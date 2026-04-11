@@ -1,0 +1,20 @@
+{
+  "name": "clawcross-frontend-tools",
+  "private": true,
+  "version": "0.0.1",
+  "scripts": {
+    "build:pretext-vendor": "node tools/build_pretext_vendor.mjs",
+    "build:oasis-town": "node tools/build_oasis_town.mjs",
+    "test:node": "node test/test_tinyfish_live_shared.js && node test/test_pretext_text_core.js",
+    "test:browser-smoke": "playwright test --config playwright.config.mjs"
+  },
+  "dependencies": {
+    "@chenglou/pretext": "^0.0.4",
+    "easystarjs": "^0.4.4",
+    "phaser": "^3.90.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "esbuild": "^0.25.3"
+  }
+}

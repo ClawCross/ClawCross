@@ -1,0 +1,20 @@
+{
+  "defaults": {
+    "browser_profile": "lite",
+    "extra_payload": {}
+  },
+  "targets": [
+    {
+      "site_key": "notion-pricing",
+      "name": "Notion Pricing",
+      "url": "https://www.notion.so/pricing",
+      "goal": "Open the public Notion pricing page and extract all publicly visible plans, prices, billing periods, and availability details. Return strict JSON only with {\"items\":[{\"item_key\":\"\",\"name\":\"\",\"plan_name\":\"\",\"sku\":\"\",\"price\":\"\",\"currency\":\"\",\"amount\":0,\"billing_period\":\"\",\"availability\":\"\",\"source_url\":\"\",\"notes\":\"\"}]}"
+    },
+    {
+      "site_key": "linear-pricing",
+      "name": "Linear Pricing",
+      "url": "https://linear.app/pricing",
+      "goal": "Open the public Linear pricing page and extract all publicly visible plans, prices, billing periods, and availability details. Return strict JSON only with {\"items\":[{\"item_key\":\"\",\"name\":\"\",\"plan_name\":\"\",\"sku\":\"\",\"price\":\"\",\"currency\":\"\",\"amount\":0,\"billing_period\":\"\",\"availability\":\"\",\"source_url\":\"\",\"notes\":\"\"}]}"
+    }
+  ]
+}

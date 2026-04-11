@@ -1,0 +1,26 @@
+{
+  "defaults": {
+    "browser_profile": "lite",
+    "extra_payload": {}
+  },
+  "targets": [
+    {
+      "site_key": "competitor-a",
+      "name": "Competitor A",
+      "url": "https://example.com/pricing",
+      "goal": "Find the public pricing page and extract all plan names, prices, billing periods, and availability. Return strict JSON only with {\"items\":[{\"item_key\":\"\",\"name\":\"\",\"plan_name\":\"\",\"sku\":\"\",\"price\":\"\",\"currency\":\"\",\"amount\":0,\"billing_period\":\"\",\"availability\":\"\",\"source_url\":\"\",\"notes\":\"\"}]}"
+    },
+    {
+      "site_key": "competitor-b",
+      "name": "Competitor B",
+      "url": "https://example.org/plans",
+      "browser_profile": "stealth",
+      "extra_payload": {
+        "proxy_config": {
+          "enabled": true,
+          "country_code": "US"
+        }
+      }
+    }
+  ]
+}
