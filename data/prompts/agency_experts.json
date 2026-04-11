@@ -1,0 +1,614 @@
+[
+  {
+    "name": "Brand Guardian",
+    "tag": "design_brand_guardian",
+    "category": "design",
+    "description": "Expert brand strategist and guardian specializing in brand identity development, consistency maintenance, and strategic brand positioning",
+    "prompt_file": "design/design-brand-guardian.md",
+    "temperature": 0.8,
+    "name_zh": "品牌守护者"
+  },
+  {
+    "name": "Image Prompt Engineer",
+    "tag": "design_image_prompt_engineer",
+    "category": "design",
+    "description": "Expert photography prompt engineer specializing in crafting detailed, evocative prompts for AI image generation. Masters the art of translating visual concepts into precise language that produces stunning, professional-quality photography through generative AI tools.",
+    "prompt_file": "design/design-image-prompt-engineer.md",
+    "temperature": 0.8,
+    "name_zh": "图像提示词工程师"
+  },
+  {
+    "name": "Inclusive Visuals Specialist",
+    "tag": "design_inclusive_visuals_specialist",
+    "category": "design",
+    "description": "Representation expert who defeats systemic AI biases to generate culturally accurate, affirming, and non-stereotypical images and video.",
+    "prompt_file": "design/design-inclusive-visuals-specialist.md",
+    "temperature": 0.8,
+    "name_zh": "包容性视觉专家"
+  },
+  {
+    "name": "UI Designer",
+    "tag": "design_ui_designer",
+    "category": "design",
+    "description": "Expert UI designer specializing in visual design systems, component libraries, and pixel-perfect interface creation. Creates beautiful, consistent, accessible user interfaces that enhance UX and reflect brand identity",
+    "prompt_file": "design/design-ui-designer.md",
+    "temperature": 0.8,
+    "name_zh": "UI 设计师"
+  },
+  {
+    "name": "UX Architect",
+    "tag": "design_ux_architect",
+    "category": "design",
+    "description": "Technical architecture and UX specialist who provides developers with solid foundations, CSS systems, and clear implementation guidance",
+    "prompt_file": "design/design-ux-architect.md",
+    "temperature": 0.8,
+    "name_zh": "UX 架构师"
+  },
+  {
+    "name": "UX Researcher",
+    "tag": "design_ux_researcher",
+    "category": "design",
+    "description": "Expert user experience researcher specializing in user behavior analysis, usability testing, and data-driven design insights. Provides actionable research findings that improve product usability and user satisfaction",
+    "prompt_file": "design/design-ux-researcher.md",
+    "temperature": 0.8,
+    "name_zh": "UX 研究员"
+  },
+  {
+    "name": "Visual Storyteller",
+    "tag": "design_visual_storyteller",
+    "category": "design",
+    "description": "Expert visual communication specialist focused on creating compelling visual narratives, multimedia content, and brand storytelling through design. Specializes in transforming complex information into engaging visual stories that connect with audiences and drive emotional engagement.",
+    "prompt_file": "design/design-visual-storyteller.md",
+    "temperature": 0.8,
+    "name_zh": "视觉叙事师"
+  },
+  {
+    "name": "Whimsy Injector",
+    "tag": "design_whimsy_injector",
+    "category": "design",
+    "description": "Expert creative specialist focused on adding personality, delight, and playful elements to brand experiences. Creates memorable, joyful interactions that differentiate brands through unexpected moments of whimsy",
+    "prompt_file": "design/design-whimsy-injector.md",
+    "temperature": 0.8,
+    "name_zh": "趣味注入师"
+  },
+  {
+    "name": "AI Engineer",
+    "tag": "engineering_ai_engineer",
+    "category": "engineering",
+    "description": "Expert AI/ML engineer specializing in machine learning model development, deployment, and integration into production systems. Focused on building intelligent features, data pipelines, and AI-powered applications with emphasis on practical, scalable solutions.",
+    "prompt_file": "engineering/engineering-ai-engineer.md",
+    "temperature": 0.4,
+    "name_zh": "AI 工程师"
+  },
+  {
+    "name": "Autonomous Optimization Architect",
+    "tag": "engineering_autonomous_optimization_architect",
+    "category": "engineering",
+    "description": "Intelligent system governor that continuously shadow-tests APIs for performance while enforcing strict financial and security guardrails against runaway costs.",
+    "prompt_file": "engineering/engineering-autonomous-optimization-architect.md",
+    "temperature": 0.4,
+    "name_zh": "自主优化架构师"
+  },
+  {
+    "name": "Backend Architect",
+    "tag": "engineering_backend_architect",
+    "category": "engineering",
+    "description": "Senior backend architect specializing in scalable system design, database architecture, API development, and cloud infrastructure. Builds robust, secure, performant server-side applications and microservices",
+    "prompt_file": "engineering/engineering-backend-architect.md",
+    "temperature": 0.4,
+    "name_zh": "后端架构师"
+  },
+  {
+    "name": "Data Engineer",
+    "tag": "engineering_data_engineer",
+    "category": "engineering",
+    "description": "Expert data engineer specializing in building reliable data pipelines, lakehouse architectures, and scalable data infrastructure. Masters ETL/ELT, Apache Spark, dbt, streaming systems, and cloud data platforms to turn raw data into trusted, analytics-ready assets.",
+    "prompt_file": "engineering/engineering-data-engineer.md",
+    "temperature": 0.4,
+    "name_zh": "数据工程师"
+  },
+  {
+    "name": "DevOps Automator",
+    "tag": "engineering_devops_automator",
+    "category": "engineering",
+    "description": "Expert DevOps engineer specializing in infrastructure automation, CI/CD pipeline development, and cloud operations",
+    "prompt_file": "engineering/engineering-devops-automator.md",
+    "temperature": 0.4,
+    "name_zh": "DevOps 自动化工程师"
+  },
+  {
+    "name": "Frontend Developer",
+    "tag": "engineering_frontend_developer",
+    "category": "engineering",
+    "description": "Expert frontend developer specializing in modern web technologies, React/Vue/Angular frameworks, UI implementation, and performance optimization",
+    "prompt_file": "engineering/engineering-frontend-developer.md",
+    "temperature": 0.4,
+    "name_zh": "前端开发者"
+  },
+  {
+    "name": "Mobile App Builder",
+    "tag": "engineering_mobile_app_builder",
+    "category": "engineering",
+    "description": "Specialized mobile application developer with expertise in native iOS/Android development and cross-platform frameworks",
+    "prompt_file": "engineering/engineering-mobile-app-builder.md",
+    "temperature": 0.4,
+    "name_zh": "移动端开发者"
+  },
+  {
+    "name": "Rapid Prototyper",
+    "tag": "engineering_rapid_prototyper",
+    "category": "engineering",
+    "description": "Specialized in ultra-fast proof-of-concept development and MVP creation using efficient tools and frameworks",
+    "prompt_file": "engineering/engineering-rapid-prototyper.md",
+    "temperature": 0.4,
+    "name_zh": "快速原型师"
+  },
+  {
+    "name": "Security Engineer",
+    "tag": "engineering_security_engineer",
+    "category": "engineering",
+    "description": "Expert application security engineer specializing in threat modeling, vulnerability assessment, secure code review, and security architecture design for modern web and cloud-native applications.",
+    "prompt_file": "engineering/engineering-security-engineer.md",
+    "temperature": 0.4,
+    "name_zh": "安全工程师"
+  },
+  {
+    "name": "Senior Developer",
+    "tag": "engineering_senior_developer",
+    "category": "engineering",
+    "description": "Premium implementation specialist - Masters Laravel/Livewire/FluxUI, advanced CSS, Three.js integration",
+    "prompt_file": "engineering/engineering-senior-developer.md",
+    "temperature": 0.4,
+    "name_zh": "高级开发者"
+  },
+  {
+    "name": "Technical Writer",
+    "tag": "engineering_technical_writer",
+    "category": "engineering",
+    "description": "Expert technical writer specializing in developer documentation, API references, README files, and tutorials. Transforms complex engineering concepts into clear, accurate, and engaging docs that developers actually read and use.",
+    "prompt_file": "engineering/engineering-technical-writer.md",
+    "temperature": 0.4,
+    "name_zh": "技术文档工程师"
+  },
+  {
+    "name": "App Store Optimizer",
+    "tag": "marketing_app_store_optimizer",
+    "category": "marketing",
+    "description": "Expert app store marketing specialist focused on App Store Optimization (ASO), conversion rate optimization, and app discoverability",
+    "prompt_file": "marketing/marketing-app-store-optimizer.md",
+    "temperature": 0.7,
+    "name_zh": "应用商店优化师"
+  },
+  {
+    "name": "Content Creator",
+    "tag": "marketing_content_creator",
+    "category": "marketing",
+    "description": "Expert content strategist and creator for multi-platform campaigns. Develops editorial calendars, creates compelling copy, manages brand storytelling, and optimizes content for engagement across all digital channels.",
+    "prompt_file": "marketing/marketing-content-creator.md",
+    "temperature": 0.7,
+    "name_zh": "内容创作者"
+  },
+  {
+    "name": "Growth Hacker",
+    "tag": "marketing_growth_hacker",
+    "category": "marketing",
+    "description": "Expert growth strategist specializing in rapid user acquisition through data-driven experimentation. Develops viral loops, optimizes conversion funnels, and finds scalable growth channels for exponential business growth.",
+    "prompt_file": "marketing/marketing-growth-hacker.md",
+    "temperature": 0.7,
+    "name_zh": "增长黑客"
+  },
+  {
+    "name": "Instagram Curator",
+    "tag": "marketing_instagram_curator",
+    "category": "marketing",
+    "description": "Expert Instagram marketing specialist focused on visual storytelling, community building, and multi-format content optimization. Masters aesthetic development and drives meaningful engagement.",
+    "prompt_file": "marketing/marketing-instagram-curator.md",
+    "temperature": 0.7,
+    "name_zh": "Instagram 运营师"
+  },
+  {
+    "name": "Reddit Community Builder",
+    "tag": "marketing_reddit_community_builder",
+    "category": "marketing",
+    "description": "Expert Reddit marketing specialist focused on authentic community engagement, value-driven content creation, and long-term relationship building. Masters Reddit culture navigation.",
+    "prompt_file": "marketing/marketing-reddit-community-builder.md",
+    "temperature": 0.7,
+    "name_zh": "Reddit 社区运营师"
+  },
+  {
+    "name": "Social Media Strategist",
+    "tag": "marketing_social_media_strategist",
+    "category": "marketing",
+    "description": "Expert social media strategist for LinkedIn, Twitter, and professional platforms. Creates cross-platform campaigns, builds communities, manages real-time engagement, and develops thought leadership strategies.",
+    "prompt_file": "marketing/marketing-social-media-strategist.md",
+    "temperature": 0.7,
+    "name_zh": "社交媒体策略师"
+  },
+  {
+    "name": "TikTok Strategist",
+    "tag": "marketing_tiktok_strategist",
+    "category": "marketing",
+    "description": "Expert TikTok marketing specialist focused on viral content creation, algorithm optimization, and community building. Masters TikTok's unique culture and features for brand growth.",
+    "prompt_file": "marketing/marketing-tiktok-strategist.md",
+    "temperature": 0.7,
+    "name_zh": "TikTok 策略师"
+  },
+  {
+    "name": "Twitter Engager",
+    "tag": "marketing_twitter_engager",
+    "category": "marketing",
+    "description": "Expert Twitter marketing specialist focused on real-time engagement, thought leadership building, and community-driven growth. Builds brand authority through authentic conversation participation and viral thread creation.",
+    "prompt_file": "marketing/marketing-twitter-engager.md",
+    "temperature": 0.7,
+    "name_zh": "Twitter 互动专家"
+  },
+  {
+    "name": "WeChat Official Account Manager",
+    "tag": "marketing_wechat_official_account",
+    "category": "marketing",
+    "description": "Expert WeChat Official Account (OA) strategist specializing in content marketing, subscriber engagement, and conversion optimization. Masters multi-format content and builds loyal communities through consistent value delivery.",
+    "prompt_file": "marketing/marketing-wechat-official-account.md",
+    "temperature": 0.7,
+    "name_zh": "微信公众号运营师"
+  },
+  {
+    "name": "Xiaohongshu Specialist",
+    "tag": "marketing_xiaohongshu_specialist",
+    "category": "marketing",
+    "description": "Expert Xiaohongshu marketing specialist focused on lifestyle content, trend-driven strategies, and authentic community engagement. Masters micro-content creation and drives viral growth through aesthetic storytelling.",
+    "prompt_file": "marketing/marketing-xiaohongshu-specialist.md",
+    "temperature": 0.7,
+    "name_zh": "小红书运营专家"
+  },
+  {
+    "name": "Zhihu Strategist",
+    "tag": "marketing_zhihu_strategist",
+    "category": "marketing",
+    "description": "Expert Zhihu marketing specialist focused on thought leadership, community credibility, and knowledge-driven engagement. Masters question-answering strategy and builds brand authority through authentic expertise sharing.",
+    "prompt_file": "marketing/marketing-zhihu-strategist.md",
+    "temperature": 0.7,
+    "name_zh": "知乎策略师"
+  },
+  {
+    "name": "Behavioral Nudge Engine",
+    "tag": "product_behavioral_nudge_engine",
+    "category": "product",
+    "description": "Behavioral psychology specialist that adapts software interaction cadences and styles to maximize user motivation and success.",
+    "prompt_file": "product/product-behavioral-nudge-engine.md",
+    "temperature": 0.6,
+    "name_zh": "行为助推引擎"
+  },
+  {
+    "name": "Feedback Synthesizer",
+    "tag": "product_feedback_synthesizer",
+    "category": "product",
+    "description": "Expert in collecting, analyzing, and synthesizing user feedback from multiple channels to extract actionable product insights. Transforms qualitative feedback into quantitative priorities and strategic recommendations.",
+    "prompt_file": "product/product-feedback-synthesizer.md",
+    "temperature": 0.6,
+    "name_zh": "用户反馈分析师"
+  },
+  {
+    "name": "Sprint Prioritizer",
+    "tag": "product_sprint_prioritizer",
+    "category": "product",
+    "description": "Expert product manager specializing in agile sprint planning, feature prioritization, and resource allocation. Focused on maximizing team velocity and business value delivery through data-driven prioritization frameworks.",
+    "prompt_file": "product/product-sprint-prioritizer.md",
+    "temperature": 0.6,
+    "name_zh": "迭代优先级规划师"
+  },
+  {
+    "name": "Trend Researcher",
+    "tag": "product_trend_researcher",
+    "category": "product",
+    "description": "Expert market intelligence analyst specializing in identifying emerging trends, competitive analysis, and opportunity assessment. Focused on providing actionable insights that drive product strategy and innovation decisions.",
+    "prompt_file": "product/product-trend-researcher.md",
+    "temperature": 0.6,
+    "name_zh": "趋势研究员"
+  },
+  {
+    "name": "Experiment Tracker",
+    "tag": "project_management_experiment_tracker",
+    "category": "project-management",
+    "description": "Expert project manager specializing in experiment design, execution tracking, and data-driven decision making. Focused on managing A/B tests, feature experiments, and hypothesis validation through systematic experimentation and rigorous analysis.",
+    "prompt_file": "project-management/project-management-experiment-tracker.md",
+    "temperature": 0.5,
+    "name_zh": "实验追踪师"
+  },
+  {
+    "name": "Project Shepherd",
+    "tag": "project_management_project_shepherd",
+    "category": "project-management",
+    "description": "Expert project manager specializing in cross-functional project coordination, timeline management, and stakeholder alignment. Focused on shepherding projects from conception to completion while managing resources, risks, and communications across multiple teams and departments.",
+    "prompt_file": "project-management/project-management-project-shepherd.md",
+    "temperature": 0.5,
+    "name_zh": "项目领航员"
+  },
+  {
+    "name": "Studio Operations",
+    "tag": "project_management_studio_operations",
+    "category": "project-management",
+    "description": "Expert operations manager specializing in day-to-day studio efficiency, process optimization, and resource coordination. Focused on ensuring smooth operations, maintaining productivity standards, and supporting all teams with the tools and processes needed for success.",
+    "prompt_file": "project-management/project-management-studio-operations.md",
+    "temperature": 0.5,
+    "name_zh": "工作室运营"
+  },
+  {
+    "name": "Studio Producer",
+    "tag": "project_management_studio_producer",
+    "category": "project-management",
+    "description": "Senior strategic leader specializing in high-level creative and technical project orchestration, resource allocation, and multi-project portfolio management. Focused on aligning creative vision with business objectives while managing complex cross-functional initiatives and ensuring optimal studio operations.",
+    "prompt_file": "project-management/project-management-studio-producer.md",
+    "temperature": 0.5,
+    "name_zh": "工作室制作人"
+  },
+  {
+    "name": "Senior Project Manager",
+    "tag": "project_manager_senior",
+    "category": "project-management",
+    "description": "Converts specs to tasks and remembers previous projects. Focused on realistic scope, no background processes, exact spec requirements",
+    "prompt_file": "project-management/project-manager-senior.md",
+    "temperature": 0.5,
+    "name_zh": "高级项目经理"
+  },
+  {
+    "name": "macOS Spatial/Metal Engineer",
+    "tag": "macos_spatial_metal_engineer",
+    "category": "spatial-computing",
+    "description": "Native Swift and Metal specialist building high-performance 3D rendering systems and spatial computing experiences for macOS and Vision Pro",
+    "prompt_file": "spatial-computing/macos-spatial-metal-engineer.md",
+    "temperature": 0.5,
+    "name_zh": "macOS 空间/Metal 工程师"
+  },
+  {
+    "name": "Terminal Integration Specialist",
+    "tag": "terminal_integration_specialist",
+    "category": "spatial-computing",
+    "description": "Terminal emulation, text rendering optimization, and SwiftTerm integration for modern Swift applications",
+    "prompt_file": "spatial-computing/terminal-integration-specialist.md",
+    "temperature": 0.5,
+    "name_zh": "终端集成专家"
+  },
+  {
+    "name": "visionOS Spatial Engineer",
+    "tag": "visionos_spatial_engineer",
+    "category": "spatial-computing",
+    "description": "Native visionOS spatial computing, SwiftUI volumetric interfaces, and Liquid Glass design implementation",
+    "prompt_file": "spatial-computing/visionos-spatial-engineer.md",
+    "temperature": 0.5,
+    "name_zh": "visionOS 空间工程师"
+  },
+  {
+    "name": "XR Cockpit Interaction Specialist",
+    "tag": "xr_cockpit_interaction_specialist",
+    "category": "spatial-computing",
+    "description": "Specialist in designing and developing immersive cockpit-based control systems for XR environments",
+    "prompt_file": "spatial-computing/xr-cockpit-interaction-specialist.md",
+    "temperature": 0.5,
+    "name_zh": "XR 座舱交互专家"
+  },
+  {
+    "name": "XR Immersive Developer",
+    "tag": "xr_immersive_developer",
+    "category": "spatial-computing",
+    "description": "Expert WebXR and immersive technology developer with specialization in browser-based AR/VR/XR applications",
+    "prompt_file": "spatial-computing/xr-immersive-developer.md",
+    "temperature": 0.5,
+    "name_zh": "XR 沉浸式开发者"
+  },
+  {
+    "name": "XR Interface Architect",
+    "tag": "xr_interface_architect",
+    "category": "spatial-computing",
+    "description": "Spatial interaction designer and interface strategist for immersive AR/VR/XR environments",
+    "prompt_file": "spatial-computing/xr-interface-architect.md",
+    "temperature": 0.5,
+    "name_zh": "XR 界面架构师"
+  },
+  {
+    "name": "Agentic Identity & Trust Architect",
+    "tag": "agentic_identity_trust",
+    "category": "specialized",
+    "description": "Designs identity, authentication, and trust verification systems for autonomous AI agents operating in multi-agent environments. Ensures agents can prove who they are, what they're authorized to do, and what they actually did.",
+    "prompt_file": "specialized/agentic-identity-trust.md",
+    "temperature": 0.5,
+    "name_zh": "Agent 身份与信任架构师"
+  },
+  {
+    "name": "Agents Orchestrator",
+    "tag": "agents_orchestrator",
+    "category": "specialized",
+    "description": "Autonomous pipeline manager that orchestrates the entire development workflow. You are the leader of this process.",
+    "prompt_file": "specialized/agents-orchestrator.md",
+    "temperature": 0.5,
+    "name_zh": "Agent 编排师"
+  },
+  {
+    "name": "Data Analytics Reporter",
+    "tag": "data_analytics_reporter",
+    "category": "specialized",
+    "description": "Expert data analyst transforming raw data into actionable business insights. Creates dashboards, performs statistical analysis, tracks KPIs, and provides strategic decision support through data visualization and reporting.",
+    "prompt_file": "specialized/data-analytics-reporter.md",
+    "temperature": 0.5,
+    "name_zh": "数据分析报告师"
+  },
+  {
+    "name": "Data Consolidation Agent",
+    "tag": "data_consolidation_agent",
+    "category": "specialized",
+    "description": "AI agent that consolidates extracted sales data into live reporting dashboards with territory, rep, and pipeline summaries",
+    "prompt_file": "specialized/data-consolidation-agent.md",
+    "temperature": 0.5,
+    "name_zh": "数据整合 Agent"
+  },
+  {
+    "name": "LSP/Index Engineer",
+    "tag": "lsp_index_engineer",
+    "category": "specialized",
+    "description": "Language Server Protocol specialist building unified code intelligence systems through LSP client orchestration and semantic indexing",
+    "prompt_file": "specialized/lsp-index-engineer.md",
+    "temperature": 0.5,
+    "name_zh": "LSP/索引工程师"
+  },
+  {
+    "name": "Report Distribution Agent",
+    "tag": "report_distribution_agent",
+    "category": "specialized",
+    "description": "AI agent that automates distribution of consolidated sales reports to representatives based on territorial parameters",
+    "prompt_file": "specialized/report-distribution-agent.md",
+    "temperature": 0.5,
+    "name_zh": "报告分发 Agent"
+  },
+  {
+    "name": "Sales Data Extraction Agent",
+    "tag": "sales_data_extraction_agent",
+    "category": "specialized",
+    "description": "AI agent specialized in monitoring Excel files and extracting key sales metrics (MTD, YTD, Year End) for internal live reporting",
+    "prompt_file": "specialized/sales-data-extraction-agent.md",
+    "temperature": 0.5,
+    "name_zh": "销售数据提取 Agent"
+  },
+  {
+    "name": "Cultural Intelligence Strategist",
+    "tag": "specialized_cultural_intelligence_strategist",
+    "category": "specialized",
+    "description": "CQ specialist that detects invisible exclusion, researches global context, and ensures software resonates authentically across intersectional identities.",
+    "prompt_file": "specialized/specialized-cultural-intelligence-strategist.md",
+    "temperature": 0.5,
+    "name_zh": "文化智能策略师"
+  },
+  {
+    "name": "Developer Advocate",
+    "tag": "specialized_developer_advocate",
+    "category": "specialized",
+    "description": "Expert developer advocate specializing in building developer communities, creating compelling technical content, optimizing developer experience (DX), and driving platform adoption through authentic engineering engagement. Bridges product and engineering teams with external developers.",
+    "prompt_file": "specialized/specialized-developer-advocate.md",
+    "temperature": 0.5,
+    "name_zh": "开发者布道师"
+  },
+  {
+    "name": "Analytics Reporter",
+    "tag": "support_analytics_reporter",
+    "category": "support",
+    "description": "Expert data analyst transforming raw data into actionable business insights. Creates dashboards, performs statistical analysis, tracks KPIs, and provides strategic decision support through data visualization and reporting.",
+    "prompt_file": "support/support-analytics-reporter.md",
+    "temperature": 0.4,
+    "name_zh": "数据分析报告师"
+  },
+  {
+    "name": "Executive Summary Generator",
+    "tag": "support_executive_summary_generator",
+    "category": "support",
+    "description": "Consultant-grade AI specialist trained to think and communicate like a senior strategy consultant. Transforms complex business inputs into concise, actionable executive summaries using McKinsey SCQA, BCG Pyramid Principle, and Bain frameworks for C-suite decision-makers.",
+    "prompt_file": "support/support-executive-summary-generator.md",
+    "temperature": 0.4,
+    "name_zh": "高管摘要生成器"
+  },
+  {
+    "name": "Finance Tracker",
+    "tag": "support_finance_tracker",
+    "category": "support",
+    "description": "Expert financial analyst and controller specializing in financial planning, budget management, and business performance analysis. Maintains financial health, optimizes cash flow, and provides strategic financial insights for business growth.",
+    "prompt_file": "support/support-finance-tracker.md",
+    "temperature": 0.4,
+    "name_zh": "财务追踪师"
+  },
+  {
+    "name": "Infrastructure Maintainer",
+    "tag": "support_infrastructure_maintainer",
+    "category": "support",
+    "description": "Expert infrastructure specialist focused on system reliability, performance optimization, and technical operations management. Maintains robust, scalable infrastructure supporting business operations with security, performance, and cost efficiency.",
+    "prompt_file": "support/support-infrastructure-maintainer.md",
+    "temperature": 0.4,
+    "name_zh": "基础设施运维师"
+  },
+  {
+    "name": "Legal Compliance Checker",
+    "tag": "support_legal_compliance_checker",
+    "category": "support",
+    "description": "Expert legal and compliance specialist ensuring business operations, data handling, and content creation comply with relevant laws, regulations, and industry standards across multiple jurisdictions.",
+    "prompt_file": "support/support-legal-compliance-checker.md",
+    "temperature": 0.4,
+    "name_zh": "法规合规检查师"
+  },
+  {
+    "name": "Support Responder",
+    "tag": "support_support_responder",
+    "category": "support",
+    "description": "Expert customer support specialist delivering exceptional customer service, issue resolution, and user experience optimization. Specializes in multi-channel support, proactive customer care, and turning support interactions into positive brand experiences.",
+    "prompt_file": "support/support-support-responder.md",
+    "temperature": 0.4,
+    "name_zh": "客户支持专员"
+  },
+  {
+    "name": "Accessibility Auditor",
+    "tag": "testing_accessibility_auditor",
+    "category": "testing",
+    "description": "Expert accessibility specialist who audits interfaces against WCAG standards, tests with assistive technologies, and ensures inclusive design. Defaults to finding barriers — if it's not tested with a screen reader, it's not accessible.",
+    "prompt_file": "testing/testing-accessibility-auditor.md",
+    "temperature": 0.3,
+    "name_zh": "无障碍审计师"
+  },
+  {
+    "name": "API Tester",
+    "tag": "testing_api_tester",
+    "category": "testing",
+    "description": "Expert API testing specialist focused on comprehensive API validation, performance testing, and quality assurance across all systems and third-party integrations",
+    "prompt_file": "testing/testing-api-tester.md",
+    "temperature": 0.3,
+    "name_zh": "API 测试师"
+  },
+  {
+    "name": "Evidence Collector",
+    "tag": "testing_evidence_collector",
+    "category": "testing",
+    "description": "Screenshot-obsessed, fantasy-allergic QA specialist - Default to finding 3-5 issues, requires visual proof for everything",
+    "prompt_file": "testing/testing-evidence-collector.md",
+    "temperature": 0.3,
+    "name_zh": "证据收集师"
+  },
+  {
+    "name": "Performance Benchmarker",
+    "tag": "testing_performance_benchmarker",
+    "category": "testing",
+    "description": "Expert performance testing and optimization specialist focused on measuring, analyzing, and improving system performance across all applications and infrastructure",
+    "prompt_file": "testing/testing-performance-benchmarker.md",
+    "temperature": 0.3,
+    "name_zh": "性能基准测试师"
+  },
+  {
+    "name": "Reality Checker",
+    "tag": "testing_reality_checker",
+    "category": "testing",
+    "description": "Stops fantasy approvals, evidence-based certification - Default to \"NEEDS WORK\", requires overwhelming proof for production readiness",
+    "prompt_file": "testing/testing-reality-checker.md",
+    "temperature": 0.3,
+    "name_zh": "现实检验师"
+  },
+  {
+    "name": "Test Results Analyzer",
+    "tag": "testing_test_results_analyzer",
+    "category": "testing",
+    "description": "Expert test analysis specialist focused on comprehensive test result evaluation, quality metrics analysis, and actionable insight generation from testing activities",
+    "prompt_file": "testing/testing-test-results-analyzer.md",
+    "temperature": 0.3,
+    "name_zh": "测试结果分析师"
+  },
+  {
+    "name": "Tool Evaluator",
+    "tag": "testing_tool_evaluator",
+    "category": "testing",
+    "description": "Expert technology assessment specialist focused on evaluating, testing, and recommending tools, software, and platforms for business use and productivity optimization",
+    "prompt_file": "testing/testing-tool-evaluator.md",
+    "temperature": 0.3,
+    "name_zh": "工具评估师"
+  },
+  {
+    "name": "Workflow Optimizer",
+    "tag": "testing_workflow_optimizer",
+    "category": "testing",
+    "description": "Expert process improvement specialist focused on analyzing, optimizing, and automating workflows across all business functions for maximum productivity and efficiency",
+    "prompt_file": "testing/testing-workflow-optimizer.md",
+    "temperature": 0.3,
+    "name_zh": "工作流优化师"
+  }
+]

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Clawcross"
+  short_description: "Operate the Clawcross multi-agent platform"
+  default_prompt: "Use $Clawcross to install, configure, debug, or modify the Clawcross repository."
