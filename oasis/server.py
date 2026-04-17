@@ -93,7 +93,9 @@ from oasis.models import (
     DiscussionStatus,
 )
 from oasis.forum import DiscussionForum, coerce_optional_post_id
+from oasis.agent_catalog import build_agent_catalog
 from oasis.engine import DiscussionEngine
+from oasis.python_workflow import PythonWorkflowEngine
 from oasis.experts import _apply_response
 from oasis.swarm_engine import build_pending_swarm, generate_swarm_blueprint
 from oasis.openclaw_cli import (
@@ -116,7 +118,7 @@ except Exception:
 
 # --- In-memory storage ---
 discussions: dict[str, DiscussionForum] = {}
-engines: dict[str, DiscussionEngine] = {}
+engines: dict[str, DiscussionEngine | PythonWorkflowEngine] = {}
 tasks: dict[str, asyncio.Task] = {}
 
 # --- Skills cache ---
@@ -231,7 +233,7 @@ app = FastAPI(
 # ------------------------------------------------------------------
 # Background task runner
 # ------------------------------------------------------------------
-async def _run_discussion(topic_id: str, engine: DiscussionEngine):
+async def _run_discussion(topic_id: str, engine: DiscussionEngine | PythonWorkflowEngine):
     """Run a discussion engine in the background, then fire callback if configured."""
     forum = discussions.get(topic_id)
     try:
@@ -312,21 +314,31 @@ async def create_topic(req: CreateTopicRequest):
         user_id=req.user_id,
         max_rounds=req.max_rounds,
     )
+    forum.team = req.team or ""
+    forum.schedule_yaml = req.schedule_yaml
     discussions[topic_id] = forum
     forum.save()
 
     try:
-        engine = DiscussionEngine(
-            forum=forum,
-            schedule_yaml=req.schedule_yaml,
-            schedule_file=req.schedule_file,
-            bot_enabled_tools=req.bot_enabled_tools,
-            bot_timeout=req.bot_timeout,
-            user_id=req.user_id,
-            early_stop=req.early_stop,
-            discussion=req.discussion,
-            team=req.team or "",
-        )
+        if req.python_file:
+            engine = PythonWorkflowEngine(
+                forum=forum,
+                python_file=req.python_file,
+                user_id=req.user_id,
+                team=req.team or "",
+            )
+        else:
+            engine = DiscussionEngine(
+                forum=forum,
+                schedule_yaml=req.schedule_yaml,
+                schedule_file=req.schedule_file,
+                bot_enabled_tools=req.bot_enabled_tools,
+                bot_timeout=req.bot_timeout,
+                user_id=req.user_id,
+                early_stop=req.early_stop,
+                discussion=req.discussion,
+                team=req.team or "",
+            )
     except Exception as e:
         forum.status = "error"
         forum.conclusion = f"引擎初始化失败: {str(e)}"
@@ -358,7 +370,7 @@ async def create_topic(req: CreateTopicRequest):
     return {
         "topic_id": topic_id,
         "status": "pending",
-        "message": f"Discussion started with {len(engine.experts)} experts",
+        "message": f"Discussion started with {len(getattr(engine, 'experts', []))} experts",
     }
 
 
@@ -965,6 +977,11 @@ async def list_workflows(user_id: str = Query(...), team: str = Query("")):
             pass
         items.append({"file": fname, "description": desc})
     return {"workflows": items}
+
+
+@app.get("/agents/catalog")
+async def list_agent_catalog(user_id: str = Query(...), team: str = Query("")):
+    return {"agents": build_agent_catalog(user_id, team)}
 
 
 class LayoutFromYamlRequest(BaseModel):

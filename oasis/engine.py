@@ -5,7 +5,7 @@ OASIS Forum - 讨论引擎
   轮次循环 → 调度/并行专家参与 → 共识检查 → 总结
 
 Three expert backends:
-  1. ExpertAgent  — direct LLM (stateless, name="tag#temp#N")
+  1. ExpertAgent  — temp sender (stateless, name="tag#temp#N")
   2. SessionExpert — internal session agent (stateful, name="tag#oasis#name" or "#oasis#name")
      - name is resolved to session_id via internal agent JSON (internal_agents.json)
      - tag (if present) enables persona injection from presets
@@ -78,14 +78,22 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
 
 
 def _load_external_agents(user_id: str, team: str = "") -> list[dict]:
-    """加载团队的 external_agents.json 列表。
+    """加载 external_agents.json 列表。
 
     返回 {"name", "tag", "global_name", "config"?, ...} 条目列表。
-    如果文件缺失、不可读或未指定团队，返回 []。
+    当提供 team 时，仅加载团队作用域配置；
+    当 team 为空时，回退到用户级配置：
+      data/user_files/{user_id}/external_agents.json
+    如果文件缺失或不可读，返回 []。
     """
-    if not user_id or not team:
+    if not user_id:
         return []
-    path = os.path.join(_PROJECT_ROOT, "data", "user_files", user_id, "teams", team, "external_agents.json")
+    if team:
+        path = os.path.join(
+            _PROJECT_ROOT, "data", "user_files", user_id, "teams", team, "external_agents.json"
+        )
+    else:
+        path = os.path.join(_PROJECT_ROOT, "data", "user_files", user_id, "external_agents.json")
     if not os.path.isfile(path):
         return []
     try:
@@ -110,6 +118,25 @@ def _find_external_agent_global_name(external_agents: list[dict], name: str) -> 
         if a.get("name", "").lower() == name_lower:
             return a.get("global_name", "")
     return ""
+
+
+def _find_external_agent_record(external_agents: list[dict], name: str) -> dict:
+    if not external_agents:
+        return {}
+    name_lower = name.lower()
+    for a in external_agents:
+        if isinstance(a, dict) and a.get("name", "").lower() == name_lower:
+            return a
+    return {}
+
+
+def _canonical_external_platform(platform_name: str) -> str:
+    pl = (platform_name or "").strip().lower()
+    if pl in ("claude-code", "claudecode"):
+        return "claude"
+    if pl in ("gemini-cli", "geminicli"):
+        return "gemini"
+    return pl
 
 
 def _load_internal_agents(user_id: str, team: str = "") -> list[dict]:
@@ -325,55 +352,64 @@ class DiscussionEngine:
 
             first, sid = working_name.split("#", 1)
             expert: ExpertAgent | SessionExpert | ExternalExpert
-            if sid.startswith("ext#"):
-                # e.g. "分析师#ext#analyst" → ExternalExpert
-                ext_id = sid.split("#", 1)[1]
-                if force_new:
-                    ext_id = uuid.uuid4().hex[:8]
-                    print(f"  [OASIS] 🆕 #new: '{full_name}' → new external session '{ext_id}'")
-                cfg = ext_configs.get(full_name, {})
-                is_acp_agent = first.lower() in ExternalExpert._ACP_TOOL_TAGS
-                tag_lower = first.lower()
-                is_openclaw_http = tag_lower == "openclaw"
-                has_http_url = bool(cfg.get("api_url")) or (is_openclaw_http and bool(os.getenv("OPENCLAW_API_URL", "")))
-                if not has_http_url and not is_acp_agent:
-                    print(f"  [OASIS] ⚠️ External expert '{full_name}' missing 'api_url' in YAML, skipping.")
+            # New format: tag#platform#name (e.g., pm#openclaw#main, analyst#claude#architect)
+            # Internal: tag#oasis#name or #oasis#name  |  temp: tag#temp#N  |  external: tag#platform#name
+            if "#oasis#" in sid or sid.startswith("oasis#") or sid == "oasis":
+                # --- Internal session agent: tag#oasis#name ---
+                # Extract the part after 'oasis#'
+                if "oasis#" in sid:
+                    oasis_rest = sid.split("oasis#", 1)[1]
+                else:
+                    oasis_rest = ""
+                # Resolve oasis_rest as an agent name
+                resolved_sid = _resolve_session_by_name(internal_agents, oasis_rest) if oasis_rest else None
+                if not resolved_sid:
+                    print(f"  [OASIS] ⚠️ Cannot resolve agent name '{oasis_rest}' from internal agents JSON, skipping '{full_name}'.")
                     continue
-                # ACP agents can work without api_url
-                api_url = cfg.get("api_url", "") or ""
-                model_str = cfg.get("model", "gpt-3.5-turbo")
-                config = self._lookup_by_tag(first, user_id, self._team)
-                if is_acp_agent:
-                    # For ACP agents, the display name comes from ext_id
-                    # (the short name in YAML, e.g. "Alice"), NOT from the tag
-                    # which is just the ACP tool identifier (openclaw, codex, etc).
-                    expert_name = ext_id
-                    persona = config.get("persona", "") if config else ""
+                agent_name = oasis_rest
+                tag_for_lookup = first
+                if force_new:
+                    actual_sid = uuid.uuid4().hex[:8]
+                    print(f"  [OASIS] 🆕 #new: '{full_name}' → new session '{actual_sid}'")
                 else:
-                    expert_name = config["name"] if config else first
-                    persona = config.get("persona", "") if config else ""
-                # Look up the real agent name from external_agents.json
-                # Use ext_id (the YAML short name) for lookup, not expert_name
-                oc_name = _find_external_agent_global_name(external_agents, ext_id)
-                expert = ExternalExpert(
+                    actual_sid = resolved_sid
+                persona = ""
+                expert_name = agent_name
+                ia_tag = ""
+                if tag_for_lookup:
+                    config = self._lookup_by_tag(tag_for_lookup, user_id, self._team)
+                    if config:
+                        expert_name = config.get("name", agent_name)
+                        persona = config.get("persona", "")
+                        print(f"  [OASIS] 🏷️ Tag '{tag_for_lookup}' → persona for '{expert_name}'")
+                else:
+                    ia_tag = _find_tag_in_internal_agents(internal_agents, resolved_sid)
+                    if ia_tag:
+                        config = self._lookup_by_tag(ia_tag, user_id, self._team)
+                        if config:
+                            persona = config.get("persona", "")
+                            print(f"  [OASIS] 🏷️ Auto-detected tag '{ia_tag}' → persona for '{expert_name}'")
+                cfg = ext_configs.get(full_name, {})
+                _oasis_config = config if config else {}
+                expert = SessionExpert(
                     name=expert_name,
-                    ext_id=ext_id,
-                    api_url=api_url,
-                    api_key=cfg.get("api_key", "") or os.getenv("OPENCLAW_GATEWAY_TOKEN", ""),
-                    model=model_str,
+                    session_id=actual_sid,
+                    user_id=user_id,
                     persona=persona,
+                    bot_base_url=bot_base_url,
+                    enabled_tools=bot_enabled_tools,
                     timeout=bot_timeout,
-                    tag=first,
+                    tag=tag_for_lookup or ia_tag,
                     extra_headers=cfg.get("headers"),
-                    oc_agent_name=oc_name,
-                    team=self._team,
+                    model=_oasis_config.get("model"),
+                    api_key=_oasis_config.get("api_key"),
+                    base_url=_oasis_config.get("base_url"),
+                    provider=_oasis_config.get("provider"),
                 )
-                if is_acp_agent:
-                    print(f"  [OASIS] 🔌 ACP agent: {expert.name} (tool={first.lower()})")
-                elif api_url:
-                    print(f"  [OASIS] 🌐 External expert: {expert.name} → {api_url}")
+                if _oasis_config.get("model"):
+                    print(f"  [OASIS] 💬 Session agent (name): '{agent_name}' → session '{actual_sid}' [model={_oasis_config.get('model')}]")
                 else:
-                    print(f"  [OASIS] 🌐 External expert: {expert.name} (no api_url)")
+                    print(f"  [OASIS] 💬 Session agent (name): '{agent_name}' → session '{actual_sid}'")
             elif sid.startswith("temp#"):
                 # e.g. "creative#temp#1" → ExpertAgent with explicit temp_id
                 config = self._lookup_by_tag(first, user_id, self._team)
@@ -398,82 +434,72 @@ class DiscussionEngine:
                     base_url=expert_base_url,
                     provider=expert_provider,
                 )
-            elif "#oasis#" in sid or sid.startswith("oasis#"):
-                # Session agent by name:
-                #   "tag#oasis#<name>"      → name lookup for session_id (tag→persona)
-                #   "oasis#<name>"          → name lookup (no tag, first is empty from '#oasis#name' split)
-                # Also handles leading '#': '#oasis#name' splits as first='', sid='oasis#name'
-
-                # Extract the part after 'oasis#'
-                oasis_rest = sid.split("oasis#", 1)[1] if "oasis#" in sid else ""
-
-                # Resolve oasis_rest as an agent name
-                resolved_sid = _resolve_session_by_name(internal_agents, oasis_rest) if oasis_rest else None
-
-                if not resolved_sid:
-                    print(f"  [OASIS] ⚠️ Cannot resolve agent name '{oasis_rest}' from internal agents JSON, skipping '{full_name}'.")
-                    continue
-
-                agent_name = oasis_rest
-                tag_for_lookup = first  # may be empty for '#oasis#name'
-
-                if force_new:
-                    actual_sid = uuid.uuid4().hex[:8]
-                    print(f"  [OASIS] 🆕 #new: '{full_name}' → new session '{actual_sid}'")
-                else:
-                    actual_sid = resolved_sid
-
-                # Tag lookup for persona (like ExternalExpert): found → use it, not found → skip
-                persona = ""
-                expert_name = agent_name
-                ia_tag = ""
-                if tag_for_lookup:
-                    config = self._lookup_by_tag(tag_for_lookup, user_id, self._team)
-                    if config:
-                        expert_name = config.get("name", agent_name)
-                        persona = config.get("persona", "")
-                        print(f"  [OASIS] 🏷️ Tag '{tag_for_lookup}' → persona for '{expert_name}'")
-                else:
-                    # No explicit tag in YAML, try to find tag from internal agent JSON
-                    ia_tag = _find_tag_in_internal_agents(internal_agents, resolved_sid)
-                    if ia_tag:
-                        config = self._lookup_by_tag(ia_tag, user_id, self._team)
-                        if config:
-                            persona = config.get("persona", "")
-                            print(f"  [OASIS] 🏷️ Auto-detected tag '{ia_tag}' → persona for '{expert_name}'")
-
-                cfg = ext_configs.get(full_name, {})
-                # Per-expert model override: read optional model/api_key/base_url/provider
-                # from the persona config (same fields as ExpertAgent)
-                _oasis_config = config if config else {}
-                expert_model = _oasis_config.get("model")
-                expert_api_key = _oasis_config.get("api_key")
-                expert_base_url = _oasis_config.get("base_url")
-                expert_provider = _oasis_config.get("provider")
-                expert = SessionExpert(
-                    name=expert_name,
-                    session_id=actual_sid,
-                    user_id=user_id,
-                    persona=persona,
-                    bot_base_url=bot_base_url,
-                    enabled_tools=bot_enabled_tools,
-                    timeout=bot_timeout,
-                    tag=tag_for_lookup or ia_tag,
-                    extra_headers=cfg.get("headers"),
-                    model=expert_model,
-                    api_key=expert_api_key,
-                    base_url=expert_base_url,
-                    provider=expert_provider,
-                )
-                if expert_model:
-                    print(f"  [OASIS] 💬 Session agent (name): '{agent_name}' → session '{actual_sid}' [model={expert_model}]")
-                else:
-                    print(f"  [OASIS] 💬 Session agent (name): '{agent_name}' → session '{actual_sid}'")
             else:
-                # Unknown format — skip with warning
-                print(f"  [OASIS] ⚠️ Unrecognized expert name format '{full_name}', skipping. "
-                      f"Use 'tag#temp#N' or 'tag#oasis#name' or '#oasis#name' or 'name#ext#id'.")
-                continue
+                # --- External agent: tag#platform#name (e.g., pm#openclaw#main, analyst#claude#architect) ---
+                # platform = second segment, name = third segment
+                parts = sid.split("#", 1)
+                platform_name = _canonical_external_platform(parts[0]) if parts else ""
+                ext_name = parts[1] if len(parts) > 1 else ""
+                if not ext_name:
+                    print(f"  [OASIS] ⚠️ External expert '{full_name}' missing name, skipping.")
+                    continue
+                if force_new:
+                    ext_name = uuid.uuid4().hex[:8]
+                    print(f"  [OASIS] 🆕 #new: '{full_name}' → new external session '{ext_name}'")
+                # If JSON record found, prefer its platform; else fallback to first (tag as platform)
+                external_agent = _find_external_agent_record(external_agents, ext_name)
+                if external_agent and external_agent.get("platform"):
+                    platform_name = _canonical_external_platform(str(external_agent.get("platform", "") or platform_name))
+                elif not platform_name:
+                    platform_name = _canonical_external_platform(first)
+                is_acp_agent = platform_name in ExternalExpert._ACP_TOOL_TAGS
+                is_openclaw_http = platform_name == "openclaw"
+                # Public OpenClaw: YAML name IS global_name, no JSON lookup needed
+                if is_openclaw_http and not self._team:
+                    oc_name = ext_name
+                    external_agent = {}
+                    cfg = ext_configs.get(full_name, {})
+                    config = self._lookup_by_tag(first, user_id, self._team)
+                    expert_name = config["name"] if config else first
+                    persona = config.get("persona", "") if config else ""
+                    api_url = cfg.get("api_url", "") or os.getenv("OPENCLAW_API_URL", "") or ""
+                    model_str = cfg.get("model", "gpt-3.5-turbo")
+                else:
+                    cfg = ext_configs.get(full_name, {})
+                    has_http_url = bool(cfg.get("api_url")) or (is_openclaw_http and bool(os.getenv("OPENCLAW_API_URL", "")))
+                    if not has_http_url and not is_acp_agent:
+                        print(f"  [OASIS] ⚠️ External expert '{full_name}' missing platform/api_url, skipping.")
+                        continue
+                    api_url = cfg.get("api_url", "") or ""
+                    model_str = cfg.get("model", "gpt-3.5-turbo")
+                    config = self._lookup_by_tag(first, user_id, self._team)
+                    if is_acp_agent:
+                        expert_name = ext_name
+                        persona = config.get("persona", "") if config else ""
+                    else:
+                        expert_name = config["name"] if config else first
+                        persona = config.get("persona", "") if config else ""
+                    oc_name = str(external_agent.get("global_name", "") or "") if external_agent else ""
+                expert = ExternalExpert(
+                    name=expert_name,
+                    ext_id=ext_name,
+                    api_url=api_url,
+                    api_key=cfg.get("api_key", "") or os.getenv("OPENCLAW_GATEWAY_TOKEN", ""),
+                    model=model_str,
+                    persona=persona,
+                    timeout=bot_timeout,
+                    tag=first,
+                    platform=platform_name,
+                    extra_headers=cfg.get("headers"),
+                    oc_agent_name=oc_name,
+                    team=self._team,
+                )
+                if is_acp_agent:
+                    print(f"  [OASIS] 🔌 ACP agent: {expert.name} (platform={platform_name})")
+                elif api_url:
+                    print(f"  [OASIS] 🌐 External expert: {expert.name} → {api_url}")
+                else:
+                    print(f"  [OASIS] 🌐 External expert: {expert.name} (no api_url)")
 
             experts_list.append(expert)
             # Register YAML original name → expert immediately (handles #new correctly)

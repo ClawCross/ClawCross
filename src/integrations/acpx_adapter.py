@@ -18,6 +18,7 @@ class AcpxAdapter:
     def __init__(self, *, cwd: str | None = None):
         self._acpx_bin = shutil.which("acpx")
         self._cwd = cwd or os.getcwd()
+        self._pending_initial_prompt: dict[str, str] = {}
         if not self._acpx_bin:
             raise AcpxError("acpx binary not found in PATH")
 
@@ -30,12 +31,24 @@ class AcpxAdapter:
         # Use business session key directly as acpx transport session.
         return session_key
 
-    async def ensure_session(self, *, tool: str, session_key: str, acpx_session: str) -> None:
+    async def ensure_session(
+        self,
+        *,
+        tool: str,
+        session_key: str,
+        acpx_session: str,
+        system_prompt: str | None = None,
+    ) -> bool:
+        existed_before = await self._session_exists(tool=tool, acpx_session=acpx_session)
         await self._run_json(
             self._command_prefix(tool=tool, session_key=session_key) + ["sessions", "ensure", "--name", acpx_session],
             timeout_sec=20,
             allow_nonzero=False,
         )
+        created = existed_before is False
+        if created and system_prompt and system_prompt.strip():
+            self._pending_initial_prompt[self._pending_prompt_key(tool=tool, acpx_session=acpx_session)] = system_prompt.strip()
+        return created
 
     async def close_session(self, *, tool: str, session_key: str, acpx_session: str) -> None:
         # close is best-effort; missing session should not fail callers
@@ -63,17 +76,12 @@ class AcpxAdapter:
         )
 
     async def ops_non_openclaw_reset_session(self, *, tool: str, session_key: str) -> None:
-        """``sessions close`` (best-effort) + ``sessions new --name``."""
+        """``sessions close`` only; let the next real prompt recreate the session."""
         acpx_session = self.to_acpx_session_name(tool=tool, session_key=session_key)
         prefix = self._command_prefix(tool=tool, session_key=session_key)
         await self._ops_run_acpx(
             prefix + ["sessions", "close", acpx_session],
             timeout_sec=15,
-            allow_nonzero=True,
-        )
-        await self._ops_run_acpx(
-            prefix + ["sessions", "new", "--name", acpx_session],
-            timeout_sec=30,
             allow_nonzero=True,
         )
 
@@ -193,6 +201,7 @@ class AcpxAdapter:
         prompt_text: str,
         timeout_sec: int = 180,
         reset_session: bool = False,
+        system_prompt: str | None = None,
         attachments: list[dict] | None = None,
     ) -> str:
         """
@@ -215,12 +224,62 @@ class AcpxAdapter:
             await self.close_session(tool=tool, session_key=session_key, acpx_session=acpx_session)
 
         # Ensure transport session on every call
-        await self.ensure_session(tool=tool, session_key=session_key, acpx_session=acpx_session)
+        await self.ensure_session(
+            tool=tool,
+            session_key=session_key,
+            acpx_session=acpx_session,
+            system_prompt=system_prompt,
+        )
 
+        pending_prompt = self._pending_initial_prompt.pop(
+            self._pending_prompt_key(tool=tool, acpx_session=acpx_session),
+            "",
+        )
+        effective_prompt = prompt_text
+        if pending_prompt:
+            effective_prompt = f"{pending_prompt}\n\n{prompt_text}".strip()
+
+        output = await self._send_prompt_file(
+            tool=tool,
+            session_key=session_key,
+            acpx_session=acpx_session,
+            prompt_text=effective_prompt,
+            timeout_sec=timeout_sec,
+            attachments=attachments,
+        )
+
+        text = self._extract_text(output)
+        if text is None:
+            return output.strip()
+        return text
+
+    async def _session_exists(self, *, tool: str, acpx_session: str) -> bool | None:
+        normalized_tool = (tool or "").strip().lower()
+        if normalized_tool == "openclaw":
+            return None
+        try:
+            sessions = await self.list_sessions(tool=normalized_tool)
+        except Exception:
+            return None
+        return any(
+            str(row.get("name") or "").strip() == acpx_session
+            and not bool(row.get("closed"))
+            for row in sessions
+        )
+
+    async def _send_prompt_file(
+        self,
+        *,
+        tool: str,
+        session_key: str,
+        acpx_session: str,
+        prompt_text: str,
+        timeout_sec: int,
+        attachments: list[dict] | None,
+    ) -> str:
         # Build multimodal prompt content (JSON array)
         content_blocks = [{"type": "text", "text": prompt_text.strip() or "(empty prompt)"}]
-        
-        # Add attachment blocks for images
+
         if attachments:
             for att in attachments:
                 att_type = att.get("type", "")
@@ -267,7 +326,7 @@ class AcpxAdapter:
         prompt_args = self._command_prefix(tool=tool, session_key=session_key)
         prompt_args += ["prompt", "-s", acpx_session, "--file", temp_path]
         try:
-            output = await self._run_json(
+            return await self._run_json(
                 prompt_args,
                 timeout_sec=timeout_sec,
                 allow_nonzero=False,
@@ -277,11 +336,6 @@ class AcpxAdapter:
                 os.unlink(temp_path)
             except Exception:
                 pass
-        
-        text = self._extract_text(output)
-        if text is None:
-            return output.strip()
-        return text
 
     async def _run_json(self, args: list[str], *, timeout_sec: int, allow_nonzero: bool) -> str:
         assert self._acpx_bin is not None
@@ -346,6 +400,10 @@ class AcpxAdapter:
         return [tool]
 
     @staticmethod
+    def _pending_prompt_key(*, tool: str, acpx_session: str) -> str:
+        return f"{(tool or '').strip().lower()}\x1f{acpx_session}"
+
+    @staticmethod
     def _extract_acpx_agent_message_chunks(obj: Any) -> str | None:
         """ACP JSON-RPC line: assistant-visible text from session/update agent_message_chunk."""
         if not isinstance(obj, dict) or obj.get("jsonrpc") != "2.0":
@@ -407,11 +465,31 @@ class AcpxAdapter:
         return None
 
 
-_adapter_singleton: AcpxAdapter | None = None
+_adapter_singletons: dict[str, AcpxAdapter] = {}
 
 
 def get_acpx_adapter(*, cwd: str | None = None) -> AcpxAdapter:
-    global _adapter_singleton
-    if _adapter_singleton is None:
-        _adapter_singleton = AcpxAdapter(cwd=cwd)
-    return _adapter_singleton
+    key = os.path.realpath(cwd or os.getcwd())
+    adapter = _adapter_singletons.get(key)
+    if adapter is None:
+        adapter = AcpxAdapter(cwd=key)
+        _adapter_singletons[key] = adapter
+    return adapter
+
+
+def load_external_agent_system_prompt(project_root: str) -> str:
+    prompt_path = os.path.join(project_root, "data", "prompts", "external_agent_system.txt")
+    try:
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except Exception:
+        return ""
+
+
+def load_external_agent_prompt_file(project_root: str, filename: str) -> str:
+    prompt_path = os.path.join(project_root, "data", "prompts", filename)
+    try:
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except Exception:
+        return ""

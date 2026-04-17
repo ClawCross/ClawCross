@@ -18,6 +18,8 @@ async def init_group_db(group_db_path: str) -> None:
     group_messages: sender_display = tag#type#short_name
     """
     async with aiosqlite.connect(group_db_path) as db:
+        await db.execute("PRAGMA journal_mode=WAL")
+        await db.execute("PRAGMA busy_timeout = 5000")
         await db.execute("""
             CREATE TABLE IF NOT EXISTS groups (
                 group_id TEXT PRIMARY KEY,
@@ -52,6 +54,22 @@ async def init_group_db(group_db_path: str) -> None:
                 FOREIGN KEY (group_id) REFERENCES groups(group_id) ON DELETE CASCADE
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS http_agent_sessions (
+                session_key TEXT NOT NULL,
+                global_name TEXT NOT NULL DEFAULT '',
+                prompt_text TEXT NOT NULL DEFAULT '',
+                transport TEXT NOT NULL DEFAULT 'http',
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL,
+                last_used_at REAL NOT NULL,
+                PRIMARY KEY (session_key)
+            )
+        """)
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_http_agent_sessions_global_name
+            ON http_agent_sessions(global_name)
+        """)
         # ── Migrations for old databases ──
         # groups: remove team_name/custom_name (kept as no-op, SQLite can't DROP COLUMN easily)
         # group_members: add new columns
@@ -70,6 +88,69 @@ async def init_group_db(group_db_path: str) -> None:
             await db.execute("ALTER TABLE group_messages ADD COLUMN attachments TEXT NOT NULL DEFAULT '[]'")
         except Exception:
             pass
+        cursor = await db.execute("PRAGMA table_info(http_agent_sessions)")
+        http_cols = [row[1] for row in await cursor.fetchall()]
+        needs_http_migration = bool(http_cols) and (
+            "prompt_profile" in http_cols or "prompt_text" not in http_cols
+        )
+        if needs_http_migration:
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS http_agent_sessions_new (
+                    session_key TEXT NOT NULL PRIMARY KEY,
+                    global_name TEXT NOT NULL DEFAULT '',
+                    prompt_text TEXT NOT NULL DEFAULT '',
+                    transport TEXT NOT NULL DEFAULT 'http',
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+                    last_used_at REAL NOT NULL
+                )
+            """)
+            src_prompt_col = "prompt_text" if "prompt_text" in http_cols else "''"
+            src_updated_col = "updated_at" if "updated_at" in http_cols else "created_at"
+            src_last_used_col = "last_used_at" if "last_used_at" in http_cols else "created_at"
+            src_transport_col = "transport" if "transport" in http_cols else "'http'"
+            rows_cur = await db.execute(
+                f"""
+                SELECT session_key, global_name, {src_prompt_col} AS prompt_text,
+                       {src_transport_col} AS transport, created_at,
+                       {src_updated_col} AS updated_at, {src_last_used_col} AS last_used_at
+                FROM http_agent_sessions
+                ORDER BY COALESCE({src_updated_col}, created_at) DESC, rowid DESC
+                """
+            )
+            rows = await rows_cur.fetchall()
+            for row in rows:
+                await db.execute(
+                    """
+                    INSERT OR IGNORE INTO http_agent_sessions_new (
+                        session_key, global_name, prompt_text, transport,
+                        created_at, updated_at, last_used_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    tuple(row),
+                )
+            await db.execute("DROP TABLE http_agent_sessions")
+            await db.execute("ALTER TABLE http_agent_sessions_new RENAME TO http_agent_sessions")
+            await db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_http_agent_sessions_global_name
+                ON http_agent_sessions(global_name)
+            """)
+        else:
+            for col, default in [
+                ("global_name", "''"),
+                ("prompt_text", "''"),
+                ("transport", "'http'"),
+            ]:
+                try:
+                    await db.execute(f"ALTER TABLE http_agent_sessions ADD COLUMN {col} TEXT NOT NULL DEFAULT {default}")
+                except Exception:
+                    pass
+            for col in ("updated_at", "last_used_at"):
+                try:
+                    await db.execute(f"ALTER TABLE http_agent_sessions ADD COLUMN {col} REAL NOT NULL DEFAULT 0")
+                except Exception:
+                    pass
+        await db.execute("DELETE FROM http_agent_sessions WHERE session_key LIKE 'agent:test-http-registry:%'")
         await db.commit()
 
 
@@ -331,3 +412,99 @@ async def clear_group_members(
                 (group_id,),
             )
         await db.commit()
+
+
+async def upsert_http_agent_session(
+    group_db_path: str,
+    *,
+    session_key: str,
+    global_name: str,
+    prompt_text: str,
+    transport: str,
+    now_ts: float,
+) -> bool:
+    async with aiosqlite.connect(group_db_path) as db:
+        await db.execute("PRAGMA busy_timeout = 5000")
+        cursor = await db.execute(
+            """
+            SELECT prompt_text
+            FROM http_agent_sessions
+            WHERE session_key = ?
+            """,
+            (session_key,),
+        )
+        row = await cursor.fetchone()
+        should_inject = row is None or (row[0] or "") != prompt_text
+        if not should_inject:
+            return False
+        if row is None:
+            await db.execute(
+                """
+                INSERT INTO http_agent_sessions (
+                    session_key, global_name, prompt_text, transport,
+                    created_at, updated_at, last_used_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (session_key, global_name, prompt_text, transport, now_ts, now_ts, now_ts),
+            )
+        else:
+            await db.execute(
+                """
+                UPDATE http_agent_sessions
+                SET global_name = ?, prompt_text = ?, transport = ?, updated_at = ?, last_used_at = ?
+                WHERE session_key = ?
+                """,
+                (global_name, prompt_text, transport, now_ts, now_ts, session_key),
+            )
+        await db.commit()
+    return should_inject
+
+
+async def delete_http_agent_sessions_by_global_name(group_db_path: str, global_name: str) -> int:
+    async with aiosqlite.connect(group_db_path) as db:
+        await db.execute("PRAGMA busy_timeout = 5000")
+        cursor = await db.execute(
+            "DELETE FROM http_agent_sessions WHERE global_name = ?",
+            (global_name,),
+        )
+        await db.commit()
+    return cursor.rowcount or 0
+
+
+async def list_http_agent_sessions(group_db_path: str) -> list[dict]:
+    """Return all http_agent_sessions records, oldest first."""
+    async with aiosqlite.connect(group_db_path) as db:
+        await db.execute("PRAGMA busy_timeout = 5000")
+        cursor = await db.execute(
+            """
+            SELECT session_key, global_name, prompt_text, transport,
+                   created_at, updated_at, last_used_at
+            FROM http_agent_sessions
+            ORDER BY last_used_at DESC
+            """,
+        )
+        rows = await cursor.fetchall()
+    return [
+        {
+            "session_key": r[0],
+            "global_name": r[1],
+            "prompt_text": r[2],
+            "transport": r[3],
+            "created_at": r[4],
+            "updated_at": r[5],
+            "last_used_at": r[6],
+        }
+        for r in rows
+    ]
+
+
+async def delete_http_agent_session_by_key(group_db_path: str, session_key: str) -> int:
+    """Delete a single http_agent_sessions record by session_key."""
+    async with aiosqlite.connect(group_db_path) as db:
+        await db.execute("PRAGMA busy_timeout = 5000")
+        cursor = await db.execute(
+            "DELETE FROM http_agent_sessions WHERE session_key = ?",
+            (session_key,),
+        )
+        await db.commit()
+    return cursor.rowcount or 0

@@ -37,6 +37,41 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 _CONN_ERR = "❌ 无法连接 OASIS 论坛服务器。请确认 OASIS 服务已启动 (端口 51202)。"
 
+
+def _workflow_python_dir(user_id: str, team: str = "") -> str:
+    if team:
+        return os.path.join(_PROJECT_ROOT, "data", "user_files", user_id, "teams", team, "oasis", "python")
+    return os.path.join(_PROJECT_ROOT, "data", "user_files", user_id, "oasis", "python")
+
+
+def resolve_python_workflow_path(user_id: str, python_file: str, team: str = "") -> tuple[str | None, str | None]:
+    if not python_file:
+        return None, "未提供 python workflow 文件名"
+    target_name = python_file if python_file.endswith(".py") else f"{python_file}.py"
+    matches: list[tuple[str, str]] = []
+    user_root = os.path.join(_PROJECT_ROOT, "data", "user_files", user_id)
+    if team:
+        search_dirs = [("team", team, _workflow_python_dir(user_id, team))]
+    else:
+        search_dirs = [("personal", "", _workflow_python_dir(user_id, ""))]
+        teams_root = os.path.join(user_root, "teams")
+        if os.path.isdir(teams_root):
+            for team_name in sorted(os.listdir(teams_root)):
+                team_dir = os.path.join(teams_root, team_name)
+                if os.path.isdir(team_dir):
+                    search_dirs.append(("team", team_name, _workflow_python_dir(user_id, team_name)))
+    for scope, team_name, base_dir in search_dirs:
+        path = os.path.join(base_dir, target_name)
+        if os.path.isfile(path):
+            label = f"team:{team_name}" if scope == "team" else "personal"
+            matches.append((label, path))
+    if not matches:
+        return None, f"未找到 python workflow 文件: {target_name}"
+    if len(matches) > 1:
+        where = ", ".join(label for label, _ in matches)
+        return None, f"找到多个同名 python workflow: {target_name}（{where}），请指定 team"
+    return matches[0][1], None
+
 # Checkpoint DB (same as agent.py / mcp_session.py)
 _DB_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
@@ -331,6 +366,7 @@ async def start_new_oasis(
     username: str = "",
     max_rounds: int = 5,
     schedule_file: str = "",
+    python_file: str = "",
     notify_session: str = "",
     discussion: bool = False,
     team: str = "",
@@ -349,10 +385,14 @@ async def start_new_oasis(
     Note: discussion can also be set in YAML via "discussion: true/false". 
     If not set here (default False), the YAML setting is used. Setting it here overrides the YAML.
 
-    Expert pool is built entirely from schedule YAML expert names.
-    Either schedule_file or schedule_yaml must be provided (at least one).
-    If both are provided, schedule_file takes priority (file content is used, schedule_yaml is ignored).
-    If the user already has a saved YAML workflow file, just use schedule_file — no need to write schedule_yaml again.
+    Workflow has two modes:
+      - YAML mode: current OASIS graph engine
+      - Python mode: provide python_file; script exports async run(ctx)
+
+    In YAML mode, expert pool is built entirely from schedule YAML expert names.
+    Either schedule_file or schedule_yaml must be provided.
+    If both are provided, schedule_file takes priority.
+    If python_file is provided, it takes priority over YAML mode.
 
     **Three Agent Types** (name must contain '#'; engine dispatches by format):
 
@@ -429,9 +469,8 @@ async def start_new_oasis(
     """
     effective_user = username or _FALLBACK_USER
 
-    # Validate: at least one of schedule_yaml / schedule_file must be provided
-    if not schedule_yaml and not schedule_file:
-        return "❌ 必须提供 schedule_yaml 或 schedule_file（至少一个）。如果已有保存的工作流文件，用 schedule_file 指定文件名即可。"
+    if not python_file and not schedule_yaml and not schedule_file:
+        return "❌ 必须提供 python_file 或 schedule_yaml 或 schedule_file（至少一个）。"
 
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(timeout=300.0)) as client:
@@ -452,8 +491,18 @@ async def start_new_oasis(
             body["callback_url"] = f"http://127.0.0.1:{port}/system_trigger"
             body["callback_session_id"] = notify_session or "default"
 
-            # schedule_file takes priority over schedule_yaml
-            if schedule_file:
+            if python_file:
+                if not os.path.isabs(python_file):
+                    resolved_path, resolve_error = resolve_python_workflow_path(
+                        effective_user,
+                        python_file,
+                        team,
+                    )
+                    if resolve_error:
+                        return f"❌ {resolve_error}"
+                    python_file = resolved_path or python_file
+                body["python_file"] = python_file
+            elif schedule_file:
                 if not os.path.isabs(schedule_file):
                     resolved_path, resolve_error = _resolve_workflow_path(
                         effective_user,
@@ -797,6 +846,49 @@ async def list_oasis_workflows(username: str = "", team: str = "") -> str:
     except Exception as e:
         return f"❌ 查询失败: {e}"
 
+
+@mcp.tool()
+async def list_oasis_agent_catalog(username: str = "", team: str = "") -> str:
+    """
+    List all callable agents for OASIS workflowpy under the current user/team.
+
+    Includes temp experts, internal session agents, and external agents with
+    their target id, tag, platform, connect_type, session default, and full persona.
+    """
+    effective_user = username or _FALLBACK_USER
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(
+                f"{OASIS_BASE_URL}/agents/catalog",
+                params={"user_id": effective_user, "team": team},
+            )
+            if resp.status_code != 200:
+                return f"❌ 查询失败: {resp.text}"
+            items = resp.json().get("agents", [])
+        if not items:
+            return "📭 暂无可调用 agent"
+
+        lines = [f"📋 OASIS Agent Catalog — 共 {len(items)} 个\n"]
+        for item in items:
+            lines.append(
+                f"  • {item.get('id')}\n"
+                f"    name={item.get('name')} | tag={item.get('tag') or '-'} | "
+                f"kind={item.get('kind')} | platform={item.get('platform')} | "
+                f"connect={item.get('connect_type')} | session={item.get('session') or '-'}"
+            )
+            persona = str(item.get("persona", "") or "").strip()
+            if persona:
+                lines.append(f"    persona: {persona}")
+        if team:
+            lines.append(f"\n💡 当前只显示 team=\"{team}\" 下的 agent。")
+        else:
+            lines.append("\n💡 未指定 team，显示个人作用域 agent。")
+        return "\n".join(lines)
+    except httpx.ConnectError:
+        return _CONN_ERR
+    except Exception as e:
+        return f"❌ 查询失败: {e}"
+
 # ======================================================================
 # Public Network Info (tunnel / public domain)
 # ======================================================================
@@ -933,22 +1025,10 @@ def _parse_expert_name(raw: str) -> dict:
 
     if len(parts) >= 3 and parts[1] == "ext":
         ext_id = parts[2]
-        # For openclaw agents, ext_id is the agent name (e.g. "main", "test1")
-        if tag == "openclaw":
-            return {
-                "type": "external",
-                "tag": tag,
-                "name": ext_id,
-                "emoji": "🦞",
-                "temperature": 0.7,
-                "instance": 1,
-                "session_id": "",
-                "ext_id": ext_id,
-            }
         return {
             "type": "external",
             "tag": tag,
-            "name": _TAG_NAMES.get(tag, tag),
+            "name": ext_id,
             "emoji": "🌐",
             "temperature": 0.5,
             "instance": 1,

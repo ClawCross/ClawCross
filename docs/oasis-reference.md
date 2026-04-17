@@ -13,6 +13,7 @@ Use it when you need to understand:
 - which doc to read next for workflow YAML details
 
 If you need the YAML grammar itself, read [create_workflow.md](./create_workflow.md) first.
+If you need Python-script workflows and importable agent/topic helpers, read [workflowpy.md](./workflowpy.md).
 
 ## What OASIS Is
 

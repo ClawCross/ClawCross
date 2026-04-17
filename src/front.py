@@ -2569,6 +2569,15 @@ def proxy_acpx_status():
     return jsonify({"available": available, "tools": _list_acpx_tools() if available else []})
 
 
+def _session_in_current_acpx_cwd(row: dict) -> bool:
+    try:
+        session_cwd = os.path.realpath(str((row or {}).get("cwd") or "").strip())
+        current_cwd = os.path.realpath(root_dir)
+    except Exception:
+        return False
+    return bool(session_cwd) and session_cwd == current_cwd
+
+
 @app.route("/proxy_acpx_sessions", methods=["GET"])
 def proxy_acpx_sessions():
     """List existing acpx sessions for a tool (``acpx <tool> sessions list`` JSON), slim rows."""
@@ -2583,7 +2592,12 @@ def proxy_acpx_sessions():
         return jsonify({"ok": False, "error": "unsupported tool", "sessions": []}), 400
 
     try:
-        from integrations.acpx_adapter import AcpxError, get_acpx_adapter
+        from integrations.acpx_adapter import (
+            AcpxError,
+            get_acpx_adapter,
+            load_external_agent_prompt_file,
+            load_external_agent_system_prompt,
+        )
     except ImportError as e:
         return jsonify({"ok": False, "error": str(e), "sessions": []}), 500
 
@@ -2597,7 +2611,110 @@ def proxy_acpx_sessions():
     except AcpxError as e:
         return jsonify({"ok": False, "error": str(e), "sessions": []}), 502
 
+    sessions = [row for row in sessions if _session_in_current_acpx_cwd(row)]
     return jsonify({"ok": True, "tool": tool, "sessions": sessions})
+
+
+@app.route("/proxy_acpx_sessions_all", methods=["GET"])
+def proxy_acpx_sessions_all():
+    """List active acpx sessions across all supported tools for public contacts."""
+    import asyncio
+    import shutil
+
+    if not shutil.which("acpx"):
+        return jsonify({"ok": False, "error": "acpx not found in PATH", "sessions": []}), 503
+
+    include_closed = str(request.args.get("include_closed", "") or "").strip().lower() in {"1", "true", "yes"}
+
+    try:
+        from integrations.acpx_adapter import AcpxError, get_acpx_adapter
+    except ImportError as e:
+        return jsonify({"ok": False, "error": str(e), "sessions": []}), 500
+
+    adapter = get_acpx_adapter(cwd=root_dir)
+    supported_tools = sorted(acpx_agent_command_names())
+
+    async def _list_all() -> list[dict]:
+        out: list[dict] = []
+        for tool in supported_tools:
+            try:
+                sessions = await adapter.list_sessions(tool=tool)
+            except AcpxError:
+                continue
+            for row in sessions:
+                if not _session_in_current_acpx_cwd(row):
+                    continue
+                if not include_closed and row.get("closed"):
+                    continue
+                out.append({
+                    **row,
+                    "tool": tool,
+                })
+        return out
+
+    try:
+        sessions = asyncio.run(_list_all())
+    except AcpxError as e:
+        return jsonify({"ok": False, "error": str(e), "sessions": []}), 502
+
+    return jsonify({"ok": True, "sessions": sessions})
+
+
+@app.route("/proxy_acpx_session_delete", methods=["POST"])
+def proxy_acpx_session_delete():
+    """Close one acpx session directly by tool + session name."""
+    import asyncio
+    import shutil
+
+    if not shutil.which("acpx"):
+        return jsonify({"ok": False, "error": "acpx not found in PATH"}), 503
+
+    body = request.get_json(silent=True) or {}
+    tool = str(body.get("tool") or "").strip().lower()
+    session_name = str(body.get("session_name") or "").strip()
+    if not session_name:
+        return jsonify({"ok": False, "error": "session_name is required"}), 400
+
+    try:
+        from integrations.acpx_adapter import AcpxError, get_acpx_adapter
+    except ImportError as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+    adapter = get_acpx_adapter(cwd=root_dir)
+
+    async def _resolve_tool() -> tuple[str, str]:
+        """Returns (tool, actual_session_name) tuple."""
+        valid_tools = acpx_agent_command_names()
+        # Even if tool is provided, still look up actual session name
+        search_tools = [tool] if tool in valid_tools else valid_tools
+        for candidate in search_tools:
+            try:
+                rows = await adapter.list_sessions(tool=candidate)
+            except AcpxError:
+                continue
+            for row in (rows or []):
+                row_name = str((row or {}).get("name") or "").strip()
+                # Match session name pattern: agent:{global_name}:{suffix}
+                if row_name == f"agent:{session_name}:" or row_name.startswith(f"agent:{session_name}:"):
+                    return candidate, row_name
+        return "", ""
+
+    async def _close(resolved_tool: str, actual_session: str) -> None:
+        await adapter.close_session(
+            tool=resolved_tool,
+            session_key=session_name,
+            acpx_session=actual_session,
+        )
+
+    try:
+        resolved_tool, actual_session = asyncio.run(_resolve_tool())
+        if not resolved_tool:
+            return jsonify({"ok": False, "error": "unsupported tool or session not found"}), 400
+        asyncio.run(_close(resolved_tool, actual_session))
+    except AcpxError as e:
+        return jsonify({"ok": False, "error": str(e)}), 502
+
+    return jsonify({"ok": True, "tool": resolved_tool, "session_name": actual_session})
 
 
 @app.route("/proxy_acpx_chat", methods=["POST", "OPTIONS"])
@@ -2650,29 +2767,44 @@ def proxy_acpx_chat():
     stream = body.get("stream", True)
 
     try:
-        from integrations.acpx_adapter import AcpxError, get_acpx_adapter
+        from integrations.acpx_adapter import load_external_agent_system_prompt, load_external_agent_prompt_file
+        from integrations.agent_sender import SendToAgentRequest, send_to_agent
     except ImportError as e:
-        return jsonify({"error": f"acpx adapter unavailable: {e}"}), 500
+        return jsonify({"error": f"agent sender unavailable: {e}"}), 500
 
-    adapter = get_acpx_adapter(cwd=root_dir)
+    front_external_system_prompt = "\n\n".join(
+        p
+        for p in (
+            load_external_agent_system_prompt(root_dir),
+            load_external_agent_prompt_file(root_dir, "external_agent_private_rules.txt"),
+        )
+        if p
+    )
 
     async def _run_prompt() -> str:
-        return await adapter.prompt(
-            tool=tool,
-            session_key=session_key,
-            prompt_text=prompt_text,
-            timeout_sec=int(body.get("timeout_sec") or 600),
-            reset_session=False,
-            attachments=acpx_attachments or None,
+        result = await send_to_agent(
+            SendToAgentRequest(
+                prompt=prompt_text,
+                connect_type="acp",
+                platform=tool,
+                session=session_key,
+                options={
+                    "cwd": root_dir,
+                    "timeout_sec": int(body.get("timeout_sec") or 600),
+                    "system_prompt": front_external_system_prompt,
+                    "attachments": acpx_attachments or None,
+                },
+            )
         )
+        if not result.ok:
+            raise RuntimeError(result.error or "acpx chat failed")
+        return result.content or ""
 
     try:
         reply = asyncio.run(_run_prompt())
-    except AcpxError as e:
-        return jsonify({"error": str(e)}), 502
     except RuntimeError as e:
         # asyncio.run from nested loop (unlikely in Flask sync)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e)}), 502
 
     if not stream:
         return jsonify(
@@ -2808,6 +2940,15 @@ def _team_openclaw_agents_save(user_id: str, team: str, data: list):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
+def _external_agent_platform(agent: dict) -> str:
+    """Return the canonical top-level platform for an external agent record."""
+    return str((agent or {}).get("platform", "") or "").strip()
+
+
+def _is_openclaw_external(agent: dict) -> bool:
+    return _external_agent_platform(agent).lower() == "openclaw"
+
+
 @app.route("/team_openclaw_snapshot", methods=["GET"])
 def team_openclaw_snapshot_get():
     """Get the team's saved external agent list.
@@ -2865,6 +3006,7 @@ def team_openclaw_snapshot_export():
     data.append({
         "name": short_name,
         "tag": "openclaw",
+        "platform": "openclaw",
         "global_name": agent_name,
         "config": snapshot.get("config", {}),
         "workspace_files": snapshot.get("workspace_files", {}),
@@ -2909,8 +3051,8 @@ def team_openclaw_snapshot_sync_all():
 
     # Source of truth: existing external_agents.json
     existing = _team_openclaw_agents_load(user_id, team)
-    openclaw_entries = [a for a in existing if a.get("tag") == "openclaw"]
-    non_openclaw = [a for a in existing if a.get("tag") != "openclaw"]
+    openclaw_entries = [a for a in existing if _is_openclaw_external(a)]
+    non_openclaw = [a for a in existing if not _is_openclaw_external(a)]
 
     if not openclaw_entries:
         return jsonify({"ok": True, "synced": 0, "agents": existing})
@@ -2947,6 +3089,7 @@ def team_openclaw_snapshot_sync_all():
                 new_openclaw.append({
                     "name": short_name,
                     "tag": "openclaw",
+                    "platform": "openclaw",
                     "global_name": agent_name,
                     "config": config,
                     "workspace_files": snap.get("workspace_files", {}),
@@ -2988,7 +3131,7 @@ def team_openclaw_snapshot_restore():
     data = _team_openclaw_agents_load(user_id, team)
     agent_snapshot = None
     for entry in data:
-        if entry.get("name") == short_name and entry.get("tag") == "openclaw":
+        if entry.get("name") == short_name and _is_openclaw_external(entry):
             agent_snapshot = entry
             break
     if not agent_snapshot:
@@ -3066,8 +3209,8 @@ def team_openclaw_snapshot_export_all():
 
     # Source of truth: existing external_agents.json
     existing = _team_openclaw_agents_load(user_id, team)
-    openclaw_entries = [a for a in existing if a.get("tag") == "openclaw"]
-    non_openclaw = [a for a in existing if a.get("tag") != "openclaw"]
+    openclaw_entries = [a for a in existing if _is_openclaw_external(a)]
+    non_openclaw = [a for a in existing if not _is_openclaw_external(a)]
 
     if not openclaw_entries:
         return jsonify({"ok": True, "exported": 0, "message": "No openclaw agents in JSON"}), 200
@@ -3100,6 +3243,7 @@ def team_openclaw_snapshot_export_all():
                 new_openclaw.append({
                     "name": short_name,
                     "tag": "openclaw",
+                    "platform": "openclaw",
                     "global_name": agent_name,
                     "config": snapshot.get("config", {}),
                     "workspace_files": snapshot.get("workspace_files", {}),
@@ -4160,8 +4304,10 @@ def get_team_members(team_name):
                             "name": agent.get("name", ""),
                             "type": "ext",
                             "tag": agent.get("tag", ""),
+                            "platform": _external_agent_platform(agent),
                             "global_name": agent.get("global_name", ""),
-                            "meta": agent.get("meta", {})
+                            "meta": agent.get("meta", {}),
+                            "team": team_name
                         })
         
         return jsonify({
@@ -4197,8 +4343,8 @@ def add_external_member(team_name):
     headers = body.get("headers", {})
     platform = str(body.get("platform", "") or "").strip()
     
-    if not name or not global_name:
-        return jsonify({"error": "name and global_name are required"}), 400
+    if not name or not global_name or not platform:
+        return jsonify({"error": "name, global_name, and platform are required"}), 400
     
     try:
         ext_path = os.path.join(team_dir, "external_agents.json")
@@ -4219,9 +4365,9 @@ def add_external_member(team_name):
         new_agent = {
             "name": name,
             "tag": tag,
+            "platform": platform,
             "global_name": global_name,
             "meta": {
-                "platform": platform,
                 "api_url": api_url,
                 "api_key": api_key,
                 "model": model,
@@ -4360,9 +4506,12 @@ def update_external_member(team_name):
         if "headers" in body:
             meta["headers"] = body["headers"]
         if "platform" in body:
-            meta["platform"] = str(body["platform"] or "").strip()
+            found["platform"] = str(body["platform"] or "").strip()
+        meta.pop("platform", None)
         if meta:
             found["meta"] = meta
+        elif "meta" in found:
+            found.pop("meta", None)
 
         # Save back
         with open(ext_path, "w", encoding="utf-8") as f:
@@ -4394,6 +4543,19 @@ def _public_agents_load_raw(user_id: str) -> list:
         return []
 
 
+def _external_agent_response_view(agent: dict) -> dict:
+    """Expose external agent records in the unified top-level platform shape."""
+    if not isinstance(agent, dict):
+        return {}
+    meta = dict(agent.get("meta") or {})
+    meta.pop("platform", None)
+    return {
+        **agent,
+        "platform": _external_agent_platform(agent),
+        "meta": meta,
+    }
+
+
 def _public_agents_save_raw(user_id: str, agents: list) -> None:
     p = _public_external_agents_user_path(user_id)
     os.makedirs(os.path.dirname(p), exist_ok=True)
@@ -4401,7 +4563,7 @@ def _public_agents_save_raw(user_id: str, agents: list) -> None:
         json.dump(agents, f, ensure_ascii=False, indent=2)
 
 
-@app.route("/public_external_agents", methods=["GET", "POST", "DELETE"])
+@app.route("/public_external_agents", methods=["GET", "POST", "PUT", "DELETE"])
 def public_external_agents():
     """User-level external_agents.json: list (GET), add (POST), remove (DELETE)."""
     user_id = session.get("user_id", "")
@@ -4409,37 +4571,72 @@ def public_external_agents():
         return jsonify({"error": "not logged in"}), 401
 
     if request.method == "GET":
-        return jsonify({"agents": _public_agents_load_raw(user_id)})
+        return jsonify({"agents": [_external_agent_response_view(a) for a in _public_agents_load_raw(user_id)]})
 
-    if request.method == "POST":
+    if request.method in {"POST", "PUT"}:
         body = request.get_json(force=True)
-        name = body.get("name", "")
-        tag = body.get("tag", "")
-        global_name = body.get("global_name", "")
-        api_url = body.get("api_url", "")
-        api_key = body.get("api_key", "")
-        model = body.get("model", "")
-        headers = body.get("headers", {})
-        platform = str(body.get("platform", "") or "").strip()
-        if not name or not global_name:
-            return jsonify({"error": "name and global_name are required"}), 400
         try:
             agents = _public_agents_load_raw(user_id)
-            if any(a.get("global_name") == global_name for a in agents if isinstance(a, dict)):
-                return jsonify({"error": "Global name already exists"}), 409
-            new_agent = {
-                "name": name,
-                "tag": tag,
-                "global_name": global_name,
-                "meta": {
+            global_name = str(body.get("global_name", "") or "").strip()
+            if not global_name:
+                return jsonify({"error": "global_name is required"}), 400
+
+            if request.method == "POST":
+                name = body.get("name", "")
+                tag = body.get("tag", "")
+                api_url = body.get("api_url", "")
+                api_key = body.get("api_key", "")
+                model = body.get("model", "")
+                headers = body.get("headers", {})
+                platform = str(body.get("platform", "") or "").strip()
+                if not name or not platform:
+                    return jsonify({"error": "name and platform are required"}), 400
+                if any(a.get("global_name") == global_name for a in agents if isinstance(a, dict)):
+                    return jsonify({"error": "Global name already exists"}), 409
+                new_agent = {
+                    "name": name,
+                    "tag": tag,
                     "platform": platform,
-                    "api_url": api_url,
-                    "api_key": api_key,
-                    "model": model,
-                    "headers": headers,
-                },
-            }
-            agents.append(new_agent)
+                    "global_name": global_name,
+                    "meta": {
+                        "api_url": api_url,
+                        "api_key": api_key,
+                        "model": model,
+                        "headers": headers,
+                    },
+                }
+            else:
+                found = None
+                for a in agents:
+                    if isinstance(a, dict) and a.get("global_name") == global_name:
+                        found = a
+                        break
+                if not found:
+                    return jsonify({"error": "Global name not found"}), 404
+                if "new_name" in body:
+                    found["name"] = body["new_name"]
+                if "new_tag" in body:
+                    found["tag"] = body["new_tag"]
+                if "platform" in body:
+                    found["platform"] = str(body.get("platform") or "").strip()
+                meta = found.get("meta", {})
+                if "api_url" in body:
+                    meta["api_url"] = body["api_url"]
+                if "api_key" in body:
+                    meta["api_key"] = body["api_key"]
+                if "model" in body:
+                    meta["model"] = body["model"]
+                if "headers" in body:
+                    meta["headers"] = body["headers"]
+                meta.pop("platform", None)
+                if meta:
+                    found["meta"] = meta
+                elif "meta" in found:
+                    found.pop("meta", None)
+                new_agent = found
+
+            if request.method == "POST":
+                agents.append(new_agent)
             _public_agents_save_raw(user_id, agents)
             return jsonify({"status": "success", "agent": new_agent})
         except Exception as e:
@@ -4839,9 +5036,10 @@ def preview_team_snapshot():
                     external_agents_info.append({
                         "name": entry.get("name", "?"),
                         "tag": entry.get("tag", ""),
+                        "platform": _external_agent_platform(entry),
                         "global_name": entry.get("global_name", ""),
                     })
-                    if entry.get("tag") == "openclaw":
+                    if _is_openclaw_external(entry):
                         openclaw_info.append({
                             "name": entry.get("name", "?"),
                             "global_name": entry.get("global_name", ""),
@@ -4856,7 +5054,7 @@ def preview_team_snapshot():
     if isinstance(ext_data, list):
         managed_collected = False
         for entry in ext_data:
-            if entry.get("tag") != "openclaw":
+            if not _is_openclaw_external(entry):
                 continue
             short_name = entry.get("name", "")
             agent_name = entry.get("global_name", "") or short_name
@@ -4905,7 +5103,7 @@ def preview_team_snapshot():
     cron_info = {}
     if isinstance(ext_data, list):
         for entry in ext_data:
-            if entry.get("tag") != "openclaw":
+            if not _is_openclaw_external(entry):
                 continue
             short_name = entry.get("name", "")
             agent_name = entry.get("global_name", "") or short_name
@@ -5082,7 +5280,7 @@ def download_team_snapshot():
 
                 if isinstance(ext_data, list):
                     for entry in ext_data:
-                        if entry.get("tag") != "openclaw":
+                        if not _is_openclaw_external(entry):
                             continue
                         short_name = entry.get("name", "")
                         # Use global_name as agentId for cron jobs
@@ -5295,7 +5493,7 @@ def upload_team_snapshot():
                 if isinstance(openclaw_data, list) and openclaw_data:
                     external_ordered = [e for e in openclaw_data if isinstance(e, dict)]
                     for agent_entry in external_ordered:
-                        if agent_entry.get("tag") == "openclaw":
+                        if _is_openclaw_external(agent_entry):
                             continue
                         agent_entry["global_name"] = restore_external_global_name(
                             team, agent_entry, external_ordered
@@ -5303,7 +5501,7 @@ def upload_team_snapshot():
 
                     oc_ordered = openclaw_entries_ordered(openclaw_data)
                     for agent_entry in openclaw_data:
-                        if agent_entry.get("tag") != "openclaw":
+                        if not _is_openclaw_external(agent_entry):
                             continue
                         short_name = agent_entry.get("name", "")
                         agent_snapshot = agent_entry

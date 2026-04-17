@@ -146,6 +146,7 @@ async def skill_evolution_report(
     limit: int = 8,
     error_text: str = "",
     command: str = "",
+    strategy: str = "auto",
 ) -> str:
     """
     Build a lightweight EvoSkill-style report for a skill using recent failures.
@@ -161,6 +162,7 @@ async def skill_evolution_report(
     :param limit: Max failure samples to analyze
     :param error_text: Optional fresh error text to include immediately
     :param command: Optional command associated with the fresh error
+    :param strategy: Strategy preset (auto, balanced, innovate, harden, repair-only)
     """
     from webot.skill_evolution import analyze_skill_evolution
 
@@ -172,6 +174,7 @@ async def skill_evolution_report(
         limit=limit,
         error_text=error_text,
         command=command,
+        strategy=strategy,
     )
     return json.dumps(result, ensure_ascii=False)
 
@@ -186,6 +189,7 @@ async def skill_evolution_apply(
     error_text: str = "",
     command: str = "",
     source: str = "runtime",
+    strategy: str = "auto",
 ) -> str:
     """
     Apply the top self-evolution candidate back into a skill's managed block.
@@ -201,6 +205,7 @@ async def skill_evolution_apply(
     :param error_text: Optional fresh error text to include immediately
     :param command: Optional command associated with the fresh error
     :param source: Source label for the feedback history
+    :param strategy: Strategy preset (auto, balanced, innovate, harden, repair-only)
     """
     from webot.skill_evolution import apply_skill_evolution
 
@@ -213,6 +218,7 @@ async def skill_evolution_apply(
         error_text=error_text,
         command=command,
         source=source,
+        strategy=strategy,
     )
     return json.dumps(result, ensure_ascii=False)
 

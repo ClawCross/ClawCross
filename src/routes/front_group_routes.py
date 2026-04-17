@@ -339,3 +339,78 @@ def register_group_routes(app, *, port_agent: int, internal_token: str) -> None:
             return jsonify({"error": "状态查询超时"}), 504
         except Exception as e:
             return jsonify({"error": str(e)}), 500
+
+    @app.route("/proxy_sessions_list", methods=["POST"])
+    def proxy_sessions_list():
+        """代理 sessions 列表查询：acpx sessions + http_agent_sessions。"""
+        user_id = session.get("user_id", "")
+        if not user_id:
+            return jsonify({"error": "未登录"}), 401
+        try:
+            r = requests.post(
+                "http://127.0.0.1:{port}/sessions_list".format(port=port_agent),
+                json={"user_id": user_id},
+                headers={"X-Internal-Token": internal_token},
+                timeout=30,
+            )
+            try:
+                resp_data = r.json()
+            except Exception:
+                resp_data = {"error": r.text or "Unknown error"}
+            return jsonify(resp_data), r.status_code
+        except requests.exceptions.Timeout:
+            return jsonify({"error": "查询超时"}), 504
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/proxy_sessions_delete", methods=["POST"])
+    def proxy_sessions_delete():
+        """删除指定的 http_agent_session 记录。"""
+        user_id = session.get("user_id", "")
+        if not user_id:
+            return jsonify({"error": "未登录"}), 401
+        try:
+            data = request.get_json(silent=True) or {}
+            data["user_id"] = user_id
+            r = requests.post(
+                "http://127.0.0.1:{port}/sessions_delete".format(port=port_agent),
+                json=data,
+                headers={"X-Internal-Token": internal_token},
+                timeout=15,
+            )
+            try:
+                resp_data = r.json()
+            except Exception:
+                resp_data = {"error": r.text or "Unknown error"}
+            return jsonify(resp_data), r.status_code
+        except requests.exceptions.Timeout:
+            return jsonify({"error": "删除超时"}), 504
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/proxy_sessions_close", methods=["POST"])
+    def proxy_sessions_close():
+        """关闭指定的 acpx session。"""
+        user_id = session.get("user_id", "")
+        if not user_id:
+            return jsonify({"error": "未登录"}), 401
+        try:
+            data = request.get_json(silent=True) or {}
+            data["user_id"] = user_id
+            r = requests.post(
+                "http://127.0.0.1:{port}/sessions_close".format(port=port_agent),
+                json=data,
+                headers={"X-Internal-Token": internal_token},
+                timeout=15,
+            )
+            try:
+                resp_data = r.json()
+            except Exception:
+                resp_data = {"error": r.text or "Unknown error"}
+            return jsonify(resp_data), r.status_code
+        except requests.exceptions.Timeout:
+            return jsonify({"error": "关闭超时"}), 504
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500

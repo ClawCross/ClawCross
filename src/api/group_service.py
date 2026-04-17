@@ -1,6 +1,5 @@
 import asyncio
 import base64
-import hashlib
 import json
 import os
 import re
@@ -33,13 +32,16 @@ from api.group_repository import (
     list_groups_for_user,
     list_recent_group_messages,
     remove_group_member,
+    upsert_http_agent_session,
     update_group_name,
 )
 from api.group_models import Attachment, GroupCreateRequest, GroupAddMemberRequest, GroupMessageRequest, GroupUpdateRequest
 from utils.logging_utils import get_logger
 from utils.session_summary import first_human_title
-from integrations.acpx_adapter import AcpxError, get_acpx_adapter
+from integrations.acpx_adapter import AcpxError, get_acpx_adapter, load_external_agent_system_prompt
 from integrations.acpx_cli_tools import acpx_agent_tags_with_legacy
+from integrations.agent_sender import SendToAgentRequest, send_to_agent
+from integrations.external_persona import build_external_persona_prompt
 
 logger = get_logger("group_service")
 
@@ -58,6 +60,11 @@ _EXTERNAL_AGENT_GROUP_RULES_PATH = os.path.join(
     _PROJECT_ROOT, "data", "prompts", "external_agent_group_rules.txt",
 )
 _external_agent_group_rules_cache: str | None = None
+_EXTERNAL_AGENT_PRIVATE_RULES_PATH = os.path.join(
+    _PROJECT_ROOT, "data", "prompts", "external_agent_private_rules.txt",
+)
+_external_agent_private_rules_cache: str | None = None
+_external_agent_system_prompt_cache: str | None = None
 
 
 def _external_agent_group_rules_block() -> str:
@@ -76,6 +83,77 @@ def _external_agent_group_rules_block() -> str:
     return _external_agent_group_rules_cache
 
 
+def _external_agent_private_rules_block() -> str:
+    global _external_agent_private_rules_cache
+    if _external_agent_private_rules_cache is not None:
+        return _external_agent_private_rules_cache
+    try:
+        with open(_EXTERNAL_AGENT_PRIVATE_RULES_PATH, encoding="utf-8") as f:
+            _external_agent_private_rules_cache = f.read().strip()
+    except Exception:
+        _external_agent_private_rules_cache = (
+            "【外部 Agent 私聊须知】当前是用户与你的一对一私聊，直接回答，不要写成群发或广播口吻。"
+        )
+    return _external_agent_private_rules_cache
+
+
+def _external_agent_system_prompt() -> str:
+    global _external_agent_system_prompt_cache
+    if _external_agent_system_prompt_cache is None:
+        _external_agent_system_prompt_cache = load_external_agent_system_prompt(_PROJECT_ROOT)
+    return _external_agent_system_prompt_cache
+
+
+def _external_agent_session_prompt(agent_info: dict, *, is_private_chat: bool) -> str:
+    parts = [
+        _external_agent_system_prompt(),
+        build_external_persona_prompt(
+            str(agent_info.get("tag", "") or ""),
+            user_id=str(agent_info.get("owner_user_id", "") or ""),
+            team=str(agent_info.get("team", "") or ""),
+        ),
+    ]
+    if is_private_chat:
+        parts.append(_external_agent_private_rules_block())
+    else:
+        parts.append(_external_agent_group_rules_block())
+    return "\n\n".join(p for p in parts if p).strip()
+
+
+def _external_http_registry_prompt(agent_info: dict) -> str:
+    parts = [
+        _external_agent_system_prompt(),
+        build_external_persona_prompt(
+            str(agent_info.get("tag", "") or ""),
+            user_id=str(agent_info.get("owner_user_id", "") or ""),
+            team=str(agent_info.get("team", "") or ""),
+        ),
+        _external_agent_group_rules_block(),
+        _external_agent_private_rules_block(),
+    ]
+    return "\n\n".join(p for p in parts if p).strip()
+
+
+def _canonical_external_platform(platform: str) -> str:
+    pl = (platform or "").strip().lower()
+    if pl in ("claude-code", "claudecode"):
+        return "claude"
+    if pl in ("gemini-cli", "geminicli"):
+        return "gemini"
+    return pl
+
+
+def _external_platform_from_agent(agent_info: dict) -> str:
+    """Resolve transport platform for external agents.
+
+    Prefer explicit ``platform``. Fall back to legacy ``tag`` because mobile
+    private-chat flows still persist ext members with tag-only metadata.
+    """
+    return _canonical_external_platform(
+        str(agent_info.get("platform", "") or agent_info.get("tag", "") or "")
+    )
+
+
 # ── Temporary ACP lifecycle trace (群聊): logger [ACP_TRACE] + logs/acp_group_trace.jsonl
 _ACP_TRACE_PATH = os.path.join(_PROJECT_ROOT, "logs", "acp_group_trace.jsonl")
 _acp_trace_file_lock = threading.Lock()
@@ -86,17 +164,13 @@ def _acp_group_trace(event: str, **fields: Any) -> None:
     return
 
 
-def _select_external_transport(tag: str, platform: str = "") -> Literal["acp", "http", "drop"]:
-    pl = (platform or "").strip().lower()
-    if pl in ("acp", "acpx", "local"):
-        return "acp"
-    if pl in ("http", "openai", "openai_http"):
+def _select_external_transport(platform: str) -> Literal["acp", "http", "drop"]:
+    pl = _canonical_external_platform(platform)
+    if not pl:
+        return "drop"
+    if pl == "openclaw":
         return "http"
-    tag_lower = (tag or "").lower()
-    # OpenClaw defaults to HTTP path in Clawcross (gateway); optional platform=acp overrides.
-    if tag_lower == "openclaw":
-        return "http"
-    if tag_lower in _ACP_TOOL_NAMES and tag_lower != "openclaw":
+    if pl in _ACP_TOOL_NAMES:
         return "acp"
     return "drop"
 
@@ -106,6 +180,12 @@ def _resolve_external_session_suffix(model: str) -> str:
     if m and m.group(1):
         return m.group(1)
     return _DEFAULT_ACP_SESSION_SUFFIX
+
+
+def _external_http_session_key(agent_info: dict) -> str:
+    global_name = str(agent_info.get("global_name", "")).strip()
+    session_suffix = _resolve_external_session_suffix(str(agent_info.get("model", "")))
+    return f"agent:{global_name}:{session_suffix}"
 
 
 # ── Text MIME helpers (shared with system_service) ──
@@ -202,7 +282,7 @@ def _public_external_agents_path(user_id: str) -> str:
     return os.path.join(_PROJECT_ROOT, "data", "user_files", user_id, "external_agents.json")
 
 
-def _parse_external_agents_file(path: str) -> list[dict]:
+def _parse_external_agents_file(path: str, *, owner_user_id: str = "", team: str = "") -> list[dict]:
     """Parse external_agents.json list into member-style dicts (shared shape with team file)."""
     if not os.path.isfile(path):
         return []
@@ -220,13 +300,15 @@ def _parse_external_agents_file(path: str) -> list[dict]:
             gn = a.get("global_name", "")
             result.append({
                 "user_id": "ext",
+                "owner_user_id": owner_user_id,
                 "global_id": gn,
                 "short_name": nm,
                 "member_type": "ext",
                 "tag": a.get("tag", ""),
                 "global_name": gn,
                 "name": nm,
-                "platform": str(ext_config.get("platform", "") or "").strip(),
+                "team": team,
+                "platform": _canonical_external_platform(str(a.get("platform", "") or "")),
                 "api_url": ext_config.get("api_url", ""),
                 "api_key": ext_config.get("api_key", ""),
                 "model": ext_config.get("model", ""),
@@ -240,7 +322,7 @@ def _load_public_external_agents(user_id: str) -> list[dict]:
     """Load external agents from user-level external_agents.json."""
     if not user_id:
         return []
-    return _parse_external_agents_file(_public_external_agents_path(user_id))
+    return _parse_external_agents_file(_public_external_agents_path(user_id), owner_user_id=user_id)
 
 
 def _load_team_external_agents(user_id: str, team: str) -> list[dict]:
@@ -251,7 +333,7 @@ def _load_team_external_agents(user_id: str, team: str) -> list[dict]:
     if not user_id or not team:
         return []
     path = os.path.join(_PROJECT_ROOT, "data", "user_files", user_id, "teams", team, "external_agents.json")
-    return _parse_external_agents_file(path)
+    return _parse_external_agents_file(path, owner_user_id=user_id, team=team)
 
 
 def build_external_agents_map_for_owner(owner_uid: str) -> dict[str, dict]:
@@ -446,13 +528,16 @@ class GroupService:
             logger.warning("acpx not available for %s", agent_info.get("name"))
             return None
 
-        tag = agent_info.get("tag", "").lower()
+        platform = _external_platform_from_agent(agent_info)
         global_name = agent_info.get("global_name", "")
         if not global_name:
             logger.warning("No global_name for external agent %s", agent_info.get("name"))
             return None
-        if tag not in _ACP_TOOL_NAMES:
-            logger.warning("Unsupported ACP tool '%s' for %s", tag, global_name)
+        if not platform:
+            logger.warning("Missing ACP tool platform for %s", global_name)
+            return None
+        if platform not in _ACP_TOOL_NAMES:
+            logger.warning("Unsupported ACP platform '%s' for %s", platform, global_name)
             return None
 
         session_suffix = _resolve_external_session_suffix(str(agent_info.get("model", "")))
@@ -464,35 +549,46 @@ class GroupService:
             "acp_ephemeral_start",
             phase="acpx_prompt",
             agent_global_name=global_name,
-            tag=tag,
+            platform=platform,
             cli_session_arg=acp_session,
             attachment_count=len(attachments or []),
         )
         try:
             adapter = get_acpx_adapter(cwd=_PROJECT_ROOT)
-            acpx_session = adapter.to_acpx_session_name(tool=tag, session_key=acp_session)
-            await adapter.ensure_session(tool=tag, session_key=acp_session, acpx_session=acpx_session)
-            
-            # Build attachment list for acpx
+            acpx_session = adapter.to_acpx_session_name(tool=platform, session_key=acp_session)
             acpx_attachments = None
             if attachments:
-                acpx_attachments = []
-                for att in attachments:
-                    acpx_attachments.append({
+                acpx_attachments = [
+                    {
                         "type": att.type,
                         "mime_type": att.mime_type,
                         "data": att.data,
                         "name": att.name,
-                    })
-            
-            reply = await adapter.prompt(
-                tool=tag,
-                session_key=acp_session,
-                prompt_text=prompt_text,
-                timeout_sec=180,
-                reset_session=bool(metadata and metadata.get("resetSession")),
-                attachments=acpx_attachments,
+                    }
+                    for att in attachments
+                ]
+
+            result = await send_to_agent(
+                SendToAgentRequest(
+                    prompt=prompt_text,
+                    connect_type="acp",
+                    platform=platform,
+                    session=acp_session,
+                    options={
+                        "cwd": _PROJECT_ROOT,
+                        "timeout_sec": 180,
+                        "reset_session": bool(metadata and metadata.get("resetSession")),
+                        "system_prompt": _external_agent_session_prompt(
+                            agent_info,
+                            is_private_chat=bool(metadata and metadata.get("is_private_chat")),
+                        ),
+                        "attachments": acpx_attachments,
+                    },
+                )
             )
+            if not result.ok:
+                raise AcpxError(result.error or "unknown acpx send error")
+            reply = result.content or ""
             _acp_group_trace(
                 "acp_prompt_complete",
                 agent_global_name=global_name,
@@ -524,6 +620,7 @@ class GroupService:
         agent_info: dict,
         message: str,
         attachments: list[Attachment] | None = None,
+        metadata: dict | None = None,
     ) -> str | None:
         """Fallback: send message to external agent via HTTP API.
         
@@ -532,16 +629,16 @@ class GroupService:
         """
         api_url = agent_info.get("api_url", "")
         api_key = agent_info.get("api_key", "")
-        tag = str(agent_info.get("tag", "")).lower()
+        platform = _external_platform_from_agent(agent_info)
         global_name = str(agent_info.get("global_name", "")).strip()
-        if tag == "openclaw":
+        if platform == "openclaw":
             # OpenClaw endpoint is device-dependent: prefer runtime env over saved config.
             api_url = os.getenv("OPENCLAW_API_URL", "") or api_url
             api_key = os.getenv("OPENCLAW_GATEWAY_TOKEN", "") or api_key
         model = agent_info.get("model", "gpt-3.5-turbo")
         # Keep OpenClaw HTTP payload aligned with /proxy_openclaw_chat:
         # use agent:<global_name> model for gateway session routing.
-        if tag == "openclaw" and global_name:
+        if platform == "openclaw" and global_name:
             model_str = str(model or "").strip()
             if not model_str.startswith("agent:"):
                 model = f"agent:{global_name}"
@@ -560,9 +657,24 @@ class GroupService:
         headers = {"Content-Type": "application/json"}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
-        if tag == "openclaw" and global_name:
-            session_suffix = _resolve_external_session_suffix(str(agent_info.get("model", "")))
-            headers["x-openclaw-session-key"] = f"agent:{global_name}:{session_suffix}"
+
+        is_private_chat = bool(metadata and metadata.get("is_private_chat"))
+        session_prompt = _external_http_registry_prompt(agent_info)
+        session_key = _external_http_session_key(agent_info) if global_name else ""
+        if self.group_db_path and global_name and session_key and session_prompt:
+            should_inject = await upsert_http_agent_session(
+                self.group_db_path,
+                session_key=session_key,
+                global_name=global_name,
+                prompt_text=session_prompt,
+                transport="http",
+                now_ts=time.time(),
+            )
+            if should_inject:
+                message = f"{session_prompt}\n\n{message}".strip()
+
+        if platform == "openclaw" and global_name:
+            headers["x-openclaw-session-key"] = session_key
 
         # Build message content (multimodal if attachments present)
         if attachments:
@@ -611,17 +723,25 @@ class GroupService:
             "stream": False,
         }
 
-        try:
-            async with httpx.AsyncClient(timeout=60) as client:
-                resp = await client.post(api_url, json=body, headers=headers)
-            if resp.status_code != 200:
-                logger.warning("HTTP API error %d for %s: %s", resp.status_code, agent_info.get("name"), resp.text[:200])
-                return None
-            data = resp.json()
-            return data["choices"][0]["message"]["content"]
-        except Exception as e:
-            logger.warning("HTTP send failed for %s: %s", agent_info.get("name"), e)
+        result = await send_to_agent(
+            SendToAgentRequest(
+                prompt=body["messages"],
+                connect_type="http",
+                platform=platform,
+                session=session_key or None,
+                options={
+                    "api_url": api_url,
+                    "api_key": api_key,
+                    "headers": headers,
+                    "body": body,
+                    "timeout": 60,
+                },
+            )
+        )
+        if not result.ok:
+            logger.warning("HTTP send failed for %s: %s", agent_info.get("name"), result.error)
             return None
+        return result.content
 
     async def _handle_external_agent_reply(
         self,
@@ -630,6 +750,7 @@ class GroupService:
         message: str,
         agent_name: str,
         attachments: list[Attachment] | None = None,
+        metadata: dict | None = None,
     ):
         """Send message to external agent and handle reply.
 
@@ -640,34 +761,51 @@ class GroupService:
         # 标记正在输入
         self.set_typing(group_id, agent_name)
         # Select transport explicitly by tag.
-        transport = _select_external_transport(
-            str(agent_info.get("tag", "")),
-            str(agent_info.get("platform", "") or ""),
-        )
+        platform = _external_platform_from_agent(agent_info)
+        transport = _select_external_transport(platform)
         if transport == "drop":
             logger.warning(
-                "Drop external agent %s due to unknown tag '%s'",
+                "Drop external agent %s due to unknown platform '%s'",
                 agent_name,
-                agent_info.get("tag", ""),
+                agent_info.get("platform", "") or agent_info.get("tag", ""),
             )
             return
-        tag_lower = str(agent_info.get("tag", "")).lower()
         if transport == "acp":
-            reply = await self._send_to_acp_agent(agent_info, message, attachments=attachments)
+            reply = await self._send_to_acp_agent(
+                agent_info,
+                message,
+                attachments=attachments,
+                metadata=metadata,
+            )
             if not reply:
                 logger.info(
                     "ACP failed/no reply for %s, fallback to HTTP",
                     agent_name,
                 )
-                reply = await self._send_to_http_agent(agent_info, message, attachments=attachments)
+                reply = await self._send_to_http_agent(
+                    agent_info,
+                    message,
+                    attachments=attachments,
+                    metadata=metadata,
+                )
         else:
-            reply = await self._send_to_http_agent(agent_info, message, attachments=attachments)
-            if not reply and tag_lower == "openclaw":
+            reply = await self._send_to_http_agent(
+                agent_info,
+                message,
+                attachments=attachments,
+                metadata=metadata,
+            )
+            if not reply and platform == "openclaw":
                 logger.info(
                     "HTTP failed/no reply for openclaw %s, fallback to ACP",
                     agent_name,
                 )
-                reply = await self._send_to_acp_agent(agent_info, message, attachments=attachments)
+                reply = await self._send_to_acp_agent(
+                    agent_info,
+                    message,
+                    attachments=attachments,
+                    metadata=metadata,
+                )
         if not reply:
             logger.info("External agent %s did not reply", agent_name)
             # ACP/HTTP 已返回（无回复），清除输入状态
@@ -745,33 +883,25 @@ class GroupService:
             if is_private_chat:
                 # 私聊：不需要群聊标记，直接告知是私信
                 msg_prefix = f"[私聊] {sender} 说:\n"
-                msg_suffix = (f"\n\n{agent_identity}，这是用户发给你的私聊，请直接回答问题，不要把它当成普通群聊。\n"
+                msg_suffix = (f"\n\n{agent_identity}。\n"
                               f"{human_user_hint}\n\n"
                               "如需让用户看到你的回复，请使用 send private cli（底层等价于群消息发送）：\n"
                               f"{private_cli_hint}\n"
-                              "注意：不要在 ACP/HTTP 同步响应中直接输出回复正文；该同步响应会被系统忽略，不会显示给用户。\n"
-                              "用户能看到的回复，必须通过上面的 send private cli 主动推送。\n"
                               "[end padding]\n[end padding]\n[end padding]")
             elif mentions and global_id in mentions:
                 msg_prefix = f"[群聊 {group_id} 成员数:{member_count}] {sender} @你 说:\n"
                 msg_suffix = (f"\n\n⚠️ 这是专门 @你 的消息，你必须回复！{agent_identity}。\n"
-                              f"{human_user_hint}\n\n{_ext_rules}\n\n"
+                              f"{human_user_hint}\n\n"
                               "请先 cd 到项目目录，然后使用 CLI 工具发送消息到群里：\n"
                               f"{group_cli_hint}\n"
-                              "注意：不要在 ACP/HTTP 同步响应中直接输出群聊内容；该同步响应不会自动发布。\n"
-                              "你必须使用上面的 CLI `groups send` 主动推送消息，群里成员才能看到。\n"
                               "[end padding]\n[end padding]\n[end padding]")
             else:
                 msg_prefix = f"[群聊 {group_id} 成员数:{member_count}] {sender} 说:\n"
                 msg_suffix = (
-                    f"\n\n{agent_identity}。请遵守下面「外部 Agent 群聊须知」："
-                    f"人类问候与 @/点名必须 groups send 回复；其他消息仅在相关或被需要时再回。\n"
-                    f"{human_user_hint}\n\n{_ext_rules}\n\n"
-                    "💡 不要主动发起与当前话题无关的新讨论；回复时尽量 @ 具体对象，避免对全群广播。\n"
+                    f"\n\n{agent_identity}。\n"
+                    f"{human_user_hint}\n\n"
                     "如需回复，请先 cd 到项目目录，然后使用 CLI 工具发送消息到群里：\n"
                     f"{group_cli_hint}\n"
-                    "注意：不要在 ACP/HTTP 同步响应中直接输出群聊内容；该同步响应不会自动发布。\n"
-                    "如需让群里看到你的回复，必须使用上面的 CLI `groups send` 主动推送。\n"
                     "[end padding]\n[end padding]\n[end padding]"
                 )
 
@@ -789,12 +919,21 @@ class GroupService:
                 # External agent: use ACP or HTTP
                 agent_info = external_agents_map.get(global_id, {})
                 if not agent_info:
-                    # Minimal info from DB
-                    agent_info = {"global_name": global_id, "name": short_name, "tag": tag}
+                    tag_key = _canonical_external_platform(str(tag or ""))
+                    if tag_key != "openclaw":
+                        logger.info(
+                            "Skip untracked external ACP agent %s (%s); not found in tracked external agents map",
+                            short_name,
+                            global_id,
+                        )
+                        continue
+                    # Allow untracked public openclaw agents as a special case.
+                    agent_info = {"global_name": global_id, "name": short_name, "tag": tag, "platform": "openclaw"}
                 asyncio.create_task(
                     self._handle_external_agent_reply(
                         group_id, agent_info, msg_text, short_name,
                         attachments=attachments,
+                        metadata={"is_private_chat": is_private_chat},
                     )
                 )
             else:
@@ -805,13 +944,11 @@ class GroupService:
                                         f"  当前群主 owner=\"{owner_uid}\"；当前人类用户是「{owner_uid}」\n"
                                         f"  send_to_group(group_id=\"{group_id}\", content=\"你的回复内容\")\n"
                                         "注意：username 和 source_session 会自动注入，不要手动设置。\n"
-                                        "系统不会自动发布你的回复，必须调用 send_to_group 工具。\n"
                                         "[end padding]\n[end padding]\n[end padding]")
                 private_trigger_suffix = ("\n\n如果需要回复，请使用 send_private_cli 工具发送私聊消息：\n"
                                           f"  当前群主 owner=\"{owner_uid}\"；当前人类用户是「{owner_uid}」\n"
                                           f"  send_private_cli(group_id=\"{group_id}\", content=\"你的回复内容\")\n"
                                           "注意：username 和 source_session 会自动注入，不要手动设置。\n"
-                                          "系统不会自动发布你的回复，必须调用 send_private_cli 工具，用户才能看到。\n"
                                           "[end padding]\n[end padding]\n[end padding]")
 
                 attach_hint = ""
@@ -823,7 +960,7 @@ class GroupService:
 
                 if is_private_chat:
                     trigger_msg = (f"[私聊] {sender} 说:\n{content}{attach_hint}\n\n"
-                                   f"(这是用户发给你的私信，你是「{short_name}」。请直接回答，不要把它当成群聊，也不要写成广播口吻。)"
+                                   f"(你当前的身份/角色是「{short_name}」。)"
                                    f"{private_trigger_suffix}")
                 elif mentions and global_id in mentions:
                     trigger_msg = (f"[群聊 {group_id} 成员数:{member_count}] {sender} @你 说:\n{content}{attach_hint}\n\n"
@@ -832,12 +969,7 @@ class GroupService:
                                    f"{group_trigger_suffix}")
                 else:
                     trigger_msg = (f"[群聊 {group_id} 成员数:{member_count}] {sender} 说:\n{content}{attach_hint}\n\n"
-                                   f"(你在群聊中的身份/角色是「{short_name}」，回复时请体现你的专业角色视角。"
-                                   f"仅当消息与你直接相关、点名你、向你提问、或面向所有人时，"
-                                   f"才需要回复。其他情况请忽略，不要回应。\n"
-                                   f"💡 尽量等待人类用户发起讨论或提出问题后再参与，不要主动发起新话题。\n"
-                                   f"⚠️ 回复时尽量精准 @具体的人，不要给群中所有人发消息。"
-                                   f"例如在 send_to_group 的 content 末尾加上 @某人名字 来指定回复对象。)"
+                                   f"(你在群聊中的身份/角色是「{short_name}」，回复时请体现你的专业角色视角。)"
                                    f"{group_trigger_suffix}")
 
                 # 标记内部 agent 正在输入（thread lock 会在处理完成后自动释放，

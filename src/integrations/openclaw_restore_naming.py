@@ -36,7 +36,7 @@ def name_slug_ascii(name: str) -> str:
 
 def openclaw_entries_ordered(entries: list) -> list:
     """团队中 openclaw 成员按列表顺序（与 JSON 一致）。"""
-    return [e for e in entries if isinstance(e, dict) and e.get("tag") == "openclaw"]
+    return [e for e in entries if isinstance(e, dict) and (e.get("platform", "") or "").strip().lower() == "openclaw"]
 
 
 def restore_agent_id(team: str, entry: dict, openclaw_ordered: list) -> str:

@@ -43,6 +43,7 @@ Read these first for setup or environment changes:
 | `scripts/setup_apikey.ps1` | legacy Windows API key helper |
 | `manual_run.sh` | manual startup helper with guardrails |
 | `manual_run.ps1` | manual Windows startup helper with guardrails |
+| `selfskill/scripts/evolve_skill.py` | repo-level Markdown skill self-evolution helper with strategy presets and validation artifacts |
 
 If the issue is model detection or provider-specific behavior, inspect:
 
@@ -110,6 +111,7 @@ When the bug is "service does not start" or "route behaves unexpectedly", start 
 - `src/core/agent.py`
 - `src/core/agent_runtime_state.py`
 - `src/integrations/acpx_adapter.py`
+- `src/webot/skill_evolution.py`
 - `src/webot/context.py`
 - `src/webot/permission_context.py`
 - `src/webot/policy.py`
@@ -250,6 +252,7 @@ When changing code, check the nearest validation surface:
 | `test/test_integration.py` | cross-service integration tests |
 | `test/test_team_creator_jobs.py` | ClawCross Creator job persistence tests |
 | `test/test_team_creator_imports.py` | ClawCross Creator colleague/mentor import and quick-create route tests |
+| `test/test_skill_evolution.py` | self-evolution strategy, validation-report, and repo-skill update tests |
 | `test/test_skill_import_tools.py` | ArXiv / Feishu helper conversion tests |
 | `test/test_team_creator_workflow.py` | ClawCross Creator workflow/build tests |
 | `test/test_team_creator_zip.py` | ClawCross Creator ZIP export tests |

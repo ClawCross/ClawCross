@@ -2771,7 +2771,6 @@
     z-index: 100000;
     display: flex; align-items: center; justify-content: center;
     background: rgba(17, 24, 39, 0.35);
-    backdrop-filter: blur(2px);
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.2s ease;
@@ -3853,7 +3852,7 @@ const I18N = {
     mobile_add_oc_title: '新建 OpenClaw Agent',
     mobile_add_ext_name: '显示名称',
     mobile_add_ext_global: 'Global Name',
-    mobile_add_ext_tag: '外部平台（tag）',
+    mobile_add_ext_tag: '人设标签（Tag）',
     mobile_add_ext_platform: '平台',
     mobile_add_ext_url: 'API URL（可选）',
     mobile_add_ext_key: 'API Key（可选）',
@@ -3869,6 +3868,7 @@ const I18N = {
     mobile_add_oc_global_hint: '完整名称：{name}',
     mobile_add_enter_name: '请填写名称与 Global Name',
     mobile_add_ext_url_required: 'HTTP 平台需要填写 API URL（openclaw tag 除外）',
+    mobile_add_ext_public_limited: '公共模式下只允许 openclaw 或 ACPX 平台（codex/claude/gemini/aider 等）',
     mobile_add_headers_json_err: 'Headers 不是合法 JSON',
     mobile_add_oc_name_invalid: '仅允许字母、数字、下划线与连字符',
     mobile_add_oc_workspace_required: '请填写 Workspace 路径',
@@ -3982,6 +3982,7 @@ const I18N = {
     about_text: 'Agent 消息中心 v1.0',
     about_github: 'GitHub',
     about_github_url: 'https://github.com/ClawCross/ClawCross',
+    session_tracker: '会话追踪',
     settings_user_password_title: '当前用户密码',
     settings_user_password_hint_local: '你现在以本机免密方式登录。为「{user_id}」设置密码后，这个用户名就可以用于密码登录。',
     settings_user_password_hint_general: '为当前登录用户「{user_id}」设置或更新密码。保存后会写入 config/users.json。',
@@ -4448,7 +4449,7 @@ const I18N = {
     mobile_add_oc_title: 'New OpenClaw agent',
     mobile_add_ext_name: 'Display name',
     mobile_add_ext_global: 'Global name',
-    mobile_add_ext_tag: 'Tag',
+    mobile_add_ext_tag: 'Persona Tag',
     mobile_add_ext_platform: 'Platform',
     mobile_add_ext_url: 'API URL (optional)',
     mobile_add_ext_key: 'API key (optional)',
@@ -4464,6 +4465,7 @@ const I18N = {
     mobile_add_oc_global_hint: 'Full name: {name}',
     mobile_add_enter_name: 'Enter display name and global name',
     mobile_add_ext_url_required: 'HTTP platform requires API URL (except openclaw tag)',
+    mobile_add_ext_public_limited: 'Public mode only allows openclaw or ACPX platforms (codex/claude/gemini/aider, etc.)',
     mobile_add_headers_json_err: 'Headers must be valid JSON',
     mobile_add_oc_name_invalid: 'Only letters, digits, underscore and hyphen',
     mobile_add_oc_workspace_required: 'Workspace path is required',
@@ -4571,7 +4573,8 @@ const I18N = {
     about_text: 'Agent Message Center v1.0',
     about_github: 'GitHub',
     about_github_url: 'https://github.com/ClawCross/ClawCross',
-    settings_user_password_title: 'Current User Password',
+    session_tracker: 'Session Tracker',
+    settings_user_password_title: 'Current user password',
     settings_user_password_hint_local: 'You are currently using local no-password login. Set a password for "{user_id}" to enable password login for this username.',
     settings_user_password_hint_general: 'Set or update the password for the currently logged-in user "{user_id}". It will be written to config/users.json.',
     settings_user_password_status_missing: 'No password saved yet',
@@ -6268,7 +6271,8 @@ async function renderCreateAgentExtPanel() {
   const panel = document.getElementById('create-agent-panel-ext');
   if (!panel) return;
   panel.innerHTML = `<div class="agent-detail-loading">${t('loading')}</div>`;
-  const tagOpts = await _mobileBuildAcpxTagOptionsHtml();
+  const tagOpts = await _mobileBuildExternalPersonaTagOptionsHtml(mobileGetCreateAgentTeam());
+  const platformOpts = await _mobileExternalPlatformOptionsHtml();
   panel.innerHTML = `
     <div class="mobile-add-agent-form">
       <p class="form-hint">${esc(t('mobile_create_agent_team_hint'))}</p>
@@ -6279,25 +6283,12 @@ async function renderCreateAgentExtPanel() {
       <input type="text" id="ca-ext-global" placeholder="global_id" autocomplete="off">
       <label>${esc(t('mobile_add_ext_tag'))}</label>
       <select id="ca-ext-tag" class="ext-tag-select">${tagOpts}</select>
-      <div class="field-note">${esc(_currentLang === 'zh' ? '优先选择 codex、claudecode、gemini、trae 等标签，列表里会自动显示对应平台徽标。' : 'Prefer tags like codex, claudecode, gemini, or trae. The contact list will render a matching platform badge automatically.')}</div>
+      <div class="field-note">${esc(_currentLang === 'zh' ? 'tag 表示人设标签。' : 'Tag is the persona label.')}</div>
       <input type="text" id="ca-ext-tag-custom" class="ext-tag-custom" placeholder="${esc(t('agent_tag_placeholder'))}" style="margin-top:8px;display:none;">
       <label>${esc(t('mobile_add_ext_platform'))}</label>
       <select id="ca-ext-platform">
-        <option value="">${esc(_currentLang === 'zh' ? '默认 / ACP' : 'Default / ACP')}</option>
-        <option value="http">HTTP API</option>
-        <option value="acp">ACP</option>
+        ${platformOpts}
       </select>
-      <label>${esc(t('mobile_add_ext_url'))}</label>
-      <input type="text" id="ca-ext-url" placeholder="https://..." autocomplete="off">
-      <label>${esc(t('mobile_add_ext_key'))}</label>
-      <input type="text" id="ca-ext-key" placeholder="sk-..." autocomplete="off">
-      <label>${esc(t('mobile_add_ext_model'))}</label>
-      <input type="text" id="ca-ext-model" placeholder="gpt-4o" autocomplete="off">
-      <details style="margin-top:8px;">
-        <summary style="font-size:12px;color:var(--text-secondary);cursor:pointer;">${esc(t('mobile_add_ext_advanced'))}</summary>
-        <label style="margin-top:8px;">${esc(t('mobile_add_ext_headers'))}</label>
-        <textarea id="ca-ext-headers" rows="3" placeholder='{"X-Custom":"v"}'></textarea>
-      </details>
       <button type="button" class="form-submit" id="ca-ext-submit" onclick="mobileSubmitCreateExtAgent()">${esc(t('mobile_create_ext_submit'))}</button>
     </div>`;
   const tagSel = document.getElementById('ca-ext-tag');
@@ -6314,10 +6305,6 @@ async function mobileSubmitCreateExtAgent() {
   const btn = document.getElementById('ca-ext-submit');
   const name = (document.getElementById('ca-ext-name') || {}).value.trim();
   const globalName = (document.getElementById('ca-ext-global') || {}).value.trim();
-  const apiUrl = (document.getElementById('ca-ext-url') || {}).value.trim();
-  const apiKey = (document.getElementById('ca-ext-key') || {}).value.trim();
-  const model = (document.getElementById('ca-ext-model') || {}).value.trim();
-  const headersStr = (document.getElementById('ca-ext-headers') || {}).value.trim();
   const platform = (document.getElementById('ca-ext-platform') || {}).value || '';
   const tagSel = document.getElementById('ca-ext-tag');
   const tagCustom = (document.getElementById('ca-ext-tag-custom') || {}).value.trim();
@@ -6327,14 +6314,13 @@ async function mobileSubmitCreateExtAgent() {
     toast(t('mobile_add_enter_name'));
     return;
   }
-  let headers = {};
-  if (headersStr) {
-    try {
-      headers = JSON.parse(headersStr);
-    } catch (e) {
-      toast(t('mobile_add_headers_json_err'));
-      return;
-    }
+  if (!platform) {
+    toast(_currentLang === 'zh' ? '请选择平台' : 'Please choose a platform');
+    return;
+  }
+  if (!team && !isPublicExtPlatformAllowed(platform)) {
+    toast(t('mobile_add_ext_public_limited'));
+    return;
   }
   if (btn) {
     btn.disabled = true;
@@ -6348,10 +6334,6 @@ async function mobileSubmitCreateExtAgent() {
         tag,
         global_name: globalName,
         platform,
-        api_url: apiUrl,
-        api_key: apiKey,
-        model,
-        headers,
       });
     } else {
       await api('POST', '/public_external_agents', {
@@ -6359,10 +6341,6 @@ async function mobileSubmitCreateExtAgent() {
         tag,
         global_name: globalName,
         platform,
-        api_url: apiUrl,
-        api_key: apiKey,
-        model,
-        headers,
       });
     }
     const ok = await startPrivateChat({
@@ -6371,6 +6349,8 @@ async function mobileSubmitCreateExtAgent() {
       type: 'ext',
       global_id: globalName,
       tag: tag || '',
+      tracked: !!(!team),
+      platform_hint: platform,
     });
     if (ok) {
       closeCreateAgentModal();
@@ -6391,13 +6371,19 @@ async function renderCreateAgentOpenClawPanel() {
   const panel = document.getElementById('create-agent-panel-oc');
   if (!panel) return;
   const team = mobileGetCreateAgentTeam();
+  panel.innerHTML = `<div class="mobile-add-agent-form"><div style="text-align:center;padding:20px;">${t('loading')}</div></div>`;
+  const tagOpts = await _mobileBuildExternalPersonaTagOptionsHtml(team);
   panel.innerHTML = `
     <div class="mobile-add-agent-form">
       <p class="form-hint">${esc(t('mobile_create_agent_team_hint'))}</p>
       <div style="font-weight:700;margin-bottom:6px;color:var(--text);">${esc(t('mobile_add_oc_title'))}</div>
       ${team ? `<p class="form-hint">${esc(t('mobile_add_team_prefix_hint', { prefix: team + '_' }))}</p>` : ''}
       <label>${esc(t('mobile_add_oc_short'))}</label>
-      <input type="text" id="ca-oc-short" placeholder="work / research" pattern="[a-zA-Z0-9_-]+" autocomplete="off">
+      <input type="text" id="ca-oc-short" placeholder="work / research" autocomplete="off">
+      <label>${esc(t('mobile_add_ext_tag'))}</label>
+      <select id="ca-oc-tag" class="ext-tag-select">${tagOpts}</select>
+      <div class="field-note">${esc(_currentLang === 'zh' ? 'tag 表示人设标签。' : 'Tag is the persona label.')}</div>
+      <input type="text" id="ca-oc-tag-custom" class="ext-tag-custom" placeholder="${esc(t('agent_tag_placeholder'))}" style="margin-top:8px;display:none;">
       <p class="form-hint" id="ca-oc-global-hint"></p>
       <label>${esc(t('mobile_add_oc_ws'))}</label>
       <div style="display:flex;gap:6px;align-items:stretch;">
@@ -6409,6 +6395,11 @@ async function renderCreateAgentOpenClawPanel() {
   const shortInp = document.getElementById('ca-oc-short');
   const wsInp = document.getElementById('ca-oc-ws');
   const hintEl = document.getElementById('ca-oc-global-hint');
+  const tagSel = document.getElementById('ca-oc-tag');
+  const tagCust = document.getElementById('ca-oc-tag-custom');
+  if (tagSel && tagCust) {
+    tagSel.onchange = () => { tagCust.style.display = tagSel.value === 'custom' ? 'block' : 'none'; };
+  }
   let parentDir = '';
   let wsManual = false;
 
@@ -6463,14 +6454,14 @@ async function renderCreateAgentOpenClawPanel() {
 async function mobileSubmitCreateOpenClawAgent() {
   const team = mobileGetCreateAgentTeam();
   const shortName = (document.getElementById('ca-oc-short') || {}).value.trim();
+  const tagSel = document.getElementById('ca-oc-tag');
+  const tagCustom = (document.getElementById('ca-oc-tag-custom') || {}).value.trim();
+  const tagSelect = tagSel ? tagSel.value : '';
+  const tag = tagCustom || (tagSelect !== 'custom' ? tagSelect : '') || 'openclaw';
   const workspace = (document.getElementById('ca-oc-ws') || {}).value.trim();
   const globalName = team ? (team + '_' + shortName) : shortName;
   if (!shortName) {
     toast(t('agent_name_required'));
-    return;
-  }
-  if (!/^[a-zA-Z0-9_-]+$/.test(globalName)) {
-    toast(t('mobile_add_oc_name_invalid'));
     return;
   }
   if (!workspace) {
@@ -6499,11 +6490,23 @@ async function mobileSubmitCreateOpenClawAgent() {
       try {
         await api('POST', `/teams/${encodeURIComponent(team)}/members/external`, {
           name: shortName,
-          tag: 'openclaw',
+          tag: tag,
           global_name: globalName,
+          platform: 'openclaw',
         });
       } catch (e) {
         console.warn('team external record:', e);
+      }
+    } else {
+      try {
+        await api('POST', `/public_external_agents`, {
+          name: shortName,
+          tag: tag,
+          global_name: globalName,
+          platform: 'openclaw',
+        });
+      } catch (e) {
+        console.warn('public external record:', e);
       }
     }
     const ok = await startPrivateChat({
@@ -6511,7 +6514,7 @@ async function mobileSubmitCreateOpenClawAgent() {
       short_name: shortName,
       type: 'ext',
       global_id: globalName,
-      tag: 'openclaw',
+      tag: tag,
     });
     if (ok) {
       closeCreateAgentModal();
@@ -8815,28 +8818,72 @@ function onAddAgentTeamChanged() {
   loadAddAgentMembers();
 }
 
-async function _mobileBuildAcpxTagOptionsHtml() {
-  const tools = [];
+const MOBILE_EXT_PLATFORM_FALLBACK = [
+  'openclaw',
+  'codex',
+  'claude',
+  'claude-code',
+  'gemini',
+  'gemini-cli',
+  'aider',
+  'cursor',
+  'copilot',
+  'droid',
+  'iflow',
+  'kilocode',
+  'kimi',
+  'kiro',
+  'opencode',
+  'pi',
+  'qoder',
+  'qwen',
+  'trae',
+];
+let _mobileExternalPlatformOptionsCache = null;
+
+async function _mobileFetchExternalPlatformOptions() {
+  if (Array.isArray(_mobileExternalPlatformOptionsCache) && _mobileExternalPlatformOptionsCache.length) {
+    return _mobileExternalPlatformOptionsCache;
+  }
+  let tools = [];
   try {
-    const j = await api('GET', '/proxy_acpx_status');
-    if (j && j.available && Array.isArray(j.tools)) {
-      for (const x of j.tools) {
-        const v = String(x || '').trim().toLowerCase();
-        if (v) tools.push(v);
-      }
-    }
-  } catch (_) { /* ignore */ }
-  tools.sort();
-  const extras = ['codex', 'claudecode', 'claude', 'gemini', 'trae', 'cursor', 'openclaw', 'aider'];
+    const data = await api('GET', '/proxy_acpx_status');
+    tools = Array.isArray(data && data.tools)
+      ? data.tools.map((t) => String(t || '').trim().toLowerCase()).filter(Boolean)
+      : [];
+  } catch (_) {
+    tools = [];
+  }
+  const merged = ['openclaw', ...tools.filter((t) => t && t !== 'openclaw')];
+  const fallback = MOBILE_EXT_PLATFORM_FALLBACK.filter((t) => !merged.includes(t));
+  _mobileExternalPlatformOptionsCache = merged.concat(fallback);
+  return _mobileExternalPlatformOptionsCache;
+}
+
+async function _mobileExternalPlatformOptionsHtml() {
+  const platforms = await _mobileFetchExternalPlatformOptions();
+  let opts = `<option value="">${esc(t('tag_none'))}</option>`;
+  for (const p of platforms) {
+    opts += `<option value="${esc(p)}">${esc(getPlatformBadgeInfo(p).label)}</option>`;
+  }
+  return opts;
+}
+
+async function _mobileBuildExternalPersonaTagOptionsHtml(team = '') {
+  const url = team
+    ? `/proxy_visual/experts?team=${encodeURIComponent(team)}`
+    : '/proxy_visual/experts';
   const seen = new Set();
   let opts = `<option value="">${esc(t('tag_none'))}</option>`;
-  const addOpt = (v) => {
-    if (seen.has(v)) return;
-    seen.add(v);
-    opts += `<option value="${esc(v)}">${esc(v)}</option>`;
-  };
-  for (const x of tools) addOpt(x);
-  for (const x of extras) addOpt(x);
+  try {
+    const experts = await api('GET', url).catch(() => []);
+    for (const exp of (Array.isArray(experts) ? experts : [])) {
+      const tag = String((exp && exp.tag) || '').trim();
+      if (!tag || seen.has(tag)) continue;
+      seen.add(tag);
+      opts += `<option value="${esc(tag)}">${esc(tag)}</option>`;
+    }
+  } catch (_) { /* ignore */ }
   opts += `<option value="custom">${esc(_currentLang === 'zh' ? '自定义' : 'Custom')}</option>`;
   return opts;
 }
@@ -8850,7 +8897,8 @@ async function renderMobileAddAgentExtForm() {
   const body = document.getElementById('add-agent-body');
   if (!body) return;
   body.innerHTML = `<div class="agent-detail-loading">${t('loading')}</div>`;
-  const tagOpts = await _mobileBuildAcpxTagOptionsHtml();
+  const tagOpts = await _mobileBuildExternalPersonaTagOptionsHtml(mobileGetAddAgentTeam());
+  const platformOpts = await _mobileExternalPlatformOptionsHtml();
   body.innerHTML = `
     <div class="mobile-add-agent-form">
       <div style="font-weight:700;margin-bottom:6px;color:var(--text);">${esc(t('mobile_add_ext_title'))}</div>
@@ -8861,25 +8909,12 @@ async function renderMobileAddAgentExtForm() {
       <input type="text" id="mobile-ext-global" placeholder="global_id" autocomplete="off">
       <label>${esc(t('mobile_add_ext_tag'))}</label>
       <select id="mobile-ext-tag" class="ext-tag-select">${tagOpts}</select>
-      <div class="field-note">${esc(_currentLang === 'zh' ? '建议直接选平台标签，前端会按平台显示图标。' : 'Prefer a platform tag here so the frontend can show the matching platform badge.')}</div>
+      <div class="field-note">${esc(_currentLang === 'zh' ? 'tag 表示人设标签。' : 'Tag is the persona label.')}</div>
       <input type="text" id="mobile-ext-tag-custom" class="ext-tag-custom" placeholder="${esc(t('agent_tag_placeholder'))}" style="margin-top:8px;display:none;">
       <label>${esc(t('mobile_add_ext_platform'))}</label>
       <select id="mobile-ext-platform">
-        <option value="">${esc(_currentLang === 'zh' ? '默认 / ACP' : 'Default / ACP')}</option>
-        <option value="http">HTTP API</option>
-        <option value="acp">ACP</option>
+        ${platformOpts}
       </select>
-      <label>${esc(t('mobile_add_ext_url'))}</label>
-      <input type="text" id="mobile-ext-url" placeholder="https://..." autocomplete="off">
-      <label>${esc(t('mobile_add_ext_key'))}</label>
-      <input type="text" id="mobile-ext-key" placeholder="sk-..." autocomplete="off">
-      <label>${esc(t('mobile_add_ext_model'))}</label>
-      <input type="text" id="mobile-ext-model" placeholder="gpt-4o" autocomplete="off">
-      <details style="margin-top:8px;">
-        <summary style="font-size:12px;color:var(--text-secondary);cursor:pointer;">${esc(t('mobile_add_ext_advanced'))}</summary>
-        <label style="margin-top:8px;">${esc(t('mobile_add_ext_headers'))}</label>
-        <textarea id="mobile-ext-headers" rows="3" placeholder='{"X-Custom":"v"}'></textarea>
-      </details>
       <button type="button" class="form-submit" id="mobile-ext-submit" onclick="mobileSubmitAddExtAgent()">${esc(t('mobile_add_ext_submit'))}</button>
     </div>`;
   const tagSel = document.getElementById('mobile-ext-tag');
@@ -8896,10 +8931,6 @@ async function mobileSubmitAddExtAgent() {
   const btn = document.getElementById('mobile-ext-submit');
   const name = (document.getElementById('mobile-ext-name') || {}).value.trim();
   const globalName = (document.getElementById('mobile-ext-global') || {}).value.trim();
-  const apiUrl = (document.getElementById('mobile-ext-url') || {}).value.trim();
-  const apiKey = (document.getElementById('mobile-ext-key') || {}).value.trim();
-  const model = (document.getElementById('mobile-ext-model') || {}).value.trim();
-  const headersStr = (document.getElementById('mobile-ext-headers') || {}).value.trim();
   const platform = (document.getElementById('mobile-ext-platform') || {}).value || '';
   const tagSel = document.getElementById('mobile-ext-tag');
   const tagCustom = (document.getElementById('mobile-ext-tag-custom') || {}).value.trim();
@@ -8909,14 +8940,13 @@ async function mobileSubmitAddExtAgent() {
     toast(t('mobile_add_enter_name'));
     return;
   }
-  let headers = {};
-  if (headersStr) {
-    try {
-      headers = JSON.parse(headersStr);
-    } catch (e) {
-      toast(t('mobile_add_headers_json_err'));
-      return;
-    }
+  if (!platform) {
+    toast(_currentLang === 'zh' ? '请选择平台' : 'Please choose a platform');
+    return;
+  }
+  if (!team && !isPublicExtPlatformAllowed(platform)) {
+    toast(t('mobile_add_ext_public_limited'));
+    return;
   }
   if (btn) {
     btn.disabled = true;
@@ -8930,10 +8960,6 @@ async function mobileSubmitAddExtAgent() {
         tag,
         global_name: globalName,
         platform,
-        api_url: apiUrl,
-        api_key: apiKey,
-        model,
-        headers,
       });
     } else {
       await api('POST', '/public_external_agents', {
@@ -8941,10 +8967,6 @@ async function mobileSubmitAddExtAgent() {
         tag,
         global_name: globalName,
         platform,
-        api_url: apiUrl,
-        api_key: apiKey,
-        model,
-        headers,
       });
     }
     if (currentGroupId) {
@@ -8975,13 +8997,19 @@ async function renderMobileAddAgentOpenClawForm() {
   const body = document.getElementById('add-agent-body');
   if (!body) return;
   const team = mobileGetAddAgentTeam();
+  body.innerHTML = `<div class="mobile-add-agent-form"><div style="text-align:center;padding:20px;">${t('loading')}</div></div>`;
+  const tagOpts = await _mobileBuildExternalPersonaTagOptionsHtml(team);
   body.innerHTML = `
     <div class="mobile-add-agent-form">
       <div style="font-weight:700;margin-bottom:6px;color:var(--text);">${esc(t('mobile_add_oc_title'))}</div>
       <p class="form-hint">${esc(t('mobile_add_agent_team_optional'))}</p>
       ${team ? `<p class="form-hint">${esc(t('mobile_add_team_prefix_hint', { prefix: team + '_' }))}</p>` : ''}
       <label>${esc(t('mobile_add_oc_short'))}</label>
-      <input type="text" id="mobile-oc-short" placeholder="work / research" pattern="[a-zA-Z0-9_-]+" autocomplete="off">
+      <input type="text" id="mobile-oc-short" placeholder="work / research" autocomplete="off">
+      <label>${esc(t('mobile_add_ext_tag'))}</label>
+      <select id="mobile-oc-tag" class="ext-tag-select">${tagOpts}</select>
+      <div class="field-note">${esc(_currentLang === 'zh' ? 'tag 表示人设标签。' : 'Tag is the persona label.')}</div>
+      <input type="text" id="mobile-oc-tag-custom" class="ext-tag-custom" placeholder="${esc(t('agent_tag_placeholder'))}" style="margin-top:8px;display:none;">
       <p class="form-hint" id="mobile-oc-global-hint"></p>
       <label>${esc(t('mobile_add_oc_ws'))}</label>
       <div style="display:flex;gap:6px;align-items:stretch;">
@@ -8993,6 +9021,11 @@ async function renderMobileAddAgentOpenClawForm() {
   const shortInp = document.getElementById('mobile-oc-short');
   const wsInp = document.getElementById('mobile-oc-ws');
   const hintEl = document.getElementById('mobile-oc-global-hint');
+  const tagSel = document.getElementById('mobile-oc-tag');
+  const tagCust = document.getElementById('mobile-oc-tag-custom');
+  if (tagSel && tagCust) {
+    tagSel.onchange = () => { tagCust.style.display = tagSel.value === 'custom' ? 'block' : 'none'; };
+  }
   let parentDir = '';
   let wsManual = false;
 
@@ -9044,14 +9077,14 @@ async function renderMobileAddAgentOpenClawForm() {
 async function mobileSubmitAddOpenClawAgent() {
   const team = mobileGetAddAgentTeam();
   const shortName = (document.getElementById('mobile-oc-short') || {}).value.trim();
+  const tagSel = document.getElementById('mobile-oc-tag');
+  const tagCustom = (document.getElementById('mobile-oc-tag-custom') || {}).value.trim();
+  const tagSelect = tagSel ? tagSel.value : '';
+  const tag = tagCustom || (tagSelect !== 'custom' ? tagSelect : '') || 'openclaw';
   const workspace = (document.getElementById('mobile-oc-ws') || {}).value.trim();
   const globalName = team ? (team + '_' + shortName) : shortName;
   if (!shortName) {
     toast(t('agent_name_required'));
-    return;
-  }
-  if (!/^[a-zA-Z0-9_-]+$/.test(globalName)) {
-    toast(t('mobile_add_oc_name_invalid'));
     return;
   }
   if (!workspace) {
@@ -9080,11 +9113,23 @@ async function mobileSubmitAddOpenClawAgent() {
       try {
         await api('POST', `/teams/${encodeURIComponent(team)}/members/external`, {
           name: shortName,
-          tag: 'openclaw',
+          tag: tag,
           global_name: globalName,
+          platform: 'openclaw',
         });
       } catch (e) {
         console.warn('team external record:', e);
+      }
+    } else {
+      try {
+        await api('POST', `/public_external_agents`, {
+          name: shortName,
+          tag: tag,
+          global_name: globalName,
+          platform: 'openclaw',
+        });
+      } catch (e) {
+        console.warn('public external record:', e);
       }
     }
     if (currentGroupId) {
@@ -9092,7 +9137,7 @@ async function mobileSubmitAddOpenClawAgent() {
         short_name: shortName,
         global_id: globalName,
         member_type: 'ext',
-        tag: 'openclaw',
+        tag: tag,
       });
     }
     toast(t('mobile_add_member_ok'));
@@ -9643,6 +9688,7 @@ function stringToColor(str) {
 function normalizePlatformKey(raw) {
   const s = String(raw || '').trim().toLowerCase().replace(/[\s_]+/g, '-');
   if (!s || s === '_') return 'default';
+  if (s.includes('unknown')) return 'unknown';
   if (s.includes('claude-code') || s.includes('claudecode')) return 'claudecode';
   if (s.includes('claude')) return 'claude';
   if (s.includes('code') && s.includes('x')) return 'codex';
@@ -9670,6 +9716,7 @@ function getPlatformBadgeInfo(raw) {
     aider: { short: 'AI', label: 'Aider' },
     http: { short: 'API', label: 'HTTP API' },
     acp: { short: 'ACP', label: 'ACP' },
+    unknown: { short: '???', label: _currentLang === 'zh' ? '未知平台' : 'Unknown' },
     default: { short: 'EXT', label: _currentLang === 'zh' ? '外部' : 'External' },
   };
   const preset = map[key];
@@ -9685,7 +9732,6 @@ function resolveExternalPlatformKey(agentInfo, fallbackTool) {
     agentInfo.platform_hint,
     agentInfo.platform,
     fallbackTool,
-    agentInfo.tag,
     agentInfo.global_id,
     agentInfo.name,
   ];
@@ -9738,7 +9784,8 @@ function showAgentDetailBySender(senderKey) {
     global_id: member.global_id || '',
     short_name: member.short_name || '',
     tag: member.tag || '',
-    platform_hint: member.platform || member.tag || ''
+    tracked: !!member.tracked,
+    platform_hint: member.platform || ''
   });
 }
 
@@ -9894,6 +9941,8 @@ function renderAgentBasicInfo(name, memberType, agentInfo) {
   const globalId = agentInfo.global_id || '';
   const tag = agentInfo.tag || '';
   const platformKey = memberType === 'ext' ? resolveExternalPlatformKey(agentInfo) : '';
+  const isTracked = !!agentInfo.tracked;
+  const needsTrackFirst = false;  // all agents from JSON are tracked
   let html = `<div class="agent-detail-section">
     <div class="agent-detail-label">${t('basic_info')}</div>
     <div class="agent-detail-value">
@@ -9934,6 +9983,12 @@ function renderAgentBasicInfo(name, memberType, agentInfo) {
       <div class="agent-detail-label">${t('about')}</div>
       <div class="agent-detail-value">${t('external_agent_desc')}</div>
     </div>`;
+    if (needsTrackFirst) {
+      html += `<div class="agent-detail-section">
+        <div class="agent-detail-label">${_currentLang === 'zh' ? '状态' : 'Status'}</div>
+        <div class="agent-detail-value" style="color:#92400e;">${_currentLang === 'zh' ? '未追踪的 ACP Agent 不能直接使用，请先追踪。' : 'Untracked ACP agents must be tracked before use.'}</div>
+      </div>`;
+    }
   }
 
   // Add private chat button for agents, or expert chat button for experts
@@ -9946,10 +10001,31 @@ function renderAgentBasicInfo(name, memberType, agentInfo) {
   } else {
     const pcInfo = JSON.stringify(agentInfo).replace(/'/g, "\\'").replace(/"/g, '&quot;');
     html += `<div style="padding:16px;display:flex;flex-direction:column;gap:10px;">
-      <button onclick="startPrivateChat(JSON.parse(this.dataset.info))" data-info="${pcInfo}" style="width:100%;padding:14px;background:#07c160;color:white;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;">${t('start_private_chat')}</button>`;
+      <button onclick="startPrivateChat(JSON.parse(this.dataset.info))" data-info="${pcInfo}" ${needsTrackFirst ? 'disabled' : ''} style="width:100%;padding:14px;background:${needsTrackFirst ? '#9ca3af' : '#07c160'};color:white;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:${needsTrackFirst ? 'not-allowed' : 'pointer'};">${needsTrackFirst ? (_currentLang === 'zh' ? '先追踪再私聊' : 'Track before chat') : t('start_private_chat')}</button>`;
 
-    // Add delete button for internal agents only
-    if (memberType === 'oasis' || memberType === 'internal') {
+    if (memberType === 'ext') {
+      const editInfo = JSON.stringify({
+        global_id: globalId,
+        name: shortName,
+        tag: tag,
+        tracked: isTracked,
+        team: agentInfo.team || '',
+        platform: agentInfo.platform || '',
+        platform_hint: agentInfo.platform_hint || platformKey,
+      }).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+      html += `
+      <button onclick="openPublicExternalAgentConfigModal(JSON.parse(this.dataset.info))" data-info="${editInfo}" style="width:100%;padding:14px;background:transparent;color:#2563eb;border:2px solid #2563eb;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;">${_currentLang === 'zh' ? '追踪 / 编辑' : 'Track / Edit'}</button>`;
+      const delInfo = JSON.stringify({
+        global_id: globalId,
+        name: shortName,
+        tag: tag,
+        team: agentInfo.team || '',
+        platform: agentInfo.platform || '',
+        platform_hint: agentInfo.platform_hint || platformKey
+      }).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+      html += `
+      <button onclick="deleteExternalAgent(JSON.parse(this.dataset.info))" data-info="${delInfo}" style="width:100%;padding:14px;background:transparent;color:#e74c3c;border:2px solid #e74c3c;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;">${t('delete_agent')}</button>`;
+    } else if (memberType === 'oasis' || memberType === 'internal') {
       const delInfo = JSON.stringify({global_id: globalId, name: shortName}).replace(/'/g, "\\'").replace(/"/g, '&quot;');
       html += `
       <button onclick="deleteInternalAgent(JSON.parse(this.dataset.info))" data-info="${delInfo}" style="width:100%;padding:14px;background:transparent;color:#e74c3c;border:2px solid #e74c3c;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;">${t('delete_agent')}</button>`;
@@ -9977,6 +10053,208 @@ async function deleteInternalAgent(info) {
   } catch (e) {
     toast(t('agent_delete_failed') + ': ' + e.message);
   }
+}
+
+function canDeleteOpenClawAgentMobile(agentName) {
+  return !!agentName && String(agentName).toLowerCase() !== 'main';
+}
+
+function isPublicExtPlatformAllowed(platform) {
+  const key = normalizePlatformKey(platform);
+  if (key === 'openclaw') return true;
+  const dynamic = Array.isArray(_mobileExternalPlatformOptionsCache)
+    ? _mobileExternalPlatformOptionsCache.map((p) => normalizePlatformKey(p))
+    : [];
+  const fallback = MOBILE_EXT_PLATFORM_FALLBACK.map((p) => normalizePlatformKey(p));
+  return new Set(dynamic.concat(fallback)).has(key);
+}
+
+function acpxToolFromAgentInfo(info) {
+  const rawCandidates = [
+    info && info.platform,
+    info && info.platform_hint,
+  ].map((v) => String(v || '').trim().toLowerCase()).filter(Boolean);
+  for (const raw of rawCandidates) {
+    if (raw === 'claude-code' || raw === 'claudecode') return 'claude-code';
+    if (raw === 'gemini-cli') return 'gemini-cli';
+    if (raw === 'openclaw') return 'openclaw';
+    if (raw !== 'http' && raw !== 'api') return raw;
+  }
+  const normalized = normalizePlatformKey((info && (info.platform || info.platform_hint)) || '');
+  if (normalized === 'claudecode') return 'claude-code';
+  if (normalized && normalized !== 'default' && normalized !== 'unknown') return normalized;
+  return '';
+}
+
+async function deleteExternalAgent(info) {
+  const name = info.name || info.global_id || '';
+  const globalId = info.global_id || '';
+  const team = (info.team || '').trim();
+  const platform = resolveExternalPlatformKey(info);
+  const isOpenClaw = platform === 'openclaw';
+  const canDeleteRealOpenClaw = isOpenClaw && canDeleteOpenClawAgentMobile(globalId);
+  const msg = t('delete_agent_confirm').replace('{name}', name);
+  if (!confirm(msg)) return;
+
+  // Try to close session (best-effort, don't block on failure)
+  try {
+    if (isOpenClaw && canDeleteRealOpenClaw) {
+      const resp = await fetch('/proxy_openclaw_remove', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: globalId }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || !data.ok) {
+        console.warn('OpenClaw remove failed:', data.error);
+      }
+    } else if (platform && platform !== 'openclaw') {
+      const tool = acpxToolFromAgentInfo(info);
+      if (tool) {
+        await fetch('/proxy_acpx_session_delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tool: tool,
+            session_name: globalId,
+          }),
+        }).catch(() => null);  // best-effort, ignore failure
+      }
+    }
+  } catch (e) {
+    console.warn('Session close failed (ignored):', e);
+  }
+
+  // Always delete JSON entry regardless of session close result
+  try {
+    if (team) {
+      await api('DELETE', `/teams/${encodeURIComponent(team)}/members/external`, {
+        global_name: globalId,
+      });
+    } else {
+      await api('DELETE', '/public_external_agents', {
+        global_name: globalId,
+      });
+    }
+    toast(t('agent_deleted') + ': ' + name);
+    closeAgentDetail();
+    invalidateContactsPrefetch();
+    if (typeof loadContactsForTeam === 'function') await loadContactsForTeam();
+  } catch (e) {
+    toast(t('agent_delete_failed') + ': ' + e.message);
+  }
+}
+
+async function openPublicExternalAgentConfigModal(info) {
+  const globalId = String((info && info.global_id) || '').trim();
+  if (!globalId) {
+    toast(_currentLang === 'zh' ? '缺少 Global ID' : 'Missing global ID');
+    return;
+  }
+  const team = (info && info.team) || '';
+  let tracked = null;
+  try {
+    if (team) {
+      // For team agents, check if exists in team's external_agents.json via /teams/{team}/members
+      const data = await api('GET', `/teams/${encodeURIComponent(team)}/members`);
+      const members = Array.isArray(data && data.members) ? data.members : [];
+      tracked = members.find((a) => String((a && a.global_name) || '').trim() === globalId && a.type === 'ext') || null;
+    } else {
+      const data = await api('GET', '/public_external_agents');
+      tracked = (Array.isArray(data && data.agents) ? data.agents : []).find((a) => String((a && a.global_name) || '').trim() === globalId) || null;
+    }
+  } catch (_) { /* ignore */ }
+
+  closeAgentDetail();
+  const sheetId = 'public-ext-edit-sheet';
+  const overlayId = 'public-ext-edit-sheet-overlay';
+  document.getElementById(sheetId)?.remove();
+  document.getElementById(overlayId)?.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = overlayId;
+  overlay.className = 'tc-sheet-overlay show';
+  const sheet = document.createElement('div');
+  sheet.id = sheetId;
+  sheet.className = 'tc-sheet show';
+  sheet.innerHTML = `
+      <div class="tc-sheet-handle"></div>
+      <div class="tc-sheet-header">
+        <div style="font-weight:700;">${esc(_currentLang === 'zh' ? '公共外部 Agent 配置' : 'Public External Agent')}</div>
+        <button class="tc-sheet-close" id="public-ext-edit-close">✕</button>
+      </div>
+      <div class="tc-sheet-body" style="display:flex;flex-direction:column;gap:10px;">
+        <label>${esc(_currentLang === 'zh' ? '名称' : 'Name')}</label>
+        <input id="public-ext-edit-name" type="text" value="${esc((tracked && tracked.name) || info.name || '')}" autocomplete="off">
+        <label>${esc(_currentLang === 'zh' ? 'Tag' : 'Tag')}</label>
+        <input id="public-ext-edit-tag" type="text" value="${esc((tracked && tracked.tag) || info.tag || '')}" autocomplete="off">
+        <label>${esc(_currentLang === 'zh' ? '平台' : 'Platform')}</label>
+        <input id="public-ext-edit-platform" type="text" value="${esc((tracked && tracked.platform) || info.platform || info.platform_hint || '')}" autocomplete="off">
+        <div class="field-note">${esc(globalId)}</div>
+      </div>
+      <div class="tc-sheet-footer">
+        <button class="tc-btn-primary" id="public-ext-edit-save">${esc(_currentLang === 'zh' ? '保存' : 'Save')}</button>
+      </div>`;
+  document.body.appendChild(overlay);
+  document.body.appendChild(sheet);
+  const close = () => {
+    overlay.remove();
+    sheet.remove();
+  };
+  overlay.addEventListener('click', close);
+  sheet.querySelector('#public-ext-edit-close').addEventListener('click', close);
+  sheet.querySelector('#public-ext-edit-save').addEventListener('click', async () => {
+    const name = String((document.getElementById('public-ext-edit-name') || {}).value || '').trim();
+    const tag = String((document.getElementById('public-ext-edit-tag') || {}).value || '').trim();
+    const platform = String((document.getElementById('public-ext-edit-platform') || {}).value || '').trim();
+    if (!name || !platform) {
+      toast(_currentLang === 'zh' ? '名称和平台不能为空' : 'Name and platform are required');
+      return;
+    }
+    try {
+      if (team) {
+        if (tracked) {
+          await api('PUT', `/teams/${encodeURIComponent(team)}/members/external`, {
+            global_name: globalId,
+            new_name: name,
+            new_tag: tag,
+            platform,
+          });
+        } else {
+          await api('POST', `/teams/${encodeURIComponent(team)}/members/external`, {
+            name,
+            tag,
+            global_name: globalId,
+            platform,
+          });
+        }
+        toast(_currentLang === 'zh' ? '已写入团队外部 Agent 列表' : 'Saved to team external agents');
+      } else {
+        if (tracked) {
+          await api('PUT', '/public_external_agents', {
+            global_name: globalId,
+            new_name: name,
+            new_tag: tag,
+            platform,
+          });
+        } else {
+          await api('POST', '/public_external_agents', {
+            name,
+            tag,
+            global_name: globalId,
+            platform,
+          });
+        }
+        toast(_currentLang === 'zh' ? '已写入公共外部 Agent 列表' : 'Saved to public external agents');
+      }
+      close();
+      closeAgentDetail();
+      invalidateContactsPrefetch();
+      if (typeof loadContactsForTeam === 'function') await loadContactsForTeam();
+    } catch (e) {
+      toast((e && e.message) ? e.message : t('save_failed'));
+    }
+  });
 }
 
 function formatTime(ts) {
@@ -10586,12 +10864,34 @@ function invalidateContactsPrefetch() {
   __contactsPrefetchPromise = null;
 }
 
-/** OpenClaw sessions + public_external_agents grouped by tag (skip openclaw dup in JSON). */
+/** Public external agents: OpenClaw from native list, ACP from active acpx sessions. */
 async function loadPublicExternalAgentGroups() {
-  const [ocRes, pubRes] = await Promise.all([
+  const [ocRes, acpxRes, trackedRes] = await Promise.all([
     api('GET', '/proxy_openclaw_sessions').catch(() => ({ agents: [] })),
+    api('GET', '/proxy_acpx_sessions_all').catch(() => ({ sessions: [] })),
     api('GET', '/public_external_agents').catch(() => ({ agents: [] }))
   ]);
+  const trackedRows = Array.isArray(trackedRes && trackedRes.agents) ? trackedRes.agents : [];
+  const trackedByGlobal = new Map();
+  trackedRows.forEach((row) => {
+    const key = String((row && row.global_name) || '').trim();
+    if (key) trackedByGlobal.set(key, row);
+  });
+  const merged = new Map();
+  const mergeItem = (item) => {
+    const key = String((item && item.global_name) || '').trim();
+    if (!key) return;
+    const tracked = trackedByGlobal.get(key) || {};
+    merged.set(key, {
+      ...item,
+      ...tracked,
+      name: (tracked && tracked.name) || item.name,
+      tag: (tracked && tracked.tag) || item.tag || '',
+      platform: (tracked && tracked.platform) || item.platform || '',
+      meta: (tracked && tracked.meta) || item.meta || {},
+      tracked: trackedByGlobal.has(key),
+    });
+  };
   const ocList = (ocRes.agents || []).map(s => ({
     name: s.name || s.global_name || t('unnamed'),
     type: 'ext',
@@ -10599,26 +10899,32 @@ async function loadPublicExternalAgentGroups() {
     global_name: s.global_name || s.name || '',
     platform: 'openclaw'
   }));
-  const acpByTool = {};
-  const rows = (pubRes && Array.isArray(pubRes.agents)) ? pubRes.agents : [];
-  rows.forEach((row) => {
+  ocList.forEach(mergeItem);
+  // JSON entries (authoritative names) - only show agents that are tracked in JSON
+  trackedRows.forEach((row) => {
     if (!row || typeof row !== 'object') return;
-    const tagRaw = String(row.tag || '').trim().toLowerCase();
-    if (tagRaw === 'openclaw') return;
-    const gn = String(row.global_name || '').trim();
-    if (!gn) return;
-    const key = tagRaw || '_';
-    const item = {
-      name: row.name || row.global_name || t('unnamed'),
-      type: 'ext',
-      tag: row.tag || '',
-      global_name: gn,
-      platform: row.platform || row.tag || ''
-    };
+    const key = String(row.global_name || '').trim();
+    if (!key) return;
+    merged.set(key, {
+      ...row,
+      global_name: key,
+      tracked: true,
+    });
+  });
+  // Don't read acpx sessions - only show agents that are in JSON
+  const openclaw = [];
+  const acpByTool = {};
+  Array.from(merged.values()).forEach((item) => {
+    const tool = normalizePlatformKey(item.platform || item.tag || '');
+    const key = tool && tool !== 'default' ? tool : 'unknown';
+    if (key === 'openclaw') {
+      openclaw.push(item);
+      return;
+    }
     if (!acpByTool[key]) acpByTool[key] = [];
     acpByTool[key].push(item);
   });
-  return { openclaw: ocList, acpByTool };
+  return { openclaw, acpByTool };
 }
 
 /** 与通讯录一致：从公共外部分组中去掉已在群内的 global_id */
@@ -10650,7 +10956,7 @@ function groupTeamExternalMembers(extMembers) {
   const acpByTool = {};
   (extMembers || []).forEach((m) => {
     if (!m || typeof m !== 'object') return;
-    const tagRaw = String(m.tag || '').trim().toLowerCase();
+    const platformKey = normalizePlatformKey(m.platform || '');
     const gn = String(m.global_name || m.name || m.session || '').trim();
     const item = {
       name: m.name || m.global_name || t('unnamed'),
@@ -10658,12 +10964,12 @@ function groupTeamExternalMembers(extMembers) {
       tag: m.tag || '',
       global_name: gn,
       team: m.team || '',
-      platform: m.platform || m.tag || ''
+      platform: m.platform || ''
     };
-    if (tagRaw === 'openclaw') {
+    if (platformKey === 'openclaw') {
       openclaw.push(item);
     } else {
-      const key = tagRaw || '_';
+      const key = platformKey || 'default';
       if (!acpByTool[key]) acpByTool[key] = [];
       acpByTool[key].push(item);
     }
@@ -10679,6 +10985,10 @@ function renderExternalAgentGroupsHtml(groups, idPrefix) {
 
   const renderOne = (a, platformHint) => {
     const name = a.name || a.global_name || t('unnamed');
+    const platformRaw = String(a.platform || a.tag || '').trim();
+    const tracked = !!a.tracked;
+    const platformKey = normalizePlatformKey(platformRaw || platformHint || '');
+    const needsTrackFirst = false;  // all agents from JSON are tracked
     const info = JSON.stringify({
       name: a.name,
       type: 'ext',
@@ -10686,11 +10996,14 @@ function renderExternalAgentGroupsHtml(groups, idPrefix) {
       short_name: a.name || '',
       tag: a.tag || '',
       team: a.team || '',
-      platform_hint: resolveExternalPlatformKey(a, platformHint)
+      tracked: tracked,
+      platform: platformRaw,
+      platform_hint: platformRaw || resolveExternalPlatformKey(a, platformHint)
     }).replace(/"/g, '&quot;');
     const teamLabel = a.team ? `<span style="font-size:11px;color:var(--text-hint);margin-left:4px;">[${esc(a.team)}]</span>` : '';
     const initial = avatarLabelFromDisplayName(name);
-    return `<div class="contact-item" onclick="showAgentDetail(JSON.parse(this.dataset.info))" data-info="${info}"><div class="contact-avatar ext">${esc(initial)}</div><div class="contact-name">${esc(name)}${teamLabel}</div>${a.tag ? `<span class="contact-tag">${esc(a.tag)}</span>` : ''}</div>`;
+    const hint = needsTrackFirst ? `<span class="contact-tag" style="background:#fef3c7;color:#92400e;">${_currentLang === 'zh' ? '先追踪' : 'Track first'}</span>` : '';
+    return `<div class="contact-item" onclick="showAgentDetail(JSON.parse(this.dataset.info))" data-info="${info}"><div class="contact-avatar ext">${esc(initial)}</div><div class="contact-name">${esc(name)}${teamLabel}</div>${a.tag ? `<span class="contact-tag">${esc(a.tag)}</span>` : ''}${hint}</div>`;
   };
 
   const oc = (groups && Array.isArray(groups.openclaw)) ? groups.openclaw : [];
@@ -10715,7 +11028,7 @@ function renderExternalAgentGroupsHtml(groups, idPrefix) {
     const items = acpByTool[tool] || [];
     if (!items.length) return;
     const uid = idPrefix + 'ext-acp-' + escId(tool);
-    const label = tool === '_' ? t('tag_none') : tool;
+    const label = tool === 'unknown' ? ((_currentLang === 'zh') ? '未知平台' : 'Unknown') : (tool === '_' ? t('tag_none') : tool);
     html += `<div class="contacts-cat-group"><div class="contacts-cat-header contacts-ext-sub" onclick="${toggleFn(uid)}"><span class="cat-icon">🔌</span><span class="cat-name">${esc(label)}</span><span class="cat-count">${items.length}</span><span class="cat-arrow">▶</span></div><div id="${uid}" class="contacts-cat-list">${items.map((item) => renderOne(item, tool)).join('')}</div></div>`;
   });
 
@@ -10733,14 +11046,18 @@ function renderExternalAgentGroupsForAddMembersHtml(groups, idPrefix) {
     const key = String(a.global_name || '').trim();
     const checked = addAgentSelected.has(key) ? 'checked' : '';
     const tag = a.tag || '';
+    const tracked = !!a.tracked;
+    const platformKey = normalizePlatformKey(String(a.platform || platformHint || '').trim());
+    const blocked = false;  // all agents from JSON are tracked
     const teamLabel = a.team ? `<span style="font-size:11px;color:var(--text-hint);margin-left:4px;">[${esc(a.team)}]</span>` : '';
     const initial = avatarLabelFromDisplayName(name);
     return `
-          <label class="contact-item" style="cursor:pointer;display:flex;align-items:center;">
-            <input type="checkbox" value="${esc(key)}" data-short="${esc(name)}" data-type="ext" data-tag="${esc(tag)}" onchange="toggleAddAgentSelect('${esc(key)}')" ${checked} style="width:18px;height:18px;margin-right:10px;accent-color:#07c160;">
+          <label class="contact-item" style="cursor:${blocked ? 'not-allowed' : 'pointer'};display:flex;align-items:center;opacity:${blocked ? '0.65' : '1'};">
+            <input type="checkbox" value="${esc(key)}" data-short="${esc(name)}" data-type="ext" data-tag="${esc(tag)}" onchange="toggleAddAgentSelect('${esc(key)}')" ${checked} ${blocked ? 'disabled' : ''} style="width:18px;height:18px;margin-right:10px;accent-color:#07c160;">
             <div class="contact-avatar ext">${esc(initial)}</div>
             <div class="contact-name">${esc(name)}${teamLabel}</div>
             ${tag ? `<span class="contact-tag">${esc(tag)}</span>` : ''}
+            ${blocked ? `<span class="contact-tag" style="background:#fef3c7;color:#92400e;">${_currentLang === 'zh' ? '先追踪' : 'Track first'}</span>` : ''}
           </label>`;
   };
 
@@ -10766,7 +11083,7 @@ function renderExternalAgentGroupsForAddMembersHtml(groups, idPrefix) {
     const items = acpByTool[tool] || [];
     if (!items.length) return;
     const uid = idPrefix + 'ext-acp-' + escId(tool);
-    const label = tool === '_' ? t('tag_none') : tool;
+    const label = tool === 'unknown' ? ((_currentLang === 'zh') ? '未知平台' : 'Unknown') : (tool === '_' ? t('tag_none') : tool);
     html += `<div class="contacts-cat-group"><div class="contacts-cat-header contacts-ext-sub" onclick="${toggleFn(uid)}"><span class="cat-icon">🔌</span><span class="cat-name">${esc(label)}</span><span class="cat-count">${items.length}</span><span class="cat-arrow">▶</span></div><div id="${uid}" class="contacts-cat-list">${items.map((item) => renderCheckbox(item, tool)).join('')}</div></div>`;
   });
 
@@ -10860,11 +11177,11 @@ async function loadAllContactsForSearch() {
 
   try {
     // Load public agents
-    const [intData, extData, publicExperts, pubExtData] = await Promise.all([
+    const [intData, extData, publicExperts, acpxAllData] = await Promise.all([
       api('GET', '/internal_agents').catch(() => ({agents: []})),
       api('GET', '/proxy_openclaw_sessions').catch(() => ({agents: []})),
       api('GET', '/proxy_visual/experts').catch(() => []),
-      api('GET', '/public_external_agents').catch(() => ({ agents: [] }))
+      api('GET', '/proxy_acpx_sessions_all').catch(() => ({ sessions: [] }))
     ]);
 
     (intData.agents || []).forEach(a => allAgents.push({
@@ -10883,17 +11200,17 @@ async function loadAllContactsForSearch() {
       team: ''
     }));
 
-    (pubExtData.agents || []).forEach(a => {
-      if (!a || typeof a !== 'object') return;
-      if (String(a.tag || '').toLowerCase() === 'openclaw') return;
-      const gn = String(a.global_name || '').trim();
+    (acpxAllData.sessions || []).forEach(s => {
+      if (!s || typeof s !== 'object') return;
+      const gn = String(s.name || '').trim();
       if (!gn) return;
       allAgents.push({
-        name: a.name || gn || t('unnamed'),
+        name: gn,
         type: 'ext',
-        tag: a.tag || '',
+        tag: s.tool || '',
         global_name: gn,
-        team: ''
+        team: '',
+        platform: s.tool || 'unknown'
       });
     });
 
@@ -11527,6 +11844,11 @@ async function loadProfile() {
       <div class="profile-row" onclick="showAbout()">
         <span class="profile-row-icon">ℹ️</span>
         <span class="profile-row-label">${t('about')}</span>
+        <span class="profile-row-arrow">›</span>
+      </div>
+      <div class="profile-row" onclick="openSessionsSubpage()">
+        <span class="profile-row-icon">🔍</span>
+        <span class="profile-row-label">${t('session_tracker') || '会话追踪'}</span>
         <span class="profile-row-arrow">›</span>
       </div>
     </div>
@@ -12915,6 +13237,101 @@ function showAbout() {
   }
   requestAnimationFrame(() => { subpage.classList.add('open'); });
 }
+
+async function openSessionsSubpage() {
+  const subpage = document.getElementById('profile-subpage');
+  const title = document.getElementById('profile-subpage-title');
+  const body = document.getElementById('profile-subpage-body');
+  const footer = document.getElementById('profile-subpage-footer');
+  if (!subpage || !body) return;
+  if (title) title.textContent = t('session_tracker') || '\u4f1a\u8bdd\u8ffd\u8e2a';
+  if (footer) footer.style.display = 'none';
+  body.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-secondary);font-size:14px;">\u52a0\u8f7d\u4e2d...</div>';
+  subpage.classList.add('open');
+
+  try {
+    const data = await api('POST', '/proxy_sessions_list');
+    const acpxSessions = (data.acpx_sessions || []).filter(function(s) { return !s.closed; });
+    const httpRecs = data.http_agent_sessions || [];
+
+    let html = '';
+
+    // ── ACPx Sessions ──
+    html += '<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px;">ACPx Sessions (' + acpxSessions.length + ')</div>';
+    if (acpxSessions.length === 0) {
+      html += '<div style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;">\u6682\u65e0</div>';
+    } else {
+      const platMap = {};
+      acpxSessions.forEach(function(s) {
+        const p = s.platform || 'unknown';
+        if (!platMap[p]) platMap[p] = [];
+        platMap[p].push(s);
+      });
+      Object.keys(platMap).sort().forEach(function(p) {
+        const sessions = platMap[p];
+        html += '<div style="background:var(--bg-card);border-radius:8px;padding:10px 12px;margin-bottom:8px;">';
+        html += '<div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:8px;">' + esc(p) + ' (' + sessions.length + ')</div>';
+        sessions.forEach(function(s) {
+          html += '<div style="font-size:12px;padding:3px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">';
+          html += '<span style="color:var(--text-secondary);word-break:break-all;flex:1;" title="' + esc(s.session_id || '') + '">' + esc(s.name || s.session_id || '-') + '</span>';
+          html += '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">';
+          html += '<span style="color:var(--text-secondary);white-space:nowrap;font-size:11px;">' + esc(s.last_used_at || '-') + '</span>';
+          html += '<button onclick="closeAcpSession(\'' + esc(p).replace(/'/g, "\\'") + '\',\'' + esc(s.name || '').replace(/'/g, "\\'") + '\')" style="padding:2px 8px;border-radius:4px;font-size:11px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;cursor:pointer;">\u5173\u95ed</button>';
+          html += '</div>';
+          html += '</div>';
+        });
+        html += '</div>';
+      });
+    }
+
+    html += '<div style="height:16px;"></div>';
+
+    // ── HTTP Agent Records ──
+    html += '<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px;">HTTP Agent Records (' + httpRecs.length + ')</div>';
+    if (httpRecs.length === 0) {
+      html += '<div style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;">\u6682\u65e0</div>';
+    } else {
+      httpRecs.forEach(function(r) {
+        const date = r.last_used_at ? new Date(r.last_used_at * 1000).toLocaleDateString() : 'N/A';
+        html += '<div style="background:var(--bg-card);border-radius:8px;padding:10px 12px;margin-bottom:6px;">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+        html += '<span style="font-size:13px;font-weight:500;">' + esc(r.global_name || '\u65e0\u540d\u5b57') + '</span>';
+        html += '<button onclick="deleteHttpSession(\'' + esc(r.session_key).replace(/'/g, "\\'") + '\')" style="padding:4px 10px;border-radius:6px;font-size:12px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;cursor:pointer;">\u5220\u9664</button>';
+        html += '</div>';
+        html += '<div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">' + date + ' · ' + esc(r.transport) + '</div>';
+        html += '</div>';
+      });
+    }
+
+    body.innerHTML = html;
+  } catch(e) {
+    body.innerHTML = '<div style="padding:16px;color:#e74c3c;font-size:14px;">\u52a0\u8f7d\u5931\u8d25: ' + esc(e.message) + '</div>';
+  }
+}
+
+async function closeAcpSession(platform, sessionName) {
+  if (!confirm('\u786e\u5b9a\u5173\u95ed\u8fd9\u4e2a\u4f1a\u8bdd?')) return;
+  try {
+    await api('POST', '/proxy_sessions_close', {platform: platform, session_name: sessionName});
+    openSessionsSubpage();
+  } catch(e) {
+    toast('\u5173\u95ed\u5931\u8d25: ' + e.message);
+  }
+}
+
+async function deleteHttpSession(sessionKey) {
+  if (!confirm('\u786e\u5b9a\u5220\u9664\u8fd9\u6761\u8bb0\u5f55?')) return;
+  try {
+    await api('POST', '/proxy_sessions_delete', {session_key: sessionKey});
+    openSessionsSubpage();
+  } catch(e) {
+    toast('\u5220\u9664\u5931\u8d25: ' + e.message);
+  }
+}
+
+
+
+
 
 async function doLogout() {
   if (!confirm(t('confirm_logout'))) return;

@@ -12,6 +12,7 @@ import argparse
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -31,6 +32,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--stdout-file", default="", help="Optional file to read stdout from instead of running a command.")
     parser.add_argument("--stderr-file", default="", help="Optional file to read stderr from instead of running a command.")
     parser.add_argument("--exit-code", type=int, default=None, help="Explicit exit code when using --stdout-file/--stderr-file.")
+    parser.add_argument("--strategy", default="auto", help="Evolution strategy preset: auto, balanced, innovate, harden, repair-only.")
     parser.add_argument("--force", action="store_true", help="Write/update the self-evolution block even if the command succeeds.")
     return parser.parse_args()
 
@@ -46,8 +48,10 @@ def main() -> int:
     stdout = _read_optional(args.stdout_file)
     stderr = _read_optional(args.stderr_file)
     exit_code = args.exit_code
+    duration_ms = None
 
     if args.command:
+        started = time.perf_counter()
         completed = subprocess.run(
             args.command,
             shell=True,
@@ -55,6 +59,7 @@ def main() -> int:
             capture_output=True,
             text=True,
         )
+        duration_ms = int((time.perf_counter() - started) * 1000)
         stdout = completed.stdout or stdout
         stderr = completed.stderr or stderr
         exit_code = completed.returncode
@@ -68,6 +73,8 @@ def main() -> int:
         stderr=stderr,
         exit_code=exit_code,
         force=args.force,
+        strategy=args.strategy,
+        duration_ms=duration_ms,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return int(exit_code or 0)

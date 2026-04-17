@@ -28,6 +28,7 @@ If you are an agent, do **not** load everything by default. Start with `AGENTS.m
 | Compare WeBot with Claude Code and inspect the runtime feature matrix that drives parity work | [`webot-claude-gap-analysis.md`](./webot-claude-gap-analysis.md) | [`webot-agent-runtime.md`](./webot-agent-runtime.md), [`repo-index.md`](./repo-index.md) |
 | Build a Team from a task description or discovered SOP pages | [`team-creator.md`](./team-creator.md) | [`build_team.md`](./build_team.md), [`example_team.md`](./example_team.md) |
 | Understand OASIS runtime behavior, Town Mode, GraphRAG memory, or ReportAgent | [`oasis-reference.md`](./oasis-reference.md) | [`runtime-reference.md`](./runtime-reference.md), [`create_workflow.md`](./create_workflow.md), [`build_team.md`](./build_team.md) |
+| Build Python-script OASIS workflows, call team agents from Python, or post into OASIS topics from code | [`workflowpy.md`](./workflowpy.md) | [`oasis-reference.md`](./oasis-reference.md), [`create_workflow.md`](./create_workflow.md), [`repo-index.md`](./repo-index.md) |
 | Understand runtime architecture / auth / services | [`runtime-reference.md`](./runtime-reference.md) | [`ports.md`](./ports.md), [`repo-index.md`](./repo-index.md) |
 | Find CLI syntax or examples | [`cli.md`](./cli.md) | `uv run scripts/cli.py <command> --help` |
 | Build a Team | [`build_team.md`](./build_team.md) | [`example_team.md`](./example_team.md) |
@@ -51,6 +52,7 @@ If you are an agent, do **not** load everything by default. Start with `AGENTS.m
 - [`team-creator.md`](./team-creator.md): ClawCross Creator flow, jobs, bilingual UI, workflow-to-team bridge
 - [`build_team.md`](./build_team.md): Team creation, internal agents, OpenClaw members, personas
 - [`create_workflow.md`](./create_workflow.md): workflow YAML grammar and examples
+- [`workflowpy.md`](./workflowpy.md): Python-script workflow mode, agent center, and forum posting helpers
 - [`oasis-reference.md`](./oasis-reference.md): OASIS runtime model, Town Mode, swarm / GraphRAG behavior, ReportAgent
 - [`webot-agent-runtime.md`](./webot-agent-runtime.md): WeBot delegated subagent runtime, profiles, tool boundaries, and the runtime DTO wiring
 - [`webot-claude-gap-analysis.md`](./webot-claude-gap-analysis.md): feature matrix vs Claude Code and the outstanding parity checklist

@@ -20,18 +20,19 @@ This `SKILL.md` is now **self-evolving**. When you hit a real execution failure 
 
 ```bash
 # Linux / macOS
-bash selfskill/scripts/run.sh evolve-skill --skill SKILL.md --command "pytest test/test_skill_evolution.py"
+bash selfskill/scripts/run.sh evolve-skill --skill SKILL.md --command "pytest test/test_skill_evolution.py" --strategy harden
 
 # Windows PowerShell
-powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1 evolve-skill --skill SKILL.md --command "pytest test/test_skill_evolution.py"
+powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1 evolve-skill --skill SKILL.md --command "pytest test/test_skill_evolution.py" --strategy harden
 ```
 
 Rules:
 
 1. Run the command **only when there is a meaningful execution error** (failed test, startup failure, CLI/runtime error), or pass `--force` if you intentionally want to refresh the verified guidance after a successful command.
-2. The command writes a managed self-evolution block into this file and stores a report under `docs/self-evolution/`.
-3. After fixing the issue, re-run the narrowest verifier command; if it still fails, refresh the block again so the latest failure evidence is preserved.
-4. Prefer exact failing commands and stderr over vague summaries. This file should accumulate operational guardrails, not generic advice.
+2. Supported strategy presets are `auto`, `balanced`, `innovate`, `harden`, and `repair-only`. Use `harden` after flaky runtime failures, `repair-only` during active breakage, and `innovate` only when the issue is really a missing capability.
+3. The command writes a managed self-evolution block into this file, stores a Markdown report under `docs/self-evolution/`, and now also emits a machine-readable validation report JSON beside it.
+4. After fixing the issue, re-run the narrowest verifier command; if it still fails, refresh the block again so the latest failure evidence is preserved.
+5. Prefer exact failing commands and stderr over vague summaries. This file should accumulate operational guardrails, not generic advice.
 
 ---
 

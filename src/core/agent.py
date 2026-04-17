@@ -872,6 +872,19 @@ class TeamAgent:
             # 默认私聊场景
             return self._prompts.get("private_chat_rules", "")
 
+    def _build_fixed_chat_rules(self) -> str:
+        """构造稳定的聊天规则系统提示，避免按每条消息切换 system prompt。"""
+        group_rules = self._prompts.get("group_chat_rules", "")
+        small_rules = self._prompts.get("group_chat_small", "")
+        large_rules = self._prompts.get("group_chat_large", "")
+        private_rules = self._prompts.get("private_chat_rules", "")
+
+        rendered_group_rules = group_rules.replace(
+            "{size_specific_rules}",
+            "\n\n".join(part for part in (small_rules, large_rules) if part),
+        )
+        return "\n\n".join(part for part in (rendered_group_rules, private_rules) if part)
+
     # ------------------------------------------------------------------
     # Properties
     # ------------------------------------------------------------------
@@ -1190,8 +1203,7 @@ class TeamAgent:
                 base_prompt += "\n\n" + profile_prompt
             base_prompt += f"\n\n【可用工具列表】\n{visible_tool_list_str}\n"
         else:
-            # 检测最后消息是否来自群聊，用于选择不同的聊天行为规则
-            chat_rules = self._build_chat_rules(state)
+            chat_rules = self._build_fixed_chat_rules()
             base_system_text = self._prompts["base_system"].replace("{chat_rules}", chat_rules)
             base_prompt = (
                 base_system_text + "\n\n"
@@ -1547,11 +1559,9 @@ class TeamAgent:
                         "max_turns": effective_max_turns,
                     },
                 )
-            from services.llm_factory import extract_text as _extract_text
-
             response = AIMessage(
                 content=build_turn_limit_message(
-                    _extract_text(response.content),
+                    extract_text(response.content),
                     effective_max_turns,
                 )
             )
@@ -1601,32 +1611,41 @@ class TeamAgent:
                     "has_tool_calls": bool(getattr(response, "tool_calls", None)),
                 },
                 result={
-                    "content": self._extract_text(response.content)[:500],
+                    "content": extract_text(response.content)[:500],
                 },
             )
 
         # --- Trajectory saving (new: ported from Hermes Agent) ---
         # Save conversation trajectory when no more tool calls (session ending)
+        # Fire-and-forget: spawn in background thread to never block the agent
         if not getattr(response, "tool_calls", None) and next_turn_count > 1:
-            with contextlib.suppress(Exception):
-                model_name = getattr(llm, "model_name", "") or getattr(llm, "model", "") or ""
-                traj_messages = [
-                    {"role": type(m).__name__.replace("Message", "").lower(), "content": self._extract_text(m.content)}
-                    for m in history_messages[:20]
-                ]
-                traj_messages.append({"role": "assistant", "content": self._extract_text(response.content)[:2000]})
-                save_trajectory(
-                    user_id=user_id,
-                    session_id=session_id,
-                    messages=traj_messages,
-                    model=model_name,
-                    completed=True,
-                    tool_calls_count=current_turn_count,
-                    token_usage={
-                        "input_tokens": usage_meta.get("input_tokens", 0) if isinstance(usage_meta, dict) else 0,
-                        "output_tokens": usage_meta.get("output_tokens", 0) if isinstance(usage_meta, dict) else 0,
-                    },
+            model_name = getattr(llm, "model_name", "") or getattr(llm, "model", "") or ""
+            traj_messages = [
+                {"role": type(m).__name__.replace("Message", "").lower(), "content": extract_text(m.content)}
+                for m in history_messages[:20]
+            ]
+            traj_messages.append({"role": "assistant", "content": extract_text(response.content)[:2000]})
+            token_usage = {
+                "input_tokens": usage_meta.get("input_tokens", 0) if isinstance(usage_meta, dict) else 0,
+                "output_tokens": usage_meta.get("output_tokens", 0) if isinstance(usage_meta, dict) else 0,
+            }
+            # Non-blocking: run save in thread pool so agent can continue immediately
+            # Fire-and-forget: failures are silently ignored to avoid impacting the agent
+            try:
+                asyncio.create_task(
+                    asyncio.to_thread(
+                        save_trajectory,
+                        user_id=user_id,
+                        session_id=session_id,
+                        messages=traj_messages,
+                        model=model_name,
+                        completed=True,
+                        tool_calls_count=current_turn_count,
+                        token_usage=token_usage,
+                    )
                 )
+            except Exception:
+                pass
 
         return {"messages": [response], "turn_count": next_turn_count}
 

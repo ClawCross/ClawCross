@@ -40,6 +40,7 @@ class CreateTopicRequest(BaseModel):
     max_rounds: int = Field(default=5, ge=1, le=20)  # 最大轮数
     schedule_yaml: Optional[str] = None   # YAML 格式的调度配置
     schedule_file: Optional[str] = None    # 调度配置文件路径
+    python_file: Optional[str] = None      # Python workflow 文件路径
     bot_enabled_tools: Optional[list[str]] = None  # 启用的工具列表
     bot_timeout: Optional[float] = None    # 超时时间（秒）
     early_stop: bool = False          # 是否启用提前终止

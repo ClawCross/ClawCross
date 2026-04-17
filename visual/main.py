@@ -190,7 +190,7 @@ def _convert_node_to_yaml_name(node: dict) -> str:
       - stateful=False（默认）→ "tag#temp#<instance>"（无状态 ExpertAgent）
       - stateful=True          → "tag#oasis#new"       （有状态 SessionExpert，自动创建）
     对于外部节点：
-      - "tag#ext#<ext_id>"  （外部 API 代理）
+      - "tag#platform#<ext_id>"  （外部 API 代理，platform 如 openclaw/claude/codex）
     对于 session_agent 节点：
       - 有标签:  "tag#oasis#<agent_name>"   （标签启用 persona 查找）
       - 无标签:  "#oasis#<agent_name>"      （名称→会话查找，引擎解析）
@@ -200,8 +200,9 @@ def _convert_node_to_yaml_name(node: dict) -> str:
 
     if node_type == "external":
         tag = node.get("tag", "custom")
+        platform = node.get("platform", tag)  # platform from node or fallback to tag
         external_id = node.get("ext_id", "1")
-        return f"{tag}#ext#{external_id}"
+        return f"{tag}#{platform}#{external_id}"
 
     if node_type == "session_agent":
         agent_name = node.get("agent_name") or node.get("name", "Agent")
