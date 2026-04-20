@@ -10095,8 +10095,13 @@ async function openGroup(teamName) {
         '<div id="team-skill-view-name" style="font-size:16px;font-weight:700;color:#111827;"></div>' +
         '<div id="team-skill-view-meta" style="font-size:11px;color:#6b7280;margin-top:4px;"></div>' +
         '</div>' +
+        '<div style="display:flex;gap:8px;align-items:center;">' +
+        '<button id="team-skill-save-btn" onclick="saveTeamSkillDetail()" style="padding:6px 12px;background:#2563eb;color:white;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">保存</button>' +
+        '<button id="team-skill-delete-btn" onclick="deleteTeamSkillDetail()" style="padding:6px 12px;background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">删除</button>' +
         '</div>' +
-        '<pre id="team-skill-view-content" style="white-space:pre-wrap;word-break:break-word;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:12px;font-size:12px;line-height:1.6;color:#1f2937;overflow:auto;"></pre>' +
+        '</div>' +
+        '<textarea id="team-skill-view-content" spellcheck="false" style="width:100%;min-height:360px;box-sizing:border-box;white-space:pre-wrap;word-break:break-word;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:12px;font-size:12px;line-height:1.6;color:#1f2937;overflow:auto;font-family:monospace;resize:vertical;"></textarea>' +
+        '<div id="team-skill-view-status" style="margin-top:8px;font-size:12px;color:#6b7280;"></div>' +
         '</div>' +
         '</div>' +
         '</div>' +
@@ -10517,6 +10522,8 @@ async function loadTeamMembers() {
 // Store preview data for export
 let _exportPreviewData = null;
 let _exportSelectedSkills = new Set(); // Store selected skill IDs: "agent/skill", "managed_personal/skill", or "managed_team/skill"
+let _teamSkillCurrentName = '';
+let _teamSkillCurrentScope = 'team';
 
 /**
  * Toggle all skills based on the "select all" checkbox
@@ -13045,11 +13052,15 @@ async function loadTeamSkillDetail(skillName, scope) {
     const nameEl = document.getElementById('team-skill-view-name');
     const metaEl = document.getElementById('team-skill-view-meta');
     const contentEl = document.getElementById('team-skill-view-content');
+    const statusEl = document.getElementById('team-skill-view-status');
     if (!contentEl) return;
+    _teamSkillCurrentName = skillName;
+    _teamSkillCurrentScope = scope || 'team';
     if (emptyEl) emptyEl.style.display = 'none';
     if (viewEl) viewEl.style.display = '';
     if (nameEl) nameEl.textContent = skillName;
     if (metaEl) metaEl.textContent = '加载中...';
+    if (statusEl) statusEl.textContent = '';
     contentEl.textContent = '';
 
     try {
@@ -13066,6 +13077,56 @@ async function loadTeamSkillDetail(skillName, scope) {
     } catch (e) {
         if (metaEl) metaEl.textContent = '加载失败';
         contentEl.textContent = String(e.message || e);
+    }
+}
+
+async function saveTeamSkillDetail() {
+    if (!currentGroupId || !_teamSkillCurrentName) return;
+    const contentEl = document.getElementById('team-skill-view-content');
+    const statusEl = document.getElementById('team-skill-view-status');
+    const saveBtn = document.getElementById('team-skill-save-btn');
+    if (!contentEl) return;
+
+    if (statusEl) statusEl.textContent = '保存中...';
+    if (saveBtn) saveBtn.disabled = true;
+    try {
+        const resp = await fetch(`/teams/${encodeURIComponent(currentGroupId)}/skills/${encodeURIComponent(_teamSkillCurrentName)}?scope=${encodeURIComponent(_teamSkillCurrentScope)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: contentEl.value }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.error || '保存失败');
+        if (statusEl) statusEl.textContent = '✅ 已保存';
+        await loadTeamSkills();
+        await loadTeamSkillDetail(_teamSkillCurrentName, _teamSkillCurrentScope);
+    } catch (e) {
+        if (statusEl) statusEl.textContent = '❌ 保存失败: ' + String(e.message || e);
+    } finally {
+        if (saveBtn) saveBtn.disabled = false;
+    }
+}
+
+async function deleteTeamSkillDetail() {
+    if (!currentGroupId || !_teamSkillCurrentName) return;
+    const statusEl = document.getElementById('team-skill-view-status');
+    const scopeLabel = _teamSkillCurrentScope === 'team' ? '团队' : '共享';
+    if (!confirm(`删除${scopeLabel} Skill「${_teamSkillCurrentName}」？`)) return;
+    try {
+        const resp = await fetch(`/teams/${encodeURIComponent(currentGroupId)}/skills/${encodeURIComponent(_teamSkillCurrentName)}?scope=${encodeURIComponent(_teamSkillCurrentScope)}`, {
+            method: 'DELETE',
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.error || '删除失败');
+        if (statusEl) statusEl.textContent = '✅ 已删除';
+        _teamSkillCurrentName = '';
+        const emptyEl = document.getElementById('team-skill-view-empty');
+        const viewEl = document.getElementById('team-skill-view');
+        if (emptyEl) emptyEl.style.display = '';
+        if (viewEl) viewEl.style.display = 'none';
+        await loadTeamSkills();
+    } catch (e) {
+        if (statusEl) statusEl.textContent = '❌ 删除失败: ' + String(e.message || e);
     }
 }
 

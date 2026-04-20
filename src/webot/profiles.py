@@ -37,6 +37,12 @@ SESSION_CONTEXT_TOOLS = (
 SEARCH_TOOLS = (
     "web_search",
     "web_news",
+    "web_search_json",
+    "web_news_json",
+    "web_fetch_url",
+    "web_browser_search",
+    "web_browser_fetch",
+    "web_research_brief",
     "call_llm_api",
 )
 

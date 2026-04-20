@@ -8,6 +8,7 @@ Use it when YAML graph scheduling is too rigid and you want:
 - loops, retries, fan-out, and synthesis logic
 - direct `send_agent(...)` / `send_persona(...)` calls
 - scripts that can run from ClawCross, MCP, or plain CLI
+- scripts that can live inside or outside the repository tree
 
 This is the current recommended model. New Python workflow files should be
 written as **self-bootstrapped scripts**, not the old injected top-level style.
@@ -62,6 +63,13 @@ if __name__ == "__main__":
     raise SystemExit(run_cli(main))
 ```
 
+This is the **minimum viable pattern**:
+
+- import the runtime
+- define `main(ctx)`
+- return results through `ctx`
+- exit through `run_cli(main)`
+
 If `oasis.python_workflow_cli` is already importable, do not add any bootstrap code.
 If it is not importable yet, any import strategy is acceptable:
 
@@ -73,6 +81,11 @@ If it is not importable yet, any import strategy is acceptable:
 - install the project in editable mode
 
 The workflow file does not need to live under the repository tree.
+
+Two practical consequences:
+
+- a file under `data/user_files/.../oasis/python/` is just a convenient saved workflow location
+- a file under `/tmp`, another repo, or your home directory can also work if imports are available
 
 ---
 
@@ -96,6 +109,26 @@ Optional:
 
 - `--result-file /tmp/run.json`
 - `--no-auto-topic`
+
+### 1a. Repo-external script, explicit import path
+
+This is the safest way to run a workflow file that lives outside the repository:
+
+```bash
+CLAWCROSS_PYTHONPATH="/abs/path/to/ClawCross:/abs/path/to/ClawCross/src" \
+/abs/path/to/ClawCross/.venv/bin/python /any/folder/my_workflow.py \
+  --question "Do the work" \
+  --user-id xinyuan \
+  --team my-team
+```
+
+This works because:
+
+- the interpreter comes from the project runtime
+- `CLAWCROSS_PYTHONPATH` makes both `oasis/` and `src/` imports available
+
+Using the project interpreter alone is often not enough for repo-external files.
+The import path still has to be available.
 
 ### 2. From the wrapper script
 
@@ -324,6 +357,26 @@ The default editor scaffold uses:
 
 This is usually a good default for team discussion workflows.
 
+### Software delivery loop
+
+For an engineering team, a useful Python-native pattern is:
+
+1. Product/PM creates the scoped delivery brief
+2. Architect defines build order and interfaces
+3. Frontend and backend run in parallel
+4. QA performs review / ATE-style acceptance checks
+5. PM acts as final product acceptance gate
+6. If rejected, review feedback loops back into another implementation round
+7. DevOps writes the deployment and rollback plan
+
+This kind of iterative delivery loop is awkward in YAML but straightforward in Python.
+
+Concrete examples:
+
+- repo example: [`docs/workflowpy_example.py`](./workflowpy_example.py)
+- repo-external example: [`/home/avalon/.openclaw/workspace/skills/testworkflow_code_team.py`](/home/avalon/.openclaw/workspace/skills/testworkflow_code_team.py:1)
+- team-saved example: [`data/user_files/default/teams/Code Team/oasis/python/code_team_full_delivery_loop.py`](/home/avalon/.openclaw/workspace/skills/ClawCross/data/user_files/default/teams/Code%20Team/oasis/python/code_team_full_delivery_loop.py:1)
+
 ---
 
 ## Agent-Written Workflow Guidance
@@ -339,6 +392,7 @@ If an AI agent is asked to generate a Python workflow, it should follow these ru
 - do not assume implicit memory is enough
 - store structured outputs in `ctx.set_result(...)`
 - use `ctx.set_conclusion(...)` for a short final summary
+- when generating a repo-external file, do not hardcode a repository path; prefer normal imports first, then `CLAWCROSS_PYTHONPATH` / `CLAWCROSS_PROJECT_ROOT`
 
 ---
 
@@ -370,5 +424,6 @@ Relevant files:
 - [`oasis/forum_client.py`](../oasis/forum_client.py)
 - [`oasis/workflow_templates/team_all_agents_sequential.py`](../oasis/workflow_templates/team_all_agents_sequential.py)
 - [`oasis/workflow_templates/team_all_agents_parallel.py`](../oasis/workflow_templates/team_all_agents_parallel.py)
+- [`workflowpy_example.py`](./workflowpy_example.py)
 - [`create_workflow.md`](./create_workflow.md)
 - [`oasis-reference.md`](./oasis-reference.md)

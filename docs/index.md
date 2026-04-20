@@ -30,6 +30,7 @@ If you are an agent, do **not** load everything by default. Start with `AGENTS.m
 | Understand OASIS runtime behavior, Town Mode, GraphRAG memory, or ReportAgent | [`oasis-reference.md`](./oasis-reference.md) | [`runtime-reference.md`](./runtime-reference.md), [`create_workflow.md`](./create_workflow.md), [`build_team.md`](./build_team.md) |
 | Build Python-script OASIS workflows, call team agents from Python, or post into OASIS topics from code | [`workflowpy.md`](./workflowpy.md) | [`oasis-reference.md`](./oasis-reference.md), [`create_workflow.md`](./create_workflow.md), [`repo-index.md`](./repo-index.md) |
 | Understand runtime architecture / auth / services | [`runtime-reference.md`](./runtime-reference.md) | [`ports.md`](./ports.md), [`repo-index.md`](./repo-index.md) |
+| Inspect or extend MCP web search tools | [`mcp-search.md`](./mcp-search.md) | [`runtime-reference.md`](./runtime-reference.md), [`repo-index.md`](./repo-index.md) |
 | Find CLI syntax or examples | [`cli.md`](./cli.md) | `uv run scripts/cli.py <command> --help` |
 | Build a Team | [`build_team.md`](./build_team.md) | [`example_team.md`](./example_team.md) |
 | Convert a workflow canvas into a Team | [`team-creator.md`](./team-creator.md) | [`build_team.md`](./build_team.md), [`create_workflow.md`](./create_workflow.md) |
@@ -53,6 +54,7 @@ If you are an agent, do **not** load everything by default. Start with `AGENTS.m
 - [`build_team.md`](./build_team.md): Team creation, internal agents, OpenClaw members, personas
 - [`create_workflow.md`](./create_workflow.md): workflow YAML grammar and examples
 - [`workflowpy.md`](./workflowpy.md): Python-script workflow mode, agent center, and forum posting helpers
+- [`mcp-search.md`](./mcp-search.md): MCP web search tools, structured JSON search, page fetch, filters, and safety limits
 - [`oasis-reference.md`](./oasis-reference.md): OASIS runtime model, Town Mode, swarm / GraphRAG behavior, ReportAgent
 - [`webot-agent-runtime.md`](./webot-agent-runtime.md): WeBot delegated subagent runtime, profiles, tool boundaries, and the runtime DTO wiring
 - [`webot-claude-gap-analysis.md`](./webot-claude-gap-analysis.md): feature matrix vs Claude Code and the outstanding parity checklist

@@ -11,7 +11,8 @@
   "dependencies": {
     "@chenglou/pretext": "^0.0.4",
     "easystarjs": "^0.4.4",
-    "phaser": "^3.90.0"
+    "phaser": "^3.90.0",
+    "playwright": "^1.58.2"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",

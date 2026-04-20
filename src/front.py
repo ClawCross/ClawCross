@@ -4945,6 +4945,62 @@ def get_team_skill_detail(team_name, skill_name):
     return jsonify({"ok": True, "skill": skill})
 
 
+@app.route("/teams/<team_name>/skills/<skill_name>", methods=["PUT"])
+def update_team_skill_detail(team_name, skill_name):
+    """Update a single managed skill's SKILL.md content."""
+    user_id = session.get("user_id", "")
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+    if "/" in team_name or "\\" in team_name or team_name.startswith("."):
+        return jsonify({"error": "Invalid team name"}), 400
+    team_dir = os.path.join(root_dir, "data", "user_files", user_id, "teams", team_name)
+    if not os.path.exists(team_dir):
+        return jsonify({"error": "Team not found"}), 404
+
+    scope = str(request.args.get("scope") or "team").strip().lower()
+    if scope not in {"team", "personal"}:
+        return jsonify({"error": "Invalid scope"}), 400
+
+    body = request.get_json(force=True) or {}
+    content = str(body.get("content") or "")
+    if not content.strip():
+        return jsonify({"error": "content is required"}), 400
+
+    from webot.skills import edit_skill, get_skill
+
+    result = edit_skill(user_id, name=skill_name, content=content, team=team_name if scope == "team" else "")
+    if not result.get("success"):
+        return jsonify({"error": result.get("error") or "Update failed"}), 400
+
+    skill = get_skill(user_id, name=skill_name, team=team_name if scope == "team" else "")
+    return jsonify({"ok": True, "skill": skill, "result": result})
+
+
+@app.route("/teams/<team_name>/skills/<skill_name>", methods=["DELETE"])
+def delete_team_skill_detail(team_name, skill_name):
+    """Delete a team/shared managed skill from the selected scope."""
+    user_id = session.get("user_id", "")
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+    if "/" in team_name or "\\" in team_name or team_name.startswith("."):
+        return jsonify({"error": "Invalid team name"}), 400
+    team_dir = os.path.join(root_dir, "data", "user_files", user_id, "teams", team_name)
+    if not os.path.exists(team_dir):
+        return jsonify({"error": "Team not found"}), 404
+
+    scope = str(request.args.get("scope") or "team").strip().lower()
+    if scope not in {"team", "personal"}:
+        return jsonify({"error": "Invalid scope"}), 400
+
+    from webot.skills import delete_skill
+
+    result = delete_skill(user_id, name=skill_name, team=team_name if scope == "team" else "")
+    if not result.get("success"):
+        return jsonify({"error": result.get("error") or "Delete failed"}), 400
+
+    return jsonify({"ok": True, "result": result})
+
+
 # ------------------------------------------------------------------
 # User-level external_agents.json  (data/user_files/<user>/external_agents.json)
 # Same entry shape as team external_agents.json; used for non-team Ext + fast contacts.
