@@ -11,6 +11,7 @@ Clawcross CLI — 命令行控制工具
 import argparse
 import json
 import os
+import re
 import signal
 import socket
 import subprocess
@@ -19,6 +20,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 
 
 def _configure_stdio():
@@ -70,6 +72,145 @@ OASIS_BASE = f"http://127.0.0.1:{PORT_OASIS}"
 FRONT_BASE = f"http://127.0.0.1:{PORT_FRONTEND}"
 
 DEFAULT_USER = os.getenv("CLI_USER", "admin")
+
+
+def _workflow_yaml_dir(user_id: str, team: str = "") -> str:
+    user_root = os.path.join(PROJECT_ROOT, "data", "user_files", user_id)
+    if team:
+        return os.path.join(user_root, "teams", team, "oasis", "yaml")
+    return os.path.join(user_root, "oasis", "yaml")
+
+
+def _workflow_python_dir(user_id: str, team: str = "") -> str:
+    user_root = os.path.join(PROJECT_ROOT, "data", "user_files", user_id)
+    if team:
+        return os.path.join(user_root, "teams", team, "oasis", "python")
+    return os.path.join(user_root, "oasis", "python")
+
+
+def _iter_yaml_workflow_dirs(user_id: str, team: str = ""):
+    if not user_id:
+        return []
+    user_root = os.path.join(PROJECT_ROOT, "data", "user_files", user_id)
+    if team:
+        return [("team", team, _workflow_yaml_dir(user_id, team))]
+    dirs = [("personal", "", _workflow_yaml_dir(user_id, ""))]
+    teams_root = os.path.join(user_root, "teams")
+    if os.path.isdir(teams_root):
+        for team_name in sorted(os.listdir(teams_root)):
+            team_dir = os.path.join(teams_root, team_name)
+            if os.path.isdir(team_dir):
+                dirs.append(("team", team_name, _workflow_yaml_dir(user_id, team_name)))
+    return dirs
+
+
+def _iter_python_workflow_dirs(user_id: str, team: str = ""):
+    if not user_id:
+        return []
+    user_root = os.path.join(PROJECT_ROOT, "data", "user_files", user_id)
+    if team:
+        return [("team", team, _workflow_python_dir(user_id, team))]
+    dirs = [("personal", "", _workflow_python_dir(user_id, ""))]
+    teams_root = os.path.join(user_root, "teams")
+    if os.path.isdir(teams_root):
+        for team_name in sorted(os.listdir(teams_root)):
+            team_dir = os.path.join(teams_root, team_name)
+            if os.path.isdir(team_dir):
+                dirs.append(("team", team_name, _workflow_python_dir(user_id, team_name)))
+    return dirs
+
+
+def _resolve_yaml_workflow_path(user_id: str, name: str, team: str = ""):
+    if not name:
+        return None, "未提供 workflow 文件名"
+    target = name if name.endswith((".yaml", ".yml")) else f"{name}.yaml"
+    matches = []
+    for scope, team_name, yaml_dir in _iter_yaml_workflow_dirs(user_id, team):
+        path = os.path.join(yaml_dir, target)
+        if os.path.isfile(path):
+            label = f"team:{team_name}" if scope == "team" else "personal"
+            matches.append((label, path))
+    if not matches:
+        return None, f"未找到 YAML workflow: {target}"
+    if len(matches) > 1:
+        where = ", ".join(label for label, _ in matches)
+        return None, f"找到多个同名 YAML workflow: {target}（{where}），请指定 --team"
+    return matches[0][1], None
+
+
+def _resolve_python_workflow_path(user_id: str, name: str, team: str = ""):
+    if not name:
+        return None, "未提供 python workflow 文件名"
+    target = name if name.endswith(".py") else f"{name}.py"
+    matches = []
+    for scope, team_name, py_dir in _iter_python_workflow_dirs(user_id, team):
+        path = os.path.join(py_dir, target)
+        if os.path.isfile(path):
+            label = f"team:{team_name}" if scope == "team" else "personal"
+            matches.append((label, path))
+    if not matches:
+        return None, f"未找到 Python workflow: {target}"
+    if len(matches) > 1:
+        where = ", ".join(label for label, _ in matches)
+        return None, f"找到多个同名 Python workflow: {target}（{where}），请指定 --team"
+    return matches[0][1], None
+
+
+def _python_runs_dir() -> str:
+    return os.path.join(PROJECT_ROOT, "data", "python_workflow_runs")
+
+
+def _spawn_standalone_python_workflow(*, user_id: str, python_file: str, question: str, team: str = ""):
+    runs_dir = _python_runs_dir()
+    os.makedirs(runs_dir, exist_ok=True)
+    run_id = uuid.uuid4().hex[:12]
+    log_path = os.path.join(runs_dir, f"{run_id}.log")
+    result_path = os.path.join(runs_dir, f"{run_id}.json")
+    meta_path = os.path.join(runs_dir, f"{run_id}.meta.json")
+    python_executable = os.path.join(PROJECT_ROOT, ".venv", "bin", "python")
+    if not os.path.isfile(python_executable):
+        python_executable = sys.executable
+    cmd = [
+        python_executable,
+        python_file,
+        "--user-id",
+        user_id or DEFAULT_USER,
+        "--question",
+        question or "",
+        "--result-file",
+        result_path,
+    ]
+    if team:
+        cmd.extend(["--team", team])
+    log_file = open(log_path, "a", encoding="utf-8")
+    proc = subprocess.Popen(
+        cmd,
+        cwd=PROJECT_ROOT,
+        env={
+            **os.environ,
+            "CLAWCROSS_PROJECT_ROOT": PROJECT_ROOT,
+            "CLAWCROSS_PYTHONPATH": PROJECT_ROOT,
+        },
+        stdout=log_file,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+    log_file.close()
+    meta = {
+        "run_id": run_id,
+        "pid": proc.pid,
+        "log_file": log_path,
+        "result_file": result_path,
+        "python_file": python_file,
+        "python_executable": python_executable,
+        "user_id": user_id,
+        "team": team,
+        "question": question,
+    }
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(meta, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+    return meta
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -1100,49 +1241,92 @@ def cmd_workflows(args):
         args: 命令行参数对象
     """
     act = args.action
+    workflow_type = getattr(args, "type", "all") or "all"
 
     if act == "list":
-        # 列出所有 workflow
-        params = {"user_id": args.user}
+        items = []
+        if workflow_type in ("all", "yaml"):
+            for scope, team_name, yaml_dir in _iter_yaml_workflow_dirs(args.user, args.team or ""):
+                if not os.path.isdir(yaml_dir):
+                    continue
+                files = sorted(f for f in os.listdir(yaml_dir) if f.endswith((".yaml", ".yml")))
+                for fname in files:
+                    desc = ""
+                    fpath = os.path.join(yaml_dir, fname)
+                    try:
+                        with open(fpath, "r", encoding="utf-8") as f:
+                            first = f.readline().strip()
+                        if first.startswith("#"):
+                            desc = first.lstrip("# ").strip()
+                    except Exception:
+                        pass
+                    items.append({
+                        "kind": "yaml",
+                        "file": fname,
+                        "description": desc,
+                        "scope": scope,
+                        "team": team_name,
+                    })
+        if workflow_type in ("all", "python"):
+            for scope, team_name, py_dir in _iter_python_workflow_dirs(args.user, args.team or ""):
+                if not os.path.isdir(py_dir):
+                    continue
+                files = sorted(f for f in os.listdir(py_dir) if f.endswith(".py"))
+                for fname in files:
+                    preview = ""
+                    fpath = os.path.join(py_dir, fname)
+                    try:
+                        with open(fpath, "r", encoding="utf-8") as f:
+                            preview = f.readline().strip()
+                    except Exception:
+                        pass
+                    items.append({
+                        "kind": "python",
+                        "file": fname,
+                        "description": preview[:100],
+                        "scope": scope,
+                        "team": team_name,
+                    })
+        if not items:
+            print("📭 暂无 workflow")
+            return
+        items.sort(key=lambda it: (it["kind"], it["scope"], it["team"], it["file"]))
+        print(f"📋 Workflows ({len(items)} 个):\n")
+        for workflow in items:
+            location = f"[team:{workflow['team']}]" if workflow["scope"] == "team" else "[personal]"
+            desc = workflow.get("description", "")
+            print(f"  • [{workflow['kind']}] {location} {workflow['file']}")
+            if desc:
+                print(f"    {desc}")
         if args.team:
-            params["team"] = args.team
-        code, body = _req("GET", f"{OASIS_BASE}/workflows", params=params)
-        if code == 200:
-            workflows = body.get("workflows", []) if isinstance(body, dict) else body
-            if not workflows:
-                print("📭 暂无 workflow")
-                return
-            print(f"📋 Workflows ({len(workflows)} 个):\n")
-            for workflow in workflows:
-                fname = workflow.get("file", "?")
-                desc = workflow.get("description", "")
-                print(f"  • {fname}")
-                if desc:
-                    print(f"    {desc}")
-            _print_doc_hint("workflow")
+            print(f"\n💡 当前只显示 team=\"{args.team}\" 下的 workflow。")
         else:
-            _err(code, body)
+            print("\n💡 未指定 --team，已展示 personal 和全部 team 的 workflow。")
+        _print_doc_hint("workflow")
 
     elif act == "show":
         # 显示 workflow 文件内容
         if not args.name:
             print("❌ 请指定 --name <workflow文件名>", file=sys.stderr)
             return
-        # 确定 workflow YAML 文件路径
-        params = {"user_id": args.user}
-        if args.team:
-            params["team"] = args.team
-        yaml_dir = os.path.join(PROJECT_ROOT, "data", "user_files", args.user)
-        if args.team:
-            yaml_dir = os.path.join(yaml_dir, "teams", args.team)
-        yaml_dir = os.path.join(yaml_dir, "oasis", "yaml")
-        fname = args.name if args.name.endswith(".yaml") else args.name + ".yaml"
-        yaml_path = os.path.join(yaml_dir, fname)
-        if os.path.isfile(yaml_path):
-            with open(yaml_path, "r", encoding="utf-8") as f:
-                print(f.read())
+        selected_type = workflow_type
+        if selected_type == "all":
+            if args.name.endswith(".py"):
+                selected_type = "python"
+            else:
+                selected_type = "yaml"
+        if selected_type == "python":
+            path, err = _resolve_python_workflow_path(args.user, args.name, args.team or "")
         else:
-            print(f"❌ 文件不存在: {yaml_path}", file=sys.stderr)
+            path, err = _resolve_yaml_workflow_path(args.user, args.name, args.team or "")
+        if err:
+            print(f"❌ {err}", file=sys.stderr)
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                print(f.read())
+        except Exception as e:
+            print(f"❌ 读取文件失败: {e}", file=sys.stderr)
 
     elif act == "save":
         # 保存 workflow
@@ -1181,22 +1365,56 @@ def cmd_workflows(args):
         if not args.question:
             print("❌ 请指定 --question <讨论问题/任务>", file=sys.stderr)
             return
-
-        data = {
-            "user_id": args.user,
-            "question": args.question,
-            "team": args.team or "",
-        }
-        # 优先使用 schedule_file（已保存的 workflow 文件名 -> 转为绝对路径）
-        if args.name:
-            fname = args.name if args.name.endswith(".yaml") else args.name + ".yaml"
-            if args.team:
-                yaml_dir = os.path.join(PROJECT_ROOT, "data", "user_files", args.user,
-                                         "teams", args.team, "oasis", "yaml")
+        selected_type = workflow_type
+        if selected_type == "all":
+            if args.name and args.name.endswith(".py"):
+                selected_type = "python"
+            elif args.python_file:
+                selected_type = "python"
             else:
-                yaml_dir = os.path.join(PROJECT_ROOT, "data", "user_files", args.user,
-                                         "oasis", "yaml")
-            data["schedule_file"] = os.path.join(yaml_dir, fname)
+                selected_type = "yaml"
+
+        if selected_type == "python":
+            if args.yaml or args.yaml_file:
+                print("❌ Python workflow 不支持 --yaml / --yaml-file，请使用 --name 或 --python-file", file=sys.stderr)
+                return
+            if args.python_file and args.name:
+                print("❌ 请只使用 --name 或 --python-file 其中一种", file=sys.stderr)
+                return
+            python_target = args.python_file or args.name
+            if not python_target:
+                print("❌ 请指定 --name <已保存的python workflow名> 或 --python-file <Python文件路径>", file=sys.stderr)
+                return
+            if os.path.isabs(python_target) or os.path.isfile(python_target):
+                python_path = python_target
+                if not os.path.isfile(python_path):
+                    print(f"❌ 文件不存在: {python_path}", file=sys.stderr)
+                    return
+            else:
+                python_path, err = _resolve_python_workflow_path(args.user, python_target, args.team or "")
+                if err:
+                    print(f"❌ {err}", file=sys.stderr)
+                    return
+            payload = _spawn_standalone_python_workflow(
+                user_id=args.user,
+                python_file=python_path,
+                question=args.question,
+                team=args.team or "",
+            )
+            print("🐍 Python workflow 已启动（standalone）")
+            print(f"   Run ID: {payload['run_id']}")
+            print(f"   PID: {payload['pid']}")
+            print(f"   Log: {payload['log_file']}")
+            print(f"   Result: {payload['result_file']}")
+            return
+
+        data = {"user_id": args.user, "question": args.question, "team": args.team or ""}
+        if args.name:
+            yaml_path, err = _resolve_yaml_workflow_path(args.user, args.name, args.team or "")
+            if err:
+                print(f"❌ {err}", file=sys.stderr)
+                return
+            data["schedule_file"] = yaml_path
         elif args.yaml_file:
             try:
                 with open(args.yaml_file, "r", encoding="utf-8") as f:
@@ -1221,7 +1439,7 @@ def cmd_workflows(args):
         if code == 200:
             tid = body.get("topic_id", "?")
             msg = body.get("message", "")
-            print(f"🚀 Workflow 已启动!")
+            print("🚀 YAML workflow 已启动!")
             print(f"   Topic ID: {tid}")
             print(f"   {msg}")
             print(f"\n   查看详情: uv run scripts/cli.py -u {args.user} topics show --topic-id {tid}")
@@ -2793,7 +3011,10 @@ def build_parser():
                    choices=["list", "show", "save", "run", "conclusion"],
                    help="操作 (默认: list)")
     c.add_argument("--team", help="Team 名称")
+    c.add_argument("--type", choices=["all", "yaml", "python"], default="all",
+                   help="workflow 类型 (list/show/run 时；默认: all)")
     c.add_argument("--name", help="Workflow 文件名 (show/save/run 时)")
+    c.add_argument("--python-file", help="Python workflow 文件路径 (run 时)")
     c.add_argument("--yaml", help="YAML 内容 (save/run 时，直接传入)")
     c.add_argument("--yaml-file", help="YAML 文件路径 (save/run 时，从文件读取)")
     c.add_argument("--description", help="Workflow 描述 (save 时)")

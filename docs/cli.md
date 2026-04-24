@@ -1,6 +1,6 @@
 # Clawcross CLI 命令大全
 
-> 最后更新：2026-04-01
+> 最后更新：2026-04-23
 
 ## 运行方式
 
@@ -58,7 +58,7 @@ uv run scripts/cli.py [-u USER] <子命令> [参数...]
 17. [teams](#17-teams) — Team 管理
 18. [topics](#18-topics) — OASIS 话题管理
 19. [personas](#19-personas) — 人设管理
-20. [workflows](#20-workflows) — Workflow 查看
+20. [workflows](#20-workflows) — YAML / Python Workflow 管理
 21. [tunnel](#21-tunnel) — Cloudflare Tunnel 管理
 22. [token](#22-token) — Token 生成与验证
 23. [status](#23-status) — 服务状态检查
@@ -690,25 +690,30 @@ uv run scripts/cli.py -u Avalon_01 personas delete --tag my_lawyer --team team2
 
 ## 20. workflows
 
-**OASIS Workflow 管理**
+**OASIS YAML / Python Workflow 管理**
 
 ```bash
-# 列出所有 workflow
+# 列出 personal + 全部 team 的 YAML/Python workflow
 uv run scripts/cli.py -u Avalon_01 workflows
 uv run scripts/cli.py -u Avalon_01 workflows list
 
-# 按 team 过滤
+# 只看 YAML 或 Python
+uv run scripts/cli.py -u Avalon_01 workflows list --type yaml
+uv run scripts/cli.py -u Avalon_01 workflows list --type python
+
+# 指定 team 后，只列该 team 下的 workflow
 uv run scripts/cli.py -u Avalon_01 workflows list --team team2
 
-# 查看 YAML 内容
+# 查看 workflow 内容
 uv run scripts/cli.py -u Avalon_01 workflows show --name creative_critical_workflow
+uv run scripts/cli.py -u Avalon_01 workflows show --type python --name my_python_flow
 uv run scripts/cli.py -u Avalon_01 workflows show --name test2flow --team team2
 
-# 保存 workflow（从文件）
+# 保存 YAML workflow（从文件）
 uv run scripts/cli.py -u Avalon_01 workflows save --name my_flow --yaml-file /path/to/flow.yaml --description "我的工作流"
 uv run scripts/cli.py -u Avalon_01 workflows save --name my_flow --yaml-file /path/to/flow.yaml --team team2
 
-# 保存 workflow（直接传 YAML）
+# 保存 YAML workflow（直接传 YAML）
 uv run scripts/cli.py -u Avalon_01 workflows save --name quick_flow --yaml 'version: 2
 plan:
   - id: s1
@@ -718,12 +723,19 @@ plan:
 edges:
   - [s1, s2]'
 
-# 运行 workflow（使用已保存的文件名）
+# 运行 YAML workflow（使用已保存的文件名）
 uv run scripts/cli.py -u Avalon_01 workflows run --name creative_critical_workflow --question "分析AI发展趋势"
 uv run scripts/cli.py -u Avalon_01 workflows run --name test2flow --team team2 --question "讨论产品策略"
 
-# 运行 workflow（从 YAML 文件）
+# 运行 YAML workflow（从 YAML 文件）
 uv run scripts/cli.py -u Avalon_01 workflows run --yaml-file /path/to/flow.yaml --question "分析数据"
+
+# 运行 Python workflow（已保存文件）
+uv run scripts/cli.py -u Avalon_01 workflows run --type python --name my_python_flow --question "生成报告"
+uv run scripts/cli.py -u Avalon_01 workflows run --type python --name team_flow --team team2 --question "执行任务"
+
+# 运行 Python workflow（直接指定文件路径）
+uv run scripts/cli.py -u Avalon_01 workflows run --type python --python-file /path/to/flow.py --question "执行任务"
 
 # 运行选项
 uv run scripts/cli.py -u Avalon_01 workflows run --name my_flow --question "问题" --max-rounds 10 --discussion true
@@ -742,7 +754,9 @@ uv run scripts/cli.py -u Avalon_01 workflows conclusion --topic-id abc12345 --ti
 |------|------|------|--------|
 | `action` | 操作 | 否 | `list` |
 | `--team` | Team 名称 | 否 | — |
-| `--name` | Workflow 文件名（可省略 `.yaml` 后缀） | show/save 时必填, run 时可选 | — |
+| `--type` | workflow 类型：`all`/`yaml`/`python` | 否 | `all` |
+| `--name` | Workflow 文件名（YAML 可省略 `.yaml`，Python 可省略 `.py`） | show/save 时必填, run 时可选 | — |
+| `--python-file` | Python workflow 文件路径 | run 时可选（与 `--name` 二选一） | — |
 | `--yaml` | 直接传入 YAML 内容 | save/run 时可选（与 `--yaml-file` 二选一） | — |
 | `--yaml-file` | YAML 文件路径 | save/run 时可选（与 `--yaml`/`--name` 二选一） | — |
 | `--description` | Workflow 描述 | 否 | — |
@@ -753,9 +767,21 @@ uv run scripts/cli.py -u Avalon_01 workflows conclusion --topic-id abc12345 --ti
 | `--topic-id` | 话题 ID | conclusion 时必填 | — |
 | `--timeout` | 等待超时秒数 | 否 | 300 |
 
-> `show` 直接读取本地 YAML 文件（`data/user_files/{user}/[teams/{team}/]oasis/yaml/{name}.yaml`），不走 HTTP。
+> `list` 在 **未指定 `--team` 时**，会自动聚合：
 >
-> `run` 返回 `topic_id`，用 `conclusion` 或 `topics show` 查看结果。
+> - `data/user_files/{user}/oasis/yaml/`
+> - `data/user_files/{user}/oasis/python/`
+> - `data/user_files/{user}/teams/*/oasis/yaml/`
+> - `data/user_files/{user}/teams/*/oasis/python/`
+>
+> 指定 `--team` 后，只显示该 team 下的 YAML/Python workflow。
+>
+> `show` 直接读取本地文件，不走 HTTP。默认按文件名后缀自动判断；也可显式传 `--type python`。
+>
+> `run` 分两类：
+>
+> - YAML workflow：返回 `topic_id`，用 `conclusion` 或 `topics show` 查看结果。
+> - Python workflow：standalone 启动，直接返回 `run_id`、`log`、`result` 路径。
 >
 > 如果 workflow 包含 `human` 节点，运行时回复入口不在 workflow 编辑器本身，而在 OASIS topic detail 中；CLI 对应命令是 `topics human-reply`。
 

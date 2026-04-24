@@ -1675,7 +1675,7 @@ def proxy_openai_completions():
                 "Content-Type": "application/json",
             },
             stream=True,
-            timeout=120,
+            timeout=None,
         )
         if r.status_code != 200:
             return Response(r.content, status=r.status_code, content_type=r.headers.get("content-type", "application/json"))
@@ -2399,7 +2399,7 @@ def proxy_openclaw_chat():
             json=body,
             headers=headers,
             stream=True,
-            timeout=120,
+            timeout=None,
         )
         if r.status_code != 200:
             return Response(r.content, status=r.status_code,

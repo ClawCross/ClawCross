@@ -34,6 +34,16 @@ class LlmFactoryTests(unittest.TestCase):
 
         self.assertEqual(provider, "ollama")
 
+    def test_infer_provider_does_not_use_api_key_prefix(self):
+        provider = llm_factory.infer_provider(
+            model="deepseek-chat",
+            base_url="",
+            provider="",
+            api_key="sk-any-provider-key",
+        )
+
+        self.assertEqual(provider, "deepseek")
+
     def test_get_provider_audio_defaults_returns_empty_values_for_ollama(self):
         defaults = llm_factory.get_provider_audio_defaults("ollama")
 

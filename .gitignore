@@ -75,6 +75,7 @@ data/oasis_discussions/
 data/python_workflow_runs/
 data/trajectories/
 data/timeset/
+data/runtime/
 
 # src 下运行时 SQLite / 用户数据（与 data/ 规则对齐）
 src/data/*.db

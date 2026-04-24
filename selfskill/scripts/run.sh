@@ -403,6 +403,25 @@ _clawcross_parse_start_flags() {
     done
 }
 
+ensure_llm_model_configured() {
+    if [ "${CLAWCROSS_ALLOW_EMPTY_LLM_MODEL:-0}" = "1" ]; then
+        return 0
+    fi
+
+    source config/.env 2>/dev/null || true
+    local llm_model="${LLM_MODEL:-}"
+    if [ -n "$llm_model" ] && [ "$llm_model" != "wait to set" ]; then
+        return 0
+    fi
+
+    echo ""
+    echo "❌ LLM_MODEL 未配置，已停止启动。"
+    echo "   请先设置模型，例如：bash selfskill/scripts/run.sh configure LLM_MODEL deepseek-chat"
+    echo "   可先查看可用模型：bash selfskill/scripts/run.sh auto-model"
+    echo "   如需临时允许空模型启动，仅本次可设置：CLAWCROSS_ALLOW_EMPTY_LLM_MODEL=1"
+    exit 1
+}
+
 case "${1:-help}" in
 
     start)
@@ -428,6 +447,8 @@ case "${1:-help}" in
             echo ""
             echo "⏭️  已指定 --no-openclaw：跳过从 OpenClaw 导入 LLM；launcher 不会预热 OpenClaw Gateway。"
         fi
+
+        ensure_llm_model_configured
 
         # launcher 会预热 OpenClaw gateway 并刷新 OPENCLAW_*（可用 CLAWCROSS_NO_OPENCLAW=1 禁用）
 
@@ -538,6 +559,8 @@ case "${1:-help}" in
             echo ""
             echo "⏭️  已指定 --no-openclaw：跳过从 OpenClaw 导入 LLM；launcher 不会预热 OpenClaw Gateway。"
         fi
+
+        ensure_llm_model_configured
 
         if [ "${NO_TUNNEL:-0}" = 1 ]; then
             echo ""

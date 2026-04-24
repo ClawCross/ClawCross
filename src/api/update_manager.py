@@ -108,6 +108,52 @@ def _tail_log(limit: int = 120) -> list[str]:
     return lines[-limit:]
 
 
+def _log_sections() -> list[tuple[str, list[str]]]:
+    """Split update log into run-scoped sections keyed by run_id."""
+    if not LOG_FILE.is_file():
+        return []
+    try:
+        lines = LOG_FILE.read_text(encoding="utf-8", errors="replace").splitlines()
+    except Exception:
+        return []
+
+    sections: list[tuple[str, list[str]]] = []
+    current_run_id = ""
+    current_lines: list[str] = []
+    marker = "queued update-"
+
+    for line in lines:
+        if marker in line:
+            if current_lines:
+                sections.append((current_run_id, current_lines))
+            current_lines = [line]
+            tail = line.split(marker, 1)[1].strip()
+            current_run_id = tail.split()[0] if tail else ""
+        elif current_lines:
+            current_lines.append(line)
+
+    if current_lines:
+        sections.append((current_run_id, current_lines))
+    return sections
+
+
+def _tail_log_for_run(run_id: str = "", limit: int = 120) -> list[str]:
+    sections = _log_sections()
+    if not sections:
+        return []
+
+    target_lines: list[str] | None = None
+    clean_run_id = str(run_id or "").strip()
+    if clean_run_id:
+        for section_run_id, section_lines in reversed(sections):
+            if section_run_id == clean_run_id:
+                target_lines = section_lines
+                break
+    if target_lines is None:
+        target_lines = sections[-1][1]
+    return target_lines[-limit:]
+
+
 def collect_repo_state(*, fetch_remote: bool = False) -> dict[str, Any]:
     branch = _git_output_or_default("unknown", "rev-parse", "--abbrev-ref", "HEAD")
     upstream = _detect_upstream(branch)
@@ -134,7 +180,6 @@ def collect_repo_state(*, fetch_remote: bool = False) -> dict[str, Any]:
         "latest_subject": latest_subject,
         "dirty": dirty,
         "has_update": has_update,
-        "log_tail": _tail_log(),
     }
 
 
@@ -143,6 +188,7 @@ def current_update_snapshot(*, fetch_remote: bool = False) -> dict[str, Any]:
     repo = collect_repo_state(fetch_remote=fetch_remote)
     merged = dict(status)
     merged.update(repo)
+    merged["log_tail"] = _tail_log_for_run(merged.get("run_id", ""))
     merged["in_progress"] = merged.get("status") in IN_PROGRESS_STATUSES
     return merged
 

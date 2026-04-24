@@ -202,12 +202,12 @@ def infer_provider(
     provider: str = "",
     api_key: str = "",
 ) -> str:
-    """根据模型名、base_url、api_key 自动推断 provider。
+    """根据显式 provider、base_url、模型名自动推断 provider。
 
     :param model: 模型名称
     :param base_url: API base URL
     :param provider: 显式指定的 provider
-    :param api_key: API key（用于通过前缀推断）
+    :param api_key: API key（保留参数用于兼容调用方；不参与 provider 推断）
     :return: provider 名称（openai/anthropic/google/deepseek/ollama/minimax）
     """
     normalized_provider = _normalize_provider_name(provider)
@@ -218,12 +218,6 @@ def infer_provider(
     for pattern, detected_provider in _BASE_URL_PROVIDER_PATTERNS:
         if pattern in base_url_lower:
             return detected_provider
-
-    api_key_clean = (api_key or "").strip()
-    if api_key_clean.startswith("sk-"):
-        return "openai"
-    if api_key_clean.startswith("AIza"):
-        return "google"
 
     model_lower = (model or "").strip().lower()
     for pattern, detected_provider in _MODEL_PROVIDER_PATTERNS.items():

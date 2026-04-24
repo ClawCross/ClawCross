@@ -59,30 +59,49 @@ Clone https://github.com/ClawCross/ClawCross.git, read AGENTS.md, and install Cl
 <details>
 <summary>Click to expand manual setup</summary>
 
-**Linux / macOS**
+**Fastest start**
 
 ```bash
-bash selfskill/scripts/run.sh start
-# start automatically handles venv, dependencies, acpx, .env init, and service startup
-# → Open http://127.0.0.1:51209
-# → First login: passwordless on localhost (or use the Magic Link printed in terminal)
-# → Setup wizard auto-appears if LLM not configured
+bash run.sh start
 ```
-
-**Windows PowerShell**
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\selfskill\scripts\run.ps1 start
-```
-
-**Verify & manage services**
-
-```bash
-bash selfskill/scripts/run.sh status    # check all services
-bash selfskill/scripts/run.sh stop      # stop all services
+powershell -ExecutionPolicy Bypass -File .\run.ps1 start
 ```
 
 Open the UI at `http://127.0.0.1:51209`.
+
+**Stop / status**
+
+```bash
+bash run.sh status
+bash run.sh stop
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\run.ps1 status
+powershell -ExecutionPolicy Bypass -File .\run.ps1 stop
+```
+
+**Notes**
+
+- `run.sh` / `run.ps1` are root-level wrappers around the canonical scripts under `selfskill/scripts/`.
+- `start` still handles venv, dependencies, `acpx`, `.env` init, and service startup automatically.
+- If `LLM_MODEL` is missing, startup now stops early and tells you to configure it instead of starting a half-usable stack.
+
+**Legacy full-path commands still work**
+
+```bash
+bash selfskill/scripts/run.sh start
+bash selfskill/scripts/run.sh status
+bash selfskill/scripts/run.sh stop
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\selfskill\scripts\run.ps1 start
+powershell -ExecutionPolicy Bypass -File .\selfskill\scripts\run.ps1 status
+powershell -ExecutionPolicy Bypass -File .\selfskill\scripts\run.ps1 stop
+```
 
 </details>
 

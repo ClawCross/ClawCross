@@ -35,6 +35,7 @@ from webot.context import (
 from webot.memory import ensure_memory_state
 from webot.skills import build_skills_prompt
 from webot.soul import build_soul_prompt
+from webot.workflow_prompt import build_team_workflow_prompt
 from webot.trajectory import save_trajectory
 from utils.context_references import expand_context_references
 from utils.routed_checkpoint_saver import ThreadRoutedAsyncSqliteSaver
@@ -78,6 +79,7 @@ from utils.token_budget import get_session_budget, SessionTokenBudget
 from utils.context_compressor import compress_context, CompressionStats
 from utils.cache_boundary import SystemPromptCacheManager
 from utils.bash_safety import analyze_command, is_command_blocked, RiskLevel
+from utils.logging_utils import get_logger
 from core.lazy_tool_discovery import LazyToolRegistry
 from core.agent_orchestrator import (
     create_fork, complete_fork, get_fork, list_forks, ForkMode,
@@ -101,6 +103,8 @@ from services.notification_system import (
     save_session_checkpoint, get_session_checkpoint, build_resume_prompt,
     create_broadcast,
 )
+
+logger = get_logger("agent")
 
 
 # 调试导出（已关闭）：原 _maybe_debug_dump_llm_payload_for_minimax 在 CLAWCROSS_DEBUG_LLM_PAYLOAD=1 时
@@ -508,6 +512,14 @@ class UserAwareToolNode:
             try:
                 tool_result = await self.tool_node.ainvoke(modified_state, config)
             except Exception as exc:
+                error_text = str(exc).strip() or exc.__class__.__name__
+                logger.exception(
+                    "tool execution failed user=%s session=%s tools=%s error=%s",
+                    user_id,
+                    session_id,
+                    [tc["name"] for tc in allowed_calls],
+                    error_text,
+                )
                 for tc in allowed_calls:
                     meta = allowed_call_meta.get(tc["id"])
                     if meta is None:
@@ -521,9 +533,21 @@ class UserAwareToolNode:
                             session_id=session_id,
                             tool_name=tool_name,
                             args=tool_args,
-                            result=str(exc),
+                            result=error_text,
                         )
-                raise
+                    result_messages.append(
+                        ToolMessage(
+                            content=(
+                                f"工具调用失败: {tool_name}\n"
+                                f"错误: {error_text}\n"
+                                "这通常表示传入参数不符合工具定义，"
+                                "请检查必填字段、字段名和参数类型后重试。"
+                            ),
+                            tool_call_id=tc["id"],
+                            name=tool_name,
+                        )
+                    )
+                return {"messages": result_messages}
             tool_messages = tool_result.get("messages", [])
             result_messages.extend(tool_messages)
             for msg in tool_messages:
@@ -1299,6 +1323,9 @@ class TeamAgent:
             skills_prompt = build_skills_prompt(user_id, team=session_team)
             if skills_prompt:
                 base_prompt += skills_prompt + "\n"
+            workflow_prompt = build_team_workflow_prompt(user_id, team=session_team)
+            if workflow_prompt:
+                base_prompt += workflow_prompt + "\n"
 
         runtime_plan = get_session_plan(user_id, session_id)
         runtime_todos = get_session_todos(user_id, session_id)

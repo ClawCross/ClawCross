@@ -59,6 +59,16 @@ def build_external_persona_prompt(tag: str = "", *, user_id: str = "", team: str
         return ""
 
     expert_name = str(matched.get("name", "") or persona_tag).strip()
+    workflow_prompt = ""
+    try:
+        try:
+            from webot.workflow_prompt import build_team_workflow_prompt
+        except Exception:
+            from src.webot.workflow_prompt import build_team_workflow_prompt
+        workflow_prompt = build_team_workflow_prompt(user_id or "", team=team or "")
+    except Exception as e:
+        _log(f"  -> workflow prompt import/build error: {e}")
+
     result = (
         "【外部 Agent 人设】\n"
         f"当前 persona tag: {persona_tag}\n"
@@ -66,5 +76,7 @@ def build_external_persona_prompt(tag: str = "", *, user_id: str = "", team: str
         "以下是你需要遵循的人设与行为描述：\n\n"
         f"{persona}"
     ).strip()
+    if workflow_prompt:
+        result += "\n\n" + workflow_prompt
     _log(f"  -> return {len(result)} chars")
     return result

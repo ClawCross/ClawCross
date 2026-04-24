@@ -1,3 +1,10 @@
+---
+name: clawcross
+description: Complete operator manual for installing, configuring, starting, debugging, and troubleshooting Clawcross across Linux, macOS, Windows, OpenClaw integration, ACP tools, and runtime operations.
+metadata:
+  short-description: Install, run, and troubleshoot Clawcross
+---
+
 # Clawcross — Install, Configure & Debug Guide
 
 > This is the complete operator manual for installing, configuring, running, and troubleshooting Clawcross.
@@ -40,13 +47,14 @@ Rules:
 
 ### Quick Start (Zero Questions)
 
-The simplest path: **no LLM key, no user account, and no manual `.env` editing are required before the first `start`.** Login can use the printed **Magic link** (or passwordless localhost). LLM and other settings are done **after** services are up — via the web setup wizard, OpenClaw import, or the CLI sections below.
+The simplest path: create `config/.env`, choose an `LLM_MODEL`, then run `start`. A missing LLM API key does not block startup if a local OpenClaw import can fill it, but **an empty `LLM_MODEL` now stops startup early** so the stack does not appear healthy while agents cannot answer. If you are intentionally bringing up only the shell services, set `CLAWCROSS_ALLOW_EMPTY_LLM_MODEL=1` for that one run.
 
 **How many commands?**
 
 | Situation | Typical commands |
 |---|---|
-| **Fresh machine / first clone** | **One:** **`start`** only (`start` / `start-foreground` 会按需运行与 `setup` 相同的 `setup_env`：venv、依赖、Linux 下 acpx 等). |
+| **Fresh machine / first clone with `LLM_MODEL` already set/importable** | **One:** **`start`** only (`start` / `start-foreground` 会按需运行与 `setup` 相同的 `setup_env`：venv、依赖、Linux 下 acpx 等). |
+| **Fresh machine with empty `LLM_MODEL`** | **Two:** configure a model first, then `start`. Use `auto-model` if you need to list available models after setting provider/key values. |
 | **Optional** | `setup` — 仅当你想**单独**重装/检查环境时；日常不必先跑。 |
 
 `start` automatically runs the equivalent of `configure --init` when `config/.env` is missing, so you **do not** need a separate `configure --init` unless you want to create or inspect `.env` before launching.
@@ -79,12 +87,13 @@ The `setup` command (optional standalone) automatically:
 The `start` command automatically:
 1. **When needed**, runs the same environment bootstrap as `setup` (`scripts/setup_env.sh` on Linux/macOS, or `setup_env.ps1` on Windows if venv/deps are still incomplete after the script’s built-in checks; on Linux/macOS, **acpx** is also installed when `npm` is present — Windows `setup_env.ps1` mirrors that)
 2. Creates `config/.env` from template if missing
-3. **Optionally** tries to copy LLM fields from local OpenClaw into `config/.env` when the key is still empty or placeholder — **failure is OK**; services still start — **skipped entirely** if you pass **`--no-openclaw`**
-4. Starts all services even if LLM is not fully configured yet
-5. Warms an installed OpenClaw gateway and refreshes runtime `OPENCLAW_*` values in `.env` (does not overwrite a **real** user-set `LLM_API_KEY`) — **skipped** if **`--no-openclaw`** (or env `CLAWCROSS_NO_OPENCLAW=1` for the launcher process)
-6. Starts **Cloudflare Tunnel** via `scripts/tunnel.py`, then prints **`🔗 Magic link`**: **local** and **remote** (when `PUBLIC_DOMAIN` is set). Operators and AI agents **must** pass these links to the user after install/start — **skipped** if **`--no-tunnel`** (Magic link text will state that no Tunnel was started).
+3. **Optionally** tries to copy LLM fields from local OpenClaw into `config/.env` when the key is still empty or placeholder — failure is OK if you will configure the key later — **skipped entirely** if you pass **`--no-openclaw`**
+4. Verifies `LLM_MODEL` is set before launching services; override only for shell-only diagnostics with `CLAWCROSS_ALLOW_EMPTY_LLM_MODEL=1`
+5. Starts all services after the model check passes
+6. Warms an installed OpenClaw gateway and refreshes runtime `OPENCLAW_*` values in `.env` (does not overwrite a **real** user-set `LLM_API_KEY`) — **skipped** if **`--no-openclaw`** (or env `CLAWCROSS_NO_OPENCLAW=1` for the launcher process)
+7. Starts **Cloudflare Tunnel** via `scripts/tunnel.py`, then prints **`🔗 Magic link`**: **local** and **remote** (when `PUBLIC_DOMAIN` is set). Operators and AI agents **must** pass these links to the user after install/start — **skipped** if **`--no-tunnel`** (Magic link text will state that no Tunnel was started).
 
-After startup, the frontend setup wizard handles LLM configuration via the web UI. The wizard detects local OpenClaw and Antigravity-Manager and offers one-click import buttons.
+After startup, the frontend setup wizard handles remaining LLM configuration via the web UI. The wizard detects local OpenClaw and Antigravity-Manager and offers one-click import buttons.
 
 ### `start` / `start-foreground` flags (`run.sh` and `run.ps1` aligned)
 

@@ -122,6 +122,11 @@ const i18n = {
         available_tools: '🧰 可用工具',
         tool_calling: '（调用工具中...）',
         tool_return: '🔧 工具返回',
+        tool_call_args: '调用参数',
+        tool_full_output: '完整结果',
+        tool_page_prev: '上一页',
+        tool_page_next: '下一页',
+        tool_page_label: '第 {current}/{total} 页',
 
         // 文件上传
         max_images: '最多上传5张图片',
@@ -875,6 +880,11 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         available_tools: '🧰 Available Tools',
         tool_calling: '(Calling tool...)',
         tool_return: '🔧 Tool Return',
+        tool_call_args: 'Arguments',
+        tool_full_output: 'Full Output',
+        tool_page_prev: 'Prev',
+        tool_page_next: 'Next',
+        tool_page_label: 'Page {current}/{total}',
 
         // File upload
         max_images: 'Maximum 5 images',
@@ -1980,7 +1990,9 @@ function initSession() {
     }
     currentSessionId = saved;
     updateSessionDisplay();
-    loadSessionList().catch(() => {});
+    loadSessionList()
+        .then(() => switchToSession(currentSessionId, true, { quiet: true }))
+        .catch(() => {});
 }
 
 function updateSessionDisplay() {
@@ -3983,7 +3995,9 @@ async function switchToSession(sessionId, force = false, options = {}) {
 
     // 加载该会话的历史消息
     const chatBox = document.getElementById('chat-box');
-    chatBox.innerHTML = `<div class="text-xs text-gray-400 text-center py-4">${t('history_loading_msg')}</div>`;
+    if (!quiet) {
+        chatBox.innerHTML = `<div class="text-xs text-gray-400 text-center py-4">${t('history_loading_msg')}</div>`;
+    }
 
     try {
         const resp = await fetch('/proxy_session_history', {
@@ -4031,17 +4045,11 @@ async function switchToSession(sessionId, force = false, options = {}) {
                     <div class="flex justify-start">
                         <div class="bg-gray-100 border border-dashed border-gray-300 p-3 max-w-[85%] shadow-sm text-xs text-gray-500 rounded-lg">
                             <div class="font-semibold text-gray-600 mb-1">🔧 ${t('tool_return')}: ${escapeHtml(msg.tool_name || '')}</div>
-                            <pre class="whitespace-pre-wrap break-words">${escapeHtml(msg.content.length > 500 ? msg.content.slice(0, 500) + '...' : msg.content)}</pre>
+                            ${renderToolPager(msg.content, { title: t('tool_full_output') })}
                         </div>
                     </div>`;
             } else {
-                let toolCallsHtml = '';
-                if (msg.tool_calls && msg.tool_calls.length > 0) {
-                    const callsList = msg.tool_calls.map(tc =>
-                        `<span class="inline-block bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded mr-1 mb-1">🔧 ${escapeHtml(tc.name)}</span>`
-                    ).join('');
-                    toolCallsHtml = `<div class="mb-2">${callsList}</div>`;
-                }
+                const toolCallsHtml = renderToolCallDetails(msg.tool_calls);
                 chatBox.innerHTML += `
                     <div class="flex justify-start">
                         <div class="message-agent bg-white border p-4 max-w-[85%] shadow-sm text-gray-700 markdown-body tc-markdown" data-tts-ready="1">
@@ -5253,6 +5261,111 @@ function escapeHtml(str) {
     const div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML.replace(/"/g, '&quot;');
+}
+
+const TOOL_PAGER_CHARS = 2000;
+let _toolPagerSeq = 0;
+const _toolPagerStore = {};
+
+function _toolPagerNormalizeContent(value) {
+    if (value == null) return '';
+    if (typeof value === 'string') return value;
+    try {
+        return JSON.stringify(value, null, 2);
+    } catch (e) {
+        return String(value);
+    }
+}
+
+function _toolPagerSplitPages(value, pageChars = TOOL_PAGER_CHARS) {
+    const text = _toolPagerNormalizeContent(value);
+    if (!text) return [''];
+    const pages = [];
+    for (let i = 0; i < text.length; i += pageChars) {
+        pages.push(text.slice(i, i + pageChars));
+    }
+    return pages.length ? pages : [''];
+}
+
+function _toolPagerRegister(value) {
+    const key = `toolpager-${++_toolPagerSeq}`;
+    _toolPagerStore[key] = {
+        pages: _toolPagerSplitPages(value),
+        current: 0,
+    };
+    return key;
+}
+
+function _toolPagerLabel(current, total) {
+    return escapeHtml(t('tool_page_label', { current: current + 1, total }));
+}
+
+function renderToolPager(value, options = {}) {
+    const text = _toolPagerNormalizeContent(value);
+    const emptyText = options.emptyText || '';
+    if (!text && !emptyText) return '';
+    const key = _toolPagerRegister(text || emptyText);
+    const store = _toolPagerStore[key];
+    const total = store.pages.length;
+    const page = escapeHtml(store.pages[0] || '');
+    const title = options.title ? `<div style="font-weight:600;color:#4b5563;margin-bottom:6px;">${escapeHtml(options.title)}</div>` : '';
+    const pager = total > 1
+        ? `<div class="tool-pager-controls" style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+                <button type="button" onclick="toolPagerPrev('${key}')" style="padding:2px 8px;border:1px solid #d1d5db;border-radius:6px;background:white;font-size:11px;color:#374151;">${escapeHtml(t('tool_page_prev'))}</button>
+                <span id="${key}-label" style="font-size:11px;color:#6b7280;">${_toolPagerLabel(0, total)}</span>
+                <button type="button" onclick="toolPagerNext('${key}')" style="padding:2px 8px;border:1px solid #d1d5db;border-radius:6px;background:white;font-size:11px;color:#374151;">${escapeHtml(t('tool_page_next'))}</button>
+           </div>`
+        : '';
+    return `<div class="tool-pager-block" style="margin-top:8px;">
+        ${title}
+        <pre id="${key}-content" class="whitespace-pre-wrap break-words" style="margin:0;max-height:360px;overflow:auto;">${page}</pre>
+        ${pager}
+    </div>`;
+}
+
+function toolPagerSetPage(key, nextIndex) {
+    const store = _toolPagerStore[key];
+    if (!store || !store.pages.length) return;
+    const total = store.pages.length;
+    const current = ((Number(nextIndex) % total) + total) % total;
+    store.current = current;
+    const contentEl = document.getElementById(`${key}-content`);
+    const labelEl = document.getElementById(`${key}-label`);
+    if (contentEl) contentEl.textContent = store.pages[current] || '';
+    if (labelEl) labelEl.innerHTML = _toolPagerLabel(current, total);
+}
+
+function toolPagerPrev(key) {
+    const store = _toolPagerStore[key];
+    if (!store) return;
+    toolPagerSetPage(key, store.current - 1);
+}
+
+function toolPagerNext(key) {
+    const store = _toolPagerStore[key];
+    if (!store) return;
+    toolPagerSetPage(key, store.current + 1);
+}
+
+function renderToolCallBadges(toolCalls) {
+    if (!Array.isArray(toolCalls) || toolCalls.length === 0) return '';
+    return toolCalls.map((tc) => {
+        const name = escapeHtml(tc && tc.name ? tc.name : '');
+        return `<span class="inline-block bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded mr-1 mb-1">🔧 ${name}</span>`;
+    }).join('');
+}
+
+function renderToolCallDetails(toolCalls) {
+    if (!Array.isArray(toolCalls) || toolCalls.length === 0) return '';
+    const items = toolCalls.map((tc, idx) => {
+        const name = escapeHtml(tc && tc.name ? tc.name : '');
+        const args = tc && Object.prototype.hasOwnProperty.call(tc, 'args') ? tc.args : {};
+        return `<details style="margin-top:8px;border:1px solid #dbeafe;border-radius:10px;background:#f8fbff;">
+            <summary style="cursor:pointer;list-style:none;padding:10px 12px;font-size:12px;font-weight:600;color:#1d4ed8;">🔧 ${name || ('tool_' + (idx + 1))}</summary>
+            <div style="padding:0 12px 12px 12px;">${renderToolPager(args, { title: t('tool_call_args') })}</div>
+        </details>`;
+    }).join('');
+    return `<div class="mb-2">${renderToolCallBadges(toolCalls)}</div><div class="tool-call-details">${items}</div>`;
 }
 
 function triggerBlobDownload(blob, filename) {
@@ -6733,6 +6846,7 @@ async function handleSend() {
         const decoder = new TextDecoder();
         let buffer = '';
         let allSegmentTexts = [];  // 记录所有段落的文本
+        let sawToolActivity = false;
 
         // 辅助函数：封存当前文本气泡，添加朗读按钮
         function sealCurrentBubble() {
@@ -6752,15 +6866,23 @@ async function handleSend() {
         }
 
         // 辅助函数：创建工具调用指示区
-        function createToolIndicator(toolName, type) {
+        function createToolIndicator(toolName, type, payload = null) {
             if (type === 'end') {
                 // 查找最后一个同名且仍在运行的 indicator 并更新
-                const allRunning = chatBox.querySelectorAll(`.stream-tool-indicator[data-tool-name="${CSS.escape(toolName)}"] .stream-tool-running`);
-                const last = allRunning.length ? allRunning[allRunning.length - 1] : null;
-                if (last) {
-                    last.textContent = '✅';
-                    last.classList.remove('stream-tool-running');
-                    last.classList.add('stream-tool-done');
+                const allIndicators = chatBox.querySelectorAll(`.stream-tool-indicator[data-tool-name="${CSS.escape(toolName)}"]`);
+                const indicator = allIndicators.length ? allIndicators[allIndicators.length - 1] : null;
+                if (indicator) {
+                    const statusEl = indicator.querySelector('.stream-tool-status');
+                    if (statusEl) {
+                        statusEl.textContent = '✅';
+                        statusEl.classList.remove('stream-tool-running');
+                        statusEl.classList.add('stream-tool-done');
+                    }
+                    const detailsEl = indicator.querySelector('.stream-tool-result');
+                    if (detailsEl && payload != null) {
+                        detailsEl.innerHTML = renderToolPager(payload, { title: t('tool_full_output') });
+                        detailsEl.style.display = '';
+                    }
                 }
                 return;
             }
@@ -6769,7 +6891,7 @@ async function handleSend() {
             const d = document.createElement('div');
             d.className = 'stream-tool-indicator';
             d.dataset.toolName = toolName;
-            d.innerHTML = `<span class="stream-tool-icon">🔧</span> <span class="stream-tool-name">${escapeHtml(toolName)}</span> <span class="stream-tool-status stream-tool-running">…</span>`;
+            d.innerHTML = `<div><span class="stream-tool-icon">🔧</span> <span class="stream-tool-name">${escapeHtml(toolName)}</span> <span class="stream-tool-status stream-tool-running">…</span></div><div class="stream-tool-result" style="display:none;margin-top:8px;"></div>`;
             w.appendChild(d);
             chatBox.appendChild(w);
             chatBox.scrollTop = chatBox.scrollHeight;
@@ -6798,11 +6920,14 @@ async function handleSend() {
                         const m = delta.meta;
                         if (m.type === 'tools_start') {
                             // LLM 回复结束，即将调工具 → 封存当前气泡
+                            sawToolActivity = true;
                             sealCurrentBubble();
                         } else if (m.type === 'tool_start') {
+                            sawToolActivity = true;
                             createToolIndicator(m.name, 'start');
                         } else if (m.type === 'tool_end') {
-                            createToolIndicator(m.name, 'end');
+                            sawToolActivity = true;
+                            createToolIndicator(m.name, 'end', m.result);
                         } else if (m.type === 'tools_end') {
                             // 所有工具执行完毕（可选：加分隔符）
                         } else if (m.type === 'ai_start') {
@@ -6837,6 +6962,12 @@ async function handleSend() {
 
         if (!fullText && allSegmentTexts.length === 0) {
             agentDiv.innerHTML = `<span class="text-gray-400">${t('no_response')}</span>`;
+        }
+
+        const hasRenderedToolIndicators = !!chatBox.querySelector('.stream-tool-indicator');
+        if ((sawToolActivity || hasRenderedToolIndicators) && _ocChatMode === 'internal' && currentSessionId) {
+            await new Promise((resolve) => setTimeout(resolve, 300));
+            await switchToSession(currentSessionId, true, { quiet: true });
         }
 
         // After agent response, refresh OASIS topics (in case a new discussion was started)

@@ -56,9 +56,9 @@ if ($addUser -match "^[Yy]$") {
 
 Write-Host ""
 Write-Host "========== 4/4 Start services =========="
-& $runScript start
-
 $useTunnel = Read-Host "Start Cloudflare Tunnel for public access? (y/N)"
 if ($useTunnel -match "^[Yy]$") {
-    & $runScript start-tunnel
+    & $runScript start
+} else {
+    & $runScript start --no-tunnel
 }

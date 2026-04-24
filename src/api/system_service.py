@@ -19,6 +19,7 @@ from services.message_builder import build_human_message
 from api.system_models import SystemTriggerRequest
 
 logger = get_logger("system_service")
+_GRAPH_RECURSION_LIMIT = 100
 
 
 @dataclass(frozen=True)
@@ -277,7 +278,10 @@ class SystemService:
 
     async def _run_single_trigger(self, req: SystemTriggerRequest, human_msg: HumanMessage) -> None:
         thread_id = self._thread_id(req)
-        config = {"configurable": {"thread_id": thread_id}}
+        config = {
+            "configurable": {"thread_id": thread_id},
+            "recursion_limit": _GRAPH_RECURSION_LIMIT,
+        }
         lock = await self.agent.get_thread_lock(thread_id)
         logger.info(
             "system_trigger waiting for lock on %s (will not cancel in-flight user run)",
@@ -310,7 +314,10 @@ class SystemService:
                 batch = await self._drain_coalesced_batch(queue_key)
                 if batch:
                     req = batch[0].req
-                    config = {"configurable": {"thread_id": thread_id}}
+                    config = {
+                        "configurable": {"thread_id": thread_id},
+                        "recursion_limit": _GRAPH_RECURSION_LIMIT,
+                    }
                     human_msg = self._build_coalesced_message(batch)
                     await self._invoke_system_message_locked(
                         req=req,

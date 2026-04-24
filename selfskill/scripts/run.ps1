@@ -293,6 +293,29 @@ function Get-OpenClawAgentBindings {
     return @()
 }
 
+function Assert-LlmModelConfigured {
+    if ($env:CLAWCROSS_ALLOW_EMPTY_LLM_MODEL -eq "1") {
+        return
+    }
+
+    $envValues = Read-ClawcrossEnvFile -Path $envPath
+    $llmModel = ""
+    if ($envValues.ContainsKey("LLM_MODEL")) {
+        $llmModel = [string]$envValues["LLM_MODEL"]
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($llmModel) -and $llmModel -ne "wait to set") {
+        return
+    }
+
+    Write-Host ""
+    Write-Host "❌ LLM_MODEL 未配置，已停止启动。"
+    Write-Host "   请先设置模型，例如：powershell -ExecutionPolicy Bypass -File .\selfskill\scripts\run.ps1 configure LLM_MODEL deepseek-chat"
+    Write-Host "   可先查看可用模型：powershell -ExecutionPolicy Bypass -File .\selfskill\scripts\run.ps1 auto-model"
+    Write-Host "   如需临时允许空模型启动，仅本次可设置：`$env:CLAWCROSS_ALLOW_EMPTY_LLM_MODEL='1'"
+    exit 1
+}
+
 function Show-Help {
     Write-Host "Clawcross Windows PowerShell entry point"
     Write-Host ""
@@ -558,6 +581,8 @@ switch ($Command) {
             }
         }
 
+        Assert-LlmModelConfigured
+
         Stop-ClawcrossServiceProcesses | Out-Null
         Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
 
@@ -707,6 +732,8 @@ switch ($Command) {
             }
         }
 
+        Assert-LlmModelConfigured
+
         if ($startOpts.NoTunnel) {
             Write-Host ""
             Write-Host "ℹ️  start-foreground does not start Tunnel; --no-tunnel is ignored for this mode."
@@ -827,7 +854,20 @@ switch ($Command) {
         }
 
         $code = Invoke-ClawcrossPython -Arguments (@("selfskill\scripts\configure.py") + $Rest)
-        exit $code
+        if ($code -ne 0) {
+            exit $code
+        }
+        if ($Rest[0] -eq "--init") {
+            Write-Host ""
+            Write-Host "=== init 完成，自动触发 OpenClaw 检测 ==="
+            $powershellExe = Join-Path $PSHOME "powershell.exe"
+            if (-not (Test-Path $powershellExe)) {
+                $powershellExe = "powershell"
+            }
+            & $powershellExe -ExecutionPolicy Bypass -File $PSCommandPath check-openclaw
+            exit $LASTEXITCODE
+        }
+        exit 0
     }
 
     "auto-model" {

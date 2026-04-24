@@ -36,6 +36,7 @@ import time
 import stat
 import platform
 import shutil
+import locale
 import urllib.request
 import webbrowser
 from dotenv import load_dotenv
@@ -55,6 +56,7 @@ for stream_name in ("stdout", "stderr"):
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(PROJECT_ROOT)
 ENV_FILE_PATH = os.path.join(PROJECT_ROOT, "config", ".env")
+PLACEHOLDER = "wait to set"
 
 # 检查 .env 配置文件是否存在（推荐用 run.sh/run.ps1 start，会自动 configure --init）
 if not os.path.exists("config/.env"):
@@ -65,6 +67,21 @@ if not os.path.exists("config/.env"):
 
 # 加载 .env 配置
 load_dotenv(dotenv_path=os.path.join(PROJECT_ROOT, "config", ".env"))
+
+_allow_empty_llm_model = (os.getenv("CLAWCROSS_ALLOW_EMPTY_LLM_MODEL") or "").strip().lower()
+if _allow_empty_llm_model not in ("1", "true", "yes", "on"):
+    llm_model = (os.getenv("LLM_MODEL") or "").strip()
+    if not llm_model or llm_model == PLACEHOLDER:
+        print("❌ LLM_MODEL 未配置，已停止启动。")
+        print("   请先设置模型，例如：")
+        if sys.platform == "win32":
+            print("   powershell -ExecutionPolicy Bypass -File .\\selfskill\\scripts\\run.ps1 configure LLM_MODEL deepseek-chat")
+            print("   可先查看可用模型：powershell -ExecutionPolicy Bypass -File .\\selfskill\\scripts\\run.ps1 auto-model")
+        else:
+            print("   bash selfskill/scripts/run.sh configure LLM_MODEL deepseek-chat")
+            print("   可先查看可用模型：bash selfskill/scripts/run.sh auto-model")
+        print("   如需临时允许空模型启动，可设置环境变量 CLAWCROSS_ALLOW_EMPTY_LLM_MODEL=1。")
+        sys.exit(1)
 
 # 读取各服务端口配置
 PORT_SCHEDULER = os.getenv("PORT_SCHEDULER", "51201")
@@ -78,9 +95,6 @@ venv_python = sys.executable
 # 子进程列表（用于管理所有启动的服务）
 child_procs = []
 cleanup_done = False
-
-# 占位符：环境变量尚未设置的标记
-PLACEHOLDER = "wait to set"
 
 
 def _init_env_placeholder(key: str):
@@ -253,13 +267,36 @@ def _command_output(args):
         result = subprocess.run(
             args,
             capture_output=True,
-            text=True,
             timeout=2,
             check=False,
         )
-        return result.returncode, result.stdout or ""
+        return result.returncode, _decode_command_output(result.stdout)
     except Exception:
         return -1, ""
+
+
+def _decode_command_output(data):
+    if isinstance(data, str):
+        return data
+
+    encodings = []
+    preferred = locale.getpreferredencoding(False)
+    if preferred:
+        encodings.append(preferred)
+    encodings.extend(["utf-8", "gbk", "cp936", "mbcs"])
+
+    tried = set()
+    for encoding in encodings:
+        normalized = (encoding or "").strip().lower()
+        if not normalized or normalized in tried:
+            continue
+        tried.add(normalized)
+        try:
+            return data.decode(encoding)
+        except Exception:
+            continue
+
+    return data.decode("utf-8", errors="replace")
 
 
 def is_port_listening(port):

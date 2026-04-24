@@ -22,6 +22,7 @@ from api.openai_models import ChatCompletionRequest, ChatMessage, OpenAIExecutio
 from api.openai_protocol import OpenAIProtocolHelper
 
 logger = get_logger("openai_service")
+_GRAPH_RECURSION_LIMIT = 100
 
 # --- Agent tool whitelist ---
 _USER_FILES_DIR = os.path.join(
@@ -158,6 +159,129 @@ class OpenAIChatService:
 
     def format_tool_calls_for_openai(self, ai_msg: AIMessage, external_names: set[str]) -> list[dict] | None:
         return self.protocol.format_tool_calls_for_openai(ai_msg, external_names)
+
+    @staticmethod
+    def _exception_chain(exc: Exception, limit: int = 8) -> list[Exception]:
+        chain: list[Exception] = []
+        seen: set[int] = set()
+        cur: Exception | None = exc
+        while cur is not None and id(cur) not in seen and len(chain) < limit:
+            chain.append(cur)
+            seen.add(id(cur))
+            next_exc = cur.__cause__ or cur.__context__
+            cur = next_exc if isinstance(next_exc, Exception) else None
+        return chain
+
+    def _exception_chain_text(self, exc: Exception) -> str:
+        parts: list[str] = []
+        for item in self._exception_chain(exc):
+            msg = str(item).strip() or item.__class__.__name__
+            parts.append(f"{item.__class__.__name__}: {msg}")
+        return " <- ".join(parts)
+
+    @staticmethod
+    def _preview_text(value: Any, limit: int = 1200) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, (dict, list)):
+            try:
+                text = json.dumps(value, ensure_ascii=False)
+            except Exception:
+                text = str(value)
+        else:
+            text = str(value)
+        text = text.strip()
+        if len(text) > limit:
+            return text[:limit] + "…"
+        return text
+
+    def _extract_exception_details(self, exc: Exception) -> dict[str, str]:
+        details: dict[str, str] = {}
+        for item in self._exception_chain(exc):
+            request = getattr(item, "request", None)
+            if request is not None:
+                details.setdefault("request_method", getattr(request, "method", "") or "")
+                with_id = str(getattr(request, "url", "") or "").strip()
+                if with_id:
+                    details.setdefault("request_url", with_id)
+
+            request_id = getattr(item, "request_id", None)
+            if request_id:
+                details.setdefault("request_id", str(request_id))
+
+            body = getattr(item, "body", None)
+            body_preview = self._preview_text(body)
+            if body_preview:
+                details.setdefault("response_body", body_preview)
+
+            response = getattr(item, "response", None)
+            if response is not None:
+                status_code = getattr(response, "status_code", None)
+                if status_code is not None:
+                    details.setdefault("status_code", str(status_code))
+                headers = getattr(response, "headers", None)
+                if headers is not None:
+                    rid = headers.get("request-id") or headers.get("x-request-id")
+                    if rid:
+                        details.setdefault("request_id", rid)
+                if "response_body" not in details:
+                    with contextlib.suppress(Exception):
+                        resp_text = (response.text or "").strip()
+                        if resp_text:
+                            details["response_body"] = self._preview_text(resp_text)
+        return details
+
+    def _llm_config_hint(self) -> str:
+        provider = (os.getenv("LLM_PROVIDER") or "").strip()
+        model = (os.getenv("LLM_MODEL") or "").strip()
+        base_url = (os.getenv("LLM_BASE_URL") or "").strip()
+        parts = []
+        if provider:
+            parts.append(f"provider={provider}")
+        if model:
+            parts.append(f"model={model}")
+        if base_url:
+            parts.append(f"base_url={base_url}")
+        return "；当前默认配置: " + " ".join(parts) if parts else ""
+
+    def _diagnose_exception(self, exc: Exception) -> str:
+        chain_text = self._exception_chain_text(exc)
+        lowered = chain_text.lower()
+
+        if "illegal status line" in lowered:
+            return (
+                "上游模型兼容网关/代理返回了损坏的 HTTP 响应，"
+                "不是提示词或工具参数错误。常见于第三方 Anthropic 兼容端点、"
+                "反向代理、CDN 或中转层协议异常。"
+                + self._llm_config_hint()
+            )
+        if "apiconnectionerror" in lowered or "remoteprotocolerror" in lowered:
+            return (
+                "这是上游模型连接/协议层错误，不是前端刷新逻辑问题，"
+                "也不像是 prompt 或 tool 参数本身导致。更像是模型服务、代理网关或网络链路异常。"
+                + self._llm_config_hint()
+            )
+        if "timeout" in lowered:
+            return "上游模型请求超时，通常是模型服务响应过慢或网络链路阻塞。" + self._llm_config_hint()
+        return "内部调用失败，需结合完整异常链继续排查。"
+
+    def _build_user_facing_error_text(self, exc: Exception) -> str:
+        chain = self._exception_chain(exc)
+        top = chain[0] if chain else exc
+        root = chain[-1] if chain else exc
+        top_msg = str(top).strip() or top.__class__.__name__
+        root_msg = str(root).strip() or root.__class__.__name__
+        diagnosis = self._diagnose_exception(exc)
+        details = self._extract_exception_details(exc)
+        text = (
+            f"响应异常: {top.__class__.__name__}: {top_msg}\n"
+            f"根因: {root.__class__.__name__}: {root_msg}\n"
+            f"原因分析: {diagnosis}"
+        )
+        response_body = details.get("response_body", "")
+        if response_body:
+            text += f"\n返回内容: {response_body}"
+        return text
 
     def auth_openai_request(self, req: ChatCompletionRequest, auth_header: str | None):
         """从 OpenAI 请求中提取认证信息并验证。"""
@@ -300,6 +424,25 @@ class OpenAIChatService:
             logger.info("non-stream cancelled user=%s session=%s", ctx.user_id, ctx.session_id)
             await self._patch_cancelled_tool_calls(ctx.config)
             return self.make_openai_response("⚠️ 已终止", model=ctx.model_name)
+        except Exception as e:
+            error_chain = self._exception_chain_text(e)
+            diagnosis = self._diagnose_exception(e)
+            details = self._extract_exception_details(e)
+            logger.exception(
+                "non-stream chat failed user=%s session=%s model=%s error=%s chain=%s diagnosis=%s request=%s %s status=%s request_id=%s response_body=%s",
+                ctx.user_id,
+                ctx.session_id,
+                ctx.model_name,
+                e,
+                error_chain,
+                diagnosis,
+                details.get("request_method", ""),
+                details.get("request_url", ""),
+                details.get("status_code", ""),
+                details.get("request_id", ""),
+                details.get("response_body", ""),
+            )
+            raise HTTPException(status_code=500, detail=self._build_user_facing_error_text(e)) from e
         finally:
             self.agent.unregister_task(task_key)
 
@@ -421,8 +564,27 @@ class OpenAIChatService:
                     ))
                     await queue.put("data: [DONE]\n\n")
                 except Exception as e:
+                    error_chain = self._exception_chain_text(e)
+                    diagnosis = self._diagnose_exception(e)
+                    details = self._extract_exception_details(e)
+                    logger.exception(
+                        "stream chat failed user=%s session=%s model=%s error=%s chain=%s diagnosis=%s request=%s %s status=%s request_id=%s response_body=%s",
+                        ctx.user_id,
+                        ctx.session_id,
+                        ctx.model_name,
+                        e,
+                        error_chain,
+                        diagnosis,
+                        details.get("request_method", ""),
+                        details.get("request_url", ""),
+                        details.get("status_code", ""),
+                        details.get("request_id", ""),
+                        details.get("response_body", ""),
+                    )
                     await queue.put(self.make_openai_chunk(
-                        f"\n❌ 响应异常: {str(e)}", model=ctx.model_name, completion_id=completion_id
+                        f"\n❌ {self._build_user_facing_error_text(e)}",
+                        model=ctx.model_name,
+                        completion_id=completion_id,
                     ))
                     await queue.put(self.make_openai_chunk(
                         "", model=ctx.model_name, finish_reason="stop", completion_id=completion_id
@@ -465,7 +627,10 @@ class OpenAIChatService:
 
         session_id = session_override or req.session_id or "default"
         thread_id = f"{user_id}#{session_id}"
-        config = {"configurable": {"thread_id": thread_id}}
+        config = {
+            "configurable": {"thread_id": thread_id},
+            "recursion_limit": _GRAPH_RECURSION_LIMIT,
+        }
 
         external_tool_names = self.extract_external_tool_names(req.tools)
         input_messages = self._build_input_messages(req)
