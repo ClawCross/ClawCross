@@ -13,6 +13,7 @@ PLAN_MODE_BLOCKED_TOOLS = frozenset(
         "run_command",
         "run_python_code",
         "cancel_subagent",
+        "delete_subagent",
         "set_oasis_workflow",
         "add_oasis_expert",
         "update_oasis_expert",

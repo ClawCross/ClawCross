@@ -7,7 +7,7 @@ from typing import Any, Awaitable, Callable
 import httpx
 from langchain_core.messages import HumanMessage
 
-from integrations.acpx_adapter import AcpxError, get_acpx_adapter
+from integrations.acpx_adapter import AcpxError, get_acpx_adapter, normalize_acpx_run_options
 from services.llm_factory import create_chat_model, extract_text
 
 
@@ -89,7 +89,7 @@ async def reset_agent(request: ResetAgentRequest) -> ResetAgentResult:
 async def _send_via_acp(request: SendToAgentRequest) -> SendToAgentResult:
     options = request.options or {}
     cwd = options.get("cwd")
-    timeout_sec = int(options.get("timeout_sec") or 180)
+    run_options = normalize_acpx_run_options(options, default_timeout_sec=180)
     prompt_text = request.prompt if isinstance(request.prompt, str) else str(request.prompt or "")
     attachments = options.get("attachments")
     try:
@@ -98,10 +98,13 @@ async def _send_via_acp(request: SendToAgentRequest) -> SendToAgentResult:
             tool=_canonical_platform(request.platform),
             session_key=request.session or "default",
             prompt_text=prompt_text,
-            timeout_sec=timeout_sec,
+            timeout_sec=run_options["timeout_sec"],
             reset_session=bool(options.get("reset_session")),
             system_prompt=options.get("system_prompt"),
             attachments=attachments,
+            ttl_sec=run_options["ttl_sec"],
+            approve_all=run_options["approve_all"],
+            non_interactive_permissions=run_options["non_interactive_permissions"],
         )
         return SendToAgentResult(
             ok=True,
@@ -127,6 +130,7 @@ async def _send_via_acp(request: SendToAgentRequest) -> SendToAgentResult:
 
 async def _reset_via_acp(request: ResetAgentRequest) -> ResetAgentResult:
     options = request.options or {}
+    run_options = normalize_acpx_run_options(options, default_timeout_sec=180)
     session_key = str(request.session or "").strip()
     if not session_key:
         return ResetAgentResult(ok=False, error="missing session")
@@ -138,12 +142,19 @@ async def _reset_via_acp(request: ResetAgentRequest) -> ResetAgentResult:
             await adapter.ops_openclaw_exec_slash(
                 session_key=session_key,
                 slash="/new",
-                timeout_sec=int(options.get("timeout_sec") or 180),
+                timeout_sec=run_options["timeout_sec"],
+                ttl_sec=run_options["ttl_sec"],
+                approve_all=run_options["approve_all"],
+                non_interactive_permissions=run_options["non_interactive_permissions"],
             )
         else:
             await adapter.ops_non_openclaw_reset_session(
                 tool=platform,
                 session_key=session_key,
+                timeout_sec=run_options["timeout_sec"],
+                ttl_sec=run_options["ttl_sec"],
+                approve_all=run_options["approve_all"],
+                non_interactive_permissions=run_options["non_interactive_permissions"],
             )
         cleared_http_sessions = await _clear_http_agent_session_records(options, session_key)
         return ResetAgentResult(

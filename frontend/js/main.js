@@ -10301,6 +10301,7 @@ async function openGroup(teamName) {
         '<button id="team-tab-members" onclick="switchTeamTab(\'members\')" style="padding:4px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid #2563eb;background:#2563eb;color:white;">👥 成员</button>' +
         '<button id="team-tab-experts" onclick="switchTeamTab(\'experts\')" style="padding:4px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid #d1d5db;background:#f9fafb;color:#374151;">🧑‍💼 人设池</button>' +
         '<button id="team-tab-workflows" onclick="switchTeamTab(\'workflows\')" style="padding:4px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid #d1d5db;background:#f9fafb;color:#374151;">📂 工作流</button>' +
+        '<button id="team-tab-alarms" onclick="switchTeamTab(\'alarms\')" style="padding:4px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid #d1d5db;background:#f9fafb;color:#374151;">⏰ 定时任务</button>' +
         '<button id="team-tab-skills" onclick="switchTeamTab(\'skills\')" style="padding:4px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid #d1d5db;background:#f9fafb;color:#374151;">🧩 Skill</button>' +
         '</div>' +
         '<div style="display:flex;gap:8px;align-items:center;">' +
@@ -10317,8 +10318,14 @@ async function openGroup(teamName) {
         '<button onclick="showImportTeamWorkflowTemplateModal()" class="text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1 rounded border border-blue-200" title="导入通用 Python 工作流模板">📥 导入模板</button>' +
         '<button onclick="newTeamWorkflowOnCanvas()" class="text-xs bg-purple-50 text-purple-600 hover:bg-purple-100 px-3 py-1 rounded border border-purple-200" title="新建工作流（跳转画布）">➕ 创建工作流</button>' +
         '</span>' +
+        '<span id="team-tab-actions-alarms" style="display:none;">' +
+        '<button onclick="loadTeamAlarms()" class="text-gray-400 hover:text-gray-600 hover:bg-gray-100 px-2 py-1 rounded transition-colors" title="刷新定时任务">🔄</button>' +
+        '</span>' +
         '<span id="team-tab-actions-skills" style="display:none;">' +
         '<button onclick="loadTeamSkills()" class="text-gray-400 hover:text-gray-600 hover:bg-gray-100 px-2 py-1 rounded transition-colors" title="刷新 Skill 列表">🔄</button>' +
+        '<button onclick="openTeamSkillHub()" class="text-xs bg-amber-50 text-amber-700 hover:bg-amber-100 px-3 py-1 rounded border border-amber-200" title="前往 ClawHub 查找 Skill">🌐 ClawHub</button>' +
+        '<button onclick="document.getElementById(\'team-skill-zip-input\').click()" class="text-xs bg-orange-50 text-orange-700 hover:bg-orange-100 px-3 py-1 rounded border border-orange-200" title="导入 Skill ZIP">📦 导入 Skill ZIP</button>' +
+        '<input id="team-skill-zip-input" type="file" accept=".zip" style="display:none;" onchange="importTeamSkillZip(this)">' +
         '</span>' +
         '<button onclick="toggleTeamMembersView()" class="text-gray-400 hover:text-gray-600 text-sm">&times;</button>' +
         '</div>' +
@@ -10364,6 +10371,36 @@ async function openGroup(teamName) {
         '</thead>' +
         '<tbody id="team-workflows-table-body">' +
         '</tbody>' +
+        '</table>' +
+        '</div>' +
+        '<div id="team-panel-alarms" class="team-members-table-container" style="display:none;padding:12px;">' +
+        '<form id="team-alarm-form" onsubmit="createTeamAlarm(event)" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;align-items:center;margin-bottom:6px;">' +
+        '<select id="team-alarm-target" title="目标" style="border:1px solid #d1d5db;border-radius:6px;padding:7px 8px;font-size:12px;min-width:0;"></select>' +
+        '<select id="team-alarm-repeat" title="重复" onchange="updateTeamAlarmScheduleControls()" style="border:1px solid #d1d5db;border-radius:6px;padding:7px 8px;font-size:12px;min-width:0;">' +
+        '<option value="once">只响一次</option>' +
+        '<option value="daily">每天</option>' +
+        '<option value="weekdays">工作日</option>' +
+        '<option value="weekends">周末</option>' +
+        '<option value="weekly">每周</option>' +
+        '<option value="monthly">每月</option>' +
+        '<option value="custom">自定义</option>' +
+        '</select>' +
+        '<input id="team-alarm-once-at" type="datetime-local" title="触发时间" onchange="updateTeamAlarmScheduleControls()" style="display:none;border:1px solid #d1d5db;border-radius:6px;padding:6px 8px;font-size:12px;min-width:0;">' +
+        '<input id="team-alarm-time" type="time" value="09:00" title="时间" onchange="updateTeamAlarmScheduleControls()" style="border:1px solid #d1d5db;border-radius:6px;padding:6px 8px;font-size:12px;min-width:0;">' +
+        '<select id="team-alarm-weekday" title="星期" onchange="updateTeamAlarmScheduleControls()" style="display:none;border:1px solid #d1d5db;border-radius:6px;padding:7px 8px;font-size:12px;min-width:0;">' +
+        '<option value="1">周一</option><option value="2">周二</option><option value="3">周三</option><option value="4">周四</option><option value="5">周五</option><option value="6">周六</option><option value="0">周日</option>' +
+        '</select>' +
+        '<select id="team-alarm-monthday" title="日期" onchange="updateTeamAlarmScheduleControls()" style="display:none;border:1px solid #d1d5db;border-radius:6px;padding:7px 8px;font-size:12px;min-width:0;">' +
+        Array.from({length:31}, (_, i) => `<option value="${i + 1}">每月 ${i + 1} 日</option>`).join('') +
+        '</select>' +
+        '<input id="team-alarm-custom-cron" placeholder="0 9 * * *" oninput="updateTeamAlarmScheduleControls()" style="display:none;border:1px solid #d1d5db;border-radius:6px;padding:7px 8px;font-size:12px;min-width:0;">' +
+        '<input id="team-alarm-text" placeholder="到点发送给该 agent 的任务内容" style="border:1px solid #d1d5db;border-radius:6px;padding:7px 8px;font-size:12px;min-width:0;">' +
+        '<button type="submit" class="text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-2 rounded border border-blue-200">添加</button>' +
+        '</form>' +
+        '<div id="team-alarm-schedule-preview" class="text-xs text-gray-500" style="margin:0 0 12px 2px;"></div>' +
+        '<table class="team-members-table">' +
+        '<thead><tr><th class="text-left">目标</th><th class="text-left">类型</th><th class="text-left">时间</th><th class="text-left">内容</th><th class="text-right">操作</th></tr></thead>' +
+        '<tbody id="team-alarms-table-body"></tbody>' +
         '</table>' +
         '</div>' +
         '<div id="team-panel-skills" class="team-members-table-container" style="display:none;padding:0;">' +
@@ -11288,7 +11325,7 @@ async function uploadTeam(input) {
 }
 
 // ── Import team dropdown & Hub import ──
-const TEAM_HUB_URL = 'https://clawcross.net';
+const TEAM_HUB_URL = 'https://clawhub.ai';
 
 function _buildClawCrossHubReturnUrl() {
     try {
@@ -13196,29 +13233,34 @@ function switchTeamTab(tab) {
     const btnMembers = document.getElementById('team-tab-members');
     const btnExperts = document.getElementById('team-tab-experts');
     const btnWorkflows = document.getElementById('team-tab-workflows');
+    const btnAlarms = document.getElementById('team-tab-alarms');
     const btnSkills = document.getElementById('team-tab-skills');
     const panelMembers = document.getElementById('team-panel-members');
     const panelExperts = document.getElementById('team-panel-experts');
     const panelWorkflows = document.getElementById('team-panel-workflows');
+    const panelAlarms = document.getElementById('team-panel-alarms');
     const panelSkills = document.getElementById('team-panel-skills');
     const actionsMembers = document.getElementById('team-tab-actions-members');
     const actionsExperts = document.getElementById('team-tab-actions-experts');
     const actionsWorkflows = document.getElementById('team-tab-actions-workflows');
+    const actionsAlarms = document.getElementById('team-tab-actions-alarms');
     const actionsSkills = document.getElementById('team-tab-actions-skills');
     if (!btnMembers || !btnExperts) return;
 
     // Reset all tabs to inactive
     const inactiveStyle = {background: '#f9fafb', color: '#374151', borderColor: '#d1d5db'};
-    [btnMembers, btnExperts, btnWorkflows, btnSkills].forEach(btn => {
+    [btnMembers, btnExperts, btnWorkflows, btnAlarms, btnSkills].forEach(btn => {
         if (btn) { btn.style.background = inactiveStyle.background; btn.style.color = inactiveStyle.color; btn.style.borderColor = inactiveStyle.borderColor; }
     });
     if (panelMembers) panelMembers.style.display = 'none';
     if (panelExperts) panelExperts.style.display = 'none';
     if (panelWorkflows) panelWorkflows.style.display = 'none';
+    if (panelAlarms) panelAlarms.style.display = 'none';
     if (panelSkills) panelSkills.style.display = 'none';
     if (actionsMembers) actionsMembers.style.display = 'none';
     if (actionsExperts) actionsExperts.style.display = 'none';
     if (actionsWorkflows) actionsWorkflows.style.display = 'none';
+    if (actionsAlarms) actionsAlarms.style.display = 'none';
     if (actionsSkills) actionsSkills.style.display = 'none';
 
     if (tab === 'experts') {
@@ -13231,6 +13273,11 @@ function switchTeamTab(tab) {
         if (panelWorkflows) panelWorkflows.style.display = '';
         if (actionsWorkflows) actionsWorkflows.style.display = '';
         loadTeamWorkflows();
+    } else if (tab === 'alarms') {
+        if (btnAlarms) { btnAlarms.style.background = '#dc2626'; btnAlarms.style.color = 'white'; btnAlarms.style.borderColor = '#dc2626'; }
+        if (panelAlarms) panelAlarms.style.display = '';
+        if (actionsAlarms) actionsAlarms.style.display = '';
+        loadTeamAlarms();
     } else if (tab === 'skills') {
         if (btnSkills) { btnSkills.style.background = '#f59e0b'; btnSkills.style.color = 'white'; btnSkills.style.borderColor = '#f59e0b'; }
         if (panelSkills) panelSkills.style.display = '';
@@ -13241,6 +13288,215 @@ function switchTeamTab(tab) {
         if (panelMembers) panelMembers.style.display = '';
         if (actionsMembers) actionsMembers.style.display = '';
         loadTeamMembers();
+    }
+}
+
+// ── Team Alarms ──
+let _teamAlarmTargets = [];
+
+function _teamAlarmPad2(value) {
+    return String(value).padStart(2, '0');
+}
+
+function _teamAlarmTimeParts() {
+    const timeInput = document.getElementById('team-alarm-time');
+    const raw = (timeInput?.value || '09:00').trim();
+    const match = raw.match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) return { hour: '9', minute: '0', label: '09:00' };
+    const hourNum = Math.max(0, Math.min(23, parseInt(match[1], 10) || 0));
+    const minuteNum = Math.max(0, Math.min(59, parseInt(match[2], 10) || 0));
+    return {
+        hour: String(hourNum),
+        minute: String(minuteNum),
+        label: `${_teamAlarmPad2(hourNum)}:${_teamAlarmPad2(minuteNum)}`,
+    };
+}
+
+function buildTeamAlarmCronFromControls() {
+    const repeat = document.getElementById('team-alarm-repeat')?.value || 'daily';
+    if (repeat === 'once') {
+        return '';
+    }
+    if (repeat === 'custom') {
+        return (document.getElementById('team-alarm-custom-cron')?.value || '').trim();
+    }
+    const { hour, minute } = _teamAlarmTimeParts();
+    if (repeat === 'weekdays') return `${minute} ${hour} * * 1-5`;
+    if (repeat === 'weekends') return `${minute} ${hour} * * 0,6`;
+    if (repeat === 'weekly') {
+        const dow = document.getElementById('team-alarm-weekday')?.value || '1';
+        return `${minute} ${hour} * * ${dow}`;
+    }
+    if (repeat === 'monthly') {
+        const dom = document.getElementById('team-alarm-monthday')?.value || '1';
+        return `${minute} ${hour} ${dom} * *`;
+    }
+    return `${minute} ${hour} * * *`;
+}
+
+function buildTeamAlarmScheduleFromControls() {
+    const repeat = document.getElementById('team-alarm-repeat')?.value || 'daily';
+    if (repeat === 'once') {
+        return {
+            schedule_type: 'once',
+            run_at: (document.getElementById('team-alarm-once-at')?.value || '').trim(),
+            cron: '',
+        };
+    }
+    return {
+        schedule_type: 'cron',
+        run_at: '',
+        cron: buildTeamAlarmCronFromControls(),
+    };
+}
+
+function teamAlarmOnceToHuman(runAt) {
+    const value = String(runAt || '').trim();
+    if (!value) return '只响一次';
+    const [datePart, timePart = ''] = value.split('T');
+    return `只响一次 ${datePart} ${timePart.slice(0, 5)}`.trim();
+}
+
+function teamAlarmCronToHuman(cron) {
+    const parts = String(cron || '').trim().split(/\s+/);
+    if (parts.length !== 5) return cron || '-';
+    const [minute, hour, day, month, weekday] = parts;
+    const simpleTime = /^\d+$/.test(hour) && /^\d+$/.test(minute)
+        ? `${_teamAlarmPad2(parseInt(hour, 10))}:${_teamAlarmPad2(parseInt(minute, 10))}`
+        : `${hour}:${minute}`;
+    if (day === '*' && month === '*' && weekday === '*') return `每天 ${simpleTime}`;
+    if (day === '*' && month === '*' && weekday === '1-5') return `工作日 ${simpleTime}`;
+    if (day === '*' && month === '*' && (weekday === '0,6' || weekday === '6,0')) return `周末 ${simpleTime}`;
+    const weekdayNames = { '0': '周日', '1': '周一', '2': '周二', '3': '周三', '4': '周四', '5': '周五', '6': '周六', '7': '周日' };
+    if (day === '*' && month === '*' && weekdayNames[weekday]) return `每周${weekdayNames[weekday].replace('周', '')} ${simpleTime}`;
+    if (/^\d+$/.test(day) && month === '*' && weekday === '*') return `每月 ${day} 日 ${simpleTime}`;
+    return cron || '-';
+}
+
+function updateTeamAlarmScheduleControls() {
+    const repeat = document.getElementById('team-alarm-repeat')?.value || 'daily';
+    const onceInput = document.getElementById('team-alarm-once-at');
+    const timeInput = document.getElementById('team-alarm-time');
+    const weekdaySelect = document.getElementById('team-alarm-weekday');
+    const monthdaySelect = document.getElementById('team-alarm-monthday');
+    const customCronInput = document.getElementById('team-alarm-custom-cron');
+    const preview = document.getElementById('team-alarm-schedule-preview');
+
+    if (onceInput) {
+        onceInput.style.display = repeat === 'once' ? '' : 'none';
+        if (repeat === 'once' && !onceInput.value) {
+            const now = new Date();
+            now.setMinutes(now.getMinutes() + 30);
+            now.setSeconds(0, 0);
+            onceInput.value = `${now.getFullYear()}-${_teamAlarmPad2(now.getMonth() + 1)}-${_teamAlarmPad2(now.getDate())}T${_teamAlarmPad2(now.getHours())}:${_teamAlarmPad2(now.getMinutes())}`;
+        }
+    }
+    if (timeInput) timeInput.style.display = repeat === 'custom' || repeat === 'once' ? 'none' : '';
+    if (weekdaySelect) weekdaySelect.style.display = repeat === 'weekly' ? '' : 'none';
+    if (monthdaySelect) monthdaySelect.style.display = repeat === 'monthly' ? '' : 'none';
+    if (customCronInput) customCronInput.style.display = repeat === 'custom' ? '' : 'none';
+
+    const schedule = buildTeamAlarmScheduleFromControls();
+    if (preview) {
+        const label = repeat === 'custom'
+            ? (schedule.cron ? `自定义：${schedule.cron}` : '自定义 cron')
+            : (repeat === 'once' ? teamAlarmOnceToHuman(schedule.run_at) : teamAlarmCronToHuman(schedule.cron));
+        preview.textContent = label;
+    }
+}
+
+async function loadTeamAlarms() {
+    if (!currentGroupId) return;
+    const tbody = document.getElementById('team-alarms-table-body');
+    const targetSelect = document.getElementById('team-alarm-target');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-gray-400 py-8">加载中...</td></tr>';
+    try {
+        const resp = await fetch(`/teams/${encodeURIComponent(currentGroupId)}/alarms`, { cache: 'no-store' });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.error || '加载失败');
+
+        _teamAlarmTargets = data.targets || [];
+        if (targetSelect) {
+            targetSelect.innerHTML = _teamAlarmTargets.length
+                ? _teamAlarmTargets.map((t, index) => `<option value="${index}">${escapeHtml(t.label || t.target_name)}</option>`).join('')
+                : '<option value="">暂无可用目标</option>';
+        }
+        updateTeamAlarmScheduleControls();
+
+        const alarms = data.alarms || [];
+        if (!alarms.length) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-gray-400 py-8">暂无定时任务</td></tr>';
+            return;
+        }
+        tbody.innerHTML = alarms.map(a => {
+            const taskId = escapeHtml(a.task_id || '');
+            const targetName = escapeHtml(a.target_name || a.target_ref || '-');
+            const targetType = escapeHtml(a.target_type || 'internal');
+            const cron = escapeHtml(a.cron || '');
+            const scheduleType = a.schedule_type || 'cron';
+            const runAt = a.run_at || '';
+            const scheduleLabel = escapeHtml(scheduleType === 'once' ? teamAlarmOnceToHuman(a.run_at || '') : teamAlarmCronToHuman(a.cron || ''));
+            const scheduleRaw = escapeHtml(scheduleType === 'once' ? runAt : (a.cron || ''));
+            const text = escapeHtml(a.text || '');
+            return `
+                <tr>
+                    <td class="font-medium text-gray-800">${targetName}</td>
+                    <td class="font-mono text-xs text-gray-500">${targetType}</td>
+                    <td><div class="text-xs text-gray-800">${scheduleLabel}</div><div class="font-mono text-[11px] text-gray-400">${scheduleRaw}</div></td>
+                    <td style="max-width:360px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${text}">${text}</td>
+                    <td style="text-align:right;white-space:nowrap;">
+                        <button onclick="deleteTeamAlarm('${taskId}')" class="text-red-500 hover:text-red-700 text-xs px-2 py-1 rounded hover:bg-red-50" title="删除">🗑️ 删除</button>
+                    </td>
+                </tr>`;
+        }).join('');
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center text-red-400 py-8">加载失败: ${escapeHtml(e.message || String(e))}</td></tr>`;
+    }
+}
+
+async function createTeamAlarm(event) {
+    if (event) event.preventDefault();
+    if (!currentGroupId) return;
+    const targetSelect = document.getElementById('team-alarm-target');
+    const textInput = document.getElementById('team-alarm-text');
+    const targetIndex = Number(targetSelect?.value ?? -1);
+    const target = Number.isInteger(targetIndex) ? _teamAlarmTargets[targetIndex] : null;
+    const targetType = target?.target_type || '';
+    const targetName = target?.target_name || '';
+    const schedule = buildTeamAlarmScheduleFromControls();
+    const text = (textInput?.value || '').trim();
+    if (!targetType || !targetName || !text || (schedule.schedule_type === 'cron' && !schedule.cron) || (schedule.schedule_type === 'once' && !schedule.run_at)) {
+        alert('请选择目标，并设置时间和任务内容');
+        return;
+    }
+    try {
+        const resp = await fetch(`/teams/${encodeURIComponent(currentGroupId)}/alarms`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ target_type: targetType, target_name: targetName, ...schedule, text }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.error || data.detail || '创建失败');
+        if (textInput) textInput.value = '';
+        await loadTeamAlarms();
+    } catch (e) {
+        alert('创建失败: ' + (e.message || String(e)));
+    }
+}
+
+async function deleteTeamAlarm(taskId) {
+    if (!currentGroupId || !taskId) return;
+    if (!confirm(`删除定时任务 ${taskId}？`)) return;
+    try {
+        const resp = await fetch(`/teams/${encodeURIComponent(currentGroupId)}/alarms/${encodeURIComponent(taskId)}`, {
+            method: 'DELETE',
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.error || data.detail || '删除失败');
+        await loadTeamAlarms();
+    } catch (e) {
+        alert('删除失败: ' + (e.message || String(e)));
     }
 }
 
@@ -13284,6 +13540,41 @@ async function loadTeamExperts() {
 }
 
 // ── Team Skills ──
+function openTeamSkillHub() {
+    const popup = window.open(_buildClawCrossHubUrl(), '_blank');
+    if (!popup) {
+        window.location.assign(_buildClawCrossHubUrl());
+    }
+}
+
+async function importTeamSkillZip(input) {
+    if (!currentGroupId || !input?.files?.[0]) return;
+    const file = input.files[0];
+    if (!confirm(`导入 Skill ZIP 到团队「${currentGroupId}」？`)) {
+        input.value = '';
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+        const resp = await fetch(`/teams/${encodeURIComponent(currentGroupId)}/skills/import-zip`, {
+            method: 'POST',
+            body: formData,
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || !data.ok) throw new Error(data.error || '导入失败');
+        const imported = data.direct?.imported?.length || 0;
+        const restored = (data.restored?.restored_team_skill_dirs || 0) + (data.restored?.restored_user_skill_dirs || 0);
+        alert(`导入成功：${imported + restored} 个 Skill`);
+        await loadTeamSkills();
+    } catch (e) {
+        alert('导入失败: ' + String(e.message || e));
+    } finally {
+        input.value = '';
+    }
+}
+
 async function loadTeamSkills() {
     if (!currentGroupId) return;
     const listEl = document.getElementById('team-skills-list');

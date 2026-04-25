@@ -259,6 +259,34 @@ class TestContextCompressor:
         result = level_evict(msgs, token_budget=200, preserve_recent=2)
         assert len(result) <= 4
 
+    def test_evict_preserves_latest_user_request(self):
+        from langchain_core.messages import HumanMessage, SystemMessage
+        from utils.context_compressor import level_evict
+
+        msgs = [
+            SystemMessage(content="system " + ("s" * 5000)),
+            HumanMessage(content="压缩摘要 " + ("x" * 5000)),
+            HumanMessage(content="latest user request must remain"),
+        ]
+        result = level_evict(msgs, token_budget=10, preserve_recent=1)
+        assert any(
+            isinstance(msg, HumanMessage) and str(msg.content).startswith("压缩摘要")
+            for msg in result
+        )
+        assert any(
+            isinstance(msg, HumanMessage) and msg.content == "latest user request must remain"
+            for msg in result
+        )
+
+    def test_collapse_summary_is_not_system_message(self):
+        from langchain_core.messages import HumanMessage, SystemMessage
+        from utils.context_compressor import level_collapse
+
+        msgs = [HumanMessage(content="old " * 200) for _ in range(20)]
+        result = level_collapse(msgs, token_budget=100, preserve_recent=4)
+        assert isinstance(result[0], HumanMessage)
+        assert not isinstance(result[0], SystemMessage)
+
     def test_full_pipeline(self):
         from utils.context_compressor import compress_context
         msgs = self._make_messages(50, 500)
@@ -273,6 +301,22 @@ class TestContextCompressor:
         assert stats.original_messages == 30
         assert stats.final_messages <= 30
         assert stats.original_tokens > 0
+
+    def test_context_limits_model_aware_defaults(self, monkeypatch):
+        from utils.context_limits import infer_model_context_window, resolve_history_token_budget
+
+        monkeypatch.delenv("LLM_CONTEXT_WINDOW", raising=False)
+        monkeypatch.delenv("WEBOT_CONTEXT_TOKEN_BUDGET", raising=False)
+        monkeypatch.setenv("LLM_MODEL", "MiniMax-M2.7")
+
+        assert infer_model_context_window() == 1_000_000
+        assert resolve_history_token_budget() == 128_000
+
+    def test_context_limits_user_override(self, monkeypatch):
+        from utils.context_limits import resolve_history_token_budget
+
+        monkeypatch.setenv("WEBOT_CONTEXT_TOKEN_BUDGET", "77777")
+        assert resolve_history_token_budget() == 77777
 
 
 # ============================================================================

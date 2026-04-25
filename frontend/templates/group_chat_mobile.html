@@ -131,6 +131,15 @@
     font-size: 12px;
     font-weight: 600;
   }
+  .header-btn.workflow-header-btn {
+    background: #e8eefc;
+    border: 1px solid #c7d7fb;
+    color: var(--primary);
+    font-weight: 700;
+  }
+  .header-btn.workflow-header-btn:active {
+    background: #dbe7ff;
+  }
   .header-back-btn {
     display: flex; align-items: center; justify-content: center;
     min-width: 40px; height: 36px; padding: 0 8px; border: none; background: none;
@@ -1109,16 +1118,18 @@
   .send-btn:disabled { background: #c8c8c8; cursor: default; }
 
   .workflow-btn {
-    width: 36px; height: 36px;
-    background: none; border: none;
+    min-width: 54px; height: 36px;
+    padding: 0 10px;
+    background: #e8eefc; border: 1px solid #c7d7fb;
     cursor: pointer; display: flex;
     align-items: center; justify-content: center;
-    flex-shrink: 0; border-radius: 50%;
-    color: #666; font-size: 20px; line-height: 1;
-    transition: background 0.15s, color 0.15s, transform 0.15s;
+    flex-shrink: 0; border-radius: 6px;
+    color: var(--primary); font-size: 13px; font-weight: 600; line-height: 1;
+    transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.15s;
+    white-space: nowrap;
   }
-  .workflow-btn:active { background: rgba(0,0,0,0.06); }
-  .workflow-btn.active { color: #fff; background: linear-gradient(135deg, #52c41a, #389e0d); border-radius: 50%; }
+  .workflow-btn:active { background: #dbe7ff; }
+  .workflow-btn.active { color: #fff; background: linear-gradient(135deg, #52c41a, #389e0d); border-color: transparent; border-radius: 6px; }
 
   /* ── Members drawer  ── */
   .drawer-overlay {
@@ -1239,6 +1250,66 @@
   .create-menu-item + .create-menu-item { border-top: 1px solid var(--border); }
   .create-menu-item .menu-icon { font-size: 18px; flex-shrink: 0; }
   .create-menu-item .menu-label { flex: 1; }
+  .mobile-alarm-preview {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+  }
+  .mobile-alarm-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .mobile-alarm-item {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-card);
+  }
+  .mobile-alarm-main {
+    min-width: 0;
+    flex: 1;
+  }
+  .mobile-alarm-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .mobile-alarm-meta {
+    margin-top: 3px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    word-break: break-word;
+  }
+  .mobile-alarm-text {
+    margin-top: 4px;
+    font-size: 13px;
+    color: var(--text);
+    line-height: 1.35;
+    word-break: break-word;
+  }
+  .mobile-alarm-delete {
+    border: none;
+    background: #fef2f2;
+    color: #dc2626;
+    border-radius: 8px;
+    padding: 6px 9px;
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+  .mobile-alarm-empty {
+    padding: 18px 10px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    text-align: center;
+  }
 
   .side-panel-overlay.drawer-overlay {
     background: rgba(0,0,0,0.2);
@@ -1438,6 +1509,37 @@
     font-size: 12px; white-space: pre-wrap;
     background: #f8f8f8; padding: 10px 12px; border-radius: 8px;
     margin-top: 4px;
+  }
+  .agent-detail-scroll-text {
+    display: block;
+    box-sizing: border-box;
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    height: min(420px, 45vh);
+    max-height: min(420px, 45vh);
+    overflow-y: scroll !important;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    padding: 10px 12px;
+    background: #f8fafc;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    border-radius: 8px;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: #9ca3af #f1f5f9;
+  }
+  .agent-detail-scroll-text::-webkit-scrollbar {
+    width: 6px;
+  }
+  .agent-detail-scroll-text::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 999px;
+  }
+  .agent-detail-scroll-text::-webkit-scrollbar-thumb {
+    background: #9ca3af;
+    border-radius: 999px;
   }
   .agent-detail-tag {
     display: inline-block; padding: 2px 8px; border-radius: 4px;
@@ -1640,12 +1742,12 @@
     margin-left: auto;
   }
   .oasis-header-btn {
-    width: 32px; height: 32px; border: none; background: none;
+    width: 32px; height: 32px; border: 1px solid #d6e2fb; background: #eef4ff;
     display: flex; align-items: center; justify-content: center;
-    cursor: pointer; font-size: 16px; color: var(--text-secondary);
+    cursor: pointer; font-size: 16px; color: var(--primary);
     border-radius: 50%;
   }
-  .oasis-header-btn:active { background: rgba(0,0,0,0.06); }
+  .oasis-header-btn:active { background: #dbe7ff; }
 
   .oasis-body {
     flex: 1; overflow-y: auto;
@@ -1797,12 +1899,15 @@
   .oasis-action-btn {
     display: inline-flex; align-items: center; justify-content: center;
     width: 22px; height: 22px;
-    font-size: 11px; border: none; background: none; cursor: pointer;
+    font-size: 11px; border: 1px solid #d6e2fb; background: #eef4ff; cursor: pointer;
+    color: var(--primary);
     border-radius: 4px; opacity: 0; transition: opacity 0.2s;
   }
   .oasis-topic-item:active .oasis-action-btn { opacity: 0.7; }
   .oasis-action-btn:active { opacity: 1 !important; }
+  .oasis-btn-cancel { background: #fff7e6; border-color: #ffd591; color: #d48806; }
   .oasis-btn-cancel:active { background: #fef3c7; }
+  .oasis-btn-delete { background: #fff1f0; border-color: #ffccc7; color: #cf1322; }
   .oasis-btn-delete:active { background: #fee2e2; }
 
   /* Topic count badge */
@@ -1822,22 +1927,24 @@
   }
   .oasis-detail-action-btn {
     font-size: 12px; padding: 5px 12px; border-radius: 4px;
-    border: none; cursor: pointer;
-    background: var(--bg-card);
-    color: var(--text);
+    border: 1px solid #d6e2fb; cursor: pointer;
+    background: #eef4ff;
+    color: var(--primary);
     transition: background 0.15s; white-space: nowrap;
-  }
-  .oasis-detail-action-btn:active { background: #e5e5e5; }
-  .oasis-detail-action-btn.cancel { color: #e6a23c; }
-  .oasis-detail-action-btn.cancel:active { background: #fdf6ec; }
-  .oasis-detail-action-btn.delete { color: #f55; }
-  .oasis-detail-action-btn.delete:active { background: #fef2f2; }
-  .oasis-detail-action-btn.overview {
-    color: #07c160;
-    background: var(--bg-card);
     font-weight: 600;
   }
-  .oasis-detail-action-btn.overview:active { background: #e5e5e5; }
+  .oasis-detail-action-btn:active { background: #dbe7ff; }
+  .oasis-detail-action-btn.cancel { color: #d48806; background: #fff7e6; border-color: #ffd591; }
+  .oasis-detail-action-btn.cancel:active { background: #fdf6ec; }
+  .oasis-detail-action-btn.delete { color: #cf1322; background: #fff1f0; border-color: #ffccc7; }
+  .oasis-detail-action-btn.delete:active { background: #fef2f2; }
+  .oasis-detail-action-btn.overview {
+    color: #0b8f49;
+    background: #ecfdf3;
+    border-color: #bbf7d0;
+    font-weight: 600;
+  }
+  .oasis-detail-action-btn.overview:active { background: #dcfce7; }
 
   /* Conclusion collapse toggle */
   .oasis-conclusion-header {
@@ -2298,6 +2405,33 @@
     background: linear-gradient(90deg, rgba(139,92,246,0.14), rgba(236,72,153,0.08));
   }
   .contact-name { margin-left: 12px; font-size: 16px; flex: 1; }
+  .contact-main {
+    margin-left: 12px;
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .contact-main .contact-name { margin-left: 0; flex: none; }
+  .contact-meta-line {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    color: var(--text-hint);
+    font-size: 11px;
+    line-height: 1.3;
+  }
+  .contact-meta-chip {
+    max-width: 100%;
+    padding: 2px 6px;
+    border-radius: 6px;
+    background: #f8fafc;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .contact-tag {
     font-size: 11px;
     padding: 4px 8px;
@@ -2598,6 +2732,136 @@
     font-size: 13px; color: var(--text-secondary); margin: 8px 16px 4px;
     padding: 10px 12px; background: var(--bg-card); border-radius: 8px;
   }
+  .mobile-update-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .mobile-update-empty {
+    padding: 18px 14px;
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 1.5;
+    text-align: center;
+    background: var(--bg);
+  }
+  .mobile-update-status-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .mobile-update-status {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #eef4ff;
+    color: var(--primary);
+    border: 1px solid #c7d7fb;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .mobile-update-branch {
+    min-width: 0;
+    color: var(--text-secondary);
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mobile-update-version-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .mobile-update-version-card {
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid #d6e2fb;
+    background: #f8fbff;
+  }
+  .mobile-update-version-card.remote {
+    border-color: #bbf7d0;
+    background: #f3fff7;
+  }
+  .mobile-update-version-label {
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .mobile-update-version-hash {
+    margin-top: 6px;
+    color: var(--text);
+    font-size: 20px;
+    font-weight: 800;
+    line-height: 1.15;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    overflow-wrap: anywhere;
+  }
+  .mobile-update-version-subject {
+    margin-top: 4px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .mobile-update-message {
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #f3f4f6;
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+  }
+  .mobile-update-message.warn {
+    background: #fff7e6;
+    color: #ad6800;
+  }
+  .mobile-update-message.good {
+    background: #ecfdf3;
+    color: #0b8f49;
+  }
+  .mobile-update-message.bad {
+    background: #fff1f0;
+    color: #cf1322;
+  }
+  .mobile-update-log-wrap {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--bg);
+  }
+  .mobile-update-log-wrap[hidden] {
+    display: none;
+  }
+  .mobile-update-log-wrap summary {
+    cursor: pointer;
+    padding: 10px 12px;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 700;
+    user-select: none;
+  }
+  .mobile-update-log-wrap summary:active {
+    background: #ececec;
+  }
+  .mobile-update-log {
+    margin: 0;
+    padding: 10px 12px;
+    border-top: 1px solid var(--border);
+    background: #111827;
+    color: #f9fafb;
+    font-size: 11px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 260px;
+    overflow: auto;
+  }
   .settings-group { background: var(--bg-card); margin-bottom: 8px; }
   .settings-group-title {
     display: flex; align-items: center; justify-content: space-between;
@@ -2701,6 +2965,51 @@
     color: #fff;
     font-size: 14px;
   }
+  .update-available-banner {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    box-sizing: border-box;
+    padding: 10px 14px;
+    background: linear-gradient(90deg, #166534, #15803d);
+    color: #fff;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(21,128,61,0.18);
+  }
+  .update-available-banner.warn {
+    background: linear-gradient(90deg, #b45309, #d97706);
+    box-shadow: 0 2px 8px rgba(180,83,9,0.18);
+  }
+  .update-available-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .update-available-title {
+    font-size: 13px;
+    font-weight: 800;
+    line-height: 1.25;
+  }
+  .update-available-text {
+    font-size: 11px;
+    opacity: 0.9;
+    line-height: 1.35;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .update-available-action {
+    flex-shrink: 0;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.18);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.28);
+    font-size: 12px;
+    font-weight: 800;
+  }
   .settings-user-password-card {
     padding: 6px 0 2px;
   }
@@ -2752,6 +3061,9 @@
     }
     .local-password-banner-actions {
       align-self: flex-start;
+    }
+    .update-available-banner {
+      align-items: flex-start;
     }
   }
 
@@ -2843,6 +3155,13 @@
     <button class="local-password-banner-close" type="button" onclick="dismissLocalPasswordBanner(); event.stopPropagation();" aria-label="Close">✕</button>
   </div>
 </div>
+<div id="mobile-update-available-banner" class="top-inline-banner update-available-banner" onclick="openMobileUpdateModal()">
+  <div class="update-available-copy">
+    <div id="mobile-update-available-title" class="update-available-title">检测到可用更新</div>
+    <div id="mobile-update-available-text" class="update-available-text"></div>
+  </div>
+  <div id="mobile-update-available-action" class="update-available-action">查看</div>
+</div>
 
 <div class="app-container">
 
@@ -2865,7 +3184,9 @@
           <span class="menu-label" data-i18n="create_new_group">创建新群聊</span>
         </button>
       </div>
-      <button class="header-btn" onclick="toggleOasisSidebar()" title="OASIS Tasks"><span>🏛️</span></button>
+      <button class="header-btn with-label workflow-header-btn" onclick="toggleOasisSidebar()" data-i18n-title="tip_workflow" title="选择工作流">
+        <span class="btn-label" data-i18n="workflow_short">工作流</span>
+      </button>
     </div>
   </div>
   <div class="chat-search-bar">
@@ -2891,7 +3212,9 @@
     </button>
     <div class="header-title" id="chat-title" data-i18n="header_agent_msg">Agent消息</div>
     <div style="display:flex;gap:2px;align-items:center;margin-left:auto;">
-      <button class="header-btn" onclick="toggleOasisSidebar()" title="OASIS Tasks"><span>🏛️</span></button>
+      <button class="header-btn with-label workflow-header-btn" onclick="toggleOasisSidebar()" data-i18n-title="tip_workflow" title="选择工作流">
+        <span class="btn-label" data-i18n="workflow_short">工作流</span>
+      </button>
       <button class="header-btn" id="chat-more-btn" onclick="toggleChatActions()" data-i18n-title="tip_more" title="更多" style="font-size:20px;font-weight:700;min-width:36px;">⋮</button>
     </div>
   </div>
@@ -2921,7 +3244,7 @@
     <div class="attach-preview" id="attach-preview"></div>
     <div class="mc-audio-preview" id="mc-audio-preview"></div>
     <div class="input-bar">
-      <button class="workflow-btn" id="workflow-btn" onclick="toggleWorkflowPopup()" data-i18n-title="tip_workflow" title="选择工作流">🏛️</button>
+      <button class="workflow-btn" id="workflow-btn" onclick="toggleWorkflowPopup()" data-i18n-title="tip_workflow" title="选择工作流" data-i18n="workflow_short">工作流</button>
       <button class="attach-btn" id="attach-btn" onclick="document.getElementById('attach-file-input').click()" data-i18n-title="tip_attach" title="添加附件">📎</button>
       <input type="file" id="attach-file-input" multiple accept="image/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.json,.zip" style="display:none" onchange="handleAttachFiles(this.files)">
       <textarea id="msg-input" data-i18n="input_placeholder" placeholder="输入消息…" rows="1"
@@ -3117,7 +3440,7 @@
       <!-- Hub 导入展开区 -->
       <div id="contacts-hub-import-area" style="display:none;margin-bottom:8px;padding:10px 12px;border-radius:8px;background:var(--bg);border:1px solid var(--border);">
         <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;" data-i18n="paste_hub_cmd">粘贴从 Hub 复制的下载命令：</div>
-        <textarea id="contacts-hub-curl-input" placeholder="curl -L 'https://clawcross.net/api/workflows/xxx/download' -o team_xxx.zip" style="width:100%;height:60px;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:monospace;background:var(--bg-card);color:var(--text);resize:none;"></textarea>
+        <textarea id="contacts-hub-curl-input" placeholder="curl -L 'https://clawhub.ai/api/workflows/xxx/download' -o team_xxx.zip" style="width:100%;height:60px;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:monospace;background:var(--bg-card);color:var(--text);resize:none;"></textarea>
         <div style="display:flex;gap:8px;margin-top:8px;">
           <button onclick="openClawcrossHub()" style="flex:1;padding:8px;background:var(--bg-card);color:var(--primary);border:1px solid var(--primary);border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;" data-i18n="go_to_hub">🌐 前往 Hub</button>
           <button onclick="importFromHubContacts()" style="flex:1;padding:8px;background:var(--primary);color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;" data-i18n="download_import">📥 下载并导入</button>
@@ -3223,6 +3546,26 @@
       </div>
     </div>
     <div class="discover-section">
+      <div class="discover-card" onclick="showMobileSkillManager()">
+        <div class="discover-card-icon">🧩</div>
+        <div class="discover-card-body">
+          <div class="discover-card-title">Skill 管理</div>
+          <div class="discover-card-desc">管理全局 Skill 和 Team Skill，导入 Skill ZIP</div>
+        </div>
+        <div class="discover-card-arrow">›</div>
+      </div>
+    </div>
+    <div class="discover-section">
+      <div class="discover-card" onclick="showMobileAlarmManager()">
+        <div class="discover-card-icon">⏰</div>
+        <div class="discover-card-body">
+          <div class="discover-card-title" data-i18n="mobile_alarm_manager">定时任务</div>
+          <div class="discover-card-desc" data-i18n="mobile_alarm_manager_desc">管理 public agent 的闹钟提醒</div>
+        </div>
+        <div class="discover-card-arrow">›</div>
+      </div>
+    </div>
+    <div class="discover-section">
       <div class="discover-card" onclick="openClawcrossCreator()">
         <div class="discover-card-icon">🛠️</div>
         <div class="discover-card-body">
@@ -3316,6 +3659,42 @@
   </div>
 </div>
 
+<!-- ═══════════════ Mobile Skill Manager ═══════════════ -->
+<div class="drawer-overlay side-panel-overlay" id="mobile-skill-manager-overlay" onclick="if(event.target===this)closeMobileSkillManager()"></div>
+<div class="drawer side-drawer" id="mobile-skill-manager">
+  <div class="drawer-header">
+    <button class="drawer-header-back" onclick="closeMobileSkillManager()">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
+    <span class="drawer-header-title">Skill 管理</span>
+  </div>
+  <div class="drawer-body" style="padding:16px;display:flex;flex-direction:column;gap:12px;">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      <button id="mobile-skill-scope-global" type="button" onclick="setMobileSkillScope('global')" style="padding:9px;border:1px solid var(--primary);border-radius:8px;background:var(--primary);color:#fff;font-size:13px;font-weight:700;">全局 Skill</button>
+      <button id="mobile-skill-scope-team" type="button" onclick="setMobileSkillScope('team')" style="padding:9px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);color:var(--text);font-size:13px;font-weight:700;">Team Skill</button>
+    </div>
+    <select id="mobile-skill-team-select" onchange="loadMobileSkills()" style="display:none;width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);color:var(--text);font-size:14px;"></select>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      <button type="button" onclick="openClawcrossHub()" style="padding:10px;border:1px solid var(--primary);border-radius:8px;background:var(--bg-card);color:var(--primary);font-size:13px;font-weight:700;">🌐 ClawHub</button>
+      <button type="button" onclick="document.getElementById('mobile-skill-zip-input').click()" style="padding:10px;border:1px solid #f59e0b;border-radius:8px;background:#fffbeb;color:#b45309;font-size:13px;font-weight:700;">📦 导入 ZIP</button>
+      <input type="file" id="mobile-skill-zip-input" accept=".zip" style="display:none;" onchange="importMobileManagedSkillZip(this)">
+    </div>
+    <div id="mobile-skill-manager-status" style="font-size:12px;color:var(--text-secondary);min-height:18px;"></div>
+    <div id="mobile-skill-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+    <div id="mobile-skill-detail" style="display:none;border-top:1px solid var(--border);padding-top:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;">
+        <div>
+          <div id="mobile-skill-detail-name" style="font-size:15px;font-weight:800;color:var(--text);"></div>
+          <div id="mobile-skill-detail-meta" style="font-size:11px;color:var(--text-secondary);margin-top:2px;"></div>
+        </div>
+        <button type="button" onclick="deleteMobileSkillDetail()" style="padding:6px 10px;border:1px solid #fecaca;border-radius:7px;background:#fee2e2;color:#b91c1c;font-size:12px;font-weight:700;">删除</button>
+      </div>
+      <textarea id="mobile-skill-detail-content" spellcheck="false" style="width:100%;min-height:260px;box-sizing:border-box;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-size:12px;line-height:1.55;font-family:monospace;resize:vertical;"></textarea>
+      <button type="button" onclick="saveMobileSkillDetail()" style="width:100%;margin-top:8px;padding:10px;border:none;border-radius:8px;background:var(--primary);color:#fff;font-size:14px;font-weight:800;">保存</button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════════ Create Agent Modal ═══════════════ -->
 <div class="drawer-overlay side-panel-overlay" id="create-agent-overlay" onclick="if(event.target===this)closeCreateAgentModal()"></div>
 <div class="drawer side-drawer" id="create-agent-modal">
@@ -3365,6 +3744,72 @@
   </div>
 </div>
 
+<!-- ═══════════════ Mobile Alarm Manager ═══════════════ -->
+<div class="drawer-overlay side-panel-overlay" id="mobile-alarm-overlay" onclick="if(event.target===this)closeMobileAlarmManager()"></div>
+<div class="drawer side-drawer" id="mobile-alarm-modal">
+  <div class="drawer-header">
+    <button class="drawer-header-back" onclick="closeMobileAlarmManager()">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
+    <span class="drawer-header-title" data-i18n="mobile_alarm_manager">定时任务</span>
+    <button class="header-btn" onclick="loadMobileAlarms()">↻</button>
+  </div>
+  <div class="drawer-body">
+      <div class="side-panel-form">
+      <div class="side-panel-section">
+        <div class="side-panel-field">
+          <label class="side-panel-label" data-i18n="mobile_alarm_scope">范围</label>
+          <select id="mobile-alarm-scope" class="side-panel-input" onchange="loadMobileAlarms()">
+            <option value="__public__" data-i18n="public_agent">公共 Agent</option>
+          </select>
+        </div>
+        <div class="side-panel-field">
+          <label class="side-panel-label" data-i18n="mobile_alarm_target">目标 agent</label>
+          <select id="mobile-alarm-target" class="side-panel-input"></select>
+        </div>
+        <div class="side-panel-field">
+          <label class="side-panel-label" data-i18n="mobile_alarm_repeat">时间</label>
+          <select id="mobile-alarm-repeat" class="side-panel-input" onchange="updateMobileAlarmControls()">
+            <option value="once" data-i18n="mobile_alarm_once">只响一次</option>
+            <option value="daily" data-i18n="mobile_alarm_daily">每天</option>
+            <option value="weekdays" data-i18n="mobile_alarm_weekdays">工作日</option>
+            <option value="weekends" data-i18n="mobile_alarm_weekends">周末</option>
+            <option value="weekly" data-i18n="mobile_alarm_weekly">每周</option>
+            <option value="monthly" data-i18n="mobile_alarm_monthly">每月</option>
+            <option value="custom" data-i18n="mobile_alarm_custom">自定义 cron</option>
+          </select>
+        </div>
+        <div class="side-panel-field" id="mobile-alarm-once-row">
+          <input id="mobile-alarm-once-at" type="datetime-local" class="side-panel-input" onchange="updateMobileAlarmControls()">
+        </div>
+        <div class="side-panel-field" id="mobile-alarm-time-row">
+          <input id="mobile-alarm-time" type="time" class="side-panel-input" value="09:00" onchange="updateMobileAlarmControls()">
+        </div>
+        <div class="side-panel-field" id="mobile-alarm-weekday-row" style="display:none;">
+          <select id="mobile-alarm-weekday" class="side-panel-input" onchange="updateMobileAlarmControls()">
+            <option value="1">周一</option><option value="2">周二</option><option value="3">周三</option><option value="4">周四</option><option value="5">周五</option><option value="6">周六</option><option value="0">周日</option>
+          </select>
+        </div>
+        <div class="side-panel-field" id="mobile-alarm-monthday-row" style="display:none;">
+          <select id="mobile-alarm-monthday" class="side-panel-input" onchange="updateMobileAlarmControls()"></select>
+        </div>
+        <div class="side-panel-field" id="mobile-alarm-cron-row" style="display:none;">
+          <input id="mobile-alarm-custom-cron" class="side-panel-input" placeholder="0 9 * * *" oninput="updateMobileAlarmControls()">
+        </div>
+        <div class="side-panel-field">
+          <textarea id="mobile-alarm-text" class="side-panel-input" rows="3" data-i18n="mobile_alarm_text_placeholder" placeholder="到点发送给 agent 的任务内容"></textarea>
+        </div>
+        <div id="mobile-alarm-preview" class="mobile-alarm-preview"></div>
+        <button class="side-panel-primary-btn" onclick="submitMobileAlarm()" data-i18n="mobile_alarm_add">添加闹钟</button>
+      </div>
+      <div class="side-panel-section">
+        <div class="side-panel-label" style="margin-bottom:10px;" data-i18n="mobile_alarm_existing">已有闹钟</div>
+        <div id="mobile-alarm-list" class="mobile-alarm-list"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════════ Create Group Modal ═══════════════ -->
 <div class="drawer-overlay side-panel-overlay" id="create-modal-overlay" onclick="if(event.target===this)closeCreateModal()"></div>
 <div class="drawer side-drawer" id="create-modal">
@@ -3405,7 +3850,7 @@
         <!-- Hub 导入展开区 -->
         <div id="hub-import-area" style="display:none;margin-bottom:8px;padding:10px 12px;border-radius:8px;background:var(--bg);border:1px solid var(--border);">
           <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;" data-i18n="paste_hub_cmd">粘贴从 Hub 复制的下载命令：</div>
-          <textarea id="hub-curl-input" placeholder="curl -L 'https://clawcross.net/api/workflows/xxx/download' -o team_xxx.zip" style="width:100%;height:60px;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:monospace;background:var(--bg-card);color:var(--text);resize:none;"></textarea>
+          <textarea id="hub-curl-input" placeholder="curl -L 'https://clawhub.ai/api/workflows/xxx/download' -o team_xxx.zip" style="width:100%;height:60px;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:monospace;background:var(--bg-card);color:var(--text);resize:none;"></textarea>
           <div style="display:flex;gap:8px;margin-top:8px;">
             <button onclick="openClawcrossHub()" style="flex:1;padding:8px;background:var(--bg-card);color:var(--primary);border:1px solid var(--primary);border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;" data-i18n="go_to_hub">🌐 前往 Hub</button>
             <button onclick="importFromHub()" style="flex:1;padding:8px;background:var(--primary);color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;" data-i18n="download_import">📥 下载并导入</button>
@@ -3546,8 +3991,13 @@
       <div class="settings-hint" id="mobile-update-hint">检查远端 Git 更新，并在确认后拉取代码并重启服务。</div>
       <div class="settings-group">
         <div class="settings-group-body" style="padding-top:12px;">
-          <div id="mobile-update-summary" style="white-space:pre-wrap;font-size:13px;line-height:1.6;color:var(--text-secondary);">点击“检查更新”后显示版本信息。</div>
-          <pre id="mobile-update-log" style="display:none;margin-top:10px;padding:10px 12px;border-radius:8px;background:#111827;color:#f9fafb;font-size:11px;line-height:1.5;white-space:pre-wrap;word-break:break-word;"></pre>
+          <div id="mobile-update-summary" class="mobile-update-panel">
+            <div class="mobile-update-empty">点击“检查更新”后显示版本信息。</div>
+          </div>
+          <details id="mobile-update-log-wrap" class="mobile-update-log-wrap" hidden>
+            <summary id="mobile-update-log-title">更新日志</summary>
+            <pre id="mobile-update-log" class="mobile-update-log"></pre>
+          </details>
         </div>
       </div>
     </div>
@@ -3656,6 +4106,29 @@ const I18N = {
     discover_hub_desc: '浏览社区分享的团队配置',
     team_creator: 'Team Creator',
     discover_creator_desc: '创建并发布新的团队页面',
+    mobile_alarm_manager: '定时任务',
+    mobile_alarm_manager_desc: '管理 public / Team agent 的闹钟提醒',
+    mobile_alarm_scope: '范围',
+    mobile_alarm_target: '目标 agent',
+    mobile_alarm_repeat: '时间',
+    mobile_alarm_once: '只响一次',
+    mobile_alarm_daily: '每天',
+    mobile_alarm_weekdays: '工作日',
+    mobile_alarm_weekends: '周末',
+    mobile_alarm_weekly: '每周',
+    mobile_alarm_monthly: '每月',
+    mobile_alarm_custom: '自定义 cron',
+    mobile_alarm_text_placeholder: '到点发送给 agent 的任务内容',
+    mobile_alarm_add: '添加闹钟',
+    mobile_alarm_existing: '已有闹钟',
+    mobile_alarm_empty: '暂无定时任务',
+    mobile_alarm_no_targets: '暂无可用 agent',
+    mobile_alarm_fill_required: '请选择目标，并设置时间和任务内容',
+    mobile_alarm_created: '闹钟已添加',
+    mobile_alarm_create_failed: '创建闹钟失败',
+    mobile_alarm_delete_confirm: '删除这个闹钟？',
+    mobile_alarm_deleted: '闹钟已删除',
+    mobile_alarm_delete_failed: '删除闹钟失败',
     tab_profile: '个人',
 
     // ── Common ──
@@ -3685,6 +4158,7 @@ const I18N = {
     agent_info_incomplete: 'agent 信息不完整',
 
     // ── Workflow ──
+    workflow_short: '工作流',
     select_workflow: '选择工作流',
     no_workflows: '暂无工作流',
     no_workflows_hint: '请在可视化编排中创建',
@@ -4261,6 +4735,29 @@ const I18N = {
     discover_hub_desc: 'Browse community-shared team configs',
     team_creator: 'Team Creator',
     discover_creator_desc: 'Create and publish new team pages',
+    mobile_alarm_manager: 'Scheduled Tasks',
+    mobile_alarm_manager_desc: 'Manage alarms for public / Team agents',
+    mobile_alarm_scope: 'Scope',
+    mobile_alarm_target: 'Target agent',
+    mobile_alarm_repeat: 'Time',
+    mobile_alarm_once: 'Once',
+    mobile_alarm_daily: 'Daily',
+    mobile_alarm_weekdays: 'Weekdays',
+    mobile_alarm_weekends: 'Weekends',
+    mobile_alarm_weekly: 'Weekly',
+    mobile_alarm_monthly: 'Monthly',
+    mobile_alarm_custom: 'Custom cron',
+    mobile_alarm_text_placeholder: 'Task content to send when time is up',
+    mobile_alarm_add: 'Add Alarm',
+    mobile_alarm_existing: 'Existing alarms',
+    mobile_alarm_empty: 'No scheduled tasks',
+    mobile_alarm_no_targets: 'No available agents',
+    mobile_alarm_fill_required: 'Select a target, schedule time, and task content',
+    mobile_alarm_created: 'Alarm added',
+    mobile_alarm_create_failed: 'Failed to create alarm',
+    mobile_alarm_delete_confirm: 'Delete this alarm?',
+    mobile_alarm_deleted: 'Alarm deleted',
+    mobile_alarm_delete_failed: 'Failed to delete alarm',
     tab_profile: 'Me',
 
     back: 'Back',
@@ -4287,6 +4784,7 @@ const I18N = {
     member_not_found: 'Member not found',
     agent_info_incomplete: 'Agent info incomplete',
 
+    workflow_short: 'Workflow',
     select_workflow: 'Select Workflow',
     no_workflows: 'No workflows',
     no_workflows_hint: 'Create one in Visual Orchestrator',
@@ -4859,6 +5357,7 @@ function setLang(lang) {
   document.title = t('page_title');
   applyLangToDOM();
   updateLocalPasswordBanner();
+  if (mobileUpdateSnapshot) renderMobileUpdateBanner(mobileUpdateSnapshot);
   // Re-render dynamic areas that are currently visible
   if (groups && groups.length) renderGroupList(groups);
   if (document.getElementById('tab-profile').classList.contains('active')) loadProfile();
@@ -4970,6 +5469,7 @@ let currentGroupName = '';
 let currentTeamName = '';
 let currentTab = 'chats';
 let mobileUpdatePollTimer = null;
+let mobileUpdateSnapshot = null;
 let lastMsgId = 0;
 const renderedMsgIds = new Set();
 let pollTimer = null;
@@ -4985,6 +5485,8 @@ let mutedGroupIds = new Set();  // Track muted groups for list display
 let groups = [];
 let currentMembers = [];  // Store members for @ mention
 let senderNameMap = {};   // sender key -> display name 映射
+let __agentDetailRenderSeq = 0;
+const __personaByTagCache = new Map();
 let mentionState = {
   active: false,
   startIndex: -1,
@@ -5248,6 +5750,201 @@ function toast(msg, duration = 2000) {
   el._t = setTimeout(() => el.classList.remove('show'), duration);
 }
 
+let mobileAlarmTargets = [];
+let mobileAlarmTeamsLoaded = false;
+
+function mobileAlarmPad2(value) {
+  return String(value).padStart(2, '0');
+}
+
+function mobileAlarmTimeParts() {
+  const raw = (document.getElementById('mobile-alarm-time')?.value || '09:00').trim();
+  const match = raw.match(/^(\d{1,2}):(\d{2})$/);
+  const hour = match ? Math.max(0, Math.min(23, parseInt(match[1], 10) || 0)) : 9;
+  const minute = match ? Math.max(0, Math.min(59, parseInt(match[2], 10) || 0)) : 0;
+  return { hour: String(hour), minute: String(minute), label: `${mobileAlarmPad2(hour)}:${mobileAlarmPad2(minute)}` };
+}
+
+function mobileAlarmCronToHuman(cron) {
+  const parts = String(cron || '').trim().split(/\s+/);
+  if (parts.length !== 5) return cron || '-';
+  const [minute, hour, day, month, weekday] = parts;
+  const time = /^\d+$/.test(hour) && /^\d+$/.test(minute)
+    ? `${mobileAlarmPad2(parseInt(hour, 10))}:${mobileAlarmPad2(parseInt(minute, 10))}`
+    : `${hour}:${minute}`;
+  if (day === '*' && month === '*' && weekday === '*') return `${t('mobile_alarm_daily')} ${time}`;
+  if (day === '*' && month === '*' && weekday === '1-5') return `${t('mobile_alarm_weekdays')} ${time}`;
+  if (day === '*' && month === '*' && (weekday === '0,6' || weekday === '6,0')) return `${t('mobile_alarm_weekends')} ${time}`;
+  const names = { '0': '周日', '1': '周一', '2': '周二', '3': '周三', '4': '周四', '5': '周五', '6': '周六', '7': '周日' };
+  if (day === '*' && month === '*' && names[weekday]) return `每周${names[weekday].replace('周', '')} ${time}`;
+  if (/^\d+$/.test(day) && month === '*' && weekday === '*') return `每月 ${day} 日 ${time}`;
+  return cron || '-';
+}
+
+function mobileAlarmOnceToHuman(runAt) {
+  const value = String(runAt || '').trim();
+  if (!value) return t('mobile_alarm_once');
+  const [datePart, timePart = ''] = value.split('T');
+  return `${t('mobile_alarm_once')} ${datePart} ${timePart.slice(0, 5)}`.trim();
+}
+
+function buildMobileAlarmSchedule() {
+  const repeat = document.getElementById('mobile-alarm-repeat')?.value || 'once';
+  if (repeat === 'once') {
+    return { schedule_type: 'once', run_at: (document.getElementById('mobile-alarm-once-at')?.value || '').trim(), cron: '' };
+  }
+  if (repeat === 'custom') {
+    return { schedule_type: 'cron', run_at: '', cron: (document.getElementById('mobile-alarm-custom-cron')?.value || '').trim() };
+  }
+  const { hour, minute } = mobileAlarmTimeParts();
+  if (repeat === 'weekdays') return { schedule_type: 'cron', run_at: '', cron: `${minute} ${hour} * * 1-5` };
+  if (repeat === 'weekends') return { schedule_type: 'cron', run_at: '', cron: `${minute} ${hour} * * 0,6` };
+  if (repeat === 'weekly') return { schedule_type: 'cron', run_at: '', cron: `${minute} ${hour} * * ${document.getElementById('mobile-alarm-weekday')?.value || '1'}` };
+  if (repeat === 'monthly') return { schedule_type: 'cron', run_at: '', cron: `${minute} ${hour} ${document.getElementById('mobile-alarm-monthday')?.value || '1'} * *` };
+  return { schedule_type: 'cron', run_at: '', cron: `${minute} ${hour} * * *` };
+}
+
+function updateMobileAlarmControls() {
+  const repeat = document.getElementById('mobile-alarm-repeat')?.value || 'once';
+  const onceInput = document.getElementById('mobile-alarm-once-at');
+  if (onceInput && repeat === 'once' && !onceInput.value) {
+    const next = new Date();
+    next.setMinutes(next.getMinutes() + 30);
+    next.setSeconds(0, 0);
+    onceInput.value = `${next.getFullYear()}-${mobileAlarmPad2(next.getMonth() + 1)}-${mobileAlarmPad2(next.getDate())}T${mobileAlarmPad2(next.getHours())}:${mobileAlarmPad2(next.getMinutes())}`;
+  }
+  const rows = {
+    once: document.getElementById('mobile-alarm-once-row'),
+    time: document.getElementById('mobile-alarm-time-row'),
+    weekday: document.getElementById('mobile-alarm-weekday-row'),
+    monthday: document.getElementById('mobile-alarm-monthday-row'),
+    cron: document.getElementById('mobile-alarm-cron-row'),
+  };
+  if (rows.once) rows.once.style.display = repeat === 'once' ? '' : 'none';
+  if (rows.time) rows.time.style.display = repeat === 'once' || repeat === 'custom' ? 'none' : '';
+  if (rows.weekday) rows.weekday.style.display = repeat === 'weekly' ? '' : 'none';
+  if (rows.monthday) rows.monthday.style.display = repeat === 'monthly' ? '' : 'none';
+  if (rows.cron) rows.cron.style.display = repeat === 'custom' ? '' : 'none';
+  const schedule = buildMobileAlarmSchedule();
+  const preview = document.getElementById('mobile-alarm-preview');
+  if (preview) {
+    preview.textContent = repeat === 'once'
+      ? mobileAlarmOnceToHuman(schedule.run_at)
+      : (repeat === 'custom' ? (schedule.cron || t('mobile_alarm_custom')) : mobileAlarmCronToHuman(schedule.cron));
+  }
+}
+
+function renderMobileAlarmTargets() {
+  const select = document.getElementById('mobile-alarm-target');
+  if (!select) return;
+  select.innerHTML = mobileAlarmTargets.length
+    ? mobileAlarmTargets.map((target, index) => `<option value="${index}">${escapeHtml(target.label || target.target_name)}</option>`).join('')
+    : `<option value="">${escapeHtml(t('mobile_alarm_no_targets'))}</option>`;
+}
+
+async function loadMobileAlarmScopes() {
+  const select = document.getElementById('mobile-alarm-scope');
+  if (!select || mobileAlarmTeamsLoaded) return;
+  try {
+    const data = await api('GET', '/teams');
+    const teams = Array.isArray(data) ? data : (data.teams || []);
+    const current = select.value || '__public__';
+    select.innerHTML = `<option value="__public__">${escapeHtml(t('public_agent'))}</option>` +
+      teams.map(team => `<option value="${escapeHtml(team)}">${escapeHtml(team)}</option>`).join('');
+    if ([...select.options].some(opt => opt.value === current)) select.value = current;
+    mobileAlarmTeamsLoaded = true;
+  } catch (_e) {
+    mobileAlarmTeamsLoaded = true;
+  }
+}
+
+function renderMobileAlarms(alarms) {
+  const list = document.getElementById('mobile-alarm-list');
+  if (!list) return;
+  if (!alarms || !alarms.length) {
+    list.innerHTML = `<div class="mobile-alarm-empty">${escapeHtml(t('mobile_alarm_empty'))}</div>`;
+    return;
+  }
+  list.innerHTML = alarms.map((alarm) => {
+    const scheduleType = alarm.schedule_type || 'cron';
+    const label = scheduleType === 'once' ? mobileAlarmOnceToHuman(alarm.run_at || '') : mobileAlarmCronToHuman(alarm.cron || '');
+    const raw = scheduleType === 'once' ? (alarm.run_at || '') : (alarm.cron || '');
+    return `
+      <div class="mobile-alarm-item">
+        <div class="mobile-alarm-main">
+          <div class="mobile-alarm-title">${escapeHtml(alarm.target_name || alarm.target_ref || '-')}</div>
+          <div class="mobile-alarm-meta">${escapeHtml(label)} · ${escapeHtml(raw)}</div>
+          <div class="mobile-alarm-text">${escapeHtml(alarm.text || '')}</div>
+        </div>
+        <button class="mobile-alarm-delete" onclick="deleteMobileAlarm('${escapeHtml(alarm.task_id || '')}')">删除</button>
+      </div>`;
+  }).join('');
+}
+
+async function loadMobileAlarms() {
+  const list = document.getElementById('mobile-alarm-list');
+  if (list) list.innerHTML = `<div class="mobile-alarm-empty">${escapeHtml(t('loading'))}</div>`;
+  try {
+    await loadMobileAlarmScopes();
+    const scope = document.getElementById('mobile-alarm-scope')?.value || '__public__';
+    const data = await api('GET', `/mobile_alarms?team=${encodeURIComponent(scope)}`);
+    mobileAlarmTargets = data.targets || [];
+    renderMobileAlarmTargets();
+    renderMobileAlarms(data.alarms || []);
+    updateMobileAlarmControls();
+  } catch (e) {
+    if (list) list.innerHTML = `<div class="mobile-alarm-empty">${escapeHtml(e.message || String(e))}</div>`;
+  }
+}
+
+function showMobileAlarmManager() {
+  const monthday = document.getElementById('mobile-alarm-monthday');
+  if (monthday && !monthday.options.length) {
+    monthday.innerHTML = Array.from({ length: 31 }, (_, i) => `<option value="${i + 1}">每月 ${i + 1} 日</option>`).join('');
+  }
+  document.getElementById('mobile-alarm-modal')?.classList.add('show');
+  document.getElementById('mobile-alarm-overlay')?.classList.add('show');
+  updateMobileAlarmControls();
+  loadMobileAlarms();
+}
+
+function closeMobileAlarmManager() {
+  document.getElementById('mobile-alarm-modal')?.classList.remove('show');
+  document.getElementById('mobile-alarm-overlay')?.classList.remove('show');
+}
+
+async function submitMobileAlarm() {
+  const targetIndex = Number(document.getElementById('mobile-alarm-target')?.value ?? -1);
+  const target = Number.isInteger(targetIndex) ? mobileAlarmTargets[targetIndex] : null;
+  const schedule = buildMobileAlarmSchedule();
+  const text = (document.getElementById('mobile-alarm-text')?.value || '').trim();
+  if (!target?.target_name || !text || (schedule.schedule_type === 'once' && !schedule.run_at) || (schedule.schedule_type === 'cron' && !schedule.cron)) {
+    toast(t('mobile_alarm_fill_required'));
+    return;
+  }
+  try {
+    const scope = document.getElementById('mobile-alarm-scope')?.value || '__public__';
+    await api('POST', '/mobile_alarms', { team: scope, target_type: target.target_type, target_name: target.target_name, ...schedule, text });
+    document.getElementById('mobile-alarm-text').value = '';
+    toast(t('mobile_alarm_created'));
+    await loadMobileAlarms();
+  } catch (e) {
+    toast(`${t('mobile_alarm_create_failed')}: ${e.message}`);
+  }
+}
+
+async function deleteMobileAlarm(taskId) {
+  if (!taskId || !confirm(t('mobile_alarm_delete_confirm'))) return;
+  try {
+    const scope = document.getElementById('mobile-alarm-scope')?.value || '__public__';
+    await api('DELETE', `/mobile_alarms/${encodeURIComponent(taskId)}?team=${encodeURIComponent(scope)}`);
+    toast(t('mobile_alarm_deleted'));
+    await loadMobileAlarms();
+  } catch (e) {
+    toast(`${t('mobile_alarm_delete_failed')}: ${e.message}`);
+  }
+}
+
 function openMobileUpdateModal() {
   const overlay = document.getElementById('mobile-update-modal-overlay');
   const title = document.getElementById('mobile-update-modal-title');
@@ -5277,47 +5974,135 @@ function stopMobileUpdatePolling() {
   }
 }
 
+function mobileUpdateStatusLabel(status) {
+  const s = status || 'idle';
+  const zh = {
+    idle: '空闲',
+    queued: '已排队',
+    checking: '检查中',
+    updating: '更新中',
+    restarting: '重启中',
+    done: '已完成',
+    failed: '失败',
+  };
+  const en = {
+    idle: 'Idle',
+    queued: 'Queued',
+    checking: 'Checking',
+    updating: 'Updating',
+    restarting: 'Restarting',
+    done: 'Done',
+    failed: 'Failed',
+  };
+  const map = _currentLang === 'zh' ? zh : en;
+  return map[s] || s;
+}
+
+function renderMobileUpdateBanner(update) {
+  mobileUpdateSnapshot = update || null;
+  const banner = document.getElementById('mobile-update-available-banner');
+  const titleEl = document.getElementById('mobile-update-available-title');
+  const textEl = document.getElementById('mobile-update-available-text');
+  const actionEl = document.getElementById('mobile-update-available-action');
+  if (!banner || !titleEl || !textEl || !actionEl) return;
+
+  if (!update || !update.has_update || update.status === 'done') {
+    banner.style.display = 'none';
+    return;
+  }
+
+  const zh = _currentLang === 'zh';
+  const currentHash = update.current_short_commit || '-';
+  const remoteHash = update.latest_short_commit || '-';
+  banner.classList.toggle('warn', Boolean(update.dirty));
+  banner.style.display = 'flex';
+  titleEl.textContent = update.dirty
+    ? (zh ? '检测到更新，但本地有未提交改动' : 'Update found, local changes block auto update')
+    : (zh ? '检测到可用更新' : 'Update available');
+  textEl.textContent = `${currentHash} → ${remoteHash}${update.latest_subject ? ' · ' + update.latest_subject : ''}`;
+  actionEl.textContent = zh ? '查看' : 'View';
+}
+
 function renderMobileUpdateSummary(update) {
   const summaryEl = document.getElementById('mobile-update-summary');
   const logEl = document.getElementById('mobile-update-log');
+  const logWrap = document.getElementById('mobile-update-log-wrap');
+  const logTitle = document.getElementById('mobile-update-log-title');
   const startBtn = document.getElementById('mobile-update-start-btn');
   if (!summaryEl || !startBtn) return;
   if (!update) {
-    summaryEl.textContent = _currentLang === 'zh'
+    summaryEl.innerHTML = `<div class="mobile-update-empty">${escapeHtml(_currentLang === 'zh'
       ? '点击“检查更新”后显示版本信息。'
-      : 'Tap "Check Update" to load version info.';
+      : 'Tap "Check Update" to load version info.')}</div>`;
     startBtn.disabled = true;
     if (logEl) {
-      logEl.style.display = 'none';
       logEl.textContent = '';
+    }
+    if (logWrap) {
+      logWrap.hidden = true;
+      logWrap.open = false;
     }
     return;
   }
-  const lines = [
-    `${_currentLang === 'zh' ? '状态' : 'Status'}: ${update.status || 'idle'}`,
-    `${_currentLang === 'zh' ? '分支' : 'Branch'}: ${update.branch || 'unknown'}`,
-    `${_currentLang === 'zh' ? '当前版本' : 'Current'}: ${(update.current_short_commit || '-')}${update.current_subject ? ' (' + update.current_subject + ')' : ''}`,
-    `${_currentLang === 'zh' ? '远端版本' : 'Remote'}: ${(update.latest_short_commit || '-')}${update.latest_subject ? ' (' + update.latest_subject + ')' : ''}`,
-  ];
+  renderMobileUpdateBanner(update);
+  const status = update.status || 'idle';
+  const branch = update.branch || 'unknown';
+  const currentHash = update.current_short_commit || '-';
+  const remoteHash = update.latest_short_commit || '-';
+  let messageText = '';
+  let messageClass = '';
   if (update.dirty) {
-    lines.push(_currentLang === 'zh' ? '本地仓库有未提交改动，禁止自动更新。' : 'Local repo is dirty. Auto update is blocked.');
+    messageText = _currentLang === 'zh' ? '本地仓库有未提交改动，禁止自动更新。' : 'Local repo is dirty. Auto update is blocked.';
+    messageClass = 'warn';
   } else if (update.has_update) {
-    lines.push(_currentLang === 'zh' ? '检测到可用更新。' : 'Update available.');
+    messageText = _currentLang === 'zh' ? '检测到可用更新。' : 'Update available.';
+    messageClass = 'good';
   } else {
-    lines.push(_currentLang === 'zh' ? '当前已经是最新版本。' : 'Already up to date.');
+    messageText = _currentLang === 'zh' ? '当前已经是最新版本。' : 'Already up to date.';
+    messageClass = 'good';
   }
+  if (status === 'failed') messageClass = 'bad';
   if (update.message) {
-    lines.push('');
-    lines.push(update.message);
+    messageText += `\n${update.message}`;
   }
-  summaryEl.textContent = lines.join('\n');
+  summaryEl.innerHTML = `
+    <div class="mobile-update-status-row">
+      <span class="mobile-update-status">${escapeHtml(mobileUpdateStatusLabel(status))}</span>
+      <span class="mobile-update-branch">${escapeHtml(_currentLang === 'zh' ? '分支: ' : 'Branch: ')}${escapeHtml(branch)}</span>
+    </div>
+    <div class="mobile-update-version-grid">
+      <div class="mobile-update-version-card local">
+        <div class="mobile-update-version-label">${escapeHtml(_currentLang === 'zh' ? '本地版本' : 'Local Version')}</div>
+        <div class="mobile-update-version-hash">${escapeHtml(currentHash)}</div>
+        <div class="mobile-update-version-subject">${escapeHtml(update.current_subject || '-')}</div>
+      </div>
+      <div class="mobile-update-version-card remote">
+        <div class="mobile-update-version-label">${escapeHtml(_currentLang === 'zh' ? '远程版本' : 'Remote Version')}</div>
+        <div class="mobile-update-version-hash">${escapeHtml(remoteHash)}</div>
+        <div class="mobile-update-version-subject">${escapeHtml(update.latest_subject || '-')}</div>
+      </div>
+    </div>
+    <div class="mobile-update-message ${messageClass}">${escapeHtml(messageText)}</div>
+  `;
   startBtn.disabled = !Boolean(update.has_update) || Boolean(update.dirty) || ['queued', 'checking', 'updating', 'restarting'].includes(update.status);
   if (logEl && Array.isArray(update.log_tail) && update.log_tail.length) {
-    logEl.style.display = 'block';
     logEl.textContent = update.log_tail.join('\n');
+    if (logWrap) {
+      const wasHidden = logWrap.hidden;
+      logWrap.hidden = false;
+      if (wasHidden) logWrap.open = false;
+    }
+    if (logTitle) {
+      logTitle.textContent = _currentLang === 'zh'
+        ? `相关日志 (${update.log_tail.length})`
+        : `Related Logs (${update.log_tail.length})`;
+    }
   } else if (logEl) {
-    logEl.style.display = 'none';
     logEl.textContent = '';
+    if (logWrap) {
+      logWrap.hidden = true;
+      logWrap.open = false;
+    }
   }
 }
 
@@ -5345,6 +6130,15 @@ async function checkMobileUpdate(refreshRemote) {
     toast((_currentLang === 'zh' ? '检查更新失败: ' : 'Check update failed: ') + e.message, 3500);
   } finally {
     if (checkBtn) checkBtn.disabled = false;
+  }
+}
+
+async function refreshMobileUpdateBanner() {
+  try {
+    const update = await mobileUpdateRequest('/proxy_update_status', {});
+    renderMobileUpdateBanner(update);
+  } catch (e) {
+    renderMobileUpdateBanner(null);
   }
 }
 
@@ -7567,6 +8361,25 @@ function handleInputKey(e) {
 }
 
 // ── Workflow functions ──
+function currentGroupBaseTeamName() {
+  const raw = String(currentTeamName || currentGroupName || '').trim();
+  if (!raw) return '';
+  const base = raw.split('#')[0].trim();
+  return base || raw;
+}
+
+function teamMemberGlobalId(member) {
+  if (!member || typeof member !== 'object') return '';
+  if (member.type === 'ext') return String(member.global_name || member.name || '').trim();
+  return String(member.session || member.global_name || member.global_id || '').trim();
+}
+
+function currentGroupMemberGlobalIds() {
+  return new Set((currentMembers || [])
+    .map(m => String(m.global_id || '').trim())
+    .filter(Boolean));
+}
+
 async function loadWorkflows() {
   // 并行加载公共 workflows 和 team 列表
   try {
@@ -7580,16 +8393,25 @@ async function loadWorkflows() {
     const teams = (teamsResp && teamsResp.teams) || [];
 
     // 并行加载各 team 的 workflows (YAML + Python)
+    const groupTeam = currentGroupBaseTeamName();
+    const groupMemberIds = currentGroupMemberGlobalIds();
     const teamResults = await Promise.all(teams.map(async (teamName) => {
       try {
-        const [yamlResp, pyResp] = await Promise.all([
+        const [yamlResp, pyResp, membersResp] = await Promise.all([
           api('GET', `/proxy_visual/load-layouts?team=${encodeURIComponent(teamName)}`),
           api('GET', `/proxy_visual/load-layouts?team=${encodeURIComponent(teamName)}&mode=python`),
+          api('GET', `/teams/${encodeURIComponent(teamName)}/members`).catch(() => ({ members: [] })),
         ]);
         const yamlLayouts = Array.isArray(yamlResp) ? yamlResp : [];
         const pyLayouts = Array.isArray(pyResp) ? pyResp : [];
-        return { team: teamName, yamlLayouts, pyLayouts };
-      } catch { return { team: teamName, yamlLayouts: [], pyLayouts: [] }; }
+        const teamMemberIds = new Set(((membersResp && membersResp.members) || [])
+          .map(teamMemberGlobalId)
+          .filter(Boolean));
+        let overlap = 0;
+        groupMemberIds.forEach(id => { if (teamMemberIds.has(id)) overlap++; });
+        const score = (teamName === groupTeam ? 1000 : 0) + overlap;
+        return { team: teamName, yamlLayouts, pyLayouts, score };
+      } catch { return { team: teamName, yamlLayouts: [], pyLayouts: [], score: teamName === groupTeam ? 1000 : 0 }; }
     }));
 
     // 构建分组 - 每个 layout 存储为 { name, mode }
@@ -7598,14 +8420,19 @@ async function loadWorkflows() {
       ...globalYamlLayouts.map(name => ({ name, mode: 'yaml' })),
       ...globalPyLayouts.map(name => ({ name, mode: 'python' })),
     ];
-    if (globalItems.length) workflowGroups.push({ group: t('wf_public'), team: '', items: globalItems });
-    teamResults.forEach(tr => {
+    const globalGroup = globalItems.length ? { group: t('wf_public'), team: '', items: globalItems, score: 0 } : null;
+    const teamGroups = teamResults.map(tr => {
       const items = [
         ...tr.yamlLayouts.map(name => ({ name, mode: 'yaml' })),
         ...tr.pyLayouts.map(name => ({ name, mode: 'python' })),
       ];
-      workflowGroups.push({ group: tr.team, team: tr.team, items });
+      return { group: tr.team, team: tr.team, items, score: tr.score || 0 };
     });
+    const hasPreferredTeam = teamGroups.some(g => g.score > 0);
+    teamGroups.sort((a, b) => (b.score - a.score) || String(a.group).localeCompare(String(b.group)));
+    workflowGroups = hasPreferredTeam
+      ? [...teamGroups.filter(g => g.score > 0), ...(globalGroup ? [globalGroup] : []), ...teamGroups.filter(g => g.score <= 0)]
+      : [...(globalGroup ? [globalGroup] : []), ...teamGroups];
     // 与桌面端一致：默认展开全部分组，否则列表项全部被 CSS 隐藏，看起来像「只有 team 标题没有工作流」
     workflowExpandedGroups = new Set(
       workflowGroups.map((g) => (g.team || '__public__'))
@@ -7716,13 +8543,13 @@ function updateWorkflowBtn() {
   const btn = document.getElementById('workflow-btn');
   const area = document.getElementById('workflow-preview-area');
   if (selectedWorkflow) {
-    btn.textContent = '⊕';
+    btn.textContent = t('workflow_short');
     btn.classList.add('active');
     const dn = esc(selectedWorkflow.displayName || 'Workflow');
     area.innerHTML = `<span class="wf-tag">📋 <span class="wf-tag-name">${dn}</span><span class="wf-tag-remove" onclick="clearWorkflow()">&times;</span></span>`;
     area.style.display = 'flex';
   } else {
-    btn.textContent = '⊕';
+    btn.textContent = t('workflow_short');
     btn.classList.remove('active');
     area.innerHTML = '';
     area.style.display = 'none';
@@ -8582,7 +9409,7 @@ setInterval(() => {
 }, 10000);
 
 // ── ClawCross Studio ──
-    const TEAM_HUB_URL = 'https://clawcross.net';
+    const TEAM_HUB_URL = 'https://clawhub.ai';
 
 function buildClawcrossHubReturnUrl() {
   try {
@@ -8616,6 +9443,181 @@ function openClawcrossHub() {
 
 function openClawcrossCreator() {
   window.location.assign('/creator');
+}
+
+// ── Mobile Skill Manager ──
+let mobileSkillScope = 'global';
+let mobileSkillCurrentName = '';
+
+function mobileSkillStatus(text) {
+  const el = document.getElementById('mobile-skill-manager-status');
+  if (el) el.textContent = text || '';
+}
+
+async function showMobileSkillManager() {
+  document.getElementById('mobile-skill-manager').classList.add('show');
+  document.getElementById('mobile-skill-manager-overlay').classList.add('show');
+  await loadMobileSkillTeams();
+  setMobileSkillScope(mobileSkillScope || 'global');
+}
+
+function closeMobileSkillManager() {
+  document.getElementById('mobile-skill-manager').classList.remove('show');
+  document.getElementById('mobile-skill-manager-overlay').classList.remove('show');
+}
+
+async function loadMobileSkillTeams() {
+  const select = document.getElementById('mobile-skill-team-select');
+  if (!select) return;
+  try {
+    const data = await api('GET', '/teams');
+    const teams = data.teams || data || [];
+    select.innerHTML = teams.map(tm => `<option value="${esc(tm)}">${esc(tm)}</option>`).join('');
+  } catch (e) {
+    select.innerHTML = '';
+    mobileSkillStatus('加载团队失败: ' + e.message);
+  }
+}
+
+function setMobileSkillScope(scope) {
+  mobileSkillScope = scope === 'team' ? 'team' : 'global';
+  const globalBtn = document.getElementById('mobile-skill-scope-global');
+  const teamBtn = document.getElementById('mobile-skill-scope-team');
+  const teamSelect = document.getElementById('mobile-skill-team-select');
+  if (globalBtn && teamBtn) {
+    const active = 'padding:9px;border:1px solid var(--primary);border-radius:8px;background:var(--primary);color:#fff;font-size:13px;font-weight:700;';
+    const inactive = 'padding:9px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);color:var(--text);font-size:13px;font-weight:700;';
+    globalBtn.style.cssText = mobileSkillScope === 'global' ? active : inactive;
+    teamBtn.style.cssText = mobileSkillScope === 'team' ? active : inactive;
+  }
+  if (teamSelect) teamSelect.style.display = mobileSkillScope === 'team' ? 'block' : 'none';
+  mobileSkillCurrentName = '';
+  const detail = document.getElementById('mobile-skill-detail');
+  if (detail) detail.style.display = 'none';
+  loadMobileSkills();
+}
+
+function mobileSkillBasePath() {
+  if (mobileSkillScope === 'global') return '/skills';
+  const team = document.getElementById('mobile-skill-team-select')?.value || '';
+  return team ? `/teams/${encodeURIComponent(team)}/skills` : '';
+}
+
+async function loadMobileSkills() {
+  const list = document.getElementById('mobile-skill-list');
+  if (!list) return;
+  const base = mobileSkillBasePath();
+  if (!base) {
+    list.innerHTML = '<div style="font-size:12px;color:var(--text-secondary);">请选择团队</div>';
+    return;
+  }
+  list.innerHTML = '<div style="font-size:12px;color:var(--text-secondary);">加载中...</div>';
+  mobileSkillStatus('');
+  try {
+    const data = await api('GET', base);
+    const skills = mobileSkillScope === 'global'
+      ? (data.skills?.personal || [])
+      : (data.skills?.team || []);
+    if (!skills.length) {
+      list.innerHTML = '<div style="font-size:12px;color:var(--text-secondary);">暂无 Skill</div>';
+      return;
+    }
+    list.innerHTML = skills.map(skill => {
+      const name = skill.name || '';
+      const desc = skill.description || '';
+      const category = skill.category ? ` · ${skill.category}` : '';
+      return `<button type="button" onclick="loadMobileSkillDetail('${esc(name)}')" style="text-align:left;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);color:var(--text);">
+        <div style="font-size:14px;font-weight:800;">${esc(name)}</div>
+        <div style="font-size:11px;color:var(--text-secondary);margin-top:3px;line-height:1.4;">${esc(desc + category)}</div>
+      </button>`;
+    }).join('');
+  } catch (e) {
+    list.innerHTML = '<div style="font-size:12px;color:#ef4444;">加载失败: ' + esc(e.message) + '</div>';
+  }
+}
+
+async function loadMobileSkillDetail(name) {
+  const base = mobileSkillBasePath();
+  if (!base || !name) return;
+  mobileSkillCurrentName = name;
+  mobileSkillStatus('加载中...');
+  try {
+    const suffix = mobileSkillScope === 'team' ? '?scope=team' : '';
+    const data = await api('GET', `${base}/${encodeURIComponent(name)}${suffix}`);
+    const skill = data.skill || {};
+    document.getElementById('mobile-skill-detail').style.display = 'block';
+    document.getElementById('mobile-skill-detail-name').textContent = skill.name || name;
+    document.getElementById('mobile-skill-detail-meta').textContent = `${mobileSkillScope === 'team' ? 'Team' : 'Global'} · ${skill.category || 'uncategorized'}`;
+    document.getElementById('mobile-skill-detail-content').value = skill.content || '';
+    mobileSkillStatus('');
+  } catch (e) {
+    mobileSkillStatus('加载失败: ' + e.message);
+  }
+}
+
+async function saveMobileSkillDetail() {
+  const base = mobileSkillBasePath();
+  if (!base || !mobileSkillCurrentName) return;
+  const content = document.getElementById('mobile-skill-detail-content')?.value || '';
+  mobileSkillStatus('保存中...');
+  try {
+    const suffix = mobileSkillScope === 'team' ? '?scope=team' : '';
+    await api('PUT', `${base}/${encodeURIComponent(mobileSkillCurrentName)}${suffix}`, { content });
+    mobileSkillStatus('已保存');
+    await loadMobileSkills();
+  } catch (e) {
+    mobileSkillStatus('保存失败: ' + e.message);
+  }
+}
+
+async function deleteMobileSkillDetail() {
+  const base = mobileSkillBasePath();
+  if (!base || !mobileSkillCurrentName) return;
+  if (!confirm(`删除 Skill「${mobileSkillCurrentName}」？`)) return;
+  mobileSkillStatus('删除中...');
+  try {
+    const suffix = mobileSkillScope === 'team' ? '?scope=team' : '';
+    await api('DELETE', `${base}/${encodeURIComponent(mobileSkillCurrentName)}${suffix}`);
+    mobileSkillCurrentName = '';
+    document.getElementById('mobile-skill-detail').style.display = 'none';
+    mobileSkillStatus('已删除');
+    await loadMobileSkills();
+  } catch (e) {
+    mobileSkillStatus('删除失败: ' + e.message);
+  }
+}
+
+async function importMobileManagedSkillZip(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const base = mobileSkillBasePath();
+  if (!base) {
+    input.value = '';
+    toast('请选择团队');
+    return;
+  }
+  const label = mobileSkillScope === 'team'
+    ? `团队「${document.getElementById('mobile-skill-team-select')?.value || ''}」`
+    : '全局 Skill';
+  if (!confirm(`导入 Skill ZIP 到${label}？`)) {
+    input.value = '';
+    return;
+  }
+  const formData = new FormData();
+  formData.append('file', file);
+  mobileSkillStatus('正在导入...');
+  try {
+    const resp = await fetch(`${base}/import-zip`, { method: 'POST', body: formData });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.ok) throw new Error(data.error || t('unknown_error'));
+    const count = data.direct?.imported?.length || 0;
+    mobileSkillStatus(`导入成功：${count} 个 Skill`);
+    await loadMobileSkills();
+  } catch (e) {
+    mobileSkillStatus('导入失败: ' + e.message);
+  } finally {
+    input.value = '';
+  }
 }
 
 // ── Polling ──
@@ -8769,6 +9771,17 @@ function renderMembers(members) {
     const initial = getInitial(name);
     const isAgent = type !== 'owner';
     const removeBtn = isAgent ? `<button onclick="event.stopPropagation();removeMemberFromGroup('${globalId.replace(/'/g, "\\'")}','${name.replace(/'/g, "\\'")}')" style="background:none;border:none;color:var(--text-secondary);font-size:16px;padding:4px 8px;cursor:pointer;" title="${t('tip_remove')}">✕</button>` : '';
+    const detailInfo = JSON.stringify({
+      name,
+      type,
+      global_id: globalId,
+      tag,
+      short_name: shortName,
+      platform: m.platform || '',
+      platform_hint: m.platform || tag || '',
+      model: m.model || '',
+      meta: m.meta || {},
+    }).replace(/"/g, '&quot;');
 
     // 操作按钮：外部 agent 显示 /new, /reset(通过_meta), 和 /stop，内部 agent 显示 cancel
     let actionBtns = '';
@@ -8792,7 +9805,7 @@ function renderMembers(members) {
 
     return `
       <div class="member-item" onclick="insertMention('${globalId}', '${name.replace(/'/g, "\\'")}')">
-        <div class="member-avatar ${type} ${isAgent ? 'clickable' : ''}"${isAgent ? ` onclick="event.stopPropagation();showAgentDetail({name:'${name.replace(/'/g, "\\\\'")}',type:'${type}',global_id:'${globalId.replace(/'/g, "\\\\'")}',tag:'${(tag||'').replace(/'/g, "\\\\'")}',short_name:'${shortName.replace(/'/g, "\\\\'")}'})" title="${t('tip_view_detail')}"` : ''}>${esc(initial)}</div>
+        <div class="member-avatar ${type} ${isAgent ? 'clickable' : ''}"${isAgent ? ` onclick="event.stopPropagation();showAgentDetail(JSON.parse(this.dataset.info))" data-info="${detailInfo}" title="${t('tip_view_detail')}"` : ''}>${esc(initial)}</div>
         <div class="member-info" style="flex:1;">
           <div class="member-name">${esc(name)}</div>
           <div class="member-tag">${typeLabel} · ${tag ? esc(tag) + ' · ' : ''}${esc(globalId)}</div>
@@ -9040,7 +10053,6 @@ function onAddAgentTeamChanged() {
 }
 
 const MOBILE_EXT_PLATFORM_FALLBACK = [
-  'openclaw',
   'codex',
   'claude',
   'claude-code',
@@ -9075,7 +10087,7 @@ async function _mobileFetchExternalPlatformOptions() {
   } catch (_) {
     tools = [];
   }
-  const merged = ['openclaw', ...tools.filter((t) => t && t !== 'openclaw')];
+  const merged = tools.filter((t) => t && t !== 'openclaw');
   const fallback = MOBILE_EXT_PLATFORM_FALLBACK.filter((t) => !merged.includes(t));
   _mobileExternalPlatformOptionsCache = merged.concat(fallback);
   return _mobileExternalPlatformOptionsCache;
@@ -9953,8 +10965,6 @@ function resolveExternalPlatformKey(agentInfo, fallbackTool) {
     agentInfo.platform_hint,
     agentInfo.platform,
     fallbackTool,
-    agentInfo.global_id,
-    agentInfo.name,
   ];
   for (const item of candidates) {
     const key = normalizePlatformKey(item);
@@ -10006,7 +11016,10 @@ function showAgentDetailBySender(senderKey) {
     short_name: member.short_name || '',
     tag: member.tag || '',
     tracked: !!member.tracked,
-    platform_hint: member.platform || ''
+    platform: member.platform || '',
+    platform_hint: member.platform || member.tag || '',
+    model: member.model || '',
+    meta: member.meta || {}
   });
 }
 
@@ -10017,6 +11030,7 @@ function showAgentDetail(agentInfo) {
   if (!agentInfo || !agentInfo.name || !agentInfo.type) {
     toast(t('agent_info_incomplete')); return;
   }
+  const renderSeq = ++__agentDetailRenderSeq;
   const overlay = document.getElementById('agent-detail-overlay');
   const body = document.getElementById('agent-detail-body');
   const title = document.getElementById('agent-detail-title');
@@ -10028,10 +11042,56 @@ function showAgentDetail(agentInfo) {
 
   // 直接渲染基本信息，无需网络请求
   body.innerHTML = renderAgentBasicInfo(memberTitle, memberType, agentInfo);
+  enrichAgentDetailPersonaByTag(agentInfo, renderSeq);
 
   // Slide in
   overlay.style.display = 'flex';
   requestAnimationFrame(() => { overlay.classList.add('open'); });
+}
+
+function agentDetailPersonaTeam(agentInfo) {
+  const fromAgent = String((agentInfo && agentInfo.team) || '').trim();
+  if (fromAgent) return fromAgent;
+  const contactTeam = String(window.__currentAgentTeam || '').trim();
+  if (contactTeam) return contactTeam;
+  const groupTeam = String(currentTeamName || '').trim();
+  if (!groupTeam) return '';
+  return groupTeam.split('#')[0].trim();
+}
+
+async function lookupPersonaByTag(tag, team) {
+  const cleanTag = String(tag || '').trim();
+  if (!cleanTag) return null;
+  const cacheKey = `${team || ''}\x1f${cleanTag}`;
+  if (__personaByTagCache.has(cacheKey)) return __personaByTagCache.get(cacheKey);
+  const params = new URLSearchParams({ full: '1' });
+  if (team) params.set('team', team);
+  const query = `?${params.toString()}`;
+  const experts = await api('GET', `/proxy_visual/experts${query}`).catch(() => []);
+  const list = Array.isArray(experts) ? experts : [];
+  const found = list.find((exp) => String((exp && exp.tag) || '').trim() === cleanTag) || null;
+  __personaByTagCache.set(cacheKey, found);
+  return found;
+}
+
+async function enrichAgentDetailPersonaByTag(agentInfo, renderSeq) {
+  const tag = String((agentInfo && agentInfo.tag) || '').trim();
+  if (!tag || agentInfo.persona) return;
+  const team = agentDetailPersonaTeam(agentInfo);
+  const expert = await lookupPersonaByTag(tag, team);
+  if (!expert || __agentDetailRenderSeq !== renderSeq) return;
+  const persona = String(expert.persona || expert.description || '').trim();
+  if (!persona) return;
+  const body = document.getElementById('agent-detail-body');
+  const overlay = document.getElementById('agent-detail-overlay');
+  if (!body || !overlay || overlay.style.display === 'none') return;
+  const enriched = {
+    ...agentInfo,
+    persona,
+    persona_source_name: expert.name || expert.name_zh || expert.name_en || '',
+    persona_source: expert.source || '',
+  };
+  body.innerHTML = renderAgentBasicInfo(enriched.name, enriched.type, enriched);
 }
 
 function closeAgentDetail() {
@@ -10188,7 +11248,14 @@ function renderAgentBasicInfo(name, memberType, agentInfo) {
   if (memberType === 'expert' && agentInfo.persona) {
     html += `<div class="agent-detail-section">
       <div class="agent-detail-label">${t('expert_persona')}</div>
-      <div class="agent-detail-value" style="font-size:13px;line-height:1.5;white-space:pre-wrap;max-height:200px;overflow-y:auto;">${esc(agentInfo.persona)}</div>
+      <div class="agent-detail-value agent-detail-scroll-text">${esc(agentInfo.persona)}</div>
+    </div>`;
+  }
+  if (memberType !== 'expert' && agentInfo.persona) {
+    const source = agentInfo.persona_source_name ? ` · ${agentInfo.persona_source_name}` : '';
+    html += `<div class="agent-detail-section">
+      <div class="agent-detail-label">${_currentLang === 'zh' ? 'Tag 人设' : 'Tag Persona'}${esc(source)}</div>
+      <div class="agent-detail-value agent-detail-scroll-text">${esc(agentInfo.persona)}</div>
     </div>`;
   }
   // Show temperature for experts
@@ -10200,9 +11267,26 @@ function renderAgentBasicInfo(name, memberType, agentInfo) {
   }
 
   if (memberType === 'ext') {
+    const { acp } = getExternalAgentMeta(agentInfo);
+    const extModel = externalAgentModel(agentInfo);
+    const acpRows = [
+      ['Platform', platformKey || agentInfo.platform || agentInfo.platform_hint || '-'],
+      ['Model', extModel || '-'],
+      ['Session', externalAgentSessionSuffix(extModel)],
+      ['Timeout', acp.timeout_sec || acp.acp_timeout_sec ? `${acp.timeout_sec || acp.acp_timeout_sec}s` : '180s'],
+      ['TTL', acp.ttl_sec ? `${acp.ttl_sec}s` : '86400s'],
+      ['Permissions', acp.non_interactive_permissions || '-'],
+      ['Approve', typeof acp.approve_all === 'boolean' ? (acp.approve_all ? 'all' : 'manual') : 'env/default']
+    ];
     html += `<div class="agent-detail-section">
       <div class="agent-detail-label">${t('about')}</div>
       <div class="agent-detail-value">${t('external_agent_desc')}</div>
+    </div>`;
+    html += `<div class="agent-detail-section">
+      <div class="agent-detail-label">ACPX</div>
+      <div class="agent-detail-value" style="font-size:13px;line-height:1.7;">
+        ${acpRows.map(([k, v]) => `<div><strong>${esc(k)}:</strong> <code>${esc(String(v))}</code></div>`).join('')}
+      </div>
     </div>`;
     if (needsTrackFirst) {
       html += `<div class="agent-detail-section">
@@ -10233,6 +11317,8 @@ function renderAgentBasicInfo(name, memberType, agentInfo) {
         team: agentInfo.team || '',
         platform: agentInfo.platform || '',
         platform_hint: agentInfo.platform_hint || platformKey,
+        model: agentInfo.model || '',
+        meta: agentInfo.meta || {},
       }).replace(/'/g, "\\'").replace(/"/g, '&quot;');
       html += `
       <button onclick="openPublicExternalAgentConfigModal(JSON.parse(this.dataset.info))" data-info="${editInfo}" style="width:100%;padding:14px;background:transparent;color:#2563eb;border:2px solid #2563eb;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;">${_currentLang === 'zh' ? '追踪 / 编辑' : 'Track / Edit'}</button>`;
@@ -10386,6 +11472,11 @@ async function openPublicExternalAgentConfigModal(info) {
     }
   } catch (_) { /* ignore */ }
 
+  const trackedMeta = (tracked && tracked.meta && typeof tracked.meta === 'object') ? tracked.meta : {};
+  const infoMeta = (info && info.meta && typeof info.meta === 'object') ? info.meta : {};
+  const meta = Object.assign({}, infoMeta, trackedMeta);
+  const acp = Object.assign({}, (infoMeta.acp || {}), (trackedMeta.acp || {}));
+
   closeAgentDetail();
   const sheetId = 'public-ext-edit-sheet';
   const overlayId = 'public-ext-edit-sheet-overlay';
@@ -10411,6 +11502,20 @@ async function openPublicExternalAgentConfigModal(info) {
         <input id="public-ext-edit-tag" type="text" value="${esc((tracked && tracked.tag) || info.tag || '')}" autocomplete="off">
         <label>${esc(_currentLang === 'zh' ? '平台' : 'Platform')}</label>
         <input id="public-ext-edit-platform" type="text" value="${esc((tracked && tracked.platform) || info.platform || info.platform_hint || '')}" autocomplete="off">
+        <label>${esc(_currentLang === 'zh' ? '模型 / Session 标记' : 'Model / Session marker')}</label>
+        <input id="public-ext-edit-model" type="text" value="${esc((tracked && tracked.model) || meta.model || info.model || '')}" placeholder="agent:name:clawcrosschat" autocomplete="off">
+        <label>${esc(_currentLang === 'zh' ? 'ACPX 超时（秒）' : 'ACPX timeout (seconds)')}</label>
+        <input id="public-ext-edit-timeout" type="number" min="5" max="3600" value="${esc(acp.timeout_sec || acp.acp_timeout_sec || '')}" placeholder="180">
+        <label>${esc(_currentLang === 'zh' ? '权限策略' : 'Permission policy')}</label>
+        <input id="public-ext-edit-perms" type="text" value="${esc(acp.non_interactive_permissions || '')}" placeholder="read-only / workspace-write / ...">
+        <label>${esc(_currentLang === 'zh' ? '自动批准' : 'Approve all')}</label>
+        <select id="public-ext-edit-approve">
+          <option value="" ${typeof acp.approve_all === 'boolean' ? '' : 'selected'}>${esc(_currentLang === 'zh' ? '使用环境默认' : 'Use env default')}</option>
+          <option value="true" ${acp.approve_all === true ? 'selected' : ''}>${esc(_currentLang === 'zh' ? '开启' : 'On')}</option>
+          <option value="false" ${acp.approve_all === false ? 'selected' : ''}>${esc(_currentLang === 'zh' ? '关闭' : 'Off')}</option>
+        </select>
+        <label>${esc(_currentLang === 'zh' ? 'ACPX TTL（秒）' : 'ACPX TTL (seconds)')}</label>
+        <input id="public-ext-edit-ttl" type="number" min="60" max="604800" value="${esc(acp.ttl_sec || '')}" placeholder="86400">
         <div class="field-note">${esc(globalId)}</div>
       </div>
       <div class="tc-sheet-footer">
@@ -10428,10 +11533,21 @@ async function openPublicExternalAgentConfigModal(info) {
     const name = String((document.getElementById('public-ext-edit-name') || {}).value || '').trim();
     const tag = String((document.getElementById('public-ext-edit-tag') || {}).value || '').trim();
     const platform = String((document.getElementById('public-ext-edit-platform') || {}).value || '').trim();
+    const model = String((document.getElementById('public-ext-edit-model') || {}).value || '').trim();
+    const timeoutRaw = String((document.getElementById('public-ext-edit-timeout') || {}).value || '').trim();
+    const perms = String((document.getElementById('public-ext-edit-perms') || {}).value || '').trim();
+    const approveRaw = String((document.getElementById('public-ext-edit-approve') || {}).value || '').trim();
+    const ttlRaw = String((document.getElementById('public-ext-edit-ttl') || {}).value || '').trim();
     if (!name || !platform) {
       toast(_currentLang === 'zh' ? '名称和平台不能为空' : 'Name and platform are required');
       return;
     }
+    const acpPayload = {};
+    if (timeoutRaw) acpPayload.timeout_sec = Number(timeoutRaw);
+    if (ttlRaw) acpPayload.ttl_sec = Number(ttlRaw);
+    if (perms) acpPayload.non_interactive_permissions = perms;
+    if (approveRaw) acpPayload.approve_all = approveRaw === 'true';
+    const metaPayload = Object.assign({}, meta, { model, acp: Object.assign({}, acp, acpPayload) });
     try {
       if (team) {
         if (tracked) {
@@ -10440,6 +11556,9 @@ async function openPublicExternalAgentConfigModal(info) {
             new_name: name,
             new_tag: tag,
             platform,
+            model,
+            acp: acpPayload,
+            meta: metaPayload,
           });
         } else {
           await api('POST', `/teams/${encodeURIComponent(team)}/members/external`, {
@@ -10447,6 +11566,9 @@ async function openPublicExternalAgentConfigModal(info) {
             tag,
             global_name: globalId,
             platform,
+            model,
+            acp: acpPayload,
+            meta: metaPayload,
           });
         }
         toast(_currentLang === 'zh' ? '已写入团队外部 Agent 列表' : 'Saved to team external agents');
@@ -10457,6 +11579,9 @@ async function openPublicExternalAgentConfigModal(info) {
             new_name: name,
             new_tag: tag,
             platform,
+            model,
+            acp: acpPayload,
+            meta: metaPayload,
           });
         } else {
           await api('POST', '/public_external_agents', {
@@ -10464,6 +11589,9 @@ async function openPublicExternalAgentConfigModal(info) {
             tag,
             global_name: globalId,
             platform,
+            model,
+            acp: acpPayload,
+            meta: metaPayload,
           });
         }
         toast(_currentLang === 'zh' ? '已写入公共外部 Agent 列表' : 'Saved to public external agents');
@@ -11172,6 +12300,35 @@ function countAgentsInExternalGroups(groups) {
   return n;
 }
 
+function getExternalAgentMeta(agentInfo) {
+  const meta = (agentInfo && typeof agentInfo.meta === 'object' && agentInfo.meta) ? agentInfo.meta : {};
+  const acp = (meta && typeof meta.acp === 'object' && meta.acp) ? meta.acp : {};
+  return { meta, acp };
+}
+
+function externalAgentModel(agentInfo) {
+  const { meta } = getExternalAgentMeta(agentInfo);
+  return String((agentInfo && agentInfo.model) || meta.model || '').trim();
+}
+
+function externalAgentSessionSuffix(model) {
+  const m = String(model || '').trim().match(/^agent:[^:]+(?::(.+))?$/);
+  return (m && m[1]) ? m[1] : 'clawcrosschat';
+}
+
+function renderExternalAgentMetaLine(agentInfo) {
+  const { acp } = getExternalAgentMeta(agentInfo);
+  const model = externalAgentModel(agentInfo);
+  const parts = [];
+  if (model) parts.push(`model ${model}`);
+  parts.push(`session ${externalAgentSessionSuffix(model)}`);
+  if (acp.timeout_sec || acp.acp_timeout_sec) parts.push(`timeout ${acp.timeout_sec || acp.acp_timeout_sec}s`);
+  if (acp.non_interactive_permissions) parts.push(`perm ${acp.non_interactive_permissions}`);
+  if (typeof acp.approve_all === 'boolean') parts.push(acp.approve_all ? 'approve all' : 'manual perms');
+  if (!parts.length) return '';
+  return `<div class="contact-meta-line">${parts.slice(0, 4).map((p) => `<span class="contact-meta-chip">${esc(p)}</span>`).join('')}</div>`;
+}
+
 function groupTeamExternalMembers(extMembers) {
   const openclaw = [];
   const acpByTool = {};
@@ -11185,7 +12342,9 @@ function groupTeamExternalMembers(extMembers) {
       tag: m.tag || '',
       global_name: gn,
       team: m.team || '',
-      platform: m.platform || ''
+      platform: m.platform || '',
+      model: m.model || (m.meta && m.meta.model) || '',
+      meta: (m.meta && typeof m.meta === 'object') ? m.meta : {}
     };
     if (platformKey === 'openclaw') {
       openclaw.push(item);
@@ -11219,12 +12378,14 @@ function renderExternalAgentGroupsHtml(groups, idPrefix) {
       team: a.team || '',
       tracked: tracked,
       platform: platformRaw,
-      platform_hint: platformRaw || resolveExternalPlatformKey(a, platformHint)
+      platform_hint: platformRaw || resolveExternalPlatformKey(a, platformHint),
+      model: a.model || '',
+      meta: a.meta || {}
     }).replace(/"/g, '&quot;');
     const teamLabel = a.team ? `<span style="font-size:11px;color:var(--text-hint);margin-left:4px;">[${esc(a.team)}]</span>` : '';
     const initial = avatarLabelFromDisplayName(name);
     const hint = needsTrackFirst ? `<span class="contact-tag" style="background:#fef3c7;color:#92400e;">${_currentLang === 'zh' ? '先追踪' : 'Track first'}</span>` : '';
-    return `<div class="contact-item" onclick="showAgentDetail(JSON.parse(this.dataset.info))" data-info="${info}"><div class="contact-avatar ext">${esc(initial)}</div><div class="contact-name">${esc(name)}${teamLabel}</div>${a.tag ? `<span class="contact-tag">${esc(a.tag)}</span>` : ''}${hint}</div>`;
+    return `<div class="contact-item" onclick="showAgentDetail(JSON.parse(this.dataset.info))" data-info="${info}"><div class="contact-avatar ext">${esc(initial)}</div><div class="contact-main"><div class="contact-name">${esc(name)}${teamLabel}</div>${renderExternalAgentMetaLine(a)}</div>${a.tag ? `<span class="contact-tag">${esc(a.tag)}</span>` : ''}${hint}</div>`;
   };
 
   const oc = (groups && Array.isArray(groups.openclaw)) ? groups.openclaw : [];
@@ -11276,7 +12437,7 @@ function renderExternalAgentGroupsForAddMembersHtml(groups, idPrefix) {
           <label class="contact-item" style="cursor:${blocked ? 'not-allowed' : 'pointer'};display:flex;align-items:center;opacity:${blocked ? '0.65' : '1'};">
             <input type="checkbox" value="${esc(key)}" data-short="${esc(name)}" data-type="ext" data-tag="${esc(tag)}" onchange="toggleAddAgentSelect('${esc(key)}')" ${checked} ${blocked ? 'disabled' : ''} style="width:18px;height:18px;margin-right:10px;accent-color:#07c160;">
             <div class="contact-avatar ext">${esc(initial)}</div>
-            <div class="contact-name">${esc(name)}${teamLabel}</div>
+            <div class="contact-main"><div class="contact-name">${esc(name)}${teamLabel}</div>${renderExternalAgentMetaLine(a)}</div>
             ${tag ? `<span class="contact-tag">${esc(tag)}</span>` : ''}
             ${blocked ? `<span class="contact-tag" style="background:#fef3c7;color:#92400e;">${_currentLang === 'zh' ? '先追踪' : 'Track first'}</span>` : ''}
           </label>`;
@@ -11398,11 +12559,12 @@ async function loadAllContactsForSearch() {
 
   try {
     // Load public agents
-    const [intData, extData, publicExperts, acpxAllData] = await Promise.all([
+    const [intData, extData, publicExperts, acpxAllData, publicExtData] = await Promise.all([
       api('GET', '/internal_agents').catch(() => ({agents: []})),
       api('GET', '/proxy_openclaw_sessions').catch(() => ({agents: []})),
       api('GET', '/proxy_visual/experts').catch(() => []),
-      api('GET', '/proxy_acpx_sessions_all').catch(() => ({ sessions: [] }))
+      api('GET', '/proxy_acpx_sessions_all').catch(() => ({ sessions: [] })),
+      api('GET', '/public_external_agents').catch(() => ({ agents: [] }))
     ]);
 
     (intData.agents || []).forEach(a => allAgents.push({
@@ -11418,7 +12580,21 @@ async function loadAllContactsForSearch() {
       type: 'ext',
       tag: s.tag || 'openclaw',
       global_name: s.global_name || s.name || '',
-      team: ''
+      team: '',
+      platform: s.platform || 'openclaw',
+      model: s.model || (s.meta && s.meta.model) || '',
+      meta: s.meta || {}
+    }));
+
+    (publicExtData.agents || []).forEach(s => allAgents.push({
+      name: s.name || s.global_name || t('unnamed'),
+      type: 'ext',
+      tag: s.tag || '',
+      global_name: s.global_name || s.name || '',
+      team: '',
+      platform: s.platform || '',
+      model: s.model || (s.meta && s.meta.model) || '',
+      meta: s.meta || {}
     }));
 
     (acpxAllData.sessions || []).forEach(s => {
@@ -11431,7 +12607,8 @@ async function loadAllContactsForSearch() {
         tag: s.tool || '',
         global_name: gn,
         team: '',
-        platform: s.tool || 'unknown'
+        platform: s.tool || 'unknown',
+        meta: {}
       });
     });
 
@@ -11457,7 +12634,10 @@ async function loadAllContactsForSearch() {
             type: m.type || 'oasis',
             tag: m.tag || '',
             global_name: m.global_name || m.session || '',
-            team: teamName
+            team: teamName,
+            platform: m.platform || '',
+            model: m.model || (m.meta && m.meta.model) || '',
+            meta: m.meta || {}
           });
         });
 
@@ -13678,6 +14858,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (e) {}
 
     updateLocalPasswordBanner();
+    refreshMobileUpdateBanner();
 
     document.addEventListener('click', (e) => {
       const popup = document.getElementById('mention-popup');

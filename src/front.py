@@ -8,6 +8,9 @@ import json
 import re
 import subprocess
 import uuid
+import shutil
+import tempfile
+import zipfile
 from pathlib import Path
 
 from integrations.acpx_cli_tools import acpx_agent_command_names
@@ -16,7 +19,7 @@ from urllib.parse import urljoin, urlparse
 from dotenv import load_dotenv
 from utils.env_settings import read_env_all, write_env_settings
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
-from utils.cron_utils import get_agent_cron_jobs, restore_cron_jobs
+from utils.internal_alarm_utils import export_team_alarms, restore_team_alarms
 from services.llm_factory import create_chat_model, extract_text, infer_provider
 from routes.front_group_routes import register_group_routes
 from routes.front_oasis_routes import register_oasis_routes
@@ -112,6 +115,8 @@ LOCAL_SESSION_HISTORY_URL = f"http://127.0.0.1:{PORT_AGENT}/session_history"
 LOCAL_DELETE_SESSION_URL = f"http://127.0.0.1:{PORT_AGENT}/delete_session"
 LOCAL_TTS_URL = f"http://127.0.0.1:{PORT_AGENT}/tts"
 LOCAL_SESSION_STATUS_URL = f"http://127.0.0.1:{PORT_AGENT}/session_status"
+PORT_SCHEDULER = int(os.getenv("PORT_SCHEDULER", "51201"))
+SCHEDULER_TASKS_URL = f"http://127.0.0.1:{PORT_SCHEDULER}/tasks"
 # OpenAI 兼容端点
 LOCAL_OPENAI_COMPLETIONS_URL = f"http://127.0.0.1:{PORT_AGENT}/v1/chat/completions"
 INTERNAL_TOKEN = os.getenv("INTERNAL_TOKEN", "")
@@ -3011,6 +3016,164 @@ def _is_openclaw_external(agent: dict) -> bool:
     return _external_agent_platform(agent).lower() == "openclaw"
 
 
+def _team_alarm_export_maps(user_id: str, team: str) -> tuple[dict[str, str], dict[str, str]]:
+    internal_session_to_name: dict[str, str] = {}
+    for item in _ia_load(user_id, team):
+        session_id = str(item.get("session") or "").strip()
+        meta = item.get("meta") if isinstance(item.get("meta"), dict) else {}
+        name = str(meta.get("name") or "").strip()
+        if session_id and name:
+            internal_session_to_name[session_id] = name
+
+    external_global_to_name: dict[str, str] = {}
+    for entry in _team_openclaw_agents_load(user_id, team):
+        if not isinstance(entry, dict):
+            continue
+        global_name = str(entry.get("global_name") or "").strip()
+        name = str(entry.get("name") or "").strip()
+        if global_name and name:
+            external_global_to_name[global_name] = name
+    return internal_session_to_name, external_global_to_name
+
+
+def _team_alarm_restore_maps(user_id: str, team: str) -> tuple[dict[str, str], dict[str, str]]:
+    internal_name_to_session: dict[str, str] = {}
+    for item in _ia_load(user_id, team):
+        session_id = str(item.get("session") or "").strip()
+        meta = item.get("meta") if isinstance(item.get("meta"), dict) else {}
+        name = str(meta.get("name") or "").strip()
+        if session_id and name:
+            internal_name_to_session[name] = session_id
+
+    external_name_to_global: dict[str, str] = {}
+    for entry in _team_openclaw_agents_load(user_id, team):
+        if not isinstance(entry, dict):
+            continue
+        name = str(entry.get("name") or "").strip()
+        global_name = str(entry.get("global_name") or "").strip()
+        if name and global_name:
+            external_name_to_global[name] = global_name
+    return internal_name_to_session, external_name_to_global
+
+
+def _team_alarm_targets(user_id: str, team: str) -> list[dict[str, str]]:
+    targets: list[dict[str, str]] = []
+    for item in _ia_load(user_id, team):
+        session_id = str(item.get("session") or "").strip()
+        meta = item.get("meta") if isinstance(item.get("meta"), dict) else {}
+        name = str(meta.get("name") or "").strip()
+        if session_id and name:
+            targets.append({
+                "target_type": "internal",
+                "target_name": name,
+                "target_ref": session_id,
+                "label": f"{name} · internal",
+            })
+    for entry in _team_openclaw_agents_load(user_id, team):
+        if not isinstance(entry, dict):
+            continue
+        name = str(entry.get("name") or "").strip()
+        global_name = str(entry.get("global_name") or "").strip()
+        platform = _external_agent_platform(entry) or str(entry.get("tag") or "external")
+        if name and global_name:
+            targets.append({
+                "target_type": "external",
+                "target_name": name,
+                "target_ref": global_name,
+                "label": f"{name} · {platform}",
+            })
+    return targets
+
+
+@app.route("/teams/<team_name>/alarms", methods=["GET", "POST"])
+def team_alarms(team_name):
+    user_id = session.get("user_id", "")
+    if "/" in team_name or "\\" in team_name or team_name.startswith("."):
+        return jsonify({"error": "Invalid team name"}), 400
+    team_dir = os.path.join(root_dir, "data", "user_files", user_id, "teams", team_name)
+    if not os.path.exists(team_dir):
+        return jsonify({"error": "Team not found"}), 404
+
+    if request.method == "GET":
+        internal_session_to_name, external_global_to_name = _team_alarm_export_maps(user_id, team_name)
+        alarms = export_team_alarms(
+            user_id=user_id,
+            team=team_name,
+            internal_session_to_name=internal_session_to_name,
+            external_global_to_name=external_global_to_name,
+        )
+        return jsonify({
+            "ok": True,
+            "team": team_name,
+            "alarms": alarms,
+            "targets": _team_alarm_targets(user_id, team_name),
+        })
+
+    body = request.get_json(force=True)
+    target_type = str(body.get("target_type") or "internal").strip().lower()
+    target_name = str(body.get("target_name") or "").strip()
+    schedule_type = str(body.get("schedule_type") or "cron").strip().lower()
+    cron = str(body.get("cron") or "").strip()
+    run_at = str(body.get("run_at") or "").strip()
+    text = str(body.get("text") or "").strip()
+    if target_type not in {"internal", "external"}:
+        return jsonify({"error": "target_type must be internal or external"}), 400
+    if schedule_type not in {"cron", "once"}:
+        return jsonify({"error": "schedule_type must be cron or once"}), 400
+    if not target_name or not text or (schedule_type == "cron" and not cron) or (schedule_type == "once" and not run_at):
+        return jsonify({"error": "target_name, schedule and text are required"}), 400
+
+    internal_name_to_session, external_name_to_global = _team_alarm_restore_maps(user_id, team_name)
+    payload = {
+        "user_id": user_id,
+        "cron": cron,
+        "schedule_type": schedule_type,
+        "run_at": run_at,
+        "text": text,
+        "target_type": target_type,
+        "target_name": target_name,
+        "team": team_name,
+    }
+    if target_type == "external":
+        if target_name not in external_name_to_global:
+            return jsonify({"error": f"External target not found: {target_name}"}), 404
+        payload["session_id"] = f"ext:{target_name}"
+    else:
+        session_id = internal_name_to_session.get(target_name)
+        if not session_id:
+            return jsonify({"error": f"Internal target not found: {target_name}"}), 404
+        payload["session_id"] = session_id
+
+    try:
+        resp = requests.post(SCHEDULER_TASKS_URL, json=payload, timeout=10)
+        data = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {"error": resp.text}
+        return jsonify(data), resp.status_code
+    except Exception as e:
+        return jsonify({"error": f"Scheduler unavailable: {e}"}), 502
+
+
+@app.route("/teams/<team_name>/alarms/<task_id>", methods=["DELETE"])
+def delete_team_alarm(team_name, task_id):
+    user_id = session.get("user_id", "")
+    if "/" in team_name or "\\" in team_name or team_name.startswith("."):
+        return jsonify({"error": "Invalid team name"}), 400
+    internal_session_to_name, external_global_to_name = _team_alarm_export_maps(user_id, team_name)
+    alarms = export_team_alarms(
+        user_id=user_id,
+        team=team_name,
+        internal_session_to_name=internal_session_to_name,
+        external_global_to_name=external_global_to_name,
+    )
+    if not any(str(item.get("task_id") or "") == task_id for item in alarms):
+        return jsonify({"error": "Alarm not found in this team"}), 404
+    try:
+        resp = requests.delete(f"{SCHEDULER_TASKS_URL}/{task_id}", timeout=10)
+        data = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {"status": resp.text}
+        return jsonify(data), resp.status_code
+    except Exception as e:
+        return jsonify({"error": f"Scheduler unavailable: {e}"}), 502
+
+
 @app.route("/team_openclaw_snapshot", methods=["GET"])
 def team_openclaw_snapshot_get():
     """Get the team's saved external agent list.
@@ -3030,7 +3193,7 @@ def team_openclaw_snapshot_export():
     """Export (save) an OpenClaw agent's full config into the team's external_agents.json.
     Body: { "team": "...", "agent_name": "real_agent_name (global_name)", "short_name": "display_name" }
     Fetches agent snapshot from oasis server and upserts into external_agents.json.
-    Also fetches and saves cron jobs for this agent.
+    Internal alarms are exported at team snapshot level, not inside OpenClaw agent snapshots.
     """
     user_id = session.get("user_id", "")
 
@@ -3055,12 +3218,6 @@ def team_openclaw_snapshot_export():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
-    # Fetch cron jobs for this agent using cron_utils
-    cron_jobs, cron_error = get_agent_cron_jobs(agent_name)
-    if cron_error:
-        print(f"[Warning] Failed to fetch cron jobs for {agent_name}: {cron_error}")
-        cron_jobs = []
-
     # Save to team snapshot list
     data = _team_openclaw_agents_load(user_id, team)
     # Remove existing entry with same name if present, then append
@@ -3072,7 +3229,6 @@ def team_openclaw_snapshot_export():
         "global_name": agent_name,
         "config": snapshot.get("config", {}),
         "workspace_files": snapshot.get("workspace_files", {}),
-        "cron_jobs": cron_jobs,
     })
     _team_openclaw_agents_save(user_id, team, data)
 
@@ -3082,8 +3238,8 @@ def team_openclaw_snapshot_export():
         "short_name": short_name,
         "agent_name": agent_name,
         "file_count": file_count,
-        "cron_count": len(cron_jobs),
-        "message": f"Exported '{agent_name}' → team snapshot as '{short_name}' ({file_count} files, {len(cron_jobs)} cron jobs)",
+        "cron_count": 0,
+        "message": f"Exported '{agent_name}' → team snapshot as '{short_name}' ({file_count} files)",
     })
 
 
@@ -3095,7 +3251,7 @@ def team_openclaw_snapshot_sync_all():
     the source of truth for which agents belong to this team), fetches each
     agent's latest snapshot from the OASIS server using the 'global_name' field,
     and updates the JSON in-place.
-    Also fetches and updates cron jobs for each agent.
+    Internal alarms are handled by team snapshot export/import, not OpenClaw cron.
 
     Body: { "team": "team_name" }
     Returns: { ok, synced: int, agents: [...] }
@@ -3142,12 +3298,6 @@ def team_openclaw_snapshot_sync_all():
                 config.pop("channels", None)
                 config.pop("bindings", None)
                 
-                # Fetch cron jobs for this agent using cron_utils
-                cron_jobs, cron_error = get_agent_cron_jobs(agent_name)
-                if cron_error:
-                    print(f"[Warning] Failed to fetch cron jobs for {agent_name}: {cron_error}")
-                    cron_jobs = []
-                
                 new_openclaw.append({
                     "name": short_name,
                     "tag": "openclaw",
@@ -3155,7 +3305,6 @@ def team_openclaw_snapshot_sync_all():
                     "global_name": agent_name,
                     "config": config,
                     "workspace_files": snap.get("workspace_files", {}),
-                    "cron_jobs": cron_jobs,
                 })
             else:
                 errors.append(f"{agent_name}: {snap.get('error', 'unknown')}")
@@ -3232,23 +3381,6 @@ def team_openclaw_snapshot_restore():
             agent_snapshot["global_name"] = target_name
             _team_openclaw_agents_save(user_id, team, data)
             
-            # Restore cron jobs for this agent using cron_utils
-            cron_jobs = agent_snapshot.get("cron_jobs", [])
-            if cron_jobs:
-                t_cron = time.perf_counter()
-                cron_restored, cron_errors = restore_cron_jobs(cron_jobs, target_name)
-                result["client_cron_ms"] = round((time.perf_counter() - t_cron) * 1000, 2)
-                result["cron_restored"] = cron_restored
-                result["cron_total"] = len(cron_jobs)
-                if cron_errors:
-                    result["cron_errors"] = cron_errors
-                _logger_oc_restore.info(
-                    "[clawcross-restore] route=single agent=%s client_cron_ms=%s cron_restored=%s",
-                    target_name,
-                    result["client_cron_ms"],
-                    cron_restored,
-                )
-        
         return jsonify(result), r.status_code
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
@@ -3260,7 +3392,7 @@ def team_openclaw_snapshot_export_all():
     Body: { "team": "..." }
     Uses external_agents.json as the source of truth for which agents belong
     to this team, fetches each one's latest snapshot, and updates in-place.
-    Also fetches and saves cron jobs for each agent.
+    Internal alarms are handled by team snapshot export/import, not OpenClaw cron.
     """
     user_id = session.get("user_id", "")
 
@@ -3296,12 +3428,6 @@ def team_openclaw_snapshot_export_all():
             )
             snapshot = r.json()
             if snapshot.get("ok"):
-                # Fetch cron jobs for this agent using cron_utils
-                cron_jobs, cron_error = get_agent_cron_jobs(agent_name)
-                if cron_error:
-                    print(f"[Warning] Failed to fetch cron jobs for {agent_name}: {cron_error}")
-                    cron_jobs = []
-                
                 new_openclaw.append({
                     "name": short_name,
                     "tag": "openclaw",
@@ -3309,7 +3435,6 @@ def team_openclaw_snapshot_export_all():
                     "global_name": agent_name,
                     "config": snapshot.get("config", {}),
                     "workspace_files": snapshot.get("workspace_files", {}),
-                    "cron_jobs": cron_jobs,
                 })
                 exported += 1
             else:
@@ -3378,31 +3503,17 @@ def team_openclaw_snapshot_restore_all():
                 "oasis_timing_ms": result.get("restore_timing_ms"),
                 "errors": result.get("errors"),
             }
-            cron_ms = None
             if result.get("ok"):
                 restored += 1
                 # Update global_name in JSON to reflect the new agent name
                 entry["global_name"] = target_name
-                
-                # Restore cron jobs for this agent using cron_utils
-                cron_jobs = entry.get("cron_jobs", [])
-                if cron_jobs:
-                    t_cron = time.perf_counter()
-                    cron_restored, cron_errors = restore_cron_jobs(cron_jobs, target_name)
-                    cron_ms = round((time.perf_counter() - t_cron) * 1000, 2)
-                    result["cron_restored"] = cron_restored
-                    result["cron_total"] = len(cron_jobs)
-                    if cron_errors:
-                        result["cron_errors"] = cron_errors
             else:
                 errors.append(f"{target_name}: {result.get('errors', result.get('error', 'failed'))}")
-            row["client_cron_ms"] = cron_ms
             per_agent_restore.append(row)
             _logger_oc_restore.info(
-                "[clawcross-restore] route=restore_all agent=%s client_http_ms=%s client_cron_ms=%s oasis=%s ok=%s",
+                "[clawcross-restore] route=restore_all agent=%s client_http_ms=%s oasis=%s ok=%s",
                 target_name,
                 client_http_ms,
-                cron_ms,
                 result.get("restore_timing_ms"),
                 result.get("ok"),
             )
@@ -3586,6 +3697,8 @@ def proxy_visual_experts():
         params = {"user_id": user_id}
         if team:
             params["team"] = team
+        if str(request.args.get("full", "")).strip().lower() in {"1", "true", "yes", "on"}:
+            params["full"] = "1"
         r = requests.get(f"{OASIS_BASE_URL}/experts", params=params, timeout=5)
         if r.ok:
             all_experts = r.json().get("experts", [])
@@ -4730,12 +4843,10 @@ def add_external_member(team_name):
             "tag": tag,
             "platform": platform,
             "global_name": global_name,
-            "meta": {
-                "api_url": api_url,
-                "api_key": api_key,
-                "model": model,
-                "headers": headers
-            }
+            "meta": _merge_external_agent_meta(
+                {"api_url": api_url, "api_key": api_key, "model": model, "headers": headers},
+                body,
+            )
         }
         agents.append(new_agent)
         
@@ -4859,18 +4970,9 @@ def update_external_member(team_name):
             found["global_name"] = new_gn
 
         # Update meta fields (only if provided)
-        meta = found.get("meta", {})
-        if "api_url" in body:
-            meta["api_url"] = body["api_url"]
-        if "api_key" in body:
-            meta["api_key"] = body["api_key"]
-        if "model" in body:
-            meta["model"] = body["model"]
-        if "headers" in body:
-            meta["headers"] = body["headers"]
+        meta = _merge_external_agent_meta(found.get("meta", {}), body)
         if "platform" in body:
             found["platform"] = str(body["platform"] or "").strip()
-        meta.pop("platform", None)
         if meta:
             found["meta"] = meta
         elif "meta" in found:
@@ -4973,6 +5075,231 @@ def get_team_skills(team_name):
             "team": list_skills(user_id, team=team_name),
             "personal": list_skills(user_id),
         },
+    })
+
+
+def _safe_extract_skill_zip(zip_path: Path, target_dir: Path) -> None:
+    with zipfile.ZipFile(zip_path) as zf:
+        for info in zf.infolist():
+            if info.is_dir():
+                continue
+            name = info.filename.replace("\\", "/")
+            if name.startswith("/") or ".." in Path(name).parts:
+                raise ValueError(f"Unsafe zip entry: {info.filename}")
+            if info.file_size > 5 * 1024 * 1024:
+                raise ValueError(f"Zip entry too large: {info.filename}")
+            target = target_dir / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(info) as src, target.open("wb") as dst:
+                shutil.copyfileobj(src, dst)
+
+
+def _copy_direct_skill_dirs(extracted_dir: Path, user_id: str, team_name: str) -> dict[str, Any]:
+    from webot.skills import _parse_frontmatter, _rebuild_index, _security_scan, _skills_dir, _team_skills_dir, _validate_name
+
+    candidates: list[Path] = []
+    root_skill = extracted_dir / "SKILL.md"
+    if root_skill.is_file():
+        candidates.append(extracted_dir)
+    for skill_md in extracted_dir.rglob("SKILL.md"):
+        if skill_md.parent == extracted_dir:
+            continue
+        if "__MACOSX" in skill_md.parts:
+            continue
+        candidates.append(skill_md.parent)
+
+    imported: list[str] = []
+    skipped: list[str] = []
+    target_root = _team_skills_dir(user_id, team_name) if team_name else _skills_dir(user_id)
+    seen: set[Path] = set()
+    for skill_dir in candidates:
+        resolved = skill_dir.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        skill_md = skill_dir / "SKILL.md"
+        try:
+            content = skill_md.read_text(encoding="utf-8")
+            if len(content.encode("utf-8")) > 100 * 1024:
+                skipped.append(f"{skill_dir.name}: SKILL.md too large")
+                continue
+            violations = _security_scan(content)
+            if violations:
+                skipped.append(f"{skill_dir.name}: security scan failed")
+                continue
+            meta, _body = _parse_frontmatter(content)
+            raw_name = str(meta.get("name") or skill_dir.name or "skill").strip().lower()
+            normalized = re.sub(r"[^a-z0-9._-]+", "-", raw_name).strip(".-_")[:64]
+            skill_name = _validate_name(normalized or "skill")
+        except Exception as exc:
+            skipped.append(f"{skill_dir.name}: {exc}")
+            continue
+
+        for support_file in skill_dir.rglob("*"):
+            if support_file.is_file() and support_file.stat().st_size > 5 * 1024 * 1024:
+                skipped.append(f"{skill_name}: file too large")
+                break
+        else:
+            target = target_root / skill_name
+            if target.exists():
+                shutil.rmtree(target, ignore_errors=True)
+            shutil.copytree(skill_dir, target)
+            imported.append(skill_name)
+
+    if imported:
+        _rebuild_index(user_id, team=team_name)
+    return {"imported": imported, "skipped": skipped}
+
+
+@app.route("/skills", methods=["GET"])
+def get_global_skills():
+    """List user-level shared managed skills."""
+    user_id = session.get("user_id", "")
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    from webot.skills import list_skills
+
+    return jsonify({
+        "ok": True,
+        "skills": {
+            "personal": list_skills(user_id),
+        },
+    })
+
+
+@app.route("/skills/import-zip", methods=["POST"])
+def import_global_skill_zip():
+    """Import managed skills from a Skill ZIP into the user-level shared scope."""
+    user_id = session.get("user_id", "")
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    file = request.files.get("file")
+    if not file or not file.filename:
+        return jsonify({"error": "file is required"}), 400
+    if not file.filename.lower().endswith(".zip"):
+        return jsonify({"error": "Only .zip files are supported"}), 400
+
+    with tempfile.TemporaryDirectory(prefix="clawcross_global_skill_zip_") as tmp:
+        tmp_dir = Path(tmp)
+        zip_path = tmp_dir / "skill.zip"
+        file.save(zip_path)
+        extract_dir = tmp_dir / "extracted"
+        extract_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            _safe_extract_skill_zip(zip_path, extract_dir)
+            direct = _copy_direct_skill_dirs(extract_dir, user_id, "")
+        except zipfile.BadZipFile:
+            return jsonify({"error": "Invalid zip file"}), 400
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    if not direct.get("imported"):
+        return jsonify({"error": "No SKILL.md found in zip", "direct": direct}), 400
+
+    return jsonify({"ok": True, "direct": direct})
+
+
+@app.route("/skills/<skill_name>", methods=["GET"])
+def get_global_skill_detail(skill_name):
+    """Get a single user-level shared managed skill detail."""
+    user_id = session.get("user_id", "")
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    from webot.skills import get_skill
+
+    skill = get_skill(user_id, name=skill_name)
+    if not skill:
+        return jsonify({"error": f"Skill '{skill_name}' not found"}), 404
+    return jsonify({"ok": True, "skill": skill})
+
+
+@app.route("/skills/<skill_name>", methods=["PUT"])
+def update_global_skill_detail(skill_name):
+    """Update a single user-level shared managed skill's SKILL.md content."""
+    user_id = session.get("user_id", "")
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+    body = request.get_json(force=True) or {}
+    content = str(body.get("content") or "")
+    if not content.strip():
+        return jsonify({"error": "content is required"}), 400
+
+    from webot.skills import edit_skill, get_skill
+
+    result = edit_skill(user_id, name=skill_name, content=content)
+    if not result.get("success"):
+        return jsonify({"error": result.get("error") or "Update failed"}), 400
+
+    return jsonify({"ok": True, "skill": get_skill(user_id, name=skill_name), "result": result})
+
+
+@app.route("/skills/<skill_name>", methods=["DELETE"])
+def delete_global_skill_detail(skill_name):
+    """Delete a user-level shared managed skill."""
+    user_id = session.get("user_id", "")
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    from webot.skills import delete_skill
+
+    result = delete_skill(user_id, name=skill_name)
+    if not result.get("success"):
+        return jsonify({"error": result.get("error") or "Delete failed"}), 400
+    return jsonify({"ok": True, "result": result})
+
+
+@app.route("/teams/<team_name>/skills/import-zip", methods=["POST"])
+def import_team_skill_zip(team_name):
+    """Import managed skills from a Skill ZIP into the selected team."""
+    user_id = session.get("user_id", "")
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+    if "/" in team_name or "\\" in team_name or team_name.startswith("."):
+        return jsonify({"error": "Invalid team name"}), 400
+    team_dir = os.path.join(root_dir, "data", "user_files", user_id, "teams", team_name)
+    if not os.path.exists(team_dir):
+        return jsonify({"error": "Team not found"}), 404
+
+    file = request.files.get("file")
+    if not file or not file.filename:
+        return jsonify({"error": "file is required"}), 400
+    if not file.filename.lower().endswith(".zip"):
+        return jsonify({"error": "Only .zip files are supported"}), 400
+
+    with tempfile.TemporaryDirectory(prefix="clawcross_skill_zip_") as tmp:
+        tmp_dir = Path(tmp)
+        zip_path = tmp_dir / "skill.zip"
+        file.save(zip_path)
+        extract_dir = tmp_dir / "extracted"
+        extract_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            _safe_extract_skill_zip(zip_path, extract_dir)
+            direct = _copy_direct_skill_dirs(extract_dir, user_id, team_name)
+        except zipfile.BadZipFile:
+            return jsonify({"error": "Invalid zip file"}), 400
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    imported_count = len(direct.get("imported") or [])
+    if imported_count == 0:
+        return jsonify({
+            "error": "No SKILL.md found in zip",
+            "direct": direct,
+        }), 400
+
+    return jsonify({
+        "ok": True,
+        "team": team_name,
+        "restored": {
+            "restored_user_skill_dirs": 0,
+            "restored_user_files": 0,
+            "restored_team_skill_dirs": 0,
+            "restored_team_files": 0,
+        },
+        "direct": direct,
     })
 
 
@@ -5091,6 +5418,27 @@ def _external_agent_response_view(agent: dict) -> dict:
     }
 
 
+def _merge_external_agent_meta(base: dict | None, body: dict) -> dict:
+    meta = dict(base or {})
+    incoming = body.get("meta")
+    if isinstance(incoming, dict):
+        for key, value in incoming.items():
+            if key != "platform":
+                meta[key] = value
+    for key in ("api_url", "api_key", "model", "headers"):
+        if key in body:
+            meta[key] = body[key]
+    acp_in = body.get("acp")
+    if isinstance(acp_in, dict):
+        current = dict(meta.get("acp") or {})
+        for key in ("timeout_sec", "ttl_sec", "approve_all", "non_interactive_permissions"):
+            if key in acp_in:
+                current[key] = acp_in[key]
+        meta["acp"] = current
+    meta.pop("platform", None)
+    return meta
+
+
 def _public_agents_save_raw(user_id: str, agents: list) -> None:
     p = _public_external_agents_user_path(user_id)
     os.makedirs(os.path.dirname(p), exist_ok=True)
@@ -5133,12 +5481,10 @@ def public_external_agents():
                     "tag": tag,
                     "platform": platform,
                     "global_name": global_name,
-                    "meta": {
-                        "api_url": api_url,
-                        "api_key": api_key,
-                        "model": model,
-                        "headers": headers,
-                    },
+                    "meta": _merge_external_agent_meta(
+                        {"api_url": api_url, "api_key": api_key, "model": model, "headers": headers},
+                        body,
+                    ),
                 }
             else:
                 found = None
@@ -5154,16 +5500,7 @@ def public_external_agents():
                     found["tag"] = body["new_tag"]
                 if "platform" in body:
                     found["platform"] = str(body.get("platform") or "").strip()
-                meta = found.get("meta", {})
-                if "api_url" in body:
-                    meta["api_url"] = body["api_url"]
-                if "api_key" in body:
-                    meta["api_key"] = body["api_key"]
-                if "model" in body:
-                    meta["model"] = body["model"]
-                if "headers" in body:
-                    meta["headers"] = body["headers"]
-                meta.pop("platform", None)
+                meta = _merge_external_agent_meta(found.get("meta", {}), body)
                 if meta:
                     found["meta"] = meta
                 elif "meta" in found:
@@ -5197,6 +5534,167 @@ def public_external_agents():
         return jsonify({"status": "success", "deleted": deleted})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/mobile_alarms", methods=["GET", "POST"])
+def mobile_alarms():
+    """Mobile message-center alarm manager for public or team agents."""
+    user_id = session.get("user_id", "")
+    if not user_id:
+        return jsonify({"error": "not logged in"}), 401
+
+    if request.method == "GET":
+        team = str(request.args.get("team") or "__public__").strip() or "__public__"
+        try:
+            resp = requests.get(SCHEDULER_TASKS_URL, timeout=10)
+            tasks = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else []
+            if not isinstance(tasks, list):
+                tasks = []
+        except Exception as e:
+            return jsonify({"error": f"Scheduler unavailable: {e}"}), 502
+
+        if team != "__public__":
+            team_dir = os.path.join(root_dir, "data", "user_files", user_id, "teams", team)
+            if not os.path.exists(team_dir):
+                return jsonify({"error": "Team not found"}), 404
+            internal_session_to_name, external_global_to_name = _team_alarm_export_maps(user_id, team)
+            return jsonify({
+                "ok": True,
+                "team": team,
+                "alarms": export_team_alarms(
+                    user_id=user_id,
+                    team=team,
+                    internal_session_to_name=internal_session_to_name,
+                    external_global_to_name=external_global_to_name,
+                ),
+                "targets": _team_alarm_targets(user_id, team),
+            })
+
+        public_names = {
+            str(a.get("name") or "").strip()
+            for a in _public_agents_load_raw(user_id)
+            if isinstance(a, dict) and str(a.get("name") or "").strip()
+        }
+        alarms = []
+        for item in tasks:
+            if not isinstance(item, dict) or str(item.get("user_id") or "") != user_id:
+                continue
+            target_type = str(item.get("target_type") or "internal").strip().lower()
+            target_name = str(item.get("target_name") or "").strip()
+            team = str(item.get("team") or "").strip()
+            if target_type == "external" and (team == "__public__" or (not team and target_name in public_names)):
+                alarms.append(item)
+        targets = []
+        for agent in _public_agents_load_raw(user_id):
+            if not isinstance(agent, dict):
+                continue
+            name = str(agent.get("name") or "").strip()
+            if not name:
+                continue
+            platform = _external_agent_platform(agent) or str(agent.get("tag") or "external")
+            targets.append({
+                "target_type": "external",
+                "target_name": name,
+                "label": f"{name} · {platform}",
+            })
+        return jsonify({"ok": True, "alarms": alarms, "targets": targets})
+
+    body = request.get_json(force=True)
+    team = str(body.get("team") or "__public__").strip() or "__public__"
+    target_type = str(body.get("target_type") or "external").strip().lower()
+    target_name = str(body.get("target_name") or "").strip()
+    schedule_type = str(body.get("schedule_type") or "cron").strip().lower()
+    cron = str(body.get("cron") or "").strip()
+    run_at = str(body.get("run_at") or "").strip()
+    text = str(body.get("text") or "").strip()
+    if target_type not in {"internal", "external"}:
+        return jsonify({"error": "target_type must be internal or external"}), 400
+    if schedule_type not in {"cron", "once"}:
+        return jsonify({"error": "schedule_type must be cron or once"}), 400
+    if not target_name or not text or (schedule_type == "cron" and not cron) or (schedule_type == "once" and not run_at):
+        return jsonify({"error": "target_name, schedule and text are required"}), 400
+
+    if team != "__public__":
+        team_dir = os.path.join(root_dir, "data", "user_files", user_id, "teams", team)
+        if not os.path.exists(team_dir):
+            return jsonify({"error": "Team not found"}), 404
+        internal_name_to_session, external_name_to_global = _team_alarm_restore_maps(user_id, team)
+        payload = {
+            "user_id": user_id,
+            "cron": cron,
+            "schedule_type": schedule_type,
+            "run_at": run_at,
+            "text": text,
+            "target_type": target_type,
+            "target_name": target_name,
+            "team": team,
+        }
+        if target_type == "external":
+            if target_name not in external_name_to_global:
+                return jsonify({"error": f"External target not found: {target_name}"}), 404
+            payload["session_id"] = f"ext:{target_name}"
+        else:
+            session_id = internal_name_to_session.get(target_name)
+            if not session_id:
+                return jsonify({"error": f"Internal target not found: {target_name}"}), 404
+            payload["session_id"] = session_id
+        try:
+            resp = requests.post(SCHEDULER_TASKS_URL, json=payload, timeout=10)
+            data = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {"error": resp.text}
+            return jsonify(data), resp.status_code
+        except Exception as e:
+            return jsonify({"error": f"Scheduler unavailable: {e}"}), 502
+
+    public_names = {
+        str(a.get("name") or "").strip()
+        for a in _public_agents_load_raw(user_id)
+        if isinstance(a, dict) and str(a.get("name") or "").strip()
+    }
+    if target_name not in public_names:
+        return jsonify({"error": f"Public agent not found: {target_name}"}), 404
+    payload = {
+        "user_id": user_id,
+        "cron": cron,
+        "schedule_type": schedule_type,
+        "run_at": run_at,
+        "text": text,
+        "target_type": "external",
+        "target_name": target_name,
+        "team": "__public__",
+        "session_id": f"ext:{target_name}",
+    }
+    try:
+        resp = requests.post(SCHEDULER_TASKS_URL, json=payload, timeout=10)
+        data = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {"error": resp.text}
+        return jsonify(data), resp.status_code
+    except Exception as e:
+        return jsonify({"error": f"Scheduler unavailable: {e}"}), 502
+
+
+@app.route("/mobile_alarms/<task_id>", methods=["DELETE"])
+def delete_mobile_alarm(task_id):
+    user_id = session.get("user_id", "")
+    if not user_id:
+        return jsonify({"error": "not logged in"}), 401
+    team = str(request.args.get("team") or "__public__").strip() or "__public__"
+    try:
+        resp = requests.get(SCHEDULER_TASKS_URL, timeout=10)
+        tasks = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else []
+        if not isinstance(tasks, list):
+            tasks = []
+        target = next((t for t in tasks if isinstance(t, dict) and str(t.get("task_id") or "") == task_id), None)
+        if not target:
+            return jsonify({"error": "Alarm not found"}), 404
+        if str(target.get("user_id") or "") != user_id:
+            return jsonify({"error": "Forbidden"}), 403
+        expected_team = "__public__" if team == "__public__" else team
+        if str(target.get("team") or "").strip() != expected_team:
+            return jsonify({"error": "Alarm scope mismatch"}), 403
+        resp = requests.delete(f"{SCHEDULER_TASKS_URL}/{task_id}", timeout=10)
+        data = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {"error": resp.text}
+        return jsonify(data), resp.status_code
+    except Exception as e:
+        return jsonify({"error": f"Scheduler unavailable: {e}"}), 502
 
 
 # ------------------------------------------------------------------
@@ -5649,24 +6147,26 @@ def preview_team_snapshot():
         result["sections"]["skills"]["clawcross_personal"] = []
         result["sections"]["skills"]["clawcross_team"] = []
 
-    # --- 5. cron jobs ---
+    # --- 5. internal scheduler alarms ---
+    internal_session_to_name, external_global_to_name = _team_alarm_export_maps(user_id, team)
+    alarm_items = export_team_alarms(
+        user_id=user_id,
+        team=team,
+        internal_session_to_name=internal_session_to_name,
+        external_global_to_name=external_global_to_name,
+    )
     cron_info = {}
-    if isinstance(ext_data, list):
-        for entry in ext_data:
-            if not _is_openclaw_external(entry):
-                continue
-            short_name = entry.get("name", "")
-            agent_name = entry.get("global_name", "") or short_name
-            cron_jobs, cron_error = get_agent_cron_jobs(agent_name)
-            if cron_error:
-                cron_info[short_name] = {"count": 0, "error": cron_error}
-            elif cron_jobs:
-                cron_info[short_name] = {
-                    "count": len(cron_jobs),
-                    "items": [{"name": j.get("name", "?"), "schedule": j.get("schedule", "")} for j in cron_jobs],
-                }
-            else:
-                cron_info[short_name] = {"count": 0}
+    for item in alarm_items:
+        target = item.get("target_name") or item.get("target_ref") or "unknown"
+        cron_info.setdefault(target, {"count": 0, "items": []})
+        cron_info[target]["count"] += 1
+        cron_info[target]["items"].append({
+            "name": item.get("task_id", ""),
+            "schedule": item.get("run_at", "") if item.get("schedule_type") == "once" else item.get("cron", ""),
+            "schedule_type": item.get("schedule_type", "cron"),
+            "text": item.get("text", ""),
+            "target_type": item.get("target_type", "internal"),
+        })
     result["sections"]["cron"] = cron_info
 
     # --- 6. workflows (yaml + python files) ---
@@ -5850,12 +6350,11 @@ def download_team_snapshot():
                             rel_path = os.path.relpath(file_path, team_dir)
                             zipf.write(file_path, rel_path)
 
-            # --- Add skill folders and cron jobs for each openclaw agent ---
+            # --- Add skill folders for each OpenClaw agent, and team internal alarms ---
             ext_path = os.path.join(team_dir, "external_agents.json")
             managed_skills_added = False
-            cron_jobs_data = {}  # {short_name: [cron_jobs]}
 
-            if (_inc("skills") or _inc("cron")) and os.path.exists(ext_path):
+            if _inc("skills") and os.path.exists(ext_path):
                 try:
                     with open(ext_path, "r", encoding="utf-8") as f:
                         ext_data = json.load(f)
@@ -5922,19 +6421,17 @@ def download_team_snapshot():
 
                             except Exception:
                                 pass
-                        
-                        # 3. Fetch cron jobs for this agent using global_name as agentId
-                        if _inc("cron"):
-                            cron_jobs, cron_error = get_agent_cron_jobs(agent_name)
-                            if cron_error:
-                                print(f"[Warning] Failed to fetch cron jobs for {agent_name}: {cron_error}")
-                                cron_jobs = []
-                            if cron_jobs:
-                                cron_jobs_data[short_name] = cron_jobs
-            
-            # Save cron jobs to zip: cron_jobs.json
-            if cron_jobs_data:
-                zipf.writestr("cron_jobs.json", json.dumps(cron_jobs_data, ensure_ascii=False, indent=2))
+            # Save internal scheduler alarms to zip: cron_jobs.json
+            if _inc("cron"):
+                internal_session_to_name, external_global_to_name = _team_alarm_export_maps(user_id, team)
+                alarm_jobs_data = export_team_alarms(
+                    user_id=user_id,
+                    team=team,
+                    internal_session_to_name=internal_session_to_name,
+                    external_global_to_name=external_global_to_name,
+                )
+                if alarm_jobs_data:
+                    zipf.writestr("cron_jobs.json", json.dumps(alarm_jobs_data, ensure_ascii=False, indent=2))
 
             # Add ClawCross managed skills (personal + team scoped).
             if _inc("skills"):
@@ -6270,7 +6767,7 @@ def upload_team_snapshot():
 
         skill_restore_result = restore_skills_from_team_dir(skills_extract_root, user_id, team)
         
-        # --- Restore cron jobs from cron_jobs.json ---
+        # --- Restore internal scheduler alarms from cron_jobs.json ---
         cron_jobs_path = os.path.join(team_dir, "cron_jobs.json")
         cron_restored_total = 0
         cron_errors = []
@@ -6279,18 +6776,21 @@ def upload_team_snapshot():
             try:
                 with open(cron_jobs_path, "r", encoding="utf-8") as f:
                     cron_jobs_data = json.load(f)
-                
                 if isinstance(cron_jobs_data, dict):
-                    # cron_jobs_data format: {short_name: [cron_jobs]}
-                    for short_name, cron_jobs in cron_jobs_data.items():
-                        if not isinstance(cron_jobs, list) or not cron_jobs:
-                            continue
-                        # Use new global_name as target_agent
-                        target_name = team + "_" + short_name
-                        restored, errors = restore_cron_jobs(cron_jobs, target_name)
-                        cron_restored_total += restored
-                        if errors:
-                            cron_errors.extend([f"{short_name}: {e}" for e in errors])
+                    # Backward compatibility for old snapshots: skip OpenClaw cron dicts.
+                    cron_jobs_data = []
+                if isinstance(cron_jobs_data, list):
+                    internal_name_to_session, external_name_to_global = _team_alarm_restore_maps(user_id, team)
+                    restored, errors = restore_team_alarms(
+                        alarms=cron_jobs_data,
+                        user_id=user_id,
+                        team=team,
+                        internal_name_to_session=internal_name_to_session,
+                        external_name_to_global=external_name_to_global,
+                        scheduler_url=SCHEDULER_TASKS_URL,
+                    )
+                    cron_restored_total += restored
+                    cron_errors.extend(errors)
                 
                 # Clean up cron_jobs.json from team folder (it was only temporary)
                 os.unlink(cron_jobs_path)

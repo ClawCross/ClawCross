@@ -9,7 +9,7 @@ import httpx
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 
-from integrations.acpx_adapter import AcpxError, get_acpx_adapter
+from integrations.acpx_adapter import AcpxError, acpx_options_from_agent, get_acpx_adapter
 from integrations.acpx_cli_tools import acpx_agent_tags_with_legacy
 from utils.auth_utils import extract_user_password_session, is_internal_bearer, parse_bearer_parts
 from api.update_manager import current_update_snapshot, start_update_process
@@ -76,6 +76,8 @@ def _load_team_external_agents(user_id: str, team: str) -> list[dict]:
             if not isinstance(agent, dict) or "name" not in agent:
                 continue
             ext_config = agent.get("config") or agent.get("meta") or {}
+            if not isinstance(ext_config, dict):
+                ext_config = {}
             result.append({
                 "user_id": "ext",
                 "session_id": agent.get("name", ""),
@@ -87,6 +89,7 @@ def _load_team_external_agents(user_id: str, team: str) -> list[dict]:
                 "api_url": ext_config.get("api_url", ""),
                 "api_key": ext_config.get("api_key", ""),
                 "model": ext_config.get("model", ""),
+                "meta": ext_config,
             })
         return result
     except Exception:
@@ -329,6 +332,16 @@ class OpsService:
         platform = _canonical_external_platform(str(agent_info.get("platform", "") or ""))
         suffix = _resolve_external_session_suffix(str(agent_info.get("model", "")))
         session_key = f"agent:{global_name}:{suffix}"
+        acpx_policy = acpx_options_from_agent(
+            agent_info,
+            overrides={
+                "timeout_sec": req.timeout_sec,
+                "ttl_sec": req.ttl_sec,
+                "approve_all": req.approve_all,
+                "non_interactive_permissions": req.non_interactive_permissions,
+            },
+            default_timeout_sec=180,
+        )
 
         if not shutil.which("acpx"):
             raise HTTPException(status_code=500, detail="acpx 未安装或不在 PATH")
@@ -359,11 +372,21 @@ class OpsService:
             if req.action == "new":
                 if use_openclaw_exec:
                     await adapter.ops_openclaw_exec_slash(
-                        session_key=session_key, slash="/new", timeout_sec=180
+                        session_key=session_key,
+                        slash="/new",
+                        timeout_sec=acpx_policy["timeout_sec"],
+                        ttl_sec=acpx_policy["ttl_sec"],
+                        approve_all=acpx_policy["approve_all"],
+                        non_interactive_permissions=acpx_policy["non_interactive_permissions"],
                     )
                 else:
                     await adapter.ops_non_openclaw_reset_session(
-                        tool=acpx_tool, session_key=session_key
+                        tool=acpx_tool,
+                        session_key=session_key,
+                        timeout_sec=acpx_policy["timeout_sec"],
+                        ttl_sec=acpx_policy["ttl_sec"],
+                        approve_all=acpx_policy["approve_all"],
+                        non_interactive_permissions=acpx_policy["non_interactive_permissions"],
                     )
                 cleared_http_sessions = 0
                 if self.group_db_path:
@@ -382,10 +405,22 @@ class OpsService:
             if req.action == "stop":
                 if use_openclaw_exec:
                     await adapter.ops_openclaw_exec_slash(
-                        session_key=session_key, slash="/stop", timeout_sec=25
+                        session_key=session_key,
+                        slash="/stop",
+                        timeout_sec=min(acpx_policy["timeout_sec"], 60),
+                        ttl_sec=acpx_policy["ttl_sec"],
+                        approve_all=acpx_policy["approve_all"],
+                        non_interactive_permissions=acpx_policy["non_interactive_permissions"],
                     )
                 else:
-                    await adapter.ops_non_openclaw_cancel(tool=acpx_tool, session_key=session_key)
+                    await adapter.ops_non_openclaw_cancel(
+                        tool=acpx_tool,
+                        session_key=session_key,
+                        timeout_sec=min(acpx_policy["timeout_sec"], 60),
+                        ttl_sec=acpx_policy["ttl_sec"],
+                        approve_all=acpx_policy["approve_all"],
+                        non_interactive_permissions=acpx_policy["non_interactive_permissions"],
+                    )
                 return {
                     "status": "success",
                     "action": req.action,
@@ -401,6 +436,10 @@ class OpsService:
                     tool=acpx_tool,
                     session_key=session_key,
                     acpx_session=acpx_session,
+                    timeout_sec=min(acpx_policy["timeout_sec"], 60),
+                    ttl_sec=acpx_policy["ttl_sec"],
+                    approve_all=acpx_policy["approve_all"],
+                    non_interactive_permissions=acpx_policy["non_interactive_permissions"],
                 )
                 cleared_http_sessions = 0
                 if self.group_db_path:

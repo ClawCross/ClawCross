@@ -77,6 +77,7 @@ from webot.subagents import (
     get_subagent_by_name,
     get_subagent_by_session,
     list_subagents_for_user,
+    delete_subagent_by_session,
     update_subagent_metadata,
     update_subagent_status,
     upsert_subagent,
@@ -96,6 +97,7 @@ _AGENT_URL = f"http://127.0.0.1:{_AGENT_PORT}/v1/chat/completions"
 _SYSTEM_TRIGGER_URL = f"http://127.0.0.1:{_AGENT_PORT}/system_trigger"
 _SESSION_HISTORY_URL = f"http://127.0.0.1:{_AGENT_PORT}/session_history"
 _CANCEL_URL = f"http://127.0.0.1:{_AGENT_PORT}/cancel"
+_DELETE_SESSION_URL = f"http://127.0.0.1:{_AGENT_PORT}/delete_session"
 _SESSION_STATUS_URL = f"http://127.0.0.1:{_AGENT_PORT}/session_status"
 
 _BACKGROUND_TASKS: dict[str, asyncio.Task] = {}
@@ -682,6 +684,24 @@ async def _cancel_internal_subagent(
             raise RuntimeError(f"取消子 Agent 失败 (HTTP {response.status_code}): {response.text[:500]}")
         data = response.json()
     return bool(data.get("cancelled"))
+
+
+async def _delete_internal_session(
+    *,
+    username: str,
+    session_id: str,
+) -> dict:
+    token = _ensure_internal_token()
+    async with httpx.AsyncClient(timeout=60) as client:
+        response = await client.post(
+            _DELETE_SESSION_URL,
+            headers={"X-Internal-Token": token, "Content-Type": "application/json"},
+            json={"user_id": username, "session_id": session_id},
+        )
+        if response.status_code != 200:
+            raise RuntimeError(f"删除子 Agent session 失败 (HTTP {response.status_code}): {response.text[:500]}")
+        return response.json()
+
 
 @mcp.tool()
 async def list_webot_agent_profiles(username: str = "") -> str:
@@ -1385,6 +1405,120 @@ async def cancel_subagent(
         f"session_id: {updated.session_id}\n"
         f"cancelled_runtime: {'yes' if cancelled else 'no'}"
     )
+
+
+@mcp.tool()
+async def delete_subagent(
+    username: str,
+    agent_ref: str,
+    source_session: str = "",
+) -> str:
+    """
+    删除一个 WeBot 子 Agent。
+
+    子 Agent 与其 session 一一对应；删除会取消当前运行、删除该 session
+    的 checkpoint/history，并移除 webot_subagents registry 记录。
+
+    agent_ref 可以是 agent_id、session_id，或创建时指定的 name。
+    """
+    await _recover_background_runs(username)
+    record = _resolve_subagent_ref(username, agent_ref)
+    if record is None:
+        return f"❌ 未找到子 Agent: {agent_ref}"
+
+    latest_run = get_latest_run_for_agent(username, record.agent_id)
+    if latest_run is not None and latest_run.status in {"queued", "running", "cancelling"}:
+        request_run_interrupt(latest_run.run_id, username)
+        record_run_event(
+            username,
+            latest_run.run_id,
+            record.session_id,
+            event_type="delete_requested",
+            status="cancelling",
+            message=f"收到删除请求: {record.name}",
+        )
+
+    background_task = _active_background_task(record.agent_id)
+    had_background_task = background_task is not None
+    if background_task is not None:
+        background_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await background_task
+
+    with contextlib.suppress(Exception):
+        await _cancel_internal_subagent(username=username, session_id=record.session_id)
+
+    try:
+        delete_resp = await _delete_internal_session(username=username, session_id=record.session_id)
+    except Exception as exc:
+        return f"❌ 删除子 Agent 失败: {exc}"
+
+    # The /delete_session endpoint removes the registry row for subagent sessions.
+    # Keep this idempotent cleanup for MCP-only/runtime edge cases.
+    registry_deleted = delete_subagent_by_session(username, record.session_id)
+    plan_deleted = delete_session_plan(username, record.session_id)
+    todos_deleted = delete_session_todos(username, record.session_id)
+
+    if latest_run is not None:
+        update_run_status(
+            latest_run.run_id,
+            username,
+            status="cancelled",
+            last_result="子 Agent session 已删除。",
+            last_error="deleted",
+            interrupt_requested=False,
+            clear_worker=True,
+        )
+        record_run_event(
+            username,
+            latest_run.run_id,
+            record.session_id,
+            event_type="deleted",
+            status="cancelled",
+            message=f"子 Agent 已删除: {record.name}",
+        )
+
+    parent_session = source_session or record.parent_session
+    if parent_session:
+        with contextlib.suppress(Exception):
+            await _notify_parent_session(
+                username=username,
+                parent_session=parent_session,
+                agent_id=record.agent_id,
+                agent_type=record.agent_type,
+                agent_name=record.name,
+                result="子 Agent session 已删除。",
+                status="cancelled",
+            )
+
+    with contextlib.suppress(Exception):
+        run_tool_policy_hooks(
+            get_tool_policy(username),
+            event="subagent_stop",
+            user_id=username,
+            session_id=parent_session or record.session_id,
+            tool_name="__session__",
+            args={
+                "agent_id": record.agent_id,
+                "agent_type": record.agent_type,
+                "session_id": record.session_id,
+            },
+            result={"status": "deleted"},
+        )
+
+    return (
+        f"🗑️ 子 Agent 已删除\n"
+        f"agent_id: {record.agent_id}\n"
+        f"name: {record.name}\n"
+        f"type: {record.agent_type}\n"
+        f"session_id: {record.session_id}\n"
+        f"had_background_task: {'yes' if had_background_task else 'no'}\n"
+        f"registry_deleted_extra: {registry_deleted}\n"
+        f"plan_deleted: {plan_deleted}\n"
+        f"todos_deleted: {todos_deleted}\n"
+        f"delete_session: {delete_resp.get('message') or delete_resp.get('status') or 'ok'}"
+    )
+
 
 @mcp.tool()
 async def write_session_plan(

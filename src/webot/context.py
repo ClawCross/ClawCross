@@ -328,7 +328,7 @@ def compact_history_messages(
             summary=_trim_text(summary_text, 220),
             metadata={"older_message_count": len(older)},
         )
-    summary = SystemMessage(content=summary_text)
+    summary = HumanMessage(content=summary_text)
     compacted = [summary] + recent
 
     while len(compacted) > max_messages and len(compacted) > 2:

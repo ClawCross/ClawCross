@@ -39,7 +39,7 @@ from api.group_repository import (
 from api.group_models import Attachment, GroupCreateRequest, GroupAddMemberRequest, GroupMessageRequest, GroupUpdateRequest
 from utils.logging_utils import get_logger
 from utils.session_summary import first_human_title
-from integrations.acpx_adapter import AcpxError, get_acpx_adapter, load_external_agent_system_prompt
+from integrations.acpx_adapter import AcpxError, acpx_options_from_agent, get_acpx_adapter, load_external_agent_system_prompt
 from integrations.acpx_cli_tools import acpx_agent_tags_with_legacy
 from integrations.agent_sender import SendToAgentRequest, send_to_agent
 from integrations.external_persona import build_external_persona_prompt
@@ -297,6 +297,8 @@ def _parse_external_agents_file(path: str, *, owner_user_id: str = "", team: str
             if not isinstance(a, dict) or "name" not in a:
                 continue
             ext_config = a.get("config") or a.get("meta") or {}
+            if not isinstance(ext_config, dict):
+                ext_config = {}
             nm = a.get("name", "")
             gn = a.get("global_name", "")
             result.append({
@@ -313,6 +315,7 @@ def _parse_external_agents_file(path: str, *, owner_user_id: str = "", team: str
                 "api_url": ext_config.get("api_url", ""),
                 "api_key": ext_config.get("api_key", ""),
                 "model": ext_config.get("model", ""),
+                "meta": ext_config if isinstance(ext_config, dict) else {},
             })
         return result
     except Exception:
@@ -558,7 +561,7 @@ class GroupService:
                     session=acp_session,
                     options={
                         "cwd": _PROJECT_ROOT,
-                        "timeout_sec": 180,
+                        **acpx_options_from_agent(agent_info, default_timeout_sec=180),
                         "reset_session": bool(metadata and metadata.get("resetSession")),
                         "system_prompt": _external_agent_session_prompt(
                             agent_info,
@@ -860,6 +863,11 @@ class GroupService:
                               f"uv run scripts/cli.py groups send --group-id {group_id} --sender '{sender_display}' --message '你的回复内容'")
             private_cli_hint = (f"cd {_PROJECT_ROOT} && "
                                 f"uv run scripts/cli.py groups private-send --group-id {group_id} --sender '{sender_display}' --message '你的回复内容'")
+            mention_hint = (
+                "如果某段回复只需要特定成员处理，或需要转交给更合适的成员，请在回复内容里直接写 @对方名称。"
+                "被 @ 的消息只会唤醒并投递给目标成员，不会打扰全群；鼓励用这种方式高效交流。"
+                "不要写内部 global_id、session_id 或 tag#type#... 标识。"
+            )
 
             _ext_rules = _external_agent_group_rules_block()
             if is_private_chat:
@@ -874,6 +882,7 @@ class GroupService:
                 msg_prefix = f"[群聊 {group_id} 成员数:{member_count}] {sender} @你 说:\n"
                 msg_suffix = (f"\n\n⚠️ 这是专门 @你 的消息，你必须回复！{agent_identity}。\n"
                               f"{human_user_hint}\n\n"
+                              f"{mention_hint}\n"
                               "请先 cd 到项目目录，然后使用 CLI 工具发送消息到群里：\n"
                               f"{group_cli_hint}\n"
                               "[end padding]\n[end padding]\n[end padding]")
@@ -882,6 +891,7 @@ class GroupService:
                 msg_suffix = (
                     f"\n\n{agent_identity}。\n"
                     f"{human_user_hint}\n\n"
+                    f"{mention_hint}\n"
                     "如需回复，请先 cd 到项目目录，然后使用 CLI 工具发送消息到群里：\n"
                     f"{group_cli_hint}\n"
                     "[end padding]\n[end padding]\n[end padding]"
@@ -925,6 +935,7 @@ class GroupService:
                 group_trigger_suffix = ("\n\n如果需要回复，请使用 send_to_group 工具发送消息到群里：\n"
                                         f"  当前群主 owner=\"{owner_uid}\"；当前人类用户是「{owner_uid}」\n"
                                         f"  send_to_group(group_id=\"{group_id}\", content=\"你的回复内容\")\n"
+                                        "  如某段回复只需要特定成员处理，或需要转交给更合适的成员，请在 content 中直接写 @对方名称。被 @ 的消息只会唤醒并投递给目标成员，不会打扰全群；鼓励用这种方式高效交流。不要写内部 global_id、session_id 或 tag#type#... 标识。\n"
                                         "注意：username 和 source_session 会自动注入，不要手动设置。\n"
                                         "[end padding]\n[end padding]\n[end padding]")
                 private_trigger_suffix = ("\n\n如果需要回复，请使用 send_private_cli 工具发送私聊消息：\n"
@@ -1020,10 +1031,17 @@ class GroupService:
             raise HTTPException(status_code=404, detail="群聊不存在")
 
         members = await list_group_members(self.group_db_path, group_id)
+        external_agents_map = build_external_agents_map_for_owner(str(group.get("owner") or ""))
         # title 直接用数据库里的 short_name，不需要再查 json
         for member in members:
             if member.get("is_agent"):
                 member["title"] = member.get("short_name") or member.get("global_id") or "未命名"
+                if (member.get("member_type") or "").strip() == "ext":
+                    ext_info = external_agents_map.get(str(member.get("global_id") or "").strip()) or {}
+                    meta = ext_info.get("meta") if isinstance(ext_info.get("meta"), dict) else {}
+                    member["platform"] = ext_info.get("platform", "") or member.get("tag", "")
+                    member["model"] = ext_info.get("model", "") or meta.get("model", "")
+                    member["meta"] = meta
             else:
                 member["title"] = member.get("user_id") or "群主"
 

@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from langchain_core.messages import HumanMessage, ToolMessage
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -83,8 +83,44 @@ class WeBotContextTests(unittest.TestCase):
         messages = [HumanMessage(content=f"message-{index} " * 20) for index in range(20)]
         compacted = compact_history_messages(messages, max_messages=8, preserve_recent=4, context_token_budget=200)
         self.assertLessEqual(len(compacted), 8)
+        self.assertIsInstance(compacted[0], HumanMessage)
         self.assertIn("压缩摘要", compacted[0].content)
         self.assertIn("message-19", compacted[-1].content)
+
+    def test_context_compressor_evict_preserves_summary_and_latest_user_request(self):
+        from utils.context_compressor import level_evict
+
+        messages = [
+            SystemMessage(content="system " + ("s" * 5000)),
+            HumanMessage(content="压缩摘要 " + ("x" * 5000)),
+            HumanMessage(content="latest user request must remain"),
+        ]
+        result = level_evict(messages, token_budget=10, preserve_recent=1)
+
+        self.assertTrue(
+            any(isinstance(msg, HumanMessage) and str(msg.content).startswith("压缩摘要") for msg in result)
+        )
+        self.assertTrue(
+            any(isinstance(msg, HumanMessage) and msg.content == "latest user request must remain" for msg in result)
+        )
+
+    def test_context_limits_support_model_defaults_and_user_override(self):
+        from utils.context_limits import infer_model_context_window, resolve_history_token_budget
+
+        with patch.dict(
+            os.environ,
+            {
+                "LLM_MODEL": "MiniMax-M2.7",
+            },
+            clear=False,
+        ):
+            os.environ.pop("LLM_CONTEXT_WINDOW", None)
+            os.environ.pop("WEBOT_CONTEXT_TOKEN_BUDGET", None)
+            self.assertEqual(infer_model_context_window(), 1_000_000)
+            self.assertEqual(resolve_history_token_budget(), 128_000)
+
+        with patch.dict(os.environ, {"WEBOT_CONTEXT_TOKEN_BUDGET": "77777"}, clear=False):
+            self.assertEqual(resolve_history_token_budget(), 77777)
 
 
 if __name__ == "__main__":

@@ -105,6 +105,7 @@ WEBOT_SUBAGENT_TOOLS = (
     "send_subagent_message",
     "get_subagent_history",
     "cancel_subagent",
+    "delete_subagent",
 )
 
 WEBOT_RUNTIME_TOOLS = (

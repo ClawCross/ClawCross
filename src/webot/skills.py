@@ -429,19 +429,22 @@ def build_skills_prompt(user_id: str, *, team: str = "") -> str:
             for skill in team_skills[:20]:
                 desc = skill["description"][:100] if skill["description"] else ""
                 cat = f" [{skill['category']}]" if skill["category"] else ""
-                lines.append(f"  - {skill['name']}{cat}: {desc}")
+                path = f" ({skill['dir']})" if skill.get("dir") else ""
+                lines.append(f"  - {skill['name']}{cat}{path}: {desc}")
             lines.append("")
         if personal_skills:
             lines.append("Shared personal skills:")
             for skill in personal_skills[:20]:
                 desc = skill["description"][:100] if skill["description"] else ""
                 cat = f" [{skill['category']}]" if skill["category"] else ""
-                lines.append(f"  - {skill['name']}{cat}: {desc}")
+                path = f" ({skill['dir']})" if skill.get("dir") else ""
+                lines.append(f"  - {skill['name']}{cat}{path}: {desc}")
     else:
         for skill in skills[:30]:  # Cap at 30 skills in prompt
             desc = skill["description"][:100] if skill["description"] else ""
             cat = f" [{skill['category']}]" if skill["category"] else ""
-            lines.append(f"  - {skill['name']}{cat}: {desc}")
+            path = f" ({skill['dir']})" if skill.get("dir") else ""
+            lines.append(f"  - {skill['name']}{cat}{path}: {desc}")
 
     return "\n".join(lines)
 

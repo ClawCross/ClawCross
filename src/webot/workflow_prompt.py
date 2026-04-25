@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import os
+import json
 from pathlib import Path
 
 
@@ -8,57 +8,114 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 USER_FILES_DIR = PROJECT_ROOT / "data" / "user_files"
 
 
-def _list_team_names(user_id: str) -> list[str]:
+def _team_dir(user_id: str, team: str) -> Path | None:
     scoped_user = (user_id or "").strip()
-    if not scoped_user:
+    scoped_team = (team or "").strip()
+    if not scoped_user or not scoped_team:
+        return None
+    team_root = USER_FILES_DIR / scoped_user / "teams" / scoped_team
+    return team_root if team_root.is_dir() else None
+
+
+def _read_json_list(path: Path) -> list[dict]:
+    if not path.is_file():
         return []
-    teams_root = USER_FILES_DIR / scoped_user / "teams"
-    if not teams_root.is_dir():
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
         return []
-    return sorted(
+    return data if isinstance(data, list) else []
+
+
+def _team_member_names(team_root: Path) -> list[str]:
+    names: list[str] = []
+    for filename in ("internal_agents.json", "external_agents.json"):
+        for item in _read_json_list(team_root / filename):
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").strip()
+            if name and name not in names:
+                names.append(name)
+    return names
+
+
+def _workflow_names(team_root: Path) -> tuple[list[str], list[str]]:
+    yaml_dir = team_root / "oasis" / "yaml"
+    python_dir = team_root / "oasis" / "python"
+    yaml_names = sorted(
         item.name
-        for item in teams_root.iterdir()
-        if item.is_dir()
-    )
+        for item in yaml_dir.iterdir()
+        if item.is_file() and item.suffix.lower() in {".yaml", ".yml"}
+    ) if yaml_dir.is_dir() else []
+    python_names = sorted(
+        item.name
+        for item in python_dir.iterdir()
+        if item.is_file() and item.suffix.lower() == ".py"
+    ) if python_dir.is_dir() else []
+    return yaml_names, python_names
+
+
+def _team_skill_names(user_id: str, team: str) -> list[str]:
+    try:
+        from webot.skills import list_skills
+    except Exception:
+        try:
+            from src.webot.skills import list_skills
+        except Exception:
+            return []
+
+    names: list[str] = []
+    try:
+        skills = list_skills(user_id, team=team)
+    except Exception:
+        return []
+    for item in skills:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if name and name not in names:
+            names.append(name)
+    return names
 
 
 def build_team_workflow_prompt(user_id: str, *, team: str = "") -> str:
-    """Build a compact team/workflow usage hint for system prompt injection."""
-    teams = _list_team_names(user_id)
-    if team and team in teams:
-        teams = [team] + [item for item in teams if item != team]
+    """Build a compact current-team context block for system prompt injection.
 
-    lines = ["\n【Team / Workflow 提示】"]
-    if teams:
-        lines.append("可用的 team：")
-        for name in teams[:20]:
-            lines.append(f"  - {name}")
-        if len(teams) > 20:
-            lines.append(f"  - ... 另有 {len(teams) - 20} 个 team")
+    If the current session is not bound to a team, return an empty string so
+    public/private agents do not receive unrelated team context.
+    """
+    team_root = _team_dir(user_id, team)
+    if team_root is None:
+        return ""
+
+    member_names = _team_member_names(team_root)
+    yaml_names, python_names = _workflow_names(team_root)
+    skill_names = _team_skill_names(user_id, team)
+
+    lines = [
+        "\n【当前 Team 信息】",
+        f"team name: {team}",
+    ]
+    if member_names:
+        lines.append("成员 name:")
+        lines.extend(f"  - {name}" for name in member_names)
     else:
-        lines.append("当前未发现可用 team。")
+        lines.append("成员 name: 暂无")
 
-    lines.extend(
-        [
-            "",
-            "查找和执行 workflow 时，遵循下面规则：",
-            "1. 内部 agent / 当前会话优先直接用 MCP 工具，不要绕 CLI。",
-            "   - 查找 YAML: list_oasis_workflows(team=\"...\")",
-            "   - 查找 Python: list_oasis_python_workflows(team=\"...\")",
-            "   - 执行 YAML: start_new_oasis(schedule_file=\"...\", team=\"...\", question=\"...\")",
-            "   - 执行 Python: start_new_oasis(python_file=\"...\", team=\"...\", question=\"...\")",
-            "2. 只有外部 agent 才使用 CLI。",
-            "   - 先切换目录: cd <项目根目录>  (例如当前仓库根目录，里面应包含 scripts/cli.py)",
-            "   - CLI 基本格式: python3 scripts/cli.py -u <user> workflows <action> [options]",
-            "   - 查找全部 workflow: python3 scripts/cli.py -u <user> workflows list",
-            "   - 查找某个 team 的 workflow: python3 scripts/cli.py -u <user> workflows list --team <team>",
-            "   - 只看 YAML: python3 scripts/cli.py -u <user> workflows list --type yaml [--team <team>]",
-            "   - 只看 Python: python3 scripts/cli.py -u <user> workflows list --type python [--team <team>]",
-            "   - 运行 YAML workflow: python3 scripts/cli.py -u <user> workflows run --type yaml --team <team> --name <workflow> --question \"<task>\"",
-            "   - 运行 Python workflow: python3 scripts/cli.py -u <user> workflows run --type python --team <team> --name <workflow> --question \"<task>\"",
-            "   - 如果 workflow 在个人目录而不是 team 目录，可省略 --team。",
-            "   - --name 用 workflow 文件名；YAML 可不写 .yaml，Python 可不写 .py。",
-            "3. 使用 CLI 时，不要在错误目录下执行；先进入项目根目录再运行命令。",
-        ]
-    )
+    if yaml_names or python_names:
+        lines.append("工作流 name:")
+        if yaml_names:
+            lines.append("  YAML:")
+            lines.extend(f"    - {name}" for name in yaml_names)
+        if python_names:
+            lines.append("  Python:")
+            lines.extend(f"    - {name}" for name in python_names)
+    else:
+        lines.append("工作流 name: 暂无")
+
+    if skill_names:
+        lines.append("Skill name:")
+        lines.extend(f"  - {name}" for name in skill_names)
+    else:
+        lines.append("Skill name: 暂无")
     return "\n".join(lines)

@@ -51,7 +51,7 @@ _ACP_AVAILABLE = bool(shutil.which("acpx"))
 
 # 确保 src/ 在 import 路径中，以便导入 llm_factory
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "src"))
-from integrations.acpx_adapter import AcpxError, get_acpx_adapter, load_external_agent_system_prompt
+from integrations.acpx_adapter import AcpxError, acpx_options_from_agent, get_acpx_adapter, load_external_agent_system_prompt
 from integrations.agent_sender import SendToAgentRequest, send_to_agent
 from services.llm_factory import create_chat_model, extract_text
 
@@ -369,23 +369,44 @@ def get_all_experts(user_id: str | None = None, team: str = "") -> list[dict]:
 # Prompt helpers (shared by both backends)
 # ======================================================================
 
-# 加载讨论 prompt 模板
-_discuss_tpl_path = os.path.join(_prompts_dir, "oasis_expert_discuss.txt")
-try:
-    with open(_discuss_tpl_path, "r", encoding="utf-8") as f:
-        _DISCUSS_PROMPT_TPL = f.read().strip()
-    print("[prompts] ✅ oasis 已加载 oasis_expert_discuss.txt")
-except FileNotFoundError:
-    print(f"[prompts] ⚠️ 未找到 {_discuss_tpl_path}，使用内置默认模板")
-    _DISCUSS_PROMPT_TPL = ""
-
-
 # Common behavior rules injected into all expert prompts (discussion & execute mode)
 _BEHAVIOR_RULES = (
     "\n\n**OASIS 子 Agent 原则：**\n"
     "你是被调度执行的子 Agent：只完成当前轮任务，按协议（JSON）回传；不得接管他人发言或整条工作流。\n"
     "**禁止调用 start_new_oasis**（或任何等价「新开 OASIS 讨论/工作流」），避免嵌套失控；嵌套须由用户或主 Agent 明确授权。\n"
-    "产出只走规定渠道；**禁止**擅自用 send_to_group 等把过程稿、内部推演推到用户群聊，除非用户或任务明文要求。\n"
+    "产出只走 OASIS 规定的 JSON 回传渠道；**默认禁止使用 send_to_group、groups send 或任何等价群聊工具**。\n"
+    "不要把过程稿、内部推演、阶段性结论或工具日志发到用户群聊；也不要为了通知进度、寻求确认或展示成果而自行发群。\n"
+    "只有当用户或当前任务指令**明确要求你发到群聊**时，才可以使用群聊工具；否则一律只返回 OASIS JSON。\n"
+)
+
+_DISCUSS_JSON_HINT = (
+    '请在回复中包含一个 JSON 对象（不要包含 markdown 代码块标记，不要包含注释）：\n'
+    '{"clawcross_type": "oasis reply", "reply_to": 2, '
+    '"content": "你的观点（200字以内，观点鲜明）", '
+    '"votes": [{"post_id": 1, "direction": "up"}]}\n\n'
+    "说明:\n"
+    "- clawcross_type: 必须为 \"oasis reply\"\n"
+    "- reply_to: 如果论坛中已有其他人的帖子，你**必须**选择一个帖子ID进行回复；只有在论坛为空时才填 null\n"
+    "- content: 你的发言内容，要有独到见解，可以赞同、反驳或补充你所回复的帖子\n"
+    '- votes: 对其他帖子的投票列表，direction 只能是 "up" 或 "down"。如果没有要投票的帖子，填空列表 []\n'
+    "- JSON 前后可以有其他文字，系统会自动提取 JSON 部分\n"
+    "- ⚠️ JSON 必须写在一行内，content 字段中不能有实际换行符（需要换行请用 \\n 转义）\n"
+)
+
+_DISCUSS_UPDATE_JSON_HINT = (
+    "请基于这些新观点以及你之前看到的讨论内容，在回复中包含一个 JSON 对象"
+    "（不要包含 markdown 代码块标记，不要包含注释）：\n"
+    '{"clawcross_type": "oasis reply", "reply_to": <某个帖子ID>, '
+    '"content": "你的观点（200字以内，观点鲜明）", '
+    '"votes": [{"post_id": <ID>, "direction": "up或down"}]}\n\n'
+    "JSON 前后可以有其他文字，系统会自动提取 JSON 部分。\n"
+    "⚠️ JSON 必须写在一行内，content 字段中不能有实际换行符（需要换行请用 \\n 转义）。\n"
+)
+
+_DISCUSS_NO_UPDATE_JSON_HINT = (
+    "本轮没有新的帖子。如果你有新的想法或补充，可以继续发言；"
+    "如果没有，回复一个空 content 即可。\n"
+    '{"clawcross_type": "oasis reply", "reply_to": null, "content": "", "votes": []}\n\n'
 )
 
 _EXEC_JSON_HINT = (
@@ -398,6 +419,13 @@ _EXEC_JSON_HINT = (
     '[end padding]\n'
     '[end padding]\n'
     '[end padding]\n'
+)
+
+_END_PADDING_HINT = (
+    "回复最后请添加：\n"
+    "[end padding]\n"
+    "[end padding]\n"
+    "[end padding]\n"
 )
 
 
@@ -438,14 +466,6 @@ def _build_discuss_prompt(
         split: If True, return (system_prompt, user_prompt) tuple for session mode.
                If False, return a single combined string for single-shot temp mode.
     """
-    if _DISCUSS_PROMPT_TPL and not split:
-        return _DISCUSS_PROMPT_TPL.format(
-            expert_name=expert_name,
-            persona=persona,
-            question=question,
-            posts_text=posts_text,
-        )
-
     # --- Build system part (identity + behavior) ---
     # 判断是否是丰富的 agency 专家 prompt（含 markdown 标题）
     _is_rich_persona = persona and ("## " in persona or "# " in persona)
@@ -470,16 +490,7 @@ def _build_discuss_prompt(
     user_prompt = (
         f"讨论主题: {question}\n\n"
         f"当前论坛内容:\n{posts_text}\n\n"
-        "请在回复中包含一个 JSON 对象（不要包含 markdown 代码块标记，不要包含注释）：\n"
-        '{"clawcross_type": "oasis reply", "reply_to": 2, "content": "你的观点（200字以内，观点鲜明）", '
-        '"votes": [{"post_id": 1, "direction": "up"}]}\n\n'
-        "说明:\n"
-        "- clawcross_type: 必须为 \"oasis reply\"\n"
-        "- reply_to: 如果论坛中已有其他人的帖子，你**必须**选择一个帖子ID进行回复；只有在论坛为空时才填 null\n"
-        "- content: 你的发言内容，要有独到见解，可以赞同、反驳或补充你所回复的帖子\n"
-        '- votes: 对其他帖子的投票列表，direction 只能是 "up" 或 "down"。如果没有要投票的帖子，填空列表 []\n'
-        "- JSON 前后可以有其他文字，系统会自动提取 JSON 部分\n"
-        "- ⚠️ JSON 必须写在一行内，content 字段中不能有实际换行符（需要换行请用 \\n 转义）\n"
+        f"{_DISCUSS_JSON_HINT}"
     )
 
     if split:
@@ -759,14 +770,6 @@ class ExpertAgent:
 
         if not discussion:
             # ── Execute mode (requires clawcross_type JSON protocol, retry=1 for internal agent) ──
-            _EXEC_JSON_HINT = (
-                '\n\n请将你的执行结果用以下 JSON 格式返回'
-                '（不要包含 markdown 代码块标记，不要包含注释）：\n'
-                '{"clawcross_type": "oasis reply", "reply_to": null, '
-                '"content": "你的执行结果", "votes": []}\n'
-                'JSON 前后可以有其他文字，系统会自动提取 JSON 部分。\n'
-                '⚠️ JSON 必须写在一行内，content 字段中不能有实际换行符（需要换行请用 \\n 转义）。\n'
-            )
             task_prompt = _build_identity_prompt(self.title, self.persona)
             task_prompt += f"任务主题: {forum.question}\n"
             if instruction:
@@ -941,15 +944,6 @@ class SessionExpert:
             new_posts = [p for p in others if p.id not in self._seen_post_ids]
             self._seen_post_ids.update(p.id for p in others)
 
-            _EXEC_JSON_HINT = (
-                '\n\n请将你的执行结果用以下 JSON 格式返回'
-                '（不要包含 markdown 代码块标记，不要包含注释）：\n'
-                '{"clawcross_type": "oasis reply", "reply_to": null, '
-                '"content": "你的执行结果", "votes": []}\n'
-                'JSON 前后可以有其他文字，系统会自动提取 JSON 部分。\n'
-                '⚠️ JSON 必须写在一行内，content 字段中不能有实际换行符（需要换行请用 \\n 转义）。\n'
-            )
-
             messages = []
             if not self._initialized:
                 # First call
@@ -1028,16 +1022,9 @@ class SessionExpert:
                     f"你的职责是从你自身的专业视角发表观点，不要试图代替其他专家发言或接管整个讨论流程。\n\n"
                     f"讨论主题: {forum.question}\n\n"
                     f"当前论坛内容:\n{posts_text}\n\n"
-                    "请以你自身的专业视角参与讨论。在回复中包含一个 JSON 对象（不要包含 markdown 代码块标记，不要包含注释）:\n"
-                    '{"clawcross_type": "oasis reply", "reply_to": 2, "content": "你的观点（200字以内，观点鲜明）", '
-                    '"votes": [{"post_id": 1, "direction": "up"}]}\n\n'
-                    "说明:\n"
-                    "- clawcross_type: 必须为 \"oasis reply\"\n"
-                    "- reply_to: 如果论坛中已有其他人的帖子，你**必须**选择一个帖子ID进行回复；只有在论坛为空时才填 null\n"
-                    "- content: 你的发言内容，要有独到见解\n"
-                    '- votes: 对其他帖子的投票列表，direction 只能是 "up" 或 "down"。如果没有要投票的帖子，填空列表 []\n'
-                    "- JSON 前后可以有其他文字，系统会自动提取 JSON 部分\n"
-                    "- ⚠️ JSON 必须写在一行内，content 字段中不能有实际换行符（需要换行请用 \\n 转义）\n"
+                    f"{_BEHAVIOR_RULES.strip()}\n\n"
+                    "请以你自身的专业视角参与讨论。"
+                    f"{_DISCUSS_JSON_HINT}"
                     "- 你拥有工具调用能力，如需搜索资料、分析数据来支撑你的观点，可以使用可用的工具。\n"
                     "- 后续轮次只会发送新增帖子，之前的帖子请参考你的对话记忆。"
                 )
@@ -1051,20 +1038,14 @@ class SessionExpert:
                     f"【第 {forum.current_round} 轮讨论更新】\n"
                     f"以下是自你上次发言后的 {len(new_posts)} 条新帖子：\n\n"
                     f"{new_text}\n\n"
-                    "请基于这些新观点以及你之前看到的讨论内容，在回复中包含一个 JSON 对象"
-                    "（不要包含 markdown 代码块标记，不要包含注释）：\n"
-                    '{"clawcross_type": "oasis reply", "reply_to": <某个帖子ID>, '
-                    '"content": "你的观点（200字以内，观点鲜明）", '
-                    '"votes": [{"post_id": <ID>, "direction": "up或down"}]}\n\n'
-                    "JSON 前后可以有其他文字，系统会自动提取 JSON 部分。"
-                    "⚠️ JSON 必须写在一行内，content 字段中不能有实际换行符（需要换行请用 \\n 转义）。"
+                    f"{_BEHAVIOR_RULES.strip()}\n"
+                    f"{_DISCUSS_UPDATE_JSON_HINT}"
                 )
             else:
                 prompt = (
                     f"【第 {forum.current_round} 轮讨论更新】\n"
-                    "本轮没有新的帖子。如果你有新的想法或补充，可以继续发言；"
-                    "如果没有，回复一个空 content 即可。\n"
-                    '{"clawcross_type": "oasis reply", "reply_to": null, "content": "", "votes": []}\n\n'
+                    f"{_BEHAVIOR_RULES.strip()}\n"
+                    f"{_DISCUSS_NO_UPDATE_JSON_HINT}"
                     "JSON 前后可以有其他文字，系统会自动提取 JSON 部分。"
                 )
             messages.append({"role": "user", "content": prompt})
@@ -1190,11 +1171,12 @@ class ExternalExpert:
         "2. 选择/投票（clawcross_type=\"oasis choose\"）：\n"
         "{\n"
         '  "clawcross_type": "oasis choose",\n'
-        '  "choose": {"option": "A", "reason": "理由"},\n'
+        '  "choose": 1,\n'
         '  "content": "补充说明（可选）"\n'
         "}\n\n"
         "注意：\n"
         "- JSON 前后可以有其他文字，系统会自动提取 JSON 部分\n"
+        "- 选择/投票时，choose 必须是数字，对应 OASIS 给出的路径编号；不要写 A/B、路径名或对象\n"
         "- ⚠️ JSON 必须是合法的单行 JSON：content 等字符串字段内不能有实际换行，请把所有内容写在同一行内（需要换行请用 \\n 转义）\n"
         "- 回复最后必须添加三行 end padding 防止传输截断：\n"
         "[end padding]\n"
@@ -1223,6 +1205,7 @@ class ExternalExpert:
         tag: str = "",
         platform: str = "",
         extra_headers: dict[str, str] | None = None,
+        acp_options: dict[str, Any] | None = None,
         oc_agent_name: str = "",
         team: str = "",
     ):
@@ -1236,6 +1219,10 @@ class ExternalExpert:
         self.model = model
         self._team = team
         self._extra_headers = extra_headers or {}
+        self._acpx_policy = acpx_options_from_agent(
+            {"meta": {"acp": acp_options or {}}},
+            default_timeout_sec=int(timeout or 180),
+        )
         self._platform_lower = self.platform
         self._http_global_name = oc_agent_name
         self._drop_unknown_platform = not self._platform_lower
@@ -1361,7 +1348,7 @@ class ExternalExpert:
                     session=cli_session,
                     options={
                         "cwd": os.path.dirname(os.path.dirname(__file__)),
-                        "timeout_sec": 180,
+                        **self._acpx_policy,
                         "system_prompt": system_prompt,
                     },
                 )
@@ -1507,7 +1494,7 @@ class ExternalExpert:
                         session=acp_session,
                         options={
                             "cwd": os.path.dirname(os.path.dirname(__file__)),
-                            "timeout_sec": 180,
+                            **self._acpx_policy,
                             "system_prompt": _EXTERNAL_AGENT_SYSTEM_PROMPT
                             + "\n\n"
                             + _build_identity_prompt(self.title, self.persona),
@@ -1715,6 +1702,8 @@ class ExternalExpert:
                 "⚠️ JSON 必须写在一行内，content 字段中不能有实际换行符（需要换行请用 \\n 转义），否则系统无法解析。\n"
                 "例如：\n"
                 '{"clawcross_type": "oasis reply", "reply_to": 2, "content": "你的观点", "votes": []}\n\n'
+                '{"clawcross_type": "oasis choose", "choose": 1, "content": "选择理由"}\n\n'
+                "如果当前任务是 OASIS selector，choose 必须是数字，对应 OASIS 给出的路径编号；不要写 A/B、路径名或对象。\n"
                 "JSON 前后可以有其他文字。回复最后必须添加：\n"
                 "[end padding]\n"
                 "[end padding]\n"
@@ -1875,26 +1864,16 @@ class ExternalExpert:
                     f"【第 {forum.current_round} 轮讨论更新】\n"
                     f"以下是自你上次发言后的 {len(new_posts)} 条新帖子：\n\n"
                     f"{new_text}\n\n"
-                    "请基于这些新观点以及你之前看到的讨论内容，在回复中包含一个 JSON 对象"
-                    "（不要包含 markdown 代码块标记，不要包含注释）：\n"
-                    '{"clawcross_type": "oasis reply", "reply_to": <某个帖子ID>, '
-                    '"content": "你的观点（200字以内，观点鲜明）", '
-                    '"votes": [{"post_id": <ID>, "direction": "up或down"}]}\n\n'
-                    "JSON 前后可以有其他文字。回复最后请添加：\n"
-                    "[end padding]\n"
-                    "[end padding]\n"
-                    "[end padding]\n"
+                    f"{_BEHAVIOR_RULES.strip()}\n"
+                    f"{_DISCUSS_UPDATE_JSON_HINT}"
+                    f"{_END_PADDING_HINT}"
                 )
             else:
                 prompt = (
                     f"【第 {forum.current_round} 轮讨论更新】\n"
-                    "本轮没有新的帖子。如果你有新的想法或补充，可以继续发言；"
-                    "如果没有，回复一个空 content 即可。\n"
-                    '{"clawcross_type": "oasis reply", "reply_to": null, "content": "", "votes": []}\n\n'
-                    "回复最后请添加：\n"
-                    "[end padding]\n"
-                    "[end padding]\n"
-                    "[end padding]\n"
+                    f"{_BEHAVIOR_RULES.strip()}\n"
+                    f"{_DISCUSS_NO_UPDATE_JSON_HINT}"
+                    f"{_END_PADDING_HINT}"
                 )
             if instruction:
                 prompt += f"\n📋 本轮你的专项指令：{instruction}\n请在回复中重点关注和执行这个指令。"

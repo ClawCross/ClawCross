@@ -75,8 +75,9 @@ from core.streaming_tool_executor import (
     StreamingToolExecutor, get_streaming_executor,
     classify_tool_access, ToolAccessMode, ToolExecutionResult,
 )
-from utils.token_budget import get_session_budget, SessionTokenBudget
-from utils.context_compressor import compress_context, CompressionStats
+from utils.token_budget import get_session_budget
+from utils.context_compressor import compress_context
+from utils.context_limits import resolve_history_message_limits, resolve_history_token_budget
 from utils.cache_boundary import SystemPromptCacheManager
 from utils.bash_safety import analyze_command, is_command_blocked, RiskLevel
 from utils.logging_utils import get_logger
@@ -87,7 +88,6 @@ from core.agent_orchestrator import (
     create_council_session, submit_council_vote, evaluate_council_consensus,
 )
 from utils.cost_tracker import get_cost_tracker
-from utils.effort_controller import resolve_effort, get_effort_config, EffortLevel
 from core.workflow_engines import (
     get_ralph_loop, create_ralph_loop, get_ralph_prompt,
     create_deep_interview, get_interview_prompt,
@@ -119,7 +119,7 @@ USER_INJECTED_TOOLS = {
     "start_background_command", "get_background_command_status",
     "read_background_command_output", "cancel_background_command",
     # Alarm management tools
-    "add_alarm", "list_alarms", "delete_alarm",
+    "get_current_time", "add_alarm", "list_alarms", "delete_alarm",
     # Telegram push notification tools
     "set_telegram_chat_id", "send_telegram_message", "get_telegram_status", "remove_telegram_config",
     # OASIS forum tools
@@ -137,7 +137,7 @@ USER_INJECTED_TOOLS = {
     "send_to_group", "send_private_cli",
     # WeBot subagent tools
     "list_webot_agent_profiles", "spawn_subagent", "list_subagents",
-    "send_subagent_message", "get_subagent_history", "cancel_subagent",
+    "send_subagent_message", "get_subagent_history", "cancel_subagent", "delete_subagent",
     "list_webot_workflow_presets", "apply_webot_workflow_preset",
     "session_send_to", "session_inbox", "session_deliver_inbox",
     "claude_session_send_to", "claude_session_inbox", "claude_session_deliver_inbox",
@@ -178,6 +178,7 @@ SESSION_INJECTED_TOOLS = {
     "spawn_subagent": "parent_session",
     "send_subagent_message": "source_session",
     "cancel_subagent": "source_session",
+    "delete_subagent": "source_session",
     "apply_webot_workflow_preset": "source_session",
     "write_session_plan": "source_session",
     "read_session_plan": "source_session",
@@ -209,6 +210,7 @@ SESSION_INJECTED_TOOLS = {
 }
 
 TEAM_INJECTED_TOOLS: frozenset[str] = frozenset({
+    "add_alarm",
     "skill_manage",
     "skill_view",
     "skill_list",
@@ -225,6 +227,7 @@ SESSION_FORCE_INJECTED_TOOLS: frozenset[str] = frozenset({
     "spawn_subagent",
     "send_subagent_message",
     "cancel_subagent",
+    "delete_subagent",
     "session_send_to",
     "session_inbox",
     "session_deliver_inbox",
@@ -1449,6 +1452,12 @@ class TeamAgent:
             session_id=session_id,
             messages=history_messages,
         )
+        history_token_budget = resolve_history_token_budget(is_subagent=is_subagent)
+        max_history_messages, preserve_recent_messages = resolve_history_message_limits(
+            is_subagent=is_subagent,
+            token_budget=history_token_budget,
+        )
+
         with contextlib.suppress(Exception):
             run_tool_policy_hooks(
                 session_policy,
@@ -1461,27 +1470,24 @@ class TeamAgent:
                     "message_count": len(history_messages),
                 },
                 result={
-                    "context_token_budget": 8000 if is_subagent else 12000,
+                    "context_token_budget": history_token_budget,
                 },
             )
         history_messages = compact_history_messages(
             history_messages,
-            max_messages=24 if is_subagent else 32,
-            preserve_recent=8 if is_subagent else 12,
-            context_token_budget=8000 if is_subagent else 12000,
+            max_messages=max_history_messages,
+            preserve_recent=preserve_recent_messages,
+            context_token_budget=history_token_budget,
             user_id=user_id,
             session_id=session_id,
         )
 
         # --- 5-level compression pipeline (new) ---
-        token_budget_val = 8000 if is_subagent else 12000
-        effort_config = resolve_effort(user_id, session_id)
-        if effort_config.max_context_tokens > 0:
-            token_budget_val = min(token_budget_val, effort_config.max_context_tokens)
+        token_budget_val = history_token_budget
         history_messages, compression_stats = compress_context(
             history_messages,
             token_budget=token_budget_val,
-            preserve_recent=effort_config.compress_threshold // 4 if effort_config else 8,
+            preserve_recent=preserve_recent_messages,
         )
         if compression_stats.level_applied != "none":
             print(f">>> [compress] applied level={compression_stats.level_applied} "

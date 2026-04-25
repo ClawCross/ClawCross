@@ -896,7 +896,7 @@ async def get_conclusion(topic_id: str, user_id: str = Query(...), timeout: int 
 # ------------------------------------------------------------------
 
 @app.get("/experts")
-async def list_experts(user_id: str = "", team: str = ""):
+async def list_experts(user_id: str = "", team: str = "", full: bool = False):
     """List all available expert agents (public + agency + user custom + team)."""
     from oasis.experts import get_all_experts
     configs = get_all_experts(user_id or None, team=team)
@@ -904,7 +904,7 @@ async def list_experts(user_id: str = "", team: str = ""):
     for c in configs:
         persona_raw = c["persona"]
         # Agency 专家的 persona 是完整 md 正文，过长时截断为预览
-        if len(persona_raw) > 300:
+        if not full and len(persona_raw) > 300:
             persona_preview = persona_raw[:300] + "..."
         else:
             persona_preview = persona_raw

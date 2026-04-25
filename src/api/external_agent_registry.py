@@ -74,6 +74,8 @@ def _parse_external_agents_file(path: str, *, owner_user_id: str = "", team: str
         if not isinstance(item, dict) or "name" not in item:
             continue
         ext_config = item.get("config") or item.get("meta") or {}
+        if not isinstance(ext_config, dict):
+            ext_config = {}
         name = str(item.get("name", "") or "")
         global_name = str(item.get("global_name", "") or "")
         result.append({
@@ -90,6 +92,7 @@ def _parse_external_agents_file(path: str, *, owner_user_id: str = "", team: str
             "api_url": ext_config.get("api_url", ""),
             "api_key": ext_config.get("api_key", ""),
             "model": ext_config.get("model", ""),
+            "meta": ext_config if isinstance(ext_config, dict) else {},
         })
     return result
 

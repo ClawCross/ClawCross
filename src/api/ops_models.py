@@ -49,6 +49,10 @@ class ACPControlRequest(BaseModel):
     agent_name: str                        # 外部 agent 的 name (= session_id in members)
     action: Literal["new", "stop", "delete"]  # delete=关闭 ACP session
     reset_session: bool = False            # 重置会话（通过 --reset-session 命令行标志实现）
+    timeout_sec: Optional[int] = None       # 覆盖 agent/meta.acp 中的 ACPX 调用超时
+    ttl_sec: Optional[int] = None           # 覆盖 acpx --ttl
+    approve_all: Optional[bool] = None      # 覆盖 acpx --approve-all 策略
+    non_interactive_permissions: Optional[str] = None  # 覆盖 acpx 非交互权限策略
 
 
 class ACPStatusRequest(BaseModel):

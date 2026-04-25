@@ -51,6 +51,7 @@ VALID_KEYS = {
     "OPENCLAW_API_URL", "OPENCLAW_GATEWAY_TOKEN", "OPENCLAW_SESSIONS_FILE",
     # 内部配置
     "INTERNAL_TOKEN", "OPENAI_STANDARD_MODE",
+    "LLM_CONTEXT_WINDOW", "WEBOT_CONTEXT_TOKEN_BUDGET", "WEBOT_SUBAGENT_CONTEXT_TOKEN_BUDGET",
     # 命令执行配置
     "ALLOWED_COMMANDS", "EXEC_TIMEOUT", "MAX_OUTPUT_LENGTH",
     # 服务配置
@@ -189,6 +190,12 @@ LLM_MODEL=
 # minimax: MiniMax API（https://api.minimaxi.com），
 #   模型名 MiniMax-M2.7 / MiniMax-M2.7-highspeed，1M context
 # LLM_PROVIDER=
+# Optional context-window override. Leave empty to infer from LLM_MODEL.
+# LLM_CONTEXT_WINDOW=128000
+#
+# Optional chat history budgets before compaction. Leave empty for model-aware defaults.
+# WEBOT_CONTEXT_TOKEN_BUDGET=64000
+# WEBOT_SUBAGENT_CONTEXT_TOKEN_BUDGET=32000
 # 是否支持图片识别（vision），可选，不设置时根据模型名自动推断：
 #   gpt-4o/gpt-5/o1/o3/o4/gemini/claude → 自动开启
 #   deepseek/qwen/glm 等 → 自动关闭

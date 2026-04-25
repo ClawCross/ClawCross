@@ -94,7 +94,13 @@ def _snip_message(msg: BaseMessage, char_limit: int = 3000) -> BaseMessage:
             name=getattr(msg, "name", ""),
         )
     if isinstance(msg, AIMessage):
-        return AIMessage(content=trimmed)
+        return AIMessage(
+            content=trimmed,
+            additional_kwargs=dict(getattr(msg, "additional_kwargs", {}) or {}),
+            response_metadata=dict(getattr(msg, "response_metadata", {}) or {}),
+            tool_calls=list(getattr(msg, "tool_calls", []) or []),
+            invalid_tool_calls=list(getattr(msg, "invalid_tool_calls", []) or []),
+        )
     if isinstance(msg, HumanMessage):
         return HumanMessage(content=trimmed)
     return msg
@@ -239,7 +245,7 @@ def level_collapse(
 
         i += 1
 
-    summary = SystemMessage(content="\n".join(summary_lines))
+    summary = HumanMessage(content="\n".join(summary_lines))
     return [summary] + collapsed + recent_part
 
 
@@ -289,22 +295,50 @@ def level_evict(
     if _total_tokens(messages) <= token_budget:
         return messages
 
-    # Always keep system messages at start and recent messages
+    # Always keep system messages, existing summaries, and the latest user
+    # request. Dropping the current ask is worse than exceeding the budget.
     system_msgs = [m for m in messages if isinstance(m, SystemMessage)]
     non_system = [m for m in messages if not isinstance(m, SystemMessage)]
     recent_count = min(preserve_recent, len(non_system))
     recent = non_system[-recent_count:] if recent_count > 0 else []
+    protected_ids = {id(m) for m in system_msgs}
 
-    result = system_msgs + recent
+    latest_human: HumanMessage | None = None
+    for msg in reversed(non_system):
+        if isinstance(msg, HumanMessage):
+            latest_human = msg
+            protected_ids.add(id(msg))
+            break
 
-    # If still over budget, trim recent messages too
+    summary_msgs: list[BaseMessage] = []
+    for msg in non_system:
+        if isinstance(msg, HumanMessage) and isinstance(msg.content, str):
+            if "压缩摘要" in msg.content or "compressed summary" in msg.content.lower():
+                protected_ids.add(id(msg))
+                summary_msgs.append(msg)
+
+    result = system_msgs + summary_msgs + recent
+    if latest_human is not None and all(id(m) != id(latest_human) for m in result):
+        result.append(latest_human)
+
+    deduped: list[BaseMessage] = []
+    seen_ids: set[int] = set()
+    for msg in result:
+        if id(msg) in seen_ids:
+            continue
+        deduped.append(msg)
+        seen_ids.add(id(msg))
+    result = deduped
+
+    # If still over budget, trim unprotected recent messages too.
     while _total_tokens(result) > token_budget and len(result) > 1:
-        # Remove the oldest non-system message
+        removed = False
         for i, msg in enumerate(result):
-            if not isinstance(msg, SystemMessage):
+            if id(msg) not in protected_ids:
                 result.pop(i)
+                removed = True
                 break
-        else:
+        if not removed:
             break
 
     return result
