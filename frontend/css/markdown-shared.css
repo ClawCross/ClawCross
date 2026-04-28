@@ -59,11 +59,78 @@
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     box-sizing: border-box;
+    background: #0f172a;
+    color: #e5edf7;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 10px;
+    padding: 0.9rem 1rem;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 .tc-markdown pre code {
     overflow-wrap: normal;
     word-break: normal;
+    color: inherit;
+    background: transparent;
+    text-shadow: none;
+}
+
+.tc-markdown :not(pre) > code {
+    background: rgba(15, 23, 42, 0.08);
+    color: #0f172a;
+    border: 1px solid rgba(15, 23, 42, 0.1);
+    border-radius: 6px;
+    padding: 0.08em 0.38em;
+}
+
+.tc-markdown pre code.hljs,
+.tc-markdown pre .hljs {
+    background: transparent !important;
+    color: #e5edf7 !important;
+}
+
+.tc-markdown pre .hljs-comment,
+.tc-markdown pre .hljs-quote {
+    color: #94a3b8 !important;
+}
+
+.tc-markdown pre .hljs-keyword,
+.tc-markdown pre .hljs-selector-tag,
+.tc-markdown pre .hljs-literal,
+.tc-markdown pre .hljs-name,
+.tc-markdown pre .hljs-section,
+.tc-markdown pre .hljs-link {
+    color: #93c5fd !important;
+}
+
+.tc-markdown pre .hljs-string,
+.tc-markdown pre .hljs-title,
+.tc-markdown pre .hljs-attr,
+.tc-markdown pre .hljs-template-tag,
+.tc-markdown pre .hljs-template-variable {
+    color: #86efac !important;
+}
+
+.tc-markdown pre .hljs-number,
+.tc-markdown pre .hljs-symbol,
+.tc-markdown pre .hljs-bullet,
+.tc-markdown pre .hljs-variable,
+.tc-markdown pre .hljs-type,
+.tc-markdown pre .hljs-built_in,
+.tc-markdown pre .hljs-builtin-name {
+    color: #f9a8d4 !important;
+}
+
+.tc-markdown pre .hljs-function,
+.tc-markdown pre .hljs-title.function_,
+.tc-markdown pre .hljs-title.class_ {
+    color: #fcd34d !important;
+}
+
+.tc-markdown pre .hljs-meta,
+.tc-markdown pre .hljs-doctag,
+.tc-markdown pre .hljs-regexp {
+    color: #c4b5fd !important;
 }
 
 /* 保持 table 布局语义；横向滚动由 .tc-markdown 承担，避免 display:block 导致 Safari 下错乱 */
@@ -88,6 +155,140 @@
 .tc-markdown img {
     max-width: 100%;
     height: auto;
+}
+
+.tc-markdown a.cc-local-file-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+    margin: 0.08em 0;
+    padding: 0.18em 0.5em;
+    border-radius: 0.55em;
+    background: rgba(37, 99, 235, 0.12);
+    border: 1px solid rgba(37, 99, 235, 0.28);
+    color: #1d4ed8;
+    text-decoration: none;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.94em;
+    line-height: 1.45;
+    word-break: break-all;
+}
+
+.tc-markdown a.cc-local-file-link::before {
+    content: "📂";
+    flex: 0 0 auto;
+    opacity: 0.95;
+}
+
+.tc-markdown a.cc-local-file-link:hover {
+    background: rgba(37, 99, 235, 0.18);
+    border-color: rgba(37, 99, 235, 0.4);
+    color: #1e40af;
+}
+
+.tc-markdown a.cc-local-file-link.cc-local-file-link-block {
+    display: flex;
+    width: 100%;
+    margin: 0.12em 0;
+    white-space: normal;
+}
+
+.tc-markdown pre.cc-local-file-code-block {
+    background: rgba(15, 23, 42, 0.92);
+}
+
+.tc-markdown pre.cc-local-file-code-block code {
+    display: block;
+}
+
+body.cc-local-file-preview-open {
+    overflow: hidden;
+}
+
+.cc-local-file-preview-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 120000;
+    display: none;
+}
+
+.cc-local-file-preview-overlay.show {
+    display: block;
+}
+
+.cc-local-file-preview-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(2, 6, 23, 0.68);
+    backdrop-filter: blur(2px);
+}
+
+.cc-local-file-preview-panel {
+    position: absolute;
+    inset: 24px;
+    display: flex;
+    flex-direction: column;
+    background: #0b1020;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+}
+
+.cc-local-file-preview-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    background: #111827;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.cc-local-file-preview-title {
+    min-width: 0;
+    color: #e5e7eb;
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cc-local-file-preview-close {
+    flex: 0 0 auto;
+    width: 34px;
+    height: 34px;
+    border: none;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #e5e7eb;
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+}
+
+.cc-local-file-preview-close:hover {
+    background: rgba(255, 255, 255, 0.14);
+}
+
+.cc-local-file-preview-frame {
+    width: 100%;
+    height: 100%;
+    flex: 1 1 auto;
+    border: none;
+    background: #020617;
+}
+
+@media (max-width: 640px) {
+    .cc-local-file-preview-panel {
+        inset: 0;
+        border-radius: 0;
+        border: none;
+    }
+    .cc-local-file-preview-header {
+        padding-top: calc(12px + env(safe-area-inset-top, 0px));
+    }
 }
 
 .msg-bubble.markdown-body.tc-markdown,

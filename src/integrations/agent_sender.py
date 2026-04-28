@@ -89,7 +89,7 @@ async def reset_agent(request: ResetAgentRequest) -> ResetAgentResult:
 async def _send_via_acp(request: SendToAgentRequest) -> SendToAgentResult:
     options = request.options or {}
     cwd = options.get("cwd")
-    run_options = normalize_acpx_run_options(options, default_timeout_sec=180)
+    run_options = normalize_acpx_run_options(options, default_timeout_sec=None)
     prompt_text = request.prompt if isinstance(request.prompt, str) else str(request.prompt or "")
     attachments = options.get("attachments")
     try:
@@ -130,7 +130,7 @@ async def _send_via_acp(request: SendToAgentRequest) -> SendToAgentResult:
 
 async def _reset_via_acp(request: ResetAgentRequest) -> ResetAgentResult:
     options = request.options or {}
-    run_options = normalize_acpx_run_options(options, default_timeout_sec=180)
+    run_options = normalize_acpx_run_options(options, default_timeout_sec=None)
     session_key = str(request.session or "").strip()
     if not session_key:
         return ResetAgentResult(ok=False, error="missing session")

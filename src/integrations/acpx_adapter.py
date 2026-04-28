@@ -27,6 +27,22 @@ def _coerce_int(value: Any, default: int, *, min_value: int, max_value: int) -> 
     return max(min_value, min(max_value, iv))
 
 
+def _coerce_optional_int(
+    value: Any,
+    default: int | None,
+    *,
+    min_value: int,
+    max_value: int,
+) -> int | None:
+    if value in (None, ""):
+        return default
+    try:
+        iv = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(min_value, min(max_value, iv))
+
+
 def _coerce_bool(value: Any) -> bool | None:
     if isinstance(value, bool):
         return value
@@ -45,7 +61,7 @@ def _coerce_bool(value: Any) -> bool | None:
 def normalize_acpx_run_options(
     options: dict[str, Any] | None = None,
     *,
-    default_timeout_sec: int = 180,
+    default_timeout_sec: int | None = None,
     default_ttl_sec: int = 86400,
 ) -> dict[str, Any]:
     """Normalize acpx run policy from user/agent config.
@@ -71,7 +87,7 @@ def normalize_acpx_run_options(
         or ""
     ).strip()
     return {
-        "timeout_sec": _coerce_int(timeout_raw, default_timeout_sec, min_value=5, max_value=3600),
+        "timeout_sec": _coerce_optional_int(timeout_raw, default_timeout_sec, min_value=5, max_value=3600),
         "ttl_sec": _coerce_int(ttl_raw, default_ttl_sec, min_value=60, max_value=604800),
         "approve_all": approve_all,
         "non_interactive_permissions": nip,
@@ -82,7 +98,7 @@ def acpx_options_from_agent(
     agent_info: dict[str, Any] | None,
     *,
     overrides: dict[str, Any] | None = None,
-    default_timeout_sec: int = 180,
+    default_timeout_sec: int | None = None,
 ) -> dict[str, Any]:
     """Resolve ACPX policy from an external agent record and optional request overrides."""
     agent_info = agent_info or {}
@@ -270,7 +286,10 @@ class AcpxAdapter:
         except FileNotFoundError as e:
             raise AcpxError(f"acpx executable missing: {e}") from e
         try:
-            out_b, err_b = await asyncio.wait_for(proc.communicate(), timeout=timeout_sec)
+            if timeout_sec is None:
+                out_b, err_b = await proc.communicate()
+            else:
+                out_b, err_b = await asyncio.wait_for(proc.communicate(), timeout=timeout_sec)
         except asyncio.TimeoutError as e:
             with contextlib.suppress(Exception):
                 proc.kill()
@@ -343,7 +362,7 @@ class AcpxAdapter:
         tool: str,
         session_key: str,
         prompt_text: str,
-        timeout_sec: int = 180,
+        timeout_sec: int | None = None,
         reset_session: bool = False,
         system_prompt: str | None = None,
         attachments: list[dict] | None = None,
@@ -544,7 +563,10 @@ class AcpxAdapter:
             stderr=asyncio.subprocess.PIPE,
         )
         try:
-            out_b, err_b = await asyncio.wait_for(proc.communicate(), timeout=timeout_sec)
+            if timeout_sec is None:
+                out_b, err_b = await proc.communicate()
+            else:
+                out_b, err_b = await asyncio.wait_for(proc.communicate(), timeout=timeout_sec)
         except asyncio.TimeoutError as e:
             with contextlib.suppress(Exception):
                 proc.kill()

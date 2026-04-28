@@ -288,6 +288,42 @@ def register_group_routes(app, *, port_agent: int, internal_token: str) -> None:
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/proxy_groups/<group_id>/members/mute", methods=["POST"])
+    def proxy_mute_group_member(group_id):
+        try:
+            headers = _group_auth_headers()
+            headers["Content-Type"] = "application/json"
+            r = requests.post(
+                "http://127.0.0.1:{port}/groups/{gid}/members/mute".format(
+                    port=port_agent,
+                    gid=_enc_group_seg(group_id),
+                ),
+                json=request.get_json(silent=True),
+                headers=headers,
+                timeout=10,
+            )
+            return jsonify(r.json()), r.status_code
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/proxy_groups/<group_id>/mute_all", methods=["POST"])
+    def proxy_mute_all_group_agents(group_id):
+        try:
+            headers = _group_auth_headers()
+            headers["Content-Type"] = "application/json"
+            r = requests.post(
+                "http://127.0.0.1:{port}/groups/{gid}/mute_all".format(
+                    port=port_agent,
+                    gid=_enc_group_seg(group_id),
+                ),
+                json=request.get_json(silent=True),
+                headers=headers,
+                timeout=10,
+            )
+            return jsonify(r.json()), r.status_code
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
     # ── ACP external agent management ──
 
     @app.route("/proxy_acp_control", methods=["POST"])

@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, session, Response, redirect, stream_with_context
+from flask import Flask, render_template, request, jsonify, session, Response, redirect, stream_with_context, send_file
 from werkzeug.middleware.proxy_fix import ProxyFix
 import hashlib
 import base64
@@ -11,7 +11,11 @@ import uuid
 import shutil
 import tempfile
 import zipfile
+import html
+import mimetypes
+import threading
 from pathlib import Path
+from io import BytesIO
 
 from integrations.acpx_cli_tools import acpx_agent_command_names
 from typing import Any
@@ -920,8 +924,9 @@ def team_creator_build():
         update_job(job.job_id, owner_id=owner_id, status="running", error="")
         if roles_data and isinstance(roles_data, list):
             # Direct role input
-            extracted_roles_payload = _normalize_role_records(roles_data)
-            team_config = build_from_roles(roles_data, team_name, task)
+            normalized_roles = _normalize_role_records(roles_data)
+            extracted_roles_payload = normalized_roles
+            team_config = build_from_roles(normalized_roles, team_name, task)
         elif extraction_results and isinstance(extraction_results, list):
             # Parse from TinyFish extraction results
             roles = parse_extracted_roles(extraction_results)
@@ -1558,6 +1563,473 @@ def group_chat_mobile():
 def group_chat_mobile_alias():
     """移动端群组群聊页面(别名) - 需要登录访问"""
     return render_template("group_chat_mobile.html")
+
+
+def _resolve_local_preview_path(raw_path: str) -> tuple[Path | None, str | None]:
+    value = str(raw_path or "").strip()
+    if not value:
+        return None, "Missing path"
+
+    candidate = Path(os.path.expanduser(value))
+    if candidate.is_absolute():
+        candidate = candidate.resolve()
+    else:
+        candidate = (Path(root_dir) / candidate).resolve()
+    if not candidate.exists():
+        return None, "File does not exist"
+    if not candidate.is_file():
+        return None, "Path is not a file"
+    return candidate, None
+
+
+def _local_preview_error_page(title: str, message: str, status: int) -> Response:
+    return Response(
+        (
+            "<html><body style='font-family:sans-serif;padding:24px;'>"
+            f"<h3>{html.escape(title)}</h3>"
+            f"<p>{html.escape(message)}</p>"
+            "</body></html>"
+        ),
+        status=status,
+        mimetype="text/html",
+    )
+
+
+def _guess_preview_kind(path: Path) -> tuple[str, str]:
+    mime_type, _ = mimetypes.guess_type(str(path))
+    mime_type = mime_type or "application/octet-stream"
+    if mime_type.startswith("image/"):
+        return "image", mime_type
+    if mime_type.startswith("video/"):
+        return "video", mime_type
+    if mime_type.startswith("audio/"):
+        return "audio", mime_type
+    if mime_type == "application/pdf":
+        return "pdf", mime_type
+    if mime_type in {
+        "application/vnd.ms-powerpoint",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/vnd.openxmlformats-officedocument.presentationml.slideshow",
+        "application/vnd.ms-powerpoint.presentation.macroenabled.12",
+    }:
+        return "powerpoint", mime_type
+    if mime_type.startswith("text/") or mime_type in {
+        "application/json",
+        "application/xml",
+        "application/javascript",
+        "application/x-sh",
+        "application/yaml",
+    }:
+        return "text", mime_type
+    return "binary", mime_type
+
+
+def _build_public_file_url(relative_path: str) -> str:
+    relative = "/" + str(relative_path or "").lstrip("/")
+    public_domain = _get_public_domain()
+    if public_domain:
+        return f"https://{public_domain}{relative}"
+    return urljoin(request.url_root, relative.lstrip("/"))
+
+
+_PPT_CONVERT_LOCK = threading.Lock()
+
+
+def _find_ppt_converter() -> str | None:
+    for name in ("soffice", "libreoffice"):
+        found = shutil.which(name)
+        if found:
+            return found
+    return None
+
+
+def _ppt_preview_cache_dir() -> Path:
+    cache_dir = Path(tempfile.gettempdir()) / "clawcross-preview-cache" / "ppt-pdf"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir
+
+
+def _convert_powerpoint_to_pdf(source_path: Path) -> tuple[Path | None, str | None]:
+    converter = _find_ppt_converter()
+    if not converter:
+        return None, "未检测到 LibreOffice/soffice，暂时无法在本机把 PPT 转成 PDF 预览。"
+
+    source_stat = source_path.stat()
+    cache_key = hashlib.sha256(
+        f"{source_path.resolve()}::{source_stat.st_mtime_ns}::{source_stat.st_size}".encode("utf-8")
+    ).hexdigest()
+    target_dir = _ppt_preview_cache_dir() / cache_key
+    pdf_path = target_dir / f"{source_path.stem}.pdf"
+    if pdf_path.exists():
+        return pdf_path, None
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+    with _PPT_CONVERT_LOCK:
+        if pdf_path.exists():
+            return pdf_path, None
+        cmd = [
+            converter,
+            "--headless",
+            "--convert-to",
+            "pdf",
+            "--outdir",
+            str(target_dir),
+            str(source_path),
+        ]
+        try:
+            completed = subprocess.run(
+                cmd,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+        except subprocess.TimeoutExpired:
+            return None, "PPT 转 PDF 超时，请稍后重试或直接下载原文件。"
+        except Exception as exc:
+            return None, f"PPT 转 PDF 失败：{exc}"
+
+        if completed.returncode != 0 or not pdf_path.exists():
+            stderr = (completed.stderr or completed.stdout or "").strip()
+            detail = f" 转换器输出：{stderr}" if stderr else ""
+            return None, f"PPT 转 PDF 失败。{detail}".strip()
+
+    return pdf_path, None
+
+
+def _render_powerpoint_html_preview(source_path: Path) -> tuple[str | None, str | None]:
+    try:
+        from pptx import Presentation
+        from PIL import Image
+    except Exception as exc:
+        return None, f"纯 Python PPT 预览依赖加载失败：{exc}"
+
+    try:
+        prs = Presentation(str(source_path))
+    except Exception as exc:
+        return None, f"PPT 文件解析失败：{exc}"
+
+    slide_html_parts: list[str] = []
+    for slide_index, slide in enumerate(prs.slides, start=1):
+        text_runs: list[str] = []
+        notes_runs: list[str] = []
+        image_blocks: list[str] = []
+
+        for shape in slide.shapes:
+            try:
+                if getattr(shape, "has_text_frame", False) and shape.text_frame:
+                    text = "\n".join(
+                        paragraph.text.strip()
+                        for paragraph in shape.text_frame.paragraphs
+                        if paragraph.text and paragraph.text.strip()
+                    ).strip()
+                    if text:
+                        text_runs.append(text)
+                if shape.shape_type == 13 and getattr(shape, "image", None):
+                    image_blob = shape.image.blob
+                    with Image.open(BytesIO(image_blob)) as img:
+                        width, height = img.size
+                    image_b64 = base64.b64encode(image_blob).decode("ascii")
+                    ext = (shape.image.ext or "png").lower()
+                    mime = "image/png" if ext == "png" else f"image/{ext}"
+                    alt = html.escape(getattr(shape, "name", "") or f"slide-{slide_index}-image")
+                    image_blocks.append(
+                        "<figure class='ppt-image'>"
+                        f"<img src='data:{mime};base64,{image_b64}' alt='{alt}'>"
+                        f"<figcaption>{alt} · {width}×{height}</figcaption>"
+                        "</figure>"
+                    )
+            except Exception:
+                continue
+
+        notes_text_frame = getattr(getattr(slide, "notes_slide", None), "notes_text_frame", None)
+        if notes_text_frame:
+            notes_text = "\n".join(
+                paragraph.text.strip()
+                for paragraph in notes_text_frame.paragraphs
+                if paragraph.text and paragraph.text.strip()
+            ).strip()
+            if notes_text:
+                notes_runs.append(notes_text)
+
+        body_html = ""
+        if text_runs:
+            body_html += "".join(
+                f"<pre class='ppt-text-block'>{html.escape(block)}</pre>"
+                for block in text_runs
+            )
+        if image_blocks:
+            body_html += "<div class='ppt-image-grid'>" + "".join(image_blocks) + "</div>"
+        if notes_runs:
+            body_html += (
+                "<details class='ppt-notes'><summary>讲者备注</summary>"
+                + "".join(f"<pre class='ppt-text-block ppt-notes-text'>{html.escape(block)}</pre>" for block in notes_runs)
+                + "</details>"
+            )
+        if not body_html:
+            body_html = "<div class='empty-state'><div class='hint'>这一页没有可提取的文本或图片内容。</div></div>"
+
+        slide_html_parts.append(
+            "<section class='ppt-slide'>"
+            f"<div class='ppt-slide-header'>第 {slide_index} 页</div>"
+            f"<div class='ppt-slide-body'>{body_html}</div>"
+            "</section>"
+        )
+
+    summary = f"共提取 {len(prs.slides)} 页"
+    preview_html = (
+        f"<div class='hint'>{summary} · 纯 Python 简化预览（文本、图片、备注）</div>"
+        "<div class='ppt-preview-stack'>"
+        + "".join(slide_html_parts)
+        + "</div>"
+    )
+    return preview_html, None
+
+
+@app.route("/local-file-converted")
+def local_file_converted():
+    if not session.get("user_id"):
+        return redirect("/", code=302)
+
+    raw_path = request.args.get("path", "")
+    target_path, error = _resolve_local_preview_path(raw_path)
+    if error or target_path is None:
+        return _local_preview_error_page("Cannot open file", error or "Unknown error", 400)
+
+    kind, _mime_type = _guess_preview_kind(target_path)
+    if kind != "powerpoint":
+        return _local_preview_error_page("Cannot convert file", "This file is not a PowerPoint document", 400)
+
+    pdf_path, convert_error = _convert_powerpoint_to_pdf(target_path)
+    if convert_error or pdf_path is None:
+        return _local_preview_error_page("PPT preview unavailable", convert_error or "Conversion failed", 503)
+
+    return send_file(
+        str(pdf_path),
+        mimetype="application/pdf",
+        as_attachment=False,
+        download_name=pdf_path.name,
+        conditional=True,
+        etag=True,
+        max_age=300,
+    )
+
+
+@app.route("/local-file-raw")
+def local_file_raw():
+    if not session.get("user_id"):
+        return redirect("/", code=302)
+
+    raw_path = request.args.get("path", "")
+    target_path, error = _resolve_local_preview_path(raw_path)
+    if error or target_path is None:
+        return _local_preview_error_page("Cannot open file", error or "Unknown error", 400)
+
+    kind, mime_type = _guess_preview_kind(target_path)
+    as_attachment = request.args.get("download", "").strip() == "1"
+    return send_file(
+        str(target_path),
+        mimetype=mime_type,
+        as_attachment=as_attachment or kind == "binary",
+        download_name=target_path.name,
+        conditional=True,
+        etag=True,
+        max_age=300,
+    )
+
+
+@app.route("/local-file-view")
+def local_file_view():
+    if not session.get("user_id"):
+        return redirect("/", code=302)
+
+    raw_path = request.args.get("path", "")
+    try:
+        line = max(1, int(request.args.get("line", "1") or "1"))
+    except ValueError:
+        line = 1
+    try:
+        col = max(1, int(request.args.get("col", "1") or "1"))
+    except ValueError:
+        col = 1
+
+    target_path, error = _resolve_local_preview_path(raw_path)
+    if error or target_path is None:
+        return _local_preview_error_page("Cannot open file", error or "Unknown error", 400)
+
+    preview_kind, mime_type = _guess_preview_kind(target_path)
+    title = html.escape(str(target_path))
+    raw_url = f"/local-file-raw?path={request.args.get('path', '')}"
+    raw_url_escaped = html.escape(raw_url, quote=True)
+    download_url_escaped = html.escape(f"{raw_url}&download=1", quote=True)
+
+    if preview_kind != "text":
+        if preview_kind == "image":
+            preview_html = f"<img class='media media-image' src='{raw_url_escaped}' alt='{title}'>"
+        elif preview_kind == "video":
+            preview_html = f"<video class='media' controls playsinline preload='metadata' src='{raw_url_escaped}'></video>"
+        elif preview_kind == "audio":
+            preview_html = f"<audio class='media-audio' controls preload='metadata' src='{raw_url_escaped}'></audio>"
+        elif preview_kind == "pdf":
+            preview_html = (
+                f"<iframe class='media media-pdf' src='{raw_url_escaped}#view=FitH' title='{title}'></iframe>"
+                f"<div class='hint'>如果手机浏览器不支持内嵌 PDF，可点下方“下载原文件”。</div>"
+            )
+        elif preview_kind == "powerpoint":
+            converted_pdf_url = f"/local-file-converted?path={request.args.get('path', '')}"
+            converted_pdf_url_escaped = html.escape(converted_pdf_url, quote=True)
+            converter_available = _find_ppt_converter() is not None
+            raw_absolute_url = _build_public_file_url(raw_url)
+            office_embed_url = "https://view.officeapps.live.com/op/embed.aspx?src=" + requests.utils.requote_uri(raw_absolute_url)
+            office_view_url = "https://view.officeapps.live.com/op/view.aspx?src=" + requests.utils.requote_uri(raw_absolute_url)
+            host_only = (request.host.split(":", 1)[0] or "").strip().lower()
+            can_embed_office = host_only not in {"127.0.0.1", "localhost", "::1", "[::1]"}
+            if converter_available:
+                preview_html = (
+                    f"<iframe class='media media-pdf' src='{converted_pdf_url_escaped}#view=FitH' title='{title}'></iframe>"
+                    "<div class='hint'>已在本机将 PPT/PPTX 转成 PDF 进行预览；如果内容更新，重新打开此链接会自动刷新转换缓存。</div>"
+                )
+                if can_embed_office:
+                    preview_html += (
+                        f"<div class='actions' style='margin-top:12px;'><a class='btn btn-secondary' href='{html.escape(office_view_url, quote=True)}' target='_blank' rel='noopener noreferrer'>在 Office Viewer 打开</a></div>"
+                    )
+            else:
+                python_preview_html, python_preview_error = _render_powerpoint_html_preview(target_path)
+                if python_preview_html:
+                    preview_html = python_preview_html
+                    if can_embed_office:
+                        preview_html += (
+                            f"<div class='actions' style='margin-top:12px;'><a class='btn btn-secondary' href='{html.escape(office_view_url, quote=True)}' target='_blank' rel='noopener noreferrer'>在 Office Viewer 打开</a></div>"
+                        )
+                elif can_embed_office:
+                    preview_html = (
+                        f"<iframe class='media media-pdf' src='{html.escape(office_embed_url, quote=True)}' title='{title}'></iframe>"
+                        "<div class='hint'>PPT/PPTX 通过 Office Web Viewer 远程预览；若加载失败，可点“在 Office Viewer 打开”或“下载原文件”。</div>"
+                        f"<div class='actions' style='margin-top:12px;'><a class='btn btn-secondary' href='{html.escape(office_view_url, quote=True)}' target='_blank' rel='noopener noreferrer'>在 Office Viewer 打开</a></div>"
+                    )
+                else:
+                    public_domain = _get_public_domain()
+                    if public_domain:
+                        preview_html = (
+                            "<div class='empty-state'>"
+                            "<div class='empty-title'>当前是本机地址，已为你准备远程 PPT 预览</div>"
+                            f"<div class='hint'>{html.escape(python_preview_error or '当前环境未检测到本地 PPT→PDF 转换器。')} 已改用 Tunnel 公网地址生成远程预览链接。</div>"
+                            "</div>"
+                            f"<div class='actions' style='margin-top:12px;justify-content:center;'><a class='btn btn-primary' href='{html.escape(office_view_url, quote=True)}' target='_blank' rel='noopener noreferrer'>打开远程 PPT 预览</a><a class='btn btn-secondary' href='{html.escape(raw_absolute_url, quote=True)}' target='_blank' rel='noopener noreferrer'>打开公网原文件</a></div>"
+                            f"<div class='hint' style='text-align:center;'>Tunnel 地址：{html.escape(public_domain)}</div>"
+                        )
+                    else:
+                        preview_html = (
+                            "<div class='empty-state'>"
+                            "<div class='empty-title'>当前无法直接预览 PPT</div>"
+                            f"<div class='hint'>{html.escape(python_preview_error or '当前既没有本地 PPT→PDF 转换器，也没有可用的 Tunnel 公网地址。')} 你仍可先下载原文件。</div>"
+                            "</div>"
+                        )
+        else:
+            preview_html = (
+                "<div class='empty-state'>"
+                "<div class='empty-title'>暂不支持在线预览此文件类型</div>"
+                f"<div class='hint'>MIME: {html.escape(mime_type)}</div>"
+                "</div>"
+            )
+        return Response(
+            (
+                "<!doctype html><html><head><meta charset='utf-8'>"
+                "<meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'>"
+                f"<title>{title}</title>"
+                "<style>"
+                "body{margin:0;background:#f3f6fb;color:#1e293b;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}"
+                ".wrap{padding:16px;max-width:1080px;margin:0 auto;}"
+                ".meta{margin-bottom:16px;padding:12px 14px;border:1px solid #d7e0ea;border-radius:14px;background:#ffffff;box-shadow:0 10px 30px rgba(15,23,42,0.06);}"
+                ".meta .path{font-size:14px;font-weight:600;word-break:break-all;line-height:1.5;color:#0f172a;}"
+                ".meta .sub{margin-top:6px;color:#64748b;font-size:12px;}"
+                ".actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;}"
+                ".btn{display:inline-flex;align-items:center;justify-content:center;padding:10px 14px;border-radius:10px;text-decoration:none;font-size:13px;font-weight:600;}"
+                ".btn-primary{background:#2563eb;color:#fff;}"
+                ".btn-secondary{background:#ffffff;color:#334155;border:1px solid #cbd5e1;}"
+                ".viewer{background:#ffffff;border:1px solid #d7e0ea;border-radius:14px;padding:14px;min-height:240px;box-shadow:0 16px 40px rgba(15,23,42,0.05);}"
+                ".media{display:block;width:100%;max-width:100%;border:none;border-radius:8px;background:#000;min-height:240px;}"
+                ".media-image{width:auto;max-width:100%;max-height:75vh;margin:0 auto;object-fit:contain;}"
+                ".media-pdf{height:80vh;}"
+                ".media-audio{width:100%;}"
+                ".hint{margin-top:10px;color:#64748b;font-size:12px;line-height:1.6;}"
+                ".empty-state{padding:24px 12px;text-align:center;}"
+                ".empty-title{font-size:16px;font-weight:700;margin-bottom:8px;color:#0f172a;}"
+                ".ppt-preview-stack{display:flex;flex-direction:column;gap:16px;}"
+                ".ppt-slide{border:1px solid #d7e0ea;border-radius:14px;background:#f8fbff;overflow:hidden;box-shadow:0 8px 24px rgba(15,23,42,0.04);}"
+                ".ppt-slide-header{padding:10px 14px;background:linear-gradient(180deg,#eef6ff,#e8f1ff);border-bottom:1px solid #d7e0ea;font-size:13px;font-weight:700;color:#1d4ed8;}"
+                ".ppt-slide-body{padding:14px;display:flex;flex-direction:column;gap:12px;}"
+                ".ppt-text-block{margin:0;padding:12px;border-radius:10px;background:#ffffff;color:#0f172a;white-space:pre-wrap;word-break:break-word;font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;border:1px solid #e2e8f0;}"
+                ".ppt-image-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;}"
+                ".ppt-image{margin:0;padding:10px;border-radius:12px;background:#ffffff;border:1px solid #dbe4ee;}"
+                ".ppt-image img{display:block;max-width:100%;max-height:320px;object-fit:contain;margin:0 auto 8px auto;border-radius:8px;background:#f8fafc;}"
+                ".ppt-image figcaption{font-size:11px;color:#64748b;word-break:break-word;}"
+                ".ppt-notes{border:1px dashed #93c5fd;border-radius:10px;padding:10px;background:#f8fbff;}"
+                ".ppt-notes summary{cursor:pointer;color:#1d4ed8;font-size:12px;font-weight:600;}"
+                ".ppt-notes-text{margin-top:10px;}"
+                "@media (max-width: 640px){.wrap{padding:12px;}.media-pdf{height:70vh;}}"
+                "</style></head><body>"
+                "<div class='wrap'>"
+                f"<div class='meta'><div class='path'>{title}</div><div class='sub'>Remote preview · {html.escape(mime_type)}</div>"
+                f"<div class='actions'><a class='btn btn-primary' href='{download_url_escaped}'>下载原文件</a><a class='btn btn-secondary' href='{raw_url_escaped}' target='_blank' rel='noopener noreferrer'>新窗口打开</a></div></div>"
+                f"<div class='viewer'>{preview_html}</div>"
+                "</div></body></html>"
+            ),
+            mimetype="text/html",
+        )
+
+    try:
+        content = target_path.read_text(encoding="utf-8", errors="replace")
+    except Exception as exc:
+        return _local_preview_error_page("Cannot read file", str(exc), 500)
+
+    lines = content.splitlines()
+    gutter_width = max(3, len(str(max(1, len(lines)))))
+    rendered_lines = []
+    for idx, text in enumerate(lines or [""], start=1):
+        escaped_text = html.escape(text)
+        line_id = f"L{idx}"
+        active_class = " is-active" if idx == line else ""
+        rendered_lines.append(
+            f"<div class='code-line{active_class}' id='{line_id}'>"
+            f"<a class='gutter' href='#{line_id}'>{str(idx).rjust(gutter_width)}</a>"
+            f"<span class='code'>{escaped_text or ' '}</span>"
+            "</div>"
+        )
+
+    title = html.escape(str(target_path))
+    return Response(
+        (
+            "<!doctype html><html><head><meta charset='utf-8'>"
+            "<meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'>"
+            f"<title>{title}</title>"
+            "<style>"
+            "body{margin:0;background:#0b1020;color:#e5e7eb;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}"
+            ".wrap{padding:16px;max-width:1200px;margin:0 auto;}"
+            ".meta{margin-bottom:16px;padding:12px 14px;border:1px solid #334155;border-radius:10px;background:#111827;}"
+            ".meta .path{font-size:14px;font-weight:600;word-break:break-all;}"
+            ".meta .sub{margin-top:6px;color:#94a3b8;font-size:12px;}"
+            ".actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;}"
+            ".btn{display:inline-flex;align-items:center;justify-content:center;padding:10px 14px;border-radius:10px;text-decoration:none;font-size:13px;font-weight:600;}"
+            ".btn-primary{background:#2563eb;color:#fff;}"
+            ".btn-secondary{background:#1f2937;color:#e5e7eb;border:1px solid #334155;}"
+            ".viewer{border-top:1px solid #1f2937;border-bottom:1px solid #1f2937;background:#020617;overflow:auto;}"
+            ".code-line{display:flex;min-height:22px;line-height:22px;}"
+            ".code-line.is-active{background:rgba(59,130,246,0.15);}"
+            ".gutter{flex:0 0 auto;width:64px;padding:0 12px;color:#64748b;text-decoration:none;text-align:right;user-select:none;border-right:1px solid #1f2937;}"
+            ".code{white-space:pre;display:block;padding:0 16px;min-width:max-content;}"
+            "@media (max-width: 640px){.wrap{padding:12px;}.gutter{width:52px;padding:0 8px;}.code{padding:0 10px;font-size:12px;}}"
+            "</style></head><body>"
+            "<div class='wrap'>"
+            f"<div class='meta'><div class='path'>{title}</div><div class='sub'>Line {line}, Column {col}</div>"
+            f"<div class='actions'><a class='btn btn-primary' href='{download_url_escaped}'>下载原文件</a><a class='btn btn-secondary' href='{raw_url_escaped}' target='_blank' rel='noopener noreferrer'>原始内容</a></div></div>"
+            f"<div class='viewer'>{''.join(rendered_lines)}</div>"
+            "</div>"
+            f"<script>location.hash='L{line}';</script>"
+            "</body></html>"
+        ),
+        mimetype="text/html",
+    )
 
 
 @app.route("/manifest.json")

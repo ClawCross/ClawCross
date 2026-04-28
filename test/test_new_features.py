@@ -11,6 +11,7 @@ Tests cover:
 """
 
 import asyncio
+import json
 import os
 import sys
 import time
@@ -45,7 +46,7 @@ class TestStreamingToolExecutor:
         from core.streaming_tool_executor import StreamingToolExecutor
         executor = StreamingToolExecutor(max_concurrent_reads=4)
         assert executor.max_concurrent_reads == 4
-        assert executor.result_char_budget == 6000
+        assert executor.result_char_budget == 12000
 
     @pytest.mark.asyncio
     async def test_execute_tool_calls(self):
@@ -117,6 +118,29 @@ class TestStreamingToolExecutor:
         assert len(messages) == 2
         assert messages[0].content == "hello"
         assert messages[1].content == "files"
+
+
+class TestToolResultPayload:
+    """Test structured tool result payloads returned to the model."""
+
+    def test_build_tool_result_payload_error_shape(self):
+        from core.agent import TeamAgent
+
+        payload = TeamAgent._build_tool_result_payload(
+            "write_file",
+            ok=False,
+            error_type="invalid_tool_arguments",
+            retryable=True,
+            message="请重发工具调用",
+            details={"raw_args": '{"file_path":"a.txt"'},
+        )
+
+        data = json.loads(payload)
+        assert data["ok"] is False
+        assert data["tool"] == "write_file"
+        assert data["error_type"] == "invalid_tool_arguments"
+        assert data["retryable"] is True
+        assert data["details"]["raw_args"] == '{"file_path":"a.txt"'
 
 
 # ============================================================================

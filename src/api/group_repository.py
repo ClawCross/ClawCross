@@ -67,6 +67,17 @@ async def init_group_db(group_db_path: str) -> None:
             )
         """)
         await db.execute("""
+            CREATE TABLE IF NOT EXISTS group_mute_state (
+                group_id TEXT NOT NULL,
+                target_type TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                muted INTEGER NOT NULL DEFAULT 1,
+                updated_at REAL NOT NULL,
+                PRIMARY KEY (group_id, target_type, target_id),
+                FOREIGN KEY (group_id) REFERENCES groups(group_id) ON DELETE CASCADE
+            )
+        """)
+        await db.execute("""
             CREATE INDEX IF NOT EXISTS idx_http_agent_sessions_global_name
             ON http_agent_sessions(global_name)
         """)
@@ -412,6 +423,55 @@ async def clear_group_members(
                 (group_id,),
             )
         await db.commit()
+
+
+async def set_group_mute_state(
+    group_db_path: str,
+    *,
+    group_id: str,
+    target_type: str,
+    target_id: str,
+    muted: bool,
+    updated_at: float,
+) -> None:
+    async with aiosqlite.connect(group_db_path) as db:
+        await db.execute(
+            """
+            INSERT INTO group_mute_state (group_id, target_type, target_id, muted, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(group_id, target_type, target_id)
+            DO UPDATE SET muted = excluded.muted, updated_at = excluded.updated_at
+            """,
+            (group_id, target_type, target_id, 1 if muted else 0, updated_at),
+        )
+        await db.commit()
+
+
+async def get_group_mute_state(
+    group_db_path: str,
+    *,
+    group_id: str,
+    target_type: str,
+    target_id: str,
+) -> bool:
+    async with aiosqlite.connect(group_db_path) as db:
+        cursor = await db.execute(
+            "SELECT muted FROM group_mute_state WHERE group_id = ? AND target_type = ? AND target_id = ?",
+            (group_id, target_type, target_id),
+        )
+        row = await cursor.fetchone()
+    return bool(row[0]) if row else False
+
+
+async def list_group_mute_states(group_db_path: str, *, group_id: str) -> list[dict]:
+    async with aiosqlite.connect(group_db_path) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT group_id, target_type, target_id, muted, updated_at FROM group_mute_state WHERE group_id = ?",
+            (group_id,),
+        )
+        rows = await cursor.fetchall()
+    return [dict(r) for r in rows]
 
 
 async def upsert_http_agent_session(

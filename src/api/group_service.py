@@ -23,20 +23,31 @@ from api.group_repository import (
     delete_group as delete_group_records,
     get_group,
     get_group_member_by_global_id,
+    get_group_mute_state,
     get_group_owner,
     group_exists,
     init_group_db as init_group_db_repo,
     insert_group_message,
+    list_group_mute_states,
     list_group_member_targets,
     list_group_members,
     list_group_messages_after,
     list_groups_for_user,
     list_recent_group_messages,
     remove_group_member,
+    set_group_mute_state,
     upsert_http_agent_session,
     update_group_name,
 )
-from api.group_models import Attachment, GroupCreateRequest, GroupAddMemberRequest, GroupMessageRequest, GroupUpdateRequest
+from api.group_models import (
+    Attachment,
+    GroupAddMemberRequest,
+    GroupCreateRequest,
+    GroupMessageRequest,
+    GroupMuteAllRequest,
+    GroupMuteMemberRequest,
+    GroupUpdateRequest,
+)
 from utils.logging_utils import get_logger
 from utils.session_summary import first_human_title
 from integrations.acpx_adapter import AcpxError, acpx_options_from_agent, get_acpx_adapter, load_external_agent_system_prompt
@@ -1031,9 +1042,22 @@ class GroupService:
             raise HTTPException(status_code=404, detail="群聊不存在")
 
         members = await list_group_members(self.group_db_path, group_id)
+        mute_states = await list_group_mute_states(self.group_db_path, group_id=group_id)
+        muted_member_ids = {
+            str(item.get("target_id") or "")
+            for item in mute_states
+            if str(item.get("target_type") or "") == "member" and bool(item.get("muted"))
+        }
+        mute_all_agents = any(
+            str(item.get("target_type") or "") == "all_agents"
+            and str(item.get("target_id") or "") == "*"
+            and bool(item.get("muted"))
+            for item in mute_states
+        )
         external_agents_map = build_external_agents_map_for_owner(str(group.get("owner") or ""))
         # title 直接用数据库里的 short_name，不需要再查 json
         for member in members:
+            member["muted"] = bool(member.get("is_agent")) and str(member.get("global_id") or "") in muted_member_ids
             if member.get("is_agent"):
                 member["title"] = member.get("short_name") or member.get("global_id") or "未命名"
                 if (member.get("member_type") or "").strip() == "ext":
@@ -1046,7 +1070,7 @@ class GroupService:
                 member["title"] = member.get("user_id") or "群主"
 
         messages = await list_recent_group_messages(self.group_db_path, group_id, limit=100)
-        return {**group, "members": members, "messages": messages}
+        return {**group, "members": members, "messages": messages, "mute_all_agents": mute_all_agents}
 
     async def get_group_messages(self, group_id: str, after_id: int, authorization: str | None):
         self.parse_group_auth(authorization)
@@ -1094,6 +1118,43 @@ class GroupService:
         now = time.time()
         if not await group_exists(self.group_db_path, group_id):
             raise HTTPException(status_code=404, detail="群聊不存在")
+
+        if sender_display:
+            sender_global_id = ""
+            sender_parts = sender_display.split("#")
+            if len(sender_parts) >= 4:
+                sender_global_id = sender_parts[-1].strip()
+            elif sender and "#" in sender:
+                sender_global_id = sender.split("#", 1)[1].strip()
+            if sender_global_id:
+                member_info = await get_group_member_by_global_id(self.group_db_path, group_id, sender_global_id)
+                if member_info and bool(member_info.get("is_agent")):
+                    if await get_group_mute_state(
+                        self.group_db_path,
+                        group_id=group_id,
+                        target_type="all_agents",
+                        target_id="*",
+                    ):
+                        return {
+                            "status": "muted",
+                            "muted": True,
+                            "sender": sender,
+                            "sender_display": sender_display,
+                            "message": "当前群已开启全员禁言，该成员已被禁言，暂不发言",
+                        }
+                    if await get_group_mute_state(
+                        self.group_db_path,
+                        group_id=group_id,
+                        target_type="member",
+                        target_id=sender_global_id,
+                    ):
+                        return {
+                            "status": "muted",
+                            "muted": True,
+                            "sender": sender,
+                            "sender_display": sender_display,
+                            "message": "该成员已被禁言，暂不发言",
+                        }
 
         # Resolve real owner user_id for loading external agent configs
         broadcast_uid = uid
@@ -1252,6 +1313,48 @@ class GroupService:
     async def group_mute_status(self, group_id: str, authorization: str | None):
         self.parse_group_auth(authorization)
         return {"muted": group_id in self.group_muted}
+
+    async def mute_group_member(self, group_id: str, req: GroupMuteMemberRequest, authorization: str | None):
+        uid, _, _ = self.parse_group_auth(authorization)
+        owner = await get_group_owner(self.group_db_path, group_id)
+        if not owner:
+            raise HTTPException(status_code=404, detail="群聊不存在")
+        if owner != uid:
+            raise HTTPException(status_code=403, detail="只有群主可以管理成员禁言")
+
+        member = await get_group_member_by_global_id(self.group_db_path, group_id, req.global_id)
+        if not member:
+            raise HTTPException(status_code=404, detail="成员不存在")
+        if not bool(member.get("is_agent")):
+            raise HTTPException(status_code=400, detail="群主成员不能被禁言")
+
+        await set_group_mute_state(
+            self.group_db_path,
+            group_id=group_id,
+            target_type="member",
+            target_id=req.global_id,
+            muted=bool(req.muted),
+            updated_at=time.time(),
+        )
+        return {"status": "ok", "group_id": group_id, "global_id": req.global_id, "muted": bool(req.muted)}
+
+    async def mute_all_group_agents(self, group_id: str, req: GroupMuteAllRequest, authorization: str | None):
+        uid, _, _ = self.parse_group_auth(authorization)
+        owner = await get_group_owner(self.group_db_path, group_id)
+        if not owner:
+            raise HTTPException(status_code=404, detail="群聊不存在")
+        if owner != uid:
+            raise HTTPException(status_code=403, detail="只有群主可以设置全员禁言")
+
+        await set_group_mute_state(
+            self.group_db_path,
+            group_id=group_id,
+            target_type="all_agents",
+            target_id="*",
+            muted=bool(req.muted),
+            updated_at=time.time(),
+        )
+        return {"status": "ok", "group_id": group_id, "muted": bool(req.muted)}
 
     async def list_available_sessions(self, group_id: str, authorization: str | None):
         uid, _, _ = self.parse_group_auth(authorization)

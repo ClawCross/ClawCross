@@ -39,6 +39,13 @@
       <span style="font-size:12px;opacity:0.85;margin-left:4px;">→</span>
     </div>
 
+    <!-- Project Update Banner -->
+    <div id="project-update-banner" style="display:none;padding:10px 44px 10px 16px;background:linear-gradient(90deg,#ea580c,#c2410c);color:#fff;font-size:14px;text-align:center;position:relative;z-index:9999;cursor:pointer;" onclick="openProjectUpdateModal()">
+      ⬆️ <span id="project-update-banner-text">发现新版本，点击查看并更新</span>
+      <span style="font-size:12px;opacity:0.85;margin-left:4px;">→</span>
+      <button type="button" onclick="dismissProjectUpdateBanner(); event.stopPropagation();" aria-label="Close" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:transparent;border:none;color:#fff;font-size:16px;line-height:1;cursor:pointer;opacity:0.9;">✕</button>
+    </div>
+
     <!-- Splash Screen -->
     <div id="app-splash">
         <img class="splash-icon splash-logo" src="/static/assets/clawcross-mark.svg" alt="Clawcross logo">

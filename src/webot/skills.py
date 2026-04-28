@@ -147,11 +147,6 @@ def create_skill(
     if len(content.encode("utf-8")) > _MAX_SKILL_SIZE:
         return {"success": False, "error": f"Skill content exceeds {_MAX_SKILL_SIZE // 1024}KB limit"}
 
-    # Validate frontmatter
-    meta, body = _parse_frontmatter(content)
-    if not meta.get("name") or not meta.get("description"):
-        return {"success": False, "error": "SKILL.md must have YAML frontmatter with 'name' and 'description' fields"}
-
     # Security scan
     violations = _security_scan(content)
     if violations:
@@ -190,10 +185,6 @@ def edit_skill(
     name = _validate_name(name)
     if len(content.encode("utf-8")) > _MAX_SKILL_SIZE:
         return {"success": False, "error": f"Skill content exceeds {_MAX_SKILL_SIZE // 1024}KB limit"}
-
-    meta, body = _parse_frontmatter(content)
-    if not meta.get("name") or not meta.get("description"):
-        return {"success": False, "error": "SKILL.md must have YAML frontmatter with 'name' and 'description' fields"}
 
     violations = _security_scan(content)
     if violations:

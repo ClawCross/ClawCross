@@ -11,8 +11,10 @@ LLM 模型工厂模块
 from __future__ import annotations
 
 import os
+from typing import Any
 from urllib.parse import urlparse
 
+from langchain_core.messages import AIMessage
 from langchain_core.language_models.chat_models import BaseChatModel
 
 
@@ -117,6 +119,35 @@ _OPENAI_ENDPOINT_SUFFIXES = (
     "/v1/models",
     "/models",
 )
+
+
+class _DeepSeekReasoningRoundTripMixin:
+    """Preserve DeepSeek reasoning_content across LangChain multi-turn serialization."""
+
+    def _get_request_payload(
+        self,
+        input_: Any,
+        *,
+        stop: list[str] | None = None,
+        **kwargs: Any,
+    ) -> dict:
+        messages = self._convert_input(input_).to_messages()
+        payload = super()._get_request_payload(input_, stop=stop, **kwargs)
+
+        payload_messages = payload.get("messages")
+        if not isinstance(payload_messages, list):
+            return payload
+
+        for source_msg, payload_msg in zip(messages, payload_messages):
+            if not isinstance(source_msg, AIMessage):
+                continue
+            if not isinstance(payload_msg, dict) or payload_msg.get("role") != "assistant":
+                continue
+            reasoning_content = getattr(source_msg, "additional_kwargs", {}).get("reasoning_content")
+            if reasoning_content:
+                payload_msg["reasoning_content"] = reasoning_content
+
+        return payload
 
 
 def _model_has_prefix(model: str, prefix: str) -> bool:
@@ -346,6 +377,9 @@ def create_chat_model(
     if provider == "deepseek":
         from langchain_deepseek import ChatDeepSeek
 
+        class ClawCrossChatDeepSeek(_DeepSeekReasoningRoundTripMixin, ChatDeepSeek):
+            pass
+
         kwargs = {
             "model": model,
             "api_key": api_key,
@@ -357,7 +391,7 @@ def create_chat_model(
         }
         if supports_temp:
             kwargs["temperature"] = temperature
-        return ChatDeepSeek(**kwargs)
+        return ClawCrossChatDeepSeek(**kwargs)
 
     if provider == "minimax":
         from langchain_anthropic import ChatAnthropic

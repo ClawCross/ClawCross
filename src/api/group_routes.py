@@ -14,7 +14,14 @@ from typing import Any, Callable
 
 from fastapi import APIRouter, Header
 
-from api.group_models import GroupCreateRequest, GroupMessageRequest, GroupUpdateRequest, GroupAddMemberRequest
+from api.group_models import (
+    GroupCreateRequest,
+    GroupMessageRequest,
+    GroupUpdateRequest,
+    GroupAddMemberRequest,
+    GroupMuteMemberRequest,
+    GroupMuteAllRequest,
+)
 from api.group_service import GroupService, init_group_db
 
 
@@ -80,6 +87,14 @@ def create_group_router(
     @router.get("/groups/{group_id}/mute_status")
     async def group_mute_status(group_id: str, authorization: str | None = Header(None)):
         return await service.group_mute_status(group_id, authorization)
+
+    @router.post("/groups/{group_id}/members/mute")
+    async def mute_group_member(group_id: str, req: GroupMuteMemberRequest, authorization: str | None = Header(None)):
+        return await service.mute_group_member(group_id, req, authorization)
+
+    @router.post("/groups/{group_id}/mute_all")
+    async def mute_all_group_agents(group_id: str, req: GroupMuteAllRequest, authorization: str | None = Header(None)):
+        return await service.mute_all_group_agents(group_id, req, authorization)
 
     @router.get("/groups/{group_id}/typing")
     async def group_typing_status(group_id: str, authorization: str | None = Header(None)):

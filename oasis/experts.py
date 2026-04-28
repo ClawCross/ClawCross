@@ -445,7 +445,7 @@ def _get_llm(
     """
     return create_chat_model(
         temperature=temperature,
-        max_tokens=1024,
+        max_tokens=2048,
         model=model,
         api_key=api_key,
         base_url=base_url,

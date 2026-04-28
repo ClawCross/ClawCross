@@ -399,6 +399,56 @@ class OpenAIChatService:
         except Exception:
             pass
 
+    async def _ensure_terminal_ai_message(
+        self,
+        *,
+        ctx: OpenAIExecutionContext,
+        result: dict | None = None,
+        max_extra_rounds: int = 3,
+    ) -> dict:
+        """Best-effort safeguard: if graph ends on ToolMessage, resume until AI speaks."""
+        current = result
+        rounds = 0
+        while rounds < max_extra_rounds:
+            if current is None:
+                snapshot = await self.agent.agent_app.aget_state(ctx.config)
+                messages = snapshot.values.get("messages", [])
+            else:
+                messages = current.get("messages", []) or []
+            if not messages:
+                return current or {"messages": []}
+            last_msg = messages[-1]
+            if isinstance(last_msg, AIMessage):
+                return current or {"messages": messages}
+            if not isinstance(last_msg, ToolMessage):
+                return current or {"messages": messages}
+
+            logger.warning(
+                "graph ended on ToolMessage; resuming once more user=%s session=%s round=%d tool=%s",
+                ctx.user_id,
+                ctx.session_id,
+                rounds + 1,
+                getattr(last_msg, "name", "") or "",
+            )
+            current = await self.agent.agent_app.ainvoke(
+                {
+                    "messages": [],
+                    "trigger_source": "system",
+                    "enabled_tools": ctx.user_input.get("enabled_tools"),
+                    "user_id": ctx.user_id,
+                    "session_id": ctx.session_id,
+                    "max_turns": ctx.user_input.get("max_turns"),
+                    "max_tokens": ctx.max_tokens,
+                    "turn_count": 0,
+                    "external_tools": ctx.user_input.get("external_tools"),
+                    "llm_override": ctx.user_input.get("llm_override"),
+                },
+                ctx.config,
+                durability="exit",
+            )
+            rounds += 1
+        return current or {"messages": []}
+
     async def _run_non_stream(
         self,
         ctx: OpenAIExecutionContext,
@@ -411,6 +461,7 @@ class OpenAIChatService:
                 self.agent.set_thread_busy_source(ctx.thread_id, "user")
                 try:
                     result = await self.agent.agent_app.ainvoke(ctx.user_input, ctx.config, durability="exit")
+                    result = await self._ensure_terminal_ai_message(ctx=ctx, result=result)
                     await self.agent.purge_checkpoints(ctx.thread_id)
                     return result
                 finally:
@@ -533,6 +584,10 @@ class OpenAIChatService:
 
                     snapshot = await self.agent.agent_app.aget_state(ctx.config)
                     last_msgs = snapshot.values.get("messages", [])
+                    if last_msgs and isinstance(last_msgs[-1], ToolMessage):
+                        resumed = await self._ensure_terminal_ai_message(ctx=ctx, result={"messages": last_msgs})
+                        if resumed and resumed.get("messages"):
+                            last_msgs = resumed.get("messages", [])
                     if last_msgs:
                         last_msg_item = last_msgs[-1]
                         ext_tool_calls = self.format_tool_calls_for_openai(last_msg_item, ctx.external_tool_names)

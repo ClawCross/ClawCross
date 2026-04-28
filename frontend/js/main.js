@@ -76,6 +76,8 @@ const i18n = {
         local_login_banner_body: '当前用户名「{user_id}」还没有密码。如需后续密码登录或远程访问，可在 Settings 里设置密码并保存为用户。',
         local_login_banner_action: '去设置',
         llm_not_configured: 'LLM API 未配置，请先前往设置填写 API Key',
+        project_update_banner: '发现新版本 {latest}，点击查看并更新',
+        project_update_banner_dirty: '发现新版本 {latest}，但本地有未提交改动',
 
         // 头部
         encrypted: '● 已加密',
@@ -834,6 +836,8 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         local_login_banner_body: 'The current username "{user_id}" does not have a password yet. Open Settings to save one for future password or remote login.',
         local_login_banner_action: 'Open Settings',
         llm_not_configured: 'LLM API not configured. Click here to set up API Key.',
+        project_update_banner: 'New version {latest} is available. Click to review and update.',
+        project_update_banner_dirty: 'New version {latest} is available, but local changes block auto update.',
 
         // Header
         encrypted: '● Encrypted',
@@ -1663,6 +1667,9 @@ function renderMarkdown(content) {
 }
 
 function highlightMarkdownIn(root) {
+    if (window.ClawcrossMarkdown && typeof window.ClawcrossMarkdown.rewriteLocalFileLinks === 'function') {
+        window.ClawcrossMarkdown.rewriteLocalFileLinks(root);
+    }
     if (window.ClawcrossMarkdown) {
         window.ClawcrossMarkdown.highlight(root);
         return;
@@ -1685,6 +1692,8 @@ let currentUserId = null;
 let currentUserHasPassword = false;
 let currentLoginMode = '';
 let localLoginBannerDismissed = false;
+let projectUpdateBannerDismissed = false;
+let projectUpdateBannerState = null;
 let currentSessionId = null;
 let currentAbortController = null;
 let projectUpdatePollTimer = null;
@@ -4234,6 +4243,80 @@ function _syncLocalLoginBannerDismissedState() {
     localLoginBannerDismissed = key ? sessionStorage.getItem(key) === '1' : false;
 }
 
+function _projectUpdateBannerDismissKey(update = projectUpdateBannerState, userId = currentUserId) {
+    const latestCommit = update && (update.latest_commit || update.latest_short_commit || '');
+    return userId && latestCommit ? `clawcross-project-update-banner-dismissed:${userId}:${latestCommit}` : '';
+}
+
+function _syncProjectUpdateBannerDismissedState(update = projectUpdateBannerState) {
+    const key = _projectUpdateBannerDismissKey(update);
+    projectUpdateBannerDismissed = key ? sessionStorage.getItem(key) === '1' : false;
+}
+
+function _visibleBannerHeight(id) {
+    const el = document.getElementById(id);
+    if (!el || el.style.display === 'none') return 0;
+    return el.offsetHeight || 0;
+}
+
+function _topBannerOffset() {
+    const spacing = 12;
+    let total = 0;
+    for (const id of ['llm-warning-banner', 'project-update-banner']) {
+        const height = _visibleBannerHeight(id);
+        if (!height) continue;
+        total += height;
+    }
+    return total ? total + spacing : spacing;
+}
+
+function updateProjectUpdateBanner(update = projectUpdateBannerState) {
+    projectUpdateBannerState = update || null;
+    const banner = document.getElementById('project-update-banner');
+    const textEl = document.getElementById('project-update-banner-text');
+    if (!banner || !textEl) return;
+
+    _syncProjectUpdateBannerDismissedState(projectUpdateBannerState);
+    const shouldShow = Boolean(
+        currentUserId &&
+        projectUpdateBannerState &&
+        projectUpdateBannerState.has_update &&
+        !projectUpdateBannerDismissed
+    );
+    banner.style.display = shouldShow ? 'block' : 'none';
+    if (shouldShow) {
+        const latest = projectUpdateBannerState.latest_short_commit || projectUpdateBannerState.latest_commit || '?';
+        textEl.textContent = projectUpdateBannerState.dirty
+            ? t('project_update_banner_dirty', { latest })
+            : t('project_update_banner', { latest });
+    }
+    updateLocalLoginBanner();
+}
+
+function dismissProjectUpdateBanner() {
+    projectUpdateBannerDismissed = true;
+    const key = _projectUpdateBannerDismissKey();
+    if (key) sessionStorage.setItem(key, '1');
+    updateProjectUpdateBanner(projectUpdateBannerState);
+}
+
+async function autoCheckProjectUpdate(refreshRemote = true) {
+    if (!currentUserId) {
+        updateProjectUpdateBanner(null);
+        return null;
+    }
+    try {
+        const update = await _fetchProjectUpdate('/proxy_update_check', {
+            refresh_remote: !!refreshRemote,
+        });
+        _renderProjectUpdateSummary(update);
+        return update;
+    } catch (err) {
+        console.warn('Auto update check failed:', err);
+        return null;
+    }
+}
+
 function updateLocalLoginBanner() {
     const banner = document.getElementById('local-login-banner');
     const titleEl = document.getElementById('local-login-banner-title');
@@ -4256,7 +4339,7 @@ function updateLocalLoginBanner() {
 
     const llmBanner = document.getElementById('llm-warning-banner');
     const llmVisible = llmBanner && llmBanner.style.display !== 'none';
-    const topOffset = llmVisible ? ((llmBanner.offsetHeight || 42) + 12) : 12;
+    const topOffset = llmVisible || _visibleBannerHeight('project-update-banner') ? _topBannerOffset() : 12;
     banner.style.top = `${topOffset}px`;
 }
 
@@ -4367,6 +4450,7 @@ async function handleLocalLogin() {
         updateLocalLoginBanner();
         // Show setup wizard if LLM not configured
         _checkAndShowSetupWizard();
+        void autoCheckProjectUpdate(true);
     } catch (e) {
         if (e.name === 'AbortError') {
             showLoginError(errorDiv, t('login_error_timeout'));
@@ -4449,6 +4533,7 @@ async function handleLogin() {
         updateLocalLoginBanner();
         // Show setup wizard if LLM not configured
         _checkAndShowSetupWizard();
+        void autoCheckProjectUpdate(true);
     } catch (e) {
         if (e.name === 'AbortError') {
             showLoginError(errorDiv, t('login_error_timeout'));
@@ -5760,6 +5845,8 @@ function showLoginScreen() {
     currentUserHasPassword = false;
     currentLoginMode = '';
     localLoginBannerDismissed = false;
+    projectUpdateBannerDismissed = false;
+    projectUpdateBannerState = null;
     currentSessionId = null;
     stopHistoryPolling();
     sessionStorage.removeItem('sessionId');
@@ -5779,6 +5866,7 @@ function showLoginScreen() {
     // Stop OASIS polling
     stopOasisPolling();
     updateLocalLoginBanner();
+    updateProjectUpdateBanner(null);
 }
 
 // User-initiated logout: clear backend session + reset UI
@@ -5994,6 +6082,7 @@ async function applyStudioInitialTabAfterAuth() {
                 _syncPublicToggle();
                 await applyStudioInitialTabAfterAuth();
                 _checkAndShowSetupWizard();
+                void autoCheckProjectUpdate(true);
                 // 移除 URL 中的 token 参数（安全原因）
                 if (window.history.replaceState) {
                     window.history.replaceState({}, document.title, window.location.pathname);
@@ -6037,6 +6126,7 @@ async function applyStudioInitialTabAfterAuth() {
                 await _applyTabParam();
                 if (!_tabParam) switchPage('chat');
                 _checkAndShowSetupWizard();
+                void autoCheckProjectUpdate(true);
                 return;
             }
         }
@@ -7851,6 +7941,7 @@ function _renderProjectUpdateSummary(update) {
     const startBtn = document.getElementById('project-update-start-btn');
     if (!summaryEl || !startBtn) return;
     if (!update) {
+        updateProjectUpdateBanner(null);
         summaryEl.textContent = '点击“检查更新”后显示版本信息。';
         startBtn.disabled = true;
         if (logWrap) logWrap.style.display = 'none';
@@ -7881,6 +7972,7 @@ function _renderProjectUpdateSummary(update) {
     } else if (logWrap) {
         logWrap.style.display = 'none';
     }
+    updateProjectUpdateBanner(update);
 }
 
 async function _fetchProjectUpdate(endpoint, payload) {
@@ -10074,6 +10166,7 @@ function getGroupSenderTitle(sender) {
 // === @ Mention 功能 ===
 let mentionSelectedIds = [];  // 被 @ 选中的 agent session_id 列表
 let currentGroupMembers = []; // 当前群的 agent 成员缓存
+let currentGroupMuteAllAgents = false;
 
 function onGroupInputChange(_e) {
     const input = document.getElementById('group-input');
@@ -10553,6 +10646,13 @@ async function sendGroupMessage() {
             body: JSON.stringify(body)
         });
         const result = await resp.json();
+        if (!resp.ok) {
+            throw new Error(result.error || result.detail || '发送失败');
+        }
+        if (result.muted) {
+            orchToast(result.message || '该成员已被禁言');
+            return;
+        }
         const realId = result.id || (groupLastMsgId + 1);
         // Immediately show in UI with real server ID
         appendGroupMessages([{
@@ -10563,23 +10663,79 @@ async function sendGroupMessage() {
         }]);
     } catch (e) {
         console.error('Failed to send group message:', e);
+        orchToast(e.message || '发送失败');
+        input.value = text;
     }
 }
 
 function renderGroupMembers(members) {
     const container = document.getElementById('group-current-members');
-    container.innerHTML = members.map(m => {
+    const muteAllBar = `
+        <div style="display:flex;justify-content:flex-end;padding:0 0 10px 0;">
+            <button onclick="toggleGroupMuteAllMembers()" style="padding:6px 10px;border-radius:999px;border:1px solid ${currentGroupMuteAllAgents ? '#86efac' : '#fdba74'};background:${currentGroupMuteAllAgents ? '#f0fdf4' : '#fff7ed'};color:${currentGroupMuteAllAgents ? '#166534' : '#c2410c'};font-size:12px;font-weight:700;">
+                ${currentGroupMuteAllAgents ? '解除全员禁言' : '全员禁言'}
+            </button>
+        </div>`;
+    container.innerHTML = muteAllBar + members.map(m => {
         const badge = m.is_agent
             ? `<span class="member-badge badge-agent">${t('group_agent')}</span>`
             : `<span class="member-badge badge-owner">${t('group_owner')}</span>`;
-        let displayName = m.is_agent && m.title ? m.title : (m.user_id + (m.session_id !== 'default' ? '#' + m.session_id : ''));
+        let displayName = m.is_agent && m.title ? m.title : (m.user_id || m.global_id || '');
         if (displayName.length > 7) displayName = displayName.slice(0, 7) + '…';
+        const muteBtn = m.is_agent
+            ? `<button onclick="toggleGroupMemberMute('${escapeHtml(m.global_id || '')}', ${m.muted ? 'false' : 'true'}, '${escapeHtml(m.title || displayName)}')" style="margin-left:auto;padding:4px 8px;border-radius:999px;border:1px solid ${m.muted ? '#86efac' : '#fdba74'};background:${m.muted ? '#f0fdf4' : '#fff7ed'};color:${m.muted ? '#166534' : '#c2410c'};font-size:12px;">${m.muted ? '解除禁言' : '禁言'}</button>`
+            : '';
         return `
-            <div class="member-item">
-                <span class="member-name" title="${escapeHtml(m.user_id + '#' + m.session_id)}">${escapeHtml(displayName)}</span>
+            <div class="member-item" style="display:flex;align-items:center;gap:8px;">
+                <span class="member-name" title="${escapeHtml(m.global_id || m.user_id || '')}">${escapeHtml(displayName)}</span>
                 ${badge}
+                ${m.muted ? '<span class="member-badge" style="background:#fef3c7;color:#92400e;">已禁言</span>' : ''}
+                ${muteBtn}
             </div>`;
     }).join('');
+}
+
+async function toggleGroupMemberMute(globalId, muted, name) {
+    if (!currentGroupId || !globalId) return;
+    try {
+        const resp = await fetch(`/proxy_groups/${encodeURIComponent(currentGroupId)}/members/mute`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ global_id: globalId, muted })
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.error || data.detail || '操作失败');
+        await refreshCurrentGroupMembers();
+        orchToast(`${name}${muted ? ' 已禁言' : ' 已解除禁言'}`);
+    } catch (e) {
+        orchToast((muted ? '禁言失败: ' : '解除禁言失败: ') + e.message);
+    }
+}
+
+async function toggleGroupMuteAllMembers() {
+    if (!currentGroupId) return;
+    const muted = !currentGroupMuteAllAgents;
+    try {
+        const resp = await fetch(`/proxy_groups/${encodeURIComponent(currentGroupId)}/mute_all`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ muted })
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.error || data.detail || '操作失败');
+        await refreshCurrentGroupMembers();
+        orchToast(muted ? '已开启全员禁言' : '已解除全员禁言');
+    } catch (e) {
+        orchToast((muted ? '全员禁言失败: ' : '解除全员禁言失败: ') + e.message);
+    }
+}
+
+async function refreshCurrentGroupMembers() {
+    if (!currentGroupId) return;
+    const resp = await fetch(`/proxy_groups/${encodeURIComponent(currentGroupId)}`);
+    const detail = await resp.json();
+    currentGroupMuteAllAgents = !!detail.mute_all_agents;
+    renderGroupMembers(detail.members || []);
 }
 
 let groupMemberPanelOpen = false;
@@ -10607,6 +10763,7 @@ async function loadAvailableSessions() {
         // Get current members to mark them
         const detailResp = await fetch(`/proxy_groups/${encodeURIComponent(currentGroupId)}`);
         const detail = await detailResp.json();
+        currentGroupMuteAllAgents = !!detail.mute_all_agents;
         const memberSet = new Set((detail.members || []).map(m => m.user_id + '#' + m.session_id));
 
         if (sessions.length === 0) {
@@ -10648,6 +10805,7 @@ async function toggleGroupAgent(sessionId, add) {
         // Refresh member list
         const resp = await fetch(`/proxy_groups/${encodeURIComponent(currentGroupId)}`);
         const detail = await resp.json();
+        currentGroupMuteAllAgents = !!detail.mute_all_agents;
         renderGroupMembers(detail.members || []);
     } catch (e) {
         console.error('Failed to toggle group agent:', e);

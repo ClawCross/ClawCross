@@ -254,6 +254,8 @@ async def write_file(
     """
     创建或写入用户的指定文件。
     支持 overwrite / append / prepend / insert / replace_range。
+    为了降低 tool 参数过长导致的截断风险，单次 content 建议尽量控制在约 4000 字符以内；
+    长内容更适合先建文件，再多次 append，或多次 replace_range 分段写入同一文件。
 
     :param username: 用户名（由系统自动注入，无需手动传递）
     :param filename: 要写入的文件名

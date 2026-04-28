@@ -299,6 +299,28 @@ class UserAwareToolNode:
             f"原因：{reason or '该工具调用不满足当前策略要求。'}"
         )
 
+    @staticmethod
+    def _build_tool_result_payload(
+        tool_name: str,
+        *,
+        ok: bool,
+        message: str,
+        error_type: str = "",
+        retryable: bool = False,
+        details: dict | None = None,
+    ) -> str:
+        payload = {
+            "ok": ok,
+            "tool": tool_name,
+            "message": message,
+        }
+        if not ok:
+            payload["error_type"] = error_type or "tool_error"
+            payload["retryable"] = bool(retryable)
+        if details:
+            payload["details"] = details
+        return json.dumps(payload, ensure_ascii=False)
+
     async def __call__(self, state, config: RunnableConfig):
         # Get user_id directly from state (injected by mainagent) instead of
         # parsing thread_id, because user_id itself may contain the separator.
@@ -540,11 +562,18 @@ class UserAwareToolNode:
                         )
                     result_messages.append(
                         ToolMessage(
-                            content=(
-                                f"工具调用失败: {tool_name}\n"
-                                f"错误: {error_text}\n"
-                                "这通常表示传入参数不符合工具定义，"
-                                "请检查必填字段、字段名和参数类型后重试。"
+                            content=self._build_tool_result_payload(
+                                tool_name,
+                                ok=False,
+                                error_type="tool_execution_error",
+                                retryable=True,
+                                message=(
+                                    "工具调用失败。请检查参数是否符合工具定义后重试；"
+                                    "如果问题来自工具运行期异常，请修正输入或改用更合适的工具。"
+                                ),
+                                details={
+                                    "error": error_text,
+                                },
                             ),
                             tool_call_id=tc["id"],
                             name=tool_name,
@@ -661,6 +690,77 @@ class TeamAgent:
         )
 
         return loaded
+
+    @staticmethod
+    def _build_tool_result_payload(
+        tool_name: str,
+        *,
+        ok: bool,
+        message: str,
+        error_type: str = "",
+        retryable: bool = False,
+        details: dict | None = None,
+    ) -> str:
+        """Build a structured tool result payload for the model to parse reliably."""
+        payload = {
+            "ok": ok,
+            "tool": tool_name,
+            "message": message,
+        }
+        if not ok:
+            payload["error_type"] = error_type or "tool_error"
+            payload["retryable"] = bool(retryable)
+        if details:
+            payload["details"] = details
+        return json.dumps(payload, ensure_ascii=False)
+
+    @staticmethod
+    def _find_invalid_tool_feedback(response) -> tuple[ToolMessage, str] | None:
+        """Build a repair ToolMessage for the first invalid tool call, if any."""
+        import json as _json
+        import logging
+
+        for _tc_list_name in ("tool_calls", "invalid_tool_calls"):
+            for _tc in getattr(response, _tc_list_name, None) or []:
+                _args = _tc.get("args") if _tc_list_name == "tool_calls" else _tc.get("args", "")
+                if _args is None or _args == "" or _args == {}:
+                    if _tc_list_name == "tool_calls":
+                        _tc["args"] = {}
+                    continue
+                if isinstance(_args, str):
+                    try:
+                        _json.loads(_args)
+                    except (ValueError, TypeError):
+                        logging.getLogger("agent.call_model").warning(
+                            "LLM 返回的 tool_call arguments 不是合法 JSON (可能被截断), "
+                            "name=%s, id=%s, args_len=%d, 进入本轮修复重试",
+                            _tc.get("name", "?"), _tc.get("id", "?"), len(_args) if _args else 0,
+                        )
+                        _tc_id = _tc.get("id", "unknown")
+                        _tc_name = _tc.get("name", "unknown")
+                        return (
+                            ToolMessage(
+                                content=TeamAgent._build_tool_result_payload(
+                                    _tc_name,
+                                    ok=False,
+                                    error_type="invalid_tool_arguments",
+                                    retryable=True,
+                                    message=(
+                                        "本次工具调用参数不是合法 JSON。"
+                                        "请仅重发同一个工具调用，确保 args 是完整且合法的 JSON，"
+                                        "不要输出额外解释。"
+                                    ),
+                                    details={
+                                        "tool_call_id": _tc_id,
+                                        "raw_args": _args,
+                                    },
+                                ),
+                                tool_call_id=_tc_id,
+                                name=_tc_name,
+                            ),
+                            _tc_name,
+                        )
+        return None
 
     def _get_user_profile(self, user_id: str) -> str:
         """从 data/user_files/{user_id}/user_profile.txt 读取用户画像。"""
@@ -1598,26 +1698,43 @@ class TeamAgent:
         #     session_id=session_id,
         # )
 
-        response = await llm.ainvoke(input_messages)
-        next_turn_count = current_turn_count + 1
+        response = None
+        usage_meta = {}
+        while True:
+            response = await llm.ainvoke(input_messages)
+            next_turn_count = current_turn_count + 1
 
-        # --- Record token usage for budget tracking (new) ---
-        usage_meta = getattr(response, "usage_metadata", None) or {}
-        if isinstance(usage_meta, dict) and usage_meta:
-            session_budget.record_turn(
-                input_tokens=usage_meta.get("input_tokens", 0),
-                output_tokens=usage_meta.get("output_tokens", 0),
-                cache_creation_tokens=usage_meta.get("cache_creation_input_tokens", 0),
-                cache_read_tokens=usage_meta.get("cache_read_input_tokens", 0),
+            # --- Record token usage for budget tracking (new) ---
+            usage_meta = getattr(response, "usage_metadata", None) or {}
+            if isinstance(usage_meta, dict) and usage_meta:
+                session_budget.record_turn(
+                    input_tokens=usage_meta.get("input_tokens", 0),
+                    output_tokens=usage_meta.get("output_tokens", 0),
+                    cache_creation_tokens=usage_meta.get("cache_creation_input_tokens", 0),
+                    cache_read_tokens=usage_meta.get("cache_read_input_tokens", 0),
+                )
+                model_name = getattr(llm, "model_name", "") or getattr(llm, "model", "") or ""
+                cost_tracker.record(
+                    model=model_name,
+                    input_tokens=usage_meta.get("input_tokens", 0),
+                    output_tokens=usage_meta.get("output_tokens", 0),
+                    cache_read_tokens=usage_meta.get("cache_read_input_tokens", 0),
+                    cache_write_tokens=usage_meta.get("cache_creation_input_tokens", 0),
+                )
+
+            invalid_feedback = self._find_invalid_tool_feedback(response)
+            if invalid_feedback is None:
+                break
+
+            error_tool_msg, invalid_tool_name = invalid_feedback
+            logging.getLogger("agent.call_model").warning(
+                "invalid tool call repair retrying: name=%s",
+                invalid_tool_name,
             )
-            model_name = getattr(llm, "model_name", "") or getattr(llm, "model", "") or ""
-            cost_tracker.record(
-                model=model_name,
-                input_tokens=usage_meta.get("input_tokens", 0),
-                output_tokens=usage_meta.get("output_tokens", 0),
-                cache_read_tokens=usage_meta.get("cache_read_input_tokens", 0),
-                cache_write_tokens=usage_meta.get("cache_creation_input_tokens", 0),
-            )
+            history_messages = history_messages + [response, error_tool_msg]
+            history_messages = self._sanitize_messages(history_messages, external_tool_names)
+            input_messages = [SystemMessage(content=base_prompt)] + history_messages
+            continue
 
         # --- Auto-continue check based on token budget (new) ---
         if not session_budget.should_auto_continue(min_utility=0.15):
@@ -1652,38 +1769,6 @@ class TeamAgent:
                     effective_max_turns,
                 )
             )
-
-        # --- 检测 tool_calls arguments 是否为合法 JSON（截断/超长会导致不完整）---
-        import json as _json
-        for _tc_list_name in ("tool_calls", "invalid_tool_calls"):
-            for _tc in getattr(response, _tc_list_name, None) or []:
-                _args = _tc.get("args") if _tc_list_name == "tool_calls" else _tc.get("args", "")
-                # 兜底：args 缺失(None) 或空字符串 → 视为空参数 {}，不报错
-                if _args is None or _args == "" or _args == {}:
-                    if _tc_list_name == "tool_calls":
-                        _tc["args"] = {}
-                    continue
-                # tool_calls 的 args 已被 LangChain 解析为 dict；如果仍是 str 说明解析失败
-                # invalid_tool_calls 的 args 是原始 str
-                if isinstance(_args, str):
-                    try:
-                        _json.loads(_args)
-                    except (ValueError, TypeError):
-                        import logging
-                        logging.getLogger("agent.call_model").warning(
-                            "LLM 返回的 tool_call arguments 不是合法 JSON (可能被截断), "
-                            "name=%s, id=%s, args_len=%d, 剥离 tool_calls 改为纯文本回复",
-                            _tc.get("name", "?"), _tc.get("id", "?"), len(_args) if _args else 0,
-                        )
-                        # 将无效的 tool_call 替换为错误 ToolMessage，保持消息序列合法
-                        _tc_id = _tc.get("id", "unknown")
-                        _tc_name = _tc.get("name", "unknown")
-                        error_tool_msg = ToolMessage(
-                            content=f"无效tool格式: {_tc_name} 的参数被截断，不是合法JSON",
-                            tool_call_id=_tc_id,
-                        )
-                        # 保留原始 AIMessage（带 tool_calls），后跟错误 ToolMessage
-                        return {"messages": [response, error_tool_msg], "turn_count": next_turn_count}
 
         with contextlib.suppress(Exception):
             run_tool_policy_hooks(

@@ -49,3 +49,14 @@ class GroupAddMemberRequest(BaseModel):
     global_id: str                      # 唯一标识 (内部=session, 外部=global_name)
     member_type: str = "oasis"          # "oasis" (内部) 或 "ext" (外部)
     tag: str = ""                       # agent 的 tag
+
+
+class GroupMuteMemberRequest(BaseModel):
+    """群成员禁言/解禁"""
+    global_id: str
+    muted: bool = True
+
+
+class GroupMuteAllRequest(BaseModel):
+    """全员禁言/解禁（仅 agent）"""
+    muted: bool = True

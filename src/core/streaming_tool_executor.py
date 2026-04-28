@@ -133,7 +133,7 @@ class StreamingToolExecutor:
     max_concurrent_reads: int = 8
     write_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     read_semaphore: asyncio.Semaphore = field(init=False)
-    result_char_budget: int = 6000
+    result_char_budget: int = 12000
     per_tool_timeout: float = 120.0  # Per-tool timeout in seconds
     on_progress: Callable[[str, str, float], None] | None = None  # (tool_name, status, pct)
     _active_count: int = field(default=0, init=False)

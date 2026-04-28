@@ -3914,6 +3914,7 @@
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
     </button>
     <span class="drawer-header-title"><span data-i18n="group_members">群成员</span> <span id="member-count" style="font-weight:400;font-size:13px;color:var(--text-secondary);"></span></span>
+    <button id="mute-all-members-btn" onclick="toggleMuteAllMembers()" style="margin-left:auto;background:#fff7ed;color:#c2410c;border:1px solid #fdba74;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:700;cursor:pointer;">全员禁言</button>
   </div>
   <div class="drawer-body" id="member-list"></div>
 </div>
@@ -5484,6 +5485,7 @@ let isMuted = false;
 let mutedGroupIds = new Set();  // Track muted groups for list display
 let groups = [];
 let currentMembers = [];  // Store members for @ mention
+let currentGroupMuteAllAgents = false;
 let senderNameMap = {};   // sender key -> display name 映射
 let __agentDetailRenderSeq = 0;
 const __personaByTagCache = new Map();
@@ -7718,6 +7720,7 @@ async function openChat(groupId, name) {
     // Extract team name from group name (format: "teamName" or "teamName#customName")
     const groupName = data.name || name || '';
     currentTeamName = groupName;
+    currentGroupMuteAllAgents = !!data.mute_all_agents;
     renderMembers(data.members || []);
     await refreshPendingApprovalsForCurrentGroup();
     renderMessages(data.messages || []);
@@ -8304,7 +8307,15 @@ async function sendMessage() {
           });
         }
       }
-      await api('POST', `/proxy_groups/${encodeURIComponent(currentGroupId)}/messages`, body);
+      const sendResult = await api('POST', `/proxy_groups/${encodeURIComponent(currentGroupId)}/messages`, body);
+      if (sendResult && sendResult.muted) {
+        toast(sendResult.message || '该成员已被禁言');
+        input.value = text;
+        if (attachToSend) { pendingAttachments = attachToSend; renderAttachPreview(); }
+        if (audiosToSend) { mcPendingAudios = audiosToSend; mcRenderAudioPreviews(); }
+        if (contextsToSend.length) { selectedOasisContexts = contextsToSend; renderOasisContextPreview(); }
+        return;
+      }
       // Poll will pick up the message
       await pollNewMessages();
       scrollToBottom();  // 发消息后滚到底（对齐 main-local）
@@ -9760,6 +9771,10 @@ function renderMembers(members) {
   currentMembers = members;  // Store for @ mention
   senderNameMap = buildSenderNameMap(members);  // 更新 sender 名字映射
   document.getElementById('member-count').textContent = `(${members.length})`;
+  const muteAllBtn = document.getElementById('mute-all-members-btn');
+  if (muteAllBtn) {
+    muteAllBtn.textContent = currentGroupMuteAllAgents ? '解除全员禁言' : '全员禁言';
+  }
   const list = document.getElementById('member-list');
   list.innerHTML = members.map(m => {
     const type = m.member_type || 'oasis';
@@ -9770,6 +9785,9 @@ function renderMembers(members) {
     const typeLabel = type === 'ext' ? t('external') : type === 'owner' ? t('owner') : t('internal');
     const initial = getInitial(name);
     const isAgent = type !== 'owner';
+    const muteBtn = isAgent
+      ? `<button onclick="event.stopPropagation();toggleMemberMute('${globalId.replace(/'/g, "\\'")}', ${m.muted ? 'false' : 'true'}, '${name.replace(/'/g, "\\'")}')" class="member-action-btn ${m.muted ? 'member-action-danger' : ''}" title="${m.muted ? '解除禁言' : '禁言'}">${m.muted ? '解除禁言' : '禁言'}</button>`
+      : '';
     const removeBtn = isAgent ? `<button onclick="event.stopPropagation();removeMemberFromGroup('${globalId.replace(/'/g, "\\'")}','${name.replace(/'/g, "\\'")}')" style="background:none;border:none;color:var(--text-secondary);font-size:16px;padding:4px 8px;cursor:pointer;" title="${t('tip_remove')}">✕</button>` : '';
     const detailInfo = JSON.stringify({
       name,
@@ -9808,12 +9826,41 @@ function renderMembers(members) {
         <div class="member-avatar ${type} ${isAgent ? 'clickable' : ''}"${isAgent ? ` onclick="event.stopPropagation();showAgentDetail(JSON.parse(this.dataset.info))" data-info="${detailInfo}" title="${t('tip_view_detail')}"` : ''}>${esc(initial)}</div>
         <div class="member-info" style="flex:1;">
           <div class="member-name">${esc(name)}</div>
-          <div class="member-tag">${typeLabel} · ${tag ? esc(tag) + ' · ' : ''}${esc(globalId)}</div>
+          <div class="member-tag">${typeLabel} · ${tag ? esc(tag) + ' · ' : ''}${esc(globalId)}${m.muted ? ' · 已禁言' : ''}</div>
           ${actionBtns}
         </div>
+        ${muteBtn}
         ${removeBtn}
       </div>`;
   }).join('');
+}
+
+async function toggleMemberMute(globalId, muted, name) {
+  if (!currentGroupId || !globalId) return;
+  try {
+    await api('POST', `/proxy_groups/${encodeURIComponent(currentGroupId)}/members/mute`, { global_id: globalId, muted });
+    const groupData = await api('GET', `/proxy_groups/${encodeURIComponent(currentGroupId)}`);
+    currentGroupMuteAllAgents = !!groupData.mute_all_agents;
+    renderMembers(groupData.members || []);
+    toast(`${name}${muted ? ' 已禁言' : ' 已解除禁言'}`);
+  } catch (e) {
+    toast((muted ? '禁言失败' : '解除禁言失败') + ': ' + e.message);
+  }
+}
+
+async function toggleMuteAllMembers() {
+  if (!currentGroupId) return;
+  const nextMuted = !currentGroupMuteAllAgents;
+  try {
+    await api('POST', `/proxy_groups/${encodeURIComponent(currentGroupId)}/mute_all`, { muted: nextMuted });
+    currentGroupMuteAllAgents = nextMuted;
+    const groupData = await api('GET', `/proxy_groups/${encodeURIComponent(currentGroupId)}`);
+    currentGroupMuteAllAgents = !!groupData.mute_all_agents;
+    renderMembers(groupData.members || []);
+    toast(nextMuted ? '已开启全员禁言' : '已解除全员禁言');
+  } catch (e) {
+    toast((nextMuted ? '全员禁言失败' : '解除全员禁言失败') + ': ' + e.message);
+  }
 }
 
 function mentionMember(key, name) {
