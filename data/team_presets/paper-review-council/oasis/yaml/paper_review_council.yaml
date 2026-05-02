@@ -1,0 +1,71 @@
+# 论文审读汇报团：搜索指挥 Agent 调度，多领域人设审读，内部汇报 Agent 汇总
+version: 2
+repeat: false
+plan:
+- id: p0
+  manual:
+    author: begin
+    content: "请提供要审读的论文信息：标题、摘要、正文/链接、所属领域、你最关心的问题。搜索指挥者会先根据专家列表选择审读专家并给出搜索重点，随后领域专家审读，最后由「论文汇报者」形成汇报。"
+- id: p1
+  expert: search_commander#oasis#搜索指挥者
+  instruction: "请根据论文信息和你的人设中的可用专家列表，输出应选择的专家 tag，以及每位专家的搜索重点。"
+- id: p2
+  expert: ml_reviewer#temp#1
+  instruction: "请先参考搜索指挥者的选择和搜索重点。如果你被选择，按该重点审读；如果未被选择，只在你发现重大跨领域风险时简短补充。"
+- id: p3
+  expert: systems_reviewer#temp#1
+  instruction: "请先参考搜索指挥者的选择和搜索重点。如果你被选择，按该重点审读；如果未被选择，只在你发现重大跨领域风险时简短补充。"
+- id: p4
+  expert: biomed_reviewer#temp#1
+  instruction: "请先参考搜索指挥者的选择和搜索重点。如果你被选择，按该重点审读；如果未被选择，只在你发现重大跨领域风险时简短补充。"
+- id: p5
+  expert: econ_finance_reviewer#temp#1
+  instruction: "请先参考搜索指挥者的选择和搜索重点。如果你被选择，按该重点审读；如果未被选择，只在你发现重大跨领域风险时简短补充。"
+- id: p6
+  expert: social_science_reviewer#temp#1
+  instruction: "请先参考搜索指挥者的选择和搜索重点。如果你被选择，按该重点审读；如果未被选择，只在你发现重大跨领域风险时简短补充。"
+- id: p7
+  expert: statistics_reviewer#temp#1
+  instruction: "请先参考搜索指挥者的选择和搜索重点。如果你被选择，按该重点审读；如果未被选择，只在你发现重大跨领域风险时简短补充。"
+- id: p8
+  expert: humanities_reviewer#temp#1
+  instruction: "请先参考搜索指挥者的选择和搜索重点。如果你被选择，按该重点审读；如果未被选择，只在你发现重大跨领域风险时简短补充。"
+- id: p9
+  expert: paper_reporter#oasis#论文汇报者
+- id: p10
+  manual:
+    author: bend
+    content: "论文审读汇报已完成。若需要更深入审查，请补充论文全文、实验表格、代码仓库或指定只让某一领域人设复审。"
+edges:
+- - p0
+  - p1
+- - p1
+  - p2
+- - p1
+  - p3
+- - p1
+  - p4
+- - p1
+  - p5
+- - p1
+  - p6
+- - p1
+  - p7
+- - p1
+  - p8
+- - p2
+  - p9
+- - p3
+  - p9
+- - p4
+  - p9
+- - p5
+  - p9
+- - p6
+  - p9
+- - p7
+  - p9
+- - p8
+  - p9
+- - p9
+  - p10

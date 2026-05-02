@@ -1,0 +1,19 @@
+{
+  "clawcross_persona_enabled": true,
+  "clawcross_user_id": "",
+  "clawcross_team": "",
+  "clawcross_persona_tag": "paper_reporter",
+  "clawcross_fallback_to_openai": true,
+  "clawcross_persona_timeout": 120,
+  "llm_api_key": "",
+  "llm_base_url": "https://api.openai.com/v1",
+  "llm_model": "gpt-4o-mini",
+  "openreview_api_token": "",
+  "lite_mode": true,
+  "topic": "multi-agent systems, LLM-based multi-agent collaboration, agent coordination, and agentic AI",
+  "filter_prompt_template": "You are a research paper filter. Given a research topic and a list of papers (title + abstract), decide which papers are relevant.\n\nTOPIC: {topic}\n\nPAPERS:\n{papers_text}\n\nFor each paper, output ONLY its index and YES or NO, one per line. Example:\n[0] YES\n[1] NO\n[2] YES\n\nBe inclusive. If the paper is even partially related to the topic, say YES. Only say NO for clearly irrelevant papers.",
+  "max_candidate_papers": 100,
+  "arxiv_queries": [],
+  "arxiv_max_results": 100,
+  "arxiv_date_from": ""
+}

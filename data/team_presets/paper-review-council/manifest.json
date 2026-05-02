@@ -1,0 +1,22 @@
+{
+  "preset_id": "paper-review-council",
+  "name": "论文审读汇报团",
+  "description": "一个搜索指挥者 Agent 和一个论文汇报者 Agent，搭配多领域论文审读人设池的预设团队。搜索指挥者先根据专家列表选择审读专家并给出搜索重点，领域专家审理后由汇报者形成结构化报告。",
+  "source": "clawcross/custom",
+  "regime": "paper-review-council",
+  "role_count": 2,
+  "persona_count": 9,
+  "workflow_files": [
+    "paper_review_council.yaml"
+  ],
+  "python_workflow_files": [
+    "paper_survey_workflow.py"
+  ],
+  "default_team_name": "论文审读汇报团",
+  "tags": [
+    "paper-review",
+    "research",
+    "multi-domain",
+    "reporting"
+  ]
+}

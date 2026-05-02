@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, jsonify, session, Response, redirect, stream_with_context, send_file
 from werkzeug.middleware.proxy_fix import ProxyFix
+import asyncio
 import hashlib
 import base64
 import requests
@@ -14,10 +15,12 @@ import zipfile
 import html
 import mimetypes
 import threading
+import contextlib
 from pathlib import Path
 from io import BytesIO
 
 from integrations.acpx_cli_tools import acpx_agent_command_names
+from integrations.agent_sender import PreparedAgentStream, SendToAgentRequest, prepare_send_to_agent_stream, send_to_agent
 from typing import Any
 from urllib.parse import urljoin, urlparse
 from dotenv import load_dotenv
@@ -1838,6 +1841,24 @@ def local_file_raw():
     )
 
 
+@app.route("/local-file-check")
+def local_file_check():
+    if not session.get("user_id"):
+        return jsonify({"ok": False, "error": "not logged in"}), 401
+
+    raw_path = request.args.get("path", "")
+    target_path, error = _resolve_local_preview_path(raw_path)
+    if error or target_path is None:
+        return jsonify({"ok": True, "exists": False, "error": error or "Unknown error"})
+
+    return jsonify({
+        "ok": True,
+        "exists": True,
+        "path": str(target_path),
+        "name": target_path.name,
+    })
+
+
 @app.route("/local-file-view")
 def local_file_view():
     if not session.get("user_id"):
@@ -2143,14 +2164,33 @@ def proxy_openai_completions():
         auth_header = f"Bearer {INTERNAL_TOKEN}:{user_id}"
     # else: 外部调用自带 Bearer user:password，原样透传
 
-    try:
-        r = requests.post(
-            LOCAL_OPENAI_COMPLETIONS_URL,
-            json=request.get_json(silent=True),
-            headers={
+    body = request.get_json(silent=True)
+    acp_request = SendToAgentRequest(
+        prompt="",
+        connect_type="http",
+        platform="internal",
+        session=None,
+        options={
+            "api_url": LOCAL_OPENAI_COMPLETIONS_URL,
+            "headers": {
                 "Authorization": auth_header,
                 "Content-Type": "application/json",
             },
+            "body": body if isinstance(body, dict) else {},
+        },
+    )
+
+    try:
+        if not bool((body or {}).get("stream", False)):
+            result = asyncio.run(send_to_agent(acp_request))
+            if not result.ok:
+                return jsonify({"error": result.error or "send_to_agent failed"}), 502
+            return jsonify(result.raw_response if isinstance(result.raw_response, dict) else {"content": result.content})
+        prepared_stream = asyncio.run(prepare_send_to_agent_stream(acp_request))
+        r = requests.post(
+            prepared_stream.api_url,
+            json=prepared_stream.body,
+            headers=prepared_stream.headers,
             stream=True,
             timeout=None,
         )
@@ -2863,18 +2903,33 @@ def proxy_openclaw_chat():
     if not isinstance(body, dict):
         return jsonify({"error": "Invalid or empty JSON body"}), 400
 
-    try:
-        headers = {"Content-Type": "application/json", "Accept": "text/event-stream, application/json"}
-        if openclaw_api_key:
-            headers["Authorization"] = f"Bearer {openclaw_api_key}"
-        oc_session = _openclaw_session_key_from_model(body.get("model"))
-        if oc_session:
-            headers["x-openclaw-session-key"] = oc_session
+    acp_request = SendToAgentRequest(
+        prompt="",
+        connect_type="http",
+        platform="openclaw",
+        session=body.get("session_id") if isinstance(body.get("session_id"), str) else None,
+        options={
+            "api_url": openclaw_api_url,
+            "api_key": openclaw_api_key,
+            "headers": {
+                "Content-Type": "application/json",
+                **({"x-openclaw-session-key": _openclaw_session_key_from_model(body.get("model"))} if _openclaw_session_key_from_model(body.get("model")) else {}),
+            },
+            "body": body,
+        },
+    )
 
+    try:
+        if not bool((body or {}).get("stream", False)):
+            result = asyncio.run(send_to_agent(acp_request))
+            if not result.ok:
+                return jsonify({"error": result.error or "send_to_agent failed"}), 502
+            return jsonify(result.raw_response if isinstance(result.raw_response, dict) else {"content": result.content})
+        prepared_stream = asyncio.run(prepare_send_to_agent_stream(acp_request))
         r = requests.post(
-            openclaw_api_url,
-            json=body,
-            headers=headers,
+            prepared_stream.api_url,
+            json=prepared_stream.body,
+            headers=prepared_stream.headers,
             stream=True,
             timeout=None,
         )
@@ -3256,6 +3311,101 @@ def proxy_acpx_session_delete():
     return jsonify({"ok": True, "tool": resolved_tool, "session_name": actual_session})
 
 
+@app.route("/proxy_acpx_session_show", methods=["GET"])
+def proxy_acpx_session_show():
+    import asyncio
+    import shutil
+
+    if not shutil.which("acpx"):
+        return jsonify({"ok": False, "error": "acpx not found in PATH"}), 503
+
+    tool = (request.args.get("tool") or "").strip().lower()
+    name = str(request.args.get("name") or "").strip()
+    if tool not in acpx_agent_command_names():
+        return jsonify({"ok": False, "error": "unsupported tool"}), 400
+    if not name:
+        return jsonify({"ok": False, "error": "name is required"}), 400
+
+    try:
+        from integrations.acpx_adapter import AcpxError, get_acpx_adapter
+    except ImportError as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+    adapter = get_acpx_adapter(cwd=root_dir)
+    try:
+        session = asyncio.run(adapter.show_session(tool=tool, name=name))
+    except AcpxError as e:
+        return jsonify({"ok": False, "error": str(e)}), 502
+    return jsonify({"ok": True, "tool": tool, "name": name, "session": session})
+
+
+@app.route("/proxy_acpx_session_history", methods=["GET"])
+def proxy_acpx_session_history():
+    import asyncio
+    import shutil
+
+    if not shutil.which("acpx"):
+        return jsonify({"ok": False, "error": "acpx not found in PATH"}), 503
+
+    tool = (request.args.get("tool") or "").strip().lower()
+    name = str(request.args.get("name") or "").strip()
+    try:
+        limit = max(1, min(200, int(request.args.get("limit", "20"))))
+    except Exception:
+        limit = 20
+    if tool not in acpx_agent_command_names():
+        return jsonify({"ok": False, "error": "unsupported tool"}), 400
+    if not name:
+        return jsonify({"ok": False, "error": "name is required"}), 400
+
+    try:
+        from integrations.acpx_adapter import AcpxError, get_acpx_adapter
+    except ImportError as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+    adapter = get_acpx_adapter(cwd=root_dir)
+    try:
+        history = asyncio.run(adapter.session_history(tool=tool, name=name, limit=limit))
+    except AcpxError as e:
+        return jsonify({"ok": False, "error": str(e)}), 502
+    return jsonify({"ok": True, "tool": tool, "name": name, "history": history})
+
+
+@app.route("/proxy_acpx_session_read", methods=["GET"])
+def proxy_acpx_session_read():
+    import asyncio
+    import shutil
+
+    if not shutil.which("acpx"):
+        return jsonify({"ok": False, "error": "acpx not found in PATH"}), 503
+
+    tool = (request.args.get("tool") or "").strip().lower()
+    name = str(request.args.get("name") or "").strip()
+    tail = None
+    tail_raw = str(request.args.get("tail") or "").strip()
+    if tail_raw:
+        try:
+            tail = max(1, min(500, int(tail_raw)))
+        except Exception:
+            tail = None
+    if tool not in acpx_agent_command_names():
+        return jsonify({"ok": False, "error": "unsupported tool"}), 400
+    if not name:
+        return jsonify({"ok": False, "error": "name is required"}), 400
+
+    try:
+        from integrations.acpx_adapter import AcpxError, get_acpx_adapter
+    except ImportError as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+    adapter = get_acpx_adapter(cwd=root_dir)
+    try:
+        session = asyncio.run(adapter.read_session(tool=tool, name=name, tail=tail))
+    except AcpxError as e:
+        return jsonify({"ok": False, "error": str(e)}), 502
+    return jsonify({"ok": True, "tool": tool, "name": name, "session": session})
+
+
 @app.route("/proxy_acpx_chat", methods=["POST", "OPTIONS"])
 def proxy_acpx_chat():
     """Main-page chat via local acpx (Codex / Claude / Gemini CLI), OpenAI-style SSE out.
@@ -3306,10 +3456,13 @@ def proxy_acpx_chat():
     stream = body.get("stream", True)
 
     try:
-        from integrations.acpx_adapter import load_external_agent_system_prompt, load_external_agent_prompt_file
-        from integrations.agent_sender import SendToAgentRequest, send_to_agent
+        from integrations.acpx_adapter import (
+            AcpxError,
+            load_external_agent_prompt_file,
+            load_external_agent_system_prompt,
+        )
     except ImportError as e:
-        return jsonify({"error": f"agent sender unavailable: {e}"}), 500
+        return jsonify({"error": f"acpx adapter unavailable: {e}"}), 500
 
     front_external_system_prompt = "\n\n".join(
         p
@@ -3320,32 +3473,36 @@ def proxy_acpx_chat():
         if p
     )
 
-    async def _run_prompt() -> str:
-        result = await send_to_agent(
-            SendToAgentRequest(
-                prompt=prompt_text,
-                connect_type="acp",
-                platform=tool,
-                session=session_key,
-                options={
-                    "cwd": root_dir,
-                    "timeout_sec": int(body.get("timeout_sec") or 600),
-                    "system_prompt": front_external_system_prompt,
-                    "attachments": acpx_attachments or None,
-                },
-            )
-        )
-        if not result.ok:
-            raise RuntimeError(result.error or "acpx chat failed")
-        return result.content or ""
-
-    try:
-        reply = asyncio.run(_run_prompt())
-    except RuntimeError as e:
-        # asyncio.run from nested loop (unlikely in Flask sync)
-        return jsonify({"error": str(e)}), 502
+    request_options = {
+        "cwd": root_dir,
+        "system_prompt": front_external_system_prompt,
+        "attachments": acpx_attachments or None,
+        "timeout_sec": int(body.get("timeout_sec") or 600),
+    }
+    acp_request = SendToAgentRequest(
+        prompt=prompt_text,
+        connect_type="acp",
+        platform=tool,
+        session=session_key,
+        options=request_options,
+    )
 
     if not stream:
+        try:
+            result = asyncio.run(send_to_agent(SendToAgentRequest(
+                prompt=acp_request.prompt,
+                connect_type=acp_request.connect_type,
+                platform=acp_request.platform,
+                session=acp_request.session,
+                options={**request_options, "return_trace": True},
+            )))
+            if not result.ok:
+                raise AcpxError(result.error or "send_to_agent failed")
+            reply = str(result.content or "")
+            trace = result.raw_response if isinstance(result.raw_response, dict) else {}
+        except (RuntimeError, AcpxError) as e:
+            # asyncio.run from nested loop (unlikely in Flask sync)
+            return jsonify({"error": str(e)}), 502
         return jsonify(
             {
                 "id": "acpx-chatcmpl",
@@ -3358,28 +3515,183 @@ def proxy_acpx_chat():
                         "finish_reason": "stop",
                     }
                 ],
+                "acpx_trace": trace,
             }
         )
 
     def _sse():
-        chunk = {
-            "id": "acpx-chatcmpl",
-            "object": "chat.completion.chunk",
-            "model": f"acp:{tool}",
-            "choices": [{"index": 0, "delta": {"content": reply}, "finish_reason": None}],
-        }
-        yield f"data: {json.dumps(chunk)}\n\n"
-        done = {
-            "id": "acpx-chatcmpl",
-            "object": "chat.completion.chunk",
-            "model": f"acp:{tool}",
-            "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
-        }
-        yield f"data: {json.dumps(done)}\n\n"
-        yield "data: [DONE]\n\n"
+        proc = None
+        temp_path = None
+        prepared_stream: PreparedAgentStream | None = None
+        output_lines: list[str] = []
+        seen_tool_calls: dict[str, dict[str, Any]] = {}
+        try:
+            prepared_stream = asyncio.run(prepare_send_to_agent_stream(acp_request))
+            temp_path = prepared_stream.temp_path
+            proc = subprocess.Popen(
+                prepared_stream.cmd,
+                cwd=root_dir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                bufsize=1,
+            )
+
+            assert proc.stdout is not None
+            for raw_line in proc.stdout:
+                line = raw_line.rstrip("\r\n")
+                if not line:
+                    continue
+                output_lines.append(line)
+                stripped = line.strip()
+                if not stripped.startswith("{"):
+                    continue
+                try:
+                    obj = json.loads(stripped)
+                except json.JSONDecodeError:
+                    continue
+                stream_event = prepared_stream.adapter.extract_stream_event(obj) if prepared_stream and prepared_stream.adapter else None
+                if not stream_event:
+                    continue
+                if stream_event.get("type") == "agent_message_chunk":
+                    part = str(stream_event.get("text") or "")
+                    if not part:
+                        continue
+                    chunk = {
+                        "id": "acpx-chatcmpl",
+                        "object": "chat.completion.chunk",
+                        "model": f"acp:{tool}",
+                        "choices": [{"index": 0, "delta": {"content": part}, "finish_reason": None}],
+                    }
+                    yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+                    continue
+                if stream_event.get("type") == "tool_call":
+                    tool_call_id = str(stream_event.get("tool_call_id") or "")
+                    seen_tool_calls[tool_call_id] = dict(stream_event)
+                    meta_chunk = {
+                        "id": "acpx-chatcmpl",
+                        "object": "chat.completion.chunk",
+                        "model": f"acp:{tool}",
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {
+                                    "meta": {
+                                        "type": "acpx_tool_start",
+                                        "tool_call_id": tool_call_id,
+                                        "title": stream_event.get("title") or "",
+                                        "kind": stream_event.get("kind") or "",
+                                        "status": stream_event.get("status") or "",
+                                        "raw_input": stream_event.get("raw_input"),
+                                        "locations": stream_event.get("locations") or [],
+                                    }
+                                },
+                                "finish_reason": None,
+                            }
+                        ],
+                    }
+                    yield f"data: {json.dumps(meta_chunk, ensure_ascii=False)}\n\n"
+                    continue
+                if stream_event.get("type") == "tool_call_update":
+                    meta_chunk = {
+                        "id": "acpx-chatcmpl",
+                        "object": "chat.completion.chunk",
+                        "model": f"acp:{tool}",
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {
+                                    "meta": {
+                                        "type": "acpx_tool_update",
+                                        "tool_call_id": stream_event.get("tool_call_id") or "",
+                                        "content_text": stream_event.get("content_text") or "",
+                                    }
+                                },
+                                "finish_reason": None,
+                            }
+                        ],
+                    }
+                    yield f"data: {json.dumps(meta_chunk, ensure_ascii=False)}\n\n"
+
+            stderr_text = ""
+            if proc.stderr is not None:
+                stderr_text = proc.stderr.read()
+            rc = proc.wait(timeout=prepared_stream.timeout_sec if prepared_stream else None)
+            full_output = "\n".join(output_lines)
+            if rc != 0:
+                raise AcpxError((stderr_text or full_output or f"acpx failed ({rc})").strip())
+
+            if prepared_stream and prepared_stream.adapter:
+                trace = prepared_stream.adapter._extract_trace(full_output)
+                for tool_call_id, info in seen_tool_calls.items():
+                    meta_chunk = {
+                        "id": "acpx-chatcmpl",
+                        "object": "chat.completion.chunk",
+                        "model": f"acp:{tool}",
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {
+                                    "meta": {
+                                        "type": "acpx_tool_end",
+                                        "tool_call_id": tool_call_id,
+                                        "title": info.get("title") or "",
+                                    }
+                                },
+                                "finish_reason": None,
+                            }
+                        ],
+                    }
+                    yield f"data: {json.dumps(meta_chunk, ensure_ascii=False)}\n\n"
+                if trace.tool_uses or trace.tool_results or trace.messages:
+                    meta_chunk = {
+                        "id": "acpx-chatcmpl",
+                        "object": "chat.completion.chunk",
+                        "model": f"acp:{tool}",
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {
+                                    "meta": {
+                                        "type": "acpx_trace",
+                                        "message_chunks": trace.message_chunks,
+                                        "messages": trace.messages,
+                                        "tool_uses": trace.tool_uses,
+                                        "tool_results": trace.tool_results,
+                                    }
+                                },
+                                "finish_reason": None,
+                            }
+                        ],
+                    }
+                    yield f"data: {json.dumps(meta_chunk, ensure_ascii=False)}\n\n"
+        except (RuntimeError, AcpxError, subprocess.TimeoutExpired) as e:
+            err_chunk = {
+                "id": "acpx-chatcmpl",
+                "object": "chat.completion.chunk",
+                "model": f"acp:{tool}",
+                "choices": [{"index": 0, "delta": {"content": f"\n\n[acpx error] {e}"}, "finish_reason": None}],
+            }
+            yield f"data: {json.dumps(err_chunk, ensure_ascii=False)}\n\n"
+        finally:
+            if proc is not None and proc.poll() is None:
+                with contextlib.suppress(Exception):
+                    proc.kill()
+            if prepared_stream is not None:
+                prepared_stream.cleanup()
+            done = {
+                "id": "acpx-chatcmpl",
+                "object": "chat.completion.chunk",
+                "model": f"acp:{tool}",
+                "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+            }
+            yield f"data: {json.dumps(done, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
 
     return Response(
-        _sse(),
+        stream_with_context(_sse()),
         mimetype="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

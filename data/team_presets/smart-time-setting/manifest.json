@@ -1,0 +1,20 @@
+{
+  "preset_id": "smart-time-setting",
+  "name": "智能时间设置团队",
+  "description": "一个内部时间设置官 Agent，用合适的人设 prompt 把自然语言提醒需求解析成明确闹钟计划，并指导外部 Agent 使用 TimeMaster/scheduler MCP 设置一次性或周期性闹钟。",
+  "source": "clawcross/custom",
+  "regime": "smart-time-setting",
+  "role_count": 1,
+  "persona_count": 1,
+  "workflow_files": [
+    "smart_time_setting.yaml"
+  ],
+  "default_team_name": "智能时间设置团队",
+  "tags": [
+    "time",
+    "alarm",
+    "scheduler",
+    "external-agent",
+    "mcp"
+  ]
+}

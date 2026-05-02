@@ -12,6 +12,7 @@ Ported from openclaw-claude-code's effort control mechanism.
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from enum import Enum
@@ -80,7 +81,7 @@ EFFORT_CONFIGS: dict[EffortLevel, EffortConfig] = {
         level=EffortLevel.HIGH,
         max_turns=30,
         max_context_tokens=32000,
-        max_output_tokens=8192,
+        max_output_tokens=12288,
         temperature=0.7,
         enable_planning=True,
         enable_verification=True,
@@ -182,6 +183,24 @@ def get_effort_config(level: EffortLevel | str | None = None) -> EffortConfig:
         except ValueError:
             return EFFORT_CONFIGS[EffortLevel.MEDIUM]
     return EFFORT_CONFIGS.get(level, EFFORT_CONFIGS[EffortLevel.MEDIUM])
+
+
+def resolve_default_chat_max_output_tokens() -> int:
+    """Resolve the default max output tokens for primary WeBot chat.
+
+    Priority:
+    1. WEBOT_DEFAULT_MAX_OUTPUT_TOKENS env override when it is a positive int
+    2. high-effort default output tokens from EFFORT_CONFIGS
+    """
+    raw = (os.getenv("WEBOT_DEFAULT_MAX_OUTPUT_TOKENS") or "").strip()
+    if raw:
+        try:
+            value = int(raw)
+        except ValueError:
+            value = 0
+        if value > 0:
+            return value
+    return EFFORT_CONFIGS[EffortLevel.HIGH].max_output_tokens
 
 
 # Per-session effort overrides

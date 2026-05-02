@@ -2,6 +2,7 @@
     const ABSOLUTE_FILE_PATH_PATTERN = /((?:\/[^\s<>"'`)\]）}]+)+\.[A-Za-z0-9_-]+(?::\d+(?::\d+)?)?)/g;
     const LOCAL_PREVIEW_ROUTE_PATTERN = /^\/local-file-(?:view|raw)(?:[/?#]|$)/;
     const LOCAL_PREVIEW_OVERLAY_ID = 'cc-local-file-preview-overlay';
+    const LOCAL_FILE_CHECK_CACHE = new Map();
 
     function isAbsoluteLocalReference(rawValue) {
         const raw = String(rawValue || '').trim();
@@ -80,6 +81,29 @@
         return `/local-file-view?${params.toString()}`;
     }
 
+    function getLocalReferencePathKey(rawValue) {
+        const parsed = parseLocalReference(rawValue);
+        return parsed && parsed.path ? String(parsed.path) : '';
+    }
+
+    async function checkLocalReferenceExists(rawValue) {
+        const pathKey = getLocalReferencePathKey(rawValue);
+        if (!pathKey) return false;
+        if (LOCAL_FILE_CHECK_CACHE.has(pathKey)) {
+            return await LOCAL_FILE_CHECK_CACHE.get(pathKey);
+        }
+        const pending = fetch(`/local-file-check?path=${encodeURIComponent(pathKey)}`, {
+            credentials: 'same-origin',
+        })
+            .then((resp) => resp.ok ? resp.json() : null)
+            .then((data) => !!(data && data.ok && data.exists))
+            .catch(() => false);
+        LOCAL_FILE_CHECK_CACHE.set(pathKey, pending);
+        const exists = await pending;
+        LOCAL_FILE_CHECK_CACHE.set(pathKey, Promise.resolve(exists));
+        return exists;
+    }
+
     function rewriteLocalFileLinks(root) {
         if (!root) return;
         root.querySelectorAll('a[href]').forEach((anchor) => {
@@ -92,6 +116,9 @@
             }
             const previewUrl = buildLocalFilePreviewUrl(rawHref);
             if (!previewUrl) return;
+            anchor.dataset.localFileOriginalHref = rawHref;
+            anchor.dataset.localFileGenerated = '0';
+            anchor.dataset.localFileRaw = rawHref;
             anchor.setAttribute('href', previewUrl);
             anchor.setAttribute('target', '_blank');
             anchor.setAttribute('rel', 'noopener noreferrer');
@@ -122,6 +149,8 @@
                     anchor.target = '_blank';
                     anchor.rel = 'noopener noreferrer';
                     anchor.dataset.localFileLink = '1';
+                    anchor.dataset.localFileGenerated = '1';
+                    anchor.dataset.localFileRaw = trimmed;
                     anchor.className = 'cc-local-file-link cc-local-file-link-block';
                     anchor.textContent = trimmed;
                     fragment.appendChild(anchor);
@@ -271,6 +300,8 @@
                     anchor.target = '_blank';
                     anchor.rel = 'noopener noreferrer';
                     anchor.dataset.localFileLink = '1';
+                    anchor.dataset.localFileGenerated = '1';
+                    anchor.dataset.localFileRaw = pathText;
                     anchor.className = 'cc-local-file-link';
                     anchor.textContent = pathText;
                     fragment.appendChild(anchor);
@@ -348,6 +379,7 @@
         linkifyLocalFileText(root);
         linkifyLocalFileCodeBlocks(root);
         rewriteLocalFileLinks(root);
+        validateLocalFileLinks(root);
         if (!root || typeof global.hljs === 'undefined') return;
         root.querySelectorAll('pre code').forEach((block) => {
             if (block.dataset.localFileCodeBlock === '1') return;
@@ -366,8 +398,39 @@
         highlight(element);
     }
 
+    function restoreInvalidLocalFileAnchor(anchor) {
+        if (!anchor || !anchor.parentNode) return;
+        if (anchor.dataset.localFileGenerated === '1') {
+            anchor.parentNode.replaceChild(document.createTextNode(anchor.textContent || ''), anchor);
+            return;
+        }
+        const originalHref = anchor.dataset.localFileOriginalHref || anchor.textContent || '';
+        anchor.setAttribute('href', originalHref);
+        anchor.classList.remove('cc-local-file-link');
+        delete anchor.dataset.localFileLink;
+        delete anchor.dataset.localFileGenerated;
+        delete anchor.dataset.localFileOriginalHref;
+        delete anchor.dataset.localFileRaw;
+        delete anchor.dataset.localFileChecked;
+    }
+
+    async function validateLocalFileLinks(root) {
+        if (!root || typeof document === 'undefined') return;
+        const anchors = Array.from(root.querySelectorAll('a.cc-local-file-link[data-local-file-link="1"]'));
+        await Promise.all(anchors.map(async (anchor) => {
+            if (!anchor || anchor.dataset.localFileChecked === '1') return;
+            anchor.dataset.localFileChecked = '1';
+            const rawRef = anchor.dataset.localFileRaw || anchor.textContent || anchor.getAttribute('href') || '';
+            const exists = await checkLocalReferenceExists(rawRef);
+            if (!exists) {
+                restoreInvalidLocalFileAnchor(anchor);
+            }
+        }));
+    }
+
     global.ClawcrossMarkdown = {
         buildLocalFilePreviewUrl,
+        checkLocalReferenceExists,
         closeLocalPreviewOverlay,
         configure: configureMarked,
         escapeHtml,
@@ -380,6 +443,7 @@
         highlight,
         renderInto,
         rewriteLocalFileLinks,
+        validateLocalFileLinks,
     };
 
     configureMarked();

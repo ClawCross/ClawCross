@@ -42,9 +42,9 @@ def _default_restart_command() -> str:
     return "bash selfskill/scripts/run.sh stop && bash selfskill/scripts/run.sh start"
 
 
-def _git_pull_ff_only() -> None:
+def _run_git(*args: str) -> None:
     proc = subprocess.run(
-        ["git", "-C", str(PROJECT_ROOT), "pull", "--ff-only"],
+        ["git", "-C", str(PROJECT_ROOT), *args],
         capture_output=True,
         text=True,
     )
@@ -53,12 +53,21 @@ def _git_pull_ff_only() -> None:
     if proc.stderr:
         print(proc.stderr, end="" if proc.stderr.endswith("\n") else "\n", file=sys.stderr)
     if proc.returncode != 0:
-        raise RuntimeError(f"git pull --ff-only 失败: {proc.stderr.strip() or proc.stdout.strip()}")
+        raise RuntimeError(f"git {' '.join(args)} 失败: {proc.stderr.strip() or proc.stdout.strip()}")
+
+
+def _git_force_sync(branch: str) -> None:
+    upstream = f"origin/{branch}"
+    _run_git("fetch", "--quiet", "origin", branch)
+    _run_git("checkout", "-B", branch, upstream)
+    _run_git("reset", "--hard", upstream)
+    _run_git("clean", "-fd")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-id", required=True)
+    parser.add_argument("--branch", default="")
     args = parser.parse_args()
 
     status = read_update_status()
@@ -69,23 +78,24 @@ def main() -> int:
 
     try:
         write_update_status("checking", "检查 Git 更新状态。", run_id=run_id)
+        target_branch = str(args.branch or "").strip()
         before = collect_repo_state(fetch_remote=True)
+        if not target_branch:
+            target_branch = str(before.get("branch") or "").strip() or "main"
         write_update_status(
             "checking",
             "已同步远端引用，检查可用更新。",
             run_id=run_id,
-            branch=before.get("branch", ""),
-            upstream=before.get("upstream", ""),
+            branch=target_branch,
+            upstream=f"origin/{target_branch}",
             current_commit=before.get("current_commit", ""),
             current_short_commit=before.get("current_short_commit", ""),
             latest_commit=before.get("latest_commit", ""),
             latest_short_commit=before.get("latest_short_commit", ""),
         )
 
-        if before.get("dirty"):
-            raise RuntimeError("仓库存在未提交改动，自动更新已停止。")
-
-        if not before.get("has_update"):
+        branch_changed = target_branch != str(before.get("branch") or "").strip()
+        if not before.get("has_update") and not branch_changed:
             write_update_status(
                 "done",
                 "已经是最新版本，无需更新。",
@@ -98,8 +108,8 @@ def main() -> int:
             )
             return 0
 
-        write_update_status("updating", "拉取最新代码。", run_id=run_id)
-        _git_pull_ff_only()
+        write_update_status("updating", f"完整更新到分支 {target_branch}，远端内容将覆盖本地。", run_id=run_id)
+        _git_force_sync(target_branch)
 
         post_pull = (os.getenv("CLAWCROSS_UPDATE_POST_PULL_CMD", "") or "").strip()
         if post_pull:
@@ -115,8 +125,8 @@ def main() -> int:
             "更新完成，服务已重启。",
             run_id=run_id,
             completed_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            branch=after.get("branch", ""),
-            upstream=after.get("upstream", ""),
+            branch=target_branch,
+            upstream=f"origin/{target_branch}",
             current_commit=after.get("current_commit", ""),
             current_short_commit=after.get("current_short_commit", ""),
             latest_commit=after.get("latest_commit", ""),

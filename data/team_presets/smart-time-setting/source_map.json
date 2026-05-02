@@ -1,0 +1,10 @@
+{
+  "preset_id": "smart-time-setting",
+  "roles": {
+    "time_planner": {
+      "name": "时间设置官",
+      "source_file": "clawcross/custom/smart-time-setting#time_planner",
+      "kind": "internal_agent"
+    }
+  }
+}

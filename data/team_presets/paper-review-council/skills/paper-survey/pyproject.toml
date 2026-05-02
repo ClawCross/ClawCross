@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "paper-survey"
+version = "1.0.0"
+description = "Scrape, analyze, and synthesize academic papers with LLMs."
+requires-python = ">=3.10"
+dependencies = [
+  "beautifulsoup4",
+  "openai",
+  "requests",
+  "tqdm",
+  "pdfplumber",
+  "PyPDF2",
+]
+
+[project.scripts]
+paper-survey = "paper_survey.cli:main"
+paper-survey-pdf-folder = "paper_survey.pdf_folder_batch:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["paper_survey*"]

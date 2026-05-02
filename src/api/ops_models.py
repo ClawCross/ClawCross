@@ -90,6 +90,7 @@ class UpdateCheckRequest(BaseModel):
 class UpdateStartRequest(BaseModel):
     user_id: str
     password: str = ""
+    branch: str = ""
 
 
 class UpdateStatusRequest(BaseModel):

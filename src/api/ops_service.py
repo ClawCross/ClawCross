@@ -529,7 +529,7 @@ class OpsService:
     async def update_start(self, req: UpdateStartRequest, x_internal_token: str | None):
         self.verify_auth_or_token(req.user_id, req.password, x_internal_token)
         try:
-            status = start_update_process(req.user_id)
+            status = start_update_process(req.user_id, branch=req.branch)
         except RuntimeError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:

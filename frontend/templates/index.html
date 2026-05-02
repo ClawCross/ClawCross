@@ -495,9 +495,9 @@
     </div>
     <div style="padding:16px;">
       <div style="font-size:13px;color:#6b7280;margin-bottom:8px;">粘贴从 Hub 复制的下载命令或 URL：</div>
-      <textarea id="hub-curl-input" placeholder="curl -L 'https://clawhub.ai/api/workflows/xxx/download' -o team_xxx.zip" style="width:100%;height:72px;padding:10px;border:1px solid #d1d5db;border-radius:8px;font-size:12px;font-family:'SF Mono',Menlo,Consolas,monospace;background:#f9fafb;color:#374151;resize:none;box-sizing:border-box;"></textarea>
+      <textarea id="hub-curl-input" placeholder="curl -L 'https://clawcross.net/api/workflows/xxx/download' -o team_xxx.zip" style="width:100%;height:72px;padding:10px;border:1px solid #d1d5db;border-radius:8px;font-size:12px;font-family:'SF Mono',Menlo,Consolas,monospace;background:#f9fafb;color:#374151;resize:none;box-sizing:border-box;"></textarea>
       <div style="display:flex;gap:8px;margin-top:12px;">
-        <button onclick="openClawcrossHub()" style="flex:1;padding:10px;background:#fff;color:#7c3aed;border:1px solid #c4b5fd;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">🌐 前往 Hub</button>
+        <button onclick="openTeamHubSite()" style="flex:1;padding:10px;background:#fff;color:#7c3aed;border:1px solid #c4b5fd;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">🌐 前往 Hub</button>
         <button onclick="importFromHub()" style="flex:1;padding:10px;background:#7c3aed;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">📥 下载并导入</button>
       </div>
     </div>
@@ -1298,7 +1298,11 @@
             </div>
             <div class="settings-body" style="overflow-y:auto;">
                 <div class="mb-4 text-sm text-gray-600">
-                    检查远端 Git 更新，并在你确认后拉取最新代码并重启服务。
+                    检查远端 Git 更新，并在你确认后完整拉取最新代码并重启服务。若本地有冲突或未提交改动，将使用远端覆盖本地。
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">分支（可选）</label>
+                    <input id="project-update-branch" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="留空则使用当前分支，例如 main">
                 </div>
                 <div id="project-update-summary" class="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700 whitespace-pre-wrap">点击“检查更新”后显示版本信息。</div>
                 <div id="project-update-log-wrap" class="mt-3" style="display:none;">
@@ -1308,7 +1312,7 @@
             </div>
             <div class="settings-footer">
                 <button onclick="checkProjectUpdate(true)" id="project-update-check-btn" class="settings-btn settings-btn-cancel">检查更新</button>
-                <button onclick="startProjectUpdate()" id="project-update-start-btn" class="settings-btn settings-btn-save bg-green-600 hover:bg-green-700" disabled>开始更新</button>
+                <button onclick="startProjectUpdate()" id="project-update-start-btn" class="settings-btn settings-btn-save bg-green-600 hover:bg-green-700">完整更新</button>
             </div>
         </div>
     </div>

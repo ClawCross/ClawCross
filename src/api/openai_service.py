@@ -17,12 +17,14 @@ from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from utils.auth_utils import extract_user_password_session, is_internal_bearer, parse_bearer_parts
+from utils.effort_controller import resolve_default_chat_max_output_tokens
 from utils.logging_utils import get_logger
 from api.openai_models import ChatCompletionRequest, ChatMessage, OpenAIExecutionContext
 from api.openai_protocol import OpenAIProtocolHelper
 
 logger = get_logger("openai_service")
 _GRAPH_RECURSION_LIMIT = 100
+_DEFAULT_WEBOT_CHAT_MAX_TOKENS = resolve_default_chat_max_output_tokens()
 
 # --- Agent tool whitelist ---
 _USER_FILES_DIR = os.path.join(
@@ -701,6 +703,11 @@ class OpenAIChatService:
                 # 调用方有自己的限制 → 取交集
                 effective_enabled = [t for t in effective_enabled if t in agent_whitelist]
 
+        model_name = req.model or "webot"
+        effective_max_tokens = req.max_tokens
+        if model_name == "webot" and (effective_max_tokens is None or effective_max_tokens <= 0):
+            effective_max_tokens = _DEFAULT_WEBOT_CHAT_MAX_TOKENS
+
         user_input = {
             "messages": input_messages,
             "trigger_source": "user",
@@ -708,7 +715,7 @@ class OpenAIChatService:
             "user_id": user_id,
             "session_id": session_id,
             "max_turns": req.max_turns,
-            "max_tokens": req.max_tokens,
+            "max_tokens": effective_max_tokens,
             "turn_count": 0,
             "external_tools": req.tools,
         }
@@ -716,7 +723,6 @@ class OpenAIChatService:
         if req.llm_override:
             user_input["llm_override"] = req.llm_override
 
-        model_name = req.model or "webot"
         thread_lock = await self.agent.get_thread_lock(thread_id)
         ctx = OpenAIExecutionContext(
             user_id=user_id,
@@ -727,7 +733,7 @@ class OpenAIChatService:
             model_name=model_name,
             external_tool_names=external_tool_names,
             thread_lock=thread_lock,
-            max_tokens=req.max_tokens,
+            max_tokens=effective_max_tokens,
         )
 
         logger.info("chat user=%s session=%s stream=%s model=%s",

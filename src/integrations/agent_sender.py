@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import contextlib
 import os
 from typing import Any, Awaitable, Callable
 
@@ -30,6 +31,25 @@ class SendToAgentResult:
 
     def get(self, key: str, default: Any = None) -> Any:
         return getattr(self, key, default)
+
+
+@dataclass(slots=True)
+class PreparedAgentStream:
+    connect_type: str
+    platform: str
+    session: str | None
+    timeout_sec: int | None
+    cmd: list[str] | None = None
+    temp_path: str | None = None
+    adapter: Any | None = None
+    api_url: str | None = None
+    headers: dict[str, Any] | None = None
+    body: dict[str, Any] | None = None
+
+    def cleanup(self) -> None:
+        if self.temp_path:
+            with contextlib.suppress(Exception):
+                os.unlink(self.temp_path)
 
 
 @dataclass(slots=True)
@@ -75,6 +95,15 @@ async def send_to_agent(request: SendToAgentRequest) -> SendToAgentResult:
     return await sender(request)
 
 
+async def prepare_send_to_agent_stream(request: SendToAgentRequest) -> PreparedAgentStream:
+    connect_type = (request.connect_type or "").strip().lower()
+    if connect_type == "acp":
+        return await _prepare_via_acp_stream(request)
+    if connect_type == "http":
+        return await _prepare_via_http_stream(request)
+    raise RuntimeError(f"streaming not supported for connect_type: {request.connect_type}")
+
+
 async def reset_agent(request: ResetAgentRequest) -> ResetAgentResult:
     connect_type = (request.connect_type or "").strip().lower()
     resetter = _RESETTERS.get(connect_type)
@@ -94,8 +123,37 @@ async def _send_via_acp(request: SendToAgentRequest) -> SendToAgentResult:
     attachments = options.get("attachments")
     try:
         adapter = get_acpx_adapter(cwd=cwd)
+        platform = _canonical_platform(request.platform)
+        if options.get("return_trace"):
+            trace = await adapter.prompt_with_trace(
+                tool=platform,
+                session_key=request.session or "default",
+                prompt_text=prompt_text,
+                timeout_sec=run_options["timeout_sec"],
+                reset_session=bool(options.get("reset_session")),
+                system_prompt=options.get("system_prompt"),
+                attachments=attachments,
+                ttl_sec=run_options["ttl_sec"],
+                approve_all=run_options["approve_all"],
+                non_interactive_permissions=run_options["non_interactive_permissions"],
+            )
+            return SendToAgentResult(
+                ok=True,
+                content=trace.text or "",
+                raw_response={
+                    "message_chunks": trace.message_chunks,
+                    "messages": trace.messages,
+                    "tool_uses": trace.tool_uses,
+                    "tool_results": trace.tool_results,
+                },
+                meta={
+                    "connect_type": "acp",
+                    "platform": platform,
+                    "session": request.session,
+                },
+            )
         reply = await adapter.prompt(
-            tool=_canonical_platform(request.platform),
+            tool=platform,
             session_key=request.session or "default",
             prompt_text=prompt_text,
             timeout_sec=run_options["timeout_sec"],
@@ -112,7 +170,7 @@ async def _send_via_acp(request: SendToAgentRequest) -> SendToAgentResult:
             raw_response=reply,
             meta={
                 "connect_type": "acp",
-                "platform": _canonical_platform(request.platform),
+                "platform": platform,
                 "session": request.session,
             },
         )
@@ -126,6 +184,95 @@ async def _send_via_acp(request: SendToAgentRequest) -> SendToAgentResult:
                 "session": request.session,
             },
         )
+
+
+async def _prepare_via_acp_stream(request: SendToAgentRequest) -> PreparedAgentStream:
+    options = request.options or {}
+    cwd = options.get("cwd")
+    run_options = normalize_acpx_run_options(options, default_timeout_sec=None)
+    prompt_text = request.prompt if isinstance(request.prompt, str) else str(request.prompt or "")
+    attachments = options.get("attachments")
+    platform = _canonical_platform(request.platform)
+    adapter = get_acpx_adapter(cwd=cwd)
+    acpx_session = adapter.to_acpx_session_name(tool=platform, session_key=request.session or "default")
+    await adapter.ensure_session(
+        tool=platform,
+        session_key=request.session or "default",
+        acpx_session=acpx_session,
+        system_prompt=options.get("system_prompt"),
+        ttl_sec=run_options["ttl_sec"],
+        approve_all=run_options["approve_all"],
+        non_interactive_permissions=run_options["non_interactive_permissions"],
+    )
+    cmd, temp_path = adapter.prepare_prompt_command(
+        tool=platform,
+        session_key=request.session or "default",
+        acpx_session=acpx_session,
+        prompt_text=prompt_text,
+        attachments=attachments,
+        ttl_sec=run_options["ttl_sec"],
+        approve_all=run_options["approve_all"],
+        non_interactive_permissions=run_options["non_interactive_permissions"],
+    )
+    return PreparedAgentStream(
+        connect_type="acp",
+        platform=platform,
+        session=request.session,
+        timeout_sec=run_options["timeout_sec"],
+        cmd=cmd,
+        temp_path=temp_path,
+        adapter=adapter,
+    )
+
+
+async def _prepare_via_http_stream(request: SendToAgentRequest) -> PreparedAgentStream:
+    options = request.options or {}
+    platform = _canonical_platform(request.platform)
+    if platform == "temp":
+        raise RuntimeError("streaming not supported for temp http platform")
+
+    api_url = str(options.get("api_url") or "").strip()
+    if not api_url:
+        raise RuntimeError("missing api_url")
+
+    headers = {"Content-Type": "application/json", "Accept": "text/event-stream, application/json"}
+    headers.update(options.get("headers") or {})
+    api_key = str(options.get("api_key") or "").strip()
+    if api_key and "Authorization" not in headers:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    session_header = str(_resolve_http_session_header(platform, options) or "").strip()
+    if request.session and session_header and session_header not in headers:
+        headers[session_header] = request.session
+
+    body = dict(options.get("body") or {})
+    if "messages" not in body:
+        body["messages"] = _build_http_messages(request.prompt, options)
+    if request.session:
+        session_field = _resolve_http_session_field(platform, options)
+        if session_field and session_field not in body:
+            body[session_field] = request.session
+    if "model" not in body and options.get("model") is not None:
+        body["model"] = options.get("model")
+    body["stream"] = True
+
+    timeout_value = options.get("timeout")
+    timeout_sec: int | None = None
+    if timeout_value not in (None, ""):
+        try:
+            timeout_sec = int(timeout_value)
+        except (TypeError, ValueError):
+            timeout_sec = None
+
+    return PreparedAgentStream(
+        connect_type="http",
+        platform=platform,
+        session=request.session,
+        timeout_sec=timeout_sec,
+        api_url=api_url,
+        headers=headers,
+        body=body,
+    )
 
 
 async def _reset_via_acp(request: ResetAgentRequest) -> ResetAgentResult:

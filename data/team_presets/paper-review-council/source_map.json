@@ -1,0 +1,50 @@
+{
+  "preset_id": "paper-review-council",
+  "roles": {
+    "search_commander": {
+      "name": "搜索指挥者",
+      "source_file": "clawcross/custom/paper-review-council#search_commander",
+      "kind": "internal_agent"
+    },
+    "paper_reporter": {
+      "name": "论文汇报者",
+      "source_file": "clawcross/custom/paper-review-council#paper_reporter",
+      "kind": "internal_agent"
+    },
+    "ml_reviewer": {
+      "name": "机器学习论文审读专家",
+      "source_file": "clawcross/custom/paper-review-council#ml_reviewer",
+      "kind": "persona"
+    },
+    "systems_reviewer": {
+      "name": "系统与软件工程论文审读专家",
+      "source_file": "clawcross/custom/paper-review-council#systems_reviewer",
+      "kind": "persona"
+    },
+    "biomed_reviewer": {
+      "name": "生物医学论文审读专家",
+      "source_file": "clawcross/custom/paper-review-council#biomed_reviewer",
+      "kind": "persona"
+    },
+    "econ_finance_reviewer": {
+      "name": "经济金融论文审读专家",
+      "source_file": "clawcross/custom/paper-review-council#econ_finance_reviewer",
+      "kind": "persona"
+    },
+    "social_science_reviewer": {
+      "name": "社会科学论文审读专家",
+      "source_file": "clawcross/custom/paper-review-council#social_science_reviewer",
+      "kind": "persona"
+    },
+    "statistics_reviewer": {
+      "name": "统计方法论文审读专家",
+      "source_file": "clawcross/custom/paper-review-council#statistics_reviewer",
+      "kind": "persona"
+    },
+    "humanities_reviewer": {
+      "name": "人文与理论论文审读专家",
+      "source_file": "clawcross/custom/paper-review-council#humanities_reviewer",
+      "kind": "persona"
+    }
+  }
+}

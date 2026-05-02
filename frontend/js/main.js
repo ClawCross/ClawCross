@@ -3875,12 +3875,7 @@ async function deleteSession(sessionId) {
                 currentSessionId = generateSessionId();
                 sessionStorage.setItem('sessionId', currentSessionId);
                 updateSessionDisplay();
-                document.getElementById('chat-box').innerHTML = `
-                    <div class="flex justify-start">
-                        <div class="message-agent bg-white border p-4 max-w-[85%] shadow-sm text-gray-700">
-                            ${t('new_session_message')}
-                        </div>
-                    </div>`;
+                renderWeBotWelcomeMessage(t('new_session_message'));
             }
             await loadSessionList();
         } else {
@@ -3920,12 +3915,7 @@ async function deleteAllSessions() {
             currentSessionId = generateSessionId();
             sessionStorage.setItem('sessionId', currentSessionId);
             updateSessionDisplay();
-            document.getElementById('chat-box').innerHTML = `
-                <div class="flex justify-start">
-                    <div class="message-agent bg-white border p-4 max-w-[85%] shadow-sm text-gray-700">
-                        ${t('new_session_message')}
-                    </div>
-                </div>`;
+            renderWeBotWelcomeMessage(t('new_session_message'));
         }
         await loadSessionList();
         if (failCount > 0) alert(`${failCount} 个会话删除失败`);
@@ -3983,7 +3973,7 @@ async function switchToSession(sessionId, force = false, options = {}) {
         const chatBoxAcp = document.getElementById('chat-box');
         if (chatBoxAcp) {
             _acpLastTranscriptKey = acpComputeTranscriptKey();
-            acpPaintTranscript();
+            await acpPaintTranscript();
         }
         try {
             const sr = await fetch('/proxy_session_status', {
@@ -4018,12 +4008,7 @@ async function switchToSession(sessionId, force = false, options = {}) {
         chatBox.innerHTML = '';
 
         if (!data.messages || data.messages.length === 0) {
-            chatBox.innerHTML = `
-                <div class="flex justify-start">
-                    <div class="message-agent bg-white border p-4 max-w-[85%] shadow-sm text-gray-700">
-                        ${t('history_no_msg')}
-                    </div>
-                </div>`;
+            renderWeBotWelcomeMessage();
             hidePageLoading();
             return;
         }
@@ -6741,10 +6726,22 @@ function showTyping() {
     wrapper.id = 'typing-indicator';
     wrapper.className = 'flex justify-start';
     wrapper.innerHTML = `
-        <div class="message-agent bg-white border p-4 flex space-x-2 items-center shadow-sm">
-            <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+        <div class="message-agent bg-white border p-4 shadow-sm text-gray-700">
+            crossing...
         </div>`;
     chatBox.appendChild(wrapper);
+    chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+function renderWeBotWelcomeMessage(message = null) {
+    const chatBox = document.getElementById('chat-box');
+    if (!chatBox) return;
+    chatBox.innerHTML = `
+        <div class="flex justify-start">
+            <div class="message-agent bg-white border p-4 max-w-[85%] shadow-sm text-gray-700">
+                ${message || t('welcome_message')}
+            </div>
+        </div>`;
     chatBox.scrollTop = chatBox.scrollHeight;
 }
 
@@ -6898,6 +6895,7 @@ async function handleSend() {
                 const acpNameRaw = document.getElementById('oc-acp-session-name') && String(document.getElementById('oc-acp-session-name').value || '').trim();
                 if (acpNameRaw) openaiPayload.acp_session_name = acpNameRaw;
             }
+            acpRememberResolvedSessionName(acpComputeSessionNameFromInputs());
             chatEndpoint = '/proxy_acpx_chat';
         } else {
             openaiPayload = {
@@ -6937,6 +6935,9 @@ async function handleSend() {
         let buffer = '';
         let allSegmentTexts = [];  // 记录所有段落的文本
         let sawToolActivity = false;
+        let sawAcpxTrace = false;
+        const acpxToolIndicators = new Map();
+        const acpxToolContents = new Map();
 
         // 辅助函数：封存当前文本气泡，添加朗读按钮
         function sealCurrentBubble() {
@@ -6987,6 +6988,74 @@ async function handleSend() {
             chatBox.scrollTop = chatBox.scrollHeight;
         }
 
+        function acpxToolDisplayName(meta = {}) {
+            return String(meta.title || meta.name || meta.kind || meta.tool_call_id || 'tool');
+        }
+
+        function upsertAcpxToolIndicator(meta = {}) {
+            const toolCallId = String(meta.tool_call_id || '').trim();
+            if (!toolCallId) return null;
+            let indicator = acpxToolIndicators.get(toolCallId);
+            if (!indicator) {
+                const w = document.createElement('div');
+                w.className = 'flex justify-start animate-in fade-in duration-200';
+                const d = document.createElement('div');
+                d.className = 'stream-tool-indicator';
+                d.dataset.toolCallId = toolCallId;
+                d.innerHTML = `
+                    <div>
+                        <span class="stream-tool-icon">🔧</span>
+                        <span class="stream-tool-name"></span>
+                        <span class="stream-tool-status stream-tool-running">…</span>
+                    </div>
+                    <div class="stream-tool-result" style="display:none;margin-top:8px;">
+                        <pre class="whitespace-pre-wrap break-words" style="margin:0;max-height:360px;overflow:auto;"></pre>
+                    </div>`;
+                w.appendChild(d);
+                chatBox.appendChild(w);
+                indicator = d;
+                acpxToolIndicators.set(toolCallId, indicator);
+            }
+            const nameEl = indicator.querySelector('.stream-tool-name');
+            if (nameEl) nameEl.textContent = acpxToolDisplayName(meta);
+            chatBox.scrollTop = chatBox.scrollHeight;
+            return indicator;
+        }
+
+        function updateAcpxToolIndicator(meta = {}) {
+            const indicator = upsertAcpxToolIndicator(meta);
+            if (!indicator) return;
+            const detailsEl = indicator.querySelector('.stream-tool-result');
+            const preEl = detailsEl ? detailsEl.querySelector('pre') : null;
+            if (!detailsEl || !preEl) return;
+            const payload = String(meta.content_text || '');
+            if (!payload) return;
+            const toolCallId = String(meta.tool_call_id || '').trim();
+            const prev = acpxToolContents.get(toolCallId) || '';
+            if (payload === prev) return;
+            let next = payload;
+            if (payload.startsWith(prev)) {
+                next = payload;
+            }
+            acpxToolContents.set(toolCallId, next);
+            preEl.textContent = next;
+            detailsEl.style.display = '';
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        function finishAcpxToolIndicator(meta = {}) {
+            const toolCallId = String(meta.tool_call_id || '').trim();
+            const indicator = toolCallId ? acpxToolIndicators.get(toolCallId) : null;
+            if (!indicator) return;
+            const statusEl = indicator.querySelector('.stream-tool-status');
+            if (statusEl) {
+                statusEl.textContent = '✅';
+                statusEl.classList.remove('stream-tool-running');
+                statusEl.classList.add('stream-tool-done');
+            }
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
@@ -7008,7 +7077,22 @@ async function handleSend() {
                     // --- 处理结构化 meta 事件 ---
                     if (delta.meta) {
                         const m = delta.meta;
-                        if (m.type === 'tools_start') {
+                        if (m.type === 'acpx_trace') {
+                            sawAcpxTrace = true;
+                            sawToolActivity = sawToolActivity
+                                || (Array.isArray(m.tool_uses) && m.tool_uses.length > 0)
+                                || (Array.isArray(m.tool_results) && m.tool_results.length > 0)
+                                || (Array.isArray(m.messages) && m.messages.length > 0);
+                        } else if (m.type === 'acpx_tool_start') {
+                            sawToolActivity = true;
+                            upsertAcpxToolIndicator(m);
+                        } else if (m.type === 'acpx_tool_update') {
+                            sawToolActivity = true;
+                            updateAcpxToolIndicator(m);
+                        } else if (m.type === 'acpx_tool_end') {
+                            sawToolActivity = true;
+                            finishAcpxToolIndicator(m);
+                        } else if (m.type === 'tools_start') {
                             // LLM 回复结束，即将调工具 → 封存当前气泡
                             sawToolActivity = true;
                             sealCurrentBubble();
@@ -7055,7 +7139,9 @@ async function handleSend() {
         }
 
         const hasRenderedToolIndicators = !!chatBox.querySelector('.stream-tool-indicator');
-        if ((sawToolActivity || hasRenderedToolIndicators) && _ocChatMode === 'internal' && currentSessionId) {
+        if (_ocChatMode === 'acp' && _acpTool && (sawAcpxTrace || sawToolActivity || !fullText)) {
+            await acpRefreshCurrentTranscriptFromHistory();
+        } else if ((sawToolActivity || hasRenderedToolIndicators) && _ocChatMode === 'internal' && currentSessionId) {
             await new Promise((resolve) => setTimeout(resolve, 300));
             await switchToSession(currentSessionId, true, { quiet: true });
         }
@@ -7333,6 +7419,7 @@ var _acpAvailable = false;
 var _acpToolsCache = [];
 var _acpTool = null;                // selected acpx tool when _ocChatMode === 'acp'
 var _acpTranscriptByKey = Object.create(null);
+var _acpResolvedSessionNameByKey = Object.create(null);
 var _acpLastTranscriptKey = '';
 /** Per–OpenClaw-agent chat HTML while switching away from OpenClaw tab (WeBot uses server history). */
 var _ocTranscriptByAgent = Object.create(null);
@@ -7954,7 +8041,7 @@ function _renderProjectUpdateSummary(update) {
         `远端版本: ${(update.latest_short_commit || '-')} ${update.latest_subject ? `(${update.latest_subject})` : ''}`.trim(),
     ];
     if (update.dirty) {
-        lines.push('本地工作区存在未提交改动，已禁止自动更新。');
+        lines.push('本地工作区存在未提交改动；完整更新会使用远端覆盖本地。');
     } else if (update.has_update) {
         lines.push('检测到可用更新。');
     } else {
@@ -7965,7 +8052,7 @@ function _renderProjectUpdateSummary(update) {
         lines.push(update.message);
     }
     summaryEl.textContent = lines.join('\n');
-    startBtn.disabled = !Boolean(update.has_update) || Boolean(update.dirty) || Boolean(update.in_progress);
+    startBtn.disabled = Boolean(update.in_progress);
     if (Array.isArray(update.log_tail) && update.log_tail.length) {
         if (logWrap) logWrap.style.display = 'block';
         if (logEl) logEl.textContent = update.log_tail.join('\n');
@@ -8067,9 +8154,11 @@ async function startProjectUpdate() {
         return;
     }
     const startBtn = document.getElementById('project-update-start-btn');
+    const branchInput = document.getElementById('project-update-branch');
+    const branch = branchInput ? String(branchInput.value || '').trim() : '';
     if (startBtn) startBtn.disabled = true;
     try {
-        const update = await _fetchProjectUpdate('/proxy_update_start', {});
+        const update = await _fetchProjectUpdate('/proxy_update_start', { branch });
         _renderProjectUpdateSummary(update);
         _projectUpdateToast('更新任务已启动。');
         _stopProjectUpdatePolling();
@@ -11483,7 +11572,8 @@ async function uploadTeam(input) {
 }
 
 // ── Import team dropdown & Hub import ──
-const TEAM_HUB_URL = 'https://clawhub.ai';
+const TEAM_HUB_SITE_URL = 'https://clawcross.net/';
+const CLAWHUB_URL = 'https://clawhub.ai';
 
 function _buildClawCrossHubReturnUrl() {
     try {
@@ -11497,10 +11587,17 @@ function _buildClawCrossHubReturnUrl() {
 }
 
 function _buildClawCrossHubUrl() {
-    const url = new URL(TEAM_HUB_URL);
+    const url = new URL(CLAWHUB_URL);
     url.searchParams.set('return_url', _buildClawCrossHubReturnUrl());
     url.searchParams.set('return_origin', window.location.origin);
     return url.toString();
+}
+
+function openTeamHubSite() {
+    const popup = window.open(TEAM_HUB_SITE_URL, '_blank');
+    if (!popup) {
+        window.location.assign(TEAM_HUB_SITE_URL);
+    }
 }
 
 function toggleImportDropdown() {
@@ -11766,7 +11863,7 @@ window.addEventListener('load', () => {
 
 window.addEventListener('message', (event) => {
     try {
-        if (event.origin !== new URL(TEAM_HUB_URL).origin) return;
+        if (event.origin !== new URL(CLAWHUB_URL).origin) return;
         if (_handleHubImportMessage(event.data)) {
             try { window.focus(); } catch (_) {}
         }
@@ -14631,6 +14728,44 @@ function acpGetSessionPickValue() {
     return sel && String(sel.value || '').trim();
 }
 
+function acpComputeSessionNameFromInputs() {
+    const tool = _acpTool || '';
+    const pick = acpGetSessionPickValue();
+    if (pick) return pick;
+    const sid = (typeof currentSessionId !== 'undefined' && currentSessionId) ? String(currentSessionId).trim() : 'default';
+    const inp = document.getElementById('oc-acp-session-name');
+    const raw = inp ? String(inp.value || '').trim() : '';
+    const slug = acpSanitizeSessionSlug(raw);
+    return slug ? `main:${tool}:${slug}` : `main:${tool}:${sid || 'default'}`;
+}
+
+function acpResolvedSessionStorageKey(cacheKey) {
+    return 'clawcross_acp_resolved_session_' + String(cacheKey || '');
+}
+
+function acpRememberResolvedSessionName(name, cacheKey = null) {
+    const resolved = String(name || '').trim();
+    const key = String(cacheKey || _acpTranscriptKey() || '').trim();
+    if (!resolved || !key) return;
+    _acpResolvedSessionNameByKey[key] = resolved;
+    try {
+        localStorage.setItem(acpResolvedSessionStorageKey(key), resolved);
+    } catch (e) {
+        /* ignore */
+    }
+}
+
+function acpResolveSessionName() {
+    const key = _acpTranscriptKey();
+    const remembered = _acpResolvedSessionNameByKey[key]
+        || localStorage.getItem(acpResolvedSessionStorageKey(key))
+        || '';
+    if (remembered) return remembered;
+    const computed = acpComputeSessionNameFromInputs();
+    if (computed) acpRememberResolvedSessionName(computed, key);
+    return computed;
+}
+
 /** Transcript + backend session: tool + list pick, custom slug, or Clawcross session id. */
 function acpComputeTranscriptKey() {
     const tool = _acpTool || '';
@@ -14669,6 +14804,7 @@ function acpNotifySessionContextChanged() {
         _acpTranscriptByKey[_acpLastTranscriptKey] = chatBox.innerHTML;
     }
     _acpLastTranscriptKey = newKey;
+    acpRememberResolvedSessionName(acpComputeSessionNameFromInputs(), newKey);
     acpPaintTranscript();
 }
 
@@ -14757,25 +14893,223 @@ function acpSaveTranscript() {
     _acpTranscriptByKey[_acpTranscriptKey()] = chatBox.innerHTML;
 }
 
-function acpPaintTranscript() {
+function acpExtractMessageTextParts(contentBlocks) {
+    const texts = [];
+    const toolUses = [];
+    if (!Array.isArray(contentBlocks)) {
+        return { text: '', toolUses: [] };
+    }
+    for (const block of contentBlocks) {
+        if (!block || typeof block !== 'object') continue;
+        if (typeof block.Text === 'string') {
+            const txt = block.Text.trim();
+            if (txt) texts.push(txt);
+        } else if (block.Text && typeof block.Text === 'object') {
+            const txt = String(block.Text.text || block.Text.value || '').trim();
+            if (txt) texts.push(txt);
+        } else if (block.Thinking) {
+            const thinking = block.Thinking;
+            const txt = typeof thinking === 'string'
+                ? thinking.trim()
+                : String((thinking && (thinking.text || thinking.value)) || '').trim();
+            if (txt) texts.push(txt);
+        } else if (block.ToolUse && typeof block.ToolUse === 'object') {
+            toolUses.push(block.ToolUse);
+        }
+    }
+    return { text: texts.join('\n\n').trim(), toolUses };
+}
+
+function acpRenderToolUses(toolUses) {
+    if (!Array.isArray(toolUses) || toolUses.length === 0) return '';
+    return toolUses.map((toolUse) => {
+        const name = escapeHtml(String(toolUse.name || toolUse.tool_name || 'tool'));
+        const input = toolUse.input ? escapeHtml(JSON.stringify(toolUse.input, null, 2)) : '';
+        return `
+            <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3 text-xs text-amber-900">
+                <div class="font-semibold mb-1">🛠 ${name}</div>
+                ${input ? `<pre class="whitespace-pre-wrap break-all text-[11px] leading-5">${input}</pre>` : ''}
+            </div>
+        `;
+    }).join('');
+}
+
+function acpRenderToolResults(toolResults) {
+    if (!Array.isArray(toolResults) || toolResults.length === 0) return '';
+    return toolResults.map((result, idx) => {
+        const title = escapeHtml(String(result.tool_name || result.name || `tool_result_${idx + 1}`));
+        const content = result.output_text || result.output || result.result || result.content || JSON.stringify(result, null, 2);
+        return `
+            <div class="flex justify-start">
+                <div class="bg-gray-100 border border-dashed border-gray-300 p-3 max-w-[85%] shadow-sm text-xs text-gray-500 rounded-lg">
+                    <div class="font-semibold text-gray-600 mb-1">🔧 ${t('tool_return')}: ${title}</div>
+                    ${renderToolPager(String(content || ''), { title: t('tool_full_output') })}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function acpRenderSessionMessages(messages) {
+    if (!Array.isArray(messages) || messages.length === 0) {
+        return '';
+    }
+    let html = '';
+    for (const item of messages) {
+        if (!item || typeof item !== 'object') continue;
+        for (const [role, payload] of Object.entries(item)) {
+            if (!payload || typeof payload !== 'object') continue;
+            const normalizedRole = String(role || '').toLowerCase();
+            const parsed = acpExtractMessageTextParts(payload.content);
+            const text = parsed.text;
+            const toolUsesHtml = acpRenderToolUses(parsed.toolUses);
+            const toolResults = payload.tool_results && typeof payload.tool_results === 'object'
+                ? Object.values(payload.tool_results).filter((v) => v && typeof v === 'object')
+                : [];
+
+            if (normalizedRole === 'user') {
+                html += `
+                    <div class="flex justify-end">
+                        <div class="message-user bg-blue-600 text-white p-4 max-w-[85%] shadow-sm">
+                            ${escapeHtml(text || '(empty)')}
+                        </div>
+                    </div>`;
+            } else {
+                html += `
+                    <div class="flex justify-start">
+                        <div class="message-agent bg-white border p-4 max-w-[85%] shadow-sm text-gray-700 markdown-body tc-markdown">
+                            ${toolUsesHtml}
+                            ${text ? renderMarkdown(text) : '<span class="text-gray-400 text-xs">(' + t('tool_calling') + ')</span>'}
+                        </div>
+                    </div>`;
+            }
+            if (toolResults.length > 0) {
+                html += acpRenderToolResults(toolResults);
+            }
+        }
+    }
+    return html;
+}
+
+function acpExtractHistoryPreviewParts(text) {
+    const raw = String(text || '');
+    const toolUses = [];
+    const cleaned = raw.replace(/\[tool:([\s\S]*?)\]/g, (_, inner) => {
+        const cmd = String(inner || '').trim();
+        if (cmd) toolUses.push(cmd);
+        return '';
+    });
+    return {
+        text: cleaned.trim(),
+        toolUses,
+    };
+}
+
+function acpRenderHistoryEntries(entries) {
+    if (!Array.isArray(entries) || entries.length === 0) {
+        return '';
+    }
+    return entries.map((entry) => {
+        if (!entry || typeof entry !== 'object') return '';
+        const role = String(entry.role || '').toLowerCase();
+        const parsed = acpExtractHistoryPreviewParts(entry.textPreview || '');
+        const text = parsed.text;
+        const toolUsesHtml = parsed.toolUses.length
+            ? acpRenderToolUses(parsed.toolUses.map((name) => ({ name })))
+            : '';
+        if (!text && !toolUsesHtml) return '';
+        if (role === 'user') {
+            return `
+                <div class="flex justify-end">
+                    <div class="message-user bg-blue-600 text-white p-4 max-w-[85%] shadow-sm">
+                        ${escapeHtml(text)}
+                    </div>
+                </div>`;
+        }
+        return `
+            <div class="flex justify-start">
+                <div class="message-agent bg-white border p-4 max-w-[85%] shadow-sm text-gray-700 markdown-body tc-markdown">
+                    ${toolUsesHtml}
+                    ${text ? renderMarkdown(text) : '<span class="text-gray-400 text-xs">(' + t('tool_calling') + ')</span>'}
+                </div>
+            </div>`;
+    }).join('');
+}
+
+async function acpLoadSessionHistory(force = false) {
+    const chatBox = document.getElementById('chat-box');
+    if (!chatBox || !_acpTool) return false;
+    const cacheKey = _acpTranscriptKey();
+    if (!force && _acpTranscriptByKey[cacheKey]) {
+        chatBox.innerHTML = _acpTranscriptByKey[cacheKey];
+        ocRefreshTtsButtonsIn(chatBox);
+        chatBox.scrollTop = chatBox.scrollHeight;
+        return true;
+    }
+
+    const sessionName = acpResolveSessionName();
+    if (!sessionName) return false;
+
+    chatBox.innerHTML = `<div class="text-xs text-gray-400 text-center py-4">${t('history_loading_msg')}</div>`;
+    try {
+        const resp = await fetch(
+            '/proxy_acpx_session_history?tool=' + encodeURIComponent(_acpTool) + '&name=' + encodeURIComponent(sessionName) + '&limit=200'
+        );
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || data.ok === false) {
+            throw new Error(data.error || ('HTTP ' + resp.status));
+        }
+        const history = data.history || {};
+        const html = acpRenderHistoryEntries(history.entries || []);
+        if (html) {
+            _acpTranscriptByKey[cacheKey] = html;
+            chatBox.innerHTML = html;
+            ocRefreshTtsButtonsIn(chatBox);
+            chatBox.scrollTop = chatBox.scrollHeight;
+            return true;
+        }
+    } catch (e) {
+        console.warn('acpLoadSessionHistory failed', e);
+    }
+    return false;
+}
+
+async function acpPaintTranscript() {
     const chatBox = document.getElementById('chat-box');
     if (!chatBox || !_acpTool) return;
+    // Prefer backend session history over any cached placeholder HTML.
+    // The cache may contain only the ACP welcome card from a prior switch.
+    if (await acpLoadSessionHistory(true)) {
+        _acpLastTranscriptKey = acpComputeTranscriptKey();
+        return;
+    }
     const k = _acpTranscriptKey();
     if (_acpTranscriptByKey[k]) {
         chatBox.innerHTML = _acpTranscriptByKey[k];
         ocRefreshTtsButtonsIn(chatBox);
-    } else {
-        const label = _acpDisplayLabel(_acpTool || '');
-        chatBox.innerHTML =
-            '<div class="flex justify-start">' +
-            '<div class="message-agent bg-white border p-4 max-w-[85%] shadow-sm text-gray-700">' +
-            escapeHtml(label) +
-            '<br><span style="font-size:0.85em;color:#6b7280;">' +
-            escapeHtml(t('oc_acp_via')) +
-            '</span></div></div>';
+        chatBox.scrollTop = chatBox.scrollHeight;
+        return;
     }
+    const label = _acpDisplayLabel(_acpTool || '');
+    chatBox.innerHTML =
+        '<div class="flex justify-start">' +
+        '<div class="message-agent bg-white border p-4 max-w-[85%] shadow-sm text-gray-700">' +
+        escapeHtml(label) +
+        '<br><span style="font-size:0.85em;color:#6b7280;">' +
+        escapeHtml(t('oc_acp_via')) +
+        '</span></div></div>';
     chatBox.scrollTop = chatBox.scrollHeight;
     _acpLastTranscriptKey = acpComputeTranscriptKey();
+}
+
+async function acpRefreshCurrentTranscriptFromHistory() {
+    if (_ocChatMode !== 'acp' || !_acpTool) return;
+    const ok = await acpLoadSessionHistory(true);
+    if (!ok) {
+        await acpPaintTranscript();
+    } else {
+        _acpLastTranscriptKey = acpComputeTranscriptKey();
+    }
 }
 
 function ocRefreshTtsButtonsIn(chatBox) {
@@ -14884,7 +15218,7 @@ async function ocSwitchTo(mode, acpTool) {
         if (modeChanged || acpToolChanged) {
             await acpLoadSessionsList();
         }
-        acpPaintTranscript();
+        await acpPaintTranscript();
     } else {
         if (agentSelector) agentSelector.style.display = 'none';
         await switchToSession(currentSessionId, modeChanged, { quiet: true });

@@ -3440,9 +3440,9 @@
       <!-- Hub 导入展开区 -->
       <div id="contacts-hub-import-area" style="display:none;margin-bottom:8px;padding:10px 12px;border-radius:8px;background:var(--bg);border:1px solid var(--border);">
         <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;" data-i18n="paste_hub_cmd">粘贴从 Hub 复制的下载命令：</div>
-        <textarea id="contacts-hub-curl-input" placeholder="curl -L 'https://clawhub.ai/api/workflows/xxx/download' -o team_xxx.zip" style="width:100%;height:60px;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:monospace;background:var(--bg-card);color:var(--text);resize:none;"></textarea>
+        <textarea id="contacts-hub-curl-input" placeholder="curl -L 'https://clawcross.net/api/workflows/xxx/download' -o team_xxx.zip" style="width:100%;height:60px;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:monospace;background:var(--bg-card);color:var(--text);resize:none;"></textarea>
         <div style="display:flex;gap:8px;margin-top:8px;">
-          <button onclick="openClawcrossHub()" style="flex:1;padding:8px;background:var(--bg-card);color:var(--primary);border:1px solid var(--primary);border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;" data-i18n="go_to_hub">🌐 前往 Hub</button>
+          <button onclick="openTeamHubSite()" style="flex:1;padding:8px;background:var(--bg-card);color:var(--primary);border:1px solid var(--primary);border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;" data-i18n="go_to_hub">🌐 前往 Hub</button>
           <button onclick="importFromHubContacts()" style="flex:1;padding:8px;background:var(--primary);color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;" data-i18n="download_import">📥 下载并导入</button>
         </div>
       </div>
@@ -3536,7 +3536,7 @@
       </div>
     </div>
     <div class="discover-section">
-      <div class="discover-card" onclick="openClawcrossHub()">
+      <div class="discover-card" onclick="openTeamHubSite()">
         <div class="discover-card-icon">🌐</div>
         <div class="discover-card-body">
           <div class="discover-card-title" data-i18n="tab_team_hub">Team Hub</div>
@@ -3850,9 +3850,9 @@
         <!-- Hub 导入展开区 -->
         <div id="hub-import-area" style="display:none;margin-bottom:8px;padding:10px 12px;border-radius:8px;background:var(--bg);border:1px solid var(--border);">
           <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;" data-i18n="paste_hub_cmd">粘贴从 Hub 复制的下载命令：</div>
-          <textarea id="hub-curl-input" placeholder="curl -L 'https://clawhub.ai/api/workflows/xxx/download' -o team_xxx.zip" style="width:100%;height:60px;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:monospace;background:var(--bg-card);color:var(--text);resize:none;"></textarea>
+          <textarea id="hub-curl-input" placeholder="curl -L 'https://clawcross.net/api/workflows/xxx/download' -o team_xxx.zip" style="width:100%;height:60px;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:monospace;background:var(--bg-card);color:var(--text);resize:none;"></textarea>
           <div style="display:flex;gap:8px;margin-top:8px;">
-            <button onclick="openClawcrossHub()" style="flex:1;padding:8px;background:var(--bg-card);color:var(--primary);border:1px solid var(--primary);border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;" data-i18n="go_to_hub">🌐 前往 Hub</button>
+            <button onclick="openTeamHubSite()" style="flex:1;padding:8px;background:var(--bg-card);color:var(--primary);border:1px solid var(--primary);border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;" data-i18n="go_to_hub">🌐 前往 Hub</button>
             <button onclick="importFromHub()" style="flex:1;padding:8px;background:var(--primary);color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;" data-i18n="download_import">📥 下载并导入</button>
           </div>
         </div>
@@ -3989,9 +3989,11 @@
       <h2 id="mobile-update-modal-title">⬆️ 检查更新</h2>
     </div>
     <div class="settings-body">
-      <div class="settings-hint" id="mobile-update-hint">检查远端 Git 更新，并在确认后拉取代码并重启服务。</div>
+      <div class="settings-hint" id="mobile-update-hint">完整更新会从远端拉取指定分支，并在有冲突或本地未提交改动时直接用远端覆盖本地后重启服务。</div>
       <div class="settings-group">
         <div class="settings-group-body" style="padding-top:12px;">
+          <label class="settings-label" for="mobile-update-branch">分支（可选）</label>
+          <input id="mobile-update-branch" class="settings-input" type="text" placeholder="留空则使用当前分支" autocomplete="off">
           <div id="mobile-update-summary" class="mobile-update-panel">
             <div class="mobile-update-empty">点击“检查更新”后显示版本信息。</div>
           </div>
@@ -4004,7 +4006,7 @@
     </div>
     <div class="settings-footer">
       <button class="settings-btn settings-btn-cancel" id="mobile-update-check-btn" onclick="checkMobileUpdate(true)">检查更新</button>
-      <button class="settings-btn settings-btn-save" id="mobile-update-start-btn" onclick="startMobileUpdate()" disabled>开始更新</button>
+      <button class="settings-btn settings-btn-save" id="mobile-update-start-btn" onclick="startMobileUpdate()" disabled>完整更新</button>
     </div>
   </div>
 </div>
@@ -5951,15 +5953,19 @@ function openMobileUpdateModal() {
   const overlay = document.getElementById('mobile-update-modal-overlay');
   const title = document.getElementById('mobile-update-modal-title');
   const hint = document.getElementById('mobile-update-hint');
+  const branchInput = document.getElementById('mobile-update-branch');
   const checkBtn = document.getElementById('mobile-update-check-btn');
   const startBtn = document.getElementById('mobile-update-start-btn');
   if (!overlay) return;
-  if (title) title.textContent = _currentLang === 'zh' ? '⬆️ 检查更新' : '⬆️ Check Update';
+  if (title) title.textContent = _currentLang === 'zh' ? '⬆️ 完整更新' : '⬆️ Complete Update';
   if (hint) hint.textContent = _currentLang === 'zh'
-    ? '检查远端 Git 更新，并在确认后拉取代码并重启服务。'
-    : 'Check remote Git updates, then pull and restart the service after confirmation.';
+    ? '完整更新会从远端拉取指定分支，并在有冲突或本地未提交改动时直接用远端覆盖本地后重启服务。'
+    : 'Complete update pulls the selected remote branch, overwrites local changes on conflicts or dirty state, then restarts the service.';
+  if (branchInput) {
+    branchInput.placeholder = _currentLang === 'zh' ? '留空则使用当前分支' : 'Leave empty to use the current branch';
+  }
   if (checkBtn) checkBtn.textContent = _currentLang === 'zh' ? '检查更新' : 'Check Update';
-  if (startBtn) startBtn.textContent = _currentLang === 'zh' ? '开始更新' : 'Start Update';
+  if (startBtn) startBtn.textContent = _currentLang === 'zh' ? '完整更新' : 'Complete Update';
   overlay.classList.add('open');
   renderMobileUpdateSummary(null);
 }
@@ -6054,7 +6060,9 @@ function renderMobileUpdateSummary(update) {
   let messageText = '';
   let messageClass = '';
   if (update.dirty) {
-    messageText = _currentLang === 'zh' ? '本地仓库有未提交改动，禁止自动更新。' : 'Local repo is dirty. Auto update is blocked.';
+    messageText = _currentLang === 'zh'
+      ? '本地仓库有未提交改动；完整更新会使用远端覆盖本地。'
+      : 'Local repo has uncommitted changes; complete update will overwrite them with the remote branch.';
     messageClass = 'warn';
   } else if (update.has_update) {
     messageText = _currentLang === 'zh' ? '检测到可用更新。' : 'Update available.';
@@ -6086,7 +6094,7 @@ function renderMobileUpdateSummary(update) {
     </div>
     <div class="mobile-update-message ${messageClass}">${escapeHtml(messageText)}</div>
   `;
-  startBtn.disabled = !Boolean(update.has_update) || Boolean(update.dirty) || ['queued', 'checking', 'updating', 'restarting'].includes(update.status);
+  startBtn.disabled = ['queued', 'checking', 'updating', 'restarting'].includes(update.status);
   if (logEl && Array.isArray(update.log_tail) && update.log_tail.length) {
     logEl.textContent = update.log_tail.join('\n');
     if (logWrap) {
@@ -6175,9 +6183,11 @@ async function pollMobileUpdateStatus() {
 
 async function startMobileUpdate() {
   const startBtn = document.getElementById('mobile-update-start-btn');
+  const branchInput = document.getElementById('mobile-update-branch');
   if (startBtn) startBtn.disabled = true;
   try {
-    const update = await mobileUpdateRequest('/proxy_update_start', {});
+    const branch = branchInput ? branchInput.value.trim() : '';
+    const update = await mobileUpdateRequest('/proxy_update_start', { branch });
     renderMobileUpdateSummary(update);
     toast(_currentLang === 'zh' ? '更新任务已启动。' : 'Update started.');
     stopMobileUpdatePolling();
@@ -9420,7 +9430,8 @@ setInterval(() => {
 }, 10000);
 
 // ── ClawCross Studio ──
-    const TEAM_HUB_URL = 'https://clawhub.ai';
+    const TEAM_HUB_SITE_URL = 'https://clawcross.net/';
+    const CLAWHUB_URL = 'https://clawhub.ai';
 
 function buildClawcrossHubReturnUrl() {
   try {
@@ -9434,7 +9445,7 @@ function buildClawcrossHubReturnUrl() {
 }
 
 function buildClawcrossHubUrl() {
-  const url = new URL(TEAM_HUB_URL);
+  const url = new URL(CLAWHUB_URL);
   url.searchParams.set('return_url', buildClawcrossHubReturnUrl());
   url.searchParams.set('return_origin', window.location.origin);
   return url.toString();
@@ -9443,6 +9454,13 @@ function buildClawcrossHubUrl() {
 function openClawcrossStudio() {
   // 当前窗口进入 Studio（与主站同一标签，便于会话/登录延续），默认打开「团队」Tab
   window.location.assign('/studio?tab=group');
+}
+
+function openTeamHubSite() {
+  const popup = window.open(TEAM_HUB_SITE_URL, '_blank');
+  if (!popup) {
+    window.location.assign(TEAM_HUB_SITE_URL);
+  }
 }
 
 function openClawcrossHub() {

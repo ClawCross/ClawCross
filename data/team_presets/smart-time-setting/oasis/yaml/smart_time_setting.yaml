@@ -1,0 +1,19 @@
+# 智能时间设置团队：解析自然语言时间需求并输出 MCP 调用方案
+version: 2
+repeat: false
+plan:
+- id: t0
+  manual:
+    author: begin
+    content: "请描述要设置的提醒/闹钟：提醒内容、触发时间、是否重复、提醒给哪个 agent。若目标是外部 agent，请提供 team 名称和外部 agent 的显示名。"
+- id: t1
+  expert: time_planner#oasis#时间设置官
+- id: t2
+  manual:
+    author: bend
+    content: "时间设置方案已生成。外部 Agent 可读取团队 skill `external-alarm-setter`，并调用 TimeMaster/scheduler MCP 的 add_alarm 完成实际设置。"
+edges:
+- - t0
+  - t1
+- - t1
+  - t2

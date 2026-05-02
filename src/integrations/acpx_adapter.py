@@ -5,11 +5,22 @@ import os
 import shlex
 import shutil
 import tempfile
+from dataclasses import dataclass
 from typing import Any, Literal
 
 
 class AcpxError(RuntimeError):
     pass
+
+
+@dataclass(slots=True)
+class AcpxPromptTrace:
+    text: str
+    message_chunks: list[str]
+    messages: list[dict[str, Any]]
+    tool_uses: list[dict[str, Any]]
+    tool_results: list[dict[str, Any]]
+    raw_output: str
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -352,9 +363,58 @@ class AcpxAdapter:
                     "lastUsedAt": it.get("lastUsedAt"),
                     "cwd": it.get("cwd"),
                     "title": it.get("title"),
+                    "message_count": len(it.get("messages") or []) if isinstance(it.get("messages"), list) else 0,
                 }
             )
         return out
+
+    async def show_session(self, *, tool: str, name: str) -> dict[str, Any]:
+        """Run `acpx <tool> sessions show <name>` and return parsed metadata."""
+        raw = await self._run_json(
+            self._command_prefix(tool=tool, session_key=name) + ["sessions", "show", name],
+            timeout_sec=20,
+            allow_nonzero=False,
+        )
+        text = raw.strip()
+        if not text:
+            return {}
+        # `sessions show` is plain text, not JSON.
+        result: dict[str, Any] = {}
+        for line in text.splitlines():
+            if ":" not in line:
+                continue
+            key, value = line.split(":", 1)
+            result[key.strip()] = value.strip()
+        return result
+
+    async def session_history(self, *, tool: str, name: str, limit: int = 20) -> dict[str, Any]:
+        """Run `acpx <tool> sessions history <name>` and return parsed JSON."""
+        raw = await self._run_json(
+            self._command_prefix(tool=tool, session_key=name) + ["sessions", "history", name, "--limit", str(limit)],
+            timeout_sec=30,
+            allow_nonzero=False,
+        )
+        try:
+            data = json.loads(raw.strip() or "{}")
+        except json.JSONDecodeError as e:
+            raise AcpxError(f"invalid acpx sessions history JSON: {e}") from e
+        return data if isinstance(data, dict) else {}
+
+    async def read_session(self, *, tool: str, name: str, tail: int | None = None) -> dict[str, Any]:
+        """Run `acpx <tool> sessions read <name>` and return parsed JSON."""
+        args = self._command_prefix(tool=tool, session_key=name) + ["sessions", "read", name]
+        if isinstance(tail, int) and tail > 0:
+            args.extend(["--tail", str(tail)])
+        raw = await self._run_json(
+            args,
+            timeout_sec=45,
+            allow_nonzero=False,
+        )
+        try:
+            data = json.loads(raw.strip() or "{}")
+        except json.JSONDecodeError as e:
+            raise AcpxError(f"invalid acpx sessions read JSON: {e}") from e
+        return data if isinstance(data, dict) else {}
 
     async def prompt(
         self,
@@ -432,6 +492,62 @@ class AcpxAdapter:
             return output.strip()
         return text
 
+    async def prompt_with_trace(
+        self,
+        *,
+        tool: str,
+        session_key: str,
+        prompt_text: str,
+        timeout_sec: int | None = None,
+        reset_session: bool = False,
+        system_prompt: str | None = None,
+        attachments: list[dict] | None = None,
+        ttl_sec: int = 86400,
+        approve_all: bool | None = None,
+        non_interactive_permissions: str | None = None,
+    ) -> AcpxPromptTrace:
+        acpx_session = self.to_acpx_session_name(tool=tool, session_key=session_key)
+        if reset_session:
+            await self.close_session(
+                tool=tool,
+                session_key=session_key,
+                acpx_session=acpx_session,
+                ttl_sec=ttl_sec,
+                approve_all=approve_all,
+                non_interactive_permissions=non_interactive_permissions,
+            )
+
+        await self.ensure_session(
+            tool=tool,
+            session_key=session_key,
+            acpx_session=acpx_session,
+            system_prompt=system_prompt,
+            ttl_sec=ttl_sec,
+            approve_all=approve_all,
+            non_interactive_permissions=non_interactive_permissions,
+        )
+
+        pending_prompt = self._pending_initial_prompt.pop(
+            self._pending_prompt_key(tool=tool, acpx_session=acpx_session),
+            "",
+        )
+        effective_prompt = prompt_text
+        if pending_prompt:
+            effective_prompt = f"{pending_prompt}\n\n{prompt_text}".strip()
+
+        output = await self._send_prompt_file(
+            tool=tool,
+            session_key=session_key,
+            acpx_session=acpx_session,
+            prompt_text=effective_prompt,
+            timeout_sec=timeout_sec,
+            attachments=attachments,
+            ttl_sec=ttl_sec,
+            approve_all=approve_all,
+            non_interactive_permissions=non_interactive_permissions,
+        )
+        return self._extract_trace(output)
+
     async def _session_exists(self, *, tool: str, acpx_session: str) -> bool | None:
         normalized_tool = (tool or "").strip().lower()
         if normalized_tool == "openclaw":
@@ -459,6 +575,43 @@ class AcpxAdapter:
         approve_all: bool | None,
         non_interactive_permissions: str | None,
     ) -> str:
+        prompt_args, temp_path = self.prepare_prompt_command(
+            tool=tool,
+            session_key=session_key,
+            acpx_session=acpx_session,
+            prompt_text=prompt_text,
+            attachments=attachments,
+            ttl_sec=ttl_sec,
+            approve_all=approve_all,
+            non_interactive_permissions=non_interactive_permissions,
+        )
+        try:
+            return await self._run_json_command(
+                prompt_args,
+                timeout_sec=timeout_sec,
+                allow_nonzero=False,
+            )
+        finally:
+            try:
+                os.unlink(temp_path)
+            except Exception:
+                pass
+
+    def prepare_prompt_command(
+        self,
+        *,
+        tool: str,
+        session_key: str,
+        acpx_session: str,
+        prompt_text: str,
+        attachments: list[dict] | None,
+        ttl_sec: int,
+        approve_all: bool | None,
+        non_interactive_permissions: str | None,
+    ) -> tuple[list[str], str]:
+        """Build the exact acpx prompt command plus temp JSON payload path."""
+        assert self._acpx_bin is not None
+
         # Build multimodal prompt content (JSON array)
         content_blocks = [{"type": "text", "text": prompt_text.strip() or "(empty prompt)"}]
 
@@ -505,22 +658,24 @@ class AcpxAdapter:
         with open(temp_path, 'w', encoding='utf-8') as f:
             f.write(json_content)
         
-        prompt_args = self._command_prefix(tool=tool, session_key=session_key)
-        prompt_args += ["prompt", "-s", acpx_session, "--file", temp_path]
-        try:
-            return await self._run_json(
-                prompt_args,
-                timeout_sec=timeout_sec,
-                allow_nonzero=False,
-                ttl_sec=ttl_sec,
-                approve_all=approve_all,
-                non_interactive_permissions=non_interactive_permissions,
-            )
-        finally:
-            try:
-                os.unlink(temp_path)
-            except Exception:
-                pass
+        if approve_all is None:
+            approve_all = _env_bool("ACPX_APPROVE_ALL", True)
+        nip = (non_interactive_permissions or os.getenv("ACPX_NON_INTERACTIVE_PERMISSIONS", "") or "").strip()
+        cmd: list[str] = [
+            self._acpx_bin,
+            "--cwd",
+            self._cwd,
+            "--ttl",
+            str(ttl_sec),
+        ]
+        if approve_all:
+            cmd.append("--approve-all")
+        if nip:
+            cmd.extend(["--non-interactive-permissions", nip])
+        cmd.extend(["--format", "json", "--json-strict"])
+        cmd.extend(self._command_prefix(tool=tool, session_key=session_key))
+        cmd.extend(["prompt", "-s", acpx_session, "--file", temp_path])
+        return cmd, temp_path
 
     async def _run_json(
         self,
@@ -557,6 +712,35 @@ class AcpxAdapter:
                 *args,
             ]
         )
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            if timeout_sec is None:
+                out_b, err_b = await proc.communicate()
+            else:
+                out_b, err_b = await asyncio.wait_for(proc.communicate(), timeout=timeout_sec)
+        except asyncio.TimeoutError as e:
+            with contextlib.suppress(Exception):
+                proc.kill()
+            raise AcpxError(f"acpx timeout after {timeout_sec}s: {' '.join(shlex.quote(x) for x in cmd)}") from e
+
+        out = out_b.decode("utf-8", errors="replace")
+        err = err_b.decode("utf-8", errors="replace")
+        if proc.returncode != 0 and not allow_nonzero:
+            msg = err.strip() or out.strip() or f"exit={proc.returncode}"
+            raise AcpxError(f"acpx failed ({proc.returncode}): {msg}")
+        return out
+
+    async def _run_json_command(
+        self,
+        cmd: list[str],
+        *,
+        timeout_sec: int,
+        allow_nonzero: bool,
+    ) -> str:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
@@ -620,6 +804,61 @@ class AcpxAdapter:
         return t if isinstance(t, str) else ""
 
     @staticmethod
+    def extract_stream_event(obj: Any) -> dict[str, Any] | None:
+        """Parse realtime ACPX session/update events useful for frontend streaming."""
+        if not isinstance(obj, dict) or obj.get("jsonrpc") != "2.0":
+            return None
+        if obj.get("method") != "session/update":
+            return None
+        params = obj.get("params")
+        if not isinstance(params, dict):
+            return None
+        upd = params.get("update")
+        if not isinstance(upd, dict):
+            return None
+
+        update_type = upd.get("sessionUpdate")
+        if update_type == "agent_message_chunk":
+            content = upd.get("content")
+            if not isinstance(content, dict):
+                return None
+            if content.get("type") != "text":
+                return None
+            text = content.get("text")
+            if not isinstance(text, str):
+                return None
+            return {"type": "agent_message_chunk", "text": text}
+
+        if update_type == "tool_call":
+            return {
+                "type": "tool_call",
+                "tool_call_id": str(upd.get("toolCallId") or ""),
+                "title": str(upd.get("title") or ""),
+                "kind": str(upd.get("kind") or ""),
+                "status": str(upd.get("status") or ""),
+                "raw_input": upd.get("rawInput"),
+                "locations": upd.get("locations") if isinstance(upd.get("locations"), list) else [],
+            }
+
+        if update_type == "tool_call_update":
+            parts: list[str] = []
+            for item in upd.get("content") or []:
+                if not isinstance(item, dict):
+                    continue
+                content = item.get("content")
+                if not isinstance(content, dict):
+                    continue
+                if content.get("type") == "text" and isinstance(content.get("text"), str):
+                    parts.append(content["text"])
+            return {
+                "type": "tool_call_update",
+                "tool_call_id": str(upd.get("toolCallId") or ""),
+                "content_text": "".join(parts),
+            }
+
+        return None
+
+    @staticmethod
     def _extract_text(output: str) -> str | None:
         """Parse acpx stdout: JSON-RPC stream (session/update … agent_message_chunk) or legacy summary JSON."""
         message_parts: list[str] = []
@@ -642,6 +881,65 @@ class AcpxAdapter:
         if assembled:
             return assembled
         return legacy
+
+    @staticmethod
+    def _extract_trace(output: str) -> AcpxPromptTrace:
+        message_parts: list[str] = []
+        messages: list[dict[str, Any]] = []
+        tool_uses: list[dict[str, Any]] = []
+        tool_results: list[dict[str, Any]] = []
+        legacy: str | None = None
+
+        for line in output.splitlines():
+            line = line.strip()
+            if not line.startswith("{"):
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            part = AcpxAdapter._extract_acpx_agent_message_chunks(obj)
+            if part is not None:
+                message_parts.append(part)
+
+            if isinstance(obj, dict):
+                if obj.get("schema") == "acpx.session.v1" and isinstance(obj.get("messages"), list):
+                    for item in obj.get("messages") or []:
+                        if isinstance(item, dict):
+                            messages.append(item)
+                            for role_payload in item.values():
+                                if not isinstance(role_payload, dict):
+                                    continue
+                                content = role_payload.get("content")
+                                if isinstance(content, list):
+                                    for block in content:
+                                        if not isinstance(block, dict):
+                                            continue
+                                        if "ToolUse" in block and isinstance(block["ToolUse"], dict):
+                                            tool_uses.append(block["ToolUse"])
+                                results = role_payload.get("tool_results")
+                                if isinstance(results, dict):
+                                    for result in results.values():
+                                        if isinstance(result, dict):
+                                            tool_results.append(result)
+
+            cand = AcpxAdapter._pick_text(obj)
+            if cand:
+                legacy = cand
+
+        # Keep the primary assistant text extraction identical to the legacy
+        # prompt() path so main-page chat rendering stays stable.
+        extracted_text = AcpxAdapter._extract_text(output)
+        assembled = (extracted_text or "").strip() or (legacy or output.strip())
+        return AcpxPromptTrace(
+            text=assembled,
+            message_chunks=message_parts,
+            messages=messages,
+            tool_uses=tool_uses,
+            tool_results=tool_results,
+            raw_output=output,
+        )
 
     @staticmethod
     def _pick_text(obj: Any) -> str | None:

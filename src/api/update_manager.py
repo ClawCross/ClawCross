@@ -193,20 +193,24 @@ def current_update_snapshot(*, fetch_remote: bool = False) -> dict[str, Any]:
     return merged
 
 
-def start_update_process(requested_by: str) -> dict[str, Any]:
+def start_update_process(requested_by: str, *, branch: str = "") -> dict[str, Any]:
     snapshot = current_update_snapshot(fetch_remote=False)
     if snapshot.get("status") in IN_PROGRESS_STATUSES:
         raise RuntimeError("已有更新任务在执行中。")
-    if snapshot.get("dirty"):
-        raise RuntimeError("当前仓库有未提交改动，拒绝自动更新。")
     if not shutil.which("git"):
         raise RuntimeError("git 不在 PATH 中，无法执行更新。")
+
+    branch = str(branch or "").strip()
+    if branch and not all(ch.isalnum() or ch in "._/-" for ch in branch):
+        raise RuntimeError("分支名不合法。")
+    target_branch = branch or str(snapshot.get("branch") or "").strip() or "main"
+    target_upstream = f"origin/{target_branch}"
 
     run_id = f"update-{uuid.uuid4().hex[:10]}"
     now = _utc_timestamp()
     write_update_status(
         "queued",
-        "更新任务已创建，等待后台执行。",
+        "完整更新任务已创建，等待后台执行。",
         run_id=run_id,
         started_at=now,
         requested_by=requested_by,
@@ -214,8 +218,9 @@ def start_update_process(requested_by: str) -> dict[str, Any]:
         current_short_commit=snapshot.get("current_short_commit", ""),
         latest_commit=snapshot.get("latest_commit", ""),
         latest_short_commit=snapshot.get("latest_short_commit", ""),
-        branch=snapshot.get("branch", ""),
-        upstream=snapshot.get("upstream", ""),
+        branch=target_branch,
+        upstream=target_upstream,
+        dirty=bool(snapshot.get("dirty")),
     )
 
     runner = PROJECT_ROOT / "tools" / "run_self_update.py"
@@ -226,7 +231,7 @@ def start_update_process(requested_by: str) -> dict[str, Any]:
         log_handle.write(f"\n[{_utc_timestamp()}] queued {run_id} by {requested_by}\n")
         log_handle.flush()
         subprocess.Popen(
-            [sys.executable, str(runner), "--run-id", run_id],
+            [sys.executable, str(runner), "--run-id", run_id, "--branch", target_branch],
             cwd=str(PROJECT_ROOT),
             stdout=log_handle,
             stderr=subprocess.STDOUT,
