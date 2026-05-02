@@ -46,6 +46,7 @@ from webot.permission_context import (
 )
 from webot.profiles import get_agent_profile, parse_subagent_session_id, render_profile_system_prompt
 from webot.runtime import (
+    PLAN_MODE_BLOCKED_TOOLS,
     build_session_mode_message,
     build_turn_limit_message,
     filter_tools_for_mode,
