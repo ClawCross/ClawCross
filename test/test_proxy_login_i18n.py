@@ -9,13 +9,11 @@ SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+from integrations.agent_sender import SendToAgentResult
 import front
 
 
 class ProxyLoginI18nTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        front.app.config.update(TESTING=True)
 
     def setUp(self):
         self.client = front.app.test_client()
@@ -219,19 +217,18 @@ class ProxyLoginI18nTests(unittest.TestCase):
         self.assertEqual(response.get_json(), {"models": ["qwen2.5:1.5b"]})
         self.assertNotIn("Authorization", seen_headers)
 
-    @mock.patch.object(front, "requests")
     @mock.patch.object(front, "read_env_all")
-    def test_proxy_openclaw_chat_reads_latest_runtime_values_from_env_file(self, mock_read_env_all, mock_requests):
+    @mock.patch.object(front, "send_to_agent")
+    def test_proxy_openclaw_chat_reads_latest_runtime_values_from_env_file(self, mock_send_to_agent, mock_read_env_all):
         mock_read_env_all.return_value = {
             "OPENCLAW_API_URL": "http://127.0.0.1:19001/v1/chat/completions",
             "OPENCLAW_GATEWAY_TOKEN": "fresh-gateway-token",
         }
-        mock_response = mock.Mock(
-            status_code=200,
-            headers={"content-type": "application/json"},
-            content=b'{"ok": true}',
+        mock_send_to_agent.return_value = SendToAgentResult(
+            ok=True,
+            content="",
+            raw_response={"ok": True},
         )
-        mock_requests.post.return_value = mock_response
 
         with mock.patch.dict(
             front.os.environ,
@@ -247,11 +244,11 @@ class ProxyLoginI18nTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.get_data(as_text=True), '{"ok": true}')
+        self.assertEqual(response.get_data(as_text=True).strip(), '{"ok":true}')
 
-        args, kwargs = mock_requests.post.call_args
-        self.assertEqual(args[0], "http://127.0.0.1:19001/v1/chat/completions")
-        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer fresh-gateway-token")
+        args, kwargs = mock_send_to_agent.call_args
+        self.assertEqual(args[0].options["api_url"], "http://127.0.0.1:19001/v1/chat/completions")
+        self.assertEqual(args[0].options["api_key"], "fresh-gateway-token")
 
 
 if __name__ == "__main__":
