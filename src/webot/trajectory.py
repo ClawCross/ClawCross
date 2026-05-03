@@ -18,8 +18,50 @@ from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = PROJECT_ROOT / "data" / "trajectories"
+DEFAULT_MAX_BYTES = 5 * 1024 * 1024
 
 _write_lock = threading.Lock()
+
+
+def auto_trajectory_enabled() -> bool:
+    """Whether runtime agent turns should be auto-saved as trajectories."""
+    value = os.getenv("CLAWCROSS_TRAJECTORY_ENABLED", "true")
+    return value.strip().lower() not in {"0", "false", "no", "off"}
+
+
+def trajectory_max_bytes() -> int:
+    """Maximum bytes allowed per trajectory JSONL file."""
+    value = os.getenv("CLAWCROSS_TRAJECTORY_MAX_BYTES", "").strip()
+    if not value:
+        return DEFAULT_MAX_BYTES
+    try:
+        parsed = int(value)
+    except ValueError:
+        return DEFAULT_MAX_BYTES
+    return max(0, parsed)
+
+
+def _trim_jsonl_to_fit(path: Path, incoming_bytes: int, max_bytes: int) -> None:
+    if max_bytes <= 0 or incoming_bytes > max_bytes or not path.exists():
+        return
+    current_size = path.stat().st_size
+    if current_size + incoming_bytes <= max_bytes:
+        return
+
+    keep_bytes = max_bytes - incoming_bytes
+    if keep_bytes <= 0:
+        path.write_text("", encoding="utf-8")
+        return
+
+    with path.open("rb") as f:
+        if current_size > keep_bytes:
+            f.seek(-keep_bytes, os.SEEK_END)
+        data = f.read()
+
+    newline_index = data.find(b"\n")
+    if newline_index != -1:
+        data = data[newline_index + 1 :]
+    path.write_bytes(data)
 
 
 def _ensure_dir() -> Path:
@@ -81,7 +123,9 @@ def save_trajectory(
     path = DATA_DIR / filename
 
     line = json.dumps(entry, ensure_ascii=False) + "\n"
+    line_bytes = line.encode("utf-8")
     with _write_lock:
+        _trim_jsonl_to_fit(path, len(line_bytes), trajectory_max_bytes())
         with path.open("a", encoding="utf-8") as f:
             f.write(line)
 

@@ -326,6 +326,34 @@ class TestTrajectory(unittest.TestCase):
         self.assertEqual(len(entries), 1)
         self.assertFalse(entries[0]["completed"])
 
+    def test_auto_trajectory_enabled_by_default(self):
+        from webot.trajectory import auto_trajectory_enabled
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertTrue(auto_trajectory_enabled())
+
+    def test_auto_trajectory_can_be_disabled(self):
+        from webot.trajectory import auto_trajectory_enabled
+        with patch.dict(os.environ, {"CLAWCROSS_TRAJECTORY_ENABLED": "false"}):
+            self.assertFalse(auto_trajectory_enabled())
+
+    def test_trajectory_file_size_limit_keeps_recent_entries(self):
+        from webot.trajectory import save_trajectory, list_trajectories
+
+        with patch.dict(os.environ, {"CLAWCROSS_TRAJECTORY_MAX_BYTES": "900"}):
+            for i in range(10):
+                save_trajectory(
+                    user_id="alice",
+                    session_id=f"sess{i}",
+                    messages=[{"role": "user", "content": "x" * 80}],
+                    model="gpt-4",
+                    completed=True,
+                )
+
+        entries = list_trajectories(user_id="alice", limit=20)
+        self.assertLess(len(entries), 10)
+        self.assertEqual(entries[0]["session_id"], "sess9")
+        self.assertLessEqual((self.tmppath / "trajectories" / "trajectory_samples.jsonl").stat().st_size, 900)
+
     def test_trajectory_stats(self):
         from webot.trajectory import save_trajectory, get_trajectory_stats
         for i in range(5):

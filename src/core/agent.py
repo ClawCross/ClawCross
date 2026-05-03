@@ -36,7 +36,7 @@ from webot.memory import ensure_memory_state
 from webot.skills import build_skills_prompt
 from webot.soul import build_soul_prompt
 from webot.workflow_prompt import build_team_workflow_prompt
-from webot.trajectory import save_trajectory
+from webot.trajectory import auto_trajectory_enabled, save_trajectory
 from utils.context_references import expand_context_references
 from utils.routed_checkpoint_saver import ThreadRoutedAsyncSqliteSaver
 from services.smart_routing import resolve_turn_route
@@ -1791,7 +1791,7 @@ class TeamAgent:
         # --- Trajectory saving (new: ported from Hermes Agent) ---
         # Save conversation trajectory when no more tool calls (session ending)
         # Fire-and-forget: spawn in background thread to never block the agent
-        if not getattr(response, "tool_calls", None) and next_turn_count > 1:
+        if auto_trajectory_enabled() and not getattr(response, "tool_calls", None) and next_turn_count > 1:
             model_name = getattr(llm, "model_name", "") or getattr(llm, "model", "") or ""
             traj_messages = [
                 {"role": type(m).__name__.replace("Message", "").lower(), "content": extract_text(m.content)}
