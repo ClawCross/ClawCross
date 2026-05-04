@@ -471,16 +471,136 @@ services = [
 ]
 
 # Chatbot 启动（可选组件）
-chatbot_setup = os.path.join(PROJECT_ROOT, "chatbot", "setup.py")
 is_headless = os.getenv("WEBOT_HEADLESS", "0") == "1"
-if os.path.exists(chatbot_setup):
-    if is_headless or not sys.stdin.isatty():
-        print(f"💬 [4/5] 跳过聊天机器人交互式配置（headless / 非交互模式）")
-        print(f"   提示: 如需配置 chatbot，请在人工模式下运行 run.sh / run.ps1 或手动编辑 config/.env")
+
+
+def _detect_chatbot_platforms():
+    """探测 .env 中已配置的社交渠道。仅读 env vars，不 import chatbot 包。
+
+    架构：
+    - Webhook: 通用 HTTP 入站
+    - NoneBot 桥接: 通过 NONEBOT_ADAPTERS 列出 30+ 平台短名（telegram, discord,
+      qq, mirai, onebot.v11, ding, villa, feishu, kaiheila, mail, minecraft, ...）
+
+    返回已启用平台名列表。
+    """
+    platforms = []
+    if any(k.endswith("_WEBHOOK_URL") and v.strip() for k, v in os.environ.items()):
+        platforms.append("webhook")
+    nonebot_adapters = os.getenv("NONEBOT_ADAPTERS", "").strip()
+    if nonebot_adapters:
+        names = [n.strip() for n in nonebot_adapters.split(",") if n.strip()]
+        if names:
+            platforms.append(f"nonebot[{'+'.join(names)}]")
+    return platforms
+
+
+def _ensure_nonebot_deps(adapter_names):
+    """确保 nonebot2 + 各 adapter 已安装到当前 venv。
+
+    检测顺序：先 import nonebot；缺失或缺 adapter 时优先用 uv 装，否则 fallback pip。
+    任何失败都返回 False，不抛异常 —— 由调用方决定是否 skip chatbot。
+    """
+    short_names = []
+    for n in adapter_names:
+        s = n.strip().split(".")[0].replace("_", "-").lower()
+        if s and s not in short_names:
+            short_names.append(s)
+
+    def _check_imports():
+        # 在 venv_python 子进程中检测 import 状态，避免污染 launcher 进程
+        check_code = (
+            "import importlib, sys\n"
+            "missing = []\n"
+            "try:\n"
+            "    import nonebot\n"
+            "except Exception:\n"
+            "    missing.append('nonebot2')\n"
+            "for n in {names}:\n"
+            "    try:\n"
+            "        importlib.import_module('nonebot.adapters.' + n.replace('-','_'))\n"
+            "    except Exception:\n"
+            "        missing.append('nonebot-adapter-' + n)\n"
+            "print('|'.join(missing))\n"
+        ).format(names=repr(short_names))
+        try:
+            result = subprocess.run(
+                [venv_python, "-c", check_code],
+                capture_output=True, timeout=15, text=True,
+            )
+            return [m for m in (result.stdout or "").strip().split("|") if m]
+        except Exception:
+            return ["nonebot2"]  # 视为整体缺失
+
+    missing = _check_imports()
+    if not missing:
+        return True
+
+    pip_pkgs = []
+    for m in missing:
+        if m == "nonebot2":
+            pip_pkgs.append("nonebot2[fastapi,httpx,websockets]")
+        else:
+            pip_pkgs.append(m)
+
+    print(f"   🔧 NoneBot 依赖缺失，自动安装: {', '.join(pip_pkgs)}")
+
+    use_uv = shutil.which("uv") is not None
+    if use_uv:
+        cmd = ["uv", "pip", "install", "--python", venv_python] + pip_pkgs
     else:
-        print(f"💬 [4/5] 启动聊天机器人...")
-        chatbot_dir = os.path.join(PROJECT_ROOT, "chatbot")
-        subprocess.run([venv_python, "setup.py"], cwd=chatbot_dir)
+        cmd = [venv_python, "-m", "pip", "install"] + pip_pkgs
+
+    try:
+        result = subprocess.run(cmd, timeout=300)
+        if result.returncode != 0:
+            print(f"   ⚠️ {'uv pip' if use_uv else 'pip'} 安装失败 (returncode={result.returncode})")
+            return False
+    except subprocess.TimeoutExpired:
+        print("   ⚠️ 依赖安装超时（>5min），跳过 chatbot")
+        return False
+    except Exception as exc:
+        print(f"   ⚠️ 依赖安装异常: {exc}")
+        return False
+
+    # 安装后再验一次
+    still_missing = _check_imports()
+    if still_missing:
+        print(f"   ⚠️ 安装后仍缺: {', '.join(still_missing)}")
+        return False
+
+    print("   ✅ NoneBot 依赖已就绪")
+    return True
+
+
+_no_channel = (os.getenv("CLAWCROSS_NO_CHANNEL") or "").strip().lower() in ("1", "true", "yes", "on")
+chatbot_platforms = _detect_chatbot_platforms()
+has_chatbot_config = bool(chatbot_platforms) and not _no_channel
+
+chatbot_main = os.path.join(PROJECT_ROOT, "chatbot", "main.py")
+should_start_chatbot = has_chatbot_config and os.path.exists(chatbot_main)
+
+if should_start_chatbot:
+    nonebot_names = [n.strip() for n in os.getenv("NONEBOT_ADAPTERS", "").split(",") if n.strip()]
+    deps_ok = True
+    if nonebot_names:
+        deps_ok = _ensure_nonebot_deps(nonebot_names)
+    if not deps_ok:
+        print("💬 [skip] NoneBot 依赖未就绪，跳过 chatbot（不影响其他服务）")
+        should_start_chatbot = False
+
+if should_start_chatbot:
+    print(f"💬 [4/5] 启动社交媒体机器人 ({len(chatbot_platforms)} 个平台: {', '.join(chatbot_platforms)})...")
+    chatbot_proc = subprocess.Popen(
+        [venv_python, chatbot_main],
+        cwd=PROJECT_ROOT,
+        stdin=subprocess.DEVNULL,
+        stdout=None,
+        stderr=None,
+    )
+    chatbot_proc._cc_optional = True  # 标记：异常退出不拖垮 launcher
+    child_procs.append(chatbot_proc)
+    print(f"   ✅ 社交媒体机器人已启动 (PID: {chatbot_proc.pid})")
     services.append(
         {
             "message": f"🌐 [5/5] 启动前端 Web UI (port {PORT_FRONTEND})...",
@@ -491,6 +611,10 @@ if os.path.exists(chatbot_setup):
         }
     )
 else:
+    if _no_channel:
+        print("💬 [skip] CLAWCROSS_NO_CHANNEL 已设置，跳过聊天机器人")
+    elif not chatbot_platforms:
+        print("💬 [skip] 未检测到聊天机器人配置（NONEBOT_ADAPTERS / *_WEBHOOK_URL 均为空）")
     services.append(
         {
             "message": f"🌐 [4/4] 启动前端 Web UI (port {PORT_FRONTEND})...",
@@ -585,9 +709,14 @@ try:
             print()
             continue
 
-        # 检测子进程异常退出
+        # 检测子进程异常退出（带 _cc_optional 标记的子进程退出不拖垮 launcher）
         for proc in child_procs:
             if proc.poll() is not None:
+                if getattr(proc, "_cc_optional", False):
+                    if not getattr(proc, "_cc_logged_exit", False):
+                        print(f"⚠️ 可选服务 (PID {proc.pid}) 已退出 (returncode={proc.returncode})，其他服务继续运行")
+                        proc._cc_logged_exit = True
+                    continue
                 print(f"⚠️ 服务 (PID {proc.pid}) 异常退出，正在关闭其余服务...")
                 sys.exit(1)
         time.sleep(0.5)

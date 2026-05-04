@@ -2,10 +2,11 @@
 # WeBot skill 入口脚本（供外部 agent 非交互式调用）
 #
 # 用法:
-#   bash selfskill/scripts/run.sh start [--no-tunnel] [--no-openclaw]
-#   bash selfskill/scripts/run.sh start-foreground [--no-openclaw]
+#   bash selfskill/scripts/run.sh start [--no-tunnel] [--no-openclaw] [--no-channel]
+#   bash selfskill/scripts/run.sh start-foreground [--no-openclaw] [--no-channel]
 #       --no-tunnel     不启动 Cloudflare Tunnel（仅本机访问）
 #       --no-openclaw   不从 OpenClaw 导入 LLM、launcher 不预热 OpenClaw Gateway
+#       --no-channel    不启动社交渠道 chatbot（即使 NONEBOT_ADAPTERS / *_WEBHOOK_URL 已配置）
 #   bash selfskill/scripts/run.sh stop                           # 停止服务
 #   bash selfskill/scripts/run.sh status                         # 检查服务状态
 #   bash selfskill/scripts/run.sh start-tunnel                   # 启动公网隧道（自动下载+暴露前端）
@@ -388,10 +389,11 @@ run_clawcross_setup_if_needed() {
     fi
 }
 
-# start / start-foreground 可选参数：--no-tunnel / --no-openclaw（$1 为子命令名）
+# start / start-foreground 可选参数（$1 为子命令名）
 _clawcross_parse_start_flags() {
     NO_TUNNEL=0
     NO_OPENCLAW=0
+    NO_CHANNEL=0
     [ $# -ge 1 ] || return 0
     shift
     local a
@@ -399,6 +401,7 @@ _clawcross_parse_start_flags() {
         case "$a" in
             --no-tunnel) NO_TUNNEL=1 ;;
             --no-openclaw) NO_OPENCLAW=1 ;;
+            --no-channel) NO_CHANNEL=1 ;;
         esac
     done
 }
@@ -461,6 +464,12 @@ case "${1:-help}" in
             export CLAWCROSS_NO_OPENCLAW=1
         else
             unset CLAWCROSS_NO_OPENCLAW
+        fi
+        if [ "${NO_CHANNEL:-0}" = 1 ]; then
+            export CLAWCROSS_NO_CHANNEL=1
+            echo "⏭️  已指定 --no-channel：不启动社交媒体 chatbot"
+        else
+            unset CLAWCROSS_NO_CHANNEL
         fi
         mkdir -p "$PROJECT_ROOT/logs"
         nohup python scripts/launcher.py > "$PROJECT_ROOT/logs/launcher.log" 2>&1 &
@@ -577,6 +586,12 @@ case "${1:-help}" in
             export CLAWCROSS_NO_OPENCLAW=1
         else
             unset CLAWCROSS_NO_OPENCLAW
+        fi
+        if [ "${NO_CHANNEL:-0}" = 1 ]; then
+            export CLAWCROSS_NO_CHANNEL=1
+            echo "⏭️  已指定 --no-channel：不启动社交媒体 chatbot"
+        else
+            unset CLAWCROSS_NO_CHANNEL
         fi
         exec python scripts/launcher.py
         ;;
@@ -1018,8 +1033,8 @@ case "${1:-help}" in
         echo "用法: bash selfskill/scripts/run.sh <command> [args]"
         echo ""
         echo "命令:"
-        echo "  start [--no-tunnel] [--no-openclaw]   后台启动；--no-tunnel 不启公网隧道；--no-openclaw 不与 OpenClaw 联动"
-        echo "  start-foreground [--no-openclaw] [--no-tunnel]  前台启动；--no-openclaw 同上（--no-tunnel 在此模式仅提示、无隧道）"
+        echo "  start [--no-tunnel] [--no-openclaw] [--no-channel]   后台启动；--no-channel 不启 chatbot"
+        echo "  start-foreground [--no-openclaw] [--no-tunnel] [--no-channel]  前台启动；同上"
         echo "  stop                           停止服务"
         echo "  status                         检查服务状态"
         echo "  start-tunnel                   启动公网隧道（自动下载 cloudflared）"
