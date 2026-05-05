@@ -291,11 +291,15 @@ class NoneBotBridgeAdapter(ChannelAdapter):
         driver = nonebot.get_driver()
 
         # NoneBot Config 有 extra='allow'，但 <NAME>_BOTS 等适配器专属 env 不会被自动读取
-        # 需要手动从 env 读 <NAME>_BOTS（如 TELEGRAM_BOTS, QQ_BOTS）并设置到 config
+        # 需要手动从 env 读 <NAME>_BOTS（如 TELEGRAM_BOTS, QQ_BOTS）并设置到 config。
+        # 带点平台（如 onebot.v11）使用 ONEBOTV11_BOTS；同时兼容旧的 ONEBOT.V11_BOTS。
         import json
         for name in self._adapter_names:
-            env_key = f"{name.upper()}_BOTS"
-            bots_json = os.getenv(env_key, "")
+            name_lower = name.lower().replace(' ', '')
+            std_name = name_lower.replace('-', '').replace('_', '').replace('.', '')
+            env_key = f"{std_name.upper()}_BOTS"
+            legacy_env_key = f"{name.upper()}_BOTS"
+            bots_json = os.getenv(env_key, "") or os.getenv(legacy_env_key, "")
             if not bots_json:
                 continue
 
@@ -305,10 +309,7 @@ class NoneBotBridgeAdapter(ChannelAdapter):
                 logger.warning(f"解析 {env_key} 失败: {e}")
                 continue
 
-            # 适配器字段名映射
-            name_lower = name.lower().replace(' ', '')
             # 标准化字段名：telegram, qq, discord, dingtalk, onebotv11, onebotv12, ...
-            std_name = name_lower.replace('-', '').replace('_', '')
             field_name = f"{std_name}_bots"
 
             # 直接设置，不判断 hasattr（Config 有 extra='allow'，可以任意添加字段）

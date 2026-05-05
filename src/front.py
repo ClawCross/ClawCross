@@ -2535,6 +2535,7 @@ def proxy_update_settings():
 
 
 LOCAL_SETTINGS_FULL_URL = f"http://127.0.0.1:{PORT_AGENT}/settings/full"
+LOCAL_CHATBOT_WHITELIST_URL = f"http://127.0.0.1:{PORT_AGENT}/chatbot/whitelist"
 LOCAL_RESTART_URL = f"http://127.0.0.1:{PORT_AGENT}/restart"
 
 
@@ -2558,6 +2559,54 @@ def proxy_update_settings_full():
         data["user_id"] = user_id
         r = requests.post(LOCAL_SETTINGS_FULL_URL, json=data, headers=_internal_auth_headers(), timeout=10)
         return jsonify(r.json()), r.status_code
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/proxy_chatbot_whitelist", methods=["GET"])
+def proxy_get_chatbot_whitelist():
+    """代理获取 chatbot 白名单"""
+    user_id = session.get("user_id", "")
+    try:
+        r = requests.get(LOCAL_CHATBOT_WHITELIST_URL, params={"user_id": user_id}, headers=_internal_auth_headers(), timeout=10)
+        return jsonify(r.json()), r.status_code
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/proxy_chatbot_whitelist", methods=["POST"])
+def proxy_update_chatbot_whitelist():
+    """代理更新 chatbot 白名单"""
+    user_id = session.get("user_id", "")
+    try:
+        data = request.get_json(force=True)
+        data["user_id"] = user_id
+        r = requests.post(LOCAL_CHATBOT_WHITELIST_URL, json=data, headers=_internal_auth_headers(), timeout=10)
+        return jsonify(r.json()), r.status_code
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/proxy_weclaw_qr", methods=["GET"])
+def proxy_get_weclaw_qr():
+    """读取 WeClaw 扫码登录二维码（ASCII）。"""
+    qr_path = os.path.join(root_dir, "data", "weclaw_qr.txt")
+    try:
+        if not os.path.exists(qr_path):
+            return jsonify({
+                "status": "pending",
+                "qr": "",
+                "path": "data/weclaw_qr.txt",
+                "message": "尚未发现新的扫码二维码。如果 WeClaw 已加载已有账号会话，则无需扫码；否则请等待 weclaw 输出二维码后刷新。",
+            })
+        with open(qr_path, "r", encoding="utf-8") as f:
+            qr = f.read()
+        return jsonify({
+            "status": "success" if qr.strip() else "pending",
+            "qr": qr,
+            "path": "data/weclaw_qr.txt",
+            "message": "请用微信扫描下方二维码登录。",
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

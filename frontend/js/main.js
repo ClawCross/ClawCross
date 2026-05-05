@@ -733,6 +733,10 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         settings_help_tts_model: '留空时自动跟随当前 LLM provider。OpenAI 默认是 gpt-4o-mini-tts，Gemini 默认是 gemini-2.5-flash-preview-tts。',
         settings_help_tts_voice: '留空时自动跟随当前 LLM provider。OpenAI 默认声音是 alloy，Gemini 默认声音是 charon。',
         settings_help_stt_model: '留空时自动跟随当前 LLM provider。OpenAI 默认是 whisper-1；Gemini 目前没有内置 STT 默认值，可按需手动填写。',
+        settings_help_bots_group: '多平台 chatbot 使用 NoneBot adapter JSON 数组和中心化 WHITELIST_FILE；移动端可在创造页的 Chatbot 配置入口按 channel 选择平台并管理连接格式。',
+        settings_help_telegram_bots: 'NoneBot Telegram adapter 的 bot JSON 数组，例如 [{"token":"123:abc"}]。',
+        settings_help_qq_bots: 'NoneBot QQ adapter 的 bot JSON 数组，例如 [{"id":"app_id","token":"secret","intents":{"public_messages":true,"direct_message":true}}]。',
+        settings_help_whitelist_file: '中心化白名单 JSON 文件路径，默认 data/whitelist.json。',
         settings_help_tinyfish_group: '只填 TinyFish API Key 也能完成接入。保存时会自动补齐默认 Base URL/DB/Targets 配置并验证 API；若修改 cron，仍需重启服务让 scheduler 生效。',
         settings_help_tinyfish_api_key: 'TinyFish Web Agent API Key。用于提交网站自动化采集任务。',
         settings_help_tinyfish_base_url: 'TinyFish API 基础地址，默认 https://agent.tinyfish.ai。',
@@ -1508,6 +1512,10 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         settings_help_tts_model: 'Leave blank to follow the current LLM provider automatically. OpenAI defaults to gpt-4o-mini-tts, Gemini defaults to gemini-2.5-flash-preview-tts.',
         settings_help_tts_voice: 'Leave blank to follow the current LLM provider automatically. OpenAI uses alloy by default, Gemini uses charon.',
         settings_help_stt_model: 'Leave blank to follow the current LLM provider automatically. OpenAI defaults to whisper-1; Gemini does not currently have a built-in STT default.',
+        settings_help_bots_group: 'Multi-platform chatbot uses NoneBot adapter JSON arrays and the centralized WHITELIST_FILE. On mobile, use Chatbot Config on the Create tab to choose channels and manage connection formats.',
+        settings_help_telegram_bots: 'Bot JSON array for the NoneBot Telegram adapter, for example [{"token":"123:abc"}].',
+        settings_help_qq_bots: 'Bot JSON array for the NoneBot QQ adapter, for example [{"id":"app_id","token":"secret","intents":{"public_messages":true,"direct_message":true}}].',
+        settings_help_whitelist_file: 'Central whitelist JSON path. Defaults to data/whitelist.json.',
         settings_help_tinyfish_group: 'Only the TinyFish API key is required for the initial setup. Saving auto-fills the default base URL, DB path, and target path, then validates the API. Restart is still required if you change the cron schedule.',
         settings_help_tinyfish_api_key: 'TinyFish Web Agent API key used to submit internet search and crawl runs.',
         settings_help_tinyfish_base_url: 'TinyFish API base URL. Defaults to https://agent.tinyfish.ai.',
@@ -4641,7 +4649,7 @@ const SETTINGS_GROUPS_ORDERED = [
     { id: 'oasis', label: 'settings_group_oasis', keys: ['OASIS_BASE_URL'] },
     { id: 'ports', label: 'settings_group_ports', keys: ['PORT_AGENT', 'PORT_SCHEDULER', 'PORT_OASIS', 'PORT_FRONTEND', 'PORT_BARK'] },
     { id: 'network', label: 'settings_group_network', keys: ['PUBLIC_DOMAIN', 'BARK_PUBLIC_URL'] },
-    { id: 'bots', label: 'settings_group_bots', keys: ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_ALLOWED_USERS', 'QQ_APP_ID', 'QQ_BOT_SECRET', 'QQ_BOT_USERNAME'] },
+    { id: 'bots', label: 'settings_group_bots', keys: ['NONEBOT_ADAPTERS', 'NONEBOT_HOST', 'NONEBOT_PORT', 'WHITELIST_FILE', 'TELEGRAM_BOTS', 'QQ_BOTS', 'QQ_IS_SANDBOX', 'WECLAW_ENABLED', 'WECLAW_BIN', 'WECLAW_USERNAME', 'WECLAW_CONFIG', 'WECLAW_PROXY_PORT', 'WECLAW_AUTO_INSTALL'] },
     { id: 'comm', label: 'settings_group_comm', keys: ['OPENAI_STANDARD_MODE'] },
     { id: 'exec', label: 'settings_group_exec', keys: ['ALLOWED_COMMANDS', 'EXEC_TIMEOUT', 'MAX_OUTPUT_LENGTH'] },
     { id: 'tinyfish', label: 'settings_group_tinyfish', keys: ['TINYFISH_API_KEY', 'TINYFISH_BASE_URL', 'TINYFISH_MONITOR_DB_PATH', 'TINYFISH_MONITOR_TARGETS_PATH', 'TINYFISH_MONITOR_ENABLED', 'TINYFISH_MONITOR_CRON'] },
@@ -4651,6 +4659,7 @@ const SETTINGS_GROUPS_ORDERED = [
 const SETTINGS_GROUP_HELP_KEYS = {
     tts: 'settings_help_audio_group',
     tinyfish: 'settings_help_tinyfish_group',
+    bots: 'settings_help_bots_group',
 };
 
 const SETTINGS_FIELD_HELP_KEYS = {
@@ -4663,6 +4672,9 @@ const SETTINGS_FIELD_HELP_KEYS = {
     TINYFISH_MONITOR_TARGETS_PATH: 'settings_help_tinyfish_targets_path',
     TINYFISH_MONITOR_ENABLED: 'settings_help_tinyfish_enabled',
     TINYFISH_MONITOR_CRON: 'settings_help_tinyfish_cron',
+    TELEGRAM_BOTS: 'settings_help_telegram_bots',
+    QQ_BOTS: 'settings_help_qq_bots',
+    WHITELIST_FILE: 'settings_help_whitelist_file',
 };
 
 let _settingsCache = {};
@@ -5418,7 +5430,11 @@ function _renderGroup(groupMeta, keys, settings) {
         const helpText = helpKey ? t(helpKey) : '';
         html += `<div class="settings-field">`;
         html += `<label class="settings-label" title="${key}">${key}</label>`;
-        html += `<input class="settings-input" data-key="${key}" type="${isPassword ? 'password' : 'text'}" value="${escapeHtml(inputState.value)}" placeholder="${escapeHtml(inputState.placeholder)}" autocomplete="off" />`;
+        if (key.endsWith('_BOTS')) {
+            html += `<textarea class="settings-input" data-key="${key}" spellcheck="false" style="min-height:78px;font-family:monospace;resize:vertical;" placeholder="${escapeHtml(inputState.placeholder)}">${escapeHtml(inputState.value)}</textarea>`;
+        } else {
+            html += `<input class="settings-input" data-key="${key}" type="${isPassword ? 'password' : 'text'}" value="${escapeHtml(inputState.value)}" placeholder="${escapeHtml(inputState.placeholder)}" autocomplete="off" />`;
+        }
         if (helpText) {
             html += `<div style="margin-top:5px;font-size:11px;line-height:1.5;color:#9ca3af;">${escapeHtml(helpText)}</div>`;
         }

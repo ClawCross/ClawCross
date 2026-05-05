@@ -1345,6 +1345,122 @@
     border: 1px solid var(--border);
     border-radius: 12px;
   }
+
+  #mobile-chatbot-config {
+    width: min(460px, calc(100vw - 12px));
+    min-width: min(300px, calc(100vw - 12px));
+  }
+  .chatbot-config-picker {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .chatbot-config-channel-select {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-card);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .chatbot-channel-card {
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-card);
+  }
+  .chatbot-channel-title {
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--text);
+  }
+  .chatbot-channel-meta {
+    margin-top: 4px;
+    font-size: 11px;
+    line-height: 1.45;
+    color: var(--text-hint);
+    word-break: break-word;
+  }
+  .chatbot-config-field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-bottom: 10px;
+  }
+  .chatbot-config-field label {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-secondary);
+  }
+  .chatbot-config-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 9px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+  }
+  textarea.chatbot-config-input {
+    min-height: 82px;
+    resize: vertical;
+    font-family: monospace;
+    line-height: 1.45;
+  }
+  .chatbot-config-help {
+    font-size: 11px;
+    line-height: 1.45;
+    color: var(--text-hint);
+  }
+  .weclaw-qr-box {
+    padding: 10px;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+  }
+  .weclaw-qr-pre {
+    margin: 8px 0 0;
+    padding: 8px;
+    overflow: auto;
+    border-radius: 6px;
+    background: #0b1020;
+    color: #f8fafc;
+    font-family: monospace;
+    font-size: 7px;
+    line-height: 1;
+    white-space: pre;
+  }
+  .chatbot-whitelist-row {
+    display: grid;
+    grid-template-columns: minmax(90px, 1fr) minmax(90px, 1fr) 34px;
+    gap: 7px;
+    align-items: center;
+    margin-bottom: 7px;
+  }
+  .chatbot-config-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .chatbot-config-actions button,
+  .chatbot-add-row-btn {
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-card);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .chatbot-config-actions button:last-child {
+    border-color: var(--primary);
+    background: var(--primary);
+    color: #fff;
+    flex: 1;
+  }
   .side-panel-field {
     display: flex;
     flex-direction: column;
@@ -3556,6 +3672,16 @@
       </div>
     </div>
     <div class="discover-section">
+      <div class="discover-card" onclick="showMobileChatbotConfig()">
+        <div class="discover-card-icon">🤖</div>
+        <div class="discover-card-body">
+          <div class="discover-card-title">Chatbot 配置</div>
+          <div class="discover-card-desc">按 channel 配置平台 token 和访问白名单</div>
+        </div>
+        <div class="discover-card-arrow">›</div>
+      </div>
+    </div>
+    <div class="discover-section">
       <div class="discover-card" onclick="showMobileAlarmManager()">
         <div class="discover-card-icon">⏰</div>
         <div class="discover-card-body">
@@ -3655,6 +3781,44 @@
       <button onclick="restartClawcross()" class="settings-btn settings-btn-restart" data-i18n="settings_restart">🔄 重启服务</button>
       <button onclick="closeSettings()" class="settings-btn settings-btn-cancel" data-i18n="cancel">取消</button>
       <button onclick="saveSettings()" class="settings-btn settings-btn-save" data-i18n="save">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ Mobile Chatbot Config ═══════════════ -->
+<div class="drawer-overlay side-panel-overlay" id="mobile-chatbot-config-overlay" onclick="if(event.target===this)closeMobileChatbotConfig()"></div>
+<div class="drawer side-drawer" id="mobile-chatbot-config">
+  <div class="drawer-header">
+    <button class="drawer-header-back" onclick="closeMobileChatbotConfig()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
+    <span class="drawer-header-title">Chatbot 配置</span>
+  </div>
+  <div class="drawer-body" style="padding:16px;display:flex;flex-direction:column;gap:12px;">
+    <div class="chatbot-config-picker">
+      <select class="chatbot-config-channel-select" id="mobile-chatbot-channel-select" onchange="switchMobileChatbotChannel(this.value)"></select>
+      <div class="chatbot-channel-card" id="mobile-chatbot-channel-summary"></div>
+    </div>
+    <div id="mobile-chatbot-config-status" style="font-size:12px;color:var(--text-secondary);min-height:18px;"></div>
+    <div class="side-panel-section">
+      <div style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:8px;">平台配置</div>
+      <div id="mobile-chatbot-channel-settings"></div>
+      <div class="chatbot-config-help" id="mobile-chatbot-channel-help"></div>
+      <div id="mobile-weclaw-login-panel" style="display:none;margin-top:10px;"></div>
+    </div>
+    <div class="side-panel-section">
+      <div style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:8px;">白名单</div>
+      <div class="chatbot-config-help" style="margin-bottom:8px;">ID 是平台用户 ID / 群 ID；username 用于生成 Agent 会话身份。</div>
+      <div id="mobile-chatbot-whitelist-rows"></div>
+      <button class="chatbot-add-row-btn" type="button" onclick="addMobileChatbotWhitelistRow()">添加白名单</button>
+    </div>
+    <div class="side-panel-section">
+      <div style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:8px;">通用运行参数</div>
+      <div id="mobile-chatbot-common-settings"></div>
+    </div>
+    <div class="chatbot-config-actions">
+      <button type="button" onclick="loadMobileChatbotConfig()">刷新</button>
+      <button type="button" onclick="saveMobileChatbotConfig()">保存配置</button>
     </div>
   </div>
 </div>
@@ -4548,6 +4712,7 @@ const I18N = {
     settings_antigravity_missing_subtitle: '⚠️ Antigravity 未运行（未启动或无法连接）',
     sg_tts_help: '留空时会自动跟随当前 LLM provider。检测到 OpenAI 时默认使用 gpt-4o-mini-tts / alloy / whisper-1；检测到 Gemini 时默认使用 gemini-2.5-flash-preview-tts / charon。',
     sg_tinyfish_help: '配置 TinyFish Web Agent API、监控目标文件与每日价格巡检计划。保存后重启服务，scheduler 会按 cron 自动执行。',
+    sg_bots_help: '多平台 chatbot 使用 NoneBot adapter JSON 数组和中心化 WHITELIST_FILE；建议在创造页的 Chatbot 配置入口按 channel 选择平台并管理连接格式。',
     sf_tts_model: '留空时自动跟随当前 LLM provider。OpenAI 默认是 gpt-4o-mini-tts，Gemini 默认是 gemini-2.5-flash-preview-tts。',
     sf_tts_voice: '留空时自动跟随当前 LLM provider。OpenAI 默认声音是 alloy，Gemini 默认声音是 charon。',
     sf_stt_model: '留空时自动跟随当前 LLM provider。OpenAI 默认是 whisper-1；Gemini 目前没有内置 STT 默认值，可按需手动填写。',
@@ -4557,6 +4722,9 @@ const I18N = {
     sf_tinyfish_targets_path: '搜索目标 JSON 配置文件路径。默认是 config/tinyfish_targets.json。',
     sf_tinyfish_enabled: '设为 true 启用内建每日监控任务；设为 false 关闭。',
     sf_tinyfish_cron: '5 段 cron 表达式，例如 0 9 * * * 代表每天早上 9 点。',
+    sf_telegram_bots: 'NoneBot Telegram adapter 的 bot JSON 数组，例如 [{"token":"123:abc"}]。',
+    sf_qq_bots: 'NoneBot QQ adapter 的 bot JSON 数组，例如 [{"id":"app_id","token":"secret","intents":{"public_messages":true,"direct_message":true}}]。',
+    sf_whitelist_file: '中心化白名单 JSON 文件路径，默认 data/whitelist.json。',
     tinyfish_run_now: '立即运行',
     tinyfish_refresh: '刷新结果',
     tinyfish_loading: '正在加载 TinyFish 监控状态...',
@@ -5161,6 +5329,7 @@ const I18N = {
     settings_antigravity_missing_subtitle: '⚠️ Antigravity is not running or cannot be reached',
     sg_tts_help: 'When empty, automatically follows the current LLM provider. OpenAI uses gpt-4o-mini-tts / alloy / whisper-1; Gemini uses gemini-2.5-flash-preview-tts / charon.',
     sg_tinyfish_help: 'Configure TinyFish Web Agent API access, search targets, and the scheduled crawl schedule. Save and restart to let the scheduler pick up cron changes.',
+    sg_bots_help: 'Multi-platform chatbot uses NoneBot adapter JSON arrays and the centralized WHITELIST_FILE. Use Chatbot Config on the Create tab to choose channels and manage connection formats.',
     sf_tts_model: 'When empty, follows the current LLM provider. OpenAI defaults to gpt-4o-mini-tts, Gemini to gemini-2.5-flash-preview-tts.',
     sf_tts_voice: 'When empty, follows the current LLM provider. OpenAI defaults to alloy, Gemini to charon.',
     sf_stt_model: 'When empty, follows the current LLM provider. OpenAI defaults to whisper-1; Gemini has no built-in STT default.',
@@ -5170,6 +5339,9 @@ const I18N = {
     sf_tinyfish_targets_path: 'JSON file listing search targets. Defaults to config/tinyfish_targets.json.',
     sf_tinyfish_enabled: 'Set true to enable the built-in daily monitor job; set false to disable it.',
     sf_tinyfish_cron: 'Five-field cron expression, for example 0 9 * * * for every day at 9:00.',
+    sf_telegram_bots: 'Bot JSON array for the NoneBot Telegram adapter, for example [{"token":"123:abc"}].',
+    sf_qq_bots: 'Bot JSON array for the NoneBot QQ adapter, for example [{"id":"app_id","token":"secret","intents":{"public_messages":true,"direct_message":true}}].',
+    sf_whitelist_file: 'Central whitelist JSON path. Defaults to data/whitelist.json.',
     tinyfish_run_now: 'Run Now',
     tinyfish_refresh: 'Refresh',
     tinyfish_loading: 'Loading TinyFish monitor status...',
@@ -9474,6 +9646,434 @@ function openClawcrossCreator() {
   window.location.assign('/creator');
 }
 
+// ── Mobile Chatbot Config ──
+const MOBILE_CHATBOT_CHANNEL_FALLBACKS = [
+  { id: 'telegram', label: 'Telegram', kind: 'nonebot', adapter: 'telegram', env_key: 'TELEGRAM_BOTS' },
+  { id: 'qq', label: 'QQ', kind: 'nonebot', adapter: 'qq', env_key: 'QQ_BOTS' },
+  { id: 'onebotv11', label: 'OneBot V11', kind: 'nonebot', adapter: 'onebot.v11', env_key: 'ONEBOTV11_BOTS' },
+  { id: 'onebotv12', label: 'OneBot V12', kind: 'nonebot', adapter: 'onebot.v12', env_key: 'ONEBOTV12_BOTS' },
+  { id: 'discord', label: 'Discord', kind: 'nonebot', adapter: 'discord', env_key: 'DISCORD_BOTS' },
+  { id: 'dingtalk', label: 'DingTalk', kind: 'nonebot', adapter: 'dingtalk', env_key: 'DINGTALK_BOTS' },
+  { id: 'feishu', label: 'Feishu', kind: 'nonebot', adapter: 'feishu', env_key: 'FEISHU_BOTS' },
+  { id: 'kaiheila', label: 'Kaiheila / KOOK', kind: 'nonebot', adapter: 'kaiheila', env_key: 'KAIHEILA_BOTS' },
+  { id: 'mail', label: 'Mail', kind: 'nonebot', adapter: 'mail', env_key: 'MAIL_BOTS' },
+  { id: 'minecraft', label: 'Minecraft', kind: 'nonebot', adapter: 'minecraft', env_key: 'MINECRAFT_BOTS' },
+  { id: 'github', label: 'GitHub', kind: 'nonebot', adapter: 'github', env_key: 'GITHUB_BOTS' },
+  { id: 'villa', label: 'Villa', kind: 'nonebot', adapter: 'villa', env_key: 'VILLA_BOTS' },
+  { id: 'yunhu', label: 'Yunhu', kind: 'nonebot', adapter: 'yunhu', env_key: 'YUNHU_BOTS' },
+  { id: 'heybox', label: 'Heybox', kind: 'nonebot', adapter: 'heybox', env_key: 'HEYBOX_BOTS' },
+  { id: 'console', label: 'Console', kind: 'nonebot', adapter: 'console', env_key: 'CONSOLE_BOTS' },
+  { id: 'weclaw', label: 'WeClaw / WeChat', kind: 'weclaw', adapter: 'weclaw', env_key: '' },
+  { id: 'webhook', label: 'Custom Webhook', kind: 'webhook', adapter: 'webhook', env_key: '' },
+];
+const MOBILE_CHATBOT_COMMON_KEYS = ['NONEBOT_ADAPTERS', 'NONEBOT_HOST', 'NONEBOT_PORT', 'WHITELIST_FILE'];
+const MOBILE_CHATBOT_WECLAW_KEYS = ['WECLAW_ENABLED', 'WECLAW_USERNAME', 'WECLAW_BIN', 'WECLAW_CONFIG', 'WECLAW_PROXY_PORT', 'WECLAW_AUTO_INSTALL'];
+const MOBILE_CHATBOT_WEBHOOK_KEYS = ['WHITELIST_FILE'];
+const MOBILE_CHATBOT_DEFAULTS = {
+  NONEBOT_HOST: '127.0.0.1',
+  NONEBOT_PORT: '8120',
+  WHITELIST_FILE: 'data/whitelist.json',
+  WECLAW_ENABLED: 'true',
+  WECLAW_USERNAME: 'default',
+  WECLAW_BIN: 'weclaw',
+  WECLAW_CONFIG: '~/.weclaw/config.json',
+  WECLAW_PROXY_PORT: '51298',
+  WECLAW_AUTO_INSTALL: 'true',
+};
+const MOBILE_CHATBOT_TEXTAREA_KEYS = new Set();
+const MOBILE_CHATBOT_JSON_KEYS = new Set();
+let mobileChatbotChannel = 'telegram';
+let mobileChatbotSettings = {};
+let mobileChatbotWhitelist = {};
+let mobileChatbotChannels = [...MOBILE_CHATBOT_CHANNEL_FALLBACKS];
+let mobileWeClawQrRetryTimer = null;
+let mobileWeClawQrLoading = false;
+
+function mobileChatbotStatus(text, isError = false) {
+  const el = document.getElementById('mobile-chatbot-config-status');
+  if (!el) return;
+  el.textContent = text || '';
+  el.style.color = isError ? '#ef4444' : 'var(--text-secondary)';
+}
+
+function showMobileChatbotConfig() {
+  document.getElementById('mobile-chatbot-config').classList.add('show');
+  document.getElementById('mobile-chatbot-config-overlay').classList.add('show');
+  renderMobileChatbotChannelPicker();
+  loadMobileChatbotConfig();
+}
+
+function closeMobileChatbotConfig() {
+  document.getElementById('mobile-chatbot-config').classList.remove('show');
+  document.getElementById('mobile-chatbot-config-overlay').classList.remove('show');
+}
+
+async function loadMobileChatbotConfig() {
+  mobileChatbotStatus('加载中...');
+  try {
+    const [settingsResp, whitelistResp] = await Promise.all([
+      fetch('/proxy_settings_full'),
+      fetch('/proxy_chatbot_whitelist'),
+    ]);
+    const settingsData = await settingsResp.json();
+    const whitelistData = await whitelistResp.json();
+    if (!settingsResp.ok || settingsData.error || !settingsData.settings) {
+      throw new Error(settingsData.error || `settings HTTP ${settingsResp.status}`);
+    }
+    if (!whitelistResp.ok || whitelistData.error || !whitelistData.whitelist) {
+      throw new Error(whitelistData.error || `whitelist HTTP ${whitelistResp.status}`);
+    }
+    mobileChatbotSettings = settingsData.settings || {};
+    mobileChatbotSettings.__original = { ...mobileChatbotSettings };
+    mobileChatbotChannels = normalizeMobileChatbotChannels(whitelistData.available_channels || MOBILE_CHATBOT_CHANNEL_FALLBACKS, whitelistData.whitelist || {});
+    if (!mobileChatbotChannels.some(ch => ch.id === mobileChatbotChannel)) {
+      mobileChatbotChannel = mobileChatbotChannels[0]?.id || 'telegram';
+    }
+    mobileChatbotWhitelist = normalizeMobileChatbotWhitelist(whitelistData.whitelist || {});
+    renderMobileChatbotChannelPicker();
+    renderMobileChatbotConfig();
+    mobileChatbotStatus(whitelistData.path ? `白名单文件：${whitelistData.path}` : '');
+  } catch (e) {
+    mobileChatbotStatus('加载失败: ' + e.message, true);
+  }
+}
+
+function normalizeMobileChatbotChannels(rawChannels, whitelist) {
+  const byId = new Map();
+  const source = Array.isArray(rawChannels) ? rawChannels : MOBILE_CHATBOT_CHANNEL_FALLBACKS;
+  source.forEach(ch => {
+    if (!ch || !ch.id) return;
+    byId.set(ch.id, {
+      id: ch.id,
+      label: ch.label || ch.id,
+      kind: ch.kind || 'nonebot',
+      adapter: ch.adapter || ch.id,
+      env_key: ch.env_key || '',
+    });
+  });
+  Object.keys(whitelist || {}).forEach(id => {
+    if (!byId.has(id)) {
+      byId.set(id, { id, label: id, kind: 'custom', adapter: id, env_key: '' });
+    }
+  });
+  return Array.from(byId.values());
+}
+
+function normalizeMobileChatbotWhitelist(raw) {
+  const out = {};
+  Object.entries(raw || {}).forEach(([id, section]) => {
+    const safeSection = (section && typeof section === 'object') ? section : {};
+    out[id] = {
+      entries: (safeSection.entries && typeof safeSection.entries === 'object') ? safeSection.entries : {},
+      name_map: (safeSection.name_map && typeof safeSection.name_map === 'object') ? safeSection.name_map : {},
+    };
+  });
+  for (const channel of mobileChatbotChannels) {
+    const section = out[channel.id] || {};
+    out[channel.id] = {
+      entries: (section.entries && typeof section.entries === 'object') ? section.entries : {},
+      name_map: (section.name_map && typeof section.name_map === 'object') ? section.name_map : {},
+    };
+  }
+  return out;
+}
+
+function renderMobileChatbotChannelPicker() {
+  const select = document.getElementById('mobile-chatbot-channel-select');
+  if (!select) return;
+  select.innerHTML = mobileChatbotChannels.map(ch =>
+    `<option value="${escapeHtml(ch.id)}" ${ch.id === mobileChatbotChannel ? 'selected' : ''}>${escapeHtml(ch.label)}</option>`
+  ).join('');
+  renderMobileChatbotChannelSummary();
+}
+
+function switchMobileChatbotChannel(channel) {
+  collectMobileChatbotConfigFromDom();
+  mobileChatbotChannel = channel;
+  renderMobileChatbotChannelPicker();
+  renderMobileChatbotConfig();
+}
+
+function renderMobileChatbotConfig() {
+  const channel = getMobileChatbotChannel();
+  renderMobileChatbotSettings('mobile-chatbot-channel-settings', getMobileChatbotChannelKeys(channel));
+  renderMobileChatbotSettings('mobile-chatbot-common-settings', MOBILE_CHATBOT_COMMON_KEYS);
+  const help = document.getElementById('mobile-chatbot-channel-help');
+  if (help) help.innerHTML = getMobileChatbotChannelHelp(channel);
+  renderMobileWeClawLoginPanel(channel);
+  renderMobileChatbotChannelSummary();
+  renderMobileChatbotWhitelistRows();
+}
+
+function getMobileChatbotChannel() {
+  return mobileChatbotChannels.find(ch => ch.id === mobileChatbotChannel) || mobileChatbotChannels[0] || MOBILE_CHATBOT_CHANNEL_FALLBACKS[0];
+}
+
+function getMobileChatbotChannelKeys(channel) {
+  if (!channel) return [];
+  if (channel.kind === 'weclaw') return MOBILE_CHATBOT_WECLAW_KEYS;
+  if (channel.kind === 'webhook') return MOBILE_CHATBOT_WEBHOOK_KEYS;
+  if (channel.env_key) {
+    MOBILE_CHATBOT_TEXTAREA_KEYS.add(channel.env_key);
+    MOBILE_CHATBOT_JSON_KEYS.add(channel.env_key);
+    return [channel.env_key];
+  }
+  return [];
+}
+
+function getMobileChatbotChannelHelp(channel) {
+  if (!channel) return '';
+  if (channel.kind === 'weclaw') {
+    return 'WeClaw 不走 NoneBot adapter，也不需要平台 token。设 WECLAW_ENABLED=true 并重启后，ClawCross 会启动 weclaw 子进程；用微信扫描登录二维码，登录后的微信消息经本地 proxy 转到 Agent。';
+  }
+  if (channel.kind === 'webhook') {
+    return 'Webhook 渠道由 *_WEBHOOK_URL 环境变量启用；白名单 channel 名应与变量前缀小写一致。';
+  }
+  const envKey = channel.env_key || `${String(channel.adapter || channel.id).replace(/[._-]/g, '').toUpperCase()}_BOTS`;
+  return `NoneBot 渠道需要两步：1) 在 NONEBOT_ADAPTERS 加入 ${escapeHtml(channel.adapter || channel.id)}；2) 在 ${escapeHtml(envKey)} 填该平台 bot JSON 数组。还需要安装对应 nonebot-adapter 包。`;
+}
+
+function renderMobileChatbotChannelSummary() {
+  const el = document.getElementById('mobile-chatbot-channel-summary');
+  if (!el) return;
+  const channel = getMobileChatbotChannel();
+  if (!channel) {
+    el.innerHTML = '';
+    return;
+  }
+  const lines = [];
+  lines.push(`类型：${channel.kind || 'nonebot'}`);
+  if (channel.adapter) lines.push(`adapter：${channel.adapter}`);
+  if (channel.env_key) lines.push(`连接配置：${channel.env_key}`);
+  if (channel.kind === 'nonebot') lines.push('白名单 channel 使用下方选择值；运行时按平台 user_id 或 username 匹配。');
+  el.innerHTML = `<div class="chatbot-channel-title">${escapeHtml(channel.label || channel.id)}</div><div class="chatbot-channel-meta">${lines.map(escapeHtml).join('<br>')}</div>`;
+}
+
+function renderMobileWeClawLoginPanel(channel) {
+  const panel = document.getElementById('mobile-weclaw-login-panel');
+  if (!panel) return;
+  if (!channel || channel.kind !== 'weclaw') {
+    panel.style.display = 'none';
+    panel.innerHTML = '';
+    return;
+  }
+  panel.style.display = 'block';
+  panel.innerHTML = `<div class="weclaw-qr-box">
+    <div class="chatbot-config-help">点击下面按钮会保存 WeClaw 默认配置并重启服务；需要登录时二维码会显示在这里。若 WeClaw 已加载已有微信会话，通常不会再次生成二维码。</div>
+    <div class="chatbot-config-actions" style="margin-top:8px;">
+      <button type="button" onclick="loadMobileWeClawQr()">刷新二维码</button>
+      <button type="button" onclick="saveMobileWeClawAndRestart()">保存并重启生成二维码</button>
+    </div>
+    <div id="mobile-weclaw-qr-status" class="chatbot-config-help" style="margin-top:8px;"></div>
+    <pre id="mobile-weclaw-qr-pre" class="weclaw-qr-pre" style="display:none;"></pre>
+  </div>`;
+  loadMobileWeClawQr();
+}
+
+async function loadMobileWeClawQr(attempt = 0) {
+  const status = document.getElementById('mobile-weclaw-qr-status');
+  const pre = document.getElementById('mobile-weclaw-qr-pre');
+  if (!status || !pre) return;
+  if (mobileWeClawQrLoading && attempt === 0) return;
+  if (mobileWeClawQrRetryTimer) {
+    clearTimeout(mobileWeClawQrRetryTimer);
+    mobileWeClawQrRetryTimer = null;
+  }
+  mobileWeClawQrLoading = true;
+  status.textContent = attempt ? `服务重启中，正在重试读取二维码... (${attempt}/12)` : '读取二维码...';
+  pre.style.display = 'none';
+  pre.textContent = '';
+  try {
+    const resp = await fetch('/proxy_weclaw_qr');
+    const data = await resp.json();
+    if (!resp.ok || data.error) throw new Error(data.error || `HTTP ${resp.status}`);
+    status.textContent = data.message || '';
+    if (data.qr && data.qr.trim()) {
+      pre.textContent = data.qr;
+      pre.style.display = 'block';
+    }
+    mobileWeClawQrLoading = false;
+  } catch (e) {
+    mobileWeClawQrLoading = false;
+    if (attempt < 12) {
+      status.textContent = '前端服务暂时不可达，可能正在重启；稍后自动重试。';
+      mobileWeClawQrRetryTimer = setTimeout(() => loadMobileWeClawQr(attempt + 1), 3000);
+      return;
+    }
+    status.textContent = '读取二维码失败: ' + e.message;
+  }
+}
+
+function renderMobileChatbotSettings(containerId, keys) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  if (!keys.length) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--text-secondary);">当前 channel 没有固定平台配置。</div>';
+    return;
+  }
+  el.innerHTML = keys.map(key => {
+    const val = getMobileChatbotSettingValue(key);
+    const isMasked = typeof val === 'string' && val.includes('****');
+    const displayVal = isMasked ? '' : val;
+    const placeholder = isMasked ? `已保存（${val}），留空不修改` : (MOBILE_CHATBOT_DEFAULTS[key] || key);
+    const tag = MOBILE_CHATBOT_TEXTAREA_KEYS.has(key) ? 'textarea' : 'input';
+    const type = /KEY|TOKEN|SECRET|PASSWORD/i.test(key) && tag === 'input' ? 'password' : 'text';
+    const help = MOBILE_CHATBOT_JSON_KEYS.has(key) ? '<div class="chatbot-config-help">保存前会校验 JSON 数组格式；.env 会写成 shell / python-dotenv 都可读取的引号格式。</div>' : '';
+    if (tag === 'textarea') {
+      return `<div class="chatbot-config-field"><label>${escapeHtml(key)}</label><textarea class="chatbot-config-input" data-chatbot-setting="${escapeHtml(key)}" spellcheck="false" placeholder="${escapeHtml(placeholder)}">${escapeHtml(displayVal)}</textarea>${help}</div>`;
+    }
+    return `<div class="chatbot-config-field"><label>${escapeHtml(key)}</label><input class="chatbot-config-input" data-chatbot-setting="${escapeHtml(key)}" type="${type}" value="${escapeHtml(displayVal)}" placeholder="${escapeHtml(placeholder)}" autocomplete="off">${help}</div>`;
+  }).join('');
+}
+
+function getMobileChatbotSettingValue(key) {
+  const val = mobileChatbotSettings[key];
+  if (val !== undefined && val !== null && String(val) !== '') return String(val);
+  return MOBILE_CHATBOT_DEFAULTS[key] || '';
+}
+
+function renderMobileChatbotWhitelistRows() {
+  const el = document.getElementById('mobile-chatbot-whitelist-rows');
+  if (!el) return;
+  const section = mobileChatbotWhitelist[mobileChatbotChannel] || { entries: {}, name_map: {} };
+  const entries = section.entries || {};
+  const rows = Object.entries(entries);
+  if (!rows.length) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">当前 channel 暂无白名单</div>';
+    return;
+  }
+  el.innerHTML = rows.map(([id, entry]) => {
+    const username = entry && typeof entry === 'object' ? (entry.username || '') : '';
+    return `<div class="chatbot-whitelist-row">
+      <input class="chatbot-config-input" data-whitelist-id value="${escapeHtml(id)}" placeholder="user_id / group_id">
+      <input class="chatbot-config-input" data-whitelist-username value="${escapeHtml(username)}" placeholder="username">
+      <button type="button" class="chatbot-add-row-btn" style="padding:8px 0;" onclick="this.closest('.chatbot-whitelist-row').remove()">×</button>
+    </div>`;
+  }).join('');
+}
+
+function addMobileChatbotWhitelistRow() {
+  const el = document.getElementById('mobile-chatbot-whitelist-rows');
+  if (!el) return;
+  if (el.textContent.includes('暂无白名单')) el.innerHTML = '';
+  el.insertAdjacentHTML('beforeend', `<div class="chatbot-whitelist-row">
+    <input class="chatbot-config-input" data-whitelist-id placeholder="user_id / group_id">
+    <input class="chatbot-config-input" data-whitelist-username placeholder="username">
+    <button type="button" class="chatbot-add-row-btn" style="padding:8px 0;" onclick="this.closest('.chatbot-whitelist-row').remove()">×</button>
+  </div>`);
+}
+
+function collectMobileChatbotConfigFromDom() {
+  document.querySelectorAll('#mobile-chatbot-config [data-chatbot-setting]').forEach(input => {
+    const key = input.dataset.chatbotSetting;
+    if (!key) return;
+    const val = input.value.trim();
+    const orig = mobileChatbotSettings.__original?.[key] || '';
+    if (orig.includes && orig.includes('****') && val === '') return;
+    mobileChatbotSettings[key] = val;
+  });
+  const rows = document.querySelectorAll('#mobile-chatbot-whitelist-rows .chatbot-whitelist-row');
+  const entries = {};
+  const nameMap = {};
+  rows.forEach(row => {
+    const id = row.querySelector('[data-whitelist-id]')?.value.trim();
+    const username = row.querySelector('[data-whitelist-username]')?.value.trim();
+    if (!id) return;
+    const entry = username ? { username } : {};
+    entries[id] = entry;
+    if (username) nameMap[username] = entry;
+  });
+  mobileChatbotWhitelist[mobileChatbotChannel] = { entries, name_map: nameMap };
+}
+
+async function saveMobileChatbotConfig() {
+  collectMobileChatbotConfigFromDom();
+  syncMobileChatbotAdapterSetting();
+  for (const key of MOBILE_CHATBOT_JSON_KEYS) {
+    const val = (mobileChatbotSettings[key] || '').trim();
+    if (!val || val.includes('****')) continue;
+    try {
+      const parsed = JSON.parse(val);
+      if (!Array.isArray(parsed)) throw new Error('not array');
+    } catch (_) {
+      mobileChatbotStatus(`${key} 必须是 JSON 数组`, true);
+      return false;
+    }
+  }
+  const allKeys = new Set([...MOBILE_CHATBOT_COMMON_KEYS]);
+  mobileChatbotChannels.forEach(ch => getMobileChatbotChannelKeys(ch).forEach(k => allKeys.add(k)));
+  const settingsUpdates = {};
+  allKeys.forEach(key => {
+    const nextVal = mobileChatbotSettings[key] || '';
+    const orig = mobileChatbotSettings.__original?.[key] || '';
+    if (orig.includes && orig.includes('****') && nextVal === orig) return;
+    if (nextVal !== orig) settingsUpdates[key] = nextVal;
+  });
+  mobileChatbotStatus('保存中...');
+  try {
+    const settingsResp = await fetch('/proxy_settings_full', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: settingsUpdates }),
+    });
+    const settingsData = await settingsResp.json();
+    if (!settingsResp.ok || settingsData.error) throw new Error(settingsData.error || `settings HTTP ${settingsResp.status}`);
+    const whitelistResp = await fetch('/proxy_chatbot_whitelist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ whitelist: mobileChatbotWhitelist }),
+    });
+    const whitelistData = await whitelistResp.json();
+    if (!whitelistResp.ok || whitelistData.error) throw new Error(whitelistData.error || `whitelist HTTP ${whitelistResp.status}`);
+    mobileChatbotWhitelist = normalizeMobileChatbotWhitelist(whitelistData.whitelist || mobileChatbotWhitelist);
+    mobileChatbotStatus('已保存。重启服务后 chatbot 运行配置会生效。');
+    toast('Chatbot 配置已保存');
+    return true;
+  } catch (e) {
+    mobileChatbotStatus('保存失败: ' + e.message, true);
+    return false;
+  }
+}
+
+async function saveMobileWeClawAndRestart() {
+  if (!confirm('保存 WeClaw 配置并重启服务以生成微信扫码二维码？')) return;
+  collectMobileChatbotConfigFromDom();
+  MOBILE_CHATBOT_WECLAW_KEYS.forEach(key => {
+    if (!mobileChatbotSettings[key]) mobileChatbotSettings[key] = MOBILE_CHATBOT_DEFAULTS[key] || '';
+  });
+  mobileChatbotSettings.WECLAW_ENABLED = 'true';
+  renderMobileChatbotConfig();
+  const ok = await saveMobileChatbotConfig();
+  if (!ok) return;
+  mobileChatbotStatus('已保存，正在发送重启信号...');
+  try {
+    await fetch('/proxy_restart', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch (_) {
+    // 服务可能已经开始重启，忽略断连。
+  }
+  mobileChatbotStatus('重启信号已发送。请等待 15-30 秒后刷新二维码。');
+  if (mobileWeClawQrRetryTimer) clearTimeout(mobileWeClawQrRetryTimer);
+  mobileWeClawQrRetryTimer = setTimeout(() => loadMobileWeClawQr(1), 6000);
+}
+
+function syncMobileChatbotAdapterSetting() {
+  const channel = getMobileChatbotChannel();
+  if (!channel || channel.kind !== 'nonebot' || !channel.adapter || !channel.env_key) return;
+  const botConfig = (mobileChatbotSettings[channel.env_key] || '').trim();
+  if (!botConfig || botConfig.includes('****')) return;
+  const adapters = String(mobileChatbotSettings.NONEBOT_ADAPTERS || '')
+    .split(',')
+    .map(x => x.trim())
+    .filter(Boolean);
+  if (!adapters.includes(channel.adapter)) {
+    adapters.push(channel.adapter);
+    mobileChatbotSettings.NONEBOT_ADAPTERS = adapters.join(',');
+  }
+}
+
 // ── Mobile Skill Manager ──
 let mobileSkillScope = 'global';
 let mobileSkillCurrentName = '';
@@ -13432,7 +14032,7 @@ const SETTINGS_GROUPS_ORDERED = [
     { id: 'oasis',    labelKey: 'sg_oasis',    keys: ['OASIS_BASE_URL'] },
     { id: 'ports',    labelKey: 'sg_ports',    keys: ['PORT_AGENT', 'PORT_SCHEDULER', 'PORT_OASIS', 'PORT_FRONTEND', 'PORT_BARK'] },
     { id: 'network',  labelKey: 'sg_network',  keys: ['PUBLIC_DOMAIN', 'BARK_PUBLIC_URL'] },
-    { id: 'bots',     labelKey: 'sg_bots',     keys: ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_ALLOWED_USERS', 'QQ_APP_ID', 'QQ_BOT_SECRET', 'QQ_BOT_USERNAME'] },
+    { id: 'bots',     labelKey: 'sg_bots',     keys: ['NONEBOT_ADAPTERS', 'NONEBOT_HOST', 'NONEBOT_PORT', 'WHITELIST_FILE', 'TELEGRAM_BOTS', 'QQ_BOTS', 'QQ_IS_SANDBOX', 'WECLAW_ENABLED', 'WECLAW_BIN', 'WECLAW_USERNAME', 'WECLAW_CONFIG', 'WECLAW_PROXY_PORT', 'WECLAW_AUTO_INSTALL'] },
     { id: 'comm',     labelKey: 'sg_comm',     keys: ['OPENAI_STANDARD_MODE'] },
     { id: 'exec',     labelKey: 'sg_exec',     keys: ['ALLOWED_COMMANDS', 'EXEC_TIMEOUT', 'MAX_OUTPUT_LENGTH'] },
     { id: 'security', labelKey: 'sg_security', keys: ['INTERNAL_TOKEN'] },
@@ -13441,6 +14041,7 @@ const SETTINGS_GROUPS_ORDERED = [
 const SETTINGS_GROUP_HELP = {
     tinyfish: 'sg_tinyfish_help',
     tts: 'sg_tts_help',
+    bots: 'sg_bots_help',
 };
 
 const SETTINGS_FIELD_HELP = {
@@ -13453,6 +14054,9 @@ const SETTINGS_FIELD_HELP = {
     TTS_MODEL: 'sf_tts_model',
     TTS_VOICE: 'sf_tts_voice',
     STT_MODEL: 'sf_stt_model',
+    TELEGRAM_BOTS: 'sf_telegram_bots',
+    QQ_BOTS: 'sf_qq_bots',
+    WHITELIST_FILE: 'sf_whitelist_file',
 };
 
 let _settingsCache = {};
@@ -13614,7 +14218,11 @@ function _renderGroup(groupMeta, keys, settings) {
         const helpText = SETTINGS_FIELD_HELP[key] ? t(SETTINGS_FIELD_HELP[key]) : '';
         html += '<div class="settings-field">';
         html += '<label class="settings-label" title="' + key + '">' + key + '</label>';
-        html += '<input class="settings-input" data-key="' + key + '" type="' + (isPassword ? 'password' : 'text') + '" value="' + escapeHtml(inputState.value) + '" placeholder="' + escapeHtml(inputState.placeholder) + '" autocomplete="off" />';
+        if (key.endsWith('_BOTS')) {
+            html += '<textarea class="settings-input" data-key="' + key + '" spellcheck="false" style="min-height:78px;font-family:monospace;resize:vertical;" placeholder="' + escapeHtml(inputState.placeholder) + '">' + escapeHtml(inputState.value) + '</textarea>';
+        } else {
+            html += '<input class="settings-input" data-key="' + key + '" type="' + (isPassword ? 'password' : 'text') + '" value="' + escapeHtml(inputState.value) + '" placeholder="' + escapeHtml(inputState.placeholder) + '" autocomplete="off" />';
+        }
         if (helpText) {
             html += '<div style="margin-top:5px;font-size:11px;line-height:1.5;color:#6b7280;">' + escapeHtml(helpText) + '</div>';
         }

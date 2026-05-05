@@ -1,4 +1,5 @@
 import sys
+import tempfile
 import types
 import unittest
 from pathlib import Path
@@ -11,6 +12,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 import front
+from utils.env_settings import mask_all_sensitive, read_env_all, write_env_settings
 
 
 class _MockJsonResponse:
@@ -20,6 +22,22 @@ class _MockJsonResponse:
 
     def json(self):
         return self._payload
+
+
+class EnvSettingsTests(unittest.TestCase):
+    def test_bot_json_values_are_shell_safe_and_read_back_unquoted(self):
+        with tempfile.NamedTemporaryFile("w+", encoding="utf-8", delete=False) as f:
+            path = f.name
+
+        try:
+            write_env_settings(path, {"ONEBOTV11_BOTS": '[{"token":"abc"}]'})
+            raw_text = Path(path).read_text(encoding="utf-8")
+
+            self.assertIn("ONEBOTV11_BOTS='[{\"token\":\"abc\"}]'", raw_text)
+            self.assertEqual(read_env_all(path)["ONEBOTV11_BOTS"], '[{"token":"abc"}]')
+            self.assertIn("****", mask_all_sensitive(read_env_all(path))["ONEBOTV11_BOTS"])
+        finally:
+            Path(path).unlink(missing_ok=True)
 
 
 class FrontendIntegrationTests(unittest.TestCase):
@@ -88,6 +106,47 @@ class FrontendIntegrationTests(unittest.TestCase):
             },
         )
         self.assertEqual(kwargs["headers"], {"X-Internal-Token": front.INTERNAL_TOKEN})
+
+    def test_proxy_chatbot_whitelist_get_forwards_user_context(self):
+        payload = {"status": "success", "whitelist": {"telegram": {"entries": {}, "name_map": {}}}}
+        with mock.patch.object(
+            front.requests,
+            "get",
+            return_value=_MockJsonResponse(payload, 200),
+        ) as mock_get:
+            response = self.client.get("/proxy_chatbot_whitelist")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), payload)
+        _, kwargs = mock_get.call_args
+        self.assertEqual(kwargs["params"], {"user_id": "integration-user"})
+        self.assertEqual(kwargs["headers"], {"X-Internal-Token": front.INTERNAL_TOKEN})
+        self.assertEqual(kwargs["timeout"], 10)
+
+    def test_proxy_chatbot_whitelist_post_merges_session_user_id(self):
+        whitelist = {"telegram": {"entries": {"123": {"username": "alice"}}, "name_map": {}}}
+        with mock.patch.object(
+            front.requests,
+            "post",
+            return_value=_MockJsonResponse({"status": "success", "whitelist": whitelist}, 200),
+        ) as mock_post:
+            response = self.client.post("/proxy_chatbot_whitelist", json={"whitelist": whitelist})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["status"], "success")
+        _, kwargs = mock_post.call_args
+        self.assertEqual(kwargs["json"], {"whitelist": whitelist, "user_id": "integration-user"})
+        self.assertEqual(kwargs["headers"], {"X-Internal-Token": front.INTERNAL_TOKEN})
+
+    def test_proxy_weclaw_qr_returns_pending_when_missing(self):
+        with mock.patch.object(front.os.path, "exists", return_value=False):
+            response = self.client.get("/proxy_weclaw_qr")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["status"], "pending")
+        self.assertEqual(payload["qr"], "")
+        self.assertIn("weclaw", payload["message"].lower())
 
     def test_proxy_openclaw_sessions_forwards_filter_and_preserves_shape(self):
         with mock.patch.object(

@@ -7,6 +7,7 @@
 - 配置合并更新
 """
 
+import shlex
 from typing import Iterable
 
 
@@ -18,7 +19,7 @@ SETTINGS_WHITELIST = [
     # Chatbot 多渠道（NoneBot 桥接 + WeClaw 微信桥）
     "NONEBOT_ADAPTERS", "NONEBOT_HOST", "NONEBOT_PORT",
     "WHITELIST_FILE",
-    "WECLAW_ENABLED", "WECLAW_BIN", "WECLAW_USERNAME", "WECLAW_CONFIG",
+    "WECLAW_ENABLED", "WECLAW_BIN", "WECLAW_USERNAME", "WECLAW_CONFIG", "WECLAW_PROXY_PORT", "WECLAW_AUTO_INSTALL",
     "TELEGRAM_BOTS", "QQ_BOTS", "QQ_IS_SANDBOX",
     "PUBLIC_DOMAIN",
     "OPENAI_STANDARD_MODE",
@@ -30,6 +31,28 @@ SETTINGS_WHITELIST = [
 
 MASK_FIELDS = {"LLM_API_KEY", "TELEGRAM_BOTS", "QQ_BOTS", "TINYFISH_API_KEY"}
 FULL_MASK_PATTERNS = ("KEY", "TOKEN", "SECRET", "PASSWORD")
+
+
+def _decode_env_value(val: str) -> str:
+    """Return the logical value for simple .env assignment values."""
+    val = val.strip()
+    if len(val) >= 2 and val[0] == val[-1] and val[0] in ("'", '"'):
+        try:
+            parts = shlex.split(val, posix=True)
+            if len(parts) == 1:
+                return parts[0]
+        except ValueError:
+            return val[1:-1]
+    return val
+
+
+def _encode_env_value(key: str, value: str) -> str:
+    """Quote JSON-like bot values so both python-dotenv and shell source read them."""
+    val = str(value)
+    upper_key = key.upper()
+    if upper_key.endswith("_BOTS") or val.lstrip().startswith(("[", "{")):
+        return shlex.quote(val)
+    return val
 
 
 def _iter_env_items(env_path: str):
@@ -47,7 +70,7 @@ def _iter_env_items(env_path: str):
                 key, _, val = line.partition("=")
                 key = key.strip()
                 if key:
-                    yield key, val.strip()
+                    yield key, _decode_env_value(val)
     except FileNotFoundError:
         return
 
@@ -89,7 +112,7 @@ def mask_sensitive(settings: dict, masked_fields: set[str] | None = None) -> dic
     fields = masked_fields if masked_fields is not None else MASK_FIELDS
     masked = {}
     for key, val in settings.items():
-        if key in fields and val and len(val) > 8:
+        if (key in fields or key.upper().endswith("_BOTS")) and val and len(val) > 8:
             masked[key] = val[:4] + "****" + val[-4:]
         else:
             masked[key] = val
@@ -105,8 +128,9 @@ def mask_all_sensitive(settings: dict, patterns: tuple[str, ...] | None = None) 
     """
     mask_patterns = patterns if patterns is not None else FULL_MASK_PATTERNS
     masked = {}
+    fields = MASK_FIELDS
     for key, val in settings.items():
-        if any(p in key.upper() for p in mask_patterns) and val and len(val) > 8:
+        if (key in fields or key.upper().endswith("_BOTS") or any(p in key.upper() for p in mask_patterns)) and val and len(val) > 8:
             masked[key] = val[:4] + "****" + val[-4:]
         else:
             masked[key] = val
@@ -132,14 +156,14 @@ def write_env_settings(env_path: str, updates: dict):
         if stripped and not stripped.startswith("#") and "=" in stripped:
             key = stripped.partition("=")[0].strip()
             if key in updates:
-                new_lines.append(f"{key}={updates[key]}\n")
+                new_lines.append(f"{key}={_encode_env_value(key, updates[key])}\n")
                 updated_keys.add(key)
                 continue
         new_lines.append(line)
 
     for key, val in updates.items():
         if key not in updated_keys:
-            new_lines.append(f"{key}={val}\n")
+            new_lines.append(f"{key}={_encode_env_value(key, val)}\n")
 
     with open(env_path, "w", encoding="utf-8") as f:
         f.writelines(new_lines)

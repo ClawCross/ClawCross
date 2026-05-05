@@ -11,7 +11,7 @@ from typing import Callable
 
 from fastapi import APIRouter, Header
 
-from api.settings_models import SettingsUpdateRequest
+from api.settings_models import ChatbotWhitelistUpdateRequest, SettingsUpdateRequest
 from api.settings_service import SettingsService
 
 
@@ -46,5 +46,13 @@ def create_settings_router(
     @router.post("/restart")
     async def restart_services(req: SettingsUpdateRequest, x_internal_token: str | None = Header(None)):
         return await service.restart_services(req, x_internal_token)
+
+    @router.get("/chatbot/whitelist")
+    async def get_chatbot_whitelist(user_id: str, password: str = "", x_internal_token: str | None = Header(None)):
+        return await service.get_chatbot_whitelist(user_id, password, x_internal_token)
+
+    @router.post("/chatbot/whitelist")
+    async def update_chatbot_whitelist(req: ChatbotWhitelistUpdateRequest, x_internal_token: str | None = Header(None)):
+        return await service.update_chatbot_whitelist(req, x_internal_token)
 
     return router
