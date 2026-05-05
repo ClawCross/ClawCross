@@ -42,6 +42,7 @@ import sys
 from typing import Any
 
 # ACPX-backed ACP support
+from integrations.acpx_adapter import acpx_options_from_agent
 from integrations.agent_sender import SendToAgentRequest, send_to_agent
 from services.llm_factory import create_chat_model, extract_text
 
@@ -618,6 +619,7 @@ async def _apply_response(
     expert_name: str,
     forum: DiscussionForum,
     others: list,
+    source_node_id: str | None = None,
 ):
     """Apply the parsed JSON response: publish post + cast votes.
 
@@ -649,6 +651,7 @@ async def _apply_response(
             author=expert_name,
             content=choice_text,
             reply_to=reply_to,
+            source_node_id=source_node_id,
         )
         print(f"  [OASIS] ✅ {expert_name} 选择完成 (choose={choose})")
         return
@@ -663,6 +666,7 @@ async def _apply_response(
         author=expert_name,
         content=result.get("content", "（发言内容为空）"),
         reply_to=reply_to,
+        source_node_id=source_node_id,
     )
 
     for v in result.get("votes", []):
@@ -743,6 +747,7 @@ class ExpertAgent:
         discussion: bool = True,
         visible_authors: set[str] | None = None,
         from_round: int | None = None,
+        source_node_id: str | None = None,
     ):
         others = await forum.browse(
             viewer=self.name,
@@ -767,11 +772,11 @@ class ExpertAgent:
             try:
                 text = await self._call_temp_sender(prompt=task_prompt, forum=forum, mode="execute")
                 result = _parse_expert_response(text)
-                await _apply_response(result, self.name, forum, others)
+                await _apply_response(result, self.name, forum, others, source_node_id=source_node_id)
             except json.JSONDecodeError as e:
                 print(f"  [OASIS] ⚠️ {self.name} JSON parse error: {e}")
                 try:
-                    await forum.publish(author=self.name, content=text.strip()[:2000])
+                    await forum.publish(author=self.name, content=text.strip()[:2000], source_node_id=source_node_id)
                 except Exception:
                     pass
             except Exception as e:
@@ -788,11 +793,11 @@ class ExpertAgent:
         try:
             text = await self._call_temp_sender(prompt=prompt, forum=forum, mode="discuss")
             result = _parse_expert_response(text)
-            await _apply_response(result, self.name, forum, others)
+            await _apply_response(result, self.name, forum, others, source_node_id=source_node_id)
         except json.JSONDecodeError as e:
             print(f"  [OASIS] ⚠️ {self.name} JSON parse error: {e}")
             try:
-                await forum.publish(author=self.name, content=text.strip()[:300])
+                await forum.publish(author=self.name, content=text.strip()[:300], source_node_id=source_node_id)
             except Exception:
                 pass
         except Exception as e:
@@ -906,6 +911,7 @@ class SessionExpert:
         discussion: bool = True,
         visible_authors: set[str] | None = None,
         from_round: int | None = None,
+        source_node_id: str | None = None,
     ):
         """
         Participate in one round.
@@ -968,11 +974,11 @@ class SessionExpert:
             try:
                 raw_content = await self._send_messages(body, timeout_override=None)
                 result = _parse_expert_response(raw_content)
-                await _apply_response(result, self.name, forum, others)
+                await _apply_response(result, self.name, forum, others, source_node_id=source_node_id)
             except json.JSONDecodeError as e:
                 print(f"  [OASIS] ⚠️ {self.name} JSON parse error: {e}")
                 try:
-                    await forum.publish(author=self.name, content=raw_content.strip()[:2000])
+                    await forum.publish(author=self.name, content=raw_content.strip()[:2000], source_node_id=source_node_id)
                 except Exception:
                     pass
             except Exception as e:
@@ -1046,12 +1052,12 @@ class SessionExpert:
         try:
             raw_content = await self._send_messages(body)
             result = _parse_expert_response(raw_content)
-            await _apply_response(result, self.name, forum, others)
+            await _apply_response(result, self.name, forum, others, source_node_id=source_node_id)
 
         except json.JSONDecodeError as e:
             print(f"  [OASIS] ⚠️ {self.name} JSON parse error: {e}")
             try:
-                await forum.publish(author=self.name, content=raw_content.strip()[:300])
+                await forum.publish(author=self.name, content=raw_content.strip()[:300], source_node_id=source_node_id)
             except Exception:
                 pass
         except Exception as e:
@@ -1204,7 +1210,10 @@ class ExternalExpert:
                 api_url += "/chat/completions"
         self._api_url = api_url
         self._api_key = api_key
-        self._acp_options = acp_options  # passed to connectors via send_to_agent options dict
+        self._acp_options = acpx_options_from_agent(
+            {"meta": {"acp": acp_options or {}}},
+            default_timeout_sec=int(timeout or 180),
+        )
 
         # Track state for incremental context (external service holds history)
         self._initialized = False
@@ -1233,17 +1242,19 @@ class ExternalExpert:
         if not self.platform:
             raise RuntimeError(f"Unsupported external platform for {self.name}; no platform specified.")
 
-        # Build options with acp_options from config
-        # Note: ACP connectors read "timeout_sec", not "timeout"
-        options: dict[str, Any] = {
-            "timeout_sec": int(effective_timeout) if effective_timeout is not None else None,
-        }
+        # Build options with acp_options from config.
+        # Note: ACP connectors read "timeout_sec", not "timeout".
+        options: dict[str, Any] = {}
         if self._api_url:
             options["api_url"] = self._api_url
         if self._api_key:
             options["api_key"] = self._api_key
         if acp_options := getattr(self, '_acp_options', None):
             options.update(acp_options)
+        # Preserve explicit per-call timeout semantics. In execute mode callers
+        # pass timeout_override=None to wait for the final aggregated ACP text;
+        # the agent default ACP timeout must not silently restore 180s.
+        options["timeout_sec"] = int(effective_timeout) if effective_timeout is not None else None
 
         # Prepare messages body for HTTP fallback
         req_model = self.model
@@ -1431,6 +1442,7 @@ class ExternalExpert:
         discussion: bool = True,
         visible_authors: set[str] | None = None,
         from_round: int | None = None,
+        source_node_id: str | None = None,
     ):
         others = await forum.browse(
             viewer=self.name,
@@ -1475,17 +1487,25 @@ class ExternalExpert:
                     result = reply
                 else:
                     result = _parse_expert_response(reply)
-                await _apply_response(result, self.name, forum, others)
+                await _apply_response(result, self.name, forum, others, source_node_id=source_node_id)
             except json.JSONDecodeError as e:
                 print(f"  [OASIS] ⚠️ {self.name} (external execute) JSON parse error: {e}")
                 raw_content = reply if isinstance(reply, str) else str(reply)
                 raw_content = self._END_PADDING_RE.sub("", raw_content).strip()
                 try:
-                    await forum.publish(author=self.name, content=raw_content.strip()[:2048])
+                    await forum.publish(author=self.name, content=raw_content.strip()[:2048], source_node_id=source_node_id)
                 except Exception:
                     pass
             except Exception as e:
                 print(f"  [OASIS] ❌ {self.name} (external) error: {e}")
+                try:
+                    await forum.publish(
+                        author=self.name,
+                        content=f"[外部 Agent 调用失败]\n{str(e)[:2048]}",
+                        source_node_id=source_node_id,
+                    )
+                except Exception:
+                    pass
             return
 
         # ── Discussion mode ──
@@ -1533,14 +1553,22 @@ class ExternalExpert:
                 result = reply
             else:
                 result = _parse_expert_response(reply)
-            await _apply_response(result, self.name, forum, others)
+            await _apply_response(result, self.name, forum, others, source_node_id=source_node_id)
         except json.JSONDecodeError as e:
             print(f"  [OASIS] ⚠️ {self.name} (external) JSON parse error: {e}")
             raw_content = reply if isinstance(reply, str) else str(reply)
             raw_content = self._END_PADDING_RE.sub("", raw_content).strip()
             try:
-                await forum.publish(author=self.name, content=raw_content.strip()[:2048])
+                await forum.publish(author=self.name, content=raw_content.strip()[:2048], source_node_id=source_node_id)
             except Exception:
                 pass
         except Exception as e:
             print(f"  [OASIS] ❌ {self.name} (external) error: {e}")
+            try:
+                await forum.publish(
+                    author=self.name,
+                    content=f"[外部 Agent 调用失败]\n{str(e)[:2048]}",
+                    source_node_id=source_node_id,
+                )
+            except Exception:
+                pass

@@ -1108,7 +1108,7 @@ class DiscussionEngine:
 
             async def _tracked_participate(expert):
                 try:
-                    await expert.participate(self.forum, discussion=disc, **vis)
+                    await expert.participate(self.forum, discussion=disc, source_node_id=step.node_id, **vis)
                 finally:
                     self.forum.log_event("agent_done", agent=expert.name)
 
@@ -1152,7 +1152,13 @@ class DiscussionEngine:
                 combined_instr = (instr + selector_instr) if instr else selector_instr
                 print(f"  [OASIS] 🎤 {agents[0].name} speaks" + (f" (instruction: {combined_instr[:60]}...)" if combined_instr else "") + (" [SELECTOR]" if step.is_selector else ""))
                 self.forum.log_event("agent_call", agent=agents[0].name, detail=combined_instr[:80] if combined_instr else "")
-                await agents[0].participate(self.forum, instruction=combined_instr, discussion=disc, **vis)
+                await agents[0].participate(
+                    self.forum,
+                    instruction=combined_instr,
+                    discussion=disc,
+                    source_node_id=step.node_id,
+                    **vis,
+                )
                 self.forum.log_event("agent_done", agent=agents[0].name)
 
         elif step.step_type == StepType.PARALLEL:
@@ -1167,7 +1173,13 @@ class DiscussionEngine:
                 async def _run_with_instr(agent, yaml_name):
                     instr = step.instructions.get(yaml_name, "")
                     try:
-                        await agent.participate(self.forum, instruction=instr, discussion=disc, **vis)
+                        await agent.participate(
+                            self.forum,
+                            instruction=instr,
+                            discussion=disc,
+                            source_node_id=step.node_id,
+                            **vis,
+                        )
                     finally:
                         self.forum.log_event("agent_done", agent=agent.name, detail=instr[:80] if instr else "")
 
