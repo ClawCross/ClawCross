@@ -791,9 +791,7 @@ class AcpxAdapter:
             else:
                 out_b, err_b = await asyncio.wait_for(proc.communicate(), timeout=timeout_sec)
         except asyncio.TimeoutError as e:
-            with contextlib.suppress(Exception):
-                proc.kill()
-                await proc.wait()
+            proc.kill()
             raise AcpxError(f"acpx timeout after {timeout_sec}s: {' '.join(shlex.quote(x) for x in cmd)}") from e
 
         out = out_b.decode("utf-8", errors="replace")

@@ -67,6 +67,7 @@ from webot.runtime_store import (
     list_tool_approvals,
     list_verification_records,
     update_tool_approval_status,
+    get_tool_approval,
 )
 from webot.voice import get_voice_state as get_webot_voice_state
 from webot.workspace import describe_session_workspace
@@ -241,6 +242,26 @@ SESSION_FORCE_INJECTED_TOOLS: frozenset[str] = frozenset({
     "get_current_session",
     "start_new_oasis",
 })
+
+_TOOL_APPROVAL_WAIT_SECONDS = max(1, int(os.getenv("COMMAND_APPROVAL_WAIT_SECONDS", "600")))
+_TOOL_APPROVAL_POLL_SECONDS = max(0.2, float(os.getenv("COMMAND_APPROVAL_POLL_SECONDS", "1.0")))
+
+
+async def _wait_for_tool_approval(approval_id: str, user_id: str) -> tuple[bool, str]:
+    """Poll until the approval record is resolved. Returns (approved, reason)."""
+    import time
+    deadline = time.monotonic() + _TOOL_APPROVAL_WAIT_SECONDS
+    while time.monotonic() < deadline:
+        record = get_tool_approval(approval_id, user_id)
+        if record is None:
+            return False, "审批记录不存在"
+        if record.status in {"approved", "used"}:
+            return True, record.resolution_reason or ""
+        if record.status == "denied":
+            return False, record.resolution_reason or "用户拒绝了该操作"
+        await asyncio.sleep(_TOOL_APPROVAL_POLL_SECONDS)
+    return False, f"审批等待超时（{_TOOL_APPROVAL_WAIT_SECONDS}s），未执行该操作"
+
 
 # --- State definition ---
 class AgentState(TypedDict):
@@ -432,6 +453,7 @@ class UserAwareToolNode:
                 approval_id = permission.approval.approval_id if permission.approval else ""
                 if not final_decision.allowed:
                     if getattr(final_decision, "requires_approval", False):
+                        # Create approval request, then block-wait for user decision
                         approval = permission.approval or create_or_reuse_permission_request(
                             user_id=user_id,
                             session_id=session_id,
@@ -453,6 +475,31 @@ class UserAwareToolNode:
                             )
                         except Exception as exc:
                             print(f">>> [tools] ⚠️ tool policy permission_request hook failed: {exc}")
+                        print(f">>> [tools] ⏸️ 等待审批: {tc['name']} approval_id={approval_id}")
+                        approved, wait_reason = await _wait_for_tool_approval(approval_id, user_id)
+                        if approved:
+                            try:
+                                update_tool_approval_status(approval_id, user_id, status="used")
+                            except Exception:
+                                pass
+                            allowed_calls.append(tc)
+                            allowed_call_meta[tc["id"]] = (tc["name"], dict(tc["args"]), permission.policy, approval_id)
+                            print(f">>> [tools] ✅ 审批通过，执行: {tc['name']}")
+                        else:
+                            try:
+                                run_tool_policy_hooks(
+                                    permission.policy,
+                                    event="deny",
+                                    user_id=user_id,
+                                    session_id=session_id,
+                                    tool_name=tc["name"],
+                                    args=tc["args"],
+                                    decision=final_decision,
+                                )
+                            except Exception as exc:
+                                print(f">>> [tools] ⚠️ tool policy deny hook failed: {exc}")
+                            blocked_calls.append((tc, wait_reason, False, approval_id))
+                            print(f">>> [tools] 🚫 审批拒绝/超时: {tc['name']}")
                     else:
                         try:
                             run_tool_policy_hooks(
@@ -466,15 +513,15 @@ class UserAwareToolNode:
                             )
                         except Exception as exc:
                             print(f">>> [tools] ⚠️ tool policy deny hook failed: {exc}")
-                    blocked_calls.append(
-                        (
-                            tc,
-                            getattr(final_decision, "reason", "") or permission.reason,
-                            getattr(final_decision, "requires_approval", False),
-                            approval_id,
+                        blocked_calls.append(
+                            (
+                                tc,
+                                getattr(final_decision, "reason", "") or permission.reason,
+                                False,
+                                approval_id,
+                            )
                         )
-                    )
-                    print(f">>> [tools] 🚫 policy blocked: {tc['name']} reason={permission.reason}")
+                        print(f">>> [tools] 🚫 policy blocked: {tc['name']} reason={permission.reason}")
                     continue
                 try:
                     if permission.approval is not None and permission.approval.status == "approved":

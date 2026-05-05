@@ -1201,21 +1201,6 @@ class WeBotService:
         if approval is None:
             raise HTTPException(status_code=404, detail=f"未找到 tool approval: {req.approval_id}")
         target_session = req.session_id or approval.session_id
-        if normalized_action == "approved" and target_session:
-            try:
-                await self._push_system_message(
-                    user_id=req.user_id,
-                    session_id=target_session,
-                    text=(
-                        f"[Tool Approval Approved]\n"
-                        f"approval_id: {approval.approval_id}\n"
-                        f"tool: {approval.tool_name}\n"
-                        "The required approval has been granted. Continue the interrupted task now. "
-                        "If the blocked tool call is still needed, invoke it again and proceed without asking the user to say 'continue'."
-                    ),
-                )
-            except Exception:
-                pass
         if target_session:
             await self._publish_runtime_snapshot(
                 req.user_id,
