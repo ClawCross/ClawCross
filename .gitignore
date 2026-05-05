@@ -69,6 +69,7 @@ data/*.db-wal
 data/*.db-shm
 data/*.db-journal
 data/telegram_whitelist.json
+data/whitelist.json
 data/agent_checkpoints/
 data/checkpoint_export_*.json
 data/user_files/
