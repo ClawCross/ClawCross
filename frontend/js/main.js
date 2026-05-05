@@ -207,6 +207,13 @@ const i18n = {
         subagent_runtime_deny: '拒绝',
         subagent_runtime_approval_ok: 'Approval 已处理',
         subagent_runtime_approval_failed: 'Approval 处理失败',
+        approval_required_title: '⚠️ 工具调用需要批准',
+        approval_reason: '原因',
+        approval_approve: '批准',
+        approval_approve_remember: '批准并记住',
+        approval_deny: '拒绝',
+        approval_working: '处理中...',
+        approval_done: '✅ 已处理',
         subagent_runtime_mode_plan: '切到 Plan',
         subagent_runtime_mode_review: '切到 Review',
         subagent_runtime_mode_execute: '切到 Execute',
@@ -967,6 +974,13 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         subagent_runtime_deny: 'Deny',
         subagent_runtime_approval_ok: 'Approval resolved',
         subagent_runtime_approval_failed: 'Failed to resolve approval',
+        approval_required_title: '⚠️ Tool call needs approval',
+        approval_reason: 'Reason',
+        approval_approve: 'Approve',
+        approval_approve_remember: 'Approve + remember',
+        approval_deny: 'Deny',
+        approval_working: 'Working...',
+        approval_done: '✅ Done',
         subagent_runtime_mode_plan: 'Set Plan',
         subagent_runtime_mode_review: 'Set Review',
         subagent_runtime_mode_execute: 'Set Execute',
@@ -2929,6 +2943,66 @@ async function refreshCurrentSessionRuntime() {
     }
 }
 
+function _escapeHtmlStrip(str) {
+    return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function renderStudioApprovalStrip(approvals) {
+    const strip = document.getElementById('studio-approval-strip');
+    if (!strip) return;
+    const pending = approvals.filter(a => a.status === 'pending');
+    if (!pending.length) {
+        strip.style.display = 'none';
+        strip.innerHTML = '';
+        return;
+    }
+    strip.style.display = 'flex';
+    strip.innerHTML = pending.map(item => {
+        const aid = _escapeHtmlStrip(item.approval_id || '');
+        const sid = _escapeHtmlStrip(item.session_id || '');
+        const reason = _escapeHtmlStrip((item.request_reason || '').slice(0, 120));
+        const tool = _escapeHtmlStrip(item.tool_name || '');
+        return `<div class="studio-approval-card">
+            <div class="studio-approval-card-title">${t('approval_required_title')}</div>
+            <div class="studio-approval-card-meta"><strong>${tool}</strong>${reason ? ' · ' + reason : ''}</div>
+            <div class="studio-approval-card-actions">
+                <button class="studio-approval-btn approve" onclick="resolveStudioApproval('${aid}','approve',false,'${sid}',this)">${t('approval_approve')}</button>
+                <button class="studio-approval-btn approve-remember" onclick="resolveStudioApproval('${aid}','approve',true,'${sid}',this)">${t('approval_approve_remember')}</button>
+                <button class="studio-approval-btn deny" onclick="resolveStudioApproval('${aid}','deny',false,'${sid}',this)">${t('approval_deny')}</button>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+async function refreshStudioApprovalStrip() {
+    try {
+        const resp = await fetch('/proxy_webot_tool_approvals?status=pending&limit=20');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        renderStudioApprovalStrip(Array.isArray(data.approvals) ? data.approvals : []);
+    } catch (_) {}
+}
+
+async function resolveStudioApproval(approvalId, action, remember, sessionId, btn) {
+    const card = btn ? btn.closest('.studio-approval-card') : null;
+    const btns = card ? Array.from(card.querySelectorAll('.studio-approval-btn')) : [];
+    btns.forEach(b => { b.disabled = true; if (b === btn) b.textContent = t('approval_working'); });
+    try {
+        const resp = await fetch('/proxy_webot_tool_approval_resolve', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ approval_id: approvalId, action, remember: !!remember, session_id: sessionId || '' }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || data.status !== 'success') throw new Error(data.detail || data.error || t('subagent_runtime_approval_failed'));
+        if (card) card.innerHTML = `<div class="studio-approval-card-title">${t('approval_done')} · ${_escapeHtmlStrip(data.approval?.tool_name || '')}</div>`;
+        setTimeout(() => refreshStudioApprovalStrip(), 800);
+    } catch (e) {
+        btns.forEach(b => { b.disabled = false; });
+        if (btn) btn.textContent = action === 'deny' ? t('approval_deny') : (remember ? t('approval_approve_remember') : t('approval_approve'));
+    }
+}
+
 function _renderSubagentStatus(status) {
     return escapeHtml((status || 'idle').toUpperCase());
 }
@@ -2992,9 +3066,9 @@ function _buildRuntimeApprovalList(item, runtimeOverride = null) {
         const sessionId = encodeURIComponent(item.session_id || '');
         const canResolve = approval.status === 'pending';
         return `
-            <div class="webot-runtime-block">
+            <div class="webot-runtime-block${canResolve ? ' webot-approval-block-pending' : ''}">
                 <div class="webot-runtime-row">
-                    <span class="webot-runtime-badge">${escapeHtml(approval.status || '')}</span>
+                    <span class="webot-runtime-badge${canResolve ? ' pending' : ''}">${escapeHtml(approval.status || '')}</span>
                     <span class="webot-runtime-text">${escapeHtml(approval.tool_name || '')}</span>
                 </div>
                 <div class="webot-runtime-detail">${_escapeAndFormatText(approval.request_reason || '')}</div>
@@ -3127,6 +3201,14 @@ function _renderCurrentSessionCard() {
     const todoItems = runtime.todos?.items || [];
     const planCaption = runtime.plan?.title ? `${runtime.plan.title} · ${runtime.plan.status || 'active'}` : '';
     const hasBridge = Boolean(runtime.bridge);
+    const cssPendingApprovals = (runtime.approvals || []).filter(a => a.status === 'pending');
+    const csrHasPending = cssPendingApprovals.length > 0;
+    const csrApprovalClass = csrHasPending
+        ? 'webot-runtime-section webot-runtime-section-full webot-approval-pending-section'
+        : 'webot-runtime-section';
+    const csrApprovalTitle = csrHasPending
+        ? `⚠️ ${t('subagent_runtime_approvals')} (${cssPendingApprovals.length})`
+        : t('subagent_runtime_approvals');
     container.style.display = 'block';
     container.innerHTML = `
         <div class="webot-current-card-header">
@@ -3136,6 +3218,10 @@ function _renderCurrentSessionCard() {
         <div class="webot-mode-row">${_modeActionButtons(runtime.session_id || currentSessionId || '', mode)}</div>
         <div class="webot-runtime-shell">
             <div class="webot-runtime-grid">
+                <div class="${csrApprovalClass}">
+                    <div class="webot-runtime-title${csrHasPending ? ' webot-approval-pending-title' : ''}">${csrApprovalTitle}</div>
+                    ${_buildRuntimeApprovalList({session_id: runtime.session_id || currentSessionId}, runtime)}
+                </div>
                 <div class="webot-runtime-section">
                     <div class="webot-runtime-title">${t('subagent_runtime_plan')}</div>
                     ${planCaption ? `<div class="webot-runtime-caption">${_escapeAndFormatText(planCaption)}</div>` : ''}
@@ -3148,10 +3234,6 @@ function _renderCurrentSessionCard() {
                 <div class="webot-runtime-section">
                     <div class="webot-runtime-title">${t('subagent_runtime_verifications')}</div>
                     ${_buildRuntimeVerificationList(runtime.verifications || [])}
-                </div>
-                <div class="webot-runtime-section">
-                    <div class="webot-runtime-title">${t('subagent_runtime_approvals')}</div>
-                    ${_buildRuntimeApprovalList({session_id: runtime.session_id || currentSessionId}, runtime)}
                 </div>
                 <div class="webot-runtime-section">
                     <div class="webot-runtime-title">${t('subagent_runtime_runs')}</div>
@@ -3198,8 +3280,20 @@ function _buildSubagentRuntimeHtml(item) {
     const remoteText = runtime.subagent && runtime.subagent.remote ? runtime.subagent.remote : (item.remote || '');
     const modeActions = _modeActionButtons(item.session_id, modeLabel);
     const extendedSections = _buildExtendedSections(runtime.subagent || {}, item);
+    const pendingApprovals = (runtime.approvals || []).filter(a => a.status === 'pending');
+    const hasPendingApprovals = pendingApprovals.length > 0;
+    const approvalSectionClass = hasPendingApprovals
+        ? 'webot-runtime-section webot-runtime-section-full webot-approval-pending-section'
+        : 'webot-runtime-section';
+    const approvalTitle = hasPendingApprovals
+        ? `⚠️ ${t('subagent_runtime_approvals')} (${pendingApprovals.length})`
+        : t('subagent_runtime_approvals');
     return `
         <div class="webot-runtime-grid">
+            <div class="${approvalSectionClass}">
+                <div class="webot-runtime-title${hasPendingApprovals ? ' webot-approval-pending-title' : ''}">${approvalTitle}</div>
+                ${_buildRuntimeApprovalList(item, runtime)}
+            </div>
             <div class="webot-runtime-section webot-runtime-section-full">
                 <div class="webot-runtime-title">${t('subagent_runtime_workspace')}</div>
                 <div class="webot-runtime-caption">${t('subagent_runtime_mode')}: ${escapeHtml(modeLabel)}</div>
@@ -3220,10 +3314,6 @@ function _buildSubagentRuntimeHtml(item) {
             <div class="webot-runtime-section">
                 <div class="webot-runtime-title">${t('subagent_runtime_verifications')}</div>
                 ${_buildRuntimeVerificationList(runtime.verifications || [])}
-            </div>
-            <div class="webot-runtime-section">
-                <div class="webot-runtime-title">${t('subagent_runtime_approvals')}</div>
-                ${_buildRuntimeApprovalList(item, runtime)}
             </div>
             <div class="webot-runtime-section">
                 <div class="webot-runtime-title">${t('subagent_runtime_runs')}</div>
@@ -3310,10 +3400,18 @@ function renderSubagentPanel(subagents) {
         const ref = item.agent_id || item.session_id;
         const active = _selectedSubagentRef === ref || _selectedSubagentRef === item.session_id;
         const encodedRef = encodeURIComponent(ref);
+        const cachedRuntime = _subagentRuntimeCache[item.session_id];
+        const pendingCount = cachedRuntime
+            ? (cachedRuntime.approvals || []).filter(a => a.status === 'pending').length
+            : 0;
+        const pendingDot = pendingCount > 0
+            ? `<span class="webot-approval-dot">${pendingCount}</span>`
+            : '';
         return `
             <div class="webot-subagent-item${active ? ' active' : ''}" onclick="selectSubagentPanelItem(decodeURIComponent('${encodedRef}'))">
                 <div class="webot-subagent-item-row">
                     <div class="webot-subagent-name">${escapeHtml(item.name || item.agent_id || 'subagent')}</div>
+                    ${pendingDot}
                     <span class="webot-subagent-status ${escapeHtml(item.status || 'idle')}">${_renderSubagentStatus(item.status)}</span>
                 </div>
                 <div class="webot-subagent-meta">${escapeHtml(_summarizeSubagentItem(item))}</div>
@@ -3542,6 +3640,7 @@ function openSubagentParentSession(sessionId) {
 
 function startHistoryPolling() {
     stopHistoryPolling();
+    refreshStudioApprovalStrip();
     _historyPollingTimer = setInterval(() => {
         if (sessionSidebarOpen) {
             refreshHistoryList();
@@ -3550,6 +3649,7 @@ function startHistoryPolling() {
             // sidebar 未打开也刷新状态（发光效果），以便打开时立即可见
             refreshSessionStatus();
         }
+        refreshStudioApprovalStrip();
     }, 3000);
 }
 function stopHistoryPolling() {

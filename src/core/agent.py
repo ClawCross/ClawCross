@@ -80,7 +80,6 @@ from utils.token_budget import get_session_budget
 from utils.context_compressor import compress_context
 from utils.context_limits import resolve_history_message_limits, resolve_history_token_budget
 from utils.cache_boundary import SystemPromptCacheManager
-from utils.bash_safety import analyze_command, is_command_blocked, RiskLevel
 from utils.logging_utils import get_logger
 from core.lazy_tool_discovery import LazyToolRegistry
 from core.agent_orchestrator import (
@@ -377,31 +376,6 @@ class UserAwareToolNode:
                 ))
                 print(f">>> [tools] 🚫 拦截禁用工具调用: {tc['name']}")
             else:
-                # --- Bash safety check (deny invariants) ---
-                if tc["name"] == "run_command":
-                    cmd_text = str(tc.get("args", {}).get("command", ""))
-                    if cmd_text and is_command_blocked(cmd_text):
-                        cmd_analysis = analyze_command(cmd_text)
-                        blocked_calls.append((
-                            tc,
-                            f"DENY INVARIANT: {'; '.join(cmd_analysis.reasons)}",
-                            False,
-                            "",
-                        ))
-                        print(f">>> [tools] 🛡️ bash safety blocked: {cmd_text[:80]}")
-                        continue
-                    # High-risk commands need approval
-                    cmd_analysis = analyze_command(cmd_text)
-                    if cmd_analysis.risk_level == RiskLevel.HIGH:
-                        blocked_calls.append((
-                            tc,
-                            f"高风险命令需要人工批准: {'; '.join(cmd_analysis.reasons)}",
-                            True,
-                            "",
-                        ))
-                        print(f">>> [tools] ⚠️ bash high-risk: {cmd_text[:80]}")
-                        continue
-
                 if tc["name"] in USER_INJECTED_TOOLS:
                     tc["args"]["username"] = user_id
                 if tc["name"] in TEAM_INJECTED_TOOLS and not tc["args"].get("team"):

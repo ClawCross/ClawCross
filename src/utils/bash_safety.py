@@ -94,8 +94,6 @@ _HIGH_RISK_PATTERNS: list[tuple[str, str]] = [
 # ---------------------------------------------------------------------------
 
 _MEDIUM_RISK_PATTERNS: list[tuple[str, str]] = [
-    (r'\brm\s+-[a-zA-Z]*r', "recursive delete"),
-    (r'\brm\b', "file deletion"),
     (r'\bcurl\b', "network download"),
     (r'\bwget\b', "network download"),
     (r'\bpip\s+install\b', "pip install"),
@@ -176,14 +174,14 @@ def analyze_command(command: str) -> CommandAnalysis:
     normalized = command.strip()
     reasons: list[str] = []
 
-    # Check deny invariants FIRST – these cannot be bypassed
+    # Deny invariant patterns now route to approval instead of hard block
     for pattern, description in _DENY_INVARIANT_PATTERNS:
         if re.search(pattern, normalized, re.IGNORECASE):
             return CommandAnalysis(
                 command=command,
-                risk_level=RiskLevel.CRITICAL,
-                reasons=(f"DENY INVARIANT: {description}",),
-                blocked=True,
+                risk_level=RiskLevel.HIGH,
+                reasons=(f"高危操作需人工批准: {description}",),
+                blocked=False,
             )
 
     # Check safe commands

@@ -3559,6 +3559,98 @@ header {
     flex-wrap: wrap;
     gap: 6px;
 }
+/* Studio global approval strip */
+#studio-approval-strip {
+    padding: 8px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: linear-gradient(to bottom, #fffbeb, #fff7ed);
+    border-bottom: 1px solid #f59e0b;
+    animation: approval-pulse 2s ease-in-out infinite;
+}
+.studio-approval-card {
+    background: #fff8e8;
+    border: 1px solid #f5d98c;
+    border-radius: 10px;
+    padding: 10px 12px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+.studio-approval-card-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #7a4b00;
+    flex-shrink: 0;
+}
+.studio-approval-card-meta {
+    font-size: 12px;
+    color: #7c6a45;
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.studio-approval-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    flex-shrink: 0;
+}
+.studio-approval-btn {
+    border: none;
+    border-radius: 999px;
+    padding: 5px 12px;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.studio-approval-btn.approve { background: #dff5e5; color: #17663a; }
+.studio-approval-btn.approve-remember { background: #dbeafe; color: #1d4ed8; }
+.studio-approval-btn.deny { background: #fee2e2; color: #b91c1c; }
+.studio-approval-btn:disabled { opacity: 0.55; cursor: default; }
+
+.webot-approval-pending-section {
+    grid-column: 1 / -1;
+    background: linear-gradient(135deg, #fff7ed 0%, #fffbeb 100%);
+    border-color: #f59e0b;
+    animation: approval-pulse 2s ease-in-out infinite;
+}
+@keyframes approval-pulse {
+    0%, 100% { border-color: #f59e0b; }
+    50% { border-color: #d97706; box-shadow: 0 0 0 3px rgba(245,158,11,0.12); }
+}
+.webot-approval-pending-title {
+    color: #b45309 !important;
+}
+.webot-approval-block-pending {
+    background: rgba(254,243,199,0.6);
+    border: 1px solid rgba(245,158,11,0.3);
+    border-radius: 6px;
+    padding: 6px;
+}
+.webot-runtime-badge.pending {
+    background: #fef3c7;
+    color: #92400e;
+}
+.webot-approval-dot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    border-radius: 999px;
+    background: #ef4444;
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 0 4px;
+    flex-shrink: 0;
+    line-height: 1;
+}
 .webot-subagent-history {
     margin-top: 8px;
     max-height: 180px;

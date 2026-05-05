@@ -30,6 +30,7 @@ from mcp.server.fastmcp import FastMCP
 from webot.permission_context import create_or_reuse_permission_request
 from webot.runtime_store import find_active_approval_for_action, get_tool_approval
 from webot.workspace import resolve_session_workspace
+from utils.bash_safety import analyze_command, RiskLevel
 
 mcp = FastMCP("Commander")
 
@@ -568,13 +569,7 @@ def _validate_command(command: str) -> str | None:
     if not stripped:
         return "命令不能为空"
 
-    # 检查危险模式
-    lower_cmd = stripped.lower()
-    for pattern in BLOCKED_PATTERNS:
-        if pattern.lower() in lower_cmd:
-            return f"安全策略拒绝：检测到危险模式 '{pattern}'"
-
-    # 允许管道（|）和重定向（>），但会逐段检查命令名
+    # 白名单模式：命令名必须在允许列表中（黑名单模式下跳过此检查，由上层审批机制控制）
     import re
     parts = re.split(r'[;|&]+', stripped)
     for part in parts:
@@ -592,9 +587,6 @@ def _validate_command(command: str) -> str | None:
 
         if not cmd_name:
             continue
-
-        if cmd_name in BLOCKED_COMMANDS:
-            return f"安全策略拒绝：命令 '{cmd_name}' 在黑名单中。"
 
         if COMMANDER_COMMAND_MODE == "whitelist" and cmd_name not in ALLOWED_COMMANDS:
             return f"安全策略拒绝：命令 '{cmd_name}' 不在白名单中。允许的命令：{', '.join(sorted(ALLOWED_COMMANDS))}"
@@ -801,28 +793,26 @@ async def run_command(
     :param username: 用户名（由系统自动注入，无需手动传递）
     :param command: 要执行的 shell 命令，例如 "ls -la" 或 "cat notes.txt | grep TODO"
     """
-    # 1. 安全校验
+    # 1. 白名单校验（仅 whitelist 模式下生效）
     reject_reason = _validate_command(command)
     approval_note = ""
     if reject_reason:
-        if (
-            COMMANDER_COMMAND_MODE == "blacklist"
-            and "危险模式" not in reject_reason
-            and "黑名单" in reject_reason
-        ):
-            approved, approval_result = await _wait_for_command_approval(
-                username,
-                session_id,
-                command,
-                reject_reason,
-            )
-            if not approved:
-                return approval_result
-            approval_note = approval_result
-        else:
-            return f"❌ {reject_reason}"
+        return f"❌ {reject_reason}"
 
-    # 2. 获取用户工作目录
+    # 2. Bash safety 高风险检查 — 阻塞等待用户审批
+    cmd_analysis = analyze_command(command)
+    if cmd_analysis.risk_level == RiskLevel.HIGH:
+        approved, approval_result = await _wait_for_command_approval(
+            username,
+            session_id,
+            command,
+            f"高风险命令需人工批准: {'; '.join(cmd_analysis.reasons)}",
+        )
+        if not approved:
+            return approval_result
+        approval_note = approval_result
+
+    # 3. 获取用户工作目录
     workspace_state = resolve_session_workspace(username, session_id, explicit_cwd=cwd)
     workspace = str(workspace_state.cwd)
     timeout_value = _bounded_int(timeout_seconds, BACKGROUND_EXEC_TIMEOUT, 1, MAX_EXEC_TIMEOUT)
@@ -985,25 +975,24 @@ async def start_background_command(
     """
     启动一个后台命令任务，立即返回 job_id，适合长时间运行的命令。
     """
+    # 白名单校验
     reject_reason = _validate_command(command)
     approval_note = ""
     if reject_reason:
-        if (
-            COMMANDER_COMMAND_MODE == "blacklist"
-            and "危险模式" not in reject_reason
-            and "黑名单" in reject_reason
-        ):
-            approved, approval_result = await _wait_for_command_approval(
-                username,
-                session_id,
-                command,
-                reject_reason,
-            )
-            if not approved:
-                return approval_result
-            approval_note = approval_result
-        else:
-            return f"❌ {reject_reason}"
+        return f"❌ {reject_reason}"
+
+    # Bash safety 高风险检查 — 阻塞等待用户审批
+    cmd_analysis = analyze_command(command)
+    if cmd_analysis.risk_level == RiskLevel.HIGH:
+        approved, approval_result = await _wait_for_command_approval(
+            username,
+            session_id,
+            command,
+            f"高风险命令需人工批准: {'; '.join(cmd_analysis.reasons)}",
+        )
+        if not approved:
+            return approval_result
+        approval_note = approval_result
 
     workspace_state = resolve_session_workspace(username, session_id, explicit_cwd=cwd)
     workspace = str(workspace_state.cwd)
