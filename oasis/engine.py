@@ -64,6 +64,7 @@ from services.llm_factory import create_chat_model, extract_text
 
 from oasis.forum import DiscussionForum
 from oasis.experts import ExpertAgent, SessionExpert, ExternalExpert, get_all_experts
+from oasis.agent_catalog import _ACP_PLATFORMS
 from oasis.scheduler import (
     Schedule, ScheduleStep, StepType, Edge, ConditionalEdge, SelectorEdge,
     START, END, MAX_SUPER_STEPS,
@@ -461,7 +462,7 @@ class DiscussionEngine:
                 elif first:
                     # Compatibility fallback: older teams sometimes encoded the effective platform in the tag.
                     platform_name = _canonical_external_platform(first)
-                is_acp_agent = platform_name in ExternalExpert._ACP_TOOL_TAGS
+                is_acp_agent = platform_name in _ACP_PLATFORMS
                 is_openclaw_http = platform_name == "openclaw"
                 # Public OpenClaw: YAML name IS global_name, no JSON lookup needed
                 if is_openclaw_http and not self._team:

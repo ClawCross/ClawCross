@@ -482,11 +482,13 @@ case "${1:-help}" in
         # 等待服务就绪
         source config/.env 2>/dev/null || true
         AGENT_PORT=${PORT_AGENT:-51200}
+        OASIS_PORT=${PORT_OASIS:-51202}
         FRONTEND_PORT=${PORT_FRONTEND:-51209}
         echo -n "   等待服务就绪"
         SERVICE_READY=false
         for i in $(seq 1 30); do
-            if curl -sf "http://127.0.0.1:$AGENT_PORT/v1/models" > /dev/null 2>&1; then
+            if curl -sf "http://127.0.0.1:$AGENT_PORT/v1/models" > /dev/null 2>&1 && \
+               curl -sf "http://127.0.0.1:$OASIS_PORT/experts" > /dev/null 2>&1; then
                 echo " ✅"
                 SERVICE_READY=true
                 break

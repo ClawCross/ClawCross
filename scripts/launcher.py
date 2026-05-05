@@ -339,9 +339,11 @@ def wait_for_service_ready(
     label,
     timeout=20.0,
     poll_interval=0.2,
+    health_url=None,
 ):
     deadline = time.monotonic() + timeout
     last_error = None
+    port_ready = False
 
     while time.monotonic() < deadline:
         if proc.poll() is not None:
@@ -350,12 +352,19 @@ def wait_for_service_ready(
             )
 
         try:
-            if is_port_listening(port):
+            if not port_ready:
+                port_ready = is_port_listening(port)
+
+            if port_ready:
+                if health_url is None:
+                    return
+                remaining = deadline - time.monotonic()
+                probe_timeout = min(2.0, max(0.5, remaining))
+                req = urllib.request.Request(health_url, method="GET")
+                urllib.request.urlopen(req, timeout=probe_timeout)
                 return
         except Exception as exc:
             last_error = exc
-        else:
-            last_error = None
 
         time.sleep(poll_interval)
 
@@ -389,6 +398,7 @@ def wait_for_started_services(services):
             port=service["port"],
             label=service["label"],
             timeout=service.get("timeout", 20.0),
+            health_url=service.get("health_url"),
         )
         print(f"   ✅ {service['label']} 已就绪 (port {service['port']})")
 
@@ -460,6 +470,7 @@ services = [
         "script": "oasis/server.py",
         "port": PORT_OASIS,
         "timeout": 20.0,
+        "health_url": f"http://127.0.0.1:{PORT_OASIS}/experts",
     },
     {
         "message": f"🤖 [3/5] 启动 AI Agent (port {PORT_AGENT})...",
@@ -467,6 +478,7 @@ services = [
         "script": "src/mainagent.py",
         "port": PORT_AGENT,
         "timeout": 25.0,
+        "health_url": f"http://127.0.0.1:{PORT_AGENT}/v1/models",
     },
 ]
 
@@ -492,6 +504,8 @@ def _detect_chatbot_platforms():
         names = [n.strip() for n in nonebot_adapters.split(",") if n.strip()]
         if names:
             platforms.append(f"nonebot[{'+'.join(names)}]")
+    if (os.getenv("WECLAW_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")):
+        platforms.append("weclaw")
     return platforms
 
 

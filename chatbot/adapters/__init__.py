@@ -28,6 +28,7 @@ __all__ = [
     "ChannelAdapter",
     "WebhookAdapter",
     "NoneBotBridgeAdapter",
+    "WeClawAdapter",
     "AdapterManager",
     "create_webhook_adapter",
     "create_manager_from_env",
@@ -35,6 +36,7 @@ __all__ = [
 
 from .webhook_adapter import WebhookAdapter, create_webhook_adapter
 from .nonebot_bridge import NoneBotBridgeAdapter
+from .weclaw_adapter import WeClawAdapter
 
 
 class AdapterManager:
@@ -59,19 +61,31 @@ class AdapterManager:
         self.register_adapter(adapter, enabled)
         return adapter
 
+    def register_weclaw(self, enabled: bool = True) -> WeClawAdapter:
+        adapter = WeClawAdapter()
+        self.register_adapter(adapter, enabled)
+        return adapter
+
     async def run_all(self):
+        coros = []
         for status, adapter in self._adapters:
             if status == "disabled":
                 continue
-            try:
-                if adapter.channel == "webhook":
-                    logger.info(f"{adapter.channel}: 请使用 Webhook 模式（被动接受 HTTP POST）")
-                else:
-                    await adapter.run()
-            except Exception as e:
-                logger.error(f"启动适配器 {adapter.channel} 失败: {e}")
+            if adapter.channel == "webhook":
+                logger.info(f"{adapter.channel}: 请使用 Webhook 模式（被动接受 HTTP POST）")
+                continue
+            coros.append(self._safe_run(adapter))
 
-        await asyncio.sleep(0)
+        if coros:
+            await asyncio.gather(*coros)
+        else:
+            await asyncio.sleep(0)
+
+    async def _safe_run(self, adapter: ChannelAdapter):
+        try:
+            await adapter.run()
+        except Exception as e:
+            logger.error(f"适配器 {adapter.channel} 异常退出: {e}", exc_info=True)
 
     def get_adapter(self, channel: str) -> ChannelAdapter | None:
         for _status, adapter in self._adapters:
@@ -97,5 +111,10 @@ def create_manager_from_env() -> AdapterManager:
     if os.getenv("NONEBOT_ADAPTERS", "").strip():
         manager.register_nonebot_bridge(enabled=True)
         logger.info("NoneBot 桥接渠道已启用")
+
+    # WeClaw（微信桥接，托管外部 weclaw 二进制）
+    if os.getenv("WECLAW_ENABLED", "").strip().lower() in ("1", "true", "yes", "on"):
+        manager.register_weclaw(enabled=True)
+        logger.info("WeClaw 渠道已启用")
 
     return manager

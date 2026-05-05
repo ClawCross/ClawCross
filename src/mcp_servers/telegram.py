@@ -13,7 +13,7 @@ MCP Telegram 推送通知服务
 功能说明：
 - Agent 可通过此工具向用户的 Telegram 发送消息
 - 用户的 chat_id 存储在 data/user_files/<username>/tg_chat_id.txt
-- 设置 chat_id 时自动同步到全局白名单 data/telegram_whitelist.json
+- 设置 chat_id 时自动同步到全局白名单 data/whitelist.json 的 telegram 段
 - 使用 .env 中的 TELEGRAM_BOT_TOKEN 发送
 """
 
@@ -55,7 +55,8 @@ def _resolve_telegram_token() -> str:
 TELEGRAM_BOT_TOKEN = _resolve_telegram_token()
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 USER_DATA_DIR = os.path.join(root_dir, "data", "user_files")
-WHITELIST_FILE = os.path.join(root_dir, "data", "telegram_whitelist.json")
+WHITELIST_FILE = os.getenv("WHITELIST_FILE") or os.path.join(root_dir, "data", "whitelist.json")
+TELEGRAM_CHANNEL = "telegram"
 
 def _get_chat_id_path(username: str) -> str:
     """获取用户 chat_id 文件路径"""
@@ -72,60 +73,50 @@ def _read_chat_id(username: str) -> str | None:
 
 # ── 白名单管理 ──
 
-def _load_whitelist() -> dict:
-    """加载白名单文件。
-
-    标准 schema（新版 chatbot 桥接读它）：
-        {"entries": {"<chat_id>": {"username": ..., "tg_username": ...}},
-         "tg_name_map": {"<tg_username>": {"username": ...}}}
-
-    旧 schema 仍可读：{"allowed": [{"username", "chat_id", "tg_username"}]}
-    读到旧版时会就地转换为新 schema 返回。
-    """
+def _load_full_whitelist() -> dict:
+    """加载中心化白名单完整字典：{"<channel>": {"entries": ..., "name_map": ...}, ...}"""
     if not os.path.exists(WHITELIST_FILE):
-        return {"entries": {}, "tg_name_map": {}}
+        return {}
     try:
         with open(WHITELIST_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
+            return data if isinstance(data, dict) else {}
     except (OSError, json.JSONDecodeError):
-        return {"entries": {}, "tg_name_map": {}}
-
-    if isinstance(data, dict) and "entries" in data:
-        data.setdefault("tg_name_map", {})
-        return data
-
-    # 兼容旧 schema -> 转为新 schema
-    new_data = {"entries": {}, "tg_name_map": {}}
-    for entry in (data or {}).get("allowed", []) or []:
-        username = entry.get("username")
-        chat_id = entry.get("chat_id")
-        tg_username = entry.get("tg_username") or ""
-        if not username or not chat_id:
-            continue
-        new_data["entries"][str(chat_id)] = {"username": username, "tg_username": tg_username}
-        if tg_username:
-            new_data["tg_name_map"][tg_username] = {"username": username}
-    return new_data
+        return {}
 
 
-def _save_whitelist(whitelist: dict):
-    """保存白名单到磁盘（统一以新 schema 写入）。"""
+def _load_telegram_section() -> dict:
+    """返回 telegram 段；不存在时返回空骨架（不写盘）。"""
+    full = _load_full_whitelist()
+    section = full.get(TELEGRAM_CHANNEL) or {}
+    return {
+        "entries": section.get("entries", {}) or {},
+        "name_map": section.get("name_map", {}) or {},
+    }
+
+
+def _save_telegram_section(section: dict) -> None:
+    """把 telegram 段写回中心化文件，保留其他 channel 数据。"""
+    full = _load_full_whitelist()
+    full[TELEGRAM_CHANNEL] = {
+        "entries": section.get("entries", {}),
+        "name_map": section.get("name_map", {}),
+    }
     os.makedirs(os.path.dirname(WHITELIST_FILE), exist_ok=True)
     with open(WHITELIST_FILE, "w", encoding="utf-8") as f:
-        json.dump(whitelist, f, ensure_ascii=False, indent=2)
+        json.dump(full, f, ensure_ascii=False, indent=2)
 
 
 def _sync_to_whitelist(username: str, chat_id: str, tg_username: str = ""):
-    """添加 / 更新 username -> (chat_id, tg_username) 到白名单。
+    """添加 / 更新 username -> (chat_id, tg_username) 到 telegram 段。
 
-    新 schema 的索引主键是 chat_id；同 username 在不同 chat_id 切换时
+    索引主键是 chat_id；同 username 在不同 chat_id 切换时
     会清掉旧 chat_id 条目，避免悬挂数据。
     """
-    whitelist = _load_whitelist()
-    entries = whitelist.setdefault("entries", {})
-    name_map = whitelist.setdefault("tg_name_map", {})
+    section = _load_telegram_section()
+    entries = section["entries"]
+    name_map = section["name_map"]
 
-    # 先清理同 username 的旧 chat_id 条目
     stale_keys = [k for k, v in entries.items() if v.get("username") == username and k != str(chat_id)]
     for k in stale_keys:
         entries.pop(k, None)
@@ -134,24 +125,21 @@ def _sync_to_whitelist(username: str, chat_id: str, tg_username: str = ""):
     if tg_username:
         name_map[tg_username] = {"username": username}
 
-    _save_whitelist(whitelist)
+    _save_telegram_section(section)
 
 
 def _remove_from_whitelist(username: str):
-    """从白名单中移除某 username 的所有条目（含 entries / tg_name_map 中的引用）。"""
-    whitelist = _load_whitelist()
-    entries = whitelist.setdefault("entries", {})
-    name_map = whitelist.setdefault("tg_name_map", {})
+    """从 telegram 段移除某 username 的所有条目。"""
+    section = _load_telegram_section()
+    entries = section["entries"]
+    name_map = section["name_map"]
 
-    entries_to_drop = [k for k, v in entries.items() if v.get("username") == username]
-    for k in entries_to_drop:
+    for k in [k for k, v in entries.items() if v.get("username") == username]:
         entries.pop(k, None)
-
-    names_to_drop = [k for k, v in name_map.items() if v.get("username") == username]
-    for k in names_to_drop:
+    for k in [k for k, v in name_map.items() if v.get("username") == username]:
         name_map.pop(k, None)
 
-    _save_whitelist(whitelist)
+    _save_telegram_section(section)
 
 @mcp.tool()
 async def set_telegram_chat_id(username: str, chat_id: str, tg_username: str = "") -> str:
@@ -298,8 +286,8 @@ async def get_telegram_status(username: str) -> str:
         status_lines.append("  ⚠️ 配置不完整，无法发送通知")
 
     # 白名单状态
-    whitelist = _load_whitelist()
-    in_whitelist = any(entry.get("username") == username for entry in whitelist.get("allowed", []))
+    section = _load_telegram_section()
+    in_whitelist = any(v.get("username") == username for v in section["entries"].values())
     if in_whitelist:
         status_lines.append("  ✅ 已在 Telegram Bot 白名单中")
     else:

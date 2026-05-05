@@ -1,0 +1,20 @@
+{
+  "telegram": {
+    "entries": {
+      "8492708966": {"username": "default"}
+    },
+    "name_map": {}
+  },
+  "qq": {
+    "entries": {},
+    "name_map": {}
+  },
+  "weclaw": {
+    "entries": {},
+    "name_map": {}
+  },
+  "webhook": {
+    "entries": {},
+    "name_map": {}
+  }
+}

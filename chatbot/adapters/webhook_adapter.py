@@ -44,7 +44,6 @@ class WebhookAdapter(ChannelAdapter):
         self._webhook_url = os.getenv(f"{platform_name.upper()}_WEBHOOK_URL")
         self._webhook_secret = os.getenv(f"{platform_name.upper()}_WEBHOOK_SECRET")
         self._reply_url = os.getenv(f"{platform_name.upper()}_REPLY_URL", "")
-        self._whitelist_file = os.path.join(_project_root, "data", f"{platform_name}_whitelist.json")
         self._default_allow = os.getenv(f"{platform_name.upper()}_DEFAULT_ALLOW", "false").lower() == "true"
 
     def _verify_signature(self, payload: str, signature: str) -> bool:
@@ -67,7 +66,7 @@ class WebhookAdapter(ChannelAdapter):
         user_id = str(event.get("user_id", "") or event.get("from_user_id", "") or "")
         username = str(event.get("username", "") or event.get("user_name", "") or user_id)
 
-        entry = self._find_whitelist_entry(user_id, username)
+        entry = self._find_whitelist_entry(user_id, username, channel=self._platform_name)
         if entry:
             return True, entry.get("username")
 
@@ -126,6 +125,15 @@ class WebhookAdapter(ChannelAdapter):
             return None
 
         content_list = await self.build_content(event)
+
+        # /cross 命令：直接返回 magic link，跳过 AI
+        text = self.extract_text(content_list)
+        if self.is_cross_command(text):
+            link = await self.generate_magic_link(username)
+            reply = self.format_cross_reply(link)
+            await self._send_reply(event, reply)
+            return reply
+
         api_key = self.build_api_key(username)
         result = await self.call_ai(content_list, api_key)
 

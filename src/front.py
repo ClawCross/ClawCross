@@ -1629,9 +1629,11 @@ def _guess_preview_kind(path: Path) -> tuple[str, str]:
 
 def _build_public_file_url(relative_path: str) -> str:
     relative = "/" + str(relative_path or "").lstrip("/")
-    public_domain = _get_public_domain()
+    public_domain = _get_public_domain().strip().rstrip('/')
     if public_domain:
-        return f"https://{public_domain}{relative}"
+        if not public_domain.startswith(("http://", "https://")):
+            public_domain = f"https://{public_domain}"
+        return f"{public_domain}{relative}"
     return urljoin(request.url_root, relative.lstrip("/"))
 
 
@@ -2449,19 +2451,20 @@ def generate_login_link():
     
     # Generate token
     token = generate_login_token(user_id)
-    
-    # Build magic link
-    # Try to get public domain from env
-    public_domain = os.getenv('PUBLIC_DOMAIN', '')
-    if public_domain == 'wait to set':
-        public_domain = ''
-    
+
+    # Re-read PUBLIC_DOMAIN from .env each call so tunnel updates take effect
+    # without restarting the front process. Normalize scheme: PUBLIC_DOMAIN may be
+    # stored as either bare host or full https://host (current convention).
+    public_domain = _get_public_domain().strip().rstrip('/')
+
     if public_domain:
-        base_url = f"https://{public_domain}"
+        if public_domain.startswith(("http://", "https://")):
+            base_url = public_domain
+        else:
+            base_url = f"https://{public_domain}"
     else:
-        # Fallback to request host
         base_url = request.host_url.rstrip('/')
-    
+
     magic_link = f"{base_url}/login-link/{token}?user={user_id}"
     
     return jsonify({

@@ -23,6 +23,8 @@ import httpx
 
 logger = logging.getLogger("chatbot.base")
 
+CROSS_COMMAND = "/cross"
+
 
 @dataclass
 class ChatMessage:
@@ -52,7 +54,8 @@ class ChannelAdapter(ABC):
         self._agent_url = os.getenv("AI_API_URL", f"http://127.0.0.1:{os.getenv('PORT_AGENT', '51200')}/v1/chat/completions")
         self._internal_token = os.getenv("INTERNAL_TOKEN", "")
         self._llm_model = os.getenv("LLM_MODEL", "")
-        self._whitelist_file = None  # 子类设置
+        _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        self._whitelist_file = os.getenv("WHITELIST_FILE") or os.path.join(_project_root, "data", "whitelist.json")
 
     @abstractmethod
     async def handle_message(self, message: ChatMessage) -> str:
@@ -70,21 +73,27 @@ class ChannelAdapter(ABC):
         pass
 
     def _load_whitelist(self) -> dict:
-        """加载白名单"""
+        """加载中心化白名单文件，返回完整字典 {channel: {entries, name_map}}"""
         if not self._whitelist_file or not os.path.exists(self._whitelist_file):
-            return {"entries": {}, "tg_name_map": {}}
+            return {}
         try:
             with open(self._whitelist_file, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception as e:
             logger.warning(f"加载白名单失败: {e}")
-            return {"entries": {}, "tg_name_map": {}}
+            return {}
 
-    def _find_whitelist_entry(self, user_id: str, username: str | None = None) -> dict | None:
-        """查找白名单条目"""
+    def _find_whitelist_entry(
+        self,
+        user_id: str,
+        username: str | None = None,
+        channel: str | None = None,
+    ) -> dict | None:
+        """在指定 channel 段下查找白名单条目。channel 默认 self.channel。"""
         whitelist = self._load_whitelist()
-        entries = whitelist.get("entries", {})
-        name_map = whitelist.get("tg_name_map", {})
+        section = whitelist.get(channel or self.channel, {})
+        entries = section.get("entries", {})
+        name_map = section.get("name_map", {})
 
         if user_id in entries:
             return entries[user_id]
@@ -127,3 +136,37 @@ class ChannelAdapter(ABC):
     def build_api_key(self, username: str) -> str:
         """构建 API 认证 key"""
         return f"{self._internal_token}:{username}:{self.channel.upper()}"
+
+    # ── /cross 命令：所有 adapter 共用 ─────────────────────────────────
+
+    @staticmethod
+    def is_cross_command(text: str) -> bool:
+        return bool(text) and text.strip().lower().startswith(CROSS_COMMAND)
+
+    @staticmethod
+    def extract_text(content_list: list[dict]) -> str:
+        """从 OpenAI 多模态 content 列表里取第一个 text 段。"""
+        for part in content_list or []:
+            if isinstance(part, dict) and part.get("type") == "text":
+                return part.get("text", "") or ""
+        return ""
+
+    @staticmethod
+    def format_cross_reply(link: str | None) -> str:
+        if not link:
+            return "❌ 生成登录链接失败，请检查前端服务（PORT_FRONTEND）是否就绪"
+        return f"🔗 ClawCross 前端登录链接（24 小时有效）：\n{link}"
+
+    async def generate_magic_link(self, user_id: str) -> str | None:
+        port = os.getenv("PORT_FRONTEND", "51209")
+        url = f"http://127.0.0.1:{port}/generate_login_link"
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(url, json={"user_id": user_id})
+            if resp.status_code != 200:
+                logger.warning(f"生成 magic link 失败: {resp.status_code} {resp.text[:200]}")
+                return None
+            return resp.json().get("link")
+        except Exception as e:
+            logger.warning(f"调用 generate_login_link 异常: {e}")
+            return None

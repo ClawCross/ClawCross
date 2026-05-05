@@ -1234,8 +1234,9 @@ class ExternalExpert:
             raise RuntimeError(f"Unsupported external platform for {self.name}; no platform specified.")
 
         # Build options with acp_options from config
+        # Note: ACP connectors read "timeout_sec", not "timeout"
         options: dict[str, Any] = {
-            "timeout": effective_timeout,
+            "timeout_sec": int(effective_timeout) if effective_timeout is not None else None,
         }
         if self._api_url:
             options["api_url"] = self._api_url
@@ -1259,19 +1260,36 @@ class ExternalExpert:
         options["headers"] = self._headers()
         options["body"] = body
 
-        # Build session key: agent:{name}:{session_suffix}
+        # Build session key and prompt for each connector type
         http_session_key = None
         if self._platform_lower == "openclaw" and self._http_global_name:
             http_session_key = f"agent:{self._http_global_name}:{self._session_suffix}"
 
-        # For openclaw platform, pass messages directly as prompt
-        # The connector handles HTTP-first + ACP fallback
+        # ACP connectors (GenericAcpConnector) expect a plain-text prompt, not a messages list.
+        # Extract the last user message content; fall back to the last message of any role.
+        from integrations.acpx_cli_tools import acpx_agent_tags_with_legacy
+        _ACP_PLATFORMS = frozenset(str(t or "").strip().lower() for t in acpx_agent_tags_with_legacy())
+        if self._platform_lower in _ACP_PLATFORMS:
+            acp_prompt: str = ""
+            for msg in reversed(messages):
+                if msg.get("role") == "user":
+                    acp_prompt = str(msg.get("content", "") or "")
+                    break
+            if not acp_prompt:
+                acp_prompt = str((messages[-1].get("content", "") if messages else "") or "")
+            prompt: str | list = acp_prompt
+            _acp_name = self._http_global_name or self.ext_id
+            acp_session_key = f"agent:{_acp_name}:{self._session_suffix}"
+        else:
+            prompt = messages
+            acp_session_key = http_session_key
+
         result = await send_to_agent(
             SendToAgentRequest(
-                prompt=messages,
+                prompt=prompt,
                 connect_type="http",
                 platform=self.platform,
-                session=http_session_key,
+                session=acp_session_key,
                 options=options,
             )
         )

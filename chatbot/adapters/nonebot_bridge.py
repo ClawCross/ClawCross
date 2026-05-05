@@ -13,7 +13,7 @@ NoneBot 的 bot.send 回写。
         NONEBOT_ADAPTERS=ding,villa,yunhu,onebot.v11,mail
         NONEBOT_HOST=127.0.0.1
         NONEBOT_PORT=8120
-        NONEBOT_BRIDGE_WHITELIST_FILE=config/whitelist_bridge.json
+        WHITELIST_FILE=data/whitelist.json    # 中心化白名单，按 channel 分段
     4. 各平台自身的 env 变量按 NoneBot 适配器文档配（如 DING_ACCESS_TOKEN, ONEBOT_ACCESS_TOKEN 等）
     5. 启动 chatbot 即可
 
@@ -89,29 +89,29 @@ class NoneBotBridgeAdapter(ChannelAdapter):
                     continue
                 self._adapter_names.append(n)
 
-        self._whitelist_file = os.getenv("NONEBOT_BRIDGE_WHITELIST_FILE")
+        # 中心化白名单由 base.__init__ 处理（WHITELIST_FILE 或 data/whitelist.json）
         self._host = os.getenv("NONEBOT_HOST", "127.0.0.1")
         self._port = int(os.getenv("NONEBOT_PORT", "8120"))
         self._driver = os.getenv("NONEBOT_DRIVER", "~fastapi+~httpx+~websockets")
 
     # ── 适配器抽象方法实现 ────────────────────────────────────────────
 
-    async def verify_permission(self, event: Any) -> tuple[bool, str | None]:
-        """从 NB 事件提取 user_id，走通用白名单。"""
+    async def verify_permission(self, event: Any, channel: str | None = None) -> tuple[bool, str | None]:
+        """从 NB 事件提取 user_id，按真实平台 channel 查中心化白名单。"""
         try:
             user_id = str(event.get_user_id())
         except Exception:
             user_id = ""
         username_hint = self._extract_username_hint(event)
 
-        entry = self._find_whitelist_entry(user_id, username_hint)
+        entry = self._find_whitelist_entry(user_id, username_hint, channel=channel)
         if entry:
             return True, entry.get("username")
 
-        if not self._whitelist_file:
+        if not self._whitelist_file or not os.path.exists(self._whitelist_file):
             return True, username_hint or user_id or "anonymous"
 
-        logger.warning(f"NoneBot bridge 未授权: user_id={user_id} hint={username_hint}")
+        logger.warning(f"NoneBot bridge 未授权: channel={channel} user_id={user_id} hint={username_hint}")
         return False, None
 
     async def build_content(self, event: Any) -> list[dict]:
@@ -160,13 +160,24 @@ class NoneBotBridgeAdapter(ChannelAdapter):
         """统一消息处理入口（被 NoneBot matcher 调用）。"""
         adapter_name = self._extract_adapter_channel(bot)
 
-        allowed, username = await self.verify_permission(event)
+        allowed, username = await self.verify_permission(event, channel=adapter_name)
         if not allowed:
             return
         if not username:
             return
 
         content_list = await self.build_content(event)
+
+        # /cross 命令：直接返回 magic link，跳过 AI
+        text = self.extract_text(content_list)
+        if self.is_cross_command(text):
+            link = await self.generate_magic_link(username)
+            reply = self.format_cross_reply(link)
+            try:
+                await bot.send(event, reply)
+            except Exception as e:
+                logger.error(f"回复 /cross 失败 ({adapter_name}): {e}")
+            return
 
         # 按消息真实平台动态构造 api_key（不修改 self.channel，避免并发竞争）
         api_key = f"{self._internal_token}:{username}:{adapter_name.upper()}"
