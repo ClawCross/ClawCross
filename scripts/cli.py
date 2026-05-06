@@ -190,6 +190,9 @@ def _spawn_standalone_python_workflow(*, user_id: str, python_file: str, questio
             **os.environ,
             "CLAWCROSS_PROJECT_ROOT": PROJECT_ROOT,
             "CLAWCROSS_PYTHONPATH": PROJECT_ROOT,
+            "PYTHONPATH": PROJECT_ROOT + (
+                os.pathsep + os.environ["PYTHONPATH"] if os.environ.get("PYTHONPATH") else ""
+            ),
         },
         stdout=log_file,
         stderr=subprocess.STDOUT,

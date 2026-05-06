@@ -11,7 +11,7 @@ Use it when YAML graph scheduling is too rigid and you want:
 - scripts that can live inside or outside the repository tree
 
 This is the current recommended model. New Python workflow files should be
-written as **self-bootstrapped scripts**, not the old injected top-level style.
+written using the single-import `oasis.workflow` entry point.
 
 ---
 
@@ -19,129 +19,98 @@ written as **self-bootstrapped scripts**, not the old injected top-level style.
 
 A Python workflow is just a `.py` file that:
 
-1. makes `oasis.python_workflow_cli` importable
-2. imports `StandaloneWorkflowContext` and `run_cli`
-3. defines `async def main(ctx)`
-4. ends with `raise SystemExit(run_cli(main))`
+1. imports from `oasis.workflow`
+2. defines `async def main(ctx)`
+3. either uses the `@workflow` decorator OR ends with an explicit
+   `raise SystemExit(run(main))`
 
-That means the same file can be started from:
+That same file can be started from:
 
 - the orchestration page
 - mobile workflow start
 - MCP / API wrappers
 - plain command line
 
-Example:
+### Minimum viable example (decorator style)
 
 ```python
-import os
-import sys
-
-try:
-    from oasis.python_workflow_cli import StandaloneWorkflowContext, run_cli
-except ModuleNotFoundError:
-    extra_paths = [
-        p for p in os.environ.get("CLAWCROSS_PYTHONPATH", "").split(os.pathsep) if p
-    ]
-    project_root = os.environ.get("CLAWCROSS_PROJECT_ROOT", "").strip()
-    if project_root:
-        extra_paths.append(project_root)
-    for path_entry in extra_paths:
-        if path_entry and path_entry not in sys.path:
-            sys.path.insert(0, path_entry)
-    from oasis.python_workflow_cli import StandaloneWorkflowContext, run_cli
+from oasis.workflow import Context, workflow
 
 
-async def main(ctx: StandaloneWorkflowContext):
+@workflow
+async def main(ctx: Context):
     agents = ctx.list_agents()
     await ctx.publish(f"loaded {len(agents)} agents", author="workflowpy")
     ctx.set_result({"agent_count": len(agents)})
     ctx.set_conclusion("workflow finished")
+```
+
+That is the entire file. No `if __name__ == "__main__"` block, no
+`sys.path` bootstrap, no `load_dotenv`, no venv setup.
+
+### Explicit style (when main has helpers defined after it)
+
+```python
+from oasis.workflow import Context, run
+
+
+async def main(ctx: Context):
+    ...
 
 
 if __name__ == "__main__":
-    raise SystemExit(run_cli(main))
+    raise SystemExit(run(main))
 ```
 
-This is the **minimum viable pattern**:
-
-- import the runtime
-- define `main(ctx)`
-- return results through `ctx`
-- exit through `run_cli(main)`
-
-If `oasis.python_workflow_cli` is already importable, do not add any bootstrap code.
-If it is not importable yet, any import strategy is acceptable:
-
-- set `PYTHONPATH`
-- append your own custom `sys.path`
-- use a wrapper script
-- set `CLAWCROSS_PYTHONPATH`
-- set `CLAWCROSS_PROJECT_ROOT`
-- install the project in editable mode
-
-The workflow file does not need to live under the repository tree.
-
-Two practical consequences:
-
-- a file under `data/user_files/.../oasis/python/` is just a convenient saved workflow location
-- a file under `/tmp`, another repo, or your home directory can also work if imports are available
+Use this form if you need module-level code to run AFTER `main` is defined.
+The decorator triggers `SystemExit` immediately, so anything below an
+`@workflow` `main` would be skipped.
 
 ---
 
-## How To Run
+## What `oasis.workflow` does for you at import time
 
-### 1. From plain Python
+1. Re-execs into `<project>/.venv/bin/python` if that venv exists and the
+   current interpreter is something else. Guarded by `OASIS_REEXEC=1` so it
+   cannot loop.
+2. Adds `<project>` and `<project>/src` to `sys.path`.
+3. Loads `<project>/config/.env` if it is present.
+4. Re-exports:
+   - `Context` (= `StandaloneWorkflowContext`)
+   - `run` (= `run_cli`)
+   - `workflow` decorator
+   - `PROJECT_ROOT` constant
+
+The project root is derived from the `oasis` package location, so once
+`import oasis` works, the venv and config are found automatically.
+
+Source: [`oasis/workflow.py`](../oasis/workflow.py).
+
+---
+
+## Making `oasis` importable
+
+`from oasis.workflow import ...` requires that the `oasis` package is on the
+import path. Two practical ways:
+
+- **OASIS auto-launch** (the orchestration page, mobile, `front.py`): the
+  runner already injects `CLAWCROSS_PYTHONPATH` and `CLAWCROSS_PROJECT_ROOT`
+  into the subprocess environment. No setup needed.
+- **Plain CLI from any folder**: install ClawCross once with
+  `pip install -e /path/to/ClawCross`, OR set
+  `PYTHONPATH=/path/to/ClawCross` for that shell.
+
+After either step, a workflow file in `/tmp`, your home directory, or any
+team folder can be run with just:
 
 ```bash
 python my_workflow.py --question "Do the work" --user-id xinyuan --team my-team
 ```
 
-If the script lives in any arbitrary folder and the imports are not already
-available, run it with an explicit import path:
-
-```bash
-CLAWCROSS_PYTHONPATH="/abs/path/to/ClawCross:/abs/path/to/ClawCross/src" \
-python /any/folder/my_workflow.py --question "Do the work" --user-id xinyuan --team my-team
-```
-
-Optional:
+Optional flags accepted by `run`:
 
 - `--result-file /tmp/run.json`
 - `--no-auto-topic`
-
-### 1a. Repo-external script, explicit import path
-
-This is the safest way to run a workflow file that lives outside the repository:
-
-```bash
-CLAWCROSS_PYTHONPATH="/abs/path/to/ClawCross:/abs/path/to/ClawCross/src" \
-/abs/path/to/ClawCross/.venv/bin/python /any/folder/my_workflow.py \
-  --question "Do the work" \
-  --user-id xinyuan \
-  --team my-team
-```
-
-This works because:
-
-- the interpreter comes from the project runtime
-- `CLAWCROSS_PYTHONPATH` makes both `oasis/` and `src/` imports available
-
-Using the project interpreter alone is often not enough for repo-external files.
-The import path still has to be available.
-
-### 2. From the wrapper script
-
-```bash
-python scripts/run_python_workflow.py my_workflow.py --question "Do the work" --user-id xinyuan --team my-team
-```
-
-### 3. From ClawCross
-
-- Orchestration page Python mode
-- Mobile workflow start
-
-These now call the standalone runner path for Python workflows.
 
 ---
 
@@ -174,9 +143,8 @@ Helper methods:
 - `ctx.set_result(value)`
 - `ctx.set_conclusion(text)`
 
-Definition:
-
-- [`oasis/python_workflow_cli.py`](../oasis/python_workflow_cli.py)
+Definition: [`oasis/python_workflow_cli.py`](../oasis/python_workflow_cli.py)
+(re-exported as `Context` from `oasis.workflow`).
 
 ---
 
@@ -237,7 +205,7 @@ If round 2 depends on round 1:
 r1 = await ctx.send_persona("creative", ctx.question)
 r2 = await ctx.send_persona(
     "critical",
-    f"Original task:\\n{ctx.question}\\n\\nCreative said:\\n{r1.content}\\n\\nRespond to it."
+    f"Original task:\n{ctx.question}\n\nCreative said:\n{r1.content}\n\nRespond to it."
 )
 ```
 
@@ -259,7 +227,7 @@ ctx.set_conclusion("workflow finished")
 
 ## Auto Topic Behavior
 
-By default, `run_cli(main)` auto-creates an OASIS topic.
+By default, `run(main)` auto-creates an OASIS topic.
 
 That means:
 
@@ -337,15 +305,11 @@ If the content is not valid OASIS reply JSON, it is posted as normal text.
 
 ### Sequential discussion
 
-See:
-
-- [`oasis/workflow_templates/team_all_agents_sequential.py`](../oasis/workflow_templates/team_all_agents_sequential.py)
+See: [`oasis/workflow_templates/team_all_agents_sequential.py`](../oasis/workflow_templates/team_all_agents_sequential.py)
 
 ### Parallel discussion
 
-See:
-
-- [`oasis/workflow_templates/team_all_agents_parallel.py`](../oasis/workflow_templates/team_all_agents_parallel.py)
+See: [`oasis/workflow_templates/team_all_agents_parallel.py`](../oasis/workflow_templates/team_all_agents_parallel.py)
 
 ### Hybrid fan-out then synthesis
 
@@ -375,7 +339,6 @@ Concrete examples:
 
 - repo example: [`docs/workflowpy_example.py`](./workflowpy_example.py)
 - repo-external example: [`/home/avalon/.openclaw/workspace/skills/testworkflow_code_team.py`](/home/avalon/.openclaw/workspace/skills/testworkflow_code_team.py:1)
-- team-saved example: [`data/user_files/default/teams/Code Team/oasis/python/code_team_full_delivery_loop.py`](/home/avalon/.openclaw/workspace/skills/ClawCross/data/user_files/default/teams/Code%20Team/oasis/python/code_team_full_delivery_loop.py:1)
 
 ---
 
@@ -383,16 +346,18 @@ Concrete examples:
 
 If an AI agent is asked to generate a Python workflow, it should follow these rules:
 
-- output a self-bootstrapped standalone script
-- import `StandaloneWorkflowContext` and `run_cli`
+- start with `from oasis.workflow import Context, workflow` (or `Context, run`
+  for the explicit style)
 - implement `async def main(ctx)`
-- finish with `raise SystemExit(run_cli(main))`
+- prefer the `@workflow` decorator; use the explicit `if __name__ == "__main__"`
+  form only when other top-level code must run after `main`
 - prefer `ctx.send_persona(...)` for persona-only speaking roles
 - prefer unique `agent["id"]` when using `ctx.send_agent(...)`
 - do not assume implicit memory is enough
 - store structured outputs in `ctx.set_result(...)`
 - use `ctx.set_conclusion(...)` for a short final summary
-- when generating a repo-external file, do not hardcode a repository path; prefer normal imports first, then `CLAWCROSS_PYTHONPATH` / `CLAWCROSS_PROJECT_ROOT`
+- never re-add the legacy try/except sys.path bootstrap; `oasis.workflow`
+  handles the venv, sys.path, and `.env` automatically
 
 ---
 
@@ -404,12 +369,14 @@ the OASIS server for compatibility.
 That path uses the old injected-style execution model and should be treated as a
 legacy entrypoint.
 
-New frontends and new Python workflow files should use the standalone runner path
-instead.
+The previous "self-bootstrapped script" pattern that imported from
+`oasis.python_workflow_cli` directly with a `try/except ModuleNotFoundError`
+block still works, but new files should use `oasis.workflow` instead.
 
 Relevant files:
 
-- [`oasis/python_workflow_cli.py`](../oasis/python_workflow_cli.py)
+- [`oasis/workflow.py`](../oasis/workflow.py) — single-import entry point
+- [`oasis/python_workflow_cli.py`](../oasis/python_workflow_cli.py) — underlying runtime
 - [`scripts/run_python_workflow.py`](../scripts/run_python_workflow.py)
 - [`src/front.py`](../src/front.py)
 - [`oasis/server.py`](../oasis/server.py)
@@ -418,6 +385,7 @@ Relevant files:
 
 ## Related Files
 
+- [`oasis/workflow.py`](../oasis/workflow.py)
 - [`oasis/python_workflow_cli.py`](../oasis/python_workflow_cli.py)
 - [`oasis/python_workflow.py`](../oasis/python_workflow.py)
 - [`oasis/agent_center.py`](../oasis/agent_center.py)

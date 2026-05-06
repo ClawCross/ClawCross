@@ -2,26 +2,9 @@ import asyncio
 import json
 import os
 import re
-import sys
 from pathlib import Path
 
-try:
-    from oasis.python_workflow_cli import StandaloneWorkflowContext, run_cli
-except ModuleNotFoundError:
-    extra_paths = [
-        p for p in os.environ.get("CLAWCROSS_PYTHONPATH", "").split(os.pathsep) if p
-    ]
-    project_root = os.environ.get("CLAWCROSS_PROJECT_ROOT", "").strip()
-    if project_root:
-        extra_paths.append(project_root)
-    for parent in Path(__file__).resolve().parents:
-        if (parent / "oasis" / "python_workflow_cli.py").is_file() and (parent / "src").is_dir():
-            extra_paths.append(str(parent))
-            break
-    for path_entry in extra_paths:
-        if path_entry and path_entry not in sys.path:
-            sys.path.insert(0, path_entry)
-    from oasis.python_workflow_cli import StandaloneWorkflowContext, run_cli
+from oasis.workflow import Context, workflow
 
 
 DOMAIN_EXPERT_TAGS = {
@@ -35,20 +18,20 @@ DOMAIN_EXPERT_TAGS = {
 }
 
 
-def _team_dir(ctx: StandaloneWorkflowContext) -> Path:
+def _team_dir(ctx: Context) -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def _skill_dir(ctx: StandaloneWorkflowContext) -> Path:
+def _skill_dir(ctx: Context) -> Path:
     return _team_dir(ctx) / "skills" / "paper-survey"
 
 
-def _output_dir(ctx: StandaloneWorkflowContext) -> Path:
+def _output_dir(ctx: Context) -> Path:
     safe_run_id = re.sub(r"[^A-Za-z0-9_.-]+", "_", ctx.run_id or "run")
     return _skill_dir(ctx) / "output" / "workflow_runs" / safe_run_id
 
 
-def _expert_list(ctx: StandaloneWorkflowContext) -> list[dict]:
+def _expert_list(ctx: Context) -> list[dict]:
     personas = ctx.list_personas()
     experts = []
     for persona in personas:
@@ -145,7 +128,7 @@ def _interesting_log_line(line: str) -> bool:
     return any(marker in line for marker in markers)
 
 
-async def _run_skill(ctx: StandaloneWorkflowContext, skill_dir: Path, args: list[str]) -> tuple[int, str]:
+async def _run_skill(ctx: Context, skill_dir: Path, args: list[str]) -> tuple[int, str]:
     proc = await asyncio.create_subprocess_exec(
         "./run.sh",
         *args,
@@ -183,7 +166,8 @@ def _load_json(path: Path):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-async def main(ctx: StandaloneWorkflowContext):
+@workflow
+async def main(ctx: Context):
     skill_dir = _skill_dir(ctx)
     if not (skill_dir / "run.sh").is_file():
         raise RuntimeError(f"paper-survey skill not found: {skill_dir}")
@@ -320,7 +304,3 @@ async def main(ctx: StandaloneWorkflowContext):
         ctx.set_conclusion(f"paper-survey workflow finished; report: {survey_path}")
     else:
         ctx.set_conclusion(f"paper-survey workflow finished; no survey_report.md generated; output: {output_dir}")
-
-
-if __name__ == "__main__":
-    raise SystemExit(run_cli(main))

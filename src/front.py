@@ -4802,6 +4802,9 @@ def _spawn_standalone_python_workflow(
             **os.environ,
             "CLAWCROSS_PROJECT_ROOT": root_dir,
             "CLAWCROSS_PYTHONPATH": WORKFLOW_IMPORT_PATHS,
+            "PYTHONPATH": WORKFLOW_IMPORT_PATHS + (
+                os.pathsep + os.environ["PYTHONPATH"] if os.environ.get("PYTHONPATH") else ""
+            ),
         },
         stdout=log_file,
         stderr=subprocess.STDOUT,

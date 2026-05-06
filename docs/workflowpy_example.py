@@ -1,28 +1,11 @@
 import asyncio
-import os
-import sys
 
-try:
-    from oasis.python_workflow_cli import StandaloneWorkflowContext, run_cli
-except ModuleNotFoundError:
-    extra_paths = [
-        p for p in os.environ.get("CLAWCROSS_PYTHONPATH", "").split(os.pathsep) if p
-    ]
-    project_root = os.environ.get("CLAWCROSS_PROJECT_ROOT", "").strip()
-    if project_root:
-        extra_paths.append(project_root)
-    for path_entry in extra_paths:
-        if path_entry and path_entry not in sys.path:
-            sys.path.insert(0, path_entry)
-    from oasis.python_workflow_cli import StandaloneWorkflowContext, run_cli
+from oasis.workflow import Context, workflow
 
 
-async def main(ctx: StandaloneWorkflowContext):
-    # This example can run from any directory as long as the required imports
-    # are already available via PYTHONPATH, custom sys.path logic, a wrapper,
-    # or CLAWCROSS_PYTHONPATH / CLAWCROSS_PROJECT_ROOT.
-    #
-    # It demonstrates a small but realistic flow:
+@workflow
+async def main(ctx: Context):
+    # Small but realistic flow:
     # 1. inspect available agents
     # 2. ask two personas in parallel
     # 3. publish their outputs
@@ -71,7 +54,3 @@ async def main(ctx: StandaloneWorkflowContext):
     }
     ctx.set_result(result)
     ctx.set_conclusion("workflowpy example finished")
-
-
-if __name__ == "__main__":
-    raise SystemExit(run_cli(main))

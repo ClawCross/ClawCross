@@ -1,23 +1,10 @@
 import asyncio
-import os
-import sys
 
-try:
-    from oasis.python_workflow_cli import StandaloneWorkflowContext, run_cli
-except ModuleNotFoundError:
-    extra_paths = [
-        p for p in os.environ.get("CLAWCROSS_PYTHONPATH", "").split(os.pathsep) if p
-    ]
-    project_root = os.environ.get("CLAWCROSS_PROJECT_ROOT", "").strip()
-    if project_root:
-        extra_paths.append(project_root)
-    for path_entry in extra_paths:
-        if path_entry and path_entry not in sys.path:
-            sys.path.insert(0, path_entry)
-    from oasis.python_workflow_cli import StandaloneWorkflowContext, run_cli
+from oasis.workflow import Context, workflow
 
 
-async def main(ctx: StandaloneWorkflowContext):
+@workflow
+async def main(ctx: Context):
     agents = [a for a in ctx.list_agents() if a.get("id")]
     if not agents:
         ctx.set_conclusion("No agents available.")
@@ -89,7 +76,3 @@ async def main(ctx: StandaloneWorkflowContext):
         "agent_count": len(ordered_agents),
         "results": results,
     })
-
-
-if __name__ == "__main__":
-    raise SystemExit(run_cli(main))
