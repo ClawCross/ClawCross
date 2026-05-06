@@ -13117,30 +13117,16 @@ function orchDefaultPythonScaffold() {
     const teamName = (typeof orch !== 'undefined' && orch && orch.teamName) ? orch.teamName : '';
     const teamHint = teamName || '<team-or-empty>';
     return `import asyncio
-import os
-import sys
 
-try:
-    from oasis.python_workflow_cli import StandaloneWorkflowContext, run_cli
-except ModuleNotFoundError:
-    extra_paths = [
-        p for p in os.environ.get("CLAWCROSS_PYTHONPATH", "").split(os.pathsep) if p
-    ]
-    project_root = os.environ.get("CLAWCROSS_PROJECT_ROOT", "").strip()
-    if project_root:
-        extra_paths.append(project_root)
-    for path_entry in extra_paths:
-        if path_entry and path_entry not in sys.path:
-            sys.path.insert(0, path_entry)
-    from oasis.python_workflow_cli import StandaloneWorkflowContext, run_cli
+from oasis.workflow import Context, workflow
 
 
-async def main(ctx: StandaloneWorkflowContext):
+@workflow
+async def main(ctx: Context):
     # This script can be launched directly:
     #   python my_workflow.py --question "Do the work" --user-id xinyuan --team "${teamHint}"
-    # If oasis imports already work, no path bootstrap is needed.
-    # If they do not, you can use PYTHONPATH, custom sys.path logic,
-    # CLAWCROSS_PYTHONPATH / CLAWCROSS_PROJECT_ROOT, or any wrapper you prefer.
+    # oasis.workflow handles venv re-exec, sys.path, and .env at import time.
+    # No bootstrap code needed in this file.
     #
     # By default, the runtime auto-creates one OASIS topic before main(ctx) starts.
     #   ctx.topic_id is usually already available
@@ -13269,10 +13255,6 @@ async def main(ctx: StandaloneWorkflowContext):
         "parallel_results": normalized_parallel,
         "synthesis": synthesis,
     })
-
-
-if __name__ == "__main__":
-    raise SystemExit(run_cli(main))
 `;
 }
 
@@ -15383,7 +15365,65 @@ function ocRenderOpenClawSelectPrompt() {
     scrollChatToBottom(chatBox);
 }
 
-function ocPaintOpenClawChatFromCache() {
+function ocOpenClawSessionKeyForAgent(agentName) {
+    if (!agentName) return '';
+    return 'agent:' + agentName + ':clawcrosschat';
+}
+
+function ocRenderOpenClawHistoryHtml(messages) {
+    if (!Array.isArray(messages) || messages.length === 0) return '';
+    const parts = [];
+    for (const msg of messages) {
+        const direction = String(msg && msg.direction || '');
+        const role = String(msg && msg.role || '');
+        let content = String(msg && msg.content || '');
+        if (!content) continue;
+        if (direction === 'send' || role === 'user') {
+            parts.push(
+                '<div class="flex justify-end animate-in fade-in duration-300">' +
+                '<div class="p-4 max-w-[85%] shadow-sm bg-blue-600 text-white message-user">' +
+                escapeHtml(content) +
+                '</div></div>'
+            );
+        } else if (direction === 'recv' || role === 'assistant') {
+            parts.push(
+                '<div class="flex justify-start animate-in fade-in duration-300">' +
+                '<div class="p-4 max-w-[85%] shadow-sm bg-white border text-gray-800 message-agent markdown-body tc-markdown">' +
+                renderMarkdown(content) +
+                '</div></div>'
+            );
+        } else if (direction === 'error') {
+            parts.push(
+                '<div class="flex justify-start">' +
+                '<div class="p-4 max-w-[85%] shadow-sm bg-red-50 border border-red-300 text-red-700 message-agent">' +
+                '⚠️ ' + escapeHtml(content) +
+                '</div></div>'
+            );
+        }
+        // tool_call / tool_result currently hidden in main chat; visible in detail view if added later.
+    }
+    return parts.join('');
+}
+
+async function ocLoadOpenClawHistoryFromDB(agentName) {
+    if (!agentName) return null;
+    const sessionKey = ocOpenClawSessionKeyForAgent(agentName);
+    try {
+        const url = '/proxy_external_history/messages?platform=openclaw&session_key=' +
+            encodeURIComponent(sessionKey) + '&limit=200';
+        const resp = await fetch(url);
+        if (!resp.ok) return null;
+        const data = await resp.json().catch(() => ({}));
+        if (!data || data.ok === false) return null;
+        const html = ocRenderOpenClawHistoryHtml(data.messages || []);
+        return html || null;
+    } catch (e) {
+        console.warn('ocLoadOpenClawHistoryFromDB failed', e);
+        return null;
+    }
+}
+
+async function ocPaintOpenClawChatFromCache() {
     const chatBox = document.getElementById('chat-box');
     if (!chatBox) return;
     const agent = _ocSelectedAgent && _ocSelectedAgent.name;
@@ -15392,7 +15432,16 @@ function ocPaintOpenClawChatFromCache() {
             chatBox.innerHTML = _ocTranscriptByAgent[agent];
             ocRefreshTtsButtonsIn(chatBox);
         } else {
-            ocRenderOpenClawWelcomeForAgent(agent);
+            chatBox.innerHTML = '<div class="text-xs text-gray-400 text-center py-4">' +
+                escapeHtml(t('history_loading_msg') || 'Loading history…') + '</div>';
+            const html = await ocLoadOpenClawHistoryFromDB(agent);
+            if (html) {
+                _ocTranscriptByAgent[agent] = html;
+                chatBox.innerHTML = html;
+                ocRefreshTtsButtonsIn(chatBox);
+            } else {
+                ocRenderOpenClawWelcomeForAgent(agent);
+            }
         }
     } else {
         ocRenderOpenClawSelectPrompt();
@@ -15445,7 +15494,7 @@ async function ocSwitchTo(mode, acpTool) {
         if (select && select.value) {
             _ocSelectedAgent = { name: select.value };
         }
-        ocPaintOpenClawChatFromCache();
+        await ocPaintOpenClawChatFromCache();
     } else if (mode === 'acp') {
         if (agentSelector) agentSelector.style.display = 'none';
         acpSyncSessionInputFromStorage();
@@ -15485,10 +15534,23 @@ function ocOnAgentChange() {
             if (_ocTranscriptByAgent[agentName]) {
                 chatBox.innerHTML = _ocTranscriptByAgent[agentName];
                 ocRefreshTtsButtonsIn(chatBox);
+                scrollChatToBottom(chatBox);
             } else {
-                ocRenderOpenClawWelcomeForAgent(agentName);
+                chatBox.innerHTML = '<div class="text-xs text-gray-400 text-center py-4">' +
+                    escapeHtml(t('history_loading_msg') || 'Loading history…') + '</div>';
+                ocLoadOpenClawHistoryFromDB(agentName).then((html) => {
+                    if (_ocSelectedAgent && _ocSelectedAgent.name === agentName) {
+                        if (html) {
+                            _ocTranscriptByAgent[agentName] = html;
+                            chatBox.innerHTML = html;
+                            ocRefreshTtsButtonsIn(chatBox);
+                        } else {
+                            ocRenderOpenClawWelcomeForAgent(agentName);
+                        }
+                        scrollChatToBottom(chatBox);
+                    }
+                });
             }
-            scrollChatToBottom(chatBox);
         }
     } else {
         _ocSelectedAgent = null;

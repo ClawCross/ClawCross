@@ -36,6 +36,7 @@ from integrations.acpx_adapter import acpx_options_from_agent, load_external_age
 from integrations.acpx_cli_tools import acpx_agent_tags_with_legacy
 from integrations.agent_sender import SendToAgentRequest, send_to_agent
 from integrations.external_persona import build_external_persona_prompt
+from utils.external_agent_history import attach_history_context
 
 TASKS_FILE = os.path.join(root_dir, "data", "timeset", "tasks.json")
 
@@ -254,17 +255,21 @@ async def trigger_external_agent(info: dict):
             connect_type="http",
             platform=platform,
             session=session_key,
-            options={
-                "api_url": _normalize_chat_url(api_url),
-                "api_key": api_key,
-                "headers": headers,
-                "body": {
-                    "model": model,
-                    "messages": [{"role": "user", "content": text}],
-                    "stream": False,
+            options=attach_history_context(
+                {
+                    "api_url": _normalize_chat_url(api_url),
+                    "api_key": api_key,
+                    "headers": headers,
+                    "body": {
+                        "model": model,
+                        "messages": [{"role": "user", "content": text}],
+                        "stream": False,
+                    },
+                    "timeout": 60,
                 },
-                "timeout": 60,
-            },
+                user_id=user_id,
+                global_name=global_name,
+            ),
         ))
         if result.ok:
             print(f"[{datetime.now()}] 外部闹钟触发：user={user_id}, target={global_name}, backend=http")
@@ -277,11 +282,16 @@ async def trigger_external_agent(info: dict):
             connect_type="acp",
             platform=platform,
             session=session_key,
-            options={
-                "cwd": root_dir,
-                **acpx_options_from_agent(agent_info, default_timeout_sec=180),
-                "system_prompt": _external_system_prompt(agent_info),
-            },
+            options=attach_history_context(
+                {
+                    "cwd": root_dir,
+                    **acpx_options_from_agent(agent_info, default_timeout_sec=180),
+                    "system_prompt": _external_system_prompt(agent_info),
+                    "return_trace": True,
+                },
+                user_id=user_id,
+                global_name=global_name,
+            ),
         ))
         if result.ok:
             print(f"[{datetime.now()}] 外部闹钟触发：user={user_id}, target={global_name}, backend=acp")
@@ -295,13 +305,17 @@ async def trigger_external_agent(info: dict):
             connect_type="http",
             platform=platform,
             session=session_key,
-            options={
-                "api_url": _normalize_chat_url(api_url),
-                "api_key": api_key,
-                "model": agent_info.get("model") or "gpt-3.5-turbo",
-                "system_prompt": _external_system_prompt(agent_info),
-                "timeout": 60,
-            },
+            options=attach_history_context(
+                {
+                    "api_url": _normalize_chat_url(api_url),
+                    "api_key": api_key,
+                    "model": agent_info.get("model") or "gpt-3.5-turbo",
+                    "system_prompt": _external_system_prompt(agent_info),
+                    "timeout": 60,
+                },
+                user_id=user_id,
+                global_name=global_name,
+            ),
         ))
         if result.ok:
             print(f"[{datetime.now()}] 外部闹钟触发：user={user_id}, target={global_name}, backend=http")

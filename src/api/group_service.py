@@ -53,6 +53,7 @@ from utils.session_summary import first_human_title
 from integrations.acpx_adapter import AcpxError, acpx_options_from_agent, get_acpx_adapter, load_external_agent_system_prompt
 from integrations.acpx_cli_tools import acpx_agent_tags_with_legacy
 from integrations.agent_sender import SendToAgentRequest, send_to_agent
+from utils.external_agent_history import attach_history_context
 from integrations.external_persona import build_external_persona_prompt
 
 logger = get_logger("group_service")
@@ -517,6 +518,8 @@ class GroupService:
         attachments: list[Attachment] | None = None,
         metadata: dict | None = None,
         *,
+        user_id: str = "",
+        group_id: str = "",
         _retry_dead: bool = False,
     ) -> str | None:
         """Send message to external agent via acpx-backed ACP session."""
@@ -564,22 +567,30 @@ class GroupService:
                     for att in attachments
                 ]
 
+            options = {
+                "cwd": _PROJECT_ROOT,
+                **acpx_options_from_agent(agent_info, default_timeout_sec=180),
+                "reset_session": bool(metadata and metadata.get("resetSession")),
+                "system_prompt": _external_agent_session_prompt(
+                    agent_info,
+                    is_private_chat=bool(metadata and metadata.get("is_private_chat")),
+                ),
+                "attachments": acpx_attachments,
+                "return_trace": True,
+            }
+            options = attach_history_context(
+                options,
+                user_id=user_id,
+                group_id=group_id,
+                global_name=global_name,
+            )
             result = await send_to_agent(
                 SendToAgentRequest(
                     prompt=prompt_text,
                     connect_type="acp",
                     platform=platform,
                     session=acp_session,
-                    options={
-                        "cwd": _PROJECT_ROOT,
-                        **acpx_options_from_agent(agent_info, default_timeout_sec=180),
-                        "reset_session": bool(metadata and metadata.get("resetSession")),
-                        "system_prompt": _external_agent_session_prompt(
-                            agent_info,
-                            is_private_chat=bool(metadata and metadata.get("is_private_chat")),
-                        ),
-                        "attachments": acpx_attachments,
-                    },
+                    options=options,
                 )
             )
             if not result.ok:
@@ -617,6 +628,9 @@ class GroupService:
         message: str,
         attachments: list[Attachment] | None = None,
         metadata: dict | None = None,
+        *,
+        user_id: str = "",
+        group_id: str = "",
     ) -> str | None:
         """Fallback: send message to external agent via HTTP API.
         
@@ -719,19 +733,26 @@ class GroupService:
             "stream": False,
         }
 
+        options = {
+            "api_url": api_url,
+            "api_key": api_key,
+            "headers": headers,
+            "body": body,
+            "timeout": 60,
+        }
+        options = attach_history_context(
+            options,
+            user_id=user_id,
+            group_id=group_id,
+            global_name=global_name,
+        )
         result = await send_to_agent(
             SendToAgentRequest(
                 prompt=body["messages"],
                 connect_type="http",
                 platform=platform,
                 session=session_key or None,
-                options={
-                    "api_url": api_url,
-                    "api_key": api_key,
-                    "headers": headers,
-                    "body": body,
-                    "timeout": 60,
-                },
+                options=options,
             )
         )
         if not result.ok:
@@ -747,6 +768,8 @@ class GroupService:
         agent_name: str,
         attachments: list[Attachment] | None = None,
         metadata: dict | None = None,
+        *,
+        user_id: str = "",
     ):
         """Send message to external agent and handle reply.
 
@@ -773,6 +796,8 @@ class GroupService:
                     message,
                     attachments=attachments,
                     metadata=metadata,
+                    user_id=user_id,
+                    group_id=group_id,
                 )
                 if not reply:
                     logger.info(
@@ -784,6 +809,8 @@ class GroupService:
                         message,
                         attachments=attachments,
                         metadata=metadata,
+                        user_id=user_id,
+                        group_id=group_id,
                     )
             else:
                 reply = await self._send_to_http_agent(
@@ -791,6 +818,8 @@ class GroupService:
                     message,
                     attachments=attachments,
                     metadata=metadata,
+                    user_id=user_id,
+                    group_id=group_id,
                 )
             if not reply:
                 logger.info("External agent %s did not reply", agent_name)
@@ -927,6 +956,7 @@ class GroupService:
                         group_id, agent_info, msg_text, short_name,
                         attachments=attachments,
                         metadata={"is_private_chat": is_private_chat},
+                        user_id=owner_uid,
                     )
                 )
             else:

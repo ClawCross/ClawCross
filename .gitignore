@@ -71,6 +71,7 @@ data/*.db-journal
 data/telegram_whitelist.json
 data/whitelist.json
 data/agent_checkpoints/
+data/external_agent_history/
 data/checkpoint_export_*.json
 data/user_files/
 data/oasis_discussions/

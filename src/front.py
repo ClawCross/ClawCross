@@ -25,6 +25,7 @@ from typing import Any
 from urllib.parse import urljoin, urlparse
 from dotenv import load_dotenv
 from utils.env_settings import read_env_all, write_env_settings
+from utils.external_agent_history import attach_history_context, get_store as get_history_store
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 from utils.internal_alarm_utils import export_team_alarms, restore_team_alarms
 from services.llm_factory import create_chat_model, extract_text, infer_provider
@@ -151,6 +152,7 @@ from integrations.openclaw_restore_naming import (
 )
 
 _logger_oc_restore = get_logger("clawcross.openclaw_restore")
+_logger_history = get_logger("clawcross.external_history")
 
 def generate_login_token(user_id: str, valid_hours: int = 24) -> str:
     """Generate HMAC-signed login token.
@@ -2191,6 +2193,7 @@ def proxy_openai_completions():
                 "Content-Type": "application/json",
             },
             "body": body if isinstance(body, dict) else {},
+            "_history_disabled": True,
         },
     )
 
@@ -2973,20 +2976,27 @@ def proxy_openclaw_chat():
     if not isinstance(body, dict):
         return jsonify({"error": "Invalid or empty JSON body"}), 400
 
+    derived_session_key = _openclaw_session_key_from_model(body.get("model"))
+    explicit_session_id = body.get("session_id") if isinstance(body.get("session_id"), str) else None
+    history_session = explicit_session_id or derived_session_key
+    history_prompt = body.get("messages") if isinstance(body.get("messages"), list) else ""
     acp_request = SendToAgentRequest(
-        prompt="",
+        prompt=history_prompt,
         connect_type="http",
         platform="openclaw",
-        session=body.get("session_id") if isinstance(body.get("session_id"), str) else None,
-        options={
-            "api_url": openclaw_api_url,
-            "api_key": openclaw_api_key,
-            "headers": {
-                "Content-Type": "application/json",
-                **({"x-openclaw-session-key": _openclaw_session_key_from_model(body.get("model"))} if _openclaw_session_key_from_model(body.get("model")) else {}),
+        session=history_session,
+        options=attach_history_context(
+            {
+                "api_url": openclaw_api_url,
+                "api_key": openclaw_api_key,
+                "headers": {
+                    "Content-Type": "application/json",
+                    **({"x-openclaw-session-key": derived_session_key} if derived_session_key else {}),
+                },
+                "body": body,
             },
-            "body": body,
-        },
+            user_id=session.get("user_id") or "",
+        ),
     )
 
     try:
@@ -3010,9 +3020,36 @@ def proxy_openclaw_chat():
         content_type = r.headers.get("content-type", "")
         if "text/event-stream" in content_type:
             def generate():
-                for chunk in r.iter_content(chunk_size=None):
-                    if chunk:
-                        yield chunk
+                buffer_chunks: list[bytes] = []
+                error_msg: str | None = None
+                try:
+                    for chunk in r.iter_content(chunk_size=None):
+                        if chunk:
+                            buffer_chunks.append(chunk)
+                            yield chunk
+                except Exception as ex:
+                    error_msg = str(ex)
+                    raise
+                finally:
+                    if prepared_stream.history_request_id:
+                        try:
+                            assistant_text = _extract_openai_sse_content(b"".join(buffer_chunks))
+                            async def _record():
+                                store = await get_history_store()
+                                await store.record_recv(
+                                    platform=acp_request.platform,
+                                    session_key=acp_request.session,
+                                    connect_type=acp_request.connect_type,
+                                    request_id=prepared_stream.history_request_id,
+                                    ok=error_msg is None,
+                                    content=assistant_text,
+                                    raw_response=None,
+                                    error=error_msg,
+                                    options=prepared_stream.history_options,
+                                )
+                            asyncio.run(_record())
+                        except Exception as e:
+                            _logger_history.warning("record_recv (openclaw stream) failed: %s", e)
             return Response(
                 generate(),
                 mimetype="text/event-stream",
@@ -3026,6 +3063,40 @@ def proxy_openclaw_chat():
             return Response(r.content, status=r.status_code, content_type=content_type)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+def _extract_openai_sse_content(raw: bytes) -> str:
+    """Extract assistant text content from OpenAI-format SSE bytes."""
+    pieces: list[str] = []
+    try:
+        text = raw.decode("utf-8", errors="replace")
+    except Exception:
+        return ""
+    for line in text.splitlines():
+        if not line.startswith("data:"):
+            continue
+        payload = line[5:].strip()
+        if not payload or payload == "[DONE]":
+            continue
+        try:
+            obj = json.loads(payload)
+        except json.JSONDecodeError:
+            continue
+        choices = obj.get("choices") if isinstance(obj, dict) else None
+        if not isinstance(choices, list):
+            continue
+        for ch in choices:
+            if not isinstance(ch, dict):
+                continue
+            delta = ch.get("delta") or {}
+            content = delta.get("content") if isinstance(delta, dict) else None
+            if isinstance(content, str):
+                pieces.append(content)
+            message = ch.get("message") or {}
+            mc = message.get("content") if isinstance(message, dict) else None
+            if isinstance(mc, str):
+                pieces.append(mc)
+    return "".join(pieces)
 
 
 def _parse_openai_data_uri(s: str) -> tuple[str | None, str | None]:
@@ -3543,12 +3614,15 @@ def proxy_acpx_chat():
         if p
     )
 
-    request_options = {
-        "cwd": root_dir,
-        "system_prompt": front_external_system_prompt,
-        "attachments": acpx_attachments or None,
-        "timeout_sec": int(body.get("timeout_sec") or 600),
-    }
+    request_options = attach_history_context(
+        {
+            "cwd": root_dir,
+            "system_prompt": front_external_system_prompt,
+            "attachments": acpx_attachments or None,
+            "timeout_sec": int(body.get("timeout_sec") or 600),
+        },
+        user_id=session.get("user_id") or "",
+    )
     acp_request = SendToAgentRequest(
         prompt=prompt_text,
         connect_type="acp",
@@ -3595,6 +3669,8 @@ def proxy_acpx_chat():
         prepared_stream: PreparedAgentStream | None = None
         output_lines: list[str] = []
         seen_tool_calls: dict[str, dict[str, Any]] = {}
+        reply_buf: list[str] = []
+        stream_error: str | None = None
         try:
             prepared_stream = asyncio.run(prepare_send_to_agent_stream(acp_request))
             temp_path = prepared_stream.temp_path
@@ -3629,6 +3705,7 @@ def proxy_acpx_chat():
                     part = str(stream_event.get("text") or "")
                     if not part:
                         continue
+                    reply_buf.append(part)
                     chunk = {
                         "id": "acpx-chatcmpl",
                         "object": "chat.completion.chunk",
@@ -3738,6 +3815,7 @@ def proxy_acpx_chat():
                     }
                     yield f"data: {json.dumps(meta_chunk, ensure_ascii=False)}\n\n"
         except (RuntimeError, AcpxError, subprocess.TimeoutExpired) as e:
+            stream_error = str(e)
             err_chunk = {
                 "id": "acpx-chatcmpl",
                 "object": "chat.completion.chunk",
@@ -3749,6 +3827,37 @@ def proxy_acpx_chat():
             if proc is not None and proc.poll() is None:
                 with contextlib.suppress(Exception):
                     proc.kill()
+            if prepared_stream is not None and prepared_stream.history_request_id:
+                trace_payload: dict[str, Any] = {}
+                if prepared_stream.adapter:
+                    try:
+                        trace_obj = prepared_stream.adapter._extract_trace("\n".join(output_lines))
+                        trace_payload = {
+                            "messages": trace_obj.messages,
+                            "tool_uses": trace_obj.tool_uses,
+                            "tool_results": trace_obj.tool_results,
+                            "message_chunks": trace_obj.message_chunks,
+                        }
+                    except Exception:
+                        trace_payload = {}
+                full_reply = "".join(reply_buf)
+                try:
+                    async def _record_history_done():
+                        store = await get_history_store()
+                        await store.record_recv(
+                            platform=acp_request.platform,
+                            session_key=acp_request.session,
+                            connect_type=acp_request.connect_type,
+                            request_id=prepared_stream.history_request_id,
+                            ok=stream_error is None,
+                            content=full_reply,
+                            raw_response=trace_payload or None,
+                            error=stream_error,
+                            options=prepared_stream.history_options,
+                        )
+                    asyncio.run(_record_history_done())
+                except Exception as e:
+                    _logger_history.warning("record_recv (acpx stream) failed: %s", e)
             if prepared_stream is not None:
                 prepared_stream.cleanup()
             done = {
@@ -3829,6 +3938,175 @@ def proxy_acpx_session_ensure():
         return jsonify({"ok": False, "error": str(e), "session_key": session_key}), 502
 
     return jsonify({"ok": True, "tool": tool, "session_key": session_key})
+
+
+# ------------------------------------------------------------------
+# External agent chat history — read/manage data/external_agent_history/
+# ------------------------------------------------------------------
+
+
+def _external_history_user_or_401() -> tuple[str | None, Any]:
+    """Return (user_id, None) on success or (None, error_response) on auth fail."""
+    user_id = str(session.get("user_id") or "").strip()
+    if not user_id:
+        return None, (jsonify({"ok": False, "error": "not logged in"}), 401)
+    return user_id, None
+
+
+def _external_history_can_read(user_id: str, row_user_id: str) -> bool:
+    """User can read their own rows; rows with empty user_id are shared (system-wide)."""
+    if not row_user_id:
+        return True
+    return row_user_id == user_id
+
+
+@app.route("/proxy_external_history/sessions", methods=["GET"])
+def proxy_external_history_sessions():
+    """List all external-agent history sessions visible to the current user.
+
+    Query: ?platform=<filter>&include_global=1
+    Response: { ok, sessions: [ { platform, session_key, connect_type, global_name,
+                                  user_id, group_id, created_at, last_used_at, db_path } ] }
+    """
+    user_id, err = _external_history_user_or_401()
+    if err:
+        return err
+    platform_filter = (request.args.get("platform") or "").strip().lower()
+    include_global = request.args.get("include_global", "1") not in ("0", "false", "False")
+
+    async def _load():
+        store = await get_history_store()
+        return await store.list_sessions()
+
+    try:
+        sessions = asyncio.run(_load())
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+    visible = []
+    for s in sessions:
+        row_uid = str(s.get("user_id") or "")
+        if not _external_history_can_read(user_id, row_uid):
+            continue
+        if not include_global and not row_uid:
+            continue
+        if platform_filter and str(s.get("platform") or "").lower() != platform_filter:
+            continue
+        visible.append(s)
+    return jsonify({"ok": True, "sessions": visible})
+
+
+@app.route("/proxy_external_history/messages", methods=["GET"])
+def proxy_external_history_messages():
+    """Return paginated messages for one (platform, session_key).
+
+    Query: platform=<str>, session_key=<str>, limit=<int default 100>, offset=<int default 0>
+    Response: { ok, messages: [...], session_meta: {...} }
+    """
+    user_id, err = _external_history_user_or_401()
+    if err:
+        return err
+    platform = (request.args.get("platform") or "").strip()
+    session_key = request.args.get("session_key")
+    if not platform:
+        return jsonify({"ok": False, "error": "missing platform"}), 400
+    try:
+        limit = max(1, min(1000, int(request.args.get("limit") or 100)))
+    except ValueError:
+        limit = 100
+    try:
+        offset = max(0, int(request.args.get("offset") or 0))
+    except ValueError:
+        offset = 0
+
+    async def _load():
+        store = await get_history_store()
+        meta = await store.get_session_meta(platform=platform, session_key=session_key)
+        msgs = await store.list_messages(
+            platform=platform, session_key=session_key, limit=limit, offset=offset
+        )
+        return meta, msgs
+
+    try:
+        meta, msgs = asyncio.run(_load())
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+    if meta and not _external_history_can_read(user_id, str(meta.get("user_id") or "")):
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+
+    return jsonify({"ok": True, "session_meta": meta, "messages": msgs})
+
+
+@app.route("/proxy_external_history/session", methods=["DELETE"])
+def proxy_external_history_delete_session():
+    """Delete an entire (platform, session_key) history DB.
+
+    Query: platform=<str>, session_key=<str>
+    """
+    user_id, err = _external_history_user_or_401()
+    if err:
+        return err
+    platform = (request.args.get("platform") or "").strip()
+    session_key = request.args.get("session_key")
+    if not platform:
+        return jsonify({"ok": False, "error": "missing platform"}), 400
+
+    async def _do():
+        store = await get_history_store()
+        meta = await store.get_session_meta(platform=platform, session_key=session_key)
+        if meta and not _external_history_can_read(user_id, str(meta.get("user_id") or "")):
+            return False, "forbidden"
+        deleted = await store.delete_session(platform=platform, session_key=session_key)
+        return deleted, None
+
+    try:
+        deleted, err_msg = asyncio.run(_do())
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+    if err_msg == "forbidden":
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+    return jsonify({"ok": True, "deleted": bool(deleted)})
+
+
+@app.route("/proxy_external_history/purge", methods=["POST"])
+def proxy_external_history_purge():
+    """Keep only the most recent ``keep_last`` messages for a session.
+
+    Body JSON: { platform, session_key, keep_last: int default 500 }
+    """
+    user_id, err = _external_history_user_or_401()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    platform = str(body.get("platform") or "").strip()
+    session_key = body.get("session_key")
+    if not platform:
+        return jsonify({"ok": False, "error": "missing platform"}), 400
+    try:
+        keep_last = max(1, int(body.get("keep_last") or 500))
+    except (TypeError, ValueError):
+        keep_last = 500
+
+    async def _do():
+        store = await get_history_store()
+        meta = await store.get_session_meta(platform=platform, session_key=session_key)
+        if meta and not _external_history_can_read(user_id, str(meta.get("user_id") or "")):
+            return None, "forbidden"
+        deleted = await store.purge_old_messages(
+            platform=platform, session_key=session_key, keep_last=keep_last
+        )
+        return deleted, None
+
+    try:
+        deleted, err_msg = asyncio.run(_do())
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+    if err_msg == "forbidden":
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+    return jsonify({"ok": True, "deleted_count": int(deleted or 0), "kept": keep_last})
 
 
 # ------------------------------------------------------------------
@@ -4669,10 +4947,10 @@ def proxy_visual_agent_generate_yaml():
                 "The script must run as:\n"
                 "python my_workflow.py --question '...' --user-id '...' --team '...'\n"
                 "Required structure:\n"
-                "- import StandaloneWorkflowContext and run_cli from oasis.python_workflow_cli\n"
-                "- from oasis.python_workflow_cli import StandaloneWorkflowContext, run_cli\n"
-                "- define async def main(ctx: StandaloneWorkflowContext)\n"
-                "- end with: if __name__ == '__main__': raise SystemExit(run_cli(main))\n"
+                "- from oasis.workflow import Context, workflow\n"
+                "- define async def main(ctx: Context)\n"
+                "- decorate it: @workflow above the def, no if __name__ block needed\n"
+                "- (only switch to: from oasis.workflow import Context, run; ... ; if __name__ == '__main__': raise SystemExit(run(main)) when other top-level code must run after main)\n"
                 "Use ctx for:\n"
                 "- ctx.question, ctx.user_id, ctx.team, ctx.topic_id, ctx.run_id\n"
                 "- ctx.list_agents(), ctx.list_personas(), ctx.get_agent(), ctx.get_persona()\n"
@@ -4682,9 +4960,9 @@ def proxy_visual_agent_generate_yaml():
                 "Rules:\n"
                 "- Use async/await.\n"
                 "- Keep the script directly executable with plain Python.\n"
-                "- If oasis.python_workflow_cli is already importable, do not add any bootstrap path logic.\n"
-                "- If imports do not work yet, you may use any import bootstrap you want: set PYTHONPATH, append custom sys.path entries, use a wrapper, or read CLAWCROSS_PYTHONPATH / CLAWCROSS_PROJECT_ROOT from the environment.\n"
-                "- Do not assume that searching upward for a repository root is required, or that the workflow file lives inside the repo tree.\n"
+                "- Do not add any sys.path / PYTHONPATH / CLAWCROSS_PYTHONPATH / load_dotenv / venv re-exec bootstrap. oasis.workflow handles all of that at import time.\n"
+                "- Do not import from oasis.python_workflow_cli directly; import from oasis.workflow instead.\n"
+                "- The workflow file does not need to live inside the repo tree.\n"
                 "- Import extra modules only when needed.\n"
                 "- By default the runtime auto-creates an OASIS topic before main(ctx) starts, so ctx.topic_id is usually already set.\n"
                 "- ctx.publish(...) writes local logs and also mirrors the message into the auto-created topic when one exists.\n"

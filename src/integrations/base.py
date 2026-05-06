@@ -39,6 +39,8 @@ class PreparedAgentStream:
     api_url: str | None = None
     headers: dict[str, Any] | None = None
     body: dict[str, Any] | None = None
+    history_request_id: str | None = None
+    history_options: dict[str, Any] | None = None
 
     def cleanup(self) -> None:
         if self.temp_path:
