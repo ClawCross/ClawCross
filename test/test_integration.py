@@ -12,6 +12,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 import front
+from chatbot.adapters.base import ChannelAdapter, MagicLink
 from utils.env_settings import mask_all_sensitive, read_env_all, write_env_settings
 
 
@@ -38,6 +39,28 @@ class EnvSettingsTests(unittest.TestCase):
             self.assertIn("****", mask_all_sensitive(read_env_all(path))["ONEBOTV11_BOTS"])
         finally:
             Path(path).unlink(missing_ok=True)
+
+
+class ChatbotCommandTests(unittest.TestCase):
+    def test_cross_command_matches_exact_command_or_arguments_only(self):
+        self.assertTrue(ChannelAdapter.is_cross_command("/cross"))
+        self.assertTrue(ChannelAdapter.is_cross_command("  /Cross   "))
+        self.assertTrue(ChannelAdapter.is_cross_command("/cross login"))
+        self.assertFalse(ChannelAdapter.is_cross_command("/crossword"))
+        self.assertFalse(ChannelAdapter.is_cross_command("please /cross"))
+
+    def test_cross_reply_includes_expiry_when_available(self):
+        reply = ChannelAdapter.format_cross_reply(
+            MagicLink(
+                link="https://example.test/login-link/token?user=default",
+                expires_at=1778119853,
+                valid_hours=24,
+            )
+        )
+
+        self.assertIn("已生成新的有效链接", reply)
+        self.assertIn("https://example.test/login-link/token?user=default", reply)
+        self.assertIn("有效至", reply)
 
 
 class FrontendIntegrationTests(unittest.TestCase):
@@ -137,6 +160,20 @@ class FrontendIntegrationTests(unittest.TestCase):
         _, kwargs = mock_post.call_args
         self.assertEqual(kwargs["json"], {"whitelist": whitelist, "user_id": "integration-user"})
         self.assertEqual(kwargs["headers"], {"X-Internal-Token": front.INTERNAL_TOKEN})
+
+    def test_generate_login_link_returns_expiry_metadata(self):
+        response = self.client.post(
+            "/generate_login_link",
+            json={"user_id": "integration-user"},
+            environ_overrides={"REMOTE_ADDR": "127.0.0.1"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        self.assertIn("/login-link/", payload["link"])
+        self.assertEqual(payload["valid_hours"], 24)
+        self.assertGreater(payload["expires_at"], payload["generated_at"])
 
     def test_proxy_weclaw_qr_returns_pending_when_missing(self):
         with mock.patch.object(front.os.path, "exists", return_value=False):

@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from datetime import datetime
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
@@ -43,6 +44,14 @@ class AIResponse:
     ok: bool
     content: str | None = None
     error: str | None = None
+
+
+@dataclass
+class MagicLink:
+    link: str
+    expires_at: int | None = None
+    generated_at: int | None = None
+    valid_hours: int | None = None
 
 
 class ChannelAdapter(ABC):
@@ -141,7 +150,10 @@ class ChannelAdapter(ABC):
 
     @staticmethod
     def is_cross_command(text: str) -> bool:
-        return bool(text) and text.strip().lower().startswith(CROSS_COMMAND)
+        if not text:
+            return False
+        parts = text.strip().split(maxsplit=1)
+        return bool(parts) and parts[0].lower() == CROSS_COMMAND
 
     @staticmethod
     def extract_text(content_list: list[dict]) -> str:
@@ -152,12 +164,20 @@ class ChannelAdapter(ABC):
         return ""
 
     @staticmethod
-    def format_cross_reply(link: str | None) -> str:
+    def format_cross_reply(link: str | MagicLink | None) -> str:
         if not link:
             return "❌ 生成登录链接失败，请检查前端服务（PORT_FRONTEND）是否就绪"
-        return f"🔗 ClawCross 前端登录链接（24 小时有效）：\n{link}"
+        if isinstance(link, MagicLink):
+            lines = ["🔗 ClawCross 前端登录链接（已生成新的有效链接）：", link.link]
+            if link.expires_at:
+                expires = datetime.fromtimestamp(link.expires_at).strftime("%Y-%m-%d %H:%M:%S")
+                lines.append(f"有效至：{expires}")
+            elif link.valid_hours:
+                lines.append(f"有效期：{link.valid_hours} 小时")
+            return "\n".join(lines)
+        return f"🔗 ClawCross 前端登录链接（已生成新的有效链接）：\n{link}"
 
-    async def generate_magic_link(self, user_id: str) -> str | None:
+    async def generate_magic_link(self, user_id: str) -> MagicLink | None:
         port = os.getenv("PORT_FRONTEND", "51209")
         url = f"http://127.0.0.1:{port}/generate_login_link"
         try:
@@ -166,7 +186,16 @@ class ChannelAdapter(ABC):
             if resp.status_code != 200:
                 logger.warning(f"生成 magic link 失败: {resp.status_code} {resp.text[:200]}")
                 return None
-            return resp.json().get("link")
+            data = resp.json()
+            link = data.get("link")
+            if not link:
+                return None
+            return MagicLink(
+                link=link,
+                expires_at=data.get("expires_at"),
+                generated_at=data.get("generated_at"),
+                valid_hours=data.get("valid_hours"),
+            )
         except Exception as e:
             logger.warning(f"调用 generate_login_link 异常: {e}")
             return None

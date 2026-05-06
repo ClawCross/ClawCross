@@ -216,6 +216,18 @@ def verify_login_token(token: str) -> str | None:
         return None
 
 
+def login_token_expire_ts(token: str) -> int | None:
+    """Extract the expiry timestamp from a generated login token."""
+    try:
+        padded = token + '=' * (-len(token) % 4)
+        decoded = base64.urlsafe_b64decode(padded).decode()
+        payload, _signature = decoded.rsplit(':', 1)
+        _user_id, expire_ts, _random_str = payload.split(':')
+        return int(expire_ts)
+    except Exception:
+        return None
+
+
 register_group_routes(app, port_agent=PORT_AGENT, internal_token=INTERNAL_TOKEN)
 register_oasis_routes(app, oasis_base_url=OASIS_BASE_URL)
 register_session_routes(
@@ -2449,8 +2461,11 @@ def generate_login_link():
     if not user_id:
         return jsonify({"error": "user_id is required"}), 400
     
-    # Generate token
-    token = generate_login_token(user_id)
+    # Generate a fresh token for each request so /cross never reuses an expired link.
+    valid_hours = 24
+    generated_ts = int(time.time())
+    token = generate_login_token(user_id, valid_hours=valid_hours)
+    expires_ts = login_token_expire_ts(token) or (generated_ts + valid_hours * 3600)
 
     # Re-read PUBLIC_DOMAIN from .env each call so tunnel updates take effect
     # without restarting the front process. Normalize scheme: PUBLIC_DOMAIN may be
@@ -2471,7 +2486,10 @@ def generate_login_link():
         "ok": True,
         "token": token,
         "link": magic_link,
-        "user_id": user_id
+        "user_id": user_id,
+        "generated_at": generated_ts,
+        "expires_at": expires_ts,
+        "valid_hours": valid_hours,
     })
 
 

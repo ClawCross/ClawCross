@@ -50,7 +50,7 @@ _chatbot_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _project_root = os.path.dirname(_chatbot_dir)
 load_dotenv(dotenv_path=os.path.join(_project_root, "config", ".env"))
 
-from .base import ChannelAdapter
+from .base import ChannelAdapter, MagicLink
 
 logger = logging.getLogger("chatbot.weclaw")
 
@@ -191,7 +191,7 @@ class WeClawAdapter(ChannelAdapter):
 
     # ── proxy: 拦截 /cross，其余透传 ──────────────────────────────────
 
-    def _gen_magic_link_sync(self, user_id: str) -> str | None:
+    def _gen_magic_link_sync(self, user_id: str) -> MagicLink | None:
         url = f"http://127.0.0.1:{self._frontend_port}/generate_login_link"
         try:
             with httpx.Client(timeout=10.0) as client:
@@ -199,7 +199,16 @@ class WeClawAdapter(ChannelAdapter):
                 if resp.status_code != 200:
                     logger.warning(f"生成 magic link 失败: {resp.status_code} {resp.text[:200]}")
                     return None
-                return resp.json().get("link")
+                data = resp.json()
+                link = data.get("link")
+                if not link:
+                    return None
+                return MagicLink(
+                    link=link,
+                    expires_at=data.get("expires_at"),
+                    generated_at=data.get("generated_at"),
+                    valid_hours=data.get("valid_hours"),
+                )
         except Exception as e:
             logger.warning(f"调用 generate_login_link 异常: {e}")
             return None
