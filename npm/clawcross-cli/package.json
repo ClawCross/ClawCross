@@ -1,0 +1,17 @@
+{
+  "name": "clawcross-cli",
+  "version": "0.0.1",
+  "description": "Codex-style command-line shell for ClawCross agent platforms.",
+  "license": "MIT",
+  "bin": {
+    "clawcross": "bin/clawcross.js"
+  },
+  "files": [
+    "bin/clawcross.js",
+    "scripts/clawcross.py",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}

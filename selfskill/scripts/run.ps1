@@ -895,6 +895,11 @@ switch ($Command) {
         exit $code
     }
 
+    "clawcross" {
+        $code = Invoke-ClawcrossPython -Arguments (@("scripts\clawcross.py") + $Rest)
+        exit $code
+    }
+
     "check-openclaw" {
         $python = Ensure-VenvPython -ProjectRoot $projectRoot
         $openclaw = Get-OpenClawCommand

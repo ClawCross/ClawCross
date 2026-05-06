@@ -2,7 +2,21 @@
   "name": "clawcross-frontend-tools",
   "private": true,
   "version": "0.0.1",
+  "bin": {
+    "clawcross": "bin/clawcross.js"
+  },
+  "files": [
+    "bin/clawcross.js",
+    "clawcross",
+    "clawcross.ps1",
+    "docs/clawcross-shell.md",
+    "scripts/clawcross.py",
+    "LICENSE",
+    "README.md"
+  ],
   "scripts": {
+    "clawcross": "node bin/clawcross.js",
+    "pack:clawcross-cli": "npm pack ./npm/clawcross-cli",
     "build:pretext-vendor": "node tools/build_pretext_vendor.mjs",
     "build:oasis-town": "node tools/build_oasis_town.mjs",
     "test:node": "node test/test_tinyfish_live_shared.js && node test/test_pretext_text_core.js",

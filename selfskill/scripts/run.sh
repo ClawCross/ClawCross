@@ -720,6 +720,13 @@ case "${1:-help}" in
         exit $?
         ;;
 
+    clawcross)
+        # Codex-style interactive multi-platform Agent shell
+        shift
+        python scripts/clawcross.py "$@"
+        exit $?
+        ;;
+
     check-openclaw)
         echo "=== OpenClaw 检测 ==="
 
