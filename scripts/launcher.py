@@ -29,6 +29,7 @@ if sys.version_info < (3, 9):
     sys.exit(1)
 
 import subprocess
+import concurrent.futures
 import os
 import signal
 import atexit
@@ -392,7 +393,7 @@ def start_service(service):
 
 
 def wait_for_started_services(services):
-    for service in services:
+    def _wait_one(service):
         wait_for_service_ready(
             proc=service["proc"],
             port=service["port"],
@@ -400,7 +401,18 @@ def wait_for_started_services(services):
             timeout=service.get("timeout", 20.0),
             health_url=service.get("health_url"),
         )
-        print(f"   ✅ {service['label']} 已就绪 (port {service['port']})")
+        return service
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(services))) as pool:
+        futures = [pool.submit(_wait_one, service) for service in services]
+        try:
+            for future in concurrent.futures.as_completed(futures):
+                service = future.result()
+                print(f"   ✅ {service['label']} 已就绪 (port {service['port']})")
+        except Exception:
+            for future in futures:
+                future.cancel()
+            raise
 
 
 def launch_services(services):
