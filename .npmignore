@@ -15,6 +15,8 @@ config/.env
 # 用户密码配置（含哈希）
 config/users.json
 !config/users.json.example
+config/tinyfish_targets.json
+!config/tinyfish_targets.example.json
 
 # 但 requirements.txt 需要上传
 !config/requirements.txt

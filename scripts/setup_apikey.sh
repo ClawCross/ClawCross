@@ -2,10 +2,11 @@
 # LLM API Key 配置脚本（支持 DeepSeek / OpenAI / Gemini / Claude / Antigravity（Google One Pro 免费） / MiniMax 等，含厂商路由与中转代理）
 
 PROJECT_ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
-cd "$PROJECT_ROOT"
 
 source "$PROJECT_ROOT/selfskill/scripts/_paths.sh"
 clawcross_init_paths
+clawcross_run_migration_if_needed
+cd "$CLAWCROSS_WORKSPACE_DIR"
 
 ENV_FILE="$CLAWCROSS_CONFIG_DIR/.env"
 EXAMPLE_FILE="$PROJECT_ROOT/config/.env.example"

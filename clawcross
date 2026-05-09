@@ -2,7 +2,11 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PY="$ROOT/.venv/bin/python"
+export PROJECT_ROOT="$ROOT"
+source "$ROOT/selfskill/scripts/_paths.sh"
+clawcross_init_paths
+
+PY="$CLAWCROSS_VENV_DIR/bin/python"
 if [ ! -x "$PY" ]; then
   PY="${PYTHON:-python3}"
 fi

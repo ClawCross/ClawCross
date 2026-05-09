@@ -179,7 +179,7 @@ print_magic_links() {
     local ml_user="${CLAWCROSS_MAGIC_LINK_USER:-default}"
     local port="${PORT_FRONTEND:-51209}"
     local cli_output token pub
-    cli_output=$(cd "$PROJECT_ROOT" && uv run scripts/cli.py token generate -u "$ml_user" --valid-hours 24 2>/dev/null)
+    cli_output=$("$VENV_PY" "$PROJECT_ROOT/scripts/cli.py" token generate -u "$ml_user" --valid-hours 24 2>/dev/null)
     token=$(_magic_token_from_cli_output "$cli_output")
     pub="${PUBLIC_DOMAIN:-}"
     echo ""
@@ -187,7 +187,7 @@ print_magic_links() {
     echo "   👤 绑定的登录用户 user_id=${ml_user}（与 URL 中 ?user= 一致）"
     if [ -z "$token" ]; then
         echo "   ⚠️  未能生成 token（请确认 config/.env 中已配置 INTERNAL_TOKEN）"
-        echo "      手动生成: uv run scripts/cli.py token generate -u ${ml_user} --valid-hours 24"
+        echo "      手动生成: bash selfskill/scripts/run.sh cli token generate -u ${ml_user} --valid-hours 24"
         return 1
     fi
     echo "   本机: http://127.0.0.1:${port}/login-link/${token}?user=${ml_user}"
@@ -445,7 +445,7 @@ case "${1:-help}" in
         # Auto-create .env if missing
         if [ ! -f "$CLAWCROSS_CONFIG_DIR/.env" ]; then
             echo "📋 config/.env 不存在，自动从模板初始化..."
-            python selfskill/scripts/configure.py --init
+            "$VENV_PY" "$PROJECT_ROOT/selfskill/scripts/configure.py" --init
         fi
 
         # 可选：若尚未配置 LLM，尝试从本机 OpenClaw 写入 Clawcross .env（失败不影响启动）。
@@ -455,7 +455,7 @@ case "${1:-help}" in
             if [ -z "${LLM_API_KEY:-}" ] || [ "${LLM_API_KEY:-}" = "your_api_key_here" ]; then
                 echo ""
                 echo "🔄 LLM_API_KEY 仍为占位/空：尝试从 OpenClaw 同步到 Clawcross .env（可忽略失败）..."
-                python selfskill/scripts/configure_openclaw.py --import-clawcross-llm-from-openclaw || true
+                "$VENV_PY" "$PROJECT_ROOT/selfskill/scripts/configure_openclaw.py" --import-clawcross-llm-from-openclaw || true
                 source "$CLAWCROSS_CONFIG_DIR/.env" 2>/dev/null || true
             fi
         else
@@ -484,7 +484,7 @@ case "${1:-help}" in
             unset CLAWCROSS_NO_CHANNEL
         fi
         mkdir -p "$CLAWCROSS_LOG_DIR"
-        nohup python scripts/launcher.py > "$CLAWCROSS_LOG_DIR/launcher.log" 2>&1 &
+        nohup "$VENV_PY" "$PROJECT_ROOT/scripts/launcher.py" > "$CLAWCROSS_LOG_DIR/launcher.log" 2>&1 &
         LAUNCHER_PID=$!
         echo "$LAUNCHER_PID" > "$PIDFILE"
         echo "✅ WeBot 已在后台启动 (PID: $LAUNCHER_PID)"
@@ -516,7 +516,7 @@ case "${1:-help}" in
         print_wsl_access_hint
         echo ""
         echo "═══════════════════════════════════════════════════"
-        python scripts/cli.py status
+        "$VENV_PY" "$PROJECT_ROOT/scripts/cli.py" status
         echo ""
 
         # 自动启动公网隧道（可用 --no-tunnel 跳过）
@@ -528,7 +528,7 @@ case "${1:-help}" in
             _stop_tracked_tunnel_if_running
             echo "🌐 正在启动 Cloudflare Tunnel（手机远程访问）..."
             mkdir -p "$CLAWCROSS_LOG_DIR"
-            nohup python scripts/tunnel.py > "$CLAWCROSS_LOG_DIR/tunnel.log" 2>&1 &
+            nohup "$VENV_PY" "$PROJECT_ROOT/scripts/tunnel.py" > "$CLAWCROSS_LOG_DIR/tunnel.log" 2>&1 &
             TUNNEL_PID=$!
             echo "$TUNNEL_PID" > "$TUNNEL_PIDFILE"
             echo -n "   等待公网地址"
@@ -567,7 +567,7 @@ case "${1:-help}" in
         # Auto-create .env if missing
         if [ ! -f "$CLAWCROSS_CONFIG_DIR/.env" ]; then
             echo "📋 config/.env 不存在，自动从模板初始化..."
-            python selfskill/scripts/configure.py --init
+            "$VENV_PY" "$PROJECT_ROOT/selfskill/scripts/configure.py" --init
         fi
 
         source "$CLAWCROSS_CONFIG_DIR/.env" 2>/dev/null || true
@@ -575,7 +575,7 @@ case "${1:-help}" in
             if [ -z "${LLM_API_KEY:-}" ] || [ "${LLM_API_KEY:-}" = "your_api_key_here" ]; then
                 echo ""
                 echo "🔄 LLM_API_KEY 仍为占位/空：尝试从 OpenClaw 同步到 Clawcross .env（可忽略失败）..."
-                python selfskill/scripts/configure_openclaw.py --import-clawcross-llm-from-openclaw || true
+                "$VENV_PY" "$PROJECT_ROOT/selfskill/scripts/configure_openclaw.py" --import-clawcross-llm-from-openclaw || true
                 source "$CLAWCROSS_CONFIG_DIR/.env" 2>/dev/null || true
             fi
         else
@@ -607,7 +607,7 @@ case "${1:-help}" in
         else
             unset CLAWCROSS_NO_CHANNEL
         fi
-        exec python scripts/launcher.py
+        exec "$VENV_PY" "$PROJECT_ROOT/scripts/launcher.py"
         ;;
     stop)
         if stop_clawcross_service_processes; then
@@ -715,13 +715,13 @@ case "${1:-help}" in
             echo "用法: $0 add-user <username> <password>" >&2
             exit 1
         fi
-        python selfskill/scripts/adduser.py "$2" "$3"
+        "$VENV_PY" "$PROJECT_ROOT/selfskill/scripts/adduser.py" "$2" "$3"
         exit 0
         ;;
 
     configure)
         shift
-        python selfskill/scripts/configure.py "$@"
+        "$VENV_PY" "$PROJECT_ROOT/selfskill/scripts/configure.py" "$@"
         CONFIG_EXIT_CODE=$?
         if [ $CONFIG_EXIT_CODE -ne 0 ]; then
             exit $CONFIG_EXIT_CODE
@@ -736,32 +736,32 @@ case "${1:-help}" in
 
     auto-model)
         # 查询 API 可用模型列表（打印供 agent 选择，不自动写入）
-        python selfskill/scripts/configure.py --auto-model
+        "$VENV_PY" "$PROJECT_ROOT/selfskill/scripts/configure.py" --auto-model
         exit 0
         ;;
 
     sync-openclaw-llm)
-        python selfskill/scripts/configure_openclaw.py --sync-clawcross-llm
+        "$VENV_PY" "$PROJECT_ROOT/selfskill/scripts/configure_openclaw.py" --sync-clawcross-llm
         exit $?
         ;;
 
     evolve-skill)
         shift
-        "$VENV_PY" selfskill/scripts/evolve_skill.py "$@"
+        "$VENV_PY" "$PROJECT_ROOT/selfskill/scripts/evolve_skill.py" "$@"
         exit $?
         ;;
 
     cli)
         # CLI 控制工具：像操作前端一样控制 Agent
         shift
-        python scripts/cli.py "$@"
+        "$VENV_PY" "$PROJECT_ROOT/scripts/cli.py" "$@"
         exit $?
         ;;
 
     clawcross)
         # Codex-style interactive multi-platform Agent shell
         shift
-        python scripts/clawcross.py "$@"
+        "$VENV_PY" "$PROJECT_ROOT/scripts/clawcross.py" "$@"
         exit $?
         ;;
 
@@ -793,7 +793,7 @@ case "${1:-help}" in
             # 自动探测并配置 + 初始化 workspace 模板
             echo ""
             echo "🔍 自动探测 OpenClaw 配置..."
-            python selfskill/scripts/configure_openclaw.py --auto-detect
+            "$VENV_PY" "$PROJECT_ROOT/selfskill/scripts/configure_openclaw.py" --auto-detect
             if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
                 echo ""
                 echo "💡 如果 Clawcross 在安装或重配 OpenClaw 之前已启动，请执行一次 stop -> start，"
@@ -810,7 +810,7 @@ case "${1:-help}" in
         echo "⚠️  OpenClaw 未安装"
         echo ""
         echo "OpenClaw 是一个本地 AI 助手，Clawcross 可以通过它进行可视化工作流编排。"
-        python selfskill/scripts/configure_openclaw.py --install-guide
+        "$VENV_PY" "$PROJECT_ROOT/selfskill/scripts/configure_openclaw.py" --install-guide
         echo ""
 
         # 3. 检测 Node.js
@@ -881,7 +881,7 @@ case "${1:-help}" in
                     # 初始化 workspace 默认模板
                     echo ""
                     echo "🏠 初始化 OpenClaw workspace 默认模板..."
-                    python selfskill/scripts/configure_openclaw.py --init-workspace
+                    "$VENV_PY" "$PROJECT_ROOT/selfskill/scripts/configure_openclaw.py" --init-workspace
 
                     echo ""
                     echo "📋 下一步：完成 OpenClaw onboarding"
@@ -998,7 +998,7 @@ case "${1:-help}" in
 
         echo "🌐 正在启动 Cloudflare Tunnel..."
         mkdir -p "$CLAWCROSS_LOG_DIR"
-        nohup python scripts/tunnel.py > "$CLAWCROSS_LOG_DIR/tunnel.log" 2>&1 &
+        nohup "$VENV_PY" "$PROJECT_ROOT/scripts/tunnel.py" > "$CLAWCROSS_LOG_DIR/tunnel.log" 2>&1 &
         TUNNEL_PID=$!
         echo "$TUNNEL_PID" > "$TUNNEL_PIDFILE"
 

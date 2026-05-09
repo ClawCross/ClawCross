@@ -102,6 +102,7 @@ class Migration:
         self.log(f"starting migration from {PROJECT_ROOT} to {self.home}")
         self.move_if_missing(PROJECT_ROOT / "config" / ".env", self.config_dir / ".env", backup_on_conflict=True)
         self.move_if_missing(PROJECT_ROOT / "config" / "users.json", self.config_dir / "users.json", backup_on_conflict=True)
+        self.move_if_missing(PROJECT_ROOT / "config" / "tinyfish_targets.json", self.config_dir / "tinyfish_targets.json", backup_on_conflict=True)
         self.copy_config_template_if_missing()
 
         for pattern in ("*.db", "*.db-wal", "*.db-shm"):

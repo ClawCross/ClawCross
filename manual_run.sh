@@ -4,27 +4,37 @@
 # 锁定绝对路径：确保无论在哪启动，都能找到项目根目录
 export PROJECT_ROOT="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 export WEBOT_HEADLESS=0
-cd "$PROJECT_ROOT"
+
+source "$PROJECT_ROOT/selfskill/scripts/_paths.sh"
+clawcross_init_paths
+clawcross_run_migration_if_needed
+cd "$CLAWCROSS_WORKSPACE_DIR"
+
 echo "========== 1/4 环境检查与配置 =========="
-bash scripts/setup_env.sh
+bash "$PROJECT_ROOT/scripts/setup_env.sh"
 if [ $? -ne 0 ]; then
     echo "❌ 环境配置失败，请检查错误信息"
     exit 1
 fi
 
 # 激活虚拟环境（如果存在），后续所有 python 调用均使用虚拟环境
-if [ -f .venv/bin/activate ]; then
-    source .venv/bin/activate
+if [ -f "$CLAWCROSS_VENV_DIR/bin/activate" ]; then
+    source "$CLAWCROSS_VENV_DIR/bin/activate"
 else
-    echo "❌ 虚拟环境 .venv 不存在，请先运行: bash selfskill/scripts/run.sh setup"
+    echo "❌ 虚拟环境不存在: $CLAWCROSS_VENV_DIR，请先运行: bash selfskill/scripts/run.sh setup"
     echo "   直接使用系统 python 可能是 Python 2.x，无法运行本项目"
+    exit 1
+fi
+VENV_PY="$CLAWCROSS_VENV_DIR/bin/python"
+if [ ! -x "$VENV_PY" ]; then
+    echo "❌ 未找到可执行的 venv python: $VENV_PY"
     exit 1
 fi
 
 # 检查 Python 版本（防止系统 python 指向 Python 2）
-_PY_MAJOR=$(python -c "import sys; print(sys.version_info.major)" 2>/dev/null || echo "0")
+_PY_MAJOR=$("$VENV_PY" -c "import sys; print(sys.version_info.major)" 2>/dev/null || echo "0")
 if [ "$_PY_MAJOR" -lt 3 ]; then
-    echo "❌ 当前 python 指向 Python $_PY_MAJOR（$(which python)）"
+    echo "❌ 当前 venv python 指向 Python $_PY_MAJOR（$VENV_PY）"
     echo "   本项目需要 Python 3.11+，请确保虚拟环境已正确激活"
     echo "   推荐使用: bash selfskill/scripts/run.sh start"
     exit 1
@@ -33,14 +43,14 @@ fi
 echo ""
 echo "========== 2/4 API Key 配置 =========="
 # 建议加上判断，防止配置失败后继续运行
-bash scripts/setup_apikey.sh
+bash "$PROJECT_ROOT/scripts/setup_apikey.sh"
 if [ $? -ne 0 ]; then
     echo "⚠️  API Key 配置未完成（可能已跳过或出错）"
 fi
 
 MODEL_NAME=""
-if [ -f config/.env ]; then
-    MODEL_NAME=$(grep '^LLM_MODEL=' config/.env | cut -d'=' -f2-)
+if [ -f "$CLAWCROSS_CONFIG_DIR/.env" ]; then
+    MODEL_NAME=$(grep '^LLM_MODEL=' "$CLAWCROSS_CONFIG_DIR/.env" | cut -d'=' -f2-)
 fi
 if [ -z "$MODEL_NAME" ]; then
     echo ""
@@ -56,7 +66,7 @@ echo ""
 echo "========== 3/4 用户管理 =========="
 read -p "是否需要添加新用户？(y/N): " answer
 if [[ "$answer" =~ ^[Yy]$ ]]; then
-    bash scripts/adduser.sh
+    bash "$PROJECT_ROOT/scripts/adduser.sh"
 fi
 
 echo ""
@@ -91,7 +101,7 @@ read -p "是否部署到公网？(y/N): " tunnel_answer
 if [[ "$tunnel_answer" =~ ^[Yy]$ ]]; then
     echo "🌐 正在后台启动 Cloudflare Tunnel..."
     # 使用 venv 中的 python（已由上面 source .venv/bin/activate 激活）
-    python scripts/tunnel.py &
+    "$VENV_PY" "$PROJECT_ROOT/scripts/tunnel.py" &
     TUNNEL_PID=$!
     # 确保主进程退出时也关闭隧道
     trap "kill $TUNNEL_PID 2>/dev/null" EXIT
@@ -99,4 +109,4 @@ if [[ "$tunnel_answer" =~ ^[Yy]$ ]]; then
 fi
 
 # exec 替换当前进程，确保信号（Ctrl+C、kill、终端关闭）直达 launcher.py
-exec python scripts/launcher.py
+exec "$VENV_PY" "$PROJECT_ROOT/scripts/launcher.py"

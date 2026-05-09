@@ -6,8 +6,10 @@ $projectRoot = $PSScriptRoot
 . (Join-Path $projectRoot "scripts\common.ps1")
 
 Set-ClawcrossUtf8
+Initialize-ClawcrossRuntimePaths -ProjectRoot $projectRoot
+Invoke-ClawcrossHomeMigration -ProjectRoot $projectRoot
 $runScript = Join-Path $projectRoot "selfskill\scripts\run.ps1"
-$envPath = Join-Path $projectRoot "config\.env"
+$envPath = Join-Path $env:CLAWCROSS_CONFIG_DIR ".env"
 
 Write-Host "========== 1/4 Environment setup =========="
 & (Join-Path $projectRoot "scripts\setup_env.ps1")

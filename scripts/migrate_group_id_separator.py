@@ -15,6 +15,12 @@ import sys
 
 import aiosqlite
 
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from src.utils.runtime_paths import DATA_DIR
+
 
 async def migrate(db_path: str, dry_run: bool = False) -> None:
     """执行 group_id 分隔符迁移"""
@@ -76,8 +82,8 @@ def main():
     parser = argparse.ArgumentParser(description="将 group_id 分隔符从 # 迁移为 ::")
     parser.add_argument(
         "--db-path",
-        default=os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "group_chat.db"),
-        help="数据库文件路径 (默认: data/group_chat.db)",
+        default=os.path.join(str(DATA_DIR), "group_chat.db"),
+        help="数据库文件路径 (默认: CLAWCROSS_DATA_DIR/group_chat.db)",
     )
     parser.add_argument("--dry-run", action="store_true", help="只显示会做什么，不实际修改")
     args = parser.parse_args()
