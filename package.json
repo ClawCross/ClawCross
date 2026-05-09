@@ -1,5 +1,5 @@
 {
-  "name": "clawcross-cli",
+  "name": "clawcross",
   "version": "0.0.3",
   "description": "ClawCross multi-platform agent CLI shell with full project source.",
   "license": "MIT",
