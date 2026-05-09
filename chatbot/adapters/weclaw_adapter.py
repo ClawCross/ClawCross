@@ -23,6 +23,7 @@ WeClaw（github.com/fastclaw-ai/weclaw）是一个 Go 写的微信 bot 桥，
   WECLAW_BIN=weclaw              二进制路径或可执行名（默认 PATH 查找）
   WECLAW_USERNAME=default        传给 agent 的 username
   WECLAW_CONFIG=~/.weclaw/config.json
+  WECLAW_PROXY_HOST=127.0.0.1    proxy 监听地址
   WECLAW_PROXY_PORT=51298        proxy 监听端口
   WECLAW_AUTO_INSTALL=true       缺二进制时自动安装
 """

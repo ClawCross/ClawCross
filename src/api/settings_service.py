@@ -44,7 +44,7 @@ CHATBOT_CHANNEL_CATALOG = [
     {"id": "yunhu", "label": "Yunhu", "kind": "nonebot", "adapter": "yunhu", "env_key": "YUNHU_BOTS"},
     {"id": "heybox", "label": "Heybox", "kind": "nonebot", "adapter": "heybox", "env_key": "HEYBOX_BOTS"},
     {"id": "console", "label": "Console", "kind": "nonebot", "adapter": "console", "env_key": "CONSOLE_BOTS"},
-    {"id": "weclaw", "label": "WeClaw / WeChat", "kind": "weclaw", "adapter": "weclaw", "env_key": ""},
+    {"id": "weclaw", "label": "微信 / WeClaw", "kind": "weclaw", "adapter": "weclaw", "env_key": ""},
     {"id": "webhook", "label": "Custom Webhook", "kind": "webhook", "adapter": "webhook", "env_key": ""},
 ]
 

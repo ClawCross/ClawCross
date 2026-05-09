@@ -3675,8 +3675,8 @@
       <div class="discover-card" onclick="showMobileChatbotConfig()">
         <div class="discover-card-icon">🤖</div>
         <div class="discover-card-body">
-          <div class="discover-card-title">Chatbot 配置</div>
-          <div class="discover-card-desc">按 channel 配置平台 token 和访问白名单</div>
+          <div class="discover-card-title">Channel 设置</div>
+          <div class="discover-card-desc">配置微信、Telegram、QQ 等渠道连接和访问白名单</div>
         </div>
         <div class="discover-card-arrow">›</div>
       </div>
@@ -3785,14 +3785,14 @@
   </div>
 </div>
 
-<!-- ═══════════════ Mobile Chatbot Config ═══════════════ -->
+<!-- ═══════════════ Mobile Channel Settings ═══════════════ -->
 <div class="drawer-overlay side-panel-overlay" id="mobile-chatbot-config-overlay" onclick="if(event.target===this)closeMobileChatbotConfig()"></div>
 <div class="drawer side-drawer" id="mobile-chatbot-config">
   <div class="drawer-header">
     <button class="drawer-header-back" onclick="closeMobileChatbotConfig()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
     </button>
-    <span class="drawer-header-title">Chatbot 配置</span>
+    <span class="drawer-header-title">Channel 设置</span>
   </div>
   <div class="drawer-body" style="padding:16px;display:flex;flex-direction:column;gap:12px;">
     <div class="chatbot-config-picker">
@@ -3801,14 +3801,14 @@
     </div>
     <div id="mobile-chatbot-config-status" style="font-size:12px;color:var(--text-secondary);min-height:18px;"></div>
     <div class="side-panel-section">
-      <div style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:8px;">平台配置</div>
+      <div style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:8px;">渠道连接</div>
       <div id="mobile-chatbot-channel-settings"></div>
       <div class="chatbot-config-help" id="mobile-chatbot-channel-help"></div>
       <div id="mobile-weclaw-login-panel" style="display:none;margin-top:10px;"></div>
     </div>
     <div class="side-panel-section">
-      <div style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:8px;">白名单</div>
-      <div class="chatbot-config-help" style="margin-bottom:8px;">ID 是平台用户 ID / 群 ID；username 用于生成 Agent 会话身份。</div>
+      <div style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:8px;">访问白名单</div>
+      <div class="chatbot-config-help" style="margin-bottom:8px;">ID 是渠道用户 ID / 群 ID；username 用于生成 Agent 会话身份。</div>
       <div id="mobile-chatbot-whitelist-rows"></div>
       <button class="chatbot-add-row-btn" type="button" onclick="addMobileChatbotWhitelistRow()">添加白名单</button>
     </div>
@@ -3818,7 +3818,7 @@
     </div>
     <div class="chatbot-config-actions">
       <button type="button" onclick="loadMobileChatbotConfig()">刷新</button>
-      <button type="button" onclick="saveMobileChatbotConfig()">保存配置</button>
+      <button type="button" onclick="saveMobileChatbotConfig()">保存设置</button>
     </div>
   </div>
 </div>
@@ -4712,7 +4712,7 @@ const I18N = {
     settings_antigravity_missing_subtitle: '⚠️ Antigravity 未运行（未启动或无法连接）',
     sg_tts_help: '留空时会自动跟随当前 LLM provider。检测到 OpenAI 时默认使用 gpt-4o-mini-tts / alloy / whisper-1；检测到 Gemini 时默认使用 gemini-2.5-flash-preview-tts / charon。',
     sg_tinyfish_help: '配置 TinyFish Web Agent API、监控目标文件与每日价格巡检计划。保存后重启服务，scheduler 会按 cron 自动执行。',
-    sg_bots_help: '多平台 chatbot 使用 NoneBot adapter JSON 数组和中心化 WHITELIST_FILE；建议在创造页的 Chatbot 配置入口按 channel 选择平台并管理连接格式。',
+    sg_bots_help: '多平台渠道使用 NoneBot adapter JSON 数组和中心化 WHITELIST_FILE；建议在创造页的 Channel 设置入口按渠道选择平台并管理连接格式。',
     sf_tts_model: '留空时自动跟随当前 LLM provider。OpenAI 默认是 gpt-4o-mini-tts，Gemini 默认是 gemini-2.5-flash-preview-tts。',
     sf_tts_voice: '留空时自动跟随当前 LLM provider。OpenAI 默认声音是 alloy，Gemini 默认声音是 charon。',
     sf_stt_model: '留空时自动跟随当前 LLM provider。OpenAI 默认是 whisper-1；Gemini 目前没有内置 STT 默认值，可按需手动填写。',
@@ -4723,7 +4723,7 @@ const I18N = {
     sf_tinyfish_enabled: '设为 true 启用内建每日监控任务；设为 false 关闭。',
     sf_tinyfish_cron: '5 段 cron 表达式，例如 0 9 * * * 代表每天早上 9 点。',
     sf_telegram_bots: 'NoneBot Telegram adapter 的 bot JSON 数组，例如 [{"token":"123:abc"}]。',
-    sf_qq_bots: 'NoneBot QQ adapter 的 bot JSON 数组，例如 [{"id":"app_id","token":"secret","intents":{"public_messages":true,"direct_message":true}}]。',
+    sf_qq_bots: 'NoneBot QQ adapter 的 bot JSON 数组，例如 [{"id":"app_id","secret":"bot_secret","intents":{"public_messages":true,"direct_message":true}}]。',
     sf_whitelist_file: '中心化白名单 JSON 文件路径，默认 data/whitelist.json。',
     tinyfish_run_now: '立即运行',
     tinyfish_refresh: '刷新结果',
@@ -5329,7 +5329,7 @@ const I18N = {
     settings_antigravity_missing_subtitle: '⚠️ Antigravity is not running or cannot be reached',
     sg_tts_help: 'When empty, automatically follows the current LLM provider. OpenAI uses gpt-4o-mini-tts / alloy / whisper-1; Gemini uses gemini-2.5-flash-preview-tts / charon.',
     sg_tinyfish_help: 'Configure TinyFish Web Agent API access, search targets, and the scheduled crawl schedule. Save and restart to let the scheduler pick up cron changes.',
-    sg_bots_help: 'Multi-platform chatbot uses NoneBot adapter JSON arrays and the centralized WHITELIST_FILE. Use Chatbot Config on the Create tab to choose channels and manage connection formats.',
+    sg_bots_help: 'Multi-platform channels use NoneBot adapter JSON arrays and the centralized WHITELIST_FILE. Use Channel Settings on the Create tab to choose platforms and manage connection formats.',
     sf_tts_model: 'When empty, follows the current LLM provider. OpenAI defaults to gpt-4o-mini-tts, Gemini to gemini-2.5-flash-preview-tts.',
     sf_tts_voice: 'When empty, follows the current LLM provider. OpenAI defaults to alloy, Gemini to charon.',
     sf_stt_model: 'When empty, follows the current LLM provider. OpenAI defaults to whisper-1; Gemini has no built-in STT default.',
@@ -5340,7 +5340,7 @@ const I18N = {
     sf_tinyfish_enabled: 'Set true to enable the built-in daily monitor job; set false to disable it.',
     sf_tinyfish_cron: 'Five-field cron expression, for example 0 9 * * * for every day at 9:00.',
     sf_telegram_bots: 'Bot JSON array for the NoneBot Telegram adapter, for example [{"token":"123:abc"}].',
-    sf_qq_bots: 'Bot JSON array for the NoneBot QQ adapter, for example [{"id":"app_id","token":"secret","intents":{"public_messages":true,"direct_message":true}}].',
+    sf_qq_bots: 'Bot JSON array for the NoneBot QQ adapter, for example [{"id":"app_id","secret":"bot_secret","intents":{"public_messages":true,"direct_message":true}}].',
     sf_whitelist_file: 'Central whitelist JSON path. Defaults to data/whitelist.json.',
     tinyfish_run_now: 'Run Now',
     tinyfish_refresh: 'Refresh',
@@ -9649,7 +9649,7 @@ function openClawcrossCreator() {
   window.location.assign('/creator');
 }
 
-// ── Mobile Chatbot Config ──
+// ── Mobile Channel Settings ──
 const MOBILE_CHATBOT_CHANNEL_FALLBACKS = [
   { id: 'telegram', label: 'Telegram', kind: 'nonebot', adapter: 'telegram', env_key: 'TELEGRAM_BOTS' },
   { id: 'qq', label: 'QQ', kind: 'nonebot', adapter: 'qq', env_key: 'QQ_BOTS' },
@@ -9666,20 +9666,21 @@ const MOBILE_CHATBOT_CHANNEL_FALLBACKS = [
   { id: 'yunhu', label: 'Yunhu', kind: 'nonebot', adapter: 'yunhu', env_key: 'YUNHU_BOTS' },
   { id: 'heybox', label: 'Heybox', kind: 'nonebot', adapter: 'heybox', env_key: 'HEYBOX_BOTS' },
   { id: 'console', label: 'Console', kind: 'nonebot', adapter: 'console', env_key: 'CONSOLE_BOTS' },
-  { id: 'weclaw', label: 'WeClaw / WeChat', kind: 'weclaw', adapter: 'weclaw', env_key: '' },
+  { id: 'weclaw', label: '微信 / WeClaw', kind: 'weclaw', adapter: 'weclaw', env_key: '' },
   { id: 'webhook', label: 'Custom Webhook', kind: 'webhook', adapter: 'webhook', env_key: '' },
 ];
 const MOBILE_CHATBOT_COMMON_KEYS = ['NONEBOT_ADAPTERS', 'NONEBOT_HOST', 'NONEBOT_PORT', 'WHITELIST_FILE'];
-const MOBILE_CHATBOT_WECLAW_KEYS = ['WECLAW_ENABLED', 'WECLAW_USERNAME', 'WECLAW_BIN', 'WECLAW_CONFIG', 'WECLAW_PROXY_PORT', 'WECLAW_AUTO_INSTALL'];
+const MOBILE_CHATBOT_WECLAW_KEYS = ['WECLAW_ENABLED', 'WECLAW_USERNAME', 'WECLAW_BIN', 'WECLAW_CONFIG', 'WECLAW_PROXY_HOST', 'WECLAW_PROXY_PORT', 'WECLAW_AUTO_INSTALL'];
 const MOBILE_CHATBOT_WEBHOOK_KEYS = ['WHITELIST_FILE'];
 const MOBILE_CHATBOT_DEFAULTS = {
   NONEBOT_HOST: '127.0.0.1',
   NONEBOT_PORT: '8120',
-  WHITELIST_FILE: 'data/whitelist.json',
+  WHITELIST_FILE: '',
   WECLAW_ENABLED: 'true',
   WECLAW_USERNAME: 'default',
   WECLAW_BIN: 'weclaw',
   WECLAW_CONFIG: '~/.weclaw/config.json',
+  WECLAW_PROXY_HOST: '127.0.0.1',
   WECLAW_PROXY_PORT: '51298',
   WECLAW_AUTO_INSTALL: 'true',
 };
@@ -9827,13 +9828,13 @@ function getMobileChatbotChannelKeys(channel) {
 function getMobileChatbotChannelHelp(channel) {
   if (!channel) return '';
   if (channel.kind === 'weclaw') {
-    return 'WeClaw 不走 NoneBot adapter，也不需要平台 token。设 WECLAW_ENABLED=true 并重启后，ClawCross 会启动 weclaw 子进程；用微信扫描登录二维码，登录后的微信消息经本地 proxy 转到 Agent。';
+    return '微信渠道使用 WeClaw，不走 NoneBot adapter，也不需要平台 token。保存时会设置 WECLAW_ENABLED=true；重启后 ClawCross 启动 weclaw 子进程，本地 proxy 默认监听 127.0.0.1:51298。若 WeClaw 已加载已有微信会话，二维码不会重新生成。';
   }
   if (channel.kind === 'webhook') {
     return 'Webhook 渠道由 *_WEBHOOK_URL 环境变量启用；白名单 channel 名应与变量前缀小写一致。';
   }
   const envKey = channel.env_key || `${String(channel.adapter || channel.id).replace(/[._-]/g, '').toUpperCase()}_BOTS`;
-  return `NoneBot 渠道需要两步：1) 在 NONEBOT_ADAPTERS 加入 ${escapeHtml(channel.adapter || channel.id)}；2) 在 ${escapeHtml(envKey)} 填该平台 bot JSON 数组。还需要安装对应 nonebot-adapter 包。`;
+  return `NoneBot 渠道需要两步：1) 在 NONEBOT_ADAPTERS 加入 ${escapeHtml(channel.adapter || channel.id)}；2) 在 ${escapeHtml(envKey)} 填该渠道 bot JSON 数组。还需要安装对应 nonebot-adapter 包。`;
 }
 
 function renderMobileChatbotChannelSummary() {
@@ -9848,7 +9849,12 @@ function renderMobileChatbotChannelSummary() {
   lines.push(`类型：${channel.kind || 'nonebot'}`);
   if (channel.adapter) lines.push(`adapter：${channel.adapter}`);
   if (channel.env_key) lines.push(`连接配置：${channel.env_key}`);
-  if (channel.kind === 'nonebot') lines.push('白名单 channel 使用下方选择值；运行时按平台 user_id 或 username 匹配。');
+  if (channel.kind === 'weclaw') {
+    const enabled = String(mobileChatbotSettings.WECLAW_ENABLED || '').toLowerCase();
+    lines.push(`状态：${enabled === 'true' ? '已启用（重启后生效）' : '未启用'}`);
+    lines.push(`proxy：${mobileChatbotSettings.WECLAW_PROXY_HOST || MOBILE_CHATBOT_DEFAULTS.WECLAW_PROXY_HOST}:${mobileChatbotSettings.WECLAW_PROXY_PORT || MOBILE_CHATBOT_DEFAULTS.WECLAW_PROXY_PORT}`);
+  }
+  if (channel.kind === 'nonebot') lines.push('白名单 channel 使用下方选择值；运行时按渠道 user_id 或 username 匹配。');
   el.innerHTML = `<div class="chatbot-channel-title">${escapeHtml(channel.label || channel.id)}</div><div class="chatbot-channel-meta">${lines.map(escapeHtml).join('<br>')}</div>`;
 }
 
@@ -9862,10 +9868,10 @@ function renderMobileWeClawLoginPanel(channel) {
   }
   panel.style.display = 'block';
   panel.innerHTML = `<div class="weclaw-qr-box">
-    <div class="chatbot-config-help">点击下面按钮会保存 WeClaw 默认配置并重启服务；需要登录时二维码会显示在这里。若 WeClaw 已加载已有微信会话，通常不会再次生成二维码。</div>
+    <div class="chatbot-config-help">点击下面按钮会保存微信渠道配置并重启服务；需要登录时二维码会显示在这里。若 WeClaw 已加载已有微信会话，通常不会再次生成二维码。</div>
     <div class="chatbot-config-actions" style="margin-top:8px;">
       <button type="button" onclick="loadMobileWeClawQr()">刷新二维码</button>
-      <button type="button" onclick="saveMobileWeClawAndRestart()">保存并重启生成二维码</button>
+      <button type="button" onclick="saveMobileWeClawAndRestart()">保存微信设置并重启</button>
     </div>
     <div id="mobile-weclaw-qr-status" class="chatbot-config-help" style="margin-top:8px;"></div>
     <pre id="mobile-weclaw-qr-pre" class="weclaw-qr-pre" style="display:none;"></pre>
@@ -10029,8 +10035,8 @@ async function saveMobileChatbotConfig() {
     const whitelistData = await whitelistResp.json();
     if (!whitelistResp.ok || whitelistData.error) throw new Error(whitelistData.error || `whitelist HTTP ${whitelistResp.status}`);
     mobileChatbotWhitelist = normalizeMobileChatbotWhitelist(whitelistData.whitelist || mobileChatbotWhitelist);
-    mobileChatbotStatus('已保存。重启服务后 chatbot 运行配置会生效。');
-    toast('Chatbot 配置已保存');
+    mobileChatbotStatus('已保存。重启服务后渠道运行配置会生效。');
+    toast('Channel 设置已保存');
     return true;
   } catch (e) {
     mobileChatbotStatus('保存失败: ' + e.message, true);
@@ -10039,7 +10045,7 @@ async function saveMobileChatbotConfig() {
 }
 
 async function saveMobileWeClawAndRestart() {
-  if (!confirm('保存 WeClaw 配置并重启服务以生成微信扫码二维码？')) return;
+  if (!confirm('保存微信渠道设置并重启服务？如果需要重新登录，二维码会在重启后显示。')) return;
   collectMobileChatbotConfigFromDom();
   MOBILE_CHATBOT_WECLAW_KEYS.forEach(key => {
     if (!mobileChatbotSettings[key]) mobileChatbotSettings[key] = MOBILE_CHATBOT_DEFAULTS[key] || '';
@@ -10048,7 +10054,7 @@ async function saveMobileWeClawAndRestart() {
   renderMobileChatbotConfig();
   const ok = await saveMobileChatbotConfig();
   if (!ok) return;
-  mobileChatbotStatus('已保存，正在发送重启信号...');
+  mobileChatbotStatus('微信渠道设置已保存，正在发送重启信号...');
   try {
     await fetch('/proxy_restart', {
       method: 'POST',
@@ -10057,7 +10063,7 @@ async function saveMobileWeClawAndRestart() {
   } catch (_) {
     // 服务可能已经开始重启，忽略断连。
   }
-  mobileChatbotStatus('重启信号已发送。请等待 15-30 秒后刷新二维码。');
+  mobileChatbotStatus('重启信号已发送。请等待 15-30 秒；若已有微信会话，二维码可能不会重新出现。');
   if (mobileWeClawQrRetryTimer) clearTimeout(mobileWeClawQrRetryTimer);
   mobileWeClawQrRetryTimer = setTimeout(() => loadMobileWeClawQr(1), 6000);
 }
@@ -14035,7 +14041,7 @@ const SETTINGS_GROUPS_ORDERED = [
     { id: 'oasis',    labelKey: 'sg_oasis',    keys: ['OASIS_BASE_URL'] },
     { id: 'ports',    labelKey: 'sg_ports',    keys: ['PORT_AGENT', 'PORT_SCHEDULER', 'PORT_OASIS', 'PORT_FRONTEND', 'PORT_BARK'] },
     { id: 'network',  labelKey: 'sg_network',  keys: ['PUBLIC_DOMAIN', 'BARK_PUBLIC_URL'] },
-    { id: 'bots',     labelKey: 'sg_bots',     keys: ['NONEBOT_ADAPTERS', 'NONEBOT_HOST', 'NONEBOT_PORT', 'WHITELIST_FILE', 'TELEGRAM_BOTS', 'QQ_BOTS', 'QQ_IS_SANDBOX', 'WECLAW_ENABLED', 'WECLAW_BIN', 'WECLAW_USERNAME', 'WECLAW_CONFIG', 'WECLAW_PROXY_PORT', 'WECLAW_AUTO_INSTALL'] },
+    { id: 'bots',     labelKey: 'sg_bots',     keys: ['NONEBOT_ADAPTERS', 'NONEBOT_HOST', 'NONEBOT_PORT', 'WHITELIST_FILE', 'TELEGRAM_BOTS', 'QQ_BOTS', 'QQ_IS_SANDBOX', 'WECLAW_ENABLED', 'WECLAW_BIN', 'WECLAW_USERNAME', 'WECLAW_CONFIG', 'WECLAW_PROXY_HOST', 'WECLAW_PROXY_PORT', 'WECLAW_AUTO_INSTALL'] },
     { id: 'comm',     labelKey: 'sg_comm',     keys: ['OPENAI_STANDARD_MODE'] },
     { id: 'exec',     labelKey: 'sg_exec',     keys: ['ALLOWED_COMMANDS', 'EXEC_TIMEOUT', 'MAX_OUTPUT_LENGTH'] },
     { id: 'security', labelKey: 'sg_security', keys: ['INTERNAL_TOKEN'] },
