@@ -213,9 +213,9 @@ class ChannelAdapter(ABC):
                 self._cli_enabled.discard(key)
                 return True, "ClawCross CLI mode closed."
             self._cli_enabled.add(key)
-            from scripts.clawcross import load_chatbot_state, welcome_text
+            from scripts.clawcross import chat_welcome_text, load_chatbot_state
             state = load_chatbot_state(channel, user_id, username)
-            return True, welcome_text(state)
+            return True, chat_welcome_text(state)
         if lower in {"/exit", "/quit", "/q"} and key in self._cli_enabled:
             self._cli_enabled.discard(key)
             return True, "ClawCross CLI mode closed."

@@ -165,6 +165,19 @@ CLI_COMMANDS = [
 ]
 
 SENSITIVE_CONFIG_RE = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD|PASS|COOKIE|AUTH)", re.IGNORECASE)
+CHAT_SLASH_COMMANDS = [
+    ("/help", "show this command list"),
+    ("/platforms", "list agent platforms"),
+    ("/use <platform>", "switch platform"),
+    ("/session", "list sessions"),
+    ("/session <id>", "switch session"),
+    ("/new session", "create session"),
+    ("/cwd [path]", "show or change workspace"),
+    ("/mode <mode>", "set execute/plan/review"),
+    ("/state", "show current shell state"),
+    ("/cancel", "cancel internal generation"),
+    ("/exit", "leave /cli mode"),
+]
 
 
 def _repo_session_name(cwd: str | None = None) -> str:
@@ -1219,6 +1232,56 @@ def welcome_text(state: dict) -> str:
     return _strip_ansi("\n".join(_welcome_lines(state))).strip()
 
 
+def _chat_state_lines(state: dict) -> list[str]:
+    current = _current(state)
+    return [
+        f"Platform: {current.get('platform', 'internal')}",
+        f"Session: {current.get('session', 'default')}",
+        f"User: {current.get('user', DEFAULT_USER)}",
+        f"Mode: {current.get('mode', 'execute')}",
+    ]
+
+
+def chat_help_text() -> str:
+    lines = ["Commands:"]
+    for command, description in CHAT_SLASH_COMMANDS:
+        lines.append(f"{command}\n  {description}")
+    lines.extend([
+        "",
+        "Examples:",
+        "/use codex",
+        "/new session",
+        "review this repo",
+        "",
+        "CLI equivalents:",
+        "clawcross",
+        "clawcross run -p codex \"review this repo\"",
+        "clawcross config KEY VALUE",
+    ])
+    return "\n".join(lines)
+
+
+def chat_welcome_text(state: dict, magic_link: str | None = None) -> str:
+    lines = [
+        f"{APP_NAME} v{_package_version()}",
+        "Chat shell is on.",
+        "",
+        *_chat_state_lines(state),
+        "",
+        "Send a message to run it.",
+        "Send /help for commands.",
+        "Send /cross for a public magic link.",
+        "Send /exit to leave.",
+    ]
+    if magic_link:
+        lines.extend([
+            "",
+            "Magic link:",
+            magic_link,
+        ])
+    return "\n".join(lines)
+
+
 def handle_chatbot_input(text: str, state: dict) -> tuple[bool, str]:
     """Handle one ClawCross shell input line for non-terminal chat channels.
 
@@ -1229,6 +1292,8 @@ def handle_chatbot_input(text: str, state: dict) -> tuple[bool, str]:
         return True, ""
     out = io.StringIO()
     active = True
+    if line.startswith("/") and line.split(maxsplit=1)[0].lower() == "/help":
+        return True, chat_help_text()
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
         if line.startswith("/"):
             active = _handle_slash(line, state)
