@@ -169,9 +169,6 @@ CHAT_SLASH_COMMANDS = [
     ("/help", "show this command list"),
     ("/platforms", "list agent platforms"),
     ("/use <platform>", "switch platform"),
-    ("/session", "list sessions"),
-    ("/session <id>", "switch session"),
-    ("/new session", "create session"),
     ("/cwd [path]", "show or change workspace"),
     ("/mode <mode>", "set execute/plan/review"),
     ("/state", "show current shell state"),
@@ -238,8 +235,18 @@ def load_chatbot_state(channel: str, user_id: str, username: str | None = None) 
     state = _load_state(_chatbot_state_path(channel, user_id))
     current = _current(state)
     current["user"] = username or user_id or DEFAULT_USER
-    current["session"] = current.get("session") or f"{channel}-{user_id}"
+    safe_session = _chat_default_session(channel, user_id)
+    current["session"] = current.get("session") or safe_session
+    state["__chat_channel"] = channel
+    state["__chat_user_id"] = user_id
+    state["__chat_default_session"] = safe_session
     return state
+
+
+def _chat_default_session(channel: str, user_id: str) -> str:
+    raw = f"{channel or 'chat'}-{user_id or 'anonymous'}"
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", raw).strip(".-")
+    return safe or "chat-anonymous"
 
 
 def _package_version() -> str:
@@ -446,6 +453,16 @@ def _set_platform(state: dict, platform: str) -> None:
     platform_state = state.setdefault("platforms", {}).setdefault(platform, {})
     current["session"] = platform_state.get("session") or old_session
     platform_state["session"] = current["session"]
+
+
+def _set_chat_platform(state: dict, platform: str) -> None:
+    platform = (platform or "internal").strip()
+    current = _current(state)
+    default_session = state.get("__chat_default_session") or _repo_session_name(current.get("cwd"))
+    current["platform"] = platform
+    current["session"] = default_session
+    state.setdefault("platforms", {}).setdefault(platform, {})["session"] = default_session
+    _save_state(state)
 
 
 def _set_session(state: dict, session: str) -> None:
@@ -1235,8 +1252,7 @@ def welcome_text(state: dict) -> str:
 def _chat_state_lines(state: dict) -> list[str]:
     current = _current(state)
     return [
-        f"Platform: {current.get('platform', 'internal')}",
-        f"Session: {current.get('session', 'default')}",
+        f"Agent: {current.get('platform', 'internal')}",
         f"User: {current.get('user', DEFAULT_USER)}",
         f"Mode: {current.get('mode', 'execute')}",
     ]
@@ -1250,7 +1266,8 @@ def chat_help_text() -> str:
         "",
         "Examples:",
         "/use codex",
-        "/new session",
+        "/use claude",
+        "/use gemini",
         "review this repo",
         "",
         "CLI equivalents:",
@@ -1268,6 +1285,8 @@ def chat_welcome_text(state: dict, magic_link: str | None = None) -> str:
         "",
         *_chat_state_lines(state),
         "",
+        "Switch agents with /use codex.",
+        "Try /use claude or /use gemini.",
         "Send a message to run it.",
         "Send /help for commands.",
         "Send /cross for a public magic link.",
@@ -1294,6 +1313,19 @@ def handle_chatbot_input(text: str, state: dict) -> tuple[bool, str]:
     active = True
     if line.startswith("/") and line.split(maxsplit=1)[0].lower() == "/help":
         return True, chat_help_text()
+    if line.startswith("/") and line.split(maxsplit=1)[0].lower() == "/use":
+        parts = line.split(maxsplit=1)
+        if len(parts) < 2 or not parts[1].strip():
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+                cmd_platforms(None, state)
+            return True, _strip_ansi(out.getvalue()).strip()
+        platform = parts[1].strip().split()[0]
+        _set_chat_platform(state, platform)
+        current = _current(state)
+        return True, (
+            f"Agent switched to {current.get('platform', platform)}.\n"
+            "Send a message to continue on this agent."
+        )
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
         if line.startswith("/"):
             active = _handle_slash(line, state)
