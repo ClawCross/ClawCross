@@ -9868,16 +9868,38 @@ function renderMobileWeClawLoginPanel(channel) {
   }
   panel.style.display = 'block';
   panel.innerHTML = `<div class="weclaw-qr-box">
-    <div class="chatbot-config-help">需要换号或重新扫码时，使用 WeClaw 内置 login 流程刷新二维码。扫码完成后再保存并重启微信渠道。</div>
+    <div class="chatbot-config-help">微信渠道使用 WeClaw 内置登录。未登录时新登录；已有登录时可重新登录。终止只停止 WeClaw 微信连接。</div>
     <div class="chatbot-config-actions" style="margin-top:8px;">
-      <button type="button" onclick="loadMobileWeClawQr()">刷新二维码</button>
-      <button type="button" onclick="saveMobileWeClawAndRestart()">保存微信设置并重启</button>
-      <button type="button" onclick="resetMobileWeClawLogin()">重新扫码登录</button>
+      <button type="button" id="mobile-weclaw-login-btn" onclick="startMobileWeClawLogin()">登录</button>
+      <button type="button" onclick="stopMobileWeClaw()">终止</button>
     </div>
     <div id="mobile-weclaw-qr-status" class="chatbot-config-help" style="margin-top:8px;"></div>
     <pre id="mobile-weclaw-qr-pre" class="weclaw-qr-pre" style="display:none;"></pre>
   </div>`;
-  loadMobileWeClawQr();
+  loadMobileWeClawStatus();
+}
+
+async function loadMobileWeClawStatus() {
+  const status = document.getElementById('mobile-weclaw-qr-status');
+  const pre = document.getElementById('mobile-weclaw-qr-pre');
+  const loginBtn = document.getElementById('mobile-weclaw-login-btn');
+  if (!status || !pre) return;
+  pre.style.display = 'none';
+  pre.textContent = '';
+  status.textContent = '读取微信登录状态...';
+  try {
+    const resp = await fetch('/proxy_weclaw_status');
+    const data = await resp.json();
+    if (!resp.ok || data.error) throw new Error(data.error || `HTTP ${resp.status}`);
+    if (loginBtn) loginBtn.textContent = data.has_login ? '重新登录' : '新登录';
+    const accountCount = Array.isArray(data.accounts) ? data.accounts.length : 0;
+    const loginText = data.has_login ? `已有 ${accountCount} 个微信登录记录` : '未发现微信登录记录';
+    const runningText = data.login_running ? '登录中，等待扫码' : (data.weclaw_status || 'WeClaw 状态未知');
+    status.textContent = `${loginText}。${runningText}`;
+    if (data.login_running) loadMobileWeClawQr(0);
+  } catch (e) {
+    status.textContent = '读取微信状态失败: ' + e.message;
+  }
 }
 
 async function loadMobileWeClawQr(attempt = 0) {
@@ -9890,7 +9912,7 @@ async function loadMobileWeClawQr(attempt = 0) {
     mobileWeClawQrRetryTimer = null;
   }
   mobileWeClawQrLoading = true;
-  status.textContent = attempt ? `服务重启中，正在重试读取二维码... (${attempt}/12)` : '读取二维码...';
+  status.textContent = attempt ? `等待二维码生成... (${attempt}/12)` : '等待二维码生成...';
   pre.style.display = 'none';
   pre.textContent = '';
   try {
@@ -9906,7 +9928,7 @@ async function loadMobileWeClawQr(attempt = 0) {
   } catch (e) {
     mobileWeClawQrLoading = false;
     if (attempt < 12) {
-      status.textContent = '前端服务暂时不可达，可能正在重启；稍后自动重试。';
+      status.textContent = '二维码暂时不可用，稍后自动重试。';
       mobileWeClawQrRetryTimer = setTimeout(() => loadMobileWeClawQr(attempt + 1), 3000);
       return;
     }
@@ -10045,8 +10067,10 @@ async function saveMobileChatbotConfig() {
   }
 }
 
-async function saveMobileWeClawAndRestart() {
-  if (!confirm('保存微信渠道设置并重启服务？如果需要重新登录，二维码会在重启后显示。')) return;
+async function startMobileWeClawLogin() {
+  const loginBtn = document.getElementById('mobile-weclaw-login-btn');
+  const action = loginBtn?.textContent?.trim() || '登录';
+  if (!confirm(`${action}微信？前端会显示新的扫码二维码。`)) return;
   collectMobileChatbotConfigFromDom();
   MOBILE_CHATBOT_WECLAW_KEYS.forEach(key => {
     if (!mobileChatbotSettings[key]) mobileChatbotSettings[key] = MOBILE_CHATBOT_DEFAULTS[key] || '';
@@ -10055,46 +10079,41 @@ async function saveMobileWeClawAndRestart() {
   renderMobileChatbotConfig();
   const ok = await saveMobileChatbotConfig();
   if (!ok) return;
-  mobileChatbotStatus('微信渠道设置已保存，正在发送重启信号...');
+  mobileChatbotStatus('正在启动微信扫码登录...');
   try {
-    await fetch('/proxy_restart', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    });
-  } catch (_) {
-    // 服务可能已经开始重启，忽略断连。
-  }
-  mobileChatbotStatus('重启信号已发送。请等待 15-30 秒；若已有微信会话，二维码可能不会重新出现。');
-  if (mobileWeClawQrRetryTimer) clearTimeout(mobileWeClawQrRetryTimer);
-  mobileWeClawQrRetryTimer = setTimeout(() => loadMobileWeClawQr(1), 6000);
-}
-
-async function resetMobileWeClawLogin() {
-  if (!confirm('启动 WeClaw 内置 login 重新扫码？扫码完成后需要再重启微信渠道。')) return;
-  collectMobileChatbotConfigFromDom();
-  MOBILE_CHATBOT_WECLAW_KEYS.forEach(key => {
-    if (!mobileChatbotSettings[key]) mobileChatbotSettings[key] = MOBILE_CHATBOT_DEFAULTS[key] || '';
-  });
-  mobileChatbotSettings.WECLAW_ENABLED = 'true';
-  renderMobileChatbotConfig();
-  const ok = await saveMobileChatbotConfig();
-  if (!ok) return;
-  mobileChatbotStatus('正在启动 WeClaw 内置 login...');
-  try {
-    const resp = await fetch('/proxy_weclaw_reset', {
+    const resp = await fetch('/proxy_weclaw_login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     });
     let data = {};
     try { data = await resp.json(); } catch (_) {}
     if (!resp.ok || data.error) throw new Error(data.error || `HTTP ${resp.status}`);
-    mobileChatbotStatus(data.message || '已启动 WeClaw login，正在等待新二维码...');
+    mobileChatbotStatus(data.message || '已启动微信扫码登录，正在等待二维码...');
   } catch (e) {
-    mobileChatbotStatus('启动 WeClaw login 失败: ' + e.message, true);
+    mobileChatbotStatus('启动微信登录失败: ' + e.message, true);
     return;
   }
   if (mobileWeClawQrRetryTimer) clearTimeout(mobileWeClawQrRetryTimer);
   mobileWeClawQrRetryTimer = setTimeout(() => loadMobileWeClawQr(1), 6000);
+}
+
+async function stopMobileWeClaw() {
+  if (!confirm('终止 WeClaw 微信连接？')) return;
+  mobileChatbotStatus('正在终止 WeClaw...');
+  try {
+    const resp = await fetch('/proxy_weclaw_stop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    let data = {};
+    try { data = await resp.json(); } catch (_) {}
+    if (!resp.ok || data.error) throw new Error(data.error || `HTTP ${resp.status}`);
+    mobileChatbotStatus(data.message || 'WeClaw 已终止');
+    if (mobileWeClawQrRetryTimer) clearTimeout(mobileWeClawQrRetryTimer);
+    loadMobileWeClawStatus();
+  } catch (e) {
+    mobileChatbotStatus('终止 WeClaw 失败: ' + e.message, true);
+  }
 }
 
 function syncMobileChatbotAdapterSetting() {

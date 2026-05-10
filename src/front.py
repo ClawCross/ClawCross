@@ -108,6 +108,37 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB for image uploads
 _weclaw_login_proc: subprocess.Popen | None = None
 _weclaw_login_lock = threading.Lock()
 
+
+def _weclaw_settings() -> tuple[str, str, str]:
+    settings = read_env_all(str(ENV_FILE))
+    weclaw_bin = settings.get("WECLAW_BIN") or os.getenv("WECLAW_BIN") or "weclaw"
+    resolved_bin = shutil.which(weclaw_bin) or weclaw_bin
+    config_path = os.path.expanduser(
+        settings.get("WECLAW_CONFIG")
+        or os.getenv("WECLAW_CONFIG")
+        or "~/.weclaw/config.json"
+    )
+    accounts_dir = os.path.join(os.path.dirname(config_path), "accounts")
+    return resolved_bin, config_path, accounts_dir
+
+
+def _check_weclaw_bin(resolved_bin: str) -> str | None:
+    if shutil.which(resolved_bin):
+        return None
+    if os.path.isfile(resolved_bin) and os.access(resolved_bin, os.X_OK):
+        return None
+    return f"找不到 weclaw 二进制: {resolved_bin}"
+
+
+def _weclaw_account_files(accounts_dir: str) -> list[str]:
+    if not os.path.isdir(accounts_dir):
+        return []
+    return sorted(
+        str(p)
+        for p in Path(accounts_dir).glob("*.json")
+        if not p.name.endswith(".sync.json")
+    )
+
 # --- 配置区 ---
 from datetime import datetime, timedelta
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=8)
@@ -2644,6 +2675,44 @@ def proxy_get_weclaw_qr():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/proxy_weclaw_status", methods=["GET"])
+def proxy_weclaw_status():
+    """读取 WeClaw 登录/运行状态。"""
+    try:
+        resolved_bin, config_path, accounts_dir = _weclaw_settings()
+        bin_error = _check_weclaw_bin(resolved_bin)
+        accounts = _weclaw_account_files(accounts_dir)
+        login_running = _weclaw_login_proc is not None and _weclaw_login_proc.poll() is None
+        status_output = ""
+        if not bin_error:
+            try:
+                result = subprocess.run(
+                    [resolved_bin, "status"],
+                    cwd=str(WORKSPACE_DIR),
+                    env=set_subprocess_env(os.environ),
+                    stdin=subprocess.DEVNULL,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                status_output = ((result.stdout or "") + (result.stderr or "")).strip()
+            except Exception as e:
+                status_output = f"status failed: {e}"
+        return jsonify({
+            "status": "success",
+            "bin": resolved_bin,
+            "bin_error": bin_error,
+            "config_path": config_path,
+            "accounts_dir": accounts_dir,
+            "accounts": accounts,
+            "has_login": bool(accounts),
+            "login_running": login_running,
+            "weclaw_status": status_output,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 def _capture_weclaw_login_output(proc: subprocess.Popen, qr_path: str) -> None:
     try:
         with open(qr_path, "w", encoding="utf-8") as f:
@@ -2662,19 +2731,19 @@ def _capture_weclaw_login_output(proc: subprocess.Popen, qr_path: str) -> None:
             pass
 
 
+@app.route("/proxy_weclaw_login", methods=["POST"])
 @app.route("/proxy_weclaw_reset", methods=["POST"])
-def proxy_reset_weclaw_login():
-    """使用 WeClaw 内置 login 流程刷新微信扫码登录。"""
+def proxy_start_weclaw_login():
+    """使用 WeClaw 内置 login 流程进行新登录/重新登录。"""
     global _weclaw_login_proc
     user_id = session.get("user_id", "")
     if not user_id:
         return jsonify({"error": "not logged in"}), 401
     try:
-        settings = read_env_all(str(ENV_FILE))
-        weclaw_bin = settings.get("WECLAW_BIN") or os.getenv("WECLAW_BIN") or "weclaw"
-        resolved_bin = shutil.which(weclaw_bin) or weclaw_bin
-        if not shutil.which(weclaw_bin) and not (os.path.isfile(resolved_bin) and os.access(resolved_bin, os.X_OK)):
-            return jsonify({"error": f"找不到 weclaw 二进制: {weclaw_bin}"}), 400
+        resolved_bin, _config_path, _accounts_dir = _weclaw_settings()
+        bin_error = _check_weclaw_bin(resolved_bin)
+        if bin_error:
+            return jsonify({"error": bin_error}), 400
 
         qr_path = os.path.join(str(DATA_DIR), "weclaw_qr.txt")
         os.makedirs(os.path.dirname(qr_path), exist_ok=True)
@@ -2683,23 +2752,13 @@ def proxy_reset_weclaw_login():
             if _weclaw_login_proc is not None and _weclaw_login_proc.poll() is None:
                 return jsonify({
                     "status": "running",
-                    "message": "WeClaw 登录流程已在运行，请刷新二维码。",
+                    "message": "WeClaw 登录流程已在运行，二维码会自动显示。",
                     "path": qr_path,
                     "pid": _weclaw_login_proc.pid,
                 })
 
             if os.path.isfile(qr_path) or os.path.islink(qr_path):
                 os.unlink(qr_path)
-
-            subprocess.run(
-                [resolved_bin, "stop"],
-                cwd=str(WORKSPACE_DIR),
-                env=set_subprocess_env(os.environ),
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=10,
-            )
 
             _weclaw_login_proc = subprocess.Popen(
                 [resolved_bin, "login"],
@@ -2720,10 +2779,49 @@ def proxy_reset_weclaw_login():
 
             return jsonify({
                 "status": "success",
-                "message": "已启动 WeClaw 内置 login。请等待二维码出现并扫码；扫码完成后再重启微信渠道。",
+                "message": "已启动微信扫码登录。请等待二维码出现并扫码。",
                 "path": qr_path,
                 "pid": _weclaw_login_proc.pid,
             })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/proxy_weclaw_stop", methods=["POST"])
+def proxy_stop_weclaw():
+    """使用 WeClaw 内置 stop 终止微信渠道。"""
+    global _weclaw_login_proc
+    user_id = session.get("user_id", "")
+    if not user_id:
+        return jsonify({"error": "not logged in"}), 401
+    try:
+        resolved_bin, _config_path, _accounts_dir = _weclaw_settings()
+        bin_error = _check_weclaw_bin(resolved_bin)
+        if bin_error:
+            return jsonify({"error": bin_error}), 400
+        with _weclaw_login_lock:
+            if _weclaw_login_proc is not None and _weclaw_login_proc.poll() is None:
+                _weclaw_login_proc.terminate()
+                try:
+                    _weclaw_login_proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    _weclaw_login_proc.kill()
+            _weclaw_login_proc = None
+        result = subprocess.run(
+            [resolved_bin, "stop"],
+            cwd=str(WORKSPACE_DIR),
+            env=set_subprocess_env(os.environ),
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return jsonify({
+            "status": "success",
+            "message": "已发送 WeClaw 终止命令。",
+            "output": ((result.stdout or "") + (result.stderr or "")).strip(),
+            "returncode": result.returncode,
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
