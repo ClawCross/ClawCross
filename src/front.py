@@ -14,6 +14,7 @@ import tempfile
 import zipfile
 import html
 import mimetypes
+import socket
 import threading
 import contextlib
 import sys as _sys
@@ -138,6 +139,14 @@ def _weclaw_account_files(accounts_dir: str) -> list[str]:
         for p in Path(accounts_dir).glob("*.json")
         if not p.name.endswith(".sync.json")
     )
+
+
+def _is_tcp_port_open(host: str, port: int, timeout: float = 0.5) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
 
 # --- 配置区 ---
 from datetime import datetime, timedelta
@@ -2680,9 +2689,14 @@ def proxy_weclaw_status():
     """读取 WeClaw 登录/运行状态。"""
     try:
         resolved_bin, config_path, accounts_dir = _weclaw_settings()
+        settings = read_env_all(str(ENV_FILE))
         bin_error = _check_weclaw_bin(resolved_bin)
         accounts = _weclaw_account_files(accounts_dir)
         login_running = _weclaw_login_proc is not None and _weclaw_login_proc.poll() is None
+        proxy_host = settings.get("WECLAW_PROXY_HOST") or os.getenv("WECLAW_PROXY_HOST") or "127.0.0.1"
+        proxy_port = int(settings.get("WECLAW_PROXY_PORT") or os.getenv("WECLAW_PROXY_PORT") or "51298")
+        proxy_running = _is_tcp_port_open(proxy_host, proxy_port)
+        bridge_running = _is_tcp_port_open("127.0.0.1", 18011)
         status_output = ""
         if not bin_error:
             try:
@@ -2707,6 +2721,9 @@ def proxy_weclaw_status():
             "accounts": accounts,
             "has_login": bool(accounts),
             "login_running": login_running,
+            "proxy_running": proxy_running,
+            "bridge_running": bridge_running,
+            "proxy": f"{proxy_host}:{proxy_port}",
             "weclaw_status": status_output,
         })
     except Exception as e:
