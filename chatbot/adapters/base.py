@@ -221,8 +221,20 @@ class ChannelAdapter(ABC):
                 self._cli_enabled.discard(key)
                 return True, "ClawCross cross shell closed."
             self._cli_enabled.add(key)
-            from scripts.clawcross import chat_welcome_text, load_chatbot_state
+            from scripts.clawcross import chat_help_text, chat_welcome_text, handle_chatbot_input, load_chatbot_state
             state = load_chatbot_state(channel, user_id, username)
+            if arg in {"help", "h", "?"}:
+                return True, chat_help_text()
+            if arg == "front":
+                link = await self.generate_magic_link(username or user_id)
+                return True, self.format_cross_reply(link)
+            if arg:
+                with self._cli_lock:
+                    active, reply = handle_chatbot_input(stripped, state)
+                if not active:
+                    self._cli_enabled.discard(key)
+                    return True, "ClawCross cross shell closed."
+                return True, reply or "(no output)"
             link = await self.generate_magic_link(username or user_id)
             return True, chat_welcome_text(state, link.link if link else None)
         if lower in {"/exit", "/quit", "/q"} and key in self._cli_enabled:

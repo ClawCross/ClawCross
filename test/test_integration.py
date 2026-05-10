@@ -13,6 +13,7 @@ if str(SRC_DIR) not in sys.path:
 
 import front
 from chatbot.adapters.base import ChannelAdapter, MagicLink
+from scripts.clawcross import chat_help_text, chat_welcome_text, handle_chatbot_input
 from utils.env_settings import mask_all_sensitive, read_env_all, write_env_settings
 
 
@@ -60,6 +61,50 @@ class ChatbotCommandTests(unittest.TestCase):
         self.assertTrue(ChannelAdapter.is_cli_command("/cross"))
         self.assertTrue(ChannelAdapter.is_cli_command("/cli"))
         self.assertFalse(ChannelAdapter.is_cli_command("/front"))
+
+    def test_chat_help_uses_cross_help_to_avoid_weclaw_builtin(self):
+        help_text = chat_help_text()
+        welcome = chat_welcome_text({"current": {"platform": "internal", "user": "default"}})
+
+        self.assertIn("/cross help", help_text)
+        self.assertIn("/cross use <platform>", help_text)
+        self.assertIn("/cross session <id>", help_text)
+        self.assertIn("Send /cross help for commands.", welcome)
+        self.assertIn("Switch agents with /cross use codex.", welcome)
+        self.assertNotIn("Send /help for commands.", welcome)
+        self.assertNotIn("Switch agents with /use codex.", welcome)
+
+    def test_cross_help_command_returns_chat_help(self):
+        _active, reply = handle_chatbot_input(
+            "/cross help",
+            {"current": {"platform": "internal", "user": "default"}},
+        )
+
+        self.assertIn("Commands:", reply)
+        self.assertIn("/cross help", reply)
+
+    def test_chat_session_switch_matches_cli_command(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state = {
+                "__state_path": str(Path(tmpdir) / "state.json"),
+                "current": {"platform": "internal", "user": "default", "cwd": "/tmp/project"},
+            }
+            _active, reply = handle_chatbot_input("/cross session review-1", state)
+
+            self.assertEqual(reply, "session: review-1")
+            self.assertEqual(state["current"]["session"], "review-1")
+            self.assertEqual(state["platforms"]["internal"]["session"], "review-1")
+
+    def test_chat_new_session_matches_cli_command(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state = {
+                "__state_path": str(Path(tmpdir) / "state.json"),
+                "current": {"platform": "internal", "user": "default", "cwd": "/tmp/project"},
+            }
+            _active, reply = handle_chatbot_input("/cross new session", state)
+
+            self.assertIn("session: project-", reply)
+            self.assertTrue(state["current"]["session"].startswith("project-"))
 
     def test_cross_reply_includes_expiry_when_available(self):
         reply = ChannelAdapter.format_cross_reply(

@@ -7,7 +7,7 @@ WeClaw（github.com/fastclaw-ai/weclaw）是一个 Go 写的微信 bot 桥，
 
   WeChat ──> weclaw 子进程 ──HTTP──> 本地 proxy(51298) ──HTTP──> /v1/chat/completions
                                           │
-                                          └─ 拦截 "/front" 命令 → 返回前端 magic link
+                                          └─ 拦截 ClawCross 命令 → 返回 magic link / cross shell
 
   1. 启动时自动检测 weclaw 二进制；缺失则跑 scripts/weclaw_install.sh 自动安装。
   2. 写 ~/.weclaw/config.json：把 proxy URL 注册为 default HTTP agent。

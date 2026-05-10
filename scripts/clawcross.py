@@ -166,15 +166,18 @@ CLI_COMMANDS = [
 
 SENSITIVE_CONFIG_RE = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD|PASS|COOKIE|AUTH)", re.IGNORECASE)
 CHAT_SLASH_COMMANDS = [
-    ("/help", "show this command list"),
-    ("/platforms", "list agent platforms"),
-    ("/use <platform>", "switch platform"),
-    ("/cwd [path]", "show or change workspace"),
-    ("/mode <mode>", "set execute/plan/review"),
-    ("/state", "show current shell state"),
-    ("/cancel", "cancel internal generation"),
-    ("/front", "get a public magic link"),
-    ("/exit", "leave /cross mode"),
+    ("/cross help", "show this command list"),
+    ("/cross platforms", "list agent platforms"),
+    ("/cross use <platform>", "switch platform"),
+    ("/cross session", "list sessions for current platform"),
+    ("/cross session <id>", "switch session by id"),
+    ("/cross new session", "create and switch to a new session"),
+    ("/cross cwd [path]", "show or change workspace"),
+    ("/cross mode <mode>", "set execute/plan/review"),
+    ("/cross state", "show current shell state"),
+    ("/cross cancel", "cancel internal generation"),
+    ("/cross front", "get a public magic link"),
+    ("/cross exit", "leave /cross mode"),
 ]
 
 
@@ -1291,12 +1294,12 @@ def chat_welcome_text(state: dict, magic_link: str | None = None) -> str:
         "",
         *_chat_state_lines(state),
         "",
-        "Switch agents with /use codex.",
-        "Try /use claude or /use gemini.",
+        "Switch agents with /cross use codex.",
+        "Try /cross use claude or /cross use gemini.",
         "Send a message to run it.",
-        "Send /help for commands.",
-        "Send /front for a public magic link.",
-        "Send /exit to leave.",
+        "Send /cross help for commands.",
+        "Send /cross front for a public magic link.",
+        "Send /cross exit to leave.",
     ]
     if magic_link:
         lines.extend([
@@ -1315,9 +1318,16 @@ def handle_chatbot_input(text: str, state: dict) -> tuple[bool, str]:
     line = (text or "").strip()
     if not line:
         return True, ""
+    lower = line.lower()
+    if lower.startswith("/cross "):
+        line = "/" + line.split(maxsplit=1)[1].strip()
+        lower = line.lower()
+    elif lower.startswith("/cli "):
+        line = "/" + line.split(maxsplit=1)[1].strip()
+        lower = line.lower()
     out = io.StringIO()
     active = True
-    if line.startswith("/") and line.split(maxsplit=1)[0].lower() == "/help":
+    if lower in {"help", "/help"}:
         return True, chat_help_text()
     if line.startswith("/") and line.split(maxsplit=1)[0].lower() == "/use":
         parts = line.split(maxsplit=1)
@@ -1333,6 +1343,18 @@ def handle_chatbot_input(text: str, state: dict) -> tuple[bool, str]:
             f"Agent switched to {current.get('platform', platform)}.\n"
             "Send a message to continue on this agent."
         )
+    if line.startswith("/") and line.split(maxsplit=1)[0].lower() == "/session":
+        parts = line.split(maxsplit=1)
+        if len(parts) < 2 or not parts[1].strip():
+            rows, error = _list_current_platform_sessions(state)
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+                _print_session_rows(rows, state, error)
+            table = _strip_ansi(out.getvalue()).strip()
+            return True, f"```\n{table}\n```"
+        session = parts[1].strip().split()[0]
+        _set_session(state, session)
+        _save_state(state)
+        return True, f"session: {_current(state)['session']}"
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
         if line.startswith("/"):
             active = _handle_slash(line, state)
