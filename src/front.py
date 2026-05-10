@@ -2638,6 +2638,49 @@ def proxy_get_weclaw_qr():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/proxy_weclaw_reset", methods=["POST"])
+def proxy_reset_weclaw_login():
+    """清除 WeClaw 持久登录状态并请求重启，用于刷新微信扫码登录。"""
+    user_id = session.get("user_id", "")
+    if not user_id:
+        return jsonify({"error": "not logged in"}), 401
+    try:
+        settings = read_env_all(str(ENV_FILE))
+        config_path = os.path.expanduser(
+            settings.get("WECLAW_CONFIG")
+            or os.getenv("WECLAW_CONFIG")
+            or "~/.weclaw/config.json"
+        )
+        qr_path = os.path.join(str(DATA_DIR), "weclaw_qr.txt")
+        removed = []
+        missing = []
+
+        for path, label in ((config_path, "config"), (qr_path, "qr")):
+            if os.path.isfile(path) or os.path.islink(path):
+                os.unlink(path)
+                removed.append({"type": label, "path": path})
+            elif os.path.exists(path):
+                return jsonify({
+                    "error": f"WeClaw {label} path is not a file: {path}",
+                    "path": path,
+                }), 400
+            else:
+                missing.append({"type": label, "path": path})
+
+        restart_flag = os.path.join(str(PID_DIR), "restart_flag")
+        with open(restart_flag, "w") as f:
+            f.write("restart")
+
+        return jsonify({
+            "status": "success",
+            "message": "已清除 WeClaw 登录状态并发送重启信号。请等待新二维码生成。",
+            "removed": removed,
+            "missing": missing,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/proxy_restart", methods=["POST"])
 def proxy_restart_services():
     """直接写重启信号文件，不经过 mainagent（避免响应返回前进程被杀）"""
