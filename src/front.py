@@ -3559,7 +3559,7 @@ def proxy_acpx_status():
 def _session_in_current_acpx_cwd(row: dict) -> bool:
     try:
         session_cwd = os.path.realpath(str((row or {}).get("cwd") or "").strip())
-        current_cwd = os.path.realpath(root_dir)
+        current_cwd = os.path.realpath(ACPX_WORKING_DIR)
     except Exception:
         return False
     return bool(session_cwd) and session_cwd == current_cwd
