@@ -150,6 +150,12 @@ SLASH_MENU = [
     ("/new session", "create a new session", "/new session", True),
     ("/cwd [path]", "show or change workspace", "/cwd ", False),
     ("/mode <mode>", "set execute, plan, or review label", "/mode ", False),
+    ("/model", "pick LLM model (curses TUI)", "/model", True),
+    ("/provider", "pick LLM provider (curses TUI)", "/provider", True),
+    ("/team [<name>]", "list teams or show one team", "/team", True),
+    ("/workflow", "list / show / run workflows", "/workflow", True),
+    ("/skill [<agent>]", "list skills", "/skill", True),
+    ("/cron [<team>]", "list cron alarms", "/cron", True),
     ("/exit", "quit", "/exit", True),
 ]
 CLI_COMMANDS = [
