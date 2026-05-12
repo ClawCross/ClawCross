@@ -85,6 +85,18 @@ def _parse_bots(raw: str) -> list[dict]:
 
 
 def _is_configured(channel: ChannelInfo, env: dict[str, str]) -> bool:
+    if channel.kind == "env_vars":
+        # Configured if any non-default required-looking field is set.
+        for f in channel.bot_fields:
+            value = (env.get(f.name) or "").strip()
+            if value and (not f.default or value != f.default):
+                if f.password and value:
+                    return True
+                if not f.password:
+                    return True
+        # Fall back: any of the fields differs from default
+        return any((env.get(f.name) or "").strip() not in {"", f.default}
+                   for f in channel.bot_fields)
     return bool(_parse_bots(env.get(channel.env_key, "")))
 
 
@@ -102,11 +114,20 @@ def cmd_list() -> str:
     env = _read_env()
     lines = ["Channels:"]
     for ch in catalog.list_channels():
-        bots = _parse_bots(env.get(ch.env_key, ""))
-        marker = "✓" if bots else " "
-        count = f" ({len(bots)} bot)" if bots else ""
         emoji = (ch.emoji + " ") if ch.emoji else ""
-        lines.append(f"  {marker} {emoji}{ch.label:<24} env={ch.env_key}{count}")
+        if ch.kind == "bots_json":
+            bots = _parse_bots(env.get(ch.env_key, ""))
+            marker = "✓" if bots else " "
+            count = f" ({len(bots)} bot)" if bots else ""
+            env_part = f"env={ch.env_key}"
+            lines.append(f"  {marker} {emoji}{ch.label:<26} {env_part}{count}")
+        else:
+            configured = _is_configured(ch, env)
+            marker = "✓" if configured else " "
+            keys = ", ".join(f.name for f in ch.bot_fields[:3])
+            if len(ch.bot_fields) > 3:
+                keys += ", ..."
+            lines.append(f"  {marker} {emoji}{ch.label:<26} env_vars: {keys}")
     lines.append("")
     lines.append("Run `clawcross channel setup <id>` to add a bot, or `clawcross channel setup` for the picker.")
     return "\n".join(lines)
@@ -117,6 +138,21 @@ def cmd_show(channel_id: str) -> str:
     if ch is None:
         return f"Unknown channel: {channel_id!r}. Run `clawcross channel` to list."
     env = _read_env()
+    if ch.kind == "env_vars":
+        lines = [f"{ch.label} (env vars):"]
+        any_set = False
+        for f in ch.bot_fields:
+            value = env.get(f.name, "")
+            if value:
+                any_set = True
+                display = _mask(value) if f.password or any(p in f.name.lower()
+                                                            for p in ("token", "secret", "key", "password")) else value
+                lines.append(f"  {f.name}: {display}")
+            else:
+                lines.append(f"  {f.name}: (unset; default={f.default!r})")
+        if not any_set:
+            lines.append("  (nothing set yet)")
+        return "\n".join(lines)
     bots = _parse_bots(env.get(ch.env_key, ""))
     lines = [f"{ch.label} ({ch.env_key}):"]
     if not bots:
@@ -135,6 +171,17 @@ def cmd_clear(channel_id: str) -> str:
     if ch is None:
         return f"Unknown channel: {channel_id!r}."
     env = _read_env()
+    if ch.kind == "env_vars":
+        cleared = []
+        updates: dict[str, str] = {}
+        for f in ch.bot_fields:
+            if env.get(f.name):
+                updates[f.name] = ""
+                cleared.append(f.name)
+        if not cleared:
+            return f"Channel {ch.label} is already empty."
+        _write_env(updates)
+        return f"Cleared {len(cleared)} env vars for {ch.label}: {', '.join(cleared)}."
     if ch.env_key not in env or not _parse_bots(env.get(ch.env_key, "")):
         return f"Channel {ch.label} is already empty."
     _write_env({ch.env_key: "[]"})
@@ -206,6 +253,17 @@ def cmd_setup(channel_id: str | None, *, interactive: bool) -> str:
 
     if not ch.bot_fields:
         return f"{ch.label} has no fields to prompt for — nothing to write."
+
+    if ch.kind == "env_vars":
+        updates: dict[str, str] = {}
+        for f in ch.bot_fields:
+            value = _prompt_field(f, interactive=True)
+            if value or f.default:
+                updates[f.name] = value or f.default
+        if not updates:
+            return "Setup cancelled (no values provided)."
+        _write_env(updates)
+        return f"Saved {len(updates)} env vars for {ch.label}: {', '.join(updates)}."
 
     bot = _collect_bot(ch, interactive=True)
     if bot is None:
