@@ -329,6 +329,10 @@ def _term_width() -> int:
     return max(76, min(120, shutil.get_terminal_size((100, 24)).columns))
 
 
+def _term_height() -> int:
+    return max(10, shutil.get_terminal_size((100, 24)).lines)
+
+
 def _strip_ansi(text: str) -> str:
     return ANSI_RE.sub("", str(text))
 
@@ -956,13 +960,37 @@ def _prompt_label(state: dict) -> str:
 
 
 def _menu_lines(selected: int) -> list[str]:
+    """Render the slash menu as a viewport — capped to fit inside the terminal.
+
+    Budget: terminal_height - 4 rows (prompt + header + footer + breathing).
+    The viewport scrolls so the selected row stays inside it.
+    """
     width = _term_width() - 1
+    total = len(SLASH_MENU)
+    budget = max(4, _term_height() - 4)
+    visible = min(total, budget)
+
+    if total <= visible:
+        first = 0
+    else:
+        first = max(0, min(total - visible, selected - visible // 2))
+
     lines = [_dim("Commands")]
-    for idx, (command, description, _insert, _execute) in enumerate(SLASH_MENU):
+    for idx in range(first, first + visible):
+        command, description, _insert, _execute = SLASH_MENU[idx]
         marker = ">" if idx == selected else " "
         text = _fit(f"{marker} {_pad_display(command, 16)} {description}", width)
         lines.append(_style(text) if idx == selected else text)
-    lines.append(_dim("Enter selects · ↑/↓ moves · Esc closes"))
+    pos = f"{selected + 1}/{total}"
+    if total > visible:
+        scroll = "↕"
+        if first == 0:
+            scroll = "↓"
+        elif first + visible >= total:
+            scroll = "↑"
+        lines.append(_dim(f"Enter selects · ↑/↓ moves · Esc closes  ·  {pos} {scroll}"))
+    else:
+        lines.append(_dim(f"Enter selects · ↑/↓ moves · Esc closes  ·  {pos}"))
     return lines
 
 

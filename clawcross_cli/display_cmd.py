@@ -155,17 +155,41 @@ _WORKFLOW_HELP_FOOTER = (
 def _format_workflow_list(items: list[dict]) -> str:
     if not items:
         return "No workflows found." + _WORKFLOW_HELP_FOOTER
-    lines = [f"Workflows ({len(items)}):"]
+
+    by_team: dict[str, list[dict]] = {}
+    personal: list[dict] = []
     for it in items:
-        scope = it.get("scope") or ""
-        team = it.get("team") or ""
-        location = f"[team:{team}]" if scope == "team" else "[personal]"
-        kind = it.get("kind") or "?"
-        lines.append(f"  - [{kind}] {location} {it.get('file', '?')}")
-        desc = (it.get("description") or "").strip()
-        if desc:
-            lines.append(f"      {desc}")
-    return _format_lines(lines) + _WORKFLOW_HELP_FOOTER
+        scope = (it.get("scope") or "").lower()
+        team = (it.get("team") or "").strip()
+        if scope == "team" and team:
+            by_team.setdefault(team, []).append(it)
+        else:
+            personal.append(it)
+
+    sections: list[str] = []
+    if by_team:
+        total_team = sum(len(v) for v in by_team.values())
+        sections.append(f"Team workflows ({total_team} across {len(by_team)} teams):")
+        for tname, batch in by_team.items():
+            sections.append(f"  [{tname}]")
+            for it in batch:
+                kind = it.get("kind") or "?"
+                sections.append(f"  - [{kind}] {it.get('file', '?')}")
+                desc = (it.get("description") or "").strip()
+                if desc:
+                    sections.append(f"      {desc}")
+    if personal:
+        if sections:
+            sections.append("")
+        sections.append(f"Personal workflows ({len(personal)}):")
+        for it in personal:
+            kind = it.get("kind") or "?"
+            sections.append(f"  - [{kind}] {it.get('file', '?')}")
+            desc = (it.get("description") or "").strip()
+            if desc:
+                sections.append(f"      {desc}")
+
+    return _format_lines(sections) + _WORKFLOW_HELP_FOOTER
 
 
 def _workflow_label(item: dict) -> str:
@@ -397,24 +421,52 @@ def handle_skill_command(args: list[str], *, interactive: bool = False, user: st
 
 # ── cron ────────────────────────────────────────────────────────────────────
 
+def _render_cron_row(a: dict) -> list[str]:
+    target = a.get("target_name") or "?"
+    ttype = a.get("target_type") or ""
+    sched = a.get("cron") or a.get("run_at") or "?"
+    text = (a.get("text") or "").splitlines()[0][:80]
+    type_part = f" ({ttype})" if ttype else ""
+    rows = [f"  - {target}{type_part}  {sched}"]
+    if text:
+        rows.append(f"      {text}")
+    return rows
+
+
 def _format_cron_list(alarms: list[dict], team: str | None = None) -> str:
+    """Render crons grouped by team (like /skill).
+
+    When *team* is given, treat all entries as belonging to that team.
+    Otherwise read each entry's ``team`` field and group accordingly.
+    """
     if not alarms:
         scope = f" for team {team}" if team else ""
         return f"No crons{scope}."
-    title = f"Crons{(' for team ' + team) if team else ''} ({len(alarms)}):"
-    lines = [title]
+
+    by_team: dict[str, list[dict]] = {}
+    personal: list[dict] = []
     for a in alarms:
-        target = a.get("target_name") or "?"
-        ttype = a.get("target_type") or ""
-        sched = a.get("cron") or a.get("run_at") or "?"
-        text = (a.get("text") or "").splitlines()[0][:80]
-        team_name = a.get("team") or ""
-        team_part = f" [team:{team_name}]" if team_name and team_name != "__public__" else ""
-        type_part = f" ({ttype})" if ttype else ""
-        lines.append(f"  - {target}{type_part}{team_part}  {sched}")
-        if text:
-            lines.append(f"      {text}")
-    return _format_lines(lines)
+        tname = team or (a.get("team") or "").strip()
+        if tname and tname != "__public__":
+            by_team.setdefault(tname, []).append(a)
+        else:
+            personal.append(a)
+
+    sections: list[str] = []
+    if by_team:
+        total = sum(len(v) for v in by_team.values())
+        sections.append(f"Team crons ({total} across {len(by_team)} teams):")
+        for tname, batch in by_team.items():
+            sections.append(f"  [{tname}]")
+            for a in batch:
+                sections.extend(_render_cron_row(a))
+    if personal:
+        if sections:
+            sections.append("")
+        sections.append(f"Personal/shared crons ({len(personal)}):")
+        for a in personal:
+            sections.extend(_render_cron_row(a))
+    return _format_lines(sections)
 
 
 def handle_cron_command(args: list[str], *, interactive: bool = False, user: str | None = None) -> str:
