@@ -419,22 +419,33 @@ _clawcross_parse_start_flags() {
 }
 
 ensure_llm_model_configured() {
-    if [ "${CLAWCROSS_ALLOW_EMPTY_LLM_MODEL:-0}" = "1" ]; then
-        return 0
-    fi
-
+    # Soft check — print a hint when LLM_MODEL is unset but don't block
+    # startup. The agent endpoints that actually call an LLM (e.g.
+    # llm_factory.create_chat_model) raise their own error at request
+    # time; web UI / acpx flows / `/model` configuration all work without
+    # an LLM, so refusing to even boot the backend is too aggressive.
+    # To restore the old hard-fail behaviour, set
+    # CLAWCROSS_REQUIRE_LLM_MODEL=1.
     source "$CLAWCROSS_CONFIG_DIR/.env" 2>/dev/null || true
     local llm_model="${LLM_MODEL:-}"
     if [ -n "$llm_model" ] && [ "$llm_model" != "wait to set" ]; then
         return 0
     fi
 
+    if [ "${CLAWCROSS_REQUIRE_LLM_MODEL:-0}" = "1" ]; then
+        echo ""
+        echo "❌ LLM_MODEL 未配置，且 CLAWCROSS_REQUIRE_LLM_MODEL=1 已要求严格模式。"
+        echo "   设置模型：bash selfskill/scripts/run.sh configure LLM_MODEL deepseek-chat"
+        echo "   查看可用：bash selfskill/scripts/run.sh auto-model"
+        exit 1
+    fi
+
     echo ""
-    echo "❌ LLM_MODEL 未配置，已停止启动。"
-    echo "   请先设置模型，例如：bash selfskill/scripts/run.sh configure LLM_MODEL deepseek-chat"
-    echo "   可先查看可用模型：bash selfskill/scripts/run.sh auto-model"
-    echo "   如需临时允许空模型启动，仅本次可设置：CLAWCROSS_ALLOW_EMPTY_LLM_MODEL=1"
-    exit 1
+    echo "⚠️  LLM_MODEL 未配置，后端将照常启动但 LLM 调用会失败。"
+    echo "   设置方式（任选其一）："
+    echo "     • 进入交互式：clawcross  → /model"
+    echo "     • 命令行：    bash selfskill/scripts/run.sh configure LLM_MODEL <name>"
+    echo ""
 }
 
 case "${1:-help}" in

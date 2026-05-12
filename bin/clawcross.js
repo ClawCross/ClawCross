@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 "use strict";
 
-const { spawnSync } = require("node:child_process");
+const { spawnSync, spawn } = require("node:child_process");
 const fs = require("node:fs");
 const http = require("node:http");
 const os = require("node:os");
@@ -135,13 +135,36 @@ async function main() {
     path.join(root, "config", ".env"),
   ]) || path.join(process.env.CLAWCROSS_CONFIG_DIR, ".env"));
   const agentPort = Number.parseInt(process.env.PORT_AGENT || env.PORT_AGENT || "51200", 10);
-  // No-args behaviour: drop straight into the interactive REPL. The REPL
-  // itself works without LLM credentials — users can configure via /model
-  // before sending any prompt. The full backend (which validates
-  // LLM_MODEL) is opt-in via `clawcross start`. If the backend is
-  // already running we still go to REPL; backend startup is never
-  // forced from a bare `clawcross` invocation.
+  // No-args behaviour:
+  //   1. If the backend isn't running, spawn it detached (run.sh start)
+  //      so the web UI / API come up automatically. LLM_MODEL is no
+  //      longer required to boot — the agent only needs it at actual
+  //      inference time, and users can fix that from inside the REPL.
+  //   2. Drop into the interactive REPL while the backend starts in
+  //      the background. The REPL itself never depends on the agent
+  //      port being live; it polls when commands need it.
   const command = args[0];
+  if (!command) {
+    const running = await isAgentRunning(agentPort);
+    if (!running) {
+      const launcher = process.platform === "win32"
+        ? ["powershell", ["-ExecutionPolicy", "Bypass", "-File", runScript, "start"]]
+        : ["bash", [runScript, "start"]];
+      try {
+        const bg = spawn(launcher[0], launcher[1], {
+          stdio: "ignore",
+          detached: true,
+          cwd: root,
+          env: process.env,
+        });
+        bg.unref();
+        console.log("Starting backend in the background — web UI / API will come up shortly.");
+        console.log("Use `clawcross status` to verify or `clawcross logs` to inspect.");
+      } catch (err) {
+        console.warn(`Backend auto-start failed (${err && err.message}); REPL still works.`);
+      }
+    }
+  }
   const launcherArgs = args;
   const useRunScript = runCommands.has(command);
   const launcher = useRunScript
