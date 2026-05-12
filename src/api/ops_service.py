@@ -747,20 +747,40 @@ class OpsService:
 
 
     async def close_acp_session(self, platform: str, session_name: str) -> dict:
-        """Close an acpx session via 'acpx <platform> sessions close <name>'."""
+        """Close an acpx session via 'acpx --cwd <ACPX_WORKING_DIR> <platform> sessions close <name>'.
+
+        ``acpx`` keeps session state per working directory. ``GET /proxy_acpx_sessions``
+        in front.py:3615 passes ``--cwd ACPX_WORKING_DIR`` (= WORKSPACE_DIR/acpx),
+        so the close must use the same cwd — otherwise acpx looks in the
+        agent process's cwd (wherever uvicorn was launched), returns
+        "session not found" with returncode=1, and the old code silently
+        reported success while the session lingered on disk.
+        """
         acpx_bin = shutil.which("acpx")
         if not acpx_bin:
             return {"status": "error", "reason": "acpx not found"}
         try:
+            from utils.runtime_paths import WORKSPACE_DIR  # local import to avoid cycles
+            acpx_cwd = os.path.join(str(WORKSPACE_DIR), "acpx")
+            os.makedirs(acpx_cwd, exist_ok=True)
+        except Exception:
+            acpx_cwd = None
+        cmd = [acpx_bin]
+        if acpx_cwd:
+            cmd.extend(["--cwd", acpx_cwd])
+        cmd.extend([platform, "sessions", "close", session_name])
+        try:
             proc = await asyncio.create_subprocess_exec(
-                acpx_bin, platform, "sessions", "close", session_name,
+                *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                cwd=acpx_cwd or None,
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
-            # exit 0 = just closed, exit 1 = already closed (both are fine)
+            err_text = (stderr.decode("utf-8", errors="replace") or "").strip()
+            # exit 0 = just closed, exit 1 = already closed (both fine for idempotency)
             if proc.returncode in (0, 1):
-                return {"status": "success"}
-            return {"status": "error", "reason": stderr.decode()[:200]}
+                return {"status": "success", "stderr": err_text} if err_text else {"status": "success"}
+            return {"status": "error", "reason": err_text[:200] or f"exit={proc.returncode}"}
         except Exception as e:
             return {"status": "error", "reason": str(e)}
