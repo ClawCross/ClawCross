@@ -1139,11 +1139,18 @@ def _choose_platform(state: dict) -> bool:
 
 
 def _read_interactive_line(prompt: str) -> str:
-    """Read one line with optional `/`-triggered slash-menu popup.
+    """Read one line with a rounded-box prompt and optional slash menu.
 
-    Slash menu is rendered in the alternate screen buffer (\\033[?1049h)
-    so opening/closing it never disturbs the main screen's scrollback —
-    no `\\033[J` clear leaves visible blank rows below short output.
+    Layout on the main screen:
+
+        ╭─── ClawCross ────────────────────╮
+        │ clawcross[codex:ClawCross]> _    │
+        ╰──────────────────────────────────╯
+
+    The cursor lives inside the middle line. Typing redraws the middle
+    line in place. Pressing `/` as the first char opens a slash-menu
+    popup in the alternate screen buffer (no main-screen clear, so no
+    blank-rows ghost effect after closing).
     """
     if not sys.stdin.isatty() or not sys.stdout.isatty() or termios is None or tty is None:
         return input(prompt)
@@ -1154,18 +1161,48 @@ def _read_interactive_line(prompt: str) -> str:
     pending_escape = False
     pending_bracket = False
     selected = 0
+    box_width = max(40, min(_term_width(), 120))
+    inner_width = box_width - 4  # "│ " ... " │"
+
+    def _truncate(text: str, w: int) -> str:
+        # Show the tail when the input exceeds the inner box width so the
+        # cursor stays visible at the right edge.
+        if _display_width(text) <= w:
+            return text
+        # Drop chars from the front until it fits.
+        result = text
+        while _display_width(result) > w and len(result) > 1:
+            result = result[1:]
+        return result
 
     def render_input() -> None:
-        # Redraw just the prompt + buffer on the current main-screen line.
-        sys.stdout.write("\r\033[K" + prompt + buffer)
+        # Cursor is somewhere on the middle line. Clear it, redraw, and
+        # leave the cursor right after the buffer text (inside the box).
+        content = _truncate(prompt + buffer, inner_width)
+        pad = inner_width - _display_width(content)
+        sys.stdout.write("\r\033[K")
+        sys.stdout.write("│ " + content + " " * pad + " │")
+        # Position cursor right after content (column 2 + display_width).
+        sys.stdout.write("\r")
+        sys.stdout.write(f"\033[{2 + _display_width(content)}C")
         sys.stdout.flush()
+
+    def draw_box() -> None:
+        # Draw the three-line box and park the cursor on the middle line.
+        horiz_top = "─" * (box_width - 2)
+        horiz_bot = "─" * (box_width - 2)
+        sys.stdout.write(f"╭{horiz_top}╮\n")
+        sys.stdout.write(f"│{' ' * (box_width - 2)}│\n")
+        sys.stdout.write(f"╰{horiz_bot}╯")
+        # Move cursor up to middle line.
+        sys.stdout.write("\033[1A\r")
+        sys.stdout.flush()
+        render_input()
 
     def render_menu() -> None:
         if not menu_open:
             return
-        # We are in the alt screen — clear it and redraw.
-        sys.stdout.write("\033[H\033[2J")  # home + clear screen
-        # Show the originating prompt for context, then the picker.
+        sys.stdout.write("\033[H\033[2J")
         sys.stdout.write(prompt + buffer + "\n\n")
         sys.stdout.write("\n".join(_menu_lines(selected)))
         sys.stdout.flush()
@@ -1175,7 +1212,7 @@ def _read_interactive_line(prompt: str) -> str:
         if menu_open:
             return
         menu_open = True
-        sys.stdout.write("\033[?1049h\033[?25l")  # alt screen, hide cursor
+        sys.stdout.write("\033[?1049h\033[?25l")
         sys.stdout.flush()
         render_menu()
 
@@ -1184,7 +1221,7 @@ def _read_interactive_line(prompt: str) -> str:
         if not menu_open:
             return
         menu_open = False
-        sys.stdout.write("\033[?1049l\033[?25h")  # back to main, show cursor
+        sys.stdout.write("\033[?1049l\033[?25h")
         sys.stdout.flush()
         if restore_input:
             render_input()
@@ -1192,13 +1229,14 @@ def _read_interactive_line(prompt: str) -> str:
     def finish_line() -> None:
         if menu_open:
             close_menu()
-        sys.stdout.write("\n")
+        # Move cursor down past the bottom border before the trailing \n
+        # so subsequent output appears below the box.
+        sys.stdout.write("\033[1B\n")
         sys.stdout.flush()
 
     try:
         tty.setcbreak(sys.stdin.fileno())
-        sys.stdout.write(prompt + buffer)
-        sys.stdout.flush()
+        draw_box()
 
         while True:
             ch = sys.stdin.read(1)
