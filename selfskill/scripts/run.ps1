@@ -519,8 +519,12 @@ function Invoke-ClawcrossSetupIfNeeded {
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         return
     }
-    $null = & $venvPy -c "import fastapi" 2>&1
-    if ($LASTEXITCODE -ne 0) {
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = "SilentlyContinue"
+    & $venvPy -c "import fastapi" 2>$null | Out-Null
+    $fastapiExit = $LASTEXITCODE
+    $ErrorActionPreference = $prevEAP
+    if ($fastapiExit -ne 0) {
         Write-Host "📋 Python dependencies incomplete — running scripts\setup_env.ps1 ..."
         & (Join-Path $projectRoot "scripts\setup_env.ps1")
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -562,8 +566,15 @@ try {
     }
 
     # 确保依赖已安装（通过尝试 import fastapi 判断）
-    $importCheck = & $venvPython -c "import fastapi" 2>&1
-    if ($LASTEXITCODE -ne 0) {
+    # ImportError 是预期场景 — 但 $ErrorActionPreference=Stop 会把 python 的
+    # stderr 当作 NativeCommandError 抛出，让整个脚本以 traceback 终止。
+    # 临时降级 + 丢弃 stderr，只看 exit code。
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = "SilentlyContinue"
+    & $venvPython -c "import fastapi" 2>$null | Out-Null
+    $importExit = $LASTEXITCODE
+    $ErrorActionPreference = $prevEAP
+    if ($importExit -ne 0) {
         Write-Host "Installing Python dependencies (config/requirements.txt) ..."
         & $uv pip install -r (Join-Path $projectRoot "config\requirements.txt") --python $venvPython
         if ($LASTEXITCODE -ne 0) {

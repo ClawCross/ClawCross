@@ -6946,6 +6946,22 @@ def mobile_alarms():
             for a in _public_agents_load_raw(user_id)
             if isinstance(a, dict) and str(a.get("name") or "").strip()
         }
+        # Public-scope internal agents live in
+        # ~/.clawcross/data/user_files/<user>/internal_agents.json
+        # (no team dir). Mirror them as schedulable targets too —
+        # otherwise the mobile cron page can only see external agents
+        # in the public tab.
+        public_internal_items = _ia_load(user_id, "")
+        public_internal_session_to_name: dict[str, str] = {}
+        public_internal_names: set[str] = set()
+        for item in public_internal_items:
+            sid = str(item.get("session") or "").strip()
+            meta = item.get("meta") if isinstance(item.get("meta"), dict) else {}
+            name = str(meta.get("name") or "").strip()
+            if sid and name:
+                public_internal_session_to_name[sid] = name
+                public_internal_names.add(name)
+
         alarms = []
         for item in tasks:
             if not isinstance(item, dict) or str(item.get("user_id") or "") != user_id:
@@ -6955,7 +6971,17 @@ def mobile_alarms():
             team = str(item.get("team") or "").strip()
             if target_type == "external" and (team == "__public__" or (not team and target_name in public_names)):
                 alarms.append(item)
+            elif target_type == "internal" and (team == "__public__" or (not team and target_name in public_internal_names)):
+                alarms.append(item)
+
         targets = []
+        for sid, name in public_internal_session_to_name.items():
+            targets.append({
+                "target_type": "internal",
+                "target_name": name,
+                "target_ref": sid,
+                "label": f"{name} · internal",
+            })
         for agent in _public_agents_load_raw(user_id):
             if not isinstance(agent, dict):
                 continue
@@ -7016,24 +7042,40 @@ def mobile_alarms():
         except Exception as e:
             return jsonify({"error": f"Scheduler unavailable: {e}"}), 502
 
-    public_names = {
+    public_external_names = {
         str(a.get("name") or "").strip()
         for a in _public_agents_load_raw(user_id)
         if isinstance(a, dict) and str(a.get("name") or "").strip()
     }
-    if target_name not in public_names:
-        return jsonify({"error": f"Public agent not found: {target_name}"}), 404
+    # Resolve a public-scope internal target → session id (mirror of the
+    # team-scope flow at 7034).
+    public_internal_name_to_session: dict[str, str] = {}
+    for item in _ia_load(user_id, ""):
+        sid = str(item.get("session") or "").strip()
+        meta = item.get("meta") if isinstance(item.get("meta"), dict) else {}
+        name = str(meta.get("name") or "").strip()
+        if sid and name:
+            public_internal_name_to_session[name] = sid
+
     payload = {
         "user_id": user_id,
         "cron": cron,
         "schedule_type": schedule_type,
         "run_at": run_at,
         "text": text,
-        "target_type": "external",
+        "target_type": target_type,
         "target_name": target_name,
         "team": "__public__",
-        "session_id": f"ext:{target_name}",
     }
+    if target_type == "external":
+        if target_name not in public_external_names:
+            return jsonify({"error": f"Public agent not found: {target_name}"}), 404
+        payload["session_id"] = f"ext:{target_name}"
+    else:  # internal
+        session_id = public_internal_name_to_session.get(target_name)
+        if not session_id:
+            return jsonify({"error": f"Public internal agent not found: {target_name}"}), 404
+        payload["session_id"] = session_id
     try:
         resp = requests.post(SCHEDULER_TASKS_URL, json=payload, timeout=10)
         data = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {"error": resp.text}
