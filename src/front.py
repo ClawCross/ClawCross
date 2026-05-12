@@ -3522,49 +3522,53 @@ def _sanitize_acpx_session_slug(name: Any) -> str:
     return s
 
 
+_ACPX_VALID_SESSION_RE = re.compile(r"[A-Za-z0-9_.:\-]+")
+
+
 def _acpx_main_session_key(*, tool: str, body: dict) -> str:
-    """Session key for main-page ACP.
+    """Resolve the acpx session key for a chat request.
+
+    Trust the caller's name and let acpx do the matching: ``acpx <tool>
+    sessions ensure --name <X>`` is idempotent (reuses if it exists,
+    creates otherwise), so any shell-safe name passed in is forwarded
+    verbatim.  Only when the input is missing or contains unsafe chars
+    do we synthesize a name.
 
     Priority:
-      1. acp_session_pick — exact ``name`` from ``acpx <tool> sessions list`` (reuse existing)
-      2. acp_session_name / aliases — builds main:<tool>:<slug>
-      3. session_id / chat_session_id — main:<tool>:<sid>
-
-    If a caller passes an already-prefixed name (``main:<tool>:foo``) in
-    ``acp_session_name`` or ``session_id`` — common when re-using a
-    session picked from a listing — return it verbatim instead of
-    re-wrapping it (which used to produce ``main:<tool>:main_<tool>_foo``
-    and orphan the existing session).
+      1. ``acp_session_pick`` — exact ``name`` from a session list
+      2. ``acp_session_name`` / ``acp_session`` / ``session_name``
+      3. ``session_id`` / ``chat_session_id``
+      4. ``main:<tool>:default`` fallback
     """
     if "acp_session_pick" in body:
         s = str(body.get("acp_session_pick") or "").strip()
         if s:
-            if len(s) > 512 or not re.fullmatch(r"[A-Za-z0-9_.:\-]+", s):
+            if len(s) > 512 or not _ACPX_VALID_SESSION_RE.fullmatch(s):
                 raise ValueError("invalid acp_session_pick")
             return s
-    expected_prefix = f"main:{tool}:"
+
     for key in ("acp_session_name", "acp_session", "session_name"):
         raw = body.get(key)
         if raw is None:
             continue
         raw_str = str(raw).strip()
-        if (
-            raw_str.startswith(expected_prefix)
-            and len(raw_str) <= 512
-            and re.fullmatch(r"[A-Za-z0-9_.:\-]+", raw_str)
-        ):
+        if not raw_str:
+            continue
+        if len(raw_str) <= 512 and _ACPX_VALID_SESSION_RE.fullmatch(raw_str):
             return raw_str
         slug = _sanitize_acpx_session_slug(raw_str)
         if slug:
-            return f"main:{tool}:{slug}"
-    sid_raw = str(body.get("session_id") or body.get("chat_session_id") or "").strip() or "default"
-    if (
-        sid_raw.startswith(expected_prefix)
-        and len(sid_raw) <= 512
-        and re.fullmatch(r"[A-Za-z0-9_.:\-]+", sid_raw)
-    ):
-        return sid_raw
-    return f"main:{tool}:{sid_raw}"
+            return slug
+
+    sid_raw = str(body.get("session_id") or body.get("chat_session_id") or "").strip()
+    if sid_raw:
+        if len(sid_raw) <= 512 and _ACPX_VALID_SESSION_RE.fullmatch(sid_raw):
+            return sid_raw
+        slug = _sanitize_acpx_session_slug(sid_raw)
+        if slug:
+            return slug
+
+    return f"main:{tool}:default"
 
 
 @app.route("/proxy_acpx_status", methods=["GET"])

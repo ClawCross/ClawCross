@@ -726,24 +726,18 @@ def _run_acpx(prompt: str, state: dict, *, model: str = "default") -> None:
     if tool not in ACP_PLATFORMS:
         raise RuntimeError(f"Unsupported ACP platform: {platform}")
     session_id = current.get("session") or _repo_session_name(current.get("cwd"))
-    # If session_id already carries the canonical `main:<tool>:` prefix
-    # (which is what the session listing returns), pass it as
-    # `acp_session_pick` so the backend reuses the existing acpx session
-    # verbatim instead of re-sanitizing the colons and creating a
-    # double-nested `main:<tool>:main_<tool>_…` ghost session.
-    expected_prefix = f"main:{tool}:"
+    # Pass the user's session name verbatim. The backend now trusts any
+    # shell-safe name and forwards it to `acpx sessions ensure` (which is
+    # idempotent — reuses an existing session or creates a new one).
     payload = {
         "tool": tool,
         "model": f"acp:{tool}",
         "messages": [{"role": "user", "content": prompt}],
         "stream": True,
         "session_id": session_id,
+        "acp_session_name": session_id,
         "timeout_sec": 600,
     }
-    if session_id.startswith(expected_prefix):
-        payload["acp_session_pick"] = session_id
-    else:
-        payload["acp_session_name"] = session_id
     _print_sse_text(_post_stream(
         f"{FRONT_BASE}/proxy_acpx_chat",
         {},
