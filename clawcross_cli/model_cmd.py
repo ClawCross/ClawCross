@@ -243,10 +243,11 @@ def apply_model_interactive(model: str | None = None) -> str:
 
 
 def apply_provider_interactive(provider_slug: str | None = None, base_url: str | None = None) -> str:
-    """Full flow: select and persist a provider.
+    """Full flow: select provider, key, model — write all to .env at once.
 
     If *provider_slug* is given, set it directly. Otherwise enter interactive
-    picker. Returns the selected provider slug.
+    wizard: provider -> API key -> model -> write .env.
+    Returns the selected provider slug.
     """
     if provider_slug is not None:
         set_provider(provider_slug, base_url)
@@ -256,6 +257,7 @@ def apply_provider_interactive(provider_slug: str | None = None, base_url: str |
             print(f"LLM_BASE_URL={base_url or info.default_base_url}")
         return provider_slug
 
+    # ── Step 1: Pick provider ──
     chosen = select_provider()
     if chosen is None:
         print("Provider selection cancelled.", file=sys.stderr)
@@ -265,9 +267,57 @@ def apply_provider_interactive(provider_slug: str | None = None, base_url: str |
     custom = prompt_text("Base URL (enter to use default): ", default="")
     url = custom if custom else chosen.default_base_url
 
-    set_provider(chosen.slug, url)
-    print(f"LLM_PROVIDER={chosen.slug}")
-    print(f"LLM_BASE_URL={url}")
+    # ── Step 2: Enter API key ──
+    import getpass
+    try:
+        key = getpass.getpass("API key (input hidden): ").strip()
+    except (EOFError, KeyboardInterrupt):
+        key = ""
+    if not key:
+        key = prompt_text("API key: ").strip()
+    if not key:
+        print("No API key entered — provider/model written, LLM_API_KEY left unchanged.", file=sys.stderr)
+        key = ""  # keep existing from .env
+
+    # ── Step 3: Pick model ──
+    model = select_model(chosen.slug, f"Select model for {chosen.label}:")
+    if model is None:
+        model = prompt_text("Model name: ", default="").strip()
+    if not model:
+        print("No model selected — skipping LLM_MODEL.", file=sys.stderr)
+
+    # ── Write all to .env ──
+    updates: dict[str, str] = {
+        ENV_PROVIDER_KEY: chosen.slug,
+        ENV_BASE_URL_KEY: url,
+    }
+    if key:
+        updates[ENV_API_KEY] = key
+    if model:
+        updates[ENV_MODEL_KEY] = model
+    _write_env(updates)
+
+    # ── Also save as a profile so /cross model use can switch later ──
+    profile_name = f"{chosen.slug}-{model}".lower() if model else chosen.slug
+    profile_name = re.sub(r"[^A-Za-z0-9_\-.]", "-", profile_name)[:48]
+    profile = models_store.upsert_profile(
+        name=profile_name,
+        provider=chosen.slug,
+        model=model,
+        api_key=key,
+        base_url=url,
+        api_mode=chosen.api_mode,
+        make_active=True,
+    )
+
+    masked_key = _mask_key(key) if key else "(unchanged)"
+    print(f"\n  LLM_PROVIDER={chosen.slug}")
+    print(f"  LLM_BASE_URL={url}")
+    print(f"  LLM_API_KEY={masked_key}")
+    if model:
+        print(f"  LLM_MODEL={model}")
+    print(f"  profile: {profile_name!r} (active)")
+    print(f"  config_file: {_find_env_file()}")
     return chosen.slug
 
 
@@ -498,13 +548,17 @@ def handle_model_command(args: list[str], *, interactive: bool = False) -> str:
 def handle_provider_command(args: list[str], *, interactive: bool = False) -> str:
     """Unified dispatcher for /cross provider and `clawcross provider`.
 
-    With multi-profile mode active, this updates the *active profile's*
-    provider/base_url rather than the bare .env (so resolve_active_profile
-    keeps working).
+    Interactive mode (CLI): runs wizard — provider -> API key -> model -> .env
+    Non-interactive (chatbot): lists providers, or sets directly with slug.
     """
     active = models_store.get_active()
 
     if not args:
+        if interactive:
+            # Terminal CLI: run interactive wizard
+            slug = apply_provider_interactive()
+            return f"Configured: {slug}"
+        # Chatbot: just list available providers
         lines = []
         if active is not None:
             lines.append(
