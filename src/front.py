@@ -3942,6 +3942,7 @@ def proxy_acpx_chat():
     def _sse():
         proc = None
         temp_path = None
+        stderr_file = None
         prepared_stream: PreparedAgentStream | None = None
         output_lines: list[str] = []
         seen_tool_calls: dict[str, dict[str, Any]] = {}
@@ -3954,7 +3955,7 @@ def proxy_acpx_chat():
                 prepared_stream.cmd,
                 cwd=runtime_working_dir,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stderr=None,
                 text=True,
                 encoding="utf-8",
                 errors="replace",
@@ -4038,13 +4039,11 @@ def proxy_acpx_chat():
                     }
                     yield f"data: {json.dumps(meta_chunk, ensure_ascii=False)}\n\n"
 
-            stderr_text = ""
-            if proc.stderr is not None:
-                stderr_text = proc.stderr.read()
-            rc = proc.wait(timeout=prepared_stream.timeout_sec if prepared_stream else None)
+            wait_timeout = prepared_stream.timeout_sec if prepared_stream else None
+            rc = proc.wait(timeout=wait_timeout)
             full_output = "\n".join(output_lines)
             if rc != 0:
-                raise AcpxError((stderr_text or full_output or f"acpx failed ({rc})").strip())
+                raise AcpxError((full_output or f"acpx failed ({rc})").strip())
 
             if prepared_stream and prepared_stream.adapter:
                 trace = prepared_stream.adapter._extract_trace(full_output)

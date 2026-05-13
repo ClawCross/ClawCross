@@ -9,6 +9,8 @@ import tempfile
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from utils.oasis_acp_log import mark as _acp_mark
+
 
 class AcpxError(RuntimeError):
     pass
@@ -750,17 +752,21 @@ class AcpxAdapter:
                 *args,
             ]
         )
+        _aux_tail = " ".join(cmd[3:7]) if len(cmd) > 7 else " ".join(cmd[3:])
+        _acp_mark("acpx.aux.spawn.pre", op=_aux_tail, timeout_sec=timeout_sec)
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
+        _acp_mark("acpx.aux.spawn.post", pid=proc.pid, op=_aux_tail)
         try:
             if timeout_sec is None:
                 out_b, err_b = await proc.communicate()
             else:
                 out_b, err_b = await asyncio.wait_for(proc.communicate(), timeout=timeout_sec)
         except asyncio.TimeoutError as e:
+            _acp_mark("acpx.aux.timeout", pid=proc.pid, op=_aux_tail)
             with contextlib.suppress(Exception):
                 proc.kill()
                 await proc.wait()
@@ -768,6 +774,13 @@ class AcpxAdapter:
 
         out = out_b.decode("utf-8", errors="replace")
         err = err_b.decode("utf-8", errors="replace")
+        _acp_mark(
+            "acpx.aux.done",
+            pid=proc.pid,
+            op=_aux_tail,
+            returncode=proc.returncode,
+            stdout_chars=len(out),
+        )
         if proc.returncode != 0 and not allow_nonzero:
             msg = err.strip() or out.strip() or f"exit={proc.returncode}"
             raise AcpxError(f"acpx failed ({proc.returncode}): {msg}")
@@ -777,28 +790,93 @@ class AcpxAdapter:
         self,
         cmd: list[str],
         *,
-        timeout_sec: int,
+        timeout_sec: int | None,
         allow_nonzero: bool,
     ) -> str:
+        # Cheap fingerprint of the command for trace correlation without leaking prompts.
+        _cmd_tail = " ".join(cmd[-4:]) if len(cmd) > 4 else " ".join(cmd)
+        _acp_mark("acpx.spawn.pre", cmd_tail=_cmd_tail, timeout_sec=timeout_sec)
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            stderr=None,
         )
+        _acp_mark("acpx.spawn.post", pid=proc.pid)
+        stdout_chunks: list[bytes] = []
+        loop = asyncio.get_running_loop()
+        deadline = (loop.time() + timeout_sec) if timeout_sec is not None else None
+
+        def _remaining_timeout() -> float | None:
+            if deadline is None:
+                return None
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                raise asyncio.TimeoutError
+            return remaining
+
         try:
-            if timeout_sec is None:
-                out_b, err_b = await proc.communicate()
-            else:
-                out_b, err_b = await asyncio.wait_for(proc.communicate(), timeout=timeout_sec)
+            if proc.stdout is not None:
+                line_no = 0
+                total_stdout_bytes = 0
+                while True:
+                    read_t0 = loop.time()
+                    _acp_mark(
+                        "acpx.stdout.readline.start",
+                        pid=proc.pid,
+                        line_no=line_no + 1,
+                        returncode=proc.returncode,
+                    )
+                    line = await asyncio.wait_for(proc.stdout.readline(), timeout=_remaining_timeout())
+                    read_elapsed = loop.time() - read_t0
+                    if not line:
+                        _acp_mark(
+                            "acpx.stdout.eof",
+                            pid=proc.pid,
+                            line_no=line_no + 1,
+                            read_elapsed=f"{read_elapsed:.3f}s",
+                            returncode=proc.returncode,
+                            stdout_bytes=total_stdout_bytes,
+                        )
+                        break
+                    line_no += 1
+                    total_stdout_bytes += len(line)
+                    stdout_chunks.append(line)
+                    _acp_mark(
+                        "acpx.stdout.line",
+                        pid=proc.pid,
+                        line_no=line_no,
+                        read_elapsed=f"{read_elapsed:.3f}s",
+                        line_bytes=len(line),
+                        stdout_bytes=total_stdout_bytes,
+                        returncode=proc.returncode,
+                    )
+            _acp_mark("acpx.wait.start", pid=proc.pid, returncode=proc.returncode)
+            wait_t0 = loop.time()
+            returncode = await asyncio.wait_for(proc.wait(), timeout=_remaining_timeout())
+            _acp_mark(
+                "acpx.wait.done",
+                pid=proc.pid,
+                returncode=returncode,
+                wait_elapsed=f"{loop.time() - wait_t0:.3f}s",
+            )
         except asyncio.TimeoutError as e:
-            proc.kill()
+            _acp_mark("acpx.timeout", pid=proc.pid, timeout_sec=timeout_sec)
+            with contextlib.suppress(Exception):
+                proc.kill()
+                await proc.wait()
             raise AcpxError(f"acpx timeout after {timeout_sec}s: {' '.join(shlex.quote(x) for x in cmd)}") from e
 
+        out_b = b"".join(stdout_chunks)
         out = out_b.decode("utf-8", errors="replace")
-        err = err_b.decode("utf-8", errors="replace")
-        if proc.returncode != 0 and not allow_nonzero:
-            msg = err.strip() or out.strip() or f"exit={proc.returncode}"
-            raise AcpxError(f"acpx failed ({proc.returncode}): {msg}")
+        _acp_mark(
+            "acpx.stream.done",
+            pid=proc.pid,
+            returncode=returncode,
+            stdout_chars=len(out),
+        )
+        if returncode != 0 and not allow_nonzero:
+            msg = out.strip() or f"exit={returncode}"
+            raise AcpxError(f"acpx failed ({returncode}): {msg}")
         return out
 
     @staticmethod

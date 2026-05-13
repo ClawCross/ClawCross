@@ -34,11 +34,13 @@ Both participate() methods accept an optional `instruction` parameter,
 which is injected into the expert's prompt to guide their focus.
 """
 
+import asyncio
 import json
 import logging
 import os
 import re
 import sys
+import time
 from typing import Any
 
 # ACPX-backed ACP support
@@ -58,7 +60,12 @@ def _acp_oasis_trace(event: str, **fields: Any) -> None:
 _data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 _prompts_dir = os.path.join(_data_dir, "prompts")
 _agency_prompts_dir = os.path.join(_prompts_dir, "agency_agents")
-from utils.runtime_paths import DATA_DIR, USER_FILES_DIR
+from utils.runtime_paths import DATA_DIR, USER_FILES_DIR, WORKSPACE_DIR
+from utils.oasis_acp_log import begin_trace, end_trace, mark as _acp_mark
+
+
+async def _send_to_agent_off_loop(request: SendToAgentRequest):
+    return await asyncio.to_thread(lambda: asyncio.run(send_to_agent(request)))
 
 
 def _load_prompt_file(prompt_file: str) -> str:
@@ -724,7 +731,7 @@ class ExpertAgent:
             self._llm_override = override
 
     async def _call_temp_sender(self, *, prompt: str, forum: DiscussionForum, mode: str) -> str:
-        result = await send_to_agent(
+        result = await _send_to_agent_off_loop(
             SendToAgentRequest(
                 prompt=prompt,
                 connect_type="http",
@@ -887,7 +894,7 @@ class SessionExpert:
 
     async def _send_messages(self, body: dict, *, timeout_override: float | None = ...) -> str:
         effective_timeout = self.timeout if timeout_override is ... else timeout_override
-        result = await send_to_agent(
+        result = await _send_to_agent_off_loop(
             SendToAgentRequest(
                 prompt=body.get("messages", []),
                 connect_type="http",
@@ -1281,7 +1288,8 @@ class ExternalExpert:
         # Extract the last user message content; fall back to the last message of any role.
         from integrations.acpx_cli_tools import acpx_agent_tags_with_legacy
         _ACP_PLATFORMS = frozenset(str(t or "").strip().lower() for t in acpx_agent_tags_with_legacy())
-        if self._platform_lower in _ACP_PLATFORMS:
+        is_acp = self._platform_lower in _ACP_PLATFORMS
+        if is_acp:
             acp_prompt: str = ""
             for msg in reversed(messages):
                 if msg.get("role") == "user":
@@ -1292,19 +1300,48 @@ class ExternalExpert:
             prompt: str | list = acp_prompt
             _acp_name = self._http_global_name or self.ext_id
             acp_session_key = f"agent:{_acp_name}:{self._session_suffix}"
+            # Align with main-page group chat: pin cwd to the workspace acpx dir so
+            # both call paths share the same adapter singleton, sessions DB and
+            # codex configuration. Without this OASIS would inherit the host
+            # process os.getcwd() and may trigger first-run init/login work on
+            # every prompt.
+            options["cwd"] = str(WORKSPACE_DIR / "acpx")
+            connect_type = "acp"
         else:
             prompt = messages
             acp_session_key = http_session_key
+            connect_type = "http"
 
-        result = await send_to_agent(
-            SendToAgentRequest(
+        trace_label = "execute" if timeout_override is None else "discuss"
+        tid = begin_trace(
+            f"call_api/{trace_label}",
+            name=self.name,
+            platform=self.platform,
+            session=acp_session_key,
+            timeout=effective_timeout if effective_timeout is not None else "none",
+            connect_type=connect_type,
+        )
+        try:
+            _acp_mark("send_to_agent.enter")
+            send_t0 = time.perf_counter()
+            request = SendToAgentRequest(
                 prompt=prompt,
-                connect_type="http",
+                connect_type=connect_type,
                 platform=self.platform,
                 session=acp_session_key,
                 options=options,
             )
-        )
+            result = await _send_to_agent_off_loop(request)
+            send_elapsed = time.perf_counter() - send_t0
+            _acp_mark(
+                "send_to_agent.exit",
+                ok=result.ok,
+                elapsed=f"{send_elapsed:.3f}s",
+                content_chars=len(result.content or ""),
+                error=(result.error or "")[:120] if not result.ok else None,
+            )
+        finally:
+            end_trace(f"call_api/{trace_label}", trace_id=tid)
 
         if result.ok:
             return result.content or ""

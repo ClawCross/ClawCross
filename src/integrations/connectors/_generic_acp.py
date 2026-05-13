@@ -9,6 +9,7 @@ from integrations.base import (
     SendToAgentResult,
 )
 from integrations.connectors._base import AgentConnector
+from utils.oasis_acp_log import mark as _acp_mark
 
 
 def _canonical_platform(platform: str) -> str:
@@ -41,9 +42,19 @@ class GenericAcpConnector(AgentConnector):
         run_options = normalize_acpx_run_options(options, default_timeout_sec=None)
         prompt_text = request.prompt if isinstance(request.prompt, str) else str(request.prompt or "")
         attachments = options.get("attachments")
+        _acp_mark(
+            "connector.send.enter",
+            platform=request.platform,
+            cwd=cwd or "<inherit>",
+            timeout_sec=run_options["timeout_sec"],
+            ttl_sec=run_options["ttl_sec"],
+            return_trace=bool(options.get("return_trace")),
+            prompt_chars=len(prompt_text),
+        )
         try:
             adapter = get_acpx_adapter(cwd=cwd)
             platform = _canonical_platform(request.platform)
+            _acp_mark("connector.adapter_ready", platform=platform)
             if options.get("return_trace"):
                 trace = await adapter.prompt_with_trace(
                     tool=platform,
@@ -57,6 +68,7 @@ class GenericAcpConnector(AgentConnector):
                     approve_all=run_options["approve_all"],
                     non_interactive_permissions=run_options["non_interactive_permissions"],
                 )
+                _acp_mark("connector.prompt_with_trace.done", chars=len(trace.text or ""))
                 return SendToAgentResult(
                     ok=True,
                     content=trace.text or "",
@@ -84,6 +96,7 @@ class GenericAcpConnector(AgentConnector):
                 approve_all=run_options["approve_all"],
                 non_interactive_permissions=run_options["non_interactive_permissions"],
             )
+            _acp_mark("connector.prompt.done", chars=len(reply or ""))
             return SendToAgentResult(
                 ok=True,
                 content=reply,
@@ -95,6 +108,7 @@ class GenericAcpConnector(AgentConnector):
                 },
             )
         except (AcpxError, RuntimeError) as e:
+            _acp_mark("connector.error", error=str(e)[:160])
             return SendToAgentResult(
                 ok=False,
                 error=str(e),

@@ -255,6 +255,11 @@ async def _run_discussion(topic_id: str, engine: DiscussionEngine | PythonWorkfl
             forum.status = "error"
             forum.conclusion = f"讨论出错: {str(e)}"
 
+    if forum:
+        # Persist the visible terminal state before any post-processing.  Swarm
+        # generation may call the LLM and must not delay topic detail reads.
+        forum.save()
+
     # Upgrade swarm blueprint with discussion results
     if forum and forum.swarm_mode and forum.status in ("concluded",):
         try:
@@ -266,7 +271,8 @@ async def _run_discussion(topic_id: str, engine: DiscussionEngine | PythonWorkfl
                 {"event": e.event, "agent": e.agent, "detail": e.detail, "elapsed": e.elapsed}
                 for e in forum.timeline
             ]
-            forum.swarm = generate_swarm_blueprint(
+            forum.swarm = await asyncio.to_thread(
+                generate_swarm_blueprint,
                 forum.question,
                 user_id=forum.user_id,
                 team=getattr(engine, "_team", ""),
@@ -276,11 +282,9 @@ async def _run_discussion(topic_id: str, engine: DiscussionEngine | PythonWorkfl
                 conclusion=forum.conclusion or "",
                 mode=forum.swarm_mode,
             )
+            forum.save()
         except Exception as e:
             print(f"[OASIS] ⚠️ Swarm blueprint upgrade failed: {e}")
-
-    if forum:
-        forum.save()
 
     # Fire callback notification
     cb_url = getattr(engine, "callback_url", None)

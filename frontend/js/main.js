@@ -8531,18 +8531,21 @@ async function openOasisTopic(topicId) {
     oasisSwarmSelectedEdgeId = null;
     oasisSwarmViewport = { scale: 1, x: 0, y: 0 };
     stopOasisPolling();
-    showPageLoading();
 
     // Switch to detail view
     document.getElementById('oasis-topic-list-view').style.display = 'none';
     document.getElementById('oasis-detail-view').style.display = 'flex';
+    const postsBox = document.getElementById('oasis-posts-box');
+    if (postsBox) {
+        postsBox.innerHTML = `
+            <div class="oasis-topic-list-empty" style="min-height: 260px;">
+                <div class="oasis-empty-town">🏘️</div>
+                <p>${t('loading')}</p>
+            </div>`;
+    }
 
     // Load topic detail
-    try {
-        await loadTopicDetail(topicId);
-    } finally {
-        hidePageLoading();
-    }
+    await loadTopicDetail(topicId);
 }
 
 function showOasisTopicList() {
