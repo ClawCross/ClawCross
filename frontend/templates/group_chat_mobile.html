@@ -11927,7 +11927,7 @@ function renderAgentDetailBody(name, agentId, memberType, data, agentInfo) {
   if (!html) html = `<div class="agent-detail-error">${t('no_detail_info')}</div>`;
 
   // Add private chat button
-  const pcInfo = JSON.stringify(agentInfo).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+  const pcInfo = escapeHtml(JSON.stringify(agentInfo));
   html += `<div style="padding:16px;">
     <button onclick="startPrivateChat(JSON.parse(this.dataset.info))" data-info="${pcInfo}" style="width:100%;padding:14px;background:#07c160;color:white;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;">${t('start_private_chat')}</button>
   </div>`;
@@ -12032,17 +12032,17 @@ function renderAgentBasicInfo(name, memberType, agentInfo) {
   // Add private chat button for agents, or expert chat button for experts
   if (memberType === 'expert') {
     // Expert: create internal agent with persona, then start private chat
-    const ecInfo = JSON.stringify(agentInfo).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    const ecInfo = escapeHtml(JSON.stringify(agentInfo));
     html += `<div style="padding:16px;">
       <button onclick="startExpertChat(JSON.parse(this.dataset.info))" data-info="${ecInfo}" style="width:100%;padding:14px;background:#07c160;color:white;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;">${t('start_expert_chat')}</button>
     </div>`;
   } else {
-    const pcInfo = JSON.stringify(agentInfo).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    const pcInfo = escapeHtml(JSON.stringify(agentInfo));
     html += `<div style="padding:16px;display:flex;flex-direction:column;gap:10px;">
       <button onclick="startPrivateChat(JSON.parse(this.dataset.info))" data-info="${pcInfo}" ${needsTrackFirst ? 'disabled' : ''} style="width:100%;padding:14px;background:${needsTrackFirst ? '#9ca3af' : '#07c160'};color:white;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:${needsTrackFirst ? 'not-allowed' : 'pointer'};">${needsTrackFirst ? (_currentLang === 'zh' ? '先追踪再私聊' : 'Track before chat') : t('start_private_chat')}</button>`;
 
     if (memberType === 'ext') {
-      const editInfo = JSON.stringify({
+      const editInfo = escapeHtml(JSON.stringify({
         global_id: globalId,
         name: shortName,
         tag: tag,
@@ -12052,21 +12052,21 @@ function renderAgentBasicInfo(name, memberType, agentInfo) {
         platform_hint: agentInfo.platform_hint || platformKey,
         model: agentInfo.model || '',
         meta: agentInfo.meta || {},
-      }).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+      }));
       html += `
       <button onclick="openPublicExternalAgentConfigModal(JSON.parse(this.dataset.info))" data-info="${editInfo}" style="width:100%;padding:14px;background:transparent;color:#2563eb;border:2px solid #2563eb;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;">${_currentLang === 'zh' ? '追踪 / 编辑' : 'Track / Edit'}</button>`;
-      const delInfo = JSON.stringify({
+      const delInfo = escapeHtml(JSON.stringify({
         global_id: globalId,
         name: shortName,
         tag: tag,
         team: agentInfo.team || '',
         platform: agentInfo.platform || '',
         platform_hint: agentInfo.platform_hint || platformKey
-      }).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+      }));
       html += `
       <button onclick="deleteExternalAgent(JSON.parse(this.dataset.info))" data-info="${delInfo}" style="width:100%;padding:14px;background:transparent;color:#e74c3c;border:2px solid #e74c3c;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;">${t('delete_agent')}</button>`;
     } else if (memberType === 'oasis' || memberType === 'internal') {
-      const delInfo = JSON.stringify({global_id: globalId, name: shortName}).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+      const delInfo = escapeHtml(JSON.stringify({global_id: globalId, name: shortName}));
       html += `
       <button onclick="deleteInternalAgent(JSON.parse(this.dataset.info))" data-info="${delInfo}" style="width:100%;padding:14px;background:transparent;color:#e74c3c;border:2px solid #e74c3c;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;">${t('delete_agent')}</button>`;
     }
