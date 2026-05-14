@@ -7,33 +7,14 @@ $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 
 Set-ClawcrossUtf8
 Initialize-ClawcrossRuntimePaths -ProjectRoot $projectRoot
-$python = Ensure-VenvPython -ProjectRoot $projectRoot
-$envPath = Join-Path $env:CLAWCROSS_CONFIG_DIR ".env"
 $env:WEBOT_HEADLESS = "1"
-
-if (-not (Test-Path $envPath)) {
-    throw "config/.env is missing. Run selfskill\scripts\run.ps1 configure --init first."
-}
-
-$resolution = Resolve-ClawcrossPortConfiguration -EnvPath $envPath
-if ($resolution.AutoUpdated) {
-    Write-Host "Updated config/.env to avoid blocked default Windows ports."
-    foreach ($entry in $resolution.NewPorts.GetEnumerator()) {
-        Write-Host "  $($entry.Key): $($resolution.CurrentPorts[$entry.Key]) -> $($entry.Value)"
-    }
-} elseif ($resolution.RequiresManualUpdate) {
-    Write-Host "The configured Clawcross ports are blocked and were not auto-changed because they are custom values."
-    foreach ($entry in $resolution.CurrentPorts.GetEnumerator()) {
-        $check = $resolution.Checks[$entry.Key]
-        if (-not $check.Available) {
-            Write-Host "  $($entry.Key)=$($entry.Value) is blocked: $([string]::Join('; ', $check.Reasons))"
-        }
-    }
-    throw "Update the custom PORT_* values in config/.env and try again."
-}
 
 Push-Location $env:CLAWCROSS_WORKSPACE_DIR
 try {
+    $python = Get-VenvPython -ProjectRoot $projectRoot
+    if (-not $python) {
+        $python = "python"
+    }
     & $python (Join-Path $projectRoot "scripts\launcher.py")
     exit $LASTEXITCODE
 } finally {

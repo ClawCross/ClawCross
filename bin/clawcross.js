@@ -116,6 +116,49 @@ function isAgentRunning(port) {
   });
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForAgent(port, attempts = 20, delayMs = 500) {
+  for (let i = 0; i < attempts; i += 1) {
+    if (await isAgentRunning(port)) {
+      return true;
+    }
+    await sleep(delayMs);
+  }
+  return false;
+}
+
+function getRunLauncher(args) {
+  return process.platform === "win32"
+    ? ["powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", runScript, ...args]]
+    : ["bash", [runScript, ...args]];
+}
+
+function spawnAutoStart(args) {
+  fs.mkdirSync(process.env.CLAWCROSS_LOG_DIR, { recursive: true });
+  const outLog = path.join(process.env.CLAWCROSS_LOG_DIR, "auto-start.out.log");
+  const errLog = path.join(process.env.CLAWCROSS_LOG_DIR, "auto-start.err.log");
+  const outFd = fs.openSync(outLog, "a");
+  const errFd = fs.openSync(errLog, "a");
+  const launcher = getRunLauncher(args);
+
+  try {
+    const child = spawn(launcher[0], launcher[1], {
+      stdio: ["ignore", outFd, errFd],
+      detached: true,
+      cwd: root,
+      env: process.env,
+    });
+    child.unref();
+    return { pid: child.pid, outLog, errLog };
+  } finally {
+    fs.closeSync(outFd);
+    fs.closeSync(errFd);
+  }
+}
+
 async function main() {
   let args = process.argv.slice(2);
   if (args[0] === "dev") {
@@ -136,30 +179,41 @@ async function main() {
   ]) || path.join(process.env.CLAWCROSS_CONFIG_DIR, ".env"));
   const agentPort = Number.parseInt(process.env.PORT_AGENT || env.PORT_AGENT || "51200", 10);
   // No-args behaviour:
-  //   1. If the backend isn't running, spawn it detached (run.sh start)
-  //      so the web UI / API come up automatically. LLM_MODEL is no
-  //      longer required to boot — the agent only needs it at actual
-  //      inference time, and users can fix that from inside the REPL.
-  //   2. Drop into the interactive REPL while the backend starts in
-  //      the background. The REPL itself never depends on the agent
-  //      port being live; it polls when commands need it.
+  //   1. If the backend isn't running, start it before entering the REPL.
+  //      Windows uses the same synchronous path as `clawcross start` because
+  //      detached PowerShell startup can otherwise hide failures.
+  //   2. On POSIX, keep the detached auto-start behaviour used by run.sh.
+  //      The REPL itself never depends on the agent port being live; it polls
+  //      when commands need it.
   const command = args[0];
   if (!command) {
     const running = await isAgentRunning(agentPort);
     if (!running) {
-      const launcher = process.platform === "win32"
-        ? ["powershell", ["-ExecutionPolicy", "Bypass", "-File", runScript, "start"]]
-        : ["bash", [runScript, "start"]];
       try {
-        const bg = spawn(launcher[0], launcher[1], {
-          stdio: "ignore",
-          detached: true,
-          cwd: root,
-          env: process.env,
-        });
-        bg.unref();
-        console.log("Starting backend in the background — web UI / API will come up shortly.");
-        console.log("Use `clawcross status` to verify or `clawcross logs` to inspect.");
+        if (process.platform === "win32") {
+          const startLauncher = getRunLauncher(["start"]);
+          const startResult = spawnSync(startLauncher[0], startLauncher[1], {
+            stdio: "inherit",
+            env: process.env,
+            cwd: root,
+          });
+          if (startResult.error) {
+            throw startResult.error;
+          }
+          if (startResult.status !== 0) {
+            process.exit(startResult.status === null ? 1 : startResult.status);
+          }
+        } else {
+          const started = spawnAutoStart(["start"]);
+          console.log(`Starting backend in the background (PID ${started.pid || "unknown"}).`);
+          console.log(`Auto-start logs: ${started.outLog}`);
+          console.log(`Auto-start errors: ${started.errLog}`);
+          if (await waitForAgent(agentPort)) {
+            console.log("Backend is ready.");
+          } else {
+            console.log("Backend is still starting. Use `clawcross status` or inspect auto-start logs.");
+          }
+        }
       } catch (err) {
         console.warn(`Backend auto-start failed (${err && err.message}); REPL still works.`);
       }
@@ -167,11 +221,7 @@ async function main() {
   }
   const launcherArgs = args;
   const useRunScript = runCommands.has(command);
-  const launcher = useRunScript
-    ? (process.platform === "win32"
-      ? ["powershell", ["-ExecutionPolicy", "Bypass", "-File", runScript, ...launcherArgs]]
-      : ["bash", [runScript, ...launcherArgs]])
-    : [python, [script, ...args]];
+  const launcher = useRunScript ? getRunLauncher(launcherArgs) : [python, [script, ...args]];
 
   const result = spawnSync(launcher[0], launcher[1], {
     stdio: "inherit",

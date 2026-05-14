@@ -44,6 +44,19 @@ function Stop-ClawcrossTunnelForFreshStart {
     }
 }
 
+function Clear-ClawcrossPublicDomain {
+    if (-not (Test-Path $envPath)) {
+        return
+    }
+
+    $raw = Get-Content $envPath -Raw -ErrorAction SilentlyContinue
+    if ($raw -and ($raw -match '(?m)^PUBLIC_DOMAIN=')) {
+        $cleared = $raw -replace '(?m)^PUBLIC_DOMAIN=.*', 'PUBLIC_DOMAIN='
+        [System.IO.File]::WriteAllText($envPath, $cleared, [System.Text.UTF8Encoding]::new($false))
+        Write-Host "Cleared PUBLIC_DOMAIN in config\.env"
+    }
+}
+
 function Invoke-ClawcrossPython {
     param(
         [Parameter(Mandatory = $true)]
@@ -71,15 +84,17 @@ function Get-ClawcrossStartOptions {
     param([string[]]$FlagArgs)
     $noTunnel = $false
     $noOpenclaw = $false
+    $noChannel = $false
     if ($null -ne $FlagArgs) {
         foreach ($a in $FlagArgs) {
             switch -Exact ($a) {
                 '--no-tunnel' { $noTunnel = $true }
                 '--no-openclaw' { $noOpenclaw = $true }
+                '--no-channel' { $noChannel = $true }
             }
         }
     }
-    [pscustomobject]@{ NoTunnel = $noTunnel; NoOpenclaw = $noOpenclaw }
+    [pscustomobject]@{ NoTunnel = $noTunnel; NoOpenclaw = $noOpenclaw; NoChannel = $noChannel }
 }
 
 function Write-MagicLinks {
@@ -342,8 +357,8 @@ function Show-Help {
     Write-Host ""
     Write-Host "Commands:"
     Write-Host "  setup                          Optional: full setup_env.ps1 (start runs it when venv/deps are missing)"
-    Write-Host "  start [--no-tunnel] [--no-openclaw]   Background start; --no-tunnel skips Cloudflare; --no-openclaw skips OpenClaw import + gateway warm"
-    Write-Host "  start-foreground [--no-openclaw] [--no-tunnel]   Foreground start; --no-openclaw same (--no-tunnel ignored; no tunnel in this mode)"
+    Write-Host "  start [--no-tunnel] [--no-openclaw] [--no-channel]   Background start; --no-tunnel skips Cloudflare; --no-openclaw skips OpenClaw import + gateway warm; --no-channel skips chatbot"
+    Write-Host "  start-foreground [--no-openclaw] [--no-tunnel] [--no-channel]   Foreground start; --no-openclaw same (--no-tunnel ignored; no tunnel in this mode)"
     Write-Host "  stop                           Stop services"
     Write-Host "  status                         Show current service status"
     Write-Host "  logs [launcher|error|tunnel]   Show recent logs"
@@ -390,21 +405,9 @@ function Show-PortChecks {
 }
 
 function Prepare-ClawcrossPorts {
-    $resolution = Resolve-ClawcrossPortConfiguration -EnvPath $envPath
-
-    if ($resolution.AutoUpdated) {
-        Write-Host "The default Clawcross ports are blocked on this Windows machine."
-        Write-Host "Updated config/.env to use a safe local port set:"
-        foreach ($entry in $resolution.NewPorts.GetEnumerator()) {
-            Write-Host "  $($entry.Key): $($resolution.CurrentPorts[$entry.Key]) -> $($entry.Value)"
-        }
-    } elseif ($resolution.RequiresManualUpdate) {
-        Write-Host "The configured Clawcross ports are blocked and were not auto-changed because they are custom values."
-        Show-PortChecks -Checks $resolution.Checks -Ports $resolution.CurrentPorts
-        Write-Host "Update PORT_AGENT / PORT_SCHEDULER / PORT_OASIS / PORT_FRONTEND in config/.env, then try again."
-        return $null
-    }
-
+    # Keep Windows startup behaviour aligned with run.sh: use the configured
+    # ports as-is. Existing ClawCross processes are stopped before launch; any
+    # unrelated port conflict is reported by the readiness/status checks.
     return Get-ClawcrossPortMap -EnvPath $envPath
 }
 
@@ -650,6 +653,12 @@ switch ($Command) {
         } else {
             Remove-Item Env:\CLAWCROSS_NO_OPENCLAW -ErrorAction SilentlyContinue
         }
+        if ($startOpts.NoChannel) {
+            $env:CLAWCROSS_NO_CHANNEL = "1"
+            Write-Host "⏭️  已指定 --no-channel：不启动社交媒体 chatbot"
+        } else {
+            Remove-Item Env:\CLAWCROSS_NO_CHANNEL -ErrorAction SilentlyContinue
+        }
         $stdoutLog = Join-Path $env:CLAWCROSS_LOG_DIR "launcher.out.log"
         $stderrLog = Join-Path $env:CLAWCROSS_LOG_DIR "launcher.err.log"
         $process = Start-BackgroundPythonProcess `
@@ -661,6 +670,7 @@ switch ($Command) {
 
         Set-Content -Path $pidFile -Value $process.Id -Encoding UTF8
         $agentPort = [int]$ports["PORT_AGENT"]
+        $oasisPort = [int]$ports["PORT_OASIS"]
         $frontendPort = [int]$ports["PORT_FRONTEND"]
 
         Write-Host "Service started. PID: $($process.Id)"
@@ -669,9 +679,9 @@ switch ($Command) {
         Write-Host "  stderr: $stderrLog"
         Write-Host "If your terminal / CI / agent runner reaps child processes after the command exits, use:"
         Write-Host "  powershell -ExecutionPolicy Bypass -File .\selfskill\scripts\run.ps1 start-foreground"
-        Write-Host "Waiting for http://127.0.0.1:$agentPort/v1/models ..."
+        Write-Host "Waiting for http://127.0.0.1:$agentPort/v1/models and http://127.0.0.1:$oasisPort/experts ..."
 
-        if (Wait-HttpEndpoint -Url "http://127.0.0.1:$agentPort/v1/models") {
+        if (Wait-ClawcrossReady -AgentPort $agentPort -OasisPort $oasisPort) {
             Write-Host "Service is ready."
             Write-Host "Web UI: http://127.0.0.1:$frontendPort"
             Write-Host ""
@@ -734,6 +744,7 @@ switch ($Command) {
         }
         Write-MagicLinks
         Remove-Item Env:\CLAWCROSS_NO_TUNNEL -ErrorAction SilentlyContinue
+        Remove-Item Env:\CLAWCROSS_NO_CHANNEL -ErrorAction SilentlyContinue
 
         Write-Host ""
         Write-Host "Docs (read before creating/managing Teams):"
@@ -747,7 +758,7 @@ switch ($Command) {
         exit 0
     }
 
-    "start-foreground" {
+    { $_ -in @("start-foreground", "start-fg") } {
         $startOpts = Get-ClawcrossStartOptions -FlagArgs $Rest
         Invoke-ClawcrossSetupIfNeeded
         # Auto-create .env if missing
@@ -797,6 +808,12 @@ switch ($Command) {
             $env:CLAWCROSS_NO_OPENCLAW = "1"
         } else {
             Remove-Item Env:\CLAWCROSS_NO_OPENCLAW -ErrorAction SilentlyContinue
+        }
+        if ($startOpts.NoChannel) {
+            $env:CLAWCROSS_NO_CHANNEL = "1"
+            Write-Host "⏭️  已指定 --no-channel：不启动社交媒体 chatbot"
+        } else {
+            Remove-Item Env:\CLAWCROSS_NO_CHANNEL -ErrorAction SilentlyContinue
         }
         Write-Host "Starting Clawcross in the foreground (headless) ..."
         Write-Host "This session stays attached. Press Ctrl+C to stop all services."
@@ -864,6 +881,25 @@ switch ($Command) {
                     Write-Host "  $($entry.Key)=$($entry.Value) is blocked: $([string]::Join('; ', $check.Reasons))"
                 }
             }
+        }
+
+        $openclaw = Get-OpenClawCommand
+        if ($openclaw) {
+            $runtimeResult = Invoke-OpenClawAndCapture -OpenClawPath $openclaw -Arguments @("gateway", "status")
+            $runtime = $null
+            foreach ($line in @($runtimeResult.StdOut -split "`r?`n")) {
+                if ($line -match '^Runtime:\s*(.+)$') {
+                    $runtime = $Matches[1]
+                    break
+                }
+            }
+            if ($runtime) {
+                Write-Host "  🦞 OpenClaw Runtime: $runtime"
+            } else {
+                Write-Host "  🦞 OpenClaw installed (runtime not detected)"
+            }
+        } else {
+            Write-Host "  🦞 OpenClaw not installed"
         }
 
         Write-Host ""
@@ -1185,21 +1221,20 @@ switch ($Command) {
         } else {
             Write-Host "Tunnel is not running."
         }
+        Clear-ClawcrossPublicDomain
         exit 0
     }
 
     "tunnel-status" {
-        if (-not (Test-TrackedProcessRunning -PidFile $tunnelPidFile)) {
+        if (Test-TrackedProcessRunning -PidFile $tunnelPidFile) {
+            $pidValue = Get-TrackedProcessId -PidFile $tunnelPidFile
+            Write-Host "Tunnel is running. PID: $pidValue"
+            $envValues = Read-ClawcrossEnvFile -Path $envPath
+            if ($envValues.ContainsKey("PUBLIC_DOMAIN") -and -not [string]::IsNullOrWhiteSpace($envValues["PUBLIC_DOMAIN"])) {
+                Write-Host "Public URL: $($envValues["PUBLIC_DOMAIN"])"
+            }
+        } else {
             Write-Host "Tunnel is not running."
-            exit 1
-        }
-
-        $pidValue = Get-TrackedProcessId -PidFile $tunnelPidFile
-        Write-Host "Tunnel is running. PID: $pidValue"
-
-        $envValues = Read-ClawcrossEnvFile -Path $envPath
-        if ($envValues.ContainsKey("PUBLIC_DOMAIN") -and -not [string]::IsNullOrWhiteSpace($envValues["PUBLIC_DOMAIN"])) {
-            Write-Host "Public URL: $($envValues["PUBLIC_DOMAIN"])"
         }
 
         Write-MagicLinks

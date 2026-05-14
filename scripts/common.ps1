@@ -333,6 +333,43 @@ function Wait-HttpEndpoint {
     return $false
 }
 
+function Test-HttpEndpoint {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Url,
+        [int]$TimeoutSec = 5
+    )
+
+    try {
+        Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec $TimeoutSec | Out-Null
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+function Wait-ClawcrossReady {
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$AgentPort,
+        [Parameter(Mandatory = $true)]
+        [int]$OasisPort,
+        [int]$Attempts = 60,
+        [int]$DelayMilliseconds = 500
+    )
+
+    for ($i = 0; $i -lt $Attempts; $i++) {
+        $agentReady = Test-HttpEndpoint -Url "http://127.0.0.1:$AgentPort/v1/models"
+        $oasisReady = Test-HttpEndpoint -Url "http://127.0.0.1:$OasisPort/experts"
+        if ($agentReady -and $oasisReady) {
+            return $true
+        }
+        Start-Sleep -Milliseconds $DelayMilliseconds
+    }
+
+    return $false
+}
+
 function Get-ListeningPortInfo {
     param(
         [Parameter(Mandatory = $true)]

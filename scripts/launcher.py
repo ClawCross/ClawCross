@@ -73,11 +73,12 @@ if not os.path.exists(ENV_FILE_PATH):
 # 加载 .env 配置
 load_dotenv(dotenv_path=ENV_FILE_PATH)
 
+_require_llm_model = (os.getenv("CLAWCROSS_REQUIRE_LLM_MODEL") or "").strip().lower()
 _allow_empty_llm_model = (os.getenv("CLAWCROSS_ALLOW_EMPTY_LLM_MODEL") or "").strip().lower()
-if _allow_empty_llm_model not in ("1", "true", "yes", "on"):
+if _require_llm_model in ("1", "true", "yes", "on") and _allow_empty_llm_model not in ("1", "true", "yes", "on"):
     llm_model = (os.getenv("LLM_MODEL") or "").strip()
     if not llm_model or llm_model == PLACEHOLDER:
-        print("❌ LLM_MODEL 未配置，已停止启动。")
+        print("❌ LLM_MODEL 未配置，且 CLAWCROSS_REQUIRE_LLM_MODEL=1 已要求严格模式。")
         print("   请先设置模型，例如：")
         if sys.platform == "win32":
             print("   powershell -ExecutionPolicy Bypass -File .\\selfskill\\scripts\\run.ps1 configure LLM_MODEL deepseek-chat")

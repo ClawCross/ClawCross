@@ -7,6 +7,39 @@ $ErrorActionPreference = "Stop"
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 . (Join-Path $PSScriptRoot "common.ps1")
 
+$internalRuntimeBase = Join-Path $HOME ".local\lib\openclaw-internal\runtime"
+
+function Add-InternalRuntimePaths {
+    $uvBin = Join-Path $internalRuntimeBase "uv\bin"
+    $nodeBin = Join-Path $internalRuntimeBase "node\bin"
+
+    if (Test-Path (Join-Path $uvBin "uv.exe")) {
+        $env:PATH = "$uvBin;$env:PATH"
+    }
+
+    if (Test-Path (Join-Path $nodeBin "node.exe")) {
+        $env:PATH = "$nodeBin;$env:PATH"
+        $npmrc = Join-Path $internalRuntimeBase ".npmrc"
+        if (Test-Path $npmrc) {
+            $env:npm_config_userconfig = $npmrc
+        }
+    }
+}
+
+function Get-NodeMajorVersion {
+    $nodeCmd = Get-Command node -ErrorAction SilentlyContinue
+    if (-not $nodeCmd) {
+        return $null
+    }
+
+    $nodeVersion = (& $nodeCmd.Source --version 2>$null).Trim()
+    if ($nodeVersion -match '^v?(\d+)\.') {
+        return [int]$Matches[1]
+    }
+
+    return $null
+}
+
 Set-ClawcrossUtf8
 Initialize-ClawcrossRuntimePaths -ProjectRoot $projectRoot
 Invoke-ClawcrossHomeMigration -ProjectRoot $projectRoot
@@ -17,6 +50,16 @@ try {
     Write-Host "  Clawcross Windows environment setup"
     Write-Host "=========================================="
     Write-Host ""
+
+    Add-InternalRuntimePaths
+
+    $nodeMajor = Get-NodeMajorVersion
+    if ($null -eq $nodeMajor) {
+        Write-Host "⚠️  Node.js 未安装，acpx 及 OpenClaw 功能不可用"
+        Write-Host "   推荐安装 Node.js 22+，或使用腾讯内网版 OpenClaw 自带的 Node.js"
+    } elseif ($nodeMajor -lt 22) {
+        Write-Host "⚠️  Node.js 版本较低（检测到 v$nodeMajor），建议升级到 22+"
+    }
 
     $uv = Ensure-UvInstalled
     Write-Host "Detected uv at: $uv"
@@ -91,6 +134,33 @@ try {
             Write-Host "⚠️  npm not found; skipping acpx (group ACP features may be unavailable)"
             Write-Host "   After installing Node.js: npm install -g acpx@latest"
         }
+    }
+
+    Write-Host ""
+    $openclawCmd = $null
+    foreach ($candidate in @("openclaw.cmd", "openclaw")) {
+        $cmd = Get-Command $candidate -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($cmd) {
+            $openclawCmd = $cmd.Source
+            break
+        }
+    }
+
+    if ($openclawCmd) {
+        $openclawVersion = ""
+        try {
+            $openclawVersion = (& $openclawCmd --version 2>$null | Select-Object -First 1)
+        } catch {
+            $openclawVersion = ""
+        }
+        if ($openclawVersion) {
+            Write-Host "OpenClaw detected at: $openclawCmd"
+            Write-Host "  Version: $openclawVersion"
+        } else {
+            Write-Host "OpenClaw detected at: $openclawCmd"
+        }
+    } else {
+        Write-Host "OpenClaw not installed (optional component; core features still work)"
     }
 
     Write-Host ""
