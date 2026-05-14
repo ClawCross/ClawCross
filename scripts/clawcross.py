@@ -1561,6 +1561,7 @@ _HELP_TIPS = [
 
 _CHAT_HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
     ("Quick start", [
+        ("/cross help", "show these commands"),
         ("/cross use codex", "switch to the Codex CLI platform"),
         ("/cross use internal", "use the built-in internal agent"),
         ("Send a message", "text without /cross runs as a prompt on the active agent"),
@@ -1569,7 +1570,7 @@ _CHAT_HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("/cross platforms", "list all agent platforms"),
         ("/cross use <platform>", "switch platform (internal / codex / claude / gemini / ...)"),
         ("/cross session", "show sessions for the current platform"),
-        ("/cross session <name>", "switch to / create session by name"),
+        ("/cross session <id>", "switch to / create session by id"),
         ("/cross new session", "create timestamped session"),
         ("/cross cwd [path]", "show or change workspace directory"),
         ("/cross mode <mode>", "label the run as execute / plan / review"),
@@ -1649,7 +1650,7 @@ def _rich_help_text() -> str:
 
 def chat_help_text() -> str:
     """Chatbot-flavoured help: /cross-prefixed commands, no interactive-only features."""
-    out: list[str] = []
+    out: list[str] = ["Commands:", ""]
     for section_title, rows in _CHAT_HELP_SECTIONS:
         out.append(section_title)
         col = max(len(label) for label, _ in rows)
