@@ -77,6 +77,12 @@ def _trim_text(text: str, limit: int) -> str:
     )
 
 
+def _content_has_image_block(content: Any) -> bool:
+    if not isinstance(content, list):
+        return False
+    return any(isinstance(part, dict) and part.get("type") == "image" for part in content)
+
+
 def _artifact_dir(user_id: str, session_id: str, bucket: str) -> Path:
     base = USER_FILES_DIR / (user_id or "anonymous") / bucket / (session_id or "default")
     base.mkdir(parents=True, exist_ok=True)
@@ -259,6 +265,9 @@ def budget_tool_messages(
     budgeted: list[BaseMessage] = []
     for message in messages:
         if not isinstance(message, ToolMessage):
+            budgeted.append(message)
+            continue
+        if _content_has_image_block(message.content):
             budgeted.append(message)
             continue
 

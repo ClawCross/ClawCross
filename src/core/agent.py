@@ -117,6 +117,8 @@ logger = get_logger("agent")
 USER_INJECTED_TOOLS = {
     # File management tools
     "list_files", "read_file", "write_file", "append_file", "delete_file",
+    # Native multimodal attachment tools
+    "list_images", "attach_image_to_context",
     # Command execution tools
     "run_command", "run_python_code",
     "start_background_command", "get_background_command_status",
@@ -165,6 +167,8 @@ SESSION_INJECTED_TOOLS = {
     "write_file": "session_id",
     "append_file": "session_id",
     "delete_file": "session_id",
+    "list_images": "session_id",
+    "attach_image_to_context": "session_id",
     "run_command": "session_id",
     "run_python_code": "session_id",
     "start_background_command": "session_id",
@@ -243,6 +247,8 @@ SESSION_FORCE_INJECTED_TOOLS: frozenset[str] = frozenset({
     "get_session_mode",
     "get_current_session",
     "start_new_oasis",
+    "list_images",
+    "attach_image_to_context",
 })
 
 _TOOL_APPROVAL_WAIT_SECONDS = max(1, int(os.getenv("COMMAND_APPROVAL_WAIT_SECONDS", "600")))
@@ -1108,6 +1114,11 @@ class TeamAgent:
                 "args": [os.path.join(self._src_dir, "mcp_servers", "filemanager.py")],
                 "transport": "stdio",
             },
+            "vision_service": {
+                "command": python_command,
+                "args": [os.path.join(self._src_dir, "mcp_servers", "vision.py")],
+                "transport": "stdio",
+            },
             "commander_service": {
                 "command": python_command,
                 "args": [os.path.join(self._src_dir, "mcp_servers", "commander.py")],
@@ -1153,7 +1164,7 @@ class TeamAgent:
         # Mark essential tools as always-loaded
         self._tool_registry.set_always_loaded({
             "read_file", "write_file", "list_files", "run_command",
-            "search_files", "run_python_code",
+            "search_files", "run_python_code", "list_images", "attach_image_to_context",
         })
 
         # 4. Build LangGraph workflow
@@ -1672,7 +1683,11 @@ class TeamAgent:
         history_messages = self._sanitize_messages(history_messages, external_tool_names)
         from services.llm_factory import extract_text
         for msg in history_messages:
-            if isinstance(msg, ToolMessage) and isinstance(msg.content, list):
+            if (
+                isinstance(msg, ToolMessage)
+                and isinstance(msg.content, list)
+                and not self._tool_message_content_has_image(msg.content)
+            ):
                 msg.content = extract_text(msg.content)
 
         # 正常对话流程（用户和系统触发共用）
@@ -2122,6 +2137,10 @@ class TeamAgent:
             else:
                 result.append(msg)
         return result
+
+    @staticmethod
+    def _tool_message_content_has_image(content: list) -> bool:
+        return any(isinstance(part, dict) and part.get("type") == "image" for part in content)
 
     def get_tools_info(self) -> list[dict]:
         """Return serializable tool metadata list."""

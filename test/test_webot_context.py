@@ -80,6 +80,27 @@ class WeBotContextTests(unittest.TestCase):
                     self.assertIn("[Tool result budgeted]", text)
                     self.assertIn("saved_to=", text)
 
+    def test_budget_tool_messages_preserves_image_tool_content(self):
+        image_content = [
+            {"type": "text", "text": "metadata"},
+            {"type": "image", "base64": "x" * 5000, "mime_type": "image/png"},
+        ]
+        messages = [
+            ToolMessage(content=image_content, tool_call_id="call-vision", name="attach_image_to_context"),
+        ]
+
+        budgeted = budget_tool_messages(
+            user_id="alice",
+            session_id="session-1",
+            messages=messages,
+            total_char_budget=100,
+            item_char_limit=80,
+        )
+
+        self.assertEqual(len(budgeted), 1)
+        self.assertIs(budgeted[0], messages[0])
+        self.assertEqual(budgeted[0].content, image_content)
+
     def test_compact_history_messages_inserts_summary_and_keeps_recent(self):
         messages = [HumanMessage(content=f"message-{index} " * 20) for index in range(20)]
         compacted = compact_history_messages(messages, max_messages=8, preserve_recent=4, context_token_budget=200)
