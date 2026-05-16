@@ -10440,6 +10440,8 @@ function renderMobileChatbotSettings(containerId, keys) {
     const placeholder = isMasked ? `已保存（${val}），留空不修改` : (fieldMeta.placeholder || MOBILE_CHATBOT_DEFAULTS[key] || key);
     const tag = fieldMeta.type === 'textarea' || MOBILE_CHATBOT_TEXTAREA_KEYS.has(key) ? 'textarea' : 'input';
     const type = getMobileChatbotInputType(key, fieldMeta, tag);
+    const patternAttr = fieldMeta.pattern && tag === 'input' ? ` pattern="${escapeHtml(fieldMeta.pattern)}"` : '';
+    const titleAttr = fieldMeta.invalid_message && tag === 'input' ? ` title="${escapeHtml(fieldMeta.invalid_message)}"` : '';
     const helpLines = [];
     if (fieldMeta.help) helpLines.push(fieldMeta.help);
     if (MOBILE_CHATBOT_JSON_KEYS.has(key)) helpLines.push('保存前会校验 JSON 数组格式；.env 会写成 shell / python-dotenv 都可读取的引号格式。');
@@ -10451,7 +10453,7 @@ function renderMobileChatbotSettings(containerId, keys) {
     if (tag === 'textarea') {
       return `<div class="chatbot-config-field"><label>${escapeHtml(label)}</label><textarea class="chatbot-config-input" data-chatbot-setting="${escapeHtml(key)}" spellcheck="false" placeholder="${escapeHtml(placeholder)}">${escapeHtml(displayVal)}</textarea>${help}</div>`;
     }
-    return `<div class="chatbot-config-field"><label>${escapeHtml(label)}</label><input class="chatbot-config-input" data-chatbot-setting="${escapeHtml(key)}" type="${type}" value="${escapeHtml(displayVal)}" placeholder="${escapeHtml(placeholder)}" autocomplete="off">${help}</div>`;
+    return `<div class="chatbot-config-field"><label>${escapeHtml(label)}</label><input class="chatbot-config-input" data-chatbot-setting="${escapeHtml(key)}" type="${type}" value="${escapeHtml(displayVal)}" placeholder="${escapeHtml(placeholder)}" autocomplete="off"${patternAttr}${titleAttr}>${help}</div>`;
   }).join('');
 }
 
@@ -10587,6 +10589,34 @@ function readMobileChatbotInputValue(input, fieldMeta = {}) {
   return (input.value || '').trim();
 }
 
+function validateMobileChatbotChannelFields() {
+  const channel = getMobileChatbotChannel();
+  const config = getMobileChatbotChannelConfig(channel);
+  const fields = Array.isArray(config.fields) ? config.fields : [];
+  for (const field of fields) {
+    if (!field || !field.pattern) continue;
+    const target = field.target || (channel.kind === 'nonebot' ? 'bot' : 'env');
+    let value = '';
+    if (target === 'env') {
+      value = String(mobileChatbotSettings[field.env_key || field.name] || '').trim();
+    } else if (channel.env_key) {
+      const bot = getMobileChatbotFirstBot(channel.env_key);
+      if (target === 'bot_intents') {
+        value = String((bot.intents && bot.intents[field.name] !== undefined) ? bot.intents[field.name] : '').trim();
+      } else {
+        value = String(bot[field.name] || '').trim();
+      }
+    }
+    if (!value || value.includes('****')) continue;
+    try {
+      if (!(new RegExp(field.pattern)).test(value)) {
+        return field.invalid_message || `${field.label || field.name} 格式不正确`;
+      }
+    } catch (_) {}
+  }
+  return '';
+}
+
 function collectMobileChatbotChannelFieldsFromDom() {
   const channel = getMobileChatbotChannel();
   if (!channel || !channel.env_key) return;
@@ -10648,6 +10678,11 @@ async function saveMobileChatbotConfig() {
       mobileChatbotStatus(`${key} 必须是 JSON 数组`, true);
       return false;
     }
+  }
+  const fieldError = validateMobileChatbotChannelFields();
+  if (fieldError) {
+    mobileChatbotStatus(fieldError, true);
+    return false;
   }
   const allKeys = new Set([...MOBILE_CHATBOT_COMMON_KEYS]);
   mobileChatbotChannels.forEach(ch => getMobileChatbotPersistKeysForChannel(ch).forEach(k => allKeys.add(k)));

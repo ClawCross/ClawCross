@@ -21,8 +21,10 @@
           "target": "bot",
           "type": "password",
           "required": true,
-          "placeholder": "123456:ABC-DEF...",
-          "help": "BotFather 给出的 token。"
+          "placeholder": "123456789:AAExample_BotFatherToken",
+          "help": "BotFather 给出的 token，格式通常是数字 bot id、冒号、较长的 secret。",
+          "pattern": "^[0-9]{6,}:[A-Za-z0-9_-]{20,}$",
+          "invalid_message": "Telegram Bot token 格式不对；请粘贴 @BotFather 给出的完整 token，例如 123456789:AA..."
         },
         {
           "name": "name",

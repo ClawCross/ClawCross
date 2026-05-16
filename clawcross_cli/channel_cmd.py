@@ -23,6 +23,7 @@ from __future__ import annotations
 import getpass
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -226,6 +227,15 @@ def _prompt_field(field: BotField, *, interactive: bool) -> str:
     return (value or field.default).strip()
 
 
+def _validate_field_value(field: BotField, value: str) -> bool:
+    if not value or not field.pattern:
+        return True
+    try:
+        return re.fullmatch(field.pattern, value) is not None
+    except re.error:
+        return True
+
+
 def _collect_bot(ch: ChannelInfo, *, interactive: bool) -> dict | None:
     bot: dict = {}
     for f in ch.bot_fields:
@@ -236,6 +246,9 @@ def _collect_bot(ch: ChannelInfo, *, interactive: bool) -> dict | None:
             if f.password:
                 print(f"   {f.name} is required.")
                 return None
+        if not _validate_field_value(f, value):
+            print(f"   {f.invalid_message or (f.name + ' has invalid format.')}")
+            return None
         if value:
             if f.target == "bot_intents":
                 bot.setdefault("intents", {})[f.name] = value.strip().lower() in {"1", "true", "yes", "on"}
@@ -250,6 +263,9 @@ def _collect_env_fields(ch: ChannelInfo, *, interactive: bool) -> dict[str, str]
         if f.target != "env":
             continue
         value = _prompt_field(f, interactive=interactive)
+        if not _validate_field_value(f, value):
+            print(f"   {f.invalid_message or (f.name + ' has invalid format.')}")
+            return {}
         if value or f.default:
             updates[_field_env_name(f)] = value or f.default
     return updates
@@ -294,6 +310,8 @@ def cmd_setup(channel_id: str | None, *, interactive: bool) -> str:
         updates: dict[str, str] = {}
         for f in ch.bot_fields:
             value = _prompt_field(f, interactive=True)
+            if not _validate_field_value(f, value):
+                return f.invalid_message or f"{f.name} has invalid format."
             if value or f.default:
                 updates[_field_env_name(f)] = value or f.default
         if not updates:

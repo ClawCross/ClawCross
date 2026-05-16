@@ -37,6 +37,8 @@ class BotField:
     help: str = ""
     target: str = "bot"             # "bot" | "bot_intents" | "env"
     env_key: str = ""
+    pattern: str = ""
+    invalid_message: str = ""
 
 
 @dataclass
@@ -318,6 +320,8 @@ def _channels_from_shared_catalog() -> dict[str, ChannelInfo]:
                 help=str(item.get("help") or ""),
                 target=target,
                 env_key=str(item.get("env_key") or item.get("name") or ""),
+                pattern=str(item.get("pattern") or ""),
+                invalid_message=str(item.get("invalid_message") or ""),
             ))
         loaded[channel_id] = ChannelInfo(
             id=channel_id,
