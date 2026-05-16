@@ -146,8 +146,8 @@ ACP_PLATFORMS = {
 }
 SLASH_COMMANDS = [
     ("/use <platform>", "switch platform"),
-    ("/session", "choose a session for current platform"),
-    ("/session <id>", "switch session by id"),
+    ("/session", "pick a session (replays last 10 messages on resume)"),
+    ("/session <id>", "switch session by id (no history replay)"),
     ("/new session", "create and switch to a new session"),
     ("/cwd [path]", "show or change workspace"),
     ("/mode <mode>", "set execute, plan, or review label"),
@@ -163,7 +163,7 @@ SLASH_MENU = [
     ("/help", "show commands", "/help", True),
     ("/cancel", "cancel internal-agent generation", "/cancel", True),
     ("/use", "choose agent platform", "/use", True),
-    ("/session", "choose current-platform session", "/session", True),
+    ("/session", "pick session — resumes & replays last 10 messages", "/session", True),
     ("/new session", "create a new session", "/new session", True),
     ("/cwd [path]", "show or change workspace", "/cwd ", False),
     ("/mode <mode>", "set execute, plan, or review label", "/mode ", False),
@@ -526,6 +526,7 @@ def _set_platform(state: dict, platform: str) -> None:
     current["platform"] = platform
     platform_state = state.setdefault("platforms", {}).setdefault(platform, {})
     current["session"] = platform_state.get("session") or old_session
+    current["session_resumed"] = False
     platform_state["session"] = current["session"]
 
 
@@ -535,14 +536,16 @@ def _set_chat_platform(state: dict, platform: str) -> None:
     default_session = state.get("__chat_default_session") or _repo_session_name(current.get("cwd"))
     current["platform"] = platform
     current["session"] = default_session
+    current["session_resumed"] = False
     state.setdefault("platforms", {}).setdefault(platform, {})["session"] = default_session
     _save_state(state)
 
 
-def _set_session(state: dict, session: str) -> None:
+def _set_session(state: dict, session: str, *, resumed: bool = False) -> None:
     current = _current(state)
     platform = current.get("platform") or "internal"
     current["session"] = session or _repo_session_name(current.get("cwd"))
+    current["session_resumed"] = bool(resumed)
     state.setdefault("platforms", {}).setdefault(platform, {})["session"] = current["session"]
 
 
@@ -552,6 +555,7 @@ def _set_cwd(state: dict, cwd: str) -> None:
     current["cwd"] = str(path)
     if not current.get("session"):
         current["session"] = _repo_session_name(str(path))
+        current["session_resumed"] = False
 
 
 def _remember_recent(state: dict) -> None:
@@ -599,6 +603,83 @@ def _request_json(method: str, url: str, headers: dict | None = None, data: dict
     return json.loads(text) if text.strip() else {}
 
 
+def _fetch_session_history(state: dict, session_id: str, *, limit: int = 10) -> tuple[list[dict], str | None]:
+    """Fetch the tail of a session's messages for resume-replay.
+
+    Mirrors the frontend's /proxy_session_history call. For ACP platforms,
+    uses GET /proxy_acpx_session_history. Returns ([], error_str) on failure
+    so callers can render silently when offline.
+    """
+    current = _current(state)
+    platform = current.get("platform") or "internal"
+    try:
+        if platform == "internal":
+            user = current.get("user") or DEFAULT_USER
+            headers = {"X-Internal-Token": INTERNAL_TOKEN} if INTERNAL_TOKEN else {}
+            data = _request_json(
+                "POST",
+                f"{AGENT_BASE}/session_history",
+                headers=headers,
+                data={"user_id": user, "session_id": session_id},
+            )
+            messages = data.get("messages") if isinstance(data, dict) else None
+            if not isinstance(messages, list):
+                return [], None
+            return messages[-limit:], None
+        tool = _acpx_tool(platform)
+        if ":" not in platform and tool in ACP_PLATFORMS:
+            query = urllib.parse.urlencode({"tool": tool, "name": session_id, "limit": limit})
+            data = _request_json("GET", f"{FRONT_BASE}/proxy_acpx_session_history?{query}")
+            messages = (data.get("history") or data.get("messages")) if isinstance(data, dict) else None
+            if not isinstance(messages, list):
+                return [], None
+            return messages[-limit:], None
+        return [], None
+    except Exception as exc:
+        return [], str(exc)
+
+
+def _print_history_tail(messages: list[dict], *, max_chars: int = 400) -> None:
+    """Render replayed history in a CLI-friendly format."""
+    if not messages:
+        return
+    print("── history ──")
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        role = str(msg.get("role") or "").strip().lower()
+        content = msg.get("content") or ""
+        if isinstance(content, list):
+            parts = []
+            for part in content:
+                if isinstance(part, dict) and part.get("type") == "text":
+                    parts.append(part.get("text") or "")
+            content = "".join(parts)
+        text = str(content).strip()
+        # Collapse newlines so each message stays on a single CLI row.
+        # Otherwise a code block in an AI reply would unfold into dozens
+        # of lines and the resume replay would flood the terminal.
+        text = re.sub(r"\s*\n\s*", " ⏎ ", text)
+        if len(text) > max_chars:
+            text = text[:max_chars].rstrip() + "…"
+        if role == "user":
+            label = "you"
+        elif role == "assistant":
+            label = "ai"
+        elif role == "tool":
+            label = f"tool[{msg.get('tool_name', '')}]"
+        else:
+            label = role or "?"
+        if text:
+            print(f"  {label}: {text}")
+        tool_calls = msg.get("tool_calls") if role == "assistant" else None
+        if isinstance(tool_calls, list):
+            for tc in tool_calls:
+                if isinstance(tc, dict) and tc.get("name"):
+                    print(f"  ai→tool: {tc.get('name')}")
+    print("── end ──")
+
+
 def _new_session_name(state: dict) -> str:
     cwd_name = _repo_session_name(_current(state).get("cwd"))
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -607,7 +688,7 @@ def _new_session_name(state: dict) -> str:
 
 def _switch_to_new_session(state: dict) -> str:
     session = _new_session_name(state)
-    _set_session(state, session)
+    _set_session(state, session, resumed=False)
     _save_state(state)
     return session
 
@@ -738,6 +819,11 @@ def _run_acpx(prompt: str, state: dict, *, model: str = "default") -> None:
         "acp_session_name": session_id,
         "timeout_sec": 600,
     }
+    # When the user picked an existing ACP session via /session, send the
+    # strict-reuse hint so the backend errors if the session is gone instead
+    # of silently creating a new one under the same name.
+    if current.get("session_resumed"):
+        payload["acp_session_pick"] = session_id
     _print_sse_text(_post_stream(
         f"{FRONT_BASE}/proxy_acpx_chat",
         {},
@@ -1015,16 +1101,56 @@ def _menu_lines(selected: int) -> list[str]:
 
 
 def _selection_menu_lines(title: str, rows: list[tuple[str, str]], selected: int) -> list[str]:
-    lines = [_dim(title)]
+    """Render the menu with a scrolling viewport so it always fits the screen.
+
+    Without a viewport, a 60+ row list would overflow the terminal, and the
+    in-place redraw on each ↑/↓ press (\\033[nA + \\033[J) could not reach
+    rows that had scrolled off the top — old and new frames would overlap.
+    """
     width = _term_width() - 1
-    label_width = min(max((_display_width(label) for label, _ in rows), default=12), max(20, width // 2))
-    for idx, (label, description) in enumerate(rows):
+    total = len(rows)
+    budget = max(4, _term_height() - 4)  # title + footer + breathing
+    visible = min(total, budget)
+
+    if total <= visible:
+        first = 0
+    else:
+        first = max(0, min(total - visible, selected - visible // 2))
+    last = first + visible
+
+    def _one_line(s: str) -> str:
+        # Collapse any embedded newlines so a single row occupies exactly
+        # one terminal line. Otherwise the in-place redraw (\033[nA + \033[J)
+        # counts logical lines while the terminal sees more, leaving an
+        # un-erased ghost of the previous frame after every ↓ keypress.
+        return re.sub(r"\s*\n\s*", " ⏎ ", str(s or ""))
+
+    window_rows = [(_one_line(label), _one_line(desc)) for label, desc in rows[first:last]]
+    label_width = min(
+        max((_display_width(label) for label, _ in window_rows), default=12),
+        max(20, width // 2),
+    )
+
+    lines = [_dim(title)]
+    for offset, (label, description) in enumerate(window_rows):
+        idx = first + offset
         marker = ">" if idx == selected else " "
         desc_width = max(8, width - label_width - 3)
         text = f"{marker} {_pad_display(label, label_width)} {_fit(description, desc_width)}"
         text = _fit(text, width)
         lines.append(_style(text) if idx == selected else text)
-    lines.append(_dim("Enter selects · ↑/↓ moves · Esc cancels"))
+
+    pos = f"{selected + 1}/{total}"
+    if total > visible:
+        if first == 0:
+            scroll = "↓"
+        elif last >= total:
+            scroll = "↑"
+        else:
+            scroll = "↕"
+        lines.append(_dim(f"Enter selects · ↑/↓ moves · Esc cancels  ·  {pos} {scroll}"))
+    else:
+        lines.append(_dim(f"Enter selects · ↑/↓ moves · Esc cancels  ·  {pos}"))
     return lines
 
 
@@ -1064,6 +1190,12 @@ def _choose_from_menu(title: str, rows: list[tuple[str, str]]) -> int | None:
 
     try:
         tty.setcbreak(sys.stdin.fileno())
+        # Explicitly disable ECHO — tty.setcbreak does not turn it off on
+        # older Python versions, so arrow-key escape sequences (\x1b[A/B)
+        # get echoed mid-frame and the menu visually duplicates itself.
+        attrs = termios.tcgetattr(sys.stdin.fileno())
+        attrs[3] &= ~termios.ECHO  # lflag
+        termios.tcsetattr(sys.stdin.fileno(), termios.TCSANOW, attrs)
         render()
         while True:
             ch = sys.stdin.read(1)
@@ -1131,9 +1263,14 @@ def _choose_session(state: dict) -> bool:
         print(f"session: {session}")
         return True
     session = rows[selected][0]
-    _set_session(state, session)
+    _set_session(state, session, resumed=True)
     _save_state(state)
-    print(f"session: {session}")
+    print(f"session: {session} (resumed)")
+    history, hist_err = _fetch_session_history(state, session, limit=10)
+    if hist_err:
+        print(f"history unavailable: {hist_err}")
+    else:
+        _print_history_tail(history)
     return True
 
 
@@ -1290,9 +1427,23 @@ def _read_interactive_line(prompt: str) -> str:
                 finish_line()
                 return buffer
             if ch == "\x03":
+                # bash-style: clear current line on Ctrl+C; exit only when
+                # the buffer is already empty.
                 if menu_open:
                     close_menu(restore_input=False)
-                raise KeyboardInterrupt
+                    buffer = ""
+                    finish_line()
+                    draw_box()
+                    continue
+                if buffer:
+                    buffer = ""
+                    finish_line()
+                    sys.stdout.write("^C\n")
+                    sys.stdout.flush()
+                    draw_box()
+                    continue
+                finish_line()
+                raise EOFError
             if ch == "\x04":
                 if not buffer:
                     if menu_open:
@@ -1484,8 +1635,8 @@ _HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
     ("Platform & session", [
         ("/platforms", "list all agent platforms (internal + acpx tools)"),
         ("/use <platform>", "switch active platform (internal / codex / claude / gemini / ...)"),
-        ("/session", "show existing sessions for the current platform"),
-        ("/session <name>", "switch to / create session by name"),
+        ("/session", "interactive picker (resumes & replays last 10 messages)"),
+        ("/session <name>", "switch to / create session by name (no replay)"),
         ("/new session", "create timestamped session (e.g. ClawCross-20260512-031544)"),
         ("/cwd [path]", "show or change the workspace directory"),
         ("/mode <mode>", "label the run as execute / plan / review"),
