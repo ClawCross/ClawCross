@@ -168,7 +168,6 @@ SLASH_MENU = [
     ("/cwd [path]", "show or change workspace", "/cwd ", False),
     ("/mode <mode>", "set execute, plan, or review label", "/mode ", False),
     ("/model", "pick LLM model (curses TUI)", "/model", True),
-    ("/provider", "pick LLM provider (curses TUI)", "/provider", True),
     ("/team [<name>]", "list teams or show one team", "/team", True),
     ("/workflow", "list / show / run workflows", "/workflow", True),
     ("/skill [<team>]", "list managed skills", "/skill", True),
@@ -184,7 +183,6 @@ CLI_COMMANDS = [
     ("clawcross config get KEY", "print one config value"),
     ("clawcross config list", "list configured values"),
     ("clawcross model [name]", "select/set LLM model"),
-    ("clawcross provider [slug] [url]", "select/set LLM provider"),
     ("clawcross team [name]", "list teams or show one team's details"),
     ("clawcross workflow [show|run ...]", "list/show/run OASIS workflows"),
     ("clawcross skill [agent]", "list skills (optionally filtered by agent)"),
@@ -206,7 +204,6 @@ CHAT_SLASH_COMMANDS = [
     ("/cross cwd [path]", "show or change workspace"),
     ("/cross mode <mode>", "set execute/plan/review"),
     ("/cross model [name]", "select/set LLM model"),
-    ("/cross provider [slug] [url]", "select/set LLM provider"),
     ("/cross team [name]", "list teams or show one team's details"),
     ("/cross workflow", "list workflows (or `show <name>` / `run <name> team <T> question <Q>`)"),
     ("/cross skill [agent]", "list skills (optionally filtered by agent)"),
@@ -1417,12 +1414,6 @@ def _handle_slash(command: str, state: dict) -> bool:
         if out:
             print(out)
         return True
-    if name == "/provider":
-        from clawcross_cli.model_cmd import handle_provider_command
-        out = handle_provider_command(parts[1:], interactive=True)
-        if out:
-            print(out)
-        return True
     current_user = (state.get("current", {}).get("user") or "").strip() or None
     if name == "/team":
         from clawcross_cli.display_cmd import handle_team_command
@@ -1489,8 +1480,6 @@ _HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("/model use <profile>", "switch which profile is active"),
         ("/model add <profile>", "create a new profile (CLI: prompts; chatbot: rejected)"),
         ("/model migrate", "import current .env into a new profile"),
-        ("/provider", "pick provider (curses); includes 'Custom endpoint' for self-host"),
-        ("/provider deepseek", "set provider directly on the active profile"),
     ]),
     ("Platform & session", [
         ("/platforms", "list all agent platforms (internal + acpx tools)"),
@@ -1581,7 +1570,6 @@ _CHAT_HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("/cross model show", "show the active profile"),
         ("/cross model use <name>", "switch active profile"),
         ("/cross model <model>", "set LLM model directly"),
-        ("/cross provider", "show current provider"),
     ]),
     ("Team resources", [
         ("/cross team", "list teams"),
@@ -1627,7 +1615,7 @@ _CHAT_HELP_TIPS = [
     "Send any message without /cross to run it as a prompt on the active agent.",
     "Send /cross front for a public magic link (web UI login).",
     "Send /cross exit (or /cross off / /exit / /quit) to leave cross shell.",
-    "Some commands (model add, provider set, channel setup) need terminal — use `clawcross` CLI.",
+    "Some commands (model add, channel setup) need terminal — use `clawcross` CLI.",
 ]
 
 
@@ -1740,18 +1728,6 @@ def handle_chatbot_input(text: str, state: dict) -> tuple[bool, str]:
         rest = line.split(maxsplit=1)
         args = rest[1].strip().split() if len(rest) > 1 else []
         return True, handle_model_command(args) or ""
-    if line.startswith("/") and line.split(maxsplit=1)[0].lower() == "/provider":
-        from clawcross_cli.model_cmd import handle_provider_command
-        rest = line.split(maxsplit=1)
-        args = rest[1].strip().split() if len(rest) > 1 else []
-        if args:
-            # No-arg show-only is fine in chatbot; argument forms attempt to
-            # mutate the active profile / .env which requires the terminal.
-            return True, (
-                "Provider switching from chatbot is disabled. "
-                "Run `clawcross provider <slug>` from terminal."
-            )
-        return True, handle_provider_command(args) or ""
     current_user = (state.get("current", {}).get("user") or "").strip() or None
     if line.startswith("/") and line.split(maxsplit=1)[0].lower() == "/team":
         from clawcross_cli.display_cmd import handle_team_command
@@ -1854,9 +1830,6 @@ def build_parser() -> argparse.ArgumentParser:
     model = sub.add_parser("model", help="Manage LLM model profiles (list/show/use/add/remove/migrate)")
     model.add_argument("args", nargs="*", help="subcommand and arguments")
 
-    provider = sub.add_parser("provider", help="Set provider on the active profile (or .env if none)")
-    provider.add_argument("args", nargs="*", help="<slug> [base_url]")
-
     team = sub.add_parser("team", help="List teams (or show one team's members and alarms)")
     team.add_argument("args", nargs="*", help="<team-name>")
 
@@ -1921,12 +1894,6 @@ def main() -> int:
     if args.command == "model":
         from clawcross_cli.model_cmd import handle_model_command
         out = handle_model_command(list(args.args or []), interactive=True)
-        if out:
-            print(out)
-        return 0
-    if args.command == "provider":
-        from clawcross_cli.model_cmd import handle_provider_command
-        out = handle_provider_command(list(args.args or []), interactive=True)
         if out:
             print(out)
         return 0

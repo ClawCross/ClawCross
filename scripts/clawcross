@@ -1,11 +1,10 @@
 #!/bin/bash
-# ClawCross CLI launcher — model and provider management
+# ClawCross CLI launcher — model profile management
 #
 # Usage:
 #   ./scripts/clawcross model              # interactive model selection
 #   ./scripts/clawcross model gpt-4o       # set LLM_MODEL directly
-#   ./scripts/clawcross provider           # interactive provider selection
-#   ./scripts/clawcross provider openai    # set LLM_PROVIDER with default base URL
+#   ./scripts/clawcross model add myapi    # create a full model profile
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"

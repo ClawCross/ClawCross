@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """
-ClawCross CLI entrypoint — model, provider, team, workflow, skill, cron.
+ClawCross CLI entrypoint — model, team, workflow, skill, cron.
 
 Invoked by ``scripts/clawcross`` bash wrapper (or directly via
 ``python3 -m clawcross_cli.main``).
 
 Subcommands:
   model [list|show|use|add|remove|migrate|<name>]
-  provider [<slug> [<base_url>]]
   team [<name>]
   workflow [show <name> | run <name> team <T> question <Q>]
   skill [<agent>]
@@ -18,11 +17,11 @@ from __future__ import annotations
 
 import sys
 
-from clawcross_cli.model_cmd import handle_model_command, handle_provider_command
+from clawcross_cli.model_cmd import handle_model_command
 
 
 def usage() -> None:
-    print("Usage: clawcross <model|provider|team|workflow|skill|cron> [...]")
+    print("Usage: clawcross <model|team|workflow|skill|cron> [...]")
     print()
     print("  model                       interactive picker / list")
     print("  model list                  list configured profiles")
@@ -31,8 +30,6 @@ def usage() -> None:
     print("  model add [<name>]          add a profile (interactive)")
     print("  model remove <name>         delete a profile")
     print("  model migrate               import current .env into a profile")
-    print("  provider                    show active provider")
-    print("  provider <slug> [<url>]     set provider on active profile (or .env)")
     print("  team [<name>]               list teams or show one team's members + alarms")
     print("  workflow                    list workflows")
     print("  workflow show <name>        show workflow YAML/py content")
@@ -57,10 +54,6 @@ def main() -> None:
 
     if cmd == "model":
         out = handle_model_command(rest, interactive=True)
-        if out:
-            print(out)
-    elif cmd == "provider":
-        out = handle_provider_command(rest, interactive=True)
         if out:
             print(out)
     elif cmd == "team":

@@ -1,13 +1,12 @@
 """
-Model and provider selection commands for ClawCross.
+Model profile selection commands for ClawCross.
 
 Exposes two high-level functions consumed by both the CLI and chatbot:
 - select_model   -> interactive model picker across all providers
 - select_provider -> interactive provider picker with optional base_url
 - apply_model    -> write LLM_MODEL to config/.env
-- apply_provider -> write LLM_PROVIDER + LLM_BASE_URL to config/.env
 
-Also provides non-interactive direct-set helpers for scripted / one-shot use.
+Also provides a non-interactive model setter for scripted / one-shot use.
 """
 
 from __future__ import annotations
@@ -88,20 +87,6 @@ def set_model(model: str) -> None:
     if not re.fullmatch(r"[A-Za-z0-9_\-.:/]+", model):
         raise ValueError(f"invalid model name: {model!r}")
     _write_env({ENV_MODEL_KEY: model})
-
-
-def set_provider(provider_slug: str, base_url: str | None = None) -> None:
-    """Write LLM_PROVIDER (and optionally LLM_BASE_URL) to .env."""
-    info = resolve_provider(provider_slug)
-    if info is None:
-        valid = ", ".join(sorted(PROVIDERS))
-        raise ValueError(f"unknown provider: {provider_slug!r}. Valid: {valid}")
-    updates: dict[str, str] = {ENV_PROVIDER_KEY: info.slug}
-    if base_url is not None:
-        updates[ENV_BASE_URL_KEY] = base_url
-    else:
-        updates[ENV_BASE_URL_KEY] = info.default_base_url
-    _write_env(updates)
 
 
 # ---------------------------------------------------------------------------
@@ -242,85 +227,6 @@ def apply_model_interactive(model: str | None = None) -> str:
     return chosen
 
 
-def apply_provider_interactive(provider_slug: str | None = None, base_url: str | None = None) -> str:
-    """Full flow: select provider, key, model — write all to .env at once.
-
-    If *provider_slug* is given, set it directly. Otherwise enter interactive
-    wizard: provider -> API key -> model -> write .env.
-    Returns the selected provider slug.
-    """
-    if provider_slug is not None:
-        set_provider(provider_slug, base_url)
-        info = resolve_provider(provider_slug)
-        if info is not None:
-            print(f"LLM_PROVIDER={info.slug}")
-            print(f"LLM_BASE_URL={base_url or info.default_base_url}")
-        return provider_slug
-
-    # ── Step 1: Pick provider ──
-    chosen = select_provider()
-    if chosen is None:
-        print("Provider selection cancelled.", file=sys.stderr)
-        return current_provider()
-
-    print(f"\nDefault base URL: {chosen.default_base_url}")
-    custom = prompt_text("Base URL (enter to use default): ", default="")
-    url = custom if custom else chosen.default_base_url
-
-    # ── Step 2: Enter API key ──
-    import getpass
-    try:
-        key = getpass.getpass("API key (input hidden): ").strip()
-    except (EOFError, KeyboardInterrupt):
-        key = ""
-    if not key:
-        key = prompt_text("API key: ").strip()
-    if not key:
-        print("No API key entered — provider/model written, LLM_API_KEY left unchanged.", file=sys.stderr)
-        key = ""  # keep existing from .env
-
-    # ── Step 3: Pick model ──
-    model = select_model(chosen.slug, f"Select model for {chosen.label}:")
-    if model is None:
-        model = prompt_text("Model name: ", default="").strip()
-    if not model:
-        print("No model selected — skipping LLM_MODEL.", file=sys.stderr)
-
-    # ── Write all to .env ──
-    updates: dict[str, str] = {
-        ENV_PROVIDER_KEY: chosen.slug,
-        ENV_BASE_URL_KEY: url,
-    }
-    if key:
-        updates[ENV_API_KEY] = key
-    if model:
-        updates[ENV_MODEL_KEY] = model
-    _write_env(updates)
-
-    # ── Also save as a profile so /cross model use can switch later ──
-    profile_name = f"{chosen.slug}-{model}".lower() if model else chosen.slug
-    profile_name = re.sub(r"[^A-Za-z0-9_\-.]", "-", profile_name)[:48]
-    profile = models_store.upsert_profile(
-        name=profile_name,
-        provider=chosen.slug,
-        model=model,
-        api_key=key,
-        base_url=url,
-        api_mode=chosen.api_mode,
-        make_active=True,
-    )
-
-    masked_key = _mask_key(key) if key else "(unchanged)"
-    print(f"\n  LLM_PROVIDER={chosen.slug}")
-    print(f"  LLM_BASE_URL={url}")
-    print(f"  LLM_API_KEY={masked_key}")
-    if model:
-        print(f"  LLM_MODEL={model}")
-    print(f"  profile: {profile_name!r} (active)")
-    print(f"  config_file: {_find_env_file()}")
-    return chosen.slug
-
-
 # ---------------------------------------------------------------------------
 # Multi-profile subcommands (models.json)
 # ---------------------------------------------------------------------------
@@ -341,6 +247,18 @@ def _mask_key(key: str) -> str:
     if len(key) <= 10:
         return "***"
     return f"{key[:4]}…{key[-4:]}"
+
+
+def _sync_profile_to_env(profile) -> None:
+    """Mirror the active profile into .env for legacy readers and restarts."""
+    updates = {
+        ENV_PROVIDER_KEY: profile.provider,
+        ENV_MODEL_KEY: profile.model,
+        ENV_BASE_URL_KEY: profile.base_url,
+    }
+    if profile.auth.api_key:
+        updates[ENV_API_KEY] = profile.auth.api_key
+    _write_env(updates)
 
 
 def cmd_list() -> str:
@@ -392,12 +310,17 @@ def cmd_use(name: str) -> str:
     except KeyError:
         existing = ", ".join(models_store.load().profiles) or "(none)"
         return f"Profile not found: {name!r}. Available: {existing}"
+    _sync_profile_to_env(p)
     return f"Active profile -> {p.name} ({p.provider}/{p.model})"
 
 
 def cmd_remove(name: str) -> str:
     if models_store.remove_profile(name):
-        new_active = models_store.load().active or "(none)"
+        store = models_store.load()
+        new_active = store.active or "(none)"
+        active_profile = models_store.get_active(store)
+        if active_profile is not None:
+            _sync_profile_to_env(active_profile)
         return f"Removed profile {name!r}. Active -> {new_active}"
     return f"Profile not found: {name!r}"
 
@@ -427,6 +350,7 @@ def cmd_migrate() -> str:
         api_mode=api_mode,
         make_active=True,
     )
+    _sync_profile_to_env(profile)
     return (
         f"Migrated .env into profile {profile.name!r} and marked active.\n"
         f"  provider={profile.provider} model={profile.model}"
@@ -465,6 +389,7 @@ def cmd_add_interactive(name: str | None = None) -> str:
         api_mode=provider_info.api_mode,
         make_active=True,
     )
+    _sync_profile_to_env(profile)
     return (
         f"Added profile {profile.name!r} and marked active.\n"
         f"  provider={profile.provider} model={profile.model}"
@@ -530,7 +455,7 @@ def handle_model_command(args: list[str], *, interactive: bool = False) -> str:
 
     active = models_store.get_active()
     if active is not None:
-        models_store.upsert_profile(
+        profile = models_store.upsert_profile(
             name=active.name,
             provider=active.provider,
             model=name,
@@ -539,58 +464,8 @@ def handle_model_command(args: list[str], *, interactive: bool = False) -> str:
             api_mode=active.api_mode,
             make_active=True,
         )
+        _sync_profile_to_env(profile)
         return f"Profile {active.name!r}: model -> {name}"
 
     set_model(name)
     return f"LLM_MODEL={name}"
-
-
-def handle_provider_command(args: list[str], *, interactive: bool = False) -> str:
-    """Unified dispatcher for /cross provider and `clawcross provider`.
-
-    Interactive mode (CLI): runs wizard — provider -> API key -> model -> .env
-    Non-interactive (chatbot): lists providers, or sets directly with slug.
-    """
-    active = models_store.get_active()
-
-    if not args:
-        if interactive:
-            # Terminal CLI: run interactive wizard
-            slug = apply_provider_interactive()
-            return f"Configured: {slug}"
-        # Chatbot: just list available providers
-        lines = []
-        if active is not None:
-            lines.append(
-                f"Active profile {active.name!r}: provider={active.provider}, "
-                f"base_url={active.base_url or '(default)'}"
-            )
-        lines.append("\nAvailable providers (use `/cross provider <slug> [base_url]`):")
-        for p in list_providers():
-            lines.append(f"  {p.slug:<14} {p.label:<18} default_base_url={p.default_base_url}")
-        return "\n".join(lines)
-
-    slug = args[0].lower()
-    url = args[1] if len(args) > 1 else None
-    info = resolve_provider(slug)
-    if info is None:
-        valid = ", ".join(PROVIDERS)
-        return f"Unknown provider: {slug!r}. Valid: {valid}"
-
-    if active is None:
-        set_provider(slug, url)
-        return f"LLM_PROVIDER={slug}" + (f"\nLLM_BASE_URL={url}" if url else "")
-
-    models_store.upsert_profile(
-        name=active.name,
-        provider=info.slug,
-        model=active.model,
-        api_key=active.auth.api_key,
-        base_url=url or info.default_base_url,
-        api_mode=info.api_mode,
-        make_active=True,
-    )
-    return (
-        f"Profile {active.name!r} updated: provider={info.slug}, "
-        f"base_url={url or info.default_base_url}"
-    )

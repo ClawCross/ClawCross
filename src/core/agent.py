@@ -1060,8 +1060,8 @@ class TeamAgent:
                 size_rules = self._prompts.get("group_chat_large", "")
                 group_rules = self._prompts.get("group_chat_rules", "")
                 return group_rules.replace("{size_specific_rules}", size_rules)
-            # 默认私聊场景
-            return self._prompts.get("private_chat_rules", "")
+            # 普通直接对话没有群聊/私聊标记，不要凭规则段落推断成私聊。
+            return ""
 
     def _build_fixed_chat_rules(self) -> str:
         """构造稳定的聊天规则系统提示，避免按每条消息切换 system prompt。"""

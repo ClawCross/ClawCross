@@ -2,7 +2,7 @@
 LLM provider registry and model catalog for ClawCross.
 
 Defines supported providers, their default base URLs, and a curated model
-catalog used by the interactive /model and /provider commands (both CLI and
+catalog used by the interactive /model commands (both CLI and
 chatbot).  Providers and models are copied from Hermes' PROVIDER_REGISTRY
 and _PROVIDER_MODELS (api_key auth only) — keep in sync with
 hermes_cli/auth.py and hermes_cli/models.py.
