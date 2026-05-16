@@ -1,0 +1,22 @@
+{
+  "preset_id": "social-platform-connectors",
+  "name": "社媒平台连接器战队",
+  "description": "面向小红书、X/Twitter、Instagram/Threads、Bilibili 和浏览器自动化兜底的 ClawCross 本地社媒连接团队。team 自带可用的 SKILL.md 与脚本，agent persona 也内嵌对应 skill 摘要。",
+  "source": "codex/clawcross-local-social-platform-skills",
+  "regime": "social-platform-connectors",
+  "role_count": 8,
+  "workflow_files": [
+    "social_platform_connectors_cycle.yaml"
+  ],
+  "default_team_name": "社媒平台连接器战队",
+  "tags": [
+    "social-media",
+    "connectors",
+    "mcp",
+    "openclaw-skill",
+    "xiaohongshu",
+    "twitter",
+    "instagram",
+    "bilibili"
+  ]
+}

@@ -1,0 +1,34 @@
+[
+  {
+    "name": "Connector Lead",
+    "tag": "connector_lead"
+  },
+  {
+    "name": "Skill Security Reviewer",
+    "tag": "security"
+  },
+  {
+    "name": "Xiaohongshu Operator",
+    "tag": "xiaohongshu"
+  },
+  {
+    "name": "X Publisher",
+    "tag": "x_publisher"
+  },
+  {
+    "name": "Meta Instagram Threads Operator",
+    "tag": "meta"
+  },
+  {
+    "name": "Bilibili Intelligence Analyst",
+    "tag": "bilibili"
+  },
+  {
+    "name": "Browser Automation Fallback",
+    "tag": "browser_fallback"
+  },
+  {
+    "name": "Implementation Runbook Writer",
+    "tag": "runbook"
+  }
+]

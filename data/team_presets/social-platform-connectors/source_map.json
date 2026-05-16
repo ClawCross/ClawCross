@@ -1,0 +1,44 @@
+{
+  "preset_id": "social-platform-connectors",
+  "roles": {
+    "connector_lead": {
+      "name": "Connector Lead",
+      "source_file": "team-skill:local-social-connectors#connector-lead"
+    },
+    "security": {
+      "name": "Skill Security Reviewer",
+      "source_file": "team-skill:local-social-connectors#security-reviewer"
+    },
+    "xiaohongshu": {
+      "name": "Xiaohongshu Operator",
+      "source_file": "team-skill:xiaohongshu-mcp"
+    },
+    "x_publisher": {
+      "name": "X Publisher",
+      "source_file": "team-skill:x-api-publisher"
+    },
+    "meta": {
+      "name": "Meta Instagram Threads Operator",
+      "source_file": "team-skill:meta-mcp-instagram-threads"
+    },
+    "bilibili": {
+      "name": "Bilibili Intelligence Analyst",
+      "source_file": "team-skill:bilibili-mcp-js"
+    },
+    "browser_fallback": {
+      "name": "Browser Automation Fallback",
+      "source_file": "team-skill:browser-automation-fallback"
+    },
+    "runbook": {
+      "name": "Implementation Runbook Writer",
+      "source_file": "team-skill:local-social-connectors#runbook"
+    }
+  },
+  "skills": {
+    "xiaohongshu-mcp": "local ClawCross skill wrapper for a running Xiaohongshu MCP server",
+    "x-api-publisher": "local ClawCross Python OAuth publisher for X API v2",
+    "meta-mcp-instagram-threads": "local ClawCross Python Graph API helper for Instagram/Threads",
+    "bilibili-mcp-js": "local ClawCross Python Bilibili public API research helper",
+    "browser-automation-fallback": "local ClawCross browser automation runbook skill"
+  }
+}

@@ -1,0 +1,55 @@
+# social-platform-connectors — choose, vet, and operate social platform skills
+version: 2
+repeat: false
+plan:
+- id: s0
+  manual:
+    author: begin
+    content: "请描述目标：要连接的平台、小红书/X/Instagram/Bilibili 的账号状态、要做发布/搜索/评论/数据分析/竞品研究哪一类任务、是否允许安装第三方 skill 或 MCP。"
+- id: s1
+  expert: connector_lead#oasis#Connector Lead
+- id: s2
+  expert: security#oasis#Skill Security Reviewer
+- id: s3
+  expert: xiaohongshu#oasis#Xiaohongshu Operator
+- id: s4
+  expert: x_publisher#oasis#X Publisher
+- id: s5
+  expert: meta#oasis#Meta Instagram Threads Operator
+- id: s6
+  expert: bilibili#oasis#Bilibili Intelligence Analyst
+- id: s7
+  expert: browser_fallback#oasis#Browser Automation Fallback
+- id: s8
+  expert: runbook#oasis#Implementation Runbook Writer
+- id: s9
+  manual:
+    author: bend
+    content: "社媒平台连接器战队已完成：平台选择、skill/MCP 使用建议、安全边界、安装/配置步骤、执行 runbook 和下一步人工授权点。"
+edges:
+- - s0
+  - s1
+- - s1
+  - s2
+- - s2
+  - s3
+- - s2
+  - s4
+- - s2
+  - s5
+- - s2
+  - s6
+- - s2
+  - s7
+- - s3
+  - s8
+- - s4
+  - s8
+- - s5
+  - s8
+- - s6
+  - s8
+- - s7
+  - s8
+- - s8
+  - s9
