@@ -319,6 +319,28 @@ def cmd_use_interactive() -> str:
     return cmd_use(profiles[idx].name)
 
 
+def cmd_remove_interactive() -> str:
+    """Pick a saved profile and delete it."""
+    store = models_store.load()
+    profiles = list(store.profiles.values())
+    if not profiles:
+        return "No profiles configured."
+    labels = [
+        f"{p.name}  ({p.provider}/{p.model})  {_mask_key(p.auth.api_key)}"
+        for p in profiles
+    ]
+    labels.append("Cancel")
+    idx = curses_radiolist(
+        "Select profile to remove:",
+        labels,
+        selected=0,
+        cancel_returns=len(labels) - 1,
+    )
+    if idx == len(labels) - 1:
+        return "Profile removal cancelled."
+    return cmd_remove(profiles[idx].name)
+
+
 def cmd_remove(name: str) -> str:
     if models_store.remove_profile(name):
         store = models_store.load()
@@ -415,6 +437,35 @@ def _model_help() -> str:
     )
 
 
+_MODEL_ACTIONS = [
+    ("list", "list saved profiles"),
+    ("show", "show the active profile"),
+    ("use", "switch active profile (picker)"),
+    ("add", "add a new profile (interactive)"),
+    ("migrate", "import current .env into a profile"),
+    ("remove", "remove a saved profile (picker)"),
+]
+
+
+def _model_action_menu() -> str | None:
+    """Open a curses picker over model actions. Returns the chosen key
+    (e.g. ``"use"``) or None when the user cancels or stdin is not a TTY.
+    """
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        return None
+    labels = [f"{key:<10}  {desc}" for key, desc in _MODEL_ACTIONS]
+    labels.append("Cancel")
+    idx = curses_radiolist(
+        "Select model action:",
+        labels,
+        selected=0,
+        cancel_returns=len(labels) - 1,
+    )
+    if idx == len(labels) - 1:
+        return None
+    return _MODEL_ACTIONS[idx][0]
+
+
 def handle_model_command(args: list[str], *, interactive: bool = False) -> str:
     """Unified dispatcher for /cross model and `clawcross model`.
 
@@ -423,13 +474,19 @@ def handle_model_command(args: list[str], *, interactive: bool = False) -> str:
     stdin for sub-prompts, so the dispatcher returns a usage hint instead.
     """
     if not args:
-        store = models_store.load()
-        sections = []
-        if store.profiles:
-            sections.append(cmd_list())
-        sections.append(cmd_catalog())
-        sections.append(_model_help())
-        return "\n\n".join(sections)
+        if interactive:
+            chosen = _model_action_menu()
+            if chosen is None:
+                return ""
+            args = [chosen]
+        else:
+            store = models_store.load()
+            sections = []
+            if store.profiles:
+                sections.append(cmd_list())
+            sections.append(cmd_catalog())
+            sections.append(_model_help())
+            return "\n\n".join(sections)
 
     sub = args[0].lower()
 
@@ -449,6 +506,8 @@ def handle_model_command(args: list[str], *, interactive: bool = False) -> str:
         return cmd_add_interactive(args[1] if len(args) > 1 else None)
     if sub in ("remove", "rm", "delete"):
         if len(args) < 2:
+            if interactive:
+                return cmd_remove_interactive()
             return "Usage: /cross model remove <name>"
         return cmd_remove(args[1])
     if sub == "migrate":

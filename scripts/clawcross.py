@@ -145,31 +145,29 @@ ACP_PLATFORMS = {
     "gemini-cli",
 }
 SLASH_COMMANDS = [
-    ("/use <platform>", "switch platform"),
+    ("/platform", "platform actions (list / use)"),
     ("/session", "pick a session (replays last 10 messages on resume)"),
     ("/session <id>", "switch session by id (no history replay)"),
     ("/new session", "create and switch to a new session"),
     ("/cwd [path]", "show or change workspace"),
     ("/mode <mode>", "set execute, plan, or review label"),
-    ("/platforms", "list agent platforms"),
     ("/state", "show persisted state"),
     ("/cancel", "cancel internal-agent generation"),
     ("/help", "show commands"),
     ("/exit", "quit"),
 ]
 SLASH_MENU = [
-    ("/platforms", "list agent platforms", "/platforms", True),
+    ("/platform", "platform actions (list / use)", "/platform", True),
     ("/state", "show persisted state", "/state", True),
     ("/help", "show commands", "/help", True),
     ("/cancel", "cancel internal-agent generation", "/cancel", True),
-    ("/use", "choose agent platform", "/use", True),
     ("/session", "pick session — resumes & replays last 10 messages", "/session", True),
     ("/new session", "create a new session", "/new session", True),
     ("/cwd [path]", "show or change workspace", "/cwd ", False),
     ("/mode <mode>", "set execute, plan, or review label", "/mode ", False),
-    ("/model", "pick LLM model (curses TUI)", "/model", True),
+    ("/model", "model actions (list / use / add / migrate / remove)", "/model", True),
     ("/team [<name>]", "list teams or show one team", "/team", True),
-    ("/workflow", "list / show / run workflows", "/workflow", True),
+    ("/workflow", "workflow actions (list / show / run / new)", "/workflow", True),
     ("/skill [<team>]", "list managed skills", "/skill", True),
     ("/cron [<team>]", "list cron alarms", "/cron", True),
     ("/channel", "list / setup chatbot channels", "/channel", True),
@@ -1292,6 +1290,44 @@ def _choose_session(state: dict) -> bool:
     return True
 
 
+def _handle_platform_command(args: list[str], state: dict) -> bool:
+    """Dispatcher for the unified /platform command.
+
+    No args -> action picker (list, use). Old /platforms and /use slash
+    commands remain as aliases for backwards compatibility.
+    """
+    if args:
+        sub = args[0].lower()
+        if sub == "list":
+            cmd_platforms(None, state)
+            return True
+        if sub == "use":
+            if len(args) >= 2:
+                _set_platform(state, args[1])
+                _save_state(state)
+                current = _current(state)
+                print(f"platform: {current['platform']}")
+                print(f"session: {current['session']}")
+                return True
+            return _choose_platform(state)
+        print(f"Unknown /platform action: {sub} (try: list, use)")
+        return True
+
+    rows = [("list", "show all platforms"), ("use", "switch active platform")]
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        cmd_platforms(None, state)
+        return True
+    selected = _choose_from_menu("Platform action", rows)
+    if selected is None:
+        return True
+    action = rows[selected][0]
+    if action == "list":
+        cmd_platforms(None, state)
+    elif action == "use":
+        _choose_platform(state)
+    return True
+
+
 def _choose_platform(state: dict) -> bool:
     current_platform = _current(state).get("platform", "internal")
     rows = []
@@ -1543,6 +1579,8 @@ def _handle_slash(command: str, state: dict) -> bool:
             print(f"platform: {current['platform']}")
             print(f"session: {current['session']}")
         return True
+    if name == "/platform":
+        return _handle_platform_command(parts[1:], state)
     if name == "/new" and len(parts) >= 2 and parts[1].lower() == "session":
         session = _switch_to_new_session(state)
         print(f"session: {session}")
@@ -1642,17 +1680,19 @@ _HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("type a message", "send to the active agent"),
     ]),
     ("LLM configuration", [
-        ("/model", "interactive picker — choose model + provider in one go"),
+        ("/model", "action picker (list / show / use / add / migrate / remove)"),
         ("/model gpt-4o", "set directly (writes .env or updates the active profile)"),
         ("/model list", "list saved profiles in ~/.clawcross/config/models.json"),
         ("/model show", "show the active profile (provider/model/base_url/api_key)"),
         ("/model use", "picker over saved profiles (or `/model use <name>` direct)"),
         ("/model add <profile>", "create a new profile (CLI: prompts; chatbot: rejected)"),
         ("/model migrate", "import current .env into a new profile"),
+        ("/model remove", "picker over saved profiles to delete one"),
     ]),
     ("Platform & session", [
-        ("/platforms", "list all agent platforms (internal + acpx tools)"),
-        ("/use <platform>", "switch active platform (internal / codex / claude / gemini / ...)"),
+        ("/platform", "action picker (list / use). aliases: /platforms /use"),
+        ("/platform list", "list all agent platforms (internal + acpx tools)"),
+        ("/platform use [<name>]", "switch platform (no name -> picker)"),
         ("/session", "interactive picker (resumes & replays last 10 messages)"),
         ("/session <name>", "switch to / create session by name (no replay)"),
         ("/new session", "create timestamped session (e.g. ClawCross-20260512-031544)"),
@@ -1671,8 +1711,10 @@ _HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("/team new <name>", "create a new team folder"),
     ]),
     ("Workflows", [
-        ("/workflow", "list all workflows (personal + every team, grouped)"),
-        ("/workflow show <name>", "print the YAML or Python source"),
+        ("/workflow", "action picker (list / show / run / new)"),
+        ("/workflow list", "list all workflows (personal + every team, grouped)"),
+        ("/workflow show", "picker over workflows, then prints source"),
+        ("/workflow show <name>", "print the YAML or Python source by name"),
         ("/workflow show <name> team <T>", "disambiguate when the name exists in several teams"),
         ("/workflow run", "picker over runnable workflows, then prompts for question"),
         ("/workflow run <name> question <text...>", "run a personal workflow"),

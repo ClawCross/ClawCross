@@ -502,16 +502,58 @@ def _edit_in_editor(initial: str, *, suffix: str = ".yaml") -> str | None:
             pass
 
 
+_WORKFLOW_ACTIONS = [
+    ("list", "list all workflows"),
+    ("show", "show source (picker)"),
+    ("run", "run a workflow (picker)"),
+    ("new", "create a new workflow"),
+]
+
+
+def _workflow_action_menu() -> str | None:
+    """Curses picker over workflow actions. None on cancel / non-TTY."""
+    if not _is_tty():
+        return None
+    labels = [f"{key:<6}  {desc}" for key, desc in _WORKFLOW_ACTIONS]
+    labels.append("Cancel")
+    idx = curses_radiolist(
+        "Select workflow action:",
+        labels,
+        selected=0,
+        cancel_returns=len(labels) - 1,
+    )
+    if idx == len(labels) - 1:
+        return None
+    return _WORKFLOW_ACTIONS[idx][0]
+
+
 def handle_workflow_command(args: list[str], *, interactive: bool = False, user: str | None = None) -> str:
     args = list(args or [])
     user = (user or api_client.DEFAULT_USER or "").strip() or api_client.DEFAULT_USER
+
+    if not args and interactive:
+        chosen = _workflow_action_menu()
+        if chosen is None:
+            return ""
+        args = [chosen]
 
     if args and args[0].lower() in {"new", "create", "add", "save"}:
         return _handle_workflow_new(args[1:], interactive=interactive, user=user)
 
     if args and args[0].lower() == "show":
         if len(args) < 2:
-            return "usage: workflow show <name>"
+            if not (interactive and _is_tty()):
+                return "usage: workflow show <name>"
+            picked = _pick_workflow_to_run(user)
+            if isinstance(picked, str):  # cancelled / empty
+                return picked
+            path = picked.get("path", "")
+            if not path:
+                return "workflow path missing"
+            content, ferr = api_client.read_workflow_file(path)
+            if ferr:
+                return ferr
+            return f"# {path}\n\n{content}"
         name = args[1]
         team = ""
         # optional "team <T>" suffix
