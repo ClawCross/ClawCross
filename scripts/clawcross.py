@@ -1099,15 +1099,27 @@ def cmd_restart(_args, state: dict) -> int:
         with urllib.request.urlopen(req, timeout=20) as resp:
             body = resp.read().decode("utf-8", errors="replace").strip()
         print(body or "restart requested")
-        print("⏳ 正在等待服务恢复...")
+        print("⏳ 正在等待服务重启并恢复...")
         deadline = time.time() + 120
+        saw_down = False
+        stable_up = 0
         while time.time() < deadline:
             try:
                 _request_json("GET", f"{AGENT_BASE}/v1/models", timeout=5)
-                print("✅ 重启完成")
-                return 0
+                if saw_down:
+                    stable_up += 1
+                    if stable_up >= 2:
+                        print("✅ 重启完成")
+                        return 0
+                else:
+                    # The old process may still be answering briefly after it
+                    # has accepted the restart flag. Keep waiting until we
+                    # observe an actual down/up transition.
+                    stable_up = 0
             except Exception:
-                time.sleep(2)
+                saw_down = True
+                stable_up = 0
+            time.sleep(2)
         print("⚠️ 重启已发起，但在 120 秒内未确认恢复", file=sys.stderr)
         return 1
     except urllib.error.HTTPError as exc:
