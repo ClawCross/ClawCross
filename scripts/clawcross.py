@@ -776,8 +776,13 @@ def _print_session_rows(rows: list[dict], state: dict, error: str | None = None)
         print(f" {marker} {session:<28} {_fit(title, 44)}{suffix}")
 
 
+_TOOL_COLOR = "\033[38;5;179m"   # warm yellow, matches history tool label
+
+
 def _print_sse_text(lines) -> bool:
     wrote = False
+    at_line_start = True
+    seen_tool_ids: set[str] = set()
     for line in lines:
         line = line.strip()
         if not line or not line.startswith("data:"):
@@ -794,7 +799,47 @@ def _print_sse_text(lines) -> bool:
         if text:
             print(text, end="", flush=True)
             wrote = True
-    if wrote:
+            at_line_start = text.endswith("\n")
+            continue
+        meta = delta.get("meta") if isinstance(delta, dict) else None
+        if not isinstance(meta, dict):
+            continue
+        mtype = meta.get("type")
+        # ACP route (proxy_acpx_chat): acpx_tool_start / acpx_tool_end (+title/kind/status)
+        # Internal route (/v1/chat/completions): tool_start / tool_end (+name)
+        is_start = mtype in ("acpx_tool_start", "tool_start")
+        is_end = mtype in ("acpx_tool_end", "tool_end")
+        if not (is_start or is_end):
+            # ignore acpx_tool_update / acpx_trace / tools_start / tools_end / ai_start
+            continue
+        if not at_line_start:
+            print()
+            at_line_start = True
+        tool_id = str(meta.get("tool_call_id") or "")
+        title = (
+            str(meta.get("title") or "").strip()
+            or str(meta.get("name") or "").strip()
+            or "tool"
+        )
+        if is_start:
+            if tool_id and tool_id in seen_tool_ids:
+                continue
+            if tool_id:
+                seen_tool_ids.add(tool_id)
+            parts = [title]
+            kind = str(meta.get("kind") or "").strip()
+            status = str(meta.get("status") or "").strip()
+            if kind:
+                parts.append(kind)
+            if status:
+                parts.append(status)
+            label = _style(f"→ tool[{' · '.join(parts)}]", _TOOL_COLOR)
+            print(label, flush=True)
+            wrote = True
+        else:  # tool_end / acpx_tool_end
+            print(_style(f"✓ {title}", _TOOL_COLOR), flush=True)
+            wrote = True
+    if wrote and not at_line_start:
         print()
     return wrote
 
