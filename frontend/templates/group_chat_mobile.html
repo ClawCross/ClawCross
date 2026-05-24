@@ -4155,7 +4155,7 @@
   .desktop-empty-chat {
     display: none;
   }
-  @media (min-width: 900px) {
+  @media (min-width: 1024px) and (hover: hover) and (pointer: fine) {
     :root {
       --desktop-rail-w: 72px;
       --desktop-list-w: clamp(300px, 24vw, 360px);
@@ -4543,7 +4543,6 @@
     }
     .drawer:not(.side-drawer),
     .settings-modal-overlay,
-    .agent-detail-overlay,
     .agent-history-overlay,
     .subagent-panel-overlay,
     .profile-subpage {
@@ -4552,14 +4551,25 @@
       width: auto;
     }
     .agent-detail-overlay {
-      background: #f7f7f7;
-      z-index: 140;
+      left: 0;
+      right: 0;
+      width: 100%;
+      padding: 24px;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.24);
+      z-index: 100000;
     }
     .agent-detail-dialog {
-      width: min(760px, 100%);
+      flex: 0 1 auto;
+      width: min(760px, calc(100vw - 48px));
+      height: min(860px, calc(100vh - 48px));
       max-width: 100%;
+      max-height: calc(100vh - 48px);
       margin: 0 auto;
       background: #f7f7f7;
+      border-radius: 10px;
+      box-shadow: 0 18px 54px rgba(0,0,0,0.28);
     }
     .agent-detail-header {
       height: 58px;
@@ -4788,7 +4798,7 @@
           </button>
         </div>
       </div>
-      <input type="file" id="attach-file-input" multiple accept="image/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.json,.zip" style="display:none" onchange="handleAttachFiles(this.files)">
+      <input type="file" id="attach-file-input" multiple accept="image/*,.pdf,.txt,.md,.markdown,.rst,.adoc,.org,.tex,.bib,.csv,.tsv,.json,.ndjson,.jsonl,.xml,.yaml,.yml,.toml,.ini,.cfg,.conf,.properties,.env,.log,.html,.htm,.css,.scss,.sass,.less,.styl,.js,.mjs,.cjs,.ts,.tsx,.jsx,.vue,.svelte,.astro,.py,.pyi,.pyx,.ipynb,.rb,.gemspec,.php,.go,.rs,.java,.kt,.kts,.scala,.groovy,.gradle,.c,.h,.cpp,.cc,.cxx,.hpp,.hh,.hxx,.m,.mm,.cs,.fs,.fsx,.fsi,.vb,.swift,.dart,.lua,.pl,.pm,.tcl,.r,.jl,.nim,.zig,.cr,.ex,.exs,.erl,.hrl,.elm,.clj,.cljs,.cljc,.hs,.ml,.mli,.ocaml,.sh,.bash,.zsh,.fish,.bat,.cmd,.ps1,.psm1,.awk,.sed,.dockerfile,.makefile,.mk,.cmake,.bazel,.bzl,.sbt,.sql,.prisma,.graphql,.gql,.proto,.thrift,.tf,.hcl,.nomad,.j2,.jinja,.jinja2,.ejs,.hbs,.mustache,.twig,.liquid,.njk,.editorconfig,.gitignore,.gitattributes,.prettierrc,.eslintrc,.npmrc,.babelrc,.lock,.sum,.mod,.mp3,.wav,.ogg,.m4a,.flac,.aac,.opus,.aiff,.amr,.avi,.mp4,.mkv,.mov,.webm,.wmv,.flv,.m4v,.3gp,.ogv" style="display:none" onchange="handleAttachFiles(this.files)">
       <textarea id="msg-input" data-i18n="input_placeholder" placeholder="输入消息…" rows="1"
                 onkeydown="handleInputKey(event)"
                 oninput="handleInputForMention()"></textarea>
@@ -6349,7 +6359,13 @@ const I18N = {
 
     // ── Attachments ──
     max_attachments: '最多添加 {n} 个附件',
-    file_too_large: '{name} 超过 10MB 限制',
+    max_images: '最多上传 5 张图片',
+    max_files: '最多上传 3 个文件',
+    file_too_large: '{name} 超过大小限制',
+    audio_too_large: '音频超过大小限制',
+    pdf_too_large: 'PDF 超过大小限制',
+    video_too_large: '视频超过大小限制',
+    unsupported_type: '不支持的文件类型',
 
     // ── ACP control ──
     acp_new: '新建会话',
@@ -7002,7 +7018,13 @@ const I18N = {
     oasis_system: 'System',
 
     max_attachments: 'Max {n} attachments',
-    file_too_large: '{name} exceeds 10MB limit',
+    max_images: 'Maximum 5 images',
+    max_files: 'Maximum 3 files',
+    file_too_large: '{name} exceeds size limit',
+    audio_too_large: 'Audio exceeds size limit',
+    pdf_too_large: 'PDF exceeds size limit',
+    video_too_large: 'Video exceeds size limit',
+    unsupported_type: 'Unsupported file type',
 
     acp_new: 'New Session',
     acp_reset: 'Reset Session (new session ID)',
@@ -10753,7 +10775,38 @@ async function refreshPendingApprovalsForCurrentGroup() {
 }
 
 // ── Attachments state ──
-let pendingAttachments = [];  // [{type, name, data, mime_type}]
+// 与主页面 main.js 对齐：按类型独立计数 (image≤5, audio≤2, file≤3)；image 自动压缩
+let pendingAttachments = [];  // [{type:'image'|'audio'|'file', name, data, mime_type}]
+
+// 支持的扩展集合（与 main.js TEXT_EXTENSIONS/AUDIO_EXTENSIONS/VIDEO_EXTENSIONS 保持一致）
+const MC_TEXT_EXTENSIONS = new Set([
+  '.txt','.md','.markdown','.rst','.adoc','.org','.tex','.bib',
+  '.csv','.tsv','.json','.ndjson','.jsonl','.xml','.yaml','.yml','.toml','.ini','.cfg','.conf','.properties','.env','.log',
+  '.html','.htm','.css','.scss','.sass','.less','.styl','.js','.mjs','.cjs','.ts','.tsx','.jsx','.vue','.svelte','.astro',
+  '.py','.pyi','.pyx','.ipynb','.rb','.gemspec','.php','.go','.rs','.java','.kt','.kts','.scala','.groovy','.gradle',
+  '.c','.h','.cpp','.cc','.cxx','.hpp','.hh','.hxx','.m','.mm','.cs','.fs','.fsx','.fsi','.vb',
+  '.swift','.dart','.lua','.pl','.pm','.tcl','.r','.jl','.nim','.zig','.cr','.ex','.exs','.erl','.hrl','.elm','.clj','.cljs','.cljc','.hs','.ml','.mli','.ocaml',
+  '.sh','.bash','.zsh','.fish','.bat','.cmd','.ps1','.psm1','.awk','.sed',
+  '.dockerfile','.makefile','.mk','.cmake','.bazel','.bzl','.sbt',
+  '.sql','.prisma','.graphql','.gql','.proto','.thrift','.tf','.hcl','.nomad',
+  '.j2','.jinja','.jinja2','.ejs','.hbs','.mustache','.twig','.liquid','.njk',
+  '.editorconfig','.gitignore','.gitattributes','.prettierrc','.eslintrc','.npmrc','.babelrc','.lock','.sum','.mod'
+]);
+const MC_AUDIO_EXTENSIONS = new Set(['.mp3','.wav','.ogg','.m4a','.flac','.aac','.opus','.aiff','.amr']);
+const MC_VIDEO_EXTENSIONS = new Set(['.avi','.mp4','.mkv','.mov','.webm','.wmv','.flv','.m4v','.3gp','.ogv']);
+
+// 各品类大小阈值（对齐主页面）
+const MC_MAX_FILE_SIZE = 512 * 1024;          // 512KB per text
+const MC_MAX_PDF_SIZE = 10 * 1024 * 1024;     // 10MB per PDF
+const MC_MAX_VIDEO_SIZE = 50 * 1024 * 1024;   // 50MB per video
+// 注意：录音专用上限 MC_MAX_AUDIO_SIZE 在录音功能段（25MB）
+const MC_MAX_IMAGE_SIZE = 10 * 1024 * 1024;   // 图片压缩目标 10MB
+const MC_MAX_IMAGE_DIMENSION = 2048;
+
+// 各品类数量上限（对齐主页面）
+const MC_MAX_IMAGES = 5;
+const MC_MAX_FILES = 3;
+const MC_MAX_AUDIOS = 2;
 
 // Fallback MIME map for files where browser returns empty file.type
 const _extMimeMap = {
@@ -10765,7 +10818,44 @@ const _extMimeMap = {
   'html': 'text/html', 'css': 'text/css', 'toml': 'application/toml',
   'ini': 'text/plain', 'cfg': 'text/plain', 'conf': 'text/plain',
   'env': 'text/plain', 'properties': 'text/plain',
+  'pdf': 'application/pdf',
 };
+
+// 图片压缩（行为对齐 main.js compressImage）：返回 dataURL
+function mcCompressImage(file) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > MC_MAX_IMAGE_DIMENSION || height > MC_MAX_IMAGE_DIMENSION) {
+        const scale = MC_MAX_IMAGE_DIMENSION / Math.max(width, height);
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      let quality = 0.85;
+      let result = canvas.toDataURL('image/jpeg', quality);
+      while (result.length > MC_MAX_IMAGE_SIZE * 1.37 && quality > 0.3) {
+        quality -= 0.1;
+        result = canvas.toDataURL('image/jpeg', quality);
+      }
+      resolve(result);
+    };
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+// 计数辅助
+function _mcCountByType(type) {
+  return pendingAttachments.filter(a => a.type === type).length;
+}
+// 把 dataURL 拆出纯 base64（后端 attachment.data 约定不带 data: 前缀）
+function _mcStripDataUrl(dataUrl) {
+  return (dataUrl && dataUrl.includes(',')) ? dataUrl.split(',')[1] : dataUrl;
+}
 
 function _guessMime(file) {
   if (file.type) return file.type;
@@ -10775,26 +10865,91 @@ function _guessMime(file) {
 
 function handleAttachFiles(files) {
   if (!files || !files.length) return;
-  const maxSize = 10 * 1024 * 1024;  // 10MB per file
-  const maxCount = 5;  // max 5 attachments
 
   Array.from(files).forEach(file => {
-    if (pendingAttachments.length >= maxCount) {
-      toast(t('max_attachments', {n: maxCount}));
+    const ext = '.' + (file.name.split('.').pop() || '').toLowerCase();
+    const mime = _guessMime(file);
+    // 分流优先级：MIME > 扩展名；.webm 等以 MIME 决定（video 优先于 audio）
+    const isImage = mime.startsWith('image/');
+    const isVideo = mime.startsWith('video/') || (!file.type && MC_VIDEO_EXTENSIONS.has(ext));
+    const isAudio = (!isVideo) && (mime.startsWith('audio/') || (!file.type && MC_AUDIO_EXTENSIONS.has(ext)));
+    const isPdf = mime === 'application/pdf' || ext === '.pdf';
+
+    if (isImage) {
+      if (_mcCountByType('image') >= MC_MAX_IMAGES) { toast(t('max_images')); return; }
+      const pushImage = (dataUrl) => {
+        pendingAttachments.push({
+          type: 'image', name: file.name,
+          data: _mcStripDataUrl(dataUrl),
+          mime_type: dataUrl.startsWith('data:') ? dataUrl.substring(5, dataUrl.indexOf(';')) : (mime || 'image/png'),
+        });
+        renderAttachPreview();
+      };
+      if (file.size <= MC_MAX_IMAGE_SIZE) {
+        const reader = new FileReader();
+        reader.onload = () => pushImage(reader.result);
+        reader.readAsDataURL(file);
+      } else {
+        mcCompressImage(file).then(pushImage);
+      }
       return;
     }
-    if (file.size > maxSize) {
-      toast(t('file_too_large', {name: file.name}));
+    if (isAudio) {
+      if (file.size > MC_MAX_AUDIO_SIZE) { toast(`${file.name}: ${t('audio_too_large')} (${(file.size/1024/1024).toFixed(1)}MB)`); return; }
+      if (_mcCountByType('audio') >= MC_MAX_AUDIOS) { toast(t('max_audios')); return; }
+      const reader = new FileReader();
+      reader.onload = () => {
+        pendingAttachments.push({
+          type: 'audio', name: file.name,
+          data: _mcStripDataUrl(reader.result),
+          mime_type: mime || 'audio/mpeg',
+        });
+        renderAttachPreview();
+      };
+      reader.readAsDataURL(file);
       return;
     }
+    if (isVideo) {
+      if (file.size > MC_MAX_VIDEO_SIZE) { toast(`${file.name}: ${t('video_too_large')} (${(file.size/1024/1024).toFixed(1)}MB)`); return; }
+      if (_mcCountByType('file') >= MC_MAX_FILES) { toast(t('max_files')); return; }
+      const reader = new FileReader();
+      reader.onload = () => {
+        pendingAttachments.push({
+          type: 'file', name: file.name,
+          data: _mcStripDataUrl(reader.result),
+          mime_type: mime || 'video/mp4',
+        });
+        renderAttachPreview();
+      };
+      reader.readAsDataURL(file);
+      return;
+    }
+    if (isPdf) {
+      if (file.size > MC_MAX_PDF_SIZE) { toast(`${file.name}: ${t('pdf_too_large')} (${(file.size/1024/1024).toFixed(1)}MB)`); return; }
+      if (_mcCountByType('file') >= MC_MAX_FILES) { toast(t('max_files')); return; }
+      const reader = new FileReader();
+      reader.onload = () => {
+        pendingAttachments.push({
+          type: 'file', name: file.name,
+          data: _mcStripDataUrl(reader.result),
+          mime_type: 'application/pdf',
+        });
+        renderAttachPreview();
+      };
+      reader.readAsDataURL(file);
+      return;
+    }
+    // 其它：当作文本扩展处理
+    if (!MC_TEXT_EXTENSIONS.has(ext)) { toast(`${t('unsupported_type')}: ${ext}`); return; }
+    if (file.size > MC_MAX_FILE_SIZE) { toast(`${file.name}: ${t('file_too_large')} (${(file.size/1024).toFixed(0)}KB)`); return; }
+    if (_mcCountByType('file') >= MC_MAX_FILES) { toast(t('max_files')); return; }
     const reader = new FileReader();
     reader.onload = () => {
-      const base64 = reader.result.split(',')[1];  // strip data:...;base64, prefix
-      const mime = _guessMime(file);
-      let type = 'file';
-      if (mime.startsWith('image/')) type = 'image';
-      else if (mime.startsWith('audio/')) type = 'audio';
-      pendingAttachments.push({ type, name: file.name, data: base64, mime_type: mime });
+      pendingAttachments.push({
+        type: 'file', name: file.name,
+        data: _mcStripDataUrl(reader.result),
+        mime_type: mime || 'text/plain',
+      });
       renderAttachPreview();
     };
     reader.readAsDataURL(file);
@@ -11156,23 +11311,30 @@ function closeLightbox() {
   document.getElementById('lightbox-img').src = '';
 }
 
-// ── Paste image from clipboard ──
-document.addEventListener('paste', (e) => {
-  if (!currentGroupId) return;
-  const items = e.clipboardData?.items;
-  if (!items) return;
-  const files = [];
-  for (const item of items) {
-    if (item.kind === 'file') {
-      const f = item.getAsFile();
-      if (f) files.push(f);
-    }
-  }
-  if (files.length) {
-    e.preventDefault();
-    handleAttachFiles(files);
-  }
-});
+// ── Paste image from clipboard (与主页面对齐：仅图片，且仅在输入框聚焦时触发) ──
+(function attachPasteHandler() {
+  const bind = () => {
+    const input = document.getElementById('msg-input');
+    if (!input) { setTimeout(bind, 200); return; }
+    input.addEventListener('paste', (e) => {
+      if (!currentGroupId) return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      const files = [];
+      for (const item of items) {
+        if (item.kind === 'file' && (item.type || '').startsWith('image/')) {
+          const f = item.getAsFile();
+          if (f) files.push(f);
+        }
+      }
+      if (files.length) {
+        e.preventDefault();
+        handleAttachFiles(files);
+      }
+    });
+  };
+  bind();
+})();
 
 function handleInputKey(e) {
   // Handle @ mention popup navigation first

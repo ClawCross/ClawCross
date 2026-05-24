@@ -1788,9 +1788,29 @@ let pendingAudios = []; // [{base64: "data:audio/...", name: "recording.wav", fo
 let isRecording = false;
 
 // OpenAI API 配置（前端不再存储 authToken，认证由服务端 session 完成）
-const TEXT_EXTENSIONS = new Set(['.txt','.md','.csv','.json','.xml','.yaml','.yml','.log','.py','.js','.ts','.html','.css','.java','.c','.cpp','.h','.go','.rs','.sh','.bat','.ini','.toml','.cfg','.conf','.sql','.r','.rb']);
-const AUDIO_EXTENSIONS = new Set(['.mp3','.wav','.ogg','.m4a','.webm','.flac','.aac']);
-const VIDEO_EXTENSIONS = new Set(['.avi','.mp4','.mkv','.mov']);
+const TEXT_EXTENSIONS = new Set([
+    // 通用文本与数据
+    '.txt','.md','.markdown','.rst','.adoc','.org','.tex','.bib',
+    '.csv','.tsv','.json','.ndjson','.jsonl','.xml','.yaml','.yml','.toml','.ini','.cfg','.conf','.properties','.env','.log',
+    // Web 前端
+    '.html','.htm','.css','.scss','.sass','.less','.styl','.js','.mjs','.cjs','.ts','.tsx','.jsx','.vue','.svelte','.astro',
+    // 后端 / 通用语言
+    '.py','.pyi','.pyx','.ipynb','.rb','.gemspec','.php','.go','.rs','.java','.kt','.kts','.scala','.groovy','.gradle',
+    '.c','.h','.cpp','.cc','.cxx','.hpp','.hh','.hxx','.m','.mm','.cs','.fs','.fsx','.fsi','.vb',
+    '.swift','.dart','.lua','.pl','.pm','.tcl','.r','.jl','.nim','.zig','.cr','.ex','.exs','.erl','.hrl','.elm','.clj','.cljs','.cljc','.hs','.ml','.mli','.ocaml',
+    // Shell / 运维 / 构建
+    '.sh','.bash','.zsh','.fish','.bat','.cmd','.ps1','.psm1','.awk','.sed',
+    '.dockerfile','.makefile','.mk','.cmake','.bazel','.bzl','.sbt',
+    // 数据库 / 查询 / 配置即代码
+    '.sql','.prisma','.graphql','.gql','.proto','.thrift','.tf','.hcl','.nomad',
+    // 模板
+    '.j2','.jinja','.jinja2','.ejs','.hbs','.mustache','.twig','.liquid','.njk',
+    // 其他
+    '.editorconfig','.gitignore','.gitattributes','.prettierrc','.eslintrc','.npmrc','.babelrc','.lock','.sum','.mod'
+]);
+const AUDIO_EXTENSIONS = new Set(['.mp3','.wav','.ogg','.m4a','.flac','.aac','.opus','.aiff','.amr']);
+// 注意：.webm 既可能是音频也可能是视频；分流时以 MIME 为准（见 handleFileSelect）
+const VIDEO_EXTENSIONS = new Set(['.avi','.mp4','.mkv','.mov','.webm','.wmv','.flv','.m4v','.3gp','.ogv']);
 const MAX_FILE_SIZE = 512 * 1024; // 512KB per text file
 const MAX_PDF_SIZE = 10 * 1024 * 1024; // 10MB per PDF
 const MAX_AUDIO_SIZE = 25 * 1024 * 1024; // 25MB per audio
@@ -1830,7 +1850,14 @@ function handleFileSelect(event) {
     const files = event.target.files;
     if (!files.length) return;
     for (const file of files) {
-        if (file.type.startsWith('image/')) {
+        const ext = '.' + (file.name.split('.').pop() || '').toLowerCase();
+        const mime = file.type || '';
+        // 分流优先级：MIME > 扩展名。video/audio 都接受的 .webm 以 MIME 决定。
+        const isImage = mime.startsWith('image/');
+        const isVideo = mime.startsWith('video/') || (!mime && VIDEO_EXTENSIONS.has(ext));
+        const isAudio = (!isVideo) && (mime.startsWith('audio/') || (!mime && AUDIO_EXTENSIONS.has(ext)));
+        const isPdf = mime === 'application/pdf' || ext === '.pdf';
+        if (isImage) {
             if (pendingImages.length >= 5) { alert(t('max_images')); break; }
             if (file.size <= MAX_IMAGE_SIZE) {
                 const reader = new FileReader();
@@ -1845,19 +1872,17 @@ function handleFileSelect(event) {
                     renderImagePreviews();
                 });
             }
-        } else if (file.type.startsWith('audio/') || AUDIO_EXTENSIONS.has('.' + file.name.split('.').pop().toLowerCase())) {
+        } else if (isAudio) {
             if (file.size > MAX_AUDIO_SIZE) { alert(`${file.name}: ${t('audio_too_large')} (${(file.size/1024/1024).toFixed(1)}MB)`); continue; }
             if (pendingAudios.length >= 2) { alert(t('max_audios')); break; }
-            const ext = file.name.split('.').pop().toLowerCase();
-            const fmt = ({'mp3':'mp3','wav':'wav','ogg':'ogg','m4a':'m4a','webm':'webm','flac':'flac','aac':'aac'})[ext] || 'mp3';
+            const fmt = ({'mp3':'mp3','wav':'wav','ogg':'ogg','m4a':'m4a','webm':'webm','flac':'flac','aac':'aac','opus':'opus','aiff':'aiff','amr':'amr'})[ext.slice(1)] || 'mp3';
             const reader = new FileReader();
             reader.onload = (e) => {
                 pendingAudios.push({ base64: e.target.result, name: file.name, format: fmt });
                 renderAudioPreviews();
             };
             reader.readAsDataURL(file);
-        } else if (file.type.startsWith('video/') || VIDEO_EXTENSIONS.has('.' + file.name.split('.').pop().toLowerCase())) {
-            // 视频文件：以 dataURL 形式存入 pendingFiles，type='media'
+        } else if (isVideo) {
             if (file.size > MAX_VIDEO_SIZE) { alert(`${file.name}: ${t('video_too_large')} (${(file.size/1024/1024).toFixed(1)}MB)`); continue; }
             if (pendingFiles.length >= 3) { alert(t('max_files')); break; }
             const reader = new FileReader();
@@ -1866,7 +1891,7 @@ function handleFileSelect(event) {
                 renderFilePreviews();
             };
             reader.readAsDataURL(file);
-        } else if (file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf') {
+        } else if (isPdf) {
             if (file.size > MAX_PDF_SIZE) { alert(`${file.name}: ${t('pdf_too_large')} (${(file.size/1024/1024).toFixed(1)}MB)`); continue; }
             if (pendingFiles.length >= 3) { alert(t('max_files')); break; }
             const reader = new FileReader();
@@ -1876,7 +1901,6 @@ function handleFileSelect(event) {
             };
             reader.readAsDataURL(file);
         } else {
-            const ext = '.' + file.name.split('.').pop().toLowerCase();
             if (!TEXT_EXTENSIONS.has(ext)) { alert(`${t('unsupported_type')}: ${ext}\n${t('supported_types')}`); continue; }
             if (file.size > MAX_FILE_SIZE) { alert(`${file.name}: ${t('file_too_large')} (${(file.size/1024).toFixed(0)}KB)`); continue; }
             if (pendingFiles.length >= 3) { alert(t('max_files')); break; }
