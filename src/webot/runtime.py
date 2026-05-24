@@ -5,6 +5,8 @@ Small pure helpers for WeBot delegated runtime behavior.
 from __future__ import annotations
 
 
+VALID_SESSION_MODES = frozenset({"execute", "agent", "plan", "review", "yolo"})
+
 PLAN_MODE_BLOCKED_TOOLS = frozenset(
     {
         "write_file",
@@ -36,14 +38,14 @@ REVIEW_MODE_BLOCKED_TOOLS = frozenset(
 
 def normalize_session_mode(mode: str | None) -> str:
     normalized = (mode or "execute").strip().lower()
-    if normalized not in {"execute", "plan", "review"}:
+    if normalized not in VALID_SESSION_MODES:
         return "execute"
     return normalized
 
 
 def filter_tools_for_mode(tool_names: list[str], mode: str | None) -> list[str]:
     normalized_mode = normalize_session_mode(mode)
-    if normalized_mode == "execute":
+    if normalized_mode in {"execute", "agent", "yolo"}:
         return list(tool_names)
     blocked = PLAN_MODE_BLOCKED_TOOLS if normalized_mode == "plan" else REVIEW_MODE_BLOCKED_TOOLS
     return [tool_name for tool_name in tool_names if tool_name not in blocked]
@@ -53,15 +55,25 @@ def build_session_mode_message(mode: str | None, reason: str = "") -> str:
     normalized_mode = normalize_session_mode(mode)
     if normalized_mode == "execute":
         base = "当前会话处于 execute 模式。优先直接落地实现、运行验证，并及时维护 plan/todo。"
+    elif normalized_mode == "agent":
+        base = (
+            "当前会话处于 agent 模式。你可以执行必要工具推进任务；"
+            "遇到当前 tool policy 标记为 manual 的操作时仍需等待人工批准。"
+        )
     elif normalized_mode == "plan":
         base = (
             "当前会话处于 plan 模式。你必须先调研、拆解、记录计划和 todo，"
             "不要修改文件或执行会改变环境状态的命令。"
         )
-    else:
+    elif normalized_mode == "review":
         base = (
             "当前会话处于 review 模式。优先做只读审查、验证和风险识别，"
             "除非用户明确要求，不要直接修改文件。"
+        )
+    else:
+        base = (
+            "当前会话处于 yolo 模式。你可以自动执行当前 tool policy 中需要 manual approval 的操作；"
+            "显式 deny 规则仍然必须遵守。"
         )
     reason_text = (reason or "").strip()
     if not reason_text:

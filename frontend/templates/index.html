@@ -29,7 +29,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
 
     <link rel="stylesheet" href="/static/css/markdown-shared.css">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260330-team-rename2">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260517-acp-status">
 </head>
 <body class="bg-gray-100 font-sans leading-normal tracking-normal">
 
@@ -320,6 +320,7 @@
                             <label for="oc-acp-session-name" class="oc-acp-session-label oc-acp-session-label-sub" data-i18n="oc_acp_session_label">名称</label>
                             <input type="text" id="oc-acp-session-name" class="oc-acp-session-input" maxlength="80" autocomplete="off" data-i18n-placeholder="oc_acp_session_placeholder" onblur="acpOnSessionNameBlur()" placeholder="可选；留空则按左侧会话区分" />
                             <button type="button" class="oc-acp-session-ensure" onclick="acpEnsureSession()" data-i18n="oc_acp_session_ensure" data-i18n-title="oc_acp_session_ensure_title" title="仅创建/预热 ACP 会话，不发送消息">预热</button>
+                            <span id="oc-acp-session-status" class="oc-acp-session-status" aria-live="polite"></span>
                         </div>
                     </div>
                 </div>
@@ -1336,7 +1337,7 @@
     <script src="/static/js/orchestration.js?v=20260329-snapshot"></script>
     <script src="/static/js/markdown-shared.js"></script>
     <script src="/static/js/tinyfish-live-shared.js"></script>
-    <script src="/static/js/main.js?v=20260422-self-update"></script>
+    <script src="/static/js/main.js?v=20260517-acp-status"></script>
     <script src="/static/js/oasis-town.bundle.js?v=20260327-humanfix"></script>
     <script src="/static/js/app.js?v=20260327-humanfix"></script>
     <script>

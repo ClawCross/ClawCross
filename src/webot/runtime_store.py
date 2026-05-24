@@ -360,6 +360,68 @@ def _connect(db_path: str | os.PathLike | None = None) -> sqlite3.Connection:
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS webot_session_goals (
+            goal_id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            title TEXT NOT NULL DEFAULT '',
+            description TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'active',
+            priority TEXT NOT NULL DEFAULT 'normal',
+            parent_goal_id TEXT NOT NULL DEFAULT '',
+            owner_session TEXT NOT NULL DEFAULT '',
+            metrics_json TEXT NOT NULL DEFAULT '{}',
+            budget_tokens INTEGER NOT NULL DEFAULT 0,
+            spent_tokens INTEGER NOT NULL DEFAULT 0,
+            budget_usd REAL NOT NULL DEFAULT 0,
+            spent_usd REAL NOT NULL DEFAULT 0,
+            heartbeat_status TEXT NOT NULL DEFAULT 'idle',
+            heartbeat_at TEXT NOT NULL DEFAULT '',
+            last_report TEXT NOT NULL DEFAULT '',
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            updated_at TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_webot_session_goals_lookup
+        ON webot_session_goals(user_id, session_id, status, updated_at DESC)
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS webot_claude_keepalive (
+            user_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 0,
+            tool TEXT NOT NULL DEFAULT 'claude',
+            prompt TEXT NOT NULL DEFAULT 'ping',
+            model TEXT NOT NULL DEFAULT '',
+            timezone TEXT NOT NULL DEFAULT '',
+            start_time TEXT NOT NULL DEFAULT '06:00',
+            sleep_time TEXT NOT NULL DEFAULT '23:00',
+            weekdays TEXT NOT NULL DEFAULT 'MTWRFSU',
+            use_caffeinate INTEGER NOT NULL DEFAULT 0,
+            force_sleep_at_quiet_hours INTEGER NOT NULL DEFAULT 0,
+            monitor_command TEXT NOT NULL DEFAULT 'claude-monitor --clear',
+            timeout_seconds INTEGER NOT NULL DEFAULT 90,
+            next_run_at TEXT NOT NULL DEFAULT '',
+            last_run_at TEXT NOT NULL DEFAULT '',
+            last_status TEXT NOT NULL DEFAULT 'idle',
+            last_error TEXT NOT NULL DEFAULT '',
+            last_result TEXT NOT NULL DEFAULT '',
+            reset_at TEXT NOT NULL DEFAULT '',
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            updated_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (user_id, session_id)
+        )
+        """
+    )
 
     existing_run_columns = {
         row["name"]
@@ -661,6 +723,69 @@ class BuddyStateRecord:
         return _json_dumps(self.metadata)
 
 
+@dataclass(frozen=True)
+class SessionGoalRecord:
+    goal_id: str
+    user_id: str
+    session_id: str
+    title: str
+    description: str
+    status: str
+    priority: str
+    parent_goal_id: str
+    owner_session: str
+    metrics: dict[str, Any] = field(default_factory=dict)
+    budget_tokens: int = 0
+    spent_tokens: int = 0
+    budget_usd: float = 0.0
+    spent_usd: float = 0.0
+    heartbeat_status: str = "idle"
+    heartbeat_at: str = ""
+    last_report: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
+    updated_at: str = ""
+    created_at: str = ""
+
+    @property
+    def metrics_json(self) -> str:
+        return _json_dumps(self.metrics)
+
+    @property
+    def metadata_json(self) -> str:
+        return _json_dumps(self.metadata)
+
+
+@dataclass(frozen=True)
+class ClaudeKeepaliveRecord:
+    user_id: str
+    session_id: str
+    enabled: bool
+    tool: str
+    prompt: str
+    model: str
+    timezone: str
+    start_time: str
+    sleep_time: str
+    weekdays: str
+    use_caffeinate: bool
+    force_sleep_at_quiet_hours: bool
+    monitor_command: str
+    timeout_seconds: int
+    next_run_at: str
+    last_run_at: str
+    last_status: str
+    last_error: str
+    last_result: str
+    reset_at: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+    updated_at: str = ""
+    created_at: str = ""
+
+    @property
+    def metadata_json(self) -> str:
+        return _json_dumps(self.metadata)
+
+
 def _row_to_run(row: sqlite3.Row | None) -> WeBotRunRecord | None:
     if row is None:
         return None
@@ -748,6 +873,31 @@ def _row_to_buddy_state(row: sqlite3.Row | None) -> BuddyStateRecord | None:
     }
     data["stats"] = stats
     return BuddyStateRecord(**data)
+
+
+def _row_to_session_goal(row: sqlite3.Row | None) -> SessionGoalRecord | None:
+    if row is None:
+        return None
+    data = dict(row)
+    data["metrics"] = _json_loads_dict(data.pop("metrics_json", ""))
+    data["metadata"] = _json_loads_dict(data.pop("metadata_json", ""))
+    data["budget_tokens"] = int(data.get("budget_tokens") or 0)
+    data["spent_tokens"] = int(data.get("spent_tokens") or 0)
+    data["budget_usd"] = float(data.get("budget_usd") or 0)
+    data["spent_usd"] = float(data.get("spent_usd") or 0)
+    return SessionGoalRecord(**data)
+
+
+def _row_to_claude_keepalive(row: sqlite3.Row | None) -> ClaudeKeepaliveRecord | None:
+    if row is None:
+        return None
+    data = dict(row)
+    data["enabled"] = bool(data["enabled"])
+    data["use_caffeinate"] = bool(data["use_caffeinate"])
+    data["force_sleep_at_quiet_hours"] = bool(data["force_sleep_at_quiet_hours"])
+    data["timeout_seconds"] = int(data.get("timeout_seconds") or 90)
+    data["metadata"] = _json_loads_dict(data.pop("metadata_json", ""))
+    return ClaudeKeepaliveRecord(**data)
 
 
 def create_run_record(
@@ -1225,7 +1375,7 @@ def save_session_state(
     db_path: str | os.PathLike | None = None,
 ) -> SessionStateRecord:
     normalized_mode = (mode or "execute").strip().lower()
-    if normalized_mode not in {"execute", "plan", "review"}:
+    if normalized_mode not in {"execute", "agent", "plan", "review", "yolo"}:
         normalized_mode = "execute"
     normalized_status = (status or "active").strip().lower() or "active"
     now = utc_now()
@@ -2006,6 +2156,411 @@ def delete_session_todos(
         )
         conn.commit()
         return cursor.rowcount
+
+
+def _normalize_goal_status(status: str | None) -> str:
+    normalized = (status or "active").strip().lower() or "active"
+    if normalized not in {"active", "blocked", "completed", "archived", "paused"}:
+        normalized = "active"
+    return normalized
+
+
+def _normalize_goal_priority(priority: str | None) -> str:
+    normalized = (priority or "normal").strip().lower() or "normal"
+    if normalized not in {"low", "normal", "high", "critical"}:
+        normalized = "normal"
+    return normalized
+
+
+def upsert_session_goal(
+    user_id: str,
+    session_id: str,
+    *,
+    goal_id: str = "",
+    title: str,
+    description: str = "",
+    status: str = "active",
+    priority: str = "normal",
+    parent_goal_id: str = "",
+    owner_session: str = "",
+    metrics: dict[str, Any] | None = None,
+    budget_tokens: int = 0,
+    spent_tokens: int = 0,
+    budget_usd: float = 0.0,
+    spent_usd: float = 0.0,
+    heartbeat_status: str = "idle",
+    heartbeat_at: str = "",
+    last_report: str = "",
+    metadata: dict[str, Any] | None = None,
+    db_path: str | os.PathLike | None = None,
+) -> SessionGoalRecord:
+    normalized_goal_id = (goal_id or "").strip() or f"goal-{uuid.uuid4().hex[:12]}"
+    existing = get_session_goal(user_id, normalized_goal_id, db_path=db_path)
+    now = utc_now()
+    created_at = existing.created_at if existing is not None else now
+    normalized_session = (session_id or (existing.session_id if existing is not None else "") or "default").strip()
+    normalized_title = (title or (existing.title if existing is not None else "")).strip()
+    if not normalized_title:
+        normalized_title = "Untitled goal"
+    record = SessionGoalRecord(
+        goal_id=normalized_goal_id,
+        user_id=user_id,
+        session_id=normalized_session,
+        title=normalized_title,
+        description=description if description is not None else (existing.description if existing else ""),
+        status=_normalize_goal_status(status if status is not None else (existing.status if existing else "active")),
+        priority=_normalize_goal_priority(priority if priority is not None else (existing.priority if existing else "normal")),
+        parent_goal_id=parent_goal_id if parent_goal_id is not None else (existing.parent_goal_id if existing else ""),
+        owner_session=owner_session if owner_session is not None else (existing.owner_session if existing else ""),
+        metrics=dict(metrics if metrics is not None else (existing.metrics if existing else {})),
+        budget_tokens=max(0, int(budget_tokens if budget_tokens is not None else (existing.budget_tokens if existing else 0))),
+        spent_tokens=max(0, int(spent_tokens if spent_tokens is not None else (existing.spent_tokens if existing else 0))),
+        budget_usd=max(0.0, float(budget_usd if budget_usd is not None else (existing.budget_usd if existing else 0))),
+        spent_usd=max(0.0, float(spent_usd if spent_usd is not None else (existing.spent_usd if existing else 0))),
+        heartbeat_status=(heartbeat_status or (existing.heartbeat_status if existing else "idle")).strip().lower() or "idle",
+        heartbeat_at=heartbeat_at if heartbeat_at is not None else (existing.heartbeat_at if existing else ""),
+        last_report=last_report if last_report is not None else (existing.last_report if existing else ""),
+        metadata=dict(metadata if metadata is not None else (existing.metadata if existing else {})),
+        updated_at=now,
+        created_at=created_at,
+    )
+    with _connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO webot_session_goals (
+                goal_id, user_id, session_id, title, description, status, priority,
+                parent_goal_id, owner_session, metrics_json, budget_tokens, spent_tokens,
+                budget_usd, spent_usd, heartbeat_status, heartbeat_at, last_report,
+                metadata_json, updated_at, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(goal_id) DO UPDATE SET
+                session_id=excluded.session_id,
+                title=excluded.title,
+                description=excluded.description,
+                status=excluded.status,
+                priority=excluded.priority,
+                parent_goal_id=excluded.parent_goal_id,
+                owner_session=excluded.owner_session,
+                metrics_json=excluded.metrics_json,
+                budget_tokens=excluded.budget_tokens,
+                spent_tokens=excluded.spent_tokens,
+                budget_usd=excluded.budget_usd,
+                spent_usd=excluded.spent_usd,
+                heartbeat_status=excluded.heartbeat_status,
+                heartbeat_at=excluded.heartbeat_at,
+                last_report=excluded.last_report,
+                metadata_json=excluded.metadata_json,
+                updated_at=excluded.updated_at
+            WHERE webot_session_goals.user_id = excluded.user_id
+            """,
+            (
+                record.goal_id,
+                record.user_id,
+                record.session_id,
+                record.title,
+                record.description,
+                record.status,
+                record.priority,
+                record.parent_goal_id,
+                record.owner_session,
+                _json_dumps(record.metrics),
+                record.budget_tokens,
+                record.spent_tokens,
+                record.budget_usd,
+                record.spent_usd,
+                record.heartbeat_status,
+                record.heartbeat_at,
+                record.last_report,
+                _json_dumps(record.metadata),
+                record.updated_at,
+                record.created_at,
+            ),
+        )
+        conn.commit()
+    refreshed = get_session_goal(user_id, record.goal_id, db_path=db_path)
+    return refreshed or record
+
+
+def get_session_goal(
+    user_id: str,
+    goal_id: str,
+    db_path: str | os.PathLike | None = None,
+) -> SessionGoalRecord | None:
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT * FROM webot_session_goals
+            WHERE user_id = ? AND goal_id = ?
+            """,
+            (user_id, goal_id),
+        ).fetchone()
+    return _row_to_session_goal(row)
+
+
+def list_session_goals(
+    user_id: str,
+    session_id: str | None = None,
+    *,
+    status: str | None = None,
+    db_path: str | os.PathLike | None = None,
+    limit: int = 50,
+) -> list[SessionGoalRecord]:
+    query = ["SELECT * FROM webot_session_goals WHERE user_id = ?"]
+    params: list[Any] = [user_id]
+    if session_id:
+        query.append("AND session_id = ?")
+        params.append(session_id)
+    if status:
+        query.append("AND status = ?")
+        params.append(_normalize_goal_status(status))
+    query.append("ORDER BY updated_at DESC LIMIT ?")
+    params.append(max(1, min(limit, 200)))
+    with _connect(db_path) as conn:
+        rows = conn.execute(" ".join(query), params).fetchall()
+    return [_row_to_session_goal(row) for row in rows if row is not None]
+
+
+def record_goal_heartbeat(
+    user_id: str,
+    goal_id: str,
+    *,
+    session_id: str = "",
+    heartbeat_status: str = "active",
+    report: str = "",
+    spent_tokens_delta: int = 0,
+    spent_usd_delta: float = 0.0,
+    metadata: dict[str, Any] | None = None,
+    db_path: str | os.PathLike | None = None,
+) -> SessionGoalRecord | None:
+    record = get_session_goal(user_id, goal_id, db_path=db_path)
+    if record is None:
+        return None
+    merged_metadata = dict(record.metadata)
+    if metadata:
+        merged_metadata.update(metadata)
+    heartbeat_at = utc_now()
+    return upsert_session_goal(
+        user_id,
+        session_id or record.session_id,
+        goal_id=record.goal_id,
+        title=record.title,
+        description=record.description,
+        status=record.status,
+        priority=record.priority,
+        parent_goal_id=record.parent_goal_id,
+        owner_session=record.owner_session,
+        metrics=record.metrics,
+        budget_tokens=record.budget_tokens,
+        spent_tokens=record.spent_tokens + max(0, int(spent_tokens_delta or 0)),
+        budget_usd=record.budget_usd,
+        spent_usd=record.spent_usd + max(0.0, float(spent_usd_delta or 0)),
+        heartbeat_status=(heartbeat_status or "active").strip().lower() or "active",
+        heartbeat_at=heartbeat_at,
+        last_report=report if report is not None else record.last_report,
+        metadata=merged_metadata,
+        db_path=db_path,
+    )
+
+
+def _default_claude_keepalive(user_id: str, session_id: str) -> ClaudeKeepaliveRecord:
+    now = utc_now()
+    return ClaudeKeepaliveRecord(
+        user_id=user_id,
+        session_id=session_id or "default",
+        enabled=False,
+        tool="claude",
+        prompt="ping",
+        model="",
+        timezone="",
+        start_time="06:00",
+        sleep_time="23:00",
+        weekdays="MTWRFSU",
+        use_caffeinate=False,
+        force_sleep_at_quiet_hours=False,
+        monitor_command="claude-monitor --clear",
+        timeout_seconds=90,
+        next_run_at="",
+        last_run_at="",
+        last_status="idle",
+        last_error="",
+        last_result="",
+        reset_at="",
+        metadata={},
+        updated_at=now,
+        created_at=now,
+    )
+
+
+def get_claude_keepalive_state(
+    user_id: str,
+    session_id: str,
+    db_path: str | os.PathLike | None = None,
+) -> ClaudeKeepaliveRecord:
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT * FROM webot_claude_keepalive
+            WHERE user_id = ? AND session_id = ?
+            """,
+            (user_id, session_id or "default"),
+        ).fetchone()
+    return _row_to_claude_keepalive(row) or _default_claude_keepalive(user_id, session_id or "default")
+
+
+def save_claude_keepalive_state(
+    user_id: str,
+    session_id: str,
+    *,
+    enabled: bool = False,
+    tool: str = "claude",
+    prompt: str = "ping",
+    model: str = "",
+    timezone_name: str = "",
+    start_time: str = "06:00",
+    sleep_time: str = "23:00",
+    weekdays: str = "MTWRFSU",
+    use_caffeinate: bool = False,
+    force_sleep_at_quiet_hours: bool = False,
+    monitor_command: str = "claude-monitor --clear",
+    timeout_seconds: int = 90,
+    next_run_at: str = "",
+    last_run_at: str = "",
+    last_status: str = "idle",
+    last_error: str = "",
+    last_result: str = "",
+    reset_at: str = "",
+    metadata: dict[str, Any] | None = None,
+    db_path: str | os.PathLike | None = None,
+) -> ClaudeKeepaliveRecord:
+    existing = get_claude_keepalive_state(user_id, session_id, db_path=db_path)
+    now = utc_now()
+    record = ClaudeKeepaliveRecord(
+        user_id=user_id,
+        session_id=session_id or "default",
+        enabled=bool(enabled),
+        tool=(tool or "claude").strip() or "claude",
+        prompt=(prompt or existing.prompt or "ping").strip() or "ping",
+        model=(model if model is not None else existing.model).strip(),
+        timezone=(timezone_name if timezone_name is not None else existing.timezone).strip(),
+        start_time=(start_time or existing.start_time or "06:00").strip(),
+        sleep_time=(sleep_time or existing.sleep_time or "23:00").strip(),
+        weekdays=(weekdays or existing.weekdays or "MTWRFSU").strip().upper() or "MTWRFSU",
+        use_caffeinate=bool(use_caffeinate),
+        force_sleep_at_quiet_hours=bool(force_sleep_at_quiet_hours),
+        monitor_command=(monitor_command or existing.monitor_command or "claude-monitor --clear").strip(),
+        timeout_seconds=max(10, min(int(timeout_seconds or existing.timeout_seconds or 90), 600)),
+        next_run_at=next_run_at if next_run_at is not None else existing.next_run_at,
+        last_run_at=last_run_at if last_run_at is not None else existing.last_run_at,
+        last_status=last_status if last_status is not None else existing.last_status,
+        last_error=last_error if last_error is not None else existing.last_error,
+        last_result=last_result if last_result is not None else existing.last_result,
+        reset_at=reset_at if reset_at is not None else existing.reset_at,
+        metadata=dict(metadata if metadata is not None else existing.metadata),
+        updated_at=now,
+        created_at=existing.created_at or now,
+    )
+    with _connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO webot_claude_keepalive (
+                user_id, session_id, enabled, tool, prompt, model, timezone,
+                start_time, sleep_time, weekdays, use_caffeinate,
+                force_sleep_at_quiet_hours, monitor_command, timeout_seconds,
+                next_run_at, last_run_at, last_status, last_error, last_result,
+                reset_at, metadata_json, updated_at, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, session_id) DO UPDATE SET
+                enabled=excluded.enabled,
+                tool=excluded.tool,
+                prompt=excluded.prompt,
+                model=excluded.model,
+                timezone=excluded.timezone,
+                start_time=excluded.start_time,
+                sleep_time=excluded.sleep_time,
+                weekdays=excluded.weekdays,
+                use_caffeinate=excluded.use_caffeinate,
+                force_sleep_at_quiet_hours=excluded.force_sleep_at_quiet_hours,
+                monitor_command=excluded.monitor_command,
+                timeout_seconds=excluded.timeout_seconds,
+                next_run_at=excluded.next_run_at,
+                last_run_at=excluded.last_run_at,
+                last_status=excluded.last_status,
+                last_error=excluded.last_error,
+                last_result=excluded.last_result,
+                reset_at=excluded.reset_at,
+                metadata_json=excluded.metadata_json,
+                updated_at=excluded.updated_at
+            """,
+            (
+                record.user_id,
+                record.session_id,
+                1 if record.enabled else 0,
+                record.tool,
+                record.prompt,
+                record.model,
+                record.timezone,
+                record.start_time,
+                record.sleep_time,
+                record.weekdays,
+                1 if record.use_caffeinate else 0,
+                1 if record.force_sleep_at_quiet_hours else 0,
+                record.monitor_command,
+                record.timeout_seconds,
+                record.next_run_at,
+                record.last_run_at,
+                record.last_status,
+                record.last_error,
+                record.last_result,
+                record.reset_at,
+                _json_dumps(record.metadata),
+                record.updated_at,
+                record.created_at,
+            ),
+        )
+        conn.commit()
+    return get_claude_keepalive_state(user_id, session_id, db_path=db_path)
+
+
+def record_claude_keepalive_result(
+    user_id: str,
+    session_id: str,
+    *,
+    status: str,
+    result: str = "",
+    error: str = "",
+    reset_at: str = "",
+    next_run_at: str = "",
+    metadata: dict[str, Any] | None = None,
+    db_path: str | os.PathLike | None = None,
+) -> ClaudeKeepaliveRecord:
+    current = get_claude_keepalive_state(user_id, session_id, db_path=db_path)
+    merged_metadata = dict(current.metadata)
+    if metadata:
+        merged_metadata.update(metadata)
+    return save_claude_keepalive_state(
+        user_id,
+        session_id,
+        enabled=current.enabled,
+        tool=current.tool,
+        prompt=current.prompt,
+        model=current.model,
+        timezone_name=current.timezone,
+        start_time=current.start_time,
+        sleep_time=current.sleep_time,
+        weekdays=current.weekdays,
+        use_caffeinate=current.use_caffeinate,
+        force_sleep_at_quiet_hours=current.force_sleep_at_quiet_hours,
+        monitor_command=current.monitor_command,
+        timeout_seconds=current.timeout_seconds,
+        next_run_at=next_run_at if next_run_at is not None else current.next_run_at,
+        last_run_at=utc_now(),
+        last_status=(status or "unknown").strip().lower() or "unknown",
+        last_error=error or "",
+        last_result=result or "",
+        reset_at=reset_at if reset_at is not None else current.reset_at,
+        metadata=merged_metadata,
+        db_path=db_path,
+    )
 
 
 def add_verification_record(

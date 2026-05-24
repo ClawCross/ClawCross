@@ -195,11 +195,17 @@
   }
   .sub-page.offscreen { transform: translateX(100%); pointer-events: none; }
 
-  /* ── Group List area ── */
-  .group-list-area {
+  /* ── Chat list scroll area ── */
+  .chat-scroll-area {
     flex: 1;
+    min-height: 0;
     margin-bottom: calc(var(--tab-h) + var(--bottom-inset));
     overflow-y: auto; -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+  .group-list-area {
+    min-height: 180px;
+    overflow: visible;
   }
   /* ── Chat search bar ── */
   .chat-search-bar {
@@ -223,6 +229,536 @@
   .chat-search-icon {
     position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
     font-size: 14px; color: var(--text-hint); pointer-events: none;
+  }
+
+  /* ── Agent ops panels ── */
+  .agent-ops-scroll {
+    flex-shrink: 0;
+    overflow: visible;
+    background: var(--bg-card);
+    border-bottom: 0.5px solid var(--border);
+  }
+
+  /* ── Project harness board ── */
+  .harness-section {
+    flex-shrink: 0;
+    background: var(--bg-card);
+    border-bottom: 0.5px solid var(--border);
+    padding: 10px 12px 12px;
+  }
+  .harness-head {
+    display: grid;
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+  .harness-head-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-width: 0;
+  }
+  .harness-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .harness-status {
+    font-size: 11px;
+    color: var(--text-secondary);
+    line-height: 1.35;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .harness-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .harness-btn {
+    min-width: 32px;
+    height: 32px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .harness-btn:active { background: #e9e9e9; }
+  .harness-btn:disabled { opacity: 0.5; cursor: default; }
+  .harness-grid {
+    display: grid;
+    gap: 7px;
+  }
+  .harness-project-group {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fff;
+    overflow: hidden;
+  }
+  .harness-project-head {
+    width: 100%;
+    border: none;
+    background: #f8fafc;
+    color: var(--text);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 9px 10px;
+    font: inherit;
+    text-align: left;
+  }
+  .harness-project-head:active {
+    background: #eef2ff;
+  }
+  .harness-project-name {
+    min-width: 0;
+    font-size: 13px;
+    font-weight: 800;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .harness-project-meta {
+    margin-top: 2px;
+    color: var(--text-secondary);
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .harness-project-toggle {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    border-radius: 999px;
+    background: #eef2ff;
+    color: #1d4ed8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 900;
+  }
+  .harness-project-body {
+    display: grid;
+    gap: 8px;
+    padding: 8px;
+  }
+  .harness-project-row {
+    min-width: 0;
+  }
+  .harness-project-row-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 0 0 5px;
+    padding: 0 2px;
+    color: var(--text-secondary);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0;
+    text-transform: uppercase;
+  }
+  .harness-project-row-track {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+    padding: 0 0 2px;
+  }
+  .harness-project-group.collapsed .harness-project-body {
+    display: none;
+  }
+  .harness-project-group.collapsed .harness-project-toggle {
+    transform: rotate(-90deg);
+  }
+  .harness-card {
+    width: min(320px, 78vw);
+    min-width: min(320px, 78vw);
+    border: 1px solid var(--border);
+    border-left: 3px solid #94a3b8;
+    border-radius: 10px;
+    background: #fff;
+    padding: 8px 9px;
+  }
+  .harness-card.active,
+  .harness-card.running { border-left-color: #2563eb; }
+  .harness-card.needs_user,
+  .harness-card.blocked,
+  .harness-card.error { border-left-color: #dc2626; background: #fffafa; }
+  .harness-card.done,
+  .harness-card.verified,
+  .harness-card.passed { border-left-color: #16a34a; background: #fbfefc; }
+  .harness-card-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .harness-card-title {
+    min-width: 0;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+  }
+  .harness-pill {
+    flex-shrink: 0;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: #eef2ff;
+    color: #1d4ed8;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .harness-meta,
+  .harness-preview {
+    margin-top: 4px;
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 1.35;
+    word-break: break-word;
+  }
+  .harness-preview {
+    color: #555;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .harness-worker-row {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid #f1f1f1;
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
+  .harness-worker-row strong {
+    color: var(--text);
+  }
+  .harness-empty-row {
+    min-width: min(240px, 64vw);
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    padding: 9px 10px;
+    color: var(--text-hint);
+    font-size: 11px;
+    background: var(--bg);
+  }
+
+  /* ── Remote Claude sessions ── */
+  .remote-claude-section {
+    flex-shrink: 0;
+    background: var(--bg-card);
+    border-bottom: 0.5px solid var(--border);
+    padding: 10px 12px 12px;
+  }
+  .remote-claude-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .remote-claude-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .remote-claude-status {
+    margin-top: 2px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 250px;
+  }
+  .remote-claude-refresh {
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text-secondary);
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .remote-claude-refresh:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+  .remote-claude-grid {
+    display: grid;
+    gap: 8px;
+    overflow: visible;
+  }
+  .remote-computer-group {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fff;
+    overflow: hidden;
+  }
+  .remote-computer-head {
+    width: 100%;
+    border: none;
+    background: #f8fafc;
+    color: var(--text);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 9px 10px;
+    font: inherit;
+    text-align: left;
+  }
+  .remote-computer-head:active {
+    background: #eef2ff;
+  }
+  .remote-computer-name {
+    min-width: 0;
+    font-size: 13px;
+    font-weight: 800;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .remote-computer-meta {
+    margin-top: 2px;
+    color: var(--text-secondary);
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .remote-computer-toggle {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    border-radius: 999px;
+    background: #eef2ff;
+    color: #1d4ed8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 900;
+  }
+  .remote-computer-body {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+    padding: 8px;
+  }
+  .remote-computer-group.collapsed .remote-computer-body {
+    display: none;
+  }
+  .remote-computer-group.collapsed .remote-computer-toggle {
+    transform: rotate(-90deg);
+  }
+  .remote-claude-card {
+    width: min(320px, 78vw);
+    min-width: 220px;
+    min-height: 126px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    padding: 10px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .remote-claude-card:active { background: #ececec; }
+  .remote-claude-card.placeholder {
+    cursor: default;
+    border-style: dashed;
+    color: var(--text-hint);
+  }
+  .remote-claude-card.review-placeholder {
+    cursor: default;
+    border-color: #f59e0b;
+    background: #fffbeb;
+  }
+  .remote-claude-card-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .remote-claude-card-title {
+    min-width: 0;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.25;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .remote-claude-pill {
+    flex-shrink: 0;
+    border-radius: 999px;
+    padding: 2px 7px;
+    background: #eef2ff;
+    color: #1e3a8a;
+    font-size: 10px;
+    font-weight: 700;
+  }
+  .remote-claude-pill.shell,
+  .remote-claude-pill.running,
+  .remote-claude-pill.active {
+    background: #ecfdf3;
+    color: #166534;
+  }
+  .remote-claude-pill.idle {
+    background: #f1f5f9;
+    color: #475569;
+  }
+  .remote-claude-pill.review {
+    background: #fef3c7;
+    color: #92400e;
+  }
+  .remote-claude-pill.needs_user,
+  .remote-claude-pill.blocked,
+  .remote-claude-pill.error,
+  .remote-claude-pill.offline {
+    background: #fef2f2;
+    color: #b91c1c;
+  }
+  .remote-claude-card-meta {
+    font-size: 11px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .remote-claude-preview {
+    font-size: 12px;
+    color: var(--text);
+    line-height: 1.45;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    word-break: break-word;
+  }
+  .remote-claude-page {
+    background: var(--bg-chat);
+    z-index: 220;
+  }
+  .remote-claude-transcript {
+    flex: 1;
+    margin-top: var(--header-h);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 12px;
+  }
+  .remote-claude-input-wrap {
+    flex-shrink: 0;
+    padding: 8px 10px calc(8px + var(--bottom-inset));
+    background: var(--bg-nav);
+    border-top: 0.5px solid var(--border);
+  }
+  .remote-claude-input-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+  }
+  .remote-claude-input {
+    flex: 1;
+    min-height: 38px;
+    max-height: 120px;
+    resize: none;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-card);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.35;
+    padding: 9px 10px;
+    outline: none;
+    font-family: inherit;
+  }
+  .remote-claude-send {
+    min-width: 64px;
+    height: 38px;
+    border: none;
+    border-radius: 8px;
+    background: #1e3a8a;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .remote-claude-send:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+  .remote-claude-message {
+    margin-bottom: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .remote-claude-message.user {
+    align-items: flex-end;
+  }
+  .remote-claude-message-meta {
+    font-size: 11px;
+    color: var(--text-hint);
+    margin: 0 4px 3px;
+  }
+  .remote-claude-message-bubble {
+    max-width: 94%;
+    border-radius: 8px;
+    padding: 9px 11px;
+    background: var(--msg-other);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .remote-claude-message.user .remote-claude-message-bubble {
+    background: var(--msg-self);
+  }
+  .remote-claude-empty {
+    text-align: center;
+    padding: 32px 18px;
+    color: var(--text-hint);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  @media (max-width: 760px) {
+    .remote-claude-card {
+      width: 78vw;
+      max-width: 320px;
+      flex: 0 0 auto;
+    }
   }
   /* ── Pin indicator ── */
   .group-item.pinned { background: rgba(102, 126, 234, 0.04); }
@@ -4163,7 +4699,24 @@
       <input type="text" class="chat-search-input" id="chat-search-input" data-i18n="search_placeholder" placeholder="搜索对话..." oninput="filterGroupList()">
     </div>
   </div>
-  <div class="group-list-area" id="group-list-container"></div>
+  <div class="chat-scroll-area" id="chat-scroll-area">
+    <div class="agent-ops-scroll" id="agent-ops-scroll">
+      <div class="harness-section" id="harness-section">
+        <div class="harness-head">
+          <div class="harness-head-top">
+            <div class="harness-title">Project Harness</div>
+            <div class="harness-actions">
+              <button class="harness-btn" onclick="createHarnessTodo()" title="新增 TODO">＋</button>
+              <button class="harness-btn" id="harness-refresh" onclick="refreshAgentOps(true)" title="刷新">↻</button>
+            </div>
+          </div>
+          <div class="harness-status" id="harness-status">正在读取项目 / TODO / worker...</div>
+        </div>
+        <div class="harness-grid" id="harness-grid"></div>
+      </div>
+    </div>
+    <div class="group-list-area" id="group-list-container"></div>
+  </div>
 </div>
 
 <!-- ═══ Chat Page (slides in from right, covers entire app) ═══ -->
@@ -4240,6 +4793,29 @@
                 onkeydown="handleInputKey(event)"
                 oninput="handleInputForMention()"></textarea>
       <button class="send-btn" id="send-btn" onclick="sendMessage()" data-i18n="send">发送</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Remote Claude Session Page ═══ -->
+<div id="remote-claude-page" class="sub-page remote-claude-page offscreen">
+  <div class="header">
+    <button class="header-back-btn" onclick="closeRemoteClaudePage()">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
+    <div class="header-title" id="remote-claude-title">Remote Claude</div>
+    <div style="display:flex;gap:2px;align-items:center;margin-left:auto;">
+      <button class="header-btn" onclick="reloadOpenRemoteClaudeSession()" title="刷新" style="font-size:18px;font-weight:700;min-width:36px;">↻</button>
+    </div>
+  </div>
+  <div class="remote-claude-transcript" id="remote-claude-transcript">
+    <div class="remote-claude-empty">选择一个远端 Claude session 后显示 transcript。</div>
+  </div>
+  <div class="remote-claude-input-wrap">
+    <div class="remote-claude-input-row">
+      <textarea class="remote-claude-input" id="remote-claude-input" rows="1" placeholder="给这个远端 Claude session 发消息..."
+                onkeydown="handleRemoteClaudeInputKey(event)"></textarea>
+      <button class="remote-claude-send" id="remote-claude-send" onclick="sendRemoteClaudeMessage()">发送</button>
     </div>
   </div>
 </div>
@@ -6679,6 +7255,18 @@ let currentMembers = [];  // Store members for @ mention
 let currentGroupMuteAllAgents = false;
 let currentGroupPrimaryAgent = '';  // 主 agent 的 global_id，空串=未设置
 let senderNameMap = {};   // sender key -> display name 映射
+let remoteClaudeSessions = [];
+let remoteClaudePayload = null;
+let remoteClaudeLoaded = false;
+let remoteClaudeLoading = false;
+let openRemoteClaudeSessionId = '';
+let remoteClaudeSending = false;
+let harnessState = null;
+let harnessLoading = false;
+const HARNESS_COLLAPSED_PROJECTS_KEY = 'clawcross_harness_collapsed_projects_v1';
+let harnessCollapsedProjects = new Set();
+const REMOTE_CLAUDE_COLLAPSED_REMOTES_KEY = 'clawcross_remote_claude_collapsed_remotes_v1';
+let remoteClaudeCollapsedRemotes = new Set();
 let __agentDetailRenderSeq = 0;
 const __personaByTagCache = new Map();
 let mentionState = {
@@ -6948,6 +7536,926 @@ function toast(msg, duration = 2000) {
   el.classList.add('show');
   clearTimeout(el._t);
   el._t = setTimeout(() => el.classList.remove('show'), duration);
+}
+
+function harnessStatusText(status) {
+  const s = String(status || '').trim().toLowerCase();
+  const zh = _currentLang === 'zh';
+  const labels = {
+    todo: zh ? '未开始' : 'Todo',
+    active: zh ? '进行中' : 'Active',
+    running: zh ? '运行中' : 'Running',
+    needs_user: zh ? '等用户' : 'Needs user',
+    blocked: zh ? '阻塞' : 'Blocked',
+    review: zh ? '待你审查' : 'Review',
+    done: zh ? '完成' : 'Done',
+    idle: zh ? '空闲' : 'Idle',
+    offline: zh ? '离线' : 'Offline',
+    error: zh ? '错误' : 'Error',
+    verified: zh ? '已验证' : 'Verified',
+    passed: zh ? '通过' : 'Passed'
+  };
+  return labels[s] || status || (zh ? '未知' : 'Unknown');
+}
+
+function harnessFormatAge(seconds) {
+  if (seconds === null || seconds === undefined || Number.isNaN(Number(seconds))) {
+    return _currentLang === 'zh' ? '无心跳' : 'no heartbeat';
+  }
+  const sec = Math.max(0, Number(seconds));
+  if (sec < 120) return _currentLang === 'zh' ? '刚刚' : 'just now';
+  const min = Math.round(sec / 60);
+  if (min < 120) return `${min}m`;
+  const hour = Math.round(min / 60);
+  if (hour < 48) return `${hour}h`;
+  return `${Math.round(hour / 24)}d`;
+}
+
+function harnessTaskRank(task) {
+  const status = String(task.status || '').toLowerCase();
+  const weights = { needs_user: 0, blocked: 1, active: 2, review: 3, todo: 4, done: 8 };
+  return weights[status] === undefined ? 5 : weights[status];
+}
+
+function loadHarnessCollapsedProjects() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(HARNESS_COLLAPSED_PROJECTS_KEY) || '[]');
+    harnessCollapsedProjects = new Set(Array.isArray(raw) ? raw.map(String) : []);
+  } catch (_) {
+    harnessCollapsedProjects = new Set();
+  }
+}
+
+function saveHarnessCollapsedProjects() {
+  try {
+    localStorage.setItem(HARNESS_COLLAPSED_PROJECTS_KEY, JSON.stringify(Array.from(harnessCollapsedProjects)));
+  } catch (_) {}
+}
+
+loadHarnessCollapsedProjects();
+
+function toggleHarnessProject(encodedProjectId) {
+  const projectId = decodeURIComponent(String(encodedProjectId || 'default'));
+  if (harnessCollapsedProjects.has(projectId)) harnessCollapsedProjects.delete(projectId);
+  else harnessCollapsedProjects.add(projectId);
+  saveHarnessCollapsedProjects();
+  if (harnessState) renderHarnessState(harnessState);
+}
+
+function bindHorizontalWheelScroll(el) {
+  if (!el || el.dataset.wheelScrollBound === '1') return;
+  el.dataset.wheelScrollBound = '1';
+  el.addEventListener('wheel', (e) => {
+    if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+    if (el.scrollWidth <= el.clientWidth + 2) return;
+    const before = el.scrollLeft;
+    try {
+      el.scrollLeft = before + e.deltaY;
+    } catch (_) {
+      return;
+    }
+    if (el.scrollLeft !== before) e.preventDefault();
+  }, { passive: false });
+}
+
+function harnessAgentLabel(agent) {
+  if (!agent) return '';
+  const id = agent.agent_id || 'worker';
+  const remote = String(agent.remote_host || '').trim();
+  if (!remote || String(id).includes(remote)) return id;
+  const remoteAddr = remote.includes('@') ? remote.split('@').pop() : remote;
+  if (remoteAddr && String(id).includes(remoteAddr)) return id;
+  return `${id} @ ${remote}`;
+}
+
+function harnessAgentIsSurveyPool(agent) {
+  if (!agent || typeof agent !== 'object') return false;
+  const caps = Array.isArray(agent.capabilities) ? agent.capabilities.map(item => String(item || '').toLowerCase()) : [];
+  const metadata = agent.metadata && typeof agent.metadata === 'object' ? agent.metadata : {};
+  const clawcross = metadata.clawcross && typeof metadata.clawcross === 'object' ? metadata.clawcross : {};
+  return !!clawcross.survey_pool || caps.includes('survey-pool') || String(agent.agent_id || '').toLowerCase().includes('survey-pool');
+}
+
+function isHarnessVisibleWorker(agent, visibleTaskIds = null, projectsById = null) {
+  if (!agent) return false;
+  if (agent.remote_host && String(agent.agent_id || '') === String(agent.remote_host)) return false;
+  const taskId = agent.current_task_id || agent.task_id || '';
+  if (taskId && (!visibleTaskIds || visibleTaskIds.has(taskId))) return true;
+  const projectId = agent.project_id || '';
+  const project = projectsById && projectsById.get ? projectsById.get(projectId) : null;
+  const status = String(agent.effective_status || agent.status || '').toLowerCase();
+  return !!harnessWorkerSessionRef(agent) && projectId && harnessProjectIsActive(project) && status !== 'error';
+}
+
+function harnessWorkerSessionRef(agent) {
+  return String((agent && agent.session_ref) || '').trim();
+}
+
+function isHarnessSessionBackedWorker(agent, visibleTaskIds = null, projectsById = null) {
+  return isHarnessVisibleWorker(agent, visibleTaskIds, projectsById) && !!harnessWorkerSessionRef(agent);
+}
+
+function harnessUniqueAgents(agents) {
+  const seen = new Set();
+  const unique = [];
+  (agents || []).forEach(agent => {
+    const key = harnessWorkerSessionRef(agent) || (agent && agent.agent_id) || '';
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    unique.push(agent);
+  });
+  return unique;
+}
+
+function harnessWorkerCountLabel(liveCount, boundCount, remoteReady = true) {
+  if (!remoteReady && boundCount > 0) {
+    return _currentLang === 'zh' ? `${boundCount} worker 连接中` : `${boundCount} worker connecting`;
+  }
+  const suffix = _currentLang === 'zh' ? 'worker 在线' : 'worker online';
+  if (boundCount > liveCount) return `${liveCount}/${boundCount} ${suffix}`;
+  return `${liveCount} ${suffix}`;
+}
+
+function harnessProjectIsActive(project) {
+  const status = String((project && project.status) || 'active').toLowerCase().replace(/-/g, '_');
+  return !['done', 'completed', 'closed', 'archived', 'cancelled'].includes(status);
+}
+
+function harnessAgentMatchesRemoteSession(agent, session) {
+  const ref = harnessWorkerSessionRef(agent);
+  if (!ref || !session) return false;
+  const refs = remoteClaudeEquivalentKeys(ref);
+  const sessionRefs = remoteClaudeSessionKeys(session).flatMap(remoteClaudeEquivalentKeys);
+  return sessionRefs.some(key => refs.includes(key));
+}
+
+function harnessTaskEvidenceAuthors(item) {
+  const authors = [];
+  const seen = new Set();
+  (Array.isArray(item && item.comments) ? item.comments : []).forEach(comment => {
+    if (!comment || typeof comment !== 'object') return;
+    const kind = String(comment.kind || '').toLowerCase();
+    if (!['comment', 'result', 'status_change', 'host_verified'].includes(kind)) return;
+    const author = String(comment.author || '').trim();
+    if (!author || author === 'agent' || author === 'Result' || author.startsWith('clawcross-main')) return;
+    if (seen.has(author)) return;
+    seen.add(author);
+    authors.push(author);
+  });
+  return authors;
+}
+
+function harnessTaskHasReviewEvidence(item) {
+  if (!item || String(item.status || '').toLowerCase() !== 'review') return false;
+  if (item.result || item.run_id || item.completed_at) return true;
+  return (Array.isArray(item.comments) ? item.comments : []).some(comment => {
+    if (!comment || typeof comment !== 'object') return false;
+    const kind = String(comment.kind || '').toLowerCase();
+    const body = String(comment.body || comment.message || '').trim();
+    return !!body && ['comment', 'result', 'status_change', 'host_verified'].includes(kind);
+  });
+}
+
+function harnessProjectRemoteLabel(tasks, agentsByTask, sessions = [], projectAgents = []) {
+  const agents = projectAgents.length ? projectAgents.slice() : [];
+  if (!agents.length) tasks.forEach(task => (agentsByTask.get(task.task_id) || []).forEach(agent => agents.push(agent)));
+  const remote = agents.map(agent => agent.remote_host).find(Boolean);
+  if (remote) return remote;
+  const sessionRemote = sessions.map(session => {
+    const normalized = remoteClaudeNormalizeUserHost(
+      session.remote_user || session.user || (session.remote && session.remote.user) || '',
+      session.remote_host || session.host || (session.remote && session.remote.host) || ''
+    );
+    return `${normalized.user || ''}${normalized.user ? '@' : ''}${normalized.host || ''}`;
+  }).find(Boolean);
+  if (sessionRemote) return sessionRemote;
+  return tasks.map(task => task.assignee).find(Boolean) || '';
+}
+
+function harnessSessionProjectId(session) {
+  const linked = remoteClaudeLinkedContext(session);
+  if (linked.task && linked.task.project_id) return linked.task.project_id;
+  if (linked.agent && linked.agent.project_id) return linked.agent.project_id;
+  return '__unbound__';
+}
+
+function harnessSessionTaskId(session) {
+  const linked = remoteClaudeLinkedContext(session);
+  return (linked.task && linked.task.task_id) || (linked.agent && linked.agent.current_task_id) || session.current_task_id || '';
+}
+
+function harnessPlaceholderSessionFromAgent(agent, tasksById, statusOverride = '') {
+  const task = tasksById.get(agent.current_task_id || agent.task_id || '');
+  const status = String(statusOverride || agent.effective_status || agent.status || 'idle').toLowerCase();
+  const title = task ? (task.title || task.task_id) : (agent.agent_id || 'worker');
+  return {
+    display_id: agent.session_ref || agent.agent_id || '',
+    bridge_session_id: agent.session_ref || '',
+    title,
+    status,
+    cwd: agent.worktree || '',
+    updated_at: agent.updated_at || agent.last_heartbeat_at || '',
+    remote_host: agent.remote_host || '',
+    remote_user: agent.remote_user || '',
+    harness_worker_placeholder: true,
+    harness_review_placeholder: status === 'review',
+    agent_id: agent.agent_id || '',
+    current_task_id: agent.current_task_id || agent.task_id || '',
+    last_message: {
+      role: 'harness',
+      content: agent.message || (task ? `${_currentLang === 'zh' ? '绑定 TODO' : 'Linked TODO'}: ${task.title || task.task_id}` : ''),
+      timestamp: agent.updated_at || agent.last_heartbeat_at || ''
+    }
+  };
+}
+
+function renderHarnessTaskCard(item, linkedAgents = [], linkedSessions = [], remoteReady = true) {
+  const status = String(item.status || 'todo').toLowerCase();
+  const linkedCount = linkedSessions.length;
+  const boundAgents = harnessUniqueAgents(linkedAgents.filter(agent => harnessWorkerSessionRef(agent)));
+  const hasReviewEvidence = harnessTaskHasReviewEvidence(item);
+  const evidenceAuthors = harnessTaskEvidenceAuthors(item);
+  let bindingState = _currentLang === 'zh' ? '未绑定 worker' : 'no linked worker';
+  if (linkedCount) {
+    bindingState = `${_currentLang === 'zh' ? '绑定' : 'linked'} ${linkedCount} worker`;
+  } else if (boundAgents.length) {
+    bindingState = remoteReady
+      ? `${_currentLang === 'zh' ? '绑定' : 'linked'} 0/${boundAgents.length} worker${_currentLang === 'zh' ? ' 在线' : ' online'}`
+      : `${_currentLang === 'zh' ? '绑定' : 'linked'} ${boundAgents.length} worker ${_currentLang === 'zh' ? '连接中' : 'connecting'}`;
+  } else if (hasReviewEvidence) {
+    bindingState = _currentLang === 'zh' ? '已提交，待你审查' : 'submitted for review';
+  }
+  const meta = [
+    item.assignee ? `owner ${item.assignee}` : '',
+    item.due_at ? `due ${item.due_at}` : '',
+    bindingState
+  ].filter(Boolean).join(' · ');
+  const sessionNames = linkedSessions
+    .map((session, index) => remoteClaudeTitle(session, index))
+    .filter(Boolean);
+  const missingAgentNames = !sessionNames.length
+    ? boundAgents.map(agent => `${harnessAgentLabel(agent)} · ${remoteReady ? (_currentLang === 'zh' ? 'session 不在线' : 'session offline') : (_currentLang === 'zh' ? 'session 连接中' : 'session connecting')}`)
+    : [];
+  const evidenceNames = !sessionNames.length && !missingAgentNames.length && hasReviewEvidence
+    ? evidenceAuthors.map(author => `${_currentLang === 'zh' ? '提交' : 'submitted by'}: ${author}`)
+    : [];
+  const binding = Array.from(new Set(sessionNames.concat(missingAgentNames).concat(evidenceNames))).slice(0, 3).join(' · ');
+  return `<div class="harness-card ${esc(status)}">
+    <div class="harness-card-top">
+      <div class="harness-card-title">${esc(item.title || item.task_id || 'TODO')}</div>
+      <span class="harness-pill">${esc(harnessStatusText(status))}</span>
+    </div>
+    ${meta ? `<div class="harness-meta">${esc(meta)}</div>` : ''}
+    ${binding ? `<div class="harness-meta">${esc(binding)}</div>` : ''}
+    ${item.description ? `<div class="harness-preview">${esc(item.description)}</div>` : ''}
+  </div>`;
+}
+
+function renderHarnessProjectGroup(projectId, tasks, project, agentsByTask, sessions, projectAgents = [], remoteReady = true) {
+  const collapsed = harnessCollapsedProjects.has(projectId);
+  const tasksById = new Map(tasks.map(task => [task.task_id, task]));
+  const boundAgents = harnessUniqueAgents(projectAgents.filter(agent => harnessWorkerSessionRef(agent)));
+  const isSurveyPool = boundAgents.some(harnessAgentIsSurveyPool) || projectAgents.some(harnessAgentIsSurveyPool);
+  const projectTitle = isSurveyPool
+    ? 'Survey pool'
+    : projectId === '__unbound__'
+    ? (_currentLang === 'zh' ? '未绑定 Sessions' : 'Unbound Sessions')
+    : ((project && (project.title || project.name)) || projectId || 'default');
+  const remoteLabel = harnessProjectRemoteLabel(tasks, agentsByTask, sessions, projectAgents);
+  const meta = [
+    `${tasks.length} TODO`,
+    harnessWorkerCountLabel(sessions.length, boundAgents.length, remoteReady),
+    remoteLabel ? `remote ${remoteLabel}` : ''
+  ].filter(Boolean).join(' · ');
+  const encodedProjectId = encodeURIComponent(projectId || 'default');
+  const todoCards = tasks.map(task => {
+    const taskSessions = sessions.filter(session => harnessSessionTaskId(session) === task.task_id);
+    return renderHarnessTaskCard(task, agentsByTask.get(task.task_id) || [], taskSessions, remoteReady);
+  }).join('') || `<div class="harness-empty-row">${esc(_currentLang === 'zh' ? '暂无 TODO' : 'No TODO')}</div>`;
+  const boundPlaceholders = boundAgents
+    .filter(agent => !sessions.some(session => harnessAgentMatchesRemoteSession(agent, session)))
+    .map(agent => harnessPlaceholderSessionFromAgent(agent, tasksById, remoteReady ? '' : 'loading'));
+  const workerCards = sessions.concat(boundPlaceholders);
+  const sessionCards = workerCards
+    .slice()
+    .sort((a, b) => {
+      const ac = remoteClaudeLinkedContext(a);
+      const bc = remoteClaudeLinkedContext(b);
+      return ac.taskIndex - bc.taskIndex || String(remoteClaudeTitle(a, 0)).localeCompare(String(remoteClaudeTitle(b, 0)));
+    })
+    .map((session, i) => renderRemoteClaudeSessionCard(session, i))
+    .join('') || `<div class="harness-empty-row">${esc(_currentLang === 'zh' ? '暂无绑定 worker' : 'No linked worker')}</div>`;
+  return `<div class="harness-project-group${collapsed ? ' collapsed' : ''}">
+    <button type="button" class="harness-project-head" onclick="toggleHarnessProject('${esc(encodedProjectId)}')" aria-expanded="${collapsed ? 'false' : 'true'}">
+      <div style="min-width:0;">
+        <div class="harness-project-name">${esc(projectTitle)}</div>
+        <div class="harness-project-meta">${esc(meta)}</div>
+      </div>
+      <span class="harness-project-toggle">⌄</span>
+    </button>
+    <div class="harness-project-body" data-harness-project="${esc(projectId || 'default')}">
+      <div class="harness-project-row">
+        <div class="harness-project-row-head"><span>TODO</span><span>${esc(String(tasks.length))}</span></div>
+        <div class="harness-project-row-track">${todoCards}</div>
+      </div>
+      <div class="harness-project-row">
+        <div class="harness-project-row-head"><span>${esc(_currentLang === 'zh' ? 'Workers' : 'Workers')}</span><span>${esc(harnessWorkerCountLabel(sessions.length, boundAgents.length, remoteReady))}</span></div>
+        <div class="harness-project-row-track">${sessionCards}</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderHarnessCard(kind, item) {
+  if (kind === 'task') {
+    return renderHarnessTaskCard(item, Array.isArray(item._agents) ? item._agents : [], []);
+  }
+  if (kind === 'agent') {
+    const status = String(item.effective_status || item.status || 'idle').toLowerCase();
+    const meta = [
+      item.project_id ? `project ${item.project_id}` : '',
+      item.current_task_id ? `task ${item.current_task_id}` : '',
+      `heartbeat ${harnessFormatAge(item.heartbeat_age_seconds)}`
+    ].filter(Boolean).join(' · ');
+    return `<div class="harness-card ${esc(status)}">
+      <div class="harness-card-top">
+        <div class="harness-card-title">${esc(item.agent_id || 'worker')}</div>
+        <span class="harness-pill">${esc(item.needs_user ? harnessStatusText('needs_user') : harnessStatusText(status))}</span>
+      </div>
+      <div class="harness-meta">${esc(meta)}</div>
+      ${item.message ? `<div class="harness-preview">${esc(item.message)}</div>` : ''}
+    </div>`;
+  }
+  const status = String(item.status || '').toLowerCase();
+  const meta = [item.task_id ? `task ${item.task_id}` : '', item.agent_id ? `agent ${item.agent_id}` : ''].filter(Boolean).join(' · ');
+  return `<div class="harness-card ${esc(status)}">
+    <div class="harness-card-top">
+      <div class="harness-card-title">${esc(item.run_id || 'verified run')}</div>
+      <span class="harness-pill">${esc(harnessStatusText(item.verifier && item.verifier.status === 'passed' ? 'verified' : status))}</span>
+    </div>
+    ${meta ? `<div class="harness-meta">${esc(meta)}</div>` : ''}
+    ${item.summary || item.command ? `<div class="harness-preview">${esc(item.summary || item.command)}</div>` : ''}
+  </div>`;
+}
+
+function renderHarnessState(payload) {
+  const grid = document.getElementById('harness-grid');
+  const statusEl = document.getElementById('harness-status');
+  if (!grid || !statusEl) return;
+  harnessState = payload;
+  const ok = payload && payload.ok !== false;
+  const tasks = Array.isArray(payload && payload.tasks) ? payload.tasks : [];
+  const agents = Array.isArray(payload && payload.agents) ? payload.agents : [];
+  const projects = Array.isArray(payload && payload.projects) ? payload.projects : [];
+  const projectsById = new Map();
+  projects.forEach(project => {
+    if (project && project.project_id) projectsById.set(project.project_id, project);
+  });
+  if (!ok) {
+    statusEl.textContent = (payload && payload.error) || (_currentLang === 'zh' ? 'Harness 不可用' : 'Harness unavailable');
+    grid.innerHTML = `<div class="harness-card error"><div class="harness-preview">${esc(statusEl.textContent)}</div></div>`;
+    return;
+  }
+  const openTasks = tasks
+    .filter(t => String(t.status || '').toLowerCase() !== 'done')
+    .sort((a, b) => harnessTaskRank(a) - harnessTaskRank(b));
+  const openTaskIds = new Set(openTasks.map(task => task.task_id).filter(Boolean));
+  const openTaskStatusById = new Map(openTasks.map(task => [task.task_id, String(task.status || '').toLowerCase()]));
+  const visibleWorkers = agents.filter(agent => isHarnessVisibleWorker(agent, openTaskIds, projectsById));
+  const sessionRefWorkers = agents.filter(agent => isHarnessSessionBackedWorker(agent, openTaskIds, projectsById));
+  const remotePayload = remoteClaudePayload || window.__lastRemoteClaudePayload || {};
+  const remoteReady = remoteClaudeLoaded || !!(remotePayload && (Array.isArray(remotePayload.sessions) || Array.isArray(remotePayload.remotes)));
+  const remotes = Array.isArray(remotePayload && remotePayload.remotes) ? remotePayload.remotes : [];
+  const liveSessions = Array.isArray(remotePayload && remotePayload.sessions) ? remotePayload.sessions : remoteClaudeSessions;
+  const realLiveSessions = liveSessions.filter(session => (
+    session && !session.harness_review_placeholder && !session.harness_worker_placeholder
+  ));
+  const pairedEntries = [];
+  const pairedKeys = new Set();
+  realLiveSessions.forEach(session => {
+    const linked = remoteClaudeLinkedContext(session);
+    const agent = linked.agent;
+    if (!agent || !isHarnessVisibleWorker(agent, openTaskIds, projectsById) || !harnessAgentMatchesRemoteSession(agent, session)) return;
+    const key = remoteClaudeSessionKey(session) || harnessWorkerSessionRef(agent);
+    if (key && pairedKeys.has(key)) return;
+    if (key) pairedKeys.add(key);
+    pairedEntries.push({ session, agent });
+  });
+  const pairedWorkers = pairedEntries.map(entry => entry.agent);
+  const pairedSessions = pairedEntries.map(entry => entry.session);
+  const boundWorkerCount = harnessUniqueAgents(sessionRefWorkers).length;
+  const needsUser = pairedWorkers.filter(a => a && a.needs_user).length;
+  const stale = pairedWorkers.filter(a => {
+    if (!a || !a.stale) return false;
+    const taskId = a.current_task_id || a.task_id || '';
+    const taskStatus = openTaskStatusById.get(taskId) || '';
+    const agentStatus = String(a.status || '').toLowerCase();
+    return taskStatus !== 'review' && agentStatus !== 'review';
+  }).length;
+  const workerCount = pairedSessions.length;
+  const projectIdsWithRows = new Set(pairedSessions.map(session => harnessSessionProjectId(session)));
+  sessionRefWorkers.forEach(agent => {
+    if (agent && agent.project_id) projectIdsWithRows.add(agent.project_id);
+  });
+  openTasks.forEach(task => {
+    projectIdsWithRows.add(task.project_id || 'default');
+  });
+  const displayedOpenTasks = openTasks.filter(task => projectIdsWithRows.has(task.project_id || 'default'));
+  const okRemoteCount = remotes.filter(item => item && item.ok).length;
+  statusEl.textContent = _currentLang === 'zh'
+    ? `${projectIdsWithRows.size} 项目 · ${displayedOpenTasks.length} TODO · ${harnessWorkerCountLabel(workerCount, boundWorkerCount, remoteReady)} · ${needsUser} 等用户 · ${remoteReady ? stale : 0} 失联${remoteReady && remotes.length ? ` · ${okRemoteCount || remotes.length}/${remotes.length} 电脑可达` : remoteClaudeLoading ? ' · 正在连接远端' : ''}`
+    : `${projectIdsWithRows.size} projects · ${displayedOpenTasks.length} TODO · ${harnessWorkerCountLabel(workerCount, boundWorkerCount, remoteReady)} · ${needsUser} needs user · ${remoteReady ? stale : 0} stale${remoteReady && remotes.length ? ` · ${okRemoteCount || remotes.length}/${remotes.length} computers` : remoteClaudeLoading ? ' · connecting remotes' : ''}`;
+  const cards = [];
+  const agentsByTask = new Map();
+  sessionRefWorkers.forEach(agent => {
+    const taskId = agent && (agent.current_task_id || agent.task_id);
+    if (!taskId) return;
+    if (!agentsByTask.has(taskId)) agentsByTask.set(taskId, []);
+    agentsByTask.get(taskId).push(agent);
+  });
+  const projectRows = new Map();
+  const ensureProjectRow = (projectId) => {
+    const id = projectId || 'default';
+    if (!projectRows.has(id)) projectRows.set(id, { tasks: [], sessions: [], agents: [] });
+    return projectRows.get(id);
+  };
+  sessionRefWorkers.forEach(agent => {
+    const row = ensureProjectRow(agent.project_id || 'default');
+    if (!row.agents.some(item => harnessWorkerSessionRef(item) === harnessWorkerSessionRef(agent))) row.agents.push(agent);
+  });
+  displayedOpenTasks.forEach(task => {
+    const projectId = task.project_id || 'default';
+    ensureProjectRow(projectId).tasks.push(task);
+  });
+  pairedSessions.forEach(session => {
+    ensureProjectRow(harnessSessionProjectId(session)).sessions.push(session);
+  });
+  Array.from(projectRows.entries())
+    .sort((a, b) => {
+      const rankA = a[1].tasks.length ? Math.min(...a[1].tasks.map(harnessTaskRank)) : 6;
+      const rankB = b[1].tasks.length ? Math.min(...b[1].tasks.map(harnessTaskRank)) : 6;
+      return rankA - rankB || String(a[0]).localeCompare(String(b[0]));
+    })
+    .forEach(([projectId, row]) => {
+      cards.push(renderHarnessProjectGroup(projectId, row.tasks, projectsById.get(projectId), agentsByTask, row.sessions, row.agents, remoteReady));
+    });
+  if (!cards.length) {
+    cards.push(`<div class="harness-card"><div class="harness-preview">${esc(_currentLang === 'zh' ? '暂无项目 TODO 或 worker session。' : 'No project TODO or worker session yet.')}</div></div>`);
+  }
+  grid.innerHTML = cards.join('');
+  grid.querySelectorAll('.harness-project-row-track').forEach(bindHorizontalWheelScroll);
+}
+
+async function refreshHarnessState(showToast = false) {
+  if (harnessLoading) return;
+  const btn = document.getElementById('harness-refresh');
+  harnessLoading = true;
+  if (btn) btn.disabled = true;
+  try {
+    const data = await api('GET', '/proxy_harness_state');
+    harnessState = data;
+    renderHarnessState(data);
+    if (showToast) toast(_currentLang === 'zh' ? 'Harness 已刷新' : 'Harness refreshed', 1600);
+  } catch (e) {
+    renderHarnessState({ ok: false, error: e.message, tasks: [], agents: [], runs: [] });
+    if (showToast) toast(e.message, 3000);
+  } finally {
+    harnessLoading = false;
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function createHarnessTodo() {
+  const title = prompt(_currentLang === 'zh' ? 'TODO 标题' : 'TODO title');
+  if (!title || !title.trim()) return;
+  const projectId = prompt(_currentLang === 'zh' ? '项目 ID（默认 default）' : 'Project ID (default)') || 'default';
+  const taskId = `task_${Date.now().toString(36)}`;
+  try {
+    await api('POST', '/proxy_harness_event', {
+      action: 'task_upsert',
+      project_id: projectId.trim() || 'default',
+      task_id: taskId,
+      title: title.trim(),
+      status: 'todo'
+    });
+    await refreshAgentOps(false);
+    toast(_currentLang === 'zh' ? 'TODO 已创建' : 'TODO created', 1600);
+  } catch (e) {
+    toast((_currentLang === 'zh' ? '创建失败: ' : 'Create failed: ') + e.message, 3000);
+  }
+}
+
+function remoteClaudeSessionKey(session) {
+  return String(
+    (session && (session.remote_key || session.display_id || session.bridge_session_id || session.session_id || session.id || session.job_id)) || ''
+  );
+}
+
+function loadRemoteClaudeCollapsedRemotes() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(REMOTE_CLAUDE_COLLAPSED_REMOTES_KEY) || '[]');
+    remoteClaudeCollapsedRemotes = new Set(Array.isArray(raw) ? raw.map(String) : []);
+  } catch (_) {
+    remoteClaudeCollapsedRemotes = new Set();
+  }
+}
+
+function saveRemoteClaudeCollapsedRemotes() {
+  try {
+    localStorage.setItem(REMOTE_CLAUDE_COLLAPSED_REMOTES_KEY, JSON.stringify(Array.from(remoteClaudeCollapsedRemotes)));
+  } catch (_) {}
+}
+
+loadRemoteClaudeCollapsedRemotes();
+
+function toggleRemoteClaudeComputer(encodedRemoteId) {
+  const remoteId = decodeURIComponent(String(encodedRemoteId || 'remote'));
+  if (remoteClaudeCollapsedRemotes.has(remoteId)) remoteClaudeCollapsedRemotes.delete(remoteId);
+  else remoteClaudeCollapsedRemotes.add(remoteId);
+  saveRemoteClaudeCollapsedRemotes();
+  if (window.__lastRemoteClaudePayload) renderRemoteClaudeSessions(window.__lastRemoteClaudePayload);
+}
+
+function remoteClaudeTitle(session, index) {
+  const raw = String((session && (session.title || session.name)) || '').trim();
+  if (raw) return raw;
+  const id = remoteClaudeSessionKey(session);
+  return id ? id : `Claude Session ${index + 1}`;
+}
+
+function remoteClaudeStatusText(status) {
+  const s = String(status || '').trim().toLowerCase();
+  const zh = _currentLang === 'zh';
+  if (s === 'loading' || s === 'connecting') return zh ? '连接中' : 'Connecting';
+  if (s === 'active') return zh ? '进行中' : 'Active';
+  if (s === 'idle') return zh ? '空闲' : 'Idle';
+  if (s === 'shell') return zh ? 'Shell 中' : 'Shell';
+  if (s === 'running' || s === 'working' || s === 'busy') return zh ? '运行中' : 'Running';
+  if (s === 'needs_user') return zh ? '等用户' : 'Needs user';
+  if (s === 'blocked') return zh ? '阻塞' : 'Blocked';
+  if (s === 'offline') return zh ? '离线' : 'Offline';
+  if (s === 'review') return zh ? '待审查' : 'Review';
+  if (s === 'completed' || s === 'done') return zh ? '已完成' : 'Done';
+  return status || (zh ? '未知' : 'Unknown');
+}
+
+function remoteClaudeFormatTime(value) {
+  if (!value) return '';
+  let d;
+  if (typeof value === 'number') d = new Date(value > 1000000000000 ? value : value * 1000);
+  else d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = n => String(n).padStart(2, '0');
+  const now = new Date();
+  const time = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  if (d.toDateString() === now.toDateString()) return time;
+  return `${pad(d.getMonth()+1)}-${pad(d.getDate())} ${time}`;
+}
+
+function remoteClaudePreviewText(message) {
+  const text = String((message && message.content) || '').replace(/\s+/g, ' ').trim();
+  return text || (_currentLang === 'zh' ? '暂无 transcript 预览' : 'No transcript preview yet');
+}
+
+function remoteClaudeSessionKeys(session) {
+  return [
+    session && session.remote_key,
+    session && session.display_id,
+    session && session.bridge_session_id,
+    session && session.session_id,
+    session && session.id,
+    session && session.job_id
+  ].filter(Boolean).map(String);
+}
+
+function remoteClaudeEquivalentKeys(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+  const keys = [raw];
+  if (raw.includes('::')) {
+    keys.push(raw.split('::').pop());
+  }
+  return Array.from(new Set(keys.filter(Boolean)));
+}
+
+function remoteClaudeLinkedContext(session) {
+  const keys = new Set(remoteClaudeSessionKeys(session).flatMap(remoteClaudeEquivalentKeys));
+  const agents = Array.isArray(harnessState && harnessState.agents) ? harnessState.agents : [];
+  const tasks = Array.isArray(harnessState && harnessState.tasks) ? harnessState.tasks : [];
+  const agent = agents.find(item => {
+    if (!item || !item.session_ref) return false;
+    return remoteClaudeEquivalentKeys(item.session_ref).some(key => keys.has(key));
+  });
+  const task = agent ? tasks.find(item => item && item.task_id === agent.current_task_id) : null;
+  const taskIndex = task ? tasks.findIndex(item => item && item.task_id === task.task_id) : 9999;
+  return { agent: agent || null, task: task || null, taskIndex: taskIndex < 0 ? 9999 : taskIndex };
+}
+
+function remoteClaudeNormalizeUserHost(user, host) {
+  let cleanUser = String(user || '').trim();
+  let cleanHost = String(host || '').trim();
+  if (cleanHost.includes('@')) {
+    const parts = cleanHost.split('@').map(part => part.trim()).filter(Boolean);
+    if (parts.length) cleanHost = parts[parts.length - 1];
+    if (!cleanUser && parts.length >= 2) cleanUser = parts[parts.length - 2];
+  }
+  return { user: cleanUser, host: cleanHost };
+}
+
+function renderRemoteClaudeSessionCard(session, index) {
+  const key = remoteClaudeSessionKey(session);
+  const title = remoteClaudeTitle(session, index);
+  const idLine = session.bridge_session_id || session.session_id || session.job_id || session.id || '';
+  const cwd = session.cwd || '';
+  const time = remoteClaudeFormatTime(session.updated_at);
+  const linked = remoteClaudeLinkedContext(session);
+  const harnessStatus = linked.agent ? String(linked.agent.effective_status || linked.agent.status || '').toLowerCase() : '';
+  const taskStatus = linked.task ? String(linked.task.status || '').toLowerCase() : '';
+  const liveStatus = String(session.status || '').toLowerCase();
+  const reviewOnly = !!session.harness_review_placeholder;
+  const placeholderOnly = reviewOnly || !!session.harness_worker_placeholder || !key;
+  const status = reviewOnly ? 'review' : (liveStatus || harnessStatus || taskStatus || 'idle');
+  const linkedLine = linked.task
+    ? `${_currentLang === 'zh' ? '绑定 TODO' : 'Linked TODO'}: ${linked.task.title || linked.task.task_id}${taskStatus ? ' · ' + harnessStatusText(taskStatus) : ''}`
+    : '';
+  const reviewLine = reviewOnly ? (_currentLang === 'zh' ? '等待审查，不自动清理' : 'Waiting for review, not auto-cleaned') : '';
+  const unmanagedLine = (!linked.agent && !reviewOnly && !session.harness_worker_placeholder)
+    ? (_currentLang === 'zh' ? '未接管：不会自动分配 TODO 或自动发送' : 'Unmanaged: no automatic TODO assignment or messages')
+    : '';
+  const attrs = placeholderOnly
+    ? `class="remote-claude-card ${reviewOnly ? 'review-placeholder' : 'placeholder'}"`
+    : `class="remote-claude-card" onclick="openRemoteClaudeSession('${esc(key)}')"`;
+  return `
+    <div ${attrs}>
+      <div class="remote-claude-card-top">
+        <div class="remote-claude-card-title">${esc(title)}</div>
+        <span class="remote-claude-pill ${esc(status)}">${esc(remoteClaudeStatusText(status))}</span>
+      </div>
+      <div class="remote-claude-card-meta">${esc(idLine)}${time ? ' · ' + esc(time) : ''}</div>
+      ${cwd ? `<div class="remote-claude-card-meta">${esc(cwd)}</div>` : ''}
+      ${linkedLine ? `<div class="remote-claude-card-meta">${esc(linkedLine)}</div>` : ''}
+      ${reviewLine ? `<div class="remote-claude-card-meta">${esc(reviewLine)}</div>` : ''}
+      ${unmanagedLine ? `<div class="remote-claude-card-meta">${esc(unmanagedLine)}</div>` : ''}
+      <div class="remote-claude-preview">${esc(remoteClaudePreviewText(session.last_message))}</div>
+    </div>`;
+}
+
+function renderRemoteClaudePlaceholderCard(index, text) {
+  return `
+    <div class="remote-claude-card placeholder">
+      <div class="remote-claude-card-top">
+        <div class="remote-claude-card-title">Claude Session ${index + 1}</div>
+        <span class="remote-claude-pill error">--</span>
+      </div>
+      <div class="remote-claude-preview">${esc(text)}</div>
+    </div>`;
+}
+
+function renderRemoteClaudeComputerGroup(remoteId, remoteLabel, sessions, options = {}) {
+  const placeholderText = options.placeholderText || '';
+  const collapsed = remoteClaudeCollapsedRemotes.has(remoteId);
+  const busy = sessions.filter(session => ['busy', 'running', 'working', 'shell'].includes(String(session.status || '').toLowerCase())).length;
+  const meta = [
+    `${sessions.length} ${sessions.length === 1 ? 'session' : 'sessions'}`,
+    busy ? `${busy} ${_currentLang === 'zh' ? '运行中' : 'running'}` : ''
+  ].filter(Boolean).join(' · ');
+  const encodedRemoteId = encodeURIComponent(remoteId || 'remote');
+  const displaySessions = sessions.slice().sort((a, b) => {
+    const ac = remoteClaudeLinkedContext(a);
+    const bc = remoteClaudeLinkedContext(b);
+    return ac.taskIndex - bc.taskIndex || String(remoteClaudeTitle(a, 0)).localeCompare(String(remoteClaudeTitle(b, 0)));
+  });
+  const cards = displaySessions.map((session, i) => renderRemoteClaudeSessionCard(session, i));
+  if (!cards.length) {
+    cards.push(renderRemoteClaudePlaceholderCard(0, placeholderText || (_currentLang === 'zh' ? '未发现 session' : 'No session found')));
+  }
+  return `<div class="remote-computer-group${collapsed ? ' collapsed' : ''}">
+    <button type="button" class="remote-computer-head" onclick="toggleRemoteClaudeComputer('${esc(encodedRemoteId)}')" aria-expanded="${collapsed ? 'false' : 'true'}">
+      <div style="min-width:0;">
+        <div class="remote-computer-name">${esc(remoteLabel || remoteId || 'Remote Claude')}</div>
+        <div class="remote-computer-meta">${esc(meta)}</div>
+      </div>
+      <span class="remote-computer-toggle">⌄</span>
+    </button>
+    <div class="remote-computer-body" data-remote-claude-computer="${esc(remoteId || 'remote')}">${cards.join('')}</div>
+  </div>`;
+}
+
+function renderRemoteClaudePlaceholders(label) {
+  const grid = document.getElementById('remote-claude-grid');
+  if (!grid) return;
+  const text = label || (_currentLang === 'zh' ? '等待远端 Claude session' : 'Waiting for remote Claude session');
+  grid.innerHTML = renderRemoteClaudeComputerGroup('remote', 'Remote Claude', [], { placeholderText: text });
+  grid.querySelectorAll('.remote-computer-body').forEach(bindHorizontalWheelScroll);
+}
+
+function renderRemoteClaudeSessions(payload) {
+  remoteClaudePayload = payload || {};
+  window.__lastRemoteClaudePayload = payload || {};
+  const sessions = Array.isArray(payload && payload.sessions) ? payload.sessions : [];
+  const remotes = Array.isArray(payload && payload.remotes) ? payload.remotes : [];
+  remoteClaudeSessions = sessions;
+  if (harnessState) renderHarnessState(harnessState);
+  const grid = document.getElementById('remote-claude-grid');
+  const statusEl = document.getElementById('remote-claude-status');
+  if (!grid || !statusEl) return;
+  if ((!payload || !payload.ok) && !sessions.length && !remotes.length) {
+    const msg = (payload && payload.error) || (_currentLang === 'zh' ? '远端 Claude 不可达' : 'Remote Claude unavailable');
+    statusEl.textContent = msg;
+    renderRemoteClaudePlaceholders(msg);
+    return;
+  }
+  const remote = payload.remote || {};
+  const remoteLabel = `${remote.user || ''}${remote.user ? '@' : ''}${remote.host || ''}`;
+  const okRemoteCount = remotes.filter(item => item && item.ok).length;
+  const remoteCount = remotes.length || (remoteLabel ? 1 : 0);
+  if (payload && payload.ok) {
+    statusEl.textContent = _currentLang === 'zh'
+      ? `${remoteCount} 台电脑 · ${okRemoteCount || remoteCount} 可达 · ${sessions.length} session`
+      : `${remoteCount} computers · ${okRemoteCount || remoteCount} reachable · ${sessions.length} sessions`;
+  } else {
+    const msg = (payload && payload.error) || (_currentLang === 'zh' ? '远端 Claude 不可达' : 'Remote Claude unavailable');
+    statusEl.textContent = remoteCount
+      ? `${remoteCount} ${_currentLang === 'zh' ? '台电脑' : 'computers'} · ${_currentLang === 'zh' ? '部分不可达' : 'partial unavailable'} · ${msg}`
+      : `${remoteLabel} · ${_currentLang === 'zh' ? '使用上次缓存' : 'using last-known cache'} · ${msg}`;
+  }
+  const groups = new Map();
+  remotes.forEach(remoteItem => {
+    if (!remoteItem) return;
+    const normalized = remoteClaudeNormalizeUserHost(remoteItem.user || '', remoteItem.host || remoteItem.target || '');
+    const host = normalized.host;
+    const user = normalized.user;
+    const groupId = `${user || 'remote'}@${host || remoteItem.hostname || 'local'}`;
+    const groupLabel = `${user || ''}${user ? '@' : ''}${host || remoteItem.hostname || ''}` || (_currentLang === 'zh' ? '远端 Claude' : 'Remote Claude');
+    if (!groups.has(groupId)) {
+      groups.set(groupId, {
+        id: groupId,
+        label: groupLabel,
+        sessions: [],
+        placeholderText: remoteItem.ok
+          ? (_currentLang === 'zh' ? '已连接，未发现 Claude session' : 'Connected, no Claude session found')
+          : (remoteItem.error || (_currentLang === 'zh' ? '连接失败' : 'Connection failed'))
+      });
+    }
+  });
+  sessions.forEach(session => {
+    const sessionRemote = session.remote || {};
+    const normalized = remoteClaudeNormalizeUserHost(
+      session.remote_user || session.user || sessionRemote.user || remote.user || '',
+      session.remote_host || session.host || sessionRemote.host || remote.host || ''
+    );
+    const host = normalized.host;
+    const user = normalized.user;
+    const groupId = `${user || 'remote'}@${host || 'local'}`;
+    const groupLabel = `${user || ''}${user ? '@' : ''}${host || ''}` || (_currentLang === 'zh' ? '远端 Claude' : 'Remote Claude');
+    if (!groups.has(groupId)) groups.set(groupId, { id: groupId, label: groupLabel, sessions: [] });
+    groups.get(groupId).sessions.push(session);
+  });
+  if (!groups.size) {
+    renderRemoteClaudePlaceholders(_currentLang === 'zh' ? '远端没有可读取的 Claude session' : 'No readable remote Claude session');
+    return;
+  }
+  grid.innerHTML = Array.from(groups.values())
+    .sort((a, b) => a.label.localeCompare(b.label))
+    .map(group => renderRemoteClaudeComputerGroup(group.id, group.label, group.sessions, { placeholderText: group.placeholderText }))
+    .join('');
+  grid.querySelectorAll('.remote-computer-body').forEach(bindHorizontalWheelScroll);
+}
+
+async function refreshRemoteClaudeSessions(showToast = false) {
+  const btn = document.getElementById('remote-claude-refresh');
+  const statusEl = document.getElementById('remote-claude-status');
+  if (btn) btn.disabled = true;
+  remoteClaudeLoading = true;
+  if (harnessState) renderHarnessState(harnessState);
+  if (statusEl) statusEl.textContent = _currentLang === 'zh' ? '正在连接远端 Claude agents...' : 'Connecting remote Claude agents...';
+  try {
+    const data = await api('GET', '/proxy_remote_claude_sessions?limit=24');
+    remoteClaudeLoaded = true;
+    renderRemoteClaudeSessions(data);
+    if (showToast) {
+      toast(data.ok ? (_currentLang === 'zh' ? '远端 Claude sessions 已刷新' : 'Remote Claude sessions refreshed') : (data.error || 'Remote Claude unavailable'), data.ok ? 1800 : 3500);
+    }
+  } catch (e) {
+    remoteClaudeLoaded = true;
+    renderRemoteClaudeSessions({ ok: false, error: e.message, sessions: [] });
+    if (showToast) toast(e.message, 3500);
+  } finally {
+    remoteClaudeLoading = false;
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function refreshAgentOps(showToast = false) {
+  const btn = document.getElementById('harness-refresh');
+  if (btn) btn.disabled = true;
+  try {
+    await Promise.all([
+      refreshHarnessState(false),
+      refreshRemoteClaudeSessions(false)
+    ]);
+    if (showToast) toast(_currentLang === 'zh' ? '项目状态已刷新' : 'Project state refreshed', 1600);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function openRemoteClaudeSession(sessionId) {
+  if (!sessionId) return;
+  openRemoteClaudeSessionId = sessionId;
+  const session = remoteClaudeSessions.find(s => remoteClaudeSessionKey(s) === sessionId) || {};
+  const titleEl = document.getElementById('remote-claude-title');
+  if (titleEl) titleEl.textContent = remoteClaudeTitle(session, 0);
+  const inputEl = document.getElementById('remote-claude-input');
+  if (inputEl) inputEl.value = '';
+  const page = document.getElementById('remote-claude-page');
+  if (page) page.classList.remove('offscreen');
+  const tabBar = document.querySelector('.tab-bar');
+  if (tabBar) tabBar.classList.add('hidden');
+  loadRemoteClaudeTranscript(sessionId);
+}
+
+function closeRemoteClaudePage() {
+  openRemoteClaudeSessionId = '';
+  const page = document.getElementById('remote-claude-page');
+  if (page) page.classList.add('offscreen');
+  if (!currentGroupId) {
+    const tabBar = document.querySelector('.tab-bar');
+    if (tabBar) tabBar.classList.remove('hidden');
+  }
+}
+
+function reloadOpenRemoteClaudeSession() {
+  if (openRemoteClaudeSessionId) loadRemoteClaudeTranscript(openRemoteClaudeSessionId);
+}
+
+function renderRemoteClaudeTranscript(messages, error) {
+  const body = document.getElementById('remote-claude-transcript');
+  if (!body) return;
+  if (error) {
+    body.innerHTML = `<div class="remote-claude-empty">${esc(error)}</div>`;
+    return;
+  }
+  if (!messages || !messages.length) {
+    body.innerHTML = `<div class="remote-claude-empty">${esc(_currentLang === 'zh' ? '这个 session 暂时没有可显示的 transcript。' : 'No transcript messages for this session yet.')}</div>`;
+    return;
+  }
+  body.innerHTML = messages.map((m) => {
+    const role = String(m.role || m.type || 'event').toLowerCase();
+    const cls = role === 'user' ? ' user' : '';
+    const meta = `${role || 'event'}${m.timestamp ? ' · ' + remoteClaudeFormatTime(m.timestamp) : ''}`;
+    return `<div class="remote-claude-message${cls}">
+      <div class="remote-claude-message-meta">${esc(meta)}</div>
+      <div class="remote-claude-message-bubble">${esc(m.content || '')}</div>
+    </div>`;
+  }).join('');
+  requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
+}
+
+async function loadRemoteClaudeTranscript(sessionId) {
+  const body = document.getElementById('remote-claude-transcript');
+  if (body) body.innerHTML = `<div class="remote-claude-empty">${esc(_currentLang === 'zh' ? '正在读取远端 transcript...' : 'Loading remote transcript...')}</div>`;
+  try {
+    const data = await api('GET', `/proxy_remote_claude_sessions/${encodeURIComponent(sessionId)}/messages?limit=120`);
+    renderRemoteClaudeTranscript(data.messages || [], data.ok ? '' : (data.error || 'Remote Claude unavailable'));
+  } catch (e) {
+    renderRemoteClaudeTranscript([], e.message);
+  }
+}
+
+function handleRemoteClaudeInputKey(event) {
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault();
+    sendRemoteClaudeMessage();
+  }
+}
+
+async function sendRemoteClaudeMessage() {
+  if (remoteClaudeSending || !openRemoteClaudeSessionId) return;
+  const inputEl = document.getElementById('remote-claude-input');
+  const sendBtn = document.getElementById('remote-claude-send');
+  const text = inputEl ? inputEl.value.trim() : '';
+  if (!text) {
+    toast(_currentLang === 'zh' ? '消息不能为空' : 'Message is empty', 1800);
+    return;
+  }
+  remoteClaudeSending = true;
+  if (sendBtn) sendBtn.disabled = true;
+  try {
+    const data = await api('POST', `/proxy_remote_claude_sessions/${encodeURIComponent(openRemoteClaudeSessionId)}/messages`, { text });
+    if (!data || data.ok === false) throw new Error((data && data.error) || 'Remote Claude send failed');
+    if (inputEl) inputEl.value = '';
+    toast(_currentLang === 'zh' ? '已发送到远端 Claude' : 'Sent to remote Claude', 1800);
+    setTimeout(() => {
+      if (openRemoteClaudeSessionId) loadRemoteClaudeTranscript(openRemoteClaudeSessionId);
+      refreshRemoteClaudeSessions(false);
+    }, 1200);
+  } catch (e) {
+    toast((_currentLang === 'zh' ? '发送失败: ' : 'Send failed: ') + e.message, 3500);
+  } finally {
+    remoteClaudeSending = false;
+    if (sendBtn) sendBtn.disabled = false;
+  }
 }
 
 let mobileAlarmTargets = [];
@@ -17610,6 +19118,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       await _consumeHubReturnParams();
       await refreshGroups();
+      refreshAgentOps(false);
       startGroupsPolling();
       await prefetchContactsBootstrap();
     } catch (e) {

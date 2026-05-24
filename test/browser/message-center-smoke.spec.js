@@ -24,7 +24,7 @@ async function stubMessageCenterNetwork(page) {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ valid: true, user_id: 'boris', has_password: true, mode: 'local' }),
+      body: JSON.stringify({ valid: true, user_id: 'test-user', has_password: true, mode: 'local' }),
     });
   });
 

@@ -16,6 +16,9 @@ from webot.subagents import get_subagent_by_session
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 from utils.runtime_paths import USER_FILES_DIR, WORKSPACE_DIR
 
+_DEFAULT_USER_FILES_DIR = USER_FILES_DIR
+_DEFAULT_WORKSPACE_DIR = WORKSPACE_DIR
+
 
 @dataclass(frozen=True)
 class SessionWorkspace:
@@ -26,7 +29,11 @@ class SessionWorkspace:
 
 
 def _user_root(user_id: str) -> Path:
-    root = WORKSPACE_DIR / "users" / os.path.basename(user_id or "anonymous")
+    safe_user = os.path.basename(user_id or "anonymous")
+    if WORKSPACE_DIR != _DEFAULT_WORKSPACE_DIR and USER_FILES_DIR == _DEFAULT_USER_FILES_DIR:
+        root = WORKSPACE_DIR / "users" / safe_user
+    else:
+        root = USER_FILES_DIR / safe_user
     root.mkdir(parents=True, exist_ok=True)
     _ensure_runtime_aliases(user_id, root)
     return root

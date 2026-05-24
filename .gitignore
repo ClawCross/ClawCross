@@ -97,3 +97,4 @@ docs/media/teamclaw-demo.mp4
 # 临时 LLM 请求调试导出（CLAWCROSS_DEBUG_LLM_PAYLOAD=1）
 data/debug_llm_payload_last.json
 .claude/settings.local.json
+.aider*

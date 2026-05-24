@@ -112,7 +112,7 @@ For the full install guide (OpenClaw, Antigravity, MiniMax, WSL, manual CLI conf
 ### Multi-Expert Collaboration, Not Just Chat
 
 - **Team-based orchestration** — combine internal agents, OpenClaw agents, and external API agents into a single Team with one-click import/export
-- **15 built-in Team Presets** — LLM Council, Nuwa All-Stars, Content Empire, Strategists, Tech Titans, and more — install and run immediately
+- **16 built-in Team Presets** — LLM Council, Nuwa All-Stars, Content Empire, Strategists, Tech Titans, and more — install and run immediately
 - **AI team builder** — ClawCross Creator discovers SOP pages, extracts roles with TinyFish, and generates editable personas plus a DAG workflow
 - **Visual orchestration** — design workflows in OASIS with sequential, parallel, branching, or DAG-style expert coordination
 

@@ -22,7 +22,7 @@ if "fastapi" not in sys.modules:
     fastapi_stub.HTTPException = HTTPException
     sys.modules["fastapi"] = fastapi_stub
 
-from webot.models import WeBotSubagentHistoryRequest, WeBotSubagentRefRequest
+from webot.models import WeBotLspRequest, WeBotSubagentHistoryRequest, WeBotSubagentRefRequest
 from webot.models import (
     WeBotApprovalResolutionRequest,
     WeBotBridgeAttachRequest,
@@ -478,6 +478,68 @@ class WeBotServiceTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 store.DEFAULT_DB_PATH = original_db_path
                 runtime_store.DEFAULT_DB_PATH = original_runtime_db_path
+
+    async def test_lsp_diagnostics_and_stubbed_operations(self):
+        with TemporaryDirectory() as tmpdir:
+            import webot.workspace as workspace
+
+            original_resolver = workspace.resolve_session_workspace
+            original_lsp_resolver = sys.modules["webot.lsp"].resolve_session_workspace
+            workspace_root = Path(tmpdir)
+            sample = workspace_root / "sample.py"
+            sample.write_text("def ok():\n    return 1\n", encoding="utf-8")
+            workspace_info = types.SimpleNamespace(cwd=str(workspace_root))
+            workspace.resolve_session_workspace = lambda username, session_id="": workspace_info
+            sys.modules["webot.lsp"].resolve_session_workspace = (
+                lambda username, session_id="": workspace_info
+            )
+            try:
+                service = WeBotService(
+                    agent=_FakeAgent({}, active_keys=set(), statuses={}),
+                    verify_auth_or_token=lambda user_id, password, token: None,
+                    extract_text=lambda content: content if isinstance(content, str) else str(content),
+                )
+
+                diagnostics = await service.run_lsp(
+                    WeBotLspRequest(
+                        user_id="alice",
+                        session_id="default",
+                        file="sample.py",
+                        timeout_seconds=5,
+                        max_diagnostics=5,
+                    ),
+                    None,
+                )
+                self.assertEqual(diagnostics["status"], "success")
+                self.assertEqual(diagnostics["language"], "py")
+                self.assertEqual(diagnostics["diagnostics"], [])
+
+                references = await service.run_lsp(
+                    WeBotLspRequest(
+                        user_id="alice",
+                        session_id="default",
+                        file="sample.py",
+                        op="references",
+                    ),
+                    None,
+                )
+                self.assertEqual(references["status"], "stub")
+                self.assertEqual(references["op"], "references")
+
+                with self.assertRaises(sys.modules["fastapi"].HTTPException) as ctx:
+                    await service.run_lsp(
+                        WeBotLspRequest(
+                            user_id="alice",
+                            session_id="default",
+                            file="sample.py",
+                            op="rename",
+                        ),
+                        None,
+                    )
+                self.assertEqual(ctx.exception.status_code, 400)
+            finally:
+                workspace.resolve_session_workspace = original_resolver
+                sys.modules["webot.lsp"].resolve_session_workspace = original_lsp_resolver
 
 
 if __name__ == "__main__":

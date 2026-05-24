@@ -200,6 +200,16 @@ const i18n = {
         subagent_runtime_relationships: 'Graph',
         subagent_runtime_current: 'Current Session',
         subagent_runtime_buddy: 'Buddy',
+        subagent_runtime_goals: 'Goals',
+        subagent_runtime_no_goals: '暂无目标',
+        subagent_runtime_claude_code: 'Claude Code',
+        subagent_runtime_probe: '探测',
+        subagent_runtime_kickoff: 'Kickoff',
+        subagent_runtime_keepalive_on: 'Keepalive On',
+        subagent_runtime_keepalive_off: 'Keepalive Off',
+        subagent_runtime_claude_probe_ok: 'Claude Code 探测成功',
+        subagent_runtime_claude_probe_failed: 'Claude Code 探测失败',
+        subagent_runtime_keepalive_updated: 'Claude keepalive 已更新',
         voice_mode: 'Voice',
         subagent_runtime_no_plan: '暂无计划',
         subagent_runtime_no_todos: '暂无 Todo',
@@ -225,7 +235,9 @@ const i18n = {
         approval_working: '处理中...',
         approval_done: '✅ 已处理',
         subagent_runtime_mode_plan: '切到 Plan',
+        subagent_runtime_mode_agent: '切到 Agent',
         subagent_runtime_mode_review: '切到 Review',
+        subagent_runtime_mode_yolo: '切到 YOLO',
         subagent_runtime_mode_execute: '切到 Execute',
         subagent_runtime_mode_updated: '会话模式已更新',
         subagent_runtime_mode_update_failed: '会话模式更新失败',
@@ -825,6 +837,9 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         oc_acp_session_placeholder: '可选；留空则按左侧 Clawcross 会话区分',
         oc_acp_session_ensure: '预热',
         oc_acp_session_ensure_title: '仅创建/预热 ACP 会话，不发送消息',
+        oc_acp_session_warming: '预热中...',
+        oc_acp_session_ready: 'ACP 会话已就绪',
+        oc_acp_session_failed: '预热失败',
         oc_internal_session_refresh_title: '从服务器刷新 WeBot 会话列表',
         // Run mode (permission mode)
         run_mode_label: '模式',
@@ -987,6 +1002,16 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         subagent_runtime_relationships: 'Graph',
         subagent_runtime_current: 'Current Session',
         subagent_runtime_buddy: 'Buddy',
+        subagent_runtime_goals: 'Goals',
+        subagent_runtime_no_goals: 'No goals yet',
+        subagent_runtime_claude_code: 'Claude Code',
+        subagent_runtime_probe: 'Probe',
+        subagent_runtime_kickoff: 'Kickoff',
+        subagent_runtime_keepalive_on: 'Keepalive On',
+        subagent_runtime_keepalive_off: 'Keepalive Off',
+        subagent_runtime_claude_probe_ok: 'Claude Code probe passed',
+        subagent_runtime_claude_probe_failed: 'Claude Code probe failed',
+        subagent_runtime_keepalive_updated: 'Claude keepalive updated',
         voice_mode: 'Voice',
         subagent_runtime_no_plan: 'No plan yet',
         subagent_runtime_no_todos: 'No todos yet',
@@ -1012,7 +1037,9 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         approval_working: 'Working...',
         approval_done: '✅ Done',
         subagent_runtime_mode_plan: 'Set Plan',
+        subagent_runtime_mode_agent: 'Set Agent',
         subagent_runtime_mode_review: 'Set Review',
+        subagent_runtime_mode_yolo: 'Set YOLO',
         subagent_runtime_mode_execute: 'Set Execute',
         subagent_runtime_mode_updated: 'Session mode updated',
         subagent_runtime_mode_update_failed: 'Failed to update session mode',
@@ -1620,6 +1647,9 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         oc_acp_session_placeholder: 'Optional; empty = scope by Clawcross session',
         oc_acp_session_ensure: 'Warm up',
         oc_acp_session_ensure_title: 'Create/warm ACP session only (no message sent)',
+        oc_acp_session_warming: 'Warming up...',
+        oc_acp_session_ready: 'ACP session ready',
+        oc_acp_session_failed: 'Warm up failed',
         oc_internal_session_refresh_title: 'Refresh WeBot session list from server',
         // Run mode (permission mode)
         run_mode_label: 'Mode',
@@ -2669,7 +2699,7 @@ function _escapeAndFormatText(value) {
 }
 
 function _modeActionButtons(sessionId, currentMode) {
-    const modes = ['plan', 'review', 'execute'];
+    const modes = ['plan', 'agent', 'review', 'yolo', 'execute'];
     return `<div class="webot-mode-actions">${modes
         .map(mode => {
             const active = currentMode === mode;
@@ -2708,6 +2738,39 @@ function _buildExtendedSections(runtime, item) {
     const sessionId = runtime?.session_id || item?.session_id || currentSessionId || '';
     const sections = [];
     sections.push(_buildWorkflowPresetSection(runtime, item));
+    if (runtime?.goals) {
+        sections.push(`
+            <div class="webot-runtime-section">
+                <div class="webot-runtime-title">${t('subagent_runtime_goals')}</div>
+                ${_buildRuntimeGoalList(runtime.goals)}
+            </div>
+        `);
+    }
+    if (runtime?.claude_code) {
+        const claude = runtime.claude_code || {};
+        const status = claude.status || {};
+        const keepalive = claude.keepalive || {};
+        const available = status.available ? 'available' : (status.status || 'unavailable');
+        const version = status.claude_version || status.claude_path || '';
+        const lastLine = keepalive.last_status
+            ? `${keepalive.last_status}${keepalive.last_run_at ? ` · ${String(keepalive.last_run_at).slice(0, 16)}` : ''}`
+            : '';
+        sections.push(`
+            <div class="webot-runtime-section">
+                <div class="webot-runtime-title">${t('subagent_runtime_claude_code')}</div>
+                <div class="webot-runtime-detail">${_escapeAndFormatText(`${available} · keepalive=${keepalive.enabled ? 'on' : 'off'}`)}</div>
+                ${version ? `<div class="webot-runtime-caption">${_escapeAndFormatText(version)}</div>` : ''}
+                ${keepalive.prompt ? `<div class="webot-runtime-detail">${_escapeAndFormatText(`prompt: ${keepalive.prompt}`)}</div>` : ''}
+                ${lastLine ? `<div class="webot-runtime-detail">${_escapeAndFormatText(lastLine)}</div>` : ''}
+                ${keepalive.last_error ? `<div class="webot-runtime-detail">${_escapeAndFormatText(keepalive.last_error)}</div>` : ''}
+                <div class="webot-runtime-actions">
+                    <button class="webot-subagent-btn" type="button" onclick="probeWeBotClaudeCode('${encodeURIComponent(sessionId)}')">${t('subagent_runtime_probe')}</button>
+                    <button class="webot-subagent-btn" type="button" onclick="runWeBotClaudeKickoff('${encodeURIComponent(sessionId)}')">${t('subagent_runtime_kickoff')}</button>
+                    <button class="webot-subagent-btn${keepalive.enabled ? ' danger' : ''}" type="button" onclick="toggleWeBotClaudeKeepalive('${encodeURIComponent(sessionId)}', ${keepalive.enabled ? 'false' : 'true'})">${keepalive.enabled ? t('subagent_runtime_keepalive_off') : t('subagent_runtime_keepalive_on')}</button>
+                </div>
+            </div>
+        `);
+    }
     if (runtime?.bridge) {
         const bridge = runtime.bridge || {};
         const primary = bridge.primary || (Array.isArray(bridge.sessions) ? bridge.sessions[0] : {}) || {};
@@ -2950,6 +3013,112 @@ async function runWeBotDream(sessionId) {
     }
 }
 
+function _runtimeForWeBotSession(sessionId) {
+    const sid = decodeURIComponent(sessionId || '');
+    if (sid === currentSessionId) return _currentSessionRuntime || {};
+    return _subagentRuntimeCache[sid] || {};
+}
+
+async function probeWeBotClaudeCode(sessionId) {
+    const sid = decodeURIComponent(sessionId || '');
+    if (!sid) return;
+    try {
+        _setWeBotPolicyStatus(`${t('subagent_runtime_claude_code')}: ${t('subagent_runtime_probe')}...`, 'success');
+        const resp = await fetch('/proxy_webot_claude_probe', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                session_id: sid,
+                prompt: 'Reply only CLAUDE_ACP_OK',
+                timeout_seconds: 90,
+            }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || !['success', 'failed'].includes(data.status)) {
+            throw new Error(data.detail || data.error || t('subagent_runtime_claude_probe_failed'));
+        }
+        _setWeBotPolicyStatus(
+            data.status === 'success'
+                ? t('subagent_runtime_claude_probe_ok')
+                : `${t('subagent_runtime_claude_probe_failed')}: ${(data.probe && (data.probe.error || data.probe.stderr_tail)) || ''}`,
+            data.status === 'success' ? 'success' : 'error'
+        );
+        delete _subagentRuntimeCache[sid];
+        await refreshSubagentPanel();
+    } catch (e) {
+        _setWeBotPolicyStatus(`${t('subagent_runtime_claude_probe_failed')}: ${e.message}`, 'error');
+    }
+}
+
+async function toggleWeBotClaudeKeepalive(sessionId, enabled) {
+    const sid = decodeURIComponent(sessionId || '');
+    if (!sid) return;
+    try {
+        const runtime = _runtimeForWeBotSession(sid);
+        const keepalive = runtime?.claude_code?.keepalive || {};
+        const resp = await fetch('/proxy_webot_claude_keepalive', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                session_id: sid,
+                enabled: !!enabled,
+                prompt: keepalive.prompt || 'ping',
+                model: keepalive.model || '',
+                timezone: keepalive.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+                start_time: keepalive.start_time || '06:00',
+                sleep_time: keepalive.sleep_time || '23:00',
+                weekdays: keepalive.weekdays || 'MTWRFSU',
+                use_caffeinate: !!keepalive.use_caffeinate,
+                force_sleep_at_quiet_hours: !!keepalive.force_sleep_at_quiet_hours,
+                monitor_command: keepalive.monitor_command || 'claude-monitor --clear',
+                timeout_seconds: keepalive.timeout_seconds || 90,
+                metadata: {source: 'ui'},
+            }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || data.status !== 'success') {
+            throw new Error(data.detail || data.error || t('subagent_runtime_keepalive_updated'));
+        }
+        _setWeBotPolicyStatus(t('subagent_runtime_keepalive_updated'), 'success');
+        delete _subagentRuntimeCache[sid];
+        await refreshSubagentPanel();
+    } catch (e) {
+        _setWeBotPolicyStatus(String(e.message || 'Claude keepalive update failed'), 'error');
+    }
+}
+
+async function runWeBotClaudeKickoff(sessionId) {
+    const sid = decodeURIComponent(sessionId || '');
+    if (!sid) return;
+    try {
+        const runtime = _runtimeForWeBotSession(sid);
+        const keepalive = runtime?.claude_code?.keepalive || {};
+        const resp = await fetch('/proxy_webot_claude_kickoff', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                session_id: sid,
+                prompt: keepalive.prompt || 'ping',
+                timeout_seconds: keepalive.timeout_seconds || 90,
+                model: keepalive.model || '',
+                use_acp: true,
+            }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || !['success', 'failed'].includes(data.status)) {
+            throw new Error(data.detail || data.error || 'Claude kickoff failed');
+        }
+        _setWeBotPolicyStatus(
+            data.status === 'success' ? t('subagent_runtime_claude_probe_ok') : t('subagent_runtime_claude_probe_failed'),
+            data.status === 'success' ? 'success' : 'error'
+        );
+        delete _subagentRuntimeCache[sid];
+        await refreshSubagentPanel();
+    } catch (e) {
+        _setWeBotPolicyStatus(String(e.message || 'Claude kickoff failed'), 'error');
+    }
+}
+
 async function petWeBotBuddy(sessionId) {
     try {
         const resp = await fetch('/proxy_webot_buddy', {
@@ -3078,6 +3247,35 @@ function _buildRuntimeItemList(items, emptyKey) {
             <span class="webot-runtime-text">${escapeHtml(item.step || item.title || item.tool_name || '')}</span>
         </div>
     `).join('');
+}
+
+function _buildRuntimeGoalList(goalsPayload) {
+    const items = goalsPayload && Array.isArray(goalsPayload.items) ? goalsPayload.items : [];
+    if (!items.length) {
+        return `<div class="webot-runtime-empty">${t('subagent_runtime_no_goals')}</div>`;
+    }
+    return items.slice(0, 4).map(goal => {
+        const usdLimit = Number(goal.budget_usd || goal.budget?.usd?.limit || 0);
+        const usdSpent = Number(goal.spent_usd || goal.budget?.usd?.spent || 0);
+        const tokenLimit = Number(goal.budget_tokens || goal.budget?.tokens?.limit || 0);
+        const tokenSpent = Number(goal.spent_tokens || goal.budget?.tokens?.spent || 0);
+        const budgetParts = [];
+        if (usdLimit || usdSpent) budgetParts.push(`$${usdSpent.toFixed(2)} / $${usdLimit.toFixed(2)}`);
+        if (tokenLimit || tokenSpent) budgetParts.push(`${tokenSpent} / ${tokenLimit} tokens`);
+        const heartbeat = goal.heartbeat_at ? `${goal.heartbeat_status || 'idle'} · ${String(goal.heartbeat_at).slice(0, 16)}` : (goal.heartbeat_status || 'idle');
+        return `
+            <div class="webot-runtime-block">
+                <div class="webot-runtime-row">
+                    <span class="webot-runtime-badge">${escapeHtml(goal.status || 'active')}</span>
+                    <span class="webot-runtime-text">${escapeHtml(goal.title || goal.goal_id || '')}</span>
+                </div>
+                <div class="webot-runtime-caption">${escapeHtml(`${goal.priority || 'normal'} · ${heartbeat}`)}</div>
+                ${goal.description ? `<div class="webot-runtime-detail">${_escapeAndFormatText(goal.description)}</div>` : ''}
+                ${budgetParts.length ? `<div class="webot-runtime-detail">${escapeHtml(budgetParts.join(' · '))}</div>` : ''}
+                ${goal.last_report ? `<div class="webot-runtime-detail">${_escapeAndFormatText(goal.last_report)}</div>` : ''}
+            </div>
+        `;
+    }).join('');
 }
 
 function _buildRuntimeVerificationList(items) {
@@ -4978,6 +5176,19 @@ function _renderLlmGroup(settings) {
         { val: 'anthropic', label: 'Claude (Anthropic)' },
         { val: 'antigravity', label: 'Antigravity (免费·Google One Pro)' },
         { val: 'minimax', label: 'MiniMax' },
+        { val: 'openrouter', label: 'OpenRouter' },
+        { val: 'groq', label: 'Groq' },
+        { val: 'xai', label: 'xAI Grok' },
+        { val: 'mistral', label: 'Mistral' },
+        { val: 'perplexity', label: 'Perplexity' },
+        { val: 'together', label: 'Together AI' },
+        { val: 'fireworks', label: 'Fireworks' },
+        { val: 'deepinfra', label: 'DeepInfra' },
+        { val: 'cerebras', label: 'Cerebras' },
+        { val: 'cohere', label: 'Cohere' },
+        { val: 'nvidia-nim', label: 'NVIDIA NIM' },
+        { val: 'novita', label: 'Novita' },
+        { val: 'vercel-gateway', label: 'Vercel AI Gateway' },
         { val: 'ollama', label: 'Ollama (本地)' },
     ];
     for (const p of providers) {
@@ -6439,6 +6650,19 @@ const _WIZARD_PROVIDER_DEFAULTS = {
     anthropic:   { base_url: 'https://api.anthropic.com',          key_hint: 'sk-ant-...' },
     antigravity: { base_url: 'http://127.0.0.1:8045',              key_hint: 'sk-antigravity', auto_key: 'sk-antigravity' },
     minimax:     { base_url: 'https://api.minimaxi.com',           key_hint: 'sk-api-...' },
+    openrouter:  { base_url: 'https://openrouter.ai/api/v1',       key_hint: 'sk-or-...' },
+    groq:        { base_url: 'https://api.groq.com/openai/v1',     key_hint: 'gsk_...' },
+    xai:         { base_url: 'https://api.x.ai/v1',                key_hint: 'xai-...' },
+    mistral:     { base_url: 'https://api.mistral.ai/v1',          key_hint: '...' },
+    perplexity:  { base_url: 'https://api.perplexity.ai',          key_hint: 'pplx-...' },
+    together:    { base_url: 'https://api.together.xyz/v1',        key_hint: '...' },
+    fireworks:   { base_url: 'https://api.fireworks.ai/inference/v1', key_hint: 'fw_...' },
+    deepinfra:   { base_url: 'https://api.deepinfra.com/v1/openai', key_hint: '...' },
+    cerebras:    { base_url: 'https://api.cerebras.ai/v1',         key_hint: 'csk-...' },
+    cohere:      { base_url: 'https://api.cohere.ai/compatibility/v1', key_hint: '...' },
+    'nvidia-nim': { base_url: 'https://integrate.api.nvidia.com/v1', key_hint: 'nvapi-...' },
+    novita:      { base_url: 'https://api.novita.ai/v3/openai',    key_hint: '...' },
+    'vercel-gateway': { base_url: 'https://ai-gateway.vercel.sh/v1', key_hint: '...' },
     ollama:      { base_url: 'http://127.0.0.1:11434',             key_hint: 'ollama', auto_key: 'ollama' },
     custom:      { base_url: '',                                    key_hint: 'your-api-key' },
 };
@@ -15188,6 +15412,13 @@ function acpGetSessionPickValue() {
     return sel && String(sel.value || '').trim();
 }
 
+function acpSetSessionStatus(message = '', kind = '') {
+    const el = document.getElementById('oc-acp-session-status');
+    if (!el) return;
+    el.textContent = message || '';
+    el.className = 'oc-acp-session-status' + (kind ? ' ' + kind : '');
+}
+
 function acpComputeSessionNameFromInputs() {
     const tool = _acpTool || '';
     const pick = acpGetSessionPickValue();
@@ -15272,6 +15503,7 @@ function acpOnSessionNameBlur() {
     if (_ocChatMode !== 'acp' || !_acpTool) return;
     const inp = document.getElementById('oc-acp-session-name');
     if (inp) localStorage.setItem('clawcross_acp_session_name_' + _acpTool, String(inp.value || '').trim());
+    acpSetSessionStatus('');
     acpNotifySessionContextChanged();
 }
 
@@ -15280,6 +15512,7 @@ function acpOnSessionPickChange() {
     const v = acpGetSessionPickValue();
     if (v) localStorage.setItem('clawcross_acp_session_pick_' + _acpTool, v);
     else localStorage.removeItem('clawcross_acp_session_pick_' + _acpTool);
+    acpSetSessionStatus('');
     acpUpdateSessionInputsDisabledState();
     acpNotifySessionContextChanged();
 }
@@ -15290,6 +15523,7 @@ async function acpLoadSessionsList() {
     if (!sel) return;
     const prev = sel.value;
     sel.disabled = true;
+    acpSetSessionStatus('');
     try {
         const r = await fetch('/proxy_acpx_sessions?tool=' + encodeURIComponent(_acpTool));
         const j = await r.json();
@@ -15327,6 +15561,7 @@ async function acpEnsureSession() {
         alert(t('oc_select_acp_hint'));
         return;
     }
+    const ensureBtn = document.querySelector('.oc-acp-session-ensure');
     const payload = { tool: _acpTool, session_id: currentSessionId };
     const pick = acpGetSessionPickValue();
     if (pick) payload.acp_session_pick = pick;
@@ -15334,6 +15569,8 @@ async function acpEnsureSession() {
         const raw = document.getElementById('oc-acp-session-name') && String(document.getElementById('oc-acp-session-name').value || '').trim();
         if (raw) payload.acp_session_name = raw;
     }
+    acpSetSessionStatus(t('oc_acp_session_warming'), '');
+    if (ensureBtn) ensureBtn.disabled = true;
     try {
         const r = await fetch('/proxy_acpx_session_ensure', {
             method: 'POST',
@@ -15342,8 +15579,14 @@ async function acpEnsureSession() {
         });
         const j = await r.json().catch(() => ({}));
         if (!r.ok || !j.ok) throw new Error(j.error || ('HTTP ' + r.status));
+        if (j.session_key) acpRememberResolvedSessionName(j.session_key);
+        acpSetSessionStatus(t('oc_acp_session_ready') + (j.session_key ? ': ' + j.session_key : ''), 'ok');
     } catch (e) {
-        alert(t('error') + ': ' + (e && e.message ? e.message : e));
+        const msg = e && e.message ? e.message : String(e || '');
+        console.error('acpEnsureSession failed', e);
+        acpSetSessionStatus(t('oc_acp_session_failed') + ': ' + msg, 'error');
+    } finally {
+        if (ensureBtn) ensureBtn.disabled = false;
     }
 }
 
@@ -15725,6 +15968,9 @@ async function ocSwitchTo(mode, acpTool) {
 
     _ocChatMode = mode;
     _acpTool = nextAcp;
+    if (mode !== 'acp' || acpToolChanged) {
+        acpSetSessionStatus('');
+    }
 
     const tabInternal = document.getElementById('oc-tab-internal');
     const tabOpenclaw = document.getElementById('oc-tab-openclaw');

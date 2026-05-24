@@ -132,6 +132,61 @@ def register_oasis_routes(app, *, oasis_base_url: str) -> None:
             logger.warning("Error fetching topic detail %s for user=%s: %s", topic_id, user_id, e)
             return jsonify({"error": str(e), "detail": "无法连接 OASIS"}), 502
 
+    @app.route("/proxy_oasis/topics/<topic_id>/agent-stats")
+    def proxy_oasis_topic_agent_stats(topic_id):
+        user_id = session.get("user_id", "")
+        try:
+            r = requests.get(
+                "{base}/topics/{topic_id}/agent-stats".format(base=oasis_base_url, topic_id=topic_id),
+                params={"user_id": user_id},
+                timeout=10,
+            )
+            data, st = _parse(r, context="topic_agent_stats")
+            return jsonify(data), st
+        except requests.RequestException as e:
+            logger.warning("Error fetching topic agent stats %s for user=%s: %s", topic_id, user_id, e)
+            return jsonify({"error": str(e), "detail": "无法连接 OASIS"}), 502
+
+    @app.route("/proxy_oasis/topics/<topic_id>/actions")
+    def proxy_oasis_topic_actions(topic_id):
+        user_id = session.get("user_id", "")
+        params = {
+            "user_id": user_id,
+            "limit": request.args.get("limit", "100"),
+            "offset": request.args.get("offset", "0"),
+            "agent": request.args.get("agent", ""),
+        }
+        try:
+            r = requests.get(
+                "{base}/topics/{topic_id}/actions".format(base=oasis_base_url, topic_id=topic_id),
+                params=params,
+                timeout=10,
+            )
+            data, st = _parse(r, context="topic_actions")
+            return jsonify(data), st
+        except requests.RequestException as e:
+            logger.warning("Error fetching topic actions %s for user=%s: %s", topic_id, user_id, e)
+            return jsonify({"error": str(e), "detail": "无法连接 OASIS"}), 502
+
+    @app.route("/proxy_oasis/topics/<topic_id>/interview", methods=["POST"])
+    def proxy_oasis_topic_interview(topic_id):
+        user_id = session.get("user_id", "")
+        try:
+            headers = {"Content-Type": "application/json"}
+            body = request.get_json(silent=True) or {}
+            body["user_id"] = user_id
+            r = requests.post(
+                "{base}/topics/{topic_id}/interview".format(base=oasis_base_url, topic_id=topic_id),
+                json=body,
+                headers=headers,
+                timeout=60,
+            )
+            data, st = _parse(r, context="topic_interview")
+            return jsonify(data), st
+        except requests.RequestException as e:
+            logger.warning("Error interviewing topic agent %s for user=%s: %s", topic_id, user_id, e)
+            return jsonify({"error": str(e), "detail": "无法连接 OASIS"}), 502
+
     @app.route("/proxy_oasis/topics/<topic_id>/posts", methods=["POST"])
     def proxy_oasis_add_topic_post(topic_id):
         user_id = session.get("user_id", "")

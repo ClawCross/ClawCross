@@ -278,6 +278,14 @@ def _repo_session_name() -> str:
     return name.replace(" ", "-")
 
 
+def _state_session_base_name(state: dict) -> str:
+    cwd = str(_current(state).get("cwd") or "").strip()
+    if cwd:
+        name = Path(cwd).expanduser().name or "default"
+        return name.replace(" ", "-")
+    return _repo_session_name()
+
+
 def _default_state() -> dict:
     session = _repo_session_name()
     return {
@@ -782,7 +790,7 @@ def _print_history_tail(messages: list[dict], *, max_chars: int = 400) -> None:
 
 
 def _new_session_name(state: dict) -> str:
-    cwd_name = _repo_session_name()
+    cwd_name = _state_session_base_name(state)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     return f"{cwd_name}-{stamp}"
 

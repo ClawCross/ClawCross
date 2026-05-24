@@ -16,6 +16,7 @@ import shutil
 from typing import List, Optional
 from datetime import datetime
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, HTTPException
@@ -108,6 +109,7 @@ PORT_AGENT = int(os.getenv("PORT_AGENT", "51200"))
 AGENT_URL = f"http://127.0.0.1:{PORT_AGENT}/system_trigger"
 INTERNAL_TOKEN = os.getenv("INTERNAL_TOKEN", "")
 TINYFISH_MONITOR_JOB_ID = "__tinyfish_monitor__"
+DASHBOARD_SUPABASE_SYNC_JOB_ID = "__dashboard_supabase_sync__"
 _ACP_TOOL_NAMES: frozenset[str] = acpx_agent_tags_with_legacy()
 _AGENT_MODEL_RE = re.compile(r"^agent:[^:]+(?::(.+))?$")
 _DEFAULT_ACP_SESSION_SUFFIX = "clawcrosschat"
@@ -440,6 +442,59 @@ def restore_tinyfish_monitor_task():
     except Exception as e:
         print(f"⚠️ TinyFish monitor 任务恢复失败: {e}")
 
+
+def _env_enabled(key: str, default: bool = False) -> bool:
+    value = os.getenv(key, "").strip().lower()
+    if not value:
+        return default
+    return value in {"1", "true", "yes", "on"}
+
+
+def trigger_dashboard_supabase_sync():
+    """到达定时时间，将 dashboard/state/*.json 同步到 Supabase。"""
+    dashboard_root = os.getenv("DASHBOARD_SUPABASE_SYNC_ROOT", "").strip()
+    project_id = os.getenv("DASHBOARD_SUPABASE_SYNC_PROJECT_ID", "").strip()
+    timeout_sec = int(os.getenv("DASHBOARD_SUPABASE_SYNC_TIMEOUT_SEC", "180") or "180")
+    try:
+        from harness.dashboard_sync import sync_dashboard_to_supabase
+
+        result = sync_dashboard_to_supabase(
+            dashboard_root=None if not dashboard_root else Path(dashboard_root).expanduser(),
+            project_id=project_id,
+            timeout_sec=timeout_sec,
+        )
+        if result.get("ok"):
+            print(f"[{datetime.now()}] Dashboard Supabase sync 完成: {result.get('output') or result.get('reason')}")
+        else:
+            print(f"[{datetime.now()}] Dashboard Supabase sync 失败: {result.get('reason')} {result.get('error') or result.get('output') or ''}")
+    except Exception as e:
+        print(f"[{datetime.now()}] Dashboard Supabase sync 执行失败: {e}")
+
+
+def restore_dashboard_supabase_sync_task():
+    enabled = _env_enabled("DASHBOARD_SUPABASE_SYNC_ENABLED", False)
+    cron_expr = os.getenv("DASHBOARD_SUPABASE_SYNC_CRON", "* * * * *").strip()
+
+    if not enabled:
+        print("📭 Dashboard Supabase sync 未启用")
+        return
+    if not cron_expr:
+        print("📭 Dashboard Supabase sync 未配置 cron")
+        return
+
+    try:
+        c = _parse_cron(cron_expr)
+        scheduler.add_job(
+            trigger_dashboard_supabase_sync,
+            'cron',
+            minute=c[0], hour=c[1], day=c[2], month=c[3], day_of_week=c[4],
+            id=DASHBOARD_SUPABASE_SYNC_JOB_ID,
+            replace_existing=True,
+        )
+        print(f"✅ 已恢复 Dashboard Supabase sync 任务: cron={cron_expr}")
+    except Exception as e:
+        print(f"⚠️ Dashboard Supabase sync 任务恢复失败: {e}")
+
 # --- 生命周期 ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -447,6 +502,7 @@ async def lifespan(app: FastAPI):
     scheduler.start()
     restore_tasks()
     restore_tinyfish_monitor_task()
+    restore_dashboard_supabase_sync_task()
     yield
     print("定时调度中心关闭...")
     scheduler.shutdown()

@@ -2,12 +2,25 @@ import unittest
 
 from src.webot.runtime import (
     build_turn_limit_message,
+    filter_tools_for_mode,
+    normalize_session_mode,
     resolve_max_turns,
     should_stop_for_turn_limit,
 )
 
 
 class WeBotRuntimeTests(unittest.TestCase):
+    def test_openseek_style_agent_and_yolo_modes_are_valid(self):
+        self.assertEqual(normalize_session_mode("agent"), "agent")
+        self.assertEqual(normalize_session_mode("yolo"), "yolo")
+        self.assertEqual(normalize_session_mode("unknown"), "execute")
+
+    def test_plan_filters_mutating_tools_but_agent_and_yolo_do_not(self):
+        tools = ["read_file", "write_file", "run_command", "lsp"]
+        self.assertEqual(filter_tools_for_mode(tools, "plan"), ["read_file", "lsp"])
+        self.assertEqual(filter_tools_for_mode(tools, "agent"), tools)
+        self.assertEqual(filter_tools_for_mode(tools, "yolo"), tools)
+
     def test_resolve_max_turns_prefers_request_override(self):
         self.assertEqual(resolve_max_turns(4, 10), 4)
         self.assertEqual(resolve_max_turns(None, 10), 10)

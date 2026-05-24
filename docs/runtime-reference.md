@@ -52,7 +52,7 @@ Side systems
 
 Every runtime request (`/webot/session-runtime` → `WeBotService.get_session_runtime`) returns:
 
-- `mode`: current `execute/plan/review` mode plus reason/status.
+- `mode`: current `execute/agent/plan/review/yolo` mode plus reason/status.
 - `plan`, `todos`, `verifications`, `approvals`: persisted states from `webot_runtime_store`.
 - `inbox`: queued messages from `webot_session_inbox`, delivered via `_deliver_inbox_messages`.
 - `artifacts`: runtime artifacts stored when budgets trigger (`webot_context`, `_deliver_inbox_messages`).
@@ -91,7 +91,8 @@ data/
 - `/webot/subagents/history` – fetch LangGraph snapshot messages for a subagent session.
 - `/webot/subagents/cancel` – cancel background runs gracefully.
 - `/webot/session-runtime` – primary runtime DTO consumed by Studio / CLI / bridge.
-- `/webot/session-mode` – switch execute/plan/review.
+- `/webot/session-mode` – switch execute/agent/plan/review/yolo.
+- `/webot/lsp` – OpenSeek-style best-effort diagnostics for a workspace file (Python, TypeScript, JavaScript, JSON).
 - `/webot/session-inbox`, `/webot/session-inbox/send`, `/webot/session-inbox/deliver` – inbox list/send/deliver for cross-session messaging.
 - `/webot/runs/interrupt` – request interruption for an active runtime run.
 - `/webot/session-plan`, `/webot/session-todos`, `/webot/verifications` – plan/todo/verification CRUD.

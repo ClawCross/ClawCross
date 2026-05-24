@@ -53,6 +53,7 @@ _DENY_INVARIANT_PATTERNS: list[tuple[str, str]] = [
     (r'\bmkfs\b', "filesystem format command"),
     (r'\bdd\s+.*\bof=/dev/', "dd writing to device"),
     # Fork bomb
+    (r':\s*\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:', "fork bomb pattern"),
     (r':\(\)\s*\{.*\};\s*:', "fork bomb pattern"),
     (r'\bwhile\s+true.*?done\s*&', "infinite background loop"),
     # Kernel/system destruction
@@ -94,6 +95,7 @@ _HIGH_RISK_PATTERNS: list[tuple[str, str]] = [
 # ---------------------------------------------------------------------------
 
 _MEDIUM_RISK_PATTERNS: list[tuple[str, str]] = [
+    (r'\brm\s+-[a-zA-Z]*r[a-zA-Z]*\b', "recursive delete"),
     (r'\bcurl\b', "network download"),
     (r'\bwget\b', "network download"),
     (r'\bpip\s+install\b', "pip install"),
@@ -174,14 +176,15 @@ def analyze_command(command: str) -> CommandAnalysis:
     normalized = command.strip()
     reasons: list[str] = []
 
-    # Deny invariant patterns now route to approval instead of hard block
+    # Deny invariants are never allowed to continue to approval or allowlists.
     for pattern, description in _DENY_INVARIANT_PATTERNS:
         if re.search(pattern, normalized, re.IGNORECASE):
             return CommandAnalysis(
                 command=command,
-                risk_level=RiskLevel.HIGH,
-                reasons=(f"高危操作需人工批准: {description}",),
-                blocked=False,
+                risk_level=RiskLevel.CRITICAL,
+                reasons=(f"deny invariant: {description}",),
+                blocked=True,
+                suggested_alternative="Use a narrower, non-destructive command.",
             )
 
     # Check safe commands

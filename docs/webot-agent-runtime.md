@@ -11,7 +11,7 @@ This document records the current, running WeBot delegated runtime that is now c
 ## Profiles, Modes & Hooks
 
 - **Profiles + tool filtering.** Built-in profiles (`general`, `research`, `planner`, `coder`, `reviewer`, `verifier`) in `webot_profiles.py` declare system prompt fragments, allowed tools, preferred models, and `max_turns`. User-defined profiles live under `data/user_files/{user_id}/webot_agent_profiles.json` and the same MCP paths.
-- **Session modes.** `webot_runtime.py` normalizes `execute`, `plan`, `review`. `webot_service.update_session_mode` persists the mode via `save_session_mode` and returns a payload with `reason`, `status`, `mode`. Mode-aware tool filtering uses `filter_tools_for_mode`, plan mode blocks destructive tools (write/delete), review mode tightens further.
+- **Session modes.** `webot_runtime.py` normalizes `execute`, `agent`, `plan`, `review`, and `yolo`. `webot_service.update_session_mode` persists the mode via `save_session_mode` and returns a payload with `reason`, `status`, `mode`. Mode-aware tool filtering uses `filter_tools_for_mode`; plan mode blocks destructive tools, review mode tightens further, and yolo auto-approves only manual policy prompts while still respecting explicit deny rules.
 - **Policy/hook pipeline.** `webot_policy.py` now normalizes hooks for events such as `session_start`, `user_prompt_submit`, `pre_tool`, `post_tool`, `permission_request`, `permission_resolved`, `pre_compact`, `stop`, `subagent_stop`, `session_end`. Hooks can log to JSONL, run shell commands, or mutate arguments. `webot_permission_context.py` enforces the decisions before MCP tools execute.
 - **Compaction + budgets.** `webot_context.py` trims long tool results, stores archival artifacts, compresses history into summaries, and writes `compact_summary` artifacts under `webot_compactions`. Those summaries are already reused by the current memory/Kairos/dream flow and fit the Claude Code multi-tier compaction idea.
 
@@ -38,6 +38,7 @@ This document records the current, running WeBot delegated runtime that is now c
 | `src/webot/runtime_store.py` | Durable tables for runs, attempts, inbox, artifacts, session state |
 | `src/webot/service.py` | Runtime API that serializes DTO for the frontend and proxies, tracks workspace descriptions, counts inbox/gate details |
 | `src/webot/runtime.py` | Utility functions (`normalize_session_mode`, mode messages, stop conditions, max_turn resolution) |
+| `src/webot/lsp.py` | OpenSeek-style best-effort workspace diagnostics used by the LSP MCP/API bridge |
 | `src/webot/context.py` | Context budgeting, artifact logging for oversized inputs/results, compaction guardrails |
 | `src/webot/policy.py` | Policy normalization, hook/approval parsing, event enumeration |
 | `src/core/agent.py` | Permits MCP tools, enforces tool filtering, injects runtime prompts, loads `webot_runtime` helpers |

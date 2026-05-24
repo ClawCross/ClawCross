@@ -28,6 +28,7 @@ from core.agent import TeamAgent
 from services.llm_factory import extract_text as _extract_text
 from utils.user_auth import load_users as load_users_from_file, verify_password as verify_password_from_file
 from api.group_routes import create_group_router, init_group_db
+from api.harness_routes import create_harness_router
 from api.openai_routes import create_openai_router
 from api.ops_routes import create_ops_router
 from api.session_routes import create_session_router
@@ -204,6 +205,12 @@ app.include_router(
         agent=agent,
         verify_auth_or_token=verify_auth_or_token,
         extract_text=_extract_text,
+    )
+)
+
+app.include_router(
+    create_harness_router(
+        verify_auth_or_token=verify_auth_or_token,
     )
 )
 

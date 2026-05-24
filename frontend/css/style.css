@@ -4515,6 +4515,25 @@ body.session-panel-resizing * {
     background: #f9fafb;
     border-color: #9ca3af;
 }
+.oc-acp-session-ensure:disabled {
+    opacity: 0.65;
+    cursor: wait;
+}
+.oc-acp-session-status {
+    flex: 1 1 180px;
+    min-width: 160px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.35;
+    color: #6b7280;
+    overflow-wrap: anywhere;
+}
+.oc-acp-session-status.ok {
+    color: #047857;
+}
+.oc-acp-session-status.error {
+    color: #b91c1c;
+}
 .oc-switcher-tabs {
     display: flex;
     gap: 2px;

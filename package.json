@@ -18,7 +18,7 @@
     "test:browser-smoke": "playwright test --config playwright.config.mjs"
   },
   "dependencies": {
-    "@chenglou/pretext": "^0.0.4",
+    "@chenglou/pretext": "^0.0.7",
     "easystarjs": "^0.4.4",
     "phaser": "^3.90.0",
     "playwright": "^1.58.2"

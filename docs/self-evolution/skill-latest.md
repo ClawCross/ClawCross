@@ -1,6 +1,6 @@
 # Repository Skill Self-Evolution Report
 
-- Skill file: `/Users/boris/Downloads/ClawCross/SKILL.md`
+- Skill file: `$CLAWCROSS_REPO/SKILL.md`
 - Generated at: `2026-04-11T11:50:44.173193+00:00`
 - Exit code: `1`
 

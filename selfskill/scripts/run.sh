@@ -121,6 +121,35 @@ is_wsl() {
     [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null
 }
 
+replace_env_value() {
+    local key="$1"
+    local value="$2"
+    local file="$3"
+
+    "$VENV_PY" - "$key" "$value" "$file" <<'PY'
+import sys
+from pathlib import Path
+
+key, value, file_name = sys.argv[1:4]
+path = Path(file_name)
+lines = path.read_text(encoding="utf-8").splitlines(keepends=True) if path.exists() else []
+updated = False
+new_lines = []
+for line in lines:
+    stripped = line.strip()
+    if stripped.startswith(f"{key}=") or stripped.startswith(f"# {key}="):
+        new_lines.append(f"{key}={value}\n")
+        updated = True
+    else:
+        new_lines.append(line)
+if not updated:
+    if new_lines and not new_lines[-1].endswith("\n"):
+        new_lines.append("\n")
+    new_lines.append(f"{key}={value}\n")
+path.write_text("".join(new_lines), encoding="utf-8")
+PY
+}
+
 print_wsl_access_hint() {
     if ! is_wsl; then
         return
@@ -162,7 +191,7 @@ _stop_tracked_tunnel_if_running() {
     fi
     rm -f "$pf"
     if [ -f "$CLAWCROSS_CONFIG_DIR/.env" ] && grep -q "^PUBLIC_DOMAIN=" "$CLAWCROSS_CONFIG_DIR/.env"; then
-        sed -i 's|^PUBLIC_DOMAIN=.*|PUBLIC_DOMAIN=|' "$CLAWCROSS_CONFIG_DIR/.env"
+        replace_env_value "PUBLIC_DOMAIN" "" "$CLAWCROSS_CONFIG_DIR/.env"
         echo "🧹 已清空 PUBLIC_DOMAIN（避免沿用过期公网地址）"
     fi
 }
@@ -1059,7 +1088,7 @@ case "${1:-help}" in
         # Clear PUBLIC_DOMAIN in .env to avoid stale URLs
         if [ -f "$CLAWCROSS_CONFIG_DIR/.env" ]; then
             if grep -q "^PUBLIC_DOMAIN=" "$CLAWCROSS_CONFIG_DIR/.env"; then
-                sed -i 's|^PUBLIC_DOMAIN=.*|PUBLIC_DOMAIN=|' "$CLAWCROSS_CONFIG_DIR/.env"
+                replace_env_value "PUBLIC_DOMAIN" "" "$CLAWCROSS_CONFIG_DIR/.env"
                 echo "🧹 已清理 PUBLIC_DOMAIN"
             fi
         fi

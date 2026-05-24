@@ -59,6 +59,9 @@ _MODEL_PROVIDER_PATTERNS: dict[str, str] = {
     "mistral": "openai",
     "llama": "openai",
     "groq": "openai",
+    "grok": "openai",
+    "command": "openai",
+    "perplexity": "openai",
 }
 
 _PROVIDER_ALIASES: dict[str, str] = {
@@ -70,6 +73,23 @@ _PROVIDER_ALIASES: dict[str, str] = {
     "ollama": "ollama",
     "antigravity": "openai",  # Antigravity reverse-proxy → OpenAI-compatible
     "minimax": "minimax",    # MiniMax chat → Anthropic-compatible API (separate branch in create_chat_model)
+    # OpenSeek-style OpenAI-compatible provider presets.
+    "openrouter": "openai",
+    "groq": "openai",
+    "xai": "openai",
+    "mistral": "openai",
+    "perplexity": "openai",
+    "together": "openai",
+    "fireworks": "openai",
+    "deepinfra": "openai",
+    "cerebras": "openai",
+    "cohere": "openai",
+    "nvidia-nim": "openai",
+    "novita": "openai",
+    "vercel-gateway": "openai",
+    "vllm": "openai",
+    "sglang": "openai",
+    "custom": "openai",
 }
 
 _BASE_URL_PROVIDER_PATTERNS: tuple[tuple[str, str], ...] = (
@@ -83,6 +103,19 @@ _BASE_URL_PROVIDER_PATTERNS: tuple[tuple[str, str], ...] = (
     ("127.0.0.1:11434", "ollama"),  # Ollama OpenAI-compatible endpoint
     ("localhost:11434", "ollama"),  # Ollama OpenAI-compatible endpoint
     ("api.minimaxi.com", "minimax"),  # MiniMax API endpoint
+    ("openrouter.ai", "openai"),
+    ("api.groq.com", "openai"),
+    ("api.x.ai", "openai"),
+    ("api.mistral.ai", "openai"),
+    ("api.perplexity.ai", "openai"),
+    ("api.together.xyz", "openai"),
+    ("api.fireworks.ai", "openai"),
+    ("deepinfra.com", "openai"),
+    ("api.cerebras.ai", "openai"),
+    ("api.cohere.ai", "openai"),
+    ("integrate.api.nvidia.com", "openai"),
+    ("api.novita.ai", "openai"),
+    ("ai-gateway.vercel.sh", "openai"),
 )
 
 _AUDIO_DEFAULTS: dict[str, dict[str, str]] = {

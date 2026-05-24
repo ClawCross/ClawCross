@@ -148,6 +148,15 @@ class FrontendIntegrationTests(unittest.TestCase):
         self.assertIn("/static/js/orchestration.js", html)
         self.assertIn("/static/js/tinyfish-live-shared.js", html)
 
+    def test_proxy_check_session_missing_session_is_soft_false(self):
+        with self.client.session_transaction() as session:
+            session.clear()
+
+        response = self.client.get("/proxy_check_session")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {"valid": False})
+
     def test_proxy_settings_full_get_forwards_user_context(self):
         with mock.patch.object(
             front.requests,
@@ -582,6 +591,44 @@ class FrontendIntegrationTests(unittest.TestCase):
                 },
             )
             self.assertEqual(kwargs["headers"], {"X-Internal-Token": front.INTERNAL_TOKEN})
+
+        with self.subTest("lsp diagnostics"):
+            with mock.patch.object(
+                front.requests,
+                "post",
+                return_value=_MockJsonResponse({"status": "success", "diagnostics": []}, 200),
+            ) as mock_post:
+                response = self.client.post(
+                    "/proxy_webot_lsp",
+                    json={
+                        "session_id": "default",
+                        "file": "src/webot/service.py",
+                        "op": "diagnostics",
+                        "line": 12,
+                        "col": 4,
+                        "new_name": "renamed_symbol",
+                        "timeout_seconds": 5,
+                        "max_diagnostics": 8,
+                    },
+                )
+            self.assertEqual(response.status_code, 200)
+            _, kwargs = mock_post.call_args
+            self.assertEqual(
+                kwargs["json"],
+                {
+                    "user_id": "integration-user",
+                    "session_id": "default",
+                    "file": "src/webot/service.py",
+                    "op": "diagnostics",
+                    "line": 12,
+                    "col": 4,
+                    "new_name": "renamed_symbol",
+                    "timeout_seconds": 5,
+                    "max_diagnostics": 8,
+                },
+            )
+            self.assertEqual(kwargs["headers"], {"X-Internal-Token": front.INTERNAL_TOKEN})
+            self.assertEqual(kwargs["timeout"], 45)
 
     def test_builtin_team_preset_api_uses_asset_loader(self):
         with self.subTest("list"):

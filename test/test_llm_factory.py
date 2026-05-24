@@ -34,6 +34,38 @@ class LlmFactoryTests(unittest.TestCase):
 
         self.assertEqual(provider, "ollama")
 
+    def test_openseek_openai_compatible_provider_aliases_route_to_openai(self):
+        for provider_name in ("openrouter", "groq", "xai", "mistral", "perplexity"):
+            with self.subTest(provider=provider_name):
+                self.assertEqual(
+                    llm_factory.infer_provider(
+                        model="",
+                        base_url="",
+                        provider=provider_name,
+                        api_key="",
+                    ),
+                    "openai",
+                )
+
+    def test_openseek_provider_base_urls_route_to_openai(self):
+        urls = [
+            "https://openrouter.ai/api/v1",
+            "https://api.groq.com/openai/v1",
+            "https://api.x.ai/v1",
+            "https://api.mistral.ai/v1",
+        ]
+        for base_url in urls:
+            with self.subTest(base_url=base_url):
+                self.assertEqual(
+                    llm_factory.infer_provider(
+                        model="",
+                        base_url=base_url,
+                        provider="",
+                        api_key="",
+                    ),
+                    "openai",
+                )
+
     def test_infer_provider_does_not_use_api_key_prefix(self):
         provider = llm_factory.infer_provider(
             model="deepseek-chat",

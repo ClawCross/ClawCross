@@ -29,6 +29,7 @@ from mcp.server.fastmcp import FastMCP
 
 from webot.bridge import get_bridge_runtime_payload, issue_bridge_session
 from webot.buddy import apply_buddy_action, serialize_buddy_state
+from webot.claude_code import detect_claude_code_cached, probe_claude_acp, run_claude_cli_prompt
 from webot.memory import ensure_memory_state, run_auto_dream, set_kairos_mode
 from webot.profiles import (
     build_subagent_session_id,
@@ -46,6 +47,7 @@ from webot.runtime_store import (
     create_run_record,
     delete_session_plan,
     delete_session_todos,
+    get_claude_keepalive_state,
     get_latest_run_for_agent,
     get_run,
     get_session_mode as load_session_mode,
@@ -57,18 +59,23 @@ from webot.runtime_store import (
     list_run_events,
     list_runs_for_parent_session,
     list_runs_for_session,
+    list_session_goals,
     list_tool_approvals as list_tool_approval_records,
     list_verification_records,
     mark_inbox_delivered,
+    record_claude_keepalive_result,
+    record_goal_heartbeat as store_goal_heartbeat,
     record_run_event,
     record_runtime_artifact,
     release_run_worker,
     request_run_interrupt,
+    save_claude_keepalive_state,
     save_session_mode,
     save_session_plan,
     save_session_todos,
     save_voice_state,
     update_run_status,
+    upsert_session_goal,
     upsert_run,
     add_verification_record,
 )
@@ -391,9 +398,38 @@ def _schedule_background_run(
     )
 
 async def _recover_background_runs(username: str = "") -> None:
-    # 后台执行已迁移到 agent 主进程（通过 /system_trigger fire-and-forget），
-    # webot.py 子进程不再持有 in-process task，无需"恢复"。保留函数签名让调用点不变。
-    return
+    for run in list_recoverable_runs():
+        if username and run.user_id != username:
+            continue
+        if run.run_kind != "subagent" or run.wait_mode:
+            continue
+        if _active_background_task(run.agent_id) is not None:
+            continue
+        record = get_subagent(run.agent_id, run.user_id) or get_subagent_by_session(
+            run.session_id,
+            run.user_id,
+        )
+        _schedule_background_run(
+            run_id=run.run_id,
+            username=run.user_id,
+            agent_id=run.agent_id,
+            session_id=run.session_id,
+            agent_type=run.agent_type,
+            agent_name=record.name if record is not None else run.agent_id,
+            content=run.input_text,
+            parent_session=run.parent_session,
+            timeout=run.timeout_seconds,
+            max_turns=run.max_turns,
+        )
+        record_run_event(
+            run.user_id,
+            run.run_id,
+            run.session_id,
+            event_type="recovered",
+            status=run.status,
+            message="后台子 Agent 任务已恢复到本地调度器。",
+            worker_id=_WORKER_ID,
+        )
 
 async def _call_internal_subagent(
     *,
@@ -847,8 +883,9 @@ async def spawn_subagent(
         reason=description or f"{profile.display_name} delegated from {effective_parent_session or 'default'}",
     )
 
-    # 后台执行已迁到 agent 主进程：通过 session busy 判断而不是本地 task
-    if record.status in {"queued", "running"} and await _peek_session_busy(username, session_id):
+    if record.status in {"queued", "running"} and (
+        _active_background_task(agent_id) is not None or await _peek_session_busy(username, session_id)
+    ):
         return (
             f"⏳ 子 Agent {record.name} ({agent_id}) 正在后台运行中。\n"
             "请先等待完成，或稍后用 list_subagents / get_subagent_history 查看状态。"
@@ -983,22 +1020,25 @@ async def spawn_subagent(
                 f"error: {exc}"
             )
 
-    # Fire-and-forget：把任务投递到 agent 主进程的 /system_trigger，
-    # 由它在自己的事件循环里跑这个 session，不依赖 webot.py 子进程存活。
-    await _push_system_message(
+    _schedule_background_run(
+        run_id=run_id,
         username=username,
+        agent_id=agent_id,
         session_id=session_id,
-        text=task,
+        agent_type=profile.agent_type,
+        agent_name=record.name,
+        content=task,
+        parent_session=effective_parent_session,
+        timeout=timeout,
+        max_turns=max_turns,
     )
-    update_run_status(run_id, username, status="running")
-    update_subagent_status(agent_id, username, status="running")
     record_run_event(
         username,
         run_id,
         session_id,
-        event_type="dispatched",
-        status="running",
-        message=f"后台子 Agent 已派发到 agent 主进程: {record.name}",
+        event_type="scheduled",
+        status="queued",
+        message=f"后台子 Agent 已加入本地调度器: {record.name}",
     )
     return (
         f"🚀 {mode_label}子 Agent 已转后台运行\n"
@@ -1079,8 +1119,10 @@ async def send_subagent_message(
         if updated is not None:
             record = updated
 
-    # 后台执行已迁到 agent 主进程：通过 session busy 判断
-    if record.status in {"queued", "running"} and await _peek_session_busy(username, record.session_id):
+    if record.status in {"queued", "running"} and (
+        _active_background_task(record.agent_id) is not None
+        or await _peek_session_busy(username, record.session_id)
+    ):
         return (
             f"⏳ 子 Agent {record.name} ({record.agent_id}) 仍在后台运行中，"
             "请等待其完成后再继续发送消息。"
@@ -1208,21 +1250,25 @@ async def send_subagent_message(
             )
             return f"❌ 子 Agent 续聊失败: {exc}\nrun_id: {run_id}"
 
-    # Fire-and-forget：续聊也走 /system_trigger
-    await _push_system_message(
+    _schedule_background_run(
+        run_id=run_id,
         username=username,
+        agent_id=record.agent_id,
         session_id=record.session_id,
-        text=content,
+        agent_type=record.agent_type,
+        agent_name=record.name,
+        content=content,
+        parent_session=source_session or record.parent_session,
+        timeout=timeout,
+        max_turns=max_turns,
     )
-    update_run_status(run_id, username, status="running")
-    update_subagent_status(record.agent_id, username, status="running")
     record_run_event(
         username,
         run_id,
         record.session_id,
-        event_type="dispatched",
-        status="running",
-        message=f"后台续聊已派发到 agent 主进程: {record.name}",
+        event_type="scheduled",
+        status="queued",
+        message=f"后台续聊已加入本地调度器: {record.name}",
     )
     return (
         f"🚀 子 Agent 已收到后台续聊任务\n"
@@ -1309,6 +1355,11 @@ async def cancel_subagent(
             status="cancelling",
             message=f"收到取消请求: {record.name}",
         )
+    task = _active_background_task(record.agent_id)
+    if task is not None:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
     cancelled = False
     try:
@@ -1572,6 +1623,217 @@ async def clear_session_todos(username: str, source_session: str = "") -> str:
     return f"📭 会话 {session_id} 没有可清除的 Todo。"
 
 @mcp.tool()
+async def write_session_goal(
+    username: str,
+    title: str,
+    source_session: str = "",
+    goal_id: str = "",
+    description: str = "",
+    status: str = "active",
+    priority: str = "normal",
+    owner_session: str = "",
+    budget_tokens: int = 0,
+    budget_usd: float = 0.0,
+    metrics: dict | None = None,
+    metadata: dict | None = None,
+) -> str:
+    """
+    写入或更新当前会话的目标控制记录。
+
+    这是 rudder 风格的轻量 control-plane 入口：目标、状态、预算和心跳
+    与普通 plan/todo 分开持久化，适合长周期 agent work loop。
+    """
+    session_id = source_session or "default"
+    record = upsert_session_goal(
+        username,
+        session_id,
+        goal_id=goal_id,
+        title=title,
+        description=description,
+        status=status,
+        priority=priority,
+        owner_session=owner_session or session_id,
+        metrics=metrics or {},
+        budget_tokens=budget_tokens,
+        budget_usd=budget_usd,
+        metadata=metadata or {"source": "mcp"},
+    )
+    return (
+        "✅ Session goal 已写入\n"
+        f"goal_id: {record.goal_id}\n"
+        f"session_id: {record.session_id}\n"
+        f"title: {record.title}\n"
+        f"status: {record.status}\n"
+        f"priority: {record.priority}\n"
+        f"budget: {record.spent_tokens}/{record.budget_tokens} tokens · ${record.spent_usd:.2f}/${record.budget_usd:.2f}"
+    )
+
+@mcp.tool()
+async def list_session_goal_control(
+    username: str,
+    source_session: str = "",
+    status: str = "",
+    limit: int = 20,
+) -> str:
+    session_id = source_session or "default"
+    goals = list_session_goals(
+        username,
+        session_id,
+        status=(status or "").strip().lower() or None,
+        limit=max(1, min(limit, 50)),
+    )
+    if not goals:
+        return f"📭 会话 {session_id} 暂无 goal control 记录。"
+    lines = [f"🎯 Session goals\nsession_id: {session_id}"]
+    for goal in goals:
+        heartbeat = goal.heartbeat_at or "(none)"
+        lines.append(
+            f"- {goal.goal_id} [{goal.status}/{goal.priority}] {goal.title}\n"
+            f"  heartbeat: {goal.heartbeat_status} · {heartbeat}\n"
+            f"  budget: {goal.spent_tokens}/{goal.budget_tokens} tokens · ${goal.spent_usd:.2f}/${goal.budget_usd:.2f}\n"
+            f"  report: {_trim(goal.last_report, 180) or '(none)'}"
+        )
+    return "\n".join(lines)
+
+@mcp.tool()
+async def record_session_goal_heartbeat(
+    username: str,
+    goal_id: str,
+    report: str = "",
+    heartbeat_status: str = "active",
+    spent_tokens_delta: int = 0,
+    spent_usd_delta: float = 0.0,
+    source_session: str = "",
+    metadata: dict | None = None,
+) -> str:
+    record = store_goal_heartbeat(
+        username,
+        goal_id,
+        session_id=source_session or "",
+        heartbeat_status=heartbeat_status,
+        report=report,
+        spent_tokens_delta=spent_tokens_delta,
+        spent_usd_delta=spent_usd_delta,
+        metadata=metadata or {"source": "mcp"},
+    )
+    if record is None:
+        return f"❌ 未找到 goal: {goal_id}"
+    return (
+        "✅ Goal heartbeat 已记录\n"
+        f"goal_id: {record.goal_id}\n"
+        f"status: {record.heartbeat_status}\n"
+        f"heartbeat_at: {record.heartbeat_at}\n"
+        f"budget: {record.spent_tokens}/{record.budget_tokens} tokens · ${record.spent_usd:.2f}/${record.budget_usd:.2f}"
+    )
+
+@mcp.tool()
+async def claude_code_status(
+    username: str,
+    source_session: str = "",
+) -> str:
+    session_id = source_session or "default"
+    status = detect_claude_code_cached(ttl_seconds=10)
+    keepalive = get_claude_keepalive_state(username, session_id)
+    errors = status.get("errors") or []
+    return (
+        "🧭 Claude Code 本地状态\n"
+        f"available: {status.get('available', False)}\n"
+        f"claude: {status.get('claude_version') or status.get('claude_path') or '(missing)'}\n"
+        f"acpx: {status.get('acpx_path') or '(missing)'} · claude_supported={status.get('acpx_claude_supported', False)}\n"
+        f"keepalive: {'enabled' if keepalive.enabled else 'disabled'} · {keepalive.start_time}-{keepalive.sleep_time} · {keepalive.weekdays}\n"
+        f"last: {keepalive.last_status} · {keepalive.last_run_at or '(never)'}\n"
+        f"errors: {_trim('; '.join(str(item) for item in errors), 500) or '(none)'}"
+    )
+
+@mcp.tool()
+async def probe_claude_code(
+    username: str,
+    prompt: str = "Reply only CLAUDE_ACP_OK",
+    source_session: str = "",
+    timeout: int = 90,
+) -> str:
+    session_id = source_session or "default"
+    result = probe_claude_acp(
+        prompt=prompt,
+        session_name=f"clawcross-{username}-{session_id}".replace("#", "-")[:80],
+        timeout=timeout,
+    )
+    record_claude_keepalive_result(
+        username,
+        session_id,
+        status="success" if result.get("ok") else "failed",
+        result=str(result.get("stdout_tail") or "")[-2000:],
+        error=str(result.get("error") or result.get("stderr_tail") or "")[-1000:],
+        metadata={"probe": True, "source": "mcp"},
+    )
+    return (
+        "✅ Claude Code ACP 探测成功"
+        if result.get("ok")
+        else f"❌ Claude Code ACP 探测失败\n{_trim(str(result.get('error') or result.get('stderr_tail') or ''), 1200)}"
+    )
+
+@mcp.tool()
+async def configure_claude_keepalive(
+    username: str,
+    enabled: bool = True,
+    prompt: str = "ping",
+    source_session: str = "",
+    timezone_name: str = "",
+    start_time: str = "06:00",
+    sleep_time: str = "23:00",
+    weekdays: str = "MTWRFSU",
+    timeout: int = 90,
+) -> str:
+    session_id = source_session or "default"
+    record = save_claude_keepalive_state(
+        username,
+        session_id,
+        enabled=enabled,
+        prompt=prompt,
+        timezone_name=timezone_name,
+        start_time=start_time,
+        sleep_time=sleep_time,
+        weekdays=weekdays,
+        timeout_seconds=timeout,
+        metadata={"source": "mcp"},
+    )
+    return (
+        "✅ Claude keepalive 配置已保存\n"
+        f"session_id: {record.session_id}\n"
+        f"enabled: {record.enabled}\n"
+        f"window: {record.start_time}-{record.sleep_time} {record.timezone or '(local)'}\n"
+        "说明：ClawCross 只保存和执行安全的一次性 kickoff，不会自动安装系统唤醒/睡眠任务。"
+    )
+
+@mcp.tool()
+async def run_claude_keepalive_once(
+    username: str,
+    source_session: str = "",
+    prompt: str = "",
+    use_acp: bool = True,
+    timeout: int = 90,
+) -> str:
+    session_id = source_session or "default"
+    state = get_claude_keepalive_state(username, session_id)
+    effective_prompt = prompt or state.prompt or "ping"
+    result = (
+        probe_claude_acp(prompt=effective_prompt, session_name=f"clawcross-{username}-{session_id}"[:80], timeout=timeout)
+        if use_acp
+        else run_claude_cli_prompt(prompt=effective_prompt, model=state.model, timeout=timeout)
+    )
+    record_claude_keepalive_result(
+        username,
+        session_id,
+        status="success" if result.get("ok") else "failed",
+        result=str(result.get("stdout_tail") or "")[-2000:],
+        error=str(result.get("error") or result.get("stderr_tail") or "")[-1000:],
+        metadata={"kickoff": True, "source": "mcp", "use_acp": use_acp},
+    )
+    if result.get("ok"):
+        return f"✅ Claude keepalive kickoff 成功\nsession_id: {session_id}"
+    return f"❌ Claude keepalive kickoff 失败\n{_trim(str(result.get('error') or result.get('stderr_tail') or ''), 1200)}"
+
+@mcp.tool()
 async def record_verification(
     username: str,
     title: str,
@@ -1676,7 +1938,9 @@ async def enter_plan_mode(
     source_session: str = "",
 ) -> str:
     session_id = source_session or "default"
-    normalized_mode = "review" if (mode or "").strip().lower() == "review" else "plan"
+    normalized_mode = normalize_session_mode(mode)
+    if normalized_mode == "execute":
+        normalized_mode = "plan"
     save_session_mode(username, session_id, mode=normalized_mode, reason=reason)
     return (
         f"✅ 已进入 {normalized_mode} 模式\n"
@@ -1694,6 +1958,27 @@ async def exit_plan_mode(
     save_session_mode(username, session_id, mode="execute", reason=reason)
     return (
         f"✅ 已恢复 execute 模式\n"
+        f"session_id: {session_id}\n"
+        f"reason: {reason or '(none)'}"
+    )
+
+@mcp.tool()
+async def set_session_mode(
+    username: str,
+    mode: str = "agent",
+    reason: str = "",
+    source_session: str = "",
+) -> str:
+    """
+    Set the current WeBot session mode.
+
+    Supported modes: execute, agent, plan, review, yolo.
+    """
+    session_id = source_session or "default"
+    normalized_mode = normalize_session_mode(mode)
+    save_session_mode(username, session_id, mode=normalized_mode, reason=reason)
+    return (
+        f"✅ 已切换到 {normalized_mode} 模式\n"
         f"session_id: {session_id}\n"
         f"reason: {reason or '(none)'}"
     )

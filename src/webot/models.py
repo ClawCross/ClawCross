@@ -43,9 +43,44 @@ class WeBotTodoUpdateRequest(WeBotSessionRuntimeRequest):
     items: list[dict] = Field(default_factory=list)
 
 
+class WeBotGoalUpdateRequest(WeBotSessionRuntimeRequest):
+    goal_id: str = ""
+    title: str = ""
+    description: str = ""
+    status: str = "active"
+    priority: str = "normal"
+    parent_goal_id: str = ""
+    owner_session: str = ""
+    metrics: dict = Field(default_factory=dict)
+    budget_tokens: int = 0
+    spent_tokens: int = 0
+    budget_usd: float = 0.0
+    spent_usd: float = 0.0
+    metadata: dict = Field(default_factory=dict)
+
+
+class WeBotGoalHeartbeatRequest(WeBotSessionRuntimeRequest):
+    goal_id: str
+    heartbeat_status: str = "active"
+    report: str = ""
+    spent_tokens_delta: int = 0
+    spent_usd_delta: float = 0.0
+    metadata: dict = Field(default_factory=dict)
+
+
 class WeBotSessionModeUpdateRequest(WeBotSessionRuntimeRequest):
     mode: str = "execute"
     reason: str = ""
+
+
+class WeBotLspRequest(WeBotSessionRuntimeRequest):
+    file: str
+    op: str = "diagnostics"
+    line: int = 0
+    col: int = 0
+    new_name: str = ""
+    timeout_seconds: int = 30
+    max_diagnostics: int = 50
 
 
 class WeBotSessionInboxDeliverRequest(WeBotSessionRuntimeRequest):
@@ -120,3 +155,29 @@ class WeBotApprovalResolutionRequest(BaseModel):
     reason: str = ""
     remember: bool = False
     session_id: str = ""
+
+
+class WeBotClaudeKeepaliveUpdateRequest(WeBotSessionRuntimeRequest):
+    enabled: bool = False
+    prompt: str = "ping"
+    model: str = ""
+    timezone: str = ""
+    start_time: str = "06:00"
+    sleep_time: str = "23:00"
+    weekdays: str = "MTWRFSU"
+    use_caffeinate: bool = False
+    force_sleep_at_quiet_hours: bool = False
+    monitor_command: str = "claude-monitor --clear"
+    timeout_seconds: int = 90
+    metadata: dict = Field(default_factory=dict)
+
+
+class WeBotClaudeProbeRequest(WeBotSessionRuntimeRequest):
+    prompt: str = "Reply only CLAUDE_ACP_OK"
+    session_name: str = ""
+    timeout_seconds: int = 90
+
+
+class WeBotClaudeKickoffRequest(WeBotClaudeProbeRequest):
+    model: str = ""
+    use_acp: bool = True

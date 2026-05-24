@@ -91,6 +91,7 @@ def _get_env(key: str, default: str = "") -> str:
 
 from oasis.models import (
     AgentCallbackRequest,
+    AgentInterviewRequest,
     CreateTopicRequest,
     HumanReplyRequest,
     HumanWaitInfo,
@@ -108,6 +109,7 @@ from oasis.agent_catalog import build_agent_catalog
 from oasis.engine import DiscussionEngine
 from oasis.python_workflow import PythonWorkflowEngine
 from oasis.experts import _apply_response
+from services.llm_factory import create_chat_model, extract_text
 from oasis.swarm_engine import build_pending_swarm, generate_swarm_blueprint
 from oasis.openclaw_cli import (
     build_agent_detail as _build_agent_detail_helper,
@@ -720,6 +722,289 @@ def _build_topic_detail(forum: DiscussionForum, posts: list) -> TopicDetail:
     )
 
 
+def _clip(value: object, limit: int = 280) -> str:
+    text = str(value or "").replace("\r", " ").strip()
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 1)].rstrip() + "…"
+
+
+def _agent_id(name: str) -> str:
+    clean = str(name or "unknown").strip() or "unknown"
+    return f"agent:{clean}"
+
+
+def _ensure_agent_stat(stats: dict[str, dict], name: str) -> dict:
+    clean = str(name or "unknown").strip() or "unknown"
+    return stats.setdefault(
+        clean,
+        {
+            "agent_id": _agent_id(clean),
+            "agent_name": clean,
+            "posts": 0,
+            "replies": 0,
+            "upvotes": 0,
+            "downvotes": 0,
+            "net_votes": 0,
+            "timeline_events": 0,
+            "event_counts": {},
+            "calls": 0,
+            "done": 0,
+            "errors": 0,
+            "rounds": [],
+            "first_elapsed": None,
+            "last_elapsed": None,
+            "last_post_id": None,
+            "last_post_preview": "",
+            "last_event": "",
+        },
+    )
+
+
+def _touch_elapsed(entry: dict, elapsed: float):
+    if entry["first_elapsed"] is None or elapsed < entry["first_elapsed"]:
+        entry["first_elapsed"] = elapsed
+    if entry["last_elapsed"] is None or elapsed > entry["last_elapsed"]:
+        entry["last_elapsed"] = elapsed
+
+
+def _build_agent_stats(forum: DiscussionForum, posts: list) -> list[dict]:
+    stats: dict[str, dict] = {}
+
+    for post in posts:
+        author = str(getattr(post, "author", "") or "unknown")
+        entry = _ensure_agent_stat(stats, author)
+        entry["posts"] += 1
+        if coerce_optional_post_id(getattr(post, "reply_to", None)) is not None:
+            entry["replies"] += 1
+        entry["upvotes"] += int(getattr(post, "upvotes", 0) or 0)
+        entry["downvotes"] += int(getattr(post, "downvotes", 0) or 0)
+        entry["net_votes"] = entry["upvotes"] - entry["downvotes"]
+        round_num = int(getattr(post, "round_num", 0) or 0)
+        if round_num not in entry["rounds"]:
+            entry["rounds"].append(round_num)
+        elapsed = float(getattr(post, "elapsed", 0) or 0)
+        _touch_elapsed(entry, elapsed)
+        entry["last_post_id"] = int(getattr(post, "id", 0) or 0)
+        entry["last_post_preview"] = _clip(getattr(post, "content", ""), 220)
+
+    call_events = {"agent_call", "agent_start", "tool_call", "callback_wait"}
+    done_events = {"agent_done", "agent_callback", "tool_done", "human_reply"}
+    error_events = {"agent_error", "tool_error", "error"}
+    for event in forum.timeline:
+        agent = str(getattr(event, "agent", "") or "").strip()
+        if not agent:
+            continue
+        entry = _ensure_agent_stat(stats, agent)
+        event_name = str(getattr(event, "event", "") or "unknown")
+        entry["timeline_events"] += 1
+        entry["event_counts"][event_name] = entry["event_counts"].get(event_name, 0) + 1
+        if event_name in call_events:
+            entry["calls"] += 1
+        if event_name in done_events:
+            entry["done"] += 1
+        if event_name in error_events:
+            entry["errors"] += 1
+        elapsed = float(getattr(event, "elapsed", 0) or 0)
+        _touch_elapsed(entry, elapsed)
+        detail = _clip(getattr(event, "detail", ""), 180)
+        entry["last_event"] = f"{event_name}: {detail}" if detail else event_name
+
+    agents = list(stats.values())
+    for entry in agents:
+        entry["rounds"].sort()
+        entry["first_elapsed"] = round(entry["first_elapsed"] or 0.0, 2)
+        entry["last_elapsed"] = round(entry["last_elapsed"] or 0.0, 2)
+    agents.sort(key=lambda item: (item["posts"], item["timeline_events"], item["net_votes"]), reverse=True)
+    return agents
+
+
+def _build_action_feed(forum: DiscussionForum, posts: list) -> list[dict]:
+    actions: list[dict] = []
+    for post in posts:
+        author = str(getattr(post, "author", "") or "unknown")
+        reply_to = coerce_optional_post_id(getattr(post, "reply_to", None))
+        actions.append(
+            {
+                "action_id": f"post-{int(getattr(post, 'id', 0) or 0)}",
+                "round_num": int(getattr(post, "round_num", 0) or 0),
+                "elapsed": round(float(getattr(post, "elapsed", 0) or 0), 2),
+                "timestamp": float(getattr(post, "timestamp", 0) or 0),
+                "platform": "oasis",
+                "agent_id": _agent_id(author),
+                "agent_name": author,
+                "action_type": "REPLY_POST" if reply_to is not None else "CREATE_POST",
+                "action_args": {
+                    "reply_to": reply_to,
+                    "content_preview": _clip(getattr(post, "content", ""), 360),
+                },
+                "result": {
+                    "post_id": int(getattr(post, "id", 0) or 0),
+                    "upvotes": int(getattr(post, "upvotes", 0) or 0),
+                    "downvotes": int(getattr(post, "downvotes", 0) or 0),
+                },
+                "success": True,
+            }
+        )
+
+    failure_events = {"agent_error", "tool_error", "error"}
+    for idx, event in enumerate(forum.timeline, start=1):
+        event_name = str(getattr(event, "event", "") or "unknown")
+        agent = str(getattr(event, "agent", "") or "").strip()
+        actions.append(
+            {
+                "action_id": f"timeline-{int(getattr(event, 'seq', idx) or idx)}",
+                "round_num": int(getattr(forum, "current_round", 0) or 0),
+                "elapsed": round(float(getattr(event, "elapsed", 0) or 0), 2),
+                "timestamp": None,
+                "platform": "oasis",
+                "agent_id": _agent_id(agent) if agent else "",
+                "agent_name": agent,
+                "action_type": event_name.upper(),
+                "action_args": {"detail": _clip(getattr(event, "detail", ""), 420)},
+                "result": {"event": event_name},
+                "success": event_name not in failure_events,
+            }
+        )
+
+    actions.sort(key=lambda item: (item["elapsed"], item["action_id"]))
+    return actions
+
+
+def _filter_actions(actions: list[dict], agent: str) -> list[dict]:
+    wanted = (agent or "").strip()
+    if not wanted:
+        return actions
+    wanted_lower = wanted.lower()
+    return [
+        action for action in actions
+        if str(action.get("agent_id", "")).lower() == wanted_lower
+        or str(action.get("agent_name", "")).lower() == wanted_lower
+    ]
+
+
+def _select_interview_agent(
+    stats: list[dict],
+    *,
+    agent_id: str | None = None,
+    agent_name: str | None = None,
+) -> dict:
+    if not stats:
+        raise HTTPException(404, "No agents or posts found in this topic")
+    wanted_id = (agent_id or "").strip().lower()
+    wanted_name = (agent_name or "").strip().lower()
+    if wanted_id or wanted_name:
+        for entry in stats:
+            if wanted_id and str(entry.get("agent_id", "")).lower() == wanted_id:
+                return entry
+            if wanted_name and str(entry.get("agent_name", "")).lower() == wanted_name:
+                return entry
+        raise HTTPException(404, "Agent not found in this topic")
+    return stats[0]
+
+
+def _lookup_agent_persona(forum: DiscussionForum, agent_name: str) -> str:
+    try:
+        from oasis.experts import get_all_experts
+
+        needle = (agent_name or "").strip().lower()
+        for expert in get_all_experts(getattr(forum, "user_id", "") or None, team=getattr(forum, "team", "") or ""):
+            aliases = {
+                str(expert.get("name", "") or "").strip().lower(),
+                str(expert.get("tag", "") or "").strip().lower(),
+                str(expert.get("name_zh", "") or "").strip().lower(),
+                str(expert.get("name_en", "") or "").strip().lower(),
+            }
+            if needle in aliases:
+                return str(expert.get("persona", "") or "")
+    except Exception:
+        return ""
+    return ""
+
+
+def _recent_agent_posts(posts: list, agent_name: str, limit: int = 6) -> list[dict]:
+    selected = [
+        {
+            "post_id": int(getattr(post, "id", 0) or 0),
+            "round_num": int(getattr(post, "round_num", 0) or 0),
+            "elapsed": round(float(getattr(post, "elapsed", 0) or 0), 2),
+            "reply_to": coerce_optional_post_id(getattr(post, "reply_to", None)),
+            "content": _clip(getattr(post, "content", ""), 800),
+        }
+        for post in posts
+        if str(getattr(post, "author", "") or "") == agent_name
+    ]
+    return selected[-limit:]
+
+
+def _fallback_interview_answer(forum: DiscussionForum, agent: dict, posts: list, prompt: str) -> str:
+    recent = _recent_agent_posts(posts, str(agent.get("agent_name", "")), limit=3)
+    last_points = "；".join(item["content"] for item in recent if item["content"]) or "还没有可引用的发言。"
+    question = f"针对你的问题「{_clip(prompt, 160)}」，" if prompt else ""
+    return (
+        f"我是 {agent.get('agent_name')}。{question}"
+        f"我在主题「{_clip(forum.question, 160)}」中发布了 {agent.get('posts', 0)} 条内容，"
+        f"参与 {agent.get('timeline_events', 0)} 个时间线事件，净投票 {agent.get('net_votes', 0)}。"
+        f"最近依据包括：{last_points}"
+    )
+
+
+async def _generate_interview_answer(
+    forum: DiscussionForum,
+    agent: dict,
+    posts: list,
+    prompt: str,
+    *,
+    include_context: bool,
+) -> str:
+    agent_name = str(agent.get("agent_name", "") or "unknown")
+    persona = _lookup_agent_persona(forum, agent_name)
+    recent_posts = _recent_agent_posts(posts, agent_name, limit=8)
+    timeline = [
+        {
+            "elapsed": round(float(getattr(event, "elapsed", 0) or 0), 2),
+            "event": str(getattr(event, "event", "") or "unknown"),
+            "agent": str(getattr(event, "agent", "") or ""),
+            "detail": _clip(getattr(event, "detail", ""), 220),
+        }
+        for event in forum.timeline[-20:]
+    ]
+    payload = {
+        "topic": forum.question,
+        "agent": agent,
+        "persona": _clip(persona, 2000),
+        "recent_posts": recent_posts if include_context else [],
+        "recent_timeline": timeline if include_context else [],
+        "question": prompt or "请用第一人称解释你在本轮 OASIS 讨论中的行动、依据和下一步判断。",
+    }
+
+    def _invoke_llm() -> str:
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        model = create_chat_model(temperature=0.35, max_tokens=1200, timeout=30, max_retries=1)
+        response = model.invoke(
+            [
+                SystemMessage(
+                    content=(
+                        "你是 OASIS Town 的 agent interview 接口。"
+                        "请严格扮演被采访的 agent，用第一人称回答；不要调用工具；"
+                        "只能依据给定 topic、persona、posts、timeline 和 stats。"
+                    )
+                ),
+                HumanMessage(content=json.dumps(payload, ensure_ascii=False, indent=2)),
+            ]
+        )
+        return extract_text(getattr(response, "content", response)).strip()
+
+    try:
+        answer = await asyncio.to_thread(_invoke_llm)
+        if answer:
+            return answer
+    except Exception as exc:
+        print(f"[OASIS] ⚠️ agent interview LLM fallback: {exc}")
+    return _fallback_interview_answer(forum, agent, posts, prompt)
+
+
 @app.get("/topics/{topic_id}", response_model=TopicDetail)
 async def get_topic(topic_id: str, user_id: str = Query(...)):
     """Get full discussion detail."""
@@ -735,6 +1020,67 @@ async def get_topic(topic_id: str, user_id: str = Query(...)):
             status_code=500,
             detail=f"Failed to serialize topic (check discussion JSON on disk): {exc}",
         ) from exc
+
+
+@app.get("/topics/{topic_id}/agent-stats")
+async def get_topic_agent_stats(topic_id: str, user_id: str = Query(...)):
+    """Return MiroFish-style per-agent activity metrics for one OASIS topic."""
+    forum = _get_forum_or_404(topic_id)
+    _check_owner(forum, user_id)
+    posts = await forum.browse()
+    agents = _build_agent_stats(forum, posts)
+    return {
+        "topic_id": topic_id,
+        "question": forum.question,
+        "status": forum.status,
+        "agents": agents,
+    }
+
+
+@app.get("/topics/{topic_id}/actions")
+async def get_topic_actions(
+    topic_id: str,
+    user_id: str = Query(...),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    agent: str = Query(""),
+):
+    """Return a normalized action feed combining OASIS posts and timeline events."""
+    forum = _get_forum_or_404(topic_id)
+    _check_owner(forum, user_id)
+    posts = await forum.browse()
+    actions = _filter_actions(_build_action_feed(forum, posts), agent)
+    return {
+        "topic_id": topic_id,
+        "total": len(actions),
+        "offset": offset,
+        "limit": limit,
+        "actions": actions[offset: offset + limit],
+    }
+
+
+@app.post("/topics/{topic_id}/interview")
+async def interview_topic_agent(topic_id: str, req: AgentInterviewRequest):
+    """Ask one OASIS participant to explain its behavior using local topic state."""
+    forum = _get_forum_or_404(topic_id)
+    _check_owner(forum, req.user_id)
+    posts = await forum.browse()
+    stats = _build_agent_stats(forum, posts)
+    agent = _select_interview_agent(stats, agent_id=req.agent_id, agent_name=req.agent_name)
+    answer = await _generate_interview_answer(
+        forum,
+        agent,
+        posts,
+        (req.prompt or "").strip(),
+        include_context=bool(req.include_context),
+    )
+    return {
+        "topic_id": topic_id,
+        "agent": agent,
+        "prompt": (req.prompt or "").strip(),
+        "answer": answer,
+        "evidence_posts": _recent_agent_posts(posts, str(agent.get("agent_name", "")), limit=8),
+    }
 
 
 @app.get("/topics/{topic_id}/stream")

@@ -130,6 +130,17 @@ def _build_frontmatter(meta: dict[str, str], body: str) -> str:
     return "\n".join(fm_lines)
 
 
+def _validate_skill_frontmatter(content: str) -> str:
+    meta, _ = _parse_frontmatter(content)
+    if not meta:
+        return "Skill content must include YAML frontmatter."
+    if not (meta.get("name") or "").strip():
+        return "Skill frontmatter must include name."
+    if not (meta.get("description") or "").strip():
+        return "Skill frontmatter must include description."
+    return ""
+
+
 # ══════════════════════════════════════════════════════════════════════
 # Public API
 # ══════════════════════════════════════════════════════════════════════
@@ -151,6 +162,9 @@ def create_skill(
     violations = _security_scan(content)
     if violations:
         return {"success": False, "error": f"Security scan failed: {'; '.join(violations)}"}
+    frontmatter_error = _validate_skill_frontmatter(content)
+    if frontmatter_error:
+        return {"success": False, "error": frontmatter_error}
 
     base = _scope_skills_dir(user_id, team)
     if category:
@@ -189,6 +203,9 @@ def edit_skill(
     violations = _security_scan(content)
     if violations:
         return {"success": False, "error": f"Security scan failed: {'; '.join(violations)}"}
+    frontmatter_error = _validate_skill_frontmatter(content)
+    if frontmatter_error:
+        return {"success": False, "error": frontmatter_error}
 
     skill_path = _find_skill_path(user_id, name, team=team)
     if not skill_path:

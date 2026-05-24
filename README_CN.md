@@ -112,7 +112,7 @@ powershell -ExecutionPolicy Bypass -File .\selfskill\scripts\run.ps1 stop
 ### 多专家协作，不只是聊天
 
 - **Team 统一编排** — 将内部 Agent、OpenClaw Agent、外部 API Agent 组合成单一 Team，支持一键导入导出
-- **15 个内置 Team 预设** — LLM 顾问团、女娲全明星、内容帝国、战略分析团、科技巨头等——安装即用
+- **16 个内置 Team 预设** — LLM 顾问团、女娲全明星、内容帝国、战略分析团、科技巨头等——安装即用
 - **自带 AI 团队构建器** — ClawCross Creator 发现 SOP 页面、用 TinyFish 抽取角色，生成可编辑的人设和 DAG 工作流
 - **可视化编排** — 在 OASIS 中设计顺序、并行、分支或 DAG 风格的专家协作工作流
 

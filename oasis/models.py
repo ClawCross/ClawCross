@@ -91,6 +91,15 @@ class ReportAskRequest(BaseModel):
     limit: int = Field(default=8, ge=3, le=20)
 
 
+class AgentInterviewRequest(BaseModel):
+    """Ask one OASIS participant to explain its actions in the current topic."""
+    user_id: str = "anonymous"
+    agent_id: Optional[str] = None
+    agent_name: Optional[str] = None
+    prompt: str = Field(default="", max_length=4000)
+    include_context: bool = True
+
+
 class AgentCallbackRequest(BaseModel):
     """Structured callback posted by an external agent during a running topic."""
     user_id: str = "anonymous"

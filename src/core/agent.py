@@ -49,6 +49,7 @@ from webot.permission_context import (
 from webot.profiles import get_agent_profile, parse_subagent_session_id, render_profile_system_prompt
 from webot.runtime import (
     PLAN_MODE_BLOCKED_TOOLS,
+    REVIEW_MODE_BLOCKED_TOOLS,
     build_session_mode_message,
     build_turn_limit_message,
     filter_tools_for_mode,
@@ -138,6 +139,8 @@ USER_INJECTED_TOOLS = {
     "list_sessions", "get_current_session",
     # LLM API access tools
     "call_llm_api", "send_internal_message",
+    # Workspace diagnostics / LSP-style feedback
+    "lsp", "workspace_diagnostics",
     # Group chat tools
     "send_to_group", "send_private_cli",
     # WeBot subagent tools
@@ -149,10 +152,10 @@ USER_INJECTED_TOOLS = {
     "write_session_plan", "read_session_plan", "clear_session_plan",
     "write_session_todos", "read_session_todos", "clear_session_todos",
     "record_verification", "list_verifications", "run_verification",
-    "list_tool_approvals",
+    "list_tool_approvals", "resolve_tool_approval",
     "ultraplan_start", "ultraplan_status",
     "ultrareview_start", "ultrareview_status",
-    "enter_plan_mode", "exit_plan_mode", "get_session_mode", "kairos_mode",
+    "enter_plan_mode", "exit_plan_mode", "set_session_mode", "get_session_mode", "kairos_mode",
     # Self-evolution tools
     "skill_manage", "skill_view", "skill_list",
     "skill_evolution_report", "skill_evolution_apply",
@@ -180,6 +183,8 @@ SESSION_INJECTED_TOOLS = {
     "get_current_session": "current_session_id",
     "send_telegram_message": "source_session",
     "send_internal_message": "source_session",
+    "lsp": "session_id",
+    "workspace_diagnostics": "session_id",
     "send_to_group": "source_session",
     "send_private_cli": "source_session",
     "spawn_subagent": "parent_session",
@@ -209,6 +214,7 @@ SESSION_INJECTED_TOOLS = {
     "ultrareview_status": "source_session",
     "enter_plan_mode": "source_session",
     "exit_plan_mode": "source_session",
+    "set_session_mode": "source_session",
     "get_session_mode": "source_session",
     "kairos_mode": "source_session",
     # Self-evolution tools
@@ -244,6 +250,7 @@ SESSION_FORCE_INJECTED_TOOLS: frozenset[str] = frozenset({
     "claude_session_deliver_inbox",
     "enter_plan_mode",
     "exit_plan_mode",
+    "set_session_mode",
     "get_session_mode",
     "get_current_session",
     "start_new_oasis",
@@ -459,6 +466,17 @@ class UserAwareToolNode:
                         requires_approval=permission.requires_approval,
                         reason=permission.reason,
                         matched_rule=permission.matched_rule,
+                    )
+                if (
+                    runtime_mode_name == "yolo"
+                    and not final_decision.allowed
+                    and getattr(final_decision, "requires_approval", False)
+                ):
+                    final_decision = ToolPolicyDecision(
+                        allowed=True,
+                        requires_approval=False,
+                        reason="YOLO mode auto-approved a manual tool-policy request.",
+                        matched_rule=getattr(final_decision, "matched_rule", "") or permission.matched_rule,
                     )
                 approval_id = permission.approval.approval_id if permission.approval else ""
                 if not final_decision.allowed:
@@ -1156,6 +1174,11 @@ class TeamAgent:
                 "args": [os.path.join(self._src_dir, "mcp_servers", "skills.py")],
                 "transport": "stdio",
             },
+            "lsp_service": {
+                "command": python_command,
+                "args": [os.path.join(self._src_dir, "mcp_servers", "lsp.py")],
+                "transport": "stdio",
+            },
         })
 
         # 3. Fetch tool definitions (new API: no context manager needed)
@@ -1167,6 +1190,7 @@ class TeamAgent:
         self._tool_registry.set_always_loaded({
             "read_file", "write_file", "list_files", "run_command",
             "search_files", "run_python_code", "list_images", "attach_image_to_context",
+            "lsp", "workspace_diagnostics",
         })
 
         # 4. Build LangGraph workflow

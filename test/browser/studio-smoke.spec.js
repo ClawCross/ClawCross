@@ -63,6 +63,14 @@ async function stubStudioNetwork(page, calls, options = {}) {
   calls.workflowApply = calls.workflowApply || [];
   calls.teamPresetInstall = calls.teamPresetInstall || [];
   calls.teamPresetList = calls.teamPresetList || 0;
+  calls.acpxEnsure = calls.acpxEnsure || [];
+  calls.projectUpdateCheck = calls.projectUpdateCheck || 0;
+  const acpxStatusPayload = options.acpxStatusPayload || { available: false, tools: [] };
+  const acpxSessionsPayload = options.acpxSessionsPayload || { ok: true, sessions: [] };
+  const acpxHistoryPayload = options.acpxHistoryPayload || { ok: true, history: { entries: [] } };
+  const acpxEnsurePayload = options.acpxEnsurePayload || { ok: true, tool: 'cursor', session_key: 'main:cursor:main-session' };
+  const acpxHistoryStatus = options.acpxHistoryStatus || 200;
+  const acpxEnsureStatus = options.acpxEnsureStatus || 200;
   const currentRuntimeState = {
     status: 'success',
     session_id: 'main-session',
@@ -376,6 +384,13 @@ async function stubStudioNetwork(page, calls, options = {}) {
   await page.route('**/teams', (route) => json(route, { teams: ['Smoke Team'] }));
   await page.route('**/proxy_visual/experts*', (route) => json(route, []));
   await page.route('**/proxy_openclaw_sessions', (route) => json(route, { available: true, agents: [] }));
+  await page.route('**/proxy_acpx_status', (route) => json(route, acpxStatusPayload));
+  await page.route('**/proxy_acpx_sessions?*', (route) => json(route, acpxSessionsPayload));
+  await page.route('**/proxy_acpx_session_history?*', (route) => json(route, acpxHistoryPayload, acpxHistoryStatus));
+  await page.route('**/proxy_acpx_session_ensure', async (route) => {
+    calls.acpxEnsure.push(await route.request().postDataJSON());
+    return json(route, acpxEnsurePayload, acpxEnsureStatus);
+  });
   await page.route('**/proxy_webot_subagents', (route) =>
     json(route, {
       status: 'success',
@@ -593,6 +608,18 @@ async function stubStudioNetwork(page, calls, options = {}) {
     }
     return json(route, { settings: proxySettings });
   });
+  await page.route('**/proxy_update_check', async (route) => {
+    calls.projectUpdateCheck += 1;
+    return json(route, {
+      status: 'idle',
+      deployment_mode: 'git',
+      branch: 'main',
+      current_short_commit: 'smoke',
+      latest_short_commit: 'smoke',
+      has_update: false,
+      dirty: false,
+    });
+  });
   await page.route('**/api/tinyfish/status*', (route) =>
     json(route, {
       ok: true,
@@ -796,6 +823,58 @@ test('studio settings export button allows keyless ollama sync', async ({ page }
     model: 'llama3.2:latest',
   });
 
+  expect(pageErrors).toEqual([]);
+});
+
+test('studio ACP warmup surfaces backend errors inline', async ({ page }) => {
+  const calls = {
+    importOpenClaw: 0,
+    exportOpenClaw: 0,
+    tinyfishRun: 0,
+    lastExportPayload: null,
+    approvalActions: [],
+    acpxEnsure: [],
+  };
+  const pageErrors = [];
+
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  page.on('dialog', async (dialog) => {
+    pageErrors.push(`unexpected dialog: ${dialog.message()}`);
+    await dialog.dismiss();
+  });
+
+  await stubStudioNetwork(page, calls, {
+    acpxStatusPayload: { available: true, tools: ['cursor'] },
+    acpxHistoryPayload: {
+      ok: false,
+      error: 'No named session "main:cursor:main-session"',
+    },
+    acpxHistoryStatus: 502,
+    acpxEnsurePayload: {
+      ok: false,
+      error: 'Failed to spawn agent command: cursor-agent acp',
+      session_key: 'main:cursor:main-session',
+    },
+    acpxEnsureStatus: 502,
+  });
+  await installMockWebSocket(page);
+  await page.addInitScript(() => {
+    window.alert = (message) => {
+      throw new Error(`unexpected alert: ${message}`);
+    };
+    window.confirm = () => true;
+  });
+
+  await page.goto('/studio');
+  await page.getByRole('button', { name: 'Cursor' }).click();
+  await expect(page.locator('#oc-acp-session-row')).toBeVisible();
+
+  await page.locator('.oc-acp-session-ensure').click();
+
+  await expect.poll(() => calls.acpxEnsure.length).toBe(1);
+  expect(calls.acpxEnsure[0]).toMatchObject({ tool: 'cursor' });
+  await expect(page.locator('#oc-acp-session-status')).toContainText(/预热失败|Warm up failed/);
+  await expect(page.locator('#oc-acp-session-status')).toContainText('cursor-agent acp');
   expect(pageErrors).toEqual([]);
 });
 
@@ -1181,5 +1260,168 @@ test('studio oasis swarm uses pretext-backed multiline labels', async ({ page })
   expect(metrics.labelLines.length).toBeGreaterThan(1);
   expect(metrics.tspanCount).toBeGreaterThan(1);
   expect(metrics.edgeLabels.join(' ')).toContain('Long relationship');
+  expect(pageErrors).toEqual([]);
+});
+
+test('oasis town runtime mounts, draws canvas, and accepts live updates', async ({ page }) => {
+  const calls = {
+    importOpenClaw: 0,
+    exportOpenClaw: 0,
+    tinyfishRun: 0,
+    lastExportPayload: null,
+    approvalActions: [],
+  };
+  const pageErrors = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+
+  await installMockWebSocket(page);
+  await stubStudioNetwork(page, calls);
+  await page.addInitScript(() => {
+    window.alert = () => {};
+    window.confirm = () => true;
+  });
+
+  await page.goto('/studio');
+  await expect.poll(() => page.evaluate(() => Boolean(window.OasisTown))).toBe(true);
+
+  const mounted = await page.evaluate(() => {
+    const host = document.createElement('div');
+    host.id = 'oasis-town-runtime-smoke-host';
+    host.style.width = '640px';
+    host.style.height = '420px';
+    host.style.position = 'fixed';
+    host.style.left = '0';
+    host.style.top = '0';
+    host.style.zIndex = '9999';
+    host.style.background = '#4a7c59';
+    document.body.appendChild(host);
+
+    const detail = {
+      topic_id: 'topic-town-smoke',
+      question: 'Should agents coordinate in a visible town?',
+      user_id: 'smoke-user',
+      status: 'running',
+      current_round: 1,
+      max_rounds: 3,
+      discussion: true,
+      conclusion: null,
+      posts: [
+        {
+          id: 1,
+          author: 'Planner',
+          content: 'Map the work before implementation.',
+          upvotes: 2,
+          downvotes: 0,
+          timestamp: 1770000000,
+          elapsed: 1,
+        },
+        {
+          id: 2,
+          author: 'Verifier',
+          content: 'Keep the browser smoke tied to canvas output.',
+          upvotes: 3,
+          downvotes: 0,
+          timestamp: 1770000010,
+          elapsed: 3,
+        },
+      ],
+      timeline: [
+        { elapsed: 0, event: 'topic_created', agent: 'System', detail: 'Town smoke started' },
+        { elapsed: 2, event: 'agent_posted', agent: 'Planner', detail: 'Initial plan' },
+      ],
+    };
+    window.OasisTown.mount(host, detail);
+    return { hasRuntime: Boolean(window.OasisTown), hostChildren: host.children.length };
+  });
+
+  expect(mounted.hasRuntime).toBeTruthy();
+  await expect(page.locator('#oasis-town-runtime-smoke-host canvas')).toBeVisible();
+  await expect.poll(() =>
+    page.locator('#oasis-town-runtime-smoke-host canvas').evaluate((canvas) => ({
+      width: canvas.width,
+      height: canvas.height,
+    }))
+  ).toMatchObject({ width: expect.any(Number), height: expect.any(Number) });
+
+  const canvasState = await page.evaluate(async () => {
+    const canvas = document.querySelector('#oasis-town-runtime-smoke-host canvas');
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const probe = document.createElement('canvas');
+    probe.width = 64;
+    probe.height = 64;
+    const ctx = probe.getContext('2d');
+    let variedPixels = 0;
+    let dataUrlLength = 0;
+    if (canvas && ctx) {
+      ctx.drawImage(canvas, 0, 0, 64, 64);
+      const data = ctx.getImageData(0, 0, 64, 64).data;
+      const r0 = data[0];
+      const g0 = data[1];
+      const b0 = data[2];
+      for (let i = 0; i < data.length; i += 4) {
+        if (Math.abs(data[i] - r0) + Math.abs(data[i + 1] - g0) + Math.abs(data[i + 2] - b0) > 12) {
+          variedPixels += 1;
+        }
+      }
+      dataUrlLength = canvas.toDataURL('image/png').length;
+    }
+    window.OasisTown.update({
+      topic_id: 'topic-town-smoke',
+      question: 'Should agents coordinate in a visible town?',
+      user_id: 'smoke-user',
+      status: 'running',
+      current_round: 2,
+      max_rounds: 3,
+      discussion: true,
+      conclusion: null,
+      posts: [
+        {
+          id: 1,
+          author: 'Planner',
+          content: 'Map the work before implementation.',
+          upvotes: 2,
+          downvotes: 0,
+          timestamp: 1770000000,
+          elapsed: 1,
+        },
+        {
+          id: 2,
+          author: 'Verifier',
+          content: 'Keep the browser smoke tied to canvas output.',
+          upvotes: 5,
+          downvotes: 0,
+          timestamp: 1770000010,
+          elapsed: 3,
+        },
+        {
+          id: 3,
+          author: 'Implementer',
+          content: 'Runtime accepted an update without remounting.',
+          upvotes: 1,
+          downvotes: 0,
+          timestamp: 1770000020,
+          elapsed: 5,
+        },
+      ],
+      timeline: [
+        { elapsed: 0, event: 'topic_created', agent: 'System', detail: 'Town smoke started' },
+        { elapsed: 2, event: 'agent_posted', agent: 'Planner', detail: 'Initial plan' },
+        { elapsed: 5, event: 'agent_posted', agent: 'Implementer', detail: 'Update applied' },
+      ],
+    });
+    return {
+      canvasCount: document.querySelectorAll('#oasis-town-runtime-smoke-host canvas').length,
+      width: canvas ? canvas.width : 0,
+      height: canvas ? canvas.height : 0,
+      variedPixels,
+      dataUrlLength,
+    };
+  });
+
+  expect(canvasState.canvasCount).toBe(1);
+  expect(canvasState.width).toBeGreaterThan(100);
+  expect(canvasState.height).toBeGreaterThan(100);
+  expect(canvasState.variedPixels).toBeGreaterThan(20);
+  expect(canvasState.dataUrlLength).toBeGreaterThan(1000);
   expect(pageErrors).toEqual([]);
 });

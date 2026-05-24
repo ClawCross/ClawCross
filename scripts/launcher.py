@@ -40,7 +40,6 @@ import platform
 import shutil
 import locale
 import urllib.request
-import webbrowser
 from dotenv import load_dotenv
 
 # 确保 Python 输出使用 UTF-8 编码
@@ -452,6 +451,29 @@ def start_chatbot_if_configured(platforms):
     return proc
 
 
+def start_harness_conductor_if_configured():
+    enabled = (os.getenv("CLAWCROSS_HARNESS_CONDUCTOR") or "1").strip().lower()
+    if enabled in ("0", "false", "no", "off"):
+        print("🧭 [skip] ClawCross harness 主控已禁用（CLAWCROSS_HARNESS_CONDUCTOR=0）")
+        return None
+    script = os.path.join(PROJECT_ROOT, "scripts", "harness_conductor.py")
+    if not os.path.exists(script):
+        return None
+    print("🧭 启动 ClawCross harness 本机主控...")
+    proc = subprocess.Popen(
+        [venv_python, script],
+        cwd=WORKING_DIR,
+        env=set_subprocess_env(os.environ),
+        stdin=subprocess.DEVNULL,
+        stdout=None,
+        stderr=None,
+    )
+    proc._cc_optional = True
+    child_procs.append(proc)
+    print(f"   ✅ Harness 主控已启动 (PID: {proc.pid})")
+    return proc
+
+
 def stop_chatbot_processes():
     chatbot_procs = [p for p in child_procs if getattr(p, "_cc_chatbot", False)]
     if not chatbot_procs:
@@ -850,6 +872,7 @@ else:
 
 # 启动所有服务
 launch_services(services)
+start_harness_conductor_if_configured()
 if should_start_chatbot:
     start_chatbot_if_configured(chatbot_platforms)
 
@@ -861,24 +884,10 @@ print("  按 Ctrl+C 停止所有服务")
 print("============================================")
 print()
 
-# 自动打开浏览器（后台线程执行）
-# 在无 GUI 环境下，webbrowser 可能尝试启动文本浏览器 (lynx/w3m) 并占用 stdin 导致卡死
-# 预防方式：无 DISPLAY 时将 BROWSER 设为 "true"（/usr/bin/true），静默跳过
-import threading
-
-def _open_browser():
-    """在后台线程中打开浏览器"""
-    url = f"http://127.0.0.1:{PORT_FRONTEND}"
-    if not os.environ.get("DISPLAY") and sys.platform != "darwin" and sys.platform != "win32":
-        # 无图形环境，设 BROWSER=true 让 webbrowser 调用 /usr/bin/true 而非文本浏览器
-        os.environ.setdefault("BROWSER", "true")
-    try:
-        webbrowser.open(url)
-        print(f"🌐 已自动打开浏览器: {url}")
-    except Exception:
-        print(f"⚠️  无法自动打开浏览器，请手动访问: {url}")
-
-threading.Thread(target=_open_browser, daemon=True).start()
+# Do not open the user's browser on startup. Local/remote URLs are printed by
+# run.sh/run.ps1, and automated verification should use explicit browser tooling.
+if (os.getenv("CLAWCROSS_OPEN_BROWSER") or "").strip().lower() in ("1", "true", "yes", "on"):
+    print("ℹ️  CLAWCROSS_OPEN_BROWSER is no longer supported; startup only prints URLs.")
 
 # 重启信号文件路径
 RESTART_FLAG = os.path.join(str(PID_DIR), "restart_flag")
@@ -943,6 +952,7 @@ try:
                     print("💬 [skip] NoneBot 依赖未就绪，跳过 chatbot（不影响其他服务）")
                     restart_should_start_chatbot = False
             launch_services(services)
+            start_harness_conductor_if_configured()
             if restart_should_start_chatbot:
                 start_chatbot_if_configured(restart_chatbot_platforms)
             print()

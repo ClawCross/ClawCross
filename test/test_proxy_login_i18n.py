@@ -164,6 +164,20 @@ class ProxyLoginI18nTests(unittest.TestCase):
         self.assertEqual(response.get_json(), {"configured": True})
 
     @mock.patch.object(front, "read_env_all")
+    def test_llm_config_status_allows_google_without_base_url(self, mock_read_env_all):
+        mock_read_env_all.return_value = {
+            "LLM_API_KEY": "AIza-test-key",
+            "LLM_BASE_URL": "",
+            "LLM_MODEL": "gemini-2.0-flash",
+            "LLM_PROVIDER": "google",
+        }
+
+        response = self.client.get("/api/llm_config_status")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {"configured": True})
+
+    @mock.patch.object(front, "read_env_all")
     def test_setup_status_treats_ollama_without_api_key_as_configured(self, mock_read_env_all):
         mock_read_env_all.return_value = {
             "LLM_API_KEY": "",
@@ -215,6 +229,50 @@ class ProxyLoginI18nTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), {"models": ["qwen2.5:1.5b"]})
+        self.assertNotIn("Authorization", seen_headers)
+
+    @mock.patch.object(front, "read_env_all")
+    def test_discover_models_google_uses_native_models_endpoint(self, mock_read_env_all):
+        mock_read_env_all.return_value = {
+            "LLM_API_KEY": "AIza-test-key",
+            "LLM_BASE_URL": "",
+            "LLM_MODEL": "gemini-2.0-flash",
+            "LLM_PROVIDER": "google",
+        }
+
+        seen_headers = {}
+
+        class _FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return (
+                    b'{"models":['
+                    b'{"name":"models/gemini-2.0-flash","supportedGenerationMethods":["generateContent"]},'
+                    b'{"name":"models/text-embedding-004","supportedGenerationMethods":["embedContent"]}'
+                    b']}'
+                )
+
+        def _fake_urlopen(req, timeout=15):
+            seen_headers.update(dict(req.header_items()))
+            self.assertEqual(
+                req.full_url,
+                "https://generativelanguage.googleapis.com/v1beta/models?key=AIza-test-key",
+            )
+            self.assertEqual(timeout, 15)
+            return _FakeResponse()
+
+        with mock.patch("urllib.request.urlopen", side_effect=_fake_urlopen):
+            response = self.client.post("/api/discover_models", json={})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {"models": ["gemini-2.0-flash"]})
         self.assertNotIn("Authorization", seen_headers)
 
     @mock.patch.object(front, "read_env_all")

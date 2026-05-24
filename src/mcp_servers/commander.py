@@ -800,8 +800,10 @@ async def run_command(
     if reject_reason:
         return f"❌ {reject_reason}"
 
-    # 2. Bash safety 高风险检查 — 阻塞等待用户审批
+    # 2. Bash safety 高风险检查 — deny invariants 直接阻断，高风险阻塞等待审批
     cmd_analysis = analyze_command(command)
+    if cmd_analysis.blocked or cmd_analysis.risk_level == RiskLevel.CRITICAL:
+        return f"❌ 命令被安全策略阻止: {'; '.join(cmd_analysis.reasons)}"
     if cmd_analysis.risk_level == RiskLevel.HIGH:
         approved, approval_result = await _wait_for_command_approval(
             username,
@@ -982,8 +984,10 @@ async def start_background_command(
     if reject_reason:
         return f"❌ {reject_reason}"
 
-    # Bash safety 高风险检查 — 阻塞等待用户审批
+    # Bash safety 高风险检查 — deny invariants 直接阻断，高风险阻塞等待审批
     cmd_analysis = analyze_command(command)
+    if cmd_analysis.blocked or cmd_analysis.risk_level == RiskLevel.CRITICAL:
+        return f"❌ 命令被安全策略阻止: {'; '.join(cmd_analysis.reasons)}"
     if cmd_analysis.risk_level == RiskLevel.HIGH:
         approved, approval_result = await _wait_for_command_approval(
             username,
