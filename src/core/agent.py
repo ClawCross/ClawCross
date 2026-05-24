@@ -129,6 +129,7 @@ USER_INJECTED_TOOLS = {
     # Notification push tools (multi-channel)
     "set_notification_channel", "send_notification", "get_notification_status",
     "remove_notification_channel", "list_notification_channels",
+    "set_default_notification_channel",
     # OASIS forum tools
     "start_new_oasis", "check_oasis_discussion", "cancel_oasis_discussion",
     "list_oasis_topics",
