@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$PythonVersion = "3.11"
 )
@@ -118,8 +118,8 @@ try {
             }
             # Common npm global bin on Windows (often already on PATH after Node install)
             $npmBin = Join-Path $env:APPDATA "npm"
-            if ((Test-Path $npmBin) -and ($env:PATH -notlike "*${npmBin}*")) {
-                $env:PATH = "${npmBin};${env:PATH}"
+            if ((Test-Path $npmBin) -and ($env:PATH -notlike ('*' + $npmBin + '*'))) {
+                $env:PATH = $npmBin + ';' + $env:PATH
                 Write-Host "Prepended npm global bin to PATH for this session: $npmBin"
             }
             $acpxAfter = Get-Command acpx -ErrorAction SilentlyContinue
