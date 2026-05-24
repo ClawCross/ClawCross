@@ -7662,6 +7662,22 @@ async function handleSend() {
             return String(meta.title || meta.name || meta.kind || meta.tool_call_id || 'tool');
         }
 
+        // 仅在新 meta 实际带 title/name/kind 时才覆盖名字。
+        // 否则保留已显示的；都没有时才退化到 tool_call_id。
+        // 修复：acpx_tool_update 只带 tool_call_id+content_text，过去会把上一帧
+        //       acpx_tool_start 的 title 覆盖成 id。
+        function _acpxApplyName(nameEl, meta, toolCallId) {
+            if (!nameEl) return;
+            const incoming = String(meta.title || meta.name || meta.kind || '').trim();
+            if (incoming) {
+                nameEl.textContent = incoming;
+                return;
+            }
+            if (!nameEl.textContent.trim()) {
+                nameEl.textContent = toolCallId || 'tool';
+            }
+        }
+
         function upsertAcpxToolIndicator(meta = {}) {
             const toolCallId = String(meta.tool_call_id || '').trim();
             if (!toolCallId) return null;
@@ -7687,7 +7703,7 @@ async function handleSend() {
                 acpxToolIndicators.set(toolCallId, indicator);
             }
             const nameEl = indicator.querySelector('.stream-tool-name');
-            if (nameEl) nameEl.textContent = acpxToolDisplayName(meta);
+            _acpxApplyName(nameEl, meta, toolCallId);
             scrollChatToBottom(chatBox, { settle: false });
             return indicator;
         }
@@ -7717,6 +7733,8 @@ async function handleSend() {
             const toolCallId = String(meta.tool_call_id || '').trim();
             const indicator = toolCallId ? acpxToolIndicators.get(toolCallId) : null;
             if (!indicator) return;
+            // acpx_tool_end 仍会带 title，补一次名字（防止 update 过程已把名字洗成 id）
+            _acpxApplyName(indicator.querySelector('.stream-tool-name'), meta, toolCallId);
             const statusEl = indicator.querySelector('.stream-tool-status');
             if (statusEl) {
                 statusEl.textContent = '✅';

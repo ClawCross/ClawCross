@@ -4828,6 +4828,10 @@
 <!-- ═══════════════ Chat Actions Menu (inline popup) ═══════════════ -->
 <div class="chat-actions-overlay" id="chat-actions-overlay" onclick="closeChatActions()"></div>
 <div class="chat-actions-sheet" id="chat-actions-sheet">
+  <div class="chat-action-item" id="action-main-history" onclick="closeChatActions(); openPrivateChatAgentHistory();" style="display:none;">
+    <span class="chat-action-icon">📜</span>
+    <span data-i18n="action_main_history">主端历史</span>
+  </div>
   <div class="chat-action-item" onclick="closeChatActions(); toggleDrawer();">
     <span class="chat-action-icon">👥</span>
     <span data-i18n="view_members">查看群成员</span>
@@ -6118,6 +6122,7 @@ const I18N = {
 
     // ── Agent history ──
     view_main_history: '📜 查看主端历史',
+    action_main_history: '主端历史',
     agent_history_title: '📜 主端历史',
     agent_history_loading: '加载历史消息...',
     agent_history_empty: '（此对话暂无消息记录）',
@@ -6777,6 +6782,7 @@ const I18N = {
     agent_detail_title: '🤖 Agent Details',
 
     view_main_history: '📜 View Main History',
+    action_main_history: 'Main history',
     agent_history_title: '📜 Main History',
     agent_history_loading: 'Loading messages...',
     agent_history_empty: '(No messages in this conversation)',
@@ -8914,13 +8920,16 @@ function savePinnedIds(ids) {
 }
 function isPinned(gid) { return getPinnedIds().includes(gid); }
 
-function renderGroupNameDisplay(rawName) {
+// '#' 后缀是系统用于区分私聊群的 global_id，UI 中不展示。
+function stripGroupNameSuffix(rawName) {
   const name = String(rawName || '');
   const hashIndex = name.indexOf('#');
-  if (hashIndex <= 0 || hashIndex >= name.length - 1) return esc(name);
-  const base = name.slice(0, hashIndex);
-  const suffix = name.slice(hashIndex);
-  return `${esc(base)}<span class="group-name-suffix">${esc(suffix)}</span>`;
+  if (hashIndex <= 0) return name;
+  return name.slice(0, hashIndex);
+}
+
+function renderGroupNameDisplay(rawName) {
+  return esc(stripGroupNameSuffix(rawName));
 }
 
 function togglePinChat() {
@@ -10406,7 +10415,7 @@ async function openChat(groupId, name) {
   clearGroupUnread(groupId, false);
   _hideNewMsgBanner();
 
-  document.getElementById('chat-title').textContent = name;
+  document.getElementById('chat-title').textContent = stripGroupNameSuffix(name);
   let cachedDetail = _cacheGetFresh(__mobileGroupDetailCache, groupId);
   if (!cachedDetail) {
     const warmTask = prefetchGroupDetail(groupId);
@@ -13468,6 +13477,32 @@ function toggleChatActions() {
     pinIcon.textContent = pinned ? '📍' : '📌';
     pinLabel.textContent = pinned ? t('unpin_chat') : t('pin_chat');
   }
+  // 二级菜单：私聊（两人群：用户 + 一个 agent）时显示「主端历史」入口
+  const historyItem = document.getElementById('action-main-history');
+  if (historyItem) {
+    historyItem.style.display = _findPrivateChatAgent() ? '' : 'none';
+  }
+}
+
+// 取当前群组的"唯一 agent"（两人群：1 用户 + 1 agent）。其他场景返回 null。
+function _findPrivateChatAgent() {
+  if (!currentGroupId) return null;
+  const detail = (typeof _cacheGetFresh === 'function')
+    ? _cacheGetFresh(__mobileGroupDetailCache, currentGroupId)
+    : null;
+  const members = (detail && detail.members) || [];
+  const agents = members.filter(m => m && m.is_agent);
+  if (agents.length !== 1) return null;
+  return agents[0];
+}
+
+function openPrivateChatAgentHistory() {
+  const agent = _findPrivateChatAgent();
+  if (!agent) {
+    if (typeof toast === 'function') toast(t('agent_history_no_session') || 'No agent');
+    return;
+  }
+  showAgentHistory(agent);
 }
 
 function closeChatActions() {
