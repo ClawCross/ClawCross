@@ -1,6 +1,6 @@
 {
   "name": "clawcross",
-  "version": "0.0.17",
+  "version": "0.0.18",
   "description": "ClawCross multi-platform agent CLI shell with full project source.",
   "license": "MIT",
   "engines": {
