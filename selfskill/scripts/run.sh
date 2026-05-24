@@ -419,7 +419,7 @@ run_clawcross_setup_if_needed() {
     if [ "$need" = false ] && command -v npm &>/dev/null && ! command -v acpx &>/dev/null; then need=true; fi
     if [ "$need" = true ]; then
         echo "📋 首次运行或环境未齐全，正在执行 scripts/setup_env.sh …"
-        bash scripts/setup_env.sh
+        bash "$PROJECT_ROOT/scripts/setup_env.sh"
         if [ -f "$CLAWCROSS_VENV_DIR/bin/activate" ]; then
             source "$CLAWCROSS_VENV_DIR/bin/activate"
         fi
@@ -737,7 +737,7 @@ case "${1:-help}" in
 
     setup)
         echo "=== 环境配置（亦会在 start / start-foreground 中按需自动执行）==="
-        bash scripts/setup_env.sh
+        bash "$PROJECT_ROOT/scripts/setup_env.sh"
 
         # acpx 自检（setup_env.sh 已处理安装，这里做最终确认）
         if command -v acpx &>/dev/null; then
