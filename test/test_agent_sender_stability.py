@@ -1,3 +1,4 @@
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -7,6 +8,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
+
+# Other test modules import `front`, which writes OPENCLAW_API_URL into the
+# process env at import time. This test asserts the structured error path when
+# no api_url is configured, so it must run with the env var cleared regardless
+# of execution order.
+_ENV_VARS_TO_CLEAR = ("OPENCLAW_API_URL", "OPENCLAW_GATEWAY_TOKEN")
 
 from integrations.acpx_adapter import AcpxAdapter
 from integrations.agent_sender import SendToAgentRequest, send_to_agent
@@ -54,12 +61,16 @@ class TestAgentSenderStability(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(result.error)
 
     async def test_http_missing_api_url_returns_structured_error(self):
-        result = await send_to_agent(SendToAgentRequest(
-            prompt="ping",
-            connect_type="http",
-            platform="openclaw",
-            options={},
-        ))
+        scrubbed = {k: os.environ.pop(k) for k in _ENV_VARS_TO_CLEAR if k in os.environ}
+        try:
+            result = await send_to_agent(SendToAgentRequest(
+                prompt="ping",
+                connect_type="http",
+                platform="openclaw",
+                options={},
+            ))
+        finally:
+            os.environ.update(scrubbed)
 
         self.assertFalse(result.ok)
         self.assertEqual(result.error, "missing api_url")

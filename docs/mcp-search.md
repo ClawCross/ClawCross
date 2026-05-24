@@ -3,7 +3,7 @@
 ClawCross exposes web search through `src/mcp_servers/search.py`.
 
 The MCP server is started by the main agent as `search_service` and provides
-both backward-compatible text tools and structured research tools.
+three unified research tools.
 
 The default provider mode is `auto`: ClawCross first tries the lightweight
 DDGS path, then falls back to a local Playwright browser when the search fails,
@@ -14,18 +14,50 @@ the feature free and registration-free while still supporting JS-rendered pages.
 
 | Tool | Use For | Return |
 |---|---|---|
-| `web_search` | Human-readable web search snippets | Markdown text |
-| `web_news` | Human-readable news snippets | Markdown text |
-| `web_search_json` | Search results for agent reasoning / post-processing | JSON string |
-| `web_news_json` | News results for agent reasoning / post-processing | JSON string |
-| `web_fetch_url` | Fetch cleaned text from a public URL | JSON string |
-| `web_browser_search` | Force local Playwright browser search | JSON string |
-| `web_browser_fetch` | Force local Playwright browser page rendering | JSON string |
+| `web_search` | Search the web or news; pick markdown or JSON | Markdown or JSON string |
+| `web_fetch` | Fetch cleaned text from a public URL | JSON string |
 | `web_research_brief` | Search plus cleaned text from top results | JSON string |
+
+### `web_search`
+
+```
+web_search(
+    query,
+    kind="web"|"news",
+    format="markdown"|"json",
+    max_results=5,
+    region, safesearch, freshness,
+    include_domains, exclude_domains,
+    provider="auto"|"ddgs"|"browser",
+    browser_engine="duckduckgo"|"bing",
+    backend,
+)
+```
+
+- `kind="news"` switches the underlying provider call to news search; the
+  markdown variant uses a 📰 icon.
+- `format="markdown"` (default) caps `max_results` at 10 for chat readability.
+  `format="json"` caps at 25.
+- `provider="browser"` forces the local Playwright runner (no DDGS attempt).
+
+### `web_fetch`
+
+```
+web_fetch(url, max_chars=12000, timeout=15, provider="auto"|"http"|"browser")
+```
+
+`provider="auto"` does a direct HTTP fetch first, then renders the page in
+the local Playwright browser if the direct fetch fails or returns too little
+text. Private/local hosts are always blocked (see Fetch Safety below).
+
+### `web_research_brief`
+
+Runs `web_search(format="json")` and then fetches cleaned text from the top
+`fetch_top` results (capped at 5).
 
 ## Structured Result Shape
 
-`web_search_json` and `web_news_json` return:
+`web_search(format="json")` returns:
 
 ```json
 {
@@ -69,7 +101,8 @@ and the payload includes `fallback_from`, `providers_tried`, and a compact
 
 Common parameters:
 
-- `max_results`: capped at `25` for structured tools and `10` for legacy text tools.
+- `max_results`: capped at `25` for `format="json"` and `10` for
+  `format="markdown"`.
 - `region`: DDGS region code. Defaults to `WEB_SEARCH_REGION` or `us-en`.
 - `safesearch`: `on`, `moderate`, or `off`.
 - `freshness`: `d`, `w`, `m`, or `y`.
@@ -81,7 +114,7 @@ Common parameters:
 
 ## Local Browser Provider
 
-`web_browser_search`, `web_browser_fetch`, and `provider=browser` use
+`provider=browser` (for both `web_search` and `web_fetch`) uses
 `scripts/browser_search_runner.mjs`. The runner opens a headless Chromium
 browser through Playwright, extracts visible search result links or page text,
 and returns JSON to the Python MCP server.
@@ -108,7 +141,7 @@ Tradeoffs:
 
 ## Fetch Safety
 
-`web_fetch_url` is for public web pages discovered by search. It blocks:
+`web_fetch` is for public web pages discovered by search. It blocks:
 
 - non-HTTP(S) schemes
 - localhost

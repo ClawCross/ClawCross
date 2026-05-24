@@ -25,7 +25,6 @@ _WEBOT_RUNTIME_USER_TOOLS = {
     "list_verifications",
     "run_verification",
     "list_tool_approvals",
-    "resolve_tool_approval",
 }
 
 

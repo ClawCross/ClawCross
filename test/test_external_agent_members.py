@@ -26,10 +26,11 @@ class ExternalAgentMemberRoutesTests(unittest.TestCase):
 
     def test_team_external_member_post_preserves_persona_tag_and_platform(self):
         with TemporaryDirectory() as tmpdir:
-            team_dir = Path(tmpdir) / "data" / "user_files" / "route-user" / "teams" / "demo"
+            user_files = Path(tmpdir) / "user_files"
+            team_dir = user_files / "route-user" / "teams" / "demo"
             team_dir.mkdir(parents=True, exist_ok=True)
 
-            with mock.patch.object(front, "root_dir", tmpdir):
+            with mock.patch.object(front, "USER_FILES_DIR", user_files):
                 response = self.client.post(
                     "/teams/demo/members/external",
                     json={
@@ -52,7 +53,8 @@ class ExternalAgentMemberRoutesTests(unittest.TestCase):
 
     def test_team_external_member_put_updates_persona_tag_without_touching_platform(self):
         with TemporaryDirectory() as tmpdir:
-            team_dir = Path(tmpdir) / "data" / "user_files" / "route-user" / "teams" / "demo"
+            user_files = Path(tmpdir) / "user_files"
+            team_dir = user_files / "route-user" / "teams" / "demo"
             team_dir.mkdir(parents=True, exist_ok=True)
             (team_dir / "external_agents.json").write_text(
                 json.dumps(
@@ -71,7 +73,7 @@ class ExternalAgentMemberRoutesTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            with mock.patch.object(front, "root_dir", tmpdir):
+            with mock.patch.object(front, "USER_FILES_DIR", user_files):
                 response = self.client.put(
                     "/teams/demo/members/external",
                     json={

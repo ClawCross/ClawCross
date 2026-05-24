@@ -733,9 +733,32 @@ async def _fetch_url_provider_payload(
     return http_payload
 
 
+_VALID_KINDS = {"web", "news"}
+_VALID_FORMATS = {"markdown", "json"}
+
+_KIND_ICONS = {
+    "web": ("🔍", "🔍"),
+    "news": ("📰", "📰"),
+}
+
+
+def _normalize_kind(value: str) -> str:
+    value = (value or "web").strip().lower()
+    return value if value in _VALID_KINDS else "web"
+
+
+def _normalize_format(value: str) -> str:
+    value = (value or "markdown").strip().lower()
+    aliases = {"md": "markdown", "text": "markdown", "structured": "json"}
+    value = aliases.get(value, value)
+    return value if value in _VALID_FORMATS else "markdown"
+
+
 @mcp.tool()
 async def web_search(
     query: str,
+    kind: str = "web",
+    format: str = "markdown",
     max_results: int = 5,
     region: str = DEFAULT_REGION,
     safesearch: str = DEFAULT_SAFESEARCH,
@@ -744,137 +767,49 @@ async def web_search(
     exclude_domains: str = "",
     provider: str = DEFAULT_PROVIDER,
     browser_engine: str = DEFAULT_BROWSER_ENGINE,
+    backend: str = DEFAULT_BACKEND,
 ) -> str:
     """
-    Search the web and return readable Markdown results.
+    Search the web and return results.
 
-    This is the backward-compatible tool for chat responses. Use
-    web_search_json when downstream code needs stable fields.
-    freshness supports d/w/m/y. include_domains and exclude_domains accept
+    kind: "web" (default) or "news".
+    format: "markdown" (default, human-readable chat output) or "json"
+      (structured fields: ok/provider/kind/query/filters/result_count/results;
+      each result has rank, title, url, domain, snippet, source, published_at).
+    provider: "auto" (default; ddgs first, browser fallback), "ddgs"
+      (DuckDuckGo HTTP only), or "browser" (local Playwright runner only).
+    freshness supports d/w/m/y. include_domains/exclude_domains accept
     comma-separated domains.
     """
+    kind_norm = _normalize_kind(kind)
+    format_norm = _normalize_format(format)
+    if format_norm == "markdown":
+        capped_max = min(_clamp_int(max_results, default=5, minimum=1, maximum=10), 10)
+    else:
+        capped_max = max_results
+
     payload = await _build_search_provider_payload(
         query=query,
-        kind="web",
-        max_results=min(_clamp_int(max_results, default=5, minimum=1, maximum=10), 10),
+        kind=kind_norm,
+        max_results=capped_max,
         region=region,
         safesearch=safesearch,
         freshness=freshness,
+        backend=backend,
         include_domains=include_domains,
         exclude_domains=exclude_domains,
         provider=provider,
         browser_engine=browser_engine,
     )
-    return _format_search_markdown(payload, empty_icon="🔍", title_icon="🔍")
+
+    if format_norm == "json":
+        return _json(payload)
+    empty_icon, title_icon = _KIND_ICONS.get(kind_norm, ("🔍", "🔍"))
+    return _format_search_markdown(payload, empty_icon=empty_icon, title_icon=title_icon)
 
 
 @mcp.tool()
-async def web_news(
-    query: str,
-    max_results: int = 5,
-    region: str = DEFAULT_REGION,
-    safesearch: str = DEFAULT_SAFESEARCH,
-    freshness: str = "",
-    include_domains: str = "",
-    exclude_domains: str = "",
-    provider: str = DEFAULT_PROVIDER,
-    browser_engine: str = DEFAULT_BROWSER_ENGINE,
-) -> str:
-    """
-    Search current news and return readable Markdown results.
-
-    freshness supports d/w/m/y. include_domains and exclude_domains accept
-    comma-separated domains.
-    """
-    payload = await _build_search_provider_payload(
-        query=query,
-        kind="news",
-        max_results=min(_clamp_int(max_results, default=5, minimum=1, maximum=10), 10),
-        region=region,
-        safesearch=safesearch,
-        freshness=freshness,
-        include_domains=include_domains,
-        exclude_domains=exclude_domains,
-        provider=provider,
-        browser_engine=browser_engine,
-    )
-    return _format_search_markdown(payload, empty_icon="📰", title_icon="📰")
-
-
-@mcp.tool()
-async def web_search_json(
-    query: str,
-    max_results: int = 8,
-    region: str = DEFAULT_REGION,
-    safesearch: str = DEFAULT_SAFESEARCH,
-    freshness: str = "",
-    backend: str = DEFAULT_BACKEND,
-    include_domains: str = "",
-    exclude_domains: str = "",
-    provider: str = DEFAULT_PROVIDER,
-    browser_engine: str = DEFAULT_BROWSER_ENGINE,
-) -> str:
-    """
-    Search the web and return structured JSON.
-
-    Result schema includes ok/provider/kind/query/filters/result_count/results.
-    Each result has rank, title, url, domain, snippet, source, published_at.
-    provider supports auto, ddgs, and browser. auto tries DDGS first and falls
-    back to a local Playwright browser when the lightweight provider fails or
-    returns no results.
-    """
-    return _json(
-        await _build_search_provider_payload(
-            query=query,
-            kind="web",
-            max_results=max_results,
-            region=region,
-            safesearch=safesearch,
-            freshness=freshness,
-            backend=backend,
-            include_domains=include_domains,
-            exclude_domains=exclude_domains,
-            provider=provider,
-            browser_engine=browser_engine,
-        )
-    )
-
-
-@mcp.tool()
-async def web_news_json(
-    query: str,
-    max_results: int = 8,
-    region: str = DEFAULT_REGION,
-    safesearch: str = DEFAULT_SAFESEARCH,
-    freshness: str = "",
-    backend: str = DEFAULT_BACKEND,
-    include_domains: str = "",
-    exclude_domains: str = "",
-    provider: str = DEFAULT_PROVIDER,
-    browser_engine: str = DEFAULT_BROWSER_ENGINE,
-) -> str:
-    """
-    Search news and return structured JSON.
-    """
-    return _json(
-        await _build_search_provider_payload(
-            query=query,
-            kind="news",
-            max_results=max_results,
-            region=region,
-            safesearch=safesearch,
-            freshness=freshness,
-            backend=backend,
-            include_domains=include_domains,
-            exclude_domains=exclude_domains,
-            provider=provider,
-            browser_engine=browser_engine,
-        )
-    )
-
-
-@mcp.tool()
-async def web_fetch_url(
+async def web_fetch(
     url: str,
     max_chars: int = 12000,
     timeout: int = 15,
@@ -883,10 +818,10 @@ async def web_fetch_url(
     """
     Fetch a public web URL and return cleaned page text as JSON.
 
-    Private/local IP literals and localhost are blocked. This tool is intended
-    for public pages discovered by web_search_json/web_news_json. provider
-    supports auto/http/browser; auto tries direct HTTP first, then browser
-    rendering when direct fetch fails or produces too little text.
+    Private/local IP literals and localhost are blocked. Intended for public
+    pages discovered by web_search(format="json"). provider: "auto" (default;
+    direct HTTP first, browser render fallback), "http" (direct only), or
+    "browser" (local Playwright only).
     """
     return _json(
         await _fetch_url_provider_payload(
@@ -896,42 +831,6 @@ async def web_fetch_url(
             provider=provider,
         )
     )
-
-
-@mcp.tool()
-async def web_browser_search(
-    query: str,
-    max_results: int = 8,
-    engine: str = DEFAULT_BROWSER_ENGINE,
-    freshness: str = "",
-    include_domains: str = "",
-    exclude_domains: str = "",
-) -> str:
-    """
-    Search through a local Playwright browser and return structured JSON.
-
-    This tool needs local Node + Playwright Chromium. It does not require a
-    paid API key or registration.
-    """
-    return _json(
-        await _build_browser_search_payload(
-            query=query,
-            kind="web",
-            max_results=max_results,
-            freshness=freshness,
-            include_domains=include_domains,
-            exclude_domains=exclude_domains,
-            browser_engine=engine,
-        )
-    )
-
-
-@mcp.tool()
-async def web_browser_fetch(url: str, max_chars: int = 12000, timeout: int = 15) -> str:
-    """
-    Render a public URL in a local Playwright browser and return page text.
-    """
-    return _json(await _fetch_url_browser_payload(url, max_chars=max_chars, timeout=timeout))
 
 
 @mcp.tool()

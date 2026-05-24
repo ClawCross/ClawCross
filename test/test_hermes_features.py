@@ -219,11 +219,18 @@ class TestSkillSystem(unittest.TestCase):
         with self.assertRaises(ValueError):
             create_skill("alice", name="INVALID NAME!", content=self._make_skill_content())
 
-    def test_missing_frontmatter_rejected(self):
-        from webot.skills import create_skill
-        result = create_skill("alice", name="test-skill", content="No frontmatter here, just text.")
-        self.assertFalse(result["success"])
-        self.assertIn("frontmatter", result["error"])
+    def test_missing_frontmatter_accepted_but_meta_empty(self):
+        # create_skill tolerates content without YAML frontmatter; the parser
+        # returns empty metadata and the body is stored verbatim. Index lookups
+        # by description simply won't surface this skill.
+        from webot.skills import create_skill, _parse_frontmatter
+        body = "No frontmatter here, just text."
+        result = create_skill("alice", name="test-skill", content=body)
+        self.assertTrue(result["success"])
+        stored = (Path(result["path"])).read_text(encoding="utf-8")
+        meta, parsed_body = _parse_frontmatter(stored)
+        self.assertEqual(meta, {})
+        self.assertEqual(parsed_body, body)
 
     def test_build_skills_prompt(self):
         from webot.skills import create_skill, build_skills_prompt

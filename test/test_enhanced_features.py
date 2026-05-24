@@ -9,7 +9,6 @@ Tests the deep enhancements ported from:
 import asyncio
 import os
 import sys
-import utils.scheduler_service
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "src"))

@@ -24,7 +24,13 @@ class WeBotPermissionContextTests(unittest.TestCase):
     def test_manual_policy_uses_pending_and_approved_requests(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_path = Path(tmpdir)
-            with patch.object(webot_policy, "PROJECT_ROOT", tmp_path), patch.object(
+            user_files = tmp_path / "data" / "user_files"
+            # _user_dir reads from webot.policy.USER_FILES_DIR when no
+            # project_root is passed. Patch it so save_tool_policy_config and
+            # get_tool_policy resolve to the same temp location.
+            with patch.object(webot_policy, "USER_FILES_DIR", user_files), patch.object(
+                webot_policy, "PROJECT_ROOT", tmp_path
+            ), patch.object(
                 webot_runtime_store,
                 "DEFAULT_DB_PATH",
                 tmp_path / "runtime.db",

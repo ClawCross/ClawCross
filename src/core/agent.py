@@ -126,8 +126,9 @@ USER_INJECTED_TOOLS = {
     "read_background_command_output", "cancel_background_command",
     # Alarm management tools
     "get_current_time", "add_alarm", "list_alarms", "delete_alarm",
-    # Telegram push notification tools
-    "set_telegram_chat_id", "send_telegram_message", "get_telegram_status", "remove_telegram_config",
+    # Notification push tools (multi-channel)
+    "set_notification_channel", "send_notification", "get_notification_status",
+    "remove_notification_channel", "list_notification_channels",
     # OASIS forum tools
     "start_new_oasis", "check_oasis_discussion", "cancel_oasis_discussion",
     "list_oasis_topics",
@@ -181,7 +182,7 @@ SESSION_INJECTED_TOOLS = {
     "add_alarm": "session_id",
     "start_new_oasis": "notify_session",
     "get_current_session": "current_session_id",
-    "send_telegram_message": "source_session",
+    "send_notification": "source_session",
     "send_internal_message": "source_session",
     "lsp": "session_id",
     "workspace_diagnostics": "session_id",
@@ -237,7 +238,7 @@ SESSION_FORCE_INJECTED_TOOLS: frozenset[str] = frozenset({
     "send_to_group",
     "send_private_cli",
     "send_internal_message",
-    "send_telegram_message",
+    "send_notification",
     "spawn_subagent",
     "send_subagent_message",
     "cancel_subagent",
@@ -1154,9 +1155,9 @@ class TeamAgent:
                 "args": [os.path.join(self._src_dir, "mcp_servers", "session.py")],
                 "transport": "stdio",
             },
-            "telegram_service": {
+            "notifier_service": {
                 "command": python_command,
-                "args": [os.path.join(self._src_dir, "mcp_servers", "telegram.py")],
+                "args": [os.path.join(self._src_dir, "mcp_servers", "notifier.py")],
                 "transport": "stdio",
             },
             "llmapi_service": {

@@ -96,12 +96,18 @@ class ChatbotCommandTests(unittest.TestCase):
             self.assertEqual(state["platforms"]["internal"]["session"], "review-1")
 
     def test_chat_new_session_matches_cli_command(self):
+        # The new-session name uses os.getcwd().name + timestamp; the state's
+        # "cwd" field is informational only. Drive os.getcwd to a known dir so
+        # the assertion is independent of where pytest happens to run.
         with tempfile.TemporaryDirectory() as tmpdir:
+            project_dir = Path(tmpdir) / "project"
+            project_dir.mkdir()
             state = {
                 "__state_path": str(Path(tmpdir) / "state.json"),
-                "current": {"platform": "internal", "user": "default", "cwd": "/tmp/project"},
+                "current": {"platform": "internal", "user": "default", "cwd": str(project_dir)},
             }
-            _active, reply = handle_chatbot_input("/cross new session", state)
+            with mock.patch("scripts.clawcross.os.getcwd", return_value=str(project_dir)):
+                _active, reply = handle_chatbot_input("/cross new session", state)
 
             self.assertIn("session: project-", reply)
             self.assertTrue(state["current"]["session"].startswith("project-"))

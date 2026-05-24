@@ -36,12 +36,7 @@ SESSION_CONTEXT_TOOLS = (
 
 SEARCH_TOOLS = (
     "web_search",
-    "web_news",
-    "web_search_json",
-    "web_news_json",
-    "web_fetch_url",
-    "web_browser_search",
-    "web_browser_fetch",
+    "web_fetch",
     "web_research_brief",
     "call_llm_api",
 )
@@ -67,10 +62,11 @@ MESSAGE_TOOLS = (
     "send_internal_message",
     "send_to_group",
     "send_private_cli",
-    "set_telegram_chat_id",
-    "remove_telegram_config",
-    "send_telegram_message",
-    "get_telegram_status",
+    "set_notification_channel",
+    "remove_notification_channel",
+    "send_notification",
+    "get_notification_status",
+    "list_notification_channels",
 )
 
 SCHEDULER_TOOLS = (

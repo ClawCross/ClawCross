@@ -4398,7 +4398,7 @@ async function switchToSession(sessionId, force = false, options = {}) {
         });
         // 高亮代码块
         highlightMarkdownIn(chatBox);
-        scrollChatToBottom(chatBox);
+        scrollChatToBottom(chatBox, { force: true });
     } catch (e) {
         chatBox.innerHTML = `
             <div class="text-xs text-red-400 text-center py-4">${t('history_error')}: ${e.message}</div>`;
@@ -4421,7 +4421,7 @@ async function switchToSession(sessionId, force = false, options = {}) {
         if (_ocChatMode === 'internal') {
             ocInternalSyncNameInput();
             ocInternalRepaintSessionPick();
-            scrollChatToBottom(chatBox);
+            scrollChatToBottom(chatBox, { force: true });
         }
         if (!quiet) hidePageLoading();
     }
@@ -7042,10 +7042,29 @@ function hideNewMsgBanner() {
 }
 
 let _chatBottomStickCleanup = null;
+let _chatUserPinnedToBottom = true;
+const _chatPinTrackerBoxes = new WeakSet();
+
+function _ensureChatPinTracker(box) {
+    if (!box || _chatPinTrackerBoxes.has(box)) return;
+    _chatPinTrackerBoxes.add(box);
+    box.addEventListener('scroll', () => {
+        const distFromBottom = box.scrollHeight - box.scrollTop - box.clientHeight;
+        _chatUserPinnedToBottom = distFromBottom < 100;
+    }, { passive: true });
+}
 
 function scrollChatToBottom(target = null, options = {}) {
     const box = target || document.getElementById('chat-box');
     if (!box) return;
+    _ensureChatPinTracker(box);
+    const force = options.force === true;
+    if (!force && !_chatUserPinnedToBottom) {
+        return;
+    }
+    if (force) {
+        _chatUserPinnedToBottom = true;
+    }
     const settle = options.settle !== false;
     if (settle && typeof _chatBottomStickCleanup === 'function') {
         _chatBottomStickCleanup();
@@ -7109,6 +7128,10 @@ function keepChatPinnedToBottomUntilStable(box, apply) {
             stop();
             return;
         }
+        if (!_chatUserPinnedToBottom) {
+            stop();
+            return;
+        }
         apply();
         const nextSignature = signature();
         stableFrames = nextSignature === lastSignature && isAtBottom() ? stableFrames + 1 : 0;
@@ -7122,6 +7145,7 @@ function keepChatPinnedToBottomUntilStable(box, apply) {
 
     if (typeof MutationObserver === 'function') {
         const observer = new MutationObserver(() => {
+            if (!_chatUserPinnedToBottom) { stop(); return; }
             stableFrames = 0;
             apply();
         });
@@ -7130,6 +7154,7 @@ function keepChatPinnedToBottomUntilStable(box, apply) {
     }
     if (typeof ResizeObserver === 'function') {
         const observer = new ResizeObserver(() => {
+            if (!_chatUserPinnedToBottom) { stop(); return; }
             stableFrames = 0;
             apply();
         });
@@ -7360,7 +7385,7 @@ function appendMessage(content, isUser = false, images = [], fileNames = [], aud
     }
     wrapper.appendChild(div);
     chatBox.appendChild(wrapper);
-    scrollChatToBottom(chatBox, { settle: false });
+    scrollChatToBottom(chatBox, { settle: false, force: isUser });
     return div;
 }
 
@@ -7385,7 +7410,7 @@ function renderWeBotWelcomeMessage(message = null) {
                 ${message || t('welcome_message')}
             </div>
         </div>`;
-    scrollChatToBottom(chatBox);
+    scrollChatToBottom(chatBox, { force: true });
 }
 
 async function handleSend() {
@@ -15749,7 +15774,7 @@ async function acpLoadSessionHistory(force = false, options = {}) {
         if (applyToChat) {
             chatBox.innerHTML = _acpTranscriptByKey[cacheKey];
             ocRefreshTtsButtonsIn(chatBox);
-            scrollChatToBottom(chatBox);
+            scrollChatToBottom(chatBox, { force: true });
         }
         return true;
     }
@@ -15775,7 +15800,7 @@ async function acpLoadSessionHistory(force = false, options = {}) {
             if (applyToChat) {
                 chatBox.innerHTML = html;
                 ocRefreshTtsButtonsIn(chatBox);
-                scrollChatToBottom(chatBox);
+                scrollChatToBottom(chatBox, { force: true });
             }
             return true;
         }
@@ -15798,7 +15823,7 @@ async function acpPaintTranscript() {
     if (_acpTranscriptByKey[k]) {
         chatBox.innerHTML = _acpTranscriptByKey[k];
         ocRefreshTtsButtonsIn(chatBox);
-        scrollChatToBottom(chatBox);
+        scrollChatToBottom(chatBox, { force: true });
         return;
     }
     const label = _acpDisplayLabel(_acpTool || '');
@@ -15809,7 +15834,7 @@ async function acpPaintTranscript() {
         '<br><span style="font-size:0.85em;color:#6b7280;">' +
         escapeHtml(t('oc_acp_via')) +
         '</span></div></div>';
-    scrollChatToBottom(chatBox);
+    scrollChatToBottom(chatBox, { force: true });
     _acpLastTranscriptKey = acpComputeTranscriptKey();
 }
 
@@ -15848,7 +15873,7 @@ function ocRenderOpenClawWelcomeForAgent(name) {
         '<br><span style="font-size:0.85em;color:#6b7280;">OpenClaw Agent — ' +
         safe +
         '</span></div></div>';
-    scrollChatToBottom(chatBox);
+    scrollChatToBottom(chatBox, { force: true });
 }
 
 function ocRenderOpenClawSelectPrompt() {
@@ -15859,7 +15884,7 @@ function ocRenderOpenClawSelectPrompt() {
         '<div class="message-agent bg-white border p-4 max-w-[85%] shadow-sm text-gray-700">' +
         escapeHtml(t('oc_select_agent_hint')) +
         '<br><span style="font-size:0.85em;color:#6b7280;">OpenClaw</span></div></div>';
-    scrollChatToBottom(chatBox);
+    scrollChatToBottom(chatBox, { force: true });
 }
 
 function ocOpenClawSessionKeyForAgent(agentName) {
@@ -15943,7 +15968,7 @@ async function ocPaintOpenClawChatFromCache() {
     } else {
         ocRenderOpenClawSelectPrompt();
     }
-    scrollChatToBottom(chatBox);
+    scrollChatToBottom(chatBox, { force: true });
 }
 
 /**
@@ -16034,7 +16059,7 @@ function ocOnAgentChange() {
             if (_ocTranscriptByAgent[agentName]) {
                 chatBox.innerHTML = _ocTranscriptByAgent[agentName];
                 ocRefreshTtsButtonsIn(chatBox);
-                scrollChatToBottom(chatBox);
+                scrollChatToBottom(chatBox, { force: true });
             } else {
                 chatBox.innerHTML = '<div class="text-xs text-gray-400 text-center py-4">' +
                     escapeHtml(t('history_loading_msg') || 'Loading history…') + '</div>';
@@ -16047,7 +16072,7 @@ function ocOnAgentChange() {
                         } else {
                             ocRenderOpenClawWelcomeForAgent(agentName);
                         }
-                        scrollChatToBottom(chatBox);
+                        scrollChatToBottom(chatBox, { force: true });
                     }
                 });
             }

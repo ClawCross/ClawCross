@@ -146,7 +146,10 @@ class WeBotOrchestrationFlowTests(unittest.IsolatedAsyncioTestCase):
         runtime_store.DEFAULT_DB_PATH = self.original_runtime_db_path
         self.tmpdir.cleanup()
 
-    async def test_background_spawn_completes_and_notifies_parent(self):
+    async def test_background_spawn_dispatches_via_system_trigger(self):
+        # Background execution moved out of the webot MCP subprocess; spawn_subagent
+        # now fire-and-forgets to the agent main process via /system_trigger and
+        # only marks the run as "running" locally. Verify the dispatch contract.
         state = {"calls": [], "callbacks": [], "cancels": []}
 
         def _client_factory(*args, **kwargs):
@@ -164,24 +167,19 @@ class WeBotOrchestrationFlowTests(unittest.IsolatedAsyncioTestCase):
                 wait=False,
                 parent_session="parent-1",
             )
-            self.assertIn("后台运行", result)
 
-            task = mcp_webot._BACKGROUND_TASKS["researcher-1"]
-            await task
-
-            listed = await mcp_webot.list_subagents(username="alice")
-            history = await mcp_webot.get_subagent_history(
-                username="alice",
-                agent_ref="researcher-1",
-                limit=4,
-            )
-            latest_run = runtime_store.get_latest_run_for_agent("alice", "researcher-1")
-
-        self.assertIn("completed", listed)
-        self.assertIn("processed: Inspect runtime", history)
+        self.assertIn("后台运行", result)
         self.assertEqual(len(state["callbacks"]), 1)
-        self.assertEqual(state["callbacks"][0]["session_id"], "parent-1")
-        self.assertEqual(latest_run.status, "completed")
+        dispatch = state["callbacks"][0]
+        self.assertEqual(dispatch["user_id"], "alice")
+        self.assertEqual(dispatch["text"], "Inspect runtime")
+        self.assertTrue(dispatch["session_id"].startswith("subagent__research__"))
+
+        latest_run = runtime_store.get_latest_run_for_agent("alice", "researcher-1")
+        self.assertEqual(latest_run.status, "running")
+
+        listed = await mcp_webot.list_subagents(username="alice")
+        self.assertIn("researcher-1", listed)
 
     async def test_cancel_subagent_stops_runtime_and_updates_registry(self):
         state = {"calls": [], "callbacks": [], "cancels": []}
@@ -214,12 +212,10 @@ class WeBotOrchestrationFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("cancelled", listed)
         self.assertEqual(state["cancels"][0]["session_id"], "subagent__general__long-runner")
 
-    async def test_recover_background_run_from_runtime_store(self):
-        state = {"calls": [], "callbacks": [], "cancels": []}
-
-        def _client_factory(*args, **kwargs):
-            return _FakeAsyncClient(state, delay=0.0)
-
+    async def test_recover_background_runs_is_safe_noop(self):
+        # Background recovery is now handled by the agent main process. The webot
+        # MCP subprocess keeps _recover_background_runs as a no-op so existing
+        # callers don't need to change; this test pins that contract.
         record = store.create_subagent_record(
             agent_id="recover-me",
             user_id="alice",
@@ -231,33 +227,10 @@ class WeBotOrchestrationFlowTests(unittest.IsolatedAsyncioTestCase):
             status="queued",
         )
         store.upsert_subagent(record)
-        runtime_store.upsert_run(
-            runtime_store.create_run_record(
-                run_id="run-recover",
-                user_id="alice",
-                agent_id="recover-me",
-                session_id="subagent__research__recover-me",
-                parent_session="parent-1",
-                agent_type="research",
-                title="recover",
-                input_text="Recover task",
-                status="queued",
-                timeout_seconds=30,
-                max_turns=None,
-                wait_mode=False,
-            )
-        )
 
-        with patch.object(mcp_webot, "_INTERNAL_TOKEN", "internal-token"), patch(
-            "mcp_servers.webot.httpx.AsyncClient",
-            new=_client_factory,
-        ):
-            await mcp_webot._recover_background_runs("alice")
-            await mcp_webot._BACKGROUND_TASKS["recover-me"]
+        await mcp_webot._recover_background_runs("alice")
 
-        latest_run = runtime_store.get_latest_run_for_agent("alice", "recover-me")
-        self.assertEqual(latest_run.status, "completed")
-        self.assertEqual(len(state["callbacks"]), 1)
+        self.assertNotIn("recover-me", mcp_webot._BACKGROUND_TASKS)
 
     async def test_ultraplan_start_and_status_create_plan_artifact(self):
         original_runtime_root = mcp_webot._RUNTIME_ROOT
