@@ -665,7 +665,7 @@ default_session_name() {
   fi
   [[ -n "$project" ]] || project="project"
   local host="${CLAWCROSS_REMOTE_NAME:-$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo remote)}"
-  printf 'ClawCross | %s | %s\n' "$project" "$host"
+  printf '%s | %s\n' "$project" "$host"
 }
 
 first="${1:-}"

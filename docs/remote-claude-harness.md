@@ -280,7 +280,7 @@ python3 scripts/sync_task_md.py \
 - 没有 TODO 时，每台电脑只保留一个 standby session。
 - 已提交待审查的 TODO 不要自动删除对应 session；等主机验收或用户审查。
 - 不可聊天、remote-control 断开且没有可用 bridge/session id 的 session 可以归档删除。
-- session 标题格式由 conductor 管理：`ClawCross | <Project Label> | <Remote Hostname> [| <Task Label>]`。
+- session 标题格式由 conductor 管理：`<Project Label> | <Remote Hostname> [| <Task Label>]`。
 - 扫描到的普通 Claude Code session 不等于 harness worker。Project Harness 只接管已经有 `clawcross-harness-agent heartbeat` 且 `session_ref` 能匹配真实 Claude session 的 worker。
 - 其他人手动打开的 Claude Code session 会在 Remote Claude 列表里标为“未接管”，conductor 不会自动分配 TODO、不会自动发送消息、不会改名、不会清理。
 - 只有在明确需要旧式自动接管时，才可临时设置 `CLAWCROSS_HARNESS_AUTOBIND_UNBOUND_SESSIONS=1`。默认不要开启，避免误接管共享账号或他人正在使用的 session。

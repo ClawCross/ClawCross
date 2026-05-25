@@ -745,7 +745,7 @@ class HarnessConductorLoopTests(unittest.TestCase):
         self.assertEqual(renamed[0]["project_id"], "project-gamma")
         rename_mock.assert_called_once_with(
             "session_robotics",
-            "ClawCross | Project Gamma | surveyuser | Benchmark photo / text-to-3D...",
+            "Project Gamma | surveyuser | Benchmark photo / text-to-3D...",
         )
 
     def test_survey_pool_session_rename_uses_pool_label(self):
@@ -780,7 +780,7 @@ class HarnessConductorLoopTests(unittest.TestCase):
         self.assertEqual(len(renamed), 1)
         rename_mock.assert_called_once_with(
             "session_survey",
-            "ClawCross | Survey Pool | surveyuser",
+            "Survey Pool | surveyuser",
         )
 
     def test_cleanup_closes_paused_todo_session_and_deletes_agent(self):

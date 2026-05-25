@@ -764,7 +764,7 @@ def expected_remote_session_name(agent: dict[str, Any], task: dict[str, Any] | N
     remote_label = _compact_label(hostname, limit=22) or user or _compact_label(host, limit=16) or _compact_label(agent.get("remote_host"), limit=16)
     task_label = _compact_label((task or {}).get("title") or agent.get("current_task_id"), limit=32)
     project_label = "Survey Pool" if _agent_is_survey_pool(agent) else _project_label(project_id)
-    parts = ["ClawCross", project_label]
+    parts = [project_label]
     if remote_label:
         parts.append(_compact_label(remote_label, limit=16))
     if task_label:

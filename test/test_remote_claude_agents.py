@@ -212,18 +212,18 @@ class RemoteClaudeParserTests(unittest.TestCase):
             "ok": True,
             "short": "5dd495e1",
             "old_name": "old",
-            "name": "ClawCross | Project Alpha | primaryuser",
+            "name": "Project Alpha | primaryuser",
             "roster_updated": True,
-            "session": {"bridge_session_id": "session_abc", "title": "ClawCross | Project Alpha | primaryuser"},
+            "session": {"bridge_session_id": "session_abc", "title": "Project Alpha | primaryuser"},
         }
         with mock.patch.object(
             rca, "load_remote_claude_configs", return_value=[rca.RemoteClaudeConfig(host="h", user="u")]
         ), mock.patch.object(rca, "_run_remote_python", return_value=payload):
-            data = rca.rename_remote_claude_session("u@h::session_abc", "ClawCross | Project Alpha | primaryuser")
+            data = rca.rename_remote_claude_session("u@h::session_abc", "Project Alpha | primaryuser")
 
         self.assertTrue(data["ok"])
         self.assertEqual(data["old_name"], "old")
-        self.assertEqual(data["name"], "ClawCross | Project Alpha | primaryuser")
+        self.assertEqual(data["name"], "Project Alpha | primaryuser")
         self.assertTrue(data["roster_updated"])
         self.assertEqual(data["session"]["remote_key"], "u@h::session_abc")
 
