@@ -394,6 +394,31 @@ def apply_harness_event(user_id: str, event: dict[str, Any]) -> dict[str, Any]:
             agent_id = _require_id(event.get("agent_id"), "agent_id")
             changed = state.setdefault("agents", {}).pop(agent_id, {"agent_id": agent_id, "deleted": False})
             changed = {**changed, "deleted": agent_id not in state.setdefault("agents", {})}
+        elif action in {"project_delete", "delete_project"}:
+            # mainagent's HarnessEventRequest defaults project_id to "default" and the
+            # route calls .model_dump(exclude_defaults=True), which silently drops the
+            # field when its value equals the default. Mirror _ensure_project's
+            # fallback so deleting the literal "default" project still works.
+            pid = _require_id(event.get("project_id") or "default", "project_id")
+            projects = state.setdefault("projects", {})
+            removed_project = projects.pop(pid, None)
+            tasks = state.setdefault("tasks", {})
+            removed_task_ids = [tid for tid, t in list(tasks.items()) if _string(t.get("project_id")) == pid]
+            for tid in removed_task_ids:
+                tasks.pop(tid, None)
+            # also unlink any agents pointing at this project (don't delete the agent itself)
+            agents = state.setdefault("agents", {})
+            unlinked_agent_ids: list[str] = []
+            for aid, agent in agents.items():
+                if _string(agent.get("project_id")) == pid:
+                    agent["project_id"] = ""
+                    unlinked_agent_ids.append(aid)
+            changed = {
+                "project_id": pid,
+                "deleted": removed_project is not None,
+                "cascaded_task_ids": removed_task_ids,
+                "unlinked_agent_ids": unlinked_agent_ids,
+            }
         else:
             raise ValueError(f"unknown harness action: {action}")
         event_record = _append_event(state, event, action)

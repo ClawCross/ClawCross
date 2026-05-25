@@ -32,8 +32,15 @@ def create_harness_router(
         x_internal_token: str | None = Header(None),
     ):
         verify_auth_or_token(req.user_id, req.password, x_internal_token)
+        # Use model_fields_set (only fields the caller actually sent) instead of
+        # exclude_defaults=True — otherwise a real value that happens to equal
+        # the field's default (e.g. project_id="default") would be silently
+        # dropped before reaching the store.
+        dumped = req.model_dump(exclude_none=True)
+        sent = req.model_fields_set | {"user_id"}
+        event = {k: v for k, v in dumped.items() if k in sent}
         try:
-            return apply_harness_event(req.user_id, req.model_dump(exclude_none=True, exclude_defaults=True))
+            return apply_harness_event(req.user_id, event)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 

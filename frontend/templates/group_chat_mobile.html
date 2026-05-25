@@ -4408,7 +4408,8 @@
     .swipe-wrapper.active .group-name {
       font-weight: 650;
     }
-    .chat-page {
+    .chat-page,
+    .remote-claude-page {
       top: 0;
       left: calc(var(--desktop-rail-w) + var(--desktop-list-w));
       right: 0;
@@ -4419,7 +4420,8 @@
       border-radius: 0 8px 8px 0;
       background: #f5f5f5;
     }
-    .chat-page.offscreen {
+    .chat-page.offscreen,
+    .remote-claude-page.offscreen {
       display: none;
       transform: none;
       pointer-events: none;
@@ -4696,6 +4698,10 @@
         <button class="create-menu-item" onclick="hideCreateMenu();showCreateGroupModal()">
           <span class="menu-icon">👥</span>
           <span class="menu-label" data-i18n="create_new_group">创建新群聊</span>
+        </button>
+        <button class="create-menu-item" id="cross-device-menu-item" onclick="hideCreateMenu();toggleHarnessVisible()">
+          <span class="menu-icon">🖥️</span>
+          <span class="menu-label" id="cross-device-menu-label">跨设备调用</span>
         </button>
       </div>
       <button class="header-btn with-label workflow-header-btn" onclick="toggleOasisSidebar()" data-i18n-title="tip_workflow" title="选择工作流">
@@ -7882,6 +7888,15 @@ function renderHarnessProjectGroup(projectId, tasks, project, agentsByTask, sess
       <span class="harness-project-toggle">⌄</span>
     </button>
     <div class="harness-project-body" data-harness-project="${esc(projectId || 'default')}">
+      ${projectId && projectId !== '__unbound__' ? `
+      <div class="harness-project-actions" style="display:flex;justify-content:flex-end;padding:4px 8px;">
+        <button type="button"
+          onclick="deleteHarnessProject('${esc(encodedProjectId)}')"
+          style="background:transparent;color:#c2410c;border:1px solid #c2410c;padding:2px 8px;border-radius:4px;font-size:12px;cursor:pointer;"
+          title="${esc(_currentLang === 'zh' ? '删除项目及其所有 TODO' : 'Delete project and all its TODOs')}">
+          ${esc(_currentLang === 'zh' ? '删除项目' : 'Delete project')}
+        </button>
+      </div>` : ''}
       <div class="harness-project-row">
         <div class="harness-project-row-head"><span>TODO</span><span>${esc(String(tasks.length))}</span></div>
         <div class="harness-project-row-track">${todoCards}</div>
@@ -8070,6 +8085,49 @@ async function createHarnessTodo() {
     toast(_currentLang === 'zh' ? 'TODO 已创建' : 'TODO created', 1600);
   } catch (e) {
     toast((_currentLang === 'zh' ? '创建失败: ' : 'Create failed: ') + e.message, 3000);
+  }
+}
+
+const HARNESS_HIDDEN_LS_KEY = 'clawcross.harness.hidden';
+
+function applyHarnessVisibility() {
+  const sec = document.getElementById('harness-section');
+  const label = document.getElementById('cross-device-menu-label');
+  if (!sec) return;
+  const hidden = localStorage.getItem(HARNESS_HIDDEN_LS_KEY) === '1';
+  sec.style.display = hidden ? 'none' : '';
+  if (label) {
+    label.textContent = hidden
+      ? (_currentLang === 'zh' ? '跨设备调用（开启）' : 'Cross-device (enable)')
+      : (_currentLang === 'zh' ? '跨设备调用（关闭）' : 'Cross-device (disable)');
+  }
+}
+
+function toggleHarnessVisible() {
+  const hidden = localStorage.getItem(HARNESS_HIDDEN_LS_KEY) === '1';
+  localStorage.setItem(HARNESS_HIDDEN_LS_KEY, hidden ? '0' : '1');
+  applyHarnessVisibility();
+}
+
+// run once at script load — section is in DOM by then
+try { applyHarnessVisibility(); } catch (_) {}
+
+async function deleteHarnessProject(encodedProjectId) {
+  const projectId = decodeURIComponent(String(encodedProjectId || ''));
+  if (!projectId || projectId === '__unbound__') return;
+  const confirmMsg = _currentLang === 'zh'
+    ? `删除项目 "${projectId}" 及其所有 TODO？此操作不可撤销。`
+    : `Delete project "${projectId}" and all its TODOs? This is irreversible.`;
+  if (!confirm(confirmMsg)) return;
+  try {
+    await api('POST', '/proxy_harness_event', {
+      action: 'project_delete',
+      project_id: projectId,
+    });
+    await refreshAgentOps(false);
+    toast(_currentLang === 'zh' ? '项目已删除' : 'Project deleted', 1600);
+  } catch (e) {
+    toast((_currentLang === 'zh' ? '删除失败: ' : 'Delete failed: ') + e.message, 3000);
   }
 }
 

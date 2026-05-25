@@ -3,6 +3,11 @@ import os as _os
 _src_dir = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
 if _src_dir not in _sys.path:
     _sys.path.insert(0, _src_dir)
+# Also expose project root so top-level packages like `oasis/` (sibling of src/)
+# are importable — e.g. `from oasis.workflow_rules import ...` from this MCP.
+_project_root = _os.path.dirname(_src_dir)
+if _project_root not in _sys.path:
+    _sys.path.insert(0, _project_root)
 
 """
 MCP Tool Server: OASIS Forum

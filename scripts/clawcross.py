@@ -2244,6 +2244,8 @@ def build_parser() -> argparse.ArgumentParser:
     workflow = sub.add_parser("workflow", help="List/show/run OASIS workflows")
     workflow.add_argument("args", nargs="*", help="[show <name> | run <name> team <T> question <Q>]")
 
+    sub.add_parser("workflow-manual", help="Print the OASIS workflowpy authoring manual")
+
     skill = sub.add_parser("skill", help="List skills exposed by OpenClaw agents")
     skill.add_argument("args", nargs="*", help="[<agent>]")
 
@@ -2316,6 +2318,12 @@ def main() -> int:
     if args.command == "workflow":
         from clawcross_cli.display_cmd import handle_workflow_command
         out = handle_workflow_command(list(args.args or []), interactive=True)
+        if out:
+            print(out)
+        return 0
+    if args.command == "workflow-manual":
+        from clawcross_cli.workflow_manual_cmd import handle_workflow_manual_command
+        out = handle_workflow_manual_command()
         if out:
             print(out)
         return 0

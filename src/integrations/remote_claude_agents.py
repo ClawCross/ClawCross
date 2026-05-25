@@ -325,6 +325,19 @@ def load_remote_claude_configs() -> list[RemoteClaudeConfig]:
         if config:
             configs.append(config)
 
+    # Targets registered via configure_remote_claude_dashboard.py
+    # (~/.clawcross/data/remote_claude_targets.json) — JSON is the persistent
+    # source of truth; the env var above stays as an ad-hoc override.
+    for item in _load_registered_targets():
+        raw = str(item.get("target") or item.get("remote") or "").strip()
+        if not raw and item.get("user") and item.get("host"):
+            raw = f"{item['user']}@{item['host']}"
+        if not raw:
+            continue
+        config = _parse_remote_target(raw, base)
+        if config:
+            configs.append(config)
+
     if not configs:
         configs.append(base)
 
@@ -375,7 +388,7 @@ def candidate_transcript(data):
     cwd = data.get("cwd") or data.get("workingDirectory") or ""
     candidates = []
     if cwd:
-        slug = cwd.rstrip("/").replace("/", "-")
+        slug = cwd.rstrip("/").replace("/", "-").replace(".", "-")
         if session_id:
             candidates.append(os.path.expanduser(f"~/.claude/projects/{{slug}}/{{session_id}}.jsonl"))
         if job_id:
@@ -453,7 +466,7 @@ def candidate_transcript(data):
     cwd = data.get("cwd") or data.get("workingDirectory") or ""
     candidates = []
     if cwd:
-        slug = cwd.rstrip("/").replace("/", "-")
+        slug = cwd.rstrip("/").replace("/", "-").replace(".", "-")
         if session_id:
             candidates.append(os.path.expanduser(f"~/.claude/projects/{{slug}}/{{session_id}}.jsonl"))
         if job_id:
