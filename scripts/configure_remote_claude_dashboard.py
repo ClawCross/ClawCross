@@ -423,23 +423,24 @@ def command_task_md(args: argparse.Namespace) -> None:
 
 
 def command_heartbeat(args: argparse.Namespace) -> None:
-    post_event(
-        args,
-        {
-            "action": "heartbeat",
-            "agent_id": args.agent_id,
-            "agent_type": args.agent_type,
-            "project_id": args.project_id,
-            "task_id": args.task_id,
-            "status": normalize_agent_status(args.status),
-            "message": args.message,
-            "remote_host": args.remote_host,
-            "worktree": args.worktree,
-            "branch": args.branch,
-            "git_sha": args.git_sha,
-            "session_ref": args.session_ref,
-        },
-    )
+    payload = {
+        "action": "heartbeat",
+        "agent_id": args.agent_id,
+        "agent_type": args.agent_type,
+        "project_id": args.project_id,
+        "task_id": args.task_id,
+        "status": normalize_agent_status(args.status),
+        "message": args.message,
+        "remote_host": args.remote_host,
+        "worktree": args.worktree,
+        "branch": args.branch,
+        "git_sha": args.git_sha,
+        "session_ref": args.session_ref,
+    }
+    capabilities = getattr(args, "capabilities", None)
+    if capabilities is not None:
+        payload["capabilities"] = capabilities
+    post_event(args, payload)
 
 
 def command_task_status(args: argparse.Namespace) -> None:
@@ -568,6 +569,10 @@ def build_parser() -> argparse.ArgumentParser:
     heartbeat = sub.add_parser("heartbeat", help="Post worker heartbeat.")
     add_event_common(heartbeat)
     heartbeat.add_argument("--status", default="running")
+    heartbeat.add_argument(
+        "--capabilities", nargs="*", default=None,
+        help="Agent capability tags, e.g. --capabilities python tmux claude-code",
+    )
     heartbeat.set_defaults(func=command_heartbeat)
 
     status = sub.add_parser("task-status", help="Set task status: doing, done, undone, blocked, review.")

@@ -121,9 +121,14 @@ def build_parser() -> argparse.ArgumentParser:
     heartbeat = sub.add_parser("heartbeat")
     add_common(heartbeat)
     heartbeat.add_argument("--status", default="running")
+    heartbeat.add_argument(
+        "--capabilities", nargs="*", default=None,
+        help="Agent capability tags, e.g. --capabilities python tmux claude-code",
+    )
 
     needs_user = sub.add_parser("needs_user")
     add_common(needs_user)
+    needs_user.add_argument("--capabilities", nargs="*", default=None)
 
     blocked = sub.add_parser("blocked")
     add_common(blocked)
@@ -198,6 +203,9 @@ def main() -> None:
             "branch": args.branch,
             "git_sha": args.git_sha,
         }
+        capabilities = getattr(args, "capabilities", None)
+        if capabilities is not None:
+            payload["capabilities"] = capabilities
     elif command == "task":
         payload = {
             "action": "task_upsert",

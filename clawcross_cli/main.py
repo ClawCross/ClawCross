@@ -35,6 +35,7 @@ def usage() -> None:
     print("  workflow show <name>        show workflow YAML/py content")
     print("  workflow run <name> team <T> question <Q>")
     print("                              launch a YAML workflow")
+    print("  workflow-manual             print the workflowpy authoring manual")
     print("  skill [<team>]              list managed skills (personal, or team+personal)")
     print("  cron [<team>]               list cron alarms (optionally for one team)")
     print("  channel                     list chatbot channels (Telegram, Discord, ...)")
@@ -64,6 +65,11 @@ def main() -> None:
     elif cmd == "workflow":
         from clawcross_cli.display_cmd import handle_workflow_command
         out = handle_workflow_command(rest, interactive=True)
+        if out:
+            print(out)
+    elif cmd == "workflow-manual":
+        from clawcross_cli.workflow_manual_cmd import handle_workflow_manual_command
+        out = handle_workflow_manual_command(rest)
         if out:
             print(out)
     elif cmd == "skill":
