@@ -94,6 +94,7 @@ class ThreadStateRegistry:
         self._thread_locks_guard: Optional[asyncio.Lock] = None
         self._thread_busy_source: Dict[str, str] = {}
         self._pending_system_messages: Dict[str, int] = {}
+        self._thread_context_usage: Dict[str, Dict[str, int]] = {}
 
     async def _get_locks_guard(self) -> asyncio.Lock:
         """获取或创建线程锁的守卫锁。"""
@@ -139,6 +140,27 @@ class ThreadStateRegistry:
         if not self.is_thread_busy(thread_id):
             return ""
         return self._thread_busy_source.get(thread_id, "unknown")
+
+    def set_thread_context_usage(self, thread_id: str, tokens: int, budget: int) -> None:
+        """设置线程当前压缩上下文用量。"""
+        tokens = max(0, int(tokens or 0))
+        budget = max(0, int(budget or 0))
+        percent = min(100, round(tokens / budget * 100)) if budget > 0 else 0
+        if tokens > 0 and percent == 0:
+            percent = 1
+        self._thread_context_usage[thread_id] = {
+            "tokens": tokens,
+            "budget": budget,
+            "percent": percent,
+            "remaining": max(0, budget - tokens),
+        }
+
+    def get_thread_context_usage(self, thread_id: str) -> Dict[str, int]:
+        """获取线程当前压缩上下文用量。"""
+        return self._thread_context_usage.get(
+            thread_id,
+            {"tokens": 0, "budget": 0, "percent": 0, "remaining": 0},
+        )
 
     def get_all_thread_status(self, prefix: str) -> Dict[str, Dict[str, object]]:
         """获取所有以指定前缀开头的线程状态。"""

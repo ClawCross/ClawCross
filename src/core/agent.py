@@ -1472,7 +1472,7 @@ class TeamAgent:
             # 注入用户专属画像
             user_profile = self._get_user_profile(user_id)
             if user_profile:
-                base_prompt += f"\n{user_profile}\n"
+                base_prompt += f"\n【用户画像（描述对方，不是你）】\n{user_profile}\n"
 
         if (not is_subagent) or (subagent_profile and subagent_profile.include_user_skills):
             # 注入用户技能列表（总是显示位置信息）
@@ -1624,7 +1624,6 @@ class TeamAgent:
                 f">>> [compact-state] updated until={compaction_state.get('compacted_until')} "
                 f"tail_tokens≈{compaction_state.get('tokens')}"
             )
-
         history_messages = budget_user_messages(
             user_id=user_id,
             session_id=session_id,
@@ -1673,6 +1672,15 @@ class TeamAgent:
 
         # --- Token budget tracking (new) ---
         session_budget = get_session_budget(user_id, session_id)
+        session_budget.update_current_context(
+            used_tokens=compression_stats.original_tokens,
+            budget_tokens=history_token_budget,
+        )
+        self.set_thread_context_usage(
+            f"{user_id}#{session_id}",
+            compression_stats.original_tokens,
+            history_token_budget,
+        )
         budget_notice = session_budget.format_budget_notice()
         if budget_notice:
             base_prompt += f"\n{budget_notice}\n"
@@ -1789,20 +1797,25 @@ class TeamAgent:
             # --- Record token usage for budget tracking (new) ---
             usage_meta = getattr(response, "usage_metadata", None) or {}
             if isinstance(usage_meta, dict) and usage_meta:
-                session_budget.record_turn(
-                    input_tokens=usage_meta.get("input_tokens", 0),
-                    output_tokens=usage_meta.get("output_tokens", 0),
-                    cache_creation_tokens=usage_meta.get("cache_creation_input_tokens", 0),
-                    cache_read_tokens=usage_meta.get("cache_read_input_tokens", 0),
-                )
-                model_name = getattr(llm, "model_name", "") or getattr(llm, "model", "") or ""
-                cost_tracker.record(
-                    model=model_name,
-                    input_tokens=usage_meta.get("input_tokens", 0),
-                    output_tokens=usage_meta.get("output_tokens", 0),
-                    cache_read_tokens=usage_meta.get("cache_read_input_tokens", 0),
-                    cache_write_tokens=usage_meta.get("cache_creation_input_tokens", 0),
-                )
+                input_tokens = int(usage_meta.get("input_tokens", 0) or 0)
+                output_tokens = int(usage_meta.get("output_tokens", 0) or 0)
+                cache_creation_tokens = int(usage_meta.get("cache_creation_input_tokens", 0) or 0)
+                cache_read_tokens = int(usage_meta.get("cache_read_input_tokens", 0) or 0)
+                if input_tokens or output_tokens or cache_creation_tokens or cache_read_tokens:
+                    session_budget.record_turn(
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        cache_creation_tokens=cache_creation_tokens,
+                        cache_read_tokens=cache_read_tokens,
+                    )
+                    model_name = getattr(llm, "model_name", "") or getattr(llm, "model", "") or ""
+                    cost_tracker.record(
+                        model=model_name,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        cache_read_tokens=cache_read_tokens,
+                        cache_write_tokens=cache_creation_tokens,
+                    )
 
             invalid_feedback = self._find_invalid_tool_feedback(response)
             if invalid_feedback is None:
@@ -2231,6 +2244,14 @@ class TeamAgent:
     def get_thread_busy_source(self, thread_id: str) -> str:
         """返回锁来源: "user"、"system"、或 "" (未占用)。"""
         return self._thread_state_registry.get_thread_busy_source(thread_id)
+
+    def set_thread_context_usage(self, thread_id: str, tokens: int, budget: int):
+        """设置该 thread 的当前压缩上下文用量。"""
+        self._thread_state_registry.set_thread_context_usage(thread_id, tokens, budget)
+
+    def get_thread_context_usage(self, thread_id: str) -> dict[str, int]:
+        """返回该 thread 的当前压缩上下文用量。"""
+        return self._thread_state_registry.get_thread_context_usage(thread_id)
 
     def get_all_thread_status(self, prefix: str) -> dict[str, dict]:
         """返回指定前缀下所有已知 thread 的状态。"""

@@ -16,6 +16,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from utils.context_limits import infer_model_context_window
+
 
 @dataclass
 class TurnTokenUsage:
@@ -47,12 +49,14 @@ class SessionTokenBudget:
     - Auto-suggest continuation or stopping
     """
 
-    max_context_tokens: int = 200_000
+    max_context_tokens: int = field(default_factory=infer_model_context_window)
     max_output_tokens_per_turn: int = 16_000
     warning_threshold: float = 0.8  # Warn at 80% usage
     critical_threshold: float = 0.95  # Critical at 95%
 
     turns: list[TurnTokenUsage] = field(default_factory=list)
+    current_context_tokens: int = 0
+    current_context_budget: int = 0
     _session_start: float = field(default_factory=time.time)
 
     @property
@@ -77,19 +81,18 @@ class SessionTokenBudget:
 
     @property
     def context_pressure(self) -> float:
-        """0.0-1.0 ratio of context usage.
-
-        Uses (input + output) / max_context per openclaw's contextPercent heuristic.
-        Note: may overcount because cumulative tokens include replayed history.
-        """
-        if self.max_context_tokens <= 0:
+        """0.0-1.0 ratio of current compressed context usage."""
+        budget = self.current_context_budget or self.max_context_tokens
+        if budget <= 0:
             return 0.0
-        return min(1.0, (self.total_input_tokens + self.total_output_tokens) / self.max_context_tokens)
+        return min(1.0, self.current_context_tokens / budget)
 
     @property
     def context_percent(self) -> int:
         """0-100 integer context usage percentage (openclaw-compatible)."""
-        return min(100, round(self.context_pressure * 100))
+        if self.current_context_tokens <= 0:
+            return 0
+        return max(1, min(100, round(self.context_pressure * 100)))
 
     @property
     def is_warning(self) -> bool:
@@ -115,6 +118,11 @@ class SessionTokenBudget:
         )
         self.turns.append(turn)
         return turn
+
+    def update_current_context(self, used_tokens: int, budget_tokens: int) -> None:
+        """Record current prompt context size after ClawCross compaction/compression."""
+        self.current_context_tokens = max(0, int(used_tokens or 0))
+        self.current_context_budget = max(0, int(budget_tokens or 0))
 
     def marginal_utility(self, window: int = 3) -> float:
         """
@@ -160,7 +168,8 @@ class SessionTokenBudget:
 
     def remaining_budget(self) -> int:
         """Tokens remaining before hitting max context."""
-        return max(0, self.max_context_tokens - self.total_input_tokens)
+        budget = self.current_context_budget or self.max_context_tokens
+        return max(0, budget - self.current_context_tokens)
 
     def get_status(self) -> dict[str, Any]:
         """Get a serializable status report."""
@@ -170,6 +179,8 @@ class SessionTokenBudget:
             "total_output_tokens": self.total_output_tokens,
             "total_cache_read": self.total_cache_read_tokens,
             "total_cache_creation": self.total_cache_creation_tokens,
+            "current_context_tokens": self.current_context_tokens,
+            "current_context_budget": self.current_context_budget or self.max_context_tokens,
             "context_pressure": round(self.context_pressure, 3),
             "marginal_utility": round(self.marginal_utility(), 3),
             "remaining_budget": self.remaining_budget(),

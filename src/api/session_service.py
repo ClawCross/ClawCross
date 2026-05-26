@@ -14,7 +14,10 @@ from api.session_models import (
     SessionListRequest,
     SessionStatusRequest,
 )
+from utils.context_compressor import estimate_messages_tokens
+from utils.context_limits import resolve_history_token_budget
 from utils.session_summary import build_session_summary
+from webot.context import get_compression_input_view
 from webot.profiles import is_subagent_session
 from webot.subagents import delete_subagent_by_session, delete_subagents_for_user
 
@@ -131,9 +134,35 @@ class SessionService:
         snapshot = await self.agent.agent_app.aget_state(config)
 
         if not snapshot or not snapshot.values:
-            return {"status": "success", "messages": []}
+            return {
+                "status": "success",
+                "messages": [],
+                "context_percent": 0,
+                "context_remaining": 0,
+                "context_tokens": 0,
+                "context_budget": 0,
+            }
 
         msgs = snapshot.values.get("messages", [])
+
+        # 静态计算：数的是 compress_context 实际看到的输入视图
+        # = [已存的 persistent compaction 摘要] + messages[compacted_until:]，
+        # 而不是用户在前端看到的完整未压缩历史。
+        try:
+            compression_view = get_compression_input_view(
+                user_id=req.user_id,
+                session_id=req.session_id,
+                messages=msgs,
+                checkpoint_store_path=getattr(self.agent, "_db_path", None),
+            )
+            static_tokens = estimate_messages_tokens(compression_view)
+            static_budget = resolve_history_token_budget(
+                is_subagent=is_subagent_session(req.session_id),
+            )
+            self.agent.set_thread_context_usage(thread_id, static_tokens, static_budget)
+        except Exception:
+            logger.exception("static context usage estimation failed for %s", thread_id)
+        context_usage = self.agent.get_thread_context_usage(thread_id)
         result = []
         for msg in msgs:
             msg_type = type(msg).__name__
@@ -162,7 +191,14 @@ class SessionService:
                     "tool_name": tool_name,
                 })
 
-        return {"status": "success", "messages": result}
+        return {
+            "status": "success",
+            "messages": result,
+            "context_percent": int(context_usage.get("percent", 0) or 0),
+            "context_remaining": int(context_usage.get("remaining", 0) or 0),
+            "context_tokens": int(context_usage.get("tokens", 0) or 0),
+            "context_budget": int(context_usage.get("budget", 0) or 0),
+        }
 
     async def delete_session(self, req: DeleteSessionRequest, x_internal_token: str | None):
         """删除指定会话或用户的所有会话。
@@ -217,9 +253,14 @@ class SessionService:
             else 0
         )
         busy_source = self.agent.get_thread_busy_source(thread_id) if busy else ""
+        context_usage = self.agent.get_thread_context_usage(thread_id)
         return {
             "has_new_messages": has_new,
             "pending_count": pending_count,
             "busy": busy,
             "busy_source": busy_source,
+            "context_percent": int(context_usage.get("percent", 0) or 0),
+            "context_remaining": int(context_usage.get("remaining", 0) or 0),
+            "context_tokens": int(context_usage.get("tokens", 0) or 0),
+            "context_budget": int(context_usage.get("budget", 0) or 0),
         }
