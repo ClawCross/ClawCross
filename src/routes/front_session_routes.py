@@ -83,7 +83,16 @@ def register_session_routes(
             )
             return jsonify(r.json()), r.status_code
         except Exception:
-            return jsonify({"has_new_messages": False}), 200
+            return jsonify({
+                "has_new_messages": False,
+                "pending_count": 0,
+                "busy": False,
+                "busy_source": "",
+                "context_percent": 0,
+                "context_remaining": 0,
+                "context_tokens": 0,
+                "context_budget": 0,
+            }), 200
 
     @app.route("/proxy_delete_session", methods=["POST"])
     def proxy_delete_session():

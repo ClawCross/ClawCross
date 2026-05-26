@@ -3,7 +3,7 @@ Deep audit fix tests — covers all specific gaps identified by source compariso
 
 Tests:
 1. Streaming executor: per-tool timeout, progress callback
-2. Token budget: context_percent (in+out)/200k, context_pressure fix
+2. Token budget: context_percent uses compressed context / compression budget
 3. Bash safety: runtime allowlist/blocklist, deep analysis, env injection, heredoc, operator chains
 4. Council: abort, inject_message, save_transcript
 5. Notification: NotificationLevel is proper Enum
@@ -64,28 +64,25 @@ class TestStreamingExecutorTimeout:
 
 
 class TestTokenBudgetContextPercent:
-    """Test context_percent uses (in+out)/200k per openclaw."""
+    """Test context_percent follows compressed context usage."""
 
-    def test_context_percent_includes_output(self):
+    def test_context_percent_hits_100_at_compression_budget(self):
         from utils.token_budget import SessionTokenBudget
         budget = SessionTokenBudget(max_context_tokens=200_000)
-        budget.record_turn(input_tokens=100_000, output_tokens=100_000)
-        # (100k + 100k) / 200k = 100%
+        budget.update_current_context(used_tokens=64_000, budget_tokens=64_000)
         assert budget.context_percent == 100
         assert budget.context_pressure == 1.0
 
     def test_context_percent_partial(self):
         from utils.token_budget import SessionTokenBudget
         budget = SessionTokenBudget(max_context_tokens=200_000)
-        budget.record_turn(input_tokens=50_000, output_tokens=50_000)
-        # (50k + 50k) / 200k = 50%
+        budget.update_current_context(used_tokens=32_000, budget_tokens=64_000)
         assert budget.context_percent == 50
 
-    def test_context_pressure_with_output(self):
+    def test_context_pressure_warning_before_compression_budget(self):
         from utils.token_budget import SessionTokenBudget
         budget = SessionTokenBudget(max_context_tokens=1000)
-        budget.record_turn(input_tokens=400, output_tokens=500)
-        # (400 + 500) / 1000 = 0.9
+        budget.update_current_context(used_tokens=900, budget_tokens=1000)
         assert budget.context_pressure == 0.9
         assert budget.is_warning  # >= 0.8
         assert not budget.is_critical  # < 0.95

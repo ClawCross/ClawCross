@@ -75,6 +75,7 @@ const i18n = {
         local_login_banner_title: '已使用本机免密登录',
         local_login_banner_body: '当前用户名「{user_id}」还没有密码。如需后续密码登录或远程访问，可在 Settings 里设置密码并保存为用户。',
         local_login_banner_action: '去设置',
+        context_usage: '上下文已用 {percent}%',
         llm_not_configured: 'LLM API 未配置，请先前往设置填写 API Key',
         project_update_banner: '发现新版本 {latest}，点击查看并更新',
         project_update_banner_dirty: '发现新版本 {latest}，但本地有未提交改动',
@@ -877,6 +878,7 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         local_login_banner_title: 'Local no-password login active',
         local_login_banner_body: 'The current username "{user_id}" does not have a password yet. Open Settings to save one for future password or remote login.',
         local_login_banner_action: 'Open Settings',
+        context_usage: 'Context {percent}% used',
         llm_not_configured: 'LLM API not configured. Click here to set up API Key.',
         project_update_banner: 'New version {latest} is available. Click to review and update.',
         project_update_banner_dirty: 'New version {latest} is available, but local changes block auto update.',
@@ -2118,6 +2120,38 @@ function updateSessionDisplay() {
         el.textContent = '#' + currentSessionId.slice(-6);
         el.title = t('session_id') + ': ' + currentSessionId;
     }
+}
+
+function updateSessionContextUsageBadge(percent, remaining) {
+    const badge = document.getElementById('session-context-usage');
+    if (!badge) return;
+    const percentValue = Number(percent);
+    const remainingValue = Number(remaining);
+    const validPercent = Number.isFinite(percentValue) ? Math.max(0, Math.min(100, Math.round(percentValue))) : null;
+    const validRemaining = Number.isFinite(remainingValue) ? Math.max(0, Math.round(remainingValue)) : null;
+
+    if (validPercent === null || !currentSessionId) {
+        badge.style.display = 'inline-flex';
+        badge.textContent = t('context_usage').replace('{percent}', '0');
+        badge.title = currentLang === 'zh-CN'
+            ? '当前会话上下文已使用 0%'
+            : 'Current session context is 0% used';
+        badge.classList.remove('warn', 'critical');
+        return;
+    }
+
+    const remainingText = validRemaining === null
+        ? ''
+        : (currentLang === 'zh-CN'
+            ? `，剩余约 ${validRemaining.toLocaleString()} tokens`
+            : `. About ${validRemaining.toLocaleString()} tokens remaining`);
+    badge.textContent = t('context_usage').replace('{percent}', String(validPercent));
+    badge.title = (currentLang === 'zh-CN'
+        ? `当前会话上下文已使用 ${validPercent}%${remainingText}`
+        : `Current session context is ${validPercent}% used${remainingText}`);
+    badge.style.display = 'inline-flex';
+    badge.classList.toggle('warn', validPercent >= 80 && validPercent < 95);
+    badge.classList.toggle('critical', validPercent >= 95);
 }
 
 // ===== Agent Meta Modal Logic =====
@@ -4337,20 +4371,7 @@ async function switchToSession(sessionId, force = false, options = {}) {
             _acpLastTranscriptKey = acpComputeTranscriptKey();
             await acpPaintTranscript();
         }
-        try {
-            const sr = await fetch('/proxy_session_status', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ session_id: sessionId }),
-            });
-            const sd = await sr.json();
-            if (sd.busy) setSystemBusyUI(true);
-            else setSystemBusyUI(false);
-        } catch (e) {
-            /* ignore */
-        } finally {
-            if (!quiet) hidePageLoading();
-        }
+        if (!quiet) hidePageLoading();
         return;
     }
 
@@ -4359,7 +4380,6 @@ async function switchToSession(sessionId, force = false, options = {}) {
     if (!quiet) {
         chatBox.innerHTML = `<div class="text-xs text-gray-400 text-center py-4">${t('history_loading_msg')}</div>`;
     }
-
     try {
         const resp = await fetch('/proxy_session_history', {
             method: 'POST',
@@ -4368,6 +4388,7 @@ async function switchToSession(sessionId, force = false, options = {}) {
         });
         const data = await resp.json();
         chatBox.innerHTML = '';
+        updateSessionContextUsageBadge(data.context_percent, data.context_remaining);
 
         if (!data.messages || data.messages.length === 0) {
             renderWeBotWelcomeMessage();
@@ -4375,6 +4396,7 @@ async function switchToSession(sessionId, force = false, options = {}) {
             return;
         }
 
+        const parts = [];
         for (const msg of data.messages) {
             if (msg.role === 'user') {
                 // 支持多模态历史消息（content 可能是 string 或 array）
@@ -4390,30 +4412,31 @@ async function switchToSession(sessionId, force = false, options = {}) {
                         }
                     }
                 }
-                chatBox.innerHTML += `
+                parts.push(`
                     <div class="flex justify-end">
                         <div class="message-user bg-blue-600 text-white p-4 max-w-[85%] shadow-sm">
                             ${imagesHtml}${imagesHtml ? '<div style="margin-top:6px">' : ''}${escapeHtml(textContent || '('+t('image_placeholder')+')')}${imagesHtml ? '</div>' : ''}
                         </div>
-                    </div>`;
+                    </div>`);
             } else if (msg.role === 'tool') {
-                chatBox.innerHTML += `
+                parts.push(`
                     <div class="flex justify-start">
                         <div class="bg-gray-100 border border-dashed border-gray-300 p-3 max-w-[85%] shadow-sm text-xs text-gray-500 rounded-lg">
                             <div class="font-semibold text-gray-600 mb-1">🔧 ${t('tool_return')}: ${escapeHtml(msg.tool_name || '')}</div>
                             ${renderToolPager(msg.content, { title: t('tool_full_output') })}
                         </div>
-                    </div>`;
+                    </div>`);
             } else {
                 const toolCallsHtml = renderToolCallDetails(msg.tool_calls);
-                chatBox.innerHTML += `
+                parts.push(`
                     <div class="flex justify-start">
                         <div class="message-agent bg-white border p-4 max-w-[85%] shadow-sm text-gray-700 markdown-body tc-markdown" data-tts-ready="1">
                             ${toolCallsHtml}${msg.content ? renderMarkdown(msg.content) : '<span class="text-gray-400 text-xs">('+t('tool_calling')+')</span>'}
                         </div>
-                    </div>`;
+                    </div>`);
             }
         }
+        chatBox.innerHTML = parts.join('');
         // 为历史 AI 消息添加朗读按钮
         chatBox.querySelectorAll('[data-tts-ready="1"]').forEach(div => {
             div.removeAttribute('data-tts-ready');
@@ -4428,27 +4451,12 @@ async function switchToSession(sessionId, force = false, options = {}) {
             <div class="text-xs text-red-400 text-center py-4">${t('history_error')}: ${e.message}</div>`;
     }
 
-    // 切换 session 后立即检查一次 busy 状态
-    try {
-        const sr = await fetch('/proxy_session_status', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ session_id: sessionId })
-        });
-        const sd = await sr.json();
-        if (sd.busy) {
-            setSystemBusyUI(true);
-        } else {
-            setSystemBusyUI(false);
-        }
-    } catch(e) {} finally {
-        if (_ocChatMode === 'internal') {
-            ocInternalSyncNameInput();
-            ocInternalRepaintSessionPick();
-            scrollChatToBottom(chatBox, { force: true });
-        }
-        if (!quiet) hidePageLoading();
+    if (_ocChatMode === 'internal') {
+        ocInternalSyncNameInput();
+        ocInternalRepaintSessionPick();
+        scrollChatToBottom(chatBox, { force: true });
     }
+    if (!quiet) hidePageLoading();
 }
 
 function ocSyncSessionSubrowsVisibility() {
@@ -10869,6 +10877,7 @@ setInterval(() => {
 
 // === System trigger polling: 检测后台系统触发产生的新消息 ===
 let _sessionStatusTimer = null;
+let _sessionStatusPolling = false;
 
 function startSessionStatusPolling() {
     stopSessionStatusPolling();
@@ -10876,6 +10885,8 @@ function startSessionStatusPolling() {
         if (!currentUserId || !currentSessionId) return;
         // 用户正在流式对话中，跳过轮询
         if (cancelBtn.style.display !== 'none') return;
+        if (_sessionStatusPolling) return;
+        _sessionStatusPolling = true;
         try {
             const resp = await fetch('/proxy_session_status', {
                 method: 'POST',
@@ -10885,15 +10896,19 @@ function startSessionStatusPolling() {
             const data = await resp.json();
 
             // --- 系统占用状态 ---
-            if (data.busy) {
-                setSystemBusyUI(true);
-            } else if (busyBtn.style.display !== 'none') {
+            setSystemBusyUI(!!data.busy);
+            if (!data.busy && busyBtn.style.display !== 'none') {
                 // busy → 不busy：恢复按钮，显示刷新横幅
-                setSystemBusyUI(false);
                 showNewMsgBanner();
+            }
+            // --- 上下文用量徽章 ---
+            if (typeof data.context_percent !== 'undefined') {
+                updateSessionContextUsageBadge(data.context_percent, data.context_remaining);
             }
         } catch(e) {
             // 静默忽略
+        } finally {
+            _sessionStatusPolling = false;
         }
     }, 5000); // 每 5 秒轮询一次
 }
@@ -13665,12 +13680,12 @@ async def main(ctx: Context):
     #
     # By default, the runtime auto-creates one OASIS topic before main(ctx) starts.
     #   ctx.topic_id is usually already available
-    #   await ctx.publish(...) writes both local logs and topic posts
+    #   await ctx.publish(...) is async and writes both local logs and topic posts
     #
     # Available through ctx:
     #   ctx.question, ctx.user_id, ctx.team, ctx.topic_id, ctx.run_id
     #   ctx.list_agents(), ctx.get_agent(), ctx.send_agent(...)
-    #   ctx.publish(...), ctx.set_result(...), ctx.set_conclusion(...)
+    #   await ctx.publish(...), ctx.set_result(...), ctx.set_conclusion(...)
     #   ctx.create_empty_topic(...), ctx.publish_to_topic(...), ctx.conclude_topic(...)
     # Notes:
     #   ctx.list_agents() is synchronous: do not write await ctx.list_agents()

@@ -438,6 +438,35 @@ def _choose_compaction_boundary(
     return find_safe_compaction_boundary(messages, boundary)
 
 
+def get_compression_input_view(
+    *,
+    user_id: str,
+    session_id: str,
+    messages: list[BaseMessage],
+    checkpoint_store_path: str | os.PathLike | None = None,
+) -> list[BaseMessage]:
+    """Read-only view: what compress_context actually receives as input.
+
+    apply_persistent_compaction reads a stored summary record from
+    ``webot_context_compactions`` and substitutes it in for
+    ``messages[0 : compacted_until]`` before downstream trimming. This helper
+    reproduces only that read path (no writes, no side effects) so endpoints
+    like session_history can count tokens on the same view the agent will use
+    on its next turn. Returns ``messages`` unchanged when persistent
+    compaction is disabled or no record exists for the thread.
+    """
+    if not persistent_compaction_enabled() or not user_id or not session_id or not messages:
+        return messages
+    thread_id = f"{user_id}#{session_id}"
+    record = _valid_compaction_record(
+        get_context_compaction(checkpoint_store_path, thread_id),
+        messages,
+    )
+    if record is None:
+        return messages
+    return [_summary_message(record.summary)] + messages[record.compacted_until:]
+
+
 def apply_persistent_compaction(
     *,
     user_id: str,

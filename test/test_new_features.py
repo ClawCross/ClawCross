@@ -163,18 +163,23 @@ class TestTokenBudget:
         assert budget.total_input_tokens == 1000
         assert budget.total_output_tokens == 500
 
+    def test_remaining_budget_uses_current_compressed_context(self):
+        from utils.token_budget import SessionTokenBudget
+        budget = SessionTokenBudget(max_context_tokens=2000)
+        budget.update_current_context(used_tokens=1500, budget_tokens=2000)
+        assert budget.remaining_budget() == 500
+
     def test_context_pressure(self):
         from utils.token_budget import SessionTokenBudget
         budget = SessionTokenBudget(max_context_tokens=1000)
-        budget.record_turn(input_tokens=800, output_tokens=100)
-        # (800 + 100) / 1000 = 0.9 (now includes output per openclaw)
+        budget.update_current_context(used_tokens=900, budget_tokens=1000)
         assert budget.context_pressure == 0.9
         assert budget.is_warning
 
     def test_critical_threshold(self):
         from utils.token_budget import SessionTokenBudget
         budget = SessionTokenBudget(max_context_tokens=1000)
-        budget.record_turn(input_tokens=960, output_tokens=100)
+        budget.update_current_context(used_tokens=960, budget_tokens=1000)
         assert budget.is_critical
 
     def test_marginal_utility(self):
@@ -205,7 +210,7 @@ class TestTokenBudget:
     def test_format_budget_notice_warning(self):
         from utils.token_budget import SessionTokenBudget
         budget = SessionTokenBudget(max_context_tokens=1000)
-        budget.record_turn(input_tokens=850, output_tokens=0)
+        budget.update_current_context(used_tokens=850, budget_tokens=1000)
         notice = budget.format_budget_notice()
         assert "⚡" in notice
 
@@ -221,9 +226,11 @@ class TestTokenBudget:
     def test_get_status(self):
         from utils.token_budget import SessionTokenBudget
         budget = SessionTokenBudget()
-        budget.record_turn(input_tokens=1000, output_tokens=500)
+        budget.update_current_context(used_tokens=1000, budget_tokens=2000)
         status = budget.get_status()
         assert "total_turns" in status
+        assert status["current_context_tokens"] == 1000
+        assert status["current_context_budget"] == 2000
         assert "context_pressure" in status
         assert "should_continue" in status
 

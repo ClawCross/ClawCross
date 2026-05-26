@@ -60,6 +60,11 @@ def _total_tokens(messages: list[BaseMessage]) -> int:
     return sum(_msg_tokens(m) for m in messages)
 
 
+def estimate_messages_tokens(messages: list[BaseMessage]) -> int:
+    """Public wrapper around the same heuristic compress_context uses."""
+    return _total_tokens(messages)
+
+
 def _stringify(content: Any) -> str:
     if isinstance(content, str):
         return content
