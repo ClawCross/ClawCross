@@ -1648,8 +1648,7 @@ class TeamAgent:
             print(
                 f">>> [compress] folded until={compression_result.compacted_until} "
                 f"view_tokens≈{compression_result.view_tokens} "
-                f"summary_chars={len(compression_result.summary)} "
-                f"artifact={compression_result.segment_artifact_path or '<disabled>'}"
+                f"summary_chars={len(compression_result.summary)}"
             )
 
         # --- Token budget tracking ---

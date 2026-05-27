@@ -7,8 +7,8 @@ Design goals:
   messages[compacted_until:] stays byte-stable; new turns only append.
 - Real summarization: when triggered, call an LLM to fold the segment
   into a capped-length summary. Mechanical fallback if LLM unavailable.
-- Full segment persisted: the exact messages that went into the
-  summary are written to disk as one artifact per compression event.
+- No segment duplication on disk: LangGraph state already keeps every
+  original message, so audit replay reads from there using compacted_until.
 - Low frequency: trigger only when accumulated tokens cross a high
   threshold (default 75% of history budget) AND enough new messages
   have accrued since last compression (min_new_messages防抖).
@@ -348,62 +348,6 @@ def make_llm_summarizer(
 
 
 # ---------------------------------------------------------------------------
-# Segment persistence
-# ---------------------------------------------------------------------------
-
-def _persist_segment(
-    *,
-    user_id: str,
-    session_id: str,
-    segment: list[BaseMessage],
-    from_idx: int,
-    to_idx: int,
-) -> str:
-    """Save the exact segment that was folded as a single artifact file.
-
-    Stored content is a readable transcript so the user can audit *what*
-    actually went into the summary. Returns the saved path (or "" when
-    runtime artifacts are disabled).
-    """
-    try:
-        from webot.context import _runtime_artifacts_enabled, _store_runtime_text
-        from webot.runtime_store import create_runtime_artifact
-    except Exception:
-        return ""
-    if not _runtime_artifacts_enabled():
-        return ""
-    blocks: list[str] = []
-    for i, msg in enumerate(segment):
-        role = _role_label(msg)
-        body = _stringify(msg.content)
-        blocks.append(f"=== messages[{from_idx + i}] role={role} ===\n{body}")
-    body = "\n\n".join(blocks)
-    try:
-        path = _store_runtime_text(
-            user_id=user_id,
-            session_id=session_id,
-            bucket="webot_compression_segments",
-            prefix=f"segment-{from_idx}-{to_idx}",
-            content=body,
-        )
-    except Exception:
-        return ""
-    try:
-        create_runtime_artifact(
-            user_id=user_id,
-            session_id=session_id,
-            kind="compression_segment",
-            title=f"messages[{from_idx}:{to_idx}]",
-            path=str(path),
-            summary=f"folded {to_idx - from_idx} messages from index {from_idx} to {to_idx}",
-            metadata={"from": from_idx, "to": to_idx, "count": to_idx - from_idx},
-        )
-    except Exception:
-        pass
-    return str(path)
-
-
-# ---------------------------------------------------------------------------
 # Record loading / view construction
 # ---------------------------------------------------------------------------
 
@@ -528,7 +472,6 @@ class CompressionResult:
     triggered: bool
     summary: str
     compacted_until: int
-    segment_artifact_path: str
     reason: str
     view_tokens: int
 
@@ -547,10 +490,15 @@ def apply_compression(
 
     Returned ``view`` is the message list to send downstream. When triggered,
     side effects are:
-      1. Save folded segment text to disk as an artifact.
-      2. Call ``summarizer(previous_summary, segment)`` to get new summary.
-      3. Truncate to ``_max_summary_chars()`` if the LLM returned too much.
-      4. Persist (summary, compacted_until) to sqlite via save_context_compaction.
+      1. Call ``summarizer(previous_summary, segment, target_chars)`` to get
+         the merged summary text.
+      2. Truncate to the dynamic char cap if the LLM returned too much.
+      3. Persist (summary, compacted_until) to sqlite via save_context_compaction.
+
+    The full LangGraph state still holds every original message, so the
+    folded segment is not duplicated to disk — call sites that need to audit
+    "what went into this compression" can replay ``messages[current_until:boundary]``
+    from langgraph using the stored ``compacted_until``.
 
     When not triggered, returns the current view unchanged and writes nothing.
     """
@@ -562,7 +510,6 @@ def apply_compression(
             triggered=False,
             summary="",
             compacted_until=0,
-            segment_artifact_path="",
             reason="disabled" if not _compression_enabled() else "empty",
             view_tokens=estimate_messages_tokens(view),
         )
@@ -580,7 +527,6 @@ def apply_compression(
             triggered=False,
             summary=previous_summary,
             compacted_until=current_until,
-            segment_artifact_path="",
             reason="no_budget",
             view_tokens=view_tokens,
         )
@@ -594,7 +540,6 @@ def apply_compression(
             triggered=False,
             summary=previous_summary,
             compacted_until=current_until,
-            segment_artifact_path="",
             reason="below_trigger",
             view_tokens=view_tokens,
         )
@@ -612,19 +557,11 @@ def apply_compression(
             triggered=False,
             summary=previous_summary,
             compacted_until=current_until,
-            segment_artifact_path="",
             reason="min_new_messages",
             view_tokens=view_tokens,
         )
 
     segment = messages[current_until:boundary]
-    artifact_path = _persist_segment(
-        user_id=user_id,
-        session_id=session_id,
-        segment=segment,
-        from_idx=current_until,
-        to_idx=boundary,
-    )
     target_chars = _max_summary_chars(history_token_budget)
     summarize = summarizer or _mechanical_summarizer
     try:
@@ -644,7 +581,6 @@ def apply_compression(
                 "trigger_tokens": trigger_tokens,
                 "target_tokens": target_tokens,
                 "preserve_recent": preserve_recent_val,
-                "segment_artifact": artifact_path,
                 "new_message_count": new_count,
             },
         )
@@ -656,7 +592,6 @@ def apply_compression(
         triggered=True,
         summary=new_summary,
         compacted_until=boundary,
-        segment_artifact_path=artifact_path,
         reason="compressed",
         view_tokens=estimate_messages_tokens(new_view),
     )
