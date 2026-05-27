@@ -12,8 +12,10 @@ import os
 
 DEFAULT_MODEL_CONTEXT_WINDOW = 128_000
 MIN_HISTORY_TOKEN_BUDGET = 16_000
-MAX_MAIN_HISTORY_TOKEN_BUDGET = 128_000
-MAX_SUBAGENT_HISTORY_TOKEN_BUDGET = 64_000
+# 主 agent 不再封顶——Gemini 2M / Minimax 1M 这种长上下文模型应该能用满。
+# 用户可通过 WEBOT_CONTEXT_TOKEN_BUDGET 显式收紧。
+MAX_SUBAGENT_HISTORY_TOKEN_BUDGET = 64_000  # subagent 仍封顶：子任务应聚焦短上下文
+HISTORY_BUDGET_RATIO = 0.80  # 历史占 context window 的比例，留 20% 给 system+input+output
 
 
 def _env_int(name: str, default: int | None = None) -> int | None:
@@ -75,9 +77,12 @@ def resolve_history_token_budget(*, is_subagent: bool = False, model: str | None
         return override
 
     context_window = infer_model_context_window(model)
-    cap = MAX_SUBAGENT_HISTORY_TOKEN_BUDGET if is_subagent else MAX_MAIN_HISTORY_TOKEN_BUDGET
-    budget = int(context_window * 0.50)
-    return min(cap, max(MIN_HISTORY_TOKEN_BUDGET, budget))
+    budget = int(context_window * HISTORY_BUDGET_RATIO)
+    if is_subagent:
+        # subagent 仍封顶，避免子任务挂着巨型历史
+        return min(MAX_SUBAGENT_HISTORY_TOKEN_BUDGET, max(MIN_HISTORY_TOKEN_BUDGET, budget))
+    # 主 agent 不封顶，但至少 MIN_HISTORY_TOKEN_BUDGET
+    return max(MIN_HISTORY_TOKEN_BUDGET, budget)
 
 
 def resolve_history_message_limits(*, is_subagent: bool = False, token_budget: int | None = None) -> tuple[int, int]:
