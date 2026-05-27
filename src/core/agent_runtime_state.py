@@ -95,6 +95,7 @@ class ThreadStateRegistry:
         self._thread_busy_source: Dict[str, str] = {}
         self._pending_system_messages: Dict[str, int] = {}
         self._thread_context_usage: Dict[str, Dict[str, int]] = {}
+        self._thread_last_model: Dict[str, str] = {}
 
     async def _get_locks_guard(self) -> asyncio.Lock:
         """获取或创建线程锁的守卫锁。"""
@@ -161,6 +162,15 @@ class ThreadStateRegistry:
             thread_id,
             {"tokens": 0, "budget": 0, "percent": 0, "remaining": 0},
         )
+
+    def set_thread_model(self, thread_id: str, model_name: str) -> None:
+        """记录线程上一次推理实际使用的模型名（用于静态路径反推 budget）。"""
+        if model_name:
+            self._thread_last_model[thread_id] = model_name
+
+    def get_thread_model(self, thread_id: str) -> str:
+        """读取线程上一次推理使用的模型名；从未记录时返回空字符串。"""
+        return self._thread_last_model.get(thread_id, "")
 
     def get_all_thread_status(self, prefix: str) -> Dict[str, Dict[str, object]]:
         """获取所有以指定前缀开头的线程状态。"""
