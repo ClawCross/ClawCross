@@ -250,7 +250,8 @@ class TestContextLimits:
         monkeypatch.setenv("LLM_MODEL", "MiniMax-M2.7")
 
         assert infer_model_context_window() == 1_000_000
-        assert resolve_history_token_budget() == 128_000
+        # 80% of 1M window, no main-agent cap → 800k
+        assert resolve_history_token_budget() == 800_000
 
     def test_context_limits_user_override(self, monkeypatch):
         from utils.context_limits import resolve_history_token_budget
