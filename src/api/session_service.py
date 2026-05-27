@@ -156,8 +156,13 @@ class SessionService:
                 checkpoint_store_path=getattr(self.agent, "_db_path", None),
             )
             static_tokens = estimate_messages_tokens(compression_view)
+            # 优先用该 thread 上次推理实际使用的模型；没有就回退到 LLM_MODEL env。
+            last_model = ""
+            if hasattr(self.agent, "get_thread_model"):
+                last_model = self.agent.get_thread_model(thread_id)
             static_budget = resolve_history_token_budget(
                 is_subagent=is_subagent_session(req.session_id),
+                model=last_model or None,
             )
             self.agent.set_thread_context_usage(thread_id, static_tokens, static_budget)
         except Exception:

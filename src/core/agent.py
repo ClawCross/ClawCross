@@ -1604,10 +1604,22 @@ class TeamAgent:
         if len(history_messages) > 1:
             history_messages = self._strip_multimodal_parts(history_messages[:-1]) + [history_messages[-1]]
 
-        history_token_budget = resolve_history_token_budget(is_subagent=is_subagent)
+        # 用本轮实际生效的模型名（可能被 cheap_route / model_swap / llm_override 改过）
+        # 反推 budget，而不是回退到 LLM_MODEL env。
+        current_model_name = (
+            getattr(llm, "model_name", "") or getattr(llm, "model", "") or ""
+        ) or None
+        history_token_budget = resolve_history_token_budget(
+            is_subagent=is_subagent,
+            model=current_model_name,
+        )
         _, preserve_recent_messages = resolve_history_message_limits(
             is_subagent=is_subagent,
             token_budget=history_token_budget,
+        )
+        # 记下本轮模型，供静态路径（session_history / session_status）后续使用
+        self._thread_state_registry.set_thread_model(
+            f"{user_id}#{session_id}", current_model_name or ""
         )
 
         # 1) 当轮新输入瘦身：仅当最后一条 HumanMessage 超大时落盘 + excerpt
@@ -2233,6 +2245,10 @@ class TeamAgent:
     def get_thread_context_usage(self, thread_id: str) -> dict[str, int]:
         """返回该 thread 的当前压缩上下文用量。"""
         return self._thread_state_registry.get_thread_context_usage(thread_id)
+
+    def get_thread_model(self, thread_id: str) -> str:
+        """返回该 thread 上一次推理实际使用的模型名（用于静态路径反推 budget）。"""
+        return self._thread_state_registry.get_thread_model(thread_id)
 
     def get_all_thread_status(self, prefix: str) -> dict[str, dict]:
         """返回指定前缀下所有已知 thread 的状态。"""
