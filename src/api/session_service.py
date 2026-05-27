@@ -17,7 +17,7 @@ from api.session_models import (
 from utils.context_compressor import estimate_messages_tokens
 from utils.context_limits import resolve_history_token_budget
 from utils.session_summary import build_session_summary
-from webot.context import get_compression_input_view
+from webot.compression import static_compression_view
 from webot.profiles import is_subagent_session
 from webot.subagents import delete_subagent_by_session, delete_subagents_for_user
 
@@ -145,11 +145,11 @@ class SessionService:
 
         msgs = snapshot.values.get("messages", [])
 
-        # 静态计算：数的是 compress_context 实际看到的输入视图
-        # = [已存的 persistent compaction 摘要] + messages[compacted_until:]，
-        # 而不是用户在前端看到的完整未压缩历史。
+        # 静态计算：数的是 apply_compression 真正看到的输入视图
+        # = [已存的 summary] + messages[compacted_until:]，
+        # 不是用户在前端看到的完整未压缩历史。
         try:
-            compression_view = get_compression_input_view(
+            compression_view = static_compression_view(
                 user_id=req.user_id,
                 session_id=req.session_id,
                 messages=msgs,

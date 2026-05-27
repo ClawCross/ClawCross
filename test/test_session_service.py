@@ -110,6 +110,22 @@ class _FakeAgent:
     def get_thread_busy_source(self, thread_id: str) -> str:
         return str(self._statuses.get(thread_id, {}).get("source", ""))
 
+    def get_thread_context_usage(self, thread_id: str) -> dict:
+        return self._statuses.get(thread_id, {}).get(
+            "context_usage",
+            {"tokens": 0, "budget": 0, "percent": 0, "remaining": 0},
+        )
+
+    def set_thread_context_usage(self, thread_id: str, tokens: int, budget: int) -> None:
+        usage = self._statuses.setdefault(thread_id, {})
+        percent = min(100, round(tokens / budget * 100)) if budget > 0 else 0
+        usage["context_usage"] = {
+            "tokens": tokens,
+            "budget": budget,
+            "percent": percent,
+            "remaining": max(0, budget - tokens),
+        }
+
 
 class SessionServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_list_sessions_hides_subagent_sidechains(self):
@@ -161,21 +177,27 @@ class SessionServiceTests(unittest.IsolatedAsyncioTestCase):
             db_path=":memory:",
             agent=_FakeAgent(
                 {},
-                statuses={"alice#default": {"busy": True, "source": "user", "pending_system": 2}},
+                statuses={
+                    "alice#default": {
+                        "busy": True,
+                        "source": "user",
+                        "pending_system": 2,
+                        "context_usage": {
+                            "tokens": 64000,
+                            "budget": 64000,
+                            "percent": 100,
+                            "remaining": 0,
+                        },
+                    }
+                },
             ),
             verify_auth_or_token=lambda user_id, password, token: None,
             extract_text=lambda content: content if isinstance(content, str) else str(content),
         )
 
-        with patch("api.session_service.get_session_budget") as mock_budget:
-            mock_budget.return_value = SimpleNamespace(
-                context_percent=100,
-                remaining_budget=lambda: 0,
-                current_context_tokens=64000,
-                current_context_budget=64000,
-                max_context_tokens=200000,
-            )
-            result = await service.session_status(SessionStatusRequest(user_id="alice", session_id="default"), None)
+        result = await service.session_status(
+            SessionStatusRequest(user_id="alice", session_id="default"), None
+        )
 
         self.assertEqual(result["busy"], True)
         self.assertEqual(result["context_percent"], 100)
