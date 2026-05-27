@@ -253,6 +253,24 @@ class TestContextLimits:
         # 80% of 1M window, no main-agent cap → 800k
         assert resolve_history_token_budget() == 800_000
 
+    def test_context_limits_known_model_windows(self, monkeypatch):
+        from utils.context_limits import infer_model_context_window, resolve_history_token_budget
+
+        monkeypatch.delenv("LLM_CONTEXT_WINDOW", raising=False)
+        monkeypatch.delenv("WEBOT_CONTEXT_TOKEN_BUDGET", raising=False)
+
+        monkeypatch.setenv("LLM_MODEL", "gpt-5.4")
+        assert infer_model_context_window() == 1_000_000
+        assert resolve_history_token_budget() == 800_000
+
+        monkeypatch.setenv("LLM_MODEL", "gpt-5.4-mini")
+        assert infer_model_context_window() == 400_000
+        assert resolve_history_token_budget() == 320_000
+
+        monkeypatch.setenv("LLM_MODEL", "deepseek-v4-pro")
+        assert infer_model_context_window() == 1_000_000
+        assert resolve_history_token_budget() == 800_000
+
     def test_context_limits_user_override(self, monkeypatch):
         from utils.context_limits import resolve_history_token_budget
 

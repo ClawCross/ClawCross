@@ -2122,13 +2122,119 @@ function updateSessionDisplay() {
     }
 }
 
-function updateSessionContextUsageBadge(percent, remaining) {
+let sessionContextUsageState = {
+    percent: 0,
+    remaining: 0,
+    tokens: 0,
+    budget: 0,
+};
+
+function formatContextTokenCount(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return '0';
+    return Math.round(n).toLocaleString();
+}
+
+function getContextPercentValue(percent, tokens, budget) {
+    const tokenValue = Number(tokens);
+    const budgetValue = Number(budget);
+    if (Number.isFinite(tokenValue) && Number.isFinite(budgetValue) && budgetValue > 0) {
+        return Math.max(0, Math.min(100, (tokenValue / budgetValue) * 100));
+    }
+    const percentValue = Number(percent);
+    return Number.isFinite(percentValue) ? Math.max(0, Math.min(100, percentValue)) : 0;
+}
+
+function formatContextBadgePercent(percentValue) {
+    if (!Number.isFinite(percentValue) || percentValue <= 0) return '0';
+    if (percentValue < 1) return '<1';
+    return String(Math.round(percentValue));
+}
+
+function formatContextDetailPercent(percentValue) {
+    if (!Number.isFinite(percentValue) || percentValue <= 0) return '0';
+    if (percentValue < 0.01) return '<0.01';
+    if (percentValue < 1) return percentValue.toFixed(2);
+    if (percentValue < 10) return percentValue.toFixed(1);
+    return String(Math.round(percentValue));
+}
+
+function renderSessionContextDetail() {
+    const detail = document.getElementById('session-context-detail');
+    if (!detail) return;
+
+    const state = sessionContextUsageState || {};
+    const percentValue = getContextPercentValue(state.percent, state.tokens, state.budget);
+    const usedLabel = currentLang === 'zh-CN' ? '已使用' : 'Used';
+    const totalLabel = currentLang === 'zh-CN' ? '总量' : 'Total';
+    const remainingLabel = currentLang === 'zh-CN' ? '剩余' : 'Remaining';
+    const percentLabel = currentLang === 'zh-CN' ? '占比' : 'Percent';
+
+    detail.innerHTML = `
+        <div class="oc-context-usage-detail-row">
+            <span>${percentLabel}</span>
+            <strong>${formatContextDetailPercent(percentValue)}%</strong>
+        </div>
+        <div class="oc-context-usage-detail-row">
+            <span>${usedLabel}</span>
+            <strong>${formatContextTokenCount(state.tokens)} tokens</strong>
+        </div>
+        <div class="oc-context-usage-detail-row">
+            <span>${totalLabel}</span>
+            <strong>${formatContextTokenCount(state.budget)} tokens</strong>
+        </div>
+        <div class="oc-context-usage-detail-row">
+            <span>${remainingLabel}</span>
+            <strong>${formatContextTokenCount(state.remaining)} tokens</strong>
+        </div>
+    `;
+}
+
+function toggleSessionContextDetail(event) {
+    if (event) event.stopPropagation();
+    const detail = document.getElementById('session-context-detail');
+    if (!detail) return;
+    renderSessionContextDetail();
+    const nextHidden = !detail.hidden;
+    detail.hidden = nextHidden;
+    const badge = document.getElementById('session-context-usage');
+    if (badge) badge.setAttribute('aria-expanded', String(!nextHidden));
+}
+
+function handleSessionContextDetailKeydown(event) {
+    if (!event) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        toggleSessionContextDetail(event);
+    }
+}
+
+function closeSessionContextDetail() {
+    const detail = document.getElementById('session-context-detail');
+    if (detail) detail.hidden = true;
+    const badge = document.getElementById('session-context-usage');
+    if (badge) badge.setAttribute('aria-expanded', 'false');
+}
+
+function updateSessionContextUsageBadge(percent, remaining, tokens, budget) {
     const badge = document.getElementById('session-context-usage');
     if (!badge) return;
-    const percentValue = Number(percent);
     const remainingValue = Number(remaining);
-    const validPercent = Number.isFinite(percentValue) ? Math.max(0, Math.min(100, Math.round(percentValue))) : null;
+    const tokenValue = Number(tokens);
+    const budgetValue = Number(budget);
+    const percentValue = getContextPercentValue(percent, tokenValue, budgetValue);
+    const validPercent = Number.isFinite(percentValue) ? Math.max(0, Math.min(100, percentValue)) : null;
     const validRemaining = Number.isFinite(remainingValue) ? Math.max(0, Math.round(remainingValue)) : null;
+    const validTokens = Number.isFinite(tokenValue) ? Math.max(0, Math.round(tokenValue)) : 0;
+    const validBudget = Number.isFinite(budgetValue) ? Math.max(0, Math.round(budgetValue)) : 0;
+
+    sessionContextUsageState = {
+        percent: validPercent || 0,
+        remaining: validRemaining || 0,
+        tokens: validTokens,
+        budget: validBudget,
+    };
+    renderSessionContextDetail();
 
     if (validPercent === null || !currentSessionId) {
         badge.style.display = 'inline-flex';
@@ -2145,10 +2251,12 @@ function updateSessionContextUsageBadge(percent, remaining) {
         : (currentLang === 'zh-CN'
             ? `，剩余约 ${validRemaining.toLocaleString()} tokens`
             : `. About ${validRemaining.toLocaleString()} tokens remaining`);
-    badge.textContent = t('context_usage').replace('{percent}', String(validPercent));
+    const badgePercent = formatContextBadgePercent(validPercent);
+    const detailPercent = formatContextDetailPercent(validPercent);
+    badge.textContent = t('context_usage').replace('{percent}', badgePercent);
     badge.title = (currentLang === 'zh-CN'
-        ? `当前会话上下文已使用 ${validPercent}%${remainingText}`
-        : `Current session context is ${validPercent}% used${remainingText}`);
+        ? `当前会话上下文已使用 ${detailPercent}%${remainingText}；点击查看已用和总量`
+        : `Current session context is ${detailPercent}% used${remainingText}. Click for used and total tokens`);
     badge.style.display = 'inline-flex';
     badge.classList.toggle('warn', validPercent >= 80 && validPercent < 95);
     badge.classList.toggle('critical', validPercent >= 95);
@@ -4388,7 +4496,12 @@ async function switchToSession(sessionId, force = false, options = {}) {
         });
         const data = await resp.json();
         chatBox.innerHTML = '';
-        updateSessionContextUsageBadge(data.context_percent, data.context_remaining);
+        updateSessionContextUsageBadge(
+            data.context_percent,
+            data.context_remaining,
+            data.context_tokens,
+            data.context_budget
+        );
 
         if (!data.messages || data.messages.length === 0) {
             renderWeBotWelcomeMessage();
@@ -10903,7 +11016,12 @@ function startSessionStatusPolling() {
             }
             // --- 上下文用量徽章 ---
             if (typeof data.context_percent !== 'undefined') {
-                updateSessionContextUsageBadge(data.context_percent, data.context_remaining);
+                updateSessionContextUsageBadge(
+                    data.context_percent,
+                    data.context_remaining,
+                    data.context_tokens,
+                    data.context_budget
+                );
             }
         } catch(e) {
             // 静默忽略
@@ -11066,6 +11184,10 @@ document.addEventListener('click', function(e) {
     const inputArea = document.querySelector('.group-input-area');
     if (popup && inputArea && !inputArea.contains(e.target)) {
         popup.classList.remove('show');
+    }
+    const contextUsageWrap = document.querySelector('.oc-context-usage-wrap');
+    if (contextUsageWrap && !contextUsageWrap.contains(e.target)) {
+        closeSessionContextDetail();
     }
 });
 

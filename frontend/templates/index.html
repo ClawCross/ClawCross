@@ -362,7 +362,10 @@
                                 <span id="tool-toggle-icon" class="tool-toggle-icon text-xs">▼</span>
                             </div>
                             <div class="oc-mode-selector" data-i18n-title="run_mode_title" title="工具权限模式：bypass=全工具自动批准；plan=只读;manual=完全不调用工具">
-                                <span id="session-context-usage" class="oc-context-usage-badge">上下文已用 0%</span>
+                                <div class="oc-context-usage-wrap">
+                                    <span id="session-context-usage" class="oc-context-usage-badge" role="button" tabindex="0" aria-expanded="false" onclick="toggleSessionContextDetail(event)" onkeydown="handleSessionContextDetailKeydown(event)">上下文已用 0%</span>
+                                    <div id="session-context-detail" class="oc-context-usage-detail" hidden></div>
+                                </div>
                                 <label for="oc-run-mode" class="oc-mode-label" data-i18n="run_mode_label">模式</label>
                                 <select id="oc-run-mode" class="oc-mode-select" onchange="onRunModeChange()">
                                     <option value="bypass" data-i18n="run_mode_bypass">自动 (全工具)</option>
