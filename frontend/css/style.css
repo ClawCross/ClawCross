@@ -4420,6 +4420,11 @@ body.session-panel-resizing * {
 /* visual hint when not in default bypass mode */
 .oc-mode-select[data-active-mode="plan"] { background: #fef3c7; border-color: #f59e0b; }
 .oc-mode-select[data-active-mode="manual"] { background: #fee2e2; border-color: #ef4444; }
+.oc-context-usage-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
 .oc-context-usage-badge {
     display: inline-flex;
     align-items: center;
@@ -4433,6 +4438,12 @@ body.session-panel-resizing * {
     font-weight: 700;
     line-height: 1;
     white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+}
+.oc-context-usage-badge:focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 2px;
 }
 .oc-context-usage-badge.warn {
     border-color: #f59e0b;
@@ -4443,6 +4454,40 @@ body.session-panel-resizing * {
     border-color: #f87171;
     background: linear-gradient(135deg, #fef2f2, #fee2e2);
     color: #b91c1c;
+}
+.oc-context-usage-detail {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 8px);
+    z-index: 40;
+    min-width: 210px;
+    padding: 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+    color: #111827;
+    font-size: 12px;
+    line-height: 1.35;
+}
+.oc-context-usage-detail[hidden] {
+    display: none;
+}
+.oc-context-usage-detail-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 3px 0;
+}
+.oc-context-usage-detail-row span {
+    color: #6b7280;
+    white-space: nowrap;
+}
+.oc-context-usage-detail-row strong {
+    color: #111827;
+    font-weight: 700;
+    white-space: nowrap;
 }
 .oc-acp-session-row {
     display: none;

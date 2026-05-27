@@ -47,8 +47,18 @@ def infer_model_context_window(model: str | None = None) -> int:
         return 1_000_000
     if "claude" in name:
         return 200_000
+    # OpenAI gpt-5.4 family:
+    # - gpt-5.4: 1M context
+    # - gpt-5.4-mini / gpt-5.4-nano: 400K context
+    if name.startswith("gpt-5.4"):
+        if any(marker in name for marker in ("mini", "nano")):
+            return 400_000
+        return 1_000_000
     if name.startswith(("gpt-5", "gpt-4.1", "o3", "o4")):
         return 128_000
+    # DeepSeek V4 models expose a 1M context window; older DeepSeek models stay at 64K.
+    if "deepseek-v4" in name:
+        return 1_000_000
     if "deepseek" in name:
         return 64_000
     if any(marker in name for marker in ("qwen", "glm", "moonshot", "kimi")):
