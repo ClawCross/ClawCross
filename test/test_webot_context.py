@@ -1,11 +1,13 @@
-import os
+"""Tests for the single-pass compression module that replaced the
+former multi-layer pipeline in webot/context.py."""
+
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -13,246 +15,181 @@ SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-import webot.context as webot_context
 from utils import checkpoint_repository
-from webot.context import budget_tool_messages, compact_history_messages
-from webot.context import budget_user_messages
+from webot import compression
 
 
-class WeBotContextTests(unittest.TestCase):
-    def test_budget_user_messages_preserves_latest_human_message(self):
-        old_text = "old-" * 80
-        latest_text = "latest-" * 120
+def _build_messages(count: int, tokens_per_msg: int = 200):
+    """Each HumanMessage is ~tokens_per_msg by char heuristic (4 chars/token)."""
+    chars = tokens_per_msg * 4
+    return [HumanMessage(content=f"msg-{i} " + ("x" * chars)) for i in range(count)]
 
-        budgeted = budget_user_messages(
-            user_id="alice",
-            session_id="session-1",
-            messages=[
-                HumanMessage(content=old_text),
-                HumanMessage(content=latest_text),
-            ],
-            total_char_budget=100,
-            item_char_limit=80,
-            preserve_latest_human_messages=1,
-        )
 
-        self.assertEqual(len(budgeted), 2)
-        self.assertIn("[User input budgeted]", budgeted[0].content)
-        self.assertEqual(budgeted[1].content, latest_text)
-
-    def test_budget_user_messages_supports_env_unlimited_limits(self):
-        message_text = "x" * 20000
-
-        with patch.dict(
-            os.environ,
-            {
-                "WEBOT_USER_INPUT_CHAR_BUDGET": "0",
-                "WEBOT_USER_INPUT_ITEM_LIMIT": "0",
-                "WEBOT_SKIP_LATEST_USER_INPUT_BUDGET": "0",
-            },
-            clear=False,
-        ):
-            budgeted = budget_user_messages(
-                user_id="alice",
-                session_id="session-1",
-                messages=[HumanMessage(content=message_text)],
+class StaticCompressionViewTests(unittest.TestCase):
+    def test_returns_raw_messages_when_no_record(self):
+        msgs = _build_messages(5, tokens_per_msg=50)
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "store.sqlite"
+            view = compression.static_compression_view(
+                user_id="u",
+                session_id="s",
+                messages=msgs,
+                checkpoint_store_path=str(db),
             )
+        self.assertEqual(len(view), 5)
 
-        self.assertEqual(len(budgeted), 1)
-        self.assertEqual(budgeted[0].content, message_text)
+    def test_view_substitutes_stored_summary(self):
+        msgs = _build_messages(10, tokens_per_msg=50)
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "store.sqlite"
+            checkpoint_repository.save_context_compaction(
+                str(db),
+                "u#s",
+                summary="prior summary",
+                compacted_until=4,
+                source_message_count=10,
+                summary_token_estimate=50,
+                metadata={},
+            )
+            view = compression.static_compression_view(
+                user_id="u",
+                session_id="s",
+                messages=msgs,
+                checkpoint_store_path=str(db),
+            )
+        self.assertEqual(len(view), 1 + (10 - 4))
+        self.assertIsInstance(view[0], HumanMessage)
+        self.assertIn("prior summary", view[0].content)
 
-    def test_budget_tool_messages_replaces_large_payload_with_reference(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.dict(os.environ, {"WEBOT_RUNTIME_ARTIFACTS_ENABLED": "1"}):
-                with patch.object(webot_context, "USER_FILES_DIR", Path(tmpdir)):
-                    messages = [
-                        ToolMessage(content="x" * 5000, tool_call_id="call-1", name="read_file"),
-                    ]
-                    budgeted = budget_tool_messages(
-                        user_id="alice",
-                        session_id="session-1",
-                        messages=messages,
-                        total_char_budget=100,
-                        item_char_limit=80,
-                    )
-                    self.assertEqual(len(budgeted), 1)
-                    text = budgeted[0].content
-                    self.assertIn("[Tool result budgeted]", text)
-                    self.assertIn("saved_to=", text)
 
-    def test_budget_tool_messages_preserves_image_tool_content(self):
-        image_content = [
-            {"type": "text", "text": "metadata"},
-            {"type": "image", "base64": "x" * 5000, "mime_type": "image/png"},
+class ApplyCompressionTests(unittest.TestCase):
+    def test_below_trigger_returns_raw(self):
+        msgs = _build_messages(5, tokens_per_msg=50)
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "store.sqlite"
+            result = compression.apply_compression(
+                user_id="u",
+                session_id="s",
+                messages=msgs,
+                history_token_budget=100_000,
+                checkpoint_store_path=str(db),
+            )
+        self.assertFalse(result.triggered)
+        self.assertEqual(result.reason, "below_trigger")
+        self.assertEqual(len(result.view), 5)
+
+    def test_above_trigger_folds_and_writes_summary(self):
+        msgs = _build_messages(40, tokens_per_msg=200)
+        captured = {}
+
+        def fake_summarizer(prev, segment, target_chars):
+            captured["segment_len"] = len(segment)
+            captured["prev"] = prev
+            captured["target_chars"] = target_chars
+            return "compact summary OK"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "store.sqlite"
+            result = compression.apply_compression(
+                user_id="u",
+                session_id="s",
+                messages=msgs,
+                history_token_budget=2000,
+                checkpoint_store_path=str(db),
+                preserve_recent=4,
+                summarizer=fake_summarizer,
+            )
+            record = checkpoint_repository.get_context_compaction(str(db), "u#s")
+        self.assertTrue(result.triggered)
+        self.assertEqual(result.reason, "compressed")
+        self.assertGreater(result.compacted_until, 0)
+        self.assertIn("compact summary OK", result.summary)
+        self.assertIsNotNone(record)
+        self.assertEqual(record.compacted_until, result.compacted_until)
+        self.assertGreater(captured["segment_len"], 0)
+        self.assertEqual(captured["prev"], "")
+
+    def test_min_new_messages_throttles(self):
+        msgs = _build_messages(40, tokens_per_msg=200)
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "store.sqlite"
+            # Pre-existing record already folded up to index 36; only 4 new
+            # messages -> below min_new_messages default (6).
+            checkpoint_repository.save_context_compaction(
+                str(db),
+                "u#s",
+                summary="prior",
+                compacted_until=36,
+                source_message_count=40,
+                summary_token_estimate=20,
+                metadata={},
+            )
+            result = compression.apply_compression(
+                user_id="u",
+                session_id="s",
+                messages=msgs,
+                history_token_budget=2000,
+                checkpoint_store_path=str(db),
+                preserve_recent=4,
+                summarizer=lambda p, s, c: "should-not-be-called",
+            )
+            record = checkpoint_repository.get_context_compaction(str(db), "u#s")
+        self.assertFalse(result.triggered)
+        self.assertIn(result.reason, {"min_new_messages", "below_trigger"})
+        # Record unchanged
+        self.assertEqual(record.summary, "prior")
+        self.assertEqual(record.compacted_until, 36)
+
+    def test_boundary_avoids_splitting_ai_tool_pair(self):
+        msgs = [
+            HumanMessage(content="u1"),
+            AIMessage(content="a1", tool_calls=[{"name": "Bash", "args": {}, "id": "t1"}]),
+            ToolMessage(content="result1", tool_call_id="t1", name="Bash"),
+            HumanMessage(content="u2 " + "x" * 4000),
+            AIMessage(content="a2", tool_calls=[{"name": "Bash", "args": {}, "id": "t2"}]),
+            ToolMessage(content="result2 " + "y" * 4000, tool_call_id="t2", name="Bash"),
+            HumanMessage(content="u3 " + "z" * 4000),
+            HumanMessage(content="u4"),
+            HumanMessage(content="u5"),
+            HumanMessage(content="u6"),
         ]
-        messages = [
-            ToolMessage(content=image_content, tool_call_id="call-vision", name="attach_image_to_context"),
-        ]
-
-        budgeted = budget_tool_messages(
-            user_id="alice",
-            session_id="session-1",
-            messages=messages,
-            total_char_budget=100,
-            item_char_limit=80,
-        )
-
-        self.assertEqual(len(budgeted), 1)
-        self.assertIs(budgeted[0], messages[0])
-        self.assertEqual(budgeted[0].content, image_content)
-
-    def test_compact_history_messages_inserts_summary_and_keeps_recent(self):
-        messages = [HumanMessage(content=f"message-{index} " * 20) for index in range(20)]
-        compacted = compact_history_messages(messages, max_messages=8, preserve_recent=4, context_token_budget=200)
-        self.assertLessEqual(len(compacted), 8)
-        self.assertIsInstance(compacted[0], HumanMessage)
-        self.assertIn("压缩摘要", compacted[0].content)
-        self.assertIn("message-19", compacted[-1].content)
-
-    def test_context_compressor_evict_preserves_summary_and_latest_user_request(self):
-        from utils.context_compressor import level_evict
-
-        messages = [
-            SystemMessage(content="system " + ("s" * 5000)),
-            HumanMessage(content="压缩摘要 " + ("x" * 5000)),
-            HumanMessage(content="latest user request must remain"),
-        ]
-        result = level_evict(messages, token_budget=10, preserve_recent=1)
-
-        self.assertTrue(
-            any(isinstance(msg, HumanMessage) and str(msg.content).startswith("压缩摘要") for msg in result)
-        )
-        self.assertTrue(
-            any(isinstance(msg, HumanMessage) and msg.content == "latest user request must remain" for msg in result)
-        )
-
-    def test_persistent_compaction_writes_state_and_reuses_it(self):
-        messages = [HumanMessage(content=f"message-{index} " * 80) for index in range(24)]
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            checkpoint_dir = Path(tmpdir) / "agent_checkpoints"
-            first, first_info = webot_context.apply_persistent_compaction(
-                user_id="alice",
-                session_id="session-1",
-                messages=messages,
-                context_token_budget=600,
-                preserve_recent=4,
-                max_messages=8,
-                checkpoint_store_path=checkpoint_dir,
-            )
-            record = checkpoint_repository.get_context_compaction(
-                checkpoint_dir,
-                "alice#session-1",
+        b = compression._pick_boundary(msgs, current_until=0, preserve_recent=3, target_tokens=500)
+        # Boundary must not land between AIMessage(tool_calls) and its ToolMessage
+        if 0 < b < len(msgs):
+            prev = msgs[b - 1]
+            self.assertFalse(
+                isinstance(prev, AIMessage) and getattr(prev, "tool_calls", None),
+                f"boundary {b} splits AI+Tool pair",
             )
 
-            self.assertTrue(first_info["updated"])
-            self.assertIsNotNone(record)
-            self.assertIsInstance(first[0], HumanMessage)
-            self.assertIn("压缩摘要", first[0].content)
 
-            second, second_info = webot_context.apply_persistent_compaction(
-                user_id="alice",
-                session_id="session-1",
-                messages=messages,
-                context_token_budget=600,
-                preserve_recent=4,
-                max_messages=8,
-                checkpoint_store_path=checkpoint_dir,
-            )
+class TrimNewInputTests(unittest.TestCase):
+    def test_short_input_unchanged(self):
+        msgs = [HumanMessage(content="hi")]
+        out = compression.trim_new_input_if_oversized(msgs, user_id="u", session_id="s")
+        self.assertEqual(out, msgs)
 
-            self.assertFalse(second_info["updated"])
-            self.assertTrue(second_info["loaded"])
-            self.assertEqual(second[0].content, first[0].content)
+    def test_oversized_input_replaced_when_artifacts_enabled(self):
+        big = "x" * 50_000
+        msgs = [HumanMessage(content=big)]
+        with patch("webot.context._runtime_artifacts_enabled", return_value=True), \
+                patch("webot.context._store_runtime_text") as store, \
+                patch("webot.runtime_store.create_runtime_artifact"):
+            fake_path = Path("/tmp/fake-input.txt")
+            store.return_value = fake_path
+            out = compression.trim_new_input_if_oversized(msgs, user_id="u", session_id="s")
+        self.assertEqual(len(out), 1)
+        body = out[0].content
+        self.assertIn("[User input budgeted]", body)
+        self.assertIn("saved_to=", body)
+        self.assertLess(len(body), len(big))
 
-    def test_persistent_compaction_waits_for_min_new_messages(self):
-        messages = [HumanMessage(content=f"message-{index} " * 80) for index in range(24)]
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            checkpoint_dir = Path(tmpdir) / "agent_checkpoints"
-            _, first_info = webot_context.apply_persistent_compaction(
-                user_id="alice",
-                session_id="session-1",
-                messages=messages,
-                context_token_budget=600,
-                preserve_recent=4,
-                max_messages=8,
-                checkpoint_store_path=checkpoint_dir,
-            )
-            updated_messages = messages + [
-                HumanMessage(content="small addition one " * 80),
-                HumanMessage(content="small addition two " * 80),
-            ]
-            _, second_info = webot_context.apply_persistent_compaction(
-                user_id="alice",
-                session_id="session-1",
-                messages=updated_messages,
-                context_token_budget=600,
-                preserve_recent=4,
-                max_messages=8,
-                checkpoint_store_path=checkpoint_dir,
-            )
-
-            self.assertTrue(first_info["updated"])
-            self.assertFalse(second_info["updated"])
-            self.assertEqual(second_info["reason"], "min_new_messages")
-
-    def test_persistent_compaction_writes_existing_checkpoint_db(self):
-        messages = [HumanMessage(content=f"message-{index} " * 80) for index in range(24)]
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            checkpoint_dir = Path(tmpdir) / "agent_checkpoints"
-            existing_db = checkpoint_dir / "alice#session-1.db"
-            checkpoint_dir.mkdir(parents=True)
-            existing_db.touch()
-
-            webot_context.apply_persistent_compaction(
-                user_id="alice",
-                session_id="session-1",
-                messages=messages,
-                context_token_budget=600,
-                preserve_recent=4,
-                max_messages=8,
-                checkpoint_store_path=checkpoint_dir,
-            )
-
-            self.assertTrue(existing_db.exists())
-            self.assertIsNotNone(
-                checkpoint_repository.get_context_compaction(checkpoint_dir, "alice#session-1")
-            )
-
-    def test_safe_compaction_boundary_does_not_orphan_tool_message(self):
-        messages = [
-            HumanMessage(content="start"),
-            AIMessage(
-                content="tool call",
-                tool_calls=[{"name": "read_file", "args": {}, "id": "call-1"}],
-            ),
-            ToolMessage(content="result", tool_call_id="call-1", name="read_file"),
-            HumanMessage(content="latest"),
-        ]
-
-        boundary = webot_context.find_safe_compaction_boundary(messages, 2)
-
-        self.assertEqual(boundary, 1)
-        self.assertIsInstance(messages[boundary], AIMessage)
-
-    def test_context_limits_support_model_defaults_and_user_override(self):
-        from utils.context_limits import infer_model_context_window, resolve_history_token_budget
-
-        with patch.dict(
-            os.environ,
-            {
-                "LLM_MODEL": "MiniMax-M2.7",
-            },
-            clear=False,
-        ):
-            os.environ.pop("LLM_CONTEXT_WINDOW", None)
-            os.environ.pop("WEBOT_CONTEXT_TOKEN_BUDGET", None)
-            self.assertEqual(infer_model_context_window(), 1_000_000)
-            self.assertEqual(resolve_history_token_budget(), 128_000)
-
-        with patch.dict(os.environ, {"WEBOT_CONTEXT_TOKEN_BUDGET": "77777"}, clear=False):
-            self.assertEqual(resolve_history_token_budget(), 77777)
+    def test_oversized_input_unchanged_when_artifacts_disabled(self):
+        big = "x" * 50_000
+        msgs = [HumanMessage(content=big)]
+        with patch("webot.context._runtime_artifacts_enabled", return_value=False):
+            out = compression.trim_new_input_if_oversized(msgs, user_id="u", session_id="s")
+        self.assertEqual(out, msgs)
 
 
 if __name__ == "__main__":
