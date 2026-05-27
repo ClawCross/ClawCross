@@ -54,6 +54,8 @@ function applyRuntimeEnv() {
   process.env.CLAWCROSS_WORKSPACE_DIR = process.env.CLAWCROSS_WORKSPACE_DIR || (legacy ? root : path.join(home, "workspace"));
   process.env.CLAWCROSS_STATE_DIR = process.env.CLAWCROSS_STATE_DIR || home;
   process.env.PYTHONDONTWRITEBYTECODE = process.env.PYTHONDONTWRITEBYTECODE || "1";
+  process.env.PYTHONUTF8 = "1";
+  process.env.PYTHONIOENCODING = "utf-8";
 }
 
 function loadDotEnv(filePath) {

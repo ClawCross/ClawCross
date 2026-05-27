@@ -151,6 +151,8 @@ def set_subprocess_env(env: MutableMapping[str, str] | Mapping[str, str] | None 
     base["CLAWCROSS_WORKSPACE_DIR"] = str(WORKSPACE_DIR)
     base["CLAWCROSS_STATE_DIR"] = str(STATE_DIR)
     base.setdefault("PYTHONDONTWRITEBYTECODE", "1")
+    base["PYTHONUTF8"] = "1"
+    base["PYTHONIOENCODING"] = "utf-8"
     if is_legacy_mode():
         base["CLAWCROSS_USE_LEGACY_PATHS"] = "1"
     return base
