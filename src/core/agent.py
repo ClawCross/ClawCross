@@ -26,13 +26,12 @@ from webot.policy import (
     get_tool_policy,
     run_tool_policy_hooks,
 )
-from webot.context import (
-    apply_persistent_compaction,
-    budget_user_messages,
-    budget_tool_messages,
-    compact_history_messages,
-    render_runtime_context_block,
+from webot.compression import (
+    apply_compression,
+    make_llm_summarizer,
+    trim_new_input_if_oversized,
 )
+from webot.context import render_runtime_context_block
 from webot.memory import ensure_memory_state
 from webot.skills import build_skills_prompt
 from webot.soul import build_soul_prompt
@@ -81,7 +80,7 @@ from core.streaming_tool_executor import (
     classify_tool_access, ToolAccessMode, ToolExecutionResult,
 )
 from utils.token_budget import get_session_budget
-from utils.context_compressor import compress_context
+from utils.context_compressor import estimate_messages_tokens
 from utils.context_limits import resolve_history_message_limits, resolve_history_token_budget
 from utils.cache_boundary import SystemPromptCacheManager
 from utils.logging_utils import get_logger
@@ -1606,33 +1605,16 @@ class TeamAgent:
             history_messages = self._strip_multimodal_parts(history_messages[:-1]) + [history_messages[-1]]
 
         history_token_budget = resolve_history_token_budget(is_subagent=is_subagent)
-        max_history_messages, preserve_recent_messages = resolve_history_message_limits(
+        _, preserve_recent_messages = resolve_history_message_limits(
             is_subagent=is_subagent,
             token_budget=history_token_budget,
         )
-        history_messages, compaction_state = apply_persistent_compaction(
+
+        # 1) 当轮新输入瘦身：仅当最后一条 HumanMessage 超大时落盘 + excerpt
+        history_messages = trim_new_input_if_oversized(
+            history_messages,
             user_id=user_id,
             session_id=session_id,
-            messages=history_messages,
-            context_token_budget=history_token_budget,
-            preserve_recent=preserve_recent_messages,
-            max_messages=max_history_messages,
-            checkpoint_store_path=self._db_path,
-        )
-        if compaction_state.get("updated"):
-            print(
-                f">>> [compact-state] updated until={compaction_state.get('compacted_until')} "
-                f"tail_tokens≈{compaction_state.get('tokens')}"
-            )
-        history_messages = budget_user_messages(
-            user_id=user_id,
-            session_id=session_id,
-            messages=history_messages,
-        )
-        history_messages = budget_tool_messages(
-            user_id=user_id,
-            session_id=session_id,
-            messages=history_messages,
         )
 
         with contextlib.suppress(Exception):
@@ -1650,35 +1632,35 @@ class TeamAgent:
                     "context_token_budget": history_token_budget,
                 },
             )
-        history_messages = compact_history_messages(
-            history_messages,
-            max_messages=max_history_messages,
-            preserve_recent=preserve_recent_messages,
-            context_token_budget=history_token_budget,
+
+        # 2) 唯一的历史压缩入口：低频触发，触发即一次性 LLM summary + 段落落盘
+        compression_result = apply_compression(
             user_id=user_id,
             session_id=session_id,
-        )
-
-        # --- 5-level compression pipeline (new) ---
-        token_budget_val = history_token_budget
-        history_messages, compression_stats = compress_context(
-            history_messages,
-            token_budget=token_budget_val,
+            messages=history_messages,
+            history_token_budget=history_token_budget,
+            checkpoint_store_path=self._db_path,
             preserve_recent=preserve_recent_messages,
+            summarizer=make_llm_summarizer(),
         )
-        if compression_stats.level_applied != "none":
-            print(f">>> [compress] applied level={compression_stats.level_applied} "
-                  f"{compression_stats.original_messages}→{compression_stats.final_messages} msgs")
+        history_messages = compression_result.view
+        if compression_result.triggered:
+            print(
+                f">>> [compress] folded until={compression_result.compacted_until} "
+                f"view_tokens≈{compression_result.view_tokens} "
+                f"summary_chars={len(compression_result.summary)} "
+                f"artifact={compression_result.segment_artifact_path or '<disabled>'}"
+            )
 
-        # --- Token budget tracking (new) ---
+        # --- Token budget tracking ---
         session_budget = get_session_budget(user_id, session_id)
         session_budget.update_current_context(
-            used_tokens=compression_stats.original_tokens,
+            used_tokens=compression_result.view_tokens,
             budget_tokens=history_token_budget,
         )
         self.set_thread_context_usage(
             f"{user_id}#{session_id}",
-            compression_stats.original_tokens,
+            compression_result.view_tokens,
             history_token_budget,
         )
         budget_notice = session_budget.format_budget_notice()
