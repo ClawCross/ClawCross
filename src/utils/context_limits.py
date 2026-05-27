@@ -47,9 +47,15 @@ def infer_model_context_window(model: str | None = None) -> int:
         return 1_000_000
     if "claude" in name:
         return 200_000
+    # OpenAI GPT-5.5+ pushed to 400k; older gpt-5 / gpt-4.1 / o3 / o4 stay 128k.
+    if name.startswith(("gpt-5.5", "gpt-6")):
+        return 400_000
     if name.startswith(("gpt-5", "gpt-4.1", "o3", "o4")):
         return 128_000
+    # DeepSeek-V4 era: 256k. V3 / R1 / older: 64k.
     if "deepseek" in name:
+        if "v4" in name or "-4" in name or "v5" in name:
+            return 256_000
         return 64_000
     if any(marker in name for marker in ("qwen", "glm", "moonshot", "kimi")):
         return 128_000
