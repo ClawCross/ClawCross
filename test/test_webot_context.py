@@ -82,9 +82,10 @@ class ApplyCompressionTests(unittest.TestCase):
         msgs = _build_messages(40, tokens_per_msg=200)
         captured = {}
 
-        def fake_summarizer(prev, segment):
+        def fake_summarizer(prev, segment, target_chars):
             captured["segment_len"] = len(segment)
             captured["prev"] = prev
+            captured["target_chars"] = target_chars
             return "compact summary OK"
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -130,7 +131,7 @@ class ApplyCompressionTests(unittest.TestCase):
                 history_token_budget=2000,
                 checkpoint_store_path=str(db),
                 preserve_recent=4,
-                summarizer=lambda p, s: "should-not-be-called",
+                summarizer=lambda p, s, c: "should-not-be-called",
             )
             record = checkpoint_repository.get_context_compaction(str(db), "u#s")
         self.assertFalse(result.triggered)

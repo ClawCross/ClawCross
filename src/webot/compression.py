@@ -43,14 +43,16 @@ _DEFAULT_TRIGGER_RATIO = 0.75
 _DEFAULT_TARGET_RATIO = 0.55
 _DEFAULT_PRESERVE_RECENT = 8
 _DEFAULT_MIN_NEW_MESSAGES = 6
-_DEFAULT_MAX_SUMMARY_CHARS = 8000  # LLM 输出超过则截断
+_DEFAULT_SUMMARY_RATIO = 0.20  # summary 字符上限 = budget tokens × 4 × 此比例
+_DEFAULT_MAX_SUMMARY_CHARS_ABS = 0  # 0 = 不设绝对上限；>0 时取 min(动态, 绝对)
 _DEFAULT_NEW_INPUT_ITEM_LIMIT = 10000  # 当轮新 HumanMessage 超过则落盘+excerpt
 
 _TRIGGER_RATIO_ENV = "WEBOT_COMPRESSION_TRIGGER_RATIO"
 _TARGET_RATIO_ENV = "WEBOT_COMPRESSION_TARGET_RATIO"
 _PRESERVE_RECENT_ENV = "WEBOT_COMPRESSION_PRESERVE_RECENT"
 _MIN_NEW_ENV = "WEBOT_COMPRESSION_MIN_NEW_MESSAGES"
-_MAX_SUMMARY_CHARS_ENV = "WEBOT_COMPRESSION_MAX_SUMMARY_CHARS"
+_SUMMARY_RATIO_ENV = "WEBOT_COMPRESSION_SUMMARY_RATIO"
+_MAX_SUMMARY_CHARS_ENV = "WEBOT_COMPRESSION_MAX_SUMMARY_CHARS"  # 仅作为绝对上限叠加
 _NEW_INPUT_LIMIT_ENV = "WEBOT_NEW_INPUT_ITEM_LIMIT"
 _SUMMARIZER_MODEL_ENV = "WEBOT_SUMMARIZER_MODEL"
 _DISABLE_ENV = "WEBOT_COMPRESSION_DISABLED"
@@ -92,8 +94,21 @@ def _min_new_messages() -> int:
     return max(1, _env_int(_MIN_NEW_ENV, _DEFAULT_MIN_NEW_MESSAGES))
 
 
-def _max_summary_chars() -> int:
-    return max(500, _env_int(_MAX_SUMMARY_CHARS_ENV, _DEFAULT_MAX_SUMMARY_CHARS))
+def _summary_ratio() -> float:
+    return min(0.50, max(0.01, _env_float(_SUMMARY_RATIO_ENV, _DEFAULT_SUMMARY_RATIO)))
+
+
+def _max_summary_chars(history_token_budget: int) -> int:
+    """Dynamic cap: budget_tokens × 4 chars/token × ratio (default 0.20).
+
+    Allows a hard absolute ceiling via WEBOT_COMPRESSION_MAX_SUMMARY_CHARS
+    when set to a positive integer; 0 (default) means ratio-only.
+    """
+    dynamic = max(500, int(history_token_budget * 4 * _summary_ratio()))
+    absolute = _env_int(_MAX_SUMMARY_CHARS_ENV, _DEFAULT_MAX_SUMMARY_CHARS_ABS)
+    if absolute > 0:
+        return min(dynamic, absolute)
+    return dynamic
 
 
 def _new_input_item_limit() -> int:
@@ -185,7 +200,12 @@ def _pick_boundary(
 # Summarizer
 # ---------------------------------------------------------------------------
 
-SummarizerFn = Callable[[str, list[BaseMessage]], str]
+SummarizerFn = Callable[[str, list[BaseMessage], int], str]
+"""Summarizer signature: (previous_summary, segment, target_chars) -> summary text.
+
+``target_chars`` is a soft cap fed into the LLM prompt as a length hint;
+apply_compression also enforces it as a hard truncate after the call returns.
+"""
 
 
 def _truncate_to_cap(text: str, cap_chars: int) -> str:
@@ -231,13 +251,15 @@ def _render_segment_for_prompt(segment: list[BaseMessage], *, per_msg_cap: int =
     return "\n\n".join(lines)
 
 
-def _mechanical_summarizer(previous_summary: str, segment: list[BaseMessage]) -> str:
+def _mechanical_summarizer(previous_summary: str, segment: list[BaseMessage], target_chars: int) -> str:
     """Fallback summarizer used when LLM call is unavailable / fails.
 
     Rolling digest: previous summary squashed to one line, each new message
     excerpted to ~280 chars with role prefix. Keeps the format machine-
-    parseable but loses semantic understanding.
+    parseable but loses semantic understanding. Output is truncated to
+    target_chars at the end if it overruns.
     """
+    _ = target_chars  # truncation handled by caller via _truncate_to_cap
     lines = [_SUMMARY_HEADER]
     prev = previous_summary.strip()
     if prev:
@@ -272,11 +294,11 @@ def make_llm_summarizer(
     """
     target_model = (model or os.getenv(_SUMMARIZER_MODEL_ENV, "")).strip() or None
 
-    def _summarize(previous_summary: str, segment: list[BaseMessage]) -> str:
+    def _summarize(previous_summary: str, segment: list[BaseMessage], target_chars: int) -> str:
         try:
             from services.llm_factory import create_chat_model
         except Exception:
-            return _mechanical_summarizer(previous_summary, segment)
+            return _mechanical_summarizer(previous_summary, segment, target_chars)
         try:
             llm = create_chat_model(
                 model=target_model,
@@ -285,7 +307,7 @@ def make_llm_summarizer(
                 timeout=60,
             )
         except Exception:
-            return _mechanical_summarizer(previous_summary, segment)
+            return _mechanical_summarizer(previous_summary, segment, target_chars)
 
         prev_block = previous_summary.strip()
         if prev_block.startswith(_SUMMARY_HEADER):
@@ -296,7 +318,7 @@ def make_llm_summarizer(
             "保留：核心任务/目标、用户的明确决定与偏好、已完成的步骤、"
             "工具调用得到的关键结果、未解决的问题。"
             "丢弃：寒暄、过程性试错的中间步骤、相同内容的重复表达。"
-            f"摘要总长度严格不超过 {_max_summary_chars()} 字符，使用中文，"
+            f"摘要总长度严格不超过 {target_chars} 字符，使用中文，"
             "条目化（每行 '- 主题: 内容'），不要包含原文长引用，不要重复同一信息。"
         )
         if prev_block:
@@ -314,13 +336,13 @@ def make_llm_summarizer(
                 HumanMessage(content=user_payload),
             ])
         except Exception:
-            return _mechanical_summarizer(previous_summary, segment)
+            return _mechanical_summarizer(previous_summary, segment, target_chars)
         text = _stringify(getattr(response, "content", "")).strip()
         if not text:
-            return _mechanical_summarizer(previous_summary, segment)
+            return _mechanical_summarizer(previous_summary, segment, target_chars)
         if not text.startswith(_SUMMARY_HEADER):
             text = f"{_SUMMARY_HEADER}\n{text}"
-        return _truncate_to_cap(text, _max_summary_chars())
+        return text  # apply_compression enforces the hard cap
 
     return _summarize
 
@@ -603,12 +625,13 @@ def apply_compression(
         from_idx=current_until,
         to_idx=boundary,
     )
+    target_chars = _max_summary_chars(history_token_budget)
     summarize = summarizer or _mechanical_summarizer
     try:
-        new_summary = summarize(previous_summary, segment)
+        new_summary = summarize(previous_summary, segment, target_chars)
     except Exception:
-        new_summary = _mechanical_summarizer(previous_summary, segment)
-    new_summary = _truncate_to_cap(new_summary, _max_summary_chars())
+        new_summary = _mechanical_summarizer(previous_summary, segment, target_chars)
+    new_summary = _truncate_to_cap(new_summary, target_chars)
     try:
         save_context_compaction(
             checkpoint_store_path,
