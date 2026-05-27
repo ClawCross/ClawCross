@@ -39,7 +39,7 @@ from utils.context_compressor import estimate_messages_tokens
 # - services.llm_factory.create_chat_model
 
 _SUMMARY_HEADER = "以下为早期对话的持久压缩摘要："
-_DEFAULT_TRIGGER_RATIO = 0.75
+_DEFAULT_TRIGGER_RATIO = 0.90
 _DEFAULT_TARGET_RATIO = 0.55
 _DEFAULT_PRESERVE_RECENT = 8
 _DEFAULT_MIN_NEW_MESSAGES = 6
