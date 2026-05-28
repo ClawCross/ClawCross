@@ -346,6 +346,27 @@ def create_cron(
     return None, friendly_error(url, code, body)
 
 
+def delete_cron(
+    task_id: str,
+    *,
+    team: str | None = None,
+    user: str | None = None,
+) -> tuple[bool, str | None]:
+    """DELETE a cron/alarm by task_id.
+
+    With *team* uses ``/teams/<team>/alarms/<task_id>``. Without, falls back to
+    ``/mobile_alarms/<task_id>``.
+    """
+    if team:
+        url = f"{FRONT_BASE}/teams/{urllib.parse.quote(team, safe='')}/alarms/{urllib.parse.quote(task_id, safe='')}"
+    else:
+        url = f"{FRONT_BASE}/mobile_alarms/{urllib.parse.quote(task_id, safe='')}"
+    code, body = _req("DELETE", url, headers=_front_headers(user))
+    if 200 <= code < 300:
+        return True, None
+    return False, friendly_error(url, code, body)
+
+
 def list_workflows(user: str, team: str = "") -> list[dict]:
     """Combine YAML + Python workflow listings from the local filesystem."""
     items: list[dict] = []

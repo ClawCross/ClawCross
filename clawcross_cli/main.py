@@ -10,7 +10,7 @@ Subcommands:
   team [<name>]
   workflow [show <name> | run <name> team <T> question <Q>]
   skill [<agent>]
-  cron [<team>]
+  cron [list [<team>] | add | delete <task_id>]
 """
 
 from __future__ import annotations
@@ -37,7 +37,10 @@ def usage() -> None:
     print("                              launch a YAML workflow")
     print("  workflow-manual             print the workflowpy authoring manual")
     print("  skill [<team>]              list managed skills (personal, or team+personal)")
-    print("  cron [<team>]               list cron alarms (optionally for one team)")
+    print("  cron                        list all cron alarms")
+    print("  cron list [<team>]          list cron alarms (optionally for one team)")
+    print("  cron add                    create a cron (interactive)")
+    print("  cron delete <task_id>       delete a cron by task_id")
     print("  channel                     list chatbot channels (Telegram, Discord, ...)")
     print("  channel setup [<id>]        guided channel setup (writes <ID>_BOTS in .env)")
     print("  channel show <id>           show channel JSON entries currently in .env")
