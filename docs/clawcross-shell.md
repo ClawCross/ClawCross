@@ -67,14 +67,14 @@ The startup screen is intentionally short: version, Web UI, current platform/ses
 
 When `clawcross` is running in an interactive terminal, type `/` as the first character in the prompt to open a command picker. Use the up/down arrow keys to select a command and press Enter.
 
-`/session` opens a picker for sessions from the current platform. The first item is `<new session>`, which creates a fresh session and switches to it. `/new session` does the same directly.
+`/resume` opens a picker for sessions from the current platform. The first item is `<new session>`, which creates a fresh session and switches to it. `/session` remains as a legacy alias. `/new session` does the same directly.
 
 `/use` opens a platform picker with every known platform. `/use <platform>` still switches directly.
 
 ```text
 /use <platform>     switch platform, e.g. codex or internal
-/session            choose a current-platform session
-/session <id>       switch session by id
+/resume             choose a current-platform session
+/resume <id>        switch session by id
 /new session        create and switch to a new session
 /cwd [path]         show or change workspace directory
 /mode <mode>        set execute, plan, or review label

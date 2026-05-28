@@ -29,6 +29,11 @@ except ImportError:  # pragma: no cover - Windows fallback uses regular input().
     termios = None
     tty = None
 
+try:
+    import msvcrt
+except ImportError:  # pragma: no cover - non-Windows terminals use termios.
+    msvcrt = None
+
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
@@ -201,8 +206,8 @@ ACP_PLATFORMS = {
 }
 SLASH_COMMANDS = [
     ("/platform", "platform actions (list / use)"),
-    ("/session", "pick a session (replays last 10 messages on resume)"),
-    ("/session <id>", "switch session by id (no history replay)"),
+    ("/resume", "pick a session and replay the last 10 messages"),
+    ("/resume <id>", "switch session by id (no history replay)"),
     ("/new session", "create and switch to a new session"),
     ("/mode [<mode>]", "permission mode picker (or `/mode manual|plan|bypass` direct)"),
     ("/state", "show persisted state"),
@@ -218,7 +223,7 @@ SLASH_MENU = [
     ("/restart", "restart the ClawCross backend", "/restart", True),
     ("/help", "show commands", "/help", True),
     ("/cancel", "cancel internal-agent generation", "/cancel", True),
-    ("/session", "pick session — resumes & replays last 10 messages", "/session", True),
+    ("/resume", "pick session and replay recent history", "/resume", True),
     ("/new session", "create a new session", "/new session", True),
     ("/mode", "permission mode: manual / plan / bypass", "/mode", True),
     ("/model", "model actions (list / use / add / migrate / remove)", "/model", True),
@@ -254,8 +259,8 @@ CHAT_SLASH_COMMANDS = [
     ("/cross help", "show this command list"),
     ("/cross platforms", "list agent platforms"),
     ("/cross use <platform>", "switch platform"),
-    ("/cross session", "list sessions for current platform"),
-    ("/cross session <id>", "switch session by id"),
+    ("/cross resume", "list sessions for current platform"),
+    ("/cross resume <id>", "switch session by id"),
     ("/cross new session", "create and switch to a new session"),
     ("/cross mode [<mode>]", "permission mode picker: manual / plan / bypass"),
     ("/cross model [name]", "select/set LLM model"),
@@ -512,6 +517,20 @@ def _llm_status_hint() -> str:
         provider = os.environ.get("LLM_PROVIDER", "").strip() or "?"
         return f"LLM: {provider}/{model} (from .env)"
     return "LLM: not configured — type /model to choose one."
+
+
+def _missing_model_hint(model: str = "default") -> str | None:
+    if model and model != "default":
+        return None
+    try:
+        from clawcross_cli.runtime_provider import resolve_active_profile
+        if resolve_active_profile().model:
+            return None
+    except Exception:
+        pass
+    if os.environ.get("LLM_MODEL", "").strip():
+        return None
+    return "LLM model is not configured. Type /model in chat, or run `clawcross model`, to set one."
 
 
 def _welcome_lines(state: dict) -> list[str]:
@@ -789,6 +808,19 @@ def _print_history_tail(messages: list[dict], *, max_chars: int = 400) -> None:
     print(_dim("── end ──"))
 
 
+def _replay_current_session_history(state: dict, *, unavailable_prefix: str | None = None) -> None:
+    current = _current(state)
+    session = (current.get("session") or "").strip()
+    if not session:
+        return
+    history, hist_err = _fetch_session_history(state, session, limit=10)
+    if hist_err:
+        if unavailable_prefix:
+            print(f"{unavailable_prefix}: {hist_err}")
+        return
+    _print_history_tail(history)
+
+
 def _new_session_name(state: dict) -> str:
     cwd_name = _state_session_base_name(state)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -974,7 +1006,7 @@ def _run_acpx(prompt: str, state: dict, *, model: str = "default") -> None:
     if allowed_tools is not None:
         # Explicitly include even when "", so acpx receives `--allowed-tools ""`.
         payload["allowed_tools"] = allowed_tools
-    # When the user picked an existing ACP session via /session, send the
+    # When the user picked an existing ACP session via /resume, send the
     # strict-reuse hint so the backend errors if the session is gone instead
     # of silently creating a new one under the same name.
     if current.get("session_resumed"):
@@ -995,6 +1027,10 @@ def run_prompt(prompt: str, state: dict, *, model: str = "default") -> int:
     platform = current.get("platform") or "internal"
     try:
         if platform == "internal":
+            hint = _missing_model_hint(model)
+            if hint:
+                print(hint, file=sys.stderr)
+                return 2
             _run_internal(prompt, state, model=model)
         elif ":" not in platform and _acpx_tool(platform) in ACP_PLATFORMS:
             _run_acpx(prompt, state, model=model)
@@ -1248,15 +1284,19 @@ def _prompt_label(state: dict) -> str:
     return f"clawcross[{platform}:{session}]{mode_suffix}> "
 
 
+def _local_frontend_hint() -> str:
+    return f"打开前端（本地）: {FRONT_BASE}"
+
+
 def _menu_lines(selected: int) -> list[str]:
     """Render the slash menu as a viewport — capped to fit inside the terminal.
 
-    Budget: terminal_height - 4 rows (prompt + header + footer + breathing).
+    Budget: terminal_height - 5 rows (prompt + header + footer + frontend + breathing).
     The viewport scrolls so the selected row stays inside it.
     """
     width = _term_width() - 1
     total = len(SLASH_MENU)
-    budget = max(4, _term_height() - 4)
+    budget = max(4, _term_height() - 5)
     visible = min(total, budget)
 
     if total <= visible:
@@ -1280,6 +1320,7 @@ def _menu_lines(selected: int) -> list[str]:
         lines.append(_dim(f"Enter selects · ↑/↓ moves · Esc closes  ·  {pos} {scroll}"))
     else:
         lines.append(_dim(f"Enter selects · ↑/↓ moves · Esc closes  ·  {pos}"))
+    lines.append(_dim(_local_frontend_hint()))
     return lines
 
 
@@ -1340,8 +1381,10 @@ def _selection_menu_lines(title: str, rows: list[tuple[str, str]], selected: int
 def _choose_from_menu(title: str, rows: list[tuple[str, str]]) -> int | None:
     if not rows:
         return None
-    if not sys.stdin.isatty() or not sys.stdout.isatty() or termios is None or tty is None:
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
         return None
+    if termios is None or tty is None:
+        return _choose_numbered_menu(title, rows)
 
     old_settings = termios.tcgetattr(sys.stdin.fileno())
     selected = 0
@@ -1425,7 +1468,93 @@ def _choose_from_menu(title: str, rows: list[tuple[str, str]]) -> int | None:
         termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, old_settings)
 
 
-def _choose_session(state: dict) -> bool:
+def _choose_numbered_menu(title: str, rows: list[tuple[str, str]], selected: int = 0) -> int | None:
+    """Portable numbered picker used when raw terminal control is unavailable.
+
+    Windows PowerShell/cmd terminals do not provide termios, so the inline
+    arrow-key picker cannot safely read one key at a time. A plain numbered
+    prompt keeps the command-line experience interactive without silently
+    returning from picker commands.
+    """
+    if not rows:
+        return None
+    selected = max(0, min(selected, len(rows) - 1))
+    print(f"\n  {title}")
+    print("  Select by number, Enter to confirm, or q to cancel.\n")
+    label_width = min(
+        max((_display_width(label) for label, _ in rows), default=12),
+        max(20, _term_width() // 2),
+    )
+    for idx, (label, description) in enumerate(rows):
+        marker = "*" if idx == selected else " "
+        desc = f"  {description}" if description else ""
+        print(f"  {marker} {idx + 1:>2}. {_pad_display(label, label_width)}{desc}")
+    print()
+    try:
+        value = input(f"  Choice [default {selected + 1}]: ").strip().lower()
+    except (KeyboardInterrupt, EOFError):
+        return None
+    if not value:
+        return selected
+    if value in {"q", "quit", "cancel", "esc"}:
+        return None
+    try:
+        choice = int(value) - 1
+    except ValueError:
+        print(f"Invalid choice: {value}")
+        return None
+    if 0 <= choice < len(rows):
+        return choice
+    print(f"Choice out of range: {value}")
+    return None
+
+
+def _choose_slash_command() -> str | None:
+    rows = [(command, description) for command, description, _insert, _execute in SLASH_MENU]
+    if sys.stdin.isatty() and sys.stdout.isatty() and (termios is None or tty is None):
+        return _choose_numbered_slash_command(rows)
+    selected = _choose_from_menu("Commands", rows)
+    if selected is None:
+        return None
+    return SLASH_MENU[selected][2]
+
+
+def _choose_numbered_slash_command(rows: list[tuple[str, str]], selected: int = 0) -> str | None:
+    selected = max(0, min(selected, len(rows) - 1))
+    print("\n  Commands")
+    print("  Select by number, type a command name, or q to cancel.\n")
+    label_width = min(
+        max((_display_width(label) for label, _ in rows), default=12),
+        max(20, _term_width() // 2),
+    )
+    for idx, (label, description) in enumerate(rows):
+        marker = "*" if idx == selected else " "
+        desc = f"  {description}" if description else ""
+        print(f"  {marker} {idx + 1:>2}. {_pad_display(label, label_width)}{desc}")
+    print(f"\n  {_local_frontend_hint()}\n")
+    try:
+        value = input(f"  Choice [default {selected + 1}]: ").strip()
+    except (KeyboardInterrupt, EOFError):
+        return None
+    if not value:
+        return SLASH_MENU[selected][2]
+    lower = value.lower()
+    if lower in {"q", "quit", "cancel", "esc"}:
+        return None
+    try:
+        choice = int(value) - 1
+    except ValueError:
+        command = value if value.startswith("/") else f"/{value}"
+        if command.split(maxsplit=1)[0].lower() == "/session":
+            return command.replace("/session", "/resume", 1)
+        return command
+    if 0 <= choice < len(SLASH_MENU):
+        return SLASH_MENU[choice][2]
+    print(f"Choice out of range: {value}")
+    return None
+
+
+def _choose_resume(state: dict) -> bool:
     sessions, error = _list_current_platform_sessions(state)
     rows: list[tuple[str, str]] = [("<new session>", "create and switch to a new session")]
     rows.extend(
@@ -1449,11 +1578,7 @@ def _choose_session(state: dict) -> bool:
     _set_session(state, session, resumed=True)
     _save_state(state)
     print(f"session: {session} (resumed)")
-    history, hist_err = _fetch_session_history(state, session, limit=10)
-    if hist_err:
-        print(f"history unavailable: {hist_err}")
-    else:
-        _print_history_tail(history)
+    _replay_current_session_history(state, unavailable_prefix="history unavailable")
     return True
 
 
@@ -1543,6 +1668,61 @@ def _choose_mode(state: dict) -> bool:
     return True
 
 
+def _read_windows_interactive_line(prompt: str) -> str:
+    """Read a Windows console line while preserving immediate slash menu access."""
+    if msvcrt is None:
+        return input(prompt)
+
+    buffer = ""
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
+
+    while True:
+        ch = msvcrt.getwch()
+        if ch in {"\x00", "\xe0"}:
+            # Consume the scan code for arrows/function keys.
+            msvcrt.getwch()
+            continue
+        if ch in {"\r", "\n"}:
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+            return buffer
+        if ch == "\x03":
+            if buffer:
+                while buffer:
+                    buffer = buffer[:-1]
+                    sys.stdout.write("\b \b")
+                sys.stdout.flush()
+                continue
+            sys.stdout.write("^C\n")
+            sys.stdout.flush()
+            raise EOFError
+        if ch == "\x04":
+            if not buffer:
+                raise EOFError
+            continue
+        if ch in {"\b", "\x7f"}:
+            if buffer:
+                buffer = buffer[:-1]
+                sys.stdout.write("\b \b")
+                sys.stdout.flush()
+            continue
+        if ch == "/" and not buffer:
+            sys.stdout.write("/\n")
+            sys.stdout.flush()
+            chosen = _choose_slash_command()
+            if chosen:
+                return chosen
+            buffer = ""
+            sys.stdout.write(prompt)
+            sys.stdout.flush()
+            continue
+        if ch.isprintable():
+            buffer += ch
+            sys.stdout.write(ch)
+            sys.stdout.flush()
+
+
 def _read_interactive_line(prompt: str) -> str:
     """Read one line with a rounded-box prompt and optional slash menu.
 
@@ -1557,6 +1737,8 @@ def _read_interactive_line(prompt: str) -> str:
     popup in the alternate screen buffer (no main-screen clear, so no
     blank-rows ghost effect after closing).
     """
+    if sys.stdin.isatty() and sys.stdout.isatty() and termios is None and tty is None and msvcrt is not None:
+        return _read_windows_interactive_line(prompt)
     if not sys.stdin.isatty() or not sys.stdout.isatty() or termios is None or tty is None:
         return input(prompt)
 
@@ -1754,6 +1936,11 @@ def _handle_slash(command: str, state: dict) -> bool:
     if not parts:
         return True
     name = parts[0].lower()
+    if name == "/":
+        chosen = _choose_slash_command()
+        if not chosen:
+            return True
+        return _handle_slash(chosen, state)
     if name in {"/exit", "/quit", "/q"}:
         _save_state(state)
         return False
@@ -1782,9 +1969,9 @@ def _handle_slash(command: str, state: dict) -> bool:
         session = _switch_to_new_session(state)
         print(f"session: {session}")
         return True
-    if name == "/session":
+    if name in {"/resume", "/session"}:
         if len(parts) == 1:
-            return _choose_session(state)
+            return _choose_resume(state)
         else:
             _set_session(state, parts[1])
             _save_state(state)
@@ -1888,8 +2075,9 @@ _HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("/platform", "action picker (list / use). aliases: /platforms /use"),
         ("/platform list", "list all agent platforms (internal + acpx tools)"),
         ("/platform use [<name>]", "switch platform (no name -> picker)"),
-        ("/session", "interactive picker (resumes & replays last 10 messages)"),
-        ("/session <name>", "switch to / create session by name (no replay)"),
+        ("/resume", "interactive picker (resumes & replays last 10 messages)"),
+        ("/resume <name>", "switch to / create session by name (no replay)"),
+        ("/session", "legacy alias for /resume"),
         ("/new session", "create timestamped session (e.g. ClawCross-20260512-031544)"),
         ("/mode", "picker over manual / plan / bypass (or `/mode <name>` direct)"),
         ("/cancel", "cancel an in-flight internal generation"),
@@ -1946,7 +2134,7 @@ _HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
 
 
 _HELP_TIPS = [
-    "Press / on an empty line to open the command picker (alt-screen, ↑↓ ENTER, Esc cancels).",
+    "Type / on an empty line to open the command picker. Some Windows terminals use a numbered fallback.",
     "All `/<cmd>` commands also work as `clawcross <cmd>` and `/cross <cmd>` (chatbot).",
     "`clawcross start` boots the full backend (web UI / API on PORT_FRONTEND).",
     "Reset LLM profiles: rm ~/.clawcross/config/models.json (.env still works as fallback).",
@@ -1965,8 +2153,9 @@ _CHAT_HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
     ("Platform & session", [
         ("/cross platforms", "list all agent platforms"),
         ("/cross use <platform>", "switch platform (internal / codex / claude / gemini / ...)"),
-        ("/cross session", "show sessions for the current platform"),
-        ("/cross session <id>", "switch to / create session by id"),
+        ("/cross resume", "show sessions for the current platform"),
+        ("/cross resume <id>", "switch to / create session by id"),
+        ("/cross session", "legacy alias for /cross resume"),
         ("/cross new session", "create timestamped session"),
         ("/cross mode [<mode>]", "picker over manual / plan / bypass (or pass name direct)"),
         ("/cross restart", "request a backend restart"),
@@ -2119,7 +2308,7 @@ def handle_chatbot_input(text: str, state: dict) -> tuple[bool, str]:
             f"Agent switched to {current.get('platform', platform)}.\n"
             "Send a message to continue on this agent."
         )
-    if line.startswith("/") and line.split(maxsplit=1)[0].lower() == "/session":
+    if line.startswith("/") and line.split(maxsplit=1)[0].lower() in {"/resume", "/session"}:
         parts = line.split(maxsplit=1)
         if len(parts) < 2 or not parts[1].strip():
             rows, error = _list_current_platform_sessions(state)
@@ -2173,6 +2362,7 @@ def handle_chatbot_input(text: str, state: dict) -> tuple[bool, str]:
 
 def repl(state: dict) -> int:
     print_welcome(state)
+    _replay_current_session_history(state)
     while True:
         try:
             line = _read_interactive_line(_prompt_label(state))
