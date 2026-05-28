@@ -101,6 +101,32 @@ venv_python = sys.executable
 # 子进程列表（用于管理所有启动的服务）
 child_procs = []
 cleanup_done = False
+CHILD_PID_FILES = []
+
+
+def _service_pid_path(name):
+    safe = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in name)
+    return os.path.join(str(PID_DIR), f"{safe}.pid")
+
+
+def _track_child_pid(proc, name):
+    path = _service_pid_path(name)
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(str(proc.pid))
+    except OSError:
+        return
+    proc._cc_pid_file = path
+    CHILD_PID_FILES.append(path)
+
+
+def _remove_child_pid_files():
+    for path in list(dict.fromkeys(CHILD_PID_FILES)):
+        try:
+            if os.path.isfile(path):
+                os.remove(path)
+        except OSError:
+            pass
 
 
 def _init_env_placeholder(key: str):
@@ -185,6 +211,8 @@ def cleanup():
             proc.wait(timeout=2)
         except Exception:
             pass
+
+    _remove_child_pid_files()
 
     print("✅ 所有服务已关闭")
 
@@ -395,6 +423,7 @@ def start_service(service):
     )
     child_procs.append(proc)
     service["proc"] = proc
+    _track_child_pid(proc, service.get("pid_name") or service["label"])
     return proc
 
 
@@ -447,6 +476,7 @@ def start_chatbot_if_configured(platforms):
     proc._cc_optional = True
     proc._cc_chatbot = True
     child_procs.append(proc)
+    _track_child_pid(proc, "chatbot")
     print(f"   ✅ 社交媒体机器人已启动 (PID: {proc.pid})")
     return proc
 
@@ -470,6 +500,7 @@ def start_harness_conductor_if_configured():
     )
     proc._cc_optional = True
     child_procs.append(proc)
+    _track_child_pid(proc, "harness_conductor")
     print(f"   ✅ Harness 主控已启动 (PID: {proc.pid})")
     return proc
 
@@ -576,23 +607,26 @@ services = [
         "label": "定时调度中心",
         "script": "src/utils/scheduler_service.py",
         "port": PORT_SCHEDULER,
-        "timeout": 15.0,
+        "timeout": 60.0,
+        "pid_name": "scheduler_service",
     },
     {
         "message": f"🏛️ [2/5] 启动 OASIS 论坛服务 (port {PORT_OASIS})...",
         "label": "OASIS 论坛服务",
         "script": "oasis/server.py",
         "port": PORT_OASIS,
-        "timeout": 45.0,
+        "timeout": 90.0,
         "health_url": f"http://127.0.0.1:{PORT_OASIS}/experts",
+        "pid_name": "oasis_server",
     },
     {
         "message": f"🤖 [3/5] 启动 AI Agent (port {PORT_AGENT})...",
         "label": "AI Agent",
         "script": "src/mainagent.py",
         "port": PORT_AGENT,
-        "timeout": 25.0,
+        "timeout": 120.0,
         "health_url": f"http://127.0.0.1:{PORT_AGENT}/v1/models",
+        "pid_name": "mainagent",
     },
 ]
 
@@ -852,7 +886,8 @@ if should_start_chatbot:
             "label": "前端 Web UI",
             "script": "src/front.py",
             "port": PORT_FRONTEND,
-            "timeout": 20.0,
+            "timeout": 90.0,
+            "pid_name": "front",
         }
     )
 else:
@@ -866,7 +901,8 @@ else:
             "label": "前端 Web UI",
             "script": "src/front.py",
             "port": PORT_FRONTEND,
-            "timeout": 20.0,
+            "timeout": 90.0,
+            "pid_name": "front",
         }
     )
 

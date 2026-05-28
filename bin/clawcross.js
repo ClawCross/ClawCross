@@ -12,6 +12,7 @@ const script = path.join(root, "scripts", "clawcross.py");
 const runScript = process.platform === "win32"
   ? path.join(root, "selfskill", "scripts", "run.ps1")
   : path.join(root, "selfskill", "scripts", "run.sh");
+const packageJsonPath = path.join(root, "package.json");
 
 const runCommands = new Set([
   "dev",
@@ -34,6 +35,19 @@ const runCommands = new Set([
 
 function getClawcrossHome() {
   return process.env.CLAWCROSS_HOME || path.join(os.homedir(), ".clawcross");
+}
+
+function packageVersion() {
+  try {
+    const data = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
+    return data.version || "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+function isVersionCommand(args) {
+  return args.length === 1 && ["--version", "-V", "version"].includes(args[0]);
 }
 
 function isLegacyMode() {
@@ -163,6 +177,10 @@ function spawnAutoStart(args) {
 
 async function main() {
   let args = process.argv.slice(2);
+  if (isVersionCommand(args)) {
+    console.log(packageVersion());
+    return;
+  }
   if (args[0] === "dev") {
     process.env.CLAWCROSS_HOME = path.join(root, ".clawcross-dev");
     args = ["start", ...args.slice(1)];

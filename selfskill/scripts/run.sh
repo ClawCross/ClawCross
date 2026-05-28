@@ -65,6 +65,8 @@ fi
 
 # 确保虚拟环境存在且可执行；目录可能由旧版本或路径初始化提前创建为空目录。
 if [ ! -x "$CLAWCROSS_VENV_DIR/bin/python" ]; then
+    echo "⏳ 正在准备 Python 运行环境；首次运行、慢网络或杀毒扫描下可能需要几分钟。"
+    echo "   如依赖下载很慢，可设置 UV_INDEX_URL / PIP_INDEX_URL 使用就近 PyPI 镜像。"
     echo "🔧 创建虚拟环境 ($CLAWCROSS_VENV_DIR, Python 3.11+)..."
     uv venv "$CLAWCROSS_VENV_DIR" --python 3.11
     echo "✅ 虚拟环境创建完成"
@@ -102,6 +104,7 @@ fi
 # 确保依赖已安装（通过检查关键包是否可导入来决定是否需要安装）
 if ! "$VENV_PY" -c "import fastapi" &>/dev/null; then
     echo "📦 安装依赖 (config/requirements.txt)..."
+    echo "   这是环境准备阶段，不计入服务端口健康检查；首次冷启动可能较慢。"
     uv pip install -r "$PROJECT_ROOT/config/requirements.txt" --python "$VENV_PY"
     echo "✅ 依赖安装完成"
 fi
@@ -113,8 +116,21 @@ CLAWCROSS_SERVICE_PATTERNS=(
     "oasis/server.py"
     "src/mainagent.py"
     "src/front.py"
+    "scripts/tunnel.py"
+    "scripts/harness_conductor.py"
     "chatbot/main.py"
     "weclaw start -f"
+    "cloudflared.*tunnel.*--url.*127\\.0\\.0\\.1"
+)
+CLAWCROSS_CHILD_PIDFILES=(
+    "$CLAWCROSS_RUN_DIR/scheduler_service.pid"
+    "$CLAWCROSS_RUN_DIR/oasis_server.pid"
+    "$CLAWCROSS_RUN_DIR/mainagent.pid"
+    "$CLAWCROSS_RUN_DIR/front.pid"
+    "$CLAWCROSS_RUN_DIR/chatbot.pid"
+    "$CLAWCROSS_RUN_DIR/harness_conductor.pid"
+    "$CLAWCROSS_RUN_DIR/tunnel.pid"
+    "$CLAWCROSS_RUN_DIR/cloudflared.pid"
 )
 
 is_wsl() {
@@ -296,6 +312,15 @@ get_clawcross_service_pids() {
                 printf '%s\n' "$tracked_pid"
             fi
         fi
+        for pidfile in "${CLAWCROSS_CHILD_PIDFILES[@]}"; do
+            if [ -f "$pidfile" ]; then
+                local child_pid=""
+                child_pid=$(tr -d ' \r\n' < "$pidfile" 2>/dev/null || true)
+                if [ -n "$child_pid" ] && kill -0 "$child_pid" 2>/dev/null; then
+                    printf '%s\n' "$child_pid"
+                fi
+            fi
+        done
         for pattern in "${CLAWCROSS_SERVICE_PATTERNS[@]}"; do
             pgrep -f "$pattern" 2>/dev/null || true
         done
@@ -342,6 +367,7 @@ stop_clawcross_service_processes() {
     done
 
     sleep 1
+    rm -f "${CLAWCROSS_CHILD_PIDFILES[@]}" 2>/dev/null || true
     echo "✅ 旧进程已停止"
     return 0
 }
@@ -538,7 +564,7 @@ case "${1:-help}" in
         FRONTEND_PORT=${PORT_FRONTEND:-51209}
         echo -n "   等待服务就绪"
         SERVICE_READY=false
-        for i in $(seq 1 60); do
+        for i in $(seq 1 240); do
             if curl -sf "http://127.0.0.1:$AGENT_PORT/v1/models" > /dev/null 2>&1 && \
                curl -sf "http://127.0.0.1:$OASIS_PORT/experts" > /dev/null 2>&1; then
                 echo " ✅"
@@ -651,10 +677,19 @@ case "${1:-help}" in
         ;;
     stop)
         if stop_clawcross_service_processes; then
-            rm -f "$PIDFILE"
+            rm -f "$PIDFILE" "${CLAWCROSS_CHILD_PIDFILES[@]}" 2>/dev/null || true
+            if [ -f "$CLAWCROSS_CONFIG_DIR/.env" ] && grep -q "^PUBLIC_DOMAIN=" "$CLAWCROSS_CONFIG_DIR/.env"; then
+                replace_env_value "PUBLIC_DOMAIN" "" "$CLAWCROSS_CONFIG_DIR/.env"
+                echo "🧹 已清空 PUBLIC_DOMAIN"
+            fi
+            mapfile -t RESIDUAL_PIDS < <(get_clawcross_service_pids)
+            if [ "${#RESIDUAL_PIDS[@]}" -gt 0 ]; then
+                echo "⚠️  stop 已执行，但仍检测到 Clawcross 残留进程: ${RESIDUAL_PIDS[*]}" >&2
+                exit 1
+            fi
             echo "✅ WeBot 已停止"
         else
-            rm -f "$PIDFILE" 2>/dev/null || true
+            rm -f "$PIDFILE" "${CLAWCROSS_CHILD_PIDFILES[@]}" 2>/dev/null || true
             echo "未找到 Clawcross 进程，服务可能未运行"
         fi
         exit 0

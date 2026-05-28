@@ -354,7 +354,7 @@ function Wait-ClawcrossReady {
         [int]$AgentPort,
         [Parameter(Mandatory = $true)]
         [int]$OasisPort,
-        [int]$Attempts = 60,
+        [int]$Attempts = 240,
         [int]$DelayMilliseconds = 500
     )
 
