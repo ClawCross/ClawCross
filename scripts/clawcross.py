@@ -246,7 +246,7 @@ CLI_COMMANDS = [
     ("clawcross team [name]", "list teams or show one team's details"),
     ("clawcross workflow [show|run ...]", "list/show/run OASIS workflows"),
     ("clawcross skill [agent]", "list skills (optionally filtered by agent)"),
-    ("clawcross cron [team]", "list cron alarms (optionally for one team)"),
+    ("clawcross cron [list [team]|add|delete <task_id>]", "list / add / delete cron alarms"),
     ("clawcross channel [list|setup ...]", "list / interactively set up chatbot channels"),
     ("clawcross platforms", "list available platforms"),
     ("clawcross state", "print state json"),
@@ -2189,7 +2189,9 @@ _CHAT_HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
     ]),
     ("Cron / Alarms", [
         ("/cross cron", "list all cron entries"),
-        ("/cross cron <team>", "list one team's cron entries"),
+        ("/cross cron list [<team>]", "list cron entries (optionally one team)"),
+        ("/cross cron add", "create a cron entry (interactive in CLI)"),
+        ("/cross cron delete <task_id>", "delete a cron entry by id"),
     ]),
     ("Chatbot channels", [
         ("/cross channel", "list channels with configured/not status"),

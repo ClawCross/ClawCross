@@ -68,7 +68,7 @@ class ChatbotCommandTests(unittest.TestCase):
 
         self.assertIn("/cross help", help_text)
         self.assertIn("/cross use <platform>", help_text)
-        self.assertIn("/cross session <id>", help_text)
+        self.assertIn("/cross resume <id>", help_text)
         self.assertIn("Send /cross help for commands.", welcome)
         self.assertIn("Switch agents with /cross use codex.", welcome)
         self.assertNotIn("Send /help for commands.", welcome)

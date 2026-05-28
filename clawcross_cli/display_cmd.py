@@ -842,8 +842,10 @@ def _render_cron_row(a: dict) -> list[str]:
     ttype = a.get("target_type") or ""
     sched = a.get("cron") or a.get("run_at") or "?"
     text = (a.get("text") or "").splitlines()[0][:80]
+    task_id = str(a.get("task_id") or "").strip()
     type_part = f" ({ttype})" if ttype else ""
-    rows = [f"  - {target}{type_part}  {sched}"]
+    id_part = f"  [{task_id}]" if task_id else ""
+    rows = [f"  - {target}{type_part}  {sched}{id_part}"]
     if text:
         rows.append(f"      {text}")
     return rows
@@ -957,11 +959,49 @@ def _handle_cron_new(rest: list[str], *, interactive: bool, user: str) -> str:
     return f"Cron created on team {parsed['team']!r}: target={parsed['target']} schedule={sched}"
 
 
+def _handle_cron_delete(rest: list[str], *, user: str) -> str:
+    """`cron delete <task_id> [team <T>]` — delete a cron by task_id."""
+    if not rest:
+        return "Usage: clawcross cron delete <task_id> [team <T>]"
+    task_id = rest[0].strip()
+    if not task_id:
+        return "task_id is required"
+    team: str | None = None
+    i = 1
+    while i < len(rest):
+        token = rest[i].lower()
+        if token == "team" and i + 1 < len(rest):
+            team = rest[i + 1].strip() or None
+            i += 2
+            continue
+        i += 1
+
+    if team is None:
+        alarms, err = api_client.list_crons(user=user)
+        if err:
+            return err
+        match = next((a for a in alarms if str(a.get("task_id") or "") == task_id), None)
+        if match:
+            tname = (match.get("team") or "").strip()
+            if tname and tname != "__public__":
+                team = tname
+
+    ok, err = api_client.delete_cron(task_id, team=team, user=user)
+    if err:
+        return err
+    scope = f" from team {team!r}" if team else ""
+    return f"Cron {task_id} deleted{scope}."
+
+
 def handle_cron_command(args: list[str], *, interactive: bool = False, user: str | None = None) -> str:
     args = list(args or [])
     user = (user or api_client.DEFAULT_USER or "").strip() or api_client.DEFAULT_USER
     if args and args[0].lower() in {"new", "create", "add"}:
         return _handle_cron_new(args[1:], interactive=interactive, user=user)
+    if args and args[0].lower() in {"delete", "remove", "rm", "del"}:
+        return _handle_cron_delete(args[1:], user=user)
+    if args and args[0].lower() == "list":
+        args = args[1:]
     team = args[0] if args else None
     alarms, err = api_client.list_crons(team=team, user=user)
     if err:
