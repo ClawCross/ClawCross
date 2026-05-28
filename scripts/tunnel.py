@@ -41,6 +41,7 @@ WORKING_DIR = str(WORKSPACE_DIR)
 CLOUDFLARED_PATH = str(cloudflared_path())
 ENV_FILE_PATH = str(ENV_FILE)
 PID_FILE_PATH = os.path.join(str(PID_DIR), "tunnel.pid")
+CLOUDFLARED_PID_FILE_PATH = os.path.join(str(PID_DIR), "cloudflared.pid")
 
 # ── 加载环境配置 ──────────────────────────────────────────────
 load_dotenv(dotenv_path=ENV_FILE_PATH)
@@ -233,11 +234,12 @@ def ensure_cloudflared():
 
 def _remove_pid_file():
     """安全删除 PID 文件"""
-    try:
-        if os.path.isfile(PID_FILE_PATH):
-            os.remove(PID_FILE_PATH)
-    except OSError:
-        pass
+    for path in (PID_FILE_PATH, CLOUDFLARED_PID_FILE_PATH):
+        try:
+            if os.path.isfile(path):
+                os.remove(path)
+        except OSError:
+            pass
 
 
 def cleanup(signum=None, frame=None):
@@ -348,6 +350,11 @@ def run_tunnel(cf_bin: str, tunnel_name: str, local_port: str, env_key: str):
         **popen_kwargs,
     )
     tunnel_procs.append(proc)
+    try:
+        with open(CLOUDFLARED_PID_FILE_PATH, "w", encoding="utf-8") as f:
+            f.write(str(proc.pid))
+    except OSError:
+        pass
 
     # Cloudflare Tunnel URL 正则匹配
     url_pattern = re.compile(r"(https://[a-zA-Z0-9-]+\.trycloudflare\.com)")

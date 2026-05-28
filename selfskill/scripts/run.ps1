@@ -21,6 +21,15 @@ Invoke-ClawcrossHomeMigration -ProjectRoot $projectRoot
 
 $pidFile = Join-Path $env:CLAWCROSS_RUN_DIR "clawcross.pid"
 $tunnelPidFile = Join-Path $env:CLAWCROSS_RUN_DIR "tunnel.pid"
+$childPidFiles = @(
+    "scheduler_service.pid",
+    "oasis_server.pid",
+    "mainagent.pid",
+    "front.pid",
+    "chatbot.pid",
+    "harness_conductor.pid",
+    "cloudflared.pid"
+) | ForEach-Object { Join-Path $env:CLAWCROSS_RUN_DIR $_ }
 $envPath = Join-Path $env:CLAWCROSS_CONFIG_DIR ".env"
 
 function Stop-ClawcrossTunnelForFreshStart {
@@ -439,24 +448,30 @@ function Show-StartupFailureDiagnostics {
 }
 
 function Get-ClawcrossServiceProcesses {
+    $ports = Get-ClawcrossPortMap -EnvPath $envPath
+    $frontendPort = [int]$ports["PORT_FRONTEND"]
     $scriptPatterns = @(
         "scripts[\\/]+launcher\.py",
         "src[\\/]+utils[\\/]+scheduler_service\.py",
         "oasis[\\/]+server\.py",
         "src[\\/]+mainagent\.py",
         "src[\\/]+front\.py",
+        "scripts[\\/]+tunnel\.py",
+        "scripts[\\/]+harness_conductor\.py",
         "chatbot[\\/]+main\.py",
-        "weclaw start -f"
+        "weclaw start -f",
+        "cloudflared.*\btunnel\b.*--url\s+http://127\.0\.0\.1:$frontendPort\b"
     )
 
     $candidatePids = New-Object System.Collections.Generic.List[int]
-    $trackedPid = Get-TrackedProcessId -PidFile $pidFile
-    if ($trackedPid) {
-        $candidatePids.Add([int]$trackedPid)
+    foreach ($trackedFile in @($pidFile, $tunnelPidFile) + $childPidFiles) {
+        $trackedPid = Get-TrackedProcessId -PidFile $trackedFile
+        if ($trackedPid) {
+            $candidatePids.Add([int]$trackedPid)
+        }
     }
 
     if (Test-Path $envPath) {
-        $ports = Get-ClawcrossPortMap -EnvPath $envPath
         foreach ($port in $ports.Values) {
             $listener = Get-ListeningPortInfo -Port $port
             if ($listener) {
@@ -466,7 +481,7 @@ function Get-ClawcrossServiceProcesses {
     }
 
     foreach ($proc in Get-CimInstance Win32_Process -ErrorAction SilentlyContinue) {
-        if ($proc.Name -notin @("python.exe", "pythonw.exe", "weclaw.exe", "weclaw")) {
+        if ($proc.Name -notin @("python.exe", "pythonw.exe", "weclaw.exe", "weclaw", "cloudflared.exe", "cloudflared")) {
             continue
         }
         if (-not $proc.CommandLine) {
@@ -484,7 +499,7 @@ function Get-ClawcrossServiceProcesses {
             continue
         }
 
-        if ($proc.Name -notin @("python.exe", "pythonw.exe", "weclaw.exe", "weclaw")) {
+        if ($proc.Name -notin @("python.exe", "pythonw.exe", "weclaw.exe", "weclaw", "cloudflared.exe", "cloudflared")) {
             continue
         }
 
@@ -510,7 +525,23 @@ function Stop-ClawcrossServiceProcesses {
     Write-Host "Found existing Clawcross service processes. Stopping them first..."
     foreach ($proc in $serviceProcesses) {
         Write-Host "  PID $($proc.ProcessId): $($proc.CommandLine)"
-        Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
+        Stop-Process -Id $proc.ProcessId -ErrorAction SilentlyContinue
+    }
+
+    $deadline = (Get-Date).AddSeconds(5)
+    while ((Get-Date) -lt $deadline) {
+        $alive = @($serviceProcesses | Where-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue })
+        if ($alive.Count -eq 0) {
+            break
+        }
+        Start-Sleep -Milliseconds 500
+    }
+
+    foreach ($proc in $serviceProcesses) {
+        if (Get-Process -Id $proc.ProcessId -ErrorAction SilentlyContinue) {
+            Write-Host "  PID $($proc.ProcessId) did not exit; killing it."
+            Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
+        }
     }
 
     Start-Sleep -Seconds 1
@@ -555,6 +586,8 @@ try {
     # 确保虚拟环境存在
     $venvPython = Get-VenvPython -ProjectRoot $projectRoot
     if (-not $venvPython) {
+        Write-Host "Preparing Python runtime with uv (first run may take several minutes on slow networks) ..."
+        Write-Host "If dependency downloads are slow, set UV_INDEX_URL or PIP_INDEX_URL to a nearby PyPI mirror."
         Write-Host "Creating .venv with Python 3.11 ..."
         & $uv venv $env:CLAWCROSS_VENV_DIR --python 3.11
         if ($LASTEXITCODE -ne 0) {
@@ -583,6 +616,7 @@ try {
     $ErrorActionPreference = $prevEAP
     if ($importExit -ne 0) {
         Write-Host "Installing Python dependencies (config/requirements.txt) ..."
+        Write-Host "This setup phase is separate from service health checks and may take several minutes on first run."
         & $uv pip install -r (Join-Path $projectRoot "config\requirements.txt") --python $venvPython
         if ($LASTEXITCODE -ne 0) {
             throw "Dependency installation failed."
@@ -831,9 +865,19 @@ switch ($Command) {
         $stoppedTracked = Stop-TrackedProcess -PidFile $pidFile
         $stoppedChildren = Stop-ClawcrossServiceProcesses
         if ($stoppedTracked -or $stoppedChildren) {
-            Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
+            Remove-Item (@($pidFile, $tunnelPidFile) + $childPidFiles) -Force -ErrorAction SilentlyContinue
+            Clear-ClawcrossPublicDomain
+            $residual = @(Get-ClawcrossServiceProcesses)
+            if ($residual.Count -gt 0) {
+                Write-Host "Service stop requested, but residual Clawcross processes remain:"
+                foreach ($proc in $residual) {
+                    Write-Host "  PID $($proc.ProcessId): $($proc.CommandLine)"
+                }
+                exit 1
+            }
             Write-Host "Service stopped."
         } else {
+            Remove-Item (@($pidFile, $tunnelPidFile) + $childPidFiles) -Force -ErrorAction SilentlyContinue
             Write-Host "Service is not running."
         }
         exit 0
