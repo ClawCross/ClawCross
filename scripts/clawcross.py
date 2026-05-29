@@ -1403,7 +1403,8 @@ def cmd_restart(_args, state: dict) -> int:
 def cmd_shutdown(_args, _state: dict) -> int:
     """Stop ALL background services (launcher + children + tunnel + cloudflared).
 
-    Delegates to the canonical `run.sh stop`, which is the single source of truth
+    Delegates to the canonical `run.sh stop` (or `run.ps1 stop` on Windows),
+    which is the single source of truth
     for a full teardown: it kills the launcher and every service it spawned, plus
     the separately-managed tunnel / cloudflared processes, clears PUBLIC_DOMAIN,
     and removes pid files. This is different from /restart (which respawns) and
@@ -1412,15 +1413,25 @@ def cmd_shutdown(_args, _state: dict) -> int:
     We run it synchronously and stream its output so the shell only drops back to
     the prompt once the teardown has actually finished.
     """
-    run_sh = PROJECT_ROOT / "run.sh"
-    if not run_sh.is_file():
-        print(f"shutdown failed: {run_sh} not found", file=sys.stderr)
+    is_windows = sys.platform == "win32"
+    run_script = PROJECT_ROOT / ("run.ps1" if is_windows else "run.sh")
+    if not run_script.is_file():
+        print(f"shutdown failed: {run_script} not found", file=sys.stderr)
         return 1
+    if is_windows:
+        cmd = [
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(run_script),
+            "stop",
+        ]
+    else:
+        cmd = ["bash", str(run_script), "stop"]
     try:
-        proc = subprocess.run(
-            ["bash", str(run_sh), "stop"],
-            cwd=str(PROJECT_ROOT),
-        )
+        proc = subprocess.run(cmd, cwd=str(PROJECT_ROOT))
     except Exception as exc:
         print(f"shutdown failed: {exc}", file=sys.stderr)
         return 1
