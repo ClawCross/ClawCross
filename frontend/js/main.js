@@ -7614,6 +7614,25 @@ async function handleSend() {
     let agentDiv = null;
     let fullText = '';
 
+    // --- 会话/平台隔离：捕获本次流所属的上下文。一旦用户切到别的 session 或平台，
+    //     就停止向 DOM 写入（仍继续把流读完，保持后端连接/存储不受影响），避免串味。 ---
+    const _computeStreamCtxKey = () => JSON.stringify({
+        mode: _ocChatMode,
+        sid: currentSessionId,
+        agent: _ocSelectedAgent ? _ocSelectedAgent.name : null,
+        acp: _acpTool || null,
+    });
+    const _streamOwnerKey = _computeStreamCtxKey();
+    let _streamAbandoned = false;
+    const streamOwns = () => {
+        if (_streamAbandoned) return false;
+        if (_computeStreamCtxKey() !== _streamOwnerKey) {
+            _streamAbandoned = true;
+            return false;
+        }
+        return true;
+    };
+
     try {
         // --- 构造 workflow / persona 前缀（隐藏在消息中发送给后端） ---
         let personaPrefix = '';
@@ -7907,6 +7926,9 @@ async function handleSend() {
                     const delta = chunk.choices && chunk.choices[0] && chunk.choices[0].delta;
                     if (!delta) continue;
 
+                    // 已切换 session/平台：丢弃本帧渲染（继续把流读完，不写入当前显示的对话）
+                    if (!streamOwns()) continue;
+
                     // --- 处理结构化 meta 事件 ---
                     if (delta.meta) {
                         const m = delta.meta;
@@ -7958,6 +7980,15 @@ async function handleSend() {
             }
         }
 
+        // 流已被切走（用户跳到别的 session/平台）：不再触碰当前显示的对话。
+        // 若此刻用户又切回了原会话，则静默从后端历史刷新，让完整回复补显出来。
+        if (!streamOwns()) {
+            if (_computeStreamCtxKey() === _streamOwnerKey && _ocChatMode === 'internal' && currentSessionId) {
+                switchToSession(currentSessionId, true, { quiet: true }).catch(() => {});
+            }
+            return;
+        }
+
         // 流式结束：封存最后一个气泡
         if (fullText) {
             agentDiv.innerHTML = renderMarkdown(fullText);
@@ -7987,6 +8018,10 @@ async function handleSend() {
     } catch (error) {
         const typingIndicator = document.getElementById('typing-indicator');
         if (typingIndicator) typingIndicator.remove();
+        // 流已被切走：不要把错误/中止提示塞进当前显示的对话
+        if (!streamOwns()) {
+            return;
+        }
         if (error.name === 'AbortError') {
             if (agentDiv) {
                 fullText += '\n\n' + t('thinking_stopped');
@@ -8009,9 +8044,13 @@ async function handleSend() {
             appendMessage(t('agent_error') + ': ' + errText, false);
         }
     } finally {
-        currentAbortController = null;
-        setStreamingUI(false);
-        hideNewMsgBanner();
+        // 仅当本次流仍拥有当前显示的会话/平台时，才复位全局 streaming 状态；
+        // 否则可能误清掉切换后新会话正在进行的流的 abort controller / UI。
+        if (streamOwns()) {
+            currentAbortController = null;
+            setStreamingUI(false);
+            hideNewMsgBanner();
+        }
     }
 }
 
