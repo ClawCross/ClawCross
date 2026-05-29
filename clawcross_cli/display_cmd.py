@@ -577,18 +577,30 @@ def _parse_run_args(rest: list[str]) -> tuple[dict | None, str | None]:
 
 
 _WORKFLOW_YAML_TEMPLATE = """\
-# {name} — describe what this workflow does in one line.
-# Fill in the schedule below. See OASIS docs for syntax.
-
-version: 1
-discussion:
-  agents:
-    - name: example
-      role: "describe the role here"
-  rules:
-    - "say what each agent should do"
-
-# Replace the example above with real agent definitions before saving.
+# {name} — one-line description of what this workflow does.
+#
+# OASIS workflow schema:
+#   plan:  list of nodes; each has an `id` and either
+#            expert: <tag>#temp#<n>          ad-hoc expert (e.g. creative#temp#1)
+#            expert: <tag>#oasis#<persona>   a saved team persona
+#            instruction: "..."              (optional) what that node should do
+#          or a manual node:
+#            manual: {{author: begin|bend, content: "..."}}
+#   edges: list of [from_id, to_id] pairs defining the flow.
+#
+# The example below runs two generic experts in sequence — replace with yours.
+version: 2
+repeat: false
+plan:
+  - id: ideate
+    expert: creative#temp#1
+    instruction: "Propose ideas / a first draft for the user's request."
+  - id: critique
+    expert: critical#temp#1
+    instruction: "Critically review the previous output and refine it."
+edges:
+  - - ideate
+    - critique
 """
 
 
