@@ -216,7 +216,8 @@ SLASH_COMMANDS = [
     ("/cancel", "cancel generation on the current platform (internal or ACP)"),
     ("/front", "get a public magic link (web UI login)"),
     ("/help", "show commands"),
-    ("/exit", "quit"),
+    ("/exit", "leave the shell (backend keeps running)"),
+    ("/shutdown", "stop all background services and quit"),
 ]
 SLASH_MENU = [
     ("/platform", "platform actions (list / use)", "/platform", True),
@@ -226,7 +227,7 @@ SLASH_MENU = [
     ("/cancel", "cancel generation on the current platform (internal or ACP)", "/cancel", True),
     ("/resume", "pick session and replay recent history", "/resume", True),
     ("/new session", "create a new session", "/new session", True),
-    ("/user", "show or set the current username", "/user", True),
+    ("/login", "show current user; change it or keep", "/login", True),
     ("/mode", "permission mode: manual / plan / bypass", "/mode", True),
     ("/model", "model actions (list / use / add / migrate / remove)", "/model", True),
     ("/team [<name>]", "team actions (list / new / rename / delete / member)", "/team", True),
@@ -236,7 +237,8 @@ SLASH_MENU = [
     ("/cron [<team>]", "cron actions (list / add / delete)", "/cron", True),
     ("/channel", "list / setup chatbot channels", "/channel", True),
     ("/front", "get a public magic link (web UI login)", "/front", True),
-    ("/exit", "quit", "/exit", True),
+    ("/exit", "leave the shell (backend keeps running)", "/exit", True),
+    ("/shutdown", "stop all background services and quit", "/shutdown", True),
 ]
 CLI_COMMANDS = [
     ("clawcross", "enter interactive shell"),
@@ -254,9 +256,10 @@ CLI_COMMANDS = [
     ("clawcross channel [list|setup ...]", "list / interactively set up chatbot channels"),
     ("clawcross platforms", "list available platforms"),
     ("clawcross state", "print state json"),
-    ("clawcross user [name]", "show or set the current username"),
+    ("clawcross login [name]", "show or set the current username"),
     ("clawcross cancel", "cancel generation on the current platform (internal or ACP)"),
     ("clawcross restart", "request a backend restart"),
+    ("clawcross shutdown", "stop all background services (alias: stop)"),
 ]
 
 SENSITIVE_CONFIG_RE = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD|PASS|COOKIE|AUTH)", re.IGNORECASE)
@@ -1157,6 +1160,45 @@ def cmd_user(args, state: dict) -> int:
     return 0
 
 
+def _login_interactive(state: dict, name: str = "") -> bool:
+    """`/login`: show the current user, then offer to /change it or /cancel (keep)."""
+    current = _current(state)
+    cur_user = current.get("user", DEFAULT_USER)
+    name = (name or "").strip()
+    if name:
+        current["user"] = name
+        _save_state(state)
+        print(f"user: {name}")
+        return True
+
+    print(f"user: {cur_user}")
+    rows = [
+        ("/change", "enter a new username"),
+        ("/cancel", "keep current user (no change)"),
+    ]
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        for label, desc in rows:
+            print(f"  {label} — {desc}")
+        return True
+
+    selected = _choose_from_menu(f"Logged in as {cur_user}", rows)
+    if selected is None or rows[selected][0] == "/cancel":
+        print(f"user: {cur_user} (unchanged)")
+        return True
+    try:
+        new_name = input("new username: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print(f"\nuser: {cur_user} (unchanged)")
+        return True
+    if not new_name:
+        print(f"user: {cur_user} (unchanged)")
+        return True
+    current["user"] = new_name
+    _save_state(state)
+    print(f"user: {new_name}")
+    return True
+
+
 def _mask_config_value(key: str, value: str) -> str:
     if not value:
         return ""
@@ -1356,6 +1398,33 @@ def cmd_restart(_args, state: dict) -> int:
     except Exception as exc:
         print(f"restart failed: {exc}", file=sys.stderr)
         return 1
+
+
+def cmd_shutdown(_args, _state: dict) -> int:
+    """Stop ALL background services (launcher + children + tunnel + cloudflared).
+
+    Delegates to the canonical `run.sh stop`, which is the single source of truth
+    for a full teardown: it kills the launcher and every service it spawned, plus
+    the separately-managed tunnel / cloudflared processes, clears PUBLIC_DOMAIN,
+    and removes pid files. This is different from /restart (which respawns) and
+    from /exit (which only leaves this shell while the backend keeps running).
+
+    We run it synchronously and stream its output so the shell only drops back to
+    the prompt once the teardown has actually finished.
+    """
+    run_sh = PROJECT_ROOT / "run.sh"
+    if not run_sh.is_file():
+        print(f"shutdown failed: {run_sh} not found", file=sys.stderr)
+        return 1
+    try:
+        proc = subprocess.run(
+            ["bash", str(run_sh), "stop"],
+            cwd=str(PROJECT_ROOT),
+        )
+    except Exception as exc:
+        print(f"shutdown failed: {exc}", file=sys.stderr)
+        return 1
+    return proc.returncode
 
 
 def cmd_update(args, _state: dict) -> int:
@@ -2052,7 +2121,29 @@ def _handle_slash(command: str, state: dict) -> bool:
             return True
         return _handle_slash(chosen, state)
     if name in {"/exit", "/quit", "/q"}:
+        # `/exit all` / `/quit all` is shorthand for /shutdown.
+        if len(parts) >= 2 and parts[1].strip().lower() == "all":
+            name = "/shutdown"
+        else:
+            _save_state(state)
+            return False
+    if name == "/shutdown":
+        if sys.stdin.isatty() and sys.stdout.isatty():
+            try:
+                answer = input(
+                    "Stop ALL background services (chatbots/agents will go offline)? [y/N] "
+                ).strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                answer = ""
+            if answer not in {"y", "yes"}:
+                print("aborted; backend left running.")
+                return True
+        rc = cmd_shutdown(None, state)
         _save_state(state)
+        if rc != 0:
+            # Teardown not confirmed; stay in the shell so the user isn't
+            # dropped to a prompt with a half-running backend.
+            return True
         return False
     if name == "/platforms":
         cmd_platforms(None, state)
@@ -2098,11 +2189,8 @@ def _handle_slash(command: str, state: dict) -> bool:
             _save_state(state)
             print(f"mode: {_current(state)['mode']}")
         return True
-    if name == "/user":
-        class UserArgs:
-            name = parts[1].strip() if len(parts) >= 2 else ""
-        cmd_user(UserArgs(), state)
-        return True
+    if name in ("/login", "/user"):
+        return _login_interactive(state, parts[1].strip() if len(parts) >= 2 else "")
     if name == "/cancel":
         class CancelArgs:
             user = ""
@@ -2202,7 +2290,7 @@ _HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("/new session", "create timestamped session (e.g. ClawCross-20260512-031544)"),
         ("/mode", "picker over manual / plan / bypass (or `/mode <name>` direct)"),
         ("/cancel", "cancel in-flight generation (internal agent, or close the active ACP session)"),
-        ("/user [<name>]", "show or set the current username (persisted in state)"),
+        ("/login [<name>]", "show current user; pick /change or /cancel (or set directly with a name)"),
     ]),
     ("Team resources", [
         ("/team", "list teams (and a usage footer)"),
@@ -2267,7 +2355,8 @@ _HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("/state", "dump persisted state.json"),
         ("/restart", "request a backend restart"),
         ("/front", "get a public magic link (when frontend is reachable)"),
-        ("/exit", "leave the shell"),
+        ("/exit", "leave the shell (backend keeps running)"),
+        ("/shutdown", "stop ALL background services, then quit (alias: /exit all)"),
     ]),
 ]
 
@@ -2589,8 +2678,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("state", help="Show persisted shell state")
     sub.add_parser("chat", help="Enter interactive shell")
     sub.add_parser("restart", help="Request a backend restart")
+    sub.add_parser("shutdown", aliases=["stop"], help="Stop all background services and exit the launcher")
 
-    user_p = sub.add_parser("user", help="Show or set the current username (identity used for all requests)")
+    user_p = sub.add_parser("login", aliases=["user"], help="Show or set the current username (identity used for all requests)")
     user_p.add_argument("name", nargs="?", help="New username (omit to just show the current one)")
 
     cancel = sub.add_parser("cancel", help="Cancel generation on the current platform (internal agent, or active ACP session)")
@@ -2649,12 +2739,14 @@ def main() -> int:
         return cmd_platforms(args, state)
     if args.command == "state":
         return cmd_state(args, state)
-    if args.command == "user":
+    if args.command in ("login", "user"):
         return cmd_user(args, state)
     if args.command == "chat":
         return repl(state)
     if args.command == "restart":
         return cmd_restart(args, state)
+    if args.command in ("shutdown", "stop"):
+        return cmd_shutdown(args, state)
     if args.command == "cancel":
         return cmd_cancel(args, state)
     if args.command == "update":
