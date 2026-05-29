@@ -91,7 +91,7 @@ OASIS_WRITE_TOOLS = (
     "delete_oasis_expert",
     "start_new_oasis",
     "cancel_oasis_discussion",
-    "set_oasis_workflow",
+    "set_oasis_yaml_workflow",
 )
 
 WEBOT_SUBAGENT_TOOLS = (

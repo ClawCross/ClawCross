@@ -933,7 +933,7 @@ def _resolve_workflow_path(user_id: str, schedule_file: str, team: str = "") -> 
     return matches[0][1], None
 
 @mcp.tool()
-async def set_oasis_workflow(
+async def set_oasis_yaml_workflow(
     username: str = "",
     name: str = "",
     schedule_yaml: str = "",
@@ -942,17 +942,40 @@ async def set_oasis_workflow(
     team: str = "",
 ) -> str:
     """
-    Save a YAML workflow so it can be reused later via start_new_oasis(schedule_file="name.yaml").
+    Save a reusable OASIS **YAML** workflow (Version 2 graph format), then run it
+    later via start_new_oasis(schedule_file="name.yaml").
 
-    Workflows are stored under data/user_files/{user}/oasis/yaml/ (or teams/{team}/oasis/yaml/ when team is set).
-    Use list_oasis_workflows to see saved workflows.
+    Stored under data/user_files/{user}/oasis/yaml/ (or teams/{team}/oasis/yaml/).
+    Call get_yaml_workflow_rules() for the full schema BEFORE authoring — the
+    schedule MUST contain a top-level `plan` or the save is rejected.
 
-    By default, also generates and saves a visual layout for the orchestrator UI.
+    Minimal schema:
+
+        version: 2
+        repeat: false
+        plan:
+          - id: n1
+            expert: "creative#temp#1"        # persona ref: tag#mode#id
+            instruction: "what this step does"   # optional
+          - id: n2
+            expert: "critical#temp#1"
+          - id: done
+            manual: {author: bend, content: "wrap-up"}
+        edges:
+          - [n1, n2]
+          - [n2, done]
+
+    Persona ref formats: tag#temp#N (stateless), tag#oasis#new / tag#oasis#<name>
+    (stateful session), #oasis#<name> (no tag), tag#ext#id (external agent).
+    Advanced (see get_yaml_workflow_rules): conditional_edges, selector_edges
+    (selector: true), parallel, all_experts, script/human nodes, __end__.
+
+    For Python (workflowpy) workflows use set_oasis_python_workflow instead.
 
     Args:
         username: (auto-injected) current user identity; do NOT set manually
         name: Filename for the workflow (e.g. "code_review"). ".yaml" appended if missing.
-        schedule_yaml: The full YAML content to save
+        schedule_yaml: The full Version-2 YAML content (must contain `plan`)
         description: Optional one-line description (saved as comment at top of file)
         save_layout: Whether to also generate and save a visual layout (default True)
         team: Team name. When provided, workflow is saved under the team directory.
@@ -1105,6 +1128,67 @@ async def get_workflow_writing_rules() -> str:
         return _rules()
     except Exception as e:
         return f"❌ 读取 workflow 规则失败: {e}"
+
+
+_YAML_WORKFLOW_RULES_FALLBACK = """\
+# OASIS YAML Workflow (Version 2 — Graph Mode)
+
+A workflow is a directed graph: `plan` lists nodes, `edges` define order.
+The schedule MUST contain a top-level `plan` key.
+
+version: 2
+repeat: false
+plan:
+  - id: n1                         # every node needs a unique id
+    expert: "creative#temp#1"      # persona ref (see formats below)
+    instruction: "optional task for this step"
+  - id: n2
+    expert: "critical#temp#1"
+  - id: done
+    manual: {author: bend, content: "wrap-up text"}   # manual/no-LLM node
+edges:
+  - [n1, n2]                       # fixed edge; fan-in waits for ALL predecessors
+  - [n2, done]
+
+Persona ref (`expert`) = tag#mode#identifier:
+  tag#temp#N        stateless preset persona, instance N (no memory)
+  tag#oasis#new     stateful, auto-create a session
+  tag#oasis#<name>  stateful session agent by display name (tag → persona)
+  #oasis#<name>     stateful session agent by name, no tag
+  tag#ext#id        external agent (resolved from external_agents.json)
+
+Manual authors: begin (start), bend (end), or any string (speaker name).
+Step types: expert | parallel: [...] | all_experts: true | manual | script | human.
+Branching: conditional_edges (source/condition/then/else) and selector_edges
+(node with selector: true; choices map LLM output → branch; __end__ terminates).
+Conditions: last_post_contains:<kw>, last_post_not_contains:<kw>,
+post_count_gte:<N>, post_count_lt:<N>, always, !<expr>.
+"""
+
+
+@mcp.tool()
+async def get_yaml_workflow_rules() -> str:
+    """
+    Return the canonical authoring spec for OASIS **YAML** workflows
+    (Version 2 graph format): node/step types, persona ref formats, edges /
+    conditional_edges / selector_edges, and graph rules.
+
+    Call this BEFORE writing or editing a YAML workflow with
+    set_oasis_yaml_workflow so the schedule validates (it MUST contain a
+    top-level `plan`). For Python workflowpy rules use get_workflow_writing_rules.
+    """
+    from pathlib import Path as _Path
+    candidates = [
+        _Path(__file__).resolve().parents[2] / "docs" / "create_workflow.md",
+        _Path(str(WORKSPACE_DIR)) / "docs" / "create_workflow.md",
+    ]
+    for p in candidates:
+        try:
+            if p.is_file():
+                return p.read_text(encoding="utf-8")
+        except Exception:
+            continue
+    return _YAML_WORKFLOW_RULES_FALLBACK
 
 
 @mcp.tool()

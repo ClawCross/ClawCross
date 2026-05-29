@@ -846,7 +846,7 @@ Based on the above canvas arrangement, generate an OASIS YAML schedule that:
 6. Maximizes parallelism — nodes with no dependency relationship should be able to run concurrently
 
 You MUST follow this exact order:
-1. FIRST, call the `set_oasis_workflow` tool to save the generated YAML as a named workflow (so the workflow is immediately ready to use from the OASIS panel).
+1. FIRST, call the `set_oasis_yaml_workflow` tool to save the generated YAML as a named workflow (so the workflow is immediately ready to use from the OASIS panel).
 2. THEN, output the complete YAML schedule in your response text.
 
 Both steps are mandatory and the order matters — save first, then output."""
@@ -899,7 +899,7 @@ def agent_generate_yaml():
                     "content": (
                         "You are a YAML schedule generator for the OASIS expert orchestration engine. "
                         "You have TWO tasks to complete IN ORDER:\n\n"
-                        "1. FIRST: Call the `set_oasis_workflow` MCP tool to save the generated YAML as a named workflow "
+                        "1. FIRST: Call the `set_oasis_yaml_workflow` MCP tool to save the generated YAML as a named workflow "
                         "(use a descriptive name based on the task/experts, e.g. 'code_review_pipeline', 'brainstorm_trio').\n"
                         "2. THEN: Output the complete YAML schedule in your response text.\n\n"
                         "The schedule uses version 2 graph format: `plan` defines nodes (each with a unique `id`), "

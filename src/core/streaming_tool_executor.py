@@ -75,7 +75,7 @@ _TOOL_ACCESS_MODES: dict[str, ToolAccessMode] = {
     "cancel_background_command": ToolAccessMode.WRITE,
     "start_new_oasis": ToolAccessMode.WRITE,
     "cancel_oasis_discussion": ToolAccessMode.WRITE,
-    "set_oasis_workflow": ToolAccessMode.WRITE,
+    "set_oasis_yaml_workflow": ToolAccessMode.WRITE,
     "add_oasis_expert": ToolAccessMode.WRITE,
     "update_oasis_expert": ToolAccessMode.WRITE,
     "delete_oasis_expert": ToolAccessMode.WRITE,

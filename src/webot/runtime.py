@@ -16,7 +16,7 @@ PLAN_MODE_BLOCKED_TOOLS = frozenset(
         "run_python_code",
         "cancel_subagent",
         "delete_subagent",
-        "set_oasis_workflow",
+        "set_oasis_yaml_workflow",
         "add_oasis_expert",
         "update_oasis_expert",
         "delete_oasis_expert",
@@ -31,7 +31,7 @@ REVIEW_MODE_BLOCKED_TOOLS = frozenset(
         "append_file",
         "delete_file",
         "start_new_oasis",
-        "set_oasis_workflow",
+        "set_oasis_yaml_workflow",
     }
 )
 
