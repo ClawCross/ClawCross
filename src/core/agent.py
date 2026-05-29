@@ -134,7 +134,7 @@ USER_INJECTED_TOOLS = {
     "list_oasis_topics",
     "list_oasis_sessions",
     "list_oasis_experts", "add_oasis_expert", "update_oasis_expert", "delete_oasis_expert",
-    "set_oasis_workflow", "list_oasis_workflows", "list_oasis_python_workflows",
+    "set_oasis_yaml_workflow", "list_oasis_workflows", "list_oasis_python_workflows",
     "check_oasis_python_run", "yaml_to_layout",
     # Session management tools
     "list_sessions", "get_current_session",
