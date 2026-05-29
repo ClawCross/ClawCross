@@ -760,3 +760,28 @@ def run_workflow(user: str, name: str, team: str, question: str,
     if code == 200 and isinstance(body, dict):
         return body, None
     return {}, friendly_error(url, code, body)
+
+
+def list_topics(user: str | None = None) -> tuple[list[dict], str | None]:
+    """GET {OASIS}/topics — the user's OASIS discussion topics (workflow runs)."""
+    user = (user or DEFAULT_USER or "").strip()
+    url = f"{OASIS_BASE}/topics"
+    code, body = _req("GET", url, params={"user_id": user})
+    if code == 200:
+        if isinstance(body, list):
+            return [t for t in body if isinstance(t, dict)], None
+        if isinstance(body, dict):
+            items = body.get("topics") or body.get("items") or []
+            return [t for t in items if isinstance(t, dict)], None
+        return [], None
+    return [], friendly_error(url, code, body)
+
+
+def get_topic(topic_id: str, user: str | None = None) -> tuple[dict | None, str | None]:
+    """GET {OASIS}/topics/<id> — full discussion detail (status, posts, conclusion)."""
+    user = (user or DEFAULT_USER or "").strip()
+    url = f"{OASIS_BASE}/topics/{urllib.parse.quote(topic_id, safe='')}"
+    code, body = _req("GET", url, params={"user_id": user})
+    if code == 200 and isinstance(body, dict):
+        return body, None
+    return None, friendly_error(url, code, body)

@@ -455,6 +455,8 @@ _WORKFLOW_HELP_FOOTER = (
     "                                                 create a new YAML workflow\n"
     "                                                 (CLI opens $EDITOR; chatbot needs `from`)\n"
     "  /cross workflow delete <name> [team <T>]       delete a workflow file\n"
+    "  /cross workflow runs [all]                     list discussion runs (running by default)\n"
+    "  /cross workflow log <topic_id>                 show a run's status + transcript\n"
     "\n"
     "<name> is the file without extension (e.g. paper_review_council),\n"
     "or with extension to force kind (e.g. paper_survey_workflow.py).\n"
@@ -713,9 +715,96 @@ _WORKFLOW_ACTIONS = [
     ("list", "list all workflows"),
     ("show", "show source (picker)"),
     ("run", "run a workflow (picker)"),
+    ("runs", "list discussion runs"),
+    ("log", "view a run's transcript (picker)"),
     ("new", "create a new workflow"),
     ("delete", "delete a workflow (picker)"),
 ]
+
+_TOPIC_STATUS_ICON = {"pending": "⏳", "discussing": "💬", "concluded": "✅", "error": "❌"}
+_RUNNING_STATUSES = {"pending", "discussing"}
+
+
+def _format_topics_list(topics: list[dict], *, show_all: bool) -> str:
+    """Render OASIS discussion topics (workflow runs). Running-only unless show_all."""
+    if not topics:
+        return "No discussion runs found."
+    rows = topics if show_all else [
+        t for t in topics if str(t.get("status") or "").lower() in _RUNNING_STATUSES
+    ]
+    if not rows:
+        return "No running discussions. Use `workflow runs all` to include finished ones."
+    title = "Discussion runs" if show_all else "Running discussions"
+    lines = [f"{title} ({len(rows)}):"]
+    for t in rows:
+        st = str(t.get("status") or "?")
+        icon = _TOPIC_STATUS_ICON.get(st, "❓")
+        q = (t.get("question") or "").splitlines()[0][:60] if t.get("question") else ""
+        lines.append(
+            f"  {icon} [{t.get('topic_id', '?')}] {q}"
+            f"  | {st} | {t.get('post_count', 0)} posts"
+            f" | {t.get('current_round', 0)}/{t.get('max_rounds', 0)} rounds"
+        )
+    return _format_lines(lines)
+
+
+def _format_topic_detail(data: dict) -> str:
+    lines = [
+        f"Discussion [{data.get('topic_id', '?')}]",
+        f"  question: {data.get('question', '')}",
+        f"  status  : {data.get('status', '?')} "
+        f"({data.get('current_round', 0)}/{data.get('max_rounds', 0)} rounds)",
+    ]
+    posts = data.get("posts") or []
+    lines.append(f"  posts   : {len(posts)}")
+    if posts:
+        lines.append("  --- recent ---")
+        for p in posts[-15:]:
+            content = (p.get("content") or "").strip().replace("\n", " ")
+            if len(content) > 200:
+                content = content[:200] + "…"
+            prefix = f"  ↳reply#{p.get('reply_to')}" if p.get("reply_to") else "  •"
+            lines.append(
+                f"{prefix} [#{p.get('id')}] {p.get('author', '?')} "
+                f"(+{p.get('upvotes', 0)}/-{p.get('downvotes', 0)}): {content}"
+            )
+    conclusion = (data.get("conclusion") or "").strip()
+    if conclusion:
+        lines += ["", "=== conclusion ===", conclusion]
+    elif str(data.get("status") or "").lower() == "discussing":
+        lines += ["", "⏳ discussion in progress…"]
+    return _format_lines(lines)
+
+
+def _handle_workflow_log(rest: list[str], *, interactive: bool, user: str) -> str:
+    """`workflow log <topic_id>` — show a discussion run's transcript.
+
+    With no id on a TTY, picks from the user's discussion runs.
+    """
+    topic_id = rest[0].strip() if rest else ""
+    if not topic_id and interactive and _is_tty():
+        topics, err = api_client.list_topics(user=user)
+        if err:
+            return err
+        if not topics:
+            return "No discussion runs to view."
+        labels = []
+        for t in topics:
+            icon = _TOPIC_STATUS_ICON.get(str(t.get("status") or ""), "❓")
+            q = (t.get("question") or "").splitlines()[0][:50] if t.get("question") else ""
+            labels.append(f"{icon} [{t.get('topic_id')}] {q} ({t.get('status')})")
+        labels.append("Cancel")
+        idx = curses_radiolist("Select a run to view:", labels, selected=0,
+                               cancel_returns=len(labels) - 1)
+        if idx is None or idx >= len(topics):
+            return "Cancelled."
+        topic_id = str(topics[idx].get("topic_id") or "")
+    if not topic_id:
+        return "Usage: clawcross workflow log <topic_id>"
+    data, err = api_client.get_topic(topic_id, user=user)
+    if err:
+        return err
+    return _format_topic_detail(data or {})
 
 
 def _handle_workflow_delete(rest: list[str], *, interactive: bool, user: str) -> str:
@@ -775,6 +864,16 @@ def handle_workflow_command(args: list[str], *, interactive: bool = False, user:
 
     if args and args[0].lower() in {"delete", "remove", "rm", "del"}:
         return _handle_workflow_delete(args[1:], interactive=interactive, user=user)
+
+    if args and args[0].lower() in {"runs", "topics", "ps"}:
+        show_all = len(args) > 1 and args[1].lower() in {"all", "-a", "--all"}
+        topics, err = api_client.list_topics(user=user)
+        if err:
+            return err
+        return _format_topics_list(topics, show_all=show_all)
+
+    if args and args[0].lower() in {"log", "discussion", "record"}:
+        return _handle_workflow_log(args[1:], interactive=interactive, user=user)
 
     if args and args[0].lower() == "show":
         if len(args) < 2:

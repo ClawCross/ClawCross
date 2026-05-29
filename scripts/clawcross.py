@@ -16,6 +16,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 import tempfile
 import unicodedata
@@ -212,7 +213,7 @@ SLASH_COMMANDS = [
     ("/mode [<mode>]", "permission mode picker (or `/mode manual|plan|bypass` direct)"),
     ("/state", "show persisted state"),
     ("/restart", "restart the ClawCross backend"),
-    ("/cancel", "cancel internal-agent generation"),
+    ("/cancel", "cancel generation on the current platform (internal or ACP)"),
     ("/front", "get a public magic link (web UI login)"),
     ("/help", "show commands"),
     ("/exit", "quit"),
@@ -222,9 +223,10 @@ SLASH_MENU = [
     ("/state", "show persisted state", "/state", True),
     ("/restart", "restart the ClawCross backend", "/restart", True),
     ("/help", "show commands", "/help", True),
-    ("/cancel", "cancel internal-agent generation", "/cancel", True),
+    ("/cancel", "cancel generation on the current platform (internal or ACP)", "/cancel", True),
     ("/resume", "pick session and replay recent history", "/resume", True),
     ("/new session", "create a new session", "/new session", True),
+    ("/user", "show or set the current username", "/user", True),
     ("/mode", "permission mode: manual / plan / bypass", "/mode", True),
     ("/model", "model actions (list / use / add / migrate / remove)", "/model", True),
     ("/team [<name>]", "team actions (list / new / rename / delete / member)", "/team", True),
@@ -245,14 +247,15 @@ CLI_COMMANDS = [
     ("clawcross config list", "list configured values"),
     ("clawcross model [name]", "select/set LLM model"),
     ("clawcross team [name|new|rename|delete|member ...]", "list/show teams, create/rename/delete, manage members"),
-    ("clawcross workflow [show|run|new|delete ...]", "list/show/run/create/delete OASIS workflows"),
+    ("clawcross workflow [show|run|new|delete|runs|log ...]", "list/show/run/create/delete workflows; runs=discussion list, log=transcript"),
     ("clawcross skill [agent|show|new|delete ...]", "list/show skills, create or delete one"),
     ("clawcross expert [team|show|add|edit|delete ...]", "manage team personas/experts"),
     ("clawcross cron [list [team]|add|delete <task_id>]", "list / add / delete cron alarms"),
     ("clawcross channel [list|setup ...]", "list / interactively set up chatbot channels"),
     ("clawcross platforms", "list available platforms"),
     ("clawcross state", "print state json"),
-    ("clawcross cancel", "cancel internal generation"),
+    ("clawcross user [name]", "show or set the current username"),
+    ("clawcross cancel", "cancel generation on the current platform (internal or ACP)"),
     ("clawcross restart", "request a backend restart"),
 ]
 
@@ -267,14 +270,14 @@ CHAT_SLASH_COMMANDS = [
     ("/cross mode [<mode>]", "permission mode picker: manual / plan / bypass"),
     ("/cross model [name]", "select/set LLM model"),
     ("/cross team [name|new|rename|delete|member ...]", "list/show teams, create/rename/delete, manage members"),
-    ("/cross workflow", "list workflows (`show`/`run`/`new`/`delete <name>`)"),
+    ("/cross workflow", "list workflows (`show`/`run`/`new`/`delete`/`runs`/`log <id>`)"),
     ("/cross skill [agent|show|new|delete ...]", "list/show skills, create or delete one"),
     ("/cross expert [team|show|add|edit|delete ...]", "manage team personas/experts"),
     ("/cross cron [team]", "list cron alarms (optionally for one team)"),
     ("/cross channel", "list configured chatbot channels (setup requires CLI)"),
     ("/cross state", "show current shell state"),
     ("/cross restart", "request a backend restart"),
-    ("/cross cancel", "cancel internal generation"),
+    ("/cross cancel", "cancel generation on the current platform (internal or ACP)"),
     ("/cross front", "get a public magic link"),
     ("/cross exit", "leave /cross mode"),
 ]
@@ -889,11 +892,59 @@ def _print_session_rows(rows: list[dict], state: dict, error: str | None = None)
 _TOOL_COLOR = "\033[38;5;179m"   # warm yellow, matches history tool label
 
 
+_THINK_FRAMES = ("✦", "✕", "✚", "✳")  # crossing-themed
+
+
+class _Thinking:
+    """Animated 'thinking' indicator shown after a prompt is sent and before the
+    first token streams back. TTY only; cleared in place once output begins."""
+
+    def __init__(self, label: str = "ClawCross thinking") -> None:
+        try:
+            self.enabled = bool(sys.stdout.isatty())
+        except Exception:
+            self.enabled = False
+        self.label = label
+        self._stop = threading.Event()
+        self._thread: "threading.Thread | None" = None
+        self._stopped = False
+
+    def start(self) -> None:
+        if not self.enabled:
+            return
+        self._thread = threading.Thread(target=self._spin, daemon=True)
+        self._thread.start()
+
+    def _spin(self) -> None:
+        i = 0
+        while not self._stop.wait(0.35):
+            frame = _THINK_FRAMES[i % len(_THINK_FRAMES)]
+            dots = "." * (1 + (i % 3))
+            sys.stdout.write(
+                f"\r{ANSI_GREEN}{frame}{ANSI_RESET} {ANSI_DIM}{self.label}{dots}{ANSI_RESET}\033[K"
+            )
+            sys.stdout.flush()
+            i += 1
+
+    def stop(self) -> None:
+        if not self.enabled or self._stopped:
+            return
+        self._stopped = True
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=1.0)
+        sys.stdout.write("\r\033[K")  # wipe the indicator line before real output
+        sys.stdout.flush()
+
+
 def _print_sse_text(lines) -> bool:
     wrote = False
     at_line_start = True
     seen_tool_ids: set[str] = set()
-    for line in lines:
+    thinking = _Thinking()
+    thinking.start()
+    try:
+      for line in lines:
         line = line.strip()
         if not line or not line.startswith("data:"):
             continue
@@ -907,6 +958,7 @@ def _print_sse_text(lines) -> bool:
         delta = chunk.get("choices", [{}])[0].get("delta", {})
         text = delta.get("content", "")
         if text:
+            thinking.stop()
             print(text, end="", flush=True)
             wrote = True
             at_line_start = text.endswith("\n")
@@ -922,6 +974,7 @@ def _print_sse_text(lines) -> bool:
         if not (is_start or is_end):
             # ignore acpx_tool_update / acpx_trace / tools_start / tools_end / ai_start
             continue
+        thinking.stop()
         if not at_line_start:
             print()
             at_line_start = True
@@ -949,6 +1002,8 @@ def _print_sse_text(lines) -> bool:
         else:  # tool_end / acpx_tool_end
             print(_style(f"✓ {title}", _TOOL_COLOR), flush=True)
             wrote = True
+    finally:
+        thinking.stop()
     if wrote and not at_line_start:
         print()
     return wrote
@@ -1045,7 +1100,16 @@ def run_prompt(prompt: str, state: dict, *, model: str = "default") -> int:
         _save_state(state)
         return 0
     except KeyboardInterrupt:
-        print("\nInterrupted. Use /cancel to request server-side cancellation.", file=sys.stderr)
+        # Ctrl+C mid-stream → actually cancel the in-flight generation on the
+        # active platform (internal agent, or the external ACP session).
+        print(_dim("\n⏹  interrupted — cancelling…"), file=sys.stderr)
+        try:
+            class _IntArgs:
+                user = ""
+                session = ""
+            cmd_cancel(_IntArgs(), state)
+        except Exception:
+            pass
         return 130
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
@@ -1077,6 +1141,19 @@ def cmd_state(_args, state: dict) -> int:
     serializable = {k: v for k, v in state.items() if not k.startswith("__")}
     print(json.dumps(serializable, ensure_ascii=False, indent=2, sort_keys=True))
     print(f"\nstate_file: {state.get('__state_path') or STATE_PATH}")
+    return 0
+
+
+def cmd_user(args, state: dict) -> int:
+    """Show or set the current username (the identity used for all requests)."""
+    current = _current(state)
+    name = (getattr(args, "name", "") or "").strip()
+    if not name:
+        print(f"user: {current.get('user', DEFAULT_USER)}")
+        return 0
+    current["user"] = name
+    _save_state(state)
+    print(f"user: {name}")
     return 0
 
 
@@ -1158,6 +1235,30 @@ def cmd_run(args, state: dict) -> int:
 def cmd_cancel(args, state: dict) -> int:
     current = _current(state)
     user = args.user or current.get("user") or DEFAULT_USER
+    platform = current.get("platform") or "internal"
+    tool = _acpx_tool(platform)
+
+    # External ACP agent: the internal /cancel only knows the internal agent
+    # runtime, so route cancellation to the adapter. Closing the acpx session
+    # terminates its in-flight turn (the session is re-created on the next run).
+    if platform != "internal" and tool in ACP_PLATFORMS:
+        session_name = args.session or current.get("session") or _repo_session_name()
+        try:
+            resp = _request_json(
+                "POST",
+                f"{FRONT_BASE}/proxy_sessions_close",
+                headers=_headers_for_user(user),
+                data={"platform": tool, "session_name": session_name},
+            ) or {}
+        except Exception as exc:
+            print(f"cancel failed: {exc}", file=sys.stderr)
+            return 1
+        ok = resp.get("status") == "success"
+        detail = "stopped" if ok else (resp.get("reason") or resp.get("error") or resp)
+        print(f"acp session {session_name!r} on {tool}: {detail}")
+        return 0 if ok else 1
+
+    # Internal agent (default).
     session_id = args.session or current.get("session") or "default"
     payload = {"user_id": user, "session_id": session_id}
     body = json.dumps(payload).encode("utf-8")
@@ -1745,7 +1846,12 @@ def _read_interactive_line(prompt: str) -> str:
     if not sys.stdin.isatty() or not sys.stdout.isatty() or termios is None or tty is None:
         return input(prompt)
 
-    old_settings = termios.tcgetattr(sys.stdin.fileno())
+    try:
+        old_settings = termios.tcgetattr(sys.stdin.fileno())
+    except Exception:
+        # Terminal not in a queryable state (e.g. EIO after a disrupted
+        # stream) — fall back to a plain prompt instead of crashing.
+        return input(prompt)
     buffer = ""
     menu_open = False
     pending_escape = False
@@ -1860,23 +1966,16 @@ def _read_interactive_line(prompt: str) -> str:
                 finish_line()
                 return buffer
             if ch == "\x03":
-                # bash-style: clear current line on Ctrl+C; exit only when
-                # the buffer is already empty.
+                # bash-style: Ctrl+C clears the current line and redraws a fresh
+                # prompt. It never exits the shell (use Ctrl+D or /exit to quit).
                 if menu_open:
                     close_menu(restore_input=False)
-                    buffer = ""
-                    finish_line()
-                    draw_box()
-                    continue
-                if buffer:
-                    buffer = ""
-                    finish_line()
-                    sys.stdout.write("^C\n")
-                    sys.stdout.flush()
-                    draw_box()
-                    continue
+                buffer = ""
                 finish_line()
-                raise EOFError
+                sys.stdout.write("^C\n")
+                sys.stdout.flush()
+                draw_box()
+                continue
             if ch == "\x04":
                 if not buffer:
                     if menu_open:
@@ -1929,9 +2028,17 @@ def _read_interactive_line(prompt: str) -> str:
                 render_input()
     finally:
         if menu_open:
-            sys.stdout.write("\033[?1049l\033[?25h")
-            sys.stdout.flush()
-        termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, old_settings)
+            try:
+                sys.stdout.write("\033[?1049l\033[?25h")
+                sys.stdout.flush()
+            except Exception:
+                pass
+        try:
+            termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, old_settings)
+        except Exception:
+            # Restoring terminal mode can fail with EIO if the tty was
+            # disrupted; never let that crash the shell.
+            pass
 
 
 def _handle_slash(command: str, state: dict) -> bool:
@@ -1990,6 +2097,11 @@ def _handle_slash(command: str, state: dict) -> bool:
             _current(state)["mode"] = requested
             _save_state(state)
             print(f"mode: {_current(state)['mode']}")
+        return True
+    if name == "/user":
+        class UserArgs:
+            name = parts[1].strip() if len(parts) >= 2 else ""
+        cmd_user(UserArgs(), state)
         return True
     if name == "/cancel":
         class CancelArgs:
@@ -2089,7 +2201,8 @@ _HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("/session", "legacy alias for /resume"),
         ("/new session", "create timestamped session (e.g. ClawCross-20260512-031544)"),
         ("/mode", "picker over manual / plan / bypass (or `/mode <name>` direct)"),
-        ("/cancel", "cancel an in-flight internal generation"),
+        ("/cancel", "cancel in-flight generation (internal agent, or close the active ACP session)"),
+        ("/user [<name>]", "show or set the current username (persisted in state)"),
     ]),
     ("Team resources", [
         ("/team", "list teams (and a usage footer)"),
@@ -2124,6 +2237,8 @@ _HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("/workflow new <name> [team <T>] [from <file>]",
          "create a YAML workflow. CLI: opens $EDITOR with a template. Chatbot: needs `from <file>`."),
         ("/workflow delete <name> [team <T>]", "delete a workflow file"),
+        ("/workflow runs [all]", "list discussion runs (running by default; `all` = include finished)"),
+        ("/workflow log <topic_id>", "show a run's status + recent transcript"),
     ]),
     ("Skills", [
         ("/skill", "list all skills aggregated across personal + every team"),
@@ -2183,7 +2298,7 @@ _CHAT_HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("/cross new session", "create timestamped session"),
         ("/cross mode [<mode>]", "picker over manual / plan / bypass (or pass name direct)"),
         ("/cross restart", "request a backend restart"),
-        ("/cross cancel", "cancel an in-flight internal generation"),
+        ("/cross cancel", "cancel in-flight generation (internal agent, or close the active ACP session)"),
     ]),
     ("Model & LLM", [
         ("/cross model", "list saved model profiles"),
@@ -2220,6 +2335,8 @@ _CHAT_HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("/cross workflow run <name> team <T> question <text...>", "run a team workflow"),
         ("/cross workflow new <name> [team <T>]", "create a workflow (CLI editor / chatbot `from <file>`)"),
         ("/cross workflow delete <name> [team <T>]", "delete a workflow file"),
+        ("/cross workflow runs [all]", "list discussion runs (running by default)"),
+        ("/cross workflow log <topic_id>", "show a run's status + transcript"),
     ]),
     ("Skills", [
         ("/cross skill", "list all skills"),
@@ -2411,15 +2528,31 @@ def handle_chatbot_input(text: str, state: dict) -> tuple[bool, str]:
 def repl(state: dict) -> int:
     print_welcome(state)
     _replay_current_session_history(state)
+    reader_fails = 0
     while True:
         try:
             line = _read_interactive_line(_prompt_label(state))
+            reader_fails = 0
         except EOFError:
             print()
             _save_state(state)
             return 0
         except KeyboardInterrupt:
             print()
+            continue
+        except Exception as exc:
+            # Terminal/reader glitch (e.g. termios EIO after a disrupted
+            # stream). Reset the screen and keep going instead of crashing.
+            reader_fails += 1
+            try:
+                sys.stdout.write("\033[?1049l\033[?25h\r\033[K")
+                sys.stdout.flush()
+            except Exception:
+                pass
+            if reader_fails >= 3:
+                print(f"\ninput unavailable ({exc}); exiting.", file=sys.stderr)
+                _save_state(state)
+                return 1
             continue
         if not line.strip():
             continue
@@ -2457,7 +2590,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("chat", help="Enter interactive shell")
     sub.add_parser("restart", help="Request a backend restart")
 
-    cancel = sub.add_parser("cancel", help="Cancel current internal-agent generation")
+    user_p = sub.add_parser("user", help="Show or set the current username (identity used for all requests)")
+    user_p.add_argument("name", nargs="?", help="New username (omit to just show the current one)")
+
+    cancel = sub.add_parser("cancel", help="Cancel generation on the current platform (internal agent, or active ACP session)")
     cancel.add_argument("-s", "--session", help="Session id")
     cancel.add_argument("-u", "--user", help="User id")
 
@@ -2513,6 +2649,8 @@ def main() -> int:
         return cmd_platforms(args, state)
     if args.command == "state":
         return cmd_state(args, state)
+    if args.command == "user":
+        return cmd_user(args, state)
     if args.command == "chat":
         return repl(state)
     if args.command == "restart":
