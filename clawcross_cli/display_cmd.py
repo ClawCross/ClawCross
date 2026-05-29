@@ -10,6 +10,7 @@ returned. None of the handlers ever call ``input()`` when ``interactive`` is
 from __future__ import annotations
 
 import json
+import os
 import sys
 from typing import Any, Iterable
 
@@ -114,7 +115,12 @@ _TEAM_HELP = (
     "  /cross team <name> workflows                team-scoped workflows\n"
     "  /cross team <name> skills                   team-scoped skills\n"
     "  /cross team <name> crons                    team-scoped cron alarms\n"
-    "  /cross team new <name>                      create a new team folder"
+    "  /cross team new <name>                      create a new team folder\n"
+    "  /cross team rename <old> <new>              rename a team folder\n"
+    "  /cross team delete <name>                   delete a team (and its agents)\n"
+    "  /cross team member add <team> ...           add an external agent member\n"
+    "  /cross team member edit|remove <team> ...   update / remove an external member\n"
+    "  /cross expert <team> [add|edit|delete ...]  manage team personas/experts"
 )
 
 
@@ -176,9 +182,197 @@ def _format_members(name: str, members_body: dict | None) -> str:
     return _format_lines(lines)
 
 
+_TEAM_ACTIONS = [
+    ("list", "list all teams"),
+    ("new", "create a new team"),
+    ("rename", "rename a team"),
+    ("delete", "delete a team (picker)"),
+]
+
+
+def _team_action_menu() -> str | None:
+    """Curses picker over team actions. None on cancel / non-TTY."""
+    if not _is_tty():
+        return None
+    labels = [f"{key:<7}  {desc}" for key, desc in _TEAM_ACTIONS]
+    labels.append("Cancel")
+    idx = curses_radiolist(
+        "Select team action:", labels, selected=0,
+        cancel_returns=len(labels) - 1,
+    )
+    if idx == len(labels) - 1:
+        return None
+    return _TEAM_ACTIONS[idx][0]
+
+
+def _handle_team_delete(rest: list[str], *, interactive: bool, user: str) -> str:
+    """`team delete <name>` — remove a team folder and its internal agents."""
+    name = rest[0].strip() if rest else ""
+    if not name and interactive and _is_tty():
+        teams, terr = api_client.list_teams(user=user)
+        if terr:
+            return terr
+        labels = [_team_label(t) for t in teams]
+        if not labels:
+            return "No teams to delete."
+        labels.append("Cancel")
+        idx = curses_radiolist(
+            "Select team to delete:", labels, selected=0,
+            cancel_returns=len(labels) - 1,
+        )
+        if idx is None or idx >= len(labels) - 1:
+            return "Team deletion cancelled."
+        name = labels[idx]
+    if not name:
+        return "Usage: clawcross team delete <name>"
+
+    if interactive and _is_tty():
+        from clawcross_cli.picker import prompt_text
+        confirm = prompt_text(
+            f"Delete team {name!r} and all its internal agents? "
+            "Type the team name to confirm: "
+        ).strip()
+        if confirm != name:
+            return "Team deletion cancelled (confirmation did not match)."
+
+    ok, err = api_client.delete_team(name, user=user)
+    if err:
+        return err
+    return f"Team {name!r} deleted."
+
+
+def _handle_team_rename(rest: list[str], *, interactive: bool = False, user: str) -> str:
+    """`team rename <old> <new>` — rename a team folder.
+
+    On a TTY, a missing source team is picked and the new name is prompted.
+    """
+    old = rest[0].strip() if rest else ""
+    new = rest[1].strip() if len(rest) > 1 else ""
+    if interactive and _is_tty():
+        from clawcross_cli.picker import prompt_text
+        old = old or _pick_team(user, "Rename which team?")
+        if old and not new:
+            new = prompt_text(f"New name for {old!r}: ").strip()
+    if not (old and new):
+        return "Usage: clawcross team rename <old_name> <new_name>"
+    body, err = api_client.rename_team(old, new, user=user)
+    if err:
+        return err
+    return f"Team renamed: {old!r} -> {new!r}"
+
+
+def _kv_args(rest: list[str], keys: set[str], flags: set[str] = frozenset()) -> dict[str, Any]:
+    """Parse ``key value [key value...] [flag...]`` into a dict.
+
+    Multi-word values are joined until the next recognised key/flag. Flags are
+    valueless and stored as ``True``.
+    """
+    parsed: dict[str, Any] = {}
+    current: str | None = None
+    for token in rest:
+        low = token.lower()
+        if low in flags:
+            parsed[low] = True
+            current = None
+            continue
+        if low in keys:
+            current = low
+            parsed.setdefault(current, "")
+            continue
+        if current is None:
+            continue
+        parsed[current] = f"{parsed[current]} {token}".strip() if parsed[current] else token
+    return parsed
+
+
+def _handle_team_member(rest: list[str], *, interactive: bool, user: str) -> str:
+    """`team member add|edit|remove <team> ...` — manage external agent members."""
+    usage = (
+        "Usage:\n"
+        "  clawcross team member add <team> name <n> global <g> platform <p>\n"
+        "                          [tag <t>] [api_url <u>] [api_key <k>] [model <m>] [primary]\n"
+        "  clawcross team member edit <team> <global_name> [name <n>] [global <g>]\n"
+        "                          [api_url <u>] [api_key <k>] [model <m>] [tag <t>]\n"
+        "  clawcross team member remove <team> <global_name>"
+    )
+    if len(rest) < 2:
+        return usage
+    verb = rest[0].lower()
+    team = rest[1].strip()
+    if not team:
+        return "Team name is required.\n" + usage
+    body = rest[2:]
+    keys = {"name", "global", "platform", "tag", "api_url", "api_key", "model"}
+
+    if verb in {"add", "new"}:
+        kv = _kv_args(body, keys, flags={"primary"})
+        name = kv.get("name", "")
+        global_name = kv.get("global", "")
+        platform = kv.get("platform", "")
+        if not (name and global_name and platform):
+            return "add requires name, global, and platform.\n" + usage
+        result, err = api_client.add_external_member(
+            team, name=name, global_name=global_name, platform=platform,
+            tag=kv.get("tag", ""), api_url=kv.get("api_url", ""),
+            api_key=kv.get("api_key", ""), model=kv.get("model", ""),
+            is_primary=bool(kv.get("primary")), user=user,
+        )
+        if err:
+            return err
+        return f"External member {name!r} ({global_name}) added to team {team!r}."
+
+    if verb in {"edit", "update"}:
+        if not body:
+            return "edit requires the current <global_name>.\n" + usage
+        global_name = body[0].strip()
+        kv = _kv_args(body[1:], keys)
+        fields: dict[str, Any] = {}
+        if "global" in kv:
+            fields["global_name"] = kv["global"]
+        for k in ("name", "tag", "api_url", "api_key", "model", "platform"):
+            if k in kv:
+                fields[k] = kv[k]
+        if not fields:
+            return "edit needs at least one field to change.\n" + usage
+        result, err = api_client.update_external_member(team, global_name, fields=fields, user=user)
+        if err:
+            return err
+        return f"External member {global_name!r} updated on team {team!r}."
+
+    if verb in {"remove", "delete", "rm", "del"}:
+        if not body:
+            return "remove requires <global_name>.\n" + usage
+        global_name = body[0].strip()
+        ok, err = api_client.delete_external_member(team, global_name, user=user)
+        if err:
+            return err
+        return f"External member {global_name!r} removed from team {team!r}."
+
+    return f"Unknown member verb {verb!r}.\n" + usage
+
+
 def handle_team_command(args: list[str], *, interactive: bool = False, user: str | None = None) -> str:
     args = list(args or [])
     user = (user or api_client.DEFAULT_USER or "").strip() or api_client.DEFAULT_USER
+
+    if not args and interactive:
+        chosen = _team_action_menu()
+        if chosen is None:
+            return ""
+        args = [chosen]
+
+    if args and args[0].lower() in {"delete", "remove", "rm", "del"}:
+        return _handle_team_delete(args[1:], interactive=interactive, user=user)
+
+    if args and args[0].lower() == "rename":
+        return _handle_team_rename(args[1:], interactive=interactive, user=user)
+
+    if args and args[0].lower() in {"member", "members"} and len(args) >= 2 \
+            and args[1].lower() in {"add", "new", "edit", "update", "remove", "delete", "rm", "del"}:
+        return _handle_team_member(args[1:], interactive=interactive, user=user)
+
+    if args and args[0].lower() in {"list", "ls"}:
+        args = args[1:]
 
     if args and args[0].lower() in {"new", "create", "add"}:
         if len(args) >= 2:
@@ -260,6 +454,7 @@ _WORKFLOW_HELP_FOOTER = (
     "  /cross workflow new <name> [team <T>] [from <file>]\n"
     "                                                 create a new YAML workflow\n"
     "                                                 (CLI opens $EDITOR; chatbot needs `from`)\n"
+    "  /cross workflow delete <name> [team <T>]       delete a workflow file\n"
     "\n"
     "<name> is the file without extension (e.g. paper_review_council),\n"
     "or with extension to force kind (e.g. paper_survey_workflow.py).\n"
@@ -507,7 +702,33 @@ _WORKFLOW_ACTIONS = [
     ("show", "show source (picker)"),
     ("run", "run a workflow (picker)"),
     ("new", "create a new workflow"),
+    ("delete", "delete a workflow (picker)"),
 ]
+
+
+def _handle_workflow_delete(rest: list[str], *, interactive: bool, user: str) -> str:
+    """`workflow delete <name> [team <T>]` — remove the local workflow file."""
+    name = rest[0].strip() if rest else ""
+    team = ""
+    i = 1
+    while i < len(rest):
+        if rest[i].lower() == "team" and i + 1 < len(rest):
+            team = rest[i + 1].strip()
+            i += 2
+            continue
+        i += 1
+    if not name and interactive and _is_tty():
+        picked = _pick_workflow_to_run(user)
+        if isinstance(picked, str):  # cancelled / nothing to delete
+            return picked
+        name = picked.get("file") or picked.get("name") or ""
+        team = picked.get("team", "") if picked.get("scope") == "team" else ""
+    if not name:
+        return "Usage: clawcross workflow delete <name> [team <T>]"
+    deleted, err = api_client.delete_workflow(user, name, team)
+    if err:
+        return err
+    return f"Workflow deleted: {deleted}"
 
 
 def _workflow_action_menu() -> str | None:
@@ -539,6 +760,9 @@ def handle_workflow_command(args: list[str], *, interactive: bool = False, user:
 
     if args and args[0].lower() in {"new", "create", "add", "save"}:
         return _handle_workflow_new(args[1:], interactive=interactive, user=user)
+
+    if args and args[0].lower() in {"delete", "remove", "rm", "del"}:
+        return _handle_workflow_delete(args[1:], interactive=interactive, user=user)
 
     if args and args[0].lower() == "show":
         if len(args) < 2:
@@ -632,15 +856,17 @@ def handle_workflow_command(args: list[str], *, interactive: bool = False, user:
 # ── skill ───────────────────────────────────────────────────────────────────
 
 def _render_skill_row(sk: Any) -> str:
-    """Format one skill entry from /skills or /teams/<t>/skills."""
+    """Format one skill entry as a compact list row: ``- name [category]``.
+
+    The list view intentionally stays terse (name + short category tag); the
+    full description / SKILL.md lives in ``skill show <name>``.
+    """
     if not isinstance(sk, dict):
         return f"  - {sk}"
     name = sk.get("name") or "?"
-    desc = (sk.get("description") or "").strip()
     cat = (sk.get("category") or "").strip()
     cat_part = f" [{cat}]" if cat else ""
-    desc_part = f" — {desc}" if desc else ""
-    return f"  - {name}{cat_part}{desc_part}"
+    return f"  - {name}{cat_part}"
 
 
 def _format_skills_payload(body: Any, team_filter: str = "") -> str:
@@ -749,11 +975,90 @@ def _handle_skill_new(rest: list[str], *, interactive: bool, user: str) -> str:
     else:
         return "SKILL.md content required. Use `from <file>` or run from a terminal."
 
+    location = f"team {team!r}" if team else "personal"
     body, err = api_client.create_skill(name, content, team=team, user=user)
+    if err and "already exists" in err:
+        # Upsert: a skill by this name is already there → overwrite its SKILL.md.
+        body, err = api_client.update_skill(name, content, team=team, user=user)
+        if err:
+            return err
+        return f"Skill {name!r} already existed; updated ({location})."
     if err:
         return err
-    location = f"team {team!r}" if team else "personal"
     return f"Skill {name!r} created ({location})."
+
+
+_SKILL_ACTIONS = [
+    ("list", "list all skills"),
+    ("show", "show a skill's SKILL.md"),
+    ("new", "create a new skill"),
+    ("delete", "delete a skill"),
+]
+
+
+def _skill_action_menu() -> str | None:
+    """Curses picker over skill actions. None on cancel / non-TTY."""
+    if not _is_tty():
+        return None
+    labels = [f"{key:<7}  {desc}" for key, desc in _SKILL_ACTIONS]
+    labels.append("Cancel")
+    idx = curses_radiolist(
+        "Select skill action:", labels, selected=0,
+        cancel_returns=len(labels) - 1,
+    )
+    if idx == len(labels) - 1:
+        return None
+    return _SKILL_ACTIONS[idx][0]
+
+
+def _parse_name_team(rest: list[str]) -> tuple[str, str]:
+    """Parse ``<name> [team <T>]`` → (name, team)."""
+    name = rest[0].strip() if rest else ""
+    team = ""
+    i = 1
+    while i < len(rest):
+        if rest[i].lower() == "team" and i + 1 < len(rest):
+            team = rest[i + 1].strip()
+            i += 2
+            continue
+        i += 1
+    return name, team
+
+
+def _handle_skill_delete(rest: list[str], *, interactive: bool, user: str) -> str:
+    """`skill delete <name> [team <T>]` — delete a managed skill."""
+    name, team = _parse_name_team(rest)
+    if not name and interactive and _is_tty():
+        from clawcross_cli.picker import prompt_text
+        name = prompt_text("Skill name to delete: ").strip()
+    if not name:
+        return "Usage: clawcross skill delete <name> [team <T>]"
+    ok, err = api_client.delete_skill(name, team=team, user=user)
+    if err:
+        return err
+    scope = f" from team {team!r}" if team else " (personal)"
+    return f"Skill {name!r} deleted{scope}."
+
+
+def _handle_skill_show(rest: list[str], *, interactive: bool = False, user: str) -> str:
+    """`skill show <name> [team <T>]` — print the SKILL.md content."""
+    name, team = _parse_name_team(rest)
+    if not name and interactive and _is_tty():
+        from clawcross_cli.picker import prompt_text
+        name = prompt_text("Skill name to show: ").strip()
+    if not name:
+        return "Usage: clawcross skill show <name> [team <T>]"
+    skill, err = api_client.get_skill_detail(name, team=team, user=user)
+    if err:
+        return err
+    if not skill:
+        return f"Skill {name!r} not found."
+    content = (skill.get("content") or skill.get("body") or "").rstrip()
+    header = f"# skill: {skill.get('name') or name}"
+    desc = (skill.get("description") or "").strip()
+    if desc:
+        header += f"\n# {desc}"
+    return f"{header}\n\n{content}" if content else f"{header}\n\n(empty SKILL.md)"
 
 
 def handle_skill_command(args: list[str], *, interactive: bool = False, user: str | None = None) -> str:
@@ -764,9 +1069,21 @@ def handle_skill_command(args: list[str], *, interactive: bool = False, user: st
     With *team*: shows just that team plus personal.
     """
     args = list(args or [])
+    if not args and interactive:
+        chosen = _skill_action_menu()
+        if chosen is None:
+            return ""
+        args = [chosen]
     if args and args[0].lower() in {"new", "create", "add"}:
         return _handle_skill_new(args[1:], interactive=interactive,
                                   user=(user or api_client.DEFAULT_USER))
+    if args and args[0].lower() == "show":
+        return _handle_skill_show(args[1:], interactive=interactive, user=(user or api_client.DEFAULT_USER))
+    if args and args[0].lower() in {"delete", "remove", "rm", "del"}:
+        return _handle_skill_delete(args[1:], interactive=interactive,
+                                    user=(user or api_client.DEFAULT_USER))
+    if args and args[0].lower() in {"list", "ls"}:
+        args = args[1:]
     team = args[0] if args else ""
 
     if team:
@@ -888,7 +1205,11 @@ def _format_cron_list(alarms: list[dict], team: str | None = None) -> str:
 
 
 def _handle_cron_new(rest: list[str], *, interactive: bool, user: str) -> str:
-    """`/cross cron new team <T> target <name> [type internal|external] [cron <expr>|once <ISO>] text <message...>`."""
+    """`/cross cron add [team <T>] target <name> [type internal|external] [cron <expr>|once <ISO>] text <message...>`.
+
+    Team is optional — omit it for a public/personal alarm. In a terminal the
+    scope and target are chosen from pickers rather than typed.
+    """
     from clawcross_cli.picker import prompt_text
 
     parsed = {
@@ -918,12 +1239,46 @@ def _handle_cron_new(rest: list[str], *, interactive: bool, user: str) -> str:
             parsed[current] = token
         i += 1
 
-    # Interactive fill-ins when running from a terminal.
-    if interactive:
-        if not parsed["team"]:
-            parsed["team"] = prompt_text("Team: ").strip()
+    usage = (
+        "Usage: clawcross cron add [team <T>] target <name> [type internal|external] "
+        "cron <expr>|once <ISO> text <message...>\n"
+        "(team is optional — omit it for a public/personal alarm)"
+    )
+
+    # Interactive fill-ins when running from a terminal (pickers, not free text).
+    saw_team_kw = "team" in {t.lower() for t in rest}
+    if interactive and _is_tty():
+        # Scope: a team is optional. Offer "(public — no team)" + every team.
+        if not parsed["team"] and not saw_team_kw:
+            teams, _terr = api_client.list_teams(user=user)
+            labels = ["(public — no team)"] + [_team_label(t) for t in teams] + ["Cancel"]
+            idx = curses_radiolist("Schedule for which scope?", labels, selected=0,
+                                   cancel_returns=len(labels) - 1)
+            if idx is None or idx >= len(labels) - 1:
+                return "Cron creation cancelled."
+            parsed["team"] = "" if idx == 0 else labels[idx]
+        # Target: pick from the scope's schedulable agents, with a type-it fallback.
         if not parsed["target"]:
-            parsed["target"] = prompt_text("Target name (internal session or external alias): ").strip()
+            targets, _gerr = api_client.list_cron_targets(parsed["team"], user=user)
+            if targets:
+                tlabels = [
+                    t.get("label") or f"{t.get('target_name', '?')} · {t.get('target_type', '?')}"
+                    for t in targets
+                ]
+                tlabels += ["Other (type a name)", "Cancel"]
+                tidx = curses_radiolist("Target agent:", tlabels, selected=0,
+                                        cancel_returns=len(tlabels) - 1)
+                if tidx is None or tidx >= len(tlabels) - 1:
+                    return "Cron creation cancelled."
+                if tidx == len(tlabels) - 2:
+                    parsed["target"] = prompt_text("Target name: ").strip()
+                else:
+                    chosen = targets[tidx]
+                    parsed["target"] = str(chosen.get("target_name") or "")
+                    parsed["type"] = str(chosen.get("target_type") or parsed["type"])
+            else:
+                parsed["target"] = prompt_text(
+                    "Target name (internal session or external alias): ").strip()
         if not parsed["cron"] and not parsed["once"]:
             mode = prompt_text("Schedule type (cron|once) [cron]: ").strip().lower() or "cron"
             if mode == "once":
@@ -933,10 +1288,8 @@ def _handle_cron_new(rest: list[str], *, interactive: bool, user: str) -> str:
         if not parsed["text"]:
             parsed["text"] = prompt_text("Message to send: ").strip()
 
-    if not parsed["team"]:
-        return "Usage: /cross cron new team <T> target <name> [cron <expr>|once <ISO>] text <message...>"
     if not parsed["target"]:
-        return "target is required (internal session name or external alias)"
+        return usage
     if not parsed["text"]:
         return "text is required"
     schedule_type = "once" if parsed["once"] else "cron"
@@ -956,16 +1309,16 @@ def _handle_cron_new(rest: list[str], *, interactive: bool, user: str) -> str:
     if err:
         return err
     sched = parsed["once"] or parsed["cron"]
-    return f"Cron created on team {parsed['team']!r}: target={parsed['target']} schedule={sched}"
+    scope = f"team {parsed['team']!r}" if parsed["team"] else "public (no team)"
+    return f"Cron created on {scope}: target={parsed['target']} schedule={sched}"
 
 
-def _handle_cron_delete(rest: list[str], *, user: str) -> str:
-    """`cron delete <task_id> [team <T>]` — delete a cron by task_id."""
-    if not rest:
-        return "Usage: clawcross cron delete <task_id> [team <T>]"
-    task_id = rest[0].strip()
-    if not task_id:
-        return "task_id is required"
+def _handle_cron_delete(rest: list[str], *, interactive: bool = False, user: str) -> str:
+    """`cron delete <task_id> [team <T>]` — delete a cron by task_id.
+
+    With no task_id on a TTY, opens a picker over current alarms.
+    """
+    task_id = rest[0].strip() if rest else ""
     team: str | None = None
     i = 1
     while i < len(rest):
@@ -975,6 +1328,35 @@ def _handle_cron_delete(rest: list[str], *, user: str) -> str:
             i += 2
             continue
         i += 1
+
+    if not task_id:
+        if not (interactive and _is_tty()):
+            return "Usage: clawcross cron delete <task_id> [team <T>]"
+        alarms, err = api_client.list_crons(user=user)
+        if err:
+            return err
+        rows = [a for a in alarms if str(a.get("task_id") or "").strip()]
+        if not rows:
+            return "No crons to delete."
+        labels = []
+        for a in rows:
+            target = a.get("target_name") or "?"
+            sched = a.get("cron") or a.get("run_at") or "?"
+            tname = (a.get("team") or "").strip()
+            loc = f" @{tname}" if tname and tname != "__public__" else ""
+            labels.append(f"{target}{loc}  {sched}  [{a.get('task_id')}]")
+        labels.append("Cancel")
+        idx = curses_radiolist(
+            "Select cron to delete:", labels, selected=0,
+            cancel_returns=len(labels) - 1,
+        )
+        if idx is None or idx >= len(rows):
+            return "Cron deletion cancelled."
+        chosen = rows[idx]
+        task_id = str(chosen.get("task_id") or "")
+        tname = (chosen.get("team") or "").strip()
+        if tname and tname != "__public__":
+            team = tname
 
     if team is None:
         alarms, err = api_client.list_crons(user=user)
@@ -993,13 +1375,40 @@ def _handle_cron_delete(rest: list[str], *, user: str) -> str:
     return f"Cron {task_id} deleted{scope}."
 
 
+_CRON_ACTIONS = [
+    ("list", "list cron alarms"),
+    ("add", "create a cron alarm"),
+    ("delete", "delete a cron (picker)"),
+]
+
+
+def _cron_action_menu() -> str | None:
+    """Curses picker over cron actions. None on cancel / non-TTY."""
+    if not _is_tty():
+        return None
+    labels = [f"{key:<7}  {desc}" for key, desc in _CRON_ACTIONS]
+    labels.append("Cancel")
+    idx = curses_radiolist(
+        "Select cron action:", labels, selected=0,
+        cancel_returns=len(labels) - 1,
+    )
+    if idx == len(labels) - 1:
+        return None
+    return _CRON_ACTIONS[idx][0]
+
+
 def handle_cron_command(args: list[str], *, interactive: bool = False, user: str | None = None) -> str:
     args = list(args or [])
     user = (user or api_client.DEFAULT_USER or "").strip() or api_client.DEFAULT_USER
+    if not args and interactive:
+        chosen = _cron_action_menu()
+        if chosen is None:
+            return ""
+        args = [chosen]
     if args and args[0].lower() in {"new", "create", "add"}:
         return _handle_cron_new(args[1:], interactive=interactive, user=user)
     if args and args[0].lower() in {"delete", "remove", "rm", "del"}:
-        return _handle_cron_delete(args[1:], user=user)
+        return _handle_cron_delete(args[1:], interactive=interactive, user=user)
     if args and args[0].lower() == "list":
         args = args[1:]
     team = args[0] if args else None
@@ -1007,3 +1416,243 @@ def handle_cron_command(args: list[str], *, interactive: bool = False, user: str
     if err:
         return err
     return _format_cron_list(alarms, team=team)
+
+
+# ── expert / persona ──────────────────────────────────────────────────────────
+
+_EXPERT_HELP = (
+    "Usage: clawcross expert <subcommand>\n"
+    "  list <team>                          list a team's experts/personas\n"
+    "  show <team> <tag>                    show one expert's full persona\n"
+    "  add <team> tag <t> name <n> persona <text...> [name_en <e>]\n"
+    "                                       [category <c>] [desc <d>] [temp <f>]\n"
+    "  edit <team> <tag> [name <n>] [persona <text...>] [temp <f>]\n"
+    "                                       [category <c>] [desc <d>] [name_en <e>]\n"
+    "  delete <team> <tag>                  remove an expert by tag\n"
+    "\nExperts are team-scoped personas (POST/PUT/DELETE /teams/<team>/experts)."
+)
+
+_EXPERT_KEYS = {"tag", "name", "persona", "name_en", "category", "desc", "description", "temp", "temperature"}
+
+
+def _format_expert_detail(team: str, e: dict) -> str:
+    lines = [f"Expert: {e.get('name') or '?'}  [{e.get('tag') or '?'}]  (team {team!r})"]
+    for label, key in (("name_en", "name_en"), ("category", "category"),
+                        ("temperature", "temperature"), ("description", "description")):
+        val = e.get(key)
+        if val not in (None, ""):
+            lines.append(f"  {label}: {val}")
+    persona = (e.get("persona") or "").rstrip()
+    lines.append("  persona:")
+    for ln in persona.splitlines() or [""]:
+        lines.append(f"    {ln}")
+    return _format_lines(lines)
+
+
+def _find_expert(team: str, tag: str, user: str) -> tuple[dict | None, str | None]:
+    experts, err = api_client.team_experts(team, user=user)
+    if err:
+        return None, err
+    match = next((e for e in experts if str(e.get("tag") or "") == tag), None)
+    if not match:
+        known = ", ".join(str(e.get("tag")) for e in experts) or "(none)"
+        return None, f"Expert tag {tag!r} not found in team {team!r}. Known: {known}"
+    return match, None
+
+
+_EXPERT_ACTIONS = [
+    ("list", "list a team's experts"),
+    ("show", "show one expert"),
+    ("add", "add a new expert"),
+    ("edit", "edit an expert"),
+    ("delete", "delete an expert"),
+]
+
+
+def _expert_action_menu() -> str | None:
+    if not _is_tty():
+        return None
+    labels = [f"{key:<7}  {desc}" for key, desc in _EXPERT_ACTIONS]
+    labels.append("Cancel")
+    idx = curses_radiolist(
+        "Select expert action:", labels, selected=0,
+        cancel_returns=len(labels) - 1,
+    )
+    if idx == len(labels) - 1:
+        return None
+    return _EXPERT_ACTIONS[idx][0]
+
+
+def _pick_team(user: str, title: str = "Select a team:") -> str:
+    """Interactive picker over teams. Returns the chosen name, or '' on cancel/non-TTY."""
+    if not _is_tty():
+        return ""
+    teams, err = api_client.list_teams(user=user)
+    if err or not teams:
+        return ""
+    labels = [_team_label(t) for t in teams]
+    labels.append("Cancel")
+    idx = curses_radiolist(title, labels, selected=0, cancel_returns=len(labels) - 1)
+    if idx is None or idx >= len(labels) - 1:
+        return ""
+    return labels[idx]
+
+
+def _pick_expert_tag(team: str, user: str) -> str:
+    """Interactive picker over a team's experts. Returns the chosen tag, or ''."""
+    if not _is_tty():
+        return ""
+    experts, err = api_client.team_experts(team, user=user)
+    if err or not experts:
+        return ""
+    tags = [str(e.get("tag") or "") for e in experts]
+    labels = [f"{e.get('name', '?')} [{e.get('tag', '?')}]" for e in experts]
+    labels.append("Cancel")
+    idx = curses_radiolist(f"Select expert in {team!r}:", labels, selected=0,
+                           cancel_returns=len(labels) - 1)
+    if idx is None or idx >= len(tags):
+        return ""
+    return tags[idx]
+
+
+def _handle_expert_add(rest: list[str], *, interactive: bool, user: str) -> str:
+    """`expert add <team> tag <t> name <n> persona <text...> [...]`.
+
+    In a terminal, missing fields are prompted (team via picker, persona via
+    $EDITOR), so it also works when reached from the `/expert` action menu.
+    """
+    team = rest[0].strip() if rest else ""
+    kv = _kv_args(rest[1:], _EXPERT_KEYS) if len(rest) > 1 else {}
+    tag = kv.get("tag", "")
+    name = kv.get("name", "")
+    persona = kv.get("persona", "")
+    if interactive and _is_tty():
+        from clawcross_cli.picker import prompt_text
+        team = team or _pick_team(user, "Add expert to which team?") or prompt_text("team: ").strip()
+        tag = tag or prompt_text("tag (short id): ").strip()
+        name = name or prompt_text("name: ").strip()
+        if not persona:
+            persona = _edit_in_editor(
+                "# Write the persona / system prompt for this expert.\n", suffix=".md"
+            ) or ""
+            persona = persona.strip()
+    if not (team and tag and name and persona):
+        return ("Usage: clawcross expert add <team> tag <t> name <n> persona <text...>\n"
+                "(run in a terminal to be prompted interactively)")
+    temp = kv.get("temp") or kv.get("temperature")
+    try:
+        temperature = float(temp) if temp else 0.7
+    except ValueError:
+        return f"invalid temperature: {temp!r}"
+    body, err = api_client.create_expert(
+        team, name=name, tag=tag, persona=persona, temperature=temperature,
+        name_en=kv.get("name_en", ""), category=kv.get("category", ""),
+        description=kv.get("desc") or kv.get("description", ""), user=user,
+    )
+    if err:
+        return err
+    return f"Expert {name!r} [{tag}] added to team {team!r}."
+
+
+def _handle_expert_edit(rest: list[str], *, interactive: bool, user: str) -> str:
+    """`expert edit <team> <tag> [name <n>] [persona <text...>] [...]`.
+
+    On a TTY, missing team/tag are picked; with no field args the current
+    persona opens in $EDITOR.
+    """
+    team = rest[0].strip() if rest else ""
+    tag = rest[1].strip() if len(rest) > 1 else ""
+    if interactive and _is_tty():
+        team = team or _pick_team(user, "Edit expert on which team?")
+        if team and not tag:
+            tag = _pick_expert_tag(team, user)
+    if not (team and tag):
+        return "Usage: clawcross expert edit <team> <tag> [name <n>] [persona <text...>] [temp <f>]"
+    kv = _kv_args(rest[2:], _EXPERT_KEYS) if len(rest) > 2 else {}
+    if interactive and _is_tty() and not kv:
+        # No field args + TTY → open editor pre-filled with the current persona.
+        current, ferr = _find_expert(team, tag, user)
+        if ferr:
+            return ferr
+        edited = _edit_in_editor((current.get("persona") or ""), suffix=".md")
+        if edited is None:
+            return "Edit cancelled (editor unavailable)."
+        kv["persona"] = edited.strip()
+    temperature = None
+    raw_temp = kv.get("temp") or kv.get("temperature")
+    if raw_temp:
+        try:
+            temperature = float(raw_temp)
+        except ValueError:
+            return f"invalid temperature: {raw_temp!r}"
+    body, err = api_client.update_expert(
+        team, tag,
+        name=kv.get("name"), persona=kv.get("persona"), temperature=temperature,
+        name_en=kv.get("name_en"), category=kv.get("category"),
+        description=kv.get("desc") or kv.get("description"), user=user,
+    )
+    if err:
+        return err
+    return f"Expert [{tag}] updated on team {team!r}."
+
+
+def _handle_expert_delete(rest: list[str], *, interactive: bool, user: str) -> str:
+    """`expert delete <team> <tag>` — on a TTY, missing team/tag are picked."""
+    team = rest[0].strip() if rest else ""
+    tag = rest[1].strip() if len(rest) > 1 else ""
+    if interactive and _is_tty():
+        team = team or _pick_team(user, "Delete expert from which team?")
+        if team and not tag:
+            tag = _pick_expert_tag(team, user)
+    if not (team and tag):
+        return "Usage: clawcross expert delete <team> <tag>"
+    ok, err = api_client.delete_expert(team, tag, user=user)
+    if err:
+        return err
+    return f"Expert [{tag}] deleted from team {team!r}."
+
+
+def handle_expert_command(args: list[str], *, interactive: bool = False, user: str | None = None) -> str:
+    """``clawcross expert`` / ``/cross expert`` — manage team personas/experts."""
+    args = list(args or [])
+    user = (user or api_client.DEFAULT_USER or "").strip() or api_client.DEFAULT_USER
+
+    if not args and interactive:
+        chosen = _expert_action_menu()
+        if chosen is None:
+            return ""
+        args = [chosen]
+
+    if args and args[0].lower() in {"add", "new"}:
+        return _handle_expert_add(args[1:], interactive=interactive, user=user)
+    if args and args[0].lower() in {"edit", "update"}:
+        return _handle_expert_edit(args[1:], interactive=interactive, user=user)
+    if args and args[0].lower() in {"delete", "remove", "rm", "del"}:
+        return _handle_expert_delete(args[1:], interactive=interactive, user=user)
+    if args and args[0].lower() == "show":
+        team = args[1].strip() if len(args) > 1 else ""
+        tag = args[2].strip() if len(args) > 2 else ""
+        if interactive and _is_tty():
+            team = team or _pick_team(user, "Show expert from which team?")
+            if team and not tag:
+                tag = _pick_expert_tag(team, user)
+        if not (team and tag):
+            return "Usage: clawcross expert show <team> <tag>"
+        match, err = _find_expert(team, tag, user)
+        if err:
+            return err
+        return _format_expert_detail(team, match)
+    if args and args[0].lower() in {"list", "ls"}:
+        args = args[1:]
+    if args and args[0].lower() == "help":
+        return _EXPERT_HELP
+
+    team = args[0].strip() if args else ""
+    if not team and interactive and _is_tty():
+        team = _pick_team(user, "List experts of which team?")
+    if not team:
+        return _EXPERT_HELP
+    experts, err = api_client.team_experts(team, user=user)
+    if err:
+        return err
+    return _format_personas(team, experts)

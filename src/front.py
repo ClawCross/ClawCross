@@ -6755,6 +6755,30 @@ def update_global_skill_detail(skill_name):
     return jsonify({"ok": True, "skill": get_skill(user_id, name=skill_name), "result": result})
 
 
+@app.route("/skills/<skill_name>", methods=["POST"])
+def create_global_skill_detail(skill_name):
+    """Create a new user-level shared managed skill from SKILL.md content."""
+    user_id = session.get("user_id", "")
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+    body = request.get_json(force=True) or {}
+    content = str(body.get("content") or "")
+    if not content.strip():
+        return jsonify({"error": "content is required"}), 400
+
+    from webot.skills import create_skill, get_skill
+
+    result = create_skill(
+        user_id, name=skill_name, content=content,
+        category=str(body.get("category") or ""),
+    )
+    if not result.get("success"):
+        err = result.get("error") or "Create failed"
+        code = 409 if "already exists" in err else 400
+        return jsonify({"error": err}), code
+    return jsonify({"ok": True, "skill": get_skill(user_id, name=skill_name), "result": result})
+
+
 @app.route("/skills/<skill_name>", methods=["DELETE"])
 def delete_global_skill_detail(skill_name):
     """Delete a user-level shared managed skill."""
@@ -6874,6 +6898,42 @@ def update_team_skill_detail(team_name, skill_name):
     if not result.get("success"):
         return jsonify({"error": result.get("error") or "Update failed"}), 400
 
+    skill = get_skill(user_id, name=skill_name, team=team_name if scope == "team" else "")
+    return jsonify({"ok": True, "skill": skill, "result": result})
+
+
+@app.route("/teams/<team_name>/skills/<skill_name>", methods=["POST"])
+def create_team_skill_detail(team_name, skill_name):
+    """Create a new team/shared managed skill from SKILL.md content."""
+    user_id = session.get("user_id", "")
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+    if "/" in team_name or "\\" in team_name or team_name.startswith("."):
+        return jsonify({"error": "Invalid team name"}), 400
+    team_dir = os.path.join(str(USER_FILES_DIR), user_id, "teams", team_name)
+    if not os.path.exists(team_dir):
+        return jsonify({"error": "Team not found"}), 404
+
+    scope = str(request.args.get("scope") or "team").strip().lower()
+    if scope not in {"team", "personal"}:
+        return jsonify({"error": "Invalid scope"}), 400
+
+    body = request.get_json(force=True) or {}
+    content = str(body.get("content") or "")
+    if not content.strip():
+        return jsonify({"error": "content is required"}), 400
+
+    from webot.skills import create_skill, get_skill
+
+    result = create_skill(
+        user_id, name=skill_name, content=content,
+        category=str(body.get("category") or ""),
+        team=team_name if scope == "team" else "",
+    )
+    if not result.get("success"):
+        err = result.get("error") or "Create failed"
+        code = 409 if "already exists" in err else 400
+        return jsonify({"error": err}), code
     skill = get_skill(user_id, name=skill_name, team=team_name if scope == "team" else "")
     return jsonify({"ok": True, "skill": skill, "result": result})
 
