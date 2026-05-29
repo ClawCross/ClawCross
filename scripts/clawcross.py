@@ -1928,6 +1928,7 @@ def _read_interactive_line(prompt: str) -> str:
     selected = 0
     box_width = max(20, min(_term_width(), 120))
     inner_width = box_width - 4  # "│ " ... " │"
+    resized = False  # set by the SIGWINCH handler; drives a full redraw
 
     def _truncate(text: str, w: int) -> str:
         # Show the tail when the input exceeds the inner box width so the
@@ -1964,6 +1965,18 @@ def _read_interactive_line(prompt: str) -> str:
         sys.stdout.flush()
         render_input()
 
+    def redraw_full() -> None:
+        # Terminal was resized: recompute the box width for the new terminal
+        # size and repaint the whole box so the borders never stay wider than
+        # the screen (which would wrap and corrupt the layout). The cursor is
+        # on the middle line; go to the top border, clear downward, repaint.
+        nonlocal box_width, inner_width
+        box_width = max(20, min(_term_width(), 120))
+        inner_width = box_width - 4
+        sys.stdout.write("\r\033[1A\033[J")
+        sys.stdout.flush()
+        draw_box()
+
     def render_menu() -> None:
         if not menu_open:
             return
@@ -1999,12 +2012,45 @@ def _read_interactive_line(prompt: str) -> str:
         sys.stdout.write("\033[1B\n")
         sys.stdout.flush()
 
+    def _on_winch(_signum, _frame) -> None:
+        # Runs in the main thread while the blocking read is parked, between
+        # bytecode ops, so terminal writes here are safe. Repaint at the new
+        # width; the interrupted read auto-resumes afterwards. (`sys.stdin` is
+        # buffered and swallows EINTR, so we cannot react from the read loop —
+        # the handler has to do the redraw.)
+        nonlocal resized
+        resized = True
+        try:
+            if menu_open:
+                render_menu()
+            else:
+                redraw_full()
+        except Exception:
+            pass
+
+    old_winch = None
+    winch_installed = False
     try:
+        try:
+            # Only works on the main thread / where SIGWINCH exists; otherwise
+            # we silently fall back to per-prompt sizing (still correct, just
+            # not live during a single edit).
+            old_winch = signal.getsignal(signal.SIGWINCH)
+            signal.signal(signal.SIGWINCH, _on_winch)
+            winch_installed = True
+        except (ValueError, OSError, AttributeError):
+            winch_installed = False
+
         tty.setcbreak(sys.stdin.fileno())
         draw_box()
 
         while True:
-            ch = sys.stdin.read(1)
+            try:
+                ch = sys.stdin.read(1)
+            except InterruptedError:
+                # Defensive: some platforms may still surface EINTR here. The
+                # handler already repainted, so just resume.
+                continue
             if pending_bracket:
                 pending_bracket = False
                 if menu_open and ch == "A":
@@ -2108,6 +2154,11 @@ def _read_interactive_line(prompt: str) -> str:
             # Restoring terminal mode can fail with EIO if the tty was
             # disrupted; never let that crash the shell.
             pass
+        if winch_installed:
+            try:
+                signal.signal(signal.SIGWINCH, old_winch)
+            except (ValueError, OSError, TypeError):
+                pass
 
 
 def _handle_slash(command: str, state: dict) -> bool:
