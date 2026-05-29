@@ -227,10 +227,11 @@ SLASH_MENU = [
     ("/new session", "create a new session", "/new session", True),
     ("/mode", "permission mode: manual / plan / bypass", "/mode", True),
     ("/model", "model actions (list / use / add / migrate / remove)", "/model", True),
-    ("/team [<name>]", "list teams or show one team", "/team", True),
-    ("/workflow", "workflow actions (list / show / run / new)", "/workflow", True),
-    ("/skill [<team>]", "list managed skills", "/skill", True),
-    ("/cron [<team>]", "list cron alarms", "/cron", True),
+    ("/team [<name>]", "team actions (list / new / rename / delete / member)", "/team", True),
+    ("/workflow", "workflow actions (list / show / run / new / delete)", "/workflow", True),
+    ("/skill [<team>]", "skill actions (list / show / new / delete)", "/skill", True),
+    ("/expert [<team>]", "team experts (list / show / add / edit / delete)", "/expert", True),
+    ("/cron [<team>]", "cron actions (list / add / delete)", "/cron", True),
     ("/channel", "list / setup chatbot channels", "/channel", True),
     ("/front", "get a public magic link (web UI login)", "/front", True),
     ("/exit", "quit", "/exit", True),
@@ -243,9 +244,10 @@ CLI_COMMANDS = [
     ("clawcross config get KEY", "print one config value"),
     ("clawcross config list", "list configured values"),
     ("clawcross model [name]", "select/set LLM model"),
-    ("clawcross team [name]", "list teams or show one team's details"),
-    ("clawcross workflow [show|run ...]", "list/show/run OASIS workflows"),
-    ("clawcross skill [agent]", "list skills (optionally filtered by agent)"),
+    ("clawcross team [name|new|rename|delete|member ...]", "list/show teams, create/rename/delete, manage members"),
+    ("clawcross workflow [show|run|new|delete ...]", "list/show/run/create/delete OASIS workflows"),
+    ("clawcross skill [agent|show|new|delete ...]", "list/show skills, create or delete one"),
+    ("clawcross expert [team|show|add|edit|delete ...]", "manage team personas/experts"),
     ("clawcross cron [list [team]|add|delete <task_id>]", "list / add / delete cron alarms"),
     ("clawcross channel [list|setup ...]", "list / interactively set up chatbot channels"),
     ("clawcross platforms", "list available platforms"),
@@ -264,9 +266,10 @@ CHAT_SLASH_COMMANDS = [
     ("/cross new session", "create and switch to a new session"),
     ("/cross mode [<mode>]", "permission mode picker: manual / plan / bypass"),
     ("/cross model [name]", "select/set LLM model"),
-    ("/cross team [name]", "list teams or show one team's details"),
-    ("/cross workflow", "list workflows (or `show <name>` / `run <name> team <T> question <Q>`)"),
-    ("/cross skill [agent]", "list skills (optionally filtered by agent)"),
+    ("/cross team [name|new|rename|delete|member ...]", "list/show teams, create/rename/delete, manage members"),
+    ("/cross workflow", "list workflows (`show`/`run`/`new`/`delete <name>`)"),
+    ("/cross skill [agent|show|new|delete ...]", "list/show skills, create or delete one"),
+    ("/cross expert [team|show|add|edit|delete ...]", "manage team personas/experts"),
     ("/cross cron [team]", "list cron alarms (optionally for one team)"),
     ("/cross channel", "list configured chatbot channels (setup requires CLI)"),
     ("/cross state", "show current shell state"),
@@ -2022,6 +2025,12 @@ def _handle_slash(command: str, state: dict) -> bool:
         if out:
             print(out)
         return True
+    if name == "/expert":
+        from clawcross_cli.display_cmd import handle_expert_command
+        out = handle_expert_command(parts[1:], interactive=True, user=current_user)
+        if out:
+            print(out)
+        return True
     if name == "/cron":
         from clawcross_cli.display_cmd import handle_cron_command
         out = handle_cron_command(parts[1:], interactive=True, user=current_user)
@@ -2091,9 +2100,20 @@ _HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("/team <name> skills", "list team SKILL.md files"),
         ("/team <name> crons", "list team-scoped cron alarms"),
         ("/team new <name>", "create a new team folder"),
+        ("/team rename <old> <new>", "rename a team folder"),
+        ("/team delete <name>", "delete a team (and its internal agents)"),
+        ("/team member add <team> name <n> global <g> platform <p> [...]", "add external agent member"),
+        ("/team member edit|remove <team> <global>", "update / remove an external member"),
+    ]),
+    ("Experts / Personas", [
+        ("/expert <team>", "list a team's experts/personas"),
+        ("/expert show <team> <tag>", "show one expert's full persona"),
+        ("/expert add <team> tag <t> name <n> persona <text...>", "add a team expert (CLI: $EDITOR for persona)"),
+        ("/expert edit <team> <tag> [name <n>] [persona <text...>] [temp <f>]", "update an expert"),
+        ("/expert delete <team> <tag>", "delete an expert by tag"),
     ]),
     ("Workflows", [
-        ("/workflow", "action picker (list / show / run / new)"),
+        ("/workflow", "action picker (list / show / run / new / delete)"),
         ("/workflow list", "list all workflows (personal + every team, grouped)"),
         ("/workflow show", "picker over workflows, then prints source"),
         ("/workflow show <name>", "print the YAML or Python source by name"),
@@ -2103,17 +2123,21 @@ _HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("/workflow run <name> team <T> question <text...>", "run a team workflow"),
         ("/workflow new <name> [team <T>] [from <file>]",
          "create a YAML workflow. CLI: opens $EDITOR with a template. Chatbot: needs `from <file>`."),
+        ("/workflow delete <name> [team <T>]", "delete a workflow file"),
     ]),
     ("Skills", [
         ("/skill", "list all skills aggregated across personal + every team"),
         ("/skill <team>", "show skills scoped to one team + personal"),
+        ("/skill show <name> [team <T>]", "print a skill's SKILL.md content"),
         ("/skill new <name> [team <T>] [from <file>]", "create a SKILL.md (CLI: $EDITOR)"),
+        ("/skill delete <name> [team <T>]", "delete a managed skill"),
     ]),
     ("Cron / Alarms", [
         ("/cron", "list all cron entries (personal + all teams)"),
         ("/cron <team>", "list one team's cron entries"),
-        ("/cron new team <T> target <X> [cron <expr>|once <ISO>] text <msg...>",
-         "create an alarm (cron expr or one-shot ISO time)"),
+        ("/cron add [team <T>] target <X> [cron <expr>|once <ISO>] text <msg...>",
+         "create an alarm (team optional; CLI picks scope+target interactively)"),
+        ("/cron delete <task_id>", "delete a cron entry by id"),
     ]),
     ("Chatbot channels", [
         ("/channel", "list 17 channels with configured/not status"),
@@ -2175,6 +2199,18 @@ _CHAT_HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("/cross team <name> workflows", "list team-scoped workflows"),
         ("/cross team <name> skills", "list team SKILL.md files"),
         ("/cross team <name> crons", "list team-scoped cron alarms"),
+        ("/cross team new <name>", "create a new team folder"),
+        ("/cross team rename <old> <new>", "rename a team folder"),
+        ("/cross team delete <name>", "delete a team (and its internal agents)"),
+        ("/cross team member add <team> ...", "add an external agent member"),
+        ("/cross team member edit|remove <team> <global>", "update / remove an external member"),
+    ]),
+    ("Experts / Personas", [
+        ("/cross expert <team>", "list a team's experts/personas"),
+        ("/cross expert show <team> <tag>", "show one expert's full persona"),
+        ("/cross expert add <team> tag <t> name <n> persona <text...>", "add a team expert"),
+        ("/cross expert edit <team> <tag> [name <n>] [persona <text...>]", "update an expert"),
+        ("/cross expert delete <team> <tag>", "delete an expert by tag"),
     ]),
     ("Workflows", [
         ("/cross workflow", "list all workflows"),
@@ -2182,10 +2218,15 @@ _CHAT_HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("/cross workflow show <name> team <T>", "disambiguate across teams"),
         ("/cross workflow run <name> question <text...>", "run a personal workflow"),
         ("/cross workflow run <name> team <T> question <text...>", "run a team workflow"),
+        ("/cross workflow new <name> [team <T>]", "create a workflow (CLI editor / chatbot `from <file>`)"),
+        ("/cross workflow delete <name> [team <T>]", "delete a workflow file"),
     ]),
     ("Skills", [
         ("/cross skill", "list all skills"),
         ("/cross skill <team>", "show skills scoped to one team"),
+        ("/cross skill show <name> [team <T>]", "print a skill's SKILL.md content"),
+        ("/cross skill new <name> [team <T>]", "create a new SKILL.md"),
+        ("/cross skill delete <name> [team <T>]", "delete a managed skill"),
     ]),
     ("Cron / Alarms", [
         ("/cross cron", "list all cron entries"),
@@ -2343,6 +2384,11 @@ def handle_chatbot_input(text: str, state: dict) -> tuple[bool, str]:
         rest = line.split(maxsplit=1)
         args = rest[1].strip().split() if len(rest) > 1 else []
         return True, handle_skill_command(args, user=current_user) or ""
+    if line.startswith("/") and line.split(maxsplit=1)[0].lower() == "/expert":
+        from clawcross_cli.display_cmd import handle_expert_command
+        rest = line.split(maxsplit=1)
+        args = rest[1].strip().split() if len(rest) > 1 else []
+        return True, handle_expert_command(args, user=current_user) or ""
     if line.startswith("/") and line.split(maxsplit=1)[0].lower() == "/cron":
         from clawcross_cli.display_cmd import handle_cron_command
         rest = line.split(maxsplit=1)
@@ -2441,6 +2487,9 @@ def build_parser() -> argparse.ArgumentParser:
     skill = sub.add_parser("skill", help="List skills exposed by OpenClaw agents")
     skill.add_argument("args", nargs="*", help="[<agent>]")
 
+    expert = sub.add_parser("expert", help="Manage team personas/experts (list/show/add/edit/delete)")
+    expert.add_argument("args", nargs="*", help="[<team> | show <team> <tag> | add ... | edit ... | delete <team> <tag>]")
+
     cron = sub.add_parser("cron", help="List cron alarms (optionally filtered by team)")
     cron.add_argument("args", nargs="*", help="[<team>]")
 
@@ -2522,6 +2571,12 @@ def main() -> int:
     if args.command == "skill":
         from clawcross_cli.display_cmd import handle_skill_command
         out = handle_skill_command(list(args.args or []), interactive=True)
+        if out:
+            print(out)
+        return 0
+    if args.command == "expert":
+        from clawcross_cli.display_cmd import handle_expert_command
+        out = handle_expert_command(list(args.args or []), interactive=True)
         if out:
             print(out)
         return 0

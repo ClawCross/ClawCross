@@ -269,6 +269,71 @@ def team_experts(name: str, user: str | None = None) -> tuple[list[dict], str | 
     return [it for it in items if isinstance(it, dict)], None
 
 
+def create_expert(
+    team: str,
+    *,
+    name: str,
+    tag: str,
+    persona: str,
+    temperature: float = 0.7,
+    name_en: str = "",
+    category: str = "",
+    description: str = "",
+    user: str | None = None,
+) -> tuple[dict | None, str | None]:
+    """POST /teams/<team>/experts — add a custom persona to a team."""
+    url = f"{FRONT_BASE}/teams/{urllib.parse.quote(team, safe='')}/experts"
+    payload: dict[str, Any] = {
+        "name": name, "tag": tag, "persona": persona, "temperature": temperature,
+    }
+    for key, val in (("name_en", name_en), ("category", category), ("description", description)):
+        if val:
+            payload[key] = val
+    code, body = _req("POST", url, headers=_front_headers(user), data=payload)
+    if code == 200:
+        return body if isinstance(body, dict) else {"ok": True}, None
+    return None, friendly_error(url, code, body)
+
+
+def update_expert(
+    team: str,
+    tag: str,
+    *,
+    name: str | None = None,
+    persona: str | None = None,
+    temperature: float | None = None,
+    name_en: str | None = None,
+    category: str | None = None,
+    description: str | None = None,
+    user: str | None = None,
+) -> tuple[dict | None, str | None]:
+    """PUT /teams/<team>/experts/<tag> — update fields of an existing persona.
+
+    Only non-None fields are sent; the backend keeps prior values otherwise.
+    """
+    url = f"{FRONT_BASE}/teams/{urllib.parse.quote(team, safe='')}/experts/{urllib.parse.quote(tag, safe='')}"
+    payload: dict[str, Any] = {}
+    for key, val in (
+        ("name", name), ("persona", persona), ("temperature", temperature),
+        ("name_en", name_en), ("category", category), ("description", description),
+    ):
+        if val is not None:
+            payload[key] = val
+    code, body = _req("PUT", url, headers=_front_headers(user), data=payload)
+    if code == 200:
+        return body if isinstance(body, dict) else {"ok": True}, None
+    return None, friendly_error(url, code, body)
+
+
+def delete_expert(team: str, tag: str, user: str | None = None) -> tuple[bool, str | None]:
+    """DELETE /teams/<team>/experts/<tag> — remove a persona by tag."""
+    url = f"{FRONT_BASE}/teams/{urllib.parse.quote(team, safe='')}/experts/{urllib.parse.quote(tag, safe='')}"
+    code, body = _req("DELETE", url, headers=_front_headers(user))
+    if 200 <= code < 300:
+        return True, None
+    return False, friendly_error(url, code, body)
+
+
 def create_team(name: str, user: str | None = None) -> tuple[dict | None, str | None]:
     """POST /teams to create a new team folder. Mirrors cli.py:cmd_teams[create]."""
     url = f"{FRONT_BASE}/teams"
@@ -276,6 +341,81 @@ def create_team(name: str, user: str | None = None) -> tuple[dict | None, str | 
     if code == 200:
         return body if isinstance(body, dict) else {"ok": True}, None
     return None, friendly_error(url, code, body)
+
+
+def delete_team(name: str, user: str | None = None) -> tuple[bool, str | None]:
+    """DELETE /teams/<name> — remove a team folder and its internal agents."""
+    url = f"{FRONT_BASE}/teams/{urllib.parse.quote(name, safe='')}"
+    code, body = _req("DELETE", url, headers=_front_headers(user))
+    if 200 <= code < 300:
+        return True, None
+    return False, friendly_error(url, code, body)
+
+
+def rename_team(old: str, new: str, user: str | None = None) -> tuple[dict | None, str | None]:
+    """PATCH /teams/<old> — rename the team folder to *new*."""
+    url = f"{FRONT_BASE}/teams/{urllib.parse.quote(old, safe='')}"
+    code, body = _req("PATCH", url, headers=_front_headers(user), data={"new_name": new})
+    if code == 200:
+        return body if isinstance(body, dict) else {"ok": True}, None
+    return None, friendly_error(url, code, body)
+
+
+def add_external_member(
+    team: str,
+    *,
+    name: str,
+    global_name: str,
+    platform: str,
+    tag: str = "",
+    api_url: str = "",
+    api_key: str = "",
+    model: str = "",
+    is_primary: bool = False,
+    user: str | None = None,
+) -> tuple[dict | None, str | None]:
+    """POST /teams/<team>/members/external — add an external agent member."""
+    url = f"{FRONT_BASE}/teams/{urllib.parse.quote(team, safe='')}/members/external"
+    payload: dict[str, Any] = {
+        "name": name, "global_name": global_name, "platform": platform,
+        "tag": tag, "api_url": api_url, "api_key": api_key, "model": model,
+        "is_primary": is_primary,
+    }
+    code, body = _req("POST", url, headers=_front_headers(user), data=payload)
+    if code == 200:
+        return body if isinstance(body, dict) else {"ok": True}, None
+    return None, friendly_error(url, code, body)
+
+
+def update_external_member(
+    team: str,
+    global_name: str,
+    *,
+    fields: dict[str, Any],
+    user: str | None = None,
+) -> tuple[dict | None, str | None]:
+    """PUT /teams/<team>/members/external — update an external agent.
+
+    The agent is matched by its current *global_name*; *fields* carries the
+    attributes to change (may include a new ``global_name``).
+    """
+    url = f"{FRONT_BASE}/teams/{urllib.parse.quote(team, safe='')}/members/external"
+    payload = {"global_name": global_name, **fields}
+    code, body = _req("PUT", url, headers=_front_headers(user), data=payload)
+    if code == 200:
+        return body if isinstance(body, dict) else {"ok": True}, None
+    return None, friendly_error(url, code, body)
+
+
+def delete_external_member(
+    team: str, global_name: str, user: str | None = None,
+) -> tuple[bool, str | None]:
+    """DELETE /teams/<team>/members/external — remove an external agent by global_name."""
+    url = f"{FRONT_BASE}/teams/{urllib.parse.quote(team, safe='')}/members/external"
+    code, body = _req("DELETE", url, headers=_front_headers(user), data={"global_name": global_name})
+    if 200 <= code < 300:
+        return True, None
+    return False, friendly_error(url, code, body)
 
 
 def save_workflow(
@@ -301,21 +441,86 @@ def save_workflow(
     return None, friendly_error(url, code, body)
 
 
+def _skill_url(name: str, team: str = "") -> str:
+    if team:
+        return f"{FRONT_BASE}/teams/{urllib.parse.quote(team, safe='')}/skills/{urllib.parse.quote(name, safe='')}"
+    return f"{FRONT_BASE}/skills/{urllib.parse.quote(name, safe='')}"
+
+
 def create_skill(
+    name: str,
+    content: str,
+    *,
+    team: str = "",
+    category: str = "",
+    user: str | None = None,
+) -> tuple[dict | None, str | None]:
+    """POST a new SKILL.md (fails 409 if it exists). Mirrors front.py POST /skills/<name>.
+
+    Use update_skill() to overwrite an existing skill.
+    """
+    payload: dict[str, Any] = {"content": content}
+    if category:
+        payload["category"] = category
+    url = _skill_url(name, team)
+    code, body = _req("POST", url, headers=_front_headers(user), data=payload)
+    if code == 200:
+        return body if isinstance(body, dict) else {"ok": True}, None
+    return None, friendly_error(url, code, body)
+
+
+def update_skill(
     name: str,
     content: str,
     *,
     team: str = "",
     user: str | None = None,
 ) -> tuple[dict | None, str | None]:
-    """PUT a SKILL.md (creates if absent). Mirrors front.py PUT /skills/<name>."""
+    """PUT — overwrite an existing SKILL.md. Mirrors front.py PUT /skills/<name>."""
+    url = _skill_url(name, team)
+    code, body = _req("PUT", url, headers=_front_headers(user), data={"content": content})
+    if code == 200:
+        return body if isinstance(body, dict) else {"ok": True}, None
+    return None, friendly_error(url, code, body)
+
+
+def delete_skill(
+    name: str,
+    *,
+    team: str = "",
+    user: str | None = None,
+) -> tuple[bool, str | None]:
+    """DELETE a managed skill — team-scoped when *team* is given, else personal.
+
+    Mirrors create_skill: ``/teams/<team>/skills/<name>`` vs ``/skills/<name>``.
+    """
     if team:
         url = f"{FRONT_BASE}/teams/{urllib.parse.quote(team, safe='')}/skills/{urllib.parse.quote(name, safe='')}"
     else:
         url = f"{FRONT_BASE}/skills/{urllib.parse.quote(name, safe='')}"
-    code, body = _req("PUT", url, headers=_front_headers(user), data={"content": content})
-    if code == 200:
-        return body if isinstance(body, dict) else {"ok": True}, None
+    code, body = _req("DELETE", url, headers=_front_headers(user))
+    if 200 <= code < 300:
+        return True, None
+    return False, friendly_error(url, code, body)
+
+
+def get_skill_detail(
+    name: str,
+    *,
+    team: str = "",
+    user: str | None = None,
+) -> tuple[dict | None, str | None]:
+    """GET full SKILL.md detail. Team-scoped when *team* is given, else personal.
+
+    Returns the ``skill`` dict (keys: name, description, content, body, ...).
+    """
+    if team:
+        url = f"{FRONT_BASE}/teams/{urllib.parse.quote(team, safe='')}/skills/{urllib.parse.quote(name, safe='')}"
+    else:
+        url = f"{FRONT_BASE}/skills/{urllib.parse.quote(name, safe='')}"
+    code, body = _req("GET", url, headers=_front_headers(user))
+    if code == 200 and isinstance(body, dict):
+        return body.get("skill") if isinstance(body.get("skill"), dict) else body, None
     return None, friendly_error(url, code, body)
 
 
@@ -330,8 +535,11 @@ def create_cron(
     target_type: str = "internal",
     user: str | None = None,
 ) -> tuple[dict | None, str | None]:
-    """POST /teams/<team>/alarms — create a cron or one-shot alarm."""
-    url = f"{FRONT_BASE}/teams/{urllib.parse.quote(team, safe='')}/alarms"
+    """Create a cron / one-shot alarm.
+
+    With *team* → ``POST /teams/<team>/alarms``. Without → ``POST /mobile_alarms``
+    in the public scope (team defaults to ``__public__`` server-side).
+    """
     payload = {
         "target_type": target_type,
         "target_name": target_name,
@@ -340,10 +548,29 @@ def create_cron(
         "run_at": run_at,
         "text": text,
     }
+    if team:
+        url = f"{FRONT_BASE}/teams/{urllib.parse.quote(team, safe='')}/alarms"
+    else:
+        url = f"{FRONT_BASE}/mobile_alarms"
     code, body = _req("POST", url, headers=_front_headers(user), data=payload)
     if code == 200:
         return body if isinstance(body, dict) else {"ok": True}, None
     return None, friendly_error(url, code, body)
+
+
+def list_cron_targets(team: str = "", user: str | None = None) -> tuple[list[dict], str | None]:
+    """GET schedulable targets for a scope via ``/mobile_alarms``.
+
+    Returns target dicts like ``{target_type, target_name, label}``. Empty
+    *team* → the public scope.
+    """
+    params = {"team": team} if team else {"team": "__public__"}
+    url = f"{FRONT_BASE}/mobile_alarms"
+    code, body = _req("GET", url, headers=_front_headers(user), params=params)
+    if code == 200 and isinstance(body, dict):
+        targets = body.get("targets") or []
+        return [t for t in targets if isinstance(t, dict)], None
+    return [], friendly_error(url, code, body)
 
 
 def delete_cron(
@@ -365,6 +592,29 @@ def delete_cron(
     if 200 <= code < 300:
         return True, None
     return False, friendly_error(url, code, body)
+
+
+def delete_workflow(user: str, name: str, team: str = "") -> tuple[str | None, str | None]:
+    """Delete a workflow's local file (YAML then Python). Returns (path, error).
+
+    OASIS exposes no DELETE route — workflows are plain files the CLI reads
+    directly (see list_workflows / save_workflow), so removal is just the
+    inverse on the same resolved path.
+    """
+    path, yerr = resolve_yaml_workflow_path(user, name, team)
+    if not path:
+        path, perr = resolve_python_workflow_path(user, name, team)
+        if not path:
+            # Prefer the ambiguity hint ("multiple ... specify --team") if present.
+            for msg in (yerr, perr):
+                if msg and "multiple" in msg:
+                    return None, msg
+            return None, yerr or perr or "workflow not found"
+    try:
+        os.remove(path)
+    except OSError as e:
+        return None, f"Failed to delete {path}: {e}"
+    return path, None
 
 
 def list_workflows(user: str, team: str = "") -> list[dict]:
