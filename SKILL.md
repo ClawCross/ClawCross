@@ -488,6 +488,8 @@ uv run scripts/cli.py --help
 uv run scripts/cli.py teams --help
 uv run scripts/cli.py workflows --help
 uv run scripts/cli.py openclaw --help
+uv run scripts/cli.py skill --help   # managed 技能 list/show/new/edit/delete
+uv run scripts/cli.py cron --help    # 定时任务 list/new/delete
 ```
 
 ### Workflow Monitoring

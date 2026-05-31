@@ -2556,6 +2556,168 @@ def _verify_login_token(token: str, internal_token: str) -> str | None:
         return None
 
 
+# ── skill: managed 技能管理 (通过 front.py /skills 接口) ────────────────────
+def _skill_url(name: str, team: str = "") -> str:
+    """技能 REST 路径：有 team 走 /teams/<team>/skills/<name>，否则 /skills/<name>。"""
+    n = urllib.parse.quote((name or "").strip(), safe="")
+    if team:
+        t = urllib.parse.quote(team.strip(), safe="")
+        return f"{FRONT_BASE}/teams/{t}/skills/{n}"
+    return f"{FRONT_BASE}/skills/{n}"
+
+
+def cmd_skill(args):
+    """Managed 技能管理 (list/show/new/edit/delete，--team 切团队/个人作用域)
+
+    参数：
+        args: 命令行参数对象
+    """
+    _check_token()
+    act = args.action
+    team = (args.team or "").strip()
+
+    if act == "list":
+        if team:
+            url = f"{FRONT_BASE}/teams/{urllib.parse.quote(team, safe='')}/skills"
+        else:
+            url = f"{FRONT_BASE}/skills"
+        code, body = _req("GET", url, headers=_front_headers(args))
+        if code == 200:
+            _pp(body)
+        else:
+            _err(code, body)
+        return
+
+    if act == "show":
+        if not args.name:
+            print("❌ 缺少 --name", file=sys.stderr)
+            sys.exit(1)
+        code, body = _req("GET", _skill_url(args.name, team), headers=_front_headers(args))
+        if code != 200:
+            _err(code, body)
+            return
+        skill = body.get("skill") if isinstance(body, dict) else None
+        # 优先直接打印 SKILL.md 正文，便于阅读；否则回退原始 JSON
+        if isinstance(skill, dict) and skill.get("content"):
+            print(skill["content"])
+        else:
+            _pp(body)
+        return
+
+    if act in {"new", "edit"}:
+        if not args.name:
+            print("❌ 缺少 --name", file=sys.stderr)
+            sys.exit(1)
+        content = args.content
+        if not content and args.file:
+            try:
+                with open(args.file, "r", encoding="utf-8") as f:
+                    content = f.read()
+            except OSError as e:
+                print(f"❌ 读取 --file 失败: {e}", file=sys.stderr)
+                sys.exit(1)
+        if not content or not content.strip():
+            print("❌ 缺少技能内容，请用 --content 或 --file 提供 SKILL.md 内容", file=sys.stderr)
+            sys.exit(1)
+        data = {"content": content}
+        if act == "new":
+            if args.category:
+                data["category"] = args.category
+            method = "POST"
+        else:
+            method = "PUT"
+        code, body = _req(method, _skill_url(args.name, team), headers=_front_headers(args), data=data)
+        if code == 200:
+            print("✅ 技能已创建" if act == "new" else "✅ 技能已更新")
+            _pp(body)
+        else:
+            _err(code, body)
+        return
+
+    if act == "delete":
+        if not args.name:
+            print("❌ 缺少 --name", file=sys.stderr)
+            sys.exit(1)
+        code, body = _req("DELETE", _skill_url(args.name, team), headers=_front_headers(args))
+        if 200 <= code < 300:
+            print("✅ 技能已删除")
+        else:
+            _err(code, body)
+        return
+
+    print(f"❌ 未知操作: {act}", file=sys.stderr)
+    sys.exit(1)
+
+
+# ── cron: 定时任务 / 闹钟管理 (通过 front.py /mobile_alarms 与 /teams/<team>/alarms) ──
+def cmd_cron(args):
+    """定时任务管理 (list/new/delete，--team 切团队/公共作用域)
+
+    参数：
+        args: 命令行参数对象
+    """
+    _check_token()
+    act = args.action
+    team = (args.team or "").strip()
+
+    if act == "list":
+        if team:
+            url = f"{FRONT_BASE}/teams/{urllib.parse.quote(team, safe='')}/alarms"
+            code, body = _req("GET", url, headers=_front_headers(args))
+        else:
+            # 无 team 默认公共作用域
+            code, body = _req("GET", f"{FRONT_BASE}/mobile_alarms",
+                              headers=_front_headers(args), params={"team": "__public__"})
+        if code == 200:
+            _pp(body)
+        else:
+            _err(code, body)
+        return
+
+    if act == "new":
+        if not args.target_name or not args.text:
+            print("❌ new 需要 --target-name 和 --text", file=sys.stderr)
+            sys.exit(1)
+        data = {
+            "target_type": args.target_type or "internal",
+            "target_name": args.target_name,
+            "schedule_type": args.schedule_type or "cron",
+            "cron": args.cron or "",
+            "run_at": args.run_at or "",
+            "text": args.text,
+        }
+        if team:
+            url = f"{FRONT_BASE}/teams/{urllib.parse.quote(team, safe='')}/alarms"
+        else:
+            url = f"{FRONT_BASE}/mobile_alarms"
+        code, body = _req("POST", url, headers=_front_headers(args), data=data)
+        if code == 200:
+            print("✅ 定时任务已创建")
+            _pp(body)
+        else:
+            _err(code, body)
+        return
+
+    if act == "delete":
+        if not args.task_id:
+            print("❌ delete 需要 --task-id", file=sys.stderr)
+            sys.exit(1)
+        tid = urllib.parse.quote(args.task_id.strip(), safe="")
+        if team:
+            url = f"{FRONT_BASE}/teams/{urllib.parse.quote(team, safe='')}/alarms/{tid}"
+        else:
+            url = f"{FRONT_BASE}/mobile_alarms/{tid}"
+        code, body = _req("DELETE", url, headers=_front_headers(args))
+        if 200 <= code < 300:
+            print("✅ 定时任务已删除")
+        else:
+            _err(code, body)
+        return
+
+    print(f"❌ 未知操作: {act}", file=sys.stderr)
+    sys.exit(1)
+
+
 def cmd_token(args):
     """Token 生成与验证
 
@@ -3047,6 +3209,31 @@ def build_parser():
     c.add_argument("--topic-id", help="话题 ID (conclusion 时)")
     c.add_argument("--timeout", type=int, help="等待超时秒数 (conclusion 时, 默认 300)")
 
+    # skill
+    c = sub.add_parser("skill", help="Managed 技能管理 (list/show/new/edit/delete)")
+    c.add_argument("action", nargs="?", default="list",
+                   choices=["list", "show", "new", "edit", "delete"],
+                   help="操作 (默认: list)")
+    c.add_argument("--name", help="技能名 (show/new/edit/delete 时)")
+    c.add_argument("--team", help="Team 名称 (留空=个人/共享技能)")
+    c.add_argument("--content", help="SKILL.md 内容 (new/edit 时，内联)")
+    c.add_argument("--file", help="SKILL.md 文件路径 (new/edit 时，从文件读取)")
+    c.add_argument("--category", help="技能分类 (new 时，可选)")
+
+    # cron
+    c = sub.add_parser("cron", help="定时任务 / 闹钟管理 (list/new/delete)")
+    c.add_argument("action", nargs="?", default="list",
+                   choices=["list", "new", "delete"],
+                   help="操作 (默认: list)")
+    c.add_argument("--team", help="Team 名称 (留空=公共作用域)")
+    c.add_argument("--target-type", help="目标类型 (new 时，默认: internal)")
+    c.add_argument("--target-name", help="目标 Agent/会话名 (new 时)")
+    c.add_argument("--schedule-type", choices=["cron", "once"], help="调度类型 (new 时，默认: cron)")
+    c.add_argument("--cron", help="cron 表达式 (new 且 schedule-type=cron 时)")
+    c.add_argument("--run-at", help="单次触发时间 ISO8601 (new 且 schedule-type=once 时)")
+    c.add_argument("--text", help="触发时下发的指令文本 (new 时)")
+    c.add_argument("--task-id", help="任务 ID (delete 时)")
+
     # tunnel
     c = sub.add_parser("tunnel", help="Cloudflare Tunnel 管理")
     c.add_argument("action", nargs="?", default="status",
@@ -3117,6 +3304,8 @@ def main():
         "topics": cmd_topics,
         "personas": cmd_experts,
         "workflows": cmd_workflows,
+        "skill": cmd_skill,
+        "cron": cmd_cron,
         "tunnel": cmd_tunnel,
         "channel": cmd_channel,
         "token": cmd_token,
