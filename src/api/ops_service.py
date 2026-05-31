@@ -684,6 +684,10 @@ class OpsService:
         acpx_bin = shutil.which("acpx")
         if not acpx_bin:
             platforms = []  # fallback: try direct binary names
+        # ``acpx <plat> sessions list`` is a global registry view (not scoped to
+        # cwd), so it lists every session regardless of where we run it. Each row
+        # carries the session's own cwd (column 3 below) — that cwd is what
+        # close_acp_session must reuse to actually close it.
         for plat_name in platforms:
             bin_path = acpx_bin if acpx_bin else shutil.which(plat_name)
             if not bin_path:
@@ -692,7 +696,6 @@ class OpsService:
                 args = [acpx_bin, plat_name, "sessions", "list"] if acpx_bin else [bin_path, "sessions"]
                 proc = await asyncio.create_subprocess_exec(
                     *args,
-
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
@@ -747,25 +750,31 @@ class OpsService:
             return {"status": "error", "reason": str(e)}
 
 
-    async def close_acp_session(self, platform: str, session_name: str) -> dict:
-        """Close an acpx session via 'acpx --cwd <ACPX_WORKING_DIR> <platform> sessions close <name>'.
+    async def close_acp_session(self, platform: str, session_name: str, cwd: str = "") -> dict:
+        """Close an acpx session via 'acpx --cwd <session_cwd> <platform> sessions close <name>'.
 
-        ``acpx`` keeps session state per working directory. ``GET /proxy_acpx_sessions``
-        in front.py:3615 passes ``--cwd ACPX_WORKING_DIR`` (= WORKSPACE_DIR/acpx),
-        so the close must use the same cwd — otherwise acpx looks in the
-        agent process's cwd (wherever uvicorn was launched), returns
-        "session not found" with returncode=1, and the old code silently
-        reported success while the session lingered on disk.
+        ``acpx`` binds every session to the cwd it was created in, and
+        ``sessions close`` only acts on the current cwd (``acpx --help``:
+        "Close session for current cwd"). The list rows carry each session's
+        own cwd (column 3) — close must reuse *that* exact cwd, not a fixed
+        store path. Closing from any other cwd prints
+        ``No named session "<name>" for cwd <dir>`` and still exits 0, so the
+        old fixed-``WORKSPACE_DIR/acpx`` path silently no-oped for every
+        session created elsewhere while the UI reported success.
         """
         acpx_bin = shutil.which("acpx")
         if not acpx_bin:
             return {"status": "error", "reason": "acpx not found"}
-        try:
-            from utils.runtime_paths import WORKSPACE_DIR  # local import to avoid cycles
-            acpx_cwd = os.path.join(str(WORKSPACE_DIR), "acpx")
-            os.makedirs(acpx_cwd, exist_ok=True)
-        except Exception:
-            acpx_cwd = None
+        acpx_cwd = (cwd or "").strip() or None
+        if acpx_cwd is None:
+            # No session cwd supplied: fall back to the canonical store so newly
+            # created sessions (which use WORKSPACE_DIR/acpx) still close.
+            try:
+                from utils.runtime_paths import WORKSPACE_DIR  # local import to avoid cycles
+                acpx_cwd = os.path.join(str(WORKSPACE_DIR), "acpx")
+                os.makedirs(acpx_cwd, exist_ok=True)
+            except Exception:
+                acpx_cwd = None
         cmd = [acpx_bin]
         if acpx_cwd:
             cmd.extend(["--cwd", acpx_cwd])
@@ -779,6 +788,11 @@ class OpsService:
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
             err_text = (stderr.decode("utf-8", errors="replace") or "").strip()
+            # acpx exits 0 even when it finds nothing to close ("No named session
+            # ... for cwd ..."), so returncode alone can't confirm success. Treat
+            # that message as a real failure instead of a false "closed".
+            if "No named session" in err_text:
+                return {"status": "error", "reason": err_text[:200]}
             # exit 0 = just closed, exit 1 = already closed (both fine for idempotency)
             if proc.returncode in (0, 1):
                 return {"status": "success", "stderr": err_text} if err_text else {"status": "success"}
