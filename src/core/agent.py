@@ -33,7 +33,7 @@ from webot.compression import (
 )
 from webot.context import render_runtime_context_block
 from webot.memory import ensure_memory_state
-from webot.skills import build_skills_prompt
+from webot.skills import build_skills_prompt, build_user_profile_block
 from webot.soul import build_soul_prompt
 from webot.workflow_prompt import build_team_workflow_prompt
 from webot.trajectory import auto_trajectory_enabled, save_trajectory
@@ -45,7 +45,7 @@ from webot.permission_context import (
     create_or_reuse_permission_request,
     resolve_permission_context,
 )
-from webot.profiles import get_agent_profile, parse_subagent_session_id, render_profile_system_prompt
+from webot.profiles import frame_session_identity, get_agent_profile, parse_subagent_session_id, render_profile_system_prompt
 from webot.runtime import (
     PLAN_MODE_BLOCKED_TOOLS,
     REVIEW_MODE_BLOCKED_TOOLS,
@@ -812,62 +812,15 @@ class TeamAgent:
                         )
         return None
 
-    def _get_user_profile(self, user_id: str) -> str:
-        """从 data/user_files/{user_id}/user_profile.txt 读取用户画像。"""
-        user_files_dir = self._prompts.get("_user_files_dir", "")
-        fpath = os.path.join(user_files_dir, user_id, "user_profile.txt")
-        try:
-            with open(fpath, "r", encoding="utf-8") as f:
-                return f.read().strip()
-        except FileNotFoundError:
-            return ""
-
     def _get_user_skills(self, user_id: str, team: str = "") -> str:
         """
         从 webot.skills 读取用户的 managed skills，
         并返回格式化的 skill 信息字符串。
         即使没有 skill，也会返回位置信息。
         """
-        from webot.skills import list_skills
+        from webot.skills import build_user_skills_listing
 
-        user_files_dir = self._prompts.get("_user_files_dir", "")
-        skills_dir = os.path.join(user_files_dir, user_id, "skills")
-        team_skills = list_skills(user_id, team=team) if team else []
-        personal_skills = list_skills(user_id)
-
-        # 格式化 skill 信息（即使为空也返回位置信息）
-        skill_lines = ["\n【用户技能列表】"]
-        skill_lines.append(f"技能文件目录位置: {skills_dir}")
-        if team:
-            skill_lines.append(f"团队技能目录位置: {os.path.join(user_files_dir, user_id, 'teams', team, 'skills')}")
-
-        def _append_section(title: str, items: list[dict]) -> None:
-            if not items:
-                return
-            skill_lines.append(title)
-            for skill in items:
-                if not isinstance(skill, dict):
-                    continue
-                skill_name = skill.get("name", "未命名技能")
-                skill_desc = skill.get("description", "无描述")
-                skill_file = skill.get("path", "")
-                skill_lines.append(f"  - {skill_name}: {skill_desc}")
-                if skill_file:
-                    skill_lines.append(f"    文件: {skill_file}")
-
-        if team:
-            _append_section("团队技能：", team_skills)
-            _append_section("共享技能：", personal_skills)
-        elif personal_skills:
-            _append_section("可用技能：", personal_skills)
-
-        if team_skills or personal_skills:
-            skill_lines.append("如需使用某个技能，请优先使用 skill_view 查看完整内容。")
-        else:
-            skill_lines.append("当前暂无已注册的技能。")
-            skill_lines.append("如需添加技能，请使用 skill_manage(action='create') 创建。")
-
-        return "\n".join(skill_lines)
+        return build_user_skills_listing(user_id, team=team)
 
     def _find_internal_session_meta(self, user_id: str, session_id: str) -> dict | None:
         """Resolve an internal agent session to its stored meta and owning team.
@@ -1027,22 +980,7 @@ class TeamAgent:
             return ""
 
         display_name = (meta.get("name") or expert_cfg.get("name") or tag or session_id).strip()
-        is_rich_persona = "## " in persona or "# " in persona
-        if is_rich_persona:
-            return (
-                "【当前会话身份设定】\n"
-                f"你当前会话的唯一身份/角色是「{display_name}」，tag 为 \"{tag}\"。\n"
-                "从现在开始，你必须始终以该身份思考、说话和行动。\n"
-                "除非用户明确要求你切换角色，否则不得退回通用助手口吻，不得否认自己的身份，不得自称只是普通 AI 助手。\n"
-                "当用户询问“你是谁”“你的身份是什么”“你在扮演谁”这类问题时，必须优先依据本身份设定回答。\n\n"
-                f"以下是你必须遵守的完整身份与行为指南：\n\n{persona}\n"
-            )
-        return (
-            "【当前会话身份设定】\n"
-            f"你当前会话的唯一身份/角色是「{display_name}」，tag 为 \"{tag}\"。"
-            "从现在开始，你必须始终按这个身份回应；除非用户明确要求切换，否则不得退回默认通用助手身份。"
-            f"{persona}\n"
-        )
+        return frame_session_identity(display_name, tag, persona)
 
     def _build_chat_rules(self, state: AgentState) -> str:
         """根据消息上下文动态组装聊天行为规则。
@@ -1469,9 +1407,7 @@ class TeamAgent:
 
         if (not is_subagent) or (subagent_profile and subagent_profile.include_user_profile):
             # 注入用户专属画像
-            user_profile = self._get_user_profile(user_id)
-            if user_profile:
-                base_prompt += f"\n【用户画像（描述对方，不是你）】\n{user_profile}\n"
+            base_prompt += build_user_profile_block(user_id)
 
         if (not is_subagent) or (subagent_profile and subagent_profile.include_user_skills):
             # 注入用户技能列表（总是显示位置信息）

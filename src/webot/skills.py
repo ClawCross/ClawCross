@@ -413,24 +413,39 @@ def get_skill(user_id: str, *, name: str, team: str = "", fallback_to_personal: 
     }
 
 
-def build_skills_prompt(user_id: str, *, team: str = "") -> str:
-    """Build compact skill index for system prompt injection."""
+def build_skills_prompt(user_id: str, *, team: str = "", tool_mode: str = "mcp") -> str:
+    """Build compact skill index for system prompt injection.
+
+    tool_mode="mcp" (internal agents) references the skill_* MCP tools for
+    reading, creating, patching and evolving skills. tool_mode="cli" (external
+    agents acting via the ClawCross CLI) tells them to read the listed SKILL.md
+    file paths instead, since they cannot call MCP tools; skill creation and
+    self-evolution stay with internal agents.
+    """
     team_skills = list_skills(user_id, team=team) if team else []
     personal_skills = list_skills(user_id)
     skills = team_skills + personal_skills if team else personal_skills
     if not skills:
         return ""
 
-    lines = [
-        "\n【Skills (Procedural Memory)】",
-        "You have the following skills available. Use skill_view to read full content before applying.",
-        "When you complete complex tasks (5+ tool calls), fix tricky errors, or discover non-trivial workflows,",
-        "consider creating a new skill with skill_manage(action='create').",
-        "When using a skill and finding it outdated or wrong, patch it immediately with skill_manage(action='patch').",
-        "When repeated failures or fresh execution errors appear, run skill_evolution_report first, then skill_evolution_apply",
-        "to refresh the managed self-evolution block and persist the new failure learnings.",
-        "",
-    ]
+    if tool_mode == "cli":
+        lines = [
+            "\n【Skills (Procedural Memory)】",
+            "You have the following skills available. To apply one, read its SKILL.md at the file path shown below.",
+            "（本 CLI 会话不能调用 skill_* MCP 工具；技能的创建与自演进由内部 agent 负责。）",
+            "",
+        ]
+    else:
+        lines = [
+            "\n【Skills (Procedural Memory)】",
+            "You have the following skills available. Use skill_view to read full content before applying.",
+            "When you complete complex tasks (5+ tool calls), fix tricky errors, or discover non-trivial workflows,",
+            "consider creating a new skill with skill_manage(action='create').",
+            "When using a skill and finding it outdated or wrong, patch it immediately with skill_manage(action='patch').",
+            "When repeated failures or fresh execution errors appear, run skill_evolution_report first, then skill_evolution_apply",
+            "to refresh the managed self-evolution block and persist the new failure learnings.",
+            "",
+        ]
     if team:
         if team_skills:
             lines.append(f"Team skills for {team}:")
@@ -455,6 +470,82 @@ def build_skills_prompt(user_id: str, *, team: str = "") -> str:
             lines.append(f"  - {skill['name']}{cat}{path}: {desc}")
 
     return "\n".join(lines)
+
+
+def build_user_skills_listing(user_id: str, *, team: str = "", tool_mode: str = "mcp") -> str:
+    """Human-readable skill listing with directory locations for prompt injection.
+
+    Always returns content (location info even when no skills exist) so agents
+    know where skills live and how to create them. Shared by internal session
+    agents and external agents to keep one source of truth.
+
+    tool_mode="mcp" (internal agents) references the skill_* MCP tools.
+    tool_mode="cli" (external agents acting via the ClawCross CLI) tells them to
+    read the listed SKILL.md file paths directly, since they cannot call MCP tools.
+    """
+    user_files_dir = str(USER_FILES_DIR)
+    safe_user = user_id or "anonymous"
+    skills_dir = os.path.join(user_files_dir, safe_user, "skills")
+    team_skills = list_skills(user_id, team=team) if team else []
+    personal_skills = list_skills(user_id)
+
+    # 格式化 skill 信息（即使为空也返回位置信息）
+    skill_lines = ["\n【用户技能列表】"]
+    skill_lines.append(f"技能文件目录位置: {skills_dir}")
+    if team:
+        skill_lines.append(f"团队技能目录位置: {os.path.join(user_files_dir, safe_user, 'teams', team, 'skills')}")
+
+    def _append_section(title: str, items: list[dict]) -> None:
+        if not items:
+            return
+        skill_lines.append(title)
+        for skill in items:
+            if not isinstance(skill, dict):
+                continue
+            skill_name = skill.get("name", "未命名技能")
+            skill_desc = skill.get("description", "无描述")
+            skill_file = skill.get("path", "")
+            skill_lines.append(f"  - {skill_name}: {skill_desc}")
+            if skill_file:
+                skill_lines.append(f"    文件: {skill_file}")
+
+    if team:
+        _append_section("团队技能：", team_skills)
+        _append_section("共享技能：", personal_skills)
+    elif personal_skills:
+        _append_section("可用技能：", personal_skills)
+
+    if team_skills or personal_skills:
+        if tool_mode == "cli":
+            skill_lines.append("如需查看某个技能的完整内容，直接读取上面列出的技能文件(SKILL.md)路径即可；也可执行 `uv run scripts/cli.py openclaw skills` 查看技能列表。")
+        else:
+            skill_lines.append("如需使用某个技能，请优先使用 skill_view 查看完整内容。")
+    else:
+        skill_lines.append("当前暂无已注册的技能。")
+        if tool_mode == "cli":
+            skill_lines.append("（技能由团队/用户在 ClawCross 中维护；本 CLI 会话不负责创建技能。）")
+        else:
+            skill_lines.append("如需添加技能，请使用 skill_manage(action='create') 创建。")
+
+    return "\n".join(skill_lines)
+
+
+def build_user_profile_block(user_id: str) -> str:
+    """Read {user_id}/user_profile.txt and wrap it as a prompt block.
+
+    Returns the full 【用户画像】 block, or "" when there is no profile. Shared by
+    internal session agents and external agents so both describe the human owner
+    with identical framing.
+    """
+    fpath = os.path.join(str(USER_FILES_DIR), user_id or "anonymous", "user_profile.txt")
+    try:
+        with open(fpath, "r", encoding="utf-8") as f:
+            profile = f.read().strip()
+    except (FileNotFoundError, OSError):
+        return ""
+    if not profile:
+        return ""
+    return f"\n【用户画像（描述对方，不是你）】\n{profile}\n"
 
 
 # ── Internal helpers ────────────────────────────────────────────────

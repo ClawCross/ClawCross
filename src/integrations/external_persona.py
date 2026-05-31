@@ -22,44 +22,50 @@ def _log(*args):
 
 
 def build_external_persona_prompt(tag: str = "", *, user_id: str = "", team: str = "") -> str:
-    """Resolve an external-agent persona by tag and format it for first-prompt injection."""
+    """Resolve an external-agent persona by tag and format it for first-prompt injection.
+
+    Persona framing and skill listing mirror the internal session agent
+    (webot.profiles.frame_session_identity / webot.skills.build_user_skills_listing),
+    so internal and external agents share one source of truth. Skill and workflow
+    blocks are injected regardless of whether a persona tag matched, matching
+    internal agents which inject skills unconditionally.
+    """
     persona_tag = str(tag or "").strip()
     _log(f"CALL tag={tag!r} uid={user_id!r} team={team!r}")
-    if not persona_tag:
-        _log(f"  -> empty tag, return empty")
-        return ""
+
+    # --- Resolve persona by tag (may be absent; skills are injected either way) ---
+    persona = ""
+    expert_name = persona_tag
+    if persona_tag:
+        experts: list = []
+        try:
+            from oasis.experts import get_all_experts
+            experts = get_all_experts(user_id or None, team=team or "")
+        except Exception as e:
+            _log(f"  -> get_all_experts error: {e}")
+        _log(f"  -> got {len(experts)} experts")
+        for expert in experts:
+            if not isinstance(expert, dict):
+                continue
+            if str(expert.get("tag", "")).strip() == persona_tag:
+                persona = str(expert.get("persona", "") or "").strip()
+                expert_name = str(expert.get("name", "") or "").strip() or persona_tag
+                _log(f"  -> matched: {expert.get('name')} source={expert.get('source')}")
+                break
+        if not persona:
+            _log(f"  -> no persona for tag={persona_tag!r}")
+
+    # --- Shared identity framing (same as internal session agents) ---
     try:
-        from oasis.experts import get_all_experts
-    except Exception as e:
-        _log(f"  -> import error: {e}, return empty")
-        return ""
+        from webot.profiles import frame_session_identity
+    except Exception:
+        from src.webot.profiles import frame_session_identity
+    persona_block = frame_session_identity(expert_name, persona_tag, persona)
 
-    try:
-        experts = get_all_experts(user_id or None, team=team or "")
-    except Exception as e:
-        _log(f"  -> get_all_experts error: {e}, return empty")
-        return ""
-
-    _log(f"  -> got {len(experts)} experts")
-    matched = None
-    for expert in experts:
-        if not isinstance(expert, dict):
-            continue
-        if str(expert.get("tag", "")).strip() == persona_tag:
-            matched = expert
-            _log(f"  -> matched: {matched.get('name')} source={matched.get('source')}")
-            break
-    if not matched:
-        _log(f"  -> no match for tag={persona_tag!r}, return empty")
-        return ""
-
-    persona = str(matched.get("persona", "") or "").strip()
-    if not persona:
-        _log(f"  -> empty persona, return empty")
-        return ""
-
-    expert_name = str(matched.get("name", "") or persona_tag).strip()
+    # --- User profile + team-scoped skill / workflow injection (unconditional, matches internal) ---
+    profile_block = ""
     workflow_prompt = ""
+    skills_listing = ""
     skills_prompt = ""
     try:
         try:
@@ -71,23 +77,16 @@ def build_external_persona_prompt(tag: str = "", *, user_id: str = "", team: str
         _log(f"  -> workflow prompt import/build error: {e}")
     try:
         try:
-            from webot.skills import build_skills_prompt
+            from webot.skills import build_skills_prompt, build_user_profile_block, build_user_skills_listing
         except Exception:
-            from src.webot.skills import build_skills_prompt
-        skills_prompt = build_skills_prompt(user_id or "", team=team or "")
+            from src.webot.skills import build_skills_prompt, build_user_profile_block, build_user_skills_listing
+        profile_block = build_user_profile_block(user_id or "")
+        skills_listing = build_user_skills_listing(user_id or "", team=team or "", tool_mode="cli")
+        skills_prompt = build_skills_prompt(user_id or "", team=team or "", tool_mode="cli")
     except Exception as e:
         _log(f"  -> skills prompt import/build error: {e}")
 
-    result = (
-        "【外部 Agent 人设】\n"
-        f"当前 persona tag: {persona_tag}\n"
-        f"当前角色名: {expert_name}\n"
-        "以下是你需要遵循的人设与行为描述：\n\n"
-        f"{persona}"
-    ).strip()
-    if workflow_prompt:
-        result += "\n\n" + workflow_prompt
-    if skills_prompt:
-        result += "\n\n" + skills_prompt
+    parts = [persona_block, profile_block, skills_listing, skills_prompt, workflow_prompt]
+    result = "\n\n".join(p for p in parts if p).strip()
     _log(f"  -> return {len(result)} chars")
     return result
