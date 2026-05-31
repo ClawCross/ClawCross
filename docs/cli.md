@@ -33,7 +33,7 @@ uv run scripts/cli.py [-u USER] <子命令> [参数...]
 |------|------|--------|
 | `-u`, `--user` | 用户名（通过 `X-User-Id` header 传递给后端） | 环境变量 `CLI_USER`，默认 `admin` |
 
-> `-u` 对所有走 front.py 的命令生效（internal-agents / teams / visual / openclaw-snapshot 等）。
+> `-u` 对所有走 front.py 的命令生效（internal-agents / teams / visual / openclaw-snapshot / skill / cron 等）。
 
 ---
 
@@ -63,6 +63,8 @@ uv run scripts/cli.py [-u USER] <子命令> [参数...]
 22. [tunnel](#22-tunnel) — Cloudflare Tunnel 管理
 23. [token](#23-token) — Token 生成与验证
 24. [status](#24-status) — 服务状态检查
+25. [skill](#25-skill) — Managed 技能管理
+26. [cron](#26-cron) — 定时任务 / 闹钟管理
 
 ---
 
@@ -886,6 +888,80 @@ uv run scripts/cli.py status
 ```
 
 无额外参数。
+
+---
+
+## 25. skill
+
+**Managed 技能管理**
+
+读写用户/团队的 managed 技能（SKILL.md）。留空 `--team` 操作个人/共享技能，带 `--team` 操作团队技能。
+
+```bash
+# 列出技能（个人 / 团队）
+uv run scripts/cli.py skill list
+uv run scripts/cli.py skill list --team myteam
+
+# 查看某个技能的完整 SKILL.md 正文
+uv run scripts/cli.py skill show --name make_slides
+uv run scripts/cli.py skill show --name make_slides --team myteam
+
+# 新建技能（已存在则报 409；--file 从文件读，--content 内联）
+uv run scripts/cli.py skill new --name make_slides --file ./SKILL.md
+uv run scripts/cli.py skill new --name make_slides --content "$(cat SKILL.md)" --category docs
+
+# 更新（覆盖）已有技能
+uv run scripts/cli.py skill edit --name make_slides --file ./SKILL.md
+
+# 删除技能
+uv run scripts/cli.py skill delete --name make_slides --team myteam
+```
+
+| 参数 | 说明 |
+| --- | --- |
+| `action` | `list`(默认) / `show` / `new` / `edit` / `delete` |
+| `--name` | 技能名（show/new/edit/delete 必填） |
+| `--team` | 团队作用域（留空=个人/共享） |
+| `--content` | SKILL.md 内容（new/edit，内联） |
+| `--file` | SKILL.md 文件路径（new/edit，从文件读取） |
+| `--category` | 技能分类（new，可选） |
+
+---
+
+## 26. cron
+
+**定时任务 / 闹钟管理**
+
+为内部 Agent / 会话设置 cron 周期任务或单次定时触发。留空 `--team` 走公共作用域，带 `--team` 走团队作用域。
+
+```bash
+# 列出定时任务与可调度目标
+uv run scripts/cli.py cron list
+uv run scripts/cli.py cron list --team myteam
+
+# 新建：cron 周期任务
+uv run scripts/cli.py cron new --team myteam --target-type internal --target-name 助手 \
+  --schedule-type cron --cron "0 9 * * *" --text "早报：汇总今天的待办"
+
+# 新建：单次定时触发
+uv run scripts/cli.py cron new --target-type internal --target-name 助手 \
+  --schedule-type once --run-at "2026-06-01T09:00:00" --text "提醒发周报"
+
+# 删除定时任务
+uv run scripts/cli.py cron delete --task-id <task_id> --team myteam
+```
+
+| 参数 | 说明 |
+| --- | --- |
+| `action` | `list`(默认) / `new` / `delete` |
+| `--team` | 团队作用域（留空=公共） |
+| `--target-type` | 目标类型（new，默认 `internal`） |
+| `--target-name` | 目标 Agent/会话名（new 必填） |
+| `--schedule-type` | `cron` / `once`（new，默认 `cron`） |
+| `--cron` | cron 表达式（new 且 cron 类型） |
+| `--run-at` | 单次触发时间 ISO8601（new 且 once 类型） |
+| `--text` | 触发时下发的指令文本（new 必填） |
+| `--task-id` | 任务 ID（delete 必填） |
 
 ---
 

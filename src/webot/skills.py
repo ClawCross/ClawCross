@@ -418,9 +418,9 @@ def build_skills_prompt(user_id: str, *, team: str = "", tool_mode: str = "mcp")
 
     tool_mode="mcp" (internal agents) references the skill_* MCP tools for
     reading, creating, patching and evolving skills. tool_mode="cli" (external
-    agents acting via the ClawCross CLI) tells them to read the listed SKILL.md
-    file paths instead, since they cannot call MCP tools; skill creation and
-    self-evolution stay with internal agents.
+    agents acting via the ClawCross CLI) points to the `scripts/cli.py skill`
+    commands (list/show/new/edit/delete) and the listed SKILL.md file paths,
+    since they cannot call MCP tools.
     """
     team_skills = list_skills(user_id, team=team) if team else []
     personal_skills = list_skills(user_id)
@@ -432,7 +432,7 @@ def build_skills_prompt(user_id: str, *, team: str = "", tool_mode: str = "mcp")
         lines = [
             "\n【Skills (Procedural Memory)】",
             "You have the following skills available. To apply one, read its SKILL.md at the file path shown below.",
-            "（本 CLI 会话不能调用 skill_* MCP 工具；技能的创建与自演进由内部 agent 负责。）",
+            "（本 CLI 会话不调用 skill_* MCP 工具；用 `uv run scripts/cli.py skill list/show/new/edit/delete` 管理技能。）",
             "",
         ]
     else:
@@ -517,13 +517,13 @@ def build_user_skills_listing(user_id: str, *, team: str = "", tool_mode: str = 
 
     if team_skills or personal_skills:
         if tool_mode == "cli":
-            skill_lines.append("如需查看某个技能的完整内容，直接读取上面列出的技能文件(SKILL.md)路径即可；也可执行 `uv run scripts/cli.py openclaw skills` 查看技能列表。")
+            skill_lines.append("如需查看某个技能的完整内容，执行 `uv run scripts/cli.py skill show --name <技能名>`（或直接读取上面列出的 SKILL.md 路径）；`uv run scripts/cli.py skill list` 查看技能列表。")
         else:
             skill_lines.append("如需使用某个技能，请优先使用 skill_view 查看完整内容。")
     else:
         skill_lines.append("当前暂无已注册的技能。")
         if tool_mode == "cli":
-            skill_lines.append("（技能由团队/用户在 ClawCross 中维护；本 CLI 会话不负责创建技能。）")
+            skill_lines.append("如需创建技能，执行 `uv run scripts/cli.py skill new --name <名称> --file <SKILL.md 路径>`（团队作用域加 --team <team>）。")
         else:
             skill_lines.append("如需添加技能，请使用 skill_manage(action='create') 创建。")
 
