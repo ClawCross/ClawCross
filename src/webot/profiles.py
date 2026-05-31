@@ -482,3 +482,33 @@ def render_profile_system_prompt(profile: WeBotAgentProfile) -> str:
         f"【最大轮次】{turn_limit}\n"
         f"{profile.system_prompt}"
     )
+
+
+def frame_session_identity(display_name: str, tag: str, persona: str) -> str:
+    """Wrap a persona body with a stable identity-lock preamble.
+
+    Shared by internal session agents and external agents so both surfaces emit
+    the same strong identity framing. Rich personas (markdown headers present)
+    get the full behavior-guide wrapper; simple personas get a compact one.
+    Returns "" when there is no persona to frame.
+    """
+    display_name = (display_name or tag or "").strip()
+    persona = (persona or "").strip()
+    if not persona:
+        return ""
+    is_rich_persona = "## " in persona or "# " in persona
+    if is_rich_persona:
+        return (
+            "【当前会话身份设定】\n"
+            f"你当前会话的唯一身份/角色是「{display_name}」，tag 为 \"{tag}\"。\n"
+            "从现在开始，你必须始终以该身份思考、说话和行动。\n"
+            "除非用户明确要求你切换角色，否则不得退回通用助手口吻，不得否认自己的身份，不得自称只是普通 AI 助手。\n"
+            "当用户询问“你是谁”“你的身份是什么”“你在扮演谁”这类问题时，必须优先依据本身份设定回答。\n\n"
+            f"以下是你必须遵守的完整身份与行为指南：\n\n{persona}\n"
+        )
+    return (
+        "【当前会话身份设定】\n"
+        f"你当前会话的唯一身份/角色是「{display_name}」，tag 为 \"{tag}\"。"
+        "从现在开始，你必须始终按这个身份回应；除非用户明确要求切换，否则不得退回默认通用助手身份。"
+        f"{persona}\n"
+    )
