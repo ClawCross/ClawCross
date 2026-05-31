@@ -200,12 +200,31 @@ def acpx_options_from_agent(
     return normalize_acpx_run_options(merged, default_timeout_sec=default_timeout_sec)
 
 
+def _default_acpx_cwd() -> str:
+    """Canonical acpx session store (``WORKSPACE_DIR/acpx``).
+
+    acpx keeps session state per working directory. Every caller must agree on
+    one directory or sessions scatter and list/close/send target different
+    stores. The process launch pwd is ``WORKSPACE_DIR`` (one level above), so a
+    raw ``os.getcwd()`` fallback would silently land in the wrong place; pin the
+    default here so an omitted ``cwd`` still hits the shared store.
+    """
+    try:
+        from utils.runtime_paths import WORKSPACE_DIR  # local import to avoid cycles
+
+        acpx_cwd = os.path.join(str(WORKSPACE_DIR), "acpx")
+        os.makedirs(acpx_cwd, exist_ok=True)
+        return acpx_cwd
+    except Exception:
+        return os.getcwd()
+
+
 class AcpxAdapter:
     """Minimal async wrapper around acpx CLI sessions/prompt."""
 
     def __init__(self, *, cwd: str | None = None):
         self._acpx_bin = shutil.which("acpx")
-        self._cwd = cwd or os.getcwd()
+        self._cwd = cwd or _default_acpx_cwd()
         self._pending_initial_prompt: dict[str, str] = {}
         if not self._acpx_bin:
             raise AcpxError("acpx binary not found in PATH")
@@ -1203,7 +1222,7 @@ _adapter_singletons: dict[str, AcpxAdapter] = {}
 
 
 def get_acpx_adapter(*, cwd: str | None = None) -> AcpxAdapter:
-    key = os.path.realpath(cwd or os.getcwd())
+    key = os.path.realpath(cwd or _default_acpx_cwd())
     adapter = _adapter_singletons.get(key)
     if adapter is None:
         adapter = AcpxAdapter(cwd=key)

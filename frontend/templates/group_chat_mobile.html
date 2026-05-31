@@ -19213,7 +19213,7 @@ async function openSessionsSubpage() {
           html += '<span style="color:var(--text-secondary);word-break:break-all;flex:1;" title="' + esc(s.session_id || '') + '">' + esc(s.name || s.session_id || '-') + '</span>';
           html += '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">';
           html += '<span style="color:var(--text-secondary);white-space:nowrap;font-size:11px;">' + esc(s.last_used_at || '-') + '</span>';
-          html += '<button onclick="closeAcpSession(\'' + esc(p).replace(/'/g, "\\'") + '\',\'' + esc(s.name || '').replace(/'/g, "\\'") + '\')" style="padding:2px 8px;border-radius:4px;font-size:11px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;cursor:pointer;">\u5173\u95ed</button>';
+          html += '<button onclick="closeAcpSession(\'' + esc(p).replace(/'/g, "\\'") + '\',\'' + esc(s.name || '').replace(/'/g, "\\'") + '\',\'' + esc(s.cwd || '').replace(/'/g, "\\'") + '\')" style="padding:2px 8px;border-radius:4px;font-size:11px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;cursor:pointer;">\u5173\u95ed</button>';
           html += '</div>';
           html += '</div>';
         });
@@ -19246,10 +19246,15 @@ async function openSessionsSubpage() {
   }
 }
 
-async function closeAcpSession(platform, sessionName) {
+async function closeAcpSession(platform, sessionName, cwd) {
   if (!confirm('\u786e\u5b9a\u5173\u95ed\u8fd9\u4e2a\u4f1a\u8bdd?')) return;
   try {
-    await api('POST', '/proxy_sessions_close', {platform: platform, session_name: sessionName});
+    // acpx binds the session to its own cwd; pass it through or close no-ops.
+    const data = await api('POST', '/proxy_sessions_close', {platform: platform, session_name: sessionName, cwd: cwd || ''});
+    if (data && data.status === 'error') {
+      toast('\u5173\u95ed\u5931\u8d25: ' + (data.reason || 'unknown'));
+      return;
+    }
     openSessionsSubpage();
   } catch(e) {
     toast('\u5173\u95ed\u5931\u8d25: ' + e.message);

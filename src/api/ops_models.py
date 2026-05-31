@@ -79,6 +79,10 @@ class SessionsCloseRequest(BaseModel):
     password: str = ""
     platform: str
     session_name: str
+    # acpx binds each session to the cwd it was created in; ``sessions close``
+    # only acts on the current cwd. Pass the session's own cwd (from the list
+    # row) or close silently no-ops with exit 0.
+    cwd: str = ""
 
 
 class UpdateCheckRequest(BaseModel):

@@ -73,7 +73,7 @@ def create_ops_router(
 
     @router.post("/sessions_close")
     async def sessions_close(req: SessionsCloseRequest, x_internal_token: str | None = Header(None)):
-        return await service.close_acp_session(req.platform, req.session_name)
+        return await service.close_acp_session(req.platform, req.session_name, req.cwd)
 
     @router.post("/update_check")
     async def update_check(req: UpdateCheckRequest, x_internal_token: str | None = Header(None)):
