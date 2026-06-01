@@ -31,7 +31,7 @@ from utils.checkpoint_repository import (
     get_context_compaction,
     save_context_compaction,
 )
-from utils.context_compressor import estimate_messages_tokens
+from utils.context_compressor import _msg_tokens, estimate_messages_tokens
 
 # Lazy imports for things that pull heavy modules
 # - webot.context._store_runtime_text / _runtime_artifacts_enabled
@@ -178,6 +178,9 @@ def _pick_boundary(
     Walks from messages[-preserve_recent] downward; first b whose tail tokens
     <= target_tokens wins. Falls back to the last safe boundary otherwise so
     we still fold something rather than nothing.
+
+    Uses a suffix-sum of per-message tokens so the tail-cost lookup is O(1),
+    bringing the overall pass to O(N) instead of O(N²).
     """
     if not messages:
         return current_until
@@ -185,13 +188,17 @@ def _pick_boundary(
     max_b = max(0, n - preserve_recent)
     if max_b <= current_until:
         return current_until
+    # suffix[i] = sum of tokens of messages[i:]; suffix[n] = 0
+    suffix = [0] * (n + 1)
+    for i in range(n - 1, -1, -1):
+        suffix[i] = suffix[i + 1] + _msg_tokens(messages[i])
     best_fallback = current_until
     for desired in range(max_b, current_until, -1):
         safe = _find_safe_boundary(messages, desired)
         if safe <= current_until:
             continue
         best_fallback = max(best_fallback, safe)
-        if estimate_messages_tokens(messages[safe:]) <= target_tokens:
+        if suffix[safe] <= target_tokens:
             return safe
     return best_fallback
 
