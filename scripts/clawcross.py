@@ -40,7 +40,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-from src.utils.runtime_paths import ENV_FILE, STATE_DIR, ensure_runtime_dirs
+from src.utils.runtime_paths import ENV_FILE, STATE_DIR, LOGS_DIR, PID_DIR, WORKSPACE_DIR, ensure_runtime_dirs, set_subprocess_env
 from src.utils.env_settings import read_env_all, write_env_settings
 ensure_runtime_dirs()
 STATE_PATH = STATE_DIR / "state.json"
@@ -214,7 +214,8 @@ SLASH_COMMANDS = [
     ("/state", "show persisted state"),
     ("/restart", "restart the ClawCross backend"),
     ("/cancel", "cancel generation on the current platform (internal or ACP)"),
-    ("/front", "get a public magic link (web UI login)"),
+    ("/front", "get magic link (local 127.0.0.1 + public tunnel)"),
+    ("/tunnel [on|off|status]", "toggle public Cloudflare tunnel"),
     ("/help", "show commands"),
     ("/exit", "leave the shell (backend keeps running)"),
     ("/shutdown", "stop all background services and quit"),
@@ -236,7 +237,8 @@ SLASH_MENU = [
     ("/expert [<team>]", "team experts (list / show / add / edit / delete)", "/expert", True),
     ("/cron [<team>]", "cron actions (list / add / delete)", "/cron", True),
     ("/channel", "list / setup chatbot channels", "/channel", True),
-    ("/front", "get a public magic link (web UI login)", "/front", True),
+    ("/front", "magic link: local 127.0.0.1 + public tunnel", "/front", True),
+    ("/tunnel", "toggle public Cloudflare tunnel (on/off/status)", "/tunnel", True),
     ("/exit", "leave the shell (backend keeps running)", "/exit", True),
     ("/shutdown", "stop all background services and quit", "/shutdown", True),
 ]
@@ -1346,8 +1348,122 @@ def _show_magic_link(state: dict) -> None:
         return
     link = resp.get("link") or ""
     valid_hours = resp.get("valid_hours") or 24
+    # 本地链接：取返回链接的 token 路径，套到 127.0.0.1 的前端端口上
+    from urllib.parse import urlsplit
+    parts_u = urlsplit(link)
+    path_q = parts_u.path + (("?" + parts_u.query) if parts_u.query else "")
+    local_link = f"{FRONT_BASE}{path_q}" if path_q else link
+    # 公网链接：仅当后端返回的是非 localhost 域名（即 tunnel 已开）才有
+    host = (parts_u.hostname or "").lower()
+    is_public = bool(host) and host not in ("127.0.0.1", "localhost", "::1")
     print(f"Magic link for {user} (valid {valid_hours}h):")
-    print(link)
+    print(f"  本地 (127.0.0.1): {local_link}")
+    if is_public:
+        print(f"  公网 (tunnel):    {link}")
+    else:
+        print("  公网 (tunnel):    未开启 —— 用 /tunnel on 开启后再 /front")
+
+
+def _cmd_tunnel(arg: str = "") -> None:
+    """Cloudflare 公网 tunnel 开关：on / off / status（不带参数=status）。
+
+    与 `clawcross tunnel` 共用同一 pidfile，所以 shell 内外状态一致。
+    """
+    pidfile = os.path.join(str(PID_DIR), "tunnel.pid")
+
+    def _running():
+        if not os.path.exists(pidfile):
+            return False, 0
+        try:
+            pid = int(open(pidfile).read().strip())
+        except (ValueError, OSError):
+            return False, 0
+        try:
+            os.kill(pid, 0)
+            return True, pid
+        except OSError:
+            return False, pid
+
+    def _public_domain():
+        try:
+            v = (read_env_all(str(ENV_FILE)).get("PUBLIC_DOMAIN") or "").strip()
+        except Exception:
+            return ""
+        return "" if v in ("", "wait to set") else v
+
+    action = (arg or "status").strip().lower()
+    if action in ("", "status"):
+        ok, pid = _running()
+        if ok:
+            dom = _public_domain()
+            print(f"✅ tunnel 运行中 (PID {pid})")
+            print(f"🌍 公网: {dom}" if dom else "⏳ 公网地址尚未就绪")
+        else:
+            print("❌ tunnel 未运行（/tunnel on 开启）")
+        return
+    if action in ("on", "start"):
+        ok, pid = _running()
+        if ok:
+            print(f"⚠️ tunnel 已在运行 (PID {pid})")
+            return
+        log = os.path.join(str(LOGS_DIR), "tunnel.log")
+        os.makedirs(os.path.dirname(log), exist_ok=True)
+        proc = subprocess.Popen(
+            [sys.executable, str(PROJECT_ROOT / "scripts" / "tunnel.py")],
+            stdout=open(log, "w"), stderr=subprocess.STDOUT,
+            cwd=str(WORKSPACE_DIR), start_new_session=True,
+            env=set_subprocess_env(os.environ),
+        )
+        with open(pidfile, "w") as f:
+            f.write(str(proc.pid))
+        print(f"🌐 tunnel 启动中 (PID {proc.pid})，日志 {log}")
+        for _ in range(30):
+            time.sleep(2)
+            dom = _public_domain()
+            if dom:
+                print(f"🌍 公网: {dom} —— 现在 /front 会同时给出本地和公网链接")
+                return
+        print("⏳ 公网地址尚未就绪，请稍后 /tunnel status 或查看日志")
+        return
+    if action in ("off", "stop"):
+        def _kill_pidfile(pf: str) -> bool:
+            if not os.path.exists(pf):
+                return False
+            try:
+                pid = int(open(pf).read().strip())
+            except (ValueError, OSError):
+                pid = 0
+            killed = False
+            if pid:
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                    for _ in range(10):
+                        time.sleep(0.5)
+                        try:
+                            os.kill(pid, 0)
+                        except OSError:
+                            break
+                    else:
+                        os.kill(pid, signal.SIGKILL)
+                    killed = True
+                except OSError:
+                    pass
+            try:
+                os.remove(pf)
+            except OSError:
+                pass
+            return killed
+        # 同时停 tunnel.py 与其 cloudflared 子进程
+        any_killed = _kill_pidfile(pidfile)
+        any_killed = _kill_pidfile(os.path.join(str(PID_DIR), "cloudflared.pid")) or any_killed
+        print("✅ tunnel 已停止" if any_killed else "tunnel 未运行")
+        # 清掉 PUBLIC_DOMAIN，避免 /front 仍显示已失效的公网地址
+        try:
+            write_env_settings(str(ENV_FILE), {"PUBLIC_DOMAIN": "wait to set"})
+        except Exception:
+            pass
+        return
+    print(f"未知参数: {action}（用 on / off / status）")
 
 
 def cmd_restart(_args, state: dict) -> int:
@@ -2261,6 +2377,9 @@ def _handle_slash(command: str, state: dict) -> bool:
         return True
     if name == "/front":
         _show_magic_link(state)
+        return True
+    if name == "/tunnel":
+        _cmd_tunnel(parts[1].strip() if len(parts) >= 2 else "")
         return True
     if name == "/model":
         from clawcross_cli.model_cmd import handle_model_command
