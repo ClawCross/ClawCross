@@ -8,6 +8,7 @@
 
 import asyncio
 import base64
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable
@@ -19,7 +20,8 @@ from services.message_builder import build_human_message
 from api.system_models import SystemTriggerRequest
 
 logger = get_logger("system_service")
-_GRAPH_RECURSION_LIMIT = 100
+# 默认 500 步上限；可用 env GRAPH_RECURSION_LIMIT 覆盖。与 openai_service 保持一致。
+_GRAPH_RECURSION_LIMIT = int(os.getenv("GRAPH_RECURSION_LIMIT", "500"))
 
 
 @dataclass(frozen=True)

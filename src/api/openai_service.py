@@ -15,6 +15,7 @@ from typing import Any, Callable
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langgraph.errors import GraphRecursionError
 
 from utils.auth_utils import extract_user_password_session, is_internal_bearer, parse_bearer_parts
 from utils.effort_controller import resolve_default_chat_max_output_tokens
@@ -24,7 +25,9 @@ from api.openai_models import ChatCompletionRequest, ChatMessage, OpenAIExecutio
 from api.openai_protocol import OpenAIProtocolHelper
 
 logger = get_logger("openai_service")
-_GRAPH_RECURSION_LIMIT = 100
+# 默认 500 步上限；可用 env GRAPH_RECURSION_LIMIT 覆盖（调大容长任务，调小更早兜底）。
+# 超出后不抛异常崩溃，由下方 except GraphRecursionError 优雅返回提示。
+_GRAPH_RECURSION_LIMIT = int(os.getenv("GRAPH_RECURSION_LIMIT", "500"))
 _DEFAULT_WEBOT_CHAT_MAX_TOKENS = resolve_default_chat_max_output_tokens()
 
 # --- Agent tool whitelist ---
@@ -475,6 +478,17 @@ class OpenAIChatService:
             logger.info("non-stream cancelled user=%s session=%s", ctx.user_id, ctx.session_id)
             await self._patch_cancelled_tool_calls(ctx.config)
             return self.make_openai_response("⚠️ 已终止", model=ctx.model_name)
+        except GraphRecursionError:
+            logger.warning(
+                "non-stream recursion limit hit user=%s session=%s limit=%s",
+                ctx.user_id, ctx.session_id, _GRAPH_RECURSION_LIMIT,
+            )
+            await self._patch_cancelled_tool_calls(ctx.config)
+            return self.make_openai_response(
+                "⚠️ 已超出本轮执行步数上限（recursion limit），已自动停止。"
+                "常见原因：工具/命令反复超时重试。请缩小任务范围、拆分步骤，或改用后台异步任务后重试。",
+                model=ctx.model_name,
+            )
         except Exception as e:
             error_chain = self._exception_chain_text(e)
             diagnosis = self._diagnose_exception(e)
@@ -613,6 +627,21 @@ class OpenAIChatService:
                         await self.agent.agent_app.aupdate_state(ctx.config, {"messages": [partial_msg]})
                     await queue.put(self.make_openai_chunk(
                         "\n\n⚠️ 已终止思考", model=ctx.model_name, completion_id=completion_id
+                    ))
+                    await queue.put(self.make_openai_chunk(
+                        "", model=ctx.model_name, finish_reason="stop", completion_id=completion_id
+                    ))
+                    await queue.put("data: [DONE]\n\n")
+                except GraphRecursionError:
+                    logger.warning(
+                        "stream recursion limit hit user=%s session=%s limit=%s",
+                        ctx.user_id, ctx.session_id, _GRAPH_RECURSION_LIMIT,
+                    )
+                    await self._patch_cancelled_tool_calls(ctx.config)
+                    await queue.put(self.make_openai_chunk(
+                        "\n\n⚠️ 已超出本轮执行步数上限（recursion limit），已自动停止。"
+                        "常见原因：工具/命令反复超时重试。请缩小任务范围、拆分步骤，或改用后台异步任务后重试。",
+                        model=ctx.model_name, completion_id=completion_id,
                     ))
                     await queue.put(self.make_openai_chunk(
                         "", model=ctx.model_name, finish_reason="stop", completion_id=completion_id
