@@ -482,7 +482,26 @@ def start_chatbot_if_configured(platforms):
 
 
 def start_harness_conductor_if_configured():
-    enabled = (os.getenv("CLAWCROSS_HARNESS_CONDUCTOR") or "1").strip().lower()
+    # harness 配置（CLAWCROSS_HARNESS_CONDUCTOR 开关 / DASHBOARD_URL / INTERNAL_TOKEN /
+    # REMOTE_HOST / DEFAULT_PROJECT_ID 等）住在独立的 harness.env 里，launcher 只 load 了
+    # config/.env，因此这些键既到不了下面的开关判断，也到不了 conductor 子进程。这里先把
+    # harness.env 合并进一份子进程环境，只填补当前环境里缺失/为空的键（不覆盖已显式设置的值），
+    # 然后用合并后的值判断开关并交给 conductor。
+    conductor_env = set_subprocess_env(os.environ)
+    harness_env_path = os.path.expanduser(
+        os.getenv("CLAWCROSS_HARNESS_ENV")
+        or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(ENV_FILE_PATH))), "harness.env")
+    )
+    if os.path.isfile(harness_env_path):
+        try:
+            from dotenv import dotenv_values
+            for key, value in dotenv_values(harness_env_path).items():
+                if value and not (conductor_env.get(key) or "").strip():
+                    conductor_env[key] = value
+        except Exception as exc:
+            print(f"   ⚠️ 读取 harness.env 失败，conductor 可能缺少 dashboard 配置: {exc}")
+
+    enabled = (conductor_env.get("CLAWCROSS_HARNESS_CONDUCTOR") or "1").strip().lower()
     if enabled in ("0", "false", "no", "off"):
         print("🧭 [skip] ClawCross harness 主控已禁用（CLAWCROSS_HARNESS_CONDUCTOR=0）")
         return None
@@ -493,7 +512,7 @@ def start_harness_conductor_if_configured():
     proc = subprocess.Popen(
         [venv_python, script],
         cwd=WORKING_DIR,
-        env=set_subprocess_env(os.environ),
+        env=conductor_env,
         stdin=subprocess.DEVNULL,
         stdout=None,
         stderr=None,
