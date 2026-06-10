@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import time
 import uuid
+import httpx
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 from utils.runtime_paths import ENV_FILE, USER_FILES_DIR
@@ -152,6 +153,9 @@ DEFAULT_BACKGROUND_READ_CHARS = 12000
 MAX_BACKGROUND_READ_CHARS = 50000
 _BACKGROUND_JOBS: dict[str, "BackgroundJob"] = {}
 _DETACHED_RUNNERS: list[subprocess.Popen] = []
+# 持有 notify watcher 的强引用：asyncio 只对 task 保弱引用，不存引用会被 GC
+# 在执行中途回收（watcher 长时间 sleep，GC 窗口很大）。完成后回调里移除。
+_NOTIFY_TASKS: set[asyncio.Task] = set()
 
 
 @dataclass
@@ -174,6 +178,7 @@ class BackgroundJob:
     pid: int | None = None
     task: asyncio.Task | None = None
     proc: asyncio.subprocess.Process | None = None
+    notify_on_done: bool = False   # opt-in：任务完成时唤醒发起的 agent 会话（system_trigger）
 
 
 def _jobs_dir(workspace: str) -> Path:
@@ -204,6 +209,7 @@ def _persist_job(job: BackgroundJob) -> None:
         "error": job.error,
         "session_id": job.session_id,
         "pid": job.pid,
+        "notify_on_done": job.notify_on_done,
     }
     _job_meta_path(job.workspace, job.job_id).write_text(
         json.dumps(payload, ensure_ascii=False, indent=2),
@@ -236,11 +242,70 @@ def _load_job_from_workspace(workspace: str, job_id: str) -> BackgroundJob | Non
         error=str(payload.get("error") or ""),
         session_id=str(payload.get("session_id") or ""),
         pid=int(payload["pid"]) if payload.get("pid") is not None else None,
+        notify_on_done=bool(payload.get("notify_on_done") or False),
     )
 
 
 def _reap_detached_runners() -> None:
     _DETACHED_RUNNERS[:] = [proc for proc in _DETACHED_RUNNERS if proc.poll() is None]
+
+
+# ── 后台任务完成主动推送（opt-in：notify_on_done=True 时才生效）──────────────
+_TERMINAL_JOB_STATUS = {"completed", "failed", "timeout", "cancelled"}
+
+
+def _tail_text(path: str, limit: int = 1500) -> str:
+    try:
+        data = Path(path).read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return ""
+    return data[-limit:]
+
+
+async def _notify_on_job_done(job: BackgroundJob) -> None:
+    """Watch a detached background job; when it reaches a terminal status, wake
+    the originating agent SESSION via the internal /system_trigger endpoint.
+
+    Security: fires from the commander process (which holds INTERNAL_TOKEN) — the
+    sandboxed runner never sees the token. Targets job.username/session_id, which
+    were stamped by the authenticated caller, so an agent can only wake itself.
+    """
+    token = os.getenv("INTERNAL_TOKEN", "")
+    if not token or not job.session_id:
+        print(f"[commander] notify_on_done 跳过 job {job.job_id}: "
+              f"token={'有' if token else '无'} session_id={job.session_id!r}", file=_sys.stderr)
+        return
+    trigger_url = f"http://127.0.0.1:{os.getenv('PORT_AGENT', '51200')}/system_trigger"
+    deadline = time.time() + int(job.timeout_seconds) + 60
+    final: BackgroundJob | None = None
+    while time.time() < deadline:
+        await asyncio.sleep(3)
+        cur = _load_job_from_workspace(job.workspace, job.job_id)
+        if cur and cur.status in _TERMINAL_JOB_STATUS:
+            final = cur
+            break
+    if final is None:
+        print(f"[commander] notify_on_done job {job.job_id} 等到 deadline 仍未达终态，放弃通知", file=_sys.stderr)
+        return
+    text = (
+        f"[后台任务完成] job {final.job_id} 状态={final.status} 退出码={final.exit_code}\n"
+        f"命令: {final.command[:200]}\n"
+        f"输出尾部:\n{_tail_text(final.stdout_path)}\n\n"
+        f"（这是后台任务的完成回报。若需向群/用户汇报结果，请用 send_to_group 主动发送；无需再重复启动该任务。）"
+    )
+    body = {
+        "user_id": final.username,
+        "session_id": final.session_id,
+        "text": text,
+        "coalesce_key": f"bgjob:{final.session_id}",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(trigger_url, headers={"X-Internal-Token": token}, json=body)
+            resp.raise_for_status()   # 4xx/5xx 也要暴露，否则投递失败会被静默吞掉
+        print(f"[commander] notify_on_done 已唤醒会话 {final.session_id}（job {final.job_id} {final.status}）", file=_sys.stderr)
+    except Exception as exc:
+        print(f"[commander] notify_on_done system_trigger failed for {final.job_id}: {exc}", file=_sys.stderr)
 
 
 def _pid_is_running(pid: int | None) -> bool:
@@ -974,9 +1039,14 @@ async def start_background_command(
     session_id: str = "",
     cwd: str = "",
     timeout_seconds: int = 0,
+    notify_on_done: bool = False,
 ) -> str:
     """
     启动一个后台命令任务，立即返回 job_id，适合长时间运行的命令。
+
+    :param notify_on_done: 默认 False（任务完成后静默）。设为 True 时，命令跑完会
+        自动用一条系统消息唤醒发起它的本会话，把状态和输出尾部推回给你——你无需
+        轮询，跑完会主动来叫你。适合分钟级长任务（如建造、批处理）。
     """
     # 白名单校验
     reject_reason = _validate_command(command)
@@ -1015,12 +1085,19 @@ async def start_background_command(
         stderr_path=str(jobs_dir / f"{job_id}.stderr.log"),
         timeout_seconds=timeout_value,
         session_id=session_id,
+        notify_on_done=bool(notify_on_done),
     )
     Path(job.stdout_path).write_text("", encoding="utf-8")
     Path(job.stderr_path).write_text("", encoding="utf-8")
     _persist_job(job)
     _launch_detached_background_job(job, _sandbox_env(workspace, username))
     _BACKGROUND_JOBS[job_id] = job
+    if job.notify_on_done and job.session_id:
+        # commander 进程内起 watcher：任务完成时唤醒发起会话（见 _notify_on_job_done）
+        # 必须存强引用，否则 task 会被 GC 掉，watcher 静默消失、永不发通知。
+        watcher = asyncio.create_task(_notify_on_job_done(job))
+        _NOTIFY_TASKS.add(watcher)
+        watcher.add_done_callback(_NOTIFY_TASKS.discard)
     result = "✅ 后台任务已启动\n" + _job_summary(job)
     if approval_note:
         result = approval_note + "\n\n" + result
