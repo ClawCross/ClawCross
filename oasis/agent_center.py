@@ -200,12 +200,22 @@ class AgentCenter:
             merged_options.update(options)
 
         effective_persona = persona_override if persona_override is not None else str(persona.get("persona", "") or "")
-        if effective_persona and not merged_options.get("system_prompt"):
-            merged_options["system_prompt"] = effective_persona
+
+        # temp is a pure, memoryless LLM call that ignores options["system_prompt"].
+        # send_persona MUST carry an identity, so bake the persona into the prompt
+        # body using the same framing as the YAML/swarm workflow
+        # (oasis.experts._build_identity_prompt) — one source of truth for persona framing.
+        effective_prompt = prompt
+        if effective_persona:
+            from oasis.experts import _build_identity_prompt
+            persona_name = str(persona.get("name", "") or persona.get("tag", "") or target)
+            identity = _build_identity_prompt(persona_name, effective_persona)
+            if identity:
+                effective_prompt = f"{identity}{prompt}"
 
         return await send_to_agent(
             SendToAgentRequest(
-                prompt=prompt,
+                prompt=effective_prompt,
                 connect_type="http",
                 platform="temp",
                 session=f"persona:{persona.get('tag')}",
