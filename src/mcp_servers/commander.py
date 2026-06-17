@@ -16,6 +16,7 @@ import os
 import sys
 import asyncio
 import contextlib
+import hashlib
 from collections import deque
 import json
 import signal
@@ -33,6 +34,7 @@ from webot.permission_context import create_or_reuse_permission_request
 from webot.runtime_store import find_active_approval_for_action, get_tool_approval
 from webot.workspace import resolve_session_workspace
 from utils.bash_safety import analyze_command, RiskLevel
+from utils.bg_notify import register_pending_notify
 
 mcp = FastMCP("Commander")
 
@@ -153,9 +155,6 @@ DEFAULT_BACKGROUND_READ_CHARS = 12000
 MAX_BACKGROUND_READ_CHARS = 50000
 _BACKGROUND_JOBS: dict[str, "BackgroundJob"] = {}
 _DETACHED_RUNNERS: list[subprocess.Popen] = []
-# 持有 notify watcher 的强引用：asyncio 只对 task 保弱引用，不存引用会被 GC
-# 在执行中途回收（watcher 长时间 sleep，GC 窗口很大）。完成后回调里移除。
-_NOTIFY_TASKS: set[asyncio.Task] = set()
 
 
 @dataclass
@@ -251,61 +250,12 @@ def _reap_detached_runners() -> None:
 
 
 # ── 后台任务完成主动推送（opt-in：notify_on_done=True 时才生效）──────────────
-_TERMINAL_JOB_STATUS = {"completed", "failed", "timeout", "cancelled"}
-
-
-def _tail_text(path: str, limit: int = 1500) -> str:
-    try:
-        data = Path(path).read_text(encoding="utf-8", errors="replace")
-    except Exception:
-        return ""
-    return data[-limit:]
-
-
-async def _notify_on_job_done(job: BackgroundJob) -> None:
-    """Watch a detached background job; when it reaches a terminal status, wake
-    the originating agent SESSION via the internal /system_trigger endpoint.
-
-    Security: fires from the commander process (which holds INTERNAL_TOKEN) — the
-    sandboxed runner never sees the token. Targets job.username/session_id, which
-    were stamped by the authenticated caller, so an agent can only wake itself.
-    """
-    token = os.getenv("INTERNAL_TOKEN", "")
-    if not token or not job.session_id:
-        print(f"[commander] notify_on_done 跳过 job {job.job_id}: "
-              f"token={'有' if token else '无'} session_id={job.session_id!r}", file=_sys.stderr)
-        return
-    trigger_url = f"http://127.0.0.1:{os.getenv('PORT_AGENT', '51200')}/system_trigger"
-    deadline = time.time() + int(job.timeout_seconds) + 60
-    final: BackgroundJob | None = None
-    while time.time() < deadline:
-        await asyncio.sleep(3)
-        cur = _load_job_from_workspace(job.workspace, job.job_id)
-        if cur and cur.status in _TERMINAL_JOB_STATUS:
-            final = cur
-            break
-    if final is None:
-        print(f"[commander] notify_on_done job {job.job_id} 等到 deadline 仍未达终态，放弃通知", file=_sys.stderr)
-        return
-    text = (
-        f"[后台任务完成] job {final.job_id} 状态={final.status} 退出码={final.exit_code}\n"
-        f"命令: {final.command[:200]}\n"
-        f"输出尾部:\n{_tail_text(final.stdout_path)}\n\n"
-        f"（这是后台任务的完成回报。若需向群/用户汇报结果，请用 send_to_group 主动发送；无需再重复启动该任务。）"
-    )
-    body = {
-        "user_id": final.username,
-        "session_id": final.session_id,
-        "text": text,
-        "coalesce_key": f"bgjob:{final.session_id}",
-    }
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(trigger_url, headers={"X-Internal-Token": token}, json=body)
-            resp.raise_for_status()   # 4xx/5xx 也要暴露，否则投递失败会被静默吞掉
-        print(f"[commander] notify_on_done 已唤醒会话 {final.session_id}（job {final.job_id} {final.status}）", file=_sys.stderr)
-    except Exception as exc:
-        print(f"[commander] notify_on_done system_trigger failed for {final.job_id}: {exc}", file=_sys.stderr)
+# NOTE: 通知由长驻的主进程（mainagent）驱动，不在 commander 进程内 watch。
+# commander 是 per-tool-call 的短命 stdio 子进程，工具一返回进程就被销毁，进程内
+# 的 asyncio watcher 会随之死掉、永不发通知；而 detached runner 处于沙箱、没有
+# INTERNAL_TOKEN，也无法自己补发。所以这里只「登记」一个待通知指针（见
+# utils.bg_notify.register_pending_notify），由 mainagent 的 background_notify_loop
+# 轮询、在任务达终态时调用 /system_trigger 唤醒发起会话。
 
 
 def _pid_is_running(pid: int | None) -> bool:
@@ -370,18 +320,14 @@ def _resolve_background_job(job_id: str, username: str = "", session_id: str = "
     return _refresh_background_job(job)
 
 
-def _write_runner_script(jobs_dir: Path) -> Path:
-    script_path = jobs_dir / "runner.py"
-    if script_path.exists():
-        return script_path
-    script_path.write_text(
-        """#!/usr/bin/env python3
+_RUNNER_SCRIPT = """#!/usr/bin/env python3
 import json
 import os
 import signal
 import subprocess
 import sys
 import time
+import urllib.request
 
 
 def _write_meta(meta_path, updates):
@@ -393,6 +339,22 @@ def _write_meta(meta_path, updates):
     payload.update(updates)
     with open(meta_path, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, ensure_ascii=False, indent=2)
+
+
+def _notify_done(cfg):
+    # Event push: tell the long-lived main process this job finished so it can
+    # wake the originating session. Carries only the job id (no token); the main
+    # process resolves the session from its own trusted pointer. Best-effort.
+    url = cfg.get("notify_url")
+    job_id = cfg.get("job_id")
+    if not url or not job_id:
+        return
+    try:
+        data = json.dumps({"job_id": job_id}).encode("utf-8")
+        req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=5).close()
+    except Exception:
+        pass
 
 
 def main():
@@ -452,13 +414,24 @@ def main():
                 "error": str(exc),
             },
         )
+    # Terminal meta is written on every path above — push the completion event.
+    _notify_done(cfg)
 
 
 if __name__ == "__main__":
     main()
-""",
-        encoding="utf-8",
-    )
+"""
+
+
+def _write_runner_script(jobs_dir: Path) -> Path:
+    # Version the cached script by content hash so template changes auto-invalidate
+    # it. A fixed "runner.py" name would be reused forever and silently run stale
+    # logic (e.g. miss the completion push), since the old write was skipped
+    # whenever the file already existed.
+    digest = hashlib.sha1(_RUNNER_SCRIPT.encode("utf-8")).hexdigest()[:10]
+    script_path = jobs_dir / f"runner_{digest}.py"
+    if not script_path.exists():
+        script_path.write_text(_RUNNER_SCRIPT, encoding="utf-8")
     return script_path
 
 
@@ -473,7 +446,13 @@ def _launch_detached_background_job(job: BackgroundJob, env: dict[str, str]) -> 
         "stderr_path": job.stderr_path,
         "meta_path": str(_job_meta_path(job.workspace, job.job_id)),
         "timeout_seconds": job.timeout_seconds,
+        "job_id": job.job_id,
     }
+    if job.notify_on_done and job.session_id:
+        # Loopback push target; main process resolves the session from its
+        # trusted pointer, so the sandboxed runner needs no token.
+        port_agent = os.getenv("PORT_AGENT", "51200")
+        payload["notify_url"] = f"http://127.0.0.1:{port_agent}/internal/bg_job_done"
     kwargs = {
         "cwd": job.workspace,
         "env": env,
@@ -1093,11 +1072,9 @@ async def start_background_command(
     _launch_detached_background_job(job, _sandbox_env(workspace, username))
     _BACKGROUND_JOBS[job_id] = job
     if job.notify_on_done and job.session_id:
-        # commander 进程内起 watcher：任务完成时唤醒发起会话（见 _notify_on_job_done）
-        # 必须存强引用，否则 task 会被 GC 掉，watcher 静默消失、永不发通知。
-        watcher = asyncio.create_task(_notify_on_job_done(job))
-        _NOTIFY_TASKS.add(watcher)
-        watcher.add_done_callback(_NOTIFY_TASKS.discard)
+        # 登记待通知指针；由长驻的 mainagent.background_notify_loop 在任务达终态时
+        # 调 /system_trigger 唤醒发起会话（commander 进程用完即销毁，不能自己 watch）。
+        register_pending_notify(job_id, str(_job_meta_path(job.workspace, job_id)))
     result = "✅ 后台任务已启动\n" + _job_summary(job)
     if approval_note:
         result = approval_note + "\n\n" + result

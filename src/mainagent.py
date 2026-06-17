@@ -8,6 +8,7 @@ FastAPI 应用入口，整合所有路由和服务：
 - 提供 CORS 支持
 """
 
+import contextlib
 import os
 import secrets
 import uuid
@@ -134,6 +135,11 @@ agent = TeamAgent(src_dir=current_dir, db_path=db_path)
 async def lifespan(app: FastAPI):
     await agent.startup()
     await init_group_db(group_db_path)   # 初始化群聊数据库（on_event 与 lifespan 不兼容）
+    # 后台任务完成通知是事件驱动的（detached runner 跑完会 POST /internal/bg_job_done）。
+    # 这里只做一次性对账（非轮询），补发「本进程宕机期间已完成」的任务通知。
+    with contextlib.suppress(Exception):
+        from utils.bg_notify import reconcile_pending_once
+        await reconcile_pending_once()
     yield
     await agent.shutdown()
 
@@ -220,6 +226,20 @@ app.include_router(
         verify_internal_token=verify_internal_token,
     )
 )
+
+
+@app.post("/internal/bg_job_done")
+async def bg_job_done(payload: dict):
+    """Loopback-only event push from a detached background runner: a job finished.
+
+    Carries only ``{"job_id": ...}``. No token is required (the sandboxed runner
+    has none); the session to wake is resolved from the commander-written
+    pointer, not from this request, and delivery is idempotent — so a loopback
+    caller cannot inject an arbitrary wake. uvicorn binds 127.0.0.1 only.
+    """
+    from utils.bg_notify import deliver_by_job_id
+    delivered = await deliver_by_job_id(str(payload.get("job_id") or ""))
+    return {"delivered": bool(delivered)}
 
 
 if __name__ == "__main__":
