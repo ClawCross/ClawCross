@@ -169,7 +169,19 @@ class TrimNewInputTests(unittest.TestCase):
         out = compression.trim_new_input_if_oversized(msgs, user_id="u", session_id="s")
         self.assertEqual(out, msgs)
 
-    def test_oversized_input_replaced_when_artifacts_enabled(self):
+    def test_large_input_kept_whole_when_window_has_room(self):
+        # 50k chars ≈ 12.5k tokens; on a 200k window with little prior context
+        # it fits comfortably and must NOT be budgeted.
+        big = "x" * 50_000
+        msgs = [HumanMessage(content=big)]
+        out = compression.trim_new_input_if_oversized(
+            msgs, user_id="u", session_id="s",
+            current_context_tokens=5_000, context_window=200_000,
+        )
+        self.assertEqual(out, msgs)
+
+    def test_oversized_input_replaced_under_pressure(self):
+        # Same input, but the window is nearly full -> it would overflow -> budget it.
         big = "x" * 50_000
         msgs = [HumanMessage(content=big)]
         with patch("webot.context._runtime_artifacts_enabled", return_value=True), \
@@ -177,7 +189,10 @@ class TrimNewInputTests(unittest.TestCase):
                 patch("webot.runtime_store.create_runtime_artifact"):
             fake_path = Path("/tmp/fake-input.txt")
             store.return_value = fake_path
-            out = compression.trim_new_input_if_oversized(msgs, user_id="u", session_id="s")
+            out = compression.trim_new_input_if_oversized(
+                msgs, user_id="u", session_id="s",
+                current_context_tokens=15_000, context_window=20_000,
+            )
         self.assertEqual(len(out), 1)
         body = out[0].content
         self.assertIn("[User input budgeted]", body)
@@ -188,7 +203,10 @@ class TrimNewInputTests(unittest.TestCase):
         big = "x" * 50_000
         msgs = [HumanMessage(content=big)]
         with patch("webot.context._runtime_artifacts_enabled", return_value=False):
-            out = compression.trim_new_input_if_oversized(msgs, user_id="u", session_id="s")
+            out = compression.trim_new_input_if_oversized(
+                msgs, user_id="u", session_id="s",
+                current_context_tokens=15_000, context_window=20_000,
+            )
         self.assertEqual(out, msgs)
 
 

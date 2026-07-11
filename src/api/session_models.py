@@ -37,3 +37,10 @@ class SessionStatusRequest(BaseModel):
     password: str = ""  # Optional when using X-Internal-Token
     session_id: str = "default"
     peek: bool = False
+
+
+class CompactSessionRequest(BaseModel):
+    """手动压缩会话请求"""
+    user_id: str
+    password: str = ""  # Optional when using X-Internal-Token
+    session_id: str

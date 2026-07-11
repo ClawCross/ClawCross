@@ -96,6 +96,12 @@ class ThreadStateRegistry:
         self._pending_system_messages: Dict[str, int] = {}
         self._thread_context_usage: Dict[str, Dict[str, int]] = {}
         self._thread_last_model: Dict[str, str] = {}
+        # 上一轮 LLM API 真实返回的用量。真实上下文占用 = input + output：
+        #   input  已含 system+工具+历史+缓存；
+        #   output 是该轮刚生成的回复，测 input 时还不存在、要下一轮才并入 input，
+        #          所以两轮之间必须把它补上，否则占用少算一轮输出。
+        self._thread_last_input_tokens: Dict[str, int] = {}
+        self._thread_last_output_tokens: Dict[str, int] = {}
 
     async def _get_locks_guard(self) -> asyncio.Lock:
         """获取或创建线程锁的守卫锁。"""
@@ -162,6 +168,25 @@ class ThreadStateRegistry:
             thread_id,
             {"tokens": 0, "budget": 0, "percent": 0, "remaining": 0},
         )
+
+    def set_thread_last_usage_tokens(self, thread_id: str, input_tokens: int, output_tokens: int = 0) -> None:
+        """记录本轮 LLM API 真实返回的 input/output token，供下一轮判断使用。"""
+        iv = max(0, int(input_tokens or 0))
+        ov = max(0, int(output_tokens or 0))
+        if iv > 0:
+            self._thread_last_input_tokens[thread_id] = iv
+            self._thread_last_output_tokens[thread_id] = ov
+
+    def get_thread_last_input_tokens(self, thread_id: str) -> int:
+        """读取上一轮真实输入 token 数；从未记录时返回 0。"""
+        return self._thread_last_input_tokens.get(thread_id, 0)
+
+    def get_thread_last_context_tokens(self, thread_id: str) -> int:
+        """上一轮真实上下文占用 = input + output；从未记录时返回 0。"""
+        iv = self._thread_last_input_tokens.get(thread_id, 0)
+        if iv <= 0:
+            return 0
+        return iv + self._thread_last_output_tokens.get(thread_id, 0)
 
     def set_thread_model(self, thread_id: str, model_name: str) -> None:
         """记录线程上一次推理实际使用的模型名（用于静态路径反推 budget）。"""

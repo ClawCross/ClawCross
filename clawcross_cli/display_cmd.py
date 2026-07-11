@@ -1767,3 +1767,33 @@ def handle_expert_command(args: list[str], *, interactive: bool = False, user: s
     if err:
         return err
     return _format_personas(team, experts)
+
+
+# ── compact: manual session compression ─────────────────────────────────────
+
+def handle_compact_command(args: list[str], user: str | None = None) -> str:
+    """``clawcross compact <session_id>`` — force-compress a session now."""
+    args = [a for a in (args or []) if a]
+    if not args or args[0].lower() == "help":
+        return "Usage: clawcross compact <session_id>"
+    session_id = args[0].strip()
+    body, err = api_client.compact_session(session_id, user=user)
+    if err:
+        return err
+    if not isinstance(body, dict):
+        return "compact: unexpected response"
+    if not body.get("triggered"):
+        reason = body.get("reason", "")
+        if reason == "empty":
+            return f"compact[{session_id}]: session is empty, nothing to compress"
+        if reason == "no_benefit":
+            return f"compact[{session_id}]: already minimal, no tokens to save"
+        return f"compact[{session_id}]: not compressed ({reason or 'below threshold'})"
+    before = int(body.get("before_tokens", 0) or 0)
+    after = int(body.get("after_tokens", 0) or 0)
+    saved = int(body.get("saved_tokens", 0) or 0)
+    pct = round(saved / before * 100) if before > 0 else 0
+    return (
+        f"compact[{session_id}]: {before:,} → {after:,} tokens "
+        f"(saved {saved:,}, -{pct}%); summary {int(body.get('summary_chars', 0) or 0):,} chars"
+    )
