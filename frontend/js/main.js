@@ -2128,6 +2128,9 @@ let sessionContextUsageState = {
     tokens: 0,
     budget: 0,
 };
+// 手动压缩按钮状态（持久化到 re-render 之间）
+let sessionCompactBusy = false;
+let sessionCompactStatus = '';
 
 function formatContextTokenCount(value) {
     const n = Number(value);
@@ -2169,6 +2172,8 @@ function renderSessionContextDetail() {
     const totalLabel = currentLang === 'zh-CN' ? '总量' : 'Total';
     const remainingLabel = currentLang === 'zh-CN' ? '剩余' : 'Remaining';
     const percentLabel = currentLang === 'zh-CN' ? '占比' : 'Percent';
+    const compactLabel = currentLang === 'zh-CN' ? '压缩历史' : 'Compress history';
+    const compactBusyLabel = currentLang === 'zh-CN' ? '压缩中…' : 'Compressing…';
 
     detail.innerHTML = `
         <div class="oc-context-usage-detail-row">
@@ -2186,6 +2191,16 @@ function renderSessionContextDetail() {
         <div class="oc-context-usage-detail-row">
             <span>${remainingLabel}</span>
             <strong>${formatContextTokenCount(state.remaining)} tokens</strong>
+        </div>
+        <div class="oc-context-usage-detail-actions" style="margin-top:8px;display:flex;flex-direction:column;gap:6px;">
+            <button type="button" id="session-compact-btn" class="oc-context-compact-btn"
+                onclick="compactCurrentSession(event)"
+                style="cursor:pointer;padding:5px 10px;border-radius:6px;border:1px solid var(--oc-border,#3a3a3a);background:transparent;color:inherit;font-size:12px;"
+                ${sessionCompactBusy ? 'disabled' : ''}>
+                ${sessionCompactBusy ? compactBusyLabel : compactLabel}
+            </button>
+            <div class="oc-context-compact-result" style="font-size:11px;opacity:.85;"
+                ${sessionCompactStatus ? '' : 'hidden'}>${sessionCompactStatus}</div>
         </div>
     `;
 }
@@ -2214,6 +2229,69 @@ function closeSessionContextDetail() {
     if (detail) detail.hidden = true;
     const badge = document.getElementById('session-context-usage');
     if (badge) badge.setAttribute('aria-expanded', 'false');
+}
+
+// 手动压缩当前会话历史（绕过自动触发阈值）。
+async function compactCurrentSession(event) {
+    if (event) event.stopPropagation();
+    if (sessionCompactBusy) return;
+    const zh = currentLang === 'zh-CN';
+    if (!currentSessionId) {
+        sessionCompactStatus = zh ? '无活动会话' : 'No active session';
+        renderSessionContextDetail();
+        return;
+    }
+    sessionCompactBusy = true;
+    sessionCompactStatus = '';
+    renderSessionContextDetail();
+    try {
+        const resp = await fetch('/proxy_compact_session', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ session_id: currentSessionId }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || (data && data.error)) {
+            sessionCompactStatus = (zh ? '压缩失败：' : 'Failed: ') + ((data && data.error) || resp.status);
+        } else if (!data.triggered) {
+            const reason = data.reason || '';
+            if (reason === 'empty') {
+                sessionCompactStatus = zh ? '会话为空，无需压缩' : 'Session empty, nothing to compress';
+            } else if (reason === 'no_benefit') {
+                sessionCompactStatus = zh ? '已是最简，无可压缩空间' : 'Already minimal, nothing to save';
+            } else {
+                sessionCompactStatus = zh ? '未压缩（未达条件）' : 'Not compressed';
+            }
+        } else {
+            const before = Number(data.before_tokens || 0);
+            const after = Number(data.after_tokens || 0);
+            const saved = Number(data.saved_tokens || 0);
+            const pct = before > 0 ? Math.round(saved / before * 100) : 0;
+            sessionCompactStatus = zh
+                ? `已压缩：${before.toLocaleString()} → ${after.toLocaleString()} tokens（省 ${saved.toLocaleString()}，-${pct}%）`
+                : `Compressed: ${before.toLocaleString()} → ${after.toLocaleString()} tokens (saved ${saved.toLocaleString()}, -${pct}%)`;
+            // 刷新上下文徽章
+            try {
+                const sresp = await fetch('/proxy_session_status', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ session_id: currentSessionId }),
+                });
+                const sdata = await sresp.json();
+                if (typeof sdata.context_percent !== 'undefined') {
+                    updateSessionContextUsageBadge(
+                        sdata.context_percent, sdata.context_remaining,
+                        sdata.context_tokens, sdata.context_budget,
+                    );
+                }
+            } catch (e) { /* 徽章刷新失败不影响结果展示 */ }
+        }
+    } catch (e) {
+        sessionCompactStatus = (zh ? '压缩失败：' : 'Failed: ') + (e && e.message ? e.message : e);
+    } finally {
+        sessionCompactBusy = false;
+        renderSessionContextDetail();
+    }
 }
 
 function updateSessionContextUsageBadge(percent, remaining, tokens, budget) {

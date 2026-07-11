@@ -45,7 +45,12 @@ _DEFAULT_PRESERVE_RECENT = 8
 _DEFAULT_MIN_NEW_MESSAGES = 6
 _DEFAULT_SUMMARY_RATIO = 0.20  # summary 字符上限 = budget tokens × 4 × 此比例
 _DEFAULT_MAX_SUMMARY_CHARS_ABS = 0  # 0 = 不设绝对上限；>0 时取 min(动态, 绝对)
-_DEFAULT_NEW_INPUT_ITEM_LIMIT = 10000  # 当轮新 HumanMessage 超过则落盘+excerpt
+# 新输入瘦身改成按真实压力判断：只有当「上一轮真实占用 + 这条新输入」会超过
+# 窗口 × 此比例时才落盘。窗口装得下就完整保留，不再用固定字符数一刀切。
+_DEFAULT_NEW_INPUT_PRESSURE_RATIO = 0.90
+# 可选的绝对字符硬顶（0 = 关闭）。设 >0 时无论窗口多大，超过即落盘，作逃生阀。
+_DEFAULT_NEW_INPUT_ITEM_LIMIT = 0
+_FALLBACK_CONTEXT_WINDOW = 128_000  # 调用方未提供窗口时的保守回退
 
 _TRIGGER_RATIO_ENV = "WEBOT_COMPRESSION_TRIGGER_RATIO"
 _TARGET_RATIO_ENV = "WEBOT_COMPRESSION_TARGET_RATIO"
@@ -53,6 +58,7 @@ _PRESERVE_RECENT_ENV = "WEBOT_COMPRESSION_PRESERVE_RECENT"
 _MIN_NEW_ENV = "WEBOT_COMPRESSION_MIN_NEW_MESSAGES"
 _SUMMARY_RATIO_ENV = "WEBOT_COMPRESSION_SUMMARY_RATIO"
 _MAX_SUMMARY_CHARS_ENV = "WEBOT_COMPRESSION_MAX_SUMMARY_CHARS"  # 仅作为绝对上限叠加
+_NEW_INPUT_PRESSURE_RATIO_ENV = "WEBOT_NEW_INPUT_PRESSURE_RATIO"
 _NEW_INPUT_LIMIT_ENV = "WEBOT_NEW_INPUT_ITEM_LIMIT"
 _SUMMARIZER_MODEL_ENV = "WEBOT_SUMMARIZER_MODEL"
 _DISABLE_ENV = "WEBOT_COMPRESSION_DISABLED"
@@ -112,7 +118,12 @@ def _max_summary_chars(history_token_budget: int) -> int:
 
 
 def _new_input_item_limit() -> int:
+    """可选的绝对字符硬顶（0 = 关闭）。默认关闭，主路径走压力判断。"""
     return max(0, _env_int(_NEW_INPUT_LIMIT_ENV, _DEFAULT_NEW_INPUT_ITEM_LIMIT))
+
+
+def _new_input_pressure_ratio() -> float:
+    return min(0.98, max(0.10, _env_float(_NEW_INPUT_PRESSURE_RATIO_ENV, _DEFAULT_NEW_INPUT_PRESSURE_RATIO)))
 
 
 def _compression_enabled() -> bool:
@@ -415,20 +426,38 @@ def trim_new_input_if_oversized(
     *,
     user_id: str,
     session_id: str,
+    current_context_tokens: int = 0,
+    context_window: int = 0,
 ) -> list[BaseMessage]:
-    """If the *last* HumanMessage in ``messages`` is over the per-input
-    character cap, replace it with a `saved_to` pointer + excerpt and
-    persist the original text to disk. Only the last message is touched;
-    historical HumanMessages are never modified here.
+    """Budget the *last* HumanMessage only when it would overflow the window.
+
+    Decision is pressure-based, not a fixed character cap: estimate the new
+    input's tokens and only persist-to-disk + excerpt when
+    ``current_context_tokens + new_input_tokens`` would exceed
+    ``context_window × pressure_ratio`` (default 0.9). If the window still has
+    room, the full input is kept intact. ``current_context_tokens`` is the
+    previous turn's real input_tokens (occupancy before this input);
+    ``context_window`` is the model's context size. An optional absolute char
+    ceiling (WEBOT_NEW_INPUT_ITEM_LIMIT, default off) still forces budgeting
+    regardless of window. Only the last message is touched; historical
+    HumanMessages are never modified here.
     """
-    limit = _new_input_item_limit()
-    if limit <= 0 or not messages:
+    if not messages:
         return messages
     last = messages[-1]
     if not isinstance(last, HumanMessage) or not isinstance(last.content, str):
         return messages
     raw = last.content
-    if len(raw) <= limit:
+
+    window = context_window if context_window > 0 else _FALLBACK_CONTEXT_WINDOW
+    new_input_tokens = _msg_tokens(last)
+    allowed_tokens = int(window * _new_input_pressure_ratio()) - max(0, int(current_context_tokens or 0))
+    over_pressure = new_input_tokens > max(0, allowed_tokens)
+
+    abs_limit = _new_input_item_limit()
+    over_abs_cap = abs_limit > 0 and len(raw) > abs_limit
+
+    if not over_pressure and not over_abs_cap:
         return messages
     try:
         from webot.context import _runtime_artifacts_enabled, _store_runtime_text
@@ -492,6 +521,9 @@ def apply_compression(
     checkpoint_store_path: Optional[str] = None,
     preserve_recent: Optional[int] = None,
     summarizer: Optional[SummarizerFn] = None,
+    measured_input_tokens: int = 0,
+    measured_budget: int = 0,
+    force: bool = False,
 ) -> CompressionResult:
     """Single-pass compression: load summary, maybe extend it, return view.
 
@@ -541,7 +573,19 @@ def apply_compression(
     trigger_tokens = max(1, int(history_token_budget * _trigger_ratio()))
     target_tokens = max(1, int(history_token_budget * _target_ratio()))
 
-    if view_tokens <= trigger_tokens:
+    # force=True（用户手动压缩）跳过阈值判断，直接进入折叠。否则触发判断优先用调用方
+    # 传入的真实 input_tokens（含 system+工具+历史，相对整窗口）——这是「上下文有多满」
+    # 的真值，由 LLM API 上一轮返回。没有真值（首轮）时回退到历史视图的字数估算。
+    # 折叠多少仍按历史估算挑边界（target_tokens 不变）。
+    if force:
+        over_trigger = True
+    elif measured_input_tokens > 0 and measured_budget > 0:
+        measured_trigger = max(1, int(measured_budget * _trigger_ratio()))
+        over_trigger = measured_input_tokens > measured_trigger
+    else:
+        over_trigger = view_tokens > trigger_tokens
+
+    if not over_trigger:
         return CompressionResult(
             view=view,
             triggered=False,
@@ -558,7 +602,9 @@ def apply_compression(
         target_tokens=target_tokens,
     )
     new_count = boundary - current_until
-    if boundary <= current_until or new_count < _min_new_messages():
+    # 手动压缩放宽防抖到 1 条：只要有可折叠的新内容就压。
+    min_new = 1 if force else _min_new_messages()
+    if boundary <= current_until or new_count < min_new:
         return CompressionResult(
             view=view,
             triggered=False,
@@ -576,6 +622,19 @@ def apply_compression(
     except Exception:
         new_summary = _mechanical_summarizer(previous_summary, segment, target_chars)
     new_summary = _truncate_to_cap(new_summary, target_chars)
+    new_view = [_summary_to_message(new_summary)] + messages[boundary:]
+    new_tokens = estimate_messages_tokens(new_view)
+    # 没有收益就不落盘（历史已很短、或摘要器无效，摘要反而更大）——避免把状态写坏。
+    # 自动触发路径只在远超阈值时进入，必然有收益；这道闸主要保护手动 force 压缩。
+    if new_tokens >= view_tokens:
+        return CompressionResult(
+            view=view,
+            triggered=False,
+            summary=previous_summary,
+            compacted_until=current_until,
+            reason="no_benefit",
+            view_tokens=view_tokens,
+        )
     try:
         save_context_compaction(
             checkpoint_store_path,
@@ -593,12 +652,11 @@ def apply_compression(
         )
     except Exception:
         pass
-    new_view = [_summary_to_message(new_summary)] + messages[boundary:]
     return CompressionResult(
         view=new_view,
         triggered=True,
         summary=new_summary,
         compacted_until=boundary,
         reason="compressed",
-        view_tokens=estimate_messages_tokens(new_view),
+        view_tokens=new_tokens,
     )

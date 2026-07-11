@@ -37,6 +37,7 @@ from webot.skills import build_skills_prompt, build_user_profile_block
 from webot.soul import build_soul_prompt
 from webot.workflow_prompt import build_team_workflow_prompt
 from webot.trajectory import auto_trajectory_enabled, save_trajectory
+from webot.llm_call_trace import llm_call_trace_enabled, save_llm_call
 from utils.context_references import expand_context_references
 from utils.runtime_paths import USER_FILES_DIR
 from utils.routed_checkpoint_saver import ThreadRoutedAsyncSqliteSaver
@@ -80,8 +81,11 @@ from core.streaming_tool_executor import (
     classify_tool_access, ToolAccessMode, ToolExecutionResult,
 )
 from utils.token_budget import get_session_budget
-from utils.context_compressor import estimate_messages_tokens
-from utils.context_limits import resolve_history_message_limits, resolve_history_token_budget
+from utils.context_limits import (
+    infer_model_context_window,
+    resolve_history_message_limits,
+    resolve_history_token_budget,
+)
 from utils.cache_boundary import SystemPromptCacheManager
 from utils.logging_utils import get_logger
 from core.lazy_tool_discovery import LazyToolRegistry
@@ -1558,11 +1562,21 @@ class TeamAgent:
             f"{user_id}#{session_id}", current_model_name or ""
         )
 
-        # 1) 当轮新输入瘦身：仅当最后一条 HumanMessage 超大时落盘 + excerpt
+        # 上一轮 API 真实返回的占用 (input+output) = 真实上下文占用。直接拿它做本轮
+        # 新输入瘦身 / 压缩判断，无需字数估算：上下文是逐轮增长的，上一轮真值是当前占用
+        # 的可靠下界。带上 output 因为它还没并入任何已测 input。
+        thread_id = f"{user_id}#{session_id}"
+        last_real_context = self.get_thread_last_context_tokens(thread_id)
+        context_window = infer_model_context_window(current_model_name)
+
+        # 1) 当轮新输入瘦身：仅当这条新输入会把上下文顶破窗口时才落盘 + excerpt。
+        # 窗口还装得下就完整保留（不再用固定字符数一刀切）。
         history_messages = trim_new_input_if_oversized(
             history_messages,
             user_id=user_id,
             session_id=session_id,
+            current_context_tokens=last_real_context,
+            context_window=context_window,
         )
 
         with contextlib.suppress(Exception):
@@ -1581,7 +1595,9 @@ class TeamAgent:
                 },
             )
 
-        # 2) 唯一的历史压缩入口：低频触发，触发即一次性 LLM summary + 段落落盘
+        # 2) 唯一的历史压缩入口：低频触发，触发即一次性 LLM summary + 段落落盘。
+        # 触发判断优先吃真值（measured_input_tokens vs 整窗口）；首轮还没真值时，
+        # compression 内部回退到字数估算的历史口径。折叠多少仍按历史估算挑边界。
         compression_result = apply_compression(
             user_id=user_id,
             session_id=session_id,
@@ -1590,6 +1606,8 @@ class TeamAgent:
             checkpoint_store_path=self._db_path,
             preserve_recent=preserve_recent_messages,
             summarizer=make_llm_summarizer(),
+            measured_input_tokens=last_real_context,
+            measured_budget=context_window,
         )
         history_messages = compression_result.view
         if compression_result.triggered:
@@ -1600,15 +1618,23 @@ class TeamAgent:
             )
 
         # --- Token budget tracking ---
+        # 上下文占用优先用上一轮 API 真实占用 (input+output) 相对整窗口口径，
+        # 这是真实的「上下文有多满」；首轮还没有真实值时，回退到字数估算的历史口径。
         session_budget = get_session_budget(user_id, session_id)
+        if last_real_context > 0:
+            context_used = last_real_context
+            context_budget = max(context_window, last_real_context)
+        else:
+            context_used = compression_result.view_tokens
+            context_budget = history_token_budget
         session_budget.update_current_context(
-            used_tokens=compression_result.view_tokens,
-            budget_tokens=history_token_budget,
+            used_tokens=context_used,
+            budget_tokens=context_budget,
         )
         self.set_thread_context_usage(
-            f"{user_id}#{session_id}",
-            compression_result.view_tokens,
-            history_token_budget,
+            thread_id,
+            context_used,
+            context_budget,
         )
         budget_notice = session_budget.format_budget_notice()
         if budget_notice:
@@ -1728,23 +1754,74 @@ class TeamAgent:
             if isinstance(usage_meta, dict) and usage_meta:
                 input_tokens = int(usage_meta.get("input_tokens", 0) or 0)
                 output_tokens = int(usage_meta.get("output_tokens", 0) or 0)
-                cache_creation_tokens = int(usage_meta.get("cache_creation_input_tokens", 0) or 0)
-                cache_read_tokens = int(usage_meta.get("cache_read_input_tokens", 0) or 0)
-                if input_tokens or output_tokens or cache_creation_tokens or cache_read_tokens:
+                # Cache token counts live in the nested ``input_token_details`` for
+                # the LangChain-normalized shape (ChatAnthropic et al.); older /
+                # raw-provider shapes expose them at the top level instead. Reading
+                # only the top level made cache hits silently count as 0.
+                details = usage_meta.get("input_token_details")
+                if isinstance(details, dict) and details:
+                    cache_read_tokens = int(details.get("cache_read", 0) or 0)
+                    cache_creation_tokens = int(details.get("cache_creation", 0) or 0)
+                    # LangChain folds cache tokens into ``input_tokens``, so it is the
+                    # true total context size. The freshly-billed (non-cached) input
+                    # is the remainder; bill only that at the full input rate so the
+                    # cached portion is not double-charged via cache_read/write.
+                    total_input_tokens = input_tokens
+                    fresh_input_tokens = max(0, input_tokens - cache_read_tokens - cache_creation_tokens)
+                else:
+                    cache_read_tokens = int(usage_meta.get("cache_read_input_tokens", 0) or 0)
+                    cache_creation_tokens = int(usage_meta.get("cache_creation_input_tokens", 0) or 0)
+                    # Raw shape: ``input_tokens`` already excludes cache tokens.
+                    fresh_input_tokens = input_tokens
+                    total_input_tokens = input_tokens + cache_read_tokens + cache_creation_tokens
+                if total_input_tokens or output_tokens or cache_creation_tokens or cache_read_tokens:
+                    # Budget tracks the true total context (input incl. cache) so
+                    # context pressure / effective_input reflect reality.
                     session_budget.record_turn(
-                        input_tokens=input_tokens,
+                        input_tokens=total_input_tokens,
                         output_tokens=output_tokens,
                         cache_creation_tokens=cache_creation_tokens,
                         cache_read_tokens=cache_read_tokens,
                     )
                     model_name = getattr(llm, "model_name", "") or getattr(llm, "model", "") or ""
+                    # Cost bills the fresh input at full rate and the cached portion
+                    # separately at its (cheaper) cache rates.
                     cost_tracker.record(
                         model=model_name,
-                        input_tokens=input_tokens,
+                        input_tokens=fresh_input_tokens,
                         output_tokens=output_tokens,
                         cache_read_tokens=cache_read_tokens,
                         cache_write_tokens=cache_creation_tokens,
                     )
+                    # 记下本轮真实 input/output 作为下一轮压缩判断 / 上下文占用显示的
+                    # 真值依据。占用 = input + output：本轮输出还没并入任何已测 input，
+                    # 要下一轮才被吸收，所以两轮之间得带上它。
+                    self.set_thread_last_usage_tokens(thread_id, total_input_tokens, output_tokens)
+
+            # --- Per-call LLM trace (new, default-off via CLAWCROSS_LLM_CALL_TRACE) ---
+            # One record per ainvoke (incl. tool-retry calls): session + full input/output
+            # + real API token usage. Fire-and-forget so it never blocks the agent.
+            if llm_call_trace_enabled():
+                try:
+                    _trace_input = [
+                        {"role": type(m).__name__.replace("Message", "").lower(),
+                         "content": extract_text(m.content)}
+                        for m in input_messages
+                    ]
+                    asyncio.create_task(asyncio.to_thread(
+                        save_llm_call,
+                        user_id=user_id,
+                        session_id=session_id,
+                        model=getattr(llm, "model_name", "") or getattr(llm, "model", "") or "",
+                        input_messages=_trace_input,
+                        output=extract_text(response.content),
+                        tool_calls=[{"name": tc.get("name"), "args": tc.get("args"), "id": tc.get("id")}
+                                    for tc in (getattr(response, "tool_calls", None) or [])],
+                        token_usage=usage_meta if isinstance(usage_meta, dict) else {},
+                        turn=next_turn_count,
+                    ))
+                except Exception:
+                    pass
 
             invalid_feedback = self._find_invalid_tool_feedback(response)
             if invalid_feedback is None:
@@ -2181,6 +2258,18 @@ class TeamAgent:
     def get_thread_context_usage(self, thread_id: str) -> dict[str, int]:
         """返回该 thread 的当前压缩上下文用量。"""
         return self._thread_state_registry.get_thread_context_usage(thread_id)
+
+    def set_thread_last_usage_tokens(self, thread_id: str, input_tokens: int, output_tokens: int = 0) -> None:
+        """记录该 thread 上一轮 API 真实 input/output token。"""
+        self._thread_state_registry.set_thread_last_usage_tokens(thread_id, input_tokens, output_tokens)
+
+    def get_thread_last_input_tokens(self, thread_id: str) -> int:
+        """返回该 thread 上一轮真实输入 token 数；从未记录时返回 0。"""
+        return self._thread_state_registry.get_thread_last_input_tokens(thread_id)
+
+    def get_thread_last_context_tokens(self, thread_id: str) -> int:
+        """返回该 thread 上一轮真实上下文占用 (input+output)；从未记录时返回 0。"""
+        return self._thread_state_registry.get_thread_last_context_tokens(thread_id)
 
     def get_thread_model(self, thread_id: str) -> str:
         """返回该 thread 上一次推理实际使用的模型名（用于静态路径反推 budget）。"""

@@ -1,3 +1,4 @@
+import contextlib
 from typing import Any, Callable
 
 from fastapi import HTTPException
@@ -9,15 +10,16 @@ from utils.checkpoint_repository import (
 )
 from utils.logging_utils import get_logger
 from api.session_models import (
+    CompactSessionRequest,
     DeleteSessionRequest,
     SessionHistoryRequest,
     SessionListRequest,
     SessionStatusRequest,
 )
 from utils.context_compressor import estimate_messages_tokens
-from utils.context_limits import resolve_history_token_budget
+from utils.context_limits import infer_model_context_window, resolve_history_token_budget
 from utils.session_summary import build_session_summary
-from webot.compression import static_compression_view
+from webot.compression import apply_compression, make_llm_summarizer, static_compression_view
 from webot.profiles import is_subagent_session
 from webot.subagents import delete_subagent_by_session, delete_subagents_for_user
 
@@ -145,28 +147,40 @@ class SessionService:
 
         msgs = snapshot.values.get("messages", [])
 
-        # 静态计算：数的是 apply_compression 真正看到的输入视图
-        # = [已存的 summary] + messages[compacted_until:]，
-        # 不是用户在前端看到的完整未压缩历史。
+        # 上下文占用与实时推理路径口径对齐：优先用上一轮 API 真实占用 (input+output)
+        # 相对整窗口；只有从未推理过的会话（没有真值）才回退到「压缩视图字数估算 ÷
+        # 历史预算」。这样刷新页面/切会话与实时轮询显示的占比一致，不会跳变。
         try:
-            compression_view = static_compression_view(
-                user_id=req.user_id,
-                session_id=req.session_id,
-                messages=msgs,
-                checkpoint_store_path=getattr(self.agent, "_db_path", None),
-            )
-            static_tokens = estimate_messages_tokens(compression_view)
             # 优先用该 thread 上次推理实际使用的模型；没有就回退到 LLM_MODEL env。
             last_model = ""
             if hasattr(self.agent, "get_thread_model"):
                 last_model = self.agent.get_thread_model(thread_id)
-            static_budget = resolve_history_token_budget(
-                is_subagent=is_subagent_session(req.session_id),
-                model=last_model or None,
-            )
-            self.agent.set_thread_context_usage(thread_id, static_tokens, static_budget)
+
+            real_ctx = 0
+            if hasattr(self.agent, "get_thread_last_context_tokens"):
+                real_ctx = int(self.agent.get_thread_last_context_tokens(thread_id) or 0)
+
+            if real_ctx > 0:
+                window = infer_model_context_window(last_model or None)
+                self.agent.set_thread_context_usage(thread_id, real_ctx, max(window, real_ctx))
+            else:
+                # 数的是 apply_compression 真正看到的输入视图
+                # = [已存的 summary] + messages[compacted_until:]，
+                # 不是用户在前端看到的完整未压缩历史。
+                compression_view = static_compression_view(
+                    user_id=req.user_id,
+                    session_id=req.session_id,
+                    messages=msgs,
+                    checkpoint_store_path=getattr(self.agent, "_db_path", None),
+                )
+                static_tokens = estimate_messages_tokens(compression_view)
+                static_budget = resolve_history_token_budget(
+                    is_subagent=is_subagent_session(req.session_id),
+                    model=last_model or None,
+                )
+                self.agent.set_thread_context_usage(thread_id, static_tokens, static_budget)
         except Exception:
-            logger.exception("static context usage estimation failed for %s", thread_id)
+            logger.exception("context usage estimation failed for %s", thread_id)
         context_usage = self.agent.get_thread_context_usage(thread_id)
         result = []
         for msg in msgs:
@@ -203,6 +217,74 @@ class SessionService:
             "context_remaining": int(context_usage.get("remaining", 0) or 0),
             "context_tokens": int(context_usage.get("tokens", 0) or 0),
             "context_budget": int(context_usage.get("budget", 0) or 0),
+        }
+
+    async def compact_session(self, req: CompactSessionRequest, x_internal_token: str | None):
+        """手动压缩指定会话的历史（绕过自动触发阈值）。
+
+        加载会话当前消息，强制跑一次压缩：把可折叠的早期消息折成摘要并落盘。
+        原始消息仍保留在 LangGraph state 中，下一轮推理会自动用压缩后的视图。
+        返回压缩前/后的 token 估算与节省量。
+
+        :param req: 压缩会话请求
+        :param x_internal_token: 内部令牌（可选）
+        :return: 压缩结果与 token 统计
+        """
+        self.verify_auth_or_token(req.user_id, req.password, x_internal_token)
+        logger.info("compact_session user=%s session=%s", req.user_id, req.session_id)
+
+        thread_id = f"{req.user_id}#{req.session_id}"
+        config = {"configurable": {"thread_id": thread_id}}
+        snapshot = await self.agent.agent_app.aget_state(config)
+        msgs = snapshot.values.get("messages", []) if snapshot and snapshot.values else []
+        if not msgs:
+            return {"status": "success", "triggered": False, "reason": "empty",
+                    "before_tokens": 0, "after_tokens": 0, "saved_tokens": 0}
+
+        last_model = ""
+        if hasattr(self.agent, "get_thread_model"):
+            last_model = self.agent.get_thread_model(thread_id)
+        budget = resolve_history_token_budget(
+            is_subagent=is_subagent_session(req.session_id),
+            model=last_model or None,
+        )
+        store_path = getattr(self.agent, "_db_path", None) or self.db_path
+
+        before_tokens = estimate_messages_tokens(
+            static_compression_view(
+                user_id=req.user_id,
+                session_id=req.session_id,
+                messages=msgs,
+                checkpoint_store_path=store_path,
+            )
+        )
+        try:
+            result = apply_compression(
+                user_id=req.user_id,
+                session_id=req.session_id,
+                messages=msgs,
+                history_token_budget=budget,
+                checkpoint_store_path=store_path,
+                summarizer=make_llm_summarizer(),
+                force=True,
+            )
+        except Exception:
+            logger.exception("compact_session failed for %s", thread_id)
+            raise HTTPException(status_code=500, detail="compaction failed")
+
+        after_tokens = result.view_tokens
+        with contextlib.suppress(Exception):
+            self.agent.set_thread_context_usage(thread_id, after_tokens, budget)
+
+        return {
+            "status": "success",
+            "triggered": result.triggered,
+            "reason": result.reason,
+            "before_tokens": int(before_tokens),
+            "after_tokens": int(after_tokens),
+            "saved_tokens": max(0, int(before_tokens) - int(after_tokens)),
+            "summary_chars": len(result.summary or ""),
+            "compacted_until": int(result.compacted_until or 0),
         }
 
     async def delete_session(self, req: DeleteSessionRequest, x_internal_token: str | None):

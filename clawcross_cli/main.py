@@ -64,6 +64,7 @@ def usage() -> None:
     print("  channel setup [<id>]        guided channel setup (writes <ID>_BOTS in .env)")
     print("  channel show <id>           show channel JSON entries currently in .env")
     print("  channel clear <id>          drop the env_key for a channel")
+    print("  compact <session_id>        manually compress a session's history now")
     sys.exit(2)
 
 
@@ -112,6 +113,11 @@ def main() -> None:
     elif cmd == "channel":
         from clawcross_cli.channel_cmd import handle_channel_command
         out = handle_channel_command(rest, interactive=True)
+        if out:
+            print(out)
+    elif cmd == "compact":
+        from clawcross_cli.display_cmd import handle_compact_command
+        out = handle_compact_command(rest)
         if out:
             print(out)
     else:

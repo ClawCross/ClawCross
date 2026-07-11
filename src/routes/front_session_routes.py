@@ -94,6 +94,21 @@ def register_session_routes(
                 "context_budget": 0,
             }), 200
 
+    @app.route("/proxy_compact_session", methods=["POST"])
+    def proxy_compact_session():
+        user_id = session.get("user_id", "")
+        sid = request.json.get("session_id", "") if request.is_json else ""
+        try:
+            r = requests.post(
+                "http://127.0.0.1:{port}/compact_session".format(port=port_agent),
+                json={"user_id": user_id, "session_id": sid},
+                headers=_internal_auth_headers(),
+                timeout=120,
+            )
+            return jsonify(r.json()), r.status_code
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
     @app.route("/proxy_delete_session", methods=["POST"])
     def proxy_delete_session():
         user_id = session.get("user_id", "")

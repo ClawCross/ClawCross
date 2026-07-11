@@ -98,3 +98,6 @@ docs/media/teamclaw-demo.mp4
 data/debug_llm_payload_last.json
 .claude/settings.local.json
 .aider*
+
+# LangGraph 把 ":memory:" 当路径写出的残留 SQLite（不应入库）
+:memory:/

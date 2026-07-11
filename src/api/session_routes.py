@@ -14,6 +14,7 @@ from typing import Any, Callable
 from fastapi import APIRouter, Header
 
 from api.session_models import (
+    CompactSessionRequest,
     DeleteSessionRequest,
     SessionHistoryRequest,
     SessionListRequest,
@@ -57,5 +58,9 @@ def create_session_router(
     @router.post("/session_status")
     async def session_status(req: SessionStatusRequest, x_internal_token: str | None = Header(None)):
         return await service.session_status(req, x_internal_token)
+
+    @router.post("/compact_session")
+    async def compact_session(req: CompactSessionRequest, x_internal_token: str | None = Header(None)):
+        return await service.compact_session(req, x_internal_token)
 
     return router
