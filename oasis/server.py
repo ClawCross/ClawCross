@@ -422,8 +422,17 @@ async def cancel_topic(topic_id: str, user_id: str = Query(...)):
     if task and not task.done():
         task.cancel()
 
+    if engine or (task and not task.done()):
+        message = "Cancellation signal sent; engine will finalize the status shortly"
+    else:
+        # No live engine/task will ever flip the status (workflow-created empty
+        # topic, or engine lost to a server restart) — mark terminal here.
+        forum.status = "cancelled"
+        if not forum.conclusion:
+            forum.conclusion = "讨论已被用户强制终止"
+        message = "Discussion cancelled"
     forum.save()
-    return {"topic_id": topic_id, "status": "cancelled", "message": "Discussion cancelled"}
+    return {"topic_id": topic_id, "status": forum.status, "message": message}
 
 
 @app.post("/topics/{topic_id}/purge")

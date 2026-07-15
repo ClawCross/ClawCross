@@ -141,6 +141,10 @@ def _spawn_standalone_python_workflow(
         user_id or _FALLBACK_USER,
         "--question",
         question or "",
+        "--run-id",
+        run_id,
+        "--meta-file",
+        meta_path,
         "--result-file",
         result_path,
     ]
@@ -255,6 +259,42 @@ def _pid_is_running(pid: int) -> bool:
         return True
     except OSError:
         return False
+
+
+async def _cancel_oasis_topic_for_python_run(data: dict, user_id: str) -> str:
+    topic_id = str(data.get("topic_id") or "").strip()
+    if not topic_id:
+        question = str(data.get("question") or "").strip()
+        if question:
+            try:
+                async with httpx.AsyncClient(timeout=10) as client:
+                    resp = await client.get(
+                        f"{OASIS_BASE_URL}/topics",
+                        params={"user_id": user_id},
+                    )
+                if resp.status_code == 200:
+                    matches = [
+                        item for item in resp.json()
+                        if str(item.get("question") or "").strip() == question
+                        and str(item.get("status") or "") == "discussing"
+                    ]
+                    if len(matches) == 1:
+                        topic_id = str(matches[0].get("topic_id") or "").strip()
+            except Exception:
+                topic_id = ""
+    if not topic_id:
+        return ""
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.delete(
+                f"{OASIS_BASE_URL}/topics/{topic_id}",
+                params={"user_id": user_id},
+            )
+        if resp.status_code == 200:
+            return topic_id
+    except Exception:
+        pass
+    return ""
 
 # ======================================================================
 # Expert persona management tools
@@ -1115,8 +1155,8 @@ async def get_workflow_writing_rules() -> str:
     The rules cover:
       • Required structure (`from oasis.workflow import Context, workflow`,
         `@workflow` decorator)
-      • Context API: identity, list/get helpers, send_agent / send_persona,
-        publish, topics, set_conclusion / set_result
+      • Context API: identity, list/get helpers, send_agent / send_agent_once /
+        send_persona / call_llm, publish, topics, set_conclusion / set_result
       • SendToAgentResult attribute access
       • Agent vs persona selection
       • Multi-round prompt splicing
@@ -1249,11 +1289,13 @@ async def check_oasis_python_run(run_id: str, username: str = "") -> str:
         run_id: The run_id returned by start_new_oasis in Python mode
         username: (auto-injected) current user identity; do NOT set manually
     """
-    _ = _resolve_effective_user(username)
     data, err = _load_python_run_payload(run_id)
     if err:
         return f"❌ {err}"
     assert data is not None
+    effective_user = _resolve_effective_user(username)
+    if str(data.get("user_id") or "") != effective_user:
+        return f"❌ 无权查看此运行: {run_id}"
 
     lines = ["🐍 Python Workflow 运行结果"]
     lines.append(f"Run ID: {data.get('run_id')}")
@@ -1371,6 +1413,9 @@ async def cancel_oasis_python_run(run_id: str, username: str = "") -> str:
     if pid <= 0:
         return f"❌ 运行缺少 PID: {run_id}"
     if not data.get("_running"):
+        cancelled_topic = await _cancel_oasis_topic_for_python_run(data, effective_user)
+        if cancelled_topic:
+            return f"ℹ️ Python workflow 进程已结束\nRun ID: {run_id}\nOASIS Topic 已同步取消: {cancelled_topic}"
         return f"ℹ️ 运行已结束，无需取消: {run_id}"
     try:
         os.killpg(pid, 15)
@@ -1379,7 +1424,30 @@ async def cancel_oasis_python_run(run_id: str, username: str = "") -> str:
             os.kill(pid, 15)
         except Exception as e:
             return f"❌ 取消失败: {e}"
-    return f"🛑 Python workflow 已发送终止信号\nRun ID: {run_id}\nPID: {pid}"
+    cancelled_topic = await _cancel_oasis_topic_for_python_run(data, effective_user)
+    result_file = data.get("_result_file") or data.get("result_file")
+    if result_file:
+        try:
+            payload = {
+                "ok": False,
+                "run_id": re.sub(r"[^a-zA-Z0-9]", "", str(run_id or "").strip()),
+                "question": data.get("question", ""),
+                "user_id": data.get("user_id", ""),
+                "team": data.get("team", ""),
+                "topic_id": data.get("topic_id") or cancelled_topic or None,
+                "error": "cancelled",
+                "cancelled": True,
+                "published_messages": data.get("published_messages") or [],
+            }
+            with open(str(result_file), "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+                f.write("\n")
+        except Exception:
+            pass
+    lines = [f"🛑 Python workflow 已发送终止信号", f"Run ID: {run_id}", f"PID: {pid}"]
+    if cancelled_topic:
+        lines.append(f"OASIS Topic 已同步取消: {cancelled_topic}")
+    return "\n".join(lines)
 
 
 @mcp.tool()
