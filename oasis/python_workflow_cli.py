@@ -27,6 +27,24 @@ _TOPIC_POST_MAX_LEN = 8000
 _TOPIC_POST_TRUNCATE_SUFFIX = "\n\n...[truncated by workflow runtime]"
 
 
+def _update_meta_file(path: str, values: dict[str, Any]) -> None:
+    if not path:
+        return
+    try:
+        current: dict[str, Any] = {}
+        if os.path.isfile(path):
+            with open(path, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+            if isinstance(loaded, dict):
+                current = loaded
+        current.update(values)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(current, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+    except Exception:
+        pass
+
+
 def _parse_oasis_publish_payload(content: str) -> dict[str, Any] | None:
     raw = str(content or "").strip()
     if not raw:
@@ -43,12 +61,22 @@ def _parse_oasis_publish_payload(content: str) -> dict[str, Any] | None:
 
 
 class StandaloneWorkflowContext:
-    def __init__(self, *, user_id: str, team: str, question: str, run_id: str, auto_topic: bool = True):
+    def __init__(
+        self,
+        *,
+        user_id: str,
+        team: str,
+        question: str,
+        run_id: str,
+        auto_topic: bool = True,
+        meta_file: str = "",
+    ):
         self.user_id = user_id
         self.team = team
         self.question = question
         self.run_id = run_id
         self.auto_topic = auto_topic
+        self.meta_file = meta_file
         self.topic_id: str | None = None
         self.conclusion: str = ""
         self.result: Any = None
@@ -161,6 +189,27 @@ class StandaloneWorkflowContext:
             options=options,
         )
 
+    async def send_agent_once(
+        self,
+        target: str = "",
+        prompt: str | None = None,
+        *,
+        persona_tag: str | None = None,
+        persona_override: str | None = None,
+        connect_type: str | None = None,
+        platform: str | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> SendToAgentResult:
+        return await self._agent_center.send_agent_once(
+            target,
+            prompt,
+            persona_tag=persona_tag,
+            persona_override=persona_override,
+            connect_type=connect_type,
+            platform=platform,
+            options=options,
+        )
+
     async def send_persona(
         self,
         target: str,
@@ -176,6 +225,23 @@ class StandaloneWorkflowContext:
             options=options,
         )
 
+    async def call_llm(
+        self,
+        prompt: str,
+        *,
+        temperature: float | None = None,
+        model: str | None = None,
+        max_tokens: int | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> SendToAgentResult:
+        return await self._agent_center.call_llm(
+            prompt,
+            temperature=temperature,
+            model=model,
+            max_tokens=max_tokens,
+            options=options,
+        )
+
     async def create_empty_topic(self, *, question: str, max_rounds: int = 1) -> dict[str, Any]:
         topic = await create_empty_topic(
             question=question,
@@ -184,6 +250,8 @@ class StandaloneWorkflowContext:
             max_rounds=max_rounds,
         )
         self.topic_id = str(topic.get("topic_id") or "")
+        if self.topic_id:
+            _update_meta_file(self.meta_file, {"topic_id": self.topic_id})
         return topic
 
     async def publish_to_topic(
@@ -228,6 +296,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--question", default="", help="Question/task passed into the workflow.")
     parser.add_argument("--user-id", default="default", help="User ID for agent/topic scope.")
     parser.add_argument("--team", default="", help="Optional team scope.")
+    parser.add_argument("--run-id", default="", help="Optional run ID supplied by the launcher.")
+    parser.add_argument("--meta-file", default="", help="Optional metadata JSON file maintained by the launcher.")
     parser.add_argument("--result-file", default="", help="Optional JSON output file.")
     parser.add_argument(
         "--no-auto-topic",
@@ -244,8 +314,9 @@ async def _run(main_func: Callable[[StandaloneWorkflowContext], Awaitable[Any]])
         user_id=args.user_id,
         team=args.team,
         question=args.question,
-        run_id=uuid.uuid4().hex[:12],
+        run_id=args.run_id or uuid.uuid4().hex[:12],
         auto_topic=not args.no_auto_topic,
+        meta_file=args.meta_file,
     )
     exit_code = 0
     try:

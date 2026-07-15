@@ -40,7 +40,13 @@ Reference docs: `docs/workflowpy.md`, `docs/oasis-reference.md`.
   - `ctx.get_agent(...)`, `ctx.get_persona(...)`
 - Sending (async, `await` required):
   - `await ctx.send_agent(agent_id, prompt)`
+  - `await ctx.send_agent_once(prompt)` — ad-hoc temporary independent agent;
+    no target, no persona_override, no catalog registration, no external id
+  - `await ctx.send_agent_once(agent_id, prompt)` — existing concrete agent,
+    one-shot with throwaway session cleaned up after the call
   - `await ctx.send_persona(persona_tag, prompt)`
+  - `await ctx.call_llm(prompt, temperature=..., model=...)` — one-shot bare
+    LLM call: no persona, no memory, no tools
   - `await ctx.publish(text, author=...)`
 - Topics (async):
   - `await ctx.create_empty_topic(...)`
@@ -70,6 +76,9 @@ Reference docs: `docs/workflowpy.md`, `docs/oasis-reference.md`.
 - Use `send_agent(...)` for existing concrete agents (call by `agent['id']`).
 - Use `send_persona(...)` for role-based one-off speaking (e.g. `creative`,
   `critical`, `entrepreneur`).
+- Use `send_agent_once(prompt)` when the workflow needs a newly generated,
+  temporary independent agent. Do not invent or ask for random external agent
+  ids.
 - Tags like `creative`/`critical` are not unique. Prefer iterating over
   `ctx.list_agents()` and passing the chosen `agent['id']` into
   `send_agent(...)` rather than relying on a tag.
@@ -80,8 +89,15 @@ Reference docs: `docs/workflowpy.md`, `docs/oasis-reference.md`.
 - `send_agent(...)` may use an existing session and therefore may have
   memory, but workflow-critical context should still be passed explicitly
   when later steps depend on earlier outputs.
+- `send_agent_once(...)` guarantees no memory: with one argument it runs a
+  stateless temporary LLM agent without catalog registration; with
+  `(agent_id, prompt)` it uses an existing concrete agent and deletes the
+  throwaway session after the call.
 - `send_persona(...)` is a lightweight role-based call; do not rely on
   implicit long-term memory there.
+- `call_llm(...)` is the cheapest primitive: a single stateless LLM
+  completion with no persona framing and no tools. Use it for pure text
+  transforms (summarize, classify, rewrite).
 - For multi-round workflows, manually splice prior outputs into the next
   prompt instead of relying on hidden session memory.
 

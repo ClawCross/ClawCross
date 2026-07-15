@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from utils.checkpoint_repository import (
     delete_thread_records,
     delete_thread_records_like,
+    fetch_thread_checkpoint_times,
     list_thread_ids_by_prefix,
 )
 from utils.logging_utils import get_logger
@@ -87,11 +88,16 @@ class SessionService:
             if not first_human:
                 continue
 
+            checkpoint_times = await fetch_thread_checkpoint_times(self.db_path, thread_id)
             sessions.append({
                 "session_id": session_id,
                 "title": first_human,
                 "last_message": last_human,
                 "message_count": msg_count,
+                "created_at": checkpoint_times.get("created_at", ""),
+                "updated_at": checkpoint_times.get("updated_at", ""),
+                "created_at_ts": checkpoint_times.get("created_at_ts", 0),
+                "updated_at_ts": checkpoint_times.get("updated_at_ts", 0),
             })
 
         return {"status": "success", "sessions": sessions}

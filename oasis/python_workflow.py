@@ -108,6 +108,27 @@ class PythonWorkflowContext:
             options=options,
         )
 
+    async def send_agent_once(
+        self,
+        target: str = "",
+        prompt: str | None = None,
+        *,
+        persona_tag: str | None = None,
+        persona_override: str | None = None,
+        connect_type: str | None = None,
+        platform: str | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> SendToAgentResult:
+        return await self._agent_center.send_agent_once(
+            target,
+            prompt,
+            persona_tag=persona_tag,
+            persona_override=persona_override,
+            connect_type=connect_type,
+            platform=platform,
+            options=options,
+        )
+
     async def send_persona(
         self,
         target: str,
@@ -120,6 +141,23 @@ class PythonWorkflowContext:
             target,
             prompt,
             persona_override=persona_override,
+            options=options,
+        )
+
+    async def call_llm(
+        self,
+        prompt: str,
+        *,
+        temperature: float | None = None,
+        model: str | None = None,
+        max_tokens: int | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> SendToAgentResult:
+        return await self._agent_center.call_llm(
+            prompt,
+            temperature=temperature,
+            model=model,
+            max_tokens=max_tokens,
             options=options,
         )
 
@@ -177,6 +215,27 @@ class StandalonePythonWorkflowContext:
             options=options,
         )
 
+    async def send_agent_once(
+        self,
+        target: str = "",
+        prompt: str | None = None,
+        *,
+        persona_tag: str | None = None,
+        persona_override: str | None = None,
+        connect_type: str | None = None,
+        platform: str | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> SendToAgentResult:
+        return await self._agent_center.send_agent_once(
+            target,
+            prompt,
+            persona_tag=persona_tag,
+            persona_override=persona_override,
+            connect_type=connect_type,
+            platform=platform,
+            options=options,
+        )
+
     async def send_persona(
         self,
         target: str,
@@ -189,6 +248,23 @@ class StandalonePythonWorkflowContext:
             target,
             prompt,
             persona_override=persona_override,
+            options=options,
+        )
+
+    async def call_llm(
+        self,
+        prompt: str,
+        *,
+        temperature: float | None = None,
+        model: str | None = None,
+        max_tokens: int | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> SendToAgentResult:
+        return await self._agent_center.call_llm(
+            prompt,
+            temperature=temperature,
+            model=model,
+            max_tokens=max_tokens,
             options=options,
         )
 
@@ -301,7 +377,9 @@ async def run_python_workflow_standalone(
         "get_agent": ctx.get_agent,
         "get_persona": ctx.get_persona,
         "send_agent": ctx.send_agent,
+        "send_agent_once": ctx.send_agent_once,
         "send_persona": ctx.send_persona,
+        "call_llm": ctx.call_llm,
         "publish": ctx.publish,
         "set_conclusion": ctx.set_conclusion,
         "AgentCenter": AgentCenter,
@@ -372,7 +450,9 @@ class PythonWorkflowEngine:
             "get_agent": ctx.get_agent,
             "get_persona": ctx.get_persona,
             "send_agent": ctx.send_agent,
+            "send_agent_once": ctx.send_agent_once,
             "send_persona": ctx.send_persona,
+            "call_llm": ctx.call_llm,
             "publish": ctx.publish,
             "set_conclusion": ctx.set_conclusion,
         }

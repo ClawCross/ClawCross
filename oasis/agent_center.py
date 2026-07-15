@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+import uuid
 from copy import deepcopy
 from typing import Any
 
@@ -148,6 +149,134 @@ class AgentCenter:
             return fallback_result
         except Exception:
             return result
+
+    async def send_agent_once(
+        self,
+        target: str = "",
+        prompt: str | None = None,
+        *,
+        persona_tag: str | None = None,
+        persona_override: str | None = None,
+        connect_type: str | None = None,
+        platform: str | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> SendToAgentResult:
+        """One-shot call.
+
+        Usage:
+          - send_agent_once(prompt): ad-hoc temporary, memoryless LLM agent.
+          - send_agent_once(agent_id, prompt): existing concrete agent with a
+            throwaway session.
+        """
+        if prompt is None:
+            prompt = str(target or "")
+            target = ""
+
+        target_key = str(target or "").strip()
+        if not target_key:
+            return await self._send_temporary_agent_once(
+                "",
+                prompt,
+                persona_override=persona_override,
+                options=options,
+            )
+
+        try:
+            self.get_agent(target_key)
+        except ValueError:
+            return await self._send_temporary_agent_once(
+                target_key,
+                prompt,
+                persona_override=persona_override,
+                options=options,
+            )
+
+        session = f"oneshot-{uuid.uuid4().hex[:12]}"
+        try:
+            result = await self.send_agent(
+                target_key,
+                prompt,
+                persona_tag=persona_tag,
+                persona_override=persona_override,
+                session=session,
+                connect_type=connect_type,
+                platform=platform,
+                options=options,
+            )
+        finally:
+            try:
+                await self.reset_agent(
+                    target_key,
+                    session=session,
+                    connect_type=connect_type,
+                    platform=platform,
+                    options=options,
+                )
+            except Exception:
+                pass
+        meta = dict(result.meta or {})
+        meta["oneshot_session"] = session
+        result.meta = meta
+        return result
+
+    async def _send_temporary_agent_once(
+        self,
+        target: str,
+        prompt: str,
+        *,
+        persona_override: str | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> SendToAgentResult:
+        """Run an ad-hoc, memoryless agent persona without requiring catalog registration."""
+        from oasis.experts import _build_identity_prompt
+
+        merged_options = dict(options or {})
+        session = f"temp-agent-{uuid.uuid4().hex[:12]}"
+        name = str(target or "").strip() or session
+        identity = _build_identity_prompt(name, persona_override or "")
+        effective_prompt = f"{identity}{prompt}" if identity else prompt
+        result = await send_to_agent(
+            SendToAgentRequest(
+                prompt=effective_prompt,
+                connect_type="http",
+                platform="temp",
+                session=session,
+                options=merged_options,
+            )
+        )
+        meta = dict(result.meta or {})
+        meta["temporary_agent"] = True
+        meta["temporary_agent_name"] = name
+        meta["oneshot_session"] = session
+        result.meta = meta
+        return result
+
+    async def call_llm(
+        self,
+        prompt: str,
+        *,
+        temperature: float | None = None,
+        model: str | None = None,
+        max_tokens: int | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> SendToAgentResult:
+        """One-shot bare LLM call via the temp connector: no persona, no memory, no tools."""
+        merged_options = dict(options or {})
+        if temperature is not None:
+            merged_options["temperature"] = temperature
+        if model:
+            merged_options["model"] = model
+        if max_tokens is not None:
+            merged_options["max_tokens"] = max_tokens
+        return await send_to_agent(
+            SendToAgentRequest(
+                prompt=prompt,
+                connect_type="http",
+                platform="temp",
+                session="call_llm",
+                options=merged_options,
+            )
+        )
 
     async def reset_agent(
         self,

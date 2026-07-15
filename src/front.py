@@ -5927,6 +5927,7 @@ def ia_list():
 
     # Primary source: current team agents (or public agents when no team)
     primary_agents = _ia_load(user_id, team)
+    primary_agents.sort(key=_ia_sort_value, reverse=True)
     seen_sids = {a["session"] for a in primary_agents if a.get("session")}
 
     # Collect ALL session IDs from other sources (public + all teams,
@@ -5986,6 +5987,17 @@ def _ia_preempt_primary(agents: list, keep_sid: str) -> None:
             other_meta.pop("is_primary", None)
 
 
+def _ia_sort_value(agent: dict) -> str:
+    meta = agent.get("meta")
+    if not isinstance(meta, dict):
+        return ""
+    return str(meta.get("updated_at") or meta.get("created_at") or "")
+
+
+def _ia_now_iso() -> str:
+    return datetime.utcnow().isoformat() + "Z"
+
+
 @app.route("/internal_agents", methods=["POST"])
 def ia_add():
     """Add a new internal agent entry.
@@ -6003,6 +6015,11 @@ def ia_add():
     if any(a["session"] == sid for a in agents):
         return jsonify({"error": f"session '{sid}' already exists"}), 409
     meta = body.get("meta", {}) or {}
+    if not isinstance(meta, dict):
+        meta = {}
+    now = _ia_now_iso()
+    meta.setdefault("created_at", now)
+    meta["updated_at"] = now
     if isinstance(meta, dict) and meta.get("is_primary"):
         _ia_preempt_primary(agents, sid)
     entry = {"session": sid, "meta": meta}
@@ -6028,6 +6045,8 @@ def ia_update(sid):
             if isinstance(new_meta, dict) and new_meta.get("is_primary"):
                 _ia_preempt_primary(agents, sid)
             a["meta"].update(new_meta)
+            a["meta"].setdefault("created_at", _ia_now_iso())
+            a["meta"]["updated_at"] = _ia_now_iso()
             _ia_save(user_id, agents, team)
             return jsonify({"status": "success", "agent": a})
     return jsonify({"error": "not found"}), 404

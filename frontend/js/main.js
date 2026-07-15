@@ -2507,6 +2507,78 @@ function _resolveTitle(originalTitle, sessionId, agentMap) {
     return originalTitle;
 }
 
+function _timeValue(value) {
+    if (value === null || value === undefined || value === '') return 0;
+    if (typeof value === 'number') return value > 100000000000 ? value : value * 1000;
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (!trimmed) return 0;
+        if (/^\d+(\.\d+)?$/.test(trimmed)) {
+            const numeric = Number(trimmed);
+            return numeric > 100000000000 ? numeric : numeric * 1000;
+        }
+        const parsed = Date.parse(trimmed);
+        return Number.isNaN(parsed) ? 0 : parsed;
+    }
+    return 0;
+}
+
+function _sessionIdTimeValue(sessionId) {
+    if (!sessionId || sessionId.length < 8) return 0;
+    const prefix = sessionId.slice(0, 8);
+    if (!/^[0-9a-z]+$/i.test(prefix)) return 0;
+    const millis = parseInt(prefix, 36);
+    const min = Date.UTC(2020, 0, 1);
+    const max = Date.UTC(2100, 0, 1);
+    return millis >= min && millis <= max ? millis : 0;
+}
+
+function _agentMetaTimeValue(meta = {}) {
+    return _timeValue(meta.updated_at_ts)
+        || _timeValue(meta.updated_at)
+        || _timeValue(meta.last_used_at)
+        || _timeValue(meta.last_message_at)
+        || _timeValue(meta.created_at_ts)
+        || _timeValue(meta.created_at);
+}
+
+function _sessionTimeValue(session = {}, agentMap = {}) {
+    const meta = agentMap[session.session_id] || {};
+    return _timeValue(session.updated_at_ts)
+        || _timeValue(session.updated_at)
+        || _timeValue(session.last_message_at)
+        || _agentMetaTimeValue(meta)
+        || _timeValue(session.created_at_ts)
+        || _timeValue(session.created_at)
+        || _sessionIdTimeValue(session.session_id);
+}
+
+function _sortSessionsByTime(sessions, agentMap = {}) {
+    return sessions.sort((a, b) => {
+        const diff = _sessionTimeValue(b, agentMap) - _sessionTimeValue(a, agentMap);
+        if (diff) return diff;
+        return String(b.session_id || '').localeCompare(String(a.session_id || ''));
+    });
+}
+
+function _agentEntryTimeValue(agent = {}) {
+    const meta = agent.meta || agent;
+    return _timeValue(agent.updated_at_ts)
+        || _timeValue(agent.updated_at)
+        || _agentMetaTimeValue(meta)
+        || _sessionIdTimeValue(agent.session || agent.session_id || agent.id || '');
+}
+
+function _sortAgentEntriesByTime(agents) {
+    return agents.sort((a, b) => {
+        const diff = _agentEntryTimeValue(b) - _agentEntryTimeValue(a);
+        if (diff) return diff;
+        const an = (a.name || a.meta?.name || a.session || '').toString();
+        const bn = (b.name || b.meta?.name || b.session || '').toString();
+        return bn.localeCompare(an);
+    });
+}
+
 async function editAgentMeta(sessionId) {
     // Load current meta from backend
     let existingMeta = {};
@@ -4237,7 +4309,13 @@ async function loadSessionList() {
         const seenIds = new Set(allSessions.map(s => s.session_id));
         for (const [sid, meta] of Object.entries(agentMap)) {
             if (!seenIds.has(sid) && meta && meta.name) {
-                allSessions.push({ session_id: sid, title: meta.name || 'Untitled', message_count: 0 });
+                allSessions.push({
+                    session_id: sid,
+                    title: meta.name || 'Untitled',
+                    message_count: 0,
+                    created_at: meta.created_at || '',
+                    updated_at: meta.updated_at || meta.created_at || ''
+                });
                 seenIds.add(sid);
             }
         }
@@ -4248,7 +4326,7 @@ async function loadSessionList() {
             return;
         }
         listEl.innerHTML = '';
-        allSessions.sort((a, b) => b.session_id.localeCompare(a.session_id));
+        _sortSessionsByTime(allSessions, agentMap);
         _mergedSessionsCache = allSessions;
         ocInternalRepaintSessionPick();
         for (const s of allSessions) {
@@ -4295,7 +4373,13 @@ async function refreshHistoryList() {
         const seenIds = new Set(sessions.map(s => s.session_id));
         for (const [sid, meta] of Object.entries(agentMap)) {
             if (!seenIds.has(sid) && meta && meta.name) {
-                sessions.push({ session_id: sid, title: meta.name || 'Untitled', message_count: 0 });
+                sessions.push({
+                    session_id: sid,
+                    title: meta.name || 'Untitled',
+                    message_count: 0,
+                    created_at: meta.created_at || '',
+                    updated_at: meta.updated_at || meta.created_at || ''
+                });
                 seenIds.add(sid);
             }
         }
@@ -4323,7 +4407,7 @@ async function refreshHistoryList() {
             if (!newIds.has(el.dataset.sessionId)) el.remove();
         });
         // 更新现有的 + 添加新的
-        sessions.sort((a, b) => b.session_id.localeCompare(a.session_id));
+        _sortSessionsByTime(sessions, agentMap);
         _mergedSessionsCache = sessions;
         ocInternalRepaintSessionPick();
         let prevEl = null;
@@ -4376,6 +4460,11 @@ async function refreshHistoryList() {
                 } else {
                     listEl.appendChild(div);
                 }
+            }
+            if (!prevEl) {
+                if (listEl.firstChild !== div) listEl.insertBefore(div, listEl.firstChild);
+            } else if (prevEl.nextSibling !== div) {
+                listEl.insertBefore(div, prevEl.nextSibling);
             }
             // 更新发光状态（不移除再添加class，避免动画重启）
             const info = statusMap[s.session_id];
@@ -15455,7 +15544,7 @@ async function _loadImportOasisList() {
     try {
         const resp = await fetch('/internal_agents');
         const data = await resp.json();
-        const agents = data.agents || [];
+        const agents = _sortAgentEntriesByTime((data.agents || []).slice());
 
         if (agents.length === 0) {
             listEl.innerHTML = '<div style="padding:12px;text-align:center;font-size:11px;color:#9ca3af;">没有可导入的 Internal Agent</div>';
@@ -15593,7 +15682,7 @@ async function _loadImportOCList() {
             return;
         }
 
-        const agents = data.agents || [];
+        const agents = _sortAgentEntriesByTime((data.agents || []).slice());
 
         if (agents.length === 0) {
             listEl.innerHTML = '<div style="padding:12px;text-align:center;font-size:11px;color:#9ca3af;">没有可导入的 OpenClaw Agent</div>';
@@ -15687,7 +15776,7 @@ async function ocLoadAgents() {
             return;
         }
         _ocAvailable = true;
-        _ocAgentsCache = data.agents || [];
+        _ocAgentsCache = _sortAgentEntriesByTime((data.agents || []).slice());
 
         select.innerHTML = '<option value="">' + t('oc_select_agent') + '</option>';
         for (const agent of _ocAgentsCache) {

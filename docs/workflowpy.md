@@ -135,7 +135,9 @@ Helper methods:
 - `ctx.get_agent(target)`
 - `ctx.get_persona(target)`
 - `await ctx.send_agent(...)`
+- `await ctx.send_agent_once(...)`
 - `await ctx.send_persona(...)`
+- `await ctx.call_llm(...)`
 - `await ctx.publish(...)`
 - `await ctx.create_empty_topic(...)`
 - `await ctx.publish_to_topic(...)`
@@ -181,6 +183,13 @@ If you only need a persona-style one-shot response, prefer:
 reply = await ctx.send_persona("creative", ctx.question)
 ```
 
+If you need a temporary independent agent with no existing agent id, use the
+single-argument one-shot form:
+
+```python
+reply = await ctx.send_agent_once("Analyze this task as an independent agent:\n" + ctx.question)
+```
+
 ### 3. `send_agent(...)` returns `SendToAgentResult`
 
 Use attribute access:
@@ -193,6 +202,12 @@ err = reply.error
 ```
 
 Do not rely on dict-style response parsing for new code.
+
+For an existing concrete agent without persistent memory, use:
+
+```python
+reply = await ctx.send_agent_once(agent_id, prompt)
+```
 
 ### 4. Do not depend on implicit history for correctness
 

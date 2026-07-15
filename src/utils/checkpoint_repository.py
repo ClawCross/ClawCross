@@ -221,6 +221,48 @@ async def list_thread_ids_like(db_path: str, pattern: str) -> list[str]:
     return sorted(thread_ids)
 
 
+async def fetch_thread_checkpoint_times(
+    db_path: str,
+    thread_id: str,
+) -> dict[str, Any]:
+    """Return best-effort created/updated times for one checkpoint thread."""
+    for path in candidate_checkpoint_db_paths_for_thread(db_path, thread_id):
+        stat = path.stat()
+        created_ts = stat.st_ctime
+        updated_ts = stat.st_mtime
+        first_checkpoint_id = ""
+        latest_checkpoint_id = ""
+        async with aiosqlite.connect(path) as db:
+            try:
+                cursor = await db.execute(
+                    "SELECT checkpoint_id FROM checkpoints WHERE thread_id = ? ORDER BY ROWID ASC LIMIT 1",
+                    (thread_id,),
+                )
+                first_row = await cursor.fetchone()
+                cursor = await db.execute(
+                    "SELECT checkpoint_id FROM checkpoints WHERE thread_id = ? ORDER BY ROWID DESC LIMIT 1",
+                    (thread_id,),
+                )
+                latest_row = await cursor.fetchone()
+            except sqlite3.OperationalError as exc:
+                if _is_missing_table_error(exc):
+                    continue
+                raise
+        if first_row:
+            first_checkpoint_id = str(first_row[0] or "")
+        if latest_row:
+            latest_checkpoint_id = str(latest_row[0] or "")
+        return {
+            "created_at": datetime.fromtimestamp(created_ts, timezone.utc).isoformat(),
+            "updated_at": datetime.fromtimestamp(updated_ts, timezone.utc).isoformat(),
+            "created_at_ts": created_ts,
+            "updated_at_ts": updated_ts,
+            "first_checkpoint_id": first_checkpoint_id,
+            "latest_checkpoint_id": latest_checkpoint_id,
+        }
+    return {}
+
+
 async def fetch_latest_checkpoint_blob(
     db_path: str,
     thread_id: str,
