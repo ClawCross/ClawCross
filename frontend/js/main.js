@@ -1782,6 +1782,10 @@ let projectUpdateBannerDismissed = false;
 let projectUpdateBannerState = null;
 let currentSessionId = null;
 let currentAbortController = null;
+// Active browser-side streams are owned by their chat context, not by the
+// currently visible page.  This lets a stream keep collecting output while
+// the user visits another session/platform and restores it on return.
+const activeChatRuns = new Map();
 let projectUpdatePollTimer = null;
 let cancelTargetSessionId = null;  // 终止按钮绑定的会话ID
 let pendingImages = []; // [{base64: "data:image/...", name: "file.jpg"}, ...]
@@ -4646,6 +4650,8 @@ async function switchToSession(sessionId, force = false, options = {}) {
             _acpLastTranscriptKey = acpComputeTranscriptKey();
             await acpPaintTranscript();
         }
+        restoreActiveChatRunForCurrentContext();
+        await syncCurrentChatRunUI();
         if (!quiet) hidePageLoading();
         return;
     }
@@ -4672,6 +4678,8 @@ async function switchToSession(sessionId, force = false, options = {}) {
 
         if (!data.messages || data.messages.length === 0) {
             renderWeBotWelcomeMessage();
+            restoreActiveChatRunForCurrentContext();
+            await syncCurrentChatRunUI();
             hidePageLoading();
             return;
         }
@@ -4732,6 +4740,8 @@ async function switchToSession(sessionId, force = false, options = {}) {
     }
 
     if (_ocChatMode === 'internal') {
+        restoreActiveChatRunForCurrentContext();
+        await syncCurrentChatRunUI();
         ocInternalSyncNameInput();
         ocInternalRepaintSessionPick();
         scrollChatToBottom(chatBox, { force: true });
@@ -7535,10 +7545,107 @@ function setSystemBusyUI(busy) {
     }
 }
 
+function chatRunContextKey(mode = _ocChatMode, sessionId = currentSessionId, agent = _ocSelectedAgent, acpTool = _acpTool) {
+    return JSON.stringify({
+        mode: mode || 'internal',
+        sid: sessionId || '',
+        agent: agent && agent.name ? agent.name : null,
+        acp: acpTool || null,
+    });
+}
+
+function currentActiveChatRun() {
+    return activeChatRuns.get(chatRunContextKey()) || null;
+}
+
+let _chatRunStatusRequestSeq = 0;
+
+function setChatStatusCheckingUI() {
+    sendBtn.style.display = 'none';
+    cancelBtn.style.display = 'none';
+    busyBtn.style.display = 'inline-flex';
+    inputField.disabled = true;
+    cancelTargetSessionId = null;
+}
+
+async function syncCurrentChatRunUI() {
+    const contextKey = chatRunContextKey();
+    const run = currentActiveChatRun();
+    if (run && ['running', 'cancelling'].includes(run.status)) {
+        currentAbortController = run.controller;
+        setStreamingUI(true);
+        return true;
+    }
+
+    // ACP/OpenClaw do not expose their running state through the Internal
+    // session-status endpoint. Their browser-side run map remains authoritative.
+    if (_ocChatMode !== 'internal' || !currentSessionId) {
+        currentAbortController = null;
+        setStreamingUI(false);
+        return false;
+    }
+
+    const requestSeq = ++_chatRunStatusRequestSeq;
+    const sessionId = currentSessionId;
+    currentAbortController = null;
+    setChatStatusCheckingUI();
+    try {
+        const resp = await fetch('/proxy_session_status', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ session_id: sessionId }),
+        });
+        const data = await resp.json();
+        if (requestSeq !== _chatRunStatusRequestSeq || chatRunContextKey() !== contextKey) {
+            return false;
+        }
+        // A browser stream may have started while the status request was in flight.
+        const latestRun = currentActiveChatRun();
+        if (latestRun && ['running', 'cancelling'].includes(latestRun.status)) {
+            currentAbortController = latestRun.controller;
+            setStreamingUI(true);
+            return true;
+        }
+        const busy = !!data.busy;
+        setSystemBusyUI(busy);
+        return busy;
+    } catch (e) {
+        // Keep the conservative checking state. The regular status poll will
+        // retry, avoiding an unsafe Send button while the state is unknown.
+        return true;
+    }
+}
+
+function markActiveRunBubble(div, run) {
+    const wrapper = div && div.parentElement;
+    if (!wrapper) return;
+    wrapper.classList.add('chat-active-run-overlay');
+    wrapper.dataset.chatRunKey = run.key;
+}
+
+function restoreActiveChatRunForCurrentContext() {
+    const run = currentActiveChatRun();
+    if (!run || run.status !== 'running') return null;
+
+    chatBox.querySelectorAll('.chat-active-run-overlay').forEach((node) => node.remove());
+    for (const segment of run.segments) {
+        if (!segment) continue;
+        const segmentDiv = appendMessage(segment, false);
+        markActiveRunBubble(segmentDiv, run);
+    }
+    const liveDiv = appendMessage(run.fullText || 'crossing...', false);
+    markActiveRunBubble(liveDiv, run);
+    run.agentDiv = liveDiv;
+    return liveDiv;
+}
+
 async function handleCancel() {
     const targetSession = cancelTargetSessionId || currentSessionId;
-    if (currentAbortController) {
-        currentAbortController.abort();
+    const run = currentActiveChatRun();
+    const controller = run && run.controller ? run.controller : currentAbortController;
+    if (controller) {
+        controller.abort();
+        if (run) run.status = 'cancelling';
         currentAbortController = null;
     }
     try {
@@ -7740,6 +7847,13 @@ async function handleSend() {
         return;
     }
 
+    // Safety guard: the backend may still be running even when the browser
+    // stream was lost or the page was reloaded. Starting another Internal
+    // request on the same session would cancel the existing task.
+    if (_ocChatMode === 'internal' && await syncCurrentChatRunUI()) {
+        return;
+    }
+
     // Stop recording if active
     if (isRecording) stopRecording();
 
@@ -7775,7 +7889,8 @@ async function handleSend() {
     sendBtn.disabled = true;
     showTyping();
 
-    currentAbortController = new AbortController();
+    const streamAbortController = new AbortController();
+    currentAbortController = streamAbortController;
     setStreamingUI(true);
 
     let agentDiv = null;
@@ -7783,22 +7898,23 @@ async function handleSend() {
 
     // --- 会话/平台隔离：捕获本次流所属的上下文。一旦用户切到别的 session 或平台，
     //     就停止向 DOM 写入（仍继续把流读完，保持后端连接/存储不受影响），避免串味。 ---
-    const _computeStreamCtxKey = () => JSON.stringify({
-        mode: _ocChatMode,
-        sid: currentSessionId,
-        agent: _ocSelectedAgent ? _ocSelectedAgent.name : null,
-        acp: _acpTool || null,
-    });
+    const _computeStreamCtxKey = () => chatRunContextKey();
     const _streamOwnerKey = _computeStreamCtxKey();
-    let _streamAbandoned = false;
-    const streamOwns = () => {
-        if (_streamAbandoned) return false;
-        if (_computeStreamCtxKey() !== _streamOwnerKey) {
-            _streamAbandoned = true;
-            return false;
-        }
-        return true;
+    const chatRun = {
+        key: _streamOwnerKey,
+        mode: _ocChatMode,
+        sessionId: currentSessionId,
+        agentName: _ocSelectedAgent ? _ocSelectedAgent.name : null,
+        acpTool: _acpTool || null,
+        acpTranscriptKey: (_ocChatMode === 'acp' && _acpTool) ? _acpTranscriptKey() : '',
+        controller: streamAbortController,
+        status: 'running',
+        fullText: '',
+        segments: [],
+        agentDiv: null,
     };
+    activeChatRuns.set(_streamOwnerKey, chatRun);
+    const streamOwns = () => _computeStreamCtxKey() === _streamOwnerKey;
 
     try {
         // --- 构造 workflow / persona 前缀（隐藏在消息中发送给后端） ---
@@ -7915,20 +8031,28 @@ async function handleSend() {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify(openaiPayload),
-            signal: currentAbortController.signal
+            signal: streamAbortController.signal
         });
 
-        const typingIndicator = document.getElementById('typing-indicator');
-        if (typingIndicator) typingIndicator.remove();
+        if (streamOwns()) {
+            const typingIndicator = document.getElementById('typing-indicator');
+            if (typingIndicator) typingIndicator.remove();
+        }
 
         if (response.status === 401) {
-            appendMessage(t('login_expired'), false);
-            showLoginScreen();
+            if (streamOwns()) {
+                appendMessage(t('login_expired'), false);
+                showLoginScreen();
+            }
             return;
         }
         if (!response.ok) throw new Error(await extractErrorMessageFromResponse(response, "Agent error"));
 
-        agentDiv = appendMessage('', false);
+        if (streamOwns()) {
+            agentDiv = appendMessage('', false);
+            chatRun.agentDiv = agentDiv;
+            markActiveRunBubble(agentDiv, chatRun);
+        }
 
         // --- 解析 OpenAI SSE 流式响应（支持分段渲染） ---
         const reader = response.body.getReader();
@@ -7942,23 +8066,41 @@ async function handleSend() {
 
         // 辅助函数：封存当前文本气泡，添加朗读按钮
         function sealCurrentBubble() {
-            if (fullText && agentDiv) {
-                agentDiv.innerHTML = renderMarkdown(fullText);
-                highlightMarkdownIn(agentDiv);
-                const ttsBtn = createTtsButton(() => extractTtsTextFromElement(agentDiv));
-                agentDiv.appendChild(ttsBtn);
+            if (fullText) {
+                if (streamOwns()) {
+                    if (!agentDiv || !agentDiv.isConnected) {
+                        agentDiv = restoreActiveChatRunForCurrentContext();
+                    }
+                    if (agentDiv) {
+                        agentDiv.innerHTML = renderMarkdown(fullText);
+                        highlightMarkdownIn(agentDiv);
+                        const sealedDiv = agentDiv;
+                        const ttsBtn = createTtsButton(() => extractTtsTextFromElement(sealedDiv));
+                        agentDiv.appendChild(ttsBtn);
+                    }
+                }
                 allSegmentTexts.push(fullText);
+                chatRun.segments = [...allSegmentTexts];
             }
         }
 
         // 辅助函数：创建新的 AI 文本气泡
         function startNewBubble() {
             fullText = '';
-            agentDiv = appendMessage('', false);
+            chatRun.fullText = '';
+            if (streamOwns()) {
+                agentDiv = appendMessage('', false);
+                markActiveRunBubble(agentDiv, chatRun);
+                chatRun.agentDiv = agentDiv;
+            } else {
+                agentDiv = null;
+                chatRun.agentDiv = null;
+            }
         }
 
         // 辅助函数：创建工具调用指示区
         function createToolIndicator(toolName, type, payload = null) {
+            if (!streamOwns()) return;
             if (type === 'end') {
                 // 查找最后一个同名且仍在运行的 indicator 并更新
                 const allIndicators = chatBox.querySelectorAll(`.stream-tool-indicator[data-tool-name="${CSS.escape(toolName)}"]`);
@@ -8010,6 +8152,7 @@ async function handleSend() {
         }
 
         function upsertAcpxToolIndicator(meta = {}) {
+            if (!streamOwns()) return null;
             const toolCallId = String(meta.tool_call_id || '').trim();
             if (!toolCallId) return null;
             let indicator = acpxToolIndicators.get(toolCallId);
@@ -8093,9 +8236,6 @@ async function handleSend() {
                     const delta = chunk.choices && chunk.choices[0] && chunk.choices[0].delta;
                     if (!delta) continue;
 
-                    // 已切换 session/平台：丢弃本帧渲染（继续把流读完，不写入当前显示的对话）
-                    if (!streamOwns()) continue;
-
                     // --- 处理结构化 meta 事件 ---
                     if (delta.meta) {
                         const m = delta.meta;
@@ -8136,6 +8276,12 @@ async function handleSend() {
                     // --- 处理文本内容 ---
                     if (delta.content) {
                         fullText += delta.content;
+                        chatRun.fullText = fullText;
+                        if (!streamOwns()) continue;
+                        if (!agentDiv || !agentDiv.isConnected) {
+                            agentDiv = restoreActiveChatRunForCurrentContext();
+                        }
+                        if (!agentDiv) continue;
                         agentDiv.innerHTML = renderMarkdown(fullText);
                         agentDiv.classList.add('tc-markdown');
                         highlightMarkdownIn(agentDiv);
@@ -8146,18 +8292,21 @@ async function handleSend() {
                 }
             }
         }
+        chatRun.status = 'completed';
 
-        // 流已被切走（用户跳到别的 session/平台）：不再触碰当前显示的对话。
-        // 若此刻用户又切回了原会话，则静默从后端历史刷新，让完整回复补显出来。
+        // 流完成时若仍在别的 session/平台，不触碰当前 DOM；完整结果由该
+        // session 的既有历史存储负责，下次切回时正常加载。
         if (!streamOwns()) {
-            if (_computeStreamCtxKey() === _streamOwnerKey && _ocChatMode === 'internal' && currentSessionId) {
-                switchToSession(currentSessionId, true, { quiet: true }).catch(() => {});
-            }
             return;
         }
 
         // 流式结束：封存最后一个气泡
         if (fullText) {
+            if (!agentDiv || !agentDiv.isConnected) {
+                agentDiv = appendMessage('', false);
+            }
+        }
+        if (fullText && agentDiv) {
             agentDiv.innerHTML = renderMarkdown(fullText);
             highlightMarkdownIn(agentDiv);
             const ttsBtn = createTtsButton(() => extractTtsTextFromElement(agentDiv));
@@ -8183,6 +8332,7 @@ async function handleSend() {
         setTimeout(() => refreshOasisTopics(), 1000);
 
     } catch (error) {
+        chatRun.status = error && error.name === 'AbortError' ? 'cancelled' : 'failed';
         const typingIndicator = document.getElementById('typing-indicator');
         if (typingIndicator) typingIndicator.remove();
         // 流已被切走：不要把错误/中止提示塞进当前显示的对话
@@ -8211,10 +8361,19 @@ async function handleSend() {
             appendMessage(t('agent_error') + ': ' + errText, false);
         }
     } finally {
-        // 仅当本次流仍拥有当前显示的会话/平台时，才复位全局 streaming 状态；
-        // 否则可能误清掉切换后新会话正在进行的流的 abort controller / UI。
+        if (chatRun.mode === 'openclaw' && chatRun.agentName) {
+            delete _ocTranscriptByAgent[chatRun.agentName];
+        } else if (chatRun.mode === 'acp' && chatRun.acpTranscriptKey) {
+            delete _acpTranscriptByKey[chatRun.acpTranscriptKey];
+        }
+        if (activeChatRuns.get(_streamOwnerKey) === chatRun) {
+            activeChatRuns.delete(_streamOwnerKey);
+        }
+        // 仅复位本次流所属的当前视图，避免误清除另一会话的新流。
         if (streamOwns()) {
-            currentAbortController = null;
+            if (currentAbortController === streamAbortController) {
+                currentAbortController = null;
+            }
             setStreamingUI(false);
             hideNewMsgBanner();
         }
@@ -11198,43 +11357,50 @@ setInterval(() => {
 let _sessionStatusTimer = null;
 let _sessionStatusPolling = false;
 
+async function pollCurrentSessionStatus() {
+    if (!currentUserId || !currentSessionId) return;
+    if (_ocChatMode !== 'internal') return;
+    // Browser-owned streams already have exact state. Backend-only runs must
+    // still be polled so Send can become Stop (and later return to Send).
+    const activeRun = currentActiveChatRun();
+    if (activeRun && ['running', 'cancelling'].includes(activeRun.status)) return;
+    if (_sessionStatusPolling) return;
+    _sessionStatusPolling = true;
+    const contextKey = chatRunContextKey();
+    const sessionId = currentSessionId;
+    try {
+        const resp = await fetch('/proxy_session_status', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ session_id: sessionId })
+        });
+        const data = await resp.json();
+        if (chatRunContextKey() !== contextKey || currentActiveChatRun()) return;
+
+        const wasBusy = cancelBtn.style.display !== 'none';
+        setSystemBusyUI(!!data.busy);
+        if (!data.busy && wasBusy) {
+            showNewMsgBanner();
+        }
+        if (typeof data.context_percent !== 'undefined') {
+            updateSessionContextUsageBadge(
+                data.context_percent,
+                data.context_remaining,
+                data.context_tokens,
+                data.context_budget
+            );
+        }
+    } catch(e) {
+        // A later poll retries without changing the last known UI state.
+    } finally {
+        _sessionStatusPolling = false;
+    }
+}
+
 function startSessionStatusPolling() {
     stopSessionStatusPolling();
-    _sessionStatusTimer = setInterval(async () => {
-        if (!currentUserId || !currentSessionId) return;
-        // 用户正在流式对话中，跳过轮询
-        if (cancelBtn.style.display !== 'none') return;
-        if (_sessionStatusPolling) return;
-        _sessionStatusPolling = true;
-        try {
-            const resp = await fetch('/proxy_session_status', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ session_id: currentSessionId })
-            });
-            const data = await resp.json();
-
-            // --- 系统占用状态 ---
-            setSystemBusyUI(!!data.busy);
-            if (!data.busy && busyBtn.style.display !== 'none') {
-                // busy → 不busy：恢复按钮，显示刷新横幅
-                showNewMsgBanner();
-            }
-            // --- 上下文用量徽章 ---
-            if (typeof data.context_percent !== 'undefined') {
-                updateSessionContextUsageBadge(
-                    data.context_percent,
-                    data.context_remaining,
-                    data.context_tokens,
-                    data.context_budget
-                );
-            }
-        } catch(e) {
-            // 静默忽略
-        } finally {
-            _sessionStatusPolling = false;
-        }
-    }, 5000); // 每 5 秒轮询一次
+    void pollCurrentSessionStatus();
+    _sessionStatusTimer = setInterval(pollCurrentSessionStatus, 5000);
 }
 
 function stopSessionStatusPolling() {
@@ -11244,18 +11410,9 @@ function stopSessionStatusPolling() {
     }
 }
 
-// 登录成功后启动轮询
-const _origLogin = typeof handleLogin === 'function' ? null : null;
-// 监听 chat-container 可见性来启动/停止轮询
-const _chatObserver = new MutationObserver(() => {
-    const chatContainer = document.getElementById('chat-container');
-    if (chatContainer && chatContainer.style.display !== 'none') {
-        startSessionStatusPolling();
-    } else {
-        stopSessionStatusPolling();
-    }
-});
-_chatObserver.observe(document.body, { childList: true, subtree: true, attributes: true });
+// Keep one stable timer. The poll itself is cheap and exits immediately while
+// logged out, without a selected session, or outside Internal chat mode.
+startSessionStatusPolling();
 
 // ================================================================
 // ===== Group Chat (群聊) 逻辑 =====
@@ -16417,6 +16574,9 @@ async function ocSwitchTo(mode, acpTool) {
         await switchToSession(currentSessionId, modeChanged, { quiet: true });
     }
 
+    restoreActiveChatRunForCurrentContext();
+    await syncCurrentChatRunUI();
+
     ocSyncSessionSubrowsVisibility();
     if (_ocChatMode === 'internal') {
         ocInternalSyncNameInput();
@@ -16468,6 +16628,8 @@ function ocOnAgentChange() {
             ocRenderOpenClawSelectPrompt();
         }
     }
+    restoreActiveChatRunForCurrentContext();
+    void syncCurrentChatRunUI();
 }
 
 /**
