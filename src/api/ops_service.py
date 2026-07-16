@@ -3,6 +3,7 @@ import json
 import os
 import re
 import shutil
+import tempfile
 from dataclasses import asdict
 from typing import Any, Callable
 
@@ -272,7 +273,7 @@ class OpsService:
                     "identity_injection_policy": "stable_system_prompt",
                     "running_known": True,
                     "can_cancel": False,
-                    "supported_actions": ["status", "cancel", "stop", "delete"],
+                    "supported_actions": ["status", "cancel", "stop", "reset", "delete"],
                 })
                 if team and team not in row["teams"]:
                     row["teams"].append(team)
@@ -280,12 +281,12 @@ class OpsService:
         # Every persisted Internal session belongs in the flat Grid, even when it
         # is idle and has no named entry in internal_agents.json. Runtime-only
         # sessions remain visible too; WeBot subagents get their own rows.
-        runtime_ids = {
+        active_runtime_ids = {
             key[len(prefix):]
-            for key in set(thread_status) | active_keys
+            for key in active_keys
             if key.startswith(prefix)
         }
-        for identity in (runtime_ids | persisted_sessions) - subagent_sessions:
+        for identity in (active_runtime_ids | persisted_sessions) - subagent_sessions:
             by_identity.setdefault(identity, {
                 "identity": identity,
                 "kind": "internal",
@@ -301,7 +302,7 @@ class OpsService:
                 "identity_injection_policy": "stable_system_prompt",
                 "running_known": True,
                 "can_cancel": False,
-                "supported_actions": ["status", "cancel", "stop", "delete"],
+                "supported_actions": ["status", "cancel", "stop", "reset", "delete"],
             })
 
         for identity, row in by_identity.items():
@@ -348,7 +349,7 @@ class OpsService:
                     "identity_injection_policy": "first_session_or_prompt_change" if transport == "http" else "first_acpx_session",
                     "running_known": False,
                     "can_cancel": controllable,
-                    "supported_actions": ["status", "delete"] + (["cancel", "stop", "new"] if controllable else []),
+                    "supported_actions": ["status", "reset", "delete"] + (["cancel", "stop", "new"] if controllable else []),
                     "session_key": session_key,
                     "session_count": 0,
                 })
@@ -498,7 +499,7 @@ class OpsService:
                 "identity_injection_policy": "internal_session",
                 "running_known": active or stored_status not in {"queued", "running", "cancelling"},
                 "can_cancel": status in {"queued", "running", "cancelling"},
-                "supported_actions": ["status", "cancel", "stop", "delete"],
+                "supported_actions": ["status", "cancel", "stop", "reset", "delete"],
                 "session_id": record.session_id,
                 "parent_session": record.parent_session,
                 "updated_at": record.updated_at,
@@ -541,13 +542,24 @@ class OpsService:
 
         action = "cancel" if req.action == "stop" else req.action
         if target["kind"] == "internal":
-            if action == "delete":
+            if action == "reset":
                 await self._delete_internal_agent_runtime(req.user_id, identity)
                 return {
                     "status": "success",
                     "supported": True,
                     "action": req.action,
-                    "message": f"Agent {identity} 的运行会话已删除",
+                    "message": f"Agent {identity} 的会话已重置",
+                    "agent": target,
+                }
+            if action == "delete":
+                await self._delete_internal_agent_runtime(req.user_id, identity)
+                deleted_sources = self._delete_agent_configs(req.user_id, "internal", identity)
+                return {
+                    "status": "success",
+                    "supported": True,
+                    "action": req.action,
+                    "deleted_sources": deleted_sources,
+                    "message": f"Agent {identity} 已删除",
                     "agent": target,
                 }
             if action != "cancel":
@@ -556,6 +568,18 @@ class OpsService:
             return {"status": "success", "supported": True, "action": req.action, "cancelled": result, "agent": target}
 
         if target["kind"] == "subagent":
+            if action == "reset":
+                session_id = str(target.get("session_id") or "").strip()
+                if not session_id:
+                    raise HTTPException(status_code=500, detail="Subagent 缺少 session_id")
+                await self._delete_internal_agent_runtime(req.user_id, session_id)
+                return {
+                    "status": "success",
+                    "supported": True,
+                    "action": req.action,
+                    "message": f"Subagent {identity} 的会话已重置",
+                    "agent": target,
+                }
             if action == "delete":
                 session_id = str(target.get("session_id") or "").strip()
                 if not session_id:
@@ -588,7 +612,7 @@ class OpsService:
                 "agent": target,
             }
 
-        if req.action == "delete" and target.get("transport") == "http":
+        if req.action == "reset" and target.get("transport") == "http" and target.get("platform") != "openclaw":
             deleted = 0
             if self.group_db_path:
                 deleted = await delete_http_agent_sessions_by_global_name(
@@ -600,7 +624,22 @@ class OpsService:
                 "supported": True,
                 "action": req.action,
                 "deleted_sessions": deleted,
-                "message": f"Agent {identity} 的本地会话追踪已删除",
+                "message": f"Agent {identity} 的本地会话已重置",
+                "agent": target,
+            }
+
+        if req.action == "delete" and target.get("transport") == "http":
+            if target.get("platform") == "openclaw":
+                await self._delete_openclaw_agent(identity)
+            elif self.group_db_path:
+                await delete_http_agent_sessions_by_global_name(self.group_db_path, identity)
+            deleted_sources = self._delete_agent_configs(req.user_id, "external", identity)
+            return {
+                "status": "success",
+                "supported": True,
+                "action": req.action,
+                "deleted_sources": deleted_sources,
+                "message": f"Agent {identity} 已删除",
                 "agent": target,
             }
 
@@ -612,7 +651,7 @@ class OpsService:
                 "reason": f"{target['transport']} transport does not expose this control",
                 "agent": target,
             }
-        acp_action = "stop" if action == "cancel" else action
+        acp_action = "stop" if action == "cancel" else "new" if action == "reset" else action
         result = await self.acp_control(
             ACPControlRequest(
                 user_id=req.user_id,
@@ -623,7 +662,65 @@ class OpsService:
             ),
             x_internal_token,
         )
+        if req.action == "delete" and result.get("status") == "success":
+            result = {
+                **result,
+                "deleted_sources": self._delete_agent_configs(req.user_id, "external", identity),
+                "message": f"Agent {identity} 已删除",
+            }
         return {**result, "supported": True, "agent": target}
+
+    @classmethod
+    def _delete_agent_configs(cls, user_id: str, kind: str, identity: str) -> list[str]:
+        """Remove one Agent definition from every backing config file."""
+        filename = "internal_agents.json" if kind == "internal" else "external_agents.json"
+        identity_key = "session" if kind == "internal" else "global_name"
+        deleted_sources: list[str] = []
+        for path, team in cls._agent_files(user_id, filename):
+            rows = cls._read_agent_file(path)
+            remaining = [
+                row for row in rows
+                if str(row.get(identity_key) or "").strip() != identity
+            ]
+            if len(remaining) == len(rows):
+                continue
+            directory = os.path.dirname(path)
+            fd, tmp_path = tempfile.mkstemp(prefix=".agent-delete-", suffix=".json", dir=directory)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                    json.dump(remaining, handle, ensure_ascii=False, indent=2)
+                    handle.write("\n")
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(tmp_path, path)
+            except Exception:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
+            deleted_sources.append(team or "public")
+        return deleted_sources
+
+    @staticmethod
+    async def _delete_openclaw_agent(identity: str) -> None:
+        if identity.strip().lower() == "main":
+            raise HTTPException(status_code=400, detail="不能删除 OpenClaw main Agent")
+        oasis_port = int(os.getenv("PORT_OASIS", "51202"))
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(
+                    f"http://127.0.0.1:{oasis_port}/sessions/openclaw/remove",
+                    params={"name": identity},
+                )
+        except httpx.HTTPError as exc:
+            raise HTTPException(status_code=502, detail=f"OpenClaw 删除失败: {exc}") from exc
+        if response.status_code >= 400:
+            try:
+                detail = response.json().get("error") or response.json().get("detail")
+            except Exception:
+                detail = response.text
+            raise HTTPException(status_code=502, detail=f"OpenClaw 删除失败: {detail or response.status_code}")
 
     async def _delete_internal_agent_runtime(
         self,

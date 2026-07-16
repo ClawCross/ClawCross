@@ -4,7 +4,7 @@ from flask import jsonify, request, session
 import requests
 
 
-_ACTIONS = {"list", "status", "cancel", "stop", "new", "delete"}
+_ACTIONS = {"list", "status", "cancel", "stop", "new", "reset", "delete"}
 _KINDS = {"", "internal", "external", "subagent"}
 
 

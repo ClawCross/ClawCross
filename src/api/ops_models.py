@@ -73,7 +73,7 @@ class AgentControlRequest(BaseModel):
 
     user_id: str
     password: str = ""
-    action: Literal["list", "status", "cancel", "stop", "new", "delete"] = "list"
+    action: Literal["list", "status", "cancel", "stop", "new", "reset", "delete"] = "list"
     kind: Literal["", "internal", "external", "subagent"] = ""
     identity: str = ""
     team: str = ""
