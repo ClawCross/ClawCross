@@ -76,7 +76,8 @@ function Initialize-ClawcrossRuntimePaths {
         if ([string]::IsNullOrWhiteSpace($env:CLAWCROSS_WORKSPACE_DIR)) { $env:CLAWCROSS_WORKSPACE_DIR = Join-Path $env:CLAWCROSS_HOME "workspace" }
     }
     if ([string]::IsNullOrWhiteSpace($env:CLAWCROSS_STATE_DIR)) { $env:CLAWCROSS_STATE_DIR = $env:CLAWCROSS_HOME }
-    if ([string]::IsNullOrWhiteSpace($env:PYTHONDONTWRITEBYTECODE)) { $env:PYTHONDONTWRITEBYTECODE = "1" }
+    # 字节码缓存集中放到 CLAWCROSS_HOME，代码目录保持干净且保留启动加速（对齐 _paths.sh）
+    if ([string]::IsNullOrWhiteSpace($env:PYTHONPYCACHEPREFIX)) { $env:PYTHONPYCACHEPREFIX = Join-Path $env:CLAWCROSS_HOME "pycache" }
     $venvParent = Split-Path -Parent $env:CLAWCROSS_VENV_DIR
     foreach ($dir in @($env:CLAWCROSS_HOME, $venvParent, $env:CLAWCROSS_DATA_DIR, $env:CLAWCROSS_LOG_DIR, $env:CLAWCROSS_CONFIG_DIR, $env:CLAWCROSS_RUN_DIR, $env:CLAWCROSS_BIN_DIR, $env:CLAWCROSS_WORKSPACE_DIR, $env:CLAWCROSS_STATE_DIR)) {
         if ($dir) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }

@@ -107,6 +107,8 @@ if ! "$VENV_PY" -c "import fastapi" &>/dev/null; then
     echo "   这是环境准备阶段，不计入服务端口健康检查；首次冷启动可能较慢。"
     uv pip install -r "$PROJECT_ROOT/config/requirements.txt" --python "$VENV_PY"
     echo "✅ 依赖安装完成"
+    # 预热字节码缓存（写入 PYTHONPYCACHEPREFIX），避免之后每个服务进程冷启动时重新编译依赖
+    "$VENV_PY" -m compileall -q "$CLAWCROSS_VENV_DIR/lib" >/dev/null 2>&1 || true
 fi
 
 PIDFILE="$CLAWCROSS_RUN_DIR/clawcross.pid"
@@ -437,11 +439,11 @@ for agent in agents:
 ' "$agent_name"
 }
 
-# 与 `run.sh setup` 实质相同：缺 venv/依赖或未装 acpx（且本机有 npm）时运行 scripts/setup_env.sh
+# 与 `run.sh setup` 实质相同：缺 venv 或未装 acpx（且本机有 npm）时运行 scripts/setup_env.sh
+# 注：fastapi 可导入已由脚本开头的环境自检保证，这里不再重复起 python 检查
 run_clawcross_setup_if_needed() {
     local need=false
     if [ ! -d "$CLAWCROSS_VENV_DIR" ]; then need=true; fi
-    if [ "$need" = false ] && ! "$VENV_PY" -c "import fastapi" 2>/dev/null; then need=true; fi
     if [ "$need" = false ] && command -v npm &>/dev/null && ! command -v acpx &>/dev/null; then need=true; fi
     if [ "$need" = true ]; then
         echo "📋 首次运行或环境未齐全，正在执行 scripts/setup_env.sh …"
@@ -582,7 +584,14 @@ case "${1:-help}" in
         print_wsl_access_hint
         echo ""
         echo "═══════════════════════════════════════════════════"
-        "$VENV_PY" "$PROJECT_ROOT/scripts/cli.py" status
+        # 端口速览（详细状态可用: bash selfskill/scripts/run.sh cli status）
+        for port in "$AGENT_PORT" ${PORT_SCHEDULER:-51201} "$OASIS_PORT" "$FRONTEND_PORT"; do
+            if port_is_listening "$port"; then
+                echo "  ✅ 端口 $port 已监听"
+            else
+                echo "  ⚠️  端口 $port 未监听"
+            fi
+        done
         echo ""
 
         # 自动启动公网隧道（可用 --no-tunnel 跳过）
