@@ -150,7 +150,10 @@ def set_subprocess_env(env: MutableMapping[str, str] | Mapping[str, str] | None 
     base["CLAWCROSS_BIN_DIR"] = str(BIN_DIR)
     base["CLAWCROSS_WORKSPACE_DIR"] = str(WORKSPACE_DIR)
     base["CLAWCROSS_STATE_DIR"] = str(STATE_DIR)
-    base.setdefault("PYTHONDONTWRITEBYTECODE", "1")
+    # 字节码缓存集中写到 CLAWCROSS_HOME/pycache（代替此前的
+    # PYTHONDONTWRITEBYTECODE=1）：代码目录不落 __pycache__，同时子服务
+    # 冷启动可复用缓存
+    base.setdefault("PYTHONPYCACHEPREFIX", str(CLAWCROSS_HOME / "pycache"))
     base["PYTHONUTF8"] = "1"
     base["PYTHONIOENCODING"] = "utf-8"
     if is_legacy_mode():

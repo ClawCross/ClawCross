@@ -5,6 +5,7 @@
 __pycache__/
 *.pyc
 *.pyo
+/pycache/
 
 # 环境变量配置（含密钥）
 config/.env

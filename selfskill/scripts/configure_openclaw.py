@@ -378,24 +378,26 @@ def print_install_guide():
 
 
 def detect_gateway_runtime():
-    """检测 gateway 运行状态。"""
+    """检测 gateway 运行状态。
+
+    先做 TCP 端口探测（毫秒级）；连不上时才回退 openclaw CLI
+    （Node 冷启动一次约 2-3 秒，启动预热路径上会被多次调用）。
+    """
+    port = detect_gateway_port() or DEFAULT_GATEWAY_PORT
+    try:
+        with socket.create_connection(("127.0.0.1", int(port)), timeout=2):
+            return "running"
+    except OSError:
+        pass
     rc, out, err = run_cmd(["openclaw", "gateway", "status"], timeout=20)
     text = "\n".join(part for part in (out, err) if part)
     if "Runtime: running" in text:
         return "running"
     if "Runtime: stopped" in text or "Gateway not running" in text:
         return "stopped"
-    port = detect_gateway_port() or DEFAULT_GATEWAY_PORT
-    try:
-        with socket.create_connection(("127.0.0.1", int(port)), timeout=2):
-            return "running"
-    except OSError:
-        if rc == 0 and not text:
-            return None
-        return "stopped"
     if rc == 0 and not text:
         return None
-    return None
+    return "stopped"
 
 
 def detect_linger_status():
