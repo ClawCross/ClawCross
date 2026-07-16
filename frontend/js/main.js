@@ -131,14 +131,18 @@ const i18n = {
         agent_center_evidence: '运行判断',
         agent_center_confirmed: '已确认',
         agent_center_session_only: '仅 Session',
-        agent_center_stop: '请求停止',
-        agent_center_stop_confirm: '确定向这个 Agent 请求停止？',
-        agent_center_stop_ok: '停止请求已发送',
+        agent_center_stop: '终止',
+        agent_center_stop_confirm: '确定终止这个 Agent 当前正在执行的任务？',
+        agent_center_stop_ok: '终止请求已发送',
         agent_center_stop_none: '当前没有可终止的运行',
         agent_center_stop_failed: '停止 Agent 失败',
+        agent_center_reset: '重置',
+        agent_center_reset_confirm: '重置这个 Agent 的会话和上下文？Agent 配置会保留。',
+        agent_center_reset_ok: 'Agent 会话已重置',
+        agent_center_reset_failed: '重置 Agent 失败',
         agent_center_delete: '删除 Agent',
-        agent_center_delete_confirm: '删除这个 Agent 的运行会话和状态记录？此操作不可撤销。',
-        agent_center_delete_ok: 'Agent 运行会话已删除',
+        agent_center_delete_confirm: '永久删除这个 Agent、会话和配置？此操作不可撤销。',
+        agent_center_delete_ok: 'Agent 已删除',
         agent_center_delete_failed: '删除 Agent 失败',
         agent_center_load_failed: '加载 Agent 列表失败',
         public_starting: '启动中...',
@@ -966,9 +970,13 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         agent_center_stop_ok: 'Stop request sent',
         agent_center_stop_none: 'No active run was found',
         agent_center_stop_failed: 'Failed to stop Agent',
+        agent_center_reset: 'Reset',
+        agent_center_reset_confirm: 'Reset this Agent session and context? Its configuration will be kept.',
+        agent_center_reset_ok: 'Agent session reset',
+        agent_center_reset_failed: 'Failed to reset Agent',
         agent_center_delete: 'Delete Agent',
-        agent_center_delete_confirm: 'Delete this Agent runtime session and status record? This cannot be undone.',
-        agent_center_delete_ok: 'Agent runtime session deleted',
+        agent_center_delete_confirm: 'Permanently delete this Agent, its session, and configuration? This cannot be undone.',
+        agent_center_delete_ok: 'Agent deleted',
         agent_center_delete_failed: 'Failed to delete Agent',
         agent_center_load_failed: 'Failed to load Agent catalog',
         public_starting: 'Starting...',
@@ -1928,6 +1936,12 @@ function renderAgentCenterGrid() {
                 data-identity="${agentCenterEscape(agent.identity || '')}"
                 onclick="controlAgentFromCenter(this)">${agentCenterEscape(t('agent_center_stop'))}</button>
         ` : '';
+        const resetButton = actions.includes('reset') ? `
+            <button class="agent-center-btn" type="button"
+                data-kind="${agentCenterEscape(agent.kind || '')}"
+                data-identity="${agentCenterEscape(agent.identity || '')}"
+                onclick="resetAgentFromCenter(this)">${agentCenterEscape(t('agent_center_reset'))}</button>
+        ` : '';
         const deleteButton = actions.includes('delete') ? `
             <button class="agent-center-btn danger" type="button"
                 data-kind="${agentCenterEscape(agent.kind || '')}"
@@ -1955,7 +1969,7 @@ function renderAgentCenterGrid() {
                     <dt>${agentCenterEscape(t('agent_center_evidence'))}</dt><dd>${agentCenterEscape(agent.running_known === false ? t('agent_center_session_only') : t('agent_center_confirmed'))}</dd>
                     <dt>Persona</dt><dd>${agentCenterEscape(agent.identity_injection_policy || '-')}</dd>
                 </dl>
-                ${(stopButton || deleteButton) ? `<div class="agent-center-card-actions">${stopButton}${deleteButton}</div>` : ''}
+                ${(stopButton || resetButton || deleteButton) ? `<div class="agent-center-card-actions">${stopButton}${resetButton}${deleteButton}</div>` : ''}
             </article>
         `;
     }).join('');
@@ -2058,6 +2072,35 @@ async function deleteAgentFromCenter(button) {
         await refreshAgentCenter(false);
     } catch (error) {
         setAgentCenterNotice(`${t('agent_center_delete_failed')}: ${error.message || error}`, true);
+    } finally {
+        button.disabled = false;
+    }
+}
+
+async function resetAgentFromCenter(button) {
+    const identity = button?.dataset?.identity || '';
+    const kind = button?.dataset?.kind || '';
+    if (!identity || !kind || !window.confirm(t('agent_center_reset_confirm'))) return;
+    button.disabled = true;
+    try {
+        const response = await fetch('/proxy_agent_control', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                action: 'reset',
+                kind,
+                identity,
+                refresh_external: false,
+            }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.status === 'unsupported' || payload.status === 'error') {
+            throw new Error(payload.reason || payload.detail || payload.error || t('agent_center_reset_failed'));
+        }
+        setAgentCenterNotice(t('agent_center_reset_ok'));
+        await refreshAgentCenter(false);
+    } catch (error) {
+        setAgentCenterNotice(`${t('agent_center_reset_failed')}: ${error.message || error}`, true);
     } finally {
         button.disabled = false;
     }

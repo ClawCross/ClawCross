@@ -105,7 +105,7 @@ Clawcross 的 CLI、主前端、OASIS、聊天机器人及其他客户端依赖�
 POST /agent_control
 ```
 
-同一个入口支持 `list`、`status`、`cancel`、`stop`、`new` 和 `delete`。`delete` 删除运行会话与状态追踪：Internal 清理 checkpoint，Subagent 同时清理 subagent registry，HTTP External 清理本地 Session 记录，ACP External 关闭 acpx Session。它不删除 Agent 定义，也不修改 Team 文件。
+同一个入口支持 `list`、`status`、`cancel`、`stop`、`new`、`reset` 和 `delete`。生命周期动作语义固定为：`cancel/stop` 只终止当前运行；`reset` 清除会话上下文但保留 Agent 配置；`delete` 删除 Agent 实体、会话状态及其配置引用。
 
 请求示例：
 

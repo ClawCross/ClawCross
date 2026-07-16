@@ -97,6 +97,7 @@ class AgentControlTests(unittest.IsolatedAsyncioTestCase):
                     new=mock.AsyncMock(return_value=[
                         "alice#main",
                         "alice#persisted-idle",
+                        "alice#runtime-only",
                         "alice#subagent-session",
                     ]),
                 ),
@@ -174,7 +175,7 @@ class AgentControlTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(result["status"], "unsupported")
             self.assertFalse(result["supported"])
 
-    async def test_internal_delete_removes_runtime_without_editing_agent_config(self):
+    async def test_internal_reset_removes_runtime_without_editing_agent_config(self):
         with TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             config_path = root / "alice" / "teams" / "alpha" / "internal_agents.json"
@@ -188,7 +189,7 @@ class AgentControlTests(unittest.IsolatedAsyncioTestCase):
                 result = await self.service.agent_control(
                     AgentControlRequest(
                         user_id="alice",
-                        action="delete",
+                        action="reset",
                         kind="internal",
                         identity="main",
                         refresh_external=False,
@@ -200,6 +201,41 @@ class AgentControlTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.agent.closed, ["alice#main"])
             delete_records.assert_awaited_once_with("/tmp/test-agent-control.db", "alice#main")
             self.assertEqual(json.loads(config_path.read_text(encoding="utf-8")), config)
+
+    async def test_internal_delete_removes_agent_from_all_config_sources(self):
+        with TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            public_path = root / "alice" / "internal_agents.json"
+            team_path = root / "alice" / "teams" / "alpha" / "internal_agents.json"
+            _write_json(public_path, [
+                {"session": "main", "name": "Main"},
+                {"session": "keep", "name": "Keep"},
+            ])
+            _write_json(team_path, [{"session": "main", "name": "Main"}])
+            with (
+                mock.patch("api.ops_service.USER_FILES_DIR", root),
+                mock.patch("webot.subagents.list_subagents_for_user", return_value=[]),
+                mock.patch("api.ops_service.list_thread_ids_by_prefix", new=mock.AsyncMock(return_value=[])),
+                mock.patch("api.ops_service.delete_thread_records", new=mock.AsyncMock()),
+            ):
+                result = await self.service.agent_control(
+                    AgentControlRequest(
+                        user_id="alice",
+                        action="delete",
+                        kind="internal",
+                        identity="main",
+                        refresh_external=False,
+                    ),
+                    None,
+                )
+
+            self.assertEqual(result["status"], "success")
+            self.assertEqual(result["deleted_sources"], ["public", "alpha"])
+            self.assertEqual(
+                json.loads(public_path.read_text(encoding="utf-8")),
+                [{"session": "keep", "name": "Keep"}],
+            )
+            self.assertEqual(json.loads(team_path.read_text(encoding="utf-8")), [])
 
 
 if __name__ == "__main__":
