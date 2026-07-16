@@ -28,7 +28,6 @@ from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 
 from webot.bridge import get_bridge_runtime_payload, issue_bridge_session
-from webot.buddy import apply_buddy_action, serialize_buddy_state
 from webot.claude_code import detect_claude_code_cached, probe_claude_acp, run_claude_cli_prompt
 from webot.memory import ensure_memory_state, run_auto_dream, set_kairos_mode
 from webot.profiles import (
@@ -134,7 +133,6 @@ _DEFAULT_ULTRAREVIEW_ANGLES = [
     "maintainability",
     "deployment/runtime",
 ]
-
 def _trim(text: str, limit: int = 1200) -> str:
     text = (text or "").strip()
     if len(text) <= limit:
@@ -2243,33 +2241,6 @@ async def voice_mode(
     )
 
 @mcp.tool()
-async def buddy_status(
-    username: str,
-) -> str:
-    buddy = serialize_buddy_state(username)
-    return (
-        "🪶 Buddy 状态\n"
-        f"name: {buddy.get('name', '')}\n"
-        f"species: {buddy.get('species', '')}\n"
-        f"rarity: {buddy.get('rarity', '')}\n"
-        f"reaction: {buddy.get('reaction', '') or '(none)'}"
-    )
-
-@mcp.tool()
-async def buddy_action(
-    username: str,
-    action: str = "pet",
-    note: str = "",
-) -> str:
-    buddy = apply_buddy_action(username, action, note=note)
-    return (
-        "🪶 Buddy 已响应\n"
-        f"name: {buddy.get('name', '')}\n"
-        f"action: {(action or 'pet').strip().lower() or 'pet'}\n"
-        f"reaction: {buddy.get('reaction', '')}"
-    )
-
-@mcp.tool()
 async def kairos_mode(
     username: str,
     enabled: bool = True,
@@ -2309,6 +2280,7 @@ async def dream_now(
         f"summary_path: {result.get('summary_path', '') or '(none)'}\n"
         f"last_dream_at: {state.get('last_dream_at', '') or '(none)'}"
     )
+
 
 @mcp.tool()
 async def ultraplan_start(

@@ -143,6 +143,7 @@ If the task touches the UI, start here:
 | `src/routes/front_group_routes.py` | frontend proxy routes for groups |
 | `src/routes/front_oasis_routes.py` | frontend proxy routes for OASIS |
 | `src/routes/front_session_routes.py` | frontend proxy routes for sessions |
+| `src/routes/front_agent_routes.py` | frontend proxy for the unified Agent catalog/control plane |
 
 ## OASIS and Workflow Engine
 

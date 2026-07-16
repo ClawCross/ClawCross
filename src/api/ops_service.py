@@ -3,6 +3,7 @@ import json
 import os
 import re
 import shutil
+from dataclasses import asdict
 from typing import Any, Callable
 
 import httpx
@@ -11,6 +12,7 @@ from fastapi.responses import StreamingResponse
 
 from integrations.acpx_adapter import AcpxError, acpx_options_from_agent, get_acpx_adapter
 from integrations.acpx_cli_tools import acpx_agent_tags_with_legacy
+from integrations.agent_session import inspect_http_agent_session
 from utils.auth_utils import extract_user_password_session, is_internal_bearer, parse_bearer_parts
 from api.update_manager import current_update_snapshot, start_update_process
 from api.group_repository import (
@@ -20,11 +22,12 @@ from api.group_repository import (
     get_group_member_by_global_id,
     list_http_agent_sessions,
 )
+from utils.checkpoint_repository import delete_thread_records, list_thread_ids_by_prefix
 from api.group_service import _load_public_external_agents, build_external_agents_map_for_owner
 from services.llm_factory import get_provider_audio_defaults, infer_provider
 from utils.logging_utils import get_logger
 from utils.runtime_paths import USER_FILES_DIR, WORKSPACE_DIR
-from api.ops_models import ACPControlRequest, ACPStatusRequest, CancelRequest, LoginRequest, TTSRequest, UpdateCheckRequest, UpdateStartRequest, UpdateStatusRequest
+from api.ops_models import ACPControlRequest, ACPStatusRequest, AgentControlRequest, CancelRequest, LoginRequest, TTSRequest, UpdateCheckRequest, UpdateStartRequest, UpdateStatusRequest
 
 logger = get_logger("ops_service")
 
@@ -208,6 +211,440 @@ class OpsService:
         if actually_cancelled:
             return {"status": "success", "message": "已终止", "cancelled": True}
         return {"status": "success", "message": "当前没有运行中的任务", "cancelled": False}
+
+    # ------------------------------------------------------------------
+    # Unified agent catalog and control plane
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _read_agent_file(path: str) -> list[dict[str, Any]]:
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                value = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return []
+        return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+    @staticmethod
+    def _agent_files(user_id: str, filename: str) -> list[tuple[str, str]]:
+        """Return ``(path, team)`` pairs without creating a second registry."""
+        user_root = os.path.join(str(USER_FILES_DIR), user_id)
+        result: list[tuple[str, str]] = []
+        public_path = os.path.join(user_root, filename)
+        if os.path.isfile(public_path):
+            result.append((public_path, ""))
+        teams_root = os.path.join(user_root, "teams")
+        if os.path.isdir(teams_root):
+            for team in sorted(os.listdir(teams_root)):
+                path = os.path.join(teams_root, team, filename)
+                if os.path.isfile(path):
+                    result.append((path, team))
+        return result
+
+    def _internal_agent_catalog(
+        self,
+        user_id: str,
+        subagent_sessions: set[str],
+        persisted_sessions: set[str],
+    ) -> list[dict[str, Any]]:
+        prefix = f"{user_id}#"
+        thread_status = self.agent.get_all_thread_status(prefix)
+        active_keys = set(self.agent.list_active_task_keys(prefix))
+        by_identity: dict[str, dict[str, Any]] = {}
+
+        for path, team in self._agent_files(user_id, "internal_agents.json"):
+            for config in self._read_agent_file(path):
+                identity = str(config.get("session") or config.get("session_id") or "").strip()
+                if not identity:
+                    continue
+                row = by_identity.setdefault(identity, {
+                    "identity": identity,
+                    "kind": "internal",
+                    "transport": "internal",
+                    "platform": "internal",
+                    "name": str(config.get("name") or identity),
+                    "tag": str(config.get("tag") or ""),
+                    "teams": [],
+                    "status": "idle",
+                    "status_source": "runtime",
+                    "connection_status": "local",
+                    "session_initialized": None,
+                    "identity_injection_policy": "stable_system_prompt",
+                    "running_known": True,
+                    "can_cancel": False,
+                    "supported_actions": ["status", "cancel", "stop", "delete"],
+                })
+                if team and team not in row["teams"]:
+                    row["teams"].append(team)
+
+        # Every persisted Internal session belongs in the flat Grid, even when it
+        # is idle and has no named entry in internal_agents.json. Runtime-only
+        # sessions remain visible too; WeBot subagents get their own rows.
+        runtime_ids = {
+            key[len(prefix):]
+            for key in set(thread_status) | active_keys
+            if key.startswith(prefix)
+        }
+        for identity in (runtime_ids | persisted_sessions) - subagent_sessions:
+            by_identity.setdefault(identity, {
+                "identity": identity,
+                "kind": "internal",
+                "transport": "internal",
+                "platform": "internal",
+                "name": identity,
+                "tag": "",
+                "teams": [],
+                "status": "idle",
+                "status_source": "runtime",
+                "connection_status": "local",
+                "session_initialized": None,
+                "identity_injection_policy": "stable_system_prompt",
+                "running_known": True,
+                "can_cancel": False,
+                "supported_actions": ["status", "cancel", "stop", "delete"],
+            })
+
+        for identity, row in by_identity.items():
+            task_key = f"{prefix}{identity}"
+            state = thread_status.get(task_key, {})
+            busy = bool(state.get("busy")) or task_key in active_keys
+            row["status"] = "running" if busy else "idle"
+            row["can_cancel"] = busy
+            row["runtime"] = {
+                "busy": busy,
+                "source": state.get("source", ""),
+                "pending_system": state.get("pending_system", 0),
+            }
+        return list(by_identity.values())
+
+    def _external_agent_catalog(self, user_id: str) -> list[dict[str, Any]]:
+        by_identity: dict[str, dict[str, Any]] = {}
+        for path, team in self._agent_files(user_id, "external_agents.json"):
+            for config in self._read_agent_file(path):
+                identity = str(config.get("global_name") or "").strip()
+                if not identity:
+                    continue
+                meta = config.get("config") or config.get("meta") or {}
+                if not isinstance(meta, dict):
+                    meta = {}
+                platform = _canonical_external_platform(
+                    str(config.get("platform") or config.get("tag") or "")
+                )
+                controllable = platform == "openclaw" or platform in _ACP_KNOWN_TOOLS or platform in _ACPX_AGENT_TAGS
+                transport = "http" if platform == "openclaw" or not controllable else "acp"
+                session_key = f"agent:{identity}:{_resolve_external_session_suffix(str(meta.get('model') or ''))}"
+                row = by_identity.setdefault(identity, {
+                    "identity": identity,
+                    "kind": "external",
+                    "transport": transport,
+                    "platform": platform,
+                    "name": str(config.get("name") or identity),
+                    "tag": str(config.get("tag") or ""),
+                    "teams": [],
+                    "status": "unknown",
+                    "status_source": "configuration",
+                    "connection_status": "unknown",
+                    "session_initialized": None,
+                    "identity_injection_policy": "first_session_or_prompt_change" if transport == "http" else "first_acpx_session",
+                    "running_known": False,
+                    "can_cancel": controllable,
+                    "supported_actions": ["status", "delete"] + (["cancel", "stop", "new"] if controllable else []),
+                    "session_key": session_key,
+                    "session_count": 0,
+                })
+                if team and team not in row["teams"]:
+                    row["teams"].append(team)
+        return list(by_identity.values())
+
+    async def list_agents(
+        self,
+        user_id: str,
+        *,
+        team: str = "",
+        refresh_external: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Build a flat runtime view from Team files and live registries."""
+        from webot.subagents import list_subagents_for_user
+
+        subagent_records = list_subagents_for_user(user_id)
+        subagent_sessions = {record.session_id for record in subagent_records}
+        persisted_sessions: set[str] = set()
+        checkpoint_db_path = str(getattr(self.agent, "_db_path", "") or "")
+        if checkpoint_db_path:
+            prefix = f"{user_id}#"
+            try:
+                persisted_sessions = {
+                    thread_id[len(prefix):]
+                    for thread_id in await list_thread_ids_by_prefix(checkpoint_db_path, prefix)
+                    if thread_id.startswith(prefix) and len(thread_id) > len(prefix)
+                }
+            except Exception as exc:
+                logger.warning("failed to list persisted Internal sessions: %s", exc)
+        rows = self._internal_agent_catalog(
+            user_id,
+            subagent_sessions,
+            persisted_sessions,
+        )
+        external_rows = self._external_agent_catalog(user_id)
+
+        if refresh_external and external_rows:
+            # HTTP's registry only proves that a conversation was initialized.
+            # It has no portable remote-running or cancellation protocol.
+            if self.group_db_path:
+                async def refresh_http(row: dict[str, Any]) -> None:
+                    if row["transport"] != "http":
+                        return
+                    try:
+                        state = await inspect_http_agent_session(
+                            group_db_path=self.group_db_path or "",
+                            session_key=row["session_key"],
+                        )
+                    except Exception as exc:
+                        row["status_detail"] = str(exc)
+                        return
+                    row["session_initialized"] = state.initialized
+                    row["connection_status"] = "online" if state.initialized else "idle"
+                    row["status"] = "idle"
+                    row["status_source"] = state.source
+                    row["session_count"] = 1 if state.initialized else 0
+
+                await asyncio.gather(*(refresh_http(row) for row in external_rows))
+
+            acp_rows: dict[str, list[dict[str, Any]]] = {}
+            for row in external_rows:
+                if row["transport"] == "acp":
+                    acp_rows.setdefault(row["platform"], []).append(row)
+
+            if acp_rows and shutil.which("acpx"):
+                try:
+                    adapter = get_acpx_adapter(cwd=str(WORKSPACE_DIR / "acpx"))
+                except AcpxError:
+                    adapter = None
+                if adapter is not None:
+                    async def refresh_platform(platform: str, platform_rows: list[dict[str, Any]]) -> None:
+                        try:
+                            sessions = await adapter.list_sessions(tool=platform)
+                        except AcpxError as exc:
+                            for row in platform_rows:
+                                row["status_detail"] = str(exc)
+                            return
+                        for row in platform_rows:
+                            matched = [
+                                session for session in sessions
+                                if session.get("name") == row["session_key"] and not session.get("closed")
+                            ]
+                            row["connection_status"] = "online" if matched else "idle"
+                            row["status"] = "idle"
+                            row["status_source"] = "acpx_session_registry"
+                            row["session_initialized"] = bool(matched)
+                            row["session_count"] = len(matched)
+                            row["sessions"] = matched
+
+                    await asyncio.gather(*(
+                        refresh_platform(platform, platform_rows)
+                        for platform, platform_rows in acp_rows.items()
+                    ))
+
+            # OpenClaw transport is HTTP, while its lifecycle control is exposed
+            # by the OpenClaw CLI/ACP bridge. Preserve the existing status probe.
+            async def refresh_openclaw(row: dict[str, Any]) -> None:
+                if row["platform"] != "openclaw" or row.get("session_initialized") is True:
+                    return
+                config = _resolve_external_agent_record(
+                    user_id,
+                    (row.get("teams") or [""])[0],
+                    row["identity"],
+                )
+                if not config:
+                    return
+                state = await self._acp_status_single(config)
+                raw_status = state.get("status", "unknown")
+                row["connection_status"] = raw_status
+                row["session_initialized"] = raw_status == "online"
+                row["session_count"] = int(state.get("session_count") or 0)
+                row["sessions"] = state.get("sessions", [])
+                row["status"] = "idle" if raw_status in {"online", "idle"} else "unknown"
+                row["status_source"] = "openclaw_session_presence"
+                if state.get("reason"):
+                    row["status_detail"] = state["reason"]
+
+            await asyncio.gather(*(refresh_openclaw(row) for row in external_rows))
+        rows.extend(external_rows)
+
+        internal_teams = {
+            row["identity"]: row["teams"]
+            for row in rows
+            if row["kind"] == "internal"
+        }
+        active_keys = set(self.agent.list_active_task_keys(f"{user_id}#"))
+        for record in subagent_records:
+            stored = asdict(record)
+            runtime_key = f"{user_id}#{record.session_id}"
+            active = runtime_key in active_keys
+            stored_status = str(record.status or "idle")
+            status = "running" if active or stored_status in {"queued", "running", "cancelling"} else stored_status
+            rows.append({
+                "identity": record.agent_id,
+                "kind": "subagent",
+                "transport": "internal",
+                "platform": record.agent_type,
+                "name": record.name,
+                "tag": record.agent_type,
+                "teams": list(internal_teams.get(record.parent_session, [])),
+                "status": status,
+                "status_source": "webot_registry",
+                "connection_status": "local",
+                "session_initialized": True,
+                "identity_injection_policy": "internal_session",
+                "running_known": active or stored_status not in {"queued", "running", "cancelling"},
+                "can_cancel": status in {"queued", "running", "cancelling"},
+                "supported_actions": ["status", "cancel", "stop", "delete"],
+                "session_id": record.session_id,
+                "parent_session": record.parent_session,
+                "updated_at": record.updated_at,
+                "runtime": stored,
+            })
+
+        team = team.strip()
+        if team:
+            rows = [row for row in rows if team in row.get("teams", [])]
+        rows.sort(key=lambda row: (row["kind"], str(row["name"]).casefold(), row["identity"]))
+        return rows
+
+    async def agent_control(self, req: AgentControlRequest, x_internal_token: str | None):
+        """One compatible entry point for catalog, status, and lifecycle control."""
+        self.verify_auth_or_token(req.user_id, req.password, x_internal_token)
+        rows = await self.list_agents(
+            req.user_id,
+            team=req.team,
+            refresh_external=req.refresh_external,
+        )
+        if req.action == "list":
+            if req.kind:
+                rows = [row for row in rows if row["kind"] == req.kind]
+            return {"status": "success", "count": len(rows), "agents": rows}
+
+        identity = req.identity.strip()
+        if not identity:
+            raise HTTPException(status_code=400, detail="identity 不能为空")
+        matches = [
+            row for row in rows
+            if row["identity"] == identity and (not req.kind or row["kind"] == req.kind)
+        ]
+        if not matches:
+            raise HTTPException(status_code=404, detail=f"未找到 Agent: {identity}")
+        if len(matches) > 1:
+            raise HTTPException(status_code=409, detail="identity 有歧义，请同时指定 kind")
+        target = matches[0]
+        if req.action == "status":
+            return {"status": "success", "agent": target}
+
+        action = "cancel" if req.action == "stop" else req.action
+        if target["kind"] == "internal":
+            if action == "delete":
+                await self._delete_internal_agent_runtime(req.user_id, identity)
+                return {
+                    "status": "success",
+                    "supported": True,
+                    "action": req.action,
+                    "message": f"Agent {identity} 的运行会话已删除",
+                    "agent": target,
+                }
+            if action != "cancel":
+                return {"status": "unsupported", "supported": False, "action": req.action, "agent": target}
+            result = await self.agent.cancel_task(f"{req.user_id}#{identity}")
+            return {"status": "success", "supported": True, "action": req.action, "cancelled": result, "agent": target}
+
+        if target["kind"] == "subagent":
+            if action == "delete":
+                session_id = str(target.get("session_id") or "").strip()
+                if not session_id:
+                    raise HTTPException(status_code=500, detail="Subagent 缺少 session_id")
+                await self._delete_internal_agent_runtime(req.user_id, session_id, delete_subagent=True)
+                return {
+                    "status": "success",
+                    "supported": True,
+                    "action": req.action,
+                    "message": f"Subagent {identity} 的运行会话和追踪记录已删除",
+                    "agent": target,
+                }
+            if action != "cancel":
+                return {"status": "unsupported", "supported": False, "action": req.action, "agent": target}
+            from webot.models import WeBotSubagentRefRequest
+            from webot.service import WeBotService
+            service = WeBotService(
+                agent=self.agent,
+                verify_auth_or_token=self.verify_auth_or_token,
+                extract_text=lambda value: str(value or ""),
+            )
+            result = await service.cancel_subagent(
+                WeBotSubagentRefRequest(user_id=req.user_id, password=req.password, agent_ref=identity),
+                x_internal_token,
+            )
+            return {
+                **result,
+                "supported": True,
+                "action": req.action,
+                "agent": target,
+            }
+
+        if req.action == "delete" and target.get("transport") == "http":
+            deleted = 0
+            if self.group_db_path:
+                deleted = await delete_http_agent_sessions_by_global_name(
+                    self.group_db_path,
+                    identity,
+                )
+            return {
+                "status": "success",
+                "supported": True,
+                "action": req.action,
+                "deleted_sessions": deleted,
+                "message": f"Agent {identity} 的本地会话追踪已删除",
+                "agent": target,
+            }
+
+        if req.action not in target["supported_actions"]:
+            return {
+                "status": "unsupported",
+                "supported": False,
+                "action": req.action,
+                "reason": f"{target['transport']} transport does not expose this control",
+                "agent": target,
+            }
+        acp_action = "stop" if action == "cancel" else action
+        result = await self.acp_control(
+            ACPControlRequest(
+                user_id=req.user_id,
+                password=req.password,
+                team=req.team or (target.get("teams") or [""])[0],
+                agent_name=identity,
+                action=acp_action,
+            ),
+            x_internal_token,
+        )
+        return {**result, "supported": True, "agent": target}
+
+    async def _delete_internal_agent_runtime(
+        self,
+        user_id: str,
+        session_id: str,
+        *,
+        delete_subagent: bool = False,
+    ) -> None:
+        """Delete runtime state only; Agent/Team configuration is intentionally untouched."""
+        from webot.subagents import delete_subagent_by_session
+
+        thread_id = f"{user_id}#{session_id}"
+        await self.agent.cancel_task(thread_id)
+        close_checkpoint = getattr(self.agent, "close_thread_checkpoint", None)
+        if callable(close_checkpoint):
+            await close_checkpoint(thread_id)
+        checkpoint_db_path = str(getattr(self.agent, "_db_path", "") or "")
+        if checkpoint_db_path:
+            await delete_thread_records(checkpoint_db_path, thread_id)
+        if delete_subagent:
+            delete_subagent_by_session(user_id, session_id)
 
     async def text_to_speech(self, req: TTSRequest, x_internal_token: str | None):
         """文本转语音（TTS）服务。

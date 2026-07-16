@@ -29,7 +29,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
 
     <link rel="stylesheet" href="/static/css/markdown-shared.css">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260517-acp-status">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260716-agent-center">
 </head>
 <body class="bg-gray-100 font-sans leading-normal tracking-normal">
 
@@ -200,6 +200,10 @@
                             <span class="hamburger-item-icon">🤖</span>
                             <span class="hamburger-item-label" data-i18n="hmenu_agents">Agents</span>
                         </button>
+                        <button class="hamburger-panel-item" onclick="openAgentCenter(); closeHamburgerMenu();">
+                            <span class="hamburger-item-icon">🧭</span>
+                            <span class="hamburger-item-label" data-i18n="hmenu_agent_center">Agent Center</span>
+                        </button>
                         <button class="hamburger-panel-item" onclick="openSettings(); closeHamburgerMenu();">
                             <span class="hamburger-item-icon">⚙️</span>
                             <span class="hamburger-item-label" data-i18n="hmenu_settings">Settings</span>
@@ -253,6 +257,7 @@
                 </div>
                 <div class="page-tab" id="uid-display" style="display:none;"></div>
                 <div class="page-tab active" id="tab-chat" onclick="switchPage('chat')" data-i18n="tab_chat">💬 Chat</div>
+                <div class="page-tab" id="tab-agent-center" onclick="openAgentCenter()" data-i18n="tab_agent_center">🧭 Agents</div>
                 <div class="page-tab" id="tab-group" onclick="switchPage('group')" data-i18n="tab_group">👥 Team</div>
                 <div class="page-tab" id="tab-orchestrate" onclick="switchPage('orchestrate')" data-i18n="tab_orchestrate">🤝 Workflow</div>
                 <div class="page-tab" id="tab-groupchat" onclick="window.location.assign('/mobile/group_chat')" data-i18n="tab_groupchat" data-i18n-title="tip_open_msgcenter" title="打开消息中心">📨 消息中心</div>
@@ -1333,6 +1338,45 @@
         </div>
     </div>
 
+    <div id="agent-center-modal" class="agent-center-overlay" style="display:none;" onclick="if(event.target===this)closeAgentCenter()">
+        <section class="agent-center-modal" role="dialog" aria-modal="true" aria-labelledby="agent-center-title">
+            <header class="agent-center-header">
+                <div>
+                    <div class="agent-center-kicker" data-i18n="agent_center_kicker">统一运行控制面</div>
+                    <h2 id="agent-center-title" data-i18n="agent_center_title">Agent Center</h2>
+                </div>
+                <div class="agent-center-header-actions">
+                    <button id="agent-center-refresh-btn" class="agent-center-btn primary" type="button" onclick="refreshAgentCenter(true)" data-i18n="agent_center_refresh_status">刷新状态</button>
+                    <button class="agent-center-close" type="button" onclick="closeAgentCenter()" aria-label="Close">&times;</button>
+                </div>
+            </header>
+            <div class="agent-center-toolbar">
+                <div id="agent-center-summary" class="agent-center-summary"></div>
+                <div class="agent-center-filters">
+                    <label>
+                        <span data-i18n="agent_center_kind">类型</span>
+                        <select id="agent-center-kind-filter" onchange="renderAgentCenterGrid()">
+                            <option value="" data-i18n="agent_center_all">全部</option>
+                            <option value="internal">Internal</option>
+                            <option value="external">External</option>
+                            <option value="subagent">Subagent</option>
+                        </select>
+                    </label>
+                    <label>
+                        <span>Team</span>
+                        <select id="agent-center-team-filter" onchange="renderAgentCenterGrid()">
+                            <option value="" data-i18n="agent_center_all">全部</option>
+                        </select>
+                    </label>
+                </div>
+            </div>
+            <div id="agent-center-notice" class="agent-center-notice" data-i18n="agent_center_status_hint">External Agent 的 Session 在线不等于正在运行。</div>
+            <div id="agent-center-grid" class="agent-center-grid">
+                <div class="agent-center-empty" data-i18n="loading">加载中...</div>
+            </div>
+        </section>
+    </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" crossorigin="anonymous"></script>
     <script src="/static/js/snapshot_zip_progress.js?v=20260331-progress"></script>
     <!-- ===== Orchestration Page JavaScript (load first for shared utils like orchToast) ===== -->
@@ -1341,7 +1385,7 @@
     <script src="/static/js/orchestration.js?v=20260329-snapshot"></script>
     <script src="/static/js/markdown-shared.js"></script>
     <script src="/static/js/tinyfish-live-shared.js"></script>
-    <script src="/static/js/main.js?v=20260517-acp-status"></script>
+    <script src="/static/js/main.js?v=20260716-agent-center"></script>
     <script src="/static/js/oasis-town.bundle.js?v=20260327-humanfix"></script>
     <script src="/static/js/app.js?v=20260327-humanfix"></script>
     <script>

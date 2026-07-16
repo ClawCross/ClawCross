@@ -81,7 +81,6 @@ OASIS_READ_TOOLS = (
     "list_oasis_topics",
     "list_oasis_workflows",
     "check_oasis_discussion",
-    "yaml_to_layout",
     "get_publicnet_info",
 )
 

@@ -8,13 +8,14 @@ Ops 操作服务路由模块
 - POST /tts：文本转语音
 - POST /acp_control：ACP 外部 agent 控制
 - POST /acp_status：查询 ACP agent 状态
+- POST /agent_control：统一列出、查询和控制各类 agent
 """
 
 from typing import Any, Callable
 
 from fastapi import APIRouter, Header
 
-from api.ops_models import ACPControlRequest, ACPStatusRequest, CancelRequest, LoginRequest, SessionsCloseRequest, SessionsDeleteRequest, SessionsListRequest, TTSRequest, UpdateCheckRequest, UpdateStartRequest, UpdateStatusRequest
+from api.ops_models import ACPControlRequest, ACPStatusRequest, AgentControlRequest, CancelRequest, LoginRequest, SessionsCloseRequest, SessionsDeleteRequest, SessionsListRequest, TTSRequest, UpdateCheckRequest, UpdateStartRequest, UpdateStatusRequest
 from api.ops_service import OpsService
 
 
@@ -62,6 +63,10 @@ def create_ops_router(
     @router.post("/acp_status")
     async def acp_status(req: ACPStatusRequest, x_internal_token: str | None = Header(None)):
         return await service.acp_status(req, x_internal_token)
+
+    @router.post("/agent_control")
+    async def agent_control(req: AgentControlRequest, x_internal_token: str | None = Header(None)):
+        return await service.agent_control(req, x_internal_token)
 
     @router.post("/sessions_list")
     async def sessions_list(req: SessionsListRequest, x_internal_token: str | None = Header(None)):

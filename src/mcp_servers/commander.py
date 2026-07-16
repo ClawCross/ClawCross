@@ -175,8 +175,6 @@ class BackgroundJob:
     error: str = ""
     session_id: str = ""
     pid: int | None = None
-    task: asyncio.Task | None = None
-    proc: asyncio.subprocess.Process | None = None
     notify_on_done: bool = False   # opt-in：任务完成时唤醒发起的 agent 会话（system_trigger）
 
 
@@ -279,17 +277,6 @@ def _pid_is_running(pid: int | None) -> bool:
 
 def _refresh_background_job(job: BackgroundJob) -> BackgroundJob:
     if job.status != "running":
-        return job
-    if job.task is not None and not job.task.done():
-        return job
-    if job.proc is not None:
-        return_code = job.proc.returncode
-        if return_code is None:
-            return job
-        job.exit_code = return_code
-        job.status = "completed" if return_code == 0 else "failed"
-        job.finished_at = job.finished_at or time.time()
-        _persist_job(job)
         return job
     fresh = _load_job_from_workspace(job.workspace, job.job_id)
     if fresh is not None and fresh.status != "running":
@@ -475,9 +462,6 @@ def _launch_detached_background_job(job: BackgroundJob, env: dict[str, str]) -> 
 
 
 def _terminate_background_job(job: BackgroundJob) -> None:
-    if job.proc is not None and job.proc.returncode is None:
-        job.proc.kill()
-        return
     child_pid = None
     with contextlib.suppress(Exception):
         payload = json.loads(_job_meta_path(job.workspace, job.job_id).read_text(encoding="utf-8"))
@@ -735,75 +719,6 @@ async def _collect_process_output(
         return True, stdout_capture.render().strip(), stderr_capture.render().strip()
 
 
-async def _stream_to_file(
-    stream: asyncio.StreamReader | None,
-    target_path: str,
-    capture: _StreamingCapture,
-) -> None:
-    if stream is None:
-        return
-    with open(target_path, "a", encoding="utf-8") as handle:
-        while True:
-            chunk = await stream.read(4096)
-            if not chunk:
-                break
-            text = chunk.decode("utf-8", errors="replace")
-            handle.write(text)
-            handle.flush()
-            capture.append(text)
-
-
-async def _run_background_job(job: BackgroundJob, env: dict[str, str]) -> None:
-    stdout_capture = _StreamingCapture(MAX_OUTPUT_LENGTH)
-    stderr_capture = _StreamingCapture(MAX_OUTPUT_LENGTH)
-    try:
-        proc = await asyncio.create_subprocess_shell(
-            job.command,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=job.workspace,
-            env=env,
-        )
-        job.proc = proc
-        _persist_job(job)
-        stdout_task = asyncio.create_task(_stream_to_file(proc.stdout, job.stdout_path, stdout_capture))
-        stderr_task = asyncio.create_task(_stream_to_file(proc.stderr, job.stderr_path, stderr_capture))
-        try:
-            await asyncio.wait_for(
-                asyncio.gather(proc.wait(), stdout_task, stderr_task),
-                timeout=job.timeout_seconds,
-            )
-            job.exit_code = proc.returncode
-            job.status = "completed" if proc.returncode == 0 else "failed"
-            _persist_job(job)
-        except asyncio.TimeoutError:
-            job.status = "timeout"
-            job.error = f"命令执行超时（{job.timeout_seconds}秒限制），已终止。"
-            proc.kill()
-            await proc.wait()
-            await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
-            _persist_job(job)
-        except asyncio.CancelledError:
-            job.status = "cancelled"
-            job.error = "后台任务已取消。"
-            if proc.returncode is None:
-                proc.kill()
-                await proc.wait()
-            await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
-            _persist_job(job)
-            raise
-    except asyncio.CancelledError:
-        raise
-    except Exception as exc:
-        job.status = "failed"
-        job.error = str(exc)
-        _persist_job(job)
-    finally:
-        job.finished_at = time.time()
-        job.proc = None
-        _persist_job(job)
-
-
 def _job_summary(job: BackgroundJob) -> str:
     lines = [
         f"🆔 job_id: {job.job_id}",
@@ -862,7 +777,7 @@ async def run_command(
     # 3. 获取用户工作目录
     workspace_state = resolve_session_workspace(username, session_id, explicit_cwd=cwd)
     workspace = str(workspace_state.cwd)
-    timeout_value = _bounded_int(timeout_seconds, BACKGROUND_EXEC_TIMEOUT, 1, MAX_EXEC_TIMEOUT)
+    timeout_value = _bounded_int(timeout_seconds, EXEC_TIMEOUT, 1, MAX_EXEC_TIMEOUT)
     capture_limit = _bounded_int(max_output_chars, MAX_OUTPUT_LENGTH, 256, MAX_CAPTURE_LENGTH)
 
     try:
@@ -943,7 +858,7 @@ async def run_python_code(
     """
     workspace_state = resolve_session_workspace(username, session_id, explicit_cwd=cwd)
     workspace = str(workspace_state.cwd)
-    timeout_value = _bounded_int(timeout_seconds, BACKGROUND_EXEC_TIMEOUT, 1, MAX_EXEC_TIMEOUT)
+    timeout_value = _bounded_int(timeout_seconds, EXEC_TIMEOUT, 1, MAX_EXEC_TIMEOUT)
     capture_limit = _bounded_int(max_output_chars, MAX_OUTPUT_LENGTH, 256, MAX_CAPTURE_LENGTH)
 
     # 将代码写入临时文件执行（比 -c 参数更可靠，支持多行和特殊字符）
@@ -1050,7 +965,7 @@ async def start_background_command(
 
     workspace_state = resolve_session_workspace(username, session_id, explicit_cwd=cwd)
     workspace = str(workspace_state.cwd)
-    timeout_value = _bounded_int(timeout_seconds, EXEC_TIMEOUT, 1, MAX_EXEC_TIMEOUT)
+    timeout_value = _bounded_int(timeout_seconds, BACKGROUND_EXEC_TIMEOUT, 1, MAX_EXEC_TIMEOUT)
     job_id = uuid.uuid4().hex[:12]
     jobs_dir = _jobs_dir(workspace)
     job = BackgroundJob(
@@ -1143,19 +1058,12 @@ async def cancel_background_command(job_id: str, username: str = "", session_id:
         return f"❌ 未找到后台任务 '{job_id}'。"
     if job.status != "running":
         return "ℹ️ 后台任务已结束\n" + _job_summary(job)
-    if job.task:
-        job.task.cancel()
-        try:
-            await job.task
-        except asyncio.CancelledError:
-            pass
-    else:
-        _terminate_background_job(job)
-        job.status = "cancelled"
-        job.error = "后台任务已取消。"
-        job.finished_at = time.time()
-        _persist_job(job)
-        _BACKGROUND_JOBS[job.job_id] = job
+    _terminate_background_job(job)
+    job.status = "cancelled"
+    job.error = "后台任务已取消。"
+    job.finished_at = time.time()
+    _persist_job(job)
+    _BACKGROUND_JOBS[job.job_id] = job
     return "🛑 后台任务已取消\n" + _job_summary(job)
 
 @mcp.tool()
