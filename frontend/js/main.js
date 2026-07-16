@@ -116,8 +116,8 @@ const i18n = {
         hmenu_lang: '语言',
         hmenu_public: '公开',
         tab_agent_center: '🧭 Agents',
-        agent_center_kicker: '统一运行控制面',
-        agent_center_title: 'Agent Center',
+        agent_center_kicker: '探索 · 观察 · 培养',
+        agent_center_title: 'Agent 图鉴',
         agent_center_refresh_status: '刷新状态',
         agent_center_kind: '类型',
         agent_center_all: '全部',
@@ -145,6 +145,20 @@ const i18n = {
         agent_center_delete_ok: 'Agent 已删除',
         agent_center_delete_failed: '删除 Agent 失败',
         agent_center_load_failed: '加载 Agent 列表失败',
+        agent_center_open_detail: '点击查看图鉴',
+        agent_center_profile: '身份档案',
+        agent_center_context: '上下文管理',
+        agent_center_tools: '工具设置',
+        agent_center_save: '保存设置',
+        agent_center_save_ok: 'Agent 设置已保存',
+        agent_center_save_failed: '保存设置失败',
+        agent_center_compact: '压缩上下文',
+        agent_center_compact_ok: '上下文压缩完成',
+        agent_center_compact_none: '当前没有可压缩的上下文',
+        agent_center_unrestricted_tools: '全部工具可用',
+        agent_center_no_tools: '禁止全部工具',
+        agent_center_used: '已用',
+        agent_center_remaining: '剩余',
         public_starting: '启动中...',
         public_stopping: '停止中...',
 
@@ -950,8 +964,8 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         hmenu_lang: 'Language',
         hmenu_public: 'Public',
         tab_agent_center: '🧭 Agents',
-        agent_center_kicker: 'Unified runtime control plane',
-        agent_center_title: 'Agent Center',
+        agent_center_kicker: 'Discover · Observe · Grow',
+        agent_center_title: 'Agent Field Guide',
         agent_center_refresh_status: 'Refresh status',
         agent_center_kind: 'Kind',
         agent_center_all: 'All',
@@ -979,6 +993,20 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         agent_center_delete_ok: 'Agent deleted',
         agent_center_delete_failed: 'Failed to delete Agent',
         agent_center_load_failed: 'Failed to load Agent catalog',
+        agent_center_open_detail: 'Open field guide entry',
+        agent_center_profile: 'Identity profile',
+        agent_center_context: 'Context management',
+        agent_center_tools: 'Tool settings',
+        agent_center_save: 'Save settings',
+        agent_center_save_ok: 'Agent settings saved',
+        agent_center_save_failed: 'Failed to save settings',
+        agent_center_compact: 'Compact context',
+        agent_center_compact_ok: 'Context compacted',
+        agent_center_compact_none: 'No context can be compacted yet',
+        agent_center_unrestricted_tools: 'All tools available',
+        agent_center_no_tools: 'All tools disabled',
+        agent_center_used: 'Used',
+        agent_center_remaining: 'Remaining',
         public_starting: 'Starting...',
         public_stopping: 'Stopping...',
 
@@ -1857,6 +1885,7 @@ let isRecording = false;
 
 let agentCenterAgents = [];
 let agentCenterLoading = false;
+let agentCenterSelectedKey = '';
 
 function agentCenterEscape(value) {
     return String(value == null ? '' : value)
@@ -1928,51 +1957,213 @@ function renderAgentCenterGrid() {
         const teamLabel = teams.length ? teams.join(', ') : t('agent_center_public');
         const platform = agent.platform || agent.transport || '-';
         const connection = agent.connection_status || '-';
-        const actions = Array.isArray(agent.supported_actions) ? agent.supported_actions : [];
-        const canRequestStop = actions.includes('cancel') || actions.includes('stop');
-        const stopButton = canRequestStop ? `
-            <button class="agent-center-btn" type="button"
-                data-kind="${agentCenterEscape(agent.kind || '')}"
-                data-identity="${agentCenterEscape(agent.identity || '')}"
-                onclick="controlAgentFromCenter(this)">${agentCenterEscape(t('agent_center_stop'))}</button>
-        ` : '';
-        const resetButton = actions.includes('reset') ? `
-            <button class="agent-center-btn" type="button"
-                data-kind="${agentCenterEscape(agent.kind || '')}"
-                data-identity="${agentCenterEscape(agent.identity || '')}"
-                onclick="resetAgentFromCenter(this)">${agentCenterEscape(t('agent_center_reset'))}</button>
-        ` : '';
-        const deleteButton = actions.includes('delete') ? `
-            <button class="agent-center-btn danger" type="button"
-                data-kind="${agentCenterEscape(agent.kind || '')}"
-                data-identity="${agentCenterEscape(agent.identity || '')}"
-                onclick="deleteAgentFromCenter(this)">${agentCenterEscape(t('agent_center_delete'))}</button>
-        ` : '';
+        const key = `${agent.kind || ''}:${agent.identity || ''}`;
+        const index = Math.max(1, agentCenterAgents.indexOf(agent) + 1);
+        const sigil = agent.kind === 'internal' ? '🧠' : (agent.kind === 'subagent' ? '✦' : '◈');
+        const contextPercent = Math.max(0, Math.min(100, Number(agent.context?.percent || 0)));
         return `
-            <article class="agent-center-card">
-                <div class="agent-center-card-top">
-                    <div class="agent-center-identity">
-                        <div class="agent-center-name" title="${agentCenterEscape(agent.name || agent.identity)}">${agentCenterEscape(agent.name || agent.identity)}</div>
-                        <div class="agent-center-id" title="${agentCenterEscape(agent.identity)}">${agentCenterEscape(agent.identity)}</div>
+            <article class="agent-center-card ${key === agentCenterSelectedKey ? 'is-selected' : ''}"
+                tabindex="0" role="button"
+                data-kind="${agentCenterEscape(agent.kind || '')}"
+                data-identity="${agentCenterEscape(agent.identity || '')}"
+                onclick="openAgentCenterDetail(this.dataset.kind, this.dataset.identity)"
+                onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openAgentCenterDetail(this.dataset.kind,this.dataset.identity)}">
+                <div class="agent-center-card-portrait ${agentCenterStatusClass(agent.kind)}">
+                    <span class="agent-center-card-number">NO.${String(index).padStart(3, '0')}</span>
+                    <span class="agent-center-card-sigil">${sigil}</span>
+                    <span class="agent-center-status ${agentCenterStatusClass(status)}" style="position:absolute;right:9px;top:8px;z-index:2;">${agentCenterEscape(status)}</span>
+                </div>
+                <div class="agent-center-card-body">
+                    <div class="agent-center-card-top">
+                        <div class="agent-center-identity">
+                            <div class="agent-center-name" title="${agentCenterEscape(agent.name || agent.identity)}">${agentCenterEscape(agent.name || agent.identity)}</div>
+                            <div class="agent-center-id" title="${agentCenterEscape(agent.identity)}">${agentCenterEscape(agent.identity)}</div>
+                        </div>
                     </div>
-                    <span class="agent-center-status ${agentCenterStatusClass(status)}">${agentCenterEscape(status)}</span>
+                    <div class="agent-center-badges">
+                        <span class="agent-center-badge kind-${agentCenterStatusClass(agent.kind)}">${agentCenterEscape(agent.kind || 'agent')}</span>
+                        <span class="agent-center-badge">${agentCenterEscape(platform)}</span>
+                        ${teams.slice(0, 1).map(item => `<span class="agent-center-badge">${agentCenterEscape(item)}</span>`).join('')}
+                    </div>
+                    <dl class="agent-center-meta">
+                        <dt>Team</dt><dd title="${agentCenterEscape(teamLabel)}">${agentCenterEscape(teamLabel)}</dd>
+                        <dt>${agentCenterEscape(t('agent_center_connection'))}</dt><dd>${agentCenterEscape(connection)}</dd>
+                    </dl>
+                    ${agent.kind === 'internal' ? `<div class="agent-center-mini-meter" title="Context ${contextPercent}%"><span style="width:${contextPercent}%"></span></div>` : ''}
+                    <div class="agent-center-card-hint">${agentCenterEscape(t('agent_center_open_detail'))} →</div>
                 </div>
-                <div class="agent-center-badges">
-                    <span class="agent-center-badge kind-${agentCenterStatusClass(agent.kind)}">${agentCenterEscape(agent.kind || 'agent')}</span>
-                    <span class="agent-center-badge">${agentCenterEscape(platform)}</span>
-                    ${teams.slice(0, 2).map(item => `<span class="agent-center-badge">${agentCenterEscape(item)}</span>`).join('')}
-                    ${teams.length > 2 ? `<span class="agent-center-badge">+${teams.length - 2}</span>` : ''}
-                </div>
-                <dl class="agent-center-meta">
-                    <dt>Team</dt><dd title="${agentCenterEscape(teamLabel)}">${agentCenterEscape(teamLabel)}</dd>
-                    <dt>${agentCenterEscape(t('agent_center_connection'))}</dt><dd>${agentCenterEscape(connection)}</dd>
-                    <dt>${agentCenterEscape(t('agent_center_evidence'))}</dt><dd>${agentCenterEscape(agent.running_known === false ? t('agent_center_session_only') : t('agent_center_confirmed'))}</dd>
-                    <dt>Persona</dt><dd>${agentCenterEscape(agent.identity_injection_policy || '-')}</dd>
-                </dl>
-                ${(stopButton || resetButton || deleteButton) ? `<div class="agent-center-card-actions">${stopButton}${resetButton}${deleteButton}</div>` : ''}
             </article>
         `;
     }).join('');
+}
+
+function agentCenterSelectedAgent() {
+    return agentCenterAgents.find(agent => `${agent.kind}:${agent.identity}` === agentCenterSelectedKey) || null;
+}
+
+function agentCenterFormatTokens(value) {
+    const amount = Number(value || 0);
+    return Number.isFinite(amount) ? Math.max(0, Math.round(amount)).toLocaleString() : '0';
+}
+
+function setAgentCenterDetailNotice(message, isError = false) {
+    const el = document.getElementById('agent-dex-note');
+    if (!el) return;
+    el.textContent = message || '';
+    el.classList.toggle('agent-center-error', Boolean(isError));
+}
+
+function renderAgentCenterDetail() {
+    const panel = document.getElementById('agent-center-detail');
+    const host = document.getElementById('agent-center-detail-content');
+    const agent = agentCenterSelectedAgent();
+    if (!panel || !host || !agent) {
+        if (panel) panel.hidden = true;
+        return;
+    }
+    panel.hidden = false;
+    const status = String(agent.status || 'unknown').toLowerCase();
+    const teams = Array.isArray(agent.teams) && agent.teams.length ? agent.teams : [];
+    const actions = Array.isArray(agent.supported_actions) ? agent.supported_actions : [];
+    const index = Math.max(1, agentCenterAgents.indexOf(agent) + 1);
+    const sigil = agent.kind === 'internal' ? '🧠' : (agent.kind === 'subagent' ? '✦' : '◈');
+    const context = agent.context || {};
+    const contextPercent = Math.max(0, Math.min(100, Number(context.percent || 0)));
+    const toolsSetting = agent.settings?.tools;
+    const unrestricted = toolsSetting == null;
+    const noTools = toolsSetting === 'none';
+    const enabledTools = unrestricted
+        ? new Set(allTools.map(tool => tool.name))
+        : new Set(noTools ? [] : Object.keys(toolsSetting || {}).filter(name => toolsSetting[name]));
+    const toolsMarkup = agent.kind === 'internal'
+        ? (allTools.length ? allTools.map(tool => `
+            <label class="agent-dex-tool" title="${agentCenterEscape(tool.description || '')}">
+                <input class="agent-dex-tool-checkbox" type="checkbox" value="${agentCenterEscape(tool.name)}" ${enabledTools.has(tool.name) ? 'checked' : ''}>
+                <span>${agentCenterEscape(tool.name)}</span>
+            </label>`).join('') : `<span class="agent-dex-note">${agentCenterEscape(t('loading'))}</span>`)
+        : '';
+    const stopButton = actions.some(action => action === 'stop' || action === 'cancel')
+        ? `<button class="agent-center-btn" data-kind="${agentCenterEscape(agent.kind)}" data-identity="${agentCenterEscape(agent.identity)}" onclick="controlAgentFromCenter(this)">${agentCenterEscape(t('agent_center_stop'))}</button>` : '';
+    const resetButton = actions.includes('reset')
+        ? `<button class="agent-center-btn" data-kind="${agentCenterEscape(agent.kind)}" data-identity="${agentCenterEscape(agent.identity)}" onclick="resetAgentFromCenter(this)">${agentCenterEscape(t('agent_center_reset'))}</button>` : '';
+    const deleteButton = actions.includes('delete')
+        ? `<button class="agent-center-btn danger" data-kind="${agentCenterEscape(agent.kind)}" data-identity="${agentCenterEscape(agent.identity)}" onclick="deleteAgentFromCenter(this)">${agentCenterEscape(t('agent_center_delete'))}</button>` : '';
+
+    host.innerHTML = `
+        <div class="agent-dex-hero ${agentCenterStatusClass(agent.kind)}">
+            <button class="agent-dex-close" type="button" onclick="closeAgentCenterDetail()" aria-label="Close">×</button>
+            <div class="agent-dex-portrait">${sigil}</div>
+            <div class="agent-dex-index">FIELD ENTRY NO.${String(index).padStart(3, '0')} · ${agentCenterEscape(status)}</div>
+            <div class="agent-dex-title">${agentCenterEscape(agent.name || agent.identity)}</div>
+            <div class="agent-dex-subtitle">${agentCenterEscape(agent.identity)}</div>
+        </div>
+        <div class="agent-dex-body">
+            <section class="agent-dex-section">
+                <div class="agent-dex-section-title">${agentCenterEscape(t('agent_center_profile'))}</div>
+                <dl class="agent-dex-facts">
+                    <dt>Kind</dt><dd>${agentCenterEscape(agent.kind || '-')}</dd>
+                    <dt>Platform</dt><dd>${agentCenterEscape(agent.platform || agent.transport || '-')}</dd>
+                    <dt>Persona tag</dt><dd>${agentCenterEscape(agent.tag || '-')}</dd>
+                    <dt>Team</dt><dd>${agentCenterEscape(teams.length ? teams.join(', ') : t('agent_center_public'))}</dd>
+                    <dt>${agentCenterEscape(t('agent_center_connection'))}</dt><dd>${agentCenterEscape(agent.connection_status || '-')}</dd>
+                </dl>
+            </section>
+            ${agent.kind === 'internal' ? `
+            <section class="agent-dex-section">
+                <div class="agent-dex-section-title">${agentCenterEscape(t('agent_center_context'))}</div>
+                <div class="agent-dex-context-row"><span>${agentCenterEscape(t('agent_center_used'))}</span><strong>${contextPercent}%</strong></div>
+                <div class="agent-dex-context-meter"><span style="width:${contextPercent}%"></span></div>
+                <div class="agent-dex-context-row"><span>${agentCenterFormatTokens(context.tokens)} / ${agentCenterFormatTokens(context.budget)} tokens</span><span>${agentCenterEscape(t('agent_center_remaining'))} ${agentCenterFormatTokens(context.remaining)}</span></div>
+                <div class="agent-dex-actions" style="margin-top:10px;"><button class="agent-center-btn" type="button" onclick="compactAgentFromCenter(this)">${agentCenterEscape(t('agent_center_compact'))}</button></div>
+            </section>
+            <section class="agent-dex-section">
+                <div class="agent-dex-section-title">${agentCenterEscape(t('agent_center_tools'))}</div>
+                <div class="agent-dex-fields">
+                    <label>Name<input id="agent-dex-name" value="${agentCenterEscape(agent.name || agent.identity)}" maxlength="120"></label>
+                    <label>Persona tag<input id="agent-dex-tag" value="${agentCenterEscape(agent.tag || '')}" maxlength="120"></label>
+                </div>
+                <div class="agent-dex-context-row" style="margin:12px 0 7px;"><span>${agentCenterEscape(unrestricted ? t('agent_center_unrestricted_tools') : (noTools ? t('agent_center_no_tools') : `${enabledTools.size}/${allTools.length}`))}</span><span><button class="agent-center-btn" type="button" onclick="document.querySelectorAll('.agent-dex-tool-checkbox').forEach(el=>el.checked=true)">All</button> <button class="agent-center-btn" type="button" onclick="document.querySelectorAll('.agent-dex-tool-checkbox').forEach(el=>el.checked=false)">None</button></span></div>
+                <div class="agent-dex-tools">${toolsMarkup}</div>
+                <button class="agent-center-btn primary" style="margin-top:11px;width:100%;background:#245f46;color:#fff;" type="button" onclick="saveAgentCenterSettings(this)">${agentCenterEscape(t('agent_center_save'))}</button>
+            </section>` : ''}
+            <section class="agent-dex-section">
+                <div class="agent-dex-section-title">Runtime control</div>
+                <div class="agent-dex-actions">${stopButton}${resetButton}${deleteButton}</div>
+            </section>
+            <div id="agent-dex-note" class="agent-dex-note"></div>
+        </div>`;
+}
+
+async function openAgentCenterDetail(kind, identity) {
+    agentCenterSelectedKey = `${kind}:${identity}`;
+    renderAgentCenterGrid();
+    renderAgentCenterDetail();
+    if (kind === 'internal' && allTools.length === 0) {
+        await loadTools();
+        renderAgentCenterDetail();
+    }
+}
+
+function closeAgentCenterDetail() {
+    agentCenterSelectedKey = '';
+    const panel = document.getElementById('agent-center-detail');
+    if (panel) panel.hidden = true;
+    renderAgentCenterGrid();
+}
+
+async function saveAgentCenterSettings(button) {
+    const agent = agentCenterSelectedAgent();
+    if (!agent || agent.kind !== 'internal') return;
+    const checked = [...document.querySelectorAll('.agent-dex-tool-checkbox:checked')].map(el => el.value);
+    let tools = null;
+    if (checked.length === 0) tools = 'none';
+    else if (checked.length < allTools.length) tools = Object.fromEntries(checked.map(name => [name, true]));
+    button.disabled = true;
+    try {
+        const response = await fetch('/proxy_agent_control', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                action: 'configure', kind: 'internal', identity: agent.identity,
+                settings: {
+                    name: document.getElementById('agent-dex-name')?.value?.trim() || agent.identity,
+                    tag: document.getElementById('agent-dex-tag')?.value?.trim() || '',
+                    tools,
+                },
+                refresh_external: false,
+            }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.status !== 'success') throw new Error(payload.detail || payload.error || payload.reason || 'configure failed');
+        const index = agentCenterAgents.findIndex(item => `${item.kind}:${item.identity}` === agentCenterSelectedKey);
+        if (index >= 0 && payload.agent) agentCenterAgents[index] = payload.agent;
+        renderAgentCenterGrid();
+        renderAgentCenterDetail();
+        setAgentCenterDetailNotice(t('agent_center_save_ok'));
+    } catch (error) {
+        setAgentCenterDetailNotice(`${t('agent_center_save_failed')}: ${error.message || error}`, true);
+    } finally {
+        button.disabled = false;
+    }
+}
+
+async function compactAgentFromCenter(button) {
+    const agent = agentCenterSelectedAgent();
+    if (!agent || agent.kind !== 'internal') return;
+    button.disabled = true;
+    try {
+        const response = await fetch('/proxy_compact_session', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({session_id: agent.identity}),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.error) throw new Error(payload.detail || payload.error || 'compact failed');
+        await refreshAgentCenter(false);
+        setAgentCenterDetailNotice(payload.triggered ? t('agent_center_compact_ok') : t('agent_center_compact_none'));
+    } catch (error) {
+        setAgentCenterDetailNotice(`${t('agent_center_compact')}: ${error.message || error}`, true);
+    } finally {
+        button.disabled = false;
+    }
 }
 
 async function refreshAgentCenter(refreshExternal = false) {
@@ -2004,6 +2195,7 @@ async function refreshAgentCenter(refreshExternal = false) {
         agentCenterLoading = false;
         if (refreshButton) refreshButton.disabled = false;
         renderAgentCenterGrid();
+        renderAgentCenterDetail();
     }
 }
 
@@ -2017,6 +2209,7 @@ async function openAgentCenter() {
 function closeAgentCenter() {
     const modal = document.getElementById('agent-center-modal');
     if (modal) modal.style.display = 'none';
+    agentCenterSelectedKey = '';
 }
 
 async function controlAgentFromCenter(button) {
@@ -2029,7 +2222,7 @@ async function controlAgentFromCenter(button) {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
-                action: 'cancel',
+                action: 'stop',
                 kind,
                 identity,
                 refresh_external: false,
@@ -2069,6 +2262,7 @@ async function deleteAgentFromCenter(button) {
             throw new Error(payload.reason || payload.detail || payload.error || t('agent_center_delete_failed'));
         }
         setAgentCenterNotice(t('agent_center_delete_ok'));
+        closeAgentCenterDetail();
         await refreshAgentCenter(false);
     } catch (error) {
         setAgentCenterNotice(`${t('agent_center_delete_failed')}: ${error.message || error}`, true);
@@ -2108,7 +2302,8 @@ async function resetAgentFromCenter(button) {
 
 document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && document.getElementById('agent-center-modal')?.style.display !== 'none') {
-        closeAgentCenter();
+        if (agentCenterSelectedKey) closeAgentCenterDetail();
+        else closeAgentCenter();
     }
 });
 
@@ -2745,9 +2940,13 @@ function _collectAgentMeta() {
             // All selected → don't set tools (= no restriction)
             tools = null;
         } else {
-            const obj = {};
-            checkedNames.forEach(t => obj[t] = true);
-            tools = obj;
+            if (checkedNames.length === 0) {
+                tools = 'none';
+            } else {
+                const obj = {};
+                checkedNames.forEach(t => obj[t] = true);
+                tools = obj;
+            }
         }
     }
 

@@ -4,7 +4,7 @@ from flask import jsonify, request, session
 import requests
 
 
-_ACTIONS = {"list", "status", "cancel", "stop", "new", "reset", "delete"}
+_ACTIONS = {"list", "status", "cancel", "stop", "new", "reset", "delete", "configure"}
 _KINDS = {"", "internal", "external", "subagent"}
 
 
@@ -41,6 +41,11 @@ def register_agent_routes(
             "identity": str(body.get("identity") or "").strip(),
             "refresh_external": bool(body.get("refresh_external", False)),
         }
+        if action == "configure":
+            settings = body.get("settings")
+            if not isinstance(settings, dict):
+                return jsonify({"error": "settings must be an object"}), 400
+            payload["settings"] = settings
         team = str(body.get("team") or "").strip()
         if team:
             payload["team"] = team

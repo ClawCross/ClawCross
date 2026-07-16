@@ -94,7 +94,9 @@ def _get_agent_tool_whitelist(user_id: str, session_id: str) -> set[str] | None:
                 if tools_cfg is None:
                     # Backward compatibility for older flat entries.
                     tools_cfg = agent_entry.get("tools")
-                if not isinstance(tools_cfg, dict) or not tools_cfg:
+                if tools_cfg == "none":
+                    return set()
+                if not isinstance(tools_cfg, dict):
                     return None  # 该 agent 无 tools 配置 → 不限制
                 return {k for k, v in tools_cfg.items() if v}
         except Exception:

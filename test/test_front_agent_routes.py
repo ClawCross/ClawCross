@@ -72,6 +72,24 @@ class FrontAgentRoutesTests(unittest.TestCase):
         self.assertEqual(payload["identity"], "worker")
         self.assertNotIn("team", payload)
 
+    def test_configure_forwards_agent_settings(self):
+        self._login()
+        with mock.patch("routes.front_agent_routes.requests.post", return_value=_Response()) as post:
+            response = self.client.post(
+                "/proxy_agent_control",
+                json={
+                    "action": "configure",
+                    "kind": "internal",
+                    "identity": "worker",
+                    "settings": {"name": "Worker", "tag": "coder", "tools": "none"},
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = post.call_args.kwargs["json"]
+        self.assertEqual(payload["settings"]["tools"], "none")
+        self.assertNotIn("team", payload)
+
 
 if __name__ == "__main__":
     unittest.main()
