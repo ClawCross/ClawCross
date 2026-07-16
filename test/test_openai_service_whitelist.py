@@ -87,6 +87,19 @@ class OpenAIServiceWhitelistScopeTests(unittest.TestCase):
                     {"write_file"},
                 )
 
+    def test_none_sentinel_disables_every_tool(self):
+        with TemporaryDirectory() as tmpdir:
+            user_root = Path(tmpdir)
+            _write_json(
+                user_root / "alice" / "internal_agents.json",
+                [{"session": "quiet-agent", "name": "Quiet", "tools": "none"}],
+            )
+            with mock.patch.object(openai_service, "_USER_FILES_DIR", str(user_root)):
+                self.assertEqual(
+                    openai_service._get_agent_tool_whitelist("alice", "quiet-agent"),
+                    set(),
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

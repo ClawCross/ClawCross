@@ -36,6 +36,11 @@ class _FakeAgent:
     def list_active_task_keys(self, prefix=""):
         return [f"{prefix}main"]
 
+    def get_thread_context_usage(self, thread_id):
+        if thread_id.endswith("#main"):
+            return {"tokens": 2400, "budget": 12000, "percent": 20, "remaining": 9600}
+        return {"tokens": 0, "budget": 0, "percent": 0, "remaining": 0}
+
     async def cancel_task(self, task_key):
         self.cancelled.append(task_key)
         return task_key.endswith("#main")
@@ -114,6 +119,7 @@ class AgentControlTests(unittest.IsolatedAsyncioTestCase):
             by_key = {(row["kind"], row["identity"]): row for row in result["agents"]}
             self.assertEqual(by_key[("internal", "main")]["teams"], ["alpha", "beta"])
             self.assertEqual(by_key[("internal", "main")]["status"], "running")
+            self.assertEqual(by_key[("internal", "main")]["context"]["percent"], 20)
             self.assertEqual(by_key[("external", "reviewer")]["teams"], ["alpha", "beta"])
             self.assertEqual(by_key[("subagent", "sub-1")]["teams"], ["alpha", "beta"])
             self.assertIn(("internal", "runtime-only"), by_key)
@@ -236,6 +242,37 @@ class AgentControlTests(unittest.IsolatedAsyncioTestCase):
                 [{"session": "keep", "name": "Keep"}],
             )
             self.assertEqual(json.loads(team_path.read_text(encoding="utf-8")), [])
+
+    async def test_internal_configure_updates_every_definition_without_team_selection(self):
+        with TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            public_path = root / "alice" / "internal_agents.json"
+            team_path = root / "alice" / "teams" / "alpha" / "internal_agents.json"
+            _write_json(public_path, [{"session": "main", "name": "Old", "tag": "lead"}])
+            _write_json(team_path, [{"session": "main", "name": "Old", "tag": "lead"}])
+            with (
+                mock.patch("api.ops_service.USER_FILES_DIR", root),
+                mock.patch("webot.subagents.list_subagents_for_user", return_value=[]),
+            ):
+                result = await self.service.agent_control(
+                    AgentControlRequest(
+                        user_id="alice",
+                        action="configure",
+                        kind="internal",
+                        identity="main",
+                        refresh_external=False,
+                        settings={"name": "Builder", "tag": "coder", "tools": "none"},
+                    ),
+                    None,
+                )
+
+            self.assertEqual(result["status"], "success")
+            self.assertEqual(result["updated_sources"], ["public", "alpha"])
+            for path in (public_path, team_path):
+                row = json.loads(path.read_text(encoding="utf-8"))[0]
+                self.assertEqual(row["name"], "Builder")
+                self.assertEqual(row["tag"], "coder")
+                self.assertEqual(row["tools"], "none")
 
 
 if __name__ == "__main__":

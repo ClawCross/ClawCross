@@ -265,6 +265,10 @@ class OpsService:
                     "platform": "internal",
                     "name": str(config.get("name") or identity),
                     "tag": str(config.get("tag") or ""),
+                    "configured": True,
+                    "settings": {
+                        "tools": config.get("tools"),
+                    },
                     "teams": [],
                     "status": "idle",
                     "status_source": "runtime",
@@ -273,7 +277,7 @@ class OpsService:
                     "identity_injection_policy": "stable_system_prompt",
                     "running_known": True,
                     "can_cancel": False,
-                    "supported_actions": ["status", "cancel", "stop", "reset", "delete"],
+                    "supported_actions": ["status", "cancel", "stop", "reset", "delete", "configure"],
                 })
                 if team and team not in row["teams"]:
                     row["teams"].append(team)
@@ -294,6 +298,8 @@ class OpsService:
                 "platform": "internal",
                 "name": identity,
                 "tag": "",
+                "configured": False,
+                "settings": {"tools": None},
                 "teams": [],
                 "status": "idle",
                 "status_source": "runtime",
@@ -302,7 +308,7 @@ class OpsService:
                 "identity_injection_policy": "stable_system_prompt",
                 "running_known": True,
                 "can_cancel": False,
-                "supported_actions": ["status", "cancel", "stop", "reset", "delete"],
+                "supported_actions": ["status", "cancel", "stop", "reset", "delete", "configure"],
             })
 
         for identity, row in by_identity.items():
@@ -316,6 +322,12 @@ class OpsService:
                 "source": state.get("source", ""),
                 "pending_system": state.get("pending_system", 0),
             }
+            get_context_usage = getattr(self.agent, "get_thread_context_usage", None)
+            row["context"] = (
+                get_context_usage(task_key)
+                if callable(get_context_usage)
+                else {"tokens": 0, "budget": 0, "percent": 0, "remaining": 0}
+            )
         return list(by_identity.values())
 
     def _external_agent_catalog(self, user_id: str) -> list[dict[str, Any]]:
@@ -540,6 +552,36 @@ class OpsService:
         if req.action == "status":
             return {"status": "success", "agent": target}
 
+        if req.action == "configure":
+            if target["kind"] != "internal":
+                return {
+                    "status": "unsupported",
+                    "supported": False,
+                    "action": req.action,
+                    "reason": "Only Internal Agent settings are managed here",
+                    "agent": target,
+                }
+            settings = req.settings or {}
+            updated_sources, effective_settings = self._configure_internal_agent(
+                req.user_id,
+                identity,
+                settings,
+            )
+            updated_target = {
+                **target,
+                "name": effective_settings["name"],
+                "tag": effective_settings["tag"],
+                "configured": True,
+                "settings": {"tools": effective_settings["tools"]},
+            }
+            return {
+                "status": "success",
+                "supported": True,
+                "action": req.action,
+                "updated_sources": updated_sources,
+                "agent": updated_target,
+            }
+
         action = "cancel" if req.action == "stop" else req.action
         if target["kind"] == "internal":
             if action == "reset":
@@ -671,6 +713,116 @@ class OpsService:
         return {**result, "supported": True, "agent": target}
 
     @classmethod
+    def _configure_internal_agent(
+        cls,
+        user_id: str,
+        identity: str,
+        settings: dict[str, Any],
+    ) -> tuple[list[str], dict[str, Any]]:
+        """Apply one Internal Agent's settings to every definition of that identity."""
+        unsupported = sorted(set(settings) - {"name", "tag", "tools"})
+        if unsupported:
+            raise HTTPException(status_code=400, detail=f"不支持的设置项: {', '.join(unsupported)}")
+
+        existing: dict[str, Any] = {}
+        for existing_path, _existing_team in cls._agent_files(user_id, "internal_agents.json"):
+            existing = next((
+                row for row in cls._read_agent_file(existing_path)
+                if str(row.get("session") or row.get("session_id") or "").strip() == identity
+            ), {})
+            if existing:
+                break
+
+        name = settings.get("name", existing.get("name") or identity)
+        if not isinstance(name, str) or not name.strip():
+            raise HTTPException(status_code=400, detail="name 不能为空")
+        name = name.strip()[:120]
+
+        tag = settings.get("tag", existing.get("tag") or "")
+        if not isinstance(tag, str):
+            raise HTTPException(status_code=400, detail="tag 必须是字符串")
+        tag = tag.strip()[:120]
+
+        tools_present = "tools" in settings
+        tools = settings.get("tools")
+        if tools_present:
+            if tools == "none":
+                pass
+            elif tools is None:
+                pass
+            elif isinstance(tools, dict):
+                if any(not isinstance(key, str) or not key.strip() or not isinstance(value, bool)
+                       for key, value in tools.items()):
+                    raise HTTPException(status_code=400, detail="tools 必须是 {工具名: boolean}")
+                tools = {key.strip(): True for key, value in tools.items() if value}
+                if not tools:
+                    tools = "none"
+            else:
+                raise HTTPException(status_code=400, detail="tools 必须是对象、none 或 null")
+
+        matched = False
+        updated_sources: list[str] = []
+        for path, team in cls._agent_files(user_id, "internal_agents.json"):
+            rows = cls._read_agent_file(path)
+            changed = False
+            for row in rows:
+                row_identity = str(row.get("session") or row.get("session_id") or "").strip()
+                if row_identity != identity:
+                    continue
+                matched = True
+                changed = True
+                row["name"] = name
+                row["tag"] = tag
+                if tools_present and tools is None:
+                    row.pop("tools", None)
+                elif tools_present:
+                    row["tools"] = tools
+            if changed:
+                cls._write_agent_rows(path, rows)
+                updated_sources.append(team or "public")
+
+        if not matched:
+            path = os.path.join(str(USER_FILES_DIR), user_id, "internal_agents.json")
+            rows = cls._read_agent_file(path)
+            entry: dict[str, Any] = {"session": identity, "name": name, "tag": tag}
+            if tools_present and tools is not None:
+                entry["tools"] = tools
+            rows.append(entry)
+            cls._write_agent_rows(path, rows)
+            updated_sources.append("public")
+
+        effective_tools = tools if tools_present else None
+        if not tools_present:
+            for path, _team in cls._agent_files(user_id, "internal_agents.json"):
+                for row in cls._read_agent_file(path):
+                    if str(row.get("session") or row.get("session_id") or "").strip() == identity:
+                        effective_tools = row.get("tools")
+                        break
+                else:
+                    continue
+                break
+        return updated_sources, {"name": name, "tag": tag, "tools": effective_tools}
+
+    @staticmethod
+    def _write_agent_rows(path: str, rows: list[dict[str, Any]]) -> None:
+        directory = os.path.dirname(path)
+        os.makedirs(directory, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(prefix=".agent-settings-", suffix=".json", dir=directory)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(rows, handle, ensure_ascii=False, indent=2)
+                handle.write("\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp_path, path)
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+
+    @classmethod
     def _delete_agent_configs(cls, user_id: str, kind: str, identity: str) -> list[str]:
         """Remove one Agent definition from every backing config file."""
         filename = "internal_agents.json" if kind == "internal" else "external_agents.json"
@@ -684,21 +836,7 @@ class OpsService:
             ]
             if len(remaining) == len(rows):
                 continue
-            directory = os.path.dirname(path)
-            fd, tmp_path = tempfile.mkstemp(prefix=".agent-delete-", suffix=".json", dir=directory)
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                    json.dump(remaining, handle, ensure_ascii=False, indent=2)
-                    handle.write("\n")
-                    handle.flush()
-                    os.fsync(handle.fileno())
-                os.replace(tmp_path, path)
-            except Exception:
-                try:
-                    os.unlink(tmp_path)
-                except OSError:
-                    pass
-                raise
+            cls._write_agent_rows(path, remaining)
             deleted_sources.append(team or "public")
         return deleted_sources
 

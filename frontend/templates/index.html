@@ -29,7 +29,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
 
     <link rel="stylesheet" href="/static/css/markdown-shared.css">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260716-agent-center">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260716-agent-dex">
 </head>
 <body class="bg-gray-100 font-sans leading-normal tracking-normal">
 
@@ -1342,8 +1342,8 @@
         <section class="agent-center-modal" role="dialog" aria-modal="true" aria-labelledby="agent-center-title">
             <header class="agent-center-header">
                 <div>
-                    <div class="agent-center-kicker" data-i18n="agent_center_kicker">统一运行控制面</div>
-                    <h2 id="agent-center-title" data-i18n="agent_center_title">Agent Center</h2>
+                    <div class="agent-center-kicker" data-i18n="agent_center_kicker">探索 · 观察 · 培养</div>
+                    <h2 id="agent-center-title" data-i18n="agent_center_title">Agent 图鉴</h2>
                 </div>
                 <div class="agent-center-header-actions">
                     <button id="agent-center-refresh-btn" class="agent-center-btn primary" type="button" onclick="refreshAgentCenter(true)" data-i18n="agent_center_refresh_status">刷新状态</button>
@@ -1371,8 +1371,13 @@
                 </div>
             </div>
             <div id="agent-center-notice" class="agent-center-notice" data-i18n="agent_center_status_hint">External Agent 的 Session 在线不等于正在运行。</div>
-            <div id="agent-center-grid" class="agent-center-grid">
-                <div class="agent-center-empty" data-i18n="loading">加载中...</div>
+            <div class="agent-center-content">
+                <div id="agent-center-grid" class="agent-center-grid">
+                    <div class="agent-center-empty" data-i18n="loading">加载中...</div>
+                </div>
+                <aside id="agent-center-detail" class="agent-center-detail" hidden aria-live="polite">
+                    <div id="agent-center-detail-content"></div>
+                </aside>
             </div>
         </section>
     </div>
@@ -1385,7 +1390,7 @@
     <script src="/static/js/orchestration.js?v=20260329-snapshot"></script>
     <script src="/static/js/markdown-shared.js"></script>
     <script src="/static/js/tinyfish-live-shared.js"></script>
-    <script src="/static/js/main.js?v=20260716-agent-center"></script>
+    <script src="/static/js/main.js?v=20260716-agent-dex"></script>
     <script src="/static/js/oasis-town.bundle.js?v=20260327-humanfix"></script>
     <script src="/static/js/app.js?v=20260327-humanfix"></script>
     <script>
