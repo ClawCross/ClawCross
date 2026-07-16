@@ -553,6 +553,34 @@ async def upsert_http_agent_session(
     return should_inject
 
 
+async def get_http_agent_session(group_db_path: str, session_key: str) -> dict | None:
+    """Return one HTTP Agent session without mutating its first-send state."""
+    async with aiosqlite.connect(group_db_path) as db:
+        await db.execute("PRAGMA busy_timeout = 5000")
+        cursor = await db.execute(
+            """
+            SELECT session_key, global_name, prompt_text, transport,
+                   created_at, updated_at, last_used_at
+            FROM http_agent_sessions
+            WHERE session_key = ?
+            LIMIT 1
+            """,
+            (session_key,),
+        )
+        row = await cursor.fetchone()
+    if row is None:
+        return None
+    return {
+        "session_key": row[0],
+        "global_name": row[1],
+        "prompt_text": row[2],
+        "transport": row[3],
+        "created_at": row[4],
+        "updated_at": row[5],
+        "last_used_at": row[6],
+    }
+
+
 async def delete_http_agent_sessions_by_global_name(group_db_path: str, global_name: str) -> int:
     async with aiosqlite.connect(group_db_path) as db:
         await db.execute("PRAGMA busy_timeout = 5000")

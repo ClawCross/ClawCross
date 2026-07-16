@@ -196,6 +196,11 @@ class GenericAcpConnector(AgentConnector):
             non_interactive_permissions=run_options["non_interactive_permissions"],
             allowed_tools=run_options["allowed_tools"],
         )
+        prompt_text, _identity_injected = adapter.consume_initial_prompt(
+            tool=platform,
+            acpx_session=acpx_session,
+            prompt_text=prompt_text,
+        )
         cmd, temp_path = adapter.prepare_prompt_command(
             tool=platform,
             session_key=request.session or "default",
