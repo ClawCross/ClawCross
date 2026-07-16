@@ -1306,6 +1306,13 @@ class ExternalExpert:
             # process os.getcwd() and may trigger first-run init/login work on
             # every prompt.
             options["cwd"] = str(WORKSPACE_DIR / "acpx")
+            system_parts = [
+                str(msg.get("content") or "").strip()
+                for msg in messages
+                if msg.get("role") == "system" and str(msg.get("content") or "").strip()
+            ]
+            if system_parts:
+                options["identity_prompt"] = "\n\n".join(system_parts)
             connect_type = "acp"
         else:
             prompt = messages

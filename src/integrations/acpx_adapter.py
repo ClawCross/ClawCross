@@ -267,6 +267,22 @@ class AcpxAdapter:
             self._pending_initial_prompt[self._pending_prompt_key(tool=tool, acpx_session=acpx_session)] = system_prompt.strip()
         return created
 
+    def consume_initial_prompt(
+        self,
+        *,
+        tool: str,
+        acpx_session: str,
+        prompt_text: str,
+    ) -> tuple[str, bool]:
+        """Apply and consume the identity prompt prepared by ``ensure_session``."""
+        pending_prompt = self._pending_initial_prompt.pop(
+            self._pending_prompt_key(tool=tool, acpx_session=acpx_session),
+            "",
+        )
+        if not pending_prompt:
+            return prompt_text, False
+        return f"{pending_prompt}\n\n{prompt_text}".strip(), True
+
     async def close_session(
         self,
         *,
@@ -628,13 +644,11 @@ class AcpxAdapter:
             allowed_tools=allowed_tools,
         )
 
-        pending_prompt = self._pending_initial_prompt.pop(
-            self._pending_prompt_key(tool=tool, acpx_session=acpx_session),
-            "",
+        effective_prompt, _identity_injected = self.consume_initial_prompt(
+            tool=tool,
+            acpx_session=acpx_session,
+            prompt_text=prompt_text,
         )
-        effective_prompt = prompt_text
-        if pending_prompt:
-            effective_prompt = f"{pending_prompt}\n\n{prompt_text}".strip()
 
         output = await self._send_prompt_file(
             tool=tool,
@@ -696,13 +710,11 @@ class AcpxAdapter:
             allowed_tools=allowed_tools,
         )
 
-        pending_prompt = self._pending_initial_prompt.pop(
-            self._pending_prompt_key(tool=tool, acpx_session=acpx_session),
-            "",
+        effective_prompt, _identity_injected = self.consume_initial_prompt(
+            tool=tool,
+            acpx_session=acpx_session,
+            prompt_text=prompt_text,
         )
-        effective_prompt = prompt_text
-        if pending_prompt:
-            effective_prompt = f"{pending_prompt}\n\n{prompt_text}".strip()
 
         output = await self._send_prompt_file(
             tool=tool,

@@ -102,8 +102,19 @@ class AgentCenter:
             effective_persona = persona_override
         elif persona_tag:
             effective_persona = str(self.get_persona(persona_tag).get("persona", "") or "")
-        if effective_persona and not merged_options.get("system_prompt"):
-            merged_options["system_prompt"] = effective_persona
+        elif agent.get("kind") == "external":
+            from integrations.external_persona import build_external_persona_prompt
+            effective_persona = build_external_persona_prompt(
+                str(agent.get("tag", "") or ""),
+                user_id=self.user_id,
+                team=self.team,
+            )
+        if effective_persona and not merged_options.get("identity_prompt"):
+            merged_options["identity_prompt"] = effective_persona
+        if agent.get("kind") == "external":
+            raw_agent = agent.get("raw") if isinstance(agent.get("raw"), dict) else {}
+            merged_options.setdefault("identity_global_name", str(raw_agent.get("global_name") or ""))
+            merged_options.setdefault("group_db_path", os.path.join(str(DATA_DIR), "group_chat.db"))
         effective_connect_type = connect_type or str(agent.get("connect_type", "") or "")
         effective_platform = platform or str(agent.get("platform", "") or "")
         effective_session = session if session is not None else agent.get("session")

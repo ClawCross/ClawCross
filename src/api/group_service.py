@@ -40,7 +40,6 @@ from api.group_repository import (
     remove_group_member,
     set_group_mute_state,
     set_group_primary_agent,
-    upsert_http_agent_session,
     update_group_name,
 )
 from api.group_models import (
@@ -616,7 +615,7 @@ class GroupService:
                     default_timeout_sec=180,
                 ),
                 "reset_session": bool(metadata and metadata.get("resetSession")),
-                "system_prompt": _external_agent_session_prompt(
+                "identity_prompt": _external_agent_session_prompt(
                     agent_info,
                     is_private_chat=bool(metadata and metadata.get("is_private_chat")),
                 ),
@@ -716,17 +715,6 @@ class GroupService:
         is_private_chat = bool(metadata and metadata.get("is_private_chat"))
         session_prompt = _external_http_registry_prompt(agent_info)
         session_key = _external_http_session_key(agent_info) if global_name else ""
-        if self.group_db_path and global_name and session_key and session_prompt:
-            should_inject = await upsert_http_agent_session(
-                self.group_db_path,
-                session_key=session_key,
-                global_name=global_name,
-                prompt_text=session_prompt,
-                transport="http",
-                now_ts=time.time(),
-            )
-            if should_inject:
-                message = f"{session_prompt}\n\n{message}".strip()
 
         if platform == "openclaw" and global_name:
             headers["x-openclaw-session-key"] = session_key
@@ -784,6 +772,10 @@ class GroupService:
             "headers": headers,
             "body": body,
             "timeout": 60,
+            "identity_prompt": session_prompt,
+            "identity_global_name": global_name,
+            "group_db_path": self.group_db_path or "",
+            "identity_injection_mode": "prepend_user",
         }
         options = attach_history_context(
             options,

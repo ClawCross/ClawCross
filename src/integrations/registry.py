@@ -10,6 +10,7 @@ from integrations.base import (
     SendToAgentRequest,
     SendToAgentResult,
 )
+from integrations.agent_session import prepare_agent_session
 from utils.external_agent_history import get_store, history_options_disabled
 
 if TYPE_CHECKING:
@@ -40,6 +41,7 @@ async def send_to_agent(request: SendToAgentRequest) -> SendToAgentResult:
     if conn is None:
         return SendToAgentResult(ok=False, error=f"unsupported platform: {key}")
 
+    request, session_state = await prepare_agent_session(request)
     record_history = not history_options_disabled(request.options)
     request_id: str | None = None
     if record_history:
@@ -57,6 +59,9 @@ async def send_to_agent(request: SendToAgentRequest) -> SendToAgentResult:
             request_id = None
 
     result = await conn.send(request)
+    result_meta = dict(result.meta or {})
+    result_meta["agent_session"] = session_state.as_dict()
+    result.meta = result_meta
 
     if record_history and request_id:
         try:
@@ -98,6 +103,7 @@ async def prepare_send_to_agent_stream(request: SendToAgentRequest) -> PreparedA
     if conn is None:
         raise RuntimeError(f"streaming not supported for connect_type: {request.connect_type}")
 
+    request, _session_state = await prepare_agent_session(request)
     prepared = await conn.prepare_stream(request)
 
     if not history_options_disabled(request.options):
