@@ -7689,9 +7689,18 @@ const _chatPinTrackerBoxes = new WeakSet();
 function _ensureChatPinTracker(box) {
     if (!box || _chatPinTrackerBoxes.has(box)) return;
     _chatPinTrackerBoxes.add(box);
+    let lastTop = box.scrollTop;
     box.addEventListener('scroll', () => {
-        const distFromBottom = box.scrollHeight - box.scrollTop - box.clientHeight;
-        _chatUserPinnedToBottom = distFromBottom < 100;
+        const top = box.scrollTop;
+        const distFromBottom = box.scrollHeight - top - box.clientHeight;
+        if (top < lastTop - 1) {
+            // 向上滚动只可能来自用户（程序滚动永远吸底），立即解除吸底，
+            // 不设距离阈值——否则流式期间小幅上滚会被下一个 chunk 拉回。
+            _chatUserPinnedToBottom = false;
+        } else if (distFromBottom < 100) {
+            _chatUserPinnedToBottom = true;
+        }
+        lastTop = top;
     }, { passive: true });
 }
 
@@ -7713,6 +7722,8 @@ function scrollChatToBottom(target = null, options = {}) {
     }
     const apply = () => {
         if (!box.isConnected) return;
+        // 排队中的 rAF/stick-loop 调用也要尊重用户解除吸底（force 路径已提前置 true）
+        if (!_chatUserPinnedToBottom) return;
         const top = Math.max(box.scrollHeight, box.scrollTop, 0);
         if (typeof box.scrollTo === 'function') {
             box.scrollTo({ top, behavior: 'auto' });
