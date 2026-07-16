@@ -107,6 +107,7 @@ const i18n = {
         menu_logout: '🚪 退出',
         // 汉堡菜单 (no emoji, icon is separate)
         hmenu_agents: 'Agents',
+        hmenu_agent_center: 'Agent 中心',
         hmenu_settings: '设置',
         hmenu_openclaw: 'OpenClaw 配置',
         hmenu_new: '新对话',
@@ -114,6 +115,32 @@ const i18n = {
         hmenu_logout: '退出',
         hmenu_lang: '语言',
         hmenu_public: '公开',
+        tab_agent_center: '🧭 Agents',
+        agent_center_kicker: '统一运行控制面',
+        agent_center_title: 'Agent Center',
+        agent_center_refresh_status: '刷新状态',
+        agent_center_kind: '类型',
+        agent_center_all: '全部',
+        agent_center_status_hint: 'External Agent 的 Session 在线不等于正在运行。',
+        agent_center_total: '总数',
+        agent_center_running: '运行中',
+        agent_center_uncertain: '状态待确认',
+        agent_center_empty: '当前筛选条件下没有 Agent',
+        agent_center_public: '公共',
+        agent_center_connection: '连接',
+        agent_center_evidence: '运行判断',
+        agent_center_confirmed: '已确认',
+        agent_center_session_only: '仅 Session',
+        agent_center_stop: '请求停止',
+        agent_center_stop_confirm: '确定向这个 Agent 请求停止？',
+        agent_center_stop_ok: '停止请求已发送',
+        agent_center_stop_none: '当前没有可终止的运行',
+        agent_center_stop_failed: '停止 Agent 失败',
+        agent_center_delete: '删除 Agent',
+        agent_center_delete_confirm: '删除这个 Agent 的运行会话和状态记录？此操作不可撤销。',
+        agent_center_delete_ok: 'Agent 运行会话已删除',
+        agent_center_delete_failed: '删除 Agent 失败',
+        agent_center_load_failed: '加载 Agent 列表失败',
         public_starting: '启动中...',
         public_stopping: '停止中...',
 
@@ -910,6 +937,7 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         menu_logout: '🚪 Logout',
         // Hamburger menu (no emoji, icon is separate)
         hmenu_agents: 'Agents',
+        hmenu_agent_center: 'Agent Center',
         hmenu_settings: 'Settings',
         hmenu_openclaw: 'OpenClaw Config',
         hmenu_new: 'New Chat',
@@ -917,6 +945,32 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         hmenu_logout: 'Logout',
         hmenu_lang: 'Language',
         hmenu_public: 'Public',
+        tab_agent_center: '🧭 Agents',
+        agent_center_kicker: 'Unified runtime control plane',
+        agent_center_title: 'Agent Center',
+        agent_center_refresh_status: 'Refresh status',
+        agent_center_kind: 'Kind',
+        agent_center_all: 'All',
+        agent_center_status_hint: 'An online External Agent session does not prove that it is running.',
+        agent_center_total: 'Total',
+        agent_center_running: 'Running',
+        agent_center_uncertain: 'Uncertain',
+        agent_center_empty: 'No agents match the current filters',
+        agent_center_public: 'Public',
+        agent_center_connection: 'Connection',
+        agent_center_evidence: 'Run evidence',
+        agent_center_confirmed: 'Confirmed',
+        agent_center_session_only: 'Session only',
+        agent_center_stop: 'Request stop',
+        agent_center_stop_confirm: 'Request this Agent to stop?',
+        agent_center_stop_ok: 'Stop request sent',
+        agent_center_stop_none: 'No active run was found',
+        agent_center_stop_failed: 'Failed to stop Agent',
+        agent_center_delete: 'Delete Agent',
+        agent_center_delete_confirm: 'Delete this Agent runtime session and status record? This cannot be undone.',
+        agent_center_delete_ok: 'Agent runtime session deleted',
+        agent_center_delete_failed: 'Failed to delete Agent',
+        agent_center_load_failed: 'Failed to load Agent catalog',
         public_starting: 'Starting...',
         public_stopping: 'Stopping...',
 
@@ -1792,6 +1846,228 @@ let pendingImages = []; // [{base64: "data:image/...", name: "file.jpg"}, ...]
 let pendingFiles = [];  // [{name: "data.csv", content: "...(text content)"}, ...]
 let pendingAudios = []; // [{base64: "data:audio/...", name: "recording.wav", format: "wav"}, ...]
 let isRecording = false;
+
+let agentCenterAgents = [];
+let agentCenterLoading = false;
+
+function agentCenterEscape(value) {
+    return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function agentCenterStatusClass(status) {
+    const normalized = String(status || 'unknown').toLowerCase();
+    return /^[a-z_-]+$/.test(normalized) ? normalized : 'unknown';
+}
+
+function setAgentCenterNotice(message, isError = false) {
+    const notice = document.getElementById('agent-center-notice');
+    if (!notice) return;
+    notice.textContent = message || t('agent_center_status_hint');
+    notice.classList.toggle('agent-center-error', Boolean(isError));
+}
+
+function updateAgentCenterTeamFilter() {
+    const select = document.getElementById('agent-center-team-filter');
+    if (!select) return;
+    const previous = select.value;
+    const teams = [...new Set(agentCenterAgents.flatMap(agent => Array.isArray(agent.teams) ? agent.teams : []))]
+        .filter(Boolean)
+        .sort((a, b) => String(a).localeCompare(String(b)));
+    select.innerHTML = `<option value="">${agentCenterEscape(t('agent_center_all'))}</option>` + teams
+        .map(team => `<option value="${agentCenterEscape(team)}">${agentCenterEscape(team)}</option>`)
+        .join('');
+    if (teams.includes(previous)) select.value = previous;
+}
+
+function renderAgentCenterSummary() {
+    const summary = document.getElementById('agent-center-summary');
+    if (!summary) return;
+    const running = agentCenterAgents.filter(agent => ['running', 'queued', 'cancelling'].includes(String(agent.status || '').toLowerCase())).length;
+    const uncertain = agentCenterAgents.filter(agent => agent.running_known === false).length;
+    summary.innerHTML = `
+        <span class="agent-center-stat">${agentCenterEscape(t('agent_center_total'))} <strong>${agentCenterAgents.length}</strong></span>
+        <span class="agent-center-stat">${agentCenterEscape(t('agent_center_running'))} <strong>${running}</strong></span>
+        <span class="agent-center-stat">${agentCenterEscape(t('agent_center_uncertain'))} <strong>${uncertain}</strong></span>
+    `;
+}
+
+function renderAgentCenterGrid() {
+    const grid = document.getElementById('agent-center-grid');
+    if (!grid) return;
+    if (agentCenterLoading) {
+        grid.innerHTML = `<div class="agent-center-empty">${agentCenterEscape(t('loading'))}</div>`;
+        return;
+    }
+    const kind = document.getElementById('agent-center-kind-filter')?.value || '';
+    const team = document.getElementById('agent-center-team-filter')?.value || '';
+    const rows = agentCenterAgents.filter(agent => {
+        if (kind && agent.kind !== kind) return false;
+        return !team || (Array.isArray(agent.teams) && agent.teams.includes(team));
+    });
+    if (!rows.length) {
+        grid.innerHTML = `<div class="agent-center-empty">${agentCenterEscape(t('agent_center_empty'))}</div>`;
+        return;
+    }
+
+    grid.innerHTML = rows.map(agent => {
+        const status = String(agent.status || 'unknown').toLowerCase();
+        const teams = Array.isArray(agent.teams) && agent.teams.length ? agent.teams : [];
+        const teamLabel = teams.length ? teams.join(', ') : t('agent_center_public');
+        const platform = agent.platform || agent.transport || '-';
+        const connection = agent.connection_status || '-';
+        const actions = Array.isArray(agent.supported_actions) ? agent.supported_actions : [];
+        const canRequestStop = actions.includes('cancel') || actions.includes('stop');
+        const stopButton = canRequestStop ? `
+            <button class="agent-center-btn" type="button"
+                data-kind="${agentCenterEscape(agent.kind || '')}"
+                data-identity="${agentCenterEscape(agent.identity || '')}"
+                onclick="controlAgentFromCenter(this)">${agentCenterEscape(t('agent_center_stop'))}</button>
+        ` : '';
+        const deleteButton = actions.includes('delete') ? `
+            <button class="agent-center-btn danger" type="button"
+                data-kind="${agentCenterEscape(agent.kind || '')}"
+                data-identity="${agentCenterEscape(agent.identity || '')}"
+                onclick="deleteAgentFromCenter(this)">${agentCenterEscape(t('agent_center_delete'))}</button>
+        ` : '';
+        return `
+            <article class="agent-center-card">
+                <div class="agent-center-card-top">
+                    <div class="agent-center-identity">
+                        <div class="agent-center-name" title="${agentCenterEscape(agent.name || agent.identity)}">${agentCenterEscape(agent.name || agent.identity)}</div>
+                        <div class="agent-center-id" title="${agentCenterEscape(agent.identity)}">${agentCenterEscape(agent.identity)}</div>
+                    </div>
+                    <span class="agent-center-status ${agentCenterStatusClass(status)}">${agentCenterEscape(status)}</span>
+                </div>
+                <div class="agent-center-badges">
+                    <span class="agent-center-badge kind-${agentCenterStatusClass(agent.kind)}">${agentCenterEscape(agent.kind || 'agent')}</span>
+                    <span class="agent-center-badge">${agentCenterEscape(platform)}</span>
+                    ${teams.slice(0, 2).map(item => `<span class="agent-center-badge">${agentCenterEscape(item)}</span>`).join('')}
+                    ${teams.length > 2 ? `<span class="agent-center-badge">+${teams.length - 2}</span>` : ''}
+                </div>
+                <dl class="agent-center-meta">
+                    <dt>Team</dt><dd title="${agentCenterEscape(teamLabel)}">${agentCenterEscape(teamLabel)}</dd>
+                    <dt>${agentCenterEscape(t('agent_center_connection'))}</dt><dd>${agentCenterEscape(connection)}</dd>
+                    <dt>${agentCenterEscape(t('agent_center_evidence'))}</dt><dd>${agentCenterEscape(agent.running_known === false ? t('agent_center_session_only') : t('agent_center_confirmed'))}</dd>
+                    <dt>Persona</dt><dd>${agentCenterEscape(agent.identity_injection_policy || '-')}</dd>
+                </dl>
+                ${(stopButton || deleteButton) ? `<div class="agent-center-card-actions">${stopButton}${deleteButton}</div>` : ''}
+            </article>
+        `;
+    }).join('');
+}
+
+async function refreshAgentCenter(refreshExternal = false) {
+    if (agentCenterLoading) return;
+    agentCenterLoading = true;
+    const refreshButton = document.getElementById('agent-center-refresh-btn');
+    if (refreshButton) refreshButton.disabled = true;
+    renderAgentCenterGrid();
+    setAgentCenterNotice(refreshExternal ? t('loading') : t('agent_center_status_hint'));
+    try {
+        const response = await fetch('/proxy_agent_control', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({action: 'list', refresh_external: Boolean(refreshExternal)}),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.status !== 'success') {
+            throw new Error(payload.detail || payload.error || t('agent_center_load_failed'));
+        }
+        agentCenterAgents = Array.isArray(payload.agents) ? payload.agents : [];
+        updateAgentCenterTeamFilter();
+        renderAgentCenterSummary();
+        setAgentCenterNotice(t('agent_center_status_hint'));
+    } catch (error) {
+        agentCenterAgents = [];
+        renderAgentCenterSummary();
+        setAgentCenterNotice(`${t('agent_center_load_failed')}: ${error.message || error}`, true);
+    } finally {
+        agentCenterLoading = false;
+        if (refreshButton) refreshButton.disabled = false;
+        renderAgentCenterGrid();
+    }
+}
+
+async function openAgentCenter() {
+    const modal = document.getElementById('agent-center-modal');
+    if (!modal || !currentUserId) return;
+    modal.style.display = 'flex';
+    await refreshAgentCenter(false);
+}
+
+function closeAgentCenter() {
+    const modal = document.getElementById('agent-center-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+async function controlAgentFromCenter(button) {
+    const identity = button?.dataset?.identity || '';
+    const kind = button?.dataset?.kind || '';
+    if (!identity || !kind || !window.confirm(t('agent_center_stop_confirm'))) return;
+    button.disabled = true;
+    try {
+        const response = await fetch('/proxy_agent_control', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                action: 'cancel',
+                kind,
+                identity,
+                refresh_external: false,
+            }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.status === 'unsupported' || payload.status === 'error') {
+            throw new Error(payload.reason || payload.detail || payload.error || t('agent_center_stop_failed'));
+        }
+        setAgentCenterNotice(payload.cancelled === false ? t('agent_center_stop_none') : t('agent_center_stop_ok'));
+        await refreshAgentCenter(false);
+    } catch (error) {
+        setAgentCenterNotice(`${t('agent_center_stop_failed')}: ${error.message || error}`, true);
+    } finally {
+        button.disabled = false;
+    }
+}
+
+async function deleteAgentFromCenter(button) {
+    const identity = button?.dataset?.identity || '';
+    const kind = button?.dataset?.kind || '';
+    if (!identity || !kind || !window.confirm(t('agent_center_delete_confirm'))) return;
+    button.disabled = true;
+    try {
+        const response = await fetch('/proxy_agent_control', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                action: 'delete',
+                kind,
+                identity,
+                refresh_external: false,
+            }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.status === 'unsupported' || payload.status === 'error') {
+            throw new Error(payload.reason || payload.detail || payload.error || t('agent_center_delete_failed'));
+        }
+        setAgentCenterNotice(t('agent_center_delete_ok'));
+        await refreshAgentCenter(false);
+    } catch (error) {
+        setAgentCenterNotice(`${t('agent_center_delete_failed')}: ${error.message || error}`, true);
+    } finally {
+        button.disabled = false;
+    }
+}
+
+document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && document.getElementById('agent-center-modal')?.style.display !== 'none') {
+        closeAgentCenter();
+    }
+});
 
 // OpenAI API 配置（前端不再存储 authToken，认证由服务端 session 完成）
 const TEXT_EXTENSIONS = new Set([

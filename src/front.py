@@ -33,6 +33,7 @@ from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 from utils.internal_alarm_utils import export_team_alarms, restore_team_alarms
 from services.llm_factory import create_chat_model, extract_text, infer_provider
 from routes.front_group_routes import register_group_routes
+from routes.front_agent_routes import register_agent_routes
 from routes.front_oasis_routes import register_oasis_routes
 from routes.front_session_routes import register_session_routes
 from routes.front_webot_routes import register_webot_routes
@@ -318,6 +319,11 @@ def login_token_expire_ts(token: str) -> int | None:
 
 
 register_group_routes(app, port_agent=PORT_AGENT, internal_token=INTERNAL_TOKEN)
+register_agent_routes(
+    app,
+    port_agent=PORT_AGENT,
+    internal_token=INTERNAL_TOKEN,
+)
 register_oasis_routes(app, oasis_base_url=OASIS_BASE_URL)
 register_session_routes(
     app,

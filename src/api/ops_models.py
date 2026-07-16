@@ -7,6 +7,7 @@ Ops 操作服务的数据模型模块
 - TTSRequest：文本转语音请求
 - ACPControlRequest：ACP 外部 agent 控制请求
 - ACPStatusRequest：ACP agent 状态查询请求
+- AgentControlRequest：统一列出、查询和控制各类 agent
 """
 
 from typing import Any, Literal, Optional
@@ -62,16 +63,35 @@ class ACPStatusRequest(BaseModel):
     team: str
     agent_name: str = ""                   # 为空则查所有外部 agent
 
+
+class AgentControlRequest(BaseModel):
+    """统一 Agent 控制面请求。
+
+    ``identity`` 沿用各运行时已有身份：Internal 使用 session，External
+    使用 global_name，WeBot 子 Agent 使用 agent_id。list 时无需 identity。
+    """
+
+    user_id: str
+    password: str = ""
+    action: Literal["list", "status", "cancel", "stop", "new", "delete"] = "list"
+    kind: Literal["", "internal", "external", "subagent"] = ""
+    identity: str = ""
+    team: str = ""
+    refresh_external: bool = True
+
+
 class SessionsListRequest(BaseModel):
     """列出所有 acpx sessions 和 http_agent_sessions。"""
     user_id: str
     password: str = ""
+
 
 class SessionsDeleteRequest(BaseModel):
     """删除指定的 http_agent_session 记录。"""
     user_id: str
     password: str = ""
     session_key: str
+
 
 class SessionsCloseRequest(BaseModel):
     """关闭指定的 acpx session。"""
