@@ -119,7 +119,14 @@ const i18n = {
         agent_center_kicker: '探索 · 观察 · 培养',
         agent_center_title: 'Agent 图鉴',
         agent_center_refresh_status: '刷新状态',
+        agent_center_search: '查找',
+        agent_center_search_placeholder: '名称、ID、标签',
         agent_center_kind: '类型',
+        agent_center_status: '状态',
+        agent_center_active: '运行中',
+        agent_center_idle: '空闲',
+        agent_center_finished: '已结束',
+        agent_center_attention: '异常/待确认',
         agent_center_all: '全部',
         agent_center_status_hint: 'External Agent 的 Session 在线不等于正在运行。',
         agent_center_total: '总数',
@@ -967,7 +974,14 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         agent_center_kicker: 'Discover · Observe · Grow',
         agent_center_title: 'Agent Field Guide',
         agent_center_refresh_status: 'Refresh status',
+        agent_center_search: 'Find',
+        agent_center_search_placeholder: 'Name, ID, or tag',
         agent_center_kind: 'Kind',
+        agent_center_status: 'Status',
+        agent_center_active: 'Active',
+        agent_center_idle: 'Idle',
+        agent_center_finished: 'Finished',
+        agent_center_attention: 'Attention',
         agent_center_all: 'All',
         agent_center_status_hint: 'An online External Agent session does not prove that it is running.',
         agent_center_total: 'Total',
@@ -1941,10 +1955,23 @@ function renderAgentCenterGrid() {
         return;
     }
     const kind = document.getElementById('agent-center-kind-filter')?.value || '';
+    const statusFilter = document.getElementById('agent-center-status-filter')?.value || '';
     const team = document.getElementById('agent-center-team-filter')?.value || '';
+    const query = (document.getElementById('agent-center-search-filter')?.value || '').trim().toLocaleLowerCase();
     const rows = agentCenterAgents.filter(agent => {
         if (kind && agent.kind !== kind) return false;
-        return !team || (Array.isArray(agent.teams) && agent.teams.includes(team));
+        if (team && !(Array.isArray(agent.teams) && agent.teams.includes(team))) return false;
+        const status = String(agent.status || 'unknown').toLowerCase();
+        if (statusFilter === 'active' && !['running', 'queued', 'cancelling'].includes(status)) return false;
+        if (statusFilter === 'idle' && status !== 'idle') return false;
+        if (statusFilter === 'finished' && !['completed', 'cancelled'].includes(status)) return false;
+        if (statusFilter === 'attention' && !['unknown', 'failed', 'unavailable'].includes(status) && agent.running_known !== false) return false;
+        if (query) {
+            const searchable = [agent.name, agent.identity, agent.tag, agent.kind, agent.platform, agent.transport, ...(agent.teams || [])]
+                .filter(Boolean).join(' ').toLocaleLowerCase();
+            if (!searchable.includes(query)) return false;
+        }
+        return true;
     });
     if (!rows.length) {
         grid.innerHTML = `<div class="agent-center-empty">${agentCenterEscape(t('agent_center_empty'))}</div>`;
@@ -1969,20 +1996,20 @@ function renderAgentCenterGrid() {
                 onclick="openAgentCenterDetail(this.dataset.kind, this.dataset.identity)"
                 onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openAgentCenterDetail(this.dataset.kind,this.dataset.identity)}">
                 <div class="agent-center-card-portrait ${agentCenterStatusClass(agent.kind)}">
-                    <span class="agent-center-card-number">NO.${String(index).padStart(3, '0')}</span>
                     <span class="agent-center-card-sigil">${sigil}</span>
-                    <span class="agent-center-status ${agentCenterStatusClass(status)}" style="position:absolute;right:9px;top:8px;z-index:2;">${agentCenterEscape(status)}</span>
                 </div>
                 <div class="agent-center-card-body">
                     <div class="agent-center-card-top">
                         <div class="agent-center-identity">
+                            <div class="agent-center-card-number">NO.${String(index).padStart(3, '0')} · ${agentCenterEscape(agent.kind || 'agent')}</div>
                             <div class="agent-center-name" title="${agentCenterEscape(agent.name || agent.identity)}">${agentCenterEscape(agent.name || agent.identity)}</div>
                             <div class="agent-center-id" title="${agentCenterEscape(agent.identity)}">${agentCenterEscape(agent.identity)}</div>
                         </div>
+                        <span class="agent-center-status ${agentCenterStatusClass(status)}">${agentCenterEscape(status)}</span>
                     </div>
                     <div class="agent-center-badges">
-                        <span class="agent-center-badge kind-${agentCenterStatusClass(agent.kind)}">${agentCenterEscape(agent.kind || 'agent')}</span>
                         <span class="agent-center-badge">${agentCenterEscape(platform)}</span>
+                        ${agent.tag ? `<span class="agent-center-badge agent-center-tag" title="Persona">#${agentCenterEscape(agent.tag)}</span>` : ''}
                         ${teams.slice(0, 1).map(item => `<span class="agent-center-badge">${agentCenterEscape(item)}</span>`).join('')}
                     </div>
                     <dl class="agent-center-meta">

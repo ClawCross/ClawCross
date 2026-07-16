@@ -29,7 +29,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
 
     <link rel="stylesheet" href="/static/css/markdown-shared.css">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260716-agent-dex">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260716-agent-dex-filter">
 </head>
 <body class="bg-gray-100 font-sans leading-normal tracking-normal">
 
@@ -1353,6 +1353,12 @@
             <div class="agent-center-toolbar">
                 <div id="agent-center-summary" class="agent-center-summary"></div>
                 <div class="agent-center-filters">
+                    <label class="agent-center-search-label">
+                        <span data-i18n="agent_center_search">查找</span>
+                        <input id="agent-center-search-filter" type="search" autocomplete="off"
+                            data-i18n-placeholder="agent_center_search_placeholder"
+                            placeholder="名称、ID、标签" oninput="renderAgentCenterGrid()">
+                    </label>
                     <label>
                         <span data-i18n="agent_center_kind">类型</span>
                         <select id="agent-center-kind-filter" onchange="renderAgentCenterGrid()">
@@ -1360,6 +1366,16 @@
                             <option value="internal">Internal</option>
                             <option value="external">External</option>
                             <option value="subagent">Subagent</option>
+                        </select>
+                    </label>
+                    <label>
+                        <span data-i18n="agent_center_status">状态</span>
+                        <select id="agent-center-status-filter" onchange="renderAgentCenterGrid()">
+                            <option value="" data-i18n="agent_center_all">全部</option>
+                            <option value="active" data-i18n="agent_center_active">运行中</option>
+                            <option value="idle" data-i18n="agent_center_idle">空闲</option>
+                            <option value="finished" data-i18n="agent_center_finished">已结束</option>
+                            <option value="attention" data-i18n="agent_center_attention">异常/待确认</option>
                         </select>
                     </label>
                     <label>
@@ -1390,7 +1406,7 @@
     <script src="/static/js/orchestration.js?v=20260329-snapshot"></script>
     <script src="/static/js/markdown-shared.js"></script>
     <script src="/static/js/tinyfish-live-shared.js"></script>
-    <script src="/static/js/main.js?v=20260716-agent-dex"></script>
+    <script src="/static/js/main.js?v=20260716-agent-dex-filter"></script>
     <script src="/static/js/oasis-town.bundle.js?v=20260327-humanfix"></script>
     <script src="/static/js/app.js?v=20260327-humanfix"></script>
     <script>
