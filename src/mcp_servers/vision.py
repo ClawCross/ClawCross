@@ -142,7 +142,7 @@ async def attach_image_to_context(
     将本地图片附加到下一次原生多模态模型调用。
 
     这个工具适合在需要直接看图时使用。调用后，MCP 会返回 metadata 文本和原生
-    ImageContent；LangGraph/LangChain MCP adapter 会把图片作为工具结果多模态
+    ImageContent；LangChain MCP adapter 会把图片作为工具结果多模态
     content block 传给下一轮模型。
 
     Args:

@@ -210,7 +210,7 @@ The most important runtime data lives here:
 
 ```text
 data/
-├── agent_checkpoints/        # per-thread LangGraph checkpoint SQLite files
+├── agent_checkpoints/        # per-thread append-only context SQLite files
 ├── group_chat.db
 ├── oasis_graph_memory.db
 ├── webot_subagents.db

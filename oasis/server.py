@@ -41,7 +41,7 @@ if _src_dir not in sys.path:
 from utils.checkpoint_paths import DEFAULT_CHECKPOINT_DB_DIR, checkpoint_store_exists
 from utils.runtime_paths import ENV_FILE, PID_DIR, USER_FILES_DIR
 from utils.checkpoint_repository import (
-    fetch_latest_checkpoint_blob,
+    fetch_thread_message_count,
     list_thread_ids_like,
 )
 
@@ -1311,18 +1311,7 @@ async def list_oasis_sessions(user_id: str = Query("")):
                 sid = thread_id
             tag = sid.split("#")[0] if "#" in sid else sid
 
-            ckpt_row = await fetch_latest_checkpoint_blob(db_path, thread_id)
-            msg_count = 0
-            if ckpt_row:
-                try:
-                    ckpt_blob = ckpt_row[1]
-                    if isinstance(ckpt_blob, (bytes, bytearray)):
-                        ckpt_blob = ckpt_blob.decode("utf-8", errors="ignore")
-                    ckpt_data = json.loads(ckpt_blob) if isinstance(ckpt_blob, str) else {}
-                    messages = ckpt_data.get("channel_values", {}).get("messages", [])
-                    msg_count = len(messages)
-                except Exception:
-                    msg_count = 0
+            msg_count = await fetch_thread_message_count(db_path, thread_id)
 
             sessions.append({
                 "user_id": user_part,

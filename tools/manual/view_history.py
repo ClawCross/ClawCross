@@ -6,7 +6,6 @@
 import argparse
 import asyncio
 import os
-import sqlite3
 import sys
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -14,65 +13,51 @@ SRC_DIR = os.path.join(PROJECT_ROOT, "src")
 if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
 
-from utils.checkpoint_paths import DEFAULT_CHECKPOINT_DB_DIR, checkpoint_store_exists, iter_checkpoint_db_paths
-from utils.routed_checkpoint_saver import ThreadRoutedAsyncSqliteSaver
+from utils.checkpoint_paths import DEFAULT_CHECKPOINT_DB_DIR, checkpoint_store_exists
+from utils.checkpoint_repository import list_thread_ids_like
+from utils.context_store import ContextStore
 
 
 DATABASE_PATH = str(DEFAULT_CHECKPOINT_DB_DIR)
 
 
-def get_all_thread_ids() -> list[str]:
-    """获取所有 thread_id。"""
-    thread_ids: set[str] = set()
-    for path in iter_checkpoint_db_paths(DATABASE_PATH):
-        conn = sqlite3.connect(path)
-        try:
-            cursor = conn.execute("SELECT DISTINCT thread_id FROM checkpoints ORDER BY thread_id")
-            thread_ids.update(row[0] for row in cursor.fetchall())
-        finally:
-            conn.close()
-    return sorted(thread_ids)
+async def get_all_thread_ids() -> list[str]:
+    """获取所有 thread_id（跨 context_messages/agent_state/checkpoints 三代 schema）。"""
+    return await list_thread_ids_like(DATABASE_PATH, "%")
 
 
 async def get_chat_history(thread_id: str, message_limit: int = 50) -> list[dict]:
-    """通过 LangGraph 的 checkpoint saver 正确反序列化消息。"""
-    async with ThreadRoutedAsyncSqliteSaver(DATABASE_PATH) as memory:
-        config = {"configurable": {"thread_id": thread_id}}
-        checkpoint = await memory.aget(config)
+    """通过 ContextStore 读取消息（内部已兼容旧版 LangGraph checkpoint 格式）。"""
+    async with ContextStore(DATABASE_PATH) as store:
+        messages = await store.load_context(thread_id)
 
-        if not checkpoint:
-            return []
+    chat_messages = []
+    for msg in messages:
+        role = getattr(msg, "type", "unknown")
+        content = getattr(msg, "content", "")
+        name = getattr(msg, "name", "")
 
-        channel_values = checkpoint.get("channel_values", {})
-        messages = channel_values.get("messages", [])
+        if isinstance(content, list):
+            content_parts = []
+            for item in content:
+                if isinstance(item, dict):
+                    content_parts.append(item.get("text", str(item)))
+                else:
+                    content_parts.append(str(item))
+            content = "\n".join(content_parts)
 
-        chat_messages = []
-        for msg in messages:
-            role = getattr(msg, "type", "unknown")
-            content = getattr(msg, "content", "")
-            name = getattr(msg, "name", "")
+        if not content:
+            continue
 
-            if isinstance(content, list):
-                content_parts = []
-                for item in content:
-                    if isinstance(item, dict):
-                        content_parts.append(item.get("text", str(item)))
-                    else:
-                        content_parts.append(str(item))
-                content = "\n".join(content_parts)
+        chat_messages.append(
+            {
+                "role": role,
+                "content": content,
+                "name": name,
+            }
+        )
 
-            if not content:
-                continue
-
-            chat_messages.append(
-                {
-                    "role": role,
-                    "content": content,
-                    "name": name,
-                }
-            )
-
-        return chat_messages[-message_limit:]
+    return chat_messages[-message_limit:]
 
 
 def print_messages(messages: list[dict]):
@@ -92,7 +77,7 @@ def print_messages(messages: list[dict]):
 
 async def async_main(args):
     """异步主函数。"""
-    thread_ids = get_all_thread_ids()
+    thread_ids = await get_all_thread_ids()
     if not thread_ids:
         print("数据库中没有任何聊天记录。")
         return

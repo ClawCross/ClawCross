@@ -15,7 +15,7 @@ from typing import Any, Callable
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-from langgraph.errors import GraphRecursionError
+from core.lightweight_agent_runtime import AgentRecursionError
 
 from utils.auth_utils import extract_user_password_session, is_internal_bearer, parse_bearer_parts
 from utils.effort_controller import resolve_default_chat_max_output_tokens
@@ -26,7 +26,7 @@ from api.openai_protocol import OpenAIProtocolHelper
 
 logger = get_logger("openai_service")
 # 默认 500 步上限；可用 env GRAPH_RECURSION_LIMIT 覆盖（调大容长任务，调小更早兜底）。
-# 超出后不抛异常崩溃，由下方 except GraphRecursionError 优雅返回提示。
+# 超出后不崩溃，由下方 AgentRecursionError 分支优雅返回提示。
 _GRAPH_RECURSION_LIMIT = int(os.getenv("GRAPH_RECURSION_LIMIT", "500"))
 _DEFAULT_WEBOT_CHAT_MAX_TOKENS = resolve_default_chat_max_output_tokens()
 
@@ -447,6 +447,7 @@ class OpenAIChatService:
                     "turn_count": 0,
                     "external_tools": ctx.user_input.get("external_tools"),
                     "llm_override": ctx.user_input.get("llm_override"),
+                    "response_format": ctx.user_input.get("response_format"),
                 },
                 ctx.config,
                 durability="exit",
@@ -480,7 +481,7 @@ class OpenAIChatService:
             logger.info("non-stream cancelled user=%s session=%s", ctx.user_id, ctx.session_id)
             await self._patch_cancelled_tool_calls(ctx.config)
             return self.make_openai_response("⚠️ 已终止", model=ctx.model_name)
-        except GraphRecursionError:
+        except AgentRecursionError:
             logger.warning(
                 "non-stream recursion limit hit user=%s session=%s limit=%s",
                 ctx.user_id, ctx.session_id, _GRAPH_RECURSION_LIMIT,
@@ -616,6 +617,19 @@ class OpenAIChatService:
                             await queue.put("data: [DONE]\n\n")
                             return
 
+                        # Fallback: some call paths never fire on_chat_model_stream
+                        # token callbacks (e.g. the model was invoked via a plain
+                        # ainvoke() without provider-level token streaming), leaving
+                        # collected_tokens empty even though a real reply exists in
+                        # the final state. Emit it once so the client isn't left
+                        # with an empty completion.
+                        if not collected_tokens and isinstance(last_msg_item, AIMessage):
+                            fallback_text = self.extract_text(last_msg_item.content)
+                            if fallback_text:
+                                await queue.put(self.make_openai_chunk(
+                                    fallback_text, model=ctx.model_name, completion_id=completion_id
+                                ))
+
                     await queue.put(self.make_openai_chunk(
                         "", model=ctx.model_name, finish_reason="stop", completion_id=completion_id
                     ))
@@ -634,7 +648,7 @@ class OpenAIChatService:
                         "", model=ctx.model_name, finish_reason="stop", completion_id=completion_id
                     ))
                     await queue.put("data: [DONE]\n\n")
-                except GraphRecursionError:
+                except AgentRecursionError:
                     logger.warning(
                         "stream recursion limit hit user=%s session=%s limit=%s",
                         ctx.user_id, ctx.session_id, _GRAPH_RECURSION_LIMIT,
@@ -752,6 +766,8 @@ class OpenAIChatService:
         # Per-request LLM model override (from OASIS SessionExpert)
         if req.llm_override:
             user_input["llm_override"] = req.llm_override
+        if req.response_format:
+            user_input["response_format"] = req.response_format
 
         thread_lock = await self.agent.get_thread_lock(thread_id)
         ctx = OpenAIExecutionContext(

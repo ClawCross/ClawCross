@@ -127,7 +127,7 @@ def save_context_compaction(
     summary_token_estimate: int,
     metadata: dict[str, Any] | None = None,
 ) -> ContextCompactionRecord:
-    """Persist compaction state in the same per-thread DB as LangGraph checkpoints."""
+    """Persist compaction metadata beside the per-thread conversation context."""
     candidates = candidate_checkpoint_db_paths_for_thread(store_path, thread_id)
     path = candidates[0] if candidates else checkpoint_db_path_for_thread(thread_id, store_path)
     now = _utc_now()
@@ -207,17 +207,18 @@ async def list_thread_ids_like(db_path: str, pattern: str) -> list[str]:
     thread_ids: set[str] = set()
     for path in iter_checkpoint_db_paths(db_path):
         async with aiosqlite.connect(path) as db:
-            try:
-                cursor = await db.execute(
-                    "SELECT DISTINCT thread_id FROM checkpoints WHERE thread_id LIKE ? ORDER BY thread_id",
-                    (pattern,),
-                )
-                rows = await cursor.fetchall()
-            except sqlite3.OperationalError as exc:
-                if _is_missing_table_error(exc):
-                    continue
-                raise
-        thread_ids.update(row[0] for row in rows)
+            for table in ("context_messages", "agent_state", "checkpoints"):
+                try:
+                    cursor = await db.execute(
+                        f"SELECT DISTINCT thread_id FROM {table} WHERE thread_id LIKE ? ORDER BY thread_id",
+                        (pattern,),
+                    )
+                    rows = await cursor.fetchall()
+                except sqlite3.OperationalError as exc:
+                    if _is_missing_table_error(exc):
+                        continue
+                    raise
+                thread_ids.update(row[0] for row in rows)
     return sorted(thread_ids)
 
 
@@ -233,6 +234,59 @@ async def fetch_thread_checkpoint_times(
         first_checkpoint_id = ""
         latest_checkpoint_id = ""
         async with aiosqlite.connect(path) as db:
+            try:
+                cursor = await db.execute(
+                    "SELECT MIN(sequence), MAX(sequence), MIN(created_at), MAX(created_at) "
+                    "FROM context_messages WHERE thread_id = ?",
+                    (thread_id,),
+                )
+                context_row = await cursor.fetchone()
+            except sqlite3.OperationalError as exc:
+                if not _is_missing_table_error(exc):
+                    raise
+                context_row = None
+            if context_row and context_row[0] is not None:
+                created_at = str(context_row[2] or "")
+                updated_at = str(context_row[3] or "")
+                try:
+                    created_ts = datetime.fromisoformat(created_at).timestamp()
+                    updated_ts = datetime.fromisoformat(updated_at).timestamp()
+                except ValueError:
+                    pass
+                return {
+                    "created_at": created_at,
+                    "updated_at": updated_at,
+                    "created_at_ts": created_ts,
+                    "updated_at_ts": updated_ts,
+                    "first_checkpoint_id": str(context_row[0]),
+                    "latest_checkpoint_id": str(context_row[1]),
+                }
+            try:
+                cursor = await db.execute(
+                    "SELECT checkpoint_id, created_at, updated_at FROM agent_state WHERE thread_id = ?",
+                    (thread_id,),
+                )
+                state_row = await cursor.fetchone()
+            except sqlite3.OperationalError as exc:
+                if not _is_missing_table_error(exc):
+                    raise
+                state_row = None
+            if state_row:
+                created_at = str(state_row[1] or "")
+                updated_at = str(state_row[2] or "")
+                try:
+                    created_ts = datetime.fromisoformat(created_at).timestamp()
+                    updated_ts = datetime.fromisoformat(updated_at).timestamp()
+                except ValueError:
+                    pass
+                return {
+                    "created_at": created_at,
+                    "updated_at": updated_at,
+                    "created_at_ts": created_ts,
+                    "updated_at_ts": updated_ts,
+                    "first_checkpoint_id": str(state_row[0] or ""),
+                    "latest_checkpoint_id": str(state_row[0] or ""),
+                }
             try:
                 cursor = await db.execute(
                     "SELECT checkpoint_id FROM checkpoints WHERE thread_id = ? ORDER BY ROWID ASC LIMIT 1",
@@ -285,15 +339,67 @@ async def fetch_latest_checkpoint_blob(
     return None
 
 
+async def fetch_thread_message_count(db_path: str, thread_id: str) -> int:
+    """Return how many messages are recorded for a thread, across schema generations."""
+    for path in candidate_checkpoint_db_paths_for_thread(db_path, thread_id):
+        async with aiosqlite.connect(path) as db:
+            try:
+                cursor = await db.execute(
+                    "SELECT COUNT(*) FROM context_messages WHERE thread_id = ?",
+                    (thread_id,),
+                )
+                row = await cursor.fetchone()
+            except sqlite3.OperationalError as exc:
+                if not _is_missing_table_error(exc):
+                    raise
+                row = None
+            if row and row[0]:
+                return int(row[0])
+
+            try:
+                cursor = await db.execute(
+                    "SELECT state_json FROM agent_state WHERE thread_id = ?",
+                    (thread_id,),
+                )
+                row = await cursor.fetchone()
+            except sqlite3.OperationalError as exc:
+                if not _is_missing_table_error(exc):
+                    raise
+                row = None
+            if row and row[0]:
+                with suppress(Exception):
+                    payload = json.loads(row[0])
+                    return len(payload.get("messages") or [])
+
+            try:
+                cursor = await db.execute(
+                    "SELECT checkpoint FROM checkpoints WHERE thread_id = ? ORDER BY ROWID DESC LIMIT 1",
+                    (thread_id,),
+                )
+                row = await cursor.fetchone()
+            except sqlite3.OperationalError as exc:
+                if not _is_missing_table_error(exc):
+                    raise
+                row = None
+            if row and row[0]:
+                with suppress(Exception):
+                    blob = row[0]
+                    if isinstance(blob, (bytes, bytearray)):
+                        blob = blob.decode("utf-8", errors="ignore")
+                    data = json.loads(blob) if isinstance(blob, str) else {}
+                    return len(data.get("channel_values", {}).get("messages", []))
+    return 0
+
+
 async def delete_thread_records(db_path: str, thread_id: str) -> None:
-    """删除指定 thread 在 checkpoints/writes 表中的所有记录。
+    """删除指定 thread 的上下文及遗留 checkpoint 记录。
 
     :param db_path: SQLite 数据库路径
     :param thread_id: 要删除的线程 ID
     """
     for path in candidate_checkpoint_db_paths_for_thread(db_path, thread_id):
         async with aiosqlite.connect(path) as db:
-            for table in ("checkpoints", "writes"):
+            for table in ("context_messages", "agent_state", "checkpoints", "writes"):
                 try:
                     await db.execute(f"DELETE FROM {table} WHERE thread_id = ?", (thread_id,))
                 except sqlite3.OperationalError as exc:
@@ -304,14 +410,14 @@ async def delete_thread_records(db_path: str, thread_id: str) -> None:
 
 
 async def delete_thread_records_like(db_path: str, pattern: str) -> None:
-    """按 LIKE 模式删除 checkpoints/writes 记录。
+    """按 LIKE 模式删除上下文及遗留 checkpoint 记录。
 
     :param db_path: SQLite 数据库路径
     :param pattern: LIKE 模式（如 "user#%"）
     """
     for path in iter_checkpoint_db_paths(db_path):
         async with aiosqlite.connect(path) as db:
-            for table in ("checkpoints", "writes"):
+            for table in ("context_messages", "agent_state", "checkpoints", "writes"):
                 try:
                     await db.execute(f"DELETE FROM {table} WHERE thread_id LIKE ?", (pattern,))
                 except sqlite3.OperationalError as exc:
@@ -342,6 +448,8 @@ async def _maybe_delete_empty_checkpoint_db(path: Path, store_path: str) -> bool
     async with aiosqlite.connect(path) as db:
         total_rows = await _table_row_count(db, "checkpoints")
         total_rows += await _table_row_count(db, "writes")
+        total_rows += await _table_row_count(db, "agent_state")
+        total_rows += await _table_row_count(db, "context_messages")
 
     if total_rows > 0:
         return False
@@ -371,9 +479,8 @@ async def _maybe_vacuum_on_free_page_ratio(db: aiosqlite.Connection) -> bool:
 async def purge_old_checkpoints(db_path: str, thread_id: str, keep: int = 1) -> int:
     """清理指定 thread 的旧 checkpoint，只保留最近 `keep` 个。
 
-    LangGraph 的 AsyncSqliteSaver 每次 graph 执行都会写入新的 checkpoint，
-    随着对话进行，checkpoint 数量会无限增长。此函数删除旧的 checkpoint 及其
-    关联的 writes 记录，只保留最新的 `keep` 个。
+    轻量状态表始终只有一行，因此无需清理；此函数仍会清理升级前遗留的
+    LangGraph checkpoint/writes 记录，只保留最新的 `keep` 个。
 
     :param db_path: SQLite 数据库路径
     :param thread_id: 线程 ID
@@ -397,6 +504,9 @@ async def purge_old_checkpoints(db_path: str, thread_id: str, keep: int = 1) -> 
 async def _purge_old_checkpoints_file(db_path: str, thread_id: str, keep: int = 1) -> int:
     deleted = 0
     async with aiosqlite.connect(db_path) as db:
+        if await _table_row_count(db, "context_messages") or await _table_row_count(db, "agent_state"):
+            # Context messages are append-only history, not disposable checkpoints.
+            return 0
         try:
             # 找出该 thread 的所有 checkpoint_id，按 checkpoint_id 倒序排列
             # （LangGraph 的 checkpoint_id 是递增的 UUID/时间戳，越新越大）
