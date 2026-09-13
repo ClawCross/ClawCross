@@ -5,10 +5,11 @@ This document summarizes the runtime-related databases used by Clawcross, what t
 ## Database Roles
 
 - `data/agent_checkpoints/*.db`
-  - Primary LangGraph checkpoint store.
+  - Primary append-only conversation context store.
   - One SQLite file per `thread_id` / session.
-  - Main tables: `checkpoints`, `writes`.
-  - Purpose: persist graph state/checkpoint history without forcing all sessions
+  - Main table: `context_messages` (one row per message); legacy `agent_state`,
+    `checkpoints`, and `writes` tables may remain after an upgrade.
+  - Purpose: persist conversation context without forcing all sessions
     to contend on one shared SQLite writer.
 
 - `data/webot_runtime.db`

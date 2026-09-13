@@ -24,7 +24,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 class InsightsEngine:
-    """Analyze session history from the LangGraph checkpoint DB."""
+    """Analyze session history from persisted trajectories and agent state."""
 
     def __init__(self, db_path: str | Path | None = None):
         self._db_path = str(db_path or (DATA_DIR / "agent_checkpoints"))

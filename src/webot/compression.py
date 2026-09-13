@@ -7,7 +7,7 @@ Design goals:
   messages[compacted_until:] stays byte-stable; new turns only append.
 - Real summarization: when triggered, call an LLM to fold the segment
   into a capped-length summary. Mechanical fallback if LLM unavailable.
-- No segment duplication on disk: LangGraph state already keeps every
+- No segment duplication on disk: persistent agent state already keeps every
   original message, so audit replay reads from there using compacted_until.
 - Low frequency: trigger only when accumulated tokens cross a high
   threshold (default 75% of history budget) AND enough new messages
@@ -534,10 +534,10 @@ def apply_compression(
       2. Truncate to the dynamic char cap if the LLM returned too much.
       3. Persist (summary, compacted_until) to sqlite via save_context_compaction.
 
-    The full LangGraph state still holds every original message, so the
+    The append-only context store still holds every original message, so the
     folded segment is not duplicated to disk — call sites that need to audit
     "what went into this compression" can replay ``messages[current_until:boundary]``
-    from langgraph using the stored ``compacted_until``.
+    from agent state using the stored ``compacted_until``.
 
     When not triggered, returns the current view unchanged and writes nothing.
     """

@@ -18,6 +18,7 @@ Security:
 
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 import subprocess
@@ -70,7 +71,7 @@ def parse_context_references(message: str) -> list[tuple[str, str]]:
     return refs
 
 
-def expand_context_references(
+async def expand_context_references(
     message: str,
     *,
     cwd: str | Path = "",
@@ -114,7 +115,7 @@ def expand_context_references(
             break
 
         try:
-            content = _expand_reference(ref_type, ref_arg, cwd, allowed_root)
+            content = await _expand_reference(ref_type, ref_arg, cwd, allowed_root)
             if content:
                 injected_parts.append(content)
                 total_chars += len(content)
@@ -147,7 +148,7 @@ class SecurityError(Exception):
     pass
 
 
-def _expand_reference(
+async def _expand_reference(
     ref_type: str,
     ref_arg: str,
     cwd: Path,
@@ -159,11 +160,11 @@ def _expand_reference(
     elif ref_type == "folder":
         return _expand_folder(ref_arg, cwd, allowed_root)
     elif ref_type == "diff":
-        return _expand_git_diff(cwd)
+        return await _expand_git_diff(cwd)
     elif ref_type == "staged":
-        return _expand_git_staged(cwd)
+        return await _expand_git_staged(cwd)
     elif ref_type == "git":
-        return _expand_git_log(ref_arg, cwd)
+        return await _expand_git_log(ref_arg, cwd)
     elif ref_type == "url":
         return _expand_url(ref_arg)
     return ""
@@ -279,16 +280,22 @@ def _build_tree(
     return len(lines)
 
 
-def _expand_git_diff(cwd: Path) -> str:
+async def _run_git(args: list[str], cwd: Path, timeout: float) -> subprocess.CompletedProcess:
+    """Run a git subprocess off the event loop thread (subprocess.run blocks)."""
+    return await asyncio.to_thread(
+        subprocess.run,
+        args,
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+
+
+async def _expand_git_diff(cwd: Path) -> str:
     """Expand @diff — git diff."""
     try:
-        result = subprocess.run(
-            ["git", "diff"],
-            cwd=str(cwd),
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
+        result = await _run_git(["git", "diff"], cwd, timeout=10)
         diff = result.stdout.strip()
         if not diff:
             return "**@diff** — No unstaged changes"
@@ -300,16 +307,10 @@ def _expand_git_diff(cwd: Path) -> str:
         return f"[git diff failed: {e}]"
 
 
-def _expand_git_staged(cwd: Path) -> str:
+async def _expand_git_staged(cwd: Path) -> str:
     """Expand @staged — git diff --staged."""
     try:
-        result = subprocess.run(
-            ["git", "diff", "--staged"],
-            cwd=str(cwd),
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
+        result = await _run_git(["git", "diff", "--staged"], cwd, timeout=10)
         diff = result.stdout.strip()
         if not diff:
             return "**@staged** — No staged changes"
@@ -320,7 +321,7 @@ def _expand_git_staged(cwd: Path) -> str:
         return f"[git diff --staged failed: {e}]"
 
 
-def _expand_git_log(ref_arg: str, cwd: Path) -> str:
+async def _expand_git_log(ref_arg: str, cwd: Path) -> str:
     """Expand @git:N — last N commits with patches."""
     try:
         n = min(int(ref_arg or "3"), 10)
@@ -328,13 +329,7 @@ def _expand_git_log(ref_arg: str, cwd: Path) -> str:
         n = 3
 
     try:
-        result = subprocess.run(
-            ["git", "log", f"-{n}", "--oneline", "-p"],
-            cwd=str(cwd),
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
+        result = await _run_git(["git", "log", f"-{n}", "--oneline", "-p"], cwd, timeout=15)
         log = result.stdout.strip()
         if not log:
             return "**@git** — No commits found"

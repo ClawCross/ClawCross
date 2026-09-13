@@ -88,7 +88,7 @@ data/
 ## API Surface
 
 - `/webot/subagents` – list subagents with runtime status and queued inbox count.
-- `/webot/subagents/history` – fetch LangGraph snapshot messages for a subagent session.
+- `/webot/subagents/history` – fetch persisted snapshot messages for a subagent session.
 - `/webot/subagents/cancel` – cancel background runs gracefully.
 - `/webot/session-runtime` – primary runtime DTO consumed by Studio / CLI / bridge.
 - `/webot/session-mode` – switch execute/agent/plan/review/yolo.

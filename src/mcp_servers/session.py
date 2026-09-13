@@ -17,20 +17,16 @@ Runs as a stdio MCP server, just like the other mcp_*.py tools.
 
 import json
 from mcp.server.fastmcp import FastMCP
-from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from utils.checkpoint_paths import DEFAULT_CHECKPOINT_DB_DIR, checkpoint_store_exists
 from utils.checkpoint_repository import (
-    fetch_latest_checkpoint_blob,
     list_thread_ids_by_prefix,
 )
+from utils.context_store import ContextStore
 
 mcp = FastMCP("Session Management")
 
 # Checkpoint DB root — same as mainagent uses
 _DB_PATH = str(DEFAULT_CHECKPOINT_DB_DIR)
-
-# LangGraph checkpoint serde (msgpack-based, not plain JSON)
-_serde = JsonPlusSerializer()
 
 @mcp.tool()
 async def get_current_session(
@@ -91,19 +87,9 @@ async def list_sessions(
         for thread_id in rows:
             sid = thread_id[len(prefix):]
 
-            ckpt_row = await fetch_latest_checkpoint_blob(_DB_PATH, thread_id)
-            if not ckpt_row:
+            messages = await ContextStore(_DB_PATH).load_context(thread_id)
+            if not messages:
                 continue
-
-            # Parse checkpoint using LangGraph serde (msgpack format)
-            try:
-                ckpt_data = _serde.loads_typed((ckpt_row[0], ckpt_row[1]))
-            except Exception:
-                continue
-
-            # Extract channel_values -> messages from checkpoint
-            channel_values = ckpt_data.get("channel_values", {})
-            messages = channel_values.get("messages", [])
 
             first_human = ""
             last_human = ""

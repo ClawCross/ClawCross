@@ -193,7 +193,7 @@ class SessionService:
             msg_type = type(msg).__name__
             if msg_type == "HumanMessage":
                 result.append({"role": "user", "content": msg.content})
-            elif msg_type == "AIMessage":
+            elif msg_type in ("AIMessage", "AIMessageChunk"):
                 content = self.extract_text(msg.content)
                 tool_calls = []
                 if hasattr(msg, "tool_calls") and msg.tool_calls:
@@ -229,7 +229,7 @@ class SessionService:
         """手动压缩指定会话的历史（绕过自动触发阈值）。
 
         加载会话当前消息，强制跑一次压缩：把可折叠的早期消息折成摘要并落盘。
-        原始消息仍保留在 LangGraph state 中，下一轮推理会自动用压缩后的视图。
+        原始消息仍保留在持久化上下文中，下一轮推理会自动用压缩后的视图。
         返回压缩前/后的 token 估算与节省量。
 
         :param req: 压缩会话请求

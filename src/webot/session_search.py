@@ -53,7 +53,7 @@ def session_search(
         limit=limit,
     )
 
-    # Search checkpoint DB for session metadata
+    # Search persisted conversation context for session metadata
     checkpoint_matches = _search_checkpoints(
         query=query,
         user_id=user_id,
@@ -152,7 +152,7 @@ def _search_checkpoints(
     limit: int,
     db_path: str,
 ) -> list[dict[str, Any]]:
-    """Search checkpoint DB for session metadata."""
+    """Search current context and legacy checkpoint tables for session metadata."""
     import sqlite3
 
     seen_threads: list[tuple[str, str]] = []
@@ -165,16 +165,30 @@ def _search_checkpoints(
         except Exception:
             continue
 
+        threads: list[str] = []
+        try:
+            cursor = conn.execute(
+                "SELECT thread_id, MAX(created_at) AS last_at FROM context_messages "
+                "GROUP BY thread_id ORDER BY last_at DESC LIMIT 200"
+            )
+            threads.extend(row["thread_id"] for row in cursor.fetchall())
+        except Exception:
+            pass
+        try:
+            cursor = conn.execute(
+                "SELECT thread_id FROM agent_state ORDER BY updated_at DESC LIMIT 200"
+            )
+            threads.extend(row["thread_id"] for row in cursor.fetchall())
+        except Exception:
+            pass
         try:
             cursor = conn.execute(
                 "SELECT DISTINCT thread_id FROM checkpoints ORDER BY rowid DESC LIMIT 200"
             )
-            threads = [row["thread_id"] for row in cursor.fetchall()]
+            threads.extend(row["thread_id"] for row in cursor.fetchall())
         except Exception:
-            conn.close()
-            continue
-        finally:
-            conn.close()
+            pass
+        conn.close()
 
         for tid in threads:
             if not tid.startswith(f"{user_id}#"):

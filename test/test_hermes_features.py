@@ -552,7 +552,7 @@ class TestSessionSearch(unittest.TestCase):
 # 6. Context References (@-syntax)
 # ════════════════════════════════════════════════════════════════════
 
-class TestContextReferences(unittest.TestCase):
+class TestContextReferences(unittest.IsolatedAsyncioTestCase):
     def test_parse_file_reference(self):
         from utils.context_references import parse_context_references
         refs = parse_context_references("Look at @file:src/main.py for details")
@@ -580,13 +580,13 @@ class TestContextReferences(unittest.TestCase):
         self.assertEqual(len(refs), 1)
         self.assertEqual(refs[0][0], "url")
 
-    def test_expand_file_reference(self):
+    async def test_expand_file_reference(self):
         from utils.context_references import expand_context_references
         with TemporaryDirectory() as tmpdir:
             test_file = Path(tmpdir) / "test.py"
             test_file.write_text("print('hello')\nprint('world')\n")
 
-            result = expand_context_references(
+            result = await expand_context_references(
                 "@file:test.py",
                 cwd=tmpdir,
                 allowed_root=tmpdir,
@@ -594,13 +594,13 @@ class TestContextReferences(unittest.TestCase):
             self.assertEqual(result.references_expanded, 1)
             self.assertIn("hello", result.expanded_message)
 
-    def test_expand_file_with_line_range(self):
+    async def test_expand_file_with_line_range(self):
         from utils.context_references import expand_context_references
         with TemporaryDirectory() as tmpdir:
             test_file = Path(tmpdir) / "test.py"
             test_file.write_text("line1\nline2\nline3\nline4\nline5\n")
 
-            result = expand_context_references(
+            result = await expand_context_references(
                 "@file:test.py:2-4",
                 cwd=tmpdir,
                 allowed_root=tmpdir,
@@ -608,7 +608,7 @@ class TestContextReferences(unittest.TestCase):
             self.assertIn("line2", result.expanded_message)
             self.assertIn("line4", result.expanded_message)
 
-    def test_expand_folder_reference(self):
+    async def test_expand_folder_reference(self):
         from utils.context_references import expand_context_references
         with TemporaryDirectory() as tmpdir:
             subdir = Path(tmpdir) / "src"
@@ -616,7 +616,7 @@ class TestContextReferences(unittest.TestCase):
             (subdir / "main.py").write_text("main")
             (subdir / "utils.py").write_text("utils")
 
-            result = expand_context_references(
+            result = await expand_context_references(
                 "@folder:src",
                 cwd=tmpdir,
                 allowed_root=tmpdir,
@@ -624,40 +624,40 @@ class TestContextReferences(unittest.TestCase):
             self.assertIn("main.py", result.expanded_message)
             self.assertIn("utils.py", result.expanded_message)
 
-    def test_sensitive_path_blocked(self):
+    async def test_sensitive_path_blocked(self):
         from utils.context_references import expand_context_references
         with TemporaryDirectory() as tmpdir:
             ssh_dir = Path(tmpdir) / ".ssh"
             ssh_dir.mkdir()
             (ssh_dir / "id_rsa").write_text("secret key")
 
-            result = expand_context_references(
+            result = await expand_context_references(
                 "@file:.ssh/id_rsa",
                 cwd=tmpdir,
                 allowed_root=tmpdir,
             )
             self.assertIn("Blocked", result.warnings[0] if result.warnings else "")
 
-    def test_path_traversal_blocked(self):
+    async def test_path_traversal_blocked(self):
         from utils.context_references import expand_context_references
         with TemporaryDirectory() as tmpdir:
-            result = expand_context_references(
+            result = await expand_context_references(
                 "@file:../../etc/passwd",
                 cwd=tmpdir,
                 allowed_root=tmpdir,
             )
             self.assertTrue(len(result.warnings) > 0)
 
-    def test_no_references_passthrough(self):
+    async def test_no_references_passthrough(self):
         from utils.context_references import expand_context_references
-        result = expand_context_references("No references here")
+        result = await expand_context_references("No references here")
         self.assertEqual(result.expanded_message, "No references here")
         self.assertEqual(result.references_found, 0)
 
-    def test_expand_diff(self):
+    async def test_expand_diff(self):
         from utils.context_references import expand_context_references
         # This will work in a git repo
-        result = expand_context_references(
+        result = await expand_context_references(
             "@diff",
             cwd=str(PROJECT_ROOT),
             allowed_root=str(PROJECT_ROOT),

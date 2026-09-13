@@ -625,7 +625,7 @@ class WeBotService:
             msg_type = type(msg).__name__
             if msg_type == "HumanMessage":
                 result.append({"role": "user", "content": msg.content})
-            elif msg_type == "AIMessage":
+            elif msg_type in ("AIMessage", "AIMessageChunk"):
                 content = self.extract_text(msg.content)
                 entry = {"role": "assistant", "content": content}
                 if getattr(msg, "tool_calls", None):

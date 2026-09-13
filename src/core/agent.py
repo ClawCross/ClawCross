@@ -6,11 +6,7 @@ import asyncio
 import contextlib
 import sys
 import logging
-from typing import Annotated, TypedDict, Optional
-
-# LangGraph related
-from langgraph.graph import StateGraph, START, END
-from langgraph.graph.message import add_messages
+from typing import TypedDict, Optional
 
 # Model related
 from langchain_openai import ChatOpenAI
@@ -18,9 +14,10 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_mcp_adapters.client import MultiServerMCPClient
-from langgraph.prebuilt import ToolNode
+from pydantic import ValidationError
 
 from core.agent_runtime_state import TaskRegistry, ThreadStateRegistry
+from core.lightweight_agent_runtime import LightweightAgentRuntime
 from webot.policy import (
     ToolPolicyDecision,
     get_tool_policy,
@@ -40,7 +37,7 @@ from webot.trajectory import auto_trajectory_enabled, save_trajectory
 from webot.llm_call_trace import llm_call_trace_enabled, save_llm_call
 from utils.context_references import expand_context_references
 from utils.runtime_paths import USER_FILES_DIR
-from utils.routed_checkpoint_saver import ThreadRoutedAsyncSqliteSaver
+from utils.context_store import ContextStore
 from services.smart_routing import resolve_turn_route
 from webot.permission_context import (
     create_or_reuse_permission_request,
@@ -285,7 +282,7 @@ async def _wait_for_tool_approval(approval_id: str, user_id: str) -> tuple[bool,
 
 # --- State definition ---
 class AgentState(TypedDict):
-    messages: Annotated[list, add_messages]
+    messages: list
     trigger_source: str
     enabled_tools: Optional[list[str]]
     user_id: Optional[str]
@@ -299,6 +296,92 @@ class AgentState(TypedDict):
     # Dict with optional keys: model, api_key, base_url, provider
     llm_override: Optional[dict]
     max_tokens: Optional[int]
+    # Per-request forced reply format (OpenAI response_format shape, e.g.
+    # {"type": "json_schema", "json_schema": {...}}). Bound additively on top
+    # of the normal tool binding — tools stay available; only providers whose
+    # wire protocol actually supports the kwarg (OpenAI-compatible) apply it.
+    response_format: Optional[dict]
+
+
+# Mirrors langgraph.prebuilt.ToolNode (default handle_tool_errors) so dropping
+# LangGraph does not change what the model sees when a tool call goes wrong.
+_TOOL_MESSAGE_BLOCK_TYPES = (
+    "text", "image_url", "image", "json", "search_result",
+    "custom_tool_call_output", "document", "file",
+)
+_INVALID_TOOL_NAME_ERROR_TEMPLATE = (
+    "Error: {requested_tool} is not a valid tool, try one of [{available_tools}]."
+)
+_TOOL_INVOCATION_ERROR_TEMPLATE = (
+    "Error invoking tool '{tool_name}' with kwargs {tool_kwargs} with error:\n"
+    " {error}\n Please fix the error and try again."
+)
+
+
+def _tool_message_content(output) -> str | list:
+    """Same normalization as LangGraph's msg_content_output."""
+    if isinstance(output, str) or (
+        isinstance(output, list)
+        and all(isinstance(x, dict) and x.get("type") in _TOOL_MESSAGE_BLOCK_TYPES for x in output)
+    ):
+        return output
+    try:
+        return json.dumps(output, ensure_ascii=False)
+    except Exception:
+        return str(output)
+
+
+class DirectToolNode:
+    """Execute independent tool calls concurrently without a graph runtime.
+
+    Error handling matches LangGraph ToolNode's default: an unknown tool name or
+    invalid arguments becomes an error ToolMessage for that call only; any other
+    exception propagates (UserAwareToolNode then reports the whole batch).
+    """
+
+    def __init__(self, tools) -> None:
+        self._tools_by_name = {tool.name: tool for tool in tools}
+
+    async def ainvoke(self, state: AgentState, config: RunnableConfig) -> dict:
+        calls = state["messages"][-1].tool_calls
+
+        async def invoke(tc: dict) -> ToolMessage:
+            tool = self._tools_by_name.get(tc["name"])
+            if tool is None:
+                return ToolMessage(
+                    content=_INVALID_TOOL_NAME_ERROR_TEMPLATE.format(
+                        requested_tool=tc["name"],
+                        available_tools=", ".join(self._tools_by_name),
+                    ),
+                    name=tc["name"],
+                    tool_call_id=tc["id"],
+                    status="error",
+                )
+            try:
+                # Invoke with the full tool call (not bare args) so langchain-core
+                # builds the ToolMessage itself, keeping artifact and status —
+                # MCP tools use response_format="content_and_artifact".
+                output = await tool.ainvoke({**tc, "type": "tool_call"}, config)
+            except ValidationError as exc:
+                error = "\n".join(
+                    f"{'.'.join(str(loc) for loc in err.get('loc', ()))}: {err.get('msg', 'Unknown error')}"
+                    for err in exc.errors()
+                    if err["loc"]
+                )
+                return ToolMessage(
+                    content=_TOOL_INVOCATION_ERROR_TEMPLATE.format(
+                        tool_name=tc["name"], tool_kwargs=tc["args"], error=error,
+                    ),
+                    name=tc["name"],
+                    tool_call_id=tc["id"],
+                    status="error",
+                )
+            if not isinstance(output, ToolMessage):
+                raise TypeError(f"Tool {tc['name']} returned unexpected type: {type(output)}")
+            output.content = _tool_message_content(output.content)
+            return output
+
+        return {"messages": list(await asyncio.gather(*(invoke(tc) for tc in calls)))}
 
 
 class UserAwareToolNode:
@@ -308,7 +391,7 @@ class UserAwareToolNode:
     2. Intercepts calls to disabled tools at runtime, returns error ToolMessage
     """
     def __init__(self, tools, get_mcp_tools_fn, find_internal_session_meta_fn=None):
-        self.tool_node = ToolNode(tools)
+        self.tool_node = DirectToolNode(tools)
         self._get_mcp_tools = get_mcp_tools_fn
         self._find_internal_session_meta_fn = find_internal_session_meta_fn
 
@@ -677,7 +760,7 @@ class UserAwareToolNode:
 
 class TeamAgent:
     """
-    Encapsulates the full LangGraph agent: MCP tool loading, graph building,
+    Encapsulates the lightweight agent runtime: MCP tool loading, loop execution,
     invoke/stream interface, task & tool-state management.
     """
 
@@ -694,8 +777,8 @@ class TeamAgent:
         self._mcp_tools: list = []
         self._agent_app = None
         self._mcp_client: Optional[MultiServerMCPClient] = None
-        self._memory = None
-        self._memory_ctx = None
+        self._context_store = None
+        self._context_store_ctx = None
 
         # Per-thread tool-state cache
         self._task_registry = TaskRegistry()
@@ -1054,10 +1137,10 @@ class TeamAgent:
     # Lifecycle
     # ------------------------------------------------------------------
     async def startup(self):
-        """Initialize MCP client, load tools, build LangGraph workflow."""
+        """Initialize MCP client, load tools, and build the lightweight loop."""
         # 1. Open checkpoint DB
-        self._memory_ctx = ThreadRoutedAsyncSqliteSaver(self._db_path)
-        self._memory = await self._memory_ctx.__aenter__()
+        self._context_store_ctx = ContextStore(self._db_path)
+        self._context_store = await self._context_store_ctx.__aenter__()
 
         # 2. Start MCP servers
         python_command = sys.executable
@@ -1136,25 +1219,23 @@ class TeamAgent:
             "lsp", "workspace_diagnostics",
         })
 
-        # 4. Build LangGraph workflow
+        # 4. Build the fixed model -> tools -> model loop.  A general-purpose
+        # graph engine is unnecessary because ClawCross has no dynamic graph,
+        # joins, interrupts, or parallel graph branches here.
         # 收集所有内部 MCP 工具名称，用于条件路由
         self._internal_tool_names = frozenset(t.name for t in self._mcp_tools)
 
-        workflow = StateGraph(AgentState)
-        workflow.add_node("chatbot", self._call_model)
-        workflow.add_node(
-            "tools",
-            UserAwareToolNode(
-                self._mcp_tools,
-                lambda: self._mcp_tools,
-                find_internal_session_meta_fn=self._find_internal_session_meta,
-            ),
+        tool_node = UserAwareToolNode(
+            self._mcp_tools,
+            lambda: self._mcp_tools,
+            find_internal_session_meta_fn=self._find_internal_session_meta,
         )
-        workflow.add_edge(START, "chatbot")
-        workflow.add_conditional_edges("chatbot", self._should_continue)
-        workflow.add_edge("tools", "chatbot")
-
-        self._agent_app = workflow.compile(checkpointer=self._memory)
+        self._agent_app = LightweightAgentRuntime(
+            call_model=self._call_model,
+            call_tools=tool_node,
+            should_continue=self._should_continue,
+            context_store=self._context_store,
+        )
 
         # 5. Run initial TTL cleanup (new)
         with contextlib.suppress(Exception):
@@ -1169,18 +1250,18 @@ class TeamAgent:
 
     async def shutdown(self):
         """Clean up MCP client and checkpoint DB."""
-        if self._memory_ctx:
+        if self._context_store_ctx:
             try:
-                await self._memory_ctx.__aexit__(None, None, None)
+                await self._context_store_ctx.__aexit__(None, None, None)
             except Exception:
                 pass
 
     async def close_thread_checkpoint(self, thread_id: str) -> None:
         """Close one thread-specific checkpoint handle so its shard can be deleted safely."""
-        if not self._memory_ctx:
+        if not self._context_store_ctx:
             return
         try:
-            await self._memory_ctx.aclose_thread(thread_id)
+            await self._context_store_ctx.aclose_thread(thread_id)
         except Exception as e:
             logging.getLogger("agent").warning("close_thread_checkpoint failed for %s: %s", thread_id, e)
 
@@ -1212,7 +1293,7 @@ class TeamAgent:
     # ------------------------------------------------------------------
     # Conditional edge: route internal tools vs external tools vs end
     # ------------------------------------------------------------------
-    def _should_continue(self, state: AgentState) -> str:
+    def _should_continue(self, state: AgentState) -> bool:
         """
         条件路由：
         - 无 tool_calls → "end" (正常结束)
@@ -1221,20 +1302,20 @@ class TeamAgent:
         """
         last_msg = state["messages"][-1]
         if not hasattr(last_msg, "tool_calls") or not last_msg.tool_calls:
-            return END
+            return False
 
         for tc in last_msg.tool_calls:
             if tc["name"] not in self._internal_tool_names:
                 # 发现外部工具调用，中断循环让调用方处理
                 print(f">>> [route] 🔀 外部工具调用检测: {tc['name']}，中断返回给调用方")
-                return END
-        return "tools"
+                return False
+        return True
 
     # ------------------------------------------------------------------
     # Core graph node
     # ------------------------------------------------------------------
-    async def _call_model(self, state: AgentState):
-        """LangGraph node: invoke LLM with dynamic tool binding & tool-state notification."""
+    async def _call_model(self, state: AgentState, config: RunnableConfig | None = None):
+        """Invoke the LLM with dynamic tool binding and tool-state notification."""
 
         user_id = state.get("user_id", "__global__")
         session_id = state.get("session_id", "")
@@ -1301,9 +1382,13 @@ class TeamAgent:
 
         filtered_tools = [t for t in all_tools if t.name in set(effective_enabled_names)]
 
-        # 将外部工具定义（OpenAI function format）转为 LangChain 可绑定的格式
+        # 工具绑定永远用全量 all_tools，不按 effective_enabled_names 收窄——
+        # 这样 bind_tools 传给 provider 的 tools 数组逐字节稳定，不因 session
+        # mode / enabled_tools 变化而改变，KV/prompt 缓存前缀才不会被打掉。
+        # 谁能不能调，交给下面 UserAwareToolNode 在真正执行时按 enabled_tools
+        # 拦截并回复"该工具被禁用"，而不是从模型能看到的工具列表里隐藏它。
         external_tools_defs = state.get("external_tools") or []
-        bind_tools_list: list = list(filtered_tools)
+        bind_tools_list: list = list(all_tools)
         external_tool_names: set[str] = set()
         for ext_tool in external_tools_defs:
             # 支持 OpenAI 标准格式: {"type":"function","function":{...}} 或简化格式 {"name":...,"parameters":...}
@@ -1374,25 +1459,59 @@ class TeamAgent:
 
         llm = base_model.bind_tools(bind_tools_list) if bind_tools_list else base_model
 
+        # Per-request forced reply format — additive on top of tool binding.
+        # Tools stay bound as-is; whether the model still calls one or answers
+        # directly in the forced shape is left to the provider's own decoding,
+        # not decided here. Only OpenAI-wire-protocol models accept this kwarg.
+        response_format = state.get("response_format")
+        if response_format:
+            from langchain_openai.chat_models.base import BaseChatOpenAI
+            if isinstance(base_model, BaseChatOpenAI):
+                llm = llm.bind(response_format=response_format)
+            else:
+                print(
+                    f">>> [response_format] ⚠️ 当前模型 provider ({type(base_model).__name__}) "
+                    "不支持 response_format 直通，本轮忽略格式约束"
+                )
+
+        # Anthropic prompt caching is opt-in (needs an explicit cache_control
+        # breakpoint per request; unlike OpenAI/DeepSeek it does not cache
+        # automatically). langchain_anthropic places this on the last eligible
+        # content block, i.e. the tail of the current request — the standard
+        # "mark the tail each turn" pattern so next turn's (longer) prefix
+        # hits cache up through this point. Safe to always set: a no-op cost
+        # if the resulting prefix isn't actually stable turn-to-turn yet.
+        from langchain_anthropic import ChatAnthropic
+        if isinstance(base_model, ChatAnthropic):
+            llm = llm.bind(cache_control={"type": "ephemeral"})
+
         all_names = sorted(t.name for t in all_tools)
         visible_names = sorted(t.name for t in filtered_tools)
-        visible_tool_list_str = ", ".join(visible_names)
+        # Static tool-list text always lists the FULL set (matches what's actually
+        # bound above) so this part of the system prompt never changes turn to
+        # turn; which subset is actually usable right now is conveyed separately
+        # via the trailing tool-status notice + runtime rejection, not by
+        # shrinking this list.
+        all_tool_list_str = ", ".join(all_names)
 
         if is_subagent:
             profile_prompt = render_profile_system_prompt(subagent_profile) if subagent_profile else ""
             base_prompt = self._prompts["base_system_subagent"]
             if profile_prompt:
                 base_prompt += "\n\n" + profile_prompt
-            base_prompt += f"\n\n【可用工具列表】\n{visible_tool_list_str}\n"
+            base_prompt += f"\n\n【可用工具列表】\n{all_tool_list_str}\n"
         else:
             chat_rules = self._build_fixed_chat_rules()
             base_system_text = self._prompts["base_system"].replace("{chat_rules}", chat_rules)
             base_prompt = (
                 base_system_text + "\n\n"
-                f"【默认可用工具列表】\n{visible_tool_list_str}\n"
+                f"【默认可用工具列表】\n{all_tool_list_str}\n"
                 "以上工具默认全部启用。如果后续有工具状态变更，系统会另行通知。\n"
             )
-        base_prompt += f"\n【Session Mode】\n{build_session_mode_message(runtime_mode_name, runtime_mode_payload.get('reason', ''))}\n"
+        # Session mode text can change turn to turn (user can switch mode
+        # mid-session) — kept out of base_prompt, folded into the dynamic
+        # tail block below instead of the stable system prompt.
+        session_mode_prompt = build_session_mode_message(runtime_mode_name, runtime_mode_payload.get('reason', ''))
 
         # Detect tool state change
         user_id = state.get("user_id", "__global__")
@@ -1490,7 +1609,9 @@ class TeamAgent:
             voice=voice_state,
             buddy=buddy_state,
         )
-        base_prompt += f"\n{runtime_context_block}\n"
+        # Not appended to base_prompt — this is live per-turn state (todos,
+        # inbox, pending approvals, ...), it belongs in the dynamic tail
+        # below, not baked into the stable system prompt.
 
         last_state = self._tool_state_cache.get(tool_state_key)
 
@@ -1516,6 +1637,20 @@ class TeamAgent:
         # Update cache
         self._tool_state_cache[tool_state_key] = current_enabled
 
+        # Everything that can legitimately change every turn (session mode,
+        # live runtime state, tool-availability changes) is assembled here as
+        # one block and attached to the current turn's message further below —
+        # never folded into base_prompt — so the system prompt stays
+        # byte-identical turn to turn (required for KV/prompt-cache reuse).
+        # Context grows by appending new content, not by rewriting the stable
+        # prefix.
+        dynamic_context_block = (
+            f"【Session Mode】\n{session_mode_prompt}\n\n"
+            f"{runtime_context_block}\n"
+        )
+        if tool_status_prompt:
+            dynamic_context_block += f"\n[工具状态变更] {tool_status_prompt}\n"
+
         history_messages = list(state["messages"])
 
         # --- Context references expansion (new: ported from Hermes Agent) ---
@@ -1527,7 +1662,7 @@ class TeamAgent:
                 ws = resolve_session_workspace(user_id, session_id)
                 cwd_path = str(ws.cwd or ws.root or "")
                 if cwd_path:
-                    ctx_result = expand_context_references(
+                    ctx_result = await expand_context_references(
                         last_content,
                         cwd=cwd_path,
                         context_limit=12000 if is_subagent else 24000,
@@ -1638,13 +1773,13 @@ class TeamAgent:
         )
         budget_notice = session_budget.format_budget_notice()
         if budget_notice:
-            base_prompt += f"\n{budget_notice}\n"
+            dynamic_context_block += f"\n{budget_notice}\n"
 
         # --- Cost tracking notice (new) ---
         cost_tracker = get_cost_tracker(user_id, session_id)
         cost_notice = cost_tracker.format_cost_notice()
         if cost_notice:
-            base_prompt += f"\n{cost_notice}\n"
+            dynamic_context_block += f"\n{cost_notice}\n"
 
         # --- HUD update (new) ---
         hud = get_hud(user_id, session_id)
@@ -1683,18 +1818,20 @@ class TeamAgent:
                 msg.content = extract_text(msg.content)
 
         # 正常对话流程（用户和系统触发共用）
-        # 工具状态通知只能并入「最后一条 HumanMessage」。若最后一条是 ToolMessage / AIMessage
-        #（例如刚执行完工具、准备让模型继续），绝不能把 ToolMessage 替换成 HumanMessage，
-        # 否则会破坏 Anthropic/MiniMax 要求的 tool_calls → ToolMessage 顺序，触发 2013。
-        if tool_status_prompt and len(history_messages) >= 1:
+        # 动态内容（session mode/运行时状态/工具变更）只能并入「最后一条 HumanMessage」。
+        # 若最后一条是 ToolMessage / AIMessage（例如刚执行完工具、准备让模型继续），
+        # 绝不能把 ToolMessage 替换成 HumanMessage，否则会破坏 Anthropic/MiniMax 要求的
+        # tool_calls → ToolMessage 顺序，触发 2013——这种情况下只能退而求其次贴回
+        # system message 尾部（跟 base_prompt 的稳定前缀部分区分开，不影响前缀命中）。
+        if dynamic_context_block and len(history_messages) >= 1:
             last_msg = history_messages[-1]
             if isinstance(last_msg, HumanMessage):
                 if isinstance(last_msg.content, list):
-                    notification = {"type": "text", "text": f"[系统通知] {tool_status_prompt}\n\n---\n"}
+                    notification = {"type": "text", "text": f"[系统状态]\n{dynamic_context_block}\n---\n"}
                     augmented_content = [notification] + list(last_msg.content)
                     augmented_msg = HumanMessage(content=augmented_content)
                 else:
-                    augmented_content = f"[系统通知] {tool_status_prompt}\n\n---\n{last_msg.content}"
+                    augmented_content = f"[系统状态]\n{dynamic_context_block}\n---\n{last_msg.content}"
                     augmented_msg = HumanMessage(content=augmented_content)
                 input_messages = (
                     [SystemMessage(content=base_prompt)]
@@ -1702,7 +1839,7 @@ class TeamAgent:
                     + [augmented_msg]
                 )
             else:
-                notice_block = f"\n\n[系统通知] {tool_status_prompt}\n"
+                notice_block = f"\n\n[系统状态]\n{dynamic_context_block}\n"
                 input_messages = (
                     [SystemMessage(content=base_prompt + notice_block)]
                     + history_messages
@@ -1746,7 +1883,26 @@ class TeamAgent:
         response = None
         usage_meta = {}
         while True:
-            response = await llm.ainvoke(input_messages)
+            # Stream instead of a single ainvoke() call so on_llm_new_token /
+            # on_chat_model_stream callbacks actually fire per token (needed
+            # for the SSE stream in openai_service.py to deliver real-time
+            # output) — chunks accumulate via AIMessageChunk.__add__ into the
+            # same complete-message shape (.content/.tool_calls/.usage_metadata)
+            # the rest of this function already expects from ainvoke().
+            full_response = None
+            async for chunk in llm.astream(input_messages, config=config):
+                full_response = chunk if full_response is None else full_response + chunk
+            if full_response is None:
+                raise RuntimeError("LLM stream produced no chunks")
+            # Downgrade the accumulated AIMessageChunk to a plain AIMessage.
+            # Several call sites elsewhere (e.g. session_service.py's history
+            # formatter) match on the exact class name "AIMessage" — an
+            # AIMessageChunk silently fails that check and gets dropped, which
+            # is why the final reply after a tool round used to vanish from
+            # session history despite streaming correctly to the client.
+            response = AIMessage(**{
+                field: getattr(full_response, field) for field in AIMessage.model_fields if field != "type"
+            })
             next_turn_count = current_turn_count + 1
 
             # --- Record token usage for budget tracking (new) ---
@@ -1920,7 +2076,16 @@ class TeamAgent:
             except Exception:
                 pass
 
-        return {"messages": [response], "turn_count": next_turn_count}
+        # Write the fully-resolved enabled-tool list back into state so the
+        # tools node (UserAwareToolNode) — which reads state["enabled_tools"]
+        # directly — enforces the same effective restriction (including the
+        # subagent-profile fallback and session-mode filtering applied above),
+        # even though binding itself no longer shrinks based on it.
+        return {
+            "messages": [response],
+            "turn_count": next_turn_count,
+            "enabled_tools": effective_enabled_names,
+        }
 
     # ------------------------------------------------------------------
     # Public interface: tools info

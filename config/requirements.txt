@@ -3,7 +3,6 @@ requests
 fastapi
 uvicorn
 pydantic
-langgraph
 langchain-openai
 langchain-google-genai
 langchain-anthropic
@@ -15,7 +14,6 @@ httpx
 mcp
 apscheduler
 aiosqlite
-langgraph-checkpoint-sqlite
 ddgs
 pymupdf
 zep-cloud
