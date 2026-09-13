@@ -256,7 +256,7 @@ async def read_file(
 async def write_file(
     username: str,
     filename: str,
-    content: str,
+    content: str = "",
     session_id: str = "",
     mode: str = "overwrite",
     start: int = 0,
@@ -264,18 +264,37 @@ async def write_file(
     encoding: str = "utf-8",
     expected_sha256: str = "",
     atomic: bool = True,
+    old_string: str = "",
+    new_string: str = "",
+    replace_all: bool = False,
 ) -> str:
     """
     创建或写入用户的指定文件。
-    支持 overwrite / append / prepend / insert / replace_range。
+    支持 overwrite / append / prepend / insert / replace_range / str_replace。
     为了降低 tool 参数过长导致的截断风险，单次 content 建议尽量控制在约 4000 字符以内；
     长内容更适合先建文件，再多次 append，或多次 replace_range 分段写入同一文件。
 
+    修改已有文件的一小段内容，优先用 str_replace（传 old_string/new_string），
+    不要用 overwrite 整篇重写——不需要模型数字符偏移量，也不必重发整份文件内容。
+    old_string 必须在文件中原样出现且默认唯一；不唯一时要么把 old_string 写得
+    再具体一点（多带几行上下文），要么显式传 replace_all=true 替换全部匹配。
+
     :param username: 用户名（由系统自动注入，无需手动传递）
     :param filename: 要写入的文件名
-    :param content: 要写入的内容
+    :param content: overwrite/append/prepend/insert/replace_range 模式下要写入的内容
+    :param old_string: str_replace 模式下要查找的原文片段
+    :param new_string: str_replace 模式下的替换内容
+    :param replace_all: str_replace 模式下是否替换全部匹配（默认只允许唯一匹配）
     :return: 操作结果描述
     """
+    normalized_mode_check = (mode or "overwrite").strip().lower()
+    if (old_string or new_string) and normalized_mode_check != "str_replace":
+        return (
+            "❌ 传了 old_string/new_string 但 mode 不是 'str_replace'（当前是 "
+            f"'{mode}'）。为避免把文件误清空/覆盖，已阻止执行——"
+            "请显式传 mode=\"str_replace\"。"
+        )
+
     try:
         file_path = _safe_path(username, filename, session_id)
         existing = os.path.exists(file_path)
@@ -310,6 +329,27 @@ async def write_file(
             safe_start = max(0, min(int(start or 0), len(existing_text)))
             safe_end = max(safe_start, min(int(end or safe_start), len(existing_text)))
             new_content = existing_text[:safe_start] + content + existing_text[safe_end:]
+        elif normalized_mode == "str_replace":
+            if not old_string:
+                return "❌ str_replace 模式需要提供 old_string。"
+            if old_string == new_string:
+                return "❌ old_string 和 new_string 不能相同。"
+            occurrences = existing_text.count(old_string)
+            if occurrences == 0:
+                return (
+                    f"❌ 在 '{filename}' 中没有找到匹配的 old_string。\n"
+                    "请确认内容（含空白/缩进/换行）与文件原文逐字符一致，"
+                    "必要时先用 read_file 核对原文。"
+                )
+            if occurrences > 1 and not replace_all:
+                return (
+                    f"❌ old_string 在 '{filename}' 中匹配到 {occurrences} 处，不唯一。\n"
+                    "请把 old_string 写得更具体（多带几行上下文使其唯一），"
+                    "或显式传 replace_all=true 替换全部匹配。"
+                )
+            new_content = existing_text.replace(
+                old_string, new_string, -1 if replace_all else 1
+            )
         else:
             return f"❌ 不支持的写入模式 '{mode}'。"
 
@@ -320,6 +360,7 @@ async def write_file(
             "prepend": "已前置追加",
             "insert": "已插入",
             "replace_range": "已范围替换",
+            "str_replace": "已替换",
         }[normalized_mode]
         return (
             f"✅ 文件 '{filename}' {action}。\n"
