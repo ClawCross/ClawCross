@@ -241,6 +241,8 @@ class SystemService:
         mode = (req.session_mode or "").strip().lower()
         if mode:
             state["session_mode"] = mode
+        if req.response_format:
+            state["response_format"] = req.response_format
         return state
 
     async def _invoke_system_message_locked(

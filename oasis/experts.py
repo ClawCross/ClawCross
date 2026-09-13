@@ -49,6 +49,7 @@ from integrations.agent_sender import SendToAgentRequest, send_to_agent
 from services.llm_factory import create_chat_model, extract_text
 
 from oasis.forum import DiscussionForum
+from oasis.schemas import OasisChooseOut, OasisReplyOut, to_openai_response_format
 
 # OASIS trace disabled
 def _acp_oasis_trace(event: str, **fields: Any) -> None:
@@ -451,12 +452,16 @@ def _build_discuss_prompt(
     question: str,
     posts_text: str,
     split: bool = False,
+    include_json_hint: bool = True,
 ) -> str | tuple[str, str]:
     """Build the prompt that asks the expert to respond with JSON.
 
     Args:
         split: If True, return (system_prompt, user_prompt) tuple for session mode.
                If False, return a single combined string for single-shot temp mode.
+        include_json_hint: If False, omit the prose JSON-format instructions —
+            use this when the reply is forced via with_structured_output()
+            instead, since the schema itself already conveys the shape.
     """
     # --- Build system part (identity + behavior) ---
     # 判断是否是丰富的 agency 专家 prompt（含 markdown 标题）
@@ -482,7 +487,10 @@ def _build_discuss_prompt(
     user_prompt = (
         f"讨论主题: {question}\n\n"
         f"当前论坛内容:\n{posts_text}\n\n"
-        f"{_DISCUSS_JSON_HINT}"
+    )
+    user_prompt += (
+        _DISCUSS_JSON_HINT if include_json_hint
+        else "请给出你的观点：赞同、反驳或补充你所回复的帖子，并对你认为重要的帖子投票。"
     )
 
     if split:
@@ -730,18 +738,23 @@ class ExpertAgent:
         if override:
             self._llm_override = override
 
-    async def _call_temp_sender(self, *, prompt: str, forum: DiscussionForum, mode: str) -> str:
+    async def _call_temp_sender(
+        self, *, prompt: str, forum: DiscussionForum, mode: str, response_schema=None,
+    ) -> str:
+        options: dict[str, Any] = {
+            "temperature": self.temperature,
+            "max_tokens": 1024,
+            **(self._llm_override or {}),
+        }
+        if response_schema is not None:
+            options["response_schema"] = response_schema
         result = await _send_to_agent_off_loop(
             SendToAgentRequest(
                 prompt=prompt,
                 connect_type="http",
                 platform="temp",
                 session=f"{self.session_id}:{mode}:r{forum.current_round}",
-                options={
-                    "temperature": self.temperature,
-                    "max_tokens": 1024,
-                    **(self._llm_override or {}),
-                },
+                options=options,
             )
         )
         if not result.ok:
@@ -756,6 +769,7 @@ class ExpertAgent:
         visible_authors: set[str] | None = None,
         from_round: int | None = None,
         source_node_id: str | None = None,
+        is_selector: bool = False,
     ):
         others = await forum.browse(
             viewer=self.name,
@@ -763,9 +777,13 @@ class ExpertAgent:
             visible_authors=visible_authors if not discussion else None,
             from_round=from_round if not discussion else None,
         )
+        # ExpertAgent talks to a chat model directly (services.llm_factory), so
+        # the reply can be forced through with_structured_output() — no need
+        # for prose JSON hints or text-parsing fallbacks on this backend.
+        schema = OasisChooseOut if is_selector else OasisReplyOut
 
         if not discussion:
-            # ── Execute mode (requires clawcross_type JSON protocol, retry=1 for internal agent) ──
+            # ── Execute mode ──
             task_prompt = _build_identity_prompt(self.title, self.persona)
             task_prompt += f"任务主题: {forum.question}\n"
             if instruction:
@@ -774,11 +792,12 @@ class ExpertAgent:
                 task_prompt += f"\n前序 agent 的执行结果:\n{_format_posts(others)}\n"
             task_prompt += "\n请直接执行任务并返回结果。"
             task_prompt += _BEHAVIOR_RULES
-            task_prompt += _EXEC_JSON_HINT
 
             text = ""
             try:
-                text = await self._call_temp_sender(prompt=task_prompt, forum=forum, mode="execute")
+                text = await self._call_temp_sender(
+                    prompt=task_prompt, forum=forum, mode="execute", response_schema=schema,
+                )
                 result = _parse_expert_response(text)
                 await _apply_response(result, self.name, forum, others, source_node_id=source_node_id)
             except json.JSONDecodeError as e:
@@ -793,13 +812,17 @@ class ExpertAgent:
 
         # ── Discussion mode (original) ──
         posts_text = _format_posts(others) if others else "(还没有其他人发言，你来开启讨论吧)"
-        prompt = _build_discuss_prompt(self.title, self.persona, forum.question, posts_text)
+        prompt = _build_discuss_prompt(
+            self.title, self.persona, forum.question, posts_text, include_json_hint=False,
+        )
         if instruction:
             prompt += f"\n\n📋 本轮你的专项指令：{instruction}\n请在回复中重点关注和执行这个指令。"
 
         text = ""
         try:
-            text = await self._call_temp_sender(prompt=prompt, forum=forum, mode="discuss")
+            text = await self._call_temp_sender(
+                prompt=prompt, forum=forum, mode="discuss", response_schema=schema,
+            )
             result = _parse_expert_response(text)
             await _apply_response(result, self.name, forum, others, source_node_id=source_node_id)
         except json.JSONDecodeError as e:
@@ -920,6 +943,7 @@ class SessionExpert:
         visible_authors: set[str] | None = None,
         from_round: int | None = None,
         source_node_id: str | None = None,
+        is_selector: bool = False,
     ):
         """
         Participate in one round.
@@ -978,6 +1002,12 @@ class SessionExpert:
                 body["enabled_tools"] = self.enabled_tools
             if self._llm_override:
                 body["llm_override"] = self._llm_override
+            # Forced on the WeBot session endpoint too — additive to whatever
+            # tools that session has bound (core/agent.py's response_format
+            # binding), applied only when the session's model is OpenAI-wire.
+            body["response_format"] = to_openai_response_format(
+                OasisChooseOut if is_selector else OasisReplyOut
+            )
 
             try:
                 raw_content = await self._send_messages(body, timeout_override=None)
@@ -1056,6 +1086,9 @@ class SessionExpert:
             body["enabled_tools"] = self.enabled_tools
         if self._llm_override:
             body["llm_override"] = self._llm_override
+        body["response_format"] = to_openai_response_format(
+            OasisChooseOut if is_selector else OasisReplyOut
+        )
 
         try:
             raw_content = await self._send_messages(body)
@@ -1488,6 +1521,7 @@ class ExternalExpert:
         visible_authors: set[str] | None = None,
         from_round: int | None = None,
         source_node_id: str | None = None,
+        is_selector: bool = False,
     ):
         others = await forum.browse(
             viewer=self.name,

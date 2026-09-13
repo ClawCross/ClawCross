@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from langchain_core.messages import HumanMessage
 
 from integrations.base import (
@@ -22,6 +24,12 @@ class TempConnector(AgentConnector):
     async def send(self, request: SendToAgentRequest) -> SendToAgentResult:
         options = request.options or {}
         prompt = request.prompt if isinstance(request.prompt, str) else str(request.prompt or "")
+        # Optional: a Pydantic model (or JSON-schema-shaped dict) passed by the
+        # caller. When present, the reply is forced through the provider's own
+        # constrained-decoding / forced-tool-call path via LangChain's
+        # with_structured_output(), so the result is guaranteed to conform —
+        # no prose "please reply in JSON" hint or text-parsing fallback needed.
+        response_schema = options.get("response_schema")
         try:
             llm = create_chat_model(
                 temperature=float(options.get("temperature", 0.7)),
@@ -31,12 +39,19 @@ class TempConnector(AgentConnector):
                 base_url=options.get("base_url"),
                 provider=options.get("provider"),
             )
-            resp = await llm.ainvoke([HumanMessage(content=prompt)])
-            text = extract_text(resp.content)
+            raw_response = None
+            if response_schema is not None:
+                structured = llm.with_structured_output(response_schema)
+                parsed = await structured.ainvoke([HumanMessage(content=prompt)])
+                data = parsed.model_dump() if hasattr(parsed, "model_dump") else parsed
+                text = json.dumps(data, ensure_ascii=False)
+            else:
+                raw_response = await llm.ainvoke([HumanMessage(content=prompt)])
+                text = extract_text(raw_response.content)
             return SendToAgentResult(
                 ok=True,
                 content=text,
-                raw_response=resp,
+                raw_response=raw_response,
                 meta={
                     "connect_type": "http",
                     "platform": "temp",
