@@ -50,6 +50,11 @@ class ChatCompletionRequest(BaseModel):
     # Per-request session mode override: "execute" | "plan" | "bypass".
     # Wins over the stored session mode for this turn without writing the store.
     session_mode: Optional[str] = None
+    # OpenAI-shaped forced reply format, e.g.
+    # {"type": "json_schema", "json_schema": {"name": ..., "schema": {...}, "strict": True}}
+    # Bound additively alongside tools; only applied for OpenAI-wire-protocol
+    # models (see core/agent.py's LLM binding site).
+    response_format: Optional[dict] = None
 
 
 @dataclass

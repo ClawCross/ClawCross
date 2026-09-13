@@ -1156,6 +1156,7 @@ class DiscussionEngine:
                     instruction=combined_instr,
                     discussion=disc,
                     source_node_id=step.node_id,
+                    is_selector=step.is_selector,
                     **vis,
                 )
                 self.forum.log_event("agent_done", agent=agents[0].name)

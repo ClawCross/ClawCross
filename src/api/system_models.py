@@ -30,3 +30,6 @@ class SystemTriggerRequest(BaseModel):
     # enabled_tools=[] is the explicit "no tools" signal (manual mode); None = default.
     session_mode: Optional[str] = None
     enabled_tools: Optional[list[str]] = None
+    # OpenAI-shaped forced reply format for this trigger's turn — same
+    # contract as ChatCompletionRequest.response_format (see openai_models.py).
+    response_format: Optional[dict] = None
