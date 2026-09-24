@@ -60,7 +60,7 @@ if "utils.logging_utils" not in sys.modules:
     logging_utils_stub.get_logger = get_logger
     sys.modules["utils.logging_utils"] = logging_utils_stub
 
-from api.session_models import DeleteSessionRequest, SessionListRequest, SessionStatusRequest
+from api.session_models import CompactSessionRequest, DeleteSessionRequest, SessionListRequest, SessionStatusRequest
 from api.session_service import SessionService
 
 
@@ -116,7 +116,7 @@ class _FakeAgent:
             {"tokens": 0, "budget": 0, "percent": 0, "remaining": 0},
         )
 
-    def set_thread_context_usage(self, thread_id: str, tokens: int, budget: int) -> None:
+    def set_thread_context_usage(self, thread_id: str, tokens: int, budget: int, **kwargs) -> None:
         usage = self._statuses.setdefault(thread_id, {})
         percent = min(100, round(tokens / budget * 100)) if budget > 0 else 0
         usage["context_usage"] = {
@@ -124,6 +124,9 @@ class _FakeAgent:
             "budget": budget,
             "percent": percent,
             "remaining": max(0, budget - tokens),
+            "source": kwargs.get("source", "estimate"),
+            "breakdown": dict(kwargs.get("breakdown") or {}),
+            "cache_read_tokens": int(kwargs.get("cache_read_tokens", 0)),
         }
 
 
@@ -204,6 +207,67 @@ class SessionServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["context_remaining"], 0)
         self.assertEqual(result["context_tokens"], 64000)
         self.assertEqual(result["context_budget"], 64000)
+
+    async def test_session_status_restores_persisted_api_usage(self):
+        agent = _FakeAgent({}, statuses={"alice#default": {"busy": False}})
+        restored: list[str] = []
+
+        async def restore_context_usage(thread_id: str) -> bool:
+            restored.append(thread_id)
+            agent.set_thread_context_usage(
+                thread_id, 1050, 128000, source="api",
+                breakdown={"system_prompt": 300, "messages": 700, "output": 50},
+                cache_read_tokens=600,
+            )
+            return True
+
+        agent.restore_context_usage = restore_context_usage
+        service = SessionService(
+            db_path=":memory:",
+            agent=agent,
+            verify_auth_or_token=lambda user_id, password, token: None,
+            extract_text=lambda content: content if isinstance(content, str) else str(content),
+        )
+
+        result = await service.session_status(
+            SessionStatusRequest(user_id="alice", session_id="default"), None
+        )
+
+        self.assertEqual(restored, ["alice#default"])
+        self.assertEqual(result["context_tokens"], 1050)
+        self.assertEqual(result["context_source"], "api")
+        self.assertEqual(result["context_breakdown"], {"system_prompt": 300, "messages": 700, "output": 50})
+        self.assertEqual(result["context_cache_read_tokens"], 600)
+
+    async def test_compact_keeps_api_usage_instead_of_estimate(self):
+        agent = _FakeAgent({"alice#default": [HumanMessage(content="hi")]})
+        agent.set_thread_context_usage(
+            "alice#default", 1050, 128000, source="api", breakdown={"messages": 1000, "output": 50},
+        )
+        agent.get_thread_last_context_tokens = lambda thread_id: 1050
+        agent.get_thread_model = lambda thread_id: ""
+        service = SessionService(
+            db_path=":memory:",
+            agent=agent,
+            verify_auth_or_token=lambda user_id, password, token: None,
+            extract_text=lambda content: content if isinstance(content, str) else str(content),
+        )
+        compression = SimpleNamespace(
+            triggered=True, reason="", view_tokens=300, summary="s", compacted_until=1, view=[],
+        )
+
+        with patch("api.session_service.static_compression_view", return_value=[]), patch(
+            "api.session_service.estimate_messages_tokens", return_value=900
+        ), patch("api.session_service.make_llm_summarizer", return_value=None), patch(
+            "api.session_service.resolve_history_token_budget", return_value=64000
+        ), patch("api.session_service.apply_compression", return_value=compression):
+            result = await service.compact_session(
+                CompactSessionRequest(user_id="alice", session_id="default"), None
+            )
+
+        self.assertEqual((result["before_tokens"], result["after_tokens"]), (900, 300))
+        usage = agent.get_thread_context_usage("alice#default")
+        self.assertEqual((usage["tokens"], usage["source"]), (1050, "api"))
 
     async def test_delete_subagent_session_also_cleans_registry_row(self):
         service = SessionService(

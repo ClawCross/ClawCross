@@ -146,10 +146,10 @@ class WeBotOrchestrationFlowTests(unittest.IsolatedAsyncioTestCase):
         runtime_store.DEFAULT_DB_PATH = self.original_runtime_db_path
         self.tmpdir.cleanup()
 
-    async def test_background_spawn_dispatches_via_system_trigger(self):
-        # Background execution moved out of the webot MCP subprocess; spawn_subagent
-        # now fire-and-forgets to the agent main process via /system_trigger and
-        # only marks the run as "running" locally. Verify the dispatch contract.
+    async def test_background_spawn_runs_locally_and_notifies_parent(self):
+        # spawn_subagent(wait=False) schedules the run on the local scheduler: it
+        # calls the internal chat completions endpoint for the subagent session,
+        # then reports the result to the parent session via /system_trigger.
         state = {"calls": [], "callbacks": [], "cancels": []}
 
         def _client_factory(*args, **kwargs):
@@ -167,16 +167,24 @@ class WeBotOrchestrationFlowTests(unittest.IsolatedAsyncioTestCase):
                 wait=False,
                 parent_session="parent-1",
             )
+            await asyncio.wait_for(
+                asyncio.gather(*list(mcp_webot._BACKGROUND_TASKS.values())),
+                timeout=10,
+            )
 
         self.assertIn("后台运行", result)
+        completion_calls = [url for url, _ in state["calls"] if url.endswith("/v1/chat/completions")]
+        self.assertEqual(len(completion_calls), 1)
         self.assertEqual(len(state["callbacks"]), 1)
-        dispatch = state["callbacks"][0]
-        self.assertEqual(dispatch["user_id"], "alice")
-        self.assertEqual(dispatch["text"], "Inspect runtime")
-        self.assertTrue(dispatch["session_id"].startswith("subagent__research__"))
+        notice = state["callbacks"][0]
+        self.assertEqual(notice["user_id"], "alice")
+        self.assertEqual(notice["session_id"], "parent-1")
+        self.assertTrue(notice["text"].startswith("[子 Agent 完成]"))
+        self.assertIn("agent_id: researcher-1", notice["text"])
+        self.assertIn("processed:", notice["text"])
 
         latest_run = runtime_store.get_latest_run_for_agent("alice", "researcher-1")
-        self.assertEqual(latest_run.status, "running")
+        self.assertEqual(latest_run.status, "completed")
 
         listed = await mcp_webot.list_subagents(username="alice")
         self.assertIn("researcher-1", listed)

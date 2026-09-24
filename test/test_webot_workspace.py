@@ -76,7 +76,8 @@ class WeBotWorkspaceTests(unittest.TestCase):
             webot_workspace.WORKSPACE_DIR = workspace_root
             webot_workspace.USER_FILES_DIR = user_files
             store.DEFAULT_DB_PATH = Path(tmpdir) / "subagents.db"
-            repo_root = workspace_root / "users" / "alice" / "repo"
+            # With USER_FILES_DIR overridden, user workspaces resolve under user_files/<user>.
+            repo_root = user_files / "alice" / "repo"
             repo_root.mkdir(parents=True, exist_ok=True)
             subprocess.run(["git", "init"], cwd=repo_root, check=True, capture_output=True)
             (repo_root / "README.md").write_text("hello", encoding="utf-8")

@@ -2672,6 +2672,19 @@ let sessionContextUsageState = {
     remaining: 0,
     tokens: 0,
     budget: 0,
+    source: '',
+    breakdown: {},
+    cacheRead: 0,
+};
+// 上下文分项：key 与后端 context_breakdown 对齐，[中文, English]
+const CONTEXT_BREAKDOWN_LABELS = {
+    system_prompt: ['系统提示词', 'System prompt'],
+    tools: ['工具定义', 'Tool definitions'],
+    runtime_state: ['运行时状态', 'Runtime state'],
+    summary: ['压缩摘要', 'Compacted summary'],
+    messages: ['对话消息', 'Messages'],
+    tool_results: ['工具结果', 'Tool results'],
+    output: ['上轮输出', 'Last output'],
 };
 // 手动压缩按钮状态（持久化到 re-render 之间）
 let sessionCompactBusy = false;
@@ -2707,6 +2720,34 @@ function formatContextDetailPercent(percentValue) {
     return String(Math.round(percentValue));
 }
 
+function renderContextBreakdown(state) {
+    const zh = currentLang === 'zh-CN';
+    const breakdown = state.breakdown || {};
+    const rows = Object.keys(CONTEXT_BREAKDOWN_LABELS)
+        .filter((key) => Number(breakdown[key]) > 0)
+        .map((key) => `
+        <div class="oc-context-usage-detail-row">
+            <span>${CONTEXT_BREAKDOWN_LABELS[key][zh ? 0 : 1]}</span>
+            <strong>${formatContextTokenCount(breakdown[key])} tokens</strong>
+        </div>`);
+    if (!rows.length) return '';
+    if (Number(state.cacheRead) > 0) {
+        rows.push(`
+        <div class="oc-context-usage-detail-row">
+            <span>${zh ? '其中缓存命中' : 'Cache hits (of input)'}</span>
+            <strong>${formatContextTokenCount(state.cacheRead)} tokens</strong>
+        </div>`);
+    }
+    return `
+        <div class="oc-context-usage-detail-section">
+            <div class="oc-context-usage-detail-title">${zh ? '组成' : 'Breakdown'}</div>
+            ${rows.join('')}
+            <div class="oc-context-usage-detail-note">${zh
+                ? '合计为 API 实测值，各项按本地分词比例分摊'
+                : 'Total is API-reported; items are split by local tokenizer ratio'}</div>
+        </div>`;
+}
+
 function renderSessionContextDetail() {
     const detail = document.getElementById('session-context-detail');
     if (!detail) return;
@@ -2726,7 +2767,7 @@ function renderSessionContextDetail() {
             <strong>${formatContextDetailPercent(percentValue)}%</strong>
         </div>
         <div class="oc-context-usage-detail-row">
-            <span>${usedLabel}</span>
+            <span>${usedLabel}${state.source === 'estimate' ? (currentLang === 'zh-CN' ? '（估算）' : ' (estimated)') : ''}</span>
             <strong>${formatContextTokenCount(state.tokens)} tokens</strong>
         </div>
         <div class="oc-context-usage-detail-row">
@@ -2737,6 +2778,7 @@ function renderSessionContextDetail() {
             <span>${remainingLabel}</span>
             <strong>${formatContextTokenCount(state.remaining)} tokens</strong>
         </div>
+        ${renderContextBreakdown(state)}
         <div class="oc-context-usage-detail-actions" style="margin-top:8px;display:flex;flex-direction:column;gap:6px;">
             <button type="button" id="session-compact-btn" class="oc-context-compact-btn"
                 onclick="compactCurrentSession(event)"
@@ -2827,6 +2869,8 @@ async function compactCurrentSession(event) {
                     updateSessionContextUsageBadge(
                         sdata.context_percent, sdata.context_remaining,
                         sdata.context_tokens, sdata.context_budget,
+                        sdata.context_source, sdata.context_breakdown,
+                        sdata.context_cache_read_tokens,
                     );
                 }
             } catch (e) { /* 徽章刷新失败不影响结果展示 */ }
@@ -2839,7 +2883,7 @@ async function compactCurrentSession(event) {
     }
 }
 
-function updateSessionContextUsageBadge(percent, remaining, tokens, budget) {
+function updateSessionContextUsageBadge(percent, remaining, tokens, budget, source, breakdown, cacheRead) {
     const badge = document.getElementById('session-context-usage');
     if (!badge) return;
     const remainingValue = Number(remaining);
@@ -2856,6 +2900,9 @@ function updateSessionContextUsageBadge(percent, remaining, tokens, budget) {
         remaining: validRemaining || 0,
         tokens: validTokens,
         budget: validBudget,
+        source: String(source || ''),
+        breakdown: (breakdown && typeof breakdown === 'object') ? breakdown : {},
+        cacheRead: Math.max(0, Math.round(Number(cacheRead) || 0)),
     };
     renderSessionContextDetail();
 
@@ -5218,7 +5265,10 @@ async function switchToSession(sessionId, force = false, options = {}) {
             data.context_percent,
             data.context_remaining,
             data.context_tokens,
-            data.context_budget
+            data.context_budget,
+            data.context_source,
+            data.context_breakdown,
+            data.context_cache_read_tokens
         );
 
         if (!data.messages || data.messages.length === 0) {
@@ -11943,7 +11993,10 @@ async function pollCurrentSessionStatus() {
                 data.context_percent,
                 data.context_remaining,
                 data.context_tokens,
-                data.context_budget
+                data.context_budget,
+                data.context_source,
+                data.context_breakdown,
+                data.context_cache_read_tokens
             );
         }
     } catch(e) {

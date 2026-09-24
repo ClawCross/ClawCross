@@ -192,6 +192,62 @@ def delete_context_compaction(
             conn.commit()
 
 
+def _ensure_context_usage_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS context_usage (
+            thread_id TEXT PRIMARY KEY,
+            usage_json TEXT NOT NULL DEFAULT '{}',
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+
+
+def get_context_usage_record(
+    store_path: str | Path | None,
+    thread_id: str,
+) -> dict[str, Any] | None:
+    """Load the last API-reported context usage persisted for this thread."""
+    for path in candidate_checkpoint_db_paths_for_thread(store_path, thread_id):
+        with sqlite3.connect(path, timeout=30) as conn:
+            try:
+                row = conn.execute(
+                    "SELECT usage_json FROM context_usage WHERE thread_id = ?",
+                    (thread_id,),
+                ).fetchone()
+            except sqlite3.OperationalError as exc:
+                if _is_missing_table_error(exc):
+                    continue
+                raise
+        if row:
+            return _json_loads_dict(row[0])
+    return None
+
+
+def save_context_usage_record(
+    store_path: str | Path | None,
+    thread_id: str,
+    record: dict[str, Any],
+) -> None:
+    """Persist context usage beside the per-thread conversation context."""
+    candidates = candidate_checkpoint_db_paths_for_thread(store_path, thread_id)
+    path = candidates[0] if candidates else checkpoint_db_path_for_thread(thread_id, store_path)
+    with sqlite3.connect(path, timeout=30) as conn:
+        _ensure_context_usage_table(conn)
+        conn.execute(
+            """
+            INSERT INTO context_usage (thread_id, usage_json, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(thread_id) DO UPDATE SET
+                usage_json=excluded.usage_json,
+                updated_at=excluded.updated_at
+            """,
+            (thread_id, _json_dumps(record), _utc_now()),
+        )
+        conn.commit()
+
+
 async def list_thread_ids_by_prefix(db_path: str, prefix: str) -> list[str]:
     """按 thread_id 前缀查询会话列表。
 
@@ -399,7 +455,7 @@ async def delete_thread_records(db_path: str, thread_id: str) -> None:
     """
     for path in candidate_checkpoint_db_paths_for_thread(db_path, thread_id):
         async with aiosqlite.connect(path) as db:
-            for table in ("context_messages", "agent_state", "checkpoints", "writes"):
+            for table in ("context_messages", "agent_state", "context_usage", "checkpoints", "writes"):
                 try:
                     await db.execute(f"DELETE FROM {table} WHERE thread_id = ?", (thread_id,))
                 except sqlite3.OperationalError as exc:
@@ -417,7 +473,7 @@ async def delete_thread_records_like(db_path: str, pattern: str) -> None:
     """
     for path in iter_checkpoint_db_paths(db_path):
         async with aiosqlite.connect(path) as db:
-            for table in ("context_messages", "agent_state", "checkpoints", "writes"):
+            for table in ("context_messages", "agent_state", "context_usage", "checkpoints", "writes"):
                 try:
                     await db.execute(f"DELETE FROM {table} WHERE thread_id LIKE ?", (pattern,))
                 except sqlite3.OperationalError as exc:

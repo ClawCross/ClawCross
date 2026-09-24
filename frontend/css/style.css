@@ -4776,6 +4776,21 @@ body.session-panel-resizing * {
     font-weight: 700;
     white-space: nowrap;
 }
+.oc-context-usage-detail-section {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid #e5e7eb;
+}
+.oc-context-usage-detail-title {
+    color: #374151;
+    font-weight: 600;
+    padding-bottom: 2px;
+}
+.oc-context-usage-detail-note {
+    color: #9ca3af;
+    font-size: 11px;
+    padding-top: 4px;
+}
 .oc-acp-session-row {
     display: none;
     align-items: center;

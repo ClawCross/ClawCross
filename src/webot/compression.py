@@ -142,6 +142,15 @@ def _summary_to_message(summary: str) -> HumanMessage:
     return HumanMessage(content=body)
 
 
+def is_summary_message(message: BaseMessage) -> bool:
+    """Whether *message* is the persisted compaction summary injected into the view."""
+    return (
+        isinstance(message, HumanMessage)
+        and isinstance(message.content, str)
+        and message.content.startswith(_SUMMARY_HEADER)
+    )
+
+
 # ---------------------------------------------------------------------------
 # Boundary selection
 # ---------------------------------------------------------------------------
