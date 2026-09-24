@@ -566,9 +566,16 @@ case "${1:-help}" in
         FRONTEND_PORT=${PORT_FRONTEND:-51209}
         echo -n "   等待服务就绪"
         SERVICE_READY=false
-        for i in $(seq 1 240); do
-            if curl -sf "http://127.0.0.1:$AGENT_PORT/v1/models" > /dev/null 2>&1 && \
-               curl -sf "http://127.0.0.1:$OASIS_PORT/experts" > /dev/null 2>&1; then
+        # --noproxy: 探的是本机端口。桌面代理导出的 no_proxy 常写成 "127.*"，
+        # curl 按字面量/域名后缀匹配，这种写法不生效，探测会被送进代理拿到 502，
+        # 循环就永远等不到就绪——而服务其实早就起来了。
+        # --max-time: agent 先监听端口、再花几十秒装载 MCP 工具，这期间连接被接受
+        # 但不回应。没有上限的话单次 curl 会一直挂着：不打点（看着像卡死），而且
+        # 整段等待的封顶失效。所以按墙钟设截止时间，每次探测各自限时。
+        READY_DEADLINE=$(( $(date +%s) + 180 ))
+        while [ "$(date +%s)" -lt "$READY_DEADLINE" ]; do
+            if curl -sf --noproxy '*' --max-time 2 "http://127.0.0.1:$AGENT_PORT/v1/models" > /dev/null 2>&1 && \
+               curl -sf --noproxy '*' --max-time 2 "http://127.0.0.1:$OASIS_PORT/experts" > /dev/null 2>&1; then
                 echo " ✅"
                 SERVICE_READY=true
                 break

@@ -45,6 +45,13 @@ TASKS_FILE = os.path.join(str(DATA_DIR), "timeset", "tasks.json")
 # 加载 .env 配置
 load_dotenv(dotenv_path=str(ENV_FILE))
 
+# 本机服务互调不能走桌面代理：no_proxy 里常见的 "127.*" 写法 HTTP 客户端并不匹配，
+# loopback 请求会被送进代理并拿到 502。详见 utils/local_no_proxy.py。
+from utils.local_no_proxy import ensure_localhost_no_proxy
+
+ensure_localhost_no_proxy()
+
+
 
 def _server_host() -> str:
     """获取调度器绑定地址。默认为 localhost；设置 CLAWCROSS_SERVER_HOST=0.0.0.0 可暴露到所有接口。"""
