@@ -4,7 +4,6 @@ import json
 import random
 import shutil
 import time
-import utils.scheduler_service
 from pathlib import Path
 from typing import Any
 

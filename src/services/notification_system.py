@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import asyncio
 import time
-import utils.scheduler_service
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone

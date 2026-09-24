@@ -20,7 +20,6 @@ import os
 import re
 import sqlite3
 import time
-import utils.scheduler_service
 import uuid
 import zipfile
 from dataclasses import dataclass, field

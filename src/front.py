@@ -234,7 +234,6 @@ OASIS_BASE_URL = f"http://127.0.0.1:{PORT_OASIS}"
 # Using INTERNAL_TOKEN + user_id + timestamp with HMAC signature
 # ============================================================================
 import time
-import utils.scheduler_service
 import secrets
 import hmac
 import hashlib

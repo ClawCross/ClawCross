@@ -15,7 +15,6 @@ Ported from oh-my-codex's skill system and openclaw-claude-code.
 from __future__ import annotations
 
 import asyncio
-import utils.scheduler_service
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
