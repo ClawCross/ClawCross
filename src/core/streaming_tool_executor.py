@@ -49,7 +49,6 @@ _TOOL_ACCESS_MODES: dict[str, ToolAccessMode] = {
     "get_subagent_history": ToolAccessMode.READ_ONLY,
     "list_webot_agent_profiles": ToolAccessMode.READ_ONLY,
     "session_inbox": ToolAccessMode.READ_ONLY,
-    "claude_session_inbox": ToolAccessMode.READ_ONLY,
     "get_session_mode": ToolAccessMode.READ_ONLY,
     "ultraplan_status": ToolAccessMode.READ_ONLY,
     "ultrareview_status": ToolAccessMode.READ_ONLY,
