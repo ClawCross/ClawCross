@@ -341,12 +341,12 @@ class TestBashSafety:
 
     def test_deny_invariants(self):
         from utils.bash_safety import analyze_command, RiskLevel
-        # Deny-invariant patterns now route to high-risk approval rather than hard block.
+        # Deny-invariant patterns are hard-blocked as CRITICAL; they never reach approval.
         for cmd in ("rm -rf /", "rm -rf ~", "dd if=/dev/zero of=/dev/sda"):
             result = analyze_command(cmd)
-            assert result.risk_level == RiskLevel.HIGH, cmd
+            assert result.risk_level == RiskLevel.CRITICAL, cmd
             assert result.reasons, cmd
-            assert not result.blocked, cmd
+            assert result.blocked, cmd
 
     def test_high_risk(self):
         from utils.bash_safety import analyze_command, RiskLevel
@@ -359,9 +359,8 @@ class TestBashSafety:
 
     def test_medium_risk(self):
         from utils.bash_safety import analyze_command, RiskLevel
-        # MEDIUM patterns: pip install, curl/wget, sed -i, kill*, etc. Non-root rm
-        # without -f is left at LOW (no destructive pattern hit).
-        assert analyze_command("rm -r some_dir").risk_level == RiskLevel.LOW
+        # MEDIUM patterns: recursive rm, pip install, curl/wget, sed -i, kill*, etc.
+        assert analyze_command("rm -r some_dir").risk_level == RiskLevel.MEDIUM
         assert analyze_command("pip install requests").risk_level == RiskLevel.MEDIUM
         assert analyze_command("curl https://example.com").risk_level == RiskLevel.MEDIUM
         assert analyze_command("sed -i 's/a/b/' file").risk_level == RiskLevel.MEDIUM
@@ -374,15 +373,17 @@ class TestBashSafety:
     def test_fork_bomb_detection(self):
         from utils.bash_safety import analyze_command, RiskLevel
         result = analyze_command(":(){ :|:& };:")
-        assert result.risk_level == RiskLevel.HIGH
+        assert result.risk_level == RiskLevel.CRITICAL
+        assert result.blocked
         assert any("fork bomb" in r.lower() for r in result.reasons)
 
     def test_credential_theft(self):
         from utils.bash_safety import analyze_command, RiskLevel
         for cmd in ("cat ~/.ssh/id_rsa", "cat /etc/shadow"):
             result = analyze_command(cmd)
-            assert result.risk_level == RiskLevel.HIGH, cmd
+            assert result.risk_level == RiskLevel.CRITICAL, cmd
             assert result.reasons, cmd
+            assert result.blocked, cmd
 
     def test_empty_command(self):
         from utils.bash_safety import analyze_command, RiskLevel
@@ -393,7 +394,7 @@ class TestBashSafety:
         from utils.bash_safety import batch_analyze, RiskLevel
         results = batch_analyze(["ls", "rm -rf /", "echo hi"])
         assert len(results) == 3
-        assert results[1].risk_level == RiskLevel.HIGH
+        assert results[1].risk_level == RiskLevel.CRITICAL
         assert results[1].reasons
 
 
@@ -916,9 +917,10 @@ class TestIntegration:
         from utils.bash_safety import analyze_command, RiskLevel
         from webot.policy import evaluate_tool_policy, WeBotToolPolicy
 
-        # Bash safety flags critical commands as HIGH risk for approval routing.
+        # Bash safety hard-blocks deny-invariant commands as CRITICAL.
         analysis = analyze_command("rm -rf /")
-        assert analysis.risk_level == RiskLevel.HIGH
+        assert analysis.risk_level == RiskLevel.CRITICAL
+        assert analysis.blocked
         assert analysis.reasons
 
         # Policy can also block commands

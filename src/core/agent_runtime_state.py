@@ -7,7 +7,7 @@ Agent 运行时状态管理模块
 """
 
 import asyncio
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 
 class TaskRegistry:
@@ -94,7 +94,7 @@ class ThreadStateRegistry:
         self._thread_locks_guard: Optional[asyncio.Lock] = None
         self._thread_busy_source: Dict[str, str] = {}
         self._pending_system_messages: Dict[str, int] = {}
-        self._thread_context_usage: Dict[str, Dict[str, int]] = {}
+        self._thread_context_usage: Dict[str, Dict[str, Any]] = {}
         self._thread_last_model: Dict[str, str] = {}
         # 上一轮 LLM API 真实返回的用量。真实上下文占用 = input + output：
         #   input  已含 system+工具+历史+缓存；
@@ -102,6 +102,8 @@ class ThreadStateRegistry:
         #          所以两轮之间必须把它补上，否则占用少算一轮输出。
         self._thread_last_input_tokens: Dict[str, int] = {}
         self._thread_last_output_tokens: Dict[str, int] = {}
+        # 已尝试从磁盘恢复用量的 thread，避免状态轮询反复读库
+        self._context_usage_restore_claimed: set[str] = set()
 
     async def _get_locks_guard(self) -> asyncio.Lock:
         """获取或创建线程锁的守卫锁。"""
@@ -148,8 +150,21 @@ class ThreadStateRegistry:
             return ""
         return self._thread_busy_source.get(thread_id, "unknown")
 
-    def set_thread_context_usage(self, thread_id: str, tokens: int, budget: int) -> None:
-        """设置线程当前压缩上下文用量。"""
+    def set_thread_context_usage(
+        self,
+        thread_id: str,
+        tokens: int,
+        budget: int,
+        *,
+        source: str = "estimate",
+        breakdown: Optional[Dict[str, int]] = None,
+        cache_read_tokens: int = 0,
+    ) -> None:
+        """设置线程当前上下文用量。
+
+        source: "api" = LLM API 实测值，"estimate" = 本地估算。
+        breakdown: 按组成部分分摊的 token 数（system_prompt/tools/.../output）。
+        """
         tokens = max(0, int(tokens or 0))
         budget = max(0, int(budget or 0))
         percent = min(100, round(tokens / budget * 100)) if budget > 0 else 0
@@ -160,14 +175,29 @@ class ThreadStateRegistry:
             "budget": budget,
             "percent": percent,
             "remaining": max(0, budget - tokens),
+            "source": source,
+            "breakdown": dict(breakdown or {}),
+            "cache_read_tokens": max(0, int(cache_read_tokens or 0)),
         }
 
-    def get_thread_context_usage(self, thread_id: str) -> Dict[str, int]:
-        """获取线程当前压缩上下文用量。"""
+    def get_thread_context_usage(self, thread_id: str) -> Dict[str, Any]:
+        """获取线程当前上下文用量。"""
         return self._thread_context_usage.get(
             thread_id,
-            {"tokens": 0, "budget": 0, "percent": 0, "remaining": 0},
+            {
+                "tokens": 0, "budget": 0, "percent": 0, "remaining": 0,
+                "source": "", "breakdown": {}, "cache_read_tokens": 0,
+            },
         )
+
+    def claim_context_usage_restore(self, thread_id: str) -> bool:
+        """内存里没有真值且从未尝试过时返回 True（并标记已尝试），用于从磁盘恢复用量。"""
+        if self._thread_last_input_tokens.get(thread_id, 0) > 0:
+            return False
+        if thread_id in self._context_usage_restore_claimed:
+            return False
+        self._context_usage_restore_claimed.add(thread_id)
+        return True
 
     def set_thread_last_usage_tokens(self, thread_id: str, input_tokens: int, output_tokens: int = 0) -> None:
         """记录本轮 LLM API 真实返回的 input/output token，供下一轮判断使用。"""

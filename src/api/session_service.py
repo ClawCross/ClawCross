@@ -165,10 +165,18 @@ class SessionService:
             real_ctx = 0
             if hasattr(self.agent, "get_thread_last_context_tokens"):
                 real_ctx = int(self.agent.get_thread_last_context_tokens(thread_id) or 0)
+            if real_ctx <= 0 and hasattr(self.agent, "restore_context_usage"):
+                # 服务重启后内存里没有真值：读回落盘的上一轮 API 用量
+                await self.agent.restore_context_usage(thread_id)
+                real_ctx = int(self.agent.get_thread_last_context_tokens(thread_id) or 0)
 
             if real_ctx > 0:
-                window = infer_model_context_window(last_model or None)
-                self.agent.set_thread_context_usage(thread_id, real_ctx, max(window, real_ctx))
+                # 推理/恢复路径已写入 API 实测值和分项，只在缺失时补一份，不用估算覆盖
+                if self.agent.get_thread_context_usage(thread_id).get("source") != "api":
+                    window = infer_model_context_window(last_model or None)
+                    self.agent.set_thread_context_usage(
+                        thread_id, real_ctx, max(window, real_ctx), source="api",
+                    )
             else:
                 # 数的是 apply_compression 真正看到的输入视图
                 # = [已存的 summary] + messages[compacted_until:]，
@@ -219,10 +227,7 @@ class SessionService:
         return {
             "status": "success",
             "messages": result,
-            "context_percent": int(context_usage.get("percent", 0) or 0),
-            "context_remaining": int(context_usage.get("remaining", 0) or 0),
-            "context_tokens": int(context_usage.get("tokens", 0) or 0),
-            "context_budget": int(context_usage.get("budget", 0) or 0),
+            **self._context_usage_fields(context_usage),
         }
 
     async def compact_session(self, req: CompactSessionRequest, x_internal_token: str | None):
@@ -279,8 +284,13 @@ class SessionService:
             raise HTTPException(status_code=500, detail="compaction failed")
 
         after_tokens = result.view_tokens
-        with contextlib.suppress(Exception):
-            self.agent.set_thread_context_usage(thread_id, after_tokens, budget)
+        # 已有 API 真值时不用字数估算覆盖；压缩效果在下一次调用后由真值体现
+        has_real_usage = hasattr(self.agent, "get_thread_last_context_tokens") and int(
+            self.agent.get_thread_last_context_tokens(thread_id) or 0
+        ) > 0
+        if not has_real_usage:
+            with contextlib.suppress(Exception):
+                self.agent.set_thread_context_usage(thread_id, after_tokens, budget)
 
         return {
             "status": "success",
@@ -329,6 +339,18 @@ class SessionService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"删除失败: {e}")
 
+    @staticmethod
+    def _context_usage_fields(context_usage: dict) -> dict:
+        return {
+            "context_percent": int(context_usage.get("percent", 0) or 0),
+            "context_remaining": int(context_usage.get("remaining", 0) or 0),
+            "context_tokens": int(context_usage.get("tokens", 0) or 0),
+            "context_budget": int(context_usage.get("budget", 0) or 0),
+            "context_source": str(context_usage.get("source", "") or ""),
+            "context_breakdown": dict(context_usage.get("breakdown") or {}),
+            "context_cache_read_tokens": int(context_usage.get("cache_read_tokens", 0) or 0),
+        }
+
     async def session_status(self, req: SessionStatusRequest, x_internal_token: str | None):
         """查询指定会话的实时状态。
 
@@ -347,13 +369,13 @@ class SessionService:
         )
         busy_source = self.agent.get_thread_busy_source(thread_id) if busy else ""
         context_usage = self.agent.get_thread_context_usage(thread_id)
+        if not context_usage.get("tokens") and hasattr(self.agent, "restore_context_usage"):
+            if await self.agent.restore_context_usage(thread_id):
+                context_usage = self.agent.get_thread_context_usage(thread_id)
         return {
             "has_new_messages": has_new,
             "pending_count": pending_count,
             "busy": busy,
             "busy_source": busy_source,
-            "context_percent": int(context_usage.get("percent", 0) or 0),
-            "context_remaining": int(context_usage.get("remaining", 0) or 0),
-            "context_tokens": int(context_usage.get("tokens", 0) or 0),
-            "context_budget": int(context_usage.get("budget", 0) or 0),
+            **self._context_usage_fields(context_usage),
         }

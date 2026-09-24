@@ -38,6 +38,8 @@ from webot.llm_call_trace import llm_call_trace_enabled, save_llm_call
 from utils.context_references import expand_context_references
 from utils.runtime_paths import USER_FILES_DIR
 from utils.context_store import ContextStore
+from utils.checkpoint_repository import get_context_usage_record, save_context_usage_record
+from webot.context_usage import estimate_context_components, scale_components, tool_schemas
 from services.smart_routing import resolve_turn_route
 from webot.permission_context import (
     create_or_reuse_permission_request,
@@ -1701,6 +1703,8 @@ class TeamAgent:
         # 新输入瘦身 / 压缩判断，无需字数估算：上下文是逐轮增长的，上一轮真值是当前占用
         # 的可靠下界。带上 output 因为它还没并入任何已测 input。
         thread_id = f"{user_id}#{session_id}"
+        # 服务重启后内存里没有真值：先读回落盘的上一轮 API 用量
+        await self.restore_context_usage(thread_id)
         last_real_context = self.get_thread_last_context_tokens(thread_id)
         context_window = infer_model_context_window(current_model_name)
 
@@ -1766,11 +1770,14 @@ class TeamAgent:
             used_tokens=context_used,
             budget_tokens=context_budget,
         )
-        self.set_thread_context_usage(
-            thread_id,
-            context_used,
-            context_budget,
-        )
+        if last_real_context <= 0:
+            # 只有还没有 API 真值时才写估算；有真值时占用和分项已由
+            # record_context_usage 写入，不能用估算覆盖。
+            self.set_thread_context_usage(
+                thread_id,
+                context_used,
+                context_budget,
+            )
         budget_notice = session_budget.format_budget_notice()
         if budget_notice:
             dynamic_context_block += f"\n{budget_notice}\n"
@@ -1880,6 +1887,10 @@ class TeamAgent:
         #     session_id=session_id,
         # )
 
+        # 上下文分项统计用：本轮实际发给模型的各组成部分
+        context_tool_schemas = tool_schemas(bind_tools_list)
+        runtime_state_in_input = dynamic_context_block if (dynamic_context_block and history_messages) else ""
+
         response = None
         usage_meta = {}
         while True:
@@ -1952,7 +1963,26 @@ class TeamAgent:
                     # 记下本轮真实 input/output 作为下一轮压缩判断 / 上下文占用显示的
                     # 真值依据。占用 = input + output：本轮输出还没并入任何已测 input，
                     # 要下一轮才被吸收，所以两轮之间得带上它。
-                    self.set_thread_last_usage_tokens(thread_id, total_input_tokens, output_tokens)
+                    try:
+                        context_components = await asyncio.to_thread(
+                            estimate_context_components,
+                            system_prompt=base_prompt,
+                            tools=context_tool_schemas,
+                            runtime_state=runtime_state_in_input,
+                            messages=list(history_messages),
+                        )
+                    except Exception as exc:
+                        logging.getLogger("agent").warning("context breakdown failed: %s", exc)
+                        context_components = {}
+                    await self.record_context_usage(
+                        thread_id,
+                        input_tokens=total_input_tokens,
+                        output_tokens=output_tokens,
+                        cache_read_tokens=cache_read_tokens,
+                        model=model_name,
+                        context_window=context_window,
+                        components=context_components,
+                    )
 
             # --- Per-call LLM trace (new, default-off via CLAWCROSS_LLM_CALL_TRACE) ---
             # One record per ainvoke (incl. tool-retry calls): session + full input/output
@@ -1991,6 +2021,7 @@ class TeamAgent:
             history_messages = history_messages + [response, error_tool_msg]
             history_messages = self._sanitize_messages(history_messages, external_tool_names)
             input_messages = [SystemMessage(content=base_prompt)] + history_messages
+            runtime_state_in_input = ""
             continue
 
         # --- Auto-continue check based on token budget (new) ---
@@ -2416,9 +2447,9 @@ class TeamAgent:
         """返回锁来源: "user"、"system"、或 "" (未占用)。"""
         return self._thread_state_registry.get_thread_busy_source(thread_id)
 
-    def set_thread_context_usage(self, thread_id: str, tokens: int, budget: int):
-        """设置该 thread 的当前压缩上下文用量。"""
-        self._thread_state_registry.set_thread_context_usage(thread_id, tokens, budget)
+    def set_thread_context_usage(self, thread_id: str, tokens: int, budget: int, **kwargs):
+        """设置该 thread 的当前上下文用量（kwargs: source / breakdown / cache_read_tokens）。"""
+        self._thread_state_registry.set_thread_context_usage(thread_id, tokens, budget, **kwargs)
 
     def get_thread_context_usage(self, thread_id: str) -> dict[str, int]:
         """返回该 thread 的当前压缩上下文用量。"""
@@ -2435,6 +2466,86 @@ class TeamAgent:
     def get_thread_last_context_tokens(self, thread_id: str) -> int:
         """返回该 thread 上一轮真实上下文占用 (input+output)；从未记录时返回 0。"""
         return self._thread_state_registry.get_thread_last_context_tokens(thread_id)
+
+    async def record_context_usage(
+        self,
+        thread_id: str,
+        *,
+        input_tokens: int,
+        output_tokens: int,
+        cache_read_tokens: int = 0,
+        model: str = "",
+        context_window: int = 0,
+        components: dict[str, int] | None = None,
+    ) -> None:
+        """把一次 LLM 调用的 API 实测用量记为该 thread 的上下文占用，并落盘。
+
+        占用 = input + output；分项按本地分词比例分摊到真实 input 总数，
+        另加 output 一项。落盘后服务重启也能读回。
+        """
+        input_tokens = max(0, int(input_tokens or 0))
+        if input_tokens <= 0:
+            return
+        output_tokens = max(0, int(output_tokens or 0))
+        cache_read_tokens = max(0, int(cache_read_tokens or 0))
+        context_window = max(0, int(context_window or 0))
+        tokens = input_tokens + output_tokens
+        breakdown = scale_components(components or {}, input_tokens)
+        breakdown["output"] = output_tokens
+
+        registry = self._thread_state_registry
+        registry.set_thread_last_usage_tokens(thread_id, input_tokens, output_tokens)
+        registry.set_thread_context_usage(
+            thread_id,
+            tokens,
+            max(context_window, tokens),
+            source="api",
+            breakdown=breakdown,
+            cache_read_tokens=cache_read_tokens,
+        )
+        record = {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cache_read_tokens": cache_read_tokens,
+            "context_window": context_window,
+            "model": model or "",
+            "breakdown": breakdown,
+        }
+        try:
+            await asyncio.to_thread(save_context_usage_record, self._db_path, thread_id, record)
+        except Exception as exc:
+            logging.getLogger("agent").warning("persist context usage failed for %s: %s", thread_id, exc)
+
+    async def restore_context_usage(self, thread_id: str) -> bool:
+        """内存里没有真值时，从磁盘读回上一轮 API 用量；每个 thread 每个进程只读一次库。"""
+        registry = self._thread_state_registry
+        if not registry.claim_context_usage_restore(thread_id):
+            return False
+        try:
+            record = await asyncio.to_thread(get_context_usage_record, self._db_path, thread_id)
+        except Exception as exc:
+            logging.getLogger("agent").warning("load context usage failed for %s: %s", thread_id, exc)
+            return False
+        record = record or {}
+        input_tokens = max(0, int(record.get("input_tokens") or 0))
+        if input_tokens <= 0:
+            return False
+        output_tokens = max(0, int(record.get("output_tokens") or 0))
+        model = str(record.get("model") or "")
+        if model and not registry.get_thread_model(thread_id):
+            registry.set_thread_model(thread_id, model)
+        context_window = int(record.get("context_window") or 0) or infer_model_context_window(model or None)
+        tokens = input_tokens + output_tokens
+        registry.set_thread_last_usage_tokens(thread_id, input_tokens, output_tokens)
+        registry.set_thread_context_usage(
+            thread_id,
+            tokens,
+            max(context_window, tokens),
+            source="api",
+            breakdown=dict(record.get("breakdown") or {}),
+            cache_read_tokens=int(record.get("cache_read_tokens") or 0),
+        )
+        return True
 
     def get_thread_model(self, thread_id: str) -> str:
         """返回该 thread 上一次推理实际使用的模型名（用于静态路径反推 budget）。"""
