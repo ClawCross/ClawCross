@@ -190,18 +190,27 @@ class SessionTokenBudget:
         }
 
     def format_budget_notice(self) -> str:
-        """Format a human-readable budget status for injection into prompts."""
-        pressure_pct = int(self.context_pressure * 100)
+        """Format a human-readable budget status for injection into prompts.
+
+        The numbers are bucketed rather than exact. This string rides in the
+        per-turn context block, which is sent but never written back to
+        history, so it is only re-sent when it changes. Exact values would
+        differ on every single call, making every tool round re-send the block
+        and leaving each request's cache entry ending in content the next
+        request no longer has. Coarse buckets still tell the model what to do.
+        """
+        pressure_pct = int(self.context_pressure * 100) // 10 * 10
+        remaining_k = self.remaining_budget() // 5000 * 5
         if self.is_critical:
             return (
-                f"⚠️ 上下文容量严重不足 ({pressure_pct}% 已用)。"
-                f"剩余 ~{self.remaining_budget():,} tokens。"
+                f"⚠️ 上下文容量严重不足 (>{pressure_pct}% 已用)。"
+                f"剩余 ~{remaining_k}k tokens。"
                 "请立即总结进展并结束当前任务。"
             )
         if self.is_warning:
             return (
-                f"⚡ 上下文容量偏高 ({pressure_pct}% 已用)。"
-                f"剩余 ~{self.remaining_budget():,} tokens。"
+                f"⚡ 上下文容量偏高 (>{pressure_pct}% 已用)。"
+                f"剩余 ~{remaining_k}k tokens。"
                 "建议精简后续操作，优先完成核心任务。"
             )
         return ""

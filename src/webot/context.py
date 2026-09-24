@@ -168,12 +168,12 @@ def _resolve_compaction_min_new_messages() -> int:
 
 def render_runtime_context_block(
     *,
-    workspace: str,
-    mode: dict[str, Any] | None,
-    plan: dict[str, Any] | None,
-    todos: dict[str, Any] | None,
-    verifications: list[dict[str, Any]] | None,
-    pending_approvals: list[dict[str, Any]] | None,
+    workspace: str = "",
+    mode: dict[str, Any] | None = None,
+    plan: dict[str, Any] | None = None,
+    todos: dict[str, Any] | None = None,
+    verifications: list[dict[str, Any]] | None = None,
+    pending_approvals: list[dict[str, Any]] | None = None,
     inbox: list[dict[str, Any]] | None = None,
     recent_artifacts: list[dict[str, Any]] | None = None,
     recent_runs: list[dict[str, Any]] | None = None,
@@ -182,7 +182,11 @@ def render_runtime_context_block(
     voice: dict[str, Any] | None = None,
     buddy: dict[str, Any] | None = None,
 ) -> str:
-    lines = ["【Runtime Context】", f"workspace: {workspace}"]
+    # workspace is optional: it is fixed per session, so the caller carries it
+    # in the stable system prompt rather than re-sending it here every turn.
+    lines = ["【Runtime Context】"]
+    if workspace:
+        lines.append(f"workspace: {workspace}")
     if mode:
         lines.append(f"session_mode: {mode.get('mode', 'execute')}")
         if mode.get("reason"):
@@ -250,3 +254,60 @@ def render_runtime_context_block(
         if buddy_note:
             lines.append(f"buddy_note: {_trim_text(str(buddy_note or ''), 100)}")
     return "\n".join(lines)
+
+
+def assemble_input_messages(
+    *,
+    base_prompt: str,
+    history: list[BaseMessage],
+    runtime_state: str,
+    last_sent_state: str = "",
+) -> tuple[list[BaseMessage], str]:
+    """Build the request sent to the model, keeping the cacheable prefix intact.
+
+    Two invariants, both required for prompt/KV cache reuse:
+
+    1. ``base_prompt`` is the whole system message. Runtime state never gets
+       appended to it — the system message renders ahead of tools and history,
+       so a per-turn edit there invalidates the entire prefix every call.
+    2. Runtime state rides at the tail, and only when it changed. It is sent
+       but never written back to history, so a request carrying it produces a
+       cache entry ending in content the next request no longer has — written,
+       never read. Re-sending unchanged state buys nothing and costs every
+       later hit, so the tool rounds in between end on stored messages instead.
+
+    Returns the messages plus the state actually injected ("" when skipped).
+    """
+    messages: list[BaseMessage] = [SystemMessage(content=base_prompt)] + list(history)
+    if not runtime_state or not history:
+        return messages, ""
+
+    last_msg = history[-1]
+    if isinstance(last_msg, HumanMessage):
+        # 本轮首调：并进用户这条消息，模型每轮至少拿到一次当前状态。
+        # 必须排在用户原文**之后**：这条消息落库时不含状态块，所以本轮之后的每次
+        # 请求看到的都是没有状态块的原文。状态块放前面，分歧点就落在这条消息的开头，
+        # 整段用户输入在后续调用里全部重算；放后面，分歧点在末尾，用户输入仍在公共
+        # 前缀里。@file/@diff 展开后单条输入可达 24000 字符，这个差别不小。
+        state_text = f"\n\n---\n[系统状态]\n{runtime_state}"
+        if isinstance(last_msg.content, list):
+            content: Any = list(last_msg.content) + [{"type": "text", "text": state_text}]
+        else:
+            content = f"{last_msg.content}{state_text}"
+        return (
+            [SystemMessage(content=base_prompt)] + list(history[:-1]) + [HumanMessage(content=content)],
+            runtime_state,
+        )
+
+    if isinstance(last_msg, ToolMessage) and runtime_state != last_sent_state:
+        # 工具回合：追加在全部 tool_result 之后，不破坏 tool_calls → ToolMessage
+        # 配对（provider 会把相邻的 tool/user 合并进同一个 user turn）。
+        return (
+            [SystemMessage(content=base_prompt)]
+            + list(history)
+            + [HumanMessage(content=f"[系统状态]\n{runtime_state}")],
+            runtime_state,
+        )
+
+    # 状态没变，或以 AIMessage 收尾（正常循环下不可达）：让请求以落库消息结尾。
+    return messages, ""

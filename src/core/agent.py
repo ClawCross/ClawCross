@@ -28,7 +28,7 @@ from webot.compression import (
     make_llm_summarizer,
     trim_new_input_if_oversized,
 )
-from webot.context import render_runtime_context_block
+from webot.context import assemble_input_messages, render_runtime_context_block
 from webot.memory import ensure_memory_state
 from webot.skills import build_skills_prompt, build_user_profile_block
 from webot.soul import build_soul_prompt
@@ -785,6 +785,11 @@ class TeamAgent:
         # Per-thread tool-state cache
         self._task_registry = TaskRegistry()
         self._tool_state_cache: dict[str, frozenset[str]] = {}
+        # 上一次真正发给模型的运行时状态块。动态块是"发了但不写回历史"的临时内容，
+        # 每发一次，本次请求写入的缓存条目就以它结尾，而下一次请求里它已不存在
+        # （被模型回复顶掉），条目永远读不回来。所以工具回合里只在状态**变化**时
+        # 才重发，没变就让请求以落库的消息收尾，缓存条目才是可复用的前缀。
+        self._last_runtime_state_sent: dict[str, str] = {}
 
         # Per-thread lock: 防止 system_trigger 和用户对话并发操作同一 checkpoint
         self._thread_state_registry = ThreadStateRegistry()
@@ -1527,6 +1532,15 @@ class TeamAgent:
         if not is_subagent and session_persona_prompt:
             base_prompt += f"\n{session_persona_prompt}\n"
 
+        # Workspace is fixed for the life of a session — nothing lets a running
+        # session change its own cwd (the stored cwd is only written when a
+        # subagent record is created or updated). So it belongs in the stable
+        # system prompt, not in the per-turn block where it would be re-sent
+        # for the life of the session. base_prompt is rebuilt every call, so a
+        # record that does change is still picked up; it costs one prefix
+        # invalidation, which is the right price for a real change.
+        base_prompt += f"\n【Workspace】\n{describe_session_workspace(user_id, session_id)}\n"
+
         session_meta = self._find_internal_session_meta(user_id, session_id or "") if (user_id and session_id) else None
         session_team = (session_meta or {}).get("team", "")
 
@@ -1597,7 +1611,6 @@ class TeamAgent:
         voice_state = get_webot_voice_state(user_id, session_id or "default")
         buddy_state = serialize_buddy_state(user_id)
         runtime_context_block = render_runtime_context_block(
-            workspace=describe_session_workspace(user_id, session_id),
             mode=runtime_mode_payload,
             plan=runtime_plan,
             todos=runtime_todos,
@@ -1797,11 +1810,13 @@ class TeamAgent:
             )
 
         # --- Session resume prompt (new) ---
+        # 只在 turn 0 出现，即逐轮变化：进 base_prompt 会让 turn 1 的 system 与
+        # turn 0 不一致，整条前缀（含工具定义）作废。放进动态块随本轮消息走。
         if current_turn_count == 0:
             checkpoint = get_session_checkpoint(user_id, session_id)
             if checkpoint:
                 resume_prompt = build_resume_prompt(checkpoint)
-                base_prompt += f"\n{resume_prompt}\n"
+                dynamic_context_block += f"\n{resume_prompt}\n"
 
         # 如果是系统触发，且最后一条不是 ToolMessage（非工具回调轮），给它加上系统触发说明
         is_system = state.get("trigger_source") == "system"
@@ -1824,35 +1839,17 @@ class TeamAgent:
             ):
                 msg.content = extract_text(msg.content)
 
-        # 正常对话流程（用户和系统触发共用）
-        # 动态内容（session mode/运行时状态/工具变更）只能并入「最后一条 HumanMessage」。
-        # 若最后一条是 ToolMessage / AIMessage（例如刚执行完工具、准备让模型继续），
-        # 绝不能把 ToolMessage 替换成 HumanMessage，否则会破坏 Anthropic/MiniMax 要求的
-        # tool_calls → ToolMessage 顺序，触发 2013——这种情况下只能退而求其次贴回
-        # system message 尾部（跟 base_prompt 的稳定前缀部分区分开，不影响前缀命中）。
-        if dynamic_context_block and len(history_messages) >= 1:
-            last_msg = history_messages[-1]
-            if isinstance(last_msg, HumanMessage):
-                if isinstance(last_msg.content, list):
-                    notification = {"type": "text", "text": f"[系统状态]\n{dynamic_context_block}\n---\n"}
-                    augmented_content = [notification] + list(last_msg.content)
-                    augmented_msg = HumanMessage(content=augmented_content)
-                else:
-                    augmented_content = f"[系统状态]\n{dynamic_context_block}\n---\n{last_msg.content}"
-                    augmented_msg = HumanMessage(content=augmented_content)
-                input_messages = (
-                    [SystemMessage(content=base_prompt)]
-                    + history_messages[:-1]
-                    + [augmented_msg]
-                )
-            else:
-                notice_block = f"\n\n[系统状态]\n{dynamic_context_block}\n"
-                input_messages = (
-                    [SystemMessage(content=base_prompt + notice_block)]
-                    + history_messages
-                )
-        else:
-            input_messages = [SystemMessage(content=base_prompt)] + history_messages
+        # 正常对话流程（用户和系统触发共用）。动态内容（session mode/运行时状态/
+        # 工具变更/resume）只能落在消息末尾、绝不进 system message，且只在变化时
+        # 重发——两条约束和原因都在 assemble_input_messages 的 docstring 里。
+        input_messages, injected_runtime_state = assemble_input_messages(
+            base_prompt=base_prompt,
+            history=history_messages,
+            runtime_state=dynamic_context_block,
+            last_sent_state=self._last_runtime_state_sent.get(tool_state_key, ""),
+        )
+        if injected_runtime_state:
+            self._last_runtime_state_sent[tool_state_key] = injected_runtime_state
 
         # # === DEBUG: dump full raw input to file for diagnosis ===
         # try:
@@ -1889,7 +1886,7 @@ class TeamAgent:
 
         # 上下文分项统计用：本轮实际发给模型的各组成部分
         context_tool_schemas = tool_schemas(bind_tools_list)
-        runtime_state_in_input = dynamic_context_block if (dynamic_context_block and history_messages) else ""
+        runtime_state_in_input = injected_runtime_state
 
         response = None
         usage_meta = {}
