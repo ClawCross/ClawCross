@@ -589,105 +589,33 @@ async def start_new_oasis(
     team: str = "",
 ) -> str:
     """
-    Submit a question or work task to the OASIS forum for multi-expert discussion or execution.
-    Always runs in detach (async) mode — returns immediately with a topic_id.
-    Use check_oasis_discussion(topic_id=...) to check progress and get the conclusion later.
+    Submit a question or task to the OASIS forum. Always async: returns a
+    topic_id (YAML mode) or run_id (Python mode) immediately — poll with
+    check_oasis_discussion / check_oasis_python_run for the result.
 
-    Two modes:
-      - discussion=False (default): Execute mode. Agents run tasks sequentially/in parallel per workflow,
-        no discussion/voting. Each agent receives the question + instruction + previous agents' outputs
-        as context, executes its task, and returns results. Ideal for task automation (e.g. game control).
-      - discussion=True: Forum discussion mode. Experts discuss, reply, vote in JSON format.
-    
-    Note: discussion can also be set in YAML via "discussion: true/false". 
-    If not set here (default False), the YAML setting is used. Setting it here overrides the YAML.
+    Supply exactly one workflow source (python_file > schedule_file >
+    schedule_yaml when several are given):
+      - schedule_yaml / schedule_file: graph engine. Call get_yaml_workflow_rules()
+        for the expert-ref formats (tag#temp#N, tag#oasis#name, tag#ext#id),
+        step types and a worked example.
+      - python_file: standalone workflowpy script. Call get_workflow_writing_rules()
+        for the ctx API and constraints.
+    list_oasis_workflows / list_oasis_python_workflows find saved ones.
 
-    Workflow has two modes:
-      - YAML mode: current OASIS graph engine
-      - Python mode: provide python_file; the script is launched in standalone mode with question/user/team injected.
-
-    Discovery helpers:
-      - Use list_oasis_workflows(...) to find saved YAML workflows.
-      - Use list_oasis_python_workflows(...) to find saved Python workflows.
-
-    In YAML mode, expert pool is built entirely from schedule YAML expert names.
-    Either schedule_file or schedule_yaml must be provided.
-    If both are provided, schedule_file takes priority.
-    If python_file is provided, it takes priority over YAML mode.
-
-    **Three Agent Types** (name must contain '#'; engine dispatches by format):
-
-      Type 1 — Direct LLM (stateless, fast):
-        "tag#temp#N"            → ExpertAgent. Stateless single-shot LLM call per round.
-                                  tag maps to preset expert name/persona; N is instance number.
-                                  Example: "creative#temp#1", "critical#temp#2"
-
-      Type 2 — Internal Session Agent (stateful, has memory):
-        "tag#oasis#name"        → SessionExpert. Resolves agent name to session_id via
-                                  internal agent JSON (internal_agents.json). tag enables
-                                  persona injection from presets.
-                                  Example: "test#oasis#test1", "creative#oasis#my_agent"
-        "#oasis#name"           → SessionExpert (no tag). Same name→session lookup,
-                                  no persona injection unless auto-detected from JSON.
-                                  Example: "#oasis#test1"
-
-      Type 3 — External API (DeepSeek, GPT-4, Ollama, etc):
-        "tag#ext#id"            → ExternalExpert. Calls any external OpenAI-compatible API directly.
-                                  Does NOT go through the local agent. External service assumed stateful.
-                                  Supports custom headers via YAML `headers` field.
-                                  Example: "deepseek#ext#ds1"
-
-    Session conventions:
-      - Agent names are resolved to session_ids via internal agent JSON.
-      - Append "#new" to force a brand-new session (resolved session_id replaced with random UUID):
-          "tag#oasis#name#new"  → "#new" stripped, resolved session_id replaced with UUID
-
-    For simple all-parallel with all preset experts, use:
-      version: 1
-      repeat: true
-      plan:
-        - all_experts: true
+    discussion=False (default) runs agents as a task pipeline, each seeing the
+    question plus earlier agents' output. discussion=True runs the forum format
+    with JSON replies and voting. Set here, it overrides the YAML's own setting.
 
     Args:
-        question: The question/topic to discuss or work task to assign
-        schedule_yaml: YAML defining expert pool AND speaking order.
-            Not needed if schedule_file is provided. If both given, schedule_file wins.
-
-            Example:
-              version: 1
-              repeat: true
-              plan:
-                - expert: "creative#temp#1"
-                  instruction: "请重点分析创新方向"
-                - expert: "creative#oasis#ab12cd34"
-                - expert: "creative#oasis#new#new"
-                - parallel:
-                    - expert: "critical#temp#2"
-                      instruction: "从风险角度分析"
-                    - "data#temp#3"
-                - expert: "助手#default"
-                - expert: "deepseek#ext#ds1"
-                - all_experts: true
-                - manual:
-                    author: "主持人"
-                    content: "请聚焦可行性"
-
-            instruction 字段（可选）：给专家的专项指令，专家会在发言时重点关注该指令。
-        username: (auto-injected) current user identity; do NOT set manually
-        max_rounds: Maximum number of discussion rounds (1-20, default 5)
-        schedule_file: Filename or path to a saved YAML workflow file. Short names (e.g. "review.yaml")
-            are resolved under data/user_files/{user}/oasis/yaml/. Takes priority over schedule_yaml.
-        notify_session: (auto-injected) Session ID for completion notification.
-        discussion: If False (default), execute mode — agents just run tasks without discussion format.
-            If True, forum discussion mode with JSON reply/vote.
-            Can also be set in YAML via "discussion: true". When False (default), YAML setting is respected.
-        team: Team name for scoped agent/expert storage. When provided, internal agents are loaded
-            from the team directory, and team-specific custom experts (defined in the team page)
-            take priority over public/agency experts for tag→persona resolution.
-
-    Returns:
-        YAML mode returns a topic_id message.
-        Python mode returns a standalone run_id plus log/result file paths.
+        question: the question to discuss, or the task to carry out
+        schedule_yaml: inline workflow YAML
+        username: (auto-injected) do NOT set manually
+        max_rounds: discussion rounds, 1-20
+        schedule_file: saved YAML, short names resolve under the user's oasis/yaml/
+        python_file: saved workflowpy script
+        notify_session: (auto-injected) session to notify on completion
+        discussion: forum mode instead of task pipeline
+        team: scope agents and experts to this team
     """
     effective_user = _resolve_effective_user(username)
 
@@ -982,46 +910,24 @@ async def set_oasis_yaml_workflow(
     team: str = "",
 ) -> str:
     """
-    Save a reusable OASIS **YAML** workflow (Version 2 graph format), then run it
-    later via start_new_oasis(schedule_file="name.yaml").
+    Save a reusable OASIS **YAML** workflow (Version 2 graph format) for later use
+    via start_new_oasis(schedule_file="name.yaml").
 
-    Stored under data/user_files/{user}/oasis/yaml/ (or teams/{team}/oasis/yaml/).
-    Call get_yaml_workflow_rules() for the full schema BEFORE authoring — the
-    schedule MUST contain a top-level `plan` or the save is rejected.
+    Call get_yaml_workflow_rules() for the schema before authoring — expert-ref
+    formats, node types, edges, conditional/selector edges and a worked example
+    all live there. The only rule enforced here: the YAML must contain a
+    top-level `plan`, or the save is rejected.
 
-    Minimal schema:
-
-        version: 2
-        repeat: false
-        plan:
-          - id: n1
-            expert: "creative#temp#1"        # persona ref: tag#mode#id
-            instruction: "what this step does"   # optional
-          - id: n2
-            expert: "critical#temp#1"
-          - id: done
-            manual: {author: bend, content: "wrap-up"}
-        edges:
-          - [n1, n2]
-          - [n2, done]
-
-    Persona ref formats: tag#temp#N (stateless), tag#oasis#new / tag#oasis#<name>
-    (stateful session), #oasis#<name> (no tag), tag#ext#id (external agent).
-    Advanced (see get_yaml_workflow_rules): conditional_edges, selector_edges
-    (selector: true), parallel, all_experts, script/human nodes, __end__.
-
+    Saved under the user's oasis/yaml/ directory, or the team's when team is set.
     For Python (workflowpy) workflows use set_oasis_python_workflow instead.
 
     Args:
-        username: (auto-injected) current user identity; do NOT set manually
-        name: Filename for the workflow (e.g. "code_review"). ".yaml" appended if missing.
-        schedule_yaml: The full Version-2 YAML content (must contain `plan`)
-        description: Optional one-line description (saved as comment at top of file)
-        save_layout: Whether to also generate and save a visual layout (default True)
-        team: Team name. When provided, workflow is saved under the team directory.
-
-    Returns:
-        Confirmation with the saved file path
+        username: (auto-injected) do NOT set manually
+        name: workflow filename, e.g. "code_review" (".yaml" appended if missing)
+        schedule_yaml: the Version-2 YAML content
+        description: optional one-line description, saved as a header comment
+        save_layout: also generate a visual layout (default True)
+        team: save under this team's directory instead of the user's
     """
     effective_user = _resolve_effective_user(username)
     # Proxy to OASIS HTTP API

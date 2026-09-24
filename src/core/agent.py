@@ -12,6 +12,7 @@ from typing import TypedDict, Optional
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
+from langchain_core.utils.function_calling import convert_to_openai_tool
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from pydantic import ValidationError
 
@@ -151,7 +152,6 @@ USER_INJECTED_TOOLS = {
     "send_subagent_message", "get_subagent_history", "cancel_subagent", "delete_subagent",
     "list_webot_workflow_presets", "apply_webot_workflow_preset",
     "session_send_to", "session_inbox", "session_deliver_inbox",
-    "claude_session_send_to", "claude_session_inbox", "claude_session_deliver_inbox",
     "write_session_plan", "read_session_plan", "clear_session_plan",
     "write_session_todos", "read_session_todos", "clear_session_todos",
     "record_verification", "list_verifications", "run_verification",
@@ -208,9 +208,6 @@ SESSION_INJECTED_TOOLS = {
     "session_send_to": "source_session",
     "session_inbox": "source_session",
     "session_deliver_inbox": "source_session",
-    "claude_session_send_to": "source_session",
-    "claude_session_inbox": "source_session",
-    "claude_session_deliver_inbox": "source_session",
     "ultraplan_start": "source_session",
     "ultraplan_status": "source_session",
     "ultrareview_start": "source_session",
@@ -248,9 +245,6 @@ SESSION_FORCE_INJECTED_TOOLS: frozenset[str] = frozenset({
     "session_send_to",
     "session_inbox",
     "session_deliver_inbox",
-    "claude_session_send_to",
-    "claude_session_inbox",
-    "claude_session_deliver_inbox",
     "enter_plan_mode",
     "exit_plan_mode",
     "set_session_mode",
@@ -260,6 +254,40 @@ SESSION_FORCE_INJECTED_TOOLS: frozenset[str] = frozenset({
     "list_images",
     "attach_image_to_context",
 })
+
+def hide_injected_params(tool):
+    """Return *tool*'s schema for binding, minus the arguments we inject ourselves.
+
+    ``UserAwareToolNode`` fills ``username`` and the per-tool session argument on
+    every call, so the model neither needs to supply them nor can it know the
+    right values. Leaving them in the bound schema costs tokens in the request's
+    most expensive stable segment — the tool array renders before the system
+    prompt — and invites the model to guess an identity we then overwrite.
+    ``username`` alone appears in 100 of the 109 tools.
+
+    Only arguments this process actually injects are removed, so a tool that
+    resolves its own user server-side keeps its parameter. Falls back to the
+    original tool whenever the schema cannot be read or has nothing to drop —
+    binding must never silently lose a tool.
+    """
+    hidden = {name for name in (SESSION_INJECTED_TOOLS.get(tool.name),) if name}
+    if tool.name in USER_INJECTED_TOOLS:
+        hidden.add("username")
+    if not hidden:
+        return tool
+    try:
+        schema = convert_to_openai_tool(tool)
+        params = schema["function"]["parameters"]
+        properties = params.get("properties") or {}
+        if not hidden & set(properties):
+            return tool
+        params["properties"] = {k: v for k, v in properties.items() if k not in hidden}
+        if isinstance(params.get("required"), list):
+            params["required"] = [k for k in params["required"] if k not in hidden]
+        return schema
+    except Exception:
+        return tool
+
 
 _TOOL_APPROVAL_WAIT_SECONDS = max(1, int(os.getenv("COMMAND_APPROVAL_WAIT_SECONDS", "600")))
 _TOOL_APPROVAL_POLL_SECONDS = max(0.2, float(os.getenv("COMMAND_APPROVAL_POLL_SECONDS", "1.0")))
@@ -1394,7 +1422,7 @@ class TeamAgent:
         # 谁能不能调，交给下面 UserAwareToolNode 在真正执行时按 enabled_tools
         # 拦截并回复"该工具被禁用"，而不是从模型能看到的工具列表里隐藏它。
         external_tools_defs = state.get("external_tools") or []
-        bind_tools_list: list = list(all_tools)
+        bind_tools_list: list = [hide_injected_params(t) for t in all_tools]
         external_tool_names: set[str] = set()
         for ext_tool in external_tools_defs:
             # 支持 OpenAI 标准格式: {"type":"function","function":{...}} 或简化格式 {"name":...,"parameters":...}

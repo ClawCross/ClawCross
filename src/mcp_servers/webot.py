@@ -2127,52 +2127,6 @@ async def session_deliver_inbox(
     return "\n".join(lines)
 
 @mcp.tool()
-async def claude_session_send_to(
-    username: str,
-    target_ref: str,
-    content: str,
-    source_session: str = "",
-) -> str:
-    return await session_send_to(
-        username=username,
-        target_ref=target_ref,
-        content=content,
-        source_session=source_session,
-    )
-
-@mcp.tool()
-async def claude_session_inbox(
-    username: str,
-    target_ref: str = "",
-    status: str = "queued",
-    source_session: str = "",
-    limit: int = 20,
-) -> str:
-    return await session_inbox(
-        username=username,
-        target_ref=target_ref,
-        status=status,
-        source_session=source_session,
-        limit=limit,
-    )
-
-@mcp.tool()
-async def claude_session_deliver_inbox(
-    username: str,
-    target_ref: str = "",
-    source_session: str = "",
-    limit: int = 20,
-    force: bool = False,
-) -> str:
-    return await session_deliver_inbox(
-        username=username,
-        target_ref=target_ref,
-        source_session=source_session,
-        limit=limit,
-        force=force,
-    )
-
-@mcp.tool()
 async def bridge_attach(
     username: str,
     source_session: str = "",
