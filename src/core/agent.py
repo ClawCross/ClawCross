@@ -1248,8 +1248,9 @@ class TeamAgent:
         self._tool_registry.register_tools(self._mcp_tools)
         # Mark essential tools as always-loaded
         self._tool_registry.set_always_loaded({
+            # No "search_files" — no server defines one; grep through run_command.
             "read_file", "write_file", "list_files", "run_command",
-            "search_files", "run_python_code", "list_images", "attach_image_to_context",
+            "run_python_code", "list_images", "attach_image_to_context",
             "lsp", "workspace_diagnostics",
         })
 
