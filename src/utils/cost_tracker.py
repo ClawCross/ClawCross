@@ -156,19 +156,28 @@ class SessionCostTracker:
         }
 
     def format_cost_notice(self) -> str:
-        """Format a cost notice for system prompt injection."""
+        """Format a cost notice for injection into the per-turn context block.
+
+        Reported as a bucketed share of the limit, not an exact dollar figure.
+        The block is sent but never written back to history, so it is only
+        re-sent when it changes; a running total to four decimals differs on
+        every call, which would re-send the block every tool round and leave
+        each request's cache entry ending in content the next request no
+        longer has. The bucket and the limit are what the model acts on.
+        """
         total = self.total_cost
         if total < 0.01:
             return ""
         limit_pct = int((total / self.cost_limit_usd) * 100) if self.cost_limit_usd > 0 else 0
+        bucket = limit_pct // 10 * 10
         if limit_pct >= 90:
             return (
-                f"⚠️ 会话成本已达 ${total:.4f} ({limit_pct}% of ${self.cost_limit_usd} limit)。"
+                f"⚠️ 会话成本已用掉 ${self.cost_limit_usd} 上限的 >{bucket}%。"
                 "请立即完成当前任务。"
             )
         if limit_pct >= 70:
             return (
-                f"💰 会话成本: ${total:.4f} ({limit_pct}% of ${self.cost_limit_usd} limit)。"
+                f"💰 会话成本已用掉 ${self.cost_limit_usd} 上限的 >{bucket}%。"
                 "请注意控制成本。"
             )
         return ""
