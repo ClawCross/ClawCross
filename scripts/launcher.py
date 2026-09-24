@@ -333,6 +333,23 @@ def _decode_command_output(data):
     return data.decode("utf-8", errors="replace")
 
 
+_DIRECT_OPENER = None
+
+
+def _direct_opener():
+    """An opener that ignores HTTP_PROXY, for probing ports on this machine.
+
+    Health checks target 127.0.0.1. A desktop proxy exports HTTP_PROXY with a
+    no_proxy written as "127.*", which urllib does not match, so the probe is
+    routed through the proxy, comes back 502 forever, and this wait times out
+    on services that actually started. Local probes never want a proxy.
+    """
+    global _DIRECT_OPENER
+    if _DIRECT_OPENER is None:
+        _DIRECT_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    return _DIRECT_OPENER
+
+
 def is_port_listening(port):
     port = str(port)
 
@@ -395,7 +412,7 @@ def wait_for_service_ready(
                 remaining = deadline - time.monotonic()
                 probe_timeout = min(2.0, max(0.5, remaining))
                 req = urllib.request.Request(health_url, method="GET")
-                urllib.request.urlopen(req, timeout=probe_timeout)
+                _direct_opener().open(req, timeout=probe_timeout)
                 return
         except Exception as exc:
             last_error = exc
