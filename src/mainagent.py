@@ -8,7 +8,7 @@ FastAPI 应用入口，整合所有路由和服务：
 - 提供 CORS 支持
 """
 
-import contextlib
+import asyncio
 import os
 import secrets
 import uuid
@@ -137,6 +137,19 @@ def verify_password(username: str, password: str) -> bool:
 agent = TeamAgent(src_dir=current_dir, db_path=db_path)
 
 
+async def _reconcile_pending_in_background() -> None:
+    """Deliver wakes for jobs that finished while this process was down.
+
+    Runs after the app is serving, because delivery goes through this same
+    process's HTTP port.
+    """
+    try:
+        from utils.bg_notify import reconcile_pending_once
+        await reconcile_pending_once()
+    except Exception as exc:
+        logger.warning("startup notify reconcile failed: %s", exc)
+
+
 # --- FastAPI lifespan ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -144,9 +157,12 @@ async def lifespan(app: FastAPI):
     await init_group_db(group_db_path)   # 初始化群聊数据库（on_event 与 lifespan 不兼容）
     # 后台任务完成通知是事件驱动的（detached runner 跑完会 POST /internal/bg_job_done）。
     # 这里只做一次性对账（非轮询），补发「本进程宕机期间已完成」的任务通知。
-    with contextlib.suppress(Exception):
-        from utils.bg_notify import reconcile_pending_once
-        await reconcile_pending_once()
+    #
+    # 必须放到后台跑，不能在这里 await：对账是通过 HTTP POST 本进程自己的
+    # /system_trigger 完成的，而 lifespan 没返回之前本进程还不处理请求——这个请求
+    # 注定要等满 httpx 的 30s 超时，每个待投递任务各付一次。端口先开始服务，这件事
+    # 随后自己做。任务句柄要留着，否则可能被 GC 掉。
+    app.state.reconcile_task = asyncio.create_task(_reconcile_pending_in_background())
     yield
     await agent.shutdown()
 

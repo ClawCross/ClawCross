@@ -95,6 +95,26 @@ def init_openclaw_routes(
     return router
 
 
+def publish_skills_cache(
+    *,
+    skills_cache: dict,
+    managed_skills_dir: str,
+    bundled_skills: list,
+) -> None:
+    """Hand the preloaded skill data to the routes that serve it.
+
+    ``init_openclaw_routes`` runs at import time, before the preload, so it can
+    only capture the empty starting values. The preloader rebinds its own module
+    globals rather than mutating them, so without this the routes keep serving
+    the empty dict forever — /sessions/openclaw/skills-info returned {} no matter
+    how long the preload took.
+    """
+    global _openclaw_skills_cache, _openclaw_managed_skills_dir, _openclaw_bundled_skills
+    _openclaw_skills_cache = skills_cache
+    _openclaw_managed_skills_dir = managed_skills_dir
+    _openclaw_bundled_skills = bundled_skills
+
+
 # ============================================================
 # 辅助函数
 # ============================================================

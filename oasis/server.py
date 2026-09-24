@@ -198,6 +198,15 @@ def _preload_openclaw_skills():
         # Cache the complete skills data
         _openclaw_skills_cache = skills_data
         
+        # 交给路由，否则这次预热等于白做：init_openclaw_routes 在导入时就执行了，
+        # 只拿到了当时的空值，而上面几行是重新绑定本模块的全局变量，路由那份看不到。
+        from oasis.openclaw_routes import publish_skills_cache
+        publish_skills_cache(
+            skills_cache=_openclaw_skills_cache,
+            managed_skills_dir=_openclaw_managed_skills_dir,
+            bundled_skills=_openclaw_bundled_skills,
+        )
+
         print(f"[OASIS] ✅ Skills preloaded: {len(all_skills)} total skills, {len(_openclaw_bundled_skills)} bundled skills")
         print(f"[OASIS] 📁 Managed skills directory: {_openclaw_managed_skills_dir}")
         
@@ -227,9 +236,16 @@ def _check_owner(forum: DiscussionForum, user_id: str):
 # --- Lifespan ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Preload OpenClaw skills information at startup
-    _preload_openclaw_skills()
-    
+    # 预热 OpenClaw 技能缓存。这是缓存预热（见 _preload_openclaw_skills 的
+    # docstring: "to reduce latency"），不是启动依赖——所有读取方都已经能应对缓存
+    # 为空。它同步跑一个 Node CLI，实测 6~13s，而 uvicorn 在 lifespan 返回之后才
+    # 绑定端口：预热挡在端口前面，launcher 的就绪检查只能干等。丢到线程里后台做，
+    # 端口先开始服务，缓存随后自己填。任务句柄要留着，否则可能被 GC 掉。
+    app.state.skills_preload_task = asyncio.create_task(
+        asyncio.to_thread(_preload_openclaw_skills)
+    )
+
+
     # Load historical discussions
     loaded = DiscussionForum.load_all()
     discussions.update(loaded)

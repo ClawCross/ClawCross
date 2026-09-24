@@ -57,6 +57,13 @@ _JOB_ID_RE = re.compile(r"^[a-f0-9]{6,32}$")
 # terminal status within this slack beyond its own timeout.
 _STALE_SLACK_SEC = 120
 
+# Give up on a *terminal* job whose wake keeps failing. Without this a pointer
+# is kept forever on every failed delivery ("retry next time"), and each retry
+# costs a full _fire_trigger timeout on the reconcile path — pointers months old
+# were still being retried at every start. Waking a session about a job that
+# finished this long ago is not useful anyway.
+_PENDING_MAX_AGE_SEC = 24 * 3600
+
 
 def register_pending_notify(job_id: str, meta_path: str) -> None:
     """Record that ``job_id`` wants a completion notification (called by commander).
@@ -93,6 +100,15 @@ def _tail_text(path: str, limit: int = 1500) -> str:
         return Path(path).read_text(encoding="utf-8", errors="replace")[-limit:]
     except Exception:
         return ""
+
+
+def _is_expired(meta: dict) -> bool:
+    """Whether a terminal job finished too long ago to be worth waking a session for."""
+    try:
+        finished = float(meta.get("finished_at") or meta.get("started_at") or 0)
+    except (TypeError, ValueError):
+        return False
+    return bool(finished) and time.time() > finished + _PENDING_MAX_AGE_SEC
 
 
 def _is_stale(meta: dict) -> bool:
@@ -165,6 +181,10 @@ async def deliver_by_job_id(job_id: str) -> bool:
             ptr.unlink(missing_ok=True)
         return False
     if meta.get("notified"):
+        ptr.unlink(missing_ok=True)
+        return False
+    if _is_expired(meta):
+        logger.warning("dropping expired pending notify for job %s", job_id)
         ptr.unlink(missing_ok=True)
         return False
     if not meta.get("session_id"):
