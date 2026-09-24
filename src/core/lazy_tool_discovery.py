@@ -31,9 +31,21 @@ class ToolRegistryEntry:
 
     @property
     def summary(self) -> str:
-        """One-line summary for compact listing."""
-        desc = self.description[:80] if self.description else "No description"
-        return f"{self.name}: {desc}"
+        """One line naming the tool and what it is for.
+
+        This is the only thing the model sees for a tool it has not loaded, so
+        it has to read as a sentence. Tool descriptions come from docstrings:
+        they open on a blank line, wrap across several lines, and continue into
+        parameter notes. Take the first real sentence, flatten its wrapping, and
+        cut on a word boundary rather than mid-character.
+        """
+        text = " ".join((self.description or "").split())
+        if not text:
+            return f"{self.name}: (no description)"
+        sentence = text.split("。")[0].split(". ")[0].strip(" .。")
+        if len(sentence) > 100:
+            sentence = sentence[:100].rsplit(" ", 1)[0] + "…"
+        return f"{self.name}: {sentence}"
 
 
 class LazyToolRegistry:

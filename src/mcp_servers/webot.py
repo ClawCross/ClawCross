@@ -739,6 +739,7 @@ async def list_webot_agent_profiles(username: str = "") -> str:
 
 @mcp.tool()
 async def list_webot_workflow_presets(username: str = "") -> str:
+    """列出可以套用的 WeBot workflow preset。"""
     presets = list_workflow_presets()
     if not presets:
         return "📭 当前没有可用的 WeBot workflow preset。"
@@ -758,6 +759,7 @@ async def apply_webot_workflow_preset(
     preset_id: str,
     source_session: str = "",
 ) -> str:
+    """套用一个 WeBot workflow preset 到当前会话，用它预置 plan 与 todo 结构。"""
     session_id = source_session or "default"
     preset = get_workflow_preset(preset_id)
     if preset is None:
@@ -1552,6 +1554,7 @@ async def write_session_plan(
     source_session: str = "",
     status: str = "active",
 ) -> str:
+    """写入或覆盖当前会话的 plan（标题、步骤列表、状态）。"""
     session_id = source_session or "default"
     save_session_plan(
         username,
@@ -1571,6 +1574,7 @@ async def write_session_plan(
 
 @mcp.tool()
 async def read_session_plan(username: str, source_session: str = "") -> str:
+    """读取当前会话的完整 plan。运行时上下文只带前几条，需要全部时用这个。"""
     session_id = source_session or "default"
     plan = get_session_plan(username, session_id)
     if plan is None:
@@ -1584,6 +1588,7 @@ async def read_session_plan(username: str, source_session: str = "") -> str:
 
 @mcp.tool()
 async def clear_session_plan(username: str, source_session: str = "") -> str:
+    """删除当前会话的 plan。"""
     session_id = source_session or "default"
     deleted = delete_session_plan(username, session_id)
     if deleted:
@@ -1596,6 +1601,7 @@ async def write_session_todos(
     items: list[dict] | None = None,
     source_session: str = "",
 ) -> str:
+    """写入或覆盖当前会话的 todo 列表。"""
     session_id = source_session or "default"
     save_session_todos(username, session_id, items=items or [])
     todos = get_session_todos(username, session_id) or {"items": []}
@@ -1603,6 +1609,7 @@ async def write_session_todos(
 
 @mcp.tool()
 async def read_session_todos(username: str, source_session: str = "") -> str:
+    """读取当前会话的完整 todo 列表。运行时上下文只带前几条，需要全部时用这个。"""
     session_id = source_session or "default"
     todos = get_session_todos(username, session_id)
     if todos is None:
@@ -1614,6 +1621,7 @@ async def read_session_todos(username: str, source_session: str = "") -> str:
 
 @mcp.tool()
 async def clear_session_todos(username: str, source_session: str = "") -> str:
+    """删除当前会话的 todo 列表。"""
     session_id = source_session or "default"
     deleted = delete_session_todos(username, session_id)
     if deleted:
@@ -1673,6 +1681,7 @@ async def list_session_goal_control(
     status: str = "",
     limit: int = 20,
 ) -> str:
+    """列出当前会话的长期目标，含各自的状态、进度与已花费的额度。"""
     session_id = source_session or "default"
     goals = list_session_goals(
         username,
@@ -1704,6 +1713,7 @@ async def record_session_goal_heartbeat(
     source_session: str = "",
     metadata: dict | None = None,
 ) -> str:
+    """给某个长期目标记一次心跳：进展汇报、当前状态，以及本次新增的 token 和费用。"""
     record = store_goal_heartbeat(
         username,
         goal_id,
@@ -1729,6 +1739,7 @@ async def claude_code_status(
     username: str,
     source_session: str = "",
 ) -> str:
+    """查看本机 Claude Code 是否可用，以及当前会话的保活配置状态。"""
     session_id = source_session or "default"
     status = detect_claude_code_cached(ttl_seconds=10)
     keepalive = get_claude_keepalive_state(username, session_id)
@@ -1750,6 +1761,7 @@ async def probe_claude_code(
     source_session: str = "",
     timeout: int = 90,
 ) -> str:
+    """向本机 Claude Code 发一条探测消息，确认 ACP 通道是否真的能用。"""
     session_id = source_session or "default"
     result = probe_claude_acp(
         prompt=prompt,
@@ -1782,6 +1794,7 @@ async def configure_claude_keepalive(
     weekdays: str = "MTWRFSU",
     timeout: int = 90,
 ) -> str:
+    """配置当前会话对 Claude Code 的定时保活：开关、提示词、时区、起止时刻、生效星期。"""
     session_id = source_session or "default"
     record = save_claude_keepalive_state(
         username,
@@ -1811,6 +1824,7 @@ async def run_claude_keepalive_once(
     use_acp: bool = True,
     timeout: int = 90,
 ) -> str:
+    """立刻按保活配置向 Claude Code 发一次消息，不等定时触发。"""
     session_id = source_session or "default"
     state = get_claude_keepalive_state(username, session_id)
     effective_prompt = prompt or state.prompt or "ping"
@@ -1839,6 +1853,7 @@ async def record_verification(
     details: str = "",
     source_session: str = "",
 ) -> str:
+    """记录一条验证结果（标题、是否通过、细节），供之后复查。"""
     session_id = source_session or "default"
     verification_id = f"verify-{uuid.uuid4().hex[:10]}"
     add_verification_record(
@@ -1858,6 +1873,7 @@ async def record_verification(
 
 @mcp.tool()
 async def list_verifications(username: str, source_session: str = "", limit: int = 10) -> str:
+    """列出当前会话已经记录下来的验证结果。"""
     session_id = source_session or "default"
     items = list_verification_records(username, session_id, limit=max(1, min(limit, 20)))
     if not items:
@@ -1878,6 +1894,7 @@ async def run_verification(
     source_session: str = "",
     timeout: int = 300,
 ) -> str:
+    """把一个验证任务交给独立的验证 agent 执行，并返回它的结论。"""
     verification_task = task.strip() or "验证当前实现"
     prompt = verification_task
     if context.strip():
@@ -1908,6 +1925,7 @@ async def list_tool_approvals(
     status: str = "pending",
     limit: int = 20,
 ) -> str:
+    """列出当前会话的工具审批记录，默认只看还在等待批准的。"""
     session_id = source_session or None
     approvals = list_tool_approval_records(
         username,
@@ -1935,6 +1953,7 @@ async def enter_plan_mode(
     mode: str = "plan",
     source_session: str = "",
 ) -> str:
+    """把当前会话切到 plan 或 review 模式：只调研和记录计划，不修改文件、不改变环境状态。"""
     session_id = source_session or "default"
     normalized_mode = normalize_session_mode(mode)
     if normalized_mode == "execute":
@@ -1952,6 +1971,7 @@ async def exit_plan_mode(
     reason: str = "",
     source_session: str = "",
 ) -> str:
+    """退出 plan 模式，切回 execute，恢复动手执行的能力。"""
     session_id = source_session or "default"
     save_session_mode(username, session_id, mode="execute", reason=reason)
     return (
@@ -1986,6 +2006,7 @@ async def get_session_mode(
     username: str,
     source_session: str = "",
 ) -> str:
+    """查询当前会话所处的模式及其设置原因。"""
     session_id = source_session or "default"
     mode_info = load_session_mode(username, session_id)
     return (
@@ -2002,6 +2023,7 @@ async def session_send_to(
     content: str,
     source_session: str = "",
 ) -> str:
+    """给另一个会话发消息，消息先进对方收件箱等待投递。"""
     source_session_id = source_session or "default"
     source_agent_id, source_label = _source_label(username, source_session_id)
     targets = _resolve_target_sessions(username, target_ref, source_session_id)
@@ -2054,6 +2076,7 @@ async def session_inbox(
     source_session: str = "",
     limit: int = 20,
 ) -> str:
+    """查看会话收件箱里的消息，默认只列还在排队的。"""
     source_session_id = source_session or "default"
     targets = _resolve_target_sessions(username, target_ref or source_session_id, source_session_id)
     if target_ref == "*":
@@ -2096,6 +2119,7 @@ async def session_deliver_inbox(
     limit: int = 20,
     force: bool = False,
 ) -> str:
+    """把目标会话收件箱里排队的消息投递出去并唤醒它处理；target_ref 传 "*" 表示所有会话。"""
     source_session_id = source_session or "default"
     if target_ref == "*":
         targets = _resolve_target_sessions(username, "*", source_session_id)
@@ -2133,6 +2157,7 @@ async def bridge_attach(
     role: str = "viewer",
     label: str = "",
 ) -> str:
+    """为当前会话签发 bridge 接入凭证，让外部客户端以观察者或协作者身份接入。"""
     session_id = source_session or "default"
     bridge = issue_bridge_session(
         user_id=username,
@@ -2153,6 +2178,7 @@ async def bridge_status(
     username: str,
     source_session: str = "",
 ) -> str:
+    """查看当前会话的 bridge 接入情况：已连接的客户端数量与角色。"""
     session_id = source_session or "default"
     payload = get_bridge_runtime_payload(username, session_id)
     primary = payload.get("primary") or {}
@@ -2171,6 +2197,7 @@ async def voice_mode(
     source_session: str = "",
     auto_read_aloud: bool = False,
 ) -> str:
+    """开关当前会话的语音模式，并决定是否自动朗读回复。"""
     session_id = source_session or "default"
     current = get_voice_runtime_state(username, session_id)
     save_voice_state(
@@ -2201,6 +2228,7 @@ async def kairos_mode(
     source_session: str = "",
     reason: str = "",
 ) -> str:
+    """开关 kairos 模式，让 agent 自行判断时机主动行动。"""
     session_id = source_session or "default"
     set_kairos_mode(username, session_id, enabled, reason=reason)
     memory = ensure_memory_state(username, session_id, kairos_enabled=enabled)
@@ -2219,6 +2247,7 @@ async def dream_now(
     force: bool = True,
     reason: str = "manual",
 ) -> str:
+    """立即触发一次记忆整理，把近期会话内容压缩进长期记忆。"""
     session_id = source_session or "default"
     result = run_auto_dream(
         username,
@@ -2248,6 +2277,7 @@ async def ultraplan_start(
     cwd: str = "",
     remote: str = "",
 ) -> str:
+    """启动 ULTRAPLAN：让一个独立 agent 在隔离工作区里为给定任务产出实施方案。"""
     existing = _latest_ultraplan_for_session(username, source_session)
     if existing is not None and existing.status in {"queued", "running", "cancelling"}:
         return (
@@ -2378,6 +2408,7 @@ async def ultraplan_status(
     agent_ref: str = "",
     source_session: str = "",
 ) -> str:
+    """查询某次 ULTRAPLAN 的进度和产出的方案。"""
     target_run = None
     if run_id:
         target_run = get_run(run_id, username)
@@ -2445,6 +2476,7 @@ async def ultrareview_start(
     remote: str = "",
     angles: list[str] | None = None,
 ) -> str:
+    """启动 ULTRAREVIEW：多个 agent 从不同角度并行评审同一个目标。"""
     review_source_session = source_session or "default"
     requested_angles = [str(angle).strip() for angle in (angles or []) if str(angle).strip()]
     selected_angles = requested_angles or list(_DEFAULT_ULTRAREVIEW_ANGLES)
@@ -2572,6 +2604,7 @@ async def ultrareview_status(
     run_id: str,
     source_session: str = "",
 ) -> str:
+    """查询某次 ULTRAREVIEW 的进度，以及各个角度给出的评审结果。"""
     coordinator = get_run(run_id, username)
     if coordinator is None:
         return f"❌ 未找到 ULTRAREVIEW 运行: {run_id}"
