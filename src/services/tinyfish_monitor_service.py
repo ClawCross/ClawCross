@@ -17,7 +17,6 @@ import re
 import sqlite3
 import sys
 import time
-import utils.scheduler_service
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field

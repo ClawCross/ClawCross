@@ -18,7 +18,6 @@ import json
 import logging
 import re
 import time
-import utils.scheduler_service
 import urllib.error
 import urllib.parse
 import urllib.request

@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import asyncio
 import time
-import utils.scheduler_service
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, AsyncIterator, Callable, Awaitable

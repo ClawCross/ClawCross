@@ -10,7 +10,6 @@ OpenAI 协议兼容辅助模块
 import json
 import os
 import time
-import utils.scheduler_service
 import uuid
 from typing import Any, Callable, Dict, Optional, Set
 

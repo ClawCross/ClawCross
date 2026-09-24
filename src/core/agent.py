@@ -9,7 +9,6 @@ import logging
 from typing import TypedDict, Optional
 
 # Model related
-from langchain_openai import ChatOpenAI
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig

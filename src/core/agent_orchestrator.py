@@ -17,7 +17,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-import utils.scheduler_service
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone

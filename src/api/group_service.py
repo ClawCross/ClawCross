@@ -8,7 +8,6 @@ import secrets
 import shutil
 import threading
 import time
-import utils.scheduler_service
 from typing import Any, Callable, Literal
 
 import httpx
