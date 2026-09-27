@@ -104,6 +104,27 @@ async def init_group_db(group_db_path: str) -> None:
             await db.execute("ALTER TABLE group_messages ADD COLUMN attachments TEXT NOT NULL DEFAULT '[]'")
         except Exception:
             pass
+        # Communication layer: who sent a message (principal id: ag_… / u:…),
+        # whom it mentions, what it replies to, and a client key for retries;
+        # per member, the last message it has been given; per group, its kind
+        # and the team it mirrors.
+        for table, column in [
+            ("group_messages", "sender_id TEXT NOT NULL DEFAULT ''"),
+            ("group_messages", "mentions TEXT NOT NULL DEFAULT '[]'"),
+            ("group_messages", "reply_to INTEGER"),
+            ("group_messages", "client_msg_id TEXT NOT NULL DEFAULT ''"),
+            ("group_members", "read_cursor INTEGER NOT NULL DEFAULT 0"),
+            ("groups", "kind TEXT NOT NULL DEFAULT 'group'"),
+            ("groups", "team TEXT NOT NULL DEFAULT ''"),
+        ]:
+            try:
+                await db.execute(f"ALTER TABLE {table} ADD COLUMN {column}")
+            except Exception:
+                pass
+        await db.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_group_messages_client_msg "
+            "ON group_messages(group_id, client_msg_id) WHERE client_msg_id != ''"
+        )
         cursor = await db.execute("PRAGMA table_info(http_agent_sessions)")
         http_cols = [row[1] for row in await cursor.fetchall()]
         needs_http_migration = bool(http_cols) and (
@@ -286,7 +307,7 @@ async def list_recent_group_messages(group_db_path: str, group_id: str, limit: i
     async with aiosqlite.connect(group_db_path) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            "SELECT id, sender, sender_display, content, attachments, timestamp FROM group_messages WHERE group_id = ? ORDER BY id DESC LIMIT ?",
+            "SELECT id, sender, sender_display, content, attachments, timestamp, sender_id, mentions, reply_to FROM group_messages WHERE group_id = ? ORDER BY id DESC LIMIT ?",
             (group_id, limit),
         )
         rows = await cursor.fetchall()
@@ -304,7 +325,7 @@ async def list_group_messages_after(
     async with aiosqlite.connect(group_db_path) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            "SELECT id, sender, sender_display, content, attachments, timestamp FROM group_messages WHERE group_id = ? AND id > ? ORDER BY id ASC LIMIT ?",
+            "SELECT id, sender, sender_display, content, attachments, timestamp, sender_id, mentions, reply_to FROM group_messages WHERE group_id = ? AND id > ? ORDER BY id ASC LIMIT ?",
             (group_id, after_id, limit),
         )
         rows = await cursor.fetchall()
@@ -338,15 +359,82 @@ async def insert_group_message(
     content: str,
     attachments: str = "[]",
     timestamp: float,
-) -> int:
+    sender_id: str = "",
+    mentions: str = "[]",
+    reply_to: int | None = None,
+    client_msg_id: str = "",
+) -> tuple[int, bool]:
+    """Store a message; returns ``(id, created)``.
+
+    A repeated ``client_msg_id`` in the same group returns the first copy's id
+    with ``created=False``, so a client retry does not post twice.
+    """
     async with aiosqlite.connect(group_db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO group_messages (group_id, sender, sender_display, content, attachments, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
-            (group_id, sender, sender_display, content, attachments, timestamp),
+            "INSERT OR IGNORE INTO group_messages (group_id, sender, sender_display, content, attachments, timestamp,"
+            " sender_id, mentions, reply_to, client_msg_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (group_id, sender, sender_display, content, attachments, timestamp,
+             sender_id, mentions, reply_to, client_msg_id),
         )
+        if cursor.rowcount == 0 and client_msg_id:
+            row = await (await db.execute(
+                "SELECT id FROM group_messages WHERE group_id = ? AND client_msg_id = ?",
+                (group_id, client_msg_id),
+            )).fetchone()
+            return row[0], False
         msg_id = cursor.lastrowid
         await db.commit()
-    return msg_id
+    return msg_id, True
+
+
+async def list_group_messages_between(
+    group_db_path: str,
+    group_id: str,
+    *,
+    after_id: int,
+    before_id: int,
+    limit: int,
+) -> list[dict]:
+    """The latest *limit* messages with ``after_id < id < before_id``, oldest first."""
+    async with aiosqlite.connect(group_db_path) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT id, sender, sender_display, sender_id, content FROM group_messages"
+            " WHERE group_id = ? AND id > ? AND id < ? ORDER BY id DESC LIMIT ?",
+            (group_id, after_id, before_id, limit),
+        )
+        rows = [dict(r) for r in await cursor.fetchall()]
+    rows.reverse()
+    return rows
+
+
+async def get_member_read_cursor(group_db_path: str, group_id: str, global_id: str) -> int:
+    async with aiosqlite.connect(group_db_path) as db:
+        row = await (await db.execute(
+            "SELECT read_cursor FROM group_members WHERE group_id = ? AND global_id = ?",
+            (group_id, global_id),
+        )).fetchone()
+    return int(row[0] or 0) if row else 0
+
+
+async def advance_member_read_cursor(group_db_path: str, group_id: str, global_id: str, message_id: int) -> None:
+    """Record that a member has been given everything up to *message_id* (never moves back)."""
+    async with aiosqlite.connect(group_db_path) as db:
+        await db.execute(
+            "UPDATE group_members SET read_cursor = MAX(read_cursor, ?) WHERE group_id = ? AND global_id = ?",
+            (message_id, group_id, global_id),
+        )
+        await db.commit()
+
+
+async def set_group_team(group_db_path: str, *, group_id: str, team: str, kind: str | None = None) -> None:
+    """Mark a group as mirroring *team* (team "" detaches it), optionally setting its kind."""
+    async with aiosqlite.connect(group_db_path) as db:
+        if kind is None:
+            await db.execute("UPDATE groups SET team = ? WHERE group_id = ?", (team, group_id))
+        else:
+            await db.execute("UPDATE groups SET team = ?, kind = ? WHERE group_id = ?", (team, kind, group_id))
+        await db.commit()
 
 
 async def get_group_owner(group_db_path: str, group_id: str) -> str | None:

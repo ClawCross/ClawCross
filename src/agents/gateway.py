@@ -16,7 +16,7 @@ import asyncio
 import logging
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
@@ -164,17 +164,33 @@ class AgentGateway:
         context: dict[str, Any] | None = None,
         mode: str | None = None,
         coalesce_key: str | None = None,
+        on_complete: Callable[[AgentReply], Any] | None = None,
     ) -> DeliveryReceipt:
-        """Put *msg* in the agent's inbox without waiting for an answer."""
+        """Put *msg* in the agent's inbox without waiting for an answer.
+
+        External runtimes have no inbox: the message is sent in the background
+        and its direct reply dropped (the agent speaks through its own channels).
+        *on_complete* is called with that reply, or a failed one, when the send
+        ends; WeBot delivery is queued in the agent's session and never calls it.
+        """
         record = ref if isinstance(ref, AgentRecord) else self.resolve(owner, ref)
         if record.driver == DRIVER_WEBOT:
             return await self._deliver_webot(record, msg, normalize_run_mode(mode), coalesce_key)
 
-        # External runtimes have no inbox: send the message and let the reply go.
         async def send() -> None:
-            reply = await self.ask(owner, record, msg, context=context, mode=mode)
-            if not reply.ok:
-                logger.warning("deliver to %s failed: %s", record.address, reply.error)
+            reply = AgentReply(ok=False, error="delivery did not complete")
+            try:
+                reply = await self.ask(owner, record, msg, context=context, mode=mode)
+                if not reply.ok:
+                    logger.warning("deliver to %s failed: %s", record.address, reply.error)
+            finally:
+                if on_complete is not None:
+                    try:
+                        result = on_complete(reply)
+                        if asyncio.iscoroutine(result):
+                            await result
+                    except Exception:
+                        logger.exception("on_complete for %s failed", record.address)
 
         task = asyncio.create_task(send())
         self._background.add(task)

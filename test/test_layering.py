@@ -14,6 +14,9 @@ _ABOVE_L1 = (
     "oasis.engine", "oasis.server", "oasis.forum", "oasis.scheduler", "oasis.swarm_engine",
 )
 
+# What the communication layer (src/comms) must never import: the products built on it.
+_ABOVE_L2 = ("api.", "routes", "mcp_servers", "teams", "oasis", "core.agent")
+
 # Talking to a transport directly instead of through agents.gateway.
 _TRANSPORT = ("integrations.agent_sender", "integrations.registry", "integrations.connectors")
 
@@ -24,7 +27,6 @@ _LEGACY_TRANSPORT_CALLERS = {
     "oasis/experts.py",
     "oasis/python_workflow.py",
     "oasis/python_workflow_cli.py",
-    "src/api/group_service.py",
     "src/front.py",
     "src/utils/scheduler_service.py",
 }
@@ -53,6 +55,12 @@ class TestLayering(unittest.TestCase):
         for path in _python_files("src/agents"):
             with self.subTest(path=str(path.relative_to(PROJECT_ROOT))):
                 bad = sorted(name for name in _imports(path) if name.startswith(_ABOVE_L1))
+                self.assertEqual(bad, [])
+
+    def test_comms_layer_does_not_import_the_products_above_it(self):
+        for path in _python_files("src/comms"):
+            with self.subTest(path=str(path.relative_to(PROJECT_ROOT))):
+                bad = sorted(name for name in _imports(path) if name.startswith(_ABOVE_L2))
                 self.assertEqual(bad, [])
 
     def test_no_new_direct_transport_callers(self):

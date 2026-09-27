@@ -39,23 +39,15 @@ class _IdleAgent:
         return False
 
 
-class _RecordingClient:
-    """Stands in for httpx.AsyncClient; records internal-agent triggers."""
+class _RecordingGateway:
+    """Stands in for the L1 AgentGateway; records which agents were woken."""
 
-    posts: list[dict] = []
+    def __init__(self):
+        self.deliveries: list[dict] = []
 
-    def __init__(self, *args, **kwargs):
-        pass
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *exc):
-        return False
-
-    async def post(self, url, headers=None, json=None):
-        _RecordingClient.posts.append(json)
-        return mock.Mock(status_code=200)
+    async def deliver(self, owner, record, msg, **kwargs):
+        self.deliveries.append({"owner": owner, "record": record, "msg": msg, **kwargs})
+        return mock.Mock(accepted=True, error="")
 
 
 class GroupChatTestCase(unittest.IsolatedAsyncioTestCase):
@@ -63,17 +55,15 @@ class GroupChatTestCase(unittest.IsolatedAsyncioTestCase):
         self.tmpdir = TemporaryDirectory()
         db = str(Path(self.tmpdir.name) / "group_chat.db")
         await init_group_db(db)
+        self.gateway = _RecordingGateway()
         self.service = GroupService(
             internal_token=TOKEN,
             verify_password=lambda _u, _p: False,
             checkpoint_db_path=str(Path(self.tmpdir.name) / "checkpoints.db"),
             group_db_path=db,
             agent=_IdleAgent(),
+            gateway=self.gateway,
         )
-        _RecordingClient.posts = []
-        patcher = mock.patch.object(group_service.httpx, "AsyncClient", _RecordingClient)
-        patcher.start()
-        self.addCleanup(patcher.stop)
 
         created = await self.service.create_group(GroupCreateRequest(name="Dev Team"), bearer("alice"))
         self.group_id = created["group_id"]
@@ -96,7 +86,7 @@ class GroupChatTestCase(unittest.IsolatedAsyncioTestCase):
             await asyncio.gather(*pending, return_exceptions=True)
 
     def woken(self) -> list[str]:
-        return sorted(post["session_id"] for post in _RecordingClient.posts)
+        return sorted(d["record"].binding["session"] for d in self.gateway.deliveries)
 
     async def post(self, content: str, user: str = "alice", **fields):
         result = await self.service.post_group_message(
@@ -164,7 +154,7 @@ class TestAccess(GroupChatTestCase):
                     await call
                 self.assertEqual(ctx.exception.status_code, 403)
         await self.settle()
-        self.assertEqual(_RecordingClient.posts, [])
+        self.assertEqual(self.gateway.deliveries, [])
 
     async def test_owner_can_read_and_post(self):
         await self.post("hello")
