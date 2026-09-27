@@ -31,7 +31,7 @@ uv run scripts/cli.py [-u USER] <子命令> [参数...]
 
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
-| `-u`, `--user` | 用户名（通过 `X-User-Id` header 传递给后端） | 环境变量 `CLI_USER`，默认 `admin` |
+| `-u`, `--user` | 用户名（通过 `X-User-Id` header 传递给后端） | 环境变量 `CLAW_USER` / `CLI_USER`，否则取 `users.json` 的第一个用户，都没有时为 `admin` |
 
 > `-u` 对所有走 front.py 的命令生效（internal-agents / teams / visual / openclaw-snapshot / skill / cron 等）。
 

@@ -5,6 +5,7 @@ import json
 import os
 import re
 import secrets
+import shlex
 import shutil
 import threading
 import time
@@ -421,6 +422,56 @@ def _group_id_name_segment(display_name: str) -> str:
     return segment[:120]
 
 
+_ASCII_WORD_CHAR = re.compile(r"[A-Za-z0-9_\-]")
+
+
+def resolve_text_mentions(content: str, members: list[tuple[str, str]]) -> list[str]:
+    """Return the global ids of members written as ``@name`` in *content*.
+
+    *members* is ``(short_name, global_id)`` pairs. Longer names are matched
+    first and claim their text, so ``@Code Reviewer`` does not also mention a
+    member called ``Code``. A name ending in an ASCII word character must be
+    followed by a non-word character, so ``@Codex`` does not mention ``Code``;
+    names ending in CJK text still match without a separator, as before. An
+    ``@`` right after an ASCII word character (``a@Code.io``) is not a mention.
+    """
+    lowered = (content or "").lower()
+    claimed = [False] * len(lowered)
+    found: list[str] = []
+    for name, gid in sorted(members, key=lambda item: len(item[0]), reverse=True):
+        needle = "@" + name.lower()
+        start = 0
+        while True:
+            idx = lowered.find(needle, start)
+            if idx < 0:
+                break
+            start = idx + 1
+            end = idx + len(needle)
+            if any(claimed[idx:end]):
+                continue
+            if idx > 0 and _ASCII_WORD_CHAR.match(lowered[idx - 1]):
+                continue
+            if (
+                _ASCII_WORD_CHAR.match(needle[-1])
+                and end < len(lowered)
+                and _ASCII_WORD_CHAR.match(lowered[end])
+            ):
+                continue
+            claimed[idx:end] = [True] * (end - idx)
+            if gid not in found:
+                found.append(gid)
+    return found
+
+
+def _cli_hint(action: str, *, owner: str, group_id: str, sender_display: str) -> str:
+    """Shell command an external agent runs to post into a group or private chat."""
+    return (
+        f"cd {shlex.quote(_PROJECT_ROOT)} && uv run scripts/cli.py -u {shlex.quote(owner)} "
+        f"groups {action} --group-id {shlex.quote(group_id)} "
+        f"--sender {shlex.quote(sender_display)} --message '你的回复内容'"
+    )
+
+
 _TYPING_TIMEOUT_SEC = 120  # 超时自动清除"正在输入"状态
 
 
@@ -488,7 +539,8 @@ class GroupService:
         同时检查内部 agent 的 thread lock 状态：
         如果内部 agent 的 thread lock 仍被占用（is_thread_busy），保持其 typing 状态。
         """
-        self.parse_group_auth(authorization)  # 鉴权
+        uid, _, _ = self.parse_group_auth(authorization)
+        await self._require_group_access(group_id, uid)
         typing_list = self.get_typing_agents(group_id)
 
         # 检查内部 agent 的 thread lock 状态
@@ -530,6 +582,32 @@ class GroupService:
         if not self.verify_password(uid, pw):
             raise HTTPException(status_code=401, detail="认证失败")
         return uid, pw, sid
+
+    async def _require_group_access(self, group_id: str, uid: str, *, owner_only: bool = False) -> str:
+        """Return the group owner if *uid* may act on the group, else raise.
+
+        The owner always may; other human members may unless *owner_only*.
+        ``system`` is an internal caller with no user context (no Flask session),
+        which only a local process holding the internal token can present.
+        """
+        owner = await get_group_owner(self.group_db_path, group_id)
+        if not owner:
+            raise HTTPException(status_code=404, detail="群聊不存在")
+        if uid in (owner, "system"):
+            return owner
+        if not owner_only:
+            member = await get_group_member_by_global_id(self.group_db_path, group_id, uid)
+            if member and not bool(member.get("is_agent")):
+                return owner
+        raise HTTPException(status_code=403, detail="无权访问该群聊")
+
+    async def _agent_member_for_sender(self, group_id: str, sender_display: str) -> dict | None:
+        """Return the agent member a full ``tag#type#short_name#global_id`` names."""
+        parts = (sender_display or "").split("#")
+        if len(parts) < 4 or not parts[-1].strip():
+            return None
+        member = await get_group_member_by_global_id(self.group_db_path, group_id, parts[-1].strip())
+        return member if member and bool(member.get("is_agent")) else None
 
     async def get_agent_title(self, user_id: str, session_id: str) -> str:
         """从 checkpoint 提取 agent 的 session title（第一条非系统触发 HumanMessage 前50字）。"""
@@ -906,14 +984,16 @@ class GroupService:
         members = await list_group_member_targets(self.group_db_path, group_id)
         member_count = len(members)
         is_private_chat = member_count <= 2  # owner + 1 agent = 私聊
-        owner_uid = user_id or await get_group_owner(self.group_db_path, group_id) or ""
+        # The group owner, not the caller: a CLI reply arrives as whatever -u the
+        # agent typed (default "admin"), which would load the wrong user's agents.
+        owner_uid = await get_group_owner(self.group_db_path, group_id) or user_id or ""
         human_user_hint = (
             f"当前群主 owner=\"{owner_uid}\"。当前人类用户是「{owner_uid}」。"
         )
 
         # Build external agent config map by global_id (need api_url etc. for ACP/HTTP)
         external_agents_map: dict[str, dict] = (
-            build_external_agents_map_for_owner(user_id) if user_id else {}
+            build_external_agents_map_for_owner(owner_uid) if owner_uid else {}
         )
 
         # 主 agent 机制（设了 primary 时收窄 mentions）：
@@ -922,6 +1002,11 @@ class GroupService:
         #   人类发 + 没 @  → mentions = [primary]
         #   人类发 + @ X   → mentions = [X]（尊重人类显式选择）
         primary_agent_gid = await get_group_primary_agent(self.group_db_path, group_id)
+        if primary_agent_gid and not any(
+            is_agent and gid == primary_agent_gid for _u, gid, is_agent, *_rest in members
+        ):
+            # A primary that left the group would swallow every message.
+            primary_agent_gid = None
         sender_global_id_for_filter = ""
         if exclude_sender_display:
             ex_parts = exclude_sender_display.split("#")
@@ -965,10 +1050,12 @@ class GroupService:
             # Build message - use prompt instructions to guide agent behavior
             agent_identity = f"你是「{short_name}」"
             sender_display = f"{tag}#{member_type}#{short_name}#{global_id}" if tag else f"#{member_type}#{short_name}#{global_id}"
-            group_cli_hint = (f"cd {_PROJECT_ROOT} && "
-                              f"uv run scripts/cli.py groups send --group-id {group_id} --sender '{sender_display}' --message '你的回复内容'")
-            private_cli_hint = (f"cd {_PROJECT_ROOT} && "
-                                f"uv run scripts/cli.py groups private-send --group-id {group_id} --sender '{sender_display}' --message '你的回复内容'")
+            group_cli_hint = _cli_hint(
+                "send", owner=owner_uid, group_id=group_id, sender_display=sender_display,
+            )
+            private_cli_hint = _cli_hint(
+                "private-send", owner=owner_uid, group_id=group_id, sender_display=sender_display,
+            )
             mention_hint = (
                 "如果某段回复只需要特定成员处理，或需要转交给更合适的成员，请在回复内容里直接写 @对方名称。"
                 "被 @ 的消息只会唤醒并投递给目标成员，不会打扰全群；鼓励用这种方式高效交流。"
@@ -1170,7 +1257,8 @@ class GroupService:
         return await list_groups_for_user(self.group_db_path, uid)
 
     async def get_group(self, group_id: str, authorization: str | None):
-        self.parse_group_auth(authorization)
+        uid, _, _ = self.parse_group_auth(authorization)
+        await self._require_group_access(group_id, uid)
         group = await get_group(self.group_db_path, group_id)
         if not group:
             raise HTTPException(status_code=404, detail="群聊不存在")
@@ -1207,7 +1295,8 @@ class GroupService:
         return {**group, "members": members, "messages": messages, "mute_all_agents": mute_all_agents}
 
     async def get_group_messages(self, group_id: str, after_id: int, authorization: str | None):
-        self.parse_group_auth(authorization)
+        uid, _, _ = self.parse_group_auth(authorization)
+        await self._require_group_access(group_id, uid)
         messages = await list_group_messages_after(self.group_db_path, group_id, after_id, limit=200)
         return {"messages": messages}
 
@@ -1220,10 +1309,16 @@ class GroupService:
     ):
         sender = ""
         sender_display = req.sender_display or ""
+        owner = await get_group_owner(self.group_db_path, group_id)
+        if not owner:
+            raise HTTPException(status_code=404, detail="群聊不存在")
 
         if x_internal_token and x_internal_token == self.internal_token:
             sender = req.sender or "agent"
-            uid = "agent"
+            # MCP send_to_group sends "username#session_id": an agent may only
+            # post into groups owned by its own user.
+            if sender.split("#", 1)[0] != owner:
+                raise HTTPException(status_code=403, detail="无权向该群发消息")
 
             # 自动补全 sender_display：
             # MCP tool 传入的 sender 格式为 "username#session_id"，sender_display 为 "#session_id"
@@ -1245,13 +1340,15 @@ class GroupService:
                         sender_display = f"{tag}#{mtype}#{sname}#{gid}" if tag else f"#{mtype}#{sname}#{gid}"
                         sender = sender_display
         else:
-            uid, _, sid = self.parse_group_auth(authorization)
+            uid, _, _ = self.parse_group_auth(authorization)
             sender = req.sender or uid
-            # 人类发消息 sender_display 为空（前端用这个判断是否 agent）
+            # 人类发消息 sender_display 为空（前端用这个判断是否 agent）。
+            # The CLI posts for an agent member with its full sender_display;
+            # the browser proxy strips sender fields, so only local callers can.
+            if not await self._agent_member_for_sender(group_id, sender_display):
+                await self._require_group_access(group_id, uid)
 
         now = time.time()
-        if not await group_exists(self.group_db_path, group_id):
-            raise HTTPException(status_code=404, detail="群聊不存在")
 
         if sender_display:
             sender_global_id = ""
@@ -1290,11 +1387,8 @@ class GroupService:
                             "message": "该成员已被禁言，暂不发言",
                         }
 
-        # Resolve real owner user_id for loading external agent configs
-        broadcast_uid = uid
-        if uid == "agent":
-            owner = await get_group_owner(self.group_db_path, group_id)
-            broadcast_uid = owner or ""
+        # External agent configs are loaded for the group owner, whoever posted.
+        broadcast_uid = owner
 
         # Serialize attachments for DB storage
         attachments_json = "[]"
@@ -1316,27 +1410,21 @@ class GroupService:
             self.clear_typing_by_sender_display(group_id, sender_display)
 
         # ── Auto-resolve @mentions from message content ──
-        # Instead of regex-parsing @name tokens (which breaks on spaces /
-        # special chars), we fetch the member list first and then check
-        # whether "@<short_name>" appears anywhere in the content.
-        # This works for all channels (frontend, CLI, MCP send_to_group).
+        # Match "@<short_name>" against the member list rather than regex-parsing
+        # @tokens, which breaks on names with spaces. Works for all channels
+        # (frontend, CLI, MCP send_to_group). Humans are included so that @human
+        # also narrows the broadcast instead of waking every agent.
         resolved_mentions = list(req.mentions) if req.mentions else []
         if "@" in req.content:
             members = await list_group_members(self.group_db_path, group_id)
-            content_lower = req.content.lower()
-            # Build list sorted by name length desc so longer names match first
-            # (e.g. "@Code Reviewer" before "@Code")
-            # Include ALL members (agents + humans) so that @human also
-            # populates mentions, preventing broadcast to unrelated agents.
-            name_gid_pairs: list[tuple[str, str]] = []
-            for m in members:
-                sname = (m.get("short_name") or "").strip()
-                gid = m.get("global_id") or ""
-                if sname and gid:
-                    name_gid_pairs.append((sname, gid))
-            name_gid_pairs.sort(key=lambda x: len(x[0]), reverse=True)
-            for sname, gid in name_gid_pairs:
-                if f"@{sname.lower()}" in content_lower and gid not in resolved_mentions:
+            name_gid_pairs = [
+                ((m.get("short_name") or "").strip(), m.get("global_id") or "")
+                for m in members
+            ]
+            for gid in resolve_text_mentions(
+                req.content, [(name, gid) for name, gid in name_gid_pairs if name and gid]
+            ):
+                if gid not in resolved_mentions:
                     resolved_mentions.append(gid)
         final_mentions = resolved_mentions if resolved_mentions else None
 
@@ -1429,24 +1517,39 @@ class GroupService:
                 )
                 added_count += 1
 
+        # Keep the primary only if it is still a member; otherwise take the
+        # team's current primary, or clear it.
+        member_gids = {m.get("global_id") for m in new_members if m.get("global_id")}
+        primary_gid = await get_group_primary_agent(self.group_db_path, group_id)
+        if primary_gid not in member_gids:
+            primary_gid = next(
+                (m.get("global_id") for m in new_members if m.get("is_primary") and m.get("global_id")),
+                None,
+            )
+            await set_group_primary_agent(self.group_db_path, group_id=group_id, global_id=primary_gid)
+
         return {
             "status": "synced",
             "group_id": group_id,
             "added_members": added_count,
+            "primary_agent_global_id": primary_gid,
         }
 
     async def mute_group(self, group_id: str, authorization: str | None):
-        self.parse_group_auth(authorization)
+        uid, _, _ = self.parse_group_auth(authorization)
+        await self._require_group_access(group_id, uid, owner_only=True)
         self.group_muted.add(group_id)
         return {"status": "muted", "group_id": group_id}
 
     async def unmute_group(self, group_id: str, authorization: str | None):
-        self.parse_group_auth(authorization)
+        uid, _, _ = self.parse_group_auth(authorization)
+        await self._require_group_access(group_id, uid, owner_only=True)
         self.group_muted.discard(group_id)
         return {"status": "unmuted", "group_id": group_id}
 
     async def group_mute_status(self, group_id: str, authorization: str | None):
-        self.parse_group_auth(authorization)
+        uid, _, _ = self.parse_group_auth(authorization)
+        await self._require_group_access(group_id, uid)
         return {"muted": group_id in self.group_muted}
 
     async def mute_group_member(self, group_id: str, req: GroupMuteMemberRequest, authorization: str | None):
@@ -1602,4 +1705,6 @@ class GroupService:
             group_id=group_id,
             global_id=global_id,
         )
+        if await get_group_primary_agent(self.group_db_path, group_id) == global_id:
+            await set_group_primary_agent(self.group_db_path, group_id=group_id, global_id=None)
         return {"status": "removed", "global_id": global_id}

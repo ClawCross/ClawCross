@@ -219,8 +219,9 @@ def _validate_expert(data: dict) -> dict:
         "persona": persona,
         "temperature": float(data.get("temperature", 0.7)),
     }
-    # 保留可选扩展字段
-    for key in ("category", "description", "prompt_file"):
+    # 保留可选扩展字段；model/api_key/base_url/provider 是单专家模型覆盖，
+    # 丢掉它们会让一次人设编辑悄悄把专家切回全局 LLM。
+    for key in ("category", "description", "prompt_file", "model", "api_key", "base_url", "provider"):
         if data.get(key):
             result[key] = data[key]
     return result

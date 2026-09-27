@@ -167,6 +167,8 @@ async def init_group_db(group_db_path: str) -> None:
                 except Exception:
                     pass
         await db.execute("DELETE FROM http_agent_sessions WHERE session_key LIKE 'agent:test-http-registry:%'")
+        # Mute rows left behind by deletes before delete_group cleaned them up.
+        await db.execute("DELETE FROM group_mute_state WHERE group_id NOT IN (SELECT group_id FROM groups)")
         await db.commit()
 
 
@@ -424,9 +426,13 @@ async def remove_group_member(
 
 
 async def delete_group(group_db_path: str, group_id: str) -> None:
+    # Foreign keys are not enforced (no PRAGMA foreign_keys), so ON DELETE
+    # CASCADE never fires: delete every dependent table explicitly. A group id
+    # is derived from its name, so leftovers would reattach to a recreated group.
     async with aiosqlite.connect(group_db_path) as db:
         await db.execute("DELETE FROM group_messages WHERE group_id = ?", (group_id,))
         await db.execute("DELETE FROM group_members WHERE group_id = ?", (group_id,))
+        await db.execute("DELETE FROM group_mute_state WHERE group_id = ?", (group_id,))
         await db.execute("DELETE FROM groups WHERE group_id = ?", (group_id,))
         await db.commit()
 

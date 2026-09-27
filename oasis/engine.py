@@ -346,9 +346,10 @@ class DiscussionEngine:
                       f"Use 'tag#temp#N' or 'tag#oasis#name' or '#oasis#name' or 'name#ext#id'.")
                 continue
 
-            # Handle #new suffix: strip only "new", keep the '#' separator
+            # Handle #new suffix: strip all of "#new". Keeping the '#' left the
+            # agent name as "name#", which never matched internal_agents.json.
             force_new = full_name.endswith("#new")
-            working_name = full_name[:-3] if force_new else full_name  # strip "new" only
+            working_name = full_name[:-len("#new")] if force_new else full_name
 
             first, sid = working_name.split("#", 1)
             expert: ExpertAgent | SessionExpert | ExternalExpert
@@ -787,7 +788,7 @@ class DiscussionEngine:
 
         except asyncio.CancelledError:
             print(f"[OASIS] 🛑 Discussion cancelled: {self.forum.topic_id}")
-            self.forum.status = "error"
+            self.forum.status = "cancelled"
             self.forum.conclusion = "讨论已被用户强制终止"
 
         except Exception as e:

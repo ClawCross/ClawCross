@@ -15,6 +15,8 @@ from utils.logging_utils import get_logger
 
 logger = get_logger("front_oasis_routes")
 
+_SERVER_ONLY_TOPIC_FIELDS = frozenset({"callback_url", "callback_session_id", "python_file", "schedule_file"})
+
 
 def _parse_oasis_json_response(
     r: requests.Response,
@@ -103,6 +105,11 @@ def register_oasis_routes(app, *, oasis_base_url: str) -> None:
         try:
             headers = {"Content-Type": "application/json"}
             body = request.get_json(silent=True) or {}
+            if not isinstance(body, dict):
+                body = {}
+            # A browser never sends these: callback_url receives the internal
+            # token, and python_file / schedule_file name files on this host.
+            body = {k: v for k, v in body.items() if k not in _SERVER_ONLY_TOPIC_FIELDS}
             # Inject user_id
             body["user_id"] = user_id
             r = requests.post(

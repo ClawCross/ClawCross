@@ -959,7 +959,8 @@
                                         <div class="oasis-swarm-inspector">
                                             <div id="oasis-swarm-summary" class="oasis-swarm-summary"></div>
                                             <div id="oasis-swarm-detail" class="oasis-swarm-detail"></div>
-                                            <div class="oasis-report-box">
+                                            <!-- Hidden until the OASIS server serves /topics/{id}/report/ask (ReportAgent is not wired up yet). -->
+                                            <div class="oasis-report-box" style="display:none">
                                                 <div class="oasis-report-toolbar">
                                                     <div class="oasis-report-title">REPORT AGENT</div>
                                                     <button id="oasis-report-ask-btn" onclick="askOasisReport()" class="oasis-swarm-action-btn" type="button">EXPLAIN</button>
