@@ -267,6 +267,19 @@ class TestTeamGroup(GroupCommsTestCase):
         await self.human("有人吗")
         self.assertEqual(self.woken(), ["s_rev"])  # the lead answers for the team
 
+    async def test_mention_reaches_the_agent_that_holds_the_role_now(self):
+        await self.human("大家好")  # the group has synced once
+        self.gateway.deliveries.clear()
+        # team-builder rewrites the role; a new agent now holds "Coder".
+        self.write_team("dev", [
+            {"name": "Planner", "tag": "plan", "session": "s_plan"},
+            {"name": "Coder", "tag": "coder", "session": "s_code_new"},
+        ])
+
+        await self.human("@Coder 看一下")
+
+        self.assertEqual(self.woken(), ["s_code_new"])
+
     async def test_members_added_by_hand_to_a_plain_group_stay(self):
         plain = await self.service.create_group(GroupCreateRequest(name="Plain"), bearer("alice"))
         await self.service.add_single_member(

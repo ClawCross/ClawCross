@@ -755,10 +755,13 @@ class ExpertAgent:
     ) -> str:
         from agents.gateway import ephemeral_agent
         from agents.messages import AgentMessage
+        from utils.effort_controller import resolve_default_chat_max_output_tokens
 
         options: dict[str, Any] = {
             "temperature": self.temperature,
-            "max_tokens": 1024,
+            # Thinking models spend output tokens on reasoning before the reply;
+            # a tight cap cuts the reply off mid-JSON.
+            "max_tokens": resolve_default_chat_max_output_tokens(),
             **(self._llm_override or {}),
         }
         record = ephemeral_agent(

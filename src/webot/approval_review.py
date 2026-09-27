@@ -39,6 +39,13 @@ class ApprovalResult:
     approval_id: str = ""
     high_risk: bool = False
     binding_hash: str = ""
+    pending: bool = False  # a request is waiting for the user; retrying after approval runs it
+
+
+# Replying in a group chat is how an agent answers the message that woke it.
+# The group service accepts the post only into a group its user owns, so the
+# auto reviewer is not asked; explicit policy rules still apply.
+_REPLY_TOOLS = frozenset({"send_to_group"})
 
 
 def _hash(value) -> str:
@@ -149,7 +156,14 @@ async def authorize_action(
     counters: dict | None = None, transfer_to_command: bool = False,
     risk_reason: str = "",
     active_approval=None,
+    wait_for_user: bool = True,
 ) -> ApprovalResult:
+    """Decide one tool call, waiting for the user when a person has to approve it.
+
+    With ``wait_for_user=False`` (a turn nobody is watching, e.g. triggered by a
+    group message or a schedule) a request that needs the user is left pending
+    and the call returns at once with ``pending=True``.
+    """
     request = None
     try:
         policy = policy if isinstance(policy, WeBotToolPolicy) else get_tool_policy(user_id)
@@ -170,7 +184,10 @@ async def authorize_action(
         bypass = mode in {"bypass", "yolo"}
         if bypass and decision.requires_approval:
             decision = ToolPolicyDecision(allowed=True, reason="Bypass 模式跳过工具确认。")
-        auto_review_action = mode == "auto" and not mode_allows_tool("readonly", tool_name, args) and not remembered
+        auto_review_action = (
+            mode == "auto" and tool_name not in _REPLY_TOOLS
+            and not mode_allows_tool("readonly", tool_name, args) and not remembered
+        )
         needs_review = (high_risk and not remembered or auto_review_action) and not bypass
         if decision.allowed and not needs_review and active_approval is not None and active_approval.status == "pending":
             # A trusted policy hook or YOLO may allow a formerly manual request.
@@ -254,8 +271,9 @@ async def authorize_action(
             if verdict.decision == "deny" and counters is not None:
                 counters["consecutive_denials"] = counters.get("consecutive_denials", 0) + 1
 
-        deadline = time.monotonic() + max(1, int(os.getenv("COMMAND_APPROVAL_WAIT_SECONDS", "600")))
-        while time.monotonic() < deadline:
+        wait_seconds = max(1, int(os.getenv("COMMAND_APPROVAL_WAIT_SECONDS", "600"))) if wait_for_user else 0
+        deadline = time.monotonic() + wait_seconds
+        while True:
             record = store.get_tool_approval(request.approval_id, user_id)
             if record is None or record.expires_at <= store.utc_now() or record.status in {"used", "expired"}:
                 return ApprovalResult(False, "审批已失效或已被使用。", request.approval_id)
@@ -275,7 +293,15 @@ async def authorize_action(
                 if counters is not None:
                     counters["consecutive_denials"] = 0
                 return ApprovalResult(True, record.resolution_reason, request.approval_id, high_risk, current_binding["policy_hash"])
+            if time.monotonic() >= deadline:
+                break
             await asyncio.sleep(max(0.05, float(os.getenv("COMMAND_APPROVAL_POLL_SECONDS", "1"))))
+        if not wait_for_user:
+            reason = (json.loads(record.review_metadata_json or "{}").get("verdict") or {}).get("reason") or record.request_reason
+            return ApprovalResult(
+                False, f"{reason}\n本轮不是用户直接发起的，没有等待批准，审批单已保留。",
+                request.approval_id, pending=True,
+            )
         store.update_tool_approval_status(request.approval_id, user_id, status="expired")
         return ApprovalResult(False, "审批等待超时，未执行该操作。", request.approval_id)
     except asyncio.CancelledError:

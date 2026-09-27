@@ -309,6 +309,50 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.allowed)
         reviewer.assert_awaited_once()
 
+    async def test_auto_mode_lets_an_agent_answer_in_its_group(self):
+        # A group message wakes the agent; there is no user request to review
+        # against, and replying is the whole point of the turn.
+        policy.save_tool_policy_config('alice', {'default_approval': 'allow'})
+        store.save_session_mode('alice', 's', mode='auto')
+        woken = [HumanMessage(content='@coder 看一下', id='g-1', additional_kwargs={'input_origin': 'system'})]
+        args = {'group_id': 'g1', 'content': '好的', 'username': 'alice', 'source_session': 's'}
+        with patch.object(review, 'run_reviewer') as reviewer:
+            result = await review.authorize_action(user_id='alice', session_id='s', tool_name='send_to_group',
+                args=args, messages=woken)
+        self.assertTrue(result.allowed)
+        reviewer.assert_not_called()
+        self.assertEqual(store.list_tool_approvals('alice'), [])
+
+        policy.save_tool_policy_config('alice', {'tools': {'send_to_group': {'approval': 'deny'}}})
+        result = await review.authorize_action(user_id='alice', session_id='s', tool_name='send_to_group',
+            args=args, messages=woken)
+        self.assertFalse(result.allowed)
+
+    async def test_unwatched_turn_leaves_the_request_pending_instead_of_waiting(self):
+        from webot.permission_context import resolve_permission_request
+        policy.save_tool_policy_config('alice', {'default_approval': 'allow'})
+        store.save_session_mode('alice', 's', mode='auto')
+        woken = [HumanMessage(content='定时任务：整理笔记', id='sys-1', additional_kwargs={'input_origin': 'system'})]
+        args = {'filename': 'notes.md', 'content': 'hello'}
+        with patch.dict('os.environ', {'COMMAND_APPROVAL_WAIT_SECONDS': '600'}):
+            started = asyncio.get_running_loop().time()
+            result = await review.authorize_action(user_id='alice', session_id='s', tool_name='write_file',
+                args=args, messages=woken, wait_for_user=False)
+            self.assertLess(asyncio.get_running_loop().time() - started, 5)
+        self.assertFalse(result.allowed)
+        self.assertTrue(result.pending)
+        self.assertEqual(store.get_tool_approval(result.approval_id, 'alice').status, 'pending')
+
+        # The user approves later; the next unwatched turn runs the same action.
+        resolve_permission_request(user_id='alice', approval_id=result.approval_id, action='approved')
+        with patch.object(review, 'run_reviewer') as reviewer:
+            retry = await review.authorize_action(user_id='alice', session_id='s', tool_name='write_file',
+                args=args, messages=woken, wait_for_user=False,
+                active_approval=store.get_tool_approval(result.approval_id, 'alice'))
+        self.assertTrue(retry.allowed)
+        reviewer.assert_not_called()
+        self.assertEqual(store.get_tool_approval(result.approval_id, 'alice').status, 'used')
+
     async def test_bypass_skips_high_risk_confirmation_but_not_hard_blocks(self):
         store.save_session_mode('alice', 's', mode='bypass')
         with patch.object(review, 'run_reviewer') as reviewer, patch.object(review, 'action_risk', return_value=(False, True, 'high risk')):

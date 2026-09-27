@@ -265,3 +265,52 @@ def strict_tool_binding(model: Any) -> tuple[Any, bool, dict[str, Any]]:
     if "ChatAnthropic" in cls_names or "BaseChatOpenAI" in cls_names:
         return model, True, {"strict": True}
     return model, False, {}
+
+
+# --- Reply formats --------------------------------------------------------------
+
+def _model_classes(model: Any) -> set[str]:
+    return {cls.__name__ for cls in type(model).__mro__}
+
+
+def reply_schema_hint(schema: dict[str, Any]) -> str:
+    """Prompt text asking for one JSON object that matches *schema*."""
+    return (
+        "Reply with exactly one JSON object and nothing else (no prose, no code fence), "
+        "matching this JSON schema:\n" + json.dumps(schema, ensure_ascii=False)
+    )
+
+
+def reply_format_binding(model: Any, response_format: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    """How to ask *model* for a reply in an OpenAI ``response_format`` shape.
+
+    Returns ``(bind_kwargs, prompt_hint)``:
+
+    - OpenAI-protocol models take the format as given; ``json_schema`` is decoded
+      under the schema.
+    - DeepSeek rejects ``json_schema`` ("This response_format type is unavailable
+      now"). Its ``json_object`` mode still decodes valid JSON, so the schema moves
+      into the prompt, which that mode needs anyway: it only accepts prompts that
+      ask for JSON.
+    - Other integrations have no such request field; the prompt carries the schema.
+    """
+    kind = (response_format or {}).get("type")
+    schema = ((response_format or {}).get("json_schema") or {}).get("schema")
+    hint = reply_schema_hint(schema) if kind == "json_schema" and isinstance(schema, dict) else ""
+    classes = _model_classes(model)
+    if "ChatDeepSeek" in classes:
+        if kind == "json_schema":
+            return {"response_format": {"type": "json_object"}}, hint
+        return {"response_format": response_format}, ""
+    if "BaseChatOpenAI" in classes:
+        return {"response_format": response_format}, ""
+    return {}, hint
+
+
+def forced_tool_choice_supported(model: Any) -> bool:
+    """Whether *model* accepts a ``tool_choice`` that forces one particular tool.
+
+    DeepSeek's thinking models answer 400 "Thinking mode does not support this
+    tool_choice", and the model name alone does not tell which mode is on.
+    """
+    return "ChatDeepSeek" not in _model_classes(model)
