@@ -50,7 +50,7 @@ class AgentCenter:
                 str(item.get("id", "")),
                 str(item.get("name", "")),
                 str(item.get("tag", "")),
-            }
+            } or (key and key in {str(item.get("agent_id", "")), str(item.get("address", ""))})
         ]
         if not candidates:
             raise ValueError(f"未找到 agent: {target}")

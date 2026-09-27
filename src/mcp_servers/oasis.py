@@ -385,6 +385,9 @@ async def list_oasis_experts(username: str = "") -> str:
                 "\n   • \"tag#oasis#name\"     — 内部session agent，按name查找"
                 "\n   • \"#oasis#name\"        — 内部session agent（无tag）"
                 "\n   • \"tag#ext#id\"         — 外部API（DeepSeek/GPT-4等）"
+                "\n   也可以直接写参与者："
+                "\n   • agent: <角色名 | handle | 用户/handle | ag_…> — 已登记的任意 agent（WeBot 或外部）"
+                "\n   • persona: <tag>，tools: none | all | [工具名]    — 本话题的临时专家；带工具时是临时会话，结束后删除"
             )
             return "\n".join(lines)
 
@@ -1555,6 +1558,11 @@ def _yaml_to_layout_data(yaml_str: str) -> dict:
         raise ValueError("YAML must contain 'plan' key")
 
     plan = data.get("plan", [])
+    # agent: / persona: steps are drawn like the classic expert: form.
+    from oasis.scheduler import normalize_participant_item
+
+    plan = [normalize_participant_item(step) for step in plan]
+    data["plan"] = plan
     repeat = data.get("repeat", True)
     version = data.get("version", 1)
 

@@ -252,6 +252,59 @@ def _extract_external_config(item: dict) -> dict:
     return cfg
 
 
+def participant_ref(item: dict) -> tuple[str | None, dict]:
+    """The expert name a plan item refers to, plus per-participant config.
+
+    Besides the classic ``expert: "<tag>#temp#N"`` / ``"<tag>#oasis#<name>"`` /
+    ``"<tag>#ext#<id>"``, a step may name:
+
+    * ``agent: "<ref>"`` — a resident agent: its role name in the team, its
+      handle or address (``alice/coder``), or its ``ag_…`` id. Becomes ``@<ref>``.
+    * ``persona: "<tag>"`` with ``tools`` — a temporary participant speaking
+      with that persona. ``tools: none`` (the default) is a single LLM call
+      (``<tag>#temp#N``); ``tools: all`` or a list of tool names runs a
+      temporary WeBot session with those tools, deleted when the topic ends
+      (``<tag>#tmp#N``). ``instance: N`` tells same-persona participants apart.
+    """
+    if "expert" in item:
+        cfg = _extract_external_config(item) if ("api_url" in item or "headers" in item or "model" in item) else {}
+        return str(item["expert"]), cfg
+    if "agent" in item:
+        ref = str(item["agent"]).strip().lstrip("@")
+        if not ref:
+            raise ValueError("'agent' must name an agent")
+        return f"@{ref}", {}
+    if "persona" in item:
+        tag = str(item["persona"]).strip()
+        if not tag:
+            raise ValueError("'persona' must be a persona tag")
+        instance = int(item.get("instance", 1))
+        tools = item.get("tools", "none")
+        if tools in (None, False, "none", "") or tools == []:
+            return f"{tag}#temp#{instance}", {}
+        if tools in (True, "all"):
+            return f"{tag}#tmp#{instance}", {"tools": "all"}
+        if isinstance(tools, list) and all(isinstance(t, str) for t in tools):
+            return f"{tag}#tmp#{instance}", {"tools": list(tools)}
+        raise ValueError(f"'tools' must be none, all or a list of tool names, got {tools!r}")
+    return None, {}
+
+
+def normalize_participant_item(item):
+    """A plan item with ``agent:`` / ``persona:`` rewritten into ``expert:`` (for tools
+    that only understand the classic form, such as the visual layout)."""
+    if not isinstance(item, dict):
+        return item
+    out = dict(item)
+    if "expert" not in out and ("agent" in out or "persona" in out):
+        name, _cfg = participant_ref(out)
+        if name:
+            out["expert"] = name
+    if isinstance(out.get("parallel"), list):
+        out["parallel"] = [normalize_participant_item(sub) for sub in out["parallel"]]
+    return out
+
+
 def _parse_node(i: int, item: dict) -> ScheduleStep:
     """Parse a single YAML step dict into a ScheduleStep node."""
     if not isinstance(item, dict):
@@ -261,14 +314,17 @@ def _parse_node(i: int, item: dict) -> ScheduleStep:
 
     is_selector = bool(item.get("selector", False))
 
-    if "expert" in item:
-        expert_name = str(item["expert"])
+    try:
+        expert_name, participant_cfg = participant_ref(item)
+    except ValueError as exc:
+        raise ValueError(f"Step {i}: {exc}") from exc
+    if expert_name:
         instr_map = {}
         ext_configs = {}
         if "instruction" in item:
             instr_map[expert_name] = str(item["instruction"])
-        if "api_url" in item or "headers" in item or "model" in item:
-            ext_configs[expert_name] = _extract_external_config(item)
+        if participant_cfg:
+            ext_configs[expert_name] = participant_cfg
         return ScheduleStep(
             step_type=StepType.EXPERT,
             node_id=node_id,
@@ -283,17 +339,17 @@ def _parse_node(i: int, item: dict) -> ScheduleStep:
         instr_map = {}
         ext_configs = {}
         for sub in item["parallel"]:
-            if isinstance(sub, dict) and "expert" in sub:
-                ename = str(sub["expert"])
+            ename, sub_cfg = participant_ref(sub) if isinstance(sub, dict) else (None, {})
+            if ename:
                 names.append(ename)
                 if "instruction" in sub:
                     instr_map[ename] = str(sub["instruction"])
-                if "api_url" in sub or "headers" in sub or "model" in sub:
-                    ext_configs[ename] = _extract_external_config(sub)
+                if sub_cfg:
+                    ext_configs[ename] = sub_cfg
             elif isinstance(sub, str):
                 names.append(sub)
             else:
-                raise ValueError(f"Step {i}: parallel entries must have 'expert' key")
+                raise ValueError(f"Step {i}: parallel entries must have an 'expert', 'agent' or 'persona' key")
         if not names:
             raise ValueError(f"Step {i}: parallel list is empty")
         return ScheduleStep(

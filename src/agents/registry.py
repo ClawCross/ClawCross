@@ -40,6 +40,13 @@ DRIVER_WEBOT = "webot"
 DRIVER_ACPX = "acpx"
 DRIVER_OPENCLAW = "openclaw"
 DRIVER_HTTP = "http"
+# A persona-only participant that lives for one task and is never stored:
+# a single LLM call (no tools), or a temporary WeBot session (with tools).
+DRIVER_EPHEMERAL = "ephemeral"
+
+# Session ids of temporary WeBot sessions start with this; only these may be
+# discarded wholesale by their creator.
+EPHEMERAL_SESSION_PREFIX = "tmp__"
 
 
 class AgentNotFound(LookupError):

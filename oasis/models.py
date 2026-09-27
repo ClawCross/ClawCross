@@ -136,6 +136,7 @@ class PostInfo(BaseModel):
     downvotes: int = 0                    # 点踩数
     timestamp: float                      # 时间戳
     elapsed: float = 0.0                  # 距离讨论开始的时间（秒）
+    author_id: str = ""                   # 作者编号：ag_…（已登记 agent）/ u:<用户>（人类）/ 空
 
 
 class TimelineEventInfo(BaseModel):
