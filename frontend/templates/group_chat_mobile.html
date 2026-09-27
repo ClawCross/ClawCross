@@ -4643,7 +4643,12 @@
       bottom: 34px;
     }
   }
+.tool-policy-category { border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+.tool-policy-category > summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text); }
+.tool-policy-category small { float: right; color: var(--text-hint); font-weight: 400; }
+.tool-policy-category-items { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; }
 </style>
+<script src="/static/js/tool-catalog.js?v=20260927-memory"></script>
 </head>
 <body>
 
@@ -4983,28 +4988,32 @@
     <button class="tc-sheet-close" onclick="closeRunModeSheet()">✕</button>
   </div>
   <div class="tc-sheet-body">
+    <div class="run-mode-option" data-mode="chat" onclick="selectRunMode('chat')">
+      <div class="run-mode-option-info">
+        <div class="run-mode-option-title" data-i18n="run_mode_chat">交流模式 · 无工具</div>
+        <div class="run-mode-option-desc" data-i18n="run_mode_chat_desc">不调用工具，仅通过文字交流</div>
+      </div>
+      <div class="run-mode-option-check">✓</div>
+    </div>
+    <div class="run-mode-option" data-mode="readonly" onclick="selectRunMode('readonly')">
+      <div class="run-mode-option-info">
+        <div class="run-mode-option-title" data-i18n="run_mode_readonly">只读模式</div>
+        <div class="run-mode-option-desc" data-i18n="run_mode_readonly_desc">只允许查看、搜索和分析</div>
+      </div>
+      <div class="run-mode-option-check">✓</div>
+    </div>
     <div class="run-mode-option" data-mode="bypass" onclick="selectRunMode('bypass')">
       <div class="run-mode-option-info">
-        <div class="run-mode-option-title" data-i18n="run_mode_bypass">自动 (全工具)</div>
-        <div class="run-mode-option-desc" data-i18n="run_mode_bypass_desc">全部工具开放，所有权限自动批准（默认）</div>
+        <div class="run-mode-option-title" data-i18n="run_mode_bypass">Bypass · 全工具</div>
+        <div class="run-mode-option-desc" data-i18n="run_mode_bypass_desc">全工具开放，跳过操作确认</div>
       </div>
       <div class="run-mode-option-check">✓</div>
     </div>
-    <div class="run-mode-option" data-mode="plan" onclick="selectRunMode('plan')">
-      <div class="run-mode-option-info">
-        <div class="run-mode-option-title" data-i18n="run_mode_plan">规划 (只读)</div>
-        <div class="run-mode-option-desc" data-i18n="run_mode_plan_desc">只读工具自动批准，写操作直接拒绝</div>
-      </div>
-      <div class="run-mode-option-check">✓</div>
+    <div class="run-mode-option" data-mode="auto" onclick="selectRunMode('auto')">
+        <div class="run-mode-option-info"><div class="run-mode-option-title" data-i18n="run_mode_auto">Auto · 替我审核</div>
+        <div class="run-mode-option-desc" data-i18n="run_mode_auto_desc">内置 Agent 根据你的任务代审；无法确定时交给你决定</div></div><div class="run-mode-option-check">✓</div>
     </div>
-    <div class="run-mode-option" data-mode="manual" onclick="selectRunMode('manual')">
-      <div class="run-mode-option-info">
-        <div class="run-mode-option-title" data-i18n="run_mode_manual">手动 (无工具)</div>
-        <div class="run-mode-option-desc" data-i18n="run_mode_manual_desc">不调用任何工具，仅生成文字回复</div>
-      </div>
-      <div class="run-mode-option-check">✓</div>
-    </div>
-    <div class="run-mode-warning" id="run-mode-warning-manual" style="display:none;" data-i18n="run_mode_warning_manual">⚠️ 群聊中 manual 模式下 agent 无法回到群里发言（缺工具调用权限）。如需"先看再决定"请改用规划模式。</div>
+    <div class="run-mode-warning" id="run-mode-warning-manual" style="display:none;" data-i18n="run_mode_warning_manual">⚠️ 群聊中 交流模式下 Agent 无法回到群里发言（缺工具调用权限）。如需"先看再决定"请改用只读模式。</div>
     <div class="run-mode-hint" data-i18n="run_mode_hint">该设置仅在本浏览器生效；CLI 与其他设备各自独立设置。</div>
   </div>
 </div>
@@ -6011,17 +6020,20 @@ const I18N = {
     tool_policy_hint: '默认策略是兜底规则；单个工具可单独覆盖为允许、手动批准或拒绝',
     run_mode_action: '运行模式',
     run_mode_title_sheet: '运行模式',
-    run_mode_bypass: '自动 (全工具)',
-    run_mode_plan: '规划 (只读)',
-    run_mode_manual: '手动 (无工具)',
-    run_mode_bypass_desc: '全部工具开放，所有权限自动批准（默认）',
-    run_mode_plan_desc: '只读工具自动批准，写操作直接拒绝',
-    run_mode_manual_desc: '不调用任何工具，仅生成文字回复',
+    run_mode_bypass: 'Bypass · 全工具',
+    run_mode_readonly: '只读模式',
+    run_mode_chat: '交流模式 · 无工具',
+    run_mode_bypass_desc: '全工具开放，跳过操作确认',
+    run_mode_readonly_desc: '只允许查看、搜索和分析',
+    run_mode_chat_desc: '不调用工具，仅通过文字交流',
     run_mode_hint: '该设置仅在本浏览器生效；CLI 与其他设备各自独立设置。',
-    run_mode_warning_manual: '⚠️ 群聊中 manual 模式下 agent 无法回到群里发言（缺工具调用权限）。如需"先看再决定"请改用规划模式。',
-    run_mode_badge_bypass: '自动',
-    run_mode_badge_plan: '规划',
-    run_mode_badge_manual: '手动',
+    run_mode_warning_manual: '⚠️ 群聊中 交流模式下 Agent 无法回到群里发言（缺工具调用权限）。如需"先看再决定"请改用只读模式。',
+    run_mode_badge_bypass: 'Bypass',
+    run_mode_auto: 'Auto · 替我审核',
+    run_mode_auto_desc: '内置 Agent 根据你的任务代审；无法确定时交给你决定',
+    run_mode_badge_auto: 'Auto',
+    run_mode_badge_readonly: '只读',
+    run_mode_badge_chat: '交流',
     approval_required_title: '工具调用需要批准',
     approval_reason: '原因',
     approval_approve: '批准',
@@ -6682,17 +6694,20 @@ const I18N = {
     tool_policy_hint: 'Default policy is the fallback; each tool can override it with allow, manual, or deny',
     run_mode_action: 'Run mode',
     run_mode_title_sheet: 'Run mode',
-    run_mode_bypass: 'Auto (all tools)',
-    run_mode_plan: 'Plan (read-only)',
-    run_mode_manual: 'Manual (no tools)',
-    run_mode_bypass_desc: 'All tools available, all permissions auto-approved (default)',
-    run_mode_plan_desc: 'Read-only tools approved; writes denied non-interactively',
-    run_mode_manual_desc: 'No tool calls — text reply only',
+    run_mode_bypass: 'Bypass · All tools',
+    run_mode_readonly: 'Read-only',
+    run_mode_chat: 'Chat · No tools',
+    run_mode_bypass_desc: 'All tools available, confirmation skipped',
+    run_mode_readonly_desc: 'View, search and analyze; writes are denied',
+    run_mode_chat_desc: 'No tool calls — text reply only',
     run_mode_hint: 'Only applies in this browser. CLI and other devices each store their own setting.',
-    run_mode_warning_manual: '⚠️ In manual mode, agents in this group cannot post replies back (no tool-call permission). Use Plan mode if you want "look-then-decide" behavior.',
-    run_mode_badge_bypass: 'Auto',
-    run_mode_badge_plan: 'Plan',
-    run_mode_badge_manual: 'Manual',
+    run_mode_warning_manual: '⚠️ In Chat mode, agents in this group cannot post replies back (no tool-call permission). Use Read-only mode if you want "look-then-decide" behavior.',
+    run_mode_badge_bypass: 'Bypass',
+    run_mode_auto: 'Auto · Review for me',
+    run_mode_auto_desc: 'Built-in agents review actions for you; uncertain decisions return to you',
+    run_mode_badge_auto: 'Auto',
+    run_mode_badge_readonly: 'Plan',
+    run_mode_badge_chat: 'Manual',
     approval_required_title: 'Tool call needs approval',
     approval_reason: 'Reason',
     approval_approve: 'Approve',
@@ -10804,6 +10819,8 @@ function renderPendingApprovalCards(approvals) {
       <div class="approval-card-title">${t('approval_required_title')}</div>
       <div class="approval-card-meta"><strong>${esc(item.tool_name || '')}</strong></div>
       <div class="approval-card-meta">${t('approval_reason')}: ${esc(item.request_reason || '')}</div>
+      <details><summary>${_currentLang === 'zh' ? '查看具体操作' : 'View exact action'}</summary><pre style="white-space:pre-wrap;max-height:160px;overflow:auto;">${esc(JSON.stringify(item.args || {}, null, 2))}</pre></details>
+      ${item.review?.verdict ? `<div class="approval-card-meta">${esc(item.review.verdict.reason || '')}</div>` : ''}
       <div class="approval-card-meta" style="font-family:monospace;">approval_id: ${esc(item.approval_id || '')}</div>
       <div class="approval-card-actions">
         <button class="approval-card-btn approve" onclick="resolveMobileToolApproval('${esc(item.approval_id || '')}','approve',false,'${esc(item.session_id || '')}',this)">${t('approval_approve')}</button>
@@ -16128,18 +16145,19 @@ async function importPersonalSkill() {
 }
 
 // ════════════════════════════════════════════════════
-// ── Run Mode (manual / plan / bypass) ──
+// ── Run Mode (chat / readonly / bypass / auto) ──
 // Shares localStorage key 'clawRunMode' with PC main chat so the
 // three surfaces (CLI / PC web / mobile) stay in sync.
 // ════════════════════════════════════════════════════
-const RUN_MODE_VALID = ['manual', 'plan', 'bypass'];
-const RUN_MODE_DEFAULT = 'bypass';
+const RUN_MODE_VALID = ['chat', 'readonly', 'bypass', 'auto'];
+const RUN_MODE_DEFAULT = 'auto';
 const RUN_MODE_STORAGE_KEY = 'clawRunMode';
 
 function getRunMode() {
   try {
     const raw = (localStorage.getItem(RUN_MODE_STORAGE_KEY) || '').trim().toLowerCase();
-    return RUN_MODE_VALID.includes(raw) ? raw : RUN_MODE_DEFAULT;
+    const mode = {manual: 'chat', plan: 'readonly', yolo: 'bypass'}[raw] || raw;
+    return RUN_MODE_VALID.includes(mode) ? mode : RUN_MODE_DEFAULT;
   } catch (e) {
     return RUN_MODE_DEFAULT;
   }
@@ -16159,7 +16177,7 @@ function refreshRunModeUI() {
   });
   // Manual mode in group chat = agent can't post replies back; warn explicitly.
   const warn = document.getElementById('run-mode-warning-manual');
-  if (warn) warn.style.display = (mode === 'manual') ? '' : 'none';
+  if (warn) warn.style.display = (mode === 'chat') ? '' : 'none';
   // Update the chat-actions inline badge
   const badge = document.getElementById('run-mode-current-label');
   if (badge) {
@@ -16183,7 +16201,7 @@ function selectRunMode(mode) {
   setRunMode(mode);
   // For manual: keep the sheet open so the user has time to read the warning
   // about agents not being able to reply back. For other modes, auto-dismiss.
-  if (mode === 'manual') return;
+  if (mode === 'chat') return;
   setTimeout(closeRunModeSheet, 120);
 }
 
@@ -16310,23 +16328,16 @@ const _READ_ONLY_TOOL_PRESET = new Set([
   'search_files',
   'grep_search',
   'list_sessions',
-  'get_current_session',
   'list_alarms',
   'get_notification_status',
-  'list_notification_channels',
-  'list_oasis_topics',
+  'check_oasis_discussion',
   'list_oasis_sessions',
   'list_oasis_experts',
   'list_oasis_workflows',
   'list_subagents',
   'get_subagent_history',
-  'list_webot_agent_profiles',
-  'session_inbox',
+  'read_session_plan',
   'claude_session_inbox',
-  'get_session_mode',
-  'ultraplan_status',
-  'ultrareview_status',
-  'list_verifications',
   'list_tool_approvals',
   'resolve_tool_approval',
   'call_llm_api'
@@ -16427,7 +16438,8 @@ function renderToolPolicy(policy) {
      <div class="agent-detail-section">
        <div class="agent-detail-label">${t('tool_policy_tool_rules')}</div>
        <div class="agent-detail-value" style="display:flex;flex-direction:column;gap:10px;">
-         ${toolEntries.length ? toolEntries.map(([tool, rule]) => {
+         ${toolEntries.length ? groupToolsByCategory(toolEntries.map(([name]) => ({ ...(_toolPolicyCatalog.find(item => item.name === name) || {}), name }))).map(category => `<details class="tool-policy-category" open><summary>${esc(category.label)} <small>${category.tools.length}</small></summary><div class="tool-policy-category-items">${category.tools.map(({name: tool}) => {
+           const rule = normalized.tools[tool] || {};
            const selected = rule && typeof rule === 'object' && typeof rule.approval === 'string' ? rule.approval : '';
            return `<div class="tool-policy-item" style="display:block;">
              <div class="tool-policy-info" style="margin-bottom:8px;">
@@ -16437,7 +16449,7 @@ function renderToolPolicy(policy) {
                ${_renderPolicyModeButtons(toolModes, selected, false)}
              </div>
            </div>`;
-         }).join('') : `<div style="font-size:12px;color:var(--text-hint);padding:4px 0;">${t('tool_policy_empty')}</div>`}
+         }).join('')}</div></details>`).join('') : `<div style="font-size:12px;color:var(--text-hint);padding:4px 0;">${t('tool_policy_empty')}</div>`}
        </div>
      </div>`;
 

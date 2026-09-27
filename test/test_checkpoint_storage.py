@@ -56,21 +56,21 @@ class CheckpointStorageTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_context_store_round_trips_multimodal_tool_content(self):
         with TemporaryDirectory() as tmpdir:
-            store = ContextStore(Path(tmpdir) / "contexts")
-            content = [
-                {"type": "text", "text": "image metadata"},
-                {"type": "image", "base64": "aGVsbG8=", "mime_type": "image/png"},
-            ]
-            await store.append_messages(
-                "alice#vision",
-                [ToolMessage(content=content, tool_call_id="image-1", name="attach_image_to_context")],
-            )
+            async with ContextStore(Path(tmpdir) / "contexts") as store:
+                content = [
+                    {"type": "text", "text": "image metadata"},
+                    {"type": "image", "base64": "aGVsbG8=", "mime_type": "image/png"},
+                ]
+                await store.append_messages(
+                    "alice#vision",
+                    [ToolMessage(content=content, tool_call_id="image-1", name="attach_image_to_context")],
+                )
 
-            restored = await store.load_context("alice#vision")
-            self.assertEqual(len(restored), 1)
-            self.assertIsInstance(restored[0], ToolMessage)
-            self.assertEqual(restored[0].content, content)
-            self.assertEqual(restored[0].tool_call_id, "image-1")
+                restored = await store.load_context("alice#vision")
+                self.assertEqual(len(restored), 1)
+                self.assertIsInstance(restored[0], ToolMessage)
+                self.assertEqual(restored[0].content, content)
+                self.assertEqual(restored[0].tool_call_id, "image-1")
 
     async def test_repository_lists_and_deletes_contexts(self):
         with TemporaryDirectory() as tmpdir:
@@ -97,87 +97,87 @@ class CheckpointStorageTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_runtime_runs_model_tool_model_and_persists_messages(self):
         with TemporaryDirectory() as tmpdir:
-            store = ContextStore(Path(tmpdir) / "states")
+            async with ContextStore(Path(tmpdir) / "states") as store:
 
-            async def model(state, config):
-                if isinstance(state["messages"][-1], HumanMessage):
-                    return {"messages": [AIMessage(
-                        content="", tool_calls=[{
-                            "name": "lookup", "args": {}, "id": "call-1", "type": "tool_call",
-                        }],
-                    )]}
-                return {"messages": [AIMessage(content="done")]}
+                async def model(state, config):
+                    if isinstance(state["messages"][-1], HumanMessage):
+                        return {"messages": [AIMessage(
+                            content="", tool_calls=[{
+                                "name": "lookup", "args": {}, "id": "call-1", "type": "tool_call",
+                            }],
+                        )]}
+                    return {"messages": [AIMessage(content="done")]}
 
-            async def tools(state, config):
-                return {"messages": [ToolMessage(content="result", tool_call_id="call-1", name="lookup")]}
+                async def tools(state, config):
+                    return {"messages": [ToolMessage(content="result", tool_call_id="call-1", name="lookup")]}
 
-            runtime = LightweightAgentRuntime(
-                call_model=model,
-                call_tools=tools,
-                should_continue=lambda state: bool(getattr(state["messages"][-1], "tool_calls", None)),
-                context_store=store,
-            )
-            config = {"configurable": {"thread_id": "alice#loop"}, "recursion_limit": 5}
-            result = await runtime.ainvoke({"messages": [HumanMessage(content="go")]}, config)
-            self.assertEqual([type(m).__name__ for m in result["messages"]], [
-                "HumanMessage", "AIMessage", "ToolMessage", "AIMessage",
-            ])
-            self.assertEqual((await runtime.aget_state(config)).values["messages"][-1].content, "done")
+                runtime = LightweightAgentRuntime(
+                    call_model=model,
+                    call_tools=tools,
+                    should_continue=lambda state: bool(getattr(state["messages"][-1], "tool_calls", None)),
+                    context_store=store,
+                )
+                config = {"configurable": {"thread_id": "alice#loop"}, "recursion_limit": 5}
+                result = await runtime.ainvoke({"messages": [HumanMessage(content="go")]}, config)
+                self.assertEqual([type(m).__name__ for m in result["messages"]], [
+                    "HumanMessage", "AIMessage", "ToolMessage", "AIMessage",
+                ])
+                self.assertEqual((await runtime.aget_state(config)).values["messages"][-1].content, "done")
 
     async def test_runtime_enforces_step_limit(self):
         with TemporaryDirectory() as tmpdir:
-            store = ContextStore(Path(tmpdir) / "states")
+            async with ContextStore(Path(tmpdir) / "states") as store:
 
-            async def model(state, config):
-                return {"messages": [AIMessage(content="", tool_calls=[{
-                    "name": "loop", "args": {}, "id": "x", "type": "tool_call",
-                }])]}
+                async def model(state, config):
+                    return {"messages": [AIMessage(content="", tool_calls=[{
+                        "name": "loop", "args": {}, "id": "x", "type": "tool_call",
+                    }])]}
 
-            async def tools(state, config):
-                return {"messages": [ToolMessage(content="again", tool_call_id="x")]}
+                async def tools(state, config):
+                    return {"messages": [ToolMessage(content="again", tool_call_id="x")]}
 
-            runtime = LightweightAgentRuntime(
-                call_model=model,
-                call_tools=tools,
-                should_continue=lambda state: True,
-                context_store=store,
-            )
-            with self.assertRaises(AgentRecursionError):
-                await runtime.ainvoke(
-                    {"messages": [HumanMessage(content="go")]},
-                    {"configurable": {"thread_id": "alice#limit"}, "recursion_limit": 2},
+                runtime = LightweightAgentRuntime(
+                    call_model=model,
+                    call_tools=tools,
+                    should_continue=lambda state: True,
+                    context_store=store,
                 )
+                with self.assertRaises(AgentRecursionError):
+                    await runtime.ainvoke(
+                        {"messages": [HumanMessage(content="go")]},
+                        {"configurable": {"thread_id": "alice#limit"}, "recursion_limit": 2},
+                    )
 
     async def test_stream_events_keep_service_compatible_node_events(self):
         with TemporaryDirectory() as tmpdir:
-            store = ContextStore(Path(tmpdir) / "states")
+            async with ContextStore(Path(tmpdir) / "states") as store:
 
-            async def model(state, config):
-                await config["callbacks"][-1].on_llm_new_token("done")
-                return {"messages": [AIMessage(content="done")]}
+                async def model(state, config):
+                    await config["callbacks"][-1].on_llm_new_token("done")
+                    return {"messages": [AIMessage(content="done")]}
 
-            runtime = LightweightAgentRuntime(
-                call_model=model,
-                call_tools=lambda state, config: None,
-                should_continue=lambda state: False,
-                context_store=store,
-            )
-            events = [
-                event async for event in runtime.astream_events(
-                    {"messages": [HumanMessage(content="go")]},
-                    {"configurable": {"thread_id": "alice#events"}},
-                    version="v2",
-                    durability="exit",
+                runtime = LightweightAgentRuntime(
+                    call_model=model,
+                    call_tools=lambda state, config: None,
+                    should_continue=lambda state: False,
+                    context_store=store,
                 )
-            ]
-            self.assertEqual(
-                [(event["event"], event["name"]) for event in events],
-                [
-                    ("on_chain_start", "chatbot"),
-                    ("on_chat_model_stream", "chat_model"),
-                    ("on_chain_end", "chatbot"),
-                ],
-            )
+                events = [
+                    event async for event in runtime.astream_events(
+                        {"messages": [HumanMessage(content="go")]},
+                        {"configurable": {"thread_id": "alice#events"}},
+                        version="v2",
+                        durability="exit",
+                    )
+                ]
+                self.assertEqual(
+                    [(event["event"], event["name"]) for event in events],
+                    [
+                        ("on_chain_start", "chatbot"),
+                        ("on_chat_model_stream", "chat_model"),
+                        ("on_chain_end", "chatbot"),
+                    ],
+                )
 
 
 if __name__ == "__main__":

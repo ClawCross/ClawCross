@@ -1,4 +1,5 @@
 import contextlib
+import asyncio
 from typing import Any, Callable
 
 from fastapi import HTTPException
@@ -18,10 +19,12 @@ from api.session_models import (
     SessionStatusRequest,
 )
 from utils.context_compressor import estimate_messages_tokens
-from utils.context_limits import infer_model_context_window, resolve_history_token_budget
+from utils.context_limits import infer_model_context_window, resolve_history_token_budget, resolve_history_message_limits
 from utils.session_summary import build_session_summary
 from webot.compression import apply_compression, make_llm_summarizer, static_compression_view
 from webot.profiles import is_subagent_session
+from webot.runtime_settings import get_runtime_settings, resolve_context_window, resolve_context_history_budget, context_usage_with_window
+from webot.runtime import effective_session_mode
 from webot.subagents import delete_subagent_by_session, delete_subagents_for_user
 
 logger = get_logger("session_service")
@@ -148,7 +151,8 @@ class SessionService:
                 "context_percent": 0,
                 "context_remaining": 0,
                 "context_tokens": 0,
-                "context_budget": 0,
+                "context_budget": resolve_context_window(get_runtime_settings(req.user_id, req.session_id).context),
+                "session_mode": effective_session_mode(req.user_id, req.session_id),
             }
 
         msgs = snapshot.values.get("messages", [])
@@ -173,7 +177,7 @@ class SessionService:
             if real_ctx > 0:
                 # 推理/恢复路径已写入 API 实测值和分项，只在缺失时补一份，不用估算覆盖
                 if self.agent.get_thread_context_usage(thread_id).get("source") != "api":
-                    window = infer_model_context_window(last_model or None)
+                    window = resolve_context_window(get_runtime_settings(req.user_id, req.session_id).context, last_model or None)
                     self.agent.set_thread_context_usage(
                         thread_id, real_ctx, max(window, real_ctx), source="api",
                     )
@@ -192,10 +196,11 @@ class SessionService:
                     is_subagent=is_subagent_session(req.session_id),
                     model=last_model or None,
                 )
-                self.agent.set_thread_context_usage(thread_id, static_tokens, static_budget)
+                window = resolve_context_window(get_runtime_settings(req.user_id, req.session_id).context, last_model or None)
+                self.agent.set_thread_context_usage(thread_id, static_tokens, window)
         except Exception:
             logger.exception("context usage estimation failed for %s", thread_id)
-        context_usage = self.agent.get_thread_context_usage(thread_id)
+        context_usage = self._configured_context_usage(req.user_id, req.session_id)
         result = []
         for msg in msgs:
             msg_type = type(msg).__name__
@@ -227,6 +232,7 @@ class SessionService:
         return {
             "status": "success",
             "messages": result,
+            "session_mode": effective_session_mode(req.user_id, req.session_id),
             **self._context_usage_fields(context_usage),
         }
 
@@ -255,10 +261,8 @@ class SessionService:
         last_model = ""
         if hasattr(self.agent, "get_thread_model"):
             last_model = self.agent.get_thread_model(thread_id)
-        budget = resolve_history_token_budget(
-            is_subagent=is_subagent_session(req.session_id),
-            model=last_model or None,
-        )
+        settings = get_runtime_settings(req.user_id, req.session_id).context
+        budget = resolve_context_history_budget(settings, is_subagent=is_subagent_session(req.session_id), model=last_model or None)
         store_path = getattr(self.agent, "_db_path", None) or self.db_path
 
         before_tokens = estimate_messages_tokens(
@@ -270,15 +274,27 @@ class SessionService:
             )
         )
         try:
-            result = apply_compression(
+            _, preserve_recent = resolve_history_message_limits(
+                is_subagent=is_subagent_session(req.session_id), token_budget=budget,
+            )
+            result = await asyncio.to_thread(
+                apply_compression,
                 user_id=req.user_id,
                 session_id=req.session_id,
                 messages=msgs,
                 history_token_budget=budget,
                 checkpoint_store_path=store_path,
-                summarizer=make_llm_summarizer(),
+                preserve_recent=preserve_recent,
+                summarizer=make_llm_summarizer(
+                    model=settings.summarizer_model or None, max_output_tokens=settings.summary_tokens,
+                    input_token_budget=settings.summarizer_input_tokens,
+                    preserve_instructions=settings.preserve_instructions,
+                ),
                 force=True,
+                settings=settings,
             )
+            if result.reason == "persistence_failed":
+                raise RuntimeError("compaction persistence failed")
         except Exception:
             logger.exception("compact_session failed for %s", thread_id)
             raise HTTPException(status_code=500, detail="compaction failed")
@@ -301,6 +317,7 @@ class SessionService:
             "saved_tokens": max(0, int(before_tokens) - int(after_tokens)),
             "summary_chars": len(result.summary or ""),
             "compacted_until": int(result.compacted_until or 0),
+            "metadata": getattr(result, "metadata", None) or {},
         }
 
     async def delete_session(self, req: DeleteSessionRequest, x_internal_token: str | None):
@@ -339,6 +356,13 @@ class SessionService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"删除失败: {e}")
 
+    def _configured_context_usage(self, user_id: str, session_id: str) -> dict:
+        thread_id = f"{user_id}#{session_id}"
+        usage = self.agent.get_thread_context_usage(thread_id)
+        model = self.agent.get_thread_model(thread_id) if hasattr(self.agent, "get_thread_model") else None
+        window = resolve_context_window(get_runtime_settings(user_id, session_id).context, model)
+        return context_usage_with_window(usage, window)
+
     @staticmethod
     def _context_usage_fields(context_usage: dict) -> dict:
         return {
@@ -368,10 +392,10 @@ class SessionService:
             else 0
         )
         busy_source = self.agent.get_thread_busy_source(thread_id) if busy else ""
-        context_usage = self.agent.get_thread_context_usage(thread_id)
+        context_usage = self._configured_context_usage(req.user_id, req.session_id)
         if not context_usage.get("tokens") and hasattr(self.agent, "restore_context_usage"):
             if await self.agent.restore_context_usage(thread_id):
-                context_usage = self.agent.get_thread_context_usage(thread_id)
+                context_usage = self._configured_context_usage(req.user_id, req.session_id)
         return {
             "has_new_messages": has_new,
             "pending_count": pending_count,

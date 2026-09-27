@@ -14,7 +14,7 @@ MCP 定时任务调度服务
 - delete_alarm: 删除指定的定时任务
 """
 
-from mcp.server.fastmcp import FastMCP
+from utils.mcp_tool_docs import DocumentedFastMCP as FastMCP
 import httpx
 import os
 from datetime import datetime, timezone

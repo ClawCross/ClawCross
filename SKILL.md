@@ -636,58 +636,41 @@ openclaw.cmd channels login --channel openclaw-weixin
 ## Self-Evolution Loop
 
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
-Prefer `skill_evolution_report` / `skill_evolution_apply` or `selfskill/scripts/evolve_skill.py` over manual edits here.
+Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `selfskill/scripts/evolve_skill.py`.
 
-- Updated at: `2026-04-11T11:50:44.173193+00:00`
-- Heuristic candidate: `blended-structured-output-workspace-preflight`
-- Heuristic score: `0.707`
+- Updated at: `2026-09-27T07:09:55.528838+00:00`
+- Strategy: `harden`
+- Heuristic candidate: `blended-verification-loop-workspace-preflight-structured-output`
+- Heuristic score: `0.628`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: python -m py_compile src/webot/skill_evolution.py selfskill/scripts/evolve_skill.py src/mcp_servers/skills.py src/webot/trajectory.py src/webot/skills.py src/core/agent.py src/core/streaming_tool_executor.py. Signals: structured-output, workspace-preflight. stderr carried the strongest failure evidence.
+Command exited with code 1. Command: (external failure context). Signals: verification-loop, workspace-preflight, structured-output. stderr carried the strongest failure evidence.
+
+### Strategy Rationale
+
+- Intent mix: repair `0.4`, optimize `0.4`, innovate `0.2`
+- Shift toward stability, bounded retries, and verifier quality.
 
 ### Latest Trigger Command
 
-`python -m py_compile src/webot/skill_evolution.py selfskill/scripts/evolve_skill.py src/mcp_servers/skills.py src/webot/trajectory.py src/webot/skills.py src/core/agent.py src/core/streaming_tool_executor.py`
+`(external failure context)`
 
 ### Latest Error Excerpt
 
 ```text
-File "src/webot/skill_evolution.py", line 69
-    _SIGNAL_LIBRARY: list[dict[str, Any]] = [
-                   ^
-SyntaxError: invalid syntax
-
-  File "selfskill/scripts/evolve_skill.py", line 26
-    def _parse_args() -> argparse.Namespace:
-                      ^
-SyntaxError: invalid syntax
-
-  File "src/mcp_servers/skills.py", line 31
-    async def skill_manage(
-        ^
-SyntaxError: invalid syntax
-
-  File "src/webot/trajectory.py", line 25
-    def _ensure_dir() -> Path:
-                      ^
-SyntaxError: invalid syntax
-
-  File "src/webot/skills.py", line 32
-    _DANGEROUS_PATTERNS: list[tuple[str, str]] = [
-                       ^
-SyntaxError: invalid syntax
-
-  File "src/core/agent.py", line 198
-    SESSION_FORCE_INJECTED_TOOLS: frozenset[str] = frozenset({
-                                ^
-SyntaxError: invalid syntax
-
-  File "src/core/streaming_tool_executor.py", line 33
-    _TOOL_ACCESS_MODES: dict[str, ToolAccessMode] = {
-                      ^
-SyntaxError: invalid syntax
+During the memory-tool migration, pytest found a SyntaxError at src/webot/skill_evolution.py:1206: nested quotes around write_file(storage="memory") in a Python string. Corrected to storage='memory'.
+Standalone test/test_skill_memory.py also initially failed collection with ModuleNotFoundError: No module named 'mcp_servers'. Added its explicit repository src import path, consistent with the other standalone tests.
+The first full regression found test_session_status_includes_context_usage still expected the cached 64K denominator (100%); the runtime now correctly recalculates against the current configured 1M window (6%). Updated the test to explicitly control settings and assert the new denominator while preserving measured tokens.
+Keep memory entry storage paths out of agent results and injected prompts. Validate both personal and Team scopes, symlink exclusion, stable IDs, metadata preservation, and concurrent sha256-protected writes.
 ```
+
+### Governance Snapshot
+
+- Suppressed signals: (none)
+- Consecutive repair cycles: `0`
+- Consecutive empty cycles: `0`
+- Recent failure ratio: `1.0`
 
 ### Operating Adjustments
 
@@ -702,14 +685,18 @@ SyntaxError: invalid syntax
 
 ### Recent Evidence
 
-- `2026-04-11T11:50:44.173193+00:00` `repo-skill` — File "src/webot/skill_evolution.py", line 69
-    _SIGNAL_LIBRARY: list[dict[str, Any]] = [
-                   ^
-SyntaxError: invalid syntax ...[truncated]
+- `2026-09-27T07:09:55.528838+00:00` `repo-skill` — During the memory-tool migration, pytest found a SyntaxError at src/webot/skill_evolution.py:1206: nested quotes around write_file(storage="me ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `blended-structured-output-workspace-preflight` score `0.707` — Blend the strongest recent failure patterns
-- `structured-output-2` score `0.657` — Harden structured-output handling
-- `workspace-preflight-1` score `0.523` — Add repo/workspace preflight checks
+- `blended-verification-loop-workspace-preflight-structured-output` score `0.628` — Blend the strongest recent failure patterns (intent `repair`)
+- `verification-loop-6` score `0.588` — Tighten verification loops (intent `repair`)
+- `workspace-preflight-2` score `0.475` — Add repo/workspace preflight checks (intent `repair`)
+- `structured-output-2` score `0.475` — Harden structured-output handling (intent `repair`)
+
+### Local State Snapshot
+
+- Python/platform: `3.14.4` / `Linux-7.0.0-14-generic-x86_64-with-glibc2.43`
+- Feedback history entries: `0`
+- Runtime failure entries: `0`
 <!-- clawcross:self-evolution:end -->

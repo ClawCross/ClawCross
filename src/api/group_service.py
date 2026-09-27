@@ -85,20 +85,21 @@ _external_agent_system_prompt_cache: str | None = None
 
 # Per-message permission mode → backend wire format. Mirrors scripts/clawcross.py
 # and frontend/js/main.js so CLI / PC web / mobile group chat are interchangeable.
-_VALID_RUN_MODES = ("manual", "plan", "bypass")
+_VALID_RUN_MODES = ("chat", "readonly", "bypass", "auto")
 _ACPX_OVERRIDES_BY_MODE: dict[str, dict[str, Any]] = {
-    "manual": {
+    "chat": {
         # All three together: tools hidden, and even if an old agent ignores --allowed-tools,
         # approve-all is moot because no tool calls happen on the manual UI side anyway.
         "permission_policy": "approve-all",
         "non_interactive_permissions": "",
         "allowed_tools": "",
     },
-    "plan": {
+    "readonly": {
         "permission_policy": "approve-reads",
         # Plan mode: writes must error out, not hang waiting for a human approval.
         "non_interactive_permissions": "deny",
     },
+    "auto": {"permission_policy": "approve-reads", "non_interactive_permissions": "deny"},
     "bypass": {
         "permission_policy": "approve-all",
         "non_interactive_permissions": "",
@@ -112,6 +113,7 @@ def _normalize_run_mode(mode: str | None) -> str | None:
     None means "no override" — each member uses its own default.
     """
     raw = (mode or "").strip().lower()
+    raw = {"manual": "chat", "plan": "readonly", "yolo": "bypass"}.get(raw, raw)
     return raw if raw in _VALID_RUN_MODES else None
 
 
@@ -1059,9 +1061,9 @@ class GroupService:
                                         "  如某段回复只需要特定成员处理，或需要转交给更合适的成员，请在 content 中直接写 @对方名称。被 @ 的消息只会唤醒并投递给目标成员，不会打扰全群；鼓励用这种方式高效交流。不要写内部 global_id、session_id 或 tag#type#... 标识。\n"
                                         "注意：username 和 source_session 会自动注入，不要手动设置。\n"
                                         "[end padding]\n[end padding]\n[end padding]")
-                private_trigger_suffix = ("\n\n如果需要回复，请使用 send_private_cli 工具发送私聊消息：\n"
+                private_trigger_suffix = ("\n\n如果需要回复，请使用 send_to_group 工具发送私聊消息：\n"
                                           f"  当前群主 owner=\"{owner_uid}\"；当前人类用户是「{owner_uid}」\n"
-                                          f"  send_private_cli(group_id=\"{group_id}\", content=\"你的回复内容\")\n"
+                                          f"  send_to_group(group_id=\"{group_id}\", content=\"你的回复内容\")\n"
                                           "注意：username 和 source_session 会自动注入，不要手动设置。\n"
                                           "[end padding]\n[end padding]\n[end padding]")
 
@@ -1103,7 +1105,7 @@ class GroupService:
                     if normalized_mode:
                         trigger_body["session_mode"] = normalized_mode
                         # Manual = no tool calls. Empty list is the explicit signal.
-                        if normalized_mode == "manual":
+                        if normalized_mode == "chat":
                             trigger_body["enabled_tools"] = []
                     async with httpx.AsyncClient(timeout=30) as client:
                         await client.post(

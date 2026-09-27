@@ -13,12 +13,13 @@ This document records the current, running WeBot delegated runtime that is now c
 - **Profiles + tool filtering.** Built-in profiles (`general`, `research`, `planner`, `coder`, `reviewer`, `verifier`) in `webot_profiles.py` declare system prompt fragments, allowed tools, preferred models, and `max_turns`. User-defined profiles live under `data/user_files/{user_id}/webot_agent_profiles.json` and the same MCP paths.
 - **Session modes.** `webot_runtime.py` normalizes `execute`, `agent`, `plan`, `review`, and `yolo`. `webot_service.update_session_mode` persists the mode via `save_session_mode` and returns a payload with `reason`, `status`, `mode`. Mode-aware tool filtering uses `filter_tools_for_mode`; plan mode blocks destructive tools, review mode tightens further, and yolo auto-approves only manual policy prompts while still respecting explicit deny rules.
 - **Policy/hook pipeline.** `webot_policy.py` now normalizes hooks for events such as `session_start`, `user_prompt_submit`, `pre_tool`, `post_tool`, `permission_request`, `permission_resolved`, `pre_compact`, `stop`, `subagent_stop`, `session_end`. Hooks can log to JSONL, run shell commands, or mutate arguments. `webot_permission_context.py` enforces the decisions before MCP tools execute.
-- **Compaction + budgets.** `webot_context.py` trims long tool results, stores archival artifacts, compresses history into summaries, and writes `compact_summary` artifacts under `webot_compactions`. Those summaries are already reused by the current memory/Kairos/dream flow and fit the Claude Code multi-tier compaction idea.
+- **Compaction + budgets.** `webot/compression.py` selects whole-turn boundaries, summarizes long transcripts in bounded chunks, and persists a summary beside the append-only originals. `webot/runtime_settings.py` adds user defaults and session overrides for budgets, recent turns, summary model and retention instructions. Desktop “Context and tool approvals” controls these settings; see [compact-approval-audit.md](./compact-approval-audit.md).
+- **Independent approval review.** `webot/approval_review.py` unifies manual tool policy and high-risk command approvals. Review defaults to the user; optional `auto_review` consults a separate model with exact actions and original user authorization. Invalid or uncertain verdicts return to the user. Explicit deny rules and command hard blocks remain enforced, with exact one-use permits between Agent and MCP.
 
 ## Feature Coverage
 
 - **Subagent orchestration.** `mcp_webot.py` handles synchronous `spawn_subagent(wait=True)` flows, background queues, recoveries (`_recover_background_runs`), notifications to parent sessions, and explicit mode propagation (planner->plan, reviewer->review). Runs record `agent_type`, workspace metadata, and `run_events` produced by `record_run_event`.
-- **Ultraplan & Ultrareview.** New APIs `ultraplan_start/status` and `ultrareview_start/status` create telemetry-rich runs, spawn child reviewers for each angle, aggregate findings, and record artifacts/logs so the frontend can surface plan approvals or reviewer summaries.
+- **Planning & review fleets.** There are no dedicated ultraplan/ultrareview tools: the agent plans with `spawn_subagent(agent_type="planner", workspace_mode="worktree")` and reviews from several angles by spawning `reviewer` subagents in parallel.
 - **Memory, Kairos, AutoDream.** `webot_memory.py` maintains per-project memory directories, `MEMORY.md`, relevant-entry recall, daily logs, and runtime-store sync. `run_auto_dream` applies time/session/lock gates, writes dream summaries, and updates `runtime.memory` so Kairos-style follow-ups can be triggered from the same control plane.
 - **Bridge / Remote control.** `webot_bridge.py` issues attachable bridge sessions, `webot_routes.py` exposes `/webot/ws/{user_id}/{bridge_id}`, and `webot_service.py` now publishes runtime snapshots to connected bridge clients after mode, inbox, run, voice, Kairos, dream, buddy, and approval changes. The browser runtime panel consumes the same `runtime.bridge` payload and auto-reconnects while the sidebar is open.
 - **Voice & Buddy (product parity focus).** The existing audio stack (`ops_service` for TTS, `main.js` recording + TTS UI) now persists `runtime.voice` per session and exposes toggle APIs/MCP tools. `webot_buddy.py` provides deterministic per-user companion state, durable reactions, and runtime-panel actions instead of Claude Code’s terminal sprite renderer.
@@ -28,18 +29,22 @@ This document records the current, running WeBot delegated runtime that is now c
 1. User hits `/studio` with a logged-in session; `main.js` loads the runtime panel via `/proxy_webot_session_runtime`.
 2. The runtime DTO includes the current session (main thread) plus subagents in `relationships.children`.
 3. Mode, plan, todos, verifications, approvals, inbox, artifacts, runs, voice, bridge, buddy, and memory metadata all come from `webot_service.get_session_runtime` and its helper serializers.
-4. Actions (mode switch, deliver inbox, start ultraplan/ultrareview, voice record/play) call the corresponding MCP/Flask endpoints; the runtime store updates runs and artifacts, keeping the main session in sync with the control plane.
+4. Actions (mode switch, deliver inbox, voice record/play, bridge attach, kairos, dream, verification records) call the corresponding MCP/Flask endpoints — the session toggles and verification records are UI/API features, not model tools; the runtime store updates runs and artifacts, keeping the main session in sync with the control plane.
 
 ## File Map
 
 | File | Role |
 |---|---|
-| `src/mcp_servers/webot.py` | Core orchestrator: queues, leases, ultrareview/ultraplan, dream gating, bridge/voice/buddy tools, runtime artifact logging |
+| `src/mcp_servers/webot.py` | Model-facing tools: subagents, plan/todo, session inbox, session mode, Claude Code keepalive, runtime artifact logging |
 | `src/webot/runtime_store.py` | Durable tables for runs, attempts, inbox, artifacts, session state |
 | `src/webot/service.py` | Runtime API that serializes DTO for the frontend and proxies, tracks workspace descriptions, counts inbox/gate details |
 | `src/webot/runtime.py` | Utility functions (`normalize_session_mode`, mode messages, stop conditions, max_turn resolution) |
-| `src/webot/lsp.py` | OpenSeek-style best-effort workspace diagnostics used by the LSP MCP/API bridge |
+| `src/webot/lsp.py` | OpenSeek-style best-effort workspace diagnostics used by the `/webot/lsp` API (the agent runs the same checks through `run_command`) |
 | `src/webot/context.py` | Context budgeting, artifact logging for oversized inputs/results, compaction guardrails |
+| `src/webot/compression.py` | Chunked summaries, whole-turn retention, version-checked persistence and compaction metrics |
+| `src/webot/runtime_settings.py` | Validated user/session context and approval overrides with atomic persistence |
+| `src/webot/approval_review.py` | Unified approval broker and independent structured reviewer |
+| `src/webot/approval_actions.py` | Canonical exact execution parameters shared with MCP |
 | `src/webot/policy.py` | Policy normalization, hook/approval parsing, event enumeration |
 | `src/core/agent.py` | Permits MCP tools, enforces tool filtering, injects runtime prompts, loads `webot_runtime` helpers |
 | `src/webot/bridge.py` | Browser-native bridge session issuance, websocket connection registry, publish helpers |

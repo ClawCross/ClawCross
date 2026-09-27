@@ -348,6 +348,22 @@ def _connect(db_path: str | os.PathLike | None = None) -> sqlite3.Connection:
         ON webot_tool_approvals(user_id, session_id, tool_name, args_hash, status, expires_at)
         """
     )
+    approval_columns = {row[1] for row in conn.execute("PRAGMA table_info(webot_tool_approvals)")}
+    if "review_metadata_json" not in approval_columns:
+        try:
+            conn.execute("ALTER TABLE webot_tool_approvals ADD COLUMN review_metadata_json TEXT NOT NULL DEFAULT '{}'")
+        except sqlite3.OperationalError:
+            # Another worker may have completed the same migration.
+            if "review_metadata_json" not in {row[1] for row in conn.execute("PRAGMA table_info(webot_tool_approvals)")}:
+                conn.close()
+                raise
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS webot_execution_permits (
+            permit_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, session_id TEXT NOT NULL,
+            tool_name TEXT NOT NULL, args_hash TEXT NOT NULL, binding_hash TEXT NOT NULL,
+            expires_at TEXT NOT NULL, consumed INTEGER NOT NULL DEFAULT 0
+        )
+    """)
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS webot_session_todos (
@@ -630,6 +646,7 @@ class ToolApprovalRecord:
     created_at: str
     updated_at: str
     expires_at: str
+    review_metadata_json: str = "{}"
 
 
 @dataclass(frozen=True)
@@ -1374,9 +1391,8 @@ def save_session_state(
     summary: str = "",
     db_path: str | os.PathLike | None = None,
 ) -> SessionStateRecord:
-    normalized_mode = (mode or "execute").strip().lower()
-    if normalized_mode not in {"execute", "agent", "plan", "review", "yolo"}:
-        normalized_mode = "execute"
+    from webot.runtime import normalize_session_mode
+    normalized_mode = normalize_session_mode(mode)
     normalized_status = (status or "active").strip().lower() or "active"
     now = utc_now()
     with _connect(db_path) as conn:
@@ -2711,7 +2727,7 @@ def find_active_approval_for_action(
               AND session_id = ?
               AND tool_name = ?
               AND args_hash = ?
-              AND status IN ('approved', 'used')
+              AND status = 'approved'
               AND expires_at >= ?
             ORDER BY updated_at DESC
             LIMIT 1
@@ -2754,28 +2770,41 @@ def update_tool_approval_status(
     *,
     status: str,
     resolution_reason: str = "",
+    expected_status: str | None = None,
     db_path: str | os.PathLike | None = None,
 ) -> ToolApprovalRecord | None:
+    expected_statuses = {
+        "approved": ("pending",),
+        "denied": ("pending", "approved"),
+        "used": ("approved",),
+        "expired": ("pending", "approved"),
+    }
+    if status not in expected_statuses:
+        raise ValueError(f"Unsupported approval status: {status}")
+    allowed_statuses = expected_statuses[status]
+    if expected_status is not None:
+        if expected_status not in allowed_statuses:
+            raise ValueError(f"Invalid expected approval status: {expected_status}")
+        allowed_statuses = (expected_status,)
     with _connect(db_path) as conn:
-        row = conn.execute(
-            """
-            SELECT * FROM webot_tool_approvals
-            WHERE approval_id = ? AND user_id = ?
-            """,
-            (approval_id, user_id),
-        ).fetchone()
-        if row is None:
-            return None
         updated_at = utc_now()
-        conn.execute(
-            """
+        placeholders = ",".join("?" for _ in allowed_statuses)
+        expiry_condition = "" if status == "expired" else " AND expires_at > ?"
+        params = [status, resolution_reason, resolution_reason, updated_at, approval_id, user_id, *allowed_statuses]
+        if status != "expired":
+            params.append(updated_at)
+        cursor = conn.execute(
+            f"""
             UPDATE webot_tool_approvals
-            SET status = ?, resolution_reason = ?, updated_at = ?
+            SET status = ?, resolution_reason = CASE WHEN ? = '' THEN resolution_reason ELSE ? END, updated_at = ?
             WHERE approval_id = ? AND user_id = ?
+              AND status IN ({placeholders}){expiry_condition}
             """,
-            (status, resolution_reason, updated_at, approval_id, user_id),
+            params,
         )
         conn.commit()
+        if cursor.rowcount != 1:
+            return None
         row = conn.execute(
             "SELECT * FROM webot_tool_approvals WHERE approval_id = ? AND user_id = ?",
             (approval_id, user_id),
@@ -2797,6 +2826,55 @@ def get_tool_approval(
             (approval_id, user_id),
         ).fetchone()
     return _row_to_approval(row)
+
+
+def set_approval_review_metadata(approval_id: str, user_id: str, metadata: dict) -> None:
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE webot_tool_approvals SET review_metadata_json = ? WHERE approval_id = ? AND user_id = ? AND status IN ('pending', 'approved')",
+            (_json_dumps(metadata), approval_id, user_id),
+        )
+        conn.commit()
+
+
+def record_tool_execution(approval_id: str, user_id: str, *, status: str, detail: str = "") -> None:
+    if not approval_id:
+        return
+    with _connect() as conn:
+        conn.commit()
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT review_metadata_json FROM webot_tool_approvals WHERE approval_id = ? AND user_id = ? AND status = 'used'", (approval_id, user_id)).fetchone()
+        if row is None:
+            return
+        metadata = json.loads(row[0])
+        metadata["execution"] = {"status": status, "at": utc_now(), "detail": detail[:500]}
+        conn.execute("UPDATE webot_tool_approvals SET review_metadata_json = ? WHERE approval_id = ? AND user_id = ?", (json.dumps(metadata, ensure_ascii=False), approval_id, user_id))
+
+
+def issue_execution_permit(user_id: str, session_id: str, tool_name: str, args: dict, binding_hash: str) -> None:
+    from datetime import timedelta
+    import uuid
+    expires_at = (datetime.now(timezone.utc) + timedelta(seconds=60)).isoformat()
+    with _connect() as conn:
+        conn.execute("DELETE FROM webot_execution_permits WHERE expires_at <= ? OR consumed = 1", (utc_now(),))
+        conn.execute(
+            "INSERT INTO webot_execution_permits VALUES (?, ?, ?, ?, ?, ?, ?, 0)",
+            (uuid.uuid4().hex, user_id, session_id, tool_name, _stable_args_hash(tool_name, args), binding_hash, expires_at),
+        )
+        conn.commit()
+
+
+def consume_execution_permit(user_id: str, session_id: str, tool_name: str, args: dict, binding_hash: str) -> bool:
+    with _connect() as conn:
+        cursor = conn.execute("""
+            UPDATE webot_execution_permits SET consumed = 1 WHERE permit_id = (
+                SELECT permit_id FROM webot_execution_permits
+                WHERE user_id = ? AND session_id = ? AND tool_name = ? AND args_hash = ?
+                  AND binding_hash = ? AND consumed = 0 AND expires_at > ? LIMIT 1
+            ) AND consumed = 0
+        """, (user_id, session_id, tool_name, _stable_args_hash(tool_name, args), binding_hash, utc_now()))
+        conn.commit()
+        return cursor.rowcount == 1
 
 
 def save_memory_state(

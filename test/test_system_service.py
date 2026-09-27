@@ -144,5 +144,69 @@ class SystemServiceCoalescingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(message.content, "普通系统触发")
 
 
+class _ConversationApp(_FakeAgentApp):
+    """Appends one turn to a running transcript, like the real graph does."""
+
+    def __init__(self, turn):
+        super().__init__()
+        self.messages = []
+        self.turn = turn
+
+    async def astream_events(self, system_input, config, version, durability):
+        self.inputs.append(system_input)
+        self.messages.extend(system_input["messages"])
+        self.messages.extend(self.turn)
+        yield {"event": "done"}
+
+    async def aget_state(self, config):
+        messages = list(self.messages)
+
+        class Snapshot:
+            values = {"messages": messages}
+
+        return Snapshot()
+
+
+class SystemTriggerWaitReplyTests(unittest.IsolatedAsyncioTestCase):
+    def _service(self, turn):
+        from langchain_core.messages import AIMessage  # noqa: F401  (turn built by callers)
+
+        agent = _FakeAgent()
+        agent.agent_app = _ConversationApp(turn)
+        # No cancel_task on the fake: a waiting trigger must never reach for it.
+        return agent, SystemService(agent=agent, verify_internal_token=lambda token: None)
+
+    async def test_waits_behind_the_running_turn_then_returns_the_reply(self):
+        from langchain_core.messages import AIMessage, ToolMessage
+
+        agent, service = self._service([
+            AIMessage(content="", tool_calls=[{"name": "read_file", "args": {}, "id": "c1"}]),
+            ToolMessage(content="file text", tool_call_id="c1"),
+            AIMessage(content="the answer"),
+        ])
+        lock = await agent.get_thread_lock("bob#s1")
+        await lock.acquire()  # the session is busy with its current turn
+        call = asyncio.create_task(service.system_trigger(
+            SystemTriggerRequest(user_id="bob", session_id="s1", text="question", wait_reply=True), None
+        ))
+        await asyncio.sleep(0.05)
+        self.assertFalse(call.done())
+        self.assertEqual(agent.agent_app.inputs, [])  # queued, not run, not interrupting
+        lock.release()
+        result = await asyncio.wait_for(call, 1)
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["reply"], "the answer")
+
+    async def test_a_turn_without_a_final_answer_replies_empty_not_an_older_answer(self):
+        from langchain_core.messages import AIMessage, HumanMessage
+
+        agent, service = self._service([AIMessage(content="", tool_calls=[{"name": "x", "args": {}, "id": "c1"}])])
+        agent.agent_app.messages = [HumanMessage(content="earlier"), AIMessage(content="earlier answer")]
+        result = await service.system_trigger(
+            SystemTriggerRequest(user_id="bob", session_id="s1", text="question", wait_reply=True), None
+        )
+        self.assertEqual(result["reply"], "")
+
+
 if __name__ == "__main__":
     unittest.main()

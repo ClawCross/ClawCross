@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20260927052802242157",
+  "candidate_id": "verification-loop-2",
+  "skill_name": "repo-skill",
+  "strategy": "harden",
+  "env_fingerprint": {
+    "python_version": "3.14.4",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-09-27T05:28:02.242110+00:00"
+  },
+  "commands": [
+    {
+      "command": "(external failure context)",
+      "ok": false,
+      "stdout": "Command: CLAWCROSS_VENV_DIR=/home/ubuntu/work2/venv bash selfskill/scripts/run.sh start --no-openclaw\nBackground startup reported ready on ports 51200, 51201, 51202, and 51209. After the tool execution returned, the managed runner cleaned up child processes.",
+      "stderr": "Post-start health verification failed: URLError [Errno 111] Connection refused at http://127.0.0.1:51200/v1/models and the frontend port 51209.\nRecovery verified: keep start-foreground --no-openclaw alive in a managed PTY session, and run scripts/tunnel.py in another persistent PTY session. All four local endpoints and the new remote /studio returned HTTP 200. Do not use a detached background start in a runner that cleans up child processes when its command exits."
+    }
+  ],
+  "overall_ok": false,
+  "duration_ms": null,
+  "created_at": "2026-09-27T05:28:02.242184+00:00",
+  "asset_id": "sha256:ca67247fbfc8f0cf630c2cca2e86e264a95033377d992d5b9f01a5aeda90f029"
+}

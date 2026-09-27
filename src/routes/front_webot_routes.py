@@ -17,6 +17,30 @@ def register_webot_routes(
     def _internal_auth_headers():
         return {"X-Internal-Token": internal_token}
 
+    @app.route("/proxy_webot_runtime_settings", methods=["GET", "POST"])
+    def proxy_webot_runtime_settings():
+        user_id = session.get("user_id", "")
+        if not user_id:
+            return jsonify({"error": "Login required"}), 401
+        try:
+            if request.method == "GET":
+                response = requests.get(
+                    f"{base_url}/webot/runtime-settings",
+                    params={"user_id": user_id, "session_id": request.args.get("session_id", "")},
+                    headers=_internal_auth_headers(), timeout=15,
+                )
+            else:
+                body = request.get_json() or {}
+                response = requests.post(
+                    f"{base_url}/webot/runtime-settings",
+                    json={"user_id": user_id, "session_id": body.get("session_id", ""),
+                          "settings": body.get("settings", {}), "reset": body.get("reset", False)},
+                    headers=_internal_auth_headers(), timeout=15,
+                )
+            return jsonify(response.json()), response.status_code
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
     @app.route("/proxy_webot_subagents")
     def proxy_webot_subagents():
         user_id = session.get("user_id", "")

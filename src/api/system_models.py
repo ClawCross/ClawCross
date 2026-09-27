@@ -33,3 +33,7 @@ class SystemTriggerRequest(BaseModel):
     # OpenAI-shaped forced reply format for this trigger's turn — same
     # contract as ChatCompletionRequest.response_format (see openai_models.py).
     response_format: Optional[dict] = None
+    # Hold the request until this trigger's turn has run and return the agent's
+    # reply. The turn still queues behind the session's current run like any
+    # other trigger — waiting is the caller's choice, never an interruption.
+    wait_reply: bool = False

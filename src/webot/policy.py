@@ -16,6 +16,7 @@ from typing import Any
 _DEFAULT_PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PROJECT_ROOT = _DEFAULT_PROJECT_ROOT
 from utils.runtime_paths import USER_FILES_DIR
+from webot.approval_actions import canonical_action_args
 DEFAULT_POLICY_FILENAME = "webot_tool_policy.json"
 DEFAULT_EVENT_LOG_PATH = "logs/webot_tool_events.jsonl"
 
@@ -37,13 +38,12 @@ _POLICY_EVENTS = {
 
 _CONTENT_ARG_NAMES = {
     "run_command": "command",
-    "run_python_code": "code",
+    "background_command_io": "input",
 }
 
 _PATH_ARG_NAMES = {
     "read_file": "filename",
     "write_file": "filename",
-    "append_file": "filename",
     "delete_file": "filename",
 }
 
@@ -91,6 +91,7 @@ class ToolPolicyRule:
     path_allow_patterns: tuple[str, ...] = ()
     path_block_patterns: tuple[str, ...] = ()
     hooks: tuple[ToolPolicyHook, ...] = ()
+    approved_args: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -197,6 +198,7 @@ def _normalize_rule(raw: object) -> ToolPolicyRule:
         path_allow_patterns=_normalize_string_tuple(raw.get("path_allow_patterns")),
         path_block_patterns=_normalize_string_tuple(raw.get("path_block_patterns")),
         hooks=_normalize_hooks(raw.get("hooks")),
+        approved_args=_normalize_string_tuple(raw.get("approved_args")),
     )
 
 
@@ -232,7 +234,9 @@ def get_tool_policy(
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
-        return WeBotToolPolicy(source="user", definition_path=str(path))
+        return WeBotToolPolicy(default_approval="deny", source="user", definition_path=str(path))
+    if not isinstance(raw, dict):
+        return WeBotToolPolicy(default_approval="deny", source="user", definition_path=str(path))
     return _normalize_policy(raw, source="user", definition_path=str(path))
 
 
@@ -248,6 +252,7 @@ def serialize_tool_policy(policy: WeBotToolPolicy) -> dict[str, Any]:
                 "path_allow_patterns": list(rule.path_allow_patterns),
                 "path_block_patterns": list(rule.path_block_patterns),
                 "hooks": [asdict(hook) for hook in rule.hooks],
+                "approved_args": list(rule.approved_args),
             }
             for tool_name, rule in policy.tools.items()
         },
@@ -358,6 +363,8 @@ def evaluate_tool_policy(
             matched_rule=matched_rule,
         )
     if approval == "manual":
+        if rule and approval_args_key(canonical_action_args(tool_name, args)) in rule.approved_args:
+            return ToolPolicyDecision(allowed=True, matched_rule=matched_rule, reason="已匹配用户记住的完整参数批准。")
         return ToolPolicyDecision(
             allowed=False,
             requires_approval=True,
@@ -365,6 +372,11 @@ def evaluate_tool_policy(
             matched_rule=matched_rule,
         )
     return ToolPolicyDecision(allowed=True, matched_rule=matched_rule)
+
+
+def approval_args_key(args: dict[str, Any]) -> str:
+    """Remember the complete action, including language, mode and target."""
+    return json.dumps(args, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
 def _resolve_hook_path(user_id: str, path: str, *, project_root: str | Path | None = None) -> Path:

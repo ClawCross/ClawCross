@@ -1,7 +1,7 @@
 """``clawcross workflow-manual`` — print the canonical OASIS workflowpy authoring manual.
 
 Thin CLI wrapper around ``oasis.workflow_rules.get_workflow_writing_rules``.
-The same function is exposed via the MCP tool ``get_workflow_writing_rules``
+The same function is exposed via the MCP tool ``get_workflow_rules(kind="python")``
 in ``src/mcp_servers/oasis.py`` — both surfaces read the same single source
 of truth so the manual never drifts between channels.
 """

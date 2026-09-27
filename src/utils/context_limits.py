@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 
 
-DEFAULT_MODEL_CONTEXT_WINDOW = 128_000
+DEFAULT_MODEL_CONTEXT_WINDOW = 1_000_000
 MIN_HISTORY_TOKEN_BUDGET = 16_000
 # 主 agent 不再封顶——Gemini 2M / Minimax 1M 这种长上下文模型应该能用满。
 # 用户可通过 WEBOT_CONTEXT_TOKEN_BUDGET 显式收紧。
@@ -68,7 +68,7 @@ def infer_model_context_window(model: str | None = None) -> int:
     return DEFAULT_MODEL_CONTEXT_WINDOW
 
 
-def resolve_history_token_budget(*, is_subagent: bool = False, model: str | None = None) -> int:
+def resolve_history_token_budget(*, is_subagent: bool = False, model: str | None = None, context_window: int | None = None) -> int:
     """
     Resolve the history budget sent to compaction.
 
@@ -86,7 +86,7 @@ def resolve_history_token_budget(*, is_subagent: bool = False, model: str | None
     if override:
         return override
 
-    context_window = infer_model_context_window(model)
+    context_window = context_window or infer_model_context_window(model)
     budget = int(context_window * HISTORY_BUDGET_RATIO)
     if is_subagent:
         # subagent 仍封顶，避免子任务挂着巨型历史

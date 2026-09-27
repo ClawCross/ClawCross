@@ -5,9 +5,14 @@ if _src_dir not in _sys.path:
     _sys.path.insert(0, _src_dir)
 
 import os
+import base64
 import hashlib
+import json
 import tempfile
-from mcp.server.fastmcp import FastMCP
+from contextlib import ExitStack
+from typing import Literal
+from mcp.types import CallToolResult, ImageContent, TextContent
+from utils.mcp_tool_docs import DocumentedFastMCP as FastMCP
 
 from webot.workspace import resolve_session_workspace
 
@@ -18,6 +23,54 @@ DEFAULT_READ_CHARS = 12000
 MAX_READ_CHARS = 50000
 DEFAULT_LINE_COUNT = 200
 MAX_LINE_COUNT = 2000
+
+# Images come back as native image content, so the next model call sees them.
+ATTACHMENT_MARKER = "__clawcross_multimodal_attachment__"
+MAX_IMAGE_BYTES = 20 * 1024 * 1024
+
+
+def _detect_image_mime(path: str) -> str:
+    with open(path, "rb") as handle:
+        head = handle.read(16)
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if head.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if head.startswith((b"GIF87a", b"GIF89a")):
+        return "image/gif"
+    if head.startswith(b"RIFF") and head[8:12] == b"WEBP":
+        return "image/webp"
+    if head.startswith(b"BM"):
+        return "image/bmp"
+    # Only the file's own header counts: a text file named *.png is text.
+    return ""
+
+
+def _image_result(path: str, mime_type: str) -> CallToolResult:
+    size = os.path.getsize(path)
+    if size > MAX_IMAGE_BYTES:
+        return CallToolResult(
+            isError=True,
+            content=[TextContent(type="text", text=f"❌ 图片过大: {_format_size(size)}，上限 {_format_size(MAX_IMAGE_BYTES)}")],
+        )
+    metadata = {
+        "ok": True,
+        "type": ATTACHMENT_MARKER,
+        "attachments": [{
+            "type": "image",
+            "name": os.path.basename(path),
+            "path": path,
+            "mime_type": mime_type,
+            "size": size,
+            "sha256": _file_sha256(path),
+        }],
+    }
+    with open(path, "rb") as handle:
+        encoded = base64.b64encode(handle.read()).decode("ascii")
+    return CallToolResult(content=[
+        TextContent(type="text", text=json.dumps(metadata, ensure_ascii=False)),
+        ImageContent(type="image", data=encoded, mimeType=mime_type),
+    ])
 
 
 def _limit_value(value: int, default: int, maximum: int) -> int:
@@ -141,15 +194,25 @@ def _atomic_write_text(path: str, content: str, *, encoding: str = "utf-8", atom
                 pass
 
 @mcp.tool()
-async def list_files(username: str, session_id: str = "", folder: str = ".") -> str:
+async def list_files(username: str, session_id: str = "", folder: str = ".", storage: Literal["file", "memory"] = "file", team: str | None = None) -> str:
     """
-    列出指定目录的文件。
+    列出目录文件，或用 storage="memory" 列出 Skill/记忆条目（编号、名称、说明，无路径）。
 
     :param username: 用户名（由系统自动注入，无需手动传递）
     :param folder: 要列出的目录；支持绝对路径，相对路径以当前 session cwd 为基准
+    :param storage: file 为普通目录；memory 为 Skill 正文条目，此时 folder 保持默认值
+    :param team: memory 范围；null 使用当前团队，空字符串为个人，列表包含团队与共享个人条目
     :return: 文件列表的描述
     """
+    team = team or ""
     try:
+        if storage == "memory":
+            from webot.skill_memory import list_memory
+            if folder not in {"", "."}:
+                return "❌ memory 模式按条目管理，不接受目录路径。"
+            return json.dumps({"storage": "memory", "items": list_memory(username, team)}, ensure_ascii=False)
+        if storage != "file":
+            return "❌ 不支持的 storage。"
         user_path = _safe_path(username, folder or ".", session_id)
         if not os.path.exists(user_path):
             return f"❌ 目录 '{folder}' 不存在。"
@@ -168,10 +231,14 @@ async def list_files(username: str, session_id: str = "", folder: str = ".") -> 
             size_str = _format_size(size)
             result += f"  - {file_name} ({size_str})\n"
         return result
+    except ValueError as e:
+        return f"❌ {e}"
     except Exception as e:
+        if storage == "memory":
+            return "⚠️ 无法读取 memory 条目。"
         return f"⚠️ 列出文件失败: {str(e)}"
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 async def read_file(
     username: str,
     filename: str,
@@ -182,21 +249,43 @@ async def read_file(
     line_count: int = 0,
     encoding: str = "utf-8",
     include_sha256: bool = False,
-) -> str:
+    storage: Literal["file", "memory"] = "file",
+    team: str | None = None,
+):
     """
-    读取用户的指定文件内容。
-    默认返回受限长度的文本分块，适合大文件渐进读取。
+    读取文件。文本按块返回，适合大文件渐进读取；图片（png/jpg/gif/webp/bmp）
+    直接作为图片交给你查看。
 
     :param username: 用户名（由系统自动注入，无需手动传递）
-    :param filename: 要读取的文件名
+    :param filename: file 模式为文件路径；memory 模式为 list_files 返回的条目编号或名称
+    :param offset: 按字符分块读取的起点；首次传 0，之后用上一次结果给出的 offset 继续
+    :param limit: 按字符分块时本次最多读取的字符数；0 表示默认值（12000），上限 50000
+    :param start_line: 按行读取的起始行号（从 1 开始）；与 line_count 任一大于 0 时改为按行读取
+    :param line_count: 按行读取的行数；0 表示默认值（200），上限 2000
+    :param encoding: 文件编码，默认 utf-8
+    :param include_sha256: 是否在结果中附上文件的 sha256，可作为之后 write_file 的 expected_sha256
+    :param storage: file 为普通文件；memory 只读取 Skill 正文，不读取支持文件
+    :param team: memory 范围；null 使用当前团队，空字符串为个人，读取时也可查看共享个人条目
     :return: 文件内容或错误信息
     """
+    team = team or ""
     try:
-        file_path = _safe_path(username, filename, session_id)
+        if storage == "memory":
+            from webot.skill_memory import memory_target
+            file_path = str(memory_target(username, filename, team, shared=True)["_path"])
+            encoding = "utf-8"
+        elif storage == "file":
+            file_path = _safe_path(username, filename, session_id)
+        else:
+            return "❌ 不支持的 storage。"
         if not os.path.exists(file_path):
             return f"❌ 文件 '{filename}' 不存在。"
         if os.path.isdir(file_path):
             return f"❌ '{filename}' 是目录，不是文件。"
+
+        mime_type = _detect_image_mime(file_path) if storage == "file" else ""
+        if mime_type:
+            return _image_result(file_path, mime_type)
 
         size = os.path.getsize(file_path)
         preview = _read_binary_preview(file_path)
@@ -250,6 +339,8 @@ async def read_file(
     except ValueError as e:
         return f"❌ {str(e)}"
     except Exception as e:
+        if storage == "memory":
+            return "⚠️ 无法读取 memory 条目。"
         return f"⚠️ 读取文件失败: {str(e)}"
 
 @mcp.tool()
@@ -263,28 +354,30 @@ async def write_file(
     end: int = 0,
     encoding: str = "utf-8",
     expected_sha256: str = "",
-    atomic: bool = True,
     old_string: str = "",
     new_string: str = "",
     replace_all: bool = False,
+    storage: Literal["file", "memory"] = "file",
+    team: str | None = None,
 ) -> str:
     """
-    创建或写入用户的指定文件。
-    支持 overwrite / append / prepend / insert / replace_range / str_replace。
-    为了降低 tool 参数过长导致的截断风险，单次 content 建议尽量控制在约 4000 字符以内；
-    长内容更适合先建文件，再多次 append，或多次 replace_range 分段写入同一文件。
-
-    修改已有文件的一小段内容，优先用 str_replace（传 old_string/new_string），
-    不要用 overwrite 整篇重写——不需要模型数字符偏移量，也不必重发整份文件内容。
-    old_string 必须在文件中原样出现且默认唯一；不唯一时要么把 old_string 写得
-    再具体一点（多带几行上下文），要么显式传 replace_all=true 替换全部匹配。
+    创建或写入文件。改已有文件的一小段时优先用 mode="str_replace"，不要整篇
+    overwrite：old_string 须在文件中原样出现且唯一，不唯一就多带几行上下文或设
+    replace_all。单次 content 尽量不超过约 4000 字符，长内容分多次 append 写入。
 
     :param username: 用户名（由系统自动注入，无需手动传递）
-    :param filename: 要写入的文件名
+    :param filename: file 模式为文件路径；memory 模式为条目编号或名称，新名称创建条目
     :param content: overwrite/append/prepend/insert/replace_range 模式下要写入的内容
     :param old_string: str_replace 模式下要查找的原文片段
     :param new_string: str_replace 模式下的替换内容
     :param replace_all: str_replace 模式下是否替换全部匹配（默认只允许唯一匹配）
+    :param mode: 写入模式：overwrite / append / prepend / insert / replace_range / str_replace；文件不存在时只允许 overwrite 或 append
+    :param start: insert / replace_range 模式下的起始字符位置（从 0 开始）
+    :param end: replace_range 模式下的结束字符位置（不含）
+    :param encoding: 文件编码，默认 utf-8
+    :param expected_sha256: 可选的并发保护：文件当前 sha256 与之不一致时拒绝写入
+    :param storage: file 为普通文件；memory 仅写入 Skill 正文，接受 Markdown 并维护元信息和索引
+    :param team: memory 范围；null 使用当前团队，空字符串为个人，修改不会回退到共享个人条目
     :return: 操作结果描述
     """
     normalized_mode_check = (mode or "overwrite").strip().lower()
@@ -295,9 +388,25 @@ async def write_file(
             "请显式传 mode=\"str_replace\"。"
         )
 
+    team = team or ""
+    guard = ExitStack()
     try:
-        file_path = _safe_path(username, filename, session_id)
+        entry = None
+        if storage == "memory":
+            from webot.skill_memory import memory_lock, memory_target, prepare_content, public_entry, refresh_index
+            guard.enter_context(memory_lock(username, team))
+            entry = memory_target(username, filename, team, create=normalized_mode_check in {"overwrite", "append", "create"})
+            file_path = str(entry["_path"])
+            encoding = "utf-8"
+        elif storage == "file":
+            file_path = _safe_path(username, filename, session_id)
+        else:
+            return "❌ 不支持的 storage。"
         existing = os.path.exists(file_path)
+        if entry is not None and normalized_mode_check in {"create", "update"}:
+            if normalized_mode_check == "create" and existing:
+                return "❌ Memory entry already exists; read it before updating."
+            mode = normalized_mode_check = "overwrite"
         existing_text = ""
         if existing:
             if os.path.isdir(file_path):
@@ -312,7 +421,7 @@ async def write_file(
                     )
             with open(file_path, "r", encoding=encoding, errors="replace") as handle:
                 existing_text = handle.read()
-        elif mode not in {"overwrite", "append"}:
+        elif normalized_mode_check not in {"overwrite", "append"}:
             return f"❌ 文件 '{filename}' 不存在，模式 '{mode}' 需要已有文件。"
 
         normalized_mode = (mode or "overwrite").strip().lower()
@@ -353,7 +462,14 @@ async def write_file(
         else:
             return f"❌ 不支持的写入模式 '{mode}'。"
 
-        _atomic_write_text(file_path, new_content, encoding=encoding, atomic=bool(atomic))
+        if entry is not None:
+            new_content = prepare_content(entry, new_content)
+        _atomic_write_text(file_path, new_content, encoding=encoding, atomic=True)
+        if entry is not None:
+            refresh_index(username, team)
+            saved = memory_target(username, entry["id"], team)
+            return json.dumps({"success": True, "storage": "memory", **public_entry(saved),
+                               "sha256": _file_sha256(file_path), "chars": len(new_content)}, ensure_ascii=False)
         action = {
             "overwrite": "已保存",
             "append": "已追加",
@@ -370,36 +486,34 @@ async def write_file(
     except ValueError as e:
         return f"❌ {str(e)}"
     except Exception as e:
+        if storage == "memory":
+            return "⚠️ 无法写入 memory 条目。"
         return f"⚠️ 写入文件失败: {str(e)}"
+    finally:
+        guard.close()
 
 @mcp.tool()
-async def append_file(username: str, filename: str, content: str, session_id: str = "") -> str:
-    """
-    向用户的指定文件末尾追加内容。
-
-    :param username: 用户名（由系统自动注入，无需手动传递）
-    :param filename: 要追加内容的文件名
-    :param content: 要追加的内容
-    :return: 操作结果描述
-    """
-    return await write_file(
-        username=username,
-        filename=filename,
-        content=content,
-        session_id=session_id,
-        mode="append",
-    )
-
-@mcp.tool()
-async def delete_file(username: str, filename: str, session_id: str = "") -> str:
+async def delete_file(username: str, filename: str, session_id: str = "", storage: Literal["file", "memory"] = "file", team: str | None = None) -> str:
     """
     删除用户的指定文件。
 
     :param username: 用户名（由系统自动注入，无需手动传递）
-    :param filename: 要删除的文件名
+    :param filename: file 模式为文件路径；memory 模式为条目编号或名称
+    :param storage: file 删除普通文件；memory 仅删除 Skill 正文，支持文件保留
+    :param team: memory 范围；null 使用当前团队，空字符串为个人
     :return: 操作结果描述
     """
+    team = team or ""
     try:
+        if storage == "memory":
+            from webot.skill_memory import memory_lock, memory_target, public_entry, refresh_index
+            with memory_lock(username, team):
+                entry = memory_target(username, filename, team)
+                entry["_path"].unlink()
+                refresh_index(username, team)
+                return json.dumps({"success": True, "deleted": public_entry(entry)}, ensure_ascii=False)
+        if storage != "file":
+            return "❌ 不支持的 storage。"
         file_path = _safe_path(username, filename, session_id)
         if not os.path.exists(file_path):
             return f"❌ 文件 '{filename}' 不存在，无法删除。"
@@ -408,6 +522,8 @@ async def delete_file(username: str, filename: str, session_id: str = "") -> str
     except ValueError as e:
         return f"❌ {str(e)}"
     except Exception as e:
+        if storage == "memory":
+            return "⚠️ 无法删除 memory 条目。"
         return f"⚠️ 删除文件失败: {str(e)}"
 
 if __name__ == "__main__":

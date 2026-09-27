@@ -126,6 +126,7 @@ def save_context_compaction(
     source_message_count: int,
     summary_token_estimate: int,
     metadata: dict[str, Any] | None = None,
+    expected_updated_at: str | None = None,
 ) -> ContextCompactionRecord:
     """Persist compaction metadata beside the per-thread conversation context."""
     candidates = candidate_checkpoint_db_paths_for_thread(store_path, thread_id)
@@ -134,6 +135,13 @@ def save_context_compaction(
     with sqlite3.connect(path, timeout=30) as conn:
         conn.row_factory = sqlite3.Row
         _ensure_context_compaction_table(conn)
+        if expected_updated_at is not None:
+            conn.execute("BEGIN IMMEDIATE")
+            current = conn.execute(
+                "SELECT updated_at FROM context_compactions WHERE thread_id = ?", (thread_id,),
+            ).fetchone()
+            if (current[0] if current else "") != expected_updated_at:
+                raise RuntimeError("compaction version changed")
         conn.execute(
             """
             INSERT INTO context_compactions (

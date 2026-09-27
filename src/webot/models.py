@@ -21,6 +21,14 @@ class WeBotToolPolicyUpdateRequest(BaseModel):
     policy: dict
 
 
+class WeBotRuntimeSettingsUpdateRequest(BaseModel):
+    user_id: str
+    password: str = ""
+    session_id: str = ""
+    settings: dict = Field(default_factory=dict)
+    reset: bool = False
+
+
 class WeBotSessionRuntimeRequest(BaseModel):
     user_id: str
     password: str = ""

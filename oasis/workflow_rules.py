@@ -1,7 +1,7 @@
 """Single source of truth for ClawCross/OASIS Python workflow authoring rules.
 
 Both the in-app workflow code generator (``src/front.py``) and the MCP tool
-``get_workflow_writing_rules`` (in ``src/mcp_servers/oasis.py``) read from
+``get_workflow_rules(kind="python")`` (in ``src/mcp_servers/oasis.py``) read from
 this module so the rules stay consistent everywhere they are surfaced.
 """
 

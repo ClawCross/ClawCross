@@ -6,17 +6,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
-import re
 import uuid
 from typing import Any
+from webot.approval_actions import canonical_action_args
 
 from webot.policy import (
     WeBotToolPolicy,
-    ToolPolicyRule,
     evaluate_tool_policy,
     get_tool_policy,
     save_tool_policy_config,
     serialize_tool_policy,
+    approval_args_key,
 )
 from webot.runtime_store import (
     ToolApprovalRecord,
@@ -24,6 +24,7 @@ from webot.runtime_store import (
     find_active_approval_for_action,
     find_pending_approval_for_action,
     update_tool_approval_status,
+    set_approval_review_metadata,
 )
 
 _POLICY_EXEMPT_TOOLS = {
@@ -54,7 +55,7 @@ def resolve_permission_context(
     policy: WeBotToolPolicy | None = None,
 ) -> PermissionContext:
     effective_policy = policy or get_tool_policy(user_id)
-    normalized_args = dict(args or {})
+    normalized_args = canonical_action_args(tool_name, dict(args or {}))
     if tool_name in _POLICY_EXEMPT_TOOLS:
         return PermissionContext(
             decision="allow",
@@ -128,7 +129,7 @@ def create_or_reuse_permission_request(
     args: dict[str, Any] | None = None,
     reason: str = "",
 ) -> ToolApprovalRecord:
-    normalized_args = dict(args or {})
+    normalized_args = canonical_action_args(tool_name, dict(args or {}))
     existing = find_pending_approval_for_action(user_id, session_id, tool_name, normalized_args)
     if existing is not None:
         return existing
@@ -142,13 +143,6 @@ def create_or_reuse_permission_request(
     )
 
 
-def _append_exact_pattern(existing: list[str], exact_value: str) -> list[str]:
-    escaped = f"^{re.escape(exact_value)}$"
-    if exact_value and escaped not in existing:
-        existing.append(escaped)
-    return existing
-
-
 def remember_approval_in_policy(
     *,
     user_id: str,
@@ -159,27 +153,14 @@ def remember_approval_in_policy(
     current.pop("source", None)
     current.pop("definition_path", None)
     tools = current.setdefault("tools", {})
-    tool_entry = dict(tools.get(tool_name) or {})
-    content = ""
-    path = ""
-    if tool_name == "run_command":
-        content = str(args.get("command") or "").strip()
-    elif tool_name == "run_python_code":
-        content = str(args.get("code") or "").strip()
-    elif tool_name in {"read_file", "write_file", "append_file", "delete_file"}:
-        path = str(args.get("filename") or "").strip()
-
+    # Creating a specific rule must retain restrictions inherited from '*'.
+    tool_entry = dict(tools.get(tool_name) or tools.get("*") or {})
     tool_entry.setdefault("approval", "manual")
-    if content:
-        tool_entry["content_allow_patterns"] = _append_exact_pattern(
-            list(tool_entry.get("content_allow_patterns") or []),
-            content,
-        )
-    if path:
-        tool_entry["path_allow_patterns"] = _append_exact_pattern(
-            list(tool_entry.get("path_allow_patterns") or []),
-            path,
-        )
+    approved_args = list(tool_entry.get("approved_args") or [])
+    key = approval_args_key(canonical_action_args(tool_name, args))
+    if key not in approved_args:
+        approved_args.append(key)
+    tool_entry["approved_args"] = approved_args
     tools[tool_name] = tool_entry
     save_tool_policy_config(user_id, current)
 
@@ -210,6 +191,11 @@ def resolve_permission_request(
                 tool_name=updated.tool_name,
                 args=json.loads(updated.args_json or "{}"),
             )
+            from webot.approval_review import policy_binding
+            metadata = json.loads(updated.review_metadata_json or "{}")
+            if metadata.get("binding"):
+                metadata["binding"]["policy_hash"] = policy_binding(user_id, updated.session_id)
+                set_approval_review_metadata(approval_id, user_id, metadata)
         except Exception:
             pass
     return updated

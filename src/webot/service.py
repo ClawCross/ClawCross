@@ -43,6 +43,8 @@ from webot.claude_code import detect_claude_code_cached, probe_claude_acp, run_c
 from webot.lsp import probe_diagnostics
 from webot.permission_context import resolve_permission_request
 from webot.policy import get_tool_policy, save_tool_policy_config, serialize_tool_policy
+from webot.runtime_settings import runtime_settings_payload, save_runtime_settings
+from utils.checkpoint_repository import get_context_compaction
 from webot.profiles import slugify
 from webot.runtime_store import (
     add_verification_record,
@@ -480,6 +482,9 @@ class WeBotService:
                 "status": approval.status,
                 "request_reason": approval.request_reason,
                 "created_at": approval.created_at,
+                "args": json.loads(approval.args_json or "{}"),
+                "resolution_reason": approval.resolution_reason,
+                "review": json.loads(approval.review_metadata_json or "{}"),
             }
             for approval in list_tool_approvals(user_id, session_id, limit=20)
         ]
@@ -711,6 +716,46 @@ class WeBotService:
         policy = get_tool_policy(user_id)
         return {"status": "success", "policy": serialize_tool_policy(policy)}
 
+    async def get_runtime_settings(self, user_id: str, session_id: str, password: str, x_internal_token: str | None):
+        self.verify_auth_or_token(user_id, password, x_internal_token)
+        try:
+            payload = runtime_settings_payload(user_id, session_id)
+        except (ValueError, OSError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        if session_id:
+            record = get_context_compaction(getattr(self.agent, "_db_path", None), f"{user_id}#{session_id}")
+            payload["last_compaction"] = record.metadata if record else None
+            from webot.runtime import effective_session_mode
+            payload["effective_mode"] = effective_session_mode(user_id, session_id)
+            thread_id = f"{user_id}#{session_id}"
+            if hasattr(self.agent, "get_thread_context_usage"):
+                if hasattr(self.agent, "restore_context_usage"):
+                    await self.agent.restore_context_usage(thread_id)
+                usage = dict(self.agent.get_thread_context_usage(thread_id))
+                if not usage.get("tokens") and hasattr(self.agent, "agent_app"):
+                    from webot.compression import static_compression_view
+                    from webot.context_usage import estimate_context_components
+                    snapshot = await self.agent.agent_app.aget_state({"configurable": {"thread_id": thread_id}})
+                    messages = snapshot.values.get("messages", []) if snapshot and snapshot.values else []
+                    view = static_compression_view(user_id=user_id, session_id=session_id, messages=messages, checkpoint_store_path=getattr(self.agent, "_db_path", None))
+                    parts = estimate_context_components(system_prompt="", tools=[], runtime_state="", messages=view)
+                    usage = {"tokens": sum(parts.values()), "breakdown": parts, "source": "estimate"}
+                from webot.runtime_settings import ContextSettings, resolve_context_window, context_usage_with_window
+                model = self.agent.get_thread_model(thread_id) if hasattr(self.agent, "get_thread_model") else None
+                usage = context_usage_with_window(usage, resolve_context_window(ContextSettings.model_validate(payload["settings"]["context"]), model))
+                payload["context_usage"] = usage
+        return {"status": "success", **payload}
+
+    async def update_runtime_settings(self, req, x_internal_token: str | None):
+        self.verify_auth_or_token(req.user_id, req.password, x_internal_token)
+        try:
+            payload = save_runtime_settings(req.user_id, settings=req.settings, session_id=req.session_id, reset=req.reset)
+        except (ValueError, OSError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        if req.session_id and (req.reset or "mode" in req.settings.get("approval", {})):
+            save_session_mode(req.user_id, req.session_id, mode="execute" if req.reset else payload["settings"]["approval"]["mode"])
+        return {"status": "success", **payload}
+
     async def list_tool_approvals(
         self,
         user_id: str,
@@ -729,6 +774,9 @@ class WeBotService:
                 "status": approval.status,
                 "request_reason": approval.request_reason,
                 "created_at": approval.created_at,
+                "args": json.loads(approval.args_json or "{}"),
+                "resolution_reason": approval.resolution_reason,
+                "review": json.loads(approval.review_metadata_json or "{}"),
             }
             for approval in list_tool_approvals(
                 user_id,
@@ -769,10 +817,14 @@ class WeBotService:
         x_internal_token: str | None,
     ):
         self.verify_auth_or_token(req.user_id, req.password, x_internal_token)
+        from webot.runtime import normalize_session_mode, RUN_MODES
+        mode_name = normalize_session_mode(req.mode)
+        if mode_name in RUN_MODES:
+            save_runtime_settings(req.user_id, session_id=req.session_id, settings={"approval": {"mode": mode_name}})
         save_session_mode(
             req.user_id,
             req.session_id,
-            mode=req.mode,
+            mode=mode_name,
             reason=req.reason,
         )
         mode = get_session_mode(req.user_id, req.session_id)

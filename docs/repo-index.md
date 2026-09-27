@@ -112,7 +112,12 @@ When the bug is "service does not start" or "route behaves unexpectedly", start 
 - `src/core/agent_runtime_state.py`
 - `src/integrations/acpx_adapter.py`
 - `src/webot/skill_evolution.py`
+- `src/webot/skill_memory.py` — path-free Skill正文 entries via file tools in memory mode
 - `src/webot/context.py`
+- `src/webot/compression.py`
+- `src/webot/runtime_settings.py`
+- `src/webot/approval_review.py`
+- `src/webot/approval_actions.py`
 - `src/webot/permission_context.py`
 - `src/webot/policy.py`
 - `src/webot/profiles.py`
@@ -130,6 +135,8 @@ If the task touches the UI, start here:
 
 | Path | Purpose |
 |---|---|
+| `frontend/js/tool-catalog.js` | tool categories and grouped picker shared by desktop/mobile |
+| `frontend/js/runtime-settings.js` | context usage meter and context/approval settings |
 | `frontend/js/main.js` | main desktop frontend logic |
 | `frontend/css/style.css` | main desktop styling, including OASIS Town / swarm / ReportAgent panels |
 | `src/routes/front_webot_routes.py` | Flask proxy routes for WeBot runtime panel and tool policy |

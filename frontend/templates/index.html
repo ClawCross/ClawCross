@@ -29,7 +29,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
 
     <link rel="stylesheet" href="/static/css/markdown-shared.css">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260716-agent-dex-filter">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260927-runtime-settings-3">
 </head>
 <body class="bg-gray-100 font-sans leading-normal tracking-normal">
 
@@ -146,6 +146,7 @@
                             <div class="webot-subagent-title" data-i18n="policy_panel_title">🛡️ Tool Policy</div>
                         </div>
                         <div class="webot-policy-actions">
+                            <button class="webot-subagent-refresh" type="button" onclick="openRuntimeSettings()" data-i18n="runtime_settings">上下文与审核</button>
                             <button id="webot-policy-toggle" class="webot-subagent-refresh" type="button" onclick="toggleWeBotPolicyEditor()" data-i18n="policy_panel_edit">编辑</button>
                             <button id="webot-policy-reload" class="webot-subagent-refresh" type="button" onclick="reloadWeBotPolicy(true)" data-i18n="refresh">刷新</button>
                         </div>
@@ -366,16 +367,17 @@
                                 <span id="tool-count" class="text-xs text-gray-400"></span>
                                 <span id="tool-toggle-icon" class="tool-toggle-icon text-xs">▼</span>
                             </div>
-                            <div class="oc-mode-selector" data-i18n-title="run_mode_title" title="工具权限模式：bypass=全工具自动批准；plan=只读;manual=完全不调用工具">
+                            <div class="oc-mode-selector" data-i18n-title="run_mode_title" title="交流：无工具；只读：查看和搜索；Bypass：跳过确认；Auto：替我审核">
                                 <div class="oc-context-usage-wrap">
                                     <span id="session-context-usage" class="oc-context-usage-badge" role="button" tabindex="0" aria-expanded="false" onclick="toggleSessionContextDetail(event)" onkeydown="handleSessionContextDetailKeydown(event)">上下文已用 0%</span>
                                     <div id="session-context-detail" class="oc-context-usage-detail" hidden></div>
                                 </div>
                                 <label for="oc-run-mode" class="oc-mode-label" data-i18n="run_mode_label">模式</label>
                                 <select id="oc-run-mode" class="oc-mode-select" onchange="onRunModeChange()">
-                                    <option value="bypass" data-i18n="run_mode_bypass">自动 (全工具)</option>
-                                    <option value="plan" data-i18n="run_mode_plan">规划 (只读)</option>
-                                    <option value="manual" data-i18n="run_mode_manual">手动 (无工具)</option>
+                                    <option value="chat" data-i18n="run_mode_chat">交流模式 · 无工具</option>
+                                    <option value="readonly" data-i18n="run_mode_readonly">只读模式</option>
+                                    <option value="bypass" data-i18n="run_mode_bypass">Bypass · 全工具</option>
+                                    <option value="auto" data-i18n="run_mode_auto">Auto · 替我审核</option>
                                 </select>
                             </div>
                         </div>
@@ -1406,7 +1408,9 @@
     <script src="/static/js/orchestration.js?v=20260329-snapshot"></script>
     <script src="/static/js/markdown-shared.js"></script>
     <script src="/static/js/tinyfish-live-shared.js"></script>
-    <script src="/static/js/main.js?v=20260716-agent-dex-filter"></script>
+    <script src="/static/js/tool-catalog.js?v=20260927-memory"></script>
+    <script src="/static/js/main.js?v=20260927-modes"></script>
+    <script src="/static/js/runtime-settings.js?v=20260927-memory"></script>
     <script src="/static/js/oasis-town.bundle.js?v=20260327-humanfix"></script>
     <script src="/static/js/app.js?v=20260327-humanfix"></script>
     <script>

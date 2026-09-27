@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20260927064110491976",
+  "candidate_id": "blended-verification-loop-workspace-preflight-bounded-execution",
+  "skill_name": "repo-skill",
+  "strategy": "repair-only",
+  "env_fingerprint": {
+    "python_version": "3.14.4",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-09-27T06:41:10.491915+00:00"
+  },
+  "commands": [
+    {
+      "command": "(external failure context)",
+      "ok": false,
+      "stdout": "Verifier after the fix: /home/ubuntu/work2/venv/bin/python -m pytest -q test/test_hermes_features.py::TestSkillSystem test/test_skill_evolution.py test/test_skill_import_tools.py test/test_team_snapshot_skills.py\n28 passed, 8 subtests passed in 1.48s. Normal nested supporting-file patch remains supported.",
+      "stderr": "Regression test before the fix failed: /home/ubuntu/work2/venv/bin/python -m pytest -q test/test_hermes_features.py::TestSkillSystem::test_patch_cannot_modify_files_outside_skill\ntest/test_hermes_features.py:196: AssertionError: True is not false. patch_skill accepted file_path='../outside.txt' and changed the sibling file outside the skill directory, in both personal and Team scopes. Absolute paths and symlinks to external files also lacked path validation.\nFixed patch_skill to use _resolve_skill_relative_path for supporting files and SKILL.md, rejecting absolute paths and resolved targets outside the skill directory. Regression test asserts the outside file remains unchanged for each attempted path."
+    }
+  ],
+  "overall_ok": false,
+  "duration_ms": null,
+  "created_at": "2026-09-27T06:41:10.492013+00:00",
+  "asset_id": "sha256:42089eee7968e03d73c4ed893241cda23e5e1bf26e5247b93ca93fcdd088f8ff"
+}
