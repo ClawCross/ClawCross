@@ -242,12 +242,17 @@ def register_group_routes(app, *, port_agent: int, internal_token: str) -> None:
         try:
             headers = _group_auth_headers()
             headers["Content-Type"] = "application/json"
+            body = request.get_json(silent=True)
+            if isinstance(body, dict):
+                # A browser speaks as its logged-in user; only local callers
+                # (CLI, MCP) may post as an agent member.
+                body = {k: v for k, v in body.items() if k not in ("sender", "sender_display")}
             r = requests.post(
                 "http://127.0.0.1:{port}/groups/{gid}/messages".format(
                     port=port_agent,
                     gid=_enc_group_seg(group_id),
                 ),
-                json=request.get_json(silent=True),
+                json=body,
                 headers=headers,
                 timeout=30,
             )

@@ -42,7 +42,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
-from src.utils.runtime_paths import DATA_DIR, ENV_FILE, LOGS_DIR, PID_DIR, USER_FILES_DIR, WORKSPACE_DIR, ensure_runtime_dirs, set_subprocess_env, venv_python
+from src.utils.runtime_paths import DATA_DIR, ENV_FILE, LOGS_DIR, PID_DIR, USER_FILES_DIR, USERS_FILE, WORKSPACE_DIR, ensure_runtime_dirs, set_subprocess_env, venv_python
 ensure_runtime_dirs()
 WORKING_DIR = str(WORKSPACE_DIR)
 
@@ -76,7 +76,33 @@ AGENT_BASE = f"http://127.0.0.1:{PORT_AGENT}"
 OASIS_BASE = f"http://127.0.0.1:{PORT_OASIS}"
 FRONT_BASE = f"http://127.0.0.1:{PORT_FRONTEND}"
 
-DEFAULT_USER = os.getenv("CLI_USER", "admin")
+def _default_user() -> str:
+    """Resolve the CLI user the same way clawcross_cli does.
+
+    CLAW_USER / CLI_USER env > first user in users.json > first non-empty user
+    directory > "admin". A fixed "admin" default made group commands act as a
+    user that usually doesn't own the group.
+    """
+    for var in ("CLAW_USER", "CLI_USER"):
+        value = (os.getenv(var) or "").strip()
+        if value:
+            return value
+    try:
+        with open(USERS_FILE, "r", encoding="utf-8") as f:
+            users = json.load(f)
+        if isinstance(users, dict) and users:
+            return next(iter(users))
+    except (OSError, ValueError):
+        pass
+    if os.path.isdir(USER_FILES_DIR):
+        for name in sorted(os.listdir(USER_FILES_DIR)):
+            path = os.path.join(USER_FILES_DIR, name)
+            if os.path.isdir(path) and os.listdir(path):
+                return name
+    return "admin"
+
+
+DEFAULT_USER = _default_user()
 
 
 def _workflow_yaml_dir(user_id: str, team: str = "") -> str:
@@ -2999,7 +3025,7 @@ def build_parser():
 提示: 使用 'clawcross <command> --help' 查看各命令的详细用法
 """,
     )
-    p.add_argument("-u", "--user", default=DEFAULT_USER, help="用户名 (默认: admin, chat 时必须显式指定)")
+    p.add_argument("-u", "--user", default=DEFAULT_USER, help="用户名 (默认: CLAW_USER/CLI_USER 或 users.json 的第一个用户, chat 时必须显式指定)")
     sub = p.add_subparsers(dest="command", help="子命令")
 
     # chat

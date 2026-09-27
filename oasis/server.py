@@ -18,6 +18,7 @@ import sys
 import asyncio
 import uuid
 from contextlib import asynccontextmanager
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse, JSONResponse
@@ -114,7 +115,7 @@ from oasis.models import (
 from oasis.forum import DiscussionForum, coerce_optional_post_id
 from oasis.agent_catalog import build_agent_catalog
 from oasis.engine import DiscussionEngine
-from oasis.python_workflow import PythonWorkflowEngine
+from oasis.python_workflow import PythonWorkflowEngine, resolve_python_workflow_path
 from oasis.experts import _apply_response
 from services.llm_factory import create_chat_model, extract_text
 from oasis.swarm_engine import build_pending_swarm, generate_swarm_blueprint
@@ -233,6 +234,37 @@ def _check_owner(forum: DiscussionForum, user_id: str):
         raise HTTPException(403, "You do not own this discussion")
 
 
+def _require_segment(value: str, what: str, *, allow_empty: bool = False) -> str:
+    """Reject a user id, team or file name that would leave its directory."""
+    text = (value or "").strip()
+    if not text:
+        if allow_empty:
+            return ""
+        raise HTTPException(400, f"{what} is required")
+    if "/" in text or "\\" in text or text.startswith(".") or "\x00" in text:
+        raise HTTPException(400, f"Invalid {what}: {value!r}")
+    return text
+
+
+def _trusted_callback_url(url: str | None) -> str | None:
+    """Keep a completion callback only if it targets this host's Agent service.
+
+    The callback carries the internal token, so any other URL would hand it out.
+    """
+    if not url:
+        return None
+    parsed = urlparse(url)
+    if (
+        parsed.scheme == "http"
+        and parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+        and str(parsed.port or "") == os.getenv("PORT_AGENT", "51200")
+        and parsed.path == "/system_trigger"
+    ):
+        return url
+    print(f"[OASIS] ⚠️ Ignoring callback_url outside the local Agent service: {url!r}")
+    return None
+
+
 # --- Lifespan ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -274,6 +306,13 @@ async def _run_discussion(topic_id: str, engine: DiscussionEngine | PythonWorkfl
     forum = discussions.get(topic_id)
     try:
         await engine.run()
+    except asyncio.CancelledError:
+        # Cancellation is the end of this task: record it, then still persist
+        # and notify below instead of leaving the topic "discussing" forever.
+        print(f"[OASIS] 🛑 Topic {topic_id} cancelled")
+        if forum:
+            forum.status = "cancelled"
+            forum.conclusion = forum.conclusion or "讨论已被用户强制终止"
     except Exception as e:
         print(f"[OASIS] ❌ Topic {topic_id} background error: {e}")
         if forum:
@@ -346,6 +385,8 @@ async def _run_discussion(topic_id: str, engine: DiscussionEngine | PythonWorkfl
 @app.post("/topics", response_model=dict)
 async def create_topic(req: CreateTopicRequest):
     """Create a new discussion topic. Returns topic_id for tracking."""
+    _require_segment(req.user_id, "user_id")
+    _require_segment(req.team or "", "team", allow_empty=True)
     topic_id = str(uuid.uuid4())[:8]
 
     forum = DiscussionForum(
@@ -375,9 +416,21 @@ async def create_topic(req: CreateTopicRequest):
             # /topics + python_file still routes into the old injected-style
             # PythonWorkflowEngine. Newer frontends should start Python workflows
             # via the standalone runner instead of sending python_file here.
+            # The file is exec'd, so it must live under the requesting user.
+            user_root = os.path.realpath(os.path.join(str(USER_FILES_DIR), req.user_id))
+            python_path = req.python_file
+            if not os.path.isabs(python_path):
+                python_path, resolve_error = resolve_python_workflow_path(
+                    req.user_id, python_path, req.team or "",
+                )
+                if resolve_error:
+                    raise ValueError(resolve_error)
+            python_path = os.path.realpath(python_path)
+            if os.path.commonpath([python_path, user_root]) != user_root:
+                raise ValueError(f"python_file must be inside the user's files: {req.python_file}")
             engine = PythonWorkflowEngine(
                 forum=forum,
-                python_file=req.python_file,
+                python_file=python_path,
                 user_id=req.user_id,
                 team=req.team or "",
             )
@@ -399,7 +452,7 @@ async def create_topic(req: CreateTopicRequest):
         forum.save()
         raise HTTPException(500, f"Engine init failed: {e}")
 
-    engine.callback_url = req.callback_url
+    engine.callback_url = _trusted_callback_url(req.callback_url)
     engine.callback_session_id = req.callback_session_id
     engines[topic_id] = engine
 
@@ -1223,7 +1276,10 @@ async def refresh_swarm(topic_id: str, user_id: str = Query("default")):
             {"event": e.event, "agent": e.agent, "detail": e.detail, "elapsed": e.elapsed}
             for e in forum.timeline
         ]
-        forum.swarm = generate_swarm_blueprint(
+        # Synchronous LLM call: run it off the event loop so every other topic
+        # keeps running while the blueprint is generated.
+        forum.swarm = await asyncio.to_thread(
+            generate_swarm_blueprint,
             forum.question,
             user_id=forum.user_id,
             team="",
@@ -1246,12 +1302,21 @@ async def get_conclusion(topic_id: str, user_id: str = Query(...), timeout: int 
     _check_owner(forum, user_id)
 
     elapsed = 0
-    while forum.status not in ("concluded", "error") and elapsed < timeout:
+    while forum.status not in ("concluded", "error", "cancelled") and elapsed < timeout:
         await asyncio.sleep(1)
         elapsed += 1
 
     if forum.status == "error":
         raise HTTPException(500, f"Discussion failed: {forum.conclusion}")
+    if forum.status == "cancelled":
+        return {
+            "topic_id": topic_id,
+            "question": forum.question,
+            "status": "cancelled",
+            "conclusion": forum.conclusion,
+            "rounds": forum.current_round,
+            "total_posts": len(forum.posts),
+        }
     if forum.status != "concluded":
         # Execution mode: return 202 (still running) instead of 504 error
         if not forum.discussion:
@@ -1359,6 +1424,8 @@ class WorkflowSaveRequest(BaseModel):
 
 def _workflow_yaml_dir(user_id: str, team: str = "") -> str:
     """Return the YAML workflow directory path (team-scoped when team is provided)."""
+    user_id = _require_segment(user_id, "user_id")
+    team = _require_segment(team, "team", allow_empty=True)
     if team:
         return os.path.join(str(USER_FILES_DIR), user_id, "teams", team, "oasis", "yaml")
     return os.path.join(str(USER_FILES_DIR), user_id, "oasis", "yaml")
@@ -1368,7 +1435,7 @@ def _workflow_yaml_dir(user_id: str, team: str = "") -> str:
 async def save_workflow(req: WorkflowSaveRequest):
     """Save a YAML workflow under data/user_files/{user}/[teams/{team}/]oasis/yaml/."""
     user = req.user_id
-    name = req.name
+    name = _require_segment(req.name, "workflow name")
     if not name.endswith((".yaml", ".yml")):
         name += ".yaml"
 
@@ -1435,7 +1502,7 @@ async def layouts_from_yaml(req: LayoutFromYamlRequest):
     source_name = ""
     if "\n" not in yaml_src and yaml_src.strip().endswith(('.yaml', '.yml')):
         yaml_dir = _workflow_yaml_dir(user, req.team)
-        fpath = os.path.join(yaml_dir, yaml_src.strip())
+        fpath = os.path.join(yaml_dir, _require_segment(yaml_src, "workflow file"))
         if not os.path.isfile(fpath):
             raise HTTPException(404, f"YAML 文件不存在: {yaml_src}")
         with open(fpath, "r", encoding="utf-8") as f:
@@ -1470,6 +1537,8 @@ class UserExpertRequest(BaseModel):
 @app.post("/experts/user")
 async def add_user_expert_route(req: UserExpertRequest):
     from oasis.experts import add_user_expert, add_team_expert
+    _require_segment(req.user_id, "user_id")
+    _require_segment(req.team, "team", allow_empty=True)
     try:
         if req.team:
             expert = add_team_expert(req.user_id, req.team, req.model_dump())
@@ -1483,6 +1552,8 @@ async def add_user_expert_route(req: UserExpertRequest):
 @app.put("/experts/user/{tag}")
 async def update_user_expert_route(tag: str, req: UserExpertRequest):
     from oasis.experts import update_user_expert, update_team_expert
+    _require_segment(req.user_id, "user_id")
+    _require_segment(req.team, "team", allow_empty=True)
     try:
         if req.team:
             expert = update_team_expert(req.user_id, req.team, tag, req.model_dump())
@@ -1496,6 +1567,8 @@ async def update_user_expert_route(tag: str, req: UserExpertRequest):
 @app.delete("/experts/user/{tag}")
 async def delete_user_expert_route(tag: str, user_id: str = Query(...), team: str = Query("")):
     from oasis.experts import delete_user_expert, delete_team_expert
+    _require_segment(user_id, "user_id")
+    _require_segment(team, "team", allow_empty=True)
     try:
         if team:
             deleted = delete_team_expert(user_id, team, tag)

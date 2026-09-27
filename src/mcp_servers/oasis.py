@@ -564,7 +564,7 @@ async def start_new_oasis(
         schedule_file: saved YAML, short names resolve under the user's oasis/yaml/
         python_file: saved workflowpy script
         notify_session: (auto-injected) session to notify on completion
-        discussion: forum with JSON replies and voting instead of a task pipeline where each agent sees earlier output; overrides the YAML's setting
+        discussion: true forces a forum with JSON replies and voting instead of a task pipeline where each agent sees earlier output; false keeps the YAML's own setting
         team: scope agents and experts to this team
     """
     effective_user = _resolve_effective_user(username)
@@ -606,11 +606,10 @@ async def start_new_oasis(
                 "max_rounds": max_rounds,
             }
             # Only send discussion when explicitly set to True (discussion mode)
-            # so YAML's own "discussion:" setting is respected by default
+            # so YAML's own "discussion:" setting is respected by default.
+            # Sending False would override a YAML that asks for discussion.
             if discussion:
                 body["discussion"] = True
-            else:
-                body["discussion"] = False
 
             # Always detach mode — set callback for completion notification
             port = os.getenv("PORT_AGENT", "51200")

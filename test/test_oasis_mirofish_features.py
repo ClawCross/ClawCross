@@ -1,9 +1,11 @@
 import asyncio
+import tempfile
 import unittest
 from unittest import mock
 
 from fastapi.testclient import TestClient
 
+from oasis import forum as forum_module
 from oasis import server
 from oasis.forum import DiscussionForum
 
@@ -49,6 +51,15 @@ def _seed_topic() -> DiscussionForum:
 
 
 class OasisMiroFishFeatureTests(unittest.TestCase):
+    def setUp(self):
+        # The app lifespan loads and re-saves every stored topic: keep it off
+        # the real data directory.
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        patcher = mock.patch.object(forum_module, "DISCUSSIONS_DIR", tmp.name)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def tearDown(self):
         server.discussions.clear()
         server.engines.clear()
