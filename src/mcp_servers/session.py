@@ -9,14 +9,13 @@ MCP Tool Server: Session Management
 
 Exposes tools for the Agent to be aware of its own session context
 and query existing sessions:
-  - get_current_session: Returns the current session_id the agent is running in
   - list_sessions: Lists all sessions for the current user with summaries
 
 Runs as a stdio MCP server, just like the other mcp_*.py tools.
 """
 
 import json
-from mcp.server.fastmcp import FastMCP
+from utils.mcp_tool_docs import DocumentedFastMCP as FastMCP
 from utils.checkpoint_paths import DEFAULT_CHECKPOINT_DB_DIR, checkpoint_store_exists
 from utils.checkpoint_repository import (
     list_thread_ids_by_prefix,
@@ -29,49 +28,15 @@ mcp = FastMCP("Session Management")
 _DB_PATH = str(DEFAULT_CHECKPOINT_DB_DIR)
 
 @mcp.tool()
-async def get_current_session(
-    username: str = "",
-    current_session_id: str = "default",
-) -> str:
-    """
-    Get the session ID that the agent is currently running in.
-
-    This is useful for:
-      - Knowing which session to specify as callback target (notify_session)
-        when dispatching sub-agents
-      - Building workflows like "agent A does work, reports back to session C"
-
-    Args:
-        username: (auto-injected) current user identity; do NOT set manually
-        current_session_id: (auto-injected) current session ID; do NOT set manually
-
-    Returns:
-        Current session context info as a formatted string
-    """
-    return (
-        f"📍 当前会话信息:\n"
-        f"  用户: {username}\n"
-        f"  Session ID: {current_session_id}\n\n"
-        f"💡 如需将讨论完成通知发送到当前会话，"
-        f"请在 start_new_oasis 中设置 notify_session=\"{current_session_id}\""
-    )
-
-@mcp.tool()
 async def list_sessions(
     username: str = "",
+    current_session_id: str = "",
 ) -> str:
     """
-    List all conversation sessions for the current user, with title and summary.
-
-    Returns each session's ID, title (first user message), last message preview,
-    and message count. Useful for knowing which sessions exist and choosing
-    a target session for callbacks or cross-session workflows.
-
-    Args:
-        username: (auto-injected) current user identity; do NOT set manually
-
-    Returns:
-        Formatted list of all sessions with summaries
+    List the current user's conversation sessions — ID, title (first user
+    message), last message preview, and message count — with the current
+    session marked. Use it to pick a target session for callbacks
+    (notify_session) or cross-session workflows.
     """
     if not username:
         return "❌ 无法获取用户信息"
@@ -139,13 +104,15 @@ async def list_sessions(
     except Exception as e:
         return f"❌ 查询会话列表失败: {str(e)}"
 
+    current = current_session_id or "(unknown)"
     if not sessions:
-        return "📭 当前没有任何对话记录。"
+        return f"📭 当前没有任何对话记录。当前会话: {current}"
 
-    lines = [f"📋 用户 {username} 的会话列表（共 {len(sessions)} 个）:\n"]
+    lines = [f"📋 用户 {username} 的会话列表（共 {len(sessions)} 个，当前会话: {current}）:\n"]
     for s in sessions:
+        marker = "（当前）" if s["session_id"] == current_session_id else ""
         lines.append(
-            f"  🔹 session_id: \"{s['session_id']}\"\n"
+            f"  🔹 session_id: \"{s['session_id']}\"{marker}\n"
             f"     标题: {s['title']}\n"
             f"     最新消息: {s['last_message']}\n"
             f"     消息数: {s['message_count']}\n"

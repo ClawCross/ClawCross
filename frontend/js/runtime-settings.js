@@ -1,0 +1,252 @@
+// User/session context and approval settings. Values are saved as overrides.
+let runtimeSettingsView = null;
+
+function runtimeSettingsText(zh, en) {
+    return currentLang === 'zh-CN' ? zh : en;
+}
+
+async function openRuntimeSettings(sessionId = '') {
+    const targetSession = sessionId || currentSessionId || '';
+    let overlay = document.getElementById('runtime-settings-modal');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'runtime-settings-modal';
+        overlay.className = 'settings-modal-overlay';
+        overlay.setAttribute('role', 'dialog');
+        overlay.setAttribute('aria-modal', 'true');
+        overlay.onclick = event => { if (event.target === overlay) closeRuntimeSettings(); };
+        document.body.appendChild(overlay);
+    }
+    overlay.style.display = 'flex';
+    overlay.setAttribute('aria-labelledby', 'runtime-settings-title');
+    overlay.innerHTML = `<div class="settings-modal runtime-settings-dialog">
+        <div class="runtime-settings-header">
+            <div><h2 id="runtime-settings-title">${runtimeSettingsText('上下文与审核', 'Context and approvals')}</h2>
+            <p>${runtimeSettingsText('让 Agent 记住重点，按你的要求执行。', 'Keep what matters. Choose how actions are reviewed.')}</p></div>
+            <button type="button" class="runtime-settings-close" onclick="closeRuntimeSettings()" aria-label="${runtimeSettingsText('关闭', 'Close')}">×</button>
+        </div>
+        <div class="runtime-settings-scope-row">
+            <label for="runtime-settings-scope">${runtimeSettingsText('应用到', 'Apply to')}</label>
+            <select id="runtime-settings-scope" class="runtime-settings-input" onchange="loadRuntimeSettingsScope()">
+                <option value="user">${runtimeSettingsText('我的默认设置', 'My defaults')}</option>
+                ${targetSession ? `<option value="session" ${sessionId ? 'selected' : ''}>${runtimeSettingsText('当前会话', 'This session')}</option>` : ''}
+            </select>
+            <span>${runtimeSettingsText('会话设置优先于默认设置', 'Session settings override your defaults')}</span>
+        </div>
+        <div class="runtime-settings-tabs" role="tablist" aria-label="${runtimeSettingsText('设置分类', 'Settings categories')}">
+            <button id="runtime-settings-context-tab" type="button" role="tab" aria-selected="true" aria-controls="runtime-settings-context" onclick="showRuntimeSettingsTab('context')">${runtimeSettingsText('上下文压缩', 'Context')}</button>
+            <button id="runtime-settings-approval-tab" type="button" role="tab" aria-selected="false" aria-controls="runtime-settings-approval" tabindex="-1" onclick="showRuntimeSettingsTab('approval')">${runtimeSettingsText('工具审核', 'Approvals')}</button>
+        </div>
+        <div id="runtime-settings-fields" class="runtime-settings-body"></div>
+        <div class="runtime-settings-footer">
+            <div id="runtime-settings-result" role="status" aria-live="polite"></div>
+            <div class="runtime-settings-footer-actions">
+                <button id="runtime-settings-reset" type="button" class="runtime-settings-btn runtime-settings-btn-secondary" onclick="saveRuntimeSettingsForm(true)">${runtimeSettingsText('恢复继承设置', 'Reset overrides')}</button>
+                <button id="runtime-settings-save" type="button" class="runtime-settings-btn runtime-settings-btn-primary" onclick="saveRuntimeSettingsForm()">${runtimeSettingsText('保存设置', 'Save settings')}</button>
+            </div>
+        </div></div>`;
+    runtimeSettingsView = { targetSession, original: null, activeTab: 'context', returnFocus: document.activeElement };
+    overlay.querySelector('.runtime-settings-close').focus();
+    await loadRuntimeSettingsScope();
+}
+
+function openAgentRuntimeSettings() {
+    const agent = agentCenterSelectedAgent();
+    if (agent && agent.kind === 'internal') openRuntimeSettings(agent.session_id || agent.identity || '');
+}
+
+async function loadRuntimeSettingsScope() {
+    const view = runtimeSettingsView;
+    const scope = document.getElementById('runtime-settings-scope').value;
+    const sessionId = scope === 'session' ? view.targetSession : '';
+    const status = document.getElementById('runtime-settings-result');
+    view.original = null;
+    document.getElementById('runtime-settings-save').disabled = true;
+    status.textContent = runtimeSettingsText('加载中…', 'Loading…');
+    try {
+        const response = await fetch('/proxy_webot_runtime_settings?session_id=' + encodeURIComponent(sessionId));
+        const payload = await response.json();
+        if (!response.ok) throw new Error(JSON.stringify(payload.detail || payload.error));
+        if (runtimeSettingsView !== view || document.getElementById('runtime-settings-scope').value !== scope) return;
+        view.original = payload.settings;
+        view.scope = scope;
+        const context = payload.settings.context;
+        const approval = payload.settings.approval;
+        if (scope === 'session' && ['chat', 'readonly', 'bypass', 'auto'].includes(payload.effective_mode)) approval.mode = payload.effective_mode;
+        const escape = value => escapeHtml(String(value)).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        const text = runtimeSettingsText;
+        const number = (key, zh, en, min, max, hint = '') => `<label class="runtime-settings-field"><span>${text(zh, en)}</span>
+            <input data-section="context" data-key="${key}" type="number" min="${min}" max="${max}" value="${context[key]}" class="runtime-settings-input">
+            ${hint ? `<small>${hint}</small>` : ''}</label>`;
+        const model = (section, key, value) => `<label class="runtime-settings-field"><span>${text('使用模型', 'Model')}</span>
+            <input data-section="${section}" data-key="${key}" maxlength="200" value="${escape(value)}" placeholder="${text('跟随默认模型', 'Use default model')}" class="runtime-settings-input"></label>`;
+        const instructions = (section, key, value, zh, en, placeholderZh, placeholderEn) => `<label class="runtime-settings-field"><span>${text(zh, en)}</span>
+            <textarea data-section="${section}" data-key="${key}" maxlength="4000" rows="3" placeholder="${text(placeholderZh, placeholderEn)}" class="runtime-settings-input runtime-settings-textarea">${escape(value)}</textarea></label>`;
+        const autoHint = text('0 表示自动，根据上面设置的窗口调整', '0 = automatic, based on the configured window');
+        document.getElementById('runtime-settings-fields').innerHTML = `
+            <section id="runtime-settings-context" role="tabpanel" aria-labelledby="runtime-settings-context-tab">
+                <div id="runtime-settings-usage">${renderRuntimeContextUsage(payload.context_usage || (typeof sessionContextUsageState !== 'undefined' ? sessionContextUsageState : {}), context.context_window_tokens)}</div>
+                <div class="runtime-settings-toggle-row">
+                    <div><h3>${text('自动压缩', 'Automatic compaction')}</h3><p>${text('上下文变长时，整理早期对话并保留近期原文。', 'Summarize older conversations while keeping recent turns intact.')}</p></div>
+                    <label class="runtime-settings-switch"><input type="checkbox" data-section="context" data-key="auto_compact" aria-label="${text('自动压缩上下文', 'Compact automatically')}" ${context.auto_compact ? 'checked' : ''}><span aria-hidden="true"></span></label>
+                </div>
+                <label class="runtime-settings-field runtime-settings-capacity"><span>${text('上下文窗口（tokens）', 'Context window (tokens)')}</span><input type="number" data-section="context" data-key="context_window_tokens" min="4096" max="4000000" value="${context.context_window_tokens || 1000000}" class="runtime-settings-input"><small>${text('默认 1M；手动值控制运行预算，请填写服务商支持的容量', 'Default: 1M. Your value controls the budget; use a capacity supported by your provider.')}</small></label>
+                <div class="runtime-settings-grid">
+                    ${number('trigger_tokens', '开始压缩时的 token 数', 'Trigger at (tokens)', 0, 4000000, autoHint)}
+                    ${number('target_tokens', '压缩后的目标 token 数', 'Compact to (tokens)', 0, 4000000, autoHint)}
+                    ${number('preserve_recent_turns', '保留最近几轮原文', 'Recent turns to retain', 1, 100, text('这些对话不参与摘要', 'Keep these turns outside the summary'))}
+                    ${number('history_tokens', '历史上下文预算', 'History budget (tokens)', 0, 4000000, autoHint)}
+                </div>
+                ${instructions('context', 'preserve_instructions', context.preserve_instructions, '希望保留什么', 'What should be retained?', '例如：任务目标、已确认的决定、未完成的工作', 'For example: goals, decisions, and unfinished work')}
+                <details class="runtime-settings-advanced"><summary>${text('高级压缩设置', 'Advanced compaction settings')}<span>${text('模型与摘要预算', 'Model and summary budgets')}</span></summary>
+                    <div class="runtime-settings-advanced-body">
+                        ${model('context', 'summarizer_model', context.summarizer_model)}
+                        <div class="runtime-settings-grid">
+                            ${number('summary_tokens', '摘要 token 上限', 'Summary token limit', 128, 32000)}
+                            ${number('summarizer_input_tokens', '摘要模型输入预算', 'Summarizer input budget (tokens)', 1024, 128000)}
+                        </div>
+                    </div>
+                </details>
+            </section>
+            <section id="runtime-settings-approval" role="tabpanel" aria-labelledby="runtime-settings-approval-tab" hidden>
+                <div class="runtime-settings-section-intro"><h3>${text('工具使用模式', 'Tool use mode')}</h3><p>${text('选择 Agent 可以做什么，以及如何批准操作。', 'Choose what the agent can do and how actions are approved.')}</p></div>
+                <label class="runtime-settings-field"><span>${text('运行模式', 'Run mode')}</span>
+                    <select data-section="approval" data-key="mode" class="runtime-settings-input" onchange="updateRuntimeReviewerHint()">
+                        <option value="chat" ${approval.mode === 'chat' ? 'selected' : ''}>${text('交流模式 · 无工具', 'Chat · No tools')}</option>
+                        <option value="readonly" ${approval.mode === 'readonly' ? 'selected' : ''}>${text('只读模式', 'Read-only')}</option>
+                        <option value="bypass" ${approval.mode === 'bypass' ? 'selected' : ''}>${text('Bypass · 全工具', 'Bypass · All tools')}</option>
+                        <option value="auto" ${(approval.mode || 'auto') === 'auto' ? 'selected' : ''}>${text('Auto · 替我审核', 'Auto · Review for me')}</option>
+                    </select>
+                </label>
+                <p id="runtime-settings-reviewer-hint" class="runtime-settings-note"></p>
+                ${instructions('approval', 'reviewer_policy', approval.reviewer_policy, '补充审核要求', 'Additional review instructions', '例如：安装依赖可以代审，删除文件需先问我', 'For example: review installs for me, but ask before deleting files')}
+                <details class="runtime-settings-advanced"><summary>${text('高级审核设置', 'Advanced review settings')}<span>${text('模型与等待时间', 'Model and timeout')}</span></summary>
+                    <div class="runtime-settings-advanced-body runtime-settings-grid">
+                        ${model('approval', 'reviewer_model', approval.reviewer_model)}
+                        <label class="runtime-settings-field"><span>${text('审核等待上限（秒）', 'Review timeout (seconds)')}</span><input data-section="approval" data-key="reviewer_timeout_seconds" type="number" min="5" max="120" value="${approval.reviewer_timeout_seconds}" class="runtime-settings-input"></label>
+                    </div>
+                </details>
+            </section>`;
+        showRuntimeSettingsTab(view.activeTab);
+        updateRuntimeReviewerHint();
+        const compact = payload.last_compaction;
+        status.textContent = compact && Number.isFinite(compact.before_tokens) && Number.isFinite(compact.after_tokens) ? runtimeSettingsText(
+            `上次压缩：约 ${compact.before_tokens} → ${compact.after_tokens} tokens，${compact.duration_ms} ms${compact.target_met === false ? '；近期保留内容超过目标' : ''}`,
+            `Last compaction: ~${compact.before_tokens} → ${compact.after_tokens} tokens, ${compact.duration_ms} ms${compact.target_met === false ? '; retained turns exceed target' : ''}`,
+        ) : '';
+        document.getElementById('runtime-settings-save').disabled = false;
+    } catch (error) { status.textContent = String(error.message || error); }
+}
+
+async function saveRuntimeSettingsForm(reset = false) {
+    const view = runtimeSettingsView;
+    if (!view || !view.original) return;
+    const status = document.getElementById('runtime-settings-result');
+    const settings = {};
+    for (const input of document.querySelectorAll('#runtime-settings-fields [data-key]')) {
+        if (!reset && !input.checkValidity()) {
+            showRuntimeSettingsTab(input.dataset.section);
+            const advanced = input.closest('details');
+            if (advanced) advanced.open = true;
+            input.reportValidity();
+            return;
+        }
+        const value = input.type === 'checkbox' ? input.checked : input.type === 'number' ? Number(input.value) : input.value;
+        const {section, key} = input.dataset;
+        if (value !== view.original[section][key]) (settings[section] ||= {})[key] = value;
+    }
+    try {
+        document.getElementById('runtime-settings-save').disabled = true;
+        const response = await fetch('/proxy_webot_runtime_settings', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({session_id: view.scope === 'session' ? view.targetSession : '', settings, reset}),
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(JSON.stringify(payload.detail || payload.error));
+        await loadRuntimeSettingsScope();
+        if (view.scope === 'session' && view.targetSession === currentSessionId && typeof setRunMode === 'function') setRunMode(view.original.approval.mode);
+        status.textContent = runtimeSettingsText('已保存，下次调用生效。', 'Saved. Applies on the next call.');
+    } catch (error) { status.textContent = String(error.message || error); }
+    finally { document.getElementById('runtime-settings-save').disabled = false; }
+}
+
+function showRuntimeSettingsTab(section) {
+    if (!runtimeSettingsView) return;
+    runtimeSettingsView.activeTab = section;
+    for (const name of ['context', 'approval']) {
+        const selected = name === section;
+        const tab = document.getElementById(`runtime-settings-${name}-tab`);
+        tab.setAttribute('aria-selected', String(selected));
+        tab.tabIndex = selected ? 0 : -1;
+        const panel = document.getElementById(`runtime-settings-${name}`);
+        if (panel) panel.hidden = !selected;
+    }
+}
+
+function updateRuntimeReviewerHint() {
+    const mode = document.querySelector('#runtime-settings-fields [data-key="mode"]').value;
+    const hints = {
+        chat: ['仅通过文字交流，不调用工具。', 'Text conversation only, with no tool calls.'],
+        readonly: ['可以查看文件、搜索和分析；不能写入、执行命令或发送消息。', 'View files, search and analyze. No writes, commands, or messages.'],
+        bypass: ['开放工具并跳过操作确认。显式禁止规则仍然生效。', 'Tools are available without confirmation. Explicit deny rules still apply.'],
+        auto: ['根据你的任务代审写入和需要批准的操作；依据不足或审核超时时，交给你决定。', 'Reviews writes and approval requests for you. If evidence is insufficient or review times out, you decide.'],
+    };
+    document.getElementById('runtime-settings-reviewer-hint').textContent = runtimeSettingsText(...hints[mode]);
+}
+
+function closeRuntimeSettings() {
+    const overlay = document.getElementById('runtime-settings-modal');
+    if (overlay) overlay.style.display = 'none';
+    if (runtimeSettingsView && runtimeSettingsView.returnFocus) runtimeSettingsView.returnFocus.focus();
+}
+
+document.addEventListener('keydown', event => {
+    const overlay = document.getElementById('runtime-settings-modal');
+    if (!overlay || overlay.style.display === 'none') return;
+    if (event.key === 'Escape') {
+        event.preventDefault();
+        closeRuntimeSettings();
+    } else if (event.target.matches('#runtime-settings-modal [role="tab"]') && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
+        event.preventDefault();
+        const section = runtimeSettingsView.activeTab === 'context' ? 'approval' : 'context';
+        showRuntimeSettingsTab(section);
+        document.getElementById(`runtime-settings-${section}-tab`).focus();
+    } else if (event.key === 'Tab') {
+        const focusable = Array.from(overlay.querySelectorAll('button, input, select, textarea, summary, [tabindex="0"]'))
+            .filter(element => !element.disabled && element.tabIndex >= 0 && element.getClientRects().length);
+        const next = event.shiftKey ? focusable[focusable.length - 1] : focusable[0];
+        const boundary = event.shiftKey ? focusable[0] : focusable[focusable.length - 1];
+        if (event.target === boundary || !overlay.contains(event.target)) { event.preventDefault(); next.focus(); }
+    }
+});
+
+// Component estimates are scaled to the API total; do not count archived originals.
+function renderRuntimeContextUsage(usage = {}, configuredWindow = 0) {
+    const n = value => Math.max(0, Number(value) || 0);
+    const budget = n(configuredWindow) || n(usage.budget) || 1000000;
+    const used = n(usage.tokens);
+    const breakdown = usage.breakdown || {};
+    const groups = [
+        {label: runtimeSettingsText('对话历史', 'Conversation'), value: n(breakdown.messages) + n(breakdown.output), color: '#3b82f6'},
+        {label: runtimeSettingsText('工具结果', 'Tool results'), value: n(breakdown.tool_results), color: '#14b8a6'},
+        {label: runtimeSettingsText('压缩摘要', 'Summary'), value: n(breakdown.summary), color: '#8b5cf6'},
+        {label: runtimeSettingsText('提示词与工具定义', 'Prompts and tools'), value: n(breakdown.system_prompt) + n(breakdown.tools) + n(breakdown.runtime_state), color: '#94a3b8'},
+    ];
+    const total = groups.reduce((sum, group) => sum + group.value, 0);
+    if (!total) groups.splice(0, groups.length, {label: runtimeSettingsText('已用上下文', 'Used context'), value: used, color: '#3b82f6'});
+    else if (used > total) groups.push({label: runtimeSettingsText('其他输入', 'Other input'), value: used - total, color: '#cbd5e1'});
+    const scale = total > used && used > 0 ? used / total : 1;
+    const pct = Math.min(100, used / budget * 100);
+    const count = value => Math.round(value).toLocaleString();
+    const label = runtimeSettingsText('历史上下文占用', 'Context usage');
+    const percent = pct === 0 ? '0' : pct < 1 ? pct.toFixed(2) : pct.toFixed(1);
+    return `<div class="runtime-context-usage">
+        <div class="runtime-context-usage-heading"><span>${label}${usage.source === 'estimate' ? runtimeSettingsText(' · 估算', ' · Estimated') : ''}</span><strong>${percent}%</strong></div>
+        <div class="runtime-context-usage-count">${count(used)} / ${count(budget)} tokens</div>
+        <div class="runtime-context-usage-bar" role="meter" aria-label="${label}" aria-valuemin="0" aria-valuemax="${budget}" aria-valuenow="${Math.min(used, budget)}">
+            ${groups.filter(g => g.value > 0).map(g => `<span style="width:${Math.min(100, g.value * scale / budget * 100)}%;background:${g.color}" title="${g.label}: ${count(g.value * scale)} tokens"></span>`).join('')}
+        </div>
+        <div class="runtime-context-usage-legend">${groups.filter(g => g.value > 0).map(g => `<span><i style="background:${g.color}"></i>${g.label} <b>${count(g.value * scale)}</b></span>`).join('')}
+        <small>${runtimeSettingsText('剩余', 'Remaining')} ${count(Math.max(0, budget - used))} tokens${usage.source === 'api' && total ? runtimeSettingsText(' · 分项为估算', ' · Component estimates') : ''}</small>
+    </div>`;
+}

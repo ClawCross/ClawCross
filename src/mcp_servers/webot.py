@@ -20,16 +20,15 @@ import asyncio
 import contextlib
 import json
 import os
-from pathlib import Path
 import uuid
 
 import httpx
 from dotenv import load_dotenv
-from mcp.server.fastmcp import FastMCP
+from typing import Literal
+from pydantic import BaseModel, Field
+from utils.mcp_tool_docs import DocumentedFastMCP as FastMCP
 
-from webot.bridge import get_bridge_runtime_payload, issue_bridge_session
 from webot.claude_code import detect_claude_code_cached, probe_claude_acp, run_claude_cli_prompt
-from webot.memory import ensure_memory_state, run_auto_dream, set_kairos_mode
 from webot.profiles import (
     build_subagent_session_id,
     get_agent_profile,
@@ -42,7 +41,6 @@ from webot.runtime import normalize_session_mode
 from webot.runtime_store import (
     claim_run_worker,
     clear_run_interrupt,
-    create_inbox_message,
     create_run_record,
     delete_session_plan,
     delete_session_todos,
@@ -55,28 +53,19 @@ from webot.runtime_store import (
     heartbeat_run,
     list_inbox_messages,
     list_recoverable_runs,
-    list_run_events,
     list_runs_for_parent_session,
     list_runs_for_session,
-    list_session_goals,
     list_tool_approvals as list_tool_approval_records,
-    list_verification_records,
-    mark_inbox_delivered,
     record_claude_keepalive_result,
-    record_goal_heartbeat as store_goal_heartbeat,
     record_run_event,
-    record_runtime_artifact,
     release_run_worker,
     request_run_interrupt,
     save_claude_keepalive_state,
     save_session_mode,
     save_session_plan,
     save_session_todos,
-    save_voice_state,
     update_run_status,
-    upsert_session_goal,
     upsert_run,
-    add_verification_record,
 )
 from webot.subagents import (
     create_subagent_record,
@@ -89,15 +78,27 @@ from webot.subagents import (
     update_subagent_status,
     upsert_subagent,
 )
-from webot.voice import get_voice_state as get_voice_runtime_state
-from webot.workflow_presets import get_workflow_preset, list_workflow_presets
 from webot.workspace import describe_session_workspace
-from utils.runtime_paths import ENV_FILE, USER_FILES_DIR
+from utils.runtime_paths import ENV_FILE
 
 root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv(dotenv_path=str(ENV_FILE))
 
 mcp = FastMCP("WeBotAgents")
+
+
+# Structured argument types. Every tool argument must have a closed schema so a
+# decoder can be constrained to it (strict tool calling); a bare ``dict`` has none.
+class PlanStep(BaseModel):
+    step: str = Field(description="步骤内容")
+    status: Literal["pending", "in_progress", "completed"] = Field("pending", description="步骤状态")
+    notes: str = Field("", description="备注")
+
+
+
+def _steps_to_dicts(items: list[PlanStep] | None) -> list[dict]:
+    return [item.model_dump() for item in items or []]
+
 
 _AGENT_PORT = os.getenv("PORT_AGENT", "51200")
 _INTERNAL_TOKEN = os.getenv("INTERNAL_TOKEN", "")
@@ -110,29 +111,6 @@ _SESSION_STATUS_URL = f"http://127.0.0.1:{_AGENT_PORT}/session_status"
 
 _BACKGROUND_TASKS: dict[str, asyncio.Task] = {}
 _WORKER_ID = f"webot-mcp:{os.getpid()}:{uuid.uuid4().hex[:8]}"
-_RUNTIME_ROOT = USER_FILES_DIR
-_DEFAULT_ULTRAREVIEW_ANGLES = [
-    "security",
-    "logic",
-    "performance",
-    "types",
-    "concurrency",
-    "error handling",
-    "dependencies",
-    "testing",
-    "api contracts",
-    "state management",
-    "edge cases",
-    "data integrity",
-    "observability",
-    "refactor safety",
-    "filesystem safety",
-    "prompt/runtime policy",
-    "tool misuse",
-    "UX regression",
-    "maintainability",
-    "deployment/runtime",
-]
 def _trim(text: str, limit: int = 1200) -> str:
     text = (text or "").strip()
     if len(text) <= limit:
@@ -141,56 +119,6 @@ def _trim(text: str, limit: int = 1200) -> str:
 
 def _new_run_id() -> str:
     return f"run-{uuid.uuid4().hex[:12]}"
-
-def _safe_json_loads(value: str | None) -> dict:
-    if not value:
-        return {}
-    try:
-        loaded = json.loads(value)
-    except Exception:
-        return {}
-    return loaded if isinstance(loaded, dict) else {}
-
-def _extract_result_field(text: str, field_name: str) -> str:
-    prefix = f"{field_name}:"
-    for line in (text or "").splitlines():
-        if line.startswith(prefix):
-            return line[len(prefix):].strip()
-    return ""
-
-def _latest_ultraplan_for_session(username: str, source_session: str):
-    session_id = source_session or "default"
-    runs = list_runs_for_parent_session(
-        username,
-        session_id,
-        limit=20,
-        run_kind="ultraplan",
-    )
-    runs.extend(
-        run
-        for run in list_runs_for_session(username, session_id, limit=20)
-        if run.run_kind == "ultraplan"
-    )
-    runs.sort(key=lambda item: item.updated_at, reverse=True)
-    return runs[0] if runs else None
-
-def _artifact_dir(user_id: str, session_id: str, bucket: str) -> Path:
-    root = _RUNTIME_ROOT / (user_id or "anonymous") / bucket / (session_id or "default")
-    root.mkdir(parents=True, exist_ok=True)
-    return root
-
-def _write_runtime_text_artifact(
-    *,
-    user_id: str,
-    session_id: str,
-    bucket: str,
-    name: str,
-    content: str,
-) -> Path:
-    safe_name = slugify(name, "artifact")
-    path = _artifact_dir(user_id, session_id, bucket) / f"{safe_name}-{uuid.uuid4().hex[:8]}.md"
-    path.write_text(content, encoding="utf-8")
-    return path
 
 def _ensure_internal_token() -> str:
     if not _INTERNAL_TOKEN:
@@ -273,52 +201,6 @@ def _resolve_target_sessions(username: str, target_ref: str, source_session: str
     if target_record is not None:
         return [{"target_session": target_record.session_id, "target_agent_id": target_record.agent_id}]
     return [{"target_session": normalized_ref or "default", "target_agent_id": ""}]
-
-async def _deliver_inbox_messages(
-    *,
-    username: str,
-    target_session: str,
-    target_agent_id: str = "",
-    limit: int = 20,
-    force: bool = False,
-) -> tuple[int, str]:
-    queued_items = list_inbox_messages(username, target_session, status="queued", limit=max(1, limit))
-    if not queued_items:
-        return 0, ""
-
-    if target_agent_id:
-        latest_run = get_latest_run_for_agent(username, target_agent_id)
-        if not force and latest_run is not None and latest_run.status in {"queued", "running", "cancelling"}:
-            return 0, "busy"
-    else:
-        if not force and await _peek_session_busy(username, target_session):
-            return 0, "busy"
-
-    ordered = list(reversed(queued_items))
-    lines = ["[WeBot Session Inbox]"]
-    for item in ordered:
-        sender = item.source_label or item.source_session or item.source_agent_id or "unknown"
-        lines.append(f"from: {sender}\n{item.body}")
-    payload_text = "\n\n---\n\n".join(lines)
-    await _push_system_message(username=username, session_id=target_session, text=payload_text)
-    mark_inbox_delivered(username, [item.message_id for item in ordered])
-    artifact_path = _write_runtime_text_artifact(
-        user_id=username,
-        session_id=target_session,
-        bucket="webot_inbox_deliveries",
-        name="session-inbox",
-        content=payload_text,
-    )
-    record_runtime_artifact(
-        username,
-        target_session,
-        artifact_kind="session_inbox_delivery",
-        title="session_inbox",
-        path=str(artifact_path),
-        preview=_trim(payload_text, 240),
-        metadata={"count": len(ordered)},
-    )
-    return len(ordered), payload_text
 
 def _build_agent_payload(
     content: str,
@@ -714,13 +596,11 @@ async def _delete_internal_session(
         return response.json()
 
 
-@mcp.tool()
-async def list_webot_agent_profiles(username: str = "") -> str:
+def _agent_profiles_text(username: str = "") -> str:
     """
     列出 WeBot 内置子 Agent 类型及其工具能力边界。
 
     这一步适合在委派任务前先调用，用于选择合适的 agent_type。
-    username 由系统自动注入，无需手动传递。
     """
     lines = ["🤖 WeBot 可用子 Agent Profiles:\n"]
     for profile in list_agent_profiles(username):
@@ -734,53 +614,8 @@ async def list_webot_agent_profiles(username: str = "") -> str:
             lines.append(f"  source: {profile.source} ({profile.definition_path})")
         else:
             lines.append(f"  source: {profile.source}")
-    lines.append("\n推荐流程：先选 profile，再用 spawn_subagent 创建或继续一个子 Agent。")
+    lines.append("\n用 spawn_subagent(agent_type=...) 创建或继续一个子 Agent。")
     return "\n".join(lines)
-
-@mcp.tool()
-async def list_webot_workflow_presets(username: str = "") -> str:
-    """列出可以套用的 WeBot workflow preset。"""
-    presets = list_workflow_presets()
-    if not presets:
-        return "📭 当前没有可用的 WeBot workflow preset。"
-    lines = ["🧭 WeBot workflow presets"]
-    for preset in presets:
-        lines.append(
-            f"- {preset.get('preset_id', '')} · {preset.get('name', '')}\n"
-            f"  mode={preset.get('mode', 'execute')} · source={preset.get('source', '')}\n"
-            f"  {preset.get('description', '')}"
-        )
-    lines.append("\n可用 apply_webot_workflow_preset 将 preset 写入当前会话计划和 mode。")
-    return "\n".join(lines)
-
-@mcp.tool()
-async def apply_webot_workflow_preset(
-    username: str,
-    preset_id: str,
-    source_session: str = "",
-) -> str:
-    """套用一个 WeBot workflow preset 到当前会话，用它预置 plan 与 todo 结构。"""
-    session_id = source_session or "default"
-    preset = get_workflow_preset(preset_id)
-    if preset is None:
-        return f"❌ 未找到 workflow preset: {preset_id}"
-    save_session_mode(username, session_id, mode=preset.mode, reason=preset.reason)
-    save_session_plan(
-        username,
-        session_id,
-        title=preset.title,
-        status="active",
-        items=list(preset.items),
-        metadata=preset.plan_metadata(),
-    )
-    return (
-        f"✅ 已应用 WeBot workflow preset\n"
-        f"session_id: {session_id}\n"
-        f"preset_id: {preset.preset_id}\n"
-        f"name: {preset.name}\n"
-        f"mode: {preset.mode}\n"
-        f"items: {len(preset.items)}"
-    )
 
 @mcp.tool()
 async def spawn_subagent(
@@ -799,11 +634,8 @@ async def spawn_subagent(
     remote: str = "",
 ) -> str:
     """
-    创建或继续一个 WeBot 子 Agent 来处理独立任务。
-
-    适用场景：
-    - 调研、规划、实现、审查、验证等可分工的子任务
-    - 需要保持独立上下文，而不想把全部中间过程塞回主会话
+    创建或继续一个 WeBot 子 Agent，处理可分工的独立任务（调研、规划、实现、审查、验证），
+    让中间过程留在它自己的上下文里。
 
     Args:
         username: 当前用户（系统自动注入）
@@ -814,6 +646,11 @@ async def spawn_subagent(
         wait: True=同步等待结果；False=后台执行并异步通知父会话
         parent_session: 当前父会话 ID（系统自动注入）
         timeout: 最长等待秒数
+        max_turns: 子 Agent 最多执行的轮数；留空用默认值
+        workspace_mode: isolated（独立目录，默认）/ shared（用户根目录）/ worktree（workspace_root 仓库的 git worktree）/ remote / custom
+        workspace_root: 工作区根目录，相对用户目录解析；worktree 模式下是要派生 worktree 的 git 仓库
+        cwd: 子 Agent 的工作目录，相对工作区根目录解析
+        remote: remote 模式下的远端标识
     """
     await _recover_background_runs(username)
     safe_name = slugify(name, "")
@@ -1055,14 +892,14 @@ async def spawn_subagent(
 @mcp.tool()
 async def list_subagents(username: str) -> str:
     """
-    列出当前用户已创建的 WeBot 子 Agent 会话。
-
-    username 由系统自动注入，无需手动传递。
+    列出当前用户已创建的 WeBot 子 Agent，以及可用的子 Agent 类型（agent_type）
+    和各自的工具边界。委派任务前先用它选 agent_type。
     """
     await _recover_background_runs(username)
     records = list_subagents_for_user(username)
+    profiles = _agent_profiles_text(username)
     if not records:
-        return "📭 当前还没有任何 WeBot 子 Agent。"
+        return f"📭 当前还没有任何 WeBot 子 Agent。\n\n{profiles}"
 
     lines = [f"📋 用户 {username} 的子 Agent 列表:\n"]
     for record in records:
@@ -1087,6 +924,7 @@ async def list_subagents(username: str) -> str:
             f"  updated_at: {record.updated_at}\n"
             f"  last_result: {_trim(record.last_result, 240) or '(暂无)'}"
         )
+    lines.append(f"\n{profiles}")
     return "\n".join(lines)
 
 @mcp.tool()
@@ -1102,8 +940,11 @@ async def send_subagent_message(
     """
     向一个已存在的子 Agent 继续发送消息。
 
-    agent_ref 可以是 agent_id、session_id，也可以是创建时使用的 name。
-    source_session 由系统自动注入，用于后台回调通知。
+    :param agent_ref: 子 Agent 的 agent_id、session_id 或创建时的 name
+    :param content: 要发送给子 Agent 的消息
+    :param wait: True=同步等待回复；False=后台执行并异步通知；留空沿用子 Agent 的默认
+    :param timeout: 同步等待的最长秒数
+    :param max_turns: 本次最多执行的轮数；留空用默认值
     """
     await _recover_background_runs(username)
     record = _resolve_subagent_ref(username, agent_ref)
@@ -1288,6 +1129,9 @@ async def get_subagent_history(
     读取某个子 Agent 最近的对话记录。
 
     适合查看它已经做了什么，而不是把整个历史都拉进主上下文。
+
+    :param agent_ref: 子 Agent 的 agent_id、session_id 或创建时的 name
+    :param limit: 返回最近多少条消息
     """
     await _recover_background_runs(username)
     record = _resolve_subagent_ref(username, agent_ref)
@@ -1337,7 +1181,7 @@ async def cancel_subagent(
     """
     取消一个正在运行中的 WeBot 子 Agent。
 
-    agent_ref 可以是 agent_id、session_id，或创建时指定的 name。
+    :param agent_ref: 子 Agent 的 agent_id、session_id 或创建时的 name
     """
     await _recover_background_runs(username)
     record = _resolve_subagent_ref(username, agent_ref)
@@ -1453,7 +1297,7 @@ async def delete_subagent(
     子 Agent 与其 session 一一对应；删除会取消当前运行、删除该 session
     的 checkpoint/history，并移除 webot_subagents registry 记录。
 
-    agent_ref 可以是 agent_id、session_id，或创建时指定的 name。
+    :param agent_ref: 子 Agent 的 agent_id、session_id 或创建时的 name
     """
     await _recover_background_runs(username)
     record = _resolve_subagent_ref(username, agent_ref)
@@ -1549,19 +1393,31 @@ async def delete_subagent(
 @mcp.tool()
 async def write_session_plan(
     username: str,
-    title: str,
-    items: list[dict] | None = None,
+    items: list[PlanStep] | None = None,
+    target: Literal["plan", "todos"] = "plan",
+    title: str = "",
     source_session: str = "",
-    status: str = "active",
+    status: Literal["active", "completed", "archived"] = "active",
 ) -> str:
-    """写入或覆盖当前会话的 plan（标题、步骤列表、状态）。"""
+    """写入或覆盖当前会话的 plan（标题、步骤、状态）或 todo 列表。
+
+    :param items: 步骤列表，整体覆盖原有内容
+    :param target: 写 plan 还是 todos
+    :param title: plan 标题；留空沿用原标题（todos 忽略）
+    :param status: plan 状态：active / completed / archived（todos 忽略）
+    """
     session_id = source_session or "default"
+    if target == "todos":
+        save_session_todos(username, session_id, items=_steps_to_dicts(items))
+        todos = get_session_todos(username, session_id) or {"items": []}
+        return f"✅ Todo 已更新\nsession_id: {session_id}\nitems: {len(todos.get('items', []))}"
+    existing = get_session_plan(username, session_id) or {}
     save_session_plan(
         username,
         session_id,
-        title=title,
+        title=title or existing.get("title", ""),
         status=status,
-        items=items or [],
+        items=_steps_to_dicts(items),
     )
     plan = get_session_plan(username, session_id) or {"items": []}
     return (
@@ -1572,167 +1428,47 @@ async def write_session_plan(
         f"items: {len(plan.get('items', []))}"
     )
 
+
 @mcp.tool()
 async def read_session_plan(username: str, source_session: str = "") -> str:
-    """读取当前会话的完整 plan。运行时上下文只带前几条，需要全部时用这个。"""
+    """读取当前会话完整的 plan 和 todo 列表（运行时上下文只带前几条，需要全部时才用）。"""
     session_id = source_session or "default"
     plan = get_session_plan(username, session_id)
-    if plan is None:
-        return f"📭 当前会话 {session_id} 还没有计划。"
-    lines = [
-        f"🗺️ 当前计划\nsession_id: {session_id}\ntitle: {plan.get('title', '')}\nstatus: {plan.get('status', 'active')}"
-    ]
-    for item in plan.get("items", []):
-        lines.append(f"- [{item.get('status', 'pending')}] {item.get('step', '')}")
-    return "\n".join(lines)
-
-@mcp.tool()
-async def clear_session_plan(username: str, source_session: str = "") -> str:
-    """删除当前会话的 plan。"""
-    session_id = source_session or "default"
-    deleted = delete_session_plan(username, session_id)
-    if deleted:
-        return f"🧹 已清除会话计划: {session_id}"
-    return f"📭 会话 {session_id} 没有可清除的计划。"
-
-@mcp.tool()
-async def write_session_todos(
-    username: str,
-    items: list[dict] | None = None,
-    source_session: str = "",
-) -> str:
-    """写入或覆盖当前会话的 todo 列表。"""
-    session_id = source_session or "default"
-    save_session_todos(username, session_id, items=items or [])
-    todos = get_session_todos(username, session_id) or {"items": []}
-    return f"✅ Todo 已更新\nsession_id: {session_id}\nitems: {len(todos.get('items', []))}"
-
-@mcp.tool()
-async def read_session_todos(username: str, source_session: str = "") -> str:
-    """读取当前会话的完整 todo 列表。运行时上下文只带前几条，需要全部时用这个。"""
-    session_id = source_session or "default"
     todos = get_session_todos(username, session_id)
-    if todos is None:
-        return f"📭 当前会话 {session_id} 还没有 todo 列表。"
-    lines = [f"📌 当前 Todo\nsession_id: {session_id}"]
-    for item in todos.get("items", []):
-        lines.append(f"- [{item.get('status', 'pending')}] {item.get('step', '')}")
+    if plan is None and todos is None:
+        return f"📭 当前会话 {session_id} 还没有计划和 todo。"
+    lines = [f"session_id: {session_id}"]
+    if plan is not None:
+        lines.append(f"🗺️ 当前计划\ntitle: {plan.get('title', '')}\nstatus: {plan.get('status', 'active')}")
+        for item in plan.get("items", []):
+            lines.append(f"- [{item.get('status', 'pending')}] {item.get('step', '')}")
+    if todos is not None:
+        lines.append("📌 当前 Todo")
+        for item in todos.get("items", []):
+            lines.append(f"- [{item.get('status', 'pending')}] {item.get('step', '')}")
     return "\n".join(lines)
 
-@mcp.tool()
-async def clear_session_todos(username: str, source_session: str = "") -> str:
-    """删除当前会话的 todo 列表。"""
-    session_id = source_session or "default"
-    deleted = delete_session_todos(username, session_id)
-    if deleted:
-        return f"🧹 已清除会话 Todo: {session_id}"
-    return f"📭 会话 {session_id} 没有可清除的 Todo。"
 
 @mcp.tool()
-async def write_session_goal(
+async def clear_session_plan(
     username: str,
-    title: str,
     source_session: str = "",
-    goal_id: str = "",
-    description: str = "",
-    status: str = "active",
-    priority: str = "normal",
-    owner_session: str = "",
-    budget_tokens: int = 0,
-    budget_usd: float = 0.0,
-    metrics: dict | None = None,
-    metadata: dict | None = None,
+    target: Literal["plan", "todos", "all"] = "plan",
 ) -> str:
-    """
-    写入或更新当前会话的目标控制记录。
+    """删除当前会话的 plan、todo 列表，或两者。
 
-    这是 rudder 风格的轻量 control-plane 入口：目标、状态、预算和心跳
-    与普通 plan/todo 分开持久化，适合长周期 agent work loop。
+    :param target: 删除哪一个：plan / todos / all
     """
     session_id = source_session or "default"
-    record = upsert_session_goal(
-        username,
-        session_id,
-        goal_id=goal_id,
-        title=title,
-        description=description,
-        status=status,
-        priority=priority,
-        owner_session=owner_session or session_id,
-        metrics=metrics or {},
-        budget_tokens=budget_tokens,
-        budget_usd=budget_usd,
-        metadata=metadata or {"source": "mcp"},
-    )
-    return (
-        "✅ Session goal 已写入\n"
-        f"goal_id: {record.goal_id}\n"
-        f"session_id: {record.session_id}\n"
-        f"title: {record.title}\n"
-        f"status: {record.status}\n"
-        f"priority: {record.priority}\n"
-        f"budget: {record.spent_tokens}/{record.budget_tokens} tokens · ${record.spent_usd:.2f}/${record.budget_usd:.2f}"
-    )
+    cleared = []
+    if target in ("plan", "all") and delete_session_plan(username, session_id):
+        cleared.append("计划")
+    if target in ("todos", "all") and delete_session_todos(username, session_id):
+        cleared.append("Todo")
+    if cleared:
+        return f"🧹 已清除会话{'和'.join(cleared)}: {session_id}"
+    return f"📭 会话 {session_id} 没有可清除的内容。"
 
-@mcp.tool()
-async def list_session_goal_control(
-    username: str,
-    source_session: str = "",
-    status: str = "",
-    limit: int = 20,
-) -> str:
-    """列出当前会话的长期目标，含各自的状态、进度与已花费的额度。"""
-    session_id = source_session or "default"
-    goals = list_session_goals(
-        username,
-        session_id,
-        status=(status or "").strip().lower() or None,
-        limit=max(1, min(limit, 50)),
-    )
-    if not goals:
-        return f"📭 会话 {session_id} 暂无 goal control 记录。"
-    lines = [f"🎯 Session goals\nsession_id: {session_id}"]
-    for goal in goals:
-        heartbeat = goal.heartbeat_at or "(none)"
-        lines.append(
-            f"- {goal.goal_id} [{goal.status}/{goal.priority}] {goal.title}\n"
-            f"  heartbeat: {goal.heartbeat_status} · {heartbeat}\n"
-            f"  budget: {goal.spent_tokens}/{goal.budget_tokens} tokens · ${goal.spent_usd:.2f}/${goal.budget_usd:.2f}\n"
-            f"  report: {_trim(goal.last_report, 180) or '(none)'}"
-        )
-    return "\n".join(lines)
-
-@mcp.tool()
-async def record_session_goal_heartbeat(
-    username: str,
-    goal_id: str,
-    report: str = "",
-    heartbeat_status: str = "active",
-    spent_tokens_delta: int = 0,
-    spent_usd_delta: float = 0.0,
-    source_session: str = "",
-    metadata: dict | None = None,
-) -> str:
-    """给某个长期目标记一次心跳：进展汇报、当前状态，以及本次新增的 token 和费用。"""
-    record = store_goal_heartbeat(
-        username,
-        goal_id,
-        session_id=source_session or "",
-        heartbeat_status=heartbeat_status,
-        report=report,
-        spent_tokens_delta=spent_tokens_delta,
-        spent_usd_delta=spent_usd_delta,
-        metadata=metadata or {"source": "mcp"},
-    )
-    if record is None:
-        return f"❌ 未找到 goal: {goal_id}"
-    return (
-        "✅ Goal heartbeat 已记录\n"
-        f"goal_id: {record.goal_id}\n"
-        f"status: {record.heartbeat_status}\n"
-        f"heartbeat_at: {record.heartbeat_at}\n"
-        f"budget: {record.spent_tokens}/{record.budget_tokens} tokens · ${record.spent_usd:.2f}/${record.budget_usd:.2f}"
-    )
 
 @mcp.tool()
 async def claude_code_status(
@@ -1757,16 +1493,28 @@ async def claude_code_status(
 @mcp.tool()
 async def probe_claude_code(
     username: str,
-    prompt: str = "Reply only CLAUDE_ACP_OK",
+    prompt: str = "",
     source_session: str = "",
+    use_acp: bool = True,
     timeout: int = 90,
 ) -> str:
-    """向本机 Claude Code 发一条探测消息，确认 ACP 通道是否真的能用。"""
+    """立刻向本机 Claude Code 发一条消息：确认通道能用，或手动触发一次保活。
+
+    :param prompt: 发送的消息；留空用保活配置里的提示词
+    :param use_acp: True 走 ACP 通道；False 直接调用 claude CLI
+    :param timeout: 等待回复的最长秒数
+    """
     session_id = source_session or "default"
-    result = probe_claude_acp(
-        prompt=prompt,
-        session_name=f"clawcross-{username}-{session_id}".replace("#", "-")[:80],
-        timeout=timeout,
+    state = get_claude_keepalive_state(username, session_id)
+    effective_prompt = prompt or state.prompt or "ping"
+    result = (
+        probe_claude_acp(
+            prompt=effective_prompt,
+            session_name=f"clawcross-{username}-{session_id}".replace("#", "-")[:80],
+            timeout=timeout,
+        )
+        if use_acp
+        else run_claude_cli_prompt(prompt=effective_prompt, model=state.model, timeout=timeout)
     )
     record_claude_keepalive_result(
         username,
@@ -1774,13 +1522,13 @@ async def probe_claude_code(
         status="success" if result.get("ok") else "failed",
         result=str(result.get("stdout_tail") or "")[-2000:],
         error=str(result.get("error") or result.get("stderr_tail") or "")[-1000:],
-        metadata={"probe": True, "source": "mcp"},
+        metadata={"probe": True, "source": "mcp", "use_acp": use_acp},
     )
-    return (
-        "✅ Claude Code ACP 探测成功"
-        if result.get("ok")
-        else f"❌ Claude Code ACP 探测失败\n{_trim(str(result.get('error') or result.get('stderr_tail') or ''), 1200)}"
-    )
+    channel = "ACP" if use_acp else "CLI"
+    if result.get("ok"):
+        return f"✅ Claude Code {channel} 调用成功\nsession_id: {session_id}"
+    return f"❌ Claude Code {channel} 调用失败\n{_trim(str(result.get('error') or result.get('stderr_tail') or ''), 1200)}"
+
 
 @mcp.tool()
 async def configure_claude_keepalive(
@@ -1794,7 +1542,16 @@ async def configure_claude_keepalive(
     weekdays: str = "MTWRFSU",
     timeout: int = 90,
 ) -> str:
-    """配置当前会话对 Claude Code 的定时保活：开关、提示词、时区、起止时刻、生效星期。"""
+    """配置当前会话对 Claude Code 的定时保活：开关、提示词、时区、起止时刻、生效星期。
+
+    :param enabled: 是否开启定时保活
+    :param prompt: 保活时发送的消息
+    :param timezone_name: IANA 时区名，如 Asia/Shanghai；留空用系统时区
+    :param start_time: 每天开始保活的时刻，HH:MM
+    :param sleep_time: 每天停止保活的时刻，HH:MM
+    :param weekdays: 生效星期，每个字母代表一天：M T W R F S U（R=周四，U=周日）
+    :param timeout: 每次保活等待回复的最长秒数
+    """
     session_id = source_session or "default"
     record = save_claude_keepalive_state(
         username,
@@ -1817,115 +1574,17 @@ async def configure_claude_keepalive(
     )
 
 @mcp.tool()
-async def run_claude_keepalive_once(
-    username: str,
-    source_session: str = "",
-    prompt: str = "",
-    use_acp: bool = True,
-    timeout: int = 90,
-) -> str:
-    """立刻按保活配置向 Claude Code 发一次消息，不等定时触发。"""
-    session_id = source_session or "default"
-    state = get_claude_keepalive_state(username, session_id)
-    effective_prompt = prompt or state.prompt or "ping"
-    result = (
-        probe_claude_acp(prompt=effective_prompt, session_name=f"clawcross-{username}-{session_id}"[:80], timeout=timeout)
-        if use_acp
-        else run_claude_cli_prompt(prompt=effective_prompt, model=state.model, timeout=timeout)
-    )
-    record_claude_keepalive_result(
-        username,
-        session_id,
-        status="success" if result.get("ok") else "failed",
-        result=str(result.get("stdout_tail") or "")[-2000:],
-        error=str(result.get("error") or result.get("stderr_tail") or "")[-1000:],
-        metadata={"kickoff": True, "source": "mcp", "use_acp": use_acp},
-    )
-    if result.get("ok"):
-        return f"✅ Claude keepalive kickoff 成功\nsession_id: {session_id}"
-    return f"❌ Claude keepalive kickoff 失败\n{_trim(str(result.get('error') or result.get('stderr_tail') or ''), 1200)}"
-
-@mcp.tool()
-async def record_verification(
-    username: str,
-    title: str,
-    status: str = "passed",
-    details: str = "",
-    source_session: str = "",
-) -> str:
-    """记录一条验证结果（标题、是否通过、细节），供之后复查。"""
-    session_id = source_session or "default"
-    verification_id = f"verify-{uuid.uuid4().hex[:10]}"
-    add_verification_record(
-        username,
-        session_id,
-        verification_id=verification_id,
-        title=title,
-        status=status,
-        details=details,
-    )
-    return (
-        f"✅ 已记录验证结果\n"
-        f"verification_id: {verification_id}\n"
-        f"session_id: {session_id}\n"
-        f"status: {status}"
-    )
-
-@mcp.tool()
-async def list_verifications(username: str, source_session: str = "", limit: int = 10) -> str:
-    """列出当前会话已经记录下来的验证结果。"""
-    session_id = source_session or "default"
-    items = list_verification_records(username, session_id, limit=max(1, min(limit, 20)))
-    if not items:
-        return f"📭 当前会话 {session_id} 暂无验证记录。"
-    lines = [f"🧪 验证记录\nsession_id: {session_id}"]
-    for item in items:
-        lines.append(
-            f"- {item.get('verification_id', '')} [{item.get('status', '')}] {item.get('title', '')}\n"
-            f"  {_trim(item.get('details', ''), 200)}"
-        )
-    return "\n".join(lines)
-
-@mcp.tool()
-async def run_verification(
-    username: str,
-    task: str,
-    context: str = "",
-    source_session: str = "",
-    timeout: int = 300,
-) -> str:
-    """把一个验证任务交给独立的验证 agent 执行，并返回它的结论。"""
-    verification_task = task.strip() or "验证当前实现"
-    prompt = verification_task
-    if context.strip():
-        prompt += f"\n\n需要重点验证的上下文：\n{context.strip()}"
-    result = await spawn_subagent(
-        username=username,
-        task=prompt,
-        agent_type="verifier",
-        wait=True,
-        parent_session=source_session,
-        timeout=timeout,
-    )
-    status = "failed" if result.startswith("❌") else "completed"
-    add_verification_record(
-        username,
-        source_session or "default",
-        verification_id=f"verify-{uuid.uuid4().hex[:10]}",
-        title=verification_task[:120],
-        status=status,
-        details=result,
-    )
-    return result
-
-@mcp.tool()
 async def list_tool_approvals(
     username: str,
     source_session: str = "",
     status: str = "pending",
     limit: int = 20,
 ) -> str:
-    """列出当前会话的工具审批记录，默认只看还在等待批准的。"""
+    """列出当前会话的工具审批记录，默认只看还在等待批准的。
+
+    :param status: 按状态过滤：pending / approved / denied；留空列出全部
+    :param limit: 最多返回多少条（1-50）
+    """
     session_id = source_session or None
     approvals = list_tool_approval_records(
         username,
@@ -1947,50 +1606,18 @@ async def list_tool_approvals(
     return "\n".join(lines)
 
 @mcp.tool()
-async def enter_plan_mode(
-    username: str,
-    reason: str = "",
-    mode: str = "plan",
-    source_session: str = "",
-) -> str:
-    """把当前会话切到 plan 或 review 模式：只调研和记录计划，不修改文件、不改变环境状态。"""
-    session_id = source_session or "default"
-    normalized_mode = normalize_session_mode(mode)
-    if normalized_mode == "execute":
-        normalized_mode = "plan"
-    save_session_mode(username, session_id, mode=normalized_mode, reason=reason)
-    return (
-        f"✅ 已进入 {normalized_mode} 模式\n"
-        f"session_id: {session_id}\n"
-        f"reason: {reason or '(none)'}"
-    )
-
-@mcp.tool()
-async def exit_plan_mode(
-    username: str,
-    reason: str = "",
-    source_session: str = "",
-) -> str:
-    """退出 plan 模式，切回 execute，恢复动手执行的能力。"""
-    session_id = source_session or "default"
-    save_session_mode(username, session_id, mode="execute", reason=reason)
-    return (
-        f"✅ 已恢复 execute 模式\n"
-        f"session_id: {session_id}\n"
-        f"reason: {reason or '(none)'}"
-    )
-
-@mcp.tool()
 async def set_session_mode(
     username: str,
-    mode: str = "agent",
+    mode: str = "auto",
     reason: str = "",
     source_session: str = "",
 ) -> str:
     """
-    Set the current WeBot session mode.
+    切换当前会话工具模式：chat 交流无工具；readonly 只读；bypass 全工具跳过确认；
+    auto 由独立审核模型代审操作。
 
-    Supported modes: execute, agent, plan, review, yolo.
+    :param mode: chat / readonly / bypass / auto (legacy plan / review / agent / execute / yolo accepted)
+    :param reason: 切换原因
     """
     session_id = source_session or "default"
     normalized_mode = normalize_session_mode(mode)
@@ -2002,695 +1629,74 @@ async def set_session_mode(
     )
 
 @mcp.tool()
-async def get_session_mode(
-    username: str,
-    source_session: str = "",
-) -> str:
-    """查询当前会话所处的模式及其设置原因。"""
-    session_id = source_session or "default"
-    mode_info = load_session_mode(username, session_id)
-    return (
-        f"🧭 当前会话模式\n"
-        f"session_id: {session_id}\n"
-        f"mode: {mode_info.get('mode', 'execute')}\n"
-        f"reason: {mode_info.get('reason', '') or '(none)'}"
-    )
-
-@mcp.tool()
-async def session_send_to(
-    username: str,
-    target_ref: str,
-    content: str,
-    source_session: str = "",
-) -> str:
-    """给另一个会话发消息，消息先进对方收件箱等待投递。"""
-    source_session_id = source_session or "default"
-    source_agent_id, source_label = _source_label(username, source_session_id)
-    targets = _resolve_target_sessions(username, target_ref, source_session_id)
-    if not targets:
-        return "📭 没有可投递的目标会话。"
-
-    created = 0
-    delivered = 0
-    lines = [
-        "📮 Session Inbox 已写入",
-        f"source_session: {source_session_id}",
-    ]
-    for target in targets:
-        target_session = target["target_session"]
-        target_agent_id = target.get("target_agent_id", "")
-        inbox_record = create_inbox_message(
-            username,
-            target_session=target_session,
-            body=content,
-            source_session=source_session_id,
-            source_agent_id=source_agent_id,
-            source_label=source_label,
-            target_agent_id=target_agent_id,
-            metadata={"target_ref": target_ref},
-        )
-        created += 1
-        delivered_count, state = await _deliver_inbox_messages(
-            username=username,
-            target_session=target_session,
-            target_agent_id=target_agent_id,
-            limit=20,
-            force=False,
-        )
-        if delivered_count:
-            delivered += delivered_count
-            lines.append(f"- {target_session}: delivered_now ({delivered_count})")
-        else:
-            lines.append(f"- {target_session}: queued ({state or inbox_record.status})")
-
-    lines.append(f"targets: {len(targets)}")
-    lines.append(f"messages_created: {created}")
-    lines.append(f"messages_delivered_now: {delivered}")
-    return "\n".join(lines)
-
-@mcp.tool()
-async def session_inbox(
-    username: str,
-    target_ref: str = "",
-    status: str = "queued",
-    source_session: str = "",
-    limit: int = 20,
-) -> str:
-    """查看会话收件箱里的消息，默认只列还在排队的。"""
-    source_session_id = source_session or "default"
-    targets = _resolve_target_sessions(username, target_ref or source_session_id, source_session_id)
-    if target_ref == "*":
-        targets = _resolve_target_sessions(username, "*", source_session_id)
-    deduped: dict[str, str] = {}
-    for target in targets:
-        deduped[target["target_session"]] = target.get("target_agent_id", "")
-    if not deduped:
-        deduped[source_session_id] = ""
-
-    lines = ["📬 Session Inbox"]
-    total = 0
-    for session_key in deduped.keys():
-        items = list_inbox_messages(
-            username,
-            session_key,
-            status=(status or "").strip().lower() or None,
-            limit=max(1, min(limit, 50)),
-        )
-        if not items:
-            continue
-        lines.append(f"- session: {session_key}")
-        for item in reversed(items):
-            sender = item.source_label or item.source_session or item.source_agent_id or "unknown"
-            lines.append(
-                f"  [{item.status}] {item.message_id} from={sender}\n"
-                f"  {_trim(item.body, 240)}"
-            )
-            total += 1
-    if total == 0:
-        return "📭 当前没有匹配的 Inbox 消息。"
-    lines.append(f"total: {total}")
-    return "\n".join(lines)
-
-@mcp.tool()
-async def session_deliver_inbox(
-    username: str,
-    target_ref: str = "",
-    source_session: str = "",
-    limit: int = 20,
-    force: bool = False,
-) -> str:
-    """把目标会话收件箱里排队的消息投递出去并唤醒它处理；target_ref 传 "*" 表示所有会话。"""
-    source_session_id = source_session or "default"
-    if target_ref == "*":
-        targets = _resolve_target_sessions(username, "*", source_session_id)
-        targets.append({"target_session": source_session_id, "target_agent_id": ""})
-    else:
-        targets = _resolve_target_sessions(username, target_ref or source_session_id, source_session_id)
-    deduped: dict[str, str] = {}
-    for target in targets:
-        deduped[target["target_session"]] = target.get("target_agent_id", "")
-    if not deduped:
-        return "📭 没有可投递的目标会话。"
-
-    lines = ["🚚 Session Inbox Delivery"]
-    delivered_total = 0
-    for target_session, target_agent_id in deduped.items():
-        delivered_count, state = await _deliver_inbox_messages(
-            username=username,
-            target_session=target_session,
-            target_agent_id=target_agent_id,
-            limit=max(1, min(limit, 50)),
-            force=force,
-        )
-        if delivered_count:
-            delivered_total += delivered_count
-            lines.append(f"- {target_session}: delivered {delivered_count}")
-        else:
-            lines.append(f"- {target_session}: skipped ({state or 'empty'})")
-    lines.append(f"delivered_total: {delivered_total}")
-    return "\n".join(lines)
-
-@mcp.tool()
-async def bridge_attach(
-    username: str,
-    source_session: str = "",
-    role: str = "viewer",
-    label: str = "",
-) -> str:
-    """为当前会话签发 bridge 接入凭证，让外部客户端以观察者或协作者身份接入。"""
-    session_id = source_session or "default"
-    bridge = issue_bridge_session(
-        user_id=username,
-        session_id=session_id,
-        role=role or "viewer",
-        label=label,
-    )
-    return (
-        "🌉 Bridge attach 已创建\n"
-        f"session_id: {session_id}\n"
-        f"bridge_id: {bridge.get('bridge_id', '')}\n"
-        f"attach_code: {bridge.get('attach_code', '')}\n"
-        f"websocket_path: {bridge.get('websocket_path', '')}"
-    )
-
-@mcp.tool()
-async def bridge_status(
-    username: str,
-    source_session: str = "",
-) -> str:
-    """查看当前会话的 bridge 接入情况：已连接的客户端数量与角色。"""
-    session_id = source_session or "default"
-    payload = get_bridge_runtime_payload(username, session_id)
-    primary = payload.get("primary") or {}
-    return (
-        "🌉 Bridge 状态\n"
-        f"session_id: {session_id}\n"
-        f"status: {payload.get('status', 'detached')}\n"
-        f"connection_count: {payload.get('connection_count', 0)}\n"
-        f"attach_code: {primary.get('attach_code', '') or '(none)'}"
-    )
-
-@mcp.tool()
-async def voice_mode(
-    username: str,
-    enabled: bool = True,
-    source_session: str = "",
-    auto_read_aloud: bool = False,
-) -> str:
-    """开关当前会话的语音模式，并决定是否自动朗读回复。"""
-    session_id = source_session or "default"
-    current = get_voice_runtime_state(username, session_id)
-    save_voice_state(
-        username,
-        session_id,
-        enabled=enabled,
-        auto_read_aloud=auto_read_aloud,
-        recording_supported=True,
-        tts_model=str(current.get("tts_model") or ""),
-        tts_voice=str(current.get("tts_voice") or ""),
-        stt_model=str(current.get("stt_model") or ""),
-        last_transcript=str(current.get("last_transcript") or ""),
-        metadata={"source": "mcp_tool"},
-    )
-    updated = get_voice_runtime_state(username, session_id)
-    return (
-        "🎙️ Voice mode 已更新\n"
-        f"session_id: {session_id}\n"
-        f"enabled: {updated.get('enabled', False)}\n"
-        f"tts: {updated.get('tts_model', '')}:{updated.get('tts_voice', '')}\n"
-        f"stt: {updated.get('stt_model', '')}"
-    )
-
-@mcp.tool()
-async def kairos_mode(
-    username: str,
-    enabled: bool = True,
-    source_session: str = "",
-    reason: str = "",
-) -> str:
-    """开关 kairos 模式，让 agent 自行判断时机主动行动。"""
-    session_id = source_session or "default"
-    set_kairos_mode(username, session_id, enabled, reason=reason)
-    memory = ensure_memory_state(username, session_id, kairos_enabled=enabled)
-    return (
-        "🧠 Kairos 已更新\n"
-        f"session_id: {session_id}\n"
-        f"enabled: {memory.get('kairos_enabled', False)}\n"
-        f"entries: {memory.get('entry_count', 0)}\n"
-        f"reason: {reason or '(none)'}"
-    )
-
-@mcp.tool()
-async def dream_now(
-    username: str,
-    source_session: str = "",
-    force: bool = True,
-    reason: str = "manual",
-) -> str:
-    """立即触发一次记忆整理，把近期会话内容压缩进长期记忆。"""
-    session_id = source_session or "default"
-    result = run_auto_dream(
-        username,
-        session_id,
-        force=force,
-        reason=reason,
-    )
-    state = result.get("state") or {}
-    return (
-        "💭 Dream 执行结果\n"
-        f"session_id: {session_id}\n"
-        f"ran: {result.get('ran', False)}\n"
-        f"summary_path: {result.get('summary_path', '') or '(none)'}\n"
-        f"last_dream_at: {state.get('last_dream_at', '') or '(none)'}"
-    )
-
-
-@mcp.tool()
-async def ultraplan_start(
-    username: str,
-    task: str,
-    source_session: str = "",
-    name: str = "",
-    timeout: int = 1800,
-    workspace_mode: str = "worktree",
-    workspace_root: str = "",
-    cwd: str = "",
-    remote: str = "",
-) -> str:
-    """启动 ULTRAPLAN：让一个独立 agent 在隔离工作区里为给定任务产出实施方案。"""
-    existing = _latest_ultraplan_for_session(username, source_session)
-    if existing is not None and existing.status in {"queued", "running", "cancelling"}:
-        return (
-            "⏳ 当前会话已有 ULTRAPLAN 正在运行\n"
-            f"run_id: {existing.run_id}\n"
-            f"session_id: {existing.session_id}\n"
-            f"status: {existing.status}\n"
-            "请用 ultraplan_status 查询进度，或取消对应子 Agent 后再启动新的 ULTRAPLAN。"
-        )
-
-    plan_name = slugify(name, "") or f"ultraplan-{uuid.uuid4().hex[:6]}"
-    plan_prompt = (
-        "你是一个专门负责大范围项目规划的 Planner 子 Agent。\n"
-        "请先全面调研，再输出详细实施计划、风险、验证策略和阶段划分。\n"
-        "除非绝对必要，不要直接修改文件。\n\n"
-        f"任务：\n{task.strip()}"
-    )
-    plan_result = await spawn_subagent(
-        username=username,
-        task=plan_prompt,
-        agent_type="planner",
-        name=plan_name,
-        description=f"ULTRAPLAN: {task[:80]}",
-        wait=True,
-        parent_session=source_session,
-        timeout=max(300, timeout),
-        max_turns=24,
-        workspace_mode=workspace_mode,
-        workspace_root=workspace_root,
-        cwd=cwd,
-        remote=remote,
-    )
-    plan_run_id = _extract_result_field(plan_result, "run_id")
-    plan_session_id = _extract_result_field(plan_result, "session_id")
-    if plan_session_id:
-        save_session_mode(username, plan_session_id, mode="plan", reason=f"Ultraplan plan: {task[:120]}")
-    if plan_run_id:
-        update_run_status(
-            plan_run_id,
-            username,
-            run_kind="ultraplan_plan",
-            mode="plan",
-            metadata={
-                "task": task,
-                "phase": "plan",
-                "source_session": source_session or "default",
-                "workspace_mode": workspace_mode,
-                "workspace_root": workspace_root,
-                "cwd": cwd,
-                "remote": remote,
-            },
-        )
-        record_run_event(
-            username,
-            plan_run_id,
-            plan_session_id or "default",
-            event_type="ultraplan_plan_completed",
-            status="completed",
-            message=f"ULTRAPLAN 规划阶段完成: {plan_name}",
-        )
-
-    execute_name = slugify(f"{plan_name}-execute", "") or f"ultraplan-execute-{uuid.uuid4().hex[:6]}"
-    execute_prompt = (
-        "你是 ULTRAPLAN 的执行型 Coder 子 Agent。\n"
-        "你必须根据下方规划直接完成原始任务，包括创建/修改文件、运行必要验证，"
-        "最后汇报实际改动和验证结果。不要只输出计划文档。\n\n"
-        f"原始任务：\n{task.strip()}\n\n"
-        f"规划阶段输出：\n{_trim(plan_result, 6000)}"
-    )
-    execute_result = await spawn_subagent(
-        username=username,
-        task=execute_prompt,
-        agent_type="coder",
-        name=execute_name,
-        description=f"ULTRAPLAN EXECUTE: {task[:80]}",
-        wait=True,
-        parent_session=source_session,
-        timeout=max(300, timeout),
-        max_turns=24,
-        workspace_mode=workspace_mode,
-        workspace_root=workspace_root,
-        cwd=cwd,
-        remote=remote,
-    )
-    execute_run_id = _extract_result_field(execute_result, "run_id")
-    execute_session_id = _extract_result_field(execute_result, "session_id")
-    if execute_session_id:
-        save_session_mode(username, execute_session_id, mode="execute", reason=f"Ultraplan execute: {task[:120]}")
-    if execute_run_id:
-        update_run_status(
-            execute_run_id,
-            username,
-            run_kind="ultraplan",
-            mode="execute",
-            metadata={
-                "task": task,
-                "phase": "execute",
-                "plan_run_id": plan_run_id,
-                "plan_session_id": plan_session_id,
-                "source_session": source_session or "default",
-                "workspace_mode": workspace_mode,
-                "workspace_root": workspace_root,
-                "cwd": cwd,
-                "remote": remote,
-            },
-        )
-        record_run_event(
-            username,
-            execute_run_id,
-            execute_session_id or "default",
-            event_type="ultraplan_execute_completed",
-            status="completed",
-            message=f"ULTRAPLAN 执行阶段完成: {execute_name}",
-        )
-    return (
-        "⚡ ULTRAPLAN 已完成\n"
-        "## Plan\n"
-        f"{plan_result}\n\n"
-        "## Execute\n"
-        f"{execute_result}\n\n"
-        "可稍后用 ultraplan_status 查询进度。"
-    )
-
-@mcp.tool()
-async def ultraplan_status(
-    username: str,
-    run_id: str = "",
-    agent_ref: str = "",
-    source_session: str = "",
-) -> str:
-    """查询某次 ULTRAPLAN 的进度和产出的方案。"""
-    target_run = None
-    if run_id:
-        target_run = get_run(run_id, username)
-    elif agent_ref:
-        record = _resolve_subagent_ref(username, agent_ref)
-        if record is not None:
-            target_run = get_latest_run_for_agent(username, record.agent_id)
-    else:
-        target_run = _latest_ultraplan_for_session(username, source_session)
-    if target_run is None:
-        return "❌ 未找到对应的 ULTRAPLAN 运行。请提供 run_id / agent_ref，或先在当前会话启动 ultraplan_start。"
-
-    metadata = _safe_json_loads(target_run.metadata_json)
-    if target_run.status == "completed" and target_run.last_result and not metadata.get("artifact_path"):
-        artifact_path = _write_runtime_text_artifact(
-            user_id=username,
-            session_id=target_run.session_id,
-            bucket="webot_ultraplan",
-            name="ultraplan-result",
-            content=target_run.last_result,
-        )
-        record_runtime_artifact(
-            username,
-            target_run.session_id,
-            run_id=target_run.run_id,
-            artifact_kind="ultraplan_result",
-            title="ultraplan_result",
-            path=str(artifact_path),
-            preview=_trim(target_run.last_result, 240),
-        )
-        metadata["artifact_path"] = str(artifact_path)
-        update_run_status(target_run.run_id, username, metadata=metadata)
-        target_run = get_run(target_run.run_id, username) or target_run
-    events = list_run_events(username, target_run.run_id, limit=10)
-    lines = [
-        "🛰️ ULTRAPLAN 状态",
-        f"run_id: {target_run.run_id}",
-        f"session_id: {target_run.session_id}",
-        f"status: {target_run.status}",
-        f"mode: {target_run.mode}",
-        f"attempt_count: {target_run.attempt_count}",
-    ]
-    if metadata.get("artifact_path"):
-        lines.append(f"artifact: {metadata['artifact_path']}")
-    if target_run.last_result:
-        lines.append(f"result:\n{_trim(target_run.last_result, 2000)}")
-    if events:
-        lines.append("events:")
-        for event in events:
-            lines.append(
-                f"- [{event.get('status') or event.get('event_type')}] {event.get('event_type')} :: {event.get('message')}"
-            )
-    return "\n".join(lines)
-
-@mcp.tool()
-async def ultrareview_start(
+async def send_to_session(
     username: str,
     target: str,
-    agent_count: int = 8,
+    content: str,
+    wait: bool = False,
+    target_user: str = "",
     source_session: str = "",
-    timeout: int = 600,
-    workspace_mode: str = "worktree",
-    workspace_root: str = "",
-    cwd: str = "",
-    remote: str = "",
-    angles: list[str] | None = None,
+    timeout: int = 180,
 ) -> str:
-    """启动 ULTRAREVIEW：多个 agent 从不同角度并行评审同一个目标。"""
-    review_source_session = source_session or "default"
-    requested_angles = [str(angle).strip() for angle in (angles or []) if str(angle).strip()]
-    selected_angles = requested_angles or list(_DEFAULT_ULTRAREVIEW_ANGLES)
-    selected_angles = selected_angles[: max(5, min(agent_count, 20))]
+    """给另一个会话发消息。对方正忙时，消息排在它当前这一轮之后处理，不会打断它。
+    wait=false 发出即返回；wait=true 等对方处理完，把它的回复带回来。
 
-    coordinator_run_id = _new_run_id()
-    coordinator_run = create_run_record(
-        run_id=coordinator_run_id,
-        user_id=username,
-        agent_id=f"ultrareview-{coordinator_run_id[-6:]}",
-        session_id=review_source_session,
-        parent_session=review_source_session,
-        agent_type="reviewer",
-        title=f"ULTRAREVIEW: {target[:80]}",
-        input_text=target,
-        status="running",
-        timeout_seconds=max(120, timeout),
-        max_turns=None,
-        wait_mode=False,
-        run_kind="ultrareview",
-        mode="review",
-        metadata={
-            "target": target,
-            "angles": selected_angles,
-            "child_runs": [],
-            "source_session": review_source_session,
-        },
-    )
-    upsert_run(coordinator_run)
-    record_run_event(
-        username,
-        coordinator_run_id,
-        review_source_session,
-        event_type="ultrareview_started",
-        status="running",
-        message=f"ULTRAREVIEW 已启动，角度数={len(selected_angles)}",
-    )
+    :param target: 目标会话：子 Agent 的 agent_id / session_id / name，或会话 id；wait=false 时 "*" 表示所有子 Agent 与主会话
+    :param content: 消息内容
+    :param wait: 是否等待对方回复
+    :param target_user: 目标会话属于其他用户时填该用户名；留空为自己
+    :param timeout: wait=true 时最多等待的秒数；超时后消息照常处理，回复留在对方会话里
+    """
+    source_session_id = source_session or "default"
+    other_user = (target_user or "").strip()
+    to_user = other_user or username
+    ref = (target or "").strip()
+    if other_user and other_user != username:
+        if ref in {"", "*"}:
+            return "❌ 发给其他用户时，target 必须是具体的会话 id。"
+        targets = [ref]
+    else:
+        targets = [item["target_session"] for item in _resolve_target_sessions(username, ref, source_session_id)]
+    if not targets:
+        return "📭 没有可投递的目标会话。"
+    if wait and len(targets) > 1:
+        return "❌ wait=true 只能发给一个会话。"
+    if wait and to_user == username and targets[0] == source_session_id:
+        return "❌ 不能等待自己当前会话的回复（会互相等待）；请改用 wait=false。"
 
-    child_runs: list[dict[str, str]] = []
-    lines = [
-        "🧪 ULTRAREVIEW 已启动",
-        f"run_id: {coordinator_run_id}",
-        f"target: {target}",
-        f"reviewers: {len(selected_angles)}",
-    ]
-    for angle in selected_angles:
-        reviewer_name = slugify(f"review-{coordinator_run_id[-4:]}-{angle}", "") or f"review-{uuid.uuid4().hex[:6]}"
-        reviewer_prompt = (
-            f"你是一个专门从 `{angle}` 角度审查代码/实现的 Reviewer 子 Agent。\n"
-            "请优先给出 findings，而不是泛泛总结。\n"
-            "重点关注 bug、风险、回归、缺失测试和不合理假设。\n"
-            "除非用户明确要求，不要修改文件。\n\n"
-            f"审查目标：\n{target}"
-        )
-        spawn_result = await spawn_subagent(
-            username=username,
-            task=reviewer_prompt,
-            agent_type="reviewer",
-            name=reviewer_name,
-            description=f"ULTRAREVIEW::{angle}",
-            wait=False,
-            parent_session=review_source_session,
-            timeout=max(120, timeout),
-            max_turns=18,
-            workspace_mode=workspace_mode,
-            workspace_root=workspace_root,
-            cwd=cwd,
-            remote=remote,
-        )
-        child_run_id = _extract_result_field(spawn_result, "run_id")
-        child_session_id = _extract_result_field(spawn_result, "session_id")
-        child_agent_id = _extract_result_field(spawn_result, "agent_id")
-        if child_session_id:
-            save_session_mode(username, child_session_id, mode="review", reason=f"Ultrareview::{angle}")
-        if child_run_id:
-            update_run_status(
-                child_run_id,
-                username,
-                run_kind="ultrareview_reviewer",
-                mode="review",
-                parent_run_id=coordinator_run_id,
-                metadata={
-                    "angle": angle,
-                    "target": target,
-                    "coordinator_run_id": coordinator_run_id,
-                    "source_session": review_source_session,
-                },
-            )
-        child_runs.append(
-            {
-                "run_id": child_run_id,
-                "session_id": child_session_id,
-                "agent_id": child_agent_id,
-                "angle": angle,
-            }
-        )
-        lines.append(f"- {angle}: {child_run_id or '(missing run_id)'}")
+    _, source_label = _source_label(username, source_session_id)
+    header = f"[来自 {username}#{source_label} 的消息]"
+    if wait:
+        header += "\n（对方正在等你的回复：直接用文字回答即可，不要再调用发消息工具回复。）"
+    text = f"{header}\n{content}"
 
-    update_run_status(
-        coordinator_run_id,
-        username,
-        metadata={
-            "target": target,
-            "angles": selected_angles,
-            "child_runs": child_runs,
-            "source_session": review_source_session,
-        },
-        status="running" if child_runs else "failed",
-        last_error="" if child_runs else "未能启动任何 reviewer 子 Agent。",
-    )
-    if not child_runs:
-        record_run_event(
-            username,
-            coordinator_run_id,
-            review_source_session,
-            event_type="ultrareview_failed",
-            status="failed",
-            message="未能启动任何 reviewer 子 Agent。",
-        )
+    token = _ensure_internal_token()
+    lines = []
+    async with httpx.AsyncClient(timeout=max(1, timeout) if wait else 30) as client:
+        for session_id in targets:
+            try:
+                response = await client.post(
+                    _SYSTEM_TRIGGER_URL,
+                    headers={"X-Internal-Token": token, "Content-Type": "application/json"},
+                    json={"user_id": to_user, "session_id": session_id, "text": text, "wait_reply": wait},
+                )
+            except httpx.TimeoutException:
+                return (
+                    f"⏰ 等待 {to_user}#{session_id} 回复超时（{timeout}s）。"
+                    "消息已投递，对方处理完后回复会留在它的会话里。"
+                )
+            except httpx.HTTPError as exc:
+                lines.append(f"❌ {to_user}#{session_id}: 投递失败: {exc}")
+                continue
+            if response.status_code != 200:
+                lines.append(f"❌ {to_user}#{session_id}: 投递失败 (HTTP {response.status_code}): {response.text[:300]}")
+                continue
+            if wait:
+                reply = str(response.json().get("reply") or "").strip()
+                return f"✅ {to_user}#{session_id} 回复:\n\n{reply or '(对方没有给出文字回复)'}"
+            lines.append(f"✅ 已投递到 {to_user}#{session_id}")
     return "\n".join(lines)
 
-@mcp.tool()
-async def ultrareview_status(
-    username: str,
-    run_id: str,
-    source_session: str = "",
-) -> str:
-    """查询某次 ULTRAREVIEW 的进度，以及各个角度给出的评审结果。"""
-    coordinator = get_run(run_id, username)
-    if coordinator is None:
-        return f"❌ 未找到 ULTRAREVIEW 运行: {run_id}"
-
-    metadata = _safe_json_loads(coordinator.metadata_json)
-    child_runs = metadata.get("child_runs") or []
-    if not isinstance(child_runs, list):
-        child_runs = []
-
-    active = 0
-    failed = 0
-    completed = 0
-    findings: list[str] = []
-    lines = [
-        "🔎 ULTRAREVIEW 状态",
-        f"run_id: {coordinator.run_id}",
-        f"target: {metadata.get('target', coordinator.input_text)}",
-        f"coordinator_status: {coordinator.status}",
-    ]
-    for child in child_runs:
-        if not isinstance(child, dict):
-            continue
-        child_run_id = str(child.get("run_id") or "").strip()
-        angle = str(child.get("angle") or "review").strip()
-        if not child_run_id:
-            lines.append(f"- {angle}: missing child run id")
-            failed += 1
-            continue
-        child_run = get_run(child_run_id, username)
-        if child_run is None:
-            lines.append(f"- {angle}: missing")
-            failed += 1
-            continue
-        lines.append(f"- {angle}: {child_run.status} ({child_run.run_id})")
-        if child_run.status in {"queued", "running", "cancelling"}:
-            active += 1
-        elif child_run.status == "completed":
-            completed += 1
-            if child_run.last_result:
-                findings.append(f"## {angle}\n\n{child_run.last_result}")
-        else:
-            failed += 1
-            if child_run.last_result:
-                findings.append(f"## {angle}\n\n{child_run.last_result}")
-
-    overall_status = "running" if active else ("failed" if completed == 0 and failed else "completed")
-    summary_text = (
-        f"completed={completed}, failed={failed}, active={active}\n\n"
-        + ("\n\n---\n\n".join(findings) if findings else "暂无 reviewer 结果。")
-    )
-    if overall_status != coordinator.status:
-        metadata["final_status"] = overall_status
-        update_run_status(
-            coordinator.run_id,
-            username,
-            status=overall_status,
-            last_result=summary_text if overall_status != "running" else coordinator.last_result,
-            metadata=metadata,
-        )
-        coordinator = get_run(coordinator.run_id, username) or coordinator
-    if overall_status != "running" and summary_text and not metadata.get("artifact_path"):
-        artifact_path = _write_runtime_text_artifact(
-            user_id=username,
-            session_id=source_session or coordinator.session_id,
-            bucket="webot_ultrareview",
-            name="ultrareview-summary",
-            content=summary_text,
-        )
-        record_runtime_artifact(
-            username,
-            source_session or coordinator.session_id,
-            run_id=coordinator.run_id,
-            artifact_kind="ultrareview_summary",
-            title="ultrareview_summary",
-            path=str(artifact_path),
-            preview=_trim(summary_text, 240),
-        )
-        metadata["artifact_path"] = str(artifact_path)
-        update_run_status(coordinator.run_id, username, metadata=metadata)
-        lines.append(f"artifact: {artifact_path}")
-    lines.append(f"completed: {completed}")
-    lines.append(f"failed: {failed}")
-    lines.append(f"active: {active}")
-    if summary_text:
-        lines.append(f"summary:\n{_trim(summary_text, 2200)}")
-    return "\n".join(lines)
 
 if __name__ == "__main__":
     mcp.run()

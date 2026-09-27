@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 
 import httpx
 from ddgs import DDGS
-from mcp.server.fastmcp import FastMCP
+from utils.mcp_tool_docs import DocumentedFastMCP as FastMCP
 
 mcp = FastMCP("WebSearcher")
 
@@ -765,24 +765,29 @@ async def web_search(
     freshness: str = "",
     include_domains: str = "",
     exclude_domains: str = "",
-    provider: str = DEFAULT_PROVIDER,
-    browser_engine: str = DEFAULT_BROWSER_ENGINE,
-    backend: str = DEFAULT_BACKEND,
+    fetch_top: int = 0,
+    max_chars_per_page: int = 4000,
 ) -> str:
     """
-    Search the web and return results.
+    Search the web and return ranked results (title, url, snippet). Set
+    fetch_top to also fetch the cleaned text of the top results; to read one
+    specific page, use web_fetch.
 
-    kind: "web" (default) or "news".
-    format: "markdown" (default, human-readable chat output) or "json"
-      (structured fields: ok/provider/kind/query/filters/result_count/results;
-      each result has rank, title, url, domain, snippet, source, published_at).
-    provider: "auto" (default; ddgs first, browser fallback), "ddgs"
-      (DuckDuckGo HTTP only), or "browser" (local Playwright runner only).
-    freshness supports d/w/m/y. include_domains/exclude_domains accept
-    comma-separated domains.
+    :param query: Search query
+    :param kind: "web" (default) or "news"
+    :param format: "markdown" (default) or "json" (results with rank, title, url, domain, snippet, published_at); fetch_top > 0 always returns json
+    :param max_results: Number of results; markdown output is capped at 10, json at 25
+    :param region: Region code such as "us-en", "cn-zh", or "wt-wt" (no region)
+    :param safesearch: "on", "moderate", or "off"
+    :param freshness: Time limit: "d", "w", "m", or "y"; empty for any time
+    :param include_domains: Comma-separated domains to keep; empty for all
+    :param exclude_domains: Comma-separated domains to drop
+    :param fetch_top: Also fetch page text for this many top results (0-5); adds a fetched_pages list
+    :param max_chars_per_page: Maximum characters of text per fetched page
     """
     kind_norm = _normalize_kind(kind)
-    format_norm = _normalize_format(format)
+    safe_fetch_top = _clamp_int(fetch_top, default=0, minimum=0, maximum=5)
+    format_norm = "json" if safe_fetch_top else _normalize_format(format)
     if format_norm == "markdown":
         capped_max = min(_clamp_int(max_results, default=5, minimum=1, maximum=10), 10)
     else:
@@ -795,12 +800,25 @@ async def web_search(
         region=region,
         safesearch=safesearch,
         freshness=freshness,
-        backend=backend,
+        backend=DEFAULT_BACKEND,
         include_domains=include_domains,
         exclude_domains=exclude_domains,
-        provider=provider,
-        browser_engine=browser_engine,
+        provider=DEFAULT_PROVIDER,
+        browser_engine=DEFAULT_BROWSER_ENGINE,
     )
+
+    if safe_fetch_top and payload.get("ok"):
+        pages: list[dict] = []
+        for result in (payload.get("results") or [])[:safe_fetch_top]:
+            page = await _fetch_url_provider_payload(
+                result.get("url") or "",
+                max_chars=max_chars_per_page,
+                timeout=int(DEFAULT_TIMEOUT),
+                provider=DEFAULT_PROVIDER,
+            )
+            page["rank"] = result.get("rank")
+            pages.append(page)
+        payload["fetched_pages"] = pages
 
     if format_norm == "json":
         return _json(payload)
@@ -813,75 +831,25 @@ async def web_fetch(
     url: str,
     max_chars: int = 12000,
     timeout: int = 15,
-    provider: str = DEFAULT_PROVIDER,
 ) -> str:
     """
-    Fetch a public web URL and return cleaned page text as JSON.
+    Fetch a public web URL and return its cleaned page text as JSON.
 
     Private/local IP literals and localhost are blocked. Intended for public
-    pages discovered by web_search(format="json"). provider: "auto" (default;
-    direct HTTP first, browser render fallback), "http" (direct only), or
-    "browser" (local Playwright only).
+    pages discovered by web_search.
+
+    :param url: Public http(s) URL
+    :param max_chars: Maximum characters of page text to return (500-50000)
+    :param timeout: Request timeout in seconds
     """
     return _json(
         await _fetch_url_provider_payload(
             url,
             max_chars=max_chars,
             timeout=timeout,
-            provider=provider,
+            provider=DEFAULT_PROVIDER,
         )
     )
-
-
-@mcp.tool()
-async def web_research_brief(
-    query: str,
-    max_results: int = 6,
-    fetch_top: int = 2,
-    max_chars_per_page: int = 4000,
-    region: str = DEFAULT_REGION,
-    safesearch: str = DEFAULT_SAFESEARCH,
-    freshness: str = "",
-    include_domains: str = "",
-    exclude_domains: str = "",
-    provider: str = DEFAULT_PROVIDER,
-    browser_engine: str = DEFAULT_BROWSER_ENGINE,
-) -> str:
-    """
-    Research helper: structured search plus cleaned text from top results.
-
-    Use this when an agent needs both search result metadata and lightweight
-    page evidence. fetch_top is capped at 5 to avoid slow broad crawling.
-    """
-    payload = await _build_search_provider_payload(
-        query=query,
-        kind="web",
-        max_results=max_results,
-        region=region,
-        safesearch=safesearch,
-        freshness=freshness,
-        include_domains=include_domains,
-        exclude_domains=exclude_domains,
-        provider=provider,
-        browser_engine=browser_engine,
-    )
-    if not payload.get("ok"):
-        return _json(payload)
-
-    safe_fetch_top = _clamp_int(fetch_top, default=2, minimum=0, maximum=5)
-    pages: list[dict] = []
-    for result in (payload.get("results") or [])[:safe_fetch_top]:
-        page = await _fetch_url_provider_payload(
-            result.get("url") or "",
-            max_chars=max_chars_per_page,
-            timeout=int(DEFAULT_TIMEOUT),
-            provider=provider,
-        )
-        page["rank"] = result.get("rank")
-        pages.append(page)
-
-    payload["fetched_pages"] = pages
-    return _json(payload)
 
 
 if __name__ == "__main__":

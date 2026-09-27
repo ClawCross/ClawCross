@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20260927062722517714",
+  "candidate_id": "blended-verification-loop-workspace-preflight",
+  "skill_name": "repo-skill",
+  "strategy": "harden",
+  "env_fingerprint": {
+    "python_version": "3.14.4",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-09-27T06:27:22.517662+00:00"
+  },
+  "commands": [
+    {
+      "command": "(external failure context)",
+      "ok": false,
+      "stdout": "Verified recovery: one sequential Playwright invocation of runtime-settings.spec.js and message-center-smoke.spec.js passed all 5 tests. Live frontend inspection passed tool grouping, collapse and individual toggle counts: 9 categories, 54 tools.\nReproducer for remaining failure: CLAWCROSS_TEST_PYTHON=/home/ubuntu/work2/venv/bin/python ./node_modules/.bin/playwright test --config /tmp/clawcross-runtime-settings-playwright.mjs studio-smoke.spec.js --grep 'oasis town runtime mounts' --output /tmp/clawcross-oasis-final-tests",
+      "stderr": "Full pytest under the restricted execution environment stalled at the SQLite/aiosqlite sender stability tests. The same suite in the normal execution environment passed: 721 tests and 284 subtests.\nConcurrent Playwright invocations shared the mock frontend server and output directory: net::ERR_CONNECTION_REFUSED and missing trace artifacts occurred when one invocation stopped the server. Run suites sequentially with unique output directories.\nIndependent remaining failure: studio-smoke.spec.js:1266, oasis town runtime mounts, draws canvas, and accepts live updates. At line 1338, locator('#oasis-town-runtime-smoke-host canvas').toBeVisible() failed: element not found after 5000ms. This remains unresolved; do not claim all Studio browser tests pass."
+    }
+  ],
+  "overall_ok": false,
+  "duration_ms": null,
+  "created_at": "2026-09-27T06:27:22.517760+00:00",
+  "asset_id": "sha256:9ea62b19bb467f1458c55d1ea90c69c9b972ff8b4937febf18c731834d2988f2"
+}

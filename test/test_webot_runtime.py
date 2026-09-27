@@ -16,8 +16,8 @@ class WeBotRuntimeTests(unittest.TestCase):
         self.assertEqual(normalize_session_mode("unknown"), "execute")
 
     def test_plan_filters_mutating_tools_but_agent_and_yolo_do_not(self):
-        tools = ["read_file", "write_file", "run_command", "lsp"]
-        self.assertEqual(filter_tools_for_mode(tools, "plan"), ["read_file", "lsp"])
+        tools = ["read_file", "write_file", "run_command", "list_files"]
+        self.assertEqual(filter_tools_for_mode(tools, "plan"), ["read_file", "list_files"])
         self.assertEqual(filter_tools_for_mode(tools, "agent"), tools)
         self.assertEqual(filter_tools_for_mode(tools, "yolo"), tools)
 

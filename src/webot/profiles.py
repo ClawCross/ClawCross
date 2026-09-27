@@ -22,6 +22,7 @@ import uuid
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 from utils.runtime_paths import USER_FILES_DIR
+from core.tool_aliases import canonical_tool_names
 
 _SLUG_RE = re.compile(r"[^a-z0-9_-]+")
 _SESSION_RE = re.compile(r"^subagent__([a-z0-9_-]+)__([a-z0-9_-]+)$")
@@ -30,14 +31,12 @@ DEFAULT_SUBAGENT_PROFILE = "general"
 DEFAULT_PROFILE_FILENAME = "webot_agent_profiles.json"
 
 SESSION_CONTEXT_TOOLS = (
-    "get_current_session",
     "list_sessions",
 )
 
 SEARCH_TOOLS = (
     "web_search",
     "web_fetch",
-    "web_research_brief",
     "call_llm_api",
 )
 
@@ -48,25 +47,22 @@ FILE_READ_TOOLS = (
 
 FILE_WRITE_TOOLS = (
     "write_file",
-    "append_file",
     "delete_file",
 )
 
 COMMAND_TOOLS = (
     "run_command",
-    "run_python_code",
-    "list_allowed_commands",
+    "background_command_io",
+    "cancel_background_command",
 )
 
 MESSAGE_TOOLS = (
-    "send_internal_message",
+    "send_to_session",
     "send_to_group",
-    "send_private_cli",
     "set_notification_channel",
     "remove_notification_channel",
     "send_notification",
     "get_notification_status",
-    "list_notification_channels",
 )
 
 SCHEDULER_TOOLS = (
@@ -78,23 +74,20 @@ SCHEDULER_TOOLS = (
 OASIS_READ_TOOLS = (
     "list_oasis_experts",
     "list_oasis_sessions",
-    "list_oasis_topics",
     "list_oasis_workflows",
     "check_oasis_discussion",
     "get_publicnet_info",
 )
 
 OASIS_WRITE_TOOLS = (
-    "add_oasis_expert",
-    "update_oasis_expert",
+    "save_oasis_expert",
     "delete_oasis_expert",
     "start_new_oasis",
     "cancel_oasis_discussion",
-    "set_oasis_yaml_workflow",
+    "save_oasis_workflow",
 )
 
 WEBOT_SUBAGENT_TOOLS = (
-    "list_webot_agent_profiles",
     "spawn_subagent",
     "list_subagents",
     "send_subagent_message",
@@ -104,27 +97,9 @@ WEBOT_SUBAGENT_TOOLS = (
 )
 
 WEBOT_RUNTIME_TOOLS = (
-    "enter_plan_mode",
-    "exit_plan_mode",
-    "get_session_mode",
-    "list_webot_workflow_presets",
-    "apply_webot_workflow_preset",
     "write_session_plan",
     "read_session_plan",
     "clear_session_plan",
-    "write_session_todos",
-    "read_session_todos",
-    "clear_session_todos",
-    "record_verification",
-    "list_verifications",
-    "run_verification",
-    "session_send_to",
-    "session_inbox",
-    "session_deliver_inbox",
-    "ultraplan_start",
-    "ultraplan_status",
-    "ultrareview_start",
-    "ultrareview_status",
     "list_tool_approvals",
 )
 
@@ -187,7 +162,8 @@ def _normalize_allowed_tools(
         for item in value:
             if isinstance(item, str) and item.strip():
                 normalized.append(item.strip())
-        candidate_tools = tuple(normalized)
+        # Custom profiles may still name merged or removed tools.
+        candidate_tools = tuple(canonical_tool_names(normalized))
 
     blocked = {
         item.strip()

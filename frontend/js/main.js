@@ -300,6 +300,7 @@ const i18n = {
         policy_panel_loading: '加载策略中...',
         policy_panel_empty: '当前未配置用户级 WeBot policy，将使用内置默认 allow。',
         policy_default_approval: '默认审批',
+        runtime_settings: '上下文与审核',
         policy_panel_format: '格式化',
         policy_panel_save: '保存',
         policy_panel_saved: 'Tool policy 已保存',
@@ -896,10 +897,11 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         oc_internal_session_refresh_title: '从服务器刷新 WeBot 会话列表',
         // Run mode (permission mode)
         run_mode_label: '模式',
-        run_mode_bypass: '自动 (全工具)',
-        run_mode_plan: '规划 (只读)',
-        run_mode_manual: '手动 (无工具)',
-        run_mode_title: '工具权限模式：自动=全工具+全自动批准；规划=只读不写；手动=完全不调用工具，仅文字回复',
+        run_mode_bypass: 'Bypass · 全工具',
+        run_mode_readonly: '只读模式',
+        run_mode_chat: '交流模式 · 无工具',
+        run_mode_auto: 'Auto · 替我审核',
+        run_mode_title: '交流：无工具；只读：查看和搜索；Bypass：跳过确认；Auto：独立模型代审',
     },
     'en': {
         // General
@@ -1155,6 +1157,7 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         policy_panel_loading: 'Loading policy...',
         policy_panel_empty: 'No user WeBot policy is configured yet. Built-in default allow is active.',
         policy_default_approval: 'Default approval',
+        runtime_settings: 'Context and approvals',
         policy_panel_format: 'Format',
         policy_panel_save: 'Save',
         policy_panel_saved: 'Tool policy saved',
@@ -1759,10 +1762,11 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         oc_internal_session_refresh_title: 'Refresh WeBot session list from server',
         // Run mode (permission mode)
         run_mode_label: 'Mode',
-        run_mode_bypass: 'Auto (all tools)',
-        run_mode_plan: 'Plan (read-only)',
-        run_mode_manual: 'Manual (no tools)',
-        run_mode_title: 'Tool permission mode: Auto = all tools, all approved; Plan = read-only; Manual = no tool calls, text only',
+        run_mode_bypass: 'Bypass · All tools',
+        run_mode_readonly: 'Read-only',
+        run_mode_chat: 'Chat · No tools',
+        run_mode_auto: 'Auto · Review for me',
+        run_mode_title: 'Chat: no tools; Read-only: view and search; Bypass: skip confirmation; Auto: independent review',
     }
 };
 
@@ -2101,7 +2105,7 @@ function renderAgentCenterDetail() {
                 <div class="agent-dex-context-row"><span>${agentCenterEscape(t('agent_center_used'))}</span><strong>${contextPercent}%</strong></div>
                 <div class="agent-dex-context-meter"><span style="width:${contextPercent}%"></span></div>
                 <div class="agent-dex-context-row"><span>${agentCenterFormatTokens(context.tokens)} / ${agentCenterFormatTokens(context.budget)} tokens</span><span>${agentCenterEscape(t('agent_center_remaining'))} ${agentCenterFormatTokens(context.remaining)}</span></div>
-                <div class="agent-dex-actions" style="margin-top:10px;"><button class="agent-center-btn" type="button" onclick="compactAgentFromCenter(this)">${agentCenterEscape(t('agent_center_compact'))}</button></div>
+                <div class="agent-dex-actions" style="margin-top:10px;"><button class="agent-center-btn" type="button" onclick="compactAgentFromCenter(this)">${agentCenterEscape(t('agent_center_compact'))}</button><button class="agent-center-btn" type="button" onclick="openAgentRuntimeSettings()">${agentCenterEscape(t('runtime_settings'))}</button></div>
             </section>
             <section class="agent-dex-section">
                 <div class="agent-dex-section-title">${agentCenterEscape(t('agent_center_tools'))}</div>
@@ -2778,6 +2782,7 @@ function renderSessionContextDetail() {
             <span>${remainingLabel}</span>
             <strong>${formatContextTokenCount(state.remaining)} tokens</strong>
         </div>
+        ${renderRuntimeContextUsage(state, state.budget || 1000000)}
         ${renderContextBreakdown(state)}
         <div class="oc-context-usage-detail-actions" style="margin-top:8px;display:flex;flex-direction:column;gap:6px;">
             <button type="button" id="session-compact-btn" class="oc-context-compact-btn"
@@ -2788,6 +2793,7 @@ function renderSessionContextDetail() {
             </button>
             <div class="oc-context-compact-result" style="font-size:11px;opacity:.85;"
                 ${sessionCompactStatus ? '' : 'hidden'}>${sessionCompactStatus}</div>
+            <button type="button" class="oc-context-compact-btn" onclick="openRuntimeSettings(currentSessionId)">${t('runtime_settings')}</button>
         </div>
     `;
 }
@@ -3611,11 +3617,12 @@ function _escapeAndFormatText(value) {
 }
 
 function _modeActionButtons(sessionId, currentMode) {
-    const modes = ['plan', 'agent', 'review', 'yolo', 'execute'];
+    const modes = ['chat', 'readonly', 'bypass', 'auto'];
+    currentMode = {manual: 'chat', plan: 'readonly', review: 'readonly', yolo: 'bypass', execute: 'auto', agent: 'auto'}[currentMode] || currentMode;
     return `<div class="webot-mode-actions">${modes
         .map(mode => {
             const active = currentMode === mode;
-            return `<button class="webot-mode-btn${active ? ' is-active' : ''}" type="button" onclick="updateWeBotSessionMode('${sessionId}', '${mode}')">${t(`subagent_runtime_mode_${mode}`)}</button>`;
+            return `<button class="webot-mode-btn${active ? ' is-active' : ''}" type="button" onclick="updateWeBotSessionMode('${sessionId}', '${mode}')">${t(`run_mode_${mode}`)}</button>`;
         })
         .join('')}</div>`;
 }
@@ -4086,6 +4093,8 @@ function renderStudioApprovalStrip(approvals) {
         return `<div class="studio-approval-card">
             <div class="studio-approval-card-title">${t('approval_required_title')}</div>
             <div class="studio-approval-card-meta"><strong>${tool}</strong>${reason ? ' · ' + reason : ''}</div>
+            <details><summary>${currentLang === 'zh-CN' ? '查看具体操作' : 'View exact action'}</summary><pre style="white-space:pre-wrap;max-height:160px;overflow:auto;">${_escapeHtmlStrip(JSON.stringify(item.args || {}, null, 2))}</pre></details>
+            ${item.review?.verdict ? `<div class="studio-approval-card-meta">${_escapeHtmlStrip(item.review.verdict.reason || '')}</div>` : ''}
             <div class="studio-approval-card-actions">
                 <button class="studio-approval-btn approve" onclick="resolveStudioApproval('${aid}','approve',false,'${sid}',this)">${t('approval_approve')}</button>
                 <button class="studio-approval-btn approve-remember" onclick="resolveStudioApproval('${aid}','approve',true,'${sid}',this)">${t('approval_approve_remember')}</button>
@@ -5261,6 +5270,7 @@ async function switchToSession(sessionId, force = false, options = {}) {
         });
         const data = await resp.json();
         chatBox.innerHTML = '';
+        if (RUN_MODE_VALID.includes(data.session_mode)) setRunMode(data.session_mode);
         updateSessionContextUsageBadge(
             data.context_percent,
             data.context_remaining,
@@ -7275,14 +7285,15 @@ function getEnabledTools() {
 }
 
 // ── Run mode (permission mode) ──────────────────────────────────────────────
-// Mirrors the CLI's manual / plan / bypass. Persisted in localStorage.
-const RUN_MODE_VALID = ['manual', 'plan', 'bypass'];
-const RUN_MODE_DEFAULT = 'bypass';
+// Chat / read-only / bypass / automatic review. Persisted in localStorage.
+const RUN_MODE_VALID = ['chat', 'readonly', 'bypass', 'auto'];
+const RUN_MODE_DEFAULT = 'auto';
 const RUN_MODE_STORAGE_KEY = 'clawRunMode';
 
 function getRunMode() {
     const raw = (localStorage.getItem(RUN_MODE_STORAGE_KEY) || '').trim().toLowerCase();
-    return RUN_MODE_VALID.includes(raw) ? raw : RUN_MODE_DEFAULT;
+    const mode = {manual: 'chat', plan: 'readonly', yolo: 'bypass'}[raw] || raw;
+    return RUN_MODE_VALID.includes(mode) ? mode : RUN_MODE_DEFAULT;
 }
 
 function setRunMode(mode) {
@@ -7298,6 +7309,7 @@ function setRunMode(mode) {
 function onRunModeChange() {
     const sel = document.getElementById('oc-run-mode');
     setRunMode(sel ? sel.value : RUN_MODE_DEFAULT);
+    if (currentSessionId) updateWeBotSessionMode(currentSessionId, getRunMode());
 }
 
 function initRunModeUI() {
@@ -7312,17 +7324,17 @@ function applyRunModeToPayload(payload, endpoint) {
     const mode = getRunMode();
     if (endpoint === 'internal') {
         payload.session_mode = mode;
-        if (mode === 'manual') {
+        if (mode === 'chat') {
             payload.enabled_tools = [];
         }
     } else if (endpoint === 'acp') {
-        if (mode === 'plan') {
+        if (mode === 'readonly' || mode === 'auto') {
             payload.permission_policy = 'approve-reads';
             payload.non_interactive_permissions = 'deny';
         } else {
             payload.permission_policy = 'approve-all';
         }
-        if (mode === 'manual') {
+        if (mode === 'chat') {
             payload.allowed_tools = '';
         }
     }
@@ -7348,15 +7360,7 @@ async function loadTools() {
 
         allTools = tools;
         enabledToolSet = new Set(tools.map(t => t.name));
-        toolList.innerHTML = '';
-        tools.forEach(t => {
-            const tag = document.createElement('span');
-            tag.className = 'tool-tag enabled';
-            tag.title = t.description || '';
-            tag.textContent = t.name;
-            tag.onclick = () => toggleTool(t.name, tag);
-            toolList.appendChild(tag);
-        });
+        renderGroupedToolPicker(toolList, tools, enabledToolSet, toggleTool);
         updateToolCount();
         if (toggleBtn) toggleBtn.style.display = '';
         if (toolPanel) toolPanel.style.display = '';

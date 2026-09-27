@@ -35,7 +35,7 @@ from urllib.parse import urlparse
 
 import httpx
 from dotenv import load_dotenv
-from mcp.server.fastmcp import FastMCP
+from utils.mcp_tool_docs import DocumentedFastMCP as FastMCP
 
 from utils.runtime_paths import DATA_DIR, ENV_FILE, USER_FILES_DIR
 
@@ -431,39 +431,21 @@ def _pick_default_channel(username: str) -> str | None:
 # ── MCP tools ───────────────────────────────────────────────────────
 
 @mcp.tool()
-async def list_notification_channels() -> str:
-    """
-    列出当前部署支持的推送通道及其后端配置状态。
-
-    :return: 多行文本，标注每个通道是否可用以及原因。
-    """
-    lines = ["📣 可用推送通道："]
-    for channel in _AVAILABLE_CHANNELS:
-        probe = _STATUS_PROBES.get(channel)
-        if probe is None:
-            lines.append(f"  • {channel}: ⚠️ 无状态探针")
-            continue
-        ok, detail = probe()
-        icon = "✅" if ok else "❌"
-        lines.append(f"  • {channel}: {icon} {detail}")
-    return "\n".join(lines)
-
-
-@mcp.tool()
 async def set_notification_channel(
     username: str,
     channel: str,
-    target_id: str,
+    target_id: str = "",
     display_name: str = "",
+    make_default: bool = False,
 ) -> str:
     """
-    为用户设置某个推送通道的目标地址，并同步到中心化白名单。
+    为用户设置某个推送通道的目标地址（同步到中心化白名单），或把已配置的通道设为默认。
 
     :param username: 用户标识符（系统自动注入，无需手动传递）
-    :param channel: 通道名（如 "telegram"）。可用值见 list_notification_channels。
-    :param target_id: 渠道用户 ID（如 Telegram chat_id）
+    :param channel: 通道名（如 "telegram"）。可用值见 get_notification_status。
+    :param target_id: 渠道用户 ID（如 Telegram chat_id）；只设默认通道时留空
     :param display_name: 渠道显示名 / @用户名（不要带 @），可选
-    :return: 操作结果描述
+    :param make_default: 同时设为默认通道（send_notification 不指定 channel 时使用）
     """
     ch = _normalize_channel(channel, default="")
     if not ch:
@@ -471,19 +453,25 @@ async def set_notification_channel(
     if ch not in _SENDERS:
         return f"❌ 不支持的通道: {ch}（当前支持：{', '.join(_AVAILABLE_CHANNELS)}）"
     target_id = (target_id or "").strip()
-    err = _validate_target(ch, target_id)
-    if err:
-        return f"❌ {err}"
-
-    display = display_name.strip().lstrip("@") if display_name else ""
-
-    _set_channel(username, ch, target_id, display)
-    _sync_to_whitelist(ch, username, target_id, display)
-
-    return (
-        f"✅ 已保存 {ch} 推送目标：{target_id}\n"
-        f"✅ 已加入 {ch} 白名单。"
-    )
+    lines = []
+    if target_id:
+        err = _validate_target(ch, target_id)
+        if err:
+            return f"❌ {err}"
+        display = display_name.strip().lstrip("@") if display_name else ""
+        _set_channel(username, ch, target_id, display)
+        _sync_to_whitelist(ch, username, target_id, display)
+        lines += [f"✅ 已保存 {ch} 推送目标：{target_id}", f"✅ 已加入 {ch} 白名单。"]
+    elif not make_default:
+        return "❌ 需要 target_id；只想设默认通道时传 make_default=true。"
+    if make_default:
+        channels = _load_channels(username)
+        if ch not in channels:
+            return f"❌ 用户尚未配置 {ch} 通道，请先传 target_id 配置。"
+        channels["_default"] = ch
+        _save_channels(username, channels)
+        lines.append(f"✅ 默认推送通道已设为 {ch}。")
+    return "\n".join(lines)
 
 
 _META_KEYS = ("_default",)
@@ -491,27 +479,6 @@ _META_KEYS = ("_default",)
 
 def _user_channel_names(channels: dict) -> list[str]:
     return [k for k in channels.keys() if k not in _META_KEYS]
-
-
-@mcp.tool()
-async def set_default_notification_channel(username: str, channel: str) -> str:
-    """
-    设置该用户的默认推送通道（send_notification 不指定 channel 时使用）。
-
-    :param username: 用户标识符（系统自动注入）
-    :param channel: 必须是已配置且受支持的通道
-    """
-    ch = _normalize_channel(channel, default="")
-    if not ch:
-        return "❌ channel 不能为空。"
-    if ch not in _SENDERS:
-        return f"❌ 不支持的通道: {ch}（当前支持：{', '.join(_AVAILABLE_CHANNELS)}）"
-    channels = _load_channels(username)
-    if ch not in channels:
-        return f"❌ 用户尚未配置 {ch} 通道，请先调用 set_notification_channel。"
-    channels["_default"] = ch
-    _save_channels(username, channels)
-    return f"✅ 默认推送通道已设为 {ch}。"
 
 
 @mcp.tool()
@@ -565,7 +532,7 @@ async def send_notification(
 
     :param username: 用户标识符（系统自动注入，无需手动传递）
     :param text: 消息内容
-    :param channel: 通道名，可选。可用值见 list_notification_channels。
+    :param channel: 通道名，可选。可用值见 get_notification_status。
     :param source_session: （自动注入）触发此通知的会话 ID
     :param parse_mode: "Markdown" / "HTML" / "" （仅 telegram 等支持的通道生效）
     :return: 发送结果描述
@@ -594,7 +561,7 @@ async def send_notification(
 @mcp.tool()
 async def get_notification_status(username: str, channel: str = "") -> str:
     """
-    查询用户的推送通道配置 + 后端状态。channel 留空时显示所有通道。
+    查询推送通道：部署支持哪些通道、各通道后端是否可用、用户在各通道的配置。channel 留空时显示所有通道。
 
     :param username: 用户标识符（系统自动注入，无需手动传递）
     :param channel: 通道名，可选

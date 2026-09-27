@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 from utils.logging_utils import get_logger
 from services.message_builder import build_human_message
@@ -285,6 +285,47 @@ class SystemService:
             await self.agent.purge_checkpoints(thread_id)
             self.agent.unregister_task(task_key)
 
+    @staticmethod
+    def _reply_text(messages: list[Any]) -> str:
+        """The final answer of the turn that ends *messages*: its last AI message without tool calls."""
+        for message in reversed(messages):
+            if isinstance(message, HumanMessage):
+                return ""
+            if isinstance(message, AIMessage) and not message.tool_calls:
+                content = message.content
+                if isinstance(content, list):
+                    content = "\n".join(
+                        str(part.get("text") or "") for part in content
+                        if isinstance(part, dict) and part.get("type") == "text"
+                    )
+                text = str(content or "").strip()
+                if text:
+                    return text
+        return ""
+
+    async def _run_trigger_for_reply(self, req: SystemTriggerRequest, human_msg: HumanMessage) -> str:
+        """Run the trigger like any other (queued on the thread lock) and return the reply.
+
+        The reply is read before the lock is released: once it is, the next
+        queued turn may start and append its own messages.
+        """
+        thread_id = self._thread_id(req)
+        config = {
+            "configurable": {"thread_id": thread_id},
+            "recursion_limit": _GRAPH_RECURSION_LIMIT,
+        }
+        lock = await self.agent.get_thread_lock(thread_id)
+        async with lock:
+            await self._invoke_system_message_locked(
+                req=req,
+                human_msg=human_msg,
+                thread_id=thread_id,
+                config=config,
+                batch_count=1,
+            )
+            snapshot = await self.agent.agent_app.aget_state(config)
+        return self._reply_text(list((snapshot.values or {}).get("messages", [])))
+
     async def _run_single_trigger(self, req: SystemTriggerRequest, human_msg: HumanMessage) -> None:
         thread_id = self._thread_id(req)
         config = {
@@ -369,6 +410,11 @@ class SystemService:
         logger.info("system_trigger for %s, has_attachments=%s, content_type=%s",
                      thread_id, bool(req.attachments),
                      type(human_msg.content).__name__)
+
+        if req.wait_reply:
+            # Shielded: if the caller gives up waiting, the turn still runs.
+            reply = await asyncio.shield(asyncio.create_task(self._run_trigger_for_reply(req, human_msg)))
+            return {"status": "completed", "reply": reply, "coalesced": False}
 
         if req.coalesce_key:
             queued_count = await self._enqueue_coalesced_trigger(req, human_msg)

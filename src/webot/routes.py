@@ -31,6 +31,7 @@ from webot.models import (
     WeBotSubagentRefRequest,
     WeBotTodoUpdateRequest,
     WeBotToolPolicyUpdateRequest,
+    WeBotRuntimeSettingsUpdateRequest,
     WeBotVerificationCreateRequest,
     WeBotVoiceStateUpdateRequest,
     WeBotWorkflowPresetApplyRequest,
@@ -81,6 +82,14 @@ def create_webot_router(
         x_internal_token: str | None = Header(None),
     ):
         return await service.get_tool_policy(user_id, password, x_internal_token)
+
+    @router.get("/webot/runtime-settings")
+    async def get_runtime_settings(user_id: str, session_id: str = "", password: str = "", x_internal_token: str | None = Header(None)):
+        return await service.get_runtime_settings(user_id, session_id, password, x_internal_token)
+
+    @router.post("/webot/runtime-settings")
+    async def update_runtime_settings(req: WeBotRuntimeSettingsUpdateRequest, x_internal_token: str | None = Header(None)):
+        return await service.update_runtime_settings(req, x_internal_token)
 
     @router.post("/webot/tool-policy")
     async def update_tool_policy(

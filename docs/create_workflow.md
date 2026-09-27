@@ -463,9 +463,9 @@ uv run scripts/cli.py oasis set-workflow \
 
 ### 8.2 Save via MCP Tool
 
-The `set_oasis_yaml_workflow` MCP tool can be used to save a workflow:
+The `save_oasis_workflow` MCP tool can be used to save a workflow:
 - Provide a descriptive `name` (e.g., `code_review_pipeline`, `brainstorm_trio`)
-- Provide the YAML content as string
+- Pass the YAML as `content`, with `kind="yaml"`
 
 ---
 

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Any, AsyncIterator, Awaitable, Callable
 
 from langchain_core.callbacks import AsyncCallbackHandler
-from langchain_core.messages import AIMessageChunk
+from langchain_core.messages import AIMessageChunk, HumanMessage
 
 
 class AgentRecursionError(RuntimeError):
@@ -114,6 +114,16 @@ class LightweightAgentRuntime:
         emit: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> dict[str, Any]:
         thread_id = self._thread_id(config)
+        input_state = dict(input_state)
+        incoming = []
+        for message in input_state.get("messages") or []:
+            if isinstance(message, HumanMessage):
+                message = message.model_copy(deep=True)
+                from uuid import uuid4
+                message.id = str(uuid4())
+                message.additional_kwargs["input_origin"] = input_state.get("trigger_source") or "user"
+            incoming.append(message)
+        input_state["messages"] = incoming
         history = await self._context_store.load_context(thread_id)
         state = _merge_state({"messages": history}, input_state)
         # Persist the incoming user/tool message before the potentially long LLM

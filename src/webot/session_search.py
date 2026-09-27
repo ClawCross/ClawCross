@@ -126,7 +126,13 @@ def _search_trajectories(
     for entry in entries:
         text = _extract_searchable_text(entry)
         text_tokens = _tokenize(text)
-        score = len(query_tokens & text_tokens)
+        # Chinese has no word separators: a keyword such as "部署" must
+        # match inside "讨论部署方案", rather than require a whole-run match.
+        score = sum(
+            token in text.lower() if _is_chinese_token(token)
+            else token in text_tokens
+            for token in query_tokens
+        )
         if score > 0:
             scored.append((score, {
                 "session_id": entry.get("session_id", ""),
@@ -216,9 +222,16 @@ def _search_checkpoints(
     return []
 
 
+_CHINESE_RUN = r"[\u3400-\u4dbf\u4e00-\u9fff\U00020000-\U0002fa1f]+"
+
+
+def _is_chinese_token(token: str) -> bool:
+    return re.fullmatch(_CHINESE_RUN, token) is not None
+
+
 def _tokenize(text: str) -> set[str]:
-    """Extract searchable tokens from text."""
-    return {token for token in re.findall(r"[a-z0-9_]{3,}", (text or "").lower())}
+    """Extract English words and Chinese keywords (including single characters)."""
+    return set(re.findall(rf"[a-z0-9_]{{3,}}|{_CHINESE_RUN}", (text or "").lower()))
 
 
 def _extract_searchable_text(entry: dict[str, Any]) -> str:

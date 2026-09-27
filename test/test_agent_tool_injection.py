@@ -19,12 +19,6 @@ _WEBOT_RUNTIME_USER_TOOLS = {
     "write_session_plan",
     "read_session_plan",
     "clear_session_plan",
-    "write_session_todos",
-    "read_session_todos",
-    "clear_session_todos",
-    "record_verification",
-    "list_verifications",
-    "run_verification",
     "list_tool_approvals",
 }
 
@@ -63,7 +57,7 @@ class UserAwareToolNodeTests(unittest.IsolatedAsyncioTestCase):
             "messages": [
                 AIMessage(
                     content="",
-                    tool_calls=[{"name": "skill_list", "args": {}, "id": "call_1", "type": "tool_call"}],
+                    tool_calls=[{"name": "skill_view", "args": {}, "id": "call_1", "type": "tool_call"}],
                 )
             ],
         }
@@ -91,6 +85,22 @@ class UserAwareToolNodeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(injected_call["args"]["username"], "alice")
         self.assertEqual(injected_call["args"]["team"], "alpha")
 
+    async def test_memory_scope_defaults_to_team_but_explicit_empty_means_personal(self):
+        node = UserAwareToolNode([], lambda: [], find_internal_session_meta_fn=lambda *a: {"team": "alpha"})
+        fake = _FakeToolNode()
+        fake._tools_by_name = {"list_files": StructuredTool(name="list_files", description="list", func=lambda **a: "ok",
+            args_schema={"type": "object", "properties": {"team": {"type": ["string", "null"], "default": None}}})}
+        node.tool_node = fake
+        permission = type("Permission", (), {"allowed": True, "requires_approval": False, "reason": "",
+            "matched_rule": None, "policy": {}, "approval": None})()
+        for team, expected in ((None, "alpha"), ("", ""), ("beta", "beta")):
+            with self.subTest(team=team), patch("core.agent.resolve_permission_context", return_value=permission), patch(
+                "core.agent.run_tool_policy_hooks", side_effect=_passthrough_hook_outcome):
+                state = {"user_id": "alice", "session_id": "s", "session_mode": "bypass", "messages": [AIMessage(content="",
+                    tool_calls=[{"name": "list_files", "args": {"storage": "memory", "team": team}, "id": "one", "type": "tool_call"}])]}
+                await node(state, config={})
+                self.assertEqual(fake.captured_state["messages"][-1].tool_calls[0]["args"]["team"], expected)
+
     async def test_session_runtime_tools_auto_inject_username(self):
         node = UserAwareToolNode([], lambda: [])
         fake_tool_node = _FakeToolNode()
@@ -104,7 +114,7 @@ class UserAwareToolNodeTests(unittest.IsolatedAsyncioTestCase):
                     content="",
                     tool_calls=[
                         {
-                            "name": "read_session_todos",
+                            "name": "read_session_plan",
                             "args": {"source_session": "exp_entrepreneur_mo0yixp1"},
                             "id": "call_2",
                             "type": "tool_call",
@@ -199,6 +209,34 @@ class DirectToolNodeErrorHandlingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(message.content, "content:hi")
         self.assertEqual(message.artifact, {"raw": "hi"})
         self.assertEqual((message.name, message.tool_call_id), ("with_artifact", "c1"))
+
+
+    async def test_plan_mode_blocks_typing_into_an_interactive_job_but_not_reading_it(self):
+        node = UserAwareToolNode([], lambda: [])
+        fake_tool_node = _FakeToolNode()
+        node.tool_node = fake_tool_node
+
+        def state(args):
+            return {
+                "user_id": "alice",
+                "session_id": "sess-1",
+                "session_mode": "plan",
+                "messages": [AIMessage(content="", tool_calls=[
+                    {"name": "background_command_io", "args": args, "id": "call_io", "type": "tool_call"},
+                ])],
+            }
+
+        permission = type("Permission", (), {
+            "allowed": True, "requires_approval": False, "reason": "",
+            "matched_rule": None, "policy": {}, "approval": None,
+        })()
+        with patch("core.agent.resolve_permission_context", return_value=permission), \
+                patch("core.agent.run_tool_policy_hooks", side_effect=_passthrough_hook_outcome):
+            blocked = await node(state({"job_id": "j1", "input": "rm x"}), config={})
+            self.assertIsNone(fake_tool_node.captured_state)
+            self.assertIn("plan", str(blocked["messages"][0].content))
+            await node(state({"job_id": "j1"}), config={})
+            self.assertIsNotNone(fake_tool_node.captured_state)
 
 
 if __name__ == "__main__":

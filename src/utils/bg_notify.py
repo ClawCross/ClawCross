@@ -4,7 +4,7 @@ Why this module exists
 ----------------------
 The commander MCP server runs as a *per-tool-call* stdio subprocess
 (``MultiServerMCPClient.get_tools`` opens a fresh session per call), so any
-in-process watcher created inside ``start_background_command`` is killed the
+in-process watcher created inside ``run_command(mode="background")`` is killed the
 moment the tool returns — long before the detached job finishes. The detached
 runner is sandboxed and deliberately has no ``INTERNAL_TOKEN``, so it cannot
 fire the wake-up itself either.

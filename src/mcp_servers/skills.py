@@ -2,15 +2,9 @@
 MCP Server: Self-Evolution Skill System
 
 Exposes skill management tools via FastMCP for agent self-evolution:
-- skill_manage: Create, edit, patch, delete skills
-- skill_view: View full skill content
-- skill_list: List all available skills
 - skill_evolution_report: Build an EvoSkill-style failure analysis report
-- skill_evolution_apply: Apply the top evolution candidate back into a skill
-- skill_run: Apply a skill's instructions in context
-- session_search: Search historical sessions
-- get_insights: Get usage analytics
-- get_trajectory_stats: Get trajectory statistics
+- search_sessions: Search historical sessions
+- usage_status: Get usage analytics and trajectory statistics
 """
 
 import sys as _sys
@@ -20,157 +14,12 @@ if _src_dir not in _sys.path:
     _sys.path.insert(0, _src_dir)
 
 import json
-from mcp.server.fastmcp import FastMCP
+from utils.mcp_tool_docs import DocumentedFastMCP as FastMCP
 
 mcp = FastMCP("SelfEvolution")
 
 
-# ── Skill Management ────────────────────────────────────────────────
-
-@mcp.tool()
-async def skill_manage(
-    username: str,
-    action: str,
-    team: str = "",
-    name: str = "",
-    content: str = "",
-    category: str = "",
-    file_path: str = "",
-    file_content: str = "",
-    old_string: str = "",
-    new_string: str = "",
-    replace_all: bool = False,
-) -> str:
-    """
-    Manage agent skills (procedural memory). Skills are reusable procedures
-    that persist across sessions.
-
-    Actions:
-    - create: Create a new skill. Requires name + content (YAML frontmatter + body).
-    - edit: Full rewrite of a skill. Requires name + content.
-    - patch: Targeted find-and-replace. Requires name + old_string + new_string.
-    - delete: Remove a skill. Requires name.
-    - write_file: Add supporting file. Requires name + file_path + file_content.
-    - remove_file: Remove supporting file. Requires name + file_path.
-
-    SKILL.md format:
-    ---
-    name: my-skill
-    description: What this skill does
-    ---
-    Instructions and procedures...
-
-    When to create skills:
-    - After completing complex tasks (5+ tool calls)
-    - After fixing tricky errors
-    - After discovering non-trivial workflows
-    When to update skills:
-    - When a skill is outdated or wrong during use
-
-    :param username: User ID (auto-injected)
-    :param action: create, edit, patch, delete, write_file, remove_file
-    :param team: Optional team scope. When provided, create/update the team-managed skill pool.
-    :param name: Skill name (lowercase, hyphens, dots, underscores)
-    :param content: SKILL.md content (for create/edit)
-    :param category: Optional category folder
-    :param file_path: Path for supporting files (e.g. references/notes.md)
-    :param file_content: Content for supporting files
-    :param old_string: Text to find (for patch)
-    :param new_string: Text to replace with (for patch)
-    :param replace_all: Replace all occurrences (for patch)
-    """
-    from webot.skills import (
-        create_skill, edit_skill, patch_skill, delete_skill,
-        write_skill_file, remove_skill_file,
-    )
-
-    action = (action or "").strip().lower()
-    if not name and action != "list":
-        return json.dumps({"success": False, "error": "Skill name is required"})
-
-    if action == "create":
-        result = create_skill(username, name=name, content=content, category=category, team=team)
-    elif action == "edit":
-        result = edit_skill(username, name=name, content=content, team=team)
-    elif action == "patch":
-        result = patch_skill(
-            username, name=name,
-            old_string=old_string, new_string=new_string,
-            file_path=file_path, replace_all=replace_all, team=team,
-        )
-    elif action == "delete":
-        result = delete_skill(username, name=name, team=team)
-    elif action == "write_file":
-        result = write_skill_file(username, name=name, file_path=file_path, file_content=file_content, team=team)
-    elif action == "remove_file":
-        result = remove_skill_file(username, name=name, file_path=file_path, team=team)
-    else:
-        result = {"success": False, "error": f"Unknown action: {action}. Use: create, edit, patch, delete, write_file, remove_file"}
-
-    return json.dumps(result, ensure_ascii=False)
-
-
-@mcp.tool()
-async def skill_view(username: str, name: str, team: str = "") -> str:
-    """
-    View full content of a skill (procedural memory).
-
-    :param username: User ID (auto-injected)
-    :param name: Skill name to view
-    :param team: Optional team scope. When provided, return both team and shared skill variants by category.
-    """
-    from webot.skills import get_skill
-    if team:
-        team_skill = get_skill(username, name=name, team=team)
-        personal_skill = get_skill(username, name=name)
-        if not team_skill and not personal_skill:
-            return json.dumps({"error": f"Skill '{name}' not found"})
-        return json.dumps(
-            {
-                "name": name,
-                "team": team,
-                "sections": {
-                    "team": team_skill,
-                    "personal": personal_skill,
-                },
-            },
-            ensure_ascii=False,
-        )
-
-    skill = get_skill(username, name=name)
-    if not skill:
-        return json.dumps({"error": f"Skill '{name}' not found"})
-    return json.dumps(skill, ensure_ascii=False)
-
-
-@mcp.tool()
-async def skill_list(username: str, team: str = "") -> str:
-    """
-    List all available skills (procedural memory) for the current user.
-
-    :param username: User ID (auto-injected)
-    :param team: Optional team scope. When provided, show team and shared skills in separate sections.
-    """
-    from webot.skills import list_skills
-    if team:
-        team_skills = list_skills(username, team=team)
-        personal_skills = list_skills(username)
-        return json.dumps(
-            {
-                "count": len(team_skills) + len(personal_skills),
-                "team": team,
-                "sections": {
-                    "team": team_skills,
-                    "personal": personal_skills,
-                },
-            },
-            ensure_ascii=False,
-        )
-    skills = list_skills(username)
-    return json.dumps({"count": len(skills), "skills": skills}, ensure_ascii=False)
-
-
-# ── Skill Evolution Loop ────────────────────────────────────────────
+# ── Memory Improvement Report ──────────────────────────────────────
 
 @mcp.tool()
 async def skill_evolution_report(
@@ -192,7 +41,7 @@ async def skill_evolution_report(
     possible skill mutations with heuristic scores.
 
     :param username: User ID (auto-injected)
-    :param name: Skill name to analyze
+    :param name: Memory entry ID or name from list_files(storage="memory")
     :param team: Optional team scope. Team skill is preferred when both scopes contain the same name.
     :param session_id: Optional current session filter
     :param days: How many recent days to inspect
@@ -203,64 +52,35 @@ async def skill_evolution_report(
     """
     from webot.skill_evolution import analyze_skill_evolution
 
+    from webot.skill_memory import memory_target, public_entry
+    entry = memory_target(username, name, team, shared=True)
+    from webot.skills import _parse_frontmatter
+    content = entry["_path"].read_text(encoding="utf-8")
+    _, body = _parse_frontmatter(content)
     result = analyze_skill_evolution(
         username,
-        name=name,
-        team=team,
+        name=entry["_key"],
+        team=entry["team"],
         session_id=session_id,
         days=days,
         limit=limit,
         error_text=error_text,
         command=command,
         strategy=strategy,
+        skill_record={"content": content, "body": body, "path": str(entry["_path"]),
+                      "scope": entry["scope"], "team": entry["team"]},
     )
-    return json.dumps(result, ensure_ascii=False)
-
-
-@mcp.tool()
-async def skill_evolution_apply(
-    username: str,
-    name: str,
-    team: str = "",
-    session_id: str = "",
-    days: int = 30,
-    limit: int = 8,
-    error_text: str = "",
-    command: str = "",
-    source: str = "runtime",
-    strategy: str = "auto",
-) -> str:
-    """
-    Apply the top self-evolution candidate back into a skill's managed block.
-
-    This turns recent failure evidence into a durable SKILL.md update plus
-    evolution reports and feedback-history artifacts under the skill directory.
-
-    :param username: User ID (auto-injected)
-    :param name: Skill name to update
-    :param team: Optional team scope. Team skill is preferred when both scopes contain the same name.
-    :param session_id: Optional current session filter
-    :param days: How many recent days to inspect
-    :param limit: Max failure samples to analyze
-    :param error_text: Optional fresh error text to include immediately
-    :param command: Optional command associated with the fresh error
-    :param source: Source label for the feedback history
-    :param strategy: Strategy preset (auto, balanced, innovate, harden, repair-only)
-    """
-    from webot.skill_evolution import apply_skill_evolution
-
-    result = apply_skill_evolution(
-        username,
-        name=name,
-        team=team,
-        session_id=session_id,
-        days=days,
-        limit=limit,
-        error_text=error_text,
-        command=command,
-        source=source,
-        strategy=strategy,
-    )
+    # Storage metadata is internal; the report proposes changes, never writes them.
+    def redact(value):
+        if isinstance(value, dict):
+            return {k: redact(v) for k, v in value.items() if k not in {"path", "dir", "skill_path", "repo_root", "cwd"}}
+        if isinstance(value, list):
+            return [redact(v) for v in value]
+        return value
+    result = redact(result)
+    result["skill_name"] = entry["name"]
+    result["memory"] = public_entry(entry)
+    result["next_step"] = "Read the entry, then apply the chosen improvement with write_file(storage='memory')."
     return json.dumps(result, ensure_ascii=False)
 
 
@@ -296,34 +116,22 @@ async def search_sessions(
 # ── Insights & Analytics ────────────────────────────────────────────
 
 @mcp.tool()
-async def get_insights(username: str, days: int = 30) -> str:
+async def usage_status(username: str, days: int = 30) -> str:
     """
-    Get usage analytics and insights for the current user.
-    Shows: session stats, tool usage patterns, activity trends,
-    model breakdown, cost estimation.
+    Get usage analytics for the current user: session stats, tool usage
+    patterns, activity trends, model breakdown, cost estimation, and
+    conversation trajectory stats (success/failure rates, tool calls per turn).
 
     :param username: User ID (auto-injected)
     :param days: Number of days to analyze (default 30)
     """
     from webot.insights import InsightsEngine
+    from webot.trajectory import get_trajectory_stats
     engine = InsightsEngine()
     insights = engine.generate(days=days, user_id=username)
     formatted = engine.format_terminal(insights)
-    return formatted
-
-
-@mcp.tool()
-async def get_trajectory_stats(username: str, days: int = 30) -> str:
-    """
-    Get conversation trajectory statistics.
-    Shows: success/failure rates, tool call averages, model breakdown.
-
-    :param username: User ID (auto-injected)
-    :param days: Number of days to analyze (default 30)
-    """
-    from webot.trajectory import get_trajectory_stats
     stats = get_trajectory_stats(user_id=username, days=days)
-    return json.dumps(stats, ensure_ascii=False)
+    return f"{formatted}\n\nTrajectory stats:\n{json.dumps(stats, ensure_ascii=False)}"
 
 
 # ── SOUL.md Personality ─────────────────────────────────────────────

@@ -19,20 +19,25 @@ import contextlib
 import hashlib
 from collections import deque
 import json
+import re
+import shlex
 import signal
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 import time
 import uuid
+from typing import Literal
+
 import httpx
 from dotenv import load_dotenv
-from mcp.server.fastmcp import FastMCP
+from utils.mcp_tool_docs import DocumentedFastMCP as FastMCP
 from utils.runtime_paths import ENV_FILE, USER_FILES_DIR
 
-from webot.permission_context import create_or_reuse_permission_request
-from webot.runtime_store import find_active_approval_for_action, get_tool_approval
 from webot.workspace import resolve_session_workspace
+from webot.approval_review import authorize_action, policy_binding
+from webot.approval_actions import canonical_action_args
+from webot.runtime_store import consume_execution_permit, get_session_mode
 from utils.bash_safety import analyze_command, RiskLevel
 from utils.bg_notify import register_pending_notify
 
@@ -145,8 +150,6 @@ else:
 EXEC_TIMEOUT = int(os.getenv("EXEC_TIMEOUT", "180"))
 BACKGROUND_EXEC_TIMEOUT = int(os.getenv("BACKGROUND_EXEC_TIMEOUT", str(max(EXEC_TIMEOUT, 300))))
 MAX_EXEC_TIMEOUT = int(os.getenv("MAX_EXEC_TIMEOUT", "1800"))
-COMMAND_APPROVAL_WAIT_SECONDS = int(os.getenv("COMMAND_APPROVAL_WAIT_SECONDS", "600"))
-COMMAND_APPROVAL_POLL_SECONDS = max(0.2, float(os.getenv("COMMAND_APPROVAL_POLL_SECONDS", "1.0")))
 
 # 输出最大长度（字符数）— 支持 .env 自定义
 MAX_OUTPUT_LENGTH = int(os.getenv("MAX_OUTPUT_LENGTH", "8000"))
@@ -176,6 +179,8 @@ class BackgroundJob:
     session_id: str = ""
     pid: int | None = None
     notify_on_done: bool = False   # opt-in：任务完成时唤醒发起的 agent 会话（system_trigger）
+    interactive: bool = False      # 在伪终端里运行，可经 stdin_path（FIFO）输入
+    stdin_path: str = ""
 
 
 def _jobs_dir(workspace: str) -> Path:
@@ -207,6 +212,8 @@ def _persist_job(job: BackgroundJob) -> None:
         "session_id": job.session_id,
         "pid": job.pid,
         "notify_on_done": job.notify_on_done,
+        "interactive": job.interactive,
+        "stdin_path": job.stdin_path,
     }
     _job_meta_path(job.workspace, job.job_id).write_text(
         json.dumps(payload, ensure_ascii=False, indent=2),
@@ -240,6 +247,8 @@ def _load_job_from_workspace(workspace: str, job_id: str) -> BackgroundJob | Non
         session_id=str(payload.get("session_id") or ""),
         pid=int(payload["pid"]) if payload.get("pid") is not None else None,
         notify_on_done=bool(payload.get("notify_on_done") or False),
+        interactive=bool(payload.get("interactive") or False),
+        stdin_path=str(payload.get("stdin_path") or ""),
     )
 
 
@@ -410,21 +419,26 @@ if __name__ == "__main__":
 """
 
 
-def _write_runner_script(jobs_dir: Path) -> Path:
+def _write_runner_script(jobs_dir: Path, script: str | None = None, prefix: str = "runner") -> Path:
     # Version the cached script by content hash so template changes auto-invalidate
     # it. A fixed "runner.py" name would be reused forever and silently run stale
     # logic (e.g. miss the completion push), since the old write was skipped
     # whenever the file already existed.
-    digest = hashlib.sha1(_RUNNER_SCRIPT.encode("utf-8")).hexdigest()[:10]
-    script_path = jobs_dir / f"runner_{digest}.py"
+    script = _RUNNER_SCRIPT if script is None else script
+    digest = hashlib.sha1(script.encode("utf-8")).hexdigest()[:10]
+    script_path = jobs_dir / f"{prefix}_{digest}.py"
     if not script_path.exists():
-        script_path.write_text(_RUNNER_SCRIPT, encoding="utf-8")
+        script_path.write_text(script, encoding="utf-8")
     return script_path
 
 
 def _launch_detached_background_job(job: BackgroundJob, env: dict[str, str]) -> None:
     jobs_dir = _jobs_dir(job.workspace)
-    runner_path = _write_runner_script(jobs_dir)
+    runner_path = (
+        _write_runner_script(jobs_dir, _PTY_RUNNER_SCRIPT, "pty_runner")
+        if job.interactive
+        else _write_runner_script(jobs_dir)
+    )
     payload = {
         "command": job.command,
         "workspace": job.workspace,
@@ -434,6 +448,7 @@ def _launch_detached_background_job(job: BackgroundJob, env: dict[str, str]) -> 
         "meta_path": str(_job_meta_path(job.workspace, job.job_id)),
         "timeout_seconds": job.timeout_seconds,
         "job_id": job.job_id,
+        "stdin_path": job.stdin_path,
     }
     if job.notify_on_done and job.session_id:
         # Loopback push target; main process resolves the session from its
@@ -628,51 +643,19 @@ async def _wait_for_command_approval(
     session_id: str,
     command: str,
     reason: str,
+    *,
+    tool_name: str = "run_command",
+    action_args: dict | None = None,
 ) -> tuple[bool, str]:
-    normalized_session = session_id or "default"
-    existing = find_active_approval_for_action(
-        username,
-        normalized_session,
-        "run_command",
-        {"command": command},
+    from webot.policy import ToolPolicyDecision
+    args = dict(action_args if action_args is not None else {"command": command})
+    args.update(username=username, session_id=session_id or "default")
+    result = await authorize_action(
+        user_id=username, session_id=session_id or "default", tool_name=tool_name,
+        args=args, decision=ToolPolicyDecision(allowed=False, requires_approval=True, reason=reason),
     )
-    if existing is not None:
-        return True, (
-            "✅ 已检测到该命令存在有效人工批准，继续执行。\n"
-            f"approval_id: {existing.approval_id}"
-        )
+    return result.allowed, result.reason
 
-    approval = create_or_reuse_permission_request(
-        user_id=username,
-        session_id=normalized_session,
-        tool_name="run_command",
-        args={"command": command},
-        reason=reason,
-    )
-    deadline = time.monotonic() + max(1, COMMAND_APPROVAL_WAIT_SECONDS)
-    while time.monotonic() < deadline:
-        current = get_tool_approval(approval.approval_id, username)
-        if current is None:
-            return False, f"❌ 未找到 tool approval: {approval.approval_id}"
-        if current.status in {"approved", "used"}:
-            return True, (
-                "✅ 命令审批已通过，继续执行。\n"
-                f"approval_id: {current.approval_id}"
-            )
-        if current.status == "denied":
-            return False, (
-                "❌ 用户拒绝了该命令的执行。\n"
-                f"approval_id: {current.approval_id}\n"
-                f"reason: {current.resolution_reason or '无'}"
-            )
-        await asyncio.sleep(COMMAND_APPROVAL_POLL_SECONDS)
-    return False, (
-        "⏳ 命令审批等待超时，未执行该命令。\n"
-        f"approval_id: {approval.approval_id}\n"
-        f"session_id: {normalized_session}\n"
-        f"command: {command}\n"
-        f"reason: {reason}"
-    )
 
 def _truncate_output(text: str, max_len: int = MAX_OUTPUT_LENGTH) -> str:
     """截断过长输出"""
@@ -724,7 +707,7 @@ def _job_summary(job: BackgroundJob) -> str:
         f"🆔 job_id: {job.job_id}",
         f"📁 工作目录: {job.workspace}",
         f"🧭 workspace mode: {job.mode}",
-        f"📌 状态: {job.status}",
+        f"📌 状态: {job.status}" + ("（交互）" if job.interactive else ""),
         f"⏱️ timeout: {job.timeout_seconds}s",
     ]
     if job.remote:
@@ -737,288 +720,426 @@ def _job_summary(job: BackgroundJob) -> str:
     lines.append(f"📤 stderr: {job.stderr_path}")
     return "\n".join(lines)
 
+_PTY_RUNNER_SCRIPT = """#!/usr/bin/env python3
+# Owns one interactive program on a pseudo-terminal for as long as it runs.
+# The MCP server lives for a single tool call, so the terminal cannot live
+# there: this runner keeps it, appends everything the program prints to the
+# job's stdout log, and forwards whatever is written to the job's stdin FIFO.
+import json
+import os
+import pty
+import select
+import signal
+import sys
+import time
+import urllib.request
+
+
+def _write_meta(meta_path, updates):
+    try:
+        with open(meta_path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except Exception:
+        payload = {}
+    payload.update(updates)
+    with open(meta_path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
+
+
+def _notify_done(cfg):
+    url = cfg.get("notify_url")
+    job_id = cfg.get("job_id")
+    if not url or not job_id:
+        return
+    try:
+        data = json.dumps({"job_id": job_id}).encode("utf-8")
+        req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=5).close()
+    except Exception:
+        pass
+
+
+def _drain(master, out):
+    while True:
+        ready, _, _ = select.select([master], [], [], 0.1)
+        if not ready:
+            return
+        try:
+            data = os.read(master, 65536)
+        except OSError:
+            return
+        if not data:
+            return
+        out.write(data)
+
+
+def main():
+    cfg = json.loads(sys.argv[1])
+    meta_path = cfg["meta_path"]
+    fifo_path = cfg["stdin_path"]
+    final = {"status": "failed", "error": ""}
+    pid = None
+    try:
+        if not os.path.exists(fifo_path):
+            os.mkfifo(fifo_path, 0o600)
+        # O_RDWR keeps a reader and a writer open on the FIFO, so select()
+        # never sees EOF between two tool calls writing input.
+        in_fd = os.open(fifo_path, os.O_RDWR | os.O_NONBLOCK)
+        pid, master = pty.fork()
+        if pid == 0:
+            os.chdir(cfg["workspace"])
+            os.execve("/bin/sh", ["/bin/sh", "-c", cfg["command"]], cfg["env"])
+        try:
+            import fcntl
+            import struct
+            import termios
+            fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 120, 0, 0))
+        except Exception:
+            pass
+        _write_meta(meta_path, {"child_pid": pid, "status": "running"})
+        deadline = time.time() + int(cfg["timeout_seconds"])
+        wait_status = None
+        with open(cfg["stdout_path"], "ab", buffering=0) as out:
+            while True:
+                if time.time() > deadline:
+                    try:
+                        os.killpg(pid, signal.SIGKILL)
+                    except OSError:
+                        pass
+                    os.waitpid(pid, 0)
+                    final = {
+                        "status": "timeout",
+                        "error": "交互任务超时（%s秒限制），已终止。" % cfg["timeout_seconds"],
+                    }
+                    break
+                try:
+                    ready, _, _ = select.select([master, in_fd], [], [], 0.2)
+                except InterruptedError:
+                    continue
+                if master in ready:
+                    try:
+                        data = os.read(master, 65536)
+                    except OSError:
+                        data = b""
+                    if data:
+                        out.write(data)
+                if in_fd in ready:
+                    try:
+                        data = os.read(in_fd, 65536)
+                    except BlockingIOError:
+                        data = b""
+                    if data:
+                        os.write(master, data)
+                done_pid, status = os.waitpid(pid, os.WNOHANG)
+                if done_pid:
+                    wait_status = status
+                    _drain(master, out)
+                    break
+        if wait_status is not None:
+            exit_code = os.waitstatus_to_exitcode(wait_status)
+            final = {"status": "completed" if exit_code == 0 else "failed", "exit_code": exit_code, "error": ""}
+    except BaseException as exc:
+        final = {"status": "failed", "error": str(exc)}
+        if pid:
+            try:
+                os.killpg(pid, signal.SIGKILL)
+            except OSError:
+                pass
+    final["finished_at"] = time.time()
+    _write_meta(meta_path, final)
+    try:
+        os.unlink(fifo_path)
+    except OSError:
+        pass
+    _notify_done(cfg)
+
+
+if __name__ == "__main__":
+    main()
+"""
+
+# Terminal output carries colour codes, cursor moves, and carriage-return
+# redraws that mean nothing to a model reading text.
+_ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_=>78]")
+_SHELL_PROGRAMS = {"bash", "sh", "zsh", "fish", "dash", "ksh", "csh", "tcsh", "cmd", "powershell", "pwsh"}
+
+
+def _clean_terminal_text(text: str) -> str:
+    text = _ANSI_RE.sub("", text).replace("\r\n", "\n")
+    # A bare \r redraws the line in place: keep what the screen ends up showing.
+    return "\n".join(line.rstrip("\r").rsplit("\r", 1)[-1] for line in text.split("\n"))
+
+
+def _program_name(command: str) -> str:
+    for token in command.strip().split():
+        if "=" in token and token.index("=") > 0:
+            continue
+        return os.path.basename(token)
+    return ""
+
+
+def _quote_command(parts: list[str]) -> str:
+    return subprocess.list2cmdline(parts) if IS_WINDOWS else shlex.join(parts)
+
+
+def _write_python_script(workspace: str, code: str) -> str:
+    """Write *code* to its own file: concurrent calls must not share one script path."""
+    path = _jobs_dir(workspace) / f"py_{uuid.uuid4().hex[:12]}.py"
+    path.write_text(code, encoding="utf-8")
+    return str(path)
+
+
+async def _command_safety_gate(
+    username: str, session_id: str, command: str, *, check_names: bool = True,
+    tool_name: str = "run_command", action_args: dict | None = None,
+) -> tuple[str | None, str]:
+    """Run the command checks; return (rejection message or None, approval note)."""
+    normalized_session = session_id or "default"
+    normalized_args = canonical_action_args(tool_name, {
+        **(action_args or {"command": command}), "username": username, "session_id": normalized_session,
+    })
+    from webot.runtime import effective_session_mode
+    mode = effective_session_mode(username, normalized_session)
+    if mode in {"chat", "readonly", "plan", "review"}:
+        return f"❌ 当前会话处于 {mode} 模式，禁止执行命令或输入。", ""
+    if check_names:
+        reject_reason = _validate_command(command)
+        if reject_reason:
+            return f"❌ {reject_reason}", ""
+    cmd_analysis = analyze_command(command)
+    if cmd_analysis.blocked or cmd_analysis.risk_level == RiskLevel.CRITICAL:
+        return f"❌ 命令被安全策略阻止: {'; '.join(cmd_analysis.reasons)}", ""
+    if consume_execution_permit(username, normalized_session, tool_name, normalized_args, policy_binding(username, normalized_session)):
+        return None, "✅ 当前操作已通过统一审核。"
+    result = await authorize_action(
+        user_id=username, session_id=normalized_session, tool_name=tool_name, args=normalized_args,
+        risk_reason=f"高风险命令需批准: {'; '.join(cmd_analysis.reasons)}" if cmd_analysis.risk_level == RiskLevel.HIGH else "",
+    )
+    return (None, result.reason) if result.allowed else ("❌ " + result.reason, "")
+
+
+async def _run_foreground(
+    argv_or_command: list[str] | str,
+    *,
+    label: str,
+    workspace_state,
+    username: str,
+    timeout_value: int,
+    capture_limit: int,
+    approval_note: str,
+) -> str:
+    workspace = str(workspace_state.cwd)
+    env = _sandbox_env(workspace, username)
+    if isinstance(argv_or_command, str):
+        proc = await asyncio.create_subprocess_shell(
+            argv_or_command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=workspace,
+            env=env,
+        )
+    else:
+        proc = await asyncio.create_subprocess_exec(
+            *argv_or_command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=workspace,
+            env=env,
+        )
+    timed_out, out, err = await _collect_process_output(
+        proc,
+        timeout_seconds=timeout_value,
+        max_output_chars=capture_limit,
+    )
+    location = [f"📁 工作目录: {workspace}", f"🧭 workspace mode: {workspace_state.mode}"]
+    if workspace_state.remote:
+        location.append(f"🌐 remote: {workspace_state.remote}")
+    if timed_out:
+        parts = [f"⏱️ {label}执行超时（{timeout_value}秒限制），已终止。", *location]
+        if out:
+            parts.append(f"📤 截止超时前的标准输出:\n{out}")
+        if err:
+            parts.append(f"📤 截止超时前的标准错误:\n{err}")
+        return "\n\n".join(parts)
+    parts = [approval_note] if approval_note else []
+    if proc.returncode == 0:
+        parts.append(f"✅ {label}执行成功 (exit code: 0)")
+    else:
+        parts.append(f"⚠️ {label}执行完毕 (exit code: {proc.returncode})")
+    parts.extend(location)
+    if out:
+        parts.append(f"📤 标准输出:\n{out}")
+    if err:
+        parts.append(f"📤 标准错误:\n{err}")
+    if not out and not err:
+        parts.append("(无输出)")
+    return "\n\n".join(parts)
+
+
+async def _wait_for_output(path: str, start: int, wait_seconds: float, job: "BackgroundJob") -> None:
+    """Wait until the program's output settles (or wait_seconds pass)."""
+    deadline = time.monotonic() + wait_seconds
+    last_size, last_change = start, time.monotonic()
+    while time.monotonic() < deadline:
+        await asyncio.sleep(0.2)
+        try:
+            size = os.path.getsize(path)
+        except OSError:
+            return
+        now = time.monotonic()
+        if size != last_size:
+            last_size, last_change = size, now
+        elif size > start and now - last_change >= 0.6:
+            return
+        if _refresh_background_job(job).status != "running" and now - last_change >= 0.3:
+            return
+
+
 @mcp.tool()
 async def run_command(
     username: str,
     command: str,
+    language: Literal["shell", "python"] = "shell",
+    mode: Literal["foreground", "background", "interactive"] = "foreground",
     session_id: str = "",
     cwd: str = "",
     timeout_seconds: int = 0,
     max_output_chars: int = 0,
-) -> str:
-    """
-    在用户的隔离工作目录中执行系统命令。
-    仅允许安全的只读/文本处理类命令，有超时保护。
-
-    :param username: 用户名（由系统自动注入，无需手动传递）
-    :param command: 要执行的 shell 命令，例如 "ls -la" 或 "cat notes.txt | grep TODO"
-    """
-    # 1. 白名单校验（仅 whitelist 模式下生效）
-    reject_reason = _validate_command(command)
-    approval_note = ""
-    if reject_reason:
-        return f"❌ {reject_reason}"
-
-    # 2. Bash safety 高风险检查 — deny invariants 直接阻断，高风险阻塞等待审批
-    cmd_analysis = analyze_command(command)
-    if cmd_analysis.blocked or cmd_analysis.risk_level == RiskLevel.CRITICAL:
-        return f"❌ 命令被安全策略阻止: {'; '.join(cmd_analysis.reasons)}"
-    if cmd_analysis.risk_level == RiskLevel.HIGH:
-        approved, approval_result = await _wait_for_command_approval(
-            username,
-            session_id,
-            command,
-            f"高风险命令需人工批准: {'; '.join(cmd_analysis.reasons)}",
-        )
-        if not approved:
-            return approval_result
-        approval_note = approval_result
-
-    # 3. 获取用户工作目录
-    workspace_state = resolve_session_workspace(username, session_id, explicit_cwd=cwd)
-    workspace = str(workspace_state.cwd)
-    timeout_value = _bounded_int(timeout_seconds, EXEC_TIMEOUT, 1, MAX_EXEC_TIMEOUT)
-    capture_limit = _bounded_int(max_output_chars, MAX_OUTPUT_LENGTH, 256, MAX_CAPTURE_LENGTH)
-
-    try:
-        # 3. 在用户目录下执行命令（使用 shell=True 以支持管道和重定向）
-        proc = await asyncio.create_subprocess_shell(
-            command,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=workspace,
-            # 限制环境变量，移除敏感信息
-            env=_sandbox_env(workspace, username),
-        )
-
-        # 4. 带超时等待
-        timed_out, out, err = await _collect_process_output(
-            proc,
-            timeout_seconds=timeout_value,
-            max_output_chars=capture_limit,
-        )
-        if timed_out:
-            result_parts = [
-                f"⏱️ 命令执行超时（{timeout_value}秒限制），已终止。",
-                f"📁 工作目录: {workspace}",
-                f"🧭 workspace mode: {workspace_state.mode}",
-            ]
-            if workspace_state.remote:
-                result_parts.append(f"🌐 remote: {workspace_state.remote}")
-            if out:
-                result_parts.append(f"📤 截止超时前的标准输出:\n{out}")
-            if err:
-                result_parts.append(f"📤 截止超时前的标准错误:\n{err}")
-            return "\n\n".join(result_parts)
-
-        # 5. 组装输出
-        exit_code = proc.returncode
-
-        result_parts = []
-        if approval_note:
-            result_parts.append(approval_note)
-
-        if exit_code == 0:
-            result_parts.append(f"✅ 命令执行成功 (exit code: 0)")
-        else:
-            result_parts.append(f"⚠️ 命令执行完毕 (exit code: {exit_code})")
-
-        result_parts.append(f"📁 工作目录: {workspace}")
-        result_parts.append(f"🧭 workspace mode: {workspace_state.mode}")
-        if workspace_state.remote:
-            result_parts.append(f"🌐 remote: {workspace_state.remote}")
-
-        if out:
-            result_parts.append(f"📤 标准输出:\n{out}")
-        if err:
-            result_parts.append(f"📤 标准错误:\n{err}")
-        if not out and not err:
-            result_parts.append("(无输出)")
-
-        return "\n\n".join(result_parts)
-
-    except Exception as e:
-        return f"❌ 执行异常: {str(e)}"
-
-@mcp.tool()
-async def run_python_code(
-    username: str,
-    code: str,
-    session_id: str = "",
-    cwd: str = "",
-    timeout_seconds: int = 0,
-    max_output_chars: int = 0,
-) -> str:
-    """
-    在用户的隔离工作目录中执行 Python 代码片段。
-    适用于数据计算、文本处理、简单脚本等场景。
-
-    :param username: 用户名（由系统自动注入，无需手动传递）
-    :param code: 要执行的 Python 代码
-    """
-    workspace_state = resolve_session_workspace(username, session_id, explicit_cwd=cwd)
-    workspace = str(workspace_state.cwd)
-    timeout_value = _bounded_int(timeout_seconds, EXEC_TIMEOUT, 1, MAX_EXEC_TIMEOUT)
-    capture_limit = _bounded_int(max_output_chars, MAX_OUTPUT_LENGTH, 256, MAX_CAPTURE_LENGTH)
-
-    # 将代码写入临时文件执行（比 -c 参数更可靠，支持多行和特殊字符）
-    tmp_script = os.path.join(workspace, ".tmp_exec.py")
-    try:
-        with open(tmp_script, "w", encoding="utf-8") as f:
-            f.write(code)
-
-        proc = await asyncio.create_subprocess_exec(
-            _python_cmd(), tmp_script,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=workspace,
-            env=_sandbox_env(workspace, username),
-        )
-
-        timed_out, out, err = await _collect_process_output(
-            proc,
-            timeout_seconds=timeout_value,
-            max_output_chars=capture_limit,
-        )
-        if timed_out:
-            result_parts = [
-                f"⏱️ Python 代码执行超时（{timeout_value}秒限制），已终止。",
-                f"📁 工作目录: {workspace}",
-                f"🧭 workspace mode: {workspace_state.mode}",
-            ]
-            if workspace_state.remote:
-                result_parts.append(f"🌐 remote: {workspace_state.remote}")
-            if out:
-                result_parts.append(f"📤 截止超时前的输出:\n{out}")
-            if err:
-                result_parts.append(f"📤 截止超时前的错误:\n{err}")
-            return "\n\n".join(result_parts)
-
-        exit_code = proc.returncode
-
-        result_parts = []
-        if exit_code == 0:
-            result_parts.append("✅ Python 代码执行成功")
-        else:
-            result_parts.append(f"⚠️ Python 代码执行出错 (exit code: {exit_code})")
-        result_parts.append(f"📁 工作目录: {workspace}")
-        result_parts.append(f"🧭 workspace mode: {workspace_state.mode}")
-        if workspace_state.remote:
-            result_parts.append(f"🌐 remote: {workspace_state.remote}")
-
-        if out:
-            result_parts.append(f"📤 输出:\n{out}")
-        if err:
-            result_parts.append(f"📤 错误信息:\n{err}")
-        if not out and not err:
-            result_parts.append("(无输出)")
-
-        return "\n\n".join(result_parts)
-
-    except Exception as e:
-        return f"❌ 执行异常: {str(e)}"
-    finally:
-        # 清理临时文件
-        if os.path.exists(tmp_script):
-            try:
-                os.remove(tmp_script)
-            except Exception:
-                pass
-
-
-@mcp.tool()
-async def start_background_command(
-    username: str = "",
-    command: str = "",
-    session_id: str = "",
-    cwd: str = "",
-    timeout_seconds: int = 0,
     notify_on_done: bool = False,
 ) -> str:
     """
-    启动一个后台命令任务，立即返回 job_id，适合长时间运行的命令。
+    在会话工作目录中运行 shell 命令或 Python 代码。mode=foreground 等待结束并返回输出；
+    background 立即返回 job_id，适合长任务；interactive 在终端里启动交互式程序（如
+    python、bash、ssh），之后用 background_command_io 输入并查看输出。检查代码可直接
+    运行 python -m py_compile、node --check 或 npx tsc --noEmit。
 
-    :param notify_on_done: 默认 False（任务完成后静默）。设为 True 时，命令跑完会
-        自动用一条系统消息唤醒发起它的本会话，把状态和输出尾部推回给你——你无需
-        轮询，跑完会主动来叫你。适合分钟级长任务（如建造、批处理）。
+    :param command: shell 命令；language=python 时是 Python 代码（interactive 下先执行它再进入 REPL，可为空）
+    :param language: shell 或 python
+    :param mode: foreground / background / interactive
+    :param cwd: 工作目录，相对当前会话工作区解析；留空用会话工作区根目录
+    :param timeout_seconds: 超时秒数；0 表示默认值（前台 180，后台和交互至少 300），上限 MAX_EXEC_TIMEOUT
+    :param max_output_chars: 前台模式最多返回的输出字符数；0 表示默认值（8000），最小 256
+    :param notify_on_done: 后台或交互任务结束后用一条系统消息唤醒本会话并附上状态和输出尾部，无需轮询
     """
-    # 白名单校验
-    reject_reason = _validate_command(command)
-    approval_note = ""
-    if reject_reason:
-        return f"❌ {reject_reason}"
+    is_python = language == "python"
+    interactive = mode == "interactive"
+    if not command.strip() and not (is_python and interactive):
+        return "❌ command 不能为空"
+    if interactive and IS_WINDOWS:
+        return "❌ 交互模式暂不支持 Windows。"
 
-    # Bash safety 高风险检查 — deny invariants 直接阻断，高风险阻塞等待审批
-    cmd_analysis = analyze_command(command)
-    if cmd_analysis.blocked or cmd_analysis.risk_level == RiskLevel.CRITICAL:
-        return f"❌ 命令被安全策略阻止: {'; '.join(cmd_analysis.reasons)}"
-    if cmd_analysis.risk_level == RiskLevel.HIGH:
-        approved, approval_result = await _wait_for_command_approval(
-            username,
-            session_id,
-            command,
-            f"高风险命令需人工批准: {'; '.join(cmd_analysis.reasons)}",
-        )
-        if not approved:
-            return approval_result
-        approval_note = approval_result
+    approval_note = ""
+    reject, approval_note = await _command_safety_gate(
+            username, session_id, command,
+            check_names=not is_python,
+            action_args={
+                "command": command, "language": language, "mode": mode,
+                "cwd": cwd, "session_id": session_id, "timeout_seconds": timeout_seconds,
+                "max_output_chars": max_output_chars, "notify_on_done": notify_on_done,
+            },
+    )
+    if reject:
+        return reject
 
     workspace_state = resolve_session_workspace(username, session_id, explicit_cwd=cwd)
     workspace = str(workspace_state.cwd)
-    timeout_value = _bounded_int(timeout_seconds, BACKGROUND_EXEC_TIMEOUT, 1, MAX_EXEC_TIMEOUT)
-    job_id = uuid.uuid4().hex[:12]
-    jobs_dir = _jobs_dir(workspace)
-    job = BackgroundJob(
-        job_id=job_id,
-        username=username,
-        command=command,
-        workspace=workspace,
-        mode=workspace_state.mode,
-        remote=workspace_state.remote,
-        stdout_path=str(jobs_dir / f"{job_id}.stdout.log"),
-        stderr_path=str(jobs_dir / f"{job_id}.stderr.log"),
-        timeout_seconds=timeout_value,
-        session_id=session_id,
-        notify_on_done=bool(notify_on_done),
-    )
-    Path(job.stdout_path).write_text("", encoding="utf-8")
-    Path(job.stderr_path).write_text("", encoding="utf-8")
-    _persist_job(job)
-    _launch_detached_background_job(job, _sandbox_env(workspace, username))
-    _BACKGROUND_JOBS[job_id] = job
-    if job.notify_on_done and job.session_id:
-        # 登记待通知指针；由长驻的 mainagent.background_notify_loop 在任务达终态时
-        # 调 /system_trigger 唤醒发起会话（commander 进程用完即销毁，不能自己 watch）。
-        register_pending_notify(job_id, str(_job_meta_path(job.workspace, job_id)))
-    result = "✅ 后台任务已启动\n" + _job_summary(job)
-    if approval_note:
-        result = approval_note + "\n\n" + result
-    return result
+
+    try:
+        if mode == "foreground":
+            script = _write_python_script(workspace, command) if is_python else ""
+            try:
+                return await _run_foreground(
+                    [_python_cmd(), script] if is_python else command,
+                    label="Python 代码" if is_python else "命令",
+                    workspace_state=workspace_state,
+                    username=username,
+                    timeout_value=_bounded_int(timeout_seconds, EXEC_TIMEOUT, 1, MAX_EXEC_TIMEOUT),
+                    capture_limit=_bounded_int(max_output_chars, MAX_OUTPUT_LENGTH, 256, MAX_CAPTURE_LENGTH),
+                    approval_note=approval_note,
+                )
+            finally:
+                if script:
+                    with contextlib.suppress(OSError):
+                        os.remove(script)
+
+        shell_command = command
+        if is_python:
+            script = _write_python_script(workspace, command)
+            shell_command = _quote_command([_python_cmd(), *(["-i"] if interactive else []), script])
+        job_id = uuid.uuid4().hex[:12]
+        jobs_dir = _jobs_dir(workspace)
+        job = BackgroundJob(
+            job_id=job_id,
+            username=username,
+            command=shell_command,
+            workspace=workspace,
+            mode=workspace_state.mode,
+            remote=workspace_state.remote,
+            stdout_path=str(jobs_dir / f"{job_id}.stdout.log"),
+            stderr_path=str(jobs_dir / f"{job_id}.stderr.log"),
+            timeout_seconds=_bounded_int(timeout_seconds, BACKGROUND_EXEC_TIMEOUT, 1, MAX_EXEC_TIMEOUT),
+            session_id=session_id,
+            notify_on_done=bool(notify_on_done),
+            interactive=interactive,
+            stdin_path=str(jobs_dir / f"{job_id}.stdin") if interactive else "",
+        )
+        Path(job.stdout_path).write_text("", encoding="utf-8")
+        Path(job.stderr_path).write_text("", encoding="utf-8")
+        _persist_job(job)
+        env = _sandbox_env(workspace, username)
+        if interactive:
+            # The basic REPL echoes plain lines; the default one redraws the
+            # input line on every keystroke, which reads as noise.
+            env["PYTHON_BASIC_REPL"] = "1"
+        _launch_detached_background_job(job, env)
+        _BACKGROUND_JOBS[job_id] = job
+        if job.notify_on_done and job.session_id:
+            # 登记待通知指针；由长驻的 mainagent.background_notify_loop 在任务达终态时
+            # 调 /system_trigger 唤醒发起会话（commander 进程用完即销毁，不能自己 watch）。
+            register_pending_notify(job_id, str(_job_meta_path(job.workspace, job_id)))
+
+        if interactive:
+            await _wait_for_output(job.stdout_path, 0, 3.0, job)
+            screen = _clean_terminal_text(Path(job.stdout_path).read_text(encoding="utf-8", errors="replace"))
+            result = (
+                "✅ 交互任务已启动，用 background_command_io(job_id, input=...) 输入\n"
+                + _job_summary(_refresh_background_job(job))
+                + f"\n\n🖥️ 当前输出:\n{screen[-MAX_OUTPUT_LENGTH:] or '(暂无输出)'}"
+            )
+        else:
+            result = "✅ 后台任务已启动\n" + _job_summary(job)
+        if approval_note:
+            result = approval_note + "\n\n" + result
+        return result
+    except Exception as e:
+        return f"❌ 执行异常: {str(e)}"
 
 
 @mcp.tool()
-async def get_background_command_status(job_id: str, username: str = "", session_id: str = "", cwd: str = "") -> str:
-    """
-    查询后台命令任务状态。
-    """
-    job = _resolve_background_job(job_id, username=username, session_id=session_id, cwd=cwd)
-    if not job:
-        return f"❌ 未找到后台任务 '{job_id}'。"
-    return _job_summary(job)
-
-
-@mcp.tool()
-async def read_background_command_output(
+async def background_command_io(
     job_id: str,
     username: str = "",
     session_id: str = "",
+    input: str = "",
+    enter: bool = True,
+    wait_seconds: int = 2,
     stream: str = "stdout",
     cwd: str = "",
     offset: int = 0,
     limit: int = 0,
 ) -> str:
     """
-    分块读取后台任务输出日志。
+    查看后台或交互任务的状态和一段输出。对交互任务传 input 就像在终端里打字，
+    返回这次输入之后的新输出。
+
+    :param job_id: run_command 返回的 job_id
+    :param input: 发给交互任务的输入；只按回车传 "\\r"；控制键用转义字符，如 "\\u0003" 是 Ctrl-C
+    :param enter: 输入后是否按回车
+    :param wait_seconds: 输入后最多等多少秒收集输出（0-30）
+    :param stream: 读取哪路输出：stdout 或 stderr（交互任务只有 stdout）
+    :param cwd: 通常留空；只有启动任务时指定了 cwd，才传同一个值以定位任务
+    :param offset: 读取起点；首次传 0，之后用上一次结果给出的 offset 继续。传了 input 时忽略，从输入之前的位置读
+    :param limit: 本次最多读取的字符数；0 表示默认值（12000），上限 50000
     """
     job = _resolve_background_job(job_id, username=username, session_id=session_id, cwd=cwd)
     if not job:
@@ -1029,29 +1150,72 @@ async def read_background_command_output(
         return "❌ stream 只支持 stdout 或 stderr。"
     path = job.stdout_path if stream_name == "stdout" else job.stderr_path
     safe_offset = max(0, int(offset or 0))
+
+    if input:
+        if not job.interactive:
+            return "❌ 这不是交互任务，不能输入；需要交互请用 run_command(mode=\"interactive\") 启动。"
+        if job.status != "running":
+            return "ℹ️ 交互任务已结束，无法再输入\n" + _job_summary(job)
+        # What is typed into a shell is a command like any other.
+        reject, _approval = await _command_safety_gate(
+            job.username or username,
+            job.session_id or session_id,
+            input,
+            check_names=_program_name(job.command) in _SHELL_PROGRAMS,
+            tool_name="background_command_io",
+            action_args={
+                "job_id": job_id, "input": input, "enter": enter, "cwd": cwd,
+                "wait_seconds": wait_seconds, "stream": stream, "offset": offset, "limit": limit,
+            },
+        )
+        if reject:
+            return reject
+        text = input if not enter or input.endswith(("\r", "\n")) else input + "\r"
+        try:
+            safe_offset = os.path.getsize(job.stdout_path)
+        except OSError:
+            safe_offset = 0
+        try:
+            fd = os.open(job.stdin_path, os.O_WRONLY | os.O_NONBLOCK)
+            try:
+                os.write(fd, text.encode("utf-8"))
+            finally:
+                os.close(fd)
+        except OSError as exc:
+            return f"❌ 输入失败（交互程序可能已退出）: {exc}\n" + _job_summary(_refresh_background_job(job))
+        await _wait_for_output(job.stdout_path, safe_offset, max(0, min(int(wait_seconds or 0), 30)), job)
+        job = _refresh_background_job(job)
+        path = job.stdout_path
+
+    summary = _job_summary(job)
     safe_limit = _bounded_int(limit, DEFAULT_BACKGROUND_READ_CHARS, 256, MAX_BACKGROUND_READ_CHARS)
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as handle:
             handle.seek(safe_offset)
             content = handle.read(safe_limit)
             next_offset = handle.tell()
-        if not content:
-            return f"📄 {stream_name} 已读到末尾。\n🆔 job_id: {job.job_id}\n📍 offset: {safe_offset}"
-        suffix = f"\n➡️ 下一段可用 `offset={next_offset}` 继续读取。"
-        return (
-            f"📄 后台任务 {job.job_id} 的 {stream_name} 输出片段：\n"
-            f"📍 offset: {safe_offset}\n"
-            f"📏 returned_chars: {len(content)}\n\n"
-            f"{content}{suffix}"
-        )
+    except FileNotFoundError:
+        return f"{summary}\n\n📄 {stream_name} 尚无输出。"
     except OSError as exc:
-        return f"❌ 读取后台输出失败: {exc}"
+        return f"{summary}\n\n❌ 读取后台输出失败: {exc}"
+    if job.interactive:
+        content = _clean_terminal_text(content)
+    if not content.strip():
+        return f"{summary}\n\n📄 {stream_name} 暂无新输出（offset: {safe_offset}）。"
+    return (
+        f"{summary}\n\n"
+        f"📄 {stream_name} 输出片段（offset: {safe_offset}）：\n"
+        f"{content}\n➡️ 下一段可用 `offset={next_offset}` 继续读取。"
+    )
 
 
 @mcp.tool()
 async def cancel_background_command(job_id: str, username: str = "", session_id: str = "", cwd: str = "") -> str:
     """
     取消一个后台命令任务。
+
+    :param job_id: start_background_command 返回的 job_id
+    :param cwd: 通常留空；只有启动任务时指定了 cwd，才传同一个值以定位任务
     """
     job = _resolve_background_job(job_id, username=username, session_id=session_id, cwd=cwd)
     if not job:
@@ -1059,87 +1223,15 @@ async def cancel_background_command(job_id: str, username: str = "", session_id:
     if job.status != "running":
         return "ℹ️ 后台任务已结束\n" + _job_summary(job)
     _terminate_background_job(job)
+    if job.stdin_path:
+        with contextlib.suppress(OSError):
+            os.unlink(job.stdin_path)
     job.status = "cancelled"
     job.error = "后台任务已取消。"
     job.finished_at = time.time()
     _persist_job(job)
     _BACKGROUND_JOBS[job.job_id] = job
     return "🛑 后台任务已取消\n" + _job_summary(job)
-
-@mcp.tool()
-async def list_allowed_commands() -> str:
-    """
-    列出所有允许执行的系统命令白名单。
-    用户想了解能执行哪些命令时调用此工具。
-    """
-    if COMMANDER_COMMAND_MODE == "blacklist":
-        blocked_names = ", ".join(sorted(BLOCKED_COMMANDS)) if BLOCKED_COMMANDS else "(空)"
-        blocked_patterns = "\n".join(f"- {pattern}" for pattern in BLOCKED_PATTERNS[:12])
-        return (
-            "📋 **命令执行模式：黑名单模式**\n\n"
-            "当前不再按白名单限制命令名；未命中黑名单的命令可进入下一层安全检查。\n\n"
-            f"🚫 基础命令黑名单: {blocked_names}\n\n"
-            "🚫 危险模式拦截（示例）:\n"
-            f"{blocked_patterns}\n\n"
-            "⚠️ 说明:\n"
-            "- 黑名单模式只放宽“命令名是否在白名单里”这一层\n"
-            "- 危险模式匹配、超时、工作目录隔离仍然有效\n"
-            "- run_command 仍可配合现有 tool approval / manual approval 机制使用\n"
-        )
-
-    # 按类别分组（动态匹配当前生效的白名单，按平台区分）
-    if IS_WINDOWS:
-        categories = [
-            ("📁 文件与目录", ["dir", "type", "more", "find", "findstr", "where", "tree",
-                             "copy", "move", "ren"]),
-            ("📝 文本处理", ["sort", "fc"]),
-            ("🖥️ 系统信息", ["echo", "date", "time", "whoami", "hostname",
-                           "systeminfo", "set", "ver", "vol", "tasklist", "wmic"]),
-            ("🔧 实用工具", ["cd", "chdir", "certutil"]),
-            ("🐍 Python", ["python", "python3"]),
-            ("🌐 网络", ["ping", "curl", "ipconfig", "nslookup", "tracert", "netstat"]),
-            ("💠 PowerShell", ["powershell"]),
-        ]
-    else:
-        categories = [
-            ("📁 文件与目录", ["ls", "cat", "head", "tail", "wc", "du", "find", "file", "stat", "rg", "nl", "mkdir", "touch", "cp", "mv", "dirname", "basename", "realpath", "readlink", "split"]),
-            ("📝 文本处理", ["grep", "awk", "sed", "sort", "uniq", "cut", "tr", "diff", "comm", "paste", "printf", "xargs", "jq", "cmp", "tee"]),
-            ("🖥️ 系统信息", ["echo", "date", "cal", "whoami", "uname", "hostname",
-                           "uptime", "free", "df", "env", "printenv", "ps"]),
-            ("🔧 实用工具", ["pwd", "which", "expr", "seq", "sleep", "timeout", "time", "base64", "md5sum", "sha256sum", "xxd", "tar", "zip", "unzip"]),
-            ("🐍 Python", ["python", "python3"]),
-            ("🌐 网络", ["ping", "curl", "wget"]),
-        ]
-
-    is_custom = bool(_env_commands)
-    result = "📋 **允许执行的命令白名单**"
-    if is_custom:
-        result += "（用户自定义）"
-    result += "\n\n"
-
-    # 展示分类中当前生效的命令
-    shown = set()
-    for category, cmds in categories:
-        active = [c for c in cmds if c in ALLOWED_COMMANDS]
-        if active:
-            result += f"{category}: {', '.join(active)}\n"
-            shown.update(active)
-
-    # 展示用户自定义中不在默认分类里的命令
-    extra = ALLOWED_COMMANDS - shown
-    if extra:
-        result += f"📌 其他: {', '.join(sorted(extra))}\n"
-
-    result += (
-        "\n⚠️ **安全说明**:\n"
-        "- 所有命令在用户隔离目录中执行\n"
-        "- 支持管道（|）和重定向（>）\n"
-        f"- 前台命令默认超时：{EXEC_TIMEOUT}秒\n"
-        f"- 后台命令默认超时：{BACKGROUND_EXEC_TIMEOUT}秒（最大 {MAX_EXEC_TIMEOUT}秒）\n"
-        f"- 默认输出长度限制：{MAX_OUTPUT_LENGTH}字符（最大 {MAX_CAPTURE_LENGTH}字符）\n"
-        "- 长任务可改用后台接口：start_background_command / get_background_command_status / read_background_command_output / cancel_background_command\n"
-    )
-    return result
 
 if __name__ == "__main__":
     mcp.run()

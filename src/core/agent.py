@@ -53,6 +53,8 @@ from webot.runtime import (
     build_turn_limit_message,
     filter_tools_for_mode,
     normalize_session_mode,
+    effective_session_mode,
+    mode_allows_tool,
     resolve_max_turns,
     should_stop_for_turn_limit,
 )
@@ -61,6 +63,7 @@ from webot.buddy import serialize_buddy_state
 from webot.runtime_store import (
     get_session_state,
     get_session_mode,
+    save_session_mode,
     list_inbox_messages,
     list_runtime_artifacts,
     list_runs_for_session,
@@ -70,6 +73,7 @@ from webot.runtime_store import (
     list_verification_records,
     update_tool_approval_status,
     get_tool_approval,
+    utc_now,
 )
 from webot.voice import get_voice_state as get_webot_voice_state
 from webot.workspace import describe_session_workspace
@@ -85,9 +89,21 @@ from utils.context_limits import (
     resolve_history_message_limits,
     resolve_history_token_budget,
 )
+from webot.runtime_settings import get_runtime_settings, resolve_context_window, resolve_context_history_budget
+from webot.approval_review import authorize_action, policy_binding
+from webot.approval_actions import canonical_action_args
+from webot.runtime_store import record_tool_execution, issue_execution_permit
 from utils.cache_boundary import SystemPromptCacheManager
 from utils.logging_utils import get_logger
 from core.lazy_tool_discovery import LazyToolRegistry
+from core.tool_aliases import canonical_tool_name, canonical_tool_names, resolve_tool_call
+from core.tool_schema import (
+    StrictSchemaError,
+    drop_null_optionals,
+    strict_tool_binding,
+    strict_violations,
+    to_strict_parameters,
+)
 from core.agent_orchestrator import (
     create_fork, complete_fork, get_fork, list_forks, ForkMode,
     start_coordinator_run, advance_coordinator_phase, get_coordinator_run,
@@ -119,50 +135,35 @@ logger = get_logger("agent")
 # --- Tools that need automatic username injection ---
 USER_INJECTED_TOOLS = {
     # File management tools
-    "list_files", "read_file", "write_file", "append_file", "delete_file",
-    # Native multimodal attachment tools
-    "list_images", "attach_image_to_context",
+    "list_files", "read_file", "write_file", "delete_file",
     # Command execution tools
-    "run_command", "run_python_code",
-    "start_background_command", "get_background_command_status",
-    "read_background_command_output", "cancel_background_command",
+    "run_command", "background_command_io", "cancel_background_command",
     # Alarm management tools
     "get_current_time", "add_alarm", "list_alarms", "delete_alarm",
     # Notification push tools (multi-channel)
     "set_notification_channel", "send_notification", "get_notification_status",
-    "remove_notification_channel", "list_notification_channels",
-    "set_default_notification_channel",
+    "remove_notification_channel",
     # OASIS forum tools
     "start_new_oasis", "check_oasis_discussion", "cancel_oasis_discussion",
-    "list_oasis_topics",
     "list_oasis_sessions",
-    "list_oasis_experts", "add_oasis_expert", "update_oasis_expert", "delete_oasis_expert",
-    "set_oasis_yaml_workflow", "list_oasis_workflows", "list_oasis_python_workflows",
-    "check_oasis_python_run",
+    "list_oasis_experts", "save_oasis_expert", "delete_oasis_expert",
+    "save_oasis_workflow", "list_oasis_workflows", "list_oasis_agent_catalog",
     # Session management tools
-    "list_sessions", "get_current_session",
+    "list_sessions",
     # LLM API access tools
-    "call_llm_api", "send_internal_message",
-    # Workspace diagnostics / LSP-style feedback
-    "lsp", "workspace_diagnostics",
+    "call_llm_api", "send_to_session",
     # Group chat tools
-    "send_to_group", "send_private_cli",
+    "send_to_group",
     # WeBot subagent tools
-    "list_webot_agent_profiles", "spawn_subagent", "list_subagents",
+    "spawn_subagent", "list_subagents",
     "send_subagent_message", "get_subagent_history", "cancel_subagent", "delete_subagent",
-    "list_webot_workflow_presets", "apply_webot_workflow_preset",
-    "session_send_to", "session_inbox", "session_deliver_inbox",
     "write_session_plan", "read_session_plan", "clear_session_plan",
-    "write_session_todos", "read_session_todos", "clear_session_todos",
-    "record_verification", "list_verifications", "run_verification",
     "list_tool_approvals", "resolve_tool_approval",
-    "ultraplan_start", "ultraplan_status",
-    "ultrareview_start", "ultrareview_status",
-    "enter_plan_mode", "exit_plan_mode", "set_session_mode", "get_session_mode", "kairos_mode",
+    "set_session_mode",
+    "claude_code_status", "probe_claude_code", "configure_claude_keepalive",
     # Self-evolution tools
-    "skill_manage", "skill_view", "skill_list",
-    "skill_evolution_report", "skill_evolution_apply",
-    "search_sessions", "get_insights", "get_trajectory_stats",
+    "skill_evolution_report",
+    "search_sessions", "usage_status",
     "manage_personality",
 }
 
@@ -171,88 +172,52 @@ SESSION_INJECTED_TOOLS = {
     "list_files": "session_id",
     "read_file": "session_id",
     "write_file": "session_id",
-    "append_file": "session_id",
     "delete_file": "session_id",
-    "list_images": "session_id",
-    "attach_image_to_context": "session_id",
     "run_command": "session_id",
-    "run_python_code": "session_id",
-    "start_background_command": "session_id",
-    "get_background_command_status": "session_id",
-    "read_background_command_output": "session_id",
+    "background_command_io": "session_id",
     "cancel_background_command": "session_id",
     "add_alarm": "session_id",
     "start_new_oasis": "notify_session",
-    "get_current_session": "current_session_id",
+    "list_sessions": "current_session_id",
     "send_notification": "source_session",
-    "send_internal_message": "source_session",
-    "lsp": "session_id",
-    "workspace_diagnostics": "session_id",
+    "send_to_session": "source_session",
     "send_to_group": "source_session",
-    "send_private_cli": "source_session",
     "spawn_subagent": "parent_session",
     "send_subagent_message": "source_session",
     "cancel_subagent": "source_session",
     "delete_subagent": "source_session",
-    "apply_webot_workflow_preset": "source_session",
     "write_session_plan": "source_session",
     "read_session_plan": "source_session",
     "clear_session_plan": "source_session",
-    "write_session_todos": "source_session",
-    "read_session_todos": "source_session",
-    "clear_session_todos": "source_session",
-    "record_verification": "source_session",
-    "list_verifications": "source_session",
-    "run_verification": "source_session",
     "list_tool_approvals": "source_session",
-    "session_send_to": "source_session",
-    "session_inbox": "source_session",
-    "session_deliver_inbox": "source_session",
-    "ultraplan_start": "source_session",
-    "ultraplan_status": "source_session",
-    "ultrareview_start": "source_session",
-    "ultrareview_status": "source_session",
-    "enter_plan_mode": "source_session",
-    "exit_plan_mode": "source_session",
     "set_session_mode": "source_session",
-    "get_session_mode": "source_session",
-    "kairos_mode": "source_session",
+    "claude_code_status": "source_session",
+    "probe_claude_code": "source_session",
+    "configure_claude_keepalive": "source_session",
     # Self-evolution tools
     "skill_evolution_report": "session_id",
-    "skill_evolution_apply": "session_id",
     "search_sessions": "session_id",
 }
 
 TEAM_INJECTED_TOOLS: frozenset[str] = frozenset({
     "add_alarm",
-    "skill_manage",
-    "skill_view",
-    "skill_list",
+    "list_files", "read_file", "write_file", "delete_file",
     "skill_evolution_report",
-    "skill_evolution_apply",
 })
 
 # Session-related tool args that must always match runtime session (model cannot override).
 SESSION_FORCE_INJECTED_TOOLS: frozenset[str] = frozenset({
+    "run_command", "background_command_io",
+    "send_to_session",
     "send_to_group",
-    "send_private_cli",
-    "send_internal_message",
     "send_notification",
     "spawn_subagent",
     "send_subagent_message",
     "cancel_subagent",
     "delete_subagent",
-    "session_send_to",
-    "session_inbox",
-    "session_deliver_inbox",
-    "enter_plan_mode",
-    "exit_plan_mode",
     "set_session_mode",
-    "get_session_mode",
-    "get_current_session",
+    "list_sessions",
     "start_new_oasis",
-    "list_images",
-    "attach_image_to_context",
 })
 
 def hide_injected_params(tool):
@@ -289,24 +254,87 @@ def hide_injected_params(tool):
         return tool
 
 
-_TOOL_APPROVAL_WAIT_SECONDS = max(1, int(os.getenv("COMMAND_APPROVAL_WAIT_SECONDS", "600")))
-_TOOL_APPROVAL_POLL_SECONDS = max(0.2, float(os.getenv("COMMAND_APPROVAL_POLL_SECONDS", "1.0")))
+def bind_tool_schema(tool, *, strict: bool):
+    """The schema to bind for one of our MCP tools, strict-mode when *strict*.
+
+    Strict mode constrains the model's decoding of the arguments to the schema.
+    It needs the closed form ``to_strict_parameters`` produces (all properties
+    required, optional ones nullable, no extra keys); ``UserAwareToolNode``
+    drops the resulting nulls again before the tool runs. A tool whose schema
+    cannot be expressed that way is bound as before, without ``strict``, and
+    logged — ``test_tool_schemas`` keeps that from happening to our own tools.
+    """
+    bound = hide_injected_params(tool)
+    if not strict:
+        return bound
+    try:
+        schema = copy.deepcopy(bound) if isinstance(bound, dict) else convert_to_openai_tool(bound)
+        function = schema["function"]
+        function["parameters"] = to_strict_parameters(
+            function.get("parameters") or {"type": "object", "properties": {}}
+        )
+        function["strict"] = True
+        return schema
+    except (StrictSchemaError, KeyError, TypeError, ValueError) as exc:
+        logger.warning("tool %s bound without strict: %s", getattr(tool, "name", tool), exc)
+        return bound
+
+
+def external_tool_schema(func_def: dict, *, strict: bool) -> dict:
+    """Bind a caller-supplied tool definition as given.
+
+    Its schema is the caller's contract — the call is handed back to the caller
+    unchanged, so rewriting optional arguments as nullable would change what it
+    receives. It is marked strict only when it already is strict-compliant.
+    """
+    parameters = func_def.get("parameters") or {"type": "object", "properties": {}}
+    function = {
+        "name": func_def["name"],
+        "description": func_def.get("description", ""),
+        "parameters": parameters,
+    }
+    if strict and not strict_violations(parameters):
+        function["strict"] = True
+    return {"type": "function", "function": function}
+
+
+def _external_tool_names(state) -> set[str]:
+    """Names of the caller-supplied tools bound for this request."""
+    names = set()
+    for ext_tool in state.get("external_tools") or []:
+        func_def = ext_tool.get("function", {}) if ext_tool.get("type") == "function" else ext_tool
+        if func_def.get("name"):
+            names.add(func_def["name"])
+    return names
+
+
+def _tool_input_schema(tool) -> dict | None:
+    """The tool's original argument schema (MCP inputSchema), for decoding nulls back."""
+    schema = getattr(tool, "args_schema", None)
+    if isinstance(schema, dict):
+        return schema
+    if schema is not None and hasattr(schema, "model_json_schema"):
+        try:
+            return schema.model_json_schema()
+        except Exception:
+            return None
+    return None
 
 
 async def _wait_for_tool_approval(approval_id: str, user_id: str) -> tuple[bool, str]:
-    """Poll until the approval record is resolved. Returns (approved, reason)."""
-    import time
-    deadline = time.monotonic() + _TOOL_APPROVAL_WAIT_SECONDS
-    while time.monotonic() < deadline:
-        record = get_tool_approval(approval_id, user_id)
-        if record is None:
-            return False, "审批记录不存在"
-        if record.status in {"approved", "used"}:
-            return True, record.resolution_reason or ""
-        if record.status == "denied":
-            return False, record.resolution_reason or "用户拒绝了该操作"
-        await asyncio.sleep(_TOOL_APPROVAL_POLL_SECONDS)
-    return False, f"审批等待超时（{_TOOL_APPROVAL_WAIT_SECONDS}s），未执行该操作"
+    """Compatibility entrypoint; all live approval behavior belongs to the broker."""
+    record = get_tool_approval(approval_id, user_id)
+    if record is None:
+        return False, "审批记录不存在"
+    if record.expires_at <= utc_now() or record.status in {"used", "expired"}:
+        return False, "审批记录已使用或过期，请重新申请"
+    if record.status == "denied":
+        return False, record.resolution_reason or "用户拒绝了该操作"
+    result = await authorize_action(
+        user_id=user_id, session_id=record.session_id, tool_name=record.tool_name,
+        args=json.loads(record.args_json), active_approval=record,
+    )
+    return result.allowed, result.reason
 
 
 # --- State definition ---
@@ -330,6 +358,8 @@ class AgentState(TypedDict):
     # of the normal tool binding — tools stay available; only providers whose
     # wire protocol actually supports the kwarg (OpenAI-compatible) apply it.
     response_format: Optional[dict]
+    _approval_review_counters: dict
+    _approval_review_blocked: bool
 
 
 # Mirrors langgraph.prebuilt.ToolNode (default handle_tool_errors) so dropping
@@ -449,7 +479,7 @@ class UserAwareToolNode:
                 f"如需继续，请先批准该请求后再重试。{approval_hint}"
             )
         return (
-            f"❌ 工具 '{tool_name}' 被当前 WeBot tool policy 拒绝。\n"
+            f"❌ 工具 '{tool_name}' 被当前 WeBot tool policy 阻止。\n"
             f"原因：{reason or '该工具调用不满足当前策略要求。'}"
         )
 
@@ -480,9 +510,9 @@ class UserAwareToolNode:
         # parsing thread_id, because user_id itself may contain the separator.
         user_id = state.get("user_id") or "anonymous"
         session_id = state.get("session_id") or "default"
-        runtime_mode_name = normalize_session_mode(
-            state.get("session_mode") or get_session_mode(user_id, session_id).get("mode")
-        )
+        runtime_mode_name = effective_session_mode(user_id, session_id, state.get("session_mode"))
+        if state.get("session_mode"):
+            save_session_mode(user_id, session_id, mode=runtime_mode_name)
 
         last_message = state["messages"][-1]
         if not hasattr(last_message, "tool_calls") or not last_message.tool_calls:
@@ -491,7 +521,7 @@ class UserAwareToolNode:
         # Get currently enabled tool set
         enabled_names = state.get("enabled_tools")
         if enabled_names is not None:
-            enabled_set = set(enabled_names)
+            enabled_set = set(canonical_tool_names(enabled_names))
         else:
             enabled_set = None  # None = all allowed
 
@@ -500,11 +530,27 @@ class UserAwareToolNode:
         blocked_calls: list[tuple[dict, str, bool, str]] = []
         allowed_calls = []
         allowed_call_meta: dict[str, tuple[str, dict, object, str]] = {}
+        allowed_bindings: dict[str, str] = {}
+        tools_by_name = getattr(self.tool_node, "_tools_by_name", {})
+        external_names = _external_tool_names(state)
         for tc in modified_message.tool_calls:
+            # A retired tool name (merged or removed) runs as the tool that replaced it.
+            if tc["name"] not in external_names and tc["name"] not in tools_by_name:
+                tc["name"], tc["args"] = resolve_tool_call(tc["name"], tc.get("args"))
+            # Strict binding encodes an omitted optional argument as null; drop
+            # those so the tool applies its own default, as before strict mode.
+            if tc["name"] in tools_by_name and isinstance(tc.get("args"), dict):
+                tc["args"] = drop_null_optionals(tc["args"], _tool_input_schema(tools_by_name[tc["name"]]))
+            if not mode_allows_tool(runtime_mode_name, tc["name"], tc.get("args")):
+                blocked_calls.append((tc, "当前模式不允许该工具操作。交流模式无工具；只读模式只允许查看和搜索。", False, ""))
+                continue
             if runtime_mode_name == "plan":
                 requested_agent_type = str(tc.get("args", {}).get("agent_type") or "").strip().lower()
                 if tc["name"] in PLAN_MODE_BLOCKED_TOOLS or (
                     tc["name"] == "spawn_subagent" and requested_agent_type in {"general", "coder"}
+                ) or (
+                    # Typing into an interactive job runs commands; reading its output does not.
+                    tc["name"] == "background_command_io" and tc.get("args", {}).get("input")
                 ):
                     blocked_calls.append((
                         tc,
@@ -514,7 +560,9 @@ class UserAwareToolNode:
                     ))
                     continue
             elif runtime_mode_name == "review":
-                if tc["name"] in REVIEW_MODE_BLOCKED_TOOLS:
+                if tc["name"] in REVIEW_MODE_BLOCKED_TOOLS or (
+                    tc["name"] == "background_command_io" and tc.get("args", {}).get("input")
+                ):
                     blocked_calls.append((
                         tc,
                         "当前会话处于 review 模式。请保持只读审查，避免直接修改文件或外部状态。",
@@ -533,7 +581,9 @@ class UserAwareToolNode:
             else:
                 if tc["name"] in USER_INJECTED_TOOLS:
                     tc["args"]["username"] = user_id
-                if tc["name"] in TEAM_INJECTED_TOOLS and not tc["args"].get("team"):
+                memory_file_tool = tc["name"] in {"list_files", "read_file", "write_file", "delete_file"}
+                inject_team = "team" not in tc["args"] if memory_file_tool else not tc["args"].get("team")
+                if tc["name"] in TEAM_INJECTED_TOOLS and inject_team:
                     session_meta = self._resolve_internal_session_meta(user_id, session_id)
                     if session_meta and session_meta.get("team"):
                         tc["args"]["team"] = session_meta["team"]
@@ -567,25 +617,40 @@ class UserAwareToolNode:
                     decision=base_decision,
                 )
                 tc["args"] = dict(hook_outcome.args)
-                if hook_outcome.decision is not None:
+                # Hooks may rewrite arguments. Recheck the actual action and
+                # restore identities before considering a hook's verdict.
+                if tc["name"] in USER_INJECTED_TOOLS:
+                    tc["args"]["username"] = user_id
+                if tc["name"] in SESSION_FORCE_INJECTED_TOOLS:
+                    tc["args"][SESSION_INJECTED_TOOLS[tc["name"]]] = session_id
+                if not mode_allows_tool(runtime_mode_name, tc["name"], tc["args"]):
+                    blocked_calls.append((tc, "当前模式禁止执行 hook 修改后的操作。", False, ""))
+                    continue
+                if runtime_mode_name in {"plan", "review"} and (
+                    tc["name"] == "background_command_io" and tc["args"].get("input")
+                    or runtime_mode_name == "plan" and tc["name"] == "spawn_subagent"
+                    and str(tc["args"].get("agent_type") or "").strip().lower() in {"general", "coder"}
+                ):
+                    blocked_calls.append((tc, f"当前会话处于 {runtime_mode_name} 模式，禁止执行该操作。", False, ""))
+                    continue
+                permission = resolve_permission_context(
+                    user_id=user_id,
+                    session_id=session_id,
+                    tool_name=tc["name"],
+                    args=tc["args"],
+                    policy=permission.policy,
+                )
+                final_decision = ToolPolicyDecision(
+                    allowed=permission.allowed,
+                    requires_approval=permission.requires_approval,
+                    reason=permission.reason,
+                    matched_rule=permission.matched_rule,
+                )
+                hard_denied = not permission.allowed and not permission.requires_approval
+                if not hard_denied and hook_outcome.decision is not None and hook_outcome.decision != base_decision:
                     final_decision = hook_outcome.decision
-                else:
-                    refreshed_permission = resolve_permission_context(
-                        user_id=user_id,
-                        session_id=session_id,
-                        tool_name=tc["name"],
-                        args=tc["args"],
-                        policy=permission.policy,
-                    )
-                    permission = refreshed_permission
-                    final_decision = ToolPolicyDecision(
-                        allowed=permission.allowed,
-                        requires_approval=permission.requires_approval,
-                        reason=permission.reason,
-                        matched_rule=permission.matched_rule,
-                    )
                 if (
-                    runtime_mode_name == "yolo"
+                    runtime_mode_name in {"yolo", "bypass"}
                     and not final_decision.allowed
                     and getattr(final_decision, "requires_approval", False)
                 ):
@@ -595,92 +660,40 @@ class UserAwareToolNode:
                         reason="YOLO mode auto-approved a manual tool-policy request.",
                         matched_rule=getattr(final_decision, "matched_rule", "") or permission.matched_rule,
                     )
-                approval_id = permission.approval.approval_id if permission.approval else ""
-                if not final_decision.allowed:
-                    if getattr(final_decision, "requires_approval", False):
-                        # Create approval request, then block-wait for user decision
-                        approval = permission.approval or create_or_reuse_permission_request(
-                            user_id=user_id,
-                            session_id=session_id,
-                            tool_name=tc["name"],
-                            args=tc["args"],
-                            reason=getattr(final_decision, "reason", "") or permission.reason,
+                counters = state.setdefault("_approval_review_counters", {})
+                outcome = await authorize_action(
+                    user_id=user_id, session_id=session_id, tool_name=tc["name"], args=tc["args"],
+                    decision=final_decision, messages=state["messages"], policy=permission.policy,
+                    counters=counters, active_approval=permission.approval,
+                )
+                if not outcome.allowed:
+                    blocked_calls.append((tc, outcome.reason, False, outcome.approval_id))
+                    with contextlib.suppress(Exception):
+                        run_tool_policy_hooks(
+                            permission.policy, event="deny", user_id=user_id, session_id=session_id,
+                            tool_name=tc["name"], args=tc["args"], decision=final_decision,
                         )
-                        approval_id = approval.approval_id
-                        try:
-                            run_tool_policy_hooks(
-                                permission.policy,
-                                event="permission_request",
-                                user_id=user_id,
-                                session_id=session_id,
-                                tool_name=tc["name"],
-                                args=tc["args"],
-                                decision=final_decision,
-                                result={"approval_id": approval_id},
-                            )
-                        except Exception as exc:
-                            print(f">>> [tools] ⚠️ tool policy permission_request hook failed: {exc}")
-                        print(f">>> [tools] ⏸️ 等待审批: {tc['name']} approval_id={approval_id}")
-                        approved, wait_reason = await _wait_for_tool_approval(approval_id, user_id)
-                        if approved:
-                            try:
-                                update_tool_approval_status(approval_id, user_id, status="used")
-                            except Exception:
-                                pass
-                            allowed_calls.append(tc)
-                            allowed_call_meta[tc["id"]] = (tc["name"], dict(tc["args"]), permission.policy, approval_id)
-                            print(f">>> [tools] ✅ 审批通过，执行: {tc['name']}")
-                        else:
-                            try:
-                                run_tool_policy_hooks(
-                                    permission.policy,
-                                    event="deny",
-                                    user_id=user_id,
-                                    session_id=session_id,
-                                    tool_name=tc["name"],
-                                    args=tc["args"],
-                                    decision=final_decision,
-                                )
-                            except Exception as exc:
-                                print(f">>> [tools] ⚠️ tool policy deny hook failed: {exc}")
-                            blocked_calls.append((tc, wait_reason, False, approval_id))
-                            print(f">>> [tools] 🚫 审批拒绝/超时: {tc['name']}")
-                    else:
-                        try:
-                            run_tool_policy_hooks(
-                                permission.policy,
-                                event="deny",
-                                user_id=user_id,
-                                session_id=session_id,
-                                tool_name=tc["name"],
-                                args=tc["args"],
-                                decision=final_decision,
-                            )
-                        except Exception as exc:
-                            print(f">>> [tools] ⚠️ tool policy deny hook failed: {exc}")
-                        blocked_calls.append(
-                            (
-                                tc,
-                                getattr(final_decision, "reason", "") or permission.reason,
-                                False,
-                                approval_id,
-                            )
-                        )
-                        print(f">>> [tools] 🚫 policy blocked: {tc['name']} reason={permission.reason}")
+                    if counters.get("consecutive_denials", 0) >= 3:
+                        state["_approval_review_blocked"] = True
                     continue
-                try:
-                    if permission.approval is not None and permission.approval.status == "approved":
-                        update_tool_approval_status(
-                            permission.approval.approval_id,
-                            user_id,
-                            status="used",
-                            resolution_reason=permission.approval.resolution_reason,
-                        )
-                except Exception:
-                    pass
                 allowed_calls.append(tc)
-                allowed_call_meta[tc["id"]] = (tc["name"], dict(tc["args"]), permission.policy, approval_id)
+                allowed_bindings[tc["id"]] = outcome.binding_hash
+                allowed_call_meta[tc["id"]] = (tc["name"], dict(tc["args"]), permission.policy, outcome.approval_id)
                 print(f">>> [tools] ✅ 调用工具: {tc['name']}")
+
+        # Waiting for a later approval can take minutes. Recheck earlier
+        # authorizations, and issue short-lived MCP permits only now.
+        for tc in list(allowed_calls):
+            binding = allowed_bindings.get(tc["id"])
+            if not binding:
+                continue
+            tool_name, tool_args, _policy, approval_id = allowed_call_meta[tc["id"]]
+            if binding != policy_binding(user_id, session_id):
+                allowed_calls.remove(tc)
+                blocked_calls.append((tc, "审核后策略、模式或工作区发生变化，未执行，请重新审核。", False, approval_id))
+                record_tool_execution(approval_id, user_id, status="not_executed")
+            elif tool_name in {"run_command", "background_command_io"}:
+                issue_execution_permit(user_id, session_id, tool_name, canonical_action_args(tool_name, tool_args), binding)
 
         result_messages = []
 
@@ -718,6 +731,7 @@ class UserAwareToolNode:
                     if meta is None:
                         continue
                     tool_name, tool_args, tool_policy, _approval_id = meta
+                    record_tool_execution(_approval_id, user_id, status="error", detail=error_text)
                     with contextlib.suppress(Exception):
                         run_tool_policy_hooks(
                             tool_policy,
@@ -757,6 +771,8 @@ class UserAwareToolNode:
                     continue
                 tool_name, tool_args, tool_policy, approval_id = meta
                 result_text = getattr(msg, "content", "")
+                failed = getattr(msg, "status", "") == "error" or str(result_text).startswith(("❌", "⚠️", "Error"))
+                record_tool_execution(approval_id, user_id, status="error" if failed else "returned")
                 try:
                     run_tool_policy_hooks(
                         tool_policy,
@@ -1194,11 +1210,6 @@ class TeamAgent:
                 "args": [os.path.join(self._src_dir, "mcp_servers", "filemanager.py")],
                 "transport": "stdio",
             },
-            "vision_service": {
-                "command": python_command,
-                "args": [os.path.join(self._src_dir, "mcp_servers", "vision.py")],
-                "transport": "stdio",
-            },
             "commander_service": {
                 "command": python_command,
                 "args": [os.path.join(self._src_dir, "mcp_servers", "commander.py")],
@@ -1234,11 +1245,6 @@ class TeamAgent:
                 "args": [os.path.join(self._src_dir, "mcp_servers", "skills.py")],
                 "transport": "stdio",
             },
-            "lsp_service": {
-                "command": python_command,
-                "args": [os.path.join(self._src_dir, "mcp_servers", "lsp.py")],
-                "transport": "stdio",
-            },
         })
 
         # 3. Fetch tool definitions (new API: no context manager needed)
@@ -1250,8 +1256,6 @@ class TeamAgent:
         self._tool_registry.set_always_loaded({
             # No "search_files" — no server defines one; grep through run_command.
             "read_file", "write_file", "list_files", "run_command",
-            "run_python_code", "list_images", "attach_image_to_context",
-            "lsp", "workspace_diagnostics",
         })
 
         # 4. Build the fixed model -> tools -> model loop.  A general-purpose
@@ -1339,8 +1343,10 @@ class TeamAgent:
         if not hasattr(last_msg, "tool_calls") or not last_msg.tool_calls:
             return False
 
+        external_names = _external_tool_names(state)
         for tc in last_msg.tool_calls:
-            if tc["name"] not in self._internal_tool_names:
+            name = tc["name"]
+            if name in external_names or canonical_tool_name(name) not in self._internal_tool_names:
                 # 发现外部工具调用，中断循环让调用方处理
                 print(f">>> [route] 🔀 外部工具调用检测: {tc['name']}，中断返回给调用方")
                 return False
@@ -1351,6 +1357,8 @@ class TeamAgent:
     # ------------------------------------------------------------------
     async def _call_model(self, state: AgentState, config: RunnableConfig | None = None):
         """Invoke the LLM with dynamic tool binding and tool-state notification."""
+        if state.get("_approval_review_blocked"):
+            return {"messages": [AIMessage(content="自动审核连续拒绝三次，本轮已停止执行。请查看拒绝原因并给出新的指示。")], "_approval_review_blocked": False}
 
         user_id = state.get("user_id", "__global__")
         session_id = state.get("session_id", "")
@@ -1366,10 +1374,9 @@ class TeamAgent:
         )
         current_turn_count = state.get("turn_count") or 0
         runtime_mode = get_session_state(user_id, session_id)
-        runtime_mode_name = normalize_session_mode(
-            state.get("session_mode")
-            or (runtime_mode.get("mode") if isinstance(runtime_mode, dict) else getattr(runtime_mode, "mode", "execute"))
-        )
+        runtime_mode_name = effective_session_mode(user_id, session_id, state.get("session_mode"))
+        if state.get("session_mode") and current_turn_count == 0:
+            save_session_mode(user_id, session_id, mode=runtime_mode_name)
         runtime_mode_payload = {
             "mode": runtime_mode_name,
             "status": runtime_mode.get("status", "active") if isinstance(runtime_mode, dict) else getattr(runtime_mode, "status", "active"),
@@ -1408,7 +1415,7 @@ class TeamAgent:
         # Dynamic tool binding based on enabled_tools + external_tools
         all_tools = self._mcp_tools
         enabled_names = state.get("enabled_tools")
-        effective_enabled_names = enabled_names
+        effective_enabled_names = None if enabled_names is None else canonical_tool_names(enabled_names)
         if effective_enabled_names is None and subagent_profile and subagent_profile.allowed_tools is not None:
             effective_enabled_names = list(subagent_profile.allowed_tools)
         if effective_enabled_names is None:
@@ -1423,8 +1430,7 @@ class TeamAgent:
         # 谁能不能调，交给下面 UserAwareToolNode 在真正执行时按 enabled_tools
         # 拦截并回复"该工具被禁用"，而不是从模型能看到的工具列表里隐藏它。
         external_tools_defs = state.get("external_tools") or []
-        bind_tools_list: list = [hide_injected_params(t) for t in all_tools]
-        external_tool_names: set[str] = set()
+        external_func_defs: list[dict] = []
         for ext_tool in external_tools_defs:
             # 支持 OpenAI 标准格式: {"type":"function","function":{...}} 或简化格式 {"name":...,"parameters":...}
             if ext_tool.get("type") == "function":
@@ -1432,16 +1438,8 @@ class TeamAgent:
             else:
                 func_def = ext_tool
             if func_def.get("name"):
-                external_tool_names.add(func_def["name"])
-                # 以 OpenAI function 格式传入 bind_tools（LangChain 支持 dict 格式）
-                bind_tools_list.append({
-                    "type": "function",
-                    "function": {
-                        "name": func_def["name"],
-                        "description": func_def.get("description", ""),
-                        "parameters": func_def.get("parameters", {"type": "object", "properties": {}}),
-                    },
-                })
+                external_func_defs.append(func_def)
+        external_tool_names: set[str] = {func_def["name"] for func_def in external_func_defs}
 
         base_model = self._get_model(response_max_tokens)
 
@@ -1492,7 +1490,15 @@ class TeamAgent:
                 max_tokens=response_max_tokens or 2048,
             )
 
-        llm = base_model.bind_tools(bind_tools_list) if bind_tools_list else base_model
+        # 工具参数在解码端按 JSON schema 强约束（strict tool calling）。
+        # 绑定结果只取决于 provider，同一 provider 下逐字节稳定，不影响前缀缓存。
+        base_model, strict_tools, bind_kwargs = strict_tool_binding(base_model)
+        bindable_tools = filtered_tools if runtime_mode_name in {"chat", "readonly"} else all_tools
+        bind_tools_list: list = [bind_tool_schema(t, strict=strict_tools) for t in bindable_tools]
+        # 以 OpenAI function 格式传入 bind_tools（LangChain 支持 dict 格式）
+        if runtime_mode_name not in {"chat", "readonly"}:
+            bind_tools_list += [external_tool_schema(d, strict=strict_tools) for d in external_func_defs]
+        llm = base_model.bind_tools(bind_tools_list, **bind_kwargs) if bind_tools_list else base_model
 
         # Per-request forced reply format — additive on top of tool binding.
         # Tools stay bound as-is; whether the model still calls one or answers
@@ -1567,7 +1573,12 @@ class TeamAgent:
         # for the life of the session. base_prompt is rebuilt every call, so a
         # record that does change is still picked up; it costs one prefix
         # invalidation, which is the right price for a real change.
-        base_prompt += f"\n【Workspace】\n{describe_session_workspace(user_id, session_id)}\n"
+        # The session id is just as fixed, and it is what callbacks
+        # (notify_session, cross-session messages) need to name this session.
+        base_prompt += (
+            f"\n【Workspace】\nsession_id: {session_id or 'default'}\n"
+            f"{describe_session_workspace(user_id, session_id)}\n"
+        )
 
         session_meta = self._find_internal_session_meta(user_id, session_id or "") if (user_id and session_id) else None
         session_team = (session_meta or {}).get("team", "")
@@ -1727,9 +1738,17 @@ class TeamAgent:
         current_model_name = (
             getattr(llm, "model_name", "") or getattr(llm, "model", "") or ""
         ) or None
-        history_token_budget = resolve_history_token_budget(
-            is_subagent=is_subagent,
-            model=current_model_name,
+        compact_settings = get_runtime_settings(user_id, session_id).context
+        prefix_cost = estimate_context_components(
+            system_prompt=base_prompt,
+            tools=tool_schemas(bind_tools_list), runtime_state=dynamic_context_block,
+            messages=[],
+        )
+        model_window = resolve_context_window(compact_settings, current_model_name)
+        output_reserve = max(2048, int(response_max_tokens or getattr(base_model, "max_tokens", 0) or 0))
+        history_token_budget = resolve_context_history_budget(
+            compact_settings, is_subagent=is_subagent, model=current_model_name,
+            prefix_tokens=sum(prefix_cost.values()), output_reserve=output_reserve,
         )
         _, preserve_recent_messages = resolve_history_message_limits(
             is_subagent=is_subagent,
@@ -1747,7 +1766,7 @@ class TeamAgent:
         # 服务重启后内存里没有真值：先读回落盘的上一轮 API 用量
         await self.restore_context_usage(thread_id)
         last_real_context = self.get_thread_last_context_tokens(thread_id)
-        context_window = infer_model_context_window(current_model_name)
+        context_window = model_window
 
         # 1) 当轮新输入瘦身：仅当这条新输入会把上下文顶破窗口时才落盘 + excerpt。
         # 窗口还装得下就完整保留（不再用固定字符数一刀切）。
@@ -1778,16 +1797,23 @@ class TeamAgent:
         # 2) 唯一的历史压缩入口：低频触发，触发即一次性 LLM summary + 段落落盘。
         # 触发判断优先吃真值（measured_input_tokens vs 整窗口）；首轮还没真值时，
         # compression 内部回退到字数估算的历史口径。折叠多少仍按历史估算挑边界。
-        compression_result = apply_compression(
+        compression_result = await asyncio.to_thread(
+            apply_compression,
             user_id=user_id,
             session_id=session_id,
             messages=history_messages,
             history_token_budget=history_token_budget,
             checkpoint_store_path=self._db_path,
             preserve_recent=preserve_recent_messages,
-            summarizer=make_llm_summarizer(),
+            summarizer=make_llm_summarizer(
+                model=compact_settings.summarizer_model or None,
+                max_output_tokens=compact_settings.summary_tokens,
+                input_token_budget=compact_settings.summarizer_input_tokens,
+                preserve_instructions=compact_settings.preserve_instructions,
+            ),
             measured_input_tokens=last_real_context,
             measured_budget=context_window,
+            settings=compact_settings,
         )
         history_messages = compression_result.view
         if compression_result.triggered:
@@ -1803,10 +1829,10 @@ class TeamAgent:
         session_budget = get_session_budget(user_id, session_id)
         if last_real_context > 0:
             context_used = last_real_context
-            context_budget = max(context_window, last_real_context)
+            context_budget = context_window
         else:
             context_used = compression_result.view_tokens
-            context_budget = history_token_budget
+            context_budget = context_window
         session_budget.update_current_context(
             used_tokens=context_used,
             budget_tokens=context_budget,
@@ -2413,7 +2439,8 @@ class TeamAgent:
 
     def get_tools_info(self) -> list[dict]:
         """Return serializable tool metadata list."""
-        return [{"name": t.name, "description": t.description or ""} for t in self._mcp_tools]
+        from core.tool_catalog import tool_category
+        return [{"name": t.name, "description": t.description or "", "category": tool_category(t.name)} for t in self._mcp_tools]
 
     # ------------------------------------------------------------------
     # Public interface: task management
@@ -2523,7 +2550,7 @@ class TeamAgent:
         registry.set_thread_context_usage(
             thread_id,
             tokens,
-            max(context_window, tokens),
+            context_window or tokens,
             source="api",
             breakdown=breakdown,
             cache_read_tokens=cache_read_tokens,
@@ -2565,7 +2592,7 @@ class TeamAgent:
         registry.set_thread_context_usage(
             thread_id,
             tokens,
-            max(context_window, tokens),
+            context_window or tokens,
             source="api",
             breakdown=dict(record.get("breakdown") or {}),
             cache_read_tokens=int(record.get("cache_read_tokens") or 0),

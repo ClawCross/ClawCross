@@ -971,8 +971,9 @@ def analyze_skill_evolution(
     error_text: str = "",
     command: str = "",
     strategy: str = "auto",
+    skill_record: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    skill = get_skill(user_id, name=name, team=team, fallback_to_personal=bool(team))
+    skill = skill_record if skill_record is not None else get_skill(user_id, name=name, team=team, fallback_to_personal=bool(team))
     if not skill:
         return {"success": False, "error": f"Skill '{name}' not found"}
 
@@ -1203,7 +1204,7 @@ def _build_managed_section(
         "## Self-Evolution Loop",
         "",
         "This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.",
-        "Prefer `skill_evolution_report` / `skill_evolution_apply` or `selfskill/scripts/evolve_skill.py` over manual edits here.",
+        "Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `selfskill/scripts/evolve_skill.py`.",
         "",
         f"- Updated at: `{report.get('generated_at', _utc_now_iso())}`",
         f"- Strategy: `{(report.get('strategy') or {}).get('name', 'balanced')}`",

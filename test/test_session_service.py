@@ -198,15 +198,16 @@ class SessionServiceTests(unittest.IsolatedAsyncioTestCase):
             extract_text=lambda content: content if isinstance(content, str) else str(content),
         )
 
-        result = await service.session_status(
-            SessionStatusRequest(user_id="alice", session_id="default"), None
-        )
+        with patch("api.session_service.get_runtime_settings", return_value=SimpleNamespace(context=SimpleNamespace(context_window_tokens=1000000))):
+            result = await service.session_status(
+                SessionStatusRequest(user_id="alice", session_id="default"), None
+            )
 
         self.assertEqual(result["busy"], True)
-        self.assertEqual(result["context_percent"], 100)
-        self.assertEqual(result["context_remaining"], 0)
+        self.assertEqual(result["context_percent"], 6)
+        self.assertEqual(result["context_remaining"], 936000)
         self.assertEqual(result["context_tokens"], 64000)
-        self.assertEqual(result["context_budget"], 64000)
+        self.assertEqual(result["context_budget"], 1000000)
 
     async def test_session_status_restores_persisted_api_usage(self):
         agent = _FakeAgent({}, statuses={"alice#default": {"busy": False}})

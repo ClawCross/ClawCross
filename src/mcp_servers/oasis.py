@@ -14,12 +14,11 @@ MCP Tool Server: OASIS Forum
 
 Exposes tools for the user's Agent to interact with the OASIS discussion forum:
   - list_oasis_experts: List all available expert personas (public + user custom)
-  - add_oasis_expert / update_oasis_expert / delete_oasis_expert: CRUD for expert personas
+  - save_oasis_expert / delete_oasis_expert: create, update, or delete expert personas
   - list_oasis_sessions: List oasis-managed sessions (containing #oasis# in session_id)
     by scanning the Agent checkpoint DB — no separate storage needed
   - start_new_oasis: Submit a discussion — supports direct LLM experts and session-backed experts
-  - check_oasis_discussion / cancel_oasis_discussion: Monitor or cancel a discussion
-  - list_oasis_topics: List all discussion topics
+  - check_oasis_discussion / cancel_oasis_discussion: List, monitor, or cancel discussions
 
 Runs as a stdio MCP server, just like the other mcp_*.py tools.
 """
@@ -30,11 +29,12 @@ import os
 import re
 import subprocess
 import uuid
+from typing import Any, Literal
 
 import httpx
 import yaml as _yaml
 from dotenv import load_dotenv
-from mcp.server.fastmcp import FastMCP
+from utils.mcp_tool_docs import DocumentedFastMCP as FastMCP
 from utils.runtime_paths import DATA_DIR, ENV_FILE, USER_FILES_DIR, WORKSPACE_DIR, ensure_runtime_dirs, set_subprocess_env, venv_python
 
 mcp = FastMCP("OASIS Forum")
@@ -212,6 +212,15 @@ def _iter_python_workflow_dirs(user_id: str, team: str = "") -> list[tuple[str, 
     return dirs
 
 
+def _is_python_run(run_id: str) -> bool:
+    """Whether *run_id* names a Python workflow run (as opposed to a discussion topic)."""
+    safe_run_id = re.sub(r"[^a-zA-Z0-9]", "", str(run_id or "").strip())
+    return bool(safe_run_id) and (
+        os.path.isfile(os.path.join(_python_runs_dir(), f"{safe_run_id}.meta.json"))
+        or os.path.isfile(os.path.join(_python_runs_dir(), f"{safe_run_id}.json"))
+    )
+
+
 def _load_python_run_payload(run_id: str) -> tuple[dict | None, str | None]:
     safe_run_id = re.sub(r"[^a-zA-Z0-9]", "", str(run_id or "").strip())
     if not safe_run_id:
@@ -385,57 +394,7 @@ async def list_oasis_experts(username: str = "") -> str:
         return f"❌ 查询异常: {str(e)}"
 
 @mcp.tool()
-async def add_oasis_expert(
-    username: str,
-    name: str,
-    tag: str,
-    persona: str,
-    temperature: float = 0.7,
-) -> str:
-    """
-    Create a custom expert persona for the current user.
-
-    Args:
-        username: (auto-injected) current user identity; do NOT set manually
-        name: Expert display name (e.g. "产品经理", "前端架构师")
-        tag: Unique identifier tag (e.g. "pm", "frontend_arch")
-        persona: Expert persona description
-        temperature: LLM temperature (0.0-1.0, default 0.7)
-
-    Returns:
-        Confirmation with the created expert info
-    """
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{OASIS_BASE_URL}/experts/user",
-                json={
-                    "user_id": username,
-                    "name": name,
-                    "tag": tag,
-                    "persona": persona,
-                    "temperature": temperature,
-                },
-            )
-            if resp.status_code != 200:
-                return f"❌ 创建失败: {resp.json().get('detail', resp.text)}"
-
-            expert = resp.json()["expert"]
-            return (
-                f"✅ 自定义专家已创建\n"
-                f"  名称: {expert['name']}\n"
-                f"  Tag: {expert['tag']}\n"
-                f"  Persona: {expert['persona']}\n"
-                f"  Temperature: {expert['temperature']}"
-            )
-
-    except httpx.ConnectError:
-        return _CONN_ERR
-    except Exception as e:
-        return f"❌ 创建异常: {str(e)}"
-
-@mcp.tool()
-async def update_oasis_expert(
+async def save_oasis_expert(
     username: str,
     tag: str,
     name: str = "",
@@ -443,38 +402,42 @@ async def update_oasis_expert(
     temperature: float = -1,
 ) -> str:
     """
-    Update an existing custom expert persona.
+    Create or update a custom expert persona for the current user, keyed by tag:
+    updates the expert if the tag exists, otherwise creates it (then name and
+    persona are required).
 
     Args:
         username: (auto-injected) current user identity; do NOT set manually
-        tag: The tag of the custom expert to update
-        name: New display name (leave empty to keep current)
-        persona: New persona description (leave empty to keep current)
-        temperature: New temperature (-1 = keep current)
-
-    Returns:
-        Confirmation with the updated expert info
+        tag: Unique identifier tag (e.g. "pm", "frontend_arch")
+        name: Display name (e.g. "产品经理"); empty keeps the current one on update
+        persona: Persona description; empty keeps the current one on update
+        temperature: LLM temperature 0.0-1.0; -1 keeps the current value (0.7 for a new expert)
     """
+    body: dict = {"user_id": username}
+    if name:
+        body["name"] = name
+    if persona:
+        body["persona"] = persona
+    if temperature >= 0:
+        body["temperature"] = temperature
     try:
-        body: dict = {"user_id": username}
-        if name:
-            body["name"] = name
-        if persona:
-            body["persona"] = persona
-        if temperature >= 0:
-            body["temperature"] = temperature
-
         async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.put(
-                f"{OASIS_BASE_URL}/experts/user/{tag}",
-                json=body,
-            )
+            resp = await client.put(f"{OASIS_BASE_URL}/experts/user/{tag}", json=body)
+            action = "更新"
+            if resp.status_code == 400 and "未找到" in str(resp.json().get("detail", "")):
+                if not name or not persona:
+                    return f"❌ 专家 tag=\"{tag}\" 不存在；新建需要同时提供 name 和 persona。"
+                resp = await client.post(
+                    f"{OASIS_BASE_URL}/experts/user",
+                    json={**body, "tag": tag, "temperature": body.get("temperature", 0.7)},
+                )
+                action = "创建"
             if resp.status_code != 200:
-                return f"❌ 更新失败: {resp.json().get('detail', resp.text)}"
+                return f"❌ {action}失败: {resp.json().get('detail', resp.text)}"
 
             expert = resp.json()["expert"]
             return (
-                f"✅ 自定义专家已更新\n"
+                f"✅ 自定义专家已{action}\n"
                 f"  名称: {expert['name']}\n"
                 f"  Tag: {expert['tag']}\n"
                 f"  Persona: {expert['persona']}\n"
@@ -484,7 +447,8 @@ async def update_oasis_expert(
     except httpx.ConnectError:
         return _CONN_ERR
     except Exception as e:
-        return f"❌ 更新异常: {str(e)}"
+        return f"❌ 保存异常: {str(e)}"
+
 
 @mcp.tool()
 async def delete_oasis_expert(username: str, tag: str) -> str:
@@ -522,12 +486,9 @@ async def delete_oasis_expert(username: str, tag: str) -> str:
 @mcp.tool()
 async def list_oasis_sessions(username: str = "") -> str:
     """
-    List all oasis-managed expert sessions for the current user.
-
-    Internal session agents are configured in internal_agents.json with
-    name→session_id mappings. In YAML, use "tag#oasis#name" or "#oasis#name"
-    format — the engine resolves the name to the actual session_id.
-    Append "#new" to force a brand-new session (resolved ID replaced with random UUID).
+    List the current user's oasis-managed expert sessions. Reference one in
+    YAML as "tag#oasis#name" or "#oasis#name"; append "#new" to force a fresh
+    session.
 
     Args:
         username: (auto-injected) current user identity; do NOT set manually
@@ -589,22 +550,11 @@ async def start_new_oasis(
     team: str = "",
 ) -> str:
     """
-    Submit a question or task to the OASIS forum. Always async: returns a
-    topic_id (YAML mode) or run_id (Python mode) immediately — poll with
-    check_oasis_discussion / check_oasis_python_run for the result.
-
-    Supply exactly one workflow source (python_file > schedule_file >
-    schedule_yaml when several are given):
-      - schedule_yaml / schedule_file: graph engine. Call get_yaml_workflow_rules()
-        for the expert-ref formats (tag#temp#N, tag#oasis#name, tag#ext#id),
-        step types and a worked example.
-      - python_file: standalone workflowpy script. Call get_workflow_writing_rules()
-        for the ctx API and constraints.
-    list_oasis_workflows / list_oasis_python_workflows find saved ones.
-
-    discussion=False (default) runs agents as a task pipeline, each seeing the
-    question plus earlier agents' output. discussion=True runs the forum format
-    with JSON replies and voting. Set here, it overrides the YAML's own setting.
+    Submit a question or task to the OASIS forum. Asynchronous: returns a
+    topic_id (YAML) or run_id (Python) at once; poll either with
+    check_oasis_discussion. Give one workflow source — python_file,
+    schedule_file, or schedule_yaml (that precedence if several);
+    get_workflow_rules explains the formats, list_oasis_workflows lists saved ones.
 
     Args:
         question: the question to discuss, or the task to carry out
@@ -614,7 +564,7 @@ async def start_new_oasis(
         schedule_file: saved YAML, short names resolve under the user's oasis/yaml/
         python_file: saved workflowpy script
         notify_session: (auto-injected) session to notify on completion
-        discussion: forum mode instead of task pipeline
+        discussion: forum with JSON replies and voting instead of a task pipeline where each agent sees earlier output; overrides the YAML's setting
         team: scope agents and experts to this team
     """
     effective_user = _resolve_effective_user(username)
@@ -708,17 +658,23 @@ async def start_new_oasis(
         return f"❌ 工具调用异常: {str(e)}"
 
 @mcp.tool()
-async def check_oasis_discussion(topic_id: str, username: str = "") -> str:
+async def check_oasis_discussion(topic_id: str = "", username: str = "", team: str = "") -> str:
     """
-    Check the current status of a discussion on the OASIS forum.
+    Check an OASIS run started by start_new_oasis — a discussion's status and
+    recent posts, or a Python workflow run's result; with no id, list all
+    discussion topics and recent Python runs.
 
     Args:
-        topic_id: The topic ID returned by start_new_oasis
+        topic_id: topic_id or Python run_id returned by start_new_oasis; empty lists everything
         username: (auto-injected) current user identity; do NOT set manually
-
-    Returns:
-        Formatted discussion status and recent posts
+        team: When listing, only show Python runs of this team
     """
+    if not (topic_id or "").strip():
+        topics = await _list_oasis_topics(username)
+        runs = await _list_oasis_python_runs(username, team)
+        return f"{topics}\n\n{runs}"
+    if _is_python_run(topic_id):
+        return await _check_oasis_python_run(topic_id, username)
     effective_user = _resolve_effective_user(username)
     try:
         async with httpx.AsyncClient(timeout=30) as client:
@@ -770,15 +726,14 @@ async def check_oasis_discussion(topic_id: str, username: str = "") -> str:
 @mcp.tool()
 async def cancel_oasis_discussion(topic_id: str, username: str = "") -> str:
     """
-    Force-cancel a running OASIS discussion.
+    Force-cancel a running OASIS discussion or Python workflow run.
 
     Args:
-        topic_id: The topic ID to cancel
+        topic_id: topic_id or Python run_id returned by start_new_oasis
         username: (auto-injected) current user identity; do NOT set manually
-
-    Returns:
-        Cancellation result
     """
+    if _is_python_run(topic_id):
+        return await _cancel_oasis_python_run(topic_id, username)
     effective_user = _resolve_effective_user(username)
     try:
         async with httpx.AsyncClient(timeout=10) as client:
@@ -802,8 +757,7 @@ async def cancel_oasis_discussion(topic_id: str, username: str = "") -> str:
     except Exception as e:
         return f"❌ 取消异常: {str(e)}"
 
-@mcp.tool()
-async def list_oasis_topics(username: str = "") -> str:
+async def _list_oasis_topics(username: str = "") -> str:
     """
     List all discussion topics on the OASIS forum.
 
@@ -901,7 +855,33 @@ def _resolve_workflow_path(user_id: str, schedule_file: str, team: str = "") -> 
     return matches[0][1], None
 
 @mcp.tool()
-async def set_oasis_yaml_workflow(
+async def save_oasis_workflow(
+    username: str,
+    name: str,
+    content: str,
+    kind: Literal["yaml", "python"],
+    description: str = "",
+    save_layout: bool = True,
+    team: str = "",
+) -> str:
+    """
+    Save a reusable OASIS workflow for start_new_oasis (schedule_file=... for
+    YAML, python_file=... for Python). Read get_workflow_rules(kind) first; a
+    YAML workflow must have a top-level `plan`.
+
+    :param name: Workflow file name; the extension is added if missing
+    :param content: The Version-2 YAML, or the full workflowpy source
+    :param kind: "yaml" or "python"
+    :param description: YAML only: one-line description saved as a header comment
+    :param save_layout: YAML only: also generate a visual layout
+    :param team: Save under this team's directory instead of the user's
+    """
+    if kind == "python":
+        return await _set_oasis_python_workflow(username, name, content, team)
+    return await _set_oasis_yaml_workflow(username, name, content, description, save_layout, team)
+
+
+async def _set_oasis_yaml_workflow(
     username: str = "",
     name: str = "",
     schedule_yaml: str = "",
@@ -910,16 +890,9 @@ async def set_oasis_yaml_workflow(
     team: str = "",
 ) -> str:
     """
-    Save a reusable OASIS **YAML** workflow (Version 2 graph format) for later use
-    via start_new_oasis(schedule_file="name.yaml").
-
-    Call get_yaml_workflow_rules() for the schema before authoring — expert-ref
-    formats, node types, edges, conditional/selector edges and a worked example
-    all live there. The only rule enforced here: the YAML must contain a
-    top-level `plan`, or the save is rejected.
-
-    Saved under the user's oasis/yaml/ directory, or the team's when team is set.
-    For Python (workflowpy) workflows use set_oasis_python_workflow instead.
+    Save a reusable OASIS YAML workflow (Version 2 graph) for
+    start_new_oasis(schedule_file=...). Read get_workflow_rules("yaml") first;
+    the YAML must have a top-level `plan`.
 
     Args:
         username: (auto-injected) do NOT set manually
@@ -960,8 +933,7 @@ async def set_oasis_yaml_workflow(
         return f"❌ 保存失败: {e}"
 
 
-@mcp.tool()
-async def set_oasis_python_workflow(
+async def _set_oasis_python_workflow(
     username: str = "",
     name: str = "",
     python_code: str = "",
@@ -972,7 +944,11 @@ async def set_oasis_python_workflow(
 
     Python workflows are stored under data/user_files/{user}/oasis/python/
     (or teams/{team}/oasis/python/ when team is set).
-    Use list_oasis_python_workflows(...) to see saved Python workflows.
+    Use list_oasis_workflows(kind="python") to see saved Python workflows.
+
+    :param name: Workflow file name; ".py" is appended if missing
+    :param python_code: Full source of the standalone Python workflow
+    :param team: Optional team; when set, save into the team's workflow directory
     """
     effective_user = _resolve_effective_user(username)
     safe_name = "".join(c for c in str(name or "") if c.isalnum() or c in "-_ ").strip() or "untitled"
@@ -996,18 +972,21 @@ async def set_oasis_python_workflow(
         return f"❌ 保存失败: {e}"
 
 @mcp.tool()
-async def list_oasis_workflows(username: str = "", team: str = "") -> str:
+async def list_oasis_workflows(username: str = "", team: str = "", kind: Literal["yaml", "python", "all"] = "all") -> str:
     """
-    List all saved YAML workflows for the current user.
+    List saved OASIS workflows (YAML and/or Python) for the current user.
 
     Args:
         username: (auto-injected) current user identity; do NOT set manually
         team: Team name. When provided, lists workflows from the team directory.
-
-    Returns:
-        List of saved YAML workflow files with preview.
-        For Python workflows, use list_oasis_python_workflows(...).
+        kind: "yaml", "python", or "all"
     """
+    if kind == "python":
+        return await _list_oasis_python_workflows(username, team)
+    if kind == "all":
+        yaml_part = await list_oasis_workflows(username, team, "yaml")
+        python_part = await _list_oasis_python_workflows(username, team)
+        return f"{yaml_part}\n\n{python_part}"
     effective_user = _resolve_effective_user(username)
     try:
         items: list[dict] = []
@@ -1045,14 +1024,26 @@ async def list_oasis_workflows(username: str = "", team: str = "") -> str:
         else:
             lines.append("\n💡 未指定 team，已展示个人目录和全部 team 的 workflows。")
         lines.append("💡 使用: start_new_oasis(schedule_file=\"文件名\", ...)")
-        lines.append("💡 Python workflows 请使用: list_oasis_python_workflows(...)")
         return "\n".join(lines)
     except Exception as e:
         return f"❌ 查询失败: {e}"
 
 
 @mcp.tool()
-async def get_workflow_writing_rules() -> str:
+async def get_workflow_rules(kind: Literal["python", "yaml"]) -> str:
+    """
+    Return the canonical authoring rules for an OASIS workflow — the workflowpy
+    ctx API and constraints, or the YAML graph format. Call this BEFORE
+    writing or editing one.
+
+    :param kind: Which workflow format: "python" or "yaml"
+    """
+    if kind == "yaml":
+        return await _yaml_workflow_rules()
+    return await _python_workflow_rules()
+
+
+async def _python_workflow_rules() -> str:
     """
     Return the canonical authoring rules for ClawCross/OASIS Python workflows
     (workflowpy). Call this BEFORE writing or editing a workflow file so you
@@ -1112,16 +1103,15 @@ post_count_gte:<N>, post_count_lt:<N>, always, !<expr>.
 """
 
 
-@mcp.tool()
-async def get_yaml_workflow_rules() -> str:
+async def _yaml_workflow_rules() -> str:
     """
     Return the canonical authoring spec for OASIS **YAML** workflows
     (Version 2 graph format): node/step types, persona ref formats, edges /
     conditional_edges / selector_edges, and graph rules.
 
     Call this BEFORE writing or editing a YAML workflow with
-    set_oasis_yaml_workflow so the schedule validates (it MUST contain a
-    top-level `plan`). For Python workflowpy rules use get_workflow_writing_rules.
+    save_oasis_workflow so the schedule validates (it MUST contain a
+    top-level `plan`).
     """
     from pathlib import Path as _Path
     candidates = [
@@ -1137,8 +1127,7 @@ async def get_yaml_workflow_rules() -> str:
     return _YAML_WORKFLOW_RULES_FALLBACK
 
 
-@mcp.tool()
-async def list_oasis_python_workflows(username: str = "", team: str = "") -> str:
+async def _list_oasis_python_workflows(username: str = "", team: str = "") -> str:
     """
     List all saved Python workflows for the current user.
 
@@ -1186,15 +1175,18 @@ async def list_oasis_python_workflows(username: str = "", team: str = "") -> str
         return f"❌ 查询失败: {e}"
 
 
-@mcp.tool()
-async def check_oasis_python_run(run_id: str, username: str = "") -> str:
+async def _check_oasis_python_run(run_id: str = "", username: str = "", team: str = "") -> str:
     """
-    Check the result of a standalone Python workflow run started via start_new_oasis(python_file=...).
+    Check the result of a Python workflow run started via
+    start_new_oasis(python_file=...); with no run_id, list recent runs.
 
     Args:
-        run_id: The run_id returned by start_new_oasis in Python mode
+        run_id: run_id returned by start_new_oasis in Python mode; empty lists recent runs
         username: (auto-injected) current user identity; do NOT set manually
+        team: When listing, only show runs of this team
     """
+    if not (run_id or "").strip():
+        return await _list_oasis_python_runs(username, team)
     data, err = _load_python_run_payload(run_id)
     if err:
         return f"❌ {err}"
@@ -1243,8 +1235,7 @@ async def check_oasis_python_run(run_id: str, username: str = "") -> str:
     return "\n".join(lines)
 
 
-@mcp.tool()
-async def list_oasis_python_runs(username: str = "", team: str = "") -> str:
+async def _list_oasis_python_runs(username: str = "", team: str = "") -> str:
     """
     List recent standalone Python workflow runs started via MCP.
 
@@ -1294,13 +1285,12 @@ async def list_oasis_python_runs(username: str = "", team: str = "") -> str:
     for item in items[:20]:
         team_label = f"[team:{item['team']}]" if item.get("team") else "[personal]"
         lines.append(f"  • {team_label} {item['run_id']} | {item['status']} | {item['question'][:70]}")
-    lines.append("\n💡 使用: check_oasis_python_run(run_id=\"...\")")
-    lines.append("💡 使用: cancel_oasis_python_run(run_id=\"...\")")
+    lines.append("\n💡 查看详情: check_oasis_discussion(topic_id=\"<run_id>\")")
+    lines.append("💡 取消: cancel_oasis_discussion(topic_id=\"<run_id>\")")
     return "\n".join(lines)
 
 
-@mcp.tool()
-async def cancel_oasis_python_run(run_id: str, username: str = "") -> str:
+async def _cancel_oasis_python_run(run_id: str, username: str = "") -> str:
     """
     Cancel a standalone Python workflow run by PID when it is still running.
 
@@ -1363,6 +1353,8 @@ async def list_oasis_agent_catalog(username: str = "", team: str = "") -> str:
 
     Includes temp experts, internal session agents, and external agents with
     their target id, tag, platform, connect_type, session default, and full persona.
+
+    :param team: Optional team whose agents to list; empty lists the user's own
     """
     effective_user = _resolve_effective_user(username)
     try:
@@ -1405,15 +1397,9 @@ async def list_oasis_agent_catalog(username: str = "", team: str = "") -> str:
 @mcp.tool()
 async def get_publicnet_info() -> str:
     """
-    Get public network information — tunnel status, public domain URL, ports, etc.
-
-    Use this to discover the public URL when the cloudflare tunnel is running,
-    so you can share the link with the user (e.g. via Telegram).
-    This does NOT read .env directly — it queries the OASIS server API.
-
-    IMPORTANT: This is a READ-ONLY query tool. It does NOT start or download
-    anything. Starting the tunnel or downloading cloudflared MUST only happen
-    when the user EXPLICITLY requests it — never on the agent's own initiative.
+    Get public network info — tunnel status, public URL, ports — e.g. to share
+    the public link with the user. Read-only: it never starts the tunnel or
+    downloads cloudflared; do that only when the user explicitly asks.
 
     Returns:
         Human-readable public network info including tunnel status and public URL.

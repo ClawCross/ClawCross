@@ -46,20 +46,13 @@ class VisionAttachmentMcpTests(unittest.TestCase):
         image_path.write_bytes(base64.b64decode(_PNG_1X1))
         return image_path
 
-    def test_attach_image_to_context_returns_lightweight_attachment_reference(self):
+    def test_read_file_returns_an_image_as_native_image_content(self):
         self._write_test_image()
 
-        from mcp_servers.vision import ATTACHMENT_MARKER, attach_image_to_context
+        from mcp_servers.filemanager import ATTACHMENT_MARKER, read_file
         from mcp.types import CallToolResult, ImageContent, TextContent
 
-        result = asyncio.run(
-            attach_image_to_context(
-                username="alice",
-                session_id="default",
-                filename="pixel.png",
-                prompt="describe it",
-            )
-        )
+        result = asyncio.run(read_file(username="alice", session_id="default", filename="pixel.png"))
         self.assertIsInstance(result, CallToolResult)
         self.assertFalse(result.isError)
         self.assertEqual(len(result.content), 2)
@@ -69,7 +62,6 @@ class VisionAttachmentMcpTests(unittest.TestCase):
 
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["type"], ATTACHMENT_MARKER)
-        self.assertEqual(payload["prompt"], "describe it")
         self.assertEqual(payload["attachments"][0]["mime_type"], "image/png")
         self.assertEqual(payload["attachments"][0]["name"], "pixel.png")
         self.assertIn(str(self.workspace_root / "users" / "alice"), payload["attachments"][0]["path"])
@@ -77,25 +69,33 @@ class VisionAttachmentMcpTests(unittest.TestCase):
         self.assertEqual(result.content[1].mimeType, "image/png")
         self.assertGreater(len(result.content[1].data), 20)
 
-    def test_attach_image_to_context_allows_absolute_path_outside_workspace(self):
+    def test_read_file_reads_an_image_by_absolute_path_outside_workspace(self):
         outside_path = Path(self.tmpdir.name) / "outside.png"
         outside_path.write_bytes(base64.b64decode(_PNG_1X1))
 
-        from mcp_servers.vision import attach_image_to_context
+        from mcp_servers.filemanager import read_file
         from mcp.types import CallToolResult, ImageContent
 
-        result = asyncio.run(
-            attach_image_to_context(
-                username="alice",
-                session_id="default",
-                filename=str(outside_path),
-            )
-        )
+        result = asyncio.run(read_file(username="alice", session_id="default", filename=str(outside_path)))
 
         self.assertIsInstance(result, CallToolResult)
         self.assertFalse(result.isError)
         self.assertIsInstance(result.content[1], ImageContent)
         self.assertEqual(result.content[1].mimeType, "image/png")
+
+    def test_read_file_still_returns_text_for_text_files(self):
+        user_root = self.workspace_root / "users" / "alice"
+        user_root.mkdir(parents=True, exist_ok=True)
+        (user_root / "notes.txt").write_text("hello", encoding="utf-8")
+        # An image extension alone does not make a file an image.
+        (user_root / "fake.png").write_text("not an image", encoding="utf-8")
+
+        from mcp_servers.filemanager import read_file
+
+        self.assertIn("hello", asyncio.run(read_file(username="alice", session_id="default", filename="notes.txt")))
+        fake = asyncio.run(read_file(username="alice", session_id="default", filename="fake.png"))
+        self.assertIsInstance(fake, str)
+        self.assertIn("not an image", fake)
 
     def test_agent_preserves_direct_mcp_image_tool_content(self):
         from core.agent import TeamAgent
@@ -112,18 +112,10 @@ class VisionAttachmentMcpTests(unittest.TestCase):
         self._write_test_image()
 
         from mcp.types import CallToolResult, ImageContent, TextContent
-        from mcp_servers.vision import mcp
+        from mcp_servers.filemanager import mcp
 
         result = asyncio.run(
-            mcp.call_tool(
-                "attach_image_to_context",
-                {
-                    "username": "alice",
-                    "session_id": "default",
-                    "filename": "pixel.png",
-                    "prompt": "describe it",
-                },
-            )
+            mcp.call_tool("read_file", {"username": "alice", "session_id": "default", "filename": "pixel.png"})
         )
 
         self.assertIsInstance(result, CallToolResult)

@@ -179,6 +179,35 @@ class TestSkillSystem(unittest.TestCase):
         skill = get_skill("alice", name="test-skill")
         self.assertIn("carefully", skill["content"])
 
+    def test_patch_cannot_modify_files_outside_skill(self):
+        from webot.skills import create_skill, patch_skill
+
+        for team in ("", "ops"):
+            with self.subTest(team=team):
+                created = create_skill("alice", name="test-skill", content=self._make_skill_content(), team=team)
+                skill_dir = Path(created["path"]).parent
+                outside = skill_dir.parent / "outside.txt"
+                outside.write_text("original", encoding="utf-8")
+                (skill_dir / "outside-link.txt").symlink_to(outside)
+                for file_path in ("../outside.txt", str(outside), "outside-link.txt"):
+                    with self.subTest(file_path=file_path):
+                        outside.write_text("original", encoding="utf-8")
+                        result = patch_skill("alice", name="test-skill", team=team,
+                                             file_path=file_path, old_string="original", new_string="changed")
+                        self.assertFalse(result["success"])
+                        self.assertEqual(outside.read_text(encoding="utf-8"), "original")
+
+    def test_patch_nested_support_file(self):
+        from webot.skills import create_skill, write_skill_file, patch_skill
+
+        created = create_skill("alice", name="test-skill", content=self._make_skill_content())
+        write_skill_file("alice", name="test-skill", file_path="references/notes.md", file_content="original")
+        result = patch_skill("alice", name="test-skill", file_path="references/notes.md",
+                             old_string="original", new_string="changed")
+        self.assertTrue(result["success"])
+        target = Path(created["path"]).parent / "references/notes.md"
+        self.assertEqual(target.read_text(encoding="utf-8"), "changed")
+
     def test_delete_skill(self):
         from webot.skills import create_skill, delete_skill, list_skills
         create_skill("alice", name="test-skill", content=self._make_skill_content())
@@ -233,7 +262,7 @@ class TestSkillSystem(unittest.TestCase):
         create_skill("alice", name="deploy-script", content=self._make_skill_content("deploy-script", "Deploy to prod"))
         prompt = build_skills_prompt("alice")
         self.assertIn("deploy-script", prompt)
-        self.assertIn("Skills (Procedural Memory)", prompt)
+        self.assertIn("Memory 条目", prompt)
 
     def test_build_skills_prompt_empty(self):
         from webot.skills import build_skills_prompt
@@ -251,7 +280,8 @@ class TestSkillSystem(unittest.TestCase):
 
         prompt = agent._get_user_skills("alice")
         self.assertIn("deploy-script", prompt)
-        self.assertIn("skill_view", prompt)
+        self.assertIn('read_file(storage="memory"', prompt)
+        self.assertNotIn(str(self.tmppath), prompt)
         self.assertNotIn("skills_manifest.json", prompt)
 
     def test_agent_user_skills_prompt_uses_team_and_personal_sections(self):
@@ -529,6 +559,41 @@ class TestSessionSearch(unittest.TestCase):
         )
         session_ids = [m["session_id"] for m in result["matches"]]
         self.assertNotIn("current", session_ids)
+
+    def test_search_chinese_and_mixed_keywords(self):
+        from webot.trajectory import save_trajectory
+        from webot.session_search import session_search
+
+        for user_id, session_id, content in (
+            ("alice", "deployment", "讨论Python部署方案和数据库备份"),
+            ("alice", "backup", "数据库备份计划"),
+            ("alice", "unrelated", "今天讨论旅游安排"),
+            ("alice", "current", "Python部署方案"),
+            ("bob", "other-user", "Python部署方案"),
+        ):
+            save_trajectory(
+                user_id=user_id, session_id=session_id,
+                messages=[{"role": "user", "content": content}],
+                model="gpt-4", completed=True,
+            )
+
+        for query, expected in (
+            ("部署", {"deployment"}),
+            ("库", {"deployment", "backup"}),
+            ("部署，备份", {"deployment", "backup"}),
+            ("PYTHON 部署", {"deployment"}),
+            ("不存在的关键词", set()),
+        ):
+            with self.subTest(query=query):
+                result = session_search(
+                    user_id="alice", query=query,
+                    current_session_id="current", db_path=self.tmppath / "checkpoints",
+                )
+                self.assertEqual(
+                    {m["session_id"] for m in result["matches"]}, expected,
+                )
+                if query == "部署，备份":
+                    self.assertEqual(result["matches"][0]["session_id"], "deployment")
 
     def test_recent_sessions_no_query(self):
         from webot.trajectory import save_trajectory
