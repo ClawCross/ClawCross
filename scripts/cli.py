@@ -738,9 +738,11 @@ def cmd_groups(args):
         gid = _quote_group_id(args.group_id)
         url = f"{base}/{gid}/messages"
         data = {"content": args.message or ""}
-        if args.sender:
+        if getattr(args, "agent", None):
+            data["agent"] = args.agent
+        elif args.sender:
             data["sender"] = args.sender
-            # sender 格式: tag#type#short_name，作为发送者显示名
+            # sender 格式: tag#type#short_name#global_id，作为发送者显示名
             data["sender_display"] = args.sender
         code, body = _req("POST", url, headers=hdrs, data=data)
         if code in (200, 201):
@@ -3087,7 +3089,8 @@ def build_parser():
     c.add_argument("--name", help="群组名称 (创建时)")
     c.add_argument("--team-name", help="Team 名称 (创建时)")
     c.add_argument("--message", help="消息内容 (send 时)")
-    c.add_argument("--sender", help="发送者标识 (send 时，用于 agent 认证，格式: 'ext#agent名')")
+    c.add_argument("--agent", help="以哪个 agent 身份发言 (send 时)：agent 编号 ag_… 或地址 <用户>/<handle>")
+    c.add_argument("--sender", help="发送者标识 (send 时，旧格式 'tag#type#short_name#global_id'；新代码请用 --agent)")
     c.add_argument("--data", help="JSON 数据")
     c.add_argument("--after-id", help="增量获取消息 (messages 时)")
 

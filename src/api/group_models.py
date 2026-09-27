@@ -42,8 +42,14 @@ class GroupMessageRequest(BaseModel):
     mentions: Optional[list[str]] = None  # 被 @ 的 agent global_id 列表
     attachments: Optional[list[Attachment]] = None  # 附件列表（图片/音频/文件）
     # Permission mode forwarded to broadcast recipients:
-    # "manual" | "plan" | "bypass". None = no override (use each agent's default).
+    # "chat" | "readonly" | "bypass" | "auto". None = no override (use each agent's default).
     run_mode: Optional[str] = None
+    # A local caller (CLI) posting for an agent member names it by id or address.
+    agent: Optional[str] = None
+    # Client-chosen key: a retry with the same key is not posted twice.
+    client_msg_id: Optional[str] = None
+    # The message this one replies to (引用回复).
+    reply_to: Optional[int] = None
 
 
 class GroupAddMemberRequest(BaseModel):

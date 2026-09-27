@@ -297,10 +297,13 @@ uv run scripts/cli.py groups delete --group-id abc123
 uv run scripts/cli.py groups messages --group-id abc123
 uv run scripts/cli.py groups messages --group-id abc123 --after-id msg_100
 
-# 发送消息
+# 发送消息（以当前用户身份）
 uv run scripts/cli.py groups send --group-id abc123 --message "大家好"
 
-# 静音/取消静音
+# 以群内某个 agent 的身份发言（外部 agent 回复群聊时用；agent 编号或地址）
+uv run scripts/cli.py -u alice groups send --group-id abc123 --agent alice/codex --message "已完成"
+
+# 免打扰/取消免打扰：消息照常记录，但不唤醒任何 agent（重启后保留）
 uv run scripts/cli.py groups mute --group-id abc123
 uv run scripts/cli.py groups unmute --group-id abc123
 uv run scripts/cli.py groups mute-status --group-id abc123

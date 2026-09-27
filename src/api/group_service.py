@@ -3,31 +3,24 @@ import hashlib
 import json
 import os
 import re
-import secrets
 import shlex
-import shutil
-import threading
 import time
-from typing import Any, Callable, Literal
+from typing import Any, Callable
 
-import httpx
 from fastapi import HTTPException
 
-# Permission modes, their acpx wire format and attachment rendering live with
-# the agent layer; CLI / PC web / mobile group chat all send the same names.
-from agents.messages import (
-    ACPX_OVERRIDES_BY_MODE as _ACPX_OVERRIDES_BY_MODE,
-    compose_text_prompt as _compose_acpx_prompt,
-    decode_text_attachment as _decode_att_text,
-    is_text_mime as _is_text_mime,
-    normalize_run_mode as _normalize_run_mode,
-)
+# Permission modes live with the agent layer; CLI / PC web / mobile group chat
+# all send the same names.
+from agents.messages import normalize_run_mode as _normalize_run_mode
+from comms.delivery import WakeRequest, mentions_everyone, render_digest, select_wake_targets, StormGuard
+from comms.principals import human_principal, member_agent, member_principal
 from api.external_agent_registry import build_external_agents_map_for_owner
 from utils.auth_utils import extract_user_password_session, is_internal_bearer, parse_bearer_parts
 from utils.checkpoint_repository import list_thread_ids_by_prefix
-from utils.runtime_paths import LOGS_DIR, USER_FILES_DIR, WORKSPACE_DIR
+from utils.runtime_paths import USER_FILES_DIR
 from api.group_repository import (
     add_group_member,
+    advance_member_read_cursor,
     clear_group_members,
     create_group_with_members,
     delete_group as delete_group_records,
@@ -35,6 +28,7 @@ from api.group_repository import (
     get_group_member_by_global_id,
     get_group_mute_state,
     get_group_owner,
+    get_member_read_cursor,
     get_group_primary_agent,
     group_exists,
     init_group_db as init_group_db_repo,
@@ -43,11 +37,13 @@ from api.group_repository import (
     list_group_member_targets,
     list_group_members,
     list_group_messages_after,
+    list_group_messages_between,
     list_groups_for_user,
     list_recent_group_messages,
     remove_group_member,
     set_group_mute_state,
     set_group_primary_agent,
+    set_group_team,
     update_group_name,
 )
 from api.group_models import (
@@ -62,21 +58,11 @@ from api.group_models import (
 )
 from utils.logging_utils import get_logger
 from utils.session_summary import first_human_title
-from integrations.acpx_adapter import AcpxError, acpx_options_from_agent, get_acpx_adapter, load_external_agent_system_prompt
-from integrations.acpx_cli_tools import acpx_agent_tags_with_legacy
-from integrations.agent_sender import SendToAgentRequest, send_to_agent
-from utils.external_agent_history import attach_history_context
-from integrations.external_persona import build_external_persona_prompt
 
 logger = get_logger("group_service")
 
-# Subcommands accepted by `acpx <tag> ...` (from `acpx --help` + legacy aliases)
-_ACP_TOOL_NAMES: frozenset[str] = acpx_agent_tags_with_legacy()
-_DEFAULT_ACP_SESSION_SUFFIX = "clawcrosschat"
-_AGENT_MODEL_RE = re.compile(r"^agent:[^:]+(?::(.+))?$")
-
-# ACPX-backed ACP support
-_ACP_AVAILABLE = bool(shutil.which("acpx"))
+# Messages a woken member may have missed, shown as a digest (most recent).
+_DIGEST_LIMIT = 15
 
 # Project root for team-scoped paths
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
@@ -89,7 +75,6 @@ _EXTERNAL_AGENT_PRIVATE_RULES_PATH = os.path.join(
     _PROJECT_ROOT, "data", "prompts", "external_agent_private_rules.txt",
 )
 _external_agent_private_rules_cache: str | None = None
-_external_agent_system_prompt_cache: str | None = None
 
 
 def _external_agent_group_rules_block() -> str:
@@ -122,43 +107,6 @@ def _external_agent_private_rules_block() -> str:
     return _external_agent_private_rules_cache
 
 
-def _external_agent_system_prompt() -> str:
-    global _external_agent_system_prompt_cache
-    if _external_agent_system_prompt_cache is None:
-        _external_agent_system_prompt_cache = load_external_agent_system_prompt(_PROJECT_ROOT)
-    return _external_agent_system_prompt_cache
-
-
-def _external_agent_session_prompt(agent_info: dict, *, is_private_chat: bool) -> str:
-    parts = [
-        _external_agent_system_prompt(),
-        build_external_persona_prompt(
-            str(agent_info.get("tag", "") or ""),
-            user_id=str(agent_info.get("owner_user_id", "") or ""),
-            team=str(agent_info.get("team", "") or ""),
-        ),
-    ]
-    if is_private_chat:
-        parts.append(_external_agent_private_rules_block())
-    else:
-        parts.append(_external_agent_group_rules_block())
-    return "\n\n".join(p for p in parts if p).strip()
-
-
-def _external_http_registry_prompt(agent_info: dict) -> str:
-    parts = [
-        _external_agent_system_prompt(),
-        build_external_persona_prompt(
-            str(agent_info.get("tag", "") or ""),
-            user_id=str(agent_info.get("owner_user_id", "") or ""),
-            team=str(agent_info.get("team", "") or ""),
-        ),
-        _external_agent_group_rules_block(),
-        _external_agent_private_rules_block(),
-    ]
-    return "\n\n".join(p for p in parts if p).strip()
-
-
 def _canonical_external_platform(platform: str) -> str:
     pl = (platform or "").strip().lower()
     if pl in ("claude-code", "claudecode"):
@@ -166,51 +114,6 @@ def _canonical_external_platform(platform: str) -> str:
     if pl in ("gemini-cli", "geminicli"):
         return "gemini"
     return pl
-
-
-def _external_platform_from_agent(agent_info: dict) -> str:
-    """Resolve transport platform for external agents.
-
-    Prefer explicit ``platform``. Fall back to legacy ``tag`` because mobile
-    private-chat flows still persist ext members with tag-only metadata.
-    """
-    return _canonical_external_platform(
-        str(agent_info.get("platform", "") or agent_info.get("tag", "") or "")
-    )
-
-
-# ── Temporary ACP lifecycle trace (群聊): logger [ACP_TRACE] + logs/acp_group_trace.jsonl
-_ACP_TRACE_PATH = os.path.join(str(LOGS_DIR), "acp_group_trace.jsonl")
-_acp_trace_file_lock = threading.Lock()
-
-
-def _acp_group_trace(event: str, **fields: Any) -> None:
-    """Temporarily disabled ACP trace output for group chat."""
-    return
-
-
-def _select_external_transport(platform: str) -> Literal["acp", "http", "drop"]:
-    pl = _canonical_external_platform(platform)
-    if not pl:
-        return "drop"
-    if pl == "openclaw":
-        return "http"
-    if pl in _ACP_TOOL_NAMES:
-        return "acp"
-    return "drop"
-
-
-def _resolve_external_session_suffix(model: str) -> str:
-    m = _AGENT_MODEL_RE.match((model or "").strip())
-    if m and m.group(1):
-        return m.group(1)
-    return _DEFAULT_ACP_SESSION_SUFFIX
-
-
-def _external_http_session_key(agent_info: dict) -> str:
-    global_name = str(agent_info.get("global_name", "")).strip()
-    session_suffix = _resolve_external_session_suffix(str(agent_info.get("model", "")))
-    return f"agent:{global_name}:{session_suffix}"
 
 
 def _team_view():
@@ -354,12 +257,17 @@ def resolve_text_mentions(content: str, members: list[tuple[str, str]]) -> list[
     return found
 
 
-def _cli_hint(action: str, *, owner: str, group_id: str, sender_display: str) -> str:
-    """Shell command an external agent runs to post into a group or private chat."""
+def _cli_hint(action: str, *, owner: str, group_id: str, sender_display: str, agent: str = "") -> str:
+    """Shell command an external agent runs to post into a group or private chat.
+
+    A registered agent names itself by address (``--agent``); an undeclared one
+    falls back to its ``tag#type#short_name#global_id`` sender display.
+    """
+    who = f"--agent {shlex.quote(agent)}" if agent else f"--sender {shlex.quote(sender_display)}"
     return (
         f"cd {shlex.quote(_PROJECT_ROOT)} && uv run scripts/cli.py -u {shlex.quote(owner)} "
         f"groups {action} --group-id {shlex.quote(group_id)} "
-        f"--sender {shlex.quote(sender_display)} --message '你的回复内容'"
+        f"{who} --message '你的回复内容'"
     )
 
 
@@ -375,13 +283,16 @@ class GroupService:
         checkpoint_db_path: str,
         group_db_path: str,
         agent: Any,
+        gateway: Any = None,
     ):
         self.internal_token = internal_token
         self.verify_password = verify_password
         self.checkpoint_db_path = checkpoint_db_path
         self.group_db_path = group_db_path
         self.agent = agent
-        self.group_muted: set[str] = set()
+        self._gateway = gateway  # L1 AgentGateway; built on first use
+        self._storm_guard = StormGuard()
+        self._team_sync_state: dict[str, tuple] = {}
         # Typing state: {group_id: {display_name: timestamp}}
         self._typing_agents: dict[str, dict[str, float]] = {}
 
@@ -492,6 +403,21 @@ class GroupService:
                 return owner
         raise HTTPException(status_code=403, detail="无权访问该群聊")
 
+    async def _sender_display_for_agent(self, group_id: str, owner: str, ref: str) -> str:
+        """The ``tag#type#short_name#global_id`` of the member agent *ref* names (CLI --agent)."""
+        from agents.registry import AgentNotFound, AmbiguousAgentRef
+
+        try:
+            record = self._registry().resolve(owner, ref)
+        except (AgentNotFound, AmbiguousAgentRef) as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        global_id = str(record.binding.get("session") or record.binding.get("global_name") or "")
+        member = await get_group_member_by_global_id(self.group_db_path, group_id, global_id)
+        if not member or not bool(member.get("is_agent")):
+            raise HTTPException(status_code=403, detail=f"{record.address} 不是本群成员")
+        tag, mtype = member.get("tag") or "", member.get("member_type") or "oasis"
+        return f"{tag}#{mtype}#{member.get('short_name') or ''}#{global_id}"
+
     async def _agent_member_for_sender(self, group_id: str, sender_display: str) -> dict | None:
         """Return the agent member a full ``tag#type#short_name#global_id`` names."""
         parts = (sender_display or "").split("#")
@@ -519,335 +445,83 @@ class GroupService:
             pass
         return session_id
 
-    async def _send_to_acp_agent(
-        self,
-        agent_info: dict,
-        message: str,
-        attachments: list[Attachment] | None = None,
-        metadata: dict | None = None,
-        *,
-        user_id: str = "",
-        group_id: str = "",
-        run_mode: str | None = None,
-        _retry_dead: bool = False,
-    ) -> str | None:
-        """Send message to external agent via acpx-backed ACP session."""
-        if not _ACP_AVAILABLE:
-            logger.warning("acpx not available for %s", agent_info.get("name"))
-            return None
+    # ── delivery (through the L1 gateway) ────────────────────────────────
 
-        platform = _external_platform_from_agent(agent_info)
-        global_name = agent_info.get("global_name", "")
-        if not global_name:
-            logger.warning("No global_name for external agent %s", agent_info.get("name"))
-            return None
-        if not platform:
-            logger.warning("Missing ACP tool platform for %s", global_name)
-            return None
-        if platform not in _ACP_TOOL_NAMES:
-            logger.warning("Unsupported ACP platform '%s' for %s", platform, global_name)
-            return None
+    def _registry(self):
+        from agents.registry import get_registry
 
-        session_suffix = _resolve_external_session_suffix(str(agent_info.get("model", "")))
-        acp_session = f"agent:{global_name}:{session_suffix}"
-        t0 = time.time()
-        prompt_text = _compose_acpx_prompt(message, attachments)
-        acpx_session = ""
-        _acp_group_trace(
-            "acp_ephemeral_start",
-            phase="acpx_prompt",
-            agent_global_name=global_name,
-            platform=platform,
-            cli_session_arg=acp_session,
-            attachment_count=len(attachments or []),
+        return get_registry(USER_FILES_DIR)
+
+    def _agent_gateway(self):
+        if self._gateway is None:
+            from agents.gateway import AgentGateway
+
+            self._gateway = AgentGateway(self._registry(), internal_token=self.internal_token)
+        return self._gateway
+
+    async def _is_do_not_disturb(self, group_id: str) -> bool:
+        """免打扰: messages are kept but no agent is woken."""
+        return await get_group_mute_state(
+            self.group_db_path, group_id=group_id, target_type="dnd", target_id="*",
         )
-        try:
-            adapter = get_acpx_adapter(cwd=str(WORKSPACE_DIR / "acpx"))
-            acpx_session = adapter.to_acpx_session_name(tool=platform, session_key=acp_session)
-            acpx_attachments = None
-            if attachments:
-                acpx_attachments = [
-                    {
-                        "type": att.type,
-                        "mime_type": att.mime_type,
-                        "data": att.data,
-                        "name": att.name,
-                    }
-                    for att in attachments
-                ]
 
-            acpx_overrides = _ACPX_OVERRIDES_BY_MODE.get(run_mode) if run_mode else None
-            options = {
-                "cwd": str(WORKSPACE_DIR / "acpx"),
-                **acpx_options_from_agent(
-                    agent_info,
-                    overrides=acpx_overrides,
-                    default_timeout_sec=180,
-                ),
-                "reset_session": bool(metadata and metadata.get("resetSession")),
-                "identity_prompt": _external_agent_session_prompt(
-                    agent_info,
-                    is_private_chat=bool(metadata and metadata.get("is_private_chat")),
-                ),
-                "attachments": acpx_attachments,
-                "return_trace": True,
-            }
-            options = attach_history_context(
-                options,
-                user_id=user_id,
-                group_id=group_id,
-                global_name=global_name,
-            )
-            result = await send_to_agent(
-                SendToAgentRequest(
-                    prompt=prompt_text,
-                    connect_type="acp",
-                    platform=platform,
-                    session=acp_session,
-                    options=options,
-                )
-            )
-            if not result.ok:
-                raise AcpxError(result.error or "unknown acpx send error")
-            reply = result.content or ""
-            _acp_group_trace(
-                "acp_prompt_complete",
-                agent_global_name=global_name,
-                cli_session_arg=acp_session,
-                reply_chars=len(reply or ""),
-                attachment_count=len(attachments or []),
-                elapsed_ms=round((time.time() - t0) * 1000),
-                cached=True,
-                backend="acpx",
-                acpx_session=acpx_session,
-            )
-            return reply or None
-        except AcpxError as e:
-            _acp_group_trace(
-                "acp_error",
-                agent_global_name=global_name,
-                cli_session_arg=acp_session,
-                error_type=type(e).__name__,
-                error=str(e),
-                elapsed_ms=round((time.time() - t0) * 1000),
-                backend="acpx",
-                acpx_session=acpx_session,
-            )
-            logger.warning("acpx send failed for %s: %s", global_name, e)
-            return None
-
-    async def _send_to_http_agent(
-        self,
-        agent_info: dict,
-        message: str,
-        attachments: list[Attachment] | None = None,
-        metadata: dict | None = None,
-        *,
-        user_id: str = "",
-        group_id: str = "",
-    ) -> str | None:
-        """Fallback: send message to external agent via HTTP API.
-        
-        Message already contains clawcross_type instruction from caller.
-        Supports multimodal content via OpenAI image_url / input_audio format.
-        """
-        api_url = agent_info.get("api_url", "")
-        api_key = agent_info.get("api_key", "")
-        platform = _external_platform_from_agent(agent_info)
-        global_name = str(agent_info.get("global_name", "")).strip()
-        if platform == "openclaw":
-            # OpenClaw endpoint is device-dependent: prefer runtime env over saved config.
-            api_url = os.getenv("OPENCLAW_API_URL", "") or api_url
-            api_key = os.getenv("OPENCLAW_GATEWAY_TOKEN", "") or api_key
-        model = agent_info.get("model", "gpt-3.5-turbo")
-        # Keep OpenClaw HTTP payload aligned with /proxy_openclaw_chat:
-        # use agent:<global_name> model for gateway session routing.
-        if platform == "openclaw" and global_name:
-            model_str = str(model or "").strip()
-            if not model_str.startswith("agent:"):
-                model = f"agent:{global_name}"
-
-        if not api_url:
-            logger.warning("No api_url for external agent %s", agent_info.get("name"))
-            return None
-
-        # Normalize URL
-        api_url = api_url.rstrip("/")
-        if not api_url.endswith("/v1/chat/completions"):
-            if not api_url.endswith("/v1"):
-                api_url += "/v1"
-            api_url += "/chat/completions"
-
-        headers = {"Content-Type": "application/json"}
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
-
-        is_private_chat = bool(metadata and metadata.get("is_private_chat"))
-        session_prompt = _external_http_registry_prompt(agent_info)
-        session_key = _external_http_session_key(agent_info) if global_name else ""
-
-        if platform == "openclaw" and global_name:
-            headers["x-openclaw-session-key"] = session_key
-
-        # Build message content (multimodal if attachments present)
-        if attachments:
-            content_parts: list[dict] = [{"type": "text", "text": message}]
-            for att in attachments:
-                if att.type == "image":
-                    data_uri = f"data:{att.mime_type};base64,{att.data}"
-                    content_parts.append({
-                        "type": "image_url",
-                        "image_url": {"url": data_uri},
-                    })
-                elif att.type == "audio":
-                    content_parts.append({
-                        "type": "input_audio",
-                        "input_audio": {
-                            "data": att.data,
-                            "format": att.mime_type.split("/")[-1],
-                        },
-                    })
-                else:
-                    # Generic file: try to decode text content, fallback to description
-                    if _is_text_mime(att.mime_type):
-                        decoded = _decode_att_text(att.data)
-                        if decoded is not None:
-                            content_parts.append({
-                                "type": "text",
-                                "text": f"\n📄 附件「{att.name}」内容:\n```\n{decoded}\n```",
-                            })
-                        else:
-                            content_parts.append({
-                                "type": "text",
-                                "text": f"[附件: {att.name} ({att.mime_type}), 解码失败]",
-                            })
-                    else:
-                        content_parts.append({
-                            "type": "text",
-                            "text": f"[附件: {att.name} ({att.mime_type}), 二进制文件无法展示]",
-                        })
-            msg_content: str | list = content_parts
-        else:
-            msg_content = message
-
-        body = {
-            "model": model,
-            "messages": [{"role": "user", "content": msg_content}],
-            "stream": False,
-        }
-
-        options = {
-            "api_url": api_url,
-            "api_key": api_key,
-            "headers": headers,
-            "body": body,
-            "timeout": 60,
-            "identity_prompt": session_prompt,
-            "identity_global_name": global_name,
-            "group_db_path": self.group_db_path or "",
-            "identity_injection_mode": "prepend_user",
-        }
-        options = attach_history_context(
-            options,
-            user_id=user_id,
-            group_id=group_id,
-            global_name=global_name,
+    async def _digest_for(self, group_id: str, global_id: str, message_id: int) -> str:
+        """What this member missed since it was last woken (or last spoke)."""
+        if not message_id:
+            return ""
+        cursor = await get_member_read_cursor(self.group_db_path, group_id, global_id)
+        missed = await list_group_messages_between(
+            self.group_db_path, group_id, after_id=cursor, before_id=message_id, limit=_DIGEST_LIMIT,
         )
-        result = await send_to_agent(
-            SendToAgentRequest(
-                prompt=body["messages"],
-                connect_type="http",
-                platform=platform,
-                session=session_key or None,
-                options=options,
-            )
-        )
-        if not result.ok:
-            logger.warning("HTTP send failed for %s: %s", agent_info.get("name"), result.error)
-            return None
-        return result.content
+        own_suffix = f"#{global_id}"
+        return render_digest([m for m in missed if not str(m.get("sender_display") or "").endswith(own_suffix)])
 
-    async def _handle_external_agent_reply(
+    async def _deliver_to_agent(
         self,
         group_id: str,
-        agent_info: dict,
-        message: str,
-        agent_name: str,
-        attachments: list[Attachment] | None = None,
-        metadata: dict | None = None,
+        owner: str,
+        record,
+        short_name: str,
+        text: str,
         *,
-        user_id: str = "",
-        run_mode: str | None = None,
-    ):
-        """Send message to external agent and handle reply.
+        instructions: str = "",
+        attachments: list[Attachment] | None = None,
+        mode: str | None = None,
+    ) -> None:
+        """Wake one agent member. Typing shows until an external send ends; a WeBot
+        member's typing follows its thread lock (see get_typing_status)."""
+        from agents.messages import AgentMessage
 
-        Both private and group chats use push-only delivery for external agents.
-        ACP/HTTP synchronous replies are not auto-posted into the group; the
-        agent must use CLI `groups send` to publish visible messages.
-        """
-        # 标记正在输入
-        self.set_typing(group_id, agent_name)
+        self.set_typing(group_id, short_name)
+        msg = AgentMessage(
+            text=text,
+            attachments=[a.model_dump() for a in attachments or []],
+            instructions=instructions,
+        )
+
+        def settled(reply) -> None:
+            self.clear_typing(group_id, short_name)
+            if reply.ok and reply.content:
+                # The direct reply is not posted: agents speak through groups send.
+                logger.info("agent %s replied directly (not auto-posting): %s", short_name, reply.content[:200])
+
         try:
-            # Select transport explicitly by tag.
-            platform = _external_platform_from_agent(agent_info)
-            transport = _select_external_transport(platform)
-            if transport == "drop":
-                logger.warning(
-                    "Drop external agent %s due to unknown platform '%s'",
-                    agent_name,
-                    agent_info.get("platform", "") or agent_info.get("tag", ""),
-                )
-                return
-            if transport == "acp":
-                reply = await self._send_to_acp_agent(
-                    agent_info,
-                    message,
-                    attachments=attachments,
-                    metadata=metadata,
-                    user_id=user_id,
-                    group_id=group_id,
-                    run_mode=run_mode,
-                )
-                if not reply:
-                    logger.info(
-                        "ACP failed/no reply for %s, fallback to HTTP",
-                        agent_name,
-                    )
-                    reply = await self._send_to_http_agent(
-                        agent_info,
-                        message,
-                        attachments=attachments,
-                        metadata=metadata,
-                        user_id=user_id,
-                        group_id=group_id,
-                    )
-            else:
-                reply = await self._send_to_http_agent(
-                    agent_info,
-                    message,
-                    attachments=attachments,
-                    metadata=metadata,
-                    user_id=user_id,
-                    group_id=group_id,
-                )
-            if not reply:
-                logger.info("External agent %s did not reply", agent_name)
-                return
-
-            members = await list_group_member_targets(self.group_db_path, group_id)
-            is_private = len(members) <= 2
-            if is_private:
-                logger.info(
-                    "Private chat: agent %s returned sync reply (ignored; waiting for push): %s",
-                    agent_name,
-                    reply[:200] if reply else "",
-                )
-            else:
-                logger.info("Group chat: agent %s replied (not auto-posting): %s", agent_name, reply[:200] if reply else "")
+            receipt = await self._agent_gateway().deliver(
+                owner,
+                record,
+                msg,
+                context={"conversation_id": group_id},
+                mode=mode,
+                coalesce_key=f"group:{group_id}:agent:{record.binding.get('session') or record.handle}",
+                on_complete=settled,
+            )
         except Exception:
-            logger.exception("External agent %s delivery crashed", agent_name)
-        finally:
-            self.clear_typing(group_id, agent_name)
+            logger.exception("delivery to %s in %s crashed", short_name, group_id)
+            self.clear_typing(group_id, short_name)
+            return
+        if not receipt.accepted:
+            logger.warning("delivery to %s in %s failed: %s", short_name, group_id, receipt.error)
+            self.clear_typing(group_id, short_name)
 
     async def broadcast_to_group(
         self,
@@ -859,63 +533,64 @@ class GroupService:
         user_id: str = "",
         attachments: list[Attachment] | None = None,
         run_mode: str | None = None,
+        message_id: int = 0,
+        mention_all: bool = False,
     ):
-        """向群内 agent 成员广播消息（异步 fire-and-forget）。
+        """Wake the agent members a message is for (fire-and-forget).
 
-        members 直接从数据库读取，包含 global_id / short_name / tag / member_type。
-        exclude_sender_display: 用 tag#type#short_name 格式排除发送者自己，
-        避免 global_id 在不同 agent 平台间可能冲突的问题。
-        run_mode: optional permission override forwarded to each agent invocation
-        (manual / plan / bypass). None = use each agent's default.
+        Every member can read the message; ``comms.delivery.select_wake_targets``
+        decides who is woken: a human wakes whom they @ (else the primary agent,
+        else everyone); an agent wakes only whom it @ (a non-primary agent only
+        the primary); ``@所有人`` from a human or the primary wakes everyone.
+        Woken members get a digest of what they missed since last time.
+        exclude_sender_display (``tag#type#short_name#global_id``) names the sender.
+        run_mode: permission override for each woken agent (chat / readonly / bypass / auto).
         """
         normalized_mode = _normalize_run_mode(run_mode)
-        if group_id in self.group_muted:
-            logger.info("群 %s 已静音，跳过广播", group_id)
+        if await self._is_do_not_disturb(group_id):
+            logger.info("群 %s 免打扰，跳过唤醒", group_id)
             return
+        # The group owner, not the caller: a CLI reply arrives as whatever -u the
+        # agent typed, which would load the wrong user's agents.
+        owner_uid = await get_group_owner(self.group_db_path, group_id) or user_id or ""
+        await self._sync_team_group(group_id, owner_uid)
         members = await list_group_member_targets(self.group_db_path, group_id)
         member_count = len(members)
-        is_private_chat = member_count <= 2  # owner + 1 agent = 私聊
-        # The group owner, not the caller: a CLI reply arrives as whatever -u the
-        # agent typed (default "admin"), which would load the wrong user's agents.
-        owner_uid = await get_group_owner(self.group_db_path, group_id) or user_id or ""
+        group = await get_group(self.group_db_path, group_id) or {}
+        is_private_chat = group.get("kind") == "direct" or member_count <= 2  # owner + 1 agent = 私聊
         human_user_hint = (
             f"当前群主 owner=\"{owner_uid}\"。当前人类用户是「{owner_uid}」。"
         )
 
-        # Build external agent config map by global_id (need api_url etc. for ACP/HTTP)
-        external_agents_map: dict[str, dict] = (
-            build_external_agents_map_for_owner(owner_uid) if owner_uid else {}
-        )
-
-        # 主 agent 机制（设了 primary 时收窄 mentions）：
-        #   主 agent 发     → 保持原 mentions（None=全员，@X=仅 X）
-        #   非主 agent 发   → sub-agent 模式：mentions 强制 = [primary]（忽略 @）
-        #   人类发 + 没 @  → mentions = [primary]
-        #   人类发 + @ X   → mentions = [X]（尊重人类显式选择）
         primary_agent_gid = await get_group_primary_agent(self.group_db_path, group_id)
-        if primary_agent_gid and not any(
-            is_agent and gid == primary_agent_gid for _u, gid, is_agent, *_rest in members
-        ):
+        agent_gids = [gid for _u, gid, is_agent, *_rest in members if is_agent]
+        if primary_agent_gid and primary_agent_gid not in agent_gids:
             # A primary that left the group would swallow every message.
             primary_agent_gid = None
-        sender_global_id_for_filter = ""
-        if exclude_sender_display:
-            ex_parts = exclude_sender_display.split("#")
-            if len(ex_parts) >= 4:
-                sender_global_id_for_filter = ex_parts[-1].strip()
+        sender_gid = ""
+        ex_parts = exclude_sender_display.split("#") if exclude_sender_display else []
+        if len(ex_parts) >= 4 and ex_parts[-1].strip() in agent_gids:
+            sender_gid = ex_parts[-1].strip()
+
+        targets = select_wake_targets(WakeRequest(
+            agent_ids=agent_gids,
+            sender_id=sender_gid,
+            mentions=list(mentions or []),
+            mention_all=mention_all,
+            primary_id=primary_agent_gid,
+            direct=is_private_chat,
+        ))
+        if not sender_gid:
+            self._storm_guard.human_spoke(group_id)
+        elif targets and not self._storm_guard.allow(group_id, len(targets)):
+            logger.warning(
+                "群 %s agent 间唤醒过于频繁，已暂停唤醒，等待人类发言（本次目标 %s）", group_id, targets,
+            )
+            return
+
         primary_short_name = ""
         sub_agent_short_names: list[str] = []
         if primary_agent_gid:
-            sender_is_human = not sender_global_id_for_filter
-            sender_is_primary = sender_global_id_for_filter == primary_agent_gid
-            sender_is_non_primary_agent = (
-                bool(sender_global_id_for_filter) and not sender_is_primary
-            )
-            if sender_is_non_primary_agent:
-                mentions = [primary_agent_gid]
-            elif sender_is_human and not mentions:
-                mentions = [primary_agent_gid]
-            # Build name lookups for role hint in the per-target prompt below
             for _uid, _gid, _is_agent, _mtype, _sname, _tag in members:
                 if not _is_agent:
                     continue
@@ -924,43 +599,39 @@ class GroupService:
                 else:
                     sub_agent_short_names.append(_sname or _gid)
 
+        registry = self._registry()
+        attach_hint = ""
+        if attachments:
+            attach_desc = "\n".join(f"  📎 {att.name} ({att.type}/{att.mime_type})" for att in attachments)
+            attach_hint = f"\n\n[随消息附件]\n{attach_desc}"
+        mention_hint = (
+            "你的发言会进入群聊记录，但只会唤醒你 @ 的成员"
+            + ("（sub-agent 的发言只送达主 agent）" if primary_agent_gid else "")
+            + "：需要谁回应就在回复内容里直接写 @对方名称，不 @ 就不会有人被唤醒；"
+            "@所有人 只有群主和主 agent 可用。不要写内部 global_id、session_id 或 tag#type#... 标识。"
+        )
+
         for user_id_member, global_id, is_agent, member_type, short_name, tag in members:
-            if group_id in self.group_muted:
-                logger.info("群 %s 广播中途被静音，停止", group_id)
-                return
-            if not is_agent:
+            if not is_agent or global_id not in targets:
                 continue
-            # 用 tag#type#short_name#global_id 排除发送者自己
-            member_display = f"{tag}#{member_type}#{short_name}#{global_id}" if tag else f"#{member_type}#{short_name}#{global_id}"
-            if exclude_sender_display and member_display == exclude_sender_display:
+            member = {
+                "user_id": user_id_member, "global_id": global_id, "is_agent": is_agent,
+                "member_type": member_type, "short_name": short_name, "tag": tag,
+            }
+            record = member_agent(registry, owner_uid, member)
+            if record is None:
+                logger.info("Skip untracked external agent %s (%s); not declared in any external_agents.json",
+                            short_name, global_id)
                 continue
+            mentioned = bool(mentions) and global_id in (mentions or [])
+            digest = await self._digest_for(group_id, global_id, message_id)
 
-            if mentions and global_id not in mentions:
-                continue
-
-            # Build message - use prompt instructions to guide agent behavior
-            agent_identity = f"你是「{short_name}」"
-            sender_display = f"{tag}#{member_type}#{short_name}#{global_id}" if tag else f"#{member_type}#{short_name}#{global_id}"
-            group_cli_hint = _cli_hint(
-                "send", owner=owner_uid, group_id=group_id, sender_display=sender_display,
-            )
-            private_cli_hint = _cli_hint(
-                "private-send", owner=owner_uid, group_id=group_id, sender_display=sender_display,
-            )
-            mention_hint = (
-                "如果某段回复只需要特定成员处理，或需要转交给更合适的成员，请在回复内容里直接写 @对方名称。"
-                "被 @ 的消息只会唤醒并投递给目标成员，不会打扰全群；鼓励用这种方式高效交流。"
-                "不要写内部 global_id、session_id 或 tag#type#... 标识。"
-            )
-
-            # 主/子 agent 身份提示（仅多人群聊且设置了主 agent 时注入）
             role_hint = ""
             if primary_agent_gid and not is_private_chat:
                 if global_id == primary_agent_gid:
                     sub_list = "、".join(f"「{n}」" for n in sub_agent_short_names) or "（暂无）"
                     role_hint = (
-                        f"\n你是本群【主 agent】，其他 agent 都是你的 sub-agent："
-                        f"{sub_list}。"
+                        f"\n你是本群【主 agent】，其他 agent 都是你的 sub-agent：{sub_list}。"
                         "sub-agent 的所有发言（含 @）都只会送达你，由你统筹后再回复用户与群聊。\n"
                     )
                 else:
@@ -970,73 +641,53 @@ class GroupService:
                         "请把汇报/请示当成主要交互模式。\n"
                     )
 
-            _ext_rules = _external_agent_group_rules_block()
-            if is_private_chat:
-                # 私聊：不需要群聊标记，直接告知是私信
-                msg_prefix = f"[私聊] {sender} 说:\n"
-                msg_suffix = (f"\n\n{agent_identity}。\n"
-                              f"{human_user_hint}\n\n"
-                              "如需让用户看到你的回复，请使用 send private cli（底层等价于群消息发送）：\n"
-                              f"{private_cli_hint}\n"
-                              "[end padding]\n[end padding]\n[end padding]")
-            elif mentions and global_id in mentions:
-                msg_prefix = f"[群聊 {group_id} 成员数:{member_count}] {sender} @你 说:\n"
-                msg_suffix = (f"\n\n⚠️ 这是专门 @你 的消息，你必须回复！{agent_identity}。\n"
-                              f"{role_hint}"
-                              f"{human_user_hint}\n\n"
-                              f"{mention_hint}\n"
-                              "请先 cd 到项目目录，然后使用 CLI 工具发送消息到群里：\n"
-                              f"{group_cli_hint}\n"
-                              "[end padding]\n[end padding]\n[end padding]")
-            else:
-                msg_prefix = f"[群聊 {group_id} 成员数:{member_count}] {sender} 说:\n"
-                msg_suffix = (
-                    f"\n\n{agent_identity}。\n"
-                    f"{role_hint}"
-                    f"{human_user_hint}\n\n"
-                    f"{mention_hint}\n"
-                    "如需回复，请先 cd 到项目目录，然后使用 CLI 工具发送消息到群里：\n"
-                    f"{group_cli_hint}\n"
-                    "[end padding]\n[end padding]\n[end padding]"
-                )
-
-            msg_text = msg_prefix + content + msg_suffix
-
-            # Append attachment descriptions to text message
-            if attachments:
-                attach_desc = "\n".join(
-                    f"  📎 {att.name} ({att.type}/{att.mime_type})" for att in attachments
-                )
-                msg_text = msg_prefix + content + f"\n\n[随消息附件]\n{attach_desc}" + msg_suffix
-
-            # Handle different member types
             if member_type == "ext":
-                # External agent: use ACP or HTTP
-                agent_info = external_agents_map.get(global_id, {})
-                if not agent_info:
-                    logger.info(
-                        "Skip untracked external agent %s (%s); not found in tracked external agents map",
-                        short_name,
-                        global_id,
-                    )
-                    continue
-                asyncio.create_task(
-                    self._handle_external_agent_reply(
-                        group_id, agent_info, msg_text, short_name,
-                        attachments=attachments,
-                        metadata={"is_private_chat": is_private_chat},
-                        user_id=owner_uid,
-                        run_mode=normalized_mode,
-                    )
-                )
+                sender_display = f"{tag}#{member_type}#{short_name}#{global_id}" if tag else f"#{member_type}#{short_name}#{global_id}"
+                agent_ref = record.address if record.agent_id else ""
+                group_cli_hint = _cli_hint("send", owner=owner_uid, group_id=group_id,
+                                           sender_display=sender_display, agent=agent_ref)
+                private_cli_hint = _cli_hint("private-send", owner=owner_uid, group_id=group_id,
+                                             sender_display=sender_display, agent=agent_ref)
+                agent_identity = f"你是「{short_name}」"
+                if is_private_chat:
+                    msg_prefix = f"[私聊] {sender} 说:\n"
+                    msg_suffix = (f"\n\n{agent_identity}。\n"
+                                  f"{human_user_hint}\n\n"
+                                  "如需让用户看到你的回复，请使用 send private cli（底层等价于群消息发送）：\n"
+                                  f"{private_cli_hint}\n"
+                                  "[end padding]\n[end padding]\n[end padding]")
+                elif mentioned:
+                    msg_prefix = f"[群聊 {group_id} 成员数:{member_count}] {sender} @你 说:\n"
+                    msg_suffix = (f"\n\n⚠️ 这是专门 @你 的消息，你必须回复！{agent_identity}。\n"
+                                  f"{role_hint}"
+                                  f"{human_user_hint}\n\n"
+                                  f"{mention_hint}\n"
+                                  "请先 cd 到项目目录，然后使用 CLI 工具发送消息到群里：\n"
+                                  f"{group_cli_hint}\n"
+                                  "[end padding]\n[end padding]\n[end padding]")
+                else:
+                    msg_prefix = f"[群聊 {group_id} 成员数:{member_count}] {sender} 说:\n"
+                    msg_suffix = (f"\n\n{agent_identity}。\n"
+                                  f"{role_hint}"
+                                  f"{human_user_hint}\n\n"
+                                  f"{mention_hint}\n"
+                                  "如需回复，请先 cd 到项目目录，然后使用 CLI 工具发送消息到群里：\n"
+                                  f"{group_cli_hint}\n"
+                                  "[end padding]\n[end padding]\n[end padding]")
+                text = digest + msg_prefix + content + attach_hint + msg_suffix
+                # ACP sessions get the rules for this kind of chat; an HTTP session is
+                # shared by private and group chats, so it carries both, unchanged.
+                if record.driver in ("openclaw", "http"):
+                    instructions = "\n\n".join([_external_agent_group_rules_block(), _external_agent_private_rules_block()])
+                elif is_private_chat:
+                    instructions = _external_agent_private_rules_block()
+                else:
+                    instructions = _external_agent_group_rules_block()
             else:
-                # Internal oasis agent: use HTTP trigger
-                trigger_url = f"http://127.0.0.1:{os.getenv('PORT_AGENT', '51200')}/system_trigger"
-
                 group_trigger_suffix = ("\n\n如果需要回复，请使用 send_to_group 工具发送消息到群里：\n"
                                         f"  当前群主 owner=\"{owner_uid}\"；当前人类用户是「{owner_uid}」\n"
                                         f"  send_to_group(group_id=\"{group_id}\", content=\"你的回复内容\")\n"
-                                        "  如某段回复只需要特定成员处理，或需要转交给更合适的成员，请在 content 中直接写 @对方名称。被 @ 的消息只会唤醒并投递给目标成员，不会打扰全群；鼓励用这种方式高效交流。不要写内部 global_id、session_id 或 tag#type#... 标识。\n"
+                                        f"  {mention_hint}\n"
                                         "注意：username 和 source_session 会自动注入，不要手动设置。\n"
                                         "[end padding]\n[end padding]\n[end padding]")
                 private_trigger_suffix = ("\n\n如果需要回复，请使用 send_to_group 工具发送私聊消息：\n"
@@ -1044,56 +695,71 @@ class GroupService:
                                           f"  send_to_group(group_id=\"{group_id}\", content=\"你的回复内容\")\n"
                                           "注意：username 和 source_session 会自动注入，不要手动设置。\n"
                                           "[end padding]\n[end padding]\n[end padding]")
-
-                attach_hint = ""
-                if attachments:
-                    attach_desc = "\n".join(
-                        f"  📎 {att.name} ({att.type}/{att.mime_type})" for att in attachments
-                    )
-                    attach_hint = f"\n\n[随消息附件]\n{attach_desc}"
-
                 if is_private_chat:
-                    trigger_msg = (f"[私聊] {sender} 说:\n{content}{attach_hint}\n\n"
-                                   f"(你当前的身份/角色是「{short_name}」。)"
-                                   f"{private_trigger_suffix}")
-                elif mentions and global_id in mentions:
-                    trigger_msg = (f"[群聊 {group_id} 成员数:{member_count}] {sender} @你 说:\n{content}{attach_hint}\n\n"
-                                   f"(⚠️ 这是专门 @你 的消息，你必须回复！"
-                                   f"你在群聊中的身份/角色是「{short_name}」，回复时请体现你的专业角色视角。)"
-                                   f"{group_trigger_suffix}")
+                    text = (f"[私聊] {sender} 说:\n{content}{attach_hint}\n\n"
+                            f"(你当前的身份/角色是「{short_name}」。)"
+                            f"{private_trigger_suffix}")
+                elif mentioned:
+                    text = (f"[群聊 {group_id} 成员数:{member_count}] {sender} @你 说:\n{content}{attach_hint}\n\n"
+                            f"(⚠️ 这是专门 @你 的消息，你必须回复！"
+                            f"你在群聊中的身份/角色是「{short_name}」，回复时请体现你的专业角色视角。)"
+                            f"{role_hint}{group_trigger_suffix}")
                 else:
-                    trigger_msg = (f"[群聊 {group_id} 成员数:{member_count}] {sender} 说:\n{content}{attach_hint}\n\n"
-                                   f"(你在群聊中的身份/角色是「{short_name}」，回复时请体现你的专业角色视角。)"
-                                   f"{group_trigger_suffix}")
+                    text = (f"[群聊 {group_id} 成员数:{member_count}] {sender} 说:\n{content}{attach_hint}\n\n"
+                            f"(你在群聊中的身份/角色是「{short_name}」，回复时请体现你的专业角色视角。)"
+                            f"{role_hint}{group_trigger_suffix}")
+                text = digest + text
+                instructions = ""
 
-                # 标记内部 agent 正在输入（thread lock 会在处理完成后自动释放，
-                # get_typing_status 会检查 lock 状态来判断是否仍在输入）
-                self.set_typing(group_id, short_name)
-                try:
-                    trigger_body: dict = {
-                        "user_id": user_id_member,
-                        "session_id": global_id,
-                        "text": trigger_msg,
-                        "coalesce_key": f"group:{group_id}:agent:{global_id}",
-                    }
-                    if attachments:
-                        trigger_body["attachments"] = [
-                            a.model_dump() for a in attachments
-                        ]
-                    if normalized_mode:
-                        trigger_body["session_mode"] = normalized_mode
-                        # Manual = no tool calls. Empty list is the explicit signal.
-                        if normalized_mode == "chat":
-                            trigger_body["enabled_tools"] = []
-                    async with httpx.AsyncClient(timeout=30) as client:
-                        await client.post(
-                            trigger_url,
-                            headers={"X-Internal-Token": self.internal_token},
-                            json=trigger_body,
-                        )
-                except Exception as e:
-                    logger.warning("广播到 %s (global_id=%s) 失败: %s", short_name, global_id, e)
-                    self.clear_typing(group_id, short_name)
+            await self._deliver_to_agent(
+                group_id, owner_uid, record, short_name, text,
+                instructions=instructions, attachments=attachments, mode=normalized_mode,
+            )
+            if message_id:
+                await advance_member_read_cursor(self.group_db_path, group_id, global_id, message_id)
+
+    # ── team groups ───────────────────────────────────────────────────────
+
+    def _team_fingerprint(self, owner: str, team: str) -> tuple:
+        base = os.path.join(str(USER_FILES_DIR), owner, "teams", team)
+        stamp = []
+        for name in ("internal_agents.json", "external_agents.json"):
+            try:
+                st = os.stat(os.path.join(base, name))
+                stamp.append((name, st.st_mtime_ns, st.st_size))
+            except OSError:
+                stamp.append((name, None, None))
+        return tuple(stamp)
+
+    async def _sync_team_group(self, group_id: str, owner: str) -> None:
+        """Keep a team group's agent members and primary in step with the team."""
+        group = await get_group(self.group_db_path, group_id)
+        team = str((group or {}).get("team") or "")
+        if not team or not owner:
+            return
+        fingerprint = self._team_fingerprint(owner, team)
+        if self._team_sync_state.get(group_id) == fingerprint:
+            return
+        desired = {m["global_id"]: m for m in _load_team_members(owner, team) if m.get("global_id")}
+        current = {m["global_id"]: m for m in await list_group_members(self.group_db_path, group_id) if m.get("is_agent")}
+        now = time.time()
+        for gid, m in desired.items():
+            if gid not in current:
+                await add_group_member(
+                    self.group_db_path, group_id=group_id, user_id=m.get("user_id", ""),
+                    short_name=m.get("short_name", ""), global_id=gid,
+                    member_type=m.get("member_type", "oasis"), tag=m.get("tag", ""), joined_at=now,
+                )
+        for gid in current:
+            if gid not in desired:
+                await remove_group_member(self.group_db_path, group_id=group_id, global_id=gid)
+        lead = next((gid for gid, m in desired.items() if m.get("is_primary")), None)
+        primary = await get_group_primary_agent(self.group_db_path, group_id)
+        if lead and primary != lead:
+            await set_group_primary_agent(self.group_db_path, group_id=group_id, global_id=lead)
+        elif primary and primary not in desired:
+            await set_group_primary_agent(self.group_db_path, group_id=group_id, global_id=None)
+        self._team_sync_state[group_id] = fingerprint
 
     async def create_group(self, req: GroupCreateRequest, authorization: str | None):
         uid, _, _ = self.parse_group_auth(authorization)
@@ -1135,6 +801,12 @@ class GroupService:
                 group_id=group_id,
                 global_id=primary_gid,
             )
+        if is_private:
+            await set_group_team(self.group_db_path, group_id=group_id, team="", kind="direct")
+        elif req.team_name:
+            # A team group mirrors its team: members and primary follow the manifest.
+            await set_group_team(self.group_db_path, group_id=group_id, team=req.team_name)
+            self._team_sync_state[group_id] = self._team_fingerprint(uid, req.team_name)
         return {
             "group_id": group_id,
             "name": req.name,
@@ -1149,7 +821,8 @@ class GroupService:
 
     async def get_group(self, group_id: str, authorization: str | None):
         uid, _, _ = self.parse_group_auth(authorization)
-        await self._require_group_access(group_id, uid)
+        owner = await self._require_group_access(group_id, uid)
+        await self._sync_team_group(group_id, owner)
         group = await get_group(self.group_db_path, group_id)
         if not group:
             raise HTTPException(status_code=404, detail="群聊不存在")
@@ -1234,9 +907,13 @@ class GroupService:
             uid, _, _ = self.parse_group_auth(authorization)
             sender = req.sender or uid
             # 人类发消息 sender_display 为空（前端用这个判断是否 agent）。
-            # The CLI posts for an agent member with its full sender_display;
-            # the browser proxy strips sender fields, so only local callers can.
-            if not await self._agent_member_for_sender(group_id, sender_display):
+            # The CLI posts for an agent member (--agent, or its full
+            # sender_display); the browser proxy strips these fields, so only
+            # local callers can.
+            if req.agent:
+                sender_display = await self._sender_display_for_agent(group_id, owner, req.agent)
+                sender = sender_display
+            elif not await self._agent_member_for_sender(group_id, sender_display):
                 await self._require_group_access(group_id, uid)
 
         now = time.time()
@@ -1278,28 +955,6 @@ class GroupService:
                             "message": "该成员已被禁言，暂不发言",
                         }
 
-        # External agent configs are loaded for the group owner, whoever posted.
-        broadcast_uid = owner
-
-        # Serialize attachments for DB storage
-        attachments_json = "[]"
-        if req.attachments:
-            attachments_json = json.dumps([a.model_dump() for a in req.attachments])
-
-        msg_id = await insert_group_message(
-            self.group_db_path,
-            group_id=group_id,
-            sender=sender,
-            sender_display=sender_display,
-            content=req.content,
-            attachments=attachments_json,
-            timestamp=now,
-        )
-
-        # Agent 发消息后清除其"正在输入"状态
-        if sender_display:
-            self.clear_typing_by_sender_display(group_id, sender_display)
-
         # ── Auto-resolve @mentions from message content ──
         # Match "@<short_name>" against the member list rather than regex-parsing
         # @tokens, which breaks on names with spaces. Works for all channels
@@ -1319,19 +974,56 @@ class GroupService:
                     resolved_mentions.append(gid)
         final_mentions = resolved_mentions if resolved_mentions else None
 
-        # 用 sender_display (tag#type#short_name) 排除发送者自己
-        # 不用 global_id 排除，因为不同 agent 平台的 global_id 可能冲突
-        exclude_display = sender_display or ""
+        sender_member = await self._agent_member_for_sender(group_id, sender_display)
+        if sender_member is not None:
+            sender_id = member_principal(self._registry(), owner, sender_member)
+        elif x_internal_token and x_internal_token == self.internal_token:
+            session = sender.split("#", 1)[1] if "#" in sender else ""
+            record = self._registry().webot_session(owner, session) if session else None
+            sender_id = record.agent_id if record else ""
+        else:
+            sender_id = human_principal(sender)
+
+        # Serialize attachments for DB storage
+        attachments_json = "[]"
+        if req.attachments:
+            attachments_json = json.dumps([a.model_dump() for a in req.attachments])
+
+        msg_id, created = await insert_group_message(
+            self.group_db_path,
+            group_id=group_id,
+            sender=sender,
+            sender_display=sender_display,
+            content=req.content,
+            attachments=attachments_json,
+            timestamp=now,
+            sender_id=sender_id,
+            mentions=json.dumps(final_mentions or [], ensure_ascii=False),
+            reply_to=req.reply_to,
+            client_msg_id=(req.client_msg_id or "").strip(),
+        )
+        if not created:
+            return {"status": "duplicate", "sender": sender, "sender_display": sender_display, "id": msg_id}
+
+        # Agent 发消息后清除其"正在输入"状态；它说话时已看过此前的一切
+        if sender_display:
+            self.clear_typing_by_sender_display(group_id, sender_display)
+        if sender_member is not None:
+            await advance_member_read_cursor(self.group_db_path, group_id, sender_member["global_id"], msg_id)
+
+        # 用 sender_display (tag#type#short_name#global_id) 标识发送者自己
         asyncio.create_task(
             self.broadcast_to_group(
                 group_id,
                 sender_display or sender,
                 req.content,
-                exclude_sender_display=exclude_display,
+                exclude_sender_display=sender_display or "",
                 mentions=final_mentions,
-                user_id=broadcast_uid,
+                user_id=owner,
                 attachments=req.attachments,
                 run_mode=req.run_mode,
+                message_id=msg_id,
+                mention_all=mentions_everyone(req.content),
             )
         )
 
@@ -1419,6 +1111,8 @@ class GroupService:
             )
             await set_group_primary_agent(self.group_db_path, group_id=group_id, global_id=primary_gid)
 
+        await set_group_team(self.group_db_path, group_id=group_id, team=team_name)
+        self._team_sync_state[group_id] = self._team_fingerprint(uid, team_name)
         return {
             "status": "synced",
             "group_id": group_id,
@@ -1427,21 +1121,28 @@ class GroupService:
         }
 
     async def mute_group(self, group_id: str, authorization: str | None):
+        """免打扰: keep every message, wake no agent. Survives restarts (it used to be in memory)."""
         uid, _, _ = self.parse_group_auth(authorization)
         await self._require_group_access(group_id, uid, owner_only=True)
-        self.group_muted.add(group_id)
+        await set_group_mute_state(
+            self.group_db_path, group_id=group_id, target_type="dnd", target_id="*",
+            muted=True, updated_at=time.time(),
+        )
         return {"status": "muted", "group_id": group_id}
 
     async def unmute_group(self, group_id: str, authorization: str | None):
         uid, _, _ = self.parse_group_auth(authorization)
         await self._require_group_access(group_id, uid, owner_only=True)
-        self.group_muted.discard(group_id)
+        await set_group_mute_state(
+            self.group_db_path, group_id=group_id, target_type="dnd", target_id="*",
+            muted=False, updated_at=time.time(),
+        )
         return {"status": "unmuted", "group_id": group_id}
 
     async def group_mute_status(self, group_id: str, authorization: str | None):
         uid, _, _ = self.parse_group_auth(authorization)
         await self._require_group_access(group_id, uid)
-        return {"muted": group_id in self.group_muted}
+        return {"muted": await self._is_do_not_disturb(group_id)}
 
     async def mute_group_member(self, group_id: str, req: GroupMuteMemberRequest, authorization: str | None):
         uid, _, _ = self.parse_group_auth(authorization)

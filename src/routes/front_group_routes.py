@@ -246,7 +246,7 @@ def register_group_routes(app, *, port_agent: int, internal_token: str) -> None:
             if isinstance(body, dict):
                 # A browser speaks as its logged-in user; only local callers
                 # (CLI, MCP) may post as an agent member.
-                body = {k: v for k, v in body.items() if k not in ("sender", "sender_display")}
+                body = {k: v for k, v in body.items() if k not in ("sender", "sender_display", "agent")}
             r = requests.post(
                 "http://127.0.0.1:{port}/groups/{gid}/messages".format(
                     port=port_agent,
