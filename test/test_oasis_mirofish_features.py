@@ -59,6 +59,10 @@ class OasisMiroFishFeatureTests(unittest.TestCase):
         patcher = mock.patch.object(forum_module, "DISCUSSIONS_DIR", tmp.name)
         patcher.start()
         self.addCleanup(patcher.stop)
+        # Test clients are not loopback: keep OASIS listening on loopback only.
+        env = mock.patch.dict("os.environ", {"CLAWCROSS_SERVER_HOST": "127.0.0.1"})
+        env.start()
+        self.addCleanup(env.stop)
 
     def tearDown(self):
         server.discussions.clear()

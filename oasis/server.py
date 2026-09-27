@@ -12,6 +12,7 @@ Start with:
 
 import os
 import platform
+import secrets
 import shutil
 import subprocess
 import sys
@@ -296,6 +297,28 @@ app = FastAPI(
     description="Multi-expert parallel discussion service",
     lifespan=lifespan,
 )
+
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+@app.middleware("http")
+async def _require_token_from_other_hosts(request: Request, call_next):
+    """When OASIS listens beyond loopback (WSL, CLAWCROSS_SERVER_HOST), only
+    this machine may call it without the internal token.
+
+    Every ClawCross service reaches OASIS on 127.0.0.1, as local callers are
+    trusted elsewhere too (front's direct-local rule, /internal/bg_job_done);
+    anyone else on the network must prove they hold INTERNAL_TOKEN.
+    """
+    if _server_host() not in _LOOPBACK_HOSTS:
+        client = request.client.host if request.client else ""
+        expected = os.getenv("INTERNAL_TOKEN", "")
+        supplied = request.headers.get("x-internal-token", "")
+        if client not in _LOOPBACK_HOSTS and not (
+            expected and secrets.compare_digest(supplied.encode(), expected.encode())
+        ):
+            return JSONResponse(status_code=401, content={"detail": "X-Internal-Token required"})
+    return await call_next(request)
 
 
 # ------------------------------------------------------------------
