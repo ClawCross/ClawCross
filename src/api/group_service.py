@@ -961,6 +961,9 @@ class GroupService:
         # (frontend, CLI, MCP send_to_group). Humans are included so that @human
         # also narrows the broadcast instead of waking every agent.
         resolved_mentions = list(req.mentions) if req.mentions else []
+        # A team group follows its team; resolve names against today's members,
+        # not ones a role change has since replaced.
+        await self._sync_team_group(group_id, owner)
         if "@" in req.content:
             members = await list_group_members(self.group_db_path, group_id)
             name_gid_pairs = [

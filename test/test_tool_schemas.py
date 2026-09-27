@@ -35,6 +35,8 @@ from core.agent import (
 from core.tool_schema import (
     StrictSchemaError,
     drop_null_optionals,
+    forced_tool_choice_supported,
+    reply_format_binding,
     strict_tool_binding,
     strict_violations,
     to_strict_parameters,
@@ -381,6 +383,41 @@ class ProviderBinding(unittest.TestCase):
             _m, per_tool, kwargs = strict_tool_binding(ChatOpenAI(model="gpt-5", api_key="test"))
         self.assertFalse(per_tool)
         self.assertEqual(kwargs, {})
+
+
+class ReplyFormats(unittest.TestCase):
+    """A requested reply schema reaches each provider in a form it accepts (built offline)."""
+
+    FORMAT = {"type": "json_schema", "json_schema": {"name": "Reply", "strict": True, "schema": {
+        "type": "object", "properties": {"content": {"type": "string"}},
+        "required": ["content"], "additionalProperties": False,
+    }}}
+
+    def test_openai_decodes_the_schema(self):
+        from langchain_openai import ChatOpenAI
+
+        model = ChatOpenAI(model="gpt-5", api_key="test")
+        self.assertEqual(reply_format_binding(model, self.FORMAT), ({"response_format": self.FORMAT}, ""))
+        self.assertTrue(forced_tool_choice_supported(model))
+
+    def test_deepseek_gets_json_mode_and_the_schema_in_the_prompt(self):
+        # DeepSeek answers json_schema with 400 "This response_format type is unavailable now".
+        from langchain_deepseek import ChatDeepSeek
+
+        model = ChatDeepSeek(model="deepseek-chat", api_key="test", api_base="https://api.deepseek.com")
+        kwargs, hint = reply_format_binding(model, self.FORMAT)
+        payload = model._get_request_payload([HumanMessage("hi")], **kwargs)
+        self.assertEqual(payload["response_format"], {"type": "json_object"})
+        self.assertIn("JSON", hint)  # json_object mode needs the prompt to ask for JSON
+        self.assertIn(json.dumps(self.FORMAT["json_schema"]["schema"]), hint)
+        self.assertFalse(forced_tool_choice_supported(model))
+
+    def test_other_wires_carry_the_schema_in_the_prompt(self):
+        from langchain_anthropic import ChatAnthropic
+
+        kwargs, hint = reply_format_binding(ChatAnthropic(model="claude-sonnet-5", api_key="test"), self.FORMAT)
+        self.assertEqual(kwargs, {})
+        self.assertIn('"content"', hint)
 
 
 class StrictCallsRunOnTheRealServer(unittest.IsolatedAsyncioTestCase):

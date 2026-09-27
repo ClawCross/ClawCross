@@ -100,6 +100,7 @@ from core.tool_aliases import canonical_tool_name, canonical_tool_names, resolve
 from core.tool_schema import (
     StrictSchemaError,
     drop_null_optionals,
+    reply_format_binding,
     strict_tool_binding,
     strict_violations,
     to_strict_parameters,
@@ -665,9 +666,12 @@ class UserAwareToolNode:
                     user_id=user_id, session_id=session_id, tool_name=tc["name"], args=tc["args"],
                     decision=final_decision, messages=state["messages"], policy=permission.policy,
                     counters=counters, active_approval=permission.approval,
+                    # Nobody watches a group- or schedule-triggered turn; leave
+                    # the request for the user instead of holding the session.
+                    wait_for_user=state.get("trigger_source") != "system",
                 )
                 if not outcome.allowed:
-                    blocked_calls.append((tc, outcome.reason, False, outcome.approval_id))
+                    blocked_calls.append((tc, outcome.reason, outcome.pending, outcome.approval_id))
                     with contextlib.suppress(Exception):
                         run_tool_policy_hooks(
                             permission.policy, event="deny", user_id=user_id, session_id=session_id,
@@ -1491,17 +1495,15 @@ class TeamAgent:
         # Per-request forced reply format — additive on top of tool binding.
         # Tools stay bound as-is; whether the model still calls one or answers
         # directly in the forced shape is left to the provider's own decoding,
-        # not decided here. Only OpenAI-wire-protocol models accept this kwarg.
+        # not decided here. What the provider cannot decode (DeepSeek has no
+        # json_schema; non-OpenAI wires have no response_format) is asked for
+        # in this turn's dynamic block instead.
         response_format = state.get("response_format")
+        reply_format_hint = ""
         if response_format:
-            from langchain_openai.chat_models.base import BaseChatOpenAI
-            if isinstance(base_model, BaseChatOpenAI):
-                llm = llm.bind(response_format=response_format)
-            else:
-                print(
-                    f">>> [response_format] ⚠️ 当前模型 provider ({type(base_model).__name__}) "
-                    "不支持 response_format 直通，本轮忽略格式约束"
-                )
+            format_kwargs, reply_format_hint = reply_format_binding(base_model, response_format)
+            if format_kwargs:
+                llm = llm.bind(**format_kwargs)
 
         # Anthropic prompt caching is opt-in (needs an explicit cache_control
         # breakpoint per request; unlike OpenAI/DeepSeek it does not cache
@@ -1692,6 +1694,8 @@ class TeamAgent:
         )
         if tool_status_prompt:
             dynamic_context_block += f"\n[工具状态变更] {tool_status_prompt}\n"
+        if reply_format_hint:
+            dynamic_context_block += f"\n[回复格式] {reply_format_hint}\n"
 
         history_messages = list(state["messages"])
 
