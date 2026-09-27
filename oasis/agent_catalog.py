@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import sys
 from copy import deepcopy
@@ -27,29 +26,16 @@ def _canonical_external_platform(platform_name: str) -> str:
     return pl
 
 
-def _load_json_list(path: str) -> list[dict]:
-    if not os.path.isfile(path):
-        return []
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, list) else []
-    except Exception:
-        return []
-
-
-def _team_base(user_id: str, team: str = "") -> str:
-    if team:
-        return os.path.join(str(USER_FILES_DIR), user_id, "teams", team)
-    return os.path.join(str(USER_FILES_DIR), user_id)
-
-
 def _load_internal_agents(user_id: str, team: str = "") -> list[dict]:
-    return _load_json_list(os.path.join(_team_base(user_id, team), "internal_agents.json"))
+    from teams.view import get_team_view
+
+    return get_team_view(USER_FILES_DIR).entries(user_id, team, "internal")
 
 
 def _load_external_agents(user_id: str, team: str = "") -> list[dict]:
-    return _load_json_list(os.path.join(_team_base(user_id, team), "external_agents.json"))
+    from teams.view import get_team_view
+
+    return get_team_view(USER_FILES_DIR).entries(user_id, team, "external")
 
 
 def _expert_by_tag(user_id: str, team: str = "") -> dict[str, dict]:

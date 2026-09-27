@@ -27,6 +27,7 @@ patch_langchain_file_mime()
 
 from core.agent import TeamAgent
 from agents.routes import create_agents_router
+from teams.routes import create_teams_router
 from services.llm_factory import extract_text as _extract_text
 from utils.user_auth import load_users as load_users_from_file, verify_password as verify_password_from_file
 from api.group_routes import create_group_router, init_group_db
@@ -254,6 +255,13 @@ app.include_router(
 # L1 agent layer: every agent on this machine, one interface.
 app.include_router(
     create_agents_router(
+        internal_token=INTERNAL_TOKEN,
+        verify_password=verify_password,
+    )
+)
+# Teams compose agents; a team is addressed through its lead.
+app.include_router(
+    create_teams_router(
         internal_token=INTERNAL_TOKEN,
         verify_password=verify_password,
     )

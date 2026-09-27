@@ -76,6 +76,22 @@ def new_agent_id() -> str:
     return AGENT_ID_PREFIX + "".join(secrets.choice(_ID_ALPHABET) for _ in range(10))
 
 
+def _base36(n: int) -> str:
+    digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+    out = ""
+    while True:
+        n, r = divmod(n, 36)
+        out = digits[r] + out
+        if n == 0:
+            return out
+
+
+def new_webot_session_id() -> str:
+    """A fresh WeBot session id, in the format the web UI and imports have always used:
+    base36 milliseconds + 4 random base36 digits."""
+    return _base36(int(time.time() * 1000)) + _base36(secrets.randbelow(36 ** 4)).zfill(4)
+
+
 def _slug(text: str) -> str:
     slug = re.sub(r"[^a-z0-9_-]+", "-", (text or "").strip().lower()).strip("-_")
     return slug[:32].rstrip("-_")

@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import json
-import random
 import shutil
-import time
 from pathlib import Path
 from typing import Any
 
+from agents.registry import new_webot_session_id
 from utils.runtime_paths import USER_FILES_DIR
 
 
@@ -16,23 +15,6 @@ PRESET_ROOT = PROJECT_ROOT / "data" / "team_presets"
 
 def _read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
-
-
-def _to_base36(n: int) -> str:
-    if n == 0:
-        return "0"
-    digits = "0123456789abcdefghijklmnopqrstuvwxyz"
-    out = ""
-    while n > 0:
-        out = digits[n % 36] + out
-        n //= 36
-    return out
-
-
-def _generate_session_id() -> str:
-    timestamp_ms = int(time.time() * 1000)
-    random_part = random.randint(0, 36**4 - 1)
-    return _to_base36(timestamp_ms) + _to_base36(random_part).zfill(4)
 
 
 def list_team_presets() -> list[dict[str, Any]]:
@@ -112,7 +94,7 @@ def install_team_preset(
         if not isinstance(entry, dict):
             continue
         meta = {k: v for k, v in entry.items() if k != "session"}
-        runtime_agents.append({"session": _generate_session_id(), "meta": meta})
+        runtime_agents.append({"session": new_webot_session_id(), "meta": meta})
         flat_agents.append(meta)
 
     internal_agents_path = team_dir / "internal_agents.json"
