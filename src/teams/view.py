@@ -14,15 +14,12 @@ they lead the team (``is_primary``).
 
 from __future__ import annotations
 
-import contextlib
-import json
 import os
-import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
-from agents.registry import AgentRecord, AgentRegistry, get_registry, new_webot_session_id
+from agents.registry import AgentRecord, AgentRegistry, get_registry, read_json_entries as _read_entries, stamp_missing_sessions
 
 INTERNAL_MANIFEST = "internal_agents.json"
 EXTERNAL_MANIFEST = "external_agents.json"
@@ -50,49 +47,6 @@ class TeamNotFound(LookupError):
 
 class TeamHasNoLead(LookupError):
     pass
-
-
-@contextlib.contextmanager
-def _file_lock(path: Path) -> Iterator[None]:
-    """Serialize manifest write-backs between the ClawCross processes."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "a+b") as handle:
-        try:
-            import fcntl
-        except ImportError:  # Windows
-            try:
-                import msvcrt
-                msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
-            except (ImportError, OSError):
-                pass
-            yield
-            return
-        fcntl.flock(handle, fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(handle, fcntl.LOCK_UN)
-
-
-def _read_entries(path: Path) -> list[Any]:
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return []
-    return data if isinstance(data, list) else []
-
-
-def _write_entries(path: Path, entries: list[Any]) -> None:
-    """Replace the manifest atomically, formatted exactly like ``_ia_save``."""
-    fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(entries, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, path)
-    except BaseException:
-        with contextlib.suppress(OSError):
-            os.unlink(tmp)
-        raise
 
 
 def _is_lead(entry: dict) -> bool:
@@ -125,24 +79,7 @@ class TeamView:
 
     def reconcile(self, owner: str, team: str) -> None:
         """Give every named internal role a session, writing it back to the manifest."""
-        path = self.team_dir(owner, team) / INTERNAL_MANIFEST
-        if not path.is_file():
-            return
-        if all(
-            not isinstance(e, dict) or "name" not in e or str(e.get("session") or "").strip()
-            for e in _read_entries(path)
-        ):
-            return
-        with _file_lock(path.with_name(f".{INTERNAL_MANIFEST}.lock")):
-            entries = _read_entries(path)  # re-read: another process may have stamped it
-            changed = False
-            for entry in entries:
-                if isinstance(entry, dict) and "name" in entry and not str(entry.get("session") or "").strip():
-                    entry.pop("session", None)
-                    entry["session"] = new_webot_session_id()  # appended last, as _ia_save does
-                    changed = True
-            if changed:
-                _write_entries(path, entries)
+        stamp_missing_sessions(self.team_dir(owner, team) / INTERNAL_MANIFEST)
 
     def entries(self, owner: str, team: str, kind: str) -> list[dict]:
         """The manifest's named entries of *kind* ("internal" / "external"), reconciled."""

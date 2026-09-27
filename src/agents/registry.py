@@ -18,17 +18,19 @@ that pick an agent's home team and config mirror the readers this replaces:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
 import secrets
 import sqlite3
+import tempfile
 import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from integrations.acpx_cli_tools import acpx_agent_tags_with_legacy
 
@@ -102,6 +104,81 @@ def new_webot_session_id() -> str:
 def _slug(text: str) -> str:
     slug = re.sub(r"[^a-z0-9_-]+", "-", (text or "").strip().lower()).strip("-_")
     return slug[:32].rstrip("-_")
+
+
+@contextlib.contextmanager
+def _file_lock(path: Path) -> Iterator[None]:
+    """Serialize manifest write-backs between the ClawCross processes."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a+b") as handle:
+        try:
+            import fcntl
+        except ImportError:  # Windows
+            try:
+                import msvcrt
+                msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+            except (ImportError, OSError):
+                pass
+            yield
+            return
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def read_json_entries(path: Path) -> list[Any]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return data if isinstance(data, list) else []
+
+
+def _write_entries(path: Path, entries: list[Any]) -> None:
+    """Replace the manifest atomically, formatted exactly like ``_ia_save``."""
+    fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(entries, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
+
+
+def stamp_missing_sessions(path: str | os.PathLike) -> bool:
+    """Give every named entry of an internal_agents.json a WeBot session.
+
+    An entry written without ``session`` (by hand, or team-builder via
+    ``write_file``) declares a new agent; its session is stamped and written
+    back in the ``_ia_save`` format (session appended last). Returns True when
+    the file changed.
+    """
+    path = Path(path)
+    if not path.is_file():
+        return False
+
+    def missing(entries: list) -> bool:
+        return any(
+            isinstance(e, dict) and "name" in e and not str(e.get("session") or "").strip()
+            for e in entries
+        )
+
+    if not missing(read_json_entries(path)):
+        return False
+    with _file_lock(path.with_name(f".{path.name}.lock")):
+        entries = read_json_entries(path)  # re-read: another process may have stamped it
+        if not missing(entries):
+            return False
+        for entry in entries:
+            if isinstance(entry, dict) and "name" in entry and not str(entry.get("session") or "").strip():
+                entry.pop("session", None)
+                entry["session"] = new_webot_session_id()
+        _write_entries(path, entries)
+    return True
 
 
 @dataclass(slots=True)
@@ -345,6 +422,11 @@ class AgentRegistry:
         with self._lock:
             if self._fingerprints.get(owner) == fingerprint:
                 return
+        # Roles written without a session declare new agents: give them one.
+        stamped = [stamp_missing_sessions(path) for kind, _team, path in files if kind == "internal_agents.json"]
+        if any(stamped):
+            files = self._owner_files(owner)
+            fingerprint = self._fingerprint(files)
         desired = self._desired_agents(owner, files)
         now = time.time()
         conn = self._connect()
