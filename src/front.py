@@ -33,7 +33,7 @@ from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 from utils.internal_alarm_utils import export_team_alarms, restore_team_alarms
 from services.llm_factory import create_chat_model, extract_text, infer_provider
 from routes.front_group_routes import register_group_routes
-from routes.front_agent_routes import register_agent_routes
+from routes.front_agent_routes import PUBLIC_AGENT_ENDPOINTS, register_agent_routes
 from routes.front_oasis_routes import register_oasis_routes
 from routes.front_session_routes import register_session_routes
 from routes.front_webot_routes import register_webot_routes
@@ -381,7 +381,7 @@ _PUBLIC_ROUTES = frozenset({
     'proxy_login_with_token', 'magic_login',
     'group_chat_mobile', 'group_chat_mobile_alias', 'studio',
     'llm_config_status', 'setup_status', 'import_openclaw_config',
-})
+}) | PUBLIC_AGENT_ENDPOINTS
 
 
 def _is_direct_local_request():
@@ -2399,9 +2399,17 @@ def proxy_openai_completions():
 
 @app.route("/v1/models", methods=["GET"])
 def proxy_openai_models():
-    """透传 /v1/models"""
+    """透传 /v1/models；带上与 /v1/chat/completions 相同的认证，列表才会包含调用者的 agent。"""
+    auth_header = request.headers.get("Authorization", "")
+    user_id = session.get("user_id")
+    if user_id:
+        auth_header = f"Bearer {INTERNAL_TOKEN}:{user_id}"
     try:
-        r = requests.get(f"http://127.0.0.1:{PORT_AGENT}/v1/models", timeout=10)
+        r = requests.get(
+            f"http://127.0.0.1:{PORT_AGENT}/v1/models",
+            headers={"Authorization": auth_header} if auth_header else {},
+            timeout=10,
+        )
         return Response(r.content, status=r.status_code, content_type=r.headers.get("content-type", "application/json"))
     except Exception as e:
         return jsonify({"error": str(e)}), 500

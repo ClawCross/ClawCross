@@ -11,6 +11,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from agents.registry import AgentRegistry
 from api.ops_models import AgentControlRequest
 from api.ops_service import OpsService
 from webot.subagents import SubagentRecord
@@ -51,6 +52,18 @@ class _FakeAgent:
 
 class AgentControlTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
+        # These tests point USER_FILES_DIR at a bare temp dir, so the agent
+        # registry's default DB (next to it) would land in the shared /tmp.
+        registry_dir = TemporaryDirectory()
+        self.addCleanup(registry_dir.cleanup)
+        patcher = mock.patch(
+            "agents.registry.get_registry",
+            lambda user_files_dir=None, db_path=None: AgentRegistry(
+                Path(registry_dir.name) / "group_chat.db", user_files_dir,
+            ),
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.agent = _FakeAgent()
         self.service = OpsService(
             internal_token="token",
@@ -150,6 +163,34 @@ class AgentControlTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertTrue(result["cancelled"])
             self.assertEqual(self.agent.cancelled, ["alice#main"])
+
+    async def test_agent_id_and_address_name_the_same_agent(self):
+        with TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            _write_json(
+                root / "alice" / "teams" / "alpha" / "internal_agents.json",
+                [{"session": "main", "name": "Main"}],
+            )
+            with (
+                mock.patch("api.ops_service.USER_FILES_DIR", root),
+                mock.patch("webot.subagents.list_subagents_for_user", return_value=[]),
+            ):
+                listed = await self.service.agent_control(
+                    AgentControlRequest(user_id="alice", action="list", kind="internal", refresh_external=False),
+                    None,
+                )
+                row = next(r for r in listed["agents"] if r["identity"] == "main")
+                self.assertTrue(row["agent_id"].startswith("ag_"))
+                self.assertEqual(row["address"], "alice/main")
+
+                for ref in (row["agent_id"], "alice/main"):
+                    result = await self.service.agent_control(
+                        AgentControlRequest(user_id="alice", action="cancel", identity=ref, refresh_external=False),
+                        None,
+                    )
+                    self.assertTrue(result["cancelled"])
+
+            self.assertEqual(self.agent.cancelled, ["alice#main", "alice#main"])
 
     async def test_http_agent_reports_cancel_as_unsupported(self):
         with TemporaryDirectory() as tmpdir:

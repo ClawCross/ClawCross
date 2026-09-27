@@ -121,6 +121,86 @@ class OpenAIChatService:
         self.agent = agent
         self.extract_text = extract_text
         self.protocol = OpenAIProtocolHelper(build_human_message=build_human_message)
+        self._gateway = None
+
+    def agent_gateway(self):
+        """The L1 gateway, so ``model`` may name any agent on this machine."""
+        if self._gateway is None:
+            from agents.gateway import AgentGateway
+
+            self._gateway = AgentGateway(internal_token=self.internal_token)
+        return self._gateway
+
+    def _model_agent(self, user_id: str, model: str | None):
+        """The agent a request's ``model`` names, or None for "webot" / plain model names."""
+        name = (model or "").strip()
+        if not name or name == "webot":
+            return None
+        from agents.registry import AgentNotFound, AmbiguousAgentRef
+
+        try:
+            return self.agent_gateway().resolve(user_id, name)
+        except AmbiguousAgentRef as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        except AgentNotFound:
+            return None
+
+    @staticmethod
+    def _last_user_message(req: ChatCompletionRequest) -> tuple[str, list[dict]]:
+        """Text and image attachments of the last user message."""
+        for msg in reversed(req.messages):
+            if msg.role != "user":
+                continue
+            content = msg.content
+            if isinstance(content, str):
+                return content, []
+            texts: list[str] = []
+            attachments: list[dict] = []
+            for part in content or []:
+                part = part if isinstance(part, dict) else part.model_dump()
+                if part.get("type") == "text" and part.get("text"):
+                    texts.append(part["text"])
+                elif part.get("type") == "image_url":
+                    url = str((part.get("image_url") or {}).get("url") or "")
+                    if url.startswith("data:") and ";base64," in url:
+                        mime, data = url[5:].split(";base64,", 1)
+                        attachments.append({"type": "image", "name": "image", "mime_type": mime, "data": data})
+            return "\n".join(texts), attachments
+        return "", []
+
+    async def _complete_with_agent(self, user_id: str, record, req: ChatCompletionRequest):
+        """Answer a chat completion by asking a non-WeBot agent through the gateway."""
+        from agents.messages import AgentMessage
+
+        text, attachments = self._last_user_message(req)
+        reply = await self.agent_gateway().ask(
+            user_id,
+            record,
+            AgentMessage(text=text, attachments=attachments, sender=f"u:{user_id}"),
+            mode=req.session_mode,
+            response_format=req.response_format,
+        )
+        if not reply.ok:
+            raise HTTPException(status_code=502, detail=reply.error or "agent call failed")
+        model = record.address
+        if not req.stream:
+            return self.make_openai_response(reply.content, model=model)
+
+        completion_id = self.make_completion_id()
+
+        async def events():
+            # The agent's reply arrives whole; stream it as one delta.
+            yield self.make_openai_chunk(model=model, completion_id=completion_id)
+            if reply.content:
+                yield self.make_openai_chunk(reply.content, model=model, completion_id=completion_id)
+            yield self.make_openai_chunk(model=model, finish_reason="stop", completion_id=completion_id)
+            yield "data: [DONE]\n\n"
+
+        return StreamingResponse(
+            events(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+        )
 
     def openai_msg_to_human_message(self, msg: ChatMessage) -> HumanMessage:
         """将 OpenAI 格式消息转换为 HumanMessage。"""
@@ -726,6 +806,12 @@ class OpenAIChatService:
             raise HTTPException(status_code=401, detail="认证失败")
 
         session_id = session_override or req.session_id or "default"
+        agent_record = self._model_agent(user_id, req.model)
+        if agent_record is not None:
+            if agent_record.driver != "webot":
+                return await self._complete_with_agent(user_id, agent_record, req)
+            # A WeBot agent named by address: talk to its own session.
+            session_id = str(agent_record.binding.get("session") or session_id)
         thread_id = f"{user_id}#{session_id}"
         config = {
             "configurable": {"thread_id": thread_id},
@@ -790,5 +876,27 @@ class OpenAIChatService:
 
         return await self._run_stream(ctx)
 
-    def list_models(self) -> dict:
-        return self.protocol.list_models_payload()
+    def list_models(self, authorization: str | None = None) -> dict:
+        """``webot`` plus, for an authenticated caller, every agent they own (id = address)."""
+        payload = self.protocol.list_models_payload()
+        parts = parse_bearer_parts(authorization)
+        user_id = None
+        if parts and self.internal_token and is_internal_bearer(parts, self.internal_token):
+            user_id = parts[1] if len(parts) >= 2 and parts[1] else None
+        elif parts:
+            parsed = extract_user_password_session(parts, default_session="")
+            if parsed and parsed[1] and self.verify_password(parsed[0], parsed[1]):
+                user_id = parsed[0]
+        if not user_id:
+            return payload
+        created = payload["data"][0]["created"] if payload["data"] else 0
+        for card in self.agent_gateway().list(user_id):
+            payload["data"].append({
+                "id": card["address"],
+                "object": "model",
+                "created": created,
+                "owned_by": card["driver"],
+                "agent_id": card["agent_id"],
+                "display_name": card["display_name"],
+            })
+        return payload

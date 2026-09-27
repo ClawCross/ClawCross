@@ -518,11 +518,46 @@ class OpsService:
                 "runtime": stored,
             })
 
+        self._attach_agent_ids(user_id, rows)
         team = team.strip()
         if team:
             rows = [row for row in rows if team in row.get("teams", [])]
         rows.sort(key=lambda row: (row["kind"], str(row["name"]).casefold(), row["identity"]))
         return rows
+
+    @staticmethod
+    def _registry():
+        from agents.registry import get_registry
+
+        return get_registry(USER_FILES_DIR)
+
+    def _attach_agent_ids(self, user_id: str, rows: list[dict[str, Any]]) -> None:
+        """Add each declared agent's stable L1 id and address to its row."""
+        registry = self._registry()
+        for row in rows:
+            if row["kind"] == "internal":
+                record = registry.webot_session(user_id, row["identity"])
+            elif row["kind"] == "external":
+                record = registry.external(user_id, row["identity"])
+            else:
+                continue
+            if record is not None:
+                row["agent_id"] = record.agent_id
+                row["address"] = record.address
+
+    def _legacy_identity(self, user_id: str, identity: str) -> tuple[str, str] | None:
+        """Map an L1 agent id or address to the (kind, identity) rows are keyed by."""
+        from agents.registry import AgentNotFound, AmbiguousAgentRef
+
+        try:
+            record = self._registry().resolve(user_id, identity)
+        except AmbiguousAgentRef as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        except AgentNotFound:
+            return None
+        if record.driver == "webot":
+            return "internal", str(record.binding.get("session") or "")
+        return "external", str(record.binding.get("global_name") or "")
 
     async def agent_control(self, req: AgentControlRequest, x_internal_token: str | None):
         """One compatible entry point for catalog, status, and lifecycle control."""
@@ -544,6 +579,12 @@ class OpsService:
             row for row in rows
             if row["identity"] == identity and (not req.kind or row["kind"] == req.kind)
         ]
+        if not matches:
+            # An L1 agent id (ag_…) or address (alice/coder) names the same row.
+            legacy = self._legacy_identity(req.user_id, identity)
+            if legacy is not None:
+                kind, identity = legacy
+                matches = [row for row in rows if row["identity"] == identity and row["kind"] == kind]
         if not matches:
             raise HTTPException(status_code=404, detail=f"未找到 Agent: {identity}")
         if len(matches) > 1:

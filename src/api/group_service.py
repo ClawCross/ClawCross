@@ -1,5 +1,4 @@
 import asyncio
-import base64
 import hashlib
 import json
 import os
@@ -14,6 +13,15 @@ from typing import Any, Callable, Literal
 import httpx
 from fastapi import HTTPException
 
+# Permission modes, their acpx wire format and attachment rendering live with
+# the agent layer; CLI / PC web / mobile group chat all send the same names.
+from agents.messages import (
+    ACPX_OVERRIDES_BY_MODE as _ACPX_OVERRIDES_BY_MODE,
+    compose_text_prompt as _compose_acpx_prompt,
+    decode_text_attachment as _decode_att_text,
+    is_text_mime as _is_text_mime,
+    normalize_run_mode as _normalize_run_mode,
+)
 from api.external_agent_registry import build_external_agents_map_for_owner
 from utils.auth_utils import extract_user_password_session, is_internal_bearer, parse_bearer_parts
 from utils.checkpoint_repository import list_thread_ids_by_prefix
@@ -82,40 +90,6 @@ _EXTERNAL_AGENT_PRIVATE_RULES_PATH = os.path.join(
 )
 _external_agent_private_rules_cache: str | None = None
 _external_agent_system_prompt_cache: str | None = None
-
-
-# Per-message permission mode → backend wire format. Mirrors scripts/clawcross.py
-# and frontend/js/main.js so CLI / PC web / mobile group chat are interchangeable.
-_VALID_RUN_MODES = ("chat", "readonly", "bypass", "auto")
-_ACPX_OVERRIDES_BY_MODE: dict[str, dict[str, Any]] = {
-    "chat": {
-        # All three together: tools hidden, and even if an old agent ignores --allowed-tools,
-        # approve-all is moot because no tool calls happen on the manual UI side anyway.
-        "permission_policy": "approve-all",
-        "non_interactive_permissions": "",
-        "allowed_tools": "",
-    },
-    "readonly": {
-        "permission_policy": "approve-reads",
-        # Plan mode: writes must error out, not hang waiting for a human approval.
-        "non_interactive_permissions": "deny",
-    },
-    "auto": {"permission_policy": "approve-reads", "non_interactive_permissions": "deny"},
-    "bypass": {
-        "permission_policy": "approve-all",
-        "non_interactive_permissions": "",
-    },
-}
-
-
-def _normalize_run_mode(mode: str | None) -> str | None:
-    """Return one of _VALID_RUN_MODES, or None when the input is empty/invalid.
-
-    None means "no override" — each member uses its own default.
-    """
-    raw = (mode or "").strip().lower()
-    raw = {"manual": "chat", "plan": "readonly", "yolo": "bypass"}.get(raw, raw)
-    return raw if raw in _VALID_RUN_MODES else None
 
 
 def _external_agent_group_rules_block() -> str:
@@ -237,64 +211,6 @@ def _external_http_session_key(agent_info: dict) -> str:
     global_name = str(agent_info.get("global_name", "")).strip()
     session_suffix = _resolve_external_session_suffix(str(agent_info.get("model", "")))
     return f"agent:{global_name}:{session_suffix}"
-
-
-# ── Text MIME helpers (shared with system_service) ──
-_TEXT_MIME_PREFIXES = ("text/",)
-_TEXT_MIME_EXACT = {
-    "application/json", "application/xml", "application/javascript",
-    "application/typescript", "application/x-yaml", "application/yaml",
-    "application/toml", "application/x-toml",
-    "application/sql", "application/graphql",
-    "application/x-sh", "application/x-python",
-    "application/csv", "application/x-csv",
-    "application/ld+json", "application/manifest+json",
-}
-
-
-def _is_text_mime(mime_type: str) -> bool:
-    """判断 MIME 类型是否为文本类。"""
-    mime = mime_type.lower().strip()
-    if any(mime.startswith(p) for p in _TEXT_MIME_PREFIXES):
-        return True
-    if mime in _TEXT_MIME_EXACT:
-        return True
-    if mime.endswith("+json") or mime.endswith("+xml"):
-        return True
-    return False
-
-
-def _decode_att_text(att_data: str, max_chars: int = 50000) -> str | None:
-    """尝试将附件 base64 数据解码为 UTF-8 文本。失败返回 None。"""
-    try:
-        raw = base64.b64decode(att_data)
-        text = raw.decode("utf-8")
-        if len(text) > max_chars:
-            text = text[:max_chars] + f"\n\n... (文件过长，已截断，共 {len(raw)} 字节)"
-        return text
-    except Exception:
-        return None
-
-
-def _compose_acpx_prompt(message: str, attachments: list[Attachment] | None = None) -> str:
-    """Compose one plain-text prompt for acpx-backed ACP call."""
-    parts: list[str] = [message]
-    for att in attachments or []:
-        if att.type == "image":
-            parts.append(f"[附件: {att.name} ({att.mime_type}), 图片已随多模态附件发送]")
-            continue
-        if att.type == "audio":
-            parts.append(f"[附件: {att.name} ({att.mime_type}), 音频已随多模态附件发送]")
-            continue
-        if _is_text_mime(att.mime_type):
-            decoded = _decode_att_text(att.data)
-            if decoded is not None:
-                parts.append(f"\n📄 附件「{att.name}」内容:\n```\n{decoded}\n```")
-            else:
-                parts.append(f"[附件: {att.name} ({att.mime_type}), 解码失败]")
-        else:
-            parts.append(f"[附件: {att.name} ({att.mime_type}), 二进制文件无法展示]")
-    return "\n\n".join(p for p in parts if p)
 
 
 def _load_team_internal_agents(user_id: str, team: str) -> list[dict]:
