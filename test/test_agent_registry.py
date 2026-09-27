@@ -61,6 +61,16 @@ class TestImport(RegistryTestCase):
         ids = {a.agent_id for a in agents.values()}
         self.assertEqual({a.agent_id for a in self.fresh().list("alice")}, ids)
 
+    def test_roles_written_without_sessions_are_listed(self):
+        # team-builder writes roles with write_file and no session.
+        self.write("alice", "builder", "internal_agents.json", [{"name": "Persona Designer", "tag": "persona_designer"}])
+
+        records = [r for r in self.registry.list("alice") if r.display_name == "Persona Designer"]
+
+        self.assertEqual(len(records), 1)
+        stored = json.loads((self.user_files / "alice" / "teams" / "builder" / "internal_agents.json").read_text())
+        self.assertEqual(records[0].binding["session"], stored[0]["session"])
+
     def test_id_survives_rename_and_moving_between_teams(self):
         self.write("alice", "dev", "internal_agents.json", [{"name": "Coder", "tag": "coder", "session": "s1"}])
         before = self.registry.resolve("alice", "coder")

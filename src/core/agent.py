@@ -803,6 +803,15 @@ class UserAwareToolNode:
         return {"messages": result_messages}
 
 
+def _mcp_instance_env() -> dict[str, str]:
+    """Variables that tell an MCP server which ClawCross instance it belongs to."""
+    return {
+        key: value
+        for key, value in os.environ.items()
+        if key.startswith(("CLAWCROSS_", "PORT_")) or key in {"INTERNAL_TOKEN", "OASIS_BASE_URL"}
+    }
+
+
 class TeamAgent:
     """
     Encapsulates the lightweight agent runtime: MCP tool loading, loop execution,
@@ -1164,7 +1173,7 @@ class TeamAgent:
 
         # 2. Start MCP servers
         python_command = sys.executable
-        self._mcp_client = MultiServerMCPClient({
+        mcp_servers = {
             "scheduler_service": {
                 "command": python_command,
                 "args": [os.path.join(self._src_dir, "mcp_servers", "scheduler.py")],
@@ -1215,7 +1224,16 @@ class TeamAgent:
                 "args": [os.path.join(self._src_dir, "mcp_servers", "skills.py")],
                 "transport": "stdio",
             },
-        })
+        }
+        # The MCP SDK starts stdio servers with only HOME/PATH/SHELL/TERM/USER/LOGNAME,
+        # so without this an instance running on its own CLAWCROSS_HOME or ports would
+        # have its tools read the default home's .env and call the default ports —
+        # another ClawCross instance.
+        instance_env = _mcp_instance_env()
+        for server in mcp_servers.values():
+            if server.get("transport") == "stdio":
+                server["env"] = {**instance_env, **server.get("env", {})}
+        self._mcp_client = MultiServerMCPClient(mcp_servers)
 
         # 3. Fetch tool definitions (new API: no context manager needed)
         self._mcp_tools = await self._mcp_client.get_tools()
