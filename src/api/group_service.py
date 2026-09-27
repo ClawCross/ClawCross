@@ -213,109 +213,84 @@ def _external_http_session_key(agent_info: dict) -> str:
     return f"agent:{global_name}:{session_suffix}"
 
 
-def _load_team_internal_agents(user_id: str, team: str) -> list[dict]:
-    """Load internal agents from team's internal_agents.json.
+def _team_view():
+    """The team view over this module's user-files tree (tests repoint USER_FILES_DIR)."""
+    from teams.view import get_team_view
 
-    Returns list of {"user_id": user_id, "global_id": session, "short_name": name, "member_type": "oasis", "tag": ...}
+    return get_team_view(USER_FILES_DIR)
+
+
+def _load_team_internal_agents(user_id: str, team: str) -> list[dict]:
+    """Internal members of a team, as group members.
+
+    Returns list of {"user_id": user_id, "global_id": session, "short_name": name, "member_type": "oasis", "tag": ...}.
+    Roles written without a session get one from the team view, so they join too.
     """
     if not user_id or not team:
         return []
-    path = os.path.join(str(USER_FILES_DIR), user_id, "teams", team, "internal_agents.json")
-    if not os.path.isfile(path):
-        return []
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if not isinstance(data, list):
-            return []
-        result = []
-        for a in data:
-            if not isinstance(a, dict) or "session" not in a:
-                continue
-            result.append({
-                "user_id": user_id,
-                "global_id": a.get("session", ""),
-                "short_name": a.get("name", ""),
-                "member_type": "oasis",
-                "tag": a.get("tag", ""),
-                "is_primary": bool(a.get("is_primary")),
-            })
-        return result
-    except Exception:
-        return []
+    return [
+        {
+            "user_id": user_id,
+            "global_id": entry.get("session", ""),
+            "short_name": entry.get("name", ""),
+            "member_type": "oasis",
+            "tag": entry.get("tag", ""),
+            "is_primary": bool(entry.get("is_primary")),
+        }
+        for entry in _team_view().entries(user_id, team, "internal")
+        if entry.get("session")
+    ]
 
 
-def _public_external_agents_path(user_id: str) -> str:
-    """User-level external_agents.json (not tied to a team)."""
-    return os.path.join(str(USER_FILES_DIR), user_id, "external_agents.json")
-
-
-def _parse_external_agents_file(path: str, *, owner_user_id: str = "", team: str = "") -> list[dict]:
-    """Parse external_agents.json list into member-style dicts (shared shape with team file)."""
-    if not os.path.isfile(path):
-        return []
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if not isinstance(data, list):
-            return []
-        result = []
-        for a in data:
-            if not isinstance(a, dict) or "name" not in a:
-                continue
-            ext_config = a.get("config") or a.get("meta") or {}
-            if not isinstance(ext_config, dict):
-                ext_config = {}
-            nm = a.get("name", "")
-            gn = a.get("global_name", "")
-            result.append({
-                "user_id": "ext",
-                "owner_user_id": owner_user_id,
-                "global_id": gn,
-                "short_name": nm,
-                "member_type": "ext",
-                "tag": a.get("tag", ""),
-                "global_name": gn,
-                "name": nm,
-                "team": team,
-                "platform": _canonical_external_platform(str(a.get("platform", "") or "")),
-                "api_url": ext_config.get("api_url", ""),
-                "api_key": ext_config.get("api_key", ""),
-                "model": ext_config.get("model", ""),
-                "meta": ext_config if isinstance(ext_config, dict) else {},
-                "is_primary": bool(a.get("is_primary")),
-            })
-        return result
-    except Exception:
-        return []
+def _external_member(entry: dict, *, owner_user_id: str = "", team: str = "") -> dict:
+    """An external_agents.json entry in group-member shape."""
+    ext_config = entry.get("config") or entry.get("meta") or {}
+    if not isinstance(ext_config, dict):
+        ext_config = {}
+    name = entry.get("name", "")
+    global_name = entry.get("global_name", "")
+    return {
+        "user_id": "ext",
+        "owner_user_id": owner_user_id,
+        "global_id": global_name,
+        "short_name": name,
+        "member_type": "ext",
+        "tag": entry.get("tag", ""),
+        "global_name": global_name,
+        "name": name,
+        "team": team,
+        "platform": _canonical_external_platform(str(entry.get("platform", "") or "")),
+        "api_url": ext_config.get("api_url", ""),
+        "api_key": ext_config.get("api_key", ""),
+        "model": ext_config.get("model", ""),
+        "meta": ext_config,
+        "is_primary": bool(entry.get("is_primary")),
+    }
 
 
 def _load_public_external_agents(user_id: str) -> list[dict]:
-    """Load external agents from user-level external_agents.json."""
+    """External agents in the user's own (non-team) scope."""
     if not user_id:
         return []
-    return _parse_external_agents_file(_public_external_agents_path(user_id), owner_user_id=user_id)
+    return [
+        _external_member(entry, owner_user_id=user_id)
+        for entry in _team_view().entries(user_id, "", "external")
+    ]
 
 
 def _load_team_external_agents(user_id: str, team: str) -> list[dict]:
-    """Load external agents from team's external_agents.json.
-
-    Returns list of {"user_id": "ext", "global_id": global_name, "short_name": name, "member_type": "ext", ...}
-    """
+    """External members of a team, as group members."""
     if not user_id or not team:
         return []
-    path = os.path.join(str(USER_FILES_DIR), user_id, "teams", team, "external_agents.json")
-    return _parse_external_agents_file(path, owner_user_id=user_id, team=team)
+    return [
+        _external_member(entry, owner_user_id=user_id, team=team)
+        for entry in _team_view().entries(user_id, team, "external")
+    ]
 
 
 def _load_team_members(user_id: str, team: str) -> list[dict]:
-    """Load all team members (internal + external agents).
-
-    Returns list of member dicts with user_id, session_id, member_type, etc.
-    """
-    internal = _load_team_internal_agents(user_id, team)
-    external = _load_team_external_agents(user_id, team)
-    return internal + external
+    """All team members (internal + external) in group-member shape."""
+    return _load_team_internal_agents(user_id, team) + _load_team_external_agents(user_id, team)
 
 
 async def init_group_db(group_db_path: str) -> None:

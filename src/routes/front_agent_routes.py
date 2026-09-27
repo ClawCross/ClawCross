@@ -12,6 +12,9 @@ PUBLIC_AGENT_ENDPOINTS = frozenset({
     "public_agent_message",
     "public_agent_control",
     "public_agent_card",
+    "public_teams_list",
+    "public_team_message",
+    "public_team_card",
 })
 
 
@@ -83,6 +86,36 @@ def register_agent_routes(
         try:
             return _relay(requests.get(
                 f"{base_url}/v1/agents/{quote(ref, safe='/')}",
+                headers=_public_auth_headers(),
+                timeout=20,
+            ))
+        except requests.RequestException as exc:
+            return jsonify({"error": str(exc)}), 502
+
+    @app.route("/v1/teams", methods=["GET"])
+    def public_teams_list():
+        try:
+            return _relay(requests.get(f"{base_url}/v1/teams", headers=_public_auth_headers(), timeout=20))
+        except requests.RequestException as exc:
+            return jsonify({"error": str(exc)}), 502
+
+    @app.route("/v1/teams/<team>/messages", methods=["POST"])
+    def public_team_message(team):
+        try:
+            return _relay(requests.post(
+                f"{base_url}/v1/teams/{quote(team, safe='')}/messages",
+                json=request.get_json(silent=True) or {},
+                headers=_public_auth_headers(),
+                timeout=900,
+            ))
+        except requests.RequestException as exc:
+            return jsonify({"error": str(exc)}), 502
+
+    @app.route("/v1/teams/<team>", methods=["GET"])
+    def public_team_card(team):
+        try:
+            return _relay(requests.get(
+                f"{base_url}/v1/teams/{quote(team, safe='')}",
                 headers=_public_auth_headers(),
                 timeout=20,
             ))

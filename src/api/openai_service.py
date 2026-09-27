@@ -145,6 +145,23 @@ class OpenAIChatService:
         except AgentNotFound:
             return None
 
+    def _model_team(self, user_id: str, model: str | None):
+        """``(lead agent, team)`` when ``model`` is a team address ``owner/team``."""
+        name = (model or "").strip()
+        prefix = f"{user_id}/"
+        if not name.startswith(prefix) or "/" in name[len(prefix):]:
+            return None
+        team = name[len(prefix):]
+        from teams.view import TeamHasNoLead, TeamView
+
+        view = TeamView(self.agent_gateway().registry)
+        if not view.exists(user_id, team):
+            return None
+        try:
+            return view.lead(user_id, team).agent, team
+        except TeamHasNoLead as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+
     @staticmethod
     def _last_user_message(req: ChatCompletionRequest) -> tuple[str, list[dict]]:
         """Text and image attachments of the last user message."""
@@ -168,7 +185,9 @@ class OpenAIChatService:
             return "\n".join(texts), attachments
         return "", []
 
-    async def _complete_with_agent(self, user_id: str, record, req: ChatCompletionRequest):
+    async def _complete_with_agent(
+        self, user_id: str, record, req: ChatCompletionRequest, *, context: dict | None = None,
+    ):
         """Answer a chat completion by asking a non-WeBot agent through the gateway."""
         from agents.messages import AgentMessage
 
@@ -177,12 +196,13 @@ class OpenAIChatService:
             user_id,
             record,
             AgentMessage(text=text, attachments=attachments, sender=f"u:{user_id}"),
+            context=context,
             mode=req.session_mode,
             response_format=req.response_format,
         )
         if not reply.ok:
             raise HTTPException(status_code=502, detail=reply.error or "agent call failed")
-        model = record.address
+        model = req.model or record.address
         if not req.stream:
             return self.make_openai_response(reply.content, model=model)
 
@@ -807,9 +827,17 @@ class OpenAIChatService:
 
         session_id = session_override or req.session_id or "default"
         agent_record = self._model_agent(user_id, req.model)
+        team_context: dict = {}
+        if agent_record is None:
+            team_target = self._model_team(user_id, req.model)
+            if team_target is not None:
+                # A team speaks through its lead. A WeBot lead keeps its home
+                # team context (its system prompt stays cache-stable).
+                agent_record, team = team_target
+                team_context = {"team": team}
         if agent_record is not None:
             if agent_record.driver != "webot":
-                return await self._complete_with_agent(user_id, agent_record, req)
+                return await self._complete_with_agent(user_id, agent_record, req, context=team_context)
             # A WeBot agent named by address: talk to its own session.
             session_id = str(agent_record.binding.get("session") or session_id)
         thread_id = f"{user_id}#{session_id}"
@@ -899,4 +927,18 @@ class OpenAIChatService:
                 "agent_id": card["agent_id"],
                 "display_name": card["display_name"],
             })
+        from teams.view import TeamView
+
+        view = TeamView(self.agent_gateway().registry)
+        for team in view.teams(user_id):
+            lead = next((m for m in view.members(user_id, team) if m.is_lead and m.agent), None)
+            if lead is not None:
+                payload["data"].append({
+                    "id": f"{user_id}/{team}",
+                    "object": "model",
+                    "created": created,
+                    "owned_by": "team",
+                    "lead": lead.agent.address,
+                    "display_name": team,
+                })
         return payload

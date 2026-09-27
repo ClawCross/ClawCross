@@ -79,29 +79,20 @@ _MAX_TOTAL_NODE_EXECS = 500
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
 
 
-def _load_external_agents(user_id: str, team: str = "") -> list[dict]:
-    """加载 external_agents.json 列表。
+def _team_view():
+    from teams.view import get_team_view
 
-    返回 {"name", "tag", "global_name", "config"?, ...} 条目列表。
-    当提供 team 时，仅加载团队作用域配置；
-    当 team 为空时，回退到用户级配置：
-      data/user_files/{user_id}/external_agents.json
-    如果文件缺失或不可读，返回 []。
+    return get_team_view(USER_FILES_DIR)
+
+
+def _load_external_agents(user_id: str, team: str = "") -> list[dict]:
+    """external_agents.json entries of *team* (or the user root when team is "").
+
+    Returns {"name", "tag", "global_name", "config"?, ...} entries, [] if none.
     """
     if not user_id:
         return []
-    if team:
-        path = os.path.join(str(USER_FILES_DIR), user_id, "teams", team, "external_agents.json")
-    else:
-        path = os.path.join(str(USER_FILES_DIR), user_id, "external_agents.json")
-    if not os.path.isfile(path):
-        return []
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            return data if isinstance(data, list) else []
-    except Exception:
-        return []
+    return _team_view().entries(user_id, team, "external")
 
 
 def _find_external_agent_global_name(external_agents: list[dict], name: str) -> str:
@@ -140,44 +131,17 @@ def _canonical_external_platform(platform_name: str) -> str:
 
 
 def _load_internal_agents(user_id: str, team: str = "") -> list[dict]:
-    """加载用户的内部代理 JSON 列表。
+    """internal_agents.json roles of *team* (or the user root when team is "").
 
-    读取 internal_agents.json：
-      [{"name": ..., "tag": ..., "session": "sid"}, ...]
-
-    如果指定了团队，从团队作用域路径加载：
-      data/user_files/{user_id}/teams/{team}/internal_agents.json
-    否则从以下路径加载：
-      data/user_files/{user_id}/internal_agents.json
-
-    返回 {"session": "<id>", "meta": {"name": ..., "tag": ...}} 条目列表。
-    如果文件缺失或不可读，返回 []。
+    Returns {"session": "<id>", "meta": {"name": ..., "tag": ...}} entries. Roles
+    written without a session get one from the team view, so they can be used.
     """
-    if team:
-        base_dir = os.path.join(str(USER_FILES_DIR), user_id, "teams", team)
-    else:
-        base_dir = os.path.join(str(USER_FILES_DIR), user_id)
-
-    ia_path = os.path.join(base_dir, "internal_agents.json")
-
-    if not os.path.isfile(ia_path):
+    if not user_id:
         return []
-
-    try:
-        with open(ia_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        agents_list = data if isinstance(data, list) else []
-    except Exception:
-        return []
-
-    result: list[dict] = []
-    for a in agents_list:
-        if not isinstance(a, dict) or "name" not in a:
-            continue
-        sid = a.get("session", "")
-        meta = {k: v for k, v in a.items() if k != "session"}
-        result.append({"session": sid, "meta": meta})
-    return result
+    return [
+        {"session": entry.get("session", ""), "meta": {k: v for k, v in entry.items() if k != "session"}}
+        for entry in _team_view().entries(user_id, team, "internal")
+    ]
 
 
 def _resolve_session_by_name(agents: list[dict], name: str) -> str | None:

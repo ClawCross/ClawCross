@@ -70,6 +70,13 @@ When this file is loaded into a running team, each entry gains a `session` field
 - `tag` — must match a `tag` in `oasis_experts.json` (or in the public persona pool).
 - `session` — runtime-only. Stripped on snapshot export, regenerated on import.
 
+A team does not own its agents; this file is the team's **manifest** of roles. Each role is bound to an agent in the agent registry, which gives every agent a stable id (`ag_…`) and address (`<user>/<handle>`, e.g. `default/search_commander`):
+
+- an entry without `session` (written by hand or by team-builder's `write_file`) is a new agent — the session is stamped the first time the team is read, and written back in this same format;
+- an entry that names an existing `session` refers to that agent, so one agent can serve several teams under different role names.
+
+The entry marked `"is_primary": true` leads the team: `POST /v1/teams/<team>/messages`, or an OpenAI-compatible request with `model: "<user>/<team>"`, goes to it. `GET /v1/agents` and `GET /v1/teams` list agents and teams with their ids and addresses.
+
 ---
 
 ## 4. `oasis_experts.json` — persona prompts

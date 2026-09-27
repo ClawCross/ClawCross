@@ -8220,26 +8220,13 @@ def upload_team_snapshot():
                 agents_list = []
 
             # Generate new session_id for each agent and build agents_data
-            import random
+            from agents.registry import new_webot_session_id
             for agent_meta in agents_list:
                 if not isinstance(agent_meta, dict) or "name" not in agent_meta:
                     continue
 
-                # Generate session_id (same format as frontend: base36 timestamp + random)
-                def to_base36(n):
-                    """Convert number to base36 string (same as JavaScript's toString(36))"""
-                    if n == 0:
-                        return '0'
-                    digits = '0123456789abcdefghijklmnopqrstuvwxyz'
-                    result = ''
-                    while n > 0:
-                        result = digits[n % 36] + result
-                        n //= 36
-                    return result
-
-                timestamp_ms = int(time.time() * 1000)
-                random_part = random.randint(0, 36**4 - 1)  # 4-digit base36 random
-                new_sid = to_base36(timestamp_ms) + to_base36(random_part).zfill(4)
+                # Same format as the web UI: base36 milliseconds + 4 random base36 digits
+                new_sid = new_webot_session_id()
 
                 # Strip any leftover session from meta (shouldn't be there, but safe)
                 meta_clean = {k: v for k, v in agent_meta.items() if k != "session"}
