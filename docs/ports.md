@@ -43,12 +43,12 @@
 - **职责**：
   - 多人设讨论引擎（Topics / Experts / Sessions）
   - Town Genesis / swarm blueprint 生成
-  - GraphRAG 长期记忆与 ReportAgent
+  - GraphRAG 长期记忆与 ReportAgent（尚未接入，见 oasis-reference.md）
   - OpenClaw 快照管理
   - `/publicnet/info` 公网信息查询
   - Agent 管理与编排中心（迁移中）
 - **调用方**：`mcp_oasis.py`、前端代理、外部脚本
-- **注意**：默认绑定 `127.0.0.1`，可用 `--host 0.0.0.0` 启动
+- **注意**：默认绑定 `127.0.0.1`；WSL 下或设置了 `CLAWCROSS_SERVER_HOST` 时会绑定到其他地址。此时只有本机回环地址的调用可以免 token，其他主机的请求必须带 `X-Internal-Token: $INTERNAL_TOKEN`，否则返回 401。
 
 ### 51209 — 前端 Web UI
 

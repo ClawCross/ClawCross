@@ -70,6 +70,11 @@ class OasisServerTestCase(unittest.TestCase):
             patcher = mock.patch.object(target, attr, value)
             patcher.start()
             self.addCleanup(patcher.stop)
+        # Test clients are not loopback; keep the listening host fixed so the
+        # network-exposure rule doesn't depend on the machine (e.g. WSL).
+        env = mock.patch.dict(os.environ, {"CLAWCROSS_SERVER_HOST": "127.0.0.1"})
+        env.start()
+        self.addCleanup(env.stop)
         self.addCleanup(server.discussions.clear)
         self.addCleanup(server.engines.clear)
         self.addCleanup(server.tasks.clear)
@@ -243,6 +248,24 @@ class TestExpertModelOverride(OasisServerTestCase):
         self.assertEqual(saved["persona"], "new persona")
         for key, value in override.items():
             self.assertEqual(saved[key], value)
+
+
+class TestNetworkExposure(OasisServerTestCase):
+    def test_other_hosts_need_the_token_when_listening_beyond_loopback(self):
+        exposed = {"CLAWCROSS_SERVER_HOST": "0.0.0.0", "INTERNAL_TOKEN": "tok"}
+        with mock.patch.dict(os.environ, exposed):
+            remote = TestClient(server.app, client=("192.168.1.50", 5000))
+            self.assertEqual(remote.get("/experts").status_code, 401)
+            self.assertEqual(remote.get("/experts", headers={"X-Internal-Token": "bad"}).status_code, 401)
+            self.assertEqual(remote.get("/experts", headers={"X-Internal-Token": "tok"}).status_code, 200)
+
+            local = TestClient(server.app, client=("127.0.0.1", 5000))
+            self.assertEqual(local.get("/experts").status_code, 200)  # launcher / run.sh health probe
+
+    def test_loopback_only_server_is_unchanged(self):
+        with mock.patch.dict(os.environ, {"CLAWCROSS_SERVER_HOST": "127.0.0.1", "INTERNAL_TOKEN": "tok"}):
+            client = TestClient(server.app, client=("192.168.1.50", 5000))
+            self.assertEqual(client.get("/experts").status_code, 200)
 
 
 class TestStartNewOasisDiscussionFlag(unittest.IsolatedAsyncioTestCase):
