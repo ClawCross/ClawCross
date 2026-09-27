@@ -1,0 +1,70 @@
+"""Dependencies point down only: composition (teams, group chat, OASIS) → agent
+layer → transports. The agent layer never reaches up."""
+
+import ast
+import unittest
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+# What the agent layer (src/agents) must never import: the layers built on it.
+_ABOVE_L1 = (
+    "api.group_", "api.ops_", "api.openai_", "api.session_", "api.system_",
+    "routes", "mcp_servers", "core.agent", "comms", "teams",
+    "oasis.engine", "oasis.server", "oasis.forum", "oasis.scheduler", "oasis.swarm_engine",
+)
+
+# Talking to a transport directly instead of through agents.gateway.
+_TRANSPORT = ("integrations.agent_sender", "integrations.registry", "integrations.connectors")
+
+# Modules that still call transports directly. This list may only shrink as
+# callers move onto the gateway; a new direct caller fails the test.
+_LEGACY_TRANSPORT_CALLERS = {
+    "oasis/agent_center.py",
+    "oasis/experts.py",
+    "oasis/python_workflow.py",
+    "oasis/python_workflow_cli.py",
+    "src/api/group_service.py",
+    "src/front.py",
+    "src/utils/scheduler_service.py",
+}
+
+
+def _imports(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+            names.add(node.module)
+    return {name.removeprefix("src.") for name in names}
+
+
+def _python_files(*roots: str) -> list[Path]:
+    files: list[Path] = []
+    for root in roots:
+        files.extend(p for p in (PROJECT_ROOT / root).rglob("*.py") if "__pycache__" not in p.parts)
+    return files
+
+
+class TestLayering(unittest.TestCase):
+    def test_agent_layer_does_not_import_the_layers_above_it(self):
+        for path in _python_files("src/agents"):
+            with self.subTest(path=str(path.relative_to(PROJECT_ROOT))):
+                bad = sorted(name for name in _imports(path) if name.startswith(_ABOVE_L1))
+                self.assertEqual(bad, [])
+
+    def test_no_new_direct_transport_callers(self):
+        callers = set()
+        for path in _python_files("src", "oasis", "scripts", "clawcross_cli", "chatbot", "visual"):
+            rel = str(path.relative_to(PROJECT_ROOT))
+            if rel.startswith(("src/integrations/", "src/agents/")):
+                continue
+            if any(name.startswith(_TRANSPORT) for name in _imports(path)):
+                callers.add(rel)
+        self.assertEqual(sorted(callers - _LEGACY_TRANSPORT_CALLERS), [], "use agents.gateway instead")
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -7,7 +7,6 @@
 """
 
 import asyncio
-import base64
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -15,6 +14,7 @@ from typing import Any, Callable
 
 from langchain_core.messages import AIMessage, HumanMessage
 
+from agents.messages import decode_text_attachment as _try_decode_base64_text, is_text_mime as _is_text_mime
 from utils.logging_utils import get_logger
 from services.message_builder import build_human_message
 from api.system_models import SystemTriggerRequest
@@ -29,45 +29,6 @@ class _QueuedSystemTrigger:
     req: SystemTriggerRequest
     message: HumanMessage
     received_at: str
-
-# 可以直接 base64 解码为文本的 MIME 类型（前缀匹配）
-_TEXT_MIME_PREFIXES = ("text/",)
-_TEXT_MIME_EXACT = {
-    "application/json", "application/xml", "application/javascript",
-    "application/typescript", "application/x-yaml", "application/yaml",
-    "application/toml", "application/x-toml",
-    "application/sql", "application/graphql",
-    "application/x-sh", "application/x-python",
-    "application/csv", "application/x-csv",
-    "application/ld+json", "application/manifest+json",
-    "application/x-httpd-php",
-}
-
-
-def _is_text_mime(mime_type: str) -> bool:
-    """判断 MIME 类型是否为文本类（可以 base64 解码为可读文本）。"""
-    mime = mime_type.lower().strip()
-    if any(mime.startswith(p) for p in _TEXT_MIME_PREFIXES):
-        return True
-    if mime in _TEXT_MIME_EXACT:
-        return True
-    # 常见文本后缀的通配：application/*+json, application/*+xml
-    if mime.endswith("+json") or mime.endswith("+xml"):
-        return True
-    return False
-
-
-def _try_decode_base64_text(data: str, max_chars: int = 50000) -> str | None:
-    """尝试将 base64 数据解码为 UTF-8 文本。失败返回 None。"""
-    try:
-        raw = base64.b64decode(data)
-        text = raw.decode("utf-8")
-        if len(text) > max_chars:
-            text = text[:max_chars] + f"\n\n... (文件过长，已截断，共 {len(raw)} 字节)"
-        return text
-    except Exception:
-        return None
-
 
 class SystemService:
     def __init__(

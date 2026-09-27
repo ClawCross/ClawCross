@@ -1,7 +1,18 @@
 """Frontend proxy for the unified Agent catalog and control plane."""
 
-from flask import jsonify, request, session
+from urllib.parse import quote
+
+from flask import Response, jsonify, request, session
 import requests
+
+# Reachable without a browser session: the Agent service authenticates the
+# forwarded ``Authorization`` itself, like /v1/chat/completions.
+PUBLIC_AGENT_ENDPOINTS = frozenset({
+    "public_agents_list",
+    "public_agent_message",
+    "public_agent_control",
+    "public_agent_card",
+})
 
 
 _ACTIONS = {"list", "status", "cancel", "stop", "new", "reset", "delete", "configure"}
@@ -18,6 +29,65 @@ def register_agent_routes(
 
     def _internal_headers():
         return {"X-Internal-Token": internal_token}
+
+    def _public_auth_headers():
+        """Browser session → internal bearer; otherwise the client's own ``Bearer user:password``."""
+        user_id = str(session.get("user_id") or "").strip()
+        if user_id:
+            return {"Authorization": f"Bearer {internal_token}:{user_id}"}
+        auth = request.headers.get("Authorization", "")
+        return {"Authorization": auth} if auth else {}
+
+    def _relay(response):
+        return Response(
+            response.content,
+            status=response.status_code,
+            content_type=response.headers.get("content-type", "application/json"),
+        )
+
+    # ── L1 agent layer: one public interface to every agent on this machine ──
+
+    @app.route("/v1/agents", methods=["GET"])
+    def public_agents_list():
+        try:
+            return _relay(requests.get(f"{base_url}/v1/agents", headers=_public_auth_headers(), timeout=20))
+        except requests.RequestException as exc:
+            return jsonify({"error": str(exc)}), 502
+
+    @app.route("/v1/agents/<path:ref>/messages", methods=["POST"])
+    def public_agent_message(ref):
+        try:
+            return _relay(requests.post(
+                f"{base_url}/v1/agents/{quote(ref, safe='/')}/messages",
+                json=request.get_json(silent=True) or {},
+                headers=_public_auth_headers(),
+                timeout=900,
+            ))
+        except requests.RequestException as exc:
+            return jsonify({"error": str(exc)}), 502
+
+    @app.route("/v1/agents/<path:ref>/control", methods=["POST"])
+    def public_agent_control(ref):
+        try:
+            return _relay(requests.post(
+                f"{base_url}/v1/agents/{quote(ref, safe='/')}/control",
+                json=request.get_json(silent=True) or {},
+                headers=_public_auth_headers(),
+                timeout=60,
+            ))
+        except requests.RequestException as exc:
+            return jsonify({"error": str(exc)}), 502
+
+    @app.route("/v1/agents/<path:ref>", methods=["GET"])
+    def public_agent_card(ref):
+        try:
+            return _relay(requests.get(
+                f"{base_url}/v1/agents/{quote(ref, safe='/')}",
+                headers=_public_auth_headers(),
+                timeout=20,
+            ))
+        except requests.RequestException as exc:
+            return jsonify({"error": str(exc)}), 502
 
     @app.route("/proxy_agent_control", methods=["POST"])
     def proxy_agent_control():

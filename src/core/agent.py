@@ -963,7 +963,9 @@ class TeamAgent:
         """Resolve an internal agent session to its stored meta and owning team.
 
         Returns {"team", "name", "tag"} or None if the session is not registered
-        in any internal_agents.json file.
+        in any internal_agents.json file. The agent registry keeps the team
+        folders indexed, so this no longer rescans them on every prompt; the
+        team is the agent's home (first team in sorted order, else user root).
         """
         if not user_id or not session_id:
             return None
@@ -972,41 +974,9 @@ class TeamAgent:
         if not user_files_dir:
             return None
 
-        user_root = os.path.join(user_files_dir, user_id)
-        candidates: list[tuple[str, str]] = []
+        from agents.registry import get_registry
 
-        teams_dir = os.path.join(user_root, "teams")
-        if os.path.isdir(teams_dir):
-            for team_name in sorted(os.listdir(teams_dir)):
-                team_root = os.path.join(teams_dir, team_name)
-                if os.path.isdir(team_root):
-                    candidates.append((team_name, os.path.join(team_root, "internal_agents.json")))
-
-        candidates.append(("", os.path.join(user_root, "internal_agents.json")))
-
-        for team_name, path in candidates:
-            if not os.path.isfile(path):
-                continue
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-            except (OSError, json.JSONDecodeError):
-                continue
-
-            if not isinstance(data, list):
-                continue
-
-            for item in data:
-                if not isinstance(item, dict):
-                    continue
-                if item.get("session", "") != session_id:
-                    continue
-                return {
-                    "team": team_name,
-                    "name": (item.get("name") or "").strip(),
-                    "tag": (item.get("tag") or "").strip(),
-                }
-        return None
+        return get_registry(user_files_dir).internal_session_meta(user_id, session_id)
 
     @staticmethod
     def _load_json_list(path: str) -> list[dict]:

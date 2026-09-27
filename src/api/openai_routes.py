@@ -41,8 +41,8 @@ def create_openai_router(
         return await service.handle_chat_completions(req, authorization)
 
     @router.get("/v1/models")
-    async def list_models():
-        """返回可用模型列表（OpenAI 兼容）"""
-        return service.list_models()
+    async def list_models(authorization: str | None = Header(None)):
+        """返回可用模型列表（OpenAI 兼容）；认证后包含调用者名下的全部 agent。"""
+        return service.list_models(authorization)
 
     return router
