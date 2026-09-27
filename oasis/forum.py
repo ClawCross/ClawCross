@@ -100,6 +100,7 @@ class Post:
     voters: dict[str, str] = field(default_factory=dict)  # voter_name -> "up"/"down"
     round_num: int = 0       # round number when this post was published
     source_node_id: str | None = None
+    author_id: str = ""      # principal id: ag_… (registered agent), u:<user> (human), "" otherwise
 
     def to_dict(self) -> dict:
         return {
@@ -110,6 +111,7 @@ class Post:
             "voters": self.voters,
             "round_num": self.round_num,
             "source_node_id": self.source_node_id,
+            "author_id": self.author_id,
         }
 
     @classmethod
@@ -118,7 +120,7 @@ class Post:
             d = {}
         allowed = (
             "id", "author", "content", "reply_to", "upvotes", "downvotes",
-            "timestamp", "elapsed", "voters", "round_num", "source_node_id",
+            "timestamp", "elapsed", "voters", "round_num", "source_node_id", "author_id",
         )
         d2 = {k: d[k] for k in allowed if k in d}
         d2.setdefault("reply_to", None)
@@ -129,6 +131,7 @@ class Post:
         d2.setdefault("voters", {})
         d2.setdefault("round_num", 0)
         d2.setdefault("source_node_id", None)
+        d2["author_id"] = str(d2.get("author_id") or "")
         d2["author"] = "" if d2.get("author") is None else str(d2["author"])
         d2["content"] = "" if d2.get("content") is None else str(d2["content"])
         d2["id"] = int(d2.get("id", 0))
@@ -353,6 +356,7 @@ class DiscussionForum:
         content: str,
         reply_to: int | None = None,
         source_node_id: str | None = None,
+        author_id: str = "",
     ) -> Post:
         """Publish a new post to the forum (thread-safe)."""
         async with self._changed:
@@ -365,6 +369,7 @@ class DiscussionForum:
                 elapsed=self.elapsed(),
                 round_num=self.current_round,
                 source_node_id=source_node_id,
+                author_id=author_id,
             )
             self.posts.append(post)
             self._changed.notify_all()
@@ -515,6 +520,7 @@ class DiscussionForum:
         round_num: int,
         content: str,
         author: str,
+        author_id: str = "",
     ) -> Post:
         """Submit a human reply for the currently waiting workflow node."""
         async with self._changed:
@@ -536,6 +542,7 @@ class DiscussionForum:
                 elapsed=self.elapsed(),
                 round_num=self.current_round,
                 source_node_id=node_id,
+                author_id=author_id,
             )
             self.posts.append(post)
             pending.submitted_post_id = post.id

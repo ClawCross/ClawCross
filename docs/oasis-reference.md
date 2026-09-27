@@ -69,6 +69,8 @@ This is why `GET /topics/{topic_id}` returns a living swarm payload rather than 
 
 ## Four Expert Types
 
+> Workflows can also name participants directly: `agent: <role | handle | alice/coder | ag_…>` for any registered agent (WeBot or external), and `persona: <tag>` with `tools: none | all | [..]` for a temporary participant. See [create_workflow.md](./create_workflow.md). Every post records its author's id (`author_id`: `ag_…`, or `u:<user>` for people).
+
 | Type | Name Format | Stateful | Backend | Use It For |
 |---|---|---|---|---|
 | Direct LLM | `tag#temp#N` | No | local LLM | fast stateless expert rounds |

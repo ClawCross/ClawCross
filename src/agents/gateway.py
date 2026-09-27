@@ -32,9 +32,11 @@ from agents.messages import (
 )
 from agents.registry import (
     DRIVER_ACPX,
+    DRIVER_EPHEMERAL,
     DRIVER_HTTP,
     DRIVER_OPENCLAW,
     DRIVER_WEBOT,
+    EPHEMERAL_SESSION_PREFIX,
     AgentRecord,
     AgentRegistry,
     get_registry,
@@ -44,6 +46,9 @@ logger = logging.getLogger(__name__)
 
 _PROJECT_ROOT = str(Path(__file__).resolve().parents[2])
 _DEFAULT_ACP_SESSION_SUFFIX = "clawcrosschat"
+
+# Pass as ``timeout`` to wait for as long as the agent takes (long execution tasks).
+NO_TIMEOUT = float("inf")
 
 CAPABILITIES: dict[str, dict[str, Any]] = {
     DRIVER_WEBOT: {
@@ -66,7 +71,28 @@ CAPABILITIES: dict[str, dict[str, Any]] = {
         "attachments": True, "structured_output": False, "tool_selection": False,
         "modes": [],
     },
+    DRIVER_EPHEMERAL: {
+        "ask": True, "deliver": False, "cancel": False, "reset": False,
+        "attachments": False, "structured_output": True, "tool_selection": False,
+        "modes": [],
+    },
 }
+
+
+def ephemeral_agent(owner: str, name: str, *, options: dict[str, Any] | None = None) -> AgentRecord:
+    """A persona-only participant for one task: one LLM call, no tools, no memory.
+
+    *options* are the LLM settings (temperature, max_tokens, model, api_key,
+    base_url, provider). Nothing is stored in the registry.
+    """
+    return AgentRecord(
+        agent_id="",
+        owner=owner,
+        handle=name,
+        display_name=name,
+        driver=DRIVER_EPHEMERAL,
+        binding={"options": dict(options or {}), "session": name},
+    )
 
 
 def agent_card(record: AgentRecord) -> dict[str, Any]:
@@ -136,10 +162,14 @@ class AgentGateway:
         context: dict[str, Any] | None = None,
         mode: str | None = None,
         tools: list[str] | None = None,
-        response_format: dict | None = None,
+        response_format: dict | Any | None = None,
         timeout: float | None = None,
     ) -> AgentReply:
-        """Send *msg* and wait for the agent's reply."""
+        """Send *msg* and wait for the agent's reply.
+
+        ``timeout`` is in seconds; None means the driver default and
+        ``NO_TIMEOUT`` waits as long as the agent takes.
+        """
         record = ref if isinstance(ref, AgentRecord) else self.resolve(owner, ref)
         context = {**record.default_context, **(context or {})}
         mode = normalize_run_mode(mode)
@@ -150,6 +180,8 @@ class AgentGateway:
                 return await self._ask_acpx(record, msg, context, mode, timeout)
             if record.driver in (DRIVER_OPENCLAW, DRIVER_HTTP):
                 return await self._ask_http(record, msg, context, timeout)
+            if record.driver == DRIVER_EPHEMERAL:
+                return await self._ask_ephemeral(record, msg, response_format)
         except Exception as exc:
             logger.exception("ask %s failed", record.address)
             return AgentReply(ok=False, error=f"{type(exc).__name__}: {exc}")
@@ -254,8 +286,45 @@ class AgentGateway:
                 "api_url": f"{self.agent_base_url}/v1/chat/completions",
                 "headers": {"Authorization": f"Bearer {self.internal_token}:{record.owner}"},
                 "body": body,
-                "timeout": timeout if timeout is not None else 500,
+                "timeout": None if timeout == NO_TIMEOUT else (timeout if timeout is not None else 500),
             },
+        ))
+        return AgentReply(ok=result.ok, content=result.content or "", error=result.error or "", meta=result.meta or {})
+
+    async def discard_session(self, owner: str, session: str) -> bool:
+        """Delete a temporary WeBot session (``tmp__…``) and its history.
+
+        Refuses anything else: the Agent service deletes *every* session of the
+        user when given an empty id.
+        """
+        session = (session or "").strip()
+        if not session.startswith(EPHEMERAL_SESSION_PREFIX) or len(session) <= len(EPHEMERAL_SESSION_PREFIX):
+            raise ValueError(f"not a temporary session: {session!r}")
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                response = await client.post(
+                    f"{self.agent_base_url}/delete_session",
+                    headers={"X-Internal-Token": self.internal_token},
+                    json={"user_id": owner, "session_id": session},
+                )
+        except httpx.HTTPError as exc:
+            logger.warning("discarding %s#%s failed: %s", owner, session, exc)
+            return False
+        return response.status_code < 400
+
+    async def _ask_ephemeral(self, record, msg, response_format) -> AgentReply:
+        from integrations.agent_sender import SendToAgentRequest, send_to_agent
+
+        options = dict(record.binding.get("options") or {})
+        if response_format is not None:
+            options["response_schema"] = response_format  # a Pydantic model or JSON schema
+        prompt = f"{msg.instructions}\n\n{msg.text}" if msg.instructions else msg.text
+        result = await send_to_agent(SendToAgentRequest(
+            prompt=prompt,
+            connect_type="http",
+            platform="temp",
+            session=str(record.binding.get("session") or record.handle),
+            options=options,
         ))
         return AgentReply(ok=result.ok, content=result.content or "", error=result.error or "", meta=result.meta or {})
 
@@ -316,13 +385,15 @@ class AgentGateway:
             **acpx_options_from_agent(
                 record.binding,
                 overrides=ACPX_OVERRIDES_BY_MODE.get(mode) if mode else None,
-                default_timeout_sec=int(timeout) if timeout else 180,
+                default_timeout_sec=int(timeout) if timeout and timeout != NO_TIMEOUT else 180,
             ),
             "reset_session": False,
             "identity_prompt": self._identity_prompt(record, context, msg.instructions),
             "attachments": [dict(a) for a in msg.attachments] or None,
             "return_trace": True,
         }
+        if timeout == NO_TIMEOUT:
+            options["timeout_sec"] = None
         options = attach_history_context(
             options,
             user_id=record.owner,
@@ -374,7 +445,7 @@ class AgentGateway:
             "api_key": api_key,
             "headers": headers,
             "body": {"model": model, "messages": messages, "stream": False},
-            "timeout": timeout if timeout is not None else 60,
+            "timeout": None if timeout == NO_TIMEOUT else (timeout if timeout is not None else 60),
             "identity_prompt": self._identity_prompt(record, context, msg.instructions),
             "identity_global_name": global_name,
             "group_db_path": self.registry.db_path,

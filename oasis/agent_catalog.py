@@ -26,6 +26,12 @@ def _canonical_external_platform(platform_name: str) -> str:
     return pl
 
 
+def _registry():
+    from agents.registry import get_registry
+
+    return get_registry(USER_FILES_DIR)
+
+
 def _load_internal_agents(user_id: str, team: str = "") -> list[dict]:
     from teams.view import get_team_view
 
@@ -98,8 +104,11 @@ def build_agent_catalog(user_id: str, team: str = "") -> list[dict[str, Any]]:
                 llm_override[key] = expert.get(key)
         if llm_override:
             options["body"]["llm_override"] = llm_override
+        registered = _registry().webot_session(user_id, session_id)
         items.append({
             "id": f"internal:{name}",
+            "agent_id": registered.agent_id if registered else "",
+            "address": registered.address if registered else "",
             "kind": "internal",
             "name": name,
             "tag": tag,
@@ -148,8 +157,11 @@ def build_agent_catalog(user_id: str, team: str = "") -> list[dict[str, Any]]:
         else:
             options["cwd"] = _PROJECT_ROOT
             options["timeout_sec"] = 180
+        registered = _registry().external(user_id, global_name) if global_name else None
         items.append({
             "id": f"external:{name}",
+            "agent_id": registered.agent_id if registered else "",
+            "address": registered.address if registered else "",
             "kind": "external",
             "name": name,
             "tag": tag,

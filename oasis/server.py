@@ -613,7 +613,9 @@ async def add_manual_post(topic_id: str, req: ManualPostRequest):
 
     author = (req.author or req.user_id or "主持人").strip() or "主持人"
     forum.log_event("manual_post", agent=author)
-    post = await forum.publish(author=author[:80], content=content, reply_to=req.reply_to)
+    post = await forum.publish(
+        author=author[:80], content=content, reply_to=req.reply_to, author_id=f"u:{req.user_id}",
+    )
     forum.save()
 
     return PostInfo(
@@ -625,6 +627,7 @@ async def add_manual_post(topic_id: str, req: ManualPostRequest):
         downvotes=post.downvotes,
         timestamp=post.timestamp,
         elapsed=post.elapsed,
+        author_id=post.author_id,
     )
 
 
@@ -747,6 +750,7 @@ async def add_human_reply(topic_id: str, req: HumanReplyRequest):
             round_num=req.round_num,
             content=req.content.strip(),
             author=(req.author or req.user_id or "主持人").strip() or "主持人",
+            author_id=f"u:{req.user_id}",
         )
     except ValueError as e:
         raise HTTPException(409, str(e))
@@ -761,6 +765,7 @@ async def add_human_reply(topic_id: str, req: HumanReplyRequest):
         downvotes=post.downvotes,
         timestamp=post.timestamp,
         elapsed=post.elapsed,
+        author_id=post.author_id,
     )
 
 
@@ -800,6 +805,7 @@ def _build_topic_detail(forum: DiscussionForum, posts: list) -> TopicDetail:
                 downvotes=int(getattr(p, "downvotes", 0) or 0),
                 timestamp=float(getattr(p, "timestamp", 0) or 0),
                 elapsed=float(getattr(p, "elapsed", 0) or 0),
+                author_id=str(getattr(p, "author_id", "") or ""),
             )
             for p in posts
         ],

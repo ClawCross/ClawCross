@@ -95,6 +95,17 @@ def _load_external_agents(user_id: str, team: str = "") -> list[dict]:
     return _team_view().entries(user_id, team, "external")
 
 
+def _ephemeral_session_id(topic_id: str, tag: str, instance: str) -> str:
+    """``tmp__<topic>__<tag>__<n>``: unique per topic participant, safe as a session id."""
+    import hashlib
+
+    slug = re.sub(r"[^a-z0-9_-]+", "-", (tag or "").lower()).strip("-_")[:24]
+    if not slug:
+        slug = "p" + hashlib.sha1((tag or "").encode("utf-8")).hexdigest()[:8]
+    part = re.sub(r"[^a-z0-9]+", "", str(instance).lower())[:8] or "1"
+    return f"tmp__{topic_id}__{slug}__{part}"
+
+
 def _find_external_agent_global_name(external_agents: list[dict], name: str) -> str:
     """从 external_agents.json 中按代理名称查找 'global_name' 字段。
 
@@ -305,6 +316,17 @@ class DiscussionEngine:
                 continue
             seen.add(full_name)
 
+            if full_name.startswith("@"):
+                # agent: <ref> — a resident agent from the registry / team view.
+                resident = self._resident_expert(
+                    full_name[1:], user_id,
+                    bot_base_url=bot_base_url, bot_enabled_tools=bot_enabled_tools, bot_timeout=bot_timeout,
+                )
+                if resident is not None:
+                    experts_list.append(resident)
+                    yaml_to_expert[full_name] = resident
+                continue
+
             if "#" not in full_name:
                 print(f"  [OASIS] ⚠️ YAML expert name '{full_name}' has no '#', skipping. "
                       f"Use 'tag#temp#N' or 'tag#oasis#name' or '#oasis#name' or 'name#ext#id'.")
@@ -378,6 +400,29 @@ class DiscussionEngine:
                     print(f"  [OASIS] 💬 Session agent (name): '{agent_name}' → session '{actual_sid}' [model={_oasis_config.get('model')}]")
                 else:
                     print(f"  [OASIS] 💬 Session agent (name): '{agent_name}' → session '{actual_sid}'")
+            elif sid.startswith("tmp#"):
+                # persona: <tag> with tools — a temporary WeBot session for this topic.
+                config = self._lookup_by_tag(first, user_id, self._team) or {}
+                instance = sid.split("#", 1)[1] or "1"
+                tools = ext_configs.get(full_name, {}).get("tools", "all")
+                session = _ephemeral_session_id(self.forum.topic_id, first, instance)
+                expert = SessionExpert(
+                    name=config.get("name", first),
+                    session_id=session,
+                    user_id=user_id,
+                    persona=config.get("persona", ""),
+                    bot_base_url=bot_base_url,
+                    enabled_tools=None if tools == "all" else list(tools),
+                    timeout=bot_timeout,
+                    tag=first,
+                    model=config.get("model"),
+                    api_key=config.get("api_key"),
+                    base_url=config.get("base_url"),
+                    provider=config.get("provider"),
+                    inject_identity=True,
+                    ephemeral=True,
+                )
+                print(f"  [OASIS] 🧪 Temporary session: '{full_name}' → {session} (tools={tools})")
             elif sid.startswith("temp#"):
                 # e.g. "creative#temp#1" → ExpertAgent with explicit temp_id
                 config = self._lookup_by_tag(first, user_id, self._team)
@@ -476,6 +521,8 @@ class DiscussionEngine:
                 else:
                     print(f"  [OASIS] 🌐 External expert: {expert.name} (no api_url)")
 
+            if not getattr(expert, "agent_id", "") and not getattr(expert, "ephemeral", False):
+                expert.agent_id = self._registered_agent_id(expert, user_id)
             experts_list.append(expert)
             # Register YAML original name → expert immediately (handles #new correctly)
             yaml_to_expert[full_name] = expert
@@ -498,6 +545,91 @@ class DiscussionEngine:
                 self._expert_map.setdefault(e.ext_id, e)  # ext_id shortcut
 
         self.summarizer = _get_summarizer()
+
+    def _team_view(self):
+        return _team_view()
+
+    def _resident_expert(self, ref, user_id, *, bot_base_url, bot_enabled_tools, bot_timeout):
+        """A participant for ``agent: <ref>``: the team's role of that name, else any
+        of the user's agents by handle, address or id."""
+        from agents.registry import DRIVER_WEBOT, AgentNotFound, AmbiguousAgentRef
+
+        view = self._team_view()
+        record, role_name = None, ""
+        if self._team:
+            try:
+                member = view.member(user_id, self._team, ref)
+                record, role_name = member.agent, member.role_name
+            except LookupError:
+                pass
+        if record is None:
+            try:
+                record = view.registry.resolve(user_id, ref, team=self._team or None)
+            except (AgentNotFound, AmbiguousAgentRef) as exc:
+                print(f"  [OASIS] ⚠️ agent '{ref}' not resolved: {exc}; skipping.")
+                return None
+        name = role_name or record.display_name or record.handle
+        if record.driver == DRIVER_WEBOT:
+            expert = SessionExpert(
+                name=name,
+                session_id=str(record.binding.get("session") or ""),
+                user_id=user_id,
+                bot_base_url=bot_base_url,
+                enabled_tools=bot_enabled_tools,
+                timeout=bot_timeout,
+                tag=record.persona_tag,
+                inject_identity=False,  # a registered agent carries its own persona
+                agent_id=record.agent_id,
+            )
+        else:
+            binding = record.binding
+            meta = binding.get("meta") if isinstance(binding.get("meta"), dict) else {}
+            config = self._lookup_by_tag(record.persona_tag, user_id, self._team) or {}
+            expert = ExternalExpert(
+                name=name,
+                ext_id=record.handle,
+                api_url=str(binding.get("api_url") or ""),
+                api_key=str(binding.get("api_key") or ""),
+                model=str(binding.get("model") or "") or "gpt-3.5-turbo",
+                persona=config.get("persona", ""),
+                timeout=bot_timeout,
+                tag=record.persona_tag,
+                platform=str(binding.get("platform") or ""),
+                acp_options=meta.get("acp") if isinstance(meta.get("acp"), dict) else None,
+                oc_agent_name=str(binding.get("global_name") or ""),
+                team=self._team,
+            )
+            expert.agent_id = record.agent_id
+        print(f"  [OASIS] 🏠 Resident agent: '{ref}' → {record.address} ({record.driver})")
+        return expert
+
+    def _registered_agent_id(self, expert, user_id: str) -> str:
+        """The registry id of a classic-form participant, if it is a registered agent."""
+        registry = self._team_view().registry
+        try:
+            if isinstance(expert, SessionExpert):
+                record = registry.webot_session(user_id, expert.session_id)
+            elif isinstance(expert, ExternalExpert) and getattr(expert, "_http_global_name", ""):
+                record = registry.external(user_id, expert._http_global_name)
+            else:
+                return ""
+        except Exception:
+            return ""
+        return record.agent_id if record else ""
+
+    async def _discard_ephemeral_sessions(self) -> None:
+        """Delete the temporary WeBot sessions this topic created (persona + tools)."""
+        from agents.gateway import get_gateway
+
+        for expert in self.experts:
+            if isinstance(expert, SessionExpert) and expert.ephemeral:
+                try:
+                    ok = await get_gateway().discard_session(self._user_id, expert.session_id)
+                except Exception as exc:
+                    ok = False
+                    print(f"  [OASIS] ⚠️ could not discard {expert.session_id}: {exc}")
+                if ok:
+                    print(f"  [OASIS] 🧹 Discarded temporary session {expert.session_id}")
 
     @staticmethod
     def _lookup_by_tag(tag: str, user_id: str, team: str = "") -> dict | None:
@@ -761,7 +893,7 @@ class DiscussionEngine:
             self.forum.conclusion = f"讨论过程中出现错误: {str(e)}"
 
         finally:
-            pass
+            await self._discard_ephemeral_sessions()
 
     async def _run_graph(self):
         """使用 Pregel 风格超步迭代执行图。

@@ -177,12 +177,30 @@ All step types require an `id` field.
 | Step Type | Key | Description |
 |-----------|-----|-------------|
 | Persona | `expert: "name"` | Single persona speaks |
+| Resident agent | `agent: "coder"` | A registered agent speaks: its role name in the team, its handle/address (`alice/coder`) or its `ag_…` id. Works for WeBot and external (codex, claude, OpenClaw…) agents alike |
+| Temporary persona | `persona: "critical"` + `tools` | A persona that exists only for this topic. `tools: none` (default) is one LLM call; `tools: all` or `tools: [read_file, web_search]` runs a temporary WeBot session with those tools, deleted when the topic ends. `instance: N` distinguishes several of the same persona |
 | Parallel | `parallel: [...]` | Multiple personas speak simultaneously |
 | All Personas | `all_experts: true` | Everyone speaks at once |
 | Manual | `manual: {author, content}` | Inject fixed text (no LLM call) |
 | Script | `script: {...}` | Run a platform command via Python-managed subprocess |
 | Human | `human: {...}` | Pause workflow and wait for a plain-text human reply |
 | Selector | `selector: true` + `expert` | LLM-powered routing node (any expert format) |
+
+`agent:` and `persona:` work inside `parallel:` lists too, and a `selector: true` node may use them instead of `expert:`:
+
+```yaml
+plan:
+  - id: plan
+    agent: Planner                 # the team's role "Planner"
+  - id: review
+    parallel:
+      - agent: alice/codex         # an external agent by address
+      - persona: critical          # one LLM call, no tools
+      - persona: security_auditor  # a temporary session that may read files
+        tools: [read_file, list_files]
+```
+
+The classic `expert:` strings (`tag#temp#N`, `tag#oasis#name`, `tag#ext#id`, `#new`) keep working unchanged.
 
 ### 5.1 Manual Nodes — Special Authors
 

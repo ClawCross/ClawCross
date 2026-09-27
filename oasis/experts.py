@@ -69,6 +69,13 @@ async def _send_to_agent_off_loop(request: SendToAgentRequest):
     return await asyncio.to_thread(lambda: asyncio.run(send_to_agent(request)))
 
 
+async def _ask_off_loop(owner: str, record, msg, **kwargs):
+    """``AgentGateway.ask`` on a worker thread, so a slow agent never stalls the forum."""
+    from agents.gateway import get_gateway
+
+    return await asyncio.to_thread(lambda: asyncio.run(get_gateway().ask(owner, record, msg, **kwargs)))
+
+
 def _load_prompt_file(prompt_file: str) -> str:
     """Load the full prompt content from an agency_agents .md file.
 
@@ -637,6 +644,7 @@ async def _apply_response(
     forum: DiscussionForum,
     others: list,
     source_node_id: str | None = None,
+    author_id: str = "",
 ):
     """Apply the parsed JSON response: publish post + cast votes.
 
@@ -669,6 +677,7 @@ async def _apply_response(
             content=choice_text,
             reply_to=reply_to,
             source_node_id=source_node_id,
+            author_id=author_id,
         )
         print(f"  [OASIS] ✅ {expert_name} 选择完成 (choose={choose})")
         return
@@ -684,6 +693,7 @@ async def _apply_response(
         content=result.get("content", "（发言内容为空）"),
         reply_to=reply_to,
         source_node_id=source_node_id,
+        author_id=author_id,
     )
 
     for v in result.get("votes", []):
@@ -726,6 +736,7 @@ class ExpertAgent:
         self.persona = persona
         self.tag = tag
         self.temperature = temperature
+        self.agent_id = ""  # a persona call, not a registered agent
         self._llm_override: dict[str, Any] | None = None
         override: dict[str, Any] = {}
         if model:
@@ -742,25 +753,23 @@ class ExpertAgent:
     async def _call_temp_sender(
         self, *, prompt: str, forum: DiscussionForum, mode: str, response_schema=None,
     ) -> str:
+        from agents.gateway import ephemeral_agent
+        from agents.messages import AgentMessage
+
         options: dict[str, Any] = {
             "temperature": self.temperature,
             "max_tokens": 1024,
             **(self._llm_override or {}),
         }
-        if response_schema is not None:
-            options["response_schema"] = response_schema
-        result = await _send_to_agent_off_loop(
-            SendToAgentRequest(
-                prompt=prompt,
-                connect_type="http",
-                platform="temp",
-                session=f"{self.session_id}:{mode}:r{forum.current_round}",
-                options=options,
-            )
+        record = ephemeral_agent(
+            forum.user_id, f"{self.session_id}:{mode}:r{forum.current_round}", options=options,
         )
-        if not result.ok:
-            raise RuntimeError(result.error or "temp sender call failed")
-        return result.content or ""
+        reply = await _ask_off_loop(
+            forum.user_id, record, AgentMessage(text=prompt), response_format=response_schema,
+        )
+        if not reply.ok:
+            raise RuntimeError(reply.error or "temp sender call failed")
+        return reply.content or ""
 
     async def participate(
         self,
@@ -800,11 +809,11 @@ class ExpertAgent:
                     prompt=task_prompt, forum=forum, mode="execute", response_schema=schema,
                 )
                 result = _parse_expert_response(text)
-                await _apply_response(result, self.name, forum, others, source_node_id=source_node_id)
+                await _apply_response(result, self.name, forum, others, source_node_id=source_node_id, author_id=self.agent_id)
             except json.JSONDecodeError as e:
                 print(f"  [OASIS] ⚠️ {self.name} JSON parse error: {e}")
                 try:
-                    await forum.publish(author=self.name, content=text.strip()[:2000], source_node_id=source_node_id)
+                    await forum.publish(author=self.name, content=text.strip()[:2000], source_node_id=source_node_id, author_id=self.agent_id)
                 except Exception:
                     pass
             except Exception as e:
@@ -825,11 +834,11 @@ class ExpertAgent:
                 prompt=prompt, forum=forum, mode="discuss", response_schema=schema,
             )
             result = _parse_expert_response(text)
-            await _apply_response(result, self.name, forum, others, source_node_id=source_node_id)
+            await _apply_response(result, self.name, forum, others, source_node_id=source_node_id, author_id=self.agent_id)
         except json.JSONDecodeError as e:
             print(f"  [OASIS] ⚠️ {self.name} JSON parse error: {e}")
             try:
-                await forum.publish(author=self.name, content=text.strip()[:300], source_node_id=source_node_id)
+                await forum.publish(author=self.name, content=text.strip()[:300], source_node_id=source_node_id, author_id=self.agent_id)
             except Exception:
                 pass
         except Exception as e:
@@ -877,12 +886,20 @@ class SessionExpert:
         api_key: str | None = None,
         base_url: str | None = None,
         provider: str | None = None,
+        inject_identity: bool | None = None,
+        agent_id: str = "",
+        ephemeral: bool = False,
     ):
         self.title = name
         self.session_id = session_id
         self.name = f"{name}#{session_id}"
         self.persona = persona
-        self.is_oasis = "#oasis#" in session_id
+        # Whether OASIS frames the session with this persona itself. Registered
+        # agents carry their own persona; temporary sessions get it from here.
+        self.is_oasis = inject_identity if inject_identity is not None else "#oasis#" in session_id
+        self.agent_id = agent_id
+        # A temporary session (tmp__…) created for this topic and deleted after it.
+        self.ephemeral = ephemeral
         self.timeout = timeout or 500.0
         self.tag = tag
         self._extra_headers = extra_headers or {}
@@ -916,25 +933,50 @@ class SessionExpert:
         h.update(self._extra_headers)
         return h
 
-    async def _send_messages(self, body: dict, *, timeout_override: float | None = ...) -> str:
-        effective_timeout = self.timeout if timeout_override is ... else timeout_override
-        result = await _send_to_agent_off_loop(
-            SendToAgentRequest(
-                prompt=body.get("messages", []),
-                connect_type="http",
-                platform="internal",
-                session=self.session_id,
-                options={
-                    "api_url": self._bot_url,
-                    "headers": self._auth_header(),
-                    "body": body,
-                    "timeout": effective_timeout,
-                },
+    def _agent_record(self):
+        """This session as an L1 agent: its registry record, or a transient one."""
+        import dataclasses
+
+        from agents.registry import DRIVER_WEBOT, AgentRecord, get_registry
+
+        record = None if self.ephemeral else get_registry().webot_session(self._user_id, self.session_id)
+        if record is not None and not self.agent_id:
+            self.agent_id = record.agent_id  # its posts carry the agent's id
+        if record is None:
+            record = AgentRecord(
+                agent_id="", owner=self._user_id, handle=self.session_id, display_name=self.title,
+                driver=DRIVER_WEBOT, binding={"session": self.session_id},
             )
+        settings = {**record.settings, "llm_override": self._llm_override} if self._llm_override else record.settings
+        return dataclasses.replace(record, settings=settings)
+
+    async def _send_messages(self, body: dict, *, timeout_override: float | None = ...) -> str:
+        """Ask the WeBot session through the agent gateway.
+
+        ``body`` is the request OASIS composed: its system messages become the
+        gateway's instructions and its user message the text. A timeout of None
+        waits as long as the session takes.
+        """
+        from agents.gateway import NO_TIMEOUT
+        from agents.messages import AgentMessage
+
+        effective_timeout = self.timeout if timeout_override is ... else timeout_override
+        messages = body.get("messages", [])
+        instructions = "\n\n".join(str(m.get("content") or "") for m in messages if m.get("role") == "system")
+        text = "\n\n".join(str(m.get("content") or "") for m in messages if m.get("role") == "user")
+        if self._extra_headers:
+            print(f"  [OASIS] ⚠️ {self.name}: per-step headers are not sent to WeBot sessions; ignoring")
+        reply = await _ask_off_loop(
+            self._user_id,
+            self._agent_record(),
+            AgentMessage(text=text, instructions=instructions),
+            tools=body.get("enabled_tools"),
+            response_format=body.get("response_format"),
+            timeout=NO_TIMEOUT if effective_timeout is None else effective_timeout,
         )
-        if not result.ok:
-            raise RuntimeError(result.error or "bot API call failed")
-        return result.content or ""
+        if not reply.ok:
+            raise RuntimeError(reply.error or "bot API call failed")
+        return reply.content or ""
 
     async def participate(
         self,
@@ -1013,11 +1055,11 @@ class SessionExpert:
             try:
                 raw_content = await self._send_messages(body, timeout_override=None)
                 result = _parse_expert_response(raw_content)
-                await _apply_response(result, self.name, forum, others, source_node_id=source_node_id)
+                await _apply_response(result, self.name, forum, others, source_node_id=source_node_id, author_id=self.agent_id)
             except json.JSONDecodeError as e:
                 print(f"  [OASIS] ⚠️ {self.name} JSON parse error: {e}")
                 try:
-                    await forum.publish(author=self.name, content=raw_content.strip()[:2000], source_node_id=source_node_id)
+                    await forum.publish(author=self.name, content=raw_content.strip()[:2000], source_node_id=source_node_id, author_id=self.agent_id)
                 except Exception:
                     pass
             except Exception as e:
@@ -1094,12 +1136,12 @@ class SessionExpert:
         try:
             raw_content = await self._send_messages(body)
             result = _parse_expert_response(raw_content)
-            await _apply_response(result, self.name, forum, others, source_node_id=source_node_id)
+            await _apply_response(result, self.name, forum, others, source_node_id=source_node_id, author_id=self.agent_id)
 
         except json.JSONDecodeError as e:
             print(f"  [OASIS] ⚠️ {self.name} JSON parse error: {e}")
             try:
-                await forum.publish(author=self.name, content=raw_content.strip()[:300], source_node_id=source_node_id)
+                await forum.publish(author=self.name, content=raw_content.strip()[:300], source_node_id=source_node_id, author_id=self.agent_id)
             except Exception:
                 pass
         except Exception as e:
@@ -1225,6 +1267,7 @@ class ExternalExpert:
         self.ext_id = ext_id
         self.name = f"{name}#ext#{ext_id}"
         self.persona = persona
+        self.agent_id = ""  # set by the engine when the agent is in the registry
         self.timeout = timeout or 500.0
         self.tag = tag
         self.platform = _canonical_external_platform(platform)
@@ -1567,13 +1610,13 @@ class ExternalExpert:
                     result = reply
                 else:
                     result = _parse_expert_response(reply)
-                await _apply_response(result, self.name, forum, others, source_node_id=source_node_id)
+                await _apply_response(result, self.name, forum, others, source_node_id=source_node_id, author_id=self.agent_id)
             except json.JSONDecodeError as e:
                 print(f"  [OASIS] ⚠️ {self.name} (external execute) JSON parse error: {e}")
                 raw_content = reply if isinstance(reply, str) else str(reply)
                 raw_content = self._END_PADDING_RE.sub("", raw_content).strip()
                 try:
-                    await forum.publish(author=self.name, content=raw_content.strip()[:2048], source_node_id=source_node_id)
+                    await forum.publish(author=self.name, content=raw_content.strip()[:2048], source_node_id=source_node_id, author_id=self.agent_id)
                 except Exception:
                     pass
             except Exception as e:
@@ -1583,6 +1626,7 @@ class ExternalExpert:
                         author=self.name,
                         content=f"[外部 Agent 调用失败]\n{str(e)[:2048]}",
                         source_node_id=source_node_id,
+                        author_id=self.agent_id,
                     )
                 except Exception:
                     pass
@@ -1633,13 +1677,13 @@ class ExternalExpert:
                 result = reply
             else:
                 result = _parse_expert_response(reply)
-            await _apply_response(result, self.name, forum, others, source_node_id=source_node_id)
+            await _apply_response(result, self.name, forum, others, source_node_id=source_node_id, author_id=self.agent_id)
         except json.JSONDecodeError as e:
             print(f"  [OASIS] ⚠️ {self.name} (external) JSON parse error: {e}")
             raw_content = reply if isinstance(reply, str) else str(reply)
             raw_content = self._END_PADDING_RE.sub("", raw_content).strip()
             try:
-                await forum.publish(author=self.name, content=raw_content.strip()[:2048], source_node_id=source_node_id)
+                await forum.publish(author=self.name, content=raw_content.strip()[:2048], source_node_id=source_node_id, author_id=self.agent_id)
             except Exception:
                 pass
         except Exception as e:
@@ -1649,6 +1693,7 @@ class ExternalExpert:
                     author=self.name,
                     content=f"[外部 Agent 调用失败]\n{str(e)[:2048]}",
                     source_node_id=source_node_id,
+                    author_id=self.agent_id,
                 )
             except Exception:
                 pass
