@@ -131,6 +131,19 @@ from services.notification_system import (
 logger = get_logger("agent")
 
 
+def should_inject_new_inbox_notice(state: dict, turn_count: int) -> bool:
+    """Show queued inbox metadata once, unless this turn already carries it."""
+    if turn_count != 0:
+        return False
+    last_input = (state.get("messages") or [None])[-1]
+    return not (
+        state.get("trigger_source") == "system"
+        and isinstance(last_input, HumanMessage)
+        and isinstance(last_input.content, str)
+        and last_input.content.startswith(("[收件箱通知]", "[来自 "))
+    )
+
+
 # 调试导出（已关闭）：原 _maybe_debug_dump_llm_payload_for_minimax 在 CLAWCROSS_DEBUG_LLM_PAYLOAD=1 时
 # 将 ainvoke 前消息写入 data/debug_llm_payload_last.json；实现已从默认分支移除，需排障时查 git 历史。
 
@@ -1500,26 +1513,26 @@ class TeamAgent:
         runtime_plan = get_session_plan(user_id, session_id)
         runtime_todos = get_session_todos(user_id, session_id)
         runtime_verifications = list_verification_records(user_id, session_id, limit=5)
-        new_inbox_items = list_inbox_messages(user_id, session_id, status="queued", limit=3)
-        recent_unread_items = list_inbox_messages(user_id, session_id, status="unread", limit=3)
-        selected_inbox = new_inbox_items[:]
-        selected_ids = {item.message_id for item in selected_inbox}
-        selected_inbox.extend(
-            item for item in recent_unread_items
-            if item.message_id not in selected_ids
-        )
-        runtime_inbox = [
-            {
-                "message_id": item.message_id,
-                "source_session": item.source_session,
-                "source_label": item.source_label,
-                "summary": item.summary,
-                "status": item.status,
-            }
-            for item in selected_inbox[:3]
-        ]
-        runtime_inbox_count = count_inbox_messages(user_id, session_id, status="unread")
-        runtime_inbox_new_count = count_inbox_messages(user_id, session_id, status="queued")
+        # The inbox worker's HumanMessage already carries its digest. For any
+        # other turn, surface newly queued messages once on the first model
+        # call; unread messages previously notified stay in the inbox only.
+        runtime_inbox = []
+        runtime_inbox_count = 0
+        runtime_inbox_new_count = 0
+        if should_inject_new_inbox_notice(state, current_turn_count):
+            runtime_inbox_new_count = count_inbox_messages(user_id, session_id, status="queued")
+            if runtime_inbox_new_count:
+                runtime_inbox_count = count_inbox_messages(user_id, session_id, status="unread")
+                runtime_inbox = [
+                    {
+                        "message_id": item.message_id,
+                        "source_session": item.source_session,
+                        "source_label": item.source_label,
+                        "summary": item.summary,
+                        "status": item.status,
+                    }
+                    for item in list_inbox_messages(user_id, session_id, status="queued", limit=3)
+                ]
         runtime_artifacts = [
             {
                 "artifact_kind": item.kind,

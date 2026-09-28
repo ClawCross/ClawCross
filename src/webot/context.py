@@ -211,15 +211,12 @@ def render_runtime_context_block(
         lines.append(f"pending_tool_approvals: {len(pending_approvals)}")
         for item in pending_approvals[:3]:
             lines.append(f"approval::{item.get('tool_name', '')}::{item.get('status', '')}")
-    if inbox_unread_count:
-        lines.append(f"inbox_unread: {inbox_unread_count}")
     if inbox_new_count:
+        lines.append(f"inbox_unread: {inbox_unread_count}")
         lines.append(f"inbox_new: {inbox_new_count}")
-    if inbox:
-        for item in inbox[:3]:
+        for item in (inbox or [])[:3]:
             sender = item.get("source_label") or item.get("source_session") or "unknown"
-            status = "new" if item.get("status") == "queued" else "unread"
-            lines.append(f"inbox::{status}::{item.get('message_id', '')}::{sender}::{item.get('summary', '')}")
+            lines.append(f"inbox::new::{item.get('message_id', '')}::{sender}::{item.get('summary', '')}")
     if recent_artifacts:
         lines.append(f"runtime_artifacts: {len(recent_artifacts)}")
         for item in recent_artifacts[:3]:

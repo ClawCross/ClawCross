@@ -16,6 +16,7 @@ if str(SRC_DIR) not in sys.path:
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
+from core.agent import should_inject_new_inbox_notice
 from webot.context import assemble_input_messages, render_runtime_context_block
 
 BASE = "stable system prompt"
@@ -201,6 +202,22 @@ class WorkspaceLivesInTheSystemPrompt(unittest.TestCase):
         self.assertIn("inbox_new: 2", block)
         self.assertIn("inbox::new::inbox-1::planner::Review build", block)
         self.assertNotIn("SECRET BODY", block)
+
+    def test_previously_notified_unread_inbox_is_absent_from_dynamic_block(self):
+        block = render_runtime_context_block(
+            inbox=[{"message_id": "inbox-old", "source_label": "planner", "summary": "Earlier notice"}],
+            inbox_unread_count=7,
+            inbox_new_count=0,
+        )
+        self.assertNotIn("inbox_", block)
+        self.assertNotIn("inbox::", block)
+
+    def test_inbox_notice_only_on_first_model_call_without_existing_delivery(self):
+        user_turn = {"trigger_source": "user", "messages": [HumanMessage(content="continue")]}
+        digest_turn = {"trigger_source": "system", "messages": [HumanMessage(content="[收件箱通知] 2 条新消息")]}
+        self.assertTrue(should_inject_new_inbox_notice(user_turn, 0))
+        self.assertFalse(should_inject_new_inbox_notice(user_turn, 1))
+        self.assertFalse(should_inject_new_inbox_notice(digest_turn, 0))
 
 
 if __name__ == "__main__":
