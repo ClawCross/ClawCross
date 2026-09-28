@@ -37,3 +37,9 @@ class SystemTriggerRequest(BaseModel):
     # reply. The turn still queues behind the session's current run like any
     # other trigger — waiting is the caller's choice, never an interruption.
     wait_reply: bool = False
+    # Cross-session delivery uses the durable inbox. A source session creates
+    # an entry; drain_inbox wakes the same worker for entries already stored.
+    inbox_source_session: str = ""
+    inbox_source_user: str = ""
+    inbox_source_label: str = ""
+    drain_inbox: bool = False

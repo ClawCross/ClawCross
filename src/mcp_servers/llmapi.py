@@ -148,7 +148,11 @@ async def send_to_group(
     Args:
         username: (auto-injected) current user identity; do NOT set manually
         group_id: The group_id given in the message you are answering
-        content: The message; write @name to wake a member
+        content: The message. Write @name to wake that member; without an @mention,
+            other agents are not woken. Only the group owner or main agent may
+            use @所有人. Do not expose internal session or agent IDs in the post.
+            When sharing a local file for preview or download, send its absolute
+            path on its own line without a code block or extra explanation.
         source_session: (auto-injected) current session ID; do NOT set manually
 
     Returns:

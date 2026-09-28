@@ -2,6 +2,8 @@ import asyncio
 import sys
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -11,6 +13,7 @@ if str(SRC_DIR) not in sys.path:
 
 from api.system_models import SystemTriggerRequest
 from api.system_service import SystemService
+from webot import runtime_store
 
 
 class _FakeAgentApp:
@@ -143,6 +146,24 @@ class SystemServiceCoalescingTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result["coalesced"])
         self.assertEqual(message.content, "普通系统触发")
 
+    async def test_new_trigger_clears_previous_reply_schema(self):
+        agent = _FakeAgent()
+        service = SystemService(agent=agent, verify_internal_token=lambda token: None)
+        first = service._build_system_input(
+            SystemTriggerRequest(
+                user_id="alice", session_id="agent-session", text="first",
+                response_format={"type": "json_schema", "json_schema": {"name": "Reply", "schema": {"type": "object"}}},
+            ),
+            None,
+        )
+        second = service._build_system_input(
+            SystemTriggerRequest(user_id="alice", session_id="agent-session", text="second"),
+            None,
+        )
+        self.assertIsNotNone(first["response_format"])
+        self.assertIn("response_format", second)
+        self.assertIsNone(second["response_format"])
+
 
 class _ConversationApp(_FakeAgentApp):
     """Appends one turn to a running transcript, like the real graph does."""
@@ -206,6 +227,68 @@ class SystemTriggerWaitReplyTests(unittest.IsolatedAsyncioTestCase):
             SystemTriggerRequest(user_id="bob", session_id="s1", text="question", wait_reply=True), None
         )
         self.assertEqual(result["reply"], "")
+
+
+class DurableInboxTests(unittest.IsolatedAsyncioTestCase):
+    async def test_cross_session_message_waits_for_idle_then_marks_delivered(self):
+        with TemporaryDirectory() as tmpdir, patch.object(runtime_store, "DEFAULT_DB_PATH", Path(tmpdir) / "runtime.db"):
+            agent = _FakeAgent()
+            service = SystemService(agent=agent, verify_internal_token=lambda token: None)
+            lock = await agent.get_thread_lock("alice#worker")
+            await lock.acquire()
+            try:
+                result = await service.system_trigger(SystemTriggerRequest(
+                    user_id="alice", session_id="worker", text="Check the build",
+                    inbox_source_session="main", inbox_source_user="alice",
+                ), None)
+                self.assertEqual(result["status"], "queued")
+                self.assertEqual(len(runtime_store.list_inbox_messages("alice", "worker", status="queued")), 1)
+                self.assertEqual(agent.agent_app.inputs, [])
+            finally:
+                lock.release()
+            await _wait_for(lambda: bool(runtime_store.list_inbox_messages("alice", "worker", status="delivered")))
+            self.assertIn("Check the build", agent.agent_app.inputs[0]["messages"][0].content)
+
+    async def test_wait_reply_uses_the_same_durable_inbox(self):
+        from langchain_core.messages import AIMessage
+
+        with TemporaryDirectory() as tmpdir, patch.object(runtime_store, "DEFAULT_DB_PATH", Path(tmpdir) / "runtime.db"):
+            agent = _FakeAgent()
+            agent.agent_app = _ConversationApp([AIMessage(content="done")])
+            service = SystemService(agent=agent, verify_internal_token=lambda token: None)
+            result = await service.system_trigger(SystemTriggerRequest(
+                user_id="alice", session_id="worker", text="Do it",
+                inbox_source_session="main", wait_reply=True,
+            ), None)
+            self.assertEqual(result["reply"], "done")
+            self.assertEqual(len(runtime_store.list_inbox_messages("alice", "worker", status="delivered")), 1)
+            self.assertIn("直接用文字回答", agent.agent_app.inputs[0]["messages"][0].content)
+
+    async def test_restart_resumes_queued_inbox(self):
+        with TemporaryDirectory() as tmpdir, patch.object(runtime_store, "DEFAULT_DB_PATH", Path(tmpdir) / "runtime.db"):
+            runtime_store.create_inbox_message("alice", source_session="main", target_session="worker", content="after restart")
+            agent = _FakeAgent()
+            service = SystemService(agent=agent, verify_internal_token=lambda token: None)
+            await service.resume_queued_inbox()
+            await _wait_for(lambda: bool(runtime_store.list_inbox_messages("alice", "worker", status="delivered")))
+            self.assertIn("after restart", agent.agent_app.inputs[0]["messages"][0].content)
+
+    async def test_failed_delivery_stays_queued_and_waiter_returns(self):
+        class FailingApp(_FakeAgentApp):
+            async def astream_events(self, system_input, config, version, durability):
+                raise RuntimeError("provider unavailable")
+                yield  # pragma: no cover
+
+        with TemporaryDirectory() as tmpdir, patch.object(runtime_store, "DEFAULT_DB_PATH", Path(tmpdir) / "runtime.db"):
+            agent = _FakeAgent()
+            agent.agent_app = FailingApp()
+            service = SystemService(agent=agent, verify_internal_token=lambda token: None)
+            result = await asyncio.wait_for(service.system_trigger(SystemTriggerRequest(
+                user_id="alice", session_id="worker", text="try later",
+                inbox_source_session="main", wait_reply=True,
+            ), None), 1)
+            self.assertEqual(result["status"], "queued")
+            self.assertEqual(len(runtime_store.list_inbox_messages("alice", "worker", status="queued")), 1)
 
 
 if __name__ == "__main__":

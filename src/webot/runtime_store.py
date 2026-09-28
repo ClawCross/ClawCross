@@ -1524,6 +1524,7 @@ def list_inbox_messages(
     status: str | None = None,
     db_path: str | os.PathLike | None = None,
     limit: int = 50,
+    oldest_first: bool = False,
 ) -> list[InboxMessageRecord]:
     query = [
         "SELECT * FROM webot_session_inbox WHERE user_id = ? AND target_session = ?",
@@ -1532,11 +1533,22 @@ def list_inbox_messages(
     if status:
         query.append("AND delivery_status = ?")
         params.append(status)
-    query.append("ORDER BY created_at DESC LIMIT ?")
+    direction = "ASC" if oldest_first else "DESC"
+    query.append(f"ORDER BY created_at {direction}, rowid {direction} LIMIT ?")
     params.append(max(1, limit))
     with _connect(db_path) as conn:
         rows = conn.execute(" ".join(query), params).fetchall()
     return [_row_to_inbox_message(row) for row in rows if row is not None]
+
+
+def list_queued_inbox_targets(*, db_path: str | os.PathLike | None = None) -> list[tuple[str, str]]:
+    """Find durable inboxes to resume after the agent service restarts."""
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT user_id, target_session FROM webot_session_inbox "
+            "WHERE delivery_status = 'queued'"
+        ).fetchall()
+    return [(row[0], row[1]) for row in rows]
 
 
 def update_inbox_message_status(

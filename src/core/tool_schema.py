@@ -314,3 +314,66 @@ def forced_tool_choice_supported(model: Any) -> bool:
     tool_choice", and the model name alone does not tell which mode is on.
     """
     return "ChatDeepSeek" not in _model_classes(model)
+
+
+async def decode_structured_final(model: Any, response_format: dict[str, Any], messages: list[Any], config: Any = None):
+    """Make one provider-constrained final call after the ReAct tool loop.
+
+    A provider that cannot produce the requested schema raises an error. We
+    never accept a prompt-only JSON guess or retry an unconstrained response.
+    """
+    from jsonschema import validate
+    from langchain_core.messages import AIMessage, HumanMessage
+    from services.llm_factory import extract_text
+
+    spec = response_format.get("json_schema") or {}
+    schema = spec.get("schema")
+    if response_format.get("type") != "json_schema" or not isinstance(schema, dict):
+        raise ValueError("Structured final reply requires response_format.type=json_schema and a schema")
+    strict_schema = to_strict_parameters(schema)
+    name = str(spec.get("name") or "final_reply")
+    final_messages = [*messages, HumanMessage(content="Give the final answer in the requested schema.")]
+    classes = _model_classes(model)
+
+    if "ChatDeepSeek" in classes:
+        model, strict, bind_kwargs = strict_tool_binding(model)
+        if not strict:
+            raise RuntimeError("DeepSeek structured replies require LLM_TOOL_STRICT=auto or on")
+        tool = {"type": "function", "function": {
+            "name": "emit_final_reply", "description": "Return the final answer.",
+            "parameters": strict_schema, "strict": True,
+        }}
+        raw = await model.bind_tools([tool], tool_choice="auto", **bind_kwargs).ainvoke(
+            [*final_messages, HumanMessage(content="Call emit_final_reply with the final answer.")], config=config,
+        )
+        calls = [call for call in (raw.tool_calls or []) if call.get("name") == "emit_final_reply"]
+        if not calls:
+            raise RuntimeError("DeepSeek did not use the schema-constrained final reply tool")
+        value = calls[0]["args"]
+    elif "BaseChatOpenAI" in classes:
+        raw = await model.bind(response_format={"type": "json_schema", "json_schema": {
+            "name": name, "strict": True, "schema": strict_schema,
+        }}).ainvoke(final_messages, config=config)
+        value = json.loads(extract_text(raw.content))
+    elif classes & {"ChatAnthropic", "ChatGoogleGenerativeAI"}:
+        result = await model.with_structured_output(
+            {**strict_schema, "title": name}, method="json_schema", include_raw=True,
+        ).ainvoke(
+            final_messages, config=config,
+        )
+        if result.get("parsing_error"):
+            raise RuntimeError("Provider rejected the schema-constrained final reply") from result["parsing_error"]
+        raw = result.get("raw")
+        value = result.get("parsed")
+        if hasattr(value, "model_dump"):
+            value = value.model_dump()
+    else:
+        raise RuntimeError("This provider has no supported schema-constrained final reply mode")
+
+    validate(value, strict_schema)
+    value = drop_null_optionals(value, schema)
+    validate(value, schema)
+    return AIMessage(
+        content=json.dumps(value, ensure_ascii=False, separators=(",", ":")),
+        usage_metadata=getattr(raw, "usage_metadata", None),
+    )

@@ -30,7 +30,7 @@ from webot.compression import (
 )
 from webot.context import assemble_input_messages, render_runtime_context_block
 from webot.memory import ensure_memory_state
-from webot.skills import build_skills_prompt, build_user_profile_block
+from webot.skills import build_user_profile_block
 from webot.soul import build_soul_prompt
 from webot.trajectory import auto_trajectory_enabled, save_trajectory
 from webot.llm_call_trace import llm_call_trace_enabled, save_llm_call
@@ -98,6 +98,7 @@ from core.lazy_tool_discovery import LazyToolRegistry
 from core.tool_aliases import canonical_tool_name, canonical_tool_names, resolve_tool_call
 from core.tool_schema import (
     StrictSchemaError,
+    decode_structured_final,
     drop_null_optionals,
     reply_format_binding,
     strict_tool_binding,
@@ -352,10 +353,8 @@ class AgentState(TypedDict):
     # Dict with optional keys: model, api_key, base_url, provider
     llm_override: Optional[dict]
     max_tokens: Optional[int]
-    # Per-request forced reply format (OpenAI response_format shape, e.g.
-    # {"type": "json_schema", "json_schema": {...}}). Bound additively on top
-    # of the normal tool binding — tools stay available; only providers whose
-    # wire protocol actually supports the kwarg (OpenAI-compatible) apply it.
+    # Per-request final reply format (OpenAI response_format shape). A
+    # json_schema is decoded in a separate tool-free call after ReAct ends.
     response_format: Optional[dict]
     _approval_review_counters: dict
     _approval_review_blocked: bool
@@ -958,11 +957,7 @@ class TeamAgent:
         return None
 
     def _get_user_skills(self, user_id: str, team: str = "") -> str:
-        """
-        从 webot.skills 读取用户的 managed skills，
-        并返回格式化的 skill 信息字符串。
-        即使没有 skill，也会返回位置信息。
-        """
+        """Describe the Skill/Memory interface and initial catalog without paths."""
         from webot.skills import build_user_skills_listing
 
         return build_user_skills_listing(user_id, team=team)
@@ -1430,15 +1425,13 @@ class TeamAgent:
             bind_tools_list += [external_tool_schema(d, strict=strict_tools) for d in external_func_defs]
         llm = base_model.bind_tools(bind_tools_list, **bind_kwargs) if bind_tools_list else base_model
 
-        # Per-request forced reply format — additive on top of tool binding.
-        # Tools stay bound as-is; whether the model still calls one or answers
-        # directly in the forced shape is left to the provider's own decoding,
-        # not decided here. What the provider cannot decode (DeepSeek has no
-        # json_schema; non-OpenAI wires have no response_format) is asked for
-        # in this turn's dynamic block instead.
+        # A JSON schema applies only to the terminal text answer, after ReAct
+        # finishes using tools. The terminal call uses provider-constrained
+        # decoding, never prompt-only formatting or retry-based repair.
         response_format = state.get("response_format")
+        structured_final = bool(response_format and response_format.get("type") == "json_schema")
         reply_format_hint = ""
-        if response_format:
+        if response_format and not structured_final:
             format_kwargs, reply_format_hint = reply_format_binding(base_model, response_format)
             if format_kwargs:
                 llm = llm.bind(**format_kwargs)
@@ -1457,67 +1450,48 @@ class TeamAgent:
         all_names = sorted(t.name for t in all_tools)
         visible_names = sorted(t.name for t in filtered_tools)
 
-        if is_subagent:
-            profile_prompt = render_profile_system_prompt(subagent_profile) if subagent_profile else ""
-            base_prompt = self._prompts["base_system_subagent"]
-            if profile_prompt:
-                base_prompt += "\n\n" + profile_prompt
-        else:
-            chat_rules = self._build_fixed_chat_rules()
-            base_prompt = self._prompts["base_system"].replace("{chat_rules}", chat_rules)
-        # Session mode text can change turn to turn (user can switch mode
-        # mid-session) — kept out of base_prompt, folded into the dynamic
-        # tail block below instead of the stable system prompt.
+        # Session mode can change mid-session; it belongs in the runtime tail,
+        # never in the immutable system prompt.
         session_mode_prompt = build_session_mode_message(runtime_mode_name, runtime_mode_payload.get('reason', ''))
 
         # Detect tool state change
         user_id = state.get("user_id", "__global__")
         current_enabled = frozenset(visible_names)
         tool_state_key = f"{user_id}#{session_id or 'default'}"
-        session_persona_prompt = self._get_internal_session_persona_prompt(
-            user_id,
-            session_id or "",
-        ) if (not is_subagent and user_id and session_id) else ""
+        # Freeze the entire system message at the first inference. Re-reading
+        # SOUL, profile or Skill/Memory metadata on later turns would change the
+        # prefix and invalidate the provider's KV cache. The file tools still
+        # expose current Skill/Memory entries on demand.
+        base_prompt = await self._context_store.get_system_prompt(tool_state_key)
+        if base_prompt is None:
+            if is_subagent:
+                profile_prompt = render_profile_system_prompt(subagent_profile) if subagent_profile else ""
+                base_prompt = self._prompts["base_system_subagent"]
+                if profile_prompt:
+                    base_prompt += "\n\n" + profile_prompt
+            else:
+                chat_rules = self._build_fixed_chat_rules()
+                base_prompt = self._prompts["base_system"].replace("{chat_rules}", chat_rules)
 
-        if not is_subagent and session_persona_prompt:
-            base_prompt += f"\n{session_persona_prompt}\n"
+            session_persona_prompt = self._get_internal_session_persona_prompt(
+                user_id, session_id or "",
+            ) if (not is_subagent and user_id and session_id) else ""
+            if session_persona_prompt:
+                base_prompt += f"\n{session_persona_prompt}\n"
 
-        # Workspace is fixed for the life of a session — nothing lets a running
-        # session change its own cwd (the stored cwd is only written when a
-        # subagent record is created or updated). So it belongs in the stable
-        # system prompt, not in the per-turn block where it would be re-sent
-        # for the life of the session. base_prompt is rebuilt every call, so a
-        # record that does change is still picked up; it costs one prefix
-        # invalidation, which is the right price for a real change.
-        # The session id is just as fixed, and it is what callbacks
-        # (notify_session, cross-session messages) need to name this session.
-        base_prompt += (
-            f"\n【Workspace】\nsession_id: {session_id or 'default'}\n"
-            f"{describe_session_workspace(user_id, session_id)}\n"
-        )
-
-        session_meta = self._find_internal_session_meta(user_id, session_id or "") if (user_id and session_id) else None
-        session_team = (session_meta or {}).get("team", "")
-
-        if (not is_subagent) or (subagent_profile and subagent_profile.include_user_profile):
-            # 注入用户专属画像
-            base_prompt += build_user_profile_block(user_id)
-
-        if (not is_subagent) or (subagent_profile and subagent_profile.include_user_skills):
-            # 注入用户技能列表（总是显示位置信息）
-            base_prompt += self._get_user_skills(user_id, team=session_team) + "\n"
-
-        # --- SOUL.md personality injection (new: ported from Hermes Agent) ---
-        if not is_subagent:
-            soul_prompt = build_soul_prompt(user_id)
-            if soul_prompt:
-                base_prompt += soul_prompt
-
-        # --- Self-evolution skills prompt injection (new: ported from Hermes Agent) ---
-        if not is_subagent:
-            skills_prompt = build_skills_prompt(user_id, team=session_team)
-            if skills_prompt:
-                base_prompt += skills_prompt + "\n"
+            base_prompt += (
+                f"\n【Workspace】\nsession_id: {session_id or 'default'}\n"
+                f"{describe_session_workspace(user_id, session_id)}\n"
+            )
+            session_meta = self._find_internal_session_meta(user_id, session_id or "") if (user_id and session_id) else None
+            session_team = (session_meta or {}).get("team", "")
+            if (not is_subagent) or (subagent_profile and subagent_profile.include_user_profile):
+                base_prompt += build_user_profile_block(user_id)
+            if (not is_subagent) or (subagent_profile and subagent_profile.include_user_skills):
+                base_prompt += self._get_user_skills(user_id, team=session_team) + "\n"
+            if not is_subagent:
+                base_prompt += build_soul_prompt(user_id)
+            base_prompt = await self._context_store.save_system_prompt_if_absent(tool_state_key, base_prompt)
 
         runtime_plan = get_session_plan(user_id, session_id)
         runtime_todos = get_session_todos(user_id, session_id)
@@ -1866,20 +1840,20 @@ class TeamAgent:
             # output) — chunks accumulate via AIMessageChunk.__add__ into the
             # same complete-message shape (.content/.tool_calls/.usage_metadata)
             # the rest of this function already expects from ainvoke().
-            full_response = None
-            async for chunk in llm.astream(input_messages, config=config):
-                full_response = chunk if full_response is None else full_response + chunk
-            if full_response is None:
-                raise RuntimeError("LLM stream produced no chunks")
-            # Downgrade the accumulated AIMessageChunk to a plain AIMessage.
-            # Several call sites elsewhere (e.g. session_service.py's history
-            # formatter) match on the exact class name "AIMessage" — an
-            # AIMessageChunk silently fails that check and gets dropped, which
-            # is why the final reply after a tool round used to vanish from
-            # session history despite streaming correctly to the client.
-            response = AIMessage(**{
-                field: getattr(full_response, field) for field in AIMessage.model_fields if field != "type"
-            })
+            if structured_final:
+                # Do not stream the unconstrained ReAct draft to the client.
+                # Only the final, schema-decoded answer may leave this node.
+                response = await llm.ainvoke(input_messages, config=config)
+            else:
+                full_response = None
+                async for chunk in llm.astream(input_messages, config=config):
+                    full_response = chunk if full_response is None else full_response + chunk
+                if full_response is None:
+                    raise RuntimeError("LLM stream produced no chunks")
+                # Keep the concrete AIMessage class for session history readers.
+                response = AIMessage(**{
+                    field: getattr(full_response, field) for field in AIMessage.model_fields if field != "type"
+                })
             next_turn_count = current_turn_count + 1
 
             # --- Record token usage for budget tracking (new) ---
@@ -2023,6 +1997,34 @@ class TeamAgent:
                     effective_max_turns,
                 )
             )
+
+        if structured_final and not getattr(response, "tool_calls", None):
+            response = await decode_structured_final(
+                base_model, response_format, [*input_messages, response], config,
+            )
+            final_usage = getattr(response, "usage_metadata", None) or {}
+            if isinstance(final_usage, dict) and final_usage:
+                final_input = int(final_usage.get("input_tokens", 0) or 0)
+                final_output = int(final_usage.get("output_tokens", 0) or 0)
+                final_details = final_usage.get("input_token_details") or {}
+                final_cache_read = int(final_details.get("cache_read", 0) or 0)
+                final_cache_write = int(final_details.get("cache_creation", 0) or 0)
+                session_budget.record_turn(
+                    input_tokens=final_input, output_tokens=final_output,
+                    cache_creation_tokens=final_cache_write,
+                    cache_read_tokens=final_cache_read,
+                )
+                cost_tracker.record(
+                    model=getattr(base_model, "model_name", "") or getattr(base_model, "model", "") or "",
+                    input_tokens=max(0, final_input - final_cache_read - final_cache_write),
+                    output_tokens=final_output,
+                    cache_read_tokens=final_cache_read,
+                    cache_write_tokens=final_cache_write,
+                )
+                usage_meta = {
+                    "input_tokens": int(usage_meta.get("input_tokens", 0) or 0) + final_input,
+                    "output_tokens": int(usage_meta.get("output_tokens", 0) or 0) + final_output,
+                }
 
         with contextlib.suppress(Exception):
             run_tool_policy_hooks(
