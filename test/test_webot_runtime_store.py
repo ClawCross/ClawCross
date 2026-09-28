@@ -1,4 +1,5 @@
 import sys
+import sqlite3
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -13,6 +14,50 @@ import webot.runtime_store as runtime_store
 
 
 class WeBotRuntimeStoreTests(unittest.TestCase):
+    def test_existing_inbox_table_gains_read_state_without_losing_messages(self):
+        with TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "runtime.db"
+            with sqlite3.connect(db_path) as conn:
+                conn.execute(
+                    "CREATE TABLE webot_session_inbox (message_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, "
+                    "source_session TEXT NOT NULL, target_session TEXT NOT NULL, target_agent_id TEXT NOT NULL DEFAULT '', "
+                    "title TEXT NOT NULL DEFAULT '', content TEXT NOT NULL DEFAULT '', "
+                    "delivery_status TEXT NOT NULL DEFAULT 'queued', wait_for_idle INTEGER NOT NULL DEFAULT 1, "
+                    "metadata_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, delivered_at TEXT NOT NULL DEFAULT '')"
+                )
+                conn.execute(
+                    "INSERT INTO webot_session_inbox (message_id, user_id, source_session, target_session, "
+                    "content, created_at) VALUES ('inbox-old', 'alice', 'main', 'worker', 'old body', '2026-01-01')"
+                )
+                conn.execute(
+                    "INSERT INTO webot_session_inbox (message_id, user_id, source_session, target_session, "
+                    "content, created_at, delivery_status, delivered_at) VALUES "
+                    "('inbox-delivered', 'alice', 'main', 'worker', 'seen body', '2026-01-01', "
+                    "'delivered', '2026-01-02')"
+                )
+            old = runtime_store.get_inbox_message("alice", "worker", "inbox-old", db_path=db_path)
+            self.assertEqual(old.content, "old body")
+            self.assertEqual(old.read_at, "")
+            delivered = runtime_store.get_inbox_message("alice", "worker", "inbox-delivered", db_path=db_path)
+            self.assertEqual(delivered.read_at, "2026-01-02")
+            self.assertEqual(runtime_store.mark_inbox_read("alice", "worker", ["inbox-old"], db_path=db_path), 1)
+            self.assertTrue(runtime_store.get_inbox_message("alice", "worker", "inbox-old", db_path=db_path).read_at)
+
+    def test_mark_all_does_not_swallow_a_waiting_reply(self):
+        with TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "runtime.db"
+            passive = runtime_store.create_inbox_message(
+                "alice", source_session="main", target_session="worker", content="FYI", db_path=db_path,
+            )
+            waiting = runtime_store.create_inbox_message(
+                "alice", source_session="main", target_session="worker", content="Reply please",
+                metadata={"wait_reply": True}, db_path=db_path,
+            )
+            self.assertEqual(runtime_store.mark_inbox_read("alice", "worker", db_path=db_path), 1)
+            self.assertTrue(runtime_store.get_inbox_message("alice", "worker", passive.message_id, db_path=db_path).read_at)
+            self.assertEqual(runtime_store.get_inbox_message("alice", "worker", waiting.message_id, db_path=db_path).status, "queued")
+            self.assertEqual(runtime_store.mark_inbox_read("alice", "worker", [waiting.message_id], db_path=db_path), 0)
+
     def test_run_leases_interrupts_and_events_follow_control_plane_semantics(self):
         with TemporaryDirectory() as tmpdir:
             original_runtime_db_path = runtime_store.DEFAULT_DB_PATH

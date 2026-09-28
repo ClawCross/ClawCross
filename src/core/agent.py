@@ -60,6 +60,7 @@ from webot.runtime import (
 from webot.bridge import get_bridge_runtime_payload
 from webot.buddy import serialize_buddy_state
 from webot.runtime_store import (
+    count_inbox_messages,
     get_session_state,
     get_session_mode,
     save_session_mode,
@@ -151,7 +152,7 @@ USER_INJECTED_TOOLS = {
     # Session management tools
     "list_sessions",
     # LLM API access tools
-    "call_llm_api", "send_to_session",
+    "call_llm_api", "send_to_session", "read_session_inbox", "mark_session_inbox_read",
     # Group chat tools
     "send_to_group",
     # WeBot subagent tools
@@ -181,6 +182,8 @@ SESSION_INJECTED_TOOLS = {
     "list_sessions": "current_session_id",
     "send_notification": "source_session",
     "send_to_session": "source_session",
+    "read_session_inbox": "source_session",
+    "mark_session_inbox_read": "source_session",
     "send_to_group": "source_session",
     "spawn_subagent": "parent_session",
     "send_subagent_message": "source_session",
@@ -209,6 +212,7 @@ TEAM_INJECTED_TOOLS: frozenset[str] = frozenset({
 SESSION_FORCE_INJECTED_TOOLS: frozenset[str] = frozenset({
     "run_command", "background_command_io",
     "send_to_session",
+    "read_session_inbox", "mark_session_inbox_read",
     "send_to_group",
     "send_notification",
     "spawn_subagent",
@@ -1496,16 +1500,26 @@ class TeamAgent:
         runtime_plan = get_session_plan(user_id, session_id)
         runtime_todos = get_session_todos(user_id, session_id)
         runtime_verifications = list_verification_records(user_id, session_id, limit=5)
+        new_inbox_items = list_inbox_messages(user_id, session_id, status="queued", limit=3)
+        recent_unread_items = list_inbox_messages(user_id, session_id, status="unread", limit=3)
+        selected_inbox = new_inbox_items[:]
+        selected_ids = {item.message_id for item in selected_inbox}
+        selected_inbox.extend(
+            item for item in recent_unread_items
+            if item.message_id not in selected_ids
+        )
         runtime_inbox = [
             {
                 "message_id": item.message_id,
                 "source_session": item.source_session,
                 "source_label": item.source_label,
-                "body": item.body,
+                "summary": item.summary,
                 "status": item.status,
             }
-            for item in list_inbox_messages(user_id, session_id, status="queued", limit=5)
+            for item in selected_inbox[:3]
         ]
+        runtime_inbox_count = count_inbox_messages(user_id, session_id, status="unread")
+        runtime_inbox_new_count = count_inbox_messages(user_id, session_id, status="queued")
         runtime_artifacts = [
             {
                 "artifact_kind": item.kind,
@@ -1543,6 +1557,8 @@ class TeamAgent:
             verifications=runtime_verifications,
             pending_approvals=pending_approvals,
             inbox=runtime_inbox,
+            inbox_unread_count=runtime_inbox_count,
+            inbox_new_count=runtime_inbox_new_count,
             recent_artifacts=runtime_artifacts,
             recent_runs=runtime_runs,
             memory=memory_state,

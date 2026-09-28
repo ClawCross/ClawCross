@@ -42,4 +42,5 @@ class SystemTriggerRequest(BaseModel):
     inbox_source_session: str = ""
     inbox_source_user: str = ""
     inbox_source_label: str = ""
+    inbox_summary: str = ""
     drain_inbox: bool = False

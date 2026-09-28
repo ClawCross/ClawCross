@@ -191,6 +191,17 @@ class WorkspaceLivesInTheSystemPrompt(unittest.TestCase):
         block = render_runtime_context_block(workspace="mode=shared cwd=/tmp")
         self.assertIn("workspace: mode=shared cwd=/tmp", block)
 
+    def test_runtime_inbox_uses_count_and_summary_without_body(self):
+        block = render_runtime_context_block(
+            inbox=[{"message_id": "inbox-1", "source_label": "planner", "summary": "Review build", "status": "queued", "body": "SECRET BODY"}],
+            inbox_unread_count=7,
+            inbox_new_count=2,
+        )
+        self.assertIn("inbox_unread: 7", block)
+        self.assertIn("inbox_new: 2", block)
+        self.assertIn("inbox::new::inbox-1::planner::Review build", block)
+        self.assertNotIn("SECRET BODY", block)
+
 
 if __name__ == "__main__":
     unittest.main()

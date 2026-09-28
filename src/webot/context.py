@@ -175,6 +175,8 @@ def render_runtime_context_block(
     verifications: list[dict[str, Any]] | None = None,
     pending_approvals: list[dict[str, Any]] | None = None,
     inbox: list[dict[str, Any]] | None = None,
+    inbox_unread_count: int = 0,
+    inbox_new_count: int = 0,
     recent_artifacts: list[dict[str, Any]] | None = None,
     recent_runs: list[dict[str, Any]] | None = None,
     memory: dict[str, Any] | None = None,
@@ -209,11 +211,15 @@ def render_runtime_context_block(
         lines.append(f"pending_tool_approvals: {len(pending_approvals)}")
         for item in pending_approvals[:3]:
             lines.append(f"approval::{item.get('tool_name', '')}::{item.get('status', '')}")
+    if inbox_unread_count:
+        lines.append(f"inbox_unread: {inbox_unread_count}")
+    if inbox_new_count:
+        lines.append(f"inbox_new: {inbox_new_count}")
     if inbox:
-        lines.append(f"inbox_pending: {len(inbox)}")
         for item in inbox[:3]:
             sender = item.get("source_label") or item.get("source_session") or "unknown"
-            lines.append(f"inbox::{sender}::{_trim_text(item.get('body', ''), 100)}")
+            status = "new" if item.get("status") == "queued" else "unread"
+            lines.append(f"inbox::{status}::{item.get('message_id', '')}::{sender}::{item.get('summary', '')}")
     if recent_artifacts:
         lines.append(f"runtime_artifacts: {len(recent_artifacts)}")
         for item in recent_artifacts[:3]:

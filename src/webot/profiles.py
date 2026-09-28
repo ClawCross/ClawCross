@@ -32,6 +32,8 @@ DEFAULT_PROFILE_FILENAME = "webot_agent_profiles.json"
 
 SESSION_CONTEXT_TOOLS = (
     "list_sessions",
+    "read_session_inbox",
+    "mark_session_inbox_read",
 )
 
 SEARCH_TOOLS = (
