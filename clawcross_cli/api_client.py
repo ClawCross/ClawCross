@@ -122,6 +122,12 @@ def _agent_headers() -> dict:
     return {"X-Internal-Token": INTERNAL_TOKEN}
 
 
+def _v1_headers(user: str | None = None) -> dict:
+    """The Agent service's /v1 APIs, acting as *user*."""
+    uid = (user or DEFAULT_USER or "").strip()
+    return {"Authorization": f"Bearer {INTERNAL_TOKEN}:{uid}"}
+
+
 def _front_headers(user: str | None = None) -> dict:
     h: dict[str, str] = {"X-Internal-Token": INTERNAL_TOKEN}
     uid = (user or DEFAULT_USER or "").strip()
@@ -247,8 +253,9 @@ def list_teams(user: str | None = None) -> tuple[list[dict], str | None]:
 
 
 def team_members(name: str, user: str | None = None) -> tuple[dict | None, str | None]:
-    url = f"{FRONT_BASE}/teams/{urllib.parse.quote(name, safe='')}/members"
-    code, body = _req("GET", url, headers=_front_headers(user))
+    """GET /v1/teams/<name> — ``{"members": [{"agent": card, "role", "is_lead"}], "lead"}``."""
+    url = f"{AGENT_BASE}/v1/teams/{urllib.parse.quote(name, safe='')}"
+    code, body = _req("GET", url, headers=_v1_headers(user))
     if code == 200 and isinstance(body, dict):
         return body, None
     return None, friendly_error(url, code, body)
@@ -344,7 +351,7 @@ def create_team(name: str, user: str | None = None) -> tuple[dict | None, str | 
 
 
 def delete_team(name: str, user: str | None = None) -> tuple[bool, str | None]:
-    """DELETE /teams/<name> — remove a team folder and its internal agents."""
+    """DELETE /teams/<name> — remove a team, and the agents that belong to no other team."""
     url = f"{FRONT_BASE}/teams/{urllib.parse.quote(name, safe='')}"
     code, body = _req("DELETE", url, headers=_front_headers(user))
     if 200 <= code < 300:
@@ -361,58 +368,51 @@ def rename_team(old: str, new: str, user: str | None = None) -> tuple[dict | Non
     return None, friendly_error(url, code, body)
 
 
-def add_external_member(
-    team: str,
-    *,
-    name: str,
-    global_name: str,
-    platform: str,
-    tag: str = "",
-    api_url: str = "",
-    api_key: str = "",
-    model: str = "",
-    is_primary: bool = False,
-    user: str | None = None,
-) -> tuple[dict | None, str | None]:
-    """POST /teams/<team>/members/external — add an external agent member."""
-    url = f"{FRONT_BASE}/teams/{urllib.parse.quote(team, safe='')}/members/external"
-    payload: dict[str, Any] = {
-        "name": name, "global_name": global_name, "platform": platform,
-        "tag": tag, "api_url": api_url, "api_key": api_key, "model": model,
-        "is_primary": is_primary,
-    }
-    code, body = _req("POST", url, headers=_front_headers(user), data=payload)
-    if code == 200:
-        return body if isinstance(body, dict) else {"ok": True}, None
+def create_agent(fields: dict[str, Any], user: str | None = None) -> tuple[dict | None, str | None]:
+    """POST /v1/agents — a new agent: ``{name, platform, …}`` (see /v1/agents)."""
+    url = f"{AGENT_BASE}/v1/agents"
+    code, body = _req("POST", url, headers=_v1_headers(user), data=fields)
+    if code == 200 and isinstance(body, dict):
+        return body, None
     return None, friendly_error(url, code, body)
 
 
-def update_external_member(
-    team: str,
-    global_name: str,
-    *,
-    fields: dict[str, Any],
-    user: str | None = None,
-) -> tuple[dict | None, str | None]:
-    """PUT /teams/<team>/members/external — update an external agent.
-
-    The agent is matched by its current *global_name*; *fields* carries the
-    attributes to change (may include a new ``global_name``).
-    """
-    url = f"{FRONT_BASE}/teams/{urllib.parse.quote(team, safe='')}/members/external"
-    payload = {"global_name": global_name, **fields}
-    code, body = _req("PUT", url, headers=_front_headers(user), data=payload)
-    if code == 200:
-        return body if isinstance(body, dict) else {"ok": True}, None
+def update_agent(ref: str, *, name: str | None = None, settings: dict[str, Any] | None = None,
+                 user: str | None = None) -> tuple[dict | None, str | None]:
+    """PATCH /v1/agents/<ref> — rename or change settings."""
+    url = f"{AGENT_BASE}/v1/agents/{urllib.parse.quote(ref, safe='/')}"
+    payload: dict[str, Any] = {"settings": settings or {}}
+    if name is not None:
+        payload["name"] = name
+    code, body = _req("PATCH", url, headers=_v1_headers(user), data=payload)
+    if code == 200 and isinstance(body, dict):
+        return body, None
     return None, friendly_error(url, code, body)
 
 
-def delete_external_member(
-    team: str, global_name: str, user: str | None = None,
-) -> tuple[bool, str | None]:
-    """DELETE /teams/<team>/members/external — remove an external agent by global_name."""
-    url = f"{FRONT_BASE}/teams/{urllib.parse.quote(team, safe='')}/members/external"
-    code, body = _req("DELETE", url, headers=_front_headers(user), data={"global_name": global_name})
+def add_team_member(team: str, agent: str, *, role: str = "", is_lead: bool = False,
+                    user: str | None = None) -> tuple[dict | None, str | None]:
+    """POST /v1/teams/<team>/members — the agent joins the team in *role*."""
+    url = f"{AGENT_BASE}/v1/teams/{urllib.parse.quote(team, safe='')}/members"
+    code, body = _req("POST", url, headers=_v1_headers(user), data={"agent": agent, "role": role, "is_lead": is_lead})
+    if code == 200 and isinstance(body, dict):
+        return body, None
+    return None, friendly_error(url, code, body)
+
+
+def import_team(team: str, user: str | None = None) -> tuple[dict | None, str | None]:
+    """POST /v1/teams/<team>/import — turn the manifest files in the team folder into members."""
+    url = f"{AGENT_BASE}/v1/teams/{urllib.parse.quote(team, safe='')}/import"
+    code, body = _req("POST", url, headers=_v1_headers(user))
+    if code == 200 and isinstance(body, dict):
+        return body, None
+    return None, friendly_error(url, code, body)
+
+
+def remove_team_member(team: str, agent: str, user: str | None = None) -> tuple[bool, str | None]:
+    """DELETE /v1/teams/<team>/members/<agent> — the agent leaves the team (and stays)."""
+    url = f"{AGENT_BASE}/v1/teams/{urllib.parse.quote(team, safe='')}/members/{urllib.parse.quote(agent, safe='/')}"
+    code, body = _req("DELETE", url, headers=_v1_headers(user))
     if 200 <= code < 300:
         return True, None
     return False, friendly_error(url, code, body)
@@ -527,27 +527,15 @@ def get_skill_detail(
 def create_cron(
     team: str,
     *,
-    target_name: str,
+    agent: str,
     text: str,
     schedule_type: str = "cron",
     cron_expr: str = "",
     run_at: str = "",
-    target_type: str = "internal",
     user: str | None = None,
 ) -> tuple[dict | None, str | None]:
-    """Create a cron / one-shot alarm.
-
-    With *team* → ``POST /teams/<team>/alarms``. Without → ``POST /mobile_alarms``
-    in the public scope (team defaults to ``__public__`` server-side).
-    """
-    payload = {
-        "target_type": target_type,
-        "target_name": target_name,
-        "schedule_type": schedule_type,
-        "cron": cron_expr,
-        "run_at": run_at,
-        "text": text,
-    }
+    """Schedule *text* for an agent (by id). With *team* the agent must be a member of it."""
+    payload = {"agent": agent, "schedule_type": schedule_type, "cron": cron_expr, "run_at": run_at, "text": text}
     if team:
         url = f"{FRONT_BASE}/teams/{urllib.parse.quote(team, safe='')}/alarms"
     else:
@@ -559,17 +547,11 @@ def create_cron(
 
 
 def list_cron_targets(team: str = "", user: str | None = None) -> tuple[list[dict], str | None]:
-    """GET schedulable targets for a scope via ``/mobile_alarms``.
-
-    Returns target dicts like ``{target_type, target_name, label}``. Empty
-    *team* → the public scope.
-    """
-    params = {"team": team} if team else {"team": "__public__"}
+    """The agents a task can target: ``{agent, target_name, label}``; a team's members, or all agents."""
     url = f"{FRONT_BASE}/mobile_alarms"
-    code, body = _req("GET", url, headers=_front_headers(user), params=params)
+    code, body = _req("GET", url, headers=_front_headers(user), params={"team": team} if team else None)
     if code == 200 and isinstance(body, dict):
-        targets = body.get("targets") or []
-        return [t for t in targets if isinstance(t, dict)], None
+        return [t for t in body.get("targets") or [] if isinstance(t, dict)], None
     return [], friendly_error(url, code, body)
 
 

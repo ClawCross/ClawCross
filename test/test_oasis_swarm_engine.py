@@ -19,6 +19,11 @@ class _FakeLLM:
 
 
 class OasisSwarmEngineTests(unittest.TestCase):
+    def test_schedule_personas_seed_the_swarm(self):
+        tags = swarm_engine._extract_schedule_tags(
+            "version: 1\nplan:\n  - parallel:\n      - persona: creative\n      - agent: Coder\n      - persona: critical\n")
+        self.assertEqual(tags, ["creative", "critical"])
+
     def test_build_pending_swarm_returns_scaffold_graph(self):
         swarm = swarm_engine.build_pending_swarm(
             "预测一款新 AI 产品发布后市场、开发者和竞品会怎么互动",
@@ -26,8 +31,8 @@ class OasisSwarmEngineTests(unittest.TestCase):
                 'version: 1',
                 'plan:',
                 '  - parallel:',
-                '      - "creative#temp#1"',
-                '      - "critical#temp#2"',
+                '      - persona: creative',
+                '      - persona: critical',
             ]),
             mode="prediction",
         )
@@ -71,8 +76,8 @@ class OasisSwarmEngineTests(unittest.TestCase):
                 'version: 1',
                 'plan:',
                 '  - parallel:',
-                '      - "creative#temp#1"',
-                '      - "critical#temp#2"',
+                '      - persona: creative',
+                '      - persona: critical',
             ]),
             mode="prediction",
         )
@@ -88,7 +93,7 @@ class OasisSwarmEngineTests(unittest.TestCase):
     def test_generate_swarm_blueprint_falls_back_when_llm_fails(self, _mock_create_chat_model):
         swarm = swarm_engine.generate_swarm_blueprint(
             "预测一项政策变化的链式反应",
-            schedule_yaml='expert: "data#temp#1"',
+            schedule_yaml="version: 1\nplan:\n  - persona: data\n",
         )
 
         self.assertEqual(swarm["status"], "ready")

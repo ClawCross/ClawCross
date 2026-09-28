@@ -22,18 +22,16 @@ class DiscussionStatus(str, Enum):
 class CreateTopicRequest(BaseModel):
     """创建新讨论主题的请求体
 
-    专家池由 schedule_yaml 或 schedule_file 构建（至少需要其中之一）。
-    若两者同时提供，schedule_file 优先。
-      "tag#temp#N" → ExpertAgent（临时专家）
-      "tag#oasis#id" → SessionExpert（OASIS 管理会话）
-      "title#sid" → SessionExpert（常规会话）
-    Tag 用于查找专家的名称和人设。
+    参与者由 schedule_yaml 或 schedule_file 给出（至少需要其中之一；两者都有时 schedule_file 优先）：
+      agent: <ref>     用户已有的 agent（团队里写角色名）
+      persona: <tag>   临时专家，人设取自人设库；tools: none | all | [工具名]
 
-    简单的全并行场景示例：
+    简单的一轮并行示例：
       version: 1
-      repeat: true
       plan:
-        - all_experts: true
+        - parallel:
+            - persona: creative
+            - persona: critical
     """
     question: str                    # 讨论主题
     user_id: str = "anonymous"       # 用户ID

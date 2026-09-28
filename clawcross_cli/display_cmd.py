@@ -78,21 +78,8 @@ def _format_team_detail(name: str, members_body: dict | None, alarms: list[dict]
         lines.append("  members: (unavailable)")
     else:
         members = members_body.get("members") or []
-        internal = [m for m in members if isinstance(m, dict) and m.get("type") == "oasis"]
-        external = [m for m in members if isinstance(m, dict) and m.get("type") != "oasis"]
         lines.append(f"  members: {len(members)}")
-        if internal:
-            lines.append(f"  internal agents ({len(internal)}):")
-            for m in internal:
-                tag = m.get("tag") or ""
-                tag_part = f" [{tag}]" if tag else ""
-                lines.append(f"    - {m.get('name', '?')}{tag_part}")
-        if external:
-            lines.append(f"  external agents ({len(external)}):")
-            for m in external:
-                tag = m.get("tag") or ""
-                tag_part = f" [{tag}]" if tag else ""
-                lines.append(f"    - {m.get('name', '?')}{tag_part}")
+        lines.extend(f"    - {_member_line(m)}" for m in members)
         if not members:
             lines.append("    (empty)")
     if alarms:
@@ -110,16 +97,18 @@ def _format_team_detail(name: str, members_body: dict | None, alarms: list[dict]
 _TEAM_HELP = (
     "\nTeam sub-commands:\n"
     "  /cross team <name>                          overview (members + alarm count)\n"
-    "  /cross team <name> members                  internal + external agents\n"
+    "  /cross team <name> members                  the team's agents (any platform)\n"
     "  /cross team <name> personas                 persona/expert prompts\n"
     "  /cross team <name> workflows                team-scoped workflows\n"
     "  /cross team <name> skills                   team-scoped skills\n"
     "  /cross team <name> crons                    team-scoped cron alarms\n"
     "  /cross team new <name>                      create a new team folder\n"
     "  /cross team rename <old> <new>              rename a team folder\n"
-    "  /cross team delete <name>                   delete a team (and its agents)\n"
-    "  /cross team member add <team> ...           add an external agent member\n"
-    "  /cross team member edit|remove <team> ...   update / remove an external member\n"
+    "  /cross team delete <name>                   delete a team (and agents in no other team)\n"
+    "  /cross team member add <team> ...           add an agent (existing or new) to the team\n"
+    "  /cross team member edit|remove <team> ...   update an agent / take it out of the team\n"
+    "  /cross team import <name>                   turn internal_agents.json / external_agents.json\n"
+    "                                              in the team folder into members\n"
     "  /cross expert <team> [add|edit|delete ...]  manage team personas/experts"
 )
 
@@ -156,27 +145,18 @@ def _format_personas(name: str, personas: list[dict]) -> str:
     return _format_lines(lines)
 
 
+def _member_line(member: dict) -> str:
+    agent = member.get("agent") or {}
+    lead = " ★lead" if member.get("is_lead") else ""
+    return f"{member.get('role', '?')}{lead} — {agent.get('address', '?')} ({agent.get('platform', '?')})"
+
+
 def _format_members(name: str, members_body: dict | None) -> str:
     if not members_body:
         return f"Team {name!r}: members unavailable."
     members = members_body.get("members") or []
-    internal = [m for m in members if isinstance(m, dict) and m.get("type") == "oasis"]
-    external = [m for m in members if isinstance(m, dict) and m.get("type") != "oasis"]
     lines = [f"Team {name!r} members ({len(members)}):"]
-    if internal:
-        lines.append(f"  internal ({len(internal)}):")
-        for m in internal:
-            tag = m.get("tag") or ""
-            tag_part = f" [{tag}]" if tag else ""
-            lines.append(f"    - {m.get('name', '?')}{tag_part}")
-    if external:
-        lines.append(f"  external ({len(external)}):")
-        for m in external:
-            tag = m.get("tag") or ""
-            tag_part = f" [{tag}]" if tag else ""
-            platform = m.get("platform") or ""
-            plat_part = f" ({platform})" if platform else ""
-            lines.append(f"    - {m.get('name', '?')}{tag_part}{plat_part}")
+    lines.extend(f"  - {_member_line(m)}" for m in members)
     if not members:
         lines.append("  (empty)")
     return _format_lines(lines)
@@ -286,14 +266,15 @@ def _kv_args(rest: list[str], keys: set[str], flags: set[str] = frozenset()) -> 
 
 
 def _handle_team_member(rest: list[str], *, interactive: bool, user: str) -> str:
-    """`team member add|edit|remove <team> ...` — manage external agent members."""
+    """`team member add|edit|remove <team> ...` — members are agents, of any platform."""
     usage = (
         "Usage:\n"
-        "  clawcross team member add <team> name <n> global <g> platform <p>\n"
-        "                          [tag <t>] [api_url <u>] [api_key <k>] [model <m>] [primary]\n"
-        "  clawcross team member edit <team> <global_name> [name <n>] [global <g>]\n"
-        "                          [api_url <u>] [api_key <k>] [model <m>] [tag <t>]\n"
-        "  clawcross team member remove <team> <global_name>"
+        "  clawcross team member add <team> agent <ref> [role <r>] [lead]\n"
+        "  clawcross team member add <team> name <n> platform <p> [global <g>] [role <r>] [lead]\n"
+        "                          [api_url <u>] [api_key <k>] [model <m>] [persona <tag>]\n"
+        "  clawcross team member edit <team> <agent> [name <n>] [api_url <u>] [api_key <k>] [model <m>]\n"
+        "  clawcross team member remove <team> <agent>\n"
+        "  <ref>/<agent>: ag_ id, address (user/handle) or handle"
     )
     if len(rest) < 2:
         return usage
@@ -302,51 +283,47 @@ def _handle_team_member(rest: list[str], *, interactive: bool, user: str) -> str
     if not team:
         return "Team name is required.\n" + usage
     body = rest[2:]
-    keys = {"name", "global", "platform", "tag", "api_url", "api_key", "model"}
+    keys = {"agent", "name", "platform", "global", "role", "api_url", "api_key", "model", "persona"}
 
     if verb in {"add", "new"}:
-        kv = _kv_args(body, keys, flags={"primary"})
-        name = kv.get("name", "")
-        global_name = kv.get("global", "")
-        platform = kv.get("platform", "")
-        if not (name and global_name and platform):
-            return "add requires name, global, and platform.\n" + usage
-        result, err = api_client.add_external_member(
-            team, name=name, global_name=global_name, platform=platform,
-            tag=kv.get("tag", ""), api_url=kv.get("api_url", ""),
-            api_key=kv.get("api_key", ""), model=kv.get("model", ""),
-            is_primary=bool(kv.get("primary")), user=user,
-        )
+        kv = _kv_args(body, keys, flags={"lead"})
+        ref = kv.get("agent", "")
+        if not ref:
+            if not (kv.get("name") and kv.get("platform")):
+                return "add requires an existing agent, or name and platform for a new one.\n" + usage
+            created, err = api_client.create_agent({
+                "name": kv["name"], "platform": kv["platform"], "global_name": kv.get("global", ""),
+                "api_url": kv.get("api_url", ""), "api_key": kv.get("api_key", ""), "model": kv.get("model", ""),
+                "persona": kv.get("persona", ""), "team": team,
+            }, user=user)
+            if err:
+                return err
+            ref = created["agent_id"]
+        member, err = api_client.add_team_member(team, ref, role=kv.get("role", ""), is_lead=bool(kv.get("lead")),
+                                                 user=user)
         if err:
             return err
-        return f"External member {name!r} ({global_name}) added to team {team!r}."
+        return f"{_member_line(member)} joined team {team!r}."
 
     if verb in {"edit", "update"}:
         if not body:
-            return "edit requires the current <global_name>.\n" + usage
-        global_name = body[0].strip()
+            return "edit requires <agent>.\n" + usage
         kv = _kv_args(body[1:], keys)
-        fields: dict[str, Any] = {}
-        if "global" in kv:
-            fields["global_name"] = kv["global"]
-        for k in ("name", "tag", "api_url", "api_key", "model", "platform"):
-            if k in kv:
-                fields[k] = kv[k]
-        if not fields:
+        settings = {k: kv[k] for k in ("api_url", "api_key", "model", "persona") if k in kv}
+        if not settings and "name" not in kv:
             return "edit needs at least one field to change.\n" + usage
-        result, err = api_client.update_external_member(team, global_name, fields=fields, user=user)
+        _result, err = api_client.update_agent(body[0].strip(), name=kv.get("name"), settings=settings, user=user)
         if err:
             return err
-        return f"External member {global_name!r} updated on team {team!r}."
+        return f"Agent {body[0].strip()!r} updated."
 
     if verb in {"remove", "delete", "rm", "del"}:
         if not body:
-            return "remove requires <global_name>.\n" + usage
-        global_name = body[0].strip()
-        ok, err = api_client.delete_external_member(team, global_name, user=user)
+            return "remove requires <agent>.\n" + usage
+        ok, err = api_client.remove_team_member(team, body[0].strip(), user=user)
         if err:
             return err
-        return f"External member {global_name!r} removed from team {team!r}."
+        return f"{body[0].strip()!r} left team {team!r} (the agent itself stays)."
 
     return f"Unknown member verb {verb!r}.\n" + usage
 
@@ -366,6 +343,14 @@ def handle_team_command(args: list[str], *, interactive: bool = False, user: str
 
     if args and args[0].lower() == "rename":
         return _handle_team_rename(args[1:], interactive=interactive, user=user)
+
+    if args and args[0].lower() == "import":
+        if len(args) < 2 or not args[1].strip():
+            return "Usage: clawcross team import <name>"
+        card, err = api_client.import_team(args[1].strip(), user=user)
+        if err:
+            return err
+        return _format_members(args[1].strip(), card)
 
     if args and args[0].lower() in {"member", "members"} and len(args) >= 2 \
             and args[1].lower() in {"add", "new", "edit", "update", "remove", "delete", "rm", "del"}:
@@ -583,8 +568,9 @@ _WORKFLOW_YAML_TEMPLATE = """\
 #
 # OASIS workflow schema:
 #   plan:  list of nodes; each has an `id` and either
-#            expert: <tag>#temp#<n>          ad-hoc expert (e.g. creative#temp#1)
-#            expert: <tag>#oasis#<persona>   a saved team persona
+#            agent: <name>                   one of your agents (in a team: its role name)
+#            persona: <tag>                  a temporary expert wearing that persona
+#                                            (add `tools: all` or `tools: [read_file]` to give it tools)
 #            instruction: "..."              (optional) what that node should do
 #          or a manual node:
 #            manual: {{author: begin|bend, content: "..."}}
@@ -595,10 +581,10 @@ version: 2
 repeat: false
 plan:
   - id: ideate
-    expert: creative#temp#1
+    persona: creative
     instruction: "Propose ideas / a first draft for the user's request."
   - id: critique
-    expert: critical#temp#1
+    persona: critical
     instruction: "Critically review the previous output and refine it."
 edges:
   - - ideate
@@ -1267,13 +1253,11 @@ def handle_skill_command(args: list[str], *, interactive: bool = False, user: st
 
 def _render_cron_row(a: dict) -> list[str]:
     target = a.get("target_name") or "?"
-    ttype = a.get("target_type") or ""
     sched = a.get("cron") or a.get("run_at") or "?"
     text = (a.get("text") or "").splitlines()[0][:80]
     task_id = str(a.get("task_id") or "").strip()
-    type_part = f" ({ttype})" if ttype else ""
     id_part = f"  [{task_id}]" if task_id else ""
-    rows = [f"  - {target}{type_part}  {sched}{id_part}"]
+    rows = [f"  - {target}  {sched}{id_part}"]
     if text:
         rows.append(f"      {text}")
     return rows
@@ -1316,7 +1300,7 @@ def _format_cron_list(alarms: list[dict], team: str | None = None) -> str:
 
 
 def _handle_cron_new(rest: list[str], *, interactive: bool, user: str) -> str:
-    """`/cross cron add [team <T>] target <name> [type internal|external] [cron <expr>|once <ISO>] text <message...>`.
+    """`/cross cron add [team <T>] target <agent> [cron <expr>|once <ISO>] text <message...>`.
 
     Team is optional — omit it for a public/personal alarm. In a terminal the
     scope and target are chosen from pickers rather than typed.
@@ -1326,14 +1310,13 @@ def _handle_cron_new(rest: list[str], *, interactive: bool, user: str) -> str:
     parsed = {
         "team": "",
         "target": "",
-        "type": "internal",
         "cron": "",
         "once": "",
         "text": "",
     }
     i = 0
     current = None
-    keywords = {"team", "target", "type", "cron", "once", "text"}
+    keywords = {"team", "target", "cron", "once", "text"}
     while i < len(rest):
         token = rest[i]
         lower = token.lower()
@@ -1351,7 +1334,7 @@ def _handle_cron_new(rest: list[str], *, interactive: bool, user: str) -> str:
         i += 1
 
     usage = (
-        "Usage: clawcross cron add [team <T>] target <name> [type internal|external] "
+        "Usage: clawcross cron add [team <T>] target <agent> "
         "cron <expr>|once <ISO> text <message...>\n"
         "(team is optional — omit it for a public/personal alarm)"
     )
@@ -1368,28 +1351,16 @@ def _handle_cron_new(rest: list[str], *, interactive: bool, user: str) -> str:
             if idx is None or idx >= len(labels) - 1:
                 return "Cron creation cancelled."
             parsed["team"] = "" if idx == 0 else labels[idx]
-        # Target: pick from the scope's schedulable agents, with a type-it fallback.
+        # Target: pick from the scope's agents.
         if not parsed["target"]:
             targets, _gerr = api_client.list_cron_targets(parsed["team"], user=user)
-            if targets:
-                tlabels = [
-                    t.get("label") or f"{t.get('target_name', '?')} · {t.get('target_type', '?')}"
-                    for t in targets
-                ]
-                tlabels += ["Other (type a name)", "Cancel"]
-                tidx = curses_radiolist("Target agent:", tlabels, selected=0,
-                                        cancel_returns=len(tlabels) - 1)
-                if tidx is None or tidx >= len(tlabels) - 1:
-                    return "Cron creation cancelled."
-                if tidx == len(tlabels) - 2:
-                    parsed["target"] = prompt_text("Target name: ").strip()
-                else:
-                    chosen = targets[tidx]
-                    parsed["target"] = str(chosen.get("target_name") or "")
-                    parsed["type"] = str(chosen.get("target_type") or parsed["type"])
-            else:
-                parsed["target"] = prompt_text(
-                    "Target name (internal session or external alias): ").strip()
+            if not targets:
+                return "No agent to schedule for in this scope."
+            tlabels = [t.get("label") or t.get("target_name", "?") for t in targets] + ["Cancel"]
+            tidx = curses_radiolist("Target agent:", tlabels, selected=0, cancel_returns=len(tlabels) - 1)
+            if tidx is None or tidx >= len(tlabels) - 1:
+                return "Cron creation cancelled."
+            parsed["target"] = str(targets[tidx].get("agent") or "")
         if not parsed["cron"] and not parsed["once"]:
             mode = prompt_text("Schedule type (cron|once) [cron]: ").strip().lower() or "cron"
             if mode == "once":
@@ -1407,10 +1378,14 @@ def _handle_cron_new(rest: list[str], *, interactive: bool, user: str) -> str:
     if schedule_type == "cron" and not parsed["cron"]:
         return "cron expression is required (or use `once <ISO>`)"
 
+    targets, _gerr = api_client.list_cron_targets(parsed["team"], user=user)
+    wanted = parsed["target"]
+    match = next((t for t in targets if wanted in (t.get("agent"), t.get("target_name"))), None)
+    if match is None:
+        return f"No agent {wanted!r} in this scope."
     body, err = api_client.create_cron(
         team=parsed["team"],
-        target_name=parsed["target"],
-        target_type=parsed["type"] or "internal",
+        agent=str(match["agent"]),
         text=parsed["text"],
         schedule_type=schedule_type,
         cron_expr=parsed["cron"],
@@ -1421,7 +1396,7 @@ def _handle_cron_new(rest: list[str], *, interactive: bool, user: str) -> str:
         return err
     sched = parsed["once"] or parsed["cron"]
     scope = f"team {parsed['team']!r}" if parsed["team"] else "public (no team)"
-    return f"Cron created on {scope}: target={parsed['target']} schedule={sched}"
+    return f"Cron created on {scope}: target={match.get('target_name')} schedule={sched}"
 
 
 def _handle_cron_delete(rest: list[str], *, interactive: bool = False, user: str) -> str:

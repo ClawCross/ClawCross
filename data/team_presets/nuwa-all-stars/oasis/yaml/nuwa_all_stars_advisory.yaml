@@ -8,33 +8,33 @@ plan:
     author: begin
     content: "请提出你的问题或议题，各位顾问将依次给出分析。"
 - id: m1
-  expert: paul_graham#oasis#保罗·格雷厄姆
+  agent: 保罗·格雷厄姆
 - id: m2
-  expert: zhang_yiming#oasis#张一鸣
+  agent: 张一鸣
 - id: m3
-  expert: karpathy#oasis#安德烈·卡帕西
+  agent: 安德烈·卡帕西
 - id: m4
-  expert: ilya_sutskever#oasis#伊利亚·苏茨克维
+  agent: 伊利亚·苏茨克维
 - id: m5
-  expert: mrbeast#oasis#MrBeast
+  agent: MrBeast
 - id: m6
-  expert: trump#oasis#唐纳德·特朗普
+  agent: 唐纳德·特朗普
 - id: m7
-  expert: steve_jobs#oasis#史蒂夫·乔布斯
+  agent: 史蒂夫·乔布斯
 - id: m8
-  expert: elon_musk#oasis#埃隆·马斯克
+  agent: 埃隆·马斯克
 - id: m9
-  expert: munger#oasis#查理·芒格
+  agent: 查理·芒格
 - id: m10
-  expert: feynman#oasis#理查德·费曼
+  agent: 理查德·费曼
 - id: m11
-  expert: naval#oasis#纳瓦尔·拉维坎特
+  agent: 纳瓦尔·拉维坎特
 - id: m12
-  expert: taleb#oasis#纳西姆·塔勒布
+  agent: 纳西姆·塔勒布
 - id: m13
-  expert: zhangxuefeng#oasis#张雪峰
+  agent: 张雪峰
 - id: m14
-  expert: x_mentor#oasis#X增长导师
+  agent: X增长导师
 - id: m15
   manual:
     author: bend

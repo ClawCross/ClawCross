@@ -1,13 +1,13 @@
-"""One interface for talking to one agent, whatever runtime it lives in.
+"""Talking to one agent, whatever runtime it lives in.
 
-``ask`` sends a message and waits for the agent's reply. ``deliver`` drops a
-message into the agent's inbox and returns at once: the agent answers, if at
-all, through its own channels (for example a group chat's send tool). Control
-actions (status, cancel, reset, …) go through the Agent service's
-``/agent_control`` so every process shares one implementation.
+``ask`` sends a message and waits for the reply. ``deliver`` drops a message in
+the agent's inbox and returns at once; the agent answers, if at all, through
+the conversation it was told about. The transports are the connectors in
+``integrations``; this module maps a message onto them per driver.
 
-The transports themselves are the existing connectors in ``integrations``;
-this module decides, per driver, how a message and its options map onto them.
+Temporary participants are agents too, just not stored: ``persona_agent`` is a
+single model call with a persona, ``temp_session_agent`` a throwaway WeBot
+session with tools, deleted with ``discard``.
 """
 
 from __future__ import annotations
@@ -19,10 +19,10 @@ from pathlib import Path
 from typing import Any, Callable
 
 import httpx
+from pydantic import BaseModel
 
 from agents.messages import (
     ACPX_OVERRIDES_BY_MODE,
-    VALID_RUN_MODES,
     AgentMessage,
     AgentReply,
     DeliveryReceipt,
@@ -30,133 +30,86 @@ from agents.messages import (
     compose_text_prompt,
     normalize_run_mode,
 )
-from agents.registry import (
-    DRIVER_ACPX,
-    DRIVER_EPHEMERAL,
-    DRIVER_HTTP,
-    DRIVER_OPENCLAW,
-    DRIVER_WEBOT,
-    EPHEMERAL_SESSION_PREFIX,
-    AgentRecord,
-    AgentRegistry,
-    get_registry,
-)
+from agents.store import ACPX, HTTP, LLM, OPENCLAW, TEMP_SESSION_PREFIX, WEBOT, Agent, default_db_path
 
 logger = logging.getLogger(__name__)
 
 _PROJECT_ROOT = str(Path(__file__).resolve().parents[2])
-_DEFAULT_ACP_SESSION_SUFFIX = "clawcrosschat"
+_SESSION_SUFFIX = "clawcrosschat"
 
 # Pass as ``timeout`` to wait for as long as the agent takes (long execution tasks).
 NO_TIMEOUT = float("inf")
 
-CAPABILITIES: dict[str, dict[str, Any]] = {
-    DRIVER_WEBOT: {
-        "ask": True, "deliver": True, "cancel": True, "reset": True,
-        "attachments": True, "structured_output": True, "tool_selection": True,
-        "modes": list(VALID_RUN_MODES),
-    },
-    DRIVER_ACPX: {
-        "ask": True, "deliver": True, "cancel": True, "reset": True,
-        "attachments": True, "structured_output": False, "tool_selection": False,
-        "modes": list(ACPX_OVERRIDES_BY_MODE),
-    },
-    DRIVER_OPENCLAW: {
-        "ask": True, "deliver": True, "cancel": True, "reset": True,
-        "attachments": True, "structured_output": False, "tool_selection": False,
-        "modes": [],
-    },
-    DRIVER_HTTP: {
-        "ask": True, "deliver": True, "cancel": False, "reset": True,
-        "attachments": True, "structured_output": False, "tool_selection": False,
-        "modes": [],
-    },
-    DRIVER_EPHEMERAL: {
-        "ask": True, "deliver": False, "cancel": False, "reset": False,
-        "attachments": False, "structured_output": True, "tool_selection": False,
-        "modes": [],
-    },
-}
+
+def persona_agent(owner: str, name: str, *, persona: str = "", team: str = "", llm: dict | None = None) -> Agent:
+    """A persona for one call: no tools, no memory. *llm*: model, api_key, base_url, provider, temperature, max_tokens."""
+    return Agent(agent_id="", owner=owner, handle=name, name=name, driver=LLM,
+                 config={"persona": persona, "team": team, "llm": dict(llm or {})})
 
 
-def ephemeral_agent(owner: str, name: str, *, options: dict[str, Any] | None = None) -> AgentRecord:
-    """A persona-only participant for one task: one LLM call, no tools, no memory.
-
-    *options* are the LLM settings (temperature, max_tokens, model, api_key,
-    base_url, provider). Nothing is stored in the registry.
-    """
-    return AgentRecord(
-        agent_id="",
-        owner=owner,
-        handle=name,
-        display_name=name,
-        driver=DRIVER_EPHEMERAL,
-        binding={"options": dict(options or {}), "session": name},
-    )
+def temp_session_agent(owner: str, name: str, session: str, *, persona: str = "", team: str = "",
+                       llm: dict | None = None) -> Agent:
+    """A throwaway WeBot session (``tmp__…``) for a persona that needs tools; *llm* overrides its model."""
+    if not session.startswith(TEMP_SESSION_PREFIX) or len(session) <= len(TEMP_SESSION_PREFIX):
+        raise ValueError(f"not a temporary session: {session!r}")
+    config = {"session": session, "persona": persona, "team": team}
+    if llm:
+        config["llm"] = dict(llm)
+    return Agent(agent_id="", owner=owner, handle=name, name=name, driver=WEBOT, config=config)
 
 
-def agent_card(record: AgentRecord) -> dict[str, Any]:
-    """What a caller may know about an agent: who it is and what it can do."""
-    return {
-        "agent_id": record.agent_id,
-        "address": record.address,
-        "owner": record.owner,
-        "handle": record.handle,
-        "display_name": record.display_name,
-        "driver": record.driver,
-        "platform": record.binding.get("platform") or record.driver,
-        "persona_tag": record.persona_tag,
-        "teams": [t for t in record.teams if t],
-        "default_context": dict(record.default_context),
-        "status": record.status,
-        "capabilities": dict(CAPABILITIES.get(record.driver, {})),
-    }
+def _reply_format_for(agent: Agent, response_format: Any) -> Any:
+    """The requested reply shape as this runtime takes it: WeBot a ``json_schema``
+    ``response_format``, a model call the Pydantic model itself, external runtimes nothing."""
+    if response_format is None:
+        return None
+    is_model = isinstance(response_format, type) and issubclass(response_format, BaseModel)
+    if agent.driver == LLM:
+        return response_format
+    if agent.driver != WEBOT:
+        return None
+    if not is_model:
+        return response_format
+    from core.tool_schema import to_strict_parameters
+
+    return {"type": "json_schema", "json_schema": {
+        "name": response_format.__name__,
+        "schema": to_strict_parameters(response_format.model_json_schema()),
+        "strict": True,
+    }}
 
 
-def _session_suffix(model: str) -> str:
-    """``agent:<name>:<suffix>`` names an external session; the default is shared with group chat."""
-    parts = (model or "").strip().split(":")
-    if len(parts) >= 3 and parts[0] == "agent" and parts[2].strip():
-        return parts[2].strip()
-    return _DEFAULT_ACP_SESSION_SUFFIX
+def external_session_key(agent: Agent) -> str:
+    """``agent:<global_name>:<suffix>``: the one conversation ClawCross keeps with an external agent."""
+    parts = str(agent.config.get("model") or "").split(":")
+    suffix = parts[2].strip() if len(parts) >= 3 and parts[0] == "agent" and parts[2].strip() else _SESSION_SUFFIX
+    return f"agent:{agent.config.get('global_name', '')}:{suffix}"
 
 
-def _external_session_key(record: AgentRecord) -> str:
-    global_name = str(record.binding.get("global_name") or "").strip()
-    return f"agent:{global_name}:{_session_suffix(str(record.binding.get('model') or ''))}"
+def reply_channel(agent: Agent, conversation_id: str) -> str:
+    """How this agent posts into a ClawCross conversation: a tool for WeBot, the CLI otherwise."""
+    import shlex
+
+    if agent.driver == WEBOT:
+        return (f'send_to_group(group_id="{conversation_id}", content="你的回复")'
+                "（username 与 source_session 自动注入，不要手动填写）")
+    return (f"cd {shlex.quote(_PROJECT_ROOT)} && uv run scripts/cli.py -u {shlex.quote(agent.owner)} "
+            f"groups send --group-id {shlex.quote(conversation_id)} --agent {shlex.quote(agent.address)} "
+            "--message '你的回复'")
 
 
 class AgentGateway:
-    def __init__(
-        self,
-        registry: AgentRegistry | None = None,
-        *,
-        agent_base_url: str | None = None,
-        internal_token: str | None = None,
-    ):
-        self.registry = registry or get_registry()
+    def __init__(self, *, agent_base_url: str | None = None, internal_token: str | None = None,
+                 runtime_db_path: str | None = None):
         self.agent_base_url = agent_base_url or f"http://127.0.0.1:{os.getenv('PORT_AGENT', '51200')}"
         self.internal_token = os.getenv("INTERNAL_TOKEN", "") if internal_token is None else internal_token
+        self.runtime_db_path = runtime_db_path or str(default_db_path())
         self._background: set[asyncio.Task] = set()
         self._external_system_prompt: str | None = None
 
-    # ── directory ────────────────────────────────────────────────────────
-
-    def resolve(self, owner: str, ref: str, *, team: str | None = None) -> AgentRecord:
-        return self.registry.resolve(owner, ref, team=team)
-
-    def describe(self, owner: str, ref: str) -> dict[str, Any]:
-        return agent_card(self.resolve(owner, ref))
-
-    def list(self, owner: str) -> list[dict[str, Any]]:
-        return [agent_card(record) for record in self.registry.list(owner)]
-
-    # ── messaging ────────────────────────────────────────────────────────
-
     async def ask(
         self,
-        owner: str,
-        ref: str | AgentRecord,
+        agent: Agent,
         msg: AgentMessage,
         *,
         context: dict[str, Any] | None = None,
@@ -165,32 +118,31 @@ class AgentGateway:
         response_format: dict | Any | None = None,
         timeout: float | None = None,
     ) -> AgentReply:
-        """Send *msg* and wait for the agent's reply.
+        """Send *msg* and wait for the reply. ``timeout`` in seconds; ``NO_TIMEOUT`` waits indefinitely.
 
-        ``timeout`` is in seconds; None means the driver default and
-        ``NO_TIMEOUT`` waits as long as the agent takes.
+        ``response_format`` is an OpenAI ``response_format`` dict or a Pydantic model;
+        each runtime gets it in the form it can enforce, or not at all.
         """
-        record = ref if isinstance(ref, AgentRecord) else self.resolve(owner, ref)
-        context = {**record.default_context, **(context or {})}
+        context = {"team": agent.config.get("team", ""), **(context or {})}
         mode = normalize_run_mode(mode)
+        response_format = _reply_format_for(agent, response_format)
         try:
-            if record.driver == DRIVER_WEBOT:
-                return await self._ask_webot(record, msg, context, mode, tools, response_format, timeout)
-            if record.driver == DRIVER_ACPX:
-                return await self._ask_acpx(record, msg, context, mode, timeout)
-            if record.driver in (DRIVER_OPENCLAW, DRIVER_HTTP):
-                return await self._ask_http(record, msg, context, timeout)
-            if record.driver == DRIVER_EPHEMERAL:
-                return await self._ask_ephemeral(record, msg, response_format)
+            if agent.driver == WEBOT:
+                return await self._ask_webot(agent, msg, mode, tools, response_format, timeout)
+            if agent.driver == ACPX:
+                return await self._ask_acpx(agent, msg, context, mode, timeout)
+            if agent.driver in (OPENCLAW, HTTP):
+                return await self._ask_http(agent, msg, context, timeout)
+            if agent.driver == LLM:
+                return await self._ask_llm(agent, msg, response_format)
         except Exception as exc:
-            logger.exception("ask %s failed", record.address)
+            logger.exception("ask %s failed", agent.address)
             return AgentReply(ok=False, error=f"{type(exc).__name__}: {exc}")
-        return AgentReply(ok=False, error=f"unsupported driver: {record.driver}")
+        return AgentReply(ok=False, error=f"unsupported driver: {agent.driver}")
 
     async def deliver(
         self,
-        owner: str,
-        ref: str | AgentRecord,
+        agent: Agent,
         msg: AgentMessage,
         *,
         context: dict[str, Any] | None = None,
@@ -200,21 +152,19 @@ class AgentGateway:
     ) -> DeliveryReceipt:
         """Put *msg* in the agent's inbox without waiting for an answer.
 
-        External runtimes have no inbox: the message is sent in the background
-        and its direct reply dropped (the agent speaks through its own channels).
-        *on_complete* is called with that reply, or a failed one, when the send
-        ends; WeBot delivery is queued in the agent's session and never calls it.
+        WeBot queues it in the agent's session. Other runtimes have no inbox: the
+        message is sent in the background, its direct reply handed to
+        *on_complete* (the agent speaks through the conversation's own channel).
         """
-        record = ref if isinstance(ref, AgentRecord) else self.resolve(owner, ref)
-        if record.driver == DRIVER_WEBOT:
-            return await self._deliver_webot(record, msg, normalize_run_mode(mode), coalesce_key)
+        if agent.driver == WEBOT:
+            return await self._deliver_webot(agent, msg, normalize_run_mode(mode), coalesce_key)
 
         async def send() -> None:
             reply = AgentReply(ok=False, error="delivery did not complete")
             try:
-                reply = await self.ask(owner, record, msg, context=context, mode=mode)
+                reply = await self.ask(agent, msg, context=context, mode=mode)
                 if not reply.ok:
-                    logger.warning("deliver to %s failed: %s", record.address, reply.error)
+                    logger.warning("deliver to %s failed: %s", agent.address, reply.error)
             finally:
                 if on_complete is not None:
                     try:
@@ -222,124 +172,81 @@ class AgentGateway:
                         if asyncio.iscoroutine(result):
                             await result
                     except Exception:
-                        logger.exception("on_complete for %s failed", record.address)
+                        logger.exception("on_complete for %s failed", agent.address)
 
         task = asyncio.create_task(send())
         self._background.add(task)
         task.add_done_callback(self._background.discard)
         return DeliveryReceipt(accepted=True)
 
-    async def control(self, owner: str, ref: str | AgentRecord, action: str) -> dict[str, Any]:
-        """status / cancel / stop / reset / new / delete, via the Agent service."""
-        record = ref if isinstance(ref, AgentRecord) else self.resolve(owner, ref)
-        if record.driver == DRIVER_WEBOT:
-            kind, identity = "internal", str(record.binding.get("session") or "")
-        else:
-            kind, identity = "external", str(record.binding.get("global_name") or "")
-        async with httpx.AsyncClient(timeout=60) as client:
-            response = await client.post(
-                f"{self.agent_base_url}/agent_control",
-                headers={"X-Internal-Token": self.internal_token},
-                json={"user_id": owner, "action": action, "kind": kind, "identity": identity},
-            )
+    async def discard(self, agent: Agent) -> bool:
+        """Delete a temporary session agent and its history."""
+        session = str(agent.config.get("session") or "")
+        if not agent.temporary or not session.startswith(TEMP_SESSION_PREFIX):
+            raise ValueError(f"{agent.name} is not temporary")
         try:
-            payload = response.json()
-        except ValueError:
-            payload = {"error": response.text[:500]}
-        payload.setdefault("status_code", response.status_code)
-        return payload
+            async with httpx.AsyncClient(timeout=30) as client:
+                response = await client.post(
+                    f"{self.agent_base_url}/delete_session",
+                    headers={"X-Internal-Token": self.internal_token},
+                    json={"user_id": agent.owner, "session_id": session},
+                )
+        except httpx.HTTPError as exc:
+            logger.warning("discarding %s#%s failed: %s", agent.owner, session, exc)
+            return False
+        return response.status_code < 400
 
     # ── WeBot ────────────────────────────────────────────────────────────
 
     @staticmethod
-    def _webot_mode_fields(mode: str | None, tools: list[str] | None) -> dict[str, Any]:
+    def _webot_fields(mode: str | None, tools: list[str] | None) -> dict[str, Any]:
         fields: dict[str, Any] = {}
         if tools is not None:
             fields["enabled_tools"] = list(tools)
         if mode:
             fields["session_mode"] = mode
             if mode == "chat":
-                # Chat means no tool calls; an empty list is the explicit signal.
-                fields["enabled_tools"] = []
+                fields["enabled_tools"] = []  # chat: no tool calls at all
         return fields
 
-    async def _ask_webot(self, record, msg, context, mode, tools, response_format, timeout) -> AgentReply:
+    async def _ask_webot(self, agent, msg, mode, tools, response_format, timeout) -> AgentReply:
         from integrations.agent_sender import SendToAgentRequest, send_to_agent
 
-        session = str(record.binding.get("session") or "")
         messages: list[dict] = []
         if msg.instructions:
             messages.append({"role": "system", "content": msg.instructions})
         messages.append({"role": "user", "content": build_openai_content(msg.text, msg.attachments)})
         body: dict[str, Any] = {"model": "webot", "messages": messages, "stream": False}
-        body.update(self._webot_mode_fields(mode, tools))
+        body.update(self._webot_fields(mode, tools))
         if response_format:
             body["response_format"] = response_format
-        if record.settings.get("llm_override"):
-            body["llm_override"] = record.settings["llm_override"]
+        if agent.config.get("llm"):
+            body["llm_override"] = agent.config["llm"]
         result = await send_to_agent(SendToAgentRequest(
             prompt=messages,
             connect_type="http",
             platform="internal",
-            session=session,
+            session=str(agent.config.get("session") or ""),
             options={
                 "api_url": f"{self.agent_base_url}/v1/chat/completions",
-                "headers": {"Authorization": f"Bearer {self.internal_token}:{record.owner}"},
+                "headers": {"Authorization": f"Bearer {self.internal_token}:{agent.owner}"},
                 "body": body,
                 "timeout": None if timeout == NO_TIMEOUT else (timeout if timeout is not None else 500),
             },
         ))
         return AgentReply(ok=result.ok, content=result.content or "", error=result.error or "", meta=result.meta or {})
 
-    async def discard_session(self, owner: str, session: str) -> bool:
-        """Delete a temporary WeBot session (``tmp__…``) and its history.
-
-        Refuses anything else: the Agent service deletes *every* session of the
-        user when given an empty id.
-        """
-        session = (session or "").strip()
-        if not session.startswith(EPHEMERAL_SESSION_PREFIX) or len(session) <= len(EPHEMERAL_SESSION_PREFIX):
-            raise ValueError(f"not a temporary session: {session!r}")
-        try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                response = await client.post(
-                    f"{self.agent_base_url}/delete_session",
-                    headers={"X-Internal-Token": self.internal_token},
-                    json={"user_id": owner, "session_id": session},
-                )
-        except httpx.HTTPError as exc:
-            logger.warning("discarding %s#%s failed: %s", owner, session, exc)
-            return False
-        return response.status_code < 400
-
-    async def _ask_ephemeral(self, record, msg, response_format) -> AgentReply:
-        from integrations.agent_sender import SendToAgentRequest, send_to_agent
-
-        options = dict(record.binding.get("options") or {})
-        if response_format is not None:
-            options["response_schema"] = response_format  # a Pydantic model or JSON schema
-        prompt = f"{msg.instructions}\n\n{msg.text}" if msg.instructions else msg.text
-        result = await send_to_agent(SendToAgentRequest(
-            prompt=prompt,
-            connect_type="http",
-            platform="temp",
-            session=str(record.binding.get("session") or record.handle),
-            options=options,
-        ))
-        return AgentReply(ok=result.ok, content=result.content or "", error=result.error or "", meta=result.meta or {})
-
-    async def _deliver_webot(self, record, msg, mode, coalesce_key) -> DeliveryReceipt:
-        text = f"{msg.text}\n\n{msg.instructions}" if msg.instructions else msg.text
+    async def _deliver_webot(self, agent, msg, mode, coalesce_key) -> DeliveryReceipt:
         body: dict[str, Any] = {
-            "user_id": record.owner,
-            "session_id": str(record.binding.get("session") or ""),
-            "text": text,
+            "user_id": agent.owner,
+            "session_id": str(agent.config.get("session") or ""),
+            "text": f"{msg.text}\n\n{msg.instructions}" if msg.instructions else msg.text,
         }
         if coalesce_key:
             body["coalesce_key"] = coalesce_key
         if msg.attachments:
             body["attachments"] = list(msg.attachments)
-        body.update(self._webot_mode_fields(mode, None))
+        body.update(self._webot_fields(mode, None))
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 response = await client.post(
@@ -353,91 +260,101 @@ class AgentGateway:
             return DeliveryReceipt(accepted=False, error=f"HTTP {response.status_code}: {response.text[:300]}")
         return DeliveryReceipt(accepted=True)
 
-    # ── external agents ──────────────────────────────────────────────────
+    # ── one model call ───────────────────────────────────────────────────
 
-    def _identity_prompt(self, record: AgentRecord, context: dict[str, Any], instructions: str) -> str:
-        from integrations.acpx_adapter import load_external_agent_system_prompt
+    async def _ask_llm(self, agent, msg, response_format) -> AgentReply:
+        from integrations.agent_sender import SendToAgentRequest, send_to_agent
+
+        options = dict(agent.config.get("llm") or {})
+        if response_format is not None:
+            options["response_schema"] = response_format  # a Pydantic model or JSON schema
+        prompt = f"{msg.instructions}\n\n{msg.text}" if msg.instructions else msg.text
+        result = await send_to_agent(SendToAgentRequest(
+            prompt=prompt, connect_type="http", platform="temp", session=agent.name, options=options,
+        ))
+        return AgentReply(ok=result.ok, content=result.content or "", error=result.error or "", meta=result.meta or {})
+
+    # ── external runtimes ────────────────────────────────────────────────
+
+    def _identity_prompt(self, agent: Agent, context: dict[str, Any], instructions: str) -> str:
+        from integrations.acpx_adapter import load_external_agent_prompt_file, load_external_agent_system_prompt
         from integrations.external_persona import build_external_persona_prompt
 
         if self._external_system_prompt is None:
-            self._external_system_prompt = load_external_agent_system_prompt(_PROJECT_ROOT)
+            # The same chat rules WeBot carries in its system prompt.
+            self._external_system_prompt = "\n\n".join(p for p in (
+                load_external_agent_system_prompt(_PROJECT_ROOT),
+                load_external_agent_prompt_file(_PROJECT_ROOT, "conversation_rules.txt"),
+            ) if p)
         parts = [
             self._external_system_prompt,
             build_external_persona_prompt(
-                record.persona_tag,
-                user_id=record.owner,
-                team=str(context.get("team") or ""),
+                str(agent.config.get("persona") or ""), user_id=agent.owner, team=str(context.get("team") or ""),
             ),
             instructions,
         ]
         return "\n\n".join(p for p in parts if p).strip()
 
-    async def _ask_acpx(self, record, msg, context, mode, timeout) -> AgentReply:
+    async def _ask_acpx(self, agent, msg, context, mode, timeout) -> AgentReply:
         from integrations.acpx_adapter import acpx_options_from_agent
         from integrations.agent_sender import SendToAgentRequest, send_to_agent
         from utils.external_agent_history import attach_history_context
         from utils.runtime_paths import WORKSPACE_DIR
 
-        global_name = str(record.binding.get("global_name") or "")
-        platform = str(record.binding.get("platform") or "")
         options: dict[str, Any] = {
             "cwd": str(WORKSPACE_DIR / "acpx"),
             **acpx_options_from_agent(
-                record.binding,
+                agent.config,
                 overrides=ACPX_OVERRIDES_BY_MODE.get(mode) if mode else None,
                 default_timeout_sec=int(timeout) if timeout and timeout != NO_TIMEOUT else 180,
             ),
             "reset_session": False,
-            "identity_prompt": self._identity_prompt(record, context, msg.instructions),
+            "identity_prompt": self._identity_prompt(agent, context, msg.instructions),
             "attachments": [dict(a) for a in msg.attachments] or None,
             "return_trace": True,
+            "runtime_db_path": self.runtime_db_path,
         }
         if timeout == NO_TIMEOUT:
             options["timeout_sec"] = None
         options = attach_history_context(
-            options,
-            user_id=record.owner,
-            group_id=str(context.get("conversation_id") or ""),
-            global_name=global_name,
+            options, user_id=agent.owner, group_id=str(context.get("conversation_id") or ""),
+            global_name=str(agent.config.get("global_name") or ""),
         )
         result = await send_to_agent(SendToAgentRequest(
             prompt=compose_text_prompt(msg.text, msg.attachments),
             connect_type="acp",
-            platform=platform,
-            session=_external_session_key(record),
+            platform=agent.platform,
+            session=external_session_key(agent),
             options=options,
         ))
         return AgentReply(ok=result.ok, content=result.content or "", error=result.error or "", meta=result.meta or {})
 
-    async def _ask_http(self, record, msg, context, timeout) -> AgentReply:
+    async def _ask_http(self, agent, msg, context, timeout) -> AgentReply:
         from integrations.agent_sender import SendToAgentRequest, send_to_agent
         from utils.external_agent_history import attach_history_context
 
-        binding = record.binding
-        platform = str(binding.get("platform") or "")
-        global_name = str(binding.get("global_name") or "").strip()
-        api_url = str(binding.get("api_url") or "")
-        api_key = str(binding.get("api_key") or "")
-        model = str(binding.get("model") or "") or "gpt-3.5-turbo"
-        if record.driver == DRIVER_OPENCLAW:
+        config = agent.config
+        global_name = str(config.get("global_name") or "").strip()
+        api_url = str(config.get("api_url") or "")
+        api_key = str(config.get("api_key") or "")
+        model = str(config.get("model") or "") or "gpt-3.5-turbo"
+        if agent.driver == OPENCLAW:
             # The OpenClaw endpoint depends on the device: runtime env beats saved config.
             api_url = os.getenv("OPENCLAW_API_URL", "") or api_url
             api_key = os.getenv("OPENCLAW_GATEWAY_TOKEN", "") or api_key
             if global_name and not model.startswith("agent:"):
                 model = f"agent:{global_name}"
         if not api_url:
-            return AgentReply(ok=False, error=f"{record.address} has no api_url")
+            return AgentReply(ok=False, error=f"{agent.address} has no api_url")
         api_url = api_url.rstrip("/")
         if not api_url.endswith("/v1/chat/completions"):
-            if not api_url.endswith("/v1"):
-                api_url += "/v1"
-            api_url += "/chat/completions"
+            api_url = (api_url if api_url.endswith("/v1") else api_url + "/v1") + "/chat/completions"
 
-        session_key = _external_session_key(record) if global_name else ""
-        headers = {"Content-Type": "application/json"}
+        session_key = external_session_key(agent) if global_name else ""
+        headers = {"Content-Type": "application/json", **dict(config.get("headers") or {})}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
-        if record.driver == DRIVER_OPENCLAW and session_key:
+        if agent.driver == OPENCLAW and session_key:
             headers["x-openclaw-session-key"] = session_key
         messages = [{"role": "user", "content": build_openai_content(msg.text, msg.attachments)}]
         options: dict[str, Any] = {
@@ -446,21 +363,18 @@ class AgentGateway:
             "headers": headers,
             "body": {"model": model, "messages": messages, "stream": False},
             "timeout": None if timeout == NO_TIMEOUT else (timeout if timeout is not None else 60),
-            "identity_prompt": self._identity_prompt(record, context, msg.instructions),
+            "identity_prompt": self._identity_prompt(agent, context, msg.instructions),
             "identity_global_name": global_name,
-            "group_db_path": self.registry.db_path,
+            "runtime_db_path": self.runtime_db_path,
             "identity_injection_mode": "prepend_user",
         }
         options = attach_history_context(
-            options,
-            user_id=record.owner,
-            group_id=str(context.get("conversation_id") or ""),
-            global_name=global_name,
+            options, user_id=agent.owner, group_id=str(context.get("conversation_id") or ""), global_name=global_name,
         )
         result = await send_to_agent(SendToAgentRequest(
             prompt=messages,
             connect_type="http",
-            platform=platform or record.driver,
+            platform=agent.platform,
             session=session_key or None,
             options=options,
         ))
@@ -471,7 +385,6 @@ _GATEWAY: AgentGateway | None = None
 
 
 def get_gateway() -> AgentGateway:
-    """The process-wide gateway over the default registry."""
     global _GATEWAY
     if _GATEWAY is None:
         _GATEWAY = AgentGateway()

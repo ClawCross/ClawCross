@@ -73,7 +73,6 @@ SCHEDULER_TOOLS = (
 
 OASIS_READ_TOOLS = (
     "list_oasis_experts",
-    "list_oasis_sessions",
     "list_oasis_workflows",
     "check_oasis_discussion",
     "get_publicnet_info",

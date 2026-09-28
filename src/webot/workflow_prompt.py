@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 
@@ -17,26 +16,10 @@ def _team_dir(user_id: str, team: str) -> Path | None:
     return team_root if team_root.is_dir() else None
 
 
-def _read_json_list(path: Path) -> list[dict]:
-    if not path.is_file():
-        return []
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return []
-    return data if isinstance(data, list) else []
+def _team_member_names(user_id: str, team: str) -> list[str]:
+    from teams.store import get_team_store
 
-
-def _team_member_names(team_root: Path) -> list[str]:
-    names: list[str] = []
-    for filename in ("internal_agents.json", "external_agents.json"):
-        for item in _read_json_list(team_root / filename):
-            if not isinstance(item, dict):
-                continue
-            name = str(item.get("name") or "").strip()
-            if name and name not in names:
-                names.append(name)
-    return names
+    return [m.role for m in get_team_store().members(user_id, team)]
 
 
 def _workflow_names(team_root: Path) -> tuple[list[str], list[str]]:
@@ -88,7 +71,7 @@ def build_team_workflow_prompt(user_id: str, *, team: str = "") -> str:
     if team_root is None:
         return ""
 
-    member_names = _team_member_names(team_root)
+    member_names = _team_member_names(user_id, team)
     yaml_names, python_names = _workflow_names(team_root)
     skill_names = _team_skill_names(user_id, team)
 

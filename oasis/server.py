@@ -40,12 +40,7 @@ _src_dir = os.path.join(_project_root, "src")
 if _src_dir not in sys.path:
     sys.path.insert(0, _src_dir)
 
-from utils.checkpoint_paths import DEFAULT_CHECKPOINT_DB_DIR, checkpoint_store_exists
 from utils.runtime_paths import ENV_FILE, PID_DIR, USER_FILES_DIR
-from utils.checkpoint_repository import (
-    fetch_thread_message_count,
-    list_thread_ids_like,
-)
 
 env_path = str(ENV_FILE)
 
@@ -114,7 +109,7 @@ from oasis.models import (
     DiscussionStatus,
 )
 from oasis.forum import DiscussionForum, coerce_optional_post_id
-from oasis.agent_catalog import build_agent_catalog
+from oasis.agent_center import AgentCenter
 from oasis.engine import DiscussionEngine
 from oasis.python_workflow import PythonWorkflowEngine, resolve_python_workflow_path
 from oasis.experts import _apply_response
@@ -1406,42 +1401,6 @@ async def list_experts(user_id: str = "", team: str = "", full: bool = False):
     return {"experts": result}
 
 
-@app.get("/sessions/oasis")
-async def list_oasis_sessions(user_id: str = Query("")):
-    """List all oasis-managed sessions by scanning the agent checkpoint DB.
-
-    Query param: user_id (optional). If provided, only sessions for that user are returned.
-    """
-    db_path = str(DEFAULT_CHECKPOINT_DB_DIR)
-    if not checkpoint_store_exists(db_path):
-        return {"sessions": []}
-
-    prefix = f"{user_id}#" if user_id else None
-    sessions = []
-    try:
-        rows = await list_thread_ids_like(db_path, f"{prefix}%#oasis%" if prefix else "%#oasis%")
-        for thread_id in rows:
-            if "#" in thread_id:
-                user_part, sid = thread_id.split("#", 1)
-            else:
-                user_part = ""
-                sid = thread_id
-            tag = sid.split("#")[0] if "#" in sid else sid
-
-            msg_count = await fetch_thread_message_count(db_path, thread_id)
-
-            sessions.append({
-                "user_id": user_part,
-                "session_id": sid,
-                "tag": tag,
-                "message_count": msg_count,
-            })
-    except Exception as e:
-        raise HTTPException(500, f"扫描 session 失败: {e}")
-
-    return {"sessions": sessions}
-
-
 class WorkflowSaveRequest(BaseModel):
     user_id: str
     name: str
@@ -1512,7 +1471,7 @@ async def list_workflows(user_id: str = Query(...), team: str = Query("")):
 
 @app.get("/agents/catalog")
 async def list_agent_catalog(user_id: str = Query(...), team: str = Query("")):
-    return {"agents": build_agent_catalog(user_id, team)}
+    return {"agents": AgentCenter(user_id, team).list_agents()}
 
 
 class LayoutFromYamlRequest(BaseModel):

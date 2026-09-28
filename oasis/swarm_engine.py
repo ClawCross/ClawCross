@@ -148,47 +148,21 @@ def _extract_seed_terms(question: str, limit: int = 4) -> list[str]:
 
 
 def _extract_schedule_tags(schedule_yaml: str | None) -> list[str]:
+    """The persona tags a schedule names (its ``persona: <tag>`` participants)."""
     if not schedule_yaml:
         return []
-
-    tags: list[str] = []
-    seen: set[str] = set()
-
-    def _push(tag: str):
-        key = (tag or "").strip()
-        if not key or key in seen:
-            return
-        seen.add(key)
-        tags.append(key)
-
-    def _walk(node: Any):
-        if isinstance(node, str):
-            match = re.match(r"([^#\s]+)#(?:temp|oasis|ext)#", node.strip())
-            if match:
-                _push(match.group(1))
-            return
-        if isinstance(node, list):
-            for item in node:
-                _walk(item)
-            return
-        if isinstance(node, dict):
-            expert_ref = node.get("expert")
-            if isinstance(expert_ref, str):
-                match = re.match(r"([^#\s]+)#(?:temp|oasis|ext)#", expert_ref.strip())
-                if match:
-                    _push(match.group(1))
-            for value in node.values():
-                _walk(value)
+    from oasis.scheduler import extract_expert_names, parse_schedule
 
     try:
-        if yaml is not None:
-            payload = yaml.safe_load(schedule_yaml)
-            _walk(payload)
-        else:
-            raise RuntimeError("yaml unavailable")
+        schedule = parse_schedule(schedule_yaml)
     except Exception:
-        for match in re.findall(r"([^#\s]+)#(?:temp|oasis|ext)#", schedule_yaml):
-            _push(match)
+        return []
+    tags: list[str] = []
+    for key in extract_expert_names(schedule):
+        kind, _, rest = key.partition(":")
+        tag = rest.rpartition(":")[0] if kind == "persona" else ""
+        if tag and tag not in tags:
+            tags.append(tag)
     return tags
 
 

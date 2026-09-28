@@ -135,12 +135,10 @@ The Studio workflow canvas also supports a direct Team-generation flow through `
 
 That flow:
 
-- scans canvas nodes of type `expert`, `session_agent`, and `external`
-- deduplicates them by `tag`
+- scans the canvas's participant nodes: `persona` nodes (deduplicated by tag) and `agent` nodes (deduplicated by agent)
 - lets the user create a new Team or target an existing one
-- checks tag conflicts against the target Team
-- lets the user choose `skip` or `overwrite` per conflict
-- submits the final payload to `POST /teams/<team_name>/generate-from-workflow`
+- marks what the target Team already has: persona tags already in its library (choose `skip` or `overwrite` per tag) and agents already members
+- submits the final payload to `POST /teams/<team_name>/generate-from-workflow`: personas go into the team's `oasis_experts.json`, agents join as members
 
 Use this when the workflow graph already exists and you want to materialize the corresponding Team quickly.
 

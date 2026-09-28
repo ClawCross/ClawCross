@@ -385,11 +385,8 @@ _DOC_HINTS = {
         "  📖 docs/build_team.md        — 将 OpenClaw agent 加入 Team\n"
         "  ❗ 不阅读文档直接操作可能导致配置错误或功能异常！\n"
     ),
-    "internal_agent": (
-        "\n⚠️  【必读】在操作内部 Agent 之前，请务必先阅读以下文档：\n"
-        "  📖 docs/build_team.md       — 内部 Agent 配置详解\n"
-        "  📖 docs/example_team.md     — 示例 Agent 配置\n"
-        "  ❗ 不阅读文档直接操作可能导致配置错误或功能异常！\n"
+    "agents": (
+        "\n📖 docs/build_team.md — agent 与 team 的关系、如何把 agent 加进 team\n"
     ),
     "status": (
         "\n⚠️  【必读】如需进一步配置或操作，请务必先阅读对应文档：\n"
@@ -671,184 +668,82 @@ def cmd_restart(args):
 
 # ── groups: 群组管理 ────────────────────────────────────────────────────────
 def cmd_groups(args):
-    """群组管理
-
-    参数：
-        args: 命令行参数对象
-    """
+    """群聊：成员和发言者都是 agent（ag_ 编号 / 地址 / handle）或你自己。"""
     hdrs = _group_headers(args.user)
     base = f"{AGENT_BASE}/groups"
+    gid = _quote_group_id(args.group_id) if args.group_id else ""
+    if args.action not in {"list", "create"} and not gid:
+        print("❌ 请指定 --group-id", file=sys.stderr)
+        return
 
     if args.action == "list":
-        # 列出所有群组
         code, body = _req("GET", base, headers=hdrs)
-        if code == 200:
-            groups = body if isinstance(body, list) else body.get("groups", [body])
-            if not groups:
-                print("📭 暂无群组")
-                return
-            print(f"👥 群组列表 ({len(groups)} 个):\n")
-            for group in groups:
-                gid = group.get("id", group.get("group_id", "?"))
-                name = group.get("name", "")
-                print(f"  • [{gid}] {name}")
-        else:
-            _err(code, body)
+        if code != 200:
+            return _err(code, body)
+        groups = body.get("groups", [])
+        if not groups:
+            print("📭 暂无群组")
+            return
+        print(f"👥 群组列表 ({len(groups)} 个):\n")
+        for group in groups:
+            team = f" · team {group['team']}" if group.get("team") else ""
+            print(f"  • [{group['group_id']}] {group['title']} ({group['kind']}, {group['member_count']} 人{team})")
 
     elif args.action == "create":
-        # 创建群组
-        if not args.team_name:
-            print("❌ 请指定 --team-name", file=sys.stderr)
-            return
         data = json.loads(args.data) if args.data else {
-            "name": args.name or "新群组",
-            "team_name": args.team_name,
+            "title": args.name or args.team_name or "新群组",
+            "team": args.team_name or "",
+            "agents": [a for a in (args.agents or "").split(",") if a.strip()],
         }
         code, body = _req("POST", base, headers=hdrs, data=data)
         if code in (200, 201):
-            print("✅ 群组已创建")
-            _pp(body)
+            print(f"✅ 群组已创建: {body.get('group_id')}")
         else:
             _err(code, body)
 
     elif args.action == "messages":
-        # 获取群组消息
-        if not args.group_id:
-            print("❌ 请指定 --group-id", file=sys.stderr)
-            return
-        gid = _quote_group_id(args.group_id)
-        url = f"{base}/{gid}/messages"
-        if args.after_id:
-            url += f"?after_id={args.after_id}"
+        url = f"{base}/{gid}/messages" + (f"?after_id={args.after_id}" if args.after_id else "")
         code, body = _req("GET", url, headers=hdrs)
-        if code == 200:
-            msgs = body if isinstance(body, list) else body.get("messages", [body])
-            for msg in msgs[-20:]:
-                sender = msg.get("sender", msg.get("user_id", "?"))
-                content = msg.get("content", "")
-                print(f"  [{sender}]: {content}")
-        else:
-            _err(code, body)
+        if code != 200:
+            return _err(code, body)
+        for msg in body.get("messages", [])[-20:]:
+            print(f"  #{msg['id']} [{msg['sender_name']}]: {msg['content']}")
 
-    elif args.action in {"send", "private-send"}:
-        # 发送消息到群组
-        if not args.group_id:
-            print("❌ 请指定 --group-id", file=sys.stderr)
-            return
-        gid = _quote_group_id(args.group_id)
-        url = f"{base}/{gid}/messages"
+    elif args.action == "send":
         data = {"content": args.message or ""}
-        if getattr(args, "agent", None):
+        send_hdrs = dict(hdrs)
+        if args.agent:
             data["agent"] = args.agent
-        elif args.sender:
-            data["sender"] = args.sender
-            # sender 格式: tag#type#short_name#global_id，作为发送者显示名
-            data["sender_display"] = args.sender
-        code, body = _req("POST", url, headers=hdrs, data=data)
+            send_hdrs["X-Internal-Token"] = INTERNAL_TOKEN  # posting for an agent is a local-service act
+        code, body = _req("POST", f"{base}/{gid}/messages", headers=send_hdrs, data=data)
         if code in (200, 201):
-            if args.action == "private-send":
-                print("✅ 私聊消息已发送")
-            else:
-                print("✅ 消息已发送")
+            print("✅ 消息已发送")
         else:
             _err(code, body)
 
     elif args.action == "get":
-        # 获取群组详情
-        if not args.group_id:
-            print("❌ 请指定 --group-id", file=sys.stderr)
-            return
-        gid = _quote_group_id(args.group_id)
         code, body = _req("GET", f"{base}/{gid}", headers=hdrs)
-        if code == 200:
-            _pp(body)
-        else:
-            _err(code, body)
+        _pp(body) if code == 200 else _err(code, body)
 
     elif args.action == "update":
-        # 更新群组信息
-        if not args.group_id:
-            print("❌ 请指定 --group-id", file=sys.stderr)
-            return
-        data = json.loads(args.data) if args.data else {}
-        gid = _quote_group_id(args.group_id)
-        code, body = _req("PUT", f"{base}/{gid}", headers=hdrs, data=data)
+        data = json.loads(args.data) if args.data else {"title": args.name}
+        code, body = _req("PATCH", f"{base}/{gid}", headers=hdrs, data=data)
         if code == 200:
             print("✅ 群组已更新")
-            _pp(body)
         else:
             _err(code, body)
 
     elif args.action == "delete":
-        # 删除群组
-        if not args.group_id:
-            print("❌ 请指定 --group-id", file=sys.stderr)
-            return
-        gid = _quote_group_id(args.group_id)
         code, body = _req("DELETE", f"{base}/{gid}", headers=hdrs)
         if code == 200:
             print(f"✅ 群组 {args.group_id} 已删除")
         else:
             _err(code, body)
 
-    elif args.action == "mute":
-        # 静音群组
-        if not args.group_id:
-            print("❌ 请指定 --group-id", file=sys.stderr)
-            return
-        gid = _quote_group_id(args.group_id)
-        code, body = _req("POST", f"{base}/{gid}/mute", headers=hdrs)
+    elif args.action in {"dnd-on", "dnd-off"}:
+        code, body = _req("PATCH", f"{base}/{gid}", headers=hdrs, data={"dnd": args.action == "dnd-on"})
         if code == 200:
-            print("✅ 群组已静音")
-        else:
-            _err(code, body)
-
-    elif args.action == "unmute":
-        # 取消静音群组
-        if not args.group_id:
-            print("❌ 请指定 --group-id", file=sys.stderr)
-            return
-        gid = _quote_group_id(args.group_id)
-        code, body = _req("POST", f"{base}/{gid}/unmute", headers=hdrs)
-        if code == 200:
-            print("✅ 群组已取消静音")
-        else:
-            _err(code, body)
-
-    elif args.action == "mute-status":
-        # 查看群组静音状态
-        if not args.group_id:
-            print("❌ 请指定 --group-id", file=sys.stderr)
-            return
-        gid = _quote_group_id(args.group_id)
-        code, body = _req("GET", f"{base}/{gid}/mute_status", headers=hdrs)
-        if code == 200:
-            _pp(body)
-        else:
-            _err(code, body)
-
-    elif args.action == "sessions":
-        # 查看群组会话
-        if not args.group_id:
-            print("❌ 请指定 --group-id", file=sys.stderr)
-            return
-        gid = _quote_group_id(args.group_id)
-        code, body = _req("GET", f"{base}/{gid}/sessions", headers=hdrs)
-        if code == 200:
-            _pp(body)
-        else:
-            _err(code, body)
-
-    elif args.action == "sync-members":
-        # 同步群组成员
-        if not args.group_id:
-            print("❌ 请指定 --group-id", file=sys.stderr)
-            return
-        gid = _quote_group_id(args.group_id)
-        code, body = _req("POST", f"{base}/{gid}/sync_members", headers=hdrs)
-        if code == 200:
-            print("✅ 群成员已同步")
-            _pp(body)
+            print("✅ 已开启免打扰（消息照常保存，不唤醒 agent）" if args.action == "dnd-on" else "✅ 已关闭免打扰")
         else:
             _err(code, body)
 
@@ -2022,75 +1917,80 @@ def cmd_visual(args):
         print(f"❌ 未知操作: {act}", file=sys.stderr)
 
 
-# ── internal-agents: 内部 Agent CRUD ──────────────────────────────────────
-def cmd_internal_agents(args):
-    """内部 Agent 管理
-
-    参数：
-        args: 命令行参数对象
-    """
-    _check_token()
+# ── agents: 本机所有 agent，一套接口 ──────────────────────────────────────────
+def cmd_agents(args):
+    """Agent 管理：本机所有 agent（WeBot、codex、claude、openclaw、http…）一套接口。"""
+    hdrs = _group_headers(args.user)
+    base = f"{AGENT_BASE}/v1/agents"
     act = args.action
-    params = {}
-    if args.team:
-        params["team"] = args.team
+    ref = urllib.parse.quote(args.agent or "", safe="/")
+    if act not in {"list", "create"} and not ref:
+        print("❌ 请指定 --agent（ag_ 编号、地址或 handle）", file=sys.stderr)
+        return
 
     if act == "list":
-        # 列出内部 Agent
-        code, body = _req("GET", f"{FRONT_BASE}/internal_agents",
-                           headers=_front_headers(), params=params)
-        if code == 200:
-            _pp(body)
-            _print_doc_hint("internal_agent")
-        else:
-            _err(code, body)
-
-    elif act == "add":
-        # 添加内部 Agent
+        code, body = _req("GET", base, headers=hdrs, params={"status": "1"} if args.status else None)
+        if code != 200:
+            return _err(code, body)
+        for a in body.get("data", []):
+            state = (a.get("status") or {}).get("state", "")
+            print(f"  • {a['address']:<32} {a['name']} ({a['platform']}{', ' + state if state else ''}) [{a['agent_id']}]")
+        _print_doc_hint("agents")
+    elif act == "show":
+        code, body = _req("GET", f"{base}/{ref}", headers=hdrs)
+        _pp(body) if code == 200 else _err(code, body)
+    elif act == "create":
         data = json.loads(args.data) if args.data else {}
-        if "session" not in data and args.session:
-            data["session"] = args.session
-        code, body = _req("POST", f"{FRONT_BASE}/internal_agents",
-                           headers=_front_headers(), data=data,
-                           params=params)
+        data.setdefault("name", args.name or "")
+        data.setdefault("platform", args.platform or "webot")
+        code, body = _req("POST", base, headers=hdrs, data=data)
         if code == 200:
-            print("✅ Agent 已添加")
-            _pp(body)
+            print(f"✅ Agent 已创建: {body['address']} [{body['agent_id']}]")
         else:
             _err(code, body)
-
     elif act == "update":
-        # 更新内部 Agent
-        if not args.sid:
-            print("❌ 请指定 --sid", file=sys.stderr)
-            return
         data = json.loads(args.data) if args.data else {}
-        code, body = _req("PUT", f"{FRONT_BASE}/internal_agents/{args.sid}",
-                           headers=_front_headers(), data=data,
-                           params=params)
+        if args.name:
+            data["name"] = args.name
+        code, body = _req("PATCH", f"{base}/{ref}", headers=hdrs, data=data)
         if code == 200:
             print("✅ Agent 已更新")
-            _pp(body)
         else:
             _err(code, body)
-
     elif act == "delete":
-        # 删除内部 Agent
-        if not args.sid:
-            print("❌ 请指定 --sid", file=sys.stderr)
-            return
-        code, body = _req("DELETE", f"{FRONT_BASE}/internal_agents/{args.sid}",
-                           headers=_front_headers(), params=params)
+        code, body = _req("DELETE", f"{base}/{ref}", headers=hdrs)
         if code == 200:
-            print(f"✅ Agent {args.sid} 已删除")
+            print(f"✅ Agent 已删除: {body.get('deleted')}")
         else:
             _err(code, body)
-
-    else:
-        print(f"❌ 未知操作: {act}", file=sys.stderr)
+    elif act == "ask":
+        code, body = _req("POST", f"{base}/{ref}/messages", headers=hdrs, data={"text": args.message or ""},
+                          timeout=900)
+        if code != 200:
+            return _err(code, body)
+        print(body.get("content") if body.get("ok") else f"❌ {body.get('error')}")
+    elif act in {"status", "cancel", "reset"}:
+        code, body = _req("POST", f"{base}/{ref}/control", headers=hdrs, data={"action": act})
+        _pp(body) if code == 200 else _err(code, body)
 
 
 # ── teams: Team 管理 ───────────────────────────────────────────────────────
+def _print_team_members(user_id, team_name):
+    team = urllib.parse.quote(team_name, safe="")
+    code, body = _req("GET", f"{AGENT_BASE}/v1/teams/{team}", headers=_group_headers(user_id))
+    if code != 200:
+        print(f"  ⚠️ 获取成员失败: [{code}] {body}", file=sys.stderr)
+        return
+    members = body.get("members", [])
+    print(f"\n👥 成员 ({len(members)} 个):")
+    for m in members:
+        agent = m["agent"]
+        lead = " ★lead" if m.get("is_lead") else ""
+        print(f"  • {m['role']}{lead} — {agent['address']} ({agent['platform']}) [{agent['agent_id']}]")
+    if not members:
+        print("  📭 暂无成员")
+
+
 def cmd_teams(args):
     """Team 管理
 
@@ -2168,46 +2068,8 @@ def cmd_teams(args):
         print(f"📋 Team: {team_name}")
         print(f"{'═' * 60}")
 
-        # 1. 成员信息
-        code, body = _req("GET", f"{FRONT_BASE}/teams/{team_name}/members", headers=hdrs)
-        if code == 200:
-            members = body.get("members", [])
-            oasis_members = [m for m in members if m.get("type") == "oasis"]
-            ext_members = [m for m in members if m.get("type") != "oasis"]
-            print(f"\n👥 成员 ({len(members)} 个):")
-            if oasis_members:
-                print(f"\n  内部 Agent ({len(oasis_members)}):")
-                for m in oasis_members:
-                    name = m.get("name", "?")
-                    tag = m.get("tag", "")
-                    gn = m.get("global_name", "")
-                    parts = [f"    • {name}"]
-                    if tag:
-                        parts.append(f"[{tag}]")
-                    if gn:
-                        parts.append(f"(session: {gn})")
-                    print(" ".join(parts))
-            if ext_members:
-                print(f"\n  外部 Agent ({len(ext_members)}):")
-                for m in ext_members:
-                    name = m.get("name", "?")
-                    tag = m.get("tag", "")
-                    gn = m.get("global_name", "")
-                    meta = m.get("meta", {})
-                    parts = [f"    • {name}"]
-                    if tag:
-                        parts.append(f"[{tag}]")
-                    if gn:
-                        parts.append(f"(global: {gn})")
-                    print(" ".join(parts))
-                    if meta:
-                        model = meta.get("model", "")
-                        if model:
-                            print(f"      model: {model}")
-            if not members:
-                print("  📭 暂无成员")
-        else:
-            print(f"  ⚠️ 获取成员失败: [{code}]", file=sys.stderr)
+        # 1. 成员
+        _print_team_members(args.user, team_name)
 
         # 2. 人设信息
         code2, body2 = _req("GET", f"{FRONT_BASE}/teams/{team_name}/experts", headers=hdrs)
@@ -2305,61 +2167,32 @@ def cmd_teams(args):
         _print_doc_hint("team")
 
     elif act == "members":
-        # 查看 Team 成员
         if not args.team_name:
             print("❌ 请指定 --team-name", file=sys.stderr)
             return
-        code, body = _req("GET", f"{FRONT_BASE}/teams/{args.team_name}/members",
-                           headers=_front_headers())
-        if code == 200:
-            _pp(body)
-            _print_doc_hint("team")
-        else:
-            _err(code, body)
+        _print_team_members(args.user, args.team_name)
+        _print_doc_hint("team")
 
-    elif act == "add-ext-member":
-        # 添加外部成员
-        if not args.team_name:
-            print("❌ 请指定 --team-name", file=sys.stderr)
+    elif act in {"add-member", "remove-member", "set-lead", "import"}:
+        if not args.team_name or (act != "import" and not args.agent):
+            print("❌ 请指定 --team-name" + ("" if act == "import" else " 和 --agent"), file=sys.stderr)
             return
-        data = json.loads(args.data) if args.data else {}
-        code, body = _req("POST",
-                           f"{FRONT_BASE}/teams/{args.team_name}/members/external",
-                           headers=_front_headers(), data=data)
-        if code == 200:
-            print("✅ 外部成员已添加")
-            _pp(body)
-            _print_doc_hint("team")
+        hdrs = _group_headers(args.user)
+        team = urllib.parse.quote(args.team_name, safe="")
+        member = urllib.parse.quote(args.agent or "", safe="/")
+        base = f"{AGENT_BASE}/v1/teams/{team}"
+        if act == "add-member":
+            code, body = _req("POST", f"{base}/members", headers=hdrs,
+                              data={"agent": args.agent, "role": args.role or "", "is_lead": bool(args.lead)})
+        elif act == "remove-member":
+            code, body = _req("DELETE", f"{base}/members/{member}", headers=hdrs)
+        elif act == "set-lead":
+            code, body = _req("PATCH", f"{base}/members/{member}", headers=hdrs, data={"is_lead": True})
         else:
-            _err(code, body)
-
-    elif act == "delete-ext-member":
-        # 删除外部成员
-        if not args.team_name:
-            print("❌ 请指定 --team-name", file=sys.stderr)
-            return
-        data = json.loads(args.data) if args.data else {}
-        code, body = _req("DELETE",
-                           f"{FRONT_BASE}/teams/{args.team_name}/members/external",
-                           headers=_front_headers(), data=data)
+            code, body = _req("POST", f"{base}/import", headers=hdrs)
         if code == 200:
-            print("✅ 外部成员已删除")
-            _pp(body)
-        else:
-            _err(code, body)
-
-    elif act == "update-ext-member":
-        # 更新外部成员
-        if not args.team_name:
-            print("❌ 请指定 --team-name", file=sys.stderr)
-            return
-        data = json.loads(args.data) if args.data else {}
-        code, body = _req("PUT",
-                           f"{FRONT_BASE}/teams/{args.team_name}/members/external",
-                           headers=_front_headers(), data=data)
-        if code == 200:
-            print("✅ 外部成员已更新")
-            _pp(body)
+            print("✅ 完成")
+            _print_team_members(args.user, args.team_name)
         else:
             _err(code, body)
 
@@ -2694,8 +2527,7 @@ def cmd_cron(args):
             code, body = _req("GET", url, headers=_front_headers(args))
         else:
             # 无 team 默认公共作用域
-            code, body = _req("GET", f"{FRONT_BASE}/mobile_alarms",
-                              headers=_front_headers(args), params={"team": "__public__"})
+            code, body = _req("GET", f"{FRONT_BASE}/mobile_alarms", headers=_front_headers(args))
         if code == 200:
             _pp(body)
         else:
@@ -2703,12 +2535,15 @@ def cmd_cron(args):
         return
 
     if act == "new":
-        if not args.target_name or not args.text:
-            print("❌ new 需要 --target-name 和 --text", file=sys.stderr)
+        if not args.agent or not args.text:
+            print("❌ new 需要 --agent 和 --text", file=sys.stderr)
             sys.exit(1)
+        ref = urllib.parse.quote(args.agent.strip(), safe="/")
+        code, found = _req("GET", f"{AGENT_BASE}/v1/agents/{ref}", headers=_group_headers(args.user))
+        if code != 200:
+            return _err(code, found)
         data = {
-            "target_type": args.target_type or "internal",
-            "target_name": args.target_name,
+            "agent": found["agent_id"],
             "schedule_type": args.schedule_type or "cron",
             "cron": args.cron or "",
             "run_at": args.run_at or "",
@@ -3081,16 +2916,14 @@ def build_parser():
     # groups
     c = sub.add_parser("groups", help="群组管理")
     c.add_argument("action", nargs="?", default="list",
-                   choices=["list", "create", "get", "update", "delete",
-                            "messages", "send", "private-send", "mute", "unmute",
-                            "mute-status", "sessions", "sync-members"],
+                   choices=["list", "create", "get", "update", "delete", "messages", "send", "dnd-on", "dnd-off"],
                    help="操作 (默认: list)")
     c.add_argument("--group-id", help="群组 ID")
-    c.add_argument("--name", help="群组名称 (创建时)")
-    c.add_argument("--team-name", help="Team 名称 (创建时)")
+    c.add_argument("--name", help="群组名称 (create / update 时)")
+    c.add_argument("--team-name", help="按 team 建群：成员跟随 team (create 时)")
+    c.add_argument("--agents", help="逗号分隔的 agent 列表 (create 时)")
     c.add_argument("--message", help="消息内容 (send 时)")
-    c.add_argument("--agent", help="以哪个 agent 身份发言 (send 时)：agent 编号 ag_… 或地址 <用户>/<handle>")
-    c.add_argument("--sender", help="发送者标识 (send 时，旧格式 'tag#type#short_name#global_id'；新代码请用 --agent)")
+    c.add_argument("--agent", help="以哪个 agent 身份发言 (send 时)：ag_ 编号、地址 <用户>/<handle> 或 handle")
     c.add_argument("--data", help="JSON 数据")
     c.add_argument("--after-id", help="增量获取消息 (messages 时)")
 
@@ -3150,15 +2983,17 @@ def build_parser():
     c.add_argument("--name", help="布局名称 (load-layout/load-yaml-raw/delete-layout 时)")
     c.add_argument("--data", help="JSON 数据")
 
-    # internal-agents
-    c = sub.add_parser("internal-agents", help="内部 Agent CRUD")
+    # agents
+    c = sub.add_parser("agents", help="Agent 管理（本机所有 agent，一套接口）")
     c.add_argument("action", nargs="?", default="list",
-                   choices=["list", "add", "update", "delete"],
+                   choices=["list", "show", "create", "update", "delete", "ask", "status", "cancel", "reset"],
                    help="操作 (默认: list)")
-    c.add_argument("--team", help="Team 名称")
-    c.add_argument("--sid", help="Session ID (update/delete 时)")
-    c.add_argument("--session", help="Session ID (add 时)")
-    c.add_argument("--data", help="JSON 数据")
+    c.add_argument("--agent", help="目标 agent：ag_ 编号、地址 <用户>/<handle> 或 handle")
+    c.add_argument("--name", help="名称 (create / update 时)")
+    c.add_argument("--platform", help="平台 (create 时)：webot、codex、claude、gemini、openclaw 或任意 HTTP 服务名")
+    c.add_argument("--message", help="消息 (ask 时)")
+    c.add_argument("--status", action="store_true", help="列出时附带运行状态 (list 时)")
+    c.add_argument("--data", help="JSON 数据：create 的字段或 update 的 {\"settings\": {...}}")
 
     # teams
     c = sub.add_parser("teams", help="Team 管理",
@@ -3172,13 +3007,15 @@ def build_parser():
                        formatter_class=argparse.RawDescriptionHelpFormatter)
     c.add_argument("action", nargs="?", default="list",
                    choices=["list", "info", "create", "delete", "rename", "members",
-                            "add-ext-member", "delete-ext-member",
-                            "update-ext-member", "personas", "add-persona",
+                            "add-member", "remove-member", "set-lead", "import", "personas", "add-persona",
                             "update-persona", "delete-persona",
                             "snapshot-preview", "snapshot-download", "snapshot-upload"],
                    help="操作 (默认: list)")
     c.add_argument("--team-name", help="Team 名称")
-    c.add_argument("--new-name", help="rename 时的新文件夹名（仅改 teams 目录名）")
+    c.add_argument("--new-name", help="rename 时的新名称")
+    c.add_argument("--agent", help="成员 agent：ag_ 编号、地址或 handle (add-member / remove-member / set-lead 时)")
+    c.add_argument("--role", help="成员在 team 里的角色名 (add-member 时，默认用 agent 名称)")
+    c.add_argument("--lead", action="store_true", help="设为 lead (add-member 时)")
     c.add_argument("--tag", help="人设 tag (update-persona/delete-persona 时)")
     c.add_argument("--data", help="JSON 数据")
     c.add_argument("-o", "--output", help="输出文件 (snapshot-download 时)")
@@ -3254,9 +3091,8 @@ def build_parser():
     c.add_argument("action", nargs="?", default="list",
                    choices=["list", "new", "delete"],
                    help="操作 (默认: list)")
-    c.add_argument("--team", help="Team 名称 (留空=公共作用域)")
-    c.add_argument("--target-type", help="目标类型 (new 时，默认: internal)")
-    c.add_argument("--target-name", help="目标 Agent/会话名 (new 时)")
+    c.add_argument("--team", help="Team 名称：只看/只建该 team 成员的任务 (留空=全部 agent)")
+    c.add_argument("--agent", help="目标 agent：ag_ 编号、地址或 handle (new 时)")
     c.add_argument("--schedule-type", choices=["cron", "once"], help="调度类型 (new 时，默认: cron)")
     c.add_argument("--cron", help="cron 表达式 (new 且 schedule-type=cron 时)")
     c.add_argument("--run-at", help="单次触发时间 ISO8601 (new 且 schedule-type=once 时)")
@@ -3328,7 +3164,7 @@ def main():
         "openclaw": cmd_openclaw,
         "openclaw-snapshot": cmd_openclaw_snapshot,
         "visual": cmd_visual,
-        "internal-agents": cmd_internal_agents,
+        "agents": cmd_agents,
         "teams": cmd_teams,
         "topics": cmd_topics,
         "personas": cmd_experts,

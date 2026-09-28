@@ -7,27 +7,27 @@ plan:
     author: begin
     content: "朝议开启"
 - id: t1
-  expert: zhongshu#oasis#中书省
+  agent: 中书省
 - id: t2
-  expert: menxia#oasis#门下省
+  agent: 门下省
 - id: t3
-  expert: shangshu#oasis#尚书省
+  agent: 尚书省
 - id: t4
-  expert: bingbu#oasis#兵部
+  agent: 兵部
 - id: t5
-  expert: hubu#oasis#户部
+  agent: 户部
 - id: t6
-  expert: libu#oasis#礼部
+  agent: 礼部
 - id: t7
-  expert: gongbu#oasis#工部
+  agent: 工部
 - id: t8
-  expert: xingbu#oasis#刑部
+  agent: 刑部
 - id: t9
-  expert: libu2#oasis#吏部
+  agent: 吏部
 - id: t10
-  expert: yushitai#oasis#御史台
+  agent: 御史台
 - id: t11
-  expert: shiguan#oasis#史馆
+  agent: 史馆
 - id: t12
   manual:
     author: bend

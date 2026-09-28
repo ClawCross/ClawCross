@@ -1,401 +1,142 @@
+"""What a Python workflow can reach: the team's agents and the persona library.
+
+Agents are reached through the agent gateway, whatever runtime they live in.
+A persona call is a temporary agent made for that one call.
+"""
+
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
-import uuid
 from copy import deepcopy
 from typing import Any
 
 _SRC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "src")
 if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
-from utils.runtime_paths import DATA_DIR
 
-from integrations.agent_sender import (
-    ResetAgentRequest,
-    ResetAgentResult,
-    SendToAgentRequest,
-    SendToAgentResult,
-    reset_agent,
-    send_to_agent,
-)
-from oasis.agent_catalog import build_agent_catalog, build_persona_catalog
+from agents.gateway import get_gateway, persona_agent
+from agents.messages import AgentMessage, AgentReply
+from agents.routes import agent_card
+from agents.store import Agent, AgentNotFound, get_store
+from oasis.experts import _build_identity_prompt, get_all_experts
+from teams.store import get_team_store
+
+
+def build_persona_catalog(user_id: str, team: str = "") -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for expert in get_all_experts(user_id, team=team):
+        tag = str(expert.get("tag", "") or "").strip()
+        if not tag:
+            continue
+        llm = {"temperature": float(expert.get("temperature", 0.7))}
+        for key in ("model", "api_key", "base_url", "provider"):
+            if expert.get(key):
+                llm[key] = expert.get(key)
+        items.append({
+            "id": f"persona:{tag}",
+            "name": str(expert.get("name", "") or tag),
+            "tag": tag,
+            "persona": str(expert.get("persona", "") or ""),
+            "source": str(expert.get("source", "") or ""),
+            "llm": llm,
+        })
+    return items
+
+
+async def _ask(agent: Agent, msg: AgentMessage) -> AgentReply:
+    return await asyncio.to_thread(lambda: asyncio.run(get_gateway().ask(agent, msg)))
 
 
 class AgentCenter:
     def __init__(self, user_id: str, team: str = ""):
         self.user_id = user_id
         self.team = team
-        self._catalog = build_agent_catalog(user_id, team)
-        self._persona_catalog = build_persona_catalog(user_id, team)
-        self._by_id = {str(item.get("id", "")): item for item in self._catalog}
-        self._persona_by_id = {str(item.get("id", "")): item for item in self._persona_catalog}
+        self._personas = build_persona_catalog(user_id, team)
+
+    # ── agents ───────────────────────────────────────────────────────────
+
+    def _members(self) -> list[tuple[Agent, str]]:
+        teams = get_team_store()
+        if self.team and teams.exists(self.user_id, self.team):
+            return [(m.agent, m.role) for m in teams.members(self.user_id, self.team)]
+        return [(a, a.name) for a in get_store().list(self.user_id)]
 
     def list_agents(self) -> list[dict[str, Any]]:
-        return deepcopy(self._catalog)
+        """The team's agents (or all of the user's, outside a team), with their role names."""
+        return [{**agent_card(agent), "role": role} for agent, role in self._members()]
 
-    def list_personas(self) -> list[dict[str, Any]]:
-        return deepcopy(self._persona_catalog)
-
-    def get_agent(self, target: str) -> dict[str, Any]:
+    def _agent(self, target: str) -> tuple[Agent, str]:
         key = str(target or "").strip()
         if not key:
             raise ValueError("target 不能为空")
-        if key in self._by_id:
-            return deepcopy(self._by_id[key])
-        candidates = [
-            item for item in self._catalog
-            if key in {
-                str(item.get("id", "")),
-                str(item.get("name", "")),
-                str(item.get("tag", "")),
-            } or (key and key in {str(item.get("agent_id", "")), str(item.get("address", ""))})
-        ]
-        if not candidates:
-            raise ValueError(f"未找到 agent: {target}")
-        if len(candidates) > 1:
-            ids = ", ".join(str(item.get("id", "")) for item in candidates)
-            raise ValueError(f"agent 标识不唯一: {target} -> {ids}")
-        return deepcopy(candidates[0])
+        for agent, role in self._members():
+            if key in (agent.agent_id, agent.address, agent.handle) or role.casefold() == key.casefold():
+                return agent, role
+        try:
+            agent = get_store().resolve(self.user_id, key)
+        except AgentNotFound:
+            raise ValueError(f"未找到 agent: {target}") from None
+        return agent, agent.name
+
+    def get_agent(self, target: str) -> dict[str, Any]:
+        agent, role = self._agent(target)
+        return {**agent_card(agent), "role": role}
+
+    async def send_agent(self, target: str, prompt: str, *, persona_tag: str | None = None,
+                         persona_override: str | None = None) -> AgentReply:
+        """Ask one of the agents; a persona given here frames this one message."""
+        agent, role = self._agent(target)
+        persona = persona_override if persona_override is not None else (
+            str(self.get_persona(persona_tag).get("persona") or "") if persona_tag else "")
+        instructions = _build_identity_prompt(role, persona).strip() if persona else ""
+        return await _ask(agent, AgentMessage(text=prompt, instructions=instructions))
+
+    # ── personas ─────────────────────────────────────────────────────────
+
+    def list_personas(self) -> list[dict[str, Any]]:
+        return deepcopy(self._personas)
 
     def get_persona(self, target: str) -> dict[str, Any]:
         key = str(target or "").strip()
         if not key:
             raise ValueError("persona target 不能为空")
-        if key in self._persona_by_id:
-            return deepcopy(self._persona_by_id[key])
-        candidates = [
-            item for item in self._persona_catalog
-            if key in {
-                str(item.get("id", "")),
-                str(item.get("name", "")),
-                str(item.get("tag", "")),
-            }
-        ]
-        if not candidates:
+        matches = [p for p in self._personas if key in (p["id"], p["name"], p["tag"])]
+        if not matches:
             raise ValueError(f"未找到 persona: {target}")
-        if len(candidates) > 1:
-            ids = ", ".join(str(item.get("id", "")) for item in candidates)
-            raise ValueError(f"persona 标识不唯一: {target} -> {ids}")
-        return deepcopy(candidates[0])
+        if len(matches) > 1:
+            raise ValueError(f"persona 标识不唯一: {target} -> {', '.join(p['id'] for p in matches)}")
+        return deepcopy(matches[0])
 
-    async def send_agent(
-        self,
-        target: str,
-        prompt: str,
-        *,
-        persona_tag: str | None = None,
-        persona_override: str | None = None,
-        session: str | None = None,
-        connect_type: str | None = None,
-        platform: str | None = None,
-        options: dict[str, Any] | None = None,
-    ) -> SendToAgentResult:
-        agent = self.get_agent(target)
-        merged_options = deepcopy(agent.get("options") or {})
-        if options:
-            merged_options.update(options)
-
-        effective_persona = ""
-        if persona_override is not None:
-            effective_persona = persona_override
-        elif persona_tag:
-            effective_persona = str(self.get_persona(persona_tag).get("persona", "") or "")
-        elif agent.get("kind") == "external":
-            from integrations.external_persona import build_external_persona_prompt
-            effective_persona = build_external_persona_prompt(
-                str(agent.get("tag", "") or ""),
-                user_id=self.user_id,
-                team=self.team,
-            )
-        if effective_persona and not merged_options.get("identity_prompt"):
-            merged_options["identity_prompt"] = effective_persona
-        if agent.get("kind") == "external":
-            raw_agent = agent.get("raw") if isinstance(agent.get("raw"), dict) else {}
-            merged_options.setdefault("identity_global_name", str(raw_agent.get("global_name") or ""))
-            merged_options.setdefault("group_db_path", os.path.join(str(DATA_DIR), "group_chat.db"))
-        effective_connect_type = connect_type or str(agent.get("connect_type", "") or "")
-        effective_platform = platform or str(agent.get("platform", "") or "")
-        effective_session = session if session is not None else agent.get("session")
-
-        def _can_fallback_to_persona() -> bool:
-            return bool(agent.get("kind") == "external" and str(agent.get("tag", "") or "").strip())
-
-        def _fallback_triggered(error_text: str) -> bool:
-            low = str(error_text or "").strip().lower()
-            if not low:
-                return False
-            return any(token in low for token in (
-                "unsupported connect_type",
-                "missing api_url",
-                "unsupported platform",
-                "platform not found",
-                "tool not found",
-                "unknown tool",
-            ))
-
-        request = SendToAgentRequest(
-            prompt=prompt,
-            connect_type=effective_connect_type,
-            platform=effective_platform,
-            session=effective_session,
-            options=merged_options,
-        )
-        result = await send_to_agent(request)
-        if result.ok or not _can_fallback_to_persona() or not _fallback_triggered(result.error or ""):
-            return result
-
-        try:
-            fallback_result = await self.send_persona(
-                str(agent.get("tag", "") or ""),
-                prompt,
-                persona_override=effective_persona if effective_persona else None,
-            )
-            fallback_meta = dict(fallback_result.meta or {})
-            fallback_meta["fallback_from_platform"] = effective_platform
-            fallback_meta["fallback_from_connect_type"] = effective_connect_type
-            fallback_meta["fallback_agent_id"] = str(agent.get("id", "") or "")
-            fallback_result.meta = fallback_meta
-            return fallback_result
-        except Exception:
-            return result
-
-    async def send_agent_once(
-        self,
-        target: str = "",
-        prompt: str | None = None,
-        *,
-        persona_tag: str | None = None,
-        persona_override: str | None = None,
-        connect_type: str | None = None,
-        platform: str | None = None,
-        options: dict[str, Any] | None = None,
-    ) -> SendToAgentResult:
-        """One-shot call.
-
-        Usage:
-          - send_agent_once(prompt): ad-hoc temporary, memoryless LLM agent.
-          - send_agent_once(agent_id, prompt): existing concrete agent with a
-            throwaway session.
-        """
-        if prompt is None:
-            prompt = str(target or "")
-            target = ""
-
-        target_key = str(target or "").strip()
-        if not target_key:
-            return await self._send_temporary_agent_once(
-                "",
-                prompt,
-                persona_override=persona_override,
-                options=options,
-            )
-
-        try:
-            self.get_agent(target_key)
-        except ValueError:
-            return await self._send_temporary_agent_once(
-                target_key,
-                prompt,
-                persona_override=persona_override,
-                options=options,
-            )
-
-        session = f"oneshot-{uuid.uuid4().hex[:12]}"
-        try:
-            result = await self.send_agent(
-                target_key,
-                prompt,
-                persona_tag=persona_tag,
-                persona_override=persona_override,
-                session=session,
-                connect_type=connect_type,
-                platform=platform,
-                options=options,
-            )
-        finally:
-            try:
-                await self.reset_agent(
-                    target_key,
-                    session=session,
-                    connect_type=connect_type,
-                    platform=platform,
-                    options=options,
-                )
-            except Exception:
-                pass
-        meta = dict(result.meta or {})
-        meta["oneshot_session"] = session
-        result.meta = meta
-        return result
-
-    async def _send_temporary_agent_once(
-        self,
-        target: str,
-        prompt: str,
-        *,
-        persona_override: str | None = None,
-        options: dict[str, Any] | None = None,
-    ) -> SendToAgentResult:
-        """Run an ad-hoc, memoryless agent persona without requiring catalog registration."""
-        from oasis.experts import _build_identity_prompt
-
-        merged_options = dict(options or {})
-        session = f"temp-agent-{uuid.uuid4().hex[:12]}"
-        name = str(target or "").strip() or session
-        identity = _build_identity_prompt(name, persona_override or "")
-        effective_prompt = f"{identity}{prompt}" if identity else prompt
-        result = await send_to_agent(
-            SendToAgentRequest(
-                prompt=effective_prompt,
-                connect_type="http",
-                platform="temp",
-                session=session,
-                options=merged_options,
-            )
-        )
-        meta = dict(result.meta or {})
-        meta["temporary_agent"] = True
-        meta["temporary_agent_name"] = name
-        meta["oneshot_session"] = session
-        result.meta = meta
-        return result
-
-    async def call_llm(
-        self,
-        prompt: str,
-        *,
-        temperature: float | None = None,
-        model: str | None = None,
-        max_tokens: int | None = None,
-        options: dict[str, Any] | None = None,
-    ) -> SendToAgentResult:
-        """One-shot bare LLM call via the temp connector: no persona, no memory, no tools."""
-        merged_options = dict(options or {})
-        if temperature is not None:
-            merged_options["temperature"] = temperature
-        if model:
-            merged_options["model"] = model
-        if max_tokens is not None:
-            merged_options["max_tokens"] = max_tokens
-        return await send_to_agent(
-            SendToAgentRequest(
-                prompt=prompt,
-                connect_type="http",
-                platform="temp",
-                session="call_llm",
-                options=merged_options,
-            )
-        )
-
-    async def reset_agent(
-        self,
-        target: str,
-        *,
-        session: str | None = None,
-        connect_type: str | None = None,
-        platform: str | None = None,
-        options: dict[str, Any] | None = None,
-    ) -> ResetAgentResult:
-        agent = self.get_agent(target)
-        merged_options = deepcopy(agent.get("options") or {})
-        if options:
-            merged_options.update(options)
-
-        effective_connect_type = connect_type or str(agent.get("connect_type", "") or "")
-        effective_platform = platform or str(agent.get("platform", "") or "")
-        effective_session = session if session is not None else agent.get("session")
-
-        merged_options.setdefault("cwd", _PROJECT_ROOT)
-        merged_options.setdefault("group_db_path", os.path.join(str(DATA_DIR), "group_chat.db"))
-        if effective_platform == "internal":
-            merged_options.setdefault("user_id", self.user_id)
-            merged_options.setdefault("internal_token", os.getenv("INTERNAL_TOKEN", ""))
-            merged_options.setdefault(
-                "delete_session_url",
-                f"http://127.0.0.1:{os.getenv('PORT_AGENT', '51200')}/delete_session",
-            )
-
-        return await reset_agent(
-            ResetAgentRequest(
-                connect_type=effective_connect_type,
-                platform=effective_platform,
-                session=effective_session,
-                options=merged_options,
-            )
-        )
-
-    async def send_persona(
-        self,
-        target: str,
-        prompt: str,
-        *,
-        persona_override: str | None = None,
-        options: dict[str, Any] | None = None,
-    ) -> SendToAgentResult:
+    async def send_persona(self, target: str, prompt: str, *, persona_override: str | None = None,
+                           llm: dict[str, Any] | None = None) -> AgentReply:
+        """One call to a temporary agent with a persona from the library: no tools, no memory."""
         persona = self.get_persona(target)
-        merged_options = deepcopy(persona.get("options") or {})
-        if options:
-            merged_options.update(options)
+        text = persona_override if persona_override is not None else persona["persona"]
+        return await self._one_call(persona["name"], text, prompt, {**persona["llm"], **(llm or {})})
 
-        effective_persona = persona_override if persona_override is not None else str(persona.get("persona", "") or "")
+    async def send_agent_once(self, name: str = "", prompt: str | None = None, *,
+                              persona_override: str | None = None, llm: dict[str, Any] | None = None) -> AgentReply:
+        """One call to an ad-hoc temporary agent: ``send_agent_once(prompt)`` or
+        ``send_agent_once(name, prompt, persona_override=…)``."""
+        if prompt is None:
+            prompt, name = name, ""
+        return await self._one_call(name or "临时 agent", persona_override or "", prompt, dict(llm or {}))
 
-        # temp is a pure, memoryless LLM call that ignores options["system_prompt"].
-        # send_persona MUST carry an identity, so bake the persona into the prompt
-        # body using the same framing as the YAML/swarm workflow
-        # (oasis.experts._build_identity_prompt) — one source of truth for persona framing.
-        effective_prompt = prompt
-        if effective_persona:
-            from oasis.experts import _build_identity_prompt
-            persona_name = str(persona.get("name", "") or persona.get("tag", "") or target)
-            identity = _build_identity_prompt(persona_name, effective_persona)
-            if identity:
-                effective_prompt = f"{identity}{prompt}"
+    async def call_llm(self, prompt: str, *, temperature: float | None = None, model: str | None = None,
+                       max_tokens: int | None = None) -> AgentReply:
+        """A bare model call: no persona, no memory, no tools."""
+        llm: dict[str, Any] = {}
+        if temperature is not None:
+            llm["temperature"] = temperature
+        if model:
+            llm["model"] = model
+        if max_tokens is not None:
+            llm["max_tokens"] = max_tokens
+        return await self._one_call("llm", "", prompt, llm)
 
-        return await send_to_agent(
-            SendToAgentRequest(
-                prompt=effective_prompt,
-                connect_type="http",
-                platform="temp",
-                session=f"persona:{persona.get('tag')}",
-                options=merged_options,
-            )
-        )
-
-
-def list_team_agents(user_id: str, team: str = "") -> list[dict[str, Any]]:
-    return AgentCenter(user_id, team).list_agents()
-
-
-def list_team_personas(user_id: str, team: str = "") -> list[dict[str, Any]]:
-    return AgentCenter(user_id, team).list_personas()
-
-
-async def send_team_agent(
-    user_id: str,
-    team: str,
-    target: str,
-    prompt: str,
-    **kwargs: Any,
-) -> SendToAgentResult:
-    return await AgentCenter(user_id, team).send_agent(target, prompt, **kwargs)
-
-
-async def reset_team_agent(
-    user_id: str,
-    team: str,
-    target: str,
-    **kwargs: Any,
-) -> ResetAgentResult:
-    return await AgentCenter(user_id, team).reset_agent(target, **kwargs)
-
-
-async def send_team_persona(
-    user_id: str,
-    team: str,
-    target: str,
-    prompt: str,
-    **kwargs: Any,
-) -> SendToAgentResult:
-    return await AgentCenter(user_id, team).send_persona(target, prompt, **kwargs)
+    async def _one_call(self, name: str, persona: str, prompt: str, llm: dict[str, Any]) -> AgentReply:
+        agent = persona_agent(self.user_id, name, team=self.team, llm=llm)
+        instructions = _build_identity_prompt(name, persona).strip() if persona else ""
+        return await _ask(agent, AgentMessage(text=prompt, instructions=instructions))

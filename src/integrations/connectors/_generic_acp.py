@@ -22,12 +22,11 @@ def _canonical_platform(platform: str) -> str:
 
 
 async def _clear_http_agent_session_records(options: dict, session_key: str) -> int:
-    from typing import Any
-    group_db_path = str(options.get("group_db_path") or "").strip()
-    if not group_db_path or not session_key:
+    runtime_db_path = str(options.get("runtime_db_path") or "").strip()
+    if not runtime_db_path or not session_key:
         return 0
-    from api.group_repository import delete_http_agent_session_by_key
-    return int(await delete_http_agent_session_by_key(group_db_path, session_key) or 0)
+    from agents.runtime_sessions import forget_session
+    return int(await forget_session(runtime_db_path, session_key) or 0)
 
 
 class GenericAcpConnector(AgentConnector):

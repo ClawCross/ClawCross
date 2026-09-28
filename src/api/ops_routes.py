@@ -15,7 +15,7 @@ from typing import Any, Callable
 
 from fastapi import APIRouter, Header
 
-from api.ops_models import ACPControlRequest, ACPStatusRequest, AgentControlRequest, CancelRequest, LoginRequest, SessionsCloseRequest, SessionsDeleteRequest, SessionsListRequest, TTSRequest, UpdateCheckRequest, UpdateStartRequest, UpdateStatusRequest
+from api.ops_models import CancelRequest, LoginRequest, SessionsCloseRequest, SessionsDeleteRequest, SessionsListRequest, TTSRequest, UpdateCheckRequest, UpdateStartRequest, UpdateStatusRequest
 from api.ops_service import OpsService
 
 
@@ -25,7 +25,7 @@ def create_ops_router(
     agent: Any,
     verify_password: Callable[[str, str], bool],
     verify_auth_or_token: Callable[[str, str, str | None], None],
-    group_db_path: str | None = None,
+    runtime_db_path: str = "",
 ) -> APIRouter:
     """构建基础运维/认证相关路由。"""
     router = APIRouter()
@@ -34,7 +34,7 @@ def create_ops_router(
         agent=agent,
         verify_password=verify_password,
         verify_auth_or_token=verify_auth_or_token,
-        group_db_path=group_db_path,
+        runtime_db_path=runtime_db_path,
     )
 
     @router.get("/tools")
@@ -55,18 +55,6 @@ def create_ops_router(
     @router.post("/tts")
     async def text_to_speech(req: TTSRequest, x_internal_token: str | None = Header(None)):
         return await service.text_to_speech(req, x_internal_token)
-
-    @router.post("/acp_control")
-    async def acp_control(req: ACPControlRequest, x_internal_token: str | None = Header(None)):
-        return await service.acp_control(req, x_internal_token)
-
-    @router.post("/acp_status")
-    async def acp_status(req: ACPStatusRequest, x_internal_token: str | None = Header(None)):
-        return await service.acp_status(req, x_internal_token)
-
-    @router.post("/agent_control")
-    async def agent_control(req: AgentControlRequest, x_internal_token: str | None = Header(None)):
-        return await service.agent_control(req, x_internal_token)
 
     @router.post("/sessions_list")
     async def sessions_list(req: SessionsListRequest, x_internal_token: str | None = Header(None)):

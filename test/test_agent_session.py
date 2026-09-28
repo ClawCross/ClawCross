@@ -49,15 +49,15 @@ class AgentSessionTests(unittest.IsolatedAsyncioTestCase):
             session="agent:remote:clawcrosschat",
             options={
                 "api_url": "https://example.invalid/v1/chat/completions",
-                "group_db_path": "/tmp/group.db",
+                "runtime_db_path": "/tmp/runtime.db",
                 "identity_global_name": "remote",
                 "identity_prompt": "Stable identity",
                 "_history_disabled": True,
             },
         )
         with (
-            mock.patch("api.group_repository.get_http_agent_session", new=mock.AsyncMock(return_value=None)),
-            mock.patch("api.group_repository.upsert_http_agent_session", new=mock.AsyncMock(return_value=True)),
+            mock.patch("agents.runtime_sessions.get_session", new=mock.AsyncMock(return_value=None)),
+            mock.patch("agents.runtime_sessions.remember_prompt", new=mock.AsyncMock(return_value=True)),
             mock.patch("integrations.connectors._generic_http.httpx.AsyncClient", _HttpClient),
         ):
             result = await send_to_agent(request)
@@ -77,15 +77,15 @@ class AgentSessionTests(unittest.IsolatedAsyncioTestCase):
             session="agent:reviewer:clawcrosschat",
             options={
                 "body": {"messages": [{"role": "user", "content": "hello"}]},
-                "group_db_path": "/tmp/group.db",
+                "runtime_db_path": "/tmp/runtime.db",
                 "identity_global_name": "reviewer",
                 "identity_prompt": "You are the reviewer.",
                 "identity_injection_mode": "prepend_user",
             },
         )
         with (
-            mock.patch("api.group_repository.get_http_agent_session", new=mock.AsyncMock(return_value=None)),
-            mock.patch("api.group_repository.upsert_http_agent_session", new=mock.AsyncMock(return_value=True)) as upsert,
+            mock.patch("agents.runtime_sessions.get_session", new=mock.AsyncMock(return_value=None)),
+            mock.patch("agents.runtime_sessions.remember_prompt", new=mock.AsyncMock(return_value=True)) as upsert,
         ):
             prepared, state = await prepare_agent_session(request)
 
@@ -104,15 +104,15 @@ class AgentSessionTests(unittest.IsolatedAsyncioTestCase):
             platform="custom-http",
             session="agent:remote:clawcrosschat",
             options={
-                "group_db_path": "/tmp/group.db",
+                "runtime_db_path": "/tmp/runtime.db",
                 "identity_global_name": "remote",
                 "identity_prompt": "Stable identity",
             },
         )
         existing = {"prompt_text": "Stable identity"}
         with (
-            mock.patch("api.group_repository.get_http_agent_session", new=mock.AsyncMock(return_value=existing)),
-            mock.patch("api.group_repository.upsert_http_agent_session", new=mock.AsyncMock()) as upsert,
+            mock.patch("agents.runtime_sessions.get_session", new=mock.AsyncMock(return_value=existing)),
+            mock.patch("agents.runtime_sessions.remember_prompt", new=mock.AsyncMock()) as upsert,
         ):
             prepared, state = await prepare_agent_session(request)
 

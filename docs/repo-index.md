@@ -84,12 +84,13 @@ When the bug is "service does not start" or "route behaves unexpectedly", start 
 - `src/utils/session_summary.py`
 - `src/utils/checkpoint_repository.py`
 
-### Groups
+### Agents, conversations, teams, group chat (three layers — see `docs/agent-runtime-and-persona.md`)
 
-- `src/api/group_routes.py`
-- `src/api/group_service.py`
-- `src/api/group_models.py`
-- `src/api/group_repository.py`
+- L1 agents: `src/agents/store.py` (one record per agent), `src/agents/gateway.py` (ask / deliver per driver), `src/agents/control.py` (status / cancel / reset / history), `src/agents/routes.py` (`/v1/agents`), `src/agents/runtime_sessions.py`
+- L2 conversations: `src/comms/store.py`, `src/comms/conversations.py` (post + wake), `src/comms/delivery.py` (wake rule, storm guard, unread digest)
+- L3 teams: `src/teams/store.py` (memberships), `src/teams/manifest.py` (internal_agents.json / external_agents.json import/export), `src/teams/routes.py` (`/v1/teams`)
+- L3 group chat: `src/groups/service.py`, `src/groups/routes.py` (`/groups`)
+- one-shot data migration: `src/migrations/unify.py`
 
 ### Settings / ops / auth / system
 
@@ -161,7 +162,9 @@ Read these for workflow execution, topics, experts, and OpenClaw integration:
 | `oasis/server.py` | OASIS API bootstrap |
 | `oasis/engine.py` | discussion / execution engine |
 | `oasis/scheduler.py` | workflow scheduling logic |
-| `oasis/experts.py` | expert definitions and storage |
+| `oasis/participants.py` | a participant = an agent asked through the agent gateway |
+| `oasis/agent_center.py` | the agents and personas a workflow can reach (team members, persona library) |
+| `oasis/experts.py` | persona library (public / agency / custom / team) and reply parsing |
 | `oasis/forum.py` | forum/topic data handling plus post/event hooks for living graph ingestion |
 | `oasis/swarm_engine.py` | Town Genesis scaffold and LLM swarm blueprint generation |
 | `oasis/graph_memory.py` | GraphRAG persistence, local SQLite fallback, optional Zep mirror, ReportAgent retrieval |
@@ -196,12 +199,11 @@ For external AI agent communication via the Agent Client Protocol:
 | Path | Purpose |
 |---|---|
 | `src/integrations/acpx_adapter.py` | Singleton `AcpxAdapter` wrapping the `acpx` CLI; manages sessions and prompt execution |
-| `src/api/group_service.py` | Primary acpx consumer; `_send_to_acp_agent()` broadcasts group chat messages to ACP agents |
-| `oasis/experts.py` | `ExternalExpert` class uses ACP for pooled prompt communication with external agents |
+| `src/agents/gateway.py` | the only acpx consumer: asks / delivers to codex, claude-code, gemini … agents for group chat, OASIS and the API |
 
 Known ACP tools (external AI agents): `openclaw`, `codex`, `claude`, `gemini`, `aider`.
 
-`acpx` is auto-installed during `bash selfskill/scripts/run.sh setup`. If missing, group chat ACP broadcasting and OASIS ExternalExpert ACP mode will be unavailable.
+`acpx` is auto-installed during `bash selfskill/scripts/run.sh setup`. If missing, agents on ACP platforms cannot be reached.
 
 ## Bot Integrations
 
@@ -218,7 +220,7 @@ The most important runtime data lives here:
 ```text
 data/
 ├── agent_checkpoints/        # per-thread append-only context SQLite files
-├── group_chat.db
+├── clawcross.db              # agents, team memberships, conversations and their messages
 ├── oasis_graph_memory.db
 ├── webot_subagents.db
 ├── team_creator_jobs.db
@@ -229,11 +231,12 @@ data/
     ├── skills_manifest.json
     ├── webot_agent_profiles.json
     ├── oasis/yaml/
-    └── teams/{team_name}/
-        ├── internal_agents.json
-        ├── external_agents.json
+    └── teams/{team_name}/            # assets only; members live in clawcross.db
         ├── oasis_experts.json
-        └── oasis/yaml/*.yaml
+        ├── team_settings.json
+        ├── oasis/yaml/*.yaml
+        ├── oasis/python/*.py
+        └── skills/
 ```
 
 Pair these with:
@@ -315,6 +318,7 @@ Read:
 - `oasis/server.py`
 - `oasis/swarm_engine.py`
 - `oasis/graph_memory.py`
+- `oasis/participants.py`
 - `docs/example_team.md`
 
 ### "Town Mode / swarm graph / ReportAgent looks wrong"

@@ -7,19 +7,19 @@ plan:
     author: begin
     content: "请描述你要交付的办公任务：交付物类型（报告 / 方案 / 表格 / PPT / 视频）、受众、时间、关键素材或数据来源。Office Team 会按 协调 → 写作 → 数据 → 视觉 → PDF → 审校 的节奏协作。"
 - id: o1
-  expert: coordinator#oasis#Office Coordinator
+  agent: Office Coordinator
 - id: o2
-  expert: writer#oasis#Document Writer
+  agent: Document Writer
 - id: o3
-  expert: analyst#oasis#Data Analyst
+  agent: Data Analyst
 - id: o4
-  expert: designer#oasis#Visual Designer
+  agent: Visual Designer
 - id: o5
-  expert: pdf_master#oasis#PDF & Print Master
+  agent: "PDF & Print Master"
 - id: o6
-  expert: reviewer#oasis#Office Reviewer
+  agent: Office Reviewer
 - id: o7
-  expert: coordinator#oasis#Office Coordinator
+  agent: Office Coordinator
 - id: o8
   manual:
     author: bend

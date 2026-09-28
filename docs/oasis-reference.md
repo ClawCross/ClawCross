@@ -59,7 +59,7 @@ Relevant environment variables live in [`config/.env.example`](../config/.env.ex
 The graph is not a static precomputed picture. OASIS keeps writing back:
 
 - the initial swarm blueprint
-- expert posts and manual `NUDGE` posts
+- participant posts and manual `NUDGE` posts
 - structured agent callbacks
 - timeline events such as `agent_callback`, `manual_post`, and round changes
 - the final conclusion
@@ -67,30 +67,30 @@ The graph is not a static precomputed picture. OASIS keeps writing back:
 
 This is why `GET /topics/{topic_id}` returns a living swarm payload rather than only the original blueprint.
 
-## Four Expert Types
+## Participants
 
-> Workflows can also name participants directly: `agent: <role | handle | alice/coder | ag_…>` for any registered agent (WeBot or external), and `persona: <tag>` with `tools: none | all | [..]` for a temporary participant. See [create_workflow.md](./create_workflow.md). Every post records its author's id (`author_id`: `ag_…`, or `u:<user>` for people).
+Every participant is an agent, named in one of two ways (full grammar in [create_workflow.md](./create_workflow.md)):
 
-| Type | Name Format | Stateful | Backend | Use It For |
-|---|---|---|---|---|
-| Direct LLM | `tag#temp#N` | No | local LLM | fast stateless expert rounds |
-| OASIS Session | `tag#oasis#id` | Yes | internal bot API | persistent expert memory across rounds |
-| Regular Agent Session | `Title#session_id` | Yes | internal bot API | reuse an existing agent session directly |
-| External API | `tag#ext#id` | Usually yes | external HTTP / OpenClaw / ACP (acpx) | external runtimes and API-based experts |
+| Form | Who | Memory | Backend |
+|---|---|---|---|
+| `agent: <ref>` | one of your agents — a team member's role name, a handle, an address (`alice/coder`) or an `ag_…` id | its own, across topics | whatever the agent runs on: WeBot, Codex / Claude Code / Gemini via `acpx`, OpenClaw, HTTP |
+| `persona: <tag>` | a temporary agent wearing the persona `<tag>` | this topic only | `tools: none` (default): one model call per turn; `tools: all` / `[names]`: a temporary WeBot session with those tools, deleted when the topic ends |
 
-### 1. Direct LLM
-
-Example:
+Every post records its author's id (`author_id`): `ag_…` for your agents, `u:<user>` for people; a temporary persona has none.
 
 ```yaml
-- expert: "creative#temp#1"
+- id: review
+  parallel:
+    - agent: Coder                 # a team member
+    - agent: alice/codex           # an agent on Codex, by address
+    - persona: critical            # one model call per turn
+    - persona: security_auditor    # a temporary session that may read files
+      tools: [read_file, list_files]
 ```
 
-Use this when you want lightweight, stateless expert behavior with no cross-round memory.
+### Per-persona model override
 
-**Per-expert model override:** Direct LLM experts can optionally use a different LLM
-provider/model than the global `LLM_*` configuration. Add `model`, `api_key`,
-`base_url`, and/or `provider` fields to the persona entry in `oasis_experts.json`:
+A persona participant can use a different model than the global `LLM_*` configuration. Add `model`, `api_key`, `base_url` and/or `provider` to the persona entry in `oasis_experts.json`:
 
 ```json
 {
@@ -99,99 +99,16 @@ provider/model than the global `LLM_*` configuration. Add `model`, `api_key`,
   "persona": "You are a creative brainstorming expert...",
   "temperature": 0.9,
   "model": "gpt-5.4",
-  "api_key": "sk-openai-xxx",
   "base_url": "https://api.openai.com",
   "provider": "openai"
 }
 ```
 
-When these fields are absent or empty, the expert falls back to the global
-`LLM_API_KEY` / `LLM_MODEL` / `LLM_BASE_URL` environment variables as before.
+When these fields are absent, the global `LLM_API_KEY` / `LLM_MODEL` / `LLM_BASE_URL` apply. An `agent:` participant always uses its own runtime's model.
 
-### 2. OASIS Session
+### Structured replies
 
-Example:
-
-```yaml
-- expert: "synthesis#oasis#analysis01"
-```
-
-Use this when the expert should preserve memory and tool context across multiple rounds.
-
-**Per-expert model override:** Like Direct LLM experts, OASIS Session experts also
-support per-expert LLM model override. The override parameters are threaded through
-the Agent service's `/v1/chat/completions` API via `llm_override` field, so each
-session expert can use a different LLM without affecting others. Add the same
-`model`, `api_key`, `base_url`, and/or `provider` fields to the persona entry:
-
-```json
-{
-  "name": "GPT-5 综合顾问",
-  "tag": "synthesis",
-  "persona": "You are a comprehensive analysis expert...",
-  "model": "gpt-5.4",
-  "api_key": "sk-openai-xxx",
-  "base_url": "https://api.openai.com",
-  "provider": "openai"
-}
-```
-
-The override is per-request: each call from the SessionExpert carries its own
-LLM config, and the Agent service dynamically creates a temporary LLM instance
-for that request. When these fields are absent, the global `LLM_*` environment
-variables are used as fallback.
-
-### 3. Regular Agent Session
-
-Example:
-
-```yaml
-- expert: "Assistant#default"
-```
-
-Use this when the session identity already exists and should not be re-injected from a preset persona.
-
-### 4. External API / OpenClaw
-
-Example:
-
-```yaml
-- expert: "openclaw#ext#my_agent"
-  api_url: "http://127.0.0.1:18789"
-  api_key: "****"
-  model: "agent:main:default"
-  headers:
-    x-openclaw-session-key: "agent:main:default"
-```
-
-Use this when the expert is backed by an external runtime or OpenClaw agent.
-
-## Session Naming Rules
-
-### `#new`
-
-Appending `#new` forces a fresh session:
-
-```yaml
-- expert: "creative#oasis#abc#new"
-```
-
-That prevents accidental reuse of an older session context.
-
-### OpenClaw model routing
-
-For OpenClaw-style experts, the `model` field uses:
-
-```text
-agent:<agent_name>:<session_name>
-```
-
-Examples:
-
-- `agent:main:default`
-- `agent:main:code-review`
-
-When OASIS detects this format, it prefers the OpenClaw CLI path first and falls back to HTTP if needed.
+Each turn asks the participant for a JSON reply (`oasis reply`, or `oasis choose` on selector nodes). The agent layer passes the schema in the form each runtime understands; agents that cannot enforce a schema are asked again once if the reply is not valid JSON.
 
 ## Execution Modes
 
@@ -242,24 +159,12 @@ Human-step continuation rule:
 
 For the exact YAML schema and examples, read [create_workflow.md](./create_workflow.md).
 
-## External and OpenClaw Behavior
+## Agents on other platforms
 
-Important rules:
-
-- external experts should use `tag#ext#id`
-- `api_key: "****"` is masked and resolved from environment at runtime
-- OpenClaw routing should keep `model` and `x-openclaw-session-key` aligned
-- if you are adding an OpenClaw agent to a Team, verify it exists first via `openclaw sessions`
-
-### ACP Exchange (acpx)
-
-External experts with tags like `openclaw`, `codex`, `claude`, `gemini`, or `aider` can communicate through the **Agent Client Protocol** via the `acpx` CLI adapter:
-
-- `src/integrations/acpx_adapter.py` provides a singleton `AcpxAdapter` class wrapping the `acpx` CLI binary
-- `oasis/experts.py` (`ExternalExpert`) uses ACP for pooled prompt communication with external agents
-- `src/api/group_service.py` uses ACP for broadcasting group chat messages to external AI agents
-- `acpx` is automatically installed during `bash selfskill/scripts/run.sh setup`
-- If `acpx` is not in PATH, the system falls back to HTTP-only communication for external experts
+- Codex, Claude Code, Gemini and other ACP tools run through the `acpx` CLI adapter (`src/integrations/acpx_adapter.py`) in the session named by the agent's `global_name`; `acpx` is installed by `bash selfskill/scripts/run.sh setup`.
+- OpenClaw agents must exist on the OpenClaw side first (`openclaw sessions` / `openclaw add`); ClawCross talks to each one in its own session key `agent:<global_name>:<suffix>`.
+- HTTP agents are called at their `api_url` with their `model`.
+- All of this is the agent layer's business (`src/agents/gateway.py`): OASIS, group chat and the API call every agent the same way.
 
 Related docs:
 
@@ -310,14 +215,14 @@ The current Clawcross docs should treat this as the canonical Town entry, not th
 
 | Symptom | Check |
 |---|---|
-| Expert name not recognized | verify `tag#temp#N`, `tag#oasis#id`, or `tag#ext#id` format |
-| External expert fails immediately | check `api_url`, `api_key`, and `model` |
-| OpenClaw session mismatch | ensure `model` and `x-openclaw-session-key` refer to the same session |
+| "agent '<x>' not found; skipping" | `agent: <x>` must be a team member's role name, or a handle / address / `ag_…` id of one of your agents |
+| A participant step raises "'expert: …' is no longer supported" | write `agent: <name>` or `persona: <tag>` instead |
+| An HTTP agent fails immediately | check its `api_url`, `api_key` and `model` (`agents show --agent <ref>`) |
 | Workflow shape looks wrong | re-check the YAML in [create_workflow.md](./create_workflow.md) |
-| Team persona / member mismatch | inspect the Team files in [example_team.md](./example_team.md) |
+| Team persona / member mismatch | `clawcross team "<team>" members` and the team's `oasis_experts.json` ([team-anatomy.md](./team-anatomy.md)) |
 | Swarm graph never appears | verify `autogen_swarm=true`, then inspect `oasis/swarm_engine.py` and `oasis/graph_memory.py` |
 | ReportAgent answers look empty | verify the topic has graph memory, then inspect `/topics/{id}/report/ask` and GraphRAG provider config |
 | Expected Zep retrieval does not happen | check `ZEP_API_KEY`, `OASIS_GRAPHRAG_PROVIDER`, and fallback behavior in `config/.env.example` |
-| External expert ACP communication fails | verify `acpx` is installed (`which acpx`); if missing, run `npm install -g acpx@latest` or re-run `bash selfskill/scripts/run.sh setup` |
+| A Codex / Claude Code / Gemini agent never answers | verify `acpx` is installed (`which acpx`); if missing, run `npm install -g acpx@latest` or re-run `bash selfskill/scripts/run.sh setup` |
 
 For code-level debugging, inspect the OASIS files listed in [repo-index.md](./repo-index.md).

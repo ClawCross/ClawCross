@@ -82,7 +82,7 @@
 ### 18789 — OpenClaw 后端（可选）
 
 - **来源**：外部 OpenClaw Gateway 服务
-- **职责**：连接外部 Agent Session，在 OASIS 工作流 YAML 中作为 `api_url` 引用
+- **职责**：OpenClaw agent 的运行时；ClawCross 的 openclaw agent 通过它对话
 - **条件**：仅在配置了 OpenClaw 集成时使用
 - **浏览器入口**：`http://127.0.0.1:18789/`
 - **HTTP API**：`http://127.0.0.1:18789/v1/chat/completions`
@@ -140,10 +140,17 @@ PORT_FRONTEND=51209
 - `GET /manifest.json` — PWA manifest
 - `GET /sw.js` — Service Worker
 
-### OpenAI 兼容（→ :51200）
+### OpenAI 兼容 & Agent / Team API（→ :51200）
 
-- `POST /v1/chat/completions` — 聊天补全（公开路由，Bearer Token 鉴权）
-- `GET /v1/models` — 模型列表（公开路由）
+- `POST /v1/chat/completions` — 聊天补全（公开路由，Bearer Token 鉴权）；`model` 可以是 agent 地址 / `ag_` 编号，或 `<用户>/<team>`（交给 team 的 lead）
+- `GET /v1/models` — 模型列表（公开路由）：你的 agent 与 team
+- `/v1/agents…` — 本机所有 agent，一套接口（登录用户以自己的身份转发）：
+  - `GET /v1/agents`（`?status=1` 附带运行状态）· `POST /v1/agents` 新建（`{name, platform, persona, team, global_name, api_url, model…}`）
+  - `GET|PATCH|DELETE /v1/agents/<ref>` · `POST /v1/agents/<ref>/messages` · `POST /v1/agents/<ref>/control`（status / cancel / reset）· `GET /v1/agents/<ref>/history`
+- `/v1/teams…` — team 组合 agent：
+  - `GET|POST /v1/teams` · `GET|PATCH|DELETE /v1/teams/<team>`
+  - `POST /v1/teams/<team>/members`（`{agent, role?, is_lead?}`）· `PATCH|DELETE /v1/teams/<team>/members/<agent>`
+  - `POST /v1/teams/<team>/import`（导入 team 文件夹里的 internal_agents.json / external_agents.json）· `POST /v1/teams/<team>/messages`（交给 lead）
 
 ### 登录 & 会话
 
@@ -169,17 +176,17 @@ PORT_FRONTEND=51209
 
 ### 群组聊天代理（→ :51200）
 
-- `GET /proxy_groups` — 群组列表（→ `/groups`）
-- `POST /proxy_groups` — 创建群组（→ `/groups`）
-- `GET /proxy_groups/<id>` — 群组详情（→ `/groups/<id>`）
-- `PUT /proxy_groups/<id>` — 更新群组（→ `/groups/<id>`）
-- `DELETE /proxy_groups/<id>` — 删除群组（→ `/groups/<id>`）
-- `GET /proxy_groups/<id>/messages` — 获取消息（→ `/groups/<id>/messages`）
-- `POST /proxy_groups/<id>/messages` — 发送消息（→ `/groups/<id>/messages`）
-- `POST /proxy_groups/<id>/mute` — 静音（→ `/groups/<id>/mute`）
-- `POST /proxy_groups/<id>/unmute` — 取消静音（→ `/groups/<id>/unmute`）
-- `GET /proxy_groups/<id>/mute_status` — 静音状态（→ `/groups/<id>/mute_status`）
-- `GET /proxy_groups/<id>/sessions` — 群组会话（→ `/groups/<id>/sessions`）
+`/proxy_groups/...` 原样转发到 `/groups/...`（以当前登录用户身份）。成员是 agent（`ag_…`）和人（`u:<用户>`）。
+
+- `GET /proxy_groups` — 群聊列表（含私聊）
+- `POST /proxy_groups` — 创建：`{title, kind?: "group"|"direct", agents?: [ref], team?}`；按 team 建群时成员和主 agent 跟随 team
+- `GET|PATCH|DELETE /proxy_groups/<id>` — 详情 / `{title?, dnd?}` / 删除
+- `GET /proxy_groups/<id>/messages?after_id=` — 增量消息
+- `POST /proxy_groups/<id>/messages` — 发送：`{content, mentions?, reply_to?, attachments?, run_mode?}`
+- `POST /proxy_groups/<id>/members` — 加成员 `{agent}`；`PATCH|DELETE /proxy_groups/<id>/members/<principal>` — `{muted?, nickname?}` / 移出
+- `POST /proxy_groups/<id>/mute_agents` — 全员禁言 `{muted}`
+- `PUT /proxy_groups/<id>/primary` — 主 agent `{agent | null}`
+- `GET /proxy_groups/<id>/typing` · `GET /proxy_groups/<id>/available_agents`
 
 ### OASIS 代理（→ :51202）
 
@@ -267,29 +274,22 @@ PORT_FRONTEND=51209
 - `POST /proxy_tunnel/start` — 启动 Tunnel
 - `POST /proxy_tunnel/stop` — 停止 Tunnel
 
-### Internal Agents 管理
-
-- `GET /internal_agents` — Agent 列表
-- `POST /internal_agents` — 创建 Agent
-- `PUT|PATCH /internal_agents/<sid>` — 更新 Agent
-- `DELETE /internal_agents/<sid>` — 删除 Agent
-
 ### Teams 管理
 
 - `GET /teams` — 团队列表
 - `POST /teams` — 创建团队
-- `DELETE /teams/<name>` — 删除团队
-- `GET /teams/<name>/members` — 成员列表
-- `POST /teams/<name>/members/external` — 添加外部成员
-- `DELETE /teams/<name>/members/external` — 移除外部成员
-- `PUT /teams/<name>/members/external` — 更新外部成员
+- `PATCH /teams/<name>` — 重命名
+- `DELETE /teams/<name>` — 删除团队（不属于其他 team 的成员 agent 一并删除）
+- `GET|POST /teams/<name>/alarms` · `DELETE /teams/<name>/alarms/<task_id>` — 团队成员的定时任务（`{agent, schedule_type, cron|run_at, text}`）
 - `GET /teams/<name>/experts` — 团队人设 prompt 列表
 - `POST /teams/<name>/experts` — 添加团队人设 prompt
 - `PUT /teams/<name>/experts/<tag>` — 更新团队人设 prompt
 - `DELETE /teams/<name>/experts/<tag>` — 删除团队人设 prompt
-- `POST /teams/<name>/generate-from-workflow` — 从 ClawCross Studio 画布节点批量生成 / 更新团队
+- `POST /teams/<name>/generate-from-workflow` — 把画布上的 agent / persona 节点加进团队
 - `POST /teams/snapshot/download` — 下载团队快照
 - `POST /teams/snapshot/upload` — 上传团队快照
+
+成员增删改走 `/v1/teams/<team>/members…`（见上）。
 
 ## 鉴权规则
 

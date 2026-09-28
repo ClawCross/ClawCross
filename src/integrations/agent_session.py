@@ -62,17 +62,17 @@ def _prepend_identity_to_messages(
 
 async def inspect_http_agent_session(
     *,
-    group_db_path: str,
+    runtime_db_path: str,
     session_key: str,
     identity_prompt: str = "",
 ) -> AgentSessionState:
     """Inspect the exact HTTP session used by sending and persona injection."""
-    if not group_db_path or not session_key:
+    if not runtime_db_path or not session_key:
         return AgentSessionState(None, bool(identity_prompt), "no_session_registry", session_key)
 
-    from api.group_repository import get_http_agent_session
+    from agents.runtime_sessions import get_session
 
-    record = await get_http_agent_session(group_db_path, session_key)
+    record = await get_session(runtime_db_path, session_key)
     if record is None:
         return AgentSessionState(False, bool(identity_prompt), "http_session_registry", session_key)
     prompt_changed = bool(identity_prompt) and str(record.get("prompt_text") or "") != identity_prompt
@@ -112,11 +112,11 @@ async def prepare_agent_session(request: SendToAgentRequest) -> tuple[SendToAgen
         options["_agent_session_state"] = state.as_dict()
         return replace(request, options=options), state
 
-    group_db_path = str(options.get("group_db_path") or "").strip()
+    runtime_db_path = str(options.get("runtime_db_path") or "").strip()
     global_name = str(options.get("identity_global_name") or "").strip()
     try:
         state = await inspect_http_agent_session(
-            group_db_path=group_db_path,
+            runtime_db_path=runtime_db_path,
             session_key=session_key,
             identity_prompt=identity_prompt,
         )
@@ -130,12 +130,12 @@ async def prepare_agent_session(request: SendToAgentRequest) -> tuple[SendToAgen
             session_key,
         )
     should_inject = state.should_inject_identity
-    if group_db_path and session_key and global_name and should_inject:
-        from api.group_repository import upsert_http_agent_session
+    if runtime_db_path and session_key and global_name and should_inject:
+        from agents.runtime_sessions import remember_prompt
 
         try:
-            persisted_should_inject = await upsert_http_agent_session(
-                group_db_path,
+            persisted_should_inject = await remember_prompt(
+                runtime_db_path,
                 session_key=session_key,
                 global_name=global_name,
                 prompt_text=identity_prompt,

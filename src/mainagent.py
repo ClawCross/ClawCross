@@ -26,11 +26,19 @@ from utils.api_patch import patch_langchain_file_mime
 patch_langchain_file_mime()
 
 from core.agent import TeamAgent
+from agents.control import AgentControl
+from agents.gateway import AgentGateway
 from agents.routes import create_agents_router
+from agents.store import get_store
+from comms.conversations import Conversations
+from comms.store import ConversationStore
+from groups.routes import create_groups_router
+from groups.service import GroupService
+from migrations.unify import migrate_once
 from teams.routes import create_teams_router
+from teams.store import get_team_store
 from services.llm_factory import extract_text as _extract_text
 from utils.user_auth import load_users as load_users_from_file, verify_password as verify_password_from_file
-from api.group_routes import create_group_router, init_group_db
 from api.harness_routes import create_harness_router
 from api.openai_routes import create_openai_router
 from api.ops_routes import create_ops_router
@@ -66,7 +74,6 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
 
 env_path = str(ENV_FILE)
 db_path = str(DEFAULT_CHECKPOINT_DB_DIR)
-group_db_path = str(DATA_DIR / "group_chat.db")
 users_path = str(USERS_FILE)
 
 load_dotenv(dotenv_path=env_path)
@@ -138,6 +145,17 @@ def verify_password(username: str, password: str) -> bool:
 # --- Create agent instance ---
 agent = TeamAgent(src_dir=current_dir, db_path=db_path)
 
+# --- Agents, teams and conversations: one database, three layers ---
+agent_store = get_store()
+gateway = AgentGateway(internal_token=INTERNAL_TOKEN, runtime_db_path=agent_store.db_path)
+agent_control = AgentControl(
+    agent, checkpoint_db_path=str(getattr(agent, "_db_path", "") or ""), runtime_db_path=agent_store.db_path,
+)
+team_store = get_team_store(agent_store)
+conversation_store = ConversationStore(agent_store)
+conversations = Conversations(conversation_store, agent_store, gateway, is_busy=agent_control.is_busy)
+group_service = GroupService(conversations, team_store)
+
 
 async def _reconcile_pending_in_background() -> None:
     """Deliver wakes for jobs that finished while this process was down.
@@ -155,8 +173,8 @@ async def _reconcile_pending_in_background() -> None:
 # --- FastAPI lifespan ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    migrate_once(data_dir=DATA_DIR, teams=team_store, conversations=conversation_store)
     await agent.startup()
-    await init_group_db(group_db_path)   # 初始化群聊数据库（on_event 与 lifespan 不兼容）
     # 后台任务完成通知是事件驱动的（detached runner 跑完会 POST /internal/bg_job_done）。
     # 这里只做一次性对账（非轮询），补发「本进程宕机期间已完成」的任务通知。
     #
@@ -184,13 +202,7 @@ app.add_middleware(
 app.add_middleware(RequestIdMiddleware)
 
 app.include_router(
-    create_group_router(
-        internal_token=INTERNAL_TOKEN,
-        verify_password=verify_password,
-        checkpoint_db_path=db_path,
-        group_db_path=group_db_path,
-        agent=agent,
-    )
+    create_groups_router(internal_token=INTERNAL_TOKEN, verify_password=verify_password, service=group_service)
 )
 
 app.include_router(
@@ -220,7 +232,7 @@ app.include_router(
         agent=agent,
         verify_password=verify_password,
         verify_auth_or_token=verify_auth_or_token,
-        group_db_path=group_db_path,
+        runtime_db_path=agent_store.db_path,
     )
 )
 
@@ -252,18 +264,17 @@ app.include_router(
     )
 )
 
-# L1 agent layer: every agent on this machine, one interface.
+# L1: every agent on this machine, one interface.
 app.include_router(
     create_agents_router(
-        internal_token=INTERNAL_TOKEN,
-        verify_password=verify_password,
+        internal_token=INTERNAL_TOKEN, verify_password=verify_password,
+        store=agent_store, gateway=gateway, control=agent_control,
     )
 )
-# Teams compose agents; a team is addressed through its lead.
+# L3: teams compose agents; a team is addressed through its lead.
 app.include_router(
     create_teams_router(
-        internal_token=INTERNAL_TOKEN,
-        verify_password=verify_password,
+        internal_token=INTERNAL_TOKEN, verify_password=verify_password, teams=team_store, gateway=gateway,
     )
 )
 

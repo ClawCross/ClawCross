@@ -1,7 +1,7 @@
 // ── Orchestration State ──
 const orch = {
     experts: [],
-    internalAgents: [],
+    agents: [],          // [{agent, role, is_lead}]
     nodes: [],
     edges: [],
     groups: [],
@@ -13,7 +13,7 @@ const orch = {
     panning: null,       // 画布拖拽平移状态
     spaceDown: false,    // 空格键按下状态
     contextMenu: null,
-    sessionStatuses: {},
+    agentStates: {},     // agent_id → running | idle
     // Team mode
     teamEnabled: false,
     teamName: '',
@@ -73,8 +73,7 @@ function orchTeamSelectChanged() {
     orch.teamEnabled = !!orch.teamName;
     orchShowTeamButtons(!!orch.teamName);
     orchLoadExperts();
-    orchLoadSessionAgents();
-    orchLoadOpenClawSessions();
+    orchLoadAgents();
 }
 
 function _orchTeamQuery() {
@@ -114,25 +113,17 @@ async function orchDeleteOpenClawAgent(agentName, options = {}) {
         if (!resp.ok || !result.ok) {
             throw new Error(result.error || 'Delete failed');
         }
-
-        const teamName = options.teamName || '';
-        if (teamName) {
-            const unlinkResp = await fetch(`/teams/${encodeURIComponent(teamName)}/members/external`, {
-                method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ global_name: agentName }),
-            });
-            const unlinkResult = await unlinkResp.json().catch(() => ({}));
-            if (!unlinkResp.ok) {
-                throw new Error(unlinkResult.error || 'Failed to remove team mapping');
-            }
-            if (options.reloadMembers && typeof loadTeamMembers === 'function') {
-                await loadTeamMembers();
-            }
+        // The agent registered for it goes too, and with it every team membership.
+        const found = await agentApi('GET', '/v1/agents?runtime=' + encodeURIComponent('openclaw:' + agentName));
+        for (const agent of found.data || []) {
+            await agentApi('DELETE', `/v1/agents/${encodeURIComponent(agent.agent_id)}`);
+        }
+        if (options.reloadMembers && typeof loadTeamMembers === 'function') {
+            await loadTeamMembers();
         }
 
         orchToast(t('orch_oc_delete_success', { name: displayName }));
-        await orchLoadOpenClawSessions();
+        await orchLoadAgents();
         return true;
     } catch (e) {
         orchToast(t('orch_oc_delete_failed', { name: displayName }) + ': ' + e.message);
@@ -171,8 +162,7 @@ async function orchCreateTeamByName(teamName) {
             sel.value = teamName;
             orchShowTeamButtons(true);
             orchLoadExperts();
-            orchLoadSessionAgents();
-            orchLoadOpenClawSessions();
+            orchLoadAgents();
         } else {
             orchToast(data.error || t('orch_toast_team_create_failed') || 'Failed to create team');
         }
@@ -195,8 +185,7 @@ async function orchDeleteTeam() {
             orch.teamName = '';
             orchShowTeamButtons(false);
             orchLoadExperts();
-            orchLoadSessionAgents();
-            orchLoadOpenClawSessions();
+            orchLoadAgents();
         } else {
             orchToast(data.error || t('orch_toast_team_delete_failed') || 'Failed to delete team');
         }
@@ -271,8 +260,7 @@ async function orchHandleSnapshotUpload(event) {
             if (typeof loadAgentTeams === 'function') {
                 await loadAgentTeams();
             }
-            orchLoadSessionAgents();
-            orchLoadOpenClawSessions();
+            orchLoadAgents();
         } else {
             orchToast(data.error || t('orch_toast_snapshot_upload_failed') || 'Failed to upload snapshot');
         }
@@ -478,8 +466,7 @@ function orchSetNodeSelector(node) {
 function orchInit() {
     orchLoadTeamList();
     orchLoadExperts();
-    orchLoadSessionAgents();
-    orchLoadOpenClawSessions();
+    orchLoadAgents();
     orchSetupCanvas();
     orchSetupSettings();
     orchSetupFileDrop();
@@ -585,7 +572,7 @@ function _orchCreateExpertCard(exp, isCustom) {
     const _isZh = (typeof currentLang !== 'undefined' && currentLang === 'zh-CN');
     const displayName = _isZh ? (exp.name_zh || exp.name) : (exp.name_en || exp.name);
     card.innerHTML = `<span class="orch-emoji">${exp.emoji}</span><div style="min-width:0;flex:1;"><div class="orch-name" title="${escapeHtml(displayName)}">${escapeHtml(displayName)}</div><div class="orch-tag">${escapeHtml(exp.tag)}</div></div><span class="orch-temp">${exp.temperature||''}</span>${isCustom ? '<button class="orch-card-delete-btn orch-expert-del-btn" title="' + t('orch_ctx_delete') + '">×</button>' : ''}`;
-    orchBindCardEvents(card, {type:'expert', ...exp});
+    orchBindCardEvents(card, {...exp, type: 'persona'});
     if (isCustom) {
         card.querySelector('.orch-expert-del-btn').addEventListener('click', async (ev) => {
             ev.stopPropagation();
@@ -605,549 +592,304 @@ function _orchCreateExpertCard(exp, isCustom) {
     return card;
 }
 
-// Helper: load internal agent meta as a map { session_id: meta }
-async function _orchLoadAgentMetaMap() {
-    try {
-        const resp = await fetch('/internal_agents' + _orchTeamQuery());
-        const data = await resp.json();
-        const map = {};
-        if (data.agents) {
-            for (const a of data.agents) map[a.session] = a.meta || {};
-        }
-        return map;
-    } catch (e) { return {}; }
+// ── Agents: in team mode the team's members, otherwise every agent the user has ──
+const ORCH_PLATFORM_EMOJI = { webot: '🤖', openclaw: '🦞' };
+
+function orchAgentEmoji(platform) {
+    return ORCH_PLATFORM_EMOJI[platform] || '🔌';
 }
 
-// Resolve display title: prefer agent meta name, fallback to original title
-function _orchResolveTitle(originalTitle, sessionId, agentMap) {
-    const meta = agentMap[sessionId];
-    if (meta && meta.name) return meta.name;
-    return originalTitle;
+function orchPlatformLabel(platform) {
+    if (platform === 'webot') return 'WeBot';
+    return (typeof addExtPlatformLabel === 'function' ? addExtPlatformLabel(platform) : '') || platform;
 }
 
-// ── Add Internal Agent Modal ──
-function orchShowAddInternalAgentModal() {
-    const overlay = document.createElement('div');
-    overlay.className = 'orch-modal-overlay';
-    overlay.id = 'orch-add-ia-overlay';
-    overlay.innerHTML = `
-        <div class="orch-modal" style="min-width:380px;max-width:460px;">
-            <h3>${t('orch_add_internal_agent_title')}</h3>
-            <div style="display:flex;flex-direction:column;gap:8px;margin:10px 0;">
-                <label style="font-size:11px;font-weight:600;color:#374151;">${t('orch_ia_name')}
-                    <input id="orch-ia-name" type="text" placeholder="my_agent" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-top:2px;">
-                </label>
-                <label style="font-size:11px;font-weight:600;color:#374151;">${t('orch_ia_tag')}
-                    <input id="orch-ia-tag" type="text" list="orch-ia-tag-list" placeholder="${t('orch_ia_tag_placeholder')}" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-top:2px;">
-                    <datalist id="orch-ia-tag-list">
-                        ${[...new Set(orch.experts.map(e => e.tag).filter(Boolean))].map(tag => `<option value="${escapeHtml(tag)}"></option>`).join('')}
-                    </datalist>
-                </label>
-                <div id="orch-ia-drop-zone" style="border:2px dashed #d1d5db;border-radius:8px;padding:12px;text-align:center;font-size:11px;color:#9ca3af;cursor:default;transition:all .15s;">
-                    📦 ${t('orch_ia_tag_placeholder')}
-                </div>
-            </div>
-            <div class="orch-modal-btns">
-                <button id="orch-ia-cancel" style="padding:6px 14px;border-radius:6px;border:1px solid #d1d5db;background:white;color:#374151;cursor:pointer;font-size:12px;">${t('orch_modal_cancel')}</button>
-                <button id="orch-ia-save" style="padding:6px 14px;border-radius:6px;border:none;background:#6366f1;color:white;cursor:pointer;font-size:12px;">${t('orch_modal_save')}</button>
-            </div>
-        </div>
-    `;
-    document.body.appendChild(overlay);
-    overlay.querySelector('#orch-ia-cancel').addEventListener('click', () => overlay.remove());
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
-    // Drop zone: accept expert drag to set tag
-    const dropZone = overlay.querySelector('#orch-ia-drop-zone');
-    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; dropZone.style.borderColor = '#6366f1'; dropZone.style.background = '#eef2ff'; });
-    dropZone.addEventListener('dragleave', () => { dropZone.style.borderColor = '#d1d5db'; dropZone.style.background = ''; });
-    dropZone.addEventListener('drop', (e) => {
-        e.preventDefault();
-        dropZone.style.borderColor = '#d1d5db'; dropZone.style.background = '';
-        try {
-            const data = JSON.parse(e.dataTransfer.getData('application/json'));
-            if (data.tag && !['manual', 'conditional', 'script', 'human'].includes(data.tag)) {
-                document.getElementById('orch-ia-tag').value = data.tag;
-                dropZone.innerHTML = '✅ Tag: <b>' + escapeHtml(data.tag) + '</b> (' + escapeHtml(data.name || '') + ')';
-                dropZone.style.borderColor = '#6366f1'; dropZone.style.color = '#374151';
-            }
-        } catch(err) {}
-    });
-    // Save: create new session + internal agent entry
-    overlay.querySelector('#orch-ia-save').addEventListener('click', async () => {
-        const name = document.getElementById('orch-ia-name').value.trim();
-        const tag = document.getElementById('orch-ia-tag').value.trim();
-        if (!name) { orchToast('⚠️ Name is required'); return; }
-        // Generate a new session id
-        const newSid = Date.now().toString(36) + Math.random().toString(36).substr(2, 4);
-        try {
-            await fetch('/internal_agents' + _orchTeamQuery(), {
-                method: 'POST', headers: {'Content-Type':'application/json'},
-                body: JSON.stringify({ session: newSid, meta: { name, tag: tag || '' } })
-            });
-            orchToast('✅ ' + t('orch_ia_created') + ': ' + name);
-            overlay.remove();
-            orchLoadSessionAgents();
-        } catch(e) { orchToast('❌ ' + t('orch_toast_net_error')); }
-    });
+// A workflow names a team member by its role, so the team folder stays portable;
+// outside a team it names the agent by handle.
+function orchAgentNodeData(entry) {
+    const agent = entry.agent;
+    const name = entry.role || agent.name;
+    return {
+        type: 'agent',
+        name,
+        agent: orch.teamName ? name : agent.handle,
+        agent_id: agent.agent_id,
+        platform: agent.platform,
+        tag: agent.settings?.persona || '',
+        emoji: orchAgentEmoji(agent.platform),
+    };
 }
 
-// ── Load Internal Agents ──
-async function orchLoadSessionAgents() {
-    const list = document.getElementById('orch-expert-list-sessions');
-    if (!list) return;
-    list.innerHTML = '<div style="padding:6px 10px;font-size:10px;color:#9ca3af;text-align:center;">⏳ ' + t('loading') + '</div>';
-    try {
-        // Load sessions and agent meta in parallel
-        const [resp, agentMap] = await Promise.all([fetch('/proxy_sessions'), _orchLoadAgentMetaMap()]);
-        const data = await resp.json();
-        list.innerHTML = '';
-
-        // Build merged session list: start from proxy_sessions, then add any JSON-only entries
-        const allSessions = (data.sessions || []).slice();
-        const seenIds = new Set(allSessions.map(s => s.session_id));
-        // Add sessions that exist in internal agent JSON but not in proxy_sessions
-        for (const [sid, meta] of Object.entries(agentMap)) {
-            if (!seenIds.has(sid)) {
-                allSessions.push({ session_id: sid, title: meta.name || 'Untitled', message_count: 0 });
-                seenIds.add(sid);
-            }
-        }
-
-        // Only show sessions that have a name in the agent JSON
-        const sessions = allSessions.filter(s => {
-            const meta = agentMap[s.session_id];
-            return meta && meta.name;
-        });
-        orch.internalAgents = sessions.map(s => {
-            const meta = agentMap[s.session_id] || {};
-            return {
-                session_id: s.session_id,
-                name: meta.name || s.title || 'Untitled',
-                tag: meta.tag || '',
-                message_count: s.message_count || 0,
-            };
-        });
-
-        if (sessions.length === 0) {
-            orch.internalAgents = [];
-            list.innerHTML = '<div style="padding:6px 10px;font-size:10px;color:#d1d5db;text-align:center;">No named agents yet</div>';
-            return;
-        }
-        // Sort by session_id descending (newest first)
-        sessions.sort((a, b) => b.session_id.localeCompare(a.session_id));
-        for (const s of sessions) {
-            const card = document.createElement('div');
-            card.className = 'orch-expert-card';
-            card.draggable = true;
-            const title = _orchResolveTitle(s.title || 'Untitled', s.session_id, agentMap);
-            const shortId = s.session_id.slice(-8);
-            const msgCount = s.message_count || 0;
-            // Carry agent meta tag (from internal agent JSON) if available
-            const meta = agentMap[s.session_id] || {};
-            const agentTag = meta.tag || '';
-            const isPrimary = !!meta.is_primary;
-            const primaryStar = `<button class="orch-ia-primary-btn" data-sid="${s.session_id}" data-is-primary="${isPrimary ? '1' : '0'}" title="${isPrimary ? '取消团队主 agent' : '设为团队主 agent（创群时自动作为主 agent）'}" style="background:none;border:none;cursor:pointer;font-size:13px;padding:1px 3px;line-height:1;${isPrimary ? 'color:#f59e0b;' : 'color:#d1d5db;opacity:0.6;'}" onmouseenter="this.style.opacity=1" onmouseleave="this.style.opacity=${isPrimary ? 1 : 0.6}">${isPrimary ? '⭐' : '☆'}</button>`;
-            // Add delete button
-            card.innerHTML = `<span class="orch-emoji">🤖</span><div style="min-width:0;flex:1;"><div class="orch-name" title="${escapeHtml(title)}">${escapeHtml(title)}${isPrimary ? ' <span style="color:#f59e0b;font-size:10px;">⭐ 主</span>' : ''}</div><div class="orch-tag" style="color:#6366f1;font-family:monospace;">${agentTag ? '🏷️' + escapeHtml(agentTag) + ' · ' : ''}#${escapeHtml(shortId)}</div></div>${primaryStar}<button class="orch-card-delete-btn" title="Delete agent" onclick="event.stopPropagation(); orchDeleteInternalAgent('${s.session_id}')">×</button>`;
-            const starBtn = card.querySelector('.orch-ia-primary-btn');
-            if (starBtn) {
-                starBtn.addEventListener('click', async (e) => {
-                    e.stopPropagation();
-                    await orchToggleInternalPrimary(starBtn.dataset.sid, starBtn.dataset.isPrimary !== '1');
-                });
-                starBtn.addEventListener('dblclick', (e) => e.stopPropagation());
-            }
-            const nodeData = {
-                type: 'session_agent',
-                name: title,
-                tag: agentTag || '',
-                emoji: '🤖',
-                temperature: 0.5,
-                session_id: s.session_id,
-                agent_name: meta.name || title,
-            };
-            orchBindCardEvents(card, nodeData);
-            list.appendChild(card);
-        }
-    } catch(e) {
-        console.error('Load internal agents failed:', e);
-        orch.internalAgents = [];
-        list.innerHTML = '<div style="padding:6px 10px;font-size:10px;color:#dc2626;text-align:center;">❌ ' + t('error') + '</div>';
-    }
+// The sidebar entry a workflow's `agent:` reference names, if any.
+function orchFindAgent(ref) {
+    const key = String(ref || '').trim().replace(/^@/, '').toLowerCase();
+    if (!key) return null;
+    return (orch.agents || []).find(e => [e.role, e.agent.agent_id, e.agent.handle, e.agent.address, e.agent.name]
+        .some(v => String(v || '').toLowerCase() === key)) || null;
 }
 
-// Toggle "team primary agent" marker on an internal agent.
-// Backend preempts: setting one to primary clears it from siblings in the same file.
-async function orchToggleInternalPrimary(sessionId, makePrimary) {
-    try {
-        const url = (orch.teamEnabled && orch.teamName)
-            ? `/internal_agents/${encodeURIComponent(sessionId)}?team=${encodeURIComponent(orch.teamName)}`
-            : `/internal_agents/${encodeURIComponent(sessionId)}`;
-        const resp = await fetch(url, {
-            method: 'PUT',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ meta: { is_primary: !!makePrimary } }),
-        });
-        if (!resp.ok) {
-            const data = await resp.json().catch(() => ({}));
-            orchToast('设置失败: ' + (data.error || resp.statusText));
-            return;
-        }
-        orchToast(makePrimary ? '✅ 已设为团队主 agent' : '✅ 已取消主 agent');
-        await orchLoadSessionAgents();
-    } catch (e) {
-        orchToast('设置失败: ' + e.message);
-    }
-}
-
-// Delete internal agent from orchestration panel
-async function orchDeleteInternalAgent(sessionId) {
-    if (!confirm('Delete this internal agent?')) return;
-    try {
-        // Delete from internal_agents JSON
-        const url = (orch.teamEnabled && orch.teamName) 
-            ? `/internal_agents/${encodeURIComponent(sessionId)}?team=${encodeURIComponent(orch.teamName)}` 
-            : `/internal_agents/${encodeURIComponent(sessionId)}`;
-        const resp = await fetch(url, { method: 'DELETE' });
-        if (resp.ok) {
-            // Reload the list
-            await orchLoadSessionAgents();
-        } else {
-            const data = await resp.json();
-            alert('Delete failed: ' + (data.error || 'Unknown error'));
-        }
-    } catch (e) {
-        alert('Delete failed: ' + e.message);
-    }
-}
-
-/** Non–OpenClaw rows grouped by platform/tool (same idea as mobile contacts). */
-function _orchGroupPublicExternalAgents(rows) {
-    const acpByTool = {};
-    (rows || []).forEach((row) => {
-        if (!row || typeof row !== 'object') return;
-        const platformRaw = String(row.platform || row.tag || '').trim().toLowerCase();
-        if (platformRaw === 'openclaw') return;
-        const gn = String(row.global_name || '').trim();
-        if (!gn) return;
-        const key = platformRaw || 'unknown';
-        if (!acpByTool[key]) acpByTool[key] = [];
-        acpByTool[key].push(row);
-    });
-    return acpByTool;
-}
-
-function _orchMakeExtCategory(title, count) {
+function _orchMakeAgentCategory(title, count) {
     const det = document.createElement('details');
     det.className = 'orch-ext-cat';
     det.open = true;
     const sum = document.createElement('summary');
     sum.className = 'orch-ext-cat-summary';
-    const t1 = document.createElement('span');
-    t1.textContent = title;
-    const t2 = document.createElement('span');
-    t2.className = 'orch-ext-cat-count';
-    t2.textContent = String(count);
-    sum.appendChild(t1);
-    sum.appendChild(t2);
+    const label = document.createElement('span');
+    label.textContent = title;
+    const counter = document.createElement('span');
+    counter.className = 'orch-ext-cat-count';
+    counter.textContent = String(count);
+    sum.append(label, counter);
     const body = document.createElement('div');
     body.className = 'orch-ext-cat-body';
-    det.appendChild(sum);
-    det.appendChild(body);
+    det.append(sum, body);
     return { det, body };
 }
 
-function _orchAppendPublicExternalCard(parent, row, yamlName) {
-    const card = document.createElement('div');
-    card.className = 'orch-expert-card';
-    card.draggable = true;
-    // name = display name (friendly yamlName, or row.name for team-only agents)
-    const name = yamlName || row.name || 'unknown';
-    // ext_id = YAML third segment; for ACP agents (global_name like "agent:cc7:clawcrosschat"),
-    // extract the middle segment; for team agents use name directly
-    let extId = yamlName || row.name || '';
-    if (!yamlName && row.global_name) {
-        // ACP public agent: global_name = "agent:{session}:{suffix}", extract middle segment
-        const parts = row.global_name.split(':');
-        extId = parts.length >= 2 ? parts[1] : row.global_name;
-    }
-    const tag = row.tag || '';
-    const meta = row.meta || {};
-    const mdl = (meta.model && meta.model !== 'unknown') ? meta.model : '';
-    const rawUrl = meta.api_url || '';
-    const urlShort = rawUrl ? (rawUrl.length > 36 ? rawUrl.slice(0, 36) + '…' : rawUrl) : '';
-    card.innerHTML = `<span class="orch-emoji">🔌</span><div style="min-width:0;flex:1;"><div class="orch-name" title="${escapeHtml(name)}">${escapeHtml(name)}</div>${tag ? '<div class="orch-tag" style="color:#6b7280;">🏷️' + escapeHtml(tag) + '</div>' : ''}${mdl ? '<div class="orch-tag" style="color:#059669;font-family:monospace;">' + escapeHtml(mdl) + '</div>' : ''}${urlShort ? '<div class="orch-tag" style="color:#6b7280;font-size:9px;">' + escapeHtml(urlShort) + '</div>' : ''}</div>`;
-    const nodeData = {
-        type: 'external',
-        name: name,
-        tag: tag || 'custom',
-        platform: row.platform || tag || 'custom',
-        emoji: '🔌',
-        temperature: 0.7,
-        api_url: rawUrl,
-        api_key: meta.api_key ? '****' : '',
-        model: meta.model || '',
-        ext_id: extId,  // YAML third segment = parsed session name (not full ACP key)
-    };
-    if (meta.headers && typeof meta.headers === 'object' && Object.keys(meta.headers).length) {
-        nodeData.headers = meta.headers;
-    }
-    orchBindCardEvents(card, nodeData);
-    parent.appendChild(card);
-}
-
-function _orchNormalizeExternalRows(rows) {
-    return (rows || []).filter((row) => row && typeof row === 'object').map((row) => ({
-        name: row.name || row.global_name || '',
-        global_name: row.global_name || row.name || '',
-        tag: row.tag || '',
-        platform: row.platform || row.tag || '',
-        meta: row.meta || {},
-        model: row.model || (row.meta && row.meta.model) || '',
-        is_primary: !!row.is_primary,
-    })).filter((row) => row.global_name);
-}
-
-// Toggle "team primary agent" marker on an external (OpenClaw) team agent.
-async function orchToggleExternalPrimary(globalName, makePrimary) {
-    if (!orch.teamEnabled || !orch.teamName) {
-        orchToast('主 agent 标记仅在团队模式下可用');
-        return;
-    }
-    try {
-        const resp = await fetch('/teams/' + encodeURIComponent(orch.teamName) + '/members/external', {
-            method: 'PUT',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ global_name: globalName, is_primary: !!makePrimary }),
-        });
-        if (!resp.ok) {
-            const data = await resp.json().catch(() => ({}));
-            orchToast('设置失败: ' + (data.error || resp.statusText));
-            return;
-        }
-        orchToast(makePrimary ? '✅ 已设为团队主 agent' : '✅ 已取消主 agent');
-        await orchLoadOpenClawSessions();
-    } catch (e) {
-        orchToast('设置失败: ' + e.message);
-    }
-}
-
-// ── External agent pool (OpenClaw + public HTTP/ACP), layered like mobile contacts ──
-async function orchLoadOpenClawSessions() {
-    const list = document.getElementById('orch-expert-list-openclaw');
+async function orchLoadAgents() {
+    const list = document.getElementById('orch-agent-list');
     if (!list) return;
     list.innerHTML = '<div style="padding:6px 10px;font-size:10px;color:#9ca3af;text-align:center;">⏳ ' + t('loading') + '</div>';
     try {
-        let extAgentMap = {};   // global_name (lowercase) → { name, global_name }
-        let allRows = [];
-        if (orch.teamEnabled && orch.teamName) {
-            try {
-                const teamResp = await fetch('/teams/' + encodeURIComponent(orch.teamName) + '/members');
-                const teamData = await teamResp.json().catch(() => ({}));
-                const members = teamData.members || [];
-                allRows = _orchNormalizeExternalRows(
-                    members.filter((m) => (m.type || m.member_type || '') === 'ext')
-                );
-            } catch(e) { allRows = []; }
+        if (orch.teamName) {
+            const team = await agentApi('GET', `/v1/teams/${encodeURIComponent(orch.teamName)}`);
+            orch.agents = team.members || [];
         } else {
-            try {
-                const pubResp = await fetch('/public_external_agents');
-                const pubData = await pubResp.json().catch(() => ({}));
-                allRows = _orchNormalizeExternalRows(pubData.agents || []);
-            } catch(e) { allRows = []; }
+            const data = await agentApi('GET', '/v1/agents');
+            orch.agents = (data.data || []).map(agent => ({ agent, role: agent.name, is_lead: false }));
         }
-
-        for (const row of allRows) {
-            extAgentMap[row.global_name.toLowerCase()] = row;
-        }
-
-        const agents = allRows.filter((row) => String(row.platform || '').trim().toLowerCase() === 'openclaw');
-        const acpRows = allRows.filter((row) => String(row.platform || '').trim().toLowerCase() !== 'openclaw');
-        const acpByTool = _orchGroupPublicExternalAgents(acpRows);
-        let acpTotal = 0;
-        Object.values(acpByTool).forEach((arr) => {
-            if (Array.isArray(arr)) acpTotal += arr.length;
+    } catch (e) {
+        console.error('Load agents failed:', e);
+        orch.agents = [];
+        list.innerHTML = '<div style="padding:6px 10px;font-size:10px;color:#dc2626;text-align:center;">❌ ' + t('error') + '</div>';
+        return;
+    }
+    list.innerHTML = '';
+    if (!orch.agents.length) {
+        list.innerHTML = '<div style="padding:6px 10px;font-size:10px;color:#d1d5db;text-align:center;">' + escapeHtml(t('orch_agents_empty')) + '</div>';
+        return;
+    }
+    const byPlatform = {};
+    orch.agents.forEach(entry => { (byPlatform[entry.agent.platform] = byPlatform[entry.agent.platform] || []).push(entry); });
+    Object.keys(byPlatform)
+        .sort((a, b) => (a === 'webot' ? -1 : b === 'webot' ? 1 : a.localeCompare(b)))
+        .forEach(platform => {
+            const cat = _orchMakeAgentCategory(orchPlatformLabel(platform), byPlatform[platform].length);
+            byPlatform[platform].forEach(entry => cat.body.appendChild(orchAgentCard(entry)));
+            list.appendChild(cat.det);
         });
+    if (orch.teamName && orch.agents.some(e => e.agent.platform === 'openclaw')) {
+        list.appendChild(orchOpenClawSnapshotBar());
+    }
+}
 
-        if (agents.length === 0 && acpTotal === 0) {
-            list.innerHTML = '<div style="padding:6px 10px;font-size:10px;color:#d1d5db;text-align:center;">' + escapeHtml(t('orch_ext_pool_empty')) + '</div>';
+function orchAgentCard(entry) {
+    const agent = entry.agent;
+    const name = entry.role || agent.name;
+    const inTeam = !!orch.teamName;
+    const persona = agent.settings?.persona || '';
+    const openclawName = agent.platform === 'openclaw' ? (agent.settings?.global_name || '') : '';
+    const button = (cls, title, text, style = '') =>
+        `<button class="${cls}" title="${escapeHtml(title)}" style="background:none;border:none;cursor:pointer;font-size:12px;padding:1px 3px;line-height:1;opacity:0.6;${style}" onmouseenter="this.style.opacity=1" onmouseleave="this.style.opacity=0.6">${text}</button>`;
+    const buttons = [
+        inTeam ? button('orch-agent-lead-btn', entry.is_lead ? t('orch_agent_unset_lead') : t('orch_agent_set_lead'),
+            entry.is_lead ? '⭐' : '☆', entry.is_lead ? 'color:#f59e0b;opacity:1;' : 'color:#9ca3af;') : '',
+        openclawName ? button('orch-agent-cfg-btn', t('orch_oc_config'), '⚙️') : '',
+        (inTeam && openclawName) ? button('orch-agent-snap-btn', 'Export to team snapshot', '📤') : '',
+        button('orch-agent-del-btn', inTeam ? t('orch_agent_remove_from_team') : t('orch_agent_delete'), '×', 'color:#dc2626;'),
+    ].join('');
+    const card = document.createElement('div');
+    card.className = 'orch-expert-card';
+    card.draggable = true;
+    card.innerHTML = `<span class="orch-emoji">${orchAgentEmoji(agent.platform)}</span>`
+        + `<div style="min-width:0;flex:1;"><div class="orch-name" title="${escapeHtml(agent.address)}">${escapeHtml(name)}${entry.is_lead ? ' <span style="color:#f59e0b;font-size:10px;">⭐</span>' : ''}</div>`
+        + `<div class="orch-tag" style="color:#6b7280;font-family:monospace;">${persona ? '🏷️' + escapeHtml(persona) + ' · ' : ''}${escapeHtml(agent.handle)}</div></div>`
+        + `<div style="display:flex;flex-direction:column;gap:2px;flex-shrink:0;">${buttons}</div>`;
+    const on = (selector, handler) => {
+        const el = card.querySelector(selector);
+        if (!el) return;
+        el.addEventListener('click', e => { e.stopPropagation(); handler(e.currentTarget); });
+        el.addEventListener('dblclick', e => e.stopPropagation());
+    };
+    on('.orch-agent-lead-btn', () => orchToggleLead(agent.agent_id, !entry.is_lead));
+    on('.orch-agent-cfg-btn', () => orchShowAgentConfigModal(openclawName));
+    on('.orch-agent-snap-btn', btn => orchExportOpenClawSnapshot(btn, openclawName, name));
+    on('.orch-agent-del-btn', () => orchRemoveAgent(entry));
+    orchBindCardEvents(card, orchAgentNodeData(entry));
+    return card;
+}
+
+// The team's lead speaks for it; at most one per team.
+async function orchToggleLead(agentId, makeLead) {
+    try {
+        await agentApi('PATCH', `/v1/teams/${encodeURIComponent(orch.teamName)}/members/${encodeURIComponent(agentId)}`, { is_lead: makeLead });
+        orchToast(makeLead ? '✅ ' + t('orch_agent_set_lead') : '✅ ' + t('orch_agent_unset_lead'));
+        await orchLoadAgents();
+    } catch (e) {
+        orchToast('❌ ' + e.message);
+    }
+}
+
+async function orchRemoveAgent(entry) {
+    const name = entry.role || entry.agent.name;
+    try {
+        const changed = orch.teamName
+            ? await removeAgentFromTeam(orch.teamName, entry.agent, name)
+            : await deleteAgent(entry.agent, name);
+        if (changed) await orchLoadAgents();
+    } catch (e) {
+        orchToast('❌ ' + e.message);
+    }
+}
+
+async function orchExportOpenClawSnapshot(btn, openclawName, shortName) {
+    btn.textContent = '⏳';
+    try {
+        const r = await fetch('/team_openclaw_snapshot/export', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ team: orch.teamName, agent_name: openclawName, short_name: shortName }),
+        });
+        const res = await r.json();
+        orchToast(res.ok ? '📤 ' + res.message : '❌ ' + (res.error || 'Export failed'));
+    } catch (err) { orchToast('❌ Network error'); }
+    btn.textContent = '📤';
+}
+
+// Team mode: save / restore every OpenClaw member's workspace in the team folder.
+function orchOpenClawSnapshotBar() {
+    const bar = document.createElement('div');
+    bar.style.cssText = 'display:flex;gap:4px;padding:6px 8px;border-top:1px solid #e5e7eb;';
+    bar.innerHTML = `
+        <button data-act="export" style="flex:1;padding:4px 8px;border-radius:4px;border:1px solid #059669;background:#ecfdf5;color:#059669;cursor:pointer;font-size:10px;font-weight:600;" title="Export all OpenClaw members' config to the team folder">📤 Export</button>
+        <button data-act="restore" style="flex:1;padding:4px 8px;border-radius:4px;border:1px solid #7c3aed;background:#f5f3ff;color:#7c3aed;cursor:pointer;font-size:10px;font-weight:600;" title="Restore OpenClaw members from the team snapshot">📥 Restore</button>
+    `;
+    bar.querySelector('[data-act="export"]').addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const btn = e.currentTarget;
+        btn.disabled = true; btn.textContent = '⏳ Exporting...';
+        try {
+            const r = await fetch('/team_openclaw_snapshot/export_all', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ team: orch.teamName }),
+            });
+            const res = await r.json();
+            orchToast(res.ok ? '📤 ' + res.message : '❌ ' + (res.error || 'Export failed'));
+        } catch (err) { orchToast('❌ Network error'); }
+        btn.disabled = false; btn.textContent = '📤 Export';
+    });
+    bar.querySelector('[data-act="restore"]').addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const btn = e.currentTarget;
+        if (!confirm('Restore all OpenClaw agents from the team snapshot? This creates/updates OpenClaw agents with prefix "' + orch.teamName + '_".')) return;
+        btn.disabled = true; btn.textContent = '⏳ Restoring...';
+        try {
+            const r = await fetch('/team_openclaw_snapshot/restore_all', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ team: orch.teamName }),
+            });
+            const res = await r.json();
+            if (res.ok) {
+                orchToast('📥 ' + res.message);
+                if (res.errors && res.errors.length) orchToast('⚠️ Errors: ' + res.errors.join('; '));
+                setTimeout(() => orchLoadAgents(), 1000);
+            } else {
+                orchToast('❌ ' + (res.error || 'Restore failed'));
+            }
+        } catch (err) { orchToast('❌ Network error'); }
+        btn.disabled = false; btn.textContent = '📥 Restore';
+    });
+    return bar;
+}
+
+// ── New agent: any platform; OpenClaw has its own form (it provisions a workspace) ──
+async function orchShowAddAgentModal() {
+    const overlay = document.createElement('div');
+    overlay.className = 'orch-modal-overlay';
+    overlay.id = 'orch-add-agent-overlay';
+    const input = 'width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-top:2px;';
+    overlay.innerHTML = `
+        <div class="orch-modal" style="min-width:380px;max-width:460px;">
+            <h3>${t('orch_add_agent_title')}</h3>
+            <div style="display:flex;flex-direction:column;gap:8px;margin:10px 0;">
+                <label style="font-size:11px;font-weight:600;color:#374151;">${t('orch_agent_platform')}
+                    <select id="orch-aa-platform" style="${input}">
+                        <option value="webot">WeBot</option>
+                        <option value="openclaw">OpenClaw</option>
+                    </select>
+                </label>
+                <label style="font-size:11px;font-weight:600;color:#374151;">${t('orch_ia_name')}
+                    <input id="orch-aa-name" type="text" placeholder="my_agent" style="${input}">
+                </label>
+                <label style="font-size:11px;font-weight:600;color:#374151;">${t('orch_ia_tag')}
+                    <input id="orch-aa-tag" type="text" list="orch-aa-tag-list" placeholder="${t('orch_ia_tag_placeholder')}" style="${input}">
+                    <datalist id="orch-aa-tag-list">
+                        ${[...new Set(orch.experts.map(e => e.tag).filter(Boolean))].map(tag => `<option value="${escapeHtml(tag)}"></option>`).join('')}
+                    </datalist>
+                </label>
+                <label id="orch-aa-runtime-row" style="display:none;font-size:11px;font-weight:600;color:#374151;">${t('orch_agent_runtime_name')}
+                    <input id="orch-aa-runtime" type="text" placeholder="coder" style="${input}font-family:monospace;">
+                </label>
+            </div>
+            <div class="orch-modal-btns">
+                <button id="orch-aa-cancel" style="padding:6px 14px;border-radius:6px;border:1px solid #d1d5db;background:white;color:#374151;cursor:pointer;font-size:12px;">${t('orch_modal_cancel')}</button>
+                <button id="orch-aa-save" style="padding:6px 14px;border-radius:6px;border:none;background:#6366f1;color:white;cursor:pointer;font-size:12px;">${t('orch_modal_save')}</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+    const platformSel = overlay.querySelector('#orch-aa-platform');
+    const nameInp = overlay.querySelector('#orch-aa-name');
+    const runtimeInp = overlay.querySelector('#orch-aa-runtime');
+    overlay.querySelector('#orch-aa-cancel').addEventListener('click', () => overlay.remove());
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+    if (typeof fetchAddExtPlatformOptions === 'function') {
+        const tools = await fetchAddExtPlatformOptions();
+        platformSel.insertAdjacentHTML('beforeend', tools.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(orchPlatformLabel(p))}</option>`).join(''));
+    }
+    let runtimeEdited = false;
+    runtimeInp.addEventListener('input', () => { runtimeEdited = true; });
+    nameInp.addEventListener('input', () => {
+        if (!runtimeEdited) runtimeInp.value = nameInp.value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+    });
+    platformSel.addEventListener('change', () => {
+        if (platformSel.value === 'openclaw') {
+            overlay.remove();
+            orchShowAddOpenClawModal();
             return;
         }
-
-        list.innerHTML = '';
-
-        const appendOpenClawAgentCard = (parent, a) => {
-            const card = document.createElement('div');
-            card.className = 'orch-expert-card';
-            card.draggable = true;
-            const agentName = a.global_name || a.name || 'unknown';
-            const yamlName = a.name || agentName;
-            const mdl = (a.model && a.model !== 'unknown' && a.model !== 'auto') ? a.model : '';
-            const isPrimaryExt = !!a.is_primary;
-            const primaryStarExt = (orch.teamEnabled && orch.teamName)
-                ? `<button class="orch-oc-primary-btn" data-agent="${escapeHtml(agentName)}" data-is-primary="${isPrimaryExt ? '1' : '0'}" title="${isPrimaryExt ? '取消团队主 agent' : '设为团队主 agent'}" style="background:none;border:none;cursor:pointer;font-size:12px;padding:1px 3px;line-height:1;${isPrimaryExt ? 'color:#f59e0b;opacity:1;' : 'color:#d1d5db;opacity:0.6;'}" onmouseenter="this.style.opacity=1" onmouseleave="this.style.opacity=${isPrimaryExt ? 1 : 0.6}">${isPrimaryExt ? '⭐' : '☆'}</button>`
-                : '';
-            card.innerHTML = `<span class="orch-emoji">🦞</span><div style="min-width:0;flex:1;"><div class="orch-name" title="${escapeHtml(agentName)}">${escapeHtml(yamlName)}${isPrimaryExt ? ' <span style="color:#f59e0b;font-size:10px;">⭐ 主</span>' : ''}</div>${mdl ? '<div class="orch-tag" style="color:#10b981;font-family:monospace;">' + escapeHtml(mdl) + '</div>' : ''}<div class="orch-tag" style="color:#6b7280;font-size:9px;font-family:monospace;">${escapeHtml(agentName)}</div></div><div style="display:flex;flex-direction:column;gap:2px;flex-shrink:0;">${primaryStarExt}${(orch.teamEnabled && orch.teamName) ? '<button class="orch-oc-snap-btn" data-agent="' + escapeHtml(agentName) + '" data-short="' + escapeHtml(yamlName) + '" title="Export to team snapshot" style="background:none;border:none;cursor:pointer;font-size:12px;padding:1px 3px;opacity:0.5;line-height:1;" onmouseenter="this.style.opacity=1" onmouseleave="this.style.opacity=0.5">📤</button>' : ''}<button class="orch-oc-cfg-btn" data-agent="${escapeHtml(agentName)}" title="${t('orch_oc_config')}" style="background:none;border:none;cursor:pointer;font-size:12px;padding:1px 3px;opacity:0.5;line-height:1;" onmouseenter="this.style.opacity=1" onmouseleave="this.style.opacity=0.5">⚙️</button>${orchCanDeleteOpenClawAgent(agentName) ? '<button class="orch-oc-del-btn" data-agent="' + escapeHtml(agentName) + '" title="' + t('orch_oc_delete') + '" style="background:none;border:none;cursor:pointer;font-size:12px;padding:1px 3px;color:#dc2626;opacity:0.65;line-height:1;" onmouseenter="this.style.opacity=1" onmouseleave="this.style.opacity=0.65">🗑️</button>' : ''}</div>`;
-            // model format: agent:<name> (CLI uses --agent <name>, no session-id)
-            const modelStr = 'agent:' + yamlName;
-            const nodeData = {
-                type: 'external', name: yamlName, tag: 'openclaw', platform: 'openclaw', emoji: '🦞', temperature: 0.7,
-                api_url: '', api_key: '****',
-                model: modelStr,
-                ext_id: yamlName,  // use agent name as ext_id to distinguish different agents
-            };
-            orchBindCardEvents(card, nodeData);
-            // Bind primary toggle (team mode only)
-            const starBtnExt = card.querySelector('.orch-oc-primary-btn');
-            if (starBtnExt) {
-                starBtnExt.addEventListener('click', async (e) => {
-                    e.stopPropagation();
-                    await orchToggleExternalPrimary(starBtnExt.dataset.agent, starBtnExt.dataset.isPrimary !== '1');
-                });
-                starBtnExt.addEventListener('dblclick', (e) => e.stopPropagation());
-            }
-            // Bind config button
-            const cfgBtn = card.querySelector('.orch-oc-cfg-btn');
-            if (cfgBtn) {
-                cfgBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    orchShowAgentConfigModal(cfgBtn.dataset.agent);
-                });
-                cfgBtn.addEventListener('dblclick', (e) => e.stopPropagation());
-            }
-            const delBtn = card.querySelector('.orch-oc-del-btn');
-            if (delBtn) {
-                delBtn.addEventListener('click', async (e) => {
-                    e.stopPropagation();
-                    await orchDeleteOpenClawAgent(delBtn.dataset.agent, {
-                        teamName: orch.teamEnabled ? orch.teamName : '',
-                        displayName: delBtn.dataset.agent,
-                        reloadMembers: !!(orch.teamEnabled && orch.teamName),
-                    });
-                });
-                delBtn.addEventListener('dblclick', (e) => e.stopPropagation());
-            }
-            const snapBtn = card.querySelector('.orch-oc-snap-btn');
-            if (snapBtn) {
-                snapBtn.addEventListener('click', async (e) => {
-                    e.stopPropagation();
-                    const sBtn = e.currentTarget;
-                    const fullName = sBtn.dataset.agent;
-                    const shortName = sBtn.dataset.short;
-                    sBtn.textContent = '⏳';
-                    try {
-                        const r = await fetch('/team_openclaw_snapshot/export', {
-                            method: 'POST',
-                            headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify({ team: orch.teamName, agent_name: fullName, short_name: shortName }),
-                        });
-                        const res = await r.json();
-                        if (res.ok) {
-                            orchToast('📤 ' + res.message);
-                        } else {
-                            orchToast('❌ ' + (res.error || 'Export failed'));
-                        }
-                    } catch(err) { orchToast('❌ Network error'); }
-                    sBtn.textContent = '📤';
-                });
-                snapBtn.addEventListener('dblclick', (e) => e.stopPropagation());
-            }
-            parent.appendChild(card);
-        };
-
-        const ocCat = _orchMakeExtCategory(t('orch_ext_cat_openclaw'), agents.length);
-        list.appendChild(ocCat.det);
-        if (agents.length === 0) {
-            const hint = document.createElement('div');
-            hint.style.cssText = 'padding:8px 10px;font-size:10px;color:#9ca3af;text-align:center;';
-            hint.textContent = t('orch_ext_openclaw_empty');
-            ocCat.body.appendChild(hint);
-        } else {
-            for (const a of agents) appendOpenClawAgentCard(ocCat.body, a);
-        }
-
-        const sortedTools = Object.keys(acpByTool).sort((a, b) => {
-            if (a === '_') return 1;
-            if (b === '_') return -1;
-            return a.localeCompare(b);
-        });
-        for (const tool of sortedTools) {
-            const items = acpByTool[tool] || [];
-            if (!items.length) continue;
-            const label = tool === '_' ? t('group_ext_tag_none') : tool;
-            const cat = _orchMakeExtCategory(label, items.length);
-            list.appendChild(cat.det);
-            for (const row of items) {
-                // In team mode, resolve yamlName from team external_agents.json by global_name
-                let yamlName;
-                if (orch.teamEnabled && orch.teamName) {
-                    yamlName = (extAgentMap[(row.global_name || '').toLowerCase()] || {}).name || row.name;
-                } else {
-                    yamlName = row.name;
-                }
-                _orchAppendPublicExternalCard(cat.body, row, yamlName);
-            }
-        }
-
-        // Team mode: add Export All / Restore All buttons
-        if (orch.teamEnabled && orch.teamName) {
-            const btnBar = document.createElement('div');
-            btnBar.style.cssText = 'display:flex;gap:4px;padding:6px 8px;border-top:1px solid #e5e7eb;';
-            btnBar.innerHTML = `
-                <button id="orch-oc-export-all" style="flex:1;padding:4px 8px;border-radius:4px;border:1px solid #059669;background:#ecfdf5;color:#059669;cursor:pointer;font-size:10px;font-weight:600;" title="Export all team agents config to team folder">📤 Export</button>
-                <button id="orch-oc-restore-all" style="flex:1;padding:4px 8px;border-radius:4px;border:1px solid #7c3aed;background:#f5f3ff;color:#7c3aed;cursor:pointer;font-size:10px;font-weight:600;" title="Restore all agents from team snapshot">📥 Restore</button>
-            `;
-            list.appendChild(btnBar);
-
-            // Export All: save all team agents' full config to team folder
-            btnBar.querySelector('#orch-oc-export-all').addEventListener('click', async (e) => {
-                e.stopPropagation();
-                const btn = e.currentTarget;
-                btn.disabled = true; btn.textContent = '⏳ Exporting...';
-                try {
-                    const r = await fetch('/team_openclaw_snapshot/export_all', {
-                        method: 'POST', headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({ team: orch.teamName }),
-                    });
-                    const res = await r.json();
-                    if (res.ok) {
-                        orchToast('📤 ' + res.message);
-                    } else {
-                        orchToast('❌ ' + (res.error || 'Export failed'));
-                    }
-                } catch(err) { orchToast('❌ Network error'); }
-                btn.disabled = false; btn.textContent = '📤 Export';
+        overlay.querySelector('#orch-aa-runtime-row').style.display = platformSel.value === 'webot' ? 'none' : '';
+    });
+    setTimeout(() => nameInp.focus(), 100);
+    overlay.querySelector('#orch-aa-save').addEventListener('click', async () => {
+        const platform = platformSel.value;
+        const name = nameInp.value.trim();
+        const runtime = runtimeInp.value.trim();
+        if (!name) { orchToast('⚠️ ' + t('orch_agent_name_required')); return; }
+        if (platform !== 'webot' && !runtime) { orchToast('⚠️ ' + t('orch_agent_runtime_required')); return; }
+        try {
+            await orchRegisterAgent({
+                name, platform,
+                persona: overlay.querySelector('#orch-aa-tag').value.trim(),
+                global_name: platform === 'webot' ? '' : runtime,
             });
-
-            // Restore All: restore agents from team snapshot
-            btnBar.querySelector('#orch-oc-restore-all').addEventListener('click', async (e) => {
-                e.stopPropagation();
-                const btn = e.currentTarget;
-                if (!confirm('Restore all agents from team snapshot? This will create/update OpenClaw agents with prefix "' + orch.teamName + '_".')) return;
-                btn.disabled = true; btn.textContent = '⏳ Restoring...';
-                try {
-                    const r = await fetch('/team_openclaw_snapshot/restore_all', {
-                        method: 'POST', headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({ team: orch.teamName }),
-                    });
-                    const res = await r.json();
-                    if (res.ok) {
-                        orchToast('📥 ' + res.message);
-                        if (res.errors && res.errors.length > 0) {
-                            orchToast('⚠️ Errors: ' + res.errors.join('; '));
-                        }
-                        // Reload the list to show newly created agents
-                        setTimeout(() => orchLoadOpenClawSessions(), 1000);
-                    } else {
-                        orchToast('❌ ' + (res.error || 'Restore failed'));
-                    }
-                } catch(err) { orchToast('❌ Network error'); }
-                btn.disabled = false; btn.textContent = '📥 Restore';
-            });
+            orchToast('✅ ' + t('orch_ia_created') + ': ' + name);
+            overlay.remove();
+            await orchLoadAgents();
+        } catch (e) {
+            orchToast('❌ ' + e.message);
         }
-    } catch(e) {
-        list.innerHTML = '<div style="padding:6px 10px;font-size:10px;color:#dc2626;text-align:center;">❌ ' + t('error') + '</div>';
+    });
+}
+
+// Register an agent (or find the one already registered for that runtime) and,
+// in team mode, add it to the team under its name.
+async function orchRegisterAgent(fields) {
+    const agent = await ensureAgent({ ...fields, team: orch.teamName || '' });
+    if (orch.teamName) {
+        await agentApi('POST', `/v1/teams/${encodeURIComponent(orch.teamName)}/members`, { agent: agent.agent_id, role: fields.name });
     }
+    return agent;
 }
 
 // ── Add custom expert modal ──
@@ -1343,13 +1085,9 @@ async function orchShowAgentConfigModal(agentName, initialTab) {
     overlay.addEventListener('click', (e) => { if (e.target === overlay) closeConfigModal(); });
     if (canDelete) {
         overlay.querySelector('#orch-ucfg-delete').addEventListener('click', async () => {
-            const teamName = (orch.teamEnabled && orch.teamName)
-                ? orch.teamName
-                : ((typeof currentGroupId !== 'undefined' && currentGroupId) ? currentGroupId : '');
             const deleted = await orchDeleteOpenClawAgent(agentName, {
-                teamName,
                 displayName: agentName,
-                reloadMembers: !!teamName,
+                reloadMembers: typeof currentGroupId !== 'undefined' && !!currentGroupId,
             });
             if (deleted) closeConfigModal();
         });
@@ -1865,7 +1603,6 @@ async function loadConfigTab(agentName, contentEl, overlay) {
                 const res = await r.json();
                 if (r.ok && res.ok) {
                     orchToast('✅ ' + t('orch_oc_cfg_saved', {name: agentName}));
-                    orchLoadOpenClawSessions();
                 } else { orchToast('❌ ' + (res.error || res.errors?.join(', ') || 'Error')); }
             } catch(e) { orchToast('❌ ' + t('orch_toast_net_error')); }
             saveBtn.disabled = false; saveBtn.textContent = '💾 ' + t('orch_oc_save');
@@ -2130,24 +1867,12 @@ function orchShowAddOpenClawModal() {
                         orchToast('📥 ' + t('orch_oc_import_done', { name: globalName }));
                     } catch(e) { /* ignore write error, user can edit later */ }
                 }
-                // Save to external_agents.json so the engine can resolve
-                // name (short display name) ↔ global_name (real OpenClaw agent name)
-                if (orch.teamEnabled && orch.teamName) {
-                    try {
-                        await fetch('/teams/' + encodeURIComponent(orch.teamName) + '/members/external', {
-                            method: 'POST',
-                            headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify({
-                                name: shortName,
-                                tag: 'openclaw',
-                                global_name: globalName
-                            })
-                        });
-                    } catch(e) { console.warn('Failed to save to external_agents.json:', e); }
-                }
+                try {
+                    await orchRegisterAgent({ name: shortName, platform: 'openclaw', global_name: globalName });
+                } catch (e) { orchToast('❌ ' + e.message); }
                 orchToast('🦞 ' + t('orch_openclaw_created', {name: globalName}));
                 overlay.remove();
-                orchLoadOpenClawSessions();
+                orchLoadAgents();
                 // Auto-open config modal for the newly created agent
                 setTimeout(() => orchShowAgentConfigModal(globalName), 500);
             } else {
@@ -2195,12 +1920,11 @@ function orchGetSettings() {
 
 // ── Node Management ──
 function orchNextInstance(data) {
-    // Compute next instance number for this agent identity
-    const key = data.type === 'session_agent' ? ('sa:' + (data.session_id||'')) : data.type === 'external' ? ('ext:' + (data.ext_id || data.tag||'custom')) : ('ex:' + (data.tag||'custom'));
+    // A persona can take part several times; each copy is its own temporary agent.
+    if (data.type !== 'persona') return 1;
     let maxInst = 0;
     orch.nodes.forEach(n => {
-        const nk = n.type === 'session_agent' ? ('sa:' + (n.session_id||'')) : n.type === 'external' ? ('ext:' + (n.ext_id || n.tag||'custom')) : ('ex:' + (n.tag||'custom'));
-        if (nk === key && n.instance > maxInst) maxInst = n.instance;
+        if (n.type === 'persona' && n.tag === data.tag && n.instance > maxInst) maxInst = n.instance;
     });
     return maxInst + 1;
 }
@@ -2208,25 +1932,21 @@ function orchNextInstance(data) {
 function orchAddNode(data, x, y) {
     const id = 'on' + orch.nid++;
     const inst = data.instance || orchNextInstance(data);
-    // session_agent is always stateful
-    const nodeStateful = data.type === 'session_agent' ? true : (data.stateful || false);
-    const node = { id, name: data.name, tag: data.tag||'custom', emoji: data.emoji||'⭐', x: Math.round(x), y: Math.round(y), type: data.type||'expert', temperature: data.temperature||0.5, author: data.author||t('orch_default_author'), content: data.content||'', session_id: data.session_id||'', source: data.source||'', instance: inst, stateful: nodeStateful };
+    const node = { id, name: data.name, tag: data.tag||'custom', emoji: data.emoji||'⭐', x: Math.round(x), y: Math.round(y), type: data.type||'persona', temperature: data.temperature||0.5, author: data.author||t('orch_default_author'), content: data.content||'', source: data.source||'', instance: inst };
     // Preserve bilingual name fields
     if (data.name_zh) node.name_zh = data.name_zh;
     if (data.name_en) node.name_en = data.name_en;
     // Preserve selector node flag
     if (data.isSelector) node.isSelector = true;
-    // Preserve session agent name for YAML generation
-    if (data.type === 'session_agent' && data.agent_name) node.agent_name = data.agent_name;
-    // Preserve external agent extra fields
-    if (data.type === 'external') {
-        node.api_url = data.api_url || '';
-        node.ext_id = data.ext_id || '1';
-        node.platform = data.platform || '';
-        if (data.headers && typeof data.headers === 'object') node.headers = data.headers;
-        if (data.api_key) node.api_key = data.api_key;
-        if (data.model) node.model = data.model;
+    if (node.type === 'agent') {
+        node.agent = data.agent || data.name;
+        const entry = data.agent_id ? null : orchFindAgent(node.agent);
+        node.agent_id = data.agent_id || entry?.agent.agent_id || '';
+        node.platform = data.platform || entry?.agent.platform || '';
+        node.emoji = orchAgentEmoji(node.platform);
+        node.tag = data.tag || entry?.agent.settings?.persona || '';
     }
+    if (node.type === 'persona') node.tools = data.tools || 'none';
     if (data.type === 'script') {
         node.script_command = data.script_command || '';
         node.script_unix_command = data.script_unix_command || '';
@@ -2260,50 +1980,32 @@ function orchAddNodeCenter(data) {
 function orchRenderNode(node) {
     const area = document.getElementById('orch-canvas-inner');
     const el = document.createElement('div');
-    const isSession = node.type === 'session_agent';
-    const isExternal = node.type === 'external';
+    const isAgent = node.type === 'agent';
     const isScript = node.type === 'script';
     const isHuman = node.type === 'human';
     el.className = 'orch-node'
         + (node.type === 'manual' ? ' manual-type' : '')
-        + (isSession ? ' session-type' : '')
-        + (isExternal ? ' external-type' : '')
+        + (isAgent ? ' session-type' : '')
         + (isScript ? ' script-type' : '')
         + (isHuman ? ' human-type' : '')
         + (node.isSelector ? ' selector-type' : '');
     el.id = 'onode-' + node.id;
     el.style.left = node.x + 'px';
     el.style.top = node.y + 'px';
-    if (isSession) el.style.borderColor = '#6366f1';
-    if (isExternal) el.style.borderColor = '#2ecc71';
+    if (isAgent) el.style.borderColor = '#6366f1';
     if (isScript) el.style.borderColor = '#3b82f6';
     if (isHuman) el.style.borderColor = '#8b5cf6';
 
-    const status = orch.sessionStatuses[node.tag] || orch.sessionStatuses[node.name] || 'idle';
+    const status = (isAgent && orch.agentStates[node.agent_id]) || 'idle';
     // Bilingual display name for canvas node
     const _nodeIsZh = (typeof currentLang !== 'undefined' && currentLang === 'zh-CN');
     const nodeDisplayName = _nodeIsZh ? (node.name_zh || node.name) : (node.name_en || node.name);
     const instBadge = `<span style="display:inline-block;background:#2563eb;color:#fff;font-size:9px;font-weight:700;border-radius:50%;min-width:16px;height:16px;line-height:16px;text-align:center;margin-left:3px;flex-shrink:0;">${node.instance||1}</span>`;
     let tagTextPlain = '';
     let tagLineStyle = '';
-    if (isSession) {
-        const tagLabel = node.tag ? `🏷️${node.tag} · ` : '';
-        tagTextPlain = `${tagLabel}#${(node.session_id||'').slice(-8)}`;
+    if (isAgent) {
+        tagTextPlain = `${node.platform ? orchPlatformLabel(node.platform) + ' · ' : ''}@${node.agent || ''}`;
         tagLineStyle = 'color:#6366f1;font-family:monospace;';
-    } else if (isExternal) {
-        let extDesc = '';
-        if (node.api_url) {
-            extDesc = `🌐 ${node.api_url}`;
-            if (node.model) extDesc += '\n📦 ' + node.model;
-        } else {
-            extDesc = '⚠️ Double-click to set URL';
-        }
-        if (node.headers && typeof node.headers === 'object') {
-            const hdrParts = Object.entries(node.headers).map(([k,v]) => `${k}: ${v}`);
-            if (hdrParts.length) extDesc += '\n' + hdrParts.join('\n');
-        }
-        tagTextPlain = extDesc.replace(/\n+/g, ' · ');
-        tagLineStyle = 'color:#2ecc71;word-break:break-all;font-size:9px;';
     } else if (isScript) {
         const timeoutLabel = node.script_timeout ? ` · ⏱ ${node.script_timeout}s` : '';
         const cwdLabel = node.script_cwd ? ` · 📁 ${node.script_cwd}` : '';
@@ -2317,7 +2019,9 @@ function orchRenderNode(node) {
         tagTextPlain = `${authorLabel}${replyLabel}`;
         tagLineStyle = 'color:#8b5cf6;';
     } else {
-        tagTextPlain = String(node.tag || '');
+        const tools = node.tools;
+        const toolsLabel = tools === 'all' ? ' · 🔧 all' : (Array.isArray(tools) && tools.length ? ` · 🔧 ${tools.length}` : '');
+        tagTextPlain = String(node.tag || '') + (node.type === 'persona' ? toolsLabel : '');
         tagLineStyle = '';
     }
     const previewText = orchNodePreviewText(node);
@@ -2327,23 +2031,22 @@ function orchRenderNode(node) {
         ? textLayout.fitSingleLine(nodeDisplayName, 148, { font: '600 12px Arial', lineHeight: 14, suffix: '…' })
         : { text: nodeDisplayName, width: Math.min(148, nodeDisplayName.length * 8) };
     const displayTag = textLayout && typeof textLayout.fitSingleLine === 'function'
-        ? textLayout.fitSingleLine(tagTextPlain, isExternal ? 164 : 148, { font: '10px Arial', lineHeight: 12, suffix: '…' })
-        : { text: tagTextPlain, width: Math.min(isExternal ? 164 : 148, String(tagTextPlain || '').length * 6.5) };
+        ? textLayout.fitSingleLine(tagTextPlain, 148, { font: '10px Arial', lineHeight: 12, suffix: '…' })
+        : { text: tagTextPlain, width: Math.min(148, String(tagTextPlain || '').length * 6.5) };
     const displayInstr = (node.type !== 'manual' && previewText && textLayout && typeof textLayout.fitSingleLine === 'function')
         ? textLayout.fitSingleLine(previewIcon + ' ' + previewText, 148, { font: '9px Arial', lineHeight: 12, suffix: '…' })
         : { text: previewIcon + ' ' + (previewText.length > 20 ? previewText.slice(0, 20) + '…' : previewText), width: Math.min(148, previewText.length * 5.8) };
-    const infoWidth = Math.max(110, Math.min(isExternal ? 180 : 160, Math.ceil(Math.max(displayName.width || 0, displayTag.width || 0, displayInstr.width || 0)) + 12));
-    const nodeWidth = Math.max(126, Math.min(isExternal ? 252 : 224, infoWidth + 54));
+    const infoWidth = Math.max(110, Math.min(160, Math.ceil(Math.max(displayName.width || 0, displayTag.width || 0, displayInstr.width || 0)) + 12));
+    const nodeWidth = Math.max(126, Math.min(224, infoWidth + 54));
     const nodeHeight = previewText && node.type !== 'manual' ? 64 : 54;
     el.style.width = nodeWidth + 'px';
     el.style.minHeight = nodeHeight + 'px';
     const tagLineHtml = `<div class="orch-node-tag" title="${escapeHtml(tagTextPlain)}" style="${tagLineStyle}max-width:${infoWidth}px;">${escapeHtml(displayTag.text || tagTextPlain)}</div>`;
     const instrPreview = (node.type !== 'manual' && previewText) ? `<div class="orch-node-instr" title="${escapeHtml(previewText)}" style="font-size:9px;color:#6b7280;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:${infoWidth}px;margin-top:1px;">${escapeHtml(displayInstr.text || '')}</div>` : '';
-    const statefulBadge = (node.stateful && !isExternal && !isScript && !isHuman) ? '<span style="display:inline-block;background:#8b5cf6;color:#fff;font-size:8px;font-weight:600;border-radius:3px;padding:0 3px;margin-left:3px;vertical-align:middle;" title="Stateful">⚡S</span>' : '';
     const selectorBadgeHtml = node.isSelector ? '<div class="orch-selector-badge">🎯 SELECTOR</div>' : '';
     el.innerHTML = `
         <span class="orch-node-emoji">${node.emoji}</span>
-        <div style="min-width:0;flex:1;max-width:${infoWidth}px;"><div class="orch-node-name" style="display:flex;align-items:center;max-width:${infoWidth}px;" title="${escapeHtml(nodeDisplayName)}">${escapeHtml(displayName.text || nodeDisplayName)}${instBadge}${statefulBadge}</div>${tagLineHtml}${instrPreview}</div>
+        <div style="min-width:0;flex:1;max-width:${infoWidth}px;"><div class="orch-node-name" style="display:flex;align-items:center;max-width:${infoWidth}px;" title="${escapeHtml(nodeDisplayName)}">${escapeHtml(displayName.text || nodeDisplayName)}${node.type === 'persona' ? instBadge : ''}</div>${tagLineHtml}${instrPreview}</div>
         <div class="orch-node-del" title="${t('orch_node_remove')}">×</div>
         <div class="orch-port port-in" data-node="${node.id}" data-dir="in"></div>
         <div class="orch-port port-out" data-node="${node.id}" data-dir="out"></div>
@@ -2397,7 +2100,6 @@ function orchRenderNode(node) {
     });
     el.addEventListener('dblclick', () => {
         if (node.type === 'manual') orchShowManualModal(node);
-        else if (node.type === 'external') orchShowExternalModal(node);
         else if (node.type === 'script') orchShowScriptModal(node);
         else if (node.type === 'human') orchShowHumanModal(node);
         else orchShowInstructionModal(node);
@@ -2824,34 +2526,25 @@ function orchSetupCanvas() {
                     const cp = orchClientToCanvas(e.clientX, e.clientY);
                     const cleanData = {...data};
                     delete cleanData._condDrop;
-                    // Create as expert type with selector flag
-                    cleanData.type = 'expert';
+                    // Create as a persona node with the selector flag
+                    cleanData.type = 'persona';
                     cleanData.tag = 'selector';
                     const node = orchAddNode(cleanData, cp.x - 55, cp.y - 20);
                     orchSetNodeSelector(node);
                 }
                 return;
             }
-            // Expert dropped on an internal agent node → set its tag
-            if (data.type === 'expert' || (!data.type && data.tag)) {
+            // A persona dropped on an agent node becomes that agent's persona
+            if (data.type === 'persona' && data.tag && !['manual', 'conditional', 'script', 'human'].includes(data.tag)) {
                 const hitNode = orchFindNodeAtPoint(e.clientX, e.clientY);
-                if (hitNode && hitNode.type === 'session_agent' && data.tag && !['manual', 'conditional', 'script', 'human'].includes(data.tag)) {
-                    const oldTag = hitNode.tag;
+                if (hitNode && hitNode.type === 'agent' && hitNode.agent_id) {
+                    agentApi('PATCH', `/v1/agents/${encodeURIComponent(hitNode.agent_id)}`, { settings: { persona: data.tag } })
+                        .then(() => orchLoadAgents())
+                        .catch(err => orchToast('❌ ' + err.message));
                     hitNode.tag = data.tag;
-                    // Also update the backend internal agent JSON
-                    if (hitNode.session_id) {
-                        fetch('/internal_agents/' + encodeURIComponent(hitNode.session_id), {
-                            method: 'PUT', headers: {'Content-Type':'application/json'},
-                            body: JSON.stringify({ meta: { tag: data.tag } })
-                        }).catch(() => {});
-                    }
-                    // Re-render node to reflect new tag
-                    const el = document.getElementById('onode-' + hitNode.id);
-                    if (el) el.remove();
-                    orchRenderNode(hitNode);
-                    orchRenderEdges();
+                    orchRerenderNode(hitNode.id);
                     orchUpdateYaml();
-                    orchToast('🏷️ ' + t('orch_ia_tag_set') + ' ' + data.tag + ' → ' + ((typeof currentLang !== 'undefined' && currentLang === 'zh-CN') ? (hitNode.name_zh || hitNode.name) : (hitNode.name_en || hitNode.name)));
+                    orchToast('🏷️ ' + t('orch_ia_tag_set') + ' ' + data.tag + ' → ' + hitNode.name);
                     return;
                 }
             }
@@ -3161,9 +2854,11 @@ function orchShowContextMenu(x, y, targetNode) {
         items.push({label: t('orch_ctx_duplicate'), action: () => {
             orchAddNode({...targetNode, instance: targetNode.instance}, targetNode.x + 40, targetNode.y + 40);
         }});
-        items.push({label: t('orch_ctx_new_instance'), action: () => {
-            orchAddNode({...targetNode, instance: undefined}, targetNode.x + 40, targetNode.y + 40);
-        }});
+        if (targetNode.type === 'persona') {
+            items.push({label: t('orch_ctx_new_instance'), action: () => {
+                orchAddNode({...targetNode, instance: undefined}, targetNode.x + 40, targetNode.y + 40);
+            }});
+        }
         // Selector node toggle
         if (orchCanBeSelector(targetNode)) {
             if (targetNode.isSelector) {
@@ -3327,20 +3022,26 @@ function orchSaveHuman(nodeId) {
     orchUpdateYaml();
 }
 
-// ── Instruction Edit Modal (for expert/session nodes) ──
+// ── Instruction Edit Modal (agent / persona nodes) ──
 function orchShowInstructionModal(node) {
-    const isExternalType = node.type === 'external';
-    const isTempType = node.type === 'expert';
-    // session_agent is always stateful, temp/external never need it — hide switch for all
-    const showStateful = false;
+    const isPersona = node.type === 'persona';
+    const tools = node.tools || 'none';
+    const toolsMode = Array.isArray(tools) ? 'list' : tools;
     const overlay = document.createElement('div');
     overlay.className = 'orch-modal-overlay';
     overlay.id = 'orch-instruction-modal';
     overlay.innerHTML = `<div class="orch-modal">
         <h3>📋 ${escapeHtml(node.name)} — Instruction</h3>
-        <p style="font-size:11px;color:#6b7280;margin-bottom:8px;">Set a specific instruction for this expert in this step. The expert will focus on this instruction when participating.</p>
+        <p style="font-size:11px;color:#6b7280;margin-bottom:8px;">Set a specific instruction for this participant in this step. It will focus on this instruction when taking part.</p>
         <textarea id="orch-instr-content" placeholder="e.g. Please focus on analyzing technical risks..." style="min-height:80px;">${escapeHtml(node.content||'')}</textarea>
-        ${showStateful ? `<label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:11px;color:#374151;cursor:pointer;"><input type="checkbox" id="orch-instr-stateful" ${node.stateful ? 'checked' : ''} style="accent-color:#8b5cf6;"> <span>⚡ ${t('orch_node_stateful')}</span></label><p style="font-size:10px;color:#9ca3af;margin:2px 0 0 22px;">${t('orch_node_stateful_hint')}</p>` : ''}
+        ${isPersona ? `<label style="display:block;margin-top:8px;font-size:11px;color:#374151;">🔧 ${t('orch_node_tools')}
+            <select id="orch-instr-tools" style="margin-left:6px;font-size:11px;">
+                <option value="none"${toolsMode === 'none' ? ' selected' : ''}>${t('orch_node_tools_none')}</option>
+                <option value="all"${toolsMode === 'all' ? ' selected' : ''}>${t('orch_node_tools_all')}</option>
+                <option value="list"${toolsMode === 'list' ? ' selected' : ''}>${t('orch_node_tools_list')}</option>
+            </select></label>
+            <input id="orch-instr-tool-list" type="text" placeholder="read_file, run_command" value="${escapeHtml(Array.isArray(tools) ? tools.join(', ') : '')}" style="margin-top:4px;font-family:monospace;font-size:11px;${toolsMode === 'list' ? '' : 'display:none;'}">
+            <p style="font-size:10px;color:#9ca3af;margin:2px 0 0;">${t('orch_node_tools_hint')}</p>` : ''}
         <div class="orch-modal-btns">
             <button onclick="document.getElementById('orch-instruction-modal').remove()">${t('orch_modal_cancel')}</button>
             <button class="primary" onclick="orchSaveInstruction('${node.id}')">${t('orch_modal_save')}</button>
@@ -3348,67 +3049,26 @@ function orchShowInstructionModal(node) {
     </div>`;
     document.body.appendChild(overlay);
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    const toolsSel = overlay.querySelector('#orch-instr-tools');
+    if (toolsSel) {
+        toolsSel.addEventListener('change', () => {
+            overlay.querySelector('#orch-instr-tool-list').style.display = toolsSel.value === 'list' ? '' : 'none';
+        });
+    }
     setTimeout(() => { const ta = document.getElementById('orch-instr-content'); if (ta) ta.focus(); }, 100);
 }
 function orchSaveInstruction(nodeId) {
     const node = orch.nodes.find(n=>n.id===nodeId);
     if (node) {
         node.content = document.getElementById('orch-instr-content').value;
-        const sfCb = document.getElementById('orch-instr-stateful');
-        if (sfCb) node.stateful = sfCb.checked;
-        // Re-render node to update instruction preview
-        const el = document.getElementById('onode-' + nodeId);
-        if (el) el.remove();
-        orchRenderNode(node);
-        orchRenderEdges();
+        const toolsSel = document.getElementById('orch-instr-tools');
+        if (toolsSel) {
+            const names = document.getElementById('orch-instr-tool-list').value.split(',').map(v => v.trim()).filter(Boolean);
+            node.tools = toolsSel.value === 'list' ? (names.length ? names : 'none') : toolsSel.value;
+        }
+        orchRerenderNode(nodeId);
     }
     document.getElementById('orch-instruction-modal')?.remove();
-    orchUpdateYaml();
-}
-
-// ── External Agent Edit Modal ──
-function orchShowExternalModal(node) {
-    const overlay = document.createElement('div');
-    overlay.className = 'orch-modal-overlay';
-    overlay.id = 'orch-external-modal';
-    const hdrs = (node.headers && typeof node.headers === 'object') ? JSON.stringify(node.headers, null, 2) : '';
-    overlay.innerHTML = `<div class="orch-modal" style="max-width:480px;">
-        <h3>🌐 ${escapeHtml((typeof currentLang !== 'undefined' && currentLang === 'zh-CN') ? (node.name_zh || node.name) : (node.name_en || node.name))} — External Agent</h3>
-        <label style="font-size:11px;color:#9ca3af;margin-bottom:2px;display:block;">API URL *</label>
-        <input type="text" id="orch-ext-url" value="${escapeHtml(node.api_url||'')}" placeholder="https://api.example.com/v1" style="font-family:monospace;font-size:12px;">
-        <label style="font-size:11px;color:#9ca3af;margin-bottom:2px;margin-top:8px;display:block;">API Key</label>
-        <input type="text" id="orch-ext-key" value="${escapeHtml(node.api_key||'')}" placeholder="sk-xxx (optional)" style="font-family:monospace;font-size:12px;">
-        <label style="font-size:11px;color:#9ca3af;margin-bottom:2px;margin-top:8px;display:block;">Model</label>
-        <input type="text" id="orch-ext-model" value="${escapeHtml(node.model||'')}" placeholder="gpt-4 / deepseek-chat (optional)" style="font-family:monospace;font-size:12px;">
-        <label style="font-size:11px;color:#9ca3af;margin-bottom:2px;margin-top:8px;display:block;">Headers (JSON)</label>
-        <textarea id="orch-ext-headers" placeholder='{"X-Custom": "value"}' style="font-family:monospace;font-size:11px;min-height:60px;">${escapeHtml(hdrs)}</textarea>
-        <div class="orch-modal-btns">
-            <button onclick="document.getElementById('orch-external-modal').remove()">${t('orch_modal_cancel')}</button>
-            <button class="primary" onclick="orchSaveExternal('${node.id}')">${t('orch_modal_save')}</button>
-        </div>
-    </div>`;
-    document.body.appendChild(overlay);
-    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
-}
-function orchSaveExternal(nodeId) {
-    const node = orch.nodes.find(n=>n.id===nodeId);
-    if (node) {
-        node.api_url = document.getElementById('orch-ext-url').value.trim();
-        node.api_key = document.getElementById('orch-ext-key').value.trim();
-        node.model = document.getElementById('orch-ext-model').value.trim();
-        const hdrsStr = document.getElementById('orch-ext-headers').value.trim();
-        if (hdrsStr) {
-            try { node.headers = JSON.parse(hdrsStr); } catch(e) { alert('Headers JSON parse error: ' + e.message); return; }
-        } else {
-            node.headers = {};
-        }
-        // Re-render node to update display
-        const el = document.getElementById('onode-' + nodeId);
-        if (el) el.remove();
-        orchRenderNode(node);
-        orchRenderEdges();
-    }
-    document.getElementById('orch-external-modal')?.remove();
     orchUpdateYaml();
 }
 
@@ -3466,8 +3126,7 @@ async function orchUpdateYaml() {
     }
 }
 
-// ── AI Generate YAML (with session selection) ──
-let orchTargetSessionId = null;
+// ── AI Generate YAML ──
 let orchPythonPreviousDraft = null;
 
 async function orchGenerateAgentYaml() {
@@ -3504,73 +3163,33 @@ function orchDefaultWorkflowName(mode = orchWorkflowMode()) {
     return mode === 'python' ? 'workflowpy-script' : 'my-layout';
 }
 
-async function orchFetchSessionStatusesSilently() {
-    try {
-        const r = await fetch('/proxy_visual/sessions-status');
-        const sessions = await r.json();
-        const map = {};
-        if (Array.isArray(sessions)) {
-            sessions.forEach(s => {
-                const sid = s.session_id || s.id || '';
-                if (!sid) return;
-                const isRunning = s.is_running || s.status === 'running' || false;
-                map[sid] = isRunning ? 'running' : 'idle';
-            });
-        }
-        orch.sessionStatuses = map;
-        return map;
-    } catch (e) {
-        return orch.sessionStatuses || {};
-    }
-}
-
 function orchBuildPromptContext(mode = orchWorkflowMode()) {
     const expertBySource = {};
     const expertByCategory = {};
-    const experts = (orch.experts || []).map(exp => {
+    const personas = (orch.experts || []).map(exp => {
         const source = exp.source || 'public';
         expertBySource[source] = (expertBySource[source] || 0) + 1;
         const category = exp.category || '';
         if (category) expertByCategory[category] = (expertByCategory[category] || 0) + 1;
-        return {
-            name: exp.name || '',
-            tag: exp.tag || '',
-            source,
-            category,
-            stateful: !!exp.stateful,
-            type: exp.type || 'expert',
-        };
+        return { name: exp.name || '', tag: exp.tag || '', source, category };
     });
-
-    const internalAgents = (orch.internalAgents || []).map(agent => ({
-        session_id: agent.session_id || '',
-        name: agent.name || '',
-        tag: agent.tag || '',
-        message_count: Number(agent.message_count || 0),
-        status: orch.sessionStatuses[agent.session_id] || 'unknown',
+    const agents = (orch.agents || []).map(entry => {
+        const data = orchAgentNodeData(entry);
+        return { ref: data.agent, name: data.name, platform: data.platform, persona: data.tag, is_lead: !!entry.is_lead };
+    });
+    const canvasAgents = (orch.nodes || []).filter(n => n.type === 'agent').map(n => ({
+        node_id: n.id, ref: n.agent || '', platform: n.platform || '',
     }));
-
-    const canvasAgents = (orch.nodes || []).filter(n =>
-        ['session_agent', 'external'].includes(n.type)
-    ).map(n => ({
-        node_id: n.id,
-        type: n.type,
-        name: n.name || '',
-        tag: n.tag || '',
-        session_id: n.session_id || '',
-        status: n.session_id ? (orch.sessionStatuses[n.session_id] || 'unknown') : 'n/a',
-    }));
-
     return {
         mode,
         scope: orch.teamName ? { kind: 'team', team: orch.teamName } : { kind: 'public', team: '' },
-        expert_pool_summary: {
-            total: experts.length,
+        persona_pool_summary: {
+            total: personas.length,
             by_source: expertBySource,
             by_category: expertByCategory,
-            experts: experts.slice(0, 80),
+            personas: personas.slice(0, 80),
         },
-        internal_agent_sessions: internalAgents.slice(0, 80),
+        agents: agents.slice(0, 80),
         canvas_agent_nodes: canvasAgents.slice(0, 80),
     };
 }
@@ -3594,85 +3213,10 @@ function orchRestorePythonDraft() {
     orchToast((typeof currentLang !== 'undefined' && currentLang === 'zh-CN') ? '已回退到上一版 Python 草稿' : 'Reverted to previous Python draft');
 }
 
-async function orchShowSessionSelectModal() {
-    const overlay = document.createElement('div');
-    overlay.className = 'orch-modal-overlay';
-    overlay.id = 'orch-session-select-overlay';
-
-    overlay.innerHTML = `
-        <div class="orch-modal" style="min-width:400px;max-width:500px;">
-            <h3>${t('orch_modal_select_session')}</h3>
-            <p style="font-size:12px;color:#6b7280;margin-bottom:10px;">${t('orch_modal_select_desc')}</p>
-            <div class="orch-session-list" id="orch-session-select-list">
-                <div style="text-align:center;padding:20px;color:#9ca3af;font-size:12px;">${t('orch_modal_loading')}</div>
-            </div>
-            <div class="orch-modal-btns">
-                <button id="orch-session-cancel-btn" style="padding:6px 14px;border-radius:6px;border:1px solid #d1d5db;background:white;color:#374151;cursor:pointer;font-size:12px;">${t('orch_modal_cancel')}</button>
-                <button id="orch-session-confirm-btn" disabled style="padding:6px 14px;border-radius:6px;border:none;background:#2563eb;color:white;cursor:pointer;font-size:12px;opacity:0.5;">${t('orch_modal_confirm_gen')}</button>
-            </div>
-        </div>
-    `;
-    document.body.appendChild(overlay);
-
-    let selectedSid = null;
-
-    overlay.querySelector('#orch-session-cancel-btn').addEventListener('click', () => overlay.remove());
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
-
-    const listEl = overlay.querySelector('#orch-session-select-list');
-    try {
-        // Load sessions and agent meta in parallel
-        const [resp, agentMap] = await Promise.all([fetch('/proxy_sessions'), _orchLoadAgentMetaMap()]);
-        const data = await resp.json();
-        listEl.innerHTML = '';
-
-        const newSessionId = Date.now().toString(36) + Math.random().toString(36).substr(2, 4);
-        const newItem = document.createElement('div');
-        newItem.className = 'orch-session-new';
-        newItem.innerHTML = `<span style="font-size:18px;">🆕</span><div style="flex:1;"><div style="font-size:13px;font-weight:500;color:#2563eb;">${t('orch_modal_new_session')}</div><div style="font-size:10px;color:#9ca3af;font-family:monospace;">#${newSessionId.slice(-6)}</div></div>`;
-        newItem.addEventListener('click', () => {
-            listEl.querySelectorAll('.orch-session-item,.orch-session-new').forEach(el => el.classList.remove('selected'));
-            newItem.classList.add('selected');
-            selectedSid = newSessionId;
-            const btn = overlay.querySelector('#orch-session-confirm-btn');
-            btn.disabled = false; btn.style.opacity = '1';
-        });
-        listEl.appendChild(newItem);
-
-        if (data.sessions && data.sessions.length > 0) {
-            data.sessions.sort((a, b) => b.session_id.localeCompare(a.session_id));
-            for (const s of data.sessions) {
-                const item = document.createElement('div');
-                item.className = 'orch-session-item';
-                const resolvedTitle = _orchResolveTitle(s.title || 'Untitled', s.session_id, agentMap);
-                item.innerHTML = `<span class="orch-session-icon">💬</span><div style="flex:1;min-width:0;"><div class="orch-session-title">${escapeHtml(resolvedTitle)}</div><div class="orch-session-id">#${s.session_id.slice(-6)} · ${t('orch_msg_count', {count: s.message_count||0})}</div></div>`;
-                item.addEventListener('click', () => {
-                    listEl.querySelectorAll('.orch-session-item,.orch-session-new').forEach(el => el.classList.remove('selected'));
-                    item.classList.add('selected');
-                    selectedSid = s.session_id;
-                    const btn = overlay.querySelector('#orch-session-confirm-btn');
-                    btn.disabled = false; btn.style.opacity = '1';
-                });
-                listEl.appendChild(item);
-            }
-        }
-    } catch(e) {
-        listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#dc2626;font-size:12px;">' + t('orch_load_session_fail') + '</div>';
-    }
-
-    overlay.querySelector('#orch-session-confirm-btn').addEventListener('click', () => {
-        if (!selectedSid) return;
-        orchTargetSessionId = selectedSid;
-        overlay.remove();
-        orchDoGenerateAgentYaml();
-    });
-}
-
 async function orchDoGenerateAgentYaml() {
     const data = orchGetLayoutData();
     const mode = orchWorkflowMode();
     const guidance = (document.getElementById('orch-guidance-input')?.value || '').trim();
-    await orchFetchSessionStatusesSilently();
     // Attach team for team-scoped workflow saving
     data.team = orch.teamName || '';
     data.mode = mode;
@@ -3761,68 +3305,18 @@ async function orchDoGenerateAgentYaml() {
     }
 }
 
-function orchShowGotoChatButton() {
-    const old = document.getElementById('orch-goto-chat-container');
-    if (old) old.remove();
-
-    if (!orchTargetSessionId) return;
-
-    const container = document.createElement('div');
-    container.id = 'orch-goto-chat-container';
-    container.style.cssText = 'padding: 8px 12px; text-align: center;';
-
-    const sessionLabel = '#' + orchTargetSessionId.slice(-6);
-    container.innerHTML = `
-        <button class="orch-goto-chat-btn" onclick="orchGotoChat()">
-            ${t('orch_goto_chat', {session: escapeHtml(sessionLabel)})}
-        </button>
-    `;
-
-    const statusEl = document.getElementById('orch-agent-status');
-    if (statusEl && statusEl.parentNode) {
-        statusEl.parentNode.insertBefore(container, statusEl.nextSibling);
-    }
-}
-
-async function orchGotoChat() {
-    if (!orchTargetSessionId) { orchToast(t('orch_toast_no_session')); return; }
-
-    const prevSessionId = currentSessionId;
-    if (currentSessionId === orchTargetSessionId) {
-        currentSessionId = '__temp_orch__';
-    }
-
-    switchPage('chat');
-    await switchToSession(orchTargetSessionId);
-
-    orchToast(t('orch_toast_jumped', {id: orchTargetSessionId.slice(-6)}));
-}
-
-// ── Session Status ──
+// ── Agent status ──
 async function orchRefreshSessions() {
     try {
-        const r = await fetch('/proxy_visual/sessions-status');
-        const sessions = await r.json();
-        orch.sessionStatuses = {};
-        if (Array.isArray(sessions)) {
-            sessions.forEach(s => {
-                const sid = s.session_id || s.id || '';
-                const isRunning = s.is_running || s.status === 'running' || false;
-                orch.sessionStatuses[sid] = isRunning ? 'running' : 'idle';
-            });
-        }
+        const data = await agentApi('GET', '/v1/agents?status=1');
+        orch.agentStates = {};
+        (data.data || []).forEach(a => { orch.agentStates[a.agent_id] = a.status?.state === 'running' ? 'running' : 'idle'; });
         orch.nodes.forEach(n => {
-            const el = document.getElementById('onode-' + n.id);
-            if (!el) return;
-            const dot = el.querySelector('.orch-node-status');
-            if (!dot) return;
-            const isRunning = Object.entries(orch.sessionStatuses).some(([sid, st]) =>
-                st === 'running' && (sid.includes(n.name) || sid.includes(n.tag))
-            );
-            dot.className = 'orch-node-status ' + (isRunning ? 'running' : 'idle');
+            const dot = document.querySelector('#onode-' + n.id + ' .orch-node-status');
+            if (dot) dot.className = 'orch-node-status ' + ((n.type === 'agent' && orch.agentStates[n.agent_id]) || 'idle');
         });
         orchToast(t('orch_toast_session_updated'));
-    } catch(e) {
+    } catch (e) {
         orchToast(t('orch_toast_session_fail'));
     }
 }
@@ -4433,15 +3927,13 @@ function orchToast(msg) {
 // ── Generate Team from Workflow ──
 
 async function orchGenerateTeam() {
-    // 1. Collect eligible nodes (expert, session_agent, external); dedupe by tag
-    const eligible = ['expert', 'session_agent', 'external'];
+    // 1. The canvas's participants: personas (by tag) and agents (by reference)
     const seen = {};
     for (const node of orch.nodes) {
-        if (eligible.includes(node.type) && node.tag) {
-            seen[node.tag] = node;
-        }
+        if (node.type === 'persona' && node.tag) seen['persona:' + node.tag] = node;
+        else if (node.type === 'agent' && (node.agent_id || node.agent)) seen['agent:' + (node.agent_id || node.agent)] = node;
     }
-    const agentNodes = Object.values(seen);
+    const participants = Object.entries(seen).map(([key, node]) => ({ key, node }));
 
     // 2. Build overlay
     const overlay = document.createElement('div');
@@ -4478,19 +3970,20 @@ async function orchGenerateTeam() {
                     style="width:100%;margin-top:6px;padding:5px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;box-sizing:border-box;">
             </div>
 
-            <div style="margin-bottom:6px;font-size:11px;font-weight:600;color:#374151;">${t('orch_gt_agents_title')} (${agentNodes.length})</div>
+            <div style="margin-bottom:6px;font-size:11px;font-weight:600;color:#374151;">${t('orch_gt_agents_title')} (${participants.length})</div>
             <div id="orch-gt-agent-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:12px;">
-                ${agentNodes.length === 0
+                ${participants.length === 0
                     ? `<div style="font-size:11px;color:#9ca3af;padding:6px 0;">${t('orch_gt_no_agents')}</div>`
-                    : agentNodes.map(n => `
-                        <div class="orch-gt-row" data-tag="${escapeHtml(n.tag)}" style="display:flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;">
+                    : participants.map(({ key, node }) => `
+                        <div class="orch-gt-row" data-key="${escapeHtml(key)}" style="display:flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;">
                             <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-                                ${escapeHtml(n.name || n.tag)}
-                                <span style="color:#9ca3af;margin-left:4px;">[${escapeHtml(n.tag)}]</span>
+                                ${escapeHtml(node.emoji || '')} ${escapeHtml(node.name || node.tag)}
+                                <span style="color:#9ca3af;margin-left:4px;">[${escapeHtml(node.type === 'agent' ? '@' + node.agent : node.tag)}]</span>
                             </span>
-                            <span class="orch-gt-conflict-badge" style="display:none;font-size:10px;color:#f59e0b;white-space:nowrap;">${t('orch_gt_conflict_label')}</span>
-                            <button class="orch-gt-skip-btn" data-tag="${escapeHtml(n.tag)}" style="display:none;padding:2px 8px;font-size:10px;border-radius:4px;border:1px solid #d1d5db;background:#f9fafb;cursor:pointer;">${t('orch_gt_conflict_skip')}</button>
-                            <button class="orch-gt-overwrite-btn" data-tag="${escapeHtml(n.tag)}" style="display:none;padding:2px 8px;font-size:10px;border-radius:4px;border:none;background:#6366f1;color:white;cursor:pointer;">${t('orch_gt_conflict_overwrite')}</button>
+                            <span class="orch-gt-conflict-badge" style="display:none;font-size:10px;color:#f59e0b;white-space:nowrap;">${t(node.type === 'agent' ? 'orch_gt_already_member' : 'orch_gt_conflict_label')}</span>
+                            ${node.type === 'persona' ? `
+                            <button class="orch-gt-skip-btn" data-key="${escapeHtml(key)}" style="display:none;padding:2px 8px;font-size:10px;border-radius:4px;border:1px solid #d1d5db;background:#f9fafb;cursor:pointer;">${t('orch_gt_conflict_skip')}</button>
+                            <button class="orch-gt-overwrite-btn" data-key="${escapeHtml(key)}" style="display:none;padding:2px 8px;font-size:10px;border-radius:4px;border:none;background:#6366f1;color:white;cursor:pointer;">${t('orch_gt_conflict_overwrite')}</button>` : ''}
                         </div>`).join('')
                 }
             </div>
@@ -4503,22 +3996,14 @@ async function orchGenerateTeam() {
     `;
     document.body.appendChild(overlay);
 
-    // Per-row resolution state: tag → "skip"|"overwrite"|null
+    // A persona whose tag the team already has: key → "skip" | "overwrite"
     const resolutions = {};
 
-    // Wire conflict toggle buttons
-    overlay.querySelectorAll('.orch-gt-skip-btn').forEach(btn => {
+    overlay.querySelectorAll('.orch-gt-skip-btn, .orch-gt-overwrite-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-            const tag = btn.dataset.tag;
-            resolutions[tag] = 'skip';
-            _orchGtHighlightRow(overlay, tag, 'skip');
-        });
-    });
-    overlay.querySelectorAll('.orch-gt-overwrite-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const tag = btn.dataset.tag;
-            resolutions[tag] = 'overwrite';
-            _orchGtHighlightRow(overlay, tag, 'overwrite');
+            const resolution = btn.classList.contains('orch-gt-skip-btn') ? 'skip' : 'overwrite';
+            resolutions[btn.dataset.key] = resolution;
+            _orchGtHighlightRow(overlay, btn.dataset.key, resolution);
         });
     });
 
@@ -4531,17 +4016,7 @@ async function orchGenerateTeam() {
     _syncNewNameVisibility();
     teamSelect.addEventListener('change', async () => {
         _syncNewNameVisibility();
-        if (teamSelect.value) {
-            await _orchGtUpdateConflicts(overlay, teamSelect.value, resolutions);
-        } else {
-            // New team — no conflicts
-            overlay.querySelectorAll('.orch-gt-row').forEach(row => {
-                row.querySelector('.orch-gt-conflict-badge').style.display = 'none';
-                row.querySelector('.orch-gt-skip-btn').style.display = 'none';
-                row.querySelector('.orch-gt-overwrite-btn').style.display = 'none';
-                row.style.borderColor = '#e5e7eb';
-            });
-        }
+        await _orchGtUpdateConflicts(overlay, teamSelect.value, participants, resolutions);
     });
 
     // Dismiss
@@ -4558,22 +4033,20 @@ async function orchGenerateTeam() {
         if (confirmBtn.disabled) return;
         confirmBtn.disabled = true;
 
-        const finalResolutions = Object.assign({}, resolutions);
-
-        // Build nodes payload from canvas nodes
+        const tagResolutions = {};
         const payload = {
-            nodes: agentNodes.map(n => ({
-                type: n.type,
-                name: n.name || '',
-                tag: n.tag || '',
-                persona: n.persona || '',
-                temperature: n.temperature != null ? n.temperature : 0.7,
-                session: n.session || '',
-                global_name: n.global_name || '',
-                meta: n.meta || {}
-            })),
+            nodes: participants.map(({ key, node }) => {
+                if (node.type === 'agent') return { type: 'agent', agent: node.agent_id || node.agent, name: node.name || '' };
+                if (resolutions[key]) tagResolutions[node.tag] = resolutions[key];
+                return {
+                    type: 'persona',
+                    name: node.name || '',
+                    tag: node.tag,
+                    temperature: node.temperature != null ? node.temperature : 0.7,
+                };
+            }),
             create_if_missing: !selectedTeam,
-            resolutions: finalResolutions
+            resolutions: tagResolutions,
         };
 
         try {
@@ -4588,6 +4061,7 @@ async function orchGenerateTeam() {
                 return;
             }
             orchToast(t('orch_gt_toast_ok', { added: (data.added || []).length, skipped: (data.skipped || []).length }));
+            if ((data.errors || []).length) orchToast('⚠️ ' + data.errors.join('; '));
             overlay.remove();
             // Refresh team list so the new team appears in the selector
             if (!selectedTeam) orchLoadTeamList();
@@ -4599,50 +4073,45 @@ async function orchGenerateTeam() {
     });
 }
 
-async function _orchGtUpdateConflicts(overlay, teamName, resolutions) {
-    if (!teamName) return;
-    let existingTags = new Set();
-    try {
-        // Fetch members (oasis + external agents) and experts in parallel
-        const [mResp, eResp] = await Promise.all([
-            fetch(`/teams/${encodeURIComponent(teamName)}/members`),
-            fetch(`/teams/${encodeURIComponent(teamName)}/experts`)
-        ]);
-        if (mResp.ok) {
-            const mData = await mResp.json();
-            (mData.members || []).forEach(m => { if (m.tag) existingTags.add(m.tag); });
-        }
-        if (eResp.ok) {
-            const eData = await eResp.json();
-            (eData.experts || []).forEach(e => { if (e.tag) existingTags.add(e.tag); });
-        }
-    } catch (e) { /* silently ignore — show no conflicts */ }
-
-    overlay.querySelectorAll('.orch-gt-row').forEach(row => {
-        const tag = row.dataset.tag;
-        if (existingTags.has(tag)) {
-            row.querySelector('.orch-gt-conflict-badge').style.display = '';
-            row.querySelector('.orch-gt-skip-btn').style.display = '';
-            row.querySelector('.orch-gt-overwrite-btn').style.display = '';
-            // Default to skip unless already resolved
-            if (!resolutions[tag]) {
-                resolutions[tag] = 'skip';
-                _orchGtHighlightRow(overlay, tag, 'skip');
-            } else {
-                _orchGtHighlightRow(overlay, tag, resolutions[tag]);
+// Mark the participants the chosen team already has: members, and persona tags in its library.
+async function _orchGtUpdateConflicts(overlay, teamName, participants, resolutions) {
+    const existing = new Set();
+    if (teamName) {
+        try {
+            const [team, eResp] = await Promise.all([
+                agentApi('GET', `/v1/teams/${encodeURIComponent(teamName)}`),
+                fetch(`/teams/${encodeURIComponent(teamName)}/experts`),
+            ]);
+            (team.members || []).forEach(m => {
+                [m.role, m.agent.agent_id, m.agent.handle, m.agent.address].forEach(v => existing.add('agent:' + v));
+            });
+            if (eResp.ok) {
+                const eData = await eResp.json();
+                (eData.experts || []).forEach(e => { if (e.tag) existing.add('persona:' + e.tag); });
             }
+        } catch (e) { /* show no conflicts */ }
+    }
+
+    participants.forEach(({ key, node }) => {
+        const row = overlay.querySelector(`.orch-gt-row[data-key="${CSS.escape(key)}"]`);
+        if (!row) return;
+        const conflict = node.type === 'agent'
+            ? existing.has('agent:' + node.agent_id) || existing.has('agent:' + node.agent)
+            : existing.has(key);
+        row.querySelector('.orch-gt-conflict-badge').style.display = conflict ? '' : 'none';
+        row.querySelectorAll('.orch-gt-skip-btn, .orch-gt-overwrite-btn').forEach(b => { b.style.display = conflict ? '' : 'none'; });
+        if (conflict && node.type === 'persona') {
+            resolutions[key] = resolutions[key] || 'skip';
+            _orchGtHighlightRow(overlay, key, resolutions[key]);
         } else {
-            row.querySelector('.orch-gt-conflict-badge').style.display = 'none';
-            row.querySelector('.orch-gt-skip-btn').style.display = 'none';
-            row.querySelector('.orch-gt-overwrite-btn').style.display = 'none';
-            row.style.borderColor = '#e5e7eb';
-            delete resolutions[tag];
+            row.style.borderColor = conflict ? '#f59e0b' : '#e5e7eb';
+            delete resolutions[key];
         }
     });
 }
 
-function _orchGtHighlightRow(overlay, tag, resolution) {
-    const row = overlay.querySelector(`.orch-gt-row[data-tag="${CSS.escape(tag)}"]`);
+function _orchGtHighlightRow(overlay, key, resolution) {
+    const row = overlay.querySelector(`.orch-gt-row[data-key="${CSS.escape(key)}"]`);
     if (!row) return;
     row.style.borderColor = resolution === 'overwrite' ? '#6366f1' : '#f59e0b';
     const skipBtn = row.querySelector('.orch-gt-skip-btn');

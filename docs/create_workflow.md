@@ -6,8 +6,8 @@
 
 ## 1. Overview
 
-OASIS workflows define how persona-driven agents collaborate to solve tasks. A workflow is a directed graph where:
-- **Nodes** (`plan`) represent persona steps, manual injections, script execution, human interaction, or special control nodes (selectors)
+OASIS workflows define how agents collaborate to solve tasks. A workflow is a directed graph where:
+- **Nodes** (`plan`) represent agent / persona steps, manual injections, script execution, human interaction, or special control nodes (selectors)
 - **Edges** define execution order — a node runs when all its incoming edges are satisfied
 - **Conditional edges** enable branching based on runtime conditions
 - **Selector edges** enable LLM-powered routing (the selector node chooses which branch to take)
@@ -25,13 +25,13 @@ version: 2
 repeat: false
 plan:
   - id: n1                        # Every node MUST have a unique id
-    expert: "creative#temp#1"     # Stateless preset persona
+    persona: creative              # Temporary expert wearing the "creative" persona
   - id: n2
-    expert: "critical#temp#1"
+    persona: critical
   - id: n3
-    expert: "#oasis#agent_name"   # Stateful internal session agent (by name, no tag)
+    agent: Coder                   # One of your agents (in a team: its role name)
   - id: n4
-    expert: "creative#oasis#🎨 创意顾问" # Session agent with tag (tag→persona lookup, identifier uses display name)
+    agent: alice/codex             # Any platform — WeBot, Codex, Claude Code, OpenClaw… — is written the same way
   - id: m1
     manual:
       author: "主持人"
@@ -64,12 +64,12 @@ conditional_edges:
 
 ### 2.3 Selector Routing (LLM-powered Branching)
 
-A selector node is an expert marked with `selector: true`. The LLM output determines which branch to take.
+A selector node is a participant marked with `selector: true`. Its reply determines which branch to take.
 
 ```yaml
 plan:
   - id: router
-    expert: "router_tag#temp#1"   # Selector can use any expert format (#temp#, #oasis#, etc.)
+    persona: router_tag            # a selector may be an agent or a persona
     selector: true                 # Mark as selector node
 
 selector_edges:
@@ -86,16 +86,17 @@ selector_edges:
 plan:
   - id: brainstorm
     parallel:
-      - expert: "creative#temp#1"
-      - expert: "critical#temp#1"
+      - persona: creative
+      - persona: critical
+      - agent: Coder
 ```
 
-### 2.5 All Experts
+### 2.5 Everyone at once
 
 ```yaml
 plan:
   - id: discuss
-    all_experts: true              # All experts speak simultaneously
+    all_experts: true              # every participant named elsewhere in the plan speaks simultaneously
 ```
 
 ---
@@ -115,58 +116,32 @@ plan:
 
 ---
 
-## 4. Persona Name Formats (expert field)
+## 4. Participants
 
-> **Note:** The YAML field is named `expert`, but it represents a **persona (人设)** — an **expert persona prompt** that defines an Agent's role and capabilities. It is NOT a separate agent. The `oasis_experts.json` file in each team folder is the persona prompt collection where these prompts are stored.
+A participant is always an agent. There are two ways to name one:
 
-Persona names follow a `tag#mode#identifier` convention.
+| Key | Who speaks | Memory | Example |
+|-----|------------|--------|---------|
+| `agent: <ref>` | One of your agents. In a team workflow write the member's **role name**; you may also write its handle, address (`alice/coder`) or `ag_…` id. The platform does not matter — WeBot, Codex, Claude Code, Gemini, OpenClaw and HTTP agents are all written this way | its own, across topics | `agent: Coder` |
+| `persona: <tag>` | A temporary expert created for this topic, wearing the persona `<tag>` from the persona library (team `oasis_experts.json`, your custom personas, public and agency personas). Removed when the topic ends | this topic only | `persona: critical` |
 
-> **Important: Tag vs Name**
->
-> - **Tag** is a short identifier corresponding to the `tag` field in `oasis_experts.json`. For example: `creative`, `critical`, `architect`. It is used as the **first part** of the `expert` field in YAML to look up the persona prompt.
-> - **Name** is the full display name of the persona (e.g., `"🎨 创意顾问"`, `"🔍 批判分析师"`), stored in the `name` field of `oasis_experts.json`. It is used as the **third part** (identifier) in `#oasis#` mode to reference a specific session agent.
-> - **In YAML `expert` field**: The format is `tag#mode#identifier`. For `#oasis#` mode, the identifier part uses the **name** (display name), NOT the tag. For example: `creative#oasis#🎨 创意顾问`, NOT `creative#oasis#creative`.
-> - For `#temp#` mode, the identifier is just an instance number (e.g., `creative#temp#1`).
+Options of `persona:`:
 
-| Format | Mode | Description | Example |
-|--------|------|-------------|---------|
-| `tag#temp#N` | Stateless | Preset persona instance N (no memory) | `creative#temp#1` |
-| `tag#oasis#new` | Stateful | Auto-create new session for this persona | `critical#oasis#new` |
-| `tag#oasis#name` | Stateful | Internal session agent by name (tag enables persona lookup) | `creative#oasis#🎨 创意顾问` |
-| `#oasis#name` | Stateful | Internal session agent by name (no tag) | `#oasis#test1` |
-| `tag#ext#id` | External | External agent (platform/global_name resolved from `external_agents.json`) | `openclaw#ext#Alice` |
+| Option | Default | Meaning |
+|--------|---------|---------|
+| `tools` | `none` | `none` = one model call per turn (lightest); `all` or a list such as `[read_file, web_search]` = a temporary WeBot session that may call those tools |
+| `instance` | `1` | several copies of the same persona in one topic: `instance: 2`, `instance: 3`, … |
 
-### 4.1 Stateless vs Stateful
+`instruction:` (optional, on any participant step) tells that participant what to focus on in this step.
 
-- **Stateless** (`#temp#`): Lightweight persona, no memory between rounds. Suitable for debates, brainstorming, and one-shot analysis.
-- **Stateful** (`#oasis#`): Persona with memory and tools. The session persists across rounds, suitable for complex multi-step tasks.
+### 4.1 Which one to use
 
-### 4.2 External ACP Agents
+- **`agent:`** when the role needs its own memory, tools or runtime — a coder that keeps context, a Codex/Claude Code agent working in a repository, the team lead.
+- **`persona:`** for debates, brainstorming, reviews and one-shot analysis — cheap, parallel, nothing left behind.
 
-For external agents, YAML should use the generic external format:
+### 4.2 Personas vs agents in a team
 
-```yaml
-- id: ext1
-  expert: "openclaw#ext#my_agent"     # Generic external format: tag#ext#id
-  api_url: "http://127.0.0.1:23001"
-  api_key: "****"
-  model: "agent:my_agent"              # Supports session extension: agent:name or agent:name:session
-```
-
-**ACP communication**: External agents with supported tags use the `acpx` CLI adapter (`src/integrations/acpx_adapter.py`) for Agent Client Protocol communication. `acpx` is auto-installed during `setup`. If `acpx` is not available, the system falls back to HTTP-only communication.
-
-**Key configuration requirements:**
-- **expert field**: Use `tag#ext#id`
-- **model field**: Supports two formats:
-  - `agent:<name>` - uses team name as session by default
-  - `agent:<name>:<session>` - explicitly specifies session name
-
-**Session control notes:**
-- Same session shares context; different sessions remain independent
-- The YAML `expert` field only identifies the external record and optional persona tag
-- The real platform / connect_type / global_name come from `external_agents.json`
-- The `<name>` in the model field is only used for routing; the actual agent name comes from the `global_name` field in `external_agents.json`
-- Session determines conversation isolation: same session = shared context, different sessions = independent context
+A team's `oasis_experts.json` is its persona library (prompts, looked up by `tag`). Its members are agents with role names (`clawcross team "<team>" members`). A member usually wears one of the team's personas, but the workflow names the member (`agent: <role>`), not the persona.
 
 ---
 
@@ -176,17 +151,16 @@ All step types require an `id` field.
 
 | Step Type | Key | Description |
 |-----------|-----|-------------|
-| Persona | `expert: "name"` | Single persona speaks |
-| Resident agent | `agent: "coder"` | A registered agent speaks: its role name in the team, its handle/address (`alice/coder`) or its `ag_…` id. Works for WeBot and external (codex, claude, OpenClaw…) agents alike |
-| Temporary persona | `persona: "critical"` + `tools` | A persona that exists only for this topic. `tools: none` (default) is one LLM call; `tools: all` or `tools: [read_file, web_search]` runs a temporary WeBot session with those tools, deleted when the topic ends. `instance: N` distinguishes several of the same persona |
-| Parallel | `parallel: [...]` | Multiple personas speak simultaneously |
-| All Personas | `all_experts: true` | Everyone speaks at once |
+| Agent | `agent: "coder"` | One of your agents speaks (see §4) |
+| Persona | `persona: "critical"` (+ `tools`, `instance`) | A temporary expert speaks (see §4) |
+| Parallel | `parallel: [...]` | Several participants speak simultaneously |
+| Everyone | `all_experts: true` | Every participant named in the plan speaks at once |
 | Manual | `manual: {author, content}` | Inject fixed text (no LLM call) |
 | Script | `script: {...}` | Run a platform command via Python-managed subprocess |
 | Human | `human: {...}` | Pause workflow and wait for a plain-text human reply |
-| Selector | `selector: true` + `expert` | LLM-powered routing node (any expert format) |
+| Selector | `selector: true` + `agent`/`persona` | Routing node: its reply picks the branch |
 
-`agent:` and `persona:` work inside `parallel:` lists too, and a `selector: true` node may use them instead of `expert:`:
+`agent:` and `persona:` work inside `parallel:` lists too:
 
 ```yaml
 plan:
@@ -199,8 +173,6 @@ plan:
       - persona: security_auditor  # a temporary session that may read files
         tools: [read_file, list_files]
 ```
-
-The classic `expert:` strings (`tag#temp#N`, `tag#oasis#name`, `tag#ext#id`, `#new`) keep working unchanged.
 
 ### 5.1 Manual Nodes — Special Authors
 
@@ -281,11 +253,11 @@ version: 2
 repeat: false
 plan:
   - id: n1
-    expert: "creative#temp#1"
+    persona: creative
   - id: n2
-    expert: "critical#temp#1"
+    persona: critical
   - id: n3
-    expert: "synthesis#temp#1"
+    persona: synthesis
 edges:
   - [n1, n2]
   - [n2, n3]
@@ -305,11 +277,11 @@ version: 2
 repeat: false
 plan:
   - id: creative
-    expert: "creative#temp#1"
+    persona: creative
   - id: data
-    expert: "data#temp#1"
+    persona: data
   - id: merge
-    expert: "synthesis#temp#1"
+    persona: synthesis
 edges:
   - [creative, merge]
   - [data, merge]
@@ -334,9 +306,9 @@ plan:
       author: begin
       content: "开始代码审查"
   - id: coder
-    expert: "coder#temp#1"
+    persona: coder
   - id: reviewer
-    expert: "critical#temp#1"
+    persona: critical
     selector: true
   - id: done
     manual:
@@ -379,15 +351,15 @@ plan:
       prompt: "请检查上面的脚本输出，并决定是否继续"
       author: "主持人"
   - id: summarize
-    expert: "synthesis#temp#1"
+    persona: synthesis
 edges:
   - [collect_status, human_gate]
   - [human_gate, summarize]
 ```
 
-### 6.5 Mixed Pipeline with External Agent
+### 6.5 Mixed Pipeline: Personas, Team Members and a Selector
 
-Combines internal personas, an external OpenClaw agent, and a selector:
+Combines temporary personas, two team members (one on WeBot, one on OpenClaw) and a selector:
 
 ```yaml
 version: 2
@@ -398,18 +370,15 @@ plan:
       author: begin
       content: "讨论开始"
   - id: creative
-    expert: "creative#temp#1"
+    persona: creative
   - id: synth
-    expert: "synthesis#oasis#综合顾问"
+    agent: 综合顾问                 # a team member (WeBot) with its own memory
   - id: arch
-    expert: "architect#temp#1"
+    persona: architect
   - id: ext_agent
-    expert: "openclaw#ext#my_new_agent"
-    api_url: "http://127.0.0.1:23001"
-    api_key: "****"
-    model: "agent:my_new_agent"
+    agent: Researcher               # a team member running on OpenClaw — written the same way
   - id: selector
-    expert: "selector#temp#1"
+    persona: selector
     selector: true
   - id: end
     manual:
@@ -428,7 +397,7 @@ selector_edges:
       2: end          # finish
 ```
 
-### 6.5 Conditional Branching
+### 6.6 Conditional Branching
 
 Route based on content of the last message:
 
@@ -437,11 +406,11 @@ version: 2
 repeat: false
 plan:
   - id: analyzer
-    expert: "data#temp#1"
+    persona: data
   - id: approve_path
-    expert: "synthesis#temp#1"
+    persona: synthesis
   - id: reject_path
-    expert: "critical#temp#1"
+    persona: critical
 edges:
   - [analyzer, approve_path]       # default edge (may be overridden by conditional)
 conditional_edges:
@@ -464,7 +433,7 @@ conditional_edges:
 
 ## 8. Workflow File Location
 
-Workflow YAML files are stored at: [[memory:s3bt8876]]
+Workflow YAML files are stored at:
 
 - **Team workflows**: `data/user_files/{user_id}/teams/{team}/oasis/yaml/*.yaml`
 - **Public workflows**: `data/user_files/{user_id}/oasis/yaml/*.yaml`
@@ -472,11 +441,11 @@ Workflow YAML files are stored at: [[memory:s3bt8876]]
 ### 8.1 Save via CLI
 
 ```bash
-# Set a workflow for a team
-uv run scripts/cli.py oasis set-workflow \
+# Save a workflow for a team
+uv run scripts/cli.py workflows save \
   --team <TEAM_NAME> \
   --name <WORKFLOW_NAME> \
-  --file <PATH_TO_YAML>
+  --yaml-file <PATH_TO_YAML>
 ```
 
 ### 8.2 Save via MCP Tool
@@ -561,8 +530,7 @@ uv run scripts/cli.py topics watch --topic-id <TOPIC_ID>
 1. **Maximize parallelism**: Nodes with no dependency relationship should run concurrently. Use fan-in/fan-out patterns.
 2. **Use selectors for loops**: When you need iterative refinement, use a selector node to decide whether to loop or exit.
 3. **Begin/End markers**: Use `manual` nodes with `author: begin` and `author: bend` to clearly mark workflow boundaries.
-4. **Stateful for complex tasks**: Use `#oasis#` mode for personas that need memory across rounds (e.g., a coder maintaining context).
-5. **Stateless for debates**: Use `#temp#` mode for lightweight discussion personas where memory is not needed.
-6. **External agents for specialized work**: Use `#ext#` for delegating to other OpenClaw agents or external APIs with their own tools.
-7. **Edge ordering**: Selector node outgoing edges should be defined in `selector_edges`, not in regular `edges`.
-8. **Selector edge restriction**: Selector nodes (`selector: true`) must NOT have outgoing edges defined in the regular `edges` section. All outgoing edges from a selector MUST be defined in `selector_edges`. This is a critical rule — violating it will cause the workflow to behave incorrectly.
+4. **Agents for work that needs memory or a runtime**: `agent: <role>` — a coder keeping context, a Codex / Claude Code / OpenClaw agent with its own tools.
+5. **Personas for debates**: `persona: <tag>` — lightweight, parallel, gone when the topic ends; add `tools:` only when the step must read files or search.
+6. **Edge ordering**: Selector node outgoing edges should be defined in `selector_edges`, not in regular `edges`.
+7. **Selector edge restriction**: Selector nodes (`selector: true`) must NOT have outgoing edges defined in the regular `edges` section. All outgoing edges from a selector MUST be defined in `selector_edges`. This is a critical rule — violating it will cause the workflow to behave incorrectly.

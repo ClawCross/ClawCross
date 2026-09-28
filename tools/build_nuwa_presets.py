@@ -487,10 +487,9 @@ def build_workflow_yaml(
     ]
 
     for i, agent in enumerate(agents):
-        tag = agent["tag"]
         name = agent.get("name_zh", agent["name"])
         lines.append(f"- id: m{i + 1}")
-        lines.append(f"  expert: {tag}#oasis#{name}")
+        lines.append(f"  agent: {name}")
 
     # Synthesis node at the end
     lines.append(f"- id: m{len(agents) + 1}")

@@ -33,7 +33,7 @@ uv run scripts/cli.py [-u USER] <子命令> [参数...]
 |------|------|--------|
 | `-u`, `--user` | 用户名（通过 `X-User-Id` header 传递给后端） | 环境变量 `CLAW_USER` / `CLI_USER`，否则取 `users.json` 的第一个用户，都没有时为 `admin` |
 
-> `-u` 对所有走 front.py 的命令生效（internal-agents / teams / visual / openclaw-snapshot / skill / cron 等）。
+> `-u` 对所有需要用户身份的命令生效（agents / teams / groups / visual / openclaw-snapshot / skill / cron 等）。
 
 ---
 
@@ -55,7 +55,7 @@ uv run scripts/cli.py [-u USER] <子命令> [参数...]
 14. [openclaw](#14-openclaw) — OpenClaw Agent 管理
 15. [openclaw-snapshot](#15-openclaw-snapshot) — OpenClaw 快照管理
 16. [visual](#16-visual) — 可视化编排管理
-17. [internal-agents](#17-internal-agents) — 内部 Agent CRUD
+17. [agents](#17-agents) — Agent 管理（本机所有平台的 agent，一套命令）
 18. [teams](#18-teams) — Team 管理
 19. [topics](#19-topics) — OASIS 话题管理
 20. [personas](#20-personas) — 人设管理
@@ -274,54 +274,45 @@ uv run scripts/cli.py channel logout weclaw
 
 ## 13. groups
 
-**群组管理**
+**群聊**：成员是 agent（任何平台）和你自己。
 
 ```bash
-# 列出群组
+# 列出群聊（含私聊）
 uv run scripts/cli.py groups
-uv run scripts/cli.py groups list
 
-# 创建群组
-uv run scripts/cli.py groups create --name "测试群" --data '{"members":["bot1","bot2"]}'
+# 建群：指定 agent（ag_ 编号 / 地址 / handle），或按 team 建群（成员与主 agent 跟随 team）
+uv run scripts/cli.py groups create --name "测试群" --agents coder,alice/codex
+uv run scripts/cli.py groups create --name "Dev 群" --team-name dev
 
-# 查看群组详情
-uv run scripts/cli.py groups get --group-id abc123
+# 详情 / 改名 / 删除
+uv run scripts/cli.py groups get --group-id g_abc123
+uv run scripts/cli.py groups update --group-id g_abc123 --name "新名字"
+uv run scripts/cli.py groups delete --group-id g_abc123
 
-# 更新群组
-uv run scripts/cli.py groups update --group-id abc123 --data '{"name":"新名字"}'
+# 消息
+uv run scripts/cli.py groups messages --group-id g_abc123 [--after-id 100]
+uv run scripts/cli.py groups send --group-id g_abc123 --message "大家好 @coder"
 
-# 删除群组
-uv run scripts/cli.py groups delete --group-id abc123
+# 以群内某个 agent 的身份发言（非 WeBot agent 回复群聊时用）
+uv run scripts/cli.py -u alice groups send --group-id g_abc123 --agent alice/codex --message "已完成"
 
-# 查看消息
-uv run scripts/cli.py groups messages --group-id abc123
-uv run scripts/cli.py groups messages --group-id abc123 --after-id msg_100
-
-# 发送消息（以当前用户身份）
-uv run scripts/cli.py groups send --group-id abc123 --message "大家好"
-
-# 以群内某个 agent 的身份发言（外部 agent 回复群聊时用；agent 编号或地址）
-uv run scripts/cli.py -u alice groups send --group-id abc123 --agent alice/codex --message "已完成"
-
-# 免打扰/取消免打扰：消息照常记录，但不唤醒任何 agent（重启后保留）
-uv run scripts/cli.py groups mute --group-id abc123
-uv run scripts/cli.py groups unmute --group-id abc123
-uv run scripts/cli.py groups mute-status --group-id abc123
-
-# 群组会话
-uv run scripts/cli.py groups sessions --group-id abc123
+# 免打扰：消息照常保存，但不唤醒任何 agent
+uv run scripts/cli.py groups dnd-on --group-id g_abc123
+uv run scripts/cli.py groups dnd-off --group-id g_abc123
 ```
 
 | 参数 | 说明 | 必填 | 默认值 |
 |------|------|------|--------|
-| `action` | 操作 | 否 | `list` |
-| `--group-id` | 群组 ID | 视操作而定 | — |
-| `--name` | 群组名称 | create 时 | — |
+| `action` | `list` / `create` / `get` / `update` / `delete` / `messages` / `send` / `dnd-on` / `dnd-off` | 否 | `list` |
+| `--group-id` | 群聊 ID | 视操作而定 | — |
+| `--name` | 群名 | create / update 时 | — |
+| `--agents` | 逗号分隔的成员 agent | create 时（与 `--team-name` 二选一） | — |
+| `--team-name` | 按 team 建群 | create 时 | — |
 | `--message` | 消息内容 | send 时 | — |
-| `--data` | JSON 数据 | 否 | — |
+| `--agent` | 以哪个 agent 身份发言 | 否 | — |
 | `--after-id` | 增量消息起点 | 否 | — |
 
-
+唤醒规则（微信式）：你发消息且没有 @ 时唤醒主 agent（没设主 agent 则唤醒全部）；有 @ 时只唤醒被 @ 的。有主 agent 时，其他 agent 的发言只唤醒主 agent；主 agent 只唤醒它 @ 的成员。
 
 ---
 
@@ -456,32 +447,40 @@ uv run scripts/cli.py -u Avalon_01 visual sessions-status
 
 ---
 
-## 17. internal-agents
+## 17. agents
 
-**内部 Agent CRUD**
+**Agent 管理**：WeBot、Codex、Claude Code、Gemini、OpenClaw、任意 HTTP 服务都是同一种 agent，用同一套命令。`--agent` 可写 `ag_` 编号、地址 `<用户>/<handle>` 或 handle。
 
 ```bash
-# 列出
-uv run scripts/cli.py -u Avalon_01 internal-agents list --team myteam
+# 列出（--status 附带运行状态）
+uv run scripts/cli.py agents list --status
 
-# 添加
-uv run scripts/cli.py -u Avalon_01 internal-agents add --team myteam --data '{"session":"s1","meta":{"name":"bot","tag":"assistant"}}'
-uv run scripts/cli.py -u Avalon_01 internal-agents add --team myteam --session s1 --data '{"meta":{"name":"bot"}}'
+# 新建
+uv run scripts/cli.py agents create --name "Coder" --data '{"persona": "coder"}'                      # WeBot
+uv run scripts/cli.py agents create --name "Codex" --platform codex --data '{"global_name": "cx"}'    # ACP 工具
+uv run scripts/cli.py agents create --name "Svc" --platform my_svc \
+  --data '{"global_name": "svc", "api_url": "http://127.0.0.1:8080/v1", "model": "gpt-4o"}'         # HTTP
 
-# 更新（--sid 必填）
-uv run scripts/cli.py -u Avalon_01 internal-agents update --sid s1 --team myteam --data '{"meta":{"name":"new_name"}}'
+# 查看 / 修改 / 删除
+uv run scripts/cli.py agents show   --agent alice/coder
+uv run scripts/cli.py agents update --agent coder --name "Coder 2" --data '{"settings": {"persona": "architect"}}'
+uv run scripts/cli.py agents delete --agent coder
 
-# 删除（--sid 必填）
-uv run scripts/cli.py -u Avalon_01 internal-agents delete --sid s1 --team myteam
+# 对话与控制（所有平台一样）
+uv run scripts/cli.py agents ask    --agent coder --message "你好"
+uv run scripts/cli.py agents status --agent coder
+uv run scripts/cli.py agents cancel --agent coder
+uv run scripts/cli.py agents reset  --agent coder
 ```
 
 | 参数 | 说明 | 必填 | 默认值 |
 |------|------|------|--------|
-| `action` | 操作 | 否 | `list` |
-| `--team` | Team 名称 | 否 | — |
-| `--sid` | Session ID | update/delete 时必填 | — |
-| `--session` | Session ID（add 时自动补入 data） | 否 | — |
-| `--data` | JSON 数据 | add/update 时 | — |
+| `action` | `list` / `show` / `create` / `update` / `delete` / `ask` / `status` / `cancel` / `reset` | 否 | `list` |
+| `--agent` | 目标 agent | 除 list / create 外必填 | — |
+| `--name` | 名称 | create 时 | — |
+| `--platform` | 平台 | 否 | `webot` |
+| `--message` | 消息 | ask 时 | — |
+| `--data` | JSON：create 的字段（persona、team、global_name、api_url、model…）或 update 的 `{"settings": {...}}` | 否 | — |
 
 ---
 
@@ -500,11 +499,14 @@ uv run scripts/cli.py -u Avalon_01 teams info --team-name team2
 uv run scripts/cli.py -u Avalon_01 teams create --team-name newteam --data '{"description":"..."}'
 uv run scripts/cli.py -u Avalon_01 teams delete --team-name oldteam
 
-# 成员管理
+# 成员管理：成员是 agent（任何平台），在 team 里有一个角色名，至多一个 lead
 uv run scripts/cli.py -u Avalon_01 teams members --team-name myteam
-uv run scripts/cli.py -u Avalon_01 teams add-ext-member --team-name myteam --data '{"user_id":"bob","role":"member"}'
-uv run scripts/cli.py -u Avalon_01 teams update-ext-member --team-name myteam --data '{"user_id":"bob","role":"admin"}'
-uv run scripts/cli.py -u Avalon_01 teams delete-ext-member --team-name myteam --data '{"user_id":"bob"}'
+uv run scripts/cli.py -u Avalon_01 teams add-member --team-name myteam --agent coder --role "Coder" [--lead]
+uv run scripts/cli.py -u Avalon_01 teams set-lead --team-name myteam --agent coder
+uv run scripts/cli.py -u Avalon_01 teams remove-member --team-name myteam --agent coder     # agent 本身保留
+
+# 导入 team 文件夹里的 internal_agents.json / external_agents.json（导入后文件被移走）
+uv run scripts/cli.py -u Avalon_01 teams import --team-name myteam
 
 # 团队人设管理
 uv run scripts/cli.py -u Avalon_01 teams personas --team-name myteam
@@ -528,8 +530,11 @@ uv run scripts/cli.py -u Avalon_01 teams snapshot-upload --team-name myteam --fi
 
 | 参数 | 说明 | 必填 | 默认值 |
 |------|------|------|--------|
-| `action` | 操作 (`list`, `info`, `create`, `delete`, `members`, `snapshot-preview`, `snapshot-download`, ...) | 否 | `list` |
+| `action` | 操作 (`list`, `info`, `create`, `delete`, `rename`, `members`, `add-member`, `remove-member`, `set-lead`, `import`, `snapshot-preview`, `snapshot-download`, ...) | 否 | `list` |
 | `--team-name` | Team 名称 | 视操作 | — |
+| `--agent` | 成员 agent | add-member / remove-member / set-lead 时 | — |
+| `--role` | 角色名 | 否 | agent 名称 |
+| `--lead` | 设为 lead | 否 | — |
 | `--tag` | 人设 tag | update-persona/delete-persona 时 | — |
 | `--data` | JSON 数据 | 视操作 | — |
 | `-o`, `--output` | 输出文件路径 | 否 | `team_{name}_snapshot.zip` |
@@ -552,7 +557,7 @@ uv run scripts/cli.py -u Avalon_01 teams snapshot-preview --team-name myteam
 📋 Team 'myteam' 可导出内容预览
 ════════════════════════════════════════════════════════════
 
-🤖 agents — 内部 Agent (2 个):
+🤖 agents — 成员 (2 个):
   • ChatBot  [assistant]
   • Coder    [developer]
 
@@ -594,7 +599,7 @@ uv run scripts/cli.py -u Avalon_01 teams snapshot-preview --team-name myteam
 
 | Section | 说明 | 对应文件 |
 |---------|------|----------|
-| `agents` | 内部 Agent 配置 | `internal_agents.json` |
+| `agents` | 成员 | `internal_agents.json` / `external_agents.json` |
 | `personas` | 自定义人设 | `oasis_experts.json` |
 | `skills` | OpenClaw Agent 技能文件夹 | `external_agents.json` + workspace skills |
 | `cron` | 定时任务 | `external_agents.json` + `cron_jobs.json` |
@@ -751,9 +756,9 @@ uv run scripts/cli.py -u Avalon_01 workflows save --name my_flow --yaml-file /pa
 uv run scripts/cli.py -u Avalon_01 workflows save --name quick_flow --yaml 'version: 2
 plan:
   - id: s1
-    expert: creative#temp#1
+    persona: creative
   - id: s2
-    expert: critical#temp#1
+    persona: critical
 edges:
   - [s1, s2]'
 
@@ -935,19 +940,19 @@ uv run scripts/cli.py skill delete --name make_slides --team myteam
 
 **定时任务 / 闹钟管理**
 
-为内部 Agent / 会话设置 cron 周期任务或单次定时触发。留空 `--team` 走公共作用域，带 `--team` 走团队作用域。
+到点把一段文本发给一个 agent（任何平台）。留空 `--team` 可以选你所有的 agent；带 `--team` 只能选该 team 的成员，任务随 team 一起导出。
 
 ```bash
-# 列出定时任务与可调度目标
+# 列出定时任务
 uv run scripts/cli.py cron list
 uv run scripts/cli.py cron list --team myteam
 
-# 新建：cron 周期任务
-uv run scripts/cli.py cron new --team myteam --target-type internal --target-name 助手 \
+# 新建：cron 周期任务（--agent 写 ag_ 编号、地址或 handle）
+uv run scripts/cli.py cron new --team myteam --agent coder \
   --schedule-type cron --cron "0 9 * * *" --text "早报：汇总今天的待办"
 
 # 新建：单次定时触发
-uv run scripts/cli.py cron new --target-type internal --target-name 助手 \
+uv run scripts/cli.py cron new --agent alice/assistant \
   --schedule-type once --run-at "2026-06-01T09:00:00" --text "提醒发周报"
 
 # 删除定时任务
@@ -957,9 +962,8 @@ uv run scripts/cli.py cron delete --task-id <task_id> --team myteam
 | 参数 | 说明 |
 | --- | --- |
 | `action` | `list`(默认) / `new` / `delete` |
-| `--team` | 团队作用域（留空=公共） |
-| `--target-type` | 目标类型（new，默认 `internal`） |
-| `--target-name` | 目标 Agent/会话名（new 必填） |
+| `--team` | 团队作用域（留空=你所有的 agent） |
+| `--agent` | 目标 agent（new 必填） |
 | `--schedule-type` | `cron` / `once`（new，默认 `cron`） |
 | `--cron` | cron 表达式（new 且 cron 类型） |
 | `--run-at` | 单次触发时间 ISO8601（new 且 once 类型） |
@@ -976,7 +980,6 @@ uv run scripts/cli.py status
 
 # 以 Avalon_01 身份管理 team2
 uv run scripts/cli.py -u Avalon_01 teams members --team-name team2
-uv run scripts/cli.py -u Avalon_01 internal-agents list --team team2
 uv run scripts/cli.py -u Avalon_01 workflows list --team team2
 uv run scripts/cli.py -u Avalon_01 workflows show --name test2flow --team team2
 
