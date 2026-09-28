@@ -13,13 +13,13 @@ plan:
 - id: m3
   agent: 翰林院·掌院学士
 - id: m4
-  agent: 修撰
+  agent: 翰林院·修撰
 - id: m5
-  agent: 编修
+  agent: 翰林院·编修
 - id: m6
-  agent: 检讨
+  agent: 翰林院·检讨
 - id: m7
-  agent: 庶吉士
+  agent: 翰林院·庶吉士
 - id: m8
   agent: 兵部
 - id: m9

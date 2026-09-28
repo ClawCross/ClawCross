@@ -119,6 +119,20 @@ class DocstringParsing(unittest.TestCase):
         self.assertEqual(doc.description, "List images.")
         self.assertEqual(doc.params, {"folder": "Folder path. Relative to the session.", "max_files": "Limit."})
 
+    def test_a_deeper_line_that_looks_like_an_entry_continues_the_argument(self):
+        doc = parse_tool_docstring(
+            """
+            Run a command.
+
+            Args:
+                mode: How to run it.
+                    note: background keeps running after the reply
+                cwd: Directory.
+            """
+        )
+        self.assertEqual(doc.params, {"mode": "How to run it. note: background keeps running after the reply",
+                                      "cwd": "Directory."})
+
     def test_prose_only_docstring_is_kept_whole(self):
         doc = parse_tool_docstring("Do one thing.\n\n- step a\n- step b")
         self.assertEqual(doc.description, "Do one thing.\n\n- step a\n- step b")

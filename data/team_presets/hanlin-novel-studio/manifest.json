@@ -4,7 +4,7 @@
   "description": "以掌院学士、修撰、编修、检讨、庶吉士、起居注官组成的长篇创作团队预设。",
   "source": "wanikua/danghuangshang",
   "regime": "hanlin-novel",
-  "role_count": 2,
+  "role_count": 6,
   "workflow_files": [
     "hanlin_novel_studio.yaml"
   ],

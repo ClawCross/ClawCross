@@ -232,10 +232,10 @@ def build_ming() -> None:
         {"id": "m1", "agent": "司礼监"},
         {"id": "m2", "agent": "内阁"},
         {"id": "m3", "agent": "翰林院·掌院学士"},
-        {"id": "m4", "agent": "修撰"},
-        {"id": "m5", "agent": "编修"},
-        {"id": "m6", "agent": "检讨"},
-        {"id": "m7", "agent": "庶吉士"},
+        {"id": "m4", "agent": "翰林院·修撰"},
+        {"id": "m5", "agent": "翰林院·编修"},
+        {"id": "m6", "agent": "翰林院·检讨"},
+        {"id": "m7", "agent": "翰林院·庶吉士"},
         {"id": "m8", "agent": "兵部"},
         {"id": "m9", "agent": "工部"},
         {"id": "m10", "agent": "户部"},
@@ -569,7 +569,7 @@ def build_tang() -> None:
 def build_hanlin_novel() -> None:
     base = SOURCE_ROOT / "configs" / "ming-neige"
     config = _read_json(base / "openclaw.json")
-    wanted = {"hanlin_zhang", "xiuzhuan", "bianxiu", "jiantao", "shujishi", "qijuzhu"}
+    wanted = {"hanlin_zhang", "hanlin_xiuzhuan", "hanlin_bianxiu", "hanlin_jiantao", "hanlin_shujishi", "qijuzhu"}
     internal_agents = []
     experts = []
     source_map: dict[str, Any] = {"preset_id": "hanlin-novel-studio", "roles": {}}
@@ -600,10 +600,10 @@ def build_hanlin_novel() -> None:
             [
                 {"id": "h0", "manual": {"author": "begin", "content": "小说项目立项"}},
                 {"id": "h1", "agent": "翰林院·掌院学士"},
-                {"id": "h2", "agent": "修撰"},
-                {"id": "h3", "agent": "编修"},
-                {"id": "h4", "agent": "检讨"},
-                {"id": "h5", "agent": "庶吉士"},
+                {"id": "h2", "agent": "翰林院·修撰"},
+                {"id": "h3", "agent": "翰林院·编修"},
+                {"id": "h4", "agent": "翰林院·检讨"},
+                {"id": "h5", "agent": "翰林院·庶吉士"},
                 {"id": "h6", "agent": "起居注官"},
                 {"id": "h7", "manual": {"author": "bend", "content": "小说版本归档完成"}},
             ],

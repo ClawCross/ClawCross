@@ -5,6 +5,22 @@
       "name": "翰林院·掌院学士",
       "source_file": "configs/ming-neige/openclaw.json#agents.list[hanlin_zhang]"
     },
+    "hanlin_xiuzhuan": {
+      "name": "翰林院·修撰",
+      "source_file": "configs/ming-neige/openclaw.json#agents.list[hanlin_xiuzhuan]"
+    },
+    "hanlin_bianxiu": {
+      "name": "翰林院·编修",
+      "source_file": "configs/ming-neige/openclaw.json#agents.list[hanlin_bianxiu]"
+    },
+    "hanlin_jiantao": {
+      "name": "翰林院·检讨",
+      "source_file": "configs/ming-neige/openclaw.json#agents.list[hanlin_jiantao]"
+    },
+    "hanlin_shujishi": {
+      "name": "翰林院·庶吉士",
+      "source_file": "configs/ming-neige/openclaw.json#agents.list[hanlin_shujishi]"
+    },
     "qijuzhu": {
       "name": "起居注官",
       "source_file": "configs/ming-neige/openclaw.json#agents.list[qijuzhu]"

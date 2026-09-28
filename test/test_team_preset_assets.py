@@ -20,6 +20,26 @@ class TeamPresetAssetsTests(unittest.TestCase):
         preset_ids = {item["preset_id"] for item in team_preset_assets.list_team_presets()}
         self.assertTrue({"ming-neige", "tang-sansheng-beta", "modern-ceo", "hanlin-novel-studio"}.issubset(preset_ids))
 
+    def test_shipped_workflows_name_only_the_presets_roles_and_known_personas(self):
+        sys.path.insert(0, str(PROJECT_ROOT))
+        from oasis.scheduler import extract_expert_names, parse_schedule
+
+        def entries(path):
+            return json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
+
+        prompts = PROJECT_ROOT / "data" / "prompts"
+        public = {e["tag"] for name in ("oasis_experts.json", "agency_experts.json") for e in entries(prompts / name)}
+        for preset in sorted((PROJECT_ROOT / "data" / "team_presets").iterdir()):
+            roles = {e["name"] for name in ("internal_agents.json", "external_agents.json") for e in entries(preset / name)}
+            tags = public | {e["tag"] for e in entries(preset / "oasis_experts.json")}
+            for workflow in sorted((preset / "oasis" / "yaml").glob("*.yaml")):
+                with self.subTest(workflow=f"{preset.name}/{workflow.name}"):
+                    names = extract_expert_names(parse_schedule(workflow.read_text(encoding="utf-8")))
+                    unknown = [n for n in names
+                               if (n.startswith("agent:") and n[len("agent:"):] not in roles)
+                               or (n.startswith("persona:") and n.split(":")[1] not in tags)]
+                    self.assertEqual(unknown, [])
+
     def test_list_and_install_team_preset(self):
         with TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
