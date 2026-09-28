@@ -45,6 +45,7 @@
 | `driver` | `webot` / `acpx` / `openclaw` / `http` |
 | `config` | 驱动私有：webot 有 `session`、`persona`、`team`、`tools`；其他平台有 `platform`、`global_name`、`api_url`、`api_key`、`model`、`headers`、`meta`、`persona`、`team` |
 | `runtime_key` | `driver:session` 或 `driver:global_name`，owner 内唯一：一个运行时只登记一次 |
+| `runtime` | 运行时已经知道什么：发过的身份 prompt、最后使用时间。所有平台同一列，只有 L1 读写 |
 
 对外只有平台（`platform`：`webot`、`codex`、`claude-code`、`openclaw`、任意 HTTP 服务名），驱动由平台推出。引用一个 agent 可以写 `ag_` 编号、地址或 handle（`AgentStore.resolve`）。
 
@@ -69,8 +70,8 @@
 | `status` | thread 忙碌、待处理系统消息、上下文占用 | acpx session 状态 | 最近使用记录 |
 | `cancel` | 取消当前任务 | acpx cancel | 不支持（明确报错） |
 | `reset` | 清空会话 | 关闭 session 并忘记已注入的人设 | 忘记已注入的人设 |
-| `history` | 会话消息（含工具调用） | 外部历史库里该 session 的往来 | 同左 |
-| `cleanup` | 删除 agent 时释放运行时 | 同上 | 同上 |
+| `history` | 会话消息（含工具调用） | 外部历史库里该 session 的往来（只记外部运行时） | 同左 |
+| `cleanup` | 删除 agent 时清空会话 | 关闭 session 并删除外部历史 | 删除外部历史 |
 
 `status` 返回 `state`（`running` / `idle` / `unknown`）和 `actions`（该 agent 支持的动作），不把推断状态伪装成确定事实。
 
@@ -95,7 +96,7 @@ agent 卡片里不返回密钥（`api_key` 只给出 `has_api_key`）；WeBot ag
 |---|---|
 | webot | `core/agent.py` 每次构造上下文时按 agent 的 `persona` + 默认 `team` 解析人设，放进 system prompt；不额外注入团队成员或工作流列表，也不重复列出工具名称 |
 | acpx | `AcpxAdapter.ensure_session()`：新建 session 时把身份 prompt 拼到第一条消息前；session 已存在不重复注入 |
-| openclaw / http | `agent_runtime_sessions` 表（`runtime_sessions.py`）记住每个 session key 已见过的 prompt：没见过或变了才注入 |
+| openclaw / http | gateway 对比 agent 的 `runtime.identity_prompt`：没发过或变了才发，成功后记回 agent；重置 agent 会清空它 |
 | llm（临时人设） | 每次调用带人设 |
 
 群聊规则与回复方式来自 `data/prompts/conversation_rules.txt`，WeBot 的 system prompt 和外部 agent 的身份 prompt 共用这一份。
@@ -170,14 +171,14 @@ agent 卡片里不返回密钥（`api_key` 只给出 `has_api_key`）；WeBot ag
 | agent 总表 | `src/agents/store.py` |
 | 单 agent 接口、驱动、回复渠道 | `src/agents/gateway.py`, `src/agents/messages.py` |
 | 状态 / 取消 / 重置 / 历史 | `src/agents/control.py` |
-| 外部运行时已注入的人设 | `src/agents/runtime_sessions.py`, `src/integrations/agent_session.py` |
+| 身份 prompt 发送与放置 | `src/agents/gateway.py`（何时发）, `src/integrations/agent_session.py`（放在哪） |
 | `/v1/agents` | `src/agents/routes.py` |
 | 会话、唤醒、未读摘要 | `src/comms/store.py`, `src/comms/conversations.py`, `src/comms/delivery.py` |
 | team 成员关系、导入导出格式、`/v1/teams` | `src/teams/store.py`, `src/teams/manifest.py`, `src/teams/routes.py` |
 | 群聊 | `src/groups/service.py`, `src/groups/routes.py` |
 | OASIS 参与者 | `oasis/participants.py`, `oasis/engine.py`, `oasis/agent_center.py` |
 | 定时任务 | `src/utils/scheduler_service.py`, `src/utils/internal_alarm_utils.py` |
-| 一次性数据迁移 | `src/migrations/unify.py` |
+| 数据升级（`PRAGMA user_version`，启动时按版本执行） | `src/migrations/unify.py` |
 | WeBot 人设 system prompt | `src/core/agent.py`, `src/webot/profiles.py` |
 | ACP session 与首次 prompt | `src/integrations/acpx_adapter.py` |
 | 分层检查 | `test/test_layering.py` |

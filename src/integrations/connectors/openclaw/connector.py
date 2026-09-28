@@ -5,8 +5,6 @@ import shutil
 
 from integrations.base import (
     PreparedAgentStream,
-    ResetAgentRequest,
-    ResetAgentResult,
     SendToAgentRequest,
     SendToAgentResult,
 )
@@ -100,11 +98,6 @@ class OpenclawConnector(GenericHttpConnector):
             options=effective_options,
         )
         return await super().prepare_stream(http_request)
-
-    async def reset(self, request: ResetAgentRequest) -> ResetAgentResult:
-        # Always use ACP for openclaw reset
-        acp_connector = GenericAcpConnector()
-        return await acp_connector.reset(request)
 
 
 register(OpenclawConnector())

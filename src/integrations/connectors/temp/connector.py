@@ -16,8 +16,6 @@ from core.tool_schema import (
 )
 
 from integrations.base import (
-    ResetAgentRequest,
-    ResetAgentResult,
     SendToAgentRequest,
     SendToAgentResult,
 )
@@ -81,10 +79,6 @@ class TempConnector(AgentConnector):
                     "session": request.session,
                 },
             )
-
-    async def reset(self, request: ResetAgentRequest) -> ResetAgentResult:
-        # stateless, no-op
-        return ResetAgentResult(ok=True)
 
 
 async def _reply_through_optional_tool(llm, prompt: str, response_schema) -> str:

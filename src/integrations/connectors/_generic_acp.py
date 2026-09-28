@@ -3,8 +3,6 @@ from __future__ import annotations
 from integrations.acpx_adapter import AcpxError, get_acpx_adapter, normalize_acpx_run_options
 from integrations.base import (
     PreparedAgentStream,
-    ResetAgentRequest,
-    ResetAgentResult,
     SendToAgentRequest,
     SendToAgentResult,
 )
@@ -19,14 +17,6 @@ def _canonical_platform(platform: str) -> str:
     if pl in ("gemini-cli", "geminicli"):
         return "gemini"
     return pl
-
-
-async def _clear_http_agent_session_records(options: dict, session_key: str) -> int:
-    runtime_db_path = str(options.get("runtime_db_path") or "").strip()
-    if not runtime_db_path or not session_key:
-        return 0
-    from agents.runtime_sessions import forget_session
-    return int(await forget_session(runtime_db_path, session_key) or 0)
 
 
 class GenericAcpConnector(AgentConnector):
@@ -119,59 +109,6 @@ class GenericAcpConnector(AgentConnector):
                     "connect_type": "acp",
                     "platform": _canonical_platform(request.platform),
                     "session": request.session,
-                },
-            )
-
-    async def reset(self, request: ResetAgentRequest) -> ResetAgentResult:
-        options = request.options or {}
-        run_options = normalize_acpx_run_options(options, default_timeout_sec=None)
-        session_key = str(request.session or "").strip()
-        if not session_key:
-            return ResetAgentResult(ok=False, error="missing session")
-
-        platform = _canonical_platform(request.platform)
-        try:
-            adapter = get_acpx_adapter(cwd=options.get("cwd"))
-            if platform == "openclaw":
-                await adapter.ops_openclaw_exec_slash(
-                    session_key=session_key,
-                    slash="/new",
-                    timeout_sec=run_options["timeout_sec"],
-                    ttl_sec=run_options["ttl_sec"],
-                    approve_all=run_options["approve_all"],
-                    permission_policy=run_options["permission_policy"],
-                    non_interactive_permissions=run_options["non_interactive_permissions"],
-                    allowed_tools=run_options["allowed_tools"],
-                )
-            else:
-                await adapter.ops_non_openclaw_reset_session(
-                    tool=platform,
-                    session_key=session_key,
-                    timeout_sec=run_options["timeout_sec"],
-                    ttl_sec=run_options["ttl_sec"],
-                    approve_all=run_options["approve_all"],
-                    permission_policy=run_options["permission_policy"],
-                    non_interactive_permissions=run_options["non_interactive_permissions"],
-                    allowed_tools=run_options["allowed_tools"],
-                )
-            cleared_http_sessions = await _clear_http_agent_session_records(options, session_key)
-            return ResetAgentResult(
-                ok=True,
-                meta={
-                    "connect_type": "acp",
-                    "platform": platform,
-                    "session": session_key,
-                    "cleared_http_sessions": cleared_http_sessions,
-                },
-            )
-        except (AcpxError, RuntimeError, ValueError) as e:
-            return ResetAgentResult(
-                ok=False,
-                error=str(e),
-                meta={
-                    "connect_type": "acp",
-                    "platform": platform,
-                    "session": session_key,
                 },
             )
 

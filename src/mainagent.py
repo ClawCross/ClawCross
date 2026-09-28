@@ -34,7 +34,7 @@ from comms.conversations import Conversations
 from comms.store import ConversationStore
 from groups.routes import create_groups_router
 from groups.service import GroupService
-from migrations.unify import migrate_once
+from migrations.unify import migrate
 from teams.routes import create_teams_router
 from teams.store import get_team_store
 from services.llm_factory import extract_text as _extract_text
@@ -147,10 +147,8 @@ agent = TeamAgent(src_dir=current_dir, db_path=db_path)
 
 # --- Agents, teams and conversations: one database, three layers ---
 agent_store = get_store()
-gateway = AgentGateway(internal_token=INTERNAL_TOKEN, runtime_db_path=agent_store.db_path)
-agent_control = AgentControl(
-    agent, checkpoint_db_path=str(getattr(agent, "_db_path", "") or ""), runtime_db_path=agent_store.db_path,
-)
+gateway = AgentGateway(internal_token=INTERNAL_TOKEN, store=agent_store)
+agent_control = AgentControl(agent, checkpoint_db_path=str(getattr(agent, "_db_path", "") or ""), store=agent_store)
 team_store = get_team_store(agent_store)
 conversation_store = ConversationStore(agent_store)
 conversations = Conversations(conversation_store, agent_store, gateway, is_busy=agent_control.is_busy)
@@ -173,7 +171,7 @@ async def _reconcile_pending_in_background() -> None:
 # --- FastAPI lifespan ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    migrate_once(data_dir=DATA_DIR, teams=team_store, conversations=conversation_store)
+    migrate(data_dir=DATA_DIR, teams=team_store, conversations=conversation_store)
     await agent.startup()
     # 后台任务完成通知是事件驱动的（detached runner 跑完会 POST /internal/bg_job_done）。
     # 这里只做一次性对账（非轮询），补发「本进程宕机期间已完成」的任务通知。
@@ -232,7 +230,6 @@ app.include_router(
         agent=agent,
         verify_password=verify_password,
         verify_auth_or_token=verify_auth_or_token,
-        runtime_db_path=agent_store.db_path,
     )
 )
 

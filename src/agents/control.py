@@ -13,8 +13,8 @@ import shutil
 from typing import Any
 
 from agents.gateway import external_session_key
-from agents.runtime_sessions import forget_agent, get_session
-from agents.store import ACPX, OPENCLAW, WEBOT, Agent
+from agents.store import ACPX, OPENCLAW, WEBOT, Agent, AgentStore, get_store
+from utils.external_agent_history import get_store as history_store
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +32,14 @@ def supported_actions(agent: Agent) -> list[str]:
 
 
 class AgentControl:
-    def __init__(self, webot_runtime: Any, *, checkpoint_db_path: str = "", runtime_db_path: str = ""):
+    def __init__(self, webot_runtime: Any, *, checkpoint_db_path: str = "", store: AgentStore | None = None):
         self.webot = webot_runtime
         self.checkpoint_db_path = checkpoint_db_path
-        self.runtime_db_path = runtime_db_path
+        self._store = store
+
+    def _forget_runtime(self, agent: Agent) -> None:
+        """The runtime starts over: it has been told nothing (the identity is sent again)."""
+        (self._store or get_store()).set_runtime(agent.agent_id, {})
 
     async def status(self, agent: Agent) -> dict[str, Any]:
         base = {"actions": supported_actions(agent)}
@@ -70,17 +74,15 @@ class AgentControl:
         if agent.driver in (ACPX, OPENCLAW):
             await self._acpx_command(agent, action)
             if action == "reset":
-                await forget_agent(self.runtime_db_path, str(agent.config.get("global_name") or ""))
+                self._forget_runtime(agent)
             return {action: True}
-        await forget_agent(self.runtime_db_path, str(agent.config.get("global_name") or ""))
+        self._forget_runtime(agent)
         return {"reset": True}
 
     async def history(self, agent: Agent, limit: int = 200) -> list[dict[str, Any]]:
         """The agent's own conversation, oldest first: ``[{role, content, tool_calls?}]``."""
         if agent.driver == WEBOT:
             return (await self._webot_history(agent))[-limit:]
-        from utils.external_agent_history import get_store as history_store
-
         store = await history_store()
         rows = await store.list_messages(platform=agent.platform, session_key=external_session_key(agent), limit=5000)
         return [
@@ -94,10 +96,10 @@ class AgentControl:
         try:
             if agent.driver == WEBOT:
                 await self._drop_webot_thread(f"{agent.owner}#{agent.config.get('session', '')}")
-            elif agent.driver == ACPX:
-                await self._acpx_command(agent, "close")
-            if agent.driver != WEBOT:
-                await forget_agent(self.runtime_db_path, str(agent.config.get("global_name") or ""))
+            else:
+                if agent.driver == ACPX:
+                    await self._acpx_command(agent, "close")
+                await (await history_store()).delete_session(platform=agent.platform, session_key=external_session_key(agent))
         except Exception:
             logger.exception("cleanup of %s failed", agent.address)
 
@@ -146,8 +148,8 @@ class AgentControl:
     # ── external runtimes ────────────────────────────────────────────────
 
     async def _http_status(self, agent: Agent) -> dict[str, Any]:
-        record = await get_session(self.runtime_db_path, external_session_key(agent))
-        return {"state": "online" if record else "idle"}
+        last_used = agent.runtime.get("last_used_at")
+        return {"state": "online" if last_used else "idle", "last_used_at": last_used}
 
     @staticmethod
     def _adapter():

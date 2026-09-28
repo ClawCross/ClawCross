@@ -1,13 +1,18 @@
-"""2026-09: agents, teams and group chat move into ``clawcross.db``.
+"""Upgrades of ``clawcross.db`` and the files it replaces, run in order at start.
 
+Version 1 (2026-09) — agents, teams and group chat move into ``clawcross.db``.
 Before: agents were entries in every team folder's ``internal_agents.json`` /
 ``external_agents.json`` (and the user root's), and group chat lived in
-``group_chat.db`` keyed by those entries' session / global_name.
+``group_chat.db`` keyed by those entries' session / global_name. After: one
+agent record each, team membership rows, and conversations whose members and
+senders are agent ids; the imported manifest files are removed.
 
-After: one agent record each, team membership rows, and conversations whose
-members and senders are agent ids. The manifest files are moved to a
-``.migrated`` folder next to them; ``group_chat.db`` is left untouched.
-Runs once per database (recorded in ``migrations``).
+Version 2 — what an agent's runtime already knows lives on the agent record,
+and what version 1 left behind goes: ``group_chat.db``, the ``.migrated``
+backups and old file locks, the ``agent_runtime_sessions`` and ``migrations``
+tables. An external runtime is told its identity again once.
+
+``PRAGMA user_version`` holds the version a database has reached.
 """
 
 from __future__ import annotations
@@ -17,7 +22,6 @@ import logging
 import re
 import shutil
 import sqlite3
-import time
 from pathlib import Path
 
 from agents.store import ACPX, HTTP, OPENCLAW, WEBOT, Agent, AgentExists, AgentStore
@@ -27,34 +31,35 @@ from teams.store import TeamStore
 
 logger = logging.getLogger(__name__)
 
-NAME = "2026-09-unify-agents"
+VERSION = 2
 
 
-def _done(store: AgentStore) -> bool:
+def _version(store: AgentStore) -> int:
     conn = store._connect()
     try:
-        conn.execute("CREATE TABLE IF NOT EXISTS migrations (name TEXT PRIMARY KEY, done_at REAL NOT NULL)")
-        return conn.execute("SELECT 1 FROM migrations WHERE name = ?", (NAME,)).fetchone() is not None
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+        if version == 0 and conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'migrations'").fetchone():
+            # Version 1 was first recorded in a table of its own.
+            if conn.execute("SELECT 1 FROM migrations WHERE name = '2026-09-unify-agents'").fetchone():
+                version = 1
+        return version
     finally:
         conn.close()
 
 
-def _mark_done(store: AgentStore) -> None:
+def _set_version(store: AgentStore, version: int) -> None:
     conn = store._connect()
     try:
-        conn.execute("INSERT OR IGNORE INTO migrations (name, done_at) VALUES (?, ?)", (NAME, time.time()))
+        conn.execute(f"PRAGMA user_version = {int(version)}")
     finally:
         conn.close()
 
 
-def _set_aside(folder: Path) -> None:
+def _remove_imported(folder: Path) -> None:
+    """The manifest files of *folder* have been imported: remove them and their old lock."""
     for name in (INTERNAL_FILE, EXTERNAL_FILE):
-        path = folder / name
-        if path.is_file():
-            backup = folder / ".migrated"
-            backup.mkdir(exist_ok=True)
-            shutil.move(str(path), str(backup / name))
-        (folder / f".{name}.lock").unlink(missing_ok=True)  # the old file lock
+        (folder / name).unlink(missing_ok=True)
+        (folder / f".{name}.lock").unlink(missing_ok=True)
 
 
 def migrate_manifests(teams: TeamStore) -> None:
@@ -74,7 +79,7 @@ def migrate_manifests(teams: TeamStore) -> None:
                 except Exception:
                     logger.exception("migrating team %s/%s failed; its files stay in place", owner, team)
                     continue
-            _set_aside(folder)
+            _remove_imported(folder)
         # Agents declared at the user root belong to no team.
         internal, external = read_folder(owner_dir)
         for entry in internal:
@@ -82,7 +87,7 @@ def migrate_manifests(teams: TeamStore) -> None:
         for entry in external:
             if entry.get("global_name"):
                 agent_for_external_entry(teams, owner, "", entry)
-        _set_aside(owner_dir)
+        _remove_imported(owner_dir)
 
 
 def _columns(conn: sqlite3.Connection, table: str) -> set[str]:
@@ -189,28 +194,6 @@ def migrate_groups(old_db: Path, conversations: ConversationStore) -> None:
         src.close()
 
 
-def migrate_runtime_sessions(old_db: Path, agents: AgentStore) -> None:
-    if not old_db.is_file():
-        return
-    src = sqlite3.connect(f"{old_db.resolve().as_uri()}?mode=ro", uri=True)
-    try:
-        if not src.execute("SELECT 1 FROM sqlite_master WHERE name = 'http_agent_sessions'").fetchone():
-            return
-        rows = src.execute(
-            "SELECT session_key, global_name, prompt_text, transport, created_at, updated_at, last_used_at"
-            " FROM http_agent_sessions"
-        ).fetchall()
-    finally:
-        src.close()
-    from agents.runtime_sessions import _SCHEMA
-    conn = agents._connect()
-    try:
-        conn.executescript(_SCHEMA)
-        conn.executemany("INSERT OR IGNORE INTO agent_runtime_sessions VALUES (?, ?, ?, ?, ?, ?, ?)", rows)
-    finally:
-        conn.close()
-
-
 def _alarm_agent(teams: TeamStore, info: dict) -> Agent | None:
     owner = str(info.get("user_id") or "")
     agents = teams.agents
@@ -305,15 +288,49 @@ def migrate_workflows(teams: TeamStore) -> None:
             path.write_text(converted, encoding="utf-8")
 
 
-def migrate_once(*, data_dir: Path, teams: TeamStore, conversations: ConversationStore) -> None:
-    agents = teams.agents
-    if _done(agents):
+def remove_old_files(data_dir: Path, teams: TeamStore) -> None:
+    """What version 1 left behind: the old group chat database, backups, locks, and the
+    history of WeBot and one-call agents that was recorded twice and never read."""
+    for suffix in ("", "-wal", "-shm"):
+        (Path(data_dir) / f"group_chat.db{suffix}").unlink(missing_ok=True)
+    history_dir = Path(data_dir) / "external_agent_history"
+    for pattern in ("internal#*", "temp#*"):
+        for path in history_dir.glob(pattern):
+            path.unlink(missing_ok=True)
+    root = teams.user_files_dir
+    if not root.is_dir():
         return
-    logger.info("migrating agents, teams and group chat into %s", agents.db_path)
-    migrate_manifests(teams)
-    old_db = Path(data_dir) / "group_chat.db"
-    migrate_groups(old_db, conversations)
-    migrate_runtime_sessions(old_db, agents)
-    migrate_alarms(Path(data_dir), teams)
-    migrate_workflows(teams)
-    _mark_done(agents)
+    for owner_dir in (p for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")):
+        teams_dir = owner_dir / "teams"
+        folders = [owner_dir] + ([p for p in teams_dir.iterdir() if p.is_dir()] if teams_dir.is_dir() else [])
+        for folder in folders:
+            shutil.rmtree(folder / ".migrated", ignore_errors=True)
+            for name in (INTERNAL_FILE, EXTERNAL_FILE):
+                (folder / f".{name}.lock").unlink(missing_ok=True)
+
+
+def _drop_old_tables(store: AgentStore) -> None:
+    conn = store._connect()
+    try:
+        conn.execute("DROP TABLE IF EXISTS agent_runtime_sessions")
+        conn.execute("DROP TABLE IF EXISTS migrations")
+    finally:
+        conn.close()
+
+
+def migrate(*, data_dir: Path, teams: TeamStore, conversations: ConversationStore) -> None:
+    """Bring the data up to ``VERSION``; a no-op once it is there."""
+    agents = teams.agents
+    version = _version(agents)
+    if version < 1:
+        logger.info("migrating agents, teams and group chat into %s", agents.db_path)
+        migrate_manifests(teams)
+        migrate_groups(Path(data_dir) / "group_chat.db", conversations)
+        migrate_alarms(Path(data_dir), teams)
+        migrate_workflows(teams)
+    if version < 2:
+        logger.info("removing what the move into %s left behind", agents.db_path)
+        remove_old_files(Path(data_dir), teams)
+        _drop_old_tables(agents)
+    if version < VERSION:
+        _set_version(agents, VERSION)

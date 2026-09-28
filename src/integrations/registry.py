@@ -5,8 +5,6 @@ from typing import TYPE_CHECKING
 
 from integrations.base import (
     PreparedAgentStream,
-    ResetAgentRequest,
-    ResetAgentResult,
     SendToAgentRequest,
     SendToAgentResult,
 )
@@ -84,17 +82,6 @@ async def send_to_agent(request: SendToAgentRequest) -> SendToAgentResult:
         result.meta = meta
 
     return result
-
-
-async def reset_agent(request: ResetAgentRequest) -> ResetAgentResult:
-    key = (request.platform or "").strip().lower()
-    conn = _CONNECTORS.get(key)
-    if conn:
-        return await conn.reset(request)
-    fallback = _CONNECTORS.get((request.connect_type or "").strip().lower())
-    if fallback:
-        return await fallback.reset(request)
-    return ResetAgentResult(ok=False, error=f"unsupported platform: {key}")
 
 
 async def prepare_send_to_agent_stream(request: SendToAgentRequest) -> PreparedAgentStream:

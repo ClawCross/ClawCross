@@ -14,7 +14,7 @@ if str(SRC_DIR) not in sys.path:
 
 from agents.store import ACPX, WEBOT, AgentStore  # noqa: E402
 from comms.store import ConversationStore  # noqa: E402
-from migrations.unify import convert_workflow_yaml, migrate_once  # noqa: E402
+from migrations.unify import VERSION, convert_workflow_yaml, migrate  # noqa: E402
 from teams.store import TeamStore  # noqa: E402
 
 OLD_GROUP_SCHEMA = """
@@ -86,7 +86,7 @@ class TestMigration(unittest.TestCase):
         self.conversations = ConversationStore(self.agents)
 
     def migrate(self):
-        migrate_once(data_dir=self.data, teams=self.teams, conversations=self.conversations)
+        migrate(data_dir=self.data, teams=self.teams, conversations=self.conversations)
 
     def test_everything_moves_once(self):
         self.migrate()
@@ -100,9 +100,10 @@ class TestMigration(unittest.TestCase):
         self.assertEqual([(m.role, m.is_lead) for m in self.teams.members("alice", "dev")],
                          [("Planner", True), ("Writer", False), ("Codex", False)])
         team = self.teams.folder("alice", "dev")
-        self.assertFalse((team / "internal_agents.json").exists())
-        self.assertTrue((team / ".migrated" / "internal_agents.json").exists())
-        self.assertFalse((team / ".internal_agents.json.lock").exists())
+        for gone in (team / "internal_agents.json", team / "external_agents.json", team / ".migrated",
+                     team / ".internal_agents.json.lock", self.data / "user_files" / "alice" / "internal_agents.json",
+                     self.data / "group_chat.db"):
+            self.assertFalse(gone.exists(), gone)
 
         group = self.conversations.get("alice::Dev")
         self.assertEqual((group.title, group.kind, group.meta, group.primary_agent),
@@ -128,8 +129,45 @@ class TestMigration(unittest.TestCase):
         self.assertIn("persona: critical", flow)
 
         conn = self.agents._connect()
-        self.assertEqual(conn.execute("SELECT global_name FROM agent_runtime_sessions").fetchall()[0][0], "cx")
+        self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], VERSION)
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         conn.close()
+        self.assertFalse({"agent_runtime_sessions", "migrations"} & tables)
+
+    def test_a_database_from_the_first_version_is_brought_up_to_date(self):
+        # What version 1 left: its own migrations table, the runtime-session table, the old
+        # group chat database, backups of the imported manifests and their locks, and history
+        # files of WeBot and one-call agents nobody reads.
+        conn = self.agents._connect()
+        conn.executescript(
+            "CREATE TABLE migrations (name TEXT PRIMARY KEY, done_at REAL NOT NULL);"
+            "INSERT INTO migrations VALUES ('2026-09-unify-agents', 1);"
+            "CREATE TABLE agent_runtime_sessions (session_key TEXT PRIMARY KEY, global_name TEXT);")
+        conn.close()
+        team = self.teams.folder("alice", "dev")
+        (team / ".migrated").mkdir()
+        (team / ".migrated" / "internal_agents.json").write_text("[]", encoding="utf-8")
+        waiting = [{"name": "New", "tag": "writer"}]  # a package written after version 1, not imported yet
+        (team / "internal_agents.json").write_text(json.dumps(waiting), encoding="utf-8")
+        flow = (team / "oasis" / "yaml" / "flow.yaml").read_text()
+        history = self.data / "external_agent_history"
+        history.mkdir()
+        for name in ("internal#s1.db", "temp#创意专家.db", "codex#agent_cx_clawcrosschat.db"):
+            (history / name).write_bytes(b"")
+
+        self.migrate()
+
+        self.assertEqual(self.agents.list("alice"), [])  # version 1 is not run again
+        self.assertEqual(json.loads((team / "internal_agents.json").read_text()), waiting)
+        self.assertEqual((team / "oasis" / "yaml" / "flow.yaml").read_text(), flow)
+        for gone in (team / ".migrated", team / ".internal_agents.json.lock", self.data / "group_chat.db"):
+            self.assertFalse(gone.exists(), gone)
+        self.assertEqual([p.name for p in history.iterdir()], ["codex#agent_cx_clawcrosschat.db"])
+        conn = self.agents._connect()
+        self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], VERSION)
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        conn.close()
+        self.assertFalse({"agent_runtime_sessions", "migrations"} & tables)
 
     def test_workflow_lines_keep_their_layout(self):
         converted = convert_workflow_yaml("  - expert: 'x#temp#2'   # c\n    - expert: a#ext#Bot: v1\n")

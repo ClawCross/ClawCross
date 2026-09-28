@@ -16915,7 +16915,6 @@ async function openSessionsSubpage() {
   try {
     const data = await api('POST', '/proxy_sessions_list');
     const acpxSessions = (data.acpx_sessions || []).filter(function(s) { return !s.closed; });
-    const httpRecs = data.http_agent_sessions || [];
 
     let html = '';
 
@@ -16947,25 +16946,6 @@ async function openSessionsSubpage() {
       });
     }
 
-    html += '<div style="height:16px;"></div>';
-
-    // ── HTTP Agent Records ──
-    html += '<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px;">HTTP Agent Records (' + httpRecs.length + ')</div>';
-    if (httpRecs.length === 0) {
-      html += '<div style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;">\u6682\u65e0</div>';
-    } else {
-      httpRecs.forEach(function(r) {
-        const date = r.last_used_at ? new Date(r.last_used_at * 1000).toLocaleDateString() : 'N/A';
-        html += '<div style="background:var(--bg-card);border-radius:8px;padding:10px 12px;margin-bottom:6px;">';
-        html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
-        html += '<span style="font-size:13px;font-weight:500;">' + esc(r.global_name || '\u65e0\u540d\u5b57') + '</span>';
-        html += '<button onclick="deleteHttpSession(\'' + esc(r.session_key).replace(/'/g, "\\'") + '\')" style="padding:4px 10px;border-radius:6px;font-size:12px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;cursor:pointer;">\u5220\u9664</button>';
-        html += '</div>';
-        html += '<div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">' + date + ' · ' + esc(r.transport) + '</div>';
-        html += '</div>';
-      });
-    }
-
     body.innerHTML = html;
   } catch(e) {
     body.innerHTML = '<div style="padding:16px;color:#e74c3c;font-size:14px;">\u52a0\u8f7d\u5931\u8d25: ' + esc(e.message) + '</div>';
@@ -16986,20 +16966,6 @@ async function closeAcpSession(platform, sessionName, cwd) {
     toast('\u5173\u95ed\u5931\u8d25: ' + e.message);
   }
 }
-
-async function deleteHttpSession(sessionKey) {
-  if (!confirm('\u786e\u5b9a\u5220\u9664\u8fd9\u6761\u8bb0\u5f55?')) return;
-  try {
-    await api('POST', '/proxy_sessions_delete', {session_key: sessionKey});
-    openSessionsSubpage();
-  } catch(e) {
-    toast('\u5220\u9664\u5931\u8d25: ' + e.message);
-  }
-}
-
-
-
-
 
 async function doLogout() {
   if (!confirm(t('confirm_logout'))) return;
