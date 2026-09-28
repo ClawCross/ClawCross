@@ -79,7 +79,7 @@ def _ensure_runtime_aliases(user_id: str, workspace_root: Path) -> None:
 def _ensure_within(base: Path, candidate: Path) -> Path:
     resolved_base = base.resolve()
     resolved_candidate = candidate.resolve()
-    if not str(resolved_candidate).startswith(str(resolved_base)):
+    if not resolved_candidate.is_relative_to(resolved_base):
         raise ValueError(f"非法工作目录: {candidate}")
     return resolved_candidate
 

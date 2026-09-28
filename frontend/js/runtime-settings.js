@@ -119,6 +119,11 @@ async function loadRuntimeSettingsScope() {
                     </select>
                 </label>
                 <p id="runtime-settings-reviewer-hint" class="runtime-settings-note"></p>
+                <label class="runtime-settings-field"><span>${text('Auto 命令沙盒', 'Auto command sandbox')}</span>
+                    <select data-section="approval" data-key="command_sandbox" class="runtime-settings-input">
+                        <option value="off" ${approval.command_sandbox !== 'container' ? 'selected' : ''}>${text('关闭 · 模型审核后在宿主机执行', 'Off · Reviewed, then run on host')}</option>
+                        <option value="container" ${approval.command_sandbox === 'container' ? 'selected' : ''}>${text('容器 · 仅前台命令', 'Container · Foreground only')}</option>
+                    </select><small>${text('需预装 Podman 或 Docker 和本地 Python 镜像；禁用网络，失败时拒绝执行。文件工具仍由模型审核。', 'Requires Podman or Docker and a local Python image. Network disabled; unavailable sandbox blocks execution. File tools remain model-reviewed.')}</small></label>
                 ${instructions('approval', 'reviewer_policy', approval.reviewer_policy, '补充审核要求', 'Additional review instructions', '例如：安装依赖可以代审，删除文件需先问我', 'For example: review installs for me, but ask before deleting files')}
                 <details class="runtime-settings-advanced"><summary>${text('高级审核设置', 'Advanced review settings')}<span>${text('模型与等待时间', 'Model and timeout')}</span></summary>
                     <div class="runtime-settings-advanced-body runtime-settings-grid">

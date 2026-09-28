@@ -22,6 +22,9 @@ class RuntimeSettingsTests(unittest.TestCase):
 
     def test_defaults_session_inheritance_and_reset(self):
         self.assertEqual(settings.get_runtime_settings("alice").approval.approvals_reviewer, "user")
+        self.assertEqual(settings.get_runtime_settings("alice").approval.command_sandbox, "off")
+        settings.save_runtime_settings("alice", session_id="s", settings={"approval": {"command_sandbox": "container"}})
+        self.assertEqual(settings.get_runtime_settings("alice", "s").approval.command_sandbox, "container")
         settings.save_runtime_settings("alice", settings={"context": {"history_tokens": 10000}})
         settings.save_runtime_settings("alice", session_id="s", settings={"context": {"preserve_recent_turns": 2}})
         settings.save_runtime_settings("alice", settings={"context": {"history_tokens": 12000}})
@@ -40,6 +43,7 @@ class RuntimeSettingsTests(unittest.TestCase):
             {"context": {"preserve_recent_turns": 0}},
             {"context": {"auto_compact": "true"}},
             {"approval": {"approvals_reviewer": "allow_all"}},
+            {"approval": {"command_sandbox": "host"}},
             {"context": {"summarizer_input_tokens": 1024}},
             {"unknown": {}},
         ):
