@@ -968,12 +968,12 @@ class TeamAgent:
         return build_user_skills_listing(user_id, team=team)
 
     def _find_internal_session_meta(self, user_id: str, session_id: str) -> dict | None:
-        """``{"team", "name", "tag"}`` of the agent this session is, or None for a plain chat."""
+        """``{"team", "name", "tag"}`` of the agent this session is."""
         if not user_id or not session_id:
             return None
-        from agents.store import WEBOT, get_store
+        from agents.store import get_store
 
-        agent = get_store().find(user_id, WEBOT, {"session": session_id})
+        agent = get_store().get(user_id, session_id)
         if agent is None:
             return None
         return {"team": agent.config.get("team", ""), "name": agent.name, "tag": agent.config.get("persona", "")}

@@ -1,20 +1,21 @@
-"""Conversations, their members and their messages.
+"""Conversations, their members and their messages, in their own database.
 
-A member or a sender is a principal: ``ag_…`` for an agent, ``u:<user>`` for a
-human. Agent members reference the agents table, so deleting an agent takes it
-out of every conversation.
+A member or a sender is a principal: an agent id, or ``u:<user>`` for a
+human. Conversations sit around the agents, not in the agent table: when an
+agent is deleted, ``forget`` takes it out of every conversation.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import secrets
 import sqlite3
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
-from agents.store import AGENT_ID_PREFIX, AgentStore
 
 HUMAN_PREFIX = "u:"
 GROUP = "group"
@@ -26,7 +27,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     owner         TEXT NOT NULL,
     title         TEXT NOT NULL,
     kind          TEXT NOT NULL CHECK (kind IN ('group', 'direct')),
-    primary_agent TEXT REFERENCES agents(agent_id) ON DELETE SET NULL,
+    primary_agent TEXT,
     dnd           INTEGER NOT NULL DEFAULT 0,
     meta_json     TEXT NOT NULL DEFAULT '{}',
     created_at    REAL NOT NULL,
@@ -36,7 +37,6 @@ CREATE INDEX IF NOT EXISTS idx_conversations_owner ON conversations(owner);
 CREATE TABLE IF NOT EXISTS conversation_members (
     conv_id     TEXT NOT NULL REFERENCES conversations(conv_id) ON DELETE CASCADE,
     principal   TEXT NOT NULL,
-    agent_id    TEXT REFERENCES agents(agent_id) ON DELETE CASCADE,
     nickname    TEXT NOT NULL DEFAULT '',
     muted       INTEGER NOT NULL DEFAULT 0,
     read_cursor INTEGER NOT NULL DEFAULT 0,
@@ -65,7 +65,7 @@ def human(user_id: str) -> str:
 
 
 def is_agent(principal: str) -> bool:
-    return (principal or "").startswith(AGENT_ID_PREFIX)
+    return bool(principal) and not principal.startswith(HUMAN_PREFIX)
 
 
 def new_conversation_id() -> str:
@@ -107,13 +107,18 @@ class Message:
 
 
 class ConversationStore:
-    def __init__(self, agents: AgentStore):
-        self.agents = agents
+    def __init__(self, db_path: str | os.PathLike):
+        self.db_path = str(db_path)
         self._ready = False
 
     def _connect(self) -> sqlite3.Connection:
-        conn = self.agents._connect()  # same database: members reference agents
+        os.makedirs(os.path.dirname(self.db_path) or ".", exist_ok=True)
+        conn = sqlite3.connect(self.db_path, timeout=10, isolation_level=None)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout = 10000")
+        conn.execute("PRAGMA foreign_keys = ON")
         if not self._ready:
+            conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(_SCHEMA)
             self._ready = True
         return conn
@@ -157,9 +162,8 @@ class ConversationStore:
             )
             for principal in [human(owner), *members]:
                 conn.execute(
-                    "INSERT OR IGNORE INTO conversation_members (conv_id, principal, agent_id, joined_at)"
-                    " VALUES (?, ?, ?, ?)",
-                    (conv_id, principal, principal if is_agent(principal) else None, now),
+                    "INSERT OR IGNORE INTO conversation_members (conv_id, principal, joined_at) VALUES (?, ?, ?)",
+                    (conv_id, principal, now),
                 )
             conn.execute("COMMIT")
         finally:
@@ -205,15 +209,20 @@ class ConversationStore:
 
     def add_member(self, conv_id: str, principal: str, *, nickname: str = "") -> None:
         self._run(
-            "INSERT OR IGNORE INTO conversation_members (conv_id, principal, agent_id, nickname, joined_at)"
-            " VALUES (?, ?, ?, ?, ?)",
-            (conv_id, principal, principal if is_agent(principal) else None, nickname, time.time()),
+            "INSERT OR IGNORE INTO conversation_members (conv_id, principal, nickname, joined_at) VALUES (?, ?, ?, ?)",
+            (conv_id, principal, nickname, time.time()),
         )
 
     def remove_member(self, conv_id: str, principal: str) -> None:
         self._run("DELETE FROM conversation_members WHERE conv_id = ? AND principal = ?", (conv_id, principal))
         self._run("UPDATE conversations SET primary_agent = NULL WHERE conv_id = ? AND primary_agent = ?",
                   (conv_id, principal))
+
+    def forget(self, owner: str, principal: str) -> None:
+        """A deleted agent leaves every conversation of its owner."""
+        mine = "SELECT conv_id FROM conversations WHERE owner = ?"
+        self._run(f"DELETE FROM conversation_members WHERE principal = ? AND conv_id IN ({mine})", (principal, owner))
+        self._run("UPDATE conversations SET primary_agent = NULL WHERE primary_agent = ? AND owner = ?", (principal, owner))
 
     def set_muted(self, conv_id: str, principal: str, muted: bool) -> None:
         self._run("UPDATE conversation_members SET muted = ? WHERE conv_id = ? AND principal = ?",
@@ -277,3 +286,8 @@ class ConversationStore:
 
     def message_count(self, conv_id: str) -> int:
         return self._run("SELECT COUNT(*) FROM conversation_messages WHERE conv_id = ?", (conv_id,))[0][0]
+
+
+def default_db_path() -> Path:
+    from utils.runtime_paths import DATA_DIR
+    return Path(DATA_DIR) / "conversations.db"

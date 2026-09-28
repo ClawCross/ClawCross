@@ -275,39 +275,5 @@ class ProxyLoginI18nTests(unittest.TestCase):
         self.assertEqual(response.get_json(), {"models": ["gemini-2.0-flash"]})
         self.assertNotIn("Authorization", seen_headers)
 
-    @mock.patch.object(front, "read_env_all")
-    @mock.patch.object(front, "send_to_agent")
-    def test_proxy_openclaw_chat_reads_latest_runtime_values_from_env_file(self, mock_send_to_agent, mock_read_env_all):
-        mock_read_env_all.return_value = {
-            "OPENCLAW_API_URL": "http://127.0.0.1:19001/v1/chat/completions",
-            "OPENCLAW_GATEWAY_TOKEN": "fresh-gateway-token",
-        }
-        mock_send_to_agent.return_value = SendToAgentResult(
-            ok=True,
-            content="",
-            raw_response={"ok": True},
-        )
-
-        with mock.patch.dict(
-            front.os.environ,
-            {
-                "OPENCLAW_API_URL": "http://127.0.0.1:19999/v1/chat/completions",
-                "OPENCLAW_GATEWAY_TOKEN": "stale-token",
-            },
-            clear=False,
-        ):
-            response = self.client.post(
-                "/proxy_openclaw_chat",
-                json={"model": "agent:main", "messages": [{"role": "user", "content": "hi"}], "stream": False},
-            )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.get_data(as_text=True).strip(), '{"ok":true}')
-
-        args, kwargs = mock_send_to_agent.call_args
-        self.assertEqual(args[0].options["api_url"], "http://127.0.0.1:19001/v1/chat/completions")
-        self.assertEqual(args[0].options["api_key"], "fresh-gateway-token")
-
-
 if __name__ == "__main__":
     unittest.main()

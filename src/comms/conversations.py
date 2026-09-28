@@ -81,10 +81,15 @@ class Conversations:
 
     # ── members ──────────────────────────────────────────────────────────
 
+    def _agent(self, conv_id: str, principal: str) -> Agent | None:
+        """A member agent, looked up in the conversation owner's space."""
+        conversation = self.store.get(conv_id)
+        return self.agents.get(conversation.owner, principal) if conversation and is_agent(principal) else None
+
     def members(self, conv_id: str) -> list[MemberView]:
         views = []
         for m in self.store.members(conv_id):
-            agent = self.agents.get(m.principal) if is_agent(m.principal) else None
+            agent = self._agent(conv_id, m.principal)
             if is_agent(m.principal) and agent is None:
                 continue
             name = m.nickname or (agent.name if agent else m.principal[len(HUMAN_PREFIX):])
@@ -95,7 +100,7 @@ class Conversations:
         for m in self.members(conv_id):
             if m.principal == principal:
                 return m.name
-        agent = self.agents.get(principal) if is_agent(principal) else None
+        agent = self._agent(conv_id, principal)
         return agent.name if agent else principal.removeprefix(HUMAN_PREFIX)
 
     def require_member(self, conv_id: str, principal: str) -> Conversation:
@@ -117,7 +122,7 @@ class Conversations:
         bucket = self._typing.get(conv_id, {})
         now = time.time()
         for principal, since in list(bucket.items()):
-            agent = self.agents.get(principal)
+            agent = self._agent(conv_id, principal)
             done = agent is None or now - since > _TYPING_TIMEOUT_SEC
             if not done and self.is_busy is not None and now - since > 5:
                 done = not self.is_busy(agent)

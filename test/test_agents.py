@@ -25,9 +25,10 @@ from agents.gateway import (  # noqa: E402
     AgentGateway,
     persona_agent,
     reply_channel,
+    runtime_session,
     temp_session_agent,
 )
-from agents.messages import AgentMessage, AgentReply  # noqa: E402
+from agents.messages import AgentMessage, AgentReply, DeliveryReceipt  # noqa: E402
 from agents.routes import create_agents_router  # noqa: E402
 from agents.store import (  # noqa: E402
     ACPX,
@@ -52,61 +53,46 @@ class StoreCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.store = AgentStore(Path(self.tmp.name) / "clawcross.db")
+        self.store = AgentStore(Path(self.tmp.name) / "agents.db")
 
     def webot(self, owner="alice", name="Coder", session="s1", **config):
-        return self.store.create(owner, name=name, driver=WEBOT, config={"session": session, **config})
+        return self.store.create(owner, driver=WEBOT, config=config, name=name, agent_id=session)
+
+    def codex(self, owner="alice", name="Codex"):
+        return self.store.create(owner, driver=ACPX, config={"platform": "codex"}, name=name)
 
 
 class TestStore(StoreCase):
-    def test_one_record_per_agent_with_a_stable_id_and_address(self):
+    def test_every_session_is_one_agent_under_its_number(self):
         coder = self.webot()
-        codex = self.store.create("alice", name="Codex", driver=ACPX, config={"platform": "codex", "global_name": "cx"})
-
-        self.assertTrue(coder.agent_id.startswith("ag_") and len(coder.agent_id) == 13)
-        self.assertEqual((coder.address, codex.address), ("alice/coder", "alice/codex"))
+        codex = self.codex()
+        self.assertEqual(coder.agent_id, "s1")  # the session number is the agent id
+        self.assertTrue(codex.agent_id.startswith("ag_") and len(codex.agent_id) == 13)  # or one is given
         self.assertEqual(codex.platform, "codex")
-        self.assertEqual(self.store.update(coder.agent_id, name="Builder").agent_id, coder.agent_id)
-        self.assertEqual(self.store.get(coder.agent_id).handle, "coder")  # renaming keeps the address
+        self.assertEqual(self.store.update("alice", "s1", name="Builder").name, "Builder")
+        self.assertEqual([a.agent_id for a in self.store.list("alice")], ["s1", codex.agent_id])
 
-    def test_every_reference_form_finds_the_agent_and_other_users_are_out_of_reach(self):
-        coder = self.webot()
-        bob = self.webot(owner="bob", session="b1")
-        for ref in (coder.agent_id, "alice/coder", "coder", "@coder"):
-            with self.subTest(ref=ref):
-                self.assertEqual(self.store.resolve("alice", ref).agent_id, coder.agent_id)
-        for ref in (bob.agent_id, "bob/coder", "nobody"):
-            with self.subTest(ref=ref), self.assertRaises(AgentNotFound):
-                self.store.resolve("alice", ref)
-
-    def test_a_runtime_belongs_to_one_agent(self):
-        coder = self.webot()
-        with self.assertRaises(AgentExists) as ctx:
+    def test_a_number_is_unique_within_its_owners_space(self):
+        self.webot()
+        with self.assertRaises(AgentExists):
             self.webot(name="Other")
-        self.assertEqual(ctx.exception.agent.agent_id, coder.agent_id)
-        self.assertEqual(self.store.find("alice", WEBOT, {"session": "s1"}).agent_id, coder.agent_id)
-        self.assertIsNone(self.store.find("bob", WEBOT, {"session": "s1"}))
+        bobs = self.webot(owner="bob", name="Bob's")  # the same number elsewhere is another agent
+        self.assertEqual((self.store.get("bob", "s1").name, self.store.get("alice", "s1").name), ("Bob's", "Coder"))
+        self.assertIsNone(self.store.get("carol", bobs.agent_id))
 
-    def test_a_database_from_before_the_runtime_column_gets_it(self):
-        import sqlite3
-        path = Path(self.tmp.name) / "old.db"
-        conn = sqlite3.connect(path)
-        conn.execute("CREATE TABLE agents (agent_id TEXT PRIMARY KEY, owner TEXT NOT NULL, handle TEXT NOT NULL,"
-                     " name TEXT NOT NULL, driver TEXT NOT NULL, runtime_key TEXT NOT NULL,"
-                     " config_json TEXT NOT NULL DEFAULT '{}', created_at REAL NOT NULL, updated_at REAL NOT NULL)")
-        conn.execute("INSERT INTO agents VALUES ('ag_old0000001', 'alice', 'old', 'Old', 'webot', 'webot:s', '{}', 1, 1)")
-        conn.commit()
-        conn.close()
-        old = AgentStore(path)
-        self.assertEqual(old.get("ag_old0000001").runtime, {})
-        old.set_runtime("ag_old0000001", {"last_used_at": 2.0})
-        self.assertEqual(old.get("ag_old0000001").runtime, {"last_used_at": 2.0})
+    def test_a_number_not_seen_before_is_a_new_agent(self):
+        made = self.store.ensure("alice", "fresh")
+        self.assertEqual((made.agent_id, made.driver, made.name), ("fresh", WEBOT, "fresh"))
+        self.assertEqual(self.store.ensure("alice", "fresh", driver=ACPX).driver, WEBOT)  # already there
+        codex = self.store.ensure("alice", "cx2", driver=ACPX, config={"platform": "codex"})
+        self.assertEqual(codex.platform, "codex")
 
-    def test_same_names_get_distinct_handles(self):
-        first, second = self.webot(session="a"), self.webot(session="b")
-        self.assertEqual((first.handle, second.handle), ("coder", "coder-2"))
-        cjk = self.webot(name="搜索指挥者", session="c")
-        self.assertEqual(cjk.handle, "agent")
+    def test_numbers_are_plain(self):
+        for bad in ("a.b", "u:x", "a/b", "x" * 65):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                self.store.create("alice", driver=WEBOT, agent_id=bad)
+        with self.assertRaises(AgentNotFound):
+            self.store.require("alice", "nobody")
 
     def test_driver_follows_the_platform(self):
         self.assertEqual(driver_for_platform("webot"), WEBOT)
@@ -178,14 +164,16 @@ class TestGateway(StoreCase):
         self.assertEqual(request.options["headers"]["Authorization"], bearer("alice"))
         self.assertTrue(request.options["_history_disabled"])  # WeBot keeps its own
 
-    def test_acpx_agent_runs_in_its_named_session_without_a_reply_schema(self):
-        codex = self.store.create("alice", name="Codex", driver=ACPX,
-                                  config={"platform": "codex", "global_name": "cx", "persona": "coder"})
+    def test_acpx_agent_runs_in_the_session_named_after_it(self):
+        codex = self.store.create("alice", name="Codex", driver=ACPX, config={"platform": "codex", "persona": "coder"})
+        other = self.codex(name="Codex 2")  # the same runtime, another session
         request = self.ask(codex, mode="bypass", response_format={"type": "json_schema"})
-        self.assertEqual((request.connect_type, request.platform, request.session), ("acp", "codex", "agent:cx:clawcrosschat"))
+        self.assertEqual((request.connect_type, request.platform, request.session),
+                         ("acp", "codex", f"clawcross-alice-{codex.agent_id}"))
+        self.assertEqual(self.ask(other).session, f"clawcross-alice-{other.agent_id}")
         self.assertIn("PERSONA", request.options["identity_prompt"])
         self.assertIn("【群聊与私聊规则】", request.options["identity_prompt"])  # the shared chat rules
-        self.assertIn("last_used_at", self.store.get(codex.agent_id).runtime)
+        self.assertIn("last_used_at", self.store.get("alice", codex.agent_id).runtime)
 
     def test_openclaw_uses_the_runtime_endpoint_and_its_session_key(self):
         claw = self.store.create("alice", name="Claw", driver=OPENCLAW,
@@ -193,23 +181,22 @@ class TestGateway(StoreCase):
         with mock.patch.dict(os.environ, {"OPENCLAW_API_URL": "http://device:18789", "OPENCLAW_GATEWAY_TOKEN": "gw"}):
             request = self.ask(claw)
         self.assertEqual(request.options["api_url"], "http://device:18789/v1/chat/completions")
-        self.assertEqual(request.options["headers"]["x-openclaw-session-key"], "agent:main:clawcrosschat")
+        self.assertEqual(request.options["headers"]["x-openclaw-session-key"], f"agent:main:clawcross-alice-{claw.agent_id}")
         self.assertEqual(request.options["body"]["model"], "agent:main")
 
     def test_a_runtime_is_told_its_identity_once_and_again_when_it_changes(self):
-        svc = self.store.create("alice", name="Svc", driver=HTTP,
-                                config={"platform": "svc", "global_name": "svc", "api_url": "http://svc"})
+        svc = self.store.create("alice", name="Svc", driver=HTTP, config={"platform": "svc", "api_url": "http://svc"})
         first = self.ask(svc)
         self.assertTrue(first.options["inject_identity"])
-        svc = self.store.get(svc.agent_id)
+        svc = self.store.get("alice", svc.agent_id)
         self.assertEqual(svc.runtime["identity_prompt"], first.options["identity_prompt"])
         self.assertFalse(self.ask(svc).options["inject_identity"])
-        svc = self.store.update(svc.agent_id, config={**svc.config, "persona": "critic"})
+        svc = self.store.update("alice", svc.agent_id, config={**svc.config, "persona": "critic"})
         with mock.patch("integrations.external_persona.build_external_persona_prompt", return_value="CRITIC"):
             self.assertTrue(self.ask(svc).options["inject_identity"])
 
     def test_http_agent_without_endpoint_says_so(self):
-        agent = self.store.create("alice", name="Svc", driver=HTTP, config={"platform": "svc", "global_name": "svc"})
+        agent = self.store.create("alice", name="Svc", driver=HTTP, config={"platform": "svc"})
         reply = asyncio.run(self.gateway.ask(agent, AgentMessage(text="hi")))
         self.assertFalse(reply.ok)
         self.assertIn("api_url", reply.error)
@@ -235,8 +222,24 @@ class TestGateway(StoreCase):
         self.assertEqual((body["session_id"], body["text"], body["coalesce_key"]), ("s1", "hello", "k"))
         self.assertEqual(body["enabled_tools"], [])  # chat mode: no tools
 
+    def test_inbox_queues_for_webot_and_sends_to_others(self):
+        patcher, calls = _http()
+        with patcher:
+            receipt = asyncio.run(self.gateway.inbox(self.webot(), AgentMessage(text="later", sender="u:alice")))
+        self.assertTrue(receipt.accepted)
+        self.assertEqual(calls[0], ("http://agent.test/webot/session-inbox/send",
+                                    {"user_id": "alice", "session_id": "u:alice", "target_ref": "s1", "body": "later"}))
+
+        async def run():
+            with _sent("ok") as send:
+                await self.gateway.inbox(self.codex(), AgentMessage(text="later"))
+                await asyncio.gather(*self.gateway._background)
+            return send.await_args.args[0]
+
+        self.assertEqual(asyncio.run(run()).prompt, "later")
+
     def test_external_delivery_sends_in_the_background_and_reports_back(self):
-        codex = self.store.create("alice", name="Codex", driver=ACPX, config={"platform": "codex", "global_name": "cx"})
+        codex = self.codex()
         replies = []
 
         async def run():
@@ -253,15 +256,17 @@ class TestGateway(StoreCase):
             temp_session_agent("alice", "x", "s1")
         with self.assertRaises(ValueError):
             asyncio.run(self.gateway.discard(self.webot()))
+        self.store.ensure("alice", "tmp__t__x__1")  # used, so it is in the table
         patcher, calls = _http()
         with patcher:
             self.assertTrue(asyncio.run(self.gateway.discard(temp_session_agent("alice", "x", "tmp__t__x__1"))))
         self.assertEqual(calls[0], ("http://agent.test/delete_session", {"user_id": "alice", "session_id": "tmp__t__x__1"}))
+        self.assertIsNone(self.store.get("alice", "tmp__t__x__1"))
 
     def test_reply_channel_depends_on_the_runtime(self):
         self.assertIn('send_to_group(group_id="g_1"', reply_channel(self.webot(), "g_1"))
-        codex = self.store.create("alice", name="Codex", driver=ACPX, config={"platform": "codex", "global_name": "cx"})
-        self.assertIn("groups send --group-id g_1 --agent alice/codex", reply_channel(codex, "g_1"))
+        codex = self.codex()
+        self.assertIn(f"groups send --group-id g_1 --agent {codex.agent_id}", reply_channel(codex, "g_1"))
 
 
 class _FakeWebot:
@@ -317,16 +322,17 @@ class TestControl(StoreCase):
             {"role": "assistant", "content": "done"},
         ])
 
-        codex = self.store.create("alice", name="Codex", driver=ACPX, config={"platform": "codex", "global_name": "cx"})
+        codex = self.codex()
+        key = runtime_session(codex)
         patcher = mock.patch.object(external_agent_history, "_STORE", None)
         patcher.start()
         self.addCleanup(patcher.stop)
         history = external_agent_history.reset_store_for_test(Path(self.tmp.name) / "history")
 
         async def talk():
-            rid = await history.record_send(platform="codex", session_key="agent:cx:clawcrosschat", connect_type="acp",
+            rid = await history.record_send(platform="codex", session_key=key, connect_type="acp",
                                             prompt="ping", options={})
-            await history.record_recv(platform="codex", session_key="agent:cx:clawcrosschat", connect_type="acp",
+            await history.record_recv(platform="codex", session_key=key, connect_type="acp",
                                       request_id=rid, ok=True, content="pong", raw_response=None, error=None, options={})
             return await self.control.history(codex)
 
@@ -336,14 +342,14 @@ class TestControl(StoreCase):
         self.assertEqual(asyncio.run(self.control.history(codex)), [])
 
     def test_http_agents_cannot_be_cancelled_and_reset_makes_them_start_over(self):
-        agent = self.store.create("alice", name="Svc", driver=HTTP, config={"platform": "svc", "global_name": "svc"})
+        agent = self.store.create("alice", name="Svc", driver=HTTP, config={"platform": "svc"})
         with self.assertRaises(ControlError):
             asyncio.run(self.control.run(agent, "cancel"))
         self.assertEqual(asyncio.run(self.control.status(agent))["state"], "idle")
-        self.store.set_runtime(agent.agent_id, {"identity_prompt": "P", "last_used_at": 1.0})
-        self.assertEqual(asyncio.run(self.control.status(self.store.get(agent.agent_id)))["state"], "online")
+        self.store.set_runtime("alice", agent.agent_id, {"identity_prompt": "P", "last_used_at": 1.0})
+        self.assertEqual(asyncio.run(self.control.status(self.store.get("alice", agent.agent_id)))["state"], "online")
         self.assertEqual(asyncio.run(self.control.run(agent, "reset")), {"reset": True})
-        self.assertEqual(self.store.get(agent.agent_id).runtime, {})
+        self.assertEqual(self.store.get("alice", agent.agent_id).runtime, {})
 
 
 class TestAgentsApi(StoreCase):
@@ -351,11 +357,16 @@ class TestAgentsApi(StoreCase):
         super().setUp()
         self.gateway = mock.Mock(spec=AgentGateway)
         self.gateway.ask = mock.AsyncMock(return_value=AgentReply(ok=True, content="pong"))
+        self.gateway.inbox = mock.AsyncMock(return_value=DeliveryReceipt(accepted=True))
         self.control = AgentControl(_FakeWebot(), store=self.store)
+        self.forgotten = []
+        names = {"dev.Critic": "s1"}
         app = FastAPI()
         app.include_router(create_agents_router(
             internal_token=TOKEN, verify_password=lambda u, p: (u, p) == ("alice", "pw"),
             store=self.store, gateway=self.gateway, control=self.control,
+            names=lambda owner, ref: self.store.get(owner, names[ref]) if ref in names else None,
+            on_delete=[lambda a: self.forgotten.append(a.agent_id)],
         ))
         self.client = TestClient(app)
 
@@ -372,35 +383,46 @@ class TestAgentsApi(StoreCase):
         self.assertTrue(codex["settings"]["has_api_key"])
 
         listed = self.call("GET", "/v1/agents?status=1").json()["data"]
-        self.assertEqual([a["address"] for a in listed], ["alice/coder", "alice/codex"])
+        self.assertEqual([a["agent_id"] for a in listed], [webot["agent_id"], codex["agent_id"]])
         self.assertEqual(listed[0]["status"]["state"], "idle")
 
-        patched = self.call("PATCH", "/v1/agents/alice/codex", json={"name": "Codex 2", "settings": {"model": "o4"}})
+        ref = codex["agent_id"]
+        patched = self.call("PATCH", f"/v1/agents/{ref}", json={"name": "Codex 2", "settings": {"model": "o4"}})
         self.assertEqual(patched.json()["settings"]["model"], "o4")
-        self.assertTrue(self.store.get(codex["agent_id"]).config["api_key"])  # kept
-        self.assertEqual(self.call("PATCH", "/v1/agents/coder", json={"settings": {"api_url": "x"}}).status_code, 400)
+        self.assertTrue(self.store.get("alice", ref).config["api_key"])  # kept
+        self.assertEqual(self.call("PATCH", f"/v1/agents/{webot['agent_id']}",
+                                   json={"settings": {"api_url": "x"}}).status_code, 400)
 
-        self.assertEqual(self.call("DELETE", f"/v1/agents/{codex['agent_id']}").status_code, 200)
-        self.assertIsNone(self.store.get(codex["agent_id"]))
+        self.assertEqual(self.call("DELETE", f"/v1/agents/{ref}").status_code, 200)
+        self.assertIsNone(self.store.get("alice", ref))
+        self.assertEqual(self.forgotten, [ref])  # what else holds its id lets it go
 
-    def test_a_runtime_is_registered_once(self):
-        self.call("POST", "/v1/agents", json={"name": "Main", "session": "default"})
-        again = self.call("POST", "/v1/agents", json={"name": "Again", "session": "default"})
-        self.assertEqual(again.status_code, 409)
-        found = self.call("GET", "/v1/agents?runtime=webot:default").json()["data"]
-        self.assertEqual([a["name"] for a in found], ["Main"])
+    def test_a_number_is_made_once(self):
+        self.assertEqual(self.call("POST", "/v1/agents", json={"agent_id": "main"}).status_code, 200)
+        self.assertEqual(self.call("POST", "/v1/agents", json={"agent_id": "main"}).status_code, 409)
+        self.assertEqual(self.call("POST", "/v1/agents", json={"agent_id": "a.b"}).status_code, 400)
+
+    def test_sending_to_a_new_number_makes_that_agent(self):
+        reply = self.call("POST", "/v1/agents/brand-new/messages", json={"text": "hi"}).json()
+        self.assertEqual((reply["agent"]["agent_id"], reply["agent"]["platform"]), ("brand-new", "webot"))
+        queued = self.call("POST", "/v1/agents/cx-7/inbox", json={"text": "later", "platform": "codex"}).json()
+        self.assertEqual((queued["agent"]["platform"], queued["accepted"]), ("codex", True))
+        self.assertEqual(self.gateway.inbox.await_args.args[0].agent_id, "cx-7")
+        self.assertEqual(self.call("POST", "/v1/agents/svc-1/messages",
+                                   json={"text": "hi", "platform": "some-service"}).status_code, 400)  # needs an endpoint
+        self.assertEqual(self.call("GET", "/v1/agents/never-sent").status_code, 404)  # reading makes nothing
 
     def test_auth_messages_and_control(self):
         self.webot()
         self.assertEqual(self.client.get("/v1/agents", headers={"Authorization": "Bearer alice:pw"}).status_code, 200)
         self.assertEqual(self.client.get("/v1/agents", headers={"Authorization": "Bearer alice:no"}).status_code, 401)
-        self.assertEqual(self.call("GET", "/v1/agents/coder", user="bob").status_code, 404)
+        self.assertEqual(self.call("GET", "/v1/agents/s1", user="bob").status_code, 404)  # not in bob's space
 
-        reply = self.call("POST", "/v1/agents/coder/messages", json={"text": "ping"}).json()
-        self.assertEqual(reply["content"], "pong")
+        reply = self.call("POST", "/v1/agents/dev.Critic/messages", json={"text": "ping"}).json()  # a team name
+        self.assertEqual((reply["content"], reply["agent"]["agent_id"]), ("pong", "s1"))
         self.assertEqual(self.gateway.ask.await_args.args[1].text, "ping")
-        self.assertEqual(self.call("POST", "/v1/agents/coder/control", json={"action": "explode"}).status_code, 400)
-        self.assertEqual(self.call("POST", "/v1/agents/coder/control", json={"action": "cancel"}).json()["cancelled"], True)
+        self.assertEqual(self.call("POST", "/v1/agents/s1/control", json={"action": "explode"}).status_code, 400)
+        self.assertEqual(self.call("POST", "/v1/agents/s1/control", json={"action": "cancel"}).json()["cancelled"], True)
 
 
 class TestOpenAIRouting(StoreCase):
@@ -408,32 +430,40 @@ class TestOpenAIRouting(StoreCase):
         super().setUp()
         from api.openai_service import OpenAIChatService
 
+        from teams.store import TeamStore
+
         self.webot()
-        self.store.create("alice", name="Codex", driver=ACPX, config={"platform": "codex", "global_name": "cx"})
-        for target, value in (("agents.store.get_store", lambda *a: self.store),):
+        self.store.create("alice", driver=ACPX, config={"platform": "codex"}, name="Codex", agent_id="cx")
+        teams = TeamStore(self.store, Path(self.tmp.name) / "user_files")
+        for target, value in (("agents.store.get_store", lambda *a: self.store),
+                              ("teams.store.get_team_store", lambda *a: teams)):
             patcher = mock.patch(target, value)
             patcher.start()
             self.addCleanup(patcher.stop)
         self.service = OpenAIChatService(internal_token=TOKEN, verify_password=lambda u, p: False, agent=mock.Mock(),
                                          extract_text=str, build_human_message=mock.Mock())
 
-    def test_model_names_an_agent_or_keeps_the_webot_path(self):
-        self.assertIsNone(self.service._model_agent("alice", "webot"))
-        self.assertIsNone(self.service._model_agent("alice", "gpt-4o"))
-        self.assertEqual(self.service._model_agent("alice", "alice/coder").config["session"], "s1")
+    def test_the_session_is_the_agent_and_a_new_one_is_made_with_the_named_runtime(self):
+        from fastapi import HTTPException
 
-    def test_models_list_the_callers_agents(self):
-        from teams.store import TeamStore
+        self.assertEqual(self.service._target("alice", "s1", "anything").agent_id, "s1")
+        self.assertEqual(self.service._target("alice", "cx", None).platform, "codex")
+        made = self.service._target("alice", "new-1", "claude")
+        self.assertEqual((made.agent_id, made.driver, made.platform), ("new-1", ACPX, "claude"))
+        self.assertEqual(self.service._target("alice", "new-2", None).driver, WEBOT)
+        self.assertEqual(self.service._target("alice", "new-3", "gpt-4o").driver, WEBOT)  # names no runtime
+        with self.assertRaises(HTTPException):
+            self.service._target("alice", "a.b", None)  # not a number, not a team name
 
-        with mock.patch("teams.store.get_team_store", lambda *a: TeamStore(self.store, Path(self.tmp.name))):
-            ids = [m["id"] for m in self.service.list_models(bearer("alice"))["data"]]
+    def test_models_are_the_runtimes(self):
+        ids = [m["id"] for m in self.service.list_models(bearer("alice"))["data"]]
         self.assertEqual(ids[0], "webot")
-        self.assertIn("alice/codex", ids)
+        self.assertIn("openclaw", ids)
 
     def test_tool_whitelist_comes_from_the_agent(self):
         from api.openai_service import _get_agent_tool_whitelist
 
-        self.store.create("alice", name="Limited", driver=WEBOT, config={"session": "s2", "tools": {"read_file": True}})
+        self.webot(session="s2", tools={"read_file": True})
         self.assertEqual(_get_agent_tool_whitelist("alice", "s2"), {"read_file"})
         self.assertIsNone(_get_agent_tool_whitelist("alice", "s1"))
 

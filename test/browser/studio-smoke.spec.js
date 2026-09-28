@@ -63,14 +63,12 @@ async function stubStudioNetwork(page, calls, options = {}) {
   calls.workflowApply = calls.workflowApply || [];
   calls.teamPresetInstall = calls.teamPresetInstall || [];
   calls.teamPresetList = calls.teamPresetList || 0;
-  calls.acpxEnsure = calls.acpxEnsure || [];
+  calls.agentCreates = calls.agentCreates || [];
   calls.projectUpdateCheck = calls.projectUpdateCheck || 0;
   const acpxStatusPayload = options.acpxStatusPayload || { available: false, tools: [] };
-  const acpxSessionsPayload = options.acpxSessionsPayload || { ok: true, sessions: [] };
-  const acpxHistoryPayload = options.acpxHistoryPayload || { ok: true, history: { entries: [] } };
-  const acpxEnsurePayload = options.acpxEnsurePayload || { ok: true, tool: 'cursor', session_key: 'main:cursor:main-session' };
-  const acpxHistoryStatus = options.acpxHistoryStatus || 200;
-  const acpxEnsureStatus = options.acpxEnsureStatus || 200;
+  // An ACP session is an agent: listed, made and read through /v1/agents.
+  const agentCreatePayload = options.agentCreatePayload || { agent_id: 'cursor-main-session', platform: 'cursor' };
+  const agentCreateStatus = options.agentCreateStatus || 200;
   const currentRuntimeState = {
     status: 'success',
     session_id: 'main-session',
@@ -385,12 +383,14 @@ async function stubStudioNetwork(page, calls, options = {}) {
   await page.route('**/proxy_visual/experts*', (route) => json(route, []));
   await page.route('**/proxy_openclaw_sessions', (route) => json(route, { available: true, agents: [] }));
   await page.route('**/proxy_acpx_status', (route) => json(route, acpxStatusPayload));
-  await page.route('**/proxy_acpx_sessions?*', (route) => json(route, acpxSessionsPayload));
-  await page.route('**/proxy_acpx_session_history?*', (route) => json(route, acpxHistoryPayload, acpxHistoryStatus));
-  await page.route('**/proxy_acpx_session_ensure', async (route) => {
-    calls.acpxEnsure.push(await route.request().postDataJSON());
-    return json(route, acpxEnsurePayload, acpxEnsureStatus);
+  await page.route(/\/v1\/agents(\?.*)?$/, async (route) => {
+    if (route.request().method() === 'POST') {
+      calls.agentCreates.push(await route.request().postDataJSON());
+      return json(route, agentCreatePayload, agentCreateStatus);
+    }
+    return json(route, { object: 'list', data: options.agents || [] });
   });
+  await page.route(/\/v1\/agents\/[^/]+\/history/, (route) => json(route, { detail: 'no agent' }, 404));
   await page.route('**/proxy_webot_subagents', (route) =>
     json(route, {
       status: 'success',
@@ -833,7 +833,7 @@ test('studio ACP warmup surfaces backend errors inline', async ({ page }) => {
     tinyfishRun: 0,
     lastExportPayload: null,
     approvalActions: [],
-    acpxEnsure: [],
+    agentCreates: [],
   };
   const pageErrors = [];
 
@@ -845,17 +845,8 @@ test('studio ACP warmup surfaces backend errors inline', async ({ page }) => {
 
   await stubStudioNetwork(page, calls, {
     acpxStatusPayload: { available: true, tools: ['cursor'] },
-    acpxHistoryPayload: {
-      ok: false,
-      error: 'No named session "main:cursor:main-session"',
-    },
-    acpxHistoryStatus: 502,
-    acpxEnsurePayload: {
-      ok: false,
-      error: 'Failed to spawn agent command: cursor-agent acp',
-      session_key: 'main:cursor:main-session',
-    },
-    acpxEnsureStatus: 502,
+    agentCreatePayload: { detail: 'Failed to spawn agent command: cursor-agent acp' },
+    agentCreateStatus: 502,
   });
   await installMockWebSocket(page);
   await page.addInitScript(() => {
@@ -871,8 +862,9 @@ test('studio ACP warmup surfaces backend errors inline', async ({ page }) => {
 
   await page.locator('.oc-acp-session-ensure').click();
 
-  await expect.poll(() => calls.acpxEnsure.length).toBe(1);
-  expect(calls.acpxEnsure[0]).toMatchObject({ tool: 'cursor' });
+  await expect.poll(() => calls.agentCreates.length).toBe(1);
+  expect(calls.agentCreates[0]).toMatchObject({ platform: 'cursor' });  // the session is made as an agent
+  expect(calls.agentCreates[0].agent_id).toMatch(/^cursor-/);
   await expect(page.locator('#oc-acp-session-status')).toContainText(/预热失败|Warm up failed/);
   await expect(page.locator('#oc-acp-session-status')).toContainText('cursor-agent acp');
   expect(pageErrors).toEqual([]);

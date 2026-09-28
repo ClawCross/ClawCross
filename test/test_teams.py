@@ -5,7 +5,6 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest import mock
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC_DIR = PROJECT_ROOT / "src"
@@ -15,8 +14,6 @@ if str(SRC_DIR) not in sys.path:
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-from agents.gateway import AgentGateway  # noqa: E402
-from agents.messages import AgentReply  # noqa: E402
 from agents.store import ACPX, OPENCLAW, WEBOT, AgentStore  # noqa: E402
 from teams.manifest import dumps, export_entries, import_entries, import_folder  # noqa: E402
 from teams.routes import create_teams_router  # noqa: E402
@@ -30,7 +27,7 @@ class TeamCase(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         root = Path(self.tmp.name)
-        self.agents = AgentStore(root / "clawcross.db")
+        self.agents = AgentStore(root / "agents.db")
         self.teams = TeamStore(self.agents, root / "user_files")
         self.teams.create("alice", "dev")
 
@@ -40,8 +37,8 @@ class TeamCase(unittest.TestCase):
 
 class TestMembership(TeamCase):
     def test_agents_join_in_roles_and_one_leads(self):
-        a = self.agents.create("alice", name="Coder", driver=WEBOT, config={"session": "s1"})
-        b = self.agents.create("alice", name="Codex", driver=ACPX, config={"platform": "codex", "global_name": "cx"})
+        a = self.agents.create("alice", driver=WEBOT, name="Coder", agent_id="s1")
+        b = self.agents.create("alice", driver=ACPX, config={"platform": "codex"}, name="Codex")
         self.teams.add("alice", "dev", a.agent_id, role="Builder", is_lead=True)
         self.teams.add("alice", "dev", b.agent_id, is_lead=True)
 
@@ -50,7 +47,7 @@ class TestMembership(TeamCase):
         self.assertEqual(self.teams.member("alice", "dev", "builder").agent.agent_id, a.agent_id)
 
     def test_an_agent_serves_several_teams_and_outlives_them(self):
-        a = self.agents.create("alice", name="Coder", driver=WEBOT, config={"session": "s1"})
+        a = self.agents.create("alice", driver=WEBOT, name="Coder", agent_id="s1")
         self.teams.create("alice", "ops")
         for team in ("dev", "ops"):
             self.teams.add("alice", team, a.agent_id)
@@ -60,13 +57,24 @@ class TestMembership(TeamCase):
         self.assertEqual(self.teams.teams_of("alice", a.agent_id), ["dev", "ops2"])
         self.teams.delete("alice", "dev")
         self.assertFalse(self.teams.exists("alice", "dev"))
-        self.assertIsNotNone(self.agents.get(a.agent_id))
+        self.assertIsNotNone(self.agents.get("alice", a.agent_id))
 
     def test_deleting_an_agent_takes_it_out_of_its_teams(self):
-        a = self.agents.create("alice", name="Coder", driver=WEBOT, config={"session": "s1"})
+        a = self.agents.create("alice", driver=WEBOT, name="Coder", agent_id="s1")
         self.teams.add("alice", "dev", a.agent_id)
-        self.agents.delete(a.agent_id)
+        self.agents.delete("alice", a.agent_id)
+        self.teams.forget_agent("alice", a.agent_id)
         self.assertEqual(self.teams.members("alice", "dev"), [])
+        self.assertEqual(self.teams.teams_of("alice", a.agent_id), [])
+
+    def test_membership_lives_in_the_team_folder_and_names_the_agent_in_the_team(self):
+        a = self.agents.create("alice", driver=WEBOT, name="Coder", agent_id="s1")
+        self.teams.add("alice", "dev", a.agent_id, role="Builder", is_lead=True)
+        stored = json.loads((self.teams.folder("alice", "dev") / "members.json").read_text(encoding="utf-8"))
+        self.assertEqual(stored, [{"agent": "s1", "name": "Builder", "lead": True}])
+        self.assertEqual(self.teams.address("alice", "dev.Builder").agent_id, "s1")
+        self.assertIsNone(self.teams.address("alice", "dev.Nobody"))
+        self.assertIsNone(self.teams.address("alice", "s1"))
 
 
 class TestManifest(TeamCase):
@@ -80,16 +88,17 @@ class TestManifest(TeamCase):
     ]
 
     def test_import_makes_agents_and_members(self):
-        existing = self.agents.create("alice", name="Coder", driver=WEBOT, config={"session": "s1"})
+        existing = self.agents.create("alice", driver=WEBOT, name="Coder", agent_id="s1")
         import_entries(self.teams, "alice", "dev", self.INTERNAL, self.EXTERNAL)
 
         self.assertEqual(self.roles(), [("Planner", WEBOT, True), ("Coder", WEBOT, False), ("Claw", OPENCLAW, False)])
         coder = self.teams.member("alice", "dev", "Coder")
-        self.assertEqual(coder.agent.agent_id, existing.agent_id)  # the session names an agent already there
+        self.assertEqual(coder.agent.agent_id, existing.agent_id)  # "session" is the id of an agent already there
         planner = self.teams.member("alice", "dev", "Planner").agent
         self.assertEqual((planner.config["persona"], planner.config["team"]), ("plan", "dev"))
         claw = self.teams.member("alice", "dev", "Claw").agent
-        self.assertEqual((claw.config["api_url"], claw.config["model"]), ("http://oc", "agent:main"))
+        self.assertEqual((claw.config["api_url"], claw.config["model"], claw.config["global_name"]),
+                         ("http://oc", "agent:main", "main"))
 
     def test_reimport_follows_the_entries_and_keeps_agents(self):
         import_entries(self.teams, "alice", "dev", self.INTERNAL, [])
@@ -99,7 +108,7 @@ class TestManifest(TeamCase):
 
         self.assertEqual(self.roles(), [("Coder", WEBOT, False)])
         self.assertEqual(self.teams.member("alice", "dev", "Coder").agent.agent_id, coder.agent_id)
-        self.assertIsNotNone(self.agents.get(planner.agent_id))
+        self.assertIsNotNone(self.agents.get("alice", planner.agent_id))
 
     def test_export_is_the_same_format(self):
         import_entries(self.teams, "alice", "dev", self.INTERNAL, self.EXTERNAL)
@@ -117,7 +126,14 @@ class TestManifest(TeamCase):
         external[0]["global_name"] = "bob_1"
         import_entries(self.teams, "bob", "copy", internal, external)
         self.assertEqual(len(self.teams.members("bob", "copy")), 3)
-        self.assertNotIn(self.teams.member("bob", "copy", "Coder").agent.config["session"], ("s1", ""))
+        self.assertTrue(self.teams.member("bob", "copy", "Coder").agent.agent_id.startswith("ag_"))
+
+    def test_an_entry_that_names_an_agent_is_that_agent(self):
+        codex = self.agents.create("alice", driver=ACPX, config={"platform": "codex"}, name="Codex", agent_id="cx-1")
+        import_entries(self.teams, "alice", "dev", [{"name": "New", "tag": "x", "session": "fresh"}],
+                       [{"name": "Rev", "tag": "codex", "platform": "codex", "global_name": "cx-1"}])
+        self.assertEqual(self.teams.member("alice", "dev", "Rev").agent.agent_id, codex.agent_id)
+        self.assertEqual(self.teams.member("alice", "dev", "New").agent.agent_id, "fresh")  # a new agent with that id
 
     def test_folder_import_removes_the_files(self):
         folder = self.teams.folder("alice", "dev")
@@ -125,10 +141,6 @@ class TestManifest(TeamCase):
         import_folder(self.teams, "alice", "dev")
         self.assertEqual(len(self.teams.members("alice", "dev")), 2)
         self.assertFalse((folder / "internal_agents.json").exists())
-
-    def test_external_entry_needs_a_runtime_name(self):
-        with self.assertRaises(ValueError):
-            import_entries(self.teams, "alice", "dev", [], [{"name": "X", "platform": "codex"}])
 
 
 class TestPreset(TeamCase):
@@ -147,28 +159,22 @@ class TestPreset(TeamCase):
 class TestTeamsApi(TeamCase):
     def setUp(self):
         super().setUp()
-        self.gateway = mock.Mock(spec=AgentGateway)
-        self.gateway.ask = mock.AsyncMock(return_value=AgentReply(ok=True, content="from the lead"))
         app = FastAPI()
         app.include_router(create_teams_router(internal_token=TOKEN, verify_password=lambda u, p: False,
-                                               teams=self.teams, gateway=self.gateway))
+                                               teams=self.teams))
         self.client = TestClient(app)
-        self.coder = self.agents.create("alice", name="Coder", driver=WEBOT, config={"session": "s1"})
+        self.coder = self.agents.create("alice", driver=WEBOT, name="Coder", agent_id="coder")
 
     def call(self, method, path, **kwargs):
         return self.client.request(method, path, headers={"Authorization": f"Bearer {TOKEN}:alice"}, **kwargs)
 
     def test_members_and_lead(self):
-        self.assertEqual(self.call("POST", "/v1/teams/dev/messages", json={"text": "hi"}).status_code, 409)
-        added = self.call("POST", "/v1/teams/dev/members", json={"agent": "alice/coder", "role": "Builder"}).json()
+        added = self.call("POST", "/v1/teams/dev/members", json={"agent": "coder", "role": "Builder"}).json()
         self.assertEqual((added["role"], added["agent"]["agent_id"]), ("Builder", self.coder.agent_id))
-        self.call("PATCH", "/v1/teams/dev/members/coder", json={"is_lead": True})
+        self.call("PATCH", "/v1/teams/dev/members/dev.Builder", json={"is_lead": True})
         card = self.call("GET", "/v1/teams/dev").json()
         self.assertEqual(card["lead"], self.coder.agent_id)
-
-        reply = self.call("POST", "/v1/teams/dev/messages", json={"text": "hi"}).json()
-        self.assertEqual(reply["content"], "from the lead")
-        self.assertEqual(self.gateway.ask.await_args.kwargs["context"], {"team": "dev"})
+        self.assertEqual(self.call("POST", "/v1/teams/dev/messages", json={"text": "hi"}).status_code, 404)  # gone
 
         self.call("DELETE", "/v1/teams/dev/members/coder")
         self.assertEqual(self.call("GET", "/v1/teams/dev").json()["members"], [])

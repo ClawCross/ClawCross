@@ -41,7 +41,7 @@ class ChatCompletionRequest(BaseModel):
     tools: Optional[list[dict]] = None
     tool_choice: Optional[Any] = None
     user: Optional[str] = None
-    session_id: Optional[str] = "default"
+    session_id: Optional[str] = None  # the number of the agent to talk to
     password: Optional[str] = None
     enabled_tools: Optional[list[str]] = None
     # Per-request LLM model override (used by OASIS SessionExpert)

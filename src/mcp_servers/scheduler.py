@@ -87,18 +87,13 @@ async def add_alarm(
     :param cron: Cron 表达式 (分 时 日 月 周)，例如 "0 1 * * *" 代表凌晨1点。schedule_type=once 时可留空。
     :param text: 到点时交给 agent 的指令内容
     :param session_id: 会话ID（系统自动注入，无需手动传递）
-    :param agent: 接收任务的 agent（地址如 alice/coder、handle 或 ag_ 编号）；留空表示你自己
+    :param agent: 接收任务的 agent（agent 编号，或 team.名字）；留空表示你自己
     :param team: 所属 team 名称，仅用于归类
     :param schedule_type: cron 或 once。once 表示一次性任务。
     :param run_at: 一次性任务的触发时间，ISO/local datetime，例如 2026-04-25T09:00。
     :return: 操作结果的描述信息
     """
-    from mcp_servers.caller_agent import caller_agent
-
-    try:
-        target = agent.strip() or await caller_agent(username, session_id, register=True)
-    except Exception as e:
-        return f"⚠️ 无法确认目标 agent: {e}"
+    target = agent.strip() or session_id  # the session is the agent
     async with httpx.AsyncClient() as client:
         try:
             payload = {

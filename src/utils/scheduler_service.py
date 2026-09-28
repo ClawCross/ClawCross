@@ -31,7 +31,8 @@ if src_dir not in sys.path:
 
 from agents.gateway import get_gateway
 from agents.messages import AgentMessage
-from agents.store import AgentNotFound, get_store
+from agents.store import get_store, valid_agent_id
+from teams.store import get_team_store
 from utils.runtime_paths import DATA_DIR, ENV_FILE
 
 TASKS_FILE = os.path.join(str(DATA_DIR), "timeset", "tasks.json")
@@ -76,7 +77,7 @@ class CronTask(BaseModel):
     user_id: str
     cron: str = ""  # 格式: "分 时 日 月 周"
     text: str
-    agent: str                     # 目标 agent：ag_ 编号、地址或 handle
+    agent: str                     # 目标 agent：编号（新编号即新 agent）或 <team>.<名字>
     team: str = ""                 # 所属 team（仅用于归类展示）
     schedule_type: str = "cron"    # cron | once
     run_at: str = ""               # once: ISO/local datetime, e.g. 2026-04-25T09:00
@@ -132,7 +133,7 @@ async def trigger_alarm(task_id: str):
     info = load_tasks().get(task_id)
     if not isinstance(info, dict):
         return
-    agent = get_store().get(str(info.get("agent") or ""))
+    agent = get_store().get(str(info.get("user_id") or ""), str(info.get("agent") or ""))
     if agent is None:
         print(f"[{datetime.now()}] 定时任务 {task_id} 的目标 agent 已不存在，跳过")
         return
@@ -140,7 +141,7 @@ async def trigger_alarm(task_id: str):
     text = f"[ClawCross 定时任务 {task_id} · {info.get('schedule_type') or 'cron'}:{schedule}]\n{info.get('text') or ''}"
     receipt = await get_gateway().deliver(agent, AgentMessage(text=text, sender="scheduler"))
     status = "已投递" if receipt.accepted else f"投递失败: {receipt.error}"
-    print(f"[{datetime.now()}] 定时任务 {task_id} → {agent.address}: {status}")
+    print(f"[{datetime.now()}] 定时任务 {task_id} → {agent.agent_id}: {status}")
 
 
 async def trigger_once_alarm(task_id: str):
@@ -300,7 +301,7 @@ app = FastAPI(title="WeBot Scheduler", lifespan=lifespan)
 
 def _task_card(task_id: str, info: dict) -> dict:
     job = scheduler.get_job(task_id)
-    agent = get_store().get(str(info.get("agent") or ""))
+    agent = get_store().get(str(info.get("user_id") or ""), str(info.get("agent") or ""))
     return {
         "task_id": task_id,
         "user_id": info.get("user_id", ""),
@@ -318,10 +319,13 @@ def _task_card(task_id: str, info: dict) -> dict:
 @app.post("/tasks", response_model=TaskResponse)
 async def add_task(task: CronTask):
     task_id = str(uuid.uuid4())[:8]
-    try:
-        agent = get_store().resolve(task.user_id, task.agent)
-    except AgentNotFound as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    # The target: an agent id (a new number is a new agent) or <team>.<name>.
+    store = get_store()
+    agent = store.get(task.user_id, task.agent) or get_team_store(store).address(task.user_id, task.agent)
+    if agent is None:
+        if not valid_agent_id(task.agent):
+            raise HTTPException(status_code=404, detail=f"no agent {task.agent!r}")
+        agent = store.ensure(task.user_id, task.agent)
     try:
         schedule_type = _schedule_type(task.model_dump())
         if schedule_type == "once":

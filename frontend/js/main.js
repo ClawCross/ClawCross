@@ -1978,7 +1978,7 @@ function renderAgentCenterGrid() {
         if (statusFilter === 'finished') return false;
         if (statusFilter === 'attention' && !['unknown', 'unavailable'].includes(state)) return false;
         if (query) {
-            const searchable = [agent.name, agent.address, agent.agent_id, agent.settings?.persona, agent.platform, ...(agent.teams || [])]
+            const searchable = [agent.name, agent.agent_id, agent.settings?.persona, agent.platform, ...(agent.teams || [])]
                 .filter(Boolean).join(' ').toLocaleLowerCase();
             if (!searchable.includes(query)) return false;
         }
@@ -2011,7 +2011,7 @@ function renderAgentCenterGrid() {
                         <div class="agent-center-identity">
                             <div class="agent-center-card-number">NO.${String(index).padStart(3, '0')} · ${agentCenterEscape(agent.platform)}</div>
                             <div class="agent-center-name" title="${agentCenterEscape(agent.name)}">${agentCenterEscape(agent.name)}</div>
-                            <div class="agent-center-id" title="${agentCenterEscape(agent.agent_id)}">${agentCenterEscape(agent.address)}</div>
+                            <div class="agent-center-id" title="${agentCenterEscape(agent.agent_id)}">${agentCenterEscape(agent.agent_id)}</div>
                         </div>
                         <span class="agent-center-status ${agentCenterStatusClass(state)}">${agentCenterEscape(state)}</span>
                     </div>
@@ -2086,7 +2086,7 @@ function renderAgentCenterDetail() {
             <div class="agent-dex-portrait">${webot ? '🧠' : '◈'}</div>
             <div class="agent-dex-index">FIELD ENTRY NO.${String(index).padStart(3, '0')} · ${agentCenterEscape(state)}</div>
             <div class="agent-dex-title">${agentCenterEscape(agent.name)}</div>
-            <div class="agent-dex-subtitle">${agentCenterEscape(agent.address)} · ${agentCenterEscape(agent.agent_id)}</div>
+            <div class="agent-dex-subtitle">${agentCenterEscape(agent.agent_id)} · ${agentCenterEscape(agent.platform)}</div>
         </div>
         <div class="agent-dex-body">
             <section class="agent-dex-section">
@@ -2200,7 +2200,7 @@ async function compactAgentFromCenter(button) {
     try {
         const response = await fetch('/proxy_compact_session', {
             method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({session_id: agent.settings.session}),
+            body: JSON.stringify({session_id: agent.agent_id}),
         });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || payload.error) throw new Error(payload.detail || payload.error || 'compact failed');
@@ -3045,12 +3045,12 @@ function onAgentTeamChange() {
     loadSessionList();
 }
 
-// A WeBot session is an agent once it is named: the agent keeps its name, persona and tools.
-// In a team view the name shown is the member's role.
+// A WeBot session is an agent: its number is the session id. In a team view the name
+// shown is the member's name in the team.
 async function _loadAgentMetaMap(team = '') {
     try {
         const [agents, teams] = await Promise.all([agentApi('GET', '/v1/agents'), agentApi('GET', '/v1/teams')]);
-        const webot = (agents.data || []).filter(a => a.platform === 'webot' && a.settings?.session);
+        const webot = (agents.data || []).filter(a => a.platform === 'webot');
         const membership = new Map();
         for (const card of teams.data || []) {
             for (const m of card.members || []) {
@@ -3062,21 +3062,25 @@ async function _loadAgentMetaMap(team = '') {
         const map = {};
         for (const a of webot.filter(inScope)) {
             const member = membership.get(a.agent_id);
-            map[a.settings.session] = {
+            map[a.agent_id] = {
                 agent_id: a.agent_id, name: member?.role || a.name, tag: a.settings.persona || '',
                 tools: a.settings.tools, is_primary: Boolean(member?.is_lead), updated_at_ts: a.updated_at,
             };
         }
-        return { map, allKnown: new Set(webot.map(a => a.settings.session)) };
+        return { map, allKnown: new Set(webot.map(a => a.agent_id)) };
     } catch (e) { return { map: {}, allKnown: new Set() }; }
 }
 
 async function _sessionAgent(sessionId) {
-    const found = await agentApi('GET', `/v1/agents?runtime=${encodeURIComponent('webot:' + sessionId)}`);
-    return (found.data || [])[0] || null;
+    try {
+        return await agentApi('GET', `/v1/agents/${encodeURIComponent(sessionId)}`);
+    } catch (e) {
+        if (e.status === 404) return null;
+        throw e;
+    }
 }
 
-// Name (or rename) a session as an agent; in a team view it is also the member's role.
+// Name (or rename) the agent of a session; in a team view it is also its name in the team.
 async function saveSessionAgent(sessionId, meta, team = _currentAgentTeam) {
     const settings = {};
     if (meta.tag !== undefined) settings.persona = meta.tag || '';
@@ -3086,7 +3090,7 @@ async function saveSessionAgent(sessionId, meta, team = _currentAgentTeam) {
         agent = await agentApi('PATCH', `/v1/agents/${encodeURIComponent(agent.agent_id)}`, {name: meta.name || undefined, settings});
     } else {
         agent = await agentApi('POST', '/v1/agents', {
-            name: meta.name || sessionId, session: sessionId, persona: settings.persona || '',
+            agent_id: sessionId, name: meta.name || sessionId, persona: settings.persona || '',
             tools: settings.tools ?? null, team,
         });
     }
@@ -7300,24 +7304,12 @@ function initRunModeUI() {
 }
 
 // Apply run-mode semantics to an outgoing chat payload.
-// endpoint: 'acp' for /proxy_acpx_chat, 'internal' for /v1/chat/completions.
-function applyRunModeToPayload(payload, endpoint) {
+// Every runtime takes the run mode as session_mode and applies it its own way.
+function applyRunModeToPayload(payload) {
     const mode = getRunMode();
-    if (endpoint === 'internal') {
-        payload.session_mode = mode;
-        if (mode === 'chat') {
-            payload.enabled_tools = [];
-        }
-    } else if (endpoint === 'acp') {
-        if (mode === 'readonly' || mode === 'auto') {
-            payload.permission_policy = 'approve-reads';
-            payload.non_interactive_permissions = 'deny';
-        } else {
-            payload.permission_policy = 'approve-all';
-        }
-        if (mode === 'chat') {
-            payload.allowed_tools = '';
-        }
+    payload.session_mode = mode;  // each runtime applies it its own way
+    if (mode === 'chat') {
+        payload.enabled_tools = [];
     }
 }
 
@@ -8576,34 +8568,17 @@ async function handleSend() {
         const messages = [];
         messages.push({ role: 'user', content: msgContent });
 
-        // ── OpenClaw: /proxy_openclaw_chat · ACP (Codex/Claude/Gemini): /proxy_acpx_chat · else WeBot ──
+        // Every agent is talked to by its number (session_id); ``model`` names the runtime of a new one.
         const isOpenClawChat = (_ocChatMode === 'openclaw' && _ocSelectedAgent);
         const isAcpChat = (_ocChatMode === 'acp' && _acpTool);
         let openaiPayload;
-        let chatEndpoint;
         if (isOpenClawChat) {
-            openaiPayload = {
-                model: 'agent:' + _ocSelectedAgent.name,
-                messages: messages,
-                stream: true,
-            };
-            chatEndpoint = '/proxy_openclaw_chat';
+            const agentId = ocAgentIdFor(_ocSelectedAgent.name);
+            await studioEnsureAgent(agentId, { name: _ocSelectedAgent.name, platform: 'openclaw', global_name: _ocSelectedAgent.name });
+            openaiPayload = { model: 'openclaw', messages: messages, stream: true, session_id: agentId };
         } else if (isAcpChat) {
-            openaiPayload = {
-                tool: _acpTool,
-                messages: messages,
-                stream: true,
-                session_id: currentSessionId,
-            };
-            const pickAcp = acpGetSessionPickValue();
-            if (pickAcp) openaiPayload.acp_session_pick = pickAcp;
-            else {
-                const acpNameRaw = document.getElementById('oc-acp-session-name') && String(document.getElementById('oc-acp-session-name').value || '').trim();
-                if (acpNameRaw) openaiPayload.acp_session_name = acpNameRaw;
-            }
-            acpRememberResolvedSessionName(acpComputeSessionNameFromInputs());
-            applyRunModeToPayload(openaiPayload, 'acp');
-            chatEndpoint = '/proxy_acpx_chat';
+            const agentId = acpResolveSessionName();
+            openaiPayload = { model: _acpTool, messages: messages, stream: true, session_id: agentId };
         } else {
             openaiPayload = {
                 model: 'webot',
@@ -8612,9 +8587,9 @@ async function handleSend() {
                 session_id: currentSessionId,
                 enabled_tools: getEnabledTools(),
             };
-            applyRunModeToPayload(openaiPayload, 'internal');
-            chatEndpoint = '/v1/chat/completions';
         }
+        applyRunModeToPayload(openaiPayload);
+        const chatEndpoint = '/v1/chat/completions';
 
         const response = await fetch(chatEndpoint, {
             method: 'POST',
@@ -12459,7 +12434,7 @@ async function loadTeamMembers() {
                     <td class="team-member-cell font-medium text-gray-800" title="${safeRole}">${safeRole}${lead ? ' <span class="text-xs text-amber-600" title="团队主 agent">· 主 agent</span>' : ''}</td>
                     <td><span class="text-xs ${badgeClass} px-2 py-1 rounded">${escapeHtml(agent.platform)}</span></td>
                     <td class="team-member-cell" title="${persona}">${persona}</td>
-                    <td class="team-member-cell team-member-cell--mono" title="${id}">${escapeHtml(agent.address)}</td>
+                    <td class="team-member-cell team-member-cell--mono" title="${id}">${id}</td>
                     <td class="team-member-cell team-member-cell--actions">
                         ${leadBtn}
                         ${configBtn}
@@ -14017,7 +13992,9 @@ async function addExternalMember(event) {
     }
     
     try {
-        await createTeamAgent({ name, platform, persona: tag, global_name: globalName }, name);
+        // OpenClaw: which of its agents; any other runtime: the new agent's number (its session)
+        const runtimeField = platform === 'openclaw' ? { global_name: globalName } : { agent_id: globalName };
+        await createTeamAgent({ name, platform, persona: tag, ...runtimeField }, name);
 
         if (typeof orchToast === 'function') {
             orchToast('成员添加成功');
@@ -14431,7 +14408,7 @@ async function showAgentConfigModal(agentId) {
                 ${externalForm}
 
                 <label style="font-size:11px;font-weight:600;color:#374151;">地址</label>
-                <input id="config-agent-global-name" type="text" value="${escapeHtml(agent.address)}" disabled style="width:100%;max-width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-top:2px;background:#f3f4f6;cursor:not-allowed;color:#9ca3af;box-sizing:border-box;">
+                <input id="config-agent-global-name" type="text" value="${escapeHtml(agent.agent_id)}" disabled style="width:100%;max-width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-top:2px;background:#f3f4f6;cursor:not-allowed;color:#9ca3af;box-sizing:border-box;">
             </div>
             <div class="orch-modal-btns">
                 <button id="config-cancel" style="padding:6px 14px;border-radius:6px;border:1px solid #d1d5db;background:white;color:#374151;cursor:pointer;font-size:12px;">取消</button>
@@ -15661,7 +15638,7 @@ async function _loadImportAgentList() {
                 <div style="width:32px;height:32px;border-radius:50%;background:#eff6ff;display:flex;align-items:center;justify-content:center;font-size:14px;">${a.platform === 'webot' ? '🤖' : '◈'}</div>
                 <div style="flex:1;min-width:0;">
                     <div style="font-size:12px;font-weight:600;color:#374151;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(a.name)}</div>
-                    <div style="font-size:10px;color:#9ca3af;font-family:monospace;">${escapeHtml(a.address)} \u00b7 ${escapeHtml(a.platform)}${tag ? ' \u00b7 ' + escapeHtml(tag) : ''}</div>
+                    <div style="font-size:10px;color:#9ca3af;font-family:monospace;">${escapeHtml(a.agent_id)} \u00b7 ${escapeHtml(a.platform)}${tag ? ' \u00b7 ' + escapeHtml(tag) : ''}</div>
                 </div>
             </div>`;
         }).join('');
@@ -15894,8 +15871,8 @@ function ocSaveOpenClawTranscript() {
 function acpSanitizeSessionSlug(s) {
     let t = String(s || '').trim();
     if (!t) return '';
-    t = t.replace(/[^a-zA-Z0-9_.-]+/g, '_').replace(/^[._-]+|[._-]+$/g, '');
-    return t.length > 80 ? t.slice(0, 80) : t;
+    t = t.replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^[_-]+|[_-]+$/g, '');
+    return t.length > 64 ? t.slice(0, 64) : t;
 }
 
 function acpGetSessionPickValue() {
@@ -15914,11 +15891,10 @@ function acpComputeSessionNameFromInputs() {
     const tool = _acpTool || '';
     const pick = acpGetSessionPickValue();
     if (pick) return pick;
-    const sid = (typeof currentSessionId !== 'undefined' && currentSessionId) ? String(currentSessionId).trim() : 'default';
+    const sid = (typeof currentSessionId !== 'undefined' && currentSessionId) ? String(currentSessionId).trim() : 'main';
     const inp = document.getElementById('oc-acp-session-name');
     const raw = inp ? String(inp.value || '').trim() : '';
-    const slug = acpSanitizeSessionSlug(raw);
-    return slug ? `main:${tool}:${slug}` : `main:${tool}:${sid || 'default'}`;
+    return acpSanitizeSessionSlug(raw) || acpSanitizeSessionSlug(`${tool}-${sid}`);
 }
 
 function acpResolvedSessionStorageKey(cacheKey) {
@@ -16016,22 +15992,18 @@ async function acpLoadSessionsList() {
     sel.disabled = true;
     acpSetSessionStatus('');
     try {
-        const r = await fetch('/proxy_acpx_sessions?tool=' + encodeURIComponent(_acpTool));
-        const j = await r.json();
-        if (!r.ok || j.ok === false) throw new Error(j.error || ('HTTP ' + r.status));
-        const sessions = (j.sessions || []).filter((s) => !(s && s.closed));
+        // The sessions of this tool are its agents.
+        const j = await agentApi('GET', '/v1/agents');
+        const sessions = (j.data || []).filter((a) => a.platform === _acpTool);
         sel.innerHTML = '';
         const o0 = document.createElement('option');
         o0.value = '';
         o0.textContent = t('oc_acp_session_pick_none');
         sel.appendChild(o0);
-        for (const s of sessions) {
-            const name = s && s.name;
-            if (!name) continue;
+        for (const a of sessions) {
             const opt = document.createElement('option');
-            opt.value = name;
-            const ts = s.lastUsedAt ? String(s.lastUsedAt).replace('T', ' ').slice(0, 19) : '';
-            opt.textContent = name + (ts ? ' · ' + ts : '');
+            opt.value = a.agent_id;
+            opt.textContent = a.name === a.agent_id ? a.agent_id : `${a.name} · ${a.agent_id}`;
             sel.appendChild(opt);
         }
         const stored = localStorage.getItem('clawcross_acp_session_pick_' + _acpTool);
@@ -16053,25 +16025,13 @@ async function acpEnsureSession() {
         return;
     }
     const ensureBtn = document.querySelector('.oc-acp-session-ensure');
-    const payload = { tool: _acpTool, session_id: currentSessionId };
-    const pick = acpGetSessionPickValue();
-    if (pick) payload.acp_session_pick = pick;
-    else {
-        const raw = document.getElementById('oc-acp-session-name') && String(document.getElementById('oc-acp-session-name').value || '').trim();
-        if (raw) payload.acp_session_name = raw;
-    }
+    const agentId = acpComputeSessionNameFromInputs();
     acpSetSessionStatus(t('oc_acp_session_warming'), '');
     if (ensureBtn) ensureBtn.disabled = true;
     try {
-        const r = await fetch('/proxy_acpx_session_ensure', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-        });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok || !j.ok) throw new Error(j.error || ('HTTP ' + r.status));
-        if (j.session_key) acpRememberResolvedSessionName(j.session_key);
-        acpSetSessionStatus(t('oc_acp_session_ready') + (j.session_key ? ': ' + j.session_key : ''), 'ok');
+        await studioEnsureAgent(agentId, { platform: _acpTool });
+        acpRememberResolvedSessionName(agentId);
+        acpSetSessionStatus(t('oc_acp_session_ready') + ': ' + agentId, 'ok');
     } catch (e) {
         const msg = e && e.message ? e.message : String(e || '');
         console.error('acpEnsureSession failed', e);
@@ -16199,37 +16159,6 @@ function acpExtractHistoryPreviewParts(text) {
     };
 }
 
-function acpRenderHistoryEntries(entries) {
-    if (!Array.isArray(entries) || entries.length === 0) {
-        return '';
-    }
-    return entries.map((entry) => {
-        if (!entry || typeof entry !== 'object') return '';
-        const role = String(entry.role || '').toLowerCase();
-        const parsed = acpExtractHistoryPreviewParts(entry.textPreview || '');
-        const text = parsed.text;
-        const toolUsesHtml = parsed.toolUses.length
-            ? acpRenderToolUses(parsed.toolUses.map((name) => ({ name })))
-            : '';
-        if (!text && !toolUsesHtml) return '';
-        if (role === 'user') {
-            return `
-                <div class="flex justify-end">
-                    <div class="message-user bg-blue-600 text-white p-4 max-w-[85%] shadow-sm">
-                        ${escapeHtml(text)}
-                    </div>
-                </div>`;
-        }
-        return `
-            <div class="flex justify-start">
-                <div class="message-agent bg-white border p-4 max-w-[85%] shadow-sm text-gray-700 markdown-body tc-markdown">
-                    ${toolUsesHtml}
-                    ${text ? renderMarkdown(text) : '<span class="text-gray-400 text-xs">(' + t('tool_calling') + ')</span>'}
-                </div>
-            </div>`;
-    }).join('');
-}
-
 async function acpLoadSessionHistory(force = false, options = {}) {
     const chatBox = document.getElementById('chat-box');
     if (!chatBox || !_acpTool) return false;
@@ -16252,15 +16181,7 @@ async function acpLoadSessionHistory(force = false, options = {}) {
         chatBox.innerHTML = `<div class="text-xs text-gray-400 text-center py-4">${t('history_loading_msg')}</div>`;
     }
     try {
-        const resp = await fetch(
-            '/proxy_acpx_session_history?tool=' + encodeURIComponent(_acpTool) + '&name=' + encodeURIComponent(sessionName) + '&limit=200'
-        );
-        const data = await resp.json().catch(() => ({}));
-        if (!resp.ok || data.ok === false) {
-            throw new Error(data.error || ('HTTP ' + resp.status));
-        }
-        const history = data.history || {};
-        const html = acpRenderHistoryEntries(history.entries || []);
+        const html = await studioAgentHistoryHtml(sessionName);
         if (html) {
             _acpTranscriptByKey[cacheKey] = html;
             if (applyToChat) {
@@ -16353,9 +16274,27 @@ function ocRenderOpenClawSelectPrompt() {
     scrollChatToBottom(chatBox, { force: true });
 }
 
-function ocOpenClawSessionKeyForAgent(agentName) {
-    if (!agentName) return '';
-    return 'agent:' + agentName + ':clawcrosschat';
+// Outside WeBot the Studio still talks to agents by number: an OpenClaw agent is one
+// ClawCross agent, the chosen ACP session is one agent.
+function ocAgentIdFor(openclawName) {
+    return 'oc-' + acpSanitizeSessionSlug(openclawName);
+}
+
+async function studioEnsureAgent(agentId, fields) {
+    try {
+        await agentApi('POST', '/v1/agents', { agent_id: agentId, ...fields });
+    } catch (e) {
+        if (e.status !== 409) throw e;  // already there
+    }
+}
+
+async function studioAgentHistoryHtml(agentId) {
+    try {
+        const data = await agentApi('GET', `/v1/agents/${encodeURIComponent(agentId)}/history?limit=200`);
+        return ocRenderOpenClawHistoryHtml(data.messages || []) || null;
+    } catch (e) {
+        return null;  // not made yet
+    }
 }
 
 function ocRenderOpenClawHistoryHtml(messages) {
@@ -16395,20 +16334,7 @@ function ocRenderOpenClawHistoryHtml(messages) {
 
 async function ocLoadOpenClawHistoryFromDB(agentName) {
     if (!agentName) return null;
-    const sessionKey = ocOpenClawSessionKeyForAgent(agentName);
-    try {
-        const url = '/proxy_external_history/messages?platform=openclaw&session_key=' +
-            encodeURIComponent(sessionKey) + '&limit=200';
-        const resp = await fetch(url);
-        if (!resp.ok) return null;
-        const data = await resp.json().catch(() => ({}));
-        if (!data || data.ok === false) return null;
-        const html = ocRenderOpenClawHistoryHtml(data.messages || []);
-        return html || null;
-    } catch (e) {
-        console.warn('ocLoadOpenClawHistoryFromDB failed', e);
-        return null;
-    }
+    return studioAgentHistoryHtml(ocAgentIdFor(agentName));
 }
 
 async function ocPaintOpenClawChatFromCache() {

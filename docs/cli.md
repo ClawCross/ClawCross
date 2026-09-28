@@ -280,9 +280,8 @@ uv run scripts/cli.py channel logout weclaw
 # 列出群聊（含私聊）
 uv run scripts/cli.py groups
 
-# 建群：指定 agent（ag_ 编号 / 地址 / handle），或按 team 建群（成员与主 agent 跟随 team）
-uv run scripts/cli.py groups create --name "测试群" --agents coder,alice/codex
-uv run scripts/cli.py groups create --name "Dev 群" --team-name dev
+# 建群：成员写 agent 编号或 <team>.<名字>；群与 team 无关
+uv run scripts/cli.py groups create --name "测试群" --agents coder,dev.Reviewer
 
 # 详情 / 改名 / 删除
 uv run scripts/cli.py groups get --group-id g_abc123
@@ -449,25 +448,26 @@ uv run scripts/cli.py -u Avalon_01 visual sessions-status
 
 ## 17. agents
 
-**Agent 管理**：WeBot、Codex、Claude Code、Gemini、OpenClaw、任意 HTTP 服务都是同一种 agent，用同一套命令。`--agent` 可写 `ag_` 编号、地址 `<用户>/<handle>` 或 handle。
+**Agent 管理**：WeBot、Codex、Claude Code、Gemini、OpenClaw、任意 HTTP 服务都是同一种 agent，用同一套命令。每个 agent 是一个会话，编号就是会话号；`--agent` 写编号或 `<team>.<名字>`。给没用过的编号发信息（ask / inbox）就新建一个 agent（WeBot）。
 
 ```bash
 # 列出（--status 附带运行状态）
 uv run scripts/cli.py agents list --status
 
 # 新建
-uv run scripts/cli.py agents create --name "Coder" --data '{"persona": "coder"}'                      # WeBot
-uv run scripts/cli.py agents create --name "Codex" --platform codex --data '{"global_name": "cx"}'    # ACP 工具
+uv run scripts/cli.py agents create --name "Coder" --data '{"agent_id": "coder", "persona": "coder"}'   # WeBot
+uv run scripts/cli.py agents create --name "Codex" --platform codex --data '{"agent_id": "cx"}'            # ACP 工具的一个会话
 uv run scripts/cli.py agents create --name "Svc" --platform my_svc \
-  --data '{"global_name": "svc", "api_url": "http://127.0.0.1:8080/v1", "model": "gpt-4o"}'         # HTTP
+  --data '{"agent_id": "svc", "api_url": "http://127.0.0.1:8080/v1", "model": "gpt-4o"}'              # HTTP
 
 # 查看 / 修改 / 删除
-uv run scripts/cli.py agents show   --agent alice/coder
+uv run scripts/cli.py agents show   --agent coder
 uv run scripts/cli.py agents update --agent coder --name "Coder 2" --data '{"settings": {"persona": "architect"}}'
 uv run scripts/cli.py agents delete --agent coder
 
 # 对话与控制（所有平台一样）
 uv run scripts/cli.py agents ask    --agent coder --message "你好"
+uv run scripts/cli.py agents inbox  --agent coder --message "空了看一下"
 uv run scripts/cli.py agents status --agent coder
 uv run scripts/cli.py agents cancel --agent coder
 uv run scripts/cli.py agents reset  --agent coder
@@ -499,7 +499,7 @@ uv run scripts/cli.py -u Avalon_01 teams info --team-name team2
 uv run scripts/cli.py -u Avalon_01 teams create --team-name newteam --data '{"description":"..."}'
 uv run scripts/cli.py -u Avalon_01 teams delete --team-name oldteam
 
-# 成员管理：成员是 agent（任何平台），在 team 里有一个角色名，至多一个 lead
+# 成员管理：成员是 agent（任何平台），在 team 里有一个名字（<team>.<名字> 可找到它），至多一个 lead
 uv run scripts/cli.py -u Avalon_01 teams members --team-name myteam
 uv run scripts/cli.py -u Avalon_01 teams add-member --team-name myteam --agent coder --role "Coder" [--lead]
 uv run scripts/cli.py -u Avalon_01 teams set-lead --team-name myteam --agent coder
@@ -947,12 +947,12 @@ uv run scripts/cli.py skill delete --name make_slides --team myteam
 uv run scripts/cli.py cron list
 uv run scripts/cli.py cron list --team myteam
 
-# 新建：cron 周期任务（--agent 写 ag_ 编号、地址或 handle）
+# 新建：cron 周期任务（--agent 写 agent 编号或 <team>.<名字>）
 uv run scripts/cli.py cron new --team myteam --agent coder \
   --schedule-type cron --cron "0 9 * * *" --text "早报：汇总今天的待办"
 
 # 新建：单次定时触发
-uv run scripts/cli.py cron new --agent alice/assistant \
+uv run scripts/cli.py cron new --agent assistant \
   --schedule-type once --run-at "2026-06-01T09:00:00" --text "提醒发周报"
 
 # 删除定时任务

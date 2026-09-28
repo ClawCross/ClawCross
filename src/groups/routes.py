@@ -1,7 +1,7 @@
 """HTTP surface of group chat.
 
     GET    /groups                               the caller's groups and direct chats
-    POST   /groups                               create {title, kind?, agents?, team?}
+    POST   /groups                               create {title, kind?, agents?}
     GET    /groups/{id}                          members, primary agent, recent messages
     PATCH  /groups/{id}                          {title?, dnd?}
     DELETE /groups/{id}
@@ -27,7 +27,6 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from agents.routes import authenticate
-from agents.store import AgentNotFound
 from comms.conversations import NotAMember
 from comms.store import GROUP, human
 from groups.service import GroupError, GroupService
@@ -44,7 +43,6 @@ class GroupCreate(BaseModel):
     title: str = ""
     kind: str = GROUP         # "group" | "direct"
     agents: list[str] = Field(default_factory=list)
-    team: str = ""
 
 
 class GroupPatch(BaseModel):
@@ -102,8 +100,7 @@ def create_groups_router(
 
     @router.post("/groups")
     async def create_group(body: GroupCreate, authorization: str | None = Header(None)):
-        return call(service.create, user_of(authorization), title=body.title, kind=body.kind,
-                    agents=body.agents, team=body.team)
+        return call(service.create, user_of(authorization), title=body.title, kind=body.kind, agents=body.agents)
 
     @router.get("/groups/{conv_id}/messages")
     async def list_messages(conv_id: str, after_id: int = 0, authorization: str | None = Header(None)):
@@ -122,9 +119,9 @@ def create_groups_router(
             if not internal_token or x_internal_token != internal_token:
                 raise HTTPException(status_code=403, detail="only local services may post for an agent")
             try:
-                sender = service.agents.resolve(user, body.agent).agent_id
-            except AgentNotFound as exc:
-                raise HTTPException(status_code=404, detail=str(exc))
+                sender = service.agent_id(user, body.agent)
+            except GroupError as exc:
+                raise HTTPException(status_code=exc.status, detail=str(exc))
         try:
             return await service.post(
                 user, conv_id, sender, body.content,

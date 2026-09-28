@@ -604,15 +604,15 @@ function orchPlatformLabel(platform) {
     return (typeof addExtPlatformLabel === 'function' ? addExtPlatformLabel(platform) : '') || platform;
 }
 
-// A workflow names a team member by its role, so the team folder stays portable;
-// outside a team it names the agent by handle.
+// A workflow names a team member by its name in the team, so the team folder stays
+// portable; outside a team it names the agent by its number.
 function orchAgentNodeData(entry) {
     const agent = entry.agent;
     const name = entry.role || agent.name;
     return {
         type: 'agent',
         name,
-        agent: orch.teamName ? name : agent.handle,
+        agent: orch.teamName ? name : agent.agent_id,
         agent_id: agent.agent_id,
         platform: agent.platform,
         tag: agent.settings?.persona || '',
@@ -624,7 +624,7 @@ function orchAgentNodeData(entry) {
 function orchFindAgent(ref) {
     const key = String(ref || '').trim().replace(/^@/, '').toLowerCase();
     if (!key) return null;
-    return (orch.agents || []).find(e => [e.role, e.agent.agent_id, e.agent.handle, e.agent.address, e.agent.name]
+    return (orch.agents || []).find(e => [e.role, e.agent.agent_id, e.agent.name]
         .some(v => String(v || '').toLowerCase() === key)) || null;
 }
 
@@ -702,8 +702,8 @@ function orchAgentCard(entry) {
     card.className = 'orch-expert-card';
     card.draggable = true;
     card.innerHTML = `<span class="orch-emoji">${orchAgentEmoji(agent.platform)}</span>`
-        + `<div style="min-width:0;flex:1;"><div class="orch-name" title="${escapeHtml(agent.address)}">${escapeHtml(name)}${entry.is_lead ? ' <span style="color:#f59e0b;font-size:10px;">⭐</span>' : ''}</div>`
-        + `<div class="orch-tag" style="color:#6b7280;font-family:monospace;">${persona ? '🏷️' + escapeHtml(persona) + ' · ' : ''}${escapeHtml(agent.handle)}</div></div>`
+        + `<div style="min-width:0;flex:1;"><div class="orch-name" title="${escapeHtml(agent.agent_id)}">${escapeHtml(name)}${entry.is_lead ? ' <span style="color:#f59e0b;font-size:10px;">⭐</span>' : ''}</div>`
+        + `<div class="orch-tag" style="color:#6b7280;font-family:monospace;">${persona ? '🏷️' + escapeHtml(persona) + ' · ' : ''}${escapeHtml(agent.agent_id)}</div></div>`
         + `<div style="display:flex;flex-direction:column;gap:2px;flex-shrink:0;">${buttons}</div>`;
     const on = (selector, handler) => {
         const el = card.querySelector(selector);
@@ -871,7 +871,8 @@ async function orchShowAddAgentModal() {
             await orchRegisterAgent({
                 name, platform,
                 persona: overlay.querySelector('#orch-aa-tag').value.trim(),
-                global_name: platform === 'webot' ? '' : runtime,
+                // OpenClaw: which of its agents; any other runtime: the new agent's number
+                ...(platform === 'openclaw' ? { global_name: runtime } : (runtime ? { agent_id: runtime } : {})),
             });
             orchToast('✅ ' + t('orch_ia_created') + ': ' + name);
             overlay.remove();
@@ -4083,7 +4084,7 @@ async function _orchGtUpdateConflicts(overlay, teamName, participants, resolutio
                 fetch(`/teams/${encodeURIComponent(teamName)}/experts`),
             ]);
             (team.members || []).forEach(m => {
-                [m.role, m.agent.agent_id, m.agent.handle, m.agent.address].forEach(v => existing.add('agent:' + v));
+                [m.role, m.agent.agent_id].forEach(v => existing.add('agent:' + v));
             });
             if (eResp.ok) {
                 const eData = await eResp.json();

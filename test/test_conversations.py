@@ -88,14 +88,14 @@ class GroupCase(unittest.IsolatedAsyncioTestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         root = Path(self.tmp.name)
-        self.agents = AgentStore(root / "clawcross.db")
+        self.agents = AgentStore(root / "agents.db")
         self.teams = TeamStore(self.agents, root / "user_files")
         self.gateway = _Gateway()
-        self.conversations = Conversations(ConversationStore(self.agents), self.agents, self.gateway)
-        self.service = GroupService(self.conversations, self.teams)
-        self.planner = self.agents.create("alice", name="Planner", driver=WEBOT, config={"session": "s_plan"})
-        self.coder = self.agents.create("alice", name="Coder", driver=WEBOT, config={"session": "s_code"})
-        self.codex = self.agents.create("alice", name="Codex", driver=ACPX, config={"platform": "codex", "global_name": "cx"})
+        self.conversations = Conversations(ConversationStore(root / "conversations.db"), self.agents, self.gateway)
+        self.service = GroupService(self.conversations, names=self.teams.address)
+        self.planner = self.agents.create("alice", driver=WEBOT, name="Planner", agent_id="planner")
+        self.coder = self.agents.create("alice", driver=WEBOT, name="Coder", agent_id="coder")
+        self.codex = self.agents.create("alice", driver=ACPX, config={"platform": "codex"}, name="Codex", agent_id="codex")
         self.group = self.service.create("alice", title="Dev", agents=["planner", "coder", "codex"])["group_id"]
 
     def woken(self):
@@ -126,7 +126,7 @@ class TestGroupChat(GroupCase):
         text = {d["agent"].name: d["msg"].text for d in self.gateway.deliveries}
         self.assertEqual(sorted(text), ["Coder", "Codex"])
         self.assertIn("@你 说:", text["Codex"])
-        self.assertIn(f"--agent {self.codex.address}", text["Codex"])  # external: CLI
+        self.assertIn(f"--agent {self.codex.agent_id}", text["Codex"])  # external: CLI
         self.assertIn(f'send_to_group(group_id="{self.group}"', text["Coder"])  # WeBot: tool
 
     async def test_agents_wake_only_whom_they_mention_and_are_capped(self):
@@ -180,7 +180,12 @@ class TestGroupChat(GroupCase):
         self.service.set_primary("alice", self.group, "planner")
         self.service.remove_member("alice", self.group, self.planner.agent_id)
         self.assertIsNone(self.service.detail("alice", self.group)["primary_agent"])
-        self.agents.delete(self.codex.agent_id)
+        self.service.set_primary("alice", self.group, "codex")
+        self.agents.delete("alice", "codex")
+        self.conversations.store.forget("alice", "codex")  # what deleting through the API does
+        detail = self.service.detail("alice", self.group)
+        self.assertIsNone(detail["primary_agent"])
+        self.assertNotIn("codex", [m["principal"] for m in detail["members"]])
         await self.say("大家好")
         self.assertEqual(self.woken(), ["Coder"])
 
@@ -204,38 +209,22 @@ class TestGroupChat(GroupCase):
             self.service.detail("bob", self.group)
         with self.assertRaises(Forbidden):
             await self.service.post("bob", self.group, human("bob"), "hi")
-        outsider = self.agents.create("alice", name="Outsider", driver=WEBOT, config={"session": "s_out"})
+        outsider = self.agents.create("alice", driver=WEBOT, name="Outsider")
         with self.assertRaises(NotAMember):
             await self.say("hi", sender=outsider.agent_id)
 
 
-class TestTeamGroup(GroupCase):
-    def setUp(self):
-        super().setUp()
+class TestGroupsAndTeams(GroupCase):
+    async def test_a_group_has_nothing_to_do_with_teams_but_takes_team_names(self):
         self.teams.create("alice", "dev")
-        self.teams.add("alice", "dev", self.planner.agent_id, is_lead=True)
-        self.teams.add("alice", "dev", self.coder.agent_id)
-        self.team_group = self.service.create("alice", title="Dev team", team="dev")["group_id"]
-
-    def agent_members(self):
-        return sorted(m["name"] for m in self.service.detail("alice", self.team_group)["members"] if m["is_agent"])
-
-    async def test_team_group_follows_the_team_and_its_lead(self):
-        self.assertEqual(self.agent_members(), ["Coder", "Planner"])
-        self.assertEqual(self.service.detail("alice", self.team_group)["primary_agent"], self.planner.agent_id)
-        self.teams.remove("alice", "dev", self.planner.agent_id)
-        self.teams.add("alice", "dev", self.codex.agent_id, is_lead=True)
-        self.assertEqual(self.agent_members(), ["Coder", "Codex"])
-        self.assertEqual(self.service.detail("alice", self.team_group)["primary_agent"], self.codex.agent_id)
-        with self.assertRaises(GroupError):
-            self.service.add_member("alice", self.team_group, "planner")
-
-    async def test_mention_reaches_whoever_holds_the_role_now(self):
-        newcomer = self.agents.create("alice", name="New Coder", driver=WEBOT, config={"session": "s_new"})
-        self.teams.remove("alice", "dev", self.coder.agent_id)
-        self.teams.add("alice", "dev", newcomer.agent_id)
-        await self.service.post("alice", self.team_group, human("alice"), "@New Coder 看一下")
-        self.assertEqual(self.woken(), ["New Coder"])
+        self.teams.add("alice", "dev", "planner", role="Builder")
+        created = self.service.create("alice", title="Mixed", agents=["dev.Builder", "codex"])
+        self.assertEqual(sorted(m["principal"] for m in created["members"]), ["codex", "planner", "u:alice"])
+        self.assertNotIn("team", created)
+        self.teams.remove("alice", "dev", "planner")  # the team changes; the group stays as it was made
+        self.assertEqual(len(self.service.detail("alice", created["group_id"])["members"]), 3)
+        await self.service.post("alice", created["group_id"], human("alice"), "hi")
+        self.assertEqual({str(d.get("context")) for d in self.gateway.deliveries}, {str({"conversation_id": created["group_id"]})})
 
 
 class TestGroupsApi(GroupCase):

@@ -129,7 +129,7 @@ class TestCallbackUrl(OasisServerTestCase):
         with TestClient(server.app) as client:
             topic = client.post("/topics", json={
                 "question": "q", "user_id": "alice", "schedule_yaml": MANUAL_YAML,
-                "discussion": False, "callback_url": url,
+                "discussion": False, "callback_url": url, "callback_session_id": "s1",
             }).json()
             self.wait_status(client, topic["topic_id"])
             self.assertTrue(self.wait_for(lambda: _RecordingClient.posts))

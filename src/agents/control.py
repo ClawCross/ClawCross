@@ -12,7 +12,7 @@ import logging
 import shutil
 from typing import Any
 
-from agents.gateway import external_session_key
+from agents.gateway import runtime_session
 from agents.store import ACPX, OPENCLAW, WEBOT, Agent, AgentStore, get_store
 from utils.external_agent_history import get_store as history_store
 
@@ -39,7 +39,7 @@ class AgentControl:
 
     def _forget_runtime(self, agent: Agent) -> None:
         """The runtime starts over: it has been told nothing (the identity is sent again)."""
-        (self._store or get_store()).set_runtime(agent.agent_id, {})
+        (self._store or get_store()).set_runtime(agent.owner, agent.agent_id, {})
 
     async def status(self, agent: Agent) -> dict[str, Any]:
         base = {"actions": supported_actions(agent)}
@@ -66,7 +66,7 @@ class AgentControl:
         if action not in supported_actions(agent):
             raise ControlError(f"{agent.platform} agents do not support {action}")
         if agent.driver == WEBOT:
-            thread = f"{agent.owner}#{agent.config.get('session', '')}"
+            thread = f"{agent.owner}#{agent.agent_id}"
             if action == "cancel":
                 return {"cancelled": bool(await self.webot.cancel_task(thread))}
             await self._drop_webot_thread(thread)
@@ -84,7 +84,7 @@ class AgentControl:
         if agent.driver == WEBOT:
             return (await self._webot_history(agent))[-limit:]
         store = await history_store()
-        rows = await store.list_messages(platform=agent.platform, session_key=external_session_key(agent), limit=5000)
+        rows = await store.list_messages(platform=agent.platform, session_key=runtime_session(agent), limit=5000)
         return [
             {"role": row.get("role") or ("user" if row.get("direction") == "send" else "assistant"),
              "content": row.get("content") or ""}
@@ -95,18 +95,18 @@ class AgentControl:
         """Release the runtime state of an agent that is being deleted."""
         try:
             if agent.driver == WEBOT:
-                await self._drop_webot_thread(f"{agent.owner}#{agent.config.get('session', '')}")
+                await self._drop_webot_thread(f"{agent.owner}#{agent.agent_id}")
             else:
                 if agent.driver == ACPX:
                     await self._acpx_command(agent, "close")
-                await (await history_store()).delete_session(platform=agent.platform, session_key=external_session_key(agent))
+                await (await history_store()).delete_session(platform=agent.platform, session_key=runtime_session(agent))
         except Exception:
-            logger.exception("cleanup of %s failed", agent.address)
+            logger.exception("cleanup of %s failed", agent.agent_id)
 
     # ── WeBot ────────────────────────────────────────────────────────────
 
     def _webot_status(self, agent: Agent) -> dict[str, Any]:
-        thread = f"{agent.owner}#{agent.config.get('session', '')}"
+        thread = f"{agent.owner}#{agent.agent_id}"
         state = self.webot.get_all_thread_status(f"{agent.owner}#").get(thread, {})
         busy = bool(state.get("busy")) or thread in set(self.webot.list_active_task_keys(f"{agent.owner}#"))
         usage = getattr(self.webot, "get_thread_context_usage", None)
@@ -119,7 +119,7 @@ class AgentControl:
     async def _webot_history(self, agent: Agent) -> list[dict[str, Any]]:
         from services.llm_factory import extract_text
 
-        thread = f"{agent.owner}#{agent.config.get('session', '')}"
+        thread = f"{agent.owner}#{agent.agent_id}"
         snapshot = await self.webot.agent_app.aget_state({"configurable": {"thread_id": thread}})
         out: list[dict[str, Any]] = []
         for msg in (snapshot.values.get("messages", []) if snapshot and snapshot.values else []):
@@ -165,7 +165,7 @@ class AgentControl:
 
     async def _acpx_status(self, agent: Agent) -> dict[str, Any]:
         sessions = await self._adapter().list_sessions(tool=agent.platform)
-        key = external_session_key(agent)
+        key = runtime_session(agent)
         live = [s for s in sessions if s.get("name") == key and not s.get("closed")]
         return {"state": "online" if live else "idle", "sessions": live}
 
@@ -179,15 +179,15 @@ class AgentControl:
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=8)
         raw = json.loads(stdout.decode("utf-8", errors="replace") or "[]")
         sessions = raw.get("sessions", []) if isinstance(raw, dict) else raw
-        prefix = f"agent:{agent.config.get('global_name', '')}:"
-        mine = [s for s in sessions if str(s.get("key", s.get("session_key", ""))).startswith(prefix)]
+        key = runtime_session(agent)
+        mine = [s for s in sessions if str(s.get("key", s.get("session_key", ""))) == key]
         return {"state": "online" if mine else "idle", "sessions": mine}
 
     async def _acpx_command(self, agent: Agent, action: str) -> None:
         from integrations.acpx_adapter import AcpxError, acpx_options_from_agent
 
         adapter = self._adapter()
-        key = external_session_key(agent)
+        key = runtime_session(agent)
         policy = acpx_options_from_agent(agent.config, default_timeout_sec=180)
         common = {
             "timeout_sec": min(policy["timeout_sec"], 60) if action != "reset" else policy["timeout_sec"],

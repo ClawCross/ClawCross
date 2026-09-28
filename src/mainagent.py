@@ -31,10 +31,9 @@ from agents.gateway import AgentGateway
 from agents.routes import create_agents_router
 from agents.store import get_store
 from comms.conversations import Conversations
-from comms.store import ConversationStore
+from comms.store import ConversationStore, default_db_path as conversations_db_path
 from groups.routes import create_groups_router
 from groups.service import GroupService
-from migrations.unify import migrate
 from teams.routes import create_teams_router
 from teams.store import get_team_store
 from services.llm_factory import extract_text as _extract_text
@@ -49,7 +48,7 @@ from webot.routes import create_webot_router
 from services.message_builder import build_human_message
 from utils.logging_utils import get_logger, request_id_ctx
 from utils.checkpoint_paths import DEFAULT_CHECKPOINT_DB_DIR
-from utils.runtime_paths import DATA_DIR, ENV_FILE, USERS_FILE, ensure_runtime_dirs
+from utils.runtime_paths import ENV_FILE, USERS_FILE, ensure_runtime_dirs
 
 # --- Path setup ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -145,14 +144,15 @@ def verify_password(username: str, password: str) -> bool:
 # --- Create agent instance ---
 agent = TeamAgent(src_dir=current_dir, db_path=db_path)
 
-# --- Agents, teams and conversations: one database, three layers ---
+# --- L1: the table of all agents (every session, by its number). L2 around it: teams
+# (namespaces in folders), group chats (their own database), workflows. ---
 agent_store = get_store()
 gateway = AgentGateway(internal_token=INTERNAL_TOKEN, store=agent_store)
 agent_control = AgentControl(agent, checkpoint_db_path=str(getattr(agent, "_db_path", "") or ""), store=agent_store)
 team_store = get_team_store(agent_store)
-conversation_store = ConversationStore(agent_store)
+conversation_store = ConversationStore(conversations_db_path())
 conversations = Conversations(conversation_store, agent_store, gateway, is_busy=agent_control.is_busy)
-group_service = GroupService(conversations, team_store)
+group_service = GroupService(conversations, names=team_store.address)
 
 
 async def _reconcile_pending_in_background() -> None:
@@ -171,7 +171,6 @@ async def _reconcile_pending_in_background() -> None:
 # --- FastAPI lifespan ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    migrate(data_dir=DATA_DIR, teams=team_store, conversations=conversation_store)
     await agent.startup()
     # 后台任务完成通知是事件驱动的（detached runner 跑完会 POST /internal/bg_job_done）。
     # 这里只做一次性对账（非轮询），补发「本进程宕机期间已完成」的任务通知。
@@ -261,18 +260,18 @@ app.include_router(
     )
 )
 
-# L1: every agent on this machine, one interface.
+# L1: every agent on this machine by its number.
 app.include_router(
     create_agents_router(
         internal_token=INTERNAL_TOKEN, verify_password=verify_password,
-        store=agent_store, gateway=gateway, control=agent_control,
+        store=agent_store, gateway=gateway, control=agent_control, names=team_store.address,
+        on_delete=(lambda a: team_store.forget_agent(a.owner, a.agent_id),
+                   lambda a: conversation_store.forget(a.owner, a.agent_id)),
     )
 )
-# L3: teams compose agents; a team is addressed through its lead.
+# L2: teams are namespaces of agents.
 app.include_router(
-    create_teams_router(
-        internal_token=INTERNAL_TOKEN, verify_password=verify_password, teams=team_store, gateway=gateway,
-    )
+    create_teams_router(internal_token=INTERNAL_TOKEN, verify_password=verify_password, teams=team_store)
 )
 
 

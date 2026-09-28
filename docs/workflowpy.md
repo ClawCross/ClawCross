@@ -169,10 +169,10 @@ agents = await ctx.list_agents()
 ### 2. Name agents by role or id
 
 `ctx.list_agents()` returns the team's members (outside a team: all of your
-agents) as agent cards with their `role`: `agent_id`, `address`, `name`,
-`platform`, `settings`. `ctx.send_agent(target, …)` accepts a role name, a
-handle, an address or an `ag_…` id. Do not assume persona tags like `creative`
-are unique among agents.
+agents) as agent cards with their `role`: `agent_id`, `name`, `platform`,
+`settings`. `ctx.send_agent(target, …)` accepts a member's name in the team, an
+agent id or `<team>.<name>`; an id not seen before is a new agent. Do not
+assume persona tags like `creative` are unique among agents.
 
 ```python
 agents = ctx.list_agents()

@@ -108,30 +108,15 @@ def _public_front_url() -> str:
         return domain
     return f"https://{domain}"
 
-# Unified CLI permission modes — apply to both internal agent (session_mode +
-# enabled_tools) and external ACP agents (acpx permission_policy / allowed_tools /
-# non_interactive_permissions). Default is bypass: full tools, auto-approve all.
+# Unified CLI permission modes, sent as ``session_mode``; each runtime (WeBot, or an
+# ACP agent through acpx) applies it its own way.
 VALID_MODES = ("chat", "readonly", "bypass", "auto")
 _DEFAULT_MODE = "auto"
-_ACPX_POLICY_BY_MODE = {
-    "chat": "approve-all",  # moot — no tools advertised
-    "readonly": "approve-reads",
-    "bypass": "approve-all",
-    "auto": "approve-reads",
-}
-_ACPX_NIP_BY_MODE = {
-    "chat": "",
-    "readonly": "deny",  # plan mode: writes must error out, not hang waiting for a human
-    "bypass": "",
-    "auto": "deny",
-}
-# None = let acpx advertise all tools. "" = explicitly advertise no tools.
-_ACPX_ALLOWED_TOOLS_BY_MODE: dict[str, str | None] = {
-    "chat": "",
-    "readonly": None,
-    "bypass": None,
-    "auto": None,
-}
+
+
+def _agent_id(session: str) -> str:
+    """A session name as the number of its agent (letters, digits, '_' and '-')."""
+    return re.sub(r"[^A-Za-z0-9_-]+", "-", session or "").strip("-_")[:64] or "main"
 
 
 def _normalize_mode(mode: str | None) -> str:
@@ -736,8 +721,8 @@ def _request_json(method: str, url: str, headers: dict | None = None, data: dict
 def _fetch_session_history(state: dict, session_id: str, *, limit: int = 10) -> tuple[list[dict], str | None]:
     """Fetch the tail of a session's messages for resume-replay.
 
-    Mirrors the frontend's /proxy_session_history call. For ACP platforms,
-    uses GET /proxy_acpx_session_history. Returns ([], error_str) on failure
+    Mirrors the frontend's /proxy_session_history call. An ACP session is an agent:
+    its history is GET /v1/agents/{id}/history. Returns ([], error_str) on failure
     so callers can render silently when offline.
     """
     current = _current(state)
@@ -758,11 +743,10 @@ def _fetch_session_history(state: dict, session_id: str, *, limit: int = 10) -> 
             return messages[-limit:], None
         tool = _acpx_tool(platform)
         if ":" not in platform and tool in ACP_PLATFORMS:
-            # Read directly from ~/.clawcross/data/external_agent_history/<tool>#<sid>.db
-            # — bypasses acpx subprocess (which may be missing or fail) and gives
-            # the full send/recv/tool stream, not acpx's short textPreview.
-            from clawcross_cli.session_adapter import fetch_history_messages
-            return fetch_history_messages(tool, session_id, limit=limit)
+            user = current.get("user") or DEFAULT_USER
+            data = _request_json("GET", f"{AGENT_BASE}/v1/agents/{_agent_id(session_id)}/history?limit={limit}",
+                                 headers=_headers_for_user(user))
+            return list(data.get("messages") or [])[-limit:], None
         return [], None
     except Exception as exc:
         return [], str(exc)
@@ -873,9 +857,11 @@ def _list_current_platform_sessions(state: dict) -> tuple[list[dict], str | None
             return sessions, None
         tool = _acpx_tool(platform)
         if ":" not in platform and tool in ACP_PLATFORMS:
-            # Same source as fetch — list every session DB on disk for this tool.
-            from clawcross_cli.session_adapter import list_history_sessions
-            return list_history_sessions(tool)
+            # This tool's sessions are its agents.
+            user = current.get("user") or DEFAULT_USER
+            data = _request_json("GET", f"{AGENT_BASE}/v1/agents", headers=_headers_for_user(user))
+            return [{"session": a["agent_id"], "title": a.get("name") or "", "message_count": None}
+                    for a in data.get("data") or [] if a.get("platform") == tool], None
         return [], f"Platform '{platform}' does not expose session listing yet."
     except Exception as exc:
         return [], str(exc)
@@ -1046,44 +1032,21 @@ def _acpx_tool(platform: str) -> str:
 
 
 def _run_acpx(prompt: str, state: dict, *, model: str = "default") -> None:
+    """Talk to the ACP agent this session is (a new session name is a new agent)."""
     current = _current(state)
     platform = current.get("platform") or "codex"
     tool = _acpx_tool(platform)
     if tool not in ACP_PLATFORMS:
         raise RuntimeError(f"Unsupported ACP platform: {platform}")
-    session_id = current.get("session") or _repo_session_name()
-    mode = _normalize_mode(current.get("mode"))
-    # Pass the user's session name verbatim. The backend now trusts any
-    # shell-safe name and forwards it to `acpx sessions ensure` (which is
-    # idempotent — reuses an existing session or creates a new one).
+    user = current.get("user") or DEFAULT_USER
     payload = {
-        "tool": tool,
-        "model": f"acp:{tool}",
+        "model": tool,
         "messages": [{"role": "user", "content": prompt}],
         "stream": True,
-        "session_id": session_id,
-        "acp_session_name": session_id,
-        "timeout_sec": 600,
-        "permission_policy": _ACPX_POLICY_BY_MODE[mode],
+        "session_id": _agent_id(current.get("session") or _repo_session_name()),
+        "session_mode": _normalize_mode(current.get("mode")),
     }
-    nip = _ACPX_NIP_BY_MODE[mode]
-    if nip:
-        payload["non_interactive_permissions"] = nip
-    allowed_tools = _ACPX_ALLOWED_TOOLS_BY_MODE.get(mode)
-    if allowed_tools is not None:
-        # Explicitly include even when "", so acpx receives `--allowed-tools ""`.
-        payload["allowed_tools"] = allowed_tools
-    # When the user picked an existing ACP session via /resume, send the
-    # strict-reuse hint so the backend errors if the session is gone instead
-    # of silently creating a new one under the same name.
-    if current.get("session_resumed"):
-        payload["acp_session_pick"] = session_id
-    _print_sse_text(_post_stream(
-        f"{FRONT_BASE}/proxy_acpx_chat",
-        {},
-        payload,
-        timeout=700,
-    ))
+    _print_sse_text(_post_stream(f"{AGENT_BASE}/v1/chat/completions", _headers_for_user(user), payload, timeout=700))
 
 
 def run_prompt(prompt: str, state: dict, *, model: str = "default") -> int:

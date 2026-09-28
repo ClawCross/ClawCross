@@ -3,10 +3,10 @@ const { test, expect } = require('@playwright/test');
 // The mobile message center speaks to agents by id: groups, members, @mentions and
 // contacts all come from /proxy_groups and /v1/agents, the same for every platform.
 
-const LEAD = { agent_id: 'ag_lead000001', address: 'tester/lead', handle: 'lead', name: 'Lead', platform: 'webot',
-  settings: { persona: 'synthesis', team: 'dev', tools: null, session: 's_lead' } };
-const CODEX = { agent_id: 'ag_codex00001', address: 'tester/codex', handle: 'codex', name: 'Codex', platform: 'codex',
-  settings: { persona: 'critical', team: 'dev', global_name: 'cx', has_api_key: false, model: '', api_url: '' } };
+const LEAD = { agent_id: 's_lead', name: 'Lead', platform: 'webot',
+  settings: { persona: 'synthesis', team: 'dev', tools: null } };
+const CODEX = { agent_id: 'ag_codex00001', name: 'Codex', platform: 'codex',
+  settings: { persona: 'critical', team: 'dev', global_name: '', has_api_key: false, model: '', api_url: '' } };
 
 const MESSAGES = [
   { id: 1, sender: 'u:tester', sender_name: 'tester', content: '@Codex 看一下', mentions: [CODEX.agent_id], attachments: [], created_at: 1790000000 },
@@ -40,7 +40,7 @@ async function stub(page, calls) {
   await page.route(/\/proxy_webot_tool_approvals/, (route) => json(route, { approvals: [] }));
   await page.route(/\/proxy_visual\/load-layouts/, (route) => json(route, []));
   await page.route(/\/v1\/teams(\?.*)?$/, (route) => json(route, { object: 'list', data: [
-    { team: 'dev', address: 'tester/dev', lead: LEAD.agent_id,
+    { team: 'dev', lead: LEAD.agent_id,
       members: [{ agent: LEAD, role: 'Lead', is_lead: true }, { agent: CODEX, role: 'Codex', is_lead: false }] },
   ] }));
   await page.route(/\/v1\/agents(\?.*)?$/, (route) => json(route, { object: 'list', data: [LEAD, CODEX] }));
@@ -87,7 +87,7 @@ test('mobile message center works with agents of any platform by id', async ({ p
 
   // Members: one kind of row for every platform, the same controls
   await expect(page.locator('#member-list')).toContainText('Codex');
-  await expect(page.locator('#member-list')).toContainText('tester/codex');
+  await expect(page.locator('#member-list')).toContainText('ag_codex00001');
   await expect(page.locator('#member-list')).toContainText('WeBot');
   await page.evaluate(() => controlMemberAgent('ag_codex00001', 'reset', 'Codex'));
   expect(calls.control).toEqual([{ action: 'reset' }]);
@@ -110,7 +110,7 @@ test('mobile message center works with agents of any platform by id', async ({ p
   await expect(page.locator('#contacts-list')).toContainText('Codex');
   await expect(page.locator('#contacts-list')).toContainText('创意专家');
   await page.locator('#contacts-list .contact-item', { hasText: 'Codex' }).first().click();
-  await expect(page.locator('#agent-detail-body')).toContainText('tester/codex');
+  await expect(page.locator('#agent-detail-body')).toContainText('ag_codex00001');
 
   expect(pageErrors).toEqual([]);
 });

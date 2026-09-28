@@ -125,6 +125,48 @@ def build_openai_content(text: str, attachments: list[Any] | None = None) -> str
     return parts
 
 
+def _data_uri(value: str) -> tuple[str, str]:
+    """``data:<mime>;base64,<payload>`` → (mime, payload); ("", "") for anything else."""
+    if not value.startswith("data:") or "," not in value:
+        return "", ""
+    header, payload = value.split(",", 1)
+    return header[5:].split(";", 1)[0].strip(), payload
+
+
+def parse_openai_content(content: Any) -> tuple[str, list[dict]]:
+    """The text and attachments of an OpenAI chat ``content`` — the inverse of
+    ``build_openai_content``: images, audio and files become attachments."""
+    if not isinstance(content, list):
+        return str(content or ""), []
+    texts: list[str] = []
+    attachments: list[dict] = []
+    for part in content:
+        part = part if isinstance(part, dict) else part.model_dump()
+        kind = part.get("type")
+        if kind == "text":
+            texts.append(str(part.get("text") or ""))
+        elif kind == "image_url":
+            mime, data = _data_uri(str((part.get("image_url") or {}).get("url") or ""))
+            if data:
+                attachments.append({"type": "image", "name": "image", "mime_type": mime or "image/png", "data": data})
+        elif kind == "input_audio":
+            audio = part.get("input_audio") or {}
+            data, fmt = str(audio.get("data") or ""), str(audio.get("format") or "wav")
+            if data.startswith("data:"):
+                data = _data_uri(data)[1]
+            if data:
+                attachments.append({"type": "audio", "name": "audio",
+                                    "mime_type": fmt if "/" in fmt else f"audio/{fmt}", "data": data})
+        elif kind == "file":
+            file = part.get("file") or {}
+            raw = str(file.get("file_data") or "")
+            mime, data = _data_uri(raw) if raw.startswith("data:") else ("", raw)
+            if data:
+                attachments.append({"type": "file", "name": str(file.get("filename") or "file"),
+                                    "mime_type": mime or "application/octet-stream", "data": data})
+    return "\n".join(t for t in texts if t), attachments
+
+
 @dataclass(slots=True)
 class AgentMessage:
     """What a caller says to one agent.

@@ -6029,7 +6029,6 @@ const I18N = {
     agent_address: '地址',
     agent_runtime: '运行时',
     edit_agent: '编辑',
-    team_group_members_follow_team: '团队群的成员跟随团队，请在团队里添加',
     tip_reset_agent: '清空这个 agent 的会话，从头开始',
     btn_reset_agent: '♻️ 重置',
     tip_agent_status: '查看状态',
@@ -6668,7 +6667,6 @@ const I18N = {
     agent_address: 'Address',
     agent_runtime: 'Runtime',
     edit_agent: 'Edit',
-    team_group_members_follow_team: "A team group's members follow the team; add them in the team",
     tip_reset_agent: "Clear this agent's session and start over",
     btn_reset_agent: '♻️ Reset',
     tip_agent_status: 'View status',
@@ -7190,7 +7188,6 @@ async function openSettingsToPassword() {
 // ── State ──
 let currentGroupId = null;
 let currentGroupName = '';
-let currentTeamName = '';  // the team the open group follows, '' for a plain group
 let currentTab = 'chats';
 let mobileUpdatePollTimer = null;
 let mobileUpdateSnapshot = null;
@@ -9600,7 +9597,6 @@ function showMobileBuiltinPresetModal() {
   const input = document.getElementById('mobile-builtin-preset-team-name');
   if (modal) modal.style.display = 'flex';
   if (input) {
-    if (!String(input.value || '').trim()) input.value = currentTeamName;
   }
   loadMobileBuiltinTeamPresets();
 }
@@ -10038,7 +10034,8 @@ async function mobileSubmitCreateAcpAgent() {
   }
   if (btn) { btn.disabled = true; btn.dataset.orig = btn.textContent; btn.textContent = t('adding'); }
   try {
-    const agent = await registerAgent({ name, platform, global_name: runtime, persona: _mobilePickedTag('ca-acp-tag', 'ca-acp-tag-custom') }, team);
+    // The runtime name is the new agent's number: its session in that runtime.
+    const agent = await registerAgent({ name, platform, agent_id: runtime, persona: _mobilePickedTag('ca-acp-tag', 'ca-acp-tag-custom') }, team);
     if (await startPrivateChat(agent.agent_id)) {
       closeCreateAgentModal();
       invalidateContactsPrefetch();
@@ -10300,12 +10297,8 @@ function updateGroupNamePreview() {
     return;
   }
 
-  // 群名自动拼接：team#customname 或 team
-  if (customName) {
-    previewEl.textContent = `${teamName}#${customName}`;
-  } else {
-    previewEl.textContent = teamName;
-  }
+  // 群名：自定义名，或 team 名
+  previewEl.textContent = customName || teamName;
 }
 
 async function submitCreateGroup() {
@@ -10317,10 +10310,12 @@ async function submitCreateGroup() {
     return;
   }
 
-  // A team group follows its team: members are the team's agents, the lead is its primary agent.
+  // The group starts with the team's agents; after that it is a group like any other.
   const title = customName || teamName;
   try {
-    const data = await api('POST', '/proxy_groups', { title, team: teamName });
+    const card = await api('GET', `/v1/teams/${encodeURIComponent(teamName)}`);
+    const agents = (card.members || []).map(m => m.agent.agent_id);
+    const data = await api('POST', '/proxy_groups', { title, agents });
     toast(t('group_created') + ': ' + data.title);
     closeCreateModal();
     refreshGroups();
@@ -10331,12 +10326,11 @@ async function submitCreateGroup() {
 }
 
 // ── Open chat ──
-// Show what the server says about the open group: its team, primary agent, members.
+// Show what the server says about the open group: its primary agent, members.
 function applyGroupDetail(detail) {
   if (!detail) return;
   _cacheSet(__mobileGroupDetailCache, detail.group_id, detail);
   if (detail.group_id !== currentGroupId) return;
-  currentTeamName = detail.team || '';
   currentGroupPrimaryAgent = detail.primary_agent || '';
   isMuted = !!detail.dnd;
   if (isMuted) mutedGroupIds.add(detail.group_id); else mutedGroupIds.delete(detail.group_id);
@@ -10410,7 +10404,6 @@ function goBack() {
   document.querySelector('.tab-bar').classList.remove('hidden');
   closeOasisSidebar();
   currentGroupId = null;
-  currentTeamName = '';
   renderPendingApprovalCards([]);
   refreshGroups();
 }
@@ -10624,7 +10617,7 @@ async function refreshPendingApprovalsForCurrentGroup() {
   // Tool approvals belong to WeBot sessions; show the ones of this group's WeBot agents.
   const sessions = (currentMembers || [])
     .filter(m => m.agent && m.agent.platform === 'webot')
-    .map(m => String(m.agent.settings?.session || ''))
+    .map(m => m.agent.platform === 'webot' ? m.agent.agent_id : '')
     .filter(Boolean);
   try {
     const data = await api('GET', '/proxy_webot_tool_approvals?status=pending&limit=50');
@@ -11207,12 +11200,12 @@ async function loadWorkflows() {
     const globalPyLayouts = Array.isArray(globalPyResp) ? globalPyResp : [];
     const teams = (teamsResp && teamsResp.data) || [];
 
-    // Teams whose members are in this group come first; the group's own team first of all.
+    // Teams whose members are in this group come first.
     const groupAgents = new Set((currentMembers || []).filter(m => m.is_agent).map(m => m.principal));
     const teamResults = await Promise.all(teams.map(async (team) => {
       const teamName = team.team;
       const overlap = (team.members || []).filter(m => groupAgents.has(m.agent.agent_id)).length;
-      const score = (teamName === currentTeamName ? 1000 : 0) + overlap;
+      const score = overlap;
       try {
         const [yamlResp, pyResp] = await Promise.all([
           api('GET', `/proxy_visual/load-layouts?team=${encodeURIComponent(teamName)}`),
@@ -13498,7 +13491,6 @@ function renderMembers(members) {
   currentMembers = members;  // for @ mentions
   const agentMembers = members.filter(m => m.is_agent);
   const allMuted = agentMembers.length > 0 && agentMembers.every(m => m.muted);
-  const teamGroup = !!currentTeamName;
   document.getElementById('member-count').textContent = `(${members.length})`;
   const muteAllBtn = document.getElementById('mute-all-members-btn');
   if (muteAllBtn) {
@@ -13528,8 +13520,8 @@ function renderMembers(members) {
     const isPrimary = principal === currentGroupPrimaryAgent;
     const muteBtn = `<button onclick="event.stopPropagation();toggleMemberMute('${jsPrincipal}', ${m.muted ? 'false' : 'true'}, '${jsName}')" class="member-action-btn ${m.muted ? 'member-action-danger' : ''}" title="${m.muted ? '解除禁言' : '禁言'}">${m.muted ? '解除禁言' : '禁言'}</button>`;
     // A team group's members and primary agent follow its team.
-    const primaryBtn = teamGroup ? '' : `<button onclick="event.stopPropagation();togglePrimaryAgent('${jsPrincipal}', '${jsName}')" class="member-action-btn" title="${isPrimary ? '取消主 agent' : '设为主 agent（其他 agent 发言只投递给主 agent）'}" style="${isPrimary ? 'background:#fde68a;color:#92400e;border-color:#fcd34d;' : ''}">${isPrimary ? '⭐ 取消主' : '⭐ 设为主'}</button>`;
-    const removeBtn = teamGroup ? '' : `<button onclick="event.stopPropagation();removeMemberFromGroup('${jsPrincipal}','${jsName}')" style="background:none;border:none;color:var(--text-secondary);font-size:16px;padding:4px 8px;cursor:pointer;" title="${t('tip_remove')}">✕</button>`;
+    const primaryBtn = `<button onclick="event.stopPropagation();togglePrimaryAgent('${jsPrincipal}', '${jsName}')" class="member-action-btn" title="${isPrimary ? '取消主 agent' : '设为主 agent（其他 agent 发言只投递给主 agent）'}" style="${isPrimary ? 'background:#fde68a;color:#92400e;border-color:#fcd34d;' : ''}">${isPrimary ? '⭐ 取消主' : '⭐ 设为主'}</button>`;
+    const removeBtn = `<button onclick="event.stopPropagation();removeMemberFromGroup('${jsPrincipal}','${jsName}')" style="background:none;border:none;color:var(--text-secondary);font-size:16px;padding:4px 8px;cursor:pointer;" title="${t('tip_remove')}">✕</button>`;
     const actionBtns = `
         <div class="member-actions" style="display:flex;gap:4px;margin-top:4px;">
           <button onclick="event.stopPropagation();controlMemberAgent('${jsPrincipal}','cancel','${jsName}')" class="member-action-btn member-action-danger" title="${t('tip_cancel_task')}">${t('btn_cancel_task')}</button>
@@ -13541,7 +13533,7 @@ function renderMembers(members) {
         <div class="member-avatar ${agentAvatarClass(agent.platform)} clickable" onclick="event.stopPropagation();showAgentDetail('${jsPrincipal}')" title="${t('tip_view_detail')}">${esc(initial)}</div>
         <div class="member-info" style="flex:1;">
           <div class="member-name">${esc(name)}</div>
-          <div class="member-tag">${esc(agentPlatformLabel(agent.platform))}${persona ? ' · ' + esc(persona) : ''} · ${esc(agent.address)}${m.muted ? ' · 已禁言' : ''}${isPrimary ? ' · ⭐ 主 agent' : ''}</div>
+          <div class="member-tag">${esc(agentPlatformLabel(agent.platform))}${persona ? ' · ' + esc(persona) : ''} · ${esc(agent.agent_id)}${m.muted ? ' · 已禁言' : ''}${isPrimary ? ' · ⭐ 主 agent' : ''}</div>
           ${actionBtns}
         </div>
         ${primaryBtn}
@@ -13648,7 +13640,7 @@ function renderMentionPopup(members) {
 
   body.innerHTML = members.map((m, idx) => {
     const name = m.name || m.principal;
-    const label = m.agent ? `${agentPlatformLabel(m.agent.platform)} · ${m.agent.address}` : t('owner');
+    const label = m.agent ? `${agentPlatformLabel(m.agent.platform)} · ${m.agent.agent_id}` : t('owner');
     const selectedClass = idx === mentionState.selectedIndex ? 'selected' : '';
     return `
       <div class="mention-item ${selectedClass}" data-idx="${idx}" onclick="selectMentionByClick(${idx})" ontouchstart="this.classList.add('selected')" ontouchend="this.classList.remove('selected')">
@@ -13866,10 +13858,6 @@ async function startExpertChat(persona) {
 
 async function showAddAgentModal() {
   if (!currentGroupId) return;
-  if (currentTeamName) {
-    toast(t('team_group_members_follow_team'));
-    return;
-  }
   closeOasisSidebar();
   document.getElementById('add-agent-overlay').classList.add('show');
   document.getElementById('add-agent-modal').classList.add('show');
@@ -14180,7 +14168,7 @@ async function showAgentDetail(agentId) {
     if (__agentDetailRenderSeq !== renderSeq) return;
     title.textContent = `🤖 ${agent.name}`;
     body.innerHTML = renderAgentBasicInfo(agent);
-    const persona = await lookupPersonaByTag(agent.settings?.persona, agent.settings?.team || currentTeamName);
+    const persona = await lookupPersonaByTag(agent.settings?.persona, agent.settings?.team || '');
     if (persona && __agentDetailRenderSeq === renderSeq) body.innerHTML = renderAgentBasicInfo(agent, persona);
   } catch (e) {
     if (__agentDetailRenderSeq === renderSeq) body.innerHTML = `<div class="agent-detail-loading">${esc(e.message)}</div>`;
@@ -14453,7 +14441,7 @@ function renderAgentBasicInfo(agent, persona = null) {
   </div>
   <div class="agent-detail-section">
     <div class="agent-detail-label">${t('agent_address')}</div>
-    <div class="agent-detail-value" style="font-family:monospace;font-size:13px;">${esc(agent.address)}<br><span style="color:var(--text-secondary);">${esc(agent.agent_id)}</span></div>
+    <div class="agent-detail-value" style="font-family:monospace;font-size:13px;">${esc(agent.agent_id)}<br><span style="color:var(--text-secondary);">${esc(agent.agent_id)}</span></div>
   </div>`;
   if (persona && (persona.persona || persona.description)) {
     html += `<div class="agent-detail-section">
@@ -14565,7 +14553,7 @@ async function openAgentSettingsSheet(agentId) {
             <option value="false" ${acp.approve_all === false ? 'selected' : ''}>${esc(zh ? '关闭' : 'Off')}</option>
           </select>
           ${field('agent-settings-ttl', 'TTL', acp.ttl_sec || '', 'inputmode="numeric" placeholder="86400"')}`}
-        <div class="field-note">${esc(agent.address)}</div>
+        <div class="field-note">${esc(agent.agent_id)}</div>
       </div>
       <div class="tc-sheet-footer">
         <button class="tc-btn-primary" id="agent-settings-save">${esc(zh ? '保存' : 'Save')}</button>
@@ -15445,7 +15433,7 @@ async function filterContactsList() {
   }
 
   const kw = contactsSearchKeyword;
-  const agents = data.agents.filter(e => [e.name, e.agent.settings?.persona, e.team, e.agent.platform, e.agent.address]
+  const agents = data.agents.filter(e => [e.name, e.agent.settings?.persona, e.team, e.agent.platform, e.agent.agent_id]
     .some(v => String(v || '').toLowerCase().includes(kw)));
   const experts = data.experts.filter(exp => [exp.name, exp.description, exp.team, exp.tag]
     .some(v => String(v || '').toLowerCase().includes(kw)));

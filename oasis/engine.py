@@ -116,6 +116,29 @@ def _get_summarizer():
     return create_chat_model(temperature=0.3, max_tokens=2048)
 
 
+def resolve_agent(user_id: str, team: str, ref: str):
+    """``(agent, name)`` a workflow means by *ref*: in team mode a member's name first;
+    then ``<team>.<name>`` or an agent id — an id not seen before is a new agent."""
+    from agents.store import get_store, valid_agent_id
+    from teams.store import get_team_store
+
+    ref = (ref or "").strip()
+    store = get_store()
+    teams = get_team_store(store)
+    if team and teams.exists(user_id, team):
+        try:
+            member = teams.member(user_id, team, ref)
+            return member.agent, member.role
+        except LookupError:
+            pass
+    agent = store.get(user_id, ref) or teams.address(user_id, ref)
+    if agent is None:
+        if not valid_agent_id(ref):
+            raise LookupError(f"no agent {ref!r}")
+        agent = store.ensure(user_id, ref)
+    return agent, agent.name
+
+
 class DiscussionEngine:
     """
     协调一个完整的讨论会话。
@@ -199,27 +222,16 @@ class DiscussionEngine:
     def _participant(self, key: str, config: dict, user_id: str, tools: list[str] | None,
                      timeout: float | None) -> Participant | None:
         from agents.gateway import persona_agent, temp_session_agent
-        from agents.store import AgentNotFound, get_store
-        from teams.store import get_team_store
         from utils.effort_controller import resolve_default_chat_max_output_tokens
 
         kind, _, rest = key.partition(":")
         if kind == "agent":
-            agent, role = None, ""
-            teams = get_team_store()
-            if self._team and teams.exists(user_id, self._team):
-                try:
-                    member = teams.member(user_id, self._team, rest)
-                    agent, role = member.agent, member.role
-                except LookupError:
-                    pass
-            if agent is None:
-                try:
-                    agent = get_store().resolve(user_id, rest)
-                except AgentNotFound as exc:
-                    print(f"  [OASIS] ⚠️ agent '{rest}' not found ({exc}); skipping.")
-                    return None
-            print(f"  [OASIS] 🏠 {key} → {agent.address} ({agent.platform})")
+            try:
+                agent, role = resolve_agent(user_id, self._team, rest)
+            except LookupError as exc:
+                print(f"  [OASIS] ⚠️ {exc}; skipping.")
+                return None
+            print(f"  [OASIS] 🏠 {key} → {agent.agent_id} ({agent.platform})")
             return Participant(agent, name=self._unique_name(role or agent.name),
                                tag=agent.persona, tools=tools, timeout=timeout)
 

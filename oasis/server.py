@@ -352,10 +352,10 @@ async def _run_discussion(topic_id: str, engine: DiscussionEngine | PythonWorkfl
 
     # Fire callback notification
     cb_url = getattr(engine, "callback_url", None)
-    if cb_url:
+    cb_session = getattr(engine, "callback_session_id", None)
+    if cb_url and cb_session:
         conclusion = forum.conclusion if forum else "（无结论）"
         status = forum.status if forum else "error"
-        cb_session = getattr(engine, "callback_session_id", "default") or "default"
         user_id = forum.user_id if forum else "anonymous"
         internal_token = os.getenv("INTERNAL_TOKEN", "")
 

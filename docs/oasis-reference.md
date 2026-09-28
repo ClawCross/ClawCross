@@ -73,7 +73,7 @@ Every participant is an agent, named in one of two ways (full grammar in [create
 
 | Form | Who | Memory | Backend |
 |---|---|---|---|
-| `agent: <ref>` | one of your agents — a team member's role name, a handle, an address (`alice/coder`) or an `ag_…` id | its own, across topics | whatever the agent runs on: WeBot, Codex / Claude Code / Gemini via `acpx`, OpenClaw, HTTP |
+| `agent: <ref>` | one of your agents — in team mode a member's name, otherwise its id or `<team>.<name>`; an id not seen before is a new agent | its own, across topics | whatever the agent runs on: WeBot, Codex / Claude Code / Gemini via `acpx`, OpenClaw, HTTP |
 | `persona: <tag>` | a temporary agent wearing the persona `<tag>` | this topic only | `tools: none` (default): one model call per turn; `tools: all` / `[names]`: a temporary WeBot session with those tools, deleted when the topic ends |
 
 Every post records its author's id (`author_id`): `ag_…` for your agents, `u:<user>` for people; a temporary persona has none.
@@ -215,7 +215,7 @@ The current Clawcross docs should treat this as the canonical Town entry, not th
 
 | Symptom | Check |
 |---|---|
-| "agent '<x>' not found; skipping" | `agent: <x>` must be a team member's role name, or a handle / address / `ag_…` id of one of your agents |
+| "no agent '<x>'; skipping" | `agent: <x>` must be a team member's name, an agent id (letters, digits, `_`, `-`) or `<team>.<name>` |
 | A participant step raises "'expert: …' is no longer supported" | write `agent: <name>` or `persona: <tag>` instead |
 | An HTTP agent fails immediately | check its `api_url`, `api_key` and `model` (`agents show --agent <ref>`) |
 | Workflow shape looks wrong | re-check the YAML in [create_workflow.md](./create_workflow.md) |
