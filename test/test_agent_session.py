@@ -40,7 +40,9 @@ class _HttpClient:
 
 
 class AgentSessionTests(unittest.IsolatedAsyncioTestCase):
-    async def test_send_to_agent_uses_shared_identity_policy(self):
+    """The caller (the agent layer) says whether a runtime still needs its identity."""
+
+    async def test_send_to_agent_places_the_identity_as_a_system_message(self):
         _HttpClient.posted = None
         request = SendToAgentRequest(
             prompt="hello",
@@ -49,77 +51,46 @@ class AgentSessionTests(unittest.IsolatedAsyncioTestCase):
             session="agent:remote:clawcrosschat",
             options={
                 "api_url": "https://example.invalid/v1/chat/completions",
-                "runtime_db_path": "/tmp/runtime.db",
-                "identity_global_name": "remote",
                 "identity_prompt": "Stable identity",
+                "inject_identity": True,
                 "_history_disabled": True,
             },
         )
-        with (
-            mock.patch("agents.runtime_sessions.get_session", new=mock.AsyncMock(return_value=None)),
-            mock.patch("agents.runtime_sessions.remember_prompt", new=mock.AsyncMock(return_value=True)),
-            mock.patch("integrations.connectors._generic_http.httpx.AsyncClient", _HttpClient),
-        ):
+        with mock.patch("integrations.connectors._generic_http.httpx.AsyncClient", _HttpClient):
             result = await send_to_agent(request)
 
         self.assertTrue(result.ok)
-        self.assertEqual(_HttpClient.posted["json"]["messages"][0], {
-            "role": "system",
-            "content": "Stable identity",
-        })
-        self.assertFalse(result.meta["agent_session"]["initialized"])
+        self.assertEqual(_HttpClient.posted["json"]["messages"][0], {"role": "system", "content": "Stable identity"})
+        self.assertTrue(result.meta["agent_session"]["should_inject_identity"])
 
-    async def test_new_http_session_injects_identity_through_shared_policy(self):
-        request = SendToAgentRequest(
+    async def test_prepend_user_mode_puts_the_identity_before_the_first_user_message(self):
+        prepared, state = await prepare_agent_session(SendToAgentRequest(
             prompt=[{"role": "user", "content": "hello"}],
             connect_type="http",
             platform="openclaw",
             session="agent:reviewer:clawcrosschat",
             options={
                 "body": {"messages": [{"role": "user", "content": "hello"}]},
-                "runtime_db_path": "/tmp/runtime.db",
-                "identity_global_name": "reviewer",
                 "identity_prompt": "You are the reviewer.",
+                "inject_identity": True,
                 "identity_injection_mode": "prepend_user",
             },
-        )
-        with (
-            mock.patch("agents.runtime_sessions.get_session", new=mock.AsyncMock(return_value=None)),
-            mock.patch("agents.runtime_sessions.remember_prompt", new=mock.AsyncMock(return_value=True)) as upsert,
-        ):
-            prepared, state = await prepare_agent_session(request)
-
-        self.assertFalse(state.initialized)
+        ))
         self.assertTrue(state.should_inject_identity)
-        self.assertEqual(
-            prepared.options["body"]["messages"][0]["content"],
-            "You are the reviewer.\n\nhello",
-        )
-        upsert.assert_awaited_once()
+        self.assertEqual(prepared.options["body"]["messages"][0]["content"], "You are the reviewer.\n\nhello")
+        self.assertNotIn("inject_identity", prepared.options)
 
-    async def test_existing_http_session_does_not_reinject_same_identity(self):
-        request = SendToAgentRequest(
+    async def test_a_runtime_that_already_knows_its_identity_is_not_told_again(self):
+        prepared, state = await prepare_agent_session(SendToAgentRequest(
             prompt="hello",
             connect_type="http",
             platform="custom-http",
             session="agent:remote:clawcrosschat",
-            options={
-                "runtime_db_path": "/tmp/runtime.db",
-                "identity_global_name": "remote",
-                "identity_prompt": "Stable identity",
-            },
-        )
-        existing = {"prompt_text": "Stable identity"}
-        with (
-            mock.patch("agents.runtime_sessions.get_session", new=mock.AsyncMock(return_value=existing)),
-            mock.patch("agents.runtime_sessions.remember_prompt", new=mock.AsyncMock()) as upsert,
-        ):
-            prepared, state = await prepare_agent_session(request)
-
-        self.assertTrue(state.initialized)
+            options={"identity_prompt": "Stable identity", "inject_identity": False},
+        ))
         self.assertFalse(state.should_inject_identity)
         self.assertNotIn("system_prompt", prepared.options)
-        upsert.assert_not_awaited()
+        self.assertEqual(prepared.prompt, "hello")
 
     async def test_acp_delegates_atomic_first_session_decision_to_acpx(self):
         prepared, state = await prepare_agent_session(SendToAgentRequest(

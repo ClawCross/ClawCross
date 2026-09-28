@@ -9,7 +9,6 @@ from fastapi.responses import StreamingResponse
 
 from utils.auth_utils import extract_user_password_session, is_internal_bearer, parse_bearer_parts
 from api.update_manager import current_update_snapshot, start_update_process
-from agents.runtime_sessions import forget_session, list_sessions
 from services.llm_factory import get_provider_audio_defaults, infer_provider
 from utils.logging_utils import get_logger
 from api.ops_models import CancelRequest, LoginRequest, TTSRequest, UpdateCheckRequest, UpdateStartRequest, UpdateStatusRequest
@@ -27,13 +26,11 @@ class OpsService:
         agent: Any,
         verify_password: Callable[[str, str], bool],
         verify_auth_or_token: Callable[[str, str, str | None], None],
-        runtime_db_path: str = "",
     ):
         self.internal_token = internal_token
         self.agent = agent
         self.verify_password = verify_password
         self.verify_auth_or_token = verify_auth_or_token
-        self.runtime_db_path = runtime_db_path
 
     async def get_tools_list(self, x_internal_token: str | None, authorization: str | None):
         """获取可用工具列表。
@@ -189,7 +186,7 @@ class OpsService:
         return {"status": "success", "update": snapshot}
 
     async def list_all_sessions(self, user_id: str) -> dict:
-        """Return acpx sessions (via acpx sessions list) + http_agent_sessions (from DB)."""
+        """Return the acpx sessions (``acpx <tool> sessions list``)."""
         acpx_sessions: list[dict] = []
         platforms = ["openclaw", "claude", "gemini", "codex", "aider"]
         acpx_bin = shutil.which("acpx")
@@ -236,29 +233,7 @@ class OpsService:
             except (asyncio.TimeoutError, Exception):
                 continue
 
-        http_records: list[dict] = []
-        if self.runtime_db_path:
-            try:
-                http_records = await list_sessions(self.runtime_db_path)
-            except Exception:
-                pass
-
-        return {
-            "status": "success",
-            "acpx_sessions": acpx_sessions,
-            "http_agent_sessions": http_records,
-        }
-
-
-    async def delete_http_agent_session(self, user_id: str, session_key: str) -> dict:
-        """Delete a single http_agent_sessions record by session_key."""
-        if not self.runtime_db_path:
-            return {"status": "error", "reason": "no db"}
-        try:
-            deleted = await forget_session(self.runtime_db_path, session_key)
-            return {"status": "success", "deleted": deleted}
-        except Exception as e:
-            return {"status": "error", "reason": str(e)}
+        return {"status": "success", "acpx_sessions": acpx_sessions}
 
 
     async def close_acp_session(self, platform: str, session_name: str, cwd: str = "") -> dict:

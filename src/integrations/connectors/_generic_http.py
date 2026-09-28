@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-import os
 from typing import Any
 
 import httpx
 
 from integrations.base import (
     PreparedAgentStream,
-    ResetAgentRequest,
-    ResetAgentResult,
     SendToAgentRequest,
     SendToAgentResult,
 )
@@ -76,14 +73,6 @@ def _build_http_messages(prompt: Any, options: dict[str, Any]) -> list[dict[str,
         "content": prompt if isinstance(prompt, str) else str(prompt or ""),
     })
     return messages
-
-
-async def _clear_http_agent_session_records(options: dict[str, Any], session_key: str) -> int:
-    runtime_db_path = str(options.get("runtime_db_path") or "").strip()
-    if not runtime_db_path or not session_key:
-        return 0
-    from agents.runtime_sessions import forget_session
-    return int(await forget_session(runtime_db_path, session_key) or 0)
 
 
 class GenericHttpConnector(AgentConnector):
@@ -156,43 +145,6 @@ class GenericHttpConnector(AgentConnector):
                     "connect_type": "http",
                     "platform": platform,
                     "session": request.session,
-                },
-            )
-
-    async def reset(self, request: ResetAgentRequest) -> ResetAgentResult:
-        options = request.options or {}
-        platform = _canonical_platform(request.platform)
-        session_key = str(request.session or "").strip()
-
-        try:
-            cleared_http_sessions = await _clear_http_agent_session_records(options, session_key)
-            if cleared_http_sessions:
-                return ResetAgentResult(
-                    ok=True,
-                    meta={
-                        "connect_type": "http",
-                        "platform": platform,
-                        "session": session_key,
-                        "cleared_http_sessions": cleared_http_sessions,
-                    },
-                )
-            return ResetAgentResult(
-                ok=False,
-                error=f"reset not supported for http platform: {platform}",
-                meta={
-                    "connect_type": "http",
-                    "platform": platform,
-                    "session": session_key,
-                },
-            )
-        except Exception as e:
-            return ResetAgentResult(
-                ok=False,
-                error=str(e),
-                meta={
-                    "connect_type": "http",
-                    "platform": platform,
-                    "session": session_key,
                 },
             )
 

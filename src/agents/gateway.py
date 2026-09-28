@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Any, Callable
 
@@ -30,7 +31,7 @@ from agents.messages import (
     compose_text_prompt,
     normalize_run_mode,
 )
-from agents.store import ACPX, HTTP, LLM, OPENCLAW, TEMP_SESSION_PREFIX, WEBOT, Agent, default_db_path
+from agents.store import ACPX, HTTP, LLM, OPENCLAW, TEMP_SESSION_PREFIX, WEBOT, Agent, AgentStore, get_store
 
 logger = logging.getLogger(__name__)
 
@@ -100,10 +101,10 @@ def reply_channel(agent: Agent, conversation_id: str) -> str:
 
 class AgentGateway:
     def __init__(self, *, agent_base_url: str | None = None, internal_token: str | None = None,
-                 runtime_db_path: str | None = None):
+                 store: AgentStore | None = None):
         self.agent_base_url = agent_base_url or f"http://127.0.0.1:{os.getenv('PORT_AGENT', '51200')}"
         self.internal_token = os.getenv("INTERNAL_TOKEN", "") if internal_token is None else internal_token
-        self.runtime_db_path = runtime_db_path or str(default_db_path())
+        self._store = store
         self._background: set[asyncio.Task] = set()
         self._external_system_prompt: str | None = None
 
@@ -232,6 +233,7 @@ class AgentGateway:
                 "headers": {"Authorization": f"Bearer {self.internal_token}:{agent.owner}"},
                 "body": body,
                 "timeout": None if timeout == NO_TIMEOUT else (timeout if timeout is not None else 500),
+                "_history_disabled": True,  # WeBot keeps its own history
             },
         ))
         return AgentReply(ok=result.ok, content=result.content or "", error=result.error or "", meta=result.meta or {})
@@ -265,7 +267,7 @@ class AgentGateway:
     async def _ask_llm(self, agent, msg, response_format) -> AgentReply:
         from integrations.agent_sender import SendToAgentRequest, send_to_agent
 
-        options = dict(agent.config.get("llm") or {})
+        options = {**(agent.config.get("llm") or {}), "_history_disabled": True}  # nothing to look back on
         if response_format is not None:
             options["response_schema"] = response_format  # a Pydantic model or JSON schema
         prompt = f"{msg.instructions}\n\n{msg.text}" if msg.instructions else msg.text
@@ -295,6 +297,15 @@ class AgentGateway:
         ]
         return "\n\n".join(p for p in parts if p).strip()
 
+    def _remember(self, agent: Agent, **runtime: Any) -> None:
+        """Record on the agent what its runtime now knows; temporary agents keep nothing."""
+        if agent.temporary:
+            return
+        try:
+            (self._store or get_store()).set_runtime(agent.agent_id, {**agent.runtime, **runtime, "last_used_at": time.time()})
+        except Exception:
+            logger.exception("could not record the runtime state of %s", agent.address)
+
     async def _ask_acpx(self, agent, msg, context, mode, timeout) -> AgentReply:
         from integrations.acpx_adapter import acpx_options_from_agent
         from integrations.agent_sender import SendToAgentRequest, send_to_agent
@@ -312,7 +323,6 @@ class AgentGateway:
             "identity_prompt": self._identity_prompt(agent, context, msg.instructions),
             "attachments": [dict(a) for a in msg.attachments] or None,
             "return_trace": True,
-            "runtime_db_path": self.runtime_db_path,
         }
         if timeout == NO_TIMEOUT:
             options["timeout_sec"] = None
@@ -327,6 +337,8 @@ class AgentGateway:
             session=external_session_key(agent),
             options=options,
         ))
+        if result.ok:
+            self._remember(agent)  # acpx itself sends the identity to a new session
         return AgentReply(ok=result.ok, content=result.content or "", error=result.error or "", meta=result.meta or {})
 
     async def _ask_http(self, agent, msg, context, timeout) -> AgentReply:
@@ -357,15 +369,17 @@ class AgentGateway:
         if agent.driver == OPENCLAW and session_key:
             headers["x-openclaw-session-key"] = session_key
         messages = [{"role": "user", "content": build_openai_content(msg.text, msg.attachments)}]
+        identity = self._identity_prompt(agent, context, msg.instructions)
+        # A runtime that keeps the conversation is told who it is once, and again when that changes.
+        inject = bool(identity) and (not session_key or identity != agent.runtime.get("identity_prompt"))
         options: dict[str, Any] = {
             "api_url": api_url,
             "api_key": api_key,
             "headers": headers,
             "body": {"model": model, "messages": messages, "stream": False},
             "timeout": None if timeout == NO_TIMEOUT else (timeout if timeout is not None else 60),
-            "identity_prompt": self._identity_prompt(agent, context, msg.instructions),
-            "identity_global_name": global_name,
-            "runtime_db_path": self.runtime_db_path,
+            "identity_prompt": identity,
+            "inject_identity": inject,
             "identity_injection_mode": "prepend_user",
         }
         options = attach_history_context(
@@ -378,6 +392,8 @@ class AgentGateway:
             session=session_key or None,
             options=options,
         ))
+        if result.ok and session_key:
+            self._remember(agent, identity_prompt=identity)
         return AgentReply(ok=result.ok, content=result.content or "", error=result.error or "", meta=result.meta or {})
 
 

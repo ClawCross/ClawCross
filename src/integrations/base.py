@@ -48,19 +48,3 @@ class PreparedAgentStream:
                 os.unlink(self.temp_path)
 
 
-@dataclass(slots=True)
-class ResetAgentRequest:
-    connect_type: str
-    platform: str
-    session: str | None = None
-    options: dict[str, Any] | None = None
-
-
-@dataclass(slots=True)
-class ResetAgentResult:
-    ok: bool
-    error: str | None = None
-    meta: dict[str, Any] | None = None
-
-    def get(self, key: str, default: Any = None) -> Any:
-        return getattr(self, key, default)

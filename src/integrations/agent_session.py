@@ -1,14 +1,14 @@
-"""Shared Agent session inspection and identity-injection policy.
+"""How an identity prompt reaches a runtime.
 
-Callers describe identity; they do not decide whether this is the first send.
-The transport-specific session registry remains the source of truth.
+ACP decides for itself: ``AcpxAdapter.ensure_session`` sends it to a new
+session. Over HTTP the caller says whether to send it (``inject_identity``);
+this module only puts it in the right place of the request.
 """
 
 from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass, replace
-import time
 from typing import Any
 
 from integrations.base import SendToAgentRequest
@@ -60,38 +60,8 @@ def _prepend_identity_to_messages(
     return result
 
 
-async def inspect_http_agent_session(
-    *,
-    runtime_db_path: str,
-    session_key: str,
-    identity_prompt: str = "",
-) -> AgentSessionState:
-    """Inspect the exact HTTP session used by sending and persona injection."""
-    if not runtime_db_path or not session_key:
-        return AgentSessionState(None, bool(identity_prompt), "no_session_registry", session_key)
-
-    from agents.runtime_sessions import get_session
-
-    record = await get_session(runtime_db_path, session_key)
-    if record is None:
-        return AgentSessionState(False, bool(identity_prompt), "http_session_registry", session_key)
-    prompt_changed = bool(identity_prompt) and str(record.get("prompt_text") or "") != identity_prompt
-    return AgentSessionState(
-        True,
-        prompt_changed,
-        "http_session_registry",
-        session_key,
-        prompt_changed=prompt_changed,
-    )
-
-
 async def prepare_agent_session(request: SendToAgentRequest) -> tuple[SendToAgentRequest, AgentSessionState]:
-    """Prepare one send using a shared identity/session policy.
-
-    ACP injection remains atomic inside ``AcpxAdapter.ensure_session``. HTTP
-    uses its persistent session registry and injects only for a new session or
-    when the resolved identity prompt changed.
-    """
+    """Place the identity prompt of one send, if it is to be sent."""
     options = dict(request.options or {})
     identity_prompt = str(
         options.get("identity_prompt") or options.get("system_prompt") or ""
@@ -112,51 +82,10 @@ async def prepare_agent_session(request: SendToAgentRequest) -> tuple[SendToAgen
         options["_agent_session_state"] = state.as_dict()
         return replace(request, options=options), state
 
-    runtime_db_path = str(options.get("runtime_db_path") or "").strip()
-    global_name = str(options.get("identity_global_name") or "").strip()
-    try:
-        state = await inspect_http_agent_session(
-            runtime_db_path=runtime_db_path,
-            session_key=session_key,
-            identity_prompt=identity_prompt,
-        )
-    except Exception:
-        # Session inspection must never turn an otherwise valid send into an
-        # outage. Without a registry, use stable system-prompt semantics.
-        state = AgentSessionState(
-            None,
-            True,
-            "http_session_registry_unavailable",
-            session_key,
-        )
-    should_inject = state.should_inject_identity
-    if runtime_db_path and session_key and global_name and should_inject:
-        from agents.runtime_sessions import remember_prompt
-
-        try:
-            persisted_should_inject = await remember_prompt(
-                runtime_db_path,
-                session_key=session_key,
-                global_name=global_name,
-                prompt_text=identity_prompt,
-                transport="http",
-                now_ts=time.time(),
-            )
-            if not persisted_should_inject:
-                state = AgentSessionState(
-                    True,
-                    False,
-                    "http_session_registry",
-                    session_key,
-                )
-        except Exception:
-            state = AgentSessionState(
-                None,
-                True,
-                "http_session_registry_unavailable",
-                session_key,
-            )
-
+    # Whether this runtime still needs to be told who it is is the caller's
+    # decision (the agent layer remembers what each agent's runtime was sent);
+    # a caller that does not say gets stable system-prompt semantics.
+    state = AgentSessionState(None, bool(options.pop("inject_identity", True)), "caller", session_key)
     should_inject = state.should_inject_identity is True
     options.pop("system_prompt", None)
     prompt = request.prompt

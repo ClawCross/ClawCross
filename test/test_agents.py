@@ -87,6 +87,21 @@ class TestStore(StoreCase):
         self.assertEqual(self.store.find("alice", WEBOT, {"session": "s1"}).agent_id, coder.agent_id)
         self.assertIsNone(self.store.find("bob", WEBOT, {"session": "s1"}))
 
+    def test_a_database_from_before_the_runtime_column_gets_it(self):
+        import sqlite3
+        path = Path(self.tmp.name) / "old.db"
+        conn = sqlite3.connect(path)
+        conn.execute("CREATE TABLE agents (agent_id TEXT PRIMARY KEY, owner TEXT NOT NULL, handle TEXT NOT NULL,"
+                     " name TEXT NOT NULL, driver TEXT NOT NULL, runtime_key TEXT NOT NULL,"
+                     " config_json TEXT NOT NULL DEFAULT '{}', created_at REAL NOT NULL, updated_at REAL NOT NULL)")
+        conn.execute("INSERT INTO agents VALUES ('ag_old0000001', 'alice', 'old', 'Old', 'webot', 'webot:s', '{}', 1, 1)")
+        conn.commit()
+        conn.close()
+        old = AgentStore(path)
+        self.assertEqual(old.get("ag_old0000001").runtime, {})
+        old.set_runtime("ag_old0000001", {"last_used_at": 2.0})
+        self.assertEqual(old.get("ag_old0000001").runtime, {"last_used_at": 2.0})
+
     def test_same_names_get_distinct_handles(self):
         first, second = self.webot(session="a"), self.webot(session="b")
         self.assertEqual((first.handle, second.handle), ("coder", "coder-2"))
@@ -137,8 +152,7 @@ def _http(status: int = 200):
 class TestGateway(StoreCase):
     def setUp(self):
         super().setUp()
-        self.gateway = AgentGateway(agent_base_url="http://agent.test", internal_token=TOKEN,
-                                    runtime_db_path=self.store.db_path)
+        self.gateway = AgentGateway(agent_base_url="http://agent.test", internal_token=TOKEN, store=self.store)
         patcher = mock.patch("integrations.external_persona.build_external_persona_prompt", return_value="PERSONA")
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -162,6 +176,7 @@ class TestGateway(StoreCase):
         self.assertEqual(body["response_format"]["json_schema"]["name"], "Reply")
         self.assertIsNone(request.options["timeout"])
         self.assertEqual(request.options["headers"]["Authorization"], bearer("alice"))
+        self.assertTrue(request.options["_history_disabled"])  # WeBot keeps its own
 
     def test_acpx_agent_runs_in_its_named_session_without_a_reply_schema(self):
         codex = self.store.create("alice", name="Codex", driver=ACPX,
@@ -170,7 +185,7 @@ class TestGateway(StoreCase):
         self.assertEqual((request.connect_type, request.platform, request.session), ("acp", "codex", "agent:cx:clawcrosschat"))
         self.assertIn("PERSONA", request.options["identity_prompt"])
         self.assertIn("【群聊与私聊规则】", request.options["identity_prompt"])  # the shared chat rules
-        self.assertEqual(request.options["runtime_db_path"], self.store.db_path)
+        self.assertIn("last_used_at", self.store.get(codex.agent_id).runtime)
 
     def test_openclaw_uses_the_runtime_endpoint_and_its_session_key(self):
         claw = self.store.create("alice", name="Claw", driver=OPENCLAW,
@@ -180,6 +195,18 @@ class TestGateway(StoreCase):
         self.assertEqual(request.options["api_url"], "http://device:18789/v1/chat/completions")
         self.assertEqual(request.options["headers"]["x-openclaw-session-key"], "agent:main:clawcrosschat")
         self.assertEqual(request.options["body"]["model"], "agent:main")
+
+    def test_a_runtime_is_told_its_identity_once_and_again_when_it_changes(self):
+        svc = self.store.create("alice", name="Svc", driver=HTTP,
+                                config={"platform": "svc", "global_name": "svc", "api_url": "http://svc"})
+        first = self.ask(svc)
+        self.assertTrue(first.options["inject_identity"])
+        svc = self.store.get(svc.agent_id)
+        self.assertEqual(svc.runtime["identity_prompt"], first.options["identity_prompt"])
+        self.assertFalse(self.ask(svc).options["inject_identity"])
+        svc = self.store.update(svc.agent_id, config={**svc.config, "persona": "critic"})
+        with mock.patch("integrations.external_persona.build_external_persona_prompt", return_value="CRITIC"):
+            self.assertTrue(self.ask(svc).options["inject_identity"])
 
     def test_http_agent_without_endpoint_says_so(self):
         agent = self.store.create("alice", name="Svc", driver=HTTP, config={"platform": "svc", "global_name": "svc"})
@@ -195,6 +222,7 @@ class TestGateway(StoreCase):
         self.assertEqual(request.platform, "temp")
         self.assertIs(request.options["response_schema"], Reply)
         self.assertEqual(request.options["model"], "m1")
+        self.assertTrue(request.options["_history_disabled"])
 
     def test_webot_delivery_goes_to_its_inbox(self):
         patcher, calls = _http()
@@ -258,7 +286,7 @@ class TestControl(StoreCase):
     def setUp(self):
         super().setUp()
         self.webot_runtime = _FakeWebot()
-        self.control = AgentControl(self.webot_runtime, runtime_db_path=self.store.db_path)
+        self.control = AgentControl(self.webot_runtime, store=self.store)
 
     def test_webot_status_cancel_and_reset(self):
         coder = self.webot()
@@ -303,12 +331,19 @@ class TestControl(StoreCase):
             return await self.control.history(codex)
 
         self.assertEqual([(m["role"], m["content"]) for m in asyncio.run(talk())], [("user", "ping"), ("assistant", "pong")])
+        with mock.patch.object(self.control, "_acpx_command", mock.AsyncMock()):
+            asyncio.run(self.control.cleanup(codex))  # deleting the agent deletes its history
+        self.assertEqual(asyncio.run(self.control.history(codex)), [])
 
-    def test_http_agents_cannot_be_cancelled(self):
+    def test_http_agents_cannot_be_cancelled_and_reset_makes_them_start_over(self):
         agent = self.store.create("alice", name="Svc", driver=HTTP, config={"platform": "svc", "global_name": "svc"})
         with self.assertRaises(ControlError):
             asyncio.run(self.control.run(agent, "cancel"))
         self.assertEqual(asyncio.run(self.control.status(agent))["state"], "idle")
+        self.store.set_runtime(agent.agent_id, {"identity_prompt": "P", "last_used_at": 1.0})
+        self.assertEqual(asyncio.run(self.control.status(self.store.get(agent.agent_id)))["state"], "online")
+        self.assertEqual(asyncio.run(self.control.run(agent, "reset")), {"reset": True})
+        self.assertEqual(self.store.get(agent.agent_id).runtime, {})
 
 
 class TestAgentsApi(StoreCase):
@@ -316,7 +351,7 @@ class TestAgentsApi(StoreCase):
         super().setUp()
         self.gateway = mock.Mock(spec=AgentGateway)
         self.gateway.ask = mock.AsyncMock(return_value=AgentReply(ok=True, content="pong"))
-        self.control = AgentControl(_FakeWebot(), runtime_db_path=self.store.db_path)
+        self.control = AgentControl(_FakeWebot(), store=self.store)
         app = FastAPI()
         app.include_router(create_agents_router(
             internal_token=TOKEN, verify_password=lambda u, p: (u, p) == ("alice", "pw"),

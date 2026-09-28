@@ -2,8 +2,10 @@
 
 An agent has an ``ag_…`` id that never changes, a handle unique per owner
 (its address is ``owner/handle``), a display name, and a driver with the
-driver's own config. Only this package reads ``driver`` and ``config``;
-everything above it knows an agent by its id.
+driver's own config. ``runtime`` is what the agent's runtime already knows —
+the identity prompt it was sent, when it was last used — whatever the driver.
+Only this package reads ``driver``, ``config`` and ``runtime``; everything
+above it knows an agent by its id.
 
 Drivers and their config:
 
@@ -64,6 +66,7 @@ class Agent:
     name: str
     driver: str
     config: dict[str, Any] = field(default_factory=dict)
+    runtime: dict[str, Any] = field(default_factory=dict)
     created_at: float = 0.0
     updated_at: float = 0.0
 
@@ -152,6 +155,7 @@ CREATE TABLE IF NOT EXISTS agents (
     driver      TEXT NOT NULL,
     runtime_key TEXT NOT NULL,
     config_json TEXT NOT NULL DEFAULT '{}',
+    runtime_json TEXT NOT NULL DEFAULT '{}',
     created_at  REAL NOT NULL,
     updated_at  REAL NOT NULL,
     UNIQUE (owner, handle),
@@ -177,14 +181,27 @@ class AgentStore:
         if not self._ready:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(_SCHEMA)
+            self._add_missing_columns(conn)
             self._ready = True
         return conn
+
+    @staticmethod
+    def _add_missing_columns(conn: sqlite3.Connection) -> None:
+        """Columns added after a database was created (``runtime_json``)."""
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(agents)")}
+        if "runtime_json" not in columns:
+            try:
+                conn.execute("ALTER TABLE agents ADD COLUMN runtime_json TEXT NOT NULL DEFAULT '{}'")
+            except sqlite3.OperationalError as exc:  # another process added it first
+                if "duplicate column" not in str(exc):
+                    raise
 
     @staticmethod
     def _agent(row: sqlite3.Row) -> Agent:
         return Agent(
             agent_id=row["agent_id"], owner=row["owner"], handle=row["handle"], name=row["name"],
             driver=row["driver"], config=json.loads(row["config_json"] or "{}"),
+            runtime=json.loads(row["runtime_json"] or "{}"),
             created_at=row["created_at"], updated_at=row["updated_at"],
         )
 
@@ -256,6 +273,15 @@ class AgentStore:
         finally:
             conn.close()
         return self.get(agent_id)  # type: ignore[return-value]
+
+    def set_runtime(self, agent_id: str, runtime: dict[str, Any]) -> None:
+        """Record what the agent's runtime now knows (not a settings change)."""
+        conn = self._connect()
+        try:
+            conn.execute("UPDATE agents SET runtime_json = ? WHERE agent_id = ?",
+                         (json.dumps(runtime, ensure_ascii=False), agent_id))
+        finally:
+            conn.close()
 
     def delete(self, agent_id: str) -> None:
         conn = self._connect()

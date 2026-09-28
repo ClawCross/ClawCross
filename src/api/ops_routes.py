@@ -15,7 +15,7 @@ from typing import Any, Callable
 
 from fastapi import APIRouter, Header
 
-from api.ops_models import CancelRequest, LoginRequest, SessionsCloseRequest, SessionsDeleteRequest, SessionsListRequest, TTSRequest, UpdateCheckRequest, UpdateStartRequest, UpdateStatusRequest
+from api.ops_models import CancelRequest, LoginRequest, SessionsCloseRequest, SessionsListRequest, TTSRequest, UpdateCheckRequest, UpdateStartRequest, UpdateStatusRequest
 from api.ops_service import OpsService
 
 
@@ -25,7 +25,6 @@ def create_ops_router(
     agent: Any,
     verify_password: Callable[[str, str], bool],
     verify_auth_or_token: Callable[[str, str, str | None], None],
-    runtime_db_path: str = "",
 ) -> APIRouter:
     """构建基础运维/认证相关路由。"""
     router = APIRouter()
@@ -34,7 +33,6 @@ def create_ops_router(
         agent=agent,
         verify_password=verify_password,
         verify_auth_or_token=verify_auth_or_token,
-        runtime_db_path=runtime_db_path,
     )
 
     @router.get("/tools")
@@ -59,10 +57,6 @@ def create_ops_router(
     @router.post("/sessions_list")
     async def sessions_list(req: SessionsListRequest, x_internal_token: str | None = Header(None)):
         return await service.list_all_sessions(req.user_id)
-
-    @router.post("/sessions_delete")
-    async def sessions_delete(req: SessionsDeleteRequest, x_internal_token: str | None = Header(None)):
-        return await service.delete_http_agent_session(req.user_id, req.session_key)
 
     @router.post("/sessions_close")
     async def sessions_close(req: SessionsCloseRequest, x_internal_token: str | None = Header(None)):
