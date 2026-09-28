@@ -247,7 +247,35 @@ class DurableInboxTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 lock.release()
             await _wait_for(lambda: bool(runtime_store.list_inbox_messages("alice", "worker", status="delivered")))
-            self.assertIn("Check the build", agent.agent_app.inputs[0]["messages"][0].content)
+            notice = agent.agent_app.inputs[0]["messages"][0].content
+            self.assertIn("你有 1 条未读消息", notice)
+            self.assertIn("Check the build", notice)
+            self.assertIn("read_session_inbox", notice)
+            self.assertFalse(runtime_store.list_inbox_messages("alice", "worker", status="delivered")[0].read_at)
+
+    async def test_busy_session_gets_one_digest_without_full_bodies(self):
+        with TemporaryDirectory() as tmpdir, patch.object(runtime_store, "DEFAULT_DB_PATH", Path(tmpdir) / "runtime.db"):
+            agent = _FakeAgent()
+            service = SystemService(agent=agent, verify_internal_token=lambda token: None)
+            lock = await agent.get_thread_lock("alice#worker")
+            await lock.acquire()
+            try:
+                for index in (1, 2):
+                    await service.system_trigger(SystemTriggerRequest(
+                        user_id="alice", session_id="worker",
+                        text=f"private body {index} " + "x" * 110 + " SECRET",
+                        inbox_source_session="main", inbox_summary=f"Task {index}",
+                    ), None)
+                self.assertEqual(agent.agent_app.inputs, [])
+            finally:
+                lock.release()
+            await _wait_for(lambda: len(runtime_store.list_inbox_messages("alice", "worker", status="delivered")) == 2)
+            self.assertEqual(len(agent.agent_app.inputs), 1)
+            notice = agent.agent_app.inputs[0]["messages"][0].content
+            self.assertIn("你有 2 条未读消息", notice)
+            self.assertIn("Task 1", notice)
+            self.assertIn("Task 2", notice)
+            self.assertNotIn("SECRET", notice)
 
     async def test_wait_reply_uses_the_same_durable_inbox(self):
         from langchain_core.messages import AIMessage
@@ -262,7 +290,36 @@ class DurableInboxTests(unittest.IsolatedAsyncioTestCase):
             ), None)
             self.assertEqual(result["reply"], "done")
             self.assertEqual(len(runtime_store.list_inbox_messages("alice", "worker", status="delivered")), 1)
+            self.assertTrue(runtime_store.list_inbox_messages("alice", "worker", status="delivered")[0].read_at)
             self.assertIn("直接用文字回答", agent.agent_app.inputs[0]["messages"][0].content)
+
+    async def test_passive_digest_then_waiting_message_keep_distinct_replies(self):
+        from langchain_core.messages import AIMessage
+
+        with TemporaryDirectory() as tmpdir, patch.object(runtime_store, "DEFAULT_DB_PATH", Path(tmpdir) / "runtime.db"):
+            agent = _FakeAgent()
+            agent.agent_app = _ConversationApp([AIMessage(content="reply")])
+            service = SystemService(agent=agent, verify_internal_token=lambda token: None)
+            lock = await agent.get_thread_lock("alice#worker")
+            await lock.acquire()
+            try:
+                await service.system_trigger(SystemTriggerRequest(
+                    user_id="alice", session_id="worker", text="FYI",
+                    inbox_source_session="main",
+                ), None)
+                waiting = asyncio.create_task(service.system_trigger(SystemTriggerRequest(
+                    user_id="alice", session_id="worker", text="please answer",
+                    inbox_source_session="main", wait_reply=True,
+                ), None))
+                await _wait_for(lambda: runtime_store.count_inbox_messages("alice", "worker", status="queued") == 2)
+            finally:
+                lock.release()
+            result = await asyncio.wait_for(waiting, 1)
+            self.assertEqual(result["reply"], "reply")
+            self.assertEqual(len(agent.agent_app.inputs), 2)
+            self.assertIn("[收件箱通知]", agent.agent_app.inputs[0]["messages"][0].content)
+            self.assertIn("please answer", agent.agent_app.inputs[1]["messages"][0].content)
+            self.assertEqual(runtime_store.count_inbox_messages("alice", "worker", status="unread"), 1)
 
     async def test_restart_resumes_queued_inbox(self):
         with TemporaryDirectory() as tmpdir, patch.object(runtime_store, "DEFAULT_DB_PATH", Path(tmpdir) / "runtime.db"):
@@ -289,6 +346,23 @@ class DurableInboxTests(unittest.IsolatedAsyncioTestCase):
             ), None), 1)
             self.assertEqual(result["status"], "queued")
             self.assertEqual(len(runtime_store.list_inbox_messages("alice", "worker", status="queued")), 1)
+
+    async def test_failed_digest_stays_queued_for_restart(self):
+        class FailingApp(_FakeAgentApp):
+            async def astream_events(self, system_input, config, version, durability):
+                raise RuntimeError("provider unavailable")
+                yield  # pragma: no cover
+
+        with TemporaryDirectory() as tmpdir, patch.object(runtime_store, "DEFAULT_DB_PATH", Path(tmpdir) / "runtime.db"):
+            agent = _FakeAgent()
+            agent.agent_app = FailingApp()
+            service = SystemService(agent=agent, verify_internal_token=lambda token: None)
+            await service.system_trigger(SystemTriggerRequest(
+                user_id="alice", session_id="worker", text="passive",
+                inbox_source_session="main",
+            ), None)
+            await _wait_for(lambda: not service._inbox_tasks)
+            self.assertEqual(runtime_store.count_inbox_messages("alice", "worker", status="queued"), 1)
 
 
 if __name__ == "__main__":

@@ -54,7 +54,7 @@ Every runtime request (`/webot/session-runtime` → `WeBotService.get_session_ru
 
 - `mode`: current `execute/agent/plan/review/yolo` mode plus reason/status.
 - `plan`, `todos`, `verifications`, `approvals`: persisted states from `webot_runtime_store`.
-- `inbox`: queued messages from `webot_session_inbox`; `send_to_session` and the inbox API share the same persistent queue, drained when the target session becomes idle.
+- `inbox`: messages from `webot_session_inbox` with `summary`, delivery status, and `read_at`. `send_to_session` and the inbox API share the queue; idle delivery sends summaries, and `read_session_inbox` retrieves full bodies on demand. The per-turn dynamic context shows separate new and unread counts plus up to three recent summaries, without injecting full bodies.
 - `artifacts`: runtime artifacts stored when budgets trigger (`webot_context`, `_deliver_inbox_messages`).
 - `runs`: `list_runs_for_session` results with `run_kind`, `mode`, `events`.
 - `active_run`: latest `queued`/`running` run (main session or child).

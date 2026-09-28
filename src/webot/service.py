@@ -173,10 +173,12 @@ class WeBotService:
             "target_session": item.target_session,
             "target_agent_id": item.target_agent_id,
             "body": item.body,
+            "summary": item.summary,
             "status": item.status,
             "metadata": _safe_json_loads(item.metadata_json),
             "created_at": item.created_at,
             "delivered_at": item.delivered_at,
+            "read_at": item.read_at,
             "updated_at": item.updated_at,
         }
 
@@ -306,7 +308,7 @@ class WeBotService:
             "cwd": record.cwd,
             "remote": record.remote,
             "session_mode": get_session_mode(user_id, record.session_id),
-            "queued_inbox_count": count_inbox_messages(user_id, record.session_id, status="queued"),
+            "queued_inbox_count": count_inbox_messages(user_id, record.session_id, status="unread"),
             "latest_run": None if latest_run is None else self._serialize_run(user_id, latest_run, include_events=False),
         }
 
@@ -960,6 +962,7 @@ class WeBotService:
                 req.user_id,
                 target_session=target_session,
                 body=req.body,
+                title=req.summary,
                 source_session=source_session,
                 source_agent_id=source_agent_id,
                 source_label=source_label,

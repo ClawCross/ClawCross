@@ -19,10 +19,12 @@ from utils.logging_utils import get_logger
 from services.message_builder import build_human_message
 from api.system_models import SystemTriggerRequest
 from webot.runtime_store import (
+    count_inbox_messages,
     create_inbox_message,
     list_inbox_messages,
     list_queued_inbox_targets,
     mark_inbox_delivered,
+    mark_inbox_handled,
 )
 
 logger = get_logger("system_service")
@@ -382,6 +384,20 @@ class SystemService:
                 self._run_inbox_worker(user_id, session_id)
             )
 
+    @staticmethod
+    def _inbox_digest(items: list[Any], unread_count: int) -> str:
+        lines = [
+            f"[收件箱通知] 你有 {unread_count} 条未读消息，本次新增 {len(items)} 条。",
+            "这里只列摘要；正文留在收件箱。可用 read_session_inbox 阅读全部或指定 ID，"
+            "用 mark_session_inbox_read 直接标记已读。",
+        ]
+        for item in items[:10]:
+            sender = item.source_label or item.source_session
+            lines.append(f"- {item.message_id} · 来自 {sender} · {item.summary}")
+        if len(items) > 10:
+            lines.append(f"其余 {len(items) - 10} 条请用 read_session_inbox 查看。")
+        return "\n".join(lines)
+
     async def _run_inbox_worker(self, user_id: str, session_id: str) -> None:
         thread_id = f"{user_id}#{session_id}"
         config = {"configurable": {"thread_id": thread_id}, "recursion_limit": _GRAPH_RECURSION_LIMIT}
@@ -391,11 +407,32 @@ class SystemService:
             async with lock:
                 while True:
                     items = list_inbox_messages(
-                        user_id, session_id, status="queued", limit=50, oldest_first=True,
+                        user_id, session_id, status="queued", limit=None, oldest_first=True,
                     )
                     if not items:
                         break
+                    # Batch consecutive passive messages into one short notice;
+                    # synchronous callers still get a full-message turn and reply.
+                    batch = []
                     for item in items:
+                        if item.metadata.get("wait_reply"):
+                            break
+                        batch.append(item)
+                    if batch:
+                        body = self._inbox_digest(batch, count_inbox_messages(user_id, session_id, status="unread"))
+                        req = SystemTriggerRequest(user_id=user_id, session_id=session_id, text=body)
+                        ok = await self._invoke_system_message_locked(
+                            req=req, human_msg=HumanMessage(content=body),
+                            thread_id=thread_id, config=config, batch_count=len(batch),
+                        )
+                        if not ok:
+                            completed = False
+                            return
+                        mark_inbox_delivered(user_id, [item.message_id for item in batch])
+                        continue
+
+                    item = items[0]
+                    if item.metadata.get("wait_reply"):
                         source_user = item.metadata.get("source_user") or user_id
                         sender = item.source_label or item.source_session
                         body = item.content
@@ -416,7 +453,8 @@ class SystemService:
                             return
                         snapshot = await self.agent.agent_app.aget_state(config)
                         reply = self._reply_text(list((snapshot.values or {}).get("messages", [])))
-                        mark_inbox_delivered(user_id, [item.message_id])
+                        if not mark_inbox_handled(user_id, session_id, item.message_id):
+                            raise RuntimeError(f"Inbox message changed before reply completion: {item.message_id}")
                         pending = self._inbox_waiters.pop(item.message_id, None)
                         if pending and not pending[1].done():
                             pending[1].set_result({"status": "completed", "message_id": item.message_id, "reply": reply})
@@ -458,6 +496,7 @@ class SystemService:
                     source_session=req.inbox_source_session,
                     target_session=req.session_id,
                     content=req.text,
+                    title=req.inbox_summary,
                     source_label=req.inbox_source_label,
                     metadata={
                         "source_user": req.inbox_source_user or req.user_id,

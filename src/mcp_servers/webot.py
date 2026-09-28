@@ -51,11 +51,14 @@ from webot.runtime_store import (
     get_session_plan,
     get_session_todos,
     heartbeat_run,
+    count_inbox_messages,
+    get_inbox_message,
     list_inbox_messages,
     list_recoverable_runs,
     list_runs_for_parent_session,
     list_runs_for_session,
     list_tool_approvals as list_tool_approval_records,
+    mark_inbox_read,
     record_claude_keepalive_result,
     record_run_event,
     release_run_worker,
@@ -905,7 +908,7 @@ async def list_subagents(username: str) -> str:
     for record in records:
         runtime_status = record.status
         latest_run = get_latest_run_for_agent(username, record.agent_id)
-        queued_inbox = len(list_inbox_messages(username, record.session_id, status="queued", limit=5))
+        unread_inbox = count_inbox_messages(username, record.session_id, status="unread")
         session_mode = load_session_mode(username, record.session_id).get("mode")
         # 后台执行在 agent 主进程中跑：DB 写 "running" 后只能靠 session 是否 busy 判断真实状态。
         if runtime_status == "running":
@@ -920,7 +923,7 @@ async def list_subagents(username: str) -> str:
             f"  status: {runtime_status}\n"
             f"  workspace: {describe_session_workspace(username, record.session_id, explicit_cwd=record.cwd)}\n"
             f"  latest_run: {latest_run.run_id if latest_run else '(none)'} / {latest_run.status if latest_run else '(none)'}\n"
-            f"  inbox: {queued_inbox} queued\n"
+            f"  inbox: {unread_inbox} unread\n"
             f"  updated_at: {record.updated_at}\n"
             f"  last_result: {_trim(record.last_result, 240) or '(暂无)'}"
         )
@@ -1637,15 +1640,17 @@ async def send_to_session(
     target_user: str = "",
     source_session: str = "",
     timeout: int = 180,
+    summary: str = "",
 ) -> str:
-    """给另一个会话发消息。消息先进入持久化收件箱，对方空闲后立即处理。
-    wait=false 发出即返回；wait=true 等对方处理完，把它的回复带回来。
+    """给另一个会话发消息。消息先进入持久化收件箱，对方空闲时收到摘要通知。
+    wait=false 发出即返回，正文由对方按需阅读；wait=true 让对方直接处理正文并等待回复。
 
     :param target: 目标会话：子 Agent 的 agent_id / session_id / name，或会话 id；wait=false 时 "*" 表示所有子 Agent 与主会话
     :param content: 消息内容
     :param wait: 是否等待对方回复
     :param target_user: 目标会话属于其他用户时填该用户名；留空为自己
     :param timeout: wait=true 时最多等待的秒数；超时后消息照常处理，回复留在对方会话里
+    :param summary: 可选的一句话摘要，用于对方空闲时的收件箱通知；留空时从正文提取短预览
     """
     source_session_id = source_session or "default"
     other_user = (target_user or "").strip()
@@ -1682,6 +1687,7 @@ async def send_to_session(
                         "inbox_source_user": username,
                         "inbox_source_session": source_session_id,
                         "inbox_source_label": source_label,
+                        "inbox_summary": summary,
                     },
                 )
             except httpx.TimeoutException:
@@ -1702,6 +1708,64 @@ async def send_to_session(
                 return f"✅ {to_user}#{session_id} 回复:\n\n{reply or '(对方没有给出文字回复)'}"
             lines.append(f"✅ 已入 {to_user}#{session_id} 的收件箱，空闲后处理")
     return "\n".join(lines)
+
+
+@mcp.tool()
+async def read_session_inbox(
+    username: str,
+    message_ids: list[str] | None = None,
+    include_read: bool = False,
+    source_session: str = "",
+) -> str:
+    """阅读当前会话的收件箱正文；不改变已读状态。
+
+    :param message_ids: 指定消息 ID；留空时阅读全部未读消息
+    :param include_read: 留空读取全部时是否也包含已读消息
+    """
+    session_id = source_session or "default"
+    if message_ids:
+        ids = list(dict.fromkeys(message_ids))
+        records = [get_inbox_message(username, session_id, mid) for mid in ids]
+        missing = [mid for mid, record in zip(ids, records) if record is None]
+        records = [record for record in records if record is not None]
+    else:
+        records = list_inbox_messages(
+            username, session_id, status=None if include_read else "unread",
+            limit=None, oldest_first=True,
+        )
+        missing = []
+    if not records:
+        return "📭 当前会话没有匹配的收件箱消息。" + (f" 未找到：{', '.join(missing)}" if missing else "")
+    lines = [f"📨 收件箱：{len(records)} 条消息（阅读不会自动标记已读）"]
+    for record in records:
+        source_user = record.metadata.get("source_user") or username
+        sender = record.source_label or record.source_session
+        lines.append(
+            f"\n[{record.message_id}] 来自 {source_user}#{sender} · "
+            f"{'已读' if record.read_at else '未读'} · {record.created_at}\n{record.content}"
+        )
+    if missing:
+        lines.append(f"\n未找到：{', '.join(missing)}")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+async def mark_session_inbox_read(
+    username: str,
+    message_ids: list[str] | None = None,
+    source_session: str = "",
+) -> str:
+    """直接将当前会话的指定消息标记已读；不传 ID 时标记全部未读。
+
+    :param message_ids: 要标记已读的消息 ID；留空表示全部未读
+    """
+    session_id = source_session or "default"
+    ids = list(dict.fromkeys(message_ids or []))
+    missing = [mid for mid in ids if get_inbox_message(username, session_id, mid) is None]
+    changed = mark_inbox_read(username, session_id, ids or None)
+    remaining = count_inbox_messages(username, session_id, status="unread")
+    result = f"✅ 已标记 {changed} 条为已读；当前还剩 {remaining} 条未读。"
+    return result + (f" 未找到：{', '.join(missing)}" if missing else "")
 
 
 if __name__ == "__main__":

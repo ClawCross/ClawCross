@@ -269,6 +269,9 @@ const i18n = {
         subagent_runtime_no_approvals: '暂无 approval 请求',
         subagent_runtime_no_runs: '暂无运行记录',
         subagent_runtime_no_inbox: '暂无 Inbox 消息',
+        subagent_runtime_inbox_read: '已读',
+        subagent_runtime_inbox_unread: '未读',
+        subagent_runtime_show_message: '查看正文',
         subagent_runtime_no_artifacts: '暂无归档 artifacts',
         subagent_runtime_no_relationships: '暂无父子关系',
         subagent_runtime_parent: '父会话',
@@ -1124,6 +1127,9 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         subagent_runtime_no_approvals: 'No approval requests',
         subagent_runtime_no_runs: 'No runs yet',
         subagent_runtime_no_inbox: 'No inbox messages',
+        subagent_runtime_inbox_read: 'Read',
+        subagent_runtime_inbox_unread: 'Unread',
+        subagent_runtime_show_message: 'Show message',
         subagent_runtime_no_artifacts: 'No runtime artifacts',
         subagent_runtime_no_relationships: 'No parent/child links',
         subagent_runtime_parent: 'Parent session',
@@ -4289,8 +4295,12 @@ function _buildRuntimeInboxList(items, sessionId = '') {
             <div class="webot-runtime-row">
                 <span class="webot-runtime-badge">${escapeHtml(item.status || '')}</span>
                 <span class="webot-runtime-text">${escapeHtml(item.source_label || item.source_session || 'unknown')}</span>
+                <span class="webot-runtime-badge">${t(item.read_at ? 'subagent_runtime_inbox_read' : 'subagent_runtime_inbox_unread')}</span>
             </div>
-            <div class="webot-runtime-detail">${_escapeAndFormatText(item.body || '')}</div>
+            <div class="webot-runtime-detail">${escapeHtml(item.summary || item.body || '')}</div>
+            <details class="webot-runtime-detail"><summary>${t('subagent_runtime_show_message')}</summary>
+                <div>${_escapeAndFormatText(item.body || '')}</div>
+            </details>
         </div>
     `).join('')}`;
 }

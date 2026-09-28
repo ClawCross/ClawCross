@@ -10,7 +10,7 @@ VALID_SESSION_MODES = frozenset({*RUN_MODES, "execute", "agent", "plan", "review
 MODE_ALIASES = {"manual": "chat", "read-only": "readonly"}
 READ_ONLY_TOOLS = frozenset({
     "read_file", "list_files", "web_search", "web_fetch", "search_sessions", "list_sessions",
-    "list_subagents", "get_subagent_history", "read_session_plan", "list_tool_approvals",
+    "list_subagents", "get_subagent_history", "read_session_plan", "list_tool_approvals", "read_session_inbox",
     "list_oasis_experts", "check_oasis_discussion", "list_oasis_workflows",
     "get_workflow_rules", "list_oasis_agent_catalog", "get_publicnet_info", "get_current_time",
     "list_alarms", "get_notification_status", "skill_evolution_report", "usage_status", "claude_code_status",
@@ -20,6 +20,7 @@ PLAN_MODE_BLOCKED_TOOLS = frozenset(
     {
         "write_file",
         "delete_file",
+        "mark_session_inbox_read",
         "run_command",
         "cancel_subagent",
         "delete_subagent",
@@ -35,6 +36,7 @@ REVIEW_MODE_BLOCKED_TOOLS = frozenset(
     {
         "write_file",
         "delete_file",
+        "mark_session_inbox_read",
         "start_new_oasis",
         "save_oasis_workflow",
     }
