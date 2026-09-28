@@ -23,7 +23,7 @@ class SystemTriggerRequest(BaseModel):
     """系统触发请求"""
     user_id: str
     text: str = "summary"
-    session_id: str = "default"
+    session_id: str  # the number of the agent it is for
     attachments: Optional[list[SystemTriggerAttachment]] = None
     coalesce_key: str = ""
     # Per-trigger permission overrides. session_mode: "manual" | "plan" | "bypass".

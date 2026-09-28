@@ -41,7 +41,7 @@ class _Gateway:
         return AgentReply(ok=True, content=self.replies.pop(0) if self.replies else REPLY)
 
     async def discard(self, agent):
-        self.discarded.append(agent.config["session"])
+        self.discarded.append(agent.agent_id)
         return True
 
 
@@ -81,11 +81,11 @@ class EngineCase(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         root = Path(self.tmp.name)
-        self.store = AgentStore(root / "clawcross.db")
+        self.store = AgentStore(root / "agents.db")
         self.teams = TeamStore(self.store, root / "user_files")
         self.teams.create("alice", "dev")
-        self.coder = self.store.create("alice", name="Coder", driver=WEBOT, config={"session": "s1", "persona": "coder"})
-        self.codex = self.store.create("alice", name="Codex", driver=ACPX, config={"platform": "codex", "global_name": "cx"})
+        self.coder = self.store.create("alice", driver=WEBOT, config={"persona": "coder"}, name="Coder", agent_id="s1")
+        self.codex = self.store.create("alice", driver=ACPX, config={"platform": "codex"}, name="Codex", agent_id="codex")
         self.teams.add("alice", "dev", self.coder.agent_id, role="Builder")
         self.fake = _Gateway()
         for target, value in (("agents.store.get_store", lambda *a: self.store),
@@ -114,10 +114,13 @@ class EngineCase(unittest.TestCase):
 
 
 class TestParticipants(EngineCase):
-    def test_residents_are_found_by_role_or_handle(self):
-        built = self.engine("  - id: a\n    agent: Builder\n  - id: b\n    agent: codex\n  - id: c\n    agent: nobody\n")
+    def test_agents_are_found_by_team_name_or_id_and_a_new_id_is_a_new_agent(self):
+        built = self.engine("  - id: a\n    agent: Builder\n  - id: b\n    agent: codex\n  - id: c\n    agent: dev.Nobody\n"
+                            "  - id: d\n    agent: fresh\n")
         self.assertEqual([(p.name, p.agent.agent_id, p.temporary) for p in built.experts],
-                         [("Builder", self.coder.agent_id, False), ("Codex", self.codex.agent_id, False)])
+                         [("Builder", self.coder.agent_id, False), ("Codex", self.codex.agent_id, False),
+                          ("fresh", "fresh", False)])
+        self.assertIsNotNone(self.store.get("alice", "fresh"))
 
     def test_personas_with_and_without_tools(self):
         built = self.engine("  - id: a\n    persona: critical\n  - id: b\n    persona: critical\n"
@@ -125,7 +128,7 @@ class TestParticipants(EngineCase):
         light, tooled = built.experts
         self.assertEqual((light.agent.driver, light.temporary), (LLM, True))
         self.assertTrue(light.persona)  # the library's persona text frames it
-        self.assertEqual((tooled.agent.driver, tooled.agent.config["session"]), (WEBOT, "tmp__t0pic__critical__2"))
+        self.assertEqual((tooled.agent.driver, tooled.agent.agent_id), (WEBOT, "tmp__t0pic__critical__2"))
         self.assertEqual(tooled.tools, ["read_file"])
         self.assertNotEqual(light.name, tooled.name)
 
@@ -173,7 +176,7 @@ class TestAgentCenter(EngineCase):
 
         center = AgentCenter("alice", "dev")
         self.assertEqual([(a["role"], a["agent_id"]) for a in center.list_agents()], [("Builder", self.coder.agent_id)])
-        for ref in ("Builder", self.coder.agent_id, "alice/coder", "codex"):
+        for ref in ("Builder", self.coder.agent_id, "dev.Builder", "codex"):
             with self.subTest(ref=ref):
                 self.assertIn(center.get_agent(ref)["agent_id"], (self.coder.agent_id, self.codex.agent_id))
         reply = asyncio.run(center.send_persona("critical", "评一下"))

@@ -97,7 +97,7 @@ class TeamPresetAssetsTests(unittest.TestCase):
                 self.assertEqual(len(listed), 1)
                 self.assertEqual(listed[0]["preset_id"], "modern-ceo")
 
-                agents = AgentStore(root / "clawcross.db")
+                agents = AgentStore(root / "agents.db")
                 teams = TeamStore(agents, root / "user_files")
                 result = team_preset_assets.install_team_preset(
                     user_id="alice",
@@ -112,7 +112,7 @@ class TeamPresetAssetsTests(unittest.TestCase):
                 team_dir = teams.folder("alice", "Modern Ops")
                 members = teams.members("alice", "Modern Ops")
                 self.assertEqual([m.role for m in members], ["CEO", "CTO"])
-                self.assertTrue(all(m.agent.config.get("session") for m in members))
+                self.assertTrue(all(m.agent.agent_id for m in members))
                 self.assertFalse((team_dir / "internal_agents.json").exists())
                 self.assertTrue((team_dir / "clawcross_preset_manifest.json").exists())
                 self.assertTrue((team_dir / "oasis" / "yaml" / "modern.yaml").exists())

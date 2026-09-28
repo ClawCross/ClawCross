@@ -19,7 +19,7 @@ if _SRC_DIR not in sys.path:
 from agents.gateway import get_gateway, persona_agent
 from agents.messages import AgentMessage, AgentReply
 from agents.routes import agent_card
-from agents.store import Agent, AgentNotFound, get_store
+from agents.store import Agent, get_store
 from oasis.experts import _build_identity_prompt, get_all_experts
 from teams.store import get_team_store
 
@@ -68,17 +68,15 @@ class AgentCenter:
         return [{**agent_card(agent), "role": role} for agent, role in self._members()]
 
     def _agent(self, target: str) -> tuple[Agent, str]:
+        from oasis.engine import resolve_agent
+
         key = str(target or "").strip()
         if not key:
             raise ValueError("target 不能为空")
-        for agent, role in self._members():
-            if key in (agent.agent_id, agent.address, agent.handle) or role.casefold() == key.casefold():
-                return agent, role
         try:
-            agent = get_store().resolve(self.user_id, key)
-        except AgentNotFound:
+            return resolve_agent(self.user_id, self.team, key)
+        except LookupError:
             raise ValueError(f"未找到 agent: {target}") from None
-        return agent, agent.name
 
     def get_agent(self, target: str) -> dict[str, Any]:
         agent, role = self._agent(target)

@@ -156,14 +156,9 @@ async def send_to_group(
     """
     if not _INTERNAL_TOKEN:
         return "❌ 系统未配置 INTERNAL_TOKEN，无法发送群聊消息。"
-    from mcp_servers.caller_agent import caller_agent, internal_headers
+    from mcp_servers.caller_agent import internal_headers
 
-    try:
-        agent = await caller_agent(username, source_session)
-    except Exception as e:
-        return f"❌ 无法确认你的 agent 身份: {type(e).__name__}: {e}"
-    if not agent:
-        return "❌ 当前会话不是任何群的成员（它还不是一个 agent），无法在群里发言。"
+    agent = source_session  # the session is the agent
     gid = quote((group_id or "").strip(), safe="")
     try:
         async with httpx.AsyncClient(timeout=15) as client:

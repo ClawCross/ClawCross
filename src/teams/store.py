@@ -1,9 +1,10 @@
-"""A team is a named set of agents, each playing a role; at most one leads.
+"""A team is a namespace: a folder that brings agents, personas, skills,
+workflows and alarms together.
 
-Membership lives in the database next to the agents it references, so deleting
-an agent takes it out of every team. The team's folder
-(``user_files/<owner>/teams/<team>``) holds the team's assets — persona
-templates, workflows, skills, settings — and never its agents.
+The folder ``user_files/<owner>/teams/<team>`` holds the team's persona library,
+skills, workflows, settings, and ``members.json`` — which agents are in it, the
+name each goes by in the team, and which one leads. Inside the team an agent is
+``<team>.<name>``; the agents themselves live in the agent table.
 """
 
 from __future__ import annotations
@@ -11,26 +12,14 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import sqlite3
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from agents.store import Agent, AgentStore
 
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS team_members (
-    owner      TEXT NOT NULL,
-    team       TEXT NOT NULL,
-    agent_id   TEXT NOT NULL REFERENCES agents(agent_id) ON DELETE CASCADE,
-    role       TEXT NOT NULL,
-    is_lead    INTEGER NOT NULL DEFAULT 0,
-    position   INTEGER NOT NULL DEFAULT 0,
-    extra_json TEXT NOT NULL DEFAULT '{}',
-    PRIMARY KEY (owner, team, agent_id)
-);
-CREATE INDEX IF NOT EXISTS idx_team_members_agent ON team_members(agent_id);
-"""
+MEMBERS_FILE = "members.json"
 
 
 class TeamNotFound(LookupError):
@@ -54,14 +43,6 @@ class TeamStore:
     def __init__(self, agents: AgentStore, user_files_dir: str | os.PathLike):
         self.agents = agents
         self.user_files_dir = Path(user_files_dir)
-        self._ready = False
-
-    def _connect(self) -> sqlite3.Connection:
-        conn = self.agents._connect()  # same database: membership references agents
-        if not self._ready:
-            conn.executescript(_SCHEMA)
-            self._ready = True
-        return conn
 
     # ── folders ──────────────────────────────────────────────────────────
 
@@ -88,11 +69,6 @@ class TeamStore:
 
     def delete(self, owner: str, team: str) -> None:
         """Remove the team and its assets; its agents stay."""
-        conn = self._connect()
-        try:
-            conn.execute("DELETE FROM team_members WHERE owner = ? AND team = ?", (owner, team))
-        finally:
-            conn.close()
         shutil.rmtree(self.folder(owner, team), ignore_errors=True)
 
     def rename(self, owner: str, old: str, new: str) -> None:
@@ -100,77 +76,82 @@ class TeamStore:
         if dst.exists():
             raise FileExistsError(f"team {new!r} already exists")
         src.rename(dst)
-        conn = self._connect()
-        try:
-            conn.execute("UPDATE team_members SET team = ? WHERE owner = ? AND team = ?", (new, owner, old))
-        finally:
-            conn.close()
 
     # ── membership ───────────────────────────────────────────────────────
 
-    def members(self, owner: str, team: str) -> list[Member]:
-        conn = self._connect()
+    def _read(self, owner: str, team: str) -> list[dict]:
         try:
-            rows = conn.execute(
-                "SELECT agent_id, role, is_lead, extra_json FROM team_members"
-                " WHERE owner = ? AND team = ? ORDER BY position, rowid",
-                (owner, team),
-            ).fetchall()
-        finally:
-            conn.close()
+            data = json.loads((self.folder(owner, team) / MEMBERS_FILE).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return []
+        return [e for e in data if isinstance(e, dict) and e.get("agent")] if isinstance(data, list) else []
+
+    @contextmanager
+    def _editing(self, owner: str, team: str) -> Iterator[list[dict]]:
+        """The member entries to change in place; written back when the block ends."""
+        folder = self.folder(owner, team)
+        with _exclusive(folder):
+            entries = self._read(owner, team)
+            yield entries
+            tmp = folder / f".{MEMBERS_FILE}.tmp"
+            tmp.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
+            os.replace(tmp, folder / MEMBERS_FILE)
+
+    def members(self, owner: str, team: str) -> list[Member]:
+        if not valid_team_name(team):
+            return []
         result = []
-        for row in rows:
-            agent = self.agents.get(row["agent_id"])
+        for entry in self._read(owner, team):
+            agent = self.agents.get(owner, entry["agent"])
             if agent is not None:
-                result.append(Member(agent, row["role"], bool(row["is_lead"]), json.loads(row["extra_json"] or "{}")))
+                result.append(Member(agent, str(entry.get("name") or agent.name), bool(entry.get("lead")),
+                                     dict(entry.get("extra") or {})))
         return result
 
     def member(self, owner: str, team: str, ref: str) -> Member:
-        """A member by agent id, address, handle or role name."""
+        """A member by its name in the team or its agent id."""
         wanted = (ref or "").strip().lstrip("@")
         for m in self.members(owner, team):
-            if wanted in (m.agent.agent_id, m.agent.address, m.agent.handle) or m.role.casefold() == wanted.casefold():
+            if m.role.casefold() == wanted.casefold() or m.agent.agent_id == wanted:
                 return m
         raise LookupError(f"{ref!r} is not in team {team!r}")
 
     def lead(self, owner: str, team: str) -> Member | None:
         return next((m for m in self.members(owner, team) if m.is_lead), None)
 
+    def address(self, owner: str, ref: str) -> Agent | None:
+        """``<team>.<name>``: the agent that goes by *name* in *team*."""
+        for team in self.teams(owner):
+            if ref.startswith(team + ".") and len(ref) > len(team) + 1:
+                try:
+                    return self.member(owner, team, ref[len(team) + 1:]).agent
+                except LookupError:
+                    return None
+        return None
+
     def teams_of(self, owner: str, agent_id: str) -> list[str]:
-        conn = self._connect()
-        try:
-            rows = conn.execute(
-                "SELECT team FROM team_members WHERE owner = ? AND agent_id = ? ORDER BY team", (owner, agent_id),
-            ).fetchall()
-        finally:
-            conn.close()
-        return [row["team"] for row in rows]
+        return [t for t in self.teams(owner) if any(e["agent"] == agent_id for e in self._read(owner, t))]
 
     def add(self, owner: str, team: str, agent_id: str, *, role: str = "", is_lead: bool = False,
             extra: dict[str, Any] | None = None) -> Member:
         self.require(owner, team)
-        agent = self.agents.get(agent_id)
-        if agent is None or agent.owner != owner:
+        agent = self.agents.get(owner, agent_id)
+        if agent is None:
             raise LookupError(f"no agent {agent_id!r} for {owner}")
-        conn = self._connect()
-        try:
-            conn.execute("BEGIN IMMEDIATE")
+        entry: dict[str, Any] = {"agent": agent_id, "name": role.strip() or agent.name}
+        if is_lead:
+            entry["lead"] = True
+        if extra:
+            entry["extra"] = extra
+        with self._editing(owner, team) as entries:
             if is_lead:
-                conn.execute("UPDATE team_members SET is_lead = 0 WHERE owner = ? AND team = ?", (owner, team))
-            position = conn.execute(
-                "SELECT COALESCE(MAX(position), -1) + 1 FROM team_members WHERE owner = ? AND team = ?", (owner, team),
-            ).fetchone()[0]
-            conn.execute(
-                "INSERT INTO team_members (owner, team, agent_id, role, is_lead, position, extra_json)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)"
-                " ON CONFLICT(owner, team, agent_id) DO UPDATE SET role = excluded.role,"
-                " is_lead = excluded.is_lead, extra_json = excluded.extra_json",
-                (owner, team, agent_id, role.strip() or agent.name, int(is_lead), position,
-                 json.dumps(extra or {}, ensure_ascii=False)),
-            )
-            conn.execute("COMMIT")
-        finally:
-            conn.close()
+                for e in entries:
+                    e.pop("lead", None)
+            at = next((i for i, e in enumerate(entries) if e["agent"] == agent_id), None)
+            if at is None:
+                entries.append(entry)
+            else:
+                entries[at] = entry
         return self.member(owner, team, agent_id)
 
     def update(self, owner: str, team: str, agent_id: str, *, role: str | None = None,
@@ -184,13 +165,31 @@ class TeamStore:
         )
 
     def remove(self, owner: str, team: str, agent_id: str) -> None:
-        conn = self._connect()
-        try:
-            conn.execute(
-                "DELETE FROM team_members WHERE owner = ? AND team = ? AND agent_id = ?", (owner, team, agent_id),
-            )
-        finally:
-            conn.close()
+        if not self.exists(owner, team):
+            return
+        with self._editing(owner, team) as entries:
+            entries[:] = [e for e in entries if e["agent"] != agent_id]
+
+    def forget_agent(self, owner: str, agent_id: str) -> None:
+        """An agent was deleted: it leaves every team."""
+        for team in self.teams_of(owner, agent_id):
+            self.remove(owner, team, agent_id)
+
+
+@contextmanager
+def _exclusive(folder: Path) -> Iterator[None]:
+    """One writer at a time across processes (where the OS can lock a folder)."""
+    try:
+        import fcntl
+    except ImportError:  # Windows: writes still replace the file whole
+        yield
+        return
+    fd = os.open(folder, os.O_RDONLY)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
 
 
 def get_team_store(agents: AgentStore | None = None, user_files_dir: str | os.PathLike | None = None) -> TeamStore:

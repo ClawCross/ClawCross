@@ -668,7 +668,7 @@ def cmd_restart(args):
 
 # ── groups: 群组管理 ────────────────────────────────────────────────────────
 def cmd_groups(args):
-    """群聊：成员和发言者都是 agent（ag_ 编号 / 地址 / handle）或你自己。"""
+    """群聊：成员和发言者都是 agent（agent 编号，或 team.名字）或你自己。"""
     hdrs = _group_headers(args.user)
     base = f"{AGENT_BASE}/groups"
     gid = _quote_group_id(args.group_id) if args.group_id else ""
@@ -686,13 +686,11 @@ def cmd_groups(args):
             return
         print(f"👥 群组列表 ({len(groups)} 个):\n")
         for group in groups:
-            team = f" · team {group['team']}" if group.get("team") else ""
-            print(f"  • [{group['group_id']}] {group['title']} ({group['kind']}, {group['member_count']} 人{team})")
+            print(f"  • [{group['group_id']}] {group['title']} ({group['kind']}, {group['member_count']} 人)")
 
     elif args.action == "create":
         data = json.loads(args.data) if args.data else {
-            "title": args.name or args.team_name or "新群组",
-            "team": args.team_name or "",
+            "title": args.name or "新群组",
             "agents": [a for a in (args.agents or "").split(",") if a.strip()],
         }
         code, body = _req("POST", base, headers=hdrs, data=data)
@@ -1925,7 +1923,7 @@ def cmd_agents(args):
     act = args.action
     ref = urllib.parse.quote(args.agent or "", safe="/")
     if act not in {"list", "create"} and not ref:
-        print("❌ 请指定 --agent（ag_ 编号、地址或 handle）", file=sys.stderr)
+        print("❌ 请指定 --agent（agent 编号，或 team.名字）", file=sys.stderr)
         return
 
     if act == "list":
@@ -1934,7 +1932,7 @@ def cmd_agents(args):
             return _err(code, body)
         for a in body.get("data", []):
             state = (a.get("status") or {}).get("state", "")
-            print(f"  • {a['address']:<32} {a['name']} ({a['platform']}{', ' + state if state else ''}) [{a['agent_id']}]")
+            print(f"  • {a['agent_id']:<32} {a['name']} ({a['platform']}{', ' + state if state else ''})")
         _print_doc_hint("agents")
     elif act == "show":
         code, body = _req("GET", f"{base}/{ref}", headers=hdrs)
@@ -1945,7 +1943,7 @@ def cmd_agents(args):
         data.setdefault("platform", args.platform or "webot")
         code, body = _req("POST", base, headers=hdrs, data=data)
         if code == 200:
-            print(f"✅ Agent 已创建: {body['address']} [{body['agent_id']}]")
+            print(f"✅ Agent 已创建: {body['agent_id']} ({body['platform']})")
         else:
             _err(code, body)
     elif act == "update":
@@ -1969,6 +1967,11 @@ def cmd_agents(args):
         if code != 200:
             return _err(code, body)
         print(body.get("content") if body.get("ok") else f"❌ {body.get('error')}")
+    elif act == "inbox":
+        code, body = _req("POST", f"{base}/{ref}/inbox", headers=hdrs, data={"text": args.message or ""})
+        if code != 200:
+            return _err(code, body)
+        print("✅ 已放入收件箱" if body.get("accepted") else f"❌ {body.get('error')}")
     elif act in {"status", "cancel", "reset"}:
         code, body = _req("POST", f"{base}/{ref}/control", headers=hdrs, data={"action": act})
         _pp(body) if code == 200 else _err(code, body)
@@ -1986,7 +1989,7 @@ def _print_team_members(user_id, team_name):
     for m in members:
         agent = m["agent"]
         lead = " ★lead" if m.get("is_lead") else ""
-        print(f"  • {m['role']}{lead} — {agent['address']} ({agent['platform']}) [{agent['agent_id']}]")
+        print(f"  • {m['role']}{lead} — {agent['agent_id']} ({agent['platform']})")
     if not members:
         print("  📭 暂无成员")
 
@@ -2923,7 +2926,7 @@ def build_parser():
     c.add_argument("--team-name", help="按 team 建群：成员跟随 team (create 时)")
     c.add_argument("--agents", help="逗号分隔的 agent 列表 (create 时)")
     c.add_argument("--message", help="消息内容 (send 时)")
-    c.add_argument("--agent", help="以哪个 agent 身份发言 (send 时)：ag_ 编号、地址 <用户>/<handle> 或 handle")
+    c.add_argument("--agent", help="以哪个 agent 身份发言 (send 时)：agent 编号，或 team.名字")
     c.add_argument("--data", help="JSON 数据")
     c.add_argument("--after-id", help="增量获取消息 (messages 时)")
 
@@ -2986,12 +2989,12 @@ def build_parser():
     # agents
     c = sub.add_parser("agents", help="Agent 管理（本机所有 agent，一套接口）")
     c.add_argument("action", nargs="?", default="list",
-                   choices=["list", "show", "create", "update", "delete", "ask", "status", "cancel", "reset"],
+                   choices=["list", "show", "create", "update", "delete", "ask", "inbox", "status", "cancel", "reset"],
                    help="操作 (默认: list)")
-    c.add_argument("--agent", help="目标 agent：ag_ 编号、地址 <用户>/<handle> 或 handle")
+    c.add_argument("--agent", help="目标 agent：agent 编号（新编号即新 agent），或 team.名字")
     c.add_argument("--name", help="名称 (create / update 时)")
     c.add_argument("--platform", help="平台 (create 时)：webot、codex、claude、gemini、openclaw 或任意 HTTP 服务名")
-    c.add_argument("--message", help="消息 (ask 时)")
+    c.add_argument("--message", help="消息 (ask / inbox 时)")
     c.add_argument("--status", action="store_true", help="列出时附带运行状态 (list 时)")
     c.add_argument("--data", help="JSON 数据：create 的字段或 update 的 {\"settings\": {...}}")
 
@@ -3013,7 +3016,7 @@ def build_parser():
                    help="操作 (默认: list)")
     c.add_argument("--team-name", help="Team 名称")
     c.add_argument("--new-name", help="rename 时的新名称")
-    c.add_argument("--agent", help="成员 agent：ag_ 编号、地址或 handle (add-member / remove-member / set-lead 时)")
+    c.add_argument("--agent", help="成员 agent：agent 编号，或 team.名字 (add-member / remove-member / set-lead 时)")
     c.add_argument("--role", help="成员在 team 里的角色名 (add-member 时，默认用 agent 名称)")
     c.add_argument("--lead", action="store_true", help="设为 lead (add-member 时)")
     c.add_argument("--tag", help="人设 tag (update-persona/delete-persona 时)")
@@ -3092,7 +3095,7 @@ def build_parser():
                    choices=["list", "new", "delete"],
                    help="操作 (默认: list)")
     c.add_argument("--team", help="Team 名称：只看/只建该 team 成员的任务 (留空=全部 agent)")
-    c.add_argument("--agent", help="目标 agent：ag_ 编号、地址或 handle (new 时)")
+    c.add_argument("--agent", help="目标 agent：agent 编号，或 team.名字 (new 时)")
     c.add_argument("--schedule-type", choices=["cron", "once"], help="调度类型 (new 时，默认: cron)")
     c.add_argument("--cron", help="cron 表达式 (new 且 schedule-type=cron 时)")
     c.add_argument("--run-at", help="单次触发时间 ISO8601 (new 且 schedule-type=once 时)")

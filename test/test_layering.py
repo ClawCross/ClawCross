@@ -27,9 +27,7 @@ _TRANSPORT = ("integrations.agent_sender", "integrations.registry", "integration
 
 # Modules that still call transports directly. This list may only shrink as
 # callers move onto the gateway; a new direct caller fails the test.
-_LEGACY_TRANSPORT_CALLERS = {
-    "src/front.py",  # the direct-chat proxies, until the agent layer streams
-}
+_LEGACY_TRANSPORT_CALLERS: set[str] = set()
 
 
 def _imports(path: Path) -> set[str]:

@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable
 
+from fastapi import HTTPException
 from langchain_core.messages import AIMessage, HumanMessage
 
 from agents.messages import decode_text_attachment as _try_decode_base64_text, is_text_mime as _is_text_mime
@@ -363,8 +364,32 @@ class SystemService:
                 )
         return queued_count
 
+    @staticmethod
+    async def _trigger_elsewhere(agent: Any, req: SystemTriggerRequest) -> dict[str, Any]:
+        from agents.gateway import get_gateway
+        from agents.messages import AgentMessage
+
+        attachments = [a.model_dump() for a in req.attachments or []]
+        msg = AgentMessage(text=req.text, attachments=attachments, sender="system")
+        if req.wait_reply:
+            reply = await get_gateway().ask(agent, msg, mode=req.session_mode)
+            return {"status": "completed", "reply": reply.content if reply.ok else f"❌ {reply.error}", "coalesced": False}
+        receipt = await get_gateway().deliver(agent, msg, mode=req.session_mode)
+        if not receipt.accepted:
+            raise HTTPException(status_code=502, detail=receipt.error)
+        return {"status": "received", "message": f"已交给 {agent.agent_id}", "coalesced": False}
+
     async def system_trigger(self, req: SystemTriggerRequest, x_internal_token: str | None):
+        """Hand a message to agent ``session_id`` now. A number not seen before is a new
+        WeBot agent; an agent of another runtime is sent it through the gateway."""
         self.verify_internal_token(x_internal_token)
+        from agents.store import WEBOT, get_store, valid_agent_id
+
+        if not valid_agent_id(req.session_id):
+            raise HTTPException(status_code=400, detail=f"invalid agent id {req.session_id!r}")
+        agent = get_store().ensure(req.user_id, req.session_id)
+        if agent.driver != WEBOT:
+            return await self._trigger_elsewhere(agent, req)
         thread_id = self._thread_id(req)
 
         human_msg = self._build_message_from_trigger(req)

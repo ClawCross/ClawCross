@@ -553,10 +553,11 @@ async def start_new_oasis(
             if discussion:
                 body["discussion"] = True
 
-            # Always detach mode — set callback for completion notification
-            port = os.getenv("PORT_AGENT", "51200")
-            body["callback_url"] = f"http://127.0.0.1:{port}/system_trigger"
-            body["callback_session_id"] = notify_session or "default"
+            # Detached: the calling agent is told when it ends
+            if notify_session:
+                port = os.getenv("PORT_AGENT", "51200")
+                body["callback_url"] = f"http://127.0.0.1:{port}/system_trigger"
+                body["callback_session_id"] = notify_session
 
             if schedule_file:
                 if not os.path.isabs(schedule_file):

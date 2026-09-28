@@ -38,9 +38,9 @@ def _get_agent_tool_whitelist(user_id: str, session_id: str) -> set[str] | None:
 
     An agent's ``tools`` setting is ``"none"``, or ``{name: bool}`` for a whitelist.
     """
-    from agents.store import WEBOT, get_store
+    from agents.store import get_store
 
-    agent = get_store().find(user_id, WEBOT, {"session": session_id}) if session_id else None
+    agent = get_store().get(user_id, session_id) if session_id else None
     tools = agent.config.get("tools") if agent else None
     if tools == "none":
         return set()
@@ -69,68 +69,44 @@ class OpenAIChatService:
         self._gateway = None
 
     def agent_gateway(self):
-        """The L1 gateway, so ``model`` may name any agent on this machine."""
+        """The L1 gateway, for agents of other runtimes."""
         if self._gateway is None:
             from agents.gateway import AgentGateway
 
             self._gateway = AgentGateway(internal_token=self.internal_token)
         return self._gateway
 
-    def _model_agent(self, user_id: str, model: str | None):
-        """The agent a request's ``model`` names, or None for "webot" / plain model names."""
-        name = (model or "").strip()
-        if not name or name == "webot":
-            return None
-        from agents.store import AgentNotFound, get_store
-
-        try:
-            return get_store().resolve(user_id, name)
-        except AgentNotFound:
-            return None
-
-    def _model_team(self, user_id: str, model: str | None):
-        """``(lead agent, team)`` when ``model`` is a team address ``owner/team``."""
-        name = (model or "").strip()
-        prefix = f"{user_id}/"
-        if not name.startswith(prefix) or "/" in name[len(prefix):]:
-            return None
-        team = name[len(prefix):]
+    @staticmethod
+    def _target(user_id: str, session: str, model: str | None):
+        """The agent a request talks to: its session number, or ``<team>.<name>``. A
+        number not seen before is a new agent, of the runtime ``model`` names (WeBot
+        when it names none, like ``gpt-4o``)."""
+        from agents.routes import runtime_of
+        from agents.store import HTTP, WEBOT, get_store, valid_agent_id
         from teams.store import get_team_store
 
-        teams = get_team_store()
-        if not teams.exists(user_id, team):
-            return None
-        lead = teams.lead(user_id, team)
-        if lead is None:
-            raise HTTPException(status_code=409, detail=f"team {team!r} has no lead; mark one member as lead")
-        return lead.agent, team
+        store = get_store()
+        agent = store.get(user_id, session) or get_team_store(store).address(user_id, session)
+        if agent is not None:
+            return agent
+        if not valid_agent_id(session):
+            raise HTTPException(status_code=404, detail=f"no agent {session!r}")
+        driver, config = runtime_of(model or "")
+        if driver == HTTP:
+            driver, config = WEBOT, {}
+        return store.ensure(user_id, session, driver=driver, config=config)
 
     @staticmethod
     def _last_user_message(req: ChatCompletionRequest) -> tuple[str, list[dict]]:
-        """Text and image attachments of the last user message."""
+        """Text and attachments (images, audio, files) of the last user message."""
+        from agents.messages import parse_openai_content
+
         for msg in reversed(req.messages):
-            if msg.role != "user":
-                continue
-            content = msg.content
-            if isinstance(content, str):
-                return content, []
-            texts: list[str] = []
-            attachments: list[dict] = []
-            for part in content or []:
-                part = part if isinstance(part, dict) else part.model_dump()
-                if part.get("type") == "text" and part.get("text"):
-                    texts.append(part["text"])
-                elif part.get("type") == "image_url":
-                    url = str((part.get("image_url") or {}).get("url") or "")
-                    if url.startswith("data:") and ";base64," in url:
-                        mime, data = url[5:].split(";base64,", 1)
-                        attachments.append({"type": "image", "name": "image", "mime_type": mime, "data": data})
-            return "\n".join(texts), attachments
+            if msg.role == "user":
+                return parse_openai_content(msg.content)
         return "", []
 
-    async def _complete_with_agent(
-        self, user_id: str, record, req: ChatCompletionRequest, *, context: dict | None = None,
-    ):
+    async def _complete_with_agent(self, user_id: str, record, req: ChatCompletionRequest):
         """Answer a chat completion by asking a non-WeBot agent through the gateway."""
         from agents.messages import AgentMessage
 
@@ -138,13 +114,12 @@ class OpenAIChatService:
         reply = await self.agent_gateway().ask(
             record,
             AgentMessage(text=text, attachments=attachments, sender=f"u:{user_id}"),
-            context=context,
             mode=req.session_mode,
             response_format=req.response_format,
         )
         if not reply.ok:
             raise HTTPException(status_code=502, detail=reply.error or "agent call failed")
-        model = req.model or record.address
+        model = req.model or record.platform
         if not req.stream:
             return self.make_openai_response(reply.content, model=model)
 
@@ -767,21 +742,13 @@ class OpenAIChatService:
         if not authenticated:
             raise HTTPException(status_code=401, detail="认证失败")
 
-        session_id = session_override or req.session_id or "default"
-        agent_record = self._model_agent(user_id, req.model)
-        team_context: dict = {}
-        if agent_record is None:
-            team_target = self._model_team(user_id, req.model)
-            if team_target is not None:
-                # A team speaks through its lead. A WeBot lead keeps its home
-                # team context (its system prompt stays cache-stable).
-                agent_record, team = team_target
-                team_context = {"team": team}
-        if agent_record is not None:
-            if agent_record.driver != "webot":
-                return await self._complete_with_agent(user_id, agent_record, req, context=team_context)
-            # A WeBot agent named by address: talk to its own session.
-            session_id = str(agent_record.config.get("session") or session_id)
+        session = (session_override or req.session_id or "").strip()
+        if not session:
+            raise HTTPException(status_code=400, detail="session_id is required: it is the number of the agent")
+        agent_record = self._target(user_id, session, req.model)
+        if agent_record.driver != "webot":
+            return await self._complete_with_agent(user_id, agent_record, req)
+        session_id = agent_record.agent_id
         thread_id = f"{user_id}#{session_id}"
         config = {
             "configurable": {"thread_id": thread_id},
@@ -847,41 +814,13 @@ class OpenAIChatService:
         return await self._run_stream(ctx)
 
     def list_models(self, authorization: str | None = None) -> dict:
-        """``webot`` plus, for an authenticated caller, every agent they own (id = address)."""
+        """The runtimes a new agent can have: ``webot``, each ACP agent, ``openclaw``.
+        Which agent a request talks to is its ``session_id``."""
         payload = self.protocol.list_models_payload()
-        parts = parse_bearer_parts(authorization)
-        user_id = None
-        if parts and self.internal_token and is_internal_bearer(parts, self.internal_token):
-            user_id = parts[1] if len(parts) >= 2 and parts[1] else None
-        elif parts:
-            parsed = extract_user_password_session(parts, default_session="")
-            if parsed and parsed[1] and self.verify_password(parsed[0], parsed[1]):
-                user_id = parsed[0]
-        if not user_id:
-            return payload
         created = payload["data"][0]["created"] if payload["data"] else 0
-        from agents.store import get_store
-        from teams.store import get_team_store
+        from agents.store import canonical_platform
+        from integrations.acpx_cli_tools import acpx_agent_tags_with_legacy
 
-        for agent in get_store().list(user_id):
-            payload["data"].append({
-                "id": agent.address,
-                "object": "model",
-                "created": created,
-                "owned_by": agent.platform,
-                "agent_id": agent.agent_id,
-                "display_name": agent.name,
-            })
-        teams = get_team_store()
-        for team in teams.teams(user_id):
-            lead = teams.lead(user_id, team)
-            if lead is not None:
-                payload["data"].append({
-                    "id": f"{user_id}/{team}",
-                    "object": "model",
-                    "created": created,
-                    "owned_by": "team",
-                    "lead": lead.agent.address,
-                    "display_name": team,
-                })
+        for runtime in [*sorted({canonical_platform(t) for t in acpx_agent_tags_with_legacy()}), "openclaw"]:
+            payload["data"].append({"id": runtime, "object": "model", "created": created, "owned_by": "clawcross"})
         return payload

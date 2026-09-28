@@ -84,13 +84,11 @@ When the bug is "service does not start" or "route behaves unexpectedly", start 
 - `src/utils/session_summary.py`
 - `src/utils/checkpoint_repository.py`
 
-### Agents, conversations, teams, group chat (three layers — see `docs/agent-runtime-and-persona.md`)
+### Agents and their compositions (see `docs/architecture.md`)
 
-- L1 agents: `src/agents/store.py` (one record per agent), `src/agents/gateway.py` (ask / deliver per driver), `src/agents/control.py` (status / cancel / reset / history), `src/agents/routes.py` (`/v1/agents`)
-- L2 conversations: `src/comms/store.py`, `src/comms/conversations.py` (post + wake), `src/comms/delivery.py` (wake rule, storm guard, unread digest)
-- L3 teams: `src/teams/store.py` (memberships), `src/teams/manifest.py` (internal_agents.json / external_agents.json import/export), `src/teams/routes.py` (`/v1/teams`)
-- L3 group chat: `src/groups/service.py`, `src/groups/routes.py` (`/groups`)
-- data upgrades, run at start by `PRAGMA user_version`: `src/migrations/unify.py`
+- L1 agents: `src/agents/store.py` (the table of all sessions: session number = agent id), `src/agents/gateway.py` (ask / deliver / inbox per driver), `src/agents/control.py` (status / cancel / reset / history), `src/agents/routes.py` (`/v1/agents`), `src/api/openai_service.py` (`/v1/chat/completions`), `src/api/system_service.py` (`/system_trigger`)
+- L2 group chat: `src/comms/store.py` (conversations.db), `src/comms/conversations.py` (post + wake), `src/comms/delivery.py` (wake rule, storm guard, unread digest), `src/groups/`
+- L2 teams: `src/teams/store.py` (members.json in the team folder, `<team>.<name>`), `src/teams/manifest.py` (internal_agents.json / external_agents.json import/export), `src/teams/routes.py` (`/v1/teams`)
 
 ### Settings / ops / auth / system
 
@@ -220,7 +218,8 @@ The most important runtime data lives here:
 ```text
 data/
 ├── agent_checkpoints/        # per-thread append-only context SQLite files
-├── clawcross.db              # agents, team memberships, conversations and their messages
+├── agents.db                 # the table of all agents (every session, by its number)
+├── conversations.db          # group and private chats
 ├── oasis_graph_memory.db
 ├── webot_subagents.db
 ├── team_creator_jobs.db
@@ -231,7 +230,8 @@ data/
     ├── skills_manifest.json
     ├── webot_agent_profiles.json
     ├── oasis/yaml/
-    └── teams/{team_name}/            # assets only; members live in clawcross.db
+    └── teams/{team_name}/            # the team's namespace
+        ├── members.json
         ├── oasis_experts.json
         ├── team_settings.json
         ├── oasis/yaml/*.yaml

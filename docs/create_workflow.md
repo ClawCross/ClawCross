@@ -122,7 +122,7 @@ A participant is always an agent. There are two ways to name one:
 
 | Key | Who speaks | Memory | Example |
 |-----|------------|--------|---------|
-| `agent: <ref>` | One of your agents. In a team workflow write the member's **role name**; you may also write its handle, address (`alice/coder`) or `ag_…` id. The platform does not matter — WeBot, Codex, Claude Code, Gemini, OpenClaw and HTTP agents are all written this way | its own, across topics | `agent: Coder` |
+| `agent: <ref>` | One of your agents. In a team workflow write the member's **name in the team**; you may also write its id or `<team>.<name>` (an id not seen before is a new agent). The platform does not matter — WeBot, Codex, Claude Code, Gemini, OpenClaw and HTTP agents are all written this way | its own, across topics | `agent: Coder` |
 | `persona: <tag>` | A temporary expert created for this topic, wearing the persona `<tag>` from the persona library (team `oasis_experts.json`, your custom personas, public and agency personas). Removed when the topic ends | this topic only | `persona: critical` |
 
 Options of `persona:`:

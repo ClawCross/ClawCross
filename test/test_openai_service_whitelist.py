@@ -25,7 +25,7 @@ class OpenAIServiceWhitelistScopeTests(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
     def agent(self, owner, session, tools):
-        self.store.create(owner, name=session, driver=WEBOT, config={"session": session, "tools": tools})
+        self.store.create(owner, driver=WEBOT, config={"tools": tools}, agent_id=session)
 
     def test_whitelist_is_scoped_to_the_sessions_owner(self):
         self.agent("alice", "shared-session", {"read_file": True, "write_file": False})

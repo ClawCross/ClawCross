@@ -9,7 +9,8 @@
     PATCH  /v1/teams/{team}/members/{agent}       {role?, is_lead?}
     DELETE /v1/teams/{team}/members/{agent}       remove from the team (the agent stays)
     POST   /v1/teams/{team}/import                import the manifest files in the team folder
-    POST   /v1/teams/{team}/messages              ask (or deliver to) the lead, in team context
+
+A member is reached like any agent, by its id or as ``<team>.<name>``.
 """
 
 from __future__ import annotations
@@ -19,10 +20,7 @@ from typing import Any, Callable
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
-from agents.gateway import AgentGateway
-from agents.messages import AgentMessage
-from agents.routes import AgentMessageRequest, agent_card, authenticate
-from agents.store import AgentNotFound
+from agents.routes import agent_card, authenticate
 from teams.manifest import import_folder
 from teams.store import Member, TeamNotFound, TeamStore, valid_team_name
 
@@ -55,7 +53,6 @@ def team_card(teams: TeamStore, owner: str, team: str) -> dict[str, Any]:
     lead = next((m for m in members if m.is_lead), None)
     return {
         "team": team,
-        "address": f"{owner}/{team}",
         "lead": lead.agent.agent_id if lead else None,
         "members": [member_card(m) for m in members],
     }
@@ -66,7 +63,6 @@ def create_teams_router(
     internal_token: str,
     verify_password: Callable[[str, str], bool],
     teams: TeamStore,
-    gateway: AgentGateway,
 ) -> APIRouter:
     router = APIRouter()
 
@@ -80,10 +76,10 @@ def create_teams_router(
             raise HTTPException(status_code=404, detail=str(exc))
 
     def agent_id(user: str, ref: str) -> str:
-        try:
-            return teams.agents.resolve(user, ref).agent_id
-        except AgentNotFound as exc:
-            raise HTTPException(status_code=404, detail=str(exc))
+        agent = teams.agents.get(user, ref) or teams.address(user, ref)
+        if agent is None:
+            raise HTTPException(status_code=404, detail=f"no agent {ref!r}")
+        return agent.agent_id
 
     @router.get("/v1/teams")
     async def list_teams(authorization: str | None = Header(None)):
@@ -133,24 +129,6 @@ def create_teams_router(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         return team_card(teams, user, team)
-
-    @router.post("/v1/teams/{team}/messages")
-    async def message_team(team: str, body: AgentMessageRequest, authorization: str | None = Header(None)):
-        user = user_of(authorization)
-        require(user, team)
-        lead = teams.lead(user, team)
-        if lead is None:
-            raise HTTPException(status_code=409, detail=f"team {team!r} has no lead; mark one member as lead")
-        msg = AgentMessage(text=body.text, attachments=body.attachments, sender=f"u:{user}", instructions=body.instructions)
-        context = {**body.context, "team": team}
-        if body.deliver:
-            receipt = await gateway.deliver(lead.agent, msg, context=context, mode=body.mode)
-            return {"team": team, "agent": agent_card(lead.agent), "accepted": receipt.accepted, "error": receipt.error}
-        reply = await gateway.ask(
-            lead.agent, msg, context=context, mode=body.mode, tools=body.tools,
-            response_format=body.response_format, timeout=body.timeout,
-        )
-        return {"team": team, "agent": agent_card(lead.agent), "ok": reply.ok, "content": reply.content, "error": reply.error}
 
     @router.get("/v1/teams/{team}")
     async def describe_team(team: str, authorization: str | None = Header(None)):

@@ -19,11 +19,11 @@
 
 | 概念 | 是什么 | 在哪 |
 |---|---|---|
-| **agent** | 本机上的一个 agent：`ag_…` 编号 + 名字 + 平台（`webot`、`codex`、`claude-code`、`gemini-cli`、`openclaw`、任意 HTTP 服务）+ 设置（人设 tag 等）。所有平台是**同一种东西**，用同一套命令管理 | `agents` 命令 / `/v1/agents` |
-| **team** | 若干 agent 的组合。每个成员有一个**角色名**（role），可以有一个 **lead**（代表团队发言、在团队群里当主 agent）。team 不拥有 agent：同一个 agent 可以在多个 team 里 | `teams` 命令 / `/v1/teams` |
+| **agent** | 本机上的一个会话，编号就是会话号（可自定，如 `coder`；不给则系统分配 `ag_…`），加上名字、平台（`webot`、`codex`、`claude-code`、`gemini-cli`、`openclaw`、任意 HTTP 服务）和设置（人设 tag 等）。所有平台是**同一种东西**，用同一套命令管理；给一个没用过的编号发信息，就新建一个 agent | `agents` 命令 / `/v1/agents` |
+| **team** | 一个命名空间：把 agent、人设、技能、定时任务、工作流放进一个文件夹。每个成员有一个 team 内名字，在任何能写编号的地方都可以用 `<team>.<名字>` 找到它；可以标一个 lead。team 不拥有 agent：同一个 agent 可以在多个 team 里 | `teams` 命令 / `/v1/teams` |
 | **persona（人设）** | 一段角色 prompt，按 `tag` 存在人设库（公共 / agency / 你自己的 / team 的 `oasis_experts.json`）。agent 用 `persona` 设置穿上它；工作流里的临时专家也按 tag 取它 | `personas` 命令 |
 
-agent 的地址是 `<用户>/<handle>`（如 `alice/coder`）；命令里的 `--agent` 可以写 `ag_` 编号、地址或 handle。
+命令里的 `--agent` 写 agent 编号，或 `<team>.<名字>`。
 
 ---
 
@@ -45,27 +45,28 @@ uv run scripts/cli.py teams delete --team-name demo_team      # 不在其他 tea
 ### 4.1 新建 agent（任何平台同一条命令）
 
 ```bash
-# WeBot（ClawCross 自己的 agent，会话自动创建）
-uv run scripts/cli.py agents create --name "创意人设" --data '{"persona": "creative"}'
+# WeBot（ClawCross 自己的 agent）；agent_id 就是会话号，不写则系统分配
+uv run scripts/cli.py agents create --name "Coder" --data '{"agent_id": "coder", "persona": "creative"}'
 
-# ACP 工具（codex / claude-code / gemini-cli / aider …）：global_name 是它在该工具里的会话名
+# ACP 工具（codex / claude-code / gemini-cli / aider …）：每个 agent 是该工具里的一个会话，同一工具可以有任意多个
 uv run scripts/cli.py agents create --name "Codex Reviewer" --platform codex \
-  --data '{"global_name": "codex_reviewer", "persona": "critical"}'
+  --data '{"agent_id": "codex-reviewer", "persona": "critical"}'
 
 # 任意 OpenAI 兼容 HTTP 服务
 uv run scripts/cli.py agents create --name "My Service" --platform my_service \
-  --data '{"global_name": "my_service", "api_url": "http://127.0.0.1:8080/v1", "model": "gpt-4o"}'
+  --data '{"agent_id": "my-service", "api_url": "http://127.0.0.1:8080/v1", "model": "gpt-4o"}'
 ```
 
-同一个运行时（同一个 WeBot 会话 / 同一个平台 + global_name）只能登记一个 agent；重复登记会返回已有的那个（HTTP 409）。
+同一个编号只能建一次；重复会返回已有的那个（HTTP 409）。也可以不建，直接给新编号发信息（`agents ask --agent <新编号>`），会按 WeBot 新建。
 
 ### 4.2 查看、修改、控制、删除
 
 ```bash
 uv run scripts/cli.py agents list [--status]
-uv run scripts/cli.py agents show   --agent alice/coder
+uv run scripts/cli.py agents show   --agent coder
 uv run scripts/cli.py agents update --agent coder --name "Coder" --data '{"settings": {"persona": "coder"}}'
 uv run scripts/cli.py agents ask    --agent coder --message "你好"
+uv run scripts/cli.py agents inbox  --agent coder --message "空了看一下"   # 放进收件箱
 uv run scripts/cli.py agents status --agent coder     # 同样适用于 cancel / reset
 uv run scripts/cli.py agents delete --agent coder     # 同时退出所有 team 和群聊
 ```
@@ -78,7 +79,7 @@ uv run scripts/cli.py teams set-lead      --team-name demo_team --agent coder
 uv run scripts/cli.py teams remove-member --team-name demo_team --agent coder   # agent 本身保留
 ```
 
-`--role` 是成员在这个 team 里的名字：工作流里的 `agent: <角色名>`、团队群里的显示名、定时任务的目标都用它。省略时用 agent 名称。
+`--role` 是成员在这个 team 里的名字：`demo_team.Coder` 就能找到它，team 模式的工作流里写 `agent: Coder`。省略时用 agent 名称。
 
 ### 4.4 OpenClaw agent
 
@@ -90,8 +91,9 @@ uv run scripts/cli.py openclaw sessions
 uv run scripts/cli.py openclaw add --data '{"name": "demo_team_researcher", "workspace": "~/.openclaw/workspace-demo_team_researcher"}'
 
 # 2. 登记为 ClawCross agent，并加入 team
+# global_name 指明是哪一个 OpenClaw agent
 uv run scripts/cli.py agents create --name "Researcher" --platform openclaw \
-  --data '{"global_name": "demo_team_researcher", "persona": "analyst", "team": "demo_team"}'
+  --data '{"agent_id": "researcher", "global_name": "demo_team_researcher", "persona": "analyst", "team": "demo_team"}'
 uv run scripts/cli.py teams add-member --team-name demo_team --agent researcher --role "Researcher"
 
 # 3.（可选）把 OpenClaw 工作区配置存进 team，便于导出 / 迁移
@@ -122,7 +124,8 @@ uv run scripts/cli.py openclaw-snapshot export --team demo_team --agent-name dem
 ```
 
 - `name` = 角色名，`tag` = 人设，`is_primary` = lead（至多一条）
-- 不写 `session` / `global_name` 时，导入会新建 agent；写了则引用本机已有的那个运行时
+- `session`（内部）/ `global_name`（外部）是本机的 agent 编号；OpenClaw 条目的 `global_name` 是 OpenClaw agent 名
+- team 里已有同名成员就是那个成员；条目指向已有编号就用那个 agent；否则新建
 
 导入：
 ```bash
@@ -180,14 +183,15 @@ edges:
 ```bash
 uv run scripts/cli.py teams create --team-name demo_team
 
-uv run scripts/cli.py agents create --name "Coordinator" --data '{"persona": "synthesis", "team": "demo_team"}'
+uv run scripts/cli.py agents create --name "Coordinator" --data '{"agent_id": "coordinator", "persona": "synthesis", "team": "demo_team"}'
 uv run scripts/cli.py agents create --name "Codex Reviewer" --platform codex \
-  --data '{"global_name": "codex_reviewer", "persona": "critical", "team": "demo_team"}'
+  --data '{"agent_id": "codex-reviewer", "persona": "critical", "team": "demo_team"}'
 
 uv run scripts/cli.py teams add-member --team-name demo_team --agent coordinator --lead
 uv run scripts/cli.py teams add-member --team-name demo_team --agent codex-reviewer
 
 uv run scripts/cli.py teams members --team-name demo_team
+uv run scripts/cli.py agents ask --agent demo_team.Coordinator --message "你好"
 uv run scripts/cli.py cron new --team demo_team --agent coordinator --cron "0 9 * * 1" --text "整理本周进展"
 ```
 

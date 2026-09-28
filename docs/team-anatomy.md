@@ -41,7 +41,7 @@ paper-review-council/
         └── runtime_config.example.json
 ```
 
-The team's **members are not files**. They are agents registered in ClawCross (`<DATA_DIR>/clawcross.db`), and the team records which agents belong to it, under which role name, and which one leads. See §3.
+The team's **members** are agents from ClawCross's table of agents (`<DATA_DIR>/agents.db`); the team folder's `members.json` records which agents belong to it, under which name, and which one leads. See §3.
 
 The minimum to be a usable team is: members + `oasis_experts.json` + at least one workflow under `oasis/yaml/` or `oasis/python/`.
 
@@ -51,19 +51,19 @@ Cron / alarm storage is **not** in the team folder either — tasks live in `<DA
 
 ## 3. Members — agents with a role
 
-Every agent on the machine — WeBot, Codex, Claude Code, Gemini, OpenClaw, any OpenAI-compatible HTTP service — is one kind of thing: an `ag_…` id, a name, a platform and its settings (the persona `tag` it wears, and for other platforms the runtime name `global_name`, `api_url`, `model`, …). Its address is `<user>/<handle>`, e.g. `default/search-commander`.
+Every agent on the machine — WeBot, Codex, Claude Code, Gemini, OpenClaw, any OpenAI-compatible HTTP service — is one kind of thing: a session, known by its number (the agent id), with a name, a platform and its settings. See [`architecture.md`](./architecture.md).
 
-A team **composes** agents; it does not own them. Each membership has:
+A team is a **namespace**: it gathers agents, personas, skills, cron and workflows in one folder; it does not own the agents. Each membership (in `members.json`) has:
 
 | Field | Meaning |
 |---|---|
-| role | the member's name in this team — used by `agent: <role>` in workflows, by `@` in the team's group chat, and as a cron target |
-| lead | at most one member: speaks for the team (`POST /v1/teams/<team>/messages`, or `model: "<user>/<team>"` on the OpenAI-compatible API) and is the primary agent of the team's group chat |
+| name | the member's name in this team — `<team>.<name>` reaches it wherever an agent id is accepted, and `agent: <name>` names it in a team workflow |
+| lead | at most one member, marked in the package format as `is_primary` |
 
 One agent can be a member of several teams under different role names. Removing a member leaves the agent in place. Deleting a team from the UI or `clawcross team delete` also deletes the member agents that belong to no other team (`DELETE /v1/teams/<team>` removes only the team).
 
 ```bash
-clawcross team "paper-review-council" members        # role, platform, address of each member
+clawcross team "paper-review-council" members        # name, platform, agent id of each member
 curl -s localhost:51200/v1/teams/paper-review-council -H "Authorization: Bearer <user>:<password>"
 ```
 
@@ -89,10 +89,11 @@ A team *package* — a preset, a snapshot zip, or a folder written by hand or by
 ```
 
 - `name` — the role name; `tag` — the persona the agent wears; `is_primary` — the lead.
-- `platform` — `codex` / `claude-code` / `gemini-cli` / `openclaw` / any HTTP service name; `global_name` — the agent's name on that platform; `meta` — `api_url`, `model`, `headers` (never an `api_key` in a package).
-- An entry **without** `session` (internal) / with a `global_name` not yet registered (external) creates a new agent. An internal entry naming an existing `session` joins that existing WeBot agent.
+- `platform` — `codex` / `claude-code` / `gemini-cli` / `openclaw` / any HTTP service name; `meta` — `api_url`, `model`, `headers` (never an `api_key` in a package).
+- `session` (internal) and `global_name` (external) are the agent's id on this machine; for OpenClaw, `global_name` is which OpenClaw agent.
+- An entry whose name is already a member of the team is that member; one naming an existing agent id is that agent; any other entry creates a new agent.
 
-Importing (`clawcross team import "<team>"`, `POST /v1/teams/<team>/import`, installing a preset, uploading a snapshot) turns the entries into agents and memberships and removes the two files from the team folder. Exporting a snapshot writes them again in the same shape, leaving out this machine's `session` / `global_name` and any secrets so that importing elsewhere creates fresh agents.
+Importing (`clawcross team import "<team>"`, `POST /v1/teams/<team>/import`, installing a preset, uploading a snapshot) turns the entries into agents and memberships and removes the two files from the team folder. Exporting a snapshot writes them again in the same shape, leaving out this machine's agent ids and any secrets so that importing elsewhere creates fresh agents.
 
 ---
 
@@ -252,7 +253,7 @@ async def main(ctx: Context):
 |---|---|
 | `await ctx.publish(content, author="…")` | Push a message to the user-visible topic. Use this for progress updates and final reports. |
 | `await ctx.send_persona(tag, prompt)` | Invoke a persona by `tag`. Returns a result object with `.content`, `.ok`, `.error`. |
-| `await ctx.send_agent(target, prompt, ...)` | Ask a team member (role name) or any of your agents (handle, address or `ag_…` id). |
+| `await ctx.send_agent(target, prompt, ...)` | Ask a team member (its name in the team) or any of your agents (its id, or `<team>.<name>`). |
 | `await ctx.create_empty_topic(question=...)` | Start a fresh topic (only needed when `auto_topic=False`). |
 | `await ctx.publish_to_topic(topic_id=..., author=..., content=...)` | Direct topic write. |
 | `await ctx.conclude_topic(topic_id=..., conclusion=...)` | Close a topic. |

@@ -3,12 +3,16 @@
 This is the only place that reads or writes them. They exist in a team package
 (a preset, a snapshot zip, a folder team-builder just wrote); importing turns
 their entries into agents and memberships, and the files are then removed from
-the team folder. Exporting writes them again, byte-for-byte in the old shape.
+the team folder. Exporting writes them again in the same shape.
 
-    internal entry: {"name", "tag", "session"?, "is_primary"?, …}
+    internal entry: {"name", "tag", "session"?, "is_primary"?, …}  — ``session`` is the agent's id
     external entry: {"name", "tag", "platform", "global_name", "meta": {api_url, api_key, model, headers, …},
-                     "is_primary"?}  — an OpenClaw entry may also carry the agent's snapshot
+                     "is_primary"?}  — ``global_name`` is the agent's id, or for OpenClaw which
+                     OpenClaw agent; an OpenClaw entry may also carry that agent's snapshot
                      ("config", "workspace_files"), kept with the membership and exported as is
+
+An entry whose name is already a member of the team is that member; one that
+names an agent of this owner is that agent; any other becomes a new agent.
 """
 
 from __future__ import annotations
@@ -17,7 +21,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from agents.store import WEBOT, Agent, canonical_platform, driver_for_platform, new_webot_session
+from agents.store import OPENCLAW, WEBOT, Agent, canonical_platform, driver_for_platform, valid_agent_id
 from teams.store import Member, TeamStore
 
 INTERNAL_FILE = "internal_agents.json"
@@ -45,47 +49,50 @@ def _is_lead(entry: dict) -> bool:
     return bool(entry.get("is_primary") or meta.get("is_primary"))
 
 
+def _member(teams: TeamStore, owner: str, team: str, entry: dict) -> Agent | None:
+    try:
+        return teams.member(owner, team, str(entry["name"]).strip()).agent
+    except LookupError:
+        return None
+
+
 def agent_for_internal_entry(teams: TeamStore, owner: str, team: str, entry: dict) -> Agent:
     session = str(entry.get("session") or entry.get("session_id") or "").strip()
-    if session:
-        found = teams.agents.find(owner, WEBOT, {"session": session})
-        if found is not None:
-            return found
-    config: dict[str, Any] = {
-        "session": session or new_webot_session(),
-        "persona": str(entry.get("tag") or "").strip(),
-        "team": team,
-    }
+    found = _member(teams, owner, team, entry) or (teams.agents.get(owner, session) if session else None)
+    if found is not None:
+        return found
+    config: dict[str, Any] = {"persona": str(entry.get("tag") or "").strip(), "team": team}
     if entry.get("tools") is not None:
         config["tools"] = entry["tools"]
-    return teams.agents.create(owner, name=str(entry["name"]).strip(), driver=WEBOT, config=config)
+    return teams.agents.create(owner, driver=WEBOT, config=config, name=str(entry["name"]).strip(),
+                               agent_id=session if valid_agent_id(session) else "")
 
 
 def agent_for_external_entry(teams: TeamStore, owner: str, team: str, entry: dict) -> Agent:
     platform = canonical_platform(str(entry.get("platform") or entry.get("tag") or ""))
     driver = driver_for_platform(platform)
+    ref = str(entry.get("global_name") or "").strip()
     meta = entry.get("meta") or {}
     meta = dict(meta) if isinstance(meta, dict) else {}
     config: dict[str, Any] = {
         "platform": platform,
-        "global_name": str(entry.get("global_name") or "").strip(),
         "persona": str(entry.get("tag") or "").strip(),
         "team": team,
         **{key: meta.pop(key) for key in _EXTERNAL_CONFIG if key in meta},
         "meta": meta,
     }
-    found = teams.agents.find(owner, driver, config)
+    if driver == OPENCLAW:
+        config["global_name"] = ref
+    found = _member(teams, owner, team, entry) or (teams.agents.get(owner, ref) if ref and driver != OPENCLAW else None)
     if found is not None:
-        return teams.agents.update(found.agent_id, config={**found.config, **config, "team": found.config.get("team") or team})
-    return teams.agents.create(owner, name=str(entry["name"]).strip(), driver=driver, config=config)
+        return teams.agents.update(owner, found.agent_id, config={**found.config, **config})
+    return teams.agents.create(owner, driver=driver, config=config, name=str(entry["name"]).strip())
 
 
 def import_entries(teams: TeamStore, owner: str, team: str, internal: list[dict], external: list[dict]) -> list[Member]:
     """Make the team's membership exactly what the entries say.
 
-    An entry that names a runtime this owner's agent already uses (``session`` /
-    ``global_name``) is that agent; any other entry becomes a new agent. Members
-    the entries no longer list leave the team; their agents stay.
+    Members the entries no longer list leave the team; their agents stay.
     """
     teams.create(owner, team)
     wanted: list[tuple[Agent, dict, dict]] = []
@@ -93,8 +100,6 @@ def import_entries(teams: TeamStore, owner: str, team: str, internal: list[dict]
         extra = {k: v for k, v in entry.items() if k not in _INTERNAL_KEYS}
         wanted.append((agent_for_internal_entry(teams, owner, team, entry), entry, extra))
     for entry in external:
-        if not str(entry.get("global_name") or "").strip():
-            raise ValueError(f"external agent {entry.get('name')!r} has no global_name")
         extra = {k: v for k, v in entry.items() if k not in _EXTERNAL_KEYS}
         wanted.append((agent_for_external_entry(teams, owner, team, entry), entry, extra))
 
@@ -118,8 +123,8 @@ def import_folder(teams: TeamStore, owner: str, team: str) -> list[Member]:
 
 
 def export_entries(teams: TeamStore, owner: str, team: str, *, portable: bool) -> tuple[list[dict], list[dict]]:
-    """The team as manifest entries. ``portable`` leaves out this machine's runtimes
-    (``session`` / ``global_name``) and secrets, so importing creates new agents."""
+    """The team as manifest entries. ``portable`` leaves out this machine's agent ids
+    and secrets, so importing elsewhere creates new agents."""
     internal: list[dict] = []
     external: list[dict] = []
     for m in teams.members(owner, team):
@@ -131,7 +136,7 @@ def export_entries(teams: TeamStore, owner: str, team: str, *, portable: bool) -
             if m.is_lead:
                 entry["is_primary"] = True
             if not portable:
-                entry["session"] = config.get("session", "")
+                entry["session"] = m.agent.agent_id
             internal.append(entry)
             continue
         meta = dict(config.get("meta") or {})
@@ -142,7 +147,7 @@ def export_entries(teams: TeamStore, owner: str, team: str, *, portable: bool) -
             meta.pop("api_key", None)
         entry = {"name": m.role, "tag": config.get("persona", ""), "platform": config.get("platform", ""), **m.extra}
         if not portable:
-            entry["global_name"] = config.get("global_name", "")
+            entry["global_name"] = config.get("global_name", "") if m.agent.driver == OPENCLAW else m.agent.agent_id
         entry["meta"] = meta
         if m.is_lead:
             entry["is_primary"] = True

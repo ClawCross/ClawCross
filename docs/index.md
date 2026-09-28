@@ -26,7 +26,7 @@ If you are an agent, do **not** load everything by default. Start with `AGENTS.m
 | Understand the platform | [`overview.md`](./overview.md) | [`../README.md`](../README.md) |
 | Understand WeBot agent runtime, subagents, delegated tool boundaries, runtime policy hooks, or the subagent panel | [`webot-agent-runtime.md`](./webot-agent-runtime.md) | [`runtime-reference.md`](./runtime-reference.md), [`repo-index.md`](./repo-index.md) |
 | Configure context compaction, inspect approval bugs, or enable independent automatic review | [`compact-approval-audit.md`](./compact-approval-audit.md) | [`webot-agent-runtime.md`](./webot-agent-runtime.md) |
-| Understand Agent identity, flat runtime views, persona injection, frontend quick personas, streaming, or cancellation semantics | [`agent-runtime-and-persona.md`](./agent-runtime-and-persona.md) | [`runtime-reference.md`](./runtime-reference.md), [`team-anatomy.md`](./team-anatomy.md), [`repo-index.md`](./repo-index.md) |
+| Understand what an agent is (its number, the ways in), and how group chat, workflows and teams compose agents | [`architecture.md`](./architecture.md) | [`runtime-reference.md`](./runtime-reference.md), [`team-anatomy.md`](./team-anatomy.md), [`repo-index.md`](./repo-index.md) |
 | Compare WeBot with Claude Code and inspect the runtime feature matrix that drives parity work | [`webot-claude-gap-analysis.md`](./webot-claude-gap-analysis.md) | [`webot-agent-runtime.md`](./webot-agent-runtime.md), [`repo-index.md`](./repo-index.md) |
 | Build a Team from a task description or discovered SOP pages | [`team-creator.md`](./team-creator.md) | [`build_team.md`](./build_team.md), [`example_team.md`](./example_team.md), [`team-anatomy.md`](./team-anatomy.md) |
 | Understand what a running Team is on disk (file layout, schemas, cross-file bindings) | [`team-anatomy.md`](./team-anatomy.md) | [`example_team.md`](./example_team.md), [`create_workflow.md`](./create_workflow.md) |
@@ -72,7 +72,7 @@ If you are an agent, do **not** load everything by default. Start with `AGENTS.m
 
 ### Maintainer / Developer Docs
 
-- [`agent-runtime-and-persona.md`](./agent-runtime-and-persona.md): Team-as-source constraints, flat Agent runtime views, stream/cancel semantics, and formal versus quick-prompt personas
+- [`architecture.md`](./architecture.md): agents by number (one table, /v1 · system trigger · inbox), and the compositions on top (group chat, workflows, teams)
 - [`runtime-reference.md`](./runtime-reference.md): runtime architecture, API surface, and the WeBot control-plane map
 - [`repo-index.md`](./repo-index.md): where code and data live
 
