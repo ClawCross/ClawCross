@@ -56,6 +56,7 @@ def parse_tool_docstring(doc: str | None) -> ToolDoc:
     in_args = False
     in_returns = False
     args_indent = 0
+    entry_indent = 1 << 30  # indent of the current Args: block's entries, once one is seen
 
     for line in lines:
         stripped = line.strip()

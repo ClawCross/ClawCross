@@ -115,13 +115,6 @@ from oasis.python_workflow import PythonWorkflowEngine, resolve_python_workflow_
 from oasis.experts import _apply_response
 from services.llm_factory import create_chat_model, extract_text
 from oasis.swarm_engine import build_pending_swarm, generate_swarm_blueprint
-from oasis.openclaw_cli import (
-    build_agent_detail as _build_agent_detail_helper,
-    fetch_openclaw_channels as _fetch_openclaw_channels_helper,
-    fetch_openclaw_full_config as _fetch_openclaw_full_config_helper,
-    get_openclaw_default_workspace as _get_openclaw_default_workspace_helper,
-    get_openclaw_workspace_path as _get_openclaw_workspace_path_helper,
-)
 
 # Ensure src/ is importable for helper reuse
 _src_path = os.path.join(_project_root, "src")
@@ -211,17 +204,6 @@ def _preload_openclaw_skills():
         print("[OASIS] ⚠️ openclaw skills list command timed out")
     except Exception as e:
         print(f"[OASIS] ⚠️ Failed to preload skills: {e}")
-
-
-def _get_complete_skills_info():
-    """Get complete skills information combining all three sources."""
-    return {
-        "workspace_dir": _get_openclaw_workspace_path(),
-        "managed_skills_dir": _openclaw_managed_skills_dir,
-        "bundled_skills": _openclaw_bundled_skills,
-        "total_skills_count": len(_openclaw_bundled_skills) if _openclaw_bundled_skills else 0,
-        "preloaded_at_startup": bool(_openclaw_skills_cache)
-    }
 
 
 def _check_owner(forum: DiscussionForum, user_id: str):
