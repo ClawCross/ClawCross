@@ -18,6 +18,12 @@ from agents.messages import decode_text_attachment as _try_decode_base64_text, i
 from utils.logging_utils import get_logger
 from services.message_builder import build_human_message
 from api.system_models import SystemTriggerRequest
+from webot.runtime_store import (
+    create_inbox_message,
+    list_inbox_messages,
+    list_queued_inbox_targets,
+    mark_inbox_delivered,
+)
 
 logger = get_logger("system_service")
 # 默认 500 步上限；可用 env GRAPH_RECURSION_LIMIT 覆盖。与 openai_service 保持一致。
@@ -44,6 +50,9 @@ class SystemService:
         self._coalesce_lock = asyncio.Lock()
         self._coalesce_queues: dict[str, list[_QueuedSystemTrigger]] = {}
         self._coalesce_tasks: dict[str, asyncio.Task] = {}
+        self._inbox_guard = asyncio.Lock()
+        self._inbox_tasks: dict[str, asyncio.Task] = {}
+        self._inbox_waiters: dict[str, tuple[str, asyncio.Future[dict[str, Any]]]] = {}
 
     @staticmethod
     def _thread_id(req: SystemTriggerRequest) -> str:
@@ -197,13 +206,12 @@ class SystemService:
             "session_id": req.session_id,
             "max_turns": None,
             "turn_count": 0,
+            "response_format": req.response_format,
         }
         # Per-request session_mode override; agent.py prefers this over the stored mode.
         mode = (req.session_mode or "").strip().lower()
         if mode:
             state["session_mode"] = mode
-        if req.response_format:
-            state["response_format"] = req.response_format
         return state
 
     async def _invoke_system_message_locked(
@@ -214,7 +222,7 @@ class SystemService:
         thread_id: str,
         config: dict[str, Any],
         batch_count: int,
-    ) -> None:
+    ) -> bool:
         task_key = thread_id
         system_input = self._build_system_input(req, human_msg)
         # 与用户 openai 流式任务共用 task_key：必须在持有锁后才 register，
@@ -227,6 +235,7 @@ class SystemService:
                 pass
             self.agent.add_pending_system_message(thread_id)
             logger.info("Done for %s (%s system trigger(s))", thread_id, batch_count)
+            return True
         except asyncio.CancelledError:
             logger.info("Cancelled for %s", thread_id)
             try:
@@ -245,6 +254,7 @@ class SystemService:
             self.agent.clear_thread_busy_source(thread_id)
             await self.agent.purge_checkpoints(thread_id)
             self.agent.unregister_task(task_key)
+        return False
 
     @staticmethod
     def _reply_text(messages: list[Any]) -> str:
@@ -363,9 +373,111 @@ class SystemService:
                 )
         return queued_count
 
+    def _ensure_inbox_worker(self, user_id: str, session_id: str) -> None:
+        """Called under _inbox_guard; the worker waits for the session lock."""
+        thread_id = f"{user_id}#{session_id}"
+        task = self._inbox_tasks.get(thread_id)
+        if task is None or task.done():
+            self._inbox_tasks[thread_id] = asyncio.create_task(
+                self._run_inbox_worker(user_id, session_id)
+            )
+
+    async def _run_inbox_worker(self, user_id: str, session_id: str) -> None:
+        thread_id = f"{user_id}#{session_id}"
+        config = {"configurable": {"thread_id": thread_id}, "recursion_limit": _GRAPH_RECURSION_LIMIT}
+        completed = True
+        try:
+            lock = await self.agent.get_thread_lock(thread_id)
+            async with lock:
+                while True:
+                    items = list_inbox_messages(
+                        user_id, session_id, status="queued", limit=50, oldest_first=True,
+                    )
+                    if not items:
+                        break
+                    for item in items:
+                        source_user = item.metadata.get("source_user") or user_id
+                        sender = item.source_label or item.source_session
+                        body = item.content
+                        if not item.metadata.get("preformatted"):
+                            body = f"[来自 {source_user}#{sender} 的消息]\n{body}"
+                        if item.metadata.get("wait_reply"):
+                            body += "\n（对方正在等你的回复：直接用文字回答即可。）"
+                        req = SystemTriggerRequest(user_id=user_id, session_id=session_id, text=body)
+                        ok = await self._invoke_system_message_locked(
+                            req=req, human_msg=HumanMessage(content=body),
+                            thread_id=thread_id, config=config, batch_count=1,
+                        )
+                        if not ok:
+                            completed = False
+                            pending = self._inbox_waiters.pop(item.message_id, None)
+                            if pending and not pending[1].done():
+                                pending[1].set_result({"status": "queued", "message_id": item.message_id})
+                            return
+                        snapshot = await self.agent.agent_app.aget_state(config)
+                        reply = self._reply_text(list((snapshot.values or {}).get("messages", [])))
+                        mark_inbox_delivered(user_id, [item.message_id])
+                        pending = self._inbox_waiters.pop(item.message_id, None)
+                        if pending and not pending[1].done():
+                            pending[1].set_result({"status": "completed", "message_id": item.message_id, "reply": reply})
+        except asyncio.CancelledError:
+            completed = False
+            raise
+        except Exception:
+            completed = False
+            logger.exception("Inbox delivery failed for %s", thread_id)
+        finally:
+            async with self._inbox_guard:
+                if self._inbox_tasks.get(thread_id) is asyncio.current_task():
+                    self._inbox_tasks.pop(thread_id, None)
+                if not completed:
+                    for message_id, (target, waiter) in list(self._inbox_waiters.items()):
+                        if target == thread_id:
+                            self._inbox_waiters.pop(message_id, None)
+                            if not waiter.done():
+                                waiter.set_result({"status": "queued", "message_id": message_id})
+                # An entry may have arrived just as this worker found the queue
+                # empty. Recheck under the same guard used by enqueue.
+                if completed and list_inbox_messages(user_id, session_id, status="queued", limit=1):
+                    self._ensure_inbox_worker(user_id, session_id)
+
+    async def resume_queued_inbox(self) -> None:
+        """Resume durable deliveries left queued when the process stopped."""
+        async with self._inbox_guard:
+            for user_id, session_id in list_queued_inbox_targets():
+                self._ensure_inbox_worker(user_id, session_id)
+
     async def system_trigger(self, req: SystemTriggerRequest, x_internal_token: str | None):
         self.verify_internal_token(x_internal_token)
         thread_id = self._thread_id(req)
+
+        if req.inbox_source_session:
+            async with self._inbox_guard:
+                record = create_inbox_message(
+                    req.user_id,
+                    source_session=req.inbox_source_session,
+                    target_session=req.session_id,
+                    content=req.text,
+                    source_label=req.inbox_source_label,
+                    metadata={
+                        "source_user": req.inbox_source_user or req.user_id,
+                        "preformatted": True,
+                        "wait_reply": req.wait_reply,
+                    },
+                )
+                waiter = None
+                if req.wait_reply:
+                    waiter = asyncio.get_running_loop().create_future()
+                    self._inbox_waiters[record.message_id] = (thread_id, waiter)
+                self._ensure_inbox_worker(req.user_id, req.session_id)
+            if waiter is not None:
+                return await asyncio.shield(waiter)
+            return {"status": "queued", "message_id": record.message_id}
+
+        if req.drain_inbox:
+            async with self._inbox_guard:
+                self._ensure_inbox_worker(req.user_id, req.session_id)
+            return {"status": "queued", "message": "Inbox delivery scheduled"}
 
         human_msg = self._build_message_from_trigger(req)
         logger.info("system_trigger for %s, has_attachments=%s, content_type=%s",

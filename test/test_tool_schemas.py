@@ -34,6 +34,7 @@ from core.agent import (
 )
 from core.tool_schema import (
     StrictSchemaError,
+    decode_structured_final,
     drop_null_optionals,
     forced_tool_choice_supported,
     reply_format_binding,
@@ -432,6 +433,109 @@ class ReplyFormats(unittest.TestCase):
         kwargs, hint = reply_format_binding(ChatAnthropic(model="claude-sonnet-5", api_key="test"), self.FORMAT)
         self.assertEqual(kwargs, {})
         self.assertIn('"content"', hint)
+
+
+class StructuredFinalDecoding(unittest.IsolatedAsyncioTestCase):
+    FORMAT = ReplyFormats.FORMAT
+
+    async def test_openai_final_uses_strict_response_format(self):
+        class Model:
+            def bind(self, **kwargs):
+                self.kwargs = kwargs
+                return self
+
+            async def ainvoke(self, messages, config=None):
+                self.messages = messages
+                return AIMessage(content='{"content":"finished"}')
+
+        model = Model()
+        with patch("core.tool_schema._model_classes", return_value={"BaseChatOpenAI"}):
+            result = await decode_structured_final(model, self.FORMAT, [HumanMessage(content="draft")])
+        self.assertEqual(json.loads(result.content), {"content": "finished"})
+        self.assertTrue(model.kwargs["response_format"]["json_schema"]["strict"])
+        self.assertFalse(model.kwargs["response_format"]["json_schema"]["schema"]["additionalProperties"])
+
+    async def test_optional_null_is_removed_from_final_text(self):
+        class Model:
+            def bind(self, **kwargs):
+                return self
+
+            async def ainvoke(self, messages, config=None):
+                return AIMessage(content='{"content":"done","note":null}')
+
+        requested = {"type": "json_schema", "json_schema": {"name": "Reply", "schema": {
+            "type": "object", "properties": {
+                "content": {"type": "string"}, "note": {"type": "string"},
+            }, "required": ["content"], "additionalProperties": False,
+        }}}
+        with patch("core.tool_schema._model_classes", return_value={"BaseChatOpenAI"}):
+            result = await decode_structured_final(Model(), requested, [HumanMessage(content="draft")])
+        self.assertEqual(json.loads(result.content), {"content": "done"})
+
+    async def test_deepseek_requires_the_constrained_final_tool(self):
+        class Model:
+            def bind_tools(self, tools, **kwargs):
+                self.tools = tools
+                self.kwargs = kwargs
+                return self
+
+            async def ainvoke(self, messages, config=None):
+                return AIMessage(content="unconstrained text")
+
+        model = Model()
+        with patch("core.tool_schema._model_classes", return_value={"ChatDeepSeek"}), patch(
+            "core.tool_schema.strict_tool_binding", return_value=(model, True, {"strict": True})
+        ):
+            with self.assertRaisesRegex(RuntimeError, "schema-constrained"):
+                await decode_structured_final(model, self.FORMAT, [HumanMessage(content="draft")])
+        self.assertTrue(model.tools[0]["function"]["strict"])
+
+    async def test_deepseek_final_tool_arguments_become_text(self):
+        class Model:
+            def bind_tools(self, tools, **kwargs):
+                return self
+
+            async def ainvoke(self, messages, config=None):
+                return AIMessage(content="", tool_calls=[{
+                    "name": "emit_final_reply", "args": {"content": "done"}, "id": "final-1",
+                }])
+
+        model = Model()
+        with patch("core.tool_schema._model_classes", return_value={"ChatDeepSeek"}), patch(
+            "core.tool_schema.strict_tool_binding", return_value=(model, True, {"strict": True})
+        ):
+            result = await decode_structured_final(model, self.FORMAT, [HumanMessage(content="draft")])
+        self.assertEqual(json.loads(result.content), {"content": "done"})
+
+    async def test_other_provider_uses_native_structured_output(self):
+        class Model:
+            def with_structured_output(self, schema, method=None, include_raw=False):
+                self.schema = schema
+                self.method = method
+                self.include_raw = include_raw
+                return self
+
+            async def ainvoke(self, messages, config=None):
+                return {"parsed": {"content": "finished"}, "raw": AIMessage(content=""), "parsing_error": None}
+
+        model = Model()
+        with patch("core.tool_schema._model_classes", return_value={"ChatAnthropic"}):
+            result = await decode_structured_final(model, self.FORMAT, [HumanMessage(content="draft")])
+        self.assertEqual(json.loads(result.content), {"content": "finished"})
+        self.assertTrue(model.include_raw)
+        self.assertEqual(model.method, "json_schema")
+
+    async def test_anthropic_and_gemini_accept_the_named_schema_offline(self):
+        from langchain_anthropic import ChatAnthropic
+        from langchain_google_genai import ChatGoogleGenerativeAI
+
+        schema = {**to_strict_parameters(self.FORMAT["json_schema"]["schema"]), "title": "Reply"}
+        for model in (
+            ChatAnthropic(model="claude-sonnet-4-5", api_key="test"),
+            ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key="test"),
+        ):
+            with self.subTest(provider=type(model).__name__):
+                self.assertIsNotNone(model.with_structured_output(schema, method="json_schema", include_raw=True))
 
 
 class StrictCallsRunOnTheRealServer(unittest.IsolatedAsyncioTestCase):

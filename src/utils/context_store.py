@@ -29,6 +29,14 @@ CREATE TABLE IF NOT EXISTS context_messages (
 )
 """
 
+_CREATE_SYSTEM_PROMPTS = """
+CREATE TABLE IF NOT EXISTS session_system_prompts (
+    thread_id TEXT PRIMARY KEY,
+    prompt TEXT NOT NULL,
+    created_at TEXT NOT NULL
+)
+"""
+
 
 def _encode_message(message: BaseMessage) -> str:
     payload = messages_to_dict([message])[0]
@@ -63,7 +71,7 @@ def _messages_from_langgraph_checkpoint(row: tuple[Any, Any] | None) -> list[Bas
 
 
 class ContextStore:
-    """Store only conversation messages; runtime state belongs outside this class."""
+    """Store conversation messages and each session's immutable system prompt."""
 
     def __init__(self, checkpoint_dir: str | Path) -> None:
         self.checkpoint_dir = Path(checkpoint_dir)
@@ -167,6 +175,42 @@ class ContextStore:
                 await self.append_messages(thread_id, legacy_messages)
                 return legacy_messages
         return []
+
+    async def get_system_prompt(self, thread_id: str) -> str | None:
+        """Return the prompt fixed at the first model call for this thread."""
+        path = checkpoint_db_path_for_thread(thread_id, self.checkpoint_dir)
+        if not path.exists():
+            return None
+        db = await self._connection_for(path)
+        try:
+            row = await (await db.execute(
+                "SELECT prompt FROM session_system_prompts WHERE thread_id = ?",
+                (thread_id,),
+            )).fetchone()
+        except sqlite3.OperationalError as exc:
+            if "no such table" not in str(exc).lower():
+                raise
+            return None
+        return row[0] if row else None
+
+    async def save_system_prompt_if_absent(self, thread_id: str, prompt: str) -> str:
+        """Persist once; concurrent callers always use the winning prompt."""
+        lock = await self._lock_for(thread_id)
+        async with lock:
+            path = checkpoint_db_path_for_thread(thread_id, self.checkpoint_dir)
+            db = await self._connection_for(path)
+            await db.execute(_CREATE_SYSTEM_PROMPTS)
+            await db.execute(
+                "INSERT OR IGNORE INTO session_system_prompts (thread_id, prompt, created_at) "
+                "VALUES (?, ?, ?)",
+                (thread_id, prompt, datetime.now(timezone.utc).isoformat()),
+            )
+            await db.commit()
+            row = await (await db.execute(
+                "SELECT prompt FROM session_system_prompts WHERE thread_id = ?",
+                (thread_id,),
+            )).fetchone()
+            return row[0]
 
     async def append_messages(
         self,

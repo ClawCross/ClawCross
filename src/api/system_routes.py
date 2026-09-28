@@ -17,10 +17,11 @@ def create_system_router(
     *,
     agent: Any,
     verify_internal_token: Callable[[str | None], None],
+    service: SystemService | None = None,
 ) -> APIRouter:
     """构建系统触发相关路由。"""
     router = APIRouter()
-    service = SystemService(
+    service = service or SystemService(
         agent=agent,
         verify_internal_token=verify_internal_token,
     )

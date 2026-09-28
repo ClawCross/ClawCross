@@ -1638,7 +1638,7 @@ async def send_to_session(
     source_session: str = "",
     timeout: int = 180,
 ) -> str:
-    """给另一个会话发消息。对方正忙时，消息排在它当前这一轮之后处理，不会打断它。
+    """给另一个会话发消息。消息先进入持久化收件箱，对方空闲后立即处理。
     wait=false 发出即返回；wait=true 等对方处理完，把它的回复带回来。
 
     :param target: 目标会话：子 Agent 的 agent_id / session_id / name，或会话 id；wait=false 时 "*" 表示所有子 Agent 与主会话
@@ -1666,8 +1666,6 @@ async def send_to_session(
 
     _, source_label = _source_label(username, source_session_id)
     header = f"[来自 {username}#{source_label} 的消息]"
-    if wait:
-        header += "\n（对方正在等你的回复：直接用文字回答即可，不要再调用发消息工具回复。）"
     text = f"{header}\n{content}"
 
     token = _ensure_internal_token()
@@ -1678,12 +1676,18 @@ async def send_to_session(
                 response = await client.post(
                     _SYSTEM_TRIGGER_URL,
                     headers={"X-Internal-Token": token, "Content-Type": "application/json"},
-                    json={"user_id": to_user, "session_id": session_id, "text": text, "wait_reply": wait},
+                    json={
+                        "user_id": to_user, "session_id": session_id, "text": text,
+                        "wait_reply": wait,
+                        "inbox_source_user": username,
+                        "inbox_source_session": source_session_id,
+                        "inbox_source_label": source_label,
+                    },
                 )
             except httpx.TimeoutException:
                 return (
                     f"⏰ 等待 {to_user}#{session_id} 回复超时（{timeout}s）。"
-                    "消息已投递，对方处理完后回复会留在它的会话里。"
+                    "请求可能已经入箱；请查看目标会话的收件箱和回复。"
                 )
             except httpx.HTTPError as exc:
                 lines.append(f"❌ {to_user}#{session_id}: 投递失败: {exc}")
@@ -1692,9 +1696,11 @@ async def send_to_session(
                 lines.append(f"❌ {to_user}#{session_id}: 投递失败 (HTTP {response.status_code}): {response.text[:300]}")
                 continue
             if wait:
+                if response.json().get("status") != "completed":
+                    return f"⏳ {to_user}#{session_id} 的消息仍在收件箱，当前处理未完成。"
                 reply = str(response.json().get("reply") or "").strip()
                 return f"✅ {to_user}#{session_id} 回复:\n\n{reply or '(对方没有给出文字回复)'}"
-            lines.append(f"✅ 已投递到 {to_user}#{session_id}")
+            lines.append(f"✅ 已入 {to_user}#{session_id} 的收件箱，空闲后处理")
     return "\n".join(lines)
 
 

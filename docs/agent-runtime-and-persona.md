@@ -55,7 +55,7 @@
 
 `AgentGateway`（`gateway.py`）：
 
-- `ask(agent, msg, *, context, mode, tools, response_format, timeout)` —— 发消息并等回复；`response_format` 是 Pydantic 模型，驱动按运行时能力转换（WeBot 走严格 schema 工具，外部 agent 在 prompt 里要求 JSON）；
+- `ask(agent, msg, *, context, mode, tools, response_format, timeout)` —— 发消息并等回复；`response_format` 是 Pydantic 模型，驱动按运行时能力转换（内部 WeBot 在 ReAct 工具阶段结束后单独用 provider 的限制解码生成最终结构化回复；外部 agent 按自身协议处理）；
 - `deliver(agent, msg, *, context, mode)` —— 投进 agent 的收件箱立即返回，agent 通过 `reply_channel` 回到会话（WeBot 用 `send_to_group` 工具，其他平台用 CLI `groups send --agent <地址>`）；
 - `discard(agent)` —— 删除临时 WeBot 会话。
 
