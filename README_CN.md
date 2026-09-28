@@ -16,14 +16,15 @@ Clawcross 把一个单聊机器人变成**可编程的多专家系统**。你创
 
 | 术语 | 含义 |
 |------|------|
-| **Team** | 一组内部 Agent、外部 Agent 和人设的协作组合 |
+| **Agent** | 本机上的任何 agent——WeBot、Codex、Claude Code、Gemini、OpenClaw 或 OpenAI 兼容服务——一套接口（`/v1/agents`） |
+| **Team** | 一组扮演不同角色的 agent（可有一个 lead），加上团队的人设、工作流和技能 |
 | **OASIS** | 可视化工作流引擎，编排多专家讨论（顺序、并行、分支、DAG） |
 | **OASIS Town** | Studio 侧栏的像素小镇可视化，实时观看讨论、查看 swarm 图谱 |
 | **WeBot** | 类 Claude Code 的委托运行时：角色化子 Agent、计划/待办/验证、审批感知工具策略 |
 | **GraphRAG** | 从每次讨论中构建的活知识图谱，本地 SQLite 存储（可选镜像到 Zep） |
 | **Team 预设** | 15 个开箱即用的专家团队——战略分析、内容创作、科技领袖等——一键安装 |
 | **ACP (acpx)** | Agent 客户端协议，用于与外部 AI Agent 通信（OpenClaw、Codex、Claude、Gemini、Aider） |
-| **OpenClaw** | 可集成到 Team 中的外部 Agent 运行时 |
+| **OpenClaw** | 一种 agent 运行时，它的 agent 和其他 agent 一样加入 Team、群聊和工作流 |
 
 ## 产品视频
 
@@ -111,7 +112,7 @@ powershell -ExecutionPolicy Bypass -File .\selfskill\scripts\run.ps1 stop
 
 ### 多专家协作，不只是聊天
 
-- **Team 统一编排** — 将内部 Agent、OpenClaw Agent、外部 API Agent 组合成单一 Team，支持一键导入导出
+- **Team 统一编排** — 把 WeBot、Codex、Claude Code、OpenClaw、API agent 组合成单一 Team，支持一键导入导出
 - **16 个内置 Team 预设** — LLM 顾问团、女娲全明星、内容帝国、战略分析团、科技巨头等——安装即用
 - **自带 AI 团队构建器** — ClawCross Creator 发现 SOP 页面、用 TinyFish 抽取角色，生成可编辑的人设和 DAG 工作流
 - **可视化编排** — 在 OASIS 中设计顺序、并行、分支或 DAG 风格的专家协作工作流

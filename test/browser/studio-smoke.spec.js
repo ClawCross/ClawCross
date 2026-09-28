@@ -1283,6 +1283,9 @@ test('oasis town runtime mounts, draws canvas, and accepts live updates', async 
 
   await page.goto('/studio');
   await expect.poll(() => page.evaluate(() => Boolean(window.OasisTown))).toBe(true);
+  // Page startup ends by syncing the page's own Town (tearing down any other mount): let it finish first.
+  await expect(page.locator('#chat-screen')).toBeVisible();
+  await page.waitForLoadState('networkidle');
 
   const mounted = await page.evaluate(() => {
     const host = document.createElement('div');

@@ -39,7 +39,6 @@ _TOOL_ACCESS_MODES: dict[str, ToolAccessMode] = {
     "get_current_time": ToolAccessMode.READ_ONLY,
     "list_alarms": ToolAccessMode.READ_ONLY,
     "get_notification_status": ToolAccessMode.READ_ONLY,
-    "list_oasis_sessions": ToolAccessMode.READ_ONLY,
     "list_oasis_experts": ToolAccessMode.READ_ONLY,
     "list_oasis_workflows": ToolAccessMode.READ_ONLY,
     "check_oasis_discussion": ToolAccessMode.READ_ONLY,

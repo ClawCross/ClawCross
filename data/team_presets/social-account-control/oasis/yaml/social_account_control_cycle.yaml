@@ -7,21 +7,21 @@ plan:
     author: begin
     content: "请描述你要控制的社交账号目标：平台、受众、发布主题、限制条件和时间窗口。团队会按策略 → 内容 → 设计 → 发布 → 社区 → 风控 → 数据复盘协作。"
 - id: s1
-  expert: strategy#oasis#Strategy Lead
+  agent: Strategy Lead
 - id: s2
-  expert: content#oasis#Content Lead
+  agent: Content Lead
 - id: s3
-  expert: design#oasis#Creative Designer
+  agent: Creative Designer
 - id: s4
-  expert: operator#oasis#Platform Operator
+  agent: Platform Operator
 - id: s5
-  expert: community#oasis#Community Manager
+  agent: Community Manager
 - id: s6
-  expert: risk#oasis#Risk & Compliance
+  agent: "Risk & Compliance"
 - id: s7
-  expert: analytics#oasis#Analytics Lead
+  agent: Analytics Lead
 - id: s8
-  expert: operator#oasis#Platform Operator
+  agent: Platform Operator
 - id: s9
   manual:
     author: bend

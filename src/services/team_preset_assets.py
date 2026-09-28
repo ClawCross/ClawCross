@@ -5,8 +5,8 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from agents.registry import new_webot_session_id
-from utils.runtime_paths import USER_FILES_DIR
+from teams.manifest import import_entries
+from teams.store import TeamStore, get_team_store
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -72,42 +72,23 @@ def install_team_preset(
     user_id: str,
     team_name: str,
     preset_id: str,
-    project_root: Path | None = None,
+    teams: TeamStore | None = None,
 ) -> dict[str, Any]:
     bundle = get_team_preset_bundle(preset_id)
     if bundle is None:
         raise FileNotFoundError(f"Unknown team preset: {preset_id}")
 
-    effective_root = project_root or USER_FILES_DIR
-    team_dir = (
-        effective_root / "data" / "user_files" / user_id / "teams" / team_name
-        if project_root is not None
-        else effective_root / user_id / "teams" / team_name
-    )
-    team_dir.mkdir(parents=True, exist_ok=True)
+    teams = teams or get_team_store()
+    teams.create(user_id, team_name)
+    team_dir = teams.folder(user_id, team_name)
     (team_dir / "oasis" / "yaml").mkdir(parents=True, exist_ok=True)
     (team_dir / "oasis" / "python").mkdir(parents=True, exist_ok=True)
 
-    runtime_agents = []
-    flat_agents = []
-    for entry in bundle["internal_agents"]:
-        if not isinstance(entry, dict):
-            continue
-        meta = {k: v for k, v in entry.items() if k != "session"}
-        runtime_agents.append({"session": new_webot_session_id(), "meta": meta})
-        flat_agents.append(meta)
-
-    internal_agents_path = team_dir / "internal_agents.json"
-    internal_agents_path.write_text(
-        json.dumps(
-            [
-                {**item["meta"], "session": item["session"]}
-                for item in runtime_agents
-            ],
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
+    # Every role becomes a new agent of this user, a member of the team.
+    members = import_entries(
+        teams, user_id, team_name,
+        [{k: v for k, v in entry.items() if k != "session"} for entry in bundle["internal_agents"] if isinstance(entry, dict)],
+        [],
     )
 
     experts_path = team_dir / "oasis_experts.json"
@@ -144,8 +125,8 @@ def install_team_preset(
             elif item.is_file() and item.name != "SKILLS_INDEX.md":
                 shutil.copy2(item, target)
         try:
-            if effective_root.resolve() != PROJECT_ROOT.resolve():
-                raise RuntimeError("skip runtime index rebuild outside project root")
+            if teams.user_files_dir.resolve() != get_team_store().user_files_dir.resolve():
+                raise RuntimeError("skip runtime index rebuild outside the runtime's user files")
             from webot.skills import _rebuild_index
 
             _rebuild_index(user_id, team=team_name)
@@ -170,7 +151,7 @@ def install_team_preset(
     return {
         "team": team_name,
         "preset": bundle["manifest"],
-        "internal_agents": len(flat_agents),
+        "internal_agents": len(members),
         "experts": len(bundle["oasis_experts"]),
         "workflow_files": sorted(bundle["workflows"].keys()),
         "python_workflow_files": sorted(bundle.get("python_workflows", {}).keys()),

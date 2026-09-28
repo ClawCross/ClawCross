@@ -128,7 +128,7 @@ const i18n = {
         agent_center_finished: '已结束',
         agent_center_attention: '异常/待确认',
         agent_center_all: '全部',
-        agent_center_status_hint: 'External Agent 的 Session 在线不等于正在运行。',
+        agent_center_status_hint: '外部运行时的 Session 在线不等于正在运行。',
         agent_center_total: '总数',
         agent_center_running: '运行中',
         agent_center_uncertain: '状态待确认',
@@ -148,7 +148,6 @@ const i18n = {
         agent_center_reset_ok: 'Agent 会话已重置',
         agent_center_reset_failed: '重置 Agent 失败',
         agent_center_delete: '删除 Agent',
-        agent_center_delete_confirm: '永久删除这个 Agent、会话和配置？此操作不可撤销。',
         agent_center_delete_ok: 'Agent 已删除',
         agent_center_delete_failed: '删除 Agent 失败',
         agent_center_load_failed: '加载 Agent 列表失败',
@@ -403,18 +402,29 @@ const i18n = {
         orch_expert_pool_text: '人设池',
         orch_preset_experts: '📚 预设人设',
         orch_custom_experts: '🛠️ 自定义人设',
-        orch_internal_agents: '🤖 Internal Agent',
-        orch_add_internal_agent_title: '新建 Internal Agent',
+        orch_agents_section: '🤖 Agent',
+        orch_agents_empty: '暂无 Agent，点击 ➕ 新建',
+        orch_add_agent_title: '新建 Agent',
+        orch_agent_platform: '平台',
+        orch_agent_runtime_name: '运行时名称（该平台上的会话名）',
+        orch_agent_name_required: '请输入名称',
+        orch_agent_runtime_required: '请输入运行时名称',
+        orch_agent_set_lead: '设为团队主 agent',
+        orch_agent_unset_lead: '取消团队主 agent',
+        orch_agent_remove_from_team: '移出团队',
+        orch_agent_delete: '删除 agent',
+        orch_node_tools: '工具',
+        orch_node_tools_none: '不用工具（轻量）',
+        orch_node_tools_all: '全部工具',
+        orch_node_tools_list: '指定工具',
+        orch_node_tools_hint: '带工具时该人设以临时 WeBot 会话运行，话题结束后清理。',
+        orch_gt_already_member: '已是成员',
         orch_ia_name: 'Agent 名称',
         orch_ia_tag: '标签 (Tag)',
         orch_ia_tag_placeholder: '可拖入专家设置，或手动输入',
-        orch_ia_created: 'Internal Agent 已创建',
+        orch_ia_created: 'Agent 已创建',
         orch_ia_tag_set: 'Tag 已设置为',
 orch_openclaw_sessions: '🦞 OpenClaw',
-        orch_external_agents_section: '2. 外部 Agent',
-        orch_ext_cat_openclaw: '2.1 OpenClaw',
-        orch_ext_openclaw_empty: '暂无 OpenClaw Agent 或未配置',
-        orch_ext_pool_empty: '暂无可拖拽的外部 Agent',
         orch_add_openclaw_title: '新建 OpenClaw Agent',
         orch_openclaw_agent_name: 'Agent 名称',
         orch_openclaw_ws_path: '路径',
@@ -543,9 +553,6 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         orch_settings: '⚙️ 设置',
         orch_repeat: '每轮重复计划',
         orch_rounds: '轮次:',
-        orch_stateful: '有状态模式',
-        orch_node_stateful: '⚡ 有状态模式',
-        orch_node_stateful_hint: '开启后该专家拥有记忆和工具能力（适合复杂任务）',
         orch_threshold: '聚类阈值:',
         orch_ai_gen: '🤖 AI 生成',
         orch_ai_hint: '点击「🤖 AI编排」自动生成 YAML',
@@ -615,11 +622,7 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         orch_modal_content_ph: '注入内容...',
         orch_modal_cancel: '取消',
         orch_modal_save: '保存',
-        orch_modal_select_session: '🎯 选择目标 Agent Session',
-        orch_modal_select_desc: '选择一个已有的对话 Session，或新建一个，生成完成后可跳转继续对话。',
         orch_modal_loading: '⏳ 加载中...',
-        orch_modal_new_session: '新建对话',
-        orch_modal_confirm_gen: '确认并生成',
         orch_modal_select_layout: '📂 选择布局',
         orch_modal_delete: '🗑️ 删除',
         orch_modal_load: '加载',
@@ -643,8 +646,6 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         orch_toast_agent_valid: 'Agent 生成了有效的 YAML! ✅',
         orch_toast_session_updated: 'Session 状态已更新',
         orch_toast_session_fail: '获取状态失败',
-        orch_toast_no_session: '没有选中的 Session',
-        orch_toast_jumped: '已跳转到对话 #{id}',
         orch_toast_custom_added: '自定义人设已添加: {name}',
         orch_toast_fill_info: '请填写完整信息',
         orch_toast_net_error: '网络错误',
@@ -677,8 +678,8 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         export_preview_loading: '正在加载预览...',
         export_preview_desc: '请选择要导出的内容：',
         export_preview_tip: '💡 提示：取消勾选某分类后，该分类下的内容将不会被导出',
-        export_agents: '内部 Agents',
-        export_external_agents: '外部 Agents',
+        export_agents: 'WeBot Agents',
+        export_external_agents: '其他平台 Agents',
         export_personas: '自定义人设',
         export_skills: 'Skills',
         export_managed_skills: '托管 Skills',
@@ -699,12 +700,9 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         orch_status_auth_fail: '认证失败',
         orch_status_agent_unavail: 'Agent 不可用',
         orch_status_conn_error: '❌ 连接错误',
-        orch_goto_chat: '💬 跳转到对话 {session} 继续聊天',
         orch_no_custom: '暂无自定义人设',
         orch_no_session: '暂无 Session',
         orch_load_fail: '❌ 加载失败',
-        orch_load_session_fail: '❌ 加载 Session 列表失败',
-        orch_msg_count: '{count}条消息',
         orch_add_expert_title: '🛠️ 添加自定义人设',
         orch_add_expert_btn: '添加自定义人设',
         orch_label_name: '名称',
@@ -985,7 +983,7 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         agent_center_finished: 'Finished',
         agent_center_attention: 'Attention',
         agent_center_all: 'All',
-        agent_center_status_hint: 'An online External Agent session does not prove that it is running.',
+        agent_center_status_hint: 'An online runtime session does not prove that the agent is running.',
         agent_center_total: 'Total',
         agent_center_running: 'Running',
         agent_center_uncertain: 'Uncertain',
@@ -1005,7 +1003,6 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         agent_center_reset_ok: 'Agent session reset',
         agent_center_reset_failed: 'Failed to reset Agent',
         agent_center_delete: 'Delete Agent',
-        agent_center_delete_confirm: 'Permanently delete this Agent, its session, and configuration? This cannot be undone.',
         agent_center_delete_ok: 'Agent deleted',
         agent_center_delete_failed: 'Failed to delete Agent',
         agent_center_load_failed: 'Failed to load Agent catalog',
@@ -1260,18 +1257,29 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         orch_expert_pool_text: 'Expert Pool',
         orch_preset_experts: '📚 Preset Experts',
         orch_custom_experts: '🛠️ Custom Experts',
-        orch_internal_agents: '🤖 Internal Agents',
-        orch_add_internal_agent_title: 'New Internal Agent',
+        orch_agents_section: '🤖 Agents',
+        orch_agents_empty: 'No agents yet — click ➕ to create one',
+        orch_add_agent_title: 'New Agent',
+        orch_agent_platform: 'Platform',
+        orch_agent_runtime_name: 'Runtime name (the session name on that platform)',
+        orch_agent_name_required: 'Name is required',
+        orch_agent_runtime_required: 'Runtime name is required',
+        orch_agent_set_lead: 'Make team lead',
+        orch_agent_unset_lead: 'Unset team lead',
+        orch_agent_remove_from_team: 'Remove from team',
+        orch_agent_delete: 'Delete agent',
+        orch_node_tools: 'Tools',
+        orch_node_tools_none: 'No tools (light)',
+        orch_node_tools_all: 'All tools',
+        orch_node_tools_list: 'Selected tools',
+        orch_node_tools_hint: 'With tools the persona runs as a temporary WeBot session, cleaned up when the topic ends.',
+        orch_gt_already_member: 'Already a member',
         orch_ia_name: 'Agent Name',
         orch_ia_tag: 'Tag',
         orch_ia_tag_placeholder: 'Drag an expert to set, or type manually',
-        orch_ia_created: 'Internal Agent created',
+        orch_ia_created: 'Agent created',
         orch_ia_tag_set: 'Tag set to',
 orch_openclaw_sessions: '🦞 OpenClaw',
-        orch_external_agents_section: '2. External Agents',
-        orch_ext_cat_openclaw: '2.1 OpenClaw',
-        orch_ext_openclaw_empty: 'No OpenClaw agents or not configured',
-        orch_ext_pool_empty: 'No external agents to drag',
         orch_add_openclaw_title: 'New OpenClaw Agent',
         orch_openclaw_agent_name: 'Agent Name',
         orch_openclaw_ws_path: 'Path',
@@ -1396,9 +1404,6 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         orch_settings: '⚙️ Settings',
         orch_repeat: 'Repeat plan each round',
         orch_rounds: 'Rounds:',
-        orch_stateful: 'Stateful mode',
-        orch_node_stateful: '⚡ Stateful mode',
-        orch_node_stateful_hint: 'Expert has memory & tools when enabled (for complex tasks)',
         orch_threshold: 'Cluster threshold:',
         orch_ai_gen: '🤖 AI Generate',
         orch_ai_hint: 'Click "🤖 AI Orch" to auto-generate YAML',
@@ -1468,11 +1473,7 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         orch_modal_content_ph: 'Injection content...',
         orch_modal_cancel: 'Cancel',
         orch_modal_save: 'Save',
-        orch_modal_select_session: '🎯 Select Target Agent Session',
-        orch_modal_select_desc: 'Select an existing conversation session or create a new one. You can jump to it after generation.',
         orch_modal_loading: '⏳ Loading...',
-        orch_modal_new_session: 'New Conversation',
-        orch_modal_confirm_gen: 'Confirm & Generate',
         orch_modal_select_layout: '📂 Select Layout',
         orch_modal_delete: '🗑️ Delete',
         orch_modal_load: 'Load',
@@ -1496,8 +1497,6 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         orch_toast_agent_valid: 'Agent generated valid YAML! ✅',
         orch_toast_session_updated: 'Session status updated',
         orch_toast_session_fail: 'Failed to get status',
-        orch_toast_no_session: 'No session selected',
-        orch_toast_jumped: 'Jumped to chat #{id}',
         orch_toast_custom_added: 'Custom expert added: {name}',
         orch_toast_fill_info: 'Please fill in all fields',
         orch_toast_net_error: 'Network error',
@@ -1542,8 +1541,8 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         export_preview_loading: 'Loading preview...',
         export_preview_desc: 'Please select items to export:',
         export_preview_tip: '💡 Tip: Uncheck a category to exclude it from export',
-        export_agents: 'Internal Agents',
-        export_external_agents: 'External Agents',
+        export_agents: 'WeBot Agents',
+        export_external_agents: 'Other-platform Agents',
         export_personas: 'Custom Personas',
         export_skills: 'Skills',
         export_managed_skills: 'Managed Skills',
@@ -1564,12 +1563,9 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         orch_status_auth_fail: 'Authentication failed',
         orch_status_agent_unavail: 'Agent unavailable',
         orch_status_conn_error: '❌ Connection error',
-        orch_goto_chat: '💬 Jump to chat {session} to continue',
         orch_no_custom: 'No custom experts yet',
         orch_no_session: 'No sessions yet',
         orch_load_fail: '❌ Load failed',
-        orch_load_session_fail: '❌ Failed to load session list',
-        orch_msg_count: '{count} messages',
         orch_add_expert_title: '🛠️ Add Custom Expert',
         orch_add_expert_btn: 'Add custom expert',
         orch_label_name: 'Name',
@@ -1919,6 +1915,14 @@ function agentCenterStatusClass(status) {
     return /^[a-z_-]+$/.test(normalized) ? normalized : 'unknown';
 }
 
+function agentCenterState(agent) {
+    return String(agent?.status?.state || 'unknown').toLowerCase();
+}
+
+function agentCenterActions(agent) {
+    return Array.isArray(agent?.status?.actions) ? agent.status.actions : [];
+}
+
 function setAgentCenterNotice(message, isError = false) {
     const notice = document.getElementById('agent-center-notice');
     if (!notice) return;
@@ -1926,24 +1930,27 @@ function setAgentCenterNotice(message, isError = false) {
     notice.classList.toggle('agent-center-error', Boolean(isError));
 }
 
-function updateAgentCenterTeamFilter() {
-    const select = document.getElementById('agent-center-team-filter');
+function fillAgentCenterFilter(id, values) {
+    const select = document.getElementById(id);
     if (!select) return;
     const previous = select.value;
-    const teams = [...new Set(agentCenterAgents.flatMap(agent => Array.isArray(agent.teams) ? agent.teams : []))]
-        .filter(Boolean)
-        .sort((a, b) => String(a).localeCompare(String(b)));
-    select.innerHTML = `<option value="">${agentCenterEscape(t('agent_center_all'))}</option>` + teams
-        .map(team => `<option value="${agentCenterEscape(team)}">${agentCenterEscape(team)}</option>`)
+    const options = [...new Set(values)].filter(Boolean).sort((a, b) => String(a).localeCompare(String(b)));
+    select.innerHTML = `<option value="">${agentCenterEscape(t('agent_center_all'))}</option>` + options
+        .map(value => `<option value="${agentCenterEscape(value)}">${agentCenterEscape(value)}</option>`)
         .join('');
-    if (teams.includes(previous)) select.value = previous;
+    if (options.includes(previous)) select.value = previous;
+}
+
+function updateAgentCenterFilters() {
+    fillAgentCenterFilter('agent-center-kind-filter', agentCenterAgents.map(agent => agent.platform));
+    fillAgentCenterFilter('agent-center-team-filter', agentCenterAgents.flatMap(agent => agent.teams || []));
 }
 
 function renderAgentCenterSummary() {
     const summary = document.getElementById('agent-center-summary');
     if (!summary) return;
-    const running = agentCenterAgents.filter(agent => ['running', 'queued', 'cancelling'].includes(String(agent.status || '').toLowerCase())).length;
-    const uncertain = agentCenterAgents.filter(agent => agent.running_known === false).length;
+    const running = agentCenterAgents.filter(agent => agentCenterState(agent) === 'running').length;
+    const uncertain = agentCenterAgents.filter(agent => ['unknown', 'unavailable'].includes(agentCenterState(agent))).length;
     summary.innerHTML = `
         <span class="agent-center-stat">${agentCenterEscape(t('agent_center_total'))} <strong>${agentCenterAgents.length}</strong></span>
         <span class="agent-center-stat">${agentCenterEscape(t('agent_center_running'))} <strong>${running}</strong></span>
@@ -1958,20 +1965,20 @@ function renderAgentCenterGrid() {
         grid.innerHTML = `<div class="agent-center-empty">${agentCenterEscape(t('loading'))}</div>`;
         return;
     }
-    const kind = document.getElementById('agent-center-kind-filter')?.value || '';
+    const platformFilter = document.getElementById('agent-center-kind-filter')?.value || '';
     const statusFilter = document.getElementById('agent-center-status-filter')?.value || '';
     const team = document.getElementById('agent-center-team-filter')?.value || '';
     const query = (document.getElementById('agent-center-search-filter')?.value || '').trim().toLocaleLowerCase();
     const rows = agentCenterAgents.filter(agent => {
-        if (kind && agent.kind !== kind) return false;
-        if (team && !(Array.isArray(agent.teams) && agent.teams.includes(team))) return false;
-        const status = String(agent.status || 'unknown').toLowerCase();
-        if (statusFilter === 'active' && !['running', 'queued', 'cancelling'].includes(status)) return false;
-        if (statusFilter === 'idle' && status !== 'idle') return false;
-        if (statusFilter === 'finished' && !['completed', 'cancelled'].includes(status)) return false;
-        if (statusFilter === 'attention' && !['unknown', 'failed', 'unavailable'].includes(status) && agent.running_known !== false) return false;
+        const state = agentCenterState(agent);
+        if (platformFilter && agent.platform !== platformFilter) return false;
+        if (team && !(agent.teams || []).includes(team)) return false;
+        if (statusFilter === 'active' && state !== 'running') return false;
+        if (statusFilter === 'idle' && !['idle', 'online'].includes(state)) return false;
+        if (statusFilter === 'finished') return false;
+        if (statusFilter === 'attention' && !['unknown', 'unavailable'].includes(state)) return false;
         if (query) {
-            const searchable = [agent.name, agent.identity, agent.tag, agent.kind, agent.platform, agent.transport, ...(agent.teams || [])]
+            const searchable = [agent.name, agent.address, agent.agent_id, agent.settings?.persona, agent.platform, ...(agent.teams || [])]
                 .filter(Boolean).join(' ').toLocaleLowerCase();
             if (!searchable.includes(query)) return false;
         }
@@ -1983,44 +1990,41 @@ function renderAgentCenterGrid() {
     }
 
     grid.innerHTML = rows.map(agent => {
-        const status = String(agent.status || 'unknown').toLowerCase();
-        const teams = Array.isArray(agent.teams) && agent.teams.length ? agent.teams : [];
+        const state = agentCenterState(agent);
+        const teams = agent.teams || [];
         const teamLabel = teams.length ? teams.join(', ') : t('agent_center_public');
-        const platform = agent.platform || agent.transport || '-';
-        const connection = agent.connection_status || '-';
-        const key = `${agent.kind || ''}:${agent.identity || ''}`;
         const index = Math.max(1, agentCenterAgents.indexOf(agent) + 1);
-        const sigil = agent.kind === 'internal' ? '🧠' : (agent.kind === 'subagent' ? '✦' : '◈');
-        const contextPercent = Math.max(0, Math.min(100, Number(agent.context?.percent || 0)));
+        const webot = agent.platform === 'webot';
+        const contextPercent = Math.max(0, Math.min(100, Number(agent.status?.context?.percent || 0)));
+        const persona = agent.settings?.persona || '';
         return `
-            <article class="agent-center-card ${key === agentCenterSelectedKey ? 'is-selected' : ''}"
+            <article class="agent-center-card ${agent.agent_id === agentCenterSelectedKey ? 'is-selected' : ''}"
                 tabindex="0" role="button"
-                data-kind="${agentCenterEscape(agent.kind || '')}"
-                data-identity="${agentCenterEscape(agent.identity || '')}"
-                onclick="openAgentCenterDetail(this.dataset.kind, this.dataset.identity)"
-                onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openAgentCenterDetail(this.dataset.kind,this.dataset.identity)}">
-                <div class="agent-center-card-portrait ${agentCenterStatusClass(agent.kind)}">
-                    <span class="agent-center-card-sigil">${sigil}</span>
+                data-agent="${agentCenterEscape(agent.agent_id)}"
+                onclick="openAgentCenterDetail(this.dataset.agent)"
+                onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openAgentCenterDetail(this.dataset.agent)}">
+                <div class="agent-center-card-portrait ${webot ? 'internal' : 'external'}">
+                    <span class="agent-center-card-sigil">${webot ? '🧠' : '◈'}</span>
                 </div>
                 <div class="agent-center-card-body">
                     <div class="agent-center-card-top">
                         <div class="agent-center-identity">
-                            <div class="agent-center-card-number">NO.${String(index).padStart(3, '0')} · ${agentCenterEscape(agent.kind || 'agent')}</div>
-                            <div class="agent-center-name" title="${agentCenterEscape(agent.name || agent.identity)}">${agentCenterEscape(agent.name || agent.identity)}</div>
-                            <div class="agent-center-id" title="${agentCenterEscape(agent.identity)}">${agentCenterEscape(agent.identity)}</div>
+                            <div class="agent-center-card-number">NO.${String(index).padStart(3, '0')} · ${agentCenterEscape(agent.platform)}</div>
+                            <div class="agent-center-name" title="${agentCenterEscape(agent.name)}">${agentCenterEscape(agent.name)}</div>
+                            <div class="agent-center-id" title="${agentCenterEscape(agent.agent_id)}">${agentCenterEscape(agent.address)}</div>
                         </div>
-                        <span class="agent-center-status ${agentCenterStatusClass(status)}">${agentCenterEscape(status)}</span>
+                        <span class="agent-center-status ${agentCenterStatusClass(state)}">${agentCenterEscape(state)}</span>
                     </div>
                     <div class="agent-center-badges">
-                        <span class="agent-center-badge">${agentCenterEscape(platform)}</span>
-                        ${agent.tag ? `<span class="agent-center-badge agent-center-tag" title="Persona">#${agentCenterEscape(agent.tag)}</span>` : ''}
+                        <span class="agent-center-badge">${agentCenterEscape(agent.platform)}</span>
+                        ${persona ? `<span class="agent-center-badge agent-center-tag" title="Persona">#${agentCenterEscape(persona)}</span>` : ''}
                         ${teams.slice(0, 1).map(item => `<span class="agent-center-badge">${agentCenterEscape(item)}</span>`).join('')}
                     </div>
                     <dl class="agent-center-meta">
                         <dt>Team</dt><dd title="${agentCenterEscape(teamLabel)}">${agentCenterEscape(teamLabel)}</dd>
-                        <dt>${agentCenterEscape(t('agent_center_connection'))}</dt><dd>${agentCenterEscape(connection)}</dd>
+                        <dt>${agentCenterEscape(t('agent_center_connection'))}</dt><dd>${agentCenterEscape(state)}</dd>
                     </dl>
-                    ${agent.kind === 'internal' ? `<div class="agent-center-mini-meter" title="Context ${contextPercent}%"><span style="width:${contextPercent}%"></span></div>` : ''}
+                    ${webot ? `<div class="agent-center-mini-meter" title="Context ${contextPercent}%"><span style="width:${contextPercent}%"></span></div>` : ''}
                     <div class="agent-center-card-hint">${agentCenterEscape(t('agent_center_open_detail'))} →</div>
                 </div>
             </article>
@@ -2029,7 +2033,7 @@ function renderAgentCenterGrid() {
 }
 
 function agentCenterSelectedAgent() {
-    return agentCenterAgents.find(agent => `${agent.kind}:${agent.identity}` === agentCenterSelectedKey) || null;
+    return agentCenterAgents.find(agent => agent.agent_id === agentCenterSelectedKey) || null;
 }
 
 function agentCenterFormatTokens(value) {
@@ -2053,12 +2057,12 @@ function renderAgentCenterDetail() {
         return;
     }
     panel.hidden = false;
-    const status = String(agent.status || 'unknown').toLowerCase();
-    const teams = Array.isArray(agent.teams) && agent.teams.length ? agent.teams : [];
-    const actions = Array.isArray(agent.supported_actions) ? agent.supported_actions : [];
+    const state = agentCenterState(agent);
+    const teams = agent.teams || [];
+    const actions = agentCenterActions(agent);
+    const webot = agent.platform === 'webot';
     const index = Math.max(1, agentCenterAgents.indexOf(agent) + 1);
-    const sigil = agent.kind === 'internal' ? '🧠' : (agent.kind === 'subagent' ? '✦' : '◈');
-    const context = agent.context || {};
+    const context = agent.status?.context || {};
     const contextPercent = Math.max(0, Math.min(100, Number(context.percent || 0)));
     const toolsSetting = agent.settings?.tools;
     const unrestricted = toolsSetting == null;
@@ -2066,70 +2070,66 @@ function renderAgentCenterDetail() {
     const enabledTools = unrestricted
         ? new Set(allTools.map(tool => tool.name))
         : new Set(noTools ? [] : Object.keys(toolsSetting || {}).filter(name => toolsSetting[name]));
-    const toolsMarkup = agent.kind === 'internal'
+    const toolsMarkup = webot
         ? (allTools.length ? allTools.map(tool => `
             <label class="agent-dex-tool" title="${agentCenterEscape(tool.description || '')}">
                 <input class="agent-dex-tool-checkbox" type="checkbox" value="${agentCenterEscape(tool.name)}" ${enabledTools.has(tool.name) ? 'checked' : ''}>
                 <span>${agentCenterEscape(tool.name)}</span>
             </label>`).join('') : `<span class="agent-dex-note">${agentCenterEscape(t('loading'))}</span>`)
         : '';
-    const stopButton = actions.some(action => action === 'stop' || action === 'cancel')
-        ? `<button class="agent-center-btn" data-kind="${agentCenterEscape(agent.kind)}" data-identity="${agentCenterEscape(agent.identity)}" onclick="controlAgentFromCenter(this)">${agentCenterEscape(t('agent_center_stop'))}</button>` : '';
-    const resetButton = actions.includes('reset')
-        ? `<button class="agent-center-btn" data-kind="${agentCenterEscape(agent.kind)}" data-identity="${agentCenterEscape(agent.identity)}" onclick="resetAgentFromCenter(this)">${agentCenterEscape(t('agent_center_reset'))}</button>` : '';
-    const deleteButton = actions.includes('delete')
-        ? `<button class="agent-center-btn danger" data-kind="${agentCenterEscape(agent.kind)}" data-identity="${agentCenterEscape(agent.identity)}" onclick="deleteAgentFromCenter(this)">${agentCenterEscape(t('agent_center_delete'))}</button>` : '';
+    const button = (action, label, extra = '') => actions.includes(action)
+        ? `<button class="agent-center-btn ${extra}" type="button" onclick="controlAgentFromCenter('${action}', this)">${agentCenterEscape(t(label))}</button>` : '';
 
     host.innerHTML = `
-        <div class="agent-dex-hero ${agentCenterStatusClass(agent.kind)}">
+        <div class="agent-dex-hero ${webot ? 'internal' : 'external'}">
             <button class="agent-dex-close" type="button" onclick="closeAgentCenterDetail()" aria-label="Close">×</button>
-            <div class="agent-dex-portrait">${sigil}</div>
-            <div class="agent-dex-index">FIELD ENTRY NO.${String(index).padStart(3, '0')} · ${agentCenterEscape(status)}</div>
-            <div class="agent-dex-title">${agentCenterEscape(agent.name || agent.identity)}</div>
-            <div class="agent-dex-subtitle">${agentCenterEscape(agent.identity)}</div>
+            <div class="agent-dex-portrait">${webot ? '🧠' : '◈'}</div>
+            <div class="agent-dex-index">FIELD ENTRY NO.${String(index).padStart(3, '0')} · ${agentCenterEscape(state)}</div>
+            <div class="agent-dex-title">${agentCenterEscape(agent.name)}</div>
+            <div class="agent-dex-subtitle">${agentCenterEscape(agent.address)} · ${agentCenterEscape(agent.agent_id)}</div>
         </div>
         <div class="agent-dex-body">
             <section class="agent-dex-section">
                 <div class="agent-dex-section-title">${agentCenterEscape(t('agent_center_profile'))}</div>
                 <dl class="agent-dex-facts">
-                    <dt>Kind</dt><dd>${agentCenterEscape(agent.kind || '-')}</dd>
-                    <dt>Platform</dt><dd>${agentCenterEscape(agent.platform || agent.transport || '-')}</dd>
-                    <dt>Persona tag</dt><dd>${agentCenterEscape(agent.tag || '-')}</dd>
+                    <dt>Platform</dt><dd>${agentCenterEscape(agent.platform)}</dd>
+                    <dt>Persona tag</dt><dd>${agentCenterEscape(agent.settings?.persona || '-')}</dd>
                     <dt>Team</dt><dd>${agentCenterEscape(teams.length ? teams.join(', ') : t('agent_center_public'))}</dd>
-                    <dt>${agentCenterEscape(t('agent_center_connection'))}</dt><dd>${agentCenterEscape(agent.connection_status || '-')}</dd>
+                    <dt>${agentCenterEscape(t('agent_center_connection'))}</dt><dd>${agentCenterEscape(state)}</dd>
                 </dl>
             </section>
-            ${agent.kind === 'internal' ? `
+            ${webot ? `
             <section class="agent-dex-section">
                 <div class="agent-dex-section-title">${agentCenterEscape(t('agent_center_context'))}</div>
                 <div class="agent-dex-context-row"><span>${agentCenterEscape(t('agent_center_used'))}</span><strong>${contextPercent}%</strong></div>
                 <div class="agent-dex-context-meter"><span style="width:${contextPercent}%"></span></div>
                 <div class="agent-dex-context-row"><span>${agentCenterFormatTokens(context.tokens)} / ${agentCenterFormatTokens(context.budget)} tokens</span><span>${agentCenterEscape(t('agent_center_remaining'))} ${agentCenterFormatTokens(context.remaining)}</span></div>
                 <div class="agent-dex-actions" style="margin-top:10px;"><button class="agent-center-btn" type="button" onclick="compactAgentFromCenter(this)">${agentCenterEscape(t('agent_center_compact'))}</button><button class="agent-center-btn" type="button" onclick="openAgentRuntimeSettings()">${agentCenterEscape(t('runtime_settings'))}</button></div>
-            </section>
+            </section>` : ''}
             <section class="agent-dex-section">
                 <div class="agent-dex-section-title">${agentCenterEscape(t('agent_center_tools'))}</div>
                 <div class="agent-dex-fields">
-                    <label>Name<input id="agent-dex-name" value="${agentCenterEscape(agent.name || agent.identity)}" maxlength="120"></label>
-                    <label>Persona tag<input id="agent-dex-tag" value="${agentCenterEscape(agent.tag || '')}" maxlength="120"></label>
+                    <label>Name<input id="agent-dex-name" value="${agentCenterEscape(agent.name)}" maxlength="120"></label>
+                    <label>Persona tag<input id="agent-dex-tag" value="${agentCenterEscape(agent.settings?.persona || '')}" maxlength="120"></label>
                 </div>
+                ${webot ? `
                 <div class="agent-dex-context-row" style="margin:12px 0 7px;"><span>${agentCenterEscape(unrestricted ? t('agent_center_unrestricted_tools') : (noTools ? t('agent_center_no_tools') : `${enabledTools.size}/${allTools.length}`))}</span><span><button class="agent-center-btn" type="button" onclick="document.querySelectorAll('.agent-dex-tool-checkbox').forEach(el=>el.checked=true)">All</button> <button class="agent-center-btn" type="button" onclick="document.querySelectorAll('.agent-dex-tool-checkbox').forEach(el=>el.checked=false)">None</button></span></div>
-                <div class="agent-dex-tools">${toolsMarkup}</div>
+                <div class="agent-dex-tools">${toolsMarkup}</div>` : ''}
                 <button class="agent-center-btn primary" style="margin-top:11px;width:100%;background:#245f46;color:#fff;" type="button" onclick="saveAgentCenterSettings(this)">${agentCenterEscape(t('agent_center_save'))}</button>
-            </section>` : ''}
+            </section>
             <section class="agent-dex-section">
                 <div class="agent-dex-section-title">Runtime control</div>
-                <div class="agent-dex-actions">${stopButton}${resetButton}${deleteButton}</div>
+                <div class="agent-dex-actions">${button('cancel', 'agent_center_stop')}${button('reset', 'agent_center_reset')}<button class="agent-center-btn danger" type="button" onclick="deleteAgentFromCenter(this)">${agentCenterEscape(t('agent_center_delete'))}</button></div>
             </section>
             <div id="agent-dex-note" class="agent-dex-note"></div>
         </div>`;
 }
 
-async function openAgentCenterDetail(kind, identity) {
-    agentCenterSelectedKey = `${kind}:${identity}`;
+async function openAgentCenterDetail(agentId) {
+    agentCenterSelectedKey = agentId;
     renderAgentCenterGrid();
     renderAgentCenterDetail();
-    if (kind === 'internal' && allTools.length === 0) {
+    if (agentCenterSelectedAgent()?.platform === 'webot' && allTools.length === 0) {
         await loadTools();
         renderAgentCenterDetail();
     }
@@ -2142,31 +2142,47 @@ function closeAgentCenterDetail() {
     renderAgentCenterGrid();
 }
 
+async function agentApi(method, path, body) {
+    const response = await fetch(path, {
+        method,
+        headers: body ? {'Content-Type': 'application/json'} : {},
+        body: body ? JSON.stringify(body) : undefined,
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        const detail = payload.detail;
+        const error = new Error((detail && (detail.error || detail)) || payload.error || `HTTP ${response.status}`);
+        throw Object.assign(error, {status: response.status, payload});
+    }
+    return payload;
+}
+
+// The agent for this runtime: a new one, or the one already registered for it.
+async function ensureAgent(fields) {
+    try {
+        return await agentApi('POST', '/v1/agents', fields);
+    } catch (error) {
+        if (error.status === 409 && error.payload?.detail?.agent) return error.payload.detail.agent;
+        throw error;
+    }
+}
+
 async function saveAgentCenterSettings(button) {
     const agent = agentCenterSelectedAgent();
-    if (!agent || agent.kind !== 'internal') return;
-    const checked = [...document.querySelectorAll('.agent-dex-tool-checkbox:checked')].map(el => el.value);
-    let tools = null;
-    if (checked.length === 0) tools = 'none';
-    else if (checked.length < allTools.length) tools = Object.fromEntries(checked.map(name => [name, true]));
+    if (!agent) return;
+    const settings = {persona: document.getElementById('agent-dex-tag')?.value?.trim() || ''};
+    if (agent.platform === 'webot') {
+        const checked = [...document.querySelectorAll('.agent-dex-tool-checkbox:checked')].map(el => el.value);
+        settings.tools = checked.length === 0 ? 'none'
+            : (checked.length < allTools.length ? Object.fromEntries(checked.map(name => [name, true])) : null);
+    }
     button.disabled = true;
     try {
-        const response = await fetch('/proxy_agent_control', {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                action: 'configure', kind: 'internal', identity: agent.identity,
-                settings: {
-                    name: document.getElementById('agent-dex-name')?.value?.trim() || agent.identity,
-                    tag: document.getElementById('agent-dex-tag')?.value?.trim() || '',
-                    tools,
-                },
-                refresh_external: false,
-            }),
+        const updated = await agentApi('PATCH', `/v1/agents/${encodeURIComponent(agent.agent_id)}`, {
+            name: document.getElementById('agent-dex-name')?.value?.trim() || agent.name,
+            settings,
         });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || payload.status !== 'success') throw new Error(payload.detail || payload.error || payload.reason || 'configure failed');
-        const index = agentCenterAgents.findIndex(item => `${item.kind}:${item.identity}` === agentCenterSelectedKey);
-        if (index >= 0 && payload.agent) agentCenterAgents[index] = payload.agent;
+        Object.assign(agent, updated);
         renderAgentCenterGrid();
         renderAgentCenterDetail();
         setAgentCenterDetailNotice(t('agent_center_save_ok'));
@@ -2179,16 +2195,16 @@ async function saveAgentCenterSettings(button) {
 
 async function compactAgentFromCenter(button) {
     const agent = agentCenterSelectedAgent();
-    if (!agent || agent.kind !== 'internal') return;
+    if (!agent || agent.platform !== 'webot') return;
     button.disabled = true;
     try {
         const response = await fetch('/proxy_compact_session', {
             method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({session_id: agent.identity}),
+            body: JSON.stringify({session_id: agent.settings.session}),
         });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || payload.error) throw new Error(payload.detail || payload.error || 'compact failed');
-        await refreshAgentCenter(false);
+        await refreshAgentCenter();
         setAgentCenterDetailNotice(payload.triggered ? t('agent_center_compact_ok') : t('agent_center_compact_none'));
     } catch (error) {
         setAgentCenterDetailNotice(`${t('agent_center_compact')}: ${error.message || error}`, true);
@@ -2197,25 +2213,26 @@ async function compactAgentFromCenter(button) {
     }
 }
 
-async function refreshAgentCenter(refreshExternal = false) {
+async function refreshAgentCenter() {
     if (agentCenterLoading) return;
     agentCenterLoading = true;
     const refreshButton = document.getElementById('agent-center-refresh-btn');
     if (refreshButton) refreshButton.disabled = true;
     renderAgentCenterGrid();
-    setAgentCenterNotice(refreshExternal ? t('loading') : t('agent_center_status_hint'));
+    setAgentCenterNotice(t('loading'));
     try {
-        const response = await fetch('/proxy_agent_control', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({action: 'list', refresh_external: Boolean(refreshExternal)}),
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || payload.status !== 'success') {
-            throw new Error(payload.detail || payload.error || t('agent_center_load_failed'));
+        const [agents, teams] = await Promise.all([
+            agentApi('GET', '/v1/agents?status=1'),
+            agentApi('GET', '/v1/teams'),
+        ]);
+        const teamsOf = {};
+        for (const team of teams.data || []) {
+            for (const member of team.members || []) {
+                (teamsOf[member.agent.agent_id] = teamsOf[member.agent.agent_id] || []).push(team.team);
+            }
         }
-        agentCenterAgents = Array.isArray(payload.agents) ? payload.agents : [];
-        updateAgentCenterTeamFilter();
+        agentCenterAgents = (agents.data || []).map(agent => ({...agent, teams: teamsOf[agent.agent_id] || []}));
+        updateAgentCenterFilters();
         renderAgentCenterSummary();
         setAgentCenterNotice(t('agent_center_status_hint'));
     } catch (error) {
@@ -2234,7 +2251,7 @@ async function openAgentCenter() {
     const modal = document.getElementById('agent-center-modal');
     if (!modal || !currentUserId) return;
     modal.style.display = 'flex';
-    await refreshAgentCenter(false);
+    await refreshAgentCenter();
 }
 
 function closeAgentCenter() {
@@ -2243,89 +2260,38 @@ function closeAgentCenter() {
     agentCenterSelectedKey = '';
 }
 
-async function controlAgentFromCenter(button) {
-    const identity = button?.dataset?.identity || '';
-    const kind = button?.dataset?.kind || '';
-    if (!identity || !kind || !window.confirm(t('agent_center_stop_confirm'))) return;
+const _AGENT_CENTER_CONTROL_TEXT = {
+    cancel: ['agent_center_stop_confirm', 'agent_center_stop_ok', 'agent_center_stop_failed'],
+    reset: ['agent_center_reset_confirm', 'agent_center_reset_ok', 'agent_center_reset_failed'],
+};
+
+async function controlAgentFromCenter(action, button) {
+    const agent = agentCenterSelectedAgent();
+    const [confirmKey, okKey, failKey] = _AGENT_CENTER_CONTROL_TEXT[action];
+    if (!agent || !window.confirm(t(confirmKey))) return;
     button.disabled = true;
     try {
-        const response = await fetch('/proxy_agent_control', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                action: 'stop',
-                kind,
-                identity,
-                refresh_external: false,
-            }),
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || payload.status === 'unsupported' || payload.status === 'error') {
-            throw new Error(payload.reason || payload.detail || payload.error || t('agent_center_stop_failed'));
-        }
-        setAgentCenterNotice(payload.cancelled === false ? t('agent_center_stop_none') : t('agent_center_stop_ok'));
-        await refreshAgentCenter(false);
+        const result = await agentApi('POST', `/v1/agents/${encodeURIComponent(agent.agent_id)}/control`, {action});
+        setAgentCenterNotice(result.cancelled === false ? t('agent_center_stop_none') : t(okKey));
+        await refreshAgentCenter();
     } catch (error) {
-        setAgentCenterNotice(`${t('agent_center_stop_failed')}: ${error.message || error}`, true);
+        setAgentCenterNotice(`${t(failKey)}: ${error.message || error}`, true);
     } finally {
         button.disabled = false;
     }
 }
 
 async function deleteAgentFromCenter(button) {
-    const identity = button?.dataset?.identity || '';
-    const kind = button?.dataset?.kind || '';
-    if (!identity || !kind || !window.confirm(t('agent_center_delete_confirm'))) return;
+    const agent = agentCenterSelectedAgent();
+    if (!agent) return;
     button.disabled = true;
     try {
-        const response = await fetch('/proxy_agent_control', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                action: 'delete',
-                kind,
-                identity,
-                refresh_external: false,
-            }),
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || payload.status === 'unsupported' || payload.status === 'error') {
-            throw new Error(payload.reason || payload.detail || payload.error || t('agent_center_delete_failed'));
-        }
+        if (!await deleteAgent(agent, agent.name)) return;
         setAgentCenterNotice(t('agent_center_delete_ok'));
         closeAgentCenterDetail();
-        await refreshAgentCenter(false);
+        await refreshAgentCenter();
     } catch (error) {
         setAgentCenterNotice(`${t('agent_center_delete_failed')}: ${error.message || error}`, true);
-    } finally {
-        button.disabled = false;
-    }
-}
-
-async function resetAgentFromCenter(button) {
-    const identity = button?.dataset?.identity || '';
-    const kind = button?.dataset?.kind || '';
-    if (!identity || !kind || !window.confirm(t('agent_center_reset_confirm'))) return;
-    button.disabled = true;
-    try {
-        const response = await fetch('/proxy_agent_control', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                action: 'reset',
-                kind,
-                identity,
-                refresh_external: false,
-            }),
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || payload.status === 'unsupported' || payload.status === 'error') {
-            throw new Error(payload.reason || payload.detail || payload.error || t('agent_center_reset_failed'));
-        }
-        setAgentCenterNotice(t('agent_center_reset_ok'));
-        await refreshAgentCenter(false);
-    } catch (error) {
-        setAgentCenterNotice(`${t('agent_center_reset_failed')}: ${error.message || error}`, true);
     } finally {
         button.disabled = false;
     }
@@ -3040,17 +3006,9 @@ function _collectAgentMeta() {
 async function submitAgentMeta() {
     const meta = _collectAgentMeta();
     if (_agentMetaMode === 'edit' && _agentMetaSessionId) {
-        // Update existing agent via PUT
         try {
-            const url = _currentAgentTeam 
-                ? `/internal_agents/${encodeURIComponent(_agentMetaSessionId)}?team=${encodeURIComponent(_currentAgentTeam)}`
-                : `/internal_agents/${encodeURIComponent(_agentMetaSessionId)}`;
-            await fetch(url, {
-                method: 'PUT',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ meta })
-            });
-        } catch (e) { console.warn('Failed to update agent meta', e); }
+            await saveSessionAgent(_agentMetaSessionId, meta);
+        } catch (e) { console.warn('Failed to update agent', e); }
     }
     document.getElementById('agent-meta-modal').style.display = 'none';
     if (_agentMetaCallback) { _agentMetaCallback(meta); _agentMetaCallback = null; }
@@ -3087,19 +3045,66 @@ function onAgentTeamChange() {
     loadSessionList();
 }
 
-// Helper: load internal agent meta as a map { session_id: meta } + all known sessions set
+// A WeBot session is an agent once it is named: the agent keeps its name, persona and tools.
+// In a team view the name shown is the member's role.
 async function _loadAgentMetaMap(team = '') {
     try {
-        const url = team ? `/internal_agents?team=${encodeURIComponent(team)}` : '/internal_agents';
-        const resp = await fetch(url);
-        const data = await resp.json();
-        const map = {};
-        if (data.agents) {
-            for (const a of data.agents) map[a.session] = a.meta || {};
+        const [agents, teams] = await Promise.all([agentApi('GET', '/v1/agents'), agentApi('GET', '/v1/teams')]);
+        const webot = (agents.data || []).filter(a => a.platform === 'webot' && a.settings?.session);
+        const membership = new Map();
+        for (const card of teams.data || []) {
+            for (const m of card.members || []) {
+                if (!team || card.team === team) membership.set(m.agent.agent_id, m);
+                else if (!membership.has(m.agent.agent_id)) membership.set(m.agent.agent_id, null);
+            }
         }
-        const allKnown = new Set(data.all_known_sessions || []);
-        return { map, allKnown };
+        const inScope = a => team ? Boolean(membership.get(a.agent_id)) : !membership.has(a.agent_id);
+        const map = {};
+        for (const a of webot.filter(inScope)) {
+            const member = membership.get(a.agent_id);
+            map[a.settings.session] = {
+                agent_id: a.agent_id, name: member?.role || a.name, tag: a.settings.persona || '',
+                tools: a.settings.tools, is_primary: Boolean(member?.is_lead), updated_at_ts: a.updated_at,
+            };
+        }
+        return { map, allKnown: new Set(webot.map(a => a.settings.session)) };
     } catch (e) { return { map: {}, allKnown: new Set() }; }
+}
+
+async function _sessionAgent(sessionId) {
+    const found = await agentApi('GET', `/v1/agents?runtime=${encodeURIComponent('webot:' + sessionId)}`);
+    return (found.data || [])[0] || null;
+}
+
+// Name (or rename) a session as an agent; in a team view it is also the member's role.
+async function saveSessionAgent(sessionId, meta, team = _currentAgentTeam) {
+    const settings = {};
+    if (meta.tag !== undefined) settings.persona = meta.tag || '';
+    if (meta.tools !== undefined) settings.tools = meta.tools;
+    let agent = await _sessionAgent(sessionId);
+    if (agent) {
+        agent = await agentApi('PATCH', `/v1/agents/${encodeURIComponent(agent.agent_id)}`, {name: meta.name || undefined, settings});
+    } else {
+        agent = await agentApi('POST', '/v1/agents', {
+            name: meta.name || sessionId, session: sessionId, persona: settings.persona || '',
+            tools: settings.tools ?? null, team,
+        });
+    }
+    if (team) {
+        const card = await agentApi('GET', `/v1/teams/${encodeURIComponent(team)}`);
+        const isMember = (card.members || []).some(m => m.agent.agent_id === agent.agent_id);
+        if (isMember && meta.name) {
+            await agentApi('PATCH', `/v1/teams/${encodeURIComponent(team)}/members/${encodeURIComponent(agent.agent_id)}`, {role: meta.name});
+        } else if (!isMember) {
+            await agentApi('POST', `/v1/teams/${encodeURIComponent(team)}/members`, {agent: agent.agent_id, role: meta.name || agent.name});
+        }
+    }
+    return agent;
+}
+
+async function forgetSessionAgent(sessionId) {
+    const agent = await _sessionAgent(sessionId);
+    if (agent) await agentApi('DELETE', `/v1/agents/${encodeURIComponent(agent.agent_id)}`);
 }
 
 // Resolve display title: prefer agent meta name, fallback to original title
@@ -3211,15 +3216,9 @@ function handleNewSession() {
                     ${t('new_session_message')}
                 </div>
             </div>`;
-        // Write internal agent JSON
         try {
-            const url = _currentAgentTeam ? `/internal_agents?team=${encodeURIComponent(_currentAgentTeam)}` : '/internal_agents';
-            await fetch(url, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ session: newSid, meta: meta })
-            });
-        } catch (e) { console.warn('Failed to save internal agent', e); }
+            await saveSessionAgent(newSid, meta);
+        } catch (e) { console.warn('Failed to create the agent', e); }
     });
 }
 
@@ -5139,13 +5138,10 @@ async function deleteSession(sessionId) {
         });
         const data = await resp.json();
         if (resp.ok && data.status === 'success') {
-            // Also delete internal agent JSON record
+            // The session was an agent: it is gone too.
             try {
-                const url = _currentAgentTeam 
-                    ? `/internal_agents/${encodeURIComponent(sessionId)}?team=${encodeURIComponent(_currentAgentTeam)}` 
-                    : `/internal_agents/${encodeURIComponent(sessionId)}`;
-                await fetch(url, { method: 'DELETE' });
-            } catch (e) { /* ignore if not found */ }
+                await forgetSessionAgent(sessionId);
+            } catch (e) { /* not an agent */ }
             // 如果删除的是当前会话，自动开一个新的
             if (sessionId === currentSessionId) {
                 currentSessionId = generateSessionId();
@@ -5435,23 +5431,8 @@ async function ocInternalOnSessionNameBlur() {
     if (_ocChatMode !== 'internal' || !currentSessionId) return;
     const inp = document.getElementById('oc-internal-session-name');
     const raw = inp ? String(inp.value || '').trim() : '';
-    const urlPut = _currentAgentTeam
-        ? `/internal_agents/${encodeURIComponent(currentSessionId)}?team=${encodeURIComponent(_currentAgentTeam)}`
-        : `/internal_agents/${encodeURIComponent(currentSessionId)}`;
     try {
-        let r = await fetch(urlPut, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ meta: { name: raw } }),
-        });
-        if (r.status === 404) {
-            const postUrl = _currentAgentTeam ? `/internal_agents?team=${encodeURIComponent(_currentAgentTeam)}` : '/internal_agents';
-            await fetch(postUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ session: currentSessionId, meta: raw ? { name: raw } : {} }),
-            });
-        }
+        await saveSessionAgent(currentSessionId, raw ? { name: raw } : {});
         await loadSessionList();
     } catch (e) {
         console.warn('ocInternalOnSessionNameBlur', e);
@@ -10221,8 +10202,8 @@ function buildTownQuickStartYaml(tags) {
         'plan:',
         '  - parallel:',
     ];
-    tags.forEach((tag, idx) => {
-        lines.push(`      - "${tag}#temp#${idx + 1}"`);
+    tags.forEach(tag => {
+        lines.push(`      - persona: ${JSON.stringify(tag)}`);
     });
     return lines.join('\n');
 }
@@ -12028,139 +12009,14 @@ function stopSessionStatusPolling() {
 startSessionStatusPolling();
 
 // ================================================================
-// ===== Group Chat (群聊) 逻辑 =====
+// ===== Teams page (团队) =====
 // ================================================================
 
-// Agent 颜色方案：根据名字 hash 分配一致的颜色
-const _agentColorPalette = [
-    { bg: '#f0fdf4', border: '#bbf7d0', text: '#166534', sender: '#15803d', pre: '#1a2e1a', code: '#d1fae5' },
-    { bg: '#eff6ff', border: '#bfdbfe', text: '#1e40af', sender: '#2563eb', pre: '#1e2a4a', code: '#dbeafe' },
-    { bg: '#fdf4ff', border: '#e9d5ff', text: '#6b21a8', sender: '#7c3aed', pre: '#2d1a3e', code: '#ede9fe' },
-    { bg: '#fff7ed', border: '#fed7aa', text: '#9a3412', sender: '#ea580c', pre: '#3b1a0a', code: '#ffedd5' },
-    { bg: '#fef2f2', border: '#fecaca', text: '#991b1b', sender: '#dc2626', pre: '#3b1212', code: '#fee2e2' },
-    { bg: '#f0fdfa', border: '#99f6e4', text: '#115e59', sender: '#0d9488', pre: '#0f2d2a', code: '#ccfbf1' },
-    { bg: '#fefce8', border: '#fde68a', text: '#854d0e', sender: '#ca8a04', pre: '#2d2305', code: '#fef9c3' },
-    { bg: '#fdf2f8', border: '#fbcfe8', text: '#9d174d', sender: '#db2777', pre: '#3b0d24', code: '#fce7f3' },
-];
-const _agentColorCache = {};
-function getAgentColor(sender) {
-    if (_agentColorCache[sender]) return _agentColorCache[sender];
-    let hash = 0;
-    for (let i = 0; i < sender.length; i++) {
-        hash = ((hash << 5) - hash) + sender.charCodeAt(i);
-        hash |= 0;
-    }
-    const color = _agentColorPalette[Math.abs(hash) % _agentColorPalette.length];
-    _agentColorCache[sender] = color;
-    return color;
-}
-function applyAgentColor(el, sender) {
-    const c = getAgentColor(sender);
-    const content = el.querySelector('.group-msg-content');
-    const senderEl = el.querySelector('.group-msg-sender');
-    if (content) {
-        content.style.background = c.bg;
-        content.style.borderColor = c.border;
-        content.style.color = c.text;
-    }
-    if (senderEl) senderEl.style.color = c.sender;
-    el.querySelectorAll('.group-msg-content pre').forEach(pre => { pre.style.background = c.pre; });
-    el.querySelectorAll('.group-msg-content code').forEach(code => { code.style.color = c.code; });
-}
-
+// The team currently open on the teams page.
 let currentGroupId = null;
-let groupPollingTimer = null;
-let groupLastMsgId = 0;
-let groupMuted = false;
-const groupSenderTitles = {};  // sender -> display title mapping
 
-function getGroupSenderTitle(sender) {
-    let name = groupSenderTitles[sender] || sender;
-    if (name.length > 7) name = name.slice(0, 7) + '…';
-    return name;
-}
-
-// === @ Mention 功能 ===
-let mentionSelectedIds = [];  // 被 @ 选中的 agent session_id 列表
-let currentGroupMembers = []; // 当前群的 agent 成员缓存
-let currentGroupMuteAllAgents = false;
-
-function onGroupInputChange(_e) {
-    const input = document.getElementById('group-input');
-    const val = input.value;
-    const cursorPos = input.selectionStart;
-    // 检测光标前一个字符是否刚输入了 @
-    if (cursorPos > 0 && val[cursorPos - 1] === '@') {
-        showMentionPopup();
-    }
-}
-
-function showMentionPopup() {
-    const popup = document.getElementById('mention-popup');
-    const listEl = document.getElementById('mention-list');
-    // 从 groupSenderTitles 构建 agent 列表
-    const agents = [];
-    for (const [key, title] of Object.entries(groupSenderTitles)) {
-        agents.push({ id: key, title: title });
-    }
-    if (agents.length === 0) {
-        listEl.innerHTML = '<div style="padding:10px 14px;font-size:12px;color:#9ca3af;">群内暂无 Agent 成员</div>';
-        popup.classList.add('show');
-        return;
-    }
-    currentGroupMembers = agents;
-    listEl.innerHTML = agents.map(a => {
-        const sel = mentionSelectedIds.includes(a.id) ? ' selected' : '';
-        const check = mentionSelectedIds.includes(a.id) ? '✓' : '';
-        return `<div class="mention-item${sel}" data-id="${a.id}" onclick="toggleMentionItem(this, '${a.id}')">
-            <div class="mention-check">${check}</div>
-            <div class="mention-name" title="${a.title}">${a.title}</div>
-        </div>`;
-    }).join('');
-    popup.classList.add('show');
-}
-
-function toggleMentionItem(el, agentId) {
-    const idx = mentionSelectedIds.indexOf(agentId);
-    if (idx >= 0) {
-        mentionSelectedIds.splice(idx, 1);
-        el.classList.remove('selected');
-        el.querySelector('.mention-check').textContent = '';
-    } else {
-        mentionSelectedIds.push(agentId);
-        el.classList.add('selected');
-        el.querySelector('.mention-check').textContent = '✓';
-    }
-}
-
-function confirmMention() {
-    const popup = document.getElementById('mention-popup');
-    popup.classList.remove('show');
-    const input = document.getElementById('group-input');
-    // 删掉输入框里刚输入的 @，替换为 @name 标签
-    let val = input.value;
-    // 找到最后一个 @ 的位置并替换
-    const lastAt = val.lastIndexOf('@');
-    if (lastAt >= 0) {
-        const before = val.slice(0, lastAt);
-        const after = val.slice(lastAt + 1);
-        const tags = mentionSelectedIds.map(id => '@' + (groupSenderTitles[id] || id)).join(' ');
-        input.value = before + tags + ' ' + after;
-    }
-    input.focus();
-}
-
-function hideMentionPopup() {
-    document.getElementById('mention-popup').classList.remove('show');
-}
-
-// 点击输入区域外关闭弹层
+// 点击上下文用量浮层之外时关闭它
 document.addEventListener('click', function(e) {
-    const popup = document.getElementById('mention-popup');
-    const inputArea = document.querySelector('.group-input-area');
-    if (popup && inputArea && !inputArea.contains(e.target)) {
-        popup.classList.remove('show');
-    }
     const contextUsageWrap = document.querySelector('.oc-context-usage-wrap');
     if (contextUsageWrap && !contextUsageWrap.contains(e.target)) {
         closeSessionContextDetail();
@@ -12185,7 +12041,6 @@ async function switchPage(page) {
             groupPage.classList.remove('active');
             groupPage.classList.remove('mobile-chat-open');
             if (orchPage) orchPage.classList.remove('active');
-            stopGroupPolling();
             stopGroupListPolling();
             // Lazy-init OpenClaw chat switcher on first visit to Chat tab
             if (!window._ocSwitcherInitialized && typeof ocInitSwitcher === 'function') {
@@ -12199,17 +12054,12 @@ async function switchPage(page) {
             if (orchPage) orchPage.classList.remove('active');
             await loadGroupList();
             startGroupListPolling();
-            // 如果已有打开的群，恢复消息轮询
-            if (currentGroupId) {
-                startGroupPolling(currentGroupId);
-            }
         } else if (page === 'orchestrate') {
             chatPage.classList.add('hidden-page');
             chatPage.style.display = 'none';
             groupPage.classList.remove('active');
             groupPage.classList.remove('mobile-chat-open');
             if (orchPage) orchPage.classList.add('active');
-            stopGroupPolling();
             stopGroupListPolling();
             if (!window._orchInitialized) { orchInit(); window._orchInitialized = true; }
         }
@@ -12217,10 +12067,6 @@ async function switchPage(page) {
         applyOasisTownMode();
         hidePageLoading();
     }
-}
-
-function stopGroupPolling() {
-    if (groupPollingTimer) { clearInterval(groupPollingTimer); groupPollingTimer = null; }
 }
 
 let _groupListPollingTimer = null;
@@ -12292,9 +12138,6 @@ function renderGroupList(teams) {
 async function openGroup(teamName) {
     showPageLoading();
     currentGroupId = teamName;
-    groupLastMsgId = 0;
-    groupRenderedMsgIds.clear();
-    stopGroupPolling();
 
     // Mobile: switch to chat view
     document.getElementById('page-group').classList.add('mobile-chat-open');
@@ -12349,9 +12192,9 @@ async function openGroup(teamName) {
         '<thead>' +
         '<tr>' +
         '<th class="text-left">名称</th>' +
-        '<th class="text-left">类型</th>' +
-        '<th class="text-left">标签</th>' +
-'<th class="text-left">Global Name</th>' +
+        '<th class="text-left">平台</th>' +
+        '<th class="text-left">人设</th>' +
+        '<th class="text-left">地址</th>' +
         '<th class="text-right">操作</th>' +
         '</tr>' +
         '</thead>' +
@@ -12413,7 +12256,7 @@ async function openGroup(teamName) {
         '</form>' +
         '<div id="team-alarm-schedule-preview" class="text-xs text-gray-500" style="margin:0 0 12px 2px;"></div>' +
         '<table class="team-members-table">' +
-        '<thead><tr><th class="text-left">目标</th><th class="text-left">类型</th><th class="text-left">时间</th><th class="text-left">内容</th><th class="text-right">操作</th></tr></thead>' +
+        '<thead><tr><th class="text-left">目标</th><th class="text-left">时间</th><th class="text-left">内容</th><th class="text-right">操作</th></tr></thead>' +
         '<tbody id="team-alarms-table-body"></tbody>' +
         '</table>' +
         '</div>' +
@@ -12443,9 +12286,6 @@ async function openGroup(teamName) {
         '</div>' +
         '</div>';
 
-    // 清空成员列表
-    document.getElementById('group-current-members').innerHTML = '<div class="text-xs text-gray-400 p-2">加载中...</div>';
-    document.getElementById('group-available-sessions').innerHTML = '<div class="text-xs text-gray-400 p-2">加载中...</div>';
 
     // 默认加载并显示成员表
     await loadTeamMembers();
@@ -12457,281 +12297,9 @@ async function openGroup(teamName) {
 
 function groupBackToList() {
     document.getElementById('page-group').classList.remove('mobile-chat-open');
-    // Close member panel if open
-    if (groupMemberPanelOpen) toggleGroupMemberPanel();
 }
 
-function renderGroupMessages(messages) {
-    const box = document.getElementById('group-messages-box');
-    if (messages.length === 0) {
-        box.innerHTML = '<div style="text-align:center;color:#9ca3af;padding:40px 0;font-size:13px;">暂无消息</div>';
-        return;
-    }
-    box.innerHTML = messages.map(m => {
-        const isSelf = m.sender === currentUserId || m.sender === currentUserId;
-        const isAgent = !isSelf && m.sender_display;
-        const msgClass = isSelf ? 'self' : (isAgent ? 'agent' : 'other');
-        const displayName = isAgent ? (m.sender_display || getGroupSenderTitle(m.sender)) : m.sender;
-        const timeStr = new Date(m.timestamp * 1000).toLocaleTimeString(currentLang === 'zh-CN' ? 'zh-CN' : 'en-US', {hour:'2-digit',minute:'2-digit'});
-        return `
-            <div class="group-msg ${msgClass}" ${isAgent ? 'data-agent-sender="'+escapeHtml(m.sender)+'"' : ''}>
-                <div class="group-msg-sender">${escapeHtml(displayName)}</div>
-                <div class="group-msg-content markdown-body tc-markdown">${renderMarkdown(m.content || '')}</div>
-                <div class="group-msg-time">${timeStr}</div>
-            </div>`;
-    }).join('');
-    highlightMarkdownIn(box);
-    box.querySelectorAll('.group-msg.agent[data-agent-sender]').forEach(el => applyAgentColor(el, el.dataset.agentSender));
-    box.scrollTop = box.scrollHeight;
-}
 
-// 已显示的消息 ID 集合，用于去重
-const groupRenderedMsgIds = new Set();
-
-function appendGroupMessages(messages) {
-    const box = document.getElementById('group-messages-box');
-    // Remove "no messages" placeholder if present
-    const placeholder = box.querySelector('div[style*="text-align:center"]');
-    if (placeholder && messages.length > 0) placeholder.remove();
-
-    for (const m of messages) {
-        // 去重：跳过已经渲染过的消息
-        if (m.id && groupRenderedMsgIds.has(m.id)) {
-            // 仍然更新 groupLastMsgId 以保持轮询指针正确
-            if (m.id > groupLastMsgId) groupLastMsgId = m.id;
-            continue;
-        }
-        if (m.id) groupRenderedMsgIds.add(m.id);
-
-        const isSelf = m.sender === currentUserId;
-        const isAgent = !isSelf && m.sender_display;
-        const msgClass = isSelf ? 'self' : (isAgent ? 'agent' : 'other');
-        const displayName = isAgent ? (m.sender_display || getGroupSenderTitle(m.sender)) : m.sender;
-        const timeStr = new Date(m.timestamp * 1000).toLocaleTimeString(currentLang === 'zh-CN' ? 'zh-CN' : 'en-US', {hour:'2-digit',minute:'2-digit'});
-        const div = document.createElement('div');
-        div.className = `group-msg ${msgClass}`;
-        div.innerHTML = `
-            <div class="group-msg-sender">${escapeHtml(displayName)}</div>
-            <div class="group-msg-content markdown-body tc-markdown">${renderMarkdown(m.content || '')}</div>
-            <div class="group-msg-time">${timeStr}</div>`;
-        highlightMarkdownIn(div);
-        if (isAgent) applyAgentColor(div, m.sender);
-        box.appendChild(div);
-        if (m.id > groupLastMsgId) groupLastMsgId = m.id;
-    }
-    box.scrollTop = box.scrollHeight;
-}
-
-function startGroupPolling(groupId) {
-    stopGroupPolling();
-    groupPollingTimer = setInterval(async () => {
-        if (currentGroupId !== groupId || currentPage !== 'group') {
-            stopGroupPolling();
-            return;
-        }
-        try {
-            const resp = await fetch(`/proxy_groups/${encodeURIComponent(groupId)}/messages?after_id=${groupLastMsgId}`);
-            if (!resp.ok) return;
-            const data = await resp.json();
-            if (data.messages && data.messages.length > 0) {
-                appendGroupMessages(data.messages);
-                // 有新消息时也刷新群列表（更新消息计数）
-                loadGroupList();
-            }
-        } catch (e) {
-            // silent
-        }
-    }, 5000);
-}
-
-async function sendGroupMessage() {
-    const input = document.getElementById('group-input');
-    const text = input.value.trim();
-    if (!text || !currentGroupId) return;
-
-    // 收集 mentions：从 mentionSelectedIds 中取出被 @ 的 agent
-    const mentions = mentionSelectedIds.length > 0 ? [...mentionSelectedIds] : null;
-    // 发送后清空 mention 选中状态
-    mentionSelectedIds = [];
-    hideMentionPopup();
-    input.value = '';
-
-    try {
-        const body = { content: text };
-        if (mentions) body.mentions = mentions;
-        const resp = await fetch(`/proxy_groups/${encodeURIComponent(currentGroupId)}/messages`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(body)
-        });
-        const result = await resp.json();
-        if (!resp.ok) {
-            throw new Error(result.error || result.detail || '发送失败');
-        }
-        if (result.muted) {
-            orchToast(result.message || '该成员已被禁言');
-            return;
-        }
-        const realId = result.id || (groupLastMsgId + 1);
-        // Immediately show in UI with real server ID
-        appendGroupMessages([{
-            id: realId,
-            sender: currentUserId,
-            content: text,
-            timestamp: Date.now() / 1000
-        }]);
-    } catch (e) {
-        console.error('Failed to send group message:', e);
-        orchToast(e.message || '发送失败');
-        input.value = text;
-    }
-}
-
-function renderGroupMembers(members) {
-    const container = document.getElementById('group-current-members');
-    const muteAllBar = `
-        <div style="display:flex;justify-content:flex-end;padding:0 0 10px 0;">
-            <button onclick="toggleGroupMuteAllMembers()" style="padding:6px 10px;border-radius:999px;border:1px solid ${currentGroupMuteAllAgents ? '#86efac' : '#fdba74'};background:${currentGroupMuteAllAgents ? '#f0fdf4' : '#fff7ed'};color:${currentGroupMuteAllAgents ? '#166534' : '#c2410c'};font-size:12px;font-weight:700;">
-                ${currentGroupMuteAllAgents ? '解除全员禁言' : '全员禁言'}
-            </button>
-        </div>`;
-    container.innerHTML = muteAllBar + members.map(m => {
-        const badge = m.is_agent
-            ? `<span class="member-badge badge-agent">${t('group_agent')}</span>`
-            : `<span class="member-badge badge-owner">${t('group_owner')}</span>`;
-        let displayName = m.is_agent && m.title ? m.title : (m.user_id || m.global_id || '');
-        if (displayName.length > 7) displayName = displayName.slice(0, 7) + '…';
-        const muteBtn = m.is_agent
-            ? `<button onclick="toggleGroupMemberMute('${escapeHtml(m.global_id || '')}', ${m.muted ? 'false' : 'true'}, '${escapeHtml(m.title || displayName)}')" style="margin-left:auto;padding:4px 8px;border-radius:999px;border:1px solid ${m.muted ? '#86efac' : '#fdba74'};background:${m.muted ? '#f0fdf4' : '#fff7ed'};color:${m.muted ? '#166534' : '#c2410c'};font-size:12px;">${m.muted ? '解除禁言' : '禁言'}</button>`
-            : '';
-        return `
-            <div class="member-item" style="display:flex;align-items:center;gap:8px;">
-                <span class="member-name" title="${escapeHtml(m.global_id || m.user_id || '')}">${escapeHtml(displayName)}</span>
-                ${badge}
-                ${m.muted ? '<span class="member-badge" style="background:#fef3c7;color:#92400e;">已禁言</span>' : ''}
-                ${muteBtn}
-            </div>`;
-    }).join('');
-}
-
-async function toggleGroupMemberMute(globalId, muted, name) {
-    if (!currentGroupId || !globalId) return;
-    try {
-        const resp = await fetch(`/proxy_groups/${encodeURIComponent(currentGroupId)}/members/mute`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ global_id: globalId, muted })
-        });
-        const data = await resp.json().catch(() => ({}));
-        if (!resp.ok) throw new Error(data.error || data.detail || '操作失败');
-        await refreshCurrentGroupMembers();
-        orchToast(`${name}${muted ? ' 已禁言' : ' 已解除禁言'}`);
-    } catch (e) {
-        orchToast((muted ? '禁言失败: ' : '解除禁言失败: ') + e.message);
-    }
-}
-
-async function toggleGroupMuteAllMembers() {
-    if (!currentGroupId) return;
-    const muted = !currentGroupMuteAllAgents;
-    try {
-        const resp = await fetch(`/proxy_groups/${encodeURIComponent(currentGroupId)}/mute_all`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ muted })
-        });
-        const data = await resp.json().catch(() => ({}));
-        if (!resp.ok) throw new Error(data.error || data.detail || '操作失败');
-        await refreshCurrentGroupMembers();
-        orchToast(muted ? '已开启全员禁言' : '已解除全员禁言');
-    } catch (e) {
-        orchToast((muted ? '全员禁言失败: ' : '解除全员禁言失败: ') + e.message);
-    }
-}
-
-async function refreshCurrentGroupMembers() {
-    if (!currentGroupId) return;
-    const resp = await fetch(`/proxy_groups/${encodeURIComponent(currentGroupId)}`);
-    const detail = await resp.json();
-    currentGroupMuteAllAgents = !!detail.mute_all_agents;
-    renderGroupMembers(detail.members || []);
-}
-
-let groupMemberPanelOpen = false;
-function toggleGroupMemberPanel() {
-    groupMemberPanelOpen = !groupMemberPanelOpen;
-    document.getElementById('group-member-panel').style.display = groupMemberPanelOpen ? 'flex' : 'none';
-    if (groupMemberPanelOpen && currentGroupId) {
-        loadAvailableSessions();
-    }
-}
-
-async function loadAvailableSessions() {
-    const container = document.getElementById('group-available-sessions');
-    container.innerHTML = '<div class="text-xs text-gray-400 p-2">' + t('loading') + '</div>';
-    try {
-        // Load sessions, group detail, and agent meta in parallel
-        const [resp, agentMap] = await Promise.all([
-            fetch(`/proxy_groups/${encodeURIComponent(currentGroupId)}/sessions`),
-            _loadAgentMetaMap()
-        ]);
-        if (!resp.ok) return;
-        const data = await resp.json();
-        const sessions = data.sessions || [];
-
-        // Get current members to mark them
-        const detailResp = await fetch(`/proxy_groups/${encodeURIComponent(currentGroupId)}`);
-        const detail = await detailResp.json();
-        currentGroupMuteAllAgents = !!detail.mute_all_agents;
-        const memberSet = new Set((detail.members || []).map(m => m.user_id + '#' + m.session_id));
-
-        if (sessions.length === 0) {
-            container.innerHTML = '<div class="text-xs text-gray-400 p-2">' + t('group_no_sessions') + '</div>';
-            return;
-        }
-
-        container.innerHTML = sessions.map(s => {
-            const key = currentUserId + '#' + s.session_id;
-            const checked = memberSet.has(key) ? 'checked' : '';
-            const title = _resolveTitle(s.title || s.session_id, s.session_id, agentMap);
-            return `
-                <label class="session-checkbox">
-                    <input type="checkbox" ${checked} onchange="toggleGroupAgent('${s.session_id}', this.checked)">
-                    <span class="session-label" title="${escapeHtml(title)}">${escapeHtml(title)}</span>
-                </label>`;
-        }).join('');
-    } catch (e) {
-        container.innerHTML = '<div class="text-xs text-red-400 p-2">加载失败</div>';
-    }
-}
-
-async function toggleGroupAgent(sessionId, add) {
-    if (!currentGroupId) return;
-    try {
-        await fetch(`/proxy_groups/${encodeURIComponent(currentGroupId)}`, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                members: [{
-                    user_id: currentUserId,
-                    session_id: sessionId,
-                    action: add ? 'add' : 'remove'
-                }]
-            })
-        });
-        // Refresh member list
-        const resp = await fetch(`/proxy_groups/${encodeURIComponent(currentGroupId)}`);
-        const detail = await resp.json();
-        currentGroupMuteAllAgents = !!detail.mute_all_agents;
-        renderGroupMembers(detail.members || []);
-    } catch (e) {
-        console.error('Failed to toggle group agent:', e);
-    }
-}
 
 function showCreateTeamModal() {
     const modal = document.getElementById('create-team-modal');
@@ -12834,7 +12402,6 @@ async function deleteTeamByName(teamName) {
             document.getElementById('group-active-chat').style.display = 'none';
             document.getElementById('group-empty-placeholder').style.display = 'flex';
             document.getElementById('page-group').classList.remove('mobile-chat-open');
-            stopGroupPolling();
         }
         loadGroupList();
     } catch (e) {
@@ -12854,114 +12421,66 @@ function toggleTeamMembersView() {
     }
 }
 
+// The open team's members as last loaded: [{agent: card, role, is_lead}]
+let _teamMembersCache = [];
+
+function _teamMember(agentId) {
+    return _teamMembersCache.find(m => m.agent.agent_id === agentId) || null;
+}
+
 async function loadTeamMembers() {
     if (!currentGroupId) return;
-    
+
     const tbody = document.getElementById('team-members-table-body');
     tbody.innerHTML = '<tr><td colspan="5" class="text-center text-gray-400 py-8">加载中...</td></tr>';
-    
+
     try {
-        const resp = await fetch(`/teams/${encodeURIComponent(currentGroupId)}/members`, { cache: 'no-store' });
-        if (!resp.ok) {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-red-400 py-8">加载失败</td></tr>';
-            return;
-        }
-        
-        const data = await resp.json();
-        const members = data.members || [];
-        
-        if (members.length === 0) {
+        const card = await agentApi('GET', `/v1/teams/${encodeURIComponent(currentGroupId)}`);
+        _teamMembersCache = card.members || [];
+        if (_teamMembersCache.length === 0) {
             tbody.innerHTML = '<tr><td colspan="5" class="text-center text-gray-400 py-8">暂无成员</td></tr>';
             return;
         }
-        
-        tbody.innerHTML = members.map(m => {
-            let typeBadge;
-            if (m.type === 'oasis') {
-                typeBadge = '<span class="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded">内部</span>';
-            } else if (m.tag === 'openclaw') {
-                typeBadge = '<span class="text-xs bg-purple-50 text-purple-600 px-2 py-1 rounded">openclaw</span>';
-            } else {
-                typeBadge = '<span class="text-xs bg-green-50 text-green-600 px-2 py-1 rounded">' + escapeHtml(m.platform || m.tag || 'ext') + '</span>';
-            }
-            const meta = m.meta || {};
-            const apiUrl = meta.api_url || '';
-            const apiKey = meta.api_key || '';
-            const model = meta.model || '';
-            const headers = meta.headers || {};
-            const deleteTitle = (m.tag === 'openclaw' && !canDeleteOpenClawAgent(m.global_name || ''))
-                ? '从团队移除（main 不会被真实删除）'
-                : '删除成员';
-            const safeName = escapeHtml(m.name || '-');
-            const safeTag = escapeHtml(m.tag || '-');
-            const safeGlobalName = escapeHtml(m.global_name || '-');
-            const isPrimary = !!m.is_primary;
-            const isAgentRow = (m.type === 'oasis' || m.type === 'ext');
-            const primaryBtn = isAgentRow
-                ? `<button onclick="toggleTeamMemberPrimary('${m.type}', '${escapeHtml(m.global_name)}', ${isPrimary ? 'false' : 'true'})" class="${isPrimary ? 'text-amber-700 bg-amber-50 border border-amber-300 hover:bg-amber-100' : 'text-gray-500 hover:text-amber-600 hover:bg-amber-50'} text-xs px-2 py-1 rounded" title="${isPrimary ? '点击取消团队主 agent' : '设为团队主 agent（创群时自动作为主 agent）'}">${isPrimary ? '取消主' : '设为主'}</button>`
-                : '';
-            const primaryBadge = isPrimary ? ' <span class="text-xs text-amber-600" title="团队主 agent">· 主 agent</span>' : '';
-
-            // For openclaw type, use the full orchestration config modal (files/tools/channels)
-            const configBtn = m.tag === 'openclaw'
-                ? `<button onclick="orchShowAgentConfigModal('${escapeHtml(m.global_name)}')" class="text-purple-500 hover:text-purple-700 text-xs px-2 py-1 rounded hover:bg-purple-50" title="OpenClaw 配置 (Files / Tools / Channels)">🦞⚙️</button>`
-                : `<button onclick="showAgentConfigModal('${m.type}', '${escapeHtml(m.global_name)}', '${escapeHtml(m.name)}', '${escapeHtml(m.tag || '')}', '${escapeHtml(apiUrl)}', '${escapeHtml(apiKey)}', '${escapeHtml(model)}', '${escapeHtml(typeof headers === 'object' ? JSON.stringify(headers).replace(/"/g, '&quot;').replace(/'/g, "\\'") : headers)}', '${escapeHtml(m.platform || '')}')" class="text-blue-500 hover:text-blue-700 text-xs px-2 py-1 rounded hover:bg-blue-50" title="配置">⚙️</button>`;
-
+        tbody.innerHTML = _teamMembersCache.map(m => {
+            const agent = m.agent;
+            const id = escapeHtml(agent.agent_id);
+            const openclaw = agent.platform === 'openclaw';
+            const badgeClass = agent.platform === 'webot' ? 'bg-blue-50 text-blue-600'
+                : (openclaw ? 'bg-purple-50 text-purple-600' : 'bg-green-50 text-green-600');
+            const safeRole = escapeHtml(m.role || agent.name);
+            const persona = escapeHtml(agent.settings?.persona || '-');
+            const lead = m.is_lead;
+            const leadBtn = `<button onclick="toggleTeamMemberPrimary('${id}', ${lead ? 'false' : 'true'})" class="${lead ? 'text-amber-700 bg-amber-50 border border-amber-300 hover:bg-amber-100' : 'text-gray-500 hover:text-amber-600 hover:bg-amber-50'} text-xs px-2 py-1 rounded" title="${lead ? '点击取消团队主 agent' : '设为团队主 agent（团队群里代表团队发言）'}">${lead ? '取消主' : '设为主'}</button>`;
+            const configBtn = openclaw
+                ? `<button onclick="orchShowAgentConfigModal('${escapeHtml(agent.settings?.global_name || '')}')" class="text-purple-500 hover:text-purple-700 text-xs px-2 py-1 rounded hover:bg-purple-50" title="OpenClaw 配置 (Files / Tools / Channels)">🦞⚙️</button>`
+                : `<button onclick="showAgentConfigModal('${id}')" class="text-blue-500 hover:text-blue-700 text-xs px-2 py-1 rounded hover:bg-blue-50" title="配置">⚙️</button>`;
             return `
                 <tr>
-                    <td class="team-member-cell font-medium text-gray-800" title="${safeName}">${safeName}${primaryBadge}</td>
-                    <td>${typeBadge}</td>
-                    <td class="team-member-cell" title="${safeTag}">${safeTag}</td>
-                    <td class="team-member-cell team-member-cell--mono" title="${safeGlobalName}">${safeGlobalName}</td>
+                    <td class="team-member-cell font-medium text-gray-800" title="${safeRole}">${safeRole}${lead ? ' <span class="text-xs text-amber-600" title="团队主 agent">· 主 agent</span>' : ''}</td>
+                    <td><span class="text-xs ${badgeClass} px-2 py-1 rounded">${escapeHtml(agent.platform)}</span></td>
+                    <td class="team-member-cell" title="${persona}">${persona}</td>
+                    <td class="team-member-cell team-member-cell--mono" title="${id}">${escapeHtml(agent.address)}</td>
                     <td class="team-member-cell team-member-cell--actions">
-                        ${primaryBtn}
+                        ${leadBtn}
                         ${configBtn}
-                        <button onclick="deleteTeamMember('${m.type}', '${escapeHtml(m.global_name)}', '${escapeHtml(m.name)}', '${escapeHtml(m.tag || '')}', '${escapeHtml(m.platform || '')}')" class="text-red-500 hover:text-red-700 text-xs px-2 py-1 rounded hover:bg-red-50" title="${deleteTitle}">🗑️</button>
+                        <button onclick="deleteTeamMember('${id}')" class="text-red-500 hover:text-red-700 text-xs px-2 py-1 rounded hover:bg-red-50" title="删除成员">🗑️</button>
                     </td>
                 </tr>`;
         }).join('');
     } catch (e) {
         console.error('Failed to load team members:', e);
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-red-400 py-8">加载失败: ' + e.message + '</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-red-400 py-8">加载失败: ' + escapeHtml(e.message) + '</td></tr>';
     }
 }
 
-/**
- * Toggle the "team primary agent" marker on a team member.
- * Backend enforces at-most-one primary per team file via preemption.
- *   - oasis: PUT /internal_agents/<sid>?team=<team>  body={meta:{is_primary}}
- *   - ext:   PUT /teams/<team>/members/external     body={global_name, is_primary}
- */
-async function toggleTeamMemberPrimary(type, globalName, makePrimary) {
-    if (!currentGroupId || !globalName) return;
+// The team's lead speaks for it (and leads its team group); at most one per team.
+async function toggleTeamMemberPrimary(agentId, makeLead) {
+    if (!currentGroupId || !agentId) return;
     try {
-        let resp;
-        if (type === 'oasis') {
-            const url = `/internal_agents/${encodeURIComponent(globalName)}?team=${encodeURIComponent(currentGroupId)}`;
-            resp = await fetch(url, {
-                method: 'PUT',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ meta: { is_primary: !!makePrimary } }),
-            });
-        } else {
-            resp = await fetch(`/teams/${encodeURIComponent(currentGroupId)}/members/external`, {
-                method: 'PUT',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ global_name: globalName, is_primary: !!makePrimary }),
-            });
-        }
-        if (!resp.ok) {
-            const data = await resp.json().catch(() => ({}));
-            if (typeof orchToast === 'function') orchToast('设置失败: ' + (data.error || resp.statusText));
-            else alert('设置失败: ' + (data.error || resp.statusText));
-            return;
-        }
-        if (typeof orchToast === 'function') {
-            orchToast(makePrimary ? '✅ 已设为团队主 agent' : '✅ 已取消团队主 agent');
-        }
+        await agentApi('PATCH', `/v1/teams/${encodeURIComponent(currentGroupId)}/members/${encodeURIComponent(agentId)}`, {is_lead: !!makeLead});
+        if (typeof orchToast === 'function') orchToast(makeLead ? '✅ 已设为团队主 agent' : '✅ 已取消团队主 agent');
         await loadTeamMembers();
     } catch (e) {
-        console.error('Toggle primary failed:', e);
         if (typeof orchToast === 'function') orchToast('设置失败: ' + e.message);
         else alert('设置失败: ' + e.message);
     }
@@ -13132,7 +12651,7 @@ function renderExportPreview(data) {
         agentsListEl.innerHTML = '<div class="text-gray-400 italic">' + t('export_preview_empty') + '</div>';
     }
 
-    // External Agents
+    // Agents on other platforms (external_agents.json)
     const externalAgents = sections.external_agents || { count: 0, items: [] };
     document.getElementById('export-external-agents-count').textContent = externalAgents.count || 0;
     const externalAgentsListEl = document.getElementById('export-external-agents-list');
@@ -13761,19 +13280,6 @@ function canDeleteOpenClawAgent(agentName) {
     return !!agentName && agentName.toLowerCase() !== 'main';
 }
 
-async function removeTeamExternalMember(teamName, globalName) {
-    const resp = await fetch(`/teams/${encodeURIComponent(teamName)}/members/external`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ global_name: globalName })
-    });
-    const result = await resp.json().catch(() => ({}));
-    if (!resp.ok) {
-        throw new Error(result.error || '删除失败');
-    }
-    return result;
-}
-
 function acpxToolFromPlatform(platform) {
     const raw = String(platform || '').trim().toLowerCase();
     if (!raw) return '';
@@ -13794,124 +13300,61 @@ function shouldShowExternalApiFields(platform) {
     return platformNeedsApiUrl(platform);
 }
 
-async function deleteTeamMember(type, globalName, name, tag, platform) {
-    if (!currentGroupId) return;
-    if (_deletingTeamMember) return; // Prevent double-click
-
-    const platformTool = acpxToolFromPlatform(platform || tag);
-    const isOpenClaw = platformTool === 'openclaw' || tag === 'openclaw';
-    const canDeleteRealOpenClaw = isOpenClaw && canDeleteOpenClawAgent(globalName || '');
-    const confirmMsg = isOpenClaw
-        ? (canDeleteRealOpenClaw
-            ? `确定要删除成员 "${name}"？\n这会同时删除真实的 OpenClaw Agent "${globalName}"。`
-            : `确定要将成员 "${name}" 从团队移除？\nmain Agent 不会被真实删除，只会解除团队绑定。`)
-        : `确定要删除成员 "${name}"？`;
-
-    if (!confirm(confirmMsg)) {
-        return;
-    }
-    
-    _deletingTeamMember = true;
-    
-    // Show loading state on the delete button (use data-id to find the correct button)
-    // Since we're re-rendering the list, just disable all delete buttons in the members table
-    const tbody = document.getElementById('team-members-table-body');
-    if (tbody) {
-        const deleteBtns = tbody.querySelectorAll('button[onclick*="deleteTeamMember"]');
-        deleteBtns.forEach(btn => {
-            btn.disabled = true;
-            btn.dataset.originalText = btn.textContent;
-            btn.textContent = '⏳';
-        });
-    }
-    
+// A member that belongs to no other team is deleted with its agent (and, for
+// OpenClaw, the OpenClaw agent itself unless it is main); otherwise it only leaves this team.
+// Take an agent out of a team. One that belongs to no other team is deleted outright
+// (see deleteAgent). Returns whether anything changed.
+async function removeAgentFromTeam(team, agent, name) {
+    let otherTeams = [];
     try {
-        if (type === 'oasis') {
-            const url = `/internal_agents/${encodeURIComponent(globalName)}?team=${encodeURIComponent(currentGroupId)}`;
-            const resp = await fetch(url, { method: 'DELETE' });
-            if (!resp.ok) {
-                const err = await resp.json();
-                throw new Error(err.error || '删除失败');
-            }
-        } else if (isOpenClaw) {
-            if (canDeleteRealOpenClaw) {
-                const agentResp = await fetch('/proxy_openclaw_remove', {
-                    method: 'DELETE',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name: globalName })
-                });
-                const agentResult = await agentResp.json().catch(() => ({}));
-                if (!agentResp.ok || !agentResult.ok) {
-                    throw new Error(agentResult.error || '删除 OpenClaw Agent 失败');
-                }
-            }
-            await removeTeamExternalMember(currentGroupId, globalName);
-        } else {
-            let closeError = '';
-            if (platformTool || globalName) {
-                const acpResp = await fetch('/proxy_acpx_session_delete', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(Object.assign(
-                        { session_name: globalName },
-                        platformTool ? { tool: platformTool } : {}
-                    )),
-                });
-                const acpResult = await acpResp.json().catch(() => ({}));
-                if (!acpResp.ok || !acpResult.ok) {
-                    closeError = String(acpResult.detail || acpResult.error || '删除 ACP Agent 失败');
-                    const low = closeError.toLowerCase();
-                    const ignorable = low.includes('session not found')
-                        || low.includes('unsupported tool')
-                        || low.includes('unsupported tool or session not found');
-                    if (!ignorable) {
-                        throw new Error(closeError);
-                    }
-                }
-            }
-            await removeTeamExternalMember(currentGroupId, globalName);
-            if (closeError && typeof orchToast === 'function') {
-                orchToast(`成员 "${name}" 已删除（会话已不存在）`);
-            }
-        }
-        
-        // Use non-blocking toast instead of alert
-        if (typeof orchToast === 'function') {
-            if (isOpenClaw && canDeleteRealOpenClaw) {
-                orchToast(`成员 "${name}" 和 OpenClaw Agent 已删除`);
-            } else if (isOpenClaw) {
-                orchToast(`成员 "${name}" 已从团队移除`);
-            } else {
-                orchToast(`成员 "${name}" 已删除`);
-            }
-        }
-        
-        // Reload the list - this will clear and re-render the table
+        const teams = await agentApi('GET', '/v1/teams');
+        otherTeams = (teams.data || []).filter(t => t.team !== team
+            && (t.members || []).some(m => m.agent.agent_id === agent.agent_id)).map(t => t.team);
+    } catch (e) { /* treat as only here */ }
+    if (!otherTeams.length) return deleteAgent(agent, name);
+    if (!confirm(`将 "${name}" 移出本团队？它仍属于：${otherTeams.join('、')}。`)) return false;
+    await agentApi('DELETE', `/v1/teams/${encodeURIComponent(team)}/members/${encodeURIComponent(agent.agent_id)}`);
+    return true;
+}
+
+// Delete an agent: it leaves every team and conversation, and the OpenClaw agent
+// behind it (never `main`) is removed too. Returns whether it was deleted.
+async function deleteAgent(agent, name) {
+    const openclawName = agent.platform === 'openclaw' ? (agent.settings?.global_name || '') : '';
+    const removeOpenClaw = openclawName && canDeleteOpenClawAgent(openclawName);
+    const question = removeOpenClaw
+        ? `确定删除 "${name}"？\n这会同时删除真实的 OpenClaw Agent "${openclawName}"。`
+        : `确定删除 "${name}"？它会离开所有团队和群聊。`;
+    if (!confirm(question)) return false;
+    if (removeOpenClaw) {
+        const resp = await fetch('/proxy_openclaw_remove', {
+            method: 'DELETE', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({name: openclawName}),
+        });
+        const result = await resp.json().catch(() => ({}));
+        if (!resp.ok || !result.ok) throw new Error(result.error || '删除 OpenClaw Agent 失败');
+    }
+    await agentApi('DELETE', `/v1/agents/${encodeURIComponent(agent.agent_id)}`);
+    return true;
+}
+
+async function deleteTeamMember(agentId) {
+    if (!currentGroupId || _deletingTeamMember) return;
+    const member = _teamMember(agentId);
+    if (!member) return;
+    const name = member.role || member.agent.name;
+    _deletingTeamMember = true;
+    try {
+        if (!await removeAgentFromTeam(currentGroupId, member.agent, name)) return;
+        if (typeof orchToast === 'function') orchToast(`成员 "${name}" 已移除`);
         await loadTeamMembers();
-        
-        // Ensure members overlay stays visible after refresh
         const membersOverlay = document.getElementById('team-members-overlay');
         if (membersOverlay) membersOverlay.style.display = 'flex';
     } catch (e) {
-        console.error('Failed to delete team member:', e);
-        if (typeof orchToast === 'function') {
-            orchToast('删除失败: ' + e.message);
-        } else {
-            alert('删除失败: ' + e.message);
-        }
+        if (typeof orchToast === 'function') orchToast('删除失败: ' + e.message);
+        else alert('删除失败: ' + e.message);
     } finally {
         _deletingTeamMember = false;
-        // Restore button states
-        const tbody = document.getElementById('team-members-table-body');
-        if (tbody) {
-            const deleteBtns = tbody.querySelectorAll('button[onclick*="deleteTeamMember"]');
-            deleteBtns.forEach(btn => {
-                btn.disabled = false;
-                if (btn.dataset.originalText) {
-                    btn.textContent = btn.dataset.originalText;
-                }
-            });
-        }
     }
 }
 
@@ -14058,12 +13501,12 @@ function showAddTeamMemberModal() {
             <h3>➕ 添加成员</h3>
             
             <div style="display:flex;gap:6px;margin-bottom:12px;">
-                <button id="tab-oasis" onclick="switchAddMemberTab('oasis')" style="flex:1;padding:7px;border:1px solid #d1d5db;border-radius:6px;background:#2563eb;color:white;font-size:11px;cursor:pointer;">Oasis</button>
+                <button id="tab-oasis" onclick="switchAddMemberTab('oasis')" style="flex:1;padding:7px;border:1px solid #d1d5db;border-radius:6px;background:#2563eb;color:white;font-size:11px;cursor:pointer;">🤖 WeBot</button>
                 <button id="tab-openclaw" onclick="switchAddMemberTab('openclaw')" style="flex:1;padding:7px;border:1px solid #d1d5db;border-radius:6px;background:#f9fafb;color:#374151;font-size:11px;cursor:pointer;">🦞 OpenClaw</button>
-                <button id="tab-external" onclick="switchAddMemberTab('external')" style="flex:1;padding:7px;border:1px solid #d1d5db;border-radius:6px;background:#f9fafb;color:#374151;font-size:11px;cursor:pointer;">External</button>
+                <button id="tab-external" onclick="switchAddMemberTab('external')" style="flex:1;padding:7px;border:1px solid #d1d5db;border-radius:6px;background:#f9fafb;color:#374151;font-size:11px;cursor:pointer;">🔌 ACP</button>
             </div>
             
-            <!-- Oasis Agent Form -->
+            <!-- WeBot agent form -->
             <div id="form-oasis">
                 <div style="display:flex;flex-direction:column;gap:8px;">
                     <label style="font-size:11px;font-weight:600;color:#374151;">名称
@@ -14094,12 +13537,12 @@ function showAddTeamMemberModal() {
                 </div>
                 <div class="orch-modal-btns" style="margin-top:12px;">
                     <button onclick="document.getElementById('add-team-member-overlay').remove()" style="padding:6px 14px;border-radius:6px;border:1px solid #d1d5db;background:white;color:#374151;cursor:pointer;font-size:12px;">取消</button>
-                    <button onclick="showImportOasisModal()" style="padding:6px 14px;border-radius:6px;border:1px solid #2563eb;background:#eff6ff;color:#2563eb;cursor:pointer;font-size:12px;">📥 导入已有</button>
+                    <button onclick="showImportAgentModal()" style="padding:6px 14px;border-radius:6px;border:1px solid #2563eb;background:#eff6ff;color:#2563eb;cursor:pointer;font-size:12px;">📥 导入已有</button>
                     <button onclick="addOasisMember(event)" style="padding:6px 14px;border-radius:6px;border:none;background:#2563eb;color:white;cursor:pointer;font-size:12px;">新建</button>
                 </div>
             </div>
             
-            <!-- External Agent Form -->
+            <!-- ACP agent form (codex, claude, gemini, …) -->
             <div id="form-external" style="display:none;">
                 <div style="display:flex;flex-direction:column;gap:8px;">
                     <label style="font-size:11px;font-weight:600;color:#374151;">名称
@@ -14184,7 +13627,7 @@ function showAddTeamMemberModal() {
     void populateAddExtTagSelectOptions();
     void populateAddOpenClawTagSelectOptions();
 
-    // Load expert tags for Oasis Agent select options
+    // Load persona tags for the WeBot form
     (async () => {
         try {
             const teamExpertsUrl = currentGroupId
@@ -14198,7 +13641,7 @@ function showAddTeamMemberModal() {
             renderAddOasisTagOptions([], '');
         }
 
-        // Populate tools checkboxes for Oasis Agent
+        // Populate tools checkboxes for the WeBot form
         const toolsContainer = document.getElementById('add-oasis-tools-container');
         if (toolsContainer && allTools.length > 0) {
             toolsContainer.innerHTML = allTools.map(t =>
@@ -14212,7 +13655,7 @@ function showAddTeamMemberModal() {
         }
     })();
     
-    // Setup drop zone for Oasis Agent
+    // Setup drop zone for the WeBot form
     const dropZone = document.getElementById('add-oasis-drop-zone');
     if (dropZone) {
         dropZone.addEventListener('dragover', (e) => {
@@ -14463,6 +13906,13 @@ function switchAddMemberTab(tab) {
     document.getElementById('tab-external').style.color = tab === 'external' ? 'white' : '#374151';
 }
 
+// A new agent of any platform, joining the open team in *role*.
+async function createTeamAgent(fields, role) {
+    const agent = await agentApi('POST', '/v1/agents', {...fields, team: currentGroupId});
+    await agentApi('POST', `/v1/teams/${encodeURIComponent(currentGroupId)}/members`, {agent: agent.agent_id, role: role || agent.name});
+    return agent;
+}
+
 async function addOasisMember(event) {
     const btn = event ? event.target : null;
     if (btn && btn.disabled) return;
@@ -14494,9 +13944,6 @@ async function addOasisMember(event) {
         // If all selected → tools stays null (no restriction)
     }
     
-    // Generate automatic session ID (UUID format)
-    const session = 'oc_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 11);
-    
     // Disable button and show loading
     if (btn) {
         btn.disabled = true;
@@ -14505,23 +13952,8 @@ async function addOasisMember(event) {
     }
     
     try {
-        const url = `/internal_agents?team=${encodeURIComponent(currentGroupId)}`;
-        const meta = { name: name, tag: tag || '' };
-        if (tools !== null) meta.tools = tools;
-        const resp = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                session: session,
-                meta: meta
-            })
-        });
-        
-        if (!resp.ok) {
-            const err = await resp.json();
-            throw new Error(err.error || '添加失败');
-        }
-        
+        await createTeamAgent({ name, platform: 'webot', persona: tag || '', tools }, name);
+
         if (typeof orchToast === 'function') {
             orchToast('成员添加成功');
         }
@@ -14585,23 +14017,8 @@ async function addExternalMember(event) {
     }
     
     try {
-        const url = `/teams/${encodeURIComponent(currentGroupId)}/members/external`;
-        const resp = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                name: name,
-                tag: tag,
-                global_name: globalName,
-                platform: platform
-            })
-        });
-        
-        if (!resp.ok) {
-            const err = await resp.json();
-            throw new Error(err.error || '添加失败');
-        }
-        
+        await createTeamAgent({ name, platform, persona: tag, global_name: globalName }, name);
+
         if (typeof orchToast === 'function') {
             orchToast('成员添加成功');
         }
@@ -14656,65 +14073,6 @@ async function populateAddOpenClawTagSelectOptions() {
         if (tag) addOpt(tag, tag);
     }
     addOpt('custom', '自定义');
-}
-
-async function deleteGroup(groupId) {    if (!confirm(t('group_delete_confirm'))) return;
-    try {
-        await fetch(`/proxy_groups/${encodeURIComponent(groupId)}`, {
-            method: 'DELETE'
-        });
-        if (currentGroupId === groupId) {
-            currentGroupId = null;
-            document.getElementById('group-active-chat').style.display = 'none';
-            document.getElementById('group-empty-placeholder').style.display = 'flex';
-            document.getElementById('page-group').classList.remove('mobile-chat-open');
-            stopGroupPolling();
-        }
-        loadGroupList();
-    } catch (e) {
-        alert('删除失败: ' + e.message);
-    }
-}
-
-function updateMuteButton() {
-    const btn = document.getElementById('group-mute-btn');
-    if (!btn) return;
-    if (groupMuted) {
-        btn.textContent = t('group_unmute');
-        btn.style.background = '#f0fdf4';
-        btn.style.color = '#16a34a';
-        btn.style.borderColor = '#bbf7d0';
-    } else {
-        btn.textContent = t('group_mute');
-        btn.style.background = '#fef2f2';
-        btn.style.color = '#dc2626';
-        btn.style.borderColor = '#fecaca';
-    }
-}
-
-async function loadGroupMuteStatus(groupId) {
-    try {
-        const resp = await fetch(`/proxy_groups/${encodeURIComponent(groupId)}/mute_status`);
-        if (resp.ok) {
-            const data = await resp.json();
-            groupMuted = data.muted;
-            updateMuteButton();
-        }
-    } catch (e) { console.error('Failed to load mute status:', e); }
-}
-
-async function toggleGroupMute() {
-    if (!currentGroupId) return;
-    const action = groupMuted ? 'unmute' : 'mute';
-    try {
-        const resp = await fetch(`/proxy_groups/${encodeURIComponent(currentGroupId)}/${action}`, {
-            method: 'POST'
-        });
-        if (resp.ok) {
-            groupMuted = !groupMuted;
-            updateMuteButton();
-        }
-    } catch (e) { console.error('Failed to toggle mute:', e); }
 }
 
 // ===== Orchestration Mobile Toggle Functions =====
@@ -14998,12 +14356,20 @@ function orchSetWorkflowMode(mode) {
 // Agent 配置模态框
 let currentConfigAgent = null;
 
-async function showAgentConfigModal(type, globalName, name, tag, api_url, api_key, model, headers, platform) {
-    const normalizedType = type === 'ext' ? 'external' : type;
-    currentConfigAgent = { type: normalizedType, globalName, name, tag, api_url, api_key, model, headers, platform };
+async function showAgentConfigModal(agentId) {
+    const member = _teamMember(agentId);
+    if (!member) return;
+    const agent = member.agent;
+    const settings = agent.settings || {};
+    const webot = agent.platform === 'webot';
+    const name = member.role || agent.name;
+    const tag = settings.persona || '';
+    const { api_url, model, headers } = settings;
+    const platform = agent.platform;
+    currentConfigAgent = { agentId, name, tag, platform };
     const platformValue = String(platform || '').trim().toLowerCase();
     let platformOptionsHtml = '';
-    if (normalizedType === 'external') {
+    if (!webot) {
         const options = await fetchAddExtPlatformOptions();
         const normalized = Array.isArray(options) ? options.slice() : [];
         if (platformValue && !normalized.includes(platformValue) && platformValue !== 'http') {
@@ -15017,15 +14383,15 @@ async function showAgentConfigModal(type, globalName, name, tag, api_url, api_ke
     overlay.className = 'orch-modal-overlay';
     overlay.id = 'agent-config-overlay';
     
-    const typeLabel = normalizedType === 'oasis' ? 'Oasis Agent' : 'External Agent';
+    const typeLabel = webot ? 'WeBot' : addExtPlatformLabel(platform);
     
-    // External Agent form fields (like orchestration page)
-    const externalForm = normalizedType === 'external' ? `
+    // Endpoint settings of platforms reached over HTTP
+    const externalForm = !webot ? `
         <div id="config-ext-api-fields" style="display:${shouldShowExternalApiFields(platformValue) ? 'block' : 'none'};">
         <label style="font-size:11px;color:#9ca3af;margin-bottom:2px;margin-top:8px;display:block;">API URL *</label>
         <input id="config-ext-url" type="text" value="${escapeHtml(api_url || '')}" placeholder="https://api.example.com/v1" style="font-family:monospace;font-size:12px;width:100%;max-width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;">
         <label style="font-size:11px;color:#9ca3af;margin-bottom:2px;margin-top:8px;display:block;">API Key</label>
-        <input id="config-ext-key" type="text" value="${escapeHtml(api_key || '')}" placeholder="sk-xxx (optional)" style="font-family:monospace;font-size:12px;width:100%;max-width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;">
+        <input id="config-ext-key" type="text" value="" placeholder="${settings.has_api_key ? '已保存（留空则不变）' : 'sk-xxx (optional)'}" style="font-family:monospace;font-size:12px;width:100%;max-width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;">
         <label style="font-size:11px;color:#9ca3af;margin-bottom:2px;margin-top:8px;display:block;">Model</label>
         <input id="config-ext-model" type="text" value="${escapeHtml(model || '')}" placeholder="gpt-4 / deepseek-chat (optional)" style="font-family:monospace;font-size:12px;width:100%;max-width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;">
         <label style="font-size:11px;color:#9ca3af;margin-bottom:2px;margin-top:8px;display:block;">Headers (JSON)</label>
@@ -15034,32 +14400,29 @@ async function showAgentConfigModal(type, globalName, name, tag, api_url, api_ke
     ` : '';
     
     // Agent persona tag section
-    const tagSection = (normalizedType === 'oasis' || normalizedType === 'external') ? `
+    const tagSection = `
         <label style="font-size:11px;font-weight:600;color:#374151;">标签 (Tag)</label>
         <select id="config-agent-tag" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-top:2px;background:white;">
             <option value="">(无标签)</option>
         </select>
-        ${normalizedType === 'oasis' ? `<div id="config-tag-drop-zone" style="border:2px dashed #d1d5db;border-radius:8px;padding:12px;text-align:center;font-size:11px;color:#9ca3af;cursor:default;transition:all .15s;margin-top:8px;">
+        ${webot ? `<div id="config-tag-drop-zone" style="border:2px dashed #d1d5db;border-radius:8px;padding:12px;text-align:center;font-size:11px;color:#9ca3af;cursor:default;transition:all .15s;margin-top:8px;">
             📦 拖入专家设置标签
         </div>` : ''}
-    ` : '';
+    `;
     
     // Platform selector for external agents
-    const platformSection = normalizedType === 'external' ? `
+    const platformSection = !webot ? `
         <label style="font-size:11px;font-weight:600;color:#374151;">平台 (Platform)</label>
-        <select id="config-agent-platform" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-top:2px;background:white;">
+        <select id="config-agent-platform" disabled style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-top:2px;background:#f3f4f6;">
             ${platformOptionsHtml}
         </select>
     ` : '';
 
     overlay.innerHTML = `
         <div class="orch-modal" style="width:min(560px, 92vw);max-width:92vw;max-height:min(88vh, 820px);overflow:auto;">
-            <h3>⚙️ ${normalizedType === 'external' ? '🌐 ' : ''}配置成员 — ${typeLabel}</h3>
+            <h3>⚙️ 配置成员 — ${escapeHtml(typeLabel)}</h3>
             <div style="display:flex;flex-direction:column;gap:8px;margin:10px 0;">
-                <label style="font-size:11px;font-weight:600;color:#374151;">类型</label>
-                <div id="config-agent-type" style="padding:6px 8px;background:#f3f4f6;border-radius:6px;font-size:12px;color:#374151;">${typeLabel}</div>
-
-                ${platformSection}
+                                ${platformSection}
 
                 <label style="font-size:11px;font-weight:600;color:#374151;">名称</label>
                 <input id="config-agent-name" type="text" placeholder="输入成员名称" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-top:2px;">
@@ -15067,12 +14430,12 @@ async function showAgentConfigModal(type, globalName, name, tag, api_url, api_ke
                 ${tagSection}
                 ${externalForm}
 
-                <label style="font-size:11px;font-weight:600;color:#374151;">Global Name</label>
-                <input id="config-agent-global-name" type="text" value="${escapeHtml(globalName)}" disabled style="width:100%;max-width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-top:2px;background:#f3f4f6;cursor:not-allowed;color:#9ca3af;box-sizing:border-box;">
+                <label style="font-size:11px;font-weight:600;color:#374151;">地址</label>
+                <input id="config-agent-global-name" type="text" value="${escapeHtml(agent.address)}" disabled style="width:100%;max-width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-top:2px;background:#f3f4f6;cursor:not-allowed;color:#9ca3af;box-sizing:border-box;">
             </div>
             <div class="orch-modal-btns">
                 <button id="config-cancel" style="padding:6px 14px;border-radius:6px;border:1px solid #d1d5db;background:white;color:#374151;cursor:pointer;font-size:12px;">取消</button>
-                <button id="config-save" style="padding:6px 14px;border-radius:6px;border:none;background:${normalizedType === 'external' ? '#10b981' : '#2563eb'};color:white;cursor:pointer;font-size:12px;">保存</button>
+                <button id="config-save" style="padding:6px 14px;border-radius:6px;border:none;background:#2563eb;color:white;cursor:pointer;font-size:12px;">保存</button>
             </div>
         </div>
     `;
@@ -15118,11 +14481,8 @@ async function showAgentConfigModal(type, globalName, name, tag, api_url, api_ke
         const tagInput = document.getElementById('config-agent-tag');
         const newTag = tagInput ? tagInput.value.trim() : '';
 
-        // Oasis Agent: save tag
-        if (normalizedType === 'oasis') {
-            meta.tag = newTag;
-        } else {
-            // External Agent: save api_url, api_key, model, headers
+        // Platforms reached over HTTP also carry their endpoint settings
+        if (!webot) {
             const platformValue = document.getElementById('config-agent-platform')?.value || '';
             const extUrl = document.getElementById('config-ext-url').value.trim();
             if (platformNeedsApiUrl(platformValue) && !extUrl) {
@@ -15147,33 +14507,16 @@ async function showAgentConfigModal(type, globalName, name, tag, api_url, api_ke
         }
         
         try {
-            const url = normalizedType === 'external'
-                ? `/teams/${encodeURIComponent(currentGroupId)}/members/external`
-                : `/internal_agents/${encodeURIComponent(globalName)}?team=${encodeURIComponent(currentGroupId)}`;
-            const body = normalizedType === 'external'
-                ? {
-                    global_name: globalName,
-                    new_name: newName,
-                    new_tag: newTag,
-                    platform: document.getElementById('config-agent-platform')?.value || '',
-                    api_url: meta.api_url,
-                    api_key: meta.api_key,
-                    model: meta.model,
-                    headers: meta.headers
-                }
-                : { meta };
-            const resp = await fetch(url, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
-            });
-            
-            if (!resp.ok) {
-                const err = await resp.json();
-                alert('保存失败: ' + (err.error || '未知错误'));
-                return;
+            const settingsPatch = { persona: newTag };
+            if (!webot) {
+                Object.assign(settingsPatch, { api_url: meta.api_url, model: meta.model, headers: meta.headers });
+                if (meta.api_key) settingsPatch.api_key = meta.api_key;  // empty keeps the saved key
             }
-            
+            await agentApi('PATCH', `/v1/agents/${encodeURIComponent(agentId)}`, { settings: settingsPatch });
+            if (newName !== name) {
+                await agentApi('PATCH', `/v1/teams/${encodeURIComponent(currentGroupId)}/members/${encodeURIComponent(agentId)}`, { role: newName });
+            }
+
             alert('保存成功！');
             overlay.remove();
             currentConfigAgent = null;
@@ -15184,7 +14527,7 @@ async function showAgentConfigModal(type, globalName, name, tag, api_url, api_ke
     });
     
     // Load expert tags for agent persona binding
-    if (normalizedType === 'oasis' || normalizedType === 'external') {
+    {
         try {
             const expertsUrl = currentGroupId
                 ? `/proxy_visual/experts?team=${encodeURIComponent(currentGroupId)}`
@@ -15213,7 +14556,7 @@ async function showAgentConfigModal(type, globalName, name, tag, api_url, api_ke
             console.warn('Failed to load expert tags', e);
         }
 
-        if (normalizedType === 'oasis') {
+        if (webot) {
             // Setup drop zone for expert tags
             const dropZone = document.getElementById('config-tag-drop-zone');
             dropZone.addEventListener('dragover', (e) => {
@@ -15529,7 +14872,7 @@ async function loadTeamAlarms() {
     const tbody = document.getElementById('team-alarms-table-body');
     const targetSelect = document.getElementById('team-alarm-target');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-gray-400 py-8">加载中...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="4" class="text-center text-gray-400 py-8">加载中...</td></tr>';
     try {
         const resp = await fetch(`/teams/${encodeURIComponent(currentGroupId)}/alarms`, { cache: 'no-store' });
         const data = await resp.json().catch(() => ({}));
@@ -15545,13 +14888,12 @@ async function loadTeamAlarms() {
 
         const alarms = data.alarms || [];
         if (!alarms.length) {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-gray-400 py-8">暂无定时任务</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center text-gray-400 py-8">暂无定时任务</td></tr>';
             return;
         }
         tbody.innerHTML = alarms.map(a => {
             const taskId = escapeHtml(a.task_id || '');
-            const targetName = escapeHtml(a.target_name || a.target_ref || '-');
-            const targetType = escapeHtml(a.target_type || 'internal');
+            const targetName = escapeHtml(a.target_name || a.agent || '-');
             const cron = escapeHtml(a.cron || '');
             const scheduleType = a.schedule_type || 'cron';
             const runAt = a.run_at || '';
@@ -15561,7 +14903,6 @@ async function loadTeamAlarms() {
             return `
                 <tr>
                     <td class="font-medium text-gray-800">${targetName}</td>
-                    <td class="font-mono text-xs text-gray-500">${targetType}</td>
                     <td><div class="text-xs text-gray-800">${scheduleLabel}</div><div class="font-mono text-[11px] text-gray-400">${scheduleRaw}</div></td>
                     <td style="max-width:360px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${text}">${text}</td>
                     <td style="text-align:right;white-space:nowrap;">
@@ -15570,7 +14911,7 @@ async function loadTeamAlarms() {
                 </tr>`;
         }).join('');
     } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="5" class="text-center text-red-400 py-8">加载失败: ${escapeHtml(e.message || String(e))}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="4" class="text-center text-red-400 py-8">加载失败: ${escapeHtml(e.message || String(e))}</td></tr>`;
     }
 }
 
@@ -15581,11 +14922,10 @@ async function createTeamAlarm(event) {
     const textInput = document.getElementById('team-alarm-text');
     const targetIndex = Number(targetSelect?.value ?? -1);
     const target = Number.isInteger(targetIndex) ? _teamAlarmTargets[targetIndex] : null;
-    const targetType = target?.target_type || '';
-    const targetName = target?.target_name || '';
+    const agent = target?.agent || '';
     const schedule = buildTeamAlarmScheduleFromControls();
     const text = (textInput?.value || '').trim();
-    if (!targetType || !targetName || !text || (schedule.schedule_type === 'cron' && !schedule.cron) || (schedule.schedule_type === 'once' && !schedule.run_at)) {
+    if (!agent || !text || (schedule.schedule_type === 'cron' && !schedule.cron) || (schedule.schedule_type === 'once' && !schedule.run_at)) {
         alert('请选择目标，并设置时间和任务内容');
         return;
     }
@@ -15593,7 +14933,7 @@ async function createTeamAlarm(event) {
         const resp = await fetch(`/teams/${encodeURIComponent(currentGroupId)}/alarms`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ target_type: targetType, target_name: targetName, ...schedule, text }),
+            body: JSON.stringify({ agent, ...schedule, text }),
         });
         const data = await resp.json().catch(() => ({}));
         if (!resp.ok) throw new Error(data.error || data.detail || '创建失败');
@@ -15889,8 +15229,7 @@ async function viewTeamWorkflow(name, mode = 'yaml') {
         if (sel) sel.value = currentGroupId;
         // Refresh sidebar agents/experts for the team
         orchLoadExperts();
-        orchLoadSessionAgents();
-        orchLoadOpenClawSessions();
+        orchLoadAgents();
         if (typeof orchSetWorkflowMode === 'function') orchSetWorkflowMode(mode);
         await orchDoLoadLayout(name, mode);
     } catch (err) {
@@ -15994,8 +15333,7 @@ function newTeamWorkflowOnCanvas() {
         if (sel) sel.value = currentGroupId;
         // Refresh sidebar agents/experts for the team
         orchLoadExperts();
-        orchLoadSessionAgents();
-        orchLoadOpenClawSessions();
+        orchLoadAgents();
         // Clear canvas for a fresh new workflow
         orchClearCanvas();
     });
@@ -16218,19 +15556,11 @@ async function addOpenClawMember() {
                 } catch(e) { console.warn('Failed to write IDENTITY.md:', e); }
             }
 
-            // 3. Save to external_agents.json (tag stores persona binding; platform stores transport)
+            // 3. The OpenClaw agent becomes a ClawCross agent in this team.
             try {
-                await fetch(`/teams/${encodeURIComponent(currentGroupId)}/members/external`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        name: shortName,
-                        tag: selectedTag || selectedExpertTag,
-                        platform: 'openclaw',
-                        global_name: globalName
-                    })
-                });
-            } catch(e) { console.warn('Failed to save to external_agents.json:', e); }
+                await createTeamAgent({ name: shortName, platform: 'openclaw', persona: selectedTag || selectedExpertTag,
+                                        global_name: globalName }, shortName);
+            } catch(e) { console.warn('Failed to add the OpenClaw agent to the team:', e); }
             
             if (typeof orchToast === 'function') {
                 orchToast('🦞 OpenClaw Agent创建成功！');
@@ -16277,104 +15607,93 @@ async function addOpenClawMember() {
 }
 
 
-// ─── Import existing Internal Agent into team ───
-let _importSelectedOasis = null;
+// ─── Add one of the user's agents to the team ───
+let _importSelectedAgent = null;
 
-function showImportOasisModal() {
+function showImportAgentModal() {
     // Close the add-member modal
     const addOverlay = document.getElementById('add-team-member-overlay');
     if (addOverlay) addOverlay.remove();
 
     const overlay = document.createElement('div');
     overlay.className = 'orch-modal-overlay';
-    overlay.id = 'import-oasis-overlay';
+    overlay.id = 'import-agent-overlay';
     overlay.innerHTML = `
         <div class="orch-modal" style="min-width:380px;max-width:500px;">
-            <h3>📥 导入 Internal Agent</h3>
-            <div style="font-size:11px;color:#6b7280;margin-bottom:8px;">从公共 Internal Agents 列表中选择，导入到当前团队：</div>
-            <div id="import-oasis-list" style="max-height:300px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px;padding:4px;">
+            <h3>📥 导入已有 Agent</h3>
+            <div style="font-size:11px;color:#6b7280;margin-bottom:8px;">从你的 Agent 中选择，加入当前团队：</div>
+            <div id="import-agent-list" style="max-height:300px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px;padding:4px;">
                 <div style="padding:12px;text-align:center;font-size:11px;color:#9ca3af;">⏳ 加载中...</div>
             </div>
             <div class="orch-modal-btns" style="margin-top:12px;">
-                <button onclick="document.getElementById('import-oasis-overlay').remove()" style="padding:6px 14px;border-radius:6px;border:1px solid #d1d5db;background:white;color:#374151;cursor:pointer;font-size:12px;">取消</button>
-                <button id="import-oasis-join-btn" onclick="_doImportOasis()" disabled style="padding:6px 14px;border-radius:6px;border:none;background:#2563eb;color:white;cursor:pointer;font-size:12px;opacity:0.5;">加入团队</button>
+                <button onclick="document.getElementById('import-agent-overlay').remove()" style="padding:6px 14px;border-radius:6px;border:1px solid #d1d5db;background:white;color:#374151;cursor:pointer;font-size:12px;">取消</button>
+                <button id="import-agent-join-btn" onclick="_doImportAgent()" disabled style="padding:6px 14px;border-radius:6px;border:none;background:#2563eb;color:white;cursor:pointer;font-size:12px;opacity:0.5;">加入团队</button>
             </div>
         </div>
     `;
     document.body.appendChild(overlay);
     overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
 
-    _importSelectedOasis = null;
-    _loadImportOasisList();
+    _importSelectedAgent = null;
+    _loadImportAgentList();
 }
 
-async function _loadImportOasisList() {
-    const listEl = document.getElementById('import-oasis-list');
+async function _loadImportAgentList() {
+    const listEl = document.getElementById('import-agent-list');
     if (!listEl) return;
     try {
-        const resp = await fetch('/internal_agents');
-        const data = await resp.json();
-        const agents = _sortAgentEntriesByTime((data.agents || []).slice());
-
-        if (agents.length === 0) {
-            listEl.innerHTML = '<div style="padding:12px;text-align:center;font-size:11px;color:#9ca3af;">没有可导入的 Internal Agent</div>';
+        const [agents, team] = await Promise.all([
+            agentApi('GET', '/v1/agents'),
+            agentApi('GET', `/v1/teams/${encodeURIComponent(currentGroupId)}`),
+        ]);
+        const inside = new Set((team.members || []).map(m => m.agent.agent_id));
+        const candidates = (agents.data || []).filter(a => !inside.has(a.agent_id))
+            .sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0));
+        if (candidates.length === 0) {
+            listEl.innerHTML = '<div style="padding:12px;text-align:center;font-size:11px;color:#9ca3af;">没有可加入的 Agent</div>';
             return;
         }
-
-        listEl.innerHTML = agents.map(a => {
-            const meta = a.meta || {};
-            const name = meta.name || '(unnamed)';
-            const tag = meta.tag || '';
-            const sid = a.session || '';
-            return `<div class="import-item" data-session="${escapeHtml(sid)}" data-name="${escapeHtml(name)}" data-tag="${escapeHtml(tag)}"
-                         onclick="_selectImportOasis(this)"
+        listEl.innerHTML = candidates.map(a => {
+            const tag = a.settings?.persona || '';
+            return `<div class="import-item" data-agent="${escapeHtml(a.agent_id)}" data-name="${escapeHtml(a.name)}" data-tag="${escapeHtml(tag)}"
+                         onclick="_selectImportAgent(this)"
                          style="padding:8px 10px;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:8px;transition:background .15s;border:2px solid transparent;">
-                <div style="width:32px;height:32px;border-radius:50%;background:#eff6ff;display:flex;align-items:center;justify-content:center;font-size:14px;">🤖</div>
+                <div style="width:32px;height:32px;border-radius:50%;background:#eff6ff;display:flex;align-items:center;justify-content:center;font-size:14px;">${a.platform === 'webot' ? '🤖' : '◈'}</div>
                 <div style="flex:1;min-width:0;">
-                    <div style="font-size:12px;font-weight:600;color:#374151;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(name)}</div>
-                    <div style="font-size:10px;color:#9ca3af;font-family:monospace;">${escapeHtml(sid.slice(-12))}${tag ? ' \u00b7 ' + escapeHtml(tag) : ''}</div>
+                    <div style="font-size:12px;font-weight:600;color:#374151;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(a.name)}</div>
+                    <div style="font-size:10px;color:#9ca3af;font-family:monospace;">${escapeHtml(a.address)} \u00b7 ${escapeHtml(a.platform)}${tag ? ' \u00b7 ' + escapeHtml(tag) : ''}</div>
                 </div>
             </div>`;
         }).join('');
     } catch(e) {
-        listEl.innerHTML = '<div style="padding:12px;text-align:center;font-size:11px;color:#ef4444;">加载失败: ' + e.message + '</div>';
+        listEl.innerHTML = '<div style="padding:12px;text-align:center;font-size:11px;color:#ef4444;">加载失败: ' + escapeHtml(e.message) + '</div>';
     }
 }
 
-function _selectImportOasis(el) {
+function _selectImportAgent(el) {
     el.parentElement.querySelectorAll('.import-item').forEach(item => {
         item.style.borderColor = 'transparent';
         item.style.background = '';
     });
     el.style.borderColor = '#2563eb';
     el.style.background = '#eff6ff';
-    _importSelectedOasis = { session: el.dataset.session, name: el.dataset.name, tag: el.dataset.tag };
-    const btn = document.getElementById('import-oasis-join-btn');
+    _importSelectedAgent = { agent: el.dataset.agent, name: el.dataset.name, tag: el.dataset.tag };
+    const btn = document.getElementById('import-agent-join-btn');
     if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
 }
 
-async function _doImportOasis() {
-    if (!_importSelectedOasis) { alert('请先选择一个 Agent'); return; }
-    const { session, name, tag } = _importSelectedOasis;
+async function _doImportAgent() {
+    if (!_importSelectedAgent) { alert('请先选择一个 Agent'); return; }
+    const { agent, name } = _importSelectedAgent;
     try {
-        const url = `/internal_agents?team=${encodeURIComponent(currentGroupId)}`;
-        const resp = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session, meta: { name, tag: tag || '' } })
-        });
-        if (!resp.ok) {
-            const err = await resp.json();
-            throw new Error(err.error || '导入失败');
-        }
-        alert('✅ Internal Agent 已导入团队');
-        document.getElementById('import-oasis-overlay').remove();
+        await agentApi('POST', `/v1/teams/${encodeURIComponent(currentGroupId)}/members`, { agent, role: name });
+        alert('✅ Agent 已加入团队');
+        document.getElementById('import-agent-overlay').remove();
         loadTeamMembers();
-        // Ensure members overlay stays visible after refresh
         const membersOverlay = document.getElementById('team-members-overlay');
         if (membersOverlay) membersOverlay.style.display = 'flex';
     } catch (e) {
-        console.error('Failed to import oasis agent:', e);
+        console.error('Failed to add the agent to the team:', e);
         alert('导入失败: ' + e.message);
     }
 }
@@ -16498,20 +15817,12 @@ async function _doImportOpenClaw() {
     const shortName = (teamNameInput && teamNameInput.value.trim()) || ocGlobalName;
 
     try {
-        // Save to external_agents.json (tag is persona binding; platform is transport)
-        const resp = await fetch(`/teams/${encodeURIComponent(currentGroupId)}/members/external`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: shortName, tag: _importSelectedOCTag, platform: 'openclaw', global_name: ocGlobalName })
-        });
-        if (!resp.ok) {
-            const err = await resp.json();
-            throw new Error(err.error || '导入失败');
-        }
+        const agent = await ensureAgent({ name: shortName, platform: 'openclaw', global_name: ocGlobalName,
+                                          persona: _importSelectedOCTag, team: currentGroupId });
+        await agentApi('POST', `/v1/teams/${encodeURIComponent(currentGroupId)}/members`, { agent: agent.agent_id, role: shortName });
         alert('🦞 OpenClaw Agent 已导入团队');
         document.getElementById('import-oc-overlay').remove();
         loadTeamMembers();
-        // Ensure members overlay stays visible after refresh
         const membersOverlay = document.getElementById('team-members-overlay');
         if (membersOverlay) membersOverlay.style.display = 'flex';
     } catch (e) {

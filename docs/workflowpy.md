@@ -166,15 +166,18 @@ Not:
 agents = await ctx.list_agents()
 ```
 
-### 2. Prefer unique agent ids
+### 2. Name agents by role or id
 
-Do not assume tags like `creative` are unique.
-
-Safer pattern:
+`ctx.list_agents()` returns the team's members (outside a team: all of your
+agents) as agent cards with their `role`: `agent_id`, `address`, `name`,
+`platform`, `settings`. `ctx.send_agent(target, …)` accepts a role name, a
+handle, an address or an `ag_…` id. Do not assume persona tags like `creative`
+are unique among agents.
 
 ```python
 agents = ctx.list_agents()
-target = next((a for a in agents if a.get("id") == "internal:创意专家"), None)
+reviewer = next((a for a in agents if a["role"] == "Reviewer"), None)
+reply = await ctx.send_agent(reviewer["agent_id"], prompt)
 ```
 
 If you only need a persona-style one-shot response, prefer:
@@ -190,7 +193,7 @@ single-argument one-shot form:
 reply = await ctx.send_agent_once("Analyze this task as an independent agent:\n" + ctx.question)
 ```
 
-### 3. `send_agent(...)` returns `SendToAgentResult`
+### 3. `send_agent(...)` returns an `AgentReply`
 
 Use attribute access:
 
@@ -202,12 +205,6 @@ err = reply.error
 ```
 
 Do not rely on dict-style response parsing for new code.
-
-For an existing concrete agent without persistent memory, use:
-
-```python
-reply = await ctx.send_agent_once(agent_id, prompt)
-```
 
 ### 4. Do not depend on implicit history for correctness
 

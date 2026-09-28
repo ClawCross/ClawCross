@@ -180,50 +180,21 @@ def _topological_sort_edges(edges: list[dict], node_map: dict) -> list[str]:
     return sorted_result
 
 
-def _convert_node_to_yaml_name(node: dict) -> str:
-    """将画布节点转换为 OASIS YAML 专家名称。
+def _participant_step(node: dict) -> dict:
+    """The YAML plan item for a participant node.
 
-    每个节点携带一个 ``instance`` 编号（≥1），使同一代理可以多次出现
-    在布局中并具有不同的身份。
-
-    对于专家节点：
-      - stateful=False（默认）→ "tag#temp#<instance>"（无状态 ExpertAgent）
-      - stateful=True          → "tag#oasis#new"       （有状态 SessionExpert，自动创建）
-    对于外部节点：
-      - "tag#ext#<ext_id>"  （外部代理；真实 platform / global_name 从 external_agents.json 解析）
-    对于 session_agent 节点：
-      - 有标签:  "tag#oasis#<agent_name>"   （标签启用 persona 查找）
-      - 无标签:  "#oasis#<agent_name>"      （名称→会话查找，引擎解析）
+    ``agent`` nodes → ``agent: <ref>`` (an agent the user has); ``persona`` nodes →
+    ``persona: <tag>``, with ``instance`` when > 1 and ``tools`` unless none.
     """
-    instance = node.get("instance", 1)
-    node_type = node.get("type", "expert")
-
-    if node_type == "external":
-        tag = node.get("tag", "custom")
-        external_id = node.get("ext_id", "1")
-        return f"{tag}#ext#{external_id}"
-
-    if node_type == "session_agent":
-        agent_name = node.get("agent_name") or node.get("name", "Agent")
-        tag = node.get("tag", "")
-        session_id = node.get("session_id", "")
-        # 统一格式：所有 session 代理使用 #oasis#<name>
-        # tag#oasis#name（标签启用 persona 查找）
-        # #oasis#name   （无标签，仅名称→引擎的会话查找）
-        if tag and tag not in ("session", ""):
-            if instance > 1:
-                return f"{tag}#oasis#{agent_name}#{instance}"
-            return f"{tag}#oasis#{agent_name}"
-        else:
-            if instance > 1:
-                return f"#oasis#{agent_name}#{instance}"
-            return f"#oasis#{agent_name}"
-
-    tag = node.get("tag", "custom")
-    # 每节点 stateful 标志：如果设置，则使用有状态会话模式
-    if node.get("stateful", False):
-        return f"{tag}#oasis#new"
-    return f"{tag}#temp#{instance}"
+    if node.get("type") == "agent":
+        return {"agent": node.get("agent") or node.get("name", "")}
+    step: dict = {"persona": node.get("tag", "custom")}
+    if int(node.get("instance", 1) or 1) > 1:
+        step["instance"] = int(node["instance"])
+    tools = node.get("tools", "none")
+    if tools not in (None, "", "none", []):
+        step["tools"] = tools
+    return step
 
 
 def _has_multiple_inputs(edge_list: list[dict]) -> bool:
@@ -255,9 +226,9 @@ def layout_to_yaml(canvas_data: dict) -> str:
     输入数据格式：
     {
         "nodes": [
-            {"id": "n1", "name": "创意专家", "tag": "creative", "x": 100, "y": 200, "type": "expert"},
-            {"id": "n2", "name": "PUA专家", "tag": "critical", "x": 300, "y": 200, "type": "expert"},
-            {"id": "n3", "name": "助手", "tag": "session", "x": 500, "y": 200, "type": "session_agent", "session_id": "abc123"},
+            {"id": "n1", "name": "创意专家", "tag": "creative", "x": 100, "y": 200, "type": "persona"},
+            {"id": "n2", "name": "PUA专家", "tag": "critical", "x": 300, "y": 200, "type": "persona", "tools": "all"},
+            {"id": "n3", "name": "Reviewer", "agent": "Reviewer", "x": 500, "y": 200, "type": "agent"},
             ...
         ],
         "edges": [
@@ -291,17 +262,10 @@ def layout_to_yaml(canvas_data: dict) -> str:
     node_lookup = {n["id"]: n for n in nodes}
 
     def _build_expert_step(node):
-        """为 expert/external 节点构建计划步骤字典。"""
-        step = {"expert": _convert_node_to_yaml_name(node)}
-        # 如果节点有内容，则包含指令
+        """为参与者节点构建计划步骤字典。"""
+        step = _participant_step(node)
         if node.get("content"):
             step["instruction"] = node["content"]
-        if node.get("type") == "external":
-            for config_key in ("api_url", "api_key", "model"):
-                if node.get(config_key):
-                    step[config_key] = node[config_key]
-            if node.get("headers") and isinstance(node["headers"], dict):
-                step["headers"] = node["headers"]
         return step
 
     def _make_special_step(node):
@@ -600,14 +564,11 @@ def _build_llm_prompt(canvas_data: dict) -> str:
     for idx, node in enumerate(expert_nodes, 1):
         instance = node.get("instance", 1)
         instance_label = f" [instance #{instance}]" if instance > 1 else ""
-        if node.get("type") == "session_agent":
-            expert_list_description += f"  {idx}. {node['emoji']} {node['name']}{instance_label} [SESSION AGENT: session_id={node.get('session_id', '?')}] — existing agent with its own tools & memory\n"
-        elif node.get("type") == "external":
-            model_info = f", model={node['model']}" if node.get("model") else ""
-            expert_list_description += f"  {idx}. {node['emoji']} {node['name']}{instance_label} [EXTERNAL: tag={node.get('tag', '?')}, api_url={node.get('api_url', '?')}{model_info}] — ACP agent or external API service\n"
+        if node.get("type") == "agent":
+            expert_list_description += f"  {idx}. {node['emoji']} {node['name']} [AGENT: agent: {node.get('agent') or node['name']}] — an agent the user has, with its own memory\n"
         else:
-            stateful_label = " ⚡STATEFUL" if node.get("stateful", False) else ""
-            expert_list_description += f"  {idx}. {node['emoji']} {node['name']}{instance_label}{stateful_label} (tag: {node['tag']}, temperature: {node.get('temperature', 0.5)}, source: {node.get('source', 'public')})\n"
+            tools_label = f", tools: {node.get('tools')}" if node.get("tools") not in (None, "", "none") else ""
+            expert_list_description += f"  {idx}. {node['emoji']} {node['name']}{instance_label} [PERSONA: persona: {node['tag']}{tools_label}] — temporary agent for this topic\n"
 
     # ── 描述关系 ──
     relationships = []
@@ -686,12 +647,6 @@ def _build_llm_prompt(canvas_data: dict) -> str:
 
     # ── 设置描述 ──
     repeat_description = "true (repeat plan every round — good for debates/discussions)" if settings.get("repeat", False) else "false (execute plan once — good for task pipelines)"
-    # 描述每节点 stateful 状态
-    stateful_expert_nodes = [n for n in expert_nodes if n.get("stateful", False) and n.get("type") != "external"]
-    if stateful_expert_nodes:
-        stateful_description = "Per-node stateful mode: " + ", ".join(f"{n['name']}(⚡stateful)" for n in stateful_expert_nodes) + " — these experts have memory & tools. Other experts are stateless."
-    else:
-        stateful_description = "All experts are stateless (lightweight, no memory, suitable for debates/brainstorming)"
 
     # ── 生成当前规则 YAML（版本 2 图格式）作为参考 ──
     try:
@@ -713,13 +668,14 @@ version: 2
 repeat: false
 plan:
   - id: n1                        # Every node MUST have a unique id
-    expert: "creative#temp#1"     # Stateless preset expert
+    persona: creative             # temporary agent with a persona, one model call per turn
   - id: n2
-    expert: "critical#temp#1"
+    persona: critical
+    tools: all                    # temporary agent with tools (a WeBot session, deleted afterwards)
   - id: n3
-    expert: "#oasis#agent_name"   # Stateful internal session agent (by name)
+    agent: Reviewer               # an agent the user has (role name, handle, address or ag_ id)
   - id: n4
-    expert: "tag#oasis#agent_name" # Session agent with tag (tag→persona)
+    agent: alice/codex
   - id: m1
     manual:
       author: "主持人"
@@ -748,7 +704,7 @@ Supported conditions: `last_post_contains:<keyword>`, `last_post_not_contains:<k
 ```yaml
 plan:
   - id: router
-    expert: "router_tag#temp#1"   # Selector can use any expert format (#temp#, #oasis#, etc.)
+    persona: router               # any participant can be a selector
     selector: true                 # Mark as selector node
 
 selector_edges:
@@ -764,8 +720,8 @@ selector_edges:
 plan:
   - id: brainstorm
     parallel:
-      - expert: "creative#temp#1"
-      - expert: "critical#temp#1"
+      - persona: creative
+      - persona: critical
 ```
 
 ### All Experts:
@@ -782,26 +738,17 @@ plan:
 - Use `__end__` as a target to terminate the workflow.
 - The graph supports cycles (via conditional/selector edges for loops).
 
-## Expert Name Formats
-1. `tag#temp#N` — Preset expert instance N (stateless, no memory), e.g. "creative#temp#1"
-2. `tag#oasis#new` — Preset expert (stateful session, auto-creates new session), use when the individual node has stateful=true
-3. `tag#oasis#name` — Internal session agent by name (tag enables persona lookup), e.g. "test#oasis#test1"
-4. `#oasis#name` — Internal session agent by name (no tag), e.g. "#oasis#test1"
-5. `tag#ext#id` — External ACP agent (tag=openclaw/codex/etc), e.g. "openclaw#ext#Alice"
-
-## External ACP Agent — Session Number
-For external ACP agents (tag = openclaw, codex, etc), the `model` field controls session:
-- `model: "agent:<name>"` — session suffix defaults to **clawcrosschat** (same as group-chat ACP; shared across teams)
-- `model: "agent:<name>:<session>"` — explicit suffix, e.g. separate isolation from the default
-The `<name>` in model is ignored for routing (real name comes from external_agents.json `global_name`).
-Session determines conversation isolation: same session = shared context, different session = separate context.
+## Participants
+1. `agent: <ref>` — an agent the user already has: its role name in the team, handle, address (`alice/coder`) or `ag_` id. It may be WeBot, codex, claude, openclaw or any other runtime.
+2. `persona: <tag>` — a temporary agent made for this topic with a persona from the library, deleted afterwards.
+   `tools: none` (default, one model call per turn), `tools: all`, or `tools: [tool names]`; `instance: N` tells same-persona participants apart.
 
 ## Available Step Types (all require `id` field)
-1. `expert: "Name"` — Single expert speaks
+1. `agent: …` / `persona: …` — One participant speaks
 2. `parallel: [...]` — Multiple experts speak simultaneously
 3. `all_experts: true` — Everyone speaks at once
 4. `manual: {{author, content}}` — Inject fixed text (no LLM)
-5. `selector: true` + `expert` — Selector node (LLM-powered routing, any expert format)
+5. `selector: true` on a participant step — Selector node (LLM-powered routing)
 
 ## Special Node: __end__
 Use `__end__` as an edge target to terminate the workflow. It is not a plan node.
@@ -821,14 +768,12 @@ Use `__end__` as an edge target to terminate the workflow. It is not a plan node
 
 ### Settings:
 - repeat: {repeat_description}
-- Stateful: {stateful_description}
 
 ## Current Rule YAML (Auto-generated Reference)
 
 **IMPORTANT**: The following YAML was auto-generated from the canvas layout using a rule-based algorithm.
 It uses version 2 graph format with explicit `edges`, `conditional_edges`, and `selector_edges`.
-It contains the complete configuration for each agent (including api_url, headers, model, etc.).
-The auto-generated graph structure is accurate; focus on verifying the expert configurations,
+The auto-generated graph structure is accurate; focus on verifying the participants,
 edge connections, and adjusting if needed. Your output MUST also use version 2 format.
 
 ```yaml
@@ -1007,8 +952,8 @@ def _validate_generated_yaml(yaml_string: str) -> dict:
         step_types = []
         for step in parsed.get("plan", []):
             if isinstance(step, dict):
-                if "expert" in step:
-                    step_types.append("expert")
+                if "agent" in step or "persona" in step:
+                    step_types.append("participant")
                 elif "parallel" in step:
                     step_types.append("parallel")
                 elif "all_experts" in step:

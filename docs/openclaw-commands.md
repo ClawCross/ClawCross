@@ -586,7 +586,7 @@ openclaw.cmd agents list --bindings --json
 
 ---
 
-## 六、外部 Agent 配置
+## 六、OpenClaw Agent 配置
 
 ### 1. 查看已有 OpenClaw Agent
 

@@ -8,6 +8,7 @@ OpenAI 兼容 API 服务模块
 """
 
 import asyncio
+import contextlib
 import json
 import os
 from typing import Any, Callable
@@ -20,7 +21,6 @@ from core.lightweight_agent_runtime import AgentRecursionError
 from utils.auth_utils import extract_user_password_session, is_internal_bearer, parse_bearer_parts
 from utils.effort_controller import resolve_default_chat_max_output_tokens
 from utils.logging_utils import get_logger
-from utils.runtime_paths import USER_FILES_DIR
 from api.openai_models import ChatCompletionRequest, ChatMessage, OpenAIExecutionContext
 from api.openai_protocol import OpenAIProtocolHelper
 
@@ -31,76 +31,21 @@ _GRAPH_RECURSION_LIMIT = int(os.getenv("GRAPH_RECURSION_LIMIT", "500"))
 _DEFAULT_WEBOT_CHAT_MAX_TOKENS = resolve_default_chat_max_output_tokens()
 
 # --- Agent tool whitelist ---
-_USER_FILES_DIR = str(USER_FILES_DIR)
-
-
-def _iter_user_internal_agent_files(user_id: str) -> list[str]:
-    """Return internal agent config files scoped to one user only."""
-    scoped_user_id = (user_id or "").strip()
-    if not scoped_user_id:
-        return []
-
-    user_dir = os.path.join(_USER_FILES_DIR, scoped_user_id)
-    if not os.path.isdir(user_dir):
-        return []
-
-    files: list[str] = []
-    user_ia = os.path.join(user_dir, "internal_agents.json")
-    if os.path.isfile(user_ia):
-        files.append(user_ia)
-
-    teams_dir = os.path.join(user_dir, "teams")
-    if not os.path.isdir(teams_dir):
-        return files
-
-    for team_name in sorted(os.listdir(teams_dir)):
-        team_ia = os.path.join(teams_dir, team_name, "internal_agents.json")
-        if os.path.isfile(team_ia):
-            files.append(team_ia)
-    return files
 
 
 def _get_agent_tool_whitelist(user_id: str, session_id: str) -> set[str] | None:
-    """根据当前 user_id + session_id 查找匹配的 internal agent tools 白名单。
+    """The tools a WeBot agent's session may use: None when unrestricted.
 
-    只在当前用户自己的 internal_agents.json 与其 team 目录内查找，避免跨用户
-    session_id 碰撞导致白名单串用。
-
-    如果该 agent 配置了 tools 白名单，返回允许的工具名集合。
-
-    Returns:
-      set[str] — 白名单集合（只包含值为 true 的 key）
-      None     — 未找到匹配 agent 或该 agent 未配置 tools（不限制）
+    An agent's ``tools`` setting is ``"none"``, or ``{name: bool}`` for a whitelist.
     """
-    if not session_id or session_id == "default":
-        return None
+    from agents.store import WEBOT, get_store
 
-    for ia_file in _iter_user_internal_agent_files(user_id):
-        try:
-            with open(ia_file, "r", encoding="utf-8") as f:
-                agents_list = json.load(f)
-            if not isinstance(agents_list, list):
-                continue
-            for agent_entry in agents_list:
-                if not isinstance(agent_entry, dict):
-                    continue
-                if agent_entry.get("session") != session_id:
-                    continue
-                # 找到匹配的 agent
-                meta = agent_entry.get("meta")
-                tools_cfg = None
-                if isinstance(meta, dict):
-                    tools_cfg = meta.get("tools")
-                if tools_cfg is None:
-                    # Backward compatibility for older flat entries.
-                    tools_cfg = agent_entry.get("tools")
-                if tools_cfg == "none":
-                    return set()
-                if not isinstance(tools_cfg, dict):
-                    return None  # 该 agent 无 tools 配置 → 不限制
-                return {k for k, v in tools_cfg.items() if v}
-        except Exception:
-            continue
+    agent = get_store().find(user_id, WEBOT, {"session": session_id}) if session_id else None
+    tools = agent.config.get("tools") if agent else None
+    if tools == "none":
+        return set()
+    if isinstance(tools, dict):
+        return {name for name, enabled in tools.items() if enabled}
     return None
 
 
@@ -136,12 +81,10 @@ class OpenAIChatService:
         name = (model or "").strip()
         if not name or name == "webot":
             return None
-        from agents.registry import AgentNotFound, AmbiguousAgentRef
+        from agents.store import AgentNotFound, get_store
 
         try:
-            return self.agent_gateway().resolve(user_id, name)
-        except AmbiguousAgentRef as exc:
-            raise HTTPException(status_code=409, detail=str(exc))
+            return get_store().resolve(user_id, name)
         except AgentNotFound:
             return None
 
@@ -152,15 +95,15 @@ class OpenAIChatService:
         if not name.startswith(prefix) or "/" in name[len(prefix):]:
             return None
         team = name[len(prefix):]
-        from teams.view import TeamHasNoLead, TeamView
+        from teams.store import get_team_store
 
-        view = TeamView(self.agent_gateway().registry)
-        if not view.exists(user_id, team):
+        teams = get_team_store()
+        if not teams.exists(user_id, team):
             return None
-        try:
-            return view.lead(user_id, team).agent, team
-        except TeamHasNoLead as exc:
-            raise HTTPException(status_code=409, detail=str(exc))
+        lead = teams.lead(user_id, team)
+        if lead is None:
+            raise HTTPException(status_code=409, detail=f"team {team!r} has no lead; mark one member as lead")
+        return lead.agent, team
 
     @staticmethod
     def _last_user_message(req: ChatCompletionRequest) -> tuple[str, list[dict]]:
@@ -193,7 +136,6 @@ class OpenAIChatService:
 
         text, attachments = self._last_user_message(req)
         reply = await self.agent_gateway().ask(
-            user_id,
             record,
             AgentMessage(text=text, attachments=attachments, sender=f"u:{user_id}"),
             context=context,
@@ -839,7 +781,7 @@ class OpenAIChatService:
             if agent_record.driver != "webot":
                 return await self._complete_with_agent(user_id, agent_record, req, context=team_context)
             # A WeBot agent named by address: talk to its own session.
-            session_id = str(agent_record.binding.get("session") or session_id)
+            session_id = str(agent_record.config.get("session") or session_id)
         thread_id = f"{user_id}#{session_id}"
         config = {
             "configurable": {"thread_id": thread_id},
@@ -918,20 +860,21 @@ class OpenAIChatService:
         if not user_id:
             return payload
         created = payload["data"][0]["created"] if payload["data"] else 0
-        for card in self.agent_gateway().list(user_id):
+        from agents.store import get_store
+        from teams.store import get_team_store
+
+        for agent in get_store().list(user_id):
             payload["data"].append({
-                "id": card["address"],
+                "id": agent.address,
                 "object": "model",
                 "created": created,
-                "owned_by": card["driver"],
-                "agent_id": card["agent_id"],
-                "display_name": card["display_name"],
+                "owned_by": agent.platform,
+                "agent_id": agent.agent_id,
+                "display_name": agent.name,
             })
-        from teams.view import TeamView
-
-        view = TeamView(self.agent_gateway().registry)
-        for team in view.teams(user_id):
-            lead = next((m for m in view.members(user_id, team) if m.is_lead and m.agent), None)
+        teams = get_team_store()
+        for team in teams.teams(user_id):
+            lead = teams.lead(user_id, team)
             if lead is not None:
                 payload["data"].append({
                     "id": f"{user_id}/{team}",

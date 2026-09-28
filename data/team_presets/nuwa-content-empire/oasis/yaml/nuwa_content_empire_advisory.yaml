@@ -8,11 +8,11 @@ plan:
     author: begin
     content: "请提出你的问题或议题，各位顾问将依次给出分析。"
 - id: m1
-  expert: mrbeast#oasis#MrBeast
+  agent: MrBeast
 - id: m2
-  expert: trump#oasis#唐纳德·特朗普
+  agent: 唐纳德·特朗普
 - id: m3
-  expert: x_mentor#oasis#X增长导师
+  agent: X增长导师
 - id: m4
   manual:
     author: bend

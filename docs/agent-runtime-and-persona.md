@@ -1,355 +1,183 @@
-# Agent 运行、全局视图与人设机制
+# Agent 三层结构：统一层 / 通讯层 / 组合层
 
-本文是 Clawcross Agent 相关功能的开发约束与实现索引。它用于回答以下问题：
+本文是 ClawCross 里 agent 相关代码的开发约束与实现索引。它回答：
 
-- Team、Agent 与全局 Agent 表之间是什么关系？
-- Internal、OpenClaw、ACP、HTTP Agent 的身份和状态从哪里获取？
-- 前端流式输出、页面切换和终止操作应如何理解？
-- 正式 Agent 人设与主前端“+ 人设”有什么区别？
-- 修改存储实现时，哪些外部接口和导入导出格式必须保持兼容？
+- 一个 agent 是什么？WeBot、Codex、Claude Code、OpenClaw、HTTP 服务之间有什么区别？
+- 消息怎样在 agent 与人之间流动？
+- team、群聊、OASIS、定时任务怎样使用 agent？
+- 人设在哪里、怎样注入？
+- 改代码时哪些边界不能越过？
 
-本文同时记录当前实现和目标架构。标记为“目标”的内容不代表已经全部实现。
+## 总览
 
-## 核心约束
-
-### Team 是最小持久化单元
-
-Team 是 Clawcross 的聚合根和最小可移植单元。属于 Team 的真实文件必须继续放在同一个 Team 目录中，包括：
-
-- Internal / external Agent 配置；
-- Persona / expert 配置；
-- Team Skill；
-- YAML / Python Workflow；
-- Team 级定时任务与其他协作配置。
-
-这样做的原因不仅是文件组织方便。Team Skill 可以是脚本，并可能读取或修改同一 Team 的其他文件；Agent、Persona、Workflow 之间也存在强绑定。将它们拆成多个全局真实数据源会破坏 Team 的自洽性、可审查性和可导出性。
-
-### 全局表是视图，不是新的真实数据源
-
-全局 Agent、Persona、Skill、Workflow 和 Cron“表”应当由用户目录和所有 Team 目录动态聚合得到。它们可以有短时内存缓存或查询索引，但不应成为另一套需要双向同步的权威配置。
-
-```text
-Team A files ─┐
-Team B files ─┼─> dynamic catalogs / runtime views ─> contacts, status, search
-Public files ─┘
+```
+公网前端 / 第三方客户端 / 手机 / chatbot / CLI
+   │  /v1/agents · /v1/teams · /v1/models · /v1/chat/completions · /groups
+   ▼
+┌ L3 组合层 ─ team（视图）· 群聊 · OASIS · 定时任务 ─────────────────────────┐
+│   只用 agent 编号；调用时通过 context 传 team 上下文；不碰运行时                  │
+├ L2 通讯层 ─ 会话 · 成员 · 消息 · 唤醒 · 未读摘要 · 发言者认证 ───────────────┤
+│   人 ↔ agent、agent ↔ agent 的所有消息都走这里；只认编号                         │
+├ L1 统一层 ─ agent 总表 + 单 agent 接口 ────────────────────────────────────┤
+│   ask · deliver · discard · status · cancel · reset · history · cleanup       │
+│   驱动：webot · acpx（codex / claude-code / gemini…）· openclaw · http · llm    │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Team 页面只是对全局视图按 Team 成员关系进行过滤。联系人或 Agent Center 页面则展示完整扁平视图。
+依赖只能向下：L3 → L2 → L1 → 驱动/传输。`test/test_layering.py` 检查：
 
-### 不新增重复身份字段
+- `src/agents` 不 import 群聊、team、OASIS、routes 等上层模块；
+- `src/comms` 不 import team、groups、OASIS、api、routes；
+- L1 以外的代码不读 agent 的 `driver` / `config`，也不引用驱动名（team 文件格式 `teams/manifest.py` 除外）；
+- 只有 `src/agents` 直接调用传输层（`integrations.registry` / connectors）。唯一的例外名单是 `src/front.py` 的直连聊天代理（`/proxy_openclaw_chat`、`/proxy_acpx_chat`），等 L1 提供 `stream()` 后迁走；名单只能缩小。
 
-不要为已有身份再发明一个同性质的 `agent_id`：
+## L1 统一层（`src/agents/`）
 
-- External Agent 使用现有 `global_name`；
-- Internal Agent 使用现有 `session` / `session_id`；
-- WeBot 子 Agent 已经有自己的 `agent_id`，该字段只属于子 Agent 运行体系；
-- 展示层如果需要无冲突键，可以在内存中使用 `kind + platform + existing_identity` 组成复合键，但不要写回 Team 文件成为第二身份。
+### 一个 agent = 一条记录
 
-### 存储变化不应推动外部调用方重写
+本机所有 agent 存在 `<DATA_DIR>/clawcross.db` 的 `agents` 表，一个 agent 一行：
 
-Clawcross 的 CLI、主前端、OASIS、聊天机器人及其他客户端依赖现有请求格式。重构内部存储或增加动态视图时：
+| 字段 | 说明 |
+|---|---|
+| `agent_id` | `ag_` + 10 位 base32，永不改变 |
+| `owner` / `handle` | handle 在 owner 内唯一；地址 `owner/handle`（如 `alice/coder`） |
+| `name` | 显示名 |
+| `driver` | `webot` / `acpx` / `openclaw` / `http` |
+| `config` | 驱动私有：webot 有 `session`、`persona`、`team`、`tools`；其他平台有 `platform`、`global_name`、`api_url`、`api_key`、`model`、`headers`、`meta`、`persona`、`team` |
+| `runtime_key` | `driver:session` 或 `driver:global_name`，owner 内唯一：一个运行时只登记一次 |
 
-- 保持现有 API 请求格式兼容；
-- 保持 `send_to_agent()` 的调用模型兼容；
-- Team ZIP 的外部结构保持兼容；
-- 导入和导出内部可以改为通过聚合层解析或生成，但不能无必要改变 ZIP 契约。
+对外只有平台（`platform`：`webot`、`codex`、`claude-code`、`openclaw`、任意 HTTP 服务名），驱动由平台推出。引用一个 agent 可以写 `ag_` 编号、地址或 handle（`AgentStore.resolve`）。
 
-## Agent 调用层
+`persona` 是人设 tag；`team` 是没有调用上下文时（例如直接私聊）使用的默认 team，决定 WeBot 加载哪个 team 的技能与人设库。
 
-`src/integrations/registry.py` 是跨平台发送的共享入口：
+### 单 agent 接口
 
-- `send_to_agent(request)`：非流式调用；
-- `prepare_send_to_agent_stream(request)`：准备流式调用；
-- `reset_agent(request)`：重置 Agent Session。
+`AgentGateway`（`gateway.py`）：
 
-主前端、OASIS 和部分群聊/调度路径已经通过该层调用 Internal、OpenClaw、ACP 或 HTTP Connector。它是统一发送语义的正确扩展点。
+- `ask(agent, msg, *, context, mode, tools, response_format, timeout)` —— 发消息并等回复；`response_format` 是 Pydantic 模型，驱动按运行时能力转换（WeBot 走严格 schema 工具，外部 agent 在 prompt 里要求 JSON）；
+- `deliver(agent, msg, *, context, mode)` —— 投进 agent 的收件箱立即返回，agent 通过 `reply_channel` 回到会话（WeBot 用 `send_to_group` 工具，其他平台用 CLI `groups send --agent <地址>`）；
+- `discard(agent)` —— 删除临时 WeBot 会话。
 
-当前它还不是完整的 Agent Run 控制面：没有统一 `run_id`，也没有统一的 connector cancel 方法。不要把“共享发送函数”误解为“已经统一了运行状态与终止语义”。
+`context` 对 L1 不透明：外部 agent 用 `team` 解析人设，`conversation_id` 用于外部历史归档。WeBot 当前按 agent 记录里的默认 `team` 解析人设与技能，不根据调用上下文切换团队。
 
-发送前的人设注入已经由 `src/integrations/agent_session.py` 统一处理。调用方只声明：
+临时参与者也是 agent，只是不入表：`persona_agent()` 是一次带人设的模型调用（驱动 `llm`），`temp_session_agent()` 是带工具的临时 WeBot 会话。
 
-- `identity_prompt`：解析完成的人设、Skill 与 Workflow Prompt；
-- `identity_global_name`：External Agent 的现有 `global_name`；
-- `group_db_path`：HTTP Session 状态表；
-- `identity_injection_mode`：兼容旧调用所需的注入位置。
+`AgentControl`（`control.py`，运行在 Agent 服务里）：
 
-调用方不得自行判断“第一次连接”并手工拼接人设。`send_to_agent()` 在发送前统一调用 `prepare_agent_session()`：
-
-- ACP：把决定委托给 `AcpxAdapter.ensure_session()`，只有新建 acpx Session 才注入；
-- HTTP：通过同一个 `inspect_http_agent_session()` 查询 Session，新 Session 或人设内容变化时注入；
-- 无持久 Session Registry 的普通 HTTP 调用：无法确认首次状态，按稳定 System Prompt 处理并在状态中标记来源。
-
-发送结果的 `meta.agent_session` 会返回 `initialized`、`should_inject_identity`、`source` 和 `prompt_changed`。ACP 的首次判断与 Session 创建是一个原子操作，因此发送前状态使用 `null` 表示由 acpx 决定，不伪造布尔值。
-
-## 扁平 Agent 视图
-
-### 已有数据来源
-
-| Agent 类型 | 身份/配置来源 | 当前状态来源 | 状态含义限制 |
+| 动作 | WeBot | acpx / OpenClaw | HTTP |
 |---|---|---|---|
-| Internal | `internal_agents.json`、Session 元信息 | `/sessions_status`、thread lock、TaskRegistry | 主要是 Session 是否忙碌 |
-| OpenClaw | OpenClaw 全局配置、Team `external_agents.json` | OpenClaw sessions、`/acp_status` | 有 Session 不等于正在执行 |
-| ACP | Team `external_agents.json`、acpx Session | `acpx sessions list`、`/acp_status` | 能发现连接，未必能确认运行 |
-| HTTP external | Team `external_agents.json` | `http_agent_sessions`、外部历史 | 多数情况下是最近使用记录 |
-| WeBot subagent | `webot_subagents.db` | 持久化 subagent/run 状态 | 已有独立 `agent_id` 与生命周期 |
+| `status` | thread 忙碌、待处理系统消息、上下文占用 | acpx session 状态 | 最近使用记录 |
+| `cancel` | 取消当前任务 | acpx cancel | 不支持（明确报错） |
+| `reset` | 清空会话 | 关闭 session 并忘记已注入的人设 | 忘记已注入的人设 |
+| `history` | 会话消息（含工具调用） | 外部历史库里该 session 的往来 | 同左 |
+| `cleanup` | 删除 agent 时释放运行时 | 同上 | 同上 |
 
-`src/api/external_agent_registry.py` 的 `build_external_agents_map_for_owner()` 已经能够扫描用户级及各 Team 的 `external_agents.json`，形成外部 Agent 的扁平配置映射。
+`status` 返回 `state`（`running` / `idle` / `unknown`）和 `actions`（该 agent 支持的动作），不把推断状态伪装成确定事实。
 
-`src/api/ops_service.py` 的 `agent_control()` 在这些数据源之上生成统一视图并分派控制操作。它是兼容性新增入口；原有 `/cancel`、`/acp_control` 和 `/acp_status` 仍然保留。
+### HTTP API
 
-### 统一控制入口
-
-后端提供：
-
-```text
-POST /agent_control
+```
+GET    /v1/agents                  ?status=1 附带状态；?runtime=webot:<session> 反查
+POST   /v1/agents                  {name, platform, persona, team, session | global_name, api_url, model…}
+GET    /v1/agents/{ref}
+PATCH  /v1/agents/{ref}            {name?, settings: {persona, team, tools | api_url, api_key, model, headers, meta}}
+DELETE /v1/agents/{ref}            同时退出所有 team 与会话
+POST   /v1/agents/{ref}/messages   ask（或 deliver: true）
+POST   /v1/agents/{ref}/control    {action: status | cancel | reset}
+GET    /v1/agents/{ref}/history
 ```
 
-同一个入口支持 `list`、`status`、`cancel`、`stop`、`new`、`reset` 和 `delete`。生命周期动作语义固定为：`cancel/stop` 只终止当前运行；`reset` 清除会话上下文但保留 Agent 配置；`delete` 删除 Agent 实体、会话状态及其配置引用。
-
-请求示例：
-
-```json
-{
-  "user_id": "default",
-  "password": "",
-  "action": "cancel",
-  "kind": "external",
-  "identity": "researcher",
-  "team": "research_team",
-  "refresh_external": true
-}
-```
+agent 卡片里不返回密钥（`api_key` 只给出 `has_api_key`）；WeBot agent 暴露 `settings.session` 供前端打开会话。`/v1/models` 与 `/v1/chat/completions` 同样按 agent 地址 / 编号路由，`model: "<user>/<team>"` 交给 team 的 lead。
 
-身份字段不做重新编号：
+### 人设注入（每个驱动一次，只在 L1）
 
-- `kind=internal`：`identity` 是现有 `session`；
-- `kind=external`：`identity` 是现有 `global_name`；
-- `kind=subagent`：`identity` 是 WeBot 已有 `agent_id`。
+| 驱动 | 方式 |
+|---|---|
+| webot | `core/agent.py` 每次构造上下文时按 agent 的 `persona` + 默认 `team` 解析人设，放进 system prompt；不额外注入团队成员或工作流列表，也不重复列出工具名称 |
+| acpx | `AcpxAdapter.ensure_session()`：新建 session 时把身份 prompt 拼到第一条消息前；session 已存在不重复注入 |
+| openclaw / http | `agent_runtime_sessions` 表（`runtime_sessions.py`）记住每个 session key 已见过的 prompt：没见过或变了才注入 |
+| llm（临时人设） | 每次调用带人设 |
 
-`action=list` 时可以省略 `kind` 和 `identity`。`team` 只过滤动态视图，不改变 Team 文件。相同 External Agent 出现在多个 Team 时，返回一个条目并把成员关系聚合进 `teams` 数组。
+群聊规则与回复方式来自 `data/prompts/conversation_rules.txt`，WeBot 的 system prompt 和外部 agent 的身份 prompt 共用这一份。
 
-控制分派如下：
+## L2 通讯层（`src/comms/`）
 
-| 类型 | 状态来源 | cancel / stop 分派 |
-|---|---|---|
-| Internal | thread lock + TaskRegistry | `agent.cancel_task(user#session)` |
-| ACP | `acpx sessions list` | 现有 `acp_control()` / acpx cancel |
-| OpenClaw | HTTP Session 表或 OpenClaw sessions | 现有 `acp_control()` / `/stop` |
-| HTTP external | `http_agent_sessions` | 没有标准取消协议时明确返回 `unsupported` |
-| WeBot subagent | subagent/run registry + TaskRegistry | 现有 `WeBotService.cancel_subagent()` |
+`clawcross.db` 里的三张表：
 
-这里的返回值刻意区分 `supported` 与 `cancelled`。请求被底层接受不等于远端工作已经完全退出，调用方不得只凭本地断流显示“终止成功”。
+- `conversations`：`conv_id`、owner、title、`kind`（`group` / `direct`）、`primary_agent`、`dnd`、`meta`（如 `{"team": …}`）；
+- `conversation_members`：成员（`u:<user>` 或 `ag_…`）、昵称、禁言、`read_cursor`；agent 被删除时成员行级联删除；
+- `conversation_messages`：发言者编号、内容、结构化 mentions、reply_to、附件、`client_msg_id`（去重）。
 
-主前端通过 `/proxy_agent_control` 使用同一接口，并提供 Agent Center Grid：
+`Conversations.post()` 存消息后唤醒：
 
-- 顶部“Agents”按钮和移动端汉堡菜单均可打开；
-- 首次打开使用快速视图，不阻塞等待外部 CLI 探测；
-- “刷新状态”显式设置 `refresh_external=true`；
-- 卡片分别展示 `status`、`connection_status` 和 `running_known`；
-- 所有停止操作仍回到统一 `agent_control()`，前端不按 Agent 类型分支调用旧接口。
-- “删除 Agent”同样调用 `agent_control(action=delete)`，请求只包含 `kind` 与 `identity`，不包含 Team 删除范围。
+- 人发言：没有 @ → 唤醒主 agent（没有主 agent 则唤醒全部）；有 @ → 只唤醒被 @ 的；
+- agent 发言：有主 agent 时，其他 agent 的发言只唤醒主 agent；主 agent（或没有主 agent 时的任何 agent）只唤醒它 @ 的成员，不 @ 就谁也不唤醒；
+- `@所有人` 唤醒全部 agent，只允许人和主 agent 使用；
+- 私聊：唤醒那一个 agent；
+- 免打扰（`dnd`）的会话不唤醒任何 agent；禁言的成员不被唤醒；
+- `StormGuard` 限制 agent 之间连锁唤醒的深度与频率，人一发言就重置；
+- 被唤醒的 agent 收到同一种信封（会话、发言者、内容、回复方式）；很久没被唤醒的成员先收到一份未读摘要（按 `read_cursor`）。
 
-### 统一 DTO
+发言者认证：人以自己身份发言；本机服务持内部 token 时才能以 agent 身份发言（`POST /groups/{id}/messages {agent}`），且发言者必须是成员。
 
-统一视图建议至少包含：
+## L3 组合层
 
-```json
-{
-  "identity": "researcher",
-  "kind": "external",
-  "platform": "openclaw",
-  "name": "研究员",
-  "teams": ["research_team", "product_team"],
-  "status": "running",
-  "status_source": "openclaw_session",
-  "sessions": [],
-  "can_cancel": true,
-  "supported_actions": ["status", "cancel", "stop"]
-}
-```
+### Team（`src/teams/`）
 
-注意：
+- `team_members`（owner, team, agent_id, role, is_lead, position）：team 是 agent 的组合，不拥有 agent；同一 agent 可在多个 team；删除 agent 时自动退出所有 team。
+- team 文件夹（`user_files/<owner>/teams/<team>/`）只放资产：`oasis_experts.json`（人设库）、workflow、skills、`team_settings.json`。
+- `internal_agents.json` / `external_agents.json` 只是**导入导出格式**（`teams/manifest.py` 是唯一读写它们的地方）：导入把条目变成 agent + 成员关系并移走文件；导出按原格式重新生成，可移植导出去掉 `session` / `global_name` 与密钥。
+- 调用 team 成员时由 L3 通过 `context={"team": …}` 传 team 上下文。
 
-- `teams` 必须是数组；同一 External Agent 可以被多个 Team 引用；
-- 当前 external registry 按 `global_name` 去重时可能只保留一个 `team`，统一视图需要显式聚合全部成员关系；
-- `status_source` 必须保留，避免把推断状态伪装成确定事实；
-- 无法确认时使用 `unknown`，不要默认写成 `idle`；
-- `online` 只表示服务或 Session 可连接时，不应等同于 `running`。
-- `running_known=false` 表示当前只能确认配置或 Session，不能确认远端是否仍在执行。
+### 群聊（`src/groups/`）
 
-建议统一状态词表：
+`GroupService` 在 L2 会话上加微信式规则：群主管理、私聊唯一、team 群跟随 team（成员 = team 成员，主 agent = lead）。HTTP 见 `src/groups/routes.py`，前端经 `/proxy_groups/...` 原样转发。
 
-```text
-unknown
-offline
-idle
-running
-cancelling
-blocked
-completed
-failed
-unavailable
-```
+### OASIS（`oasis/`）
 
-## Agent Run、流式输出与前端
+参与者一律是 agent：`agent: <ref>`（团队里按角色名解析）或 `persona: <tag>`（临时 agent，`tools: none | all | [..]`，话题结束 `discard`）。`oasis/participants.py` 的 `Participant` 统一通过 gateway 的 `ask(response_format=…)` 取结构化回复；帖子记录作者编号 `author_id`。
 
-### Agent 运行与前端显示是两个生命周期
+### 定时任务
 
-浏览器页面是 Agent Run 的订阅者，不是运行本身。应严格区分：
+`<DATA_DIR>/timeset/tasks.json` 每条任务指向一个 agent 编号（可附 team）；到点由调度器经 L1 `deliver`。team 导出时按角色名导出，导入时映射回新成员。
 
-- `disconnect` / `unsubscribe`：前端不再接收或显示流，Agent 可以继续运行；
-- `cancel`：明确要求后端或远端 Agent 停止执行。
+## 前端
 
-主前端当前在浏览器存活期间按聊天上下文保存活动流。聊天上下文由平台、Session、OpenClaw Agent 和 ACP Tool 组成。切换主页面或 Session 时，旧流继续读取；返回原上下文时恢复已收到的文本。
+- Agent Center、团队面板、编排侧栏、手机页都只用 `/v1/agents`、`/v1/teams`、`/proxy_groups`：一种 agent，按平台分组显示，控制按钮对所有平台相同（status / cancel / reset）。
+- 平台专属的只有运行时自身的配置界面（OpenClaw 工作区文件 / 工具 / channels、HTTP 的 `api_url` / `model`、ACP 的超时与权限），它们改的是 agent 的 `settings` 或运行时本身。
 
-纯前端方案无法保证以下场景续流：
+### 运行与显示是两个生命周期
 
-- 浏览器刷新或关闭；
-- 浏览器崩溃或被移动系统回收；
-- 网络中断后跨连接补发；
-- 在另一设备查看同一个运行。
+浏览器页面是运行的订阅者：`disconnect` 只是不再显示，`cancel` 才要求 agent 停止。前端不能仅凭本地 `AbortError` 宣称远端已停止；以 `/v1/agents/{ref}/control` 的 `status` 为准。
 
-这些能力需要后端持有 Run 和事件游标。目标形态可以保留现有请求格式，在响应头或 SSE meta 事件中附加 `run_id`。
+### 主前端“+ 人设”快捷 Prompt
 
-### Internal 运行状态
-
-Internal Agent 的运行状态主要由 `ThreadStateRegistry` 的 thread lock 和 busy source 提供，活动 asyncio Task 则由 `TaskRegistry` 跟踪。
-
-主前端必须同时考虑：
-
-- 浏览器当前持有的活动流；
-- 后端 `/proxy_session_status` 返回的真实 busy 状态。
-
-发送前必须再次检查 Internal Session 是否 busy。原因是 `OpenAIChatService._run_stream()` 在开始新请求时会先取消同一 Session 的旧 Task；错误显示“发送”可能让用户无意中顶掉正在执行的任务。
-
-### 当前终止语义
-
-| 通道 | 当前行为 | 可靠性说明 |
-|---|---|---|
-| Internal | `/cancel` -> `TaskRegistry.cancel()` | 对异步 Task 通常有效；阻塞线程/进程未必停止 |
-| ACP | 浏览器断流时代理会 kill 直接 acpx 进程；另有 acpx Session cancel 能力 | 通用前端取消尚未完整接入 Session cancel |
-| OpenClaw | 浏览器可以停止接收；控制面另有 `/stop` | 通用前端取消尚未保证发送远端 `/stop` |
-| OASIS | engine cancel flag + outer task cancel | 编排可停；正在运行的远端调用或同步 Python 未必立即停止 |
-| Commander background job | Task cancel + 进程/进程组终止 | 独立后台命令路径相对完整 |
-
-前端不能仅根据本地 `AbortError` 宣称远端 Agent 已确认终止。正确状态序列是：
-
-```text
-running -> cancelling -> cancelled
-                      -> cancel_failed / still_running
-```
-
-## 正式人设机制
-
-正式人设属于 Agent 或 Team 配置，不属于某条临时用户消息。不同通道按自身会话模型注入。
-
-### Internal Agent
-
-Internal Session 元信息中的 `tag` 用于解析 Team Persona。`src/core/agent.py` 在每次构造模型上下文时调用 `_get_internal_session_persona_prompt()`，并将稳定身份加入基础 System Prompt。
-
-这不是每轮往历史中追加一条人设消息，而是每次模型调用都携带稳定 System Prompt。它符合正常多轮对话模型，并能减少长对话中的身份漂移。
-
-### ACP / acpx External Agent
-
-`AcpxAdapter.ensure_session()` 先检查 acpx Session 是否已经存在：
-
-- Session 不存在：创建 Session，并把 `system_prompt` 放入 pending initial prompt；
-- 第一条真实 Prompt：将 pending initial prompt 拼到用户 Prompt 前；
-- Session 已存在：不重复注入；
-- Session 被关闭、重建或显式 reset：下一次重新注入。
-
-对应实现：`src/integrations/acpx_adapter.py`。
-
-### HTTP External Agent
-
-`http_agent_sessions` 表记录 External HTTP Session 已使用的 prompt 文本。`upsert_http_agent_session()` 返回是否需要注入：
-
-- 没有 Session 记录：注入；
-- 已有记录且 Prompt 相同：不注入；
-- Persona、Skill、Workflow 等组成的 Prompt 发生变化：重新注入；
-- Session 记录被删除：下一次重新注入。
-
-对应实现：
-
-- `src/api/group_service.py`；
-- `src/api/group_repository.py`。
-
-### OASIS
-
-`SessionExpert` 和 `ExternalExpert` 使用实例内 `_initialized` 判断第一轮。这里的“第一次”是当前 OASIS Expert 实例、Topic 或 Workflow Run 的第一次参与，不是该 Agent 一生中的第一次连接。服务重启或新建 OASIS 运行后可以再次注入。
-
-对应实现：`oasis/experts.py`。
-
-### OpenClaw IDENTITY.md
-
-写入 Agent Workspace 的 `IDENTITY.md` 属于 OpenClaw Agent 的持久身份文件。它不是 Clawcross 主前端快捷 Prompt，也不应依赖浏览器中的首次发送标记。
-
-## 主前端“+ 人设”快捷 Prompt
-
-主前端“+ 人设”是用户主动选择的快捷 Prompt，不是正式 Agent 身份，也不是后端首次连接机制。
-
-语义上它等价于：
-
-```text
-发送内容 = 用户选择的临时人设提示 + Workflow 提示 + 用户输入
-```
-
-因此开发时必须遵守：
-
-- 不要把快捷 Prompt 写回 Agent 的正式 Persona；
-- 不要用它判断 ACP、HTTP 或 Internal Agent 是否首次连接；
-- 不要让它覆盖 Team 文件中的权威身份配置；
-- UI 应明确它是用户控制的临时上下文。
-
-当前主前端使用 `personaInjectedSession !== currentSessionId` 避免重复拼接，但该实现并不代表真实首次连接，并存在以下限制：
-
-- `switchToSession()` 会清空标记，A -> B -> A 后可能再次注入；
-- 单一字符串不能同时记录多个 Session；
-- 键中没有平台、OpenClaw Agent 或 ACP Tool，可能漏注入或串上下文；
-- 请求发送前就设置为已注入，请求失败后可能不会自动重试；
-- 浏览器刷新后内存标记丢失；
-- 正式 Internal Persona 与快捷 Persona 可能同时出现，这是两层不同语义，不应被误认为重复的同一机制。
-
-如果产品语义确定为“快捷 Prompt”，推荐默认行为是一次性：
-
-1. 用户选择“+ 人设”；
-2. 下一次成功发送时拼接；
-3. 发送成功后清除选择；
-4. 请求未成功建立时保留，允许重试。
-
-如未来需要“当前会话持续使用”，应作为显式模式提供，并使用 `platform + agent/session + persona` 作为前端上下文键，而不是复用后端首次连接概念。
+它是用户主动选择的临时提示，不是 agent 的正式人设：不要写回 agent 的 `persona`，不要用它判断首次连接。推荐一次性使用：下一次发送成功后清除。
 
 ## 修改检查清单
 
-修改 Agent、Persona、状态或前端调用代码前，检查：
-
-- 是否仍以 Team 文件为真实数据源？
-- 是否错误创建了第二套 Agent 身份？
-- 多 Team 成员关系是否聚合为数组？
-- `online`、`idle`、`running` 是否被正确区分？
-- 状态是否带有来源和检查时间？
-- 页面断流是否被误当成 Agent cancel？
-- Internal 新发送是否会意外取消旧运行？
-- 正式 Persona 与快捷 Prompt 是否被混用？
-- ACP 新 Session、HTTP Session Prompt 变化、OASIS 新 Run 的重新注入是否仍正确？
-- CLI、前端、OASIS 和外部 API 请求格式是否保持兼容？
-- Team ZIP 的外部结构是否保持兼容？
+- L1 以外有没有读 `driver` / `config`、引用驱动名、直接调用传输层？（`test_layering.py`）
+- 有没有在 L2 / L3 按平台分支？平台差异应在 L1 驱动里消化。
+- 新的身份字段？agent 只有 `ag_` 编号；人是 `u:<user>`。
+- team 有没有“拥有” agent？删除 team 不应删除别的 team 还在用的 agent。
+- 人设是否只在 L1 注入一次？
+- 导入导出格式（`internal_agents.json` / `external_agents.json` / 快照 zip）是否保持原样？
 
 ## 代码索引
 
-| 主题 | 主要文件 |
+| 主题 | 文件 |
 |---|---|
-| 跨平台发送入口 | `src/integrations/registry.py` |
-| Session 状态与统一人设注入 | `src/integrations/agent_session.py` |
-| ACP Session 与首次 Prompt | `src/integrations/acpx_adapter.py` |
-| External Persona 组装 | `src/integrations/external_persona.py` |
-| External Agent 扁平配置映射 | `src/api/external_agent_registry.py` |
-| External Agent 状态 | `src/api/ops_service.py` |
-| 统一 Agent 列表与控制入口 | `src/api/ops_models.py`, `src/api/ops_routes.py`, `src/api/ops_service.py` |
-| HTTP External Session 首次判断 | `src/api/group_repository.py`, `src/api/group_service.py` |
-| Internal Persona System Prompt | `src/core/agent.py`, `src/webot/profiles.py` |
-| Internal Task / busy 状态 | `src/core/agent_runtime_state.py`, `src/api/session_service.py` |
-| OASIS 第一轮人设 | `oasis/experts.py` |
-| 主前端流、状态、快捷人设 | `frontend/js/main.js` |
-| OpenClaw Agent 配置 | `oasis/openclaw_routes.py` |
+| agent 总表 | `src/agents/store.py` |
+| 单 agent 接口、驱动、回复渠道 | `src/agents/gateway.py`, `src/agents/messages.py` |
+| 状态 / 取消 / 重置 / 历史 | `src/agents/control.py` |
+| 外部运行时已注入的人设 | `src/agents/runtime_sessions.py`, `src/integrations/agent_session.py` |
+| `/v1/agents` | `src/agents/routes.py` |
+| 会话、唤醒、未读摘要 | `src/comms/store.py`, `src/comms/conversations.py`, `src/comms/delivery.py` |
+| team 成员关系、导入导出格式、`/v1/teams` | `src/teams/store.py`, `src/teams/manifest.py`, `src/teams/routes.py` |
+| 群聊 | `src/groups/service.py`, `src/groups/routes.py` |
+| OASIS 参与者 | `oasis/participants.py`, `oasis/engine.py`, `oasis/agent_center.py` |
+| 定时任务 | `src/utils/scheduler_service.py`, `src/utils/internal_alarm_utils.py` |
+| 一次性数据迁移 | `src/migrations/unify.py` |
+| WeBot 人设 system prompt | `src/core/agent.py`, `src/webot/profiles.py` |
+| ACP session 与首次 prompt | `src/integrations/acpx_adapter.py` |
+| 分层检查 | `test/test_layering.py` |

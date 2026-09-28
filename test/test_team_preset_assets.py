@@ -11,6 +11,8 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 import services.team_preset_assets as team_preset_assets
+from agents.store import AgentStore
+from teams.store import TeamStore
 
 
 class TeamPresetAssetsTests(unittest.TestCase):
@@ -75,20 +77,23 @@ class TeamPresetAssetsTests(unittest.TestCase):
                 self.assertEqual(len(listed), 1)
                 self.assertEqual(listed[0]["preset_id"], "modern-ceo")
 
+                agents = AgentStore(root / "clawcross.db")
+                teams = TeamStore(agents, root / "user_files")
                 result = team_preset_assets.install_team_preset(
                     user_id="alice",
                     team_name="Modern Ops",
                     preset_id="modern-ceo",
-                    project_root=root,
+                    teams=teams,
                 )
                 self.assertEqual(result["team"], "Modern Ops")
                 self.assertEqual(result["internal_agents"], 2)
                 self.assertEqual(result["workflow_files"], ["modern.yaml"])
 
-                team_dir = root / "data" / "user_files" / "alice" / "teams" / "Modern Ops"
-                installed_agents = json.loads((team_dir / "internal_agents.json").read_text(encoding="utf-8"))
-                self.assertEqual(len(installed_agents), 2)
-                self.assertTrue(all(item.get("session") for item in installed_agents))
+                team_dir = teams.folder("alice", "Modern Ops")
+                members = teams.members("alice", "Modern Ops")
+                self.assertEqual([m.role for m in members], ["CEO", "CTO"])
+                self.assertTrue(all(m.agent.config.get("session") for m in members))
+                self.assertFalse((team_dir / "internal_agents.json").exists())
                 self.assertTrue((team_dir / "clawcross_preset_manifest.json").exists())
                 self.assertTrue((team_dir / "oasis" / "yaml" / "modern.yaml").exists())
             finally:

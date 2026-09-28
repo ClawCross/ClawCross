@@ -7,17 +7,17 @@ plan:
     author: begin
     content: "小说项目立项"
 - id: h1
-  expert: hanlin_zhang#oasis#翰林院·掌院学士
+  agent: 翰林院·掌院学士
 - id: h2
-  expert: xiuzhuan#oasis#修撰
+  agent: 修撰
 - id: h3
-  expert: bianxiu#oasis#编修
+  agent: 编修
 - id: h4
-  expert: jiantao#oasis#检讨
+  agent: 检讨
 - id: h5
-  expert: shujishi#oasis#庶吉士
+  agent: 庶吉士
 - id: h6
-  expert: qijuzhu#oasis#起居注官
+  agent: 起居注官
 - id: h7
   manual:
     author: bend

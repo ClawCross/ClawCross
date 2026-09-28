@@ -15,7 +15,6 @@ MCP Tool Server: OASIS Forum
 Exposes tools for the user's Agent to interact with the OASIS discussion forum:
   - list_oasis_experts: List all available expert personas (public + user custom)
   - save_oasis_expert / delete_oasis_expert: create, update, or delete expert personas
-  - list_oasis_sessions: List oasis-managed sessions (containing #oasis# in session_id)
     by scanning the Agent checkpoint DB — no separate storage needed
   - start_new_oasis: Submit a discussion — supports direct LLM experts and session-backed experts
   - check_oasis_discussion / cancel_oasis_discussion: List, monitor, or cancel discussions
@@ -379,15 +378,9 @@ async def list_oasis_experts(username: str = "") -> str:
                     lines.append(f"  • {e['name']} (tag: \"{e['tag']}\") — {persona_preview}")
 
             lines.append(
-                "\n💡 在 schedule_yaml 中使用 expert 的 tag 来指定参与者。"
-                "\n   三种格式:"
-                "\n   • \"tag#temp#N\"         — 直连LLM，无状态"
-                "\n   • \"tag#oasis#name\"     — 内部session agent，按name查找"
-                "\n   • \"#oasis#name\"        — 内部session agent（无tag）"
-                "\n   • \"tag#ext#id\"         — 外部API（DeepSeek/GPT-4等）"
-                "\n   也可以直接写参与者："
-                "\n   • agent: <角色名 | handle | 用户/handle | ag_…> — 已登记的任意 agent（WeBot 或外部）"
-                "\n   • persona: <tag>，tools: none | all | [工具名]    — 本话题的临时专家；带工具时是临时会话，结束后删除"
+                "\n💡 在 schedule_yaml 里这样写参与者："
+                "\n   • persona: <tag>，tools: none | all | [工具名] — 用上面的人设临时创建一个 agent，话题结束即删除"
+                "\n   • agent: <角色名 | handle | 用户/handle | ag_…> — 你已有的任意 agent"
             )
             return "\n".join(lines)
 
@@ -481,60 +474,6 @@ async def delete_oasis_expert(username: str, tag: str) -> str:
         return _CONN_ERR
     except Exception as e:
         return f"❌ 删除异常: {str(e)}"
-
-# ======================================================================
-# Oasis session discovery (scans checkpoint DB for #oasis# sessions)
-# ======================================================================
-
-@mcp.tool()
-async def list_oasis_sessions(username: str = "") -> str:
-    """
-    List the current user's oasis-managed expert sessions. Reference one in
-    YAML as "tag#oasis#name" or "#oasis#name"; append "#new" to force a fresh
-    session.
-
-    Args:
-        username: (auto-injected) current user identity; do NOT set manually
-
-    Returns:
-        Formatted list of oasis sessions with tag, session_id and message count
-    """
-    effective_user = _resolve_effective_user(username)
-    # Prefer calling OASIS HTTP API so both MCP and curl can access sessions
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(f"{OASIS_BASE_URL}/sessions/oasis", params={"user_id": effective_user})
-            if resp.status_code != 200:
-                return f"❌ 查询失败: {resp.text}"
-            data = resp.json()
-            sessions = data.get("sessions", [])
-
-            if not sessions:
-                return (
-                    "📭 暂无 oasis 专家 session。\n\n"
-                    "💡 在 schedule_yaml 中使用\n"
-                    "   \"tag#oasis#name\" 或 \"#oasis#name\" 格式即可。\n"
-                    "   agent name 会自动映射到对应的 session。\n"
-                    "   加 \"#new\" 后缀可确保创建全新 session。"
-                )
-
-            lines = [f"🏛️ OASIS 专家 Sessions — 共 {len(sessions)} 个\n"]
-            for s in sessions:
-                lines.append(
-                    f"  • Tag: {s.get('tag')}\n"
-                    f"    Session ID: {s.get('session_id')}\n"
-                    f"    消息数: {s.get('message_count')}"
-                )
-
-            lines.append(
-                "\n💡 在 schedule_yaml 中使用 session_id 即可让这些专家参与讨论。"
-                "\n   也可在 schedule_yaml 中精确指定发言顺序。"
-            )
-            return "\n".join(lines)
-    except httpx.ConnectError:
-        return _CONN_ERR
-    except Exception as e:
-        return f"❌ 查询失败: {e}"
 
 # ======================================================================
 # Discussion tools
@@ -1079,25 +1018,24 @@ version: 2
 repeat: false
 plan:
   - id: n1                         # every node needs a unique id
-    expert: "creative#temp#1"      # persona ref (see formats below)
+    persona: creative              # a temporary agent with this persona
     instruction: "optional task for this step"
   - id: n2
-    expert: "critical#temp#1"
+    agent: Reviewer                # an agent you have: role name, handle, address or ag_ id
   - id: done
     manual: {author: bend, content: "wrap-up text"}   # manual/no-LLM node
 edges:
   - [n1, n2]                       # fixed edge; fan-in waits for ALL predecessors
   - [n2, done]
 
-Persona ref (`expert`) = tag#mode#identifier:
-  tag#temp#N        stateless preset persona, instance N (no memory)
-  tag#oasis#new     stateful, auto-create a session
-  tag#oasis#<name>  stateful session agent by display name (tag → persona)
-  #oasis#<name>     stateful session agent by name, no tag
-  tag#ext#id        external agent (resolved from external_agents.json)
+Participants:
+  agent: <ref>        an agent you have (WeBot, codex, claude, openclaw, …); in a team, its role name
+  persona: <tag>      a temporary agent with a persona from the library, gone when the topic ends
+    tools: none|all|[names]   none (default): one model call per turn; else a temporary WeBot session
+    instance: N               tells same-persona participants apart
 
 Manual authors: begin (start), bend (end), or any string (speaker name).
-Step types: expert | parallel: [...] | all_experts: true | manual | script | human.
+Step types: agent / persona | parallel: [...] | all_experts: true | manual | script | human.
 Branching: conditional_edges (source/condition/then/else) and selector_edges
 (node with selector: true; choices map LLM output → branch; __end__ terminates).
 Conditions: last_post_contains:<kw>, last_post_not_contains:<kw>,
@@ -1351,10 +1289,8 @@ async def _cancel_oasis_python_run(run_id: str, username: str = "") -> str:
 @mcp.tool()
 async def list_oasis_agent_catalog(username: str = "", team: str = "") -> str:
     """
-    List all callable agents for OASIS workflowpy under the current user/team.
-
-    Includes temp experts, internal session agents, and external agents with
-    their target id, tag, platform, connect_type, session default, and full persona.
+    List the agents a Python workflow (and a YAML ``agent:`` step) can call:
+    the team's members with their role names, or all of the user's agents.
 
     :param team: Optional team whose agents to list; empty lists the user's own
     """
@@ -1374,14 +1310,8 @@ async def list_oasis_agent_catalog(username: str = "", team: str = "") -> str:
         lines = [f"📋 OASIS Agent Catalog — 共 {len(items)} 个\n"]
         for item in items:
             lines.append(
-                f"  • {item.get('id')}\n"
-                f"    name={item.get('name')} | tag={item.get('tag') or '-'} | "
-                f"kind={item.get('kind')} | platform={item.get('platform')} | "
-                f"connect={item.get('connect_type')} | session={item.get('session') or '-'}"
+                f"  • {item.get('role') or item.get('name')} — {item.get('address')} ({item.get('platform')}, {item.get('agent_id')})"
             )
-            persona = str(item.get("persona", "") or "").strip()
-            if persona:
-                lines.append(f"    persona: {persona}")
         if team:
             lines.append(f"\n💡 当前只显示 team=\"{team}\" 下的 agent。")
         else:
@@ -1468,81 +1398,23 @@ try:
 except Exception:
     pass
 
-def _parse_expert_name(raw: str) -> dict:
-    """Parse a YAML expert name string into a layout node dict.
+def _participant_node(step: dict) -> dict | None:
+    """The canvas node for a plan item naming a participant, or None.
 
-    Formats:
-      tag#temp#N         → expert, instance=N
-      tag#oasis#new      → expert (stateful, auto-create session)
-      tag#oasis#<name>   → session_agent (name→session lookup, tag→persona)
-      #oasis#<name>      → session_agent (name→session lookup, no tag)
-      tag#ext#id         → external (external API agent)
+    ``agent: <ref>`` → an ``agent`` node; ``persona: <tag>`` → a ``persona`` node
+    carrying its ``instance`` and ``tools`` (none / all / [names]).
     """
-    parts = raw.split("#")
-    tag = parts[0]
-
-    if len(parts) >= 3 and parts[1] == "temp":
-        inst = int(parts[2]) if parts[2].isdigit() else 1
-        return {
-            "type": "expert",
-            "tag": tag,
-            "name": _TAG_NAMES.get(tag, tag),
-            "emoji": _TAG_EMOJI.get(tag, "⭐"),
-            "temperature": 0.5,
-            "instance": inst,
-            "session_id": "",
-        }
-
-    if len(parts) >= 3 and parts[1] == "oasis":
-        oasis_val = parts[2]
-        # "tag#oasis#new" → stateful expert (auto-create new session)
-        if oasis_val == "new":
-            return {
-                "type": "expert",
-                "tag": tag,
-                "name": _TAG_NAMES.get(tag, tag),
-                "emoji": _TAG_EMOJI.get(tag, "⭐"),
-                "temperature": 0.5,
-                "instance": 1,
-                "session_id": "",
-                "stateful": True,
-            }
-        # "tag#oasis#<name>" or "#oasis#<name>" → session_agent (name-based)
-        inst = int(parts[3]) if len(parts) >= 4 and parts[3].isdigit() else 1
-        return {
-            "type": "session_agent",
-            "tag": tag or "",
-            "name": oasis_val,
-            "agent_name": oasis_val,
-            "emoji": "🤖",
-            "temperature": 0.5,
-            "instance": inst,
-            "session_id": "",
-        }
-
-    if len(parts) >= 3 and parts[1] == "ext":
-        ext_id = parts[2]
-        return {
-            "type": "external",
-            "tag": tag,
-            "name": ext_id,
-            "emoji": "🌐",
-            "temperature": 0.5,
-            "instance": 1,
-            "session_id": "",
-            "ext_id": ext_id,
-        }
-
-    # Unrecognized format — treat as unknown expert
-    return {
-        "type": "expert",
-        "tag": tag or "custom",
-        "name": tag or raw,
-        "emoji": "❓",
-        "temperature": 0.5,
-        "instance": 1,
-        "session_id": "",
-    }
+    if "agent" in step:
+        ref = str(step["agent"] or "").strip()
+        return {"type": "agent", "agent": ref, "tag": "", "name": ref, "emoji": "🤖",
+                "temperature": 0.5, "instance": 1, "session_id": ""}
+    if "persona" in step:
+        tag = str(step["persona"] or "").strip()
+        tools = step.get("tools", "none")
+        return {"type": "persona", "tag": tag, "name": _TAG_NAMES.get(tag, tag), "emoji": _TAG_EMOJI.get(tag, "⭐"),
+                "temperature": 0.5, "instance": int(step.get("instance", 1)), "session_id": "",
+                "tools": tools if tools not in (None, False, "", []) else "none"}
+    return None
 
 def _yaml_to_layout_data(yaml_str: str) -> dict:
     """Convert OASIS YAML schedule string to visual layout JSON.
@@ -1558,11 +1430,6 @@ def _yaml_to_layout_data(yaml_str: str) -> dict:
         raise ValueError("YAML must contain 'plan' key")
 
     plan = data.get("plan", [])
-    # agent: / persona: steps are drawn like the classic expert: form.
-    from oasis.scheduler import normalize_participant_item
-
-    plan = [normalize_participant_item(step) for step in plan]
-    data["plan"] = plan
     repeat = data.get("repeat", True)
     version = data.get("version", 1)
 
@@ -1619,9 +1486,7 @@ def _yaml_v2_to_layout(data: dict) -> dict:
         step_id = str(step.get("id", ""))
         node_id = f"on{nid}"; nid += 1
 
-        if "expert" in step:
-            raw = step["expert"]
-            info = _parse_expert_name(raw)
+        if (info := _participant_node(step)) is not None:
             node = {
                 "id": node_id,
                 "x": 0, "y": 0,
@@ -1630,12 +1495,6 @@ def _yaml_v2_to_layout(data: dict) -> dict:
                 "content": step.get("instruction", ""),
                 "source": "",
             }
-            if info.get("type") == "external":
-                for _ek in ("api_url", "api_key", "model"):
-                    if _ek in step:
-                        node[_ek] = step[_ek]
-                if "headers" in step and isinstance(step["headers"], dict):
-                    node["headers"] = step["headers"]
             # Mark selector nodes
             if step.get("selector") or step_id in selector_step_ids:
                 node["isSelector"] = True
@@ -1914,9 +1773,7 @@ def _yaml_dag_to_layout(plan: list, repeat: bool) -> dict:
 
         node_id = f"on{nid}"; nid += 1
 
-        if "expert" in step:
-            raw = step["expert"]
-            info = _parse_expert_name(raw)
+        if (info := _participant_node(step)) is not None:
             node = {
                 "id": node_id,
                 "x": 0, "y": 0,
@@ -1925,12 +1782,6 @@ def _yaml_dag_to_layout(plan: list, repeat: bool) -> dict:
                 "content": step.get("instruction", ""),
                 "source": "",
             }
-            if info.get("type") == "external":
-                for _ek in ("api_url", "api_key", "model"):
-                    if _ek in step:
-                        node[_ek] = step[_ek]
-                if "headers" in step and isinstance(step["headers"], dict):
-                    node["headers"] = step["headers"]
         elif "manual" in step:
             manual = step["manual"]
             _author = manual.get("author", "主持人") if isinstance(manual, dict) else "主持人"
@@ -2151,9 +2002,7 @@ def _yaml_linear_to_layout(plan: list, repeat: bool) -> dict:
             continue
 
         # --- expert step ---
-        if "expert" in step:
-            raw = step["expert"]
-            info = _parse_expert_name(raw)
+        if (info := _participant_node(step)) is not None:
             node_id = f"on{nid}"; nid += 1
             node = {
                 "id": node_id,
@@ -2164,12 +2013,6 @@ def _yaml_linear_to_layout(plan: list, repeat: bool) -> dict:
                 "content": step.get("instruction", ""),
                 "source": "",
             }
-            if info.get("type") == "external":
-                for _ek in ("api_url", "api_key", "model"):
-                    if _ek in step:
-                        node[_ek] = step[_ek]
-                if "headers" in step and isinstance(step["headers"], dict):
-                    node["headers"] = step["headers"]
             nodes.append(node)
             for pid in prev_node_ids:
                 edges.append({"id": f"oe{eid}", "source": pid, "target": node_id})
@@ -2189,16 +2032,10 @@ def _yaml_linear_to_layout(plan: list, repeat: bool) -> dict:
             y_start = BASE_Y - total_h // 2  # centre around baseline
 
             for idx, item in enumerate(members):
-                if isinstance(item, str):
-                    raw = item
-                    instruction = ""
-                elif isinstance(item, dict) and "expert" in item:
-                    raw = item["expert"]
-                    instruction = item.get("instruction", "")
-                else:
+                info = _participant_node(item) if isinstance(item, dict) else None
+                if info is None:
                     continue
-
-                info = _parse_expert_name(raw)
+                instruction = item.get("instruction", "")
                 node_id = f"on{nid}"; nid += 1
                 node = {
                     "id": node_id,
@@ -2209,12 +2046,6 @@ def _yaml_linear_to_layout(plan: list, repeat: bool) -> dict:
                     "content": instruction,
                     "source": "",
                 }
-                if info.get("type") == "external" and isinstance(item, dict):
-                    for _ek in ("api_url", "api_key", "model"):
-                        if _ek in item:
-                            node[_ek] = item[_ek]
-                    if "headers" in item and isinstance(item["headers"], dict):
-                        node["headers"] = item["headers"]
                 nodes.append(node)
                 group_node_ids.append(node_id)
 

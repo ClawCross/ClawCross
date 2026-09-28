@@ -5,12 +5,9 @@ Ops 操作服务的数据模型模块
 - LoginRequest：登录请求
 - CancelRequest：取消任务请求
 - TTSRequest：文本转语音请求
-- ACPControlRequest：ACP 外部 agent 控制请求
-- ACPStatusRequest：ACP agent 状态查询请求
-- AgentControlRequest：统一列出、查询和控制各类 agent
 """
 
-from typing import Any, Literal, Optional
+from typing import Optional
 
 from pydantic import BaseModel
 
@@ -34,51 +31,6 @@ class TTSRequest(BaseModel):
     password: str = ""  # Optional when using X-Internal-Token
     text: str
     voice: Optional[str] = None
-
-
-class ACPControlRequest(BaseModel):
-    """对外部 ACP agent 执行控制命令。
-
-    Session routing 通过命令行 --session 参数传入（bridge 当前版本不处理 _meta.sessionKey）。
-    - reset_session: 通过命令行 --reset-session 标志强制生成新 session ID（同 key 下刷新状态）
-    - delete: 关闭该 agent 对应的 ACP session（用于真实删除前的清理）
-    """
-    user_id: str
-    password: str = ""
-    team: str                              # 群组/团队名
-    group_id: str = ""                     # 群聊 id；若提供则与 broadcast_to_group 相同方式解析 ext 成员
-    agent_name: str                        # 外部 agent 的 name (= session_id in members)
-    action: Literal["new", "stop", "delete"]  # delete=关闭 ACP session
-    reset_session: bool = False            # 重置会话（通过 --reset-session 命令行标志实现）
-    timeout_sec: Optional[int] = None       # 覆盖 agent/meta.acp 中的 ACPX 调用超时
-    ttl_sec: Optional[int] = None           # 覆盖 acpx --ttl
-    approve_all: Optional[bool] = None      # 覆盖 acpx --approve-all 策略
-    non_interactive_permissions: Optional[str] = None  # 覆盖 acpx 非交互权限策略
-
-
-class ACPStatusRequest(BaseModel):
-    """查询外部 agent 的 session 列表 / 运行状态。"""
-    user_id: str
-    password: str = ""
-    team: str
-    agent_name: str = ""                   # 为空则查所有外部 agent
-
-
-class AgentControlRequest(BaseModel):
-    """统一 Agent 控制面请求。
-
-    ``identity`` 沿用各运行时已有身份：Internal 使用 session，External
-    使用 global_name，WeBot 子 Agent 使用 agent_id。list 时无需 identity。
-    """
-
-    user_id: str
-    password: str = ""
-    action: Literal["list", "status", "cancel", "stop", "new", "reset", "delete", "configure"] = "list"
-    kind: Literal["", "internal", "external", "subagent"] = ""
-    identity: str = ""
-    team: str = ""
-    refresh_external: bool = True
-    settings: dict[str, Any] | None = None
 
 
 class SessionsListRequest(BaseModel):

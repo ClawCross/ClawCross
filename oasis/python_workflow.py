@@ -12,7 +12,7 @@ _SRC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "src")
 if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
 
-from integrations.agent_sender import SendToAgentResult
+from agents.messages import AgentReply
 from utils.runtime_paths import DATA_DIR, USER_FILES_DIR
 from oasis.agent_center import AgentCenter
 from oasis.forum import DiscussionForum
@@ -62,13 +62,10 @@ def resolve_python_workflow_path(user_id: str, python_file: str, team: str = "")
     return matches[0][1], None
 
 
-class PythonWorkflowContext:
-    def __init__(self, forum: DiscussionForum, *, user_id: str, team: str, question: str):
-        self.forum = forum
-        self.user_id = user_id
-        self.team = team
-        self.question = question
-        self._agent_center = AgentCenter(user_id, team)
+class AgentAccess:
+    """``ctx`` methods for reaching agents and personas (see ``oasis.agent_center``)."""
+
+    _agent_center: AgentCenter
 
     def list_agents(self) -> list[dict[str, Any]]:
         return self._agent_center.list_agents()
@@ -82,90 +79,40 @@ class PythonWorkflowContext:
     def get_persona(self, target: str) -> dict[str, Any]:
         return self._agent_center.get_persona(target)
 
+    async def send_agent(self, target: str, prompt: str, *, persona_tag: str | None = None,
+                         persona_override: str | None = None) -> AgentReply:
+        return await self._agent_center.send_agent(target, prompt, persona_tag=persona_tag,
+                                                   persona_override=persona_override)
+
+    async def send_agent_once(self, name: str = "", prompt: str | None = None, *,
+                              persona_override: str | None = None, llm: dict[str, Any] | None = None) -> AgentReply:
+        return await self._agent_center.send_agent_once(name, prompt, persona_override=persona_override, llm=llm)
+
+    async def send_persona(self, target: str, prompt: str, *, persona_override: str | None = None,
+                           llm: dict[str, Any] | None = None) -> AgentReply:
+        return await self._agent_center.send_persona(target, prompt, persona_override=persona_override, llm=llm)
+
+    async def call_llm(self, prompt: str, *, temperature: float | None = None, model: str | None = None,
+                       max_tokens: int | None = None) -> AgentReply:
+        return await self._agent_center.call_llm(prompt, temperature=temperature, model=model, max_tokens=max_tokens)
+
+
+class PythonWorkflowContext(AgentAccess):
+    def __init__(self, forum: DiscussionForum, *, user_id: str, team: str, question: str):
+        self.forum = forum
+        self.user_id = user_id
+        self.team = team
+        self.question = question
+        self._agent_center = AgentCenter(user_id, team)
+
     async def publish(self, content: str, *, author: str = "workflowpy", reply_to: int | None = None) -> None:
         await self.forum.publish(author=author, content=content, reply_to=reply_to)
-
-    async def send_agent(
-        self,
-        target: str,
-        prompt: str,
-        *,
-        persona_tag: str | None = None,
-        persona_override: str | None = None,
-        session: str | None = None,
-        connect_type: str | None = None,
-        platform: str | None = None,
-        options: dict[str, Any] | None = None,
-    ) -> SendToAgentResult:
-        return await self._agent_center.send_agent(
-            target,
-            prompt,
-            persona_tag=persona_tag,
-            persona_override=persona_override,
-            session=session,
-            connect_type=connect_type,
-            platform=platform,
-            options=options,
-        )
-
-    async def send_agent_once(
-        self,
-        target: str = "",
-        prompt: str | None = None,
-        *,
-        persona_tag: str | None = None,
-        persona_override: str | None = None,
-        connect_type: str | None = None,
-        platform: str | None = None,
-        options: dict[str, Any] | None = None,
-    ) -> SendToAgentResult:
-        return await self._agent_center.send_agent_once(
-            target,
-            prompt,
-            persona_tag=persona_tag,
-            persona_override=persona_override,
-            connect_type=connect_type,
-            platform=platform,
-            options=options,
-        )
-
-    async def send_persona(
-        self,
-        target: str,
-        prompt: str,
-        *,
-        persona_override: str | None = None,
-        options: dict[str, Any] | None = None,
-    ) -> SendToAgentResult:
-        return await self._agent_center.send_persona(
-            target,
-            prompt,
-            persona_override=persona_override,
-            options=options,
-        )
-
-    async def call_llm(
-        self,
-        prompt: str,
-        *,
-        temperature: float | None = None,
-        model: str | None = None,
-        max_tokens: int | None = None,
-        options: dict[str, Any] | None = None,
-    ) -> SendToAgentResult:
-        return await self._agent_center.call_llm(
-            prompt,
-            temperature=temperature,
-            model=model,
-            max_tokens=max_tokens,
-            options=options,
-        )
 
     def set_conclusion(self, text: str) -> None:
         self.forum.conclusion = text
 
 
-class StandalonePythonWorkflowContext:
+class StandalonePythonWorkflowContext(AgentAccess):
     def __init__(self, *, user_id: str, team: str, question: str):
         self.user_id = user_id
         self.team = team
@@ -175,98 +122,10 @@ class StandalonePythonWorkflowContext:
         self.published_messages: list[dict[str, Any]] = []
         self._agent_center = AgentCenter(user_id, team)
 
-    def list_agents(self) -> list[dict[str, Any]]:
-        return self._agent_center.list_agents()
-
-    def list_personas(self) -> list[dict[str, Any]]:
-        return self._agent_center.list_personas()
-
-    def get_agent(self, target: str) -> dict[str, Any]:
-        return self._agent_center.get_agent(target)
-
-    def get_persona(self, target: str) -> dict[str, Any]:
-        return self._agent_center.get_persona(target)
-
     async def publish(self, content: str, *, author: str = "workflowpy", reply_to: int | None = None) -> None:
         entry = {"author": author, "content": content, "reply_to": reply_to}
         self.published_messages.append(entry)
         print(f"[workflowpy:{author}] {content}", flush=True)
-
-    async def send_agent(
-        self,
-        target: str,
-        prompt: str,
-        *,
-        persona_tag: str | None = None,
-        persona_override: str | None = None,
-        session: str | None = None,
-        connect_type: str | None = None,
-        platform: str | None = None,
-        options: dict[str, Any] | None = None,
-    ) -> SendToAgentResult:
-        return await self._agent_center.send_agent(
-            target,
-            prompt,
-            persona_tag=persona_tag,
-            persona_override=persona_override,
-            session=session,
-            connect_type=connect_type,
-            platform=platform,
-            options=options,
-        )
-
-    async def send_agent_once(
-        self,
-        target: str = "",
-        prompt: str | None = None,
-        *,
-        persona_tag: str | None = None,
-        persona_override: str | None = None,
-        connect_type: str | None = None,
-        platform: str | None = None,
-        options: dict[str, Any] | None = None,
-    ) -> SendToAgentResult:
-        return await self._agent_center.send_agent_once(
-            target,
-            prompt,
-            persona_tag=persona_tag,
-            persona_override=persona_override,
-            connect_type=connect_type,
-            platform=platform,
-            options=options,
-        )
-
-    async def send_persona(
-        self,
-        target: str,
-        prompt: str,
-        *,
-        persona_override: str | None = None,
-        options: dict[str, Any] | None = None,
-    ) -> SendToAgentResult:
-        return await self._agent_center.send_persona(
-            target,
-            prompt,
-            persona_override=persona_override,
-            options=options,
-        )
-
-    async def call_llm(
-        self,
-        prompt: str,
-        *,
-        temperature: float | None = None,
-        model: str | None = None,
-        max_tokens: int | None = None,
-        options: dict[str, Any] | None = None,
-    ) -> SendToAgentResult:
-        return await self._agent_center.call_llm(
-            prompt,
-            temperature=temperature,
-            model=model,
-            max_tokens=max_tokens,
-            options=options,
-        )
 
     def set_conclusion(self, text: str) -> None:
         self.conclusion = text

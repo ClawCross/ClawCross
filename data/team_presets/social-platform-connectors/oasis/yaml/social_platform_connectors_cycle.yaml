@@ -7,21 +7,21 @@ plan:
     author: begin
     content: "请描述目标：要连接的平台、小红书/X/Instagram/Bilibili 的账号状态、要做发布/搜索/评论/数据分析/竞品研究哪一类任务、是否允许安装第三方 skill 或 MCP。"
 - id: s1
-  expert: connector_lead#oasis#Connector Lead
+  agent: Connector Lead
 - id: s2
-  expert: security#oasis#Skill Security Reviewer
+  agent: Skill Security Reviewer
 - id: s3
-  expert: xiaohongshu#oasis#Xiaohongshu Operator
+  agent: Xiaohongshu Operator
 - id: s4
-  expert: x_publisher#oasis#X Publisher
+  agent: X Publisher
 - id: s5
-  expert: meta#oasis#Meta Instagram Threads Operator
+  agent: Meta Instagram Threads Operator
 - id: s6
-  expert: bilibili#oasis#Bilibili Intelligence Analyst
+  agent: Bilibili Intelligence Analyst
 - id: s7
-  expert: browser_fallback#oasis#Browser Automation Fallback
+  agent: Browser Automation Fallback
 - id: s8
-  expert: runbook#oasis#Implementation Runbook Writer
+  agent: Implementation Runbook Writer
 - id: s9
   manual:
     author: bend

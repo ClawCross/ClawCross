@@ -18,17 +18,18 @@ YAML format (new unified graph):
   plan:
     # Every node has a unique id
     - id: analyze
-      expert: "analyst#temp#1"
+      persona: analyst            # a temporary participant with that persona
       instruction: "分析需求"
 
     - id: review
-      expert: "reviewer#temp#1"
+      agent: Reviewer             # a resident agent: role name, handle, address or ag_ id
 
     - id: implement
-      expert: "coder#temp#1"
+      persona: coder
+      tools: all                  # a temporary WeBot session with tools; none (default), all or a list
 
     - id: final
-      expert: "writer#temp#1"
+      persona: writer
 
   # Fixed edges: always fire when source completes
   edges:
@@ -48,12 +49,11 @@ Backward compatibility:
     - Linear mode (no depends_on): sequential edges are auto-created
     - DAG mode (has depends_on): depends_on is converted to edges
 
-Expert name format:
-  "tag#temp#N"          → ExpertAgent (stateless LLM)
-  "tag#oasis#name"      → SessionExpert (name→session lookup, tag→persona)
-  "#oasis#name"         → SessionExpert (name→session lookup, no tag)
-  "name#ext#id"         → ExternalExpert
-  Any name + "#new"     → force new session
+Participants:
+  agent: <ref>          → a resident agent of the user; inside a team its role name comes first
+  persona: <tag>        → a temporary agent with that persona, made for the topic and gone after
+    tools: none|all|[…] → none: one model call per turn; otherwise a temporary WeBot session
+    instance: N         → tells same-persona participants apart
 """
 
 from __future__ import annotations
@@ -62,12 +62,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
-import os
-
 import yaml
-
-# Placeholder mask used in YAML to indicate "use key from environment"
-_API_KEY_MASK = "****"
 
 # Special node IDs for graph entry/exit
 START = "__start__"
@@ -105,8 +100,8 @@ class ScheduleStep:
     human_prompt: str = ""                                   # for HUMAN
     human_author: str = ""                                   # author shown for human prompt
     human_reply_to: Optional[int] = None                     # explicit reply target
-    # External agent config: expert_name → {api_url, api_key, model}
-    external_configs: dict[str, dict] = field(default_factory=dict)
+    # Participant key → its settings ({"tools": …} for a persona with tools)
+    participant_configs: dict[str, dict] = field(default_factory=dict)
     # Selector node: this node acts as a LLM-powered router
     is_selector: bool = False
 
@@ -234,75 +229,37 @@ class Schedule:
         return self.nodes
 
 
-def _extract_external_config(item: dict) -> dict:
-    """Extract external agent config fields from a YAML step item."""
-    cfg: dict = {}
-    if "api_url" in item:
-        cfg["api_url"] = str(item["api_url"])
-    if "api_key" in item:
-        raw_key = str(item["api_key"])
-        if raw_key == _API_KEY_MASK:
-            cfg["api_key"] = os.getenv("OPENCLAW_GATEWAY_TOKEN", "")
-        else:
-            cfg["api_key"] = raw_key
-    if "model" in item:
-        cfg["model"] = str(item["model"])
-    if "headers" in item and isinstance(item["headers"], dict):
-        cfg["headers"] = {str(k): str(v) for k, v in item["headers"].items()}
-    return cfg
-
-
 def participant_ref(item: dict) -> tuple[str | None, dict]:
-    """The expert name a plan item refers to, plus per-participant config.
+    """The participant a plan item names, as ``(key, settings)``.
 
-    Besides the classic ``expert: "<tag>#temp#N"`` / ``"<tag>#oasis#<name>"`` /
-    ``"<tag>#ext#<id>"``, a step may name:
-
-    * ``agent: "<ref>"`` — a resident agent: its role name in the team, its
-      handle or address (``alice/coder``), or its ``ag_…`` id. Becomes ``@<ref>``.
-    * ``persona: "<tag>"`` with ``tools`` — a temporary participant speaking
-      with that persona. ``tools: none`` (the default) is a single LLM call
-      (``<tag>#temp#N``); ``tools: all`` or a list of tool names runs a
-      temporary WeBot session with those tools, deleted when the topic ends
-      (``<tag>#tmp#N``). ``instance: N`` tells same-persona participants apart.
+    ``agent: <ref>`` → ``"agent:<ref>"``; ``persona: <tag>`` → ``"persona:<tag>:<instance>"``
+    with ``{"tools": "all" | [names]}`` when it has tools. ``(None, {})`` when the
+    item names no participant.
     """
     if "expert" in item:
-        cfg = _extract_external_config(item) if ("api_url" in item or "headers" in item or "model" in item) else {}
-        return str(item["expert"]), cfg
+        raise ValueError(
+            f"'expert: {item['expert']}' is no longer supported: name a resident agent with "
+            "'agent: <name>', or a temporary one with 'persona: <tag>'"
+        )
     if "agent" in item:
-        ref = str(item["agent"]).strip().lstrip("@")
+        ref = str(item["agent"] or "").strip().lstrip("@")
         if not ref:
             raise ValueError("'agent' must name an agent")
-        return f"@{ref}", {}
+        return f"agent:{ref}", {}
     if "persona" in item:
-        tag = str(item["persona"]).strip()
+        tag = str(item["persona"] or "").strip()
         if not tag:
             raise ValueError("'persona' must be a persona tag")
-        instance = int(item.get("instance", 1))
+        key = f"persona:{tag}:{int(item.get('instance', 1))}"
         tools = item.get("tools", "none")
         if tools in (None, False, "none", "") or tools == []:
-            return f"{tag}#temp#{instance}", {}
+            return key, {}
         if tools in (True, "all"):
-            return f"{tag}#tmp#{instance}", {"tools": "all"}
+            return key, {"tools": "all"}
         if isinstance(tools, list) and all(isinstance(t, str) for t in tools):
-            return f"{tag}#tmp#{instance}", {"tools": list(tools)}
+            return key, {"tools": list(tools)}
         raise ValueError(f"'tools' must be none, all or a list of tool names, got {tools!r}")
     return None, {}
-
-
-def normalize_participant_item(item):
-    """A plan item with ``agent:`` / ``persona:`` rewritten into ``expert:`` (for tools
-    that only understand the classic form, such as the visual layout)."""
-    if not isinstance(item, dict):
-        return item
-    out = dict(item)
-    if "expert" not in out and ("agent" in out or "persona" in out):
-        name, _cfg = participant_ref(out)
-        if name:
-            out["expert"] = name
-    if isinstance(out.get("parallel"), list):
-        out["parallel"] = [normalize_participant_item(sub) for sub in out["parallel"]]
-    return out
 
 
 def _parse_node(i: int, item: dict) -> ScheduleStep:
@@ -320,36 +277,36 @@ def _parse_node(i: int, item: dict) -> ScheduleStep:
         raise ValueError(f"Step {i}: {exc}") from exc
     if expert_name:
         instr_map = {}
-        ext_configs = {}
+        configs = {}
         if "instruction" in item:
             instr_map[expert_name] = str(item["instruction"])
         if participant_cfg:
-            ext_configs[expert_name] = participant_cfg
+            configs[expert_name] = participant_cfg
         return ScheduleStep(
             step_type=StepType.EXPERT,
             node_id=node_id,
             expert_names=[expert_name],
             instructions=instr_map,
-            external_configs=ext_configs,
+            participant_configs=configs,
             is_selector=is_selector,
         )
 
     elif "parallel" in item:
         names = []
         instr_map = {}
-        ext_configs = {}
+        configs = {}
         for sub in item["parallel"]:
-            ename, sub_cfg = participant_ref(sub) if isinstance(sub, dict) else (None, {})
-            if ename:
-                names.append(ename)
-                if "instruction" in sub:
-                    instr_map[ename] = str(sub["instruction"])
-                if sub_cfg:
-                    ext_configs[ename] = sub_cfg
-            elif isinstance(sub, str):
-                names.append(sub)
-            else:
-                raise ValueError(f"Step {i}: parallel entries must have an 'expert', 'agent' or 'persona' key")
+            try:
+                ename, sub_cfg = participant_ref(sub) if isinstance(sub, dict) else (None, {})
+            except ValueError as exc:
+                raise ValueError(f"Step {i}: {exc}") from exc
+            if not ename:
+                raise ValueError(f"Step {i}: parallel entries must have an 'agent' or 'persona' key")
+            names.append(ename)
+            if "instruction" in sub:
+                instr_map[ename] = str(sub["instruction"])
+            if sub_cfg:
+                configs[ename] = sub_cfg
         if not names:
             raise ValueError(f"Step {i}: parallel list is empty")
         return ScheduleStep(
@@ -357,7 +314,7 @@ def _parse_node(i: int, item: dict) -> ScheduleStep:
             node_id=node_id,
             expert_names=names,
             instructions=instr_map,
-            external_configs=ext_configs,
+            participant_configs=configs,
         )
 
     elif "all_experts" in item:
@@ -639,15 +596,11 @@ def extract_expert_names(schedule: Schedule) -> list[str]:
     return result
 
 
-def collect_external_configs(schedule: Schedule) -> dict[str, dict]:
-    """Collect all external agent configs from schedule nodes.
-
-    Returns a dict mapping expert_name → {api_url, api_key?, model?}.
-    If an expert appears in multiple nodes with different configs, the first one wins.
-    """
+def collect_participant_configs(schedule: Schedule) -> dict[str, dict]:
+    """Participant key → settings, from every node; the first mention wins."""
     configs: dict[str, dict] = {}
     for node in schedule.nodes:
-        for name, cfg in node.external_configs.items():
+        for name, cfg in node.participant_configs.items():
             if name not in configs:
                 configs[name] = cfg
     return configs

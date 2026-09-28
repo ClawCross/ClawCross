@@ -141,14 +141,14 @@ async def send_to_group(
     source_session: str = "",
 ) -> str:
     """
-    Send a message to a group chat or one-to-one private chat, to reply to a
-    message marked "[群聊 xxx]" or "[私聊]" (the human only sees replies sent
-    here) or to speak up proactively.
+    Post into a group chat or private chat you are a member of: the reply to a
+    message marked "[群聊 …]" or "[私聊 …]" (people only see what is posted
+    here), or speaking up on your own.
 
     Args:
         username: (auto-injected) current user identity; do NOT set manually
-        group_id: The group or private chat ID (e.g. "admin::my_team")
-        content: The message content to send to the group
+        group_id: The group_id given in the message you are answering
+        content: The message; write @name to wake a member
         source_session: (auto-injected) current session ID; do NOT set manually
 
     Returns:
@@ -156,23 +156,21 @@ async def send_to_group(
     """
     if not _INTERNAL_TOKEN:
         return "❌ 系统未配置 INTERNAL_TOKEN，无法发送群聊消息。"
+    from mcp_servers.caller_agent import caller_agent, internal_headers
 
-    # group_id 可能含 #、中文、::；必须编码，否则 # 会把 /messages 截成 fragment → POST 落到 /groups/{id} → 405
+    try:
+        agent = await caller_agent(username, source_session)
+    except Exception as e:
+        return f"❌ 无法确认你的 agent 身份: {type(e).__name__}: {e}"
+    if not agent:
+        return "❌ 当前会话不是任何群的成员（它还不是一个 agent），无法在群里发言。"
     gid = quote((group_id or "").strip(), safe="")
-    url = f"http://127.0.0.1:{_AGENT_PORT}/groups/{gid}/messages"
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             response = await client.post(
-                url,
-                headers={
-                    "X-Internal-Token": _INTERNAL_TOKEN,
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "content": content,
-                    "sender": f"{username}#{source_session}" if source_session else username,
-                    "sender_display": f"#{source_session}" if source_session else "",
-                },
+                f"http://127.0.0.1:{_AGENT_PORT}/groups/{gid}/messages",
+                headers=internal_headers(username),
+                json={"content": content, "agent": agent},
             )
             if response.status_code != 200:
                 return f"❌ 发送失败 (HTTP {response.status_code}): {response.text[:500]}"

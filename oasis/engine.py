@@ -2,50 +2,15 @@
 OASIS Forum - 讨论引擎
 
 管理讨论的完整生命周期：
-  轮次循环 → 调度/并行专家参与 → 共识检查 → 总结
+  轮次循环 → 调度/并行参与者发言 → 共识检查 → 总结
 
-Three expert backends:
-  1. ExpertAgent  — temp sender (stateless, name="tag#temp#N")
-  2. SessionExpert — internal session agent (stateful, name="tag#oasis#name" or "#oasis#name")
-     - name is resolved to session_id via internal agent JSON (internal_agents.json)
-     - tag (if present) enables persona injection from presets
-  3. ExternalExpert — external OpenAI-compatible API (name="tag#ext#id")
-     - Directly calls external endpoints (DeepSeek, GPT-4, Ollama, etc)
-     - Configured per-expert via YAML: api_url, api_key, model
-     - ACP agent support: tag (codex, claude, gemini, aider, etc) determines the ACP binary;
-       model "agent:<name>[:<session>]" prefers ACP persistent connection,
-       falls back to HTTP API if ACP unavailable and api_url is configured.
-       Session suffix defaults to clawcrosschat if not specified in model (aligned with group ACP).
+参与者（仅来自 YAML，schedule_file 优先于 schedule_yaml）一律是 agent：
+  agent: <ref>     用户的常驻 agent；在 team 里先按角色名找，再按 handle / 地址 / ag_ 编号
+  persona: <tag>   为本话题临时创建的 agent，人设取自人设库；
+                   tools: none（默认，每轮一次模型调用）| all | [工具名] （临时 WeBot 会话，话题结束即删除）
+  `all_experts: true` 让计划里出现过的所有参与者并行发言。
 
-专家池来源（仅 YAML，需要 schedule_file 或 schedule_yaml）：
-  专家池完全从 YAML 专家名称构建（去重）。
-  优先级：schedule_file > schedule_yaml（如果两者都提供，文件优先）。
-  名称必须包含 '#' 来指定类型：
-    "tag#temp#N"              → ExpertAgent（从预设中查找 tag 获取 name/persona）
-    "tag#oasis#<name>"       → SessionExpert（name→session 查找，tag→persona）
-    "#oasis#<name>"          → SessionExpert（name→session 查找，无 tag）
-    "name#ext#<id>"          → ExternalExpert（YAML 中需要 api_url）
-  不含 '#' 的名称会被警告并跳过。
-
-  Session ID 通过内部代理 JSON 从代理名称解析。
-  要明确确保新会话，请在名称后附加 "#new"：
-    "tag#oasis#name#new"  → "#new" 被剥离，解析的 session_id 替换为随机 UUID
-  这保证了不会意外重用现有会话。
-
-  如果 YAML 使用 `all_experts: true`，池中所有专家并行发言。
-  即使是简单的全并行场景，也只需最简 YAML：
-    version: 1
-    repeat: true
-    plan:
-      - all_experts: true
-
-没有单独的专家-会话存储：session_id 通过内部代理 JSON
-（internal_agents.json）从代理名称解析，然后用于访问
-Agent checkpoint DB。
-
-执行模式：
-  1. 默认（repeat + all_experts）：所有专家每轮并行参与
-  2. 调度模式：遵循 YAML 调度，定义每一步的发言顺序
+执行：遵循 YAML 调度，定义每一步的发言顺序（repeat: true 时整轮循环）。
 """
 
 import asyncio
@@ -54,7 +19,6 @@ import os
 import platform
 import re
 import sys
-import uuid
 
 from langchain_core.messages import HumanMessage
 
@@ -64,12 +28,12 @@ from services.llm_factory import create_chat_model, extract_text
 from utils.runtime_paths import USER_FILES_DIR
 
 from oasis.forum import DiscussionForum
-from oasis.experts import ExpertAgent, SessionExpert, ExternalExpert, get_all_experts
-from oasis.agent_catalog import _ACP_PLATFORMS
+from oasis.experts import get_all_experts
+from oasis.participants import Participant
 from oasis.scheduler import (
     Schedule, ScheduleStep, StepType, Edge, ConditionalEdge, SelectorEdge,
     START, END, MAX_SUPER_STEPS,
-    parse_schedule, load_schedule_file, extract_expert_names, collect_external_configs,
+    parse_schedule, load_schedule_file, extract_expert_names, collect_participant_configs,
 )
 
 # Maximum total node executions across all super-steps (safety limit)
@@ -77,22 +41,6 @@ _MAX_TOTAL_NODE_EXECS = 500
 
 # Project root for team-scoped paths
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
-
-
-def _team_view():
-    from teams.view import get_team_view
-
-    return get_team_view(USER_FILES_DIR)
-
-
-def _load_external_agents(user_id: str, team: str = "") -> list[dict]:
-    """external_agents.json entries of *team* (or the user root when team is "").
-
-    Returns {"name", "tag", "global_name", "config"?, ...} entries, [] if none.
-    """
-    if not user_id:
-        return []
-    return _team_view().entries(user_id, team, "external")
 
 
 def _ephemeral_session_id(topic_id: str, tag: str, instance: str) -> str:
@@ -105,78 +53,6 @@ def _ephemeral_session_id(topic_id: str, tag: str, instance: str) -> str:
     part = re.sub(r"[^a-z0-9]+", "", str(instance).lower())[:8] or "1"
     return f"tmp__{topic_id}__{slug}__{part}"
 
-
-def _find_external_agent_global_name(external_agents: list[dict], name: str) -> str:
-    """从 external_agents.json 中按代理名称查找 'global_name' 字段。
-
-    返回 global_name 字符串（真实的 ACP 代理名称）。
-    当没有配置团队（external_agents 列表为空）时，
-    回退到 *name* 本身，以便仍能创建 ACP 代理。
-    """
-    if not external_agents:
-        return name
-    name_lower = name.lower()
-    for a in external_agents:
-        if a.get("name", "").lower() == name_lower:
-            return a.get("global_name", "")
-    return ""
-
-
-def _find_external_agent_record(external_agents: list[dict], name: str) -> dict:
-    if not external_agents:
-        return {}
-    name_lower = name.lower()
-    for a in external_agents:
-        if isinstance(a, dict) and a.get("name", "").lower() == name_lower:
-            return a
-    return {}
-
-
-def _canonical_external_platform(platform_name: str) -> str:
-    pl = (platform_name or "").strip().lower()
-    if pl in ("claude-code", "claudecode"):
-        return "claude"
-    if pl in ("gemini-cli", "geminicli"):
-        return "gemini"
-    return pl
-
-
-def _load_internal_agents(user_id: str, team: str = "") -> list[dict]:
-    """internal_agents.json roles of *team* (or the user root when team is "").
-
-    Returns {"session": "<id>", "meta": {"name": ..., "tag": ...}} entries. Roles
-    written without a session get one from the team view, so they can be used.
-    """
-    if not user_id:
-        return []
-    return [
-        {"session": entry.get("session", ""), "meta": {k: v for k, v in entry.items() if k != "session"}}
-        for entry in _team_view().entries(user_id, team, "internal")
-    ]
-
-
-def _resolve_session_by_name(agents: list[dict], name: str) -> str | None:
-    """通过匹配代理 meta.name 查找 session_id（不区分大小写）。
-
-    返回 session_id 字符串，如果未找到则返回 None。
-    """
-    name_lower = name.lower()
-    for a in agents:
-        meta = a.get("meta", {})
-        if meta.get("name", "").lower() == name_lower:
-            return a.get("session", "")
-    return None
-
-
-def _find_tag_in_internal_agents(agents: list[dict], session_id: str) -> str:
-    """通过 session_id 从内部代理 JSON 中查找 tag。
-
-    返回 tag 字符串，如果未找到则返回 ""。
-    """
-    for a in agents:
-        if a.get("session") == session_id:
-            return a.get("meta", {}).get("tag", "")
-    return ""
 
 def _extract_selector_choice(content: str) -> int | None:
     """从帖子的内容中提取选择器选择编号。
@@ -249,13 +125,7 @@ class DiscussionEngine:
       2. 每轮后检查是否达成共识
       3. 完成后（达成共识或达到最大轮数），将最高赞帖子总结为结论
 
-    专家池构建（仅 YAML）：
-      专家池完全从 YAML 专家名称构建（去重）。
-      "tag#temp#N"          → ExpertAgent（tag→从预设中查找 name/persona）
-      "tag#oasis#name"      → SessionExpert（name→session 查找，tag→persona）
-      "#oasis#name"         → SessionExpert（name→session 查找，无 tag）
-      "name#ext#id"         → ExternalExpert（从 YAML 获取 api_url/api_key/model）
-      任意名称 + "#new"     → 强制新会话（id 替换为随机 UUID）
+    参与者池由 YAML 中的 agent: / persona: 构建（去重），见模块说明。
     """
 
     def __init__(
@@ -264,7 +134,6 @@ class DiscussionEngine:
         schedule: Schedule | None = None,
         schedule_yaml: str | None = None,
         schedule_file: str | None = None,
-        bot_base_url: str | None = None,
         bot_enabled_tools: list[str] | None = None,
         bot_timeout: float | None = None,
         user_id: str = "anonymous",
@@ -292,7 +161,7 @@ class DiscussionEngine:
         if not self.schedule:
             raise ValueError(
                 "schedule_yaml or schedule_file is required. "
-                "For simple all-parallel, use: version: 1\\nrepeat: true\\nplan:\\n  - all_experts: true"
+                "For a simple round, use: version: 1\\nplan:\\n  - parallel:\\n      - persona: creative\\n      - persona: critical"
             )
 
         # discussion mode: API override > YAML setting > default False
@@ -301,335 +170,90 @@ class DiscussionEngine:
         else:
             self._discussion = self.schedule.discussion
 
-        # ── Step 2: Build expert pool from YAML ──
-        experts_list: list[ExpertAgent | SessionExpert | ExternalExpert] = []
-
-        yaml_names = extract_expert_names(self.schedule)
-        ext_configs = collect_external_configs(self.schedule)
-        internal_agents = _load_internal_agents(user_id, self._team)  # for name→session lookup
-        external_agents = _load_external_agents(user_id, self._team)  # for name→oc_agent_name lookup
-        seen: set[str] = set()
-        # Map YAML original names → expert (built during pool construction)
-        yaml_to_expert: dict[str, ExpertAgent | SessionExpert | ExternalExpert] = {}
-        for full_name in yaml_names:
-            if full_name in seen:
-                continue
-            seen.add(full_name)
-
-            if full_name.startswith("@"):
-                # agent: <ref> — a resident agent from the registry / team view.
-                resident = self._resident_expert(
-                    full_name[1:], user_id,
-                    bot_base_url=bot_base_url, bot_enabled_tools=bot_enabled_tools, bot_timeout=bot_timeout,
-                )
-                if resident is not None:
-                    experts_list.append(resident)
-                    yaml_to_expert[full_name] = resident
-                continue
-
-            if "#" not in full_name:
-                print(f"  [OASIS] ⚠️ YAML expert name '{full_name}' has no '#', skipping. "
-                      f"Use 'tag#temp#N' or 'tag#oasis#name' or '#oasis#name' or 'name#ext#id'.")
-                continue
-
-            # Handle #new suffix: strip all of "#new". Keeping the '#' left the
-            # agent name as "name#", which never matched internal_agents.json.
-            force_new = full_name.endswith("#new")
-            working_name = full_name[:-len("#new")] if force_new else full_name
-
-            first, sid = working_name.split("#", 1)
-            expert: ExpertAgent | SessionExpert | ExternalExpert
-            # Current format:
-            # Internal: tag#oasis#name or #oasis#name
-            # Temp:     tag#temp#N
-            # External: tag#ext#id   (preferred)
-            # Legacy external: tag#platform#id (still accepted for compatibility)
-            if "#oasis#" in sid or sid.startswith("oasis#") or sid == "oasis":
-                # --- Internal session agent: tag#oasis#name ---
-                # Extract the part after 'oasis#'
-                if "oasis#" in sid:
-                    oasis_rest = sid.split("oasis#", 1)[1]
-                else:
-                    oasis_rest = ""
-                # Resolve oasis_rest as an agent name
-                resolved_sid = _resolve_session_by_name(internal_agents, oasis_rest) if oasis_rest else None
-                if not resolved_sid:
-                    print(f"  [OASIS] ⚠️ Cannot resolve agent name '{oasis_rest}' from internal agents JSON, skipping '{full_name}'.")
-                    continue
-                agent_name = oasis_rest
-                tag_for_lookup = first
-                if force_new:
-                    actual_sid = uuid.uuid4().hex[:8]
-                    print(f"  [OASIS] 🆕 #new: '{full_name}' → new session '{actual_sid}'")
-                else:
-                    actual_sid = resolved_sid
-                persona = ""
-                expert_name = agent_name
-                ia_tag = ""
-                if tag_for_lookup:
-                    config = self._lookup_by_tag(tag_for_lookup, user_id, self._team)
-                    if config:
-                        expert_name = config.get("name", agent_name)
-                        persona = config.get("persona", "")
-                        print(f"  [OASIS] 🏷️ Tag '{tag_for_lookup}' → persona for '{expert_name}'")
-                else:
-                    ia_tag = _find_tag_in_internal_agents(internal_agents, resolved_sid)
-                    if ia_tag:
-                        config = self._lookup_by_tag(ia_tag, user_id, self._team)
-                        if config:
-                            persona = config.get("persona", "")
-                            print(f"  [OASIS] 🏷️ Auto-detected tag '{ia_tag}' → persona for '{expert_name}'")
-                cfg = ext_configs.get(full_name, {})
-                _oasis_config = config if config else {}
-                expert = SessionExpert(
-                    name=expert_name,
-                    session_id=actual_sid,
-                    user_id=user_id,
-                    persona=persona,
-                    bot_base_url=bot_base_url,
-                    enabled_tools=bot_enabled_tools,
-                    timeout=bot_timeout,
-                    tag=tag_for_lookup or ia_tag,
-                    extra_headers=cfg.get("headers"),
-                    model=_oasis_config.get("model"),
-                    api_key=_oasis_config.get("api_key"),
-                    base_url=_oasis_config.get("base_url"),
-                    provider=_oasis_config.get("provider"),
-                )
-                if _oasis_config.get("model"):
-                    print(f"  [OASIS] 💬 Session agent (name): '{agent_name}' → session '{actual_sid}' [model={_oasis_config.get('model')}]")
-                else:
-                    print(f"  [OASIS] 💬 Session agent (name): '{agent_name}' → session '{actual_sid}'")
-            elif sid.startswith("tmp#"):
-                # persona: <tag> with tools — a temporary WeBot session for this topic.
-                config = self._lookup_by_tag(first, user_id, self._team) or {}
-                instance = sid.split("#", 1)[1] or "1"
-                tools = ext_configs.get(full_name, {}).get("tools", "all")
-                session = _ephemeral_session_id(self.forum.topic_id, first, instance)
-                expert = SessionExpert(
-                    name=config.get("name", first),
-                    session_id=session,
-                    user_id=user_id,
-                    persona=config.get("persona", ""),
-                    bot_base_url=bot_base_url,
-                    enabled_tools=None if tools == "all" else list(tools),
-                    timeout=bot_timeout,
-                    tag=first,
-                    model=config.get("model"),
-                    api_key=config.get("api_key"),
-                    base_url=config.get("base_url"),
-                    provider=config.get("provider"),
-                    inject_identity=True,
-                    ephemeral=True,
-                )
-                print(f"  [OASIS] 🧪 Temporary session: '{full_name}' → {session} (tools={tools})")
-            elif sid.startswith("temp#"):
-                # e.g. "creative#temp#1" → ExpertAgent with explicit temp_id
-                config = self._lookup_by_tag(first, user_id, self._team)
-                expert_name = config["name"] if config else first
-                persona = config.get("persona", "") if config else ""
-                temp_num = sid.split("#", 1)[1]
-                # Per-expert model override: read optional model/api_key/base_url/provider
-                # from the persona config in oasis_experts.json
-                expert_temperature = float(config.get("temperature", 0.7)) if config else 0.7
-                expert_model = config.get("model") if config else None
-                expert_api_key = config.get("api_key") if config else None
-                expert_base_url = config.get("base_url") if config else None
-                expert_provider = config.get("provider") if config else None
-                expert = ExpertAgent(
-                    name=expert_name,
-                    persona=persona,
-                    temperature=expert_temperature,
-                    temp_id=int(temp_num) if temp_num.isdigit() else None,
-                    tag=first,
-                    model=expert_model,
-                    api_key=expert_api_key,
-                    base_url=expert_base_url,
-                    provider=expert_provider,
-                )
-            else:
-                # --- External agent ---
-                # Preferred: tag#ext#id
-                # Legacy:    tag#platform#id
-                parts = sid.split("#", 1)
-                external_mode = parts[0] if parts else ""
-                ext_name = parts[1] if len(parts) > 1 else ""
-                if not ext_name:
-                    print(f"  [OASIS] ⚠️ External expert '{full_name}' missing name, skipping.")
-                    continue
-                if force_new:
-                    ext_name = uuid.uuid4().hex[:8]
-                    print(f"  [OASIS] 🆕 #new: '{full_name}' → new external session '{ext_name}'")
-                # Prefer the external_agents.json record as the source of truth for platform/global_name.
-                # Only fall back to legacy YAML-embedded platform hints when no record is available.
-                external_agent = _find_external_agent_record(external_agents, ext_name)
-                platform_name = ""
-                if external_agent and external_agent.get("platform"):
-                    platform_name = _canonical_external_platform(str(external_agent.get("platform", "") or platform_name))
-                elif external_mode and external_mode != "ext":
-                    platform_name = _canonical_external_platform(external_mode)
-                elif first:
-                    # Compatibility fallback: older teams sometimes encoded the effective platform in the tag.
-                    platform_name = _canonical_external_platform(first)
-                is_acp_agent = platform_name in _ACP_PLATFORMS
-                is_openclaw_http = platform_name == "openclaw"
-                # Public OpenClaw: YAML name IS global_name, no JSON lookup needed
-                if is_openclaw_http and not self._team:
-                    oc_name = ext_name
-                    external_agent = {}
-                    cfg = ext_configs.get(full_name, {})
-                    config = self._lookup_by_tag(first, user_id, self._team)
-                    expert_name = config["name"] if config else first
-                    persona = config.get("persona", "") if config else ""
-                    api_url = cfg.get("api_url", "") or os.getenv("OPENCLAW_API_URL", "") or ""
-                    model_str = cfg.get("model", "gpt-3.5-turbo")
-                else:
-                    cfg = ext_configs.get(full_name, {})
-                    has_http_url = bool(cfg.get("api_url")) or (is_openclaw_http and bool(os.getenv("OPENCLAW_API_URL", "")))
-                    if not has_http_url and not is_acp_agent:
-                        print(f"  [OASIS] ⚠️ External expert '{full_name}' missing platform/api_url, skipping.")
-                        continue
-                    api_url = cfg.get("api_url", "") or ""
-                    model_str = cfg.get("model", "gpt-3.5-turbo")
-                    config = self._lookup_by_tag(first, user_id, self._team)
-                    if is_acp_agent:
-                        expert_name = ext_name
-                        persona = config.get("persona", "") if config else ""
-                    else:
-                        expert_name = config["name"] if config else first
-                        persona = config.get("persona", "") if config else ""
-                    oc_name = str(external_agent.get("global_name", "") or "") if external_agent else ""
-                expert = ExternalExpert(
-                    name=expert_name,
-                    ext_id=ext_name,
-                    api_url=api_url,
-                    api_key=cfg.get("api_key", "") or os.getenv("OPENCLAW_GATEWAY_TOKEN", ""),
-                    model=model_str,
-                    persona=persona,
-                    timeout=bot_timeout,
-                    tag=first,
-                    platform=platform_name,
-                    extra_headers=cfg.get("headers"),
-                    acp_options=cfg.get("acp") if isinstance(cfg.get("acp"), dict) else None,
-                    oc_agent_name=oc_name,
-                    team=self._team,
-                )
-                if is_acp_agent:
-                    print(f"  [OASIS] 🔌 ACP agent: {expert.name} (platform={platform_name})")
-                elif api_url:
-                    print(f"  [OASIS] 🌐 External expert: {expert.name} → {api_url}")
-                else:
-                    print(f"  [OASIS] 🌐 External expert: {expert.name} (no api_url)")
-
-            if not getattr(expert, "agent_id", "") and not getattr(expert, "ephemeral", False):
-                expert.agent_id = self._registered_agent_id(expert, user_id)
-            experts_list.append(expert)
-            # Register YAML original name → expert immediately (handles #new correctly)
-            yaml_to_expert[full_name] = expert
-
-        self.experts = experts_list
+        # ── Step 2: the participants the plan names ──
+        configs = collect_participant_configs(self.schedule)
+        self.experts: list[Participant] = []
+        self._expert_map: dict[str, Participant] = {}
+        for key in extract_expert_names(self.schedule):
+            participant = self._participant(key, configs.get(key, {}), user_id, bot_enabled_tools, bot_timeout)
+            if participant is not None:
+                self.experts.append(participant)
+                self._expert_map[key] = participant
+        for participant in self.experts:
+            self._expert_map.setdefault(participant.name, participant)
+            if participant.tag:
+                self._expert_map.setdefault(participant.tag, participant)
         self._total_node_execs = 0  # safety counter for Pregel super-step execution
-
-        # Build lookup map: YAML original names first (highest priority for scheduling),
-        # then register by internal name, title, tag, session_id as shortcuts
-        self._expert_map: dict[str, ExpertAgent | SessionExpert | ExternalExpert] = {}
-        self._expert_map.update(yaml_to_expert)
-        for e in self.experts:
-            self._expert_map.setdefault(e.name, e)       # expert display name
-            self._expert_map.setdefault(e.title, e)      # "创意专家" (first-come wins)
-            if e.tag:
-                self._expert_map.setdefault(e.tag, e)    # "creative" (first-come wins)
-            if hasattr(e, "session_id"):
-                self._expert_map.setdefault(e.session_id, e)  # session_id shortcut
-            if hasattr(e, "ext_id"):
-                self._expert_map.setdefault(e.ext_id, e)  # ext_id shortcut
 
         self.summarizer = _get_summarizer()
 
-    def _team_view(self):
-        return _team_view()
+    def _unique_name(self, name: str) -> str:
+        """Forum authors are told apart by name."""
+        taken = {p.name for p in self.experts}
+        unique, n = name, 1
+        while unique in taken:
+            n += 1
+            unique = f"{name} ({n})"
+        return unique
 
-    def _resident_expert(self, ref, user_id, *, bot_base_url, bot_enabled_tools, bot_timeout):
-        """A participant for ``agent: <ref>``: the team's role of that name, else any
-        of the user's agents by handle, address or id."""
-        from agents.registry import DRIVER_WEBOT, AgentNotFound, AmbiguousAgentRef
+    def _participant(self, key: str, config: dict, user_id: str, tools: list[str] | None,
+                     timeout: float | None) -> Participant | None:
+        from agents.gateway import persona_agent, temp_session_agent
+        from agents.store import AgentNotFound, get_store
+        from teams.store import get_team_store
+        from utils.effort_controller import resolve_default_chat_max_output_tokens
 
-        view = self._team_view()
-        record, role_name = None, ""
-        if self._team:
-            try:
-                member = view.member(user_id, self._team, ref)
-                record, role_name = member.agent, member.role_name
-            except LookupError:
-                pass
-        if record is None:
-            try:
-                record = view.registry.resolve(user_id, ref, team=self._team or None)
-            except (AgentNotFound, AmbiguousAgentRef) as exc:
-                print(f"  [OASIS] ⚠️ agent '{ref}' not resolved: {exc}; skipping.")
-                return None
-        name = role_name or record.display_name or record.handle
-        if record.driver == DRIVER_WEBOT:
-            expert = SessionExpert(
-                name=name,
-                session_id=str(record.binding.get("session") or ""),
-                user_id=user_id,
-                bot_base_url=bot_base_url,
-                enabled_tools=bot_enabled_tools,
-                timeout=bot_timeout,
-                tag=record.persona_tag,
-                inject_identity=False,  # a registered agent carries its own persona
-                agent_id=record.agent_id,
-            )
-        else:
-            binding = record.binding
-            meta = binding.get("meta") if isinstance(binding.get("meta"), dict) else {}
-            config = self._lookup_by_tag(record.persona_tag, user_id, self._team) or {}
-            expert = ExternalExpert(
-                name=name,
-                ext_id=record.handle,
-                api_url=str(binding.get("api_url") or ""),
-                api_key=str(binding.get("api_key") or ""),
-                model=str(binding.get("model") or "") or "gpt-3.5-turbo",
-                persona=config.get("persona", ""),
-                timeout=bot_timeout,
-                tag=record.persona_tag,
-                platform=str(binding.get("platform") or ""),
-                acp_options=meta.get("acp") if isinstance(meta.get("acp"), dict) else None,
-                oc_agent_name=str(binding.get("global_name") or ""),
-                team=self._team,
-            )
-            expert.agent_id = record.agent_id
-        print(f"  [OASIS] 🏠 Resident agent: '{ref}' → {record.address} ({record.driver})")
-        return expert
+        kind, _, rest = key.partition(":")
+        if kind == "agent":
+            agent, role = None, ""
+            teams = get_team_store()
+            if self._team and teams.exists(user_id, self._team):
+                try:
+                    member = teams.member(user_id, self._team, rest)
+                    agent, role = member.agent, member.role
+                except LookupError:
+                    pass
+            if agent is None:
+                try:
+                    agent = get_store().resolve(user_id, rest)
+                except AgentNotFound as exc:
+                    print(f"  [OASIS] ⚠️ agent '{rest}' not found ({exc}); skipping.")
+                    return None
+            print(f"  [OASIS] 🏠 {key} → {agent.address} ({agent.platform})")
+            return Participant(agent, name=self._unique_name(role or agent.name),
+                               tag=agent.persona, tools=tools, timeout=timeout)
 
-    def _registered_agent_id(self, expert, user_id: str) -> str:
-        """The registry id of a classic-form participant, if it is a registered agent."""
-        registry = self._team_view().registry
-        try:
-            if isinstance(expert, SessionExpert):
-                record = registry.webot_session(user_id, expert.session_id)
-            elif isinstance(expert, ExternalExpert) and getattr(expert, "_http_global_name", ""):
-                record = registry.external(user_id, expert._http_global_name)
-            else:
-                return ""
-        except Exception:
-            return ""
-        return record.agent_id if record else ""
+        tag, _, instance = rest.rpartition(":")
+        preset = self._lookup_by_tag(tag, user_id, self._team) or {}
+        title = str(preset.get("name") or tag)
+        name = self._unique_name(title if instance == "1" else f"{title} #{instance}")
+        persona = str(preset.get("persona") or "")
+        llm = {k: preset[k] for k in ("model", "api_key", "base_url", "provider") if preset.get(k)}
+        if not config.get("tools"):
+            llm.update(temperature=float(preset.get("temperature", 0.7)),
+                       max_tokens=resolve_default_chat_max_output_tokens())
+            agent = persona_agent(user_id, name, persona=tag, team=self._team, llm=llm)
+            return Participant(agent, name=name, tag=tag, persona=persona, timeout=timeout)
+        session = _ephemeral_session_id(self.forum.topic_id, tag, instance)
+        agent = temp_session_agent(user_id, name, session, persona=tag, team=self._team, llm=llm)
+        chosen = None if config["tools"] == "all" else list(config["tools"])
+        print(f"  [OASIS] 🧪 {key} → temporary session {session} (tools={config['tools']})")
+        return Participant(agent, name=name, tag=tag, persona=persona, tools=chosen, timeout=timeout)
 
     async def _discard_ephemeral_sessions(self) -> None:
-        """Delete the temporary WeBot sessions this topic created (persona + tools)."""
+        """Delete the temporary WeBot sessions this topic created (personas with tools)."""
         from agents.gateway import get_gateway
 
-        for expert in self.experts:
-            if isinstance(expert, SessionExpert) and expert.ephemeral:
-                try:
-                    ok = await get_gateway().discard_session(self._user_id, expert.session_id)
-                except Exception as exc:
-                    ok = False
-                    print(f"  [OASIS] ⚠️ could not discard {expert.session_id}: {exc}")
-                if ok:
-                    print(f"  [OASIS] 🧹 Discarded temporary session {expert.session_id}")
+        for participant in self.experts:
+            if not participant.temporary or not participant.agent.remembers:
+                continue  # a single model call leaves nothing behind
+            try:
+                ok = await get_gateway().discard(participant.agent)
+            except Exception as exc:
+                ok = False
+                print(f"  [OASIS] ⚠️ could not discard {participant.name}: {exc}")
+            if ok:
+                print(f"  [OASIS] 🧹 Discarded temporary agent {participant.name}")
 
     @staticmethod
     def _lookup_by_tag(tag: str, user_id: str, team: str = "") -> dict | None:
@@ -835,15 +459,13 @@ class DiscussionEngine:
         self.forum.discussion = self._discussion
         self.forum.start_clock()
 
-        session_count = sum(1 for e in self.experts if isinstance(e, SessionExpert))
-        external_count = sum(1 for e in self.experts if isinstance(e, ExternalExpert))
-        direct_count = len(self.experts) - session_count - external_count
+        resident_count = sum(1 for e in self.experts if not e.temporary)
         mode_label = "discussion" if self._discussion else "execute"
         n_nodes = len(self.schedule.nodes)
         n_edges = len(self.schedule.edges) + len(self.schedule.conditional_edges)
         print(
             f"[OASIS] 🏛️ Discussion started: {self.forum.topic_id} "
-            f"({len(self.experts)} experts [{direct_count} direct, {session_count} session, {external_count} external], "
+            f"({len(self.experts)} participants [{resident_count} resident, {len(self.experts) - resident_count} temporary], "
             f"graph: {n_nodes} nodes, {n_edges} edges, mode={mode_label})"
         )
 

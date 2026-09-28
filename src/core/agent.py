@@ -32,7 +32,6 @@ from webot.context import assemble_input_messages, render_runtime_context_block
 from webot.memory import ensure_memory_state
 from webot.skills import build_skills_prompt, build_user_profile_block
 from webot.soul import build_soul_prompt
-from webot.workflow_prompt import build_team_workflow_prompt
 from webot.trajectory import auto_trajectory_enabled, save_trajectory
 from webot.llm_call_trace import llm_call_trace_enabled, save_llm_call
 from utils.context_references import expand_context_references
@@ -146,7 +145,6 @@ USER_INJECTED_TOOLS = {
     "remove_notification_channel",
     # OASIS forum tools
     "start_new_oasis", "check_oasis_discussion", "cancel_oasis_discussion",
-    "list_oasis_sessions",
     "list_oasis_experts", "save_oasis_expert", "delete_oasis_expert",
     "save_oasis_workflow", "list_oasis_workflows", "list_oasis_agent_catalog",
     # Session management tools
@@ -870,10 +868,7 @@ class TeamAgent:
             "base_system_subagent": "base_system_subagent.txt",
             "system_trigger": "system_trigger.txt",
             "tool_status": "tool_status.txt",
-            "group_chat_rules": "group_chat_rules.txt",
-            "group_chat_small": "group_chat_small.txt",
-            "group_chat_large": "group_chat_large.txt",
-            "private_chat_rules": "private_chat_rules.txt",
+            "conversation_rules": "conversation_rules.txt",
         }
         loaded = {}
         for key, filename in prompt_files.items():
@@ -973,23 +968,15 @@ class TeamAgent:
         return build_user_skills_listing(user_id, team=team)
 
     def _find_internal_session_meta(self, user_id: str, session_id: str) -> dict | None:
-        """Resolve an internal agent session to its stored meta and owning team.
-
-        Returns {"team", "name", "tag"} or None if the session is not registered
-        in any internal_agents.json file. The agent registry keeps the team
-        folders indexed, so this no longer rescans them on every prompt; the
-        team is the agent's home (first team in sorted order, else user root).
-        """
+        """``{"team", "name", "tag"}`` of the agent this session is, or None for a plain chat."""
         if not user_id or not session_id:
             return None
+        from agents.store import WEBOT, get_store
 
-        user_files_dir = self._prompts.get("_user_files_dir", "")
-        if not user_files_dir:
+        agent = get_store().find(user_id, WEBOT, {"session": session_id})
+        if agent is None:
             return None
-
-        from agents.registry import get_registry
-
-        return get_registry(user_files_dir).internal_session_meta(user_id, session_id)
+        return {"team": agent.config.get("team", ""), "name": agent.name, "tag": agent.config.get("persona", "")}
 
     @staticmethod
     def _load_json_list(path: str) -> list[dict]:
@@ -1102,58 +1089,9 @@ class TeamAgent:
         display_name = (meta.get("name") or expert_cfg.get("name") or tag or session_id).strip()
         return frame_session_identity(display_name, tag, persona)
 
-    def _build_chat_rules(self, state: AgentState) -> str:
-        """根据消息上下文动态组装聊天行为规则。
-
-        - 检测最后一条 HumanMessage 是否包含 [私聊] 或 [群聊 xxx 成员数:N] 前缀
-        - 私聊：注入私聊规则
-        - 群聊：注入群聊通用规则 + 根据成员数选择小群/大群规则
-        """
-        messages = state.get("messages", [])
-        # 从最后一条 HumanMessage 中检测场景标记
-        last_human_text = ""
-        for m in reversed(messages):
-            if isinstance(m, HumanMessage):
-                last_human_text = m.content if isinstance(m.content, str) else str(m.content)
-                break
-
-        # 优先检测私聊标记
-        if "[私聊]" in last_human_text:
-            return self._prompts.get("private_chat_rules", "")
-
-        # 匹配 [群聊 xxx 成员数:N] 格式
-        group_match = re.search(r"\[群聊\s+\S+\s+成员数:(\d+)\]", last_human_text)
-        if group_match:
-            member_count = int(group_match.group(1))
-            # 选择小群或大群规则
-            if member_count <= 5:
-                size_rules = self._prompts.get("group_chat_small", "")
-            else:
-                size_rules = self._prompts.get("group_chat_large", "")
-
-            group_rules = self._prompts.get("group_chat_rules", "")
-            return group_rules.replace("{size_specific_rules}", size_rules)
-        else:
-            # 兼容旧格式 [群聊 xxx]（不含成员数）
-            if "[群聊" in last_human_text:
-                size_rules = self._prompts.get("group_chat_large", "")
-                group_rules = self._prompts.get("group_chat_rules", "")
-                return group_rules.replace("{size_specific_rules}", size_rules)
-            # 普通直接对话没有群聊/私聊标记，不要凭规则段落推断成私聊。
-            return ""
-
     def _build_fixed_chat_rules(self) -> str:
-        """构造稳定的聊天规则系统提示，避免按每条消息切换 system prompt。"""
-        group_rules = self._prompts.get("group_chat_rules", "")
-        small_rules = self._prompts.get("group_chat_small", "")
-        large_rules = self._prompts.get("group_chat_large", "")
-        private_rules = self._prompts.get("private_chat_rules", "")
-
-        rendered_group_rules = group_rules.replace(
-            "{size_specific_rules}",
-            "\n\n".join(part for part in (small_rules, large_rules) if part),
-        )
-        return "\n\n".join(part for part in (rendered_group_rules, private_rules) if part)
+        """Group and private chat rules, shared with every other agent; stable across turns."""
+        return self._prompts.get("conversation_rules", "")
 
     # ------------------------------------------------------------------
     # Properties
@@ -1518,27 +1456,15 @@ class TeamAgent:
 
         all_names = sorted(t.name for t in all_tools)
         visible_names = sorted(t.name for t in filtered_tools)
-        # Static tool-list text always lists the FULL set (matches what's actually
-        # bound above) so this part of the system prompt never changes turn to
-        # turn; which subset is actually usable right now is conveyed separately
-        # via the trailing tool-status notice + runtime rejection, not by
-        # shrinking this list.
-        all_tool_list_str = ", ".join(all_names)
 
         if is_subagent:
             profile_prompt = render_profile_system_prompt(subagent_profile) if subagent_profile else ""
             base_prompt = self._prompts["base_system_subagent"]
             if profile_prompt:
                 base_prompt += "\n\n" + profile_prompt
-            base_prompt += f"\n\n【可用工具列表】\n{all_tool_list_str}\n"
         else:
             chat_rules = self._build_fixed_chat_rules()
-            base_system_text = self._prompts["base_system"].replace("{chat_rules}", chat_rules)
-            base_prompt = (
-                base_system_text + "\n\n"
-                f"【默认可用工具列表】\n{all_tool_list_str}\n"
-                "以上工具默认全部启用。如果后续有工具状态变更，系统会另行通知。\n"
-            )
+            base_prompt = self._prompts["base_system"].replace("{chat_rules}", chat_rules)
         # Session mode text can change turn to turn (user can switch mode
         # mid-session) — kept out of base_prompt, folded into the dynamic
         # tail block below instead of the stable system prompt.
@@ -1592,9 +1518,6 @@ class TeamAgent:
             skills_prompt = build_skills_prompt(user_id, team=session_team)
             if skills_prompt:
                 base_prompt += skills_prompt + "\n"
-            workflow_prompt = build_team_workflow_prompt(user_id, team=session_team)
-            if workflow_prompt:
-                base_prompt += workflow_prompt + "\n"
 
         runtime_plan = get_session_plan(user_id, session_id)
         runtime_todos = get_session_todos(user_id, session_id)

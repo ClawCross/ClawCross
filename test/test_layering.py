@@ -1,5 +1,6 @@
-"""Dependencies point down only: composition (teams, group chat, OASIS) → agent
-layer → transports. The agent layer never reaches up."""
+"""Dependencies point down only: composition (teams, group chat, OASIS) → conversations →
+agent layer → transports. Above the agent layer an agent is an id: which runtime it lives
+in (WeBot, codex, OpenClaw, …) is known only to the agent layer and the team file format."""
 
 import ast
 import unittest
@@ -15,7 +16,11 @@ _ABOVE_L1 = (
 )
 
 # What the communication layer (src/comms) must never import: the products built on it.
-_ABOVE_L2 = ("api.", "routes", "mcp_servers", "teams", "oasis", "core.agent")
+_ABOVE_L2 = ("api.", "routes", "mcp_servers", "teams", "groups", "oasis", "core.agent")
+
+# The runtime an agent lives in: driver names and the driver's own config.
+_DRIVER_NAMES = {"WEBOT", "ACPX", "OPENCLAW", "HTTP", "LLM", "DRIVERS", "runtime_key", "driver_for_platform"}
+_DRIVER_ATTRS = {"driver", "config"}
 
 # Talking to a transport directly instead of through agents.gateway.
 _TRANSPORT = ("integrations.agent_sender", "integrations.registry", "integrations.connectors")
@@ -23,12 +28,7 @@ _TRANSPORT = ("integrations.agent_sender", "integrations.registry", "integration
 # Modules that still call transports directly. This list may only shrink as
 # callers move onto the gateway; a new direct caller fails the test.
 _LEGACY_TRANSPORT_CALLERS = {
-    "oasis/agent_center.py",
-    "oasis/experts.py",
-    "oasis/python_workflow.py",
-    "oasis/python_workflow_cli.py",
-    "src/front.py",
-    "src/utils/scheduler_service.py",
+    "src/front.py",  # the direct-chat proxies, until the agent layer streams
 }
 
 
@@ -62,6 +62,19 @@ class TestLayering(unittest.TestCase):
             with self.subTest(path=str(path.relative_to(PROJECT_ROOT))):
                 bad = sorted(name for name in _imports(path) if name.startswith(_ABOVE_L2))
                 self.assertEqual(bad, [])
+
+    def test_above_the_agent_layer_nobody_knows_an_agents_runtime(self):
+        paths = _python_files("src/comms", "src/groups", "src/teams", "oasis")
+        for path in paths:
+            rel = str(path.relative_to(PROJECT_ROOT))
+            if rel == "src/teams/manifest.py":  # the team file format names runtimes
+                continue
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            with self.subTest(path=rel):
+                imported = {a.name for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) for a in n.names}
+                read = {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
+                self.assertEqual(sorted(imported & _DRIVER_NAMES), [])
+                self.assertEqual(sorted(read & _DRIVER_ATTRS), [])
 
     def test_no_new_direct_transport_callers(self):
         callers = set()

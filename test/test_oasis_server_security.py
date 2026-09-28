@@ -2,7 +2,6 @@
 states that must reach a terminal value."""
 
 import asyncio
-import json
 import os
 import tempfile
 import threading
@@ -16,7 +15,6 @@ from oasis import engine as engine_module
 from oasis import experts as experts_module
 from oasis import forum as forum_module
 from oasis import server
-from oasis.engine import DiscussionEngine
 from oasis.forum import DiscussionForum
 
 MANUAL_YAML = """version: 2
@@ -214,25 +212,6 @@ class TestSwarmRefresh(OasisServerTestCase):
             ticks = asyncio.run(run())
         self.assertGreater(ticks, 10)
         self.assertEqual(forum.swarm, {"summary": "ok"})
-
-
-class TestExpertNames(OasisServerTestCase):
-    def test_new_suffix_resolves_the_agent_and_uses_a_fresh_session(self):
-        user_files = os.path.join(self.tmp.name, "user_files")
-        os.makedirs(os.path.join(user_files, "alice"))
-        with open(os.path.join(user_files, "alice", "internal_agents.json"), "w", encoding="utf-8") as f:
-            json.dump([{"name": "coder", "tag": "creative", "session": "coder_s1"}], f)
-
-        with mock.patch.object(engine_module, "USER_FILES_DIR", user_files):
-            sessions = {}
-            for name in ("creative#oasis#coder", "creative#oasis#coder#new"):
-                yaml = f'version: 2\nrepeat: false\nplan:\n  - id: n1\n    expert: "{name}"\n'
-                built = DiscussionEngine(forum=DiscussionForum("t", "q", "alice"), schedule_yaml=yaml, user_id="alice")
-                self.assertEqual(len(built.experts), 1, name)
-                sessions[name] = built.experts[0].session_id
-
-        self.assertEqual(sessions["creative#oasis#coder"], "coder_s1")
-        self.assertNotEqual(sessions["creative#oasis#coder#new"], "coder_s1")
 
 
 class TestExpertModelOverride(OasisServerTestCase):

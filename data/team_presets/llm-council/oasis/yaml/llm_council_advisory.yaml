@@ -8,29 +8,29 @@ plan:
     author: begin
     content: "请提出你正在纠结的决策或问题。5位顾问将分两轮进行分析：第一轮各自独立发言，第二轮互相审阅质疑。"
 - id: m1
-  expert: contrarian#oasis#反驳者
+  agent: 反驳者
 - id: m2
-  expert: essence_prober#oasis#本质追问者
+  agent: 本质追问者
 - id: m3
-  expert: expander#oasis#扩张者
+  agent: 扩张者
 - id: m4
-  expert: outsider#oasis#局外人
+  agent: 局外人
 - id: m5
-  expert: executor#oasis#执行者
+  agent: 执行者
 - id: m6
   manual:
     author: begin
     content: "第一轮发言完毕。现在进入第二轮：各顾问匿名审阅其他顾问的观点，互相挑刺，补充遗漏，指出矛盾。请基于以上所有发言进行交叉审阅。"
 - id: m7
-  expert: contrarian#oasis#反驳者
+  agent: 反驳者
 - id: m8
-  expert: essence_prober#oasis#本质追问者
+  agent: 本质追问者
 - id: m9
-  expert: expander#oasis#扩张者
+  agent: 扩张者
 - id: m10
-  expert: outsider#oasis#局外人
+  agent: 局外人
 - id: m11
-  expert: executor#oasis#执行者
+  agent: 执行者
 - id: m12
   manual:
     author: bend

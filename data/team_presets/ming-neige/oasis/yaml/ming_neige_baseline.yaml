@@ -7,23 +7,23 @@ plan:
     author: begin
     content: "朝会开始"
 - id: n1
-  expert: silijian#oasis#司礼监
+  agent: 司礼监
 - id: n2
-  expert: neige#oasis#内阁
+  agent: 内阁
 - id: n3
-  expert: bingbu#oasis#兵部
+  agent: 兵部
 - id: n4
-  expert: hubu#oasis#户部
+  agent: 户部
 - id: n5
-  expert: libu#oasis#礼部
+  agent: 礼部
 - id: n6
-  expert: gongbu#oasis#工部
+  agent: 工部
 - id: n7
-  expert: libu2#oasis#吏部
+  agent: 吏部
 - id: n8
-  expert: xingbu#oasis#刑部
+  agent: 刑部
 - id: n9
-  expert: duchayuan#oasis#都察院
+  agent: 都察院
 - id: n10
   manual:
     author: bend

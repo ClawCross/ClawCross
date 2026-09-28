@@ -373,6 +373,5 @@ if (inputEl && isTouchDevice) {
 
     // 初始化四宫格内部 divider
     initColDivider('orch-grid-col-divider-top');
-    initColDivider('orch-grid-col-divider-bottom');
     initRowDivider('orch-grid-row-divider');
 })();

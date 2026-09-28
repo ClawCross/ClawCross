@@ -1,5 +1,5 @@
 # team-builder — pipeline:
-#   访谈 → 写 personas → 绑 internal_agents → 写 workflow → 设 skill+cron → 校验
+#   访谈 → 写 personas → 定成员并导入 → 写 workflow → 设 skill+cron → 校验
 # 每个角色 persona 里都写清了那一步的完整方法（路径 + schema + 工具命令）
 version: 2
 repeat: false
@@ -7,30 +7,30 @@ plan:
 - id: u0
   manual:
     author: begin
-    content: "请描述你要造的团队：核心目标 / 期望的可交付物 / 受众 / 应该调哪些 SKILL / 是否要 OpenClaw 外部 agent / 是否要定时任务。若要外部 agent，请同时说明显示名 name、运行标识 global_name、平台 tag/backend、用途。可以只给一句话，Interviewer 会问清楚。"
+    content: "请描述你要造的团队：核心目标 / 期望的可交付物 / 受众 / 应该调哪些 SKILL / 是否要 OpenClaw、Codex、Claude Code 等其他平台的 agent / 是否要定时任务。若要其他平台的 agent，请同时说明角色名、平台、它在该平台上的名字（global_name）和用途。可以只给一句话，Interviewer 会问清楚。"
 
 - id: u1
-  expert: interviewer#oasis#Requirements Interviewer
+  agent: Requirements Interviewer
   instruction: "把用户描述问成 [访谈结果] 字段表。如果用户描述模糊，主动给 2-3 个候选方向。"
 
 - id: u2
-  expert: persona_designer#oasis#Persona Designer
+  agent: Persona Designer
   instruction: "**第一个落盘文件**：直接 write_file 写出 teams/<team>/oasis_experts.json。3-7 个角色，每个 persona 走 5 段式（身份/职责/边界/方法/输出格式）。会产出文件的角色必须内嵌 ClawCross 工具调用速查。落完用 read_file 回读校验 JSON。"
 
 - id: u3
-  expert: agent_binder#oasis#Agent Binder
-  instruction: "**第二个落盘文件**：write_file 写 teams/<team>/internal_agents.json；如访谈结果要求外部 agent，还要写 teams/<team>/external_agents.json。internal 决定哪些 persona 要做成 stateful internal agent（出现在 workflow 的 #oasis# 引用里），哪些只当 stateless persona（#temp#）。因为这里是直接写成品 team 到磁盘，不是走 import/install，所以 internal 每条必须立即写入 name + tag + session；external 每条必须写入 name + tag + global_name，必要时补 meta。"
+  agent: Agent Binder
+  instruction: "**定成员并导入**：决定哪些角色做成团队成员（workflow 里写 agent: <角色名>），哪些只留作临时人设（persona: <tag>）。WeBot 成员写 teams/<team>/internal_agents.json（name + tag，可标 is_primary，不写 session）；其他平台成员写 teams/<team>/external_agents.json（name + tag + platform + global_name）。然后 run_command('clawcross team import \"<team>\"') 登记成员，再用 clawcross team \"<team>\" members 回读。"
 
 - id: u4
-  expert: workflow_architect#oasis#Workflow Architect
+  agent: Workflow Architect
   instruction: "**第三个落盘文件**：根据需求选择 YAML workflow 或 Python workflow。静态 DAG 用 write_file 写 teams/<team>/oasis/yaml/<slug>.yaml；需要动态分发、脚本编排、复杂解析时，用 write_file 写 teams/<team>/oasis/python/<slug>.py。无论哪种，都要给出完整方法、落盘命令和可执行校验。"
 
 - id: u5
-  expert: skill_cron_operator#oasis#Skill & Cron Operator
-  instruction: "**第四步：skills 与 cron**。按访谈结果决定要不要 team-scoped skill；要的话 mkdir teams/<team>/skills/<name>/ 并写 SKILL.md。再按访谈结果决定要不要定时任务，用 POST /teams/<team>/alarms 或 clawcross cron new 创建。"
+  agent: "Skill & Cron Operator"
+  instruction: "**第四步：skills 与 cron**。按访谈结果决定要不要 team-scoped skill；要的话 mkdir teams/<team>/skills/<name>/ 并写 SKILL.md。再按访谈结果决定要不要定时任务，用 clawcross cron add team \"<team>\" target \"<角色名>\" ... 创建。"
 
 - id: u6
-  expert: validator#oasis#Build Validator
+  agent: Build Validator
   instruction: "用 read_file / run_python_code 跑 8 条核对清单，并额外校验 Python workflow（如果存在）是否满足 `@workflow` + `async def main(ctx: Context)` + 可导入。Fail 时明确点出哪个角色应该回去重写哪个文件改哪些字段。"
 
 - id: u7

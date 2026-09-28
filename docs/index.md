@@ -39,9 +39,9 @@ If you are an agent, do **not** load everything by default. Start with `AGENTS.m
 | Debug a Team that already exists (wrong persona, missing member, dead workflow edge) | [`team-anatomy.md`](./team-anatomy.md) | [`build_team.md`](./build_team.md), [`create_workflow.md`](./create_workflow.md) |
 | Convert a workflow canvas into a Team | [`team-creator.md`](./team-creator.md) | [`build_team.md`](./build_team.md), [`create_workflow.md`](./create_workflow.md) |
 | Create / debug workflow YAML | [`create_workflow.md`](./create_workflow.md) | [`example_team.md`](./example_team.md) |
-| Configure OpenClaw or external agents | [`openclaw-commands.md`](./openclaw-commands.md) | [`build_team.md`](./build_team.md) |
+| Configure OpenClaw or other agent runtimes | [`openclaw-commands.md`](./openclaw-commands.md) | [`build_team.md`](./build_team.md) |
 | Add or debug remote Claude computers in Project Harness | [`remote-claude-harness.md`](./remote-claude-harness.md) | [`ports.md`](./ports.md), [`runtime-reference.md`](./runtime-reference.md), [`repo-index.md`](./repo-index.md) |
-| Configure or debug ACP / acpx (external agent communication) | [`runtime-reference.md`](./runtime-reference.md) | [`build_team.md`](./build_team.md), [`oasis-reference.md`](./oasis-reference.md), [`repo-index.md`](./repo-index.md) |
+| Configure or debug ACP / acpx (Codex / Claude Code / Gemini agents) | [`runtime-reference.md`](./runtime-reference.md) | [`build_team.md`](./build_team.md), [`oasis-reference.md`](./oasis-reference.md), [`repo-index.md`](./repo-index.md) |
 | Configure TinyFish internet search agent | [`tinyfish-monitor.md`](./tinyfish-monitor.md) | [`runtime-reference.md`](./runtime-reference.md), [`repo-index.md`](./repo-index.md) |
 | Inspect ports, proxies, or service boundaries | [`ports.md`](./ports.md) | [`repo-index.md`](./repo-index.md) |
 
@@ -56,7 +56,7 @@ If you are an agent, do **not** load everything by default. Start with `AGENTS.m
 
 - [`cli.md`](./cli.md): command catalog
 - [`team-creator.md`](./team-creator.md): ClawCross Creator flow, jobs, bilingual UI, workflow-to-team bridge
-- [`build_team.md`](./build_team.md): Team creation, internal agents, OpenClaw members, personas
+- [`build_team.md`](./build_team.md): agents, teams, members on any platform, personas
 - [`create_workflow.md`](./create_workflow.md): workflow YAML grammar and examples
 - [`workflowpy.md`](./workflowpy.md): Python-script workflow mode, agent center, and forum posting helpers
 - [`mcp-search.md`](./mcp-search.md): MCP web search tools, structured JSON search, page fetch, filters, and safety limits

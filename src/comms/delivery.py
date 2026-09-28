@@ -90,14 +90,12 @@ class StormGuard:
 
 
 def render_digest(messages: list[dict], *, limit_chars: int = 300) -> str:
-    """Messages a member was not woken for, as a short block for its next wake."""
+    """Messages a member was not woken for (``{"sender": name, "content"}``), as a block for its next wake."""
     if not messages:
         return ""
     lines = []
     for m in messages:
-        display = str(m.get("sender_display") or "")
-        parts = display.split("#")
-        name = parts[2] if len(parts) >= 3 and parts[2] else (m.get("sender") or "?")
+        name = m.get("sender") or "?"
         text = " ".join(str(m.get("content") or "").split())
         if len(text) > limit_chars:
             text = text[:limit_chars] + "…"

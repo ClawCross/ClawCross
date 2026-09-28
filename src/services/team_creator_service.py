@@ -2359,9 +2359,10 @@ def _build_workflow_yaml(
         if not role_name or not tag:
             continue
         instance_index = role_to_index.get(role_name, 1)
-        expert_ref = f"{tag}#temp#{instance_index}"
         lines.append(f"  - id: {step_id}")
-        lines.append(f"    expert: {_yaml_quote(expert_ref)}")
+        lines.append(f"    persona: {_yaml_quote(tag)}")
+        if instance_index > 1:
+            lines.append(f"    instance: {instance_index}")
         if step.get("instruction"):
             lines.append(f"    instruction: {_yaml_quote(step['instruction'])}")
         if step.get("selector"):

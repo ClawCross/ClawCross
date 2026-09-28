@@ -1,8 +1,6 @@
-"""L3 · teams: named compositions of agents.
+"""L3 · teams: named sets of agents, one of which may lead.
 
-A team does not own agents. Its folder holds a manifest — the same
-``internal_agents.json`` / ``external_agents.json`` that team import and export
-have always used — naming the roles it has; each role is bound to an agent in
-the L1 registry. The folder also holds the team's assets (persona templates,
-workflows, skills, settings).
+A team owns no agent. Membership (agent id, role, lead) is stored next to the
+agents; the team folder holds assets. ``manifest`` reads and writes the team
+package format (``internal_agents.json`` / ``external_agents.json``).
 """

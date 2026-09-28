@@ -528,7 +528,6 @@
 </div>
                                 <button onclick="toggleTeamMembersView()" class="text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 px-2 py-1 rounded border border-blue-200" title="团队成员">👥 成员</button>
                                 <button onclick="orchOpenClawQuickConfig()" class="text-xs bg-purple-50 text-purple-600 hover:bg-purple-100 px-2 py-1 rounded border border-purple-200" title="OpenClaw Agent 配置">🦞</button>
-<button id="group-mute-btn" onclick="toggleGroupMute()" class="text-xs px-2 py-1 rounded border font-bold" style="display:none;background:#fef2f2;color:#dc2626;border-color:#fecaca;" data-i18n="group_mute">🔇 急停</button>
 <button onclick="deleteTeam()" class="text-xs bg-red-50 text-red-600 hover:bg-red-100 px-2 py-1 rounded border border-red-200" title="删除团队" style="display:none;">🗑️</button>
                             </div>
                         </div>
@@ -547,9 +546,9 @@
                                         <thead>
                                             <tr>
                                                 <th class="text-left">名称</th>
-                                                <th class="text-left">类型</th>
-                                                <th class="text-left">标签</th>
-                                                <th class="text-left">Global Name</th>
+                                                <th class="text-left">平台</th>
+                                                <th class="text-left">人设</th>
+                                                <th class="text-left">地址</th>
                                                 <th class="text-right">操作</th>
                                             </tr>
                                         </thead>
@@ -562,34 +561,9 @@
                                 </div>
                             </div>
                         </div>
-                        <!-- Group chat input hidden: not in use for now -->
-                        <div class="group-input-area" style="position:relative; display:none;">
-                            <div class="mention-popup" id="mention-popup">
-                                <div class="mention-title">@ 选择要通知的 Agent</div>
-                                <div id="mention-list"></div>
-                                <button class="mention-confirm" onclick="confirmMention()">确认</button>
-                            </div>
-                            <textarea id="group-input" rows="1" placeholder="发送消息... 输入@选择Agent" data-i18n-placeholder="group_input_placeholder" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendGroupMessage();}" oninput="onGroupInputChange(event)"></textarea>
-                            <button onclick="sendGroupMessage()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-bold text-sm flex-shrink-0" data-i18n="send_btn">发送</button>
-                        </div>
                     </div>
                 </div>
 
-                <!-- Member panel (right side) -->
-                <div class="group-member-panel" id="group-member-panel" style="display:none;">
-                    <div class="panel-header flex justify-between items-center">
-                        <span data-i18n="group_members">成员管理</span>
-                        <button onclick="toggleGroupMemberPanel()" class="text-gray-400 hover:text-gray-600 text-sm">&times;</button>
-                    </div>
-                    <div class="p-2 border-b">
-                        <div class="text-xs font-semibold text-gray-500 mb-2" data-i18n="group_current_members">当前成员</div>
-                        <div id="group-current-members" class="member-list" style="max-height:200px;"></div>
-                    </div>
-                    <div class="p-2 flex-1 overflow-hidden flex flex-col">
-                        <div class="text-xs font-semibold text-gray-500 mb-2" data-i18n="group_add_agents">添加 Agent Session</div>
-                        <div id="group-available-sessions" class="flex-1 overflow-y-auto"></div>
-                    </div>
-                </div>
             </div>
         </div>
         <!-- end of group-page -->
@@ -648,29 +622,16 @@
                         <div class="orch-grid-row-divider" id="orch-grid-row-divider"></div>
                         <!-- 下行 -->
                         <div class="orch-grid-row" id="orch-grid-row-bottom">
-                            <!-- Bottom-left: Internal agents -->
+                            <!-- Bottom: agents (every platform) -->
                             <div class="orch-sidebar-grid-cell" id="orch-cell-bl">
                                 <div class="orch-sidebar-grid-cell-header">
-                                    <span data-i18n="orch_internal_agents">🤖 Internal Agents</span>
+                                    <span data-i18n="orch_agents_section">🤖 Agent</span>
                                     <span style="display:flex;gap:2px;">
-                                        <button onclick="orchShowAddInternalAgentModal()" data-i18n-title="orch_add_internal_agent_title" title="新建 Agent" style="color:#6366f1;">➕</button>
-                                        <button onclick="orchLoadSessionAgents()" data-i18n-title="refresh" title="刷新">🔄</button>
+                                        <button onclick="orchShowAddAgentModal()" data-i18n-title="orch_add_agent_title" title="新建 Agent" style="color:#6366f1;">➕</button>
+                                        <button onclick="orchLoadAgents()" data-i18n-title="refresh" title="刷新">🔄</button>
                                     </span>
                                 </div>
-                                <div class="orch-expert-list" id="orch-expert-list-sessions"></div>
-                            </div>
-                            <!-- 列 Divider -->
-                            <div class="orch-grid-col-divider" id="orch-grid-col-divider-bottom"></div>
-                            <!-- Bottom-right: External agents (OpenClaw + HTTP/ACP), same layering as contacts -->
-                            <div class="orch-sidebar-grid-cell" id="orch-cell-br">
-                                <div class="orch-sidebar-grid-cell-header">
-                                    <span data-i18n="orch_external_agents_section">2. 外部 Agent</span>
-                                    <span style="display:flex;gap:2px;">
-                                        <button onclick="orchShowAddOpenClawModal()" data-i18n-title="orch_add_openclaw_title" title="新建Agent" style="color:#10b981;">➕</button>
-                                        <button onclick="orchLoadOpenClawSessions()" data-i18n-title="refresh" title="刷新">🔄</button>
-                                    </span>
-                                </div>
-                                <div class="orch-expert-list" id="orch-expert-list-openclaw"></div>
+                                <div class="orch-expert-list" id="orch-agent-list"></div>
                             </div>
                         </div>
                     </div>
@@ -1231,19 +1192,19 @@
                         <div class="flex items-center gap-2 mb-2">
                             <input type="checkbox" id="export-agents" class="export-checkbox" data-section="agents" checked>
                             <label for="export-agents" class="font-medium text-gray-800 cursor-pointer flex items-center gap-2">
-                                👤 <span data-i18n="export_agents">内部 Agents</span>
+                                👤 <span data-i18n="export_agents">WeBot Agents</span>
                                 <span id="export-agents-count" class="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded">0</span>
                             </label>
                         </div>
                         <div id="export-agents-list" class="ml-6 text-sm text-gray-600 max-h-24 overflow-y-auto"></div>
                     </div>
 
-                    <!-- External Agents Section -->
+                    <!-- Other-platform agents (external_agents.json) -->
                     <div class="export-section mb-4 p-3 bg-gray-50 rounded-lg">
                         <div class="flex items-center gap-2 mb-2">
                             <input type="checkbox" id="export-external-agents" class="export-checkbox" data-section="external_agents" checked>
                             <label for="export-external-agents" class="font-medium text-gray-800 cursor-pointer flex items-center gap-2">
-                                🔌 <span data-i18n="export_external_agents">外部 Agents</span>
+                                🔌 <span data-i18n="export_external_agents">其他平台 Agents</span>
                                 <span id="export-external-agents-count" class="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded">0</span>
                             </label>
                         </div>
@@ -1349,7 +1310,7 @@
                     <h2 id="agent-center-title" data-i18n="agent_center_title">Agent 图鉴</h2>
                 </div>
                 <div class="agent-center-header-actions">
-                    <button id="agent-center-refresh-btn" class="agent-center-btn primary" type="button" onclick="refreshAgentCenter(true)" data-i18n="agent_center_refresh_status">刷新状态</button>
+                    <button id="agent-center-refresh-btn" class="agent-center-btn primary" type="button" onclick="refreshAgentCenter()" data-i18n="agent_center_refresh_status">刷新状态</button>
                     <button class="agent-center-close" type="button" onclick="closeAgentCenter()" aria-label="Close">&times;</button>
                 </div>
             </header>
@@ -1366,9 +1327,6 @@
                         <span data-i18n="agent_center_kind">类型</span>
                         <select id="agent-center-kind-filter" onchange="renderAgentCenterGrid()">
                             <option value="" data-i18n="agent_center_all">全部</option>
-                            <option value="internal">Internal</option>
-                            <option value="external">External</option>
-                            <option value="subagent">Subagent</option>
                         </select>
                     </label>
                     <label>
@@ -1389,7 +1347,7 @@
                     </label>
                 </div>
             </div>
-            <div id="agent-center-notice" class="agent-center-notice" data-i18n="agent_center_status_hint">External Agent 的 Session 在线不等于正在运行。</div>
+            <div id="agent-center-notice" class="agent-center-notice" data-i18n="agent_center_status_hint">外部运行时的 Session 在线不等于正在运行。</div>
             <div class="agent-center-content">
                 <div id="agent-center-grid" class="agent-center-grid">
                     <div class="agent-center-empty" data-i18n="loading">加载中...</div>

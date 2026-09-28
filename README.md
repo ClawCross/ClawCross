@@ -16,14 +16,15 @@ Clawcross turns a single chatbot into a **programmable multi-expert system**. Yo
 
 | Term | Meaning |
 |------|---------|
-| **Team** | A group of internal agents, external agents, and personas that work together |
+| **Agent** | Any agent on your machine — WeBot, Codex, Claude Code, Gemini, OpenClaw, or an OpenAI-compatible service — behind one interface (`/v1/agents`) |
+| **Team** | A named set of agents, each playing a role (one may lead), plus the team's personas, workflows and skills |
 | **OASIS** | The visual workflow engine that orchestrates multi-expert discussions (sequential, parallel, branching, DAG) |
 | **OASIS Town** | A pixel-town visualization in the Studio sidebar where you watch live discussions and inspect the swarm graph |
 | **WeBot** | A Claude-Code-style delegated runtime with role-based subagents, plan/todo/verification, and approval-aware tool policies |
 | **GraphRAG** | A living knowledge graph built from each discussion, stored locally in SQLite (optionally mirrored to Zep) |
 | **Team Presets** | 15 ready-to-use expert teams — strategists, content creators, tech titans, and more — installable in one click |
 | **ACP (acpx)** | Agent Client Protocol for communicating with external AI agents (OpenClaw, Codex, Claude, Gemini, Aider) |
-| **OpenClaw** | An external agent runtime that can be integrated into Teams alongside internal agents |
+| **OpenClaw** | An agent runtime whose agents join Teams, group chats and workflows like any other agent |
 
 ## Product Video
 
@@ -111,7 +112,7 @@ For the full install guide (OpenClaw, Antigravity, MiniMax, WSL, manual CLI conf
 
 ### Multi-Expert Collaboration, Not Just Chat
 
-- **Team-based orchestration** — combine internal agents, OpenClaw agents, and external API agents into a single Team with one-click import/export
+- **Team-based orchestration** — combine WeBot, Codex, Claude Code, OpenClaw and API agents into a single Team with one-click import/export
 - **16 built-in Team Presets** — LLM Council, Nuwa All-Stars, Content Empire, Strategists, Tech Titans, and more — install and run immediately
 - **AI team builder** — ClawCross Creator discovers SOP pages, extracts roles with TinyFish, and generates editable personas plus a DAG workflow
 - **Visual orchestration** — design workflows in OASIS with sequential, parallel, branching, or DAG-style expert coordination

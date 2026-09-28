@@ -8,13 +8,13 @@ plan:
     author: begin
     content: "请提出你的问题或议题，各位顾问将依次给出分析。"
 - id: m1
-  expert: paul_graham#oasis#保罗·格雷厄姆
+  agent: 保罗·格雷厄姆
 - id: m2
-  expert: munger#oasis#查理·芒格
+  agent: 查理·芒格
 - id: m3
-  expert: naval#oasis#纳瓦尔·拉维坎特
+  agent: 纳瓦尔·拉维坎特
 - id: m4
-  expert: taleb#oasis#纳西姆·塔勒布
+  agent: 纳西姆·塔勒布
 - id: m5
   manual:
     author: bend

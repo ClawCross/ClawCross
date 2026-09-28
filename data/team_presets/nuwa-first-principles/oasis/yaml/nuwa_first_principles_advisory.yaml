@@ -8,13 +8,13 @@ plan:
     author: begin
     content: "请提出你的问题或议题，各位顾问将依次给出分析。"
 - id: m1
-  expert: elon_musk#oasis#埃隆·马斯克
+  agent: 埃隆·马斯克
 - id: m2
-  expert: munger#oasis#查理·芒格
+  agent: 查理·芒格
 - id: m3
-  expert: feynman#oasis#理查德·费曼
+  agent: 理查德·费曼
 - id: m4
-  expert: taleb#oasis#纳西姆·塔勒布
+  agent: 纳西姆·塔勒布
 - id: m5
   manual:
     author: bend

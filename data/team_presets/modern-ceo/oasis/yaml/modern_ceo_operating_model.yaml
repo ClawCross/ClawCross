@@ -7,35 +7,35 @@ plan:
     author: begin
     content: "Quarterly operating review starts"
 - id: o1
-  expert: board#oasis#Board
+  agent: Board
 - id: o2
-  expert: ceo#oasis#CEO
+  agent: CEO
 - id: o3
-  expert: prod#oasis#Product
+  agent: Product
 - id: o4
-  expert: cto#oasis#CTO
+  agent: CTO
 - id: o5
-  expert: eng#oasis#Engineering
+  agent: Engineering
 - id: o6
-  expert: qa#oasis#Quality
+  agent: Quality
 - id: o7
-  expert: coo#oasis#COO
+  agent: COO
 - id: o8
-  expert: hr#oasis#Human Resources
+  agent: Human Resources
 - id: o9
-  expert: cfo#oasis#CFO
+  agent: CFO
 - id: o10
-  expert: legal#oasis#Legal
+  agent: Legal
 - id: o11
-  expert: data#oasis#Data
+  agent: Data
 - id: o12
-  expert: cmo#oasis#CMO
+  agent: CMO
 - id: o13
-  expert: sales#oasis#Sales
+  agent: Sales
 - id: o14
-  expert: cs#oasis#Customer Success
+  agent: Customer Success
 - id: o15
-  expert: ceo#oasis#CEO
+  agent: CEO
 - id: o16
   manual:
     author: bend

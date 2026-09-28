@@ -48,7 +48,7 @@ OASIS is the workflow engine behind coordinated persona-driven discussions and e
 - GraphRAG long-term memory and report queries
 - multi-session and multi-user isolation
 - profile-bound delegated subagents for research / planning / coding / review / verification
-- ACP exchange (acpx) for external agent communication in group chat and OASIS workflows
+- ACP exchange (acpx): Codex, Claude Code, Gemini … agents reached through one agent interface, in group chat, OASIS and the API
 - Web UI on the local machine
 - scheduled tasks
 - internet search via TinyFish

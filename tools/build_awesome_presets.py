@@ -332,7 +332,7 @@ def build_workflow_yaml(preset_id: str, agents: list[dict], desc: str) -> str:
     ]
     for i, a in enumerate(agents):
         lines.append(f"- id: m{i+1}")
-        lines.append(f"  expert: {a['tag']}#oasis#{a['name']}")
+        lines.append(f"  agent: {a['name']}")
     lines.append(f"- id: m{len(agents)+1}")
     lines.append("  manual:")
     lines.append("    author: bend")
