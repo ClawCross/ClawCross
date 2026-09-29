@@ -774,7 +774,7 @@ def fork_session(
     source_session: str,
     reason: str = "",
 ) -> SessionFork:
-    """Fork a session to explore an alternative approach."""
+    """Legacy in-process fork metadata; durable forks use /v1/agents/{ref}/fork."""
     fork_id = f"sfork_{uuid.uuid4().hex[:12]}"
     forked_session = f"{source_session}_fork_{fork_id[-8:]}"
 

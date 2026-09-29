@@ -16,6 +16,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+from langchain_core.messages import AIMessage, BaseMessage
+
 from agents.messages import AgentMessage, AgentReply, DeliveryReceipt
 from agents.runtime import NO_TIMEOUT, Runtime
 from agents.store import Agent
@@ -110,6 +112,26 @@ class WebotRuntime(Runtime):
     def is_busy(self, agent: Agent) -> bool:
         running = self.engine.list_active_task_keys(f"{agent.owner}#")
         return bool(self._thread_state(agent).get("busy")) or self.thread(agent) in set(running)
+
+    async def fork_history(self, parent: Agent, child: Agent) -> int:
+        """Copy completed conversation turns into a new session's context store.
+
+        The child gets its own system prompt on first inference and starts with
+        empty inbox, approvals, permits, runs, and compaction state.
+        """
+        source_thread = self.thread(parent)
+        target_thread = self.thread(child)
+        history: list[BaseMessage] = await self.engine._context_store.snapshot_context(source_thread)
+        last_complete = 0
+        for index, message in enumerate(history, start=1):
+            if isinstance(message, AIMessage) and not message.tool_calls:
+                last_complete = index
+        if not last_complete:
+            raise ValueError("The source agent has no completed conversation turn")
+        await self.engine._context_store.append_messages(
+            target_thread, [message.model_copy(deep=True) for message in history[:last_complete]],
+        )
+        return last_complete
 
     async def status(self, agent: Agent) -> dict[str, Any]:
         """Running or idle, and who started the running turn (``source``: user / system);

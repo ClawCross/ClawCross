@@ -34,6 +34,7 @@ from agents.store import (
     AgentStore,
     canonical_platform,
     driver_for_platform,
+    new_agent_id,
     valid_agent_id,
 )
 from common.auth_utils import extract_user_password_session, is_internal_bearer, parse_bearer_parts
@@ -78,6 +79,12 @@ class AgentMessageRequest(BaseModel):
 
 class AgentControlBody(BaseModel):
     action: str
+
+
+class AgentForkBody(BaseModel):
+    agent_id: str = Field("", max_length=64)
+    name: str = Field("", max_length=160)
+    reason: str = Field("", max_length=500)
 
 
 def authenticate(authorization: str | None, *, internal_token: str, verify_password: Callable[[str, str], bool]) -> str:
@@ -208,6 +215,66 @@ def create_agents_router(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         return agent_card(agent)
+
+    @router.post("/v1/agents/{ref}/fork")
+    async def fork_agent(ref: str, body: AgentForkBody, authorization: str | None = Header(None)):
+        from webot.driver import WebotRuntime
+        from webot.profiles import is_subagent_session
+        from webot.runtime_settings import runtime_settings_payload, save_runtime_settings
+        from webot.runtime_store import get_session_mode, save_session_mode
+
+        user = user_of(authorization)
+        parent = lookup(user, ref)
+        if parent.driver != WEBOT:
+            raise HTTPException(status_code=400, detail="Fork currently supports WeBot agents only")
+        if is_subagent_session(parent.agent_id):
+            raise HTTPException(status_code=400, detail="Fork of isolated subagents is not supported")
+        runtime = gateway.runtime(parent)
+        if not isinstance(runtime, WebotRuntime):
+            raise HTTPException(status_code=503, detail="WeBot runtime is unavailable")
+
+        child_id = body.agent_id.strip() or new_agent_id()
+        config = {key: value for key, value in parent.config.items() if key not in {"teams", "fork"}}
+        config["fork"] = {"parent_agent_id": parent.agent_id, "reason": body.reason.strip()}
+        try:
+            child = store.create(user, driver=WEBOT, config=config,
+                                 name=body.name.strip() or f"{parent.name} fork", agent_id=child_id)
+        except AgentExists as exc:
+            raise HTTPException(status_code=409, detail={"error": str(exc), "agent": agent_card(exc.agent)})
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+        try:
+            message_count = await runtime.fork_history(parent, child)
+            overrides = runtime_settings_payload(user, parent.agent_id)["session_overrides"]
+            if overrides:
+                save_runtime_settings(user, session_id=child_id, settings=overrides)
+            mode = get_session_mode(user, parent.agent_id).get("mode") or "execute"
+            save_session_mode(user, child_id, mode=mode, reason=f"Fork of {parent.agent_id}")
+            child = store.update(user, child_id, config={
+                **config, "fork": {**config["fork"], "source_message_count": message_count},
+            })
+        except Exception as exc:
+            from contextlib import suppress
+            with suppress(Exception):
+                await gateway.destroy(child)
+            with suppress(Exception):
+                save_runtime_settings(user, session_id=child_id, settings={}, reset=True)
+            store.delete(user, child_id)
+            if isinstance(exc, ValueError):
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            raise
+        return {"agent": agent_card(child), "fork": child.config["fork"]}
+
+    @router.get("/v1/agents/{ref}/forks")
+    async def list_agent_forks(ref: str, authorization: str | None = Header(None)):
+        user = user_of(authorization)
+        parent = lookup(user, ref)
+        children = [agent for agent in store.list(user)
+                    if (agent.config.get("fork") or {}).get("parent_agent_id") == parent.agent_id]
+        return {"object": "list", "data": [
+            {"agent": agent_card(child), "fork": child.config["fork"]} for child in children
+        ]}
 
     @router.post("/v1/agents/{ref}/messages")
     async def message_agent(ref: str, body: AgentMessageRequest, authorization: str | None = Header(None)):

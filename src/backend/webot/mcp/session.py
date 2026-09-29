@@ -15,6 +15,10 @@ Runs as a stdio MCP server, just like the other mcp_*.py tools.
 """
 
 import json
+import os
+from dotenv import dotenv_values
+from agents.client import AgentClient
+from common.runtime_paths import ENV_FILE
 from webot.mcp_tool_docs import DocumentedFastMCP as FastMCP
 from webot.checkpoint_paths import DEFAULT_CHECKPOINT_DB_DIR, checkpoint_store_exists
 from webot.checkpoint_repository import (
@@ -26,6 +30,28 @@ mcp = FastMCP("Session Management")
 
 # Checkpoint DB root — same as mainagent uses
 _DB_PATH = str(DEFAULT_CHECKPOINT_DB_DIR)
+
+
+@mcp.tool()
+async def fork_session(username: str = "", current_session_id: str = "", name: str = "", reason: str = "") -> str:
+    """Create a new Agent from this session's completed conversation turns.
+
+    The new Agent has its own context, inbox, approvals, permits, and runs.
+    It shares the user's normal workspace and tool policy.
+
+    :param username: Current user, injected by the runtime
+    :param current_session_id: Current session, injected by the runtime
+    :param name: Optional name for the new Agent
+    :param reason: Short reason for exploring a separate branch
+    """
+    if not username or not current_session_id:
+        return "❌ 无法获取当前会话。"
+    try:
+        token = os.getenv("INTERNAL_TOKEN", "").strip() or str(dotenv_values(ENV_FILE).get("INTERNAL_TOKEN") or "")
+        result = await AgentClient(username, internal_token=token).fork(current_session_id, name=name, reason=reason)
+    except Exception as exc:
+        return f"❌ 创建分支失败: {exc}"
+    return json.dumps(result, ensure_ascii=False)
 
 @mcp.tool()
 async def list_sessions(

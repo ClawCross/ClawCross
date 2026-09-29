@@ -20,6 +20,7 @@ PLAN_MODE_BLOCKED_TOOLS = frozenset(
     {
         "write_file",
         "delete_file",
+        "fork_session",
         "mark_session_inbox_read",
         "run_command",
         "cancel_subagent",
@@ -36,6 +37,7 @@ REVIEW_MODE_BLOCKED_TOOLS = frozenset(
     {
         "write_file",
         "delete_file",
+        "fork_session",
         "mark_session_inbox_read",
         "start_new_oasis",
         "save_oasis_workflow",
