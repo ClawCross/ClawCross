@@ -497,6 +497,8 @@ def _valid_record(
         return None
     if record.compacted_until > len(messages):
         return None
+    if record.source_message_count > len(messages):
+        return None
     return record
 
 
@@ -507,6 +509,43 @@ def _build_view(
     if record is None:
         return list(messages)
     return [_summary_to_message(record.summary)] + messages[record.compacted_until:]
+
+
+def compression_view_from_record(
+    record: Optional[ContextCompactionRecord], messages: list[BaseMessage],
+) -> list[BaseMessage]:
+    """Build a view from a version frozen at the start of one agent turn."""
+    return _build_view(_valid_record(record, messages), messages)
+
+
+def temporary_bounded_view(
+    view: list[BaseMessage], history_token_budget: int,
+) -> list[BaseMessage]:
+    """Trim older complete turns when a background summary is pending.
+
+    This view is never persisted. Whole user turns are retained so tool calls
+    and their results stay together. A single oversized turn may still exceed
+    the budget; the next turn can use a completed summary.
+    """
+    if history_token_budget <= 0 or estimate_messages_tokens(view) <= history_token_budget:
+        return view
+    prefix_count = 1 if view and is_summary_message(view[0]) else 0
+    prefix = view[:prefix_count]
+    notice = HumanMessage(content="【运行时通知】较早的对话暂时省略；后台正在生成摘要。")
+    suffix_tokens = [0] * (len(view) + 1)
+    for index in range(len(view) - 1, -1, -1):
+        suffix_tokens[index] = suffix_tokens[index + 1] + _msg_tokens(view[index])
+    fixed_tokens = sum(_msg_tokens(message) for message in prefix) + _msg_tokens(notice)
+    starts = [
+        index for index in range(prefix_count + 1, len(view))
+        if isinstance(view[index], HumanMessage)
+    ]
+    for start in starts:
+        if fixed_tokens + suffix_tokens[start] <= history_token_budget:
+            return [*prefix, notice, *view[start:]]
+    if starts:
+        return [*prefix, notice, *view[starts[-1]:]]
+    return view
 
 
 # ---------------------------------------------------------------------------
@@ -530,8 +569,7 @@ def static_compression_view(
         return list(messages)
     thread_id = f"{user_id}#{session_id}"
     raw_record = get_context_compaction(checkpoint_store_path, thread_id)
-    record = _valid_record(raw_record, messages)
-    return _build_view(record, messages)
+    return compression_view_from_record(raw_record, messages)
 
 
 # ---------------------------------------------------------------------------
@@ -628,6 +666,26 @@ class CompressionResult:
     reason: str
     view_tokens: int
     metadata: dict = field(default_factory=dict)
+    base_updated_at: str = ""
+    source_message_count: int = 0
+
+
+def commit_prepared_compression(
+    store_path: str | None, thread_id: str, result: CompressionResult,
+) -> ContextCompactionRecord:
+    """Publish a background summary only if its predecessor version still matches."""
+    if not result.triggered or not result.summary or result.source_message_count <= 0:
+        raise ValueError("No prepared compression to commit")
+    return save_context_compaction(
+        store_path,
+        thread_id,
+        summary=result.summary,
+        compacted_until=result.compacted_until,
+        source_message_count=result.source_message_count,
+        summary_token_estimate=estimate_messages_tokens([_summary_to_message(result.summary)]),
+        metadata=result.metadata,
+        expected_updated_at=result.base_updated_at,
+    )
 
 
 @_serialize_compaction
@@ -644,15 +702,17 @@ def apply_compression(
     measured_budget: int = 0,
     force: bool = False,
     settings: ContextSettings | None = None,
+    persist: bool = True,
+    before_summary: Callable[[], None] | None = None,
 ) -> CompressionResult:
     """Single-pass compression: load summary, maybe extend it, return view.
 
     Returned ``view`` is the message list to send downstream. When triggered,
-    side effects are:
+    the summary is prepared by:
       1. Call ``summarizer(previous_summary, segment, target_chars)`` to get
          the merged summary text.
       2. Truncate to the dynamic char cap if the LLM returned too much.
-      3. Persist (summary, compacted_until) to sqlite via save_context_compaction.
+      3. Persist (summary, compacted_until) to sqlite when ``persist`` is true.
 
     The append-only context store still holds every original message, so the
     folded segment is not duplicated to disk — call sites that need to audit
@@ -753,6 +813,11 @@ def apply_compression(
     segment = messages[current_until:boundary]
     target_chars = _max_summary_chars(history_token_budget)
     summarize = summarizer or _mechanical_summarizer
+    if before_summary is not None:
+        try:
+            before_summary()
+        except Exception:
+            pass
     try:
         new_summary = summarize(previous_summary, segment, target_chars)
     except Exception:
@@ -784,32 +849,27 @@ def apply_compression(
         "target_met": new_tokens <= target_tokens,
         "source_range": [current_until, boundary],
     }
-    try:
-        save_context_compaction(
-            checkpoint_store_path,
-            thread_id,
-            summary=new_summary,
-            compacted_until=boundary,
-            source_message_count=len(messages),
-            summary_token_estimate=estimate_messages_tokens([_summary_to_message(new_summary)]),
-            metadata=metadata,
-            expected_updated_at=raw_record.updated_at if raw_record else "",
-        )
-    except Exception:
-        return CompressionResult(
-            view=view,
-            triggered=False,
-            summary=previous_summary,
-            compacted_until=current_until,
-            reason="persistence_failed",
-            view_tokens=view_tokens,
-        )
-    return CompressionResult(
+    result = CompressionResult(
         view=new_view,
         triggered=True,
         summary=new_summary,
         compacted_until=boundary,
-        reason="compressed",
+        reason="compressed" if persist else "prepared",
         view_tokens=new_tokens,
         metadata=metadata,
+        base_updated_at=raw_record.updated_at if raw_record else "",
+        source_message_count=len(messages),
     )
+    if persist:
+        try:
+            commit_prepared_compression(checkpoint_store_path, thread_id, result)
+        except Exception:
+            return CompressionResult(
+                view=view,
+                triggered=False,
+                summary=previous_summary,
+                compacted_until=current_until,
+                reason="persistence_failed",
+                view_tokens=view_tokens,
+            )
+    return result

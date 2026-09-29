@@ -93,11 +93,13 @@ class LightweightAgentRuntime:
         call_tools: Callable[[dict[str, Any], dict[str, Any]], Awaitable[dict[str, Any]]],
         should_continue: Callable[[dict[str, Any]], bool],
         context_store: Any,
+        on_turn_complete: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         self._call_model = call_model
         self._call_tools = call_tools
         self._should_continue = should_continue
         self._context_store = context_store
+        self._on_turn_complete = on_turn_complete
 
     @staticmethod
     def _thread_id(config: dict[str, Any] | None) -> str:
@@ -151,6 +153,8 @@ class LightweightAgentRuntime:
         while True:
             await run_node("chatbot", self._call_model)
             if not self._should_continue(state):
+                if self._on_turn_complete is not None:
+                    self._on_turn_complete(state)
                 return state
             await run_node("tools", self._call_tools)
 
