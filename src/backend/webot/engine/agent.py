@@ -313,7 +313,7 @@ def _external_tool_names(state) -> set[str]:
     names = set()
     for ext_tool in state.get("external_tools") or []:
         func_def = ext_tool.get("function", {}) if ext_tool.get("type") == "function" else ext_tool
-        if func_def.get("name"):
+        if func_def.get("name") and func_def["name"] not in {"tool_search", "tool_call"}:
             names.add(func_def["name"])
     return names
 
@@ -329,6 +329,62 @@ def _tool_input_schema(tool) -> dict | None:
         except Exception:
             return None
     return None
+
+
+def available_internal_tool_names(tools, *, user_id: str, session_id: str,
+                                  state: dict, find_session_meta) -> set[str]:
+    """One allow set for model binding, discovery, and final execution."""
+    names = {tool.name for tool in tools}
+    own_tools = (find_session_meta(user_id, session_id) or {}).get("tools")
+    if own_tools is not None:
+        names.intersection_update(canonical_tool_names(own_tools))
+    subagent = parse_subagent_session_id(session_id)
+    if subagent:
+        profile = get_agent_profile(subagent["agent_type"], user_id=user_id)
+        if profile.allowed_tools is not None:
+            names.intersection_update(profile.allowed_tools)
+    if state.get("enabled_tools") is not None:
+        names.intersection_update(canonical_tool_names(state["enabled_tools"]))
+    mode = effective_session_mode(user_id, session_id, state.get("session_mode"))
+    return set(filter_tools_for_mode(sorted(names), mode))
+
+
+def _visible_tool_parameters(tool) -> dict:
+    bound = hide_injected_params(tool)
+    schema = bound if isinstance(bound, dict) else convert_to_openai_tool(bound)
+    return schema["function"].get("parameters") or {"type": "object", "properties": {}}
+
+
+def discovery_tool_schemas(registry: LazyToolRegistry, long_tail_names: set[str], *, strict: bool) -> list[dict]:
+    """Two fixed schemas; the search description carries brief long-tail names."""
+    if not long_tail_names:
+        return []
+    search = {
+        "name": "tool_search",
+        "description": registry.compact_tool_list(long_tail_names),
+        "parameters": {
+            "type": "object", "properties": {"query": {"type": "string", "description": "What capability or tool do you need?"}},
+            "required": ["query"], "additionalProperties": False,
+        },
+    }
+    call = {
+        "name": "tool_call",
+        "description": (
+            "Call one tool returned by tool_search. Supply its exact tool name and an arguments_json "
+            "string containing a JSON object that matches the parameters returned by tool_search."
+        ),
+        "parameters": {
+            "type": "object", "properties": {
+                "tool_name": {"type": "string", "description": "Exact tool name from tool_search"},
+                "arguments_json": {"type": "string", "description": "JSON object with the selected tool's arguments"},
+            },
+            "required": ["tool_name", "arguments_json"], "additionalProperties": False,
+        },
+    }
+    if strict:
+        search["strict"] = True
+        call["strict"] = True
+    return [{"type": "function", "function": search}, {"type": "function", "function": call}]
 
 
 async def _wait_for_tool_approval(approval_id: str, user_id: str) -> tuple[bool, str]:
@@ -457,10 +513,12 @@ class UserAwareToolNode:
     1. Reads thread_id from RunnableConfig, auto-injects as username for file/command tools
     2. Intercepts calls to disabled tools at runtime, returns error ToolMessage
     """
-    def __init__(self, tools, get_mcp_tools_fn, find_internal_session_meta_fn=None):
+    def __init__(self, tools, get_mcp_tools_fn, find_internal_session_meta_fn=None,
+                 tool_registry: LazyToolRegistry | None = None):
         self.tool_node = DirectToolNode(tools)
         self._get_mcp_tools = get_mcp_tools_fn
         self._find_internal_session_meta_fn = find_internal_session_meta_fn
+        self._tool_registry = tool_registry
 
     def _resolve_internal_session_meta(self, user_id: str, session_id: str) -> dict | None:
         resolver = self._find_internal_session_meta_fn
@@ -526,22 +584,67 @@ class UserAwareToolNode:
         if not hasattr(last_message, "tool_calls") or not last_message.tool_calls:
             return {"messages": []}
 
-        # Get currently enabled tool set
-        enabled_names = state.get("enabled_tools")
-        if enabled_names is not None:
-            enabled_set = set(canonical_tool_names(enabled_names))
-        else:
-            enabled_set = None  # None = all allowed
-
         # Separate blocked and allowed calls
         modified_message = copy.deepcopy(last_message)
         blocked_calls: list[tuple[dict, str, bool, str]] = []
+        discovery_messages: list[ToolMessage] = []
         allowed_calls = []
         allowed_call_meta: dict[str, tuple[str, dict, object, str]] = {}
         allowed_bindings: dict[str, str] = {}
         tools_by_name = getattr(self.tool_node, "_tools_by_name", {})
+        available_names = available_internal_tool_names(
+            list(tools_by_name.values()), user_id=user_id, session_id=session_id,
+            state=state, find_session_meta=self._resolve_internal_session_meta,
+        )
+        long_tail_names = available_names - (
+            self._tool_registry.always_loaded_names if self._tool_registry else frozenset()
+        )
         external_names = _external_tool_names(state)
         for tc in modified_message.tool_calls:
+            if tc["name"] == "tool_search":
+                if not self._tool_registry or not long_tail_names:
+                    discovery_messages.append(ToolMessage(
+                        content="No searchable tools are enabled in this session.",
+                        name="tool_search", tool_call_id=tc["id"], status="error",
+                    ))
+                    continue
+                search_args = tc.get("args") if isinstance(tc.get("args"), dict) else {}
+                query = str(search_args.get("query") or "").strip()[:200]
+                matches = self._tool_registry.search_tools(
+                    query, limit=6, enabled_names=long_tail_names,
+                )
+                for match in matches:
+                    match["parameters"] = _visible_tool_parameters(tools_by_name[match["name"]])
+                discovery_messages.append(ToolMessage(
+                    content=json.dumps({"tools": matches}, ensure_ascii=False),
+                    name="tool_search", tool_call_id=tc["id"],
+                ))
+                continue
+            if tc["name"] == "tool_call":
+                call_args = tc.get("args") if isinstance(tc.get("args"), dict) else {}
+                target_name = str(call_args.get("tool_name") or "")
+                raw_json = call_args.get("arguments_json")
+                try:
+                    if target_name not in long_tail_names or target_name not in tools_by_name:
+                        raise ValueError("This tool is not available through tool_call in the current session")
+                    if not isinstance(raw_json, str) or len(raw_json) > 200_000:
+                        raise ValueError("arguments_json must be a JSON object string under 200 KB")
+                    parsed_args = json.loads(raw_json)
+                    if not isinstance(parsed_args, dict):
+                        raise ValueError("arguments_json must contain a JSON object")
+                    schema = _visible_tool_parameters(tools_by_name[target_name])
+                    parsed_args = drop_null_optionals(parsed_args, schema)
+                    from jsonschema import validate
+                    validate(parsed_args, {**schema, "additionalProperties": False})
+                except Exception as exc:
+                    discovery_messages.append(ToolMessage(
+                        content=f"Invalid tool_call: {type(exc).__name__}: {str(exc)[:300]}",
+                        name="tool_call", tool_call_id=tc["id"], status="error",
+                    ))
+                    continue
+                # From this point on the call is the original tool. All normal
+                # mode, enablement, policy, approval and MCP permit checks apply.
+                tc["name"], tc["args"] = target_name, parsed_args
             # A retired tool name (merged or removed) runs as the tool that replaced it.
             if tc["name"] not in external_names and tc["name"] not in tools_by_name:
                 tc["name"], tc["args"] = resolve_tool_call(tc["name"], tc.get("args"))
@@ -578,7 +681,7 @@ class UserAwareToolNode:
                         "",
                     ))
                     continue
-            if enabled_set is not None and tc["name"] not in enabled_set:
+            if tc["name"] in tools_by_name and tc["name"] not in available_names:
                 blocked_calls.append((
                     tc,
                     "该工具当前未在会话的 enabled_tools 列表中。",
@@ -709,7 +812,7 @@ class UserAwareToolNode:
                 issue_execution_permit(user_id, normalized_session, tool_name,
                     bind_file_target(tool_name, tool_args, user_id, normalized_session), binding)
 
-        result_messages = []
+        result_messages = discovery_messages
 
         # For blocked tools, return error ToolMessages directly
         for tc, reason, requires_approval, approval_id in blocked_calls:
@@ -1095,12 +1198,13 @@ class TeamAgent:
         # graph engine is unnecessary because ClawCross has no dynamic graph,
         # joins, interrupts, or parallel graph branches here.
         # 收集所有内部 MCP 工具名称，用于条件路由
-        self._internal_tool_names = frozenset(t.name for t in self._mcp_tools)
+        self._internal_tool_names = frozenset(t.name for t in self._mcp_tools) | {"tool_search", "tool_call"}
 
         tool_node = UserAwareToolNode(
             self._mcp_tools,
             lambda: self._mcp_tools,
             find_internal_session_meta_fn=self._find_internal_session_meta,
+            tool_registry=self._tool_registry,
         )
         self._agent_app = LightweightAgentRuntime(
             call_model=self._call_model,
@@ -1245,21 +1349,15 @@ class TeamAgent:
                     },
                 )
 
-        # The agent's own tools are what is bound; enabled_tools and the mode
-        # narrow what may run this turn.
-        own_tools = (self._find_internal_session_meta(user_id, session_id or "") or {}).get("tools")
-        all_tools = self._mcp_tools if own_tools is None else [t for t in self._mcp_tools if t.name in set(own_tools)]
-        enabled_names = state.get("enabled_tools")
-        effective_enabled_names = None if enabled_names is None else canonical_tool_names(enabled_names)
-        if effective_enabled_names is None and subagent_profile and subagent_profile.allowed_tools is not None:
-            effective_enabled_names = list(subagent_profile.allowed_tools)
-        if effective_enabled_names is None:
-            effective_enabled_names = [tool.name for tool in all_tools]
-        own_names = {tool.name for tool in all_tools}
-        effective_enabled_names = filter_tools_for_mode(
-            [name for name in effective_enabled_names if name in own_names], runtime_mode_name)
-
-        filtered_tools = [t for t in all_tools if t.name in set(effective_enabled_names)]
+        # The model sees core schemas plus compact discovery for eligible tail
+        # tools. The execution node recomputes this same allow set before calls.
+        allowed_names = available_internal_tool_names(
+            self._mcp_tools, user_id=user_id, session_id=session_id,
+            state=state, find_session_meta=self._find_internal_session_meta,
+        )
+        filtered_tools = [tool for tool in self._mcp_tools
+                          if tool.name in allowed_names and tool.name in self._tool_registry.always_loaded_names]
+        long_tail_names = allowed_names - self._tool_registry.always_loaded_names
 
         # Only send tools the agent may call in this session. The tool node
         # enforces the same list again at execution time.
@@ -1271,7 +1369,7 @@ class TeamAgent:
                 func_def = ext_tool.get("function", {})
             else:
                 func_def = ext_tool
-            if func_def.get("name"):
+            if func_def.get("name") and func_def["name"] not in {"tool_search", "tool_call"}:
                 external_func_defs.append(func_def)
         external_tool_names: set[str] = {func_def["name"] for func_def in external_func_defs}
 
@@ -1328,6 +1426,7 @@ class TeamAgent:
         # 只发送本轮可用工具；启用列表改变时 tools 前缀也会改变。
         base_model, strict_tools, bind_kwargs = strict_tool_binding(base_model)
         bind_tools_list: list = [bind_tool_schema(t, strict=strict_tools) for t in filtered_tools]
+        bind_tools_list.extend(discovery_tool_schemas(self._tool_registry, long_tail_names, strict=strict_tools))
         # 以 OpenAI function 格式传入 bind_tools（LangChain 支持 dict 格式）
         if runtime_mode_name not in {"chat", "readonly"}:
             bind_tools_list += [external_tool_schema(d, strict=strict_tools) for d in external_func_defs]
@@ -1938,15 +2037,12 @@ class TeamAgent:
             except Exception:
                 pass
 
-        # Write the fully-resolved enabled-tool list back into state so the
-        # tools node (UserAwareToolNode) — which reads state["enabled_tools"]
-        # directly — enforces the same effective restriction (including the
-        # subagent-profile fallback and session-mode filtering applied above),
-        # even though binding itself no longer shrinks based on it.
+        # The tool node recomputes the same allow set. Keep the caller's
+        # requested enabled_tools intact so a mode change can expose tools
+        # again on a later model turn.
         return {
             "messages": [response],
             "turn_count": next_turn_count,
-            "enabled_tools": effective_enabled_names,
         }
 
     # ------------------------------------------------------------------
