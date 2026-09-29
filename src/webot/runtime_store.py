@@ -1,9 +1,7 @@
 """
 Persistent runtime primitives for WeBot.
 
-Most session-local state lives in ``data/webot_agents/<user>#<agent>.db``.
-``webot_runtime.db`` remains for legacy imports and bridge records.
-Old goal and buddy rows remain on disk but are no longer used.
+Runtime state lives in ``data/webot_agents/<user>#<agent>.db``.
 
 Provides:
 - durable delegated run records and control-plane state
@@ -32,11 +30,11 @@ from utils.runtime_paths import DATA_DIR
 from utils.checkpoint_paths import checkpoint_db_name_for_thread, checkpoint_db_path_for_thread
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-_DEFAULT_SHARED_DB_PATH = DATA_DIR / "webot_runtime.db"
-DEFAULT_DB_PATH = _DEFAULT_SHARED_DB_PATH
+# An explicit override is available to isolated callers; production uses
+# one database file per agent.
+DEFAULT_DB_PATH: Path | None = None
 AGENT_RUNTIME_DB_DIR = DATA_DIR / "webot_agents"
 _INITIALIZED_DB_FILES: set[tuple[str, int]] = set()
-_MIGRATED_AGENT_DB_FILES: set[tuple[str, int]] = set()
 
 
 class _ClosingConnection(sqlite3.Connection):
@@ -85,6 +83,8 @@ def is_timestamp_active(value: str | None) -> bool:
 
 def get_runtime_db_path(db_path: str | os.PathLike | None = None) -> Path:
     explicit = Path(db_path) if db_path is not None else DEFAULT_DB_PATH
+    if explicit is None:
+        raise ValueError("An explicit database path is required")
     explicit.parent.mkdir(parents=True, exist_ok=True)
     return explicit
 
@@ -249,32 +249,6 @@ def _connect(db_path: str | os.PathLike | None = None) -> sqlite3.Connection:
         """
         CREATE INDEX IF NOT EXISTS idx_webot_memory_state_lookup
         ON webot_memory_state(user_id, updated_at DESC)
-        """
-    )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS webot_bridge_sessions (
-            bridge_id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL,
-            session_id TEXT NOT NULL,
-            role TEXT NOT NULL DEFAULT 'viewer',
-            label TEXT NOT NULL DEFAULT '',
-            attach_code TEXT NOT NULL DEFAULT '',
-            websocket_path TEXT NOT NULL DEFAULT '',
-            status TEXT NOT NULL DEFAULT 'detached',
-            connection_count INTEGER NOT NULL DEFAULT 0,
-            metadata_json TEXT NOT NULL DEFAULT '{}',
-            last_error TEXT NOT NULL DEFAULT '',
-            last_attached_at TEXT NOT NULL DEFAULT '',
-            updated_at TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_webot_bridge_sessions_lookup
-        ON webot_bridge_sessions(user_id, session_id, updated_at DESC)
         """
     )
     conn.execute(
@@ -472,26 +446,6 @@ def _connect(db_path: str | os.PathLike | None = None) -> sqlite3.Connection:
     return conn
 
 
-# Session-local state has one SQLite file per agent. For the tables below, the
-# old shared DB is consulted only for rows written before this layout existed.
-_AGENT_LOCAL_TABLES = (
-    "webot_runs",
-    "webot_run_attempts",
-    "webot_session_state",
-    "webot_session_inbox",
-    "webot_runtime_artifacts",
-    "webot_session_plans",
-    "webot_session_todos",
-    "webot_verifications",
-    "webot_tool_approvals",
-    "webot_execution_permits",
-    "webot_memory_state",
-    "webot_voice_state",
-    "webot_claude_keepalive",
-)
-_AGENT_SESSION_COLUMNS = {"webot_session_inbox": "target_session"}
-
-
 def get_agent_runtime_db_path(user_id: str, session_id: str) -> Path:
     return checkpoint_db_path_for_thread(f"{user_id}#{session_id}", AGENT_RUNTIME_DB_DIR)
 
@@ -501,108 +455,32 @@ def _remove_agent_runtime_file(path: Path) -> None:
     _INITIALIZED_DB_FILES.difference_update(
         [key for key in _INITIALIZED_DB_FILES if key[0] == resolved]
     )
-    _MIGRATED_AGENT_DB_FILES.difference_update(
-        [key for key in _MIGRATED_AGENT_DB_FILES if key[0] == resolved]
-    )
     for suffix in ("", "-wal", "-shm", "-journal"):
         Path(f"{path}{suffix}").unlink(missing_ok=True)
 
 
 def delete_agent_runtime_db(user_id: str, session_id: str) -> None:
-    if DEFAULT_DB_PATH == _DEFAULT_SHARED_DB_PATH:
+    if DEFAULT_DB_PATH is None:
         _remove_agent_runtime_file(get_agent_runtime_db_path(user_id, session_id))
-        if DEFAULT_DB_PATH.is_file():
-            with _connect(DEFAULT_DB_PATH) as conn:
-                for table in _AGENT_LOCAL_TABLES:
-                    session_column = _AGENT_SESSION_COLUMNS.get(table, "session_id")
-                    conn.execute(
-                        f"DELETE FROM {table} WHERE user_id = ? AND {session_column} = ?",
-                        (user_id, session_id),
-                    )
-                conn.commit()
 
 
 def delete_agent_runtime_dbs_for_user(user_id: str) -> None:
-    if DEFAULT_DB_PATH != _DEFAULT_SHARED_DB_PATH:
+    if DEFAULT_DB_PATH is not None:
         return
     if AGENT_RUNTIME_DB_DIR.is_dir():
         prefix = checkpoint_db_name_for_thread(f"{user_id}#")[:-3]
         for path in AGENT_RUNTIME_DB_DIR.glob("*.db"):
             if path.name.startswith(prefix):
                 _remove_agent_runtime_file(path)
-    if DEFAULT_DB_PATH.is_file():
-        with _connect(DEFAULT_DB_PATH) as conn:
-            for table in _AGENT_LOCAL_TABLES:
-                conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
-            conn.commit()
 
 
 def _connect_agent(
     user_id: str, session_id: str, db_path: str | os.PathLike | None = None,
 ) -> sqlite3.Connection:
-    """Open one agent's DB, importing its old shared rows once on first use."""
-    if db_path is not None:
+    """Open this agent's database, or an explicitly supplied database."""
+    if db_path is not None or DEFAULT_DB_PATH is not None:
         return _connect(db_path)
-    # An explicit runtime-store override (used by isolated deployments and
-    # callers that supply a temporary DB) must remain authoritative.
-    if DEFAULT_DB_PATH != _DEFAULT_SHARED_DB_PATH:
-        return _connect(DEFAULT_DB_PATH)
-    path = get_agent_runtime_db_path(user_id, session_id)
-    conn = _connect(path)
-    file_key = (str(path.resolve()), path.stat().st_ino)
-    if file_key in _MIGRATED_AGENT_DB_FILES:
-        return conn
-    try:
-        conn.execute("BEGIN IMMEDIATE")
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS webot_local_migrations "
-            "(source TEXT PRIMARY KEY, migrated_at TEXT NOT NULL)"
-        )
-        migrated = conn.execute(
-            "SELECT 1 FROM webot_local_migrations WHERE source = 'shared-v2'"
-        ).fetchone()
-        if not migrated and DEFAULT_DB_PATH.is_file():
-            legacy = sqlite3.connect(f"file:{DEFAULT_DB_PATH}?mode=ro", uri=True)
-            try:
-                for table in _AGENT_LOCAL_TABLES:
-                    session_column = _AGENT_SESSION_COLUMNS.get(table, "session_id")
-                    exists = legacy.execute(
-                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
-                    ).fetchone()
-                    if not exists:
-                        continue
-                    local_cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
-                    columns = [
-                        row[1] for row in legacy.execute(f"PRAGMA table_info({table})")
-                        if row[1] in local_cols
-                    ]
-                    if not {"user_id", session_column} <= set(columns):
-                        continue
-                    selected = ", ".join(columns)
-                    placeholders = ", ".join("?" for _ in columns)
-                    rows = legacy.execute(
-                        f"SELECT {selected} FROM {table} WHERE user_id=? AND {session_column}=?",
-                        (user_id, session_id),
-                    ).fetchall()
-                    if rows:
-                        conn.executemany(
-                            f"INSERT OR IGNORE INTO {table} ({selected}) VALUES ({placeholders})",
-                            rows,
-                        )
-            finally:
-                legacy.close()
-        if not migrated:
-            conn.execute(
-                "INSERT INTO webot_local_migrations (source, migrated_at) VALUES ('shared-v2', ?)",
-                (utc_now(),),
-            )
-        conn.commit()
-        _MIGRATED_AGENT_DB_FILES.add(file_key)
-    except Exception:
-        conn.rollback()
-        conn.close()
-        raise
-    return conn
+    return _connect(get_agent_runtime_db_path(user_id, session_id))
 
 
 def _query_agent_rows(
@@ -612,22 +490,20 @@ def _query_agent_rows(
     db_path: str | os.PathLike | None = None,
     identity: str | None = None,
 ) -> list[sqlite3.Row]:
-    """Query agent files, then legacy shared rows, preferring a local copy by ID."""
-    if db_path is not None or DEFAULT_DB_PATH != _DEFAULT_SHARED_DB_PATH:
+    """Search agent database files, preferring one copy of each record ID."""
+    if db_path is not None or DEFAULT_DB_PATH is not None:
         with _connect(db_path) as conn:
             return conn.execute(sql, params).fetchall()
     paths = sorted(AGENT_RUNTIME_DB_DIR.glob("*.db")) if AGENT_RUNTIME_DB_DIR.is_dir() else []
-    if DEFAULT_DB_PATH.is_file():
-        paths.append(DEFAULT_DB_PATH)
     rows: list[sqlite3.Row] = []
     seen: set[tuple[str, str]] = set()
     for path in paths:
         with _connect(path) as conn:
             for row in conn.execute(sql, params).fetchall():
-                key = (str(row["user_id"]), str(row[identity])) if identity else ("", "")
-                if identity and key in seen:
-                    continue
                 if identity:
+                    key = (str(row["user_id"]), str(row[identity]))
+                    if key in seen:
+                        continue
                     seen.add(key)
                 rows.append(row)
     return rows
@@ -840,28 +716,6 @@ class MemoryStateRecord:
 
 
 @dataclass(frozen=True)
-class BridgeSessionRecord:
-    bridge_id: str
-    user_id: str
-    session_id: str
-    role: str
-    label: str
-    attach_code: str
-    websocket_path: str
-    status: str
-    connection_count: int
-    metadata: dict[str, Any] = field(default_factory=dict)
-    last_error: str = ""
-    last_attached_at: str = ""
-    updated_at: str = ""
-    created_at: str = ""
-
-    @property
-    def metadata_json(self) -> str:
-        return _json_dumps(self.metadata)
-
-
-@dataclass(frozen=True)
 class VoiceStateRecord:
     user_id: str
     session_id: str
@@ -964,14 +818,6 @@ def _row_to_memory_state(row: sqlite3.Row | None) -> MemoryStateRecord | None:
     data["kairos_enabled"] = bool(data["kairos_enabled"])
     data["metadata"] = _json_loads_dict(data.pop("metadata_json", ""))
     return MemoryStateRecord(**data)
-
-
-def _row_to_bridge_session(row: sqlite3.Row | None) -> BridgeSessionRecord | None:
-    if row is None:
-        return None
-    data = dict(row)
-    data["metadata"] = _json_loads_dict(data.pop("metadata_json", ""))
-    return BridgeSessionRecord(**data)
 
 
 def _row_to_voice_state(row: sqlite3.Row | None) -> VoiceStateRecord | None:
@@ -1829,7 +1675,7 @@ def update_runtime_artifact(
         db_path=db_path,
     )
     if (updated.session_id != record.session_id and db_path is None
-            and DEFAULT_DB_PATH == _DEFAULT_SHARED_DB_PATH):
+            and DEFAULT_DB_PATH is None):
         with _connect_agent(user_id, record.session_id, db_path) as conn:
             conn.execute("DELETE FROM webot_runtime_artifacts WHERE artifact_id = ? AND user_id = ?",
                          (artifact_id, user_id))
@@ -2941,100 +2787,6 @@ def get_memory_state(
         updated_at=now,
         created_at=now,
     )
-
-
-def upsert_bridge_session(
-    *,
-    bridge_id: str,
-    user_id: str,
-    session_id: str,
-    role: str = "viewer",
-    label: str = "",
-    attach_code: str = "",
-    websocket_path: str = "",
-    status: str = "detached",
-    connection_count: int = 0,
-    metadata: dict[str, Any] | None = None,
-    last_error: str = "",
-    last_attached_at: str = "",
-    db_path: str | os.PathLike | None = None,
-) -> BridgeSessionRecord:
-    now = utc_now()
-    with _connect(db_path) as conn:
-        conn.execute(
-            """
-            INSERT INTO webot_bridge_sessions (
-                bridge_id, user_id, session_id, role, label, attach_code,
-                websocket_path, status, connection_count, metadata_json,
-                last_error, last_attached_at, updated_at, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(bridge_id) DO UPDATE SET
-                role=excluded.role,
-                label=excluded.label,
-                attach_code=excluded.attach_code,
-                websocket_path=excluded.websocket_path,
-                status=excluded.status,
-                connection_count=excluded.connection_count,
-                metadata_json=excluded.metadata_json,
-                last_error=excluded.last_error,
-                last_attached_at=excluded.last_attached_at,
-                updated_at=excluded.updated_at
-            """,
-            (
-                bridge_id,
-                user_id,
-                session_id,
-                role,
-                label,
-                attach_code,
-                websocket_path,
-                status,
-                connection_count,
-                _json_dumps(metadata or {}),
-                last_error,
-                last_attached_at,
-                now,
-                now,
-            ),
-        )
-        conn.commit()
-        row = conn.execute(
-            "SELECT * FROM webot_bridge_sessions WHERE bridge_id = ?",
-            (bridge_id,),
-        ).fetchone()
-    return _row_to_bridge_session(row)  # type: ignore[arg-type]
-
-
-def get_bridge_session(
-    bridge_id: str,
-    user_id: str,
-    db_path: str | os.PathLike | None = None,
-) -> BridgeSessionRecord | None:
-    with _connect(db_path) as conn:
-        row = conn.execute(
-            "SELECT * FROM webot_bridge_sessions WHERE bridge_id = ? AND user_id = ?",
-            (bridge_id, user_id),
-        ).fetchone()
-    return _row_to_bridge_session(row)
-
-
-def list_bridge_sessions(
-    user_id: str,
-    session_id: str | None = None,
-    *,
-    db_path: str | os.PathLike | None = None,
-    limit: int = 20,
-) -> list[BridgeSessionRecord]:
-    query = ["SELECT * FROM webot_bridge_sessions WHERE user_id = ?"]
-    params: list[Any] = [user_id]
-    if session_id:
-        query.append("AND session_id = ?")
-        params.append(session_id)
-    query.append("ORDER BY updated_at DESC LIMIT ?")
-    params.append(max(1, limit))
-    with _connect(db_path) as conn:
-        rows = conn.execute(" ".join(query), params).fetchall()
-    return [_row_to_bridge_session(row) for row in rows if row is not None]
 
 
 def save_voice_state(

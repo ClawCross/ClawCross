@@ -435,44 +435,6 @@ def register_webot_routes(
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
-    @app.route("/proxy_webot_bridge_attach", methods=["POST"])
-    def proxy_webot_bridge_attach():
-        user_id = session.get("user_id", "")
-        body = request.get_json(force=True) if request.is_json else {}
-        try:
-            response = requests.post(
-                f"{base_url}/webot/bridge/attach",
-                json={
-                    "user_id": user_id,
-                    "session_id": body.get("session_id", ""),
-                    "role": body.get("role", "viewer"),
-                    "label": body.get("label", ""),
-                },
-                headers=_internal_auth_headers(),
-                timeout=15,
-            )
-            return jsonify(response.json()), response.status_code
-        except Exception as exc:
-            return jsonify({"error": str(exc)}), 500
-
-    @app.route("/proxy_webot_bridge_detach", methods=["POST"])
-    def proxy_webot_bridge_detach():
-        user_id = session.get("user_id", "")
-        body = request.get_json(force=True) if request.is_json else {}
-        try:
-            response = requests.post(
-                f"{base_url}/webot/bridge/detach",
-                json={
-                    "user_id": user_id,
-                    "bridge_id": body.get("bridge_id", ""),
-                },
-                headers=_internal_auth_headers(),
-                timeout=15,
-            )
-            return jsonify(response.json()), response.status_code
-        except Exception as exc:
-            return jsonify({"error": str(exc)}), 500
-
     @app.route("/proxy_webot_kairos", methods=["POST"])
     def proxy_webot_kairos():
         user_id = session.get("user_id", "")

@@ -17,12 +17,7 @@ This document summarizes the runtime-related databases used by Clawcross, what t
     run events, artifacts, mode, plans, todos, verifications, memory, voice,
     and Claude keepalive state.
   - A sender writes an inbox message to the recipient Agent's file. Cross-Agent
-    listings scan these files and deduplicate legacy rows by record ID.
-
-- `data/webot_runtime.db`
-  - Legacy store. Existing session rows are copied into the relevant Agent file
-    on first access; new rows for the features above are written only to Agent files.
-  - Active bridge records use this database. Existing goal and buddy rows remain only as inert legacy data.
+    listings scan Agent files and deduplicate records by ID.
 
 ## Per-Agent Runtime Tables
 

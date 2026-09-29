@@ -1,54 +1,5 @@
 const { test, expect } = require('@playwright/test');
 
-async function installMockWebSocket(page) {
-  await page.addInitScript(() => {
-    const sockets = [];
-    window.__clawcrossSocketUrls = [];
-    window.__clawcrossSocketSends = [];
-
-    class MockWebSocket {
-      static CONNECTING = 0;
-      static OPEN = 1;
-      static CLOSING = 2;
-      static CLOSED = 3;
-
-      constructor(url) {
-        this.url = url;
-        this.readyState = MockWebSocket.CONNECTING;
-        this.onopen = null;
-        this.onmessage = null;
-        this.onerror = null;
-        this.onclose = null;
-        sockets.push(this);
-        window.__clawcrossSocketUrls.push(url);
-        setTimeout(() => {
-          this.readyState = MockWebSocket.OPEN;
-          if (typeof this.onopen === 'function') this.onopen({ type: 'open' });
-        }, 0);
-      }
-
-      send(data) {
-        window.__clawcrossSocketSends.push({ url: this.url, data: String(data || '') });
-      }
-
-      close() {
-        this.readyState = MockWebSocket.CLOSED;
-        if (typeof this.onclose === 'function') this.onclose({ type: 'close' });
-      }
-    }
-
-    window.WebSocket = MockWebSocket;
-    window.__emitClawcrossSocket = (payload) => {
-      const data = JSON.stringify(payload);
-      sockets.forEach((socket) => {
-        if (socket.readyState === MockWebSocket.OPEN && typeof socket.onmessage === 'function') {
-          socket.onmessage({ data });
-        }
-      });
-    };
-  });
-}
-
 async function stubStudioNetwork(page, calls, options = {}) {
   const webotState = {
     approvals: [
@@ -136,13 +87,6 @@ async function stubStudioNetwork(page, calls, options = {}) {
       kairos_enabled: false,
       relevant_entries: [{ name: 'deploy_notes' }],
     },
-    bridge: {
-      status: 'detached',
-      attached: false,
-      connection_count: 0,
-      sessions: [],
-      primary: null,
-    },
     voice: {
       enabled: false,
       auto_read_aloud: false,
@@ -211,13 +155,6 @@ async function stubStudioNetwork(page, calls, options = {}) {
       },
     ],
     approvals: webotState.approvals,
-    bridge: {
-      status: 'detached',
-      attached: false,
-      connection_count: 0,
-      sessions: [],
-      primary: null,
-    },
     voice: {
       enabled: false,
       auto_read_aloud: false,
@@ -472,58 +409,6 @@ async function stubStudioNetwork(page, calls, options = {}) {
       last_transcript: payload.last_transcript || currentRuntimeState.voice.last_transcript,
     };
     return json(route, { status: 'success', voice: currentRuntimeState.voice });
-  });
-  await page.route('**/proxy_webot_bridge_attach', async (route) => {
-    const payload = await route.request().postDataJSON();
-    calls.bridgeAttach = (calls.bridgeAttach || 0) + 1;
-    const sessionId = payload.session_id || currentRuntimeState.session_id || 'main-session';
-    currentRuntimeState.session_id = sessionId;
-    currentRuntimeState.bridge = {
-      status: 'attached',
-      attached: true,
-      connection_count: 0,
-      sessions: [
-        {
-          bridge_id: 'bridge-main-1',
-          session_id: sessionId,
-          role: payload.role || 'viewer',
-          attach_code: 'ATTACH-42',
-          websocket_path: '/webot/ws/smoke-user/bridge-main-1',
-          status: 'attached',
-          connection_count: 0,
-        },
-      ],
-      primary: {
-        bridge_id: 'bridge-main-1',
-        session_id: sessionId,
-        role: payload.role || 'viewer',
-        attach_code: 'ATTACH-42',
-        websocket_path: '/webot/ws/smoke-user/bridge-main-1',
-        status: 'attached',
-        connection_count: 0,
-      },
-    };
-    return json(route, {
-      status: 'success',
-      bridge: currentRuntimeState.bridge.primary,
-    });
-  });
-  await page.route('**/proxy_webot_bridge_detach', async (route) => {
-    calls.bridgeDetach = (calls.bridgeDetach || 0) + 1;
-    currentRuntimeState.bridge = {
-      status: 'detached',
-      attached: false,
-      connection_count: 0,
-      sessions: [],
-      primary: null,
-    };
-    return json(route, {
-      status: 'success',
-      bridge: {
-        bridge_id: 'bridge-main-1',
-        status: 'detached',
-      },
-    });
   });
   await page.route('**/proxy_webot_kairos', async (route) => {
     const payload = await route.request().postDataJSON();
@@ -820,7 +705,6 @@ test('studio ACP warmup surfaces backend errors inline', async ({ page }) => {
     agentCreatePayload: { detail: 'Failed to spawn agent command: cursor-agent acp' },
     agentCreateStatus: 502,
   });
-  await installMockWebSocket(page);
   await page.addInitScript(() => {
     window.alert = (message) => {
       throw new Error(`unexpected alert: ${message}`);
@@ -839,131 +723,6 @@ test('studio ACP warmup surfaces backend errors inline', async ({ page }) => {
   expect(calls.agentCreates[0].agent_id).toMatch(/^cursor-/);
   await expect(page.locator('#oc-acp-session-status')).toContainText(/预热失败|Warm up failed/);
   await expect(page.locator('#oc-acp-session-status')).toContainText('cursor-agent acp');
-  expect(pageErrors).toEqual([]);
-});
-
-test('studio webot current runtime card stays synced over bridge websocket', async ({ page }) => {
-  const calls = {
-    importOpenClaw: 0,
-    exportOpenClaw: 0,
-    tinyfishRun: 0,
-    lastExportPayload: null,
-    approvalActions: [],
-    bridgeAttach: 0,
-    bridgeDetach: 0,
-    voiceUpdates: [],
-    kairosUpdates: [],
-    dreamRuns: 0,
-    inboxDeliveries: 0,
-  };
-  const pageErrors = [];
-
-  page.on('pageerror', (error) => pageErrors.push(error.message));
-  page.on('dialog', async (dialog) => {
-    pageErrors.push(`unexpected dialog: ${dialog.message()}`);
-    await dialog.dismiss();
-  });
-
-  await installMockWebSocket(page);
-  await stubStudioNetwork(page, calls);
-  await page.addInitScript(() => {
-    window.alert = () => {};
-    window.confirm = () => true;
-    localStorage.removeItem('clawcrossSessionRuntimePanelHeightV1');
-  });
-
-  await page.goto('/studio');
-  await page.locator('.hamburger-btn').click();
-  await page.locator('#hamburger-panel button[onclick*="toggleSessionSidebar(); closeHamburgerMenu();"]').click();
-
-  await expect(page.locator('#webot-current-session')).toBeVisible();
-  await expect(page.locator('#webot-current-session')).toContainText('Current Session');
-  await expect(page.locator('#webot-current-session')).toContainText(/Execution swarm|Execution Swarm/);
-  await expect(page.locator('#webot-current-session')).toContainText('Memory');
-
-  await page.locator('#webot-current-session button').filter({ hasText: 'Attach' }).click();
-  await expect.poll(() => calls.bridgeAttach).toBe(1);
-  await expect.poll(() => page.evaluate(() => window.__clawcrossSocketUrls.length)).toBe(1);
-  await expect(page.locator('#webot-current-session')).toContainText('attach=ATTACH-42');
-
-  const currentSessionId = await page.locator('#webot-current-session .webot-current-card-caption').evaluate((el) => {
-    return String(el.textContent || '').split(' · ')[0].trim();
-  });
-
-  await page.evaluate(({ sessionId }) => {
-    window.__emitClawcrossSocket({
-      type: 'runtime_update',
-      changed_session_id: sessionId,
-      runtime: {
-        status: 'success',
-        session_id: sessionId,
-        session_role: 'main',
-        workspace: '/tmp/clawcross/main',
-        mode: { mode: 'execute', reason: 'Bridge live update' },
-        plan: {
-          title: 'Main session plan',
-          status: 'active',
-          items: [{ step: 'Keep runtime panel synced', status: 'completed' }],
-        },
-        todos: { items: [{ title: 'Deliver inbox', status: 'completed' }] },
-        verifications: [],
-        approvals: [],
-        inbox: [{ message_id: 'inbox-1', source_label: 'planner', body: 'Delivered from socket', status: 'delivered' }],
-        artifacts: [],
-        runs: [],
-        active_run: null,
-        relationships: { parent_session: '', children: [] },
-        memory: {
-          summary: '4 entries · kairos on · last dream just now',
-          project_slug: 'clawcross-main',
-          entry_count: 4,
-          can_dream: false,
-          kairos_enabled: true,
-          relevant_entries: [{ name: 'deploy_notes' }],
-        },
-        bridge: {
-          status: 'attached',
-          attached: true,
-          connection_count: 1,
-          sessions: [{
-            bridge_id: 'bridge-main-1',
-            session_id: sessionId,
-            role: 'viewer',
-            attach_code: 'ATTACH-42',
-            websocket_path: '/webot/ws/smoke-user/bridge-main-1',
-            status: 'attached',
-            connection_count: 1,
-          }],
-          primary: {
-            bridge_id: 'bridge-main-1',
-            session_id: sessionId,
-            role: 'viewer',
-            attach_code: 'ATTACH-42',
-            websocket_path: '/webot/ws/smoke-user/bridge-main-1',
-            status: 'attached',
-            connection_count: 1,
-          },
-        },
-        voice: {
-          enabled: true,
-          auto_read_aloud: false,
-          recording_supported: true,
-          tts_model: 'gpt-4o-mini-tts',
-          tts_voice: 'alloy',
-          stt_model: 'whisper-1',
-          last_transcript: 'Bridge runtime synced',
-          status: 'enabled',
-        },
-      },
-    });
-  }, { sessionId: currentSessionId });
-
-  await expect(page.locator('#webot-current-session')).toContainText('socket=live');
-  await expect(page.locator('#webot-current-session')).toContainText('clients=1');
-  await expect(page.locator('#webot-current-session')).toContainText('Bridge runtime synced');
-  await expect(page.locator('#webot-current-session')).toContainText('kairos on');
-
-
   expect(pageErrors).toEqual([]);
 });
 
@@ -1154,7 +913,6 @@ test('studio oasis swarm uses pretext-backed multiline labels', async ({ page })
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
 
-  await installMockWebSocket(page);
   await stubStudioNetwork(page, calls);
   await page.addInitScript(() => {
     window.alert = () => {};
@@ -1222,7 +980,6 @@ test('oasis town runtime mounts, draws canvas, and accepts live updates', async 
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
 
-  await installMockWebSocket(page);
   await stubStudioNetwork(page, calls);
   await page.addInitScript(() => {
     window.alert = () => {};

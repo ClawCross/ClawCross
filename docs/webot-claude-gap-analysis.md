@@ -16,16 +16,14 @@
 | Kairos / autoDream | `services/autoDream` background agent + logs. | `webot_memory.py` + `webot_service.py` + `mcp_webot.py` now expose Kairos enable/disable, dream execution, daily logs, memory summary artifacts, and runtime-state persistence. | Not ported (Claude web). | Not implemented. |
 | Ultraplan | Remote CCR session plan polling, teleport flag. | No dedicated tool (removed); planning runs as a `planner` subagent in a worktree via `spawn_subagent`. | Session-manager includes plan prompt, remote session state. | No implementation. |
 | Ultrareview | Reviewer fleet, 20 angles, coordinator. | No dedicated tool (removed); parallel `reviewer` subagents via `spawn_subagent`. | Council review workflow built-in. | Not implemented. |
-| Bridge / Remote Control | WebSocket bridge to claude.ai and direct connect API. | `src/webot/bridge.py` + `/webot/ws/{user_id}/{bridge_id}` provide attach/detach session records and runtime-snapshot pushes for Studio. This is a status stream, with no Agent command channel or bound bridge tool. | Bridge built for browser CLI integration. | None. |
 | Voice Mode | CLI / CCR voice (requires OAuth). | WeBot reuses the existing audio/TTS stack and now persists voice mode state per session, surfaces it in runtime DTO/UI, and exposes BFF + MCP controls. | Session-manager voice stub. | CLI audio limited to placeholder functions. |
-| Frontend Runtime Visibility | Runtime panel showing plan/todos/runs/workspaces. | Studio now renders the current session as a first-class runtime card alongside subagents, with mode/verifications/approvals/runs/inbox/artifacts/relationships plus bridge/voice/memory controls mapped to the canonical runtime DTO. | Panel via session-manager UI. | Not a UI. |
+| Frontend Runtime Visibility | Runtime panel showing plan/todos/runs/workspaces. | Studio now renders the current session as a first-class runtime card alongside subagents, with mode/verifications/approvals/runs/inbox/artifacts/relationships plus voice/memory controls mapped to the canonical runtime DTO. | Panel via session-manager UI. | Not a UI. |
 
 ## Current Parity Status
 
-Clawcross now mirrors most of the Claude-Code-inspired product surface that is practical in a browser-first app: durable runtime store, MCP orchestration, mode gating, permission hooks, subagent control plane, run history, inbox delivery, plan/todo/verification persistence, compacted artifacts, current-session runtime UI, bridge attach/detach, voice state, and Kairos/dream memory plumbing.
+Clawcross now mirrors most of the Claude-Code-inspired product surface that is practical in a browser-first app: durable runtime store, MCP orchestration, mode gating, permission hooks, subagent control plane, run history, inbox delivery, plan/todo/verification persistence, compacted artifacts, current-session runtime UI, voice state, and Kairos/dream memory plumbing.
 
 ## Outstanding Alignments
 
 - **Browser-native polish**: WeBot intentionally adapts Claude Code’s terminal UI into cards, controls, and websocket metadata. It still does not replicate Ink/Yoga/Vim/ANSI semantics.
 - **Automation depth**: Kairos/dream is now callable and persisted, but still lacks a long-running autonomous scheduler equivalent to Claude Code’s always-on assistant mode.
-- **Transport richness**: bridge attach/detach and websocket runtime snapshots are live, but a fuller remote viewer/editor client and more interactive direct-control protocol still remain.
