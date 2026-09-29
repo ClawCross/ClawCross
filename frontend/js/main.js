@@ -3218,160 +3218,10 @@ let _webotPolicyDirty = false;
 let _webotPolicyEditorOpen = false;
 let _webotPolicyLoaded = false;
 let _currentSessionRuntime = null;
-let _webotBridgeSockets = {};
-let _webotBridgeReconnectTimers = {};
-let _webotBridgeDesired = {};
 const SESSION_RUNTIME_PANEL_HEIGHT_KEY = 'clawcrossSessionRuntimePanelHeightV1';
 const SESSION_RUNTIME_PANEL_MIN_HEIGHT = 140;
 const SESSION_RUNTIME_LIST_MIN_HEIGHT = 120;
 let _sessionPanelResizeState = null;
-
-function _weBotBridgeWsUrl(path) {
-    if (!path) return '';
-    if (/^wss?:\/\//i.test(path)) return path;
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const normalized = path.startsWith('/') ? path : `/${path}`;
-    return `${protocol}//${window.location.host}${normalized}`;
-}
-
-function _weBotBridgeSocketLabel(sessionId) {
-    const socket = _webotBridgeSockets[sessionId];
-    if (!socket) return 'idle';
-    switch (socket.readyState) {
-        case WebSocket.CONNECTING:
-            return 'connecting';
-        case WebSocket.OPEN:
-            return 'live';
-        case WebSocket.CLOSING:
-            return 'closing';
-        case WebSocket.CLOSED:
-        default:
-            return 'closed';
-    }
-}
-
-function _clearWeBotBridgeReconnect(sessionId) {
-    if (_webotBridgeReconnectTimers[sessionId]) {
-        clearTimeout(_webotBridgeReconnectTimers[sessionId]);
-        delete _webotBridgeReconnectTimers[sessionId];
-    }
-}
-
-function _closeWeBotBridgeSocket(sessionId, clearDesired = false) {
-    _clearWeBotBridgeReconnect(sessionId);
-    const socket = _webotBridgeSockets[sessionId];
-    if (socket) {
-        socket.onopen = null;
-        socket.onmessage = null;
-        socket.onerror = null;
-        socket.onclose = null;
-        try {
-            socket.close();
-        } catch (e) {
-            console.debug('Failed to close WeBot bridge socket', e);
-        }
-        delete _webotBridgeSockets[sessionId];
-    }
-    if (clearDesired) {
-        delete _webotBridgeDesired[sessionId];
-    }
-}
-
-function _closeAllWeBotBridgeSockets() {
-    Object.keys(_webotBridgeSockets).forEach(sessionId => {
-        _closeWeBotBridgeSocket(sessionId);
-    });
-}
-
-function _storeWeBotRuntimeSnapshot(runtime) {
-    if (!runtime || !runtime.session_id) return;
-    if (runtime.session_id === currentSessionId) {
-        _currentSessionRuntime = runtime;
-        _renderCurrentSessionCard();
-    } else {
-        _subagentRuntimeCache[runtime.session_id] = runtime;
-        _renderSubagentDetail();
-    }
-}
-
-function _scheduleWeBotBridgeReconnect(sessionId, bridgeRecord) {
-    if (!sessionId || !_webotBridgeDesired[sessionId] || !sessionSidebarOpen || !bridgeRecord?.websocket_path) {
-        return;
-    }
-    if (_webotBridgeReconnectTimers[sessionId]) return;
-    _webotBridgeReconnectTimers[sessionId] = setTimeout(() => {
-        delete _webotBridgeReconnectTimers[sessionId];
-        _connectWeBotBridgeSocket(sessionId, bridgeRecord, true);
-    }, 1500);
-}
-
-function _handleWeBotBridgeMessage(sessionId, payload) {
-    if (!payload || typeof payload !== 'object') return;
-    const messageType = String(payload.type || '').toLowerCase();
-    if (messageType === 'runtime_snapshot' || messageType === 'runtime_update') {
-        if (payload.runtime && payload.runtime.session_id) {
-            _storeWeBotRuntimeSnapshot(payload.runtime);
-            if (payload.runtime.session_id === currentSessionId) {
-                _syncWeBotBridgeSocket(currentSessionId, payload.runtime);
-            }
-        }
-        const changedSessionId = payload.changed_session_id || '';
-        if (sessionSidebarOpen && changedSessionId && changedSessionId !== (payload.runtime?.session_id || '')) {
-            void refreshSubagentPanel();
-        }
-    }
-}
-
-function _connectWeBotBridgeSocket(sessionId, bridgeRecord, force = false) {
-    if (!sessionId || !bridgeRecord?.websocket_path) return;
-    const existing = _webotBridgeSockets[sessionId];
-    if (!force && existing && (existing.readyState === WebSocket.CONNECTING || existing.readyState === WebSocket.OPEN)) {
-        return;
-    }
-    _closeWeBotBridgeSocket(sessionId);
-    const socketUrl = _weBotBridgeWsUrl(bridgeRecord.websocket_path);
-    if (!socketUrl) return;
-    const socket = new WebSocket(socketUrl);
-    _webotBridgeSockets[sessionId] = socket;
-    socket.onopen = () => {
-        _clearWeBotBridgeReconnect(sessionId);
-        try {
-            socket.send(JSON.stringify({ type: 'refresh' }));
-        } catch (e) {
-            console.debug('Failed to request WeBot bridge refresh', e);
-        }
-    };
-    socket.onmessage = event => {
-        try {
-            const payload = JSON.parse(event.data || '{}');
-            _handleWeBotBridgeMessage(sessionId, payload);
-        } catch (e) {
-            console.debug('Invalid WeBot bridge payload', e);
-        }
-    };
-    socket.onerror = () => {
-        if (!_webotBridgeDesired[sessionId]) return;
-        _setWeBotPolicyStatus('WeBot bridge socket error', 'error');
-    };
-    socket.onclose = () => {
-        if (_webotBridgeSockets[sessionId] === socket) {
-            delete _webotBridgeSockets[sessionId];
-        }
-        _scheduleWeBotBridgeReconnect(sessionId, bridgeRecord);
-    };
-}
-
-function _syncWeBotBridgeSocket(sessionId, runtime) {
-    if (!sessionId) return;
-    const bridge = runtime?.bridge || {};
-    const primary = bridge.primary || (Array.isArray(bridge.sessions) ? bridge.sessions[0] : null);
-    const shouldConnect = !!_webotBridgeDesired[sessionId] || !!bridge.attached || Number(bridge.connection_count || 0) > 0;
-    if (!primary?.bridge_id || !primary?.websocket_path || !shouldConnect) {
-        _closeWeBotBridgeSocket(sessionId);
-        return;
-    }
-    _connectWeBotBridgeSocket(sessionId, primary);
-}
 
 function _readSessionRuntimePanelHeightPreference() {
     try {
@@ -3663,23 +3513,6 @@ function _buildExtendedSections(runtime, item) {
             </div>
         `);
     }
-    if (runtime?.bridge) {
-        const bridge = runtime.bridge || {};
-        const primary = bridge.primary || (Array.isArray(bridge.sessions) ? bridge.sessions[0] : {}) || {};
-        const canDetach = !!(primary && primary.bridge_id);
-        const socketState = _weBotBridgeSocketLabel(sessionId);
-        sections.push(`
-            <div class="webot-runtime-section">
-                <div class="webot-runtime-title">Bridge</div>
-                <div class="webot-runtime-detail">${_escapeAndFormatText(bridge.status || 'detached')} · socket=${_escapeAndFormatText(socketState)} · clients=${_escapeAndFormatText(String(bridge.connection_count || 0))}</div>
-                <div class="webot-runtime-detail">${_escapeAndFormatText(primary.attach_code ? `attach=${primary.attach_code}` : '')} ${_escapeAndFormatText(primary.role ? `· role=${primary.role}` : '')}</div>
-                <div class="webot-runtime-actions">
-                    <button class="webot-subagent-btn" type="button" onclick="attachWeBotBridge('${encodeURIComponent(sessionId)}')">Attach</button>
-                    ${canDetach ? `<button class="webot-subagent-btn danger" type="button" onclick="detachWeBotBridge('${encodeURIComponent(sessionId)}', '${encodeURIComponent(primary.bridge_id || '')}')">Detach</button>` : ''}
-                </div>
-            </div>
-        `);
-    }
     if (runtime?.voice) {
         const voice = runtime.voice || {};
         sections.push(`
@@ -3810,48 +3643,6 @@ async function applyWeBotWorkflowPreset(sessionId, presetId) {
         await refreshSubagentPanel();
     } catch (e) {
         _setWeBotPolicyStatus(String(e.message || 'Workflow preset apply failed'), 'error');
-    }
-}
-
-async function attachWeBotBridge(sessionId, role = 'viewer') {
-    if (!sessionId) return;
-    try {
-        const resp = await fetch('/proxy_webot_bridge_attach', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({session_id: sessionId, role}),
-        });
-        const data = await resp.json();
-        if (!resp.ok || data.status !== 'success') {
-            throw new Error(data.detail || data.error || 'Bridge attach failed');
-        }
-        _webotBridgeDesired[sessionId] = true;
-        if (data.bridge) {
-            _connectWeBotBridgeSocket(sessionId, data.bridge, true);
-        }
-        await refreshSubagentPanel();
-    } catch (e) {
-        _setWeBotPolicyStatus(String(e.message || 'Bridge attach failed'), 'error');
-    }
-}
-
-async function detachWeBotBridge(sessionId, bridgeId) {
-    if (!sessionId || !bridgeId) return;
-    try {
-        delete _webotBridgeDesired[sessionId];
-        _closeWeBotBridgeSocket(sessionId);
-        const resp = await fetch('/proxy_webot_bridge_detach', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({bridge_id: bridgeId}),
-        });
-        const data = await resp.json();
-        if (!resp.ok || data.status !== 'success') {
-            throw new Error(data.detail || data.error || 'Bridge detach failed');
-        }
-        await refreshSubagentPanel();
-    } catch (e) {
-        _setWeBotPolicyStatus(String(e.message || 'Bridge detach failed'), 'error');
     }
 }
 
@@ -4006,7 +3797,6 @@ async function refreshCurrentSessionRuntime() {
         if (!resp.ok) return;
         const data = await resp.json();
         _currentSessionRuntime = data;
-        _syncWeBotBridgeSocket(data.session_id || currentSessionId, data);
         _renderCurrentSessionCard();
     } catch (e) {
         console.error('Failed to load WeBot session runtime', e);
@@ -4276,7 +4066,6 @@ function _renderCurrentSessionCard() {
     const planItems = runtime.plan?.items || [];
     const todoItems = runtime.todos?.items || [];
     const planCaption = runtime.plan?.title ? `${runtime.plan.title} · ${runtime.plan.status || 'active'}` : '';
-    const hasBridge = Boolean(runtime.bridge);
     const cssPendingApprovals = (runtime.approvals || []).filter(a => a.status === 'pending');
     const csrHasPending = cssPendingApprovals.length > 0;
     const csrApprovalClass = csrHasPending
@@ -4545,7 +4334,6 @@ async function ensureSubagentRuntimeLoaded(agentRef, force = false) {
             throw new Error(data.detail || data.error || t('subagent_runtime_unavailable'));
         }
         _subagentRuntimeCache[item.session_id] = data;
-        _syncWeBotBridgeSocket(item.session_id, data);
     } catch (e) {
         _subagentRuntimeCache[item.session_id] = {
             status: 'error',
@@ -4772,7 +4560,6 @@ async function openSessionSidebar() {
 }
 
 function closeSessionSidebar() {
-    _closeAllWeBotBridgeSockets();
     document.getElementById('session-sidebar').style.display = 'none';
     const overlay = document.getElementById('session-overlay');
     if (overlay) overlay.style.display = 'none';

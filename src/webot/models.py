@@ -89,17 +89,6 @@ class WeBotRunInterruptRequest(WeBotSessionRuntimeRequest):
     agent_ref: str = ""
 
 
-class WeBotBridgeAttachRequest(WeBotSessionRuntimeRequest):
-    role: str = "viewer"
-    label: str = ""
-
-
-class WeBotBridgeDetachRequest(BaseModel):
-    user_id: str
-    password: str = ""
-    bridge_id: str
-
-
 class WeBotVoiceStateUpdateRequest(WeBotSessionRuntimeRequest):
     enabled: bool = False
     auto_read_aloud: bool = False

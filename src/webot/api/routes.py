@@ -5,12 +5,9 @@ WeBot runtime routes for subagent inspection and policy management.
 from typing import Any, Callable
 
 from fastapi import APIRouter, Header
-from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from webot.models import (
     WeBotApprovalResolutionRequest,
-    WeBotBridgeAttachRequest,
-    WeBotBridgeDetachRequest,
     WeBotClaudeKeepaliveUpdateRequest,
     WeBotClaudeKickoffRequest,
     WeBotClaudeProbeRequest,
@@ -33,7 +30,6 @@ from webot.models import (
     WeBotVoiceStateUpdateRequest,
     WeBotWorkflowPresetApplyRequest,
 )
-from webot.bridge import bridge_hub, get_bridge_record_for_user
 from webot.api.service import WeBotService
 
 
@@ -264,20 +260,6 @@ def create_webot_router(
     ):
         return await service.update_voice_state(req, x_internal_token)
 
-    @router.post("/webot/bridge/attach")
-    async def create_bridge_attach(
-        req: WeBotBridgeAttachRequest,
-        x_internal_token: str | None = Header(None),
-    ):
-        return await service.create_bridge_attach(req, x_internal_token)
-
-    @router.post("/webot/bridge/detach")
-    async def detach_bridge(
-        req: WeBotBridgeDetachRequest,
-        x_internal_token: str | None = Header(None),
-    ):
-        return await service.detach_bridge(req, x_internal_token)
-
     @router.post("/webot/kairos")
     async def update_kairos_state(
         req: WeBotKairosUpdateRequest,
@@ -298,53 +280,5 @@ def create_webot_router(
         x_internal_token: str | None = Header(None),
     ):
         return await service.resolve_tool_approval(req, x_internal_token)
-
-    @router.websocket("/webot/ws/{user_id}/{bridge_id}")
-    async def webot_bridge_socket(websocket: WebSocket, user_id: str, bridge_id: str):
-        record = get_bridge_record_for_user(user_id, bridge_id)
-        if record is None:
-            await websocket.close(code=4404)
-            return
-        await bridge_hub.connect(record, websocket)
-        try:
-            snapshot = service._serialize_session_runtime(user_id, record.session_id)
-            await websocket.send_json(
-                {
-                    "type": "connected",
-                    "bridge_id": record.bridge_id,
-                    "session_id": record.session_id,
-                    "role": record.role,
-                }
-            )
-            await websocket.send_json(
-                {
-                    "type": "runtime_snapshot",
-                    "bridge_id": record.bridge_id,
-                    "session_id": record.session_id,
-                    "changed_session_id": record.session_id,
-                    "runtime": snapshot,
-                }
-            )
-            while True:
-                message = await websocket.receive_json()
-                msg_type = str(message.get("type") or "").strip().lower()
-                if msg_type == "ping":
-                    await websocket.send_json({"type": "pong", "bridge_id": record.bridge_id})
-                elif msg_type == "refresh":
-                    await websocket.send_json(
-                        {
-                            "type": "runtime_snapshot",
-                            "bridge_id": record.bridge_id,
-                            "session_id": record.session_id,
-                            "changed_session_id": record.session_id,
-                            "runtime": service._serialize_session_runtime(user_id, record.session_id),
-                        }
-                    )
-                else:
-                    await websocket.send_json({"type": "ack", "bridge_id": record.bridge_id, "message": message})
-        except WebSocketDisconnect:
-            pass
-        finally:
-            await bridge_hub.disconnect(record, websocket)
 
     return router
