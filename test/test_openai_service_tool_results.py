@@ -9,8 +9,8 @@ SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from api.openai_models import ChatCompletionRequest
-from api.openai_service import OpenAIChatService
+from webot.api.openai_models import ChatCompletionRequest
+from webot.api.openai_service import OpenAIChatService
 
 
 class OpenAIServiceToolResultTests(unittest.TestCase):

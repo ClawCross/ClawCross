@@ -8,8 +8,8 @@ OpenAI 兼容 API 路由模块
 
 from fastapi import APIRouter, Header
 
-from api.openai_models import ChatCompletionRequest
-from api.openai_service import OpenAIChatService
+from webot.api.openai_models import ChatCompletionRequest
+from webot.api.openai_service import OpenAIChatService
 
 
 def create_openai_router(*, service: OpenAIChatService) -> APIRouter:

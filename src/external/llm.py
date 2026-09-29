@@ -24,7 +24,7 @@ async def _reply_through_optional_tool(llm, prompt: str, schema: dict, name: str
     """
     from langchain_core.messages import HumanMessage, SystemMessage
 
-    from core.tool_schema import drop_null_optionals, reply_schema_hint, strict_tool_binding, to_strict_parameters
+    from webot.engine.tool_schema import drop_null_optionals, reply_schema_hint, strict_tool_binding, to_strict_parameters
     from services.llm_factory import extract_text
 
     model, strict, bind_kwargs = strict_tool_binding(llm)
@@ -53,7 +53,7 @@ class LlmRuntime(Runtime):
     async def ask(self, agent: Agent, msg: AgentMessage, *, context, mode, tools, response_format, timeout) -> AgentReply:
         from langchain_core.messages import HumanMessage
 
-        from core.tool_schema import forced_tool_choice_supported
+        from webot.engine.tool_schema import forced_tool_choice_supported
         from services.llm_factory import create_chat_model, extract_text
 
         options = agent.config.get("llm") or {}

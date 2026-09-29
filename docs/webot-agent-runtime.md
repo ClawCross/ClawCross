@@ -35,9 +35,9 @@ This document records the current, running WeBot delegated runtime that is now c
 
 | File | Role |
 |---|---|
-| `src/mcp_servers/webot.py` | Model-facing tools: subagents, plan/todo, session inbox, session mode, Claude Code keepalive, runtime artifact logging |
+| `src/webot/tools/webot.py` | Model-facing tools: subagents, plan/todo, session inbox, session mode, Claude Code keepalive, runtime artifact logging |
 | `src/webot/runtime_store.py` | Durable tables for runs, attempts, inbox, artifacts, session state |
-| `src/webot/service.py` | Runtime API that serializes DTO for the frontend and proxies, tracks workspace descriptions, counts inbox/gate details |
+| `src/webot/api/service.py` | Runtime API that serializes DTO for the frontend and proxies, tracks workspace descriptions, counts inbox/gate details |
 | `src/webot/runtime.py` | Utility functions (`normalize_session_mode`, mode messages, stop conditions, max_turn resolution) |
 | `src/webot/lsp.py` | OpenSeek-style best-effort workspace diagnostics used by the `/webot/lsp` API (the agent runs the same checks through `run_command`) |
 | `src/webot/context.py` | Context budgeting, artifact logging for oversized inputs/results, compaction guardrails |
@@ -46,7 +46,7 @@ This document records the current, running WeBot delegated runtime that is now c
 | `src/webot/approval_review.py` | Unified approval broker and independent structured reviewer |
 | `src/webot/approval_actions.py` | Canonical exact execution parameters shared with MCP |
 | `src/webot/policy.py` | Policy normalization, hook/approval parsing, event enumeration |
-| `src/core/agent.py` | Permits MCP tools, enforces tool filtering, injects runtime prompts, loads `webot_runtime` helpers |
+| `src/webot/engine/agent.py` | Permits MCP tools, enforces tool filtering, injects runtime prompts, loads `webot_runtime` helpers |
 | `src/webot/bridge.py` | Browser-native bridge session issuance, websocket connection registry, publish helpers |
 | `src/webot/memory.py` | Per-project memory directories, Kairos state, daily logs, dream summaries |
 | `src/webot/buddy.py` | Deterministic companion generation plus durable reaction state |

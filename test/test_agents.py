@@ -269,7 +269,7 @@ class TestGateway(StoreCase):
                 return SimpleNamespace(ainvoke=mock.AsyncMock(return_value={"content": "x"}))
 
         with mock.patch("services.llm_factory.create_chat_model", lambda **kw: made.update(kw) or Model()), \
-                mock.patch("core.tool_schema.forced_tool_choice_supported", return_value=True):
+                mock.patch("webot.engine.tool_schema.forced_tool_choice_supported", return_value=True):
             reply = self.ask(critic, response_format=reply_format)
         self.assertEqual(json.loads(reply.content), {"content": "x"})
         self.assertEqual(schemas, [{"type": "object", "title": "Reply"}])
@@ -529,7 +529,7 @@ class TestAgentClient(ApiCase):
 class TestOpenAIRouting(StoreCase):
     def setUp(self):
         super().setUp()
-        from api.openai_service import OpenAIChatService
+        from webot.api.openai_service import OpenAIChatService
 
         from teams.store import TeamStore
 
@@ -562,7 +562,7 @@ class TestOpenAIRouting(StoreCase):
         self.assertIn("openclaw", ids)
 
     def test_a_webot_session_is_its_agent_with_its_own_persona_and_tools(self):
-        from core.agent import TeamAgent
+        from webot.engine.agent import TeamAgent
 
         webot = TeamAgent.__new__(TeamAgent)
         self.webot(session="s2", name="Reviewer", persona="你是严谨的审稿人。", tools=["read_file"])

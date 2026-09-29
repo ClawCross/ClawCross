@@ -15,7 +15,7 @@ from typing import Any, Callable, Dict, Optional, Set
 
 from langchain_core.messages import AIMessage, HumanMessage
 
-from api.openai_models import ChatMessage
+from webot.api.openai_models import ChatMessage
 
 
 class OpenAIProtocolHelper:

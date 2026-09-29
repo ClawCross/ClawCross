@@ -15,13 +15,13 @@ from typing import Any, Callable
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-from core.lightweight_agent_runtime import AgentRecursionError
+from webot.engine.lightweight_agent_runtime import AgentRecursionError
 
 from utils.auth_utils import extract_user_password_session, is_internal_bearer, parse_bearer_parts
 from utils.effort_controller import resolve_default_chat_max_output_tokens
 from utils.logging_utils import get_logger
-from api.openai_models import ChatCompletionRequest, ChatMessage, OpenAIExecutionContext
-from api.openai_protocol import OpenAIProtocolHelper
+from webot.api.openai_models import ChatCompletionRequest, ChatMessage, OpenAIExecutionContext
+from webot.api.openai_protocol import OpenAIProtocolHelper
 
 logger = get_logger("openai_service")
 # 默认 500 步上限；可用 env GRAPH_RECURSION_LIMIT 覆盖（调大容长任务，调小更早兜底）。

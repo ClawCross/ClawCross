@@ -130,7 +130,7 @@ def refresh_index(user_id: str, team: str = "") -> None:
         raise ValueError("Memory index cannot use symbolic links")
     entries = list_memory(user_id, team, include_personal=False)
     text = "# Skills Index\n\n" + "\n".join(f"- **{e['name']}**: {e['description']}" for e in entries) + "\n"
-    from mcp_servers.filemanager import _atomic_write_text
+    from webot.tools.filemanager import _atomic_write_text
     _atomic_write_text(str(path), text)
 
 

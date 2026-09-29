@@ -11,14 +11,14 @@
 
 from fastapi import APIRouter, Header
 
-from api.session_models import (
+from webot.api.session_models import (
     CompactSessionRequest,
     DeleteSessionRequest,
     SessionHistoryRequest,
     SessionListRequest,
     SessionStatusRequest,
 )
-from api.session_service import SessionService
+from webot.api.session_service import SessionService
 
 
 def create_session_router(*, service: SessionService) -> APIRouter:

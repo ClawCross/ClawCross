@@ -13,7 +13,7 @@ if str(SRC_DIR) not in sys.path:
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from core.lightweight_agent_runtime import AgentRecursionError, LightweightAgentRuntime
+from webot.engine.lightweight_agent_runtime import AgentRecursionError, LightweightAgentRuntime
 from utils.checkpoint_paths import checkpoint_db_path_for_thread
 from utils.checkpoint_repository import delete_thread_records, delete_thread_records_like, list_thread_ids_by_prefix
 from utils.context_store import ContextStore

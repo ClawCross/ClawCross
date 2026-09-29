@@ -10,7 +10,7 @@ SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from core.agent_runtime_state import TaskRegistry, ThreadStateRegistry
+from webot.engine.agent_runtime_state import TaskRegistry, ThreadStateRegistry
 
 
 class TaskRegistryTests(unittest.IsolatedAsyncioTestCase):

@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from webot import command_sandbox
 from webot.workspace import SessionWorkspace, _ensure_within
-import mcp_servers.commander as commander
+import webot.tools.commander as commander
 
 
 class CommandSandboxTests(unittest.TestCase):

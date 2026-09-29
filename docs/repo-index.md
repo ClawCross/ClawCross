@@ -70,23 +70,23 @@ When the bug is "service does not start" or "route behaves unexpectedly", start 
 
 ### OpenAI-compatible chat API
 
-- `src/api/openai_routes.py`
-- `src/api/openai_service.py`
-- `src/api/openai_models.py`
-- `src/api/openai_protocol.py`
+- `src/webot/api/openai_routes.py`
+- `src/webot/api/openai_service.py`
+- `src/webot/api/openai_models.py`
+- `src/webot/api/openai_protocol.py`
 - `src/services/message_builder.py`
 
 ### Sessions
 
-- `src/api/session_routes.py`
-- `src/api/session_service.py`
-- `src/api/session_models.py`
+- `src/webot/api/session_routes.py`
+- `src/webot/api/session_service.py`
+- `src/webot/api/session_models.py`
 - `src/utils/session_summary.py`
 - `src/utils/checkpoint_repository.py`
 
 ### Agents and their compositions (see `docs/architecture.md`)
 
-- L1 agents: `src/agents/store.py` (the table of all sessions: session number = agent id), `src/agents/gateway.py` (ask / trigger / inbox and the control plane, handed to the agent's runtime), `src/agents/runtime.py` (what a runtime offers), `src/webot/driver.py` and `src/external/` (the runtimes: WeBot, acp, openclaw, http, llm), `src/agents/routes.py` (`/v1/agents`), `src/api/openai_service.py` (`/v1/chat/completions`), `src/api/system_service.py` (`/system_trigger`)
+- L1 agents: `src/agents/store.py` (the table of all sessions: session number = agent id), `src/agents/gateway.py` (ask / trigger / inbox and the control plane, handed to the agent's runtime), `src/agents/runtime.py` (what a runtime offers), `src/webot/driver.py` and `src/external/` (the runtimes: WeBot, acp, openclaw, http, llm), `src/agents/routes.py` (`/v1/agents`), `src/webot/api/openai_service.py` (`/v1/chat/completions`), `src/webot/api/system_service.py` (`/system_trigger`)
 - L2 group chat: `src/comms/store.py` (conversations.db), `src/comms/conversations.py` (post + wake), `src/comms/delivery.py` (wake rule, storm guard, unread digest), `src/groups/`
 - L2 teams: `src/teams/store.py` (members.json in the team folder, `<team>.<name>`), `src/teams/manifest.py` (internal_agents.json / external_agents.json import/export), `src/teams/routes.py` (`/v1/teams`)
 
@@ -98,17 +98,17 @@ When the bug is "service does not start" or "route behaves unexpectedly", start 
 - `src/api/ops_routes.py`
 - `src/api/ops_service.py`
 - `src/api/ops_models.py`
-- `src/api/system_routes.py`
-- `src/api/system_service.py`
-- `src/api/system_models.py`
+- `src/webot/api/system_routes.py`
+- `src/webot/api/system_service.py`
+- `src/webot/api/system_models.py`
 - `src/utils/env_settings.py`
 - `src/utils/user_auth.py`
 - `src/utils/auth_utils.py`
 
 ### Runtime plumbing
 
-- `src/core/agent.py`
-- `src/core/agent_runtime_state.py`
+- `src/webot/engine/agent.py`
+- `src/webot/engine/agent_runtime_state.py`
 - `src/webot/skill_evolution.py`
 - `src/webot/skill_memory.py` — path-free Skill正文 entries via file tools in memory mode
 - `src/webot/context.py`
@@ -120,10 +120,10 @@ When the bug is "service does not start" or "route behaves unexpectedly", start 
 - `src/webot/permission_context.py`
 - `src/webot/policy.py`
 - `src/webot/profiles.py`
-- `src/webot/routes.py`
+- `src/webot/api/routes.py`
 - `src/webot/runtime.py`
 - `src/webot/runtime_store.py`
-- `src/webot/service.py`
+- `src/webot/api/service.py`
 - `src/webot/subagents.py`
 - `src/webot/workspace.py`
 - `src/utils/logging_utils.py`
@@ -180,15 +180,14 @@ Pair these with:
 
 For tool execution or tool exposure:
 
-- `src/mcp_servers/commander.py`
-- `src/mcp_servers/filemanager.py`
-- `src/mcp_servers/oasis.py`
-- `src/mcp_servers/scheduler.py`
-- `src/mcp_servers/search.py`
-- `src/mcp_servers/session.py`
-- `src/mcp_servers/webot.py`
-- `src/mcp_servers/telegram.py`
-- `src/mcp_servers/llmapi.py`
+- `src/webot/tools/commander.py`
+- `src/webot/tools/filemanager.py`
+- `src/webot/tools/oasis.py`
+- `src/webot/tools/scheduler.py`
+- `src/webot/tools/search.py`
+- `src/webot/tools/session.py`
+- `src/webot/tools/webot.py`
+- `src/webot/tools/llmapi.py`
 
 ## ACP Exchange (acpx)
 

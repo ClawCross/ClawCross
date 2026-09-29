@@ -3584,7 +3584,7 @@ except Exception:
 
 # Import YAML→Layout converter (used for on-the-fly layout generation from saved YAML)
 try:
-    from mcp_servers.oasis import _yaml_to_layout_data as _vis_yaml_to_layout
+    from oasis.layout import yaml_to_layout as _vis_yaml_to_layout
 except Exception:
     _vis_yaml_to_layout = None
 

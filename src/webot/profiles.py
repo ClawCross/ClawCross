@@ -22,7 +22,7 @@ import uuid
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 from utils.runtime_paths import USER_FILES_DIR
-from core.tool_aliases import canonical_tool_names
+from webot.engine.tool_aliases import canonical_tool_names
 
 _SLUG_RE = re.compile(r"[^a-z0-9_-]+")
 _SESSION_RE = re.compile(r"^subagent__([a-z0-9_-]+)__([a-z0-9_-]+)$")

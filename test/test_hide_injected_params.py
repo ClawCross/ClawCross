@@ -17,7 +17,7 @@ if str(SRC_DIR) not in sys.path:
 
 from langchain_core.tools import StructuredTool
 
-from core.agent import hide_injected_params
+from webot.engine.agent import hide_injected_params
 
 
 def _tool(name: str, **fields):

@@ -50,7 +50,7 @@ class WebotRuntime(Runtime):
     async def ask(self, agent: Agent, msg: AgentMessage, *, context, mode, tools, response_format, timeout) -> AgentReply:
         from fastapi import HTTPException
 
-        from api.openai_models import ChatCompletionRequest
+        from webot.api.openai_models import ChatCompletionRequest
 
         messages: list[dict] = []
         if msg.instructions:
@@ -70,7 +70,7 @@ class WebotRuntime(Runtime):
             return AgentReply(ok=False, error=str(exc.detail))
 
     async def trigger(self, agent: Agent, msg: AgentMessage, *, context, mode, coalesce_key, on_complete) -> DeliveryReceipt:
-        from api.system_models import SystemTriggerRequest
+        from webot.api.system_models import SystemTriggerRequest
 
         await self.system.run(SystemTriggerRequest(
             user_id=agent.owner,
@@ -84,7 +84,7 @@ class WebotRuntime(Runtime):
 
     async def inbox(self, agent: Agent, msg: AgentMessage, *, context, mode, on_complete) -> DeliveryReceipt:
         """Taken when the session is free, in the session's own mode."""
-        from api.system_models import SystemTriggerRequest
+        from webot.api.system_models import SystemTriggerRequest
 
         await self.system.run(SystemTriggerRequest(
             user_id=agent.owner, session_id=agent.agent_id, text=msg.text,

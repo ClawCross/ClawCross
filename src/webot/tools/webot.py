@@ -11,7 +11,7 @@ This is a first-phase Claude-Code-inspired runtime:
 from __future__ import annotations
 import sys as _sys
 import os as _os
-_src_dir = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+_src_dir = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
 if _src_dir not in _sys.path:
     _sys.path.insert(0, _src_dir)
 
@@ -84,7 +84,7 @@ from webot.subagents import (
 from webot.workspace import describe_session_workspace
 from utils.runtime_paths import ENV_FILE
 
-root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 load_dotenv(dotenv_path=str(ENV_FILE))
 
 mcp = FastMCP("WeBotAgents")

@@ -21,7 +21,7 @@ from starlette.websockets import WebSocketDisconnect
 import webot.memory as memory
 import webot.runtime_store as runtime_store
 from webot.bridge import issue_bridge_session
-from webot.routes import create_webot_router
+from webot.api.routes import create_webot_router
 
 
 class _FakeAgent:

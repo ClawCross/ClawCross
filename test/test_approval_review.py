@@ -293,7 +293,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(store.list_tool_approvals("alice")[0].status, "expired")
 
     async def test_command_gate_consumes_broker_permit_without_second_review(self):
-        from mcp_servers import commander
+        from webot.tools import commander
         with patch.object(review, "run_reviewer", return_value=self.verdict):
             self.assertTrue((await self.authorize(transfer_to_command=True)).allowed)
         with patch.object(commander, "authorize_action") as second_review:
@@ -302,8 +302,8 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         second_review.assert_not_called()
 
     async def test_batch_wait_does_not_issue_early_execution_permits(self):
-        from core.agent import UserAwareToolNode
-        from mcp_servers import commander
+        from webot.engine.agent import UserAwareToolNode
+        from webot.tools import commander
         node = UserAwareToolNode([], lambda: [])
         owner = self
         class Tools:
@@ -328,7 +328,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([m.content for m in result["messages"]], ["ok", "ok"])
 
     async def test_batch_rechecks_an_earlier_approval_after_policy_change(self):
-        from core.agent import UserAwareToolNode
+        from webot.engine.agent import UserAwareToolNode
         node = UserAwareToolNode([], lambda: [])
         node.tool_node = AsyncMock()
         async def reviewer(**kwargs):
@@ -372,7 +372,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(json.loads(payload[1].content)["args"], self.args)
 
     async def test_runtime_overwrites_spoofed_origin_and_assigns_stable_ids(self):
-        from core.lightweight_agent_runtime import LightweightAgentRuntime
+        from webot.engine.lightweight_agent_runtime import LightweightAgentRuntime
         context_store = AsyncMock()
         context_store.load_context.return_value = []
         runtime = LightweightAgentRuntime(call_model=AsyncMock(return_value={"messages": [AIMessage(content="done")]}),

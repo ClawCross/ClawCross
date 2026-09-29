@@ -60,8 +60,8 @@ if "utils.logging_utils" not in sys.modules:
     logging_utils_stub.get_logger = get_logger
     sys.modules["utils.logging_utils"] = logging_utils_stub
 
-from api.session_models import CompactSessionRequest, DeleteSessionRequest, SessionListRequest, SessionStatusRequest
-from api.session_service import SessionService
+from webot.api.session_models import CompactSessionRequest, DeleteSessionRequest, SessionListRequest, SessionStatusRequest
+from webot.api.session_service import SessionService
 
 
 class HumanMessage:
@@ -145,7 +145,7 @@ class SessionServiceTests(unittest.IsolatedAsyncioTestCase):
         )
 
         with patch(
-            "api.session_service.list_thread_ids_by_prefix",
+            "webot.api.session_service.list_thread_ids_by_prefix",
             new=AsyncMock(return_value=["alice#default", "alice#subagent__research__worker1"]),
         ):
             result = await service.list_sessions(SessionListRequest(user_id="alice"), None)
@@ -198,7 +198,7 @@ class SessionServiceTests(unittest.IsolatedAsyncioTestCase):
             extract_text=lambda content: content if isinstance(content, str) else str(content),
         )
 
-        with patch("api.session_service.get_runtime_settings", return_value=SimpleNamespace(context=SimpleNamespace(context_window_tokens=1000000))):
+        with patch("webot.api.session_service.get_runtime_settings", return_value=SimpleNamespace(context=SimpleNamespace(context_window_tokens=1000000))):
             result = await service.session_status(
                 SessionStatusRequest(user_id="alice", session_id="default"), None
             )
@@ -257,11 +257,11 @@ class SessionServiceTests(unittest.IsolatedAsyncioTestCase):
             triggered=True, reason="", view_tokens=300, summary="s", compacted_until=1, view=[],
         )
 
-        with patch("api.session_service.static_compression_view", return_value=[]), patch(
-            "api.session_service.estimate_messages_tokens", return_value=900
-        ), patch("api.session_service.make_llm_summarizer", return_value=None), patch(
-            "api.session_service.resolve_history_token_budget", return_value=64000
-        ), patch("api.session_service.apply_compression", return_value=compression):
+        with patch("webot.api.session_service.static_compression_view", return_value=[]), patch(
+            "webot.api.session_service.estimate_messages_tokens", return_value=900
+        ), patch("webot.api.session_service.make_llm_summarizer", return_value=None), patch(
+            "webot.api.session_service.resolve_history_token_budget", return_value=64000
+        ), patch("webot.api.session_service.apply_compression", return_value=compression):
             result = await service.compact_session(
                 CompactSessionRequest(user_id="alice", session_id="default"), None
             )
@@ -278,8 +278,8 @@ class SessionServiceTests(unittest.IsolatedAsyncioTestCase):
             extract_text=lambda content: content if isinstance(content, str) else str(content),
         )
 
-        with patch("api.session_service.delete_thread_records", new=AsyncMock()) as delete_thread_records:
-            with patch("api.session_service.delete_subagent_by_session", new=Mock()) as delete_subagent_by_session:
+        with patch("webot.api.session_service.delete_thread_records", new=AsyncMock()) as delete_thread_records:
+            with patch("webot.api.session_service.delete_subagent_by_session", new=Mock()) as delete_subagent_by_session:
                 result = await service.delete_session(
                     DeleteSessionRequest(
                         user_id="alice",

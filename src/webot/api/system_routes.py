@@ -9,8 +9,8 @@ from typing import Any, Callable
 
 from fastapi import APIRouter, Header
 
-from api.system_models import SystemTriggerRequest
-from api.system_service import SystemService
+from webot.api.system_models import SystemTriggerRequest
+from webot.api.system_service import SystemService
 
 
 def create_system_router(

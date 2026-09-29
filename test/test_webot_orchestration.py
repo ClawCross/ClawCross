@@ -60,7 +60,7 @@ if "dotenv" not in sys.modules:
 
 import webot.subagents as store
 import webot.runtime_store as runtime_store
-import mcp_servers.webot as mcp_webot
+import webot.tools.webot as mcp_webot
 
 
 class _FakeResponse:
@@ -156,7 +156,7 @@ class WeBotOrchestrationFlowTests(unittest.IsolatedAsyncioTestCase):
             return _FakeAsyncClient(state, delay=0.0)
 
         with patch.object(mcp_webot, "_INTERNAL_TOKEN", "internal-token"), patch(
-            "mcp_servers.webot.httpx.AsyncClient",
+            "webot.tools.webot.httpx.AsyncClient",
             new=_client_factory,
         ):
             result = await mcp_webot.spawn_subagent(
@@ -196,7 +196,7 @@ class WeBotOrchestrationFlowTests(unittest.IsolatedAsyncioTestCase):
             return _FakeAsyncClient(state, delay=0.2)
 
         with patch.object(mcp_webot, "_INTERNAL_TOKEN", "internal-token"), patch(
-            "mcp_servers.webot.httpx.AsyncClient",
+            "webot.tools.webot.httpx.AsyncClient",
             new=_client_factory,
         ):
             await mcp_webot.spawn_subagent(

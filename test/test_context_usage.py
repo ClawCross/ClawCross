@@ -11,8 +11,8 @@ if str(SRC_DIR) not in sys.path:
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import StructuredTool
 
-from core.agent import TeamAgent
-from core.agent_runtime_state import ThreadStateRegistry
+from webot.engine.agent import TeamAgent
+from webot.engine.agent_runtime_state import ThreadStateRegistry
 from utils.checkpoint_repository import (
     delete_thread_records,
     get_context_usage_record,

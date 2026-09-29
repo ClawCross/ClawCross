@@ -20,8 +20,8 @@ if str(SRC_DIR) not in sys.path:
 from langchain_core.messages import AIMessage
 from langchain_core.tools import StructuredTool
 
-from core.agent import TeamAgent, UserAwareToolNode
-from core.tool_aliases import TOOL_ALIASES, canonical_tool_names, resolve_tool_call
+from webot.engine.agent import TeamAgent, UserAwareToolNode
+from webot.engine.tool_aliases import TOOL_ALIASES, canonical_tool_names, resolve_tool_call
 
 MCP_SERVERS = (
     "commander", "filemanager", "llmapi", "oasis", "search",
@@ -32,7 +32,7 @@ MCP_SERVERS = (
 def _current_tool_names() -> set[str]:
     names = set()
     for server in MCP_SERVERS:
-        module = importlib.import_module(f"mcp_servers.{server}")
+        module = importlib.import_module(f"webot.tools.{server}")
         names.update(tool.name for tool in asyncio.run(module.mcp.list_tools()))
     return names
 
@@ -120,9 +120,9 @@ class OldNameCalls(unittest.IsolatedAsyncioTestCase):
 
     async def _run(self, node, calls, **state_extra):
         state = {"session_mode": "bypass", "user_id": "alice", "session_id": "s1", "messages": [AIMessage(content="", tool_calls=calls)], **state_extra}
-        with patch("core.agent.get_session_mode", return_value={"mode": "default"}), \
-                patch("core.agent.resolve_permission_context", side_effect=_allow_all_permission), \
-                patch("core.agent.run_tool_policy_hooks", side_effect=_passthrough_hook_outcome):
+        with patch("webot.engine.agent.get_session_mode", return_value={"mode": "default"}), \
+                patch("webot.engine.agent.resolve_permission_context", side_effect=_allow_all_permission), \
+                patch("webot.engine.agent.run_tool_policy_hooks", side_effect=_passthrough_hook_outcome):
             return await node(state, config={})
 
     async def test_an_old_name_runs_the_replacement(self):

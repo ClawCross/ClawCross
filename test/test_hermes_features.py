@@ -281,7 +281,7 @@ class TestSkillSystem(unittest.TestCase):
         self.assertIn("你是审稿人。", prompt)
 
     def test_agent_user_skills_prompt_uses_managed_skills(self):
-        from core.agent import TeamAgent
+        from webot.engine.agent import TeamAgent
         from webot.skills import create_skill
 
         create_skill("alice", name="deploy-script", content=self._make_skill_content("deploy-script", "Deploy to prod"))
@@ -296,7 +296,7 @@ class TestSkillSystem(unittest.TestCase):
         self.assertNotIn("skills_manifest.json", prompt)
 
     def test_agent_user_skills_prompt_uses_team_and_personal_sections(self):
-        from core.agent import TeamAgent
+        from webot.engine.agent import TeamAgent
         from webot.skills import create_skill
 
         create_skill("alice", name="shared-skill", content=self._make_skill_content("shared-skill", "Shared"))

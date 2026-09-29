@@ -14,7 +14,7 @@ if str(SRC_DIR) not in sys.path:
 
 import httpx
 
-webot = importlib.import_module("mcp_servers.webot")
+webot = importlib.import_module("webot.tools.webot")
 from webot import runtime_store
 
 
