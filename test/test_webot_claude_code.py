@@ -32,44 +32,7 @@ class _FakeAgent:
         return False
 
 
-class WeBotGoalClaudeCodeTests(unittest.TestCase):
-    def test_goal_store_roundtrip_and_heartbeat(self):
-        with TemporaryDirectory() as tmpdir:
-            original_runtime_db_path = runtime_store.DEFAULT_DB_PATH
-            runtime_store.DEFAULT_DB_PATH = Path(tmpdir) / "runtime.db"
-            try:
-                goal = runtime_store.upsert_session_goal(
-                    "alice",
-                    "default",
-                    title="Ship ClawCross control plane",
-                    priority="high",
-                    budget_tokens=1000,
-                    budget_usd=12.5,
-                    metrics={"done": False},
-                )
-                self.assertTrue(goal.goal_id.startswith("goal-"))
-                self.assertEqual(goal.status, "active")
-                self.assertEqual(goal.priority, "high")
-
-                updated = runtime_store.record_goal_heartbeat(
-                    "alice",
-                    goal.goal_id,
-                    heartbeat_status="active",
-                    report="Claude Code probe wired",
-                    spent_tokens_delta=125,
-                    spent_usd_delta=0.75,
-                )
-                self.assertIsNotNone(updated)
-                self.assertEqual(updated.spent_tokens, 125)
-                self.assertAlmostEqual(updated.spent_usd, 0.75)
-                self.assertEqual(updated.last_report, "Claude Code probe wired")
-
-                goals = runtime_store.list_session_goals("alice", "default")
-                self.assertEqual(len(goals), 1)
-                self.assertEqual(goals[0].goal_id, goal.goal_id)
-            finally:
-                runtime_store.DEFAULT_DB_PATH = original_runtime_db_path
-
+class WeBotClaudeCodeTests(unittest.TestCase):
     def test_claude_monitor_reset_parser(self):
         now = datetime(2026, 5, 17, 10, 0, tzinfo=ZoneInfo("UTC"))
         absolute = parse_reset_time("Limit resets at: 11:30 AM", timezone_name="UTC", now=now)
@@ -82,7 +45,7 @@ class WeBotGoalClaudeCodeTests(unittest.TestCase):
         self.assertEqual(duration.hour, 11)
         self.assertEqual(duration.minute, 15)
 
-    def test_routes_expose_goals_and_claude_code_runtime(self):
+    def test_routes_expose_claude_code_runtime(self):
         with TemporaryDirectory() as tmpdir:
             original_runtime_db_path = runtime_store.DEFAULT_DB_PATH
             original_user_files_dir = memory.USER_FILES_DIR
@@ -118,33 +81,6 @@ class WeBotGoalClaudeCodeTests(unittest.TestCase):
                     "webot.api.service.probe_claude_acp", return_value=fake_probe
                 ):
                     with TestClient(app) as client:
-                        created = client.post(
-                            "/webot/session-goals",
-                            json={
-                                "user_id": "alice",
-                                "session_id": "default",
-                                "title": "Verify local Claude Code",
-                                "priority": "critical",
-                                "budget_tokens": 2000,
-                            },
-                        )
-                        self.assertEqual(created.status_code, 200)
-                        goal = created.json()["goal"]
-                        self.assertEqual(goal["priority"], "critical")
-
-                        heartbeat = client.post(
-                            "/webot/session-goals/heartbeat",
-                            json={
-                                "user_id": "alice",
-                                "session_id": "default",
-                                "goal_id": goal["goal_id"],
-                                "report": "ACP probe passed",
-                                "spent_tokens_delta": 50,
-                            },
-                        )
-                        self.assertEqual(heartbeat.status_code, 200)
-                        self.assertEqual(heartbeat.json()["goal"]["spent_tokens"], 50)
-
                         keepalive = client.post(
                             "/webot/claude-code/keepalive",
                             json={
@@ -171,8 +107,6 @@ class WeBotGoalClaudeCodeTests(unittest.TestCase):
                         )
                         self.assertEqual(runtime.status_code, 200)
                         payload = runtime.json()
-                        self.assertEqual(payload["goals"]["active_count"], 1)
-                        self.assertEqual(payload["goals"]["active_goal"]["last_report"], "ACP probe passed")
                         self.assertTrue(payload["claude_code"]["status"]["available"])
                         self.assertTrue(payload["claude_code"]["keepalive"]["enabled"])
             finally:

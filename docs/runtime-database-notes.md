@@ -22,7 +22,7 @@ This document summarizes the runtime-related databases used by Clawcross, what t
 - `data/webot_runtime.db`
   - Legacy store. Existing session rows are copied into the relevant Agent file
     on first access; new rows for the features above are written only to Agent files.
-  - Bridge, goal, and user-level buddy records still use this database.
+  - Active bridge records use this database. Existing goal and buddy rows remain only as inert legacy data.
 
 ## Per-Agent Runtime Tables
 
@@ -42,7 +42,7 @@ This document summarizes the runtime-related databases used by Clawcross, what t
 - Other state tables
   - `webot_session_state`, `webot_session_plans`, `webot_session_todos`
   - `webot_verifications`, `webot_tool_approvals`, `webot_execution_permits`
-  - `webot_memory_state`, `webot_bridge_sessions`, `webot_voice_state`, `webot_buddy_state`
+  - `webot_memory_state`, `webot_voice_state`, `webot_claude_keepalive`
 
 ## Runtime Artifacts: What Is Stored
 
