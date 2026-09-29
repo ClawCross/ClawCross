@@ -33,10 +33,8 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _user_root(user_id: str) -> Path:
-    root = USER_FILES_DIR / (user_id or "anonymous")
-    root.mkdir(parents=True, exist_ok=True)
-    return root
+def _user_root_path(user_id: str) -> Path:
+    return USER_FILES_DIR / (user_id or "anonymous")
 
 
 def _project_slug(user_id: str, session_id: str) -> str:
@@ -80,25 +78,30 @@ def _sync_runtime_store(
     return payload
 
 
+def _memory_dir_path(user_id: str, session_id: str) -> Path:
+    return _user_root_path(user_id) / "projects" / _project_slug(user_id, session_id) / "memory"
+
+
 def get_memory_dir(user_id: str, session_id: str) -> Path:
-    root = _user_root(user_id) / "projects" / _project_slug(user_id, session_id) / "memory"
+    root = _memory_dir_path(user_id, session_id)
     (root / "entries").mkdir(parents=True, exist_ok=True)
     (root / "logs").mkdir(parents=True, exist_ok=True)
     return root
 
 
 def _state_path(user_id: str, session_id: str) -> Path:
-    return get_memory_dir(user_id, session_id) / "state.json"
+    return _memory_dir_path(user_id, session_id) / "state.json"
 
 
 def _index_path(user_id: str, session_id: str) -> Path:
-    return get_memory_dir(user_id, session_id) / "MEMORY.md"
+    return _memory_dir_path(user_id, session_id) / "MEMORY.md"
 
 
-def _daily_log_path(user_id: str, session_id: str, at: datetime | None = None) -> Path:
+def _daily_log_path(user_id: str, session_id: str, at: datetime | None = None, *, create: bool = True) -> Path:
     current = at or _utc_now()
-    log_root = get_memory_dir(user_id, session_id) / "logs" / current.strftime("%Y") / current.strftime("%m")
-    log_root.mkdir(parents=True, exist_ok=True)
+    log_root = _memory_dir_path(user_id, session_id) / "logs" / current.strftime("%Y") / current.strftime("%m")
+    if create:
+        log_root.mkdir(parents=True, exist_ok=True)
     return log_root / f"{current.strftime('%Y-%m-%d')}.md"
 
 
@@ -127,7 +130,9 @@ def _load_state(user_id: str, session_id: str) -> dict[str, Any]:
 def _save_state(user_id: str, session_id: str, state: dict[str, Any]) -> dict[str, Any]:
     payload = dict(state)
     payload["updated_at"] = _utc_now().isoformat()
-    _state_path(user_id, session_id).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    path = _state_path(user_id, session_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return payload
 
 
@@ -178,7 +183,7 @@ def append_memory_entry(
 
 
 def list_memory_entries(user_id: str, session_id: str) -> list[dict[str, Any]]:
-    entry_dir = get_memory_dir(user_id, session_id) / "entries"
+    entry_dir = _memory_dir_path(user_id, session_id) / "entries"
     rows: list[dict[str, Any]] = []
     for path in sorted(entry_dir.glob("*.md"), key=lambda item: item.stat().st_mtime, reverse=True):
         text = path.read_text(encoding="utf-8", errors="replace")
@@ -213,6 +218,7 @@ def refresh_memory_index(user_id: str, session_id: str) -> Path:
     if len(encoded) > _MAX_INDEX_BYTES:
         text = encoded[:_MAX_INDEX_BYTES].decode("utf-8", errors="ignore")
     path = _index_path(user_id, session_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
     return path
 
@@ -245,15 +251,15 @@ def recall_relevant_memories(user_id: str, session_id: str, query: str, limit: i
 def get_memory_state(user_id: str, session_id: str, query: str = "") -> dict[str, Any]:
     state = _load_state(user_id, session_id)
     entries = list_memory_entries(user_id, session_id)
-    relevant = recall_relevant_memories(user_id, session_id, query, limit=5)
+    relevant = recall_relevant_memories(user_id, session_id, query, limit=5) if query else entries[:5]
     return {
         "enabled": True,
         "project_slug": _project_slug(user_id, session_id),
-        "memory_dir": str(get_memory_dir(user_id, session_id)),
+        "memory_dir": str(_memory_dir_path(user_id, session_id)),
         "index_path": str(_index_path(user_id, session_id)),
         "entry_count": len(entries),
         "relevant_entries": relevant,
-        "daily_log_path": str(_daily_log_path(user_id, session_id)),
+        "daily_log_path": str(_daily_log_path(user_id, session_id, create=False)),
         "kairos_enabled": bool(state.get("kairos_enabled", False)),
         "last_dream_at": state.get("last_dream_at", ""),
         "log_entries_since_dream": int(state.get("log_entries_since_dream") or 0),
