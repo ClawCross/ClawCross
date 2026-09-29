@@ -1,9 +1,9 @@
 """
 Persistent runtime primitives for WeBot.
 
-Session-local state lives in ``data/webot_agents/<user>#<agent>.db``. The
-shared ``webot_runtime.db`` retains cross-agent queues and ID-based records;
-old session-local rows are copied lazily when an agent is first accessed.
+Most session-local state lives in ``data/webot_agents/<user>#<agent>.db``.
+``webot_runtime.db`` remains for legacy imports and bridge, goal, and buddy
+records that have not moved into Agent files.
 
 Provides:
 - durable delegated run records and control-plane state
@@ -526,17 +526,24 @@ def _connect(db_path: str | os.PathLike | None = None) -> sqlite3.Connection:
     return conn
 
 
-# Session-local state has one SQLite file per agent. The shared runtime DB
-# remains available for cross-agent queues and ID lookups.
+# Session-local state has one SQLite file per agent. For the tables below, the
+# old shared DB is consulted only for rows written before this layout existed.
 _AGENT_LOCAL_TABLES = (
+    "webot_runs",
+    "webot_run_attempts",
     "webot_session_state",
+    "webot_session_inbox",
+    "webot_runtime_artifacts",
     "webot_session_plans",
     "webot_session_todos",
     "webot_verifications",
+    "webot_tool_approvals",
+    "webot_execution_permits",
     "webot_memory_state",
     "webot_voice_state",
     "webot_claude_keepalive",
 )
+_AGENT_SESSION_COLUMNS = {"webot_session_inbox": "target_session"}
 
 
 def get_agent_runtime_db_path(user_id: str, session_id: str) -> Path:
@@ -561,20 +568,22 @@ def delete_agent_runtime_db(user_id: str, session_id: str) -> None:
         if DEFAULT_DB_PATH.is_file():
             with _connect(DEFAULT_DB_PATH) as conn:
                 for table in _AGENT_LOCAL_TABLES:
+                    session_column = _AGENT_SESSION_COLUMNS.get(table, "session_id")
                     conn.execute(
-                        f"DELETE FROM {table} WHERE user_id = ? AND session_id = ?",
+                        f"DELETE FROM {table} WHERE user_id = ? AND {session_column} = ?",
                         (user_id, session_id),
                     )
                 conn.commit()
 
 
 def delete_agent_runtime_dbs_for_user(user_id: str) -> None:
-    if DEFAULT_DB_PATH != _DEFAULT_SHARED_DB_PATH or not AGENT_RUNTIME_DB_DIR.is_dir():
+    if DEFAULT_DB_PATH != _DEFAULT_SHARED_DB_PATH:
         return
-    prefix = checkpoint_db_name_for_thread(f"{user_id}#")[:-3]
-    for path in AGENT_RUNTIME_DB_DIR.glob("*.db"):
-        if path.name.startswith(prefix):
-            _remove_agent_runtime_file(path)
+    if AGENT_RUNTIME_DB_DIR.is_dir():
+        prefix = checkpoint_db_name_for_thread(f"{user_id}#")[:-3]
+        for path in AGENT_RUNTIME_DB_DIR.glob("*.db"):
+            if path.name.startswith(prefix):
+                _remove_agent_runtime_file(path)
     if DEFAULT_DB_PATH.is_file():
         with _connect(DEFAULT_DB_PATH) as conn:
             for table in _AGENT_LOCAL_TABLES:
@@ -604,12 +613,13 @@ def _connect_agent(
             "(source TEXT PRIMARY KEY, migrated_at TEXT NOT NULL)"
         )
         migrated = conn.execute(
-            "SELECT 1 FROM webot_local_migrations WHERE source = 'shared-v1'"
+            "SELECT 1 FROM webot_local_migrations WHERE source = 'shared-v2'"
         ).fetchone()
         if not migrated and DEFAULT_DB_PATH.is_file():
             legacy = sqlite3.connect(f"file:{DEFAULT_DB_PATH}?mode=ro", uri=True)
             try:
                 for table in _AGENT_LOCAL_TABLES:
+                    session_column = _AGENT_SESSION_COLUMNS.get(table, "session_id")
                     exists = legacy.execute(
                         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
                     ).fetchone()
@@ -620,12 +630,12 @@ def _connect_agent(
                         row[1] for row in legacy.execute(f"PRAGMA table_info({table})")
                         if row[1] in local_cols
                     ]
-                    if not {"user_id", "session_id"} <= set(columns):
+                    if not {"user_id", session_column} <= set(columns):
                         continue
                     selected = ", ".join(columns)
                     placeholders = ", ".join("?" for _ in columns)
                     rows = legacy.execute(
-                        f"SELECT {selected} FROM {table} WHERE user_id=? AND session_id=?",
+                        f"SELECT {selected} FROM {table} WHERE user_id=? AND {session_column}=?",
                         (user_id, session_id),
                     ).fetchall()
                     if rows:
@@ -637,7 +647,7 @@ def _connect_agent(
                 legacy.close()
         if not migrated:
             conn.execute(
-                "INSERT INTO webot_local_migrations (source, migrated_at) VALUES ('shared-v1', ?)",
+                "INSERT INTO webot_local_migrations (source, migrated_at) VALUES ('shared-v2', ?)",
                 (utc_now(),),
             )
         conn.commit()
@@ -647,6 +657,50 @@ def _connect_agent(
         conn.close()
         raise
     return conn
+
+
+def _query_agent_rows(
+    sql: str,
+    params: tuple[Any, ...] | list[Any] = (),
+    *,
+    db_path: str | os.PathLike | None = None,
+    identity: str | None = None,
+) -> list[sqlite3.Row]:
+    """Query agent files, then legacy shared rows, preferring a local copy by ID."""
+    if db_path is not None or DEFAULT_DB_PATH != _DEFAULT_SHARED_DB_PATH:
+        with _connect(db_path) as conn:
+            return conn.execute(sql, params).fetchall()
+    paths = sorted(AGENT_RUNTIME_DB_DIR.glob("*.db")) if AGENT_RUNTIME_DB_DIR.is_dir() else []
+    if DEFAULT_DB_PATH.is_file():
+        paths.append(DEFAULT_DB_PATH)
+    rows: list[sqlite3.Row] = []
+    seen: set[tuple[str, str]] = set()
+    for path in paths:
+        with _connect(path) as conn:
+            for row in conn.execute(sql, params).fetchall():
+                key = (str(row["user_id"]), str(row[identity])) if identity else ("", "")
+                if identity and key in seen:
+                    continue
+                if identity:
+                    seen.add(key)
+                rows.append(row)
+    return rows
+
+
+def _record_session(
+    table: str,
+    id_column: str,
+    record_id: str,
+    user_id: str,
+    *,
+    session_column: str = "session_id",
+    db_path: str | os.PathLike | None = None,
+) -> str | None:
+    rows = _query_agent_rows(
+        f"SELECT {session_column} FROM {table} WHERE {id_column} = ? AND user_id = ? LIMIT 1",
+        (record_id, user_id), db_path=db_path,
+    )
+    return str(rows[0][0]) if rows else None
 
 
 def _json_dumps(value: Any) -> str:
@@ -1136,7 +1190,7 @@ def create_run_record(
 
 
 def upsert_run(record: WeBotRunRecord, db_path: str | os.PathLike | None = None) -> WeBotRunRecord:
-    with _connect(db_path) as conn:
+    with _connect_agent(record.user_id, record.session_id, db_path) as conn:
         conn.execute(
             """
             INSERT INTO webot_runs (
@@ -1199,12 +1253,11 @@ def upsert_run(record: WeBotRunRecord, db_path: str | os.PathLike | None = None)
 
 
 def get_run(run_id: str, user_id: str, db_path: str | os.PathLike | None = None) -> WeBotRunRecord | None:
-    with _connect(db_path) as conn:
-        row = conn.execute(
-            "SELECT * FROM webot_runs WHERE run_id = ? AND user_id = ?",
-            (run_id, user_id),
-        ).fetchone()
-    return _row_to_run(row)
+    rows = _query_agent_rows(
+        "SELECT * FROM webot_runs WHERE run_id = ? AND user_id = ?",
+        (run_id, user_id), db_path=db_path, identity="run_id",
+    )
+    return _row_to_run(rows[0] if rows else None)
 
 
 def list_runs_for_agent(
@@ -1213,17 +1266,11 @@ def list_runs_for_agent(
     db_path: str | os.PathLike | None = None,
     limit: int = 20,
 ) -> list[WeBotRunRecord]:
-    with _connect(db_path) as conn:
-        rows = conn.execute(
-            """
-            SELECT * FROM webot_runs
-            WHERE user_id = ? AND agent_id = ?
-            ORDER BY updated_at DESC
-            LIMIT ?
-            """,
-            (user_id, agent_id, max(1, limit)),
-        ).fetchall()
-    return [_row_to_run(row) for row in rows if row is not None]
+    rows = _query_agent_rows(
+        "SELECT * FROM webot_runs WHERE user_id = ? AND agent_id = ?",
+        (user_id, agent_id), db_path=db_path, identity="run_id",
+    )
+    return sorted((_row_to_run(row) for row in rows), key=lambda item: item.updated_at, reverse=True)[:max(1, limit)]
 
 
 def list_runs_for_session(
@@ -1232,7 +1279,7 @@ def list_runs_for_session(
     db_path: str | os.PathLike | None = None,
     limit: int = 20,
 ) -> list[WeBotRunRecord]:
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         rows = conn.execute(
             """
             SELECT * FROM webot_runs
@@ -1252,28 +1299,13 @@ def list_runs_for_parent_session(
     limit: int = 20,
     run_kind: str | None = None,
 ) -> list[WeBotRunRecord]:
-    with _connect(db_path) as conn:
-        if run_kind:
-            rows = conn.execute(
-                """
-                SELECT * FROM webot_runs
-                WHERE user_id = ? AND parent_session = ? AND run_kind = ?
-                ORDER BY updated_at DESC
-                LIMIT ?
-                """,
-                (user_id, parent_session, run_kind, max(1, limit)),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                """
-                SELECT * FROM webot_runs
-                WHERE user_id = ? AND parent_session = ?
-                ORDER BY updated_at DESC
-                LIMIT ?
-                """,
-                (user_id, parent_session, max(1, limit)),
-            ).fetchall()
-    return [_row_to_run(row) for row in rows if row is not None]
+    sql = "SELECT * FROM webot_runs WHERE user_id = ? AND parent_session = ?"
+    params: tuple[Any, ...] = (user_id, parent_session)
+    if run_kind:
+        sql += " AND run_kind = ?"
+        params += (run_kind,)
+    rows = _query_agent_rows(sql, params, db_path=db_path, identity="run_id")
+    return sorted((_row_to_run(row) for row in rows), key=lambda item: item.updated_at, reverse=True)[:max(1, limit)]
 
 
 def list_child_runs(
@@ -1282,17 +1314,11 @@ def list_child_runs(
     db_path: str | os.PathLike | None = None,
     limit: int = 50,
 ) -> list[WeBotRunRecord]:
-    with _connect(db_path) as conn:
-        rows = conn.execute(
-            """
-            SELECT * FROM webot_runs
-            WHERE user_id = ? AND parent_run_id = ?
-            ORDER BY updated_at DESC
-            LIMIT ?
-            """,
-            (user_id, parent_run_id, max(1, limit)),
-        ).fetchall()
-    return [_row_to_run(row) for row in rows if row is not None]
+    rows = _query_agent_rows(
+        "SELECT * FROM webot_runs WHERE user_id = ? AND parent_run_id = ?",
+        (user_id, parent_run_id), db_path=db_path, identity="run_id",
+    )
+    return sorted((_row_to_run(row) for row in rows), key=lambda item: item.updated_at, reverse=True)[:max(1, limit)]
 
 
 def get_latest_run_for_agent(
@@ -1305,16 +1331,16 @@ def get_latest_run_for_agent(
 
 
 def list_recoverable_runs(db_path: str | os.PathLike | None = None) -> list[WeBotRunRecord]:
-    with _connect(db_path) as conn:
-        rows = conn.execute(
-            """
-            SELECT * FROM webot_runs
-            WHERE status IN ('queued', 'running', 'cancelling')
-              AND run_kind IN ('subagent', 'ultraplan')
-            ORDER BY updated_at ASC
-            """
-        ).fetchall()
-    return [_row_to_run(row) for row in rows if row is not None]
+    rows = _query_agent_rows(
+        "SELECT * FROM webot_runs",
+        db_path=db_path, identity="run_id",
+    )
+    return sorted(
+        (item for item in (_row_to_run(row) for row in rows)
+         if item.status in {"queued", "running", "cancelling"}
+         and item.run_kind in {"subagent", "ultraplan"}),
+        key=lambda item: item.updated_at,
+    )
 
 
 def update_run_status(
@@ -1401,7 +1427,7 @@ def add_run_attempt(
         worker_id=worker_id,
         created_at=utc_now(),
     )
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         conn.execute(
             """
             INSERT INTO webot_run_attempts (
@@ -1446,11 +1472,12 @@ def list_run_attempts(
     if agent_id:
         query.append("AND agent_id = ?")
         params.append(agent_id)
-    query.append("ORDER BY created_at DESC LIMIT ?")
-    params.append(max(1, limit))
-    with _connect(db_path) as conn:
-        rows = conn.execute(" ".join(query), params).fetchall()
-    return [_row_to_attempt(row) for row in rows if row is not None]
+    if session_id:
+        with _connect_agent(user_id, session_id, db_path) as conn:
+            rows = conn.execute(" ".join(query), params).fetchall()
+    else:
+        rows = _query_agent_rows(" ".join(query), params, db_path=db_path, identity="attempt_id")
+    return sorted((_row_to_attempt(row) for row in rows), key=lambda item: item.created_at, reverse=True)[:max(1, limit)]
 
 
 def claim_run_lease(
@@ -1659,7 +1686,7 @@ def create_inbox_message(
         delivered_at="",
         read_at="",
     )
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, record.target_session, db_path) as conn:
         conn.execute(
             """
             INSERT INTO webot_session_inbox (
@@ -1712,19 +1739,19 @@ def list_inbox_messages(
     if limit is not None:
         query.append("LIMIT ?")
         params.append(max(1, limit))
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, target_session, db_path) as conn:
         rows = conn.execute(" ".join(query), params).fetchall()
     return [_row_to_inbox_message(row) for row in rows if row is not None]
 
 
 def list_queued_inbox_targets(*, db_path: str | os.PathLike | None = None) -> list[tuple[str, str]]:
     """Find durable inboxes to resume after the agent service restarts."""
-    with _connect(db_path) as conn:
-        rows = conn.execute(
-            "SELECT DISTINCT user_id, target_session FROM webot_session_inbox "
-            "WHERE delivery_status = 'queued'"
-        ).fetchall()
-    return [(row[0], row[1]) for row in rows]
+    rows = _query_agent_rows(
+        "SELECT message_id, user_id, target_session, delivery_status FROM webot_session_inbox",
+        db_path=db_path, identity="message_id",
+    )
+    return sorted({(row["user_id"], row["target_session"]) for row in rows
+                   if row["delivery_status"] == "queued"})
 
 
 def get_inbox_message(
@@ -1735,7 +1762,7 @@ def get_inbox_message(
     db_path: str | os.PathLike | None = None,
 ) -> InboxMessageRecord | None:
     """A message ID is only readable in its owning user's target session."""
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, target_session, db_path) as conn:
         row = conn.execute(
             "SELECT * FROM webot_session_inbox WHERE user_id = ? AND target_session = ? AND message_id = ?",
             (user_id, target_session, message_id),
@@ -1751,7 +1778,7 @@ def mark_inbox_read(
     db_path: str | os.PathLike | None = None,
 ) -> int:
     """Mark selected or all unread messages read, without crossing a session boundary."""
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, target_session, db_path) as conn:
         selected = set(message_ids) if message_ids is not None else None
         if selected is not None and not selected:
             return 0
@@ -1790,7 +1817,7 @@ def mark_inbox_handled(
 ) -> bool:
     """Atomically mark a synchronous inbox turn delivered and read."""
     now = utc_now()
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, target_session, db_path) as conn:
         cursor = conn.execute(
             "UPDATE webot_session_inbox SET delivery_status = 'delivered', delivered_at = ?, read_at = ? "
             "WHERE user_id = ? AND target_session = ? AND message_id = ? AND delivery_status = 'queued'",
@@ -1811,7 +1838,13 @@ def update_inbox_message_status(
     if not normalized_status:
         return None
     delivered_at = utc_now() if normalized_status == "delivered" else ""
-    with _connect(db_path) as conn:
+    target_session = _record_session(
+        "webot_session_inbox", "message_id", message_id, user_id,
+        session_column="target_session", db_path=db_path,
+    )
+    if target_session is None:
+        return None
+    with _connect_agent(user_id, target_session, db_path) as conn:
         row = conn.execute(
             """
             SELECT * FROM webot_session_inbox
@@ -1865,7 +1898,7 @@ def create_runtime_artifact(
         metadata=dict(metadata or {}),
         created_at=utc_now(),
     )
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         conn.execute(
             """
             INSERT INTO webot_runtime_artifacts (
@@ -1926,7 +1959,7 @@ def update_runtime_artifact(
         metadata=metadata if metadata is not None else record.metadata,
         created_at=record.created_at,
     )
-    return create_runtime_artifact(
+    result = create_runtime_artifact(
         artifact_id=updated.artifact_id,
         user_id=updated.user_id,
         session_id=updated.session_id,
@@ -1938,6 +1971,13 @@ def update_runtime_artifact(
         metadata=updated.metadata,
         db_path=db_path,
     )
+    if (updated.session_id != record.session_id and db_path is None
+            and DEFAULT_DB_PATH == _DEFAULT_SHARED_DB_PATH):
+        with _connect_agent(user_id, record.session_id, db_path) as conn:
+            conn.execute("DELETE FROM webot_runtime_artifacts WHERE artifact_id = ? AND user_id = ?",
+                         (artifact_id, user_id))
+            conn.commit()
+    return result
 
 
 def get_runtime_artifact(
@@ -1945,7 +1985,10 @@ def get_runtime_artifact(
     user_id: str,
     db_path: str | os.PathLike | None = None,
 ) -> RuntimeArtifactRecord | None:
-    with _connect(db_path) as conn:
+    session_id = _record_session("webot_runtime_artifacts", "artifact_id", artifact_id, user_id, db_path=db_path)
+    if session_id is None:
+        return None
+    with _connect_agent(user_id, session_id, db_path) as conn:
         row = conn.execute(
             """
             SELECT * FROM webot_runtime_artifacts
@@ -1972,11 +2015,12 @@ def list_runtime_artifacts(
     if kind:
         query.append("AND kind = ?")
         params.append(kind)
-    query.append("ORDER BY created_at DESC LIMIT ?")
-    params.append(max(1, limit))
-    with _connect(db_path) as conn:
-        rows = conn.execute(" ".join(query), params).fetchall()
-    return [_row_to_artifact(row) for row in rows if row is not None]
+    if session_id:
+        with _connect_agent(user_id, session_id, db_path) as conn:
+            rows = conn.execute(" ".join(query), params).fetchall()
+    else:
+        rows = _query_agent_rows(" ".join(query), params, db_path=db_path, identity="artifact_id")
+    return sorted((_row_to_artifact(row) for row in rows), key=lambda item: item.created_at, reverse=True)[:max(1, limit)]
 
 
 def record_runtime_artifact(
@@ -2024,7 +2068,7 @@ def count_inbox_messages(
     elif status:
         query.append("AND delivery_status = ?")
         params.append(status)
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, target_session, db_path) as conn:
         row = conn.execute(" ".join(query), params).fetchone()
     if row is None:
         return 0
@@ -2923,7 +2967,7 @@ def create_tool_approval_request(
         updated_at=now,
         expires_at=_future_timestamp(hours=expiry_hours),
     )
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         conn.execute(
             """
             INSERT INTO webot_tool_approvals (
@@ -2965,14 +3009,15 @@ def list_tool_approvals(
     if session_id:
         query.append("AND session_id = ?")
         params.append(session_id)
+    if session_id:
+        with _connect_agent(user_id, session_id, db_path) as conn:
+            rows = conn.execute(" ".join(query), params).fetchall()
+    else:
+        rows = _query_agent_rows(" ".join(query), params, db_path=db_path, identity="approval_id")
+    records = [_row_to_approval(row) for row in rows]
     if status:
-        query.append("AND status = ?")
-        params.append(status)
-    query.append("ORDER BY updated_at DESC LIMIT ?")
-    params.append(max(1, limit))
-    with _connect(db_path) as conn:
-        rows = conn.execute(" ".join(query), params).fetchall()
-    return [_row_to_approval(row) for row in rows if row is not None]
+        records = [record for record in records if record.status == status]
+    return sorted(records, key=lambda item: item.updated_at, reverse=True)[:max(1, limit)]
 
 
 def find_active_approval_for_action(
@@ -2984,7 +3029,7 @@ def find_active_approval_for_action(
 ) -> ToolApprovalRecord | None:
     args_hash = _stable_args_hash(tool_name, args or {})
     now = utc_now()
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         row = conn.execute(
             """
             SELECT * FROM webot_tool_approvals
@@ -3011,7 +3056,7 @@ def find_pending_approval_for_action(
 ) -> ToolApprovalRecord | None:
     args_hash = _stable_args_hash(tool_name, args or {})
     now = utc_now()
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         row = conn.execute(
             """
             SELECT * FROM webot_tool_approvals
@@ -3051,7 +3096,10 @@ def update_tool_approval_status(
         if expected_status not in allowed_statuses:
             raise ValueError(f"Invalid expected approval status: {expected_status}")
         allowed_statuses = (expected_status,)
-    with _connect(db_path) as conn:
+    session_id = _record_session("webot_tool_approvals", "approval_id", approval_id, user_id, db_path=db_path)
+    if session_id is None:
+        return None
+    with _connect_agent(user_id, session_id, db_path) as conn:
         updated_at = utc_now()
         placeholders = ",".join("?" for _ in allowed_statuses)
         expiry_condition = "" if status == "expired" else " AND expires_at > ?"
@@ -3082,7 +3130,10 @@ def get_tool_approval(
     user_id: str,
     db_path: str | os.PathLike | None = None,
 ) -> ToolApprovalRecord | None:
-    with _connect(db_path) as conn:
+    session_id = _record_session("webot_tool_approvals", "approval_id", approval_id, user_id, db_path=db_path)
+    if session_id is None:
+        return None
+    with _connect_agent(user_id, session_id, db_path) as conn:
         row = conn.execute(
             """
             SELECT * FROM webot_tool_approvals
@@ -3094,7 +3145,10 @@ def get_tool_approval(
 
 
 def set_approval_review_metadata(approval_id: str, user_id: str, metadata: dict) -> None:
-    with _connect() as conn:
+    session_id = _record_session("webot_tool_approvals", "approval_id", approval_id, user_id)
+    if session_id is None:
+        return
+    with _connect_agent(user_id, session_id) as conn:
         conn.execute(
             "UPDATE webot_tool_approvals SET review_metadata_json = ? WHERE approval_id = ? AND user_id = ? AND status IN ('pending', 'approved')",
             (_json_dumps(metadata), approval_id, user_id),
@@ -3105,7 +3159,10 @@ def set_approval_review_metadata(approval_id: str, user_id: str, metadata: dict)
 def record_tool_execution(approval_id: str, user_id: str, *, status: str, detail: str = "") -> None:
     if not approval_id:
         return
-    with _connect() as conn:
+    session_id = _record_session("webot_tool_approvals", "approval_id", approval_id, user_id)
+    if session_id is None:
+        return
+    with _connect_agent(user_id, session_id) as conn:
         conn.commit()
         conn.execute("BEGIN IMMEDIATE")
         row = conn.execute("SELECT review_metadata_json FROM webot_tool_approvals WHERE approval_id = ? AND user_id = ? AND status = 'used'", (approval_id, user_id)).fetchone()
@@ -3120,7 +3177,7 @@ def issue_execution_permit(user_id: str, session_id: str, tool_name: str, args: 
     from datetime import timedelta
     import uuid
     expires_at = (datetime.now(timezone.utc) + timedelta(seconds=60)).isoformat()
-    with _connect() as conn:
+    with _connect_agent(user_id, session_id) as conn:
         conn.execute("DELETE FROM webot_execution_permits WHERE expires_at <= ? OR consumed = 1", (utc_now(),))
         conn.execute(
             "INSERT INTO webot_execution_permits VALUES (?, ?, ?, ?, ?, ?, ?, 0)",
@@ -3130,7 +3187,7 @@ def issue_execution_permit(user_id: str, session_id: str, tool_name: str, args: 
 
 
 def consume_execution_permit(user_id: str, session_id: str, tool_name: str, args: dict, binding_hash: str) -> bool:
-    with _connect() as conn:
+    with _connect_agent(user_id, session_id) as conn:
         cursor = conn.execute("""
             UPDATE webot_execution_permits SET consumed = 1 WHERE permit_id = (
                 SELECT permit_id FROM webot_execution_permits
