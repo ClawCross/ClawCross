@@ -152,12 +152,12 @@ class TestParticipant(EngineCase):
         self.assertIn("问题", ask["msg"].text)
         self.assertEqual((forum.posts[0].author, forum.posts[0].author_id), ("Builder", self.coder.agent_id))
 
-    def test_an_agent_that_remembers_is_asked_again_for_the_json(self):
+    def test_a_reply_without_the_json_is_posted_as_it_is(self):
         self.fake.replies = ["no json here", REPLY]
         forum = DiscussionForum("t", "问题", "alice")
         asyncio.run(Participant(self.codex, name="Codex").participate(forum))
-        self.assertEqual(len(self.fake.asks), 2)
-        self.assertEqual(forum.posts[0].content, "ok")
+        self.assertEqual(len(self.fake.asks), 1)  # not asked again
+        self.assertEqual(forum.posts[0].content, "no json here")
 
     def test_later_turns_send_only_what_is_new(self):
         participant = Participant(self.codex, name="Codex")

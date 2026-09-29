@@ -34,13 +34,6 @@ from oasis.schemas import OasisChooseOut, OasisReplyOut
 
 logger = logging.getLogger(__name__)
 
-_RETRY_PROMPT = (
-    "你的回复里没有找到 OASIS JSON。请只回复一个 JSON 对象，例如：\n"
-    '{"clawcross_type": "oasis reply", "reply_to": 2, "content": "你的观点", "votes": []}\n'
-    '或选择器节点：{"clawcross_type": "oasis choose", "choose": 1, "content": "理由"}\n'
-    "content 里的换行写成 \\n；choose 必须是给出的路径编号。"
-)
-
 
 async def _ask(agent: Agent, msg: AgentMessage, **kwargs: Any) -> AgentReply:
     """Ask on a worker thread, so a slow agent never stalls the forum."""
@@ -121,10 +114,7 @@ class Participant:
     # ── one turn ─────────────────────────────────────────────────────────
 
     async def _reply(self, text: str, *, is_selector: bool, execute: bool) -> dict | str:
-        """The agent's answer as parsed OASIS JSON, or its raw text when it gives none.
-
-        An agent that remembers the exchange is asked once more for the JSON.
-        """
+        """The agent's answer as parsed OASIS JSON, or its raw text when it gives none."""
         schema = OasisChooseOut if is_selector else OasisReplyOut
         options = {"tools": self.tools, "response_format": schema, "timeout": NO_TIMEOUT if execute else self.timeout}
         reply = await _ask(self.agent, AgentMessage(text=text, instructions=self._identity()), **options)
@@ -133,15 +123,7 @@ class Participant:
         try:
             return _parse_expert_response(reply.content or "")
         except json.JSONDecodeError:
-            if not self._remembers:
-                return reply.content or ""
-        retry = await _ask(self.agent, AgentMessage(text=_RETRY_PROMPT), **options)
-        if not retry.ok:
             return reply.content or ""
-        try:
-            return _parse_expert_response(retry.content or "")
-        except json.JSONDecodeError:
-            return retry.content or ""
 
     async def participate(
         self,
