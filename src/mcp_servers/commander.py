@@ -35,7 +35,7 @@ from utils.mcp_tool_docs import DocumentedFastMCP as FastMCP
 from utils.runtime_paths import ENV_FILE, USER_FILES_DIR
 
 from webot.workspace import resolve_session_workspace
-from webot.command_sandbox import build_srt_command, SandboxUnavailable, SrtCommand
+from webot.command_sandbox import build_srt_command, normalize_escalation, SandboxUnavailable, SrtCommand
 from webot.approval_review import authorize_action, policy_binding
 from webot.approval_actions import canonical_action_args
 from webot.runtime_store import consume_execution_permit, get_session_mode
@@ -159,6 +159,10 @@ DEFAULT_BACKGROUND_READ_CHARS = 12000
 MAX_BACKGROUND_READ_CHARS = 50000
 _BACKGROUND_JOBS: dict[str, "BackgroundJob"] = {}
 _DETACHED_RUNNERS: list[subprocess.Popen] = []
+_SANDBOX_RETRY_HINT = (
+    "沙盒报告了权限拒绝。核对具体路径或域名后，可用同一 run_command 的 "
+    "sandbox_access 与 escalation_target 申请单次提权；本次命令不会自动重跑。"
+)
 
 
 @dataclass
@@ -364,7 +368,7 @@ def main():
             cfg["stderr_path"], "ab", buffering=0
         ) as stderr_handle:
             kwargs = {
-                "shell": True,
+                "shell": not bool(cfg.get("exec_argv")),
                 "cwd": cfg["workspace"],
                 "env": cfg["env"],
                 "stdout": stdout_handle,
@@ -374,7 +378,7 @@ def main():
                 kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
             else:
                 kwargs["start_new_session"] = True
-            proc = subprocess.Popen(cfg["command"], **kwargs)
+            proc = subprocess.Popen(cfg.get("exec_argv") or cfg["command"], **kwargs)
             _write_meta(meta_path, {"child_pid": proc.pid, "status": "running"})
             try:
                 return_code = proc.wait(timeout=int(cfg["timeout_seconds"]))
@@ -411,6 +415,13 @@ def main():
                 "error": str(exc),
             },
         )
+    finally:
+        for path in (cfg.get("sandbox_settings_path"), cfg.get("cleanup_script")):
+            if path:
+                try:
+                    os.unlink(path)
+                except OSError:
+                    pass
     # Terminal meta is written on every path above — push the completion event.
     _notify_done(cfg)
 
@@ -433,7 +444,10 @@ def _write_runner_script(jobs_dir: Path, script: str | None = None, prefix: str 
     return script_path
 
 
-def _launch_detached_background_job(job: BackgroundJob, env: dict[str, str]) -> None:
+def _launch_detached_background_job(
+    job: BackgroundJob, env: dict[str, str], *, sandbox: SrtCommand | None = None,
+    cleanup_script: str = "",
+) -> None:
     jobs_dir = _jobs_dir(job.workspace)
     runner_path = (
         _write_runner_script(jobs_dir, _PTY_RUNNER_SCRIPT, "pty_runner")
@@ -450,6 +464,9 @@ def _launch_detached_background_job(job: BackgroundJob, env: dict[str, str]) -> 
         "timeout_seconds": job.timeout_seconds,
         "job_id": job.job_id,
         "stdin_path": job.stdin_path,
+        "exec_argv": list(sandbox.argv) if sandbox is not None else None,
+        "sandbox_settings_path": str(sandbox.settings_path) if sandbox is not None else "",
+        "cleanup_script": cleanup_script,
     }
     if job.notify_on_done and job.session_id:
         # Loopback push target; main process resolves the session from its
@@ -485,18 +502,28 @@ def _terminate_background_job(job: BackgroundJob) -> None:
             child_pid = int(payload["child_pid"])
     try:
         if IS_WINDOWS:
-            for pid in (child_pid, job.pid):
-                if pid and _pid_is_running(pid):
-                    subprocess.run(
-                        ["taskkill", "/PID", str(pid), "/T", "/F"],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        timeout=10,
-                    )
+            if child_pid and _pid_is_running(child_pid):
+                subprocess.run(
+                    ["taskkill", "/PID", str(child_pid), "/T", "/F"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10,
+                )
         else:
-            for pid in (child_pid, job.pid):
-                if pid and _pid_is_running(pid):
-                    os.killpg(pid, signal.SIGKILL)
+            if child_pid and _pid_is_running(child_pid):
+                os.killpg(child_pid, signal.SIGKILL)
+        # Let the runner observe the child exit and remove its private SRT
+        # policy and Python script before terminating the runner itself.
+        for _ in range(20):
+            fresh = _load_job_from_workspace(job.workspace, job.job_id)
+            if fresh is not None and fresh.status != "running":
+                break
+            time.sleep(0.05)
+        else:
+            if job.pid and _pid_is_running(job.pid):
+                if IS_WINDOWS:
+                    subprocess.run(["taskkill", "/PID", str(job.pid), "/T", "/F"],
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+                else:
+                    os.killpg(job.pid, signal.SIGKILL)
     except Exception:
         for pid in (child_pid, job.pid):
             if pid:
@@ -741,6 +768,10 @@ def _job_summary(job: BackgroundJob) -> str:
         lines.append(f"🚪 exit_code: {job.exit_code}")
     if job.error:
         lines.append(f"⚠️ error: {job.error}")
+    if job.status in {"failed", "completed"}:
+        with contextlib.suppress(OSError):
+            if "<sandbox_violations>" in Path(job.stderr_path).read_text(encoding="utf-8", errors="replace"):
+                lines.append(_SANDBOX_RETRY_HINT)
     lines.append(f"📤 stdout: {job.stdout_path}")
     lines.append(f"📤 stderr: {job.stderr_path}")
     return "\n".join(lines)
@@ -813,7 +844,8 @@ def main():
         pid, master = pty.fork()
         if pid == 0:
             os.chdir(cfg["workspace"])
-            os.execve("/bin/sh", ["/bin/sh", "-c", cfg["command"]], cfg["env"])
+            argv = cfg.get("exec_argv") or ["/bin/sh", "-c", cfg["command"]]
+            os.execvpe(argv[0], argv, cfg["env"])
         try:
             import fcntl
             import struct
@@ -876,6 +908,12 @@ def main():
         os.unlink(fifo_path)
     except OSError:
         pass
+    for path in (cfg.get("sandbox_settings_path"), cfg.get("cleanup_script")):
+        if path:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
     _notify_done(cfg)
 
 
@@ -1019,6 +1057,8 @@ async def _run_foreground(
         parts.append(f"📤 标准输出:\n{out}")
     if err:
         parts.append(f"📤 标准错误:\n{err}")
+    if sandbox is not None and "<sandbox_violations>" in err:
+        parts.append(_SANDBOX_RETRY_HINT)
     if not out and not err:
         parts.append("(无输出)")
     return "\n\n".join(parts)
@@ -1054,6 +1094,9 @@ async def run_command(
     timeout_seconds: int = 0,
     max_output_chars: int = 0,
     notify_on_done: bool = False,
+    sandbox_access: Literal["default", "read_path", "write_path", "network", "host"] = "default",
+    escalation_target: str = "",
+    escalation_reason: str = "",
 ) -> str:
     """
     在会话工作目录中运行 shell 命令或 Python 代码。mode=foreground 等待结束并返回输出；
@@ -1068,6 +1111,9 @@ async def run_command(
     :param timeout_seconds: 超时秒数；0 表示默认值（前台 180，后台和交互至少 300），上限 MAX_EXEC_TIMEOUT
     :param max_output_chars: 前台模式最多返回的输出字符数；0 表示默认值（8000），最小 256
     :param notify_on_done: 后台或交互任务结束后用一条系统消息唤醒本会话并附上状态和输出尾部，无需轮询
+    :param sandbox_access: default 使用当前 SRT 沙盒；read_path / write_path / network 仅放宽一个目标；host 请求本次命令在宿主机运行。提权均需单次审核，不自动重跑失败命令
+    :param escalation_target: read_path/write_path 为已存在的绝对路径，network 为一个域名或域名:端口；default/host 留空
+    :param escalation_reason: 提权时说明所需权限和此前的失败；理由本身不能替代用户授权
     """
     is_python = language == "python"
     interactive = mode == "interactive"
@@ -1075,6 +1121,17 @@ async def run_command(
         return "❌ command 不能为空"
     if interactive and IS_WINDOWS:
         return "❌ 交互模式暂不支持 Windows。"
+    from webot.runtime_settings import get_runtime_settings
+    sandbox_selected = get_runtime_settings(username, session_id or "default").approval.command_sandbox == "srt"
+    if sandbox_access != "default" and not sandbox_selected:
+        return "❌ 沙盒提权请求仅适用于启用 SRT 的会话。"
+    if sandbox_access != "default" and not escalation_reason.strip():
+        return "❌ 沙盒提权需要说明本次请求的原因。"
+    workspace_state = resolve_session_workspace(username, session_id, explicit_cwd=cwd)
+    try:
+        escalation_target = normalize_escalation(sandbox_access, escalation_target, workspace_state.root)
+    except SandboxUnavailable as exc:
+        return f"❌ {exc}"
 
     approval_note = ""
     reject, approval_note = await _command_safety_gate(
@@ -1084,34 +1141,29 @@ async def run_command(
                 "command": command, "language": language, "mode": mode,
                 "cwd": cwd, "session_id": session_id, "timeout_seconds": timeout_seconds,
                 "max_output_chars": max_output_chars, "notify_on_done": notify_on_done,
+                "sandbox_access": sandbox_access, "escalation_target": escalation_target,
+                "escalation_reason": escalation_reason,
             },
     )
     if reject:
         return reject
 
-    workspace_state = resolve_session_workspace(username, session_id, explicit_cwd=cwd)
     workspace = str(workspace_state.cwd)
 
     try:
-        from webot.runtime import effective_session_mode
-        from webot.runtime_settings import get_runtime_settings
-        use_srt = (
-            effective_session_mode(username, session_id or "default") == "auto"
-            and get_runtime_settings(username, session_id or "default").approval.command_sandbox == "srt"
-        )
-        if use_srt and mode != "foreground":
-            return "❌ Auto SRT 沙盒目前只支持前台命令；后台和交互命令不会回退宿主机。"
+        use_srt = sandbox_selected and sandbox_access != "host"
         if mode == "foreground":
             if use_srt:
                 script = _write_python_script(workspace, command) if is_python else ""
                 sandbox = None
                 try:
                     try:
-                        sandbox = await asyncio.to_thread(
-                            build_srt_command, root=workspace_state.root,
+                        sandbox = build_srt_command(
+                            root=workspace_state.root,
                             cwd=workspace_state.cwd, command=command, language=language,
                             python_executable=_python_cmd(),
                             script_path=Path(script) if script else None,
+                            access=sandbox_access, target=escalation_target,
                         )
                     except SandboxUnavailable as exc:
                         return f"❌ {exc}"
@@ -1145,12 +1197,26 @@ async def run_command(
                         os.remove(script)
 
         shell_command = command
+        script = ""
+        sandbox = None
+        launched = False
         if is_python:
             script = _write_python_script(workspace, command)
             shell_command = _quote_command([_python_cmd(), *(["-i"] if interactive else []), script])
-        job_id = uuid.uuid4().hex[:12]
-        jobs_dir = _jobs_dir(workspace)
-        job = BackgroundJob(
+        try:
+            if use_srt:
+                try:
+                    sandbox = build_srt_command(
+                        root=workspace_state.root, cwd=workspace_state.cwd,
+                        command=command, language=language, python_executable=_python_cmd(),
+                        script_path=Path(script) if script else None, interactive=interactive,
+                        access=sandbox_access, target=escalation_target,
+                    )
+                except SandboxUnavailable as exc:
+                    return f"❌ {exc}"
+            job_id = uuid.uuid4().hex[:12]
+            jobs_dir = _jobs_dir(workspace)
+            job = BackgroundJob(
             job_id=job_id,
             username=username,
             command=shell_command,
@@ -1164,16 +1230,26 @@ async def run_command(
             notify_on_done=bool(notify_on_done),
             interactive=interactive,
             stdin_path=str(jobs_dir / f"{job_id}.stdin") if interactive else "",
-        )
-        Path(job.stdout_path).write_text("", encoding="utf-8")
-        Path(job.stderr_path).write_text("", encoding="utf-8")
-        _persist_job(job)
-        env = _sandbox_env(workspace, username)
-        if interactive:
-            # The basic REPL echoes plain lines; the default one redraws the
-            # input line on every keystroke, which reads as noise.
-            env["PYTHON_BASIC_REPL"] = "1"
-        _launch_detached_background_job(job, env)
+            )
+            Path(job.stdout_path).write_text("", encoding="utf-8")
+            Path(job.stderr_path).write_text("", encoding="utf-8")
+            _persist_job(job)
+            env = _sandbox_env(workspace, username)
+            if interactive:
+                # The basic REPL echoes plain lines; the default one redraws the
+                # input line on every keystroke, which reads as noise.
+                env["PYTHON_BASIC_REPL"] = "1"
+            if sandbox is not None:
+                env["PATH"] = os.environ.get("PATH", env["PATH"])
+                env["TMPDIR"] = str(sandbox.settings_path.parent)
+            _launch_detached_background_job(job, env, sandbox=sandbox, cleanup_script=script)
+            launched = True
+        finally:
+            if not launched:
+                if sandbox is not None:
+                    sandbox.settings_path.unlink(missing_ok=True)
+                if script:
+                    Path(script).unlink(missing_ok=True)
         _BACKGROUND_JOBS[job_id] = job
         if job.notify_on_done and job.session_id:
             # 登记待通知指针；由长驻的 mainagent.background_notify_loop 在任务达终态时

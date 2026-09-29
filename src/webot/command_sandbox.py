@@ -7,6 +7,7 @@ constructs a bounded SRT process with an explicit, per-command policy.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -24,6 +25,48 @@ class SandboxUnavailable(RuntimeError):
 class SrtCommand:
     argv: tuple[str, ...]
     settings_path: Path
+
+
+_PRIVATE_NAMES = (
+    ".ssh", ".aws", ".gnupg", ".kube", ".docker", ".claude", ".codex",
+    ".npmrc", ".pypirc", ".config/gcloud",
+)
+
+
+def normalize_escalation(access: str, target: str, root: Path) -> str:
+    """Keep each SRT exception to one explicit path or domain."""
+    if access in {"default", "host"}:
+        if target.strip():
+            raise SandboxUnavailable("该权限等级不接受额外目标。")
+        return ""
+    if access == "network":
+        domain = target.strip().lower()
+        if not re.fullmatch(r"[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::[0-9]{1,5})?", domain) or ".." in domain:
+            raise SandboxUnavailable("网络提权只能指定一个域名或域名:端口，不接受通配符、URL 或 IP 范围。")
+        host = domain.split(":", 1)[0]
+        try:
+            address = ipaddress.ip_address(host)
+        except ValueError:
+            address = None
+        if host == "localhost" or (address is not None and not address.is_global):
+            raise SandboxUnavailable("本地服务不能通过网络域名提权；需要单独审核宿主机权限。")
+        return domain
+    if access not in {"read_path", "write_path"}:
+        raise SandboxUnavailable("不支持的沙盒权限等级。")
+    path = Path(target.strip()).expanduser()
+    if not path.is_absolute() or not path.exists():
+        raise SandboxUnavailable("路径提权需要指定一个已存在的绝对文件或目录。")
+    path = path.resolve()
+    root = root.resolve()
+    home = Path.home().resolve()
+    if path == Path("/") or root.is_relative_to(path) or path.is_relative_to(root):
+        raise SandboxUnavailable("路径提权仅用于工作区外的具体目标，不能指定工作区或其上级目录。")
+    if path == home or home.is_relative_to(path) or any(
+        path.is_relative_to(private) or private.is_relative_to(path)
+        for private in (home / name for name in _PRIVATE_NAMES)
+    ):
+        raise SandboxUnavailable("常见凭据目录或其上级目录不能作为路径提权目标。")
+    return str(path)
 
 
 def _srt_binary() -> str:
@@ -58,19 +101,20 @@ def _srt_binary() -> str:
     return binary
 
 
-def _policy(root: Path, settings_path: Path) -> dict:
+def _policy(root: Path, settings_path: Path, *, access: str = "default", target: str = "") -> dict:
     home = Path.home().resolve()
-    private_names = (
-        ".ssh", ".aws", ".gnupg", ".kube", ".docker", ".claude", ".codex",
-        ".npmrc", ".pypirc", ".config/gcloud",
-    )
-    deny_read = [str(path) for name in private_names if (path := home / name).exists()]
+    deny_read = [str(home)]
+    deny_read.extend(str(path) for name in _PRIVATE_NAMES if (path := home / name).exists())
     deny_read.append(str(settings_path))
     allow_read = list(dict.fromkeys(str(path.resolve()) for path in (root, Path(sys.prefix), Path(sys.base_prefix))))
     allow_write = list(dict.fromkeys((str(root), str(Path(tempfile.gettempdir()).resolve()))))
+    if access in {"read_path", "write_path"}:
+        allow_read.append(target)
+    if access == "write_path":
+        allow_write.append(target)
     return {
         "network": {
-            "allowedDomains": [], "deniedDomains": [],
+            "allowedDomains": [target] if access == "network" else [], "deniedDomains": [],
             "allowUnixSockets": [], "allowLocalBinding": False,
         },
         "filesystem": {
@@ -84,15 +128,18 @@ def _policy(root: Path, settings_path: Path) -> dict:
 
 
 def build_srt_command(*, root: Path, cwd: Path, command: str, language: str,
-                      python_executable: str, script_path: Path | None = None) -> SrtCommand:
+                      python_executable: str, script_path: Path | None = None,
+                      interactive: bool = False, access: str = "default",
+                      target: str = "") -> SrtCommand:
     """Create an SRT invocation with a private settings file; never use a host shell."""
     root, cwd = root.resolve(), cwd.resolve()
     if not cwd.is_relative_to(root):
         raise SandboxUnavailable("命令工作目录超出会话工作区。")
+    target = normalize_escalation(access, target, root)
     if language == "python":
         if script_path is None or not script_path.resolve().is_relative_to(root):
             raise SandboxUnavailable("Python 脚本超出会话工作区。")
-        wrapped = [python_executable, str(script_path.resolve())]
+        wrapped = [python_executable, *(["-i"] if interactive else []), str(script_path.resolve())]
     elif language == "shell":
         if os.name == "nt":
             wrapped = [os.environ.get("COMSPEC", "cmd.exe"), "/c", command]
@@ -105,7 +152,7 @@ def build_srt_command(*, root: Path, cwd: Path, command: str, language: str,
     settings_path = Path(raw_path)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(_policy(root, settings_path), handle, ensure_ascii=False)
+            json.dump(_policy(root, settings_path, access=access, target=target), handle, ensure_ascii=False)
         return SrtCommand((binary, "--settings", str(settings_path), "--", *wrapped), settings_path)
     except BaseException:
         settings_path.unlink(missing_ok=True)
