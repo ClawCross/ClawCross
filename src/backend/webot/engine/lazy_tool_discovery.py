@@ -141,7 +141,7 @@ class LazyToolRegistry:
         Only includes names and short descriptions, not full schemas.
         This reduces prompt size significantly.
         """
-        lines = ["Available tools (use search_tools to discover more details):"]
+        lines = ["Long-tail tools available through tool_call. Use tool_search for their parameters:"]
 
         # Group by category
         by_category: dict[str, list[ToolRegistryEntry]] = {}
@@ -197,12 +197,19 @@ class LazyToolRegistry:
             if name in self._full_tools
         ]
 
-    def search_tools(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
+    @property
+    def always_loaded_names(self) -> frozenset[str]:
+        return frozenset(self._always_loaded)
+
+    def search_tools(self, query: str, limit: int = 10,
+                     enabled_names: set[str] | None = None) -> list[dict[str, Any]]:
         """
         Search for tools by keyword.
 
         Returns matching tools with name, description, category, and tags.
         """
+        entries = [entry for entry in self._entries.values()
+                   if enabled_names is None or entry.name in enabled_names]
         if not query:
             return [
                 {
@@ -211,19 +218,19 @@ class LazyToolRegistry:
                     "category": e.category,
                     "tags": list(e.tags),
                 }
-                for e in sorted(self._entries.values(), key=lambda e: e.name)[:limit]
+                for e in sorted(entries, key=lambda e: e.name)[:limit]
             ]
 
-        query_tokens = set(re.findall(r"[a-z0-9_]+", query.lower()))
+        query_tokens = set(re.findall(r"[a-z0-9_]+|[\u3400-\u9fff]", query.lower()))
         scored: list[tuple[int, ToolRegistryEntry]] = []
 
-        for entry in self._entries.values():
+        for entry in entries:
             haystack = f"{entry.name} {entry.description} {entry.category} {' '.join(entry.tags)}".lower()
             score = sum(1 for token in query_tokens if token in haystack)
             if score > 0:
                 scored.append((score, entry))
 
-        scored.sort(key=lambda x: x[0], reverse=True)
+        scored.sort(key=lambda x: (-x[0], x[1].name))
         return [
             {
                 "name": e.name,
