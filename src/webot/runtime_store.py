@@ -1,6 +1,10 @@
 """
 Persistent runtime primitives for WeBot.
 
+Session-local state lives in ``data/webot_agents/<user>#<agent>.db``. The
+shared ``webot_runtime.db`` retains cross-agent queues and ID-based records;
+old session-local rows are copied lazily when an agent is first accessed.
+
 Provides:
 - durable delegated run records and control-plane state
 - run attempt timelines
@@ -25,9 +29,14 @@ from typing import Any
 import uuid
 
 from utils.runtime_paths import DATA_DIR
+from utils.checkpoint_paths import checkpoint_db_name_for_thread, checkpoint_db_path_for_thread
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_DB_PATH = DATA_DIR / "webot_runtime.db"
+_DEFAULT_SHARED_DB_PATH = DATA_DIR / "webot_runtime.db"
+DEFAULT_DB_PATH = _DEFAULT_SHARED_DB_PATH
+AGENT_RUNTIME_DB_DIR = DATA_DIR / "webot_agents"
+_INITIALIZED_DB_FILES: set[tuple[str, int]] = set()
+_MIGRATED_AGENT_DB_FILES: set[tuple[str, int]] = set()
 
 
 class _ClosingConnection(sqlite3.Connection):
@@ -81,8 +90,15 @@ def get_runtime_db_path(db_path: str | os.PathLike | None = None) -> Path:
 
 
 def _connect(db_path: str | os.PathLike | None = None) -> sqlite3.Connection:
-    conn = sqlite3.connect(get_runtime_db_path(db_path), factory=_ClosingConnection)
+    path = get_runtime_db_path(db_path)
+    conn = sqlite3.connect(path, timeout=30, factory=_ClosingConnection)
     conn.row_factory = sqlite3.Row
+    # Schema migration belongs to the first open of a database file, not
+    # every read. In particular, the legacy inbox UPDATE below must not run
+    # for every status lookup in a model turn.
+    file_key = (str(path.resolve()), path.stat().st_ino)
+    if file_key in _INITIALIZED_DB_FILES:
+        return conn
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS webot_runs (
@@ -505,6 +521,131 @@ def _connect(db_path: str | os.PathLike | None = None) -> sqlite3.Connection:
         WHERE delivery_status = 'pending'
         """
     )
+    conn.commit()
+    _INITIALIZED_DB_FILES.add(file_key)
+    return conn
+
+
+# Session-local state has one SQLite file per agent. The shared runtime DB
+# remains available for cross-agent queues and ID lookups.
+_AGENT_LOCAL_TABLES = (
+    "webot_session_state",
+    "webot_session_plans",
+    "webot_session_todos",
+    "webot_verifications",
+    "webot_memory_state",
+    "webot_voice_state",
+    "webot_claude_keepalive",
+)
+
+
+def get_agent_runtime_db_path(user_id: str, session_id: str) -> Path:
+    return checkpoint_db_path_for_thread(f"{user_id}#{session_id}", AGENT_RUNTIME_DB_DIR)
+
+
+def _remove_agent_runtime_file(path: Path) -> None:
+    resolved = str(path.resolve())
+    _INITIALIZED_DB_FILES.difference_update(
+        [key for key in _INITIALIZED_DB_FILES if key[0] == resolved]
+    )
+    _MIGRATED_AGENT_DB_FILES.difference_update(
+        [key for key in _MIGRATED_AGENT_DB_FILES if key[0] == resolved]
+    )
+    for suffix in ("", "-wal", "-shm", "-journal"):
+        Path(f"{path}{suffix}").unlink(missing_ok=True)
+
+
+def delete_agent_runtime_db(user_id: str, session_id: str) -> None:
+    if DEFAULT_DB_PATH == _DEFAULT_SHARED_DB_PATH:
+        _remove_agent_runtime_file(get_agent_runtime_db_path(user_id, session_id))
+        if DEFAULT_DB_PATH.is_file():
+            with _connect(DEFAULT_DB_PATH) as conn:
+                for table in _AGENT_LOCAL_TABLES:
+                    conn.execute(
+                        f"DELETE FROM {table} WHERE user_id = ? AND session_id = ?",
+                        (user_id, session_id),
+                    )
+                conn.commit()
+
+
+def delete_agent_runtime_dbs_for_user(user_id: str) -> None:
+    if DEFAULT_DB_PATH != _DEFAULT_SHARED_DB_PATH or not AGENT_RUNTIME_DB_DIR.is_dir():
+        return
+    prefix = checkpoint_db_name_for_thread(f"{user_id}#")[:-3]
+    for path in AGENT_RUNTIME_DB_DIR.glob("*.db"):
+        if path.name.startswith(prefix):
+            _remove_agent_runtime_file(path)
+    if DEFAULT_DB_PATH.is_file():
+        with _connect(DEFAULT_DB_PATH) as conn:
+            for table in _AGENT_LOCAL_TABLES:
+                conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
+            conn.commit()
+
+
+def _connect_agent(
+    user_id: str, session_id: str, db_path: str | os.PathLike | None = None,
+) -> sqlite3.Connection:
+    """Open one agent's DB, importing its old shared rows once on first use."""
+    if db_path is not None:
+        return _connect(db_path)
+    # An explicit runtime-store override (used by isolated deployments and
+    # callers that supply a temporary DB) must remain authoritative.
+    if DEFAULT_DB_PATH != _DEFAULT_SHARED_DB_PATH:
+        return _connect(DEFAULT_DB_PATH)
+    path = get_agent_runtime_db_path(user_id, session_id)
+    conn = _connect(path)
+    file_key = (str(path.resolve()), path.stat().st_ino)
+    if file_key in _MIGRATED_AGENT_DB_FILES:
+        return conn
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS webot_local_migrations "
+            "(source TEXT PRIMARY KEY, migrated_at TEXT NOT NULL)"
+        )
+        migrated = conn.execute(
+            "SELECT 1 FROM webot_local_migrations WHERE source = 'shared-v1'"
+        ).fetchone()
+        if not migrated and DEFAULT_DB_PATH.is_file():
+            legacy = sqlite3.connect(f"file:{DEFAULT_DB_PATH}?mode=ro", uri=True)
+            try:
+                for table in _AGENT_LOCAL_TABLES:
+                    exists = legacy.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+                    ).fetchone()
+                    if not exists:
+                        continue
+                    local_cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+                    columns = [
+                        row[1] for row in legacy.execute(f"PRAGMA table_info({table})")
+                        if row[1] in local_cols
+                    ]
+                    if not {"user_id", "session_id"} <= set(columns):
+                        continue
+                    selected = ", ".join(columns)
+                    placeholders = ", ".join("?" for _ in columns)
+                    rows = legacy.execute(
+                        f"SELECT {selected} FROM {table} WHERE user_id=? AND session_id=?",
+                        (user_id, session_id),
+                    ).fetchall()
+                    if rows:
+                        conn.executemany(
+                            f"INSERT OR IGNORE INTO {table} ({selected}) VALUES ({placeholders})",
+                            rows,
+                        )
+            finally:
+                legacy.close()
+        if not migrated:
+            conn.execute(
+                "INSERT INTO webot_local_migrations (source, migrated_at) VALUES ('shared-v1', ?)",
+                (utc_now(),),
+            )
+        conn.commit()
+        _MIGRATED_AGENT_DB_FILES.add(file_key)
+    except Exception:
+        conn.rollback()
+        conn.close()
+        raise
     return conn
 
 
@@ -1423,7 +1564,7 @@ def save_session_state(
     normalized_mode = normalize_session_mode(mode)
     normalized_status = (status or "active").strip().lower() or "active"
     now = utc_now()
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         conn.execute(
             """
             INSERT INTO webot_session_state (
@@ -1454,7 +1595,7 @@ def get_session_state(
     session_id: str,
     db_path: str | os.PathLike | None = None,
 ) -> SessionStateRecord:
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         row = conn.execute(
             """
             SELECT * FROM webot_session_state
@@ -2150,7 +2291,7 @@ def save_session_plan(
     normalized_status = (status or "active").strip().lower()
     if normalized_status not in {"active", "completed", "archived"}:
         normalized_status = "active"
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         conn.execute(
             """
             INSERT INTO webot_session_plans (
@@ -2182,7 +2323,7 @@ def get_session_plan(
     session_id: str,
     db_path: str | os.PathLike | None = None,
 ) -> dict[str, Any] | None:
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         row = conn.execute(
             """
             SELECT title, status, items_json, metadata_json, updated_at, created_at
@@ -2212,7 +2353,7 @@ def delete_session_plan(
     session_id: str,
     db_path: str | os.PathLike | None = None,
 ) -> int:
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         cursor = conn.execute(
             """
             DELETE FROM webot_session_plans
@@ -2233,7 +2374,7 @@ def save_session_todos(
 ) -> None:
     now = utc_now()
     normalized_items = _normalize_plan_items(items)
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         conn.execute(
             """
             INSERT INTO webot_session_todos (
@@ -2259,7 +2400,7 @@ def get_session_todos(
     session_id: str,
     db_path: str | os.PathLike | None = None,
 ) -> dict[str, Any] | None:
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         row = conn.execute(
             """
             SELECT items_json, updated_at, created_at
@@ -2286,7 +2427,7 @@ def delete_session_todos(
     session_id: str,
     db_path: str | os.PathLike | None = None,
 ) -> int:
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         cursor = conn.execute(
             """
             DELETE FROM webot_session_todos
@@ -2536,7 +2677,7 @@ def get_claude_keepalive_state(
     session_id: str,
     db_path: str | os.PathLike | None = None,
 ) -> ClaudeKeepaliveRecord:
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         row = conn.execute(
             """
             SELECT * FROM webot_claude_keepalive
@@ -2599,7 +2740,7 @@ def save_claude_keepalive_state(
         updated_at=now,
         created_at=existing.created_at or now,
     )
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         conn.execute(
             """
             INSERT INTO webot_claude_keepalive (
@@ -2713,7 +2854,7 @@ def add_verification_record(
     details: str,
     db_path: str | os.PathLike | None = None,
 ) -> None:
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         conn.execute(
             """
             INSERT INTO webot_verifications (
@@ -2740,7 +2881,7 @@ def list_verification_records(
     limit: int = 20,
     db_path: str | os.PathLike | None = None,
 ) -> list[dict[str, str]]:
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         rows = conn.execute(
             """
             SELECT verification_id, title, status, details, created_at
@@ -3017,7 +3158,7 @@ def save_memory_state(
     db_path: str | os.PathLike | None = None,
 ) -> MemoryStateRecord:
     now = utc_now()
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         conn.execute(
             """
             INSERT INTO webot_memory_state (
@@ -3066,7 +3207,7 @@ def get_memory_state(
     session_id: str,
     db_path: str | os.PathLike | None = None,
 ) -> MemoryStateRecord:
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         row = conn.execute(
             "SELECT * FROM webot_memory_state WHERE user_id = ? AND session_id = ?",
             (user_id, session_id),
@@ -3201,7 +3342,7 @@ def save_voice_state(
     db_path: str | os.PathLike | None = None,
 ) -> VoiceStateRecord:
     now = utc_now()
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         conn.execute(
             """
             INSERT INTO webot_voice_state (
@@ -3248,7 +3389,7 @@ def get_voice_state(
     session_id: str,
     db_path: str | os.PathLike | None = None,
 ) -> VoiceStateRecord:
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         row = conn.execute(
             "SELECT * FROM webot_voice_state WHERE user_id = ? AND session_id = ?",
             (user_id, session_id),

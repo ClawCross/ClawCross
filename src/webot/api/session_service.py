@@ -25,6 +25,7 @@ from webot.compression import apply_compression, make_llm_summarizer, static_com
 from webot.profiles import is_subagent_session
 from webot.runtime_settings import get_runtime_settings, resolve_context_window, resolve_context_history_budget, context_usage_with_window
 from webot.runtime import effective_session_mode
+from webot.runtime_store import delete_agent_runtime_db, delete_agent_runtime_dbs_for_user
 from webot.subagents import delete_subagent_by_session, delete_subagents_for_user
 
 logger = get_logger("session_service")
@@ -326,6 +327,7 @@ class SessionService:
         await self.agent.cancel_task(thread_id)
         await self._close_thread_checkpoints([thread_id])
         await delete_thread_records(self.db_path, thread_id)
+        delete_agent_runtime_db(user_id, session_id)
         if is_subagent_session(session_id):
             delete_subagent_by_session(user_id, session_id)
 
@@ -353,6 +355,7 @@ class SessionService:
             await self._close_thread_checkpoints(thread_ids)
             pattern = f"{req.user_id}#%"
             await delete_thread_records_like(self.db_path, pattern)
+            delete_agent_runtime_dbs_for_user(req.user_id)
             delete_subagents_for_user(req.user_id)
             return {"status": "success", "message": f"用户 {req.user_id} 的所有会话已删除"}
         except Exception as e:
