@@ -1,6 +1,5 @@
 """WeBot's own answer to an OpenAI chat completion (``agents.openai`` owns the route):
-a turn of the session, streamed or not, with the caller's own tools. ``answer`` is
-the same turn for the agent layer's ``ask``."""
+a turn of the session, streamed or not, with the caller's own tools."""
 
 import asyncio
 import contextlib
@@ -604,11 +603,6 @@ class OpenAIChatService:
         if not req.stream:
             return await self._run_non_stream(ctx)
         return await self._run_stream(ctx)
-
-    async def answer(self, user_id: str, session_id: str, req: ChatCompletionRequest) -> str:
-        """One turn of WeBot agent *session_id*, for the agent layer: the reply's text."""
-        last_msg = await self._invoke(await self._context(user_id, session_id, req))
-        return last_msg if isinstance(last_msg, str) else self.extract_text(last_msg.content)
 
     async def _context(self, user_id: str, session_id: str, req: ChatCompletionRequest) -> OpenAIExecutionContext:
         thread_id = f"{user_id}#{session_id}"

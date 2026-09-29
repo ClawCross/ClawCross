@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import httpx
 import json
 import os
 from typing import Any, Callable
@@ -117,10 +116,12 @@ class WeBotService:
         self,
         *,
         agent: Any,
+        system: Any,
         verify_auth_or_token: Callable[[str, str, str | None], None],
         extract_text: Callable[[Any], str],
     ):
         self.agent = agent
+        self.system = system  # WeBot's system trigger (webot.api.system_service)
         self.verify_auth_or_token = verify_auth_or_token
         self.extract_text = extract_text
 
@@ -312,20 +313,6 @@ class WeBotService:
             "latest_run": None if latest_run is None else self._serialize_run(user_id, latest_run, include_events=False),
         }
 
-    @staticmethod
-    def _agent_base_url() -> str:
-        return f"http://127.0.0.1:{os.getenv('PORT_AGENT', '51200')}"
-
-    @staticmethod
-    def _internal_headers() -> dict[str, str]:
-        token = (os.getenv("INTERNAL_TOKEN", "") or "").strip()
-        if not token:
-            raise HTTPException(status_code=500, detail="INTERNAL_TOKEN 未配置，无法执行 WeBot 控制面操作。")
-        return {
-            "X-Internal-Token": token,
-            "Content-Type": "application/json",
-        }
-
     def _source_label(self, user_id: str, source_session: str) -> tuple[str, str]:
         record = get_subagent_by_session(source_session, user_id) if source_session else None
         if record is not None:
@@ -361,14 +348,11 @@ class WeBotService:
         thread_id = f"{user_id}#{session_id}"
         return bool(self.agent.is_thread_busy(thread_id))
 
-    async def _push_system_message(self, *, user_id: str, session_id: str, text: str, timeout: int = 30, drain_inbox: bool = False) -> None:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(
-                f"{self._agent_base_url()}/system_trigger",
-                headers=self._internal_headers(),
-                json={"user_id": user_id, "session_id": session_id, "text": text, "drain_inbox": drain_inbox},
-            )
-            response.raise_for_status()
+    async def _push_system_message(self, *, user_id: str, session_id: str, text: str, drain_inbox: bool = False) -> None:
+        from webot.api.system_models import SystemTriggerRequest
+
+        await self.system.run(SystemTriggerRequest(user_id=user_id, session_id=session_id, text=text,
+                                                   drain_inbox=drain_inbox))
 
     async def _deliver_inbox_messages(
         self,

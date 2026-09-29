@@ -43,7 +43,7 @@ class WeBotRoutesTests(unittest.TestCase):
             try:
                 app = FastAPI()
                 app.include_router(
-                    create_webot_router(
+                    create_webot_router(system=None,
                         agent=_FakeAgent(),
                         verify_auth_or_token=lambda user_id, password, token: None,
                         extract_text=lambda content: content if isinstance(content, str) else str(content),
@@ -86,7 +86,7 @@ class WeBotRoutesTests(unittest.TestCase):
             try:
                 app = FastAPI()
                 app.include_router(
-                    create_webot_router(
+                    create_webot_router(system=None,
                         agent=_FakeAgent(),
                         verify_auth_or_token=lambda user_id, password, token: None,
                         extract_text=lambda content: content if isinstance(content, str) else str(content),
@@ -135,7 +135,7 @@ class WeBotRoutesTests(unittest.TestCase):
     def test_bridge_websocket_missing_record_closes_with_4404(self):
         app = FastAPI()
         app.include_router(
-            create_webot_router(
+            create_webot_router(system=None,
                 agent=_FakeAgent(),
                 verify_auth_or_token=lambda user_id, password, token: None,
                 extract_text=lambda content: content if isinstance(content, str) else str(content),

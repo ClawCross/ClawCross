@@ -1,11 +1,13 @@
 """WeBot as a runtime of the agent layer.
 
-WeBot runs in the Agent service, and its runtime with it: ``ask`` runs a turn
-(``chat_service.answer``) and ``chat`` a whole OpenAI chat completion, streamed
-or not (``chat_service.complete``); ``trigger`` and ``inbox`` hand the session a system message
-(``system.run``; an inbox entry names its sender and is taken when the session
-is free); ``destroy`` deletes the session (``sessions.delete``). The control
-plane reads the engine. An agent's session is the WeBot thread ``<owner>#<agent_id>``.
+WeBot runs in the Agent service, and its runtime with it. ``ask``, ``trigger`` and
+``inbox`` hand the session a message through its system trigger (``system.run``):
+``ask`` is a turn after the session's current one, and waits for its reply;
+``trigger`` a turn now; ``inbox`` an entry that names its sender, taken when the
+session is free. ``chat`` is the chat window's OpenAI completion, streamed or not,
+which takes over from the current turn (``chat_service.complete``). ``destroy``
+deletes the session (``sessions.delete``); the control plane reads the engine. An
+agent's session is the WeBot thread ``<owner>#<agent_id>``.
 """
 
 from __future__ import annotations
@@ -13,7 +15,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from agents.messages import AgentMessage, AgentReply, DeliveryReceipt, build_openai_content
+from agents.messages import AgentMessage, AgentReply, DeliveryReceipt
 from agents.runtime import NO_TIMEOUT, Runtime
 from agents.store import Agent
 
@@ -49,26 +51,23 @@ class WebotRuntime(Runtime):
     # ── calls ────────────────────────────────────────────────────────────
 
     async def ask(self, agent: Agent, msg: AgentMessage, *, context, mode, tools, response_format, timeout) -> AgentReply:
-        from fastapi import HTTPException
+        from webot.api.system_models import SystemTriggerRequest
 
-        from agents.openai import ChatCompletionRequest
-
-        messages: list[dict] = []
-        if msg.instructions:
-            messages.append({"role": "system", "content": msg.instructions})
-        messages.append({"role": "user", "content": build_openai_content(msg.text, msg.attachments)})
-        req = ChatCompletionRequest(model="webot", messages=messages, response_format=response_format,
-                                    llm_override=agent.config.get("llm") or None, **_fields(mode, tools))
-        turn = asyncio.ensure_future(self.chat_service.answer(agent.owner, agent.agent_id, req))
+        text = f"[来自调度方的指令]\n{msg.instructions}\n\n---\n{msg.text}" if msg.instructions else msg.text
+        req = SystemTriggerRequest(
+            user_id=agent.owner, session_id=agent.agent_id, text=text, attachments=list(msg.attachments) or None,
+            response_format=response_format, llm_override=agent.config.get("llm") or None, wait_reply=True,
+            **_fields(mode, tools),
+        )
+        turn = asyncio.ensure_future(self.system.run(req))
         turn.add_done_callback(lambda t: t.cancelled() or t.exception())  # a turn outliving its caller
         wait = None if timeout == NO_TIMEOUT else (timeout if timeout is not None else _DEFAULT_TIMEOUT)
         try:
             # Waiting ends; the turn itself goes on, like any turn of the session.
-            return AgentReply(ok=True, content=await asyncio.wait_for(asyncio.shield(turn), wait))
+            result = await asyncio.wait_for(asyncio.shield(turn), wait)
         except TimeoutError:
             return AgentReply(ok=False, error=f"no reply within {wait:g}s")
-        except HTTPException as exc:
-            return AgentReply(ok=False, error=str(exc.detail))
+        return AgentReply(ok=True, content=str(result.get("reply") or ""))
 
     async def chat(self, agent: Agent, request: Any) -> Any:
         """The chat window's call: streamed or not, with the caller's own tools; like a
@@ -89,12 +88,15 @@ class WebotRuntime(Runtime):
         return DeliveryReceipt(accepted=True)
 
     async def inbox(self, agent: Agent, msg: AgentMessage, *, context, mode, on_complete) -> DeliveryReceipt:
-        """Taken when the session is free, in the session's own mode."""
+        """Taken when the session is free, in the session's own mode. *context* may name
+        the sender's user (``source_user``, when another) and a label (``source_label``)."""
         from webot.api.system_models import SystemTriggerRequest
 
         await self.system.run(SystemTriggerRequest(
             user_id=agent.owner, session_id=agent.agent_id, text=msg.text,
             inbox_source_session=msg.sender or "system", inbox_summary=msg.summary,
+            inbox_source_user=str(context.get("source_user") or ""),
+            inbox_source_label=str(context.get("source_label") or ""),
             attachments=list(msg.attachments) or None,
         ))
         return DeliveryReceipt(accepted=True)

@@ -28,6 +28,7 @@ patch_langchain_file_mime()
 from webot.engine.agent import TeamAgent
 from agents.gateway import AgentGateway, set_gateway
 from agents.openai import create_openai_router
+from agents.trigger import create_trigger_router
 from agents.routes import create_agents_router
 from agents.store import WEBOT, get_store
 from comms.conversations import Conversations
@@ -44,7 +45,6 @@ from api.ops_routes import create_ops_router
 from webot.api.session_routes import create_session_router
 from webot.api.session_service import SessionService
 from api.settings_routes import create_settings_router
-from webot.api.system_routes import create_system_router
 from webot.api.system_service import SystemService
 from webot.driver import WebotRuntime
 from webot.api.routes import create_webot_router
@@ -113,12 +113,6 @@ if not INTERNAL_TOKEN:
     logger.info("已自动生成 INTERNAL_TOKEN 并写入 %s", env_path)
 
 
-def verify_internal_token(token: str | None):
-    """校验内部服务通信 token，失败抛 403"""
-    if not token or token != INTERNAL_TOKEN:
-        raise HTTPException(status_code=403, detail="无效的内部通信凭证")
-
-
 def verify_auth_or_token(user_id: str, password: str = "",
                          x_internal_token: str | None = None):
     """Verify authentication via password OR X-Internal-Token.
@@ -146,7 +140,7 @@ def verify_password(username: str, password: str) -> bool:
 
 # --- Create agent instance ---
 agent = TeamAgent(src_dir=current_dir, db_path=db_path)
-system_service = SystemService(agent=agent, verify_internal_token=verify_internal_token)
+system_service = SystemService(agent=agent)
 chat_service = OpenAIChatService(agent=agent, extract_text=_extract_text, build_human_message=build_human_message)
 session_service = SessionService(db_path=db_path, agent=agent, verify_auth_or_token=verify_auth_or_token,
                                  extract_text=_extract_text)
@@ -235,6 +229,7 @@ app.include_router(
 app.include_router(
     create_webot_router(
         agent=agent,
+        system=system_service,
         verify_auth_or_token=verify_auth_or_token,
         extract_text=_extract_text,
     )
@@ -246,13 +241,7 @@ app.include_router(
     )
 )
 
-app.include_router(
-    create_system_router(
-        agent=agent,
-        verify_internal_token=verify_internal_token,
-        service=system_service,
-    )
-)
+app.include_router(create_trigger_router(internal_token=INTERNAL_TOKEN, store=agent_store, gateway=gateway))
 
 # L1: every agent on this machine by its number.
 app.include_router(
