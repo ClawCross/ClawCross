@@ -1,7 +1,8 @@
 """WeBot as a runtime of the agent layer.
 
 WeBot runs in the Agent service, and its runtime with it: ``ask`` runs a turn
-(``chat.answer``); ``trigger`` and ``inbox`` hand the session a system message
+(``chat_service.answer``) and ``chat`` a whole OpenAI chat completion, streamed
+or not (``chat_service.complete``); ``trigger`` and ``inbox`` hand the session a system message
 (``system.run``; an inbox entry names its sender and is taken when the session
 is free); ``destroy`` deletes the session (``sessions.delete``). The control
 plane reads the engine. An agent's session is the WeBot thread ``<owner>#<agent_id>``.
@@ -34,10 +35,10 @@ def _fields(mode: str | None, tools: list[str] | None) -> dict[str, Any]:
 class WebotRuntime(Runtime):
     controls = ("cancel", "reset")
 
-    def __init__(self, *, engine: Any, chat: Any, system: Any, sessions: Any):
+    def __init__(self, *, engine: Any, chat_service: Any, system: Any, sessions: Any):
         super().__init__()
         self.engine = engine
-        self.chat = chat
+        self.chat_service = chat_service
         self.system = system
         self.sessions = sessions
 
@@ -50,7 +51,7 @@ class WebotRuntime(Runtime):
     async def ask(self, agent: Agent, msg: AgentMessage, *, context, mode, tools, response_format, timeout) -> AgentReply:
         from fastapi import HTTPException
 
-        from webot.api.openai_models import ChatCompletionRequest
+        from agents.openai import ChatCompletionRequest
 
         messages: list[dict] = []
         if msg.instructions:
@@ -58,7 +59,7 @@ class WebotRuntime(Runtime):
         messages.append({"role": "user", "content": build_openai_content(msg.text, msg.attachments)})
         req = ChatCompletionRequest(model="webot", messages=messages, response_format=response_format,
                                     llm_override=agent.config.get("llm") or None, **_fields(mode, tools))
-        turn = asyncio.ensure_future(self.chat.answer(agent.owner, agent.agent_id, req))
+        turn = asyncio.ensure_future(self.chat_service.answer(agent.owner, agent.agent_id, req))
         turn.add_done_callback(lambda t: t.cancelled() or t.exception())  # a turn outliving its caller
         wait = None if timeout == NO_TIMEOUT else (timeout if timeout is not None else _DEFAULT_TIMEOUT)
         try:
@@ -68,6 +69,11 @@ class WebotRuntime(Runtime):
             return AgentReply(ok=False, error=f"no reply within {wait:g}s")
         except HTTPException as exc:
             return AgentReply(ok=False, error=str(exc.detail))
+
+    async def chat(self, agent: Agent, request: Any) -> Any:
+        """The chat window's call: streamed or not, with the caller's own tools; like a
+        message typed in, it takes over from the session's current turn."""
+        return await self.chat_service.complete(agent.owner, agent.agent_id, request)
 
     async def trigger(self, agent: Agent, msg: AgentMessage, *, context, mode, coalesce_key, on_complete) -> DeliveryReceipt:
         from webot.api.system_models import SystemTriggerRequest

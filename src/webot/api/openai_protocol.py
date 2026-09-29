@@ -10,12 +10,11 @@ OpenAI 协议兼容辅助模块
 import json
 import os
 import time
-import uuid
 from typing import Any, Callable, Dict, Optional, Set
 
 from langchain_core.messages import AIMessage, HumanMessage
 
-from webot.api.openai_models import ChatMessage
+from agents.openai import ChatMessage
 
 
 class OpenAIProtocolHelper:
@@ -107,85 +106,6 @@ class OpenAIProtocolHelper:
         return self.build_human_message(combined_text, images or None, files or None, audios or None)
 
     @staticmethod
-    def make_completion_id() -> str:
-        """生成唯一的 completion ID。
-
-        :return: 格式为 "chatcmpl-<24位十六进制>" 的 ID
-        """
-        return "chatcmpl-{suffix}".format(suffix=uuid.uuid4().hex[:24])
-
-    def make_openai_response(
-        self,
-        content: str,
-        *,
-        model: str = "webot",
-        finish_reason: str = "stop",
-        tool_calls: Optional[list] = None,
-    ) -> Dict[str, Any]:
-        """构建 OpenAI 兼容的完整响应。
-
-        :param content: 回复内容文本
-        :param model: 模型名称
-        :param finish_reason: 完成原因（stop/tool_calls）
-        :param tool_calls: 工具调用列表
-        :return: OpenAI 格式的响应字典
-        """
-        message: Dict[str, Any] = {"role": "assistant", "content": content}
-        if tool_calls:
-            message["tool_calls"] = tool_calls
-            finish_reason = "tool_calls"
-        return {
-            "id": self.make_completion_id(),
-            "object": "chat.completion",
-            "created": int(time.time()),
-            "model": model,
-            "choices": [{
-                "index": 0,
-                "message": message,
-                "finish_reason": finish_reason,
-            }],
-            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-        }
-
-    def make_openai_chunk(
-        self,
-        *,
-        completion_id: str,
-        content: str = "",
-        model: str = "webot",
-        finish_reason: Optional[str] = None,
-        meta: Optional[dict] = None,
-    ) -> str:
-        """构建 SSE 格式的流式 chunk。
-
-        :param completion_id: completion ID
-        :param content: delta 内容
-        :param model: 模型名称
-        :param finish_reason: 完成原因
-        :param meta: 元数据（如 round、type 等）
-        :return: SSE 格式的 chunk 字符串
-        """
-        delta: Dict[str, Any] = {}
-        if content:
-            delta["content"] = content
-        if meta:
-            delta["meta"] = meta
-        if finish_reason is None and not content and not meta:
-            delta["role"] = "assistant"
-        chunk = {
-            "id": completion_id,
-            "object": "chat.completion.chunk",
-            "created": int(time.time()),
-            "model": model,
-            "choices": [{
-                "index": 0,
-                "delta": delta,
-                "finish_reason": finish_reason,
-            }],
-        }
-        return "data: {payload}\n\n".format(payload=json.dumps(chunk, ensure_ascii=False))
-
-    @staticmethod
     def extract_external_tool_names(tools: Optional[list]) -> Set[str]:
         """从工具定义列表中提取外部工具名称。
 
@@ -246,19 +166,3 @@ class OpenAIProtocolHelper:
             }],
         }
         return "data: {payload}\n\n".format(payload=json.dumps(chunk, ensure_ascii=False))
-
-    @staticmethod
-    def list_models_payload() -> Dict[str, Any]:
-        """返回支持的模型列表负载。
-
-        :return: OpenAI models list 格式的字典
-        """
-        return {
-            "object": "list",
-            "data": [{
-                "id": "webot",
-                "object": "model",
-                "created": int(time.time()),
-                "owned_by": "webot",
-            }],
-        }

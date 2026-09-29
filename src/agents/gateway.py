@@ -7,6 +7,9 @@ The gateway finds the runtime of an agent's driver (``agents.runtime``: WeBot in
 * ``trigger`` — the system trigger: hand it over to be handled now, return at once;
 * ``inbox``   — queue it; the runtime takes it when it can.
 
+``chat`` is the OpenAI chat-completions call (``/v1/chat/completions``): the
+runtime answers it when it speaks the protocol, otherwise the agent is asked.
+
 The agent answers, if at all, through the conversation it was told about. Each
 runtime's control plane (``status``, ``control``, ``history``, ``destroy``) is its own.
 
@@ -89,6 +92,16 @@ class AgentGateway:
         except Exception as exc:
             logger.exception("ask %s failed", agent.agent_id)
             return AgentReply(ok=False, error=f"{type(exc).__name__}: {exc}")
+
+    async def chat(self, agent: Agent, request: Any) -> Any:
+        """An OpenAI chat completion (``agents.openai.ChatCompletionRequest``), streamed or
+        not: the runtime's own when it speaks the protocol, otherwise the agent is asked."""
+        runtime = self.runtime(agent)
+        if runtime.chat is not None:
+            return await runtime.chat(agent, request)
+        from agents.openai import answer_by_asking
+
+        return await answer_by_asking(self, agent, request)
 
     async def trigger(
         self,

@@ -99,6 +99,8 @@ WeBot 的代码都在 `src/webot/` 一个包里：
 
 gateway 按 agent 的 `driver` 找到运行时，把调用交给它：`ask`、`trigger`、`inbox`，控制面 `status`、`control`、`history`、`destroy`。
 
+`/v1/chat/completions` 也经过 gateway（`chat`）：会说 OpenAI 对话协议的运行时自己回答（WeBot：流式、调用方自带的工具，像聊天窗口发来的消息一样接管当前这一轮）；其他运行时是问它最后一条用户消息，再按协议的格式返回（流式时整段作为一个 delta）。
+
 运行时只在 Agent 服务里。其他进程（OASIS、定时任务）用 `agents/client.py` 走上面的入口：`/v1/agents` 新建、询问、删除，`/system_trigger` 触发。
 
 附件统一为 `{type, name, mime_type, data}`。`parse_openai_content` 把 OpenAI 格式的图片、音频、文件解析成附件，再由各运行方式按能力发送：图片和音频作为多模态附件，文本文件内联，其他二进制只写文件名。
@@ -173,7 +175,7 @@ agent 的人设和工具是它自己的，各运行方式按自己的方式用�
 | 主题 | 文件 |
 |---|---|
 | agent 表 | `src/agents/store.py` |
-| 入口 /v1、inbox | `src/agents/routes.py`, `src/webot/api/openai_service.py` |
+| 入口 /v1、inbox | `src/agents/routes.py`, `src/agents/openai.py`（`/v1/chat/completions`、`/v1/models`） |
 | system trigger | `src/webot/api/system_service.py` |
 | 单 agent 接口、附件 | `src/agents/gateway.py`, `src/agents/messages.py` |
 | 运行时（调用接口与控制面） | `src/agents/runtime.py`, `src/webot/driver.py`, `src/external/` |

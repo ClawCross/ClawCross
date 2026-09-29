@@ -8,6 +8,9 @@ runtime:
 * ``trigger`` — hand it over to be handled now, return at once;
 * ``inbox``   — queue it; the runtime takes it when it can.
 
+A runtime that speaks the OpenAI chat-completions protocol itself (streaming,
+the caller's tools) also has ``chat``; any other is asked instead.
+
 Each runtime's control plane is its own: ``controls`` names the actions it has,
 ``control`` runs one; ``status``, ``history`` and ``destroy`` (release everything
 when the agent is deleted) complete it.
@@ -34,6 +37,9 @@ class ControlError(RuntimeError):
 
 class Runtime:
     controls: tuple[str, ...] = ()
+    # ``async chat(agent, request)``: an OpenAI chat completion answered by the runtime
+    # itself, streamed or not. None: it is asked the last user message (agents.openai).
+    chat = None
 
     def __init__(self) -> None:
         self._background: set[asyncio.Task] = set()

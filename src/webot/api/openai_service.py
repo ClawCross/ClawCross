@@ -1,10 +1,6 @@
-"""
-OpenAI 兼容 API 服务模块
-
-提供 OpenAI Chat Completions API 的实现：
-- 处理聊天补全请求（流式/非流式）
-- 支持工具调用和外部工具集成
-"""
+"""WeBot's own answer to an OpenAI chat completion (``agents.openai`` owns the route):
+a turn of the session, streamed or not, with the caller's own tools. ``answer`` is
+the same turn for the agent layer's ``ask``."""
 
 import asyncio
 import contextlib
@@ -17,10 +13,11 @@ from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from webot.engine.lightweight_agent_runtime import AgentRecursionError
 
-from utils.auth_utils import extract_user_password_session, is_internal_bearer, parse_bearer_parts
 from utils.effort_controller import resolve_default_chat_max_output_tokens
 from utils.logging_utils import get_logger
-from webot.api.openai_models import ChatCompletionRequest, ChatMessage, OpenAIExecutionContext
+from agents import openai
+from agents.openai import ChatCompletionRequest, ChatMessage
+from webot.api.openai_models import OpenAIExecutionContext
 from webot.api.openai_protocol import OpenAIProtocolHelper
 
 logger = get_logger("openai_service")
@@ -35,88 +32,20 @@ class OpenAIChatService:
     def __init__(
         self,
         *,
-        internal_token: str,
-        verify_password: Callable[[str, str], bool],
         agent: Any,
         extract_text: Callable[[Any], str],
         build_human_message: Callable[[str, list[str] | None, list[dict] | None, list[dict] | None], HumanMessage],
     ):
-        self.internal_token = internal_token
-        self.verify_password = verify_password
         self.agent = agent
         self.extract_text = extract_text
         self.protocol = OpenAIProtocolHelper(build_human_message=build_human_message)
-
-    @staticmethod
-    def _target(user_id: str, session: str, model: str | None):
-        """The agent a request talks to: its session number, or ``<team>.<name>``. A
-        number not seen before is a new agent, of the runtime ``model`` names (WeBot
-        when it names none, like ``gpt-4o``)."""
-        from agents.routes import runtime_of
-        from agents.store import HTTP, WEBOT, get_store, valid_agent_id
-        from teams.store import get_team_store
-
-        store = get_store()
-        agent = store.get(user_id, session) or get_team_store(store).address(user_id, session)
-        if agent is not None:
-            return agent
-        if not valid_agent_id(session):
-            raise HTTPException(status_code=404, detail=f"no agent {session!r}")
-        driver, config = runtime_of(model or "")
-        if driver == HTTP:
-            driver, config = WEBOT, {}
-        return store.ensure(user_id, session, driver=driver, config=config)
-
-    @staticmethod
-    def _last_user_message(req: ChatCompletionRequest) -> tuple[str, list[dict]]:
-        """Text and attachments (images, audio, files) of the last user message."""
-        from agents.messages import parse_openai_content
-
-        for msg in reversed(req.messages):
-            if msg.role == "user":
-                return parse_openai_content(msg.content)
-        return "", []
-
-    async def _complete_with_agent(self, user_id: str, record, req: ChatCompletionRequest):
-        """Answer a chat completion by asking a non-WeBot agent through the gateway."""
-        from agents.gateway import get_gateway
-        from agents.messages import AgentMessage
-
-        text, attachments = self._last_user_message(req)
-        reply = await get_gateway().ask(
-            record,
-            AgentMessage(text=text, attachments=attachments, sender=f"u:{user_id}"),
-            mode=req.session_mode,
-            response_format=req.response_format,
-        )
-        if not reply.ok:
-            raise HTTPException(status_code=502, detail=reply.error or "agent call failed")
-        model = req.model or record.platform
-        if not req.stream:
-            return self.make_openai_response(reply.content, model=model)
-
-        completion_id = self.make_completion_id()
-
-        async def events():
-            # The agent's reply arrives whole; stream it as one delta.
-            yield self.make_openai_chunk(model=model, completion_id=completion_id)
-            if reply.content:
-                yield self.make_openai_chunk(reply.content, model=model, completion_id=completion_id)
-            yield self.make_openai_chunk(model=model, finish_reason="stop", completion_id=completion_id)
-            yield "data: [DONE]\n\n"
-
-        return StreamingResponse(
-            events(),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
-        )
 
     def openai_msg_to_human_message(self, msg: ChatMessage) -> HumanMessage:
         """将 OpenAI 格式消息转换为 HumanMessage。"""
         return self.protocol.openai_msg_to_human_message(msg)
 
     def make_completion_id(self) -> str:
-        return self.protocol.make_completion_id()
+        return openai.completion_id()
 
     def make_openai_response(
         self,
@@ -125,12 +54,7 @@ class OpenAIChatService:
         finish_reason: str = "stop",
         tool_calls: list[dict] | None = None,
     ) -> dict:
-        return self.protocol.make_openai_response(
-            content,
-            model=model,
-            finish_reason=finish_reason,
-            tool_calls=tool_calls,
-        )
+        return openai.response(content, model=model, finish_reason=finish_reason, tool_calls=tool_calls)
 
     def make_openai_chunk(
         self,
@@ -140,13 +64,8 @@ class OpenAIChatService:
         completion_id: str = "",
         meta: dict | None = None,
     ) -> str:
-        return self.protocol.make_openai_chunk(
-            completion_id=completion_id,
-            content=content,
-            model=model,
-            finish_reason=finish_reason,
-            meta=meta,
-        )
+        return openai.chunk(completion_id=completion_id, content=content, model=model,
+                            finish_reason=finish_reason, meta=meta)
 
     def extract_external_tool_names(self, tools: list[dict] | None) -> set[str]:
         return self.protocol.extract_external_tool_names(tools)
@@ -276,31 +195,6 @@ class OpenAIChatService:
         if response_body:
             text += f"\n返回内容: {response_body}"
         return text
-
-    def auth_openai_request(self, req: ChatCompletionRequest, auth_header: str | None):
-        """从 OpenAI 请求中提取认证信息并验证。"""
-        user_id = req.user
-        password = req.password
-        session_override = None
-
-        parts = parse_bearer_parts(auth_header)
-        if parts:
-            if is_internal_bearer(parts, self.internal_token):
-                if len(parts) >= 3:
-                    return parts[1], True, parts[2]
-                if len(parts) == 2:
-                    return parts[1], True, None
-                return user_id or "system", True, None
-
-            parsed = extract_user_password_session(parts, default_session="")
-            if parsed:
-                user_id, password, session_override = parsed
-
-        if not user_id or not password:
-            return None, False, None
-        if not self.verify_password(user_id, password):
-            return None, False, None
-        return user_id, True, session_override
 
     def _build_input_messages(self, req: ChatCompletionRequest):
         input_messages = []
@@ -703,23 +597,10 @@ class OpenAIChatService:
             },
         )
 
-    async def handle_chat_completions(
-        self,
-        req: ChatCompletionRequest,
-        authorization: str | None,
-    ):
-        user_id, authenticated, session_override = self.auth_openai_request(req, authorization)
-        if not authenticated:
-            raise HTTPException(status_code=401, detail="认证失败")
-
-        session = (session_override or req.session_id or "").strip()
-        if not session:
-            raise HTTPException(status_code=400, detail="session_id is required: it is the number of the agent")
-        agent_record = self._target(user_id, session, req.model)
-        if agent_record.driver != "webot":
-            return await self._complete_with_agent(user_id, agent_record, req)
-        ctx = await self._context(user_id, agent_record.agent_id, req)
-        logger.info("chat user=%s session=%s stream=%s model=%s", user_id, ctx.session_id, req.stream, ctx.model_name)
+    async def complete(self, user_id: str, session_id: str, req: ChatCompletionRequest):
+        """A chat completion from WeBot agent *session_id*, streamed or not."""
+        ctx = await self._context(user_id, session_id, req)
+        logger.info("chat user=%s session=%s stream=%s model=%s", user_id, session_id, req.stream, ctx.model_name)
         if not req.stream:
             return await self._run_non_stream(ctx)
         return await self._run_stream(ctx)
@@ -771,15 +652,3 @@ class OpenAIChatService:
             thread_lock=await self.agent.get_thread_lock(thread_id),
             max_tokens=effective_max_tokens,
         )
-
-    def list_models(self, authorization: str | None = None) -> dict:
-        """The runtimes a new agent can have: ``webot``, each ACP agent, ``openclaw``.
-        Which agent a request talks to is its ``session_id``."""
-        payload = self.protocol.list_models_payload()
-        created = payload["data"][0]["created"] if payload["data"] else 0
-        from agents.store import canonical_platform
-        from agents.platforms import acpx_agent_tags_with_legacy
-
-        for runtime in [*sorted({canonical_platform(t) for t in acpx_agent_tags_with_legacy()}), "openclaw"]:
-            payload["data"].append({"id": runtime, "object": "model", "created": created, "owned_by": "clawcross"})
-        return payload
