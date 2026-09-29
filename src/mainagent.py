@@ -42,7 +42,6 @@ from utils.user_auth import load_users as load_users_from_file, verify_password 
 from api.harness_routes import create_harness_router
 from webot.api.openai_service import OpenAIChatService
 from api.ops_routes import create_ops_router
-from webot.api.session_routes import create_session_router
 from webot.api.session_service import SessionService
 from api.settings_routes import create_settings_router
 from webot.api.system_service import SystemService
@@ -142,8 +141,7 @@ def verify_password(username: str, password: str) -> bool:
 agent = TeamAgent(src_dir=current_dir, db_path=db_path)
 system_service = SystemService(agent=agent)
 chat_service = OpenAIChatService(agent=agent, extract_text=_extract_text, build_human_message=build_human_message)
-session_service = SessionService(db_path=db_path, agent=agent, verify_auth_or_token=verify_auth_or_token,
-                                 extract_text=_extract_text)
+session_service = SessionService(db_path=db_path, agent=agent, extract_text=_extract_text)
 
 # --- L1: the table of all agents (every session, by its number). L2 around it: teams
 # (namespaces in folders), group chats (their own database), workflows. ---
@@ -205,7 +203,6 @@ app.include_router(
     create_groups_router(internal_token=INTERNAL_TOKEN, verify_password=verify_password, service=group_service)
 )
 
-app.include_router(create_session_router(service=session_service))
 app.include_router(create_openai_router(internal_token=INTERNAL_TOKEN, verify_password=verify_password,
                                         store=agent_store, gateway=gateway, names=team_store.address))
 

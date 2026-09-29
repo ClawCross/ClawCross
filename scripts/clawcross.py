@@ -721,35 +721,21 @@ def _request_json(method: str, url: str, headers: dict | None = None, data: dict
 def _fetch_session_history(state: dict, session_id: str, *, limit: int = 10) -> tuple[list[dict], str | None]:
     """Fetch the tail of a session's messages for resume-replay.
 
-    Mirrors the frontend's /proxy_session_history call. An ACP session is an agent:
-    its history is GET /v1/agents/{id}/history. Returns ([], error_str) on failure
-    so callers can render silently when offline.
+    A session (internal or ACP) is an agent: its history is GET /v1/agents/{id}/history,
+    and one with no turn yet has none. Returns ([], error_str) on failure so callers
+    can render silently when offline.
     """
     current = _current(state)
     platform = current.get("platform") or "internal"
-    try:
-        if platform == "internal":
-            user = current.get("user") or DEFAULT_USER
-            headers = {"X-Internal-Token": INTERNAL_TOKEN} if INTERNAL_TOKEN else {}
-            data = _request_json(
-                "POST",
-                f"{AGENT_BASE}/session_history",
-                headers=headers,
-                data={"user_id": user, "session_id": session_id},
-            )
-            messages = data.get("messages") if isinstance(data, dict) else None
-            if not isinstance(messages, list):
-                return [], None
-            return messages[-limit:], None
-        tool = _acpx_tool(platform)
-        if ":" not in platform and tool in ACP_PLATFORMS:
-            user = current.get("user") or DEFAULT_USER
-            data = _request_json("GET", f"{AGENT_BASE}/v1/agents/{_agent_id(session_id)}/history?limit={limit}",
-                                 headers=_headers_for_user(user))
-            return list(data.get("messages") or [])[-limit:], None
+    if platform != "internal" and (":" in platform or _acpx_tool(platform) not in ACP_PLATFORMS):
         return [], None
+    user = current.get("user") or DEFAULT_USER
+    try:
+        data = _request_json("GET", f"{AGENT_BASE}/v1/agents/{_agent_id(session_id)}/history?limit={limit}",
+                             headers=_headers_for_user(user))
     except Exception as exc:
-        return [], str(exc)
+        return [], None if str(exc).startswith("HTTP 404") else str(exc)
+    return list(data.get("messages") or [])[-limit:], None
 
 
 _HIST_COLOR_USER = "\033[38;5;39m"   # cyan-blue
@@ -838,23 +824,13 @@ def _list_current_platform_sessions(state: dict) -> tuple[list[dict], str | None
     platform = current.get("platform") or "internal"
     try:
         if platform == "internal":
+            # WeBot's sessions are its agents; one nobody has written to yet has no title.
             user = current.get("user") or DEFAULT_USER
-            headers = {"X-Internal-Token": INTERNAL_TOKEN} if INTERNAL_TOKEN else {}
-            data = _request_json("POST", f"{AGENT_BASE}/sessions", headers=headers, data={"user_id": user})
-            raw_sessions = data.get("sessions", []) if isinstance(data, dict) else []
-            sessions = []
-            for row in raw_sessions:
-                if not isinstance(row, dict):
-                    continue
-                sid = str(row.get("session_id") or row.get("id") or "").strip()
-                if not sid:
-                    continue
-                sessions.append({
-                    "session": sid,
-                    "title": row.get("title") or row.get("last_message") or "",
-                    "message_count": row.get("message_count"),
-                })
-            return sessions, None
+            data = _request_json("GET", f"{AGENT_BASE}/v1/agents?status=1&platform=webot",
+                                 headers=_headers_for_user(user))
+            return [{"session": a["agent_id"], "title": a["status"]["title"],
+                     "message_count": a["status"].get("message_count")}
+                    for a in data.get("data") or [] if (a.get("status") or {}).get("title")], None
         tool = _acpx_tool(platform)
         if ":" not in platform and tool in ACP_PLATFORMS:
             # This tool's sessions are its agents.
@@ -1007,7 +983,7 @@ def _print_sse_text(lines) -> bool:
 def _run_internal(prompt: str, state: dict, *, model: str = "default") -> None:
     current = _current(state)
     user = current.get("user") or DEFAULT_USER
-    session_id = current.get("session") or "default"
+    session_id = _agent_id(current.get("session") or "default")
     mode = _normalize_mode(current.get("mode"))
     payload = {
         "model": model or "default",
@@ -1249,8 +1225,7 @@ def cmd_cancel(args, state: dict) -> int:
     platform = current.get("platform") or "internal"
     tool = _acpx_tool(platform)
 
-    # External ACP agent: the internal /cancel only knows the internal agent
-    # runtime, so route cancellation to the adapter. Closing the acpx session
+    # External ACP agent: route cancellation to the adapter. Closing the acpx session
     # terminates its in-flight turn (the session is re-created on the next run).
     if platform != "internal" and tool in ACP_PLATFORMS:
         session_name = args.session or current.get("session") or _repo_session_name()
@@ -1269,23 +1244,18 @@ def cmd_cancel(args, state: dict) -> int:
         print(f"acp session {session_name!r} on {tool}: {detail}")
         return 0 if ok else 1
 
-    # Internal agent (default).
-    session_id = args.session or current.get("session") or "default"
-    payload = {"user_id": user, "session_id": session_id}
-    body = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        f"{AGENT_BASE}/cancel",
-        data=body,
-        headers={"Content-Type": "application/json", "X-Internal-Token": INTERNAL_TOKEN},
-        method="POST",
-    )
+    # Internal agent (default); one with no turn yet has nothing to cancel.
+    session_id = _agent_id(args.session or current.get("session") or "default")
     try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            print(resp.read().decode("utf-8", errors="replace"))
-        return 0
+        resp = _request_json("POST", f"{AGENT_BASE}/v1/agents/{session_id}/control",
+                             headers=_headers_for_user(user), data={"action": "cancel"})
     except Exception as exc:
-        print(f"cancel failed: {exc}", file=sys.stderr)
-        return 1
+        if not str(exc).startswith("HTTP 404"):
+            print(f"cancel failed: {exc}", file=sys.stderr)
+            return 1
+        resp = {"cancelled": False}
+    print(f"session {session_id!r}: {'cancelled' if resp.get('cancelled') else 'nothing running'}")
+    return 0
 
 
 def _show_magic_link(state: dict) -> None:

@@ -60,7 +60,6 @@ if "utils.logging_utils" not in sys.modules:
     logging_utils_stub.get_logger = get_logger
     sys.modules["utils.logging_utils"] = logging_utils_stub
 
-from webot.api.session_models import CompactSessionRequest, DeleteSessionRequest, SessionListRequest, SessionStatusRequest
 from webot.api.session_service import SessionService
 
 
@@ -130,86 +129,39 @@ class _FakeAgent:
         }
 
 
+def _service(agent) -> SessionService:
+    return SessionService(db_path=":memory:", agent=agent,
+                          extract_text=lambda content: content if isinstance(content, str) else str(content))
+
+
 class SessionServiceTests(unittest.IsolatedAsyncioTestCase):
-    async def test_list_sessions_hides_subagent_sidechains(self):
-        service = SessionService(
-            db_path=":memory:",
-            agent=_FakeAgent(
-                {
-                    "alice#default": [HumanMessage(content="Main chat")],
-                    "alice#subagent__research__worker1": [HumanMessage(content="Side task")],
-                }
-            ),
-            verify_auth_or_token=lambda user_id, password, token: None,
-            extract_text=lambda content: content if isinstance(content, str) else str(content),
-        )
+    async def test_summary_is_empty_for_subagent_sidechains(self):
+        service = _service(_FakeAgent({
+            "alice#default": [HumanMessage(content="Main chat")],
+            "alice#subagent__research__worker1": [HumanMessage(content="Side task")],
+        }))
 
-        with patch(
-            "webot.api.session_service.list_thread_ids_by_prefix",
-            new=AsyncMock(return_value=["alice#default", "alice#subagent__research__worker1"]),
-        ):
-            result = await service.list_sessions(SessionListRequest(user_id="alice"), None)
+        with patch("webot.api.session_service.fetch_thread_checkpoint_times", new=AsyncMock(return_value={})):
+            main = await service.summary("alice", "default")
+            side = await service.summary("alice", "subagent__research__worker1")
 
-        self.assertEqual(result["status"], "success")
-        self.assertEqual([item["session_id"] for item in result["sessions"]], ["default"])
+        self.assertEqual((main["title"], main["message_count"]), ("Main chat", 1))
+        self.assertEqual(side, {})
 
-    async def test_sessions_status_hides_subagent_sidechains(self):
-        service = SessionService(
-            db_path=":memory:",
-            agent=_FakeAgent(
-                {},
-                statuses={
-                    "alice#default": {"busy": False, "source": "", "pending_system": 0},
-                    "alice#subagent__reviewer__audit": {"busy": True, "source": "system", "pending_system": 1},
-                },
-            ),
-            verify_auth_or_token=lambda user_id, password, token: None,
-            extract_text=lambda content: content if isinstance(content, str) else str(content),
-        )
+    async def test_summary_is_empty_before_anyone_writes(self):
+        self.assertEqual(await _service(_FakeAgent({})).summary("alice", "fresh"), {})
 
-        result = await service.sessions_status(SessionListRequest(user_id="alice"), None)
-
-        self.assertEqual(result["status"], "success")
-        self.assertEqual(
-            result["sessions"],
-            [{"session_id": "default", "busy": False, "source": "", "pending_system": 0}],
-        )
-
-    async def test_session_status_includes_context_usage(self):
-        service = SessionService(
-            db_path=":memory:",
-            agent=_FakeAgent(
-                {},
-                statuses={
-                    "alice#default": {
-                        "busy": True,
-                        "source": "user",
-                        "pending_system": 2,
-                        "context_usage": {
-                            "tokens": 64000,
-                            "budget": 64000,
-                            "percent": 100,
-                            "remaining": 0,
-                        },
-                    }
-                },
-            ),
-            verify_auth_or_token=lambda user_id, password, token: None,
-            extract_text=lambda content: content if isinstance(content, str) else str(content),
-        )
+    async def test_context_usage_uses_the_configured_window(self):
+        service = _service(_FakeAgent({}, statuses={"alice#default": {"context_usage": {
+            "tokens": 64000, "budget": 64000, "percent": 100, "remaining": 0,
+        }}}))
 
         with patch("webot.api.session_service.get_runtime_settings", return_value=SimpleNamespace(context=SimpleNamespace(context_window_tokens=1000000))):
-            result = await service.session_status(
-                SessionStatusRequest(user_id="alice", session_id="default"), None
-            )
+            usage = await service.context_usage("alice", "default")
 
-        self.assertEqual(result["busy"], True)
-        self.assertEqual(result["context_percent"], 6)
-        self.assertEqual(result["context_remaining"], 936000)
-        self.assertEqual(result["context_tokens"], 64000)
-        self.assertEqual(result["context_budget"], 1000000)
+        self.assertEqual((usage["percent"], usage["remaining"], usage["tokens"], usage["budget"]), (6, 936000, 64000, 1000000))
 
-    async def test_session_status_restores_persisted_api_usage(self):
+    async def test_context_usage_restores_persisted_api_usage(self):
         agent = _FakeAgent({}, statuses={"alice#default": {"busy": False}})
         restored: list[str] = []
 
@@ -223,22 +175,18 @@ class SessionServiceTests(unittest.IsolatedAsyncioTestCase):
             return True
 
         agent.restore_context_usage = restore_context_usage
-        service = SessionService(
-            db_path=":memory:",
-            agent=agent,
-            verify_auth_or_token=lambda user_id, password, token: None,
-            extract_text=lambda content: content if isinstance(content, str) else str(content),
-        )
-
-        result = await service.session_status(
-            SessionStatusRequest(user_id="alice", session_id="default"), None
-        )
+        usage = await _service(agent).context_usage("alice", "default")
 
         self.assertEqual(restored, ["alice#default"])
-        self.assertEqual(result["context_tokens"], 1050)
-        self.assertEqual(result["context_source"], "api")
-        self.assertEqual(result["context_breakdown"], {"system_prompt": 300, "messages": 700, "output": 50})
-        self.assertEqual(result["context_cache_read_tokens"], 600)
+        self.assertEqual((usage["tokens"], usage["source"]), (1050, "api"))
+        self.assertEqual(usage["breakdown"], {"system_prompt": 300, "messages": 700, "output": 50})
+        self.assertEqual(usage["cache_read_tokens"], 600)
+
+    async def test_messages_keep_a_users_images(self):
+        image = [{"type": "text", "text": "look"}, {"type": "image_url", "image_url": {"url": "data:x"}}]
+        service = _service(_FakeAgent({"alice#default": [HumanMessage(content=image)]}))
+
+        self.assertEqual(await service.messages("alice", "default"), [{"role": "user", "content": image}])
 
     async def test_compact_keeps_api_usage_instead_of_estimate(self):
         agent = _FakeAgent({"alice#default": [HumanMessage(content="hi")]})
@@ -247,12 +195,6 @@ class SessionServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         agent.get_thread_last_context_tokens = lambda thread_id: 1050
         agent.get_thread_model = lambda thread_id: ""
-        service = SessionService(
-            db_path=":memory:",
-            agent=agent,
-            verify_auth_or_token=lambda user_id, password, token: None,
-            extract_text=lambda content: content if isinstance(content, str) else str(content),
-        )
         compression = SimpleNamespace(
             triggered=True, reason="", view_tokens=300, summary="s", compacted_until=1, view=[],
         )
@@ -260,35 +202,19 @@ class SessionServiceTests(unittest.IsolatedAsyncioTestCase):
         with patch("webot.api.session_service.static_compression_view", return_value=[]), patch(
             "webot.api.session_service.estimate_messages_tokens", return_value=900
         ), patch("webot.api.session_service.make_llm_summarizer", return_value=None), patch(
-            "webot.api.session_service.resolve_history_token_budget", return_value=64000
-        ), patch("webot.api.session_service.apply_compression", return_value=compression):
-            result = await service.compact_session(
-                CompactSessionRequest(user_id="alice", session_id="default"), None
-            )
+            "webot.api.session_service.apply_compression", return_value=compression
+        ):
+            result = await _service(agent).compact("alice", "default")
 
         self.assertEqual((result["before_tokens"], result["after_tokens"]), (900, 300))
         usage = agent.get_thread_context_usage("alice#default")
         self.assertEqual((usage["tokens"], usage["source"]), (1050, "api"))
 
     async def test_delete_subagent_session_also_cleans_registry_row(self):
-        service = SessionService(
-            db_path=":memory:",
-            agent=_FakeAgent({}),
-            verify_auth_or_token=lambda user_id, password, token: None,
-            extract_text=lambda content: content if isinstance(content, str) else str(content),
-        )
-
         with patch("webot.api.session_service.delete_thread_records", new=AsyncMock()) as delete_thread_records:
             with patch("webot.api.session_service.delete_subagent_by_session", new=Mock()) as delete_subagent_by_session:
-                result = await service.delete_session(
-                    DeleteSessionRequest(
-                        user_id="alice",
-                        session_id="subagent__research__worker1",
-                    ),
-                    None,
-                )
+                await _service(_FakeAgent({})).delete("alice", "subagent__research__worker1")
 
-        self.assertEqual(result["status"], "success")
         delete_thread_records.assert_awaited_once_with(":memory:", "alice#subagent__research__worker1")
         delete_subagent_by_session.assert_called_once_with("alice", "subagent__research__worker1")
 

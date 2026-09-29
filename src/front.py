@@ -31,7 +31,6 @@ from services.llm_factory import create_chat_model, extract_text, infer_provider
 from routes.front_group_routes import register_group_routes
 from routes.front_agent_routes import PUBLIC_AGENT_ENDPOINTS, register_agent_routes
 from routes.front_oasis_routes import register_oasis_routes
-from routes.front_session_routes import register_session_routes
 from routes.front_webot_routes import register_webot_routes
 from services.tinyfish_monitor_service import (
     DEFAULT_BASE_URL as TINYFISH_DEFAULT_BASE_URL,
@@ -203,17 +202,12 @@ PORT_AGENT = int(os.getenv("PORT_AGENT", "51200"))
 # [已弃用] 旧端点 URL，已被 /v1/chat/completions 替代
 # LOCAL_AGENT_URL = f"http://127.0.0.1:{PORT_AGENT}/ask"
 # LOCAL_AGENT_STREAM_URL = f"http://127.0.0.1:{PORT_AGENT}/ask_stream"
-LOCAL_AGENT_CANCEL_URL = f"http://127.0.0.1:{PORT_AGENT}/cancel"
 LOCAL_LOGIN_URL = f"http://127.0.0.1:{PORT_AGENT}/login"
 LOCAL_TOOLS_URL = f"http://127.0.0.1:{PORT_AGENT}/tools"
 LOCAL_UPDATE_CHECK_URL = f"http://127.0.0.1:{PORT_AGENT}/update_check"
 LOCAL_UPDATE_START_URL = f"http://127.0.0.1:{PORT_AGENT}/update_start"
 LOCAL_UPDATE_STATUS_URL = f"http://127.0.0.1:{PORT_AGENT}/update_status"
-LOCAL_SESSIONS_URL = f"http://127.0.0.1:{PORT_AGENT}/sessions"
-LOCAL_SESSION_HISTORY_URL = f"http://127.0.0.1:{PORT_AGENT}/session_history"
-LOCAL_DELETE_SESSION_URL = f"http://127.0.0.1:{PORT_AGENT}/delete_session"
 LOCAL_TTS_URL = f"http://127.0.0.1:{PORT_AGENT}/tts"
-LOCAL_SESSION_STATUS_URL = f"http://127.0.0.1:{PORT_AGENT}/session_status"
 PORT_SCHEDULER = int(os.getenv("PORT_SCHEDULER", "51201"))
 SCHEDULER_TASKS_URL = f"http://127.0.0.1:{PORT_SCHEDULER}/tasks"
 # OpenAI 兼容端点
@@ -327,15 +321,6 @@ register_agent_routes(
     internal_token=INTERNAL_TOKEN,
 )
 register_oasis_routes(app, oasis_base_url=OASIS_BASE_URL)
-register_session_routes(
-    app,
-    port_agent=PORT_AGENT,
-    internal_token=INTERNAL_TOKEN,
-    local_sessions_url=LOCAL_SESSIONS_URL,
-    local_session_history_url=LOCAL_SESSION_HISTORY_URL,
-    local_session_status_url=LOCAL_SESSION_STATUS_URL,
-    local_delete_session_url=LOCAL_DELETE_SESSION_URL,
-)
 register_webot_routes(
     app,
     port_agent=PORT_AGENT,
@@ -2521,17 +2506,6 @@ def save_current_user_password():
 # def proxy_ask_stream():
 #     ...
 
-@app.route("/proxy_cancel", methods=["POST"])
-def proxy_cancel():
-    """代理取消请求到后端 Agent"""
-    user_id = session.get("user_id", "")
-    session_id = request.json.get("session_id", "default") if request.is_json else "default"
-    try:
-        r = requests.post(LOCAL_AGENT_CANCEL_URL, json={"user_id": user_id, "session_id": session_id}, headers=_internal_auth_headers(), timeout=5)
-        return jsonify(r.json())
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
 @app.route("/proxy_tts", methods=["POST"])
 def proxy_tts():
     """代理 TTS 请求到后端 Agent，返回 mp3 音频流"""
@@ -4163,20 +4137,6 @@ def proxy_visual_upload_yaml():
             layout = None
 
     return jsonify({"saved": True, "name": safe, "layout": layout})
-
-
-@app.route("/proxy_visual/sessions-status", methods=["GET"])
-def proxy_visual_sessions_status():
-    """Return all sessions with their running status for the canvas display."""
-    user_id = session.get("user_id", "")
-    try:
-        r = requests.post(LOCAL_SESSIONS_URL, json={"user_id": user_id}, headers=_internal_auth_headers(), timeout=10)
-        if r.status_code != 200:
-            return jsonify([])
-        sessions_data = r.json()
-        return jsonify(sessions_data if isinstance(sessions_data, list) else [])
-    except Exception:
-        return jsonify([])
 
 
 # ===== Tunnel Control API =====

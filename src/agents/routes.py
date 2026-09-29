@@ -1,13 +1,13 @@
 """HTTP surface of the agent layer: every agent on this machine by its number.
 
-    GET    /v1/agents                  the caller's agents (?status=1 adds live status)
+    GET    /v1/agents                  the caller's agents (?status=1 adds live status, ?platform= one runtime's)
     POST   /v1/agents                  create: {agent_id?, name?, platform, …}
     GET    /v1/agents/{ref}            one agent (with live status)
     PATCH  /v1/agents/{ref}            rename / change settings
     DELETE /v1/agents/{ref}            delete (also leaves every team and conversation)
     POST   /v1/agents/{ref}/messages   ask and wait for the reply
     POST   /v1/agents/{ref}/inbox      put a message in its inbox
-    POST   /v1/agents/{ref}/control    status / cancel / reset
+    POST   /v1/agents/{ref}/control    status, or one of the runtime's actions (cancel, reset, …)
     GET    /v1/agents/{ref}/history    the agent's own conversation (?limit=)
 
 ``ref`` is an agent id (its session number) or ``<team>.<name>``. Sending to an
@@ -185,8 +185,11 @@ def create_agents_router(
                             instructions=body.instructions)
 
     @router.get("/v1/agents")
-    async def list_agents(authorization: str | None = Header(None), status: bool = Query(False)):
+    async def list_agents(authorization: str | None = Header(None), status: bool = Query(False),
+                          platform: str = Query("")):
         agents = store.list(user_of(authorization))
+        if platform:
+            agents = [a for a in agents if a.platform == canonical_platform(platform)]
         if status:
             import asyncio
             cards = await asyncio.gather(*(with_status(a) for a in agents))

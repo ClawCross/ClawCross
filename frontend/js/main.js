@@ -2200,12 +2200,7 @@ async function compactAgentFromCenter(button) {
     if (!agent || agent.platform !== 'webot') return;
     button.disabled = true;
     try {
-        const response = await fetch('/proxy_compact_session', {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({session_id: agent.agent_id}),
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || payload.error) throw new Error(payload.detail || payload.error || 'compact failed');
+        const payload = await agentApi('POST', `/v1/agents/${encodeURIComponent(agent.agent_id)}/control`, {action: 'compact'});
         await refreshAgentCenter();
         setAgentCenterDetailNotice(payload.triggered ? t('agent_center_compact_ok') : t('agent_center_compact_none'));
     } catch (error) {
@@ -2806,15 +2801,8 @@ async function compactCurrentSession(event) {
     sessionCompactStatus = '';
     renderSessionContextDetail();
     try {
-        const resp = await fetch('/proxy_compact_session', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ session_id: currentSessionId }),
-        });
-        const data = await resp.json();
-        if (!resp.ok || (data && data.error)) {
-            sessionCompactStatus = (zh ? '压缩失败：' : 'Failed: ') + ((data && data.error) || resp.status);
-        } else if (!data.triggered) {
+        const data = await agentApi('POST', `/v1/agents/${encodeURIComponent(currentSessionId)}/control`, {action: 'compact'});
+        if (!data.triggered) {
             const reason = data.reason || '';
             if (reason === 'empty') {
                 sessionCompactStatus = zh ? '会话为空，无需压缩' : 'Session empty, nothing to compress';
@@ -2833,20 +2821,8 @@ async function compactCurrentSession(event) {
                 : `Compressed: ${before.toLocaleString()} → ${after.toLocaleString()} tokens (saved ${saved.toLocaleString()}, -${pct}%)`;
             // 刷新上下文徽章
             try {
-                const sresp = await fetch('/proxy_session_status', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ session_id: currentSessionId }),
-                });
-                const sdata = await sresp.json();
-                if (typeof sdata.context_percent !== 'undefined') {
-                    updateSessionContextUsageBadge(
-                        sdata.context_percent, sdata.context_remaining,
-                        sdata.context_tokens, sdata.context_budget,
-                        sdata.context_source, sdata.context_breakdown,
-                        sdata.context_cache_read_tokens,
-                    );
-                }
+                const status = await fetchSessionStatus(currentSessionId);
+                if (status.context) showSessionContextUsage(status.context);
             } catch (e) { /* 徽章刷新失败不影响结果展示 */ }
         }
     } catch (e) {
@@ -3068,6 +3044,28 @@ async function _sessionAgent(sessionId) {
     }
 }
 
+// The WeBot sessions (agents of the webot runtime), each with its status:
+// {session_id, title, last_message, message_count, created_at, updated_at, busy, source, …}.
+// One nobody has written to yet has no title.
+async function fetchWebotSessions() {
+    const {data} = await agentApi('GET', '/v1/agents?status=1&platform=webot');
+    return (data || []).map(agent => ({
+        ...agent.status, session_id: agent.agent_id, busy: agent.status?.state === 'running',
+    }));
+}
+
+// A session's status ({state, source, mode, context, …}); idle for one not made yet.
+async function fetchSessionStatus(sessionId) {
+    const agent = await _sessionAgent(sessionId);
+    return agent ? agent.status : {state: 'idle'};
+}
+
+function showSessionContextUsage(context) {
+    const c = context || {};
+    updateSessionContextUsageBadge(c.percent || 0, c.remaining || 0, c.tokens || 0, c.budget || 0,
+                                   c.source, c.breakdown, c.cache_read_tokens);
+}
+
 // Name (or rename) the agent of a session; in a team view it is also its name in the team.
 async function saveSessionAgent(sessionId, meta, team = _currentAgentTeam) {
     const settings = {};
@@ -3092,11 +3090,6 @@ async function saveSessionAgent(sessionId, meta, team = _currentAgentTeam) {
         }
     }
     return agent;
-}
-
-async function forgetSessionAgent(sessionId) {
-    const agent = await _sessionAgent(sessionId);
-    if (agent) await agentApi('DELETE', `/v1/agents/${encodeURIComponent(agent.agent_id)}`);
 }
 
 // Resolve display title: prefer agent meta name, fallback to original title
@@ -3777,18 +3770,10 @@ async function interruptWeBotRun(sessionId, runId, agentRef = '') {
     }
 }
 
-async function deliverWeBotInbox(sessionId, targetRef = '', force = false) {
+async function deliverWeBotInbox(sessionId) {
     if (!sessionId) return;
     try {
-        const resp = await fetch('/proxy_webot_session_inbox_deliver', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({session_id: sessionId, target_ref: targetRef, force}),
-        });
-        const data = await resp.json();
-        if (!resp.ok || data.status !== 'success') {
-            throw new Error(data.detail || data.error || 'Inbox delivery failed');
-        }
+        await agentApi('POST', `/v1/agents/${encodeURIComponent(sessionId)}/control`, {action: 'deliver_inbox'});
         await refreshSubagentPanel();
     } catch (e) {
         _setWeBotPolicyStatus(String(e.message || 'Inbox delivery failed'), 'error');
@@ -4270,7 +4255,7 @@ function _buildRuntimeInboxList(items, sessionId = '') {
     }
     const hasQueued = items.some(item => String(item.status || '').toLowerCase() === 'queued');
     const actionHtml = sessionId && hasQueued
-        ? `<div class="webot-runtime-actions"><button class="webot-subagent-btn" type="button" onclick="deliverWeBotInbox('${encodeURIComponent(sessionId)}')">Deliver queued</button></div>`
+        ? `<div class="webot-runtime-actions"><button class="webot-subagent-btn" type="button" onclick="deliverWeBotInbox(decodeURIComponent('${encodeURIComponent(sessionId)}'))">Deliver queued</button></div>`
         : '';
     return `${actionHtml}${items.map(item => `
         <div class="webot-runtime-block">
@@ -4859,7 +4844,7 @@ let sessionFilterMode = 'named';
 let _cachedAgentMap = {};
 // All known session IDs across all JSON files (public + all teams), for unnamed detection
 let _allKnownSessions = new Set();
-// Last merged /proxy_sessions list (+ named-only from agent map), for chat-bar session picker
+// Last merged session list (+ named-only from agent map), for chat-bar session picker
 let _mergedSessionsCache = [];
 
 function isNamedSession(sessionId) {
@@ -4895,13 +4880,12 @@ async function loadSessionList() {
     }
     try {
         // Load sessions and agent meta in parallel
-        const [resp, agentResult] = await Promise.all([fetch('/proxy_sessions'), _loadAgentMetaMap(_currentAgentTeam)]);
+        const [webotSessions, agentResult] = await Promise.all([fetchWebotSessions(), _loadAgentMetaMap(_currentAgentTeam)]);
         _cachedAgentMap = agentResult.map;
         _allKnownSessions = agentResult.allKnown;
         const agentMap = agentResult.map;
-        const data = await resp.json();
-        // Merge: add sessions from agent JSON that are not in proxy_sessions
-        const allSessions = (data.sessions || []).slice();
+        // Merge: add sessions from agent JSON that are not in the list
+        const allSessions = webotSessions.filter(s => s.title);
         const seenIds = new Set(allSessions.map(s => s.session_id));
         for (const [sid, meta] of Object.entries(agentMap)) {
             if (!seenIds.has(sid) && meta && meta.name) {
@@ -4943,7 +4927,7 @@ async function loadSessionList() {
             }
             listEl.appendChild(div);
         }
-        refreshSessionStatus();
+        paintSessionBusy(webotSessions);
     } catch (e) {
         listEl.innerHTML = `<div class="text-xs text-red-400 text-center py-4">${t('history_error')}</div>`;
         _mergedSessionsCache = [];
@@ -4954,18 +4938,15 @@ async function loadSessionList() {
 // 增量刷新：不重建DOM，只更新标题/计数 + 状态发光
 async function refreshHistoryList() {
     try {
-        const [sessResp, statusResp, agentResult] = await Promise.all([
-            fetch('/proxy_sessions'),
-            fetch('/proxy_sessions_status'),
+        const [webotSessions, agentResult] = await Promise.all([
+            fetchWebotSessions(),
             _loadAgentMetaMap(_currentAgentTeam)
         ]);
-        const sessData = await sessResp.json();
-        const statusData = statusResp.ok ? await statusResp.json() : {};
         _cachedAgentMap = agentResult.map;
         _allKnownSessions = agentResult.allKnown;
         const agentMap = agentResult.map;
-        const sessions = sessData.sessions || [];
-        // Merge: add named sessions from agent JSON that are not in proxy_sessions
+        const sessions = webotSessions.filter(s => s.title);
+        // Merge: add named sessions from agent JSON that are not in the list
         const seenIds = new Set(sessions.map(s => s.session_id));
         for (const [sid, meta] of Object.entries(agentMap)) {
             if (!seenIds.has(sid) && meta && meta.name) {
@@ -4990,9 +4971,7 @@ async function refreshHistoryList() {
         const sessMap = {};
         for (const s of sessions) sessMap[s.session_id] = s;
         const statusMap = {};
-        if (statusData.sessions) {
-            for (const s of statusData.sessions) statusMap[s.session_id] = s;
-        }
+        for (const s of webotSessions) statusMap[s.session_id] = s;
         // 现有 DOM 的 session id 集合
         const existingEls = listEl.querySelectorAll('.session-item[data-session-id]');
         const existingIds = new Set();
@@ -5097,54 +5076,50 @@ async function refreshHistoryList() {
 
 async function refreshSessionStatus() {
     try {
-        const resp = await fetch('/proxy_sessions_status');
-        if (!resp.ok) return;
-        const data = await resp.json();
-        if (!data.sessions) return;
-        const statusMap = {};
-        for (const s of data.sessions) statusMap[s.session_id] = s;
-        document.querySelectorAll('.session-item[data-session-id]').forEach(el => {
-            const sid = el.dataset.sessionId;
-            const info = statusMap[sid];
-            el.classList.remove('busy-user', 'busy-system');
-            el.querySelector('.session-busy-badge')?.remove();
-            if (info && info.busy) {
-                const cls = info.source === 'system' ? 'busy-system' : 'busy-user';
-                el.classList.add(cls);
-                const badge = document.createElement('span');
-                badge.className = 'session-busy-badge ' + (info.source === 'system' ? 'system' : 'user');
-                badge.textContent = info.source === 'system' ? '⚙️' : '💬';
-                el.querySelector('.session-meta')?.appendChild(badge);
-            }
-        });
+        paintSessionBusy(await fetchWebotSessions());
     } catch (e) { /* silent */ }
+}
+
+// The busy glow and badge of each listed session.
+function paintSessionBusy(sessions) {
+    const statusMap = {};
+    for (const s of sessions) statusMap[s.session_id] = s;
+    document.querySelectorAll('.session-item[data-session-id]').forEach(el => {
+        const info = statusMap[el.dataset.sessionId];
+        el.classList.remove('busy-user', 'busy-system');
+        el.querySelector('.session-busy-badge')?.remove();
+        if (info && info.busy) {
+            const cls = info.source === 'system' ? 'busy-system' : 'busy-user';
+            el.classList.add(cls);
+            const badge = document.createElement('span');
+            badge.className = 'session-busy-badge ' + (info.source === 'system' ? 'system' : 'user');
+            badge.textContent = info.source === 'system' ? '⚙️' : '💬';
+            el.querySelector('.session-meta')?.appendChild(badge);
+        }
+    });
+}
+
+// Delete a session's agent: its session and record go with it. One already gone is deleted.
+async function deleteSessionAgent(sessionId) {
+    try {
+        await agentApi('DELETE', `/v1/agents/${encodeURIComponent(sessionId)}`);
+    } catch (e) {
+        if (e.status !== 404) throw e;
+    }
 }
 
 async function deleteSession(sessionId) {
     if (!confirm(t('delete_session_confirm'))) return;
     try {
-        const resp = await fetch('/proxy_delete_session', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ session_id: sessionId })
-        });
-        const data = await resp.json();
-        if (resp.ok && data.status === 'success') {
-            // The session was an agent: it is gone too.
-            try {
-                await forgetSessionAgent(sessionId);
-            } catch (e) { /* not an agent */ }
-            // 如果删除的是当前会话，自动开一个新的
-            if (sessionId === currentSessionId) {
-                currentSessionId = generateSessionId();
-                sessionStorage.setItem('sessionId', currentSessionId);
-                updateSessionDisplay();
-                renderWeBotWelcomeMessage(t('new_session_message'));
-            }
-            await loadSessionList();
-        } else {
-            alert(t('delete_fail') + ': ' + (data.detail || data.error || ''));
+        await deleteSessionAgent(sessionId);
+        // 如果删除的是当前会话，自动开一个新的
+        if (sessionId === currentSessionId) {
+            currentSessionId = generateSessionId();
+            sessionStorage.setItem('sessionId', currentSessionId);
+            updateSessionDisplay();
+            renderWeBotWelcomeMessage(t('new_session_message'));
         }
+        await loadSessionList();
     } catch (e) {
         alert(t('delete_fail') + ': ' + e.message);
     }
@@ -5165,13 +5140,7 @@ async function deleteAllSessions() {
         let failCount = 0;
         await Promise.all(visibleIds.map(async sid => {
             try {
-                const resp = await fetch('/proxy_delete_session', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ session_id: sid })
-                });
-                const data = await resp.json();
-                if (!resp.ok || data.status !== 'success') failCount++;
+                await deleteSessionAgent(sid);
             } catch { failCount++; }
         }));
         // If current session was among deleted, reset it
@@ -5251,23 +5220,13 @@ async function switchToSession(sessionId, force = false, options = {}) {
         chatBox.innerHTML = `<div class="text-xs text-gray-400 text-center py-4">${t('history_loading_msg')}</div>`;
     }
     try {
-        const resp = await fetch('/proxy_session_history', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ session_id: sessionId })
-        });
-        const data = await resp.json();
+        // The messages first: reading them brings the session's context use up to date.
+        const data = await agentApi('GET', `/v1/agents/${encodeURIComponent(sessionId)}/history?limit=1000`)
+            .catch(e => { if (e.status === 404) return {messages: []}; throw e; });
+        const status = await fetchSessionStatus(sessionId);
         chatBox.innerHTML = '';
-        if (RUN_MODE_VALID.includes(data.session_mode)) setRunMode(data.session_mode);
-        updateSessionContextUsageBadge(
-            data.context_percent,
-            data.context_remaining,
-            data.context_tokens,
-            data.context_budget,
-            data.context_source,
-            data.context_breakdown,
-            data.context_cache_read_tokens
-        );
+        if (RUN_MODE_VALID.includes(status.mode)) setRunMode(status.mode);
+        showSessionContextUsage(status.context);
 
         if (!data.messages || data.messages.length === 0) {
             renderWeBotWelcomeMessage();
@@ -8161,12 +8120,7 @@ async function syncCurrentChatRunUI() {
     currentAbortController = null;
     setChatStatusCheckingUI();
     try {
-        const resp = await fetch('/proxy_session_status', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ session_id: sessionId }),
-        });
-        const data = await resp.json();
+        const status = await fetchSessionStatus(sessionId);
         if (requestSeq !== _chatRunStatusRequestSeq || chatRunContextKey() !== contextKey) {
             return false;
         }
@@ -8177,7 +8131,7 @@ async function syncCurrentChatRunUI() {
             setStreamingUI(true);
             return true;
         }
-        const busy = !!data.busy;
+        const busy = status.state === 'running';
         setSystemBusyUI(busy);
         return busy;
     } catch (e) {
@@ -8220,11 +8174,7 @@ async function handleCancel() {
         currentAbortController = null;
     }
     try {
-        await fetch("/proxy_cancel", {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ session_id: targetSession })
-        });
+        await agentApi('POST', `/v1/agents/${encodeURIComponent(targetSession)}/control`, {action: 'cancel'});
     } catch(e) { /* ignore */ }
     // 恢复 UI（无论是用户流式还是系统调用被终止）
     setStreamingUI(false);
@@ -11923,30 +11873,16 @@ async function pollCurrentSessionStatus() {
     const contextKey = chatRunContextKey();
     const sessionId = currentSessionId;
     try {
-        const resp = await fetch('/proxy_session_status', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ session_id: sessionId })
-        });
-        const data = await resp.json();
+        const status = await fetchSessionStatus(sessionId);
         if (chatRunContextKey() !== contextKey || currentActiveChatRun()) return;
 
+        const busy = status.state === 'running';
         const wasBusy = cancelBtn.style.display !== 'none';
-        setSystemBusyUI(!!data.busy);
-        if (!data.busy && wasBusy) {
+        setSystemBusyUI(busy);
+        if (!busy && wasBusy) {
             showNewMsgBanner();
         }
-        if (typeof data.context_percent !== 'undefined') {
-            updateSessionContextUsageBadge(
-                data.context_percent,
-                data.context_remaining,
-                data.context_tokens,
-                data.context_budget,
-                data.context_source,
-                data.context_breakdown,
-                data.context_cache_read_tokens
-            );
-        }
+        if (status.context) showSessionContextUsage(status.context);
     } catch(e) {
         // A later poll retries without changing the last known UI state.
     } finally {

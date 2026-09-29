@@ -154,6 +154,12 @@ class _WebotServices:
     async def context_usage(self, user_id, session_id):
         return {"percent": 10}
 
+    async def summary(self, user_id, session_id):
+        return {"title": "hi", "message_count": 1}
+
+    async def compact(self, user_id, session_id):
+        return {"triggered": True, "saved_tokens": 5}
+
 
 def webot_runtime(services=None, engine=None):
     services = services or _WebotServices()
@@ -343,7 +349,7 @@ class _FakeWebot:
         self.cancelled = []
 
     def get_all_thread_status(self, prefix):
-        return {"alice#s1": {"busy": True, "pending_system": 2}}
+        return {"alice#s1": {"busy": True, "source": "system", "pending_system": 2}}
 
     def list_active_task_keys(self, prefix):
         return []
@@ -360,17 +366,30 @@ class TestControl(StoreCase):
     def setUp(self):
         super().setUp()
         self.webot_runtime = _FakeWebot()
-        self.control = AgentGateway(store=self.store, runtimes={WEBOT: webot_runtime(engine=self.webot_runtime)})
+        self.services = _WebotServices()
+        self.control = AgentGateway(store=self.store, runtimes={WEBOT: webot_runtime(self.services, self.webot_runtime)})
 
     def test_webot_status_cancel_and_reset(self):
         coder = self.webot()
         status = asyncio.run(self.control.status(coder))
-        self.assertEqual((status["state"], status["pending"], status["context"]), ("running", 2, {"percent": 10}))
-        self.assertEqual(status["actions"], ["status", "cancel", "reset"])
+        self.assertEqual((status["state"], status["source"], status["pending"], status["context"]),
+                         ("running", "system", 2, {"percent": 10}))
+        from webot.runtime import effective_session_mode
+
+        self.assertEqual((status["mode"], status["title"], status["message_count"]),
+                         (effective_session_mode("alice", "s1"), "hi", 1))
+        self.assertEqual(status["actions"], ["status", "cancel", "reset", "compact", "deliver_inbox"])
         self.assertTrue(self.control.is_busy(coder))
         self.assertEqual(asyncio.run(self.control.control(coder, "cancel")), {"cancelled": True})
         self.assertEqual(asyncio.run(self.control.control(coder, "reset")), {"reset": True})
         self.assertEqual(self.webot_runtime.cancelled, ["alice#s1", "alice#s1"])
+
+    def test_webot_compacts_and_delivers_its_inbox(self):
+        coder = self.webot()
+        self.assertEqual(asyncio.run(self.control.control(coder, "compact")), {"triggered": True, "saved_tokens": 5})
+        self.assertEqual(asyncio.run(self.control.control(coder, "deliver_inbox")), {"scheduled": True})
+        [drain] = self.services.system
+        self.assertEqual((drain.user_id, drain.session_id, drain.drain_inbox), ("alice", "s1", True))
 
     def test_webot_is_reached_only_where_it_runs(self):
         with self.assertRaises(ControlError):
@@ -380,15 +399,21 @@ class TestControl(StoreCase):
         from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
         from external import history as external_agent_history
 
+        from services.llm_factory import extract_text
+        from webot.api.session_service import SessionService
+
         self.webot_runtime.agent_app = mock.Mock()
         self.webot_runtime.agent_app.aget_state = mock.AsyncMock(return_value=SimpleNamespace(values={"messages": [
-            HumanMessage("hi"),
+            HumanMessage([{"type": "text", "text": "hi"}, {"type": "image_url", "image_url": {"url": "data:x"}}]),
             AIMessage("", tool_calls=[{"name": "read_file", "args": {"path": "a"}, "id": "c1"}]),
             ToolMessage("text", tool_call_id="c1", name="read_file"),
             AIMessage("done"),
         ]}))
-        self.assertEqual(asyncio.run(self.control.history(self.webot())), [
-            {"role": "user", "content": "hi"},
+        sessions = SessionService(db_path=":memory:", agent=self.webot_runtime, extract_text=extract_text)
+        control = AgentGateway(store=self.store, runtimes={
+            WEBOT: WebotRuntime(engine=self.webot_runtime, chat_service=None, system=None, sessions=sessions)})
+        self.assertEqual(asyncio.run(control.history(self.webot())), [
+            {"role": "user", "content": [{"type": "text", "text": "hi"}, {"type": "image_url", "image_url": {"url": "data:x"}}]},
             {"role": "assistant", "content": "", "tool_calls": [{"name": "read_file", "args": {"path": "a"}}]},
             {"role": "tool", "content": "text", "tool_name": "read_file"},
             {"role": "assistant", "content": "done"},
@@ -461,6 +486,8 @@ class TestAgentsApi(ApiCase):
         listed = self.call("GET", "/v1/agents?status=1").json()["data"]
         self.assertEqual([a["agent_id"] for a in listed], [webot["agent_id"], codex["agent_id"]])
         self.assertEqual(listed[0]["status"]["state"], "idle")
+        self.assertEqual([a["agent_id"] for a in self.call("GET", "/v1/agents?platform=codex").json()["data"]],
+                         [codex["agent_id"]])
 
         ref = codex["agent_id"]
         patched = self.call("PATCH", f"/v1/agents/{ref}", json={"name": "Codex 2", "settings": {"model": "o4"}})

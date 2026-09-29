@@ -40,31 +40,25 @@ uv run scripts/cli.py [-u USER] <子命令> [参数...]
 ## 目录
 
 1. [chat](#1-chat) — 发送消息
-2. [sessions](#2-sessions) — 会话列表
-3. [sessions-status](#3-sessions-status) — 所有会话忙碌状态
-4. [session-status](#4-session-status) — 单个会话状态
-5. [history](#5-history) — 会话历史
-6. [delete-session](#6-delete-session) — 删除会话
-7. [settings](#7-settings) — 查看/修改设置
-8. [tools](#8-tools) — 可用工具
-9. [tts](#9-tts) — 文字转语音
-10. [cancel](#10-cancel) — 取消当前生成
-11. [restart](#11-restart) — 重启 Agent
-12. [channel](#12-channel) — Chatbot / NoneBot / WeClaw channel 管理
-13. [groups](#13-groups) — 群组管理
-14. [openclaw](#14-openclaw) — OpenClaw Agent 管理
-15. [openclaw-snapshot](#15-openclaw-snapshot) — OpenClaw 快照管理
-16. [visual](#16-visual) — 可视化编排管理
-17. [agents](#17-agents) — Agent 管理（本机所有平台的 agent，一套命令）
-18. [teams](#18-teams) — Team 管理
-19. [topics](#19-topics) — OASIS 话题管理
-20. [personas](#20-personas) — 人设管理
-21. [workflows](#21-workflows) — YAML / Python Workflow 管理
-22. [tunnel](#22-tunnel) — Cloudflare Tunnel 管理
-23. [token](#23-token) — Token 生成与验证
-24. [status](#24-status) — 服务状态检查
-25. [skill](#25-skill) — Managed 技能管理
-26. [cron](#26-cron) — 定时任务 / 闹钟管理
+2. [settings](#2-settings) — 查看/修改设置
+3. [tools](#3-tools) — 可用工具
+4. [tts](#4-tts) — 文字转语音
+5. [restart](#5-restart) — 重启 Agent
+6. [channel](#6-channel) — Chatbot / NoneBot / WeClaw channel 管理
+7. [groups](#7-groups) — 群组管理
+8. [openclaw](#8-openclaw) — OpenClaw Agent 管理
+9. [openclaw-snapshot](#9-openclaw-snapshot) — OpenClaw 快照管理
+10. [visual](#10-visual) — 可视化编排管理
+11. [agents](#11-agents) — Agent 管理（本机所有平台的 agent，一套命令）
+12. [teams](#12-teams) — Team 管理
+13. [topics](#13-topics) — OASIS 话题管理
+14. [personas](#14-personas) — 人设管理
+15. [workflows](#15-workflows) — YAML / Python Workflow 管理
+16. [tunnel](#16-tunnel) — Cloudflare Tunnel 管理
+17. [token](#17-token) — Token 生成与验证
+18. [status](#18-status) — 服务状态检查
+19. [skill](#19-skill) — Managed 技能管理
+20. [cron](#20-cron) — 定时任务 / 闹钟管理
 
 ---
 
@@ -85,82 +79,7 @@ uv run scripts/cli.py -u Avalon_01 chat "你好" -s mysession
 
 ---
 
-## 2. sessions
-
-**查看会话列表**
-
-```bash
-uv run scripts/cli.py -u Avalon_01 sessions
-```
-
-无额外参数。
-
----
-
-## 3. sessions-status
-
-**查看所有会话忙碌状态**
-
-```bash
-uv run scripts/cli.py sessions-status
-```
-
-无额外参数。
-
----
-
-## 4. session-status
-
-**查看单个会话状态**
-
-```bash
-uv run scripts/cli.py session-status -s mysession
-```
-
-| 参数 | 说明 | 必填 | 默认值 |
-|------|------|------|--------|
-| `-s`, `--session` | 会话 ID | 否 | `default` |
-
----
-
-## 5. history
-
-**查看会话历史**
-
-```bash
-# 查看完整历史
-uv run scripts/cli.py -u Avalon_01 history -s mysession
-
-# 最近 5 条
-uv run scripts/cli.py -u Avalon_01 history -s mysession -n 5
-
-# 不截断长消息
-uv run scripts/cli.py -u Avalon_01 history -s mysession --full
-```
-
-| 参数 | 说明 | 必填 | 默认值 |
-|------|------|------|--------|
-| `-s`, `--session` | 会话 ID | 否 | `default` |
-| `-n`, `--limit` | 最近 N 条 | 否 | 全部 |
-| `--full` | 不截断长消息 | 否 | `False` |
-
----
-
-## 6. delete-session
-
-**删除会话**
-
-```bash
-uv run scripts/cli.py -u Avalon_01 delete-session mysession
-```
-
-| 参数 | 说明 | 必填 | 默认值 |
-|------|------|------|--------|
-| `session` | 会话 ID（位置参数） | 是 | — |
-
----
-
-## 7. settings
+## 2. settings
 
 **查看/修改设置**
 
@@ -184,7 +103,7 @@ uv run scripts/cli.py settings --set model gpt-4o
 
 ---
 
-## 8. tools
+## 3. tools
 
 **查看可用工具**
 
@@ -202,7 +121,7 @@ uv run scripts/cli.py tools --brief
 
 ---
 
-## 9. tts
+## 4. tts
 
 **文字转语音**
 
@@ -218,21 +137,7 @@ uv run scripts/cli.py tts "你好世界" -o hello.mp3 --voice alloy
 
 ---
 
-## 10. cancel
-
-**取消当前生成**
-
-```bash
-uv run scripts/cli.py cancel -s mysession
-```
-
-| 参数 | 说明 | 必填 | 默认值 |
-|------|------|------|--------|
-| `-s`, `--session` | 会话 ID | 否 | `default` |
-
----
-
-## 11. restart
+## 5. restart
 
 **重启 Agent 服务**
 
@@ -248,7 +153,7 @@ uv run scripts/cli.py restart
 
 ---
 
-## 12. channel
+## 6. channel
 
 **Chatbot / NoneBot / WeClaw channel 管理**
 
@@ -272,7 +177,7 @@ uv run scripts/cli.py channel logout weclaw
 
 ---
 
-## 13. groups
+## 7. groups
 
 **群聊**：成员是 agent（任何平台）和你自己。
 
@@ -315,7 +220,7 @@ uv run scripts/cli.py groups dnd-off --group-id g_abc123
 
 ---
 
-## 14. openclaw
+## 8. openclaw
 
 **OpenClaw Agent 管理**
 
@@ -371,7 +276,7 @@ uv run scripts/cli.py openclaw remove --name mybot
 
 ---
 
-## 15. openclaw-snapshot
+## 9. openclaw-snapshot
 
 **OpenClaw 快照管理**
 
@@ -406,7 +311,7 @@ uv run scripts/cli.py -u Avalon_01 openclaw-snapshot restore-all --team myteam
 
 ---
 
-## 16. visual
+## 10. visual
 
 **可视化编排管理**
 
@@ -431,9 +336,6 @@ uv run scripts/cli.py -u Avalon_01 visual delete-layout --name myflow --team myt
 
 # 上传 YAML
 uv run scripts/cli.py -u Avalon_01 visual upload-yaml --data '{"name":"myflow","yaml_content":"..."}' --team myteam
-
-# 编排会话状态
-uv run scripts/cli.py -u Avalon_01 visual sessions-status
 ```
 
 | 参数 | 说明 | 必填 | 默认值 |
@@ -446,13 +348,14 @@ uv run scripts/cli.py -u Avalon_01 visual sessions-status
 
 ---
 
-## 17. agents
+## 11. agents
 
 **Agent 管理**：WeBot、Codex、Claude Code、Gemini、OpenClaw、任意 HTTP 服务都是同一种 agent，用同一套命令。每个 agent 是一个会话，编号就是会话号；`--agent` 写编号或 `<team>.<名字>`。给没用过的编号发信息（ask / inbox）就新建一个 agent（WeBot）。
 
 ```bash
-# 列出（--status 附带运行状态）
+# 列出（--status 附带运行状态，--platform 只列一个平台的，如 WeBot 会话）
 uv run scripts/cli.py agents list --status
+uv run scripts/cli.py agents list --status --platform webot
 
 # 新建
 uv run scripts/cli.py agents create --name "Coder" --data '{"agent_id": "coder", "persona": "coder"}'   # WeBot
@@ -468,23 +371,30 @@ uv run scripts/cli.py agents delete --agent coder
 # 对话与控制（所有平台一样）
 uv run scripts/cli.py agents ask    --agent coder --message "你好"
 uv run scripts/cli.py agents inbox  --agent coder --message "空了看一下"
+uv run scripts/cli.py agents history --agent coder -n 10 --full
 uv run scripts/cli.py agents status --agent coder
 uv run scripts/cli.py agents cancel --agent coder
 uv run scripts/cli.py agents reset  --agent coder
+
+# WeBot 会话才有的
+uv run scripts/cli.py agents compact       --agent coder   # 立即压缩历史
+uv run scripts/cli.py agents deliver_inbox --agent coder   # 收件箱里排队的消息：当前这轮结束就处理
 ```
 
 | 参数 | 说明 | 必填 | 默认值 |
 |------|------|------|--------|
-| `action` | `list` / `show` / `create` / `update` / `delete` / `ask` / `status` / `cancel` / `reset` | 否 | `list` |
+| `action` | `list` / `show` / `create` / `update` / `delete` / `ask` / `inbox` / `history` / `status` / `cancel` / `reset` / `compact` / `deliver_inbox` | 否 | `list` |
 | `--agent` | 目标 agent | 除 list / create 外必填 | — |
 | `--name` | 名称 | create 时 | — |
-| `--platform` | 平台 | 否 | `webot` |
+| `--platform` | create：新 agent 的平台；list：只列这个平台的 | 否 | create 时 `webot` |
+| `-n`, `--limit` | 最近 N 条 | history 时 | `50` |
+| `--full` | 不截断长消息 | 否 | `False` |
 | `--message` | 消息 | ask 时 | — |
 | `--data` | JSON：create 的字段（persona、team、global_name、api_url、model…）或 update 的 `{"settings": {...}}` | 否 | — |
 
 ---
 
-## 18. teams
+## 12. teams
 
 **Team 管理**
 
@@ -650,7 +560,7 @@ uv run scripts/cli.py -u admin teams snapshot-download --team-name myteam \
 
 ---
 
-## 19. topics
+## 13. topics
 
 **OASIS 话题管理**
 
@@ -690,7 +600,7 @@ uv run scripts/cli.py topics delete-all
 > - `conclusion` (在 workflows 子命令中) — 阻塞等待直到讨论结束并返回结论
 
 
-## 20. personas
+## 14. personas
 
 **OASIS 人设管理**
 
@@ -727,7 +637,7 @@ uv run scripts/cli.py -u Avalon_01 personas delete --tag my_lawyer --team team2
 
 ---
 
-## 21. workflows
+## 15. workflows
 
 **OASIS YAML / Python Workflow 管理**
 
@@ -826,7 +736,7 @@ uv run scripts/cli.py -u Avalon_01 workflows conclusion --topic-id abc12345 --ti
 
 ---
 
-## 22. tunnel
+## 16. tunnel
 
 **Cloudflare Tunnel 管理**
 
@@ -850,7 +760,7 @@ uv run scripts/cli.py tunnel stop
 
 ---
 
-## 23. token
+## 17. token
 
 **Token 生成与验证**
 
@@ -885,7 +795,7 @@ uv run scripts/cli.py token decode --token "xxx"
 
 ---
 
-## 24. status
+## 18. status
 
 **检查各服务状态**
 
@@ -899,7 +809,7 @@ uv run scripts/cli.py status
 
 ---
 
-## 25. skill
+## 19. skill
 
 **Managed 技能管理**
 
@@ -936,7 +846,7 @@ uv run scripts/cli.py skill delete --name make_slides --team myteam
 
 ---
 
-## 26. cron
+## 20. cron
 
 **定时任务 / 闹钟管理**
 
@@ -987,12 +897,11 @@ uv run scripts/cli.py -u Avalon_01 workflows show --name test2flow --team team2
 uv run scripts/cli.py -u Avalon_01 chat "帮我分析这段数据" -s analysis_session
 
 # 查看聊天历史（最近 10 条，完整输出）
-uv run scripts/cli.py -u Avalon_01 history -s analysis_session -n 10 --full
+uv run scripts/cli.py -u Avalon_01 agents history --agent analysis_session -n 10 --full
 
-# 可视化编排：查看布局 → 查看 YAML → 查看会话状态
+# 可视化编排：查看布局 → 查看 YAML
 uv run scripts/cli.py -u Avalon_01 visual load-layouts --team myteam
 uv run scripts/cli.py -u Avalon_01 visual load-yaml-raw --name myflow --team myteam
-uv run scripts/cli.py -u Avalon_01 visual sessions-status
 
 # OpenClaw 快照：导出全部 → 恢复全部
 uv run scripts/cli.py -u Avalon_01 openclaw-snapshot export-all --team myteam

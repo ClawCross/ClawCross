@@ -3,7 +3,6 @@ Ops 操作服务的数据模型模块
 
 定义登录、TTS、ACP 外部 agent 控制相关的请求模型：
 - LoginRequest：登录请求
-- CancelRequest：取消任务请求
 - TTSRequest：文本转语音请求
 """
 
@@ -16,13 +15,6 @@ class LoginRequest(BaseModel):
     """登录请求"""
     user_id: str
     password: str
-
-
-class CancelRequest(BaseModel):
-    """取消任务请求"""
-    user_id: str
-    password: str = ""  # Optional when using X-Internal-Token
-    session_id: str = "default"
 
 
 class TTSRequest(BaseModel):

@@ -192,7 +192,6 @@ class ApprovalExecutionAuditTests(unittest.IsolatedAsyncioTestCase):
         from types import SimpleNamespace
         from unittest.mock import AsyncMock, Mock
         from webot.api.session_service import SessionService
-        from webot.api.session_models import CompactSessionRequest
 
         messages = [HumanMessage(content="history")]
         agent = SimpleNamespace(
@@ -201,10 +200,7 @@ class ApprovalExecutionAuditTests(unittest.IsolatedAsyncioTestCase):
             get_thread_last_context_tokens=lambda thread: 0,
             set_thread_context_usage=Mock(),
         )
-        service = SessionService(
-            db_path=":memory:", agent=agent,
-            verify_auth_or_token=lambda *args: None, extract_text=str,
-        )
+        service = SessionService(db_path=":memory:", agent=agent, extract_text=str)
         release = Event()
         observed = []
 
@@ -217,7 +213,7 @@ class ApprovalExecutionAuditTests(unittest.IsolatedAsyncioTestCase):
         with patch("webot.api.session_service.apply_compression", side_effect=compact), patch(
             "webot.api.session_service.static_compression_view", return_value=messages,
         ):
-            task = asyncio.create_task(service.compact_session(CompactSessionRequest(user_id="alice", session_id="s"), None))
+            task = asyncio.create_task(service.compact("alice", "s"))
             await asyncio.sleep(0.02)
             release.set()
             await task

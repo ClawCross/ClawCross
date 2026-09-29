@@ -463,61 +463,6 @@ class FrontendIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(kwargs["headers"], {"X-Internal-Token": front.INTERNAL_TOKEN})
 
-    def test_proxy_webot_session_inbox_send_forwards_payload(self):
-        with mock.patch.object(
-            front.requests,
-            "post",
-            return_value=_MockJsonResponse({"status": "success", "created": 1}, 200),
-        ) as mock_post:
-            response = self.client.post(
-                "/proxy_webot_session_inbox_send",
-                json={
-                    "session_id": "default",
-                    "target_ref": "worker-1",
-                    "body": "Need a review pass",
-                },
-            )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.get_json()["created"], 1)
-        _, kwargs = mock_post.call_args
-        self.assertEqual(
-            kwargs["json"],
-            {
-                "user_id": "integration-user",
-                "session_id": "default",
-                "target_ref": "worker-1",
-                "body": "Need a review pass",
-            },
-        )
-        self.assertEqual(kwargs["headers"], {"X-Internal-Token": front.INTERNAL_TOKEN})
-
-    def test_proxy_webot_session_inbox_deliver_forwards_payload(self):
-        with mock.patch.object(
-            front.requests,
-            "post",
-            return_value=_MockJsonResponse({"status": "success", "delivered_total": 1}, 200),
-        ) as mock_post:
-            response = self.client.post(
-                "/proxy_webot_session_inbox_deliver",
-                json={"session_id": "default", "target_ref": "worker-1", "limit": 5, "force": True},
-            )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.get_json()["delivered_total"], 1)
-        _, kwargs = mock_post.call_args
-        self.assertEqual(
-            kwargs["json"],
-            {
-                "user_id": "integration-user",
-                "session_id": "default",
-                "target_ref": "worker-1",
-                "limit": 5,
-                "force": True,
-            },
-        )
-        self.assertEqual(kwargs["headers"], {"X-Internal-Token": front.INTERNAL_TOKEN})
-
     def test_proxy_webot_runtime_controls_forward_payloads(self):
         with self.subTest("session mode"):
             with mock.patch.object(

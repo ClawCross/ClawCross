@@ -468,93 +468,6 @@ def cmd_chat(args):
         print()  # 换行
 
 
-# ── sessions: 会话管理 ─────────────────────────────────────────────────────
-def cmd_sessions(args):
-    """查看会话列表
-
-    参数：
-        args: 命令行参数对象
-    """
-    _check_token()
-    code, body = _req("POST", f"{AGENT_BASE}/sessions",
-                       headers=_agent_headers(),
-                       data={"user_id": args.user})
-    if code == 200:
-        if isinstance(body, dict) and "sessions" in body:
-            sessions = body["sessions"]
-        elif isinstance(body, list):
-            sessions = body
-        else:
-            _pp(body)
-            return
-        if not sessions:
-            print("📭 暂无会话")
-            return
-        print(f"📋 会话列表 ({len(sessions)} 个):\n")
-        for session in sessions:
-            sid = session.get("session_id", session.get("id", "?"))
-            title = session.get("title", session.get("name", ""))
-            status = session.get("status", "")
-            updated = session.get("updated_at", session.get("last_active", ""))
-            flag = "🟢" if status == "active" else "⚪"
-            line = f"  {flag} {sid}"
-            if title:
-                line += f"  {title}"
-            if updated:
-                line += f"  ({updated})"
-            print(line)
-    else:
-        _err(code, body)
-
-
-def cmd_history(args):
-    """查看会话历史
-
-    参数：
-        args: 命令行参数对象
-    """
-    _check_token()
-    data = {"user_id": args.user, "session_id": args.session or "default"}
-    code, body = _req("POST", f"{AGENT_BASE}/session_history",
-                       headers=_agent_headers(), data=data)
-    if code == 200:
-        messages = body if isinstance(body, list) else body.get("messages", body.get("history", [body]))
-        if not messages:
-            print("📭 暂无历史记录")
-            return
-        limit = args.limit or len(messages)
-        for msg in messages[-limit:]:
-            role = msg.get("role", "?")
-            content = msg.get("content", "")
-            icon = {"user": "👤", "assistant": "🤖", "system": "⚙️", "tool": "🔧"}.get(role, "❓")
-            if isinstance(content, list):
-                content = " ".join(
-                    p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text"
-                ) or str(content)
-            # 截断过长内容
-            if len(content) > 500 and not args.full:
-                content = content[:500] + "..."
-            print(f"{icon} [{role}]: {content}\n")
-    else:
-        _err(code, body)
-
-
-def cmd_delete_session(args):
-    """删除会话
-
-    参数：
-        args: 命令行参数对象
-    """
-    _check_token()
-    data = {"user_id": args.user, "session_id": args.session}
-    code, body = _req("POST", f"{AGENT_BASE}/delete_session",
-                       headers=_agent_headers(), data=data)
-    if code == 200:
-        print(f"✅ 会话 '{args.session}' 已删除")
-    else:
-        _err(code, body)
-
-
 # ── settings: 设置 ─────────────────────────────────────────────────────────
 def cmd_settings(args):
     """查看或修改设置
@@ -637,22 +550,6 @@ def cmd_tts(args):
 
 
 # ── cancel: 取消生成 ────────────────────────────────────────────────────────
-def cmd_cancel(args):
-    """取消当前生成
-
-    参数：
-        args: 命令行参数对象
-    """
-    _check_token()
-    data = {"user_id": args.user, "session_id": args.session or "default"}
-    code, body = _req("POST", f"{AGENT_BASE}/cancel",
-                       headers=_agent_headers(), data=data)
-    if code == 200:
-        print("✅ 已取消")
-    else:
-        _err(code, body)
-
-
 # ── restart: 重启 Agent ─────────────────────────────────────────────────────
 def cmd_restart(args):
     """重启 Agent 服务（通过写入重启标记文件）
@@ -793,40 +690,6 @@ def cmd_profile(args):
         return
 
     print(f"❌ 未知操作: {act}", file=sys.stderr)
-
-
-# ── sessions-status: 所有会话忙碌状态 ──────────────────────────────────────
-def cmd_sessions_status(args):
-    """查看所有会话的忙碌状态
-
-    参数：
-        args: 命令行参数对象
-    """
-    _check_token()
-    code, body = _req("POST", f"{AGENT_BASE}/sessions_status",
-                       headers=_agent_headers(),
-                       data={"user_id": args.user})
-    if code == 200:
-        _pp(body)
-    else:
-        _err(code, body)
-
-
-# ── session-status: 单个会话状态 ───────────────────────────────────────────
-def cmd_session_status(args):
-    """查看单个会话是否有新消息
-
-    参数：
-        args: 命令行参数对象
-    """
-    _check_token()
-    data = {"user_id": args.user, "session_id": args.session or "default"}
-    code, body = _req("POST", f"{AGENT_BASE}/session_status",
-                       headers=_agent_headers(), data=data)
-    if code == 200:
-        _pp(body)
-    else:
-        _err(code, body)
 
 
 # ── topics: OASIS 话题 ─────────────────────────────────────────────────────
@@ -1902,15 +1765,6 @@ def cmd_visual(args):
         else:
             _err(code, body)
 
-    elif act == "sessions-status":
-        # 查看会话状态
-        code, body = _req("GET", f"{FRONT_BASE}/proxy_visual/sessions-status",
-                           headers=_front_headers())
-        if code == 200:
-            _pp(body)
-        else:
-            _err(code, body)
-
     else:
         print(f"❌ 未知操作: {act}", file=sys.stderr)
 
@@ -1927,7 +1781,8 @@ def cmd_agents(args):
         return
 
     if act == "list":
-        code, body = _req("GET", base, headers=hdrs, params={"status": "1"} if args.status else None)
+        params = {**({"status": "1"} if args.status else {}), **({"platform": args.platform} if args.platform else {})}
+        code, body = _req("GET", base, headers=hdrs, params=params or None)
         if code != 200:
             return _err(code, body)
         for a in body.get("data", []):
@@ -1972,7 +1827,23 @@ def cmd_agents(args):
         if code != 200:
             return _err(code, body)
         print("✅ 已放入收件箱" if body.get("accepted") else f"❌ {body.get('error')}")
-    elif act in {"status", "cancel", "reset"}:
+    elif act == "history":
+        code, body = _req("GET", f"{base}/{ref}/history", headers=hdrs, params={"limit": args.limit})
+        if code != 200:
+            return _err(code, body)
+        if not body.get("messages"):
+            print("📭 暂无历史记录")
+        for msg in body.get("messages", []):
+            role, content = msg.get("role", "?"), msg.get("content", "")
+            icon = {"user": "👤", "assistant": "🤖", "system": "⚙️", "tool": "🔧"}.get(role, "❓")
+            if isinstance(content, list):
+                content = " ".join(
+                    p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text"
+                ) or str(content)
+            if len(content) > 500 and not args.full:
+                content = content[:500] + "..."
+            print(f"{icon} [{role}]: {content}\n")
+    elif act in {"status", "cancel", "reset", "compact", "deliver_inbox"}:
         code, body = _req("POST", f"{base}/{ref}/control", headers=hdrs, data={"action": act})
         _pp(body) if code == 200 else _err(code, body)
 
@@ -2874,26 +2745,6 @@ def build_parser():
     c.add_argument("-s", "--session", required=True, help="会话 ID（必填）")
     c.add_argument("-m", "--model", help="模型名称")
 
-    # sessions
-    sub.add_parser("sessions", help="查看会话列表")
-
-    # sessions-status
-    sub.add_parser("sessions-status", help="查看所有会话忙碌状态")
-
-    # session-status
-    c = sub.add_parser("session-status", help="查看单个会话状态")
-    c.add_argument("-s", "--session", help="会话 ID (默认: default)")
-
-    # history
-    c = sub.add_parser("history", help="查看会话历史")
-    c.add_argument("-s", "--session", help="会话 ID (默认: default)")
-    c.add_argument("-n", "--limit", type=int, help="最近 N 条")
-    c.add_argument("--full", action="store_true", help="不截断长消息")
-
-    # delete-session
-    c = sub.add_parser("delete-session", help="删除会话")
-    c.add_argument("session", help="会话 ID")
-
     # settings
     c = sub.add_parser("settings", help="查看/修改设置")
     c.add_argument("--full", action="store_true", help="完整设置（含高级项）")
@@ -2908,10 +2759,6 @@ def build_parser():
     c.add_argument("text", help="要转换的文本")
     c.add_argument("-o", "--output", help="输出文件 (默认: tts_output.mp3)")
     c.add_argument("--voice", help="语音角色")
-
-    # cancel
-    c = sub.add_parser("cancel", help="取消当前生成")
-    c.add_argument("-s", "--session", help="会话 ID")
 
     # restart
     sub.add_parser("restart", help="重启 Agent 服务")
@@ -2978,8 +2825,7 @@ def build_parser():
                    choices=["personas", "add-persona", "delete-persona",
                             "generate-yaml", "agent-generate-yaml",
                             "save-layout", "load-layouts", "load-layout",
-                            "load-yaml-raw", "delete-layout", "upload-yaml",
-                            "sessions-status"],
+                            "load-yaml-raw", "delete-layout", "upload-yaml"],
                    help="操作 (默认: personas)")
     c.add_argument("--team", help="Team 名称")
     c.add_argument("--tag", help="人设 tag (delete-persona 时)")
@@ -2989,13 +2835,16 @@ def build_parser():
     # agents
     c = sub.add_parser("agents", help="Agent 管理（本机所有 agent，一套接口）")
     c.add_argument("action", nargs="?", default="list",
-                   choices=["list", "show", "create", "update", "delete", "ask", "inbox", "status", "cancel", "reset"],
+                   choices=["list", "show", "create", "update", "delete", "ask", "inbox", "history",
+                            "status", "cancel", "reset", "compact", "deliver_inbox"],
                    help="操作 (默认: list)")
     c.add_argument("--agent", help="目标 agent：agent 编号（新编号即新 agent），或 team.名字")
     c.add_argument("--name", help="名称 (create / update 时)")
-    c.add_argument("--platform", help="平台 (create 时)：webot、codex、claude、gemini、openclaw 或任意 HTTP 服务名")
+    c.add_argument("--platform", help="平台：create 时新 agent 的平台（webot、codex、claude、gemini、openclaw 或任意 HTTP 服务名）；list 时只列这个平台的")
     c.add_argument("--message", help="消息 (ask / inbox 时)")
     c.add_argument("--status", action="store_true", help="列出时附带运行状态 (list 时)")
+    c.add_argument("-n", "--limit", type=int, default=50, help="最近 N 条 (history 时，默认 50)")
+    c.add_argument("--full", action="store_true", help="不截断长消息 (history 时)")
     c.add_argument("--data", help="JSON 数据：create 的字段或 update 的 {\"settings\": {...}}")
 
     # teams
@@ -3152,15 +3001,9 @@ def main():
     # 命令分发映射
     dispatch = {
         "chat": cmd_chat,
-        "sessions": cmd_sessions,
-        "sessions-status": cmd_sessions_status,
-        "session-status": cmd_session_status,
-        "history": cmd_history,
-        "delete-session": cmd_delete_session,
         "settings": cmd_settings,
         "tools": cmd_tools,
         "tts": cmd_tts,
-        "cancel": cmd_cancel,
         "restart": cmd_restart,
         "groups": cmd_groups,
         "profile": cmd_profile,
