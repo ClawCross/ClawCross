@@ -111,6 +111,28 @@ async def _file_access_gate(username: str, session_id: str, tool_name: str, args
     return (None if result.allowed else "❌ " + result.reason), path
 
 
+async def _memory_access_gate(username: str, session_id: str, tool_name: str, args: dict) -> str | None:
+    """Apply the same session mode and tool approval checks to memory entries."""
+    normalized_session = session_id or "default"
+    from webot.runtime import effective_session_mode, mode_allows_tool, PLAN_MODE_BLOCKED_TOOLS, REVIEW_MODE_BLOCKED_TOOLS
+    mode = effective_session_mode(username, normalized_session)
+    if not mode_allows_tool(mode, tool_name, args) or (mode == "plan" and tool_name in PLAN_MODE_BLOCKED_TOOLS) or (mode == "review" and tool_name in REVIEW_MODE_BLOCKED_TOOLS):
+        return "❌ 当前模式不允许该文件操作。"
+    bound = bind_file_target(tool_name, {**args, "username": username, "session_id": normalized_session},
+                             username, normalized_session)
+    if consume_execution_permit(username, normalized_session, tool_name, bound,
+                                policy_binding(username, normalized_session)):
+        return None
+    decision = evaluate_tool_policy(get_tool_policy(username), tool_name, bound)
+    if decision.allowed:
+        return None
+    if not decision.requires_approval:
+        return "❌ " + decision.reason
+    result = await authorize_action(user_id=username, session_id=normalized_session,
+                                    tool_name=tool_name, args=bound)
+    return None if result.allowed else "❌ " + result.reason
+
+
 def _file_sha256(path: str) -> str:
     digest = hashlib.sha256()
     with open(path, "rb") as handle:
@@ -214,6 +236,10 @@ async def list_files(username: str, session_id: str = "", folder: str = ".", sto
             from webot.skill_memory import list_memory
             if folder not in {"", "."}:
                 return "❌ memory 模式按条目管理，不接受目录路径。"
+            reject = await _memory_access_gate(username, session_id, "list_files",
+                {"folder": folder, "storage": storage, "team": team})
+            if reject:
+                return reject
             return json.dumps({"storage": "memory", "items": list_memory(username, team)}, ensure_ascii=False)
         if storage != "file":
             return "❌ 不支持的 storage。"
@@ -279,6 +305,13 @@ async def read_file(
     try:
         if storage == "memory":
             from webot.skill_memory import memory_target
+            reject = await _memory_access_gate(username, session_id, "read_file", {
+                "filename": filename, "offset": offset, "limit": limit,
+                "start_line": start_line, "line_count": line_count, "encoding": encoding,
+                "include_sha256": include_sha256, "storage": storage, "team": team,
+            })
+            if reject:
+                return reject
             file_path = str(memory_target(username, filename, team, shared=True)["_path"])
             encoding = "utf-8"
         elif storage == "file":
@@ -407,6 +440,15 @@ async def write_file(
         entry = None
         if storage == "memory":
             from webot.skill_memory import memory_lock, memory_target, prepare_content, public_entry, refresh_index
+            reject = await _memory_access_gate(username, session_id, "write_file", {
+                "filename": filename, "content": content, "mode": mode,
+                "start": start, "end": end, "encoding": encoding,
+                "expected_sha256": expected_sha256, "old_string": old_string,
+                "new_string": new_string, "replace_all": replace_all,
+                "storage": storage, "team": team,
+            })
+            if reject:
+                return reject
             guard.enter_context(memory_lock(username, team))
             entry = memory_target(username, filename, team, create=normalized_mode_check in {"overwrite", "append", "create"})
             file_path = str(entry["_path"])
@@ -528,6 +570,10 @@ async def delete_file(username: str, filename: str, session_id: str = "", storag
     try:
         if storage == "memory":
             from webot.skill_memory import memory_lock, memory_target, public_entry, refresh_index
+            reject = await _memory_access_gate(username, session_id, "delete_file",
+                {"filename": filename, "storage": storage, "team": team})
+            if reject:
+                return reject
             with memory_lock(username, team):
                 entry = memory_target(username, filename, team)
                 entry["_path"].unlink()
