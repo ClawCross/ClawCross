@@ -44,6 +44,7 @@ from api.ops_routes import create_ops_router
 from api.session_routes import create_session_router
 from api.settings_routes import create_settings_router
 from api.system_routes import create_system_router
+from api.system_service import SystemService
 from webot.routes import create_webot_router
 from services.message_builder import build_human_message
 from utils.logging_utils import get_logger, request_id_ctx
@@ -143,6 +144,7 @@ def verify_password(username: str, password: str) -> bool:
 
 # --- Create agent instance ---
 agent = TeamAgent(src_dir=current_dir, db_path=db_path)
+system_service = SystemService(agent=agent, verify_internal_token=verify_internal_token)
 
 # --- L1: the table of all agents (every session, by its number). L2 around it: teams
 # (namespaces in folders), group chats (their own database), workflows. ---
@@ -172,6 +174,7 @@ async def _reconcile_pending_in_background() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await agent.startup()
+    await system_service.resume_queued_inbox()
     # 后台任务完成通知是事件驱动的（detached runner 跑完会 POST /internal/bg_job_done）。
     # 这里只做一次性对账（非轮询），补发「本进程宕机期间已完成」的任务通知。
     #
@@ -257,6 +260,7 @@ app.include_router(
     create_system_router(
         agent=agent,
         verify_internal_token=verify_internal_token,
+        service=system_service,
     )
 )
 

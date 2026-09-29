@@ -785,13 +785,11 @@ class OpenAIChatService:
             "turn_count": 0,
             "external_tools": req.tools,
             "session_mode": (req.session_mode or "").strip().lower() or None,
+            "response_format": req.response_format,
         }
         # Per-request LLM model override (from OASIS SessionExpert)
         if req.llm_override:
             user_input["llm_override"] = req.llm_override
-        if req.response_format:
-            user_input["response_format"] = req.response_format
-
         thread_lock = await self.agent.get_thread_lock(thread_id)
         ctx = OpenAIExecutionContext(
             user_id=user_id,

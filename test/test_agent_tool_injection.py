@@ -147,6 +147,24 @@ class UserAwareToolNodeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(injected_call["args"]["username"], "alice")
         self.assertEqual(injected_call["args"]["source_session"], "exp_entrepreneur_mo0yixp1")
 
+    async def test_inbox_tool_cannot_select_another_users_session(self):
+        node = UserAwareToolNode([], lambda: [])
+        fake_tool_node = _FakeToolNode()
+        node.tool_node = fake_tool_node
+        permission = type("Permission", (), {"allowed": True, "requires_approval": False,
+            "reason": "", "matched_rule": None, "policy": {}, "approval": None})()
+        state = {"user_id": "alice", "session_id": "actual", "session_mode": "bypass",
+            "messages": [AIMessage(content="", tool_calls=[{
+                "name": "read_session_inbox",
+                "args": {"username": "bob", "source_session": "other"},
+                "id": "inbox", "type": "tool_call",
+            }])]}
+        with patch("core.agent.resolve_permission_context", return_value=permission), patch(
+            "core.agent.run_tool_policy_hooks", side_effect=_passthrough_hook_outcome):
+            await node(state, config={})
+        args = fake_tool_node.captured_state["messages"][-1].tool_calls[0]["args"]
+        self.assertEqual((args["username"], args["source_session"]), ("alice", "actual"))
+
 
 async def _add(a: int, b: int) -> str:
     return str(a + b)

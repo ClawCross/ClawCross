@@ -5,7 +5,7 @@ if _src_dir not in _sys.path:
     _sys.path.insert(0, _src_dir)
 
 """
-MCP 指令执行工具服务 — 安全沙箱化的系统命令执行
+MCP 指令执行工具服务 — 审核和可选的 Auto SRT 隔离
 - 每个用户有独立的工作目录 (data/user_files/<username>/)
 - 支持白名单/黑名单两种命令准入模式
 - 超时保护、输出截断、路径穿越防护
@@ -35,6 +35,7 @@ from utils.mcp_tool_docs import DocumentedFastMCP as FastMCP
 from utils.runtime_paths import ENV_FILE, USER_FILES_DIR
 
 from webot.workspace import resolve_session_workspace
+from webot.command_sandbox import build_srt_command, SandboxUnavailable, SrtCommand
 from webot.approval_review import authorize_action, policy_binding
 from webot.approval_actions import canonical_action_args
 from webot.runtime_store import consume_execution_permit, get_session_mode
@@ -576,7 +577,7 @@ class _StreamingCapture:
         )
 
 def _sandbox_env(workspace: str, username: str) -> dict:
-    """构造沙箱环境变量（跨平台）"""
+    """构造最小宿主机命令环境；本身不提供 OS 级沙盒。"""
     if IS_WINDOWS:
         return {
             "PATH": os.environ.get("PATH", ""),
@@ -679,11 +680,31 @@ async def _consume_stream(stream: asyncio.StreamReader | None, capture: _Streami
         capture.append(chunk.decode("utf-8", errors="replace"))
 
 
+async def _stop_sandbox_group(proc: asyncio.subprocess.Process) -> None:
+    """Give SRT a chance to restore mounts/ACLs, then stop stragglers."""
+    if os.name == "nt":
+        with contextlib.suppress(ProcessLookupError):
+            proc.kill()
+        await proc.wait()
+        return
+    with contextlib.suppress(ProcessLookupError):
+        os.killpg(proc.pid, signal.SIGTERM)
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=2)
+    except asyncio.TimeoutError:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(proc.pid, signal.SIGKILL)
+        await proc.wait()
+    with contextlib.suppress(ProcessLookupError):
+        os.killpg(proc.pid, signal.SIGKILL)
+
+
 async def _collect_process_output(
     proc: asyncio.subprocess.Process,
     *,
     timeout_seconds: int,
     max_output_chars: int,
+    process_group: bool = False,
 ) -> tuple[bool, str, str]:
     stdout_capture = _StreamingCapture(max_output_chars)
     stderr_capture = _StreamingCapture(max_output_chars)
@@ -696,8 +717,12 @@ async def _collect_process_output(
         )
         return False, stdout_capture.render().strip(), stderr_capture.render().strip()
     except asyncio.TimeoutError:
-        proc.kill()
-        await proc.wait()
+        if process_group:
+            await _stop_sandbox_group(proc)
+        else:
+            with contextlib.suppress(ProcessLookupError):
+                proc.kill()
+            await proc.wait()
         await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
         return True, stdout_capture.render().strip(), stderr_capture.render().strip()
 
@@ -927,9 +952,15 @@ async def _run_foreground(
     timeout_value: int,
     capture_limit: int,
     approval_note: str,
+    sandbox: SrtCommand | None = None,
 ) -> str:
     workspace = str(workspace_state.cwd)
+    # SRT inherits its own environment into the wrapped process. Never hand
+    # API keys or other host environment secrets to that process.
     env = _sandbox_env(workspace, username)
+    if sandbox is not None:
+        env["PATH"] = os.environ.get("PATH", env["PATH"])
+        env["TMPDIR"] = str(Path(sandbox.settings_path).parent)
     if isinstance(argv_or_command, str):
         proc = await asyncio.create_subprocess_shell(
             argv_or_command,
@@ -945,12 +976,29 @@ async def _run_foreground(
             stderr=asyncio.subprocess.PIPE,
             cwd=workspace,
             env=env,
+            start_new_session=sandbox is not None and os.name != "nt",
         )
-    timed_out, out, err = await _collect_process_output(
-        proc,
-        timeout_seconds=timeout_value,
-        max_output_chars=capture_limit,
-    )
+    try:
+        timed_out, out, err = await _collect_process_output(
+            proc,
+            timeout_seconds=timeout_value,
+            max_output_chars=capture_limit,
+            process_group=sandbox is not None,
+        )
+    finally:
+        if proc.returncode is None:
+            if sandbox is not None:
+                await _stop_sandbox_group(proc)
+            else:
+                with contextlib.suppress(ProcessLookupError):
+                    proc.kill()
+                await proc.wait()
+        elif sandbox is not None and os.name != "nt":
+            # A wrapped program may have left children after the CLI exits.
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(proc.pid, signal.SIGKILL)
+        if sandbox is not None:
+            sandbox.settings_path.unlink(missing_ok=True)
     location = [f"📁 工作目录: {workspace}", f"🧭 workspace mode: {workspace_state.mode}"]
     if workspace_state.remote:
         location.append(f"🌐 remote: {workspace_state.remote}")
@@ -1045,7 +1093,41 @@ async def run_command(
     workspace = str(workspace_state.cwd)
 
     try:
+        from webot.runtime import effective_session_mode
+        from webot.runtime_settings import get_runtime_settings
+        use_srt = (
+            effective_session_mode(username, session_id or "default") == "auto"
+            and get_runtime_settings(username, session_id or "default").approval.command_sandbox == "srt"
+        )
+        if use_srt and mode != "foreground":
+            return "❌ Auto SRT 沙盒目前只支持前台命令；后台和交互命令不会回退宿主机。"
         if mode == "foreground":
+            if use_srt:
+                script = _write_python_script(workspace, command) if is_python else ""
+                sandbox = None
+                try:
+                    try:
+                        sandbox = await asyncio.to_thread(
+                            build_srt_command, root=workspace_state.root,
+                            cwd=workspace_state.cwd, command=command, language=language,
+                            python_executable=_python_cmd(),
+                            script_path=Path(script) if script else None,
+                        )
+                    except SandboxUnavailable as exc:
+                        return f"❌ {exc}"
+                    return await _run_foreground(
+                        list(sandbox.argv), label="SRT 内 Python 代码" if is_python else "SRT 内命令",
+                        workspace_state=workspace_state, username=username,
+                        timeout_value=_bounded_int(timeout_seconds, EXEC_TIMEOUT, 1, MAX_EXEC_TIMEOUT),
+                        capture_limit=_bounded_int(max_output_chars, MAX_OUTPUT_LENGTH, 256, MAX_CAPTURE_LENGTH),
+                        approval_note=approval_note, sandbox=sandbox,
+                    )
+                finally:
+                    if sandbox is not None:
+                        sandbox.settings_path.unlink(missing_ok=True)
+                    if script:
+                        with contextlib.suppress(OSError):
+                            os.remove(script)
             script = _write_python_script(workspace, command) if is_python else ""
             try:
                 return await _run_foreground(

@@ -25,6 +25,7 @@
 | `approval.reviewer_model` | 空；使用默认模型 |
 | `approval.reviewer_policy` | 空；补充审核要求，不能解除明确禁止规则 |
 | `approval.reviewer_timeout_seconds` | 30；独立模型审核超时后回到人工审核 |
+| `approval.command_sandbox` | `off`；可选 `srt`，仅 Auto 模式的前台 `run_command` 在原生 SRT 沙盒内执行；旧 `container` 配置迁移到 `srt` |
 
 `trigger_tokens` 必须大于 `target_tokens`，且不能超过显式历史预算；摘要和保留指示必须在摘要输入预算内。部分设置更新合并到已有覆盖，非法更新不会修改文件。用户默认修改若与现有会话覆盖冲突，也会拒绝保存并显示原因。
 
@@ -92,6 +93,10 @@ FastAPI 入口（现有用户认证或内部 token）：
 交流模式在解码绑定和执行端都不提供工具。只读模式以明确的读取工具集合过滤，拒绝写文件、发送消息、启动子 Agent、执行命令及终端输入；后台输出仍可读。Bypass 跳过人工和模型确认，但保留显式 deny 和关键命令硬拦截。Auto 对写入及需要批准的操作调用独立代审；来源不足、模型失败或超时时仍转交人工。模式随用户默认/会话覆盖保存，桌面、手机和 CLI 使用同一组名称；旧 manual/plan/yolo 值兼容。
 
 Auto 代审目前只接入内置 Agent；外部 ACP Agent 不具备这个审核通道，Auto 使用 approve-reads + deny，拒绝写操作，避免静默放行。
+
+Auto 模式可以启用 Anthropic Sandbox Runtime（SRT）：设置 `approval.command_sandbox=srt` 后，前台 shell 与 Python 命令使用当前机器的解释器、虚拟环境和依赖，在 SRT 的原生 OS 沙盒内执行。程序为每次命令生成私有临时策略文件：禁止网络和 Unix socket、限制写入到会话工作区和系统临时目录，并阻止读取常见凭证目录。SRT 默认允许读取其他宿主机文件，因此它不是只挂载工作区的容器；模型审核与原有明确禁止规则继续生效。文件工具、网络工具和其他 MCP 工具不在该命令沙盒内。后台和交互命令暂时拒绝。SRT 或依赖不可用时拒绝命令，不在宿主机回退。需要 SRT 0.0.77 或更新版本（旧版本配置加载可能降级）。Linux 需要 `bwrap`、`socat`、`rg`；macOS 需要 `rg`；Windows 支持为 alpha，需执行一次 `windows-install` 并确保虚拟环境对沙盒账户可读。旧 `container` 设置会安全迁移到 `srt`。
+
+本机使用临时安装的 SRT 0.0.77 和 `socat` 做过真实启动探针：策略被读取，但 Ubuntu 的 `kernel.apparmor_restrict_unprivileged_userns=1` 阻止了 SRT 的嵌套 user namespace，命令以 `apply-seccomp: write /proc/self/setgroups ... Permission denied` 退出，未执行脚本或写入工作区外。没有为了测试修改系统级 AppArmor/sysctl 配置。启用前需要管理员按 [SRT 官方 Linux 指引](https://github.com/anthropics/sandbox-runtime#platform-specific-dependencies) 配置允许的 user namespace；不能通过关闭沙盒回退来掩盖此错误。
 
 上下文详情与设置面板显示分段长条，区分对话历史、工具结果、压缩摘要、提示词/工具定义和剩余。API 总数为真值，分项仍为本地估算；没有 API 用量时仅估算实际压缩视图。默认窗口 1M；手动值控制窗口与默认历史预算，历史还扣除提示词、工具定义和输出预留。它不会扩大服务商实际容量，需要填写服务商支持的窗口。会话设置优先于用户默认设置。
 

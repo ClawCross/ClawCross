@@ -42,6 +42,17 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def summarize_inbox_content(content: str, limit: int = 100) -> str:
+    """A bounded preview for notifications; the full body stays in the inbox."""
+    lines = (content or "").splitlines()
+    if lines and lines[0].startswith("[来自 ") and lines[0].endswith(" 的消息]"):
+        lines = lines[1:]
+    preview = " ".join(" ".join(lines).split())
+    if not preview:
+        return "（空消息）"
+    return preview[:limit].rstrip() + ("…" if len(preview) > limit else "")
+
+
 def _parse_timestamp(value: str | None) -> datetime | None:
     text = (value or "").strip()
     if not text:
@@ -165,7 +176,8 @@ def _connect(db_path: str | os.PathLike | None = None) -> sqlite3.Connection:
             wait_for_idle INTEGER NOT NULL DEFAULT 1,
             metadata_json TEXT NOT NULL DEFAULT '{}',
             created_at TEXT NOT NULL,
-            delivered_at TEXT NOT NULL DEFAULT ''
+            delivered_at TEXT NOT NULL DEFAULT '',
+            read_at TEXT NOT NULL DEFAULT ''
         )
         """
     )
@@ -475,6 +487,17 @@ def _connect(db_path: str | os.PathLike | None = None) -> sqlite3.Connection:
         conn.execute(
             "ALTER TABLE webot_session_plans ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'"
         )
+    existing_inbox_columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(webot_session_inbox)").fetchall()
+    }
+    if "read_at" not in existing_inbox_columns:
+        conn.execute("ALTER TABLE webot_session_inbox ADD COLUMN read_at TEXT NOT NULL DEFAULT ''")
+        # Before this schema, a delivered message's full body was already
+        # handed to the agent. Do not reclassify that history as unread.
+        conn.execute(
+            "UPDATE webot_session_inbox SET read_at = CASE WHEN delivered_at != '' "
+            "THEN delivered_at ELSE created_at END WHERE delivery_status = 'delivered'"
+        )
     conn.execute(
         """
         UPDATE webot_session_inbox
@@ -580,6 +603,7 @@ class InboxMessageRecord:
     metadata: dict[str, Any] = field(default_factory=dict)
     created_at: str = ""
     delivered_at: str = ""
+    read_at: str = ""
 
     @property
     def body(self) -> str:
@@ -588,6 +612,10 @@ class InboxMessageRecord:
     @property
     def status(self) -> str:
         return self.delivery_status
+
+    @property
+    def summary(self) -> str:
+        return summarize_inbox_content(self.title or self.content)
 
     @property
     def source_agent_id(self) -> str:
@@ -1481,13 +1509,14 @@ def create_inbox_message(
         source_session=source_session or "default",
         target_session=target_session or "default",
         target_agent_id=target_agent_id or "",
-        title=title.strip(),
+        title=title.strip()[:160],
         content=normalized_content,
         delivery_status=normalized_status,
         wait_for_idle=wait_for_idle,
         metadata=merged_metadata,
         created_at=utc_now(),
         delivered_at="",
+        read_at="",
     )
     with _connect(db_path) as conn:
         conn.execute(
@@ -1523,20 +1552,111 @@ def list_inbox_messages(
     *,
     status: str | None = None,
     db_path: str | os.PathLike | None = None,
-    limit: int = 50,
+    limit: int | None = 50,
+    oldest_first: bool = False,
 ) -> list[InboxMessageRecord]:
     query = [
         "SELECT * FROM webot_session_inbox WHERE user_id = ? AND target_session = ?",
     ]
     params: list[Any] = [user_id, target_session]
-    if status:
+    if status == "unread":
+        query.append("AND read_at = ''")
+    elif status == "read":
+        query.append("AND read_at != ''")
+    elif status:
         query.append("AND delivery_status = ?")
         params.append(status)
-    query.append("ORDER BY created_at DESC LIMIT ?")
-    params.append(max(1, limit))
+    direction = "ASC" if oldest_first else "DESC"
+    query.append(f"ORDER BY created_at {direction}, rowid {direction}")
+    if limit is not None:
+        query.append("LIMIT ?")
+        params.append(max(1, limit))
     with _connect(db_path) as conn:
         rows = conn.execute(" ".join(query), params).fetchall()
     return [_row_to_inbox_message(row) for row in rows if row is not None]
+
+
+def list_queued_inbox_targets(*, db_path: str | os.PathLike | None = None) -> list[tuple[str, str]]:
+    """Find durable inboxes to resume after the agent service restarts."""
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT user_id, target_session FROM webot_session_inbox "
+            "WHERE delivery_status = 'queued'"
+        ).fetchall()
+    return [(row[0], row[1]) for row in rows]
+
+
+def get_inbox_message(
+    user_id: str,
+    target_session: str,
+    message_id: str,
+    *,
+    db_path: str | os.PathLike | None = None,
+) -> InboxMessageRecord | None:
+    """A message ID is only readable in its owning user's target session."""
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT * FROM webot_session_inbox WHERE user_id = ? AND target_session = ? AND message_id = ?",
+            (user_id, target_session, message_id),
+        ).fetchone()
+    return _row_to_inbox_message(row)
+
+
+def mark_inbox_read(
+    user_id: str,
+    target_session: str,
+    message_ids: list[str] | None = None,
+    *,
+    db_path: str | os.PathLike | None = None,
+) -> int:
+    """Mark selected or all unread messages read, without crossing a session boundary."""
+    with _connect(db_path) as conn:
+        selected = set(message_ids) if message_ids is not None else None
+        if selected is not None and not selected:
+            return 0
+        rows = conn.execute(
+            "SELECT message_id, delivery_status, metadata_json FROM webot_session_inbox "
+            "WHERE user_id = ? AND target_session = ? AND read_at = ''",
+            (user_id, target_session),
+        ).fetchall()
+        eligible = [
+            row["message_id"] for row in rows
+            if (selected is None or row["message_id"] in selected)
+            # A synchronous sender is waiting for this exact turn's reply.
+            # Marking it read before the worker runs would strand its waiter.
+            and not (
+                row["delivery_status"] == "queued"
+                and _json_loads_dict(row["metadata_json"]).get("wait_reply")
+            )
+        ]
+        now = utc_now()
+        cursor = conn.executemany(
+            "UPDATE webot_session_inbox SET read_at = ?, delivery_status = 'delivered', "
+            "delivered_at = CASE WHEN delivered_at = '' THEN ? ELSE delivered_at END "
+            "WHERE user_id = ? AND target_session = ? AND message_id = ? AND read_at = ''",
+            [(now, now, user_id, target_session, message_id) for message_id in eligible],
+        )
+        conn.commit()
+        return cursor.rowcount
+
+
+def mark_inbox_handled(
+    user_id: str,
+    target_session: str,
+    message_id: str,
+    *,
+    db_path: str | os.PathLike | None = None,
+) -> bool:
+    """Atomically mark a synchronous inbox turn delivered and read."""
+    now = utc_now()
+    with _connect(db_path) as conn:
+        cursor = conn.execute(
+            "UPDATE webot_session_inbox SET delivery_status = 'delivered', delivered_at = ?, read_at = ? "
+            "WHERE user_id = ? AND target_session = ? AND message_id = ? AND delivery_status = 'queued'",
+            (now, now, user_id, target_session, message_id),
+        )
+        conn.commit()
+        return cursor.rowcount == 1
 
 
 def update_inbox_message_status(
@@ -1756,7 +1876,11 @@ def count_inbox_messages(
         "SELECT COUNT(*) AS count FROM webot_session_inbox WHERE user_id = ? AND target_session = ?",
     ]
     params: list[Any] = [user_id, target_session]
-    if status:
+    if status == "unread":
+        query.append("AND read_at = ''")
+    elif status == "read":
+        query.append("AND read_at != ''")
+    elif status:
         query.append("AND delivery_status = ?")
         params.append(status)
     with _connect(db_path) as conn:

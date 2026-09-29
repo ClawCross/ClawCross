@@ -119,6 +119,11 @@ async function loadRuntimeSettingsScope() {
                     </select>
                 </label>
                 <p id="runtime-settings-reviewer-hint" class="runtime-settings-note"></p>
+                <label class="runtime-settings-field"><span>${text('Auto 命令沙盒', 'Auto command sandbox')}</span>
+                    <select data-section="approval" data-key="command_sandbox" class="runtime-settings-input">
+                        <option value="off" ${approval.command_sandbox !== 'srt' ? 'selected' : ''}>${text('关闭 · 模型审核后在宿主机执行', 'Off · Reviewed, then run on host')}</option>
+                        <option value="srt" ${approval.command_sandbox === 'srt' ? 'selected' : ''}>${text('SRT · 原生沙盒，仅前台命令', 'SRT · Native sandbox, foreground only')}</option>
+                    </select><small>${text('需预装 Anthropic Sandbox Runtime。沿用本机 Python 环境；禁用网络、限制写入，沙盒不可用时拒绝执行。Windows 支持仍为 alpha。', 'Requires Anthropic Sandbox Runtime. Uses the host Python environment; blocks network and limits writes. Unavailable sandbox blocks execution. Windows support is alpha.')}</small></label>
                 ${instructions('approval', 'reviewer_policy', approval.reviewer_policy, '补充审核要求', 'Additional review instructions', '例如：安装依赖可以代审，删除文件需先问我', 'For example: review installs for me, but ask before deleting files')}
                 <details class="runtime-settings-advanced"><summary>${text('高级审核设置', 'Advanced review settings')}<span>${text('模型与等待时间', 'Model and timeout')}</span></summary>
                     <div class="runtime-settings-advanced-body runtime-settings-grid">

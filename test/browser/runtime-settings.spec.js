@@ -5,7 +5,7 @@ const defaults = {
   context: { auto_compact: true, context_window_tokens: 1000000, history_tokens: 0, trigger_tokens: 0, target_tokens: 0,
     preserve_recent_turns: 4, summary_tokens: 2000, summarizer_input_tokens: 8000,
     summarizer_model: '', preserve_instructions: '' },
-  approval: { mode: 'auto', approvals_reviewer: 'user', reviewer_model: '', reviewer_policy: '', reviewer_timeout_seconds: 30 },
+  approval: { mode: 'auto', approvals_reviewer: 'user', reviewer_model: '', reviewer_policy: '', reviewer_timeout_seconds: 30, command_sandbox: 'off' },
 };
 
 async function setup(page, options = {}) {
@@ -72,6 +72,16 @@ test('model and summary instructions render as literal text', async ({ page }) =
   await expect(page.locator('[data-key="preserve_instructions"]')).toHaveValue(instructions);
   await expect(page.locator('#runtime-settings-modal [onfocus], #runtime-settings-modal img')).toHaveCount(0);
   expect(await page.evaluate(() => window.injected)).toBeUndefined();
+});
+
+test('Auto SRT sandbox is saved for the selected session', async ({ page }) => {
+  const requests = await setup(page);
+  await page.evaluate(() => openRuntimeSettings('session-1'));
+  await page.getByRole('tab', { name: '工具审核' }).click();
+  await page.locator('[data-key="command_sandbox"]').selectOption('srt');
+  await page.locator('#runtime-settings-save').click();
+  await expect(page.locator('#runtime-settings-result')).toContainText('已保存');
+  expect(requests[0]).toEqual({ session_id: 'session-1', settings: { approval: { command_sandbox: 'srt' } }, reset: false });
 });
 
 test('invalid settings show backend error and preserve edited values', async ({ page }) => {

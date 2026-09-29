@@ -424,8 +424,8 @@ class WeBotServiceTests(unittest.IsolatedAsyncioTestCase):
 
                 delivered_payloads = []
 
-                async def _fake_push_system_message(*, user_id, session_id, text, timeout=30):
-                    delivered_payloads.append((user_id, session_id, text))
+                async def _fake_push_system_message(*, user_id, session_id, text, timeout=30, drain_inbox=False):
+                    delivered_payloads.append((user_id, session_id, text, drain_inbox))
 
                 service._push_system_message = _fake_push_system_message
 
@@ -438,19 +438,20 @@ class WeBotServiceTests(unittest.IsolatedAsyncioTestCase):
                     ),
                     None,
                 )
-                delivered_list = await service.get_session_inbox(
+                queued_list = await service.get_session_inbox(
                     WeBotSessionInboxListRequest(
                         user_id="alice",
                         session_id="subagent__research__worker1",
-                        status="delivered",
+                        status="queued",
                     ),
                     None,
                 )
 
                 self.assertEqual(sent["created"], 1)
-                self.assertEqual(sent["delivered"], 1)
+                self.assertEqual(sent["delivered"], 0)
                 self.assertEqual(len(delivered_payloads), 1)
-                self.assertEqual(delivered_list["items"][0]["status"], "delivered")
+                self.assertTrue(delivered_payloads[0][3])
+                self.assertEqual(queued_list["items"][0]["status"], "queued")
 
                 agent._active_keys.add("alice#subagent__research__worker1")
                 queued = await service.send_session_inbox(
@@ -471,10 +472,9 @@ class WeBotServiceTests(unittest.IsolatedAsyncioTestCase):
                     None,
                 )
 
-                self.assertEqual(queued["targets"][0]["delivery_state"], "busy")
+                self.assertEqual(queued["targets"][0]["delivery_state"], "scheduled")
                 self.assertEqual(queued_list["items"][0]["status"], "queued")
-                artifacts = runtime_store.list_runtime_artifacts("alice", "subagent__research__worker1", limit=10)
-                self.assertTrue(any(item.kind == "session_inbox_delivery" for item in artifacts))
+                self.assertEqual(len(delivered_payloads), 2)
             finally:
                 store.DEFAULT_DB_PATH = original_db_path
                 runtime_store.DEFAULT_DB_PATH = original_runtime_db_path

@@ -65,7 +65,7 @@ GET    /v1/models                   新 agent 可用的运行方式
 
 ### 单 agent 接口（`gateway.py`）
 
-- `ask(agent, msg, *, context, mode, tools, response_format, timeout)`：发送并等回复。`response_format` 由各运行方式按自己的能力处理。
+- `ask(agent, msg, *, context, mode, tools, response_format, timeout)`：发送并等回复。`response_format` 由各运行方式按自己的能力处理：WeBot 在工具调用阶段结束后，单独用模型服务的受限解码生成最终的结构化回复；外部 agent 按自身协议处理。
 - `deliver(agent, msg, …)`：system trigger 语义。
 - `inbox(agent, msg)`：inbox 语义。
 - `discard(agent)`：删除临时 WeBot 会话，连同它在表里的行。

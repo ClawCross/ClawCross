@@ -69,7 +69,6 @@ from webot.runtime_store import (
     list_tool_approvals,
     list_verification_records,
     list_bridge_sessions,
-    mark_inbox_delivered,
     list_session_goals,
     request_run_interrupt,
     record_claude_keepalive_result,
@@ -174,10 +173,12 @@ class WeBotService:
             "target_session": item.target_session,
             "target_agent_id": item.target_agent_id,
             "body": item.body,
+            "summary": item.summary,
             "status": item.status,
             "metadata": _safe_json_loads(item.metadata_json),
             "created_at": item.created_at,
             "delivered_at": item.delivered_at,
+            "read_at": item.read_at,
             "updated_at": item.updated_at,
         }
 
@@ -307,7 +308,7 @@ class WeBotService:
             "cwd": record.cwd,
             "remote": record.remote,
             "session_mode": get_session_mode(user_id, record.session_id),
-            "queued_inbox_count": count_inbox_messages(user_id, record.session_id, status="queued"),
+            "queued_inbox_count": count_inbox_messages(user_id, record.session_id, status="unread"),
             "latest_run": None if latest_run is None else self._serialize_run(user_id, latest_run, include_events=False),
         }
 
@@ -360,12 +361,12 @@ class WeBotService:
         thread_id = f"{user_id}#{session_id}"
         return bool(self.agent.is_thread_busy(thread_id))
 
-    async def _push_system_message(self, *, user_id: str, session_id: str, text: str, timeout: int = 30) -> None:
+    async def _push_system_message(self, *, user_id: str, session_id: str, text: str, timeout: int = 30, drain_inbox: bool = False) -> None:
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(
                 f"{self._agent_base_url()}/system_trigger",
                 headers=self._internal_headers(),
-                json={"user_id": user_id, "session_id": session_id, "text": text},
+                json={"user_id": user_id, "session_id": session_id, "text": text, "drain_inbox": drain_inbox},
             )
             response.raise_for_status()
 
@@ -381,39 +382,16 @@ class WeBotService:
         queued_items = list_inbox_messages(user_id, target_session, status="queued", limit=max(1, min(limit, 50)))
         if not queued_items:
             return 0, "empty"
-        if not force and await self._peek_session_busy(user_id, target_session):
-            return 0, "busy"
-
-        ordered = list(reversed(queued_items))
-        lines = [
-            "[Session Inbox Delivery]",
-            "You have queued cross-session messages. Fold them into the current task if relevant.",
-            "",
-        ]
-        for item in ordered:
-            sender = item.source_label or item.source_session or item.source_agent_id or "unknown"
-            lines.append(f"- From {sender}: {item.body}")
-
+        # The agent service owns one durable inbox worker per target session.
+        # It waits on the session lock and drains immediately when the active
+        # turn finishes; this API must not mark messages delivered on HTTP ACK.
         await self._push_system_message(
             user_id=user_id,
             session_id=target_session,
-            text="\n".join(lines),
+            text="",
+            drain_inbox=True,
         )
-        delivered_count = mark_inbox_delivered(user_id, [item.message_id for item in ordered])
-        create_runtime_artifact(
-            user_id=user_id,
-            session_id=target_session,
-            kind="session_inbox_delivery",
-            title="session_inbox",
-            summary=f"Delivered {delivered_count} queued inbox message(s).",
-            metadata={
-                "target_session": target_session,
-                "target_agent_id": target_agent_id,
-                "message_ids": [item.message_id for item in ordered],
-                "force": force,
-            },
-        )
-        return delivered_count, "delivered"
+        return 0, "scheduled"
 
     @staticmethod
     def _voice_defaults() -> dict[str, str]:
@@ -984,6 +962,7 @@ class WeBotService:
                 req.user_id,
                 target_session=target_session,
                 body=req.body,
+                title=req.summary,
                 source_session=source_session,
                 source_agent_id=source_agent_id,
                 source_label=source_label,
