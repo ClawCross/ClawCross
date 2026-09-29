@@ -35,7 +35,7 @@ uv run scripts/cli.py teams list                              # 列出
 uv run scripts/cli.py teams info --team-name demo_team        # 详情
 uv run scripts/cli.py teams members --team-name demo_team     # 成员（任何平台）
 uv run scripts/cli.py teams rename --team-name demo_team --new-name demo2
-uv run scripts/cli.py teams delete --team-name demo_team      # 不在其他 team 里的成员 agent 一并删除
+uv run scripts/cli.py teams delete --team-name demo_team      # 只删 team 文件夹，agent 不受影响
 ```
 
 ---

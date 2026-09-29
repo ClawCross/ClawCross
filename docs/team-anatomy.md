@@ -60,7 +60,7 @@ A team is a **namespace**: it gathers agents, personas, skills, cron and workflo
 | name | the member's name in this team — `<team>.<name>` reaches it wherever an agent id is accepted, and `agent: <name>` names it in a team workflow |
 | lead | at most one member, marked in the package format as `is_primary` |
 
-One agent can be a member of several teams under different role names. Removing a member leaves the agent in place. Deleting a team from the UI or `clawcross team delete` also deletes the member agents that belong to no other team (`DELETE /v1/teams/<team>` removes only the team).
+One agent can be a member of several teams under different names. Removing a member, or deleting the team, leaves the agent as it is.
 
 ```bash
 clawcross team "paper-review-council" members        # name, platform, agent id of each member
