@@ -141,14 +141,12 @@ class _WebotServices:
         self.turns.append((user_id, session_id, req))
         return {"object": "chat.completion", "from": "webot"}
 
-    async def answer(self, user_id, session_id, req):
-        self.turns.append((user_id, session_id, req))
-        await asyncio.sleep(self.delay)
-        return "ok"
-
     async def run(self, req):
         self.system.append(req)
-        return {"status": "received"}
+        if not req.wait_reply:
+            return {"status": "received"}
+        await asyncio.sleep(self.delay)
+        return {"status": "completed", "reply": "ok"}
 
     async def delete(self, user_id, session_id):
         self.deleted.append((user_id, session_id))
@@ -185,18 +183,27 @@ class TestGateway(StoreCase):
         self.assertTrue(reply.ok, reply.error)
         return reply
 
-    def test_webot_runs_a_turn_in_its_session_with_mode_tools_and_schema(self):
+    def test_a_webot_ask_is_a_turn_after_the_current_one_with_mode_tools_and_schema(self):
         reply_format = {"type": "json_schema", "json_schema": {"name": "Reply", "schema": {"type": "object"}}}
         reply = asyncio.run(self.gateway.ask(self.webot(llm={"model": "m1"}), AgentMessage(text="hi", instructions="rules"),
                                              mode="readonly", tools=["read_file"], response_format=reply_format,
                                              timeout=NO_TIMEOUT))
         self.assertEqual((reply.ok, reply.content), (True, "ok"))
-        user, session, req = self.services.turns[0]
-        self.assertEqual((user, session), ("alice", "s1"))
-        self.assertEqual([(m.role, m.content) for m in req.messages], [("system", "rules"), ("user", "hi")])
+        req = self.services.system[0]
+        self.assertTrue(req.wait_reply)  # queued behind the session's current turn, not interrupting it
+        self.assertEqual((req.user_id, req.session_id), ("alice", "s1"))
+        self.assertTrue(req.text.startswith("[来自调度方的指令]\nrules") and req.text.endswith("hi"))
         self.assertEqual((req.session_mode, req.enabled_tools), ("readonly", ["read_file"]))
         self.assertEqual(req.response_format, reply_format)  # WeBot enforces it itself
         self.assertEqual(req.llm_override, {"model": "m1"})
+        self.assertEqual(self.services.turns, [])  # not the chat window's call
+
+    def test_the_chat_window_call_is_webots_own_completion(self):
+        from agents.openai import ChatCompletionRequest
+
+        req = ChatCompletionRequest(messages=[{"role": "user", "content": "hi"}], stream=True)
+        self.assertEqual(asyncio.run(self.gateway.chat(self.webot(), req))["from"], "webot")
+        self.assertEqual(self.services.turns[0][:2], ("alice", "s1"))
 
     def test_a_webot_turn_goes_on_when_the_caller_stops_waiting(self):
         services = _WebotServices(delay=0.2)
@@ -530,6 +537,51 @@ class TestAgentClient(ApiCase):
         self.assertEqual((kwargs["timeout"], kwargs["response_format"]["json_schema"]["name"]), (NO_TIMEOUT, "Reply"))
         self.assertEqual((deleted, twice), (True, False))
         self.assertIsNone(self.store.get("alice", "tmp__t__c__1"))
+
+
+class TestSystemTrigger(StoreCase):
+    """/system_trigger hands the message to the gateway by what the caller wants."""
+
+    def setUp(self):
+        super().setUp()
+        from agents.trigger import create_trigger_router
+
+        self.gateway = mock.Mock()
+        self.gateway.ask = mock.AsyncMock(return_value=AgentReply(ok=True, content="pong"))
+        self.gateway.inbox = mock.AsyncMock(return_value=DeliveryReceipt(accepted=True))
+        self.gateway.trigger = mock.AsyncMock(return_value=DeliveryReceipt(accepted=True))
+        app = FastAPI()
+        app.include_router(create_trigger_router(internal_token=TOKEN, store=self.store, gateway=self.gateway))
+        self.client = TestClient(app)
+
+    def post(self, token=TOKEN, **body):
+        return self.client.post("/system_trigger", headers={"X-Internal-Token": token},
+                                json={"user_id": "alice", "session_id": "w1", "text": "hi", **body})
+
+    def test_wait_inbox_or_now(self):
+        waited = self.post(wait_reply=True, enabled_tools=["read_file"], session_mode="readonly").json()
+        self.assertEqual(waited, {"status": "completed", "reply": "pong"})
+        agent, msg = self.gateway.ask.await_args.args
+        self.assertEqual((agent.agent_id, agent.driver, msg.text), ("w1", WEBOT, "hi"))  # a new number: a WeBot agent
+        self.assertEqual((self.gateway.ask.await_args.kwargs["tools"], self.gateway.ask.await_args.kwargs["mode"]),
+                         (["read_file"], "readonly"))
+
+        queued = self.post(inbox_source_session="main", inbox_source_user="bob", inbox_source_label="Lead",
+                           inbox_summary="看一下").json()
+        self.assertEqual(queued["status"], "queued")
+        _agent, msg = self.gateway.inbox.await_args.args
+        self.assertEqual((msg.sender, msg.summary), ("main", "看一下"))
+        self.assertEqual(self.gateway.inbox.await_args.kwargs["context"], {"source_user": "bob", "source_label": "Lead"})
+
+        now = self.post(coalesce_key="k", session_mode="chat").json()
+        self.assertEqual(now["status"], "received")
+        self.assertEqual(self.gateway.trigger.await_args.kwargs, {"mode": "chat", "coalesce_key": "k"})
+
+    def test_only_local_services_trigger_and_failures_say_so(self):
+        self.assertEqual(self.post(token="wrong").status_code, 403)
+        self.assertEqual(self.post(session_id="a.b").status_code, 400)
+        self.gateway.trigger.return_value = DeliveryReceipt(accepted=False, error="down")
+        self.assertEqual(self.post().status_code, 502)
 
 
 class TestOpenAIRouting(StoreCase):

@@ -43,12 +43,14 @@ from webot.api.service import WeBotService
 def create_webot_router(
     *,
     agent: Any,
+    system: Any,
     verify_auth_or_token: Callable[[str, str, str | None], None],
     extract_text: Callable[[Any], str],
 ) -> APIRouter:
     router = APIRouter()
     service = WeBotService(
         agent=agent,
+        system=system,
         verify_auth_or_token=verify_auth_or_token,
         extract_text=extract_text,
     )

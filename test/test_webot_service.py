@@ -134,7 +134,7 @@ class WeBotServiceTests(unittest.IsolatedAsyncioTestCase):
                     active_keys={"alice#subagent__research__worker1"},
                     statuses={"alice#subagent__research__worker1": {"busy": True}},
                 )
-                service = WeBotService(
+                service = WeBotService(system=None,
                     agent=agent,
                     verify_auth_or_token=lambda user_id, password, token: None,
                     extract_text=lambda content: content if isinstance(content, str) else str(content),
@@ -173,7 +173,7 @@ class WeBotServiceTests(unittest.IsolatedAsyncioTestCase):
             runtime_store.DEFAULT_DB_PATH = Path(tmpdir) / "runtime.db"
             policy.PROJECT_ROOT = Path(tmpdir)
             try:
-                service = WeBotService(
+                service = WeBotService(system=None,
                     agent=_FakeAgent({}, active_keys=set(), statuses={}),
                     verify_auth_or_token=lambda user_id, password, token: None,
                     extract_text=lambda content: content if isinstance(content, str) else str(content),
@@ -247,7 +247,7 @@ class WeBotServiceTests(unittest.IsolatedAsyncioTestCase):
             store.DEFAULT_DB_PATH = Path(tmpdir) / "subagents.db"
             runtime_store.DEFAULT_DB_PATH = Path(tmpdir) / "runtime.db"
             try:
-                service = WeBotService(
+                service = WeBotService(system=None,
                     agent=_FakeAgent({}, active_keys=set(), statuses={}),
                     verify_auth_or_token=lambda user_id, password, token: None,
                     extract_text=lambda content: content if isinstance(content, str) else str(content),
@@ -324,7 +324,7 @@ class WeBotServiceTests(unittest.IsolatedAsyncioTestCase):
             webot_memory.USER_FILES_DIR = Path(tmpdir) / "user_files"
             runtime_store.PROJECT_ROOT = Path(tmpdir)
             try:
-                service = WeBotService(
+                service = WeBotService(system=None,
                     agent=_FakeAgent({}, active_keys=set(), statuses={}),
                     verify_auth_or_token=lambda user_id, password, token: None,
                     extract_text=lambda content: content if isinstance(content, str) else str(content),
@@ -416,7 +416,7 @@ class WeBotServiceTests(unittest.IsolatedAsyncioTestCase):
                 upsert_subagent(target_record)
 
                 agent = _FakeAgent({}, active_keys=set(), statuses={})
-                service = WeBotService(
+                service = WeBotService(system=None,
                     agent=agent,
                     verify_auth_or_token=lambda user_id, password, token: None,
                     extract_text=lambda content: content if isinstance(content, str) else str(content),
@@ -494,7 +494,7 @@ class WeBotServiceTests(unittest.IsolatedAsyncioTestCase):
                 lambda username, session_id="": workspace_info
             )
             try:
-                service = WeBotService(
+                service = WeBotService(system=None,
                     agent=_FakeAgent({}, active_keys=set(), statuses={}),
                     verify_auth_or_token=lambda user_id, password, token: None,
                     extract_text=lambda content: content if isinstance(content, str) else str(content),

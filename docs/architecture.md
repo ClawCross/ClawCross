@@ -45,7 +45,7 @@ ClawCross 把一台机器上所有 agent 统一成一种东西：**有编号的�
 | 入口 | 说明 |
 |---|---|
 | **/v1** | `POST /v1/agents/{id}/messages`：发送并等回复。<br>`POST /v1/chat/completions`：`session_id` 是编号（必填）；`model` 只在新建时决定运行方式，不是运行方式名（如 `gpt-4o`）时按 WeBot 处理 |
-| **system trigger** | `POST /system_trigger {user_id, session_id, text}`（内部 token）：交给 agent 立即处理。WeBot 走自己的触发队列，其他运行方式在后台发送 |
+| **system trigger** | `POST /system_trigger {user_id, session_id, text}`（内部 token），经 gateway：带 `wait_reply` 是 `ask`（等回复）；带 `inbox_source_session` 是 `inbox`（放进收件箱，注明来自哪个会话）；否则是 `trigger`（交给它立即处理，`coalesce_key` 可合并排队的几条） |
 | **inbox** | `POST /v1/agents/{id}/inbox`：放进收件箱。WeBot 的收件箱在 `/system_trigger`（带 `inbox_source_session`）里：记下发件人，会话空闲时处理；其他运行方式没有收件箱，直接在后台发送（acpx 自己按会话排队） |
 
 其他接口：
@@ -77,7 +77,7 @@ GET    /v1/models                   新 agent 可用的运行方式
 
 | 运行时 | 代码 |
 |---|---|
-| WeBot | `src/webot/driver.py`：在进程内调用 WeBot 的对话、system trigger 和会话服务；控制面直接读引擎 |
+| WeBot | `src/webot/driver.py`：在进程内调用 WeBot 的服务。`ask`、`trigger`、`inbox` 都走它的 system trigger：`ask` 排在会话当前这一轮之后、等回复，不打断；`chat`（聊天窗口）接管当前这一轮。控制面直接读引擎 |
 | acpx（codex / claude / gemini…） | `src/external/acp.py`，经 `src/external/acpx.py`（acpx CLI） |
 | OpenClaw | `src/external/openclaw.py`（HTTP；取消、重置经 acpx） |
 | HTTP | `src/external/http.py` |
@@ -176,7 +176,7 @@ agent 的人设和工具是它自己的，各运行方式按自己的方式用�
 |---|---|
 | agent 表 | `src/agents/store.py` |
 | 入口 /v1、inbox | `src/agents/routes.py`, `src/agents/openai.py`（`/v1/chat/completions`、`/v1/models`） |
-| system trigger | `src/webot/api/system_service.py` |
+| system trigger | `src/agents/trigger.py`（入口），`src/webot/api/system_service.py`（WeBot 的处理） |
 | 单 agent 接口、附件 | `src/agents/gateway.py`, `src/agents/messages.py` |
 | 运行时（调用接口与控制面） | `src/agents/runtime.py`, `src/webot/driver.py`, `src/external/` |
 | 群聊 | `src/comms/`, `src/groups/` |

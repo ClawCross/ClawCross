@@ -115,7 +115,7 @@ class SendToSessionTests(unittest.IsolatedAsyncioTestCase):
         self._client(timeout_error=True)
         result = await webot.send_to_session("alice", "worker", "slow question", wait=True, source_session="main", timeout=1)
         self.assertIn("超时", result)
-        self.assertIn("可能已经入箱", result)
+        self.assertIn("当前这一轮结束后处理", result)
 
     async def test_read_and_mark_tools_are_scoped_to_the_current_session(self):
         with TemporaryDirectory() as tmpdir, patch.object(runtime_store, "DEFAULT_DB_PATH", Path(tmpdir) / "runtime.db"):

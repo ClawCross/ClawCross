@@ -10,9 +10,8 @@ import asyncio
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import Any
 
-from fastapi import HTTPException
 from langchain_core.messages import AIMessage, HumanMessage
 
 from agents.messages import decode_text_attachment as _try_decode_base64_text, is_text_mime as _is_text_mime
@@ -40,15 +39,8 @@ class _QueuedSystemTrigger:
     received_at: str
 
 class SystemService:
-    def __init__(
-        self,
-        *,
-        agent: Any,
-        verify_internal_token: Callable[[str | None], None],
-        coalesce_debounce_seconds: float = 0.75,
-    ):
+    def __init__(self, *, agent: Any, coalesce_debounce_seconds: float = 0.75):
         self.agent = agent
-        self.verify_internal_token = verify_internal_token
         self.coalesce_debounce_seconds = max(0.0, coalesce_debounce_seconds)
         self._coalesce_lock = asyncio.Lock()
         self._coalesce_queues: dict[str, list[_QueuedSystemTrigger]] = {}
@@ -211,6 +203,8 @@ class SystemService:
             "turn_count": 0,
             "response_format": req.response_format,
         }
+        if req.llm_override:
+            state["llm_override"] = req.llm_override
         # Per-request session_mode override; agent.py prefers this over the stored mode.
         mode = (req.session_mode or "").strip().lower()
         if mode:
@@ -376,21 +370,6 @@ class SystemService:
                 )
         return queued_count
 
-    @staticmethod
-    async def _trigger_elsewhere(agent: Any, req: SystemTriggerRequest) -> dict[str, Any]:
-        from agents.gateway import get_gateway
-        from agents.messages import AgentMessage
-
-        attachments = [a.model_dump() for a in req.attachments or []]
-        msg = AgentMessage(text=req.text, attachments=attachments, sender="system")
-        if req.wait_reply:
-            reply = await get_gateway().ask(agent, msg, mode=req.session_mode)
-            return {"status": "completed", "reply": reply.content if reply.ok else f"❌ {reply.error}", "coalesced": False}
-        receipt = await get_gateway().trigger(agent, msg, mode=req.session_mode)
-        if not receipt.accepted:
-            raise HTTPException(status_code=502, detail=receipt.error)
-        return {"status": "received", "message": f"已交给 {agent.agent_id}", "coalesced": False}
-
     def _ensure_inbox_worker(self, user_id: str, session_id: str) -> None:
         """Called under _inbox_guard; the worker waits for the session lock."""
         thread_id = f"{user_id}#{session_id}"
@@ -508,19 +487,6 @@ class SystemService:
         async with self._inbox_guard:
             for user_id, session_id in list_queued_inbox_targets():
                 self._ensure_inbox_worker(user_id, session_id)
-
-    async def system_trigger(self, req: SystemTriggerRequest, x_internal_token: str | None):
-        """Hand a message to agent ``session_id`` now. A number not seen before is a new
-        WeBot agent; an agent of another runtime is sent it through the gateway."""
-        self.verify_internal_token(x_internal_token)
-        from agents.store import WEBOT, get_store, valid_agent_id
-
-        if not valid_agent_id(req.session_id):
-            raise HTTPException(status_code=400, detail=f"invalid agent id {req.session_id!r}")
-        agent = get_store().ensure(req.user_id, req.session_id)
-        if agent.driver != WEBOT:
-            return await self._trigger_elsewhere(agent, req)
-        return await self.run(req)
 
     async def run(self, req: SystemTriggerRequest) -> dict[str, Any]:
         """A system message for WeBot agent ``session_id``: an inbox entry when it names

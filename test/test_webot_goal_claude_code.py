@@ -91,7 +91,7 @@ class WeBotGoalClaudeCodeTests(unittest.TestCase):
             try:
                 app = FastAPI()
                 app.include_router(
-                    create_webot_router(
+                    create_webot_router(system=None,
                         agent=_FakeAgent(),
                         verify_auth_or_token=lambda user_id, password, token: None,
                         extract_text=lambda content: content if isinstance(content, str) else str(content),

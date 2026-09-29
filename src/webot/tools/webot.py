@@ -1642,8 +1642,8 @@ async def send_to_session(
     timeout: int = 180,
     summary: str = "",
 ) -> str:
-    """给另一个会话发消息。消息先进入持久化收件箱，对方空闲时收到摘要通知。
-    wait=false 发出即返回，正文由对方按需阅读；wait=true 让对方直接处理正文并等待回复。
+    """给另一个会话发消息。wait=false 时消息进入对方的持久化收件箱，发出即返回，对方空闲时收到摘要通知、
+    按需阅读正文；wait=true 时对方在当前这一轮结束后直接处理正文，并把回复返回给你。
 
     :param target: 目标会话：子 Agent 的 agent_id / session_id / name，或会话 id；wait=false 时 "*" 表示所有子 Agent 与主会话
     :param content: 消息内容
@@ -1672,6 +1672,8 @@ async def send_to_session(
     _, source_label = _source_label(username, source_session_id)
     header = f"[来自 {username}#{source_label} 的消息]"
     text = f"{header}\n{content}"
+    if wait:
+        text += "\n（对方正在等你的回复：直接用文字回答即可。）"
 
     token = _ensure_internal_token()
     lines = []
@@ -1693,7 +1695,7 @@ async def send_to_session(
             except httpx.TimeoutException:
                 return (
                     f"⏰ 等待 {to_user}#{session_id} 回复超时（{timeout}s）。"
-                    "请求可能已经入箱；请查看目标会话的收件箱和回复。"
+                    "对方仍会在当前这一轮结束后处理这条消息，回复留在它的会话里。"
                 )
             except httpx.HTTPError as exc:
                 lines.append(f"❌ {to_user}#{session_id}: 投递失败: {exc}")
@@ -1703,7 +1705,7 @@ async def send_to_session(
                 continue
             if wait:
                 if response.json().get("status") != "completed":
-                    return f"⏳ {to_user}#{session_id} 的消息仍在收件箱，当前处理未完成。"
+                    return f"⏳ {to_user}#{session_id} 的回复还没有拿到，当前处理未完成。"
                 reply = str(response.json().get("reply") or "").strip()
                 return f"✅ {to_user}#{session_id} 回复:\n\n{reply or '(对方没有给出文字回复)'}"
             lines.append(f"✅ 已入 {to_user}#{session_id} 的收件箱，空闲后处理")

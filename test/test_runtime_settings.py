@@ -70,7 +70,7 @@ class RuntimeSettingsTests(unittest.TestCase):
         from webot.models import WeBotRuntimeSettingsUpdateRequest
         from webot.api.service import WeBotService
         auth = Mock(side_effect=HTTPException(status_code=401, detail="unauthorized"))
-        service = WeBotService(agent=SimpleNamespace(), verify_auth_or_token=auth, extract_text=str)
+        service = WeBotService(system=None, agent=SimpleNamespace(), verify_auth_or_token=auth, extract_text=str)
         req = WeBotRuntimeSettingsUpdateRequest(user_id="alice", settings={"approval": {"approvals_reviewer": "auto_review"}})
         with self.assertRaises(HTTPException):
             asyncio.run(service.update_runtime_settings(req, None))
