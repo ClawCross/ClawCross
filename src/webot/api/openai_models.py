@@ -1,65 +1,12 @@
-"""
-OpenAI API 数据模型模块
-
-定义 OpenAI 兼容 API 的请求/响应数据结构：
-- ChatMessage / ChatMessageContent：聊天消息格式
-- ChatCompletionRequest：聊天补全请求
-- OpenAIExecutionContext：执行上下文（dataclass）
-"""
+"""WeBot's run of one chat completion (the request itself is ``agents.openai``'s)."""
 
 from dataclasses import dataclass
-from typing import Any, Optional
-
-from pydantic import BaseModel
-
-
-class ChatMessageContent(BaseModel):
-    """OpenAI 消息内容部分（text / image_url / input_audio / file）"""
-    type: str
-    text: Optional[str] = None
-    image_url: Optional[dict] = None
-    input_audio: Optional[dict] = None
-    file: Optional[dict] = None
-
-
-class ChatMessage(BaseModel):
-    """OpenAI 格式的消息"""
-    role: str  # "system" | "user" | "assistant" | "tool"
-    content: Optional[Any] = None  # str 或 list[ChatMessageContent]
-    name: Optional[str] = None
-    tool_calls: Optional[list[dict]] = None
-    tool_call_id: Optional[str] = None
-
-
-class ChatCompletionRequest(BaseModel):
-    """OpenAI /v1/chat/completions 请求格式"""
-    model: Optional[str] = None
-    messages: list[ChatMessage]
-    stream: bool = False
-    temperature: Optional[float] = None
-    max_tokens: Optional[int] = None
-    tools: Optional[list[dict]] = None
-    tool_choice: Optional[Any] = None
-    user: Optional[str] = None
-    session_id: Optional[str] = None  # the number of the agent to talk to
-    password: Optional[str] = None
-    enabled_tools: Optional[list[str]] = None
-    # Per-request LLM model override (used by OASIS SessionExpert)
-    llm_override: Optional[dict] = None
-    max_turns: Optional[int] = None
-    # Per-request session mode override: "execute" | "plan" | "bypass".
-    # Wins over the stored session mode for this turn without writing the store.
-    session_mode: Optional[str] = None
-    # OpenAI-shaped forced reply format, e.g.
-    # {"type": "json_schema", "json_schema": {"name": ..., "schema": {...}, "strict": True}}
-    # Bound additively alongside tools; only applied for OpenAI-wire-protocol
-    # models (see core/agent.py's LLM binding site).
-    response_format: Optional[dict] = None
+from typing import Any
 
 
 @dataclass
 class OpenAIExecutionContext:
-    """聊天补全执行上下文（dataclass）"""
+    """One chat completion's turn: the session, its state input and how to answer."""
     user_id: str
     session_id: str
     thread_id: str

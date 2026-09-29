@@ -27,6 +27,7 @@ patch_langchain_file_mime()
 
 from webot.engine.agent import TeamAgent
 from agents.gateway import AgentGateway, set_gateway
+from agents.openai import create_openai_router
 from agents.routes import create_agents_router
 from agents.store import WEBOT, get_store
 from comms.conversations import Conversations
@@ -38,7 +39,6 @@ from teams.store import get_team_store
 from services.llm_factory import extract_text as _extract_text
 from utils.user_auth import load_users as load_users_from_file, verify_password as verify_password_from_file
 from api.harness_routes import create_harness_router
-from webot.api.openai_routes import create_openai_router
 from webot.api.openai_service import OpenAIChatService
 from api.ops_routes import create_ops_router
 from webot.api.session_routes import create_session_router
@@ -147,15 +147,14 @@ def verify_password(username: str, password: str) -> bool:
 # --- Create agent instance ---
 agent = TeamAgent(src_dir=current_dir, db_path=db_path)
 system_service = SystemService(agent=agent, verify_internal_token=verify_internal_token)
-chat_service = OpenAIChatService(internal_token=INTERNAL_TOKEN, verify_password=verify_password, agent=agent,
-                                 extract_text=_extract_text, build_human_message=build_human_message)
+chat_service = OpenAIChatService(agent=agent, extract_text=_extract_text, build_human_message=build_human_message)
 session_service = SessionService(db_path=db_path, agent=agent, verify_auth_or_token=verify_auth_or_token,
                                  extract_text=_extract_text)
 
 # --- L1: the table of all agents (every session, by its number). L2 around it: teams
 # (namespaces in folders), group chats (their own database), workflows. ---
 agent_store = get_store()
-webot = WebotRuntime(engine=agent, chat=chat_service, system=system_service, sessions=session_service)
+webot = WebotRuntime(engine=agent, chat_service=chat_service, system=system_service, sessions=session_service)
 gateway = AgentGateway(store=agent_store, runtimes={WEBOT: webot})
 set_gateway(gateway)
 team_store = get_team_store(agent_store)
@@ -213,7 +212,8 @@ app.include_router(
 )
 
 app.include_router(create_session_router(service=session_service))
-app.include_router(create_openai_router(service=chat_service))
+app.include_router(create_openai_router(internal_token=INTERNAL_TOKEN, verify_password=verify_password,
+                                        store=agent_store, gateway=gateway, names=team_store.address))
 
 
 app.include_router(

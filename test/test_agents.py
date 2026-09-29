@@ -137,6 +137,10 @@ class _WebotServices:
         self.delay = delay
         self.turns, self.system, self.deleted = [], [], []
 
+    async def complete(self, user_id, session_id, req):
+        self.turns.append((user_id, session_id, req))
+        return {"object": "chat.completion", "from": "webot"}
+
     async def answer(self, user_id, session_id, req):
         self.turns.append((user_id, session_id, req))
         await asyncio.sleep(self.delay)
@@ -155,7 +159,7 @@ class _WebotServices:
 
 def webot_runtime(services=None, engine=None):
     services = services or _WebotServices()
-    return WebotRuntime(engine=engine, chat=services, system=services, sessions=services)
+    return WebotRuntime(engine=engine, chat_service=services, system=services, sessions=services)
 
 
 class TestGateway(StoreCase):
@@ -529,37 +533,55 @@ class TestAgentClient(ApiCase):
 
 
 class TestOpenAIRouting(StoreCase):
+    """/v1/chat/completions: the session is the agent, and every call goes through the gateway."""
+
     def setUp(self):
         super().setUp()
-        from webot.api.openai_service import OpenAIChatService
-
-        from teams.store import TeamStore
+        from agents.openai import create_openai_router
 
         self.webot()
         self.store.create("alice", driver=ACPX, config={"platform": "codex"}, name="Codex", agent_id="cx")
-        teams = TeamStore(self.store, Path(self.tmp.name) / "user_files")
-        for target, value in (("agents.store.get_store", lambda *a: self.store),
-                              ("teams.store.get_team_store", lambda *a: teams)):
-            patcher = mock.patch(target, value)
-            patcher.start()
-            self.addCleanup(patcher.stop)
-        self.service = OpenAIChatService(internal_token=TOKEN, verify_password=lambda u, p: False, agent=mock.Mock(),
-                                         extract_text=str, build_human_message=mock.Mock())
+        patcher = mock.patch("agents.store.get_store", lambda *a: self.store)  # WeBot reads its agent's entry
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.services = _WebotServices()
+        self.gateway = AgentGateway(store=self.store, runtimes={WEBOT: webot_runtime(self.services)})
+        self.gateway.ask = mock.AsyncMock(return_value=AgentReply(ok=True, content="pong"))
+        names = {"dev.Critic": "s1"}
+        app = FastAPI()
+        app.include_router(create_openai_router(
+            internal_token=TOKEN, verify_password=lambda u, p: (u, p) == ("alice", "pw"), store=self.store,
+            gateway=self.gateway, names=lambda owner, ref: self.store.get(owner, names[ref]) if ref in names else None,
+        ))
+        self.client = TestClient(app)
+
+    def chat(self, session, model=None, auth=None, **extra):
+        body = {"session_id": session, "messages": [{"role": "user", "content": "ping"}], **extra}
+        if model:
+            body["model"] = model
+        return self.client.post("/v1/chat/completions", headers={"Authorization": auth or bearer("alice")}, json=body)
 
     def test_the_session_is_the_agent_and_a_new_one_is_made_with_the_named_runtime(self):
-        from fastapi import HTTPException
-
-        self.assertEqual(self.service._target("alice", "s1", "anything").agent_id, "s1")
-        self.assertEqual(self.service._target("alice", "cx", None).platform, "codex")
-        made = self.service._target("alice", "new-1", "claude")
-        self.assertEqual((made.agent_id, made.driver, made.platform), ("new-1", ACPX, "claude"))
-        self.assertEqual(self.service._target("alice", "new-2", None).driver, WEBOT)
-        self.assertEqual(self.service._target("alice", "new-3", "gpt-4o").driver, WEBOT)  # names no runtime
-        with self.assertRaises(HTTPException):
-            self.service._target("alice", "a.b", None)  # not a number, not a team name
+        self.assertEqual(self.chat("s1", "anything").json()["from"], "webot")  # WeBot answers it itself
+        self.assertEqual(self.services.turns[0][:2], ("alice", "s1"))
+        self.assertEqual(self.chat("dev.Critic").json()["from"], "webot")  # a team name
+        self.assertEqual(self.chat("cx").json()["choices"][0]["message"]["content"], "pong")  # codex is asked
+        self.assertEqual(self.gateway.ask.await_args.args[1].text, "ping")
+        streamed = self.chat("cx", stream=True).text
+        self.assertIn("pong", streamed)
+        self.assertIn("[DONE]", streamed)
+        self.chat("new-1", "claude")
+        made = self.store.get("alice", "new-1")
+        self.assertEqual((made.driver, made.platform), (ACPX, "claude"))
+        self.chat("new-2")
+        self.chat("new-3", "gpt-4o")  # names no runtime
+        self.assertEqual([self.store.get("alice", i).driver for i in ("new-2", "new-3")], [WEBOT, WEBOT])
+        self.assertEqual(self.chat("a.b").status_code, 404)  # not a number, not a team name
+        self.assertEqual(self.chat("s1", auth="Bearer alice:wrong").status_code, 401)
+        self.assertEqual(self.chat("s1", auth="Bearer alice:pw").status_code, 200)
 
     def test_models_are_the_runtimes(self):
-        ids = [m["id"] for m in self.service.list_models(bearer("alice"))["data"]]
+        ids = [m["id"] for m in self.client.get("/v1/models").json()["data"]]
         self.assertEqual(ids[0], "webot")
         self.assertIn("openclaw", ids)
 
