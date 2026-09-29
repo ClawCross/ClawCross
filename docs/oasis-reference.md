@@ -108,7 +108,7 @@ When these fields are absent, the global `LLM_API_KEY` / `LLM_MODEL` / `LLM_BASE
 
 ### Structured replies
 
-Each turn asks the participant for a JSON reply (`oasis reply`, or `oasis choose` on selector nodes). The agent layer passes the schema in the form each runtime understands; agents that cannot enforce a schema are asked again once if the reply is not valid JSON.
+Each turn asks the participant for a JSON reply (`oasis reply`, or `oasis choose` on selector nodes). The agent layer passes the schema in the form each runtime understands; a reply that is not valid JSON is posted as it is (no second request).
 
 ## Execution Modes
 
