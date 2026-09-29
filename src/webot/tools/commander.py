@@ -1,6 +1,6 @@
 import sys as _sys
 import os as _os
-_src_dir = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+_src_dir = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
 if _src_dir not in _sys.path:
     _sys.path.insert(0, _src_dir)
 
@@ -45,7 +45,7 @@ from utils.bg_notify import register_pending_notify
 mcp = FastMCP("Commander")
 
 # 项目根目录
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 # 加载 .env 配置
 load_dotenv(dotenv_path=str(ENV_FILE))

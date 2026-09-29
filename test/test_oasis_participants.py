@@ -70,10 +70,10 @@ class TestYamlForms(unittest.TestCase):
         self.assertEqual(node.participant_configs, {"persona:critical:1": {"tools": ["read_file"]}})
 
     def test_visual_layout_round_trips_the_forms(self):
-        import mcp_servers.oasis as oasis_mcp
+        from oasis.layout import yaml_to_layout
         from visual.main import layout_to_yaml
 
-        layout = oasis_mcp._yaml_to_layout_data(
+        layout = yaml_to_layout(
             "version: 2\nrepeat: false\nplan:\n  - id: a\n    agent: Coder\n  - id: b\n    persona: critical\n"
             "    tools: all\nedges:\n  - [a, b]\n")
         self.assertEqual([n["type"] for n in layout["nodes"]], ["agent", "persona"])

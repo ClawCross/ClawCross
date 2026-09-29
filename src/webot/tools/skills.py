@@ -9,7 +9,7 @@ Exposes skill management tools via FastMCP for agent self-evolution:
 
 import sys as _sys
 import os as _os
-_src_dir = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+_src_dir = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
 if _src_dir not in _sys.path:
     _sys.path.insert(0, _src_dir)
 

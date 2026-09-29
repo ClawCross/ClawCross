@@ -37,7 +37,7 @@ from webot.models import (
     WeBotWorkflowPresetApplyRequest,
 )
 from webot.bridge import bridge_hub, get_bridge_record_for_user
-from webot.service import WeBotService
+from webot.api.service import WeBotService
 
 
 def create_webot_router(

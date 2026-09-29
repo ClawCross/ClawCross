@@ -18,7 +18,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from agents.messages import decode_text_attachment as _try_decode_base64_text, is_text_mime as _is_text_mime
 from utils.logging_utils import get_logger
 from services.message_builder import build_human_message
-from api.system_models import SystemTriggerAttachment, SystemTriggerRequest
+from webot.api.system_models import SystemTriggerAttachment, SystemTriggerRequest
 from webot.runtime_store import (
     count_inbox_messages,
     create_inbox_message,

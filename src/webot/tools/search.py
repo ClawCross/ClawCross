@@ -1,7 +1,7 @@
 import sys as _sys
 import os as _os
 
-_src_dir = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+_src_dir = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
 if _src_dir not in _sys.path:
     _sys.path.insert(0, _src_dir)
 
@@ -35,7 +35,7 @@ except ValueError:
     DEFAULT_BROWSER_TIMEOUT = int(DEFAULT_TIMEOUT)
 DEFAULT_NODE_BIN = _os.getenv("WEB_SEARCH_NODE_BIN", "node")
 PROJECT_ROOT = _os.path.dirname(
-    _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
 )
 BROWSER_RUNNER = _os.path.join(PROJECT_ROOT, "scripts", "browser_search_runner.mjs")
 MAX_RESULTS = 25

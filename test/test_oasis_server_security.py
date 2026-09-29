@@ -249,7 +249,7 @@ class TestNetworkExposure(OasisServerTestCase):
 
 class TestStartNewOasisDiscussionFlag(unittest.IsolatedAsyncioTestCase):
     async def test_yaml_decides_unless_discussion_is_forced(self):
-        import mcp_servers.oasis as oasis_mcp
+        import webot.tools.oasis as oasis_mcp
 
         bodies = []
 

@@ -191,8 +191,8 @@ class ApprovalExecutionAuditTests(unittest.IsolatedAsyncioTestCase):
         from threading import Event
         from types import SimpleNamespace
         from unittest.mock import AsyncMock, Mock
-        from api.session_service import SessionService
-        from api.session_models import CompactSessionRequest
+        from webot.api.session_service import SessionService
+        from webot.api.session_models import CompactSessionRequest
 
         messages = [HumanMessage(content="history")]
         agent = SimpleNamespace(
@@ -214,8 +214,8 @@ class ApprovalExecutionAuditTests(unittest.IsolatedAsyncioTestCase):
                 view=messages, triggered=False, summary="", compacted_until=0, reason="no_benefit", view_tokens=1,
             )
 
-        with patch("api.session_service.apply_compression", side_effect=compact), patch(
-            "api.session_service.static_compression_view", return_value=messages,
+        with patch("webot.api.session_service.apply_compression", side_effect=compact), patch(
+            "webot.api.session_service.static_compression_view", return_value=messages,
         ):
             task = asyncio.create_task(service.compact_session(CompactSessionRequest(user_id="alice", session_id="s"), None))
             await asyncio.sleep(0.02)
@@ -224,7 +224,7 @@ class ApprovalExecutionAuditTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(observed, [True])
 
     async def test_hook_cannot_bypass_block_or_change_identity(self):
-        from core.agent import UserAwareToolNode
+        from webot.engine.agent import UserAwareToolNode
         from webot.policy import ToolHookOutcome, ToolPolicyDecision
 
         node = UserAwareToolNode([], lambda: [])
@@ -248,7 +248,7 @@ class ApprovalExecutionAuditTests(unittest.IsolatedAsyncioTestCase):
             }])],
         }
         with patch("webot.permission_context.get_tool_policy", return_value=configured), patch(
-            "core.agent.run_tool_policy_hooks",
+            "webot.engine.agent.run_tool_policy_hooks",
             return_value=ToolHookOutcome(args={"command": "rm -rf project", "username": "bob"}, decision=ToolPolicyDecision(allowed=True)),
         ):
             result = await node(state, {})
@@ -256,7 +256,7 @@ class ApprovalExecutionAuditTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("阻止", result["messages"][0].content)
 
         with patch("webot.permission_context.get_tool_policy", return_value=configured), patch(
-            "core.agent.run_tool_policy_hooks",
+            "webot.engine.agent.run_tool_policy_hooks",
             return_value=ToolHookOutcome(args={"command": "echo hi", "username": "bob"}, decision=ToolPolicyDecision(allowed=True)),
         ):
             await node(state, {})
@@ -264,7 +264,7 @@ class ApprovalExecutionAuditTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(args["username"], "alice")
 
     async def test_review_blocks_interactive_input(self):
-        from core.agent import UserAwareToolNode
+        from webot.engine.agent import UserAwareToolNode
 
         node = UserAwareToolNode([], lambda: [])
         state = {
@@ -277,12 +277,12 @@ class ApprovalExecutionAuditTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("review", result["messages"][0].content)
 
     async def test_wait_rejects_expired_and_consumed_approvals(self):
-        from core.agent import _wait_for_tool_approval
+        from webot.engine.agent import _wait_for_tool_approval
         from types import SimpleNamespace
 
         for status, expiry in (("approved", "2000-01-01"), ("used", "2999-01-01")):
             with self.subTest(status=status), patch(
-                "core.agent.get_tool_approval",
+                "webot.engine.agent.get_tool_approval",
                 return_value=SimpleNamespace(status=status, expires_at=expiry, resolution_reason=""),
             ):
                 allowed, reason = await _wait_for_tool_approval("approval-1", "alice")
@@ -290,7 +290,7 @@ class ApprovalExecutionAuditTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(reason)
 
     async def test_command_safety_approval_delegates_exact_action(self):
-        from mcp_servers import commander
+        from webot.tools import commander
         from webot.approval_review import ApprovalResult
         action = {"job_id": "job-1", "input": "operation", "enter": True, "cwd": "project"}
         with patch.object(commander, "authorize_action", return_value=ApprovalResult(True)) as broker:
@@ -303,7 +303,7 @@ class ApprovalExecutionAuditTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(broker.call_args.kwargs["args"], action | {"username": "alice", "session_id": "s"})
 
     async def test_command_safety_propagates_broker_rejection(self):
-        from mcp_servers import commander
+        from webot.tools import commander
         from webot.approval_review import ApprovalResult
         with patch.object(commander, "authorize_action", return_value=ApprovalResult(False, "审批已失效或已被使用。")):
             approved, reason = await commander._wait_for_command_approval("alice", "s", "command", "reason")

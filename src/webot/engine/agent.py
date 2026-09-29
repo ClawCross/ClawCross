@@ -15,8 +15,8 @@ from langchain_core.utils.function_calling import convert_to_openai_tool
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from pydantic import ValidationError
 
-from core.agent_runtime_state import TaskRegistry, ThreadStateRegistry
-from core.lightweight_agent_runtime import LightweightAgentRuntime
+from webot.engine.agent_runtime_state import TaskRegistry, ThreadStateRegistry
+from webot.engine.lightweight_agent_runtime import LightweightAgentRuntime
 from webot.policy import (
     ToolPolicyDecision,
     get_tool_policy,
@@ -78,7 +78,7 @@ from webot.voice import get_voice_state as get_webot_voice_state
 from webot.workspace import describe_session_workspace
 
 # --- New feature modules (ported from Claude Code / openclaw / oh-my-codex) ---
-from core.streaming_tool_executor import (
+from webot.engine.streaming_tool_executor import (
     StreamingToolExecutor, get_streaming_executor,
     classify_tool_access, ToolAccessMode, ToolExecutionResult,
 )
@@ -94,9 +94,9 @@ from webot.approval_actions import bind_file_target, canonical_action_args
 from webot.runtime_store import record_tool_execution, issue_execution_permit
 from utils.cache_boundary import SystemPromptCacheManager
 from utils.logging_utils import get_logger
-from core.lazy_tool_discovery import LazyToolRegistry
-from core.tool_aliases import canonical_tool_name, canonical_tool_names, resolve_tool_call
-from core.tool_schema import (
+from webot.engine.lazy_tool_discovery import LazyToolRegistry
+from webot.engine.tool_aliases import canonical_tool_name, canonical_tool_names, resolve_tool_call
+from webot.engine.tool_schema import (
     StrictSchemaError,
     decode_structured_final,
     drop_null_optionals,
@@ -105,13 +105,13 @@ from core.tool_schema import (
     strict_violations,
     to_strict_parameters,
 )
-from core.agent_orchestrator import (
+from webot.engine.agent_orchestrator import (
     create_fork, complete_fork, get_fork, list_forks, ForkMode,
     start_coordinator_run, advance_coordinator_phase, get_coordinator_run,
     create_council_session, submit_council_vote, evaluate_council_consensus,
 )
 from utils.cost_tracker import get_cost_tracker
-from core.workflow_engines import (
+from webot.engine.workflow_engines import (
     get_ralph_loop, create_ralph_loop, get_ralph_prompt,
     create_deep_interview, get_interview_prompt,
     get_autopilot, AutopilotConfig,
@@ -879,7 +879,7 @@ class TeamAgent:
     @staticmethod
     def _load_prompts() -> dict[str, str]:
         """从 data/prompts/ 加载所有 prompt 模板文件，服务启动时调用一次。"""
-        prompts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "prompts")
+        prompts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "data", "prompts")
         prompt_files = {
             "base_system": "base_system.txt",
             "base_system_subagent": "base_system_subagent.txt",
@@ -1028,52 +1028,52 @@ class TeamAgent:
         mcp_servers = {
             "scheduler_service": {
                 "command": python_command,
-                "args": [os.path.join(self._src_dir, "mcp_servers", "scheduler.py")],
+                "args": [os.path.join(self._src_dir, "webot", "tools", "scheduler.py")],
                 "transport": "stdio",
             },
             "search_service": {
                 "command": python_command,
-                "args": [os.path.join(self._src_dir, "mcp_servers", "search.py")],
+                "args": [os.path.join(self._src_dir, "webot", "tools", "search.py")],
                 "transport": "stdio",
             },
             "file_service": {
                 "command": python_command,
-                "args": [os.path.join(self._src_dir, "mcp_servers", "filemanager.py")],
+                "args": [os.path.join(self._src_dir, "webot", "tools", "filemanager.py")],
                 "transport": "stdio",
             },
             "commander_service": {
                 "command": python_command,
-                "args": [os.path.join(self._src_dir, "mcp_servers", "commander.py")],
+                "args": [os.path.join(self._src_dir, "webot", "tools", "commander.py")],
                 "transport": "stdio",
             },
             "oasis_service": {
                 "command": python_command,
-                "args": [os.path.join(self._src_dir, "mcp_servers", "oasis.py")],
+                "args": [os.path.join(self._src_dir, "webot", "tools", "oasis.py")],
                 "transport": "stdio",
             },
             "session_service": {
                 "command": python_command,
-                "args": [os.path.join(self._src_dir, "mcp_servers", "session.py")],
+                "args": [os.path.join(self._src_dir, "webot", "tools", "session.py")],
                 "transport": "stdio",
             },
             "notifier_service": {
                 "command": python_command,
-                "args": [os.path.join(self._src_dir, "mcp_servers", "notifier.py")],
+                "args": [os.path.join(self._src_dir, "webot", "tools", "notifier.py")],
                 "transport": "stdio",
             },
             "llmapi_service": {
                 "command": python_command,
-                "args": [os.path.join(self._src_dir, "mcp_servers", "llmapi.py")],
+                "args": [os.path.join(self._src_dir, "webot", "tools", "llmapi.py")],
                 "transport": "stdio",
             },
             "webot_service": {
                 "command": python_command,
-                "args": [os.path.join(self._src_dir, "mcp_servers", "webot.py")],
+                "args": [os.path.join(self._src_dir, "webot", "tools", "webot.py")],
                 "transport": "stdio",
             },
             "self_evolution_service": {
                 "command": python_command,
-                "args": [os.path.join(self._src_dir, "mcp_servers", "skills.py")],
+                "args": [os.path.join(self._src_dir, "webot", "tools", "skills.py")],
                 "transport": "stdio",
             },
         }
@@ -2287,7 +2287,7 @@ class TeamAgent:
 
     def get_tools_info(self) -> list[dict]:
         """Return serializable tool metadata list."""
-        from core.tool_catalog import tool_category
+        from webot.engine.tool_catalog import tool_category
         return [{"name": t.name, "description": t.description or "", "category": tool_category(t.name)} for t in self._mcp_tools]
 
     # ------------------------------------------------------------------

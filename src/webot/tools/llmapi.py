@@ -1,6 +1,6 @@
 import sys as _sys
 import os as _os
-_src_dir = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+_src_dir = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
 if _src_dir not in _sys.path:
     _sys.path.insert(0, _src_dir)
 
@@ -160,7 +160,7 @@ async def send_to_group(
     """
     if not _INTERNAL_TOKEN:
         return "❌ 系统未配置 INTERNAL_TOKEN，无法发送群聊消息。"
-    from mcp_servers.caller_agent import internal_headers
+    from webot.tools.caller_agent import internal_headers
 
     agent = source_session  # the session is the agent
     gid = quote((group_id or "").strip(), safe="")

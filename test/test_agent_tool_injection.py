@@ -12,7 +12,7 @@ if str(SRC_DIR) not in sys.path:
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.tools import StructuredTool
 
-from core.agent import USER_INJECTED_TOOLS, DirectToolNode, UserAwareToolNode
+from webot.engine.agent import USER_INJECTED_TOOLS, DirectToolNode, UserAwareToolNode
 
 
 _WEBOT_RUNTIME_USER_TOOLS = {
@@ -62,8 +62,8 @@ class UserAwareToolNodeTests(unittest.IsolatedAsyncioTestCase):
             ],
         }
 
-        with patch("core.agent.get_session_mode", return_value={"mode": "default"}), patch(
-            "core.agent.resolve_permission_context",
+        with patch("webot.engine.agent.get_session_mode", return_value={"mode": "default"}), patch(
+            "webot.engine.agent.resolve_permission_context",
             return_value=type(
                 "Permission",
                 (),
@@ -76,7 +76,7 @@ class UserAwareToolNodeTests(unittest.IsolatedAsyncioTestCase):
                     "approval": None,
                 },
             )(),
-        ), patch("core.agent.run_tool_policy_hooks", side_effect=_passthrough_hook_outcome):
+        ), patch("webot.engine.agent.run_tool_policy_hooks", side_effect=_passthrough_hook_outcome):
             result = await node(state, config={})
 
         self.assertEqual(len(result["messages"]), 1)
@@ -94,8 +94,8 @@ class UserAwareToolNodeTests(unittest.IsolatedAsyncioTestCase):
         permission = type("Permission", (), {"allowed": True, "requires_approval": False, "reason": "",
             "matched_rule": None, "policy": {}, "approval": None})()
         for team, expected in ((None, "alpha"), ("", ""), ("beta", "beta")):
-            with self.subTest(team=team), patch("core.agent.resolve_permission_context", return_value=permission), patch(
-                "core.agent.run_tool_policy_hooks", side_effect=_passthrough_hook_outcome):
+            with self.subTest(team=team), patch("webot.engine.agent.resolve_permission_context", return_value=permission), patch(
+                "webot.engine.agent.run_tool_policy_hooks", side_effect=_passthrough_hook_outcome):
                 state = {"user_id": "alice", "session_id": "s", "session_mode": "bypass", "messages": [AIMessage(content="",
                     tool_calls=[{"name": "list_files", "args": {"storage": "memory", "team": team}, "id": "one", "type": "tool_call"}])]}
                 await node(state, config={})
@@ -124,8 +124,8 @@ class UserAwareToolNodeTests(unittest.IsolatedAsyncioTestCase):
             ],
         }
 
-        with patch("core.agent.get_session_mode", return_value={"mode": "default"}), patch(
-            "core.agent.resolve_permission_context",
+        with patch("webot.engine.agent.get_session_mode", return_value={"mode": "default"}), patch(
+            "webot.engine.agent.resolve_permission_context",
             return_value=type(
                 "Permission",
                 (),
@@ -138,7 +138,7 @@ class UserAwareToolNodeTests(unittest.IsolatedAsyncioTestCase):
                     "approval": None,
                 },
             )(),
-        ), patch("core.agent.run_tool_policy_hooks", side_effect=_passthrough_hook_outcome):
+        ), patch("webot.engine.agent.run_tool_policy_hooks", side_effect=_passthrough_hook_outcome):
             result = await node(state, config={})
 
         self.assertEqual(len(result["messages"]), 1)
@@ -159,8 +159,8 @@ class UserAwareToolNodeTests(unittest.IsolatedAsyncioTestCase):
                 "args": {"username": "bob", "source_session": "other"},
                 "id": "inbox", "type": "tool_call",
             }])]}
-        with patch("core.agent.resolve_permission_context", return_value=permission), patch(
-            "core.agent.run_tool_policy_hooks", side_effect=_passthrough_hook_outcome):
+        with patch("webot.engine.agent.resolve_permission_context", return_value=permission), patch(
+            "webot.engine.agent.run_tool_policy_hooks", side_effect=_passthrough_hook_outcome):
             await node(state, config={})
         args = fake_tool_node.captured_state["messages"][-1].tool_calls[0]["args"]
         self.assertEqual((args["username"], args["source_session"]), ("alice", "actual"))
@@ -248,8 +248,8 @@ class DirectToolNodeErrorHandlingTests(unittest.IsolatedAsyncioTestCase):
             "allowed": True, "requires_approval": False, "reason": "",
             "matched_rule": None, "policy": {}, "approval": None,
         })()
-        with patch("core.agent.resolve_permission_context", return_value=permission), \
-                patch("core.agent.run_tool_policy_hooks", side_effect=_passthrough_hook_outcome):
+        with patch("webot.engine.agent.resolve_permission_context", return_value=permission), \
+                patch("webot.engine.agent.run_tool_policy_hooks", side_effect=_passthrough_hook_outcome):
             blocked = await node(state({"job_id": "j1", "input": "rm x"}), config={})
             self.assertIsNone(fake_tool_node.captured_state)
             self.assertIn("plan", str(blocked["messages"][0].content))

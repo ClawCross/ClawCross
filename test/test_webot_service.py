@@ -42,7 +42,7 @@ from webot.models import (
 import webot.memory as webot_memory
 import webot.policy as policy
 import webot.runtime_store as runtime_store
-from webot.service import WeBotService
+from webot.api.service import WeBotService
 from webot.subagents import create_subagent_record, upsert_subagent
 
 

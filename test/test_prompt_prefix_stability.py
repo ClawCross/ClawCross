@@ -16,7 +16,7 @@ if str(SRC_DIR) not in sys.path:
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
-from core.agent import should_inject_new_inbox_notice
+from webot.engine.agent import should_inject_new_inbox_notice
 from webot.context import assemble_input_messages, render_runtime_context_block
 
 BASE = "stable system prompt"

@@ -11,7 +11,7 @@ SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-import mcp_servers.commander as commander
+import webot.tools.commander as commander
 from webot.workspace import SessionWorkspace
 from webot.runtime_settings import RuntimeSettings, ApprovalSettings
 

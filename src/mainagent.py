@@ -25,7 +25,7 @@ from dotenv import load_dotenv
 from utils.api_patch import patch_langchain_file_mime
 patch_langchain_file_mime()
 
-from core.agent import TeamAgent
+from webot.engine.agent import TeamAgent
 from agents.gateway import AgentGateway, set_gateway
 from agents.routes import create_agents_router
 from agents.store import WEBOT, get_store
@@ -38,16 +38,16 @@ from teams.store import get_team_store
 from services.llm_factory import extract_text as _extract_text
 from utils.user_auth import load_users as load_users_from_file, verify_password as verify_password_from_file
 from api.harness_routes import create_harness_router
-from api.openai_routes import create_openai_router
-from api.openai_service import OpenAIChatService
+from webot.api.openai_routes import create_openai_router
+from webot.api.openai_service import OpenAIChatService
 from api.ops_routes import create_ops_router
-from api.session_routes import create_session_router
-from api.session_service import SessionService
+from webot.api.session_routes import create_session_router
+from webot.api.session_service import SessionService
 from api.settings_routes import create_settings_router
-from api.system_routes import create_system_router
-from api.system_service import SystemService
+from webot.api.system_routes import create_system_router
+from webot.api.system_service import SystemService
 from webot.driver import WebotRuntime
-from webot.routes import create_webot_router
+from webot.api.routes import create_webot_router
 from services.message_builder import build_human_message
 from utils.logging_utils import get_logger, request_id_ctx
 from utils.checkpoint_paths import DEFAULT_CHECKPOINT_DB_DIR

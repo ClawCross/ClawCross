@@ -11,8 +11,8 @@ SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from api.system_models import SystemTriggerRequest
-from api.system_service import SystemService
+from webot.api.system_models import SystemTriggerRequest
+from webot.api.system_service import SystemService
 from webot import runtime_store
 
 

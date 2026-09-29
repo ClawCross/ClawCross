@@ -14,6 +14,6 @@ TOOL_CATEGORIES = {
 
 
 def tool_category(name: str) -> str:
-    from core.tool_aliases import canonical_tool_name
+    from webot.engine.tool_aliases import canonical_tool_name
     name = canonical_tool_name(name)
     return next((category for category, tools in TOOL_CATEGORIES.items() if name in tools), "other")

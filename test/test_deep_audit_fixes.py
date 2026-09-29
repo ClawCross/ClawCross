@@ -24,7 +24,7 @@ class TestStreamingExecutorTimeout:
 
     @pytest.mark.asyncio
     async def test_timeout_fires(self):
-        from core.streaming_tool_executor import StreamingToolExecutor
+        from webot.engine.streaming_tool_executor import StreamingToolExecutor
 
         async def slow_executor(tc):
             await asyncio.sleep(10)  # Way too slow
@@ -43,7 +43,7 @@ class TestStreamingExecutorTimeout:
 
     @pytest.mark.asyncio
     async def test_progress_callback(self):
-        from core.streaming_tool_executor import StreamingToolExecutor
+        from webot.engine.streaming_tool_executor import StreamingToolExecutor
 
         progress_calls = []
 
@@ -143,7 +143,7 @@ class TestCouncilAbortInjectTranscript:
     """Test Council abort, inject_message, and save_transcript."""
 
     def test_abort_session(self):
-        from core.agent_orchestrator import (
+        from webot.engine.agent_orchestrator import (
             create_council_full_session, abort_council_session,
             CouncilAgentPersona,
         )
@@ -155,11 +155,11 @@ class TestCouncilAbortInjectTranscript:
         assert session.status == "error"
 
     def test_abort_nonexistent(self):
-        from core.agent_orchestrator import abort_council_session
+        from webot.engine.agent_orchestrator import abort_council_session
         assert abort_council_session("nonexistent") is False
 
     def test_inject_message(self):
-        from core.agent_orchestrator import (
+        from webot.engine.agent_orchestrator import (
             create_council_full_session, inject_council_message,
             consume_council_injection, CouncilAgentPersona,
         )
@@ -173,7 +173,7 @@ class TestCouncilAbortInjectTranscript:
         assert consume_council_injection(session.session_id) == ""
 
     def test_save_transcript(self):
-        from core.agent_orchestrator import (
+        from webot.engine.agent_orchestrator import (
             create_council_full_session, record_council_agent_response,
             evaluate_council_round, save_council_transcript,
             CouncilAgentPersona,
@@ -215,7 +215,7 @@ class TestAutopilotPipeline:
     """Test Autopilot 5-phase pipeline state management."""
 
     def test_start_autopilot(self):
-        from core.workflow_engines import start_autopilot, get_autopilot_state
+        from webot.engine.workflow_engines import start_autopilot, get_autopilot_state
         state = start_autopilot(user_id="u1", session_id="s1", task="Build REST API")
         assert state.active
         assert state.current_phase == "pre_context"
@@ -226,7 +226,7 @@ class TestAutopilotPipeline:
         assert retrieved.task == "Build REST API"
 
     def test_phase_advancement(self):
-        from core.workflow_engines import start_autopilot, AUTOPILOT_PHASES
+        from webot.engine.workflow_engines import start_autopilot, AUTOPILOT_PHASES
         state = start_autopilot(user_id="u1", session_id="phase_test", task="Test")
         state.advance_phase("expansion")
         assert state.current_phase == "expansion"
@@ -237,7 +237,7 @@ class TestAutopilotPipeline:
         assert state.completed_at != ""
 
     def test_qa_error_counting(self):
-        from core.workflow_engines import start_autopilot
+        from webot.engine.workflow_engines import start_autopilot
         state = start_autopilot(user_id="u1", session_id="qa_test", task="Test")
         state.advance_phase("qa")
 
@@ -249,14 +249,14 @@ class TestAutopilotPipeline:
         assert state.should_stop_qa()
 
     def test_qa_cycle_limit(self):
-        from core.workflow_engines import start_autopilot, AutopilotConfig
+        from webot.engine.workflow_engines import start_autopilot, AutopilotConfig
         config = AutopilotConfig(max_qa_cycles=3)
         state = start_autopilot(user_id="u1", session_id="qa_limit", task="Test", config=config)
         state.qa_cycle = 3
         assert state.should_stop_qa()
 
     def test_validator_approval(self):
-        from core.workflow_engines import start_autopilot
+        from webot.engine.workflow_engines import start_autopilot
         state = start_autopilot(user_id="u1", session_id="val_test", task="Test")
         assert not state.all_validators_approved()
 
@@ -268,7 +268,7 @@ class TestAutopilotPipeline:
         assert state.all_validators_approved()
 
     def test_state_dict(self):
-        from core.workflow_engines import start_autopilot
+        from webot.engine.workflow_engines import start_autopilot
         state = start_autopilot(user_id="u1", session_id="dict_test", task="Build it")
         d = state.to_state_dict()
         assert d["mode"] == "autopilot"
@@ -276,7 +276,7 @@ class TestAutopilotPipeline:
         assert d["current_phase"] == "pre_context"
 
     def test_autopilot_phases_defined(self):
-        from core.workflow_engines import AUTOPILOT_PHASES
+        from webot.engine.workflow_engines import AUTOPILOT_PHASES
         assert "pre_context" in AUTOPILOT_PHASES
         assert "expansion" in AUTOPILOT_PHASES
         assert "qa" in AUTOPILOT_PHASES

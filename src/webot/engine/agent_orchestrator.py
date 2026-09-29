@@ -468,7 +468,7 @@ def build_council_agent_prompt(
     - Round 1: plan-only round (no code)
     - Round 2+: execution rounds with collaboration history
     """
-    from core.consensus import strip_consensus_tags
+    from webot.engine.consensus import strip_consensus_tags
 
     other_agents = [a for a in all_agents if a.name != agent.name]
     other_list = "\n".join(f"- {a.emoji} {a.name}" for a in other_agents)
@@ -565,7 +565,7 @@ def build_council_system_prompt(
 
 def generate_council_summary(session: CouncilFullSession) -> str:
     """Generate a summary of the council session, matching openclaw's generateSummary."""
-    from core.consensus import strip_consensus_tags
+    from webot.engine.consensus import strip_consensus_tags
 
     max_round = max((r.round for r in session.responses), default=0)
     status_text = (
@@ -595,7 +595,7 @@ def generate_council_summary(session: CouncilFullSession) -> str:
 
 def generate_council_compact_context(session: CouncilFullSession) -> str:
     """Generate compact context for session continuation."""
-    from core.consensus import strip_consensus_tags
+    from webot.engine.consensus import strip_consensus_tags
     import re as _re
 
     max_round = max((r.round for r in session.responses), default=0)
@@ -646,7 +646,7 @@ def record_council_agent_response(
     content: str,
 ) -> CouncilAgentResponse | None:
     """Record a response from a council agent."""
-    from core.consensus import parse_consensus
+    from webot.engine.consensus import parse_consensus
 
     session = _council_full_sessions.get(session_id)
     if not session or session.status != "running":
@@ -744,7 +744,7 @@ def save_council_transcript(session: CouncilFullSession, log_dir: str = "") -> s
     """
     import os
     from pathlib import Path as _Path
-    from core.consensus import strip_consensus_tags as _strip
+    from webot.engine.consensus import strip_consensus_tags as _strip
 
     if not log_dir:
         home = os.path.expanduser("~")

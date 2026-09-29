@@ -10,8 +10,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 # What the agent layer (src/agents) must never import: the layers built on it.
 _ABOVE_L1 = (
-    "api.group_", "api.ops_", "api.openai_", "api.session_", "api.system_",
-    "routes", "mcp_servers", "core.agent", "comms", "teams",
+    "api.", "webot", "routes", "comms", "teams", "groups",
     "oasis.engine", "oasis.server", "oasis.forum", "oasis.scheduler", "oasis.swarm_engine",
 )
 
@@ -19,7 +18,7 @@ _ABOVE_L1 = (
 _COMPOSITIONS = ("comms", "groups", "teams", "oasis", "routes")
 
 # What the communication layer (src/comms) must never import: the products built on it.
-_ABOVE_L2 = ("api.", "routes", "mcp_servers", "teams", "groups", "oasis", "core.agent")
+_ABOVE_L2 = ("api.", "routes", "webot", "teams", "groups", "oasis")
 
 # The runtime an agent lives in: driver names and the driver's own config.
 _DRIVER_NAMES = {"WEBOT", "ACPX", "OPENCLAW", "HTTP", "LLM", "DRIVERS", "runtime_key", "driver_for_platform"}

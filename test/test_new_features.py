@@ -29,7 +29,7 @@ class TestStreamingToolExecutor:
     """Test streaming tool execution with concurrency control."""
 
     def test_tool_access_classification(self):
-        from core.streaming_tool_executor import classify_tool_access, ToolAccessMode
+        from webot.engine.streaming_tool_executor import classify_tool_access, ToolAccessMode
         assert classify_tool_access("read_file") == ToolAccessMode.READ_ONLY
         assert classify_tool_access("write_file") == ToolAccessMode.WRITE
         assert classify_tool_access("run_command") == ToolAccessMode.WRITE
@@ -37,19 +37,19 @@ class TestStreamingToolExecutor:
         assert classify_tool_access("unknown_tool") == ToolAccessMode.UNKNOWN
 
     def test_register_custom_tool_mode(self):
-        from core.streaming_tool_executor import register_tool_access_mode, classify_tool_access, ToolAccessMode
+        from webot.engine.streaming_tool_executor import register_tool_access_mode, classify_tool_access, ToolAccessMode
         register_tool_access_mode("my_custom_tool", ToolAccessMode.READ_ONLY)
         assert classify_tool_access("my_custom_tool") == ToolAccessMode.READ_ONLY
 
     def test_executor_creation(self):
-        from core.streaming_tool_executor import StreamingToolExecutor
+        from webot.engine.streaming_tool_executor import StreamingToolExecutor
         executor = StreamingToolExecutor(max_concurrent_reads=4)
         assert executor.max_concurrent_reads == 4
         assert executor.result_char_budget == 12000
 
     @pytest.mark.asyncio
     async def test_execute_tool_calls(self):
-        from core.streaming_tool_executor import StreamingToolExecutor, ToolExecutionResult
+        from webot.engine.streaming_tool_executor import StreamingToolExecutor, ToolExecutionResult
 
         async def mock_executor(tc):
             await asyncio.sleep(0.01)
@@ -71,7 +71,7 @@ class TestStreamingToolExecutor:
 
     @pytest.mark.asyncio
     async def test_execute_with_truncation(self):
-        from core.streaming_tool_executor import StreamingToolExecutor
+        from webot.engine.streaming_tool_executor import StreamingToolExecutor
 
         async def large_result_executor(tc):
             return "x" * 20000  # Exceeds default budget
@@ -90,7 +90,7 @@ class TestStreamingToolExecutor:
 
     @pytest.mark.asyncio
     async def test_execute_with_error(self):
-        from core.streaming_tool_executor import StreamingToolExecutor
+        from webot.engine.streaming_tool_executor import StreamingToolExecutor
 
         async def failing_executor(tc):
             raise ValueError("test error")
@@ -107,7 +107,7 @@ class TestStreamingToolExecutor:
         assert "test error" in results[0].content
 
     def test_to_tool_messages(self):
-        from core.streaming_tool_executor import StreamingToolExecutor, ToolExecutionResult
+        from webot.engine.streaming_tool_executor import StreamingToolExecutor, ToolExecutionResult
         executor = StreamingToolExecutor()
         results = [
             ToolExecutionResult(tool_call_id="tc1", tool_name="read_file", content="hello"),
@@ -123,7 +123,7 @@ class TestToolResultPayload:
     """Test structured tool result payloads returned to the model."""
 
     def test_build_tool_result_payload_error_shape(self):
-        from core.agent import TeamAgent
+        from webot.engine.agent import TeamAgent
 
         payload = TeamAgent._build_tool_result_payload(
             "write_file",
@@ -419,13 +419,13 @@ class TestLazyToolDiscovery:
         ]
 
     def test_register_tools(self):
-        from core.lazy_tool_discovery import LazyToolRegistry
+        from webot.engine.lazy_tool_discovery import LazyToolRegistry
         registry = LazyToolRegistry()
         registry.register_tools(self._mock_tools())
         assert registry.tool_count == 5
 
     def test_compact_listing(self):
-        from core.lazy_tool_discovery import LazyToolRegistry
+        from webot.engine.lazy_tool_discovery import LazyToolRegistry
         registry = LazyToolRegistry()
         registry.register_tools(self._mock_tools())
         listing = registry.compact_tool_list()
@@ -433,7 +433,7 @@ class TestLazyToolDiscovery:
         assert "write_file" in listing
 
     def test_search_tools(self):
-        from core.lazy_tool_discovery import LazyToolRegistry
+        from webot.engine.lazy_tool_discovery import LazyToolRegistry
         registry = LazyToolRegistry()
         registry.register_tools(self._mock_tools())
         results = registry.search_tools("file")
@@ -441,7 +441,7 @@ class TestLazyToolDiscovery:
         assert any(r["name"] == "read_file" for r in results)
 
     def test_get_full_schema(self):
-        from core.lazy_tool_discovery import LazyToolRegistry
+        from webot.engine.lazy_tool_discovery import LazyToolRegistry
         registry = LazyToolRegistry()
         registry.register_tools(self._mock_tools())
         schema = registry.get_full_schema("read_file")
@@ -449,7 +449,7 @@ class TestLazyToolDiscovery:
         assert schema["name"] == "read_file"
 
     def test_always_loaded(self):
-        from core.lazy_tool_discovery import LazyToolRegistry
+        from webot.engine.lazy_tool_discovery import LazyToolRegistry
         registry = LazyToolRegistry()
         registry.register_tools(self._mock_tools())
         registry.set_always_loaded({"read_file", "write_file"})
@@ -457,14 +457,14 @@ class TestLazyToolDiscovery:
         assert len(always) == 2
 
     def test_category_inference(self):
-        from core.lazy_tool_discovery import LazyToolRegistry
+        from webot.engine.lazy_tool_discovery import LazyToolRegistry
         registry = LazyToolRegistry()
         registry.register_tools(self._mock_tools())
         stats = registry.get_stats()
         assert "filesystem" in stats["categories"]
 
     def test_search_empty_query(self):
-        from core.lazy_tool_discovery import LazyToolRegistry
+        from webot.engine.lazy_tool_discovery import LazyToolRegistry
         registry = LazyToolRegistry()
         registry.register_tools(self._mock_tools())
         results = registry.search_tools("")
@@ -479,7 +479,7 @@ class TestAgentOrchestrator:
     """Test fork, coordinator, council, and consensus."""
 
     def test_create_fork(self):
-        from core.agent_orchestrator import create_fork, get_fork, ForkMode
+        from webot.engine.agent_orchestrator import create_fork, get_fork, ForkMode
         fork = create_fork(
             parent_session="main_session",
             task="Implement feature X",
@@ -490,21 +490,21 @@ class TestAgentOrchestrator:
         assert get_fork(fork.fork_id) is not None
 
     def test_complete_fork(self):
-        from core.agent_orchestrator import create_fork, complete_fork
+        from webot.engine.agent_orchestrator import create_fork, complete_fork
         fork = create_fork(parent_session="test", task="Test task")
         completed = complete_fork(fork.fork_id, "Done!")
         assert completed.status == "completed"
         assert completed.result == "Done!"
 
     def test_list_forks(self):
-        from core.agent_orchestrator import create_fork, list_forks
+        from webot.engine.agent_orchestrator import create_fork, list_forks
         create_fork(parent_session="parent_a", task="Task 1")
         create_fork(parent_session="parent_a", task="Task 2")
         forks = list_forks("parent_a")
         assert len(forks) >= 2
 
     def test_coordinator_run(self):
-        from core.agent_orchestrator import (
+        from webot.engine.agent_orchestrator import (
             start_coordinator_run, advance_coordinator_phase,
             get_coordinator_prompt, CoordinatorPhase,
         )
@@ -527,7 +527,7 @@ class TestAgentOrchestrator:
         assert run.status == "completed"
 
     def test_council_session(self):
-        from core.agent_orchestrator import (
+        from webot.engine.agent_orchestrator import (
             create_council_session, submit_council_vote,
             evaluate_council_consensus,
         )
@@ -556,7 +556,7 @@ class TestAgentOrchestrator:
 
     @pytest.mark.asyncio
     async def test_build_consensus(self):
-        from core.agent_orchestrator import build_consensus
+        from webot.engine.agent_orchestrator import build_consensus
 
         async def approve_voter(question):
             return ("approve", "Looks good", 0.8)
@@ -666,7 +666,7 @@ class TestWorkflowEngines:
     """Test Ralph loop, deep interview, autopilot, context gate, HUD."""
 
     def test_ralph_loop(self):
-        from core.workflow_engines import create_ralph_loop, get_ralph_prompt
+        from webot.engine.workflow_engines import create_ralph_loop, get_ralph_prompt
         loop = create_ralph_loop(
             user_id="u1", session_id="s1",
             task="Fix the bug", verification_criteria="All tests pass",
@@ -676,7 +676,7 @@ class TestWorkflowEngines:
         assert "首次执行" in prompt
 
     def test_ralph_iterations(self):
-        from core.workflow_engines import create_ralph_loop
+        from webot.engine.workflow_engines import create_ralph_loop
         loop = create_ralph_loop(
             user_id="u1", session_id="s1",
             task="Fix bug", verification_criteria="Tests pass",
@@ -690,7 +690,7 @@ class TestWorkflowEngines:
         assert loop.status.value == "complete"
 
     def test_ralph_max_retries(self):
-        from core.workflow_engines import create_ralph_loop
+        from webot.engine.workflow_engines import create_ralph_loop
         loop = create_ralph_loop(
             user_id="u1", session_id="s1",
             task="Fix bug", verification_criteria="Tests pass",
@@ -702,7 +702,7 @@ class TestWorkflowEngines:
         assert not loop.can_retry
 
     def test_deep_interview(self):
-        from core.workflow_engines import (
+        from webot.engine.workflow_engines import (
             create_deep_interview, add_interview_question,
             answer_interview_question, complete_interview,
         )
@@ -717,7 +717,7 @@ class TestWorkflowEngines:
         assert interview.status == "complete"
 
     def test_autopilot(self):
-        from core.workflow_engines import set_autopilot, get_autopilot, disable_autopilot, AutopilotConfig
+        from webot.engine.workflow_engines import set_autopilot, get_autopilot, disable_autopilot, AutopilotConfig
         config = AutopilotConfig(enabled=True, max_turns=20, allow_network=False)
         set_autopilot("u1", "s1", config)
         retrieved = get_autopilot("u1", "s1")
@@ -727,7 +727,7 @@ class TestWorkflowEngines:
         assert get_autopilot("u1", "s1") is None
 
     def test_context_gate(self):
-        from core.workflow_engines import check_context_gate
+        from webot.engine.workflow_engines import check_context_gate
         result = check_context_gate(
             task="implement feature",
             available_context={"task": "implement feature", "workspace": "/tmp"},
@@ -743,14 +743,14 @@ class TestWorkflowEngines:
         assert "workspace" in result.missing_context
 
     def test_session_fork(self):
-        from core.workflow_engines import fork_session, list_session_forks
+        from webot.engine.workflow_engines import fork_session, list_session_forks
         fork = fork_session(user_id="u1", source_session="main", reason="Try alternative")
         assert fork.fork_id.startswith("sfork_")
         forks = list_session_forks("u1", "main")
         assert len(forks) >= 1
 
     def test_hud(self):
-        from core.workflow_engines import get_hud, update_hud
+        from webot.engine.workflow_engines import get_hud, update_hud
         hud = get_hud("u1", "s1")
         assert not hud.active
 
@@ -867,7 +867,7 @@ class TestIntegration:
 
     def test_ralph_with_hud(self):
         """Ralph loop updates should reflect in HUD."""
-        from core.workflow_engines import create_ralph_loop, get_hud, update_hud
+        from webot.engine.workflow_engines import create_ralph_loop, get_hud, update_hud
 
         loop = create_ralph_loop(
             user_id="u1", session_id="s1",
@@ -883,7 +883,7 @@ class TestIntegration:
 
     def test_council_with_notification(self):
         """Council conclusion should trigger notification."""
-        from core.agent_orchestrator import create_council_session, submit_council_vote, evaluate_council_consensus
+        from webot.engine.agent_orchestrator import create_council_session, submit_council_vote, evaluate_council_consensus
         from services.notification_system import send_notification
 
         council = create_council_session(question="Deploy to prod?")
@@ -900,7 +900,7 @@ class TestIntegration:
 
     def test_fork_with_cost_tracking(self):
         """Forked sessions should have independent cost tracking."""
-        from core.agent_orchestrator import create_fork
+        from webot.engine.agent_orchestrator import create_fork
         from utils.cost_tracker import get_cost_tracker
 
         fork = create_fork(parent_session="main", task="Explore alternative")

@@ -68,7 +68,7 @@ class RuntimeSettingsTests(unittest.TestCase):
     def test_service_authentication_runs_before_write(self):
         from fastapi import HTTPException
         from webot.models import WeBotRuntimeSettingsUpdateRequest
-        from webot.service import WeBotService
+        from webot.api.service import WeBotService
         auth = Mock(side_effect=HTTPException(status_code=401, detail="unauthorized"))
         service = WeBotService(agent=SimpleNamespace(), verify_auth_or_token=auth, extract_text=str)
         req = WeBotRuntimeSettingsUpdateRequest(user_id="alice", settings={"approval": {"approvals_reviewer": "auto_review"}})
@@ -118,8 +118,8 @@ class RuntimeSettingsTests(unittest.TestCase):
         self.assertEqual(usage["breakdown"], {"messages": 9000})
 
     def test_session_status_uses_new_window_with_existing_api_usage(self):
-        from api.session_service import SessionService
-        from api.session_models import SessionStatusRequest
+        from webot.api.session_service import SessionService
+        from webot.api.session_models import SessionStatusRequest
         settings.save_runtime_settings("alice", session_id="s", settings={"context": {"context_window_tokens": 20000}})
         agent = SimpleNamespace(
             get_thread_context_usage=lambda _: {"tokens": 10000, "budget": 64000, "percent": 16, "source": "api"},

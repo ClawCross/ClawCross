@@ -120,10 +120,7 @@ from oasis.swarm_engine import build_pending_swarm, generate_swarm_blueprint
 _src_path = os.path.join(_project_root, "src")
 if _src_path not in sys.path:
     sys.path.insert(0, _src_path)
-try:
-    from mcp_servers.oasis import _yaml_to_layout_data
-except Exception:
-    _yaml_to_layout_data = None
+from oasis.layout import yaml_to_layout
 
 
 # --- In-memory storage ---
@@ -1482,11 +1479,8 @@ async def layouts_from_yaml(req: LayoutFromYamlRequest):
         yaml_content = yaml_src
         source_name = "converted"
 
-    if _yaml_to_layout_data is None:
-        raise HTTPException(500, "layout 功能不可用（缺少实现）")
-
     try:
-        layout = _yaml_to_layout_data(yaml_content)
+        layout = yaml_to_layout(yaml_content)
     except Exception as e:
         raise HTTPException(400, f"YAML 转换失败: {e}")
 

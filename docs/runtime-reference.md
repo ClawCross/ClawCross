@@ -10,9 +10,9 @@ Browser / Studio UI
     -> `frontend/js/main.js` + runtime panel wiring (current-session card, bridge socket consumer, voice/buddy controls)
 FastAPI services
     -> `src/mainagent.py` (OpenAI-compatible chat endpoints, session history, cancel)
-    -> `src/webot/routes.py` (runtime + policy APIs via `WeBotService`)
-    -> `src/webot/service.py` (serializes runtime DTOs, policy/plan/todo persistence)
-    -> `src/mcp_servers/webot.py` (MCP tools: spawn, send, inbox, ultrareview, ultraplan, dream, bridge hooks)
+    -> `src/webot/api/routes.py` (runtime + policy APIs via `WeBotService`)
+    -> `src/webot/api/service.py` (serializes runtime DTOs, policy/plan/todo persistence)
+    -> `src/webot/tools/webot.py` (MCP tools: spawn, send, inbox, ultrareview, ultraplan, dream, bridge hooks)
     -> `src/api/ops_service.py` (voice/TTS + direct connect hooks for audio uploads)
     -> `src/webot/bridge.py` (bridge session issuance, websocket hub, runtime snapshot publish)
     -> `src/webot/memory.py` / `src/webot/voice.py` / `src/webot/buddy.py` (browser-native parity services)
@@ -32,12 +32,12 @@ Side systems
 |---|---|
 | `src/front.py` | Flask UI shell, authentication, WeBot runtime proxy routes (`/proxy_webot_*`), voice/TTS proxies, bridge-ready URLs. |
 | `src/mainagent.py` | OpenAI-compatible chat API, session history, cancel, provider routing. |
-| `src/webot/service.py` | Serializes DTO (mode, plan, todos, approvals, inbox, artifacts, runs, relationships, bridge/voice/buddy/memory), enforces auth, counts inbox queue, exposes policy endpoints. |
-| `src/mcp_servers/webot.py` | Durable spawn/send/cancel workflows, background run leasing, ultrareview/ultraplan orchestration, Kairos/dream tools, inbox delivery, runtime artifact logging, bridge/voice/buddy tools. |
+| `src/webot/api/service.py` | Serializes DTO (mode, plan, todos, approvals, inbox, artifacts, runs, relationships, bridge/voice/buddy/memory), enforces auth, counts inbox queue, exposes policy endpoints. |
+| `src/webot/tools/webot.py` | Durable spawn/send/cancel workflows, background run leasing, ultrareview/ultraplan orchestration, Kairos/dream tools, inbox delivery, runtime artifact logging, bridge/voice/buddy tools. |
 | `src/webot/runtime_store.py` | SQLite tables for runs, attempts, inbox messages, artifacts, session modes, verifications, tool approvals, memory state, bridge sessions, voice state, buddy state; helpers for leases/heartbeats/interruption/events. |
 | `src/webot/runtime.py` | Mode normalization, blocked tool lists, turn-limit messaging, surgical heuristics for plan/execute/review. |
 | `src/webot/policy.py` | Normalizes tool policies, events (`session_start`, `permission_request`, `stop`, etc.), hook definitions, serialization, router for `save_tool_policy_config`. |
-| `src/core/agent.py` | Enforces tool filtering, injects runtime context, proxies MCP tooling into session handler, budgets history with `webot_context`. |
+| `src/webot/engine/agent.py` | Enforces tool filtering, injects runtime context, proxies MCP tooling into session handler, budgets history with `webot_context`. |
 | `src/api/ops_service.py` | Text-to-speech / audio proxy for voice mode; writes audio metadata into runtime payload via `front.py`. |
 | `src/webot/profiles.py` | Profile definitions (`general`, `research`, `planner`, `coder`, `reviewer`, `verifier`), helper `slugify`, built-in tool sets, user extension loading. |
 | `src/webot/context.py` | Budgeting helpers (tool results, user inputs) that log artifacts, perform compaction, build runtime summaries. |

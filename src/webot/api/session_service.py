@@ -11,7 +11,7 @@ from utils.checkpoint_repository import (
     list_thread_ids_by_prefix,
 )
 from utils.logging_utils import get_logger
-from api.session_models import (
+from webot.api.session_models import (
     CompactSessionRequest,
     DeleteSessionRequest,
     SessionHistoryRequest,

@@ -85,6 +85,16 @@ GET    /v1/models                   新 agent 可用的运行方式
 
 外部运行时自己发送，共用 `src/external/session.py`（以编号命名的会话、身份 prompt）和 `src/external/history.py`（往来记录）。哪些平台是 ACP 工具由 `src/agents/platforms.py` 决定。
 
+WeBot 的代码都在 `src/webot/` 一个包里：
+
+| 位置 | 内容 |
+|---|---|
+| `driver.py` | `WebotRuntime`：L1 只通过它调用 WeBot |
+| `engine/` | agent 循环、工具绑定、工具 schema |
+| `api/` | WeBot 自己的服务和路由：对话（`openai_*`）、system trigger 与收件箱（`system_*`）、会话（`session_*`）、运行时面板（`routes.py`、`service.py`） |
+| `tools/` | WeBot 的 MCP 工具服务（命令、文件、OASIS、会话、定时、搜索……），由引擎作为子进程启动 |
+| 其余模块 | 状态存储、审批、沙箱、技能与记忆、压缩、子 agent 等 |
+
 ### 单 agent 接口（`gateway.py`）
 
 gateway 按 agent 的 `driver` 找到运行时，把调用交给它：`ask`、`trigger`、`inbox`，控制面 `status`、`control`、`history`、`destroy`。
@@ -163,8 +173,8 @@ agent 的人设和工具是它自己的，各运行方式按自己的方式用�
 | 主题 | 文件 |
 |---|---|
 | agent 表 | `src/agents/store.py` |
-| 入口 /v1、inbox | `src/agents/routes.py`, `src/api/openai_service.py` |
-| system trigger | `src/api/system_service.py` |
+| 入口 /v1、inbox | `src/agents/routes.py`, `src/webot/api/openai_service.py` |
+| system trigger | `src/webot/api/system_service.py` |
 | 单 agent 接口、附件 | `src/agents/gateway.py`, `src/agents/messages.py` |
 | 运行时（调用接口与控制面） | `src/agents/runtime.py`, `src/webot/driver.py`, `src/external/` |
 | 群聊 | `src/comms/`, `src/groups/` |

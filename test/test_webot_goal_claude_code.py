@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 import webot.memory as memory
 import webot.runtime_store as runtime_store
 from webot.claude_code import parse_reset_time
-from webot.routes import create_webot_router
+from webot.api.routes import create_webot_router
 
 
 class _FakeAgent:
@@ -114,8 +114,8 @@ class WeBotGoalClaudeCodeTests(unittest.TestCase):
                     "stdout_tail": "CLAUDE_ACP_OK",
                     "stderr_tail": "",
                 }
-                with patch("webot.service.detect_claude_code_cached", return_value=fake_status), patch(
-                    "webot.service.probe_claude_acp", return_value=fake_probe
+                with patch("webot.api.service.detect_claude_code_cached", return_value=fake_status), patch(
+                    "webot.api.service.probe_claude_acp", return_value=fake_probe
                 ):
                     with TestClient(app) as client:
                         created = client.post(

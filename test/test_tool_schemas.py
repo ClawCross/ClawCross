@@ -25,14 +25,14 @@ if str(SRC_DIR) not in sys.path:
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import StructuredTool
 
-from core.agent import (
+from webot.engine.agent import (
     SESSION_INJECTED_TOOLS,
     USER_INJECTED_TOOLS,
     UserAwareToolNode,
     bind_tool_schema,
     external_tool_schema,
 )
-from core.tool_schema import (
+from webot.engine.tool_schema import (
     StrictSchemaError,
     decode_structured_final,
     drop_null_optionals,
@@ -63,7 +63,7 @@ def _mcp_inventory():
     if _inventory_cache is None:
         tools, stale = {}, {}
         for name in MCP_SERVERS:
-            module = importlib.import_module(f"mcp_servers.{name}")
+            module = importlib.import_module(f"webot.tools.{name}")
             for tool in asyncio.run(module.mcp.list_tools()):
                 tools[tool.name] = (name, tool)
             stale.update(getattr(module.mcp, "stale_param_docs", {}))
@@ -233,8 +233,8 @@ class NullOptionalsRoundTrip(unittest.TestCase):
 
 class McpToolInventory(unittest.TestCase):
     def test_every_tool_has_a_display_category_and_usage_old_name_is_compatible(self):
-        from core.tool_catalog import tool_category
-        from core.tool_aliases import resolve_tool_call
+        from webot.engine.tool_catalog import tool_category
+        from webot.engine.tool_aliases import resolve_tool_call
         inventory, _ = _mcp_inventory()
         self.assertIn("usage_status", inventory)
         self.assertNotIn("get_insights", inventory)
@@ -449,7 +449,7 @@ class StructuredFinalDecoding(unittest.IsolatedAsyncioTestCase):
                 return AIMessage(content='{"content":"finished"}')
 
         model = Model()
-        with patch("core.tool_schema._model_classes", return_value={"BaseChatOpenAI"}):
+        with patch("webot.engine.tool_schema._model_classes", return_value={"BaseChatOpenAI"}):
             result = await decode_structured_final(model, self.FORMAT, [HumanMessage(content="draft")])
         self.assertEqual(json.loads(result.content), {"content": "finished"})
         self.assertTrue(model.kwargs["response_format"]["json_schema"]["strict"])
@@ -468,7 +468,7 @@ class StructuredFinalDecoding(unittest.IsolatedAsyncioTestCase):
                 "content": {"type": "string"}, "note": {"type": "string"},
             }, "required": ["content"], "additionalProperties": False,
         }}}
-        with patch("core.tool_schema._model_classes", return_value={"BaseChatOpenAI"}):
+        with patch("webot.engine.tool_schema._model_classes", return_value={"BaseChatOpenAI"}):
             result = await decode_structured_final(Model(), requested, [HumanMessage(content="draft")])
         self.assertEqual(json.loads(result.content), {"content": "done"})
 
@@ -483,8 +483,8 @@ class StructuredFinalDecoding(unittest.IsolatedAsyncioTestCase):
                 return AIMessage(content="unconstrained text")
 
         model = Model()
-        with patch("core.tool_schema._model_classes", return_value={"ChatDeepSeek"}), patch(
-            "core.tool_schema.strict_tool_binding", return_value=(model, True, {"strict": True})
+        with patch("webot.engine.tool_schema._model_classes", return_value={"ChatDeepSeek"}), patch(
+            "webot.engine.tool_schema.strict_tool_binding", return_value=(model, True, {"strict": True})
         ):
             with self.assertRaisesRegex(RuntimeError, "schema-constrained"):
                 await decode_structured_final(model, self.FORMAT, [HumanMessage(content="draft")])
@@ -501,8 +501,8 @@ class StructuredFinalDecoding(unittest.IsolatedAsyncioTestCase):
                 }])
 
         model = Model()
-        with patch("core.tool_schema._model_classes", return_value={"ChatDeepSeek"}), patch(
-            "core.tool_schema.strict_tool_binding", return_value=(model, True, {"strict": True})
+        with patch("webot.engine.tool_schema._model_classes", return_value={"ChatDeepSeek"}), patch(
+            "webot.engine.tool_schema.strict_tool_binding", return_value=(model, True, {"strict": True})
         ):
             result = await decode_structured_final(model, self.FORMAT, [HumanMessage(content="draft")])
         self.assertEqual(json.loads(result.content), {"content": "done"})
@@ -519,7 +519,7 @@ class StructuredFinalDecoding(unittest.IsolatedAsyncioTestCase):
                 return {"parsed": {"content": "finished"}, "raw": AIMessage(content=""), "parsing_error": None}
 
         model = Model()
-        with patch("core.tool_schema._model_classes", return_value={"ChatAnthropic"}):
+        with patch("webot.engine.tool_schema._model_classes", return_value={"ChatAnthropic"}):
             result = await decode_structured_final(model, self.FORMAT, [HumanMessage(content="draft")])
         self.assertEqual(json.loads(result.content), {"content": "finished"})
         self.assertTrue(model.include_raw)
@@ -542,7 +542,7 @@ class StrictCallsRunOnTheRealServer(unittest.IsolatedAsyncioTestCase):
     """A call shaped by the strict schema, decoded back, passes the server's own validation."""
 
     async def test_write_session_plan(self):
-        webot = importlib.import_module("mcp_servers.webot")
+        webot = importlib.import_module("webot.tools.webot")
         schema = next(t for t in await webot.mcp.list_tools() if t.name == "write_session_plan").inputSchema
         # What a strict decoder emits: every key present, omitted ones null.
         model_args = {
@@ -604,9 +604,9 @@ class ToolNodeDropsStrictNulls(unittest.IsolatedAsyncioTestCase):
                 {"name": "echo_tool", "args": {"text": "hi", "limit": None}, "id": "c1", "type": "tool_call"},
             ])],
         }
-        with patch("core.agent.get_session_mode", return_value={"mode": "default"}), \
-                patch("core.agent.resolve_permission_context", side_effect=_allow_all_permission), \
-                patch("core.agent.run_tool_policy_hooks", side_effect=_passthrough_hook_outcome):
+        with patch("webot.engine.agent.get_session_mode", return_value={"mode": "default"}), \
+                patch("webot.engine.agent.resolve_permission_context", side_effect=_allow_all_permission), \
+                patch("webot.engine.agent.run_tool_policy_hooks", side_effect=_passthrough_hook_outcome):
             await node(state, config={})
         self.assertEqual(received, {"text": "hi"})
 

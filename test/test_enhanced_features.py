@@ -22,51 +22,51 @@ class TestConsensus:
     """Test consensus vote parsing ported from openclaw."""
 
     def test_strict_format_yes(self):
-        from core.consensus import parse_consensus
+        from webot.engine.consensus import parse_consensus
         assert parse_consensus("Some text [CONSENSUS: YES] end") is True
 
     def test_strict_format_no(self):
-        from core.consensus import parse_consensus
+        from webot.engine.consensus import parse_consensus
         assert parse_consensus("Some text [CONSENSUS: NO] end") is False
 
     def test_chinese_colon(self):
-        from core.consensus import parse_consensus
+        from webot.engine.consensus import parse_consensus
         assert parse_consensus("[CONSENSUS：YES]") is True
         assert parse_consensus("[CONSENSUS：NO]") is False
 
     def test_last_match_wins(self):
-        from core.consensus import parse_consensus
+        from webot.engine.consensus import parse_consensus
         # Two tags — the LAST one wins (ported from openclaw)
         assert parse_consensus("[CONSENSUS: NO] ... [CONSENSUS: YES]") is True
         assert parse_consensus("[CONSENSUS: YES] ... [CONSENSUS: NO]") is False
 
     def test_variant_patterns(self):
-        from core.consensus import parse_consensus
+        from webot.engine.consensus import parse_consensus
         assert parse_consensus("consensus: yes") is True
         assert parse_consensus("CONSENSUS=YES") is True
         assert parse_consensus("共识投票: YES") is True
         assert parse_consensus("**consensus**: no") is False
 
     def test_tail_fallback_positive(self):
-        from core.consensus import parse_consensus
+        from webot.engine.consensus import parse_consensus
         text = "Lots of text\n" * 20 + "达成共识"
         assert parse_consensus(text) is True
 
     def test_tail_fallback_negative(self):
-        from core.consensus import parse_consensus
+        from webot.engine.consensus import parse_consensus
         text = "Lots of text\n" * 20 + "未达成共识"
         assert parse_consensus(text) is False
 
     def test_default_false(self):
-        from core.consensus import parse_consensus
+        from webot.engine.consensus import parse_consensus
         assert parse_consensus("No consensus tags here at all") is False
 
     def test_strip_tags(self):
-        from core.consensus import strip_consensus_tags
+        from webot.engine.consensus import strip_consensus_tags
         assert strip_consensus_tags("hello [CONSENSUS: YES] world") == "hello  world"
 
     def test_has_marker(self):
-        from core.consensus import has_consensus_marker
+        from webot.engine.consensus import has_consensus_marker
         assert has_consensus_marker("[CONSENSUS: YES]") is True
         assert has_consensus_marker("共识投票: NO") is True
         assert has_consensus_marker("no tags here") is False
@@ -80,14 +80,14 @@ class TestCouncilTwoPhase:
     """Test the full two-phase council protocol from openclaw."""
 
     def test_default_agents(self):
-        from core.agent_orchestrator import get_default_council_agents
+        from webot.engine.agent_orchestrator import get_default_council_agents
         agents = get_default_council_agents()
         assert len(agents) == 3
         names = {a["name"] for a in agents}
         assert names == {"Architect", "Engineer", "Reviewer"}
 
     def test_create_full_session(self):
-        from core.agent_orchestrator import create_council_full_session, CouncilAgentPersona
+        from webot.engine.agent_orchestrator import create_council_full_session, CouncilAgentPersona
         agents = [
             CouncilAgentPersona(name="A", emoji="🏗️", persona="Architect"),
             CouncilAgentPersona(name="B", emoji="⚙️", persona="Engineer"),
@@ -98,7 +98,7 @@ class TestCouncilTwoPhase:
         assert session.max_rounds == 10
 
     def test_plan_round_prompt(self):
-        from core.agent_orchestrator import (
+        from webot.engine.agent_orchestrator import (
             build_council_agent_prompt, CouncilAgentPersona, CouncilAgentResponse,
         )
         agents = [
@@ -111,7 +111,7 @@ class TestCouncilTwoPhase:
         assert "plan.md" in prompt
 
     def test_execution_round_prompt(self):
-        from core.agent_orchestrator import (
+        from webot.engine.agent_orchestrator import (
             build_council_agent_prompt, CouncilAgentPersona, CouncilAgentResponse,
         )
         agents = [
@@ -125,7 +125,7 @@ class TestCouncilTwoPhase:
         assert "之前的协作记录" in prompt
 
     def test_system_prompt(self):
-        from core.agent_orchestrator import build_council_system_prompt, CouncilAgentPersona
+        from webot.engine.agent_orchestrator import build_council_system_prompt, CouncilAgentPersona
         agents = [
             CouncilAgentPersona(name="Arch", emoji="🏗️", persona="System architect"),
             CouncilAgentPersona(name="Eng", emoji="⚙️", persona="Engineer"),
@@ -136,7 +136,7 @@ class TestCouncilTwoPhase:
         assert "System architect" in prompt
 
     def test_record_and_evaluate(self):
-        from core.agent_orchestrator import (
+        from webot.engine.agent_orchestrator import (
             create_council_full_session, record_council_agent_response,
             evaluate_council_round, CouncilAgentPersona,
         )
@@ -153,7 +153,7 @@ class TestCouncilTwoPhase:
         assert result["yes_count"] == 0
 
     def test_consensus_reached(self):
-        from core.agent_orchestrator import (
+        from webot.engine.agent_orchestrator import (
             create_council_full_session, record_council_agent_response,
             evaluate_council_round, CouncilAgentPersona,
         )
@@ -171,7 +171,7 @@ class TestCouncilTwoPhase:
         assert session.final_summary != ""
 
     def test_max_rounds_reached(self):
-        from core.agent_orchestrator import (
+        from webot.engine.agent_orchestrator import (
             create_council_full_session, record_council_agent_response,
             evaluate_council_round, CouncilAgentPersona,
         )
@@ -183,7 +183,7 @@ class TestCouncilTwoPhase:
         assert session.status == "max_rounds"
 
     def test_summary_generation(self):
-        from core.agent_orchestrator import (
+        from webot.engine.agent_orchestrator import (
             create_council_full_session, record_council_agent_response,
             evaluate_council_round, generate_council_summary, CouncilAgentPersona,
         )
@@ -207,7 +207,7 @@ class TestRalphPhases:
     """Test Ralph 7-phase state machine from oh-my-codex."""
 
     def test_all_phases_defined(self):
-        from core.workflow_engines import RALPH_PHASES
+        from webot.engine.workflow_engines import RALPH_PHASES
         assert len(RALPH_PHASES) == 7
         assert "starting" in RALPH_PHASES
         assert "executing" in RALPH_PHASES
@@ -218,12 +218,12 @@ class TestRalphPhases:
         assert "cancelled" in RALPH_PHASES
 
     def test_normalize_phase(self):
-        from core.workflow_engines import normalize_ralph_phase
+        from webot.engine.workflow_engines import normalize_ralph_phase
         assert normalize_ralph_phase("executing")[0] == "executing"
         assert normalize_ralph_phase("EXECUTING")[0] == "executing"
 
     def test_legacy_aliases(self):
-        from core.workflow_engines import normalize_ralph_phase
+        from webot.engine.workflow_engines import normalize_ralph_phase
         phase, warning = normalize_ralph_phase("started")
         assert phase == "starting"
         assert "legacy" in warning.lower()
@@ -235,13 +235,13 @@ class TestRalphPhases:
         assert phase == "complete"
 
     def test_invalid_phase(self):
-        from core.workflow_engines import normalize_ralph_phase
+        from webot.engine.workflow_engines import normalize_ralph_phase
         phase, error = normalize_ralph_phase("invalid_phase")
         assert phase == ""
         assert "must be one of" in error
 
     def test_validate_state_active(self):
-        from core.workflow_engines import validate_ralph_state
+        from webot.engine.workflow_engines import validate_ralph_state
         result = validate_ralph_state({"active": True})
         assert result["ok"]
         state = result["state"]
@@ -251,7 +251,7 @@ class TestRalphPhases:
         assert "started_at" in state
 
     def test_validate_terminal_phase(self):
-        from core.workflow_engines import validate_ralph_state
+        from webot.engine.workflow_engines import validate_ralph_state
         result = validate_ralph_state({"current_phase": "complete", "active": True})
         assert not result["ok"]
         assert "terminal" in result["error"].lower()
@@ -260,7 +260,7 @@ class TestRalphPhases:
         assert result["ok"]
 
     def test_validate_iteration_bounds(self):
-        from core.workflow_engines import validate_ralph_state
+        from webot.engine.workflow_engines import validate_ralph_state
         result = validate_ralph_state({"iteration": -1})
         assert not result["ok"]
 
@@ -276,7 +276,7 @@ class TestDeepInterviewEnhanced:
     """Test enhanced deep interview with weighted ambiguity scoring."""
 
     def test_depth_profiles(self):
-        from core.workflow_engines import create_deep_interview
+        from webot.engine.workflow_engines import create_deep_interview
         quick = create_deep_interview(user_id="u1", session_id="s1", topic="Test")
         quick.depth_profile = "quick"
         quick.__post_init__()
@@ -284,7 +284,7 @@ class TestDeepInterviewEnhanced:
         assert quick.max_rounds == 5
 
     def test_ambiguity_computation_greenfield(self):
-        from core.workflow_engines import create_deep_interview, ClarityScore
+        from webot.engine.workflow_engines import create_deep_interview, ClarityScore
         interview = create_deep_interview(user_id="u1", session_id="s1", topic="New App")
         interview.project_type = "greenfield"
         interview.clarity_scores = {
@@ -300,7 +300,7 @@ class TestDeepInterviewEnhanced:
         assert abs(ambiguity - 0.35) < 0.01
 
     def test_ambiguity_computation_brownfield(self):
-        from core.workflow_engines import create_deep_interview, ClarityScore
+        from webot.engine.workflow_engines import create_deep_interview, ClarityScore
         interview = create_deep_interview(user_id="u1", session_id="s1", topic="Refactor")
         interview.project_type = "brownfield"
         interview.clarity_scores = {
@@ -315,7 +315,7 @@ class TestDeepInterviewEnhanced:
         assert ambiguity == 0.0  # Perfect clarity
 
     def test_readiness_gates(self):
-        from core.workflow_engines import create_deep_interview, ClarityScore
+        from webot.engine.workflow_engines import create_deep_interview, ClarityScore
         interview = create_deep_interview(user_id="u1", session_id="s1", topic="Test")
         interview.current_ambiguity = 0.1  # Below threshold
         # Not ready: non_goals not explicit
@@ -331,7 +331,7 @@ class TestDeepInterviewEnhanced:
         assert interview.is_ready_to_crystallize()
 
     def test_weakest_dimension(self):
-        from core.workflow_engines import create_deep_interview, ClarityScore
+        from webot.engine.workflow_engines import create_deep_interview, ClarityScore
         interview = create_deep_interview(user_id="u1", session_id="s1", topic="Test")
         # Provide scores for ALL greenfield dimensions so we can control which is weakest
         interview.clarity_scores = {
@@ -344,7 +344,7 @@ class TestDeepInterviewEnhanced:
         assert interview.get_weakest_dimension() == "outcome"
 
     def test_challenge_modes(self):
-        from core.workflow_engines import create_deep_interview
+        from webot.engine.workflow_engines import create_deep_interview
         interview = create_deep_interview(user_id="u1", session_id="s1", topic="Test")
 
         interview.current_round = 1
@@ -371,7 +371,7 @@ class TestHUDEnhanced:
     """Test enhanced HUD with presets from oh-my-codex."""
 
     def test_minimal_preset(self):
-        from core.workflow_engines import get_hud, update_hud
+        from webot.engine.workflow_engines import get_hud, update_hud
         hud = get_hud("hud_test", "s1")
         update_hud("hud_test", "s1",
             active=True, preset="minimal",
@@ -383,7 +383,7 @@ class TestHUDEnhanced:
         assert "WeBot" in display
 
     def test_focused_preset(self):
-        from core.workflow_engines import get_hud, update_hud
+        from webot.engine.workflow_engines import get_hud, update_hud
         hud = get_hud("hud_test2", "s1")
         update_hud("hud_test2", "s1",
             active=True, preset="focused",
@@ -397,7 +397,7 @@ class TestHUDEnhanced:
         assert "tokens:" in display
 
     def test_ralph_color_coding(self):
-        from core.workflow_engines import get_hud, update_hud
+        from webot.engine.workflow_engines import get_hud, update_hud
         hud = get_hud("hud_color", "s1")
 
         # Normal (green)
@@ -413,7 +413,7 @@ class TestHUDEnhanced:
         assert hud._get_ralph_color_marker() == "🔴"
 
     def test_hud_to_dict(self):
-        from core.workflow_engines import get_hud, update_hud
+        from webot.engine.workflow_engines import get_hud, update_hud
         hud = get_hud("hud_dict", "s1")
         update_hud("hud_dict", "s1",
             active=True, ralph_iteration=5, ralph_max_iterations=10,
@@ -433,7 +433,7 @@ class TestBackwardCompat:
     """Ensure enhanced features don't break existing functionality."""
 
     def test_ralph_loop_still_works(self):
-        from core.workflow_engines import create_ralph_loop
+        from webot.engine.workflow_engines import create_ralph_loop
         loop = create_ralph_loop(
             user_id="u1", session_id="s1",
             task="Fix bug", verification_criteria="Tests pass",
@@ -443,7 +443,7 @@ class TestBackwardCompat:
         assert loop.status.value in ("complete", "succeeded")
 
     def test_council_simple_session_still_works(self):
-        from core.agent_orchestrator import (
+        from webot.engine.agent_orchestrator import (
             create_council_session, submit_council_vote,
             evaluate_council_consensus,
         )
@@ -457,7 +457,7 @@ class TestBackwardCompat:
         assert result.consensus == "approved"
 
     def test_interview_basic_flow(self):
-        from core.workflow_engines import (
+        from webot.engine.workflow_engines import (
             create_deep_interview, add_interview_question,
             answer_interview_question, complete_interview,
         )
@@ -469,4 +469,4 @@ class TestBackwardCompat:
 
 
 # Import for backward compat test
-from core.workflow_engines import RalphStatus
+from webot.engine.workflow_engines import RalphStatus
