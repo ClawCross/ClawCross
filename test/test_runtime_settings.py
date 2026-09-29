@@ -117,17 +117,15 @@ class RuntimeSettingsTests(unittest.TestCase):
         self.assertEqual(usage["source"], "api")
         self.assertEqual(usage["breakdown"], {"messages": 9000})
 
-    def test_session_status_uses_new_window_with_existing_api_usage(self):
+    def test_session_context_usage_uses_new_window_with_existing_api_usage(self):
         from webot.api.session_service import SessionService
-        from webot.api.session_models import SessionStatusRequest
         settings.save_runtime_settings("alice", session_id="s", settings={"context": {"context_window_tokens": 20000}})
         agent = SimpleNamespace(
             get_thread_context_usage=lambda _: {"tokens": 10000, "budget": 64000, "percent": 16, "source": "api"},
-            get_thread_model=lambda _: "deepseek-flash", has_pending_system_messages=lambda _: False,
-            is_thread_busy=lambda _: False,
+            get_thread_model=lambda _: "deepseek-flash",
         )
-        service = SessionService(db_path=":memory:", agent=agent, verify_auth_or_token=lambda *a: None, extract_text=str)
-        result = asyncio.run(service.session_status(SessionStatusRequest(user_id="alice", session_id="s"), None))
-        self.assertEqual(result["context_budget"], 20000)
-        self.assertEqual(result["context_percent"], 50)
-        self.assertEqual(result["context_source"], "api")
+        service = SessionService(db_path=":memory:", agent=agent, extract_text=str)
+        result = asyncio.run(service.context_usage("alice", "s"))
+        self.assertEqual(result["budget"], 20000)
+        self.assertEqual(result["percent"], 50)
+        self.assertEqual(result["source"], "api")

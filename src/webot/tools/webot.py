@@ -107,10 +107,7 @@ _AGENT_PORT = os.getenv("PORT_AGENT", "51200")
 _INTERNAL_TOKEN = os.getenv("INTERNAL_TOKEN", "")
 _AGENT_URL = f"http://127.0.0.1:{_AGENT_PORT}/v1/chat/completions"
 _SYSTEM_TRIGGER_URL = f"http://127.0.0.1:{_AGENT_PORT}/system_trigger"
-_SESSION_HISTORY_URL = f"http://127.0.0.1:{_AGENT_PORT}/session_history"
-_CANCEL_URL = f"http://127.0.0.1:{_AGENT_PORT}/cancel"
-_DELETE_SESSION_URL = f"http://127.0.0.1:{_AGENT_PORT}/delete_session"
-_SESSION_STATUS_URL = f"http://127.0.0.1:{_AGENT_PORT}/session_status"
+_AGENTS_URL = f"http://127.0.0.1:{_AGENT_PORT}/v1/agents"
 
 _BACKGROUND_TASKS: dict[str, asyncio.Task] = {}
 _WORKER_ID = f"webot-mcp:{os.getpid()}:{uuid.uuid4().hex[:8]}"
@@ -127,6 +124,10 @@ def _ensure_internal_token() -> str:
     if not _INTERNAL_TOKEN:
         raise RuntimeError("系统未配置 INTERNAL_TOKEN，无法启用 WeBot 子 Agent 调度。")
     return _INTERNAL_TOKEN
+
+def _agent_auth(username: str) -> dict[str, str]:
+    """``/v1/agents`` as *username*: a session is the agent of its number."""
+    return {"Authorization": f"Bearer {_ensure_internal_token()}:{username}"}
 
 def _resolve_subagent_ref(username: str, agent_ref: str):
     ref = (agent_ref or "").strip()
@@ -167,17 +168,13 @@ async def _push_system_message(
         response.raise_for_status()
 
 async def _peek_session_busy(username: str, session_id: str) -> bool:
-    token = _ensure_internal_token()
     async with httpx.AsyncClient(timeout=15) as client:
-        response = await client.post(
-            _SESSION_STATUS_URL,
-            headers={"X-Internal-Token": token, "Content-Type": "application/json"},
-            json={"user_id": username, "session_id": session_id, "peek": True},
-        )
-        if response.status_code != 200:
-            return True
-        data = response.json()
-    return bool(data.get("busy"))
+        response = await client.get(f"{_AGENTS_URL}/{session_id}", headers=_agent_auth(username))
+    if response.status_code == 404:  # no turn yet
+        return False
+    if response.status_code != 200:
+        return True
+    return (response.json().get("status") or {}).get("state") == "running"
 
 def _source_label(username: str, source_session: str) -> tuple[str, str]:
     record = get_subagent_by_session(source_session, username) if source_session else None
@@ -569,17 +566,14 @@ async def _cancel_internal_subagent(
     username: str,
     session_id: str,
 ) -> bool:
-    token = _ensure_internal_token()
     async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.post(
-            _CANCEL_URL,
-            headers={"X-Internal-Token": token, "Content-Type": "application/json"},
-            json={"user_id": username, "session_id": session_id},
-        )
-        if response.status_code != 200:
-            raise RuntimeError(f"取消子 Agent 失败 (HTTP {response.status_code}): {response.text[:500]}")
-        data = response.json()
-    return bool(data.get("cancelled"))
+        response = await client.post(f"{_AGENTS_URL}/{session_id}/control", headers=_agent_auth(username),
+                                     json={"action": "cancel"})
+    if response.status_code == 404:  # no turn yet
+        return False
+    if response.status_code != 200:
+        raise RuntimeError(f"取消子 Agent 失败 (HTTP {response.status_code}): {response.text[:500]}")
+    return bool(response.json().get("cancelled"))
 
 
 async def _delete_internal_session(
@@ -587,16 +581,13 @@ async def _delete_internal_session(
     username: str,
     session_id: str,
 ) -> dict:
-    token = _ensure_internal_token()
     async with httpx.AsyncClient(timeout=60) as client:
-        response = await client.post(
-            _DELETE_SESSION_URL,
-            headers={"X-Internal-Token": token, "Content-Type": "application/json"},
-            json={"user_id": username, "session_id": session_id},
-        )
-        if response.status_code != 200:
-            raise RuntimeError(f"删除子 Agent session 失败 (HTTP {response.status_code}): {response.text[:500]}")
-        return response.json()
+        response = await client.delete(f"{_AGENTS_URL}/{session_id}", headers=_agent_auth(username))
+    if response.status_code == 404:  # no turn yet: nothing of it in the agent service
+        return {}
+    if response.status_code != 200:
+        raise RuntimeError(f"删除子 Agent session 失败 (HTTP {response.status_code}): {response.text[:500]}")
+    return response.json()
 
 
 def _agent_profiles_text(username: str = "") -> str:
@@ -1141,20 +1132,12 @@ async def get_subagent_history(
     if record is None:
         return f"❌ 未找到子 Agent: {agent_ref}"
 
-    token = _ensure_internal_token()
-    payload = {"user_id": username, "session_id": record.session_id}
     async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.post(
-            _SESSION_HISTORY_URL,
-            headers={"X-Internal-Token": token, "Content-Type": "application/json"},
-            json=payload,
-        )
-        if response.status_code != 200:
-            return f"❌ 读取子 Agent 历史失败 (HTTP {response.status_code}): {response.text[:500]}"
-        data = response.json()
-
-    messages = data.get("messages") or []
-    messages = messages[-max(1, min(limit, 50)) :]
+        response = await client.get(f"{_AGENTS_URL}/{record.session_id}/history", headers=_agent_auth(username),
+                                    params={"limit": max(1, min(limit, 50))})
+    if response.status_code not in (200, 404):  # 404: no turn yet
+        return f"❌ 读取子 Agent 历史失败 (HTTP {response.status_code}): {response.text[:500]}"
+    messages = (response.json().get("messages") or []) if response.status_code == 200 else []
     if not messages:
         return f"📭 子 Agent {record.name} ({record.agent_id}) 还没有历史消息。"
 
@@ -1327,7 +1310,7 @@ async def delete_subagent(
     except Exception as exc:
         return f"❌ 删除子 Agent 失败: {exc}"
 
-    # The /delete_session endpoint removes the registry row for subagent sessions.
+    # Deleting the agent removes the registry row for subagent sessions.
     # Keep this idempotent cleanup for MCP-only/runtime edge cases.
     registry_deleted = delete_subagent_by_session(username, record.session_id)
     plan_deleted = delete_session_plan(username, record.session_id)

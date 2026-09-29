@@ -32,7 +32,6 @@ from webot.models import (
     WeBotKairosUpdateRequest,
     WeBotPlanUpdateRequest,
     WeBotSessionInboxListRequest,
-    WeBotSessionInboxSendRequest,
     WeBotSessionRuntimeRequest,
     WeBotTodoUpdateRequest,
     WeBotVerificationCreateRequest,
@@ -395,7 +394,7 @@ class WeBotServiceTests(unittest.IsolatedAsyncioTestCase):
                 webot_memory.USER_FILES_DIR = original_memory_user_files
                 runtime_store.PROJECT_ROOT = original_runtime_root
 
-    async def test_session_inbox_send_and_deliver(self):
+    async def test_session_inbox_lists_queued_entries(self):
         with TemporaryDirectory() as tmpdir:
             import webot.subagents as store
             original_db_path = store.DEFAULT_DB_PATH
@@ -403,7 +402,7 @@ class WeBotServiceTests(unittest.IsolatedAsyncioTestCase):
             store.DEFAULT_DB_PATH = Path(tmpdir) / "subagents.db"
             runtime_store.DEFAULT_DB_PATH = Path(tmpdir) / "runtime.db"
             try:
-                target_record = create_subagent_record(
+                upsert_subagent(create_subagent_record(
                     agent_id="worker1",
                     user_id="alice",
                     session_id="subagent__research__worker1",
@@ -412,32 +411,17 @@ class WeBotServiceTests(unittest.IsolatedAsyncioTestCase):
                     description="Investigate runtime",
                     parent_session="default",
                     status="idle",
+                ))
+                runtime_store.create_inbox_message(
+                    "alice", source_session="default", target_session="subagent__research__worker1",
+                    content="Auth module needs rate limiting",
                 )
-                upsert_subagent(target_record)
-
-                agent = _FakeAgent({}, active_keys=set(), statuses={})
                 service = WeBotService(system=None,
-                    agent=agent,
+                    agent=_FakeAgent({}, active_keys=set(), statuses={}),
                     verify_auth_or_token=lambda user_id, password, token: None,
                     extract_text=lambda content: content if isinstance(content, str) else str(content),
                 )
 
-                delivered_payloads = []
-
-                async def _fake_push_system_message(*, user_id, session_id, text, timeout=30, drain_inbox=False):
-                    delivered_payloads.append((user_id, session_id, text, drain_inbox))
-
-                service._push_system_message = _fake_push_system_message
-
-                sent = await service.send_session_inbox(
-                    WeBotSessionInboxSendRequest(
-                        user_id="alice",
-                        session_id="default",
-                        target_ref="worker1",
-                        body="Auth module needs rate limiting",
-                    ),
-                    None,
-                )
                 queued_list = await service.get_session_inbox(
                     WeBotSessionInboxListRequest(
                         user_id="alice",
@@ -447,34 +431,7 @@ class WeBotServiceTests(unittest.IsolatedAsyncioTestCase):
                     None,
                 )
 
-                self.assertEqual(sent["created"], 1)
-                self.assertEqual(sent["delivered"], 0)
-                self.assertEqual(len(delivered_payloads), 1)
-                self.assertTrue(delivered_payloads[0][3])
-                self.assertEqual(queued_list["items"][0]["status"], "queued")
-
-                agent._active_keys.add("alice#subagent__research__worker1")
-                queued = await service.send_session_inbox(
-                    WeBotSessionInboxSendRequest(
-                        user_id="alice",
-                        session_id="default",
-                        target_ref="worker1",
-                        body="Build failed again",
-                    ),
-                    None,
-                )
-                queued_list = await service.get_session_inbox(
-                    WeBotSessionInboxListRequest(
-                        user_id="alice",
-                        session_id="subagent__research__worker1",
-                        status="queued",
-                    ),
-                    None,
-                )
-
-                self.assertEqual(queued["targets"][0]["delivery_state"], "scheduled")
-                self.assertEqual(queued_list["items"][0]["status"], "queued")
-                self.assertEqual(len(delivered_payloads), 2)
+                self.assertEqual([item["status"] for item in queued_list["items"]], ["queued"])
             finally:
                 store.DEFAULT_DB_PATH = original_db_path
                 runtime_store.DEFAULT_DB_PATH = original_runtime_db_path

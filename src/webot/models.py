@@ -91,22 +91,10 @@ class WeBotLspRequest(WeBotSessionRuntimeRequest):
     max_diagnostics: int = 50
 
 
-class WeBotSessionInboxDeliverRequest(WeBotSessionRuntimeRequest):
-    target_ref: str = ""
-    limit: int = 20
-    force: bool = False
-
-
 class WeBotSessionInboxListRequest(WeBotSessionRuntimeRequest):
     target_ref: str = ""
     status: str = "unread"
     limit: int = 20
-
-
-class WeBotSessionInboxSendRequest(WeBotSessionRuntimeRequest):
-    target_ref: str = ""
-    body: str = ""
-    summary: str = ""
 
 
 class WeBotRunInterruptRequest(WeBotSessionRuntimeRequest):

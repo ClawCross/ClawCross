@@ -375,9 +375,6 @@ async function stubStudioNetwork(page, calls, options = {}) {
   await page.route('**/proxy_check_session', (route) => json(route, { valid: true, user_id: 'smoke-user' }));
   await page.route('**/proxy_tools', (route) => json(route, []));
   await page.route('**/proxy_oasis/topics', (route) => json(route, []));
-  await page.route('**/proxy_sessions', (route) => json(route, { sessions: [] }));
-  await page.route('**/proxy_sessions_status', (route) => json(route, { sessions: [] }));
-  await page.route('**/proxy_session_history', (route) => json(route, { messages: [] }));
   await page.route('**/proxy_tunnel/status', (route) => json(route, { running: false, public_domain: '' }));
   await page.route('**/teams', (route) => json(route, { teams: ['Smoke Team'] }));
   await page.route('**/proxy_visual/experts*', (route) => json(route, []));
@@ -391,6 +388,8 @@ async function stubStudioNetwork(page, calls, options = {}) {
     return json(route, { object: 'list', data: options.agents || [] });
   });
   await page.route(/\/v1\/agents\/[^/]+\/history/, (route) => json(route, { detail: 'no agent' }, 404));
+  // A session with no turn yet is no agent yet.
+  await page.route(/\/v1\/agents\/[^/?]+$/, (route) => json(route, { detail: 'no agent' }, 404));
   await page.route('**/proxy_webot_subagents', (route) =>
     json(route, {
       status: 'success',
@@ -470,10 +469,14 @@ async function stubStudioNetwork(page, calls, options = {}) {
       },
     });
   });
-  await page.route('**/proxy_webot_session_inbox_deliver', async (route) => {
-    calls.inboxDeliveries = (calls.inboxDeliveries || 0) + 1;
-    currentRuntimeState.inbox = currentRuntimeState.inbox.map(item => ({ ...item, status: 'delivered' }));
-    return json(route, { status: 'success', delivered: currentRuntimeState.inbox.length });
+  await page.route(/\/v1\/agents\/[^/]+\/control$/, async (route) => {
+    const { action } = await route.request().postDataJSON();
+    if (action === 'deliver_inbox') {
+      calls.inboxDeliveries = (calls.inboxDeliveries || 0) + 1;
+      currentRuntimeState.inbox = currentRuntimeState.inbox.map(item => ({ ...item, status: 'delivered' }));
+      return json(route, { scheduled: true });
+    }
+    return json(route, {});
   });
   await page.route('**/proxy_webot_voice', async (route) => {
     const payload = await route.request().postDataJSON();

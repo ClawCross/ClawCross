@@ -23,7 +23,7 @@
   - 提供 OpenAI 兼容的 `/v1/chat/completions` 接口
   - Agent 核心逻辑（工具调用、多轮对话、记忆管理）
   - `/system_trigger` 内部触发端点（定时任务回调等）
-  - `/login`、`/sessions`、`/tools`、`/tts`、`/settings`、`/groups` 等 API
+  - `/v1/agents`（本机所有 agent，WeBot 会话也在其中）、`/login`、`/tools`、`/tts`、`/settings`、`/groups` 等 API
 - **调用方**：前端 `front.py`（代理转发）、chatbot、MCP 模块、OASIS 回调
 - **鉴权**：`X-Internal-Token` 或用户密码
 
@@ -145,8 +145,9 @@ PORT_FRONTEND=51209
 - `POST /v1/chat/completions` — 聊天补全（公开路由，Bearer Token 鉴权）；`model` 可以是 agent 地址 / `ag_` 编号，或 `<用户>/<team>`（交给 team 的 lead）
 - `GET /v1/models` — 模型列表（公开路由）：你的 agent 与 team
 - `/v1/agents…` — 本机所有 agent，一套接口（登录用户以自己的身份转发）：
-  - `GET /v1/agents`（`?status=1` 附带运行状态）· `POST /v1/agents` 新建（`{name, platform, persona, team, global_name, api_url, model…}`）
-  - `GET|PATCH|DELETE /v1/agents/<ref>` · `POST /v1/agents/<ref>/messages` · `POST /v1/agents/<ref>/control`（status / cancel / reset）· `GET /v1/agents/<ref>/history`
+  - `GET /v1/agents`（`?status=1` 附带运行状态，`?platform=webot` 只列一个平台的）· `POST /v1/agents` 新建（`{name, platform, persona, team, global_name, api_url, model…}`）
+  - `GET|PATCH|DELETE /v1/agents/<ref>` · `POST /v1/agents/<ref>/messages` · `POST /v1/agents/<ref>/control`（status / cancel / reset；WeBot 还有 compact / deliver_inbox）· `GET /v1/agents/<ref>/history`
+  - WeBot 会话就是 WeBot agent：会话列表 = `GET /v1/agents?status=1&platform=webot`（状态里带 `title`、`last_message`、`message_count`、时间、`mode`、`context`），删除会话 = `DELETE /v1/agents/<id>`
 - `/v1/teams…` — team 组合 agent：
   - `GET|POST /v1/teams` · `GET|PATCH|DELETE /v1/teams/<team>`
   - `POST /v1/teams/<team>/members`（`{agent, role?, is_lead?}`）· `PATCH|DELETE /v1/teams/<team>/members/<agent>`
@@ -160,7 +161,6 @@ PORT_FRONTEND=51209
 
 ### Agent 代理（→ :51200）
 
-- `POST /proxy_cancel` — 取消生成（→ `/cancel`）
 - `POST /proxy_tts` — 语音合成（→ `/tts`）
 - `GET /proxy_tools` — 工具列表（→ `/tools`）
 - `GET /proxy_settings` — 获取设置（→ `/settings`）
@@ -168,11 +168,6 @@ PORT_FRONTEND=51209
 - `GET /proxy_settings_full` — 获取完整设置（→ `/settings/full`）
 - `POST /proxy_settings_full` — 更新完整设置（→ `/settings/full`）
 - `POST /proxy_restart` — 重启服务（→ `/restart`）
-- `GET /proxy_sessions` — 会话列表（→ `/sessions`）
-- `GET /proxy_sessions_status` — 会话状态（→ `/sessions_status`）
-- `POST /proxy_session_history` — 会话历史（→ `/session_history`）
-- `POST /proxy_session_status` — 单会话状态（→ `/session_status`）
-- `POST /proxy_delete_session` — 删除会话（→ `/delete_session`）
 
 ### 群组聊天代理（→ :51200）
 
@@ -266,7 +261,6 @@ PORT_FRONTEND=51209
 - `GET /proxy_visual/load-yaml-raw/<name>` — 原始 YAML
 - `DELETE /proxy_visual/delete-layout/<name>` — 删除布局
 - `POST /proxy_visual/upload-yaml` — 上传 YAML
-- `GET /proxy_visual/sessions-status` — 编排会话状态
 
 ### Tunnel 管理
 

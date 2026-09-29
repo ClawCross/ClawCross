@@ -259,47 +259,6 @@ def register_webot_routes(
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
-    @app.route("/proxy_webot_session_inbox_send", methods=["POST"])
-    def proxy_webot_session_inbox_send():
-        user_id = session.get("user_id", "")
-        body = request.get_json(force=True) if request.is_json else {}
-        try:
-            response = requests.post(
-                f"{base_url}/webot/session-inbox/send",
-                json={
-                    "user_id": user_id,
-                    "session_id": body.get("session_id", ""),
-                    "target_ref": body.get("target_ref", ""),
-                    "body": body.get("body", ""),
-                },
-                headers=_internal_auth_headers(),
-                timeout=15,
-            )
-            return jsonify(response.json()), response.status_code
-        except Exception as exc:
-            return jsonify({"error": str(exc)}), 500
-
-    @app.route("/proxy_webot_session_inbox_deliver", methods=["POST"])
-    def proxy_webot_session_inbox_deliver():
-        user_id = session.get("user_id", "")
-        body = request.get_json(force=True) if request.is_json else {}
-        try:
-            response = requests.post(
-                f"{base_url}/webot/session-inbox/deliver",
-                json={
-                    "user_id": user_id,
-                    "session_id": body.get("session_id", ""),
-                    "target_ref": body.get("target_ref", ""),
-                    "limit": body.get("limit", 20),
-                    "force": bool(body.get("force", False)),
-                },
-                headers=_internal_auth_headers(),
-                timeout=20,
-            )
-            return jsonify(response.json()), response.status_code
-        except Exception as exc:
-            return jsonify({"error": str(exc)}), 500
-
     @app.route("/proxy_webot_run_interrupt", methods=["POST"])
     def proxy_webot_run_interrupt():
         user_id = session.get("user_id", "")

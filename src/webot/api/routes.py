@@ -22,9 +22,7 @@ from webot.models import (
     WeBotLspRequest,
     WeBotPlanUpdateRequest,
     WeBotRunInterruptRequest,
-    WeBotSessionInboxDeliverRequest,
     WeBotSessionInboxListRequest,
-    WeBotSessionInboxSendRequest,
     WeBotSessionModeUpdateRequest,
     WeBotSessionRuntimeRequest,
     WeBotSubagentHistoryRequest,
@@ -175,20 +173,6 @@ def create_webot_router(
             limit=limit,
         )
         return await service.get_session_inbox(req, x_internal_token)
-
-    @router.post("/webot/session-inbox/send")
-    async def send_session_inbox(
-        req: WeBotSessionInboxSendRequest,
-        x_internal_token: str | None = Header(None),
-    ):
-        return await service.send_session_inbox(req, x_internal_token)
-
-    @router.post("/webot/session-inbox/deliver")
-    async def deliver_session_inbox(
-        req: WeBotSessionInboxDeliverRequest,
-        x_internal_token: str | None = Header(None),
-    ):
-        return await service.deliver_session_inbox(req, x_internal_token)
 
     @router.post("/webot/runs/interrupt")
     async def interrupt_run(

@@ -93,7 +93,7 @@ data/
 - `/webot/session-runtime` – primary runtime DTO consumed by Studio / CLI / bridge.
 - `/webot/session-mode` – switch execute/agent/plan/review/yolo.
 - `/webot/lsp` – OpenSeek-style best-effort diagnostics for a workspace file (Python, TypeScript, JavaScript, JSON).
-- `/webot/session-inbox`, `/webot/session-inbox/send`, `/webot/session-inbox/deliver` – inbox list/send/deliver for cross-session messaging.
+- `/webot/session-inbox` – list a session's inbox. Sending is `send_to_session` (or `POST /v1/agents/<id>/inbox`); delivering what is queued is `POST /v1/agents/<id>/control` `{"action": "deliver_inbox"}`.
 - `/webot/runs/interrupt` – request interruption for an active runtime run.
 - `/webot/session-plan`, `/webot/session-todos`, `/webot/verifications` – plan/todo/verification CRUD.
 - `/webot/voice`, `/webot/bridge/attach`, `/webot/bridge/detach`, `/webot/kairos`, `/webot/dream`, `/webot/buddy` – browser-native parity endpoints for voice, bridge, Kairos, dream, and companion control.

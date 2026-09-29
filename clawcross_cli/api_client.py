@@ -118,10 +118,6 @@ def _req(method: str, url: str, headers: dict | None = None,
         return 0, {"error": f"unexpected error: {e}"}
 
 
-def _agent_headers() -> dict:
-    return {"X-Internal-Token": INTERNAL_TOKEN}
-
-
 def _v1_headers(user: str | None = None) -> dict:
     """The Agent service's /v1 APIs, acting as *user*."""
     uid = (user or DEFAULT_USER or "").strip()
@@ -770,19 +766,13 @@ def get_topic(topic_id: str, user: str | None = None) -> tuple[dict | None, str 
 
 
 def compact_session(session_id: str, user: str | None = None) -> tuple[dict | None, str | None]:
-    """POST {AGENT}/compact_session — manually compress a session's history.
+    """POST {AGENT}/v1/agents/<id>/control compact — manually compress a session's history.
 
     Force-compresses the session via the agent backend (bypasses the auto
     trigger threshold) and returns the before/after token stats.
     """
-    user = (user or DEFAULT_USER or "").strip()
-    url = f"{AGENT_BASE}/compact_session"
-    code, body = _req(
-        "POST", url,
-        headers=_agent_headers(),
-        data={"user_id": user, "session_id": session_id},
-        timeout=120,
-    )
+    url = f"{AGENT_BASE}/v1/agents/{urllib.parse.quote(session_id, safe='')}/control"
+    code, body = _req("POST", url, headers=_v1_headers(user), data={"action": "compact"}, timeout=120)
     if code == 200 and isinstance(body, dict):
         return body, None
     return None, friendly_error(url, code, body)

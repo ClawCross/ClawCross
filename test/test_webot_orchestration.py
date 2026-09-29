@@ -107,7 +107,14 @@ class _FakeAsyncClient:
         if url.endswith("/system_trigger"):
             self.state["callbacks"].append(json)
             return _FakeResponse({"status": "success"})
-        if url.endswith("/session_history"):
+        if url.endswith("/control") and json == {"action": "cancel"}:
+            self.state["cancels"].append(url)
+            return _FakeResponse({"cancelled": True})
+        return _FakeResponse({"status": "success"})
+
+    async def get(self, url, headers=None, params=None):
+        self.state["calls"].append((url, params))
+        if url.endswith("/history"):
             return _FakeResponse(
                 {
                     "messages": [
@@ -120,10 +127,11 @@ class _FakeAsyncClient:
                     ]
                 }
             )
-        if url.endswith("/cancel"):
-            self.state["cancels"].append(json)
-            return _FakeResponse({"status": "success", "cancelled": True})
-        return _FakeResponse({"status": "success"})
+        return _FakeResponse({"status": {"state": "idle"}})
+
+    async def delete(self, url, headers=None):
+        self.state["calls"].append((url, None))
+        return _FakeResponse({"deleted": url.rsplit("/", 1)[-1]})
 
 
 class WeBotOrchestrationFlowTests(unittest.IsolatedAsyncioTestCase):
@@ -218,7 +226,7 @@ class WeBotOrchestrationFlowTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("已取消", cancelled)
         self.assertIn("cancelled", listed)
-        self.assertEqual(state["cancels"][0]["session_id"], "subagent__general__long-runner")
+        self.assertTrue(state["cancels"][0].endswith("/v1/agents/subagent__general__long-runner/control"))
 
     async def test_recover_background_runs_is_safe_noop(self):
         # Background recovery is now handled by the agent main process. The webot

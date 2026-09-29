@@ -25,9 +25,7 @@ from webot.models import (
     WeBotLspRequest,
     WeBotPlanUpdateRequest,
     WeBotRunInterruptRequest,
-    WeBotSessionInboxDeliverRequest,
     WeBotSessionInboxListRequest,
-    WeBotSessionInboxSendRequest,
     WeBotSessionModeUpdateRequest,
     WeBotSessionRuntimeRequest,
     WeBotSubagentHistoryRequest,
@@ -48,7 +46,6 @@ from webot.profiles import slugify
 from webot.runtime_store import (
     add_verification_record,
     count_inbox_messages,
-    create_inbox_message,
     create_runtime_artifact,
     delete_session_plan,
     delete_session_todos,
@@ -313,12 +310,6 @@ class WeBotService:
             "latest_run": None if latest_run is None else self._serialize_run(user_id, latest_run, include_events=False),
         }
 
-    def _source_label(self, user_id: str, source_session: str) -> tuple[str, str]:
-        record = get_subagent_by_session(source_session, user_id) if source_session else None
-        if record is not None:
-            return record.agent_id, record.name or record.agent_id
-        return "", source_session or user_id
-
     def _resolve_target_sessions(
         self,
         user_id: str,
@@ -343,39 +334,6 @@ class WeBotService:
         if target_record is not None:
             return [{"target_session": target_record.session_id, "target_agent_id": target_record.agent_id}]
         return [{"target_session": normalized_ref or source_session or "default", "target_agent_id": ""}]
-
-    async def _peek_session_busy(self, user_id: str, session_id: str) -> bool:
-        thread_id = f"{user_id}#{session_id}"
-        return bool(self.agent.is_thread_busy(thread_id))
-
-    async def _push_system_message(self, *, user_id: str, session_id: str, text: str, drain_inbox: bool = False) -> None:
-        from webot.api.system_models import SystemTriggerRequest
-
-        await self.system.run(SystemTriggerRequest(user_id=user_id, session_id=session_id, text=text,
-                                                   drain_inbox=drain_inbox))
-
-    async def _deliver_inbox_messages(
-        self,
-        *,
-        user_id: str,
-        target_session: str,
-        target_agent_id: str = "",
-        limit: int = 20,
-        force: bool = False,
-    ) -> tuple[int, str]:
-        queued_items = list_inbox_messages(user_id, target_session, status="queued", limit=max(1, min(limit, 50)))
-        if not queued_items:
-            return 0, "empty"
-        # The agent service owns one durable inbox worker per target session.
-        # It waits on the session lock and drains immediately when the active
-        # turn finishes; this API must not mark messages delivered on HTTP ACK.
-        await self._push_system_message(
-            user_id=user_id,
-            session_id=target_session,
-            text="",
-            drain_inbox=True,
-        )
-        return 0, "scheduled"
 
     @staticmethod
     def _voice_defaults() -> dict[str, str]:
@@ -922,117 +880,6 @@ class WeBotService:
             "status": "success",
             "target_sessions": list(deduped.keys()),
             "items": items[: max(1, min(req.limit, 50))],
-        }
-
-    async def send_session_inbox(
-        self,
-        req: WeBotSessionInboxSendRequest,
-        x_internal_token: str | None,
-    ):
-        self.verify_auth_or_token(req.user_id, req.password, x_internal_token)
-        source_session = req.session_id or "default"
-        source_agent_id, source_label = self._source_label(req.user_id, source_session)
-        targets = self._resolve_target_sessions(req.user_id, req.target_ref, source_session)
-        if not targets:
-            return {"status": "success", "created": 0, "delivered": 0, "targets": []}
-
-        created = 0
-        delivered = 0
-        results: list[dict[str, Any]] = []
-        for target in targets:
-            target_session = target["target_session"]
-            target_agent_id = target.get("target_agent_id", "")
-            inbox_record = create_inbox_message(
-                req.user_id,
-                target_session=target_session,
-                body=req.body,
-                title=req.summary,
-                source_session=source_session,
-                source_agent_id=source_agent_id,
-                source_label=source_label,
-                target_agent_id=target_agent_id,
-                metadata={"target_ref": req.target_ref},
-            )
-            created += 1
-            delivered_count, state = await self._deliver_inbox_messages(
-                user_id=req.user_id,
-                target_session=target_session,
-                target_agent_id=target_agent_id,
-                limit=20,
-                force=False,
-            )
-            delivered += delivered_count
-            results.append(
-                {
-                    "target_session": target_session,
-                    "target_agent_id": target_agent_id,
-                    "delivery_state": state,
-                    "delivered_count": delivered_count,
-                    "message": self._serialize_inbox(inbox_record),
-                }
-            )
-        await self._publish_runtime_snapshots(
-            req.user_id,
-            [source_session] + [item["target_session"] for item in results],
-            reason="session_inbox_send",
-            changed_session_id=source_session,
-        )
-        return {
-            "status": "success",
-            "source_session": source_session,
-            "created": created,
-            "delivered": delivered,
-            "targets": results,
-        }
-
-    async def deliver_session_inbox(
-        self,
-        req: WeBotSessionInboxDeliverRequest,
-        x_internal_token: str | None,
-    ):
-        self.verify_auth_or_token(req.user_id, req.password, x_internal_token)
-        source_session = req.session_id or "default"
-        if req.target_ref == "*":
-            targets = self._resolve_target_sessions(req.user_id, "*", source_session)
-            targets.append({"target_session": source_session, "target_agent_id": ""})
-        else:
-            targets = self._resolve_target_sessions(req.user_id, req.target_ref or source_session, source_session)
-        deduped: dict[str, str] = {}
-        for target in targets:
-            deduped[target["target_session"]] = target.get("target_agent_id", "")
-        if not deduped:
-            deduped[source_session] = ""
-
-        delivered_total = 0
-        target_results: list[dict[str, Any]] = []
-        for target_session, target_agent_id in deduped.items():
-            delivered_count, state = await self._deliver_inbox_messages(
-                user_id=req.user_id,
-                target_session=target_session,
-                target_agent_id=target_agent_id,
-                limit=req.limit,
-                force=req.force,
-            )
-            delivered_total += delivered_count
-            target_results.append(
-                {
-                    "target_session": target_session,
-                    "target_agent_id": target_agent_id,
-                    "delivery_state": state,
-                    "delivered_count": delivered_count,
-                }
-            )
-        await self._publish_runtime_snapshots(
-            req.user_id,
-            [source_session] + [item["target_session"] for item in target_results],
-            reason="session_inbox_deliver",
-            changed_session_id=source_session,
-        )
-        return {
-            "status": "success",
-            "source_session": source_session,
-            "delivered_total": delivered_total,
-            "targets": target_results,
         }
 
     async def interrupt_run(
