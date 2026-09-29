@@ -13,8 +13,9 @@ class LlmRuntime(Runtime):
         from integrations.agent_sender import SendToAgentRequest, send_to_agent
 
         options = {**(agent.config.get("llm") or {}), "_history_disabled": True}  # nothing to look back on
-        if response_format is not None:
-            options["response_schema"] = response_format  # a Pydantic model or JSON schema
+        spec = (response_format or {}).get("json_schema") or {}
+        if isinstance(spec.get("schema"), dict):  # decoded within the schema by the model service
+            options["response_schema"] = {**spec["schema"], "title": spec.get("name") or "reply"}
         prompt = f"{msg.instructions}\n\n{msg.text}" if msg.instructions else msg.text
         result = await send_to_agent(SendToAgentRequest(
             prompt=prompt, connect_type="http", platform="temp", session=agent.name, options=options,

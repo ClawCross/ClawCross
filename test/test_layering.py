@@ -25,6 +25,12 @@ _DRIVER_ATTRS = {"driver", "config"}
 # Talking to a transport directly instead of through agents.gateway (only the runtimes do).
 _TRANSPORT = ("integrations.agent_sender", "integrations.registry", "integrations.connectors")
 
+# The runtimes, which live in the Agent service only; other processes (OASIS, the
+# scheduler, the web front, the CLI) reach agents over its entrances (agents.client).
+_RUNTIMES = ("agents.gateway", "external", "webot.driver")
+_OTHER_PROCESSES = ("oasis", "scripts", "chatbot", "visual", "clawcross_cli")
+_OTHER_PROCESS_FILES = ("src/utils/scheduler_service.py", "src/front.py")
+
 # Modules that still call transports directly. This list may only shrink as
 # callers move onto the gateway; a new direct caller fails the test.
 _LEGACY_TRANSPORT_CALLERS: set[str] = set()
@@ -73,6 +79,13 @@ class TestLayering(unittest.TestCase):
                 read = {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
                 self.assertEqual(sorted(imported & _DRIVER_NAMES), [])
                 self.assertEqual(sorted(read & _DRIVER_ATTRS), [])
+
+    def test_only_the_agent_service_holds_runtimes(self):
+        paths = [*_python_files(*_OTHER_PROCESSES), *(PROJECT_ROOT / f for f in _OTHER_PROCESS_FILES)]
+        for path in paths:
+            with self.subTest(path=str(path.relative_to(PROJECT_ROOT))):
+                bad = sorted(name for name in _imports(path) if name.startswith(_RUNTIMES))
+                self.assertEqual(bad, [], "use agents.client")
 
     def test_no_new_direct_transport_callers(self):
         callers = set()

@@ -221,7 +221,6 @@ class DiscussionEngine:
 
     def _participant(self, key: str, config: dict, user_id: str, tools: list[str] | None,
                      timeout: float | None) -> Participant | None:
-        from agents.gateway import persona_agent, temp_session_agent
         from utils.effort_controller import resolve_default_chat_max_output_tokens
 
         kind, _, rest = key.partition(":")
@@ -232,7 +231,7 @@ class DiscussionEngine:
                 print(f"  [OASIS] ⚠️ {exc}; skipping.")
                 return None
             print(f"  [OASIS] 🏠 {key} → {agent.agent_id} ({agent.platform})")
-            return Participant(agent, name=self._unique_name(role or agent.name),
+            return Participant(user_id, agent.agent_id, name=self._unique_name(role or agent.name),
                                tag=agent.persona, tools=tools, timeout=timeout)
 
         tag, _, instance = rest.rpartition(":")
@@ -241,31 +240,28 @@ class DiscussionEngine:
         name = self._unique_name(title if instance == "1" else f"{title} #{instance}")
         persona = str(preset.get("persona") or "")
         llm = {k: preset[k] for k in ("model", "api_key", "base_url", "provider") if preset.get(k)}
-        if not config.get("tools"):
+        agent_id = _ephemeral_session_id(self.forum.topic_id, tag, instance)
+        if not config.get("tools"):  # one model call per turn
             llm.update(temperature=float(preset.get("temperature", 0.7)),
                        max_tokens=resolve_default_chat_max_output_tokens())
-            agent = persona_agent(user_id, name, persona=tag, team=self._team, llm=llm)
-            return Participant(agent, name=name, tag=tag, persona=persona, timeout=timeout)
-        session = _ephemeral_session_id(self.forum.topic_id, tag, instance)
-        agent = temp_session_agent(user_id, name, session, persona=tag, team=self._team, llm=llm)
+            make = {"agent_id": agent_id, "name": name, "platform": "llm", "llm": llm}
+            return Participant(user_id, agent_id, name=name, tag=tag, persona=persona, timeout=timeout,
+                               make=make, remembers=False)
+        make = {"agent_id": agent_id, "name": name, "platform": "webot", "llm": llm}
         chosen = None if config["tools"] == "all" else list(config["tools"])
-        print(f"  [OASIS] 🧪 {key} → temporary session {session} (tools={config['tools']})")
-        return Participant(agent, name=name, tag=tag, persona=persona, tools=chosen, timeout=timeout)
+        print(f"  [OASIS] 🧪 {key} → temporary WeBot session {agent_id} (tools={config['tools']})")
+        return Participant(user_id, agent_id, name=name, tag=tag, persona=persona, tools=chosen, timeout=timeout,
+                           make=make)
 
     async def _discard_ephemeral_sessions(self) -> None:
-        """Delete the temporary WeBot sessions this topic created (personas with tools)."""
-        from agents.gateway import get_gateway
-
+        """Delete the temporary agents this topic made (its personas)."""
         for participant in self.experts:
-            if not participant.temporary or not participant.agent.remembers:
-                continue  # a single model call leaves nothing behind
+            if not participant.temporary:
+                continue
             try:
-                ok = await get_gateway().discard(participant.agent)
+                await participant.discard()
             except Exception as exc:
-                ok = False
                 print(f"  [OASIS] ⚠️ could not discard {participant.name}: {exc}")
-            if ok:
-                print(f"  [OASIS] 🧹 Discarded temporary agent {participant.name}")
 
     @staticmethod
     def _lookup_by_tag(tag: str, user_id: str, team: str = "") -> dict | None:

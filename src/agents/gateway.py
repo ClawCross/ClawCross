@@ -8,10 +8,10 @@ The gateway finds the runtime of an agent's driver (``agents.runtime``: WeBot in
 * ``inbox``   — queue it; the runtime takes it when it can.
 
 The agent answers, if at all, through the conversation it was told about. Each
-runtime's control plane (``status``, ``control``, ``history``) is its own.
+runtime's control plane (``status``, ``control``, ``history``, ``destroy``) is its own.
 
-``persona_agent`` is a single model call with a persona (nothing stored);
-``temp_session_agent`` a throwaway WeBot session with tools, deleted with ``discard``.
+The runtimes live in the Agent service; other processes reach agents over its
+HTTP entrances (``agents.client``).
 """
 
 from __future__ import annotations
@@ -23,28 +23,11 @@ from typing import Any, Callable
 
 from agents.messages import AgentMessage, AgentReply, DeliveryReceipt, normalize_run_mode
 from agents.runtime import ControlError, Runtime
-from agents.store import ACPX, HTTP, LLM, OPENCLAW, TEMP_SESSION_PREFIX, WEBOT, Agent, AgentStore, get_store
+from agents.store import ACPX, HTTP, LLM, OPENCLAW, WEBOT, Agent, AgentStore
 
 logger = logging.getLogger(__name__)
 
 _PROJECT_ROOT = str(Path(__file__).resolve().parents[2])
-
-
-def persona_agent(owner: str, name: str, *, persona: str = "", team: str = "", llm: dict | None = None) -> Agent:
-    """A persona for one call: no tools, no memory. *llm*: model, api_key, base_url, provider, temperature, max_tokens."""
-    return Agent(agent_id="", owner=owner, name=name, driver=LLM,
-                 config={"persona": persona, "team": team, "llm": dict(llm or {})})
-
-
-def temp_session_agent(owner: str, name: str, session: str, *, persona: str = "", team: str = "",
-                       llm: dict | None = None) -> Agent:
-    """A throwaway WeBot session (``tmp__…``) for a persona that needs tools; *llm* overrides its model."""
-    if not session.startswith(TEMP_SESSION_PREFIX) or len(session) <= len(TEMP_SESSION_PREFIX):
-        raise ValueError(f"not a temporary session: {session!r}")
-    config: dict[str, Any] = {"persona": persona, "team": team}
-    if llm:
-        config["llm"] = dict(llm)
-    return Agent(agent_id=session, owner=owner, name=name, driver=WEBOT, config=config)
 
 
 def reply_channel(agent: Agent, conversation_id: str) -> str:
@@ -67,7 +50,6 @@ class AgentGateway:
         from external.openclaw import OpenclawRuntime
         from webot.driver import WebotRuntime
 
-        self._store = store
         self.runtimes: dict[str, Runtime] = {
             WEBOT: WebotRuntime(),
             ACPX: AcpRuntime(store),
@@ -93,13 +75,13 @@ class AgentGateway:
         context: dict[str, Any] | None = None,
         mode: str | None = None,
         tools: list[str] | None = None,
-        response_format: dict | Any | None = None,
+        response_format: dict | None = None,
         timeout: float | None = None,
     ) -> AgentReply:
         """Send *msg* and wait for the reply. ``timeout`` in seconds; ``NO_TIMEOUT`` waits indefinitely.
 
-        ``response_format`` is an OpenAI ``response_format`` dict or a Pydantic model;
-        each runtime takes it in the form it can enforce, or not at all.
+        ``response_format`` is an OpenAI ``response_format``; each runtime enforces
+        it as it can, or not at all.
         """
         context = {"team": agent.config.get("team", ""), **(context or {})}
         try:
@@ -132,18 +114,6 @@ class AgentGateway:
         runtime without an inbox is handed it at once."""
         context = {"team": agent.config.get("team", "")}
         return await self.runtime(agent).inbox(agent, msg, context=context, on_complete=on_complete)
-
-    async def discard(self, agent: Agent) -> bool:
-        """Delete a temporary session agent: its session and its record."""
-        if not agent.agent_id.startswith(TEMP_SESSION_PREFIX):
-            raise ValueError(f"{agent.name} is not temporary")
-        try:
-            await self.runtime(agent).destroy(agent)
-        except Exception as exc:
-            logger.warning("discarding %s#%s failed: %s", agent.owner, agent.agent_id, exc)
-            return False
-        (self._store or get_store()).delete(agent.owner, agent.agent_id)
-        return True
 
     # ── control plane ────────────────────────────────────────────────────
 

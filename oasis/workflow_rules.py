@@ -89,10 +89,9 @@ Reference docs: `docs/workflowpy.md`, `docs/oasis-reference.md`.
 - `send_agent(...)` may use an existing session and therefore may have
   memory, but workflow-critical context should still be passed explicitly
   when later steps depend on earlier outputs.
-- `send_agent_once(...)` guarantees no memory: with one argument it runs a
-  stateless temporary LLM agent without catalog registration; with
-  `(agent_id, prompt)` it uses an existing concrete agent and deletes the
-  throwaway session after the call.
+- `send_agent_once(...)` guarantees no memory: `send_agent_once(prompt)` or
+  `send_agent_once(name, prompt)` makes a temporary model-call agent for that
+  one call and deletes it after the call.
 - `send_persona(...)` is a lightweight role-based call; do not rely on
   implicit long-term memory there.
 - `call_llm(...)` is the cheapest primitive: a single stateless LLM

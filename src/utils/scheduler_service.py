@@ -4,7 +4,7 @@
 提供基于 cron 表达式的定时任务管理：
 - 添加/删除/列出定时任务
 - 持久化任务到 JSON 文件
-- 调度时间到达时把任务内容投递给目标 agent（任何 agent，经 agent 网关）
+- 调度时间到达时把任务内容按 system trigger 交给目标 agent（任何 agent，按编号）
 """
 
 import os
@@ -29,7 +29,7 @@ src_dir = os.path.dirname(current_dir)
 if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
 
-from agents.gateway import get_gateway
+from agents.client import AgentClient
 from agents.messages import AgentMessage
 from agents.store import get_store, valid_agent_id
 from teams.store import get_team_store
@@ -139,7 +139,7 @@ async def trigger_alarm(task_id: str):
         return
     schedule = info.get("run_at") if _schedule_type(info) == "once" else info.get("cron")
     text = f"[ClawCross 定时任务 {task_id} · {info.get('schedule_type') or 'cron'}:{schedule}]\n{info.get('text') or ''}"
-    receipt = await get_gateway().trigger(agent, AgentMessage(text=text, sender="scheduler"))
+    receipt = await AgentClient(agent.owner).trigger(agent.agent_id, AgentMessage(text=text, sender="scheduler"))
     status = "已投递" if receipt.accepted else f"投递失败: {receipt.error}"
     print(f"[{datetime.now()}] 定时任务 {task_id} → {agent.agent_id}: {status}")
 
