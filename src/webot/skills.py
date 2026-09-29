@@ -439,12 +439,6 @@ def _memory_prompt(user_id: str, team: str = "", tool_mode: str = "mcp") -> str:
     return "\n".join(lines)
 
 
-def build_skills_prompt(user_id: str, *, team: str = "", tool_mode: str = "mcp") -> str:
-    """Inject identifiers and descriptions without exposing storage paths."""
-    from webot.skill_memory import list_memory
-    return _memory_prompt(user_id, team, tool_mode) if list_memory(user_id, team) else ""
-
-
 def build_user_skills_listing(user_id: str, *, team: str = "", tool_mode: str = "mcp") -> str:
     """Describe the memory interface even before the first entry exists."""
     return _memory_prompt(user_id, team, tool_mode)

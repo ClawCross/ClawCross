@@ -103,10 +103,9 @@ class WebotRuntime(Runtime):
         return bool(self._thread_state(agent).get("busy")) or self.thread(agent) in set(running)
 
     async def status(self, agent: Agent) -> dict[str, Any]:
-        usage = getattr(self.engine, "get_thread_context_usage", None)
         return {
             "state": "running" if self.is_busy(agent) else "idle",
-            "context": usage(self.thread(agent)) if callable(usage) else None,
+            "context": await self.sessions.context_usage(agent.owner, agent.agent_id),
             "pending": self._thread_state(agent).get("pending_system", 0),
         }
 

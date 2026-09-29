@@ -35,7 +35,6 @@ def build_external_persona_prompt(persona: str = "", *, name: str = "", user_id:
     profile_block = ""
     workflow_prompt = ""
     skills_listing = ""
-    skills_prompt = ""
     try:
         try:
             from webot.workflow_prompt import build_team_workflow_prompt
@@ -46,16 +45,15 @@ def build_external_persona_prompt(persona: str = "", *, name: str = "", user_id:
         _log(f"  -> workflow prompt import/build error: {e}")
     try:
         try:
-            from webot.skills import build_skills_prompt, build_user_profile_block, build_user_skills_listing
+            from webot.skills import build_user_profile_block, build_user_skills_listing
         except Exception:
-            from src.webot.skills import build_skills_prompt, build_user_profile_block, build_user_skills_listing
+            from src.webot.skills import build_user_profile_block, build_user_skills_listing
         profile_block = build_user_profile_block(user_id or "")
         skills_listing = build_user_skills_listing(user_id or "", team=team or "", tool_mode="cli")
-        skills_prompt = build_skills_prompt(user_id or "", team=team or "", tool_mode="cli")
     except Exception as e:
         _log(f"  -> skills prompt import/build error: {e}")
 
-    parts = [persona_block, profile_block, skills_listing, skills_prompt, workflow_prompt]
+    parts = [persona_block, profile_block, skills_listing, workflow_prompt]
     result = "\n\n".join(p for p in parts if p).strip()
     _log(f"  -> return {len(result)} chars")
     return result

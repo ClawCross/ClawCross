@@ -257,17 +257,25 @@ class TestSkillSystem(unittest.TestCase):
         self.assertEqual(result["error"], "Skill content must include YAML frontmatter.")
         self.assertEqual(list_skills("alice"), [])
 
-    def test_build_skills_prompt(self):
-        from webot.skills import create_skill, build_skills_prompt
+    def test_skills_listing(self):
+        from webot.skills import create_skill, build_user_skills_listing
         create_skill("alice", name="deploy-script", content=self._make_skill_content("deploy-script", "Deploy to prod"))
-        prompt = build_skills_prompt("alice")
+        prompt = build_user_skills_listing("alice")
         self.assertIn("deploy-script", prompt)
         self.assertIn("Memory 条目", prompt)
 
-    def test_build_skills_prompt_empty(self):
-        from webot.skills import build_skills_prompt
-        prompt = build_skills_prompt("nonexistent-user")
-        self.assertEqual(prompt, "")
+    def test_skills_listing_without_entries_still_describes_memory(self):
+        from webot.skills import build_user_skills_listing
+        prompt = build_user_skills_listing("nonexistent-user")
+        self.assertIn("当前暂无已注册条目", prompt)
+
+    def test_an_external_agent_is_told_its_skills_once(self):
+        from integrations.external_persona import build_external_persona_prompt
+        from webot.skills import create_skill
+        create_skill("alice", name="deploy-script", content=self._make_skill_content("deploy-script", "Deploy to prod"))
+        prompt = build_external_persona_prompt("你是审稿人。", name="Critic", user_id="alice")
+        self.assertEqual(prompt.count("【用户技能 / Memory 条目】"), 1)
+        self.assertIn("你是审稿人。", prompt)
 
     def test_agent_user_skills_prompt_uses_managed_skills(self):
         from core.agent import TeamAgent

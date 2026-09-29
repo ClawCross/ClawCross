@@ -123,6 +123,9 @@ class _WebotServices:
     async def delete(self, user_id, session_id):
         self.deleted.append((user_id, session_id))
 
+    async def context_usage(self, user_id, session_id):
+        return {"percent": 10}
+
 
 def webot_runtime(services=None, engine=None):
     services = services or _WebotServices()
