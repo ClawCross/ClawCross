@@ -228,18 +228,24 @@ class TestGateway(StoreCase):
         self.assertEqual(req.inbox_source_session, "")
 
     def test_inbox_queues_for_webot_and_sends_to_others(self):
-        receipt = asyncio.run(self.gateway.inbox(self.webot(), AgentMessage(text="later", sender="u:alice")))
+        receipt = asyncio.run(self.gateway.inbox(
+            self.webot(), AgentMessage(text="later", sender="u:alice", summary="群聊「Dev」 alice: later"),
+            mode="bypass"))
         self.assertTrue(receipt.accepted)
         req = self.services.system[0]
-        self.assertEqual((req.session_id, req.text, req.inbox_source_session), ("s1", "later", "u:alice"))
+        self.assertEqual((req.session_id, req.text, req.inbox_source_session, req.inbox_summary),
+                         ("s1", "later", "u:alice", "群聊「Dev」 alice: later"))
+        self.assertIsNone(req.session_mode)  # WeBot runs it in the session's own mode
 
         async def run():
             with _sent("ok") as send:
-                await self.gateway.inbox(self.codex(), AgentMessage(text="later"))
+                await self.gateway.inbox(self.codex(), AgentMessage(text="later"), mode="readonly")
                 await asyncio.gather(*self.gateway.runtimes[ACPX]._background)
             return send.await_args.args[0]
 
-        self.assertEqual(asyncio.run(run()).prompt, "later")
+        request = asyncio.run(run())
+        self.assertEqual(request.prompt, "later")  # handed over at once,
+        self.assertEqual(request.options["non_interactive_permissions"], "deny")  # in the mode it was sent in
 
     def test_an_external_trigger_is_sent_in_the_background_and_reports_back(self):
         codex = self.codex()

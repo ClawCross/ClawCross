@@ -277,6 +277,21 @@ class DurableInboxTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("Task 2", notice)
             self.assertNotIn("SECRET", notice)
 
+    async def test_what_came_with_an_entry_comes_with_its_notice(self):
+        with TemporaryDirectory() as tmpdir, patch.object(runtime_store, "DEFAULT_DB_PATH", Path(tmpdir) / "runtime.db"), \
+                patch("services.message_builder._is_vision_model", return_value=True):
+            agent = _FakeAgent()
+            service = SystemService(agent=agent, verify_internal_token=lambda token: None)
+            await service.system_trigger(SystemTriggerRequest(
+                user_id="alice", session_id="worker", text="看这张图", inbox_source_session="u:alice",
+                attachments=[{"type": "image", "name": "a.png", "mime_type": "image/png", "data": "iVBORw0KGgo="}],
+            ), None)
+            await _wait_for(lambda: bool(runtime_store.list_inbox_messages("alice", "worker", status="delivered")))
+            parts = agent.agent_app.inputs[0]["messages"][0].content
+            self.assertIsInstance(parts, list)
+            self.assertIn("[收件箱通知]", parts[0]["text"])
+            self.assertTrue(any(p.get("type") == "image_url" for p in parts))
+
     async def test_wait_reply_uses_the_same_durable_inbox(self):
         from langchain_core.messages import AIMessage
 

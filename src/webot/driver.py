@@ -82,12 +82,14 @@ class WebotRuntime(Runtime):
         ))
         return DeliveryReceipt(accepted=True)
 
-    async def inbox(self, agent: Agent, msg: AgentMessage, *, context, on_complete) -> DeliveryReceipt:
+    async def inbox(self, agent: Agent, msg: AgentMessage, *, context, mode, on_complete) -> DeliveryReceipt:
+        """Taken when the session is free, in the session's own mode."""
         from api.system_models import SystemTriggerRequest
 
         await self.system.run(SystemTriggerRequest(
             user_id=agent.owner, session_id=agent.agent_id, text=msg.text,
-            inbox_source_session=msg.sender or "system",
+            inbox_source_session=msg.sender or "system", inbox_summary=msg.summary,
+            attachments=list(msg.attachments) or None,
         ))
         return DeliveryReceipt(accepted=True)
 

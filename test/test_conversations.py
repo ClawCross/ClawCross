@@ -78,7 +78,7 @@ class _Gateway:
         self.deliveries = []
         self.fail = False
 
-    async def trigger(self, agent, msg, **kwargs):
+    async def inbox(self, agent, msg, **kwargs):
         self.deliveries.append({"agent": agent, "msg": msg, **kwargs})
         return DeliveryReceipt(accepted=not self.fail, error="down" if self.fail else "")
 
@@ -128,6 +128,8 @@ class TestGroupChat(GroupCase):
         self.assertIn("@你 说:", text["Codex"])
         self.assertIn(f"--agent {self.codex.agent_id}", text["Codex"])  # external: CLI
         self.assertIn(f'send_to_group(group_id="{self.group}"', text["Coder"])  # WeBot: tool
+        summary = {d["agent"].name: d["msg"].summary for d in self.gateway.deliveries}
+        self.assertEqual(summary["Codex"], "群聊「Dev」 alice @你: @Codex 看一下 @Coder")  # its inbox notice
 
     async def test_agents_wake_only_whom_they_mention_and_are_capped(self):
         await self.say("@Coder 你好", sender=self.planner.agent_id)

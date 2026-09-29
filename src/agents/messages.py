@@ -173,12 +173,14 @@ class AgentMessage:
 
     ``instructions`` is caller-supplied system text (for example the rules of
     the group chat the message comes from); the agent layer only forwards it.
+    ``summary`` is one line for an inbox notice.
     """
 
     text: str
     attachments: list[dict] = field(default_factory=list)
     sender: str = ""
     instructions: str = ""
+    summary: str = ""
 
 
 @dataclass(slots=True)
