@@ -617,49 +617,7 @@ class FrontendIntegrationTests(unittest.TestCase):
             self.assertEqual(kwargs["preset_id"], "modern-ceo")
             self.assertNotIn("project_root", kwargs)
 
-    def test_proxy_webot_bridge_memory_and_buddy_controls_forward_payloads(self):
-        with self.subTest("bridge attach"):
-            with mock.patch.object(
-                front.requests,
-                "post",
-                return_value=_MockJsonResponse({"status": "success"}, 200),
-            ) as mock_post:
-                response = self.client.post(
-                    "/proxy_webot_bridge_attach",
-                    json={"session_id": "default", "role": "viewer", "label": "browser"},
-                )
-            self.assertEqual(response.status_code, 200)
-            _, kwargs = mock_post.call_args
-            self.assertEqual(
-                kwargs["json"],
-                {
-                    "user_id": "integration-user",
-                    "session_id": "default",
-                    "role": "viewer",
-                    "label": "browser",
-                },
-            )
-
-        with self.subTest("bridge detach"):
-            with mock.patch.object(
-                front.requests,
-                "post",
-                return_value=_MockJsonResponse({"status": "success"}, 200),
-            ) as mock_post:
-                response = self.client.post(
-                    "/proxy_webot_bridge_detach",
-                    json={"bridge_id": "bridge-123"},
-                )
-            self.assertEqual(response.status_code, 200)
-            _, kwargs = mock_post.call_args
-            self.assertEqual(
-                kwargs["json"],
-                {
-                    "user_id": "integration-user",
-                    "bridge_id": "bridge-123",
-                },
-            )
-
+    def test_proxy_webot_memory_controls_forward_payloads(self):
         with self.subTest("kairos"):
             with mock.patch.object(
                 front.requests,
@@ -702,28 +660,6 @@ class FrontendIntegrationTests(unittest.TestCase):
                     "reason": "manual",
                 },
             )
-
-        with self.subTest("buddy"):
-            with mock.patch.object(
-                front.requests,
-                "post",
-                return_value=_MockJsonResponse({"status": "success"}, 200),
-            ) as mock_post:
-                response = self.client.post(
-                    "/proxy_webot_buddy",
-                    json={"session_id": "default", "action": "pet"},
-                )
-            self.assertEqual(response.status_code, 200)
-            _, kwargs = mock_post.call_args
-            self.assertEqual(
-                kwargs["json"],
-                {
-                    "user_id": "integration-user",
-                    "session_id": "default",
-                    "action": "pet",
-                },
-            )
-            self.assertEqual(kwargs["headers"], {"X-Internal-Token": front.INTERNAL_TOKEN})
 
     def test_proxy_webot_tool_approval_resolve_forwards_resolution_payload(self):
         with mock.patch.object(

@@ -99,16 +99,17 @@ class RuntimeStateRidesAtTheTail(unittest.TestCase):
         self.assertEqual(content[-1]["type"], "text")
         self.assertIn(STATE, content[-1]["text"])
 
-    def test_tool_round_appends_after_every_tool_result(self):
+    def test_tool_round_attaches_state_to_last_tool_result(self):
         history = _tool_round_history()
         messages, injected = assemble_input_messages(
             base_prompt=BASE, history=history, runtime_state=STATE
         )
         self.assertEqual(injected, STATE)
-        # tool_calls -> ToolMessage pairing must survive: the state message is
-        # appended after the tool results, never substituted for one.
-        self.assertIsInstance(messages[-2], ToolMessage)
-        self.assertIsInstance(messages[-1], HumanMessage)
+        # The tool call/result pairing and result identity are preserved;
+        # runtime state never starts a synthetic user turn.
+        self.assertEqual(len(messages), len(history) + 1)
+        self.assertIsInstance(messages[-1], ToolMessage)
+        self.assertEqual(messages[-1].tool_call_id, "call_1")
         self.assertIn(STATE, messages[-1].content)
 
     def test_history_is_never_mutated(self):
@@ -141,7 +142,7 @@ class UnchangedStateIsNotResent(unittest.TestCase):
             last_sent_state=STATE,
         )
         self.assertTrue(injected)
-        self.assertIsInstance(messages[-1], HumanMessage)
+        self.assertIsInstance(messages[-1], ToolMessage)
 
     def test_first_call_resends_even_when_unchanged(self):
         _, injected = assemble_input_messages(

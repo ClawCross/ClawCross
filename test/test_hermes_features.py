@@ -291,7 +291,7 @@ class TestSkillSystem(unittest.TestCase):
 
         prompt = agent._get_user_skills("alice")
         self.assertIn("deploy-script", prompt)
-        self.assertIn('read_file(storage="memory"', prompt)
+        self.assertNotIn("read_file(", prompt)  # how to use the tools is in their schemas
         self.assertNotIn(str(self.tmppath), prompt)
         self.assertNotIn("skills_manifest.json", prompt)
 
@@ -310,7 +310,6 @@ class TestSkillSystem(unittest.TestCase):
         for section, skill in (("团队「dev」技能", "dev-skill"), ("团队「ops」技能", "ops-skill"), ("个人技能", "shared-skill")):
             self.assertIn(section, prompt)
             self.assertIn(skill, prompt)
-        self.assertIn('team="团队名"', prompt)  # in several teams a call names the one it means
 
     def test_get_nonexistent_skill(self):
         from webot.skills import get_skill

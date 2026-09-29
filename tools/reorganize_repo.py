@@ -41,7 +41,6 @@ FILE_MAP = {
     "workflow_engines.py":          ("core", "workflow_engines.py"),
 
     # ── webot/ ──
-    "webot_bridge.py":              ("webot", "bridge.py"),
     "webot_buddy.py":               ("webot", "buddy.py"),
     "webot_context.py":             ("webot", "context.py"),
     "webot_memory.py":              ("webot", "memory.py"),

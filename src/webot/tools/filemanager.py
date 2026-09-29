@@ -205,7 +205,7 @@ async def list_files(username: str, session_id: str = "", folder: str = ".", sto
     :param username: 用户名（由系统自动注入，无需手动传递）
     :param folder: 要列出的目录；支持绝对路径，相对路径以当前 session cwd 为基准
     :param storage: file 为普通目录；memory 为 Skill 正文条目，此时 folder 保持默认值
-    :param team: memory 范围；null 使用当前团队，空字符串为个人，列表包含团队与共享个人条目
+    :param team: memory 范围；团队名为该团队的条目，null 或空字符串为个人，列团队时也列出共享个人条目
     :return: 文件列表的描述
     """
     team = team or ""
@@ -272,7 +272,7 @@ async def read_file(
     :param encoding: 文件编码，默认 utf-8
     :param include_sha256: 是否在结果中附上文件的 sha256，可作为之后 write_file 的 expected_sha256
     :param storage: file 为普通文件；memory 只读取 Skill 正文，不读取支持文件
-    :param team: memory 范围；null 使用当前团队，空字符串为个人，读取时也可查看共享个人条目
+    :param team: memory 范围；团队名为该团队的条目，null 或空字符串为个人，读团队时也可读共享个人条目
     :return: 文件内容或错误信息
     """
     team = team or ""
@@ -390,7 +390,7 @@ async def write_file(
     :param encoding: 文件编码，默认 utf-8
     :param expected_sha256: 可选的并发保护：文件当前 sha256 与之不一致时拒绝写入
     :param storage: file 为普通文件；memory 仅写入 Skill 正文，接受 Markdown 并维护元信息和索引
-    :param team: memory 范围；null 使用当前团队，空字符串为个人，修改不会回退到共享个人条目
+    :param team: memory 范围；团队名为该团队的条目，null 或空字符串为个人，修改不会回退到共享个人条目
     :return: 操作结果描述
     """
     normalized_mode_check = (mode or "overwrite").strip().lower()
@@ -521,7 +521,7 @@ async def delete_file(username: str, filename: str, session_id: str = "", storag
     :param username: 用户名（由系统自动注入，无需手动传递）
     :param filename: file 模式为文件路径；memory 模式为条目编号或名称
     :param storage: file 删除普通文件；memory 仅删除 Skill 正文，支持文件保留
-    :param team: memory 范围；null 使用当前团队，空字符串为个人
+    :param team: memory 范围；团队名为该团队的条目，null 或空字符串为个人
     :return: 操作结果描述
     """
     team = team or ""

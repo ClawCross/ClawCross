@@ -13,6 +13,7 @@ from utils.session_summary import build_session_summary
 from webot.compression import apply_compression, make_llm_summarizer, static_compression_view
 from webot.profiles import is_subagent_session
 from webot.runtime_settings import get_runtime_settings, resolve_context_window, resolve_context_history_budget, context_usage_with_window
+from webot.runtime_store import delete_agent_runtime_db
 from webot.subagents import delete_subagent_by_session
 
 logger = get_logger("session_service")
@@ -214,11 +215,12 @@ class SessionService:
         }
 
     async def delete(self, user_id: str, session_id: str) -> None:
-        """Stop and delete one session: its task, checkpoints and sub-agent record."""
+        """Stop and delete one session: its task, checkpoints, runtime state and sub-agent record."""
         thread_id = f"{user_id}#{session_id}"
         await self.agent.cancel_task(thread_id)
         await self._close_thread_checkpoints([thread_id])
         await delete_thread_records(self.db_path, thread_id)
+        delete_agent_runtime_db(user_id, session_id)
         if is_subagent_session(session_id):
             delete_subagent_by_session(user_id, session_id)
 
