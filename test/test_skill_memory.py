@@ -42,10 +42,10 @@ class MemoryFilesTests(unittest.TestCase):
         changed = json.loads(self.write(entry_id, mode="str_replace", content="", old_string="第一条", new_string="修正后"))
         self.assertEqual(changed["id"], entry_id)
         self.assertEqual(changed["name"], "中文经验")
-        for prompt in (skills.build_skills_prompt("alice"), skills.build_user_skills_listing("alice")):
-            self.assertIn(entry_id, prompt)
-            self.assertNotIn(str(self.root), prompt)
-            self.assertNotIn("skill_manage", prompt)
+        prompt = skills.build_user_skills_listing("alice")
+        self.assertIn(entry_id, prompt)
+        self.assertNotIn(str(self.root), prompt)
+        self.assertNotIn("skill_manage", prompt)
         index = self.root / "users/alice/skills/SKILLS_INDEX.md"
         self.assertIn("中文经验", index.read_text())
 

@@ -365,6 +365,14 @@ class SessionService:
         window = resolve_context_window(get_runtime_settings(user_id, session_id).context, model)
         return context_usage_with_window(usage, window)
 
+    async def context_usage(self, user_id: str, session_id: str) -> dict:
+        """The session's context use against its window; read back from disk after a restart."""
+        usage = self._configured_context_usage(user_id, session_id)
+        if not usage.get("tokens") and hasattr(self.agent, "restore_context_usage"):
+            if await self.agent.restore_context_usage(f"{user_id}#{session_id}"):
+                usage = self._configured_context_usage(user_id, session_id)
+        return usage
+
     @staticmethod
     def _context_usage_fields(context_usage: dict) -> dict:
         return {
@@ -394,10 +402,7 @@ class SessionService:
             else 0
         )
         busy_source = self.agent.get_thread_busy_source(thread_id) if busy else ""
-        context_usage = self._configured_context_usage(req.user_id, req.session_id)
-        if not context_usage.get("tokens") and hasattr(self.agent, "restore_context_usage"):
-            if await self.agent.restore_context_usage(thread_id):
-                context_usage = self._configured_context_usage(req.user_id, req.session_id)
+        context_usage = await self.context_usage(req.user_id, req.session_id)
         return {
             "has_new_messages": has_new,
             "pending_count": pending_count,
