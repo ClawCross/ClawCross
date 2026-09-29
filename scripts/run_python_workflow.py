@@ -7,8 +7,9 @@ import subprocess
 import sys
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, _PROJECT_ROOT)
+_BACKEND_DIR = os.path.join(_PROJECT_ROOT, "src", "backend")  # the backend's import root
+if _BACKEND_DIR not in sys.path:
+    sys.path.insert(0, _BACKEND_DIR)
 
 from oasis.python_workflow import resolve_python_workflow_path
 

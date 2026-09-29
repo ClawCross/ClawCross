@@ -25,7 +25,7 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 try:
-    from src.utils.runtime_paths import DATA_DIR, USER_FILES_DIR  # type: ignore
+    from src.backend.common.runtime_paths import DATA_DIR, USER_FILES_DIR  # type: ignore
 except Exception:  # pragma: no cover - runtime fallback
     DATA_DIR = Path(os.getenv("CLAWCROSS_DATA_DIR", str(Path.home() / ".clawcross" / "data")))
     USER_FILES_DIR = Path(

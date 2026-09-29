@@ -12,11 +12,11 @@ import unittest
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src"
+SRC_DIR = PROJECT_ROOT / "src" / "backend"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from utils.local_no_proxy import LOCAL_NO_PROXY_HOSTS, ensure_localhost_no_proxy
+from common.local_no_proxy import LOCAL_NO_PROXY_HOSTS, ensure_localhost_no_proxy
 
 PROXY_VARS = ("http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY", "no_proxy", "NO_PROXY")
 

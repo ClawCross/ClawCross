@@ -26,7 +26,7 @@ paper-review-council/
 ├── team_settings.json                # team-level settings (optional)
 ├── clawcross_preset_manifest.json    # preset stamp (optional)
 ├── clawcross_preset_source_map.json  # preset stamp (optional)
-├── oasis/
+├── src/backend/oasis/
 │   ├── yaml/
 │   │   └── paper_review_council.yaml      # YAML workflow plan
 │   └── python/
@@ -439,7 +439,7 @@ Only that one team sees these. Use this scope when the SKILL is meaningless outs
 
 ### 8.3 Lookup order
 
-When the runtime (`src/webot/skills.py::_scope_skills_dir`) builds the SKILL list for an agent in team T, it merges:
+When the runtime (`src/backend/webot/skills.py::_scope_skills_dir`) builds the SKILL list for an agent in team T, it merges:
 
 ```
 team scope:     <user_files>/<user>/teams/<T>/skills/

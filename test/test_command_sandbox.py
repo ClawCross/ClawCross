@@ -9,11 +9,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "backend"))
 
 from webot import command_sandbox
 from webot.workspace import SessionWorkspace, _ensure_within
-import webot.tools.commander as commander
+import webot.mcp.commander as commander
 
 
 class CommandSandboxTests(unittest.TestCase):

@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src"
+SRC_DIR = PROJECT_ROOT / "src" / "backend"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
@@ -49,8 +49,8 @@ if "pydantic" not in sys.modules:
     pydantic_stub.BaseModel = BaseModel
     sys.modules["pydantic"] = pydantic_stub
 
-if "utils.logging_utils" not in sys.modules:
-    logging_utils_stub = types.ModuleType("utils.logging_utils")
+if "common.logging_utils" not in sys.modules:
+    logging_utils_stub = types.ModuleType("common.logging_utils")
 
     def get_logger(_name):
         import logging
@@ -58,7 +58,7 @@ if "utils.logging_utils" not in sys.modules:
         return logging.getLogger(_name)
 
     logging_utils_stub.get_logger = get_logger
-    sys.modules["utils.logging_utils"] = logging_utils_stub
+    sys.modules["common.logging_utils"] = logging_utils_stub
 
 from webot.api.session_service import SessionService
 

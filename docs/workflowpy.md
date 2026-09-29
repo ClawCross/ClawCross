@@ -84,7 +84,7 @@ The decorator triggers `SystemExit` immediately, so anything below an
 The project root is derived from the `oasis` package location, so once
 `import oasis` works, the venv and config are found automatically.
 
-Source: [`oasis/workflow.py`](../oasis/workflow.py).
+Source: [`src/backend/oasis/workflow.py`](../src/backend/oasis/workflow.py).
 
 ---
 
@@ -93,7 +93,7 @@ Source: [`oasis/workflow.py`](../oasis/workflow.py).
 `from oasis.workflow import ...` requires that the `oasis` package is on the
 import path. Two practical ways:
 
-- **OASIS auto-launch** (the orchestration page, mobile, `front.py`): the
+- **OASIS auto-launch** (the orchestration page, mobile, `src/frontend/server.py`): the
   runner already injects `CLAWCROSS_PYTHONPATH` and `CLAWCROSS_PROJECT_ROOT`
   into the subprocess environment. No setup needed.
 - **Plain CLI from any folder**: install ClawCross once with
@@ -317,11 +317,11 @@ If the content is not valid OASIS reply JSON, it is posted as normal text.
 
 ### Sequential discussion
 
-See: [`oasis/workflow_templates/team_all_agents_sequential.py`](../oasis/workflow_templates/team_all_agents_sequential.py)
+See: [`src/backend/oasis/workflow_templates/team_all_agents_sequential.py`](../src/backend/oasis/workflow_templates/team_all_agents_sequential.py)
 
 ### Parallel discussion
 
-See: [`oasis/workflow_templates/team_all_agents_parallel.py`](../oasis/workflow_templates/team_all_agents_parallel.py)
+See: [`src/backend/oasis/workflow_templates/team_all_agents_parallel.py`](../src/backend/oasis/workflow_templates/team_all_agents_parallel.py)
 
 ### Hybrid fan-out then synthesis
 
@@ -387,23 +387,23 @@ block still works, but new files should use `oasis.workflow` instead.
 
 Relevant files:
 
-- [`oasis/workflow.py`](../oasis/workflow.py) — single-import entry point
+- [`src/backend/oasis/workflow.py`](../src/backend/oasis/workflow.py) — single-import entry point
 - [`oasis/python_workflow_cli.py`](../oasis/python_workflow_cli.py) — underlying runtime
 - [`scripts/run_python_workflow.py`](../scripts/run_python_workflow.py)
-- [`src/front.py`](../src/front.py)
-- [`oasis/server.py`](../oasis/server.py)
+- [`src/frontend/server.py`](../src/frontend/server.py)
+- [`src/backend/oasis/server.py`](../src/backend/oasis/server.py)
 
 ---
 
 ## Related Files
 
-- [`oasis/workflow.py`](../oasis/workflow.py)
+- [`src/backend/oasis/workflow.py`](../src/backend/oasis/workflow.py)
 - [`oasis/python_workflow_cli.py`](../oasis/python_workflow_cli.py)
 - [`oasis/python_workflow.py`](../oasis/python_workflow.py)
-- [`oasis/agent_center.py`](../oasis/agent_center.py)
-- [`oasis/forum_client.py`](../oasis/forum_client.py)
-- [`oasis/workflow_templates/team_all_agents_sequential.py`](../oasis/workflow_templates/team_all_agents_sequential.py)
-- [`oasis/workflow_templates/team_all_agents_parallel.py`](../oasis/workflow_templates/team_all_agents_parallel.py)
+- [`src/backend/oasis/agent_center.py`](../src/backend/oasis/agent_center.py)
+- [`src/backend/oasis/forum_client.py`](../src/backend/oasis/forum_client.py)
+- [`src/backend/oasis/workflow_templates/team_all_agents_sequential.py`](../src/backend/oasis/workflow_templates/team_all_agents_sequential.py)
+- [`src/backend/oasis/workflow_templates/team_all_agents_parallel.py`](../src/backend/oasis/workflow_templates/team_all_agents_parallel.py)
 - [`workflowpy_example.py`](./workflowpy_example.py)
 - [`create_workflow.md`](./create_workflow.md)
 - [`oasis-reference.md`](./oasis-reference.md)

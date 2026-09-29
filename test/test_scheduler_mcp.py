@@ -5,11 +5,11 @@ from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SRC = ROOT / "src"
+SRC = ROOT / "src" / "backend"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-import webot.tools.scheduler as scheduler_mcp  # noqa: E402
+import webot.mcp.scheduler as scheduler_mcp  # noqa: E402
 
 
 class _FakeResponse:
@@ -47,7 +47,7 @@ class TestSchedulerMcp(unittest.IsolatedAsyncioTestCase):
         fake = _FakeAsyncClient(
             get_response=_FakeResponse({"detail": "boom"}, status_code=500, text='{"detail":"boom"}')
         )
-        with mock.patch("webot.tools.scheduler.httpx.AsyncClient", return_value=fake):
+        with mock.patch("webot.mcp.scheduler.httpx.AsyncClient", return_value=fake):
             result = await scheduler_mcp.list_alarms("alice")
 
         self.assertIn("读取列表失败", result)
@@ -58,7 +58,7 @@ class TestSchedulerMcp(unittest.IsolatedAsyncioTestCase):
         fake = _FakeAsyncClient(
             get_response=_FakeResponse(ValueError("not json"), status_code=502, text="<html>bad gateway</html>")
         )
-        with mock.patch("webot.tools.scheduler.httpx.AsyncClient", return_value=fake):
+        with mock.patch("webot.mcp.scheduler.httpx.AsyncClient", return_value=fake):
             result = await scheduler_mcp.delete_alarm("alice", "task-1")
 
         self.assertIn("删除前查询失败", result)
@@ -70,7 +70,7 @@ class TestSchedulerMcp(unittest.IsolatedAsyncioTestCase):
             get_response=_FakeResponse([{"task_id": "task-1", "user_id": "alice"}]),
             delete_response=_FakeResponse({"status": "deleted"}),
         )
-        with mock.patch("webot.tools.scheduler.httpx.AsyncClient", return_value=fake):
+        with mock.patch("webot.mcp.scheduler.httpx.AsyncClient", return_value=fake):
             result = await scheduler_mcp.delete_alarm("alice", "task-1")
 
         self.assertIn("已成功删除", result)

@@ -5,10 +5,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "backend"))
 from webot import compression as c
 from webot.runtime_settings import ContextSettings
-from utils.checkpoint_repository import save_context_compaction, get_context_compaction
+from webot.checkpoint_repository import save_context_compaction, get_context_compaction
 
 
 class CompactSettingsTests(unittest.TestCase):
@@ -84,7 +84,7 @@ class CompactSettingsTests(unittest.TestCase):
                 return AIMessage(content="已保留关键记录")
         messages = [AIMessage(content="", tool_calls=[{"id": "call", "name": "run_command",
             "args": {"command": "始" + "中" * 4500 + "末尾必须送入摘要器"}}])]
-        with patch("services.llm_factory.create_chat_model", return_value=Model()):
+        with patch("common.llm_factory.create_chat_model", return_value=Model()):
             summarize = c.make_llm_summarizer(max_output_tokens=128, input_token_budget=1600)
             summarize("", messages, 500)
         self.assertGreater(len(payloads), 1)

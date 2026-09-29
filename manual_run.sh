@@ -73,7 +73,7 @@ echo ""
 echo "========== 4/4 启动服务 =========="
 
 # 清理旧的 Clawcross 进程（按进程名匹配，pgrep/pkill 在 Linux 和 macOS 上均可用）
-_TC_SCRIPTS="scripts/launcher.py src/utils/scheduler_service.py oasis/server.py src/mainagent.py src/front.py"
+_TC_SCRIPTS="scripts/launcher.py src/backend/scheduler/service.py src/backend/oasis/server.py src/backend/server.py src/frontend/server.py"
 _TC_KILLED=0
 for _script in $_TC_SCRIPTS; do
     _pids=$(pgrep -f "$_script" 2>/dev/null || true)

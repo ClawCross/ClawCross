@@ -8,17 +8,19 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-# What the agent layer (src/agents) must never import: the layers built on it.
+# What the agent layer (src/backend/agents) must never import: the layers built on it.
 _ABOVE_L1 = (
-    "api.", "webot", "routes", "comms", "teams", "groups",
+    "ops.", "webot", "frontend", "teams", "groups",
     "oasis.engine", "oasis.server", "oasis.forum", "oasis.scheduler", "oasis.swarm_engine",
 )
 
-# What a runtime (src/external, webot/driver.py) must never import: the compositions of agents.
-_COMPOSITIONS = ("comms", "groups", "teams", "oasis", "routes")
+# What a runtime (src/backend/external, webot/driver.py) must never import: the compositions of agents.
+_COMPOSITIONS = ("groups", "teams", "oasis", "frontend")
 
-# What the communication layer (src/comms) must never import: the products built on it.
-_ABOVE_L2 = ("api.", "routes", "webot", "teams", "groups", "oasis")
+# What the conversations under group chat (groups/conversations, delivery, store) must
+# never import: the products built on them, the group rules included.
+_CONVERSATION_FILES = ("conversations.py", "delivery.py", "store.py")
+_ABOVE_L2 = ("ops.", "frontend", "webot", "teams", "oasis", "groups.service", "groups.routes")
 
 # The runtime an agent lives in: driver names and the driver's own config.
 _DRIVER_NAMES = {"WEBOT", "ACPX", "OPENCLAW", "HTTP", "LLM", "DRIVERS", "runtime_key", "driver_for_platform"}
@@ -28,10 +30,10 @@ _DRIVER_ATTRS = {"driver", "config"}
 _TRANSPORT = ("external",)
 
 # The runtimes, which live in the Agent service only; other processes (OASIS, the
-# scheduler, the web front, the CLI) reach agents over its entrances (agents.client).
+# scheduler, the chatbot, the web front, the CLI) reach agents over its entrances (agents.client).
 _RUNTIMES = ("agents.gateway", "external", "webot.driver")
-_OTHER_PROCESSES = ("oasis", "scripts", "chatbot", "visual", "clawcross_cli")
-_OTHER_PROCESS_FILES = ("src/utils/scheduler_service.py", "src/front.py")
+_OTHER_PROCESSES = ("src/backend/oasis", "src/backend/chatbot", "src/frontend", "scripts", "clawcross_cli")
+_OTHER_PROCESS_FILES = ("src/backend/scheduler/service.py",)
 
 
 def _imports(path: Path) -> set[str]:
@@ -42,7 +44,7 @@ def _imports(path: Path) -> set[str]:
             names.update(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
             names.add(node.module)
-    return {name.removeprefix("src.") for name in names}
+    return {name.removeprefix("src.backend.").removeprefix("src.") for name in names}
 
 
 def _python_files(*roots: str) -> list[Path]:
@@ -54,28 +56,28 @@ def _python_files(*roots: str) -> list[Path]:
 
 class TestLayering(unittest.TestCase):
     def test_agent_layer_does_not_import_the_layers_above_it(self):
-        for path in _python_files("src/agents"):
+        for path in _python_files("src/backend/agents"):
             with self.subTest(path=str(path.relative_to(PROJECT_ROOT))):
                 bad = sorted(name for name in _imports(path) if name.startswith(_ABOVE_L1))
                 self.assertEqual(bad, [])
 
     def test_runtimes_do_not_know_compositions(self):
-        for path in [*_python_files("src/external"), PROJECT_ROOT / "src/webot/driver.py"]:
+        for path in [*_python_files("src/backend/external"), PROJECT_ROOT / "src/backend/webot/driver.py"]:
             with self.subTest(path=str(path.relative_to(PROJECT_ROOT))):
                 bad = sorted(name for name in _imports(path) if name.startswith(_COMPOSITIONS))
                 self.assertEqual(bad, [])
 
-    def test_comms_layer_does_not_import_the_products_above_it(self):
-        for path in _python_files("src/comms"):
+    def test_conversations_do_not_import_the_products_above_them(self):
+        for path in (PROJECT_ROOT / "src/backend/groups" / name for name in _CONVERSATION_FILES):
             with self.subTest(path=str(path.relative_to(PROJECT_ROOT))):
                 bad = sorted(name for name in _imports(path) if name.startswith(_ABOVE_L2))
                 self.assertEqual(bad, [])
 
     def test_above_the_agent_layer_nobody_knows_an_agents_runtime(self):
-        paths = _python_files("src/comms", "src/groups", "src/teams", "oasis")
+        paths = _python_files("src/backend/groups", "src/backend/teams", "src/backend/oasis")
         for path in paths:
             rel = str(path.relative_to(PROJECT_ROOT))
-            if rel == "src/teams/manifest.py":  # the team file format names runtimes
+            if rel == "src/backend/teams/manifest.py":  # the team file format names runtimes
                 continue
             tree = ast.parse(path.read_text(encoding="utf-8"))
             with self.subTest(path=rel):
@@ -93,9 +95,9 @@ class TestLayering(unittest.TestCase):
 
     def test_no_new_direct_transport_callers(self):
         callers = set()
-        for path in _python_files("src", "oasis", "scripts", "clawcross_cli", "chatbot", "visual"):
+        for path in _python_files("src", "scripts", "clawcross_cli"):
             rel = str(path.relative_to(PROJECT_ROOT))
-            if rel.startswith(("src/agents/", "src/external/")):
+            if rel.startswith(("src/backend/agents/", "src/backend/external/")):
                 continue
             if any(name.startswith(_TRANSPORT) for name in _imports(path)):
                 callers.add(rel)

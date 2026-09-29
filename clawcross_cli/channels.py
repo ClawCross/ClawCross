@@ -2,10 +2,10 @@
 Channel setup catalog for the ClawCross CLI.
 
 Mirrors the channels exposed by the mobile creator tab
-(frontend/templates/group_chat_mobile.html:9657 MOBILE_CHATBOT_CHANNEL_FALLBACKS)
+(src/frontend/templates/group_chat_mobile.html:9657 MOBILE_CHATBOT_CHANNEL_FALLBACKS)
 so anything the user can configure in the UI can also be set up from
 the terminal. The CLI never talks to the backend's settings service —
-it just writes the same env vars that ``src/api/settings_service.py``
+it just writes the same env vars that ``src/backend/ops/settings_service.py``
 already reads from ``~/.clawcross/config/.env``.
 
 Two storage shapes:
@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from src.utils.chatbot_channel_catalog import get_chatbot_channels
+from src.backend.chatbot.channel_catalog import get_chatbot_channels
 
 
 @dataclass

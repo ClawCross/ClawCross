@@ -114,13 +114,13 @@ fi
 PIDFILE="$CLAWCROSS_RUN_DIR/clawcross.pid"
 CLAWCROSS_SERVICE_PATTERNS=(
     "scripts/launcher.py"
-    "src/utils/scheduler_service.py"
-    "oasis/server.py"
-    "src/mainagent.py"
-    "src/front.py"
+    "src/backend/scheduler/service.py"
+    "src/backend/oasis/server.py"
+    "src/backend/server.py"
+    "src/frontend/server.py"
     "scripts/tunnel.py"
     "scripts/harness_conductor.py"
-    "chatbot/main.py"
+    "src/backend/chatbot/main.py"
     "weclaw start -f"
     "cloudflared.*tunnel.*--url.*127\\.0\\.0\\.1"
 )

@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src"
+SRC_DIR = PROJECT_ROOT / "src" / "backend"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
@@ -285,7 +285,7 @@ class TestGateway(StoreCase):
                 schemas.append(schema)
                 return SimpleNamespace(ainvoke=mock.AsyncMock(return_value={"content": "x"}))
 
-        with mock.patch("services.llm_factory.create_chat_model", lambda **kw: made.update(kw) or Model()), \
+        with mock.patch("common.llm_factory.create_chat_model", lambda **kw: made.update(kw) or Model()), \
                 mock.patch("webot.engine.tool_schema.forced_tool_choice_supported", return_value=True):
             reply = self.ask(critic, response_format=reply_format)
         self.assertEqual(json.loads(reply.content), {"content": "x"})
@@ -399,7 +399,7 @@ class TestControl(StoreCase):
         from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
         from external import history as external_agent_history
 
-        from services.llm_factory import extract_text
+        from common.llm_factory import extract_text
         from webot.api.session_service import SessionService
 
         self.webot_runtime.agent_app = mock.Mock()

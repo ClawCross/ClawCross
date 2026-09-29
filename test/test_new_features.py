@@ -18,7 +18,7 @@ import time
 import pytest
 
 # Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "src", "backend"))
 
 
 # ============================================================================
@@ -150,13 +150,13 @@ class TestTokenBudget:
     """Test token budget tracking and marginal utility."""
 
     def test_session_budget_creation(self):
-        from utils.token_budget import SessionTokenBudget
+        from webot.token_budget import SessionTokenBudget
         budget = SessionTokenBudget(max_context_tokens=100000)
         assert budget.total_tokens == 0
         assert budget.context_pressure == 0.0
 
     def test_record_turn(self):
-        from utils.token_budget import SessionTokenBudget
+        from webot.token_budget import SessionTokenBudget
         budget = SessionTokenBudget()
         turn = budget.record_turn(input_tokens=1000, output_tokens=500)
         assert turn.total_tokens == 1500
@@ -164,26 +164,26 @@ class TestTokenBudget:
         assert budget.total_output_tokens == 500
 
     def test_remaining_budget_uses_current_compressed_context(self):
-        from utils.token_budget import SessionTokenBudget
+        from webot.token_budget import SessionTokenBudget
         budget = SessionTokenBudget(max_context_tokens=2000)
         budget.update_current_context(used_tokens=1500, budget_tokens=2000)
         assert budget.remaining_budget() == 500
 
     def test_context_pressure(self):
-        from utils.token_budget import SessionTokenBudget
+        from webot.token_budget import SessionTokenBudget
         budget = SessionTokenBudget(max_context_tokens=1000)
         budget.update_current_context(used_tokens=900, budget_tokens=1000)
         assert budget.context_pressure == 0.9
         assert budget.is_warning
 
     def test_critical_threshold(self):
-        from utils.token_budget import SessionTokenBudget
+        from webot.token_budget import SessionTokenBudget
         budget = SessionTokenBudget(max_context_tokens=1000)
         budget.update_current_context(used_tokens=960, budget_tokens=1000)
         assert budget.is_critical
 
     def test_marginal_utility(self):
-        from utils.token_budget import SessionTokenBudget
+        from webot.token_budget import SessionTokenBudget
         budget = SessionTokenBudget()
         budget.record_turn(input_tokens=1000, output_tokens=500)
         budget.record_turn(input_tokens=2000, output_tokens=400)
@@ -191,31 +191,31 @@ class TestTokenBudget:
         assert 0.0 <= utility <= 1.0
 
     def test_marginal_utility_single_turn(self):
-        from utils.token_budget import SessionTokenBudget
+        from webot.token_budget import SessionTokenBudget
         budget = SessionTokenBudget()
         budget.record_turn(input_tokens=1000, output_tokens=500)
         assert budget.marginal_utility() == 1.0  # Not enough data
 
     def test_should_auto_continue(self):
-        from utils.token_budget import SessionTokenBudget
+        from webot.token_budget import SessionTokenBudget
         budget = SessionTokenBudget(max_context_tokens=100000)
         budget.record_turn(input_tokens=1000, output_tokens=500)
         assert budget.should_auto_continue()
 
     def test_format_budget_notice_empty(self):
-        from utils.token_budget import SessionTokenBudget
+        from webot.token_budget import SessionTokenBudget
         budget = SessionTokenBudget()
         assert budget.format_budget_notice() == ""
 
     def test_format_budget_notice_warning(self):
-        from utils.token_budget import SessionTokenBudget
+        from webot.token_budget import SessionTokenBudget
         budget = SessionTokenBudget(max_context_tokens=1000)
         budget.update_current_context(used_tokens=850, budget_tokens=1000)
         notice = budget.format_budget_notice()
         assert "⚡" in notice
 
     def test_get_session_budget(self):
-        from utils.token_budget import get_session_budget, reset_session_budget
+        from webot.token_budget import get_session_budget, reset_session_budget
         budget = get_session_budget("test_user", "test_session")
         assert budget is not None
         budget.record_turn(input_tokens=100, output_tokens=50)
@@ -224,7 +224,7 @@ class TestTokenBudget:
         reset_session_budget("test_user", "test_session")
 
     def test_get_status(self):
-        from utils.token_budget import SessionTokenBudget
+        from webot.token_budget import SessionTokenBudget
         budget = SessionTokenBudget()
         budget.update_current_context(used_tokens=1000, budget_tokens=2000)
         status = budget.get_status()
@@ -243,7 +243,7 @@ class TestContextLimits:
     """Model-aware history budget resolution."""
 
     def test_context_limits_model_aware_defaults(self, monkeypatch):
-        from utils.context_limits import infer_model_context_window, resolve_history_token_budget
+        from webot.context_limits import infer_model_context_window, resolve_history_token_budget
 
         monkeypatch.delenv("LLM_CONTEXT_WINDOW", raising=False)
         monkeypatch.delenv("WEBOT_CONTEXT_TOKEN_BUDGET", raising=False)
@@ -254,7 +254,7 @@ class TestContextLimits:
         assert resolve_history_token_budget() == 800_000
 
     def test_context_limits_known_model_windows(self, monkeypatch):
-        from utils.context_limits import infer_model_context_window, resolve_history_token_budget
+        from webot.context_limits import infer_model_context_window, resolve_history_token_budget
 
         monkeypatch.delenv("LLM_CONTEXT_WINDOW", raising=False)
         monkeypatch.delenv("WEBOT_CONTEXT_TOKEN_BUDGET", raising=False)
@@ -272,7 +272,7 @@ class TestContextLimits:
         assert resolve_history_token_budget() == 800_000
 
     def test_context_limits_user_override(self, monkeypatch):
-        from utils.context_limits import resolve_history_token_budget
+        from webot.context_limits import resolve_history_token_budget
 
         monkeypatch.setenv("WEBOT_CONTEXT_TOKEN_BUDGET", "77777")
         assert resolve_history_token_budget() == 77777
@@ -286,7 +286,7 @@ class TestCacheBoundary:
     """Test system prompt cache boundary management."""
 
     def test_set_sections(self):
-        from utils.cache_boundary import SystemPromptCacheManager
+        from webot.cache_boundary import SystemPromptCacheManager
         mgr = SystemPromptCacheManager()
         mgr.set_section("identity", "I am WeBot")
         mgr.set_section("tools", "Available tools: read_file, write_file")
@@ -296,7 +296,7 @@ class TestCacheBoundary:
         assert boundary.static_chars > 0
 
     def test_cache_breakpoint(self):
-        from utils.cache_boundary import SystemPromptCacheManager
+        from webot.cache_boundary import SystemPromptCacheManager
         mgr = SystemPromptCacheManager()
         mgr.set_section("identity", "I am WeBot")
         mgr.set_section("tools", "Tools list")
@@ -307,7 +307,7 @@ class TestCacheBoundary:
         assert boundary.cache_breakpoint_index == 2
 
     def test_build_single_prompt(self):
-        from utils.cache_boundary import SystemPromptCacheManager
+        from webot.cache_boundary import SystemPromptCacheManager
         mgr = SystemPromptCacheManager()
         mgr.set_section("identity", "Part 1")
         mgr.set_section("runtime_context", "Part 2")
@@ -316,7 +316,7 @@ class TestCacheBoundary:
         assert "Part 2" in prompt
 
     def test_cache_stats(self):
-        from utils.cache_boundary import SystemPromptCacheManager
+        from webot.cache_boundary import SystemPromptCacheManager
         mgr = SystemPromptCacheManager()
         mgr.set_section("identity", "x" * 1000)
         mgr.set_section("runtime_context", "y" * 200)
@@ -333,14 +333,14 @@ class TestBashSafety:
     """Test bash command safety analysis."""
 
     def test_safe_commands(self):
-        from utils.bash_safety import analyze_command, RiskLevel
+        from webot.bash_safety import analyze_command, RiskLevel
         assert analyze_command("ls -la").risk_level == RiskLevel.SAFE
         assert analyze_command("pwd").risk_level == RiskLevel.SAFE
         assert analyze_command("echo hello").risk_level == RiskLevel.SAFE
         assert analyze_command("git status").risk_level == RiskLevel.SAFE
 
     def test_deny_invariants(self):
-        from utils.bash_safety import analyze_command, RiskLevel
+        from webot.bash_safety import analyze_command, RiskLevel
         # Deny-invariant patterns are hard-blocked as CRITICAL; they never reach approval.
         for cmd in ("rm -rf /", "rm -rf ~", "dd if=/dev/zero of=/dev/sda"):
             result = analyze_command(cmd)
@@ -349,7 +349,7 @@ class TestBashSafety:
             assert result.blocked, cmd
 
     def test_high_risk(self):
-        from utils.bash_safety import analyze_command, RiskLevel
+        from webot.bash_safety import analyze_command, RiskLevel
         result = analyze_command("sudo rm -rf /tmp/test")
         assert result.risk_level == RiskLevel.HIGH
         assert not result.blocked
@@ -358,7 +358,7 @@ class TestBashSafety:
         assert result.risk_level == RiskLevel.HIGH
 
     def test_medium_risk(self):
-        from utils.bash_safety import analyze_command, RiskLevel
+        from webot.bash_safety import analyze_command, RiskLevel
         # MEDIUM patterns: recursive rm, pip install, curl/wget, sed -i, kill*, etc.
         assert analyze_command("rm -r some_dir").risk_level == RiskLevel.MEDIUM
         assert analyze_command("pip install requests").risk_level == RiskLevel.MEDIUM
@@ -366,19 +366,19 @@ class TestBashSafety:
         assert analyze_command("sed -i 's/a/b/' file").risk_level == RiskLevel.MEDIUM
 
     def test_low_risk(self):
-        from utils.bash_safety import analyze_command, RiskLevel
+        from webot.bash_safety import analyze_command, RiskLevel
         result = analyze_command("python3 script.py")
         assert result.risk_level in (RiskLevel.LOW, RiskLevel.SAFE)
 
     def test_fork_bomb_detection(self):
-        from utils.bash_safety import analyze_command, RiskLevel
+        from webot.bash_safety import analyze_command, RiskLevel
         result = analyze_command(":(){ :|:& };:")
         assert result.risk_level == RiskLevel.CRITICAL
         assert result.blocked
         assert any("fork bomb" in r.lower() for r in result.reasons)
 
     def test_credential_theft(self):
-        from utils.bash_safety import analyze_command, RiskLevel
+        from webot.bash_safety import analyze_command, RiskLevel
         for cmd in ("cat ~/.ssh/id_rsa", "cat /etc/shadow"):
             result = analyze_command(cmd)
             assert result.risk_level == RiskLevel.CRITICAL, cmd
@@ -386,12 +386,12 @@ class TestBashSafety:
             assert result.blocked, cmd
 
     def test_empty_command(self):
-        from utils.bash_safety import analyze_command, RiskLevel
+        from webot.bash_safety import analyze_command, RiskLevel
         result = analyze_command("")
         assert result.risk_level == RiskLevel.SAFE
 
     def test_batch_analyze(self):
-        from utils.bash_safety import batch_analyze, RiskLevel
+        from webot.bash_safety import batch_analyze, RiskLevel
         results = batch_analyze(["ls", "rm -rf /", "echo hi"])
         assert len(results) == 3
         assert results[1].risk_level == RiskLevel.CRITICAL
@@ -580,13 +580,13 @@ class TestCostTracker:
     """Test cost tracking and pricing."""
 
     def test_record_cost(self):
-        from utils.cost_tracker import SessionCostTracker
+        from webot.cost_tracker import SessionCostTracker
         tracker = SessionCostTracker(user_id="u1", session_id="s1")
         entry = tracker.record("gpt-4o", input_tokens=1000, output_tokens=500)
         assert entry.cost_usd > 0
 
     def test_cost_breakdown(self):
-        from utils.cost_tracker import SessionCostTracker
+        from webot.cost_tracker import SessionCostTracker
         tracker = SessionCostTracker(user_id="u1", session_id="s1")
         tracker.record("gpt-4o", input_tokens=1000, output_tokens=500)
         tracker.record("gpt-4o-mini", input_tokens=2000, output_tokens=1000)
@@ -596,20 +596,20 @@ class TestCostTracker:
         assert "gpt-4o-mini" in breakdown["by_model"]
 
     def test_cost_limit(self):
-        from utils.cost_tracker import SessionCostTracker
+        from webot.cost_tracker import SessionCostTracker
         tracker = SessionCostTracker(user_id="u1", session_id="s1", cost_limit_usd=0.001)
         tracker.record("gpt-4o", input_tokens=100000, output_tokens=50000)
         assert tracker.is_over_limit
 
     def test_format_notice(self):
-        from utils.cost_tracker import SessionCostTracker
+        from webot.cost_tracker import SessionCostTracker
         tracker = SessionCostTracker(user_id="u1", session_id="s1", cost_limit_usd=0.01)
         tracker.record("gpt-4o", input_tokens=100000, output_tokens=50000)
         notice = tracker.format_cost_notice()
         assert len(notice) > 0
 
     def test_get_cost_tracker(self):
-        from utils.cost_tracker import get_cost_tracker, get_user_total_cost
+        from webot.cost_tracker import get_cost_tracker, get_user_total_cost
         tracker = get_cost_tracker("test_cost_user", "session_a")
         tracker.record("gpt-4o", input_tokens=1000, output_tokens=500)
         total = get_user_total_cost("test_cost_user")
@@ -624,35 +624,35 @@ class TestEffortController:
     """Test effort level estimation and configuration."""
 
     def test_estimate_minimal(self):
-        from utils.effort_controller import estimate_effort, EffortLevel
+        from common.effort_controller import estimate_effort, EffortLevel
         assert estimate_effort("what is the version?") == EffortLevel.MINIMAL
         assert estimate_effort("show me the file") == EffortLevel.MINIMAL
 
     def test_estimate_high(self):
-        from utils.effort_controller import estimate_effort, EffortLevel
+        from common.effort_controller import estimate_effort, EffortLevel
         level = estimate_effort("implement a new authentication system with JWT")
         assert level in (EffortLevel.HIGH, EffortLevel.EXPERT)
 
     def test_estimate_expert(self):
-        from utils.effort_controller import estimate_effort, EffortLevel
+        from common.effort_controller import estimate_effort, EffortLevel
         level = estimate_effort("architect and refactor the entire codebase with a comprehensive migration plan")
         assert level == EffortLevel.EXPERT
 
     def test_get_config(self):
-        from utils.effort_controller import get_effort_config, EffortLevel
+        from common.effort_controller import get_effort_config, EffortLevel
         config = get_effort_config(EffortLevel.HIGH)
         assert config.max_turns == 30
         assert config.enable_planning
 
     def test_session_override(self):
-        from utils.effort_controller import set_session_effort, get_session_effort, clear_session_effort, EffortLevel
+        from common.effort_controller import set_session_effort, get_session_effort, clear_session_effort, EffortLevel
         set_session_effort("u1", "s1", EffortLevel.EXPERT)
         assert get_session_effort("u1", "s1") == EffortLevel.EXPERT
         clear_session_effort("u1", "s1")
         assert get_session_effort("u1", "s1") is None
 
     def test_resolve_effort(self):
-        from utils.effort_controller import resolve_effort, EffortLevel
+        from common.effort_controller import resolve_effort, EffortLevel
         config = resolve_effort("u1", "s1", "implement a feature")
         assert config.level in EffortLevel
         assert config.max_turns > 0
@@ -772,7 +772,7 @@ class TestNotificationSystem:
     """Test notifications, TTL, broadcast, session resume."""
 
     def test_send_notification(self):
-        from services.notification_system import send_notification, get_notifications
+        from webot.notification_system import send_notification, get_notifications
         notif = send_notification(
             user_id="u1", session_id="s1",
             level="info", title="Test", body="Hello",
@@ -783,7 +783,7 @@ class TestNotificationSystem:
         assert len(notifs) >= 1
 
     def test_unread_notifications(self):
-        from services.notification_system import send_notification, get_notifications, mark_notification_read
+        from webot.notification_system import send_notification, get_notifications, mark_notification_read
         send_notification(user_id="u_notif_test", title="A", body="1")
         send_notification(user_id="u_notif_test", title="B", body="2")
 
@@ -795,13 +795,13 @@ class TestNotificationSystem:
         assert len(unread) == 1
 
     def test_ttl_registration(self):
-        from services.notification_system import register_ttl, get_ttl_stats
+        from webot.notification_system import register_ttl, get_ttl_stats
         register_ttl("test_key_1", "test_category", ttl_seconds=3600)
         stats = get_ttl_stats()
         assert stats["total_entries"] >= 1
 
     def test_ttl_cleanup(self):
-        from services.notification_system import register_ttl, run_ttl_cleanup
+        from webot.notification_system import register_ttl, run_ttl_cleanup
         # Register an already-expired entry
         register_ttl("expired_key", "test", ttl_seconds=0)
         time.sleep(0.01)
@@ -809,7 +809,7 @@ class TestNotificationSystem:
         assert counts.get("test", 0) >= 1
 
     def test_broadcast(self):
-        from services.notification_system import create_broadcast, mark_broadcast_delivered, get_broadcast
+        from webot.notification_system import create_broadcast, mark_broadcast_delivered, get_broadcast
         msg = create_broadcast(
             sender_user_id="u1", sender_session_id="s1",
             target_sessions=["s2", "s3"],
@@ -821,7 +821,7 @@ class TestNotificationSystem:
         assert "s2" in retrieved.delivered_to
 
     def test_session_checkpoint(self):
-        from services.notification_system import save_session_checkpoint, get_session_checkpoint, build_resume_prompt
+        from webot.notification_system import save_session_checkpoint, get_session_checkpoint, build_resume_prompt
         checkpoint = save_session_checkpoint(
             user_id="u1", session_id="s1",
             state_summary="Working on feature X",
@@ -838,7 +838,7 @@ class TestNotificationSystem:
         assert "Finish implementation" in prompt
 
     def test_model_hot_swap(self):
-        from services.notification_system import request_model_swap, get_pending_model_swap, consume_model_swap
+        from webot.notification_system import request_model_swap, get_pending_model_swap, consume_model_swap
         request_model_swap("u1", "s1", "gpt-4o", reason="Need better reasoning")
         pending = get_pending_model_swap("u1", "s1")
         assert pending is not None
@@ -858,8 +858,8 @@ class TestIntegration:
 
     def test_effort_with_budget(self):
         """Effort controller should influence token budget."""
-        from utils.effort_controller import resolve_effort
-        from utils.token_budget import SessionTokenBudget
+        from common.effort_controller import resolve_effort
+        from webot.token_budget import SessionTokenBudget
 
         config = resolve_effort("u1", "s1", "architect a complete system redesign")
         budget = SessionTokenBudget(max_context_tokens=config.max_context_tokens)
@@ -884,7 +884,7 @@ class TestIntegration:
     def test_council_with_notification(self):
         """Council conclusion should trigger notification."""
         from webot.engine.agent_orchestrator import create_council_session, submit_council_vote, evaluate_council_consensus
-        from services.notification_system import send_notification
+        from webot.notification_system import send_notification
 
         council = create_council_session(question="Deploy to prod?")
         submit_council_vote(council.council_id, voter_id="v1", model="a", decision="approve", reasoning="ok", confidence=0.9)
@@ -901,7 +901,7 @@ class TestIntegration:
     def test_fork_with_cost_tracking(self):
         """Forked sessions should have independent cost tracking."""
         from webot.engine.agent_orchestrator import create_fork
-        from utils.cost_tracker import get_cost_tracker
+        from webot.cost_tracker import get_cost_tracker
 
         fork = create_fork(parent_session="main", task="Explore alternative")
         parent_tracker = get_cost_tracker("u1", "main")
@@ -914,7 +914,7 @@ class TestIntegration:
 
     def test_bash_safety_with_policy(self):
         """Bash safety should work alongside existing policy system."""
-        from utils.bash_safety import analyze_command, RiskLevel
+        from webot.bash_safety import analyze_command, RiskLevel
         from webot.policy import evaluate_tool_policy, WeBotToolPolicy
 
         # Bash safety hard-blocks deny-invariant commands as CRITICAL.

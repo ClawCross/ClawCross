@@ -7,11 +7,11 @@ from unittest.mock import AsyncMock, patch
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src"
+SRC_DIR = PROJECT_ROOT / "src" / "backend"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-import webot.tools.filemanager as filemanager
+import webot.mcp.filemanager as filemanager
 from webot.approval_actions import bind_file_target
 from webot.approval_review import ApprovalResult
 from webot import runtime_store as store

@@ -37,8 +37,8 @@ async function setup(page, options = {}) {
     window.currentSessionId = 'session-1';
     window.escapeHtml = text => { const el = document.createElement('div'); el.textContent = text; return el.innerHTML; };
   });
-  await page.addStyleTag({ path: path.resolve('frontend/css/style.css') });
-  await page.addScriptTag({ path: path.resolve('frontend/js/runtime-settings.js') });
+  await page.addStyleTag({ path: path.resolve('src/frontend/static/css/style.css') });
+  await page.addScriptTag({ path: path.resolve('src/frontend/static/js/runtime-settings.js') });
   return requests;
 }
 

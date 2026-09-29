@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src"
+SRC_DIR = PROJECT_ROOT / "src" / "backend"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
@@ -18,9 +18,9 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from agents.messages import DeliveryReceipt  # noqa: E402
 from agents.store import ACPX, WEBOT, AgentStore  # noqa: E402
-from comms.conversations import Conversations, NotAMember, resolve_text_mentions  # noqa: E402
-from comms.delivery import StormGuard, WakeRequest, mentions_everyone, select_wake_targets  # noqa: E402
-from comms.store import DIRECT, ConversationStore, human  # noqa: E402
+from groups.conversations import Conversations, NotAMember, resolve_text_mentions  # noqa: E402
+from groups.delivery import StormGuard, WakeRequest, mentions_everyone, select_wake_targets  # noqa: E402
+from groups.store import DIRECT, ConversationStore, human  # noqa: E402
 from groups.routes import create_groups_router  # noqa: E402
 from groups.service import Forbidden, GroupError, GroupService  # noqa: E402
 from teams.store import TeamStore  # noqa: E402

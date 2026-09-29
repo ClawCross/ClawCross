@@ -5,11 +5,11 @@ import unittest
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src"
+SRC_DIR = PROJECT_ROOT / "src" / "backend"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from src.webot.lsp import format_diagnostics, parse_tsc_output, probe_diagnostics
+from webot.lsp import format_diagnostics, parse_tsc_output, probe_diagnostics
 
 
 class WebotLspOpenSeekTests(unittest.TestCase):

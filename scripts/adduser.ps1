@@ -11,7 +11,7 @@ $python = Ensure-VenvPython -ProjectRoot $projectRoot
 
 Push-Location $env:CLAWCROSS_WORKSPACE_DIR
 try {
-    & $python (Join-Path $projectRoot "tools\gen_password.py")
+    & $python (Join-Path $projectRoot "scripts\gen_password.py")
     exit $LASTEXITCODE
 } finally {
     Pop-Location

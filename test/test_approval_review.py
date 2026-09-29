@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "backend"))
 from webot import approval_review as review, policy, runtime_settings, runtime_store as store
 from webot.approval_actions import canonical_action_args
 from webot.workspace import SessionWorkspace
@@ -293,7 +293,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(store.list_tool_approvals("alice")[0].status, "expired")
 
     async def test_command_gate_consumes_broker_permit_without_second_review(self):
-        from webot.tools import commander
+        from webot.mcp import commander
         with patch.object(review, "run_reviewer", return_value=self.verdict):
             self.assertTrue((await self.authorize(transfer_to_command=True)).allowed)
         with patch.object(commander, "authorize_action") as second_review:
@@ -303,7 +303,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_batch_wait_does_not_issue_early_execution_permits(self):
         from webot.engine.agent import UserAwareToolNode
-        from webot.tools import commander
+        from webot.mcp import commander
         node = UserAwareToolNode([], lambda: [])
         owner = self
         class Tools:
@@ -343,8 +343,8 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any("工作区发生变化" in m.content for m in result["messages"]))
 
     async def test_standalone_review_recovers_authorization_before_long_tool_history(self):
-        from utils.context_store import ContextStore
-        from utils.checkpoint_paths import checkpoint_db_path_for_thread
+        from webot.context_store import ContextStore
+        from webot.checkpoint_paths import checkpoint_db_path_for_thread
         db_root = Path(self.tmp.name) / "contexts"
         async with ContextStore(db_root) as context_store:
             await context_store.append_messages("alice#s", self.messages + [AIMessage(content=f"evidence-{i}") for i in range(150)])
@@ -361,7 +361,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         from unittest.mock import Mock
         model = Mock()
         model.with_structured_output.return_value = structured
-        with patch("services.llm_factory.create_chat_model", return_value=model):
+        with patch("common.llm_factory.create_chat_model", return_value=model):
             result = await review.run_reviewer(tool_name="run_command", args=self.args,
                 context=review.review_context(self.messages), settings=runtime_settings.ApprovalSettings(), policy={})
         self.assertEqual(result, self.verdict)

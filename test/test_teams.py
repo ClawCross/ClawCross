@@ -8,7 +8,7 @@ from unittest import mock
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src"
+SRC_DIR = PROJECT_ROOT / "src" / "backend"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
@@ -164,7 +164,7 @@ class TestManifest(TeamCase):
 
 class TestPreset(TeamCase):
     def test_install_makes_every_role_an_agent(self):
-        from services.team_preset_assets import get_team_preset_bundle, install_team_preset
+        from teams.preset_assets import get_team_preset_bundle, install_team_preset
 
         result = install_team_preset(user_id="alice", team_name="builder", preset_id="team-builder", teams=self.teams)
         roles = [e["name"] for e in get_team_preset_bundle("team-builder")["internal_agents"]]

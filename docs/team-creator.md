@@ -102,7 +102,7 @@ Two backend helpers already cover the Phase 3 collection step without relying on
 
 ClawCross Creator has two layers of localization:
 
-- static UI strings are embedded in `frontend/js/creator.js`
+- static UI strings are embedded in `src/frontend/static/js/creator.js`
 - dynamic content can be translated on demand through `POST /api/team-creator/translate`
 
 Dynamic translation is used for things like:
@@ -131,7 +131,7 @@ If needed, set `TEAM_CREATOR_JOBS_DB_PATH` to move the jobs database.
 
 ## Workflow -> Generate Team
 
-The Studio workflow canvas also supports a direct Team-generation flow through `orchGenerateTeam()` in `frontend/js/orchestration.js`.
+The Studio workflow canvas also supports a direct Team-generation flow through `orchGenerateTeam()` in `src/frontend/static/js/orchestration.js`.
 
 That flow:
 
@@ -166,12 +166,12 @@ Use this when the workflow graph already exists and you want to materialize the 
 
 | Path | Role |
 |---|---|
-| `src/front.py` | ClawCross Creator routes and workflow-to-team endpoint |
-| `src/services/team_creator_service.py` | discovery, extraction, build, ZIP, jobs, translation |
-| `frontend/templates/creator.html` | ClawCross Creator page shell |
-| `frontend/js/creator.js` | ClawCross Creator UI, i18n, persistence, preview rendering |
-| `frontend/css/creator.css` | ClawCross Creator layout and DAG styling |
-| `frontend/js/orchestration.js` | `Generate Team` modal on the workflow canvas |
+| `src/frontend/server.py` | ClawCross Creator routes and workflow-to-team endpoint |
+| `src/backend/teams/creator.py` | discovery, extraction, build, ZIP, jobs, translation |
+| `src/frontend/templates/creator.html` | ClawCross Creator page shell |
+| `src/frontend/static/js/creator.js` | ClawCross Creator UI, i18n, persistence, preview rendering |
+| `src/frontend/static/css/creator.css` | ClawCross Creator layout and DAG styling |
+| `src/frontend/static/js/orchestration.js` | `Generate Team` modal on the workflow canvas |
 | `test/test_team_creator_jobs.py` | jobs persistence coverage |
 | `test/test_team_creator_workflow.py` | workflow build coverage |
 | `test/test_team_creator_zip.py` | ZIP export coverage |

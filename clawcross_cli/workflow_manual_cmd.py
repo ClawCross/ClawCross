@@ -2,7 +2,7 @@
 
 Thin CLI wrapper around ``oasis.workflow_rules.get_workflow_writing_rules``.
 The same function is exposed via the MCP tool ``get_workflow_rules(kind="python")``
-in ``src/webot/tools/oasis.py`` — both surfaces read the same single source
+in ``src/backend/webot/mcp/oasis.py`` — both surfaces read the same single source
 of truth so the manual never drifts between channels.
 """
 from __future__ import annotations

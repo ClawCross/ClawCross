@@ -6,22 +6,22 @@ This reference captures the architecture, service responsibilities, and runtime 
 
 ```
 Browser / Studio UI
-    -> `src/front.py` (Flask UI + session auth + runtime proxies)
-    -> `frontend/js/main.js` + runtime panel wiring (current-session card and voice controls)
+    -> `src/frontend/server.py` (Flask UI + session auth + runtime proxies)
+    -> `src/frontend/static/js/main.js` + runtime panel wiring (current-session card and voice controls)
 FastAPI services
-    -> `src/mainagent.py` (OpenAI-compatible chat endpoints, session history, cancel)
-    -> `src/webot/api/routes.py` (runtime + policy APIs via `WeBotService`)
-    -> `src/webot/api/service.py` (serializes runtime DTOs, policy/plan/todo persistence)
-    -> `src/webot/tools/webot.py` (MCP tools: subagents, session messages, inbox, plans and todos)
-    -> `src/api/ops_service.py` (voice/TTS + direct connect hooks for audio uploads)
-    -> `src/webot/memory.py` / `src/webot/voice.py` (memory and voice services)
+    -> `src/backend/server.py` (OpenAI-compatible chat endpoints, session history, cancel)
+    -> `src/backend/webot/api/routes.py` (runtime + policy APIs via `WeBotService`)
+    -> `src/backend/webot/api/service.py` (serializes runtime DTOs, policy/plan/todo persistence)
+    -> `src/backend/webot/mcp/webot.py` (MCP tools: subagents, session messages, inbox, plans and todos)
+    -> `src/backend/ops/service.py` (voice/TTS + direct connect hooks for audio uploads)
+    -> `src/backend/webot/memory.py` / `src/backend/webot/voice.py` (memory and voice services)
 Persistence
     -> `data/webot_agents/<user>#<agent>.db` (runs, inbox, approvals, permits, artifacts, session state, memory, voice)
     -> `data/webot_subagents.db` (subagent metadata)
     -> `data/user_files/{user_id}/` (profiles, policies, runtime artifacts, memory dirs, logs)
 Side systems
-    -> `oasis/` (Town Mode, workflows, swarm engine)
-    -> `src/integrations/acpx_adapter.py` (ACP exchange with external AI agents via acpx CLI)
+    -> `src/backend/oasis/` (Town Mode, workflows, swarm engine)
+    -> `src/backend/external/acpx.py` (ACP exchange with external AI agents via acpx CLI)
     -> WeBot dream pipeline (`webot_memory.py`) as the current browser-native autoDream layer
 ```
 
@@ -29,21 +29,21 @@ Side systems
 
 | Service | Ownership |
 |---|---|
-| `src/front.py` | Flask UI shell, authentication, WeBot runtime proxy routes (`/proxy_webot_*`), voice/TTS proxies. |
-| `src/mainagent.py` | OpenAI-compatible chat API, session history, cancel, provider routing. |
-| `src/webot/api/service.py` | Serializes DTO (mode, plan, todos, approvals, inbox, artifacts, runs, relationships, voice/memory), enforces auth, counts inbox queue, exposes policy endpoints. |
-| `src/webot/tools/webot.py` | Durable spawn/send/cancel workflows, background run leasing, inbox delivery, plan/todo updates, runtime artifact logging. |
-| `src/webot/runtime_store.py` | SQLite tables for runs, attempts, inbox messages, artifacts, session modes, verifications, tool approvals, memory state, voice state; helpers for leases/heartbeats/interruption/events. |
-| `src/webot/runtime.py` | Mode normalization, blocked tool lists, turn-limit messaging, surgical heuristics for plan/execute/review. |
-| `src/webot/policy.py` | Normalizes tool policies, events (`session_start`, `permission_request`, `stop`, etc.), hook definitions, serialization, router for `save_tool_policy_config`. |
-| `src/webot/engine/agent.py` | Enforces tool filtering, injects runtime context, proxies MCP tooling into session handler, budgets history with `webot_context`. |
-| `src/api/ops_service.py` | Text-to-speech / audio proxy for voice mode; writes audio metadata into runtime payload via `front.py`. |
-| `src/webot/profiles.py` | Profile definitions (`general`, `research`, `planner`, `coder`, `reviewer`, `verifier`), helper `slugify`, built-in tool sets, user extension loading. |
-| `src/webot/context.py` | Budgeting helpers (tool results, user inputs) that log artifacts, perform compaction, build runtime summaries. |
-| `src/webot/workspace.py` | Worktree/remote/shared workspace resolution used when rendering runtime panel workspace text. |
-| `src/routes/front_webot_routes.py` | Additional Flask proxies for runtime mode updates, plan/todo/verification APIs, supporting UI actions. |
-| `src/webot/memory.py` | Per-project memory directories, `MEMORY.md`, relevant entry recall, daily logs, dream gating, Kairos flags. |
-| `src/webot/voice.py` | Voice defaults + persisted per-session voice state derived from current LLM/audio provider. |
+| `src/frontend/server.py` | Flask UI shell, authentication, WeBot runtime proxy routes (`/proxy_webot_*`), voice/TTS proxies. |
+| `src/backend/server.py` | OpenAI-compatible chat API, session history, cancel, provider routing. |
+| `src/backend/webot/api/service.py` | Serializes DTO (mode, plan, todos, approvals, inbox, artifacts, runs, relationships, voice/memory), enforces auth, counts inbox queue, exposes policy endpoints. |
+| `src/backend/webot/mcp/webot.py` | Durable spawn/send/cancel workflows, background run leasing, inbox delivery, plan/todo updates, runtime artifact logging. |
+| `src/backend/webot/runtime_store.py` | SQLite tables for runs, attempts, inbox messages, artifacts, session modes, verifications, tool approvals, memory state, voice state; helpers for leases/heartbeats/interruption/events. |
+| `src/backend/webot/runtime.py` | Mode normalization, blocked tool lists, turn-limit messaging, surgical heuristics for plan/execute/review. |
+| `src/backend/webot/policy.py` | Normalizes tool policies, events (`session_start`, `permission_request`, `stop`, etc.), hook definitions, serialization, router for `save_tool_policy_config`. |
+| `src/backend/webot/engine/agent.py` | Enforces tool filtering, injects runtime context, proxies MCP tooling into session handler, budgets history with `webot_context`. |
+| `src/backend/ops/service.py` | Text-to-speech / audio proxy for voice mode; writes audio metadata into runtime payload via the frontend (`src/frontend/server.py`). |
+| `src/backend/webot/profiles.py` | Profile definitions (`general`, `research`, `planner`, `coder`, `reviewer`, `verifier`), helper `slugify`, built-in tool sets, user extension loading. |
+| `src/backend/webot/context.py` | Budgeting helpers (tool results, user inputs) that log artifacts, perform compaction, build runtime summaries. |
+| `src/backend/webot/workspace.py` | Worktree/remote/shared workspace resolution used when rendering runtime panel workspace text. |
+| `src/frontend/proxies/webot.py` | Additional Flask proxies for runtime mode updates, plan/todo/verification APIs, supporting UI actions. |
+| `src/backend/webot/memory.py` | Per-project memory directories, `MEMORY.md`, relevant entry recall, daily logs, dream gating, Kairos flags. |
+| `src/backend/webot/voice.py` | Voice defaults + persisted per-session voice state derived from current LLM/audio provider. |
 
 ## Runtime DTO
 

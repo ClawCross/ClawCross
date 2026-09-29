@@ -36,7 +36,7 @@ for stream_name in ("stdout", "stderr"):
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
-from src.utils.runtime_paths import ENV_FILE, env_template_path, ensure_runtime_dirs
+from src.backend.common.runtime_paths import ENV_FILE, env_template_path, ensure_runtime_dirs
 ensure_runtime_dirs()
 ENV_PATH = str(ENV_FILE)
 ENV_EXAMPLE = str(env_template_path())

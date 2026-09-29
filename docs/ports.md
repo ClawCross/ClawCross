@@ -6,11 +6,11 @@
 
 | 端口 | 环境变量 | 服务文件 | 说明 | 绑定地址 | 对外暴露 |
 |------|----------|----------|------|----------|----------|
-| **51200** | `PORT_AGENT` | `src/mainagent.py` | AI Agent 主服务（OpenAI 兼容 API） | `127.0.0.1` | 否 |
-| **51201** | `PORT_SCHEDULER` | `src/utils/scheduler_service.py` | 定时任务调度中心 | `127.0.0.1` | 否 |
-| **51202** | `PORT_OASIS` | `oasis/server.py` | OASIS 论坛 / Agent 管理与编排中心 | `127.0.0.1` | 否 |
-| **51209** | `PORT_FRONTEND` | `src/front.py` | 前端 Web UI（Flask） | `0.0.0.0` | 是 Tunnel |
-| **51210** | —（硬编码） | `visual/main.py` | 可视化编排系统（开发用） | `0.0.0.0` | 否 |
+| **51200** | `PORT_AGENT` | `src/backend/server.py` | AI Agent 主服务（OpenAI 兼容 API） | `127.0.0.1` | 否 |
+| **51201** | `PORT_SCHEDULER` | `src/backend/scheduler/service.py` | 定时任务调度中心 | `127.0.0.1` | 否 |
+| **51202** | `PORT_OASIS` | `src/backend/oasis/server.py` | OASIS 论坛 / Agent 管理与编排中心 | `127.0.0.1` | 否 |
+| **51209** | `PORT_FRONTEND` | `src/frontend/server.py` | 前端 Web UI（Flask） | `0.0.0.0` | 是 Tunnel |
+| **51210** | —（硬编码） | `src/frontend/visual.py` | 可视化编排系统（开发用） | `0.0.0.0` | 否 |
 | **58010** | `PORT_BARK` | 外部二进制 `bin/bark-server` | Bark 推送服务器 | — | 是 Tunnel |
 | **18789** | `OPENCLAW_API_URL`（可选） | 外部服务 | OpenClaw 后端（外部集成） | 不适用 | 不适用 |
 
@@ -18,18 +18,18 @@
 
 ### 51200 — AI Agent 主服务
 
-- **文件**：`src/mainagent.py`
+- **文件**：`src/backend/server.py`
 - **职责**：
   - 提供 OpenAI 兼容的 `/v1/chat/completions` 接口
   - Agent 核心逻辑（工具调用、多轮对话、记忆管理）
   - `/system_trigger` 内部触发端点（定时任务回调等）
   - `/v1/agents`（本机所有 agent，WeBot 会话也在其中）、`/login`、`/tools`、`/tts`、`/settings`、`/groups` 等 API
-- **调用方**：前端 `front.py`（代理转发）、chatbot、MCP 模块、OASIS 回调
+- **调用方**：前端 `src/frontend/server.py`（代理转发）、chatbot、MCP 模块、OASIS 回调
 - **鉴权**：`X-Internal-Token` 或用户密码
 
 ### 51201 — 定时任务调度中心
 
-- **文件**：`src/utils/scheduler_service.py`
+- **文件**：`src/backend/scheduler/service.py`
 - **职责**：
   - 管理 cron / 一次性定时任务
   - 提供 `/tasks` 端点供 `mcp_scheduler.py` 调用
@@ -39,7 +39,7 @@
 
 ### 51202 — OASIS 论坛服务
 
-- **文件**：`oasis/server.py`
+- **文件**：`src/backend/oasis/server.py`
 - **职责**：
   - 多人设讨论引擎（Topics / Experts / Sessions）
   - Town Genesis / swarm blueprint 生成
@@ -52,7 +52,7 @@
 
 ### 51209 — 前端 Web UI
 
-- **文件**：`src/front.py`
+- **文件**：`src/frontend/server.py`
 - **职责**：
   - 用户交互界面（聊天、登录、设置、OASIS 面板）
   - 反向代理：将浏览器请求转发到 Agent / OASIS 等内部服务
@@ -68,9 +68,9 @@
 
 ### 51210 — 可视化编排系统（开发用）
 
-- **文件**：`visual/main.py`
+- **文件**：`src/frontend/visual.py`
 - **职责**：独立 Flask 应用，提供 2D 画布拖拽编排 Agent 节点，导出 OASIS 兼容的 YAML 工作流
-- **注意**：不在 `launcher.py` 启动序列中，需手动 `python visual/main.py` 启动
+- **注意**：不在 `launcher.py` 启动序列中，需手动 `python src/frontend/visual.py` 启动
 
 ### 58010 — Bark 推送服务器
 
@@ -109,13 +109,13 @@
 公网用户
   ↓ HTTPS
 [Cloudflare Tunnel]
-  ├─→ 127.0.0.1:51209 (front.py)    → PUBLIC_DOMAIN
+  ├─→ 127.0.0.1:51209 (frontend)    → PUBLIC_DOMAIN
   └─→ 127.0.0.1:58010 (bark-server) → BARK_PUBLIC_URL
 ```
 
-- Tunnel 只暴露 `front.py` 和 `bark-server`
+- Tunnel 只暴露前端（`src/frontend/server.py`）和 `bark-server`
 - 所有内部服务（Agent、Scheduler、OASIS）**不对外暴露**
-- 前端到内部服务的通信全部通过 `front.py` 反向代理
+- 前端到内部服务的通信全部通过前端（`src/frontend/server.py`）反向代理
 
 ## 环境变量配置
 
@@ -130,7 +130,7 @@ PORT_FRONTEND=51209
 
 ---
 
-## front.py 全部接口（:51209）
+## 前端 src/frontend/server.py 全部接口（:51209）
 
 ### 页面 & 静态资源
 
@@ -229,14 +229,14 @@ PORT_FRONTEND=51209
 - `POST /team_openclaw_snapshot/restore` — 恢复单个快照
 - `POST /team_openclaw_snapshot/restore_all` — 恢复全部快照
 
-### TinyFish 搜索代理（front.py 本地处理 + TinyFish Web Agent）
+### TinyFish 搜索代理（前端本地处理 + TinyFish Web Agent）
 
 - `GET /api/tinyfish/status` — 获取监控配置、目标列表、最近运行、价格变化和最新站点快照
 - `POST /api/tinyfish/run` — 提交 TinyFish 监控任务，可选同步等待完成
 - `POST /api/tinyfish/live-run` — 透传 TinyFish SSE 实时爬取事件，并在结束后持久化结果
 - `GET /api/tinyfish/sites/<site_key>` — 查看单个站点最近一次存储的快照
 
-### ClawCross Creator（front.py 本地处理 + TinyFish / OASIS）
+### ClawCross Creator（前端本地处理 + TinyFish / OASIS）
 
 - `POST /api/team-creator/discover` — ClawCross Creator 第 1 阶段：发现 SOP / 组织结构页面，SSE 流式返回
 - `POST /api/team-creator/extract` — ClawCross Creator 第 2 阶段：对单个页面执行 TinyFish 角色提取，SSE 流式返回

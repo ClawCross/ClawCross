@@ -40,8 +40,8 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-from src.utils.runtime_paths import ENV_FILE, STATE_DIR, LOGS_DIR, PID_DIR, WORKSPACE_DIR, ensure_runtime_dirs, set_subprocess_env
-from src.utils.env_settings import read_env_all, write_env_settings
+from src.backend.common.runtime_paths import ENV_FILE, STATE_DIR, LOGS_DIR, PID_DIR, WORKSPACE_DIR, ensure_runtime_dirs, set_subprocess_env
+from src.backend.common.env_settings import read_env_all, write_env_settings
 ensure_runtime_dirs()
 STATE_PATH = STATE_DIR / "state.json"
 STATE_VERSION = 1
