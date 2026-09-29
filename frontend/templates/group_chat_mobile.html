@@ -7504,7 +7504,7 @@ async function ensureAgent(fields) {
 // A new agent (in *team*, when given) wearing the library persona *tag*: its text is copied into the agent.
 async function registerAgent(fields, team = '', tag = '') {
   const persona = tag ? (((await lookupPersonaByTag(tag, team)) || {}).persona || '') : '';
-  const agent = await ensureAgent({ ...fields, persona, team });
+  const agent = await ensureAgent({ ...fields, persona });
   if (team) {
     await api('POST', `/v1/teams/${encodeURIComponent(team)}/members`, { agent: agent.agent_id, role: fields.name, tag });
   }

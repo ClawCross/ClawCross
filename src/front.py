@@ -3424,7 +3424,7 @@ def team_openclaw_snapshot_export():
         agent = teams.member(user_id, team, short_name).agent
     except LookupError:
         agent = teams.agents.create(user_id, name=short_name, driver="openclaw",
-                                    config={"platform": "openclaw", "global_name": agent_name, "persona": "", "team": team})
+                                    config={"platform": "openclaw", "global_name": agent_name, "persona": ""})
     member = teams.add(user_id, team, agent.agent_id, role=short_name)
     _keep_openclaw_snapshot(user_id, team, member, snapshot)
     file_count = len(snapshot.get("workspace_files", {}))

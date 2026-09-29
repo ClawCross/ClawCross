@@ -82,7 +82,7 @@ class AgentGateway:
         ``response_format`` is an OpenAI ``response_format``; each runtime enforces
         it as it can, or not at all.
         """
-        context = {"team": agent.config.get("team", ""), **(context or {})}
+        context = {"team": agent.team, **(context or {})}
         try:
             return await self.runtime(agent).ask(agent, msg, context=context, mode=normalize_run_mode(mode),
                                                  tools=tools, response_format=response_format, timeout=timeout)
@@ -103,7 +103,7 @@ class AgentGateway:
         """Hand *msg* over to be handled now, without waiting for an answer. A runtime
         without a queue of its own is asked in the background, its direct reply handed
         to *on_complete* (the agent speaks through the conversation's own channel)."""
-        context = {"team": agent.config.get("team", ""), **(context or {})}
+        context = {"team": agent.team, **(context or {})}
         return await self.runtime(agent).trigger(agent, msg, context=context, mode=normalize_run_mode(mode),
                                                  coalesce_key=coalesce_key, on_complete=on_complete)
 
@@ -119,7 +119,7 @@ class AgentGateway:
         """Queue *msg* (from ``msg.sender``): WeBot takes it when the session is free and
         runs it in the session's own mode; a runtime without an inbox is handed it at
         once, in *mode*."""
-        context = {"team": agent.config.get("team", ""), **(context or {})}
+        context = {"team": agent.team, **(context or {})}
         return await self.runtime(agent).inbox(agent, msg, context=context, mode=normalize_run_mode(mode),
                                                on_complete=on_complete)
 

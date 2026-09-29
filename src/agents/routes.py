@@ -39,7 +39,7 @@ from agents.store import (
 from utils.auth_utils import extract_user_password_session, is_internal_bearer, parse_bearer_parts
 
 # Settings a caller may set; everything else in a driver's config is its own.
-_SHARED_SETTINGS = ("persona", "team")
+_SHARED_SETTINGS = ("persona",)
 _WEBOT_SETTINGS = ("tools",)
 _EXTERNAL_SETTINGS = ("api_url", "api_key", "model", "headers", "meta", "global_name")
 
@@ -49,7 +49,6 @@ class AgentCreate(BaseModel):
     name: str = ""
     platform: str = WEBOT
     persona: str = ""        # its persona: the text itself (a library persona is copied in)
-    team: str = ""
     tools: list[str] | None = None  # the tools it has; none: all of them
     global_name: str = ""    # openclaw: which OpenClaw agent
     api_url: str = ""
@@ -98,6 +97,7 @@ def agent_card(agent: Agent) -> dict[str, Any]:
     """What a caller sees of an agent. Secrets never leave; the driver is the agent's business."""
     config = agent.config
     settings = {key: config.get(key, "") for key in _SHARED_SETTINGS}
+    settings["team"] = config.get("team", "")  # the team it is in; changed only by joining or leaving one
     if agent.driver == WEBOT:
         settings["tools"] = config.get("tools")
     elif agent.driver != LLM:
@@ -121,7 +121,7 @@ def runtime_of(platform: str) -> tuple[str, dict[str, Any]]:
 
 def new_agent_config(body: AgentCreate) -> tuple[str, dict[str, Any]]:
     driver, config = runtime_of(body.platform)
-    config.update({"persona": body.persona.strip(), "team": body.team.strip()})
+    config.update({"persona": body.persona.strip()})
     if driver == WEBOT and body.tools is not None:
         config["tools"] = body.tools
     if driver in (WEBOT, LLM):

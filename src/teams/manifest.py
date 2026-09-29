@@ -78,7 +78,7 @@ def agent_for_internal_entry(teams: TeamStore, owner: str, team: str, entry: dic
     found = _member(teams, owner, team, entry) or (teams.agents.get(owner, session) if session else None)
     if found is not None:
         return found
-    config: dict[str, Any] = {"persona": persona_of(owner, team, entry), "team": team}
+    config: dict[str, Any] = {"persona": persona_of(owner, team, entry)}
     if entry.get("tools") is not None:
         config["tools"] = entry["tools"]
     return teams.agents.create(owner, driver=WEBOT, config=config, name=str(entry["name"]).strip(),
@@ -94,7 +94,6 @@ def agent_for_external_entry(teams: TeamStore, owner: str, team: str, entry: dic
     config: dict[str, Any] = {
         "platform": platform,
         "persona": persona_of(owner, team, entry),
-        "team": team,
         **{key: meta.pop(key) for key in _EXTERNAL_CONFIG if key in meta},
         "meta": meta,
     }
