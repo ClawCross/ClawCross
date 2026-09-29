@@ -413,21 +413,12 @@ def get_skill(user_id: str, *, name: str, team: str = "", fallback_to_personal: 
 
 
 def _memory_prompt(user_id: str, team: str = "", tool_mode: str = "mcp") -> str:
+    """List the initial Memory catalog; MCP file-tool usage lives in tool schemas."""
     from webot.skill_memory import list_memory
     entries = list_memory(user_id, team)
     lines = ["\n【用户技能 / Memory 条目】"]
     if tool_mode == "cli":
         lines.append("按名称通过 `uv run scripts/cli.py skill list/show` 查看技能；技能存储位置由系统管理。")
-    else:
-        lines.extend([
-            '用 list_files(storage="memory") 列最新条目；用 read_file(storage="memory", filename="编号或名称") 读取。',
-            '用 write_file(storage="memory", filename="名称", content="Markdown") 记录新经验；用编号更新已有条目。',
-            '正文修改仍使用 write_file 的 overwrite、append 或 str_replace。系统维护元信息和索引，不需要知道存储路径。',
-            'memory 模式只管理 Skill 正文；支持文件使用普通文件读写。',
-            'skill_evolution_report 只分析并提出改进；阅读后自行选择内容，通过 write_file(storage="memory") 更新。',
-            '团队范围由当前会话提供；显式 team="" 操作个人条目。修改不会自动回退到个人范围。',
-            '下面的目录是会话首次调用时的快照；增删改条目后用 list_files(storage="memory") 查看最新目录。',
-        ])
     for scope, title in (("team", "团队技能："), ("personal", "共享技能：" if team else "可用技能：")):
         selected = [entry for entry in entries if entry["scope"] == scope]
         if selected:
@@ -440,7 +431,7 @@ def _memory_prompt(user_id: str, team: str = "", tool_mode: str = "mcp") -> str:
 
 
 def build_user_skills_listing(user_id: str, *, team: str = "", tool_mode: str = "mcp") -> str:
-    """Describe the memory interface even before the first entry exists."""
+    """Snapshot the initial Memory catalog without repeating MCP tool schemas."""
     return _memory_prompt(user_id, team, tool_mode)
 
 

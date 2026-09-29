@@ -965,7 +965,7 @@ class TeamAgent:
         return None
 
     def _get_user_skills(self, user_id: str, team: str = "") -> str:
-        """Describe the Skill/Memory interface and initial catalog without paths."""
+        """Snapshot the initial Skill/Memory catalog without paths."""
         from webot.skills import build_user_skills_listing
 
         return build_user_skills_listing(user_id, team=team)
