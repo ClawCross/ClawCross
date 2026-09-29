@@ -76,7 +76,7 @@ class AgentGateway:
         *,
         context: dict[str, Any] | None = None,
         mode: str | None = None,
-        tools: list[str] | None = None,
+        enabled_tools: list[str] | None = None,
         response_format: dict | None = None,
         timeout: float | None = None,
     ) -> AgentReply:
@@ -88,7 +88,8 @@ class AgentGateway:
         context = {"teams": agent.teams, **(context or {})}
         try:
             return await self.runtime(agent).ask(agent, msg, context=context, mode=normalize_run_mode(mode),
-                                                 tools=tools, response_format=response_format, timeout=timeout)
+                                                 enabled_tools=enabled_tools, response_format=response_format,
+                                                 timeout=timeout)
         except Exception as exc:
             logger.exception("ask %s failed", agent.agent_id)
             return AgentReply(ok=False, error=f"{type(exc).__name__}: {exc}")

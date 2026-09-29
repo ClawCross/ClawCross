@@ -46,7 +46,7 @@ class AcpRuntime(Runtime):
         super().__init__()
         self._store = store
 
-    async def ask(self, agent: Agent, msg: AgentMessage, *, context, mode, tools, response_format, timeout) -> AgentReply:
+    async def ask(self, agent: Agent, msg: AgentMessage, *, context, mode, enabled_tools, response_format, timeout) -> AgentReply:
         from external.acpx import AcpxError, acpx_options_from_agent, get_acpx_adapter
 
         run = acpx_options_from_agent(

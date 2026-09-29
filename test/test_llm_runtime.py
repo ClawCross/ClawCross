@@ -46,7 +46,7 @@ class DeepSeekStructuredReply(unittest.TestCase):
         agent = Agent(agent_id="tmp__t__critic__1", owner="alice", name="Critic", driver=LLM, config={})
         with patch("services.llm_factory.create_chat_model", return_value=model):
             result = asyncio.run(LlmRuntime().ask(
-                agent, AgentMessage(text="谈谈测试"), context={}, mode=None, tools=None,
+                agent, AgentMessage(text="谈谈测试"), context={}, mode=None, enabled_tools=None,
                 response_format=response_format_of(OasisReplyOut), timeout=None))
         return result, sent
 

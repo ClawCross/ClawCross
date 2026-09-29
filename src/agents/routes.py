@@ -70,7 +70,7 @@ class AgentMessageRequest(BaseModel):
     instructions: str = ""
     context: dict[str, Any] = Field(default_factory=dict)
     mode: str | None = None
-    tools: list[str] | None = None
+    enabled_tools: list[str] | None = None  # the tools this turn may use (none: the agent's own)
     response_format: dict | None = None  # OpenAI response_format
     timeout: float | None = None  # seconds; 0 waits as long as the agent takes; none: the runtime's default
     platform: str = ""       # the runtime of a new agent
@@ -211,7 +211,7 @@ def create_agents_router(
         user = user_of(authorization)
         agent = target(user, ref, body.platform)
         reply = await gateway.ask(
-            agent, message(user, body), context=body.context, mode=body.mode, tools=body.tools,
+            agent, message(user, body), context=body.context, mode=body.mode, enabled_tools=body.enabled_tools,
             response_format=body.response_format, timeout=NO_TIMEOUT if body.timeout == 0 else body.timeout,
         )
         return {"agent": agent_card(agent), "ok": reply.ok, "content": reply.content, "error": reply.error}

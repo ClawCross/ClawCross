@@ -186,7 +186,7 @@ class TestGateway(StoreCase):
     def test_a_webot_ask_is_a_turn_after_the_current_one_with_mode_tools_and_schema(self):
         reply_format = {"type": "json_schema", "json_schema": {"name": "Reply", "schema": {"type": "object"}}}
         reply = asyncio.run(self.gateway.ask(self.webot(llm={"model": "m1"}), AgentMessage(text="hi", instructions="rules"),
-                                             mode="readonly", tools=["read_file"], response_format=reply_format,
+                                             mode="readonly", enabled_tools=["read_file"], response_format=reply_format,
                                              timeout=NO_TIMEOUT))
         self.assertEqual((reply.ok, reply.content), (True, "ok"))
         req = self.services.system[0]
@@ -563,7 +563,7 @@ class TestSystemTrigger(StoreCase):
         self.assertEqual(waited, {"status": "completed", "reply": "pong"})
         agent, msg = self.gateway.ask.await_args.args
         self.assertEqual((agent.agent_id, agent.driver, msg.text), ("w1", WEBOT, "hi"))  # a new number: a WeBot agent
-        self.assertEqual((self.gateway.ask.await_args.kwargs["tools"], self.gateway.ask.await_args.kwargs["mode"]),
+        self.assertEqual((self.gateway.ask.await_args.kwargs["enabled_tools"], self.gateway.ask.await_args.kwargs["mode"]),
                          (["read_file"], "readonly"))
 
         queued = self.post(inbox_source_session="main", inbox_source_user="bob", inbox_source_label="Lead",

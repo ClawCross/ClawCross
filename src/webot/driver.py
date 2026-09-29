@@ -23,10 +23,10 @@ from agents.store import Agent
 _DEFAULT_TIMEOUT = 500
 
 
-def _fields(mode: str | None, tools: list[str] | None) -> dict[str, Any]:
+def _fields(mode: str | None, enabled_tools: list[str] | None) -> dict[str, Any]:
     fields: dict[str, Any] = {}
-    if tools is not None:
-        fields["enabled_tools"] = list(tools)
+    if enabled_tools is not None:
+        fields["enabled_tools"] = list(enabled_tools)
     if mode:
         fields["session_mode"] = mode
         if mode == "chat":
@@ -50,14 +50,14 @@ class WebotRuntime(Runtime):
 
     # ── calls ────────────────────────────────────────────────────────────
 
-    async def ask(self, agent: Agent, msg: AgentMessage, *, context, mode, tools, response_format, timeout) -> AgentReply:
+    async def ask(self, agent: Agent, msg: AgentMessage, *, context, mode, enabled_tools, response_format, timeout) -> AgentReply:
         from webot.api.system_models import SystemTriggerRequest
 
         text = f"[来自调度方的指令]\n{msg.instructions}\n\n---\n{msg.text}" if msg.instructions else msg.text
         req = SystemTriggerRequest(
             user_id=agent.owner, session_id=agent.agent_id, text=text, attachments=list(msg.attachments) or None,
             response_format=response_format, llm_override=agent.config.get("llm") or None, wait_reply=True,
-            **_fields(mode, tools),
+            **_fields(mode, enabled_tools),
         )
         turn = asyncio.ensure_future(self.system.run(req))
         turn.add_done_callback(lambda t: t.cancelled() or t.exception())  # a turn outliving its caller

@@ -54,7 +54,7 @@ class HttpRuntime(Runtime):
         """How the request names the agent's session: a body field."""
         return {"session_id": session.runtime_session(agent)}
 
-    async def ask(self, agent: Agent, msg: AgentMessage, *, context, mode, tools, response_format, timeout) -> AgentReply:
+    async def ask(self, agent: Agent, msg: AgentMessage, *, context, mode, enabled_tools, response_format, timeout) -> AgentReply:
         api_url, _api_key, model, headers = self.endpoint(agent)
         if not api_url:
             return AgentReply(ok=False, error=f"{agent.agent_id} has no api_url")

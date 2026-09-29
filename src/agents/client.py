@@ -50,12 +50,12 @@ class AgentClient:
             raise RuntimeError(_error(response))
         return response.json()
 
-    async def ask(self, ref: str, msg: AgentMessage, *, mode: str | None = None, tools: list[str] | None = None,
+    async def ask(self, ref: str, msg: AgentMessage, *, mode: str | None = None, enabled_tools: list[str] | None = None,
                   response_format: type[BaseModel] | dict | None = None, timeout: float | None = None) -> AgentReply:
         """Send *msg* and wait for the reply; ``NO_TIMEOUT`` waits as long as the agent takes."""
         body = {
             "text": msg.text, "attachments": list(msg.attachments), "instructions": msg.instructions,
-            "mode": mode, "tools": tools, "response_format": response_format_of(response_format),
+            "mode": mode, "enabled_tools": enabled_tools, "response_format": response_format_of(response_format),
             "timeout": 0 if timeout == NO_TIMEOUT else timeout,
         }
         # The agent service keeps the time; waiting here only ends a request it has lost.

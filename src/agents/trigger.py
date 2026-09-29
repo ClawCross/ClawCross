@@ -58,7 +58,7 @@ def create_trigger_router(*, internal_token: str, store: AgentStore, gateway: An
         msg = AgentMessage(text=req.text, attachments=[a.model_dump() for a in req.attachments or []],
                            sender=req.inbox_source_session or "system", summary=req.inbox_summary)
         if req.wait_reply:
-            reply = await gateway.ask(agent, msg, mode=req.session_mode, tools=req.enabled_tools,
+            reply = await gateway.ask(agent, msg, mode=req.session_mode, enabled_tools=req.enabled_tools,
                                       response_format=req.response_format)
             return {"status": "completed", "reply": reply.content if reply.ok else f"❌ {reply.error}"}
         if req.inbox_source_session:
