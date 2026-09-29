@@ -37,15 +37,18 @@ class MemberAdd(BaseModel):
     agent: str
     role: str = ""
     is_lead: bool = False
+    tag: str = ""            # the team persona it wears (its text is the agent's own copy)
 
 
 class MemberPatch(BaseModel):
     role: str | None = None
     is_lead: bool | None = None
+    tag: str | None = None
 
 
 def member_card(m: Member) -> dict[str, Any]:
-    return {"agent": agent_card(m.agent), "role": m.role, "is_lead": m.is_lead}
+    """``tag``: the team persona the member was made with, if any."""
+    return {"agent": agent_card(m.agent), "role": m.role, "is_lead": m.is_lead, "tag": m.extra.get("tag", "")}
 
 
 def team_card(teams: TeamStore, owner: str, team: str) -> dict[str, Any]:
@@ -100,7 +103,8 @@ def create_teams_router(
     async def add_member(team: str, body: MemberAdd, authorization: str | None = Header(None)):
         user = user_of(authorization)
         require(user, team)
-        member = teams.add(user, team, agent_id(user, body.agent), role=body.role, is_lead=body.is_lead)
+        member = teams.add(user, team, agent_id(user, body.agent), role=body.role, is_lead=body.is_lead,
+                           extra={"tag": body.tag} if body.tag else None)
         return member_card(member)
 
     @router.patch("/v1/teams/{team}/members/{ref:path}")
@@ -108,7 +112,7 @@ def create_teams_router(
         user = user_of(authorization)
         require(user, team)
         try:
-            member = teams.update(user, team, agent_id(user, ref), role=body.role, is_lead=body.is_lead)
+            member = teams.update(user, team, agent_id(user, ref), role=body.role, is_lead=body.is_lead, tag=body.tag)
         except LookupError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
         return member_card(member)

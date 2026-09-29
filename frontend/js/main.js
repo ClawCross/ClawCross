@@ -2002,7 +2002,6 @@ function renderAgentCenterGrid() {
         const index = Math.max(1, agentCenterAgents.indexOf(agent) + 1);
         const webot = agent.platform === 'webot';
         const contextPercent = Math.max(0, Math.min(100, Number(agent.status?.context?.percent || 0)));
-        const persona = agent.settings?.persona || '';
         return `
             <article class="agent-center-card ${agent.agent_id === agentCenterSelectedKey ? 'is-selected' : ''}"
                 tabindex="0" role="button"
@@ -2023,7 +2022,6 @@ function renderAgentCenterGrid() {
                     </div>
                     <div class="agent-center-badges">
                         <span class="agent-center-badge">${agentCenterEscape(agent.platform)}</span>
-                        ${persona ? `<span class="agent-center-badge agent-center-tag" title="Persona">#${agentCenterEscape(persona)}</span>` : ''}
                         ${teams.slice(0, 1).map(item => `<span class="agent-center-badge">${agentCenterEscape(item)}</span>`).join('')}
                     </div>
                     <dl class="agent-center-meta">
@@ -2070,12 +2068,11 @@ function renderAgentCenterDetail() {
     const index = Math.max(1, agentCenterAgents.indexOf(agent) + 1);
     const context = agent.status?.context || {};
     const contextPercent = Math.max(0, Math.min(100, Number(context.percent || 0)));
-    const toolsSetting = agent.settings?.tools;
+    const toolsSetting = agent.settings?.tools;  // the agent's own tools; null: all of them
     const unrestricted = toolsSetting == null;
-    const noTools = toolsSetting === 'none';
-    const enabledTools = unrestricted
-        ? new Set(allTools.map(tool => tool.name))
-        : new Set(noTools ? [] : Object.keys(toolsSetting || {}).filter(name => toolsSetting[name]));
+    const noTools = Array.isArray(toolsSetting) && toolsSetting.length === 0;
+    const enabledTools = new Set(unrestricted ? allTools.map(tool => tool.name) : toolsSetting);
+    const personaText = agent.settings?.persona || '';
     const toolsMarkup = webot
         ? (allTools.length ? allTools.map(tool => `
             <label class="agent-dex-tool" title="${agentCenterEscape(tool.description || '')}">
@@ -2099,7 +2096,7 @@ function renderAgentCenterDetail() {
                 <div class="agent-dex-section-title">${agentCenterEscape(t('agent_center_profile'))}</div>
                 <dl class="agent-dex-facts">
                     <dt>Platform</dt><dd>${agentCenterEscape(agent.platform)}</dd>
-                    <dt>Persona tag</dt><dd>${agentCenterEscape(agent.settings?.persona || '-')}</dd>
+                    <dt>Persona</dt><dd>${agentCenterEscape(personaText ? (personaText.length > 80 ? personaText.slice(0, 80) + '…' : personaText) : '-')}</dd>
                     <dt>Team</dt><dd>${agentCenterEscape(teams.length ? teams.join(', ') : t('agent_center_public'))}</dd>
                     <dt>${agentCenterEscape(t('agent_center_connection'))}</dt><dd>${agentCenterEscape(state)}</dd>
                 </dl>
@@ -2116,7 +2113,7 @@ function renderAgentCenterDetail() {
                 <div class="agent-dex-section-title">${agentCenterEscape(t('agent_center_tools'))}</div>
                 <div class="agent-dex-fields">
                     <label>Name<input id="agent-dex-name" value="${agentCenterEscape(agent.name)}" maxlength="120"></label>
-                    <label>Persona tag<input id="agent-dex-tag" value="${agentCenterEscape(agent.settings?.persona || '')}" maxlength="120"></label>
+                    <label>Persona<textarea id="agent-dex-persona" rows="5">${agentCenterEscape(personaText)}</textarea></label>
                 </div>
                 ${webot ? `
                 <div class="agent-dex-context-row" style="margin:12px 0 7px;"><span>${agentCenterEscape(unrestricted ? t('agent_center_unrestricted_tools') : (noTools ? t('agent_center_no_tools') : `${enabledTools.size}/${allTools.length}`))}</span><span><button class="agent-center-btn" type="button" onclick="document.querySelectorAll('.agent-dex-tool-checkbox').forEach(el=>el.checked=true)">All</button> <button class="agent-center-btn" type="button" onclick="document.querySelectorAll('.agent-dex-tool-checkbox').forEach(el=>el.checked=false)">None</button></span></div>
@@ -2176,11 +2173,10 @@ async function ensureAgent(fields) {
 async function saveAgentCenterSettings(button) {
     const agent = agentCenterSelectedAgent();
     if (!agent) return;
-    const settings = {persona: document.getElementById('agent-dex-tag')?.value?.trim() || ''};
+    const settings = {persona: document.getElementById('agent-dex-persona')?.value?.trim() || ''};
     if (agent.platform === 'webot') {
         const checked = [...document.querySelectorAll('.agent-dex-tool-checkbox:checked')].map(el => el.value);
-        settings.tools = checked.length === 0 ? 'none'
-            : (checked.length < allTools.length ? Object.fromEntries(checked.map(name => [name, true])) : null);
+        settings.tools = checked.length < allTools.length ? checked : null;
     }
     button.disabled = true;
     try {
@@ -2926,13 +2922,8 @@ async function openAgentMetaModal(mode, sessionId, existingMeta) {
     // ── Populate tools checkbox list ──
     const toolsContainer = document.getElementById('agent-meta-tools-container');
     // Determine which tools are currently enabled for this agent
-    const existingTools = (existingMeta && existingMeta.tools) || null;
-    let enabledToolNames = null; // null = all
-    if (existingTools && typeof existingTools === 'object' && !Array.isArray(existingTools)) {
-        enabledToolNames = new Set(Object.keys(existingTools).filter(k => existingTools[k] === true));
-    } else if (typeof existingTools === 'string' && existingTools === 'none') {
-        enabledToolNames = new Set();
-    }
+    const existingTools = existingMeta ? existingMeta.tools : null;
+    const enabledToolNames = Array.isArray(existingTools) ? new Set(existingTools) : null; // null = all
     // allTools comes from loadTools() global
     if (allTools.length > 0) {
         toolsContainer.innerHTML = `
@@ -2951,22 +2942,30 @@ async function openAgentMetaModal(mode, sessionId, existingMeta) {
         toolsContainer.innerHTML = '<span style="color:#9ca3af;font-size:12px;">无可用工具（请先登录加载工具列表）</span>';
     }
 
-    // Populate tag select options from experts list
-    const tagSelect = document.getElementById('agent-meta-tag');
-    const currentTag = (existingMeta && existingMeta.tag) || '';
+    // The agent's persona is its own text; a library persona is copied into it.
+    document.getElementById('agent-meta-persona').value = (existingMeta && existingMeta.persona) || '';
+    const librarySelect = document.getElementById('agent-meta-persona-library');
     try {
-        const r = await fetch('/proxy_visual/experts');
-        const experts = await r.json();
-        const tags = [...new Set(experts.map(e => e.tag).filter(Boolean))];
-        tagSelect.innerHTML = '<option value="">(None)</option>' +
-            tags.map(t => `<option value="${t}">${t}</option>`).join('');
+        const params = new URLSearchParams({ full: '1' });
+        if (_currentAgentTeam) params.set('team', _currentAgentTeam);
+        const r = await fetch('/proxy_visual/experts?' + params);
+        _agentMetaPersonas = (await r.json()).filter(e => e.tag && e.persona);
+        librarySelect.innerHTML = '<option value="">—</option>' + _agentMetaPersonas.map((e, i) =>
+            `<option value="${i}">${escapeHtml(e.name || e.tag)} (${escapeHtml(e.tag)})</option>`).join('');
     } catch (e) {
-        console.warn('Failed to load expert tags', e);
+        console.warn('Failed to load the persona library', e);
     }
-    tagSelect.value = currentTag;
+    librarySelect.value = '';
     modal.style.display = 'flex';
     document.getElementById('agent-meta-name').focus();
     return new Promise(resolve => { _agentMetaCallback = resolve; });
+}
+
+let _agentMetaPersonas = [];
+
+function _agentMetaCopyPersona(index) {
+    const picked = _agentMetaPersonas[Number(index)];
+    if (picked) document.getElementById('agent-meta-persona').value = picked.persona;
 }
 
 function _agentMetaToolsSelectAll(selectAll) {
@@ -2980,32 +2979,15 @@ function closeAgentMetaModal() {
 
 function _collectAgentMeta() {
     const name = document.getElementById('agent-meta-name').value.trim() || null;
-    const tag = document.getElementById('agent-meta-tag').value.trim() || null;
+    const persona = document.getElementById('agent-meta-persona').value.trim();
 
-    // Collect tools from checkboxes
-    const checkboxes = document.querySelectorAll('.agent-meta-tool-cb');
-    let tools = null;
-    if (checkboxes.length > 0) {
-        const checkedNames = [];
-        checkboxes.forEach(cb => { if (cb.checked) checkedNames.push(cb.value); });
-        if (checkedNames.length === allTools.length) {
-            // All selected → don't set tools (= no restriction)
-            tools = null;
-        } else {
-            if (checkedNames.length === 0) {
-                tools = 'none';
-            } else {
-                const obj = {};
-                checkedNames.forEach(t => obj[t] = true);
-                tools = obj;
-            }
-        }
-    }
+    // The agent's own tools: all of them (null), or the ones checked.
+    const checkboxes = [...document.querySelectorAll('.agent-meta-tool-cb')];
+    const checkedNames = checkboxes.filter(cb => cb.checked).map(cb => cb.value);
+    const tools = checkboxes.length && checkedNames.length < allTools.length ? checkedNames : null;
 
-    const meta = {};
+    const meta = { persona, tools };
     if (name !== null) meta.name = name;
-    if (tools !== null) meta.tools = tools;
-    if (tag !== null) meta.tag = tag;
     return meta;
 }
 
@@ -3069,7 +3051,7 @@ async function _loadAgentMetaMap(team = '') {
         for (const a of webot.filter(inScope)) {
             const member = membership.get(a.agent_id);
             map[a.agent_id] = {
-                agent_id: a.agent_id, name: member?.role || a.name, tag: a.settings.persona || '',
+                agent_id: a.agent_id, name: member?.role || a.name, persona: a.settings.persona || '',
                 tools: a.settings.tools, is_primary: Boolean(member?.is_lead), updated_at_ts: a.updated_at,
             };
         }
@@ -3089,7 +3071,7 @@ async function _sessionAgent(sessionId) {
 // Name (or rename) the agent of a session; in a team view it is also its name in the team.
 async function saveSessionAgent(sessionId, meta, team = _currentAgentTeam) {
     const settings = {};
-    if (meta.tag !== undefined) settings.persona = meta.tag || '';
+    if (meta.persona !== undefined) settings.persona = meta.persona || '';
     if (meta.tools !== undefined) settings.tools = meta.tools;
     let agent = await _sessionAgent(sessionId);
     if (agent) {
@@ -3203,10 +3185,6 @@ async function editAgentMeta(sessionId) {
         const agentResult = await _loadAgentMetaMap(_currentAgentTeam);
         existingMeta = agentResult.map[sessionId] || {};
     } catch (e) { /* ignore */ }
-    // If tools is object, convert back to comma string for display
-    if (existingMeta.tools && typeof existingMeta.tools === 'object') {
-        existingMeta.tools = Object.keys(existingMeta.tools).join(',');
-    }
     await openAgentMetaModal('edit', sessionId, existingMeta);
 }
 
@@ -12433,7 +12411,7 @@ async function loadTeamMembers() {
             const badgeClass = agent.platform === 'webot' ? 'bg-blue-50 text-blue-600'
                 : (openclaw ? 'bg-purple-50 text-purple-600' : 'bg-green-50 text-green-600');
             const safeRole = escapeHtml(m.role || agent.name);
-            const persona = escapeHtml(agent.settings?.persona || '-');
+            const persona = escapeHtml(m.tag || '-');  // the team persona it wears
             const lead = m.is_lead;
             const leadBtn = `<button onclick="toggleTeamMemberPrimary('${id}', ${lead ? 'false' : 'true'})" class="${lead ? 'text-amber-700 bg-amber-50 border border-amber-300 hover:bg-amber-100' : 'text-gray-500 hover:text-amber-600 hover:bg-amber-50'} text-xs px-2 py-1 rounded" title="${lead ? '点击取消团队主 agent' : '设为团队主 agent（团队群里代表团队发言）'}">${lead ? '取消主' : '设为主'}</button>`;
             const configBtn = openclaw
@@ -13892,9 +13870,20 @@ function switchAddMemberTab(tab) {
 }
 
 // A new agent of any platform, joining the open team in *role*.
-async function createTeamAgent(fields, role) {
-    const agent = await agentApi('POST', '/v1/agents', {...fields, team: currentGroupId});
-    await agentApi('POST', `/v1/teams/${encodeURIComponent(currentGroupId)}/members`, {agent: agent.agent_id, role: role || agent.name});
+// A library persona's text (the team's own personas first), to copy into an agent.
+async function personaTextFor(tag, team = '') {
+    if (!tag) return '';
+    const params = new URLSearchParams({ full: '1' });
+    if (team) params.set('team', team);
+    const experts = await (await fetch('/proxy_visual/experts?' + params)).json();
+    return (experts.find(e => e.tag === tag) || {}).persona || '';
+}
+
+// A new agent in this team, wearing the team persona *tag*: its text is copied into the agent.
+async function createTeamAgent(fields, role, tag = '') {
+    const persona = await personaTextFor(tag, currentGroupId);
+    const agent = await agentApi('POST', '/v1/agents', {...fields, persona, team: currentGroupId});
+    await agentApi('POST', `/v1/teams/${encodeURIComponent(currentGroupId)}/members`, {agent: agent.agent_id, role: role || agent.name, tag});
     return agent;
 }
 
@@ -13914,20 +13903,10 @@ async function addOasisMember(event) {
         return;
     }
 
-    // Collect tools from checkboxes
-    const toolCbs = document.querySelectorAll('.add-oasis-tool-cb');
-    let tools = null;
-    if (toolCbs.length > 0) {
-        const checked = [];
-        toolCbs.forEach(cb => { if (cb.checked) checked.push(cb.value); });
-        if (checked.length < allTools.length) {
-            // Not all selected → build whitelist object
-            const obj = {};
-            checked.forEach(t => obj[t] = true);
-            tools = obj;
-        }
-        // If all selected → tools stays null (no restriction)
-    }
+    // The agent's own tools: all of them (null), or the ones checked.
+    const toolCbs = [...document.querySelectorAll('.add-oasis-tool-cb')];
+    const checked = toolCbs.filter(cb => cb.checked).map(cb => cb.value);
+    const tools = toolCbs.length && checked.length < allTools.length ? checked : null;
     
     // Disable button and show loading
     if (btn) {
@@ -13937,7 +13916,7 @@ async function addOasisMember(event) {
     }
     
     try {
-        await createTeamAgent({ name, platform: 'webot', persona: tag || '', tools }, name);
+        await createTeamAgent({ name, platform: 'webot', tools }, name, tag);
 
         if (typeof orchToast === 'function') {
             orchToast('成员添加成功');
@@ -14004,7 +13983,7 @@ async function addExternalMember(event) {
     try {
         // OpenClaw: which of its agents; any other runtime: the new agent's number (its session)
         const runtimeField = platform === 'openclaw' ? { global_name: globalName } : { agent_id: globalName };
-        await createTeamAgent({ name, platform, persona: tag, ...runtimeField }, name);
+        await createTeamAgent({ name, platform, ...runtimeField }, name, tag);
 
         if (typeof orchToast === 'function') {
             orchToast('成员添加成功');
@@ -14350,7 +14329,7 @@ async function showAgentConfigModal(agentId) {
     const settings = agent.settings || {};
     const webot = agent.platform === 'webot';
     const name = member.role || agent.name;
-    const tag = settings.persona || '';
+    const tag = member.tag || '';  // the team persona it wears
     const { api_url, model, headers } = settings;
     const platform = agent.platform;
     currentConfigAgent = { agentId, name, tag, platform };
@@ -14494,14 +14473,15 @@ async function showAgentConfigModal(agentId) {
         }
         
         try {
-            const settingsPatch = { persona: newTag };
+            const settingsPatch = {};
+            if (newTag !== tag) settingsPatch.persona = await personaTextFor(newTag, currentGroupId);
             if (!webot) {
                 Object.assign(settingsPatch, { api_url: meta.api_url, model: meta.model, headers: meta.headers });
                 if (meta.api_key) settingsPatch.api_key = meta.api_key;  // empty keeps the saved key
             }
             await agentApi('PATCH', `/v1/agents/${encodeURIComponent(agentId)}`, { settings: settingsPatch });
-            if (newName !== name) {
-                await agentApi('PATCH', `/v1/teams/${encodeURIComponent(currentGroupId)}/members/${encodeURIComponent(agentId)}`, { role: newName });
+            if (newName !== name || newTag !== tag) {
+                await agentApi('PATCH', `/v1/teams/${encodeURIComponent(currentGroupId)}/members/${encodeURIComponent(agentId)}`, { role: newName, tag: newTag });
             }
 
             alert('保存成功！');
@@ -15545,8 +15525,8 @@ async function addOpenClawMember() {
 
             // 3. The OpenClaw agent becomes a ClawCross agent in this team.
             try {
-                await createTeamAgent({ name: shortName, platform: 'openclaw', persona: selectedTag || selectedExpertTag,
-                                        global_name: globalName }, shortName);
+                await createTeamAgent({ name: shortName, platform: 'openclaw', global_name: globalName }, shortName,
+                                      selectedTag || selectedExpertTag);
             } catch(e) { console.warn('Failed to add the OpenClaw agent to the team:', e); }
             
             if (typeof orchToast === 'function') {
@@ -15641,14 +15621,13 @@ async function _loadImportAgentList() {
             return;
         }
         listEl.innerHTML = candidates.map(a => {
-            const tag = a.settings?.persona || '';
-            return `<div class="import-item" data-agent="${escapeHtml(a.agent_id)}" data-name="${escapeHtml(a.name)}" data-tag="${escapeHtml(tag)}"
+            return `<div class="import-item" data-agent="${escapeHtml(a.agent_id)}" data-name="${escapeHtml(a.name)}"
                          onclick="_selectImportAgent(this)"
                          style="padding:8px 10px;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:8px;transition:background .15s;border:2px solid transparent;">
                 <div style="width:32px;height:32px;border-radius:50%;background:#eff6ff;display:flex;align-items:center;justify-content:center;font-size:14px;">${a.platform === 'webot' ? '🤖' : '◈'}</div>
                 <div style="flex:1;min-width:0;">
                     <div style="font-size:12px;font-weight:600;color:#374151;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(a.name)}</div>
-                    <div style="font-size:10px;color:#9ca3af;font-family:monospace;">${escapeHtml(a.agent_id)} \u00b7 ${escapeHtml(a.platform)}${tag ? ' \u00b7 ' + escapeHtml(tag) : ''}</div>
+                    <div style="font-size:10px;color:#9ca3af;font-family:monospace;">${escapeHtml(a.agent_id)} \u00b7 ${escapeHtml(a.platform)}</div>
                 </div>
             </div>`;
         }).join('');
@@ -15664,7 +15643,7 @@ function _selectImportAgent(el) {
     });
     el.style.borderColor = '#2563eb';
     el.style.background = '#eff6ff';
-    _importSelectedAgent = { agent: el.dataset.agent, name: el.dataset.name, tag: el.dataset.tag };
+    _importSelectedAgent = { agent: el.dataset.agent, name: el.dataset.name };
     const btn = document.getElementById('import-agent-join-btn');
     if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
 }
@@ -15804,9 +15783,11 @@ async function _doImportOpenClaw() {
     const shortName = (teamNameInput && teamNameInput.value.trim()) || ocGlobalName;
 
     try {
+        const persona = await personaTextFor(_importSelectedOCTag, currentGroupId);
         const agent = await ensureAgent({ name: shortName, platform: 'openclaw', global_name: ocGlobalName,
-                                          persona: _importSelectedOCTag, team: currentGroupId });
-        await agentApi('POST', `/v1/teams/${encodeURIComponent(currentGroupId)}/members`, { agent: agent.agent_id, role: shortName });
+                                          persona, team: currentGroupId });
+        await agentApi('POST', `/v1/teams/${encodeURIComponent(currentGroupId)}/members`,
+                       { agent: agent.agent_id, role: shortName, tag: _importSelectedOCTag || '' });
         alert('🦞 OpenClaw Agent 已导入团队');
         document.getElementById('import-oc-overlay').remove();
         loadTeamMembers();

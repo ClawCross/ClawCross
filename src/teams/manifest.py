@@ -5,14 +5,18 @@ This is the only place that reads or writes them. They exist in a team package
 their entries into agents and memberships, and the files are then removed from
 the team folder. Exporting writes them again in the same shape.
 
-    internal entry: {"name", "tag", "session"?, "is_primary"?, …}  — ``session`` is the agent's id
-    external entry: {"name", "tag", "platform", "global_name", "meta": {api_url, api_key, model, headers, …},
-                     "is_primary"?}  — ``global_name`` is the agent's id, or for OpenClaw which
+    internal entry: {"name", "tag", "persona"?, "session"?, "is_primary"?, …}  — ``session`` is the agent's id
+    external entry: {"name", "tag", "persona"?, "platform", "global_name", "meta": {api_url, api_key, model,
+                     headers, …}, "is_primary"?}  — ``global_name`` is the agent's id, or for OpenClaw which
                      OpenClaw agent; an OpenClaw entry may also carry that agent's snapshot
                      ("config", "workspace_files"), kept with the membership and exported as is
 
 An entry whose name is already a member of the team is that member; one that
 names an agent of this owner is that agent; any other becomes a new agent.
+
+A new agent gets its own copy of its persona: the entry's ``persona`` text, or
+the team's persona ``tag`` looked up in the persona library (the team's own
+first). The tag stays with the membership, and both are exported again.
 """
 
 from __future__ import annotations
@@ -27,8 +31,8 @@ from teams.store import Member, TeamStore
 INTERNAL_FILE = "internal_agents.json"
 EXTERNAL_FILE = "external_agents.json"
 
-_INTERNAL_KEYS = {"name", "tag", "session", "session_id", "is_primary"}
-_EXTERNAL_KEYS = {"name", "tag", "platform", "global_name", "meta", "is_primary"}
+_INTERNAL_KEYS = {"name", "persona", "session", "session_id", "is_primary"}
+_EXTERNAL_KEYS = {"name", "persona", "platform", "global_name", "meta", "is_primary"}
 _EXTERNAL_CONFIG = ("api_url", "api_key", "model", "headers")
 
 
@@ -56,12 +60,25 @@ def _member(teams: TeamStore, owner: str, team: str, entry: dict) -> Agent | Non
         return None
 
 
+def persona_of(owner: str, team: str, entry: dict) -> str:
+    """The persona text an entry's agent gets: its own, or its tag's in the persona library."""
+    if str(entry.get("persona") or "").strip():
+        return str(entry["persona"]).strip()
+    tag = str(entry.get("tag") or "").strip()
+    if not tag:
+        return ""
+    from oasis.experts import get_all_experts
+
+    found = next((e for e in get_all_experts(owner, team=team) if str(e.get("tag") or "").strip() == tag), None)
+    return str((found or {}).get("persona") or "").strip()
+
+
 def agent_for_internal_entry(teams: TeamStore, owner: str, team: str, entry: dict) -> Agent:
     session = str(entry.get("session") or entry.get("session_id") or "").strip()
     found = _member(teams, owner, team, entry) or (teams.agents.get(owner, session) if session else None)
     if found is not None:
         return found
-    config: dict[str, Any] = {"persona": str(entry.get("tag") or "").strip(), "team": team}
+    config: dict[str, Any] = {"persona": persona_of(owner, team, entry), "team": team}
     if entry.get("tools") is not None:
         config["tools"] = entry["tools"]
     return teams.agents.create(owner, driver=WEBOT, config=config, name=str(entry["name"]).strip(),
@@ -76,7 +93,7 @@ def agent_for_external_entry(teams: TeamStore, owner: str, team: str, entry: dic
     meta = dict(meta) if isinstance(meta, dict) else {}
     config: dict[str, Any] = {
         "platform": platform,
-        "persona": str(entry.get("tag") or "").strip(),
+        "persona": persona_of(owner, team, entry),
         "team": team,
         **{key: meta.pop(key) for key in _EXTERNAL_CONFIG if key in meta},
         "meta": meta,
@@ -130,7 +147,9 @@ def export_entries(teams: TeamStore, owner: str, team: str, *, portable: bool) -
     for m in teams.members(owner, team):
         config = m.agent.config
         if m.agent.driver == WEBOT:
-            entry: dict[str, Any] = {"name": m.role, "tag": config.get("persona", ""), **m.extra}
+            entry: dict[str, Any] = {"name": m.role, **m.extra}
+            if config.get("persona"):
+                entry["persona"] = config["persona"]
             if config.get("tools") is not None:
                 entry["tools"] = config["tools"]
             if m.is_lead:
@@ -145,7 +164,9 @@ def export_entries(teams: TeamStore, owner: str, team: str, *, portable: bool) -
                 meta[key] = config[key]
         if portable:
             meta.pop("api_key", None)
-        entry = {"name": m.role, "tag": config.get("persona", ""), "platform": config.get("platform", ""), **m.extra}
+        entry = {"name": m.role, "platform": config.get("platform", ""), **m.extra}
+        if config.get("persona"):
+            entry["persona"] = config["persona"]
         if not portable:
             entry["global_name"] = config.get("global_name", "") if m.agent.driver == OPENCLAW else m.agent.agent_id
         entry["meta"] = meta

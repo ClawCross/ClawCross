@@ -48,9 +48,9 @@ class AgentCreate(BaseModel):
     agent_id: str = ""       # its session number; a new ag_… when not given
     name: str = ""
     platform: str = WEBOT
-    persona: str = ""
+    persona: str = ""        # its persona: the text itself (a library persona is copied in)
     team: str = ""
-    tools: Any = None
+    tools: list[str] | None = None  # the tools it has; none: all of them
     global_name: str = ""    # openclaw: which OpenClaw agent
     api_url: str = ""
     api_key: str = ""

@@ -1,5 +1,4 @@
 import os
-import re
 import json
 import copy
 import asyncio
@@ -980,7 +979,8 @@ class TeamAgent:
         return build_user_skills_listing(user_id, team=team)
 
     def _find_internal_session_meta(self, user_id: str, session_id: str) -> dict | None:
-        """``{"team", "name", "tag"}`` of the agent this session is."""
+        """``{"team", "name", "persona", "tools"}`` of the agent this session is: its
+        persona text, and the tools it has (None: all of them)."""
         if not user_id or not session_id:
             return None
         from agents.store import get_store
@@ -988,118 +988,14 @@ class TeamAgent:
         agent = get_store().get(user_id, session_id)
         if agent is None:
             return None
-        return {"team": agent.config.get("team", ""), "name": agent.name, "tag": agent.config.get("persona", "")}
-
-    @staticmethod
-    def _load_json_list(path: str) -> list[dict]:
-        """Best-effort JSON list loader used by persona resolution."""
-        if not os.path.isfile(path):
-            return []
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            return data if isinstance(data, list) else []
-        except (OSError, json.JSONDecodeError):
-            return []
-
-    @staticmethod
-    def _load_agency_prompt_body(prompt_file: str) -> str:
-        """Load rich agency persona prompt body without importing oasis.experts."""
-        if not prompt_file:
-            return ""
-        agency_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-            "data",
-            "prompts",
-            "agency_agents",
-        )
-        path = os.path.join(agency_dir, prompt_file)
-        if not os.path.isfile(path):
-            return ""
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                content = f.read()
-        except OSError:
-            return ""
-        frontmatter = re.match(r'^---\s*\n.*?\n---\s*\n', content, re.DOTALL)
-        body = content[frontmatter.end():] if frontmatter else content
-        return body.strip()
-
-    def _find_internal_session_expert_config(self, user_id: str, team: str, tag: str) -> dict | None:
-        """Resolve tag -> expert config locally, avoiding cross-package imports.
-
-        Lookup order mirrors the important runtime sources:
-        team experts -> public experts -> agency experts -> user custom experts.
-        """
-        if not user_id or not tag:
-            return None
-
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        data_dir = os.path.join(project_root, "data")
-        user_files_dir = self._prompts.get("_user_files_dir", "")
-
-        candidates: list[dict] = []
-
-        if team and user_files_dir:
-            candidates.extend(
-                self._load_json_list(
-                    os.path.join(user_files_dir, user_id, "teams", team, "oasis_experts.json")
-                )
-            )
-
-        candidates.extend(
-            self._load_json_list(os.path.join(data_dir, "prompts", "oasis_experts.json"))
-        )
-
-        for item in self._load_json_list(os.path.join(data_dir, "prompts", "agency_experts.json")):
-            if not isinstance(item, dict):
-                continue
-            item = dict(item)
-            if not item.get("persona"):
-                item["persona"] = self._load_agency_prompt_body(item.get("prompt_file", ""))
-            candidates.append(item)
-
-        safe_user_id = user_id.replace("/", "_").replace("\\", "_").replace("..", "_")
-        candidates.extend(
-            self._load_json_list(os.path.join(data_dir, "oasis_user_experts", f"{safe_user_id}.json"))
-        )
-
-        for item in candidates:
-            if not isinstance(item, dict):
-                continue
-            if (item.get("tag") or "").strip() != tag:
-                continue
-            return item
-        return None
+        return {"team": agent.config.get("team", ""), "name": agent.name,
+                "persona": agent.config.get("persona", ""), "tools": agent.config.get("tools")}
 
     def _get_internal_session_persona_prompt(self, user_id: str, session_id: str) -> str:
-        """Build a stable identity prompt for internal sessions with a stored tag.
-
-        This lifts tag -> persona resolution into TeamAgent runtime so group chat
-        and OASIS regular session invocations share the same session identity.
-        """
-        meta = self._find_internal_session_meta(user_id, session_id)
-        if not meta:
-            return ""
-
-        tag = meta.get("tag", "")
-        if not tag:
-            return ""
-
-        expert_cfg = self._find_internal_session_expert_config(
-            user_id,
-            meta.get("team", ""),
-            tag,
-        )
-        if not expert_cfg:
-            return ""
-
-        persona = (expert_cfg.get("persona") or "").strip()
-        if not persona:
-            return ""
-
-        display_name = (meta.get("name") or expert_cfg.get("name") or tag or session_id).strip()
-        return frame_session_identity(display_name, tag, persona)
+        """The identity of the agent this session is, from its own persona text."""
+        meta = self._find_internal_session_meta(user_id, session_id) or {}
+        persona = str(meta.get("persona") or "").strip()
+        return frame_session_identity(meta.get("name") or session_id, "", persona) if persona else ""
 
     def _build_fixed_chat_rules(self) -> str:
         """Group and private chat rules, shared with every other agent; stable across turns."""
@@ -1354,15 +1250,19 @@ class TeamAgent:
                     },
                 )
 
-        # Dynamic tool binding based on enabled_tools + external_tools
-        all_tools = self._mcp_tools
+        # The agent's own tools are what is bound; enabled_tools and the mode
+        # narrow what may run this turn.
+        own_tools = (self._find_internal_session_meta(user_id, session_id or "") or {}).get("tools")
+        all_tools = self._mcp_tools if own_tools is None else [t for t in self._mcp_tools if t.name in set(own_tools)]
         enabled_names = state.get("enabled_tools")
         effective_enabled_names = None if enabled_names is None else canonical_tool_names(enabled_names)
         if effective_enabled_names is None and subagent_profile and subagent_profile.allowed_tools is not None:
             effective_enabled_names = list(subagent_profile.allowed_tools)
         if effective_enabled_names is None:
             effective_enabled_names = [tool.name for tool in all_tools]
-        effective_enabled_names = filter_tools_for_mode(list(effective_enabled_names), runtime_mode_name)
+        own_names = {tool.name for tool in all_tools}
+        effective_enabled_names = filter_tools_for_mode(
+            [name for name in effective_enabled_names if name in own_names], runtime_mode_name)
 
         filtered_tools = [t for t in all_tools if t.name in set(effective_enabled_names)]
 

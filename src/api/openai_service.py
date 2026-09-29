@@ -3,7 +3,6 @@ OpenAI 兼容 API 服务模块
 
 提供 OpenAI Chat Completions API 的实现：
 - 处理聊天补全请求（流式/非流式）
-- 管理 agent 工具白名单
 - 支持工具调用和外部工具集成
 """
 
@@ -29,25 +28,6 @@ logger = get_logger("openai_service")
 # 超出后不崩溃，由下方 AgentRecursionError 分支优雅返回提示。
 _GRAPH_RECURSION_LIMIT = int(os.getenv("GRAPH_RECURSION_LIMIT", "500"))
 _DEFAULT_WEBOT_CHAT_MAX_TOKENS = resolve_default_chat_max_output_tokens()
-
-# --- Agent tool whitelist ---
-
-
-def _get_agent_tool_whitelist(user_id: str, session_id: str) -> set[str] | None:
-    """The tools a WeBot agent's session may use: None when unrestricted.
-
-    An agent's ``tools`` setting is ``"none"``, or ``{name: bool}`` for a whitelist.
-    """
-    from agents.store import get_store
-
-    agent = get_store().get(user_id, session_id) if session_id else None
-    tools = agent.config.get("tools") if agent else None
-    if tools == "none":
-        return set()
-    if isinstance(tools, dict):
-        return {name for name, enabled in tools.items() if enabled}
-    return None
-
 
 class OpenAIChatService:
     """OpenAI 兼容聊天服务，提供 Chat Completions API 实现。"""
@@ -759,17 +739,6 @@ class OpenAIChatService:
         external_tool_names = self.extract_external_tool_names(req.tools)
         input_messages = self._build_input_messages(req)
 
-        # --- Agent tool whitelist filtering ---
-        agent_whitelist = _get_agent_tool_whitelist(user_id, session_id)
-        effective_enabled = req.enabled_tools
-        if agent_whitelist is not None:
-            if effective_enabled is None:
-                # 调用方未限制 → 直接用白名单
-                effective_enabled = list(agent_whitelist)
-            else:
-                # 调用方有自己的限制 → 取交集
-                effective_enabled = [t for t in effective_enabled if t in agent_whitelist]
-
         model_name = req.model or "webot"
         effective_max_tokens = req.max_tokens
         if model_name == "webot" and (effective_max_tokens is None or effective_max_tokens <= 0):
@@ -778,7 +747,7 @@ class OpenAIChatService:
         user_input = {
             "messages": input_messages,
             "trigger_source": "user",
-            "enabled_tools": effective_enabled,
+            "enabled_tools": req.enabled_tools,
             "user_id": user_id,
             "session_id": session_id,
             "max_turns": req.max_turns,

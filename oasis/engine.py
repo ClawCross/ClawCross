@@ -232,7 +232,7 @@ class DiscussionEngine:
                 return None
             print(f"  [OASIS] 🏠 {key} → {agent.agent_id} ({agent.platform})")
             return Participant(user_id, agent.agent_id, name=self._unique_name(role or agent.name),
-                               tag=agent.persona, tools=tools, timeout=timeout)
+                               tools=tools, timeout=timeout)
 
         tag, _, instance = rest.rpartition(":")
         preset = self._lookup_by_tag(tag, user_id, self._team) or {}
