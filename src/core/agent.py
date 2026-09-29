@@ -90,7 +90,7 @@ from utils.context_limits import (
 )
 from webot.runtime_settings import get_runtime_settings, resolve_context_window, resolve_context_history_budget
 from webot.approval_review import authorize_action, policy_binding
-from webot.approval_actions import canonical_action_args
+from webot.approval_actions import bind_file_target, canonical_action_args
 from webot.runtime_store import record_tool_execution, issue_execution_permit
 from utils.cache_boundary import SystemPromptCacheManager
 from utils.logging_utils import get_logger
@@ -709,8 +709,10 @@ class UserAwareToolNode:
                 allowed_calls.remove(tc)
                 blocked_calls.append((tc, "审核后策略、模式或工作区发生变化，未执行，请重新审核。", False, approval_id))
                 record_tool_execution(approval_id, user_id, status="not_executed")
-            elif tool_name in {"run_command", "background_command_io"}:
-                issue_execution_permit(user_id, session_id, tool_name, canonical_action_args(tool_name, tool_args), binding)
+            elif tool_name in {"run_command", "background_command_io", "list_files", "read_file", "write_file", "delete_file"}:
+                normalized_session = session_id or "default"
+                issue_execution_permit(user_id, normalized_session, tool_name,
+                    bind_file_target(tool_name, tool_args, user_id, normalized_session), binding)
 
         result_messages = []
 

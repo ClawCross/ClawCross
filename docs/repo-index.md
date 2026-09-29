@@ -115,7 +115,7 @@ When the bug is "service does not start" or "route behaves unexpectedly", start 
 - `src/webot/compression.py`
 - `src/webot/runtime_settings.py`
 - `src/webot/approval_review.py`
-- `src/webot/command_sandbox.py` — optional SRT execution for Auto foreground commands
+- `src/webot/command_sandbox.py` — SRT command isolation and scoped escalation policies
 - `src/webot/approval_actions.py`
 - `src/webot/permission_context.py`
 - `src/webot/policy.py`

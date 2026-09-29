@@ -21,11 +21,11 @@
 | `context.summarizer_model` | 空；使用默认模型，兼容 `WEBOT_SUMMARIZER_MODEL` |
 | `context.preserve_instructions` | 空；额外保留要求，默认摘要已保留目标、限制、决定、证据、待办和恢复位置 |
 | `approval.mode` | `auto`；交流 chat、只读 readonly、全工具 bypass、代审 auto |
-| `approval.approvals_reviewer` | 旧 API 兼容字段；Auto 模式强制使用独立代审，Bypass 跳过确认 |
+| `approval.approvals_reviewer` | 旧 API 兼容字段；审核者由模式决定：Auto 用独立模型，其余非 Bypass 模式由用户审核 |
 | `approval.reviewer_model` | 空；使用默认模型 |
 | `approval.reviewer_policy` | 空；补充审核要求，不能解除明确禁止规则 |
 | `approval.reviewer_timeout_seconds` | 30；独立模型审核超时后回到人工审核 |
-| `approval.command_sandbox` | `off`；可选 `srt`，仅 Auto 模式的前台 `run_command` 在原生 SRT 沙盒内执行；旧 `container` 配置迁移到 `srt` |
+| `approval.command_sandbox` | 默认 `off`，命令在宿主机运行；设为 `srt` 时，所有允许执行命令的模式均使用 SRT，支持前台、后台、交互。旧 `container` 配置迁移到 `srt` |
 
 `trigger_tokens` 必须大于 `target_tokens`，且不能超过显式历史预算；摘要和保留指示必须在摘要输入预算内。部分设置更新合并到已有覆盖，非法更新不会修改文件。用户默认修改若与现有会话覆盖冲突，也会拒绝保存并显示原因。
 
@@ -42,11 +42,11 @@
 
 ## 审核流程
 
-工具策略的 allow / deny / manual 与审核者设置分开。工具策略请求和命令内部高风险检查使用同一个 broker。已允许的普通操作继续执行；需要批准时，默认等待用户。YOLO 保持现有的手动工具策略放行行为，高风险命令仍经过审核。
+工具策略的 allow / deny / manual 与审核者设置分开。Auto 只把审核者从用户换成独立模型；allow 直接执行，deny 始终拒绝，manual 才进入审核。沙盒提权和文件工具访问工作区外目标也要求单次批准。Bypass 跳过批准但保留明确禁止规则。未启用沙盒时，命令的既有高风险检查仍进入审核。
 
 审批记录查询保留原有的流程豁免，避免禁止策略让 Agent 无法查看拒绝原因。
 
-启用“替我审核”后，对每项请求调用独立的结构化审核模型，不提供行动工具。输入包含具体工具和全部实际参数、原始用户请求、相关工具证据及策略，输出 `approve` / `deny` / `ask_user`、风险、理由和用户请求来源 ID。
+Auto 模式遇到需要批准的请求时，调用独立的结构化审核模型，不提供行动工具。输入包含具体工具和全部实际参数、原始用户请求、相关工具证据及策略，输出 `approve` / `deny` / `ask_user`、风险、理由和用户请求来源 ID。
 
 - 原始用户输入由运行时标记来源并赋予稳定 ID。系统触发、助手消息、摘要、工具调用和输出作为不可信证据，不能充当用户授权。即使最近一百条都是工具活动，也另外恢复最近的原始用户请求。
 - 审核者批准必须引用有效的原始用户请求 ID。旧消息没有可信来源、授权原文过长、完整材料超过窗口、结构无效、超时或模型失败，都回到人工审核。
@@ -90,11 +90,13 @@ FastAPI 入口（现有用户认证或内部 token）：
 
 ## 四种运行模式与占用条
 
-交流模式在解码绑定和执行端都不提供工具。只读模式以明确的读取工具集合过滤，拒绝写文件、发送消息、启动子 Agent、执行命令及终端输入；后台输出仍可读。Bypass 跳过人工和模型确认，但保留显式 deny 和关键命令硬拦截。Auto 对写入及需要批准的操作调用独立代审；来源不足、模型失败或超时时仍转交人工。模式随用户默认/会话覆盖保存，桌面、手机和 CLI 使用同一组名称；旧 manual/plan/yolo 值兼容。
+交流模式在解码绑定和执行端都不提供工具。只读模式以明确的读取工具集合过滤，拒绝写文件、发送消息、启动子 Agent、执行命令及终端输入；后台输出仍可读。Bypass 跳过人工和模型确认，但保留显式 deny 和关键命令硬拦截。Auto 仅代审工具策略中标记 manual 的调用，以及沙盒提权、工作区外文件访问；来源不足、模型失败或超时时仍转交人工。模式随用户默认/会话覆盖保存，桌面、手机和 CLI 使用同一组名称；旧 manual/plan/yolo 值兼容。
 
 Auto 代审目前只接入内置 Agent；外部 ACP Agent 不具备这个审核通道，Auto 使用 approve-reads + deny，拒绝写操作，避免静默放行。
 
-Auto 模式可以启用 Anthropic Sandbox Runtime（SRT）：设置 `approval.command_sandbox=srt` 后，前台 shell 与 Python 命令使用当前机器的解释器、虚拟环境和依赖，在 SRT 的原生 OS 沙盒内执行。程序为每次命令生成私有临时策略文件：禁止网络和 Unix socket、限制写入到会话工作区和系统临时目录，并阻止读取常见凭证目录。SRT 默认允许读取其他宿主机文件，因此它不是只挂载工作区的容器；模型审核与原有明确禁止规则继续生效。文件工具、网络工具和其他 MCP 工具不在该命令沙盒内。后台和交互命令暂时拒绝。SRT 或依赖不可用时拒绝命令，不在宿主机回退。需要 SRT 0.0.77 或更新版本（旧版本配置加载可能降级）。Linux 需要 `bwrap`、`socat`、`rg`；macOS 需要 `rg`；Windows 支持为 alpha，需执行一次 `windows-install` 并确保虚拟环境对沙盒账户可读。旧 `container` 设置会安全迁移到 `srt`。
+命令沙盒与审核模式独立，默认关闭。`approval.command_sandbox=srt` 时，前台、后台、交互的 shell 与 Python 命令使用当前机器的解释器和虚拟环境，在原生 SRT 沙盒内执行。默认策略禁止网络及 Unix socket，只允许写会话工作区与临时目录，阻止读取用户主目录中工作区以外的数据及常见凭据。系统目录仍可读，以便程序加载依赖。后台 runner 持有策略文件至任务结束再清理；交互输入仍逐条经过工具策略和模式限制。沙盒拒绝后不会自动重跑可能已有副作用的命令；Agent 可用同一 `run_command` 明确申请 `read_path`（一个已存在的工作区外路径）、`write_path`（一个已存在的工作区外路径）、`network`（一个域名）或 `host`（本次命令跳出沙盒），附上失败原因。每次提权绑定完整命令和参数；Auto 交独立模型，其他非 Bypass 执行模式交用户，Bypass 依其定义跳过确认。明确 deny 与命令硬拦截不能提权覆盖。SRT 或依赖不可用时默认命令拒绝执行，不自动回退宿主机。需要 SRT 0.0.77 或更新版本；Linux 需要 `bwrap`、`socat`、`rg`，macOS 需要 `rg`，Windows 支持为 alpha。旧 `container` 设置会安全迁移到 `srt`。
+
+普通 `list_files` / `read_file` / `write_file` / `delete_file` 在解析符号链接后若目标超出当前会话工作区，也需要单次批准；文件工具既有白名单、黑名单及 manual 规则照常优先生效。内置 memory/Skill 条目不按文件路径触发这项审批。文件工具本身不在 SRT 命令沙盒中。
 
 本机使用临时安装的 SRT 0.0.77 和 `socat` 做过真实启动探针：策略被读取，但 Ubuntu 的 `kernel.apparmor_restrict_unprivileged_userns=1` 阻止了 SRT 的嵌套 user namespace，命令以 `apply-seccomp: write /proc/self/setgroups ... Permission denied` 退出，未执行脚本或写入工作区外。没有为了测试修改系统级 AppArmor/sysctl 配置。启用前需要管理员按 [SRT 官方 Linux 指引](https://github.com/anthropics/sandbox-runtime#platform-specific-dependencies) 配置允许的 user namespace；不能通过关闭沙盒回退来掩盖此错误。
 

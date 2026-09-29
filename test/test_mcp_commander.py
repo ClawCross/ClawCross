@@ -13,6 +13,7 @@ if str(SRC_DIR) not in sys.path:
 
 import mcp_servers.commander as commander
 from webot.workspace import SessionWorkspace
+from webot.runtime_settings import RuntimeSettings, ApprovalSettings
 
 
 class CommanderTests(unittest.TestCase):
@@ -24,6 +25,12 @@ class CommanderTests(unittest.TestCase):
         broker = patch("webot.approval_review.effective_session_mode", return_value="bypass")
         broker.start()
         self.addCleanup(broker.stop)
+        # Lifecycle tests exercise the host runner explicitly; the production
+        # default is SRT and has separate sandbox tests.
+        options = patch("webot.runtime_settings.get_runtime_settings", return_value=RuntimeSettings(
+            approval=ApprovalSettings(command_sandbox="off")))
+        options.start()
+        self.addCleanup(options.stop)
 
     async def _wait_for_not_running(self, job_id: str, *, username: str = "alice", session_id: str = "", attempts: int = 20) -> str:
         status = ""
@@ -211,6 +218,10 @@ class InteractiveCommandTests(unittest.IsolatedAsyncioTestCase):
             mode = patch(target, return_value="bypass")
             mode.start()
             self.addCleanup(mode.stop)
+        options = patch("webot.runtime_settings.get_runtime_settings", return_value=RuntimeSettings(
+            approval=ApprovalSettings(command_sandbox="off")))
+        options.start()
+        self.addCleanup(options.stop)
         self._tmp = tempfile.TemporaryDirectory()
         root = Path(self._tmp.name)
         workspace = SessionWorkspace(root=root, cwd=root, mode="shared", remote="")
