@@ -3079,7 +3079,7 @@ async function saveSessionAgent(sessionId, meta, team = _currentAgentTeam) {
     } else {
         agent = await agentApi('POST', '/v1/agents', {
             agent_id: sessionId, name: meta.name || sessionId, persona: settings.persona || '',
-            tools: settings.tools ?? null, team,
+            tools: settings.tools ?? null,
         });
     }
     if (team) {
@@ -13882,7 +13882,7 @@ async function personaTextFor(tag, team = '') {
 // A new agent in this team, wearing the team persona *tag*: its text is copied into the agent.
 async function createTeamAgent(fields, role, tag = '') {
     const persona = await personaTextFor(tag, currentGroupId);
-    const agent = await agentApi('POST', '/v1/agents', {...fields, persona, team: currentGroupId});
+    const agent = await agentApi('POST', '/v1/agents', {...fields, persona});
     await agentApi('POST', `/v1/teams/${encodeURIComponent(currentGroupId)}/members`, {agent: agent.agent_id, role: role || agent.name, tag});
     return agent;
 }
@@ -15785,7 +15785,7 @@ async function _doImportOpenClaw() {
     try {
         const persona = await personaTextFor(_importSelectedOCTag, currentGroupId);
         const agent = await ensureAgent({ name: shortName, platform: 'openclaw', global_name: ocGlobalName,
-                                          persona, team: currentGroupId });
+                                          persona });
         await agentApi('POST', `/v1/teams/${encodeURIComponent(currentGroupId)}/members`,
                        { agent: agent.agent_id, role: shortName, tag: _importSelectedOCTag || '' });
         alert('🦞 OpenClaw Agent 已导入团队');

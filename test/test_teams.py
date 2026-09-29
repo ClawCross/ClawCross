@@ -47,19 +47,6 @@ class TestMembership(TeamCase):
         self.assertEqual(self.teams.lead("alice", "dev").agent.agent_id, b.agent_id)
         self.assertEqual(self.teams.member("alice", "dev", "builder").agent.agent_id, a.agent_id)
 
-    def test_an_agent_serves_several_teams_and_outlives_them(self):
-        a = self.agents.create("alice", driver=WEBOT, name="Coder", agent_id="s1")
-        self.teams.create("alice", "ops")
-        for team in ("dev", "ops"):
-            self.teams.add("alice", team, a.agent_id)
-        self.assertEqual(self.teams.teams_of("alice", a.agent_id), ["dev", "ops"])
-
-        self.teams.rename("alice", "ops", "ops2")
-        self.assertEqual(self.teams.teams_of("alice", a.agent_id), ["dev", "ops2"])
-        self.teams.delete("alice", "dev")
-        self.assertFalse(self.teams.exists("alice", "dev"))
-        self.assertIsNotNone(self.agents.get("alice", a.agent_id))
-
     def test_deleting_an_agent_takes_it_out_of_its_teams(self):
         a = self.agents.create("alice", driver=WEBOT, name="Coder", agent_id="s1")
         self.teams.add("alice", "dev", a.agent_id)
@@ -76,6 +63,28 @@ class TestMembership(TeamCase):
         self.assertEqual(self.teams.address("alice", "dev.Builder").agent_id, "s1")
         self.assertIsNone(self.teams.address("alice", "dev.Nobody"))
         self.assertIsNone(self.teams.address("alice", "s1"))
+
+
+class TestOneTeamPerAgent(TeamCase):
+    """members.json and the agent's ``team`` always say the same thing."""
+
+    def team_of(self, agent_id):
+        return (self.agents.get("alice", agent_id).team, self.teams.teams_of("alice", agent_id))
+
+    def test_joining_leaving_renaming_and_deleting_keep_both_in_step(self):
+        a = self.agents.create("alice", driver=WEBOT, name="Coder", agent_id="s1")
+        self.teams.create("alice", "ops")
+        self.teams.add("alice", "dev", a.agent_id, role="Builder")
+        self.assertEqual(self.team_of("s1"), ("dev", ["dev"]))
+        self.teams.add("alice", "ops", a.agent_id)  # joining another team moves it there
+        self.assertEqual(self.team_of("s1"), ("ops", ["ops"]))
+        self.teams.rename("alice", "ops", "ops2")
+        self.assertEqual(self.team_of("s1"), ("ops2", ["ops2"]))
+        self.teams.remove("alice", "ops2", a.agent_id)
+        self.assertEqual(self.team_of("s1"), ("", []))
+        self.teams.add("alice", "dev", a.agent_id)
+        self.teams.delete("alice", "dev")
+        self.assertEqual(self.team_of("s1"), ("", []))  # the agent stays, in no team
 
 
 class TestManifest(TeamCase):

@@ -73,6 +73,11 @@ class Agent:
         return str(self.config.get("platform") or self.driver)
 
     @property
+    def team(self) -> str:
+        """The team it is in ("" for none); only the team layer sets it."""
+        return str(self.config.get("team") or "")
+
+    @property
     def temporary(self) -> bool:
         """Made for one task and discarded after it."""
         return not self.agent_id or self.agent_id.startswith(TEMP_SESSION_PREFIX)
@@ -202,6 +207,12 @@ class AgentStore:
              owner, agent_id),
         )
         return self.require(owner, agent_id)
+
+    def set_team(self, owner: str, agent_id: str, team: str) -> None:
+        """Record the team the agent is in ("" for none)."""
+        agent = self.require(owner, agent_id)
+        if agent.team != team:
+            self.update(owner, agent_id, config={**agent.config, "team": team})
 
     def set_runtime(self, owner: str, agent_id: str, runtime: dict[str, Any]) -> None:
         """Record what the agent's runtime now knows (not a settings change)."""

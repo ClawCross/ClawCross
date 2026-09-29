@@ -5,6 +5,10 @@ The folder ``user_files/<owner>/teams/<team>`` holds the team's persona library,
 skills, workflows, settings, and ``members.json`` — which agents are in it, the
 name each goes by in the team, and which one leads. Inside the team an agent is
 ``<team>.<name>``; the agents themselves live in the agent table.
+
+An agent is in at most one team, and its config ``team`` names it: this store
+is the only writer of both, so ``members.json`` and the agent's ``team`` always
+agree. Joining another team moves the agent there.
 """
 
 from __future__ import annotations
@@ -68,7 +72,9 @@ class TeamStore:
         self.folder(owner, team).mkdir(parents=True, exist_ok=True)
 
     def delete(self, owner: str, team: str) -> None:
-        """Remove the team and its assets; its agents stay."""
+        """Remove the team and its assets; its agents stay, in no team."""
+        for entry in self._read(owner, team):
+            self._set_team(owner, entry["agent"], "")
         shutil.rmtree(self.folder(owner, team), ignore_errors=True)
 
     def rename(self, owner: str, old: str, new: str) -> None:
@@ -76,6 +82,12 @@ class TeamStore:
         if dst.exists():
             raise FileExistsError(f"team {new!r} already exists")
         src.rename(dst)
+        for entry in self._read(owner, new):
+            self._set_team(owner, entry["agent"], new)
+
+    def _set_team(self, owner: str, agent_id: str, team: str) -> None:
+        if self.agents.get(owner, agent_id) is not None:
+            self.agents.set_team(owner, agent_id, team)
 
     # ── membership ───────────────────────────────────────────────────────
 
@@ -143,6 +155,9 @@ class TeamStore:
             entry["lead"] = True
         if extra:
             entry["extra"] = extra
+        for other in self.teams_of(owner, agent_id):  # one team per agent: joining this one leaves the other
+            if other != team:
+                self.remove(owner, other, agent_id)
         with self._editing(owner, team) as entries:
             if is_lead:
                 for e in entries:
@@ -152,6 +167,7 @@ class TeamStore:
                 entries.append(entry)
             else:
                 entries[at] = entry
+        self._set_team(owner, agent_id, team)
         return self.member(owner, team, agent_id)
 
     def update(self, owner: str, team: str, agent_id: str, *, role: str | None = None,
@@ -175,6 +191,9 @@ class TeamStore:
             return
         with self._editing(owner, team) as entries:
             entries[:] = [e for e in entries if e["agent"] != agent_id]
+        agent = self.agents.get(owner, agent_id)
+        if agent is not None and agent.team == team:
+            self._set_team(owner, agent_id, "")
 
     def forget_agent(self, owner: str, agent_id: str) -> None:
         """An agent was deleted: it leaves every team."""
