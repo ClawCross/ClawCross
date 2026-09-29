@@ -180,9 +180,7 @@ def render_runtime_context_block(
     recent_artifacts: list[dict[str, Any]] | None = None,
     recent_runs: list[dict[str, Any]] | None = None,
     memory: dict[str, Any] | None = None,
-    bridge: dict[str, Any] | None = None,
     voice: dict[str, Any] | None = None,
-    buddy: dict[str, Any] | None = None,
 ) -> str:
     # workspace is optional: it is fixed per session, so the caller carries it
     # in the stable system prompt rather than re-sending it here every turn.
@@ -229,7 +227,7 @@ def render_runtime_context_block(
             lines.append(
                 f"run::{item.get('run_kind', '')}::{item.get('status', '')}::{item.get('title', '') or item.get('run_id', '')}"
             )
-    if memory:
+    if memory and (memory.get("entry_count") or memory.get("kairos_enabled") or memory.get("last_dream_at")):
         lines.append(f"memory_entries: {memory.get('entry_count', 0)}")
         if memory.get("kairos_enabled"):
             lines.append("kairos: enabled")
@@ -239,23 +237,10 @@ def render_runtime_context_block(
             lines.append(
                 f"memory::{item.get('type', 'project')}::{item.get('name', '')}::{_trim_text(item.get('description') or item.get('snippet', ''), 100)}"
             )
-    if bridge:
-        lines.append(f"bridge_attached: {bool(bridge.get('attached', False))}")
-        lines.append(f"bridge_clients: {bridge.get('connected_clients', 0)}")
-        roles = bridge.get("roles") or []
-        if roles:
-            lines.append(f"bridge_roles: {', '.join(str(role) for role in roles)}")
     if voice:
         lines.append(f"voice_enabled: {bool(voice.get('enabled', False))}")
         if voice.get("tts_available"):
             lines.append(f"voice_tts: {voice.get('tts_model', '')}:{voice.get('tts_voice', '')}")
-    if buddy:
-        lines.append(
-            f"buddy::{buddy.get('species', '')}::{buddy.get('rarity', '')}::{buddy.get('name') or buddy.get('soul', {}).get('name', '')}"
-        )
-        buddy_note = buddy.get("reaction") or buddy.get("last_bubble")
-        if buddy_note:
-            lines.append(f"buddy_note: {_trim_text(str(buddy_note or ''), 100)}")
     return "\n".join(lines)
 
 
@@ -273,11 +258,9 @@ def assemble_input_messages(
     1. ``base_prompt`` is the whole system message. Runtime state never gets
        appended to it — the system message renders ahead of tools and history,
        so a per-turn edit there invalidates the entire prefix every call.
-    2. Runtime state rides at the tail, and only when it changed. It is sent
-       but never written back to history, so a request carrying it produces a
-       cache entry ending in content the next request no longer has — written,
-       never read. Re-sending unchanged state buys nothing and costs every
-       later hit, so the tool rounds in between end on stored messages instead.
+    2. Runtime state is attached to the last user query or tool result, never
+       emitted as a separate user turn. It is sent only when needed and never
+       written back to history.
 
     Returns the messages plus the state actually injected ("" when skipped).
     """
@@ -303,12 +286,18 @@ def assemble_input_messages(
         )
 
     if isinstance(last_msg, ToolMessage) and runtime_state != last_sent_state:
-        # 工具回合：追加在全部 tool_result 之后，不破坏 tool_calls → ToolMessage
-        # 配对（provider 会把相邻的 tool/user 合并进同一个 user turn）。
+        # Keep the tool result in its original role and preserve tool_call_id.
+        # A synthetic HumanMessage here starts a new user turn and can disrupt
+        # the model's continuation after a tool call.
+        state_text = f"\n\n---\n[系统状态]\n{runtime_state}"
+        if isinstance(last_msg.content, list):
+            content: Any = list(last_msg.content) + [{"type": "text", "text": state_text}]
+        else:
+            content = f"{last_msg.content}{state_text}"
         return (
             [SystemMessage(content=base_prompt)]
-            + list(history)
-            + [HumanMessage(content=f"[系统状态]\n{runtime_state}")],
+            + list(history[:-1])
+            + [last_msg.model_copy(update={"content": content})],
             runtime_state,
         )
 

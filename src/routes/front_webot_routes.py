@@ -279,80 +279,6 @@ def register_webot_routes(
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
-    @app.route("/proxy_webot_session_goals")
-    def proxy_webot_session_goals():
-        user_id = session.get("user_id", "")
-        try:
-            response = requests.get(
-                f"{base_url}/webot/session-goals",
-                params={
-                    "user_id": user_id,
-                    "session_id": request.args.get("session_id", ""),
-                    "status": request.args.get("status", ""),
-                    "limit": request.args.get("limit", 20),
-                },
-                headers=_internal_auth_headers(),
-                timeout=15,
-            )
-            return jsonify(response.json()), response.status_code
-        except Exception as exc:
-            return jsonify({"error": str(exc), "goals": []}), 500
-
-    @app.route("/proxy_webot_session_goal", methods=["POST"])
-    def proxy_webot_session_goal():
-        user_id = session.get("user_id", "")
-        body = request.get_json(force=True) if request.is_json else {}
-        try:
-            response = requests.post(
-                f"{base_url}/webot/session-goals",
-                json={
-                    "user_id": user_id,
-                    "session_id": body.get("session_id", ""),
-                    "goal_id": body.get("goal_id", ""),
-                    "title": body.get("title", ""),
-                    "description": body.get("description", ""),
-                    "status": body.get("status", "active"),
-                    "priority": body.get("priority", "normal"),
-                    "parent_goal_id": body.get("parent_goal_id", ""),
-                    "owner_session": body.get("owner_session", ""),
-                    "metrics": body.get("metrics") or {},
-                    "budget_tokens": body.get("budget_tokens", 0),
-                    "spent_tokens": body.get("spent_tokens", 0),
-                    "budget_usd": body.get("budget_usd", 0),
-                    "spent_usd": body.get("spent_usd", 0),
-                    "metadata": body.get("metadata") or {},
-                },
-                headers=_internal_auth_headers(),
-                timeout=15,
-            )
-            return jsonify(response.json()), response.status_code
-        except Exception as exc:
-            return jsonify({"error": str(exc)}), 500
-
-    @app.route("/proxy_webot_session_goal_heartbeat", methods=["POST"])
-    def proxy_webot_session_goal_heartbeat():
-        user_id = session.get("user_id", "")
-        body = request.get_json(force=True) if request.is_json else {}
-        try:
-            response = requests.post(
-                f"{base_url}/webot/session-goals/heartbeat",
-                json={
-                    "user_id": user_id,
-                    "session_id": body.get("session_id", ""),
-                    "goal_id": body.get("goal_id", ""),
-                    "heartbeat_status": body.get("heartbeat_status", "active"),
-                    "report": body.get("report", ""),
-                    "spent_tokens_delta": body.get("spent_tokens_delta", 0),
-                    "spent_usd_delta": body.get("spent_usd_delta", 0),
-                    "metadata": body.get("metadata") or {},
-                },
-                headers=_internal_auth_headers(),
-                timeout=15,
-            )
-            return jsonify(response.json()), response.status_code
-        except Exception as exc:
-            return jsonify({"error": str(exc)}), 500
-
     @app.route("/proxy_webot_claude_code_status")
     def proxy_webot_claude_code_status():
         user_id = session.get("user_id", "")
@@ -468,44 +394,6 @@ def register_webot_routes(
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
-    @app.route("/proxy_webot_bridge_attach", methods=["POST"])
-    def proxy_webot_bridge_attach():
-        user_id = session.get("user_id", "")
-        body = request.get_json(force=True) if request.is_json else {}
-        try:
-            response = requests.post(
-                f"{base_url}/webot/bridge/attach",
-                json={
-                    "user_id": user_id,
-                    "session_id": body.get("session_id", ""),
-                    "role": body.get("role", "viewer"),
-                    "label": body.get("label", ""),
-                },
-                headers=_internal_auth_headers(),
-                timeout=15,
-            )
-            return jsonify(response.json()), response.status_code
-        except Exception as exc:
-            return jsonify({"error": str(exc)}), 500
-
-    @app.route("/proxy_webot_bridge_detach", methods=["POST"])
-    def proxy_webot_bridge_detach():
-        user_id = session.get("user_id", "")
-        body = request.get_json(force=True) if request.is_json else {}
-        try:
-            response = requests.post(
-                f"{base_url}/webot/bridge/detach",
-                json={
-                    "user_id": user_id,
-                    "bridge_id": body.get("bridge_id", ""),
-                },
-                headers=_internal_auth_headers(),
-                timeout=15,
-            )
-            return jsonify(response.json()), response.status_code
-        except Exception as exc:
-            return jsonify({"error": str(exc)}), 500
-
     @app.route("/proxy_webot_kairos", methods=["POST"])
     def proxy_webot_kairos():
         user_id = session.get("user_id", "")
@@ -540,25 +428,6 @@ def register_webot_routes(
                 },
                 headers=_internal_auth_headers(),
                 timeout=30,
-            )
-            return jsonify(response.json()), response.status_code
-        except Exception as exc:
-            return jsonify({"error": str(exc)}), 500
-
-    @app.route("/proxy_webot_buddy", methods=["POST"])
-    def proxy_webot_buddy():
-        user_id = session.get("user_id", "")
-        body = request.get_json(force=True) if request.is_json else {}
-        try:
-            response = requests.post(
-                f"{base_url}/webot/buddy",
-                json={
-                    "user_id": user_id,
-                    "session_id": body.get("session_id", ""),
-                    "action": body.get("action", "pet"),
-                },
-                headers=_internal_auth_headers(),
-                timeout=15,
             )
             return jsonify(response.json()), response.status_code
         except Exception as exc:

@@ -7,20 +7,13 @@ from typing import Any, Callable
 from fastapi import HTTPException
 
 from services.llm_factory import get_provider_audio_defaults, infer_provider
-from webot.bridge import bridge_hub, get_bridge_runtime_payload, issue_bridge_session, serialize_bridge_record
-from webot.buddy import apply_buddy_action, serialize_buddy_state
 from webot.memory import ensure_memory_state, run_auto_dream
 from webot.models import (
     WeBotApprovalResolutionRequest,
-    WeBotBridgeAttachRequest,
-    WeBotBridgeDetachRequest,
-    WeBotBuddyActionRequest,
     WeBotClaudeKeepaliveUpdateRequest,
     WeBotClaudeKickoffRequest,
     WeBotClaudeProbeRequest,
     WeBotDreamRequest,
-    WeBotGoalHeartbeatRequest,
-    WeBotGoalUpdateRequest,
     WeBotKairosUpdateRequest,
     WeBotLspRequest,
     WeBotPlanUpdateRequest,
@@ -49,7 +42,6 @@ from webot.runtime_store import (
     create_runtime_artifact,
     delete_session_plan,
     delete_session_todos,
-    get_bridge_session,
     get_claude_keepalive_state,
     get_latest_active_run_for_session,
     get_latest_run_for_agent,
@@ -64,11 +56,8 @@ from webot.runtime_store import (
     list_runtime_artifacts,
     list_tool_approvals,
     list_verification_records,
-    list_bridge_sessions,
-    list_session_goals,
     request_run_interrupt,
     record_claude_keepalive_result,
-    record_goal_heartbeat,
     save_memory_state,
     save_claude_keepalive_state,
     save_session_mode,
@@ -76,8 +65,6 @@ from webot.runtime_store import (
     save_session_todos,
     save_voice_state,
     update_run_status,
-    upsert_session_goal,
-    upsert_bridge_session,
 )
 from webot.subagents import (
     SubagentRecord,
@@ -190,35 +177,6 @@ class WeBotService:
             "path": item.path,
             "preview": item.preview,
             "metadata": _safe_json_loads(item.metadata_json),
-            "created_at": item.created_at,
-        }
-
-    @staticmethod
-    def _serialize_goal(item) -> dict[str, Any]:
-        budget = {
-            "tokens": {"limit": item.budget_tokens, "spent": item.spent_tokens},
-            "usd": {"limit": item.budget_usd, "spent": item.spent_usd},
-        }
-        return {
-            "goal_id": item.goal_id,
-            "session_id": item.session_id,
-            "title": item.title,
-            "description": item.description,
-            "status": item.status,
-            "priority": item.priority,
-            "parent_goal_id": item.parent_goal_id,
-            "owner_session": item.owner_session,
-            "metrics": dict(item.metrics),
-            "budget": budget,
-            "budget_tokens": item.budget_tokens,
-            "spent_tokens": item.spent_tokens,
-            "budget_usd": item.budget_usd,
-            "spent_usd": item.spent_usd,
-            "heartbeat_status": item.heartbeat_status,
-            "heartbeat_at": item.heartbeat_at,
-            "last_report": item.last_report,
-            "metadata": dict(item.metadata),
-            "updated_at": item.updated_at,
             "created_at": item.created_at,
         }
 
@@ -392,8 +350,6 @@ class WeBotService:
         plan = get_session_plan(user_id, session_id)
         inbox_items = list_inbox_messages(user_id, session_id, limit=20)
         artifacts = list_runtime_artifacts(user_id, session_id, limit=20)
-        goals = list_session_goals(user_id, session_id, limit=20)
-        active_goals = [goal for goal in goals if goal.status == "active"]
         keepalive = get_claude_keepalive_state(user_id, session_id)
         approvals = [
             {
@@ -409,9 +365,7 @@ class WeBotService:
             for approval in list_tool_approvals(user_id, session_id, limit=20)
         ]
         memory = self._serialize_memory_payload(user_id, session_id)
-        bridge = get_bridge_runtime_payload(user_id, session_id)
         voice = self._serialize_voice_payload(user_id, session_id)
-        buddy = serialize_buddy_state(user_id)
         return {
             "status": "success",
             "session_id": session_id,
@@ -423,11 +377,6 @@ class WeBotService:
             ),
             "mode": runtime_mode,
             "plan": plan,
-            "goals": {
-                "items": [self._serialize_goal(item) for item in goals],
-                "active_goal": self._serialize_goal(active_goals[0]) if active_goals else None,
-                "active_count": len(active_goals),
-            },
             "workflow_presets": list_workflow_presets(),
             "active_workflow": self._active_workflow_payload(plan),
             "todos": get_session_todos(user_id, session_id),
@@ -461,66 +410,12 @@ class WeBotService:
                 "created_at": record.created_at,
             },
             "memory": memory,
-            "bridge": bridge,
             "voice": voice,
-            "buddy": buddy,
             "claude_code": {
                 "status": detect_claude_code_cached(ttl_seconds=60),
                 "keepalive": self._serialize_claude_keepalive(keepalive),
             },
         }
-
-    async def _publish_runtime_snapshot(
-        self,
-        user_id: str,
-        session_id: str,
-        *,
-        reason: str,
-        event_type: str = "runtime_update",
-        changed_session_id: str = "",
-    ) -> None:
-        if not session_id:
-            return
-        targets = {session_id}
-        record = get_subagent_by_session(session_id, user_id)
-        if record is not None and record.parent_session:
-            targets.add(record.parent_session)
-        effective_changed_session = changed_session_id or session_id
-        for target_session in targets:
-            runtime = self._serialize_session_runtime(user_id, target_session)
-            await bridge_hub.publish_to_session(
-                user_id,
-                target_session,
-                {
-                    "type": event_type,
-                    "reason": reason,
-                    "session_id": target_session,
-                    "changed_session_id": effective_changed_session,
-                    "runtime": runtime,
-                },
-            )
-
-    async def _publish_runtime_snapshots(
-        self,
-        user_id: str,
-        session_ids: list[str],
-        *,
-        reason: str,
-        event_type: str = "runtime_update",
-        changed_session_id: str = "",
-    ) -> None:
-        seen: set[str] = set()
-        for session_id in session_ids:
-            if not session_id or session_id in seen:
-                continue
-            seen.add(session_id)
-            await self._publish_runtime_snapshot(
-                user_id,
-                session_id,
-                reason=reason,
-                event_type=event_type,
-                changed_session_id=changed_session_id or session_id,
-            )
 
     async def list_subagents(self, user_id: str, password: str, x_internal_token: str | None):
         self.verify_auth_or_token(user_id, password, x_internal_token)
@@ -610,11 +505,6 @@ class WeBotService:
                     interrupt_requested=False,
                     clear_worker=True,
                 )
-        await self._publish_runtime_snapshot(
-            req.user_id,
-            record.session_id,
-            reason="cancel_subagent",
-        )
 
         return {
             "status": "success",
@@ -748,11 +638,6 @@ class WeBotService:
             reason=req.reason,
         )
         mode = get_session_mode(req.user_id, req.session_id)
-        await self._publish_runtime_snapshot(
-            req.user_id,
-            req.session_id,
-            reason="session_mode",
-        )
         return {
             "status": "success",
             "session_id": req.session_id,
@@ -836,11 +721,6 @@ class WeBotService:
                 "source": preset.source,
             },
         )
-        await self._publish_runtime_snapshot(
-            req.user_id,
-            req.session_id,
-            reason="workflow_preset_apply",
-        )
         return {
             "status": "success",
             "session_id": req.session_id,
@@ -900,11 +780,6 @@ class WeBotService:
         run = request_run_interrupt(target_run_id, req.user_id)
         if run is None:
             raise HTTPException(status_code=404, detail=f"未找到运行: {target_run_id}")
-        await self._publish_runtime_snapshot(
-            req.user_id,
-            run.session_id,
-            reason="run_interrupt",
-        )
         return {
             "status": "success",
             "run": self._serialize_run(req.user_id, run),
@@ -925,11 +800,6 @@ class WeBotService:
             metadata=req.metadata or {},
         )
         plan = get_session_plan(req.user_id, req.session_id)
-        await self._publish_runtime_snapshot(
-            req.user_id,
-            req.session_id,
-            reason="session_plan_update",
-        )
         return {
             "status": "success",
             "session_id": req.session_id,
@@ -943,11 +813,6 @@ class WeBotService:
     ):
         self.verify_auth_or_token(req.user_id, req.password, x_internal_token)
         deleted = delete_session_plan(req.user_id, req.session_id)
-        await self._publish_runtime_snapshot(
-            req.user_id,
-            req.session_id,
-            reason="session_plan_clear",
-        )
         return {"status": "success", "deleted": deleted}
 
     async def update_session_todos(
@@ -958,11 +823,6 @@ class WeBotService:
         self.verify_auth_or_token(req.user_id, req.password, x_internal_token)
         save_session_todos(req.user_id, req.session_id, items=req.items)
         todos = get_session_todos(req.user_id, req.session_id)
-        await self._publish_runtime_snapshot(
-            req.user_id,
-            req.session_id,
-            reason="session_todos_update",
-        )
         return {
             "status": "success",
             "session_id": req.session_id,
@@ -976,95 +836,7 @@ class WeBotService:
     ):
         self.verify_auth_or_token(req.user_id, req.password, x_internal_token)
         deleted = delete_session_todos(req.user_id, req.session_id)
-        await self._publish_runtime_snapshot(
-            req.user_id,
-            req.session_id,
-            reason="session_todos_clear",
-        )
         return {"status": "success", "deleted": deleted}
-
-    async def list_session_goals(
-        self,
-        user_id: str,
-        session_id: str,
-        password: str,
-        status: str,
-        limit: int,
-        x_internal_token: str | None,
-    ):
-        self.verify_auth_or_token(user_id, password, x_internal_token)
-        goals = list_session_goals(
-            user_id,
-            session_id or None,
-            status=(status or "").strip().lower() or None,
-            limit=max(1, min(limit or 20, 100)),
-        )
-        return {
-            "status": "success",
-            "session_id": session_id or "",
-            "goals": [self._serialize_goal(item) for item in goals],
-        }
-
-    async def update_session_goal(
-        self,
-        req: WeBotGoalUpdateRequest,
-        x_internal_token: str | None,
-    ):
-        self.verify_auth_or_token(req.user_id, req.password, x_internal_token)
-        record = upsert_session_goal(
-            req.user_id,
-            req.session_id,
-            goal_id=req.goal_id,
-            title=req.title,
-            description=req.description,
-            status=req.status,
-            priority=req.priority,
-            parent_goal_id=req.parent_goal_id,
-            owner_session=req.owner_session,
-            metrics=req.metrics or {},
-            budget_tokens=req.budget_tokens,
-            spent_tokens=req.spent_tokens,
-            budget_usd=req.budget_usd,
-            spent_usd=req.spent_usd,
-            metadata=req.metadata or {},
-        )
-        await self._publish_runtime_snapshot(
-            req.user_id,
-            record.session_id,
-            reason="session_goal_update",
-        )
-        return {
-            "status": "success",
-            "goal": self._serialize_goal(record),
-        }
-
-    async def record_goal_heartbeat(
-        self,
-        req: WeBotGoalHeartbeatRequest,
-        x_internal_token: str | None,
-    ):
-        self.verify_auth_or_token(req.user_id, req.password, x_internal_token)
-        record = record_goal_heartbeat(
-            req.user_id,
-            req.goal_id,
-            session_id=req.session_id,
-            heartbeat_status=req.heartbeat_status,
-            report=req.report,
-            spent_tokens_delta=req.spent_tokens_delta,
-            spent_usd_delta=req.spent_usd_delta,
-            metadata=req.metadata or {},
-        )
-        if record is None:
-            raise HTTPException(status_code=404, detail=f"未找到目标: {req.goal_id}")
-        await self._publish_runtime_snapshot(
-            req.user_id,
-            record.session_id,
-            reason="session_goal_heartbeat",
-        )
-        return {
-            "status": "success",
-            "goal": self._serialize_goal(record),
-        }
 
     async def get_claude_code_status(
         self,
@@ -1106,11 +878,6 @@ class WeBotService:
             timeout_seconds=req.timeout_seconds,
             metadata=req.metadata or {},
         )
-        await self._publish_runtime_snapshot(
-            req.user_id,
-            record.session_id,
-            reason="claude_keepalive_update",
-        )
         return {
             "status": "success",
             "keepalive": self._serialize_claude_keepalive(record),
@@ -1134,11 +901,6 @@ class WeBotService:
             result=str(result.get("stdout_tail") or "")[-2000:],
             error=str(result.get("error") or result.get("stderr_tail") or "")[-1000:],
             metadata={"probe": True, "session_name": result.get("session_name", "")},
-        )
-        await self._publish_runtime_snapshot(
-            req.user_id,
-            req.session_id,
-            reason="claude_code_probe",
         )
         return {
             "status": "success" if result.get("ok") else "failed",
@@ -1173,11 +935,6 @@ class WeBotService:
             error=str(result.get("error") or result.get("stderr_tail") or "")[-1000:],
             metadata={"kickoff": True, "use_acp": req.use_acp},
         )
-        await self._publish_runtime_snapshot(
-            req.user_id,
-            record.session_id,
-            reason="claude_keepalive_kickoff",
-        )
         return {
             "status": "success" if result.get("ok") else "failed",
             "result": result,
@@ -1200,11 +957,6 @@ class WeBotService:
             details=req.details,
         )
         verifications = list_verification_records(req.user_id, req.session_id, limit=20)
-        await self._publish_runtime_snapshot(
-            req.user_id,
-            req.session_id,
-            reason="verification_record",
-        )
         return {
             "status": "success",
             "verification_id": verification_id,
@@ -1230,61 +982,7 @@ class WeBotService:
             last_transcript=req.last_transcript,
         )
         payload = self._serialize_voice_payload(req.user_id, req.session_id)
-        await self._publish_runtime_snapshot(
-            req.user_id,
-            req.session_id,
-            reason="voice_update",
-        )
         return {"status": "success", "voice": payload}
-
-    async def create_bridge_attach(
-        self,
-        req: WeBotBridgeAttachRequest,
-        x_internal_token: str | None,
-    ):
-        self.verify_auth_or_token(req.user_id, req.password, x_internal_token)
-        bridge = issue_bridge_session(
-            user_id=req.user_id,
-            session_id=req.session_id,
-            role=req.role,
-            label=req.label,
-        )
-        await self._publish_runtime_snapshot(
-            req.user_id,
-            req.session_id,
-            reason="bridge_attach",
-        )
-        return {"status": "success", "bridge": bridge}
-
-    async def detach_bridge(
-        self,
-        req: WeBotBridgeDetachRequest,
-        x_internal_token: str | None,
-    ):
-        self.verify_auth_or_token(req.user_id, req.password, x_internal_token)
-        record = get_bridge_session(req.bridge_id, req.user_id)
-        if record is None:
-            raise HTTPException(status_code=404, detail=f"未找到 bridge: {req.bridge_id}")
-        updated = upsert_bridge_session(
-            bridge_id=record.bridge_id,
-            user_id=record.user_id,
-            session_id=record.session_id,
-            role=record.role,
-            label=record.label,
-            attach_code=record.attach_code,
-            websocket_path=record.websocket_path,
-            status="detached",
-            connection_count=0,
-            metadata=record.metadata,
-            last_error="",
-            last_attached_at=record.last_attached_at,
-        )
-        await self._publish_runtime_snapshot(
-            req.user_id,
-            record.session_id,
-            reason="bridge_detach",
-        )
-        return {"status": "success", "bridge": serialize_bridge_record(updated)}
 
     async def update_kairos_state(
         self,
@@ -1308,11 +1006,6 @@ class WeBotService:
             metadata={"last_kairos_reason": req.reason},
         )
         memory = ensure_memory_state(req.user_id, req.session_id, kairos_enabled=req.enabled)
-        await self._publish_runtime_snapshot(
-            req.user_id,
-            req.session_id,
-            reason="kairos_update",
-        )
         return {"status": "success", "memory": memory}
 
     async def run_dream(
@@ -1333,28 +1026,7 @@ class WeBotService:
             recent_artifacts=runtime.get("artifacts"),
             reason=req.reason or "manual",
         )
-        await self._publish_runtime_snapshot(
-            req.user_id,
-            req.session_id,
-            reason="dream_run",
-        )
         return {"status": "success", "memory": memory}
-
-    async def buddy_action(
-        self,
-        req: WeBotBuddyActionRequest,
-        x_internal_token: str | None,
-    ):
-        self.verify_auth_or_token(req.user_id, req.password, x_internal_token)
-        normalized_action = (req.action or "").strip().lower() or "pet"
-        apply_buddy_action(req.user_id, normalized_action)
-        buddy = serialize_buddy_state(req.user_id)
-        await self._publish_runtime_snapshot(
-            req.user_id,
-            req.session_id or "default",
-            reason="buddy_action",
-        )
-        return {"status": "success", "buddy": buddy}
 
     async def resolve_tool_approval(
         self,
@@ -1372,13 +1044,6 @@ class WeBotService:
         )
         if approval is None:
             raise HTTPException(status_code=404, detail=f"未找到 tool approval: {req.approval_id}")
-        target_session = req.session_id or approval.session_id
-        if target_session:
-            await self._publish_runtime_snapshot(
-                req.user_id,
-                target_session,
-                reason="approval_resolution",
-            )
         return {
             "status": "success",
             "approval": {

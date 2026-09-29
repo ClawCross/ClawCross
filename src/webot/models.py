@@ -51,31 +51,6 @@ class WeBotTodoUpdateRequest(WeBotSessionRuntimeRequest):
     items: list[dict] = Field(default_factory=list)
 
 
-class WeBotGoalUpdateRequest(WeBotSessionRuntimeRequest):
-    goal_id: str = ""
-    title: str = ""
-    description: str = ""
-    status: str = "active"
-    priority: str = "normal"
-    parent_goal_id: str = ""
-    owner_session: str = ""
-    metrics: dict = Field(default_factory=dict)
-    budget_tokens: int = 0
-    spent_tokens: int = 0
-    budget_usd: float = 0.0
-    spent_usd: float = 0.0
-    metadata: dict = Field(default_factory=dict)
-
-
-class WeBotGoalHeartbeatRequest(WeBotSessionRuntimeRequest):
-    goal_id: str
-    heartbeat_status: str = "active"
-    report: str = ""
-    spent_tokens_delta: int = 0
-    spent_usd_delta: float = 0.0
-    metadata: dict = Field(default_factory=dict)
-
-
 class WeBotSessionModeUpdateRequest(WeBotSessionRuntimeRequest):
     mode: str = "execute"
     reason: str = ""
@@ -102,17 +77,6 @@ class WeBotRunInterruptRequest(WeBotSessionRuntimeRequest):
     agent_ref: str = ""
 
 
-class WeBotBridgeAttachRequest(WeBotSessionRuntimeRequest):
-    role: str = "viewer"
-    label: str = ""
-
-
-class WeBotBridgeDetachRequest(BaseModel):
-    user_id: str
-    password: str = ""
-    bridge_id: str
-
-
 class WeBotVoiceStateUpdateRequest(WeBotSessionRuntimeRequest):
     enabled: bool = False
     auto_read_aloud: bool = False
@@ -120,13 +84,6 @@ class WeBotVoiceStateUpdateRequest(WeBotSessionRuntimeRequest):
     tts_model: str = ""
     tts_voice: str = ""
     stt_model: str = ""
-
-
-class WeBotBuddyActionRequest(BaseModel):
-    user_id: str
-    password: str = ""
-    session_id: str = ""
-    action: str = "pet"
 
 
 class WeBotKairosUpdateRequest(WeBotSessionRuntimeRequest):

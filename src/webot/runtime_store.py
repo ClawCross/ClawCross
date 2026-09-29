@@ -1,6 +1,8 @@
 """
 Persistent runtime primitives for WeBot.
 
+Runtime state lives in ``data/webot_agents/<user>#<agent>.db``.
+
 Provides:
 - durable delegated run records and control-plane state
 - run attempt timelines
@@ -25,9 +27,14 @@ from typing import Any
 import uuid
 
 from utils.runtime_paths import DATA_DIR
+from utils.checkpoint_paths import checkpoint_db_name_for_thread, checkpoint_db_path_for_thread
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_DB_PATH = DATA_DIR / "webot_runtime.db"
+# An explicit override is available to isolated callers; production uses
+# one database file per agent.
+DEFAULT_DB_PATH: Path | None = None
+AGENT_RUNTIME_DB_DIR = DATA_DIR / "webot_agents"
+_INITIALIZED_DB_FILES: set[tuple[str, int]] = set()
 
 
 class _ClosingConnection(sqlite3.Connection):
@@ -76,13 +83,22 @@ def is_timestamp_active(value: str | None) -> bool:
 
 def get_runtime_db_path(db_path: str | os.PathLike | None = None) -> Path:
     explicit = Path(db_path) if db_path is not None else DEFAULT_DB_PATH
+    if explicit is None:
+        raise ValueError("An explicit database path is required")
     explicit.parent.mkdir(parents=True, exist_ok=True)
     return explicit
 
 
 def _connect(db_path: str | os.PathLike | None = None) -> sqlite3.Connection:
-    conn = sqlite3.connect(get_runtime_db_path(db_path), factory=_ClosingConnection)
+    path = get_runtime_db_path(db_path)
+    conn = sqlite3.connect(path, timeout=30, factory=_ClosingConnection)
     conn.row_factory = sqlite3.Row
+    # Schema migration belongs to the first open of a database file, not
+    # every read. In particular, the legacy inbox UPDATE below must not run
+    # for every status lookup in a model turn.
+    file_key = (str(path.resolve()), path.stat().st_ino)
+    if file_key in _INITIALIZED_DB_FILES:
+        return conn
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS webot_runs (
@@ -237,32 +253,6 @@ def _connect(db_path: str | os.PathLike | None = None) -> sqlite3.Connection:
     )
     conn.execute(
         """
-        CREATE TABLE IF NOT EXISTS webot_bridge_sessions (
-            bridge_id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL,
-            session_id TEXT NOT NULL,
-            role TEXT NOT NULL DEFAULT 'viewer',
-            label TEXT NOT NULL DEFAULT '',
-            attach_code TEXT NOT NULL DEFAULT '',
-            websocket_path TEXT NOT NULL DEFAULT '',
-            status TEXT NOT NULL DEFAULT 'detached',
-            connection_count INTEGER NOT NULL DEFAULT 0,
-            metadata_json TEXT NOT NULL DEFAULT '{}',
-            last_error TEXT NOT NULL DEFAULT '',
-            last_attached_at TEXT NOT NULL DEFAULT '',
-            updated_at TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_webot_bridge_sessions_lookup
-        ON webot_bridge_sessions(user_id, session_id, updated_at DESC)
-        """
-    )
-    conn.execute(
-        """
         CREATE TABLE IF NOT EXISTS webot_voice_state (
             user_id TEXT NOT NULL,
             session_id TEXT NOT NULL,
@@ -277,28 +267,6 @@ def _connect(db_path: str | os.PathLike | None = None) -> sqlite3.Connection:
             updated_at TEXT NOT NULL,
             created_at TEXT NOT NULL,
             PRIMARY KEY (user_id, session_id)
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS webot_buddy_state (
-            user_id TEXT PRIMARY KEY,
-            seed TEXT NOT NULL DEFAULT '',
-            species TEXT NOT NULL DEFAULT '',
-            rarity TEXT NOT NULL DEFAULT '',
-            shiny INTEGER NOT NULL DEFAULT 0,
-            eye TEXT NOT NULL DEFAULT '',
-            hat TEXT NOT NULL DEFAULT '',
-            stats_json TEXT NOT NULL DEFAULT '{}',
-            soul_name TEXT NOT NULL DEFAULT '',
-            soul_personality TEXT NOT NULL DEFAULT '',
-            reaction TEXT NOT NULL DEFAULT '',
-            hatched_at TEXT NOT NULL DEFAULT '',
-            last_interaction_at TEXT NOT NULL DEFAULT '',
-            metadata_json TEXT NOT NULL DEFAULT '{}',
-            updated_at TEXT NOT NULL,
-            created_at TEXT NOT NULL
         )
         """
     )
@@ -390,38 +358,6 @@ def _connect(db_path: str | os.PathLike | None = None) -> sqlite3.Connection:
     )
     conn.execute(
         """
-        CREATE TABLE IF NOT EXISTS webot_session_goals (
-            goal_id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL,
-            session_id TEXT NOT NULL,
-            title TEXT NOT NULL DEFAULT '',
-            description TEXT NOT NULL DEFAULT '',
-            status TEXT NOT NULL DEFAULT 'active',
-            priority TEXT NOT NULL DEFAULT 'normal',
-            parent_goal_id TEXT NOT NULL DEFAULT '',
-            owner_session TEXT NOT NULL DEFAULT '',
-            metrics_json TEXT NOT NULL DEFAULT '{}',
-            budget_tokens INTEGER NOT NULL DEFAULT 0,
-            spent_tokens INTEGER NOT NULL DEFAULT 0,
-            budget_usd REAL NOT NULL DEFAULT 0,
-            spent_usd REAL NOT NULL DEFAULT 0,
-            heartbeat_status TEXT NOT NULL DEFAULT 'idle',
-            heartbeat_at TEXT NOT NULL DEFAULT '',
-            last_report TEXT NOT NULL DEFAULT '',
-            metadata_json TEXT NOT NULL DEFAULT '{}',
-            updated_at TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_webot_session_goals_lookup
-        ON webot_session_goals(user_id, session_id, status, updated_at DESC)
-        """
-    )
-    conn.execute(
-        """
         CREATE TABLE IF NOT EXISTS webot_claude_keepalive (
             user_id TEXT NOT NULL,
             session_id TEXT NOT NULL,
@@ -505,7 +441,88 @@ def _connect(db_path: str | os.PathLike | None = None) -> sqlite3.Connection:
         WHERE delivery_status = 'pending'
         """
     )
+    conn.commit()
+    _INITIALIZED_DB_FILES.add(file_key)
     return conn
+
+
+def get_agent_runtime_db_path(user_id: str, session_id: str) -> Path:
+    return checkpoint_db_path_for_thread(f"{user_id}#{session_id}", AGENT_RUNTIME_DB_DIR)
+
+
+def _remove_agent_runtime_file(path: Path) -> None:
+    resolved = str(path.resolve())
+    _INITIALIZED_DB_FILES.difference_update(
+        [key for key in _INITIALIZED_DB_FILES if key[0] == resolved]
+    )
+    for suffix in ("", "-wal", "-shm", "-journal"):
+        Path(f"{path}{suffix}").unlink(missing_ok=True)
+
+
+def delete_agent_runtime_db(user_id: str, session_id: str) -> None:
+    if DEFAULT_DB_PATH is None:
+        _remove_agent_runtime_file(get_agent_runtime_db_path(user_id, session_id))
+
+
+def delete_agent_runtime_dbs_for_user(user_id: str) -> None:
+    if DEFAULT_DB_PATH is not None:
+        return
+    if AGENT_RUNTIME_DB_DIR.is_dir():
+        prefix = checkpoint_db_name_for_thread(f"{user_id}#")[:-3]
+        for path in AGENT_RUNTIME_DB_DIR.glob("*.db"):
+            if path.name.startswith(prefix):
+                _remove_agent_runtime_file(path)
+
+
+def _connect_agent(
+    user_id: str, session_id: str, db_path: str | os.PathLike | None = None,
+) -> sqlite3.Connection:
+    """Open this agent's database, or an explicitly supplied database."""
+    if db_path is not None or DEFAULT_DB_PATH is not None:
+        return _connect(db_path)
+    return _connect(get_agent_runtime_db_path(user_id, session_id))
+
+
+def _query_agent_rows(
+    sql: str,
+    params: tuple[Any, ...] | list[Any] = (),
+    *,
+    db_path: str | os.PathLike | None = None,
+    identity: str | None = None,
+) -> list[sqlite3.Row]:
+    """Search agent database files, preferring one copy of each record ID."""
+    if db_path is not None or DEFAULT_DB_PATH is not None:
+        with _connect(db_path) as conn:
+            return conn.execute(sql, params).fetchall()
+    paths = sorted(AGENT_RUNTIME_DB_DIR.glob("*.db")) if AGENT_RUNTIME_DB_DIR.is_dir() else []
+    rows: list[sqlite3.Row] = []
+    seen: set[tuple[str, str]] = set()
+    for path in paths:
+        with _connect(path) as conn:
+            for row in conn.execute(sql, params).fetchall():
+                if identity:
+                    key = (str(row["user_id"]), str(row[identity]))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                rows.append(row)
+    return rows
+
+
+def _record_session(
+    table: str,
+    id_column: str,
+    record_id: str,
+    user_id: str,
+    *,
+    session_column: str = "session_id",
+    db_path: str | os.PathLike | None = None,
+) -> str | None:
+    rows = _query_agent_rows(
+        f"SELECT {session_column} FROM {table} WHERE {id_column} = ? AND user_id = ? LIMIT 1",
+        (record_id, user_id), db_path=db_path,
+    )
+    return str(rows[0][0]) if rows else None
 
 
 def _json_dumps(value: Any) -> str:
@@ -699,28 +716,6 @@ class MemoryStateRecord:
 
 
 @dataclass(frozen=True)
-class BridgeSessionRecord:
-    bridge_id: str
-    user_id: str
-    session_id: str
-    role: str
-    label: str
-    attach_code: str
-    websocket_path: str
-    status: str
-    connection_count: int
-    metadata: dict[str, Any] = field(default_factory=dict)
-    last_error: str = ""
-    last_attached_at: str = ""
-    updated_at: str = ""
-    created_at: str = ""
-
-    @property
-    def metadata_json(self) -> str:
-        return _json_dumps(self.metadata)
-
-
-@dataclass(frozen=True)
 class VoiceStateRecord:
     user_id: str
     session_id: str
@@ -734,66 +729,6 @@ class VoiceStateRecord:
     metadata: dict[str, Any] = field(default_factory=dict)
     updated_at: str = ""
     created_at: str = ""
-
-    @property
-    def metadata_json(self) -> str:
-        return _json_dumps(self.metadata)
-
-
-@dataclass(frozen=True)
-class BuddyStateRecord:
-    user_id: str
-    seed: str
-    species: str
-    rarity: str
-    shiny: bool
-    eye: str
-    hat: str
-    stats: dict[str, int] = field(default_factory=dict)
-    soul_name: str = ""
-    soul_personality: str = ""
-    reaction: str = ""
-    hatched_at: str = ""
-    last_interaction_at: str = ""
-    metadata: dict[str, Any] = field(default_factory=dict)
-    updated_at: str = ""
-    created_at: str = ""
-
-    @property
-    def stats_json(self) -> str:
-        return _json_dumps(self.stats)
-
-    @property
-    def metadata_json(self) -> str:
-        return _json_dumps(self.metadata)
-
-
-@dataclass(frozen=True)
-class SessionGoalRecord:
-    goal_id: str
-    user_id: str
-    session_id: str
-    title: str
-    description: str
-    status: str
-    priority: str
-    parent_goal_id: str
-    owner_session: str
-    metrics: dict[str, Any] = field(default_factory=dict)
-    budget_tokens: int = 0
-    spent_tokens: int = 0
-    budget_usd: float = 0.0
-    spent_usd: float = 0.0
-    heartbeat_status: str = "idle"
-    heartbeat_at: str = ""
-    last_report: str = ""
-    metadata: dict[str, Any] = field(default_factory=dict)
-    updated_at: str = ""
-    created_at: str = ""
-
-    @property
-    def metrics_json(self) -> str:
-        return _json_dumps(self.metrics)
 
     @property
     def metadata_json(self) -> str:
@@ -885,14 +820,6 @@ def _row_to_memory_state(row: sqlite3.Row | None) -> MemoryStateRecord | None:
     return MemoryStateRecord(**data)
 
 
-def _row_to_bridge_session(row: sqlite3.Row | None) -> BridgeSessionRecord | None:
-    if row is None:
-        return None
-    data = dict(row)
-    data["metadata"] = _json_loads_dict(data.pop("metadata_json", ""))
-    return BridgeSessionRecord(**data)
-
-
 def _row_to_voice_state(row: sqlite3.Row | None) -> VoiceStateRecord | None:
     if row is None:
         return None
@@ -902,35 +829,6 @@ def _row_to_voice_state(row: sqlite3.Row | None) -> VoiceStateRecord | None:
     data["recording_supported"] = bool(data["recording_supported"])
     data["metadata"] = _json_loads_dict(data.pop("metadata_json", ""))
     return VoiceStateRecord(**data)
-
-
-def _row_to_buddy_state(row: sqlite3.Row | None) -> BuddyStateRecord | None:
-    if row is None:
-        return None
-    data = dict(row)
-    data["shiny"] = bool(data["shiny"])
-    data["stats"] = _json_loads_dict(data.pop("stats_json", ""))
-    data["metadata"] = _json_loads_dict(data.pop("metadata_json", ""))
-    stats = {
-        str(key): int(value)
-        for key, value in data["stats"].items()
-        if isinstance(key, str)
-    }
-    data["stats"] = stats
-    return BuddyStateRecord(**data)
-
-
-def _row_to_session_goal(row: sqlite3.Row | None) -> SessionGoalRecord | None:
-    if row is None:
-        return None
-    data = dict(row)
-    data["metrics"] = _json_loads_dict(data.pop("metrics_json", ""))
-    data["metadata"] = _json_loads_dict(data.pop("metadata_json", ""))
-    data["budget_tokens"] = int(data.get("budget_tokens") or 0)
-    data["spent_tokens"] = int(data.get("spent_tokens") or 0)
-    data["budget_usd"] = float(data.get("budget_usd") or 0)
-    data["spent_usd"] = float(data.get("spent_usd") or 0)
-    return SessionGoalRecord(**data)
 
 
 def _row_to_claude_keepalive(row: sqlite3.Row | None) -> ClaudeKeepaliveRecord | None:
@@ -995,7 +893,7 @@ def create_run_record(
 
 
 def upsert_run(record: WeBotRunRecord, db_path: str | os.PathLike | None = None) -> WeBotRunRecord:
-    with _connect(db_path) as conn:
+    with _connect_agent(record.user_id, record.session_id, db_path) as conn:
         conn.execute(
             """
             INSERT INTO webot_runs (
@@ -1058,12 +956,11 @@ def upsert_run(record: WeBotRunRecord, db_path: str | os.PathLike | None = None)
 
 
 def get_run(run_id: str, user_id: str, db_path: str | os.PathLike | None = None) -> WeBotRunRecord | None:
-    with _connect(db_path) as conn:
-        row = conn.execute(
-            "SELECT * FROM webot_runs WHERE run_id = ? AND user_id = ?",
-            (run_id, user_id),
-        ).fetchone()
-    return _row_to_run(row)
+    rows = _query_agent_rows(
+        "SELECT * FROM webot_runs WHERE run_id = ? AND user_id = ?",
+        (run_id, user_id), db_path=db_path, identity="run_id",
+    )
+    return _row_to_run(rows[0] if rows else None)
 
 
 def list_runs_for_agent(
@@ -1072,17 +969,11 @@ def list_runs_for_agent(
     db_path: str | os.PathLike | None = None,
     limit: int = 20,
 ) -> list[WeBotRunRecord]:
-    with _connect(db_path) as conn:
-        rows = conn.execute(
-            """
-            SELECT * FROM webot_runs
-            WHERE user_id = ? AND agent_id = ?
-            ORDER BY updated_at DESC
-            LIMIT ?
-            """,
-            (user_id, agent_id, max(1, limit)),
-        ).fetchall()
-    return [_row_to_run(row) for row in rows if row is not None]
+    rows = _query_agent_rows(
+        "SELECT * FROM webot_runs WHERE user_id = ? AND agent_id = ?",
+        (user_id, agent_id), db_path=db_path, identity="run_id",
+    )
+    return sorted((_row_to_run(row) for row in rows), key=lambda item: item.updated_at, reverse=True)[:max(1, limit)]
 
 
 def list_runs_for_session(
@@ -1091,7 +982,7 @@ def list_runs_for_session(
     db_path: str | os.PathLike | None = None,
     limit: int = 20,
 ) -> list[WeBotRunRecord]:
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         rows = conn.execute(
             """
             SELECT * FROM webot_runs
@@ -1111,28 +1002,13 @@ def list_runs_for_parent_session(
     limit: int = 20,
     run_kind: str | None = None,
 ) -> list[WeBotRunRecord]:
-    with _connect(db_path) as conn:
-        if run_kind:
-            rows = conn.execute(
-                """
-                SELECT * FROM webot_runs
-                WHERE user_id = ? AND parent_session = ? AND run_kind = ?
-                ORDER BY updated_at DESC
-                LIMIT ?
-                """,
-                (user_id, parent_session, run_kind, max(1, limit)),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                """
-                SELECT * FROM webot_runs
-                WHERE user_id = ? AND parent_session = ?
-                ORDER BY updated_at DESC
-                LIMIT ?
-                """,
-                (user_id, parent_session, max(1, limit)),
-            ).fetchall()
-    return [_row_to_run(row) for row in rows if row is not None]
+    sql = "SELECT * FROM webot_runs WHERE user_id = ? AND parent_session = ?"
+    params: tuple[Any, ...] = (user_id, parent_session)
+    if run_kind:
+        sql += " AND run_kind = ?"
+        params += (run_kind,)
+    rows = _query_agent_rows(sql, params, db_path=db_path, identity="run_id")
+    return sorted((_row_to_run(row) for row in rows), key=lambda item: item.updated_at, reverse=True)[:max(1, limit)]
 
 
 def list_child_runs(
@@ -1141,17 +1017,11 @@ def list_child_runs(
     db_path: str | os.PathLike | None = None,
     limit: int = 50,
 ) -> list[WeBotRunRecord]:
-    with _connect(db_path) as conn:
-        rows = conn.execute(
-            """
-            SELECT * FROM webot_runs
-            WHERE user_id = ? AND parent_run_id = ?
-            ORDER BY updated_at DESC
-            LIMIT ?
-            """,
-            (user_id, parent_run_id, max(1, limit)),
-        ).fetchall()
-    return [_row_to_run(row) for row in rows if row is not None]
+    rows = _query_agent_rows(
+        "SELECT * FROM webot_runs WHERE user_id = ? AND parent_run_id = ?",
+        (user_id, parent_run_id), db_path=db_path, identity="run_id",
+    )
+    return sorted((_row_to_run(row) for row in rows), key=lambda item: item.updated_at, reverse=True)[:max(1, limit)]
 
 
 def get_latest_run_for_agent(
@@ -1164,16 +1034,16 @@ def get_latest_run_for_agent(
 
 
 def list_recoverable_runs(db_path: str | os.PathLike | None = None) -> list[WeBotRunRecord]:
-    with _connect(db_path) as conn:
-        rows = conn.execute(
-            """
-            SELECT * FROM webot_runs
-            WHERE status IN ('queued', 'running', 'cancelling')
-              AND run_kind IN ('subagent', 'ultraplan')
-            ORDER BY updated_at ASC
-            """
-        ).fetchall()
-    return [_row_to_run(row) for row in rows if row is not None]
+    rows = _query_agent_rows(
+        "SELECT * FROM webot_runs",
+        db_path=db_path, identity="run_id",
+    )
+    return sorted(
+        (item for item in (_row_to_run(row) for row in rows)
+         if item.status in {"queued", "running", "cancelling"}
+         and item.run_kind in {"subagent", "ultraplan"}),
+        key=lambda item: item.updated_at,
+    )
 
 
 def update_run_status(
@@ -1260,7 +1130,7 @@ def add_run_attempt(
         worker_id=worker_id,
         created_at=utc_now(),
     )
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         conn.execute(
             """
             INSERT INTO webot_run_attempts (
@@ -1305,11 +1175,12 @@ def list_run_attempts(
     if agent_id:
         query.append("AND agent_id = ?")
         params.append(agent_id)
-    query.append("ORDER BY created_at DESC LIMIT ?")
-    params.append(max(1, limit))
-    with _connect(db_path) as conn:
-        rows = conn.execute(" ".join(query), params).fetchall()
-    return [_row_to_attempt(row) for row in rows if row is not None]
+    if session_id:
+        with _connect_agent(user_id, session_id, db_path) as conn:
+            rows = conn.execute(" ".join(query), params).fetchall()
+    else:
+        rows = _query_agent_rows(" ".join(query), params, db_path=db_path, identity="attempt_id")
+    return sorted((_row_to_attempt(row) for row in rows), key=lambda item: item.created_at, reverse=True)[:max(1, limit)]
 
 
 def claim_run_lease(
@@ -1423,7 +1294,7 @@ def save_session_state(
     normalized_mode = normalize_session_mode(mode)
     normalized_status = (status or "active").strip().lower() or "active"
     now = utc_now()
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         conn.execute(
             """
             INSERT INTO webot_session_state (
@@ -1454,7 +1325,7 @@ def get_session_state(
     session_id: str,
     db_path: str | os.PathLike | None = None,
 ) -> SessionStateRecord:
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         row = conn.execute(
             """
             SELECT * FROM webot_session_state
@@ -1518,7 +1389,7 @@ def create_inbox_message(
         delivered_at="",
         read_at="",
     )
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, record.target_session, db_path) as conn:
         conn.execute(
             """
             INSERT INTO webot_session_inbox (
@@ -1571,19 +1442,19 @@ def list_inbox_messages(
     if limit is not None:
         query.append("LIMIT ?")
         params.append(max(1, limit))
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, target_session, db_path) as conn:
         rows = conn.execute(" ".join(query), params).fetchall()
     return [_row_to_inbox_message(row) for row in rows if row is not None]
 
 
 def list_queued_inbox_targets(*, db_path: str | os.PathLike | None = None) -> list[tuple[str, str]]:
     """Find durable inboxes to resume after the agent service restarts."""
-    with _connect(db_path) as conn:
-        rows = conn.execute(
-            "SELECT DISTINCT user_id, target_session FROM webot_session_inbox "
-            "WHERE delivery_status = 'queued'"
-        ).fetchall()
-    return [(row[0], row[1]) for row in rows]
+    rows = _query_agent_rows(
+        "SELECT message_id, user_id, target_session, delivery_status FROM webot_session_inbox",
+        db_path=db_path, identity="message_id",
+    )
+    return sorted({(row["user_id"], row["target_session"]) for row in rows
+                   if row["delivery_status"] == "queued"})
 
 
 def get_inbox_message(
@@ -1594,7 +1465,7 @@ def get_inbox_message(
     db_path: str | os.PathLike | None = None,
 ) -> InboxMessageRecord | None:
     """A message ID is only readable in its owning user's target session."""
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, target_session, db_path) as conn:
         row = conn.execute(
             "SELECT * FROM webot_session_inbox WHERE user_id = ? AND target_session = ? AND message_id = ?",
             (user_id, target_session, message_id),
@@ -1610,7 +1481,7 @@ def mark_inbox_read(
     db_path: str | os.PathLike | None = None,
 ) -> int:
     """Mark selected or all unread messages read, without crossing a session boundary."""
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, target_session, db_path) as conn:
         selected = set(message_ids) if message_ids is not None else None
         if selected is not None and not selected:
             return 0
@@ -1649,7 +1520,7 @@ def mark_inbox_handled(
 ) -> bool:
     """Atomically mark a synchronous inbox turn delivered and read."""
     now = utc_now()
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, target_session, db_path) as conn:
         cursor = conn.execute(
             "UPDATE webot_session_inbox SET delivery_status = 'delivered', delivered_at = ?, read_at = ? "
             "WHERE user_id = ? AND target_session = ? AND message_id = ? AND delivery_status = 'queued'",
@@ -1670,7 +1541,13 @@ def update_inbox_message_status(
     if not normalized_status:
         return None
     delivered_at = utc_now() if normalized_status == "delivered" else ""
-    with _connect(db_path) as conn:
+    target_session = _record_session(
+        "webot_session_inbox", "message_id", message_id, user_id,
+        session_column="target_session", db_path=db_path,
+    )
+    if target_session is None:
+        return None
+    with _connect_agent(user_id, target_session, db_path) as conn:
         row = conn.execute(
             """
             SELECT * FROM webot_session_inbox
@@ -1724,7 +1601,7 @@ def create_runtime_artifact(
         metadata=dict(metadata or {}),
         created_at=utc_now(),
     )
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         conn.execute(
             """
             INSERT INTO webot_runtime_artifacts (
@@ -1785,7 +1662,7 @@ def update_runtime_artifact(
         metadata=metadata if metadata is not None else record.metadata,
         created_at=record.created_at,
     )
-    return create_runtime_artifact(
+    result = create_runtime_artifact(
         artifact_id=updated.artifact_id,
         user_id=updated.user_id,
         session_id=updated.session_id,
@@ -1797,6 +1674,13 @@ def update_runtime_artifact(
         metadata=updated.metadata,
         db_path=db_path,
     )
+    if (updated.session_id != record.session_id and db_path is None
+            and DEFAULT_DB_PATH is None):
+        with _connect_agent(user_id, record.session_id, db_path) as conn:
+            conn.execute("DELETE FROM webot_runtime_artifacts WHERE artifact_id = ? AND user_id = ?",
+                         (artifact_id, user_id))
+            conn.commit()
+    return result
 
 
 def get_runtime_artifact(
@@ -1804,7 +1688,10 @@ def get_runtime_artifact(
     user_id: str,
     db_path: str | os.PathLike | None = None,
 ) -> RuntimeArtifactRecord | None:
-    with _connect(db_path) as conn:
+    session_id = _record_session("webot_runtime_artifacts", "artifact_id", artifact_id, user_id, db_path=db_path)
+    if session_id is None:
+        return None
+    with _connect_agent(user_id, session_id, db_path) as conn:
         row = conn.execute(
             """
             SELECT * FROM webot_runtime_artifacts
@@ -1831,11 +1718,12 @@ def list_runtime_artifacts(
     if kind:
         query.append("AND kind = ?")
         params.append(kind)
-    query.append("ORDER BY created_at DESC LIMIT ?")
-    params.append(max(1, limit))
-    with _connect(db_path) as conn:
-        rows = conn.execute(" ".join(query), params).fetchall()
-    return [_row_to_artifact(row) for row in rows if row is not None]
+    if session_id:
+        with _connect_agent(user_id, session_id, db_path) as conn:
+            rows = conn.execute(" ".join(query), params).fetchall()
+    else:
+        rows = _query_agent_rows(" ".join(query), params, db_path=db_path, identity="artifact_id")
+    return sorted((_row_to_artifact(row) for row in rows), key=lambda item: item.created_at, reverse=True)[:max(1, limit)]
 
 
 def record_runtime_artifact(
@@ -1883,7 +1771,7 @@ def count_inbox_messages(
     elif status:
         query.append("AND delivery_status = ?")
         params.append(status)
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, target_session, db_path) as conn:
         row = conn.execute(" ".join(query), params).fetchone()
     if row is None:
         return 0
@@ -2150,7 +2038,7 @@ def save_session_plan(
     normalized_status = (status or "active").strip().lower()
     if normalized_status not in {"active", "completed", "archived"}:
         normalized_status = "active"
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         conn.execute(
             """
             INSERT INTO webot_session_plans (
@@ -2182,7 +2070,7 @@ def get_session_plan(
     session_id: str,
     db_path: str | os.PathLike | None = None,
 ) -> dict[str, Any] | None:
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         row = conn.execute(
             """
             SELECT title, status, items_json, metadata_json, updated_at, created_at
@@ -2212,7 +2100,7 @@ def delete_session_plan(
     session_id: str,
     db_path: str | os.PathLike | None = None,
 ) -> int:
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         cursor = conn.execute(
             """
             DELETE FROM webot_session_plans
@@ -2233,7 +2121,7 @@ def save_session_todos(
 ) -> None:
     now = utc_now()
     normalized_items = _normalize_plan_items(items)
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         conn.execute(
             """
             INSERT INTO webot_session_todos (
@@ -2259,7 +2147,7 @@ def get_session_todos(
     session_id: str,
     db_path: str | os.PathLike | None = None,
 ) -> dict[str, Any] | None:
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         row = conn.execute(
             """
             SELECT items_json, updated_at, created_at
@@ -2286,7 +2174,7 @@ def delete_session_todos(
     session_id: str,
     db_path: str | os.PathLike | None = None,
 ) -> int:
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         cursor = conn.execute(
             """
             DELETE FROM webot_session_todos
@@ -2296,210 +2184,6 @@ def delete_session_todos(
         )
         conn.commit()
         return cursor.rowcount
-
-
-def _normalize_goal_status(status: str | None) -> str:
-    normalized = (status or "active").strip().lower() or "active"
-    if normalized not in {"active", "blocked", "completed", "archived", "paused"}:
-        normalized = "active"
-    return normalized
-
-
-def _normalize_goal_priority(priority: str | None) -> str:
-    normalized = (priority or "normal").strip().lower() or "normal"
-    if normalized not in {"low", "normal", "high", "critical"}:
-        normalized = "normal"
-    return normalized
-
-
-def upsert_session_goal(
-    user_id: str,
-    session_id: str,
-    *,
-    goal_id: str = "",
-    title: str,
-    description: str = "",
-    status: str = "active",
-    priority: str = "normal",
-    parent_goal_id: str = "",
-    owner_session: str = "",
-    metrics: dict[str, Any] | None = None,
-    budget_tokens: int = 0,
-    spent_tokens: int = 0,
-    budget_usd: float = 0.0,
-    spent_usd: float = 0.0,
-    heartbeat_status: str = "idle",
-    heartbeat_at: str = "",
-    last_report: str = "",
-    metadata: dict[str, Any] | None = None,
-    db_path: str | os.PathLike | None = None,
-) -> SessionGoalRecord:
-    normalized_goal_id = (goal_id or "").strip() or f"goal-{uuid.uuid4().hex[:12]}"
-    existing = get_session_goal(user_id, normalized_goal_id, db_path=db_path)
-    now = utc_now()
-    created_at = existing.created_at if existing is not None else now
-    normalized_session = (session_id or (existing.session_id if existing is not None else "") or "default").strip()
-    normalized_title = (title or (existing.title if existing is not None else "")).strip()
-    if not normalized_title:
-        normalized_title = "Untitled goal"
-    record = SessionGoalRecord(
-        goal_id=normalized_goal_id,
-        user_id=user_id,
-        session_id=normalized_session,
-        title=normalized_title,
-        description=description if description is not None else (existing.description if existing else ""),
-        status=_normalize_goal_status(status if status is not None else (existing.status if existing else "active")),
-        priority=_normalize_goal_priority(priority if priority is not None else (existing.priority if existing else "normal")),
-        parent_goal_id=parent_goal_id if parent_goal_id is not None else (existing.parent_goal_id if existing else ""),
-        owner_session=owner_session if owner_session is not None else (existing.owner_session if existing else ""),
-        metrics=dict(metrics if metrics is not None else (existing.metrics if existing else {})),
-        budget_tokens=max(0, int(budget_tokens if budget_tokens is not None else (existing.budget_tokens if existing else 0))),
-        spent_tokens=max(0, int(spent_tokens if spent_tokens is not None else (existing.spent_tokens if existing else 0))),
-        budget_usd=max(0.0, float(budget_usd if budget_usd is not None else (existing.budget_usd if existing else 0))),
-        spent_usd=max(0.0, float(spent_usd if spent_usd is not None else (existing.spent_usd if existing else 0))),
-        heartbeat_status=(heartbeat_status or (existing.heartbeat_status if existing else "idle")).strip().lower() or "idle",
-        heartbeat_at=heartbeat_at if heartbeat_at is not None else (existing.heartbeat_at if existing else ""),
-        last_report=last_report if last_report is not None else (existing.last_report if existing else ""),
-        metadata=dict(metadata if metadata is not None else (existing.metadata if existing else {})),
-        updated_at=now,
-        created_at=created_at,
-    )
-    with _connect(db_path) as conn:
-        conn.execute(
-            """
-            INSERT INTO webot_session_goals (
-                goal_id, user_id, session_id, title, description, status, priority,
-                parent_goal_id, owner_session, metrics_json, budget_tokens, spent_tokens,
-                budget_usd, spent_usd, heartbeat_status, heartbeat_at, last_report,
-                metadata_json, updated_at, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(goal_id) DO UPDATE SET
-                session_id=excluded.session_id,
-                title=excluded.title,
-                description=excluded.description,
-                status=excluded.status,
-                priority=excluded.priority,
-                parent_goal_id=excluded.parent_goal_id,
-                owner_session=excluded.owner_session,
-                metrics_json=excluded.metrics_json,
-                budget_tokens=excluded.budget_tokens,
-                spent_tokens=excluded.spent_tokens,
-                budget_usd=excluded.budget_usd,
-                spent_usd=excluded.spent_usd,
-                heartbeat_status=excluded.heartbeat_status,
-                heartbeat_at=excluded.heartbeat_at,
-                last_report=excluded.last_report,
-                metadata_json=excluded.metadata_json,
-                updated_at=excluded.updated_at
-            WHERE webot_session_goals.user_id = excluded.user_id
-            """,
-            (
-                record.goal_id,
-                record.user_id,
-                record.session_id,
-                record.title,
-                record.description,
-                record.status,
-                record.priority,
-                record.parent_goal_id,
-                record.owner_session,
-                _json_dumps(record.metrics),
-                record.budget_tokens,
-                record.spent_tokens,
-                record.budget_usd,
-                record.spent_usd,
-                record.heartbeat_status,
-                record.heartbeat_at,
-                record.last_report,
-                _json_dumps(record.metadata),
-                record.updated_at,
-                record.created_at,
-            ),
-        )
-        conn.commit()
-    refreshed = get_session_goal(user_id, record.goal_id, db_path=db_path)
-    return refreshed or record
-
-
-def get_session_goal(
-    user_id: str,
-    goal_id: str,
-    db_path: str | os.PathLike | None = None,
-) -> SessionGoalRecord | None:
-    with _connect(db_path) as conn:
-        row = conn.execute(
-            """
-            SELECT * FROM webot_session_goals
-            WHERE user_id = ? AND goal_id = ?
-            """,
-            (user_id, goal_id),
-        ).fetchone()
-    return _row_to_session_goal(row)
-
-
-def list_session_goals(
-    user_id: str,
-    session_id: str | None = None,
-    *,
-    status: str | None = None,
-    db_path: str | os.PathLike | None = None,
-    limit: int = 50,
-) -> list[SessionGoalRecord]:
-    query = ["SELECT * FROM webot_session_goals WHERE user_id = ?"]
-    params: list[Any] = [user_id]
-    if session_id:
-        query.append("AND session_id = ?")
-        params.append(session_id)
-    if status:
-        query.append("AND status = ?")
-        params.append(_normalize_goal_status(status))
-    query.append("ORDER BY updated_at DESC LIMIT ?")
-    params.append(max(1, min(limit, 200)))
-    with _connect(db_path) as conn:
-        rows = conn.execute(" ".join(query), params).fetchall()
-    return [_row_to_session_goal(row) for row in rows if row is not None]
-
-
-def record_goal_heartbeat(
-    user_id: str,
-    goal_id: str,
-    *,
-    session_id: str = "",
-    heartbeat_status: str = "active",
-    report: str = "",
-    spent_tokens_delta: int = 0,
-    spent_usd_delta: float = 0.0,
-    metadata: dict[str, Any] | None = None,
-    db_path: str | os.PathLike | None = None,
-) -> SessionGoalRecord | None:
-    record = get_session_goal(user_id, goal_id, db_path=db_path)
-    if record is None:
-        return None
-    merged_metadata = dict(record.metadata)
-    if metadata:
-        merged_metadata.update(metadata)
-    heartbeat_at = utc_now()
-    return upsert_session_goal(
-        user_id,
-        session_id or record.session_id,
-        goal_id=record.goal_id,
-        title=record.title,
-        description=record.description,
-        status=record.status,
-        priority=record.priority,
-        parent_goal_id=record.parent_goal_id,
-        owner_session=record.owner_session,
-        metrics=record.metrics,
-        budget_tokens=record.budget_tokens,
-        spent_tokens=record.spent_tokens + max(0, int(spent_tokens_delta or 0)),
-        budget_usd=record.budget_usd,
-        spent_usd=record.spent_usd + max(0.0, float(spent_usd_delta or 0)),
-        heartbeat_status=(heartbeat_status or "active").strip().lower() or "active",
-        heartbeat_at=heartbeat_at,
-        last_report=report if report is not None else record.last_report,
-        metadata=merged_metadata,
-        db_path=db_path,
-    )
 
 
 def _default_claude_keepalive(user_id: str, session_id: str) -> ClaudeKeepaliveRecord:
@@ -2536,7 +2220,7 @@ def get_claude_keepalive_state(
     session_id: str,
     db_path: str | os.PathLike | None = None,
 ) -> ClaudeKeepaliveRecord:
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         row = conn.execute(
             """
             SELECT * FROM webot_claude_keepalive
@@ -2599,7 +2283,7 @@ def save_claude_keepalive_state(
         updated_at=now,
         created_at=existing.created_at or now,
     )
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         conn.execute(
             """
             INSERT INTO webot_claude_keepalive (
@@ -2713,7 +2397,7 @@ def add_verification_record(
     details: str,
     db_path: str | os.PathLike | None = None,
 ) -> None:
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         conn.execute(
             """
             INSERT INTO webot_verifications (
@@ -2740,7 +2424,7 @@ def list_verification_records(
     limit: int = 20,
     db_path: str | os.PathLike | None = None,
 ) -> list[dict[str, str]]:
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         rows = conn.execute(
             """
             SELECT verification_id, title, status, details, created_at
@@ -2782,7 +2466,7 @@ def create_tool_approval_request(
         updated_at=now,
         expires_at=_future_timestamp(hours=expiry_hours),
     )
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         conn.execute(
             """
             INSERT INTO webot_tool_approvals (
@@ -2824,14 +2508,15 @@ def list_tool_approvals(
     if session_id:
         query.append("AND session_id = ?")
         params.append(session_id)
+    if session_id:
+        with _connect_agent(user_id, session_id, db_path) as conn:
+            rows = conn.execute(" ".join(query), params).fetchall()
+    else:
+        rows = _query_agent_rows(" ".join(query), params, db_path=db_path, identity="approval_id")
+    records = [_row_to_approval(row) for row in rows]
     if status:
-        query.append("AND status = ?")
-        params.append(status)
-    query.append("ORDER BY updated_at DESC LIMIT ?")
-    params.append(max(1, limit))
-    with _connect(db_path) as conn:
-        rows = conn.execute(" ".join(query), params).fetchall()
-    return [_row_to_approval(row) for row in rows if row is not None]
+        records = [record for record in records if record.status == status]
+    return sorted(records, key=lambda item: item.updated_at, reverse=True)[:max(1, limit)]
 
 
 def find_active_approval_for_action(
@@ -2843,7 +2528,7 @@ def find_active_approval_for_action(
 ) -> ToolApprovalRecord | None:
     args_hash = _stable_args_hash(tool_name, args or {})
     now = utc_now()
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         row = conn.execute(
             """
             SELECT * FROM webot_tool_approvals
@@ -2870,7 +2555,7 @@ def find_pending_approval_for_action(
 ) -> ToolApprovalRecord | None:
     args_hash = _stable_args_hash(tool_name, args or {})
     now = utc_now()
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         row = conn.execute(
             """
             SELECT * FROM webot_tool_approvals
@@ -2910,7 +2595,10 @@ def update_tool_approval_status(
         if expected_status not in allowed_statuses:
             raise ValueError(f"Invalid expected approval status: {expected_status}")
         allowed_statuses = (expected_status,)
-    with _connect(db_path) as conn:
+    session_id = _record_session("webot_tool_approvals", "approval_id", approval_id, user_id, db_path=db_path)
+    if session_id is None:
+        return None
+    with _connect_agent(user_id, session_id, db_path) as conn:
         updated_at = utc_now()
         placeholders = ",".join("?" for _ in allowed_statuses)
         expiry_condition = "" if status == "expired" else " AND expires_at > ?"
@@ -2941,7 +2629,10 @@ def get_tool_approval(
     user_id: str,
     db_path: str | os.PathLike | None = None,
 ) -> ToolApprovalRecord | None:
-    with _connect(db_path) as conn:
+    session_id = _record_session("webot_tool_approvals", "approval_id", approval_id, user_id, db_path=db_path)
+    if session_id is None:
+        return None
+    with _connect_agent(user_id, session_id, db_path) as conn:
         row = conn.execute(
             """
             SELECT * FROM webot_tool_approvals
@@ -2953,7 +2644,10 @@ def get_tool_approval(
 
 
 def set_approval_review_metadata(approval_id: str, user_id: str, metadata: dict) -> None:
-    with _connect() as conn:
+    session_id = _record_session("webot_tool_approvals", "approval_id", approval_id, user_id)
+    if session_id is None:
+        return
+    with _connect_agent(user_id, session_id) as conn:
         conn.execute(
             "UPDATE webot_tool_approvals SET review_metadata_json = ? WHERE approval_id = ? AND user_id = ? AND status IN ('pending', 'approved')",
             (_json_dumps(metadata), approval_id, user_id),
@@ -2964,7 +2658,10 @@ def set_approval_review_metadata(approval_id: str, user_id: str, metadata: dict)
 def record_tool_execution(approval_id: str, user_id: str, *, status: str, detail: str = "") -> None:
     if not approval_id:
         return
-    with _connect() as conn:
+    session_id = _record_session("webot_tool_approvals", "approval_id", approval_id, user_id)
+    if session_id is None:
+        return
+    with _connect_agent(user_id, session_id) as conn:
         conn.commit()
         conn.execute("BEGIN IMMEDIATE")
         row = conn.execute("SELECT review_metadata_json FROM webot_tool_approvals WHERE approval_id = ? AND user_id = ? AND status = 'used'", (approval_id, user_id)).fetchone()
@@ -2979,7 +2676,7 @@ def issue_execution_permit(user_id: str, session_id: str, tool_name: str, args: 
     from datetime import timedelta
     import uuid
     expires_at = (datetime.now(timezone.utc) + timedelta(seconds=60)).isoformat()
-    with _connect() as conn:
+    with _connect_agent(user_id, session_id) as conn:
         conn.execute("DELETE FROM webot_execution_permits WHERE expires_at <= ? OR consumed = 1", (utc_now(),))
         conn.execute(
             "INSERT INTO webot_execution_permits VALUES (?, ?, ?, ?, ?, ?, ?, 0)",
@@ -2989,7 +2686,7 @@ def issue_execution_permit(user_id: str, session_id: str, tool_name: str, args: 
 
 
 def consume_execution_permit(user_id: str, session_id: str, tool_name: str, args: dict, binding_hash: str) -> bool:
-    with _connect() as conn:
+    with _connect_agent(user_id, session_id) as conn:
         cursor = conn.execute("""
             UPDATE webot_execution_permits SET consumed = 1 WHERE permit_id = (
                 SELECT permit_id FROM webot_execution_permits
@@ -3017,7 +2714,7 @@ def save_memory_state(
     db_path: str | os.PathLike | None = None,
 ) -> MemoryStateRecord:
     now = utc_now()
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         conn.execute(
             """
             INSERT INTO webot_memory_state (
@@ -3066,7 +2763,7 @@ def get_memory_state(
     session_id: str,
     db_path: str | os.PathLike | None = None,
 ) -> MemoryStateRecord:
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         row = conn.execute(
             "SELECT * FROM webot_memory_state WHERE user_id = ? AND session_id = ?",
             (user_id, session_id),
@@ -3092,100 +2789,6 @@ def get_memory_state(
     )
 
 
-def upsert_bridge_session(
-    *,
-    bridge_id: str,
-    user_id: str,
-    session_id: str,
-    role: str = "viewer",
-    label: str = "",
-    attach_code: str = "",
-    websocket_path: str = "",
-    status: str = "detached",
-    connection_count: int = 0,
-    metadata: dict[str, Any] | None = None,
-    last_error: str = "",
-    last_attached_at: str = "",
-    db_path: str | os.PathLike | None = None,
-) -> BridgeSessionRecord:
-    now = utc_now()
-    with _connect(db_path) as conn:
-        conn.execute(
-            """
-            INSERT INTO webot_bridge_sessions (
-                bridge_id, user_id, session_id, role, label, attach_code,
-                websocket_path, status, connection_count, metadata_json,
-                last_error, last_attached_at, updated_at, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(bridge_id) DO UPDATE SET
-                role=excluded.role,
-                label=excluded.label,
-                attach_code=excluded.attach_code,
-                websocket_path=excluded.websocket_path,
-                status=excluded.status,
-                connection_count=excluded.connection_count,
-                metadata_json=excluded.metadata_json,
-                last_error=excluded.last_error,
-                last_attached_at=excluded.last_attached_at,
-                updated_at=excluded.updated_at
-            """,
-            (
-                bridge_id,
-                user_id,
-                session_id,
-                role,
-                label,
-                attach_code,
-                websocket_path,
-                status,
-                connection_count,
-                _json_dumps(metadata or {}),
-                last_error,
-                last_attached_at,
-                now,
-                now,
-            ),
-        )
-        conn.commit()
-        row = conn.execute(
-            "SELECT * FROM webot_bridge_sessions WHERE bridge_id = ?",
-            (bridge_id,),
-        ).fetchone()
-    return _row_to_bridge_session(row)  # type: ignore[arg-type]
-
-
-def get_bridge_session(
-    bridge_id: str,
-    user_id: str,
-    db_path: str | os.PathLike | None = None,
-) -> BridgeSessionRecord | None:
-    with _connect(db_path) as conn:
-        row = conn.execute(
-            "SELECT * FROM webot_bridge_sessions WHERE bridge_id = ? AND user_id = ?",
-            (bridge_id, user_id),
-        ).fetchone()
-    return _row_to_bridge_session(row)
-
-
-def list_bridge_sessions(
-    user_id: str,
-    session_id: str | None = None,
-    *,
-    db_path: str | os.PathLike | None = None,
-    limit: int = 20,
-) -> list[BridgeSessionRecord]:
-    query = ["SELECT * FROM webot_bridge_sessions WHERE user_id = ?"]
-    params: list[Any] = [user_id]
-    if session_id:
-        query.append("AND session_id = ?")
-        params.append(session_id)
-    query.append("ORDER BY updated_at DESC LIMIT ?")
-    params.append(max(1, limit))
-    with _connect(db_path) as conn:
-        rows = conn.execute(" ".join(query), params).fetchall()
-    return [_row_to_bridge_session(row) for row in rows if row is not None]
-
-
 def save_voice_state(
     user_id: str,
     session_id: str,
@@ -3201,7 +2804,7 @@ def save_voice_state(
     db_path: str | os.PathLike | None = None,
 ) -> VoiceStateRecord:
     now = utc_now()
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         conn.execute(
             """
             INSERT INTO webot_voice_state (
@@ -3248,7 +2851,7 @@ def get_voice_state(
     session_id: str,
     db_path: str | os.PathLike | None = None,
 ) -> VoiceStateRecord:
-    with _connect(db_path) as conn:
+    with _connect_agent(user_id, session_id, db_path) as conn:
         row = conn.execute(
             "SELECT * FROM webot_voice_state WHERE user_id = ? AND session_id = ?",
             (user_id, session_id),
@@ -3271,85 +2874,3 @@ def get_voice_state(
         updated_at=now,
         created_at=now,
     )
-
-
-def save_buddy_state(
-    *,
-    user_id: str,
-    seed: str,
-    species: str,
-    rarity: str,
-    shiny: bool,
-    eye: str,
-    hat: str,
-    stats: dict[str, int],
-    soul_name: str = "",
-    soul_personality: str = "",
-    reaction: str = "",
-    hatched_at: str = "",
-    last_interaction_at: str = "",
-    metadata: dict[str, Any] | None = None,
-    db_path: str | os.PathLike | None = None,
-) -> BuddyStateRecord:
-    now = utc_now()
-    with _connect(db_path) as conn:
-        conn.execute(
-            """
-            INSERT INTO webot_buddy_state (
-                user_id, seed, species, rarity, shiny, eye, hat, stats_json,
-                soul_name, soul_personality, reaction, hatched_at,
-                last_interaction_at, metadata_json, updated_at, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(user_id) DO UPDATE SET
-                seed=excluded.seed,
-                species=excluded.species,
-                rarity=excluded.rarity,
-                shiny=excluded.shiny,
-                eye=excluded.eye,
-                hat=excluded.hat,
-                stats_json=excluded.stats_json,
-                soul_name=excluded.soul_name,
-                soul_personality=excluded.soul_personality,
-                reaction=excluded.reaction,
-                hatched_at=excluded.hatched_at,
-                last_interaction_at=excluded.last_interaction_at,
-                metadata_json=excluded.metadata_json,
-                updated_at=excluded.updated_at
-            """,
-            (
-                user_id,
-                seed,
-                species,
-                rarity,
-                1 if shiny else 0,
-                eye,
-                hat,
-                _json_dumps(stats),
-                soul_name,
-                soul_personality,
-                reaction,
-                hatched_at,
-                last_interaction_at,
-                _json_dumps(metadata or {}),
-                now,
-                now,
-            ),
-        )
-        conn.commit()
-        row = conn.execute(
-            "SELECT * FROM webot_buddy_state WHERE user_id = ?",
-            (user_id,),
-        ).fetchone()
-    return _row_to_buddy_state(row)  # type: ignore[arg-type]
-
-
-def get_buddy_state(
-    user_id: str,
-    db_path: str | os.PathLike | None = None,
-) -> BuddyStateRecord | None:
-    with _connect(db_path) as conn:
-        row = conn.execute(
-            "SELECT * FROM webot_buddy_state WHERE user_id = ?",
-            (user_id,),
-        ).fetchone()
-    return _row_to_buddy_state(row)

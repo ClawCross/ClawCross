@@ -25,9 +25,6 @@ if "fastapi" not in sys.modules:
 from webot.models import WeBotLspRequest, WeBotSubagentHistoryRequest, WeBotSubagentRefRequest
 from webot.models import (
     WeBotApprovalResolutionRequest,
-    WeBotBridgeAttachRequest,
-    WeBotBridgeDetachRequest,
-    WeBotBuddyActionRequest,
     WeBotDreamRequest,
     WeBotKairosUpdateRequest,
     WeBotPlanUpdateRequest,
@@ -339,19 +336,6 @@ class WeBotServiceTests(unittest.IsolatedAsyncioTestCase):
                     ),
                     None,
                 )
-                bridge = await service.create_bridge_attach(
-                    WeBotBridgeAttachRequest(
-                        user_id="alice",
-                        session_id="default",
-                        role="viewer",
-                        label="browser",
-                    ),
-                    None,
-                )
-                buddy = await service.buddy_action(
-                    WeBotBuddyActionRequest(user_id="alice", action="pet"),
-                    None,
-                )
                 kairos = await service.update_kairos_state(
                     WeBotKairosUpdateRequest(
                         user_id="alice",
@@ -369,24 +353,14 @@ class WeBotServiceTests(unittest.IsolatedAsyncioTestCase):
                     ),
                     None,
                 )
-                bridge_id = bridge["bridge"]["bridge_id"]
-                detached = await service.detach_bridge(
-                    WeBotBridgeDetachRequest(user_id="alice", bridge_id=bridge_id),
-                    None,
-                )
                 runtime_view = await service.get_session_runtime("alice", "default", "", None)
 
                 self.assertTrue(voice["voice"]["enabled"])
                 self.assertEqual(voice["voice"]["status"], "enabled")
-                self.assertEqual(bridge["bridge"]["websocket_path"], f"/webot/ws/alice/{bridge_id}")
-                self.assertEqual(detached["bridge"]["status"], "detached")
-                self.assertEqual(buddy["buddy"]["species"], runtime_view["buddy"]["species"])
                 self.assertTrue(kairos["memory"]["kairos_enabled"])
                 self.assertIn("state", dream["memory"])
                 self.assertIn("memory", runtime_view)
-                self.assertIn("bridge", runtime_view)
                 self.assertIn("voice", runtime_view)
-                self.assertIn("buddy", runtime_view)
             finally:
                 store.DEFAULT_DB_PATH = original_db_path
                 runtime_store.DEFAULT_DB_PATH = original_runtime_db_path

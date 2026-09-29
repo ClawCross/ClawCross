@@ -122,7 +122,6 @@ For the full install guide (OpenClaw, Antigravity, MiniMax, WSL, manual CLI conf
 - **Role-based subagents** — profiles for general, research, planner, coder, reviewer, and verifier modes
 - **Persisted state** — run/task lifecycle, plan/todo/verification primitives, context compression, and artifact logging
 - **Approval-aware tool policies** — configure which tools require human approval, with event logging and hooks
-- **Bridge sessions** — real-time WebSocket connections between WeBot runtime and the UI
 
 ### Living Memory and Observability
 
@@ -150,7 +149,7 @@ For the full install guide (OpenClaw, Antigravity, MiniMax, WSL, manual CLI conf
 | **ClawCross Creator** | Turn a task description or SOP pages into roles, personas, and an OASIS workflow |
 | **OASIS workflows** | Sequential, parallel, branching, and DAG-style expert orchestration |
 | **OASIS Town** | Pixel-town visualization with live residents, nudges, and swarm graph |
-| **WeBot runtime** | Claude-Code-style delegation with profiles, modes, tool policies, and bridge sessions |
+| **WeBot runtime** | Claude-Code-style delegation with profiles, modes, tool policies, and per-Agent runtime state |
 | **GraphRAG memory** | Persist each topic as a living graph in local SQLite, with optional Zep mirroring |
 | **ReportAgent** | Graph-backed evidence for predictions and decisions |
 | **MCP tools** | Built-in tools for commands, files, sessions, search, scheduler, OASIS, WeBot, and LLM API |

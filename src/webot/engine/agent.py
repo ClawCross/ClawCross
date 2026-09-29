@@ -28,7 +28,7 @@ from webot.compression import (
     trim_new_input_if_oversized,
 )
 from webot.context import assemble_input_messages, render_runtime_context_block
-from webot.memory import ensure_memory_state
+from webot.memory import get_memory_state
 from webot.skills import build_user_profile_block
 from webot.soul import build_soul_prompt
 from webot.trajectory import auto_trajectory_enabled, save_trajectory
@@ -56,25 +56,17 @@ from webot.runtime import (
     resolve_max_turns,
     should_stop_for_turn_limit,
 )
-from webot.bridge import get_bridge_runtime_payload
-from webot.buddy import serialize_buddy_state
 from webot.runtime_store import (
     count_inbox_messages,
     get_session_state,
     get_session_mode,
     save_session_mode,
     list_inbox_messages,
-    list_runtime_artifacts,
-    list_runs_for_session,
-    get_session_plan,
-    get_session_todos,
     list_tool_approvals,
-    list_verification_records,
     update_tool_approval_status,
     get_tool_approval,
     utc_now,
 )
-from webot.voice import get_voice_state as get_webot_voice_state
 from webot.workspace import describe_session_workspace
 
 # --- New feature modules (ported from Claude Code / openclaw / oh-my-codex) ---
@@ -854,9 +846,8 @@ class TeamAgent:
         self._context_store = None
         self._context_store_ctx = None
 
-        # Per-thread tool-state cache
+        # Per-thread execution state
         self._task_registry = TaskRegistry()
-        self._tool_state_cache: dict[str, frozenset[str]] = {}
         # 上一次真正发给模型的运行时状态块。动态块是"发了但不写回历史"的临时内容，
         # 每发一次，本次请求写入的缓存条目就以它结尾，而下一次请求里它已不存在
         # （被模型回复顶掉），条目永远读不回来。所以工具回合里只在状态**变化**时
@@ -885,7 +876,6 @@ class TeamAgent:
             "base_system": "base_system.txt",
             "base_system_subagent": "base_system_subagent.txt",
             "system_trigger": "system_trigger.txt",
-            "tool_status": "tool_status.txt",
             "conversation_rules": "conversation_rules.txt",
         }
         loaded = {}
@@ -976,7 +966,7 @@ class TeamAgent:
         return None
 
     def _get_user_skills(self, user_id: str, teams: list[str] | tuple[str, ...] = ()) -> str:
-        """Describe the Skill/Memory interface and initial catalog without paths."""
+        """Snapshot the initial Skill/Memory catalog without paths."""
         from webot.skills import build_user_skills_listing
 
         return build_user_skills_listing(user_id, teams=teams)
@@ -1269,11 +1259,8 @@ class TeamAgent:
 
         filtered_tools = [t for t in all_tools if t.name in set(effective_enabled_names)]
 
-        # 工具绑定永远用全量 all_tools，不按 effective_enabled_names 收窄——
-        # 这样 bind_tools 传给 provider 的 tools 数组逐字节稳定，不因 session
-        # mode / enabled_tools 变化而改变，KV/prompt 缓存前缀才不会被打掉。
-        # 谁能不能调，交给下面 UserAwareToolNode 在真正执行时按 enabled_tools
-        # 拦截并回复"该工具被禁用"，而不是从模型能看到的工具列表里隐藏它。
+        # Only send tools the agent may call in this session. The tool node
+        # enforces the same list again at execution time.
         external_tools_defs = state.get("external_tools") or []
         external_func_defs: list[dict] = []
         for ext_tool in external_tools_defs:
@@ -1336,10 +1323,9 @@ class TeamAgent:
             )
 
         # 工具参数在解码端按 JSON schema 强约束（strict tool calling）。
-        # 绑定结果只取决于 provider，同一 provider 下逐字节稳定，不影响前缀缓存。
+        # 只发送本轮可用工具；启用列表改变时 tools 前缀也会改变。
         base_model, strict_tools, bind_kwargs = strict_tool_binding(base_model)
-        bindable_tools = filtered_tools if runtime_mode_name in {"chat", "readonly"} else all_tools
-        bind_tools_list: list = [bind_tool_schema(t, strict=strict_tools) for t in bindable_tools]
+        bind_tools_list: list = [bind_tool_schema(t, strict=strict_tools) for t in filtered_tools]
         # 以 OpenAI function 格式传入 bind_tools（LangChain 支持 dict 格式）
         if runtime_mode_name not in {"chat", "readonly"}:
             bind_tools_list += [external_tool_schema(d, strict=strict_tools) for d in external_func_defs]
@@ -1367,16 +1353,12 @@ class TeamAgent:
         if isinstance(base_model, ChatAnthropic):
             llm = llm.bind(cache_control={"type": "ephemeral"})
 
-        all_names = sorted(t.name for t in all_tools)
-        visible_names = sorted(t.name for t in filtered_tools)
-
         # Session mode can change mid-session; it belongs in the runtime tail,
         # never in the immutable system prompt.
         session_mode_prompt = build_session_mode_message(runtime_mode_name, runtime_mode_payload.get('reason', ''))
 
-        # Detect tool state change
+        # Stable system prompt key
         user_id = state.get("user_id", "__global__")
-        current_enabled = frozenset(visible_names)
         tool_state_key = f"{user_id}#{session_id or 'default'}"
         # Freeze the entire system message at the first inference. Re-reading
         # SOUL, profile or Skill/Memory metadata on later turns would change the
@@ -1413,9 +1395,6 @@ class TeamAgent:
                 base_prompt += build_soul_prompt(user_id)
             base_prompt = await self._context_store.save_system_prompt_if_absent(tool_state_key, base_prompt)
 
-        runtime_plan = get_session_plan(user_id, session_id)
-        runtime_todos = get_session_todos(user_id, session_id)
-        runtime_verifications = list_verification_records(user_id, session_id, limit=5)
         # The inbox worker's HumanMessage already carries its digest. For any
         # other turn, surface newly queued messages once on the first model
         # call; unread messages previously notified stay in the inbox only.
@@ -1436,24 +1415,6 @@ class TeamAgent:
                     }
                     for item in list_inbox_messages(user_id, session_id, status="queued", limit=3)
                 ]
-        runtime_artifacts = [
-            {
-                "artifact_kind": item.kind,
-                "title": item.title,
-                "path": item.path,
-                "summary": item.summary,
-            }
-            for item in list_runtime_artifacts(user_id, session_id, limit=5)
-        ]
-        runtime_runs = [
-            {
-                "run_id": item.run_id,
-                "run_kind": item.run_kind,
-                "status": item.status,
-                "title": item.title,
-            }
-            for item in list_runs_for_session(user_id, session_id, limit=5)
-        ]
         pending_approvals = [
             {
                 "approval_id": approval.approval_id,
@@ -1462,56 +1423,23 @@ class TeamAgent:
             }
             for approval in list_tool_approvals(user_id, session_id, status="pending", limit=5)
         ]
-        memory_state = ensure_memory_state(user_id, session_id)
-        bridge_state = get_bridge_runtime_payload(user_id, session_id)
-        voice_state = get_webot_voice_state(user_id, session_id or "default")
-        buddy_state = serialize_buddy_state(user_id)
+        # Reading memory for a model call must not rewrite its index and
+        # upsert runtime metadata when no memory entry changed.
+        memory_state = get_memory_state(user_id, session_id)
         runtime_context_block = render_runtime_context_block(
             mode=runtime_mode_payload,
-            plan=runtime_plan,
-            todos=runtime_todos,
-            verifications=runtime_verifications,
             pending_approvals=pending_approvals,
             inbox=runtime_inbox,
             inbox_unread_count=runtime_inbox_count,
             inbox_new_count=runtime_inbox_new_count,
-            recent_artifacts=runtime_artifacts,
-            recent_runs=runtime_runs,
             memory=memory_state,
-            bridge=bridge_state,
-            voice=voice_state,
-            buddy=buddy_state,
         )
-        # Not appended to base_prompt — this is live per-turn state (todos,
-        # inbox, pending approvals, ...), it belongs in the dynamic tail
+        # Not appended to base_prompt — this is live per-turn state (inbox,
+        # pending approvals, ...), it belongs in the dynamic tail
         # below, not baked into the stable system prompt.
 
-        last_state = self._tool_state_cache.get(tool_state_key)
-
-        tool_status_prompt = ""
-        if last_state is not None and current_enabled != last_state:
-            all_names_set = set(all_names)
-            enabled_set = set(current_enabled)
-            disabled_names_set = all_names_set - enabled_set
-            tool_status_prompt = self._prompts["tool_status"].format(
-                enabled_tools=', '.join(sorted(enabled_set & all_names_set)) if (enabled_set & all_names_set) else '无',
-                disabled_tools=', '.join(sorted(disabled_names_set)) if disabled_names_set else '无',
-            )
-        elif last_state is None and effective_enabled_names is not None:
-            all_names_set = set(all_names)
-            enabled_set = set(current_enabled)
-            disabled_names_set = all_names_set - enabled_set
-            if disabled_names_set:
-                tool_status_prompt = self._prompts["tool_status"].format(
-                    enabled_tools=', '.join(sorted(enabled_set & all_names_set)) if (enabled_set & all_names_set) else '无',
-                    disabled_tools=', '.join(sorted(disabled_names_set)),
-                )
-
-        # Update cache
-        self._tool_state_cache[tool_state_key] = current_enabled
-
         # Everything that can legitimately change every turn (session mode,
-        # live runtime state, tool-availability changes) is assembled here as
+        # live runtime state) is assembled here as
         # one block and attached to the current turn's message further below —
         # never folded into base_prompt — so the system prompt stays
         # byte-identical turn to turn (required for KV/prompt-cache reuse).
@@ -1521,8 +1449,6 @@ class TeamAgent:
             f"【Session Mode】\n{session_mode_prompt}\n\n"
             f"{runtime_context_block}\n"
         )
-        if tool_status_prompt:
-            dynamic_context_block += f"\n[工具状态变更] {tool_status_prompt}\n"
         if reply_format_hint:
             dynamic_context_block += f"\n[回复格式] {reply_format_hint}\n"
 
