@@ -187,17 +187,13 @@ def analyze_command(command: str) -> CommandAnalysis:
                 suggested_alternative="Use a narrower, non-destructive command.",
             )
 
-    # Check safe commands
+    # A safe first word does not make redirects, chains, or substitutions safe.
     tokens = _tokenize_command(normalized)
+    safe_command = False
     if tokens:
         base_cmd = tokens[0]
         full_cmd = " ".join(tokens[:2]) if len(tokens) > 1 else base_cmd
-        if base_cmd in _SAFE_COMMANDS or full_cmd in _SAFE_COMMANDS:
-            return CommandAnalysis(
-                command=command,
-                risk_level=RiskLevel.SAFE,
-                reasons=(),
-            )
+        safe_command = base_cmd in _SAFE_COMMANDS or full_cmd in _SAFE_COMMANDS
 
     # Check high risk patterns
     for pattern, description in _HIGH_RISK_PATTERNS:
@@ -242,6 +238,16 @@ def analyze_command(command: str) -> CommandAnalysis:
             risk_level=RiskLevel.LOW,
             reasons=("command substitution",),
         )
+
+    if safe_command and re.search(r"[;&|<>\n]", normalized):
+        return CommandAnalysis(
+            command=command,
+            risk_level=RiskLevel.MEDIUM,
+            reasons=("shell operator after safe command",),
+        )
+
+    if safe_command:
+        return CommandAnalysis(command=command, risk_level=RiskLevel.SAFE, reasons=())
 
     return CommandAnalysis(
         command=command,

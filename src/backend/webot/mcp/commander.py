@@ -641,6 +641,11 @@ def _validate_command(command: str) -> str | None:
     if not stripped:
         return "命令不能为空"
 
+    lowered = stripped.lower()
+    for pattern in BLOCKED_PATTERNS:
+        if pattern.lower() in lowered:
+            return f"安全策略拒绝：命令包含禁止模式 '{pattern}'。"
+
     # 白名单模式：命令名必须在允许列表中（黑名单模式下跳过此检查，由上层审批机制控制）
     import re
     parts = re.split(r'[;|&]+', stripped)
@@ -660,6 +665,8 @@ def _validate_command(command: str) -> str | None:
         if not cmd_name:
             continue
 
+        if COMMANDER_COMMAND_MODE == "blacklist" and cmd_name.lower() in BLOCKED_COMMANDS:
+            return f"安全策略拒绝：命令 '{cmd_name}' 在黑名单中。"
         if COMMANDER_COMMAND_MODE == "whitelist" and cmd_name not in ALLOWED_COMMANDS:
             return f"安全策略拒绝：命令 '{cmd_name}' 不在白名单中。允许的命令：{', '.join(sorted(ALLOWED_COMMANDS))}"
 

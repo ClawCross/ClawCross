@@ -1619,14 +1619,17 @@ class TeamAgent:
                 resume_prompt = build_resume_prompt(checkpoint)
                 dynamic_context_block += f"\n{resume_prompt}\n"
 
-        # 如果是系统触发，且最后一条不是 ToolMessage（非工具回调轮），给它加上系统触发说明
+        # 内部触发仍是 HumanMessage：只给用户查询加文字说明，保留原始多模态内容。
         is_system = state.get("trigger_source") == "system"
         if is_system and history_messages and isinstance(history_messages[-1], HumanMessage):
-            original_text = history_messages[-1].content
-            system_trigger_prompt = self._prompts["system_trigger"].format(
-                original_text=original_text
-            )
-            history_messages = history_messages[:-1] + [HumanMessage(content=system_trigger_prompt)]
+            original_message = history_messages[-1]
+            original_content = original_message.content
+            if isinstance(original_content, list):
+                prefix = self._prompts["system_trigger"].format(original_text="")
+                content = [{"type": "text", "text": prefix}, *original_content]
+            else:
+                content = self._prompts["system_trigger"].format(original_text=original_content)
+            history_messages = history_messages[:-1] + [original_message.model_copy(update={"content": content})]
 
         # 发往 LLM 前最后一次 tool 序列校验：须在 compact/compress 与系统触发改写之后，
         # 否则摘要截断可能再次产生「孤儿 Tool / 悬空 tool_calls」。
