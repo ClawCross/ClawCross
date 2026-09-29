@@ -109,7 +109,6 @@ When the bug is "service does not start" or "route behaves unexpectedly", start 
 
 - `src/core/agent.py`
 - `src/core/agent_runtime_state.py`
-- `src/integrations/acpx_adapter.py`
 - `src/webot/skill_evolution.py`
 - `src/webot/skill_memory.py` — path-free Skill正文 entries via file tools in memory mode
 - `src/webot/context.py`
@@ -161,7 +160,7 @@ Read these for workflow execution, topics, experts, and OpenClaw integration:
 | `oasis/server.py` | OASIS API bootstrap |
 | `oasis/engine.py` | discussion / execution engine |
 | `oasis/scheduler.py` | workflow scheduling logic |
-| `oasis/participants.py` | a participant = an agent asked through the agent gateway |
+| `oasis/participants.py` | a participant = an agent asked by its id over the agent layer's entrances (`agents/client.py`) |
 | `oasis/agent_center.py` | the agents and personas a workflow can reach (team members, persona library) |
 | `oasis/experts.py` | persona library (public / agency / custom / team) and reply parsing |
 | `oasis/forum.py` | forum/topic data handling plus post/event hooks for living graph ingestion |
@@ -197,8 +196,10 @@ For external AI agent communication via the Agent Client Protocol:
 
 | Path | Purpose |
 |---|---|
-| `src/integrations/acpx_adapter.py` | Singleton `AcpxAdapter` wrapping the `acpx` CLI; manages sessions and prompt execution |
+| `src/external/acpx.py` | Singleton `AcpxAdapter` wrapping the `acpx` CLI; manages sessions and prompt execution |
 | `src/external/acp.py` | the only acpx consumer: the runtime of codex, claude-code, gemini … agents |
+| `src/external/session.py`, `src/external/history.py` | what the external runtimes share: the session named after the agent id, the identity prompt, the exchange log |
+| `src/agents/platforms.py` | which platforms are ACP tools (the `acpx` agent list) |
 
 Known ACP tools (external AI agents): `openclaw`, `codex`, `claude`, `gemini`, `aider`.
 

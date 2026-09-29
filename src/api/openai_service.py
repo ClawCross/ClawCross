@@ -778,7 +778,7 @@ class OpenAIChatService:
         payload = self.protocol.list_models_payload()
         created = payload["data"][0]["created"] if payload["data"] else 0
         from agents.store import canonical_platform
-        from integrations.acpx_cli_tools import acpx_agent_tags_with_legacy
+        from agents.platforms import acpx_agent_tags_with_legacy
 
         for runtime in [*sorted({canonical_platform(t) for t in acpx_agent_tags_with_legacy()}), "openclaw"]:
             payload["data"].append({"id": runtime, "object": "model", "created": created, "owned_by": "clawcross"})

@@ -270,10 +270,13 @@ class TestSkillSystem(unittest.TestCase):
         self.assertIn("当前暂无已注册条目", prompt)
 
     def test_an_external_agent_is_told_its_skills_once(self):
-        from integrations.external_persona import build_external_persona_prompt
+        from agents.store import ACPX, Agent
+        from external.session import identity_prompt
         from webot.skills import create_skill
         create_skill("alice", name="deploy-script", content=self._make_skill_content("deploy-script", "Deploy to prod"))
-        prompt = build_external_persona_prompt("你是审稿人。", name="Critic", user_id="alice")
+        agent = Agent(agent_id="cx", owner="alice", name="Critic", driver=ACPX,
+                      config={"platform": "codex", "persona": "你是审稿人。"})
+        prompt = identity_prompt(agent, {}, "")
         self.assertEqual(prompt.count("【用户技能 / Memory 条目】"), 1)
         self.assertIn("你是审稿人。", prompt)
 

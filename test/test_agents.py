@@ -6,6 +6,7 @@ import os
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
 from unittest import mock
 
@@ -14,6 +15,7 @@ SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+import httpx  # noqa: E402
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
@@ -36,7 +38,6 @@ from agents.store import (  # noqa: E402
     driver_for_platform,
 )
 from external.session import runtime_session  # noqa: E402
-from integrations.base import SendToAgentResult  # noqa: E402
 from webot.driver import WebotRuntime  # noqa: E402
 
 TOKEN = "tok"
@@ -98,10 +99,35 @@ class TestStore(StoreCase):
         self.assertEqual(driver_for_platform("some-service"), HTTP)
 
 
-def _sent(result: str = "ok"):
-    """Patch the transport; the mock records every request the gateway builds."""
-    return mock.patch("integrations.agent_sender.send_to_agent",
-                      mock.AsyncMock(return_value=SendToAgentResult(ok=True, content=result)))
+class _Acpx:
+    """The acpx adapter as the ACP runtime uses it; ``calls`` holds each prompt's arguments."""
+
+    def __init__(self, text: str = "ok"):
+        self.calls = []
+        self.text = text
+
+    async def prompt_with_trace(self, **kwargs):
+        self.calls.append(kwargs)
+        return SimpleNamespace(text=self.text, messages=[], tool_uses=[], tool_results=[])
+
+
+class _Http:
+    """httpx.AsyncClient as the HTTP runtime uses it; ``posts`` holds (url, json, headers)."""
+
+    posts: list = []
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def post(self, url, json=None, headers=None):
+        type(self).posts.append((url, json, headers))
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
 
 
 class _WebotServices:
@@ -137,15 +163,23 @@ class TestGateway(StoreCase):
         super().setUp()
         self.services = _WebotServices()
         self.gateway = AgentGateway(store=self.store, runtimes={WEBOT: webot_runtime(self.services)})
-        patcher = mock.patch("integrations.external_persona.build_external_persona_prompt", return_value="PERSONA")
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        self.acpx = _Acpx()
+        _Http.posts = []
+        for target, value in (("webot.profiles.frame_session_identity", lambda *a: "PERSONA"),
+                              ("external.acpx.get_acpx_adapter", lambda *a, **k: self.acpx),
+                              ("external.http.httpx.AsyncClient", _Http),
+                              ("external.history._STORE", None)):
+            patcher = mock.patch(target, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        from external import history
+
+        history.reset_store_for_test(Path(self.tmp.name) / "history")
 
     def ask(self, agent, **kwargs):
-        with _sent() as send:
-            reply = asyncio.run(self.gateway.ask(agent, AgentMessage(text="hi", instructions="rules"), **kwargs))
+        reply = asyncio.run(self.gateway.ask(agent, AgentMessage(text="hi", instructions="rules"), **kwargs))
         self.assertTrue(reply.ok, reply.error)
-        return send.await_args.args[0]
+        return reply
 
     def test_webot_runs_a_turn_in_its_session_with_mode_tools_and_schema(self):
         reply_format = {"type": "json_schema", "json_schema": {"name": "Reply", "schema": {"type": "object"}}}
@@ -176,33 +210,46 @@ class TestGateway(StoreCase):
     def test_acpx_agent_runs_in_the_session_named_after_it(self):
         codex = self.store.create("alice", name="Codex", driver=ACPX, config={"platform": "codex", "persona": "coder"})
         other = self.codex(name="Codex 2")  # the same runtime, another session
-        request = self.ask(codex, mode="bypass", response_format={"type": "json_schema"})
-        self.assertEqual((request.connect_type, request.platform, request.session),
-                         ("acp", "codex", f"clawcross-alice-{codex.agent_id}"))
-        self.assertEqual(self.ask(other).session, f"clawcross-alice-{other.agent_id}")
-        self.assertIn("PERSONA", request.options["identity_prompt"])
-        self.assertIn("【群聊与私聊规则】", request.options["identity_prompt"])  # the shared chat rules
+        self.ask(codex, mode="bypass", response_format={"type": "json_schema"})
+        self.ask(other)
+        first, second = self.acpx.calls
+        self.assertEqual((first["tool"], first["session_key"], first["prompt_text"]),
+                         ("codex", f"clawcross-alice-{codex.agent_id}", "hi"))
+        self.assertEqual(second["session_key"], f"clawcross-alice-{other.agent_id}")
+        self.assertIn("PERSONA", first["system_prompt"])  # acpx tells a new session who it is
+        self.assertIn("【群聊与私聊规则】", first["system_prompt"])  # the shared chat rules
+        self.assertIn("rules", first["system_prompt"])  # and the caller's instructions
+        self.assertEqual(first["permission_policy"], "approve-all")  # bypass
         self.assertIn("last_used_at", self.store.get("alice", codex.agent_id).runtime)
 
     def test_openclaw_uses_the_runtime_endpoint_and_its_session_key(self):
         claw = self.store.create("alice", name="Claw", driver=OPENCLAW,
                                  config={"platform": "openclaw", "global_name": "main", "api_url": "http://saved"})
         with mock.patch.dict(os.environ, {"OPENCLAW_API_URL": "http://device:18789", "OPENCLAW_GATEWAY_TOKEN": "gw"}):
-            request = self.ask(claw)
-        self.assertEqual(request.options["api_url"], "http://device:18789/v1/chat/completions")
-        self.assertEqual(request.options["headers"]["x-openclaw-session-key"], f"agent:main:clawcross-alice-{claw.agent_id}")
-        self.assertEqual(request.options["body"]["model"], "agent:main")
+            self.ask(claw)
+        url, body, headers = _Http.posts[0]
+        self.assertEqual(url, "http://device:18789/v1/chat/completions")
+        self.assertEqual(headers["x-openclaw-session-key"], f"agent:main:clawcross-alice-{claw.agent_id}")
+        self.assertEqual(headers["Authorization"], "Bearer gw")
+        self.assertEqual(body["model"], "agent:main")
+        self.assertNotIn("session_id", body)  # the session is the header
 
     def test_a_runtime_is_told_its_identity_once_and_again_when_it_changes(self):
         svc = self.store.create("alice", name="Svc", driver=HTTP, config={"platform": "svc", "api_url": "http://svc"})
-        first = self.ask(svc)
-        self.assertTrue(first.options["inject_identity"])
+        self.ask(svc)
+        url, body, _headers = _Http.posts[0]
+        self.assertEqual((url, body["session_id"]), ("http://svc/v1/chat/completions", f"clawcross-alice-{svc.agent_id}"))
+        told = body["messages"][0]["content"]
+        self.assertIn("PERSONA", told)
+        self.assertTrue(told.endswith("\n\nhi"))  # the identity comes before the message
         svc = self.store.get("alice", svc.agent_id)
-        self.assertEqual(svc.runtime["identity_prompt"], first.options["identity_prompt"])
-        self.assertFalse(self.ask(svc).options["inject_identity"])
+        self.assertIn("PERSONA", svc.runtime["identity_prompt"])
+        self.ask(svc)
+        self.assertEqual(_Http.posts[1][1]["messages"][0]["content"], "hi")  # already told
         svc = self.store.update("alice", svc.agent_id, config={**svc.config, "persona": "critic"})
-        with mock.patch("integrations.external_persona.build_external_persona_prompt", return_value="CRITIC"):
-            self.assertTrue(self.ask(svc).options["inject_identity"])
+        with mock.patch("webot.profiles.frame_session_identity", lambda *a: "CRITIC"):
+            self.ask(svc)
+        self.assertIn("CRITIC", _Http.posts[2][1]["messages"][0]["content"])  # told again: it changed
 
     def test_http_agent_without_endpoint_says_so(self):
         agent = self.store.create("alice", name="Svc", driver=HTTP, config={"platform": "svc"})
@@ -214,11 +261,19 @@ class TestGateway(StoreCase):
         critic = self.store.create("alice", driver=LLM, config={"llm": {"model": "m1"}}, name="Critic",
                                    agent_id="tmp__t__critic__1")
         reply_format = {"type": "json_schema", "json_schema": {"name": "Reply", "schema": {"type": "object"}}}
-        request = self.ask(critic, response_format=reply_format)
-        self.assertEqual(request.platform, "temp")
-        self.assertEqual(request.options["response_schema"], {"type": "object", "title": "Reply"})
-        self.assertEqual(request.options["model"], "m1")
-        self.assertTrue(request.options["_history_disabled"])
+        made, schemas = {}, []
+
+        class Model:
+            def with_structured_output(self, schema):
+                schemas.append(schema)
+                return SimpleNamespace(ainvoke=mock.AsyncMock(return_value={"content": "x"}))
+
+        with mock.patch("services.llm_factory.create_chat_model", lambda **kw: made.update(kw) or Model()), \
+                mock.patch("core.tool_schema.forced_tool_choice_supported", return_value=True):
+            reply = self.ask(critic, response_format=reply_format)
+        self.assertEqual(json.loads(reply.content), {"content": "x"})
+        self.assertEqual(schemas, [{"type": "object", "title": "Reply"}])
+        self.assertEqual(made["model"], "m1")
         self.assertFalse(critic.remembers)
 
     def test_webot_is_handed_a_system_message(self):
@@ -241,23 +296,22 @@ class TestGateway(StoreCase):
         self.assertIsNone(req.session_mode)  # WeBot runs it in the session's own mode
 
         async def run():
-            with _sent("ok") as send:
-                await self.gateway.inbox(self.codex(), AgentMessage(text="later"), mode="readonly")
-                await asyncio.gather(*self.gateway.runtimes[ACPX]._background)
-            return send.await_args.args[0]
+            await self.gateway.inbox(self.codex(), AgentMessage(text="later"), mode="readonly")
+            await asyncio.gather(*self.gateway.runtimes[ACPX]._background)
 
-        request = asyncio.run(run())
-        self.assertEqual(request.prompt, "later")  # handed over at once,
-        self.assertEqual(request.options["non_interactive_permissions"], "deny")  # in the mode it was sent in
+        asyncio.run(run())
+        self.assertEqual(self.acpx.calls[0]["prompt_text"], "later")  # handed over at once,
+        self.assertEqual(self.acpx.calls[0]["non_interactive_permissions"], "deny")  # in the mode it was sent in
 
     def test_an_external_trigger_is_sent_in_the_background_and_reports_back(self):
         codex = self.codex()
         replies = []
 
+        self.acpx.text = "done"
+
         async def run():
-            with _sent("done"):
-                receipt = await self.gateway.trigger(codex, AgentMessage(text="go"), on_complete=replies.append)
-                await asyncio.gather(*self.gateway.runtimes[ACPX]._background)
+            receipt = await self.gateway.trigger(codex, AgentMessage(text="go"), on_complete=replies.append)
+            await asyncio.gather(*self.gateway.runtimes[ACPX]._background)
             return receipt
 
         self.assertTrue(asyncio.run(run()).accepted)
@@ -312,10 +366,8 @@ class TestControl(StoreCase):
             asyncio.run(AgentGateway(store=self.store).control(self.webot(), "cancel"))
 
     def test_history_reads_the_agents_own_conversation(self):
-        from types import SimpleNamespace
-
         from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-        from utils import external_agent_history
+        from external import history as external_agent_history
 
         self.webot_runtime.agent_app = mock.Mock()
         self.webot_runtime.agent_app.aget_state = mock.AsyncMock(return_value=SimpleNamespace(values={"messages": [

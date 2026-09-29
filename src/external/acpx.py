@@ -1240,21 +1240,3 @@ def get_acpx_adapter(*, cwd: str | None = None) -> AcpxAdapter:
         adapter = AcpxAdapter(cwd=key)
         _adapter_singletons[key] = adapter
     return adapter
-
-
-def load_external_agent_system_prompt(project_root: str) -> str:
-    prompt_path = os.path.join(project_root, "data", "prompts", "external_agent_system.txt")
-    try:
-        with open(prompt_path, "r", encoding="utf-8") as f:
-            return f.read().strip()
-    except Exception:
-        return ""
-
-
-def load_external_agent_prompt_file(project_root: str, filename: str) -> str:
-    prompt_path = os.path.join(project_root, "data", "prompts", filename)
-    try:
-        with open(prompt_path, "r", encoding="utf-8") as f:
-            return f.read().strip()
-    except Exception:
-        return ""

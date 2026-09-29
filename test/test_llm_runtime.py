@@ -1,4 +1,4 @@
-"""The lightweight temporary expert: one direct model call, structured when asked."""
+"""An llm agent: one direct model call, structured when asked."""
 
 import asyncio
 import json
@@ -14,8 +14,10 @@ for path in (str(PROJECT_ROOT), str(PROJECT_ROOT / "src")):
     if path not in sys.path:
         sys.path.insert(0, path)
 
-from integrations.base import SendToAgentRequest  # noqa: E402
-from integrations.connectors.temp import connector as temp  # noqa: E402
+from agents.client import response_format_of  # noqa: E402
+from agents.messages import AgentMessage  # noqa: E402
+from agents.store import LLM, Agent  # noqa: E402
+from external.llm import LlmRuntime  # noqa: E402
 from oasis.schemas import OasisReplyOut  # noqa: E402
 
 
@@ -41,12 +43,11 @@ class DeepSeekStructuredReply(unittest.TestCase):
             model="deepseek-flash", api_key="test", api_base="https://api.deepseek.com",
             http_async_client=httpx.AsyncClient(transport=httpx.MockTransport(answer)),
         )
-        request = SendToAgentRequest(
-            prompt="谈谈测试", connect_type="http", platform="temp", session="s",
-            options={"response_schema": OasisReplyOut},
-        )
-        with patch.object(temp, "create_chat_model", return_value=model):
-            result = asyncio.run(temp.TempConnector().send(request))
+        agent = Agent(agent_id="tmp__t__critic__1", owner="alice", name="Critic", driver=LLM, config={})
+        with patch("services.llm_factory.create_chat_model", return_value=model):
+            result = asyncio.run(LlmRuntime().ask(
+                agent, AgentMessage(text="谈谈测试"), context={}, mode=None, tools=None,
+                response_format=response_format_of(OasisReplyOut), timeout=None))
         return result, sent
 
     def test_a_tool_call_is_the_reply(self):
@@ -57,9 +58,7 @@ class DeepSeekStructuredReply(unittest.TestCase):
         }]})
 
         self.assertTrue(result.ok, result.error)
-        self.assertEqual(json.loads(result.content), {
-            "clawcross_type": "oasis reply", "reply_to": None, "content": "有用", "votes": [],
-        })
+        self.assertEqual(json.loads(result.content), {"clawcross_type": "oasis reply", "content": "有用"})
         url, body = sent[0]
         self.assertTrue(url.endswith("/beta/chat/completions"))  # where DeepSeek enforces strict
         self.assertEqual(body["tool_choice"], "auto")
@@ -73,7 +72,6 @@ class DeepSeekStructuredReply(unittest.TestCase):
         self.assertTrue(result.ok, result.error)
         self.assertEqual(result.content, text)
         self.assertIn("JSON schema", json.dumps(sent[0][1]["messages"], ensure_ascii=False))
-
 
     def test_a_reply_cut_off_by_max_tokens_is_an_error_not_an_empty_post(self):
         # Reasoning counts against max_tokens; the arguments stop mid-JSON.

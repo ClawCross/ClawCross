@@ -103,7 +103,7 @@ def driver_for_platform(platform: str) -> str:
         return WEBOT
     if pl in (OPENCLAW, LLM):
         return pl
-    from integrations.acpx_cli_tools import acpx_agent_tags_with_legacy
+    from agents.platforms import acpx_agent_tags_with_legacy
     if pl in {canonical_platform(t) for t in acpx_agent_tags_with_legacy()}:
         return ACPX
     return HTTP

@@ -6,7 +6,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from integrations.acpx_cli_tools import acpx_agent_command_names, acpx_agent_tags_with_legacy  # noqa: E402
+from agents.platforms import acpx_agent_command_names, acpx_agent_tags_with_legacy  # noqa: E402
 
 
 def test_acpx_agent_command_names_nonempty():

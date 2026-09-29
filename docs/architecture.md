@@ -14,7 +14,7 @@ ClawCross 把一台机器上所有 agent 统一成一种东西：**有编号的�
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-依赖只能向下，`test/test_layering.py` 检查：L1 不 import 群聊、team、OASIS；只有各运行时（`src/external`、`src/webot/driver.py`）直接调用传输层（`integrations.*`）。
+依赖只能向下，`test/test_layering.py` 检查：L1 不 import 群聊、team、OASIS；运行时（`src/external`、`src/webot/driver.py`）不知道组合层，也只有 L1 用它们；运行时只在 Agent 服务里，其他进程走入口。
 
 ## L1：agent（`src/agents/`）
 
@@ -77,13 +77,13 @@ GET    /v1/models                   新 agent 可用的运行方式
 
 | 运行时 | 代码 |
 |---|---|
-| WeBot | `src/webot/driver.py`：调用走 `/v1/chat/completions` 和 `/system_trigger`；控制面直接读引擎，只在 Agent 服务里有 |
-| acpx（codex / claude / gemini…） | `src/external/acp.py` |
-| OpenClaw | `src/external/openclaw.py` |
+| WeBot | `src/webot/driver.py`：在进程内调用 WeBot 的对话、system trigger 和会话服务；控制面直接读引擎 |
+| acpx（codex / claude / gemini…） | `src/external/acp.py`，经 `src/external/acpx.py`（acpx CLI） |
+| OpenClaw | `src/external/openclaw.py`（HTTP；取消、重置经 acpx） |
 | HTTP | `src/external/http.py` |
 | llm（模型调用：不带工具，不记得上一条） | `src/external/llm.py` |
 
-外部运行时共用 `src/external/session.py`：以编号命名的会话、身份 prompt、往来记录。
+外部运行时自己发送，共用 `src/external/session.py`（以编号命名的会话、身份 prompt）和 `src/external/history.py`（往来记录）。哪些平台是 ACP 工具由 `src/agents/platforms.py` 决定。
 
 ### 单 agent 接口（`gateway.py`）
 

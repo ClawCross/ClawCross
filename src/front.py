@@ -19,7 +19,7 @@ import sys as _sys
 from pathlib import Path
 from io import BytesIO
 
-from integrations.acpx_cli_tools import acpx_agent_command_names
+from agents.platforms import acpx_agent_command_names
 from typing import Any
 from urllib.parse import quote, urljoin, urlparse
 from dotenv import load_dotenv
