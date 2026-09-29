@@ -15,6 +15,10 @@ from mcp.types import CallToolResult, ImageContent, TextContent
 from utils.mcp_tool_docs import DocumentedFastMCP as FastMCP
 
 from webot.workspace import resolve_session_workspace
+from webot.approval_actions import bind_file_target, file_target_outside_workspace
+from webot.approval_review import authorize_action, policy_binding
+from webot.policy import evaluate_tool_policy, get_tool_policy
+from webot.runtime_store import consume_execution_permit
 
 mcp = FastMCP("FileManager")
 
@@ -82,29 +86,29 @@ def _limit_value(value: int, default: int, maximum: int) -> int:
         parsed = default
     return min(parsed, maximum)
 
-def _user_dir(username: str, session_id: str = "") -> str:
-    """获取当前会话工作目录路径。
-
-    :param username: 用户名
-    :return: 当前工作目录的绝对路径
-    """
-
-    return str(resolve_session_workspace(username, session_id).cwd)
-
-def _safe_path(username: str, filename: str, session_id: str = "") -> str:
-    """解析工具路径。
-
-    文件 MCP 与 command/python 工具处于同一信任边界内，不再限制路径必须位于
-    workspace 内；相对路径以当前 session cwd 为基准，绝对路径按原路径解析。
-
-    :param username: 用户名
-    :param filename: 文件名或路径
-    :return: 文件的完整绝对路径
-    """
-    requested = os.path.expanduser((filename or "").strip())
-    if os.path.isabs(requested):
-        return os.path.abspath(os.path.normpath(requested))
-    return os.path.abspath(os.path.normpath(os.path.join(_user_dir(username, session_id), requested)))
+async def _file_access_gate(username: str, session_id: str, tool_name: str, args: dict) -> tuple[str | None, str]:
+    """Require one exact approval when a file tool crosses the workspace root."""
+    normalized_session = session_id or "default"
+    from webot.runtime import effective_session_mode, mode_allows_tool, PLAN_MODE_BLOCKED_TOOLS, REVIEW_MODE_BLOCKED_TOOLS
+    mode = effective_session_mode(username, normalized_session)
+    if not mode_allows_tool(mode, tool_name, args) or (mode == "plan" and tool_name in PLAN_MODE_BLOCKED_TOOLS) or (mode == "review" and tool_name in REVIEW_MODE_BLOCKED_TOOLS):
+        return "❌ 当前模式不允许该文件操作。", ""
+    workspace = resolve_session_workspace(username, session_id)
+    bound = bind_file_target(tool_name, {**args, "username": username, "session_id": normalized_session},
+                             username, normalized_session, workspace=workspace)
+    path = bound["_resolved_path"]
+    if consume_execution_permit(username, normalized_session, tool_name, bound,
+                                policy_binding(username, normalized_session)):
+        return None, path
+    if not file_target_outside_workspace(bound):
+        policy_decision = evaluate_tool_policy(get_tool_policy(username), tool_name, bound)
+        if policy_decision.allowed:
+            return None, path
+        if not policy_decision.requires_approval:
+            return "❌ " + policy_decision.reason, path
+    result = await authorize_action(user_id=username, session_id=normalized_session,
+                                    tool_name=tool_name, args=bound)
+    return (None if result.allowed else "❌ " + result.reason), path
 
 
 def _file_sha256(path: str) -> str:
@@ -213,7 +217,10 @@ async def list_files(username: str, session_id: str = "", folder: str = ".", sto
             return json.dumps({"storage": "memory", "items": list_memory(username, team)}, ensure_ascii=False)
         if storage != "file":
             return "❌ 不支持的 storage。"
-        user_path = _safe_path(username, folder or ".", session_id)
+        reject, user_path = await _file_access_gate(username, session_id, "list_files",
+            {"folder": folder, "storage": storage, "team": team})
+        if reject:
+            return reject
         if not os.path.exists(user_path):
             return f"❌ 目录 '{folder}' 不存在。"
         if not os.path.isdir(user_path):
@@ -275,7 +282,13 @@ async def read_file(
             file_path = str(memory_target(username, filename, team, shared=True)["_path"])
             encoding = "utf-8"
         elif storage == "file":
-            file_path = _safe_path(username, filename, session_id)
+            reject, file_path = await _file_access_gate(username, session_id, "read_file", {
+                "filename": filename, "offset": offset, "limit": limit,
+                "start_line": start_line, "line_count": line_count, "encoding": encoding,
+                "include_sha256": include_sha256, "storage": storage, "team": team,
+            })
+            if reject:
+                return reject
         else:
             return "❌ 不支持的 storage。"
         if not os.path.exists(file_path):
@@ -399,7 +412,15 @@ async def write_file(
             file_path = str(entry["_path"])
             encoding = "utf-8"
         elif storage == "file":
-            file_path = _safe_path(username, filename, session_id)
+            reject, file_path = await _file_access_gate(username, session_id, "write_file", {
+                "filename": filename, "content": content, "mode": mode,
+                "start": start, "end": end, "encoding": encoding,
+                "expected_sha256": expected_sha256, "old_string": old_string,
+                "new_string": new_string, "replace_all": replace_all,
+                "storage": storage, "team": team,
+            })
+            if reject:
+                return reject
         else:
             return "❌ 不支持的 storage。"
         existing = os.path.exists(file_path)
@@ -514,7 +535,10 @@ async def delete_file(username: str, filename: str, session_id: str = "", storag
                 return json.dumps({"success": True, "deleted": public_entry(entry)}, ensure_ascii=False)
         if storage != "file":
             return "❌ 不支持的 storage。"
-        file_path = _safe_path(username, filename, session_id)
+        reject, file_path = await _file_access_gate(username, session_id, "delete_file",
+            {"filename": filename, "storage": storage, "team": team})
+        if reject:
+            return reject
         if not os.path.exists(file_path):
             return f"❌ 文件 '{filename}' 不存在，无法删除。"
         os.remove(file_path)
