@@ -1,6 +1,7 @@
-"""The Auto command sandbox must not silently execute on the host."""
+"""Auto command isolation must remain fail-closed and avoid host secrets."""
 
 import asyncio
+import json
 import sys
 import tempfile
 import unittest
@@ -16,80 +17,85 @@ import mcp_servers.commander as commander
 
 
 class CommandSandboxTests(unittest.TestCase):
-    def test_container_argv_has_isolation_and_no_shell_interpolation(self):
+    def test_srt_uses_exact_arguments_and_private_policy(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             child = root / "project"
             child.mkdir()
-            code = "print('hello; $(whoami)')"
-            with patch.object(command_sandbox, "_runtime_and_image", return_value=("/usr/bin/podman", "python:3.12-slim")):
-                call = command_sandbox.build_container_command(
-                    root=root, cwd=child, command=code, language="python",
+            script = child / "code.py"
+            script.write_text("print('hello; $(whoami)')", encoding="utf-8")
+            with patch.object(command_sandbox, "_srt_binary", return_value="/usr/bin/srt"):
+                call = command_sandbox.build_srt_command(
+                    root=root, cwd=child, command=script.read_text(), language="python",
+                    python_executable="/opt/venv/bin/python", script_path=script,
                 )
-            argv = list(call.argv)
-            self.assertEqual(argv[:2], ["/usr/bin/podman", "run"])
-            for flag in ("--pull=never", "--network=none", "--read-only", "--cap-drop=ALL",
-                         "--security-opt=no-new-privileges", "--pids-limit=128", "--memory=512m", "--cpus=1"):
-                self.assertIn(flag, argv)
-            self.assertEqual(argv[argv.index("--workdir") + 1], "/workspace/project")
-            self.assertEqual(argv[-2:], ["-c", code])
-            self.assertEqual(argv[argv.index("--entrypoint") + 1], "/usr/local/bin/python")
-            self.assertEqual(argv[argv.index("--mount") + 1], f"type=bind,source={root},target=/workspace")
-            self.assertNotIn("--privileged", argv)
+            try:
+                self.assertEqual(call.argv[:2], ("/usr/bin/srt", "--settings"))
+                self.assertEqual(call.argv[3:], ("--", "/opt/venv/bin/python", str(script)))
+                policy = json.loads(call.settings_path.read_text(encoding="utf-8"))
+                self.assertEqual(policy["network"]["allowedDomains"], [])
+                self.assertEqual(policy["network"]["allowUnixSockets"], [])
+                self.assertEqual(policy["filesystem"]["allowWrite"][0], str(root))
+                self.assertIn(str(call.settings_path), policy["filesystem"]["denyRead"])
+                self.assertFalse(call.settings_path.stat().st_mode & 0o077)
+            finally:
+                call.settings_path.unlink(missing_ok=True)
 
-    def test_invalid_workspace_cannot_be_mounted(self):
+    def test_workspace_and_script_cannot_escape_root(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "workspace"
-            root.mkdir()
             sibling = Path(directory) / "workspace-extra"
+            root.mkdir()
             sibling.mkdir()
-            with patch.object(command_sandbox, "_runtime_and_image", return_value=("docker", "python:3.12-slim")):
+            with patch.object(command_sandbox, "_srt_binary", return_value="srt"):
                 with self.assertRaises(command_sandbox.SandboxUnavailable):
-                    command_sandbox.build_container_command(root=root, cwd=sibling, command="pwd", language="shell")
+                    command_sandbox.build_srt_command(root=root, cwd=sibling, command="pwd", language="shell",
+                                                      python_executable=sys.executable)
                 with self.assertRaises(command_sandbox.SandboxUnavailable):
-                    command_sandbox.build_container_command(root=root, cwd=root, command="print(1)",
-                                                            language="python", script_path=sibling / "x.py")
+                    command_sandbox.build_srt_command(root=root, cwd=root, command="print(1)", language="python",
+                                                      python_executable=sys.executable, script_path=sibling / "x.py")
             with self.assertRaises(ValueError):
                 _ensure_within(root, sibling)
 
-    def test_auto_python_uses_container_and_removes_script(self):
+    def test_missing_srt_blocks_auto_command(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             workspace = SessionWorkspace(root=root, cwd=root, mode="shared", remote="")
-            options = SimpleNamespace(approval=SimpleNamespace(command_sandbox="container"))
+            options = SimpleNamespace(approval=SimpleNamespace(command_sandbox="srt"))
             with patch.object(commander, "_command_safety_gate", new=AsyncMock(return_value=(None, ""))), \
                  patch.object(commander, "resolve_session_workspace", return_value=workspace), \
                  patch("webot.runtime.effective_session_mode", return_value="auto"), \
                  patch("webot.runtime_settings.get_runtime_settings", return_value=options), \
-                 patch.object(command_sandbox, "_runtime_and_image", return_value=("/usr/bin/podman", "python:3.12-slim")), \
-                 patch.object(commander, "_run_foreground", new=AsyncMock(return_value="container result")) as runner:
-                result = asyncio.run(commander.run_command("alice", "print('hello')", language="python"))
-            self.assertEqual(result, "container result")
-            args, kwargs = runner.await_args
-            self.assertIn("--network=none", args[0])
-            self.assertIsNotNone(kwargs["container"])
-            self.assertEqual(list((root / ".mcp_jobs").glob("py_*.py")), [])
-
-    def test_missing_runtime_blocks_auto_command(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            workspace = SessionWorkspace(root=root, cwd=root, mode="shared", remote="")
-            options = SimpleNamespace(approval=SimpleNamespace(command_sandbox="container"))
-            with patch.object(commander, "_command_safety_gate", new=AsyncMock(return_value=(None, ""))), \
-                 patch.object(commander, "resolve_session_workspace", return_value=workspace), \
-                 patch("webot.runtime.effective_session_mode", return_value="auto"), \
-                 patch("webot.runtime_settings.get_runtime_settings", return_value=options), \
-                 patch.object(command_sandbox, "_runtime_and_image", side_effect=command_sandbox.SandboxUnavailable("missing")), \
+                 patch.object(command_sandbox, "_srt_binary", side_effect=command_sandbox.SandboxUnavailable("missing")), \
                  patch.object(commander, "_run_foreground", new=AsyncMock()) as host_run:
                 result = asyncio.run(commander.run_command("alice", "print('hello')", language="python"))
             self.assertIn("missing", result)
             host_run.assert_not_awaited()
+            self.assertEqual(list((root / ".mcp_jobs").glob("py_*.py")), [])
 
-    def test_background_command_is_rejected_when_container_selected(self):
+    def test_auto_python_uses_srt_and_cleans_policy(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             workspace = SessionWorkspace(root=root, cwd=root, mode="shared", remote="")
-            options = SimpleNamespace(approval=SimpleNamespace(command_sandbox="container"))
+            options = SimpleNamespace(approval=SimpleNamespace(command_sandbox="srt"))
+            with patch.object(commander, "_command_safety_gate", new=AsyncMock(return_value=(None, ""))), \
+                 patch.object(commander, "resolve_session_workspace", return_value=workspace), \
+                 patch("webot.runtime.effective_session_mode", return_value="auto"), \
+                 patch("webot.runtime_settings.get_runtime_settings", return_value=options), \
+                 patch.object(command_sandbox, "_srt_binary", return_value="/usr/bin/srt"), \
+                 patch.object(commander, "_run_foreground", new=AsyncMock(return_value="srt result")) as runner:
+                result = asyncio.run(commander.run_command("alice", "print('hello')", language="python"))
+            self.assertEqual(result, "srt result")
+            args, kwargs = runner.await_args
+            self.assertEqual(args[0][0], "/usr/bin/srt")
+            self.assertFalse(kwargs["sandbox"].settings_path.exists())
+            self.assertEqual(list((root / ".mcp_jobs").glob("py_*.py")), [])
+
+    def test_background_command_is_rejected_when_srt_selected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            workspace = SessionWorkspace(root=root, cwd=root, mode="shared", remote="")
+            options = SimpleNamespace(approval=SimpleNamespace(command_sandbox="srt"))
             with patch.object(commander, "_command_safety_gate", new=AsyncMock(return_value=(None, ""))), \
                  patch.object(commander, "resolve_session_workspace", return_value=workspace), \
                  patch("webot.runtime.effective_session_mode", return_value="auto"), \
@@ -99,19 +105,40 @@ class CommandSandboxTests(unittest.TestCase):
             self.assertIn("只支持前台", result)
             launch.assert_not_called()
 
-    def test_runtime_image_check_never_pulls(self):
-        with patch.object(command_sandbox.shutil, "which", side_effect=lambda name: "/usr/bin/podman" if name == "podman" else None), \
-             patch.object(command_sandbox.subprocess, "run", return_value=SimpleNamespace(returncode=0)) as run, \
-             patch.dict(command_sandbox.os.environ, {"WEBOT_SANDBOX_RUNTIME": "auto", "WEBOT_SANDBOX_IMAGE": "python:3.12-slim"}):
-            self.assertEqual(command_sandbox._runtime_and_image(), ("/usr/bin/podman", "python:3.12-slim"))
-        self.assertEqual(run.call_args.args[0], ["/usr/bin/podman", "image", "inspect", "python:3.12-slim"])
+    def test_linux_dependency_check_is_fail_closed(self):
+        with patch.object(command_sandbox.sys, "platform", "linux"), \
+             patch.object(command_sandbox.shutil, "which", side_effect=lambda name: "/usr/bin/" + name if name != "socat" else None):
+            with self.assertRaisesRegex(command_sandbox.SandboxUnavailable, "socat"):
+                command_sandbox._srt_binary()
 
-    def test_auto_runtime_tries_docker_when_podman_is_unready(self):
-        def inspect(argv, **_kwargs):
-            return SimpleNamespace(returncode=1 if argv[0].endswith("podman") else 0)
+    def test_old_srt_version_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            package = Path(directory) / "package"
+            (package / "dist").mkdir(parents=True)
+            binary = package / "dist" / "cli.js"
+            binary.write_text("", encoding="utf-8")
+            (package / "package.json").write_text(
+                json.dumps({"name": "@anthropic-ai/sandbox-runtime", "version": "0.0.35"}), encoding="utf-8",
+            )
+            with patch.object(command_sandbox.sys, "platform", "linux"), \
+                 patch.object(command_sandbox.shutil, "which", side_effect=lambda name: str(binary) if name == "srt" else "/usr/bin/" + name):
+                with self.assertRaisesRegex(command_sandbox.SandboxUnavailable, "0.0.77"):
+                    command_sandbox._srt_binary()
 
-        with patch.object(command_sandbox.shutil, "which", side_effect=lambda name: "/usr/bin/" + name), \
-             patch.object(command_sandbox.subprocess, "run", side_effect=inspect) as run, \
-             patch.dict(command_sandbox.os.environ, {"WEBOT_SANDBOX_RUNTIME": "auto", "WEBOT_SANDBOX_IMAGE": "python:3.12-slim"}):
-            self.assertEqual(command_sandbox._runtime_and_image(), ("/usr/bin/docker", "python:3.12-slim"))
-        self.assertEqual(run.call_count, 2)
+    def test_srt_process_does_not_inherit_host_secret_environment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            settings_file = root / "policy.json"
+            settings_file.write_text("{}", encoding="utf-8")
+            sandbox = command_sandbox.SrtCommand((sys.executable,), settings_file)
+            workspace = SessionWorkspace(root=root, cwd=root, mode="shared", remote="")
+            code = "import os; print(os.getenv('CLAWCROSS_TEST_SECRET', 'not-present'))"
+            with patch.dict(command_sandbox.os.environ, {"CLAWCROSS_TEST_SECRET": "must-not-leak"}):
+                result = asyncio.run(commander._run_foreground(
+                    [sys.executable, "-c", code], label="test", workspace_state=workspace,
+                    username="alice", timeout_value=5, capture_limit=1000,
+                    approval_note="", sandbox=sandbox,
+                ))
+            self.assertIn("not-present", result)
+            self.assertNotIn("must-not-leak", result)
+            self.assertFalse(settings_file.exists())
