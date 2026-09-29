@@ -16,7 +16,7 @@ for path in (str(PROJECT_ROOT), str(SRC_DIR)):
         sys.path.insert(0, path)
 
 import agents.gateway as gateway_module  # noqa: E402
-from agents.gateway import NO_TIMEOUT  # noqa: E402
+from agents.runtime import NO_TIMEOUT  # noqa: E402
 from agents.store import LLM  # noqa: E402
 from agents.messages import AgentReply  # noqa: E402
 from agents.store import ACPX, WEBOT, AgentStore  # noqa: E402

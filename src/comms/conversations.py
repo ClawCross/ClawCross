@@ -13,7 +13,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 from agents.gateway import AgentGateway, reply_channel
 from agents.messages import AgentMessage, AgentReply
@@ -70,12 +70,10 @@ class MemberView:
 
 
 class Conversations:
-    def __init__(self, store: ConversationStore, agents: AgentStore, gateway: AgentGateway, *,
-                 is_busy: Callable[[Agent], bool] | None = None):
+    def __init__(self, store: ConversationStore, agents: AgentStore, gateway: AgentGateway):
         self.store = store
         self.agents = agents
         self.gateway = gateway
-        self.is_busy = is_busy
         self.storm_guard = StormGuard()
         self._typing: dict[str, dict[str, float]] = {}
 
@@ -124,8 +122,8 @@ class Conversations:
         for principal, since in list(bucket.items()):
             agent = self._agent(conv_id, principal)
             done = agent is None or now - since > _TYPING_TIMEOUT_SEC
-            if not done and self.is_busy is not None and now - since > 5:
-                done = not self.is_busy(agent)
+            if not done and now - since > 5:
+                done = not self.gateway.is_busy(agent)
             if done:
                 bucket.pop(principal, None)
         return list(bucket)
@@ -231,7 +229,7 @@ class Conversations:
             self._typing_stop(conv_id, member.principal)
 
         try:
-            receipt = await self.gateway.deliver(
+            receipt = await self.gateway.trigger(
                 member.agent,
                 AgentMessage(text=text, attachments=list(message.attachments), sender=message.sender),
                 context={"conversation_id": conv_id},

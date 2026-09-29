@@ -386,7 +386,7 @@ class SystemService:
         if req.wait_reply:
             reply = await get_gateway().ask(agent, msg, mode=req.session_mode)
             return {"status": "completed", "reply": reply.content if reply.ok else f"❌ {reply.error}", "coalesced": False}
-        receipt = await get_gateway().deliver(agent, msg, mode=req.session_mode)
+        receipt = await get_gateway().trigger(agent, msg, mode=req.session_mode)
         if not receipt.accepted:
             raise HTTPException(status_code=502, detail=receipt.error)
         return {"status": "received", "message": f"已交给 {agent.agent_id}", "coalesced": False}

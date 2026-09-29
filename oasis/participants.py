@@ -14,8 +14,9 @@ import json
 import logging
 from typing import Any
 
-from agents.gateway import NO_TIMEOUT, get_gateway
+from agents.gateway import get_gateway
 from agents.messages import AgentMessage, AgentReply
+from agents.runtime import NO_TIMEOUT
 from agents.store import Agent
 from oasis.experts import (
     _BEHAVIOR_RULES,

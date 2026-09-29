@@ -86,7 +86,7 @@ When the bug is "service does not start" or "route behaves unexpectedly", start 
 
 ### Agents and their compositions (see `docs/architecture.md`)
 
-- L1 agents: `src/agents/store.py` (the table of all sessions: session number = agent id), `src/agents/gateway.py` (ask / deliver / inbox per driver), `src/agents/control.py` (status / cancel / reset / history), `src/agents/routes.py` (`/v1/agents`), `src/api/openai_service.py` (`/v1/chat/completions`), `src/api/system_service.py` (`/system_trigger`)
+- L1 agents: `src/agents/store.py` (the table of all sessions: session number = agent id), `src/agents/gateway.py` (ask / trigger / inbox and the control plane, handed to the agent's runtime), `src/agents/runtime.py` (what a runtime offers), `src/webot/driver.py` and `src/external/` (the runtimes: WeBot, acp, openclaw, http, llm), `src/agents/routes.py` (`/v1/agents`), `src/api/openai_service.py` (`/v1/chat/completions`), `src/api/system_service.py` (`/system_trigger`)
 - L2 group chat: `src/comms/store.py` (conversations.db), `src/comms/conversations.py` (post + wake), `src/comms/delivery.py` (wake rule, storm guard, unread digest), `src/groups/`
 - L2 teams: `src/teams/store.py` (members.json in the team folder, `<team>.<name>`), `src/teams/manifest.py` (internal_agents.json / external_agents.json import/export), `src/teams/routes.py` (`/v1/teams`)
 
@@ -198,7 +198,7 @@ For external AI agent communication via the Agent Client Protocol:
 | Path | Purpose |
 |---|---|
 | `src/integrations/acpx_adapter.py` | Singleton `AcpxAdapter` wrapping the `acpx` CLI; manages sessions and prompt execution |
-| `src/agents/gateway.py` | the only acpx consumer: asks / delivers to codex, claude-code, gemini … agents for group chat, OASIS and the API |
+| `src/external/acp.py` | the only acpx consumer: the runtime of codex, claude-code, gemini … agents |
 
 Known ACP tools (external AI agents): `openclaw`, `codex`, `claude`, `gemini`, `aider`.
 

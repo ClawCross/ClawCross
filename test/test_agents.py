@@ -19,17 +19,10 @@ from fastapi.testclient import TestClient  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 
 import agents.store as store_module  # noqa: E402
-from agents.control import AgentControl, ControlError  # noqa: E402
-from agents.gateway import (  # noqa: E402
-    NO_TIMEOUT,
-    AgentGateway,
-    persona_agent,
-    reply_channel,
-    runtime_session,
-    temp_session_agent,
-)
+from agents.gateway import AgentGateway, persona_agent, reply_channel, temp_session_agent  # noqa: E402
 from agents.messages import AgentMessage, AgentReply, DeliveryReceipt  # noqa: E402
 from agents.routes import create_agents_router  # noqa: E402
+from agents.runtime import NO_TIMEOUT, ControlError  # noqa: E402
 from agents.store import (  # noqa: E402
     ACPX,
     HTTP,
@@ -40,7 +33,9 @@ from agents.store import (  # noqa: E402
     AgentStore,
     driver_for_platform,
 )
+from external.session import runtime_session  # noqa: E402
 from integrations.base import SendToAgentResult  # noqa: E402
+from webot.driver import WebotRuntime  # noqa: E402
 
 TOKEN = "tok"
 
@@ -132,13 +127,14 @@ def _http(status: int = 200):
             response.status_code = status
             return response
 
-    return mock.patch("agents.gateway.httpx.AsyncClient", Client), calls
+    return mock.patch("webot.driver.httpx.AsyncClient", Client), calls
 
 
 class TestGateway(StoreCase):
     def setUp(self):
         super().setUp()
-        self.gateway = AgentGateway(agent_base_url="http://agent.test", internal_token=TOKEN, store=self.store)
+        self.gateway = AgentGateway(store=self.store, runtimes={
+            WEBOT: WebotRuntime(base_url="http://agent.test", internal_token=TOKEN)})
         patcher = mock.patch("integrations.external_persona.build_external_persona_prompt", return_value="PERSONA")
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -211,10 +207,10 @@ class TestGateway(StoreCase):
         self.assertEqual(request.options["model"], "m1")
         self.assertTrue(request.options["_history_disabled"])
 
-    def test_webot_delivery_goes_to_its_inbox(self):
+    def test_webot_is_triggered_through_the_system_trigger(self):
         patcher, calls = _http()
         with patcher:
-            receipt = asyncio.run(self.gateway.deliver(self.webot(), AgentMessage(text="hello"), mode="chat",
+            receipt = asyncio.run(self.gateway.trigger(self.webot(), AgentMessage(text="hello"), mode="chat",
                                                        coalesce_key="k"))
         self.assertTrue(receipt.accepted)
         url, body = calls[0]
@@ -227,25 +223,25 @@ class TestGateway(StoreCase):
         with patcher:
             receipt = asyncio.run(self.gateway.inbox(self.webot(), AgentMessage(text="later", sender="u:alice")))
         self.assertTrue(receipt.accepted)
-        self.assertEqual(calls[0], ("http://agent.test/webot/session-inbox/send",
-                                    {"user_id": "alice", "session_id": "u:alice", "target_ref": "s1", "body": "later"}))
+        self.assertEqual(calls[0], ("http://agent.test/system_trigger", {
+            "user_id": "alice", "session_id": "s1", "text": "later", "inbox_source_session": "u:alice"}))
 
         async def run():
             with _sent("ok") as send:
                 await self.gateway.inbox(self.codex(), AgentMessage(text="later"))
-                await asyncio.gather(*self.gateway._background)
+                await asyncio.gather(*self.gateway.runtimes[ACPX]._background)
             return send.await_args.args[0]
 
         self.assertEqual(asyncio.run(run()).prompt, "later")
 
-    def test_external_delivery_sends_in_the_background_and_reports_back(self):
+    def test_an_external_trigger_is_sent_in_the_background_and_reports_back(self):
         codex = self.codex()
         replies = []
 
         async def run():
             with _sent("done"):
-                receipt = await self.gateway.deliver(codex, AgentMessage(text="go"), on_complete=replies.append)
-                await asyncio.gather(*self.gateway._background)
+                receipt = await self.gateway.trigger(codex, AgentMessage(text="go"), on_complete=replies.append)
+                await asyncio.gather(*self.gateway.runtimes[ACPX]._background)
             return receipt
 
         self.assertTrue(asyncio.run(run()).accepted)
@@ -291,16 +287,21 @@ class TestControl(StoreCase):
     def setUp(self):
         super().setUp()
         self.webot_runtime = _FakeWebot()
-        self.control = AgentControl(self.webot_runtime, store=self.store)
+        self.control = AgentGateway(store=self.store, runtimes={WEBOT: WebotRuntime(engine=self.webot_runtime)})
 
     def test_webot_status_cancel_and_reset(self):
         coder = self.webot()
         status = asyncio.run(self.control.status(coder))
         self.assertEqual((status["state"], status["pending"], status["context"]), ("running", 2, {"percent": 10}))
+        self.assertEqual(status["actions"], ["status", "cancel", "reset"])
         self.assertTrue(self.control.is_busy(coder))
-        self.assertEqual(asyncio.run(self.control.run(coder, "cancel")), {"cancelled": True})
-        self.assertEqual(asyncio.run(self.control.run(coder, "reset")), {"reset": True})
+        self.assertEqual(asyncio.run(self.control.control(coder, "cancel")), {"cancelled": True})
+        self.assertEqual(asyncio.run(self.control.control(coder, "reset")), {"reset": True})
         self.assertEqual(self.webot_runtime.cancelled, ["alice#s1", "alice#s1"])
+
+    def test_webot_is_controlled_only_where_its_engine_is(self):
+        with self.assertRaises(ControlError):
+            asyncio.run(AgentGateway(store=self.store).control(self.webot(), "cancel"))
 
     def test_history_reads_the_agents_own_conversation(self):
         from types import SimpleNamespace
@@ -337,34 +338,35 @@ class TestControl(StoreCase):
             return await self.control.history(codex)
 
         self.assertEqual([(m["role"], m["content"]) for m in asyncio.run(talk())], [("user", "ping"), ("assistant", "pong")])
-        with mock.patch.object(self.control, "_acpx_command", mock.AsyncMock()):
-            asyncio.run(self.control.cleanup(codex))  # deleting the agent deletes its history
+        acpx = mock.Mock(close_session=mock.AsyncMock(), to_acpx_session_name=mock.Mock(return_value="n"))
+        with mock.patch("external.acp.adapter", return_value=acpx):
+            asyncio.run(self.control.destroy(codex))  # deleting the agent deletes its history
+        acpx.close_session.assert_awaited_once()
         self.assertEqual(asyncio.run(self.control.history(codex)), [])
 
     def test_http_agents_cannot_be_cancelled_and_reset_makes_them_start_over(self):
         agent = self.store.create("alice", name="Svc", driver=HTTP, config={"platform": "svc"})
         with self.assertRaises(ControlError):
-            asyncio.run(self.control.run(agent, "cancel"))
+            asyncio.run(self.control.control(agent, "cancel"))
         self.assertEqual(asyncio.run(self.control.status(agent))["state"], "idle")
         self.store.set_runtime("alice", agent.agent_id, {"identity_prompt": "P", "last_used_at": 1.0})
         self.assertEqual(asyncio.run(self.control.status(self.store.get("alice", agent.agent_id)))["state"], "online")
-        self.assertEqual(asyncio.run(self.control.run(agent, "reset")), {"reset": True})
+        self.assertEqual(asyncio.run(self.control.control(agent, "reset")), {"reset": True})
         self.assertEqual(self.store.get("alice", agent.agent_id).runtime, {})
 
 
 class TestAgentsApi(StoreCase):
     def setUp(self):
         super().setUp()
-        self.gateway = mock.Mock(spec=AgentGateway)
+        self.gateway = AgentGateway(store=self.store, runtimes={WEBOT: WebotRuntime(engine=_FakeWebot())})
         self.gateway.ask = mock.AsyncMock(return_value=AgentReply(ok=True, content="pong"))
         self.gateway.inbox = mock.AsyncMock(return_value=DeliveryReceipt(accepted=True))
-        self.control = AgentControl(_FakeWebot(), store=self.store)
         self.forgotten = []
         names = {"dev.Critic": "s1"}
         app = FastAPI()
         app.include_router(create_agents_router(
             internal_token=TOKEN, verify_password=lambda u, p: (u, p) == ("alice", "pw"),
-            store=self.store, gateway=self.gateway, control=self.control,
+            store=self.store, gateway=self.gateway,
             names=lambda owner, ref: self.store.get(owner, names[ref]) if ref in names else None,
             on_delete=[lambda a: self.forgotten.append(a.agent_id)],
         ))

@@ -26,10 +26,9 @@ from utils.api_patch import patch_langchain_file_mime
 patch_langchain_file_mime()
 
 from core.agent import TeamAgent
-from agents.control import AgentControl
-from agents.gateway import AgentGateway
+from agents.gateway import AgentGateway, set_gateway
 from agents.routes import create_agents_router
-from agents.store import get_store
+from agents.store import WEBOT, get_store
 from comms.conversations import Conversations
 from comms.store import ConversationStore, default_db_path as conversations_db_path
 from groups.routes import create_groups_router
@@ -45,6 +44,7 @@ from api.session_routes import create_session_router
 from api.settings_routes import create_settings_router
 from api.system_routes import create_system_router
 from api.system_service import SystemService
+from webot.driver import WebotRuntime
 from webot.routes import create_webot_router
 from services.message_builder import build_human_message
 from utils.logging_utils import get_logger, request_id_ctx
@@ -149,11 +149,11 @@ system_service = SystemService(agent=agent, verify_internal_token=verify_interna
 # --- L1: the table of all agents (every session, by its number). L2 around it: teams
 # (namespaces in folders), group chats (their own database), workflows. ---
 agent_store = get_store()
-gateway = AgentGateway(internal_token=INTERNAL_TOKEN, store=agent_store)
-agent_control = AgentControl(agent, checkpoint_db_path=str(getattr(agent, "_db_path", "") or ""), store=agent_store)
+gateway = AgentGateway(store=agent_store, runtimes={WEBOT: WebotRuntime(internal_token=INTERNAL_TOKEN, engine=agent)})
+set_gateway(gateway)
 team_store = get_team_store(agent_store)
 conversation_store = ConversationStore(conversations_db_path())
-conversations = Conversations(conversation_store, agent_store, gateway, is_busy=agent_control.is_busy)
+conversations = Conversations(conversation_store, agent_store, gateway)
 group_service = GroupService(conversations, names=team_store.address)
 
 
@@ -268,7 +268,7 @@ app.include_router(
 app.include_router(
     create_agents_router(
         internal_token=INTERNAL_TOKEN, verify_password=verify_password,
-        store=agent_store, gateway=gateway, control=agent_control, names=team_store.address,
+        store=agent_store, gateway=gateway, names=team_store.address,
         on_delete=(lambda a: team_store.forget_agent(a.owner, a.agent_id),
                    lambda a: conversation_store.forget(a.owner, a.agent_id)),
     )
