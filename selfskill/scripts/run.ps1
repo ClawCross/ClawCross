@@ -452,13 +452,13 @@ function Get-ClawcrossServiceProcesses {
     $frontendPort = [int]$ports["PORT_FRONTEND"]
     $scriptPatterns = @(
         "scripts[\\/]+launcher\.py",
-        "src[\\/]+utils[\\/]+scheduler_service\.py",
-        "oasis[\\/]+server\.py",
-        "src[\\/]+mainagent\.py",
-        "src[\\/]+front\.py",
+        "src[\\/]+backend[\\/]+scheduler[\\/]+service\.py",
+        "src[\\/]+backend[\\/]+oasis[\\/]+server\.py",
+        "src[\\/]+backend[\\/]+server\.py",
+        "src[\\/]+frontend[\\/]+server\.py",
         "scripts[\\/]+tunnel\.py",
         "scripts[\\/]+harness_conductor\.py",
-        "chatbot[\\/]+main\.py",
+        "src[\\/]+backend[\\/]+chatbot[\\/]+main\.py",
         "weclaw start -f",
         "cloudflared.*\btunnel\b.*--url\s+http://127\.0\.0\.1:$frontendPort\b"
     )

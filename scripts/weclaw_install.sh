@@ -16,7 +16,7 @@ if command -v weclaw >/dev/null 2>&1; then
     echo
     echo "下一步："
     echo "  1) 在 config/.env 设置 WECLAW_ENABLED=true"
-    echo "  2) 启动 chatbot：python chatbot/main.py --weclaw"
+    echo "  2) 启动 chatbot：python src/backend/chatbot/main.py --weclaw"
     echo "  3) 终端会出现微信扫码二维码，扫码登录"
 else
     echo "安装失败：weclaw 未在 PATH 中" >&2

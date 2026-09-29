@@ -2,7 +2,7 @@
 Runtime LLM provider resolution for ClawCross.
 
 Single entry point — ``resolve_active_profile()`` — used by
-``src/services/llm_factory.py`` to obtain the model, provider, base URL,
+``src/backend/common/llm_factory.py`` to obtain the model, provider, base URL,
 and API key for the active LLM. All other callers (LangGraph, services)
 keep consuming env vars; only the factory is rewired.
 

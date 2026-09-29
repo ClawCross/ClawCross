@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "backend"))
 
 from webot import compression, policy, runtime_store
 from webot.permission_context import (
@@ -286,7 +286,7 @@ class ApprovalExecutionAuditTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(reason)
 
     async def test_command_safety_approval_delegates_exact_action(self):
-        from webot.tools import commander
+        from webot.mcp import commander
         from webot.approval_review import ApprovalResult
         action = {"job_id": "job-1", "input": "operation", "enter": True, "cwd": "project"}
         with patch.object(commander, "authorize_action", return_value=ApprovalResult(True)) as broker:
@@ -299,7 +299,7 @@ class ApprovalExecutionAuditTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(broker.call_args.kwargs["args"], action | {"username": "alice", "session_id": "s"})
 
     async def test_command_safety_propagates_broker_rejection(self):
-        from webot.tools import commander
+        from webot.mcp import commander
         from webot.approval_review import ApprovalResult
         with patch.object(commander, "authorize_action", return_value=ApprovalResult(False, "审批已失效或已被使用。")):
             approved, reason = await commander._wait_for_command_approval("alice", "s", "command", "reason")

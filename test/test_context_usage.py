@@ -4,7 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src"
+SRC_DIR = PROJECT_ROOT / "src" / "backend"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
@@ -13,7 +13,7 @@ from langchain_core.tools import StructuredTool
 
 from webot.engine.agent import TeamAgent
 from webot.engine.agent_runtime_state import ThreadStateRegistry
-from utils.checkpoint_repository import (
+from webot.checkpoint_repository import (
     delete_thread_records,
     get_context_usage_record,
     save_context_usage_record,

@@ -10,7 +10,7 @@ from unittest.mock import patch
 import httpx
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-for path in (str(PROJECT_ROOT), str(PROJECT_ROOT / "src")):
+for path in (str(PROJECT_ROOT), str(PROJECT_ROOT / "src" / "backend")):
     if path not in sys.path:
         sys.path.insert(0, path)
 
@@ -44,7 +44,7 @@ class DeepSeekStructuredReply(unittest.TestCase):
             http_async_client=httpx.AsyncClient(transport=httpx.MockTransport(answer)),
         )
         agent = Agent(agent_id="tmp__t__critic__1", owner="alice", name="Critic", driver=LLM, config={})
-        with patch("services.llm_factory.create_chat_model", return_value=model):
+        with patch("common.llm_factory.create_chat_model", return_value=model):
             result = asyncio.run(LlmRuntime().ask(
                 agent, AgentMessage(text="谈谈测试"), context={}, mode=None, enabled_tools=None,
                 response_format=response_format_of(OasisReplyOut), timeout=None))

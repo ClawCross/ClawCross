@@ -9,7 +9,7 @@ demo_team/
 ├── internal_agents.json          # WeBot members (import format)
 ├── external_agents.json          # members on other platforms (import format)
 ├── oasis_experts.json            # persona prompts (NOT agents)
-└── oasis/
+└── src/backend/oasis/
     └── yaml/
         └── demo_team_workflow.yaml
 ```

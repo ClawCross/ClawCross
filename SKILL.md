@@ -455,7 +455,7 @@ Notes:
 - On Windows, default ports may be auto-remapped; always trust `config/.env` or `status`.
 - Local `127.0.0.1` access supports passwordless login; **non-localhost / HTTPS** access uses the **magic link** from `start`, `status`, `tunnel-status`, or `start-tunnel` (not `cli.py status` alone).
 - Clawcross starts even without LLM configured. The setup wizard prompts on first login.
-- `chatbot/setup.py` requires an interactive terminal. In non-interactive contexts, `launcher.py` automatically skips the chatbot menu. Force with `WEBOT_HEADLESS=1`.
+- `src/backend/chatbot/setup.py` requires an interactive terminal. In non-interactive contexts, `launcher.py` automatically skips the chatbot menu. Force with `WEBOT_HEADLESS=1`.
 
 **Mandatory for anyone guiding a user after `start`:** Reproduce or summarize the **Magic link** block (local + remote when available). Do not end the handoff with only “open localhost” if the user needs phone or HTTPS access.
 
@@ -534,13 +534,13 @@ On macOS, the system `python` may point to **Python 2.7**. Clawcross requires **
 2. Activate the venv first: `source .venv/bin/activate && python scripts/launcher.py`
 3. Use the venv python directly: `.venv/bin/python scripts/launcher.py`
 
-**Never** run `cd src && python front.py` or `python3 src/front.py` directly.
+**Never** run `python3 src/frontend/server.py` directly.
 
 Safety guards: `launcher.py` includes a Python version check and `run.sh` verifies after venv activation.
 
 ### EOFError on Startup
 
-**Symptom**: `EOFError: EOF when reading a line` from `chatbot/setup.py`
+**Symptom**: `EOFError: EOF when reading a line` from `src/backend/chatbot/setup.py`
 
 **Cause**: Non-interactive terminal (agent runners, CI, piped scripts).
 
@@ -659,7 +659,7 @@ Command exited with code 1. Command: (external failure context). Signals: verifi
 ### Latest Error Excerpt
 
 ```text
-During the memory-tool migration, pytest found a SyntaxError at src/webot/skill_evolution.py:1206: nested quotes around write_file(storage="memory") in a Python string. Corrected to storage='memory'.
+During the memory-tool migration, pytest found a SyntaxError at src/backend/webot/skill_evolution.py:1206: nested quotes around write_file(storage="memory") in a Python string. Corrected to storage='memory'.
 Standalone test/test_skill_memory.py also initially failed collection with ModuleNotFoundError: No module named 'mcp_servers'. Added its explicit repository src import path, consistent with the other standalone tests.
 The first full regression found test_session_status_includes_context_usage still expected the cached 64K denominator (100%); the runtime now correctly recalculates against the current configured 1M window (6%). Updated the test to explicitly control settings and assert the new denominator while preserving measured tokens.
 Keep memory entry storage paths out of agent results and injected prompts. Validate both personal and Team scopes, symlink exclusion, stable IDs, metadata preservation, and concurrent sha256-protected writes.
@@ -685,7 +685,7 @@ Keep memory entry storage paths out of agent results and injected prompts. Valid
 
 ### Recent Evidence
 
-- `2026-09-27T07:09:55.528838+00:00` `repo-skill` — During the memory-tool migration, pytest found a SyntaxError at src/webot/skill_evolution.py:1206: nested quotes around write_file(storage="me ...[truncated]
+- `2026-09-27T07:09:55.528838+00:00` `repo-skill` — During the memory-tool migration, pytest found a SyntaxError at src/backend/webot/skill_evolution.py:1206: nested quotes around write_file(storage="me ...[truncated]
 
 ### Candidate Frontier Snapshot
 

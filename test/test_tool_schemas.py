@@ -18,7 +18,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src"
+SRC_DIR = PROJECT_ROOT / "src" / "backend"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
@@ -42,7 +42,7 @@ from webot.engine.tool_schema import (
     strict_violations,
     to_strict_parameters,
 )
-from utils.mcp_tool_docs import parse_tool_docstring
+from webot.mcp_tool_docs import parse_tool_docstring
 
 MCP_SERVERS = (
     "commander", "filemanager", "llmapi", "oasis", "search",
@@ -63,7 +63,7 @@ def _mcp_inventory():
     if _inventory_cache is None:
         tools, stale = {}, {}
         for name in MCP_SERVERS:
-            module = importlib.import_module(f"webot.tools.{name}")
+            module = importlib.import_module(f"webot.mcp.{name}")
             for tool in asyncio.run(module.mcp.list_tools()):
                 tools[tool.name] = (name, tool)
             stale.update(getattr(module.mcp, "stale_param_docs", {}))
@@ -542,7 +542,7 @@ class StrictCallsRunOnTheRealServer(unittest.IsolatedAsyncioTestCase):
     """A call shaped by the strict schema, decoded back, passes the server's own validation."""
 
     async def test_write_session_plan(self):
-        webot = importlib.import_module("webot.tools.webot")
+        webot = importlib.import_module("webot.mcp.webot")
         schema = next(t for t in await webot.mcp.list_tools() if t.name == "write_session_plan").inputSchema
         # What a strict decoder emits: every key present, omitted ones null.
         model_args = {

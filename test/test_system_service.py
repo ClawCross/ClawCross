@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src"
+SRC_DIR = PROJECT_ROOT / "src" / "backend"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
@@ -272,7 +272,7 @@ class DurableInboxTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_what_came_with_an_entry_comes_with_its_notice(self):
         with TemporaryDirectory() as tmpdir, patch.object(runtime_store, "DEFAULT_DB_PATH", Path(tmpdir) / "runtime.db"), \
-                patch("services.message_builder._is_vision_model", return_value=True):
+                patch("webot.message_builder._is_vision_model", return_value=True):
             agent = _FakeAgent()
             service = SystemService(agent=agent)
             await service.run(SystemTriggerRequest(

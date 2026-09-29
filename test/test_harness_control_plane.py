@@ -6,14 +6,14 @@ from tempfile import TemporaryDirectory
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src"
+SRC_DIR = PROJECT_ROOT / "src" / "backend"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-from api.harness_routes import create_harness_router  # noqa: E402
+from harness.routes import create_harness_router  # noqa: E402
 from harness.store import apply_harness_event, get_harness_state  # noqa: E402
 
 

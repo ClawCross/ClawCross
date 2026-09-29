@@ -1,0 +1,272 @@
+"""
+主 Agent 服务入口模块
+
+FastAPI 应用入口，整合所有路由和服务：
+- 初始化日志和请求 ID 中间件
+- 初始化数据库和用户认证
+- 注册所有 API 路由（session、group、system、settings、ops、openai）
+- 提供 CORS 支持
+"""
+
+import asyncio
+import os
+import secrets
+import uuid
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+import uvicorn
+
+from dotenv import load_dotenv
+
+# API patch（提供音频格式适配和 MIME 修复）
+from common.api_patch import patch_langchain_file_mime
+patch_langchain_file_mime()
+
+from webot.engine.agent import TeamAgent
+from agents.gateway import AgentGateway, set_gateway
+from agents.openai import create_openai_router
+from agents.trigger import create_trigger_router
+from agents.routes import create_agents_router
+from agents.store import WEBOT, get_store
+from groups.conversations import Conversations
+from groups.store import ConversationStore, default_db_path as conversations_db_path
+from groups.routes import create_groups_router
+from groups.service import GroupService
+from teams.routes import create_teams_router
+from teams.store import get_team_store
+from common.llm_factory import extract_text as _extract_text
+from common.user_auth import load_users as load_users_from_file, verify_password as verify_password_from_file
+from harness.routes import create_harness_router
+from webot.api.openai_service import OpenAIChatService
+from ops.routes import create_ops_router
+from webot.api.session_service import SessionService
+from ops.settings_routes import create_settings_router
+from webot.api.system_service import SystemService
+from webot.driver import WebotRuntime
+from webot.api.routes import create_webot_router
+from webot.message_builder import build_human_message
+from common.logging_utils import get_logger, request_id_ctx
+from webot.checkpoint_paths import DEFAULT_CHECKPOINT_DB_DIR
+from common.runtime_paths import ENV_FILE, USERS_FILE, ensure_runtime_dirs
+
+# --- Path setup ---
+current_dir = os.path.dirname(os.path.abspath(__file__))  # src/backend: the import root
+logger = get_logger("mainagent")
+ensure_runtime_dirs()
+
+
+# --- Request ID Middleware ---
+class RequestIdMiddleware(BaseHTTPMiddleware):
+    """为每个请求生成或传播 X-Request-Id，并注入日志上下文。"""
+
+    async def dispatch(self, request: Request, call_next):
+        req_id = request.headers.get("X-Request-Id") or uuid.uuid4().hex[:12]
+        token = request_id_ctx.set(req_id)
+        try:
+            response: Response = await call_next(request)
+            response.headers["X-Request-Id"] = req_id
+            return response
+        finally:
+            request_id_ctx.reset(token)
+
+env_path = str(ENV_FILE)
+db_path = str(DEFAULT_CHECKPOINT_DB_DIR)
+users_path = str(USERS_FILE)
+
+load_dotenv(dotenv_path=env_path)
+
+# 本机服务互调不能走桌面代理：no_proxy 里常见的 "127.*" 写法 HTTP 客户端并不匹配，
+# loopback 请求会被送进代理并拿到 502。详见 utils/local_no_proxy.py。
+from common.local_no_proxy import ensure_localhost_no_proxy
+
+ensure_localhost_no_proxy()
+
+
+
+# --- Internal token for service-to-service auth ---
+INTERNAL_TOKEN = os.getenv("INTERNAL_TOKEN", "").strip()
+if not INTERNAL_TOKEN:
+    # Auto-generate a token and append to .env (replacing any empty INTERNAL_TOKEN= line)
+    INTERNAL_TOKEN = secrets.token_hex(32)
+    # Read existing content, replace empty placeholder if present
+    with open(env_path, "r", encoding="utf-8") as f:
+        content = f.read()
+    if "INTERNAL_TOKEN=" in content:
+        # Replace empty or placeholder line with real value
+        import re
+        content = re.sub(
+            r"^INTERNAL_TOKEN=\s*$",
+            f"INTERNAL_TOKEN={INTERNAL_TOKEN}",
+            content,
+            flags=re.MULTILINE,
+        )
+        with open(env_path, "w", encoding="utf-8") as f:
+            f.write(content)
+    else:
+        with open(env_path, "a", encoding="utf-8") as f:
+            f.write(f"\n# 内部服务间通信密钥（自动生成，勿泄露）\nINTERNAL_TOKEN={INTERNAL_TOKEN}\n")
+    logger.info("已自动生成 INTERNAL_TOKEN 并写入 %s", env_path)
+
+
+def verify_auth_or_token(user_id: str, password: str = "",
+                         x_internal_token: str | None = None):
+    """Verify authentication via password OR X-Internal-Token.
+    Raises HTTPException on failure.
+    """
+    # 1. Internal token takes priority
+    if x_internal_token and x_internal_token == INTERNAL_TOKEN:
+        return
+    # 2. Fall back to password verification
+    if password and verify_password(user_id, password):
+        return
+    raise HTTPException(status_code=401, detail="用户名或密码错误")
+
+
+# --- User auth helpers ---
+def load_users() -> dict:
+    """加载用户名-密码哈希配置。"""
+    return load_users_from_file(users_path)
+
+
+def verify_password(username: str, password: str) -> bool:
+    """验证用户密码：对输入密码做 sha256 后与配置中的哈希比对。"""
+    return verify_password_from_file(users_path, username, password)
+
+
+# --- Create agent instance ---
+agent = TeamAgent(src_dir=current_dir, db_path=db_path)
+system_service = SystemService(agent=agent)
+chat_service = OpenAIChatService(agent=agent, extract_text=_extract_text, build_human_message=build_human_message)
+session_service = SessionService(db_path=db_path, agent=agent, extract_text=_extract_text)
+
+# --- L1: the table of all agents (every session, by its number). L2 around it: teams
+# (namespaces in folders), group chats (their own database), workflows. ---
+agent_store = get_store()
+webot = WebotRuntime(engine=agent, chat_service=chat_service, system=system_service, sessions=session_service)
+gateway = AgentGateway(store=agent_store, runtimes={WEBOT: webot})
+set_gateway(gateway)
+team_store = get_team_store(agent_store)
+conversation_store = ConversationStore(conversations_db_path())
+conversations = Conversations(conversation_store, agent_store, gateway)
+group_service = GroupService(conversations, names=team_store.address)
+
+
+async def _reconcile_pending_in_background() -> None:
+    """Deliver wakes for jobs that finished while this process was down.
+
+    Runs after the app is serving, because delivery goes through this same
+    process's HTTP port.
+    """
+    try:
+        from scheduler.bg_notify import reconcile_pending_once
+        await reconcile_pending_once()
+    except Exception as exc:
+        logger.warning("startup notify reconcile failed: %s", exc)
+
+
+# --- FastAPI lifespan ---
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await agent.startup()
+    await system_service.resume_queued_inbox()
+    # 后台任务完成通知是事件驱动的（detached runner 跑完会 POST /internal/bg_job_done）。
+    # 这里只做一次性对账（非轮询），补发「本进程宕机期间已完成」的任务通知。
+    #
+    # 必须放到后台跑，不能在这里 await：对账是通过 HTTP POST 本进程自己的
+    # /system_trigger 完成的，而 lifespan 没返回之前本进程还不处理请求——这个请求
+    # 注定要等满 httpx 的 30s 超时，每个待投递任务各付一次。端口先开始服务，这件事
+    # 随后自己做。任务句柄要留着，否则可能被 GC 掉。
+    app.state.reconcile_task = asyncio.create_task(_reconcile_pending_in_background())
+    yield
+    await agent.shutdown()
+
+
+app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+
+# --- CORS: 允许前端直连 ---
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"],
+)
+# --- Request ID 传播 ---
+app.add_middleware(RequestIdMiddleware)
+
+app.include_router(
+    create_groups_router(internal_token=INTERNAL_TOKEN, verify_password=verify_password, service=group_service)
+)
+
+app.include_router(create_openai_router(internal_token=INTERNAL_TOKEN, verify_password=verify_password,
+                                        store=agent_store, gateway=gateway, names=team_store.address))
+
+
+app.include_router(
+    create_ops_router(
+        internal_token=INTERNAL_TOKEN,
+        agent=agent,
+        verify_password=verify_password,
+        verify_auth_or_token=verify_auth_or_token,
+    )
+)
+
+app.include_router(
+    create_settings_router(
+        env_path=env_path,
+        verify_auth_or_token=verify_auth_or_token,
+    )
+)
+
+app.include_router(
+    create_webot_router(
+        agent=agent,
+        system=system_service,
+        verify_auth_or_token=verify_auth_or_token,
+        extract_text=_extract_text,
+    )
+)
+
+app.include_router(
+    create_harness_router(
+        verify_auth_or_token=verify_auth_or_token,
+    )
+)
+
+app.include_router(create_trigger_router(internal_token=INTERNAL_TOKEN, store=agent_store, gateway=gateway))
+
+# L1: every agent on this machine by its number.
+app.include_router(
+    create_agents_router(
+        internal_token=INTERNAL_TOKEN, verify_password=verify_password,
+        store=agent_store, gateway=gateway, names=team_store.address,
+        on_delete=(lambda a: team_store.forget_agent(a.owner, a.agent_id),
+                   lambda a: conversation_store.forget(a.owner, a.agent_id)),
+    )
+)
+# L2: teams are namespaces of agents.
+app.include_router(
+    create_teams_router(internal_token=INTERNAL_TOKEN, verify_password=verify_password, teams=team_store)
+)
+
+
+@app.post("/internal/bg_job_done")
+async def bg_job_done(payload: dict):
+    """Loopback-only event push from a detached background runner: a job finished.
+
+    Carries only ``{"job_id": ...}``. No token is required (the sandboxed runner
+    has none); the session to wake is resolved from the commander-written
+    pointer, not from this request, and delivery is idempotent — so a loopback
+    caller cannot inject an arbitrary wake. uvicorn binds 127.0.0.1 only.
+    """
+    from scheduler.bg_notify import deliver_by_job_id
+    delivered = await deliver_by_job_id(str(payload.get("job_id") or ""))
+    return {"delivered": bool(delivered)}
+
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="127.0.0.1", port=int(os.getenv("PORT_AGENT", "51200")))

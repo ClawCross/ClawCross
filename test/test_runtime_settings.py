@@ -8,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "backend"))
 from webot import runtime_settings as settings
 
 
@@ -78,12 +78,12 @@ class RuntimeSettingsTests(unittest.TestCase):
 
     def test_front_proxy_uses_authenticated_user(self):
         from flask import Flask
-        from routes.front_webot_routes import register_webot_routes
+        from frontend.proxies.webot import register_webot_routes
         app = Flask(__name__)
         app.secret_key = "test-secret"
         register_webot_routes(app, port_agent=1, internal_token="test-token")
         client = app.test_client()
-        with patch("routes.front_webot_routes.requests.post") as post:
+        with patch("frontend.proxies.webot.requests.post") as post:
             self.assertEqual(client.post("/proxy_webot_runtime_settings", json={}).status_code, 401)
             post.assert_not_called()
             with client.session_transaction() as session:
@@ -96,10 +96,10 @@ class RuntimeSettingsTests(unittest.TestCase):
     def test_configured_window_overrides_model_name_guess(self):
         config = settings.get_runtime_settings('alice').context
         self.assertEqual(config.context_window_tokens, 1_000_000)
-        with patch('utils.context_limits.infer_model_context_window', return_value=64_000):
+        with patch('webot.context_limits.infer_model_context_window', return_value=64_000):
             self.assertEqual(settings.resolve_context_window(config, "deepseek-flash"), 1_000_000)
             self.assertEqual(settings.resolve_context_history_budget(config, model="deepseek-flash"), 800_000)
-        with patch('utils.context_limits.infer_model_context_window', return_value=2_000_000):
+        with patch('webot.context_limits.infer_model_context_window', return_value=2_000_000):
             self.assertEqual(settings.resolve_context_window(config), 1_000_000)
         with self.assertRaises(ValueError):
             settings.save_runtime_settings('alice', settings={'approval': {'mode': 'unknown'}})

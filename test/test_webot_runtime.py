@@ -1,6 +1,6 @@
 import unittest
 
-from src.webot.runtime import (
+from webot.runtime import (
     build_turn_limit_message,
     filter_tools_for_mode,
     normalize_session_mode,

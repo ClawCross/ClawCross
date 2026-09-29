@@ -8,13 +8,13 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src"
+SRC_DIR = PROJECT_ROOT / "src" / "backend"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 import httpx
 
-webot = importlib.import_module("webot.tools.webot")
+webot = importlib.import_module("webot.mcp.webot")
 from webot import runtime_store
 
 

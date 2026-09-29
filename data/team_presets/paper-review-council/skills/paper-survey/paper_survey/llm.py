@@ -100,7 +100,7 @@ def reset_llm_stats() -> None:
 def _find_clawcross_root() -> Path | None:
     """Find the ClawCross project root from a nested team skill path."""
     for parent in Path(__file__).resolve().parents:
-        if (parent / "oasis" / "agent_center.py").is_file() and (parent / "src").is_dir():
+        if (parent / "src" / "backend" / "oasis" / "agent_center.py").is_file():
             return parent
     return None
 
@@ -148,9 +148,9 @@ async def _send_to_clawcross_persona_async(
     root = _find_clawcross_root()
     if root is None:
         raise RuntimeError("Cannot locate ClawCross project root for persona backend")
-    root_str = str(root)
-    if root_str not in sys.path:
-        sys.path.insert(0, root_str)
+    backend = str(root / "src" / "backend")  # the backend's import root
+    if backend not in sys.path:
+        sys.path.insert(0, backend)
     _load_clawcross_env(root)
 
     from oasis.agent_center import send_team_persona

@@ -5,12 +5,12 @@ from unittest import mock
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src"
+SRC_DIR = PROJECT_ROOT / "src" / "backend"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from langchain_core.messages import AIMessage, HumanMessage
-from services.llm_factory import create_chat_model
+from common.llm_factory import create_chat_model
 
 
 class DeepSeekReasoningPatchTests(unittest.TestCase):

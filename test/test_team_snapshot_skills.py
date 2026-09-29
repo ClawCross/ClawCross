@@ -7,11 +7,11 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src"
+SRC_DIR = PROJECT_ROOT / "src" / "backend"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-import services.team_snapshot_skills as snapshot_skills
+import teams.snapshot_skills as snapshot_skills
 import webot.skills as webot_skills
 
 

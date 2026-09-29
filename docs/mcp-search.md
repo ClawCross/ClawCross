@@ -1,6 +1,6 @@
 # MCP Web Search
 
-ClawCross exposes web search through `src/webot/tools/search.py`.
+ClawCross exposes web search through `src/backend/webot/mcp/search.py`.
 
 The MCP server is started by the main agent as `search_service` and provides
 two research tools.

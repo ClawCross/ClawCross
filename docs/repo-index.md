@@ -17,15 +17,30 @@ Use this file when an agent needs to **index the repo before reading code**. It 
 | `README.md` | Product overview |
 | `docs/` | Task docs, maintainer docs, repo index |
 | `selfskill/scripts/` | Preferred install / configure / run entrypoints |
-| `scripts/` | Legacy setup/start helpers and launcher pieces |
-| `tools/` | build helpers and manual utilities |
-| `src/` | Main backend, frontend proxy, MCP tools, frontend assets |
-| `oasis/` | OASIS engine and OpenClaw routes |
-| `chatbot/` | Telegram / QQ bot integrations |
+| `scripts/` | launcher, CLI, setup/start helpers; `scripts/dev/` build helpers and manual utilities |
+| `src/backend/` | every backend service, one package per module; the Python import root |
+| `src/frontend/` | the web frontend: Flask server, proxies to the backend, templates, static assets |
 | `config/` | `.env`, TinyFish target files, requirements, users |
 | `data/` | runtime DBs, prompts, user files, workflow files |
 | `test/` | automated Python, Node, and browser smoke tests |
-| `visual/` | standalone visual orchestrator app |
+
+`src/backend/` modules (imported by their name, e.g. `from agents.store import …`):
+
+| Module | What it is |
+|---|---|
+| `server.py` | the Agent service (port 51200): every agent entrance and the routers below |
+| `agents/` | L1: the table of all agents, the gateway, `/v1/agents`, `/v1/chat/completions`, `/system_trigger` |
+| `external/` | the runtimes of external agents (ACP tools, OpenClaw, HTTP, model calls) |
+| `webot/` | WeBot: `engine/`, `api/`, `mcp/` (its MCP tool servers), `driver.py` (its runtime) |
+| `teams/` | teams: store, manifest (package format), Creator, presets, snapshots |
+| `groups/` | group chat: conversations, delivery, store, and the rules on top |
+| `oasis/` | OASIS workflows (its own service, port 51202) and the OpenClaw routes it hosts |
+| `scheduler/` | the scheduler service (port 51201), cron parsing, internal alarms, background-job notices |
+| `chatbot/` | chat channel bridges (webhook, NoneBot, WeClaw) |
+| `harness/` | the cross-session harness control plane |
+| `ops/` | the Agent service's own operations: login, tools, TTS, settings, self-update |
+| `tinyfish/` | TinyFish internet monitoring |
+| `common/` | shared by all: runtime paths, env settings, logging, auth, the LLM factory |
 
 ## Install and Configuration
 
@@ -47,8 +62,8 @@ Read these first for setup or environment changes:
 
 If the issue is model detection or provider-specific behavior, inspect:
 
-- `src/services/llm_factory.py`
-- `src/api/ops_service.py`
+- `src/backend/common/llm_factory.py`
+- `src/backend/ops/service.py`
 
 ## Runtime Entry Points
 
@@ -56,12 +71,12 @@ These are the main services Clawcross runs:
 
 | Path | Service |
 |---|---|
-| `src/mainagent.py` | Agent API bootstrap and router composition |
-| `src/front.py` | Flask frontend and proxy gateway |
-| `src/utils/scheduler_service.py` | scheduler service |
-| `src/services/team_creator_service.py` | ClawCross Creator discovery, extraction, build, jobs, and translation pipeline |
-| `src/services/tinyfish_monitor_service.py` | shared TinyFish monitor runtime used by frontend, scheduler, and CLI |
-| `oasis/server.py` | OASIS service |
+| `src/backend/server.py` | Agent API bootstrap and router composition |
+| `src/frontend/server.py` | Flask frontend and proxy gateway |
+| `src/backend/scheduler/service.py` | scheduler service |
+| `src/backend/teams/creator.py` | ClawCross Creator discovery, extraction, build, jobs, and translation pipeline |
+| `src/backend/tinyfish/monitor.py` | shared TinyFish monitor runtime used by frontend, scheduler, and CLI |
+| `src/backend/oasis/server.py` | OASIS service |
 | `scripts/launcher.py` | multi-service startup order |
 
 When the bug is "service does not start" or "route behaves unexpectedly", start from the matching entrypoint plus its route/service files below.
@@ -70,63 +85,62 @@ When the bug is "service does not start" or "route behaves unexpectedly", start 
 
 ### OpenAI-compatible chat API
 
-- `src/webot/api/openai_routes.py`
-- `src/webot/api/openai_service.py`
-- `src/webot/api/openai_models.py`
-- `src/webot/api/openai_protocol.py`
-- `src/services/message_builder.py`
+- `src/backend/agents/openai.py` (`/v1/chat/completions`, `/v1/models`)
+- `src/backend/webot/api/openai_service.py`
+- `src/backend/webot/api/openai_models.py`
+- `src/backend/webot/api/openai_protocol.py`
+- `src/backend/webot/message_builder.py`
 
 ### Sessions
 
-- `src/webot/api/session_routes.py`
-- `src/webot/api/session_service.py`
-- `src/webot/api/session_models.py`
-- `src/utils/session_summary.py`
-- `src/utils/checkpoint_repository.py`
+A WeBot session is its agent: listed, read, compacted and deleted through `/v1/agents`.
+
+- `src/backend/webot/api/session_service.py` (the session's own operations, for its runtime)
+- `src/backend/webot/session_summary.py`
+- `src/backend/webot/checkpoint_repository.py`
 
 ### Agents and their compositions (see `docs/architecture.md`)
 
-- L1 agents: `src/agents/store.py` (the table of all sessions: session number = agent id), `src/agents/gateway.py` (ask / trigger / inbox and the control plane, handed to the agent's runtime), `src/agents/runtime.py` (what a runtime offers), `src/webot/driver.py` and `src/external/` (the runtimes: WeBot, acp, openclaw, http, llm), `src/agents/routes.py` (`/v1/agents`), `src/webot/api/openai_service.py` (`/v1/chat/completions`), `src/webot/api/system_service.py` (`/system_trigger`)
-- L2 group chat: `src/comms/store.py` (conversations.db), `src/comms/conversations.py` (post + wake), `src/comms/delivery.py` (wake rule, storm guard, unread digest), `src/groups/`
-- L2 teams: `src/teams/store.py` (members.json in the team folder, `<team>.<name>`), `src/teams/manifest.py` (internal_agents.json / external_agents.json import/export), `src/teams/routes.py` (`/v1/teams`)
+- L1 agents: `src/backend/agents/store.py` (the table of all sessions: session number = agent id), `src/backend/agents/gateway.py` (ask / trigger / inbox and the control plane, handed to the agent's runtime), `src/backend/agents/runtime.py` (what a runtime offers), `src/backend/webot/driver.py` and `src/backend/external/` (the runtimes: WeBot, acp, openclaw, http, llm), `src/backend/agents/routes.py` (`/v1/agents`), `src/backend/webot/api/openai_service.py` (`/v1/chat/completions`), `src/backend/agents/trigger.py` (`/system_trigger`)
+- L2 group chat: `src/backend/groups/store.py` (conversations.db), `src/backend/groups/conversations.py` (post + wake), `src/backend/groups/delivery.py` (wake rule, storm guard, unread digest), `src/backend/groups/`
+- L2 teams: `src/backend/teams/store.py` (members.json in the team folder, `<team>.<name>`), `src/backend/teams/manifest.py` (internal_agents.json / external_agents.json import/export), `src/backend/teams/routes.py` (`/v1/teams`)
 
 ### Settings / ops / auth / system
 
-- `src/api/settings_routes.py`
-- `src/api/settings_service.py`
-- `src/api/settings_models.py`
-- `src/api/ops_routes.py`
-- `src/api/ops_service.py`
-- `src/api/ops_models.py`
-- `src/webot/api/system_routes.py`
-- `src/webot/api/system_service.py`
-- `src/webot/api/system_models.py`
-- `src/utils/env_settings.py`
-- `src/utils/user_auth.py`
-- `src/utils/auth_utils.py`
+- `src/backend/ops/settings_routes.py`
+- `src/backend/ops/settings_service.py`
+- `src/backend/ops/settings_models.py`
+- `src/backend/ops/routes.py`
+- `src/backend/ops/service.py`
+- `src/backend/ops/models.py`
+- `src/backend/webot/api/system_service.py`
+- `src/backend/webot/api/system_models.py`
+- `src/backend/common/env_settings.py`
+- `src/backend/common/user_auth.py`
+- `src/backend/common/auth_utils.py`
 
 ### Runtime plumbing
 
-- `src/webot/engine/agent.py`
-- `src/webot/engine/agent_runtime_state.py`
-- `src/webot/skill_evolution.py`
-- `src/webot/skill_memory.py` — path-free Skill正文 entries via file tools in memory mode
-- `src/webot/context.py`
-- `src/webot/compression.py`
-- `src/webot/runtime_settings.py`
-- `src/webot/approval_review.py`
-- `src/webot/command_sandbox.py` — SRT command isolation and scoped escalation policies
-- `src/webot/approval_actions.py`
-- `src/webot/permission_context.py`
-- `src/webot/policy.py`
-- `src/webot/profiles.py`
-- `src/webot/api/routes.py`
-- `src/webot/runtime.py`
-- `src/webot/runtime_store.py`
-- `src/webot/api/service.py`
-- `src/webot/subagents.py`
-- `src/webot/workspace.py`
-- `src/utils/logging_utils.py`
+- `src/backend/webot/engine/agent.py`
+- `src/backend/webot/engine/agent_runtime_state.py`
+- `src/backend/webot/skill_evolution.py`
+- `src/backend/webot/skill_memory.py` — path-free Skill正文 entries via file tools in memory mode
+- `src/backend/webot/context.py`
+- `src/backend/webot/compression.py`
+- `src/backend/webot/runtime_settings.py`
+- `src/backend/webot/approval_review.py`
+- `src/backend/webot/command_sandbox.py` — SRT command isolation and scoped escalation policies
+- `src/backend/webot/approval_actions.py`
+- `src/backend/webot/permission_context.py`
+- `src/backend/webot/policy.py`
+- `src/backend/webot/profiles.py`
+- `src/backend/webot/api/routes.py`
+- `src/backend/webot/runtime.py`
+- `src/backend/webot/runtime_store.py`
+- `src/backend/webot/api/service.py`
+- `src/backend/webot/subagents.py`
+- `src/backend/webot/workspace.py`
+- `src/backend/common/logging_utils.py`
 
 ## Frontend Map
 
@@ -134,22 +148,23 @@ If the task touches the UI, start here:
 
 | Path | Purpose |
 |---|---|
-| `frontend/js/tool-catalog.js` | tool categories and grouped picker shared by desktop/mobile |
-| `frontend/js/runtime-settings.js` | context usage meter and context/approval settings |
-| `frontend/js/main.js` | main desktop frontend logic |
-| `frontend/css/style.css` | main desktop styling, including OASIS Town / swarm / ReportAgent panels |
-| `src/routes/front_webot_routes.py` | Flask proxy routes for WeBot runtime panel and tool policy |
-| `frontend/js/creator.js` | ClawCross Creator page logic, i18n, persistence, DAG preview |
-| `frontend/css/creator.css` | ClawCross Creator styles and DAG layout |
-| `frontend/js/orchestration.js` | Studio canvas logic, including `Generate Team` |
-| `frontend/templates/creator.html` | ClawCross Creator HTML shell |
-| `frontend/templates/group_chat_mobile.html` | mobile group chat page and mobile settings UI |
-| `frontend/templates/` | other HTML templates |
-| `frontend/` | CSS, JS, images |
-| `src/routes/front_group_routes.py` | frontend proxy routes for groups |
-| `src/routes/front_oasis_routes.py` | frontend proxy routes for OASIS |
-| `src/routes/front_session_routes.py` | frontend proxy routes for sessions |
-| `src/routes/front_agent_routes.py` | frontend proxy for the unified Agent catalog/control plane |
+| `src/frontend/static/js/tool-catalog.js` | tool categories and grouped picker shared by desktop/mobile |
+| `src/frontend/static/js/runtime-settings.js` | context usage meter and context/approval settings |
+| `src/frontend/static/js/main.js` | main desktop frontend logic |
+| `src/frontend/static/css/style.css` | main desktop styling, including OASIS Town / swarm / ReportAgent panels |
+| `src/frontend/proxies/webot.py` | Flask proxy routes for WeBot runtime panel and tool policy |
+| `src/frontend/static/js/creator.js` | ClawCross Creator page logic, i18n, persistence, DAG preview |
+| `src/frontend/static/css/creator.css` | ClawCross Creator styles and DAG layout |
+| `src/frontend/static/js/orchestration.js` | Studio canvas logic, including `Generate Team` |
+| `src/frontend/templates/creator.html` | ClawCross Creator HTML shell |
+| `src/frontend/templates/group_chat_mobile.html` | mobile group chat page and mobile settings UI |
+| `src/frontend/templates/` | other HTML templates |
+| `src/frontend/static/` | CSS, JS, images (served at `/static`) |
+| `src/frontend/server.py` | the Flask frontend (port 51209) |
+| `src/frontend/visual.py` | visual orchestration helpers (layout ↔ YAML, expert pool) |
+| `src/frontend/proxies/groups.py` | frontend proxy routes for groups |
+| `src/frontend/proxies/oasis.py` | frontend proxy routes for OASIS |
+| `src/frontend/proxies/agents.py` | frontend proxy for the unified Agent catalog/control plane |
 
 ## OASIS and Workflow Engine
 
@@ -157,18 +172,18 @@ Read these for workflow execution, topics, experts, and OpenClaw integration:
 
 | Path | Purpose |
 |---|---|
-| `oasis/server.py` | OASIS API bootstrap |
-| `oasis/engine.py` | discussion / execution engine |
-| `oasis/scheduler.py` | workflow scheduling logic |
-| `oasis/participants.py` | a participant = an agent asked by its id over the agent layer's entrances (`agents/client.py`) |
-| `oasis/agent_center.py` | the agents and personas a workflow can reach (team members, persona library) |
-| `oasis/experts.py` | persona library (public / agency / custom / team) and reply parsing |
-| `oasis/forum.py` | forum/topic data handling plus post/event hooks for living graph ingestion |
-| `oasis/swarm_engine.py` | Town Genesis scaffold and LLM swarm blueprint generation |
-| `oasis/graph_memory.py` | GraphRAG persistence, local SQLite fallback, optional Zep mirror, ReportAgent retrieval |
-| `oasis/models.py` | OASIS request/response models |
-| `oasis/openclaw_routes.py` | OpenClaw API routes |
-| `oasis/openclaw_cli.py` | OpenClaw CLI wrappers |
+| `src/backend/oasis/server.py` | OASIS API bootstrap |
+| `src/backend/oasis/engine.py` | discussion / execution engine |
+| `src/backend/oasis/scheduler.py` | workflow scheduling logic |
+| `src/backend/oasis/participants.py` | a participant = an agent asked by its id over the agent layer's entrances (`agents/client.py`) |
+| `src/backend/oasis/agent_center.py` | the agents and personas a workflow can reach (team members, persona library) |
+| `src/backend/oasis/experts.py` | persona library (public / agency / custom / team) and reply parsing |
+| `src/backend/oasis/forum.py` | forum/topic data handling plus post/event hooks for living graph ingestion |
+| `src/backend/oasis/swarm_engine.py` | Town Genesis scaffold and LLM swarm blueprint generation |
+| `src/backend/oasis/graph_memory.py` | GraphRAG persistence, local SQLite fallback, optional Zep mirror, ReportAgent retrieval |
+| `src/backend/oasis/models.py` | OASIS request/response models |
+| `src/backend/oasis/openclaw_routes.py` | OpenClaw API routes |
+| `src/backend/oasis/openclaw_cli.py` | OpenClaw CLI wrappers |
 
 Pair these with:
 
@@ -180,14 +195,14 @@ Pair these with:
 
 For tool execution or tool exposure:
 
-- `src/webot/tools/commander.py`
-- `src/webot/tools/filemanager.py`
-- `src/webot/tools/oasis.py`
-- `src/webot/tools/scheduler.py`
-- `src/webot/tools/search.py`
-- `src/webot/tools/session.py`
-- `src/webot/tools/webot.py`
-- `src/webot/tools/llmapi.py`
+- `src/backend/webot/mcp/commander.py`
+- `src/backend/webot/mcp/filemanager.py`
+- `src/backend/webot/mcp/oasis.py`
+- `src/backend/webot/mcp/scheduler.py`
+- `src/backend/webot/mcp/search.py`
+- `src/backend/webot/mcp/session.py`
+- `src/backend/webot/mcp/webot.py`
+- `src/backend/webot/mcp/llmapi.py`
 
 ## ACP Exchange (acpx)
 
@@ -195,10 +210,10 @@ For external AI agent communication via the Agent Client Protocol:
 
 | Path | Purpose |
 |---|---|
-| `src/external/acpx.py` | Singleton `AcpxAdapter` wrapping the `acpx` CLI; manages sessions and prompt execution |
-| `src/external/acp.py` | the only acpx consumer: the runtime of codex, claude-code, gemini … agents |
-| `src/external/session.py`, `src/external/history.py` | what the external runtimes share: the session named after the agent id, the identity prompt, the exchange log |
-| `src/agents/platforms.py` | which platforms are ACP tools (the `acpx` agent list) |
+| `src/backend/external/acpx.py` | Singleton `AcpxAdapter` wrapping the `acpx` CLI; manages sessions and prompt execution |
+| `src/backend/external/acp.py` | the only acpx consumer: the runtime of codex, claude-code, gemini … agents |
+| `src/backend/external/session.py`, `src/backend/external/history.py` | what the external runtimes share: the session named after the agent id, the identity prompt, the exchange log |
+| `src/backend/agents/platforms.py` | which platforms are ACP tools (the `acpx` agent list) |
 
 Known ACP tools (external AI agents): `openclaw`, `codex`, `claude`, `gemini`, `aider`.
 
@@ -208,9 +223,9 @@ Known ACP tools (external AI agents): `openclaw`, `codex`, `claude`, `gemini`, `
 
 | Path | Purpose |
 |---|---|
-| `chatbot/telegrambot.py` | Telegram bot runtime |
-| `chatbot/QQbot.py` | QQ bot runtime |
-| `chatbot/setup.py` | bot setup helper (interactive menu; requires `stdin.isatty()` — skipped automatically by `launcher.py` in non-interactive / headless mode) |
+| `src/backend/chatbot/main.py` | starts the configured channels |
+| `src/backend/chatbot/adapters/` | webhook, NoneBot and WeClaw bridges |
+| `src/backend/chatbot/channel_catalog.py` | the channel catalog (`config/chatbot_channels.json`) |
 
 ## Team and User Data
 
@@ -283,8 +298,8 @@ When changing code, check the nearest validation surface:
 | `python test/tinyfish_live_smoke.py --site <site_key>` | opt-in real TinyFish smoke test |
 | `uv run scripts/cli.py status` | smoke test services |
 | `python -m py_compile <file>` | quick syntax check for touched Python files |
-| `node --check frontend/js/creator.js` | quick ClawCross Creator syntax check |
-| `node --check frontend/js/main.js` | quick JS syntax check |
+| `node --check src/frontend/static/js/creator.js` | quick ClawCross Creator syntax check |
+| `node --check src/frontend/static/js/main.js` | quick JS syntax check |
 
 ## Task-to-File Lookup
 
@@ -292,19 +307,19 @@ When changing code, check the nearest validation surface:
 
 Read:
 
-- `frontend/js/main.js`
-- `frontend/templates/group_chat_mobile.html`
-- `src/api/settings_routes.py`
-- `src/api/settings_service.py`
-- `src/utils/env_settings.py`
+- `src/frontend/static/js/main.js`
+- `src/frontend/templates/group_chat_mobile.html`
+- `src/backend/ops/settings_routes.py`
+- `src/backend/ops/settings_service.py`
+- `src/backend/common/env_settings.py`
 - `config/.env.example`
 
 ### "Model selection / provider / audio defaults are wrong"
 
 Read:
 
-- `src/services/llm_factory.py`
-- `src/api/ops_service.py`
+- `src/backend/common/llm_factory.py`
+- `src/backend/ops/service.py`
 - `scripts/setup_apikey.sh`
 - `scripts/setup_apikey.ps1`
 - `selfskill/scripts/configure.py`
@@ -314,37 +329,37 @@ Read:
 Read:
 
 - `docs/create_workflow.md`
-- `oasis/scheduler.py`
-- `oasis/engine.py`
-- `oasis/server.py`
-- `oasis/swarm_engine.py`
-- `oasis/graph_memory.py`
-- `oasis/participants.py`
+- `src/backend/oasis/scheduler.py`
+- `src/backend/oasis/engine.py`
+- `src/backend/oasis/server.py`
+- `src/backend/oasis/swarm_engine.py`
+- `src/backend/oasis/graph_memory.py`
+- `src/backend/oasis/participants.py`
 - `docs/example_team.md`
 
 ### "Town Mode / swarm graph / ReportAgent looks wrong"
 
 Read:
 
-- `frontend/templates/index.html`
-- `frontend/js/main.js`
-- `frontend/css/style.css`
-- `src/routes/front_oasis_routes.py`
-- `oasis/server.py`
-- `oasis/swarm_engine.py`
-- `oasis/graph_memory.py`
+- `src/frontend/templates/index.html`
+- `src/frontend/static/js/main.js`
+- `src/frontend/static/css/style.css`
+- `src/frontend/proxies/oasis.py`
+- `src/backend/oasis/server.py`
+- `src/backend/oasis/swarm_engine.py`
+- `src/backend/oasis/graph_memory.py`
 
 ### "ClawCross Creator or workflow-to-team is wrong"
 
 Read:
 
 - `docs/team-creator.md`
-- `src/front.py`
-- `src/services/team_creator_service.py`
-- `frontend/js/creator.js`
-- `frontend/css/creator.css`
-- `frontend/templates/creator.html`
-- `frontend/js/orchestration.js`
+- `src/frontend/server.py`
+- `src/backend/teams/creator.py`
+- `src/frontend/static/js/creator.js`
+- `src/frontend/static/css/creator.css`
+- `src/frontend/templates/creator.html`
+- `src/frontend/static/js/orchestration.js`
 - `test/test_team_creator_jobs.py`
 - `test/test_team_creator_workflow.py`
 - `test/test_team_creator_zip.py`
@@ -354,8 +369,8 @@ Read:
 Read:
 
 - `docs/openclaw-commands.md`
-- `oasis/openclaw_routes.py`
-- `oasis/openclaw_cli.py`
+- `src/backend/oasis/openclaw_routes.py`
+- `src/backend/oasis/openclaw_cli.py`
 - `docs/build_team.md`
 
 ### "Clawcross and OpenClaw model settings drift"
@@ -372,9 +387,9 @@ Read:
 Read:
 
 - `docs/tinyfish-monitor.md`
-- `src/services/tinyfish_monitor_service.py`
-- `src/front.py`
-- `src/utils/scheduler_service.py`
+- `src/backend/tinyfish/monitor.py`
+- `src/frontend/server.py`
+- `src/backend/scheduler/service.py`
 - `config/tinyfish_targets.example.json`
 - `test/test_tinyfish_monitor.py`
 
@@ -382,10 +397,10 @@ Read:
 
 Read:
 
-- `src/front.py`
-- `src/routes/front_group_routes.py`
-- `src/routes/front_oasis_routes.py`
-- `src/routes/front_session_routes.py`
+- `src/frontend/server.py`
+- `src/frontend/proxies/groups.py`
+- `src/frontend/proxies/oasis.py`
+- `src/frontend/proxies/front_session_routes.py`
 - `docs/ports.md`
 
 ## Documentation Cross-Links

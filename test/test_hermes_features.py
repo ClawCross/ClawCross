@@ -20,7 +20,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src"
+SRC_DIR = PROJECT_ROOT / "src" / "backend"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
@@ -626,13 +626,13 @@ class TestSessionSearch(unittest.TestCase):
 
 class TestContextReferences(unittest.IsolatedAsyncioTestCase):
     def test_parse_file_reference(self):
-        from utils.context_references import parse_context_references
+        from webot.context_references import parse_context_references
         refs = parse_context_references("Look at @file:src/main.py for details")
         self.assertEqual(len(refs), 1)
         self.assertEqual(refs[0], ("file", "src/main.py"))
 
     def test_parse_multiple_references(self):
-        from utils.context_references import parse_context_references
+        from webot.context_references import parse_context_references
         refs = parse_context_references("Check @file:a.py and @diff and @folder:src/")
         self.assertEqual(len(refs), 3)
         types = [r[0] for r in refs]
@@ -641,19 +641,19 @@ class TestContextReferences(unittest.IsolatedAsyncioTestCase):
         self.assertIn("folder", types)
 
     def test_parse_git_reference(self):
-        from utils.context_references import parse_context_references
+        from webot.context_references import parse_context_references
         refs = parse_context_references("Show me @git:5")
         self.assertEqual(len(refs), 1)
         self.assertEqual(refs[0], ("git", "5"))
 
     def test_parse_url_reference(self):
-        from utils.context_references import parse_context_references
+        from webot.context_references import parse_context_references
         refs = parse_context_references("Fetch @url:https://example.com")
         self.assertEqual(len(refs), 1)
         self.assertEqual(refs[0][0], "url")
 
     async def test_expand_file_reference(self):
-        from utils.context_references import expand_context_references
+        from webot.context_references import expand_context_references
         with TemporaryDirectory() as tmpdir:
             test_file = Path(tmpdir) / "test.py"
             test_file.write_text("print('hello')\nprint('world')\n")
@@ -667,7 +667,7 @@ class TestContextReferences(unittest.IsolatedAsyncioTestCase):
             self.assertIn("hello", result.expanded_message)
 
     async def test_expand_file_with_line_range(self):
-        from utils.context_references import expand_context_references
+        from webot.context_references import expand_context_references
         with TemporaryDirectory() as tmpdir:
             test_file = Path(tmpdir) / "test.py"
             test_file.write_text("line1\nline2\nline3\nline4\nline5\n")
@@ -681,7 +681,7 @@ class TestContextReferences(unittest.IsolatedAsyncioTestCase):
             self.assertIn("line4", result.expanded_message)
 
     async def test_expand_folder_reference(self):
-        from utils.context_references import expand_context_references
+        from webot.context_references import expand_context_references
         with TemporaryDirectory() as tmpdir:
             subdir = Path(tmpdir) / "src"
             subdir.mkdir()
@@ -697,7 +697,7 @@ class TestContextReferences(unittest.IsolatedAsyncioTestCase):
             self.assertIn("utils.py", result.expanded_message)
 
     async def test_sensitive_path_blocked(self):
-        from utils.context_references import expand_context_references
+        from webot.context_references import expand_context_references
         with TemporaryDirectory() as tmpdir:
             ssh_dir = Path(tmpdir) / ".ssh"
             ssh_dir.mkdir()
@@ -711,7 +711,7 @@ class TestContextReferences(unittest.IsolatedAsyncioTestCase):
             self.assertIn("Blocked", result.warnings[0] if result.warnings else "")
 
     async def test_path_traversal_blocked(self):
-        from utils.context_references import expand_context_references
+        from webot.context_references import expand_context_references
         with TemporaryDirectory() as tmpdir:
             result = await expand_context_references(
                 "@file:../../etc/passwd",
@@ -721,13 +721,13 @@ class TestContextReferences(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(len(result.warnings) > 0)
 
     async def test_no_references_passthrough(self):
-        from utils.context_references import expand_context_references
+        from webot.context_references import expand_context_references
         result = await expand_context_references("No references here")
         self.assertEqual(result.expanded_message, "No references here")
         self.assertEqual(result.references_found, 0)
 
     async def test_expand_diff(self):
-        from utils.context_references import expand_context_references
+        from webot.context_references import expand_context_references
         # This will work in a git repo
         result = await expand_context_references(
             "@diff",
@@ -743,7 +743,7 @@ class TestContextReferences(unittest.IsolatedAsyncioTestCase):
 
 class TestSmartRouting(unittest.TestCase):
     def setUp(self):
-        from services.smart_routing import set_routing_config
+        from webot.smart_routing import set_routing_config
         self.config = {
             "enabled": True,
             "cheap_model": {
@@ -756,20 +756,20 @@ class TestSmartRouting(unittest.TestCase):
         set_routing_config(self.config)
 
     def tearDown(self):
-        from services.smart_routing import set_routing_config
+        from webot.smart_routing import set_routing_config
         set_routing_config(None)
-        import services.smart_routing as mod
+        import webot.smart_routing as mod
         mod._runtime_config = None
 
     def test_simple_message_routes_cheap(self):
-        from services.smart_routing import choose_cheap_model_route
+        from webot.smart_routing import choose_cheap_model_route
         result = choose_cheap_model_route("What time is it?", routing_config=self.config)
         self.assertIsNotNone(result)
         self.assertEqual(result["model"], "gemini-2.0-flash")
         self.assertEqual(result["routing_reason"], "simple_turn")
 
     def test_complex_message_uses_primary(self):
-        from services.smart_routing import choose_cheap_model_route
+        from webot.smart_routing import choose_cheap_model_route
         result = choose_cheap_model_route(
             "Debug this Docker container that fails to build with the following error...",
             routing_config=self.config,
@@ -777,45 +777,45 @@ class TestSmartRouting(unittest.TestCase):
         self.assertIsNone(result)
 
     def test_long_message_uses_primary(self):
-        from services.smart_routing import choose_cheap_model_route
+        from webot.smart_routing import choose_cheap_model_route
         long_msg = "word " * 50  # > 28 words
         result = choose_cheap_model_route(long_msg, routing_config=self.config)
         self.assertIsNone(result)
 
     def test_code_fence_uses_primary(self):
-        from services.smart_routing import choose_cheap_model_route
+        from webot.smart_routing import choose_cheap_model_route
         result = choose_cheap_model_route("```python\nprint('hi')\n```", routing_config=self.config)
         self.assertIsNone(result)
 
     def test_url_uses_primary(self):
-        from services.smart_routing import choose_cheap_model_route
+        from webot.smart_routing import choose_cheap_model_route
         result = choose_cheap_model_route("Check https://example.com", routing_config=self.config)
         self.assertIsNone(result)
 
     def test_multiline_uses_primary(self):
-        from services.smart_routing import choose_cheap_model_route
+        from webot.smart_routing import choose_cheap_model_route
         result = choose_cheap_model_route("First thing\n\nSecond thing", routing_config=self.config)
         self.assertIsNone(result)
 
     def test_disabled_routing(self):
-        from services.smart_routing import choose_cheap_model_route
+        from webot.smart_routing import choose_cheap_model_route
         config = {**self.config, "enabled": False}
         result = choose_cheap_model_route("Hi", routing_config=config)
         self.assertIsNone(result)
 
     def test_keyword_detection(self):
-        from services.smart_routing import choose_cheap_model_route
+        from webot.smart_routing import choose_cheap_model_route
         for keyword in ["debug", "deploy", "error", "analyze"]:
             result = choose_cheap_model_route(f"Please {keyword}", routing_config=self.config)
             self.assertIsNone(result, f"Keyword '{keyword}' should route to primary")
 
     def test_multiple_questions_use_primary(self):
-        from services.smart_routing import choose_cheap_model_route
+        from webot.smart_routing import choose_cheap_model_route
         result = choose_cheap_model_route("What is A? And what is B?", routing_config=self.config)
         self.assertIsNone(result)
 
     def test_resolve_turn_route(self):
-        from services.smart_routing import resolve_turn_route
+        from webot.smart_routing import resolve_turn_route
         result = resolve_turn_route("Hello!", routing_config=self.config)
         self.assertIsNotNone(result)
 

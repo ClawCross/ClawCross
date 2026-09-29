@@ -4,7 +4,7 @@ const path = require('path');
 delete global.ClawcrossPretext;
 delete global.ClawcrossTextLayout;
 
-const textLayout = require(path.join(__dirname, '..', 'frontend', 'js', 'pretext_text_core.js'));
+const textLayout = require(path.join(__dirname, '..', 'src', 'frontend', 'static', 'js', 'pretext_text_core.js'));
 
 const singleLine = textLayout.fitSingleLine(
   '超级超级超级长的团队角色名称 AlphaBetaGammaDelta 🚀',

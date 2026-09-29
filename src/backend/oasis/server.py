@@ -1,0 +1,1620 @@
+"""
+OASIS Forum - FastAPI Server
+
+A standalone discussion forum service where resident expert agents
+debate user-submitted questions in parallel.
+
+Start with:
+    uvicorn oasis.server:app --host 0.0.0.0 --port 51202
+    or
+    python -m oasis.server
+"""
+
+import os
+import platform
+import secrets
+import shutil
+import subprocess
+import sys
+import asyncio
+import uuid
+from contextlib import asynccontextmanager
+from urllib.parse import urlparse
+
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse, JSONResponse
+from pydantic import BaseModel
+import httpx
+import uvicorn
+import yaml as _yaml
+import json
+
+from dotenv import load_dotenv
+
+# --- Path setup ---
+_backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # src/backend: the import root
+if _backend_dir not in sys.path:
+    sys.path.insert(0, _backend_dir)
+
+from common.runtime_paths import ENV_FILE, PID_DIR, USER_FILES_DIR
+
+env_path = str(ENV_FILE)
+
+
+def _resolve_openclaw_bin():
+    candidates = ["openclaw"]
+    if os.name == "nt":
+        candidates = ["openclaw.cmd", "openclaw"]
+
+    for name in candidates:
+        path = shutil.which(name)
+        if path:
+            return path
+    return None
+load_dotenv(dotenv_path=env_path)
+
+# 本机服务互调不能走桌面代理：no_proxy 里常见的 "127.*" 写法 HTTP 客户端并不匹配，
+# loopback 请求会被送进代理并拿到 502。详见 utils/local_no_proxy.py。
+from common.local_no_proxy import ensure_localhost_no_proxy
+
+ensure_localhost_no_proxy()
+
+
+
+def _server_host() -> str:
+    """Expose services to the Windows host when running inside WSL."""
+    explicit_host = os.getenv("CLAWCROSS_SERVER_HOST", "").strip()
+    if explicit_host:
+        return explicit_host
+    return "0.0.0.0" if os.getenv("WSL_DISTRO_NAME") else "127.0.0.1"
+
+
+def _get_env(key: str, default: str = "") -> str:
+    """Read from os.environ first; fall back to .env file if missing.
+
+    configure.py's set_env() writes to .env but does NOT update
+    os.environ in *this* process, so a freshly-written value might
+    only exist on disk.  Re-read the file as a fallback.
+    """
+    val = os.getenv(key, "")
+    if val:
+        return val
+    try:
+        with open(env_path, "r", encoding="utf-8") as f:
+            for line in f:
+                s = line.strip()
+                if s and not s.startswith("#") and s.startswith(key + "="):
+                    return s.split("=", 1)[1].strip()
+    except FileNotFoundError:
+        pass
+    return default
+
+from oasis.models import (
+    AgentCallbackRequest,
+    AgentInterviewRequest,
+    CreateTopicRequest,
+    HumanReplyRequest,
+    HumanWaitInfo,
+    ManualConclusionRequest,
+    ManualPostRequest,
+    ManualVoteRequest,
+    TopicDetail,
+    TopicSummary,
+    PostInfo,
+    TimelineEventInfo,
+    DiscussionStatus,
+)
+from oasis.forum import DiscussionForum, coerce_optional_post_id
+from oasis.agent_center import AgentCenter
+from oasis.engine import DiscussionEngine
+from oasis.python_workflow import PythonWorkflowEngine, resolve_python_workflow_path
+from oasis.experts import _apply_response
+from common.llm_factory import create_chat_model, extract_text
+from oasis.swarm_engine import build_pending_swarm, generate_swarm_blueprint
+from oasis.layout import yaml_to_layout
+
+
+# --- In-memory storage ---
+discussions: dict[str, DiscussionForum] = {}
+engines: dict[str, DiscussionEngine | PythonWorkflowEngine] = {}
+tasks: dict[str, asyncio.Task] = {}
+
+# --- Skills cache ---
+_openclaw_skills_cache: dict = {}
+_openclaw_managed_skills_dir: str = ""
+_openclaw_bundled_skills: list = []
+
+
+# --- Helpers ---
+
+def _get_forum_or_404(topic_id: str) -> DiscussionForum:
+    forum = discussions.get(topic_id)
+    if not forum:
+        raise HTTPException(404, "Topic not found")
+    return forum
+
+
+def _preload_openclaw_skills():
+    """Preload OpenClaw skills information at startup to reduce latency."""
+    global _openclaw_skills_cache, _openclaw_managed_skills_dir, _openclaw_bundled_skills
+    
+    openclaw_bin = _resolve_openclaw_bin()
+    if not openclaw_bin:
+        print("[OASIS] ⚠️ openclaw CLI not available, skipping skills preload")
+        return
+    
+    try:
+        # Execute openclaw skills list --json command
+        result = subprocess.run(
+            [openclaw_bin, "skills", "list", "--json"],
+            capture_output=True, text=True, timeout=30,
+        )
+        
+        if result.returncode != 0:
+            print(f"[OASIS] ⚠️ openclaw skills list failed: {result.stderr.strip()[:200]}")
+            return
+        
+        # Parse JSON response
+        raw_output = result.stdout
+        idx = raw_output.find('{')
+        if idx < 0:
+            print("[OASIS] ⚠️ Failed to parse openclaw skills list output")
+            return
+        
+        skills_data = json.loads(raw_output[idx:])
+        
+        # Extract managed skills directory
+        _openclaw_managed_skills_dir = skills_data.get("managedSkillsDir", "")
+        
+        # Extract bundled skills
+        all_skills = skills_data.get("skills", [])
+        _openclaw_bundled_skills = [
+            skill for skill in all_skills 
+            if skill.get("source") == "openclaw-bundled"
+        ]
+        
+        # Cache the complete skills data
+        _openclaw_skills_cache = skills_data
+        
+        # 交给路由，否则这次预热等于白做：init_openclaw_routes 在导入时就执行了，
+        # 只拿到了当时的空值，而上面几行是重新绑定本模块的全局变量，路由那份看不到。
+        from oasis.openclaw_routes import publish_skills_cache
+        publish_skills_cache(
+            skills_cache=_openclaw_skills_cache,
+            managed_skills_dir=_openclaw_managed_skills_dir,
+            bundled_skills=_openclaw_bundled_skills,
+        )
+
+        print(f"[OASIS] ✅ Skills preloaded: {len(all_skills)} total skills, {len(_openclaw_bundled_skills)} bundled skills")
+        print(f"[OASIS] 📁 Managed skills directory: {_openclaw_managed_skills_dir}")
+        
+    except subprocess.TimeoutExpired:
+        print("[OASIS] ⚠️ openclaw skills list command timed out")
+    except Exception as e:
+        print(f"[OASIS] ⚠️ Failed to preload skills: {e}")
+
+
+def _check_owner(forum: DiscussionForum, user_id: str):
+    """Verify the requester owns this discussion."""
+    if forum.user_id != user_id:
+        raise HTTPException(403, "You do not own this discussion")
+
+
+def _require_segment(value: str, what: str, *, allow_empty: bool = False) -> str:
+    """Reject a user id, team or file name that would leave its directory."""
+    text = (value or "").strip()
+    if not text:
+        if allow_empty:
+            return ""
+        raise HTTPException(400, f"{what} is required")
+    if "/" in text or "\\" in text or text.startswith(".") or "\x00" in text:
+        raise HTTPException(400, f"Invalid {what}: {value!r}")
+    return text
+
+
+def _trusted_callback_url(url: str | None) -> str | None:
+    """Keep a completion callback only if it targets this host's Agent service.
+
+    The callback carries the internal token, so any other URL would hand it out.
+    """
+    if not url:
+        return None
+    parsed = urlparse(url)
+    if (
+        parsed.scheme == "http"
+        and parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+        and str(parsed.port or "") == os.getenv("PORT_AGENT", "51200")
+        and parsed.path == "/system_trigger"
+    ):
+        return url
+    print(f"[OASIS] ⚠️ Ignoring callback_url outside the local Agent service: {url!r}")
+    return None
+
+
+# --- Lifespan ---
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 预热 OpenClaw 技能缓存。这是缓存预热（见 _preload_openclaw_skills 的
+    # docstring: "to reduce latency"），不是启动依赖——所有读取方都已经能应对缓存
+    # 为空。它同步跑一个 Node CLI，实测 6~13s，而 uvicorn 在 lifespan 返回之后才
+    # 绑定端口：预热挡在端口前面，launcher 的就绪检查只能干等。丢到线程里后台做，
+    # 端口先开始服务，缓存随后自己填。任务句柄要留着，否则可能被 GC 掉。
+    app.state.skills_preload_task = asyncio.create_task(
+        asyncio.to_thread(_preload_openclaw_skills)
+    )
+
+
+    # Load historical discussions
+    loaded = DiscussionForum.load_all()
+    discussions.update(loaded)
+    print(f"[OASIS] 🏛️ Forum server started (loaded {len(loaded)} historical discussions)")
+    yield
+    for tid, forum in discussions.items():
+        if forum.status == "discussing":
+            forum.status = "error"
+            forum.conclusion = "服务关闭，讨论被终止"
+        forum.save()
+    print("[OASIS] 🏛️ Forum server stopped (all discussions saved)")
+
+
+app = FastAPI(
+    title="OASIS Discussion Forum",
+    description="Multi-expert parallel discussion service",
+    lifespan=lifespan,
+)
+
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+@app.middleware("http")
+async def _require_token_from_other_hosts(request: Request, call_next):
+    """When OASIS listens beyond loopback (WSL, CLAWCROSS_SERVER_HOST), only
+    this machine may call it without the internal token.
+
+    Every ClawCross service reaches OASIS on 127.0.0.1, as local callers are
+    trusted elsewhere too (front's direct-local rule, /internal/bg_job_done);
+    anyone else on the network must prove they hold INTERNAL_TOKEN.
+    """
+    if _server_host() not in _LOOPBACK_HOSTS:
+        client = request.client.host if request.client else ""
+        expected = os.getenv("INTERNAL_TOKEN", "")
+        supplied = request.headers.get("x-internal-token", "")
+        if client not in _LOOPBACK_HOSTS and not (
+            expected and secrets.compare_digest(supplied.encode(), expected.encode())
+        ):
+            return JSONResponse(status_code=401, content={"detail": "X-Internal-Token required"})
+    return await call_next(request)
+
+
+# ------------------------------------------------------------------
+# Background task runner
+# ------------------------------------------------------------------
+async def _run_discussion(topic_id: str, engine: DiscussionEngine | PythonWorkflowEngine):
+    """Run a discussion engine in the background, then fire callback if configured."""
+    forum = discussions.get(topic_id)
+    try:
+        await engine.run()
+    except asyncio.CancelledError:
+        # Cancellation is the end of this task: record it, then still persist
+        # and notify below instead of leaving the topic "discussing" forever.
+        print(f"[OASIS] 🛑 Topic {topic_id} cancelled")
+        if forum:
+            forum.status = "cancelled"
+            forum.conclusion = forum.conclusion or "讨论已被用户强制终止"
+    except Exception as e:
+        print(f"[OASIS] ❌ Topic {topic_id} background error: {e}")
+        if forum:
+            forum.status = "error"
+            forum.conclusion = f"讨论出错: {str(e)}"
+
+    if forum:
+        # Persist the visible terminal state before any post-processing.  Swarm
+        # generation may call the LLM and must not delay topic detail reads.
+        forum.save()
+
+    # Upgrade swarm blueprint with discussion results
+    if forum and forum.swarm_mode and forum.status in ("concluded",):
+        try:
+            posts = [
+                {"author": p.author, "content": p.content, "upvotes": p.upvotes, "downvotes": p.downvotes}
+                for p in await forum.browse()
+            ]
+            timeline = [
+                {"event": e.event, "agent": e.agent, "detail": e.detail, "elapsed": e.elapsed}
+                for e in forum.timeline
+            ]
+            forum.swarm = await asyncio.to_thread(
+                generate_swarm_blueprint,
+                forum.question,
+                user_id=forum.user_id,
+                team=getattr(engine, "_team", ""),
+                schedule_yaml=None,
+                posts=posts,
+                timeline=timeline,
+                conclusion=forum.conclusion or "",
+                mode=forum.swarm_mode,
+            )
+            forum.save()
+        except Exception as e:
+            print(f"[OASIS] ⚠️ Swarm blueprint upgrade failed: {e}")
+
+    # Fire callback notification
+    cb_url = getattr(engine, "callback_url", None)
+    cb_session = getattr(engine, "callback_session_id", None)
+    if cb_url and cb_session:
+        conclusion = forum.conclusion if forum else "（无结论）"
+        status = forum.status if forum else "error"
+        user_id = forum.user_id if forum else "anonymous"
+        internal_token = os.getenv("INTERNAL_TOKEN", "")
+
+        text = (
+            f"[OASIS 子任务完成通知]\n"
+            f"Topic ID: {topic_id}\n"
+            f"状态: {status}\n"
+            f"主题: {forum.question if forum else '?'}\n\n"
+            f"📋 结论:\n{conclusion}"
+        )
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                await client.post(
+                    cb_url,
+                    json={"user_id": user_id, "text": text, "session_id": cb_session},
+                    headers={"X-Internal-Token": internal_token},
+                )
+            print(f"[OASIS] 📨 Callback sent for {topic_id} → {cb_session}")
+        except Exception as cb_err:
+            print(f"[OASIS] ⚠️ Callback failed for {topic_id}: {cb_err}")
+
+
+# ------------------------------------------------------------------
+# Routes
+# ------------------------------------------------------------------
+
+@app.post("/topics", response_model=dict)
+async def create_topic(req: CreateTopicRequest):
+    """Create a new discussion topic. Returns topic_id for tracking."""
+    _require_segment(req.user_id, "user_id")
+    _require_segment(req.team or "", "team", allow_empty=True)
+    topic_id = str(uuid.uuid4())[:8]
+
+    forum = DiscussionForum(
+        topic_id=topic_id,
+        question=req.question,
+        user_id=req.user_id,
+        max_rounds=req.max_rounds,
+    )
+    forum.team = req.team or ""
+    forum.schedule_yaml = req.schedule_yaml
+    discussions[topic_id] = forum
+    forum.save()
+
+    if req.allow_empty and not req.python_file and not req.schedule_yaml and not req.schedule_file:
+        forum.status = "discussing"
+        forum.start_clock()
+        forum.save()
+        return {
+            "topic_id": topic_id,
+            "status": "discussing",
+            "message": "Empty topic created; external scripts may publish posts and conclude it later",
+        }
+
+    try:
+        if req.python_file:
+            # Legacy compatibility path:
+            # /topics + python_file still routes into the old injected-style
+            # PythonWorkflowEngine. Newer frontends should start Python workflows
+            # via the standalone runner instead of sending python_file here.
+            # The file is exec'd, so it must live under the requesting user.
+            user_root = os.path.realpath(os.path.join(str(USER_FILES_DIR), req.user_id))
+            python_path = req.python_file
+            if not os.path.isabs(python_path):
+                python_path, resolve_error = resolve_python_workflow_path(
+                    req.user_id, python_path, req.team or "",
+                )
+                if resolve_error:
+                    raise ValueError(resolve_error)
+            python_path = os.path.realpath(python_path)
+            if os.path.commonpath([python_path, user_root]) != user_root:
+                raise ValueError(f"python_file must be inside the user's files: {req.python_file}")
+            engine = PythonWorkflowEngine(
+                forum=forum,
+                python_file=python_path,
+                user_id=req.user_id,
+                team=req.team or "",
+            )
+        else:
+            engine = DiscussionEngine(
+                forum=forum,
+                schedule_yaml=req.schedule_yaml,
+                schedule_file=req.schedule_file,
+                bot_enabled_tools=req.bot_enabled_tools,
+                bot_timeout=req.bot_timeout,
+                user_id=req.user_id,
+                early_stop=req.early_stop,
+                discussion=req.discussion,
+                team=req.team or "",
+            )
+    except Exception as e:
+        forum.status = "error"
+        forum.conclusion = f"引擎初始化失败: {str(e)}"
+        forum.save()
+        raise HTTPException(500, f"Engine init failed: {e}")
+
+    engine.callback_url = _trusted_callback_url(req.callback_url)
+    engine.callback_session_id = req.callback_session_id
+    engines[topic_id] = engine
+
+    # Generate pending swarm scaffold if requested
+    if req.autogen_swarm:
+        try:
+            forum.swarm_mode = req.swarm_mode or "prediction"
+            forum.swarm = build_pending_swarm(
+                req.question,
+                user_id=req.user_id,
+                team=req.team or "",
+                schedule_yaml=req.schedule_yaml,
+                mode=forum.swarm_mode,
+            )
+            forum.save()
+        except Exception as e:
+            print(f"[OASIS] ⚠️ Swarm scaffold generation failed: {e}")
+
+    task = asyncio.create_task(_run_discussion(topic_id, engine))
+    tasks[topic_id] = task
+
+    return {
+        "topic_id": topic_id,
+        "status": "pending",
+        "message": f"Discussion started with {len(getattr(engine, 'experts', []))} experts",
+    }
+
+
+@app.delete("/topics/{topic_id}")
+async def cancel_topic(topic_id: str, user_id: str = Query(...)):
+    """Force-cancel a running discussion."""
+    forum = _get_forum_or_404(topic_id)
+    _check_owner(forum, user_id)
+
+    if forum.status != "discussing":
+        return {"topic_id": topic_id, "status": forum.status, "message": "Discussion already finished"}
+
+    engine = engines.get(topic_id)
+    if engine:
+        engine.cancel()
+
+    task = tasks.get(topic_id)
+    if task and not task.done():
+        task.cancel()
+
+    if engine or (task and not task.done()):
+        message = "Cancellation signal sent; engine will finalize the status shortly"
+    else:
+        # No live engine/task will ever flip the status (workflow-created empty
+        # topic, or engine lost to a server restart) — mark terminal here.
+        forum.status = "cancelled"
+        if not forum.conclusion:
+            forum.conclusion = "讨论已被用户强制终止"
+        message = "Discussion cancelled"
+    forum.save()
+    return {"topic_id": topic_id, "status": forum.status, "message": message}
+
+
+@app.post("/topics/{topic_id}/purge")
+async def purge_topic(topic_id: str, user_id: str = Query(...)):
+    """Permanently delete a discussion record."""
+    forum = _get_forum_or_404(topic_id)
+    _check_owner(forum, user_id)
+
+    if forum.status in ("pending", "discussing"):
+        engine = engines.get(topic_id)
+        if engine:
+            engine.cancel()
+        task = tasks.get(topic_id)
+        if task and not task.done():
+            task.cancel()
+
+    storage_path = forum._storage_path()
+    if os.path.exists(storage_path):
+        os.remove(storage_path)
+
+    discussions.pop(topic_id, None)
+    engines.pop(topic_id, None)
+    tasks.pop(topic_id, None)
+
+    return {"topic_id": topic_id, "message": "Discussion permanently deleted"}
+
+
+@app.delete("/topics")
+async def purge_all_topics(user_id: str = Query(...)):
+    """Delete all topics for a specific user."""
+    global discussions, engines, tasks
+
+    to_delete = [
+        tid for tid, forum in discussions.items()
+        if forum.user_id == user_id
+    ]
+
+    deleted_count = 0
+    for tid in to_delete:
+        forum = discussions.get(tid)
+        if forum:
+            if forum.status in ("pending", "discussing"):
+                engine = engines.get(tid)
+                if engine:
+                    engine.cancel()
+                task = tasks.get(tid)
+                if task and not task.done():
+                    task.cancel()
+
+            storage_path = forum._storage_path()
+            if os.path.exists(storage_path):
+                os.remove(storage_path)
+
+            discussions.pop(tid, None)
+            engines.pop(tid, None)
+            tasks.pop(tid, None)
+            deleted_count += 1
+
+    return {"deleted_count": deleted_count, "message": f"Deleted {deleted_count} topics"}
+
+
+@app.post("/topics/{topic_id}/posts", response_model=PostInfo)
+async def add_manual_post(topic_id: str, req: ManualPostRequest):
+    """Inject a live user post into a running discussion."""
+    forum = _get_forum_or_404(topic_id)
+    _check_owner(forum, req.user_id)
+
+    task = tasks.get(topic_id)
+    engine = engines.get(topic_id)
+    manual_topic = engine is None and task is None
+    if forum.status != "discussing":
+        raise HTTPException(409, "Only active topics accept live posts")
+    if not manual_topic and (not engine or not task or task.done()):
+        raise HTTPException(409, "Only actively running discussions accept live posts")
+
+    content = (req.content or "").strip()
+    if not content:
+        raise HTTPException(400, "Post content cannot be empty")
+
+    author = (req.author or req.user_id or "主持人").strip() or "主持人"
+    forum.log_event("manual_post", agent=author)
+    post = await forum.publish(
+        author=author[:80], content=content, reply_to=req.reply_to, author_id=f"u:{req.user_id}",
+    )
+    forum.save()
+
+    return PostInfo(
+        id=post.id,
+        author=post.author,
+        content=post.content,
+        reply_to=post.reply_to,
+        upvotes=post.upvotes,
+        downvotes=post.downvotes,
+        timestamp=post.timestamp,
+        elapsed=post.elapsed,
+        author_id=post.author_id,
+    )
+
+
+@app.post("/topics/{topic_id}/vote", response_model=dict)
+async def add_manual_vote(topic_id: str, req: ManualVoteRequest):
+    """Vote on an existing topic post."""
+    forum = _get_forum_or_404(topic_id)
+    _check_owner(forum, req.user_id)
+
+    if forum.status != "discussing":
+        raise HTTPException(409, "Only active topics accept votes")
+
+    voter = (req.voter or req.user_id or "workflowpy").strip() or "workflowpy"
+    await forum.vote(voter[:80], req.post_id, req.direction)
+    forum.save()
+
+    posts = await forum.browse()
+    post = next((p for p in posts if p.id == req.post_id), None)
+    if not post:
+        raise HTTPException(404, "Post not found")
+
+    return {
+        "topic_id": topic_id,
+        "post_id": post.id,
+        "voter": voter[:80],
+        "direction": req.direction,
+        "upvotes": post.upvotes,
+        "downvotes": post.downvotes,
+    }
+
+
+@app.post("/topics/{topic_id}/conclude", response_model=dict)
+async def conclude_manual_topic(topic_id: str, req: ManualConclusionRequest):
+    """Manually conclude an externally-driven topic."""
+    forum = _get_forum_or_404(topic_id)
+    _check_owner(forum, req.user_id)
+
+    task = tasks.get(topic_id)
+    engine = engines.get(topic_id)
+    if engine or task:
+        raise HTTPException(409, "Use the workflow engine to finish non-manual topics")
+    if forum.status != "discussing":
+        raise HTTPException(409, f"Topic is already {forum.status}")
+
+    author = (req.author or req.user_id or "主持人").strip() or "主持人"
+    conclusion = req.conclusion.strip()
+    forum.log_event("conclude", agent=author[:80], detail="manual conclusion")
+    forum.conclusion = conclusion
+    forum.status = "concluded"
+    forum.save()
+    return {
+        "topic_id": topic_id,
+        "status": forum.status,
+        "conclusion": forum.conclusion,
+    }
+
+
+@app.post("/topics/{topic_id}/callback", response_model=dict)
+async def add_agent_callback(topic_id: str, req: AgentCallbackRequest):
+    """Apply a structured OASIS callback submitted by an agent itself."""
+    forum = _get_forum_or_404(topic_id)
+    _check_owner(forum, req.user_id)
+
+    task = tasks.get(topic_id)
+    engine = engines.get(topic_id)
+    if forum.status != "discussing" or not engine or not task or task.done():
+        raise HTTPException(409, "Only actively running discussions accept agent callbacks")
+    if req.round_num != forum.current_round:
+        raise HTTPException(
+            409,
+            f"Round mismatch: callback for round {req.round_num}, current round is {forum.current_round}",
+        )
+
+    author = (req.author or "").strip()
+    if not author:
+        raise HTTPException(400, "Author cannot be empty")
+    if not await forum.is_waiting_expert(author):
+        raise HTTPException(
+            409,
+            f"Author {author} is not waiting for callback in round {req.round_num}",
+        )
+    if not isinstance(req.result, dict) or not req.result:
+        raise HTTPException(400, "Callback result must be a non-empty object")
+
+    others = await forum.browse(viewer=author, exclude_self=True)
+    await _apply_response(req.result, author[:200], forum, others)
+    forum.log_event(
+        "agent_callback",
+        agent=author[:200],
+        detail=f"round={req.round_num}, type={req.result.get('clawcross_type', 'oasis reply')}",
+    )
+    forum.save()
+
+    posts = await forum.browse()
+    latest = posts[-1] if posts else None
+    return {
+        "status": "applied",
+        "topic_id": topic_id,
+        "author": author[:200],
+        "round_num": req.round_num,
+        "clawcross_type": req.result.get("clawcross_type", "oasis reply"),
+        "post_id": latest.id if latest and latest.author == author[:200] else None,
+    }
+
+
+@app.post("/topics/{topic_id}/human-reply", response_model=PostInfo)
+async def add_human_reply(topic_id: str, req: HumanReplyRequest):
+    """Submit a plain-text human reply for a waiting workflow node."""
+    forum = _get_forum_or_404(topic_id)
+    _check_owner(forum, req.user_id)
+
+    task = tasks.get(topic_id)
+    engine = engines.get(topic_id)
+    if forum.status != "discussing" or not engine or not task or task.done():
+        raise HTTPException(409, "Only actively running discussions accept human workflow replies")
+
+    try:
+        post = await forum.submit_human_reply(
+            node_id=req.node_id,
+            round_num=req.round_num,
+            content=req.content.strip(),
+            author=(req.author or req.user_id or "主持人").strip() or "主持人",
+            author_id=f"u:{req.user_id}",
+        )
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+
+    forum.save()
+    return PostInfo(
+        id=post.id,
+        author=post.author,
+        content=post.content,
+        reply_to=post.reply_to,
+        upvotes=post.upvotes,
+        downvotes=post.downvotes,
+        timestamp=post.timestamp,
+        elapsed=post.elapsed,
+        author_id=post.author_id,
+    )
+
+
+def _coerce_discussion_status(raw: str) -> DiscussionStatus:
+    try:
+        return DiscussionStatus(raw)
+    except ValueError:
+        return DiscussionStatus.ERROR
+
+
+def _sanitize_swarm_for_api(obj):
+    """Ensure swarm dict is JSON-serializable (no datetime / odd types breaking OpenAPI)."""
+    if obj is None:
+        return None
+    try:
+        return json.loads(json.dumps(obj, default=str))
+    except (TypeError, ValueError):
+        return {"_error": "swarm payload could not be normalized"}
+
+
+def _build_topic_detail(forum: DiscussionForum, posts: list) -> TopicDetail:
+    """Build TopicDetail with defensive coercion so bad persisted data cannot 500 the API."""
+    return TopicDetail(
+        topic_id=str(forum.topic_id),
+        question=str(forum.question or ""),
+        user_id=str(forum.user_id or "anonymous"),
+        status=_coerce_discussion_status(str(forum.status or "error")),
+        current_round=int(forum.current_round or 0),
+        max_rounds=int(forum.max_rounds or 5),
+        posts=[
+            PostInfo(
+                id=int(getattr(p, "id", 0) or 0),
+                author=str(getattr(p, "author", None) or ""),
+                content=str(getattr(p, "content", None) or ""),
+                reply_to=coerce_optional_post_id(getattr(p, "reply_to", None)),
+                upvotes=int(getattr(p, "upvotes", 0) or 0),
+                downvotes=int(getattr(p, "downvotes", 0) or 0),
+                timestamp=float(getattr(p, "timestamp", 0) or 0),
+                elapsed=float(getattr(p, "elapsed", 0) or 0),
+                author_id=str(getattr(p, "author_id", "") or ""),
+            )
+            for p in posts
+        ],
+        timeline=[
+            TimelineEventInfo(
+                elapsed=float(getattr(e, "elapsed", 0) or 0),
+                event=str(getattr(e, "event", None) or "unknown"),
+                agent=str(getattr(e, "agent", None) or ""),
+                detail=str(getattr(e, "detail", None) or ""),
+            )
+            for e in forum.timeline
+        ],
+        discussion=bool(forum.discussion),
+        conclusion=forum.conclusion,
+        swarm_mode=forum.swarm_mode or None,
+        swarm=_sanitize_swarm_for_api(forum.swarm),
+        pending_human=(
+            HumanWaitInfo(
+                node_id=str(forum.pending_human.node_id),
+                prompt=str(forum.pending_human.prompt or ""),
+                author=str(forum.pending_human.author or ""),
+                round_num=int(forum.pending_human.round_num or 0),
+                reply_to=coerce_optional_post_id(forum.pending_human.reply_to),
+            )
+            if forum.pending_human
+            else None
+        ),
+    )
+
+
+def _clip(value: object, limit: int = 280) -> str:
+    text = str(value or "").replace("\r", " ").strip()
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 1)].rstrip() + "…"
+
+
+def _agent_id(name: str) -> str:
+    clean = str(name or "unknown").strip() or "unknown"
+    return f"agent:{clean}"
+
+
+def _ensure_agent_stat(stats: dict[str, dict], name: str) -> dict:
+    clean = str(name or "unknown").strip() or "unknown"
+    return stats.setdefault(
+        clean,
+        {
+            "agent_id": _agent_id(clean),
+            "agent_name": clean,
+            "posts": 0,
+            "replies": 0,
+            "upvotes": 0,
+            "downvotes": 0,
+            "net_votes": 0,
+            "timeline_events": 0,
+            "event_counts": {},
+            "calls": 0,
+            "done": 0,
+            "errors": 0,
+            "rounds": [],
+            "first_elapsed": None,
+            "last_elapsed": None,
+            "last_post_id": None,
+            "last_post_preview": "",
+            "last_event": "",
+        },
+    )
+
+
+def _touch_elapsed(entry: dict, elapsed: float):
+    if entry["first_elapsed"] is None or elapsed < entry["first_elapsed"]:
+        entry["first_elapsed"] = elapsed
+    if entry["last_elapsed"] is None or elapsed > entry["last_elapsed"]:
+        entry["last_elapsed"] = elapsed
+
+
+def _build_agent_stats(forum: DiscussionForum, posts: list) -> list[dict]:
+    stats: dict[str, dict] = {}
+
+    for post in posts:
+        author = str(getattr(post, "author", "") or "unknown")
+        entry = _ensure_agent_stat(stats, author)
+        entry["posts"] += 1
+        if coerce_optional_post_id(getattr(post, "reply_to", None)) is not None:
+            entry["replies"] += 1
+        entry["upvotes"] += int(getattr(post, "upvotes", 0) or 0)
+        entry["downvotes"] += int(getattr(post, "downvotes", 0) or 0)
+        entry["net_votes"] = entry["upvotes"] - entry["downvotes"]
+        round_num = int(getattr(post, "round_num", 0) or 0)
+        if round_num not in entry["rounds"]:
+            entry["rounds"].append(round_num)
+        elapsed = float(getattr(post, "elapsed", 0) or 0)
+        _touch_elapsed(entry, elapsed)
+        entry["last_post_id"] = int(getattr(post, "id", 0) or 0)
+        entry["last_post_preview"] = _clip(getattr(post, "content", ""), 220)
+
+    call_events = {"agent_call", "agent_start", "tool_call", "callback_wait"}
+    done_events = {"agent_done", "agent_callback", "tool_done", "human_reply"}
+    error_events = {"agent_error", "tool_error", "error"}
+    for event in forum.timeline:
+        agent = str(getattr(event, "agent", "") or "").strip()
+        if not agent:
+            continue
+        entry = _ensure_agent_stat(stats, agent)
+        event_name = str(getattr(event, "event", "") or "unknown")
+        entry["timeline_events"] += 1
+        entry["event_counts"][event_name] = entry["event_counts"].get(event_name, 0) + 1
+        if event_name in call_events:
+            entry["calls"] += 1
+        if event_name in done_events:
+            entry["done"] += 1
+        if event_name in error_events:
+            entry["errors"] += 1
+        elapsed = float(getattr(event, "elapsed", 0) or 0)
+        _touch_elapsed(entry, elapsed)
+        detail = _clip(getattr(event, "detail", ""), 180)
+        entry["last_event"] = f"{event_name}: {detail}" if detail else event_name
+
+    agents = list(stats.values())
+    for entry in agents:
+        entry["rounds"].sort()
+        entry["first_elapsed"] = round(entry["first_elapsed"] or 0.0, 2)
+        entry["last_elapsed"] = round(entry["last_elapsed"] or 0.0, 2)
+    agents.sort(key=lambda item: (item["posts"], item["timeline_events"], item["net_votes"]), reverse=True)
+    return agents
+
+
+def _build_action_feed(forum: DiscussionForum, posts: list) -> list[dict]:
+    actions: list[dict] = []
+    for post in posts:
+        author = str(getattr(post, "author", "") or "unknown")
+        reply_to = coerce_optional_post_id(getattr(post, "reply_to", None))
+        actions.append(
+            {
+                "action_id": f"post-{int(getattr(post, 'id', 0) or 0)}",
+                "round_num": int(getattr(post, "round_num", 0) or 0),
+                "elapsed": round(float(getattr(post, "elapsed", 0) or 0), 2),
+                "timestamp": float(getattr(post, "timestamp", 0) or 0),
+                "platform": "oasis",
+                "agent_id": _agent_id(author),
+                "agent_name": author,
+                "action_type": "REPLY_POST" if reply_to is not None else "CREATE_POST",
+                "action_args": {
+                    "reply_to": reply_to,
+                    "content_preview": _clip(getattr(post, "content", ""), 360),
+                },
+                "result": {
+                    "post_id": int(getattr(post, "id", 0) or 0),
+                    "upvotes": int(getattr(post, "upvotes", 0) or 0),
+                    "downvotes": int(getattr(post, "downvotes", 0) or 0),
+                },
+                "success": True,
+            }
+        )
+
+    failure_events = {"agent_error", "tool_error", "error"}
+    for idx, event in enumerate(forum.timeline, start=1):
+        event_name = str(getattr(event, "event", "") or "unknown")
+        agent = str(getattr(event, "agent", "") or "").strip()
+        actions.append(
+            {
+                "action_id": f"timeline-{int(getattr(event, 'seq', idx) or idx)}",
+                "round_num": int(getattr(forum, "current_round", 0) or 0),
+                "elapsed": round(float(getattr(event, "elapsed", 0) or 0), 2),
+                "timestamp": None,
+                "platform": "oasis",
+                "agent_id": _agent_id(agent) if agent else "",
+                "agent_name": agent,
+                "action_type": event_name.upper(),
+                "action_args": {"detail": _clip(getattr(event, "detail", ""), 420)},
+                "result": {"event": event_name},
+                "success": event_name not in failure_events,
+            }
+        )
+
+    actions.sort(key=lambda item: (item["elapsed"], item["action_id"]))
+    return actions
+
+
+def _filter_actions(actions: list[dict], agent: str) -> list[dict]:
+    wanted = (agent or "").strip()
+    if not wanted:
+        return actions
+    wanted_lower = wanted.lower()
+    return [
+        action for action in actions
+        if str(action.get("agent_id", "")).lower() == wanted_lower
+        or str(action.get("agent_name", "")).lower() == wanted_lower
+    ]
+
+
+def _select_interview_agent(
+    stats: list[dict],
+    *,
+    agent_id: str | None = None,
+    agent_name: str | None = None,
+) -> dict:
+    if not stats:
+        raise HTTPException(404, "No agents or posts found in this topic")
+    wanted_id = (agent_id or "").strip().lower()
+    wanted_name = (agent_name or "").strip().lower()
+    if wanted_id or wanted_name:
+        for entry in stats:
+            if wanted_id and str(entry.get("agent_id", "")).lower() == wanted_id:
+                return entry
+            if wanted_name and str(entry.get("agent_name", "")).lower() == wanted_name:
+                return entry
+        raise HTTPException(404, "Agent not found in this topic")
+    return stats[0]
+
+
+def _lookup_agent_persona(forum: DiscussionForum, agent_name: str) -> str:
+    try:
+        from oasis.experts import get_all_experts
+
+        needle = (agent_name or "").strip().lower()
+        for expert in get_all_experts(getattr(forum, "user_id", "") or None, team=getattr(forum, "team", "") or ""):
+            aliases = {
+                str(expert.get("name", "") or "").strip().lower(),
+                str(expert.get("tag", "") or "").strip().lower(),
+                str(expert.get("name_zh", "") or "").strip().lower(),
+                str(expert.get("name_en", "") or "").strip().lower(),
+            }
+            if needle in aliases:
+                return str(expert.get("persona", "") or "")
+    except Exception:
+        return ""
+    return ""
+
+
+def _recent_agent_posts(posts: list, agent_name: str, limit: int = 6) -> list[dict]:
+    selected = [
+        {
+            "post_id": int(getattr(post, "id", 0) or 0),
+            "round_num": int(getattr(post, "round_num", 0) or 0),
+            "elapsed": round(float(getattr(post, "elapsed", 0) or 0), 2),
+            "reply_to": coerce_optional_post_id(getattr(post, "reply_to", None)),
+            "content": _clip(getattr(post, "content", ""), 800),
+        }
+        for post in posts
+        if str(getattr(post, "author", "") or "") == agent_name
+    ]
+    return selected[-limit:]
+
+
+def _fallback_interview_answer(forum: DiscussionForum, agent: dict, posts: list, prompt: str) -> str:
+    recent = _recent_agent_posts(posts, str(agent.get("agent_name", "")), limit=3)
+    last_points = "；".join(item["content"] for item in recent if item["content"]) or "还没有可引用的发言。"
+    question = f"针对你的问题「{_clip(prompt, 160)}」，" if prompt else ""
+    return (
+        f"我是 {agent.get('agent_name')}。{question}"
+        f"我在主题「{_clip(forum.question, 160)}」中发布了 {agent.get('posts', 0)} 条内容，"
+        f"参与 {agent.get('timeline_events', 0)} 个时间线事件，净投票 {agent.get('net_votes', 0)}。"
+        f"最近依据包括：{last_points}"
+    )
+
+
+async def _generate_interview_answer(
+    forum: DiscussionForum,
+    agent: dict,
+    posts: list,
+    prompt: str,
+    *,
+    include_context: bool,
+) -> str:
+    agent_name = str(agent.get("agent_name", "") or "unknown")
+    persona = _lookup_agent_persona(forum, agent_name)
+    recent_posts = _recent_agent_posts(posts, agent_name, limit=8)
+    timeline = [
+        {
+            "elapsed": round(float(getattr(event, "elapsed", 0) or 0), 2),
+            "event": str(getattr(event, "event", "") or "unknown"),
+            "agent": str(getattr(event, "agent", "") or ""),
+            "detail": _clip(getattr(event, "detail", ""), 220),
+        }
+        for event in forum.timeline[-20:]
+    ]
+    payload = {
+        "topic": forum.question,
+        "agent": agent,
+        "persona": _clip(persona, 2000),
+        "recent_posts": recent_posts if include_context else [],
+        "recent_timeline": timeline if include_context else [],
+        "question": prompt or "请用第一人称解释你在本轮 OASIS 讨论中的行动、依据和下一步判断。",
+    }
+
+    def _invoke_llm() -> str:
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        model = create_chat_model(temperature=0.35, max_tokens=1200, timeout=30, max_retries=1)
+        response = model.invoke(
+            [
+                SystemMessage(
+                    content=(
+                        "你是 OASIS Town 的 agent interview 接口。"
+                        "请严格扮演被采访的 agent，用第一人称回答；不要调用工具；"
+                        "只能依据给定 topic、persona、posts、timeline 和 stats。"
+                    )
+                ),
+                HumanMessage(content=json.dumps(payload, ensure_ascii=False, indent=2)),
+            ]
+        )
+        return extract_text(getattr(response, "content", response)).strip()
+
+    try:
+        answer = await asyncio.to_thread(_invoke_llm)
+        if answer:
+            return answer
+    except Exception as exc:
+        print(f"[OASIS] ⚠️ agent interview LLM fallback: {exc}")
+    return _fallback_interview_answer(forum, agent, posts, prompt)
+
+
+@app.get("/topics/{topic_id}", response_model=TopicDetail)
+async def get_topic(topic_id: str, user_id: str = Query(...)):
+    """Get full discussion detail."""
+    forum = _get_forum_or_404(topic_id)
+    _check_owner(forum, user_id)
+
+    posts = await forum.browse()
+    try:
+        return _build_topic_detail(forum, posts)
+    except Exception as exc:
+        print(f"[OASIS] ❌ get_topic serialize failed topic_id={topic_id}: {exc}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to serialize topic (check discussion JSON on disk): {exc}",
+        ) from exc
+
+
+@app.get("/topics/{topic_id}/agent-stats")
+async def get_topic_agent_stats(topic_id: str, user_id: str = Query(...)):
+    """Return MiroFish-style per-agent activity metrics for one OASIS topic."""
+    forum = _get_forum_or_404(topic_id)
+    _check_owner(forum, user_id)
+    posts = await forum.browse()
+    agents = _build_agent_stats(forum, posts)
+    return {
+        "topic_id": topic_id,
+        "question": forum.question,
+        "status": forum.status,
+        "agents": agents,
+    }
+
+
+@app.get("/topics/{topic_id}/actions")
+async def get_topic_actions(
+    topic_id: str,
+    user_id: str = Query(...),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    agent: str = Query(""),
+):
+    """Return a normalized action feed combining OASIS posts and timeline events."""
+    forum = _get_forum_or_404(topic_id)
+    _check_owner(forum, user_id)
+    posts = await forum.browse()
+    actions = _filter_actions(_build_action_feed(forum, posts), agent)
+    return {
+        "topic_id": topic_id,
+        "total": len(actions),
+        "offset": offset,
+        "limit": limit,
+        "actions": actions[offset: offset + limit],
+    }
+
+
+@app.post("/topics/{topic_id}/interview")
+async def interview_topic_agent(topic_id: str, req: AgentInterviewRequest):
+    """Ask one OASIS participant to explain its behavior using local topic state."""
+    forum = _get_forum_or_404(topic_id)
+    _check_owner(forum, req.user_id)
+    posts = await forum.browse()
+    stats = _build_agent_stats(forum, posts)
+    agent = _select_interview_agent(stats, agent_id=req.agent_id, agent_name=req.agent_name)
+    answer = await _generate_interview_answer(
+        forum,
+        agent,
+        posts,
+        (req.prompt or "").strip(),
+        include_context=bool(req.include_context),
+    )
+    return {
+        "topic_id": topic_id,
+        "agent": agent,
+        "prompt": (req.prompt or "").strip(),
+        "answer": answer,
+        "evidence_posts": _recent_agent_posts(posts, str(agent.get("agent_name", "")), limit=8),
+    }
+
+
+@app.get("/topics/{topic_id}/stream")
+async def stream_topic(topic_id: str, user_id: str = Query(...)):
+    """SSE stream for real-time discussion updates."""
+    forum = _get_forum_or_404(topic_id)
+    _check_owner(forum, user_id)
+
+    async def event_generator():
+        last_count = 0
+        last_round = 0
+        last_timeline_idx = 0      # 已发送的 timeline 事件索引
+
+        while forum.status in ("pending", "discussing"):
+            if forum.discussion:
+                # ── 讨论模式：原有逻辑，按帖子轮询 ──
+                posts = await forum.browse()
+
+                if forum.current_round > last_round:
+                    last_round = forum.current_round
+                    yield f"data: 📢 === 第 {last_round} 轮讨论 ===\n\n"
+
+                if len(posts) > last_count:
+                    for p in posts[last_count:]:
+                        prefix = f"↳回复#{p.reply_to}" if p.reply_to else "📌"
+                        yield (
+                            f"data: {prefix} [{p.author}] "
+                            f"(👍{p.upvotes}): {p.content}\n\n"
+                        )
+                    last_count = len(posts)
+            else:
+                # ── 执行模式：timeline 事件当普通消息发送 ──
+                tl = forum.timeline
+
+                while last_timeline_idx < len(tl):
+                    ev = tl[last_timeline_idx]
+                    last_timeline_idx += 1
+
+                    if ev.event == "start":
+                        yield f"data: 🚀 执行开始\n\n"
+                    elif ev.event == "round":
+                        yield f"data: 📢 {ev.detail}\n\n"
+                    elif ev.event == "agent_call":
+                        yield f"data: ⏳ {ev.agent} 开始执行...\n\n"
+                    elif ev.event == "agent_done":
+                        yield f"data: ✅ {ev.agent} 执行完成\n\n"
+                    elif ev.event == "conclude":
+                        yield f"data: 🏁 执行完成\n\n"
+
+            await asyncio.sleep(1)
+
+        if forum.discussion:
+            if forum.conclusion:
+                yield f"data: \n🏆 === 讨论结论 ===\n{forum.conclusion}\n\n"
+        else:
+            yield f"data: ✅ 已完成\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.get("/topics", response_model=list[TopicSummary])
+async def list_topics(user_id: str = Query(...)):
+    """List discussion topics for a specific user."""
+    items = []
+    for f in discussions.values():
+        if f.user_id != user_id:
+            continue
+        items.append(
+            TopicSummary(
+                topic_id=f.topic_id,
+                question=f.question,
+                user_id=f.user_id,
+                status=DiscussionStatus(f.status),
+                post_count=len(f.posts),
+                current_round=f.current_round,
+                max_rounds=f.max_rounds,
+                created_at=f.created_at,
+                swarm_mode=f.swarm_mode or None,
+                has_swarm=f.swarm is not None,
+            )
+        )
+    items.sort(key=lambda x: x.created_at, reverse=True)
+    return items
+
+
+@app.post("/topics/{topic_id}/swarm/refresh")
+async def refresh_swarm(topic_id: str, user_id: str = Query("default")):
+    """Regenerate the swarm blueprint using current discussion data."""
+    forum = _get_forum_or_404(topic_id)
+    _check_owner(forum, user_id)
+
+    mode = forum.swarm_mode or "prediction"
+    try:
+        posts = [
+            {"author": p.author, "content": p.content, "upvotes": p.upvotes, "downvotes": p.downvotes}
+            for p in await forum.browse()
+        ]
+        timeline = [
+            {"event": e.event, "agent": e.agent, "detail": e.detail, "elapsed": e.elapsed}
+            for e in forum.timeline
+        ]
+        # Synchronous LLM call: run it off the event loop so every other topic
+        # keeps running while the blueprint is generated.
+        forum.swarm = await asyncio.to_thread(
+            generate_swarm_blueprint,
+            forum.question,
+            user_id=forum.user_id,
+            team="",
+            posts=posts,
+            timeline=timeline,
+            conclusion=forum.conclusion or "",
+            mode=mode,
+        )
+        forum.save()
+    except Exception as e:
+        raise HTTPException(500, f"Swarm refresh failed: {e}")
+
+    return {"topic_id": topic_id, "status": "ok", "swarm": forum.swarm}
+
+
+@app.get("/topics/{topic_id}/conclusion")
+async def get_conclusion(topic_id: str, user_id: str = Query(...), timeout: int = 300):
+    """Get the final conclusion (blocks until discussion finishes)."""
+    forum = _get_forum_or_404(topic_id)
+    _check_owner(forum, user_id)
+
+    elapsed = 0
+    while forum.status not in ("concluded", "error", "cancelled") and elapsed < timeout:
+        await asyncio.sleep(1)
+        elapsed += 1
+
+    if forum.status == "error":
+        raise HTTPException(500, f"Discussion failed: {forum.conclusion}")
+    if forum.status == "cancelled":
+        return {
+            "topic_id": topic_id,
+            "question": forum.question,
+            "status": "cancelled",
+            "conclusion": forum.conclusion,
+            "rounds": forum.current_round,
+            "total_posts": len(forum.posts),
+        }
+    if forum.status != "concluded":
+        # Execution mode: return 202 (still running) instead of 504 error
+        if not forum.discussion:
+            return {
+                "topic_id": topic_id,
+                "question": forum.question,
+                "status": "running",
+                "current_round": forum.current_round,
+                "total_posts": len(forum.posts),
+                "message": "执行仍在后台运行中，可稍后通过 check_oasis_discussion 查看结果",
+            }
+        raise HTTPException(504, "Discussion timed out")
+
+    return {
+        "topic_id": topic_id,
+        "question": forum.question,
+        "conclusion": forum.conclusion,
+        "rounds": forum.current_round,
+        "total_posts": len(forum.posts),
+    }
+
+
+# ------------------------------------------------------------------
+# Expert persona CRUD
+# ------------------------------------------------------------------
+
+@app.get("/experts")
+async def list_experts(user_id: str = "", team: str = "", full: bool = False):
+    """List all available expert agents (public + agency + user custom + team)."""
+    from oasis.experts import get_all_experts
+    configs = get_all_experts(user_id or None, team=team)
+    result = []
+    for c in configs:
+        persona_raw = c["persona"]
+        # Agency 专家的 persona 是完整 md 正文，过长时截断为预览
+        if not full and len(persona_raw) > 300:
+            persona_preview = persona_raw[:300] + "..."
+        else:
+            persona_preview = persona_raw
+        entry = {
+            "name": c["name"],
+            "tag": c["tag"],
+            "persona": persona_preview,
+            "source": c.get("source", "public"),
+            "deletable": c.get("source", "public") not in {"public", "agency"},
+        }
+        # 双语名称：公共专家有 name_en，agency 专家有 name_zh
+        if c.get("name_zh"):
+            entry["name_zh"] = c["name_zh"]
+        if c.get("name_en"):
+            entry["name_en"] = c["name_en"]
+        # 为 agency 专家附加分类和描述
+        if c.get("category"):
+            entry["category"] = c["category"]
+        if c.get("description"):
+            entry["description"] = c["description"]
+        result.append(entry)
+    return {"experts": result}
+
+
+class WorkflowSaveRequest(BaseModel):
+    user_id: str
+    name: str
+    schedule_yaml: str
+    description: str = ""
+    save_layout: bool = False  # deprecated, layout is now generated on-the-fly from YAML
+    team: str = ""  # Team name for scoped workflow storage
+
+
+def _workflow_yaml_dir(user_id: str, team: str = "") -> str:
+    """Return the YAML workflow directory path (team-scoped when team is provided)."""
+    user_id = _require_segment(user_id, "user_id")
+    team = _require_segment(team, "team", allow_empty=True)
+    if team:
+        return os.path.join(str(USER_FILES_DIR), user_id, "teams", team, "oasis", "yaml")
+    return os.path.join(str(USER_FILES_DIR), user_id, "oasis", "yaml")
+
+
+@app.post("/workflows")
+async def save_workflow(req: WorkflowSaveRequest):
+    """Save a YAML workflow under data/user_files/{user}/[teams/{team}/]oasis/yaml/."""
+    user = req.user_id
+    name = _require_segment(req.name, "workflow name")
+    if not name.endswith((".yaml", ".yml")):
+        name += ".yaml"
+
+    # validate YAML
+    try:
+        data = _yaml.safe_load(req.schedule_yaml)
+        if not isinstance(data, dict) or "plan" not in data:
+            raise ValueError("must contain 'plan'")
+    except Exception as e:
+        raise HTTPException(400, f"YAML 解析失败: {e}")
+
+    yaml_dir = _workflow_yaml_dir(user, req.team)
+    os.makedirs(yaml_dir, exist_ok=True)
+    filepath = os.path.join(yaml_dir, name)
+    content = (f"# {req.description}\n" if req.description else "") + req.schedule_yaml
+    try:
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(content)
+    except Exception as e:
+        raise HTTPException(500, f"保存失败: {e}")
+
+    return {"status": "ok", "file": name, "path": filepath}
+
+
+@app.get("/workflows")
+async def list_workflows(user_id: str = Query(...), team: str = Query("")):
+    yaml_dir = _workflow_yaml_dir(user_id, team)
+    if not os.path.isdir(yaml_dir):
+        return {"workflows": []}
+    files = sorted(f for f in os.listdir(yaml_dir) if f.endswith((".yaml", ".yml")))
+    items = []
+    for fname in files:
+        fpath = os.path.join(yaml_dir, fname)
+        desc = ""
+        try:
+            with open(fpath, "r", encoding="utf-8") as f:
+                first = f.readline().strip()
+                if first.startswith("#"):
+                    desc = first.lstrip("# ")
+        except Exception:
+            pass
+        items.append({"file": fname, "description": desc})
+    return {"workflows": items}
+
+
+@app.get("/agents/catalog")
+async def list_agent_catalog(user_id: str = Query(...), team: str = Query("")):
+    return {"agents": AgentCenter(user_id, team).list_agents()}
+
+
+class LayoutFromYamlRequest(BaseModel):
+    user_id: str
+    yaml_source: str
+    layout_name: str = ""
+    team: str = ""  # Team name for scoped workflow lookup
+
+
+@app.post("/layouts/from-yaml")
+async def layouts_from_yaml(req: LayoutFromYamlRequest):
+    """Generate a layout from YAML on-the-fly (no file saved; layout is ephemeral)."""
+    user = req.user_id
+    yaml_src = req.yaml_source
+    yaml_content = ""
+    source_name = ""
+    if "\n" not in yaml_src and yaml_src.strip().endswith(('.yaml', '.yml')):
+        yaml_dir = _workflow_yaml_dir(user, req.team)
+        fpath = os.path.join(yaml_dir, _require_segment(yaml_src, "workflow file"))
+        if not os.path.isfile(fpath):
+            raise HTTPException(404, f"YAML 文件不存在: {yaml_src}")
+        with open(fpath, "r", encoding="utf-8") as f:
+            yaml_content = f.read()
+        source_name = yaml_src.replace('.yaml','').replace('.yml','')
+    else:
+        yaml_content = yaml_src
+        source_name = "converted"
+
+    try:
+        layout = yaml_to_layout(yaml_content)
+    except Exception as e:
+        raise HTTPException(400, f"YAML 转换失败: {e}")
+
+    layout_name = req.layout_name or source_name
+    layout["name"] = layout_name
+    return {"status": "ok", "layout": layout_name, "data": layout}
+
+
+class UserExpertRequest(BaseModel):
+    user_id: str
+    name: str = ""
+    tag: str = ""
+    persona: str = ""
+    temperature: float = 0.7
+    team: str = ""  # Team name for scoped expert storage
+
+
+@app.post("/experts/user")
+async def add_user_expert_route(req: UserExpertRequest):
+    from oasis.experts import add_user_expert, add_team_expert
+    _require_segment(req.user_id, "user_id")
+    _require_segment(req.team, "team", allow_empty=True)
+    try:
+        if req.team:
+            expert = add_team_expert(req.user_id, req.team, req.model_dump())
+        else:
+            expert = add_user_expert(req.user_id, req.model_dump())
+        return {"status": "ok", "expert": expert}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.put("/experts/user/{tag}")
+async def update_user_expert_route(tag: str, req: UserExpertRequest):
+    from oasis.experts import update_user_expert, update_team_expert
+    _require_segment(req.user_id, "user_id")
+    _require_segment(req.team, "team", allow_empty=True)
+    try:
+        if req.team:
+            expert = update_team_expert(req.user_id, req.team, tag, req.model_dump())
+        else:
+            expert = update_user_expert(req.user_id, tag, req.model_dump())
+        return {"status": "ok", "expert": expert}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/experts/user/{tag}")
+async def delete_user_expert_route(tag: str, user_id: str = Query(...), team: str = Query("")):
+    from oasis.experts import delete_user_expert, delete_team_expert
+    _require_segment(user_id, "user_id")
+    _require_segment(team, "team", allow_empty=True)
+    try:
+        if team:
+            deleted = delete_team_expert(user_id, team, tag)
+        else:
+            deleted = delete_user_expert(user_id, tag)
+        return {"status": "ok", "deleted": deleted}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+
+# ------------------------------------------------------------------
+# OpenClaw 路由（从 openclaw_routes.py 引入）
+# ------------------------------------------------------------------
+
+_OPENCLAW_BIN = _resolve_openclaw_bin()
+
+from oasis.openclaw_routes import init_openclaw_routes
+app.include_router(init_openclaw_routes(
+    openclaw_bin=_OPENCLAW_BIN,
+    get_env_fn=_get_env,
+    skills_cache=_openclaw_skills_cache,
+    managed_skills_dir=_openclaw_managed_skills_dir,
+    bundled_skills=_openclaw_bundled_skills,
+))
+
+# --- System Info ---
+
+_TUNNEL_PIDFILE = os.path.join(str(PID_DIR), "tunnel.pid")
+_IS_WINDOWS = platform.system().lower() == "windows"
+
+
+def _tunnel_running() -> tuple[bool, int | None]:
+    """Check if the cloudflare tunnel process is alive.
+    Cleans up stale PID file if the process is dead."""
+    if not os.path.isfile(_TUNNEL_PIDFILE):
+        return False, None
+    try:
+        with open(_TUNNEL_PIDFILE) as f:
+            pid = int(f.read().strip())
+        if _IS_WINDOWS:
+            import subprocess as _sp
+            result = _sp.run(
+                ["tasklist", "/FI", f"PID eq {pid}", "/NH"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if str(pid) not in result.stdout:
+                raise OSError("Process not found")
+        else:
+            os.kill(pid, 0)
+        return True, pid
+    except (ValueError, OSError):
+        # PID file exists but process is dead — clean up
+        try:
+            os.remove(_TUNNEL_PIDFILE)
+        except OSError:
+            pass
+        return False, None
+
+
+@app.get("/publicnet/info")
+async def publicnet_info():
+    """Return public network info: tunnel status, public domain, ports, etc.
+
+    This is the canonical way for agents / bots to discover the public URL
+    without needing direct access to .env files.
+    """
+    running, pid = _tunnel_running()
+    domain = ""
+    if running:
+        domain = _get_env("PUBLIC_DOMAIN", "")
+        if domain == "wait to set":
+            domain = ""
+
+    frontend_port = _get_env("PORT_FRONTEND", "51209")
+    oasis_port = _get_env("PORT_OASIS", "51202")
+
+    return {
+        "tunnel": {
+            "running": running,
+            "pid": pid,
+            "public_domain": domain,
+        },
+        "ports": {
+            "frontend": frontend_port,
+            "oasis": oasis_port,
+        },
+    }
+
+
+
+if __name__ == "__main__":
+    port = int(os.getenv("PORT_OASIS", "51202"))
+    uvicorn.run(app, host=_server_host(), port=port)

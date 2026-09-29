@@ -56,8 +56,8 @@ for stream_name in ("stdout", "stderr"):
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
-from src.utils.runtime_paths import ENV_FILE, PID_DIR, WORKSPACE_DIR, ensure_runtime_dirs, set_subprocess_env
-from src.utils.chatbot_channel_catalog import get_nonebot_adapter_meta, get_chatbot_channel
+from src.backend.common.runtime_paths import ENV_FILE, PID_DIR, WORKSPACE_DIR, ensure_runtime_dirs, set_subprocess_env
+from src.backend.chatbot.channel_catalog import get_nonebot_adapter_meta, get_chatbot_channel
 ENV_FILE_PATH = str(ENV_FILE)
 ensure_runtime_dirs()
 WORKING_DIR = str(WORKSPACE_DIR)
@@ -581,7 +581,7 @@ def restart_chatbot_only():
         print("💬 [skip] 未检测到聊天机器人配置，聊天机器人已停止")
         return
     if not os.path.exists(chatbot_main):
-        print("💬 [skip] chatbot/main.py 不存在")
+        print("💬 [skip] src/backend/chatbot/main.py 不存在")
         return
     nonebot_names = _configured_nonebot_adapter_names()
     if nonebot_names and not _ensure_nonebot_deps(nonebot_names):
@@ -641,7 +641,7 @@ services = [
     {
         "message": f"⏰ [1/5] 启动定时调度中心 (port {PORT_SCHEDULER})...",
         "label": "定时调度中心",
-        "script": "src/utils/scheduler_service.py",
+        "script": "src/backend/scheduler/service.py",
         "port": PORT_SCHEDULER,
         "timeout": 60.0,
         "pid_name": "scheduler_service",
@@ -649,7 +649,7 @@ services = [
     {
         "message": f"🏛️ [2/5] 启动 OASIS 论坛服务 (port {PORT_OASIS})...",
         "label": "OASIS 论坛服务",
-        "script": "oasis/server.py",
+        "script": "src/backend/oasis/server.py",
         "port": PORT_OASIS,
         "timeout": 90.0,
         "health_url": f"http://127.0.0.1:{PORT_OASIS}/experts",
@@ -658,7 +658,7 @@ services = [
     {
         "message": f"🤖 [3/5] 启动 AI Agent (port {PORT_AGENT})...",
         "label": "AI Agent",
-        "script": "src/mainagent.py",
+        "script": "src/backend/server.py",
         "port": PORT_AGENT,
         "timeout": 120.0,
         "health_url": f"http://127.0.0.1:{PORT_AGENT}/v1/models",
@@ -903,7 +903,7 @@ def _ensure_nonebot_deps(adapter_names):
 chatbot_platforms = _detect_chatbot_platforms()
 has_chatbot_config = bool(chatbot_platforms) and not _channel_disabled()
 
-chatbot_main = os.path.join(PROJECT_ROOT, "chatbot", "main.py")
+chatbot_main = os.path.join(PROJECT_ROOT, "src", "backend", "chatbot", "main.py")
 should_start_chatbot = has_chatbot_config and os.path.exists(chatbot_main)
 
 if should_start_chatbot:
@@ -920,7 +920,7 @@ if should_start_chatbot:
         {
             "message": f"🌐 [5/5] 启动前端 Web UI (port {PORT_FRONTEND})...",
             "label": "前端 Web UI",
-            "script": "src/front.py",
+            "script": "src/frontend/server.py",
             "port": PORT_FRONTEND,
             "timeout": 90.0,
             "pid_name": "front",
@@ -935,7 +935,7 @@ else:
         {
             "message": f"🌐 [4/4] 启动前端 Web UI (port {PORT_FRONTEND})...",
             "label": "前端 Web UI",
-            "script": "src/front.py",
+            "script": "src/frontend/server.py",
             "port": PORT_FRONTEND,
             "timeout": 90.0,
             "pid_name": "front",

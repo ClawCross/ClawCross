@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest import mock
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src"
+SRC_DIR = PROJECT_ROOT / "src" / "backend"
 for path in (str(PROJECT_ROOT), str(SRC_DIR)):
     if path not in sys.path:
         sys.path.insert(0, path)
@@ -71,7 +71,7 @@ class TestYamlForms(unittest.TestCase):
 
     def test_visual_layout_round_trips_the_forms(self):
         from oasis.layout import yaml_to_layout
-        from visual.main import layout_to_yaml
+        from frontend.visual import layout_to_yaml
 
         layout = yaml_to_layout(
             "version: 2\nrepeat: false\nplan:\n  - id: a\n    agent: Coder\n  - id: b\n    persona: critical\n"

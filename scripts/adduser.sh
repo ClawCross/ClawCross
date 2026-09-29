@@ -14,6 +14,6 @@ fi
 
 VENV_PY="$CLAWCROSS_VENV_DIR/bin/python"
 if [ -x "$VENV_PY" ]; then
-    exec "$VENV_PY" "$PROJECT_ROOT/tools/gen_password.py"
+    exec "$VENV_PY" "$PROJECT_ROOT/scripts/gen_password.py"
 fi
-exec python "$PROJECT_ROOT/tools/gen_password.py"
+exec python "$PROJECT_ROOT/scripts/gen_password.py"

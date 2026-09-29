@@ -6,11 +6,11 @@ import sys
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src"
+SRC_DIR = PROJECT_ROOT / "src" / "backend"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from services.tinyfish_monitor_service import main  # noqa: E402
+from tinyfish.monitor import main  # noqa: E402
 
 
 if __name__ == "__main__":

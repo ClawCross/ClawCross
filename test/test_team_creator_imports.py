@@ -8,13 +8,13 @@ from unittest import mock
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src"
+SRC_DIR = PROJECT_ROOT / "src" / "backend"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-import front
-import services.skill_import_tools as skill_import_tools
-import services.team_creator_service as svc
+import frontend.server as front
+import webot.skill_import_tools as skill_import_tools
+import teams.creator as svc
 
 
 class ClawcrossCreatorImportTests(unittest.TestCase):
@@ -57,7 +57,7 @@ class ClawcrossCreatorImportTests(unittest.TestCase):
             def invoke(self, _prompt):
                 return SimpleNamespace(content=json.dumps(llm_payload, ensure_ascii=False))
 
-        with mock.patch("services.llm_factory.create_chat_model", return_value=FakeLlm()):
+        with mock.patch("common.llm_factory.create_chat_model", return_value=FakeLlm()):
             distilled = svc.distill_colleague_skill_artifacts(
                 meta_json=meta_json,
                 messages_text="## 日常消息（风格参考）\n\n[10:00] 先确认边界，再推进方案。",

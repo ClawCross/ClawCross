@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src"
+SRC_DIR = PROJECT_ROOT / "src" / "backend"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
@@ -60,7 +60,7 @@ if "dotenv" not in sys.modules:
 
 import webot.subagents as store
 import webot.runtime_store as runtime_store
-import webot.tools.webot as mcp_webot
+import webot.mcp.webot as mcp_webot
 
 
 class _FakeResponse:
@@ -164,7 +164,7 @@ class WeBotOrchestrationFlowTests(unittest.IsolatedAsyncioTestCase):
             return _FakeAsyncClient(state, delay=0.0)
 
         with patch.object(mcp_webot, "_INTERNAL_TOKEN", "internal-token"), patch(
-            "webot.tools.webot.httpx.AsyncClient",
+            "webot.mcp.webot.httpx.AsyncClient",
             new=_client_factory,
         ):
             result = await mcp_webot.spawn_subagent(
@@ -204,7 +204,7 @@ class WeBotOrchestrationFlowTests(unittest.IsolatedAsyncioTestCase):
             return _FakeAsyncClient(state, delay=0.2)
 
         with patch.object(mcp_webot, "_INTERNAL_TOKEN", "internal-token"), patch(
-            "webot.tools.webot.httpx.AsyncClient",
+            "webot.mcp.webot.httpx.AsyncClient",
             new=_client_factory,
         ):
             await mcp_webot.spawn_subagent(

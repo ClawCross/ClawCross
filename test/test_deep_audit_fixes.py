@@ -16,7 +16,7 @@ import sys
 import tempfile
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "src", "backend"))
 
 
 class TestStreamingExecutorTimeout:
@@ -67,20 +67,20 @@ class TestTokenBudgetContextPercent:
     """Test context_percent follows compressed context usage."""
 
     def test_context_percent_hits_100_at_compression_budget(self):
-        from utils.token_budget import SessionTokenBudget
+        from webot.token_budget import SessionTokenBudget
         budget = SessionTokenBudget(max_context_tokens=200_000)
         budget.update_current_context(used_tokens=64_000, budget_tokens=64_000)
         assert budget.context_percent == 100
         assert budget.context_pressure == 1.0
 
     def test_context_percent_partial(self):
-        from utils.token_budget import SessionTokenBudget
+        from webot.token_budget import SessionTokenBudget
         budget = SessionTokenBudget(max_context_tokens=200_000)
         budget.update_current_context(used_tokens=32_000, budget_tokens=64_000)
         assert budget.context_percent == 50
 
     def test_context_pressure_warning_before_compression_budget(self):
-        from utils.token_budget import SessionTokenBudget
+        from webot.token_budget import SessionTokenBudget
         budget = SessionTokenBudget(max_context_tokens=1000)
         budget.update_current_context(used_tokens=900, budget_tokens=1000)
         assert budget.context_pressure == 0.9
@@ -92,7 +92,7 @@ class TestBashSafetyRuntime:
     """Test runtime allowlist/blocklist and deep analysis."""
 
     def test_add_to_allowlist(self):
-        from utils.bash_safety import add_to_allowlist, check_runtime_lists, remove_from_allowlist
+        from webot.bash_safety import add_to_allowlist, check_runtime_lists, remove_from_allowlist
         add_to_allowlist("docker compose")
         result = check_runtime_lists("docker compose up -d")
         assert result is not None
@@ -100,7 +100,7 @@ class TestBashSafetyRuntime:
         remove_from_allowlist("docker compose")
 
     def test_add_to_blocklist(self):
-        from utils.bash_safety import add_to_blocklist, check_runtime_lists, remove_from_blocklist
+        from webot.bash_safety import add_to_blocklist, check_runtime_lists, remove_from_blocklist
         add_to_blocklist(r"npm\s+run\s+deploy")
         result = check_runtime_lists("npm run deploy --prod")
         assert result is not None
@@ -108,33 +108,33 @@ class TestBashSafetyRuntime:
         remove_from_blocklist(r"npm\s+run\s+deploy")
 
     def test_detect_operator_chains(self):
-        from utils.bash_safety import detect_operator_chains
+        from webot.bash_safety import detect_operator_chains
         warnings = detect_operator_chains("ls && rm -rf / && echo done")
         assert any("dangerous" in w for w in warnings)
 
     def test_detect_env_injection(self):
-        from utils.bash_safety import detect_env_injection
+        from webot.bash_safety import detect_env_injection
         warnings = detect_env_injection("export LD_PRELOAD=/tmp/evil.so")
         assert len(warnings) > 0
 
     def test_detect_heredoc(self):
-        from utils.bash_safety import detect_heredoc
+        from webot.bash_safety import detect_heredoc
         warnings = detect_heredoc("cat << EOF\nmalicious content\nEOF")
         assert len(warnings) > 0
 
     def test_detect_subshell_nesting(self):
-        from utils.bash_safety import detect_subshell_nesting
+        from webot.bash_safety import detect_subshell_nesting
         warnings = detect_subshell_nesting("$($($(echo nested)))")
         assert len(warnings) > 0
         assert "depth" in warnings[0]
 
     def test_deep_analyze(self):
-        from utils.bash_safety import deep_analyze
+        from webot.bash_safety import deep_analyze
         result = deep_analyze("ls && echo safe && rm -rf /tmp/test ; cat file")
         assert len(result.reasons) > 0
 
     def test_get_lists(self):
-        from utils.bash_safety import get_allowlist, get_blocklist
+        from webot.bash_safety import get_allowlist, get_blocklist
         assert isinstance(get_allowlist(), frozenset)
         assert isinstance(get_blocklist(), frozenset)
 
@@ -196,17 +196,17 @@ class TestNotificationLevelEnum:
     """Test NotificationLevel is a proper Enum."""
 
     def test_is_enum(self):
-        from services.notification_system import NotificationLevel
+        from webot.notification_system import NotificationLevel
         from enum import Enum
         assert issubclass(NotificationLevel, Enum)
 
     def test_values(self):
-        from services.notification_system import NotificationLevel
+        from webot.notification_system import NotificationLevel
         assert NotificationLevel.INFO == "info"
         assert NotificationLevel.ERROR == "error"
 
     def test_iterable(self):
-        from services.notification_system import NotificationLevel
+        from webot.notification_system import NotificationLevel
         levels = list(NotificationLevel)
         assert len(levels) == 4
 

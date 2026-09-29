@@ -8,7 +8,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src"
+SRC_DIR = PROJECT_ROOT / "src" / "backend"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
@@ -49,7 +49,7 @@ class VisionAttachmentMcpTests(unittest.TestCase):
     def test_read_file_returns_an_image_as_native_image_content(self):
         self._write_test_image()
 
-        from webot.tools.filemanager import ATTACHMENT_MARKER, read_file
+        from webot.mcp.filemanager import ATTACHMENT_MARKER, read_file
         from mcp.types import CallToolResult, ImageContent, TextContent
 
         result = asyncio.run(read_file(username="alice", session_id="default", filename="pixel.png"))
@@ -75,7 +75,7 @@ class VisionAttachmentMcpTests(unittest.TestCase):
 
         from unittest.mock import AsyncMock, patch
         from types import SimpleNamespace
-        from webot.tools import filemanager
+        from webot.mcp import filemanager
         from mcp.types import CallToolResult, ImageContent
 
         # Outside the workspace a read needs one approval; here the user has given it.
@@ -96,7 +96,7 @@ class VisionAttachmentMcpTests(unittest.TestCase):
         # An image extension alone does not make a file an image.
         (user_root / "fake.png").write_text("not an image", encoding="utf-8")
 
-        from webot.tools.filemanager import read_file
+        from webot.mcp.filemanager import read_file
 
         self.assertIn("hello", asyncio.run(read_file(username="alice", session_id="default", filename="notes.txt")))
         fake = asyncio.run(read_file(username="alice", session_id="default", filename="fake.png"))
@@ -118,7 +118,7 @@ class VisionAttachmentMcpTests(unittest.TestCase):
         self._write_test_image()
 
         from mcp.types import CallToolResult, ImageContent, TextContent
-        from webot.tools.filemanager import mcp
+        from webot.mcp.filemanager import mcp
 
         result = asyncio.run(
             mcp.call_tool("read_file", {"username": "alice", "session_id": "default", "filename": "pixel.png"})

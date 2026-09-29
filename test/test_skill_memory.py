@@ -8,9 +8,9 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "backend"))
 
-from webot.tools import filemanager
+from webot.mcp import filemanager
 from webot import skills
 from webot.skill_memory import memory_target
 
@@ -117,7 +117,7 @@ class MemoryFilesTests(unittest.TestCase):
         self.assertIn("经验正文", current)
 
     def test_evolution_report_keeps_analysis_but_hides_storage_metadata(self):
-        from webot.tools.skills import skill_evolution_report
+        from webot.mcp.skills import skill_evolution_report
         entry = json.loads(self.write("report"))
         report = {"success": True, "local_state": {"skill_path": str(self.root), "cwd": str(self.root)},
                   "validation_report": {"env_fingerprint": {"repo_root": str(self.root)}}, "frontier": [{"candidate_id": "candidate"}]}

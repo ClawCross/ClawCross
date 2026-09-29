@@ -34,24 +34,24 @@ This document records the current, running WeBot delegated runtime that is now c
 
 | File | Role |
 |---|---|
-| `src/webot/tools/webot.py` | Model-facing tools: subagents, plan/todo, session inbox, session mode, Claude Code keepalive, runtime artifact logging |
-| `src/webot/runtime_store.py` | Durable tables for runs, attempts, inbox, artifacts, session state |
-| `src/webot/api/service.py` | Runtime API that serializes DTO for the frontend and proxies, tracks workspace descriptions, counts inbox/gate details |
-| `src/webot/runtime.py` | Utility functions (`normalize_session_mode`, mode messages, stop conditions, max_turn resolution) |
-| `src/webot/lsp.py` | OpenSeek-style best-effort workspace diagnostics used by the `/webot/lsp` API (the agent runs the same checks through `run_command`) |
-| `src/webot/context.py` | Context budgeting, artifact logging for oversized inputs/results, compaction guardrails |
-| `src/webot/compression.py` | Chunked summaries, whole-turn retention, version-checked persistence and compaction metrics |
-| `src/webot/runtime_settings.py` | Validated user/session context and approval overrides with atomic persistence |
-| `src/webot/approval_review.py` | Unified approval broker and independent structured reviewer |
-| `src/webot/approval_actions.py` | Canonical exact execution parameters shared with MCP |
-| `src/webot/policy.py` | Policy normalization, hook/approval parsing, event enumeration |
-| `src/webot/engine/agent.py` | Permits MCP tools, enforces tool filtering, injects runtime prompts, loads `webot_runtime` helpers |
-| `src/webot/memory.py` | Per-project memory directories, Kairos state, daily logs, dream summaries |
-| `src/webot/voice.py` | Session voice defaults/state adapter layered on top of existing audio providers |
-| `src/routes/front_webot_routes.py` | Flask proxies for runtime APIs, bridging the JS UI with FastAPI backends |
-| `src/webot/profiles.py` | Profile definitions plus helper to build/parse `subagent__...` session ids |
-| `src/webot/workspace.py` | Worktree/remote/shared workspace resolution describing `workspace_mode` for the runtime card |
-| `src/api/ops_service.py` | Text-to-speech (voice) backend that feeds audio metadata into runtime payloads |
+| `src/backend/webot/mcp/webot.py` | Model-facing tools: subagents, plan/todo, session inbox, session mode, Claude Code keepalive, runtime artifact logging |
+| `src/backend/webot/runtime_store.py` | Durable tables for runs, attempts, inbox, artifacts, session state |
+| `src/backend/webot/api/service.py` | Runtime API that serializes DTO for the frontend and proxies, tracks workspace descriptions, counts inbox/gate details |
+| `src/backend/webot/runtime.py` | Utility functions (`normalize_session_mode`, mode messages, stop conditions, max_turn resolution) |
+| `src/backend/webot/lsp.py` | OpenSeek-style best-effort workspace diagnostics used by the `/webot/lsp` API (the agent runs the same checks through `run_command`) |
+| `src/backend/webot/context.py` | Context budgeting, artifact logging for oversized inputs/results, compaction guardrails |
+| `src/backend/webot/compression.py` | Chunked summaries, whole-turn retention, version-checked persistence and compaction metrics |
+| `src/backend/webot/runtime_settings.py` | Validated user/session context and approval overrides with atomic persistence |
+| `src/backend/webot/approval_review.py` | Unified approval broker and independent structured reviewer |
+| `src/backend/webot/approval_actions.py` | Canonical exact execution parameters shared with MCP |
+| `src/backend/webot/policy.py` | Policy normalization, hook/approval parsing, event enumeration |
+| `src/backend/webot/engine/agent.py` | Permits MCP tools, enforces tool filtering, injects runtime prompts, loads `webot_runtime` helpers |
+| `src/backend/webot/memory.py` | Per-project memory directories, Kairos state, daily logs, dream summaries |
+| `src/backend/webot/voice.py` | Session voice defaults/state adapter layered on top of existing audio providers |
+| `src/frontend/proxies/webot.py` | Flask proxies for runtime APIs, bridging the JS UI with FastAPI backends |
+| `src/backend/webot/profiles.py` | Profile definitions plus helper to build/parse `subagent__...` session ids |
+| `src/backend/webot/workspace.py` | Worktree/remote/shared workspace resolution describing `workspace_mode` for the runtime card |
+| `src/backend/ops/service.py` | Text-to-speech (voice) backend that feeds audio metadata into runtime payloads |
 
 ## Runtime Best Practices
 

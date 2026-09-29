@@ -6,11 +6,11 @@ from tempfile import TemporaryDirectory
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src"
+SRC_DIR = PROJECT_ROOT / "src" / "backend"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-import services.team_preset_assets as team_preset_assets
+import teams.preset_assets as team_preset_assets
 from agents.store import AgentStore
 from teams.store import TeamStore
 

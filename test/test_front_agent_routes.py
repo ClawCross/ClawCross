@@ -6,13 +6,13 @@ from pathlib import Path
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
-SRC = ROOT / "src"
+SRC = ROOT / "src" / "backend"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from flask import Flask  # noqa: E402
 
-from routes.front_agent_routes import register_agent_routes  # noqa: E402
+from frontend.proxies.agents import register_agent_routes  # noqa: E402
 
 
 class _Response:
@@ -29,7 +29,7 @@ class FrontAgentRoutesTests(unittest.TestCase):
         self.client = self.app.test_client()
 
     def relay(self, method, path, **kwargs):
-        with mock.patch("routes.front_agent_routes.requests.request", return_value=_Response()) as request:
+        with mock.patch("frontend.proxies.agents.requests.request", return_value=_Response()) as request:
             response = getattr(self.client, method)(path, **kwargs)
         self.assertEqual(response.status_code, 200)
         return request.call_args

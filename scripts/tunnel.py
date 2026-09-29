@@ -30,7 +30,7 @@ IS_WINDOWS = platform.system().lower() == "windows"
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
-from src.utils.runtime_paths import BIN_DIR as RUNTIME_BIN_DIR, ENV_FILE, PID_DIR, WORKSPACE_DIR, cloudflared_path, ensure_runtime_dirs
+from src.backend.common.runtime_paths import BIN_DIR as RUNTIME_BIN_DIR, ENV_FILE, PID_DIR, WORKSPACE_DIR, cloudflared_path, ensure_runtime_dirs
 
 BIN_DIR = str(RUNTIME_BIN_DIR)
 ensure_runtime_dirs()

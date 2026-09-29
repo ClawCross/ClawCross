@@ -14,9 +14,9 @@ ClawCross 把一台机器上所有 agent 统一成一种东西：**有编号的�
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-依赖只能向下，`test/test_layering.py` 检查：L1 不 import 群聊、team、OASIS；运行时（`src/external`、`src/webot/driver.py`）不知道组合层，也只有 L1 用它们；运行时只在 Agent 服务里，其他进程走入口。
+依赖只能向下，`test/test_layering.py` 检查：L1 不 import 群聊、team、OASIS；运行时（`src/backend/external`、`src/backend/webot/driver.py`）不知道组合层，也只有 L1 用它们；运行时只在 Agent 服务里，其他进程走入口。
 
-## L1：agent（`src/agents/`）
+## L1：agent（`src/backend/agents/`）
 
 ### 一张表：所有会话
 
@@ -77,22 +77,22 @@ GET    /v1/models                   新 agent 可用的运行方式
 
 | 运行时 | 代码 |
 |---|---|
-| WeBot | `src/webot/driver.py`：在进程内调用 WeBot 的服务。`ask`、`trigger`、`inbox` 都走它的 system trigger：`ask` 排在会话当前这一轮之后、等回复，不打断；`chat`（聊天窗口）接管当前这一轮。控制面直接读引擎 |
-| acpx（codex / claude / gemini…） | `src/external/acp.py`，经 `src/external/acpx.py`（acpx CLI） |
-| OpenClaw | `src/external/openclaw.py`（HTTP；取消、重置经 acpx） |
-| HTTP | `src/external/http.py` |
-| llm（模型调用：不带工具，不记得上一条） | `src/external/llm.py` |
+| WeBot | `src/backend/webot/driver.py`：在进程内调用 WeBot 的服务。`ask`、`trigger`、`inbox` 都走它的 system trigger：`ask` 排在会话当前这一轮之后、等回复，不打断；`chat`（聊天窗口）接管当前这一轮。控制面直接读引擎 |
+| acpx（codex / claude / gemini…） | `src/backend/external/acp.py`，经 `src/backend/external/acpx.py`（acpx CLI） |
+| OpenClaw | `src/backend/external/openclaw.py`（HTTP；取消、重置经 acpx） |
+| HTTP | `src/backend/external/http.py` |
+| llm（模型调用：不带工具，不记得上一条） | `src/backend/external/llm.py` |
 
-外部运行时自己发送，共用 `src/external/session.py`（以编号命名的会话、身份 prompt）和 `src/external/history.py`（往来记录）。哪些平台是 ACP 工具由 `src/agents/platforms.py` 决定。
+外部运行时自己发送，共用 `src/backend/external/session.py`（以编号命名的会话、身份 prompt）和 `src/backend/external/history.py`（往来记录）。哪些平台是 ACP 工具由 `src/backend/agents/platforms.py` 决定。
 
-WeBot 的代码都在 `src/webot/` 一个包里：
+WeBot 的代码都在 `src/backend/webot/` 一个包里：
 
 | 位置 | 内容 |
 |---|---|
 | `driver.py` | `WebotRuntime`：L1 只通过它调用 WeBot |
 | `engine/` | agent 循环、工具绑定、工具 schema |
 | `api/` | WeBot 自己的服务和路由：对话（`openai_*`）、system trigger 与收件箱（`system_*`）、会话（`session_*`）、运行时面板（`routes.py`、`service.py`） |
-| `tools/` | WeBot 的 MCP 工具服务（命令、文件、OASIS、会话、定时、搜索……），由引擎作为子进程启动 |
+| `mcp/` | WeBot 的 MCP 工具服务（命令、文件、OASIS、会话、定时、搜索……），由引擎作为子进程启动 |
 | 其余模块 | 状态存储、审批、沙箱、技能与记忆、压缩、子 agent 等 |
 
 ### 单 agent 接口（`gateway.py`）
@@ -125,7 +125,7 @@ agent 的人设和工具是它自己的，各运行方式按自己的方式用�
 
 ## L2：组合（只引用编号）
 
-### 群聊 / 私聊（`src/comms/`、`src/groups/`）
+### 群聊 / 私聊（`src/backend/groups/`）
 
 - 是对"发信息"的封装。
 - 存在独立的 `<DATA_DIR>/conversations.db` 里：会话、成员（`u:<用户>` 或 agent 编号）、消息。
@@ -148,14 +148,14 @@ agent 的人设和工具是它自己的，各运行方式按自己的方式用�
 
 只有本机服务持内部 token 时，才能以 agent 身份发言，而且发言者必须是群成员。
 
-### workflow（OASIS，`oasis/`）
+### workflow（OASIS，`src/backend/oasis/`）
 
 - 按顺序调用 agent。YAML 里的 `agent: <ref>` 在 **team 模式**下先按该 team 的成员名查找，然后按 `<team>.<名字>` 或编号查找；新编号就是新 agent。
 - `persona: <tag>` 是为这个话题新建的临时 agent（`tmp__<话题>__<tag>__<n>`）：不带工具时运行方式是 llm，带工具时是 WeBot；第一次发言前经 `POST /v1/agents` 新建，话题结束时删除。
 - OASIS 是单独的进程，经 `agents/client.py` 按编号调用 agent。
 - 不往 agent 里传 team。
 
-### team（`src/teams/`）
+### team（`src/backend/teams/`）
 
 - 一个文件夹（`user_files/<owner>/teams/<team>/`），就是一个命名空间，放成员、人设库（`oasis_experts.json`）、技能、定时任务和 workflow。
 - 成员记在 `members.json` 里：`{agent: 编号, name: team 内名字, lead?, extra?}`；`extra.tag` 是成员用的 team 人设。team 内的 agent 可以称作 `<team>.<name>`，三种入口都认这种写法，而且换了机器也能用同一个名字找到对应的 agent。
@@ -174,13 +174,13 @@ agent 的人设和工具是它自己的，各运行方式按自己的方式用�
 
 | 主题 | 文件 |
 |---|---|
-| agent 表 | `src/agents/store.py` |
-| 入口 /v1、inbox | `src/agents/routes.py`, `src/agents/openai.py`（`/v1/chat/completions`、`/v1/models`） |
-| system trigger | `src/agents/trigger.py`（入口），`src/webot/api/system_service.py`（WeBot 的处理） |
-| 单 agent 接口、附件 | `src/agents/gateway.py`, `src/agents/messages.py` |
-| 运行时（调用接口与控制面） | `src/agents/runtime.py`, `src/webot/driver.py`, `src/external/` |
-| 群聊 | `src/comms/`, `src/groups/` |
-| team、导入导出 | `src/teams/store.py`, `src/teams/manifest.py`, `src/teams/routes.py` |
-| workflow | `oasis/engine.py`, `oasis/participants.py`, `oasis/agent_center.py` |
-| 定时任务 | `src/utils/scheduler_service.py`, `src/utils/internal_alarm_utils.py` |
+| agent 表 | `src/backend/agents/store.py` |
+| 入口 /v1、inbox | `src/backend/agents/routes.py`, `src/backend/agents/openai.py`（`/v1/chat/completions`、`/v1/models`） |
+| system trigger | `src/backend/agents/trigger.py`（入口），`src/backend/webot/api/system_service.py`（WeBot 的处理） |
+| 单 agent 接口、附件 | `src/backend/agents/gateway.py`, `src/backend/agents/messages.py` |
+| 运行时（调用接口与控制面） | `src/backend/agents/runtime.py`, `src/backend/webot/driver.py`, `src/backend/external/` |
+| 群聊 | `src/backend/groups/` |
+| team、导入导出 | `src/backend/teams/store.py`, `src/backend/teams/manifest.py`, `src/backend/teams/routes.py` |
+| workflow | `src/backend/oasis/engine.py`, `src/backend/oasis/participants.py`, `src/backend/oasis/agent_center.py` |
+| 定时任务 | `src/backend/scheduler/service.py`, `src/backend/scheduler/internal_alarm.py` |
 | 分层检查 | `test/test_layering.py` |

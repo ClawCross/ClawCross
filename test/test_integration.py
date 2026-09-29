@@ -7,14 +7,14 @@ from unittest import mock
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src"
+SRC_DIR = PROJECT_ROOT / "src" / "backend"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-import front
+import frontend.server as front
 from chatbot.adapters.base import ChannelAdapter, MagicLink
 from scripts.clawcross import chat_help_text, chat_welcome_text, handle_chatbot_input
-from utils.env_settings import mask_all_sensitive, read_env_all, write_env_settings
+from common.env_settings import mask_all_sensitive, read_env_all, write_env_settings
 
 
 class _MockJsonResponse:
@@ -553,7 +553,7 @@ class FrontendIntegrationTests(unittest.TestCase):
                     "/proxy_webot_lsp",
                     json={
                         "session_id": "default",
-                        "file": "src/webot/service.py",
+                        "file": "src/backend/webot/service.py",
                         "op": "diagnostics",
                         "line": 12,
                         "col": 4,
@@ -569,7 +569,7 @@ class FrontendIntegrationTests(unittest.TestCase):
                 {
                     "user_id": "integration-user",
                     "session_id": "default",
-                    "file": "src/webot/service.py",
+                    "file": "src/backend/webot/service.py",
                     "op": "diagnostics",
                     "line": 12,
                     "col": 4,

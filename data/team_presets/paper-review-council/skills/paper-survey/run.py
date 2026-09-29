@@ -19,7 +19,7 @@ from pathlib import Path
 
 
 SKILL_DIR = Path(__file__).resolve().parent
-CLAWCROSS_ROOT_MARKERS = ("oasis/agent_center.py", "src")
+CLAWCROSS_ROOT_MARKERS = ("src/backend/oasis/agent_center.py", "src")
 HELP_FLAGS = {"-h", "--help"}
 REQUIRED_PACKAGES = {
     "bs4": "beautifulsoup4",
@@ -41,7 +41,8 @@ def _find_clawcross_root(start: Path) -> Path | None:
 
 def _prepare_imports() -> None:
     clawcross_root = _find_clawcross_root(SKILL_DIR)
-    for path in (SKILL_DIR, clawcross_root):
+    backend = clawcross_root / "src" / "backend" if clawcross_root else None  # the backend's import root
+    for path in (SKILL_DIR, backend):
         if path is None:
             continue
         path_str = str(path)

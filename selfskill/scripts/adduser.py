@@ -16,7 +16,7 @@ import sys
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
-from src.utils.runtime_paths import USERS_FILE, ensure_runtime_dirs
+from src.backend.common.runtime_paths import USERS_FILE, ensure_runtime_dirs
 # 用户配置文件路径
 ensure_runtime_dirs()
 CONFIG_PATH = str(USERS_FILE)

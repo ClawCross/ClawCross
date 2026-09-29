@@ -6,14 +6,14 @@ from unittest.mock import patch
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src"
+SRC_DIR = PROJECT_ROOT / "src" / "backend"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-from api.harness_routes import create_harness_router  # noqa: E402
+from harness.routes import create_harness_router  # noqa: E402
 from harness.opencli_bridge import get_opencli_status, run_opencli_command  # noqa: E402
 
 
@@ -84,7 +84,7 @@ class OpenCliBridgeTests(unittest.TestCase):
             self.assertEqual(status.status_code, 200)
             self.assertIn("external_clis", status.json()["capabilities"])
 
-            with patch("api.harness_routes.run_opencli_command", return_value={"ok": True, "stdout": "done"}):
+            with patch("harness.routes.run_opencli_command", return_value={"ok": True, "stdout": "done"}):
                 run = client.post(
                     "/harness/opencli/run",
                     json={"user_id": "alice", "args": ["wx", "search", "TODO"]},

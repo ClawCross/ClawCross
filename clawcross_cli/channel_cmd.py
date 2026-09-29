@@ -33,8 +33,8 @@ from pathlib import Path
 from clawcross_cli import channels as catalog
 from clawcross_cli.channels import BotField, ChannelInfo
 from clawcross_cli.picker import curses_radiolist, prompt_text
-from src.utils.env_settings import read_env_all, write_env_settings
-from src.utils.runtime_paths import PID_DIR
+from src.backend.common.env_settings import read_env_all, write_env_settings
+from src.backend.common.runtime_paths import PID_DIR
 
 
 def _env_path() -> Path:
