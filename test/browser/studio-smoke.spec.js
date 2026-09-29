@@ -153,15 +153,6 @@ async function stubStudioNetwork(page, calls, options = {}) {
       last_transcript: '',
       status: 'disabled',
     },
-    buddy: {
-      compact_face: '^_^',
-      name: 'Mochi',
-      species: 'capybara',
-      rarity: 'rare',
-      personality: 'Calm but opinionated',
-      reaction: 'Waiting by the prompt',
-      available_actions: ['pet', 'bridge'],
-    },
   };
   const subagentRuntimeState = {
     status: 'success',
@@ -236,15 +227,6 @@ async function stubStudioNetwork(page, calls, options = {}) {
       stt_model: 'whisper-1',
       last_transcript: '',
       status: 'disabled',
-    },
-    buddy: {
-      compact_face: '^_^',
-      name: 'Mochi',
-      species: 'capybara',
-      rarity: 'rare',
-      personality: 'Calm but opinionated',
-      reaction: 'Watching Curie work',
-      available_actions: ['pet', 'bridge'],
     },
     memory: {
       summary: '2 entries · kairos off',
@@ -565,16 +547,6 @@ async function stubStudioNetwork(page, calls, options = {}) {
     };
     return json(route, { status: 'success', memory: currentRuntimeState.memory });
   });
-  await page.route('**/proxy_webot_buddy', async (route) => {
-    const payload = await route.request().postDataJSON();
-    calls.buddyActions = calls.buddyActions || [];
-    calls.buddyActions.push(payload);
-    currentRuntimeState.buddy = {
-      ...currentRuntimeState.buddy,
-      reaction: 'Purring after a bridge sync',
-    };
-    return json(route, { status: 'success', buddy: currentRuntimeState.buddy });
-  });
   await page.route('**/proxy_webot_tool_policy', async (route) => {
     if (route.request().method() !== 'GET') {
       return json(route, {
@@ -880,7 +852,6 @@ test('studio webot current runtime card stays synced over bridge websocket', asy
     bridgeAttach: 0,
     bridgeDetach: 0,
     voiceUpdates: [],
-    buddyActions: [],
     kairosUpdates: [],
     dreamRuns: 0,
     inboxDeliveries: 0,
@@ -909,8 +880,6 @@ test('studio webot current runtime card stays synced over bridge websocket', asy
   await expect(page.locator('#webot-current-session')).toContainText('Current Session');
   await expect(page.locator('#webot-current-session')).toContainText(/Execution swarm|Execution Swarm/);
   await expect(page.locator('#webot-current-session')).toContainText('Memory');
-  await expect(page.locator('#webot-current-session')).toContainText('Buddy');
-  await expect(page.locator('#webot-current-session')).toContainText('Waiting by the prompt');
 
   await page.locator('#webot-current-session button').filter({ hasText: 'Attach' }).click();
   await expect.poll(() => calls.bridgeAttach).toBe(1);
@@ -985,28 +954,15 @@ test('studio webot current runtime card stays synced over bridge websocket', asy
           last_transcript: 'Bridge runtime synced',
           status: 'enabled',
         },
-        buddy: {
-          compact_face: '^_^',
-          name: 'Mochi',
-          species: 'capybara',
-          rarity: 'rare',
-          personality: 'Calm but opinionated',
-          reaction: 'Bridge sync received',
-          available_actions: ['pet', 'bridge'],
-        },
       },
     });
   }, { sessionId: currentSessionId });
 
   await expect(page.locator('#webot-current-session')).toContainText('socket=live');
   await expect(page.locator('#webot-current-session')).toContainText('clients=1');
-  await expect(page.locator('#webot-current-session')).toContainText('Bridge sync received');
   await expect(page.locator('#webot-current-session')).toContainText('Bridge runtime synced');
   await expect(page.locator('#webot-current-session')).toContainText('kairos on');
 
-  await page.locator('#webot-current-session button').filter({ hasText: 'Pet' }).click();
-  await expect.poll(() => calls.buddyActions.length).toBe(1);
-  await expect(page.locator('#webot-current-session')).toContainText('Purring after a bridge sync');
 
   expect(pageErrors).toEqual([]);
 });

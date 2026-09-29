@@ -180,9 +180,7 @@ def render_runtime_context_block(
     recent_artifacts: list[dict[str, Any]] | None = None,
     recent_runs: list[dict[str, Any]] | None = None,
     memory: dict[str, Any] | None = None,
-    bridge: dict[str, Any] | None = None,
     voice: dict[str, Any] | None = None,
-    buddy: dict[str, Any] | None = None,
 ) -> str:
     # workspace is optional: it is fixed per session, so the caller carries it
     # in the stable system prompt rather than re-sending it here every turn.
@@ -239,23 +237,10 @@ def render_runtime_context_block(
             lines.append(
                 f"memory::{item.get('type', 'project')}::{item.get('name', '')}::{_trim_text(item.get('description') or item.get('snippet', ''), 100)}"
             )
-    if bridge:
-        lines.append(f"bridge_attached: {bool(bridge.get('attached', False))}")
-        lines.append(f"bridge_clients: {bridge.get('connected_clients', 0)}")
-        roles = bridge.get("roles") or []
-        if roles:
-            lines.append(f"bridge_roles: {', '.join(str(role) for role in roles)}")
     if voice:
         lines.append(f"voice_enabled: {bool(voice.get('enabled', False))}")
         if voice.get("tts_available"):
             lines.append(f"voice_tts: {voice.get('tts_model', '')}:{voice.get('tts_voice', '')}")
-    if buddy:
-        lines.append(
-            f"buddy::{buddy.get('species', '')}::{buddy.get('rarity', '')}::{buddy.get('name') or buddy.get('soul', {}).get('name', '')}"
-        )
-        buddy_note = buddy.get("reaction") or buddy.get("last_bubble")
-        if buddy_note:
-            lines.append(f"buddy_note: {_trim_text(str(buddy_note or ''), 100)}")
     return "\n".join(lines)
 
 

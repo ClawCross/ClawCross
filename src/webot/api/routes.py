@@ -11,13 +11,10 @@ from webot.models import (
     WeBotApprovalResolutionRequest,
     WeBotBridgeAttachRequest,
     WeBotBridgeDetachRequest,
-    WeBotBuddyActionRequest,
     WeBotClaudeKeepaliveUpdateRequest,
     WeBotClaudeKickoffRequest,
     WeBotClaudeProbeRequest,
     WeBotDreamRequest,
-    WeBotGoalHeartbeatRequest,
-    WeBotGoalUpdateRequest,
     WeBotKairosUpdateRequest,
     WeBotLspRequest,
     WeBotPlanUpdateRequest,
@@ -223,38 +220,6 @@ def create_webot_router(
     ):
         return await service.clear_session_todos(req, x_internal_token)
 
-    @router.get("/webot/session-goals")
-    async def list_session_goals(
-        user_id: str,
-        session_id: str = "",
-        status: str = "",
-        limit: int = 20,
-        password: str = "",
-        x_internal_token: str | None = Header(None),
-    ):
-        return await service.list_session_goals(
-            user_id,
-            session_id,
-            password,
-            status,
-            limit,
-            x_internal_token,
-        )
-
-    @router.post("/webot/session-goals")
-    async def update_session_goal(
-        req: WeBotGoalUpdateRequest,
-        x_internal_token: str | None = Header(None),
-    ):
-        return await service.update_session_goal(req, x_internal_token)
-
-    @router.post("/webot/session-goals/heartbeat")
-    async def record_goal_heartbeat(
-        req: WeBotGoalHeartbeatRequest,
-        x_internal_token: str | None = Header(None),
-    ):
-        return await service.record_goal_heartbeat(req, x_internal_token)
-
     @router.get("/webot/claude-code/status")
     async def get_claude_code_status(
         user_id: str,
@@ -326,13 +291,6 @@ def create_webot_router(
         x_internal_token: str | None = Header(None),
     ):
         return await service.run_dream(req, x_internal_token)
-
-    @router.post("/webot/buddy")
-    async def buddy_action(
-        req: WeBotBuddyActionRequest,
-        x_internal_token: str | None = Header(None),
-    ):
-        return await service.buddy_action(req, x_internal_token)
 
     @router.post("/webot/tool-approvals/resolve")
     async def resolve_tool_approval(

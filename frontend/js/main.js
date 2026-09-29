@@ -251,9 +251,6 @@ const i18n = {
         subagent_runtime_artifacts: 'Artifacts',
         subagent_runtime_relationships: 'Graph',
         subagent_runtime_current: 'Current Session',
-        subagent_runtime_buddy: 'Buddy',
-        subagent_runtime_goals: 'Goals',
-        subagent_runtime_no_goals: '暂无目标',
         subagent_runtime_claude_code: 'Claude Code',
         subagent_runtime_probe: '探测',
         subagent_runtime_kickoff: 'Kickoff',
@@ -1109,9 +1106,6 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         subagent_runtime_artifacts: 'Artifacts',
         subagent_runtime_relationships: 'Graph',
         subagent_runtime_current: 'Current Session',
-        subagent_runtime_buddy: 'Buddy',
-        subagent_runtime_goals: 'Goals',
-        subagent_runtime_no_goals: 'No goals yet',
         subagent_runtime_claude_code: 'Claude Code',
         subagent_runtime_probe: 'Probe',
         subagent_runtime_kickoff: 'Kickoff',
@@ -3644,14 +3638,6 @@ function _buildExtendedSections(runtime, item) {
     const sessionId = runtime?.session_id || item?.session_id || currentSessionId || '';
     const sections = [];
     sections.push(_buildWorkflowPresetSection(runtime, item));
-    if (runtime?.goals) {
-        sections.push(`
-            <div class="webot-runtime-section">
-                <div class="webot-runtime-title">${t('subagent_runtime_goals')}</div>
-                ${_buildRuntimeGoalList(runtime.goals)}
-            </div>
-        `);
-    }
     if (runtime?.claude_code) {
         const claude = runtime.claude_code || {};
         const status = claude.status || {};
@@ -3704,20 +3690,6 @@ function _buildExtendedSections(runtime, item) {
                 <div class="webot-runtime-detail">${_escapeAndFormatText(voice.last_transcript || '')}</div>
                 <div class="webot-runtime-actions">
                     <button class="webot-subagent-btn" type="button" onclick="toggleWeBotVoice('${encodeURIComponent(sessionId)}', ${voice.enabled ? 'false' : 'true'})">${voice.enabled ? 'Disable' : 'Enable'}</button>
-                </div>
-            </div>
-        `);
-    }
-    if (runtime?.buddy) {
-        const buddy = runtime.buddy || {};
-        sections.push(`
-            <div class="webot-runtime-section">
-                <div class="webot-runtime-title">${t('subagent_runtime_buddy')}</div>
-                <div class="webot-runtime-detail">${_escapeAndFormatText(`${buddy.compact_face || ''} ${buddy.name || buddy.soul?.name || ''}`)} · ${_escapeAndFormatText(buddy.species || '')} · ${_escapeAndFormatText(buddy.rarity || '')}</div>
-                <div class="webot-runtime-detail">${_escapeAndFormatText(buddy.personality || buddy.soul?.personality || '')}</div>
-                <div class="webot-runtime-detail">${_escapeAndFormatText(buddy.reaction || buddy.last_bubble || '')}</div>
-                <div class="webot-runtime-actions">
-                    <button class="webot-subagent-btn" type="button" onclick="petWeBotBuddy('${encodeURIComponent(sessionId)}')">Pet</button>
                 </div>
             </div>
         `);
@@ -4025,23 +3997,6 @@ async function runWeBotClaudeKickoff(sessionId) {
     }
 }
 
-async function petWeBotBuddy(sessionId) {
-    try {
-        const resp = await fetch('/proxy_webot_buddy', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({session_id: sessionId || currentSessionId || '', action: 'pet'}),
-        });
-        const data = await resp.json();
-        if (!resp.ok || data.status !== 'success') {
-            throw new Error(data.detail || data.error || 'Buddy action failed');
-        }
-        await refreshSubagentPanel();
-    } catch (e) {
-        _setWeBotPolicyStatus(String(e.message || 'Buddy action failed'), 'error');
-    }
-}
-
 async function refreshCurrentSessionRuntime() {
     if (!currentUserId || !currentSessionId) {
         return;
@@ -4155,35 +4110,6 @@ function _buildRuntimeItemList(items, emptyKey) {
             <span class="webot-runtime-text">${escapeHtml(item.step || item.title || item.tool_name || '')}</span>
         </div>
     `).join('');
-}
-
-function _buildRuntimeGoalList(goalsPayload) {
-    const items = goalsPayload && Array.isArray(goalsPayload.items) ? goalsPayload.items : [];
-    if (!items.length) {
-        return `<div class="webot-runtime-empty">${t('subagent_runtime_no_goals')}</div>`;
-    }
-    return items.slice(0, 4).map(goal => {
-        const usdLimit = Number(goal.budget_usd || goal.budget?.usd?.limit || 0);
-        const usdSpent = Number(goal.spent_usd || goal.budget?.usd?.spent || 0);
-        const tokenLimit = Number(goal.budget_tokens || goal.budget?.tokens?.limit || 0);
-        const tokenSpent = Number(goal.spent_tokens || goal.budget?.tokens?.spent || 0);
-        const budgetParts = [];
-        if (usdLimit || usdSpent) budgetParts.push(`$${usdSpent.toFixed(2)} / $${usdLimit.toFixed(2)}`);
-        if (tokenLimit || tokenSpent) budgetParts.push(`${tokenSpent} / ${tokenLimit} tokens`);
-        const heartbeat = goal.heartbeat_at ? `${goal.heartbeat_status || 'idle'} · ${String(goal.heartbeat_at).slice(0, 16)}` : (goal.heartbeat_status || 'idle');
-        return `
-            <div class="webot-runtime-block">
-                <div class="webot-runtime-row">
-                    <span class="webot-runtime-badge">${escapeHtml(goal.status || 'active')}</span>
-                    <span class="webot-runtime-text">${escapeHtml(goal.title || goal.goal_id || '')}</span>
-                </div>
-                <div class="webot-runtime-caption">${escapeHtml(`${goal.priority || 'normal'} · ${heartbeat}`)}</div>
-                ${goal.description ? `<div class="webot-runtime-detail">${_escapeAndFormatText(goal.description)}</div>` : ''}
-                ${budgetParts.length ? `<div class="webot-runtime-detail">${escapeHtml(budgetParts.join(' · '))}</div>` : ''}
-                ${goal.last_report ? `<div class="webot-runtime-detail">${_escapeAndFormatText(goal.last_report)}</div>` : ''}
-            </div>
-        `;
-    }).join('');
 }
 
 function _buildRuntimeVerificationList(items) {
