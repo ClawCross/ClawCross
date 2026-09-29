@@ -464,10 +464,9 @@ class OpenAIChatService:
             rounds += 1
         return current or {"messages": []}
 
-    async def _run_non_stream(
-        self,
-        ctx: OpenAIExecutionContext,
-    ):
+    async def _invoke(self, ctx: OpenAIExecutionContext) -> AIMessage | str:
+        """Run one turn to its end: the last message, or the text to answer with when
+        it stopped early (cancelled, out of steps)."""
         task_key = f"{ctx.user_id}#{ctx.session_id}"
         await self.agent.cancel_task(task_key)
 
@@ -489,18 +488,15 @@ class OpenAIChatService:
         except asyncio.CancelledError:
             logger.info("non-stream cancelled user=%s session=%s", ctx.user_id, ctx.session_id)
             await self._patch_cancelled_tool_calls(ctx.config)
-            return self.make_openai_response("⚠️ 已终止", model=ctx.model_name)
+            return "⚠️ 已终止"
         except AgentRecursionError:
             logger.warning(
                 "non-stream recursion limit hit user=%s session=%s limit=%s",
                 ctx.user_id, ctx.session_id, _GRAPH_RECURSION_LIMIT,
             )
             await self._patch_cancelled_tool_calls(ctx.config)
-            return self.make_openai_response(
-                "⚠️ 已超出本轮执行步数上限（recursion limit），已自动停止。"
-                "常见原因：工具/命令反复超时重试。请缩小任务范围、拆分步骤，或改用后台异步任务后重试。",
-                model=ctx.model_name,
-            )
+            return ("⚠️ 已超出本轮执行步数上限（recursion limit），已自动停止。"
+                    "常见原因：工具/命令反复超时重试。请缩小任务范围、拆分步骤，或改用后台异步任务后重试。")
         except Exception as e:
             error_chain = self._exception_chain_text(e)
             diagnosis = self._diagnose_exception(e)
@@ -522,16 +518,18 @@ class OpenAIChatService:
             raise HTTPException(status_code=500, detail=self._build_user_facing_error_text(e)) from e
         finally:
             self.agent.unregister_task(task_key)
+        return result["messages"][-1]
 
-        last_msg = result["messages"][-1]
+    async def _run_non_stream(self, ctx: OpenAIExecutionContext):
+        last_msg = await self._invoke(ctx)
+        if isinstance(last_msg, str):
+            return self.make_openai_response(last_msg, model=ctx.model_name)
         ext_tool_calls = self.format_tool_calls_for_openai(last_msg, ctx.external_tool_names)
         if ext_tool_calls:
             return self.make_openai_response(
                 self.extract_text(last_msg.content), model=ctx.model_name, tool_calls=ext_tool_calls
             )
-
-        reply = self.extract_text(last_msg.content)
-        return self.make_openai_response(reply, model=ctx.model_name)
+        return self.make_openai_response(self.extract_text(last_msg.content), model=ctx.model_name)
 
     async def _run_stream(
         self,
@@ -740,7 +738,18 @@ class OpenAIChatService:
         agent_record = self._target(user_id, session, req.model)
         if agent_record.driver != "webot":
             return await self._complete_with_agent(user_id, agent_record, req)
-        session_id = agent_record.agent_id
+        ctx = await self._context(user_id, agent_record.agent_id, req)
+        logger.info("chat user=%s session=%s stream=%s model=%s", user_id, ctx.session_id, req.stream, ctx.model_name)
+        if not req.stream:
+            return await self._run_non_stream(ctx)
+        return await self._run_stream(ctx)
+
+    async def answer(self, user_id: str, session_id: str, req: ChatCompletionRequest) -> str:
+        """One turn of WeBot agent *session_id*, for the agent layer: the reply's text."""
+        last_msg = await self._invoke(await self._context(user_id, session_id, req))
+        return last_msg if isinstance(last_msg, str) else self.extract_text(last_msg.content)
+
+    async def _context(self, user_id: str, session_id: str, req: ChatCompletionRequest) -> OpenAIExecutionContext:
         thread_id = f"{user_id}#{session_id}"
         config = {
             "configurable": {"thread_id": thread_id},
@@ -782,8 +791,7 @@ class OpenAIChatService:
         # Per-request LLM model override (from OASIS SessionExpert)
         if req.llm_override:
             user_input["llm_override"] = req.llm_override
-        thread_lock = await self.agent.get_thread_lock(thread_id)
-        ctx = OpenAIExecutionContext(
+        return OpenAIExecutionContext(
             user_id=user_id,
             session_id=session_id,
             thread_id=thread_id,
@@ -791,17 +799,9 @@ class OpenAIChatService:
             user_input=user_input,
             model_name=model_name,
             external_tool_names=external_tool_names,
-            thread_lock=thread_lock,
+            thread_lock=await self.agent.get_thread_lock(thread_id),
             max_tokens=effective_max_tokens,
         )
-
-        logger.info("chat user=%s session=%s stream=%s model=%s",
-                    user_id, session_id, req.stream, model_name)
-
-        if not req.stream:
-            return await self._run_non_stream(ctx)
-
-        return await self._run_stream(ctx)
 
     def list_models(self, authorization: str | None = None) -> dict:
         """The runtimes a new agent can have: ``webot``, each ACP agent, ``openclaw``.

@@ -41,17 +41,16 @@ def reply_channel(agent: Agent, conversation_id: str) -> str:
 
 
 class AgentGateway:
-    """``runtimes`` replaces the runtime of a driver (the Agent service gives WeBot its engine)."""
+    """``runtimes`` adds or replaces runtimes by driver: WeBot's is the Agent service's,
+    which runs WeBot."""
 
     def __init__(self, *, store: AgentStore | None = None, runtimes: dict[str, Runtime] | None = None):
         from external.acp import AcpRuntime
         from external.http import HttpRuntime
         from external.llm import LlmRuntime
         from external.openclaw import OpenclawRuntime
-        from webot.driver import WebotRuntime
 
         self.runtimes: dict[str, Runtime] = {
-            WEBOT: WebotRuntime(),
             ACPX: AcpRuntime(store),
             OPENCLAW: OpenclawRuntime(store),
             HTTP: HttpRuntime(store),
