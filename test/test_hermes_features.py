@@ -295,21 +295,22 @@ class TestSkillSystem(unittest.TestCase):
         self.assertNotIn(str(self.tmppath), prompt)
         self.assertNotIn("skills_manifest.json", prompt)
 
-    def test_agent_user_skills_prompt_uses_team_and_personal_sections(self):
+    def test_agent_user_skills_prompt_lists_the_owners_and_each_teams(self):
         from webot.engine.agent import TeamAgent
         from webot.skills import create_skill
 
         create_skill("alice", name="shared-skill", content=self._make_skill_content("shared-skill", "Shared"))
-        create_skill("alice", name="team-skill", content=self._make_skill_content("team-skill", "Team"), team="ops")
+        create_skill("alice", name="ops-skill", content=self._make_skill_content("ops-skill", "Ops"), team="ops")
+        create_skill("alice", name="dev-skill", content=self._make_skill_content("dev-skill", "Dev"), team="dev")
 
         agent = TeamAgent(str(SRC_DIR), str(self.tmppath / "checkpoints.db"))
         agent._prompts["_user_files_dir"] = str(self.tmppath / "user_files")
 
-        prompt = agent._get_user_skills("alice", team="ops")
-        self.assertIn("团队技能", prompt)
-        self.assertIn("共享技能", prompt)
-        self.assertIn("team-skill", prompt)
-        self.assertIn("shared-skill", prompt)
+        prompt = agent._get_user_skills("alice", ["dev", "ops"])  # an agent in two teams
+        for section, skill in (("团队「dev」技能", "dev-skill"), ("团队「ops」技能", "ops-skill"), ("个人技能", "shared-skill")):
+            self.assertIn(section, prompt)
+            self.assertIn(skill, prompt)
+        self.assertIn('team="团队名"', prompt)  # in several teams a call names the one it means
 
     def test_get_nonexistent_skill(self):
         from webot.skills import get_skill

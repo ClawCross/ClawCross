@@ -65,26 +65,25 @@ class TestMembership(TeamCase):
         self.assertIsNone(self.teams.address("alice", "s1"))
 
 
-class TestOneTeamPerAgent(TeamCase):
-    """members.json and the agent's ``team`` always say the same thing."""
+class TestTeamsOfAnAgent(TeamCase):
+    """members.json and the agent's ``teams`` always say the same thing."""
 
-    def team_of(self, agent_id):
-        return (self.agents.get("alice", agent_id).team, self.teams.teams_of("alice", agent_id))
+    def teams_of(self, agent_id):
+        return (self.agents.get("alice", agent_id).teams, self.teams.teams_of("alice", agent_id))
 
     def test_joining_leaving_renaming_and_deleting_keep_both_in_step(self):
         a = self.agents.create("alice", driver=WEBOT, name="Coder", agent_id="s1")
         self.teams.create("alice", "ops")
         self.teams.add("alice", "dev", a.agent_id, role="Builder")
-        self.assertEqual(self.team_of("s1"), ("dev", ["dev"]))
-        self.teams.add("alice", "ops", a.agent_id)  # joining another team moves it there
-        self.assertEqual(self.team_of("s1"), ("ops", ["ops"]))
+        self.teams.add("alice", "ops", a.agent_id)  # an agent may be in several teams
+        self.assertEqual(self.teams_of("s1"), (["dev", "ops"], ["dev", "ops"]))
         self.teams.rename("alice", "ops", "ops2")
-        self.assertEqual(self.team_of("s1"), ("ops2", ["ops2"]))
+        self.assertEqual(self.teams_of("s1"), (["dev", "ops2"], ["dev", "ops2"]))
         self.teams.remove("alice", "ops2", a.agent_id)
-        self.assertEqual(self.team_of("s1"), ("", []))
-        self.teams.add("alice", "dev", a.agent_id)
+        self.assertEqual(self.teams_of("s1"), (["dev"], ["dev"]))
         self.teams.delete("alice", "dev")
-        self.assertEqual(self.team_of("s1"), ("", []))  # the agent stays, in no team
+        self.assertEqual(self.teams_of("s1"), ([], []))
+        self.assertIsNotNone(self.agents.get("alice", a.agent_id))  # the agent stays
 
 
 class TestManifest(TeamCase):
@@ -113,7 +112,7 @@ class TestManifest(TeamCase):
         self.assertEqual(coder.agent.agent_id, existing.agent_id)  # "session" is the id of an agent already there
         planner = self.teams.member("alice", "dev", "Planner").agent
         # A new agent gets its own copy of the team persona its tag names.
-        self.assertEqual((planner.config["persona"], planner.config["team"]), ("你负责规划。", "dev"))
+        self.assertEqual((planner.config["persona"], planner.teams), ("你负责规划。", ["dev"]))
         claw = self.teams.member("alice", "dev", "Claw").agent
         self.assertEqual((claw.config["api_url"], claw.config["model"], claw.config["global_name"]),
                          ("http://oc", "agent:main", "main"))

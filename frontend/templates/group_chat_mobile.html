@@ -14432,7 +14432,7 @@ function renderAgentBasicInfo(agent) {
       <div><strong>${esc(agent.name)}</strong></div>
       <div style="margin-top:4px;">
         ${renderPlatformBadge(agentPlatformLabel(agent.platform))}
-        ${settings.team ? `<span class="agent-detail-tag blue">${esc(settings.team)}</span>` : ''}
+        ${(settings.teams || []).map(team => `<span class="agent-detail-tag blue">${esc(team)}</span>`).join('')}
         ${status.state ? `<span class="agent-detail-tag ${status.state === 'running' ? 'green' : 'gray'}">${esc(status.state)}</span>` : ''}
       </div>
     </div>

@@ -28,7 +28,7 @@ ClawCross 把一台机器上所有 agent 统一成一种东西：**有编号的�
 | `owner` | 所属用户空间 |
 | `name` | 显示名，默认等于编号 |
 | `driver` | 运行方式，只用来决定把信息转给谁 |
-| `config` | agent 自己的设置：`persona` 是人设文本本身（用人设库里的人设时复制一份进来）；WeBot 还有 `tools`（它有的工具，不填为全部）和 `llm`（模型）；外部 agent 有 `platform`、`api_url`、`api_key`、`model`、`headers`、`meta`，OpenClaw 还有 `global_name`，指明是哪一个 OpenClaw agent |
+| `config` | agent 自己的设置：`persona` 是人设文本本身（用人设库里的人设时复制一份进来）；`teams` 是它所在的 team（可以有多个，只由 team 层随成员变动维护，和各 team 的 `members.json` 一致）；WeBot 还有 `tools`（它有的工具，不填为全部）和 `llm`（模型）；外部 agent 有 `platform`、`api_url`、`api_key`、`model`、`headers`、`meta`，OpenClaw 还有 `global_name`，指明是哪一个 OpenClaw agent |
 | `runtime` | 运行时已经知道的东西（发过的身份 prompt、最后使用时间），只有 L1 读写 |
 
 在各运行时内部，会话都以编号命名：

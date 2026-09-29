@@ -39,7 +39,7 @@ def _prompt_file(name: str) -> str:
 
 def identity_prompt(agent: Agent, context: dict[str, Any], instructions: str) -> str:
     """Who the agent is, as WeBot's system prompt says it: the chat rules, its own
-    persona text, the owner's profile, its skills and the team's workflows, then
+    persona text, the owner's profile, its skills and its teams' workflows, then
     the caller's instructions."""
     from webot.profiles import frame_session_identity
     from webot.skills import build_user_profile_block, build_user_skills_listing
@@ -50,13 +50,13 @@ def identity_prompt(agent: Agent, context: dict[str, Any], instructions: str) ->
         _system_prompt = "\n\n".join(p for p in (
             _prompt_file("external_agent_system.txt"), _prompt_file("conversation_rules.txt"),
         ) if p)
-    team = str(context.get("team") or "")
+    teams = list(context.get("teams") or [])
     parts = [
         _system_prompt,
         frame_session_identity(agent.name, "", str(agent.config.get("persona") or "").strip()),
         build_user_profile_block(agent.owner),
-        build_user_skills_listing(agent.owner, team=team, tool_mode="cli"),
-        build_team_workflow_prompt(agent.owner, team=team),
+        build_user_skills_listing(agent.owner, teams=teams, tool_mode="cli"),
+        *(build_team_workflow_prompt(agent.owner, team=team) for team in teams),
         instructions,
     ]
     return "\n\n".join(p.strip() for p in parts if p and p.strip())
