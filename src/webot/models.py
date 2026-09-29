@@ -99,13 +99,14 @@ class WeBotSessionInboxDeliverRequest(WeBotSessionRuntimeRequest):
 
 class WeBotSessionInboxListRequest(WeBotSessionRuntimeRequest):
     target_ref: str = ""
-    status: str = "queued"
+    status: str = "unread"
     limit: int = 20
 
 
 class WeBotSessionInboxSendRequest(WeBotSessionRuntimeRequest):
     target_ref: str = ""
     body: str = ""
+    summary: str = ""
 
 
 class WeBotRunInterruptRequest(WeBotSessionRuntimeRequest):

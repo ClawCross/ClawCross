@@ -15,7 +15,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from core.lightweight_agent_runtime import AgentRecursionError, LightweightAgentRuntime
 from utils.checkpoint_paths import checkpoint_db_path_for_thread
-from utils.checkpoint_repository import delete_thread_records, list_thread_ids_by_prefix
+from utils.checkpoint_repository import delete_thread_records, delete_thread_records_like, list_thread_ids_by_prefix
 from utils.context_store import ContextStore
 from webot.session_search import session_search
 
@@ -53,6 +53,37 @@ class CheckpointStorageTests(unittest.IsolatedAsyncioTestCase):
                 restored = await store.load_context("alice#missing")
             self.assertEqual(restored, [])
             self.assertFalse(checkpoint_db_path_for_thread("alice#missing", checkpoint_dir).exists())
+
+    async def test_system_prompt_is_fixed_across_calls_and_process_restarts(self):
+        with TemporaryDirectory() as tmpdir:
+            checkpoint_dir = Path(tmpdir) / "agent_checkpoints"
+            thread_id = "alice#session"
+            async with ContextStore(checkpoint_dir) as store:
+                self.assertIsNone(await store.get_system_prompt(thread_id))
+                self.assertEqual(await store.save_system_prompt_if_absent(thread_id, "skill: old"), "skill: old")
+                self.assertEqual(await store.save_system_prompt_if_absent(thread_id, "skill: changed"), "skill: old")
+
+            async with ContextStore(checkpoint_dir) as store:
+                self.assertEqual(await store.get_system_prompt(thread_id), "skill: old")
+                self.assertEqual(await store.save_system_prompt_if_absent(thread_id, "skill: new"), "skill: old")
+
+            await delete_thread_records(str(checkpoint_dir), thread_id)
+            async with ContextStore(checkpoint_dir) as store:
+                self.assertIsNone(await store.get_system_prompt(thread_id))
+                self.assertEqual(await store.save_system_prompt_if_absent(thread_id, "skill: new"), "skill: new")
+
+    async def test_bulk_session_delete_removes_frozen_system_prompts(self):
+        with TemporaryDirectory() as tmpdir:
+            checkpoint_dir = Path(tmpdir) / "agent_checkpoints"
+            async with ContextStore(checkpoint_dir) as store:
+                await store.save_system_prompt_if_absent("alice#one", "first")
+                await store.save_system_prompt_if_absent("alice#two", "second")
+                await store.save_system_prompt_if_absent("bob#one", "keep")
+            await delete_thread_records_like(str(checkpoint_dir), "alice#%")
+            async with ContextStore(checkpoint_dir) as store:
+                self.assertIsNone(await store.get_system_prompt("alice#one"))
+                self.assertIsNone(await store.get_system_prompt("alice#two"))
+                self.assertEqual(await store.get_system_prompt("bob#one"), "keep")
 
     async def test_context_store_round_trips_multimodal_tool_content(self):
         with TemporaryDirectory() as tmpdir:

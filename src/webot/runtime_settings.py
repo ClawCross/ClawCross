@@ -48,6 +48,14 @@ class ApprovalSettings(BaseModel):
     reviewer_model: str = Field(default="", max_length=200)
     reviewer_policy: str = Field(default="", max_length=4000)
     reviewer_timeout_seconds: int = Field(default=30, ge=5, le=120)
+    command_sandbox: Literal["off", "srt"] = "off"
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_container_setting(cls, value):
+        if isinstance(value, dict) and value.get("command_sandbox") == "container":
+            return {**value, "command_sandbox": "srt"}
+        return value
 
 
 def resolve_context_window(settings: ContextSettings, model: str | None = None) -> int:

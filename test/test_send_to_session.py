@@ -1,14 +1,10 @@
-"""send_to_session: one tool for messages between sessions.
-
-Both modes go through /system_trigger, so the receiver's current turn is never
-interrupted — a message queues behind it. wait only decides whether the sender
-waits for the reply.
-"""
+"""send_to_session stores messages in the inbox and wakes the target session."""
 
 import importlib
 import sys
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -19,6 +15,7 @@ if str(SRC_DIR) not in sys.path:
 import httpx
 
 webot = importlib.import_module("mcp_servers.webot")
+from webot import runtime_store
 
 
 class _Response:
@@ -78,11 +75,14 @@ class SendToSessionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_without_wait_it_queues_through_system_trigger_and_returns(self):
         self._client()
-        result = await webot.send_to_session("alice", "worker", "please check X", source_session="main")
-        self.assertIn("已投递", result)
+        result = await webot.send_to_session("alice", "worker", "please check X", source_session="main", summary="Review X")
+        self.assertIn("已入", result)
         url, body = self.calls[0]
         self.assertTrue(url.endswith("/system_trigger"))
         self.assertEqual((body["user_id"], body["session_id"], body["wait_reply"]), ("alice", "worker", False))
+        self.assertEqual(body["inbox_source_session"], "main")
+        self.assertEqual(body["inbox_source_user"], "alice")
+        self.assertEqual(body["inbox_summary"], "Review X")
         # The receiver can tell who wrote: the message is never mistaken for its user.
         self.assertTrue(body["text"].startswith("[来自 alice#main 的消息]"))
 
@@ -91,7 +91,7 @@ class SendToSessionTests(unittest.IsolatedAsyncioTestCase):
         result = await webot.send_to_session("alice", "worker", "is X fine?", wait=True, source_session="main")
         self.assertIn("X is fine", result)
         self.assertTrue(self.calls[0][1]["wait_reply"])
-        self.assertIn("直接用文字回答", self.calls[0][1]["text"])
+        self.assertEqual(self.calls[0][1]["inbox_source_session"], "main")
 
     async def test_waiting_on_its_own_session_is_refused(self):
         self._client()
@@ -115,7 +115,39 @@ class SendToSessionTests(unittest.IsolatedAsyncioTestCase):
         self._client(timeout_error=True)
         result = await webot.send_to_session("alice", "worker", "slow question", wait=True, source_session="main", timeout=1)
         self.assertIn("超时", result)
-        self.assertIn("已投递", result)
+        self.assertIn("可能已经入箱", result)
+
+    async def test_read_and_mark_tools_are_scoped_to_the_current_session(self):
+        with TemporaryDirectory() as tmpdir, patch.object(runtime_store, "DEFAULT_DB_PATH", Path(tmpdir) / "runtime.db"):
+            own = runtime_store.create_inbox_message("alice", source_session="main", target_session="worker", content="full private text", title="private summary")
+            other_session = runtime_store.create_inbox_message("alice", source_session="main", target_session="other", content="other session")
+            other_user = runtime_store.create_inbox_message("bob", source_session="main", target_session="worker", content="other user")
+            listed = await webot.read_session_inbox("alice", source_session="worker")
+            self.assertIn(own.message_id, listed)
+            self.assertIn("full private text", listed)
+            self.assertNotIn(other_session.message_id, listed)
+            self.assertNotIn(other_user.message_id, listed)
+            self.assertEqual(runtime_store.count_inbox_messages("alice", "worker", status="unread"), 1)
+            missing = await webot.read_session_inbox("alice", [other_session.message_id], source_session="worker")
+            self.assertIn("未找到", missing)
+            marked = await webot.mark_session_inbox_read("alice", [own.message_id, other_session.message_id], source_session="worker")
+            self.assertIn("已标记 1 条", marked)
+            self.assertEqual(runtime_store.count_inbox_messages("alice", "worker", status="unread"), 0)
+            self.assertEqual(runtime_store.count_inbox_messages("alice", "other", status="unread"), 1)
+            self.assertTrue(runtime_store.get_inbox_message("alice", "worker", own.message_id).read_at)
+            self.assertFalse(runtime_store.get_inbox_message("alice", "other", other_session.message_id).read_at)
+
+    async def test_read_all_and_mark_all_have_separate_effects(self):
+        with TemporaryDirectory() as tmpdir, patch.object(runtime_store, "DEFAULT_DB_PATH", Path(tmpdir) / "runtime.db"):
+            for body in ("first", "second"):
+                runtime_store.create_inbox_message("alice", source_session="main", target_session="worker", content=body)
+            result = await webot.read_session_inbox("alice", source_session="worker")
+            self.assertIn("first", result)
+            self.assertIn("second", result)
+            self.assertEqual(runtime_store.count_inbox_messages("alice", "worker", status="unread"), 2)
+            marked = await webot.mark_session_inbox_read("alice", source_session="worker")
+            self.assertIn("已标记 2 条", marked)
+            self.assertEqual(runtime_store.count_inbox_messages("alice", "worker", status="unread"), 0)
 
 
 if __name__ == "__main__":
