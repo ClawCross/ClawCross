@@ -19,13 +19,15 @@ from fastapi.testclient import TestClient  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 
 import agents.store as store_module  # noqa: E402
-from agents.gateway import AgentGateway, persona_agent, reply_channel, temp_session_agent  # noqa: E402
+from agents.client import AgentClient  # noqa: E402
+from agents.gateway import AgentGateway, reply_channel  # noqa: E402
 from agents.messages import AgentMessage, AgentReply, DeliveryReceipt  # noqa: E402
 from agents.routes import create_agents_router  # noqa: E402
 from agents.runtime import NO_TIMEOUT, ControlError  # noqa: E402
 from agents.store import (  # noqa: E402
     ACPX,
     HTTP,
+    LLM,
     OPENCLAW,
     WEBOT,
     AgentExists,
@@ -146,16 +148,14 @@ class TestGateway(StoreCase):
         return send.await_args.args[0]
 
     def test_webot_is_asked_in_its_session_with_mode_tools_and_schema(self):
-        class Reply(BaseModel):
-            content: str
-
-        request = self.ask(self.webot(), mode="readonly", tools=["read_file"], response_format=Reply,
+        reply_format = {"type": "json_schema", "json_schema": {"name": "Reply", "schema": {"type": "object"}}}
+        request = self.ask(self.webot(), mode="readonly", tools=["read_file"], response_format=reply_format,
                            timeout=NO_TIMEOUT)
         body = request.options["body"]
         self.assertEqual(request.session, "s1")
         self.assertEqual(body["messages"][0], {"role": "system", "content": "rules"})
         self.assertEqual((body["session_mode"], body["enabled_tools"]), ("readonly", ["read_file"]))
-        self.assertEqual(body["response_format"]["json_schema"]["name"], "Reply")
+        self.assertEqual(body["response_format"], reply_format)  # WeBot enforces it itself
         self.assertIsNone(request.options["timeout"])
         self.assertEqual(request.options["headers"]["Authorization"], bearer("alice"))
         self.assertTrue(request.options["_history_disabled"])  # WeBot keeps its own
@@ -197,15 +197,16 @@ class TestGateway(StoreCase):
         self.assertFalse(reply.ok)
         self.assertIn("api_url", reply.error)
 
-    def test_persona_call_takes_the_pydantic_model_itself(self):
-        class Reply(BaseModel):
-            content: str
-
-        request = self.ask(persona_agent("alice", "Critic", llm={"model": "m1"}), response_format=Reply)
+    def test_a_model_call_agent_decodes_within_the_schema(self):
+        critic = self.store.create("alice", driver=LLM, config={"llm": {"model": "m1"}}, name="Critic",
+                                   agent_id="tmp__t__critic__1")
+        reply_format = {"type": "json_schema", "json_schema": {"name": "Reply", "schema": {"type": "object"}}}
+        request = self.ask(critic, response_format=reply_format)
         self.assertEqual(request.platform, "temp")
-        self.assertIs(request.options["response_schema"], Reply)
+        self.assertEqual(request.options["response_schema"], {"type": "object", "title": "Reply"})
         self.assertEqual(request.options["model"], "m1")
         self.assertTrue(request.options["_history_disabled"])
+        self.assertFalse(critic.remembers)
 
     def test_webot_is_triggered_through_the_system_trigger(self):
         patcher, calls = _http()
@@ -247,17 +248,11 @@ class TestGateway(StoreCase):
         self.assertTrue(asyncio.run(run()).accepted)
         self.assertEqual(replies[0].content, "done")
 
-    def test_only_temporary_sessions_are_discarded(self):
-        with self.assertRaises(ValueError):
-            temp_session_agent("alice", "x", "s1")
-        with self.assertRaises(ValueError):
-            asyncio.run(self.gateway.discard(self.webot()))
-        self.store.ensure("alice", "tmp__t__x__1")  # used, so it is in the table
+    def test_destroying_a_webot_agent_deletes_its_session(self):
         patcher, calls = _http()
         with patcher:
-            self.assertTrue(asyncio.run(self.gateway.discard(temp_session_agent("alice", "x", "tmp__t__x__1"))))
-        self.assertEqual(calls[0], ("http://agent.test/delete_session", {"user_id": "alice", "session_id": "tmp__t__x__1"}))
-        self.assertIsNone(self.store.get("alice", "tmp__t__x__1"))
+            asyncio.run(self.gateway.destroy(self.webot()))
+        self.assertEqual(calls[0], ("http://agent.test/delete_session", {"user_id": "alice", "session_id": "s1"}))
 
     def test_reply_channel_depends_on_the_runtime(self):
         self.assertIn('send_to_group(group_id="g_1"', reply_channel(self.webot(), "g_1"))
@@ -355,7 +350,7 @@ class TestControl(StoreCase):
         self.assertEqual(self.store.get("alice", agent.agent_id).runtime, {})
 
 
-class TestAgentsApi(StoreCase):
+class ApiCase(StoreCase):
     def setUp(self):
         super().setUp()
         self.gateway = AgentGateway(store=self.store, runtimes={WEBOT: WebotRuntime(engine=_FakeWebot())})
@@ -374,6 +369,9 @@ class TestAgentsApi(StoreCase):
 
     def call(self, method, path, user="alice", **kwargs):
         return self.client.request(method, path, headers={"Authorization": bearer(user)}, **kwargs)
+
+
+class TestAgentsApi(ApiCase):
 
     def test_create_list_update_and_delete_any_platform(self):
         webot = self.call("POST", "/v1/agents", json={"name": "Coder", "persona": "coder"}).json()
@@ -425,6 +423,42 @@ class TestAgentsApi(StoreCase):
         self.assertEqual(self.gateway.ask.await_args.args[1].text, "ping")
         self.assertEqual(self.call("POST", "/v1/agents/s1/control", json={"action": "explode"}).status_code, 400)
         self.assertEqual(self.call("POST", "/v1/agents/s1/control", json={"action": "cancel"}).json()["cancelled"], True)
+
+
+class TestAgentClient(ApiCase):
+    """Another process reaches agents over the entrances: ``agents.client`` against the router."""
+
+    def client_for(self, owner="alice"):
+        import httpx
+
+        transport, real = httpx.ASGITransport(app=self.client.app), httpx.AsyncClient
+        patcher = mock.patch("agents.client.httpx.AsyncClient",
+                             lambda timeout=None: real(transport=transport, timeout=timeout))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return AgentClient(owner, base_url="http://agent.test", internal_token=TOKEN)
+
+    def test_make_ask_and_delete_a_temporary_agent(self):
+        class Reply(BaseModel):
+            content: str
+
+        client = self.client_for()
+
+        async def run():
+            made = await client.create(agent_id="tmp__t__c__1", name="Critic", platform="llm", llm={"model": "m1"})
+            again = await client.create(agent_id="tmp__t__c__1", platform="llm")  # already there: that agent
+            reply = await client.ask("tmp__t__c__1", AgentMessage(text="hi", instructions="rules"),
+                                     response_format=Reply, timeout=NO_TIMEOUT)
+            return made, again, reply, await client.delete("tmp__t__c__1"), await client.delete("tmp__t__c__1")
+
+        made, again, reply, deleted, twice = asyncio.run(run())
+        self.assertEqual((made["platform"], again["agent_id"], reply.content), ("llm", "tmp__t__c__1", "pong"))
+        agent, msg = self.gateway.ask.await_args.args
+        kwargs = self.gateway.ask.await_args.kwargs
+        self.assertEqual((agent.driver, agent.config["llm"], msg.instructions), (LLM, {"model": "m1"}, "rules"))
+        self.assertEqual((kwargs["timeout"], kwargs["response_format"]["json_schema"]["name"]), (NO_TIMEOUT, "Reply"))
+        self.assertEqual((deleted, twice), (True, False))
+        self.assertIsNone(self.store.get("alice", "tmp__t__c__1"))
 
 
 class TestOpenAIRouting(StoreCase):

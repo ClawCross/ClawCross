@@ -1,14 +1,14 @@
 """What a Python workflow can reach: the team's agents and the persona library.
 
-Agents are reached through the agent gateway, whatever runtime they live in.
-A persona call is a temporary agent made for that one call.
+Agents are asked by their id over the agent layer's entrances, whatever runtime
+they live in. A persona call is a temporary agent made for that one call.
 """
 
 from __future__ import annotations
 
-import asyncio
 import os
 import sys
+import uuid
 from copy import deepcopy
 from typing import Any
 
@@ -16,7 +16,7 @@ _SRC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "src")
 if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
 
-from agents.gateway import get_gateway, persona_agent
+from agents.client import AgentClient
 from agents.messages import AgentMessage, AgentReply
 from agents.routes import agent_card
 from agents.store import Agent, get_store
@@ -45,15 +45,12 @@ def build_persona_catalog(user_id: str, team: str = "") -> list[dict[str, Any]]:
     return items
 
 
-async def _ask(agent: Agent, msg: AgentMessage) -> AgentReply:
-    return await asyncio.to_thread(lambda: asyncio.run(get_gateway().ask(agent, msg)))
-
-
 class AgentCenter:
     def __init__(self, user_id: str, team: str = ""):
         self.user_id = user_id
         self.team = team
         self._personas = build_persona_catalog(user_id, team)
+        self._client = AgentClient(user_id)
 
     # ── agents ───────────────────────────────────────────────────────────
 
@@ -89,7 +86,7 @@ class AgentCenter:
         persona = persona_override if persona_override is not None else (
             str(self.get_persona(persona_tag).get("persona") or "") if persona_tag else "")
         instructions = _build_identity_prompt(role, persona).strip() if persona else ""
-        return await _ask(agent, AgentMessage(text=prompt, instructions=instructions))
+        return await self._client.ask(agent.agent_id, AgentMessage(text=prompt, instructions=instructions))
 
     # ── personas ─────────────────────────────────────────────────────────
 
@@ -135,6 +132,10 @@ class AgentCenter:
         return await self._one_call("llm", "", prompt, llm)
 
     async def _one_call(self, name: str, persona: str, prompt: str, llm: dict[str, Any]) -> AgentReply:
-        agent = persona_agent(self.user_id, name, team=self.team, llm=llm)
+        agent_id = f"tmp__py__{uuid.uuid4().hex[:12]}"
+        await self._client.create(agent_id=agent_id, name=name, platform="llm", llm=llm)
         instructions = _build_identity_prompt(name, persona).strip() if persona else ""
-        return await _ask(agent, AgentMessage(text=prompt, instructions=instructions))
+        try:
+            return await self._client.ask(agent_id, AgentMessage(text=prompt, instructions=instructions))
+        finally:
+            await self._client.delete(agent_id)

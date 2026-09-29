@@ -24,9 +24,10 @@ from pydantic import BaseModel, Field
 
 from agents.gateway import AgentGateway
 from agents.messages import AgentMessage
-from agents.runtime import ControlError
+from agents.runtime import NO_TIMEOUT, ControlError
 from agents.store import (
     HTTP,
+    LLM,
     WEBOT,
     Agent,
     AgentExists,
@@ -56,6 +57,7 @@ class AgentCreate(BaseModel):
     model: str = ""
     headers: dict[str, Any] = Field(default_factory=dict)
     meta: dict[str, Any] = Field(default_factory=dict)
+    llm: dict[str, Any] = Field(default_factory=dict)  # webot / llm: model, api_key, base_url, provider, temperature, max_tokens
 
 
 class AgentPatch(BaseModel):
@@ -70,8 +72,8 @@ class AgentMessageRequest(BaseModel):
     context: dict[str, Any] = Field(default_factory=dict)
     mode: str | None = None
     tools: list[str] | None = None
-    response_format: dict | None = None
-    timeout: float | None = None
+    response_format: dict | None = None  # OpenAI response_format
+    timeout: float | None = None  # seconds; 0 waits as long as the agent takes; none: the runtime's default
     platform: str = ""       # the runtime of a new agent
 
 
@@ -98,7 +100,7 @@ def agent_card(agent: Agent) -> dict[str, Any]:
     settings = {key: config.get(key, "") for key in _SHARED_SETTINGS}
     if agent.driver == WEBOT:
         settings["tools"] = config.get("tools")
-    else:
+    elif agent.driver != LLM:
         settings.update({key: config.get(key) for key in _EXTERNAL_SETTINGS if key != "api_key"})
         settings["has_api_key"] = bool(config.get("api_key"))
     return {
@@ -120,9 +122,11 @@ def runtime_of(platform: str) -> tuple[str, dict[str, Any]]:
 def new_agent_config(body: AgentCreate) -> tuple[str, dict[str, Any]]:
     driver, config = runtime_of(body.platform)
     config.update({"persona": body.persona.strip(), "team": body.team.strip()})
-    if driver == WEBOT:
-        if body.tools is not None:
-            config["tools"] = body.tools
+    if driver == WEBOT and body.tools is not None:
+        config["tools"] = body.tools
+    if driver in (WEBOT, LLM):
+        if body.llm:
+            config["llm"] = dict(body.llm)
         return driver, config
     config.update({
         "global_name": body.global_name.strip(),
@@ -208,7 +212,7 @@ def create_agents_router(
         agent = target(user, ref, body.platform)
         reply = await gateway.ask(
             agent, message(user, body), context=body.context, mode=body.mode, tools=body.tools,
-            response_format=body.response_format, timeout=body.timeout,
+            response_format=body.response_format, timeout=NO_TIMEOUT if body.timeout == 0 else body.timeout,
         )
         return {"agent": agent_card(agent), "ok": reply.ok, "content": reply.content, "error": reply.error}
 

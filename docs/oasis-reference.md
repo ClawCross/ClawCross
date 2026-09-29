@@ -74,9 +74,9 @@ Every participant is an agent, named in one of two ways (full grammar in [create
 | Form | Who | Memory | Backend |
 |---|---|---|---|
 | `agent: <ref>` | one of your agents — in team mode a member's name, otherwise its id or `<team>.<name>`; an id not seen before is a new agent | its own, across topics | whatever the agent runs on: WeBot, Codex / Claude Code / Gemini via `acpx`, OpenClaw, HTTP |
-| `persona: <tag>` | a temporary agent wearing the persona `<tag>` | this topic only | `tools: none` (default): one model call per turn; `tools: all` / `[names]`: a temporary WeBot session with those tools, deleted when the topic ends |
+| `persona: <tag>` | a temporary agent (`tmp__<topic>__<tag>__<n>`) wearing the persona `<tag>`, made before its first turn and deleted when the topic ends | this topic only | `tools: none` (default): an `llm` agent, one model call per turn; `tools: all` / `[names]`: a WeBot session with those tools |
 
-Every post records its author's id (`author_id`): `ag_…` for your agents, `u:<user>` for people; a temporary persona has none.
+Every post records its author's id (`author_id`): the agent's id (a temporary persona's is its `tmp__…` id), `u:<user>` for people.
 
 ```yaml
 - id: review

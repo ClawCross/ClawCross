@@ -13,7 +13,6 @@ import os
 from typing import Any
 
 import httpx
-from pydantic import BaseModel
 
 from agents.messages import AgentMessage, AgentReply, DeliveryReceipt, build_openai_content
 from agents.runtime import NO_TIMEOUT, ControlError, Runtime
@@ -29,19 +28,6 @@ def _fields(mode: str | None, tools: list[str] | None) -> dict[str, Any]:
         if mode == "chat":
             fields["enabled_tools"] = []  # chat: no tool calls at all
     return fields
-
-
-def _response_format(response_format: Any) -> Any:
-    """A Pydantic model as the ``json_schema`` ``response_format`` WeBot enforces."""
-    if not (isinstance(response_format, type) and issubclass(response_format, BaseModel)):
-        return response_format
-    from core.tool_schema import to_strict_parameters
-
-    return {"type": "json_schema", "json_schema": {
-        "name": response_format.__name__,
-        "schema": to_strict_parameters(response_format.model_json_schema()),
-        "strict": True,
-    }}
 
 
 class WebotRuntime(Runtime):
@@ -68,7 +54,7 @@ class WebotRuntime(Runtime):
         messages.append({"role": "user", "content": build_openai_content(msg.text, msg.attachments)})
         body: dict[str, Any] = {"model": "webot", "messages": messages, "stream": False, **_fields(mode, tools)}
         if response_format is not None:
-            body["response_format"] = _response_format(response_format)
+            body["response_format"] = response_format
         if agent.config.get("llm"):
             body["llm_override"] = agent.config["llm"]
         result = await send_to_agent(SendToAgentRequest(

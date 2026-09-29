@@ -37,12 +37,12 @@ WEBOT = "webot"
 ACPX = "acpx"
 OPENCLAW = "openclaw"
 HTTP = "http"
-DRIVERS = (WEBOT, ACPX, OPENCLAW, HTTP)
-# A single model call with a persona: a temporary agent, never stored.
+# A model call with a persona: no tools, remembers nothing between messages.
 LLM = "llm"
+DRIVERS = (WEBOT, ACPX, OPENCLAW, HTTP, LLM)
 
-# Throwaway WeBot sessions (OASIS personas with tools) start with this; they are
-# discarded, record and all, when their task ends.
+# Agents made for one task (OASIS personas) start with this; they are deleted,
+# record and all, when their task ends.
 TEMP_SESSION_PREFIX = "tmp__"
 
 
@@ -106,8 +106,8 @@ def driver_for_platform(platform: str) -> str:
     pl = canonical_platform(platform)
     if pl in ("", WEBOT):
         return WEBOT
-    if pl == OPENCLAW:
-        return OPENCLAW
+    if pl in (OPENCLAW, LLM):
+        return pl
     from integrations.acpx_cli_tools import acpx_agent_tags_with_legacy
     if pl in {canonical_platform(t) for t in acpx_agent_tags_with_legacy()}:
         return ACPX

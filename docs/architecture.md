@@ -10,7 +10,7 @@ ClawCross 把一台机器上所有 agent 统一成一种东西：**有编号的�
    ▼
 ┌ L2 组合 ─ 群聊/私聊（发信息的封装）· workflow（按顺序调用 agent）· team（命名空间）──┐
 ├ L1 agent ─ 一张表：每个会话一行，会话号 = agent 编号 · 三种入口 · 各运行时 ────────┤
-│   运行方式：webot · acpx（codex / claude / gemini…）· openclaw · http · llm（一次调用）│
+│   运行方式：webot · acpx（codex / claude / gemini…）· openclaw · http · llm（模型调用）│
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -52,7 +52,7 @@ ClawCross 把一台机器上所有 agent 统一成一种东西：**有编号的�
 
 ```
 GET    /v1/agents                   ?status=1 附带状态
-POST   /v1/agents                   {agent_id?, name?, platform, persona?, team?, tools?, global_name?, api_url?, api_key?, model?…}
+POST   /v1/agents                   {agent_id?, name?, platform, persona?, team?, tools?, llm?, global_name?, api_url?, api_key?, model?…}
 GET    /v1/agents/{ref}
 PATCH  /v1/agents/{ref}             {name?, settings}
 DELETE /v1/agents/{ref}             同时从所有 team 与群聊里移除
@@ -62,6 +62,8 @@ GET    /v1/models                   新 agent 可用的运行方式
 ```
 
 `ref` 是编号，或 `<team>.<名字>`（见 team）。agent 卡片不返回密钥，只给 `has_api_key`。
+
+`POST /v1/agents/{id}/messages` 的 `timeout` 是秒数，`0` 表示等到 agent 做完为止，不填用运行时的默认值；`response_format` 是 OpenAI 的 `response_format`。
 
 ### 运行时
 
@@ -79,20 +81,19 @@ GET    /v1/models                   新 agent 可用的运行方式
 | acpx（codex / claude / gemini…） | `src/external/acp.py` |
 | OpenClaw | `src/external/openclaw.py` |
 | HTTP | `src/external/http.py` |
-| llm（一次调用） | `src/external/llm.py` |
+| llm（模型调用：不带工具，不记得上一条） | `src/external/llm.py` |
 
 外部运行时共用 `src/external/session.py`：以编号命名的会话、身份 prompt、往来记录。
 
 ### 单 agent 接口（`gateway.py`）
 
-gateway 按 agent 的 `driver` 找到运行时，把调用交给它：`ask`、`trigger`、`inbox`，控制面 `status`、`control`、`history`、`destroy`；`discard(agent)` 删除临时 WeBot 会话，连同它在表里的行。
+gateway 按 agent 的 `driver` 找到运行时，把调用交给它：`ask`、`trigger`、`inbox`，控制面 `status`、`control`、`history`、`destroy`。
+
+运行时只在 Agent 服务里。其他进程（OASIS、定时任务）用 `agents/client.py` 走上面的入口：`/v1/agents` 新建、询问、删除，`/system_trigger` 触发。
 
 附件统一为 `{type, name, mime_type, data}`。`parse_openai_content` 把 OpenAI 格式的图片、音频、文件解析成附件，再由各运行方式按能力发送：图片和音频作为多模态附件，文本文件内联，其他二进制只写文件名。
 
-临时 agent：
-
-- `persona_agent()`：一次带人设的模型调用，不进表；
-- `temp_session_agent()`：带工具的临时 WeBot 会话（`tmp__…`），用完即删。
+临时 agent 的编号以 `tmp__` 开头，为一件事新建，事情做完就删掉（`DELETE /v1/agents/{id}`）。
 
 各运行时的控制面：
 
@@ -133,7 +134,8 @@ agent 内部的人设、技能、工具，是各运行方式自己的事：
 ### workflow（OASIS，`oasis/`）
 
 - 按顺序调用 agent。YAML 里的 `agent: <ref>` 在 **team 模式**下先按该 team 的成员名查找，然后按 `<team>.<名字>` 或编号查找；新编号就是新 agent。
-- `persona: <tag>` 是临时 agent。
+- `persona: <tag>` 是为这个话题新建的临时 agent（`tmp__<话题>__<tag>__<n>`）：不带工具时运行方式是 llm，带工具时是 WeBot；第一次发言前经 `POST /v1/agents` 新建，话题结束时删除。
+- OASIS 是单独的进程，经 `agents/client.py` 按编号调用 agent。
 - 不往 agent 里传 team。
 
 ### team（`src/teams/`）

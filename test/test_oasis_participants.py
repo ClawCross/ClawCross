@@ -1,5 +1,5 @@
 """OASIS participants are agents: residents named with ``agent:``, temporary ones with
-``persona:``; all of them are asked through the agent gateway."""
+``persona:``; all of them are asked by id over the agent layer's entrances."""
 
 import asyncio
 import json
@@ -15,9 +15,7 @@ for path in (str(PROJECT_ROOT), str(SRC_DIR)):
     if path not in sys.path:
         sys.path.insert(0, path)
 
-import agents.gateway as gateway_module  # noqa: E402
 from agents.runtime import NO_TIMEOUT  # noqa: E402
-from agents.store import LLM  # noqa: E402
 from agents.messages import AgentReply  # noqa: E402
 from agents.store import ACPX, WEBOT, AgentStore  # noqa: E402
 from oasis.engine import DiscussionEngine  # noqa: E402
@@ -30,18 +28,25 @@ from teams.store import TeamStore  # noqa: E402
 REPLY = json.dumps({"clawcross_type": "oasis reply", "reply_to": None, "content": "ok", "votes": []})
 
 
-class _Gateway:
+class _Client:
+    """The agent layer as OASIS reaches it: records what is made, asked and deleted."""
+
     def __init__(self, replies=None):
         self.asks = []
-        self.discarded = []
+        self.made = []
+        self.deleted = []
         self.replies = list(replies or [])
 
-    async def ask(self, agent, msg, **kwargs):
-        self.asks.append({"agent": agent, "msg": msg, **kwargs})
+    async def create(self, **fields):
+        self.made.append(fields)
+        return fields
+
+    async def ask(self, ref, msg, **kwargs):
+        self.asks.append({"agent": ref, "msg": msg, **kwargs})
         return AgentReply(ok=True, content=self.replies.pop(0) if self.replies else REPLY)
 
-    async def discard(self, agent):
-        self.discarded.append(agent.agent_id)
+    async def delete(self, ref):
+        self.deleted.append(ref)
         return True
 
 
@@ -87,19 +92,16 @@ class EngineCase(unittest.TestCase):
         self.coder = self.store.create("alice", driver=WEBOT, config={"persona": "coder"}, name="Coder", agent_id="s1")
         self.codex = self.store.create("alice", driver=ACPX, config={"platform": "codex"}, name="Codex", agent_id="codex")
         self.teams.add("alice", "dev", self.coder.agent_id, role="Builder")
-        self.fake = _Gateway()
+        self.fake = _Client()
         for target, value in (("agents.store.get_store", lambda *a: self.store),
                               ("teams.store.get_team_store", lambda *a: self.teams),
                               ("oasis.engine.create_chat_model", mock.MagicMock())):
             patcher = mock.patch(target, value)
             patcher.start()
             self.addCleanup(patcher.stop)
-        patcher = mock.patch.object(gateway_module, "get_gateway", lambda: self.fake)
-        patcher.start()
-        self.addCleanup(patcher.stop)
         import oasis.agent_center as agent_center
         for module in ("oasis.participants", "oasis.agent_center"):
-            patcher = mock.patch(f"{module}.get_gateway", lambda: self.fake)
+            patcher = mock.patch(f"{module}.AgentClient", lambda owner: self.fake)
             patcher.start()
             self.addCleanup(patcher.stop)
         for name, value in (("get_store", lambda *a: self.store), ("get_team_store", lambda *a: self.teams)):
@@ -117,7 +119,7 @@ class TestParticipants(EngineCase):
     def test_agents_are_found_by_team_name_or_id_and_a_new_id_is_a_new_agent(self):
         built = self.engine("  - id: a\n    agent: Builder\n  - id: b\n    agent: codex\n  - id: c\n    agent: dev.Nobody\n"
                             "  - id: d\n    agent: fresh\n")
-        self.assertEqual([(p.name, p.agent.agent_id, p.temporary) for p in built.experts],
+        self.assertEqual([(p.name, p.agent_id, p.temporary) for p in built.experts],
                          [("Builder", self.coder.agent_id, False), ("Codex", self.codex.agent_id, False),
                           ("fresh", "fresh", False)])
         self.assertIsNotNone(self.store.get("alice", "fresh"))
@@ -126,23 +128,26 @@ class TestParticipants(EngineCase):
         built = self.engine("  - id: a\n    persona: critical\n  - id: b\n    persona: critical\n"
                             "    tools: [read_file]\n    instance: 2\n")
         light, tooled = built.experts
-        self.assertEqual((light.agent.driver, light.temporary), (LLM, True))
+        self.assertEqual((light.agent_id, light.temporary, light._remembers), ("tmp__t0pic__critical__1", True, False))
+        self.assertEqual(light._make["platform"], "llm")  # one model call per turn
         self.assertTrue(light.persona)  # the library's persona text frames it
-        self.assertEqual((tooled.agent.driver, tooled.agent.agent_id), (WEBOT, "tmp__t0pic__critical__2"))
+        self.assertEqual((tooled.agent_id, tooled._make["platform"]), ("tmp__t0pic__critical__2", "webot"))
         self.assertEqual(tooled.tools, ["read_file"])
         self.assertNotEqual(light.name, tooled.name)
 
-    def test_temporary_sessions_are_discarded_when_the_topic_ends(self):
+    def test_temporary_agents_are_made_for_their_first_turn_and_deleted_when_the_topic_ends(self):
         built = self.engine("  - id: a\n    persona: critical\n    tools: all\n  - id: b\n    agent: Builder\n")
         asyncio.run(built.run())
         self.assertEqual(built.forum.status, "concluded")
-        self.assertEqual(self.fake.discarded, ["tmp__t0pic__critical__1"])
+        self.assertEqual([m["agent_id"] for m in self.fake.made], ["tmp__t0pic__critical__1"])
+        self.assertEqual(self.fake.deleted, ["tmp__t0pic__critical__1"])
+        self.assertEqual(self.fake.asks[0]["agent"], "tmp__t0pic__critical__1")
         self.assertIsNone(self.fake.asks[0]["tools"])  # all tools
 
 
 class TestParticipant(EngineCase):
     def test_asks_its_agent_with_schema_and_posts_with_its_id(self):
-        participant = Participant(self.coder, name="Builder", tools=["read_file"])
+        participant = Participant("alice", self.coder.agent_id, name="Builder", tools=["read_file"])
         forum = DiscussionForum("t", "问题", "alice")
         asyncio.run(participant.participate(forum, discussion=False))
         ask = self.fake.asks[0]
@@ -155,12 +160,12 @@ class TestParticipant(EngineCase):
     def test_a_reply_without_the_json_is_posted_as_it_is(self):
         self.fake.replies = ["no json here", REPLY]
         forum = DiscussionForum("t", "问题", "alice")
-        asyncio.run(Participant(self.codex, name="Codex").participate(forum))
+        asyncio.run(Participant("alice", self.codex.agent_id, name="Codex").participate(forum))
         self.assertEqual(len(self.fake.asks), 1)  # not asked again
         self.assertEqual(forum.posts[0].content, "no json here")
 
     def test_later_turns_send_only_what_is_new(self):
-        participant = Participant(self.codex, name="Codex")
+        participant = Participant("alice", self.codex.agent_id, name="Codex")
         forum = DiscussionForum("t", "问题", "alice")
         asyncio.run(participant.participate(forum))
         asyncio.run(forum.publish(author="Other", content="新观点"))
@@ -182,8 +187,10 @@ class TestAgentCenter(EngineCase):
         reply = asyncio.run(center.send_persona("critical", "评一下"))
         self.assertTrue(reply.ok)
         persona_ask = self.fake.asks[-1]
-        self.assertEqual(persona_ask["agent"].driver, LLM)
+        made = self.fake.made[-1]
+        self.assertEqual((made["platform"], persona_ask["agent"]), ("llm", made["agent_id"]))
         self.assertIn("评一下", persona_ask["msg"].text)
+        self.assertEqual(self.fake.deleted, [made["agent_id"]])  # made for that one call
 
 
 if __name__ == "__main__":

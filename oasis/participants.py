@@ -1,23 +1,21 @@
 """An OASIS participant: an agent taking part in a topic.
 
-Every participant is an agent reached through the agent gateway — a resident
-agent of the user (``agent: <ref>``), or a temporary one made for the topic
-(``persona: <tag>``; a single model call, or a throwaway WeBot session when it
-needs tools). The participant only decides what to say to its agent and what
-to post from the answer.
+Every participant is an agent, asked by its id over the agent layer's entrances
+(``agents.client``) — a resident agent of the user (``agent: <ref>``), or a
+temporary one made for the topic (``persona: <tag>``; a model call, or a WeBot
+session when it needs tools), deleted when the topic ends. The participant only
+decides what to say to its agent and what to post from the answer.
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from typing import Any
 
-from agents.gateway import get_gateway
-from agents.messages import AgentMessage, AgentReply
+from agents.client import AgentClient
+from agents.messages import AgentMessage
 from agents.runtime import NO_TIMEOUT
-from agents.store import Agent
 from oasis.experts import (
     _BEHAVIOR_RULES,
     _DISCUSS_JSON_HINT,
@@ -36,39 +34,40 @@ from oasis.schemas import OasisChooseOut, OasisReplyOut
 logger = logging.getLogger(__name__)
 
 
-async def _ask(agent: Agent, msg: AgentMessage, **kwargs: Any) -> AgentReply:
-    """Ask on a worker thread, so a slow agent never stalls the forum."""
-    return await asyncio.to_thread(lambda: asyncio.run(get_gateway().ask(agent, msg, **kwargs)))
-
-
 class Participant:
-    """One seat in a topic, held by one agent.
+    """One seat in a topic, held by agent *agent_id* of *owner*.
 
-    ``persona`` is set for temporary agents, which have no identity of their
-    own; a resident agent speaks as itself. An agent that remembers the topic
-    (anything but a single model call) is sent only what is new after its first turn.
+    ``make`` is set for a temporary agent: the ``/v1/agents`` fields it is made
+    with before its first turn. ``persona`` is set for temporary agents, which
+    have no identity of their own; a resident agent speaks as itself. An agent
+    that remembers the topic is sent only what is new after its first turn.
     """
 
     def __init__(
         self,
-        agent: Agent,
+        owner: str,
+        agent_id: str,
         *,
         name: str,
         tag: str = "",
         persona: str = "",
         tools: list[str] | None = None,
         timeout: float | None = None,
+        make: dict[str, Any] | None = None,
+        remembers: bool = True,
     ):
-        self.agent = agent
+        self.client = AgentClient(owner)
+        self.agent_id = agent_id
         self.name = name
         self.title = name
         self.tag = tag
         self.persona = persona
         self.tools = tools
         self.timeout = timeout
-        self.agent_id = agent.agent_id
-        self.temporary = agent.temporary
-        self._remembers = agent.remembers
+        self.temporary = make is not None
+        self._make = make
+        self._made = False
+        self._remembers = remembers
         self._started = False
         self._seen: set[int] = set()
 
@@ -116,9 +115,14 @@ class Participant:
 
     async def _reply(self, text: str, *, is_selector: bool, execute: bool) -> dict | str:
         """The agent's answer as parsed OASIS JSON, or its raw text when it gives none."""
-        schema = OasisChooseOut if is_selector else OasisReplyOut
-        options = {"tools": self.tools, "response_format": schema, "timeout": NO_TIMEOUT if execute else self.timeout}
-        reply = await _ask(self.agent, AgentMessage(text=text, instructions=self._identity()), **options)
+        if self._make is not None and not self._made:
+            await self.client.create(**self._make)
+            self._made = True
+        reply = await self.client.ask(
+            self.agent_id, AgentMessage(text=text, instructions=self._identity()), tools=self.tools,
+            response_format=OasisChooseOut if is_selector else OasisReplyOut,
+            timeout=NO_TIMEOUT if execute else self.timeout,
+        )
         if not reply.ok:
             raise RuntimeError(reply.error or "agent call failed")
         try:
@@ -161,3 +165,9 @@ class Participant:
         elif result.strip():
             await forum.publish(author=self.name, content=result.strip()[:2000],
                                 source_node_id=source_node_id, author_id=self.agent_id)
+
+    async def discard(self) -> None:
+        """Delete the temporary agent made for the topic."""
+        if self._made:
+            await self.client.delete(self.agent_id)
+            self._made = False
