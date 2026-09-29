@@ -11,25 +11,24 @@ from typing import Any
 
 from agents.messages import ACPX_OVERRIDES_BY_MODE, AgentMessage, AgentReply, compose_text_prompt
 from agents.runtime import NO_TIMEOUT, ControlError, Runtime
-from agents.store import Agent, AgentStore
+from agents.store import Agent, AgentStore, canonical_platform
 from external import session
 
 
 def adapter():
-    from integrations.acpx_adapter import AcpxError, get_acpx_adapter
-    from utils.runtime_paths import WORKSPACE_DIR
+    from external.acpx import AcpxError, get_acpx_adapter
 
     if not shutil.which("acpx"):
         raise ControlError("acpx is not installed")
     try:
-        return get_acpx_adapter(cwd=str(WORKSPACE_DIR / "acpx"))
+        return get_acpx_adapter()
     except AcpxError as exc:
         raise ControlError(str(exc)) from exc
 
 
 def command_options(agent: Agent, *, long: bool) -> dict[str, Any]:
     """acpx options for a control command; only *long* ones get the agent's full timeout."""
-    from integrations.acpx_adapter import acpx_options_from_agent
+    from external.acpx import acpx_options_from_agent
 
     policy = acpx_options_from_agent(agent.config, default_timeout_sec=180)
     return {
@@ -48,39 +47,40 @@ class AcpRuntime(Runtime):
         self._store = store
 
     async def ask(self, agent: Agent, msg: AgentMessage, *, context, mode, tools, response_format, timeout) -> AgentReply:
-        from integrations.acpx_adapter import acpx_options_from_agent
-        from integrations.agent_sender import SendToAgentRequest, send_to_agent
-        from utils.external_agent_history import attach_history_context
-        from utils.runtime_paths import WORKSPACE_DIR
+        from external.acpx import AcpxError, acpx_options_from_agent, get_acpx_adapter
 
-        options: dict[str, Any] = {
-            "cwd": str(WORKSPACE_DIR / "acpx"),
-            **acpx_options_from_agent(
-                agent.config,
-                overrides=ACPX_OVERRIDES_BY_MODE.get(mode) if mode else None,
-                default_timeout_sec=int(timeout) if timeout and timeout != NO_TIMEOUT else 180,
-            ),
-            "reset_session": False,
-            "identity_prompt": session.identity_prompt(agent, context, msg.instructions),
-            "attachments": [dict(a) for a in msg.attachments] or None,
-            "return_trace": True,
-        }
-        if timeout == NO_TIMEOUT:
-            options["timeout_sec"] = None
-        options = attach_history_context(
-            options, user_id=agent.owner, group_id=str(context.get("conversation_id") or ""),
-            global_name=agent.agent_id,
+        run = acpx_options_from_agent(
+            agent.config,
+            overrides=ACPX_OVERRIDES_BY_MODE.get(mode) if mode else None,
+            default_timeout_sec=int(timeout) if timeout and timeout != NO_TIMEOUT else 180,
         )
-        result = await send_to_agent(SendToAgentRequest(
-            prompt=compose_text_prompt(msg.text, msg.attachments),
-            connect_type="acp",
-            platform=agent.platform,
-            session=session.runtime_session(agent),
-            options=options,
-        ))
-        if result.ok:
-            session.remember(self._store, agent)  # acpx itself sends the identity to a new session
-        return session.reply_of(result)
+        if timeout == NO_TIMEOUT:
+            run["timeout_sec"] = None
+        prompt = compose_text_prompt(msg.text, msg.attachments)
+        # acpx sends the identity to a new session itself.
+        identity = session.identity_prompt(agent, context, msg.instructions)
+
+        async def send() -> session.Sent:
+            try:
+                trace = await get_acpx_adapter().prompt_with_trace(
+                    tool=canonical_platform(agent.platform),
+                    session_key=session.runtime_session(agent),
+                    prompt_text=prompt,
+                    reset_session=False,
+                    system_prompt=identity or None,
+                    attachments=[dict(a) for a in msg.attachments] or None,
+                    **run,
+                )
+            except (AcpxError, RuntimeError) as exc:
+                return session.Sent(ok=False, error=str(exc))
+            return session.Sent(ok=True, content=trace.text or "", raw={
+                "messages": trace.messages, "tool_uses": trace.tool_uses, "tool_results": trace.tool_results,
+            })
+
+        reply = await session.exchange(agent, connect_type="acp", prompt=prompt, context=context, send=send)
+        if reply.ok:
+            session.remember(self._store, agent)
+        return reply
 
     async def status(self, agent: Agent) -> dict[str, Any]:
         sessions = await adapter().list_sessions(tool=agent.platform)
@@ -89,7 +89,7 @@ class AcpRuntime(Runtime):
         return {"state": "online" if live else "idle", "sessions": live}
 
     async def control(self, agent: Agent, action: str) -> dict[str, Any]:
-        from integrations.acpx_adapter import AcpxError
+        from external.acpx import AcpxError
 
         acpx, key = adapter(), session.runtime_session(agent)
         try:
@@ -107,7 +107,7 @@ class AcpRuntime(Runtime):
         return {action: True}
 
     async def history(self, agent: Agent, limit: int) -> list[dict[str, Any]]:
-        return await session.history(agent, limit)
+        return await session.log(agent, limit)
 
     async def destroy(self, agent: Agent) -> None:
         acpx, key = adapter(), session.runtime_session(agent)
@@ -115,4 +115,4 @@ class AcpRuntime(Runtime):
             tool=agent.platform, session_key=key, acpx_session=acpx.to_acpx_session_name(tool=agent.platform, session_key=key),
             **command_options(agent, long=False),
         )
-        await session.drop_history(agent)
+        await session.drop_log(agent)

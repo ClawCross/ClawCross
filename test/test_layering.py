@@ -25,18 +25,14 @@ _ABOVE_L2 = ("api.", "routes", "mcp_servers", "teams", "groups", "oasis", "core.
 _DRIVER_NAMES = {"WEBOT", "ACPX", "OPENCLAW", "HTTP", "LLM", "DRIVERS", "runtime_key", "driver_for_platform"}
 _DRIVER_ATTRS = {"driver", "config"}
 
-# Talking to a transport directly instead of through agents.gateway (only the runtimes do).
-_TRANSPORT = ("integrations.agent_sender", "integrations.registry", "integrations.connectors")
+# The external runtimes and their transports: only the agent layer reaches them.
+_TRANSPORT = ("external",)
 
 # The runtimes, which live in the Agent service only; other processes (OASIS, the
 # scheduler, the web front, the CLI) reach agents over its entrances (agents.client).
 _RUNTIMES = ("agents.gateway", "external", "webot.driver")
 _OTHER_PROCESSES = ("oasis", "scripts", "chatbot", "visual", "clawcross_cli")
 _OTHER_PROCESS_FILES = ("src/utils/scheduler_service.py", "src/front.py")
-
-# Modules that still call transports directly. This list may only shrink as
-# callers move onto the gateway; a new direct caller fails the test.
-_LEGACY_TRANSPORT_CALLERS: set[str] = set()
 
 
 def _imports(path: Path) -> set[str]:
@@ -100,11 +96,11 @@ class TestLayering(unittest.TestCase):
         callers = set()
         for path in _python_files("src", "oasis", "scripts", "clawcross_cli", "chatbot", "visual"):
             rel = str(path.relative_to(PROJECT_ROOT))
-            if rel.startswith(("src/integrations/", "src/agents/", "src/external/")) or rel == "src/webot/driver.py":
+            if rel.startswith(("src/agents/", "src/external/")):
                 continue
             if any(name.startswith(_TRANSPORT) for name in _imports(path)):
                 callers.add(rel)
-        self.assertEqual(sorted(callers - _LEGACY_TRANSPORT_CALLERS), [], "use agents.gateway instead")
+        self.assertEqual(sorted(callers), [], "use agents.gateway instead")
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@ SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from utils.external_agent_history import (
+from external.history import (
     ExternalAgentHistoryStore,
     HistoryContext,
     attach_history_context,

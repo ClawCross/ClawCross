@@ -23,6 +23,7 @@ class OpenclawRuntime(HttpRuntime):
 
     def endpoint(self, agent: Agent) -> tuple[str, str, str, dict[str, str]]:
         api_url, api_key, model, headers = super().endpoint(agent)
+        headers["x-openclaw-session-key"] = session.runtime_session(agent)
         # The OpenClaw endpoint depends on the device: runtime env beats saved config.
         api_url = os.getenv("OPENCLAW_API_URL", "") or api_url
         api_key = os.getenv("OPENCLAW_GATEWAY_TOKEN", "") or api_key
@@ -30,8 +31,10 @@ class OpenclawRuntime(HttpRuntime):
             headers["Authorization"] = f"Bearer {api_key}"
         if not model.startswith("agent:"):
             model = f"agent:{agent.config.get('global_name') or 'main'}"
-        headers["x-openclaw-session-key"] = session.runtime_session(agent)
         return api_url, api_key, model, headers
+
+    def session_fields(self, agent: Agent) -> dict[str, str]:
+        return {}  # the session is the x-openclaw-session-key header
 
     async def status(self, agent: Agent) -> dict[str, Any]:
         binary = shutil.which("openclaw")
@@ -48,7 +51,7 @@ class OpenclawRuntime(HttpRuntime):
         return {"state": "online" if mine else "idle", "sessions": mine}
 
     async def control(self, agent: Agent, action: str) -> dict[str, Any]:
-        from integrations.acpx_adapter import AcpxError
+        from external.acpx import AcpxError
 
         if action not in self.controls:
             return await super().control(agent, action)

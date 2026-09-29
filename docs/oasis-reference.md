@@ -161,7 +161,7 @@ For the exact YAML schema and examples, read [create_workflow.md](./create_workf
 
 ## Agents on other platforms
 
-- Codex, Claude Code, Gemini and other ACP tools run through the `acpx` CLI adapter (`src/integrations/acpx_adapter.py`) in a session named after the agent's id (`clawcross-<owner>-<id>`); `acpx` is installed by `bash selfskill/scripts/run.sh setup`.
+- Codex, Claude Code, Gemini and other ACP tools run through the `acpx` CLI adapter (`src/external/acpx.py`) in a session named after the agent's id (`clawcross-<owner>-<id>`); `acpx` is installed by `bash selfskill/scripts/run.sh setup`.
 - OpenClaw agents must exist on the OpenClaw side first (`openclaw sessions` / `openclaw add`); ClawCross talks to each agent in its own session key `agent:<global_name>:clawcross-<owner>-<id>`.
 - HTTP agents are called at their `api_url` with their `model`.
 - All of this is the agent layer's business (`src/agents/gateway.py` hands each call to the agent's runtime in `src/external/` or `src/webot/driver.py`): OASIS, group chat and the API call every agent the same way.
