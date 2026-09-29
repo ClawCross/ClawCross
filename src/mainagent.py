@@ -39,8 +39,10 @@ from services.llm_factory import extract_text as _extract_text
 from utils.user_auth import load_users as load_users_from_file, verify_password as verify_password_from_file
 from api.harness_routes import create_harness_router
 from api.openai_routes import create_openai_router
+from api.openai_service import OpenAIChatService
 from api.ops_routes import create_ops_router
 from api.session_routes import create_session_router
+from api.session_service import SessionService
 from api.settings_routes import create_settings_router
 from api.system_routes import create_system_router
 from api.system_service import SystemService
@@ -145,11 +147,16 @@ def verify_password(username: str, password: str) -> bool:
 # --- Create agent instance ---
 agent = TeamAgent(src_dir=current_dir, db_path=db_path)
 system_service = SystemService(agent=agent, verify_internal_token=verify_internal_token)
+chat_service = OpenAIChatService(internal_token=INTERNAL_TOKEN, verify_password=verify_password, agent=agent,
+                                 extract_text=_extract_text, build_human_message=build_human_message)
+session_service = SessionService(db_path=db_path, agent=agent, verify_auth_or_token=verify_auth_or_token,
+                                 extract_text=_extract_text)
 
 # --- L1: the table of all agents (every session, by its number). L2 around it: teams
 # (namespaces in folders), group chats (their own database), workflows. ---
 agent_store = get_store()
-gateway = AgentGateway(store=agent_store, runtimes={WEBOT: WebotRuntime(internal_token=INTERNAL_TOKEN, engine=agent)})
+webot = WebotRuntime(engine=agent, chat=chat_service, system=system_service, sessions=session_service)
+gateway = AgentGateway(store=agent_store, runtimes={WEBOT: webot})
 set_gateway(gateway)
 team_store = get_team_store(agent_store)
 conversation_store = ConversationStore(conversations_db_path())
@@ -205,25 +212,8 @@ app.include_router(
     create_groups_router(internal_token=INTERNAL_TOKEN, verify_password=verify_password, service=group_service)
 )
 
-app.include_router(
-    create_session_router(
-        db_path=db_path,
-        agent=agent,
-        verify_auth_or_token=verify_auth_or_token,
-        extract_text=_extract_text,
-    )
-)
-
-
-app.include_router(
-    create_openai_router(
-        internal_token=INTERNAL_TOKEN,
-        verify_password=verify_password,
-        agent=agent,
-        extract_text=_extract_text,
-        build_human_message=build_human_message,
-    )
-)
+app.include_router(create_session_router(service=session_service))
+app.include_router(create_openai_router(service=chat_service))
 
 
 app.include_router(

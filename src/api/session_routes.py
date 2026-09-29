@@ -9,8 +9,6 @@
 - POST /session_status：获取单个会话状态
 """
 
-from typing import Any, Callable
-
 from fastapi import APIRouter, Header
 
 from api.session_models import (
@@ -23,21 +21,9 @@ from api.session_models import (
 from api.session_service import SessionService
 
 
-def create_session_router(
-    *,
-    db_path: str,
-    agent: Any,
-    verify_auth_or_token: Callable[[str, str, str | None], None],
-    extract_text: Callable[[Any], str],
-) -> APIRouter:
+def create_session_router(*, service: SessionService) -> APIRouter:
     """构建会话相关路由。"""
     router = APIRouter()
-    service = SessionService(
-        db_path=db_path,
-        agent=agent,
-        verify_auth_or_token=verify_auth_or_token,
-        extract_text=extract_text,
-    )
 
     @router.post("/sessions")
     async def list_sessions(req: SessionListRequest, x_internal_token: str | None = Header(None)):

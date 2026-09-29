@@ -512,6 +512,11 @@ class SystemService:
         agent = get_store().ensure(req.user_id, req.session_id)
         if agent.driver != WEBOT:
             return await self._trigger_elsewhere(agent, req)
+        return await self.run(req)
+
+    async def run(self, req: SystemTriggerRequest) -> dict[str, Any]:
+        """A system message for WeBot agent ``session_id``: an inbox entry when it names
+        its sender, otherwise a turn now (queued behind the session's current one)."""
         thread_id = self._thread_id(req)
 
         if req.inbox_source_session:

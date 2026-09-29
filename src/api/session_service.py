@@ -320,6 +320,15 @@ class SessionService:
             "metadata": getattr(result, "metadata", None) or {},
         }
 
+    async def delete(self, user_id: str, session_id: str) -> None:
+        """Stop and delete one session: its task, checkpoints and sub-agent record."""
+        thread_id = f"{user_id}#{session_id}"
+        await self.agent.cancel_task(thread_id)
+        await self._close_thread_checkpoints([thread_id])
+        await delete_thread_records(self.db_path, thread_id)
+        if is_subagent_session(session_id):
+            delete_subagent_by_session(user_id, session_id)
+
     async def delete_session(self, req: DeleteSessionRequest, x_internal_token: str | None):
         """删除指定会话或用户的所有会话。
 
@@ -332,14 +341,7 @@ class SessionService:
 
         try:
             if req.session_id:
-                task_key = f"{req.user_id}#{req.session_id}"
-                await self.agent.cancel_task(task_key)
-
-                thread_id = f"{req.user_id}#{req.session_id}"
-                await self._close_thread_checkpoints([thread_id])
-                await delete_thread_records(self.db_path, thread_id)
-                if is_subagent_session(req.session_id):
-                    delete_subagent_by_session(req.user_id, req.session_id)
+                await self.delete(req.user_id, req.session_id)
                 return {"status": "success", "message": f"会话 {req.session_id} 已删除"}
 
             prefix = f"{req.user_id}#"

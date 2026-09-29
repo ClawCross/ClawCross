@@ -15,6 +15,9 @@ _ABOVE_L1 = (
     "oasis.engine", "oasis.server", "oasis.forum", "oasis.scheduler", "oasis.swarm_engine",
 )
 
+# What a runtime (src/external, webot/driver.py) must never import: the compositions of agents.
+_COMPOSITIONS = ("comms", "groups", "teams", "oasis", "routes")
+
 # What the communication layer (src/comms) must never import: the products built on it.
 _ABOVE_L2 = ("api.", "routes", "mcp_servers", "teams", "groups", "oasis", "core.agent")
 
@@ -56,9 +59,15 @@ def _python_files(*roots: str) -> list[Path]:
 
 class TestLayering(unittest.TestCase):
     def test_agent_layer_does_not_import_the_layers_above_it(self):
-        for path in [*_python_files("src/agents", "src/external"), PROJECT_ROOT / "src/webot/driver.py"]:
+        for path in _python_files("src/agents"):
             with self.subTest(path=str(path.relative_to(PROJECT_ROOT))):
                 bad = sorted(name for name in _imports(path) if name.startswith(_ABOVE_L1))
+                self.assertEqual(bad, [])
+
+    def test_runtimes_do_not_know_compositions(self):
+        for path in [*_python_files("src/external"), PROJECT_ROOT / "src/webot/driver.py"]:
+            with self.subTest(path=str(path.relative_to(PROJECT_ROOT))):
+                bad = sorted(name for name in _imports(path) if name.startswith(_COMPOSITIONS))
                 self.assertEqual(bad, [])
 
     def test_comms_layer_does_not_import_the_products_above_it(self):

@@ -104,39 +104,36 @@ def _sent(result: str = "ok"):
                       mock.AsyncMock(return_value=SendToAgentResult(ok=True, content=result)))
 
 
-class _FakeResponse:
-    status_code = 200
-    text = ""
+class _WebotServices:
+    """WeBot's services as its runtime calls them; ``delay`` makes a turn slow."""
+
+    def __init__(self, delay: float = 0):
+        self.delay = delay
+        self.turns, self.system, self.deleted = [], [], []
+
+    async def answer(self, user_id, session_id, req):
+        self.turns.append((user_id, session_id, req))
+        await asyncio.sleep(self.delay)
+        return "ok"
+
+    async def run(self, req):
+        self.system.append(req)
+        return {"status": "received"}
+
+    async def delete(self, user_id, session_id):
+        self.deleted.append((user_id, session_id))
 
 
-def _http(status: int = 200):
-    """Patch httpx.AsyncClient; ``calls`` collects (url, json)."""
-    calls = []
-
-    class Client:
-        def __init__(self, *a, **k):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *exc):
-            return False
-
-        async def post(self, url, headers=None, json=None):
-            calls.append((url, json))
-            response = _FakeResponse()
-            response.status_code = status
-            return response
-
-    return mock.patch("webot.driver.httpx.AsyncClient", Client), calls
+def webot_runtime(services=None, engine=None):
+    services = services or _WebotServices()
+    return WebotRuntime(engine=engine, chat=services, system=services, sessions=services)
 
 
 class TestGateway(StoreCase):
     def setUp(self):
         super().setUp()
-        self.gateway = AgentGateway(store=self.store, runtimes={
-            WEBOT: WebotRuntime(base_url="http://agent.test", internal_token=TOKEN)})
+        self.services = _WebotServices()
+        self.gateway = AgentGateway(store=self.store, runtimes={WEBOT: webot_runtime(self.services)})
         patcher = mock.patch("integrations.external_persona.build_external_persona_prompt", return_value="PERSONA")
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -147,18 +144,31 @@ class TestGateway(StoreCase):
         self.assertTrue(reply.ok, reply.error)
         return send.await_args.args[0]
 
-    def test_webot_is_asked_in_its_session_with_mode_tools_and_schema(self):
+    def test_webot_runs_a_turn_in_its_session_with_mode_tools_and_schema(self):
         reply_format = {"type": "json_schema", "json_schema": {"name": "Reply", "schema": {"type": "object"}}}
-        request = self.ask(self.webot(), mode="readonly", tools=["read_file"], response_format=reply_format,
-                           timeout=NO_TIMEOUT)
-        body = request.options["body"]
-        self.assertEqual(request.session, "s1")
-        self.assertEqual(body["messages"][0], {"role": "system", "content": "rules"})
-        self.assertEqual((body["session_mode"], body["enabled_tools"]), ("readonly", ["read_file"]))
-        self.assertEqual(body["response_format"], reply_format)  # WeBot enforces it itself
-        self.assertIsNone(request.options["timeout"])
-        self.assertEqual(request.options["headers"]["Authorization"], bearer("alice"))
-        self.assertTrue(request.options["_history_disabled"])  # WeBot keeps its own
+        reply = asyncio.run(self.gateway.ask(self.webot(llm={"model": "m1"}), AgentMessage(text="hi", instructions="rules"),
+                                             mode="readonly", tools=["read_file"], response_format=reply_format,
+                                             timeout=NO_TIMEOUT))
+        self.assertEqual((reply.ok, reply.content), (True, "ok"))
+        user, session, req = self.services.turns[0]
+        self.assertEqual((user, session), ("alice", "s1"))
+        self.assertEqual([(m.role, m.content) for m in req.messages], [("system", "rules"), ("user", "hi")])
+        self.assertEqual((req.session_mode, req.enabled_tools), ("readonly", ["read_file"]))
+        self.assertEqual(req.response_format, reply_format)  # WeBot enforces it itself
+        self.assertEqual(req.llm_override, {"model": "m1"})
+
+    def test_a_webot_turn_goes_on_when_the_caller_stops_waiting(self):
+        services = _WebotServices(delay=0.2)
+        gateway = AgentGateway(store=self.store, runtimes={WEBOT: webot_runtime(services)})
+
+        async def run():
+            reply = await gateway.ask(self.webot(), AgentMessage(text="hi"), timeout=0.05)
+            await asyncio.sleep(0.3)
+            return reply
+
+        reply = asyncio.run(run())
+        self.assertFalse(reply.ok)
+        self.assertIn("no reply within", reply.error)
 
     def test_acpx_agent_runs_in_the_session_named_after_it(self):
         codex = self.store.create("alice", name="Codex", driver=ACPX, config={"platform": "codex", "persona": "coder"})
@@ -208,24 +218,20 @@ class TestGateway(StoreCase):
         self.assertTrue(request.options["_history_disabled"])
         self.assertFalse(critic.remembers)
 
-    def test_webot_is_triggered_through_the_system_trigger(self):
-        patcher, calls = _http()
-        with patcher:
-            receipt = asyncio.run(self.gateway.trigger(self.webot(), AgentMessage(text="hello"), mode="chat",
-                                                       coalesce_key="k"))
+    def test_webot_is_handed_a_system_message(self):
+        receipt = asyncio.run(self.gateway.trigger(self.webot(), AgentMessage(text="hello"), mode="chat",
+                                                   coalesce_key="k"))
         self.assertTrue(receipt.accepted)
-        url, body = calls[0]
-        self.assertEqual(url, "http://agent.test/system_trigger")
-        self.assertEqual((body["session_id"], body["text"], body["coalesce_key"]), ("s1", "hello", "k"))
-        self.assertEqual(body["enabled_tools"], [])  # chat mode: no tools
+        req = self.services.system[0]
+        self.assertEqual((req.user_id, req.session_id, req.text, req.coalesce_key), ("alice", "s1", "hello", "k"))
+        self.assertEqual(req.enabled_tools, [])  # chat mode: no tools
+        self.assertEqual(req.inbox_source_session, "")
 
     def test_inbox_queues_for_webot_and_sends_to_others(self):
-        patcher, calls = _http()
-        with patcher:
-            receipt = asyncio.run(self.gateway.inbox(self.webot(), AgentMessage(text="later", sender="u:alice")))
+        receipt = asyncio.run(self.gateway.inbox(self.webot(), AgentMessage(text="later", sender="u:alice")))
         self.assertTrue(receipt.accepted)
-        self.assertEqual(calls[0], ("http://agent.test/system_trigger", {
-            "user_id": "alice", "session_id": "s1", "text": "later", "inbox_source_session": "u:alice"}))
+        req = self.services.system[0]
+        self.assertEqual((req.session_id, req.text, req.inbox_source_session), ("s1", "later", "u:alice"))
 
         async def run():
             with _sent("ok") as send:
@@ -249,10 +255,8 @@ class TestGateway(StoreCase):
         self.assertEqual(replies[0].content, "done")
 
     def test_destroying_a_webot_agent_deletes_its_session(self):
-        patcher, calls = _http()
-        with patcher:
-            asyncio.run(self.gateway.destroy(self.webot()))
-        self.assertEqual(calls[0], ("http://agent.test/delete_session", {"user_id": "alice", "session_id": "s1"}))
+        asyncio.run(self.gateway.destroy(self.webot()))
+        self.assertEqual(self.services.deleted, [("alice", "s1")])
 
     def test_reply_channel_depends_on_the_runtime(self):
         self.assertIn('send_to_group(group_id="g_1"', reply_channel(self.webot(), "g_1"))
@@ -282,7 +286,7 @@ class TestControl(StoreCase):
     def setUp(self):
         super().setUp()
         self.webot_runtime = _FakeWebot()
-        self.control = AgentGateway(store=self.store, runtimes={WEBOT: WebotRuntime(engine=self.webot_runtime)})
+        self.control = AgentGateway(store=self.store, runtimes={WEBOT: webot_runtime(engine=self.webot_runtime)})
 
     def test_webot_status_cancel_and_reset(self):
         coder = self.webot()
@@ -294,7 +298,7 @@ class TestControl(StoreCase):
         self.assertEqual(asyncio.run(self.control.control(coder, "reset")), {"reset": True})
         self.assertEqual(self.webot_runtime.cancelled, ["alice#s1", "alice#s1"])
 
-    def test_webot_is_controlled_only_where_its_engine_is(self):
+    def test_webot_is_reached_only_where_it_runs(self):
         with self.assertRaises(ControlError):
             asyncio.run(AgentGateway(store=self.store).control(self.webot(), "cancel"))
 
@@ -353,7 +357,7 @@ class TestControl(StoreCase):
 class ApiCase(StoreCase):
     def setUp(self):
         super().setUp()
-        self.gateway = AgentGateway(store=self.store, runtimes={WEBOT: WebotRuntime(engine=_FakeWebot())})
+        self.gateway = AgentGateway(store=self.store, runtimes={WEBOT: webot_runtime(engine=_FakeWebot())})
         self.gateway.ask = mock.AsyncMock(return_value=AgentReply(ok=True, content="pong"))
         self.gateway.inbox = mock.AsyncMock(return_value=DeliveryReceipt(accepted=True))
         self.forgotten = []
