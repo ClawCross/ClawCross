@@ -91,7 +91,7 @@ class CommandSandboxTests(unittest.TestCase):
             self.assertFalse(kwargs["sandbox"].settings_path.exists())
             self.assertEqual(list((root / ".mcp_jobs").glob("py_*.py")), [])
 
-    def test_background_command_is_rejected_when_srt_selected(self):
+    def test_background_command_uses_srt_and_runner_owns_policy(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             workspace = SessionWorkspace(root=root, cwd=root, mode="shared", remote="")
@@ -100,10 +100,128 @@ class CommandSandboxTests(unittest.TestCase):
                  patch.object(commander, "resolve_session_workspace", return_value=workspace), \
                  patch("webot.runtime.effective_session_mode", return_value="auto"), \
                  patch("webot.runtime_settings.get_runtime_settings", return_value=options), \
+                 patch.object(command_sandbox, "_srt_binary", return_value="/usr/bin/srt"), \
                  patch.object(commander, "_launch_detached_background_job") as launch:
                 result = asyncio.run(commander.run_command("alice", "print('hello')", language="python", mode="background"))
-            self.assertIn("只支持前台", result)
-            launch.assert_not_called()
+            try:
+                self.assertIn("后台任务已启动", result)
+                sandbox = launch.call_args.kwargs["sandbox"]
+                self.assertEqual(sandbox.argv[0], "/usr/bin/srt")
+                self.assertTrue(sandbox.settings_path.exists())
+            finally:
+                sandbox.settings_path.unlink(missing_ok=True)
+                Path(launch.call_args.kwargs["cleanup_script"]).unlink(missing_ok=True)
+
+    def test_scoped_sandbox_escalation_policy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "workspace"
+            outside = Path(directory) / "outside.txt"
+            root.mkdir()
+            outside.write_text("hello", encoding="utf-8")
+            with patch.object(command_sandbox, "_srt_binary", return_value="/usr/bin/srt"):
+                for access, target in (("read_path", str(outside)), ("write_path", str(outside)), ("network", "example.org:443")):
+                    with self.subTest(access=access):
+                        call = command_sandbox.build_srt_command(
+                            root=root, cwd=root, command="true", language="shell",
+                            python_executable=sys.executable, access=access, target=target,
+                        )
+                        try:
+                            policy = json.loads(call.settings_path.read_text(encoding="utf-8"))
+                            self.assertEqual(policy["network"]["allowedDomains"], [target] if access == "network" else [])
+                            self.assertEqual(outside.as_posix() in policy["filesystem"]["allowWrite"], access == "write_path")
+                            self.assertIn(str(Path.home().resolve()), policy["filesystem"]["denyRead"])
+                        finally:
+                            call.settings_path.unlink(missing_ok=True)
+
+    def test_escalation_rejects_broad_or_credential_targets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "workspace"
+            root.mkdir()
+            for access, target in (
+                ("read_path", "/"), ("write_path", str(root.parent)),
+                ("read_path", str(Path.home())), ("network", "*.example.org"),
+                ("network", "127.0.0.1:51200"), ("host", "unexpected"),
+            ):
+                with self.subTest(access=access, target=target), self.assertRaises(command_sandbox.SandboxUnavailable):
+                    command_sandbox.normalize_escalation(access, target, root)
+
+    @unittest.skipIf(sys.platform.startswith("win"), "fake SRT runner uses a POSIX shell")
+    def test_detached_srt_runner_executes_and_cleans_policy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fake_srt = root / "fake-srt"
+            fake_srt.write_text('#!/bin/sh\nshift 3\nexec "$@"\n', encoding="utf-8")
+            fake_srt.chmod(0o755)
+            workspace = SessionWorkspace(root=root, cwd=root, mode="shared", remote="")
+            options = SimpleNamespace(approval=SimpleNamespace(command_sandbox="srt"))
+            calls = []
+
+            def build(**kwargs):
+                sandbox = command_sandbox.build_srt_command(**kwargs)
+                calls.append(sandbox)
+                return sandbox
+
+            async def exercise():
+                start = await commander.run_command("alice", "echo sandbox-ready", mode="background")
+                self.assertIn("job_id:", start)
+                job_id = start.split("job_id: ", 1)[1].splitlines()[0]
+                for _ in range(40):
+                    status = await commander.background_command_io(job_id, username="alice")
+                    if "状态: running" not in status:
+                        return status
+                    await asyncio.sleep(0.1)
+                return status
+
+            with patch.object(commander, "_command_safety_gate", new=AsyncMock(return_value=(None, ""))), \
+                 patch.object(commander, "resolve_session_workspace", return_value=workspace), \
+                 patch("webot.runtime_settings.get_runtime_settings", return_value=options), \
+                 patch.object(command_sandbox, "_srt_binary", return_value=str(fake_srt)), \
+                 patch.object(commander, "build_srt_command", side_effect=build):
+                status = asyncio.run(exercise())
+            self.assertIn("状态: completed", status)
+            self.assertIn("sandbox-ready", status)
+            self.assertEqual(len(calls), 1)
+            self.assertFalse(calls[0].settings_path.exists())
+
+    @unittest.skipIf(sys.platform.startswith("win"), "interactive jobs need a POSIX pseudo-terminal")
+    def test_interactive_srt_runner_accepts_reviewed_input(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fake_srt = root / "fake-srt"
+            fake_srt.write_text('#!/bin/sh\nshift 3\nexec "$@"\n', encoding="utf-8")
+            fake_srt.chmod(0o755)
+            workspace = SessionWorkspace(root=root, cwd=root, mode="shared", remote="")
+            options = SimpleNamespace(approval=SimpleNamespace(command_sandbox="srt"))
+            calls = []
+
+            def build(**kwargs):
+                sandbox = command_sandbox.build_srt_command(**kwargs)
+                calls.append(sandbox)
+                return sandbox
+
+            async def exercise():
+                start = await commander.run_command("alice", "sh", mode="interactive")
+                self.assertIn("job_id:", start)
+                job_id = start.split("job_id: ", 1)[1].splitlines()[0]
+                output = await commander.background_command_io(job_id, username="alice", input="echo interactive-ready", wait_seconds=1)
+                await commander.background_command_io(job_id, username="alice", input="exit", wait_seconds=1)
+                for _ in range(30):
+                    status = await commander.background_command_io(job_id, username="alice")
+                    if "状态: running" not in status:
+                        return output, status
+                    await asyncio.sleep(0.1)
+                return output, status
+
+            with patch.object(commander, "_command_safety_gate", new=AsyncMock(return_value=(None, ""))) as gate, \
+                 patch.object(commander, "resolve_session_workspace", return_value=workspace), \
+                 patch("webot.runtime_settings.get_runtime_settings", return_value=options), \
+                 patch.object(command_sandbox, "_srt_binary", return_value=str(fake_srt)), \
+                 patch.object(commander, "build_srt_command", side_effect=build):
+                output, status = asyncio.run(exercise())
+            self.assertIn("interactive-ready", output)
+            self.assertIn("状态: completed", status)
+            self.assertGreaterEqual(gate.await_count, 3)
+            self.assertFalse(calls[0].settings_path.exists())
 
     def test_linux_dependency_check_is_fail_closed(self):
         with patch.object(command_sandbox.sys, "platform", "linux"), \

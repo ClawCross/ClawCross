@@ -11,6 +11,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from webot import approval_review as review, policy, runtime_settings, runtime_store as store
 from webot.approval_actions import canonical_action_args
+from webot.workspace import SessionWorkspace
 
 
 class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
@@ -65,6 +66,89 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(store.consume_execution_permit("alice", "s", "run_command", action, binding))
         store.record_tool_execution(result.approval_id, "alice", status="returned")
         self.assertEqual(json.loads(store.get_tool_approval(result.approval_id, "alice").review_metadata_json)["execution"]["status"], "returned")
+
+    async def test_auto_only_changes_reviewer_for_manual_policy(self):
+        policy.save_tool_policy_config("alice", {"default_approval": "allow"})
+        with patch.object(review, "run_reviewer") as reviewer:
+            result = await self.authorize()
+        self.assertTrue(result.allowed)
+        reviewer.assert_not_called()
+        self.assertEqual(store.list_tool_approvals("alice"), [])
+
+    async def test_outside_workspace_file_requires_exact_review(self):
+        root = Path(self.tmp.name) / "workspace"
+        root.mkdir()
+        outside = Path(self.tmp.name) / "outside.txt"
+        outside.write_text("private", encoding="utf-8")
+        policy.save_tool_policy_config("alice", {"default_approval": "allow"})
+        workspace = SessionWorkspace(root=root, cwd=root, mode="shared", remote="")
+        args = {"username": "alice", "session_id": "s", "filename": str(outside)}
+        with patch("webot.workspace.resolve_session_workspace", return_value=workspace), \
+             patch.object(review, "run_reviewer", return_value=self.verdict) as reviewer:
+            result = await review.authorize_action(user_id="alice", session_id="s", tool_name="read_file",
+                args=args, messages=self.messages)
+        self.assertTrue(result.allowed)
+        reviewer.assert_awaited_once()
+        self.assertEqual(reviewer.call_args.kwargs["args"]["_resolved_path"], str(outside))
+
+    async def test_outside_file_approval_survives_until_same_action_retries(self):
+        from webot.permission_context import resolve_permission_context, resolve_permission_request
+        root = Path(self.tmp.name) / "workspace"
+        root.mkdir()
+        outside = Path(self.tmp.name) / "outside.txt"
+        outside.write_text("hello", encoding="utf-8")
+        policy.save_tool_policy_config("alice", {"default_approval": "allow"})
+        workspace = SessionWorkspace(root=root, cwd=root, mode="shared", remote="")
+        args = {"username": "alice", "session_id": "s", "filename": str(outside)}
+        ask = review.ReviewVerdict(decision="ask_user", reason="需要用户确认", risk="medium", authorization_sources=[])
+        with patch("webot.workspace.resolve_session_workspace", return_value=workspace), \
+             patch.object(review, "run_reviewer", return_value=ask):
+            pending = await review.authorize_action(user_id="alice", session_id="s", tool_name="read_file",
+                args=args, messages=self.messages, wait_for_user=False)
+            self.assertTrue(pending.pending)
+            resolve_permission_request(user_id="alice", approval_id=pending.approval_id, action="approved")
+            active = resolve_permission_context(user_id="alice", session_id="s", tool_name="read_file", args=args)
+            self.assertIsNotNone(active.approval)
+            allowed = await review.authorize_action(user_id="alice", session_id="s", tool_name="read_file",
+                args=args, messages=self.messages, active_approval=active.approval, wait_for_user=False)
+        self.assertTrue(allowed.allowed)
+        self.assertEqual(store.get_tool_approval(pending.approval_id, "alice").status, "used")
+
+    async def test_explicit_file_deny_still_blocks_outside_review(self):
+        root = Path(self.tmp.name) / "workspace"
+        root.mkdir()
+        outside = Path(self.tmp.name) / "outside.txt"
+        outside.write_text("private", encoding="utf-8")
+        policy.save_tool_policy_config("alice", {"tools": {"read_file": {"approval": "deny"}}})
+        workspace = SessionWorkspace(root=root, cwd=root, mode="shared", remote="")
+        with patch("webot.workspace.resolve_session_workspace", return_value=workspace), \
+             patch.object(review, "run_reviewer") as reviewer:
+            result = await review.authorize_action(user_id="alice", session_id="s", tool_name="read_file",
+                args={"username": "alice", "session_id": "s", "filename": str(outside)}, messages=self.messages)
+        self.assertFalse(result.allowed)
+        reviewer.assert_not_called()
+
+    async def test_host_escalation_is_reviewed_even_when_tool_is_allowed(self):
+        policy.save_tool_policy_config("alice", {"default_approval": "allow"})
+        runtime_settings.save_runtime_settings("alice", settings={"approval": {"command_sandbox": "srt"}})
+        args = {**self.args, "sandbox_access": "host", "escalation_reason": "sandbox denied a required system call"}
+        with patch.object(review, "run_reviewer", return_value=self.verdict) as reviewer:
+            result = await review.authorize_action(user_id="alice", session_id="s", tool_name="run_command",
+                args=args, messages=self.messages)
+        self.assertTrue(result.allowed)
+        reviewer.assert_awaited_once()
+
+    async def test_agent_mode_sandbox_escalation_goes_to_user(self):
+        policy.save_tool_policy_config("alice", {"default_approval": "allow"})
+        store.save_session_mode("alice", "s", mode="agent")
+        runtime_settings.save_runtime_settings("alice", settings={"approval": {"command_sandbox": "srt"}})
+        args = {**self.args, "sandbox_access": "network", "escalation_target": "example.org:443",
+                "escalation_reason": "sandbox denied the needed domain"}
+        with patch.object(review, "run_reviewer") as reviewer, self.approve_pending():
+            result = await review.authorize_action(user_id="alice", session_id="s", tool_name="run_command",
+                args=args, messages=self.messages)
+        self.assertTrue(result.allowed)
+        reviewer.assert_not_called()
 
     async def test_hard_deny_cannot_be_overridden(self):
         policy.save_tool_policy_config("alice", {"tools": {"run_command": {"approval": "deny"}}})
@@ -240,7 +324,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
                     canonical_action_args("run_command", self.args), review.policy_binding("alice", "s")))
             return self.verdict
         with patch.object(review, "run_reviewer", side_effect=reviewer):
-            result = await node({"user_id": "alice", "session_id": "s", "session_mode": "agent", "messages": self.messages + [AIMessage(content="", tool_calls=calls)]}, {})
+            result = await node({"user_id": "alice", "session_id": "s", "session_mode": "auto", "messages": self.messages + [AIMessage(content="", tool_calls=calls)]}, {})
         self.assertEqual([m.content for m in result["messages"]], ["ok", "ok"])
 
     async def test_batch_rechecks_an_earlier_approval_after_policy_change(self):
@@ -253,7 +337,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
             return self.verdict
         calls = [{"name": "run_command", "id": str(i), "args": {"command": command}} for i, command in enumerate(("git status", "git diff"))]
         with patch.object(review, "run_reviewer", side_effect=reviewer):
-            result = await node({"user_id": "alice", "session_id": "s", "session_mode": "agent", "messages": self.messages + [AIMessage(content="", tool_calls=calls)]}, {})
+            result = await node({"user_id": "alice", "session_id": "s", "session_mode": "auto", "messages": self.messages + [AIMessage(content="", tool_calls=calls)]}, {})
         node.tool_node.ainvoke.assert_not_awaited()
         self.assertEqual(len(result["messages"]), 2)
         self.assertTrue(any("工作区发生变化" in m.content for m in result["messages"]))
@@ -300,14 +384,14 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(actual.id, "chosen-by-caller")
         self.assertEqual(context_store.append_messages.call_args_list[0].args[1][0].id, actual.id)
 
-    async def test_auto_mode_reviews_writes_even_when_policy_allows(self):
+    async def test_auto_mode_does_not_review_allowed_workspace_write(self):
         policy.save_tool_policy_config('alice', {'default_approval': 'allow'})
         store.save_session_mode('alice', 's', mode='auto')
         with patch.object(review, 'run_reviewer', return_value=self.verdict) as reviewer:
             result = await review.authorize_action(user_id='alice', session_id='s', tool_name='write_file',
                 args={'filename': 'notes.md', 'content': 'hello'}, messages=self.messages)
         self.assertTrue(result.allowed)
-        reviewer.assert_awaited_once()
+        reviewer.assert_not_called()
 
     async def test_auto_mode_lets_an_agent_answer_in_its_group(self):
         # A group message wakes the agent; there is no user request to review
@@ -330,7 +414,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_unwatched_turn_leaves_the_request_pending_instead_of_waiting(self):
         from webot.permission_context import resolve_permission_request
-        policy.save_tool_policy_config('alice', {'default_approval': 'allow'})
+        policy.save_tool_policy_config('alice', {'tools': {'write_file': {'approval': 'manual'}}})
         store.save_session_mode('alice', 's', mode='auto')
         woken = [HumanMessage(content='定时任务：整理笔记', id='sys-1', additional_kwargs={'input_origin': 'system'})]
         args = {'filename': 'notes.md', 'content': 'hello'}

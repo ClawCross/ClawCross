@@ -8,7 +8,7 @@ from dataclasses import dataclass
 import json
 import uuid
 from typing import Any
-from webot.approval_actions import canonical_action_args
+from webot.approval_actions import bind_file_target, canonical_action_args, file_target_outside_workspace
 
 from webot.policy import (
     WeBotToolPolicy,
@@ -55,7 +55,7 @@ def resolve_permission_context(
     policy: WeBotToolPolicy | None = None,
 ) -> PermissionContext:
     effective_policy = policy or get_tool_policy(user_id)
-    normalized_args = canonical_action_args(tool_name, dict(args or {}))
+    normalized_args = bind_file_target(tool_name, dict(args or {}), user_id, session_id)
     if tool_name in _POLICY_EXEMPT_TOOLS:
         return PermissionContext(
             decision="allow",
@@ -68,6 +68,12 @@ def resolve_permission_context(
             policy=effective_policy,
         )
     base_decision = evaluate_tool_policy(effective_policy, tool_name, normalized_args)
+    if file_target_outside_workspace(normalized_args) and (base_decision.allowed or base_decision.requires_approval):
+        from webot.policy import ToolPolicyDecision
+        base_decision = ToolPolicyDecision(
+            allowed=False, requires_approval=True,
+            reason=f"文件目标超出当前工作区，需要批准：{normalized_args['_resolved_path']}",
+        )
 
     if base_decision.allowed:
         return PermissionContext(
@@ -129,7 +135,7 @@ def create_or_reuse_permission_request(
     args: dict[str, Any] | None = None,
     reason: str = "",
 ) -> ToolApprovalRecord:
-    normalized_args = canonical_action_args(tool_name, dict(args or {}))
+    normalized_args = bind_file_target(tool_name, dict(args or {}), user_id, session_id)
     existing = find_pending_approval_for_action(user_id, session_id, tool_name, normalized_args)
     if existing is not None:
         return existing
