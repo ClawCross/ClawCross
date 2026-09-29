@@ -47,7 +47,7 @@ class Runtime:
     # ── calls ────────────────────────────────────────────────────────────
 
     async def ask(self, agent: Agent, msg: AgentMessage, *, context: dict[str, Any], mode: str | None,
-                  tools: list[str] | None, response_format: Any, timeout: float | None) -> AgentReply:
+                  enabled_tools: list[str] | None, response_format: Any, timeout: float | None) -> AgentReply:
         raise NotImplementedError
 
     async def trigger(self, agent: Agent, msg: AgentMessage, *, context: dict[str, Any], mode: str | None,
@@ -58,7 +58,7 @@ class Runtime:
         async def send() -> None:
             reply = AgentReply(ok=False, error="delivery did not complete")
             try:
-                reply = await self.ask(agent, msg, context=context, mode=mode, tools=None,
+                reply = await self.ask(agent, msg, context=context, mode=mode, enabled_tools=None,
                                        response_format=None, timeout=None)
                 if not reply.ok:
                     logger.warning("trigger %s failed: %s", agent.agent_id, reply.error)

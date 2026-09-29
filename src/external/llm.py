@@ -50,7 +50,7 @@ async def _reply_through_optional_tool(llm, prompt: str, schema: dict, name: str
 
 
 class LlmRuntime(Runtime):
-    async def ask(self, agent: Agent, msg: AgentMessage, *, context, mode, tools, response_format, timeout) -> AgentReply:
+    async def ask(self, agent: Agent, msg: AgentMessage, *, context, mode, enabled_tools, response_format, timeout) -> AgentReply:
         from langchain_core.messages import HumanMessage
 
         from webot.engine.tool_schema import forced_tool_choice_supported

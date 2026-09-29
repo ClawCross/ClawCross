@@ -142,7 +142,7 @@ class TestParticipants(EngineCase):
         self.assertEqual([m["agent_id"] for m in self.fake.made], ["tmp__t0pic__critical__1"])
         self.assertEqual(self.fake.deleted, ["tmp__t0pic__critical__1"])
         self.assertEqual(self.fake.asks[0]["agent"], "tmp__t0pic__critical__1")
-        self.assertIsNone(self.fake.asks[0]["tools"])  # all tools
+        self.assertIsNone(self.fake.asks[0]["enabled_tools"])  # all tools
 
 
 class TestParticipant(EngineCase):
@@ -152,7 +152,7 @@ class TestParticipant(EngineCase):
         asyncio.run(participant.participate(forum, discussion=False))
         ask = self.fake.asks[0]
         self.assertIs(ask["response_format"], OasisReplyOut)
-        self.assertEqual((ask["tools"], ask["timeout"]), (["read_file"], NO_TIMEOUT))  # execute mode waits
+        self.assertEqual((ask["enabled_tools"], ask["timeout"]), (["read_file"], NO_TIMEOUT))  # execute mode waits
         self.assertEqual(ask["msg"].instructions, "")  # a resident speaks as itself
         self.assertIn("问题", ask["msg"].text)
         self.assertEqual((forum.posts[0].author, forum.posts[0].author_id), ("Builder", self.coder.agent_id))

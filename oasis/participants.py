@@ -119,7 +119,7 @@ class Participant:
             await self.client.create(**self._make)
             self._made = True
         reply = await self.client.ask(
-            self.agent_id, AgentMessage(text=text, instructions=self._identity()), tools=self.tools,
+            self.agent_id, AgentMessage(text=text, instructions=self._identity()), enabled_tools=self.tools,
             response_format=OasisChooseOut if is_selector else OasisReplyOut,
             timeout=NO_TIMEOUT if execute else self.timeout,
         )

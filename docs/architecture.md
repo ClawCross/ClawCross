@@ -69,7 +69,7 @@ GET    /v1/models                   新 agent 可用的运行方式
 
 每种运行方式是一个运行时（`agents/runtime.py` 的 `Runtime`），对上提供同样的调用接口：
 
-- `ask(agent, msg, *, context, mode, tools, response_format, timeout)`：发送并等回复。`response_format` 由各运行时按自己的能力处理：WeBot 在工具调用阶段结束后，单独用模型服务的受限解码生成最终的结构化回复；外部 agent 按自身协议处理。
+- `ask(agent, msg, *, context, mode, enabled_tools, response_format, timeout)`：发送并等回复。`response_format` 由各运行时按自己的能力处理：WeBot 在工具调用阶段结束后，单独用模型服务的受限解码生成最终的结构化回复；外部 agent 按自身协议处理。
 - `trigger(agent, msg, …)`：system trigger 语义，交给它立即处理，不等回复。
 - `inbox(agent, msg)`：inbox 语义。
 
