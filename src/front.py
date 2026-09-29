@@ -4428,27 +4428,13 @@ def rename_team(team_name):
 
 @app.route("/teams/<team_name>", methods=["DELETE"])
 def delete_team(team_name):
-    """Delete a team and the agents that belong to no other team."""
+    """Delete a team: its folder goes, its agents stay."""
     user_id = session.get("user_id", "")
     teams = _teams()
     if not teams.exists(user_id, team_name):
         return jsonify({"error": "Team not found"}), 404
-    deleted, errors = 0, []
-    for member in teams.members(user_id, team_name):
-        if teams.teams_of(user_id, member.agent.agent_id) != [team_name]:
-            continue
-        try:
-            r = requests.delete(f"http://127.0.0.1:{PORT_AGENT}/v1/agents/{member.agent.agent_id}",
-                                headers=_agent_api_headers(user_id), timeout=30)
-            if r.status_code == 200:
-                deleted += 1
-            else:
-                errors.append(f"{member.role}: HTTP {r.status_code}")
-        except requests.RequestException as e:
-            errors.append(f"{member.role}: {e}")
     teams.delete(user_id, team_name)
-    return jsonify({"success": True, "message": f"Team '{team_name}' deleted", "deleted_agents": deleted,
-                    "errors": errors})
+    return jsonify({"success": True, "message": f"Team '{team_name}' deleted"})
 
 
 def _team_settings_path(user_id: str, team_name: str) -> str:

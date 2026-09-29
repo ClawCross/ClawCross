@@ -279,7 +279,7 @@ PORT_FRONTEND=51209
 - `GET /teams` — 团队列表
 - `POST /teams` — 创建团队
 - `PATCH /teams/<name>` — 重命名
-- `DELETE /teams/<name>` — 删除团队（不属于其他 team 的成员 agent 一并删除）
+- `DELETE /teams/<name>` — 删除团队文件夹（agent 不受影响）
 - `GET|POST /teams/<name>/alarms` · `DELETE /teams/<name>/alarms/<task_id>` — 团队成员的定时任务（`{agent, schedule_type, cron|run_at, text}`）
 - `GET /teams/<name>/experts` — 团队人设 prompt 列表
 - `POST /teams/<name>/experts` — 添加团队人设 prompt

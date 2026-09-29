@@ -179,7 +179,7 @@ async function orchDeleteTeam() {
         const resp = await fetch('/teams/' + encodeURIComponent(teamName), { method: 'DELETE' });
         const data = await resp.json();
         if (data.success) {
-            orchToast(t('orch_toast_team_deleted') || `Team deleted (${data.deleted_agents || 0} agents removed)`);
+            orchToast(t('orch_toast_team_deleted') || 'Team deleted');
             const sel = document.getElementById('orch-team-select');
             sel.value = '';
             orch.teamName = '';
