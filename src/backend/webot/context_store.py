@@ -176,6 +176,26 @@ class ContextStore:
                 return legacy_messages
         return []
 
+    async def snapshot_context(self, thread_id: str) -> list[BaseMessage]:
+        """Read a committed message prefix while short append operations are paused."""
+        await self.load_context(thread_id)  # Migrate an older checkpoint if needed.
+        lock = await self._lock_for(thread_id)
+        async with lock:
+            path = checkpoint_db_path_for_thread(thread_id, self.checkpoint_dir)
+            if not path.exists():
+                return []
+            db = await self._connection_for(path)
+            try:
+                rows = await (await db.execute(
+                    "SELECT message_json FROM context_messages "
+                    "WHERE thread_id = ? ORDER BY sequence", (thread_id,),
+                )).fetchall()
+            except sqlite3.OperationalError as exc:
+                if "no such table" not in str(exc).lower():
+                    raise
+                return []
+            return [_decode_message(row[0]) for row in rows]
+
     async def get_system_prompt(self, thread_id: str) -> str | None:
         """Return the prompt fixed at the first model call for this thread."""
         path = checkpoint_db_path_for_thread(thread_id, self.checkpoint_dir)

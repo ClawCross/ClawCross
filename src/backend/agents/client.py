@@ -50,6 +50,17 @@ class AgentClient:
             raise RuntimeError(_error(response))
         return response.json()
 
+    async def fork(self, ref: str, *, name: str = "", reason: str = "", agent_id: str = "") -> dict[str, Any]:
+        """Create a new WeBot agent from the source's completed conversation."""
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = await client.post(
+                f"{self.base_url}/v1/agents/{ref}/fork", headers=self._auth(),
+                json={"name": name, "reason": reason, "agent_id": agent_id},
+            )
+        if response.status_code >= 400:
+            raise RuntimeError(_error(response))
+        return response.json()
+
     async def ask(self, ref: str, msg: AgentMessage, *, mode: str | None = None, enabled_tools: list[str] | None = None,
                   response_format: type[BaseModel] | dict | None = None, timeout: float | None = None) -> AgentReply:
         """Send *msg* and wait for the reply; ``NO_TIMEOUT`` waits as long as the agent takes."""

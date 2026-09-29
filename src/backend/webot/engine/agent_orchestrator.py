@@ -64,7 +64,7 @@ def create_fork(
     mode: ForkMode = ForkMode.INHERIT,
     permission_level: str = "inherit",
 ) -> ForkedAgent:
-    """Create a new forked sub-agent."""
+    """Create legacy in-process metadata; durable forks use the Agent API."""
     fork_id = f"fork_{uuid.uuid4().hex[:12]}"
     child_session = f"sub_{parent_session}_{fork_id}"
 

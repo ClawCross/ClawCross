@@ -154,7 +154,7 @@ USER_INJECTED_TOOLS = {
     "list_oasis_experts", "save_oasis_expert", "delete_oasis_expert",
     "save_oasis_workflow", "list_oasis_workflows", "list_oasis_agent_catalog",
     # Session management tools
-    "list_sessions",
+    "list_sessions", "fork_session",
     # LLM API access tools
     "call_llm_api", "send_to_session", "read_session_inbox", "mark_session_inbox_read",
     # Group chat tools
@@ -184,6 +184,7 @@ SESSION_INJECTED_TOOLS = {
     "add_alarm": "session_id",
     "start_new_oasis": "notify_session",
     "list_sessions": "current_session_id",
+    "fork_session": "current_session_id",
     "send_notification": "source_session",
     "send_to_session": "source_session",
     "read_session_inbox": "source_session",
@@ -225,6 +226,7 @@ SESSION_FORCE_INJECTED_TOOLS: frozenset[str] = frozenset({
     "delete_subagent",
     "set_session_mode",
     "list_sessions",
+    "fork_session",
     "start_new_oasis",
 })
 
