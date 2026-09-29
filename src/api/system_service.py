@@ -18,7 +18,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from agents.messages import decode_text_attachment as _try_decode_base64_text, is_text_mime as _is_text_mime
 from utils.logging_utils import get_logger
 from services.message_builder import build_human_message
-from api.system_models import SystemTriggerRequest
+from api.system_models import SystemTriggerAttachment, SystemTriggerRequest
 from webot.runtime_store import (
     count_inbox_messages,
     create_inbox_message,
@@ -414,6 +414,12 @@ class SystemService:
             lines.append(f"其余 {len(items) - 10} 条请用 read_session_inbox 查看。")
         return "\n".join(lines)
 
+    @staticmethod
+    def _inbox_attachments(items: list[Any]) -> list[SystemTriggerAttachment] | None:
+        """What came with the entries (images, audio, files), for the turn that delivers them."""
+        found = [SystemTriggerAttachment(**a) for item in items for a in item.metadata.get("attachments") or []]
+        return found or None
+
     async def _run_inbox_worker(self, user_id: str, session_id: str) -> None:
         thread_id = f"{user_id}#{session_id}"
         config = {"configurable": {"thread_id": thread_id}, "recursion_limit": _GRAPH_RECURSION_LIMIT}
@@ -436,9 +442,10 @@ class SystemService:
                         batch.append(item)
                     if batch:
                         body = self._inbox_digest(batch, count_inbox_messages(user_id, session_id, status="unread"))
-                        req = SystemTriggerRequest(user_id=user_id, session_id=session_id, text=body)
+                        req = SystemTriggerRequest(user_id=user_id, session_id=session_id, text=body,
+                                                   attachments=self._inbox_attachments(batch))
                         ok = await self._invoke_system_message_locked(
-                            req=req, human_msg=HumanMessage(content=body),
+                            req=req, human_msg=self._build_message_from_trigger(req),
                             thread_id=thread_id, config=config, batch_count=len(batch),
                         )
                         if not ok:
@@ -456,9 +463,10 @@ class SystemService:
                             body = f"[来自 {source_user}#{sender} 的消息]\n{body}"
                         if item.metadata.get("wait_reply"):
                             body += "\n（对方正在等你的回复：直接用文字回答即可。）"
-                        req = SystemTriggerRequest(user_id=user_id, session_id=session_id, text=body)
+                        req = SystemTriggerRequest(user_id=user_id, session_id=session_id, text=body,
+                                                   attachments=self._inbox_attachments([item]))
                         ok = await self._invoke_system_message_locked(
-                            req=req, human_msg=HumanMessage(content=body),
+                            req=req, human_msg=self._build_message_from_trigger(req),
                             thread_id=thread_id, config=config, batch_count=1,
                         )
                         if not ok:
@@ -532,6 +540,7 @@ class SystemService:
                         "source_user": req.inbox_source_user or req.user_id,
                         "preformatted": True,
                         "wait_reply": req.wait_reply,
+                        "attachments": [a.model_dump() for a in req.attachments or []],
                     },
                 )
                 waiter = None

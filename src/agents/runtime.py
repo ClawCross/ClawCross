@@ -73,10 +73,10 @@ class Runtime:
         task.add_done_callback(self._background.discard)
         return DeliveryReceipt(accepted=True)
 
-    async def inbox(self, agent: Agent, msg: AgentMessage, *, context: dict[str, Any],
+    async def inbox(self, agent: Agent, msg: AgentMessage, *, context: dict[str, Any], mode: str | None,
                     on_complete: Callable[[AgentReply], Any] | None) -> DeliveryReceipt:
         """Without an inbox of its own, a runtime is handed the message at once."""
-        return await self.trigger(agent, msg, context=context, mode=None, coalesce_key=None, on_complete=on_complete)
+        return await self.trigger(agent, msg, context=context, mode=mode, coalesce_key=None, on_complete=on_complete)
 
     # ── control plane ────────────────────────────────────────────────────
 

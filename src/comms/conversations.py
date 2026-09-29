@@ -1,9 +1,9 @@
 """Posting into a conversation and waking the members it is for.
 
 Every member can read every message; ``delivery.select_wake_targets`` picks
-the agents to wake, each is sent the same kind of envelope through the agent
-gateway, and a member that was not woken for a while gets an unread digest the
-next time it is. How an agent posts back is its runtime's business
+the agents to wake, each is sent the same kind of envelope into its inbox (a
+runtime without one is handed it at once), and a member that was not woken for
+a while gets an unread digest the next time it is. How an agent posts back is its runtime's business
 (``gateway.reply_channel``); this module never looks at drivers.
 """
 
@@ -219,6 +219,13 @@ class Conversations:
         return (f"{digest}{head}\n{message.content}{attach_block}\n\n"
                 f"（{role}。{must}群里人人可见你的发言，但只唤醒你 @ 的成员。）\n回复方式：{reply}")
 
+    def _summary(self, conversation: Conversation, member: MemberView, message: Message) -> str:
+        """One line for the member's inbox notice: where, who, and the start of what was said."""
+        where = "私聊" if conversation.kind == DIRECT else f"群聊「{conversation.title}」"
+        mentioned = " @你" if member.principal in message.mentions else ""
+        preview = " ".join(message.content.split())[:60]
+        return f"{where} {self.name_of(conversation.conv_id, message.sender)}{mentioned}: {preview}"
+
     async def _deliver(self, conversation: Conversation, members: list[MemberView], member: MemberView,
                        message: Message, *, mode: str | None) -> None:
         conv_id = conversation.conv_id
@@ -229,12 +236,12 @@ class Conversations:
             self._typing_stop(conv_id, member.principal)
 
         try:
-            receipt = await self.gateway.trigger(
+            receipt = await self.gateway.inbox(
                 member.agent,
-                AgentMessage(text=text, attachments=list(message.attachments), sender=message.sender),
+                AgentMessage(text=text, attachments=list(message.attachments), sender=message.sender,
+                             summary=self._summary(conversation, member, message)),
                 context={"conversation_id": conv_id},
                 mode=mode,
-                coalesce_key=f"conversation:{conv_id}:{member.principal}",
                 on_complete=settled,
             )
         except Exception:

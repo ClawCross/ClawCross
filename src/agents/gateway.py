@@ -107,12 +107,21 @@ class AgentGateway:
         return await self.runtime(agent).trigger(agent, msg, context=context, mode=normalize_run_mode(mode),
                                                  coalesce_key=coalesce_key, on_complete=on_complete)
 
-    async def inbox(self, agent: Agent, msg: AgentMessage, *,
-                    on_complete: Callable[[AgentReply], Any] | None = None) -> DeliveryReceipt:
-        """Queue *msg* (from ``msg.sender``): WeBot takes it when the session is free; a
-        runtime without an inbox is handed it at once."""
-        context = {"team": agent.config.get("team", "")}
-        return await self.runtime(agent).inbox(agent, msg, context=context, on_complete=on_complete)
+    async def inbox(
+        self,
+        agent: Agent,
+        msg: AgentMessage,
+        *,
+        context: dict[str, Any] | None = None,
+        mode: str | None = None,
+        on_complete: Callable[[AgentReply], Any] | None = None,
+    ) -> DeliveryReceipt:
+        """Queue *msg* (from ``msg.sender``): WeBot takes it when the session is free and
+        runs it in the session's own mode; a runtime without an inbox is handed it at
+        once, in *mode*."""
+        context = {"team": agent.config.get("team", ""), **(context or {})}
+        return await self.runtime(agent).inbox(agent, msg, context=context, mode=normalize_run_mode(mode),
+                                               on_complete=on_complete)
 
     # ── control plane ────────────────────────────────────────────────────
 
