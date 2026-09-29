@@ -74,14 +74,14 @@ test('model and summary instructions render as literal text', async ({ page }) =
   expect(await page.evaluate(() => window.injected)).toBeUndefined();
 });
 
-test('Auto container sandbox is saved for the selected session', async ({ page }) => {
+test('Auto SRT sandbox is saved for the selected session', async ({ page }) => {
   const requests = await setup(page);
   await page.evaluate(() => openRuntimeSettings('session-1'));
   await page.getByRole('tab', { name: '工具审核' }).click();
-  await page.locator('[data-key="command_sandbox"]').selectOption('container');
+  await page.locator('[data-key="command_sandbox"]').selectOption('srt');
   await page.locator('#runtime-settings-save').click();
   await expect(page.locator('#runtime-settings-result')).toContainText('已保存');
-  expect(requests[0]).toEqual({ session_id: 'session-1', settings: { approval: { command_sandbox: 'container' } }, reset: false });
+  expect(requests[0]).toEqual({ session_id: 'session-1', settings: { approval: { command_sandbox: 'srt' } }, reset: false });
 });
 
 test('invalid settings show backend error and preserve edited values', async ({ page }) => {

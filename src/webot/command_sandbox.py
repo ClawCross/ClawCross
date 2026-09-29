@@ -1,101 +1,112 @@
-"""Optional OCI isolation for commands in Auto approval mode.
+"""Native SRT isolation for commands in Auto approval mode.
 
-Only the selected workspace is bind-mounted.  The container has no network,
-container socket, extra capabilities, or writable rootfs; host credentials
-are not passed into its environment.
-The reviewer still decides whether the requested action is authorized.
+The model reviewer remains responsible for authorization.  This module only
+constructs a bounded SRT process with an explicit, per-command policy.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import os
 from pathlib import Path
+import re
 import shutil
-import subprocess
-import uuid
-
-
-DEFAULT_IMAGE = "python:3.12-slim"
+import sys
+import tempfile
 
 
 class SandboxUnavailable(RuntimeError):
-    """The requested container sandbox cannot be used safely."""
+    """The requested native sandbox cannot be used safely."""
 
 
 @dataclass(frozen=True)
-class ContainerCommand:
+class SrtCommand:
     argv: tuple[str, ...]
-    runtime: str
-    name: str
+    settings_path: Path
 
 
-def _runtime_and_image() -> tuple[str, str]:
-    preferred = os.getenv("WEBOT_SANDBOX_RUNTIME", "auto").strip().lower()
-    if preferred not in {"auto", "podman", "docker"}:
-        raise SandboxUnavailable("WEBOT_SANDBOX_RUNTIME 必须是 auto、podman 或 docker。")
-    choices = ("podman", "docker") if preferred == "auto" else (preferred,)
-    image = os.getenv("WEBOT_SANDBOX_IMAGE", DEFAULT_IMAGE).strip()
-    if not image or image.startswith("-") or any(char.isspace() for char in image):
-        raise SandboxUnavailable("WEBOT_SANDBOX_IMAGE 无效。")
-    found = False
-    for choice in choices:
-        runtime = shutil.which(choice)
-        if not runtime:
-            continue
-        found = True
-        try:
-            check = subprocess.run(
-                [runtime, "image", "inspect", image], capture_output=True, text=True,
-                timeout=8, check=False,
+def _srt_binary() -> str:
+    binary = shutil.which("srt")
+    if not binary:
+        raise SandboxUnavailable("未找到 srt；请安装 @anthropic-ai/sandbox-runtime。命令不会在宿主机直接执行。")
+    if sys.platform.startswith("linux"):
+        missing = [name for name in ("bwrap", "socat", "rg") if not shutil.which(name)]
+        if missing:
+            raise SandboxUnavailable(
+                "SRT 缺少 Linux 依赖：" + ", ".join(missing) + "。命令不会在宿主机直接执行。"
             )
-        except (OSError, subprocess.TimeoutExpired):
-            continue
-        if check.returncode == 0:
-            return runtime, image
-    if not found:
-        raise SandboxUnavailable("未找到 Podman 或 Docker；Auto 沙盒已启用，命令不会在宿主机执行。")
-    raise SandboxUnavailable(
-        f"容器运行时不可用或本地缺少镜像 {image}；请先在宿主机准备镜像。命令不会回退宿主机。"
+    elif sys.platform == "darwin" and not shutil.which("rg"):
+        raise SandboxUnavailable("SRT 缺少 macOS 依赖 rg。命令不会在宿主机直接执行。")
+    executable = Path(binary).resolve()
+    candidates = (
+        executable.parent.parent / "package.json",  # npm .bin symlink -> dist/cli.js
+        executable.parent / "node_modules/@anthropic-ai/sandbox-runtime/package.json",  # Windows .cmd shim
     )
+    manifest = None
+    for path in candidates:
+        try:
+            candidate = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if candidate.get("name") == "@anthropic-ai/sandbox-runtime":
+            manifest = candidate
+            break
+    match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", str((manifest or {}).get("version", "")))
+    if not match or tuple(map(int, match.groups())) < (0, 0, 77):
+        raise SandboxUnavailable("需要 SRT 0.0.77 或更新版本；命令不会在宿主机直接执行。")
+    return binary
 
 
-def build_container_command(*, root: Path, cwd: Path, command: str, language: str,
-                            script_path: Path | None = None) -> ContainerCommand:
-    """Build a local, non-pulling container call without invoking a host shell."""
-    runtime, image = _runtime_and_image()
+def _policy(root: Path, settings_path: Path) -> dict:
+    home = Path.home().resolve()
+    private_names = (
+        ".ssh", ".aws", ".gnupg", ".kube", ".docker", ".claude", ".codex",
+        ".npmrc", ".pypirc", ".config/gcloud",
+    )
+    deny_read = [str(path) for name in private_names if (path := home / name).exists()]
+    deny_read.append(str(settings_path))
+    allow_read = list(dict.fromkeys(str(path.resolve()) for path in (root, Path(sys.prefix), Path(sys.base_prefix))))
+    allow_write = list(dict.fromkeys((str(root), str(Path(tempfile.gettempdir()).resolve()))))
+    return {
+        "network": {
+            "allowedDomains": [], "deniedDomains": [],
+            "allowUnixSockets": [], "allowLocalBinding": False,
+        },
+        "filesystem": {
+            "denyRead": deny_read, "allowRead": allow_read,
+            "allowWrite": allow_write, "denyWrite": [str(settings_path)],
+        },
+        "enableWeakerNestedSandbox": False,
+        "enableWeakerNetworkIsolation": False,
+        "allowAppleEvents": False,
+    }
+
+
+def build_srt_command(*, root: Path, cwd: Path, command: str, language: str,
+                      python_executable: str, script_path: Path | None = None) -> SrtCommand:
+    """Create an SRT invocation with a private settings file; never use a host shell."""
     root, cwd = root.resolve(), cwd.resolve()
     if not cwd.is_relative_to(root):
         raise SandboxUnavailable("命令工作目录超出会话工作区。")
-    if script_path is not None:
-        script_path = script_path.resolve()
-        if language != "python" or not script_path.is_relative_to(root):
-            raise SandboxUnavailable("Python 脚本超出会话工作区。")
-    # OCI --mount uses comma-separated key/value pairs.  Reject paths that
-    # could be parsed as additional mount options by the runtime.
-    if "," in str(root):
-        raise SandboxUnavailable("工作区路径含逗号，容器挂载无法安全解析。")
-    name = "clawcross-auto-" + uuid.uuid4().hex
-    container_cwd = "/workspace" + ("/" + cwd.relative_to(root).as_posix() if cwd != root else "")
-    uid = f"{os.getuid()}:{os.getgid()}" if hasattr(os, "getuid") and os.getuid() else "1000:1000"
-    argv = [
-        runtime, "run", "--rm", "--pull=never", "--name", name,
-        "--network=none", "--read-only", "--cap-drop=ALL",
-        "--security-opt=no-new-privileges", "--pids-limit=128",
-        "--memory=512m", "--cpus=1", "--user", uid,
-        "--tmpfs=/tmp:rw,nosuid,nodev,size=64m",
-        "--mount", f"type=bind,source={root},target=/workspace",
-        "--workdir", container_cwd, "--env", "HOME=/tmp",
-        "--env", "PYTHONDONTWRITEBYTECODE=1",
-    ]
     if language == "python":
-        argv.extend(["--entrypoint", "/usr/local/bin/python", image])
-        if script_path is None:
-            argv.extend(["-c", command])
-        else:
-            argv.append("/workspace/" + script_path.relative_to(root).as_posix())
+        if script_path is None or not script_path.resolve().is_relative_to(root):
+            raise SandboxUnavailable("Python 脚本超出会话工作区。")
+        wrapped = [python_executable, str(script_path.resolve())]
     elif language == "shell":
-        argv.extend(["--entrypoint", "/bin/sh", image, "-c", command])
+        if os.name == "nt":
+            wrapped = [os.environ.get("COMSPEC", "cmd.exe"), "/c", command]
+        else:
+            wrapped = ["/bin/sh", "-c", command]
     else:
-        raise SandboxUnavailable("不支持的容器命令语言。")
-    return ContainerCommand(tuple(argv), runtime, name)
+        raise SandboxUnavailable("不支持的 SRT 命令语言。")
+    binary = _srt_binary()
+    fd, raw_path = tempfile.mkstemp(prefix="clawcross-srt-", suffix=".json")
+    settings_path = Path(raw_path)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(_policy(root, settings_path), handle, ensure_ascii=False)
+        return SrtCommand((binary, "--settings", str(settings_path), "--", *wrapped), settings_path)
+    except BaseException:
+        settings_path.unlink(missing_ok=True)
+        raise
