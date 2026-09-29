@@ -12,11 +12,19 @@ This document summarizes the runtime-related databases used by Clawcross, what t
   - Purpose: persist conversation context without forcing all sessions
     to contend on one shared SQLite writer.
 
-- `data/webot_runtime.db`
-  - WeBot runtime control-plane store (not full chat transcript storage).
-  - Stores run lifecycle, runtime artifacts index, session state, approvals, memory/bridge/voice/buddy runtime state.
+- `data/webot_agents/<user>#<agent>.db`
+  - One SQLite file per Agent for its inbox, approvals, execution permits, runs,
+    run events, artifacts, mode, plans, todos, verifications, memory, voice,
+    and Claude keepalive state.
+  - A sender writes an inbox message to the recipient Agent's file. Cross-Agent
+    listings scan these files and deduplicate legacy rows by record ID.
 
-## `webot_runtime.db` Core Tables
+- `data/webot_runtime.db`
+  - Legacy store. Existing session rows are copied into the relevant Agent file
+    on first access; new rows for the features above are written only to Agent files.
+  - Bridge, goal, and user-level buddy records still use this database.
+
+## Per-Agent Runtime Tables
 
 - `webot_runs`
   - One record per runtime task execution (`run_id`), including status, timeout, worker lease/heartbeat, result/error.
@@ -33,7 +41,7 @@ This document summarizes the runtime-related databases used by Clawcross, what t
 
 - Other state tables
   - `webot_session_state`, `webot_session_plans`, `webot_session_todos`
-  - `webot_verifications`, `webot_tool_approvals`
+  - `webot_verifications`, `webot_tool_approvals`, `webot_execution_permits`
   - `webot_memory_state`, `webot_bridge_sessions`, `webot_voice_state`, `webot_buddy_state`
 
 ## Runtime Artifacts: What Is Stored

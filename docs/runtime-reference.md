@@ -17,7 +17,8 @@ FastAPI services
     -> `src/webot/bridge.py` (bridge session issuance, websocket hub, runtime snapshot publish)
     -> `src/webot/memory.py` / `src/webot/voice.py` / `src/webot/buddy.py` (browser-native parity services)
 Persistence
-    -> `data/webot_runtime.db` (runs, attempts, inbox, artifacts, session state, memory, bridge, voice, buddy)
+    -> `data/webot_agents/<user>#<agent>.db` (runs, inbox, approvals, permits, artifacts, session state, memory, voice)
+    -> `data/webot_runtime.db` (legacy rows plus bridge, goals, user-level buddy state)
     -> `data/webot_subagents.db` (subagent metadata)
     -> `data/user_files/{user_id}/` (profiles, policies, runtime artifacts, memory dirs, logs)
 Side systems
@@ -70,7 +71,8 @@ Internal modules use this DTO to keep the runtime panel, Flask proxies, MCP tool
 
 ```
 data/
-├── webot_runtime.db   (runs / attempts / inbox / artifacts / session_mode)
+├── webot_agents/     (one DB per Agent: runs / attempts / inbox / approvals / permits / artifacts / session_mode)
+├── webot_runtime.db  (legacy rows / bridge / goals / user-level buddy state)
 ├── webot_subagents.db (agent metadata: id/session/parent/status)
 ├── user_files/
 │   └── {user_id}/
