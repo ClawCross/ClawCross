@@ -49,7 +49,7 @@ class VisionAttachmentMcpTests(unittest.TestCase):
     def test_read_file_returns_an_image_as_native_image_content(self):
         self._write_test_image()
 
-        from mcp_servers.filemanager import ATTACHMENT_MARKER, read_file
+        from webot.tools.filemanager import ATTACHMENT_MARKER, read_file
         from mcp.types import CallToolResult, ImageContent, TextContent
 
         result = asyncio.run(read_file(username="alice", session_id="default", filename="pixel.png"))
@@ -73,11 +73,17 @@ class VisionAttachmentMcpTests(unittest.TestCase):
         outside_path = Path(self.tmpdir.name) / "outside.png"
         outside_path.write_bytes(base64.b64decode(_PNG_1X1))
 
-        from mcp_servers.filemanager import read_file
+        from unittest.mock import AsyncMock, patch
+        from types import SimpleNamespace
+        from webot.tools import filemanager
         from mcp.types import CallToolResult, ImageContent
 
-        result = asyncio.run(read_file(username="alice", session_id="default", filename=str(outside_path)))
+        # Outside the workspace a read needs one approval; here the user has given it.
+        approve = AsyncMock(return_value=SimpleNamespace(allowed=True, reason=""))
+        with patch.object(filemanager, "authorize_action", approve):
+            result = asyncio.run(filemanager.read_file(username="alice", session_id="default", filename=str(outside_path)))
 
+        approve.assert_awaited_once()
         self.assertIsInstance(result, CallToolResult)
         self.assertFalse(result.isError)
         self.assertIsInstance(result.content[1], ImageContent)
@@ -90,7 +96,7 @@ class VisionAttachmentMcpTests(unittest.TestCase):
         # An image extension alone does not make a file an image.
         (user_root / "fake.png").write_text("not an image", encoding="utf-8")
 
-        from mcp_servers.filemanager import read_file
+        from webot.tools.filemanager import read_file
 
         self.assertIn("hello", asyncio.run(read_file(username="alice", session_id="default", filename="notes.txt")))
         fake = asyncio.run(read_file(username="alice", session_id="default", filename="fake.png"))
@@ -98,7 +104,7 @@ class VisionAttachmentMcpTests(unittest.TestCase):
         self.assertIn("not an image", fake)
 
     def test_agent_preserves_direct_mcp_image_tool_content(self):
-        from core.agent import TeamAgent
+        from webot.engine.agent import TeamAgent
 
         content = [
             {"type": "text", "text": "metadata"},
@@ -112,7 +118,7 @@ class VisionAttachmentMcpTests(unittest.TestCase):
         self._write_test_image()
 
         from mcp.types import CallToolResult, ImageContent, TextContent
-        from mcp_servers.filemanager import mcp
+        from webot.tools.filemanager import mcp
 
         result = asyncio.run(
             mcp.call_tool("read_file", {"username": "alice", "session_id": "default", "filename": "pixel.png"})
