@@ -463,7 +463,7 @@ async def delete_thread_records(db_path: str, thread_id: str) -> None:
     """
     for path in candidate_checkpoint_db_paths_for_thread(db_path, thread_id):
         async with aiosqlite.connect(path) as db:
-            for table in ("context_messages", "session_system_prompts", "agent_state", "context_usage", "checkpoints", "writes"):
+            for table in ("context_messages", "session_system_prompts", "context_compactions", "agent_state", "context_usage", "checkpoints", "writes"):
                 try:
                     await db.execute(f"DELETE FROM {table} WHERE thread_id = ?", (thread_id,))
                 except sqlite3.OperationalError as exc:
@@ -481,7 +481,7 @@ async def delete_thread_records_like(db_path: str, pattern: str) -> None:
     """
     for path in iter_checkpoint_db_paths(db_path):
         async with aiosqlite.connect(path) as db:
-            for table in ("context_messages", "session_system_prompts", "agent_state", "context_usage", "checkpoints", "writes"):
+            for table in ("context_messages", "session_system_prompts", "context_compactions", "agent_state", "context_usage", "checkpoints", "writes"):
                 try:
                     await db.execute(f"DELETE FROM {table} WHERE thread_id LIKE ?", (pattern,))
                 except sqlite3.OperationalError as exc:
@@ -515,6 +515,7 @@ async def _maybe_delete_empty_checkpoint_db(path: Path, store_path: str) -> bool
         total_rows += await _table_row_count(db, "agent_state")
         total_rows += await _table_row_count(db, "context_messages")
         total_rows += await _table_row_count(db, "session_system_prompts")
+        total_rows += await _table_row_count(db, "context_compactions")
 
     if total_rows > 0:
         return False

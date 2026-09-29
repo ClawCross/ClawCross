@@ -23,10 +23,17 @@ from webot.policy import (
     run_tool_policy_hooks,
 )
 from webot.compression import (
-    apply_compression,
-    make_llm_summarizer,
+    compression_view_from_record,
+    temporary_bounded_view,
     trim_new_input_if_oversized,
 )
+from webot.checkpoint_repository import (
+    get_context_compaction,
+    get_context_usage_record,
+    save_context_usage_record,
+)
+from webot.context_compressor import estimate_messages_tokens
+from webot.engine.background_compaction import BackgroundCompressionManager
 from webot.context import assemble_input_messages, render_runtime_context_block
 from webot.memory import get_memory_state
 from webot.skills import build_user_profile_block
@@ -36,7 +43,6 @@ from webot.llm_call_trace import llm_call_trace_enabled, save_llm_call
 from webot.context_references import expand_context_references
 from common.runtime_paths import PROJECT_ROOT, USER_FILES_DIR
 from webot.context_store import ContextStore
-from webot.checkpoint_repository import get_context_usage_record, save_context_usage_record
 from webot.context_usage import estimate_context_components, scale_components, tool_schemas
 from webot.smart_routing import resolve_turn_route
 from webot.permission_context import (
@@ -950,6 +956,7 @@ class TeamAgent:
         self._mcp_client: Optional[MultiServerMCPClient] = None
         self._context_store = None
         self._context_store_ctx = None
+        self._background_compression = BackgroundCompressionManager(db_path)
 
         # Per-thread execution state
         self._task_registry = TaskRegistry()
@@ -1211,6 +1218,7 @@ class TeamAgent:
             call_tools=tool_node,
             should_continue=self._should_continue,
             context_store=self._context_store,
+            on_turn_complete=self._queue_background_compression,
         )
 
         # 5. Run initial TTL cleanup (new)
@@ -1226,6 +1234,7 @@ class TeamAgent:
 
     async def shutdown(self):
         """Clean up MCP client and checkpoint DB."""
+        await self._background_compression.close()
         if self._context_store_ctx:
             try:
                 await self._context_store_ctx.__aexit__(None, None, None)
@@ -1234,12 +1243,35 @@ class TeamAgent:
 
     async def close_thread_checkpoint(self, thread_id: str) -> None:
         """Close one thread-specific checkpoint handle so its shard can be deleted safely."""
+        await self.invalidate_background_compression(thread_id)
         if not self._context_store_ctx:
             return
         try:
             await self._context_store_ctx.aclose_thread(thread_id)
         except Exception as e:
             logging.getLogger("agent").warning("close_thread_checkpoint failed for %s: %s", thread_id, e)
+
+    async def invalidate_background_compression(self, thread_id: str) -> None:
+        await self._background_compression.invalidate(thread_id)
+
+    def _queue_background_compression(self, state: dict) -> None:
+        """Schedule summarization only after the final reply is persisted."""
+        config = state.get("_background_compaction_config")
+        if not config:
+            return
+        user_id = state.get("user_id") or ""
+        session_id = state.get("session_id") or ""
+        if not user_id or not session_id:
+            return
+        self._background_compression.schedule(
+            user_id=user_id, session_id=session_id,
+            messages=list(state.get("messages") or []),
+            history_token_budget=config["history_token_budget"],
+            preserve_recent=config["preserve_recent"],
+            settings=config["settings"],
+            measured_input_tokens=self.get_thread_last_context_tokens(f"{user_id}#{session_id}"),
+            measured_budget=config["context_window"],
+        )
 
     async def purge_checkpoints(self, thread_id: str, keep: int = 1) -> int:
         """
@@ -1602,6 +1634,12 @@ class TeamAgent:
             is_subagent=is_subagent,
             token_budget=history_token_budget,
         )
+        state["_background_compaction_config"] = {
+            "history_token_budget": history_token_budget,
+            "preserve_recent": preserve_recent_messages,
+            "settings": compact_settings,
+            "context_window": model_window,
+        }
         # 记下本轮模型，供静态路径（session_history / session_status）后续使用
         self._thread_state_registry.set_thread_model(
             f"{user_id}#{session_id}", current_model_name or ""
@@ -1626,50 +1664,16 @@ class TeamAgent:
             context_window=context_window,
         )
 
-        with contextlib.suppress(Exception):
-            run_tool_policy_hooks(
-                session_policy,
-                event="pre_compact",
-                user_id=user_id,
-                session_id=session_id,
-                tool_name="__session__",
-                args={
-                    "mode": runtime_mode_name,
-                    "message_count": len(history_messages),
-                },
-                result={
-                    "context_token_budget": history_token_budget,
-                },
-            )
-
-        # 2) 唯一的历史压缩入口：低频触发，触发即一次性 LLM summary + 段落落盘。
-        # 触发判断优先吃真值（measured_input_tokens vs 整窗口）；首轮还没真值时，
-        # compression 内部回退到字数估算的历史口径。折叠多少仍按历史估算挑边界。
-        compression_result = await asyncio.to_thread(
-            apply_compression,
-            user_id=user_id,
-            session_id=session_id,
-            messages=history_messages,
-            history_token_budget=history_token_budget,
-            checkpoint_store_path=self._db_path,
-            preserve_recent=preserve_recent_messages,
-            summarizer=make_llm_summarizer(
-                model=compact_settings.summarizer_model or None,
-                max_output_tokens=compact_settings.summary_tokens,
-                input_token_budget=compact_settings.summarizer_input_tokens,
-                preserve_instructions=compact_settings.preserve_instructions,
-            ),
-            measured_input_tokens=last_real_context,
-            measured_budget=context_window,
-            settings=compact_settings,
+        # Freeze the completed summary for this entire turn. Background work
+        # may publish a newer summary while tools are running; this turn keeps
+        # the same view and the next turn picks up the new version.
+        if "_turn_compaction_record" not in state:
+            state["_turn_compaction_record"] = get_context_compaction(self._db_path, thread_id)
+        history_messages = compression_view_from_record(
+            state["_turn_compaction_record"], history_messages,
         )
-        history_messages = compression_result.view
-        if compression_result.triggered:
-            print(
-                f">>> [compress] folded until={compression_result.compacted_until} "
-                f"view_tokens≈{compression_result.view_tokens} "
-                f"summary_chars={len(compression_result.summary)}"
-            )
+        history_messages = temporary_bounded_view(history_messages, history_token_budget)
+        view_tokens = estimate_messages_tokens(history_messages)
 
         # --- Token budget tracking ---
         # 上下文占用优先用上一轮 API 真实占用 (input+output) 相对整窗口口径，
@@ -1679,7 +1683,7 @@ class TeamAgent:
             context_used = last_real_context
             context_budget = context_window
         else:
-            context_used = compression_result.view_tokens
+            context_used = view_tokens
             context_budget = context_window
         session_budget.update_current_context(
             used_tokens=context_used,

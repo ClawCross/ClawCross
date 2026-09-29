@@ -147,6 +147,9 @@ class SessionService:
         logger.info("compact_session user=%s session=%s", user_id, session_id)
 
         thread_id = f"{user_id}#{session_id}"
+        invalidate = getattr(self.agent, "invalidate_background_compression", None)
+        if callable(invalidate):
+            await invalidate(thread_id)
         config = {"configurable": {"thread_id": thread_id}}
         snapshot = await self.agent.agent_app.aget_state(config)
         msgs = snapshot.values.get("messages", []) if snapshot and snapshot.values else []
