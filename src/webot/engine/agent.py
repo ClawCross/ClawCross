@@ -599,8 +599,9 @@ class UserAwareToolNode:
                 inject_team = "team" not in tc["args"] if memory_file_tool else not tc["args"].get("team")
                 if tc["name"] in TEAM_INJECTED_TOOLS and inject_team:
                     session_meta = self._resolve_internal_session_meta(user_id, session_id)
-                    if session_meta and session_meta.get("team"):
-                        tc["args"]["team"] = session_meta["team"]
+                    teams = (session_meta or {}).get("teams") or []
+                    if len(teams) == 1:  # in several teams, the call names the one it means
+                        tc["args"]["team"] = teams[0]
                 # Auto-inject session-related args; SESSION_FORCE_INJECTED_TOOLS always overwrites model args.
                 if tc["name"] in SESSION_INJECTED_TOOLS:
                     param_name = SESSION_INJECTED_TOOLS[tc["name"]]
@@ -974,15 +975,15 @@ class TeamAgent:
                         )
         return None
 
-    def _get_user_skills(self, user_id: str, team: str = "") -> str:
+    def _get_user_skills(self, user_id: str, teams: list[str] | tuple[str, ...] = ()) -> str:
         """Describe the Skill/Memory interface and initial catalog without paths."""
         from webot.skills import build_user_skills_listing
 
-        return build_user_skills_listing(user_id, team=team)
+        return build_user_skills_listing(user_id, teams=teams)
 
     def _find_internal_session_meta(self, user_id: str, session_id: str) -> dict | None:
-        """``{"team", "name", "persona", "tools"}`` of the agent this session is: its
-        persona text, and the tools it has (None: all of them)."""
+        """``{"teams", "name", "persona", "tools"}`` of the agent this session is: the
+        teams it is in, its persona text, and the tools it has (None: all of them)."""
         if not user_id or not session_id:
             return None
         from agents.store import get_store
@@ -990,7 +991,7 @@ class TeamAgent:
         agent = get_store().get(user_id, session_id)
         if agent is None:
             return None
-        return {"team": agent.config.get("team", ""), "name": agent.name,
+        return {"teams": agent.teams, "name": agent.name,
                 "persona": agent.config.get("persona", ""), "tools": agent.config.get("tools")}
 
     def _get_internal_session_persona_prompt(self, user_id: str, session_id: str) -> str:
@@ -1403,11 +1404,11 @@ class TeamAgent:
                 f"{describe_session_workspace(user_id, session_id)}\n"
             )
             session_meta = self._find_internal_session_meta(user_id, session_id or "") if (user_id and session_id) else None
-            session_team = (session_meta or {}).get("team", "")
+            session_teams = (session_meta or {}).get("teams") or []
             if (not is_subagent) or (subagent_profile and subagent_profile.include_user_profile):
                 base_prompt += build_user_profile_block(user_id)
             if (not is_subagent) or (subagent_profile and subagent_profile.include_user_skills):
-                base_prompt += self._get_user_skills(user_id, team=session_team) + "\n"
+                base_prompt += self._get_user_skills(user_id, session_teams) + "\n"
             if not is_subagent:
                 base_prompt += build_soul_prompt(user_id)
             base_prompt = await self._context_store.save_system_prompt_if_absent(tool_state_key, base_prompt)

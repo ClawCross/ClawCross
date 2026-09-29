@@ -458,7 +458,7 @@ class TestAgentsApi(ApiCase):
         self.assertEqual(self.call("PATCH", f"/v1/agents/{webot['agent_id']}",
                                    json={"settings": {"api_url": "x"}}).status_code, 400)
         self.assertEqual(self.call("PATCH", f"/v1/agents/{webot['agent_id']}",
-                                   json={"settings": {"team": "dev"}}).status_code, 400)  # only teams set it
+                                   json={"settings": {"teams": ["dev"]}}).status_code, 400)  # only teams set it
 
         self.assertEqual(self.call("DELETE", f"/v1/agents/{ref}").status_code, 200)
         self.assertIsNone(self.store.get("alice", ref))

@@ -46,7 +46,7 @@ class UserAwareToolNodeTests(unittest.IsolatedAsyncioTestCase):
         node = UserAwareToolNode(
             [],
             lambda: [],
-            find_internal_session_meta_fn=lambda user_id, session_id: {"team": "alpha"},
+            find_internal_session_meta_fn=lambda user_id, session_id: {"teams": ["alpha"]},
         )
         fake_tool_node = _FakeToolNode()
         node.tool_node = fake_tool_node
@@ -86,7 +86,7 @@ class UserAwareToolNodeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(injected_call["args"]["team"], "alpha")
 
     async def test_memory_scope_defaults_to_team_but_explicit_empty_means_personal(self):
-        node = UserAwareToolNode([], lambda: [], find_internal_session_meta_fn=lambda *a: {"team": "alpha"})
+        node = UserAwareToolNode([], lambda: [], find_internal_session_meta_fn=lambda *a: {"teams": ["alpha"]})
         fake = _FakeToolNode()
         fake._tools_by_name = {"list_files": StructuredTool(name="list_files", description="list", func=lambda **a: "ok",
             args_schema={"type": "object", "properties": {"team": {"type": ["string", "null"], "default": None}}})}

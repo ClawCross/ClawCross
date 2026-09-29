@@ -97,7 +97,7 @@ def agent_card(agent: Agent) -> dict[str, Any]:
     """What a caller sees of an agent. Secrets never leave; the driver is the agent's business."""
     config = agent.config
     settings = {key: config.get(key, "") for key in _SHARED_SETTINGS}
-    settings["team"] = config.get("team", "")  # the team it is in; changed only by joining or leaving one
+    settings["teams"] = agent.teams  # changed only by joining or leaving a team
     if agent.driver == WEBOT:
         settings["tools"] = config.get("tools")
     elif agent.driver != LLM:
