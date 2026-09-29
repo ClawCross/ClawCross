@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from mcp_servers import filemanager
+from webot.tools import filemanager
 from webot import skills
 from webot.skill_memory import memory_target
 
@@ -61,7 +61,7 @@ class MemoryFilesTests(unittest.TestCase):
         entry = json.loads(self.write("safe"))
         path = memory_target("alice", entry["id"])["_path"]
         support = path.parent / "notes.md"
-        asyncio.run(filemanager.write_file("alice", str(support), "normal file write"))
+        support.write_text("normal file write")  # a supporting file beside the entry, written directly
         for selector in (str(path), "safe/SKILL.md", "../safe", "safe/notes.md"):
             with self.subTest(selector=selector):
                 self.assertTrue(self.write(selector).startswith("❌"))
@@ -117,7 +117,7 @@ class MemoryFilesTests(unittest.TestCase):
         self.assertIn("经验正文", current)
 
     def test_evolution_report_keeps_analysis_but_hides_storage_metadata(self):
-        from mcp_servers.skills import skill_evolution_report
+        from webot.tools.skills import skill_evolution_report
         entry = json.loads(self.write("report"))
         report = {"success": True, "local_state": {"skill_path": str(self.root), "cwd": str(self.root)},
                   "validation_report": {"env_fingerprint": {"repo_root": str(self.root)}}, "frontier": [{"candidate_id": "candidate"}]}
