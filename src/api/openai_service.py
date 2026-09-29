@@ -66,15 +66,6 @@ class OpenAIChatService:
         self.agent = agent
         self.extract_text = extract_text
         self.protocol = OpenAIProtocolHelper(build_human_message=build_human_message)
-        self._gateway = None
-
-    def agent_gateway(self):
-        """The L1 gateway, for agents of other runtimes."""
-        if self._gateway is None:
-            from agents.gateway import AgentGateway
-
-            self._gateway = AgentGateway(internal_token=self.internal_token)
-        return self._gateway
 
     @staticmethod
     def _target(user_id: str, session: str, model: str | None):
@@ -108,10 +99,11 @@ class OpenAIChatService:
 
     async def _complete_with_agent(self, user_id: str, record, req: ChatCompletionRequest):
         """Answer a chat completion by asking a non-WeBot agent through the gateway."""
+        from agents.gateway import get_gateway
         from agents.messages import AgentMessage
 
         text, attachments = self._last_user_message(req)
-        reply = await self.agent_gateway().ask(
+        reply = await get_gateway().ask(
             record,
             AgentMessage(text=text, attachments=attachments, sender=f"u:{user_id}"),
             mode=req.session_mode,

@@ -22,9 +22,9 @@ from typing import Any, Callable, Iterable
 from fastapi import APIRouter, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from agents.control import AgentControl, ControlError
 from agents.gateway import AgentGateway
 from agents.messages import AgentMessage
+from agents.runtime import ControlError
 from agents.store import (
     HTTP,
     WEBOT,
@@ -141,7 +141,6 @@ def create_agents_router(
     verify_password: Callable[[str, str], bool],
     store: AgentStore,
     gateway: AgentGateway,
-    control: AgentControl | None = None,
     names: Callable[[str, str], Agent | None] | None = None,
     on_delete: Iterable[Callable[[Agent], None]] = (),
 ) -> APIRouter:
@@ -175,10 +174,7 @@ def create_agents_router(
         return store.ensure(user, ref, driver=driver, config=config)
 
     async def with_status(agent: Agent) -> dict[str, Any]:
-        card = agent_card(agent)
-        if control is not None:
-            card["status"] = await control.status(agent)
-        return card
+        return {**agent_card(agent), "status": await gateway.status(agent)}
 
     def message(user: str, body: AgentMessageRequest) -> AgentMessage:
         return AgentMessage(text=body.text, attachments=body.attachments, sender=f"u:{user}",
@@ -187,7 +183,7 @@ def create_agents_router(
     @router.get("/v1/agents")
     async def list_agents(authorization: str | None = Header(None), status: bool = Query(False)):
         agents = store.list(user_of(authorization))
-        if status and control is not None:
+        if status:
             import asyncio
             cards = await asyncio.gather(*(with_status(a) for a in agents))
         else:
@@ -226,19 +222,18 @@ def create_agents_router(
     @router.post("/v1/agents/{ref}/control")
     async def control_agent(ref: str, body: AgentControlBody, authorization: str | None = Header(None)):
         agent = lookup(user_of(authorization), ref)
-        if control is None:
-            raise HTTPException(status_code=503, detail="agent control runs in the Agent service")
         try:
-            return {"agent": agent_card(agent), **await control.run(agent, body.action)}
+            return {"agent": agent_card(agent), **await gateway.control(agent, body.action)}
         except ControlError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
     @router.get("/v1/agents/{ref}/history")
     async def agent_history(ref: str, limit: int = Query(200, ge=1, le=1000), authorization: str | None = Header(None)):
         agent = lookup(user_of(authorization), ref)
-        if control is None:
-            raise HTTPException(status_code=503, detail="agent history is kept by the Agent service")
-        return {"agent": agent_card(agent), "messages": await control.history(agent, limit)}
+        try:
+            return {"agent": agent_card(agent), "messages": await gateway.history(agent, limit)}
+        except ControlError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
 
     @router.get("/v1/agents/{ref}")
     async def describe_agent(ref: str, authorization: str | None = Header(None)):
@@ -260,8 +255,7 @@ def create_agents_router(
     @router.delete("/v1/agents/{ref}")
     async def delete_agent(ref: str, authorization: str | None = Header(None)):
         agent = lookup(user_of(authorization), ref)
-        if control is not None:
-            await control.cleanup(agent)
+        await gateway.destroy(agent)
         store.delete(agent.owner, agent.agent_id)
         for forget in on_delete:
             forget(agent)

@@ -78,7 +78,7 @@ class _Gateway:
         self.deliveries = []
         self.fail = False
 
-    async def deliver(self, agent, msg, **kwargs):
+    async def trigger(self, agent, msg, **kwargs):
         self.deliveries.append({"agent": agent, "msg": msg, **kwargs})
         return DeliveryReceipt(accepted=not self.fail, error="down" if self.fail else "")
 

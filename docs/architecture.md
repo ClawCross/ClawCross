@@ -14,7 +14,7 @@ ClawCross 把一台机器上所有 agent 统一成一种东西：**有编号的�
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-依赖只能向下，`test/test_layering.py` 检查：L1 不 import 群聊、team、OASIS；只有 `src/agents` 直接调用传输层（`integrations.*`）。
+依赖只能向下，`test/test_layering.py` 检查：L1 不 import 群聊、team、OASIS；只有各运行时（`src/external`、`src/webot/driver.py`）直接调用传输层（`integrations.*`）。
 
 ## L1：agent（`src/agents/`）
 
@@ -46,7 +46,7 @@ ClawCross 把一台机器上所有 agent 统一成一种东西：**有编号的�
 |---|---|
 | **/v1** | `POST /v1/agents/{id}/messages`：发送并等回复。<br>`POST /v1/chat/completions`：`session_id` 是编号（必填）；`model` 只在新建时决定运行方式，不是运行方式名（如 `gpt-4o`）时按 WeBot 处理 |
 | **system trigger** | `POST /system_trigger {user_id, session_id, text}`（内部 token）：交给 agent 立即处理。WeBot 走自己的触发队列，其他运行方式在后台发送 |
-| **inbox** | `POST /v1/agents/{id}/inbox`：放进收件箱。WeBot 空闲时处理，其他运行方式没有收件箱，直接在后台发送 |
+| **inbox** | `POST /v1/agents/{id}/inbox`：放进收件箱。WeBot 的收件箱在 `/system_trigger`（带 `inbox_source_session`）里：记下发件人，会话空闲时处理；其他运行方式没有收件箱，直接在后台发送（acpx 自己按会话排队） |
 
 其他接口：
 
@@ -63,12 +63,29 @@ GET    /v1/models                   新 agent 可用的运行方式
 
 `ref` 是编号，或 `<team>.<名字>`（见 team）。agent 卡片不返回密钥，只给 `has_api_key`。
 
+### 运行时
+
+每种运行方式是一个运行时（`agents/runtime.py` 的 `Runtime`），对上提供同样的调用接口：
+
+- `ask(agent, msg, *, context, mode, tools, response_format, timeout)`：发送并等回复。`response_format` 由各运行时按自己的能力处理：WeBot 在工具调用阶段结束后，单独用模型服务的受限解码生成最终的结构化回复；外部 agent 按自身协议处理。
+- `trigger(agent, msg, …)`：system trigger 语义，交给它立即处理，不等回复。
+- `inbox(agent, msg)`：inbox 语义。
+
+控制面是各运行时自己的：`controls` 列出它支持的动作，另有 `status`、`history`，以及删除 agent 时释放资源的 `destroy`。
+
+| 运行时 | 代码 |
+|---|---|
+| WeBot | `src/webot/driver.py`：调用走 `/v1/chat/completions` 和 `/system_trigger`；控制面直接读引擎，只在 Agent 服务里有 |
+| acpx（codex / claude / gemini…） | `src/external/acp.py` |
+| OpenClaw | `src/external/openclaw.py` |
+| HTTP | `src/external/http.py` |
+| llm（一次调用） | `src/external/llm.py` |
+
+外部运行时共用 `src/external/session.py`：以编号命名的会话、身份 prompt、往来记录。
+
 ### 单 agent 接口（`gateway.py`）
 
-- `ask(agent, msg, *, context, mode, tools, response_format, timeout)`：发送并等回复。`response_format` 由各运行方式按自己的能力处理：WeBot 在工具调用阶段结束后，单独用模型服务的受限解码生成最终的结构化回复；外部 agent 按自身协议处理。
-- `deliver(agent, msg, …)`：system trigger 语义。
-- `inbox(agent, msg)`：inbox 语义。
-- `discard(agent)`：删除临时 WeBot 会话，连同它在表里的行。
+gateway 按 agent 的 `driver` 找到运行时，把调用交给它：`ask`、`trigger`、`inbox`，控制面 `status`、`control`、`history`、`destroy`；`discard(agent)` 删除临时 WeBot 会话，连同它在表里的行。
 
 附件统一为 `{type, name, mime_type, data}`。`parse_openai_content` 把 OpenAI 格式的图片、音频、文件解析成附件，再由各运行方式按能力发送：图片和音频作为多模态附件，文本文件内联，其他二进制只写文件名。
 
@@ -77,7 +94,7 @@ GET    /v1/models                   新 agent 可用的运行方式
 - `persona_agent()`：一次带人设的模型调用，不进表；
 - `temp_session_agent()`：带工具的临时 WeBot 会话（`tmp__…`），用完即删。
 
-`AgentControl`（`control.py`）：
+各运行时的控制面：
 
 | 动作 | WeBot | acpx / OpenClaw | HTTP |
 |---|---|---|---|
@@ -85,7 +102,7 @@ GET    /v1/models                   新 agent 可用的运行方式
 | `cancel` | 取消当前任务 | acpx cancel | 不支持 |
 | `reset` | 清空会话 | 重置会话，忘记已注入的身份 | 忘记已注入的身份 |
 | `history` | 会话消息（含工具调用） | 外部往来记录 | 同左 |
-| `cleanup` | 删除时清空会话 | 关闭会话并删除往来记录 | 删除往来记录 |
+| `destroy` | 删除时删掉会话 | 关闭会话并删除往来记录 | 删除往来记录 |
 
 agent 内部的人设、技能、工具，是各运行方式自己的事：
 
@@ -141,7 +158,7 @@ agent 内部的人设、技能、工具，是各运行方式自己的事：
 | 入口 /v1、inbox | `src/agents/routes.py`, `src/api/openai_service.py` |
 | system trigger | `src/api/system_service.py` |
 | 单 agent 接口、附件 | `src/agents/gateway.py`, `src/agents/messages.py` |
-| 状态 / 取消 / 重置 / 历史 | `src/agents/control.py` |
+| 运行时（调用接口与控制面） | `src/agents/runtime.py`, `src/webot/driver.py`, `src/external/` |
 | 群聊 | `src/comms/`, `src/groups/` |
 | team、导入导出 | `src/teams/store.py`, `src/teams/manifest.py`, `src/teams/routes.py` |
 | workflow | `oasis/engine.py`, `oasis/participants.py`, `oasis/agent_center.py` |

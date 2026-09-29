@@ -22,7 +22,7 @@ _ABOVE_L2 = ("api.", "routes", "mcp_servers", "teams", "groups", "oasis", "core.
 _DRIVER_NAMES = {"WEBOT", "ACPX", "OPENCLAW", "HTTP", "LLM", "DRIVERS", "runtime_key", "driver_for_platform"}
 _DRIVER_ATTRS = {"driver", "config"}
 
-# Talking to a transport directly instead of through agents.gateway.
+# Talking to a transport directly instead of through agents.gateway (only the runtimes do).
 _TRANSPORT = ("integrations.agent_sender", "integrations.registry", "integrations.connectors")
 
 # Modules that still call transports directly. This list may only shrink as
@@ -50,7 +50,7 @@ def _python_files(*roots: str) -> list[Path]:
 
 class TestLayering(unittest.TestCase):
     def test_agent_layer_does_not_import_the_layers_above_it(self):
-        for path in _python_files("src/agents"):
+        for path in [*_python_files("src/agents", "src/external"), PROJECT_ROOT / "src/webot/driver.py"]:
             with self.subTest(path=str(path.relative_to(PROJECT_ROOT))):
                 bad = sorted(name for name in _imports(path) if name.startswith(_ABOVE_L1))
                 self.assertEqual(bad, [])
@@ -78,7 +78,7 @@ class TestLayering(unittest.TestCase):
         callers = set()
         for path in _python_files("src", "oasis", "scripts", "clawcross_cli", "chatbot", "visual"):
             rel = str(path.relative_to(PROJECT_ROOT))
-            if rel.startswith(("src/integrations/", "src/agents/")):
+            if rel.startswith(("src/integrations/", "src/agents/", "src/external/")) or rel == "src/webot/driver.py":
                 continue
             if any(name.startswith(_TRANSPORT) for name in _imports(path)):
                 callers.add(rel)

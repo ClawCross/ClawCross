@@ -139,7 +139,7 @@ async def trigger_alarm(task_id: str):
         return
     schedule = info.get("run_at") if _schedule_type(info) == "once" else info.get("cron")
     text = f"[ClawCross 定时任务 {task_id} · {info.get('schedule_type') or 'cron'}:{schedule}]\n{info.get('text') or ''}"
-    receipt = await get_gateway().deliver(agent, AgentMessage(text=text, sender="scheduler"))
+    receipt = await get_gateway().trigger(agent, AgentMessage(text=text, sender="scheduler"))
     status = "已投递" if receipt.accepted else f"投递失败: {receipt.error}"
     print(f"[{datetime.now()}] 定时任务 {task_id} → {agent.agent_id}: {status}")
 
