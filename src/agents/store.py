@@ -73,11 +73,6 @@ class Agent:
         return str(self.config.get("platform") or self.driver)
 
     @property
-    def persona(self) -> str:
-        """The persona tag it speaks with, if any."""
-        return str(self.config.get("persona") or "")
-
-    @property
     def temporary(self) -> bool:
         """Made for one task and discarded after it."""
         return not self.agent_id or self.agent_id.startswith(TEMP_SESSION_PREFIX)

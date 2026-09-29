@@ -28,7 +28,7 @@ ClawCross 把一台机器上所有 agent 统一成一种东西：**有编号的�
 | `owner` | 所属用户空间 |
 | `name` | 显示名，默认等于编号 |
 | `driver` | 运行方式，只用来决定把信息转给谁 |
-| `config` | 运行方式自己的配置：外部 agent 有 `platform`、`api_url`、`api_key`、`model`、`headers`、`meta`；OpenClaw 还有 `global_name`，指明是哪一个 OpenClaw agent |
+| `config` | agent 自己的设置：`persona` 是人设文本本身（用人设库里的人设时复制一份进来）；WeBot 还有 `tools`（它有的工具，不填为全部）和 `llm`（模型）；外部 agent 有 `platform`、`api_url`、`api_key`、`model`、`headers`、`meta`，OpenClaw 还有 `global_name`，指明是哪一个 OpenClaw agent |
 | `runtime` | 运行时已经知道的东西（发过的身份 prompt、最后使用时间），只有 L1 读写 |
 
 在各运行时内部，会话都以编号命名：
@@ -105,9 +105,9 @@ gateway 按 agent 的 `driver` 找到运行时，把调用交给它：`ask`、`t
 | `history` | 会话消息（含工具调用） | 外部往来记录 | 同左 |
 | `destroy` | 删除时删掉会话 | 关闭会话并删除往来记录 | 删除往来记录 |
 
-agent 内部的人设、技能、工具，是各运行方式自己的事：
+agent 的人设和工具是它自己的，各运行方式按自己的方式用：
 
-- WeBot 按自己的配置组装 system prompt；
+- WeBot 把人设文本放进会话的 system prompt（会话建立时固定下来，之后改人设对新会话或重置后的会话生效）；只绑定 agent 自己的工具，每次请求的 `enabled_tools` 和运行模式在其中再收窄本轮能执行的；
 - acpx 在新会话的第一条消息前放身份 prompt；
 - OpenClaw 和 HTTP 在身份 prompt 没发过或有变化时才发。
 
@@ -141,11 +141,12 @@ agent 内部的人设、技能、工具，是各运行方式自己的事：
 ### team（`src/teams/`）
 
 - 一个文件夹（`user_files/<owner>/teams/<team>/`），就是一个命名空间，放成员、人设库（`oasis_experts.json`）、技能、定时任务和 workflow。
-- 成员记在 `members.json` 里：`{agent: 编号, name: team 内名字, lead?}`。team 内的 agent 可以称作 `<team>.<name>`，三种入口都认这种写法，而且换了机器也能用同一个名字找到对应的 agent。
+- 成员记在 `members.json` 里：`{agent: 编号, name: team 内名字, lead?, extra?}`；`extra.tag` 是成员用的 team 人设。team 内的 agent 可以称作 `<team>.<name>`，三种入口都认这种写法，而且换了机器也能用同一个名字找到对应的 agent。
 - `internal_agents.json` / `external_agents.json` 是导入导出格式，只有 `teams/manifest.py` 读写，格式不变：
   - `session`（内部条目）和 `global_name`（外部条目）就是 agent 编号；OpenClaw 条目的 `global_name` 是 OpenClaw agent 名；
   - 导入时，team 里已有同名成员就是那个成员，条目指向已有 agent 就用那个 agent，否则新建；
-  - 可移植导出不带编号和密钥。
+  - 新建的 agent 得到一份自己的人设文本：条目里的 `persona`，或按 `tag` 在人设库里找（先找 team 自己的 `oasis_experts.json`）；`tag` 留在成员上；
+  - 导出时写回 `tag` 和 agent 的 `persona` 文本；可移植导出不带编号和密钥。
 
 ### 定时任务
 

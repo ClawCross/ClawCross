@@ -155,13 +155,19 @@ class TeamStore:
         return self.member(owner, team, agent_id)
 
     def update(self, owner: str, team: str, agent_id: str, *, role: str | None = None,
-               is_lead: bool | None = None) -> Member:
+               is_lead: bool | None = None, tag: str | None = None) -> Member:
+        """``tag``: the team persona the member wears ("" for none)."""
         current = self.member(owner, team, agent_id)
+        extra = dict(current.extra)
+        if tag is not None:
+            extra.pop("tag", None)
+            if tag:
+                extra["tag"] = tag
         return self.add(
             owner, team, agent_id,
             role=current.role if role is None else role,
             is_lead=current.is_lead if is_lead is None else is_lead,
-            extra=current.extra,
+            extra=extra,
         )
 
     def remove(self, owner: str, team: str, agent_id: str) -> None:

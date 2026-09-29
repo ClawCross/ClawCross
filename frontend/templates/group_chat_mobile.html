@@ -7501,10 +7501,12 @@ async function ensureAgent(fields) {
 
 // Register an agent (or find the one already registered for its runtime); with a team,
 // it also joins the team under its name.
-async function registerAgent(fields, team = '') {
-  const agent = await ensureAgent({ ...fields, team });
+// A new agent (in *team*, when given) wearing the library persona *tag*: its text is copied into the agent.
+async function registerAgent(fields, team = '', tag = '') {
+  const persona = tag ? (((await lookupPersonaByTag(tag, team)) || {}).persona || '') : '';
+  const agent = await ensureAgent({ ...fields, persona, team });
   if (team) {
-    await api('POST', `/v1/teams/${encodeURIComponent(team)}/members`, { agent: agent.agent_id, role: fields.name });
+    await api('POST', `/v1/teams/${encodeURIComponent(team)}/members`, { agent: agent.agent_id, role: fields.name, tag });
   }
   return agent;
 }
@@ -7513,7 +7515,7 @@ async function registerAgent(fields, team = '') {
 async function listAgentEntries(team = '') {
   if (team) {
     const card = await api('GET', `/v1/teams/${encodeURIComponent(team)}`);
-    return (card.members || []).map(m => ({ agent: m.agent, name: m.role || m.agent.name, team, is_lead: !!m.is_lead }));
+    return (card.members || []).map(m => ({ agent: m.agent, name: m.role || m.agent.name, team, is_lead: !!m.is_lead, tag: m.tag || '' }));
   }
   const data = await api('GET', '/v1/agents');
   return (data.data || []).map(agent => ({ agent, name: agent.name, team: '', is_lead: false }));
@@ -10035,7 +10037,7 @@ async function mobileSubmitCreateAcpAgent() {
   if (btn) { btn.disabled = true; btn.dataset.orig = btn.textContent; btn.textContent = t('adding'); }
   try {
     // The runtime name is the new agent's number: its session in that runtime.
-    const agent = await registerAgent({ name, platform, agent_id: runtime, persona: _mobilePickedTag('ca-acp-tag', 'ca-acp-tag-custom') }, team);
+    const agent = await registerAgent({ name, platform, agent_id: runtime }, team, _mobilePickedTag('ca-acp-tag', 'ca-acp-tag-custom'));
     if (await startPrivateChat(agent.agent_id)) {
       closeCreateAgentModal();
       invalidateContactsPrefetch();
@@ -10160,7 +10162,7 @@ async function mobileSubmitCreateOpenClawAgent() {
       toast(r.status === 409 ? t('mobile_add_oc_exists') : (res.error || t('mobile_add_oc_failed')));
       return;
     }
-    const agent = await registerAgent({ name: shortName, platform: 'openclaw', global_name: globalName, persona: tag }, team);
+    const agent = await registerAgent({ name: shortName, platform: 'openclaw', global_name: globalName }, team, tag);
     if (await startPrivateChat(agent.agent_id)) {
       closeCreateAgentModal();
       invalidateContactsPrefetch();
@@ -10234,7 +10236,7 @@ async function submitCreateAgent() {
     return;
   }
   try {
-    const agent = await registerAgent({ name, platform: 'webot', persona: tag }, team);
+    const agent = await registerAgent({ name, platform: 'webot' }, team, tag);
     toast(t('agent_created') + ': ' + name);
     closeCreateAgentModal();
     await startPrivateChat(agent.agent_id);
@@ -13516,7 +13518,6 @@ function renderMembers(members) {
       </div>`;
     }
     const agent = m.agent;
-    const persona = agent.settings?.persona || '';
     const isPrimary = principal === currentGroupPrimaryAgent;
     const muteBtn = `<button onclick="event.stopPropagation();toggleMemberMute('${jsPrincipal}', ${m.muted ? 'false' : 'true'}, '${jsName}')" class="member-action-btn ${m.muted ? 'member-action-danger' : ''}" title="${m.muted ? '解除禁言' : '禁言'}">${m.muted ? '解除禁言' : '禁言'}</button>`;
     // A team group's members and primary agent follow its team.
@@ -13533,7 +13534,7 @@ function renderMembers(members) {
         <div class="member-avatar ${agentAvatarClass(agent.platform)} clickable" onclick="event.stopPropagation();showAgentDetail('${jsPrincipal}')" title="${t('tip_view_detail')}">${esc(initial)}</div>
         <div class="member-info" style="flex:1;">
           <div class="member-name">${esc(name)}</div>
-          <div class="member-tag">${esc(agentPlatformLabel(agent.platform))}${persona ? ' · ' + esc(persona) : ''} · ${esc(agent.agent_id)}${m.muted ? ' · 已禁言' : ''}${isPrimary ? ' · ⭐ 主 agent' : ''}</div>
+          <div class="member-tag">${esc(agentPlatformLabel(agent.platform))} · ${esc(agent.agent_id)}${m.muted ? ' · 已禁言' : ''}${isPrimary ? ' · ⭐ 主 agent' : ''}</div>
           ${actionBtns}
         </div>
         ${primaryBtn}
@@ -13846,7 +13847,7 @@ async function startExpertChat(persona) {
   if (!window.__currentUser) { toast(t('not_logged_in')); return; }
   toast(t('expert_chat_creating'));
   try {
-    const agent = await registerAgent({ name: persona.name, platform: 'webot', persona: persona.tag }, persona.team || '');
+    const agent = await registerAgent({ name: persona.name, platform: 'webot' }, persona.team || '', persona.tag);
     toast(t('expert_agent_created') + ': ' + agent.name);
     await startPrivateChat(agent.agent_id);
     invalidateContactsPrefetch();
@@ -13921,7 +13922,7 @@ async function loadAddAgentMembers() {
             ${checkbox('agent:' + entry.agent.agent_id, { agent_id: entry.agent.agent_id })}
             <div class="contact-avatar ${agentAvatarClass(entry.agent.platform)}">${esc(avatarLabelFromDisplayName(entry.name))}</div>
             <div class="contact-name">${esc(entry.name)}</div>
-            ${entry.agent.settings?.persona ? `<span class="contact-tag">${esc(entry.agent.settings.persona)}</span>` : ''}
+            ${entry.tag ? `<span class="contact-tag">${esc(entry.tag)}</span>` : ''}
           </label>`);
     }
     const personaRow = (exp, avatarClass) => {
@@ -13992,7 +13993,7 @@ async function confirmAddAgents() {
       try {
         // A persona joins as a new WeBot agent wearing it.
         const agentId = pick.agent_id
-          || (await registerAgent({ name: pick.persona.name, platform: 'webot', persona: pick.persona.tag }, team)).agent_id;
+          || (await registerAgent({ name: pick.persona.name, platform: 'webot' }, team, pick.persona.tag)).agent_id;
         applyGroupDetail(await api('POST', `/proxy_groups/${encodeURIComponent(currentGroupId)}/members`, { agent: agentId }));
         success++;
       } catch (e) {
@@ -14168,8 +14169,6 @@ async function showAgentDetail(agentId) {
     if (__agentDetailRenderSeq !== renderSeq) return;
     title.textContent = `🤖 ${agent.name}`;
     body.innerHTML = renderAgentBasicInfo(agent);
-    const persona = await lookupPersonaByTag(agent.settings?.persona, agent.settings?.team || '');
-    if (persona && __agentDetailRenderSeq === renderSeq) body.innerHTML = renderAgentBasicInfo(agent, persona);
   } catch (e) {
     if (__agentDetailRenderSeq === renderSeq) body.innerHTML = `<div class="agent-detail-loading">${esc(e.message)}</div>`;
   }
@@ -14422,7 +14421,7 @@ function closeAgentHistory() {
   }, 280);
 }
 
-function renderAgentBasicInfo(agent, persona = null) {
+function renderAgentBasicInfo(agent) {
   const settings = agent.settings || {};
   const jsId = agent.agent_id.replace(/'/g, "\\'");
   const jsName = agent.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -14433,7 +14432,6 @@ function renderAgentBasicInfo(agent, persona = null) {
       <div><strong>${esc(agent.name)}</strong></div>
       <div style="margin-top:4px;">
         ${renderPlatformBadge(agentPlatformLabel(agent.platform))}
-        ${settings.persona ? `<span class="agent-detail-tag gray">${esc(settings.persona)}</span>` : ''}
         ${settings.team ? `<span class="agent-detail-tag blue">${esc(settings.team)}</span>` : ''}
         ${status.state ? `<span class="agent-detail-tag ${status.state === 'running' ? 'green' : 'gray'}">${esc(status.state)}</span>` : ''}
       </div>
@@ -14443,10 +14441,10 @@ function renderAgentBasicInfo(agent, persona = null) {
     <div class="agent-detail-label">${t('agent_address')}</div>
     <div class="agent-detail-value" style="font-family:monospace;font-size:13px;">${esc(agent.agent_id)}<br><span style="color:var(--text-secondary);">${esc(agent.agent_id)}</span></div>
   </div>`;
-  if (persona && (persona.persona || persona.description)) {
+  if (settings.persona) {
     html += `<div class="agent-detail-section">
-      <div class="agent-detail-label">${_currentLang === 'zh' ? '人设' : 'Persona'} · ${esc(persona.name || settings.persona)}</div>
-      <div class="agent-detail-value agent-detail-scroll-text">${esc(persona.persona || persona.description)}</div>
+      <div class="agent-detail-label">${_currentLang === 'zh' ? '人设' : 'Persona'}</div>
+      <div class="agent-detail-value agent-detail-scroll-text">${esc(settings.persona)}</div>
     </div>`;
   }
   if (settings.model || settings.api_url) {
@@ -14541,7 +14539,7 @@ async function openAgentSettingsSheet(agentId) {
       </div>
       <div class="tc-sheet-body" style="display:flex;flex-direction:column;gap:10px;">
         ${field('agent-settings-name', zh ? '名称' : 'Name', agent.name)}
-        ${field('agent-settings-persona', zh ? '人设 Tag' : 'Persona tag', s.persona || '')}
+        <label>${esc(zh ? '人设' : 'Persona')}</label><textarea id="agent-settings-persona" rows="5" style="resize:vertical;">${esc(s.persona || '')}</textarea>
         ${webot ? '' : `
           ${field('agent-settings-model', zh ? '模型 / Session 标记' : 'Model / session marker', s.model || '', 'placeholder="agent:name:clawcrosschat"')}
           ${field('agent-settings-timeout', zh ? '超时（秒）' : 'Timeout (seconds)', acp.timeout_sec || '', 'inputmode="numeric" placeholder="180"')}
@@ -15277,9 +15275,8 @@ function renderAgentGroupsHtml(entries, idPrefix, renderRow) {
 
 function renderAgentContactRow(entry) {
   const name = entry.name || entry.agent.name;
-  const persona = entry.agent.settings?.persona || '';
   const teamLabel = entry.team ? `<span style="font-size:11px;color:var(--text-hint);margin-left:4px;">[${esc(entry.team)}]</span>` : '';
-  return `<div class="contact-item" onclick="showAgentDetail('${entry.agent.agent_id}')"><div class="contact-avatar ${agentAvatarClass(entry.agent.platform)}">${esc(avatarLabelFromDisplayName(name))}</div><div class="contact-main"><div class="contact-name">${esc(name)}${entry.is_lead ? ' ⭐' : ''}${teamLabel}</div></div>${persona ? `<span class="contact-tag">${esc(persona)}</span>` : ''}</div>`;
+  return `<div class="contact-item" onclick="showAgentDetail('${entry.agent.agent_id}')"><div class="contact-avatar ${agentAvatarClass(entry.agent.platform)}">${esc(avatarLabelFromDisplayName(name))}</div><div class="contact-main"><div class="contact-name">${esc(name)}${entry.is_lead ? ' ⭐' : ''}${teamLabel}</div></div>${entry.tag ? `<span class="contact-tag">${esc(entry.tag)}</span>` : ''}</div>`;
 }
 
 function renderPersonaContactRow(exp, avatarClass) {

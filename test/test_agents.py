@@ -500,12 +500,17 @@ class TestOpenAIRouting(StoreCase):
         self.assertEqual(ids[0], "webot")
         self.assertIn("openclaw", ids)
 
-    def test_tool_whitelist_comes_from_the_agent(self):
-        from api.openai_service import _get_agent_tool_whitelist
+    def test_a_webot_session_is_its_agent_with_its_own_persona_and_tools(self):
+        from core.agent import TeamAgent
 
-        self.webot(session="s2", tools={"read_file": True})
-        self.assertEqual(_get_agent_tool_whitelist("alice", "s2"), {"read_file"})
-        self.assertIsNone(_get_agent_tool_whitelist("alice", "s1"))
+        webot = TeamAgent.__new__(TeamAgent)
+        self.webot(session="s2", name="Reviewer", persona="你是严谨的审稿人。", tools=["read_file"])
+        self.assertEqual(webot._find_internal_session_meta("alice", "s2")["tools"], ["read_file"])
+        prompt = webot._get_internal_session_persona_prompt("alice", "s2")
+        self.assertIn("你是严谨的审稿人。", prompt)
+        self.assertIn("Reviewer", prompt)
+        self.assertEqual(webot._get_internal_session_persona_prompt("alice", "s1"), "")  # no persona
+        self.assertIsNone(webot._find_internal_session_meta("alice", "s1")["tools"])  # all tools
 
 
 if __name__ == "__main__":

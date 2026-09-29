@@ -4,6 +4,7 @@ import json
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -87,6 +88,13 @@ class TestManifest(TeamCase):
          "meta": {"api_url": "http://oc", "model": "agent:main"}, "config": {"agents": {}}, "workspace_files": {"a": "1"}},
     ]
 
+    def setUp(self):
+        super().setUp()
+        library = [{"tag": "plan", "name": "Planner", "persona": "你负责规划。"}]
+        patcher = mock.patch("oasis.experts.get_all_experts", lambda owner, team="": library)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_import_makes_agents_and_members(self):
         existing = self.agents.create("alice", driver=WEBOT, name="Coder", agent_id="s1")
         import_entries(self.teams, "alice", "dev", self.INTERNAL, self.EXTERNAL)
@@ -95,7 +103,8 @@ class TestManifest(TeamCase):
         coder = self.teams.member("alice", "dev", "Coder")
         self.assertEqual(coder.agent.agent_id, existing.agent_id)  # "session" is the id of an agent already there
         planner = self.teams.member("alice", "dev", "Planner").agent
-        self.assertEqual((planner.config["persona"], planner.config["team"]), ("plan", "dev"))
+        # A new agent gets its own copy of the team persona its tag names.
+        self.assertEqual((planner.config["persona"], planner.config["team"]), ("你负责规划。", "dev"))
         claw = self.teams.member("alice", "dev", "Claw").agent
         self.assertEqual((claw.config["api_url"], claw.config["model"], claw.config["global_name"]),
                          ("http://oc", "agent:main", "main"))
@@ -114,6 +123,7 @@ class TestManifest(TeamCase):
         import_entries(self.teams, "alice", "dev", self.INTERNAL, self.EXTERNAL)
         internal, external = export_entries(self.teams, "alice", "dev", portable=False)
         self.assertEqual(internal[1], {"name": "Coder", "tag": "coder", "note": "kept", "session": "s1"})
+        self.assertEqual((internal[0]["tag"], internal[0]["persona"]), ("plan", "你负责规划。"))
         self.assertTrue(internal[0]["is_primary"])
         self.assertEqual(external[0]["global_name"], "main")
         self.assertEqual(external[0]["workspace_files"], {"a": "1"})  # the OpenClaw snapshot travels along
@@ -127,6 +137,7 @@ class TestManifest(TeamCase):
         import_entries(self.teams, "bob", "copy", internal, external)
         self.assertEqual(len(self.teams.members("bob", "copy")), 3)
         self.assertTrue(self.teams.member("bob", "copy", "Coder").agent.agent_id.startswith("ag_"))
+        self.assertEqual(self.teams.member("bob", "copy", "Planner").agent.config["persona"], "你负责规划。")
 
     def test_an_entry_that_names_an_agent_is_that_agent(self):
         codex = self.agents.create("alice", driver=ACPX, config={"platform": "codex"}, name="Codex", agent_id="cx-1")

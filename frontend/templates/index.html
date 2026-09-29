@@ -1018,10 +1018,11 @@
                     <span style="color:#9ca3af;font-size:12px;">Loading tools...</span>
                 </div>
                 <input type="hidden" id="agent-meta-tools">
-                <label class="agent-meta-label">Tag</label>
-                <select id="agent-meta-tag" class="agent-meta-input">
-                    <option value="">(None)</option>
+                <label class="agent-meta-label">Persona</label>
+                <select id="agent-meta-persona-library" class="agent-meta-input" title="Copy a persona from the library" onchange="_agentMetaCopyPersona(this.value)">
+                    <option value="">—</option>
                 </select>
+                <textarea id="agent-meta-persona" class="agent-meta-input" rows="5" style="resize:vertical;margin-top:6px;" placeholder="(None)"></textarea>
             </div>
             <div class="agent-meta-footer">
                 <button onclick="closeAgentMetaModal()" class="agent-meta-btn agent-meta-btn-cancel">Cancel</button>

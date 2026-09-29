@@ -29,8 +29,8 @@ def runtime_session(agent: Agent) -> str:
 
 
 def identity_prompt(agent: Agent, context: dict[str, Any], instructions: str) -> str:
-    """Who the agent is: the chat rules WeBot carries in its system prompt, its persona
-    and the caller's instructions."""
+    """Who the agent is: the chat rules WeBot carries in its system prompt, its own
+    persona text and the caller's instructions."""
     from integrations.acpx_adapter import load_external_agent_prompt_file, load_external_agent_system_prompt
     from integrations.external_persona import build_external_persona_prompt
 
@@ -43,7 +43,8 @@ def identity_prompt(agent: Agent, context: dict[str, Any], instructions: str) ->
     parts = [
         _system_prompt,
         build_external_persona_prompt(
-            str(agent.config.get("persona") or ""), user_id=agent.owner, team=str(context.get("team") or ""),
+            str(agent.config.get("persona") or ""), name=agent.name, user_id=agent.owner,
+            team=str(context.get("team") or ""),
         ),
         instructions,
     ]
