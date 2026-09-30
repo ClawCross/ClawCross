@@ -14,12 +14,13 @@ summary, messages, compaction, deletion). An agent's session is the WeBot thread
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 from typing import Any
 
 from langchain_core.messages import AIMessage, BaseMessage
 
 from agents.messages import AgentMessage, AgentReply, DeliveryReceipt
-from agents.runtime import NO_TIMEOUT, Runtime
+from agents.runtime import NO_TIMEOUT, ControlError, Runtime
 from agents.store import Agent
 
 # How long ``ask`` waits when the caller does not say.
@@ -113,12 +114,19 @@ class WebotRuntime(Runtime):
         running = self.engine.list_active_task_keys(f"{agent.owner}#")
         return bool(self._thread_state(agent).get("busy")) or self.thread(agent) in set(running)
 
-    async def fork_history(self, parent: Agent, child: Agent) -> int:
-        """Copy completed conversation turns into a new session's context store.
+    async def fork(self, parent: Agent, child: Agent) -> int:
+        """Copy completed conversation turns, the session's setting overrides and its
+        mode into a new session.
 
         The child gets its own system prompt on first inference and starts with
         empty inbox, approvals, permits, runs, and compaction state.
         """
+        from webot.profiles import is_subagent_session
+        from webot.runtime_settings import runtime_settings_payload, save_runtime_settings
+        from webot.runtime_store import get_session_mode, save_session_mode
+
+        if is_subagent_session(parent.agent_id):
+            raise ControlError("Fork of isolated subagents is not supported")
         source_thread = self.thread(parent)
         target_thread = self.thread(child)
         history: list[BaseMessage] = await self.engine._context_store.snapshot_context(source_thread)
@@ -131,6 +139,17 @@ class WebotRuntime(Runtime):
         await self.engine._context_store.append_messages(
             target_thread, [message.model_copy(deep=True) for message in history[:last_complete]],
         )
+        try:
+            overrides = runtime_settings_payload(parent.owner, parent.agent_id)["session_overrides"]
+            if overrides:
+                save_runtime_settings(child.owner, session_id=child.agent_id, settings=overrides)
+            mode = get_session_mode(parent.owner, parent.agent_id).get("mode") or "execute"
+            save_session_mode(child.owner, child.agent_id, mode=mode, reason=f"Fork of {parent.agent_id}")
+        except Exception:
+            # ``destroy`` does not reach the overrides: they live in the owner's settings file.
+            with suppress(Exception):
+                save_runtime_settings(child.owner, session_id=child.agent_id, settings={}, reset=True)
+            raise
         return last_complete
 
     async def status(self, agent: Agent) -> dict[str, Any]:

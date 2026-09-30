@@ -51,7 +51,7 @@ class AgentClient:
         return response.json()
 
     async def fork(self, ref: str, *, name: str = "", reason: str = "", agent_id: str = "") -> dict[str, Any]:
-        """Create a new WeBot agent from the source's completed conversation."""
+        """Create a new agent from the source's completed conversation."""
         async with httpx.AsyncClient(timeout=60) as client:
             response = await client.post(
                 f"{self.base_url}/v1/agents/{ref}/fork", headers=self._auth(),

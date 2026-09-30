@@ -166,6 +166,10 @@ class AgentGateway:
         """The agent's own conversation, oldest first: ``[{role, content, tool_calls?}]``."""
         return await self.runtime(agent).history(agent, limit)
 
+    async def fork(self, parent: Agent, child: Agent) -> int:
+        """Start *child* from *parent*'s completed conversation; how many messages it got."""
+        return await self.runtime(parent).fork(parent, child)
+
     async def destroy(self, agent: Agent) -> None:
         """Release what the runtime holds for an agent that is being deleted."""
         try:
