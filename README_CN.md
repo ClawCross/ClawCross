@@ -42,8 +42,8 @@ Clawcross 把一个单聊机器人变成**可编程的多专家系统**。你创
 
 ### 环境要求
 
-- **Python 3.11+**
-- **Node.js 18+**（用于 acpx 和前端构建）
+- **Python 3.11+**（没有时由启动脚本通过 `uv` 准备）
+- **Node.js 18+**（仅用于可选的 acpx 和前端构建）
 - **Git**
 - macOS / Linux / Windows（WSL 或 PowerShell）
 
@@ -87,7 +87,7 @@ powershell -ExecutionPolicy Bypass -File .\run.ps1 stop
 **说明**
 
 - `run.sh` / `run.ps1` 是项目根目录下的转发入口，实际仍调用 `selfskill/scripts/` 里的正式脚本。
-- `start` 依然会自动处理 venv、依赖、`acpx`、`.env` 初始化和服务启动。
+- `start` 自动准备 Python 3.11、虚拟环境、核心依赖、`.env` 和服务。acpx、NoneBot、WeClaw、cloudflared 等外部集成需显式执行 `install-component`；具体命令见 [SKILL.md](./SKILL.md)。
 - 如果 `LLM_MODEL` 为空，启动现在会提前停止并提示你先配置，而不是拉起一个看似在线但 Agent 不工作的服务。
 
 **原有完整路径命令仍然可用**

@@ -17,6 +17,44 @@ if ($Command -eq "dev") {
 } else {
     Initialize-ClawcrossRuntimePaths -ProjectRoot $projectRoot
 }
+
+# Keep the platform entrypoint limited to finding Python. The shared Python
+# controller handles lifecycle, core dependencies, and optional components.
+$lifecycleReadOnly = @("status", "stop", "components", "stop-tunnel", "tunnel-status")
+$lifecycleBootstrap = @("start", "start-foreground", "start-fg", "setup", "install-component", "start-tunnel")
+if ($Command -in @("help", "-h", "--help")) {
+    Write-Host "ClawCross: start, start-foreground, setup, stop, status, components, install-component, start-tunnel, stop-tunnel, tunnel-status"
+    Write-Host "Other commands are documented in docs/cli.md and SKILL.md."
+    exit 0
+}
+if ($Command -in $lifecycleReadOnly -or $Command -in $lifecycleBootstrap) {
+    $python = Get-VenvPython -ProjectRoot $projectRoot
+    if ($Command -in $lifecycleBootstrap) {
+        $uv = Ensure-UvInstalled
+        $env:CLAWCROSS_UV_BIN = $uv
+        $env:PATH = (Split-Path -Parent $uv) + ';' + $env:PATH
+        if (-not $python) {
+            & $uv venv $env:CLAWCROSS_VENV_DIR --python 3.11
+            if ($LASTEXITCODE -ne 0) {
+                & $uv python install 3.11
+                if ($LASTEXITCODE -ne 0) { throw "Python 3.11 bootstrap failed." }
+                & $uv venv $env:CLAWCROSS_VENV_DIR --python 3.11
+                if ($LASTEXITCODE -ne 0) { throw "Virtual environment creation failed." }
+            }
+            $python = Ensure-VenvPython -ProjectRoot $projectRoot
+        }
+    } elseif (-not $python) {
+        $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
+        if (-not $pythonCommand) {
+            Write-Error "Python is unavailable; no environment was downloaded for this read-only command."
+            exit 1
+        }
+        $python = $pythonCommand.Source
+    }
+    & $python (Join-Path $projectRoot "scripts\runtime_control.py") $Command @Rest
+    exit $LASTEXITCODE
+}
+
 Invoke-ClawcrossHomeMigration -ProjectRoot $projectRoot
 
 $pidFile = Join-Path $env:CLAWCROSS_RUN_DIR "clawcross.pid"

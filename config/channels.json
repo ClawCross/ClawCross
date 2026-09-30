@@ -383,8 +383,7 @@
         {"name": "WECLAW_BIN", "label": "WeClaw binary", "target": "env", "type": "text", "default": "weclaw"},
         {"name": "WECLAW_CONFIG", "label": "WeClaw config path", "target": "env", "type": "text", "default": "~/.weclaw/config.json"},
         {"name": "WECLAW_PROXY_HOST", "label": "Proxy host", "target": "env", "type": "text", "default": "127.0.0.1"},
-        {"name": "WECLAW_PROXY_PORT", "label": "Proxy port", "target": "env", "type": "text", "default": "51298"},
-        {"name": "WECLAW_AUTO_INSTALL", "label": "Auto-install on first run", "target": "env", "type": "boolean", "default": "true"}
+        {"name": "WECLAW_PROXY_PORT", "label": "Proxy port", "target": "env", "type": "text", "default": "51298"}
       ]
     },
     {

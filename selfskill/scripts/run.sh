@@ -9,7 +9,7 @@
 #       --no-channel    不启动社交渠道（即使 NONEBOT_ADAPTERS / *_WEBHOOK_URL 已配置）
 #   bash selfskill/scripts/run.sh stop                           # 停止服务
 #   bash selfskill/scripts/run.sh status                         # 检查服务状态
-#   bash selfskill/scripts/run.sh start-tunnel                   # 启动公网隧道（自动下载+暴露前端）
+#   bash selfskill/scripts/run.sh start-tunnel                   # 启动公网隧道（需已安装 cloudflared）
 #   bash selfskill/scripts/run.sh stop-tunnel                    # 停止公网隧道
 #   bash selfskill/scripts/run.sh tunnel-status                  # 查看隧道状态和公网地址
 #   bash selfskill/scripts/run.sh setup                          # 可选：单独补环境；直接 start 会按需自动执行 setup_env
@@ -28,10 +28,10 @@
 #
 # 所有命令均为非交互式，适合自动化调用。
 
-set -e
+set -eo pipefail
 
 # 定位项目根目录（skill/scripts/run.sh → 上两级）
-SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 export PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 source "$PROJECT_ROOT/selfskill/scripts/_paths.sh"
@@ -41,8 +41,52 @@ if [ "${1:-help}" = "dev" ]; then
     set -- start "$@"
 fi
 clawcross_init_paths
-clawcross_run_migration_if_needed
 cd "$CLAWCROSS_WORKSPACE_DIR"
+
+# The OS wrapper only bootstraps Python for lifecycle commands. The shared
+# Python controller owns dependency setup and service orchestration.
+case "${1:-help}" in
+    help|-h|--help)
+        echo "ClawCross: start, start-foreground, setup, stop, status, components, install-component, start-tunnel, stop-tunnel, tunnel-status"
+        echo "Other commands are documented in docs/cli.md and SKILL.md."
+        exit 0
+        ;;
+    status|stop|components|stop-tunnel|tunnel-status)
+        if [ -x "$CLAWCROSS_VENV_DIR/bin/python" ]; then
+            exec "$CLAWCROSS_VENV_DIR/bin/python" "$PROJECT_ROOT/scripts/runtime_control.py" "$@"
+        fi
+        if command -v python3 >/dev/null 2>&1; then
+            exec python3 "$PROJECT_ROOT/scripts/runtime_control.py" "$@"
+        fi
+        echo "Python is unavailable; no environment was downloaded for this read-only command." >&2
+        exit 1
+        ;;
+    start|start-foreground|start-fg|setup|install-component|start-tunnel)
+        if ! command -v uv >/dev/null 2>&1; then
+            if [ -x "$HOME/.local/bin/uv" ]; then
+                export PATH="$HOME/.local/bin:$PATH"
+            elif [ -x "$HOME/.cargo/bin/uv" ]; then
+                export PATH="$HOME/.cargo/bin:$PATH"
+            else
+                echo "Preparing uv to bootstrap Python 3.11..."
+                curl -LsSf https://astral.sh/uv/install.sh | sh
+                export PATH="$HOME/.local/bin:$PATH"
+            fi
+        fi
+        command -v uv >/dev/null 2>&1 || { echo "uv bootstrap failed" >&2; exit 1; }
+        export CLAWCROSS_UV_BIN="$(command -v uv)"
+        if [ ! -x "$CLAWCROSS_VENV_DIR/bin/python" ]; then
+            uv venv "$CLAWCROSS_VENV_DIR" --python 3.11 || {
+                uv python install 3.11
+                uv venv "$CLAWCROSS_VENV_DIR" --python 3.11
+            }
+        fi
+        export PATH="$CLAWCROSS_VENV_DIR/bin:$PATH"
+        exec "$CLAWCROSS_VENV_DIR/bin/python" "$PROJECT_ROOT/scripts/runtime_control.py" "$@"
+        ;;
+esac
+
+clawcross_run_migration_if_needed
 
 # ---- uv 环境自检 & 自动配置 ----
 # 确保 uv 可用

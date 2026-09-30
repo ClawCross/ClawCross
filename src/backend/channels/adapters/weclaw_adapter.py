@@ -9,7 +9,7 @@ WeClaw（github.com/fastclaw-ai/weclaw）是一个 Go 写的微信 bot 桥，
                                           │
                                           └─ 拦截 ClawCross 命令 → 返回 magic link / cross shell
 
-  1. 启动时自动检测 weclaw 二进制；缺失则跑 scripts/weclaw_install.sh 自动安装。
+  1. 启动时检测 weclaw 二进制；缺失时报告显式安装命令。
   2. 写 ~/.weclaw/config.json：把 proxy URL 注册为 default HTTP agent。
   3. spawn `weclaw start -f`，捕获 stdout：
      - 检测 ASCII QR 块，独立保存到 data/weclaw_qr.txt 并打印 banner
@@ -25,7 +25,6 @@ WeClaw（github.com/fastclaw-ai/weclaw）是一个 Go 写的微信 bot 桥，
   WECLAW_CONFIG=~/.weclaw/config.json
   WECLAW_PROXY_HOST=127.0.0.1    proxy 监听地址
   WECLAW_PROXY_PORT=51298        proxy 监听端口
-  WECLAW_AUTO_INSTALL=true       缺二进制时自动安装
 """
 
 from __future__ import annotations
@@ -48,7 +47,7 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 
-from common.runtime_paths import DATA_DIR, ENV_FILE, PROJECT_ROOT, WORKSPACE_DIR, ensure_runtime_dirs
+from common.runtime_paths import BIN_DIR, DATA_DIR, ENV_FILE, PROJECT_ROOT, ensure_runtime_dirs
 
 load_dotenv(dotenv_path=ENV_FILE)
 ensure_runtime_dirs()
@@ -59,7 +58,6 @@ logger = logging.getLogger("channels.weclaw")
 
 # QR ASCII 块字符（unicode 半/全块、白/黑、阴影）
 _QR_CHARS = set("█▀▄▌▐░▒▓ ▉▊▋▍▎▏▔▕")
-_INSTALL_SCRIPT_RELPATH = "scripts/weclaw_install.sh"
 # 失效账号自动清理：sync.json ≤ 该字节数视为"从未成功 long-poll"
 _STALE_SYNC_MAX_BYTES = 32
 # 且 mtime 距今超过该小时数才动手（避免误伤刚扫码、还没收消息的新号）
@@ -107,7 +105,6 @@ class WeClawAdapter(ChannelAdapter):
         )
         self._proxy_port = int(os.getenv("WECLAW_PROXY_PORT", "51298"))
         self._proxy_host = os.getenv("WECLAW_PROXY_HOST", "127.0.0.1")
-        self._auto_install = os.getenv("WECLAW_AUTO_INSTALL", "true").lower() in ("1", "true", "yes", "on")
         self._frontend_port = os.getenv("PORT_FRONTEND", "51209")
         self._proc: subprocess.Popen | None = None
         self._http_server: ThreadingHTTPServer | None = None
@@ -132,40 +129,12 @@ class WeClawAdapter(ChannelAdapter):
         path = shutil.which(self._bin)
         if path:
             return path
+        local = BIN_DIR / ("weclaw.exe" if os.name == "nt" else "weclaw")
+        if self._bin == "weclaw" and local.is_file():
+            return str(local)
         if Path(self._bin).is_file() and os.access(self._bin, os.X_OK):
             return self._bin
         return None
-
-    def _try_auto_install(self) -> str | None:
-        """缺二进制时跑 scripts/weclaw_install.sh；返回安装后的路径或 None。"""
-        if not self._auto_install:
-            return None
-        script = os.path.join(str(PROJECT_ROOT), _INSTALL_SCRIPT_RELPATH)
-        if not os.path.exists(script):
-            logger.error(f"找不到安装脚本 {script}")
-            return None
-        logger.info("WeClaw 二进制未找到，自动安装中（执行 scripts/weclaw_install.sh）...")
-        try:
-            result = subprocess.run(
-                ["bash", script],
-                cwd=str(WORKSPACE_DIR),
-                timeout=300,
-                capture_output=True,
-                text=True,
-            )
-            if result.stdout:
-                for ln in result.stdout.splitlines():
-                    logger.info(f"[install] {ln}")
-            if result.returncode != 0:
-                logger.error(f"weclaw 安装失败 (rc={result.returncode}): {result.stderr[:500]}")
-                return None
-        except subprocess.TimeoutExpired:
-            logger.error("weclaw 安装超时（>5min）")
-            return None
-        except Exception as e:
-            logger.error(f"weclaw 安装异常: {e}")
-            return None
-        return self._resolve_bin()
 
     def _write_weclaw_config(self) -> None:
         cfg_dir = os.path.dirname(self._config_path)
@@ -419,11 +388,9 @@ class WeClawAdapter(ChannelAdapter):
 
         bin_path = self._resolve_bin()
         if not bin_path:
-            bin_path = self._try_auto_install()
-        if not bin_path:
             logger.error(
-                f"找不到 weclaw 二进制 ({self._bin})，且自动安装失败。"
-                f"请手动执行: bash {_INSTALL_SCRIPT_RELPATH}"
+                f"找不到 weclaw 二进制 ({self._bin})。"
+                f"如需使用，请显式执行: python scripts/environment.py install weclaw"
             )
             return
 

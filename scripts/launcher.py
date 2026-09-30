@@ -584,7 +584,7 @@ def restart_channels_only():
         print("💬 [skip] src/backend/channels/main.py 不存在")
         return
     nonebot_names = _configured_nonebot_adapter_names()
-    if nonebot_names and not _ensure_nonebot_deps(nonebot_names):
+    if nonebot_names and not _check_nonebot_deps(nonebot_names):
         print("💬 [skip] NoneBot 依赖未就绪，跳过渠道（不影响其他服务）")
         return
     start_channels_if_configured(platforms)
@@ -802,12 +802,8 @@ def _configured_nonebot_adapter_names():
     return configured
 
 
-def _ensure_nonebot_deps(adapter_names):
-    """确保 nonebot2 + 各 adapter 已安装到当前 venv。
-
-    检测顺序：先 import nonebot；缺失或缺 adapter 时优先用 uv 装，否则 fallback pip。
-    任何失败都返回 False，不抛异常 —— 由调用方决定是否跳过渠道。
-    """
+def _check_nonebot_deps(adapter_names):
+    """Check optional channel dependencies without changing the environment."""
     adapter_specs = []
     for n in adapter_names:
         s = str(get_nonebot_adapter_meta(n).get("adapter") or n).strip().replace("_", "-").lower()
@@ -828,9 +824,8 @@ def _ensure_nonebot_deps(adapter_names):
         package_base = name.split(".", 1)[0]
         return "nonebot-adapter-" + package_base.replace("_", "-").lower()
 
-    def _check_imports():
-        # 在 venv_python 子进程中检测 import 状态，避免污染 launcher 进程
-        check_code = (
+    # 在 venv_python 子进程中检测 import 状态，避免污染 launcher 进程
+    check_code = (
             "import importlib, sys\n"
             "missing = []\n"
             "try:\n"
@@ -849,54 +844,18 @@ def _ensure_nonebot_deps(adapter_names):
             "    if not ok:\n"
             "        missing.append(package)\n"
             "print('|'.join(missing))\n"
-        ).format(specs=repr([(n, _module_candidates(n), _package_name(n)) for n in adapter_specs]))
-        try:
-            result = subprocess.run(
-                [venv_python, "-c", check_code],
-                capture_output=True, timeout=15, text=True,
-            )
-            return [m for m in (result.stdout or "").strip().split("|") if m]
-        except Exception:
-            return ["nonebot2"]  # 视为整体缺失
-
-    missing = _check_imports()
-    if not missing:
-        return True
-
-    pip_pkgs = []
-    for m in missing:
-        if m == "nonebot2":
-            pip_pkgs.append("nonebot2[fastapi,httpx,websockets]")
-        else:
-            pip_pkgs.append(m)
-
-    print(f"   🔧 NoneBot 依赖缺失，自动安装: {', '.join(pip_pkgs)}")
-
-    use_uv = shutil.which("uv") is not None
-    if use_uv:
-        cmd = ["uv", "pip", "install", "--python", venv_python] + pip_pkgs
-    else:
-        cmd = [venv_python, "-m", "pip", "install"] + pip_pkgs
-
+    ).format(specs=repr([(n, _module_candidates(n), _package_name(n)) for n in adapter_specs]))
     try:
-        result = subprocess.run(cmd, timeout=300)
-        if result.returncode != 0:
-            print(f"   ⚠️ {'uv pip' if use_uv else 'pip'} 安装失败 (returncode={result.returncode})")
-            return False
-    except subprocess.TimeoutExpired:
-        print("   ⚠️ 依赖安装超时（>5min），跳过渠道")
-        return False
+        result = subprocess.run([venv_python, "-c", check_code],
+                                capture_output=True, timeout=15, text=True)
+        missing = [item for item in (result.stdout or "").strip().split("|") if item]
     except Exception as exc:
-        print(f"   ⚠️ 依赖安装异常: {exc}")
+        print(f"   ⚠️ 无法检测 NoneBot 依赖: {exc}")
         return False
-
-    # 安装后再验一次
-    still_missing = _check_imports()
-    if still_missing:
-        print(f"   ⚠️ 安装后仍缺: {', '.join(still_missing)}")
+    if missing:
+        print(f"   ⚠️ 缺少可选 NoneBot 依赖: {', '.join(missing)}")
+        print("   需要时显式执行: python scripts/environment.py install nonebot --adapter <name>")
         return False
-
-    print("   ✅ NoneBot 依赖已就绪")
     return True
 
 
@@ -910,7 +869,7 @@ if should_start_channels:
     nonebot_names = _configured_nonebot_adapter_names()
     deps_ok = True
     if nonebot_names:
-        deps_ok = _ensure_nonebot_deps(nonebot_names)
+        deps_ok = _check_nonebot_deps(nonebot_names)
     if not deps_ok:
         print("💬 [skip] NoneBot 依赖未就绪，跳过渠道（不影响其他服务）")
         should_start_channels = False
@@ -1020,7 +979,7 @@ try:
             )
             if restart_should_start_channels:
                 restart_nonebot_names = _configured_nonebot_adapter_names()
-                if restart_nonebot_names and not _ensure_nonebot_deps(restart_nonebot_names):
+                if restart_nonebot_names and not _check_nonebot_deps(restart_nonebot_names):
                     print("💬 [skip] NoneBot 依赖未就绪，跳过渠道（不影响其他服务）")
                     restart_should_start_channels = False
             launch_services(services)

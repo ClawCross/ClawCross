@@ -8,10 +8,7 @@ def test_setup_env_ps1_is_utf8_bom_for_windows_powershell_51():
     assert data.startswith(b"\xef\xbb\xbf")
 
 
-def test_setup_env_ps1_uses_explicit_path_concatenation():
+def test_setup_env_ps1_forwards_to_shared_python_bootstrap():
     text = Path("scripts/setup_env.ps1").read_text(encoding="utf-8-sig")
-
-    assert "$env:PATH -notlike ('*' + $npmBin + '*')" in text
-    assert "$env:PATH = $npmBin + ';' + $env:PATH" in text
-    assert '"${npmBin};${env:PATH}"' not in text
-    assert '"*${npmBin}*"' not in text
+    assert '"selfskill\\scripts\\run.ps1") setup @args' in text
+    assert "npm install" not in text

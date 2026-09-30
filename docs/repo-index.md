@@ -48,8 +48,11 @@ Read these first for setup or environment changes:
 
 | Path | Purpose |
 |---|---|
-| `selfskill/scripts/run.sh` | primary Linux / macOS install, configure, start flow |
-| `selfskill/scripts/run.ps1` | primary Windows install, configure, start flow |
+| `selfskill/scripts/run.sh` | Linux / macOS Python bootstrap and legacy CLI wrapper |
+| `selfskill/scripts/run.ps1` | Windows Python bootstrap and legacy CLI wrapper |
+| `scripts/runtime_control.py` | shared Python start, stop, status, and tunnel lifecycle |
+| `scripts/environment.py` | core Python dependencies and explicit optional component installs |
+| `config/requirements-channels.txt` | optional QQ, Telegram, and media dependencies |
 | `selfskill/scripts/configure.py` | `.env` initialization and configuration logic |
 | `selfskill/scripts/configure_openclaw.py` | OpenClaw detection plus Clawcross/OpenClaw LLM sync logic |
 | `config/.env.example` | config template and inline guidance |
@@ -217,7 +220,7 @@ For external AI agent communication via the Agent Client Protocol:
 
 Known ACP tools (external AI agents): `openclaw`, `codex`, `claude`, `gemini`, `aider`.
 
-`acpx` is auto-installed during `bash selfskill/scripts/run.sh setup`. If missing, agents on ACP platforms cannot be reached.
+`acpx` is optional. Install it explicitly with `bash selfskill/scripts/run.sh install-component acpx` before using ACP agents.
 
 ## Bot Integrations
 

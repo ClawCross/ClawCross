@@ -42,8 +42,8 @@ Clawcross turns a single chatbot into a **programmable multi-expert system**. Yo
 
 ### Prerequisites
 
-- **Python 3.11+**
-- **Node.js 18+** (for acpx and frontend builds)
+- **Python 3.11+**, prepared by the startup wrapper through `uv` if absent
+- **Node.js 18+** only for optional acpx and frontend builds
 - **Git**
 - macOS / Linux / Windows (WSL or PowerShell)
 
@@ -87,8 +87,8 @@ powershell -ExecutionPolicy Bypass -File .\run.ps1 stop
 **Notes**
 
 - `run.sh` / `run.ps1` are root-level wrappers around the canonical scripts under `selfskill/scripts/`.
-- `start` still handles venv, dependencies, `acpx`, `.env` init, and service startup automatically.
-- If `LLM_MODEL` is missing, startup now stops early and tells you to configure it instead of starting a half-usable stack.
+- `start` prepares Python 3.11, a virtual environment, core dependencies, `.env`, and services. Use `install-component` only for optional integrations; see [SKILL.md](./SKILL.md).
+- If `LLM_MODEL` is missing, the web UI still starts; configure a model in the first-login wizard before sending LLM requests. Set `CLAWCROSS_REQUIRE_LLM_MODEL=1` to make startup strict.
 
 **Legacy full-path commands still work**
 
