@@ -1086,7 +1086,7 @@ case "${1:-help}" in
         ;;
 
     start-tunnel)
-        # 启动预先配置的 Cloudflare 命名隧道
+        # 启动单个 Cloudflare 临时隧道
         TUNNEL_PIDFILE="$CLAWCROSS_RUN_DIR/tunnel.pid"
         _stop_tracked_tunnel_if_running
 

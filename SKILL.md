@@ -91,7 +91,7 @@ The `start` command automatically:
 4. Verifies `LLM_MODEL` is set before launching services; override only for shell-only diagnostics with `CLAWCROSS_ALLOW_EMPTY_LLM_MODEL=1`
 5. Starts all services after the model check passes
 6. Warms an installed OpenClaw gateway and refreshes runtime `OPENCLAW_*` values in `.env` (does not overwrite a **real** user-set `LLM_API_KEY`) — **skipped** if **`--no-openclaw`** (or env `CLAWCROSS_NO_OPENCLAW=1` for the launcher process)
-7. Attempts to start a **preconfigured named Cloudflare Tunnel** via `scripts/tunnel.py`, then prints **`🔗 Magic link`**: **local** and **remote** (when `PUBLIC_DOMAIN` is set). A fixed hostname, existing tunnel credentials, and installed `cloudflared` are required; nothing is downloaded automatically. Operators and AI agents **must** pass available links to the user after install/start — **skipped** if **`--no-tunnel`**.
+7. Starts **one Cloudflare Quick Tunnel** via `scripts/tunnel.py`, then prints **`🔗 Magic link`**: **local** and **remote** (when `PUBLIC_DOMAIN` is set). An installed `cloudflared` is required; nothing is downloaded automatically. Operators and AI agents **must** pass available links to the user after install/start — **skipped** if **`--no-tunnel`**.
 
 After startup, the frontend setup wizard handles remaining LLM configuration via the web UI. The wizard detects local OpenClaw and Antigravity-Manager and offers one-click import buttons.
 

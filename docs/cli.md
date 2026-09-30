@@ -742,7 +742,7 @@ uv run scripts/cli.py -u Avalon_01 workflows conclusion --topic-id abc12345 --ti
 
 本地进程操作，通过 `scripts/tunnel.py` 和 pid 文件管理。
 
-启动前须在 `config/.env` 中配置 `CLOUDFLARE_PUBLIC_HOSTNAME`，并设置 `CLOUDFLARE_TUNNEL_TOKEN_FILE`，或同时设置 `CLOUDFLARE_TUNNEL_CONFIG` 与 `CLOUDFLARE_TUNNEL_ID`。Cloudflare 侧需将主机名指向本机前端服务。`cloudflared` 必须已安装；此命令不会下载二进制，也不会创建随机公网地址。
+启动一个临时隧道，只暴露本机前端服务。`cloudflared` 必须预先安装；此命令不会自动下载。地址可能在重启后变化。
 
 ```bash
 # 查看状态

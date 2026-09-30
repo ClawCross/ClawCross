@@ -12,7 +12,7 @@ compatibility:
   - "antigravity"
   - "minimax"
 
-argument-hint: "[RECOMMENDED] LLM_API_KEY, LLM_BASE_URL (auto-detected from OpenClaw/Antigravity, or configured via frontend wizard on first login). [MODEL] If LLM_MODEL is not provided, the frontend setup wizard will auto-detect available models. [OPTIONAL] TTS_MODEL/TTS_VOICE, STT_MODEL/WHISPER_MODEL, OPENCLAW_*, TINYFISH_*, TELEGRAM_BOT_TOKEN/QQ_APP_ID, PORT_*. [TUNNEL] Configure CLOUDFLARE_PUBLIC_HOSTNAME and existing tunnel credentials for a fixed remote URL; PUBLIC_DOMAIN is set by tunnel.py while running."
+argument-hint: "[RECOMMENDED] LLM_API_KEY, LLM_BASE_URL (auto-detected from OpenClaw/Antigravity, or configured via frontend wizard on first login). [MODEL] If LLM_MODEL is not provided, the frontend setup wizard will auto-detect available models. [OPTIONAL] TTS_MODEL/TTS_VOICE, STT_MODEL/WHISPER_MODEL, OPENCLAW_*, TINYFISH_*, TELEGRAM_BOT_TOKEN/QQ_APP_ID, PORT_*. [TUNNEL] One Cloudflare Quick Tunnel starts when cloudflared is installed; PUBLIC_DOMAIN is set while running."
 
 metadata:
   version: "1.1.0"
@@ -99,12 +99,12 @@ The goal is a **silent, non-interactive install**. NEVER repeatedly ask the user
    - Automatically warms an installed OpenClaw gateway and refreshes runtime `OPENCLAW_*` values
    - If `config/.env` has no real `LLM_API_KEY` (missing/placeholder), it **tries** to import OpenClaw LLM config into Clawcross (optional; **failure does not block startup**)
      (it will NOT overwrite a user-provided real `LLM_API_KEY`)
-   - Attempts to start an already configured Cloudflare named tunnel for mobile remote access; requires a fixed hostname, existing credentials and installed cloudflared
+   - Attempts to start one Cloudflare Quick Tunnel for mobile remote access; requires an installed cloudflared and never downloads it automatically
    - After Tunnel (or when it is still starting), prints **Magic link** lines (local + remote when `PUBLIC_DOMAIN` is ready)
 2. **Do NOT ask the user for API credentials before starting** unless `LLM_MODEL` discovery requires a configured provider/key. The frontend provides a first-login setup wizard where the user can configure API Key and provider values — but startup itself requires `LLM_MODEL`.
 3. After `start`, **always tell the user the access URLs** — copy them from the command output into your reply (do not assume the user saw the terminal):
    - Local web UI: `http://127.0.0.1:<PORT_FRONTEND>`
-   - **Magic links** (passwordless): the script prints `🔗 Magic link` with **本机** `http://127.0.0.1:.../login-link/...?user=default` and, when Tunnel is ready, **远程** `https://<CLOUDFLARE_PUBLIC_HOSTNAME>/login-link/...?user=default`. HTTPS / phone login needs the remote link; **you must relay both lines when present**.
+   - **Magic links** (passwordless): the script prints `🔗 Magic link` with **本机** `http://127.0.0.1:.../login-link/...?user=default` and, when Tunnel is ready, **远程** `https://...trycloudflare.com/login-link/...?user=default`. HTTPS / phone login needs the remote link; **you must relay both lines when present**.
    - Mobile message center: `<PUBLIC_DOMAIN>/mobile_group_chat` (after `PUBLIC_DOMAIN` is written to `config/.env`)
 4. The first-login flow handles everything:
    - Passwordless localhost login
