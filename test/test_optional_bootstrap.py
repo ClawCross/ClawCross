@@ -193,7 +193,7 @@ def test_legacy_paths_use_repository_runtime(monkeypatch):
     assert os.environ["CLAWCROSS_VENV_DIR"] == str(ROOT / ".venv")
 
 
-def test_no_tunnel_start_stops_old_tunnel(tmp_path, monkeypatch):
+def test_default_start_is_local_and_skips_openclaw(tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(ROOT / "scripts"))
     control = _load_runtime_control()
     monkeypatch.setattr(control, "RUN_DIR", tmp_path / "run")
@@ -204,9 +204,11 @@ def test_no_tunnel_start_stops_old_tunnel(tmp_path, monkeypatch):
     monkeypatch.setattr(control, "_migrate_if_needed", lambda: None)
     monkeypatch.setattr(control, "ensure_core", lambda: None)
     monkeypatch.setattr(control, "_ensure_config", lambda: None)
-    monkeypatch.setattr(control, "_maybe_import_openclaw", lambda *args, **kwargs: None)
+    imports = []
+    monkeypatch.setattr(control, "_maybe_import_openclaw", lambda *args, **kwargs: imports.append(kwargs))
     monkeypatch.setattr(control, "_check_model", lambda *args: None)
-    monkeypatch.setattr(control, "_process_env", lambda **kwargs: {})
+    process_flags = []
+    monkeypatch.setattr(control, "_process_env", lambda **kwargs: process_flags.append(kwargs) or {})
     monkeypatch.setattr(control, "_probe", lambda *args: True)
     monkeypatch.setattr(control, "_magic_links", lambda *args, **kwargs: None)
     stopped = []
@@ -216,7 +218,9 @@ def test_no_tunnel_start_stops_old_tunnel(tmp_path, monkeypatch):
     monkeypatch.setattr(control, "_start_tunnel", lambda *args: (_ for _ in ()).throw(AssertionError("started tunnel")))
     monkeypatch.setattr(control.subprocess, "Popen", lambda *args, **kwargs:
                         SimpleNamespace(pid=1234, poll=lambda: None))
-    args = SimpleNamespace(foreground=False, no_tunnel=True, no_openclaw=True, no_channel=True)
+    args = SimpleNamespace(foreground=False, no_tunnel=False, no_openclaw=False, no_channel=True)
     assert control.start(args) == 0
     assert stopped == [control.TUNNEL_PID, control.LAUNCHER_PID]
     assert cleared == [True]
+    assert imports == [{"no_openclaw": True}]
+    assert all(flags.get("no_openclaw") is True for flags in process_flags)

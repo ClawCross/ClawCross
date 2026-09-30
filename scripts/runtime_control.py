@@ -257,12 +257,14 @@ def _start_tunnel(env: dict[str, str]) -> bool:
 
 
 def start(args: argparse.Namespace) -> int:
+    use_openclaw = bool(getattr(args, "with_openclaw", False) and not args.no_openclaw)
+    use_tunnel = bool(getattr(args, "tunnel", False) and not args.no_tunnel)
     _migrate_if_needed()
     ensure_core()
     _ensure_config()
-    env = _process_env(no_openclaw=args.no_openclaw, no_channel=args.no_channel)
-    _maybe_import_openclaw(env, no_openclaw=args.no_openclaw)
-    env = _process_env(no_openclaw=args.no_openclaw, no_channel=args.no_channel)
+    env = _process_env(no_openclaw=not use_openclaw, no_channel=args.no_channel)
+    _maybe_import_openclaw(env, no_openclaw=not use_openclaw)
+    env = _process_env(no_openclaw=not use_openclaw, no_channel=args.no_channel)
     _check_model(env)
     RUN_DIR.mkdir(parents=True, exist_ok=True)
     LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -285,7 +287,7 @@ def start(args: argparse.Namespace) -> int:
                         _probe(f"http://127.0.0.1:{oasis}/experts") and
                         _probe(f"http://127.0.0.1:{frontend}/")):
                     print(f"Local web UI: http://127.0.0.1:{frontend}", flush=True)
-                    _magic_links(_process_env(no_openclaw=args.no_openclaw,
+                    _magic_links(_process_env(no_openclaw=not use_openclaw,
                                               no_channel=args.no_channel), tunnel=False)
                     break
                 time.sleep(0.5)
@@ -327,7 +329,7 @@ def start(args: argparse.Namespace) -> int:
         print(f"Services did not become ready; see {LOG_DIR / 'launcher.log'}", file=sys.stderr)
         return 1
     print(f"Local web UI: http://127.0.0.1:{frontend}")
-    tunnel = False if args.no_tunnel else _start_tunnel(env)
+    tunnel = _start_tunnel(env) if use_tunnel else False
     _magic_links(env, tunnel=tunnel)
     return 0
 
@@ -409,6 +411,8 @@ def _legacy_command(command: str, arguments: list[str]) -> int | None:
         _clear_public_domain()
         _stop_pid(LAUNCHER_PID)
         options = argparse.ArgumentParser(prog="restart")
+        options.add_argument("--tunnel", action="store_true")
+        options.add_argument("--with-openclaw", action="store_true")
         options.add_argument("--no-tunnel", action="store_true")
         options.add_argument("--no-openclaw", action="store_true")
         options.add_argument("--no-channel", action="store_true")
@@ -439,6 +443,8 @@ def main() -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     for name in ("start", "start-foreground", "start-fg"):
         command = sub.add_parser(name)
+        command.add_argument("--tunnel", action="store_true")
+        command.add_argument("--with-openclaw", action="store_true")
         command.add_argument("--no-tunnel", action="store_true")
         command.add_argument("--no-openclaw", action="store_true")
         command.add_argument("--no-channel", action="store_true")

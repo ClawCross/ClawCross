@@ -463,7 +463,10 @@ class OpenAIChatService:
                                 output = event.get("data", {}).get("output", "")
                                 if hasattr(output, "content"):
                                     output = output.content
-                                output_str = str(output)[:200] if output else ""
+                                if tool_name == "show_ui_panel" and isinstance(output, list):
+                                    first = output[0] if output else ""
+                                    output = first.get("text", "") if isinstance(first, dict) else getattr(first, "text", first)
+                                output_str = (str(output) if tool_name == "show_ui_panel" else str(output)[:200]) if output else ""
                                 await queue.put(self.make_openai_chunk(
                                     model=ctx.model_name,
                                     completion_id=completion_id,

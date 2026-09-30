@@ -446,7 +446,7 @@ def _internal_auth_params(extra: dict | None = None):
 
 @app.route("/")
 def index():
-    """主页 - 默认跳转移动端群聊页面。支持通过 URL 参数携带 Token 自动登录。"""
+    """Open Studio by default and accept a login token from a shared URL."""
     token = request.args.get('token', '')
     user_id = request.args.get('user', '')
     
@@ -456,15 +456,14 @@ def index():
         if verified_user == user_id:
             session['user_id'] = user_id
             session.permanent = True
-            # 重定向到移动端群聊页面（去除 URL 中的 token）
-            return redirect('/mobile_group_chat')
+            return redirect('/studio')
     
     # 如果带有 redirect=group_chat 参数，转发到 studio 进行登录后再跳回
     redirect_param = request.args.get('redirect', '')
     if redirect_param:
         return redirect(f'/studio?redirect={redirect_param}')
     
-    return redirect('/mobile_group_chat')
+    return redirect('/studio')
 
 
 @app.route("/api/llm_config_status")
@@ -2233,7 +2232,7 @@ def manifest():
         "name": "Clawcross",
         "short_name": "Clawcross",
         "description": "WeBot AI Agent - Intelligent Control Assistant",
-        "start_url": "/mobile_group_chat",
+        "start_url": "/studio",
         "scope": "/",
         "display": "standalone",
         "orientation": "portrait",
@@ -2571,8 +2570,7 @@ def magic_login(token):
     if verified_user == user_id:
         session['user_id'] = user_id
         session.permanent = True
-        # Redirect to mobile group chat after successful login
-        return redirect('/mobile_group_chat')
+        return redirect('/studio')
     else:
         return jsonify({"error": "Invalid or expired token"}), 401
 

@@ -259,7 +259,7 @@ class InteractiveCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("after-interrupt", out)
         # What is typed into the shell goes through the same checks as run_command.
         blocked = await commander.background_command_io(job_id, username="alice", input="rm -rf /")
-        self.assertIn("安全策略阻止", blocked)
+        self.assertRegex(blocked, r"安全策略(拒绝|阻止)")
 
     async def test_cancel_ends_the_session_and_removes_its_input_pipe(self):
         job_id = _job_id(await commander.run_command("alice", "sh", mode="interactive"))

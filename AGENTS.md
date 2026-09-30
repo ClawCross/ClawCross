@@ -12,7 +12,7 @@ compatibility:
   - "antigravity"
   - "minimax"
 
-argument-hint: "[RECOMMENDED] LLM_API_KEY, LLM_BASE_URL (auto-detected from OpenClaw/Antigravity, or configured via frontend wizard on first login). [MODEL] If LLM_MODEL is not provided, the frontend setup wizard will auto-detect available models. [OPTIONAL] TTS_MODEL/TTS_VOICE, STT_MODEL/WHISPER_MODEL, OPENCLAW_*, TINYFISH_*, TELEGRAM_BOT_TOKEN/QQ_APP_ID, PORT_*. [TUNNEL] One Cloudflare Quick Tunnel starts when cloudflared is installed; PUBLIC_DOMAIN is set while running."
+argument-hint: "[RECOMMENDED] Configure LLM_API_KEY and LLM_BASE_URL in the first-login wizard. [MODEL] The wizard can discover available models when LLM_MODEL is empty. [OPTIONAL] TTS_MODEL/TTS_VOICE, STT_MODEL/WHISPER_MODEL, TINYFISH_*, TELEGRAM_BOT_TOKEN/QQ_APP_ID, PORT_*. [INTEGRATIONS] OpenClaw detection needs --with-openclaw; Cloudflare Tunnel needs --tunnel and an installed cloudflared binary."
 
 metadata:
   version: "1.1.0"
@@ -96,11 +96,11 @@ The goal is a **silent, non-interactive install**. NEVER repeatedly ask the user
 1. Run **`start`** (or `start-foreground`). First run **does not** require a separate `setup`: `start` prepares Python 3.11, a virtual environment, and core Python dependencies when needed. Optional integrations such as `acpx`, NoneBot, WeClaw, cloudflared, and SRT require an explicit `install-component` command. You do **not** need `configure --init` before `start` — `start` creates `config/.env` from the template if missing. The `start` command:
    - Creates a default `.env` if missing
    - Warns if `LLM_MODEL` is empty; strict mode with `CLAWCROSS_REQUIRE_LLM_MODEL=1` stops before launching services
-   - Automatically warms an installed OpenClaw gateway and refreshes runtime `OPENCLAW_*` values
-   - If `config/.env` has no real `LLM_API_KEY` (missing/placeholder), it **tries** to import OpenClaw LLM config into Clawcross (optional; **failure does not block startup**)
+   - Detects and warms OpenClaw only with `--with-openclaw`
+   - Imports OpenClaw LLM config only with `--with-openclaw` and only when ClawCross has no real API key
      (it will NOT overwrite a user-provided real `LLM_API_KEY`)
-   - Attempts to start one Cloudflare Quick Tunnel for mobile remote access; requires an installed cloudflared and never downloads it automatically
-   - After Tunnel (or when it is still starting), prints **Magic link** lines (local + remote when `PUBLIC_DOMAIN` is ready)
+   - Starts locally by default; `--tunnel` uses an already installed cloudflared binary for remote access
+   - Prints a local Magic link, plus a remote link when the explicit tunnel is ready
 2. **Do NOT ask the user for API credentials before starting** unless `LLM_MODEL` discovery requires a configured provider/key. The frontend provides a first-login setup wizard where the user can configure API Key, provider, and model values.
 3. After `start`, **always tell the user the access URLs** — copy them from the command output into your reply (do not assume the user saw the terminal):
    - Local web UI: `http://127.0.0.1:<PORT_FRONTEND>`
@@ -114,7 +114,7 @@ The goal is a **silent, non-interactive install**. NEVER repeatedly ask the user
 ### General Rules
 
 4. Do not install or configure OpenClaw unless the user explicitly asks for it.
-5. Cloudflare Tunnel is started **automatically** by `start`. No manual `start-tunnel` needed.
+5. Cloudflare Tunnel requires `start --tunnel` or `start-tunnel` and an already installed cloudflared binary.
 6. On Windows, prefer the PowerShell flow. Use WSL only if the user prefers it.
 7. Audio settings should follow the detected LLM provider when left blank:
    - OpenAI: `TTS_MODEL=gpt-4o-mini-tts`, `TTS_VOICE=alloy`, `STT_MODEL=whisper-1`

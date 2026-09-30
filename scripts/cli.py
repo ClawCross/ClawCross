@@ -12,7 +12,6 @@ import argparse
 import json
 import os
 import re
-import signal
 import socket
 import subprocess
 import sys
@@ -42,8 +41,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
-from src.backend.common.runtime_paths import DATA_DIR, ENV_FILE, LOGS_DIR, PID_DIR, USER_FILES_DIR, USERS_FILE, WORKSPACE_DIR, ensure_runtime_dirs, set_subprocess_env, venv_python
-from src.backend.common.env_settings import write_env_settings
+from src.backend.common.runtime_paths import DATA_DIR, ENV_FILE, PID_DIR, USER_FILES_DIR, USERS_FILE, WORKSPACE_DIR, ensure_runtime_dirs, set_subprocess_env, venv_python
 ensure_runtime_dirs()
 WORKING_DIR = str(WORKSPACE_DIR)
 
@@ -1270,110 +1268,14 @@ def cmd_workflows(args):
 
 # ── tunnel: Tunnel 管理 ───────────────────────────────────────────────────
 def cmd_tunnel(args):
-    """Cloudflare Tunnel 管理
-
-    参数：
-        args: 命令行参数对象
-    """
-    pidfile = os.path.join(str(PID_DIR), "tunnel.pid")
-
-    def _is_running():
-        """检查 tunnel 是否正在运行"""
-        if not os.path.exists(pidfile):
-            return False, 0
-        with open(pidfile) as f:
-            pid = int(f.read().strip())
-        try:
-            os.kill(pid, 0)
-            return True, pid
-        except OSError:
-            return False, pid
-
-    def _get_public_domain():
-        """获取公网域名"""
-        env_path = str(ENV_FILE)
-        if not os.path.exists(env_path):
-            return None
-        with open(env_path) as f:
-            for line in f:
-                if line.strip().startswith("PUBLIC_DOMAIN="):
-                    v = line.strip().split("=", 1)[1].strip()
-                    if v and v != "wait to set":
-                        return v
-        return None
-
-    if args.action == "status":
-        # 查看 tunnel 状态
-        ok, pid = _is_running()
-        if ok:
-            domain = _get_public_domain()
-            print(f"✅ Tunnel 运行中 (PID: {pid})")
-            if domain:
-                print(f"🌍 公网地址: {domain}")
-            else:
-                print("⏳ 公网地址尚未就绪")
-        else:
-            print("❌ Tunnel 未运行")
-
-    elif args.action == "start":
-        # 启动 tunnel
-        ok, pid = _is_running()
-        if ok:
-            print(f"⚠️ Tunnel 已在运行 (PID: {pid})")
-            return
-        print("🌐 启动 Tunnel...")
-        log = os.path.join(str(LOGS_DIR), "tunnel.log")
-        os.makedirs(os.path.dirname(log), exist_ok=True)
-        command = [sys.executable, os.path.join(PROJECT_ROOT, "scripts", "tunnel.py")]
-        runtime_env = set_subprocess_env(os.environ)
-        preflight = subprocess.run(
-            [*command, "--check"], cwd=WORKING_DIR, env=runtime_env,
-            capture_output=True, text=True, timeout=10,
-        )
-        if preflight.returncode:
-            print(f"❌ {(preflight.stderr or preflight.stdout).strip()}")
-            return
-        with open(log, "w") as log_file:
-            proc = subprocess.Popen(
-                command, stdout=log_file, stderr=subprocess.STDOUT,
-                cwd=WORKING_DIR, start_new_session=True, env=runtime_env,
-            )
-        print(f"✅ Tunnel 已启动 (PID: {proc.pid})")
-        print(f"   日志: {log}")
-        # 等待公网地址
-        for _ in range(30):
-            time.sleep(2)
-            domain = _get_public_domain()
-            if domain:
-                print(f"🌍 公网地址: {domain}")
-                return
-            if proc.poll() is not None:
-                print(f"❌ Tunnel 启动失败，请查看日志: {log}")
-                return
-        print("⏳ 公网地址尚未就绪，请查看日志")
-
-    elif args.action == "stop":
-        # 停止 tunnel
-        ok, pid = _is_running()
-        if not ok:
-            print("Tunnel 未运行")
-            return
-        if os.name == "nt":
-            subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True, timeout=10)
-            write_env_settings(str(ENV_FILE), {"PUBLIC_DOMAIN": ""})
-        else:
-            os.kill(pid, signal.SIGTERM)
-            for _ in range(10):
-                time.sleep(0.5)
-                try:
-                    os.kill(pid, 0)
-                except OSError:
-                    break
-            else:
-                os.kill(pid, signal.SIGKILL)
-        if os.path.exists(pidfile):
-            os.remove(pidfile)
-        print("✅ Tunnel 已停止")
+    """Use the shared, cross-platform tunnel lifecycle controller."""
+    command = {"status": "tunnel-status", "start": "start-tunnel", "stop": "stop-tunnel"}[args.action]
+    return subprocess.run(
+        [sys.executable, os.path.join(PROJECT_ROOT, "scripts", "runtime_control.py"), command],
+        cwd=WORKING_DIR,
+        env=set_subprocess_env(os.environ),
+        check=False,
+    ).returncode
 
 
 # ── openclaw: OpenClaw Agent 管理 ─────────────────────────────────────────
@@ -3038,10 +2940,12 @@ def main():
 
     fn = dispatch.get(args.command)
     if fn:
-        fn(args)
+        result = fn(args)
+        return result if type(result) is int else 0
     else:
         parser.print_help()
+        return 2
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

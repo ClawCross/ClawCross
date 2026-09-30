@@ -63,9 +63,9 @@ The simplest path is `start`. It creates the runtime `.env` when needed. An empt
 # Linux / macOS
 bash selfskill/scripts/run.sh start          # 准备 Python/venv/核心依赖，初始化 .env，启动服务
 # Optional flags (same semantics as Windows run.ps1):
-#   --no-tunnel      Do not start Cloudflare Tunnel (local-only; Magic link output has no “remote” URL).
-#   --no-openclaw    Do not import LLM from OpenClaw; launcher skips OpenClaw gateway warm / OPENCLAW_* refresh.
-bash selfskill/scripts/run.sh start --no-tunnel --no-openclaw   # example: both
+#   --tunnel         Use an already installed cloudflared binary for a public tunnel.
+#   --with-openclaw  Detect and warm an existing OpenClaw installation; allow LLM import.
+bash selfskill/scripts/run.sh start --tunnel --with-openclaw   # explicit integrations
 # → Open http://127.0.0.1:51209 (or use the printed Magic link; remote/HTTPS needs the remote link)
 # → First login: Magic link or passwordless localhost
 # → Setup wizard appears if LLM is not yet configured in Clawcross
@@ -74,8 +74,8 @@ bash selfskill/scripts/run.sh start --no-tunnel --no-openclaw   # example: both
 ```powershell
 # Windows PowerShell（入口脚本只负责准备 Python；后续交给共享 Python 控制器）
 powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1 start
-# Same flags: --no-tunnel --no-openclaw (any order). start-foreground accepts --no-openclaw; --no-tunnel is ignored there (no tunnel in that mode).
-powershell -ExecutionPolicy Bypass -File .\selfskill\scripts\run.ps1 start --no-tunnel --no-openclaw
+# The same opt-in flags work on Windows. Foreground mode does not start a tunnel.
+powershell -ExecutionPolicy Bypass -File .\selfskill\scripts\run.ps1 start --tunnel --with-openclaw
 ```
 
 The `setup` command (optional standalone) automatically:
@@ -102,11 +102,11 @@ SRT is also explicit and stays off until a session selects `command_sandbox=srt`
 The `start` command automatically:
 1. **When needed**, creates the Python environment through the platform wrapper, then installs only `config/requirements.txt` from Python. Optional integrations are installed only through `install-component`.
 2. Creates `config/.env` from template if missing
-3. **Optionally** tries to copy LLM fields from local OpenClaw into `config/.env` when the key is still empty or placeholder — failure is OK if you will configure the key later — **skipped entirely** if you pass **`--no-openclaw`**
+3. Imports LLM fields from an existing OpenClaw installation only with `--with-openclaw` and only when the local key is empty or placeholder.
 4. Warns if `LLM_MODEL` is missing; set `CLAWCROSS_REQUIRE_LLM_MODEL=1` to require one before launching services
 5. Starts all services after the model check passes
-6. Warms an installed OpenClaw gateway and refreshes runtime `OPENCLAW_*` values in `.env` (does not overwrite a **real** user-set `LLM_API_KEY`) — **skipped** if **`--no-openclaw`** (or env `CLAWCROSS_NO_OPENCLAW=1` for the launcher process)
-7. Starts **one Cloudflare Quick Tunnel** via `scripts/tunnel.py`, then prints **`🔗 Magic link`**: **local** and **remote** (when `PUBLIC_DOMAIN` is set). An installed `cloudflared` is required; nothing is downloaded automatically. Operators and AI agents **must** pass available links to the user after install/start — **skipped** if **`--no-tunnel`**.
+6. Warms OpenClaw and refreshes `OPENCLAW_*` only with `--with-openclaw`.
+7. Prints a local Magic link. With `--tunnel`, it also starts an already installed Cloudflare Quick Tunnel and prints a remote link when available. Startup never downloads cloudflared.
 
 After startup, the frontend setup wizard handles remaining LLM configuration via the web UI. The wizard detects local OpenClaw and Antigravity-Manager and offers one-click import buttons.
 
@@ -114,8 +114,9 @@ After startup, the frontend setup wizard handles remaining LLM configuration via
 
 | Flag | When to use | Behavior |
 |------|-------------|----------|
-| **`--no-tunnel`** | User wants no public tunnel for this run. | Background `start` does **not** run `tunnel.py` or wait on `PUBLIC_DOMAIN`. **`start-foreground`**: tunnel is never started anyway; the flag is **ignored** (a short note is printed). |
-| **`--no-openclaw`** | User does **not** want Clawcross to tie into OpenClaw for this run (no shared LLM import on start, no gateway warm). | Skips `configure_openclaw.py --import-clawcross-llm-from-openclaw` when the key is still placeholder. Sets **`CLAWCROSS_NO_OPENCLAW`** for **`scripts/launcher.py`**, which **skips** `ensure_openclaw_gateway_running()` (no `OPENCLAW_*` refresh on startup; restart loop respects the same flag). |
+| **`--tunnel`** | Public access is explicitly requested. | Background `start` uses an already installed cloudflared binary. Foreground mode remains local. |
+| **`--with-openclaw`** | OpenClaw integration is explicitly requested. | Allows LLM import and gateway warm. |
+| **`--no-tunnel`, `--no-openclaw`** | Older scripts or automation still pass these flags. | Accepted for compatibility; they preserve the local-only default. |
 
 Environment variables (for advanced/manual launcher runs): **`CLAWCROSS_NO_OPENCLAW`** and **`CLAWCROSS_NO_TUNNEL`** may be set to `1` / `true` / `yes` / `on` where documented; scripts set them when the flags above are used.
 
@@ -125,7 +126,7 @@ Follow **[For AI agents that read this SKILL](#for-ai-agents-that-read-this-skil
 
 ### Optional: auto-import OpenClaw LLM at startup
 
-During `start` / `start-foreground`, if `config/.env` has no real `LLM_API_KEY` (missing or placeholder `your_api_key_here`), the scripts **try** to import provider/model/key from OpenClaw into Clawcross `.env` — **unless** **`--no-openclaw`** was passed. If OpenClaw is missing or has no LLM config, startup **continues** anyway. If you already set a real `LLM_API_KEY`, startup does not overwrite it.
+With `--with-openclaw`, startup may import provider/model/key from an existing OpenClaw installation when ClawCross has no real `LLM_API_KEY`. Ordinary startup does not probe OpenClaw.
 
 ### Magic Prompts for AI Code CLI
 

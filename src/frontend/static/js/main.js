@@ -169,9 +169,9 @@ const i18n = {
         public_stopping: '停止中...',
 
         // 聊天区域
-        welcome_message: '你好！我是 WeBot 智能助手。我已经准备好为你服务，请输入你的指令。',
-        new_session_message: '🆕 已开启新对话。我是 WeBot 智能助手，请输入你的指令。',
-        input_placeholder: '输入指令...（可粘贴图片/上传文件/录音）',
+        welcome_message: '你好，想做什么直接告诉我。',
+        new_session_message: '新对话已开始。想做什么直接告诉我。',
+        input_placeholder: '说说你想做什么…',
         send_btn: '发送',
         cancel_btn: '终止',
         busy_btn: '系统占用中',
@@ -1024,9 +1024,9 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         public_stopping: 'Stopping...',
 
         // Chat area
-        welcome_message: 'Hello! I am WeBot AI Assistant. Ready to serve you. Please enter your instructions.',
-        new_session_message: '🆕 New conversation started. I am WeBot AI Assistant. Please enter your instructions.',
-        input_placeholder: 'Enter command... (paste images/upload files/record audio)',
+        welcome_message: 'Hi, tell me what you would like to do.',
+        new_session_message: 'New conversation started. Tell me what you would like to do.',
+        input_placeholder: 'Tell me what you would like to do…',
         send_btn: 'Send',
         cancel_btn: 'Stop',
         busy_btn: 'System Busy',
@@ -4950,6 +4950,7 @@ async function switchToSession(sessionId, force = false, options = {}) {
         }
 
         const parts = [];
+        const uiPanels = [];
         for (const msg of data.messages) {
             if (msg.role === 'user') {
                 // 支持多模态历史消息（content 可能是 string 或 array）
@@ -4972,6 +4973,12 @@ async function switchToSession(sessionId, force = false, options = {}) {
                         </div>
                     </div>`);
             } else if (msg.role === 'tool') {
+                const panel = parseConversationUiPanel(msg.content);
+                if (panel) {
+                    const index = uiPanels.push(panel) - 1;
+                    parts.push(`<div data-ui-panel-index="${index}"></div>`);
+                    continue;
+                }
                 parts.push(`
                     <div class="flex justify-start">
                         <div class="bg-gray-100 border border-dashed border-gray-300 p-3 max-w-[85%] shadow-sm text-xs text-gray-500 rounded-lg">
@@ -4990,6 +4997,9 @@ async function switchToSession(sessionId, force = false, options = {}) {
             }
         }
         chatBox.innerHTML = parts.join('');
+        chatBox.querySelectorAll('[data-ui-panel-index]').forEach(node => {
+            node.replaceWith(createConversationUiPanel(uiPanels[Number(node.dataset.uiPanelIndex)]));
+        });
         // 为历史 AI 消息添加朗读按钮
         chatBox.querySelectorAll('[data-tts-ready="1"]').forEach(div => {
             div.removeAttribute('data-tts-ready');
@@ -8001,6 +8011,63 @@ function createTtsButton(textRef) {
     return btn;
 }
 
+const CONVERSATION_UI_PANEL_KIND = 'clawcross_ui_panel_v1';
+
+document.addEventListener('pointerdown', event => {
+    const menu = document.getElementById('studio-more-menu');
+    if (menu && menu.open && !menu.contains(event.target)) menu.open = false;
+});
+
+window.addEventListener('message', event => {
+    if (!event.data || event.data.kind !== 'clawcross_ui_panel_resize_v1') return;
+    const height = Number(event.data.height);
+    if (!Number.isFinite(height)) return;
+    for (const frame of document.querySelectorAll('.conversation-ui-panel iframe')) {
+        if (event.source === frame.contentWindow) {
+            frame.style.height = `${Math.max(120, Math.min(480, Math.ceil(height)))}px`;
+            break;
+        }
+    }
+});
+
+function parseConversationUiPanel(value) {
+    try {
+        const panel = typeof value === 'string' ? JSON.parse(value) : value;
+        if (!panel || panel.kind !== CONVERSATION_UI_PANEL_KIND) return null;
+        if (typeof panel.title !== 'string' || !panel.title.trim() || panel.title.length > 100) return null;
+        if (typeof panel.html !== 'string' || !panel.html.trim() || panel.html.length > 24000) return null;
+        if (typeof panel.css !== 'string' || panel.css.length > 12000) return null;
+        if (typeof panel.javascript !== 'string' || panel.javascript.length > 12000) return null;
+        return panel;
+    } catch (_) {
+        return null;
+    }
+}
+
+function createConversationUiPanel(panel) {
+    const section = document.createElement('section');
+    section.className = 'conversation-ui-panel';
+    const heading = document.createElement('div');
+    heading.className = 'conversation-ui-panel-heading';
+    heading.textContent = panel.title;
+    section.appendChild(heading);
+    const frame = document.createElement('iframe');
+    frame.title = panel.title;
+    frame.setAttribute('sandbox', 'allow-scripts');
+    frame.setAttribute('referrerpolicy', 'no-referrer');
+    frame.setAttribute('loading', 'lazy');
+    const css = panel.css.replace(/<\/style/gi, '<\\/style');
+    const js = panel.javascript.replace(/<\/script/gi, '<\\/script');
+    const resizeScript = 'const reportSize=()=>parent.postMessage({kind:"clawcross_ui_panel_resize_v1",height:document.body.scrollHeight+4},"*");new ResizeObserver(reportSize).observe(document.body);window.addEventListener("load",reportSize);reportSize();';
+    frame.srcdoc = '<!doctype html><html><head><meta charset="utf-8">'
+        + '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        + '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data: blob:; style-src \'unsafe-inline\'; script-src \'unsafe-inline\'; connect-src \'none\'; form-action \'none\'; base-uri \'none\'; frame-src \'none\'">'
+        + '<style>*,*::before,*::after{box-sizing:border-box}body{margin:0;padding:16px;font:14px system-ui,sans-serif;color:#17233d;overflow-wrap:anywhere}img,svg,video,canvas{max-width:100%}pre{overflow-x:auto}'
+        + css + '</style></head><body>' + panel.html + '<script>' + js + '</script><script>' + resizeScript + '</script></body></html>';
+    section.appendChild(frame);
+    return section;
+}
+
 function appendMessage(content, isUser = false, images = [], fileNames = [], audioNames = [], workflowNames = []) {
     const wrapper = document.createElement('div');
     wrapper.className = `flex ${isUser ? 'justify-end' : 'justify-start'} animate-in fade-in duration-300`;
@@ -8318,10 +8385,16 @@ async function handleSend() {
         function createToolIndicator(toolName, type, payload = null) {
             if (!streamOwns()) return;
             if (type === 'end') {
+                const panel = toolName === 'show_ui_panel' ? parseConversationUiPanel(payload) : null;
                 // 查找最后一个同名且仍在运行的 indicator 并更新
                 const allIndicators = chatBox.querySelectorAll(`.stream-tool-indicator[data-tool-name="${CSS.escape(toolName)}"]`);
                 const indicator = allIndicators.length ? allIndicators[allIndicators.length - 1] : null;
                 if (indicator) {
+                    if (panel) {
+                        indicator.parentElement.replaceWith(createConversationUiPanel(panel));
+                        scrollChatToBottom(chatBox, { settle: false });
+                        return;
+                    }
                     const statusEl = indicator.querySelector('.stream-tool-status');
                     if (statusEl) {
                         statusEl.textContent = '✅';

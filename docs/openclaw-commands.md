@@ -2,14 +2,14 @@
 
 ## Clawcross 启动时会做什么
 
-从现在起，`bash selfskill/scripts/run.sh start`、`bash selfskill/scripts/run.sh start-foreground`，以及 PowerShell 对应命令，在检测到本机已安装 OpenClaw 后，会在拉起 Clawcross 服务前自动做一轮 runtime 预热：
+普通 `start` 不检测 OpenClaw。仅在显式运行 `bash selfskill/scripts/run.sh start --with-openclaw`（PowerShell 对应命令同理）时，才会在拉起 Clawcross 服务前做一轮 runtime 预热：
 
 - 尝试启动 OpenClaw gateway
 - 确保 `gateway.http.endpoints.chatCompletions.enabled=true`
 - 刷新 `OPENCLAW_API_URL`、`OPENCLAW_GATEWAY_TOKEN`、`OPENCLAW_SESSIONS_FILE`
 - 轻量修复缺失 transcript 的 sessions 坏索引
 
-这一步只处理 OpenClaw runtime 联通性，不会静默把 OpenClaw 的 LLM provider / model / key 覆盖到 Clawcross。LLM 导入仍然走首次登录向导，或显式运行 `bash selfskill/scripts/run.sh import-openclaw-llm`。
+如果 Clawcross 尚未配置真实的 API Key，`--with-openclaw` 也允许从现有 OpenClaw 配置导入 LLM 信息；已有真实 Key 不会被覆盖。也可以在首次登录向导中手动导入，或显式运行 `bash selfskill/scripts/run.sh import-openclaw-llm`。
 
 ## Web 入口
 

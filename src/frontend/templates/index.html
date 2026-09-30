@@ -296,6 +296,8 @@
             </div>
 
             <div id="chat-standard-shell" class="chat-standard-shell flex flex-col flex-1 min-h-0">
+                <details class="studio-conversation-switcher">
+                    <summary>当前对话 <span aria-hidden="true">⌄</span></summary>
                 <!-- OpenClaw Agent Switcher Bar -->
                 <div id="openclaw-chat-switcher" class="openclaw-chat-switcher" style="display:none;">
                     <div class="oc-switcher-inner">
@@ -342,11 +344,12 @@
                     <label for="oc-internal-session-name" class="oc-acp-session-label oc-acp-session-label-sub" data-i18n="oc_acp_session_label">名称</label>
                     <input type="text" id="oc-internal-session-name" class="oc-acp-session-input" maxlength="80" autocomplete="off" data-i18n-placeholder="oc_acp_session_placeholder" onblur="ocInternalOnSessionNameBlur()" placeholder="可选；留空则按左侧 Clawcross 会话区分" />
                 </div>
+                </details>
 
                 <div id="chat-box" class="chat-container overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6 flex-grow bg-gray-50">
                     <div class="flex justify-start">
                         <div class="message-agent bg-white border p-4 max-w-[85%] shadow-sm text-gray-700" data-i18n="welcome_message">
-                            你好！我是 WeBot 智能助手。我已经准备好为你服务，请输入你的指令。
+                            你好，想做什么直接告诉我。
                         </div>
                     </div>
                 </div>
@@ -359,6 +362,27 @@
                 </div>
 
                 <div class="p-2 sm:p-4 border-t bg-white flex-shrink-0">
+                    <div id="image-preview-area" class="image-preview-area" style="display:none;"></div>
+                    <div id="file-preview-area" class="image-preview-area" style="display:none;"></div>
+                    <div id="audio-preview-area" class="image-preview-area" style="display:none;"></div>
+                    <div id="workflow-preview-area"></div>
+                    <div id="persona-preview-area"></div>
+                    <div class="chat-composer-stack">
+                        <div class="chat-composer-input-row">
+                            <details id="studio-more-menu" class="studio-more-menu">
+                                <summary aria-label="更多操作" title="更多操作">＋</summary>
+                                <div class="studio-more-content">
+                                    <div class="studio-more-heading">添加内容</div>
+                                    <div class="chat-composer-toolbar">
+                                        <label class="image-upload-btn" title="上传图片/文件/音频">
+                                            📎 <span>上传文件</span>
+                                            <input type="file" id="image-input" accept="image/*,.pdf,.txt,.md,.markdown,.rst,.adoc,.org,.tex,.bib,.csv,.tsv,.json,.ndjson,.jsonl,.xml,.yaml,.yml,.toml,.ini,.cfg,.conf,.properties,.env,.log,.html,.htm,.css,.scss,.sass,.less,.styl,.js,.mjs,.cjs,.ts,.tsx,.jsx,.vue,.svelte,.astro,.py,.pyi,.pyx,.ipynb,.rb,.gemspec,.php,.go,.rs,.java,.kt,.kts,.scala,.groovy,.gradle,.c,.h,.cpp,.cc,.cxx,.hpp,.hh,.hxx,.m,.mm,.cs,.fs,.fsx,.fsi,.vb,.swift,.dart,.lua,.pl,.pm,.tcl,.r,.jl,.nim,.zig,.cr,.ex,.exs,.erl,.hrl,.elm,.clj,.cljs,.cljc,.hs,.ml,.mli,.ocaml,.sh,.bash,.zsh,.fish,.bat,.cmd,.ps1,.psm1,.awk,.sed,.dockerfile,.makefile,.mk,.cmake,.bazel,.bzl,.sbt,.sql,.prisma,.graphql,.gql,.proto,.thrift,.tf,.hcl,.nomad,.j2,.jinja,.jinja2,.ejs,.hbs,.mustache,.twig,.liquid,.njk,.editorconfig,.gitignore,.gitattributes,.prettierrc,.eslintrc,.npmrc,.babelrc,.lock,.sum,.mod,.mp3,.wav,.ogg,.m4a,.flac,.aac,.opus,.aiff,.amr,.avi,.mp4,.mkv,.mov,.webm,.wmv,.flv,.m4v,.3gp,.ogv" multiple style="display:none;" onchange="document.getElementById('studio-more-menu').open=false; handleFileSelect(event)">
+                                        </label>
+                                        <button id="record-btn" class="audio-record-btn" data-i18n-title="recording_title" title="录音" onclick="document.getElementById('studio-more-menu').open=false; toggleRecording()">🎤 <span>录音</span></button>
+                                        <button id="workflow-add-btn" class="workflow-add-btn" data-i18n-title="wf_btn_title" title="添加工作流" onclick="document.getElementById('studio-more-menu').open=false; showWorkflowPopup()"><span class="wf-label" data-i18n="wf_btn_label">添加工作流</span></button>
+                                        <button id="persona-add-btn" class="persona-add-btn" data-i18n-title="persona_btn_title" title="引入专家人设" onclick="document.getElementById('studio-more-menu').open=false; showPersonaPopup()"><span class="persona-icon">🎭</span><span class="persona-label" data-i18n="persona_btn_label">+ 人设</span></button>
+                                    </div>
+                                    <div class="studio-more-heading">高级选项</div>
                     <!-- Tool List Panel -->
                     <div id="tool-panel-wrapper" class="mb-2">
                         <div class="flex items-center justify-between mb-1">
@@ -387,26 +411,12 @@
                             </div>
                         </div>
                     </div>
-                    <div id="image-preview-area" class="image-preview-area" style="display:none;"></div>
-                    <div id="file-preview-area" class="image-preview-area" style="display:none;"></div>
-                    <div id="audio-preview-area" class="image-preview-area" style="display:none;"></div>
-                    <div id="workflow-preview-area"></div>
-                    <div id="persona-preview-area"></div>
-                    <div class="chat-composer-stack">
-                        <div class="chat-composer-toolbar">
-                            <label class="image-upload-btn" title="上传图片/文件/音频">
-                                📎
-                                <input type="file" id="image-input" accept="image/*,.pdf,.txt,.md,.markdown,.rst,.adoc,.org,.tex,.bib,.csv,.tsv,.json,.ndjson,.jsonl,.xml,.yaml,.yml,.toml,.ini,.cfg,.conf,.properties,.env,.log,.html,.htm,.css,.scss,.sass,.less,.styl,.js,.mjs,.cjs,.ts,.tsx,.jsx,.vue,.svelte,.astro,.py,.pyi,.pyx,.ipynb,.rb,.gemspec,.php,.go,.rs,.java,.kt,.kts,.scala,.groovy,.gradle,.c,.h,.cpp,.cc,.cxx,.hpp,.hh,.hxx,.m,.mm,.cs,.fs,.fsx,.fsi,.vb,.swift,.dart,.lua,.pl,.pm,.tcl,.r,.jl,.nim,.zig,.cr,.ex,.exs,.erl,.hrl,.elm,.clj,.cljs,.cljc,.hs,.ml,.mli,.ocaml,.sh,.bash,.zsh,.fish,.bat,.cmd,.ps1,.psm1,.awk,.sed,.dockerfile,.makefile,.mk,.cmake,.bazel,.bzl,.sbt,.sql,.prisma,.graphql,.gql,.proto,.thrift,.tf,.hcl,.nomad,.j2,.jinja,.jinja2,.ejs,.hbs,.mustache,.twig,.liquid,.njk,.editorconfig,.gitignore,.gitattributes,.prettierrc,.eslintrc,.npmrc,.babelrc,.lock,.sum,.mod,.mp3,.wav,.ogg,.m4a,.flac,.aac,.opus,.aiff,.amr,.avi,.mp4,.mkv,.mov,.webm,.wmv,.flv,.m4v,.3gp,.ogv" multiple style="display:none;" onchange="handleFileSelect(event)">
-                            </label>
-                            <button id="record-btn" class="audio-record-btn" data-i18n-title="recording_title" title="录音" onclick="toggleRecording()">🎤</button>
-                            <button id="workflow-add-btn" class="workflow-add-btn" data-i18n-title="wf_btn_title" title="添加工作流" onclick="showWorkflowPopup()"><span class="wf-label" data-i18n="wf_btn_label">添加工作流</span></button>
-                            <button id="persona-add-btn" class="persona-add-btn" data-i18n-title="persona_btn_title" title="引入专家人设" onclick="showPersonaPopup()"><span class="persona-icon">🎭</span><span class="persona-label" data-i18n="persona_btn_label">+ 人设</span></button>
-                        </div>
-                        <div class="chat-composer-input-row">
+                                </div>
+                            </details>
                             <div class="chat-composer-textarea-wrap">
                                 <textarea id="user-input" rows="1"
                                     class="w-full p-2 sm:p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none transition-all text-sm sm:text-base"
-                                    data-i18n-placeholder="input_placeholder" placeholder="输入指令...（可粘贴图片/上传文件/录音）"></textarea>
+                                    data-i18n-placeholder="input_placeholder" placeholder="说说你想做什么…"></textarea>
                             </div>
                             <button onclick="handleSend()" id="send-btn"
                                 class="bg-blue-600 hover:bg-blue-700 text-white px-4 sm:px-6 py-2 sm:py-3 rounded-xl transition-all font-bold shadow-lg h-[42px] sm:h-[50px] text-sm sm:text-base flex-shrink-0"
@@ -423,7 +433,6 @@
                             </button>
                         </div>
                     </div>
-                    <p class="text-[10px] text-center text-gray-400 mt-2 sm:mt-3 font-mono hidden sm:block" data-i18n="secure_footer">Secured by Nginx Reverse Proxy & SSH Tunnel</p>
                 </div>
             </div>
         </div>
