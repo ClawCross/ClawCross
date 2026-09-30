@@ -1345,20 +1345,29 @@ def _cmd_tunnel(arg: str = "") -> None:
             return
         log = os.path.join(str(LOGS_DIR), "tunnel.log")
         os.makedirs(os.path.dirname(log), exist_ok=True)
-        proc = subprocess.Popen(
-            [sys.executable, str(PROJECT_ROOT / "scripts" / "tunnel.py")],
-            stdout=open(log, "w"), stderr=subprocess.STDOUT,
-            cwd=str(WORKSPACE_DIR), start_new_session=True,
-            env=set_subprocess_env(os.environ),
+        command = [sys.executable, str(PROJECT_ROOT / "scripts" / "tunnel.py")]
+        runtime_env = set_subprocess_env(os.environ)
+        preflight = subprocess.run(
+            [*command, "--check"], cwd=str(WORKSPACE_DIR), env=runtime_env,
+            capture_output=True, text=True, timeout=10,
         )
-        with open(pidfile, "w") as f:
-            f.write(str(proc.pid))
+        if preflight.returncode:
+            print(f"❌ {(preflight.stderr or preflight.stdout).strip()}")
+            return
+        with open(log, "w") as log_file:
+            proc = subprocess.Popen(
+                command, stdout=log_file, stderr=subprocess.STDOUT,
+                cwd=str(WORKSPACE_DIR), start_new_session=True, env=runtime_env,
+            )
         print(f"🌐 tunnel 启动中 (PID {proc.pid})，日志 {log}")
         for _ in range(30):
             time.sleep(2)
             dom = _public_domain()
             if dom:
                 print(f"🌍 公网: {dom} —— 现在 /front 会同时给出本地和公网链接")
+                return
+            if proc.poll() is not None:
+                print(f"❌ tunnel 启动失败，请查看日志: {log}")
                 return
         print("⏳ 公网地址尚未就绪，请稍后 /tunnel status 或查看日志")
         return

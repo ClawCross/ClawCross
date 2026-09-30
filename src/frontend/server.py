@@ -4204,8 +4204,6 @@ def proxy_tunnel_status():
 @app.route("/proxy_tunnel/start", methods=["POST"])
 def proxy_tunnel_start():
     """Start cloudflare tunnel in background."""
-    user_id = session.get("user_id", "")
-
     running, pid = _tunnel_running()
     if running:
         domain = _get_public_domain()
@@ -4218,12 +4216,20 @@ def proxy_tunnel_start():
 
     try:
         import sys as _sys
+        runtime_env = set_subprocess_env(os.environ)
+        preflight = _subprocess.run(
+            [_sys.executable, _TUNNEL_SCRIPT, "--check"],
+            cwd=runtime_working_dir, env=runtime_env,
+            capture_output=True, text=True, timeout=10,
+        )
+        if preflight.returncode:
+            return jsonify({"error": (preflight.stderr or preflight.stdout).strip()}), 400
         log_fh = open(log_file, "w")
         popen_kwargs = dict(
             stdout=log_fh,
             stderr=_subprocess.STDOUT,
             cwd=runtime_working_dir,
-            env=set_subprocess_env(os.environ),
+            env=runtime_env,
         )
         if _IS_WINDOWS:
             popen_kwargs["creationflags"] = (
@@ -4232,12 +4238,10 @@ def proxy_tunnel_start():
         else:
             popen_kwargs["start_new_session"] = True
 
-        proc = _subprocess.Popen(
-            [_sys.executable, _TUNNEL_SCRIPT],
-            **popen_kwargs,
-        )
-        with open(_TUNNEL_PIDFILE, "w") as f:
-            f.write(str(proc.pid))
+        try:
+            proc = _subprocess.Popen([_sys.executable, _TUNNEL_SCRIPT], **popen_kwargs)
+        finally:
+            log_fh.close()
         return jsonify({"status": "started", "pid": proc.pid})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -4246,8 +4250,6 @@ def proxy_tunnel_start():
 @app.route("/proxy_tunnel/stop", methods=["POST"])
 def proxy_tunnel_stop():
     """Stop the running tunnel."""
-    user_id = session.get("user_id", "")
-
     running, pid = _tunnel_running()
     if not running:
         # Clean up stale pidfile

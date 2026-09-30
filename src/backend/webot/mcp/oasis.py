@@ -1327,7 +1327,7 @@ async def get_publicnet_info() -> str:
     """
     Get public network info — tunnel status, public URL, ports — e.g. to share
     the public link with the user. Read-only: it never starts the tunnel or
-    downloads cloudflared; do that only when the user explicitly asks.
+    downloads cloudflared; the tunnel manager requires an existing installation.
 
     Returns:
         Human-readable public network info including tunnel status and public URL.

@@ -33,17 +33,14 @@ $childPidFiles = @(
 $envPath = Join-Path $env:CLAWCROSS_CONFIG_DIR ".env"
 
 function Stop-ClawcrossTunnelForFreshStart {
-    $touched = $false
     if (Test-TrackedProcessRunning -PidFile $tunnelPidFile) {
         Write-Host "Stopping existing Tunnel before starting a new one..."
         Stop-TrackedProcess -PidFile $tunnelPidFile | Out-Null
-        $touched = $true
     } elseif (Test-Path $tunnelPidFile) {
         Write-Host "Removing stale .tunnel.pid"
         Remove-Item $tunnelPidFile -Force -ErrorAction SilentlyContinue
-        $touched = $true
     }
-    if ($touched -and (Test-Path $envPath)) {
+    if (Test-Path $envPath) {
         $raw = Get-Content $envPath -Raw -ErrorAction SilentlyContinue
         if ($raw -and ($raw -match '(?m)^PUBLIC_DOMAIN=')) {
             $cleared = $raw -replace '(?m)^PUBLIC_DOMAIN=.*', 'PUBLIC_DOMAIN='
@@ -449,7 +446,6 @@ function Show-StartupFailureDiagnostics {
 
 function Get-ClawcrossServiceProcesses {
     $ports = Get-ClawcrossPortMap -EnvPath $envPath
-    $frontendPort = [int]$ports["PORT_FRONTEND"]
     $scriptPatterns = @(
         "scripts[\\/]+launcher\.py",
         "src[\\/]+backend[\\/]+scheduler[\\/]+service\.py",
@@ -459,9 +455,10 @@ function Get-ClawcrossServiceProcesses {
         "scripts[\\/]+tunnel\.py",
         "scripts[\\/]+harness_conductor\.py",
         "src[\\/]+backend[\\/]+chatbot[\\/]+main\.py",
-        "weclaw start -f",
-        "cloudflared.*\btunnel\b.*--url\s+http://127\.0\.0\.1:$frontendPort\b"
+        "weclaw start -f"
     )
+
+    $ownedCloudflaredPid = Get-TrackedProcessId -PidFile (Join-Path $env:CLAWCROSS_RUN_DIR "cloudflared.pid")
 
     $candidatePids = New-Object System.Collections.Generic.List[int]
     foreach ($trackedFile in @($pidFile, $tunnelPidFile) + $childPidFiles) {
@@ -508,7 +505,8 @@ function Get-ClawcrossServiceProcesses {
             continue
         }
 
-        if ($scriptPatterns | Where-Object { $commandLine -match $_ }) {
+        if (($scriptPatterns | Where-Object { $commandLine -match $_ }) -or
+            ($ownedCloudflaredPid -and $proc.ProcessId -eq $ownedCloudflaredPid -and $proc.Name -in @("cloudflared.exe", "cloudflared"))) {
             $matched.Add($proc)
         }
     }
@@ -749,17 +747,20 @@ switch ($Command) {
                 -Arguments @("scripts\tunnel.py") `
                 -StdOutLog $tunnelStdoutLog `
                 -StdErrLog $tunnelStderrLog
-            Set-Content -Path $tunnelPidFile -Value $tunnelProcess.Id -Encoding UTF8
             Write-Host "Tunnel started. PID: $($tunnelProcess.Id)"
 
             $tunnelReady = $false
             for ($i = 0; $i -lt 40; $i++) {
                 Start-Sleep -Seconds 1
                 $envContent = Get-Content $envPath -ErrorAction SilentlyContinue | Out-String
-                if ($envContent -match 'PUBLIC_DOMAIN=(https://\S+trycloudflare\.com\S*)') {
+                if ($envContent -match '(?m)^PUBLIC_DOMAIN=(https://\S+)') {
                     $publicDomain = $matches[1]
                     Write-Host "Mobile access: $publicDomain/mobile_group_chat"
                     $tunnelReady = $true
+                    break
+                }
+                if ($tunnelProcess.HasExited) {
+                    Write-Host "Tunnel failed to start. Check $tunnelStderrLog"
                     break
                 }
             }
@@ -1235,7 +1236,6 @@ switch ($Command) {
             -StdOutLog $stdoutLog `
             -StdErrLog $stderrLog
 
-        Set-Content -Path $tunnelPidFile -Value $process.Id -Encoding UTF8
         Write-Host "Tunnel started. PID: $($process.Id)"
         Write-Host "Logs:"
         Write-Host "  stdout: $stdoutLog"
@@ -1246,9 +1246,13 @@ switch ($Command) {
             Start-Sleep -Seconds 2
             $envValues = Read-ClawcrossEnvFile -Path $envPath
             $pd = if ($envValues.ContainsKey("PUBLIC_DOMAIN")) { $envValues["PUBLIC_DOMAIN"] } else { "" }
-            if ($pd -and $pd -ne "wait to set" -and $pd -match "trycloudflare\.com") {
+            if ($pd -and $pd -ne "wait to set") {
                 Write-Host "Public URL: $pd"
                 $ready = $true
+                break
+            }
+            if ($process.HasExited) {
+                Write-Host "Tunnel failed to start. Check $stderrLog"
                 break
             }
         }

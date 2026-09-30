@@ -122,7 +122,6 @@ CLAWCROSS_SERVICE_PATTERNS=(
     "scripts/harness_conductor.py"
     "src/backend/chatbot/main.py"
     "weclaw start -f"
-    "cloudflared.*tunnel.*--url.*127\\.0\\.0\\.1"
 )
 CLAWCROSS_CHILD_PIDFILES=(
     "$CLAWCROSS_RUN_DIR/scheduler_service.pid"
@@ -189,25 +188,26 @@ print_wsl_access_hint() {
 # 若已有 .tunnel.pid（进程活或仅陈旧文件），先停进程、删 pid、清空 PUBLIC_DOMAIN=，再交给调用方重新 nohup tunnel.py
 _stop_tracked_tunnel_if_running() {
     local pf="$CLAWCROSS_RUN_DIR/tunnel.pid"
-    [ -f "$pf" ] || return 0
-    local apid
-    apid=$(tr -d ' \r\n' < "$pf")
-    if [ -n "$apid" ] && kill -0 "$apid" 2>/dev/null; then
-        echo "🌐 检测到已有 Tunnel (PID $apid)，先停止再启动新的…"
-        kill "$apid" 2>/dev/null || true
-        local i
-        for i in $(seq 1 10); do
-            kill -0 "$apid" 2>/dev/null || break
-            sleep 0.5
-        done
-        if kill -0 "$apid" 2>/dev/null; then
-            kill -9 "$apid" 2>/dev/null || true
+    if [ -f "$pf" ]; then
+        local apid
+        apid=$(tr -d ' \r\n' < "$pf")
+        if [ -n "$apid" ] && kill -0 "$apid" 2>/dev/null; then
+            echo "🌐 检测到已有 Tunnel (PID $apid)，先停止再启动新的…"
+            kill "$apid" 2>/dev/null || true
+            local i
+            for i in $(seq 1 10); do
+                kill -0 "$apid" 2>/dev/null || break
+                sleep 0.5
+            done
+            if kill -0 "$apid" 2>/dev/null; then
+                kill -9 "$apid" 2>/dev/null || true
+            fi
+            echo "✅ 旧 Tunnel 已停止"
+        else
+            echo "🧹 清理失效或残留的 .tunnel.pid"
         fi
-        echo "✅ 旧 Tunnel 已停止"
-    else
-        echo "🧹 清理失效或残留的 .tunnel.pid"
+        rm -f "$pf"
     fi
-    rm -f "$pf"
     if [ -f "$CLAWCROSS_CONFIG_DIR/.env" ] && grep -q "^PUBLIC_DOMAIN=" "$CLAWCROSS_CONFIG_DIR/.env"; then
         replace_env_value "PUBLIC_DOMAIN" "" "$CLAWCROSS_CONFIG_DIR/.env"
         echo "🧹 已清空 PUBLIC_DOMAIN（避免沿用过期公网地址）"
@@ -612,13 +612,16 @@ case "${1:-help}" in
             mkdir -p "$CLAWCROSS_LOG_DIR"
             nohup "$VENV_PY" "$PROJECT_ROOT/scripts/tunnel.py" > "$CLAWCROSS_LOG_DIR/tunnel.log" 2>&1 &
             TUNNEL_PID=$!
-            echo "$TUNNEL_PID" > "$TUNNEL_PIDFILE"
             echo -n "   等待公网地址"
             for i in $(seq 1 40); do
                 source "$CLAWCROSS_CONFIG_DIR/.env" 2>/dev/null || true
-                if [ -n "$PUBLIC_DOMAIN" ] && [ "$PUBLIC_DOMAIN" != "wait to set" ] && echo "$PUBLIC_DOMAIN" | grep -q "trycloudflare.com"; then
+                if [ -n "$PUBLIC_DOMAIN" ] && [ "$PUBLIC_DOMAIN" != "wait to set" ]; then
                     echo " ✅"
                     echo "📱 手机访问地址: ${PUBLIC_DOMAIN}/mobile_group_chat"
+                    break
+                fi
+                if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then
+                    echo " 失败：$(tail -n 1 "$CLAWCROSS_LOG_DIR/tunnel.log")"
                     break
                 fi
                 echo -n "."
@@ -1083,7 +1086,7 @@ case "${1:-help}" in
         ;;
 
     start-tunnel)
-        # 启动 Cloudflare Tunnel（自动下载 cloudflared + 暴露前端到公网）
+        # 启动预先配置的 Cloudflare 命名隧道
         TUNNEL_PIDFILE="$CLAWCROSS_RUN_DIR/tunnel.pid"
         _stop_tracked_tunnel_if_running
 
@@ -1091,17 +1094,20 @@ case "${1:-help}" in
         mkdir -p "$CLAWCROSS_LOG_DIR"
         nohup "$VENV_PY" "$PROJECT_ROOT/scripts/tunnel.py" > "$CLAWCROSS_LOG_DIR/tunnel.log" 2>&1 &
         TUNNEL_PID=$!
-        echo "$TUNNEL_PID" > "$TUNNEL_PIDFILE"
 
         # 等待公网地址就绪（最多 60 秒）
         echo -n "   等待公网地址"
         for i in $(seq 1 30); do
             source "$CLAWCROSS_CONFIG_DIR/.env" 2>/dev/null || true
-            if [ -n "$PUBLIC_DOMAIN" ] && [ "$PUBLIC_DOMAIN" != "wait to set" ] && echo "$PUBLIC_DOMAIN" | grep -q "trycloudflare.com"; then
+            if [ -n "$PUBLIC_DOMAIN" ] && [ "$PUBLIC_DOMAIN" != "wait to set" ]; then
                 echo " ✅"
                 echo "🌍 公网地址: $PUBLIC_DOMAIN"
                 print_magic_links
                 exit 0
+            fi
+            if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then
+                echo " 失败：$(tail -n 1 "$CLAWCROSS_LOG_DIR/tunnel.log")"
+                exit 1
             fi
             echo -n "."
             sleep 2
@@ -1176,7 +1182,7 @@ case "${1:-help}" in
         echo "  stop                           停止服务"
         echo "  status                         检查服务状态"
         echo "  logs [launcher|error|tunnel]   查看最近日志"
-        echo "  start-tunnel                   启动公网隧道（自动下载 cloudflared）"
+        echo "  start-tunnel                   启动已配置的公网隧道"
         echo "  stop-tunnel                    停止公网隧道"
         echo "  tunnel-status                  查看隧道状态和公网地址"
         echo "  setup                          单独安装/更新环境（start 会按需自动执行）"
