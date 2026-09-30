@@ -1160,6 +1160,11 @@ class TeamAgent:
                 "args": [os.path.join(self._src_dir, "webot", "mcp", "session.py")],
                 "transport": "stdio",
             },
+            "ui_panel_service": {
+                "command": python_command,
+                "args": [os.path.join(self._src_dir, "webot", "mcp", "ui_panel.py")],
+                "transport": "stdio",
+            },
             "notifier_service": {
                 "command": python_command,
                 "args": [os.path.join(self._src_dir, "webot", "mcp", "notifier.py")],
@@ -1199,7 +1204,7 @@ class TeamAgent:
         # Mark essential tools as always-loaded
         self._tool_registry.set_always_loaded({
             # No "search_files" — no server defines one; grep through run_command.
-            "read_file", "write_file", "list_files", "run_command",
+            "read_file", "write_file", "list_files", "run_command", "show_ui_panel",
         })
 
         # 4. Build the fixed model -> tools -> model loop.  A general-purpose

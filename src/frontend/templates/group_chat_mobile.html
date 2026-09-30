@@ -17,7 +17,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="消息中心">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#ededed">
+<meta name="theme-color" content="#f5f7fc">
 <meta name="format-detection" content="telephone=no">
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="https://img.icons8.com/fluency/180/robot-2.png">
@@ -4643,6 +4643,30 @@
       bottom: 34px;
     }
   }
+/* Mobile conversation polish and narrow-screen containment. */
+:root { --bg: #f5f7fc; --bg-chat: #f7f9fd; --bg-nav: #fff; --primary: #365adf; --primary-dark: #2845b6; --text: #1d2b43; --text-secondary: #6e7d94; --border: #e2e8f2; --msg-self: #dfe9ff; --msg-other: #fff; --msg-system: #e9eef7; }
+html, body { background: #f5f7fc; }
+.app-container { box-shadow: 0 16px 44px rgba(35, 56, 94, .1); }
+.chat-page { min-width: 0; }
+.chat-page .header { background: rgba(255,255,255,.96); border-bottom: 1px solid var(--border); box-shadow: 0 2px 12px rgba(31, 49, 92, .04); }
+.chat-page .header-title { max-width: min(54vw, 280px); color: #203252; }
+.chat-body { min-height: 0; margin-top: 0; padding: 16px 12px 12px; background: linear-gradient(180deg, #f4f7fe, #f8faff 45%, #f5f7fc); }
+.msg-row, .msg-body { min-width: 0; }
+.msg-body { max-width: calc(100% - 50px); }
+.msg-bubble { border-radius: 16px; border: 1px solid #e6ebf5; box-shadow: 0 4px 16px rgba(31, 49, 92, .045); overflow-wrap: anywhere; }
+.msg-row.self .msg-bubble { border-color: #cbdafa; }
+.msg-row.self .msg-avatar { background: #5977df; }
+.msg-bubble pre, .msg-bubble table { max-width: 100%; overflow-x: auto; }
+.input-bar-wrap { background: #fff; border-top: 1px solid var(--border); box-shadow: 0 -5px 18px rgba(31, 49, 92, .04); }
+.input-bar { min-width: 0; gap: 8px; }
+.input-bar textarea { min-width: 0; border-color: #dae3f2; border-radius: 12px; background: #fafcff; }
+.input-bar textarea:focus { border-color: #7f9df1; box-shadow: 0 0 0 3px rgba(54,90,223,.12); }
+.input-actions-toggle { border-color: #dce5f5; color: var(--primary); background: #f1f5ff; }
+.send-btn { background: var(--primary); border-radius: 11px; }
+.tab-bar { border-top: 1px solid var(--border); box-shadow: 0 -5px 16px rgba(31,49,92,.035); }
+.tab-item.active .tab-icon svg { fill: var(--primary); }
+.tab-item.active .tab-label { color: var(--primary); }
+@media (max-width: 360px) { .chat-body { padding-left: 8px; padding-right: 8px; } .input-bar { padding-left: 6px; padding-right: 6px; gap: 5px; } .chat-page .header-title { max-width: 46vw; } }
 .tool-policy-category { border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
 .tool-policy-category > summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text); }
 .tool-policy-category small { float: right; color: var(--text-hint); font-weight: 400; }

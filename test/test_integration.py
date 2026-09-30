@@ -137,6 +137,7 @@ class FrontendIntegrationTests(unittest.TestCase):
             session["user_id"] = "integration-user"
 
     def test_studio_page_renders_shell_and_settings_modal(self):
+        self.assertEqual(self.client.get("/").location, "/studio")
         response = self.client.get("/studio", environ_overrides={"REMOTE_ADDR": "127.0.0.1"})
         html = response.get_data(as_text=True)
 
@@ -150,6 +151,8 @@ class FrontendIntegrationTests(unittest.TestCase):
         self.assertIn('id="webot-subagent-panel"', html)
         self.assertIn('id="webot-subagent-list"', html)
         self.assertIn('id="webot-policy-panel"', html)
+        self.assertIn('id="studio-more-menu"', html)
+        self.assertIn('class="studio-conversation-switcher"', html)
         self.assertIn('id="webot-policy-editor"', html)
         self.assertIn("/static/js/orchestration.js", html)
         self.assertIn("/static/js/tinyfish-live-shared.js", html)

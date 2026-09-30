@@ -17,7 +17,7 @@ from webot.engine.tool_schema import drop_null_optionals, to_strict_parameters
 def _base_url(model: Any) -> str:
     base = str(getattr(model, "api_base", "") or "").rstrip("/")
     parsed = urlparse(base)
-    if parsed.hostname == "api.deepseek.com" and parsed.path.rstrip("/") == "/beta":
+    if parsed.hostname == "api.deepseek.com" and parsed.path.rstrip("/") in {"/beta", "/v1"}:
         return "https://api.deepseek.com"
     return base
 
