@@ -91,7 +91,7 @@ The `start` command automatically:
 4. Verifies `LLM_MODEL` is set before launching services; override only for shell-only diagnostics with `CLAWCROSS_ALLOW_EMPTY_LLM_MODEL=1`
 5. Starts all services after the model check passes
 6. Warms an installed OpenClaw gateway and refreshes runtime `OPENCLAW_*` values in `.env` (does not overwrite a **real** user-set `LLM_API_KEY`) — **skipped** if **`--no-openclaw`** (or env `CLAWCROSS_NO_OPENCLAW=1` for the launcher process)
-7. Starts **Cloudflare Tunnel** via `scripts/tunnel.py`, then prints **`🔗 Magic link`**: **local** and **remote** (when `PUBLIC_DOMAIN` is set). Operators and AI agents **must** pass these links to the user after install/start — **skipped** if **`--no-tunnel`** (Magic link text will state that no Tunnel was started).
+7. Attempts to start a **preconfigured named Cloudflare Tunnel** via `scripts/tunnel.py`, then prints **`🔗 Magic link`**: **local** and **remote** (when `PUBLIC_DOMAIN` is set). A fixed hostname, existing tunnel credentials, and installed `cloudflared` are required; nothing is downloaded automatically. Operators and AI agents **must** pass available links to the user after install/start — **skipped** if **`--no-tunnel`**.
 
 After startup, the frontend setup wizard handles remaining LLM configuration via the web UI. The wizard detects local OpenClaw and Antigravity-Manager and offers one-click import buttons.
 
@@ -99,7 +99,7 @@ After startup, the frontend setup wizard handles remaining LLM configuration via
 
 | Flag | When to use | Behavior |
 |------|-------------|----------|
-| **`--no-tunnel`** | User wants **no** quick public URL (no Cloudflare Tunnel for this run). | Background `start` does **not** run `tunnel.py` or wait on `PUBLIC_DOMAIN`. **`start-foreground`**: tunnel is never started anyway; the flag is **ignored** (a short note is printed). |
+| **`--no-tunnel`** | User wants no public tunnel for this run. | Background `start` does **not** run `tunnel.py` or wait on `PUBLIC_DOMAIN`. **`start-foreground`**: tunnel is never started anyway; the flag is **ignored** (a short note is printed). |
 | **`--no-openclaw`** | User does **not** want Clawcross to tie into OpenClaw for this run (no shared LLM import on start, no gateway warm). | Skips `configure_openclaw.py --import-clawcross-llm-from-openclaw` when the key is still placeholder. Sets **`CLAWCROSS_NO_OPENCLAW`** for **`scripts/launcher.py`**, which **skips** `ensure_openclaw_gateway_running()` (no `OPENCLAW_*` refresh on startup; restart loop respects the same flag). |
 
 Environment variables (for advanced/manual launcher runs): **`CLAWCROSS_NO_OPENCLAW`** and **`CLAWCROSS_NO_TUNNEL`** may be set to `1` / `true` / `yes` / `on` where documented; scripts set them when the flags above are used.

@@ -1594,7 +1594,8 @@ async def publicnet_info():
     running, pid = _tunnel_running()
     domain = ""
     if running:
-        domain = _get_env("PUBLIC_DOMAIN", "")
+        from dotenv import dotenv_values
+        domain = dotenv_values(str(ENV_FILE)).get("PUBLIC_DOMAIN") or ""
         if domain == "wait to set":
             domain = ""
 

@@ -43,6 +43,7 @@ PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 from src.backend.common.runtime_paths import DATA_DIR, ENV_FILE, LOGS_DIR, PID_DIR, USER_FILES_DIR, USERS_FILE, WORKSPACE_DIR, ensure_runtime_dirs, set_subprocess_env, venv_python
+from src.backend.common.env_settings import write_env_settings
 ensure_runtime_dirs()
 WORKING_DIR = str(WORKSPACE_DIR)
 
@@ -1323,14 +1324,20 @@ def cmd_tunnel(args):
         print("🌐 启动 Tunnel...")
         log = os.path.join(str(LOGS_DIR), "tunnel.log")
         os.makedirs(os.path.dirname(log), exist_ok=True)
-        proc = subprocess.Popen(
-            [sys.executable, os.path.join(PROJECT_ROOT, "scripts", "tunnel.py")],
-            stdout=open(log, "w"), stderr=subprocess.STDOUT,
-            cwd=WORKING_DIR, start_new_session=True,
-            env=set_subprocess_env(os.environ),
+        command = [sys.executable, os.path.join(PROJECT_ROOT, "scripts", "tunnel.py")]
+        runtime_env = set_subprocess_env(os.environ)
+        preflight = subprocess.run(
+            [*command, "--check"], cwd=WORKING_DIR, env=runtime_env,
+            capture_output=True, text=True, timeout=10,
         )
-        with open(pidfile, "w") as f:
-            f.write(str(proc.pid))
+        if preflight.returncode:
+            print(f"❌ {(preflight.stderr or preflight.stdout).strip()}")
+            return
+        with open(log, "w") as log_file:
+            proc = subprocess.Popen(
+                command, stdout=log_file, stderr=subprocess.STDOUT,
+                cwd=WORKING_DIR, start_new_session=True, env=runtime_env,
+            )
         print(f"✅ Tunnel 已启动 (PID: {proc.pid})")
         print(f"   日志: {log}")
         # 等待公网地址
@@ -1340,6 +1347,9 @@ def cmd_tunnel(args):
             if domain:
                 print(f"🌍 公网地址: {domain}")
                 return
+            if proc.poll() is not None:
+                print(f"❌ Tunnel 启动失败，请查看日志: {log}")
+                return
         print("⏳ 公网地址尚未就绪，请查看日志")
 
     elif args.action == "stop":
@@ -1348,15 +1358,19 @@ def cmd_tunnel(args):
         if not ok:
             print("Tunnel 未运行")
             return
-        os.kill(pid, signal.SIGTERM)
-        for _ in range(10):
-            time.sleep(0.5)
-            try:
-                os.kill(pid, 0)
-            except OSError:
-                break
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True, timeout=10)
+            write_env_settings(str(ENV_FILE), {"PUBLIC_DOMAIN": ""})
         else:
-            os.kill(pid, signal.SIGKILL)
+            os.kill(pid, signal.SIGTERM)
+            for _ in range(10):
+                time.sleep(0.5)
+                try:
+                    os.kill(pid, 0)
+                except OSError:
+                    break
+            else:
+                os.kill(pid, signal.SIGKILL)
         if os.path.exists(pidfile):
             os.remove(pidfile)
         print("✅ Tunnel 已停止")
