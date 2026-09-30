@@ -12,16 +12,16 @@ SRC_DIR = PROJECT_ROOT / "src" / "backend"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from harness import conductor  # noqa: E402
-from harness.dashboard_sync import (  # noqa: E402
+from fleet import conductor  # noqa: E402
+from fleet.dashboard_sync import (  # noqa: E402
     import_dashboard_todos,
     publish_dashboard_tasks,
     should_sync_dashboard_comment,
     sync_dashboard_to_supabase,
-    sync_harness_to_dashboard,
+    sync_fleet_to_dashboard,
 )
-from harness.store import apply_harness_event, get_harness_state  # noqa: E402
-from harness.task_markdown import (  # noqa: E402
+from fleet.store import apply_fleet_event, get_fleet_state  # noqa: E402
+from fleet.task_markdown import (  # noqa: E402
     parse_task_markdown,
     render_task_markdown,
     sync_task_markdown,
@@ -53,7 +53,7 @@ def sample_state():
     }
 
 
-class HarnessConductorDecisionTests(unittest.TestCase):
+class FleetConductorDecisionTests(unittest.TestCase):
     def test_decision_replies_to_linked_worker_that_needs_user(self):
         decision = conductor.decide_for_session(
             {
@@ -210,7 +210,7 @@ class HarnessConductorDecisionTests(unittest.TestCase):
                     return mock.Mock(returncode=0, stdout="abc123\n", stderr="")
                 return mock.Mock(returncode=0, stdout="", stderr="")
 
-            with mock.patch("harness.dashboard_sync.subprocess.run", side_effect=fake_run):
+            with mock.patch("fleet.dashboard_sync.subprocess.run", side_effect=fake_run):
                 result = publish_dashboard_tasks(dashboard_root=dashboard)
 
             self.assertTrue(result["ok"])
@@ -224,7 +224,7 @@ class HarnessConductorDecisionTests(unittest.TestCase):
                     str(repo_resolved),
                     "commit",
                     "-m",
-                    "Update dashboard task status from ClawCross harness",
+                    "Update dashboard task status from ClawCross fleet",
                     "--",
                     "dashboard/state/tasks.json",
                 ],
@@ -246,7 +246,7 @@ class HarnessConductorDecisionTests(unittest.TestCase):
                 calls.append(cmd)
                 return mock.Mock(returncode=0, stdout='{"ok":true,"tasks":2}\n', stderr="")
 
-            with mock.patch("harness.dashboard_sync.subprocess.run", side_effect=fake_run):
+            with mock.patch("fleet.dashboard_sync.subprocess.run", side_effect=fake_run):
                 result = sync_dashboard_to_supabase(dashboard_root=dashboard, project_id="project-alpha")
 
             self.assertTrue(result["ok"])
@@ -258,15 +258,15 @@ class HarnessConductorDecisionTests(unittest.TestCase):
             )
 
 
-class HarnessConductorLoopTests(unittest.TestCase):
+class FleetConductorLoopTests(unittest.TestCase):
     def test_run_once_sends_reply_and_records_comment(self):
         with TemporaryDirectory() as tmpdir:
-            old_state = os.environ.get("CLAWCROSS_HARNESS_STATE_PATH")
-            old_cache = os.environ.get("CLAWCROSS_HARNESS_CONDUCTOR_CACHE")
-            os.environ["CLAWCROSS_HARNESS_STATE_PATH"] = str(Path(tmpdir) / "harness.json")
-            os.environ["CLAWCROSS_HARNESS_CONDUCTOR_CACHE"] = str(Path(tmpdir) / "cache.json")
+            old_state = os.environ.get("CLAWCROSS_FLEET_STATE_PATH")
+            old_cache = os.environ.get("CLAWCROSS_FLEET_CONDUCTOR_CACHE")
+            os.environ["CLAWCROSS_FLEET_STATE_PATH"] = str(Path(tmpdir) / "fleet.json")
+            os.environ["CLAWCROSS_FLEET_CONDUCTOR_CACHE"] = str(Path(tmpdir) / "cache.json")
             try:
-                apply_harness_event(
+                apply_fleet_event(
                     "test-user",
                     {
                         "action": "task_upsert",
@@ -276,7 +276,7 @@ class HarnessConductorLoopTests(unittest.TestCase):
                         "status": "active",
                     },
                 )
-                apply_harness_event(
+                apply_fleet_event(
                     "test-user",
                     {
                         "action": "needs_user",
@@ -305,23 +305,23 @@ class HarnessConductorLoopTests(unittest.TestCase):
 
                 self.assertEqual(len(result["actions"]), 1)
                 self.assertTrue(result["actions"][0]["sent"])
-                state = get_harness_state("test-user")
+                state = get_fleet_state("test-user")
                 comments = state["tasks"][0].get("comments", [])
                 self.assertTrue(any(c.get("kind") == "conductor_reply" for c in comments))
             finally:
                 if old_state is None:
-                    os.environ.pop("CLAWCROSS_HARNESS_STATE_PATH", None)
+                    os.environ.pop("CLAWCROSS_FLEET_STATE_PATH", None)
                 else:
-                    os.environ["CLAWCROSS_HARNESS_STATE_PATH"] = old_state
+                    os.environ["CLAWCROSS_FLEET_STATE_PATH"] = old_state
                 if old_cache is None:
-                    os.environ.pop("CLAWCROSS_HARNESS_CONDUCTOR_CACHE", None)
+                    os.environ.pop("CLAWCROSS_FLEET_CONDUCTOR_CACHE", None)
                 else:
-                    os.environ["CLAWCROSS_HARNESS_CONDUCTOR_CACHE"] = old_cache
+                    os.environ["CLAWCROSS_FLEET_CONDUCTOR_CACHE"] = old_cache
 
     def test_dashboard_pull_verify_assign_and_push_loop(self):
         with TemporaryDirectory() as tmpdir:
-            old_state = os.environ.get("CLAWCROSS_HARNESS_STATE_PATH")
-            os.environ["CLAWCROSS_HARNESS_STATE_PATH"] = str(Path(tmpdir) / "harness.json")
+            old_state = os.environ.get("CLAWCROSS_FLEET_STATE_PATH")
+            os.environ["CLAWCROSS_FLEET_STATE_PATH"] = str(Path(tmpdir) / "fleet.json")
             dashboard = Path(tmpdir) / "dashboard"
             (dashboard / "state").mkdir(parents=True)
             (dashboard / "state" / "tasks.json").write_text(
@@ -353,7 +353,7 @@ class HarnessConductorLoopTests(unittest.TestCase):
                 encoding="utf-8",
             )
             try:
-                apply_harness_event(
+                apply_fleet_event(
                     "test-user",
                     {
                         "action": "task_upsert",
@@ -363,7 +363,7 @@ class HarnessConductorLoopTests(unittest.TestCase):
                         "status": "done",
                     },
                 )
-                apply_harness_event(
+                apply_fleet_event(
                     "test-user",
                     {
                         "action": "task_comment",
@@ -374,7 +374,7 @@ class HarnessConductorLoopTests(unittest.TestCase):
                         "message": "Decision evidence is recorded.",
                     },
                 )
-                apply_harness_event(
+                apply_fleet_event(
                     "test-user",
                     {
                         "action": "heartbeat",
@@ -391,7 +391,7 @@ class HarnessConductorLoopTests(unittest.TestCase):
                 self.assertEqual(pull["created"], 1)
                 verify = conductor.verify_finished_tasks("test-user", project_id="project-alpha")
                 self.assertEqual(verify["accepted"], 1)
-                state = get_harness_state("test-user")
+                state = get_fleet_state("test-user")
                 assigned = conductor.assign_next_dashboard_todos(
                     "test-user",
                     [{"display_id": "session_abc", "status": "idle"}],
@@ -401,21 +401,21 @@ class HarnessConductorLoopTests(unittest.TestCase):
                 )
                 self.assertEqual(assigned[0]["task_id"], "task_next_dashboard")
 
-                push = sync_harness_to_dashboard("test-user", dashboard_root=dashboard, project_id="project-alpha")
+                push = sync_fleet_to_dashboard("test-user", dashboard_root=dashboard, project_id="project-alpha")
                 self.assertTrue(push["changed"])
                 doc = (dashboard / "state" / "tasks.json").read_text(encoding="utf-8")
                 self.assertIn('"status": "done"', doc)
                 self.assertIn("Host verification", doc)
             finally:
                 if old_state is None:
-                    os.environ.pop("CLAWCROSS_HARNESS_STATE_PATH", None)
+                    os.environ.pop("CLAWCROSS_FLEET_STATE_PATH", None)
                 else:
-                    os.environ["CLAWCROSS_HARNESS_STATE_PATH"] = old_state
+                    os.environ["CLAWCROSS_FLEET_STATE_PATH"] = old_state
 
     def test_dashboard_push_syncs_project_move_for_existing_task(self):
         with TemporaryDirectory() as tmpdir:
-            old_state = os.environ.get("CLAWCROSS_HARNESS_STATE_PATH")
-            os.environ["CLAWCROSS_HARNESS_STATE_PATH"] = str(Path(tmpdir) / "harness.json")
+            old_state = os.environ.get("CLAWCROSS_FLEET_STATE_PATH")
+            os.environ["CLAWCROSS_FLEET_STATE_PATH"] = str(Path(tmpdir) / "fleet.json")
             dashboard = Path(tmpdir) / "dashboard"
             (dashboard / "state").mkdir(parents=True)
             tasks_path = dashboard / "state" / "tasks.json"
@@ -442,7 +442,7 @@ class HarnessConductorLoopTests(unittest.TestCase):
                 encoding="utf-8",
             )
             try:
-                apply_harness_event(
+                apply_fleet_event(
                     "test-user",
                     {
                         "action": "task_upsert",
@@ -452,7 +452,7 @@ class HarnessConductorLoopTests(unittest.TestCase):
                         "status": "needs_user",
                     },
                 )
-                apply_harness_event(
+                apply_fleet_event(
                     "test-user",
                     {
                         "action": "task_status",
@@ -464,7 +464,7 @@ class HarnessConductorLoopTests(unittest.TestCase):
                     },
                 )
 
-                summary = sync_harness_to_dashboard("test-user", dashboard_root=dashboard)
+                summary = sync_fleet_to_dashboard("test-user", dashboard_root=dashboard)
                 self.assertEqual(summary["project_updates"], 1)
                 self.assertEqual(summary["status_updates"], 1)
                 task = json.loads(tasks_path.read_text(encoding="utf-8"))["tasks"][0]
@@ -472,9 +472,9 @@ class HarnessConductorLoopTests(unittest.TestCase):
                 self.assertEqual(task["status"], "todo")
             finally:
                 if old_state is None:
-                    os.environ.pop("CLAWCROSS_HARNESS_STATE_PATH", None)
+                    os.environ.pop("CLAWCROSS_FLEET_STATE_PATH", None)
                 else:
-                    os.environ["CLAWCROSS_HARNESS_STATE_PATH"] = old_state
+                    os.environ["CLAWCROSS_FLEET_STATE_PATH"] = old_state
 
     def test_all_project_assignment_matches_worker_project(self):
         state = {
@@ -633,7 +633,7 @@ class HarnessConductorLoopTests(unittest.TestCase):
             "runs": [],
         }
 
-        with mock.patch.dict(os.environ, {"CLAWCROSS_HARNESS_AUTOBIND_UNBOUND_SESSIONS": "1"}):
+        with mock.patch.dict(os.environ, {"CLAWCROSS_FLEET_AUTOBIND_UNBOUND_SESSIONS": "1"}):
             assigned = conductor.assign_next_dashboard_todos(
                 "test-user",
                 [
@@ -785,10 +785,10 @@ class HarnessConductorLoopTests(unittest.TestCase):
 
     def test_cleanup_closes_paused_todo_session_and_deletes_agent(self):
         with TemporaryDirectory() as tmpdir:
-            old_state = os.environ.get("CLAWCROSS_HARNESS_STATE_PATH")
-            os.environ["CLAWCROSS_HARNESS_STATE_PATH"] = str(Path(tmpdir) / "harness.json")
+            old_state = os.environ.get("CLAWCROSS_FLEET_STATE_PATH")
+            os.environ["CLAWCROSS_FLEET_STATE_PATH"] = str(Path(tmpdir) / "fleet.json")
             try:
-                apply_harness_event(
+                apply_fleet_event(
                     "test-user",
                     {
                         "action": "task_upsert",
@@ -799,7 +799,7 @@ class HarnessConductorLoopTests(unittest.TestCase):
                         "metadata": {"clawcross": {"paused_by_user": True}},
                     },
                 )
-                apply_harness_event(
+                apply_fleet_event(
                     "test-user",
                     {
                         "action": "heartbeat",
@@ -811,7 +811,7 @@ class HarnessConductorLoopTests(unittest.TestCase):
                         "status": "idle",
                     },
                 )
-                apply_harness_event(
+                apply_fleet_event(
                     "test-user",
                     {
                         "action": "task_upsert",
@@ -821,7 +821,7 @@ class HarnessConductorLoopTests(unittest.TestCase):
                         "status": "active",
                     },
                 )
-                apply_harness_event(
+                apply_fleet_event(
                     "test-user",
                     {
                         "action": "heartbeat",
@@ -834,7 +834,7 @@ class HarnessConductorLoopTests(unittest.TestCase):
                     },
                 )
 
-                state = get_harness_state("test-user")
+                state = get_fleet_state("test-user")
                 with mock.patch.object(
                     conductor,
                     "close_remote_claude_session",
@@ -853,19 +853,19 @@ class HarnessConductorLoopTests(unittest.TestCase):
                 self.assertEqual(len(cleaned), 1)
                 self.assertTrue(cleaned[0]["deleted_agent"])
                 close_mock.assert_called_once_with("session_paused", force=True)
-                self.assertEqual(get_harness_state("test-user")["counts"]["agents"], 1)
+                self.assertEqual(get_fleet_state("test-user")["counts"]["agents"], 1)
             finally:
                 if old_state is None:
-                    os.environ.pop("CLAWCROSS_HARNESS_STATE_PATH", None)
+                    os.environ.pop("CLAWCROSS_FLEET_STATE_PATH", None)
                 else:
-                    os.environ["CLAWCROSS_HARNESS_STATE_PATH"] = old_state
+                    os.environ["CLAWCROSS_FLEET_STATE_PATH"] = old_state
 
     def test_cleanup_keeps_last_session_for_active_project_as_standby(self):
         with TemporaryDirectory() as tmpdir:
-            old_state = os.environ.get("CLAWCROSS_HARNESS_STATE_PATH")
-            os.environ["CLAWCROSS_HARNESS_STATE_PATH"] = str(Path(tmpdir) / "harness.json")
+            old_state = os.environ.get("CLAWCROSS_FLEET_STATE_PATH")
+            os.environ["CLAWCROSS_FLEET_STATE_PATH"] = str(Path(tmpdir) / "fleet.json")
             try:
-                apply_harness_event(
+                apply_fleet_event(
                     "test-user",
                     {
                         "action": "task_upsert",
@@ -875,7 +875,7 @@ class HarnessConductorLoopTests(unittest.TestCase):
                         "status": "done",
                     },
                 )
-                apply_harness_event(
+                apply_fleet_event(
                     "test-user",
                     {
                         "action": "task_comment",
@@ -886,7 +886,7 @@ class HarnessConductorLoopTests(unittest.TestCase):
                         "message": "verified",
                     },
                 )
-                apply_harness_event(
+                apply_fleet_event(
                     "test-user",
                     {
                         "action": "heartbeat",
@@ -899,7 +899,7 @@ class HarnessConductorLoopTests(unittest.TestCase):
                     },
                 )
 
-                state = get_harness_state("test-user")
+                state = get_fleet_state("test-user")
                 with mock.patch.object(conductor, "close_remote_claude_session") as close_mock:
                     cleaned = conductor.cleanup_remote_sessions_without_todos(
                         "test-user",
@@ -911,22 +911,22 @@ class HarnessConductorLoopTests(unittest.TestCase):
                 self.assertEqual(len(cleaned), 1)
                 self.assertTrue(cleaned[0]["kept"])
                 close_mock.assert_not_called()
-                agents = get_harness_state("test-user")["agents"]
+                agents = get_fleet_state("test-user")["agents"]
                 self.assertEqual(len(agents), 1)
                 self.assertEqual(agents[0]["status"], "idle")
                 self.assertEqual(agents[0]["current_task_id"], "")
             finally:
                 if old_state is None:
-                    os.environ.pop("CLAWCROSS_HARNESS_STATE_PATH", None)
+                    os.environ.pop("CLAWCROSS_FLEET_STATE_PATH", None)
                 else:
-                    os.environ["CLAWCROSS_HARNESS_STATE_PATH"] = old_state
+                    os.environ["CLAWCROSS_FLEET_STATE_PATH"] = old_state
 
     def test_codex_review_accepts_review_task_and_marks_done(self):
         with TemporaryDirectory() as tmpdir:
-            old_state = os.environ.get("CLAWCROSS_HARNESS_STATE_PATH")
-            os.environ["CLAWCROSS_HARNESS_STATE_PATH"] = str(Path(tmpdir) / "harness.json")
+            old_state = os.environ.get("CLAWCROSS_FLEET_STATE_PATH")
+            os.environ["CLAWCROSS_FLEET_STATE_PATH"] = str(Path(tmpdir) / "fleet.json")
             try:
-                apply_harness_event(
+                apply_fleet_event(
                     "test-user",
                     {
                         "action": "task_upsert",
@@ -936,7 +936,7 @@ class HarnessConductorLoopTests(unittest.TestCase):
                         "status": "review",
                     },
                 )
-                state = get_harness_state("test-user")
+                state = get_fleet_state("test-user")
                 cache = {"sent": {}}
                 with mock.patch.object(
                     conductor,
@@ -961,23 +961,23 @@ class HarnessConductorLoopTests(unittest.TestCase):
 
                 self.assertEqual(len(reviewed), 1)
                 self.assertEqual(reviewed[0]["action"], "accept")
-                final = get_harness_state("test-user")
+                final = get_fleet_state("test-user")
                 task = final["tasks"][0]
                 self.assertEqual(task["status"], "done")
                 self.assertTrue(any(c.get("kind") == "host_verified" for c in task.get("comments", [])))
                 self.assertIn("task_review_me", cache["codex_review"])
             finally:
                 if old_state is None:
-                    os.environ.pop("CLAWCROSS_HARNESS_STATE_PATH", None)
+                    os.environ.pop("CLAWCROSS_FLEET_STATE_PATH", None)
                 else:
-                    os.environ["CLAWCROSS_HARNESS_STATE_PATH"] = old_state
+                    os.environ["CLAWCROSS_FLEET_STATE_PATH"] = old_state
 
     def test_codex_review_reopens_review_task(self):
         with TemporaryDirectory() as tmpdir:
-            old_state = os.environ.get("CLAWCROSS_HARNESS_STATE_PATH")
-            os.environ["CLAWCROSS_HARNESS_STATE_PATH"] = str(Path(tmpdir) / "harness.json")
+            old_state = os.environ.get("CLAWCROSS_FLEET_STATE_PATH")
+            os.environ["CLAWCROSS_FLEET_STATE_PATH"] = str(Path(tmpdir) / "fleet.json")
             try:
-                apply_harness_event(
+                apply_fleet_event(
                     "test-user",
                     {
                         "action": "task_upsert",
@@ -987,7 +987,7 @@ class HarnessConductorLoopTests(unittest.TestCase):
                         "status": "review",
                     },
                 )
-                state = get_harness_state("test-user")
+                state = get_fleet_state("test-user")
                 cache = {"sent": {}}
                 with mock.patch.object(
                     conductor,
@@ -1010,21 +1010,21 @@ class HarnessConductorLoopTests(unittest.TestCase):
 
                 self.assertEqual(len(reviewed), 1)
                 self.assertEqual(reviewed[0]["action"], "reopen")
-                task = get_harness_state("test-user")["tasks"][0]
+                task = get_fleet_state("test-user")["tasks"][0]
                 self.assertEqual(task["status"], "active")
                 self.assertTrue(any("Scale to 100" in c.get("body", "") for c in task.get("comments", [])))
             finally:
                 if old_state is None:
-                    os.environ.pop("CLAWCROSS_HARNESS_STATE_PATH", None)
+                    os.environ.pop("CLAWCROSS_FLEET_STATE_PATH", None)
                 else:
-                    os.environ["CLAWCROSS_HARNESS_STATE_PATH"] = old_state
+                    os.environ["CLAWCROSS_FLEET_STATE_PATH"] = old_state
 
     def test_codex_review_needs_user_updates_task_status(self):
         with TemporaryDirectory() as tmpdir:
-            old_state = os.environ.get("CLAWCROSS_HARNESS_STATE_PATH")
-            os.environ["CLAWCROSS_HARNESS_STATE_PATH"] = str(Path(tmpdir) / "harness.json")
+            old_state = os.environ.get("CLAWCROSS_FLEET_STATE_PATH")
+            os.environ["CLAWCROSS_FLEET_STATE_PATH"] = str(Path(tmpdir) / "fleet.json")
             try:
-                apply_harness_event(
+                apply_fleet_event(
                     "test-user",
                     {
                         "action": "task_upsert",
@@ -1034,7 +1034,7 @@ class HarnessConductorLoopTests(unittest.TestCase):
                         "status": "review",
                     },
                 )
-                state = get_harness_state("test-user")
+                state = get_fleet_state("test-user")
                 cache = {"sent": {}}
                 with mock.patch.object(
                     conductor,
@@ -1057,21 +1057,21 @@ class HarnessConductorLoopTests(unittest.TestCase):
 
                 self.assertEqual(len(reviewed), 1)
                 self.assertEqual(reviewed[0]["action"], "needs_user")
-                task = get_harness_state("test-user")["tasks"][0]
+                task = get_fleet_state("test-user")["tasks"][0]
                 self.assertEqual(task["status"], "needs_user")
                 self.assertTrue(any(c.get("kind") == "needs_user" for c in task.get("comments", [])))
             finally:
                 if old_state is None:
-                    os.environ.pop("CLAWCROSS_HARNESS_STATE_PATH", None)
+                    os.environ.pop("CLAWCROSS_FLEET_STATE_PATH", None)
                 else:
-                    os.environ["CLAWCROSS_HARNESS_STATE_PATH"] = old_state
+                    os.environ["CLAWCROSS_FLEET_STATE_PATH"] = old_state
 
     def test_verify_finished_restores_host_verified_review_task_to_done(self):
         with TemporaryDirectory() as tmpdir:
-            old_state = os.environ.get("CLAWCROSS_HARNESS_STATE_PATH")
-            os.environ["CLAWCROSS_HARNESS_STATE_PATH"] = str(Path(tmpdir) / "harness.json")
+            old_state = os.environ.get("CLAWCROSS_FLEET_STATE_PATH")
+            os.environ["CLAWCROSS_FLEET_STATE_PATH"] = str(Path(tmpdir) / "fleet.json")
             try:
-                apply_harness_event(
+                apply_fleet_event(
                     "test-user",
                     {
                         "action": "task_upsert",
@@ -1081,7 +1081,7 @@ class HarnessConductorLoopTests(unittest.TestCase):
                         "status": "review",
                     },
                 )
-                apply_harness_event(
+                apply_fleet_event(
                     "test-user",
                     {
                         "action": "task_comment",
@@ -1096,18 +1096,18 @@ class HarnessConductorLoopTests(unittest.TestCase):
                 result = conductor.verify_finished_tasks("test-user", project_id="project-beta")
 
                 self.assertEqual(result["accepted"], 1)
-                task = get_harness_state("test-user")["tasks"][0]
+                task = get_fleet_state("test-user")["tasks"][0]
                 self.assertEqual(task["status"], "done")
             finally:
                 if old_state is None:
-                    os.environ.pop("CLAWCROSS_HARNESS_STATE_PATH", None)
+                    os.environ.pop("CLAWCROSS_FLEET_STATE_PATH", None)
                 else:
-                    os.environ["CLAWCROSS_HARNESS_STATE_PATH"] = old_state
+                    os.environ["CLAWCROSS_FLEET_STATE_PATH"] = old_state
 
     def test_task_md_round_trips_dashboard_and_lifecycle_comment(self):
         with TemporaryDirectory() as tmpdir:
-            old_state = os.environ.get("CLAWCROSS_HARNESS_STATE_PATH")
-            os.environ["CLAWCROSS_HARNESS_STATE_PATH"] = str(Path(tmpdir) / "harness.json")
+            old_state = os.environ.get("CLAWCROSS_FLEET_STATE_PATH")
+            os.environ["CLAWCROSS_FLEET_STATE_PATH"] = str(Path(tmpdir) / "fleet.json")
             try:
                 root = Path(tmpdir) / "dashboard"
                 (root / "state").mkdir(parents=True)
@@ -1173,9 +1173,9 @@ class HarnessConductorLoopTests(unittest.TestCase):
                 self.assertTrue(any("## Plan" in c.get("body", "") for c in task.get("comments", [])))
             finally:
                 if old_state is None:
-                    os.environ.pop("CLAWCROSS_HARNESS_STATE_PATH", None)
+                    os.environ.pop("CLAWCROSS_FLEET_STATE_PATH", None)
                 else:
-                    os.environ["CLAWCROSS_HARNESS_STATE_PATH"] = old_state
+                    os.environ["CLAWCROSS_FLEET_STATE_PATH"] = old_state
 
 
 if __name__ == "__main__":

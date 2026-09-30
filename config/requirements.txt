@@ -18,7 +18,7 @@ ddgs
 pymupdf
 zep-cloud
 
-# Chatbot dependencies
+# Channel dependencies
 qq-botpy
 python-telegram-bot
 aiohttp

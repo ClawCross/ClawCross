@@ -24,7 +24,7 @@
   - Agent 核心逻辑（工具调用、多轮对话、记忆管理）
   - `/system_trigger` 内部触发端点（定时任务回调等）
   - `/v1/agents`（本机所有 agent，WeBot 会话也在其中）、`/login`、`/tools`、`/tts`、`/settings`、`/groups` 等 API
-- **调用方**：前端 `src/frontend/server.py`（代理转发）、chatbot、MCP 模块、OASIS 回调
+- **调用方**：前端 `src/frontend/server.py`（代理转发）、渠道、MCP 模块、OASIS 回调
 - **鉴权**：`X-Internal-Token` 或用户密码
 
 ### 51201 — 定时任务调度中心
@@ -98,7 +98,7 @@
 | 1/5 | 定时调度中心 | 51201 | 2s |
 | 2/5 | OASIS 论坛 | 51202 | 2s |
 | 3/5 | AI Agent | 51200 | 3s |
-| 4/5 | Chatbot 配置 | — | 交互式 |
+| 4/5 | 渠道配置 | — | 交互式 |
 | 5/5 | 前端 Web UI | 51209 | 1s |
 
 ## Tunnel 暴露策略

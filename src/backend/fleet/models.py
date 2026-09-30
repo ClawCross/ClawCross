@@ -1,11 +1,11 @@
-"""Pydantic models for the ClawCross harness control plane."""
+"""Pydantic models for the ClawCross fleet control plane."""
 
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 
-class HarnessEventRequest(BaseModel):
+class FleetEventRequest(BaseModel):
     user_id: str
     password: str = ""
     action: str = "heartbeat"
@@ -45,7 +45,7 @@ class HarnessEventRequest(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class HarnessOpenCliRunRequest(BaseModel):
+class FleetOpenCliRunRequest(BaseModel):
     user_id: str
     password: str = ""
     args: list[str] = Field(default_factory=list)

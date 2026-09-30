@@ -57,7 +57,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 from src.backend.common.runtime_paths import ENV_FILE, PID_DIR, WORKSPACE_DIR, ensure_runtime_dirs, set_subprocess_env
-from src.backend.chatbot.channel_catalog import get_nonebot_adapter_meta, get_chatbot_channel
+from src.backend.channels.channel_catalog import get_nonebot_adapter_meta, get_channel
 ENV_FILE_PATH = str(ENV_FILE)
 ensure_runtime_dirs()
 WORKING_DIR = str(WORKSPACE_DIR)
@@ -478,12 +478,12 @@ def _channel_disabled():
     return (os.getenv("CLAWCROSS_NO_CHANNEL") or "").strip().lower() in ("1", "true", "yes", "on")
 
 
-def start_chatbot_if_configured(platforms):
+def start_channels_if_configured(platforms):
     if not platforms:
         return None
     print(f"💬 启动社交媒体机器人 ({len(platforms)} 个平台: {', '.join(platforms)})...")
     proc = subprocess.Popen(
-        [venv_python, chatbot_main],
+        [venv_python, channels_main],
         cwd=WORKING_DIR,
         env=set_subprocess_env(os.environ),
         stdin=subprocess.DEVNULL,
@@ -491,41 +491,41 @@ def start_chatbot_if_configured(platforms):
         stderr=None,
     )
     proc._cc_optional = True
-    proc._cc_chatbot = True
+    proc._cc_channel = True
     child_procs.append(proc)
-    _track_child_pid(proc, "chatbot")
+    _track_child_pid(proc, "channels")
     print(f"   ✅ 社交媒体机器人已启动 (PID: {proc.pid})")
     return proc
 
 
-def start_harness_conductor_if_configured():
-    # harness 配置（CLAWCROSS_HARNESS_CONDUCTOR 开关 / DASHBOARD_URL / INTERNAL_TOKEN /
-    # REMOTE_HOST / DEFAULT_PROJECT_ID 等）住在独立的 harness.env 里，launcher 只 load 了
+def start_fleet_conductor_if_configured():
+    # fleet 配置（CLAWCROSS_FLEET_CONDUCTOR 开关 / DASHBOARD_URL / INTERNAL_TOKEN /
+    # REMOTE_HOST / DEFAULT_PROJECT_ID 等）住在独立的 fleet.env 里，launcher 只 load 了
     # config/.env，因此这些键既到不了下面的开关判断，也到不了 conductor 子进程。这里先把
-    # harness.env 合并进一份子进程环境，只填补当前环境里缺失/为空的键（不覆盖已显式设置的值），
+    # fleet.env 合并进一份子进程环境，只填补当前环境里缺失/为空的键（不覆盖已显式设置的值），
     # 然后用合并后的值判断开关并交给 conductor。
     conductor_env = set_subprocess_env(os.environ)
-    harness_env_path = os.path.expanduser(
-        os.getenv("CLAWCROSS_HARNESS_ENV")
-        or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(ENV_FILE_PATH))), "harness.env")
+    fleet_env_path = os.path.expanduser(
+        os.getenv("CLAWCROSS_FLEET_ENV")
+        or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(ENV_FILE_PATH))), "fleet.env")
     )
-    if os.path.isfile(harness_env_path):
+    if os.path.isfile(fleet_env_path):
         try:
             from dotenv import dotenv_values
-            for key, value in dotenv_values(harness_env_path).items():
+            for key, value in dotenv_values(fleet_env_path).items():
                 if value and not (conductor_env.get(key) or "").strip():
                     conductor_env[key] = value
         except Exception as exc:
-            print(f"   ⚠️ 读取 harness.env 失败，conductor 可能缺少 dashboard 配置: {exc}")
+            print(f"   ⚠️ 读取 fleet.env 失败，conductor 可能缺少 dashboard 配置: {exc}")
 
-    enabled = (conductor_env.get("CLAWCROSS_HARNESS_CONDUCTOR") or "1").strip().lower()
+    enabled = (conductor_env.get("CLAWCROSS_FLEET_CONDUCTOR") or "1").strip().lower()
     if enabled in ("0", "false", "no", "off"):
-        print("🧭 [skip] ClawCross harness 主控已禁用（CLAWCROSS_HARNESS_CONDUCTOR=0）")
+        print("🧭 [skip] ClawCross fleet 主控已禁用（CLAWCROSS_FLEET_CONDUCTOR=0）")
         return None
-    script = os.path.join(PROJECT_ROOT, "scripts", "harness_conductor.py")
+    script = os.path.join(PROJECT_ROOT, "scripts", "fleet_conductor.py")
     if not os.path.exists(script):
         return None
-    print("🧭 启动 ClawCross harness 本机主控...")
+    print("🧭 启动 ClawCross fleet 本机主控...")
     proc = subprocess.Popen(
         [venv_python, script],
         cwd=WORKING_DIR,
@@ -536,59 +536,59 @@ def start_harness_conductor_if_configured():
     )
     proc._cc_optional = True
     child_procs.append(proc)
-    _track_child_pid(proc, "harness_conductor")
-    print(f"   ✅ Harness 主控已启动 (PID: {proc.pid})")
+    _track_child_pid(proc, "fleet_conductor")
+    print(f"   ✅ Fleet 主控已启动 (PID: {proc.pid})")
     return proc
 
 
-def stop_chatbot_processes():
-    chatbot_procs = [p for p in child_procs if getattr(p, "_cc_chatbot", False)]
-    if not chatbot_procs:
+def stop_channel_processes():
+    channel_procs = [p for p in child_procs if getattr(p, "_cc_channel", False)]
+    if not channel_procs:
         return
-    for proc in chatbot_procs:
+    for proc in channel_procs:
         if proc.poll() is None:
             try:
                 proc.terminate()
             except Exception:
                 pass
     for _ in range(50):
-        if all(p.poll() is not None for p in chatbot_procs):
+        if all(p.poll() is not None for p in channel_procs):
             break
         time.sleep(0.1)
-    for proc in chatbot_procs:
+    for proc in channel_procs:
         if proc.poll() is None:
             try:
                 proc.kill()
             except Exception:
                 pass
-    for proc in chatbot_procs:
+    for proc in channel_procs:
         try:
             proc.wait(timeout=2)
         except Exception:
             pass
-    child_procs[:] = [p for p in child_procs if p not in chatbot_procs]
+    child_procs[:] = [p for p in child_procs if p not in channel_procs]
 
 
-def restart_chatbot_only():
-    print("\n🔄 检测到 chatbot 重启信号，正在重启社交媒体机器人...")
-    stop_chatbot_processes()
+def restart_channels_only():
+    print("\n🔄 检测到渠道重启信号，正在重启社交渠道...")
+    stop_channel_processes()
     load_dotenv(dotenv_path=ENV_FILE_PATH, override=True)
     if _channel_disabled():
         print("💬 [skip] CLAWCROSS_NO_CHANNEL 已设置，聊天机器人已停止")
         return
-    platforms = _detect_chatbot_platforms()
+    platforms = _detect_channel_platforms()
     if not platforms:
         print("💬 [skip] 未检测到聊天机器人配置，聊天机器人已停止")
         return
-    if not os.path.exists(chatbot_main):
-        print("💬 [skip] src/backend/chatbot/main.py 不存在")
+    if not os.path.exists(channels_main):
+        print("💬 [skip] src/backend/channels/main.py 不存在")
         return
     nonebot_names = _configured_nonebot_adapter_names()
     if nonebot_names and not _ensure_nonebot_deps(nonebot_names):
-        print("💬 [skip] NoneBot 依赖未就绪，跳过 chatbot（不影响其他服务）")
+        print("💬 [skip] NoneBot 依赖未就绪，跳过渠道（不影响其他服务）")
         return
-    start_chatbot_if_configured(platforms)
-    print("✅ chatbot 已重启！")
+    start_channels_if_configured(platforms)
+    print("✅ 渠道已重启！")
 
 
 # 注册退出清理函数
@@ -666,12 +666,12 @@ services = [
     },
 ]
 
-# Chatbot 启动（可选组件）
+# 渠道启动（可选组件）
 is_headless = os.getenv("WEBOT_HEADLESS", "0") == "1"
 
 
-def _detect_chatbot_platforms():
-    """探测 .env 中已配置的社交渠道。仅读 env vars，不 import chatbot 包。
+def _detect_channel_platforms():
+    """探测 .env 中已配置的社交渠道。仅读 env vars，不 import channels 包。
 
     架构：
     - Webhook: 通用 HTTP 入站
@@ -727,7 +727,7 @@ def _bots_json_for_nonebot_adapter(name):
 
 
 def _nonebot_required_fields(name):
-    channel = get_chatbot_channel(name) or {}
+    channel = get_channel(name) or {}
     fields = []
     for field in channel.get("fields") or []:
         if not isinstance(field, dict):
@@ -806,7 +806,7 @@ def _ensure_nonebot_deps(adapter_names):
     """确保 nonebot2 + 各 adapter 已安装到当前 venv。
 
     检测顺序：先 import nonebot；缺失或缺 adapter 时优先用 uv 装，否则 fallback pip。
-    任何失败都返回 False，不抛异常 —— 由调用方决定是否 skip chatbot。
+    任何失败都返回 False，不抛异常 —— 由调用方决定是否跳过渠道。
     """
     adapter_specs = []
     for n in adapter_names:
@@ -884,7 +884,7 @@ def _ensure_nonebot_deps(adapter_names):
             print(f"   ⚠️ {'uv pip' if use_uv else 'pip'} 安装失败 (returncode={result.returncode})")
             return False
     except subprocess.TimeoutExpired:
-        print("   ⚠️ 依赖安装超时（>5min），跳过 chatbot")
+        print("   ⚠️ 依赖安装超时（>5min），跳过渠道")
         return False
     except Exception as exc:
         print(f"   ⚠️ 依赖安装异常: {exc}")
@@ -900,22 +900,22 @@ def _ensure_nonebot_deps(adapter_names):
     return True
 
 
-chatbot_platforms = _detect_chatbot_platforms()
-has_chatbot_config = bool(chatbot_platforms) and not _channel_disabled()
+channel_platforms = _detect_channel_platforms()
+has_channel_config = bool(channel_platforms) and not _channel_disabled()
 
-chatbot_main = os.path.join(PROJECT_ROOT, "src", "backend", "chatbot", "main.py")
-should_start_chatbot = has_chatbot_config and os.path.exists(chatbot_main)
+channels_main = os.path.join(PROJECT_ROOT, "src", "backend", "channels", "main.py")
+should_start_channels = has_channel_config and os.path.exists(channels_main)
 
-if should_start_chatbot:
+if should_start_channels:
     nonebot_names = _configured_nonebot_adapter_names()
     deps_ok = True
     if nonebot_names:
         deps_ok = _ensure_nonebot_deps(nonebot_names)
     if not deps_ok:
-        print("💬 [skip] NoneBot 依赖未就绪，跳过 chatbot（不影响其他服务）")
-        should_start_chatbot = False
+        print("💬 [skip] NoneBot 依赖未就绪，跳过渠道（不影响其他服务）")
+        should_start_channels = False
 
-if should_start_chatbot:
+if should_start_channels:
     services.append(
         {
             "message": f"🌐 [5/5] 启动前端 Web UI (port {PORT_FRONTEND})...",
@@ -929,7 +929,7 @@ if should_start_chatbot:
 else:
     if _channel_disabled():
         print("💬 [skip] CLAWCROSS_NO_CHANNEL 已设置，跳过聊天机器人")
-    elif not chatbot_platforms:
+    elif not channel_platforms:
         print("💬 [skip] 未检测到聊天机器人配置（NONEBOT_ADAPTERS / *_WEBHOOK_URL 均为空）")
     services.append(
         {
@@ -944,9 +944,9 @@ else:
 
 # 启动所有服务
 launch_services(services)
-start_harness_conductor_if_configured()
-if should_start_chatbot:
-    start_chatbot_if_configured(chatbot_platforms)
+start_fleet_conductor_if_configured()
+if should_start_channels:
+    start_channels_if_configured(channel_platforms)
 
 print()
 print("============================================")
@@ -963,12 +963,12 @@ if (os.getenv("CLAWCROSS_OPEN_BROWSER") or "").strip().lower() in ("1", "true", 
 
 # 重启信号文件路径
 RESTART_FLAG = os.path.join(str(PID_DIR), "restart_flag")
-CHATBOT_RESTART_FLAG = os.path.join(str(PID_DIR), "chatbot_restart_flag")
+CHANNELS_RESTART_FLAG = os.path.join(str(PID_DIR), "channels_restart_flag")
 # 启动时清理残留的重启信号
 if os.path.isfile(RESTART_FLAG):
     os.remove(RESTART_FLAG)
-if os.path.isfile(CHATBOT_RESTART_FLAG):
-    os.remove(CHATBOT_RESTART_FLAG)
+if os.path.isfile(CHANNELS_RESTART_FLAG):
+    os.remove(CHANNELS_RESTART_FLAG)
 
 # 主循环：监测子进程退出和重启信号
 try:
@@ -1012,29 +1012,29 @@ try:
             child_procs.clear()
             cleanup_done = False
             print()
-            restart_chatbot_platforms = _detect_chatbot_platforms()
-            restart_should_start_chatbot = (
-                bool(restart_chatbot_platforms)
+            restart_channel_platforms = _detect_channel_platforms()
+            restart_should_start_channels = (
+                bool(restart_channel_platforms)
                 and not _channel_disabled()
-                and os.path.exists(chatbot_main)
+                and os.path.exists(channels_main)
             )
-            if restart_should_start_chatbot:
+            if restart_should_start_channels:
                 restart_nonebot_names = _configured_nonebot_adapter_names()
                 if restart_nonebot_names and not _ensure_nonebot_deps(restart_nonebot_names):
-                    print("💬 [skip] NoneBot 依赖未就绪，跳过 chatbot（不影响其他服务）")
-                    restart_should_start_chatbot = False
+                    print("💬 [skip] NoneBot 依赖未就绪，跳过渠道（不影响其他服务）")
+                    restart_should_start_channels = False
             launch_services(services)
-            start_harness_conductor_if_configured()
-            if restart_should_start_chatbot:
-                start_chatbot_if_configured(restart_chatbot_platforms)
+            start_fleet_conductor_if_configured()
+            if restart_should_start_channels:
+                start_channels_if_configured(restart_channel_platforms)
             print()
             print("✅ 所有服务已重启！")
             print()
             continue
 
-        if os.path.isfile(CHATBOT_RESTART_FLAG):
-            os.remove(CHATBOT_RESTART_FLAG)
-            restart_chatbot_only()
+        if os.path.isfile(CHANNELS_RESTART_FLAG):
+            os.remove(CHANNELS_RESTART_FLAG)
+            restart_channels_only()
             print()
             continue
 

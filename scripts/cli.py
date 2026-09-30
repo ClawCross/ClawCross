@@ -2720,7 +2720,7 @@ def cmd_status(args):
 # ═══════════════════════════════════════════════════════════════════════
 
 def cmd_channel(args):
-    """Chatbot channel setup/status command."""
+    """Channel setup/status command."""
     from clawcross_cli.channel_cmd import handle_channel_command
 
     output = handle_channel_command(
@@ -2972,7 +2972,7 @@ def build_parser():
                    help="操作 (默认: status)")
 
     # channel
-    c = sub.add_parser("channel", help="Chatbot / NoneBot / WeClaw channel 管理")
+    c = sub.add_parser("channel", help="渠道管理（NoneBot / WeClaw 等）")
     c.add_argument("channel_args", nargs=argparse.REMAINDER,
                    help="子命令: list/status/show/setup/clear/login/logout")
 

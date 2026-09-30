@@ -1,4 +1,4 @@
-"""FastAPI routes for cross-computer agent harness state."""
+"""FastAPI routes for cross-computer agent fleet state."""
 
 from __future__ import annotations
 
@@ -6,29 +6,29 @@ from typing import Callable
 
 from fastapi import APIRouter, Header, HTTPException
 
-from harness.models import HarnessEventRequest, HarnessOpenCliRunRequest
-from harness.opencli_bridge import get_opencli_status, run_opencli_command
-from harness.store import apply_harness_event, get_harness_state
+from fleet.models import FleetEventRequest, FleetOpenCliRunRequest
+from fleet.opencli_bridge import get_opencli_status, run_opencli_command
+from fleet.store import apply_fleet_event, get_fleet_state
 
 
-def create_harness_router(
+def create_fleet_router(
     *,
     verify_auth_or_token: Callable[[str, str, str | None], None],
 ) -> APIRouter:
     router = APIRouter()
 
-    @router.get("/harness/state")
-    async def read_harness_state(
+    @router.get("/fleet/state")
+    async def read_fleet_state(
         user_id: str,
         password: str = "",
         x_internal_token: str | None = Header(None),
     ):
         verify_auth_or_token(user_id, password, x_internal_token)
-        return get_harness_state(user_id)
+        return get_fleet_state(user_id)
 
-    @router.post("/harness/event")
-    async def write_harness_event(
-        req: HarnessEventRequest,
+    @router.post("/fleet/event")
+    async def write_fleet_event(
+        req: FleetEventRequest,
         x_internal_token: str | None = Header(None),
     ):
         verify_auth_or_token(req.user_id, req.password, x_internal_token)
@@ -40,11 +40,11 @@ def create_harness_router(
         sent = req.model_fields_set | {"user_id"}
         event = {k: v for k, v in dumped.items() if k in sent}
         try:
-            return apply_harness_event(req.user_id, event)
+            return apply_fleet_event(req.user_id, event)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    @router.get("/harness/opencli/status")
+    @router.get("/fleet/opencli/status")
     async def read_opencli_status(
         user_id: str,
         password: str = "",
@@ -54,9 +54,9 @@ def create_harness_router(
         verify_auth_or_token(user_id, password, x_internal_token)
         return get_opencli_status(query=query)
 
-    @router.post("/harness/opencli/run")
+    @router.post("/fleet/opencli/run")
     async def run_opencli(
-        req: HarnessOpenCliRunRequest,
+        req: FleetOpenCliRunRequest,
         x_internal_token: str | None = Header(None),
     ):
         verify_auth_or_token(req.user_id, req.password, x_internal_token)

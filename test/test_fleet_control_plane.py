@@ -13,17 +13,17 @@ if str(SRC_DIR) not in sys.path:
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-from harness.routes import create_harness_router  # noqa: E402
-from harness.store import apply_harness_event, get_harness_state  # noqa: E402
+from fleet.routes import create_fleet_router  # noqa: E402
+from fleet.store import apply_fleet_event, get_fleet_state  # noqa: E402
 
 
-class HarnessStoreTests(unittest.TestCase):
+class FleetStoreTests(unittest.TestCase):
     def test_task_agent_and_verified_run_roundtrip(self):
         with TemporaryDirectory() as tmpdir:
-            original = os.environ.get("CLAWCROSS_HARNESS_STATE_PATH")
-            os.environ["CLAWCROSS_HARNESS_STATE_PATH"] = str(Path(tmpdir) / "harness.json")
+            original = os.environ.get("CLAWCROSS_FLEET_STATE_PATH")
+            os.environ["CLAWCROSS_FLEET_STATE_PATH"] = str(Path(tmpdir) / "fleet.json")
             try:
-                apply_harness_event(
+                apply_fleet_event(
                     "alice",
                     {
                         "action": "task_upsert",
@@ -33,7 +33,7 @@ class HarnessStoreTests(unittest.TestCase):
                         "status": "active",
                     },
                 )
-                apply_harness_event(
+                apply_fleet_event(
                     "alice",
                     {
                         "action": "heartbeat",
@@ -45,7 +45,7 @@ class HarnessStoreTests(unittest.TestCase):
                         "message": "running verifier",
                     },
                 )
-                apply_harness_event(
+                apply_fleet_event(
                     "alice",
                     {
                         "action": "run",
@@ -61,7 +61,7 @@ class HarnessStoreTests(unittest.TestCase):
                     },
                 )
 
-                state = get_harness_state("alice")
+                state = get_fleet_state("alice")
                 self.assertEqual(state["counts"]["tasks"], 1)
                 self.assertEqual(state["counts"]["agents"], 1)
                 self.assertEqual(state["counts"]["runs"], 1)
@@ -69,17 +69,17 @@ class HarnessStoreTests(unittest.TestCase):
                 self.assertEqual(state["runs"][0]["verifier"]["status"], "passed")
             finally:
                 if original is None:
-                    os.environ.pop("CLAWCROSS_HARNESS_STATE_PATH", None)
+                    os.environ.pop("CLAWCROSS_FLEET_STATE_PATH", None)
                 else:
-                    os.environ["CLAWCROSS_HARNESS_STATE_PATH"] = original
+                    os.environ["CLAWCROSS_FLEET_STATE_PATH"] = original
 
     def test_verified_run_requires_machine_verifier(self):
         with TemporaryDirectory() as tmpdir:
-            original = os.environ.get("CLAWCROSS_HARNESS_STATE_PATH")
-            os.environ["CLAWCROSS_HARNESS_STATE_PATH"] = str(Path(tmpdir) / "harness.json")
+            original = os.environ.get("CLAWCROSS_FLEET_STATE_PATH")
+            os.environ["CLAWCROSS_FLEET_STATE_PATH"] = str(Path(tmpdir) / "fleet.json")
             try:
                 with self.assertRaises(ValueError):
-                    apply_harness_event(
+                    apply_fleet_event(
                         "alice",
                         {
                             "action": "run",
@@ -96,16 +96,16 @@ class HarnessStoreTests(unittest.TestCase):
                     )
             finally:
                 if original is None:
-                    os.environ.pop("CLAWCROSS_HARNESS_STATE_PATH", None)
+                    os.environ.pop("CLAWCROSS_FLEET_STATE_PATH", None)
                 else:
-                    os.environ["CLAWCROSS_HARNESS_STATE_PATH"] = original
+                    os.environ["CLAWCROSS_FLEET_STATE_PATH"] = original
 
-    def test_agent_delete_removes_harness_worker(self):
+    def test_agent_delete_removes_fleet_worker(self):
         with TemporaryDirectory() as tmpdir:
-            original = os.environ.get("CLAWCROSS_HARNESS_STATE_PATH")
-            os.environ["CLAWCROSS_HARNESS_STATE_PATH"] = str(Path(tmpdir) / "harness.json")
+            original = os.environ.get("CLAWCROSS_FLEET_STATE_PATH")
+            os.environ["CLAWCROSS_FLEET_STATE_PATH"] = str(Path(tmpdir) / "fleet.json")
             try:
-                apply_harness_event(
+                apply_fleet_event(
                     "alice",
                     {
                         "action": "heartbeat",
@@ -114,9 +114,9 @@ class HarnessStoreTests(unittest.TestCase):
                         "status": "idle",
                     },
                 )
-                self.assertEqual(get_harness_state("alice")["counts"]["agents"], 1)
+                self.assertEqual(get_fleet_state("alice")["counts"]["agents"], 1)
 
-                result = apply_harness_event(
+                result = apply_fleet_event(
                     "alice",
                     {
                         "action": "agent_delete",
@@ -126,29 +126,29 @@ class HarnessStoreTests(unittest.TestCase):
                 )
 
                 self.assertTrue(result["record"]["deleted"])
-                self.assertEqual(get_harness_state("alice")["counts"]["agents"], 0)
+                self.assertEqual(get_fleet_state("alice")["counts"]["agents"], 0)
             finally:
                 if original is None:
-                    os.environ.pop("CLAWCROSS_HARNESS_STATE_PATH", None)
+                    os.environ.pop("CLAWCROSS_FLEET_STATE_PATH", None)
                 else:
-                    os.environ["CLAWCROSS_HARNESS_STATE_PATH"] = original
+                    os.environ["CLAWCROSS_FLEET_STATE_PATH"] = original
 
 
-class HarnessRouteTests(unittest.TestCase):
-    def test_routes_read_and_write_harness_state(self):
+class FleetRouteTests(unittest.TestCase):
+    def test_routes_read_and_write_fleet_state(self):
         with TemporaryDirectory() as tmpdir:
-            original = os.environ.get("CLAWCROSS_HARNESS_STATE_PATH")
-            os.environ["CLAWCROSS_HARNESS_STATE_PATH"] = str(Path(tmpdir) / "harness.json")
+            original = os.environ.get("CLAWCROSS_FLEET_STATE_PATH")
+            os.environ["CLAWCROSS_FLEET_STATE_PATH"] = str(Path(tmpdir) / "fleet.json")
             try:
                 app = FastAPI()
                 app.include_router(
-                    create_harness_router(
+                    create_fleet_router(
                         verify_auth_or_token=lambda user_id, password, token: None,
                     )
                 )
                 with TestClient(app) as client:
                     posted = client.post(
-                        "/harness/event",
+                        "/fleet/event",
                         json={
                             "user_id": "alice",
                             "action": "needs_user",
@@ -161,31 +161,31 @@ class HarnessRouteTests(unittest.TestCase):
                     self.assertEqual(posted.status_code, 200)
                     self.assertTrue(posted.json()["ok"])
 
-                    state = client.get("/harness/state", params={"user_id": "alice"})
+                    state = client.get("/fleet/state", params={"user_id": "alice"})
                     self.assertEqual(state.status_code, 200)
                     data = state.json()
                     self.assertEqual(data["counts"]["needs_user"], 1)
                     self.assertEqual(data["agents"][0]["effective_status"], "needs_user")
             finally:
                 if original is None:
-                    os.environ.pop("CLAWCROSS_HARNESS_STATE_PATH", None)
+                    os.environ.pop("CLAWCROSS_FLEET_STATE_PATH", None)
                 else:
-                    os.environ["CLAWCROSS_HARNESS_STATE_PATH"] = original
+                    os.environ["CLAWCROSS_FLEET_STATE_PATH"] = original
 
     def test_route_heartbeat_omitted_task_id_preserves_existing_binding(self):
         with TemporaryDirectory() as tmpdir:
-            original = os.environ.get("CLAWCROSS_HARNESS_STATE_PATH")
-            os.environ["CLAWCROSS_HARNESS_STATE_PATH"] = str(Path(tmpdir) / "harness.json")
+            original = os.environ.get("CLAWCROSS_FLEET_STATE_PATH")
+            os.environ["CLAWCROSS_FLEET_STATE_PATH"] = str(Path(tmpdir) / "fleet.json")
             try:
                 app = FastAPI()
                 app.include_router(
-                    create_harness_router(
+                    create_fleet_router(
                         verify_auth_or_token=lambda user_id, password, token: None,
                     )
                 )
                 with TestClient(app) as client:
                     client.post(
-                        "/harness/event",
+                        "/fleet/event",
                         json={
                             "user_id": "alice",
                             "action": "heartbeat",
@@ -198,7 +198,7 @@ class HarnessRouteTests(unittest.TestCase):
                         },
                     )
                     client.post(
-                        "/harness/event",
+                        "/fleet/event",
                         json={
                             "user_id": "alice",
                             "action": "heartbeat",
@@ -208,14 +208,14 @@ class HarnessRouteTests(unittest.TestCase):
                             "message": "plain heartbeat",
                         },
                     )
-                    state = client.get("/harness/state", params={"user_id": "alice"}).json()
+                    state = client.get("/fleet/state", params={"user_id": "alice"}).json()
                     self.assertEqual(state["agents"][0]["current_task_id"], "task_vbench")
                     self.assertEqual(state["agents"][0]["session_ref"], "session_vbench")
             finally:
                 if original is None:
-                    os.environ.pop("CLAWCROSS_HARNESS_STATE_PATH", None)
+                    os.environ.pop("CLAWCROSS_FLEET_STATE_PATH", None)
                 else:
-                    os.environ["CLAWCROSS_HARNESS_STATE_PATH"] = original
+                    os.environ["CLAWCROSS_FLEET_STATE_PATH"] = original
 
 
 if __name__ == "__main__":

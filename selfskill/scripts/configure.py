@@ -257,7 +257,7 @@ QQ_BOT_USERNAME=qquser
 # === Telegram Bot 配置 ===
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 
-# === Chatbot 通用配置 ===
+# === 渠道通用配置 ===
 # TG/QQ Bot 通过 INTERNAL_TOKEN + 白名单中的用户名以用户身份调用 Agent
 AI_API_URL=http://127.0.0.1:51200/v1/chat/completions
 # 留空时默认复用 LLM_MODEL

@@ -40,7 +40,7 @@ If you are an agent, do **not** load everything by default. Start with `AGENTS.m
 | Convert a workflow canvas into a Team | [`team-creator.md`](./team-creator.md) | [`build_team.md`](./build_team.md), [`create_workflow.md`](./create_workflow.md) |
 | Create / debug workflow YAML | [`create_workflow.md`](./create_workflow.md) | [`example_team.md`](./example_team.md) |
 | Configure OpenClaw or other agent runtimes | [`openclaw-commands.md`](./openclaw-commands.md) | [`build_team.md`](./build_team.md) |
-| Add or debug remote Claude computers in Project Harness | [`remote-claude-harness.md`](./remote-claude-harness.md) | [`ports.md`](./ports.md), [`runtime-reference.md`](./runtime-reference.md), [`repo-index.md`](./repo-index.md) |
+| Add or debug remote Claude computers in Project Fleet | [`remote-claude-fleet.md`](./remote-claude-fleet.md) | [`ports.md`](./ports.md), [`runtime-reference.md`](./runtime-reference.md), [`repo-index.md`](./repo-index.md) |
 | Configure or debug ACP / acpx (Codex / Claude Code / Gemini agents) | [`runtime-reference.md`](./runtime-reference.md) | [`build_team.md`](./build_team.md), [`oasis-reference.md`](./oasis-reference.md), [`repo-index.md`](./repo-index.md) |
 | Configure TinyFish internet search agent | [`tinyfish-monitor.md`](./tinyfish-monitor.md) | [`runtime-reference.md`](./runtime-reference.md), [`repo-index.md`](./repo-index.md) |
 | Inspect ports, proxies, or service boundaries | [`ports.md`](./ports.md) | [`repo-index.md`](./repo-index.md) |
@@ -66,7 +66,7 @@ If you are an agent, do **not** load everything by default. Start with `AGENTS.m
 - [`team-anatomy.md`](./team-anatomy.md): single-file runtime reference — folder layout, every file schema, cross-file bindings, runtime-only vs persistent fields, debug checklist
 - [`example_team.md`](./example_team.md): concrete file layout for a Team
 - [`openclaw-commands.md`](./openclaw-commands.md): OpenClaw command and config reference
-- [`remote-claude-harness.md`](./remote-claude-harness.md): Tailscale/SSH/Claude setup for remote Claude workers in Project Harness
+- [`remote-claude-fleet.md`](./remote-claude-fleet.md): Tailscale/SSH/Claude setup for remote Claude workers in Project Fleet
 - [`tinyfish-monitor.md`](./tinyfish-monitor.md): TinyFish internet search agent, live crawl, and data persistence
 - [`ports.md`](./ports.md): ports, proxy routes, exposure rules
 

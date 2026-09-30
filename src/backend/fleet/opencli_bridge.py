@@ -1,4 +1,4 @@
-"""OpenCLI bridge for the private ClawCross harness control plane.
+"""OpenCLI bridge for the private ClawCross fleet control plane.
 
 This module intentionally shells out only to the `opencli` executable with an
 argument vector. It does not run through a shell, so remote workers can ask the

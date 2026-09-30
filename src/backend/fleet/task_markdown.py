@@ -1,8 +1,8 @@
 """TASK.md sync helpers for remote ClawCross workers.
 
-The dashboard remains the public TODO board and the harness remains the private
+The dashboard remains the public TODO board and the fleet remains the private
 control plane. TASK.md is a per-worktree working copy for remote Claude workers:
-dashboard -> harness -> TASK.md, and worker edits in TASK.md -> harness ->
+dashboard -> fleet -> TASK.md, and worker edits in TASK.md -> fleet ->
 dashboard.
 """
 
@@ -13,13 +13,13 @@ from pathlib import Path
 import re
 from typing import Any
 
-from harness.dashboard_sync import (
+from fleet.dashboard_sync import (
     clean_status,
     import_dashboard_todos,
     now_iso,
-    sync_harness_to_dashboard,
+    sync_fleet_to_dashboard,
 )
-from harness.store import apply_harness_event, get_harness_state
+from fleet.store import apply_fleet_event, get_fleet_state
 
 
 TASK_MD_SCHEMA_VERSION = "clawcross.task_md.v1"
@@ -63,9 +63,9 @@ def task_markdown_payload(
     project_id: str,
     include_done: bool = False,
 ) -> dict[str, Any]:
-    """Build the machine-editable TASK.md payload from harness state."""
+    """Build the machine-editable TASK.md payload from fleet state."""
 
-    state = get_harness_state(user_id)
+    state = get_fleet_state(user_id)
     projects = {
         str(project.get("project_id") or ""): project
         for project in state.get("projects", []) or []
@@ -119,7 +119,7 @@ def task_markdown_payload(
             "Use each tasks[].update object as a plan-execute-modify-experiment log.",
             "Edit update.status, plan, execution, modifications, experiments, result, next, and comment.",
             "Allowed status values: todo, active, blocked, needs_user, review, done.",
-            "After editing, run: clawcross-harness-agent task-md import --path TASK.md",
+            "After editing, run: clawcross-fleet-agent task-md import --path TASK.md",
         ],
         "tasks": tasks,
     }
@@ -135,7 +135,7 @@ def render_task_markdown(payload: dict[str, Any]) -> str:
         f"Project: `{payload.get('project_title') or payload.get('project_id')}`",
         f"Generated: `{payload.get('generated_at')}`",
         "",
-        "Use `update` fields as the worker log: plan, execution, modifications, experiments, result, next. Then run `clawcross-harness-agent task-md import --path TASK.md`.",
+        "Use `update` fields as the worker log: plan, execution, modifications, experiments, result, next. Then run `clawcross-fleet-agent task-md import --path TASK.md`.",
         "",
         "| Status | Priority | Task | Assignee |",
         "| --- | --- | --- | --- |",
@@ -228,11 +228,11 @@ def import_task_markdown(
     agent_id: str = "task-md-sync",
     write: bool = True,
 ) -> dict[str, Any]:
-    """Apply TASK.md status/comment edits to the local harness."""
+    """Apply TASK.md status/comment edits to the local fleet."""
 
     payload = parse_task_markdown(task_md_path.expanduser().read_text(encoding="utf-8"))
     project_id = project_id or str(payload.get("project_id") or "")
-    state = get_harness_state(user_id)
+    state = get_fleet_state(user_id)
     by_id = {
         str(task.get("task_id") or ""): task
         for task in state.get("tasks", []) or []
@@ -257,7 +257,7 @@ def import_task_markdown(
         local = by_id.get(task_id) or {}
         if status and status != (clean_status(local.get("status")) or "todo"):
             if write:
-                apply_harness_event(
+                apply_fleet_event(
                     user_id,
                     {
                         "action": "task_status",
@@ -292,7 +292,7 @@ def import_task_markdown(
             }
             if comment not in existing_bodies:
                 if write:
-                    apply_harness_event(
+                    apply_fleet_event(
                         user_id,
                         {
                             "action": "task_comment",
@@ -319,10 +319,10 @@ def sync_task_markdown(
     create_missing: bool = True,
     write: bool = True,
 ) -> dict[str, Any]:
-    """Sync dashboard/harness with TASK.md.
+    """Sync dashboard/fleet with TASK.md.
 
     ``both`` pulls dashboard TODOs first, applies TASK.md edits if the file
-    exists, pushes harness updates back to dashboard, and rewrites TASK.md.
+    exists, pushes fleet updates back to dashboard, and rewrites TASK.md.
     TASK.md edits win over dashboard status for explicit update.status fields.
     """
 
@@ -343,7 +343,7 @@ def sync_task_markdown(
             project_id=project_id,
             write=write,
         )
-        summary["dashboard_push"] = sync_harness_to_dashboard(
+        summary["dashboard_push"] = sync_fleet_to_dashboard(
             user_id,
             dashboard_root=dashboard_root,
             project_id=project_id,

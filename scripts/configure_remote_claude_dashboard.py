@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install ClawCross dashboard/harness rules into a remote Claude Code host."""
+"""Install ClawCross dashboard/fleet rules into a remote Claude Code host."""
 
 from __future__ import annotations
 
@@ -21,10 +21,10 @@ SHELL_END_MARKER = "# <<< CLAWCROSS_CLAUDE_DEFAULTS_END"
 LOCAL_TARGETS_PATH = Path(os.getenv("CLAWCROSS_REMOTE_CLAUDE_TARGETS_FILE", "~/.clawcross/data/remote_claude_targets.json")).expanduser()
 
 REMOTE_CLIENT = r'''#!/usr/bin/env python3
-"""Remote ClawCross harness client for Claude Code workers.
+"""Remote ClawCross fleet client for Claude Code workers.
 
 Remote workers read the public dashboard for TODOs, but write runtime status
-only to the private ClawCross harness API.
+only to the private ClawCross fleet API.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ import urllib.parse
 import urllib.request
 
 
-DEFAULT_CONFIG_PATH = Path(os.getenv("CLAWCROSS_HARNESS_ENV", "~/.clawcross/harness.env")).expanduser()
+DEFAULT_CONFIG_PATH = Path(os.getenv("CLAWCROSS_FLEET_ENV", "~/.clawcross/fleet.env")).expanduser()
 TASK_MD_SCHEMA_VERSION = "clawcross.task_md.v1"
 TASK_MD_START = "<!-- CLAWCROSS_TASK_MD_START -->"
 TASK_MD_END = "<!-- CLAWCROSS_TASK_MD_END -->"
@@ -142,7 +142,7 @@ def post_event(args: argparse.Namespace, payload: dict, *, emit: bool = True) ->
     config = load_env(args.config)
     base_url = config_value(config, "CLAWCROSS_AGENT_BASE_URL", "http://127.0.0.1:51200").rstrip("/")
     token = config_value(config, "INTERNAL_TOKEN")
-    user_id = config_value(config, "CLAWCROSS_HARNESS_USER", config_value(config, "CLAWCROSS_USER_ID", "default"))
+    user_id = config_value(config, "CLAWCROSS_FLEET_USER", config_value(config, "CLAWCROSS_USER_ID", "default"))
     if not token:
         raise SystemExit(f"INTERNAL_TOKEN is missing in {args.config}")
     payload = {key: value for key, value in payload.items() if value not in (None, "")}
@@ -150,7 +150,7 @@ def post_event(args: argparse.Namespace, payload: dict, *, emit: bool = True) ->
     if default_project_id:
         payload.setdefault("project_id", default_project_id)
     payload["user_id"] = user_id
-    data = request_json(f"{base_url}/harness/event", timeout=args.timeout, token=token, payload=payload)
+    data = request_json(f"{base_url}/fleet/event", timeout=args.timeout, token=token, payload=payload)
     if emit:
         print(json.dumps(data, ensure_ascii=False, indent=2))
     return data
@@ -160,7 +160,7 @@ def request_clawcross(args: argparse.Namespace, path: str, *, payload: dict | No
     config = load_env(args.config)
     base_url = config_value(config, "CLAWCROSS_AGENT_BASE_URL", "http://127.0.0.1:51200").rstrip("/")
     token = config_value(config, "INTERNAL_TOKEN")
-    user_id = config_value(config, "CLAWCROSS_HARNESS_USER", config_value(config, "CLAWCROSS_USER_ID", "default"))
+    user_id = config_value(config, "CLAWCROSS_FLEET_USER", config_value(config, "CLAWCROSS_USER_ID", "default"))
     if not token:
         raise SystemExit(f"INTERNAL_TOKEN is missing in {args.config}")
     url = f"{base_url}{path}"
@@ -177,7 +177,7 @@ def command_dashboard(args: argparse.Namespace) -> None:
     config = load_env(args.config)
     dashboard_url = config_value(config, "DASHBOARD_URL").rstrip("/")
     if not dashboard_url:
-        raise SystemExit("DASHBOARD_URL is missing in the remote ClawCross harness env")
+        raise SystemExit("DASHBOARD_URL is missing in the remote ClawCross fleet env")
     project_id = args.project_id or config_value(config, "DEFAULT_PROJECT_ID")
     tasks_doc = request_json(f"{dashboard_url}/state/tasks.json", timeout=args.timeout)
     tasks = tasks_doc.get("tasks", tasks_doc if isinstance(tasks_doc, list) else [])
@@ -211,9 +211,9 @@ def task_md_payload_from_dashboard(args: argparse.Namespace) -> dict:
     config = load_env(args.config)
     dashboard_url = config_value(config, "DASHBOARD_URL").rstrip("/")
     if not dashboard_url:
-        raise SystemExit("DASHBOARD_URL is missing in the remote ClawCross harness env")
+        raise SystemExit("DASHBOARD_URL is missing in the remote ClawCross fleet env")
     project_id = args.project_id or config_value(config, "DEFAULT_PROJECT_ID")
-    user_id = config_value(config, "CLAWCROSS_HARNESS_USER", config_value(config, "CLAWCROSS_USER_ID", "default"))
+    user_id = config_value(config, "CLAWCROSS_FLEET_USER", config_value(config, "CLAWCROSS_USER_ID", "default"))
     tasks_doc = request_json(f"{dashboard_url}/state/tasks.json", timeout=args.timeout)
     tasks = tasks_doc.get("tasks", tasks_doc if isinstance(tasks_doc, list) else [])
     if not isinstance(tasks, list):
@@ -266,7 +266,7 @@ def task_md_payload_from_dashboard(args: argparse.Namespace) -> dict:
         "instructions": [
             "Use each tasks[].update object as a plan-execute-modify-experiment log.",
             "Allowed status values: todo, active, blocked, needs_user, review, done.",
-            "Run clawcross-harness-agent task-md import --path TASK.md after editing.",
+            "Run clawcross-fleet-agent task-md import --path TASK.md after editing.",
         ],
         "tasks": selected,
     }
@@ -356,7 +356,7 @@ def command_task_md(args: argparse.Namespace) -> None:
     summary = {"ok": True, "path": str(path), "action": args.action}
     if args.action in {"import", "sync"} and path.exists():
         payload = parse_task_md(path)
-        state = request_clawcross(args, "/harness/state")
+        state = request_clawcross(args, "/fleet/state")
         existing = {
             str(task.get("task_id") or ""): task
             for task in state.get("tasks", []) or []
@@ -506,7 +506,7 @@ def command_comment(args: argparse.Namespace) -> None:
 
 def command_opencli_status(args: argparse.Namespace) -> None:
     query = f"?query={urllib.parse.quote(args.query)}" if args.query else ""
-    data = request_clawcross(args, f"/harness/opencli/status{query}")
+    data = request_clawcross(args, f"/fleet/opencli/status{query}")
     print(json.dumps(data, ensure_ascii=False, indent=2))
 
 
@@ -516,7 +516,7 @@ def command_opencli_run(args: argparse.Namespace) -> None:
         opencli_args = opencli_args[1:]
     data = request_clawcross(
         args,
-        "/harness/opencli/run",
+        "/fleet/opencli/run",
         payload={
             "args": opencli_args,
             "profile": args.profile,
@@ -547,7 +547,7 @@ def add_event_common(
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Read dashboard TODOs and update the ClawCross harness.")
+    parser = argparse.ArgumentParser(description="Read dashboard TODOs and update the ClawCross fleet.")
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
     parser.add_argument("--timeout", type=float, default=20.0)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -653,7 +653,7 @@ has_short_arg() {
 
 read_clawcross_env_value() {
   local key="$1"
-  local file="${CLAWCROSS_HARNESS_ENV:-$HOME/.clawcross/harness.env}"
+  local file="${CLAWCROSS_FLEET_ENV:-$HOME/.clawcross/fleet.env}"
   [[ -f "$file" ]] || return 0
   awk -F= -v k="$key" '$1 == k {gsub(/^["'\'']|["'\'']$/, "", $2); print $2; exit}' "$file" 2>/dev/null || true
 }
@@ -794,7 +794,7 @@ if payload.get("install_config"):
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_lines = [
         f"CLAWCROSS_AGENT_BASE_URL={payload['agent_base_url']}",
-        f"CLAWCROSS_HARNESS_USER={payload['harness_user']}",
+        f"CLAWCROSS_FLEET_USER={payload['fleet_user']}",
         f"DASHBOARD_URL={payload['dashboard_url']}",
         f"DEFAULT_PROJECT_ID={payload['default_project_id']}",
         f"REMOTE_HOST={payload['remote']}",
@@ -835,12 +835,12 @@ if payload.get("install_settings"):
         deny = []
         permissions["deny"] = deny
     for rule in [
-        "Bash(clawcross-harness-agent *)",
+        "Bash(clawcross-fleet-agent *)",
         f"Bash({client_path} *)",
-        "Bash(~/.local/bin/clawcross-harness-agent *)",
+        "Bash(~/.local/bin/clawcross-fleet-agent *)",
         f"Bash(curl -fsSL {payload['dashboard_url']}/*)",
-        "Bash(curl -fsSL http://127.0.0.1:51200/harness/state*)",
-        "Bash(curl -fsSL http://127.0.0.1:51200/harness/opencli/status*)",
+        "Bash(curl -fsSL http://127.0.0.1:51200/fleet/state*)",
+        "Bash(curl -fsSL http://127.0.0.1:51200/fleet/opencli/status*)",
     ]:
         if rule not in allow:
             allow.append(rule)
@@ -896,14 +896,14 @@ def build_managed_block(*, remote: str, dashboard_url: str, default_project_id: 
         else "No project_id is baked into ClawCross. Choose project_id from dashboard/state/tasks.json or the user's assignment."
     )
     dashboard_agent_command = (
-        f"clawcross-harness-agent dashboard --project-id {default_project} --project"
+        f"clawcross-fleet-agent dashboard --project-id {default_project} --project"
         if default_project
-        else "clawcross-harness-agent dashboard"
+        else "clawcross-fleet-agent dashboard"
     )
     task_md_sync_command = (
-        f"clawcross-harness-agent task-md sync --project-id {default_project} --path TASK.md"
+        f"clawcross-fleet-agent task-md sync --project-id {default_project} --path TASK.md"
         if default_project
-        else "clawcross-harness-agent task-md sync --project-id <project_id> --path TASK.md"
+        else "clawcross-fleet-agent task-md sync --project-id <project_id> --path TASK.md"
     )
     status_project_arg = default_project or "<project_id>"
     return dedent(
@@ -920,7 +920,7 @@ def build_managed_block(*, remote: str, dashboard_url: str, default_project_id: 
         - For normal interactive work, start Claude through the configured `claude` shell alias, which expands to `claude --effort max --permission-mode auto --remote-control`.
         - For the background agent view, start it through the configured `claude` shell alias, which expands `claude agents` to `claude --effort max --permission-mode auto agents`.
         - If you are already inside an interactive Claude session and the user asks you to reconfigure the current session, run `/effort max`, `/permission-mode auto`, and `/remote-control`.
-        - Do not publish remote-control links, Claude session IDs, or harness runtime details to the public dashboard.
+        - Do not publish remote-control links, Claude session IDs, or fleet runtime details to the public dashboard.
 
         ## Parallel Worker Policy
 
@@ -929,7 +929,7 @@ def build_managed_block(*, remote: str, dashboard_url: str, default_project_id: 
         - Prefer 2-3 parallel sessions per computer when there are independent TODOs.
         - Use one session per TODO. Do not have two sessions edit the same files for the same TODO unless the user explicitly asks.
         - Choose parallel TODOs by dashboard priority and due date; `urgent` and due-soon TODOs come first.
-        - Each session must use a unique `--agent-id` in `clawcross-harness-agent`, usually `<project-or-task>-$(hostname)`.
+        - Each session must use a unique `--agent-id` in `clawcross-fleet-agent`, usually `<project-or-task>-$(hostname)`.
         - Keep `--session-ref` set for the live session so ClawCross can bind the worker card to the remote Claude session.
         - If all open TODOs are done or waiting for human review, do not invent work; mark the session idle/review and wait for the next dashboard TODO.
 
@@ -954,7 +954,7 @@ def build_managed_block(*, remote: str, dashboard_url: str, default_project_id: 
 
         Do not assume the controller machine's local workspace path exists on this host.
 
-        If `clawcross-harness-agent` is available, prefer this machine-readable read path:
+        If `clawcross-fleet-agent` is available, prefer this machine-readable read path:
 
         ```bash
         {dashboard_agent_command}
@@ -981,19 +981,19 @@ def build_managed_block(*, remote: str, dashboard_url: str, default_project_id: 
         Then run:
 
         ```bash
-        clawcross-harness-agent task-md import --path TASK.md
+        clawcross-fleet-agent task-md import --path TASK.md
         ```
 
         ClawCross will turn the lifecycle fields into dashboard comments and task state, while keeping runtime/session metadata private.
 
         ## Keep TODOs Updated
 
-        Keep task state current whenever it changes. Use ClawCross harness commands for runtime updates; ClawCross is the private control plane and may sync TODO status/comments back to the dashboard.
+        Keep task state current whenever it changes. Use ClawCross fleet commands for runtime updates; ClawCross is the private control plane and may sync TODO status/comments back to the dashboard.
 
         ```bash
-        clawcross-harness-agent task-status --agent-id "$(hostname)-claude" --project-id {status_project_arg} --task-id <task_id> --status doing --message "Started: <short plan>"
-        clawcross-harness-agent comment --agent-id "$(hostname)-claude" --project-id {status_project_arg} --task-id <task_id> --kind comment --message "Progress: <evidence>"
-        clawcross-harness-agent task-status --agent-id "$(hostname)-claude" --project-id {status_project_arg} --task-id <task_id> --status done --message "Result: <evidence and artifact path>"
+        clawcross-fleet-agent task-status --agent-id "$(hostname)-claude" --project-id {status_project_arg} --task-id <task_id> --status doing --message "Started: <short plan>"
+        clawcross-fleet-agent comment --agent-id "$(hostname)-claude" --project-id {status_project_arg} --task-id <task_id> --kind comment --message "Progress: <evidence>"
+        clawcross-fleet-agent task-status --agent-id "$(hostname)-claude" --project-id {status_project_arg} --task-id <task_id> --status done --message "Result: <evidence and artifact path>"
         ```
 
         Status vocabulary:
@@ -1004,16 +1004,16 @@ def build_managed_block(*, remote: str, dashboard_url: str, default_project_id: 
         - `blocked` means exact missing input or failing command is known.
         - `review` means work is ready for human review.
 
-        If `clawcross-harness-agent` cannot reach ClawCross, say that explicitly. Do not pretend task status was updated.
+        If `clawcross-fleet-agent` cannot reach ClawCross, say that explicitly. Do not pretend task status was updated.
 
         ## Private OpenCLI Bridge
 
         If a TODO explicitly requires local private sources such as WeChat, enterprise WeChat, Gmail/Outlook web, Lark, Notion, Telegram, Discord, GitHub, Docker, or another local CLI, use ClawCross as the private bridge. Do not put raw private messages, cookies, tokens, or full mail/chat transcripts into the public dashboard.
 
         ```bash
-        clawcross-harness-agent opencli-status --query wechat
-        clawcross-harness-agent opencli-run -- wx search "<keyword>"
-        clawcross-harness-agent opencli-status --query gmail
+        clawcross-fleet-agent opencli-status --query wechat
+        clawcross-fleet-agent opencli-run -- wx search "<keyword>"
+        clawcross-fleet-agent opencli-status --query gmail
         ```
 
         Summarize only task-relevant evidence back into TODO comments. If OpenCLI is missing or login/browser bridge is unavailable, mark the TODO `blocked` with the exact missing dependency.
@@ -1025,11 +1025,11 @@ def build_managed_block(*, remote: str, dashboard_url: str, default_project_id: 
         Never write these into the dashboard repo or dashboard comments:
 
         - Claude Code session IDs or remote-control links.
-        - ClawCross runtime state, harness state, worker heartbeats, or CLI config.
+        - ClawCross runtime state, fleet state, worker heartbeats, or CLI config.
         - API keys, service-role keys, tokens, passwords, or secret-bearing logs.
         - Private machine paths unless the user explicitly asks for them as project evidence.
 
-        Do not create `dashboard/harness`, `dashboard/state/agents`, `dashboard/state/runs`, agent-event Edge Functions, or agent/run schemas. Runtime control belongs in ClawCross, not the dashboard. Do not put ClawCross CLI configuration or Claude session configuration into the dashboard repo.
+        Do not create `dashboard/fleet`, `dashboard/state/agents`, `dashboard/state/runs`, agent-event Edge Functions, or agent/run schemas. Runtime control belongs in ClawCross, not the dashboard. Do not put ClawCross CLI configuration or Claude session configuration into the dashboard repo.
 
         ## Editing Discipline
 
@@ -1135,7 +1135,7 @@ def install(args: argparse.Namespace) -> str:
         return block + "\n"
     internal_token = load_internal_token(args.internal_token) if args.install_config else ""
     if args.install_config and not internal_token:
-        raise SystemExit("INTERNAL_TOKEN is required to install remote harness write config.")
+        raise SystemExit("INTERNAL_TOKEN is required to install remote fleet write config.")
     payload = {
         "memory_path": args.memory_path,
         "block": block,
@@ -1157,7 +1157,7 @@ def install(args: argparse.Namespace) -> str:
         "shell_start_marker": SHELL_START_MARKER,
         "shell_end_marker": SHELL_END_MARKER,
         "agent_base_url": args.agent_base_url,
-        "harness_user": args.harness_user,
+        "fleet_user": args.fleet_user,
         "internal_token": internal_token,
         "dashboard_url": normalize_dashboard_url(args.dashboard_url),
         "default_project_id": args.default_project_id,
@@ -1190,21 +1190,21 @@ def install(args: argparse.Namespace) -> str:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Configure a remote Claude Code host to read dashboard TODOs and update ClawCross harness state."
+        description="Configure a remote Claude Code host to read dashboard TODOs and update ClawCross fleet state."
     )
     parser.add_argument("remote", help="SSH target, for example user@host.example")
     parser.add_argument("--dashboard-url", default=os.getenv("CLAWCROSS_DASHBOARD_URL") or os.getenv("DASHBOARD_URL") or "")
-    parser.add_argument("--default-project-id", default=os.getenv("CLAWCROSS_DASHBOARD_DEFAULT_PROJECT_ID") or os.getenv("CLAWCROSS_HARNESS_PROJECT_ID") or "")
+    parser.add_argument("--default-project-id", default=os.getenv("CLAWCROSS_DASHBOARD_DEFAULT_PROJECT_ID") or os.getenv("CLAWCROSS_FLEET_PROJECT_ID") or "")
     parser.add_argument("--project-id", action="append", default=[], help="Additional project_id to include in startup reads.")
     parser.add_argument("--memory-path", default="~/.claude/CLAUDE.md", help="Remote Claude Code user memory file.")
-    parser.add_argument("--client-path", default="~/.local/bin/clawcross-harness-agent")
-    parser.add_argument("--config-path", default="~/.clawcross/harness.env")
+    parser.add_argument("--client-path", default="~/.local/bin/clawcross-fleet-agent")
+    parser.add_argument("--config-path", default="~/.clawcross/fleet.env")
     parser.add_argument("--settings-path", default="~/.claude/settings.json")
     parser.add_argument("--local-settings-path", default="~/.claude/settings.local.json")
     parser.add_argument("--claude-wrapper-path", default="~/.local/bin/clawcross-claude")
     parser.add_argument("--real-claude-path", default="~/.local/bin/claude")
     parser.add_argument("--agent-base-url", default="http://127.0.0.1:51200")
-    parser.add_argument("--harness-user", default=os.getenv("CLAWCROSS_HARNESS_USER") or os.getenv("CLAWCROSS_USER_ID") or "default")
+    parser.add_argument("--fleet-user", default=os.getenv("CLAWCROSS_FLEET_USER") or os.getenv("CLAWCROSS_USER_ID") or "default")
     parser.add_argument("--internal-token", default="")
     parser.add_argument("--connect-timeout", type=int, default=8)
     parser.add_argument("--port", type=int, default=0)
@@ -1213,8 +1213,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-batch-mode", action="store_false", dest="batch_mode", help="Allow interactive SSH authentication.")
     parser.add_argument("--replace-file", action="store_true", help="Replace the remote memory file instead of replacing/appending the managed block.")
     parser.add_argument("--no-install-client", action="store_false", dest="install_client", help="Only update CLAUDE.md; do not install the remote client.")
-    parser.add_argument("--no-install-config", action="store_false", dest="install_config", help="Only update CLAUDE.md/client; do not install private harness config.")
-    parser.add_argument("--no-install-settings", action="store_false", dest="install_settings", help="Do not update Claude Code permissions for dashboard/harness commands.")
+    parser.add_argument("--no-install-config", action="store_false", dest="install_config", help="Only update CLAUDE.md/client; do not install private fleet config.")
+    parser.add_argument("--no-install-settings", action="store_false", dest="install_settings", help="Do not update Claude Code permissions for dashboard/fleet commands.")
     parser.add_argument("--no-install-claude-defaults", action="store_false", dest="install_claude_defaults", help="Do not install the Claude max-effort/remote-control shell defaults.")
     parser.add_argument("--dry-run", action="store_true", help="Print the managed CLAUDE.md block without connecting.")
     parser.set_defaults(batch_mode=True, install_client=True, install_config=True, install_settings=True, install_claude_defaults=True)

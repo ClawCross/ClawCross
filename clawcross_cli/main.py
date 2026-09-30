@@ -60,7 +60,7 @@ def usage() -> None:
     print("  cron list [<team>]          list cron alarms (optionally for one team)")
     print("  cron add                    create a cron (interactive)")
     print("  cron delete <task_id>       delete a cron by task_id")
-    print("  channel                     list chatbot channels (Telegram, Discord, ...)")
+    print("  channel                     list channels (Telegram, Discord, ...)")
     print("  channel setup [<id>]        guided channel setup (writes <ID>_BOTS in .env)")
     print("  channel show <id>           show channel JSON entries currently in .env")
     print("  channel clear <id>          drop the env_key for a channel")

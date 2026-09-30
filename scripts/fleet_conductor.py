@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the ClawCross local conductor loop for remote harness workers."""
+"""Run the ClawCross local conductor loop for remote fleet workers."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ SRC_DIR = PROJECT_ROOT / "src" / "backend"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from harness.conductor import run_conductor_once  # noqa: E402
+from fleet.conductor import run_conductor_once  # noqa: E402
 from common.runtime_paths import ENV_FILE  # noqa: E402
 
 
@@ -42,46 +42,46 @@ def _env_bool(key: str, default: bool) -> bool:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Keep remote Claude harness workers moving from the local ClawCross host.")
+    parser = argparse.ArgumentParser(description="Keep remote Claude fleet workers moving from the local ClawCross host.")
     parser.add_argument("--user-id", default="")
-    parser.add_argument("--interval", type=float, default=float(os.getenv("CLAWCROSS_HARNESS_CONDUCTOR_INTERVAL", "25")))
-    parser.add_argument("--cooldown", type=int, default=int(os.getenv("CLAWCROSS_HARNESS_CONDUCTOR_COOLDOWN", "180")))
-    parser.add_argument("--remote-limit", type=int, default=int(os.getenv("CLAWCROSS_HARNESS_CONDUCTOR_REMOTE_LIMIT", "12")))
+    parser.add_argument("--interval", type=float, default=float(os.getenv("CLAWCROSS_FLEET_CONDUCTOR_INTERVAL", "25")))
+    parser.add_argument("--cooldown", type=int, default=int(os.getenv("CLAWCROSS_FLEET_CONDUCTOR_COOLDOWN", "180")))
+    parser.add_argument("--remote-limit", type=int, default=int(os.getenv("CLAWCROSS_FLEET_CONDUCTOR_REMOTE_LIMIT", "12")))
     parser.add_argument(
         "--project-id",
-        default=os.getenv("CLAWCROSS_HARNESS_PROJECT_ID", ""),
+        default=os.getenv("CLAWCROSS_FLEET_PROJECT_ID", ""),
         help="Dashboard project to sync. Empty means all projects.",
     )
-    parser.add_argument("--dashboard-root", default=os.getenv("CLAWCROSS_HARNESS_DASHBOARD_ROOT", ""))
+    parser.add_argument("--dashboard-root", default=os.getenv("CLAWCROSS_FLEET_DASHBOARD_ROOT", ""))
     parser.add_argument("--no-dashboard-sync", action="store_true")
     parser.add_argument(
         "--dashboard-publish",
         action=argparse.BooleanOptionalAction,
-        default=_env_bool("CLAWCROSS_HARNESS_DASHBOARD_PUBLISH", True),
+        default=_env_bool("CLAWCROSS_FLEET_DASHBOARD_PUBLISH", True),
         help="Commit and push dashboard/state/tasks.json when the conductor changes dashboard task state.",
     )
     parser.add_argument(
         "--dashboard-supabase-sync",
         action=argparse.BooleanOptionalAction,
-        default=_env_bool("CLAWCROSS_HARNESS_DASHBOARD_SUPABASE_SYNC", True),
+        default=_env_bool("CLAWCROSS_FLEET_DASHBOARD_SUPABASE_SYNC", True),
         help="Sync dashboard/state/*.json into Supabase when the conductor changes dashboard task state.",
     )
     parser.add_argument(
         "--llm-mode",
         action=argparse.BooleanOptionalAction,
-        default=_env_bool("CLAWCROSS_HARNESS_CONDUCTOR_LLM", True),
+        default=_env_bool("CLAWCROSS_FLEET_CONDUCTOR_LLM", True),
         help="Use the configured Webot/ClawCross LLM to choose assignments and draft replies.",
     )
     parser.add_argument(
         "--codex-review",
         action=argparse.BooleanOptionalAction,
-        default=_env_bool("CLAWCROSS_HARNESS_CONDUCTOR_CODEX_REVIEW", True),
+        default=_env_bool("CLAWCROSS_FLEET_CONDUCTOR_CODEX_REVIEW", True),
         help="Use local Codex exec to inspect and resolve review/待审查 TODOs before surfacing them to the user.",
     )
     parser.add_argument(
         "--codex-review-limit",
         type=int,
-        default=int(os.getenv("CLAWCROSS_HARNESS_CONDUCTOR_CODEX_REVIEW_LIMIT", "1")),
+        default=int(os.getenv("CLAWCROSS_FLEET_CONDUCTOR_CODEX_REVIEW_LIMIT", "1")),
         help="Maximum review TODOs local Codex may inspect per conductor tick.",
     )
     parser.add_argument("--once", action="store_true")
@@ -91,14 +91,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     load_env_file()
-    if not _env_bool("CLAWCROSS_HARNESS_CONDUCTOR", True):
-        print("[harness-conductor] disabled by CLAWCROSS_HARNESS_CONDUCTOR=0", flush=True)
+    if not _env_bool("CLAWCROSS_FLEET_CONDUCTOR", True):
+        print("[fleet-conductor] disabled by CLAWCROSS_FLEET_CONDUCTOR=0", flush=True)
         return
     args = build_parser().parse_args()
-    user_id = args.user_id or os.getenv("CLAWCROSS_HARNESS_USER") or os.getenv("CLAWCROSS_USER_ID") or os.getenv("USER") or "default"
+    user_id = args.user_id or os.getenv("CLAWCROSS_FLEET_USER") or os.getenv("CLAWCROSS_USER_ID") or os.getenv("USER") or "default"
     driver = "webot_llm" if args.llm_mode else "rules"
     print(
-        f"[harness-conductor] started user={user_id} interval={args.interval}s cooldown={args.cooldown}s driver={driver}",
+        f"[fleet-conductor] started user={user_id} interval={args.interval}s cooldown={args.cooldown}s driver={driver}",
         flush=True,
     )
 
@@ -120,9 +120,9 @@ def main() -> None:
             )
             actions = result.get("actions") or []
             if actions or not result.get("remote_ok"):
-                print("[harness-conductor] " + json.dumps(result, ensure_ascii=False, separators=(",", ":")), flush=True)
+                print("[fleet-conductor] " + json.dumps(result, ensure_ascii=False, separators=(",", ":")), flush=True)
         except Exception as exc:
-            print(f"[harness-conductor] error: {exc}", file=sys.stderr, flush=True)
+            print(f"[fleet-conductor] error: {exc}", file=sys.stderr, flush=True)
         if args.once:
             break
         time.sleep(max(5.0, args.interval))

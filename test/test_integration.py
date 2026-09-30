@@ -12,8 +12,8 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 import frontend.server as front
-from chatbot.adapters.base import ChannelAdapter, MagicLink
-from scripts.clawcross import chat_help_text, chat_welcome_text, handle_chatbot_input
+from channels.adapters.base import ChannelAdapter, MagicLink
+from scripts.clawcross import chat_help_text, chat_welcome_text, handle_channel_input
 from common.env_settings import mask_all_sensitive, read_env_all, write_env_settings
 
 
@@ -42,7 +42,7 @@ class EnvSettingsTests(unittest.TestCase):
             Path(path).unlink(missing_ok=True)
 
 
-class ChatbotCommandTests(unittest.TestCase):
+class ChannelCommandTests(unittest.TestCase):
     def test_front_command_matches_exact_command_or_arguments_only(self):
         self.assertTrue(ChannelAdapter.is_front_command("/front"))
         self.assertTrue(ChannelAdapter.is_front_command("  /Front   "))
@@ -75,7 +75,7 @@ class ChatbotCommandTests(unittest.TestCase):
         self.assertNotIn("Switch agents with /use codex.", welcome)
 
     def test_cross_help_command_returns_chat_help(self):
-        _active, reply = handle_chatbot_input(
+        _active, reply = handle_channel_input(
             "/cross help",
             {"current": {"platform": "internal", "user": "default"}},
         )
@@ -89,7 +89,7 @@ class ChatbotCommandTests(unittest.TestCase):
                 "__state_path": str(Path(tmpdir) / "state.json"),
                 "current": {"platform": "internal", "user": "default", "cwd": "/tmp/project"},
             }
-            _active, reply = handle_chatbot_input("/cross session review-1", state)
+            _active, reply = handle_channel_input("/cross session review-1", state)
 
             self.assertEqual(reply, "session: review-1")
             self.assertEqual(state["current"]["session"], "review-1")
@@ -107,7 +107,7 @@ class ChatbotCommandTests(unittest.TestCase):
                 "current": {"platform": "internal", "user": "default", "cwd": str(project_dir)},
             }
             with mock.patch("scripts.clawcross.os.getcwd", return_value=str(project_dir)):
-                _active, reply = handle_chatbot_input("/cross new session", state)
+                _active, reply = handle_channel_input("/cross new session", state)
 
             self.assertIn("session: project-", reply)
             self.assertTrue(state["current"]["session"].startswith("project-"))
@@ -202,14 +202,14 @@ class FrontendIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(kwargs["headers"], {"X-Internal-Token": front.INTERNAL_TOKEN})
 
-    def test_proxy_chatbot_whitelist_get_forwards_user_context(self):
+    def test_proxy_channel_whitelist_get_forwards_user_context(self):
         payload = {"status": "success", "whitelist": {"telegram": {"entries": {}, "name_map": {}}}}
         with mock.patch.object(
             front.requests,
             "get",
             return_value=_MockJsonResponse(payload, 200),
         ) as mock_get:
-            response = self.client.get("/proxy_chatbot_whitelist")
+            response = self.client.get("/proxy_channel_whitelist")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), payload)
@@ -218,14 +218,14 @@ class FrontendIntegrationTests(unittest.TestCase):
         self.assertEqual(kwargs["headers"], {"X-Internal-Token": front.INTERNAL_TOKEN})
         self.assertEqual(kwargs["timeout"], 10)
 
-    def test_proxy_chatbot_whitelist_post_merges_session_user_id(self):
+    def test_proxy_channel_whitelist_post_merges_session_user_id(self):
         whitelist = {"telegram": {"entries": {"123": {"username": "alice"}}, "name_map": {}}}
         with mock.patch.object(
             front.requests,
             "post",
             return_value=_MockJsonResponse({"status": "success", "whitelist": whitelist}, 200),
         ) as mock_post:
-            response = self.client.post("/proxy_chatbot_whitelist", json={"whitelist": whitelist})
+            response = self.client.post("/proxy_channel_whitelist", json={"whitelist": whitelist})
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["status"], "success")

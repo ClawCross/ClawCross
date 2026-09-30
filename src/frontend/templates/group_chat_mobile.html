@@ -239,26 +239,26 @@
     border-bottom: 0.5px solid var(--border);
   }
 
-  /* ── Project harness board ── */
-  .harness-section {
+  /* ── Project fleet board ── */
+  .fleet-section {
     flex-shrink: 0;
     background: var(--bg-card);
     border-bottom: 0.5px solid var(--border);
     padding: 10px 12px 12px;
   }
-  .harness-head {
+  .fleet-head {
     display: grid;
     gap: 4px;
     margin-bottom: 8px;
   }
-  .harness-head-top {
+  .fleet-head-top {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
     min-width: 0;
   }
-  .harness-title {
+  .fleet-title {
     font-size: 13px;
     font-weight: 700;
     color: var(--text);
@@ -267,19 +267,19 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .harness-status {
+  .fleet-status {
     font-size: 11px;
     color: var(--text-secondary);
     line-height: 1.35;
     white-space: normal;
     overflow-wrap: anywhere;
   }
-  .harness-actions {
+  .fleet-actions {
     display: flex;
     gap: 6px;
     flex-shrink: 0;
   }
-  .harness-btn {
+  .fleet-btn {
     min-width: 32px;
     height: 32px;
     border: 1px solid var(--border);
@@ -290,19 +290,19 @@
     color: var(--text);
     cursor: pointer;
   }
-  .harness-btn:active { background: #e9e9e9; }
-  .harness-btn:disabled { opacity: 0.5; cursor: default; }
-  .harness-grid {
+  .fleet-btn:active { background: #e9e9e9; }
+  .fleet-btn:disabled { opacity: 0.5; cursor: default; }
+  .fleet-grid {
     display: grid;
     gap: 7px;
   }
-  .harness-project-group {
+  .fleet-project-group {
     border: 1px solid var(--border);
     border-radius: 8px;
     background: #fff;
     overflow: hidden;
   }
-  .harness-project-head {
+  .fleet-project-head {
     width: 100%;
     border: none;
     background: #f8fafc;
@@ -316,10 +316,10 @@
     font: inherit;
     text-align: left;
   }
-  .harness-project-head:active {
+  .fleet-project-head:active {
     background: #eef2ff;
   }
-  .harness-project-name {
+  .fleet-project-name {
     min-width: 0;
     font-size: 13px;
     font-weight: 800;
@@ -327,7 +327,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .harness-project-meta {
+  .fleet-project-meta {
     margin-top: 2px;
     color: var(--text-secondary);
     font-size: 11px;
@@ -335,7 +335,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .harness-project-toggle {
+  .fleet-project-toggle {
     flex-shrink: 0;
     width: 24px;
     height: 24px;
@@ -348,15 +348,15 @@
     font-size: 14px;
     font-weight: 900;
   }
-  .harness-project-body {
+  .fleet-project-body {
     display: grid;
     gap: 8px;
     padding: 8px;
   }
-  .harness-project-row {
+  .fleet-project-row {
     min-width: 0;
   }
-  .harness-project-row-head {
+  .fleet-project-row-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -369,7 +369,7 @@
     letter-spacing: 0;
     text-transform: uppercase;
   }
-  .harness-project-row-track {
+  .fleet-project-row-track {
     display: flex;
     gap: 8px;
     overflow-x: auto;
@@ -378,13 +378,13 @@
     -webkit-overflow-scrolling: touch;
     padding: 0 0 2px;
   }
-  .harness-project-group.collapsed .harness-project-body {
+  .fleet-project-group.collapsed .fleet-project-body {
     display: none;
   }
-  .harness-project-group.collapsed .harness-project-toggle {
+  .fleet-project-group.collapsed .fleet-project-toggle {
     transform: rotate(-90deg);
   }
-  .harness-card {
+  .fleet-card {
     width: min(320px, 78vw);
     min-width: min(320px, 78vw);
     border: 1px solid var(--border);
@@ -393,21 +393,21 @@
     background: #fff;
     padding: 8px 9px;
   }
-  .harness-card.active,
-  .harness-card.running { border-left-color: #2563eb; }
-  .harness-card.needs_user,
-  .harness-card.blocked,
-  .harness-card.error { border-left-color: #dc2626; background: #fffafa; }
-  .harness-card.done,
-  .harness-card.verified,
-  .harness-card.passed { border-left-color: #16a34a; background: #fbfefc; }
-  .harness-card-top {
+  .fleet-card.active,
+  .fleet-card.running { border-left-color: #2563eb; }
+  .fleet-card.needs_user,
+  .fleet-card.blocked,
+  .fleet-card.error { border-left-color: #dc2626; background: #fffafa; }
+  .fleet-card.done,
+  .fleet-card.verified,
+  .fleet-card.passed { border-left-color: #16a34a; background: #fbfefc; }
+  .fleet-card-top {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     gap: 8px;
   }
-  .harness-card-title {
+  .fleet-card-title {
     min-width: 0;
     color: var(--text);
     font-size: 13px;
@@ -415,7 +415,7 @@
     line-height: 1.3;
     overflow-wrap: anywhere;
   }
-  .harness-pill {
+  .fleet-pill {
     flex-shrink: 0;
     padding: 2px 7px;
     border-radius: 999px;
@@ -425,22 +425,22 @@
     font-weight: 700;
     text-transform: uppercase;
   }
-  .harness-meta,
-  .harness-preview {
+  .fleet-meta,
+  .fleet-preview {
     margin-top: 4px;
     color: var(--text-secondary);
     font-size: 11px;
     line-height: 1.35;
     word-break: break-word;
   }
-  .harness-preview {
+  .fleet-preview {
     color: #555;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
-  .harness-worker-row {
+  .fleet-worker-row {
     margin-top: 6px;
     padding-top: 6px;
     border-top: 1px solid #f1f1f1;
@@ -449,10 +449,10 @@
     line-height: 1.35;
     overflow-wrap: anywhere;
   }
-  .harness-worker-row strong {
+  .fleet-worker-row strong {
     color: var(--text);
   }
-  .harness-empty-row {
+  .fleet-empty-row {
     min-width: min(240px, 64vw);
     border: 1px dashed var(--border);
     border-radius: 8px;
@@ -2050,16 +2050,16 @@
     border-radius: 12px;
   }
 
-  #mobile-chatbot-config {
+  #mobile-channel-config {
     width: min(460px, calc(100vw - 12px));
     min-width: min(300px, calc(100vw - 12px));
   }
-  .chatbot-config-picker {
+  .channel-config-picker {
     display: grid;
     grid-template-columns: 1fr;
     gap: 8px;
   }
-  .chatbot-config-channel-select {
+  .channel-config-select {
     width: 100%;
     padding: 10px;
     border: 1px solid var(--border);
@@ -2069,36 +2069,36 @@
     font-size: 13px;
     font-weight: 700;
   }
-  .chatbot-channel-card {
+  .channel-card {
     padding: 10px;
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--bg-card);
   }
-  .chatbot-channel-title {
+  .channel-title {
     font-size: 13px;
     font-weight: 800;
     color: var(--text);
   }
-  .chatbot-channel-meta {
+  .channel-meta {
     margin-top: 4px;
     font-size: 11px;
     line-height: 1.45;
     color: var(--text-hint);
     word-break: break-word;
   }
-  .chatbot-config-field {
+  .channel-config-field {
     display: flex;
     flex-direction: column;
     gap: 5px;
     margin-bottom: 10px;
   }
-  .chatbot-config-field label {
+  .channel-config-field label {
     font-size: 12px;
     font-weight: 700;
     color: var(--text-secondary);
   }
-  .chatbot-config-input {
+  .channel-config-input {
     width: 100%;
     box-sizing: border-box;
     padding: 9px 10px;
@@ -2108,13 +2108,13 @@
     color: var(--text);
     font-size: 13px;
   }
-  textarea.chatbot-config-input {
+  textarea.channel-config-input {
     min-height: 82px;
     resize: vertical;
     font-family: monospace;
     line-height: 1.45;
   }
-  .chatbot-config-help {
+  .channel-config-help {
     font-size: 11px;
     line-height: 1.45;
     color: var(--text-hint);
@@ -2140,20 +2140,20 @@
     text-shadow: none;
     box-shadow: inset 0 0 0 4px #ffffff;
   }
-  .chatbot-whitelist-row {
+  .channel-whitelist-row {
     display: grid;
     grid-template-columns: minmax(90px, 1fr) minmax(90px, 1fr) 34px;
     gap: 7px;
     align-items: center;
     margin-bottom: 7px;
   }
-  .chatbot-config-actions {
+  .channel-config-actions {
     display: flex;
     gap: 8px;
     margin-top: 12px;
   }
-  .chatbot-config-actions button,
-  .chatbot-add-row-btn {
+  .channel-config-actions button,
+  .channel-add-row-btn {
     padding: 10px 12px;
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -2162,7 +2162,7 @@
     font-size: 13px;
     font-weight: 700;
   }
-  .chatbot-config-actions button:last-child {
+  .channel-config-actions button:last-child {
     border-color: var(--primary);
     background: var(--primary);
     color: #fff;
@@ -4704,7 +4704,7 @@
           <span class="menu-icon">👥</span>
           <span class="menu-label" data-i18n="create_new_group">创建新群聊</span>
         </button>
-        <button class="create-menu-item" id="cross-device-menu-item" onclick="hideCreateMenu();toggleHarnessVisible()">
+        <button class="create-menu-item" id="cross-device-menu-item" onclick="hideCreateMenu();toggleFleetVisible()">
           <span class="menu-icon">🖥️</span>
           <span class="menu-label" id="cross-device-menu-label">跨设备调用</span>
         </button>
@@ -4722,18 +4722,18 @@
   </div>
   <div class="chat-scroll-area" id="chat-scroll-area">
     <div class="agent-ops-scroll" id="agent-ops-scroll">
-      <div class="harness-section" id="harness-section">
-        <div class="harness-head">
-          <div class="harness-head-top">
-            <div class="harness-title">Project Harness</div>
-            <div class="harness-actions">
-              <button class="harness-btn" onclick="createHarnessTodo()" title="新增 TODO">＋</button>
-              <button class="harness-btn" id="harness-refresh" onclick="refreshAgentOps(true)" title="刷新">↻</button>
+      <div class="fleet-section" id="fleet-section">
+        <div class="fleet-head">
+          <div class="fleet-head-top">
+            <div class="fleet-title">Project Fleet</div>
+            <div class="fleet-actions">
+              <button class="fleet-btn" onclick="createFleetTodo()" title="新增 TODO">＋</button>
+              <button class="fleet-btn" id="fleet-refresh" onclick="refreshAgentOps(true)" title="刷新">↻</button>
             </div>
           </div>
-          <div class="harness-status" id="harness-status">正在读取项目 / TODO / worker...</div>
+          <div class="fleet-status" id="fleet-status">正在读取项目 / TODO / worker...</div>
         </div>
-        <div class="harness-grid" id="harness-grid"></div>
+        <div class="fleet-grid" id="fleet-grid"></div>
       </div>
     </div>
     <div class="group-list-area" id="group-list-container"></div>
@@ -5189,7 +5189,7 @@
       </div>
     </div>
     <div class="discover-section">
-      <div class="discover-card" onclick="showMobileChatbotConfig()">
+      <div class="discover-card" onclick="showMobileChannelConfig()">
         <div class="discover-card-icon">🤖</div>
         <div class="discover-card-body">
           <div class="discover-card-title">Channel 设置</div>
@@ -5303,39 +5303,39 @@
 </div>
 
 <!-- ═══════════════ Mobile Channel Settings ═══════════════ -->
-<div class="drawer-overlay side-panel-overlay" id="mobile-chatbot-config-overlay" onclick="if(event.target===this)closeMobileChatbotConfig()"></div>
-<div class="drawer side-drawer" id="mobile-chatbot-config">
+<div class="drawer-overlay side-panel-overlay" id="mobile-channel-config-overlay" onclick="if(event.target===this)closeMobileChannelConfig()"></div>
+<div class="drawer side-drawer" id="mobile-channel-config">
   <div class="drawer-header">
-    <button class="drawer-header-back" onclick="closeMobileChatbotConfig()">
+    <button class="drawer-header-back" onclick="closeMobileChannelConfig()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
     </button>
     <span class="drawer-header-title">Channel 设置</span>
   </div>
   <div class="drawer-body" style="padding:16px;display:flex;flex-direction:column;gap:12px;">
-    <div class="chatbot-config-picker">
-      <select class="chatbot-config-channel-select" id="mobile-chatbot-channel-select" onchange="switchMobileChatbotChannel(this.value)"></select>
-      <div class="chatbot-channel-card" id="mobile-chatbot-channel-summary"></div>
+    <div class="channel-config-picker">
+      <select class="channel-config-select" id="mobile-channel-select" onchange="switchMobileChannel(this.value)"></select>
+      <div class="channel-card" id="mobile-channel-summary"></div>
     </div>
-    <div id="mobile-chatbot-config-status" style="font-size:12px;color:var(--text-secondary);min-height:18px;"></div>
+    <div id="mobile-channel-config-status" style="font-size:12px;color:var(--text-secondary);min-height:18px;"></div>
     <div class="side-panel-section">
       <div style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:8px;">渠道连接</div>
-      <div id="mobile-chatbot-channel-settings"></div>
-      <div class="chatbot-config-help" id="mobile-chatbot-channel-help"></div>
+      <div id="mobile-channel-settings"></div>
+      <div class="channel-config-help" id="mobile-channel-help"></div>
       <div id="mobile-weclaw-login-panel" style="display:none;margin-top:10px;"></div>
     </div>
     <div class="side-panel-section">
       <div style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:8px;">访问白名单</div>
-      <div class="chatbot-config-help" style="margin-bottom:8px;">ID 是渠道用户 ID / 群 ID；username 用于生成 Agent 会话身份。</div>
-      <div id="mobile-chatbot-whitelist-rows"></div>
-      <button class="chatbot-add-row-btn" type="button" onclick="addMobileChatbotWhitelistRow()">添加白名单</button>
+      <div class="channel-config-help" style="margin-bottom:8px;">ID 是渠道用户 ID / 群 ID；username 用于生成 Agent 会话身份。</div>
+      <div id="mobile-channel-whitelist-rows"></div>
+      <button class="channel-add-row-btn" type="button" onclick="addMobileChannelWhitelistRow()">添加白名单</button>
     </div>
     <div class="side-panel-section">
       <div style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:8px;">通用运行参数</div>
-      <div id="mobile-chatbot-common-settings"></div>
+      <div id="mobile-channel-common-settings"></div>
     </div>
-    <div class="chatbot-config-actions">
-      <button type="button" onclick="loadMobileChatbotConfig()">刷新</button>
-      <button type="button" onclick="saveMobileChatbotConfig()">保存设置</button>
+    <div class="channel-config-actions">
+      <button type="button" onclick="loadMobileChannelConfig()">刷新</button>
+      <button type="button" onclick="saveMobileChannelConfig()">保存设置</button>
     </div>
   </div>
 </div>
@@ -7212,10 +7212,10 @@ let remoteClaudeLoaded = false;
 let remoteClaudeLoading = false;
 let openRemoteClaudeSessionId = '';
 let remoteClaudeSending = false;
-let harnessState = null;
-let harnessLoading = false;
-const HARNESS_COLLAPSED_PROJECTS_KEY = 'clawcross_harness_collapsed_projects_v1';
-let harnessCollapsedProjects = new Set();
+let fleetState = null;
+let fleetLoading = false;
+const FLEET_COLLAPSED_PROJECTS_KEY = 'clawcross_fleet_collapsed_projects_v1';
+let fleetCollapsedProjects = new Set();
 const REMOTE_CLAUDE_COLLAPSED_REMOTES_KEY = 'clawcross_remote_claude_collapsed_remotes_v1';
 let remoteClaudeCollapsedRemotes = new Set();
 let __agentDetailRenderSeq = 0;
@@ -7544,7 +7544,7 @@ function toast(msg, duration = 2000) {
   el._t = setTimeout(() => el.classList.remove('show'), duration);
 }
 
-function harnessStatusText(status) {
+function fleetStatusText(status) {
   const s = String(status || '').trim().toLowerCase();
   const zh = _currentLang === 'zh';
   const labels = {
@@ -7564,7 +7564,7 @@ function harnessStatusText(status) {
   return labels[s] || status || (zh ? '未知' : 'Unknown');
 }
 
-function harnessFormatAge(seconds) {
+function fleetFormatAge(seconds) {
   if (seconds === null || seconds === undefined || Number.isNaN(Number(seconds))) {
     return _currentLang === 'zh' ? '无心跳' : 'no heartbeat';
   }
@@ -7577,35 +7577,35 @@ function harnessFormatAge(seconds) {
   return `${Math.round(hour / 24)}d`;
 }
 
-function harnessTaskRank(task) {
+function fleetTaskRank(task) {
   const status = String(task.status || '').toLowerCase();
   const weights = { needs_user: 0, blocked: 1, active: 2, review: 3, todo: 4, done: 8 };
   return weights[status] === undefined ? 5 : weights[status];
 }
 
-function loadHarnessCollapsedProjects() {
+function loadFleetCollapsedProjects() {
   try {
-    const raw = JSON.parse(localStorage.getItem(HARNESS_COLLAPSED_PROJECTS_KEY) || '[]');
-    harnessCollapsedProjects = new Set(Array.isArray(raw) ? raw.map(String) : []);
+    const raw = JSON.parse(localStorage.getItem(FLEET_COLLAPSED_PROJECTS_KEY) || '[]');
+    fleetCollapsedProjects = new Set(Array.isArray(raw) ? raw.map(String) : []);
   } catch (_) {
-    harnessCollapsedProjects = new Set();
+    fleetCollapsedProjects = new Set();
   }
 }
 
-function saveHarnessCollapsedProjects() {
+function saveFleetCollapsedProjects() {
   try {
-    localStorage.setItem(HARNESS_COLLAPSED_PROJECTS_KEY, JSON.stringify(Array.from(harnessCollapsedProjects)));
+    localStorage.setItem(FLEET_COLLAPSED_PROJECTS_KEY, JSON.stringify(Array.from(fleetCollapsedProjects)));
   } catch (_) {}
 }
 
-loadHarnessCollapsedProjects();
+loadFleetCollapsedProjects();
 
-function toggleHarnessProject(encodedProjectId) {
+function toggleFleetProject(encodedProjectId) {
   const projectId = decodeURIComponent(String(encodedProjectId || 'default'));
-  if (harnessCollapsedProjects.has(projectId)) harnessCollapsedProjects.delete(projectId);
-  else harnessCollapsedProjects.add(projectId);
-  saveHarnessCollapsedProjects();
-  if (harnessState) renderHarnessState(harnessState);
+  if (fleetCollapsedProjects.has(projectId)) fleetCollapsedProjects.delete(projectId);
+  else fleetCollapsedProjects.add(projectId);
+  saveFleetCollapsedProjects();
+  if (fleetState) renderFleetState(fleetState);
 }
 
 function bindHorizontalWheelScroll(el) {
@@ -7624,7 +7624,7 @@ function bindHorizontalWheelScroll(el) {
   }, { passive: false });
 }
 
-function harnessAgentLabel(agent) {
+function fleetAgentLabel(agent) {
   if (!agent) return '';
   const id = agent.agent_id || 'worker';
   const remote = String(agent.remote_host || '').trim();
@@ -7634,7 +7634,7 @@ function harnessAgentLabel(agent) {
   return `${id} @ ${remote}`;
 }
 
-function harnessAgentIsSurveyPool(agent) {
+function fleetAgentIsSurveyPool(agent) {
   if (!agent || typeof agent !== 'object') return false;
   const caps = Array.isArray(agent.capabilities) ? agent.capabilities.map(item => String(item || '').toLowerCase()) : [];
   const metadata = agent.metadata && typeof agent.metadata === 'object' ? agent.metadata : {};
@@ -7642,7 +7642,7 @@ function harnessAgentIsSurveyPool(agent) {
   return !!clawcross.survey_pool || caps.includes('survey-pool') || String(agent.agent_id || '').toLowerCase().includes('survey-pool');
 }
 
-function isHarnessVisibleWorker(agent, visibleTaskIds = null, projectsById = null) {
+function isFleetVisibleWorker(agent, visibleTaskIds = null, projectsById = null) {
   if (!agent) return false;
   if (agent.remote_host && String(agent.agent_id || '') === String(agent.remote_host)) return false;
   const taskId = agent.current_task_id || agent.task_id || '';
@@ -7650,22 +7650,22 @@ function isHarnessVisibleWorker(agent, visibleTaskIds = null, projectsById = nul
   const projectId = agent.project_id || '';
   const project = projectsById && projectsById.get ? projectsById.get(projectId) : null;
   const status = String(agent.effective_status || agent.status || '').toLowerCase();
-  return !!harnessWorkerSessionRef(agent) && projectId && harnessProjectIsActive(project) && status !== 'error';
+  return !!fleetWorkerSessionRef(agent) && projectId && fleetProjectIsActive(project) && status !== 'error';
 }
 
-function harnessWorkerSessionRef(agent) {
+function fleetWorkerSessionRef(agent) {
   return String((agent && agent.session_ref) || '').trim();
 }
 
-function isHarnessSessionBackedWorker(agent, visibleTaskIds = null, projectsById = null) {
-  return isHarnessVisibleWorker(agent, visibleTaskIds, projectsById) && !!harnessWorkerSessionRef(agent);
+function isFleetSessionBackedWorker(agent, visibleTaskIds = null, projectsById = null) {
+  return isFleetVisibleWorker(agent, visibleTaskIds, projectsById) && !!fleetWorkerSessionRef(agent);
 }
 
-function harnessUniqueAgents(agents) {
+function fleetUniqueAgents(agents) {
   const seen = new Set();
   const unique = [];
   (agents || []).forEach(agent => {
-    const key = harnessWorkerSessionRef(agent) || (agent && agent.agent_id) || '';
+    const key = fleetWorkerSessionRef(agent) || (agent && agent.agent_id) || '';
     if (!key || seen.has(key)) return;
     seen.add(key);
     unique.push(agent);
@@ -7673,7 +7673,7 @@ function harnessUniqueAgents(agents) {
   return unique;
 }
 
-function harnessWorkerCountLabel(liveCount, boundCount, remoteReady = true) {
+function fleetWorkerCountLabel(liveCount, boundCount, remoteReady = true) {
   if (!remoteReady && boundCount > 0) {
     return _currentLang === 'zh' ? `${boundCount} worker 连接中` : `${boundCount} worker connecting`;
   }
@@ -7682,20 +7682,20 @@ function harnessWorkerCountLabel(liveCount, boundCount, remoteReady = true) {
   return `${liveCount} ${suffix}`;
 }
 
-function harnessProjectIsActive(project) {
+function fleetProjectIsActive(project) {
   const status = String((project && project.status) || 'active').toLowerCase().replace(/-/g, '_');
   return !['done', 'completed', 'closed', 'archived', 'cancelled'].includes(status);
 }
 
-function harnessAgentMatchesRemoteSession(agent, session) {
-  const ref = harnessWorkerSessionRef(agent);
+function fleetAgentMatchesRemoteSession(agent, session) {
+  const ref = fleetWorkerSessionRef(agent);
   if (!ref || !session) return false;
   const refs = remoteClaudeEquivalentKeys(ref);
   const sessionRefs = remoteClaudeSessionKeys(session).flatMap(remoteClaudeEquivalentKeys);
   return sessionRefs.some(key => refs.includes(key));
 }
 
-function harnessTaskEvidenceAuthors(item) {
+function fleetTaskEvidenceAuthors(item) {
   const authors = [];
   const seen = new Set();
   (Array.isArray(item && item.comments) ? item.comments : []).forEach(comment => {
@@ -7711,7 +7711,7 @@ function harnessTaskEvidenceAuthors(item) {
   return authors;
 }
 
-function harnessTaskHasReviewEvidence(item) {
+function fleetTaskHasReviewEvidence(item) {
   if (!item || String(item.status || '').toLowerCase() !== 'review') return false;
   if (item.result || item.run_id || item.completed_at) return true;
   return (Array.isArray(item.comments) ? item.comments : []).some(comment => {
@@ -7722,7 +7722,7 @@ function harnessTaskHasReviewEvidence(item) {
   });
 }
 
-function harnessProjectRemoteLabel(tasks, agentsByTask, sessions = [], projectAgents = []) {
+function fleetProjectRemoteLabel(tasks, agentsByTask, sessions = [], projectAgents = []) {
   const agents = projectAgents.length ? projectAgents.slice() : [];
   if (!agents.length) tasks.forEach(task => (agentsByTask.get(task.task_id) || []).forEach(agent => agents.push(agent)));
   const remote = agents.map(agent => agent.remote_host).find(Boolean);
@@ -7738,19 +7738,19 @@ function harnessProjectRemoteLabel(tasks, agentsByTask, sessions = [], projectAg
   return tasks.map(task => task.assignee).find(Boolean) || '';
 }
 
-function harnessSessionProjectId(session) {
+function fleetSessionProjectId(session) {
   const linked = remoteClaudeLinkedContext(session);
   if (linked.task && linked.task.project_id) return linked.task.project_id;
   if (linked.agent && linked.agent.project_id) return linked.agent.project_id;
   return '__unbound__';
 }
 
-function harnessSessionTaskId(session) {
+function fleetSessionTaskId(session) {
   const linked = remoteClaudeLinkedContext(session);
   return (linked.task && linked.task.task_id) || (linked.agent && linked.agent.current_task_id) || session.current_task_id || '';
 }
 
-function harnessPlaceholderSessionFromAgent(agent, tasksById, statusOverride = '') {
+function fleetPlaceholderSessionFromAgent(agent, tasksById, statusOverride = '') {
   const task = tasksById.get(agent.current_task_id || agent.task_id || '');
   const status = String(statusOverride || agent.effective_status || agent.status || 'idle').toLowerCase();
   const title = task ? (task.title || task.task_id) : (agent.agent_id || 'worker');
@@ -7763,24 +7763,24 @@ function harnessPlaceholderSessionFromAgent(agent, tasksById, statusOverride = '
     updated_at: agent.updated_at || agent.last_heartbeat_at || '',
     remote_host: agent.remote_host || '',
     remote_user: agent.remote_user || '',
-    harness_worker_placeholder: true,
-    harness_review_placeholder: status === 'review',
+    fleet_worker_placeholder: true,
+    fleet_review_placeholder: status === 'review',
     agent_id: agent.agent_id || '',
     current_task_id: agent.current_task_id || agent.task_id || '',
     last_message: {
-      role: 'harness',
+      role: 'fleet',
       content: agent.message || (task ? `${_currentLang === 'zh' ? '绑定 TODO' : 'Linked TODO'}: ${task.title || task.task_id}` : ''),
       timestamp: agent.updated_at || agent.last_heartbeat_at || ''
     }
   };
 }
 
-function renderHarnessTaskCard(item, linkedAgents = [], linkedSessions = [], remoteReady = true) {
+function renderFleetTaskCard(item, linkedAgents = [], linkedSessions = [], remoteReady = true) {
   const status = String(item.status || 'todo').toLowerCase();
   const linkedCount = linkedSessions.length;
-  const boundAgents = harnessUniqueAgents(linkedAgents.filter(agent => harnessWorkerSessionRef(agent)));
-  const hasReviewEvidence = harnessTaskHasReviewEvidence(item);
-  const evidenceAuthors = harnessTaskEvidenceAuthors(item);
+  const boundAgents = fleetUniqueAgents(linkedAgents.filter(agent => fleetWorkerSessionRef(agent)));
+  const hasReviewEvidence = fleetTaskHasReviewEvidence(item);
+  const evidenceAuthors = fleetTaskEvidenceAuthors(item);
   let bindingState = _currentLang === 'zh' ? '未绑定 worker' : 'no linked worker';
   if (linkedCount) {
     bindingState = `${_currentLang === 'zh' ? '绑定' : 'linked'} ${linkedCount} worker`;
@@ -7800,47 +7800,47 @@ function renderHarnessTaskCard(item, linkedAgents = [], linkedSessions = [], rem
     .map((session, index) => remoteClaudeTitle(session, index))
     .filter(Boolean);
   const missingAgentNames = !sessionNames.length
-    ? boundAgents.map(agent => `${harnessAgentLabel(agent)} · ${remoteReady ? (_currentLang === 'zh' ? 'session 不在线' : 'session offline') : (_currentLang === 'zh' ? 'session 连接中' : 'session connecting')}`)
+    ? boundAgents.map(agent => `${fleetAgentLabel(agent)} · ${remoteReady ? (_currentLang === 'zh' ? 'session 不在线' : 'session offline') : (_currentLang === 'zh' ? 'session 连接中' : 'session connecting')}`)
     : [];
   const evidenceNames = !sessionNames.length && !missingAgentNames.length && hasReviewEvidence
     ? evidenceAuthors.map(author => `${_currentLang === 'zh' ? '提交' : 'submitted by'}: ${author}`)
     : [];
   const binding = Array.from(new Set(sessionNames.concat(missingAgentNames).concat(evidenceNames))).slice(0, 3).join(' · ');
-  return `<div class="harness-card ${esc(status)}">
-    <div class="harness-card-top">
-      <div class="harness-card-title">${esc(item.title || item.task_id || 'TODO')}</div>
-      <span class="harness-pill">${esc(harnessStatusText(status))}</span>
+  return `<div class="fleet-card ${esc(status)}">
+    <div class="fleet-card-top">
+      <div class="fleet-card-title">${esc(item.title || item.task_id || 'TODO')}</div>
+      <span class="fleet-pill">${esc(fleetStatusText(status))}</span>
     </div>
-    ${meta ? `<div class="harness-meta">${esc(meta)}</div>` : ''}
-    ${binding ? `<div class="harness-meta">${esc(binding)}</div>` : ''}
-    ${item.description ? `<div class="harness-preview">${esc(item.description)}</div>` : ''}
+    ${meta ? `<div class="fleet-meta">${esc(meta)}</div>` : ''}
+    ${binding ? `<div class="fleet-meta">${esc(binding)}</div>` : ''}
+    ${item.description ? `<div class="fleet-preview">${esc(item.description)}</div>` : ''}
   </div>`;
 }
 
-function renderHarnessProjectGroup(projectId, tasks, project, agentsByTask, sessions, projectAgents = [], remoteReady = true) {
-  const collapsed = harnessCollapsedProjects.has(projectId);
+function renderFleetProjectGroup(projectId, tasks, project, agentsByTask, sessions, projectAgents = [], remoteReady = true) {
+  const collapsed = fleetCollapsedProjects.has(projectId);
   const tasksById = new Map(tasks.map(task => [task.task_id, task]));
-  const boundAgents = harnessUniqueAgents(projectAgents.filter(agent => harnessWorkerSessionRef(agent)));
-  const isSurveyPool = boundAgents.some(harnessAgentIsSurveyPool) || projectAgents.some(harnessAgentIsSurveyPool);
+  const boundAgents = fleetUniqueAgents(projectAgents.filter(agent => fleetWorkerSessionRef(agent)));
+  const isSurveyPool = boundAgents.some(fleetAgentIsSurveyPool) || projectAgents.some(fleetAgentIsSurveyPool);
   const projectTitle = isSurveyPool
     ? 'Survey pool'
     : projectId === '__unbound__'
     ? (_currentLang === 'zh' ? '未绑定 Sessions' : 'Unbound Sessions')
     : ((project && (project.title || project.name)) || projectId || 'default');
-  const remoteLabel = harnessProjectRemoteLabel(tasks, agentsByTask, sessions, projectAgents);
+  const remoteLabel = fleetProjectRemoteLabel(tasks, agentsByTask, sessions, projectAgents);
   const meta = [
     `${tasks.length} TODO`,
-    harnessWorkerCountLabel(sessions.length, boundAgents.length, remoteReady),
+    fleetWorkerCountLabel(sessions.length, boundAgents.length, remoteReady),
     remoteLabel ? `remote ${remoteLabel}` : ''
   ].filter(Boolean).join(' · ');
   const encodedProjectId = encodeURIComponent(projectId || 'default');
   const todoCards = tasks.map(task => {
-    const taskSessions = sessions.filter(session => harnessSessionTaskId(session) === task.task_id);
-    return renderHarnessTaskCard(task, agentsByTask.get(task.task_id) || [], taskSessions, remoteReady);
-  }).join('') || `<div class="harness-empty-row">${esc(_currentLang === 'zh' ? '暂无 TODO' : 'No TODO')}</div>`;
+    const taskSessions = sessions.filter(session => fleetSessionTaskId(session) === task.task_id);
+    return renderFleetTaskCard(task, agentsByTask.get(task.task_id) || [], taskSessions, remoteReady);
+  }).join('') || `<div class="fleet-empty-row">${esc(_currentLang === 'zh' ? '暂无 TODO' : 'No TODO')}</div>`;
   const boundPlaceholders = boundAgents
-    .filter(agent => !sessions.some(session => harnessAgentMatchesRemoteSession(agent, session)))
-    .map(agent => harnessPlaceholderSessionFromAgent(agent, tasksById, remoteReady ? '' : 'loading'));
+    .filter(agent => !sessions.some(session => fleetAgentMatchesRemoteSession(agent, session)))
+    .map(agent => fleetPlaceholderSessionFromAgent(agent, tasksById, remoteReady ? '' : 'loading'));
   const workerCards = sessions.concat(boundPlaceholders);
   const sessionCards = workerCards
     .slice()
@@ -7850,74 +7850,74 @@ function renderHarnessProjectGroup(projectId, tasks, project, agentsByTask, sess
       return ac.taskIndex - bc.taskIndex || String(remoteClaudeTitle(a, 0)).localeCompare(String(remoteClaudeTitle(b, 0)));
     })
     .map((session, i) => renderRemoteClaudeSessionCard(session, i))
-    .join('') || `<div class="harness-empty-row">${esc(_currentLang === 'zh' ? '暂无绑定 worker' : 'No linked worker')}</div>`;
-  return `<div class="harness-project-group${collapsed ? ' collapsed' : ''}">
-    <button type="button" class="harness-project-head" onclick="toggleHarnessProject('${esc(encodedProjectId)}')" aria-expanded="${collapsed ? 'false' : 'true'}">
+    .join('') || `<div class="fleet-empty-row">${esc(_currentLang === 'zh' ? '暂无绑定 worker' : 'No linked worker')}</div>`;
+  return `<div class="fleet-project-group${collapsed ? ' collapsed' : ''}">
+    <button type="button" class="fleet-project-head" onclick="toggleFleetProject('${esc(encodedProjectId)}')" aria-expanded="${collapsed ? 'false' : 'true'}">
       <div style="min-width:0;">
-        <div class="harness-project-name">${esc(projectTitle)}</div>
-        <div class="harness-project-meta">${esc(meta)}</div>
+        <div class="fleet-project-name">${esc(projectTitle)}</div>
+        <div class="fleet-project-meta">${esc(meta)}</div>
       </div>
-      <span class="harness-project-toggle">⌄</span>
+      <span class="fleet-project-toggle">⌄</span>
     </button>
-    <div class="harness-project-body" data-harness-project="${esc(projectId || 'default')}">
+    <div class="fleet-project-body" data-fleet-project="${esc(projectId || 'default')}">
       ${projectId && projectId !== '__unbound__' ? `
-      <div class="harness-project-actions" style="display:flex;justify-content:flex-end;padding:4px 8px;">
+      <div class="fleet-project-actions" style="display:flex;justify-content:flex-end;padding:4px 8px;">
         <button type="button"
-          onclick="deleteHarnessProject('${esc(encodedProjectId)}')"
+          onclick="deleteFleetProject('${esc(encodedProjectId)}')"
           style="background:transparent;color:#c2410c;border:1px solid #c2410c;padding:2px 8px;border-radius:4px;font-size:12px;cursor:pointer;"
           title="${esc(_currentLang === 'zh' ? '删除项目及其所有 TODO' : 'Delete project and all its TODOs')}">
           ${esc(_currentLang === 'zh' ? '删除项目' : 'Delete project')}
         </button>
       </div>` : ''}
-      <div class="harness-project-row">
-        <div class="harness-project-row-head"><span>TODO</span><span>${esc(String(tasks.length))}</span></div>
-        <div class="harness-project-row-track">${todoCards}</div>
+      <div class="fleet-project-row">
+        <div class="fleet-project-row-head"><span>TODO</span><span>${esc(String(tasks.length))}</span></div>
+        <div class="fleet-project-row-track">${todoCards}</div>
       </div>
-      <div class="harness-project-row">
-        <div class="harness-project-row-head"><span>${esc(_currentLang === 'zh' ? 'Workers' : 'Workers')}</span><span>${esc(harnessWorkerCountLabel(sessions.length, boundAgents.length, remoteReady))}</span></div>
-        <div class="harness-project-row-track">${sessionCards}</div>
+      <div class="fleet-project-row">
+        <div class="fleet-project-row-head"><span>${esc(_currentLang === 'zh' ? 'Workers' : 'Workers')}</span><span>${esc(fleetWorkerCountLabel(sessions.length, boundAgents.length, remoteReady))}</span></div>
+        <div class="fleet-project-row-track">${sessionCards}</div>
       </div>
     </div>
   </div>`;
 }
 
-function renderHarnessCard(kind, item) {
+function renderFleetCard(kind, item) {
   if (kind === 'task') {
-    return renderHarnessTaskCard(item, Array.isArray(item._agents) ? item._agents : [], []);
+    return renderFleetTaskCard(item, Array.isArray(item._agents) ? item._agents : [], []);
   }
   if (kind === 'agent') {
     const status = String(item.effective_status || item.status || 'idle').toLowerCase();
     const meta = [
       item.project_id ? `project ${item.project_id}` : '',
       item.current_task_id ? `task ${item.current_task_id}` : '',
-      `heartbeat ${harnessFormatAge(item.heartbeat_age_seconds)}`
+      `heartbeat ${fleetFormatAge(item.heartbeat_age_seconds)}`
     ].filter(Boolean).join(' · ');
-    return `<div class="harness-card ${esc(status)}">
-      <div class="harness-card-top">
-        <div class="harness-card-title">${esc(item.agent_id || 'worker')}</div>
-        <span class="harness-pill">${esc(item.needs_user ? harnessStatusText('needs_user') : harnessStatusText(status))}</span>
+    return `<div class="fleet-card ${esc(status)}">
+      <div class="fleet-card-top">
+        <div class="fleet-card-title">${esc(item.agent_id || 'worker')}</div>
+        <span class="fleet-pill">${esc(item.needs_user ? fleetStatusText('needs_user') : fleetStatusText(status))}</span>
       </div>
-      <div class="harness-meta">${esc(meta)}</div>
-      ${item.message ? `<div class="harness-preview">${esc(item.message)}</div>` : ''}
+      <div class="fleet-meta">${esc(meta)}</div>
+      ${item.message ? `<div class="fleet-preview">${esc(item.message)}</div>` : ''}
     </div>`;
   }
   const status = String(item.status || '').toLowerCase();
   const meta = [item.task_id ? `task ${item.task_id}` : '', item.agent_id ? `agent ${item.agent_id}` : ''].filter(Boolean).join(' · ');
-  return `<div class="harness-card ${esc(status)}">
-    <div class="harness-card-top">
-      <div class="harness-card-title">${esc(item.run_id || 'verified run')}</div>
-      <span class="harness-pill">${esc(harnessStatusText(item.verifier && item.verifier.status === 'passed' ? 'verified' : status))}</span>
+  return `<div class="fleet-card ${esc(status)}">
+    <div class="fleet-card-top">
+      <div class="fleet-card-title">${esc(item.run_id || 'verified run')}</div>
+      <span class="fleet-pill">${esc(fleetStatusText(item.verifier && item.verifier.status === 'passed' ? 'verified' : status))}</span>
     </div>
-    ${meta ? `<div class="harness-meta">${esc(meta)}</div>` : ''}
-    ${item.summary || item.command ? `<div class="harness-preview">${esc(item.summary || item.command)}</div>` : ''}
+    ${meta ? `<div class="fleet-meta">${esc(meta)}</div>` : ''}
+    ${item.summary || item.command ? `<div class="fleet-preview">${esc(item.summary || item.command)}</div>` : ''}
   </div>`;
 }
 
-function renderHarnessState(payload) {
-  const grid = document.getElementById('harness-grid');
-  const statusEl = document.getElementById('harness-status');
+function renderFleetState(payload) {
+  const grid = document.getElementById('fleet-grid');
+  const statusEl = document.getElementById('fleet-status');
   if (!grid || !statusEl) return;
-  harnessState = payload;
+  fleetState = payload;
   const ok = payload && payload.ok !== false;
   const tasks = Array.isArray(payload && payload.tasks) ? payload.tasks : [];
   const agents = Array.isArray(payload && payload.agents) ? payload.agents : [];
@@ -7927,38 +7927,38 @@ function renderHarnessState(payload) {
     if (project && project.project_id) projectsById.set(project.project_id, project);
   });
   if (!ok) {
-    statusEl.textContent = (payload && payload.error) || (_currentLang === 'zh' ? 'Harness 不可用' : 'Harness unavailable');
-    grid.innerHTML = `<div class="harness-card error"><div class="harness-preview">${esc(statusEl.textContent)}</div></div>`;
+    statusEl.textContent = (payload && payload.error) || (_currentLang === 'zh' ? 'Fleet 不可用' : 'Fleet unavailable');
+    grid.innerHTML = `<div class="fleet-card error"><div class="fleet-preview">${esc(statusEl.textContent)}</div></div>`;
     return;
   }
   const openTasks = tasks
     .filter(t => String(t.status || '').toLowerCase() !== 'done')
-    .sort((a, b) => harnessTaskRank(a) - harnessTaskRank(b));
+    .sort((a, b) => fleetTaskRank(a) - fleetTaskRank(b));
   const openTaskIds = new Set(openTasks.map(task => task.task_id).filter(Boolean));
   const openTaskStatusById = new Map(openTasks.map(task => [task.task_id, String(task.status || '').toLowerCase()]));
-  const visibleWorkers = agents.filter(agent => isHarnessVisibleWorker(agent, openTaskIds, projectsById));
-  const sessionRefWorkers = agents.filter(agent => isHarnessSessionBackedWorker(agent, openTaskIds, projectsById));
+  const visibleWorkers = agents.filter(agent => isFleetVisibleWorker(agent, openTaskIds, projectsById));
+  const sessionRefWorkers = agents.filter(agent => isFleetSessionBackedWorker(agent, openTaskIds, projectsById));
   const remotePayload = remoteClaudePayload || window.__lastRemoteClaudePayload || {};
   const remoteReady = remoteClaudeLoaded || !!(remotePayload && (Array.isArray(remotePayload.sessions) || Array.isArray(remotePayload.remotes)));
   const remotes = Array.isArray(remotePayload && remotePayload.remotes) ? remotePayload.remotes : [];
   const liveSessions = Array.isArray(remotePayload && remotePayload.sessions) ? remotePayload.sessions : remoteClaudeSessions;
   const realLiveSessions = liveSessions.filter(session => (
-    session && !session.harness_review_placeholder && !session.harness_worker_placeholder
+    session && !session.fleet_review_placeholder && !session.fleet_worker_placeholder
   ));
   const pairedEntries = [];
   const pairedKeys = new Set();
   realLiveSessions.forEach(session => {
     const linked = remoteClaudeLinkedContext(session);
     const agent = linked.agent;
-    if (!agent || !isHarnessVisibleWorker(agent, openTaskIds, projectsById) || !harnessAgentMatchesRemoteSession(agent, session)) return;
-    const key = remoteClaudeSessionKey(session) || harnessWorkerSessionRef(agent);
+    if (!agent || !isFleetVisibleWorker(agent, openTaskIds, projectsById) || !fleetAgentMatchesRemoteSession(agent, session)) return;
+    const key = remoteClaudeSessionKey(session) || fleetWorkerSessionRef(agent);
     if (key && pairedKeys.has(key)) return;
     if (key) pairedKeys.add(key);
     pairedEntries.push({ session, agent });
   });
   const pairedWorkers = pairedEntries.map(entry => entry.agent);
   const pairedSessions = pairedEntries.map(entry => entry.session);
-  const boundWorkerCount = harnessUniqueAgents(sessionRefWorkers).length;
+  const boundWorkerCount = fleetUniqueAgents(sessionRefWorkers).length;
   const needsUser = pairedWorkers.filter(a => a && a.needs_user).length;
   const stale = pairedWorkers.filter(a => {
     if (!a || !a.stale) return false;
@@ -7968,7 +7968,7 @@ function renderHarnessState(payload) {
     return taskStatus !== 'review' && agentStatus !== 'review';
   }).length;
   const workerCount = pairedSessions.length;
-  const projectIdsWithRows = new Set(pairedSessions.map(session => harnessSessionProjectId(session)));
+  const projectIdsWithRows = new Set(pairedSessions.map(session => fleetSessionProjectId(session)));
   sessionRefWorkers.forEach(agent => {
     if (agent && agent.project_id) projectIdsWithRows.add(agent.project_id);
   });
@@ -7978,8 +7978,8 @@ function renderHarnessState(payload) {
   const displayedOpenTasks = openTasks.filter(task => projectIdsWithRows.has(task.project_id || 'default'));
   const okRemoteCount = remotes.filter(item => item && item.ok).length;
   statusEl.textContent = _currentLang === 'zh'
-    ? `${projectIdsWithRows.size} 项目 · ${displayedOpenTasks.length} TODO · ${harnessWorkerCountLabel(workerCount, boundWorkerCount, remoteReady)} · ${needsUser} 等用户 · ${remoteReady ? stale : 0} 失联${remoteReady && remotes.length ? ` · ${okRemoteCount || remotes.length}/${remotes.length} 电脑可达` : remoteClaudeLoading ? ' · 正在连接远端' : ''}`
-    : `${projectIdsWithRows.size} projects · ${displayedOpenTasks.length} TODO · ${harnessWorkerCountLabel(workerCount, boundWorkerCount, remoteReady)} · ${needsUser} needs user · ${remoteReady ? stale : 0} stale${remoteReady && remotes.length ? ` · ${okRemoteCount || remotes.length}/${remotes.length} computers` : remoteClaudeLoading ? ' · connecting remotes' : ''}`;
+    ? `${projectIdsWithRows.size} 项目 · ${displayedOpenTasks.length} TODO · ${fleetWorkerCountLabel(workerCount, boundWorkerCount, remoteReady)} · ${needsUser} 等用户 · ${remoteReady ? stale : 0} 失联${remoteReady && remotes.length ? ` · ${okRemoteCount || remotes.length}/${remotes.length} 电脑可达` : remoteClaudeLoading ? ' · 正在连接远端' : ''}`
+    : `${projectIdsWithRows.size} projects · ${displayedOpenTasks.length} TODO · ${fleetWorkerCountLabel(workerCount, boundWorkerCount, remoteReady)} · ${needsUser} needs user · ${remoteReady ? stale : 0} stale${remoteReady && remotes.length ? ` · ${okRemoteCount || remotes.length}/${remotes.length} computers` : remoteClaudeLoading ? ' · connecting remotes' : ''}`;
   const cards = [];
   const agentsByTask = new Map();
   sessionRefWorkers.forEach(agent => {
@@ -7996,57 +7996,57 @@ function renderHarnessState(payload) {
   };
   sessionRefWorkers.forEach(agent => {
     const row = ensureProjectRow(agent.project_id || 'default');
-    if (!row.agents.some(item => harnessWorkerSessionRef(item) === harnessWorkerSessionRef(agent))) row.agents.push(agent);
+    if (!row.agents.some(item => fleetWorkerSessionRef(item) === fleetWorkerSessionRef(agent))) row.agents.push(agent);
   });
   displayedOpenTasks.forEach(task => {
     const projectId = task.project_id || 'default';
     ensureProjectRow(projectId).tasks.push(task);
   });
   pairedSessions.forEach(session => {
-    ensureProjectRow(harnessSessionProjectId(session)).sessions.push(session);
+    ensureProjectRow(fleetSessionProjectId(session)).sessions.push(session);
   });
   Array.from(projectRows.entries())
     .sort((a, b) => {
-      const rankA = a[1].tasks.length ? Math.min(...a[1].tasks.map(harnessTaskRank)) : 6;
-      const rankB = b[1].tasks.length ? Math.min(...b[1].tasks.map(harnessTaskRank)) : 6;
+      const rankA = a[1].tasks.length ? Math.min(...a[1].tasks.map(fleetTaskRank)) : 6;
+      const rankB = b[1].tasks.length ? Math.min(...b[1].tasks.map(fleetTaskRank)) : 6;
       return rankA - rankB || String(a[0]).localeCompare(String(b[0]));
     })
     .forEach(([projectId, row]) => {
-      cards.push(renderHarnessProjectGroup(projectId, row.tasks, projectsById.get(projectId), agentsByTask, row.sessions, row.agents, remoteReady));
+      cards.push(renderFleetProjectGroup(projectId, row.tasks, projectsById.get(projectId), agentsByTask, row.sessions, row.agents, remoteReady));
     });
   if (!cards.length) {
-    cards.push(`<div class="harness-card"><div class="harness-preview">${esc(_currentLang === 'zh' ? '暂无项目 TODO 或 worker session。' : 'No project TODO or worker session yet.')}</div></div>`);
+    cards.push(`<div class="fleet-card"><div class="fleet-preview">${esc(_currentLang === 'zh' ? '暂无项目 TODO 或 worker session。' : 'No project TODO or worker session yet.')}</div></div>`);
   }
   grid.innerHTML = cards.join('');
-  grid.querySelectorAll('.harness-project-row-track').forEach(bindHorizontalWheelScroll);
+  grid.querySelectorAll('.fleet-project-row-track').forEach(bindHorizontalWheelScroll);
 }
 
-async function refreshHarnessState(showToast = false) {
-  if (harnessLoading) return;
-  const btn = document.getElementById('harness-refresh');
-  harnessLoading = true;
+async function refreshFleetState(showToast = false) {
+  if (fleetLoading) return;
+  const btn = document.getElementById('fleet-refresh');
+  fleetLoading = true;
   if (btn) btn.disabled = true;
   try {
-    const data = await api('GET', '/proxy_harness_state');
-    harnessState = data;
-    renderHarnessState(data);
-    if (showToast) toast(_currentLang === 'zh' ? 'Harness 已刷新' : 'Harness refreshed', 1600);
+    const data = await api('GET', '/proxy_fleet_state');
+    fleetState = data;
+    renderFleetState(data);
+    if (showToast) toast(_currentLang === 'zh' ? 'Fleet 已刷新' : 'Fleet refreshed', 1600);
   } catch (e) {
-    renderHarnessState({ ok: false, error: e.message, tasks: [], agents: [], runs: [] });
+    renderFleetState({ ok: false, error: e.message, tasks: [], agents: [], runs: [] });
     if (showToast) toast(e.message, 3000);
   } finally {
-    harnessLoading = false;
+    fleetLoading = false;
     if (btn) btn.disabled = false;
   }
 }
 
-async function createHarnessTodo() {
+async function createFleetTodo() {
   const title = prompt(_currentLang === 'zh' ? 'TODO 标题' : 'TODO title');
   if (!title || !title.trim()) return;
   const projectId = prompt(_currentLang === 'zh' ? '项目 ID（默认 default）' : 'Project ID (default)') || 'default';
   const taskId = `task_${Date.now().toString(36)}`;
   try {
-    await api('POST', '/proxy_harness_event', {
+    await api('POST', '/proxy_fleet_event', {
       action: 'task_upsert',
       project_id: projectId.trim() || 'default',
       task_id: taskId,
@@ -8060,13 +8060,13 @@ async function createHarnessTodo() {
   }
 }
 
-const HARNESS_HIDDEN_LS_KEY = 'clawcross.harness.hidden';
+const FLEET_HIDDEN_LS_KEY = 'clawcross.fleet.hidden';
 
-function applyHarnessVisibility() {
-  const sec = document.getElementById('harness-section');
+function applyFleetVisibility() {
+  const sec = document.getElementById('fleet-section');
   const label = document.getElementById('cross-device-menu-label');
   if (!sec) return;
-  const hidden = localStorage.getItem(HARNESS_HIDDEN_LS_KEY) === '1';
+  const hidden = localStorage.getItem(FLEET_HIDDEN_LS_KEY) === '1';
   sec.style.display = hidden ? 'none' : '';
   if (label) {
     label.textContent = hidden
@@ -8075,16 +8075,16 @@ function applyHarnessVisibility() {
   }
 }
 
-function toggleHarnessVisible() {
-  const hidden = localStorage.getItem(HARNESS_HIDDEN_LS_KEY) === '1';
-  localStorage.setItem(HARNESS_HIDDEN_LS_KEY, hidden ? '0' : '1');
-  applyHarnessVisibility();
+function toggleFleetVisible() {
+  const hidden = localStorage.getItem(FLEET_HIDDEN_LS_KEY) === '1';
+  localStorage.setItem(FLEET_HIDDEN_LS_KEY, hidden ? '0' : '1');
+  applyFleetVisibility();
 }
 
 // run once at script load — section is in DOM by then
-try { applyHarnessVisibility(); } catch (_) {}
+try { applyFleetVisibility(); } catch (_) {}
 
-async function deleteHarnessProject(encodedProjectId) {
+async function deleteFleetProject(encodedProjectId) {
   const projectId = decodeURIComponent(String(encodedProjectId || ''));
   if (!projectId || projectId === '__unbound__') return;
   const confirmMsg = _currentLang === 'zh'
@@ -8092,7 +8092,7 @@ async function deleteHarnessProject(encodedProjectId) {
     : `Delete project "${projectId}" and all its TODOs? This is irreversible.`;
   if (!confirm(confirmMsg)) return;
   try {
-    await api('POST', '/proxy_harness_event', {
+    await api('POST', '/proxy_fleet_event', {
       action: 'project_delete',
       project_id: projectId,
     });
@@ -8198,8 +8198,8 @@ function remoteClaudeEquivalentKeys(value) {
 
 function remoteClaudeLinkedContext(session) {
   const keys = new Set(remoteClaudeSessionKeys(session).flatMap(remoteClaudeEquivalentKeys));
-  const agents = Array.isArray(harnessState && harnessState.agents) ? harnessState.agents : [];
-  const tasks = Array.isArray(harnessState && harnessState.tasks) ? harnessState.tasks : [];
+  const agents = Array.isArray(fleetState && fleetState.agents) ? fleetState.agents : [];
+  const tasks = Array.isArray(fleetState && fleetState.tasks) ? fleetState.tasks : [];
   const agent = agents.find(item => {
     if (!item || !item.session_ref) return false;
     return remoteClaudeEquivalentKeys(item.session_ref).some(key => keys.has(key));
@@ -8227,17 +8227,17 @@ function renderRemoteClaudeSessionCard(session, index) {
   const cwd = session.cwd || '';
   const time = remoteClaudeFormatTime(session.updated_at);
   const linked = remoteClaudeLinkedContext(session);
-  const harnessStatus = linked.agent ? String(linked.agent.effective_status || linked.agent.status || '').toLowerCase() : '';
+  const fleetStatus = linked.agent ? String(linked.agent.effective_status || linked.agent.status || '').toLowerCase() : '';
   const taskStatus = linked.task ? String(linked.task.status || '').toLowerCase() : '';
   const liveStatus = String(session.status || '').toLowerCase();
-  const reviewOnly = !!session.harness_review_placeholder;
-  const placeholderOnly = reviewOnly || !!session.harness_worker_placeholder || !key;
-  const status = reviewOnly ? 'review' : (liveStatus || harnessStatus || taskStatus || 'idle');
+  const reviewOnly = !!session.fleet_review_placeholder;
+  const placeholderOnly = reviewOnly || !!session.fleet_worker_placeholder || !key;
+  const status = reviewOnly ? 'review' : (liveStatus || fleetStatus || taskStatus || 'idle');
   const linkedLine = linked.task
-    ? `${_currentLang === 'zh' ? '绑定 TODO' : 'Linked TODO'}: ${linked.task.title || linked.task.task_id}${taskStatus ? ' · ' + harnessStatusText(taskStatus) : ''}`
+    ? `${_currentLang === 'zh' ? '绑定 TODO' : 'Linked TODO'}: ${linked.task.title || linked.task.task_id}${taskStatus ? ' · ' + fleetStatusText(taskStatus) : ''}`
     : '';
   const reviewLine = reviewOnly ? (_currentLang === 'zh' ? '等待审查，不自动清理' : 'Waiting for review, not auto-cleaned') : '';
-  const unmanagedLine = (!linked.agent && !reviewOnly && !session.harness_worker_placeholder)
+  const unmanagedLine = (!linked.agent && !reviewOnly && !session.fleet_worker_placeholder)
     ? (_currentLang === 'zh' ? '未接管：不会自动分配 TODO 或自动发送' : 'Unmanaged: no automatic TODO assignment or messages')
     : '';
   const attrs = placeholderOnly
@@ -8313,7 +8313,7 @@ function renderRemoteClaudeSessions(payload) {
   const sessions = Array.isArray(payload && payload.sessions) ? payload.sessions : [];
   const remotes = Array.isArray(payload && payload.remotes) ? payload.remotes : [];
   remoteClaudeSessions = sessions;
-  if (harnessState) renderHarnessState(harnessState);
+  if (fleetState) renderFleetState(fleetState);
   const grid = document.getElementById('remote-claude-grid');
   const statusEl = document.getElementById('remote-claude-status');
   if (!grid || !statusEl) return;
@@ -8385,7 +8385,7 @@ async function refreshRemoteClaudeSessions(showToast = false) {
   const statusEl = document.getElementById('remote-claude-status');
   if (btn) btn.disabled = true;
   remoteClaudeLoading = true;
-  if (harnessState) renderHarnessState(harnessState);
+  if (fleetState) renderFleetState(fleetState);
   if (statusEl) statusEl.textContent = _currentLang === 'zh' ? '正在连接远端 Claude agents...' : 'Connecting remote Claude agents...';
   try {
     const data = await api('GET', '/proxy_remote_claude_sessions?limit=24');
@@ -8405,11 +8405,11 @@ async function refreshRemoteClaudeSessions(showToast = false) {
 }
 
 async function refreshAgentOps(showToast = false) {
-  const btn = document.getElementById('harness-refresh');
+  const btn = document.getElementById('fleet-refresh');
   if (btn) btn.disabled = true;
   try {
     await Promise.all([
-      refreshHarnessState(false),
+      refreshFleetState(false),
       refreshRemoteClaudeSessions(false)
     ]);
     if (showToast) toast(_currentLang === 'zh' ? '项目状态已刷新' : 'Project state refreshed', 1600);
@@ -12398,7 +12398,7 @@ function openClawcrossCreator() {
 }
 
 // ── Mobile Channel Settings ──
-const MOBILE_CHATBOT_CHANNEL_FALLBACKS = [
+const MOBILE_CHANNEL_FALLBACKS = [
   { id: 'telegram', label: 'Telegram', kind: 'nonebot', adapter: 'telegram', env_key: 'TELEGRAM_BOTS' },
   { id: 'qq', label: 'QQ', kind: 'nonebot', adapter: 'qq', env_key: 'QQ_BOTS' },
   { id: 'onebotv11', label: 'OneBot V11', kind: 'nonebot', adapter: 'onebot.v11', env_key: '', requires_config: false },
@@ -12417,11 +12417,11 @@ const MOBILE_CHATBOT_CHANNEL_FALLBACKS = [
   { id: 'weclaw', label: '微信 / WeClaw', kind: 'weclaw', adapter: 'weclaw', env_key: '' },
   { id: 'webhook', label: 'Custom Webhook', kind: 'webhook', adapter: 'webhook', env_key: '' },
 ];
-const MOBILE_CHATBOT_COMMON_KEYS = ['NONEBOT_ADAPTERS', 'NONEBOT_HOST', 'NONEBOT_PORT', 'WHITELIST_FILE'];
-const MOBILE_CHATBOT_WECLAW_KEYS = ['WECLAW_ENABLED', 'WECLAW_USERNAME', 'WECLAW_BIN', 'WECLAW_CONFIG', 'WECLAW_PROXY_HOST', 'WECLAW_PROXY_PORT', 'WECLAW_AUTO_INSTALL'];
-const MOBILE_CHATBOT_WEBHOOK_KEYS = ['WEBHOOK_WEBHOOK_URL', 'WEBHOOK_WEBHOOK_SECRET', 'WEBHOOK_REPLY_URL', 'WEBHOOK_DEFAULT_ALLOW'];
-const MOBILE_CHATBOT_CHANNEL_CONFIG = {};
-const MOBILE_CHATBOT_DEFAULTS = {
+const MOBILE_CHANNEL_COMMON_KEYS = ['NONEBOT_ADAPTERS', 'NONEBOT_HOST', 'NONEBOT_PORT', 'WHITELIST_FILE'];
+const MOBILE_CHANNEL_WECLAW_KEYS = ['WECLAW_ENABLED', 'WECLAW_USERNAME', 'WECLAW_BIN', 'WECLAW_CONFIG', 'WECLAW_PROXY_HOST', 'WECLAW_PROXY_PORT', 'WECLAW_AUTO_INSTALL'];
+const MOBILE_CHANNEL_WEBHOOK_KEYS = ['WEBHOOK_WEBHOOK_URL', 'WEBHOOK_WEBHOOK_SECRET', 'WEBHOOK_REPLY_URL', 'WEBHOOK_DEFAULT_ALLOW'];
+const MOBILE_CHANNEL_CONFIG = {};
+const MOBILE_CHANNEL_DEFAULTS = {
   NONEBOT_HOST: '127.0.0.1',
   NONEBOT_PORT: '8120',
   WHITELIST_FILE: '',
@@ -12435,40 +12435,40 @@ const MOBILE_CHATBOT_DEFAULTS = {
   WECLAW_PROXY_PORT: '51298',
   WECLAW_AUTO_INSTALL: 'true',
 };
-const MOBILE_CHATBOT_TEXTAREA_KEYS = new Set();
-const MOBILE_CHATBOT_JSON_KEYS = new Set();
-let mobileChatbotChannel = 'telegram';
-let mobileChatbotSettings = {};
-let mobileChatbotWhitelist = {};
-let mobileChatbotChannels = [...MOBILE_CHATBOT_CHANNEL_FALLBACKS];
+const MOBILE_CHANNEL_TEXTAREA_KEYS = new Set();
+const MOBILE_CHANNEL_JSON_KEYS = new Set();
+let mobileChannel = 'telegram';
+let mobileChannelSettings = {};
+let mobileChannelWhitelist = {};
+let mobileChannels = [...MOBILE_CHANNEL_FALLBACKS];
 let mobileWeClawQrRetryTimer = null;
 let mobileWeClawQrLoading = false;
 
-function mobileChatbotStatus(text, isError = false) {
-  const el = document.getElementById('mobile-chatbot-config-status');
+function mobileChannelStatus(text, isError = false) {
+  const el = document.getElementById('mobile-channel-config-status');
   if (!el) return;
   el.textContent = text || '';
   el.style.color = isError ? '#ef4444' : 'var(--text-secondary)';
 }
 
-function showMobileChatbotConfig() {
-  document.getElementById('mobile-chatbot-config').classList.add('show');
-  document.getElementById('mobile-chatbot-config-overlay').classList.add('show');
-  renderMobileChatbotChannelPicker();
-  loadMobileChatbotConfig();
+function showMobileChannelConfig() {
+  document.getElementById('mobile-channel-config').classList.add('show');
+  document.getElementById('mobile-channel-config-overlay').classList.add('show');
+  renderMobileChannelPicker();
+  loadMobileChannelConfig();
 }
 
-function closeMobileChatbotConfig() {
-  document.getElementById('mobile-chatbot-config').classList.remove('show');
-  document.getElementById('mobile-chatbot-config-overlay').classList.remove('show');
+function closeMobileChannelConfig() {
+  document.getElementById('mobile-channel-config').classList.remove('show');
+  document.getElementById('mobile-channel-config-overlay').classList.remove('show');
 }
 
-async function loadMobileChatbotConfig() {
-  mobileChatbotStatus('加载中...');
+async function loadMobileChannelConfig() {
+  mobileChannelStatus('加载中...');
   try {
     const [settingsResp, whitelistResp] = await Promise.all([
       fetch('/proxy_settings_full'),
-      fetch('/proxy_chatbot_whitelist'),
+      fetch('/proxy_channel_whitelist'),
     ]);
     const settingsData = await settingsResp.json();
     const whitelistData = await whitelistResp.json();
@@ -12478,24 +12478,24 @@ async function loadMobileChatbotConfig() {
     if (!whitelistResp.ok || whitelistData.error || !whitelistData.whitelist) {
       throw new Error(whitelistData.error || `whitelist HTTP ${whitelistResp.status}`);
     }
-    mobileChatbotSettings = settingsData.settings || {};
-    mobileChatbotSettings.__original = { ...mobileChatbotSettings };
-    mobileChatbotChannels = normalizeMobileChatbotChannels(whitelistData.available_channels || MOBILE_CHATBOT_CHANNEL_FALLBACKS, whitelistData.whitelist || {});
-    if (!mobileChatbotChannels.some(ch => ch.id === mobileChatbotChannel)) {
-      mobileChatbotChannel = mobileChatbotChannels[0]?.id || 'telegram';
+    mobileChannelSettings = settingsData.settings || {};
+    mobileChannelSettings.__original = { ...mobileChannelSettings };
+    mobileChannels = normalizeMobileChannels(whitelistData.available_channels || MOBILE_CHANNEL_FALLBACKS, whitelistData.whitelist || {});
+    if (!mobileChannels.some(ch => ch.id === mobileChannel)) {
+      mobileChannel = mobileChannels[0]?.id || 'telegram';
     }
-    mobileChatbotWhitelist = normalizeMobileChatbotWhitelist(whitelistData.whitelist || {});
-    renderMobileChatbotChannelPicker();
-    renderMobileChatbotConfig();
-    mobileChatbotStatus(whitelistData.path ? `白名单文件：${whitelistData.path}` : '');
+    mobileChannelWhitelist = normalizeMobileChannelWhitelist(whitelistData.whitelist || {});
+    renderMobileChannelPicker();
+    renderMobileChannelConfig();
+    mobileChannelStatus(whitelistData.path ? `白名单文件：${whitelistData.path}` : '');
   } catch (e) {
-    mobileChatbotStatus('加载失败: ' + e.message, true);
+    mobileChannelStatus('加载失败: ' + e.message, true);
   }
 }
 
-function normalizeMobileChatbotChannels(rawChannels, whitelist) {
+function normalizeMobileChannels(rawChannels, whitelist) {
   const byId = new Map();
-  const source = Array.isArray(rawChannels) ? rawChannels : MOBILE_CHATBOT_CHANNEL_FALLBACKS;
+  const source = Array.isArray(rawChannels) ? rawChannels : MOBILE_CHANNEL_FALLBACKS;
   source.forEach(ch => {
     if (!ch || !ch.id) return;
     byId.set(ch.id, {
@@ -12521,7 +12521,7 @@ function normalizeMobileChatbotChannels(rawChannels, whitelist) {
   return Array.from(byId.values());
 }
 
-function normalizeMobileChatbotWhitelist(raw) {
+function normalizeMobileChannelWhitelist(raw) {
   const out = {};
   Object.entries(raw || {}).forEach(([id, section]) => {
     const safeSection = (section && typeof section === 'object') ? section : {};
@@ -12530,7 +12530,7 @@ function normalizeMobileChatbotWhitelist(raw) {
       name_map: (safeSection.name_map && typeof safeSection.name_map === 'object') ? safeSection.name_map : {},
     };
   });
-  for (const channel of mobileChatbotChannels) {
+  for (const channel of mobileChannels) {
     const section = out[channel.id] || {};
     out[channel.id] = {
       entries: (section.entries && typeof section.entries === 'object') ? section.entries : {},
@@ -12540,40 +12540,40 @@ function normalizeMobileChatbotWhitelist(raw) {
   return out;
 }
 
-function renderMobileChatbotChannelPicker() {
-  const select = document.getElementById('mobile-chatbot-channel-select');
+function renderMobileChannelPicker() {
+  const select = document.getElementById('mobile-channel-select');
   if (!select) return;
-  select.innerHTML = mobileChatbotChannels.map(ch =>
-    `<option value="${escapeHtml(ch.id)}" ${ch.id === mobileChatbotChannel ? 'selected' : ''}>${escapeHtml(ch.label)}</option>`
+  select.innerHTML = mobileChannels.map(ch =>
+    `<option value="${escapeHtml(ch.id)}" ${ch.id === mobileChannel ? 'selected' : ''}>${escapeHtml(ch.label)}</option>`
   ).join('');
-  renderMobileChatbotChannelSummary();
+  renderMobileChannelSummary();
 }
 
-function switchMobileChatbotChannel(channel) {
-  collectMobileChatbotConfigFromDom();
-  mobileChatbotChannel = channel;
-  renderMobileChatbotChannelPicker();
-  renderMobileChatbotConfig();
+function switchMobileChannel(channel) {
+  collectMobileChannelConfigFromDom();
+  mobileChannel = channel;
+  renderMobileChannelPicker();
+  renderMobileChannelConfig();
 }
 
-function renderMobileChatbotConfig() {
-  const channel = getMobileChatbotChannel();
-  renderMobileChatbotSettings('mobile-chatbot-channel-settings', getMobileChatbotChannelKeys(channel));
-  renderMobileChatbotSettings('mobile-chatbot-common-settings', MOBILE_CHATBOT_COMMON_KEYS);
-  const help = document.getElementById('mobile-chatbot-channel-help');
-  if (help) help.innerHTML = getMobileChatbotChannelHelp(channel);
+function renderMobileChannelConfig() {
+  const channel = getMobileChannel();
+  renderMobileChannelSettings('mobile-channel-settings', getMobileChannelKeys(channel));
+  renderMobileChannelSettings('mobile-channel-common-settings', MOBILE_CHANNEL_COMMON_KEYS);
+  const help = document.getElementById('mobile-channel-help');
+  if (help) help.innerHTML = getMobileChannelHelp(channel);
   renderMobileWeClawLoginPanel(channel);
-  renderMobileChatbotChannelSummary();
-  renderMobileChatbotWhitelistRows();
+  renderMobileChannelSummary();
+  renderMobileChannelWhitelistRows();
 }
 
-function getMobileChatbotChannel() {
-  return mobileChatbotChannels.find(ch => ch.id === mobileChatbotChannel) || mobileChatbotChannels[0] || MOBILE_CHATBOT_CHANNEL_FALLBACKS[0];
+function getMobileChannel() {
+  return mobileChannels.find(ch => ch.id === mobileChannel) || mobileChannels[0] || MOBILE_CHANNEL_FALLBACKS[0];
 }
 
-function getMobileChatbotChannelConfig(channel) {
+function getMobileChannelConfig(channel) {
   if (!channel) return {};
-  const fallback = MOBILE_CHATBOT_CHANNEL_CONFIG[channel.id] || MOBILE_CHATBOT_CHANNEL_CONFIG[channel.adapter] || {};
+  const fallback = MOBILE_CHANNEL_CONFIG[channel.id] || MOBILE_CHANNEL_CONFIG[channel.adapter] || {};
   return {
     ...fallback,
     ...channel,
@@ -12583,38 +12583,38 @@ function getMobileChatbotChannelConfig(channel) {
   };
 }
 
-function getMobileChatbotChannelKeys(channel) {
+function getMobileChannelKeys(channel) {
   if (!channel) return [];
-  const config = getMobileChatbotChannelConfig(channel);
+  const config = getMobileChannelConfig(channel);
   if (Array.isArray(config.fields) && config.fields.length) {
     if (channel.env_key && config.fields.some(field => (field.target || 'bot') !== 'env')) {
-      MOBILE_CHATBOT_TEXTAREA_KEYS.add(channel.env_key);
-      MOBILE_CHATBOT_JSON_KEYS.add(channel.env_key);
+      MOBILE_CHANNEL_TEXTAREA_KEYS.add(channel.env_key);
+      MOBILE_CHANNEL_JSON_KEYS.add(channel.env_key);
     }
-    return config.fields.map(field => getMobileChatbotInputKey(channel, field)).filter(Boolean);
+    return config.fields.map(field => getMobileChannelInputKey(channel, field)).filter(Boolean);
   }
   if (Array.isArray(config.keys) && config.keys.length) {
     config.keys.forEach(key => {
       if (key.endsWith('_BOTS')) {
-        MOBILE_CHATBOT_TEXTAREA_KEYS.add(key);
-        MOBILE_CHATBOT_JSON_KEYS.add(key);
+        MOBILE_CHANNEL_TEXTAREA_KEYS.add(key);
+        MOBILE_CHANNEL_JSON_KEYS.add(key);
       }
     });
     return config.keys;
   }
-  if (channel.kind === 'weclaw') return MOBILE_CHATBOT_WECLAW_KEYS;
-  if (channel.kind === 'webhook') return MOBILE_CHATBOT_WEBHOOK_KEYS;
+  if (channel.kind === 'weclaw') return MOBILE_CHANNEL_WECLAW_KEYS;
+  if (channel.kind === 'webhook') return MOBILE_CHANNEL_WEBHOOK_KEYS;
   if (channel.env_key) {
-    MOBILE_CHATBOT_TEXTAREA_KEYS.add(channel.env_key);
-    MOBILE_CHATBOT_JSON_KEYS.add(channel.env_key);
+    MOBILE_CHANNEL_TEXTAREA_KEYS.add(channel.env_key);
+    MOBILE_CHANNEL_JSON_KEYS.add(channel.env_key);
     return [channel.env_key];
   }
   return [];
 }
 
-function getMobileChatbotChannelHelp(channel) {
+function getMobileChannelHelp(channel) {
   if (!channel) return '';
-  const config = getMobileChatbotChannelConfig(channel);
+  const config = getMobileChannelConfig(channel);
   if (config.help) return escapeHtml(config.help);
   if (channel.kind === 'weclaw') {
     return '微信渠道使用 WeClaw，不走 NoneBot adapter，也不需要平台 token。保存时会设置 WECLAW_ENABLED=true；重启后 ClawCross 启动 weclaw 子进程，本地 proxy 默认监听 127.0.0.1:51298。若 WeClaw 已加载已有微信会话，二维码不会重新生成。';
@@ -12629,10 +12629,10 @@ function getMobileChatbotChannelHelp(channel) {
   return `NoneBot 渠道需要两步：1) 在 NONEBOT_ADAPTERS 加入 ${escapeHtml(channel.adapter || channel.id)}；2) 在 ${escapeHtml(envKey)} 填该渠道 bot JSON 数组。还需要安装对应 nonebot-adapter 包。`;
 }
 
-function renderMobileChatbotChannelSummary() {
-  const el = document.getElementById('mobile-chatbot-channel-summary');
+function renderMobileChannelSummary() {
+  const el = document.getElementById('mobile-channel-summary');
   if (!el) return;
-  const channel = getMobileChatbotChannel();
+  const channel = getMobileChannel();
   if (!channel) {
     el.innerHTML = '';
     return;
@@ -12643,12 +12643,12 @@ function renderMobileChatbotChannelSummary() {
   if (channel.env_key) lines.push(`连接配置：${channel.env_key}`);
   if (channel.kind === 'nonebot' && channel.requires_config === false && !channel.env_key) lines.push('连接配置：adapter / env-only');
   if (channel.kind === 'weclaw') {
-    const enabled = String(mobileChatbotSettings.WECLAW_ENABLED || '').toLowerCase();
+    const enabled = String(mobileChannelSettings.WECLAW_ENABLED || '').toLowerCase();
     lines.push(`状态：${enabled === 'true' ? '已启用（重启后生效）' : '未启用'}`);
-    lines.push(`proxy：${mobileChatbotSettings.WECLAW_PROXY_HOST || MOBILE_CHATBOT_DEFAULTS.WECLAW_PROXY_HOST}:${mobileChatbotSettings.WECLAW_PROXY_PORT || MOBILE_CHATBOT_DEFAULTS.WECLAW_PROXY_PORT}`);
+    lines.push(`proxy：${mobileChannelSettings.WECLAW_PROXY_HOST || MOBILE_CHANNEL_DEFAULTS.WECLAW_PROXY_HOST}:${mobileChannelSettings.WECLAW_PROXY_PORT || MOBILE_CHANNEL_DEFAULTS.WECLAW_PROXY_PORT}`);
   }
   if (channel.kind === 'nonebot') lines.push('白名单 channel 使用下方选择值；运行时按渠道 user_id 或 username 匹配。');
-  el.innerHTML = `<div class="chatbot-channel-title">${escapeHtml(channel.label || channel.id)}</div><div class="chatbot-channel-meta">${lines.map(escapeHtml).join('<br>')}</div>`;
+  el.innerHTML = `<div class="channel-title">${escapeHtml(channel.label || channel.id)}</div><div class="channel-meta">${lines.map(escapeHtml).join('<br>')}</div>`;
 }
 
 function renderMobileWeClawLoginPanel(channel) {
@@ -12661,12 +12661,12 @@ function renderMobileWeClawLoginPanel(channel) {
   }
   panel.style.display = 'block';
   panel.innerHTML = `<div class="weclaw-qr-box">
-    <div class="chatbot-config-help">微信渠道使用 WeClaw 内置登录。扫码成功后会自动重启微信连接；已有登录时可重新登录。</div>
-    <div class="chatbot-config-actions" style="margin-top:8px;">
+    <div class="channel-config-help">微信渠道使用 WeClaw 内置登录。扫码成功后会自动重启微信连接；已有登录时可重新登录。</div>
+    <div class="channel-config-actions" style="margin-top:8px;">
       <button type="button" id="mobile-weclaw-login-btn" onclick="startMobileWeClawLogin()">登录</button>
       <button type="button" onclick="stopMobileWeClaw()">终止</button>
     </div>
-    <div id="mobile-weclaw-qr-status" class="chatbot-config-help" style="margin-top:8px;"></div>
+    <div id="mobile-weclaw-qr-status" class="channel-config-help" style="margin-top:8px;"></div>
     <pre id="mobile-weclaw-qr-pre" class="weclaw-qr-pre" style="display:none;"></pre>
   </div>`;
   loadMobileWeClawStatus();
@@ -12737,7 +12737,7 @@ async function loadMobileWeClawQr(attempt = 0) {
   }
 }
 
-function renderMobileChatbotSettings(containerId, keys) {
+function renderMobileChannelSettings(containerId, keys) {
   const el = document.getElementById(containerId);
   if (!el) return;
   if (!keys.length) {
@@ -12745,48 +12745,48 @@ function renderMobileChatbotSettings(containerId, keys) {
     return;
   }
   el.innerHTML = keys.map(key => {
-    const val = getMobileChatbotSettingValue(key);
+    const val = getMobileChannelSettingValue(key);
     const isMasked = typeof val === 'string' && val.includes('****');
     const displayVal = isMasked ? '' : val;
-    const fieldMeta = getMobileChatbotFieldMeta(key);
+    const fieldMeta = getMobileChannelFieldMeta(key);
     const label = fieldMeta.label || key;
-    const placeholder = isMasked ? `已保存（${val}），留空不修改` : (fieldMeta.placeholder || MOBILE_CHATBOT_DEFAULTS[key] || key);
-    const tag = fieldMeta.type === 'textarea' || MOBILE_CHATBOT_TEXTAREA_KEYS.has(key) ? 'textarea' : 'input';
-    const type = getMobileChatbotInputType(key, fieldMeta, tag);
+    const placeholder = isMasked ? `已保存（${val}），留空不修改` : (fieldMeta.placeholder || MOBILE_CHANNEL_DEFAULTS[key] || key);
+    const tag = fieldMeta.type === 'textarea' || MOBILE_CHANNEL_TEXTAREA_KEYS.has(key) ? 'textarea' : 'input';
+    const type = getMobileChannelInputType(key, fieldMeta, tag);
     const patternAttr = fieldMeta.pattern && tag === 'input' ? ` pattern="${escapeHtml(fieldMeta.pattern)}"` : '';
     const titleAttr = fieldMeta.invalid_message && tag === 'input' ? ` title="${escapeHtml(fieldMeta.invalid_message)}"` : '';
     const helpLines = [];
     if (fieldMeta.help) helpLines.push(fieldMeta.help);
-    if (MOBILE_CHATBOT_JSON_KEYS.has(key)) helpLines.push('保存前会校验 JSON 数组格式；.env 会写成 shell / python-dotenv 都可读取的引号格式。');
-    const help = helpLines.length ? `<div class="chatbot-config-help">${helpLines.map(escapeHtml).join('<br>')}</div>` : '';
-    const checked = isMobileChatbotTruthy(displayVal) ? ' checked' : '';
+    if (MOBILE_CHANNEL_JSON_KEYS.has(key)) helpLines.push('保存前会校验 JSON 数组格式；.env 会写成 shell / python-dotenv 都可读取的引号格式。');
+    const help = helpLines.length ? `<div class="channel-config-help">${helpLines.map(escapeHtml).join('<br>')}</div>` : '';
+    const checked = isMobileChannelTruthy(displayVal) ? ' checked' : '';
     if (fieldMeta.type === 'boolean') {
-      return `<div class="chatbot-config-field"><label>${escapeHtml(label)}</label><label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text);"><input data-chatbot-setting="${escapeHtml(key)}" type="checkbox"${checked}> ${escapeHtml(placeholder || 'true')}</label>${help}</div>`;
+      return `<div class="channel-config-field"><label>${escapeHtml(label)}</label><label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text);"><input data-channel-setting="${escapeHtml(key)}" type="checkbox"${checked}> ${escapeHtml(placeholder || 'true')}</label>${help}</div>`;
     }
     if (tag === 'textarea') {
-      return `<div class="chatbot-config-field"><label>${escapeHtml(label)}</label><textarea class="chatbot-config-input" data-chatbot-setting="${escapeHtml(key)}" spellcheck="false" placeholder="${escapeHtml(placeholder)}">${escapeHtml(displayVal)}</textarea>${help}</div>`;
+      return `<div class="channel-config-field"><label>${escapeHtml(label)}</label><textarea class="channel-config-input" data-channel-setting="${escapeHtml(key)}" spellcheck="false" placeholder="${escapeHtml(placeholder)}">${escapeHtml(displayVal)}</textarea>${help}</div>`;
     }
-    return `<div class="chatbot-config-field"><label>${escapeHtml(label)}</label><input class="chatbot-config-input" data-chatbot-setting="${escapeHtml(key)}" type="${type}" value="${escapeHtml(displayVal)}" placeholder="${escapeHtml(placeholder)}" autocomplete="off"${patternAttr}${titleAttr}>${help}</div>`;
+    return `<div class="channel-config-field"><label>${escapeHtml(label)}</label><input class="channel-config-input" data-channel-setting="${escapeHtml(key)}" type="${type}" value="${escapeHtml(displayVal)}" placeholder="${escapeHtml(placeholder)}" autocomplete="off"${patternAttr}${titleAttr}>${help}</div>`;
   }).join('');
 }
 
-function getMobileChatbotInputKey(channel, field) {
+function getMobileChannelInputKey(channel, field) {
   if (!channel || !field || !field.name) return '';
   const target = field.target || (channel.kind === 'nonebot' ? 'bot' : 'env');
   if (target === 'env') return field.env_key || field.name;
   return `${channel.env_key || channel.id}::${target}::${field.name}`;
 }
 
-function parseMobileChatbotInputKey(key) {
+function parseMobileChannelInputKey(key) {
   const parts = String(key || '').split('::');
   if (parts.length !== 3) return null;
   return { envKey: parts[0], target: parts[1], name: parts[2] };
 }
 
-function getMobileChatbotFieldMeta(key) {
-  const parsed = parseMobileChatbotInputKey(key);
-  const channel = getMobileChatbotChannel();
-  const config = getMobileChatbotChannelConfig(channel);
+function getMobileChannelFieldMeta(key) {
+  const parsed = parseMobileChannelInputKey(key);
+  const channel = getMobileChannel();
+  const config = getMobileChannelConfig(channel);
   const fields = Array.isArray(config.fields) ? config.fields : [];
   if (parsed) {
     return fields.find(field => field.name === parsed.name && (field.target || 'bot') === parsed.target) || {};
@@ -12794,7 +12794,7 @@ function getMobileChatbotFieldMeta(key) {
   return fields.find(field => (field.env_key || field.name) === key) || {};
 }
 
-function getMobileChatbotInputType(key, fieldMeta, tag) {
+function getMobileChannelInputType(key, fieldMeta, tag) {
   if (tag !== 'input') return 'text';
   if (fieldMeta.type === 'password') return 'password';
   if (fieldMeta.type === 'number') return 'number';
@@ -12802,15 +12802,15 @@ function getMobileChatbotInputType(key, fieldMeta, tag) {
   return 'text';
 }
 
-function isMobileChatbotTruthy(value) {
+function isMobileChannelTruthy(value) {
   return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
 }
 
-function getMobileChatbotObjectPath(field, fallbackName) {
+function getMobileChannelObjectPath(field, fallbackName) {
   return String(field?.path || fallbackName || '').split('.').filter(Boolean);
 }
 
-function getMobileChatbotNestedValue(obj, pathParts) {
+function getMobileChannelNestedValue(obj, pathParts) {
   let current = obj || {};
   for (const part of pathParts) {
     if (!current || typeof current !== 'object' || current[part] === undefined) return '';
@@ -12819,7 +12819,7 @@ function getMobileChatbotNestedValue(obj, pathParts) {
   return current;
 }
 
-function setMobileChatbotNestedValue(obj, pathParts, value) {
+function setMobileChannelNestedValue(obj, pathParts, value) {
   if (!pathParts.length) return;
   let current = obj;
   pathParts.slice(0, -1).forEach(part => {
@@ -12829,8 +12829,8 @@ function setMobileChatbotNestedValue(obj, pathParts, value) {
   current[pathParts[pathParts.length - 1]] = value;
 }
 
-function coerceMobileChatbotFieldValue(value, fieldMeta = {}) {
-  if (fieldMeta.type === 'boolean') return isMobileChatbotTruthy(value);
+function coerceMobileChannelFieldValue(value, fieldMeta = {}) {
+  if (fieldMeta.type === 'boolean') return isMobileChannelTruthy(value);
   if (fieldMeta.type === 'number' && String(value || '').trim()) {
     const n = Number(value);
     return Number.isFinite(n) ? n : value;
@@ -12838,35 +12838,35 @@ function coerceMobileChatbotFieldValue(value, fieldMeta = {}) {
   return value;
 }
 
-function getMobileChatbotIntentKey(target) {
+function getMobileChannelIntentKey(target) {
   if (target === 'bot_intent') return 'intent';
   if (target === 'bot_intents') return 'intents';
   return '';
 }
 
-function getMobileChatbotSettingValue(key) {
-  const parsed = parseMobileChatbotInputKey(key);
+function getMobileChannelSettingValue(key) {
+  const parsed = parseMobileChannelInputKey(key);
   if (parsed) {
-    const field = getMobileChatbotFieldMeta(key);
-    const bot = getMobileChatbotFirstBot(parsed.envKey);
+    const field = getMobileChannelFieldMeta(key);
+    const bot = getMobileChannelFirstBot(parsed.envKey);
     let val = '';
-    const intentKey = getMobileChatbotIntentKey(parsed.target);
+    const intentKey = getMobileChannelIntentKey(parsed.target);
     if (intentKey) {
-      val = getMobileChatbotNestedValue(bot[intentKey] || {}, getMobileChatbotObjectPath(field, parsed.name));
+      val = getMobileChannelNestedValue(bot[intentKey] || {}, getMobileChannelObjectPath(field, parsed.name));
     } else {
-      val = getMobileChatbotNestedValue(bot, getMobileChatbotObjectPath(field, parsed.name));
+      val = getMobileChannelNestedValue(bot, getMobileChannelObjectPath(field, parsed.name));
     }
     if (val !== undefined && val !== null && String(val) !== '') return String(val);
     return field.default || '';
   }
-  const val = mobileChatbotSettings[key];
+  const val = mobileChannelSettings[key];
   if (val !== undefined && val !== null && String(val) !== '') return String(val);
-  const field = getMobileChatbotFieldMeta(key);
-  return field.default || MOBILE_CHATBOT_DEFAULTS[key] || '';
+  const field = getMobileChannelFieldMeta(key);
+  return field.default || MOBILE_CHANNEL_DEFAULTS[key] || '';
 }
 
-function getMobileChatbotFirstBot(envKey) {
-  const raw = mobileChatbotSettings[envKey] || '';
+function getMobileChannelFirstBot(envKey) {
+  const raw = mobileChannelSettings[envKey] || '';
   if (!raw || String(raw).includes('****')) return {};
   try {
     const parsed = JSON.parse(raw);
@@ -12876,10 +12876,10 @@ function getMobileChatbotFirstBot(envKey) {
   return {};
 }
 
-function renderMobileChatbotWhitelistRows() {
-  const el = document.getElementById('mobile-chatbot-whitelist-rows');
+function renderMobileChannelWhitelistRows() {
+  const el = document.getElementById('mobile-channel-whitelist-rows');
   if (!el) return;
-  const section = mobileChatbotWhitelist[mobileChatbotChannel] || { entries: {}, name_map: {} };
+  const section = mobileChannelWhitelist[mobileChannel] || { entries: {}, name_map: {} };
   const entries = section.entries || {};
   const rows = Object.entries(entries);
   if (!rows.length) {
@@ -12888,38 +12888,38 @@ function renderMobileChatbotWhitelistRows() {
   }
   el.innerHTML = rows.map(([id, entry]) => {
     const username = entry && typeof entry === 'object' ? (entry.username || '') : '';
-    return `<div class="chatbot-whitelist-row">
-      <input class="chatbot-config-input" data-whitelist-id value="${escapeHtml(id)}" placeholder="user_id / group_id">
-      <input class="chatbot-config-input" data-whitelist-username value="${escapeHtml(username)}" placeholder="username">
-      <button type="button" class="chatbot-add-row-btn" style="padding:8px 0;" onclick="this.closest('.chatbot-whitelist-row').remove()">×</button>
+    return `<div class="channel-whitelist-row">
+      <input class="channel-config-input" data-whitelist-id value="${escapeHtml(id)}" placeholder="user_id / group_id">
+      <input class="channel-config-input" data-whitelist-username value="${escapeHtml(username)}" placeholder="username">
+      <button type="button" class="channel-add-row-btn" style="padding:8px 0;" onclick="this.closest('.channel-whitelist-row').remove()">×</button>
     </div>`;
   }).join('');
 }
 
-function addMobileChatbotWhitelistRow() {
-  const el = document.getElementById('mobile-chatbot-whitelist-rows');
+function addMobileChannelWhitelistRow() {
+  const el = document.getElementById('mobile-channel-whitelist-rows');
   if (!el) return;
   if (el.textContent.includes('暂无白名单')) el.innerHTML = '';
-  el.insertAdjacentHTML('beforeend', `<div class="chatbot-whitelist-row">
-    <input class="chatbot-config-input" data-whitelist-id placeholder="user_id / group_id">
-    <input class="chatbot-config-input" data-whitelist-username placeholder="username">
-    <button type="button" class="chatbot-add-row-btn" style="padding:8px 0;" onclick="this.closest('.chatbot-whitelist-row').remove()">×</button>
+  el.insertAdjacentHTML('beforeend', `<div class="channel-whitelist-row">
+    <input class="channel-config-input" data-whitelist-id placeholder="user_id / group_id">
+    <input class="channel-config-input" data-whitelist-username placeholder="username">
+    <button type="button" class="channel-add-row-btn" style="padding:8px 0;" onclick="this.closest('.channel-whitelist-row').remove()">×</button>
   </div>`);
 }
 
-function collectMobileChatbotConfigFromDom() {
-  document.querySelectorAll('#mobile-chatbot-config [data-chatbot-setting]').forEach(input => {
-    const key = input.dataset.chatbotSetting;
+function collectMobileChannelConfigFromDom() {
+  document.querySelectorAll('#mobile-channel-config [data-channel-setting]').forEach(input => {
+    const key = input.dataset.channelSetting;
     if (!key) return;
-    if (parseMobileChatbotInputKey(key)) return;
-    const fieldMeta = getMobileChatbotFieldMeta(key);
-    const val = readMobileChatbotInputValue(input, fieldMeta);
-    const orig = mobileChatbotSettings.__original?.[key] || '';
+    if (parseMobileChannelInputKey(key)) return;
+    const fieldMeta = getMobileChannelFieldMeta(key);
+    const val = readMobileChannelInputValue(input, fieldMeta);
+    const orig = mobileChannelSettings.__original?.[key] || '';
     if (orig.includes && orig.includes('****') && val === '') return;
-    mobileChatbotSettings[key] = val;
+    mobileChannelSettings[key] = val;
   });
-  collectMobileChatbotChannelFieldsFromDom();
-  const rows = document.querySelectorAll('#mobile-chatbot-whitelist-rows .chatbot-whitelist-row');
+  collectMobileChannelFieldsFromDom();
+  const rows = document.querySelectorAll('#mobile-channel-whitelist-rows .channel-whitelist-row');
   const entries = {};
   const nameMap = {};
   rows.forEach(row => {
@@ -12930,10 +12930,10 @@ function collectMobileChatbotConfigFromDom() {
     entries[id] = entry;
     if (username) nameMap[username] = entry;
   });
-  mobileChatbotWhitelist[mobileChatbotChannel] = { entries, name_map: nameMap };
+  mobileChannelWhitelist[mobileChannel] = { entries, name_map: nameMap };
 }
 
-function readMobileChatbotInputValue(input, fieldMeta = {}) {
+function readMobileChannelInputValue(input, fieldMeta = {}) {
   if (!input) return '';
   if (fieldMeta.type === 'boolean' || input.type === 'checkbox') {
     return input.checked ? 'true' : 'false';
@@ -12941,24 +12941,24 @@ function readMobileChatbotInputValue(input, fieldMeta = {}) {
   return (input.value || '').trim();
 }
 
-function validateMobileChatbotChannelFields() {
-  const channel = getMobileChatbotChannel();
-  const config = getMobileChatbotChannelConfig(channel);
+function validateMobileChannelFields() {
+  const channel = getMobileChannel();
+  const config = getMobileChannelConfig(channel);
   const fields = Array.isArray(config.fields) ? config.fields : [];
-  const rawBotConfigMasked = Boolean(channel?.env_key && String(mobileChatbotSettings[channel.env_key] || '').includes('****'));
+  const rawBotConfigMasked = Boolean(channel?.env_key && String(mobileChannelSettings[channel.env_key] || '').includes('****'));
   for (const field of fields) {
     if (!field) continue;
     const target = field.target || (channel.kind === 'nonebot' ? 'bot' : 'env');
     let value = '';
     if (target === 'env') {
-      value = String(mobileChatbotSettings[field.env_key || field.name] || '').trim();
+      value = String(mobileChannelSettings[field.env_key || field.name] || '').trim();
     } else if (channel.env_key) {
-      const bot = getMobileChatbotFirstBot(channel.env_key);
-      const intentKey = getMobileChatbotIntentKey(target);
+      const bot = getMobileChannelFirstBot(channel.env_key);
+      const intentKey = getMobileChannelIntentKey(target);
       if (intentKey) {
-        value = String(getMobileChatbotNestedValue(bot[intentKey] || {}, getMobileChatbotObjectPath(field, field.name)) || '').trim();
+        value = String(getMobileChannelNestedValue(bot[intentKey] || {}, getMobileChannelObjectPath(field, field.name)) || '').trim();
       } else {
-        value = String(getMobileChatbotNestedValue(bot, getMobileChatbotObjectPath(field, field.name)) || '').trim();
+        value = String(getMobileChannelNestedValue(bot, getMobileChannelObjectPath(field, field.name)) || '').trim();
       }
     }
     if (field.required && !value && !(target !== 'env' && rawBotConfigMasked)) return `${field.label || field.name} 不能为空`;
@@ -12973,14 +12973,14 @@ function validateMobileChatbotChannelFields() {
   return '';
 }
 
-function collectMobileChatbotChannelFieldsFromDom() {
-  const channel = getMobileChatbotChannel();
+function collectMobileChannelFieldsFromDom() {
+  const channel = getMobileChannel();
   if (!channel || !channel.env_key) return;
-  const inputs = Array.from(document.querySelectorAll('#mobile-chatbot-channel-settings [data-chatbot-setting]'))
-    .filter(input => parseMobileChatbotInputKey(input.dataset.chatbotSetting || ''));
+  const inputs = Array.from(document.querySelectorAll('#mobile-channel-settings [data-channel-setting]'))
+    .filter(input => parseMobileChannelInputKey(input.dataset.channelSetting || ''));
   if (!inputs.length) return;
 
-  const raw = mobileChatbotSettings[channel.env_key] || '';
+  const raw = mobileChannelSettings[channel.env_key] || '';
   const rawMasked = typeof raw === 'string' && raw.includes('****');
   let bots = [];
   if (!rawMasked && raw) {
@@ -12997,21 +12997,21 @@ function collectMobileChatbotChannelFieldsFromDom() {
   let hasTopLevelValue = false;
 
   inputs.forEach(input => {
-    const parsed = parseMobileChatbotInputKey(input.dataset.chatbotSetting || '');
+    const parsed = parseMobileChannelInputKey(input.dataset.channelSetting || '');
     if (!parsed) return;
-    const fieldMeta = getMobileChatbotFieldMeta(input.dataset.chatbotSetting || '');
-    const val = readMobileChatbotInputValue(input, fieldMeta);
+    const fieldMeta = getMobileChannelFieldMeta(input.dataset.channelSetting || '');
+    const val = readMobileChannelInputValue(input, fieldMeta);
     if (fieldMeta.type === 'password' && rawMasked && !val) return;
     if (fieldMeta.required && val) hasRequiredValue = true;
     if (fieldMeta.type !== 'boolean' && !val && !fieldMeta.default) return;
     touched = true;
-    const coerced = coerceMobileChatbotFieldValue(val, fieldMeta);
-    const intentKey = getMobileChatbotIntentKey(parsed.target);
+    const coerced = coerceMobileChannelFieldValue(val, fieldMeta);
+    const intentKey = getMobileChannelIntentKey(parsed.target);
     if (intentKey) {
       bot[intentKey] = bot[intentKey] && typeof bot[intentKey] === 'object' ? bot[intentKey] : {};
-      setMobileChatbotNestedValue(bot[intentKey], getMobileChatbotObjectPath(fieldMeta, parsed.name), coerced);
+      setMobileChannelNestedValue(bot[intentKey], getMobileChannelObjectPath(fieldMeta, parsed.name), coerced);
     } else {
-      setMobileChatbotNestedValue(bot, getMobileChatbotObjectPath(fieldMeta, parsed.name), coerced);
+      setMobileChannelNestedValue(bot, getMobileChannelObjectPath(fieldMeta, parsed.name), coerced);
       if (val) hasTopLevelValue = true;
     }
   });
@@ -13020,38 +13020,38 @@ function collectMobileChatbotChannelFieldsFromDom() {
   if (!bots.length && !hasRequiredValue && !hasTopLevelValue) return;
   if (rawMasked && !hasRequiredValue) return;
   bots[0] = bot;
-  mobileChatbotSettings[channel.env_key] = JSON.stringify(bots.filter(x => x && Object.keys(x).length));
+  mobileChannelSettings[channel.env_key] = JSON.stringify(bots.filter(x => x && Object.keys(x).length));
 }
 
-async function saveMobileChatbotConfig() {
-  collectMobileChatbotConfigFromDom();
-  syncMobileChatbotAdapterSetting();
-  for (const key of MOBILE_CHATBOT_JSON_KEYS) {
-    const val = (mobileChatbotSettings[key] || '').trim();
+async function saveMobileChannelConfig() {
+  collectMobileChannelConfigFromDom();
+  syncMobileChannelAdapterSetting();
+  for (const key of MOBILE_CHANNEL_JSON_KEYS) {
+    const val = (mobileChannelSettings[key] || '').trim();
     if (!val || val.includes('****')) continue;
     try {
       const parsed = JSON.parse(val);
       if (!Array.isArray(parsed)) throw new Error('not array');
     } catch (_) {
-      mobileChatbotStatus(`${key} 必须是 JSON 数组`, true);
+      mobileChannelStatus(`${key} 必须是 JSON 数组`, true);
       return false;
     }
   }
-  const fieldError = validateMobileChatbotChannelFields();
+  const fieldError = validateMobileChannelFields();
   if (fieldError) {
-    mobileChatbotStatus(fieldError, true);
+    mobileChannelStatus(fieldError, true);
     return false;
   }
-  const allKeys = new Set([...MOBILE_CHATBOT_COMMON_KEYS]);
-  mobileChatbotChannels.forEach(ch => getMobileChatbotPersistKeysForChannel(ch).forEach(k => allKeys.add(k)));
+  const allKeys = new Set([...MOBILE_CHANNEL_COMMON_KEYS]);
+  mobileChannels.forEach(ch => getMobileChannelPersistKeysForChannel(ch).forEach(k => allKeys.add(k)));
   const settingsUpdates = {};
   allKeys.forEach(key => {
-    const nextVal = mobileChatbotSettings[key] || '';
-    const orig = mobileChatbotSettings.__original?.[key] || '';
+    const nextVal = mobileChannelSettings[key] || '';
+    const orig = mobileChannelSettings.__original?.[key] || '';
     if (orig.includes && orig.includes('****') && nextVal === orig) return;
     if (nextVal !== orig) settingsUpdates[key] = nextVal;
   });
-  mobileChatbotStatus('保存中...');
+  mobileChannelStatus('保存中...');
   try {
     const settingsResp = await fetch('/proxy_settings_full', {
       method: 'POST',
@@ -13060,38 +13060,38 @@ async function saveMobileChatbotConfig() {
     });
     const settingsData = await settingsResp.json();
     if (!settingsResp.ok || settingsData.error) throw new Error(settingsData.error || `settings HTTP ${settingsResp.status}`);
-    const whitelistResp = await fetch('/proxy_chatbot_whitelist', {
+    const whitelistResp = await fetch('/proxy_channel_whitelist', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ whitelist: mobileChatbotWhitelist }),
+      body: JSON.stringify({ whitelist: mobileChannelWhitelist }),
     });
     const whitelistData = await whitelistResp.json();
     if (!whitelistResp.ok || whitelistData.error) throw new Error(whitelistData.error || `whitelist HTTP ${whitelistResp.status}`);
-    mobileChatbotWhitelist = normalizeMobileChatbotWhitelist(whitelistData.whitelist || mobileChatbotWhitelist);
-    mobileChatbotStatus('已保存，正在重启 chatbot 使配置生效...');
+    mobileChannelWhitelist = normalizeMobileChannelWhitelist(whitelistData.whitelist || mobileChannelWhitelist);
+    mobileChannelStatus('已保存，正在重启渠道使配置生效...');
     try {
-      const restartResp = await fetch('/proxy_restart_chatbot', {
+      const restartResp = await fetch('/proxy_restart_channels', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
       const restartData = await restartResp.json().catch(() => ({}));
       if (!restartResp.ok || restartData.error) throw new Error(restartData.error || `HTTP ${restartResp.status}`);
-      mobileChatbotStatus('已保存，chatbot 正在后台重启。');
-      toast('Channel 设置已保存，chatbot 正在重启');
+      mobileChannelStatus('已保存，渠道正在后台重启。');
+      toast('渠道设置已保存，正在重启');
     } catch (restartError) {
-      mobileChatbotStatus('已保存，但 chatbot 自动重启失败: ' + restartError.message, true);
-      toast('Channel 设置已保存，但需要手动重启 chatbot');
+      mobileChannelStatus('已保存，但渠道自动重启失败: ' + restartError.message, true);
+      toast('渠道设置已保存，但需要手动重启渠道');
     }
     return true;
   } catch (e) {
-    mobileChatbotStatus('保存失败: ' + e.message, true);
+    mobileChannelStatus('保存失败: ' + e.message, true);
     return false;
   }
 }
 
-function getMobileChatbotPersistKeysForChannel(channel) {
+function getMobileChannelPersistKeysForChannel(channel) {
   if (!channel) return [];
-  const config = getMobileChatbotChannelConfig(channel);
+  const config = getMobileChannelConfig(channel);
   const keys = new Set();
   if (channel.env_key) keys.add(channel.env_key);
   (config.keys || []).forEach(key => {
@@ -13113,15 +13113,15 @@ async function startMobileWeClawLogin() {
   const loginBtn = document.getElementById('mobile-weclaw-login-btn');
   const action = loginBtn?.textContent?.trim() || '登录';
   if (!confirm(`${action}微信？前端会显示新的扫码二维码。`)) return;
-  collectMobileChatbotConfigFromDom();
-  MOBILE_CHATBOT_WECLAW_KEYS.forEach(key => {
-    if (!mobileChatbotSettings[key]) mobileChatbotSettings[key] = MOBILE_CHATBOT_DEFAULTS[key] || '';
+  collectMobileChannelConfigFromDom();
+  MOBILE_CHANNEL_WECLAW_KEYS.forEach(key => {
+    if (!mobileChannelSettings[key]) mobileChannelSettings[key] = MOBILE_CHANNEL_DEFAULTS[key] || '';
   });
-  mobileChatbotSettings.WECLAW_ENABLED = 'true';
-  renderMobileChatbotConfig();
-  const ok = await saveMobileChatbotConfig();
+  mobileChannelSettings.WECLAW_ENABLED = 'true';
+  renderMobileChannelConfig();
+  const ok = await saveMobileChannelConfig();
   if (!ok) return;
-  mobileChatbotStatus('正在启动微信扫码登录...');
+  mobileChannelStatus('正在启动微信扫码登录...');
   try {
     const resp = await fetch('/proxy_weclaw_login', {
       method: 'POST',
@@ -13130,9 +13130,9 @@ async function startMobileWeClawLogin() {
     let data = {};
     try { data = await resp.json(); } catch (_) {}
     if (!resp.ok || data.error) throw new Error(data.error || `HTTP ${resp.status}`);
-    mobileChatbotStatus(data.message || '已启动微信扫码登录，正在等待二维码...');
+    mobileChannelStatus(data.message || '已启动微信扫码登录，正在等待二维码...');
   } catch (e) {
-    mobileChatbotStatus('启动微信登录失败: ' + e.message, true);
+    mobileChannelStatus('启动微信登录失败: ' + e.message, true);
     return;
   }
   if (mobileWeClawQrRetryTimer) clearTimeout(mobileWeClawQrRetryTimer);
@@ -13141,7 +13141,7 @@ async function startMobileWeClawLogin() {
 
 async function stopMobileWeClaw() {
   if (!confirm('终止 WeClaw 微信连接？')) return;
-  mobileChatbotStatus('正在终止 WeClaw...');
+  mobileChannelStatus('正在终止 WeClaw...');
   try {
     const resp = await fetch('/proxy_weclaw_stop', {
       method: 'POST',
@@ -13150,35 +13150,35 @@ async function stopMobileWeClaw() {
     let data = {};
     try { data = await resp.json(); } catch (_) {}
     if (!resp.ok || data.error) throw new Error(data.error || `HTTP ${resp.status}`);
-    mobileChatbotStatus(data.message || 'WeClaw 已终止');
+    mobileChannelStatus(data.message || 'WeClaw 已终止');
     if (mobileWeClawQrRetryTimer) clearTimeout(mobileWeClawQrRetryTimer);
     loadMobileWeClawStatus();
   } catch (e) {
-    mobileChatbotStatus('终止 WeClaw 失败: ' + e.message, true);
+    mobileChannelStatus('终止 WeClaw 失败: ' + e.message, true);
   }
 }
 
-function syncMobileChatbotAdapterSetting() {
-  const channel = getMobileChatbotChannel();
+function syncMobileChannelAdapterSetting() {
+  const channel = getMobileChannel();
   if (!channel || channel.kind !== 'nonebot' || !channel.adapter) return;
   let hasConfig = false;
   if (channel.env_key) {
-    const botConfig = (mobileChatbotSettings[channel.env_key] || '').trim();
+    const botConfig = (mobileChannelSettings[channel.env_key] || '').trim();
     hasConfig = Boolean(botConfig && !botConfig.includes('****'));
   } else if (channel.requires_config === false) {
     const requiredEnv = Array.isArray(channel.required_env) ? channel.required_env : [];
     hasConfig = requiredEnv.length
-      ? requiredEnv.every(key => String(mobileChatbotSettings[key] || '').trim())
+      ? requiredEnv.every(key => String(mobileChannelSettings[key] || '').trim())
       : true;
   }
   if (!hasConfig) return;
-  const adapters = String(mobileChatbotSettings.NONEBOT_ADAPTERS || '')
+  const adapters = String(mobileChannelSettings.NONEBOT_ADAPTERS || '')
     .split(',')
     .map(x => x.trim())
     .filter(Boolean);
   if (!adapters.includes(channel.adapter)) {
     adapters.push(channel.adapter);
-    mobileChatbotSettings.NONEBOT_ADAPTERS = adapters.join(',');
+    mobileChannelSettings.NONEBOT_ADAPTERS = adapters.join(',');
   }
 }
 

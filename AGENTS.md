@@ -25,7 +25,7 @@ metadata:
   auth_methods:
     - "user_password"
     - "internal_token"
-    - "chatbot_whitelist"
+    - "channel_whitelist"
   integrations:
     - "openclaw"
     - "acpx"

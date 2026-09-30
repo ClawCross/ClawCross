@@ -1,10 +1,10 @@
 """Display commands for ClawCross: team, workflow, skill, cron.
 
-Both the CLI (``clawcross team``) and the chatbot (``/cross team``) call into
+Both the CLI (``clawcross team``) and chat channels (``/cross team``) call into
 these handlers. When ``interactive=True`` and a TTY is available, list views
 offer a curses picker to drill into a specific item; otherwise plain text is
 returned. None of the handlers ever call ``input()`` when ``interactive`` is
-``False`` — chatbot transport has no stdin.
+``False`` — channel transport has no stdin.
 """
 
 from __future__ import annotations
@@ -438,7 +438,7 @@ _WORKFLOW_HELP_FOOTER = (
     "                                                 run a team workflow\n"
     "  /cross workflow new <name> [team <T>] [from <file>]\n"
     "                                                 create a new YAML workflow\n"
-    "                                                 (CLI opens $EDITOR; chatbot needs `from`)\n"
+    "                                                 (CLI opens $EDITOR; channel needs `from`)\n"
     "  /cross workflow delete <name> [team <T>]       delete a workflow file\n"
     "  /cross workflow runs [all]                     list discussion runs (running by default)\n"
     "  /cross workflow log <topic_id>                 show a run's status + transcript\n"
@@ -596,7 +596,7 @@ def _handle_workflow_new(rest: list[str], *, interactive: bool, user: str) -> st
     """`/cross workflow new <name> [team <T>] [from <file>] [desc <text...>]`.
 
     Interactive (CLI tty): if no `from`, opens $EDITOR with a template.
-    Chatbot: requires `from <path>` since there is no stdin/editor.
+    Channel: requires `from <path>` since there is no stdin/editor.
     """
     from clawcross_cli.picker import prompt_text
 
@@ -652,7 +652,7 @@ def _handle_workflow_new(rest: list[str], *, interactive: bool, user: str) -> st
             return "No changes saved (template was not edited)."
         yaml_content = edited
     else:
-        return "Workflow YAML required. Use `from <file>` in chatbot or run from a terminal to edit interactively."
+        return "Workflow YAML required. Use `from <file>` in a channel or run from a terminal to edit interactively."
 
     body, err = api_client.save_workflow(
         user=user, name=name, yaml_content=yaml_content, team=team, description=description,

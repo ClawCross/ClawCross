@@ -1,6 +1,6 @@
-"""Shared chatbot channel catalog loader.
+"""Shared channel catalog loader.
 
-The source of truth is ``config/chatbot_channels.json`` so the mobile UI,
+The source of truth is ``config/channels.json`` so the mobile UI,
 settings API, and CLI all describe the same channel-specific fields.
 """
 
@@ -13,15 +13,15 @@ from typing import Any
 
 try:
     from common.runtime_paths import PROJECT_ROOT
-except ModuleNotFoundError:  # the CLI imports this module as src.backend.chatbot.*
+except ModuleNotFoundError:  # the CLI imports this module as src.backend.channels.*
     from src.backend.common.runtime_paths import PROJECT_ROOT
 
 
-CATALOG_PATH = PROJECT_ROOT / "config" / "chatbot_channels.json"
+CATALOG_PATH = PROJECT_ROOT / "config" / "channels.json"
 
 
 @lru_cache(maxsize=1)
-def load_chatbot_channel_catalog() -> dict[str, Any]:
+def load_channel_catalog() -> dict[str, Any]:
     try:
         with open(CATALOG_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -39,15 +39,15 @@ def load_chatbot_channel_catalog() -> dict[str, Any]:
     }
 
 
-def get_chatbot_channels() -> list[dict[str, Any]]:
-    return list(load_chatbot_channel_catalog()["channels"])
+def get_channels() -> list[dict[str, Any]]:
+    return list(load_channel_catalog()["channels"])
 
 
-def get_chatbot_channel(channel_id_or_adapter: str) -> dict[str, Any] | None:
+def get_channel(channel_id_or_adapter: str) -> dict[str, Any] | None:
     key = str(channel_id_or_adapter or "").strip().lower()
     if not key:
         return None
-    for channel in get_chatbot_channels():
+    for channel in get_channels():
         channel_id = str(channel.get("id") or "").strip().lower()
         adapter = str(channel.get("adapter") or channel_id).strip().lower()
         aliases = [str(x).strip().lower() for x in channel.get("aliases") or []]
@@ -56,13 +56,13 @@ def get_chatbot_channel(channel_id_or_adapter: str) -> dict[str, Any] | None:
     return None
 
 
-def get_chatbot_common_keys() -> list[str]:
-    return list(load_chatbot_channel_catalog()["common_keys"])
+def get_channel_common_keys() -> list[str]:
+    return list(load_channel_catalog()["common_keys"])
 
 
-def get_chatbot_env_keys() -> list[str]:
-    keys: set[str] = set(get_chatbot_common_keys())
-    for channel in get_chatbot_channels():
+def get_channel_env_keys() -> list[str]:
+    keys: set[str] = set(get_channel_common_keys())
+    for channel in get_channels():
         env_key = str(channel.get("env_key") or "").strip()
         if env_key:
             keys.add(env_key)
@@ -81,7 +81,7 @@ def get_chatbot_env_keys() -> list[str]:
 
 
 def get_nonebot_adapter_meta(adapter_name: str) -> dict[str, Any]:
-    channel = get_chatbot_channel(adapter_name) or {}
+    channel = get_channel(adapter_name) or {}
     adapter = str(channel.get("adapter") or adapter_name or "").strip()
     normalized = adapter.lower().replace(" ", "")
     flat = normalized.replace("-", "_").replace(".", "_")

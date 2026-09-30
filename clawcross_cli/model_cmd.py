@@ -1,7 +1,7 @@
 """
 Model profile selection commands for ClawCross.
 
-Exposes two high-level functions consumed by both the CLI and chatbot:
+Exposes two high-level functions consumed by both the CLI and chat channels:
 - select_model   -> interactive model picker across all providers
 - select_provider -> interactive provider picker with optional base_url
 - apply_model    -> write LLM_MODEL to config/.env
@@ -470,7 +470,7 @@ def handle_model_command(args: list[str], *, interactive: bool = False) -> str:
     """Unified dispatcher for /cross model and `clawcross model`.
 
     *interactive* must be True only when ``input()`` prompts are safe (true
-    CLI invocation). The chatbot REPL passes False — there is no usable
+    CLI invocation). The channel REPL passes False — there is no usable
     stdin for sub-prompts, so the dispatcher returns a usage hint instead.
     """
     if not args:

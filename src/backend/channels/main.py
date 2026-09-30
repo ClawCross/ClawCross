@@ -1,12 +1,12 @@
 """
-Chatbot 入口 - 多渠道机器人管理器
+渠道入口 - 多渠道机器人管理器
 
 用法：
-    python src/backend/chatbot/main.py             # 启动所有已配置的渠道
-    python src/backend/chatbot/main.py --list      # 列出所有渠道状态
-    python src/backend/chatbot/main.py --webhook   # 只启动通用 Webhook
-    python src/backend/chatbot/main.py --nonebot   # 只启动 NoneBot 桥接
-    python src/backend/chatbot/main.py --weclaw    # 只启动 WeClaw 微信桥
+    python src/backend/channels/main.py             # 启动所有已配置的渠道
+    python src/backend/channels/main.py --list      # 列出所有渠道状态
+    python src/backend/channels/main.py --webhook   # 只启动通用 Webhook
+    python src/backend/channels/main.py --nonebot   # 只启动 NoneBot 桥接
+    python src/backend/channels/main.py --weclaw    # 只启动 WeClaw 微信桥
 """
 
 from __future__ import annotations
@@ -17,8 +17,8 @@ import logging
 import os
 import sys
 
-_chatbot_dir = os.path.dirname(os.path.abspath(__file__))
-_project_root = os.path.dirname(_chatbot_dir)
+_channels_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.dirname(_channels_dir)
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
@@ -27,7 +27,7 @@ logging.basicConfig(
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     handlers=[logging.StreamHandler()]
 )
-logger = logging.getLogger("chatbot.main")
+logger = logging.getLogger("channels.main")
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 
@@ -80,7 +80,7 @@ def list_channels():
 
     manager = create_manager_from_env()
 
-    print("=== Chatbot 渠道状态 ===\n")
+    print("=== 渠道状态 ===\n")
 
     if not manager._adapters:
         print("(无已配置的渠道)")
@@ -109,7 +109,7 @@ def list_channels():
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Chatbot 多渠道机器人")
+    parser = argparse.ArgumentParser(description="多渠道机器人")
     parser.add_argument("--list", action="store_true", help="列出渠道状态")
     parser.add_argument("--webhook", action="store_true", help="只启动通用 Webhook")
     parser.add_argument("--nonebot", action="store_true", help="只启动 NoneBot 桥接")

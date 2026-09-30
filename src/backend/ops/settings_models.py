@@ -12,8 +12,8 @@ class SettingsUpdateRequest(BaseModel):
     settings: dict  # 要更新的设置项
 
 
-class ChatbotWhitelistUpdateRequest(BaseModel):
-    """Chatbot 白名单更新请求"""
+class ChannelWhitelistUpdateRequest(BaseModel):
+    """渠道白名单更新请求"""
     user_id: str
     password: str = ""
     whitelist: dict

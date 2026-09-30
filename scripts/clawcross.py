@@ -227,7 +227,7 @@ SLASH_MENU = [
     ("/skill [<team>]", "skill actions (list / show / new / delete)", "/skill", True),
     ("/expert [<team>]", "team experts (list / show / add / edit / delete)", "/expert", True),
     ("/cron [<team>]", "cron actions (list / add / delete)", "/cron", True),
-    ("/channel", "list / setup chatbot channels", "/channel", True),
+    ("/channel", "list / setup channels", "/channel", True),
     ("/front", "magic link: local 127.0.0.1 + public tunnel", "/front", True),
     ("/tunnel", "toggle public Cloudflare tunnel (on/off/status)", "/tunnel", True),
     ("/exit", "leave the shell (backend keeps running)", "/exit", True),
@@ -246,7 +246,7 @@ CLI_COMMANDS = [
     ("clawcross skill [agent|show|new|delete ...]", "list/show skills, create or delete one"),
     ("clawcross expert [team|show|add|edit|delete ...]", "manage team personas/experts"),
     ("clawcross cron [list [team]|add|delete <task_id>]", "list / add / delete cron alarms"),
-    ("clawcross channel [list|setup ...]", "list / interactively set up chatbot channels"),
+    ("clawcross channel [list|setup ...]", "list / interactively set up channels"),
     ("clawcross platforms", "list available platforms"),
     ("clawcross state", "print state json"),
     ("clawcross login [name]", "show or set the current username"),
@@ -270,7 +270,7 @@ CHAT_SLASH_COMMANDS = [
     ("/cross skill [agent|show|new|delete ...]", "list/show skills, create or delete one"),
     ("/cross expert [team|show|add|edit|delete ...]", "manage team personas/experts"),
     ("/cross cron [team]", "list cron alarms (optionally for one team)"),
-    ("/cross channel", "list configured chatbot channels (setup requires CLI)"),
+    ("/cross channel", "list configured channels (setup requires CLI)"),
     ("/cross state", "show current shell state"),
     ("/cross restart", "request a backend restart"),
     ("/cross cancel", "cancel generation on the current platform (internal or ACP)"),
@@ -350,14 +350,14 @@ def _load_state(path: Path | str | None = None) -> dict:
     return data
 
 
-def _chatbot_state_path(channel: str, user_id: str) -> Path:
+def _channel_state_path(channel: str, user_id: str) -> Path:
     raw = f"{channel or 'chat'}-{user_id or 'anonymous'}"
     safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", raw).strip("._") or "chat-anonymous"
-    return STATE_DIR / "chatbot" / f"{safe}.json"
+    return STATE_DIR / "channels" / f"{safe}.json"
 
 
-def load_chatbot_state(channel: str, user_id: str, username: str | None = None) -> dict:
-    state = _load_state(_chatbot_state_path(channel, user_id))
+def load_channel_state(channel: str, user_id: str, username: str | None = None) -> dict:
+    state = _load_state(_channel_state_path(channel, user_id))
     current = _current(state)
     current["user"] = username or user_id or DEFAULT_USER
     safe_session = _chat_default_session(channel, user_id)
@@ -2258,7 +2258,7 @@ def _handle_slash(command: str, state: dict) -> bool:
         if sys.stdin.isatty() and sys.stdout.isatty():
             try:
                 answer = input(
-                    "Stop ALL background services (chatbots/agents will go offline)? [y/N] "
+                    "Stop ALL background services (channels/agents will go offline)? [y/N] "
                 ).strip().lower()
             except (EOFError, KeyboardInterrupt):
                 answer = ""
@@ -2406,7 +2406,7 @@ _HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("/model list", "list saved profiles in ~/.clawcross/config/models.json"),
         ("/model show", "show the active profile (provider/model/base_url/api_key)"),
         ("/model use", "picker over saved profiles (or `/model use <name>` direct)"),
-        ("/model add <profile>", "create a new profile (CLI: prompts; chatbot: rejected)"),
+        ("/model add <profile>", "create a new profile (CLI: prompts; channel: rejected)"),
         ("/model migrate", "import current .env into a new profile"),
         ("/model remove", "picker over saved profiles to delete one"),
     ]),
@@ -2453,7 +2453,7 @@ _HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("/workflow run <name> question <text...>", "run a personal workflow"),
         ("/workflow run <name> team <T> question <text...>", "run a team workflow"),
         ("/workflow new <name> [team <T>] [from <file>]",
-         "create a YAML workflow. CLI: opens $EDITOR with a template. Chatbot: needs `from <file>`."),
+         "create a YAML workflow. CLI: opens $EDITOR with a template. Channel: needs `from <file>`."),
         ("/workflow delete <name> [team <T>]", "delete a workflow file"),
         ("/workflow runs [all]", "list discussion runs (running by default; `all` = include finished)"),
         ("/workflow log <topic_id>", "show a run's status + recent transcript"),
@@ -2472,7 +2472,7 @@ _HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
          "create an alarm (team optional; CLI picks scope+target interactively)"),
         ("/cron delete <task_id>", "delete a cron entry by id"),
     ]),
-    ("Chatbot channels", [
+    ("Channels", [
         ("/channel", "list 17 channels with configured/not status"),
         ("/channel setup [<id>]", "guided setup (curses picker; CLI only)"),
         ("/channel show <id>", "show JSON entries / env vars currently in .env"),
@@ -2493,13 +2493,13 @@ _HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
 
 _HELP_TIPS = [
     "Type / on an empty line to open the command picker. Some Windows terminals use a numbered fallback.",
-    "All `/<cmd>` commands also work as `clawcross <cmd>` and `/cross <cmd>` (chatbot).",
+    "All `/<cmd>` commands also work as `clawcross <cmd>` and `/cross <cmd>` (channel).",
     "`clawcross start` boots the full backend (web UI / API on PORT_FRONTEND).",
     "Reset LLM profiles: rm ~/.clawcross/config/models.json (.env still works as fallback).",
     "Reset shell state:  rm ~/.clawcross/state.json",
 ]
 
-# ── Chatbot /cross help (no interactive-only commands, no terminal tips) ──
+# ── Channel /cross help (no interactive-only commands, no terminal tips) ──
 
 _CHAT_HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
     ("Quick start", [
@@ -2552,7 +2552,7 @@ _CHAT_HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("/cross workflow show <name> team <T>", "disambiguate across teams"),
         ("/cross workflow run <name> question <text...>", "run a personal workflow"),
         ("/cross workflow run <name> team <T> question <text...>", "run a team workflow"),
-        ("/cross workflow new <name> [team <T>]", "create a workflow (CLI editor / chatbot `from <file>`)"),
+        ("/cross workflow new <name> [team <T>]", "create a workflow (CLI editor / channel `from <file>`)"),
         ("/cross workflow delete <name> [team <T>]", "delete a workflow file"),
         ("/cross workflow runs [all]", "list discussion runs (running by default)"),
         ("/cross workflow log <topic_id>", "show a run's status + transcript"),
@@ -2570,7 +2570,7 @@ _CHAT_HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("/cross cron add", "create a cron entry (interactive in CLI)"),
         ("/cross cron delete <task_id>", "delete a cron entry by id"),
     ]),
-    ("Chatbot channels", [
+    ("Channels", [
         ("/cross channel", "list channels with configured/not status"),
         ("/cross channel show <id>", "show current channel config"),
         ("/cross channel clear <id>", "drop the channel config"),
@@ -2587,7 +2587,7 @@ _CHAT_HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
 ]
 
 _CHAT_HELP_TIPS = [
-    "All commands use the /cross prefix in chatbot (e.g. /cross use codex).",
+    "All commands use the /cross prefix in channels (e.g. /cross use codex).",
     "Send any message without /cross to run it as a prompt on the active agent.",
     "Send /cross front for a public magic link (web UI login).",
     "Send /cross exit (or /cross off / /exit / /quit) to leave cross shell.",
@@ -2613,7 +2613,7 @@ def _rich_help_text() -> str:
 
 
 def chat_help_text() -> str:
-    """Chatbot-flavoured help: /cross-prefixed commands, no interactive-only features."""
+    """Channel-flavoured help: /cross-prefixed commands, no interactive-only features."""
     out: list[str] = ["Commands:", ""]
     for section_title, rows in _CHAT_HELP_SECTIONS:
         out.append(section_title)
@@ -2654,7 +2654,7 @@ def chat_welcome_text(state: dict, magic_link: str | None = None) -> str:
     return "\n".join(lines)
 
 
-def handle_chatbot_input(text: str, state: dict) -> tuple[bool, str]:
+def handle_channel_input(text: str, state: dict) -> tuple[bool, str]:
     """Handle one ClawCross shell input line for non-terminal chat channels.
 
     Returns (active, reply). active becomes False when /exit or /quit is used.
@@ -2849,7 +2849,7 @@ def build_parser() -> argparse.ArgumentParser:
     cron = sub.add_parser("cron", help="List cron alarms (optionally filtered by team)")
     cron.add_argument("args", nargs="*", help="[<team>]")
 
-    channel = sub.add_parser("channel", help="List / setup chatbot channels (Telegram, Discord, ...)")
+    channel = sub.add_parser("channel", help="List / setup channels (Telegram, Discord, ...)")
     channel.add_argument("args", nargs="*", help="[list|status|show <id>|setup [<id>]|clear <id>]")
 
     return parser

@@ -36,8 +36,8 @@ Use this file when an agent needs to **index the repo before reading code**. It 
 | `groups/` | group chat: conversations, delivery, store, and the rules on top |
 | `oasis/` | OASIS workflows (its own service, port 51202) and the OpenClaw routes it hosts |
 | `scheduler/` | the scheduler service (port 51201), cron parsing, internal alarms, background-job notices |
-| `chatbot/` | chat channel bridges (webhook, NoneBot, WeClaw) |
-| `harness/` | the cross-session harness control plane |
+| `channels/` | chat channel bridges (webhook, NoneBot, WeClaw) |
+| `fleet/` | the cross-session fleet control plane |
 | `ops/` | the Agent service's own operations: login, tools, TTS, settings, self-update |
 | `tinyfish/` | TinyFish internet monitoring |
 | `common/` | shared by all: runtime paths, env settings, logging, auth, the LLM factory |
@@ -223,9 +223,9 @@ Known ACP tools (external AI agents): `openclaw`, `codex`, `claude`, `gemini`, `
 
 | Path | Purpose |
 |---|---|
-| `src/backend/chatbot/main.py` | starts the configured channels |
-| `src/backend/chatbot/adapters/` | webhook, NoneBot and WeClaw bridges |
-| `src/backend/chatbot/channel_catalog.py` | the channel catalog (`config/chatbot_channels.json`) |
+| `src/backend/channels/main.py` | starts the configured channels |
+| `src/backend/channels/adapters/` | webhook, NoneBot and WeClaw bridges |
+| `src/backend/channels/channel_catalog.py` | the channel catalog (`config/channels.json`) |
 
 ## Team and User Data
 

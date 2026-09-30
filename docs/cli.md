@@ -44,7 +44,7 @@ uv run scripts/cli.py [-u USER] <子命令> [参数...]
 3. [tools](#3-tools) — 可用工具
 4. [tts](#4-tts) — 文字转语音
 5. [restart](#5-restart) — 重启 Agent
-6. [channel](#6-channel) — Chatbot / NoneBot / WeClaw channel 管理
+6. [channel](#6-channel) — 渠道管理（NoneBot / WeClaw 等）
 7. [groups](#7-groups) — 群组管理
 8. [openclaw](#8-openclaw) — OpenClaw Agent 管理
 9. [openclaw-snapshot](#9-openclaw-snapshot) — OpenClaw 快照管理
@@ -155,7 +155,7 @@ uv run scripts/cli.py restart
 
 ## 6. channel
 
-**Chatbot / NoneBot / WeClaw channel 管理**
+**渠道管理（NoneBot / WeClaw 等）**
 
 ```bash
 # 列出所有渠道及配置状态

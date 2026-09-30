@@ -26,8 +26,8 @@ $childPidFiles = @(
     "oasis_server.pid",
     "mainagent.pid",
     "front.pid",
-    "chatbot.pid",
-    "harness_conductor.pid",
+    "channels.pid",
+    "fleet_conductor.pid",
     "cloudflared.pid"
 ) | ForEach-Object { Join-Path $env:CLAWCROSS_RUN_DIR $_ }
 $envPath = Join-Path $env:CLAWCROSS_CONFIG_DIR ".env"
@@ -366,7 +366,7 @@ function Show-Help {
     Write-Host ""
     Write-Host "Commands:"
     Write-Host "  setup                          Optional: full setup_env.ps1 (start runs it when venv/deps are missing)"
-    Write-Host "  start [--no-tunnel] [--no-openclaw] [--no-channel]   Background start; --no-tunnel skips Cloudflare; --no-openclaw skips OpenClaw import + gateway warm; --no-channel skips chatbot"
+    Write-Host "  start [--no-tunnel] [--no-openclaw] [--no-channel]   Background start; --no-tunnel skips Cloudflare; --no-openclaw skips OpenClaw import + gateway warm; --no-channel skips channels"
     Write-Host "  start-foreground [--no-openclaw] [--no-tunnel] [--no-channel]   Foreground start; --no-openclaw same (--no-tunnel ignored; no tunnel in this mode)"
     Write-Host "  stop                           Stop services"
     Write-Host "  status                         Show current service status"
@@ -456,8 +456,8 @@ function Get-ClawcrossServiceProcesses {
         "src[\\/]+backend[\\/]+server\.py",
         "src[\\/]+frontend[\\/]+server\.py",
         "scripts[\\/]+tunnel\.py",
-        "scripts[\\/]+harness_conductor\.py",
-        "src[\\/]+backend[\\/]+chatbot[\\/]+main\.py",
+        "scripts[\\/]+fleet_conductor\.py",
+        "src[\\/]+backend[\\/]+channels[\\/]+main\.py",
         "weclaw start -f"
     )
 
@@ -690,7 +690,7 @@ switch ($Command) {
         }
         if ($startOpts.NoChannel) {
             $env:CLAWCROSS_NO_CHANNEL = "1"
-            Write-Host "⏭️  已指定 --no-channel：不启动社交媒体 chatbot"
+            Write-Host "⏭️  已指定 --no-channel：不启动社交渠道"
         } else {
             Remove-Item Env:\CLAWCROSS_NO_CHANNEL -ErrorAction SilentlyContinue
         }
@@ -849,7 +849,7 @@ switch ($Command) {
         }
         if ($startOpts.NoChannel) {
             $env:CLAWCROSS_NO_CHANNEL = "1"
-            Write-Host "⏭️  已指定 --no-channel：不启动社交媒体 chatbot"
+            Write-Host "⏭️  已指定 --no-channel：不启动社交渠道"
         } else {
             Remove-Item Env:\CLAWCROSS_NO_CHANNEL -ErrorAction SilentlyContinue
         }

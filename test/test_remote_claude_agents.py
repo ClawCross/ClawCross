@@ -11,8 +11,8 @@ SRC_DIR = PROJECT_ROOT / "src" / "backend"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from harness import remote_claude_agents as rca  # noqa: E402
-from frontend.proxies.groups import _merge_review_harness_sessions  # noqa: E402
+from fleet import remote_claude_agents as rca  # noqa: E402
+from frontend.proxies.groups import _merge_review_fleet_sessions  # noqa: E402
 
 
 class RemoteClaudeParserTests(unittest.TestCase):
@@ -275,13 +275,13 @@ class RemoteClaudeRouteTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json(), payload)
 
-    def test_merge_review_harness_sessions_keeps_settled_review_worker_visible(self):
+    def test_merge_review_fleet_sessions_keeps_settled_review_worker_visible(self):
         data = {
             "ok": True,
             "remote": {"host": "192.0.2.1", "user": "primaryuser"},
             "sessions": [{"display_id": "session_live"}],
         }
-        harness_state = {
+        fleet_state = {
             "tasks": [
                 {
                     "task_id": "task_review",
@@ -303,7 +303,7 @@ class RemoteClaudeRouteTests(unittest.TestCase):
             ],
         }
 
-        merged = _merge_review_harness_sessions(data, harness_state)
+        merged = _merge_review_fleet_sessions(data, fleet_state)
 
         self.assertEqual(len(merged["sessions"]), 2)
         review = merged["sessions"][1]
@@ -311,7 +311,7 @@ class RemoteClaudeRouteTests(unittest.TestCase):
         self.assertEqual(review["status"], "review")
         self.assertEqual(review["remote_user"], "primaryuser")
         self.assertEqual(review["remote_host"], "192.0.2.1")
-        self.assertTrue(review["harness_review_placeholder"])
+        self.assertTrue(review["fleet_review_placeholder"])
 
     def test_messages_route_returns_remote_payload(self):
         client = self.front.app.test_client()
