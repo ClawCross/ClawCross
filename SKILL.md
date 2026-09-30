@@ -93,9 +93,11 @@ bash selfskill/scripts/run.sh install-component nonebot --adapter telegram
 bash selfskill/scripts/run.sh install-component channels
 bash selfskill/scripts/run.sh install-component weclaw
 bash selfskill/scripts/run.sh install-component cloudflared
+bash selfskill/scripts/run.sh install-component srt          # optional command sandbox
 ```
 
 Use the same subcommands with `selfskill/scripts/run.ps1` on Windows. `channels` installs legacy QQ/Telegram and media packages; NoneBot adapters are installed separately. `acpx`, WeClaw, and cloudflared are placed under `CLAWCROSS_BIN_DIR` when installed through this interface. `start` may use a cloudflared binary already present on the machine, but never downloads it.
+SRT is also explicit and stays off until a session selects `command_sandbox=srt`. On Linux it needs `bwrap`, `socat`, and `rg`; on macOS it needs `rg`. Windows additionally requires the separately elevated `srt windows-install` setup.
 
 The `start` command automatically:
 1. **When needed**, creates the Python environment through the platform wrapper, then installs only `config/requirements.txt` from Python. Optional integrations are installed only through `install-component`.

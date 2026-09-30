@@ -77,6 +77,13 @@ def component_status() -> None:
         if name == "acpx":
             local = bin_dir() / "node" / "node_modules" / ".bin" / ("acpx.cmd" if os.name == "nt" else "acpx")
         print(f"{name}: {shutil.which(binary) or (str(local) if local.is_file() else 'not installed')}")
+    srt = bin_dir() / "node" / "node_modules" / ".bin" / ("srt.cmd" if os.name == "nt" else "srt")
+    available = shutil.which("srt") or (str(srt) if srt.is_file() else "")
+    prerequisites = (("bwrap", "socat", "rg") if sys.platform.startswith("linux")
+                     else ("rg",) if sys.platform == "darwin" else ())
+    missing = [name for name in prerequisites if not shutil.which(name)]
+    print(f"srt: {available or 'not installed'}" +
+          (f" (missing system dependencies: {', '.join(missing)})" if available and missing else ""))
     python = venv_python()
     if python.is_file():
         check = subprocess.run([str(python), "-c", "import nonebot"],
@@ -90,6 +97,18 @@ def component_status() -> None:
     else:
         print("nonebot: Python environment missing")
         print("channels: Python environment missing")
+
+
+def _node_component_target() -> Path:
+    """Keep explicitly installed npm components in one persistent manifest."""
+    target = bin_dir() / "node"
+    target.mkdir(parents=True, exist_ok=True)
+    manifest = target / "package.json"
+    if not manifest.exists():
+        manifest.write_text(json.dumps({
+            "name": "clawcross-optional-components", "private": True, "dependencies": {},
+        }, indent=2) + "\n", encoding="utf-8")
+    return target
 
 
 def _asset_name(component: str) -> str:
@@ -203,10 +222,24 @@ def install_component(name: str, adapters: list[str]) -> None:
         npm = shutil.which("npm.cmd" if os.name == "nt" else "npm")
         if not npm:
             raise RuntimeError("npm is required to install acpx; install Node.js first")
-        target = bin_dir() / "node"
-        target.mkdir(parents=True, exist_ok=True)
-        _run([npm, "install", "--ignore-scripts", "--prefix", str(target), "acpx@latest"])
+        target = _node_component_target()
+        _run([npm, "install", "--ignore-scripts", "--save-exact", "--prefix", str(target), "acpx@latest"])
         print(f"acpx installed under {target}")
+        return
+    if name == "srt":
+        npm = shutil.which("npm.cmd" if os.name == "nt" else "npm")
+        if not npm:
+            raise RuntimeError("npm and Node.js 20.11+ are required to install SRT")
+        target = _node_component_target()
+        _run([npm, "install", "--ignore-scripts", "--save-exact", "--prefix", str(target),
+              "@anthropic-ai/sandbox-runtime@latest"])
+        executable = target / "node_modules" / ".bin" / ("srt.cmd" if os.name == "nt" else "srt")
+        if not executable.is_file():
+            raise RuntimeError("SRT package installed without its command shim")
+        print(f"srt installed: {executable}")
+        if os.name == "nt":
+            print(f"Windows requires a separate elevated setup when SRT is enabled: {executable} windows-install")
+        component_status()
         return
     if name == "nonebot":
         python = venv_python()
@@ -238,7 +271,7 @@ def main() -> int:
     sub.add_parser("ensure-core", help="Install core Python dependencies if needed")
     sub.add_parser("components", help="Report optional component availability")
     install = sub.add_parser("install", help="Explicitly install an optional component")
-    install.add_argument("component", choices=("acpx", "nonebot", "channels", "weclaw", "cloudflared"))
+    install.add_argument("component", choices=("acpx", "nonebot", "channels", "weclaw", "cloudflared", "srt"))
     install.add_argument("--adapter", action="append", default=[], help="NoneBot adapter name")
     args = parser.parse_args()
     try:
