@@ -244,7 +244,7 @@ def trigger_dashboard_supabase_sync():
     project_id = os.getenv("DASHBOARD_SUPABASE_SYNC_PROJECT_ID", "").strip()
     timeout_sec = int(os.getenv("DASHBOARD_SUPABASE_SYNC_TIMEOUT_SEC", "180") or "180")
     try:
-        from harness.dashboard_sync import sync_dashboard_to_supabase
+        from fleet.dashboard_sync import sync_dashboard_to_supabase
 
         result = sync_dashboard_to_supabase(
             dashboard_root=None if not dashboard_root else Path(dashboard_root).expanduser(),

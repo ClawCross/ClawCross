@@ -2,7 +2,7 @@
 Channel setup catalog for the ClawCross CLI.
 
 Mirrors the channels exposed by the mobile creator tab
-(src/frontend/templates/group_chat_mobile.html:9657 MOBILE_CHATBOT_CHANNEL_FALLBACKS)
+(src/frontend/templates/group_chat_mobile.html:9657 MOBILE_CHANNEL_FALLBACKS)
 so anything the user can configure in the UI can also be set up from
 the terminal. The CLI never talks to the backend's settings service —
 it just writes the same env vars that ``src/backend/ops/settings_service.py``
@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from src.backend.chatbot.channel_catalog import get_chatbot_channels
+from src.backend.channels.channel_catalog import get_channels
 
 
 @dataclass
@@ -267,7 +267,7 @@ CHANNELS: dict[str, ChannelInfo] = {
         ],
     ),
 
-    # ── WeClaw (env_vars; mirrors mobile MOBILE_CHATBOT_WECLAW_KEYS) ─────────
+    # ── WeClaw (env_vars; mirrors mobile MOBILE_CHANNEL_WECLAW_KEYS) ─────────
     "weclaw": ChannelInfo(
         id="weclaw", label="微信 / WeClaw", env_key="", kind="env_vars", emoji="🟢",
         setup_instructions=[
@@ -310,7 +310,7 @@ CHANNELS: dict[str, ChannelInfo] = {
 
 def _channels_from_shared_catalog() -> dict[str, ChannelInfo]:
     loaded: dict[str, ChannelInfo] = {}
-    for raw in get_chatbot_channels():
+    for raw in get_channels():
         channel_id = str(raw.get("id") or "").strip()
         if not channel_id:
             continue

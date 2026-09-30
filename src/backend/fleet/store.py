@@ -1,4 +1,4 @@
-"""Durable control-plane state for cross-computer agent harnesses.
+"""Durable control-plane state for cross-computer agent fleets.
 
 The store is intentionally small and dependency-free. It gives ClawCross a
 machine-readable state source for external workers without tying the first
@@ -20,8 +20,8 @@ from typing import Any
 from common.runtime_paths import DATA_DIR
 
 
-STORE_SCHEMA_VERSION = "clawcross_harness_store.v1"
-STATE_SCHEMA_VERSION = "clawcross_harness.v1"
+STORE_SCHEMA_VERSION = "clawcross_fleet_store.v1"
+STATE_SCHEMA_VERSION = "clawcross_fleet.v1"
 VALID_AGENT_STATUSES = frozenset({"idle", "running", "blocked", "needs_user", "review", "done", "error", "offline"})
 VALID_TASK_STATUSES = frozenset({"todo", "active", "blocked", "needs_user", "review", "done"})
 VALID_RUN_STATUSES = frozenset({"not_run", "started", "running", "failed", "passed", "verified"})
@@ -38,8 +38,8 @@ def _now_iso() -> str:
 
 
 def _state_path() -> Path:
-    explicit = os.getenv("CLAWCROSS_HARNESS_STATE_PATH", "").strip()
-    return Path(explicit).expanduser() if explicit else DATA_DIR / "harness_state.json"
+    explicit = os.getenv("CLAWCROSS_FLEET_STATE_PATH", "").strip()
+    return Path(explicit).expanduser() if explicit else DATA_DIR / "fleet_state.json"
 
 
 def _empty_store() -> dict[str, Any]:
@@ -363,7 +363,7 @@ def _record_run(state: dict[str, Any], event: dict[str, Any]) -> dict[str, Any]:
     return run
 
 
-def apply_harness_event(user_id: str, event: dict[str, Any]) -> dict[str, Any]:
+def apply_fleet_event(user_id: str, event: dict[str, Any]) -> dict[str, Any]:
     action = _string(event.get("action")) or "heartbeat"
     action = action.lower().replace("-", "_")
     with _lock:
@@ -395,7 +395,7 @@ def apply_harness_event(user_id: str, event: dict[str, Any]) -> dict[str, Any]:
             changed = state.setdefault("agents", {}).pop(agent_id, {"agent_id": agent_id, "deleted": False})
             changed = {**changed, "deleted": agent_id not in state.setdefault("agents", {})}
         elif action in {"project_delete", "delete_project"}:
-            # mainagent's HarnessEventRequest defaults project_id to "default" and the
+            # mainagent's FleetEventRequest defaults project_id to "default" and the
             # route calls .model_dump(exclude_defaults=True), which silently drops the
             # field when its value equals the default. Mirror _ensure_project's
             # fallback so deleting the literal "default" project still works.
@@ -420,7 +420,7 @@ def apply_harness_event(user_id: str, event: dict[str, Any]) -> dict[str, Any]:
                 "unlinked_agent_ids": unlinked_agent_ids,
             }
         else:
-            raise ValueError(f"unknown harness action: {action}")
+            raise ValueError(f"unknown fleet action: {action}")
         event_record = _append_event(state, event, action)
         state["updated_at"] = _now_iso()
         _write_store(store)
@@ -430,7 +430,7 @@ def apply_harness_event(user_id: str, event: dict[str, Any]) -> dict[str, Any]:
         "action": action,
         "event": event_record,
         "record": changed,
-        "state": get_harness_state(user_id),
+        "state": get_fleet_state(user_id),
     }
 
 
@@ -459,7 +459,7 @@ def _annotate_agent(agent: dict[str, Any]) -> dict[str, Any]:
     return item
 
 
-def get_harness_state(user_id: str) -> dict[str, Any]:
+def get_fleet_state(user_id: str) -> dict[str, Any]:
     with _lock:
         store = _read_store()
         state = deepcopy(_get_user_state(store, user_id))

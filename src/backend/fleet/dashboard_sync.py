@@ -1,4 +1,4 @@
-"""Task-only sync between the public dashboard and ClawCross harness.
+"""Task-only sync between the public dashboard and ClawCross fleet.
 
 Dashboard remains a human/agent-readable TODO board. Runtime details such as
 Claude settings, session wiring, credentials, and worker process state stay in
@@ -16,7 +16,7 @@ import subprocess
 from typing import Any
 import urllib.request
 
-from harness.store import apply_harness_event, get_harness_state
+from fleet.store import apply_fleet_event, get_fleet_state
 
 
 DASHBOARD_STATUSES = {"todo", "active", "blocked", "needs_user", "review", "done"}
@@ -144,13 +144,13 @@ def import_dashboard_todos(
     project_id: str = "",
     write: bool = True,
 ) -> dict[str, Any]:
-    """Import open dashboard TODOs into the local harness task queue."""
+    """Import open dashboard TODOs into the local fleet task queue."""
 
     doc, source = load_dashboard_tasks_doc(dashboard_root)
     tasks = doc.get("tasks")
     if not isinstance(tasks, list):
         raise ValueError("dashboard/state/tasks.json must contain a tasks list")
-    state = get_harness_state(user_id)
+    state = get_fleet_state(user_id)
     existing = {
         str(task.get("task_id") or ""): task
         for task in state.get("tasks", [])
@@ -196,7 +196,7 @@ def import_dashboard_todos(
                 payload["status"] = status
             updated += 1
         if write:
-            apply_harness_event(user_id, payload)
+            apply_fleet_event(user_id, payload)
 
     return {"created": created, "updated": updated, "skipped": skipped, "source": source}
 
@@ -249,7 +249,7 @@ def should_sync_dashboard_comment(comment: dict[str, Any]) -> bool:
     return True
 
 
-def sync_harness_to_dashboard(
+def sync_fleet_to_dashboard(
     user_id: str,
     *,
     dashboard_root: Path | None = None,
@@ -257,16 +257,16 @@ def sync_harness_to_dashboard(
     create_missing: bool = False,
     write: bool = True,
 ) -> dict[str, Any]:
-    """Copy harness task status/comments into dashboard/state/tasks.json."""
+    """Copy fleet task status/comments into dashboard/state/tasks.json."""
 
     path = dashboard_tasks_path(dashboard_root)
     doc = load_json(path)
     dashboard_tasks = doc.setdefault("tasks", [])
     if not isinstance(dashboard_tasks, list):
         raise ValueError("dashboard/state/tasks.json must contain a tasks list")
-    state = get_harness_state(user_id)
+    state = get_fleet_state(user_id)
     runs = [run for run in state.get("runs", []) if isinstance(run, dict)]
-    harness_tasks = {
+    fleet_tasks = {
         str(task.get("task_id")): task
         for task in state.get("tasks", [])
         if isinstance(task, dict) and task.get("task_id")
@@ -283,27 +283,27 @@ def sync_harness_to_dashboard(
     }
 
     if create_missing:
-        for task_id, harness_task in sorted(harness_tasks.items()):
+        for task_id, fleet_task in sorted(fleet_tasks.items()):
             if task_id in existing_ids:
                 continue
-            if project_id and harness_task.get("project_id") != project_id:
+            if project_id and fleet_task.get("project_id") != project_id:
                 continue
-            status = clean_status(harness_task.get("status")) or "todo"
-            if status == "done" and not task_has_host_verification(harness_task, runs):
+            status = clean_status(fleet_task.get("status")) or "todo"
+            if status == "done" and not task_has_host_verification(fleet_task, runs):
                 status = "review"
             dashboard_tasks.append(
                 {
                     "task_id": task_id,
-                    "project_id": harness_task.get("project_id") or project_id,
-                    "title": harness_task.get("title") or task_id,
-                    "description": harness_task.get("description") or "",
+                    "project_id": fleet_task.get("project_id") or project_id,
+                    "title": fleet_task.get("title") or task_id,
+                    "description": fleet_task.get("description") or "",
                     "status": status,
-                    "priority": harness_task.get("priority") or "medium",
-                    "assignee": harness_task.get("assignee") or None,
-                    "due_at": harness_task.get("due_at") or "",
+                    "priority": fleet_task.get("priority") or "medium",
+                    "assignee": fleet_task.get("assignee") or None,
+                    "due_at": fleet_task.get("due_at") or "",
                     "result": None,
                     "comments": [],
-                    "updated_at": harness_task.get("updated_at") or now_iso(),
+                    "updated_at": fleet_task.get("updated_at") or now_iso(),
                 }
             )
             existing_ids.add(task_id)
@@ -316,25 +316,25 @@ def sync_harness_to_dashboard(
         if project_id and dashboard_task.get("project_id") != project_id:
             continue
         task_id = str(dashboard_task.get("task_id") or "")
-        harness_task = harness_tasks.get(task_id)
-        if not harness_task:
+        fleet_task = fleet_tasks.get(task_id)
+        if not fleet_task:
             summary["skipped"] += 1
             continue
 
         task_changed = False
-        status = clean_status(harness_task.get("status"))
-        if status == "done" and not task_has_host_verification(harness_task, runs):
+        status = clean_status(fleet_task.get("status"))
+        if status == "done" and not task_has_host_verification(fleet_task, runs):
             status = "review"
         if status and dashboard_task.get("status") != status:
             dashboard_task["status"] = status
             if status == "done" and not dashboard_task.get("completed_at"):
-                dashboard_task["completed_at"] = str(harness_task.get("updated_at") or now_iso()).split("T", 1)[0]
+                dashboard_task["completed_at"] = str(fleet_task.get("updated_at") or now_iso()).split("T", 1)[0]
             summary["status_updates"] += 1
             task_changed = True
             changed = True
 
         for field in ("project_id", "title", "description", "priority", "assignee", "due_at"):
-            value = harness_task.get(field)
+            value = fleet_task.get(field)
             if field == "assignee" and not value:
                 value = None
             if value is None and field != "assignee":
@@ -362,7 +362,7 @@ def sync_harness_to_dashboard(
                     changed = True
         seen_ids = {str(item.get("comment_id") or "").strip() for item in comments if isinstance(item, dict)}
         seen_bodies = {str(item.get("body") or "").strip() for item in comments if isinstance(item, dict)}
-        for comment in harness_task.get("comments", []) or []:
+        for comment in fleet_task.get("comments", []) or []:
             if not isinstance(comment, dict):
                 continue
             if not should_sync_dashboard_comment(comment):
@@ -391,7 +391,7 @@ def sync_harness_to_dashboard(
             changed = True
 
         if task_changed:
-            dashboard_task["updated_at"] = harness_task.get("updated_at") or now_iso()
+            dashboard_task["updated_at"] = fleet_task.get("updated_at") or now_iso()
 
     if changed:
         doc["updated_at"] = now_iso()
@@ -415,12 +415,12 @@ def _run_git(repo_root: Path, args: list[str]) -> subprocess.CompletedProcess[st
 def publish_dashboard_tasks(
     *,
     dashboard_root: Path | None = None,
-    message: str = "Update dashboard task status from ClawCross harness",
+    message: str = "Update dashboard task status from ClawCross fleet",
     push: bool = True,
 ) -> dict[str, Any]:
     """Commit and push task-state changes from the dashboard repo, if any.
 
-    The harness deliberately publishes only dashboard/state/tasks.json so Claude
+    The fleet deliberately publishes only dashboard/state/tasks.json so Claude
     configuration, runtime wiring, and any unrelated dashboard edits stay out of
     this automated path.
     """

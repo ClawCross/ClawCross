@@ -39,7 +39,7 @@ from teams.routes import create_teams_router
 from teams.store import get_team_store
 from common.llm_factory import extract_text as _extract_text
 from common.user_auth import load_users as load_users_from_file, verify_password as verify_password_from_file
-from harness.routes import create_harness_router
+from fleet.routes import create_fleet_router
 from webot.api.openai_service import OpenAIChatService
 from ops.routes import create_ops_router
 from webot.api.session_service import SessionService
@@ -232,7 +232,7 @@ app.include_router(
 )
 
 app.include_router(
-    create_harness_router(
+    create_fleet_router(
         verify_auth_or_token=verify_auth_or_token,
     )
 )

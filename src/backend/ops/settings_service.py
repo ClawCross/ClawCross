@@ -23,12 +23,12 @@ from common.env_settings import (
     read_env_settings,
     write_env_settings,
 )
-from chatbot.channel_catalog import get_chatbot_channels
+from channels.channel_catalog import get_channels
 from common.runtime_paths import DATA_DIR, PID_DIR, PROJECT_ROOT
-from ops.settings_models import ChatbotWhitelistUpdateRequest, SettingsUpdateRequest
+from ops.settings_models import ChannelWhitelistUpdateRequest, SettingsUpdateRequest
 
 
-CHATBOT_WHITELIST_CHANNELS = ("telegram", "qq", "weclaw", "webhook")
+WHITELIST_CHANNELS = ("telegram", "qq", "weclaw", "webhook")
 
 
 class SettingsService:
@@ -43,7 +43,7 @@ class SettingsService:
         self.project_root = str(PROJECT_ROOT)
         self.restart_flag = os.path.join(str(PID_DIR), "restart_flag")
 
-    def _chatbot_whitelist_path(self) -> str:
+    def _channel_whitelist_path(self) -> str:
         settings = read_env_settings(self.env_path, ["WHITELIST_FILE"])
         configured = (settings.get("WHITELIST_FILE") or "").strip()
         path = os.path.expanduser(configured) if configured else str(DATA_DIR / "whitelist.json")
@@ -54,10 +54,10 @@ class SettingsService:
             path = "/".join(parts[1:]) or "whitelist.json"
         return os.path.abspath(os.path.join(str(DATA_DIR), path))
 
-    def _normalize_chatbot_whitelist(self, raw: dict | None) -> dict:
+    def _normalize_channel_whitelist(self, raw: dict | None) -> dict:
         normalized = {}
         raw = raw if isinstance(raw, dict) else {}
-        for channel in CHATBOT_WHITELIST_CHANNELS:
+        for channel in WHITELIST_CHANNELS:
             section = raw.get(channel, {})
             if not isinstance(section, dict):
                 section = {}
@@ -82,19 +82,19 @@ class SettingsService:
             }
         return normalized
 
-    def _read_chatbot_whitelist(self) -> dict:
-        path = self._chatbot_whitelist_path()
+    def _read_channel_whitelist(self) -> dict:
+        path = self._channel_whitelist_path()
         if not os.path.exists(path):
-            return self._normalize_chatbot_whitelist({})
+            return self._normalize_channel_whitelist({})
         try:
             with open(path, "r", encoding="utf-8") as f:
-                return self._normalize_chatbot_whitelist(json.load(f))
+                return self._normalize_channel_whitelist(json.load(f))
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"读取 chatbot 白名单失败: {e}")
+            raise HTTPException(status_code=500, detail=f"读取渠道白名单失败: {e}")
 
-    def _write_chatbot_whitelist(self, whitelist: dict) -> None:
-        path = self._chatbot_whitelist_path()
-        normalized = self._normalize_chatbot_whitelist(whitelist)
+    def _write_channel_whitelist(self, whitelist: dict) -> None:
+        path = self._channel_whitelist_path()
+        normalized = self._normalize_channel_whitelist(whitelist)
         try:
             os.makedirs(os.path.dirname(path), exist_ok=True)
             tmp_path = f"{path}.tmp"
@@ -103,7 +103,7 @@ class SettingsService:
                 f.write("\n")
             os.replace(tmp_path, path)
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"写入 chatbot 白名单失败: {e}")
+            raise HTTPException(status_code=500, detail=f"写入渠道白名单失败: {e}")
 
     async def get_settings(self, user_id: str, password: str, x_internal_token: str | None):
         self.verify_auth_or_token(user_id, password, x_internal_token)
@@ -152,23 +152,23 @@ class SettingsService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"写入重启信号失败: {e}")
 
-    async def get_chatbot_whitelist(self, user_id: str, password: str, x_internal_token: str | None):
+    async def get_channel_whitelist(self, user_id: str, password: str, x_internal_token: str | None):
         self.verify_auth_or_token(user_id, password, x_internal_token)
-        path = self._chatbot_whitelist_path()
+        path = self._channel_whitelist_path()
         return {
             "status": "success",
             "path": os.path.relpath(path, self.project_root) if path.startswith(self.project_root) else path,
-            "channels": list(CHATBOT_WHITELIST_CHANNELS),
-            "available_channels": get_chatbot_channels(),
-            "whitelist": self._read_chatbot_whitelist(),
+            "channels": list(WHITELIST_CHANNELS),
+            "available_channels": get_channels(),
+            "whitelist": self._read_channel_whitelist(),
         }
 
-    async def update_chatbot_whitelist(self, req: ChatbotWhitelistUpdateRequest, x_internal_token: str | None):
+    async def update_channel_whitelist(self, req: ChannelWhitelistUpdateRequest, x_internal_token: str | None):
         self.verify_auth_or_token(req.user_id, req.password, x_internal_token)
-        self._write_chatbot_whitelist(req.whitelist)
+        self._write_channel_whitelist(req.whitelist)
         return {
             "status": "success",
-            "channels": list(CHATBOT_WHITELIST_CHANNELS),
-            "available_channels": get_chatbot_channels(),
-            "whitelist": self._read_chatbot_whitelist(),
+            "channels": list(WHITELIST_CHANNELS),
+            "available_channels": get_channels(),
+            "whitelist": self._read_channel_whitelist(),
         }

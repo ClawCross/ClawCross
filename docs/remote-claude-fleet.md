@@ -1,15 +1,15 @@
-# Remote Claude Harness 接入流程
+# Remote Claude Fleet 接入流程
 
-本文记录把一台新的远端电脑接入 ClawCross Project Harness 的标准流程。目标是让远端 Claude Code / Claude Agents session 能被本机 ClawCross 发现、收发消息、读取 dashboard TODO，并通过私有 harness 更新任务状态和评论。
+本文记录把一台新的远端电脑接入 ClawCross Project Fleet 的标准流程。目标是让远端 Claude Code / Claude Agents session 能被本机 ClawCross 发现、收发消息、读取 dashboard TODO，并通过私有 fleet 更新任务状态和评论。
 
-不要把密码、`INTERNAL_TOKEN`、Claude remote-control 链接、Claude session id 或 harness runtime state 写进 dashboard 仓库。dashboard 只保留项目、TODO、comment、result 等任务信息；Claude 配置和控制链路只放在 ClawCross 里。
+不要把密码、`INTERNAL_TOKEN`、Claude remote-control 链接、Claude session id 或 fleet runtime state 写进 dashboard 仓库。dashboard 只保留项目、TODO、comment、result 等任务信息；Claude 配置和控制链路只放在 ClawCross 里。
 
 ## 架构约定
 
-- 本机 ClawCross 运行 `mainagent`、frontend 和 `harness_conductor`。
+- 本机 ClawCross 运行 `mainagent`、frontend 和 `fleet_conductor`。
 - 远端电脑通过 Tailscale 和 SSH 接入。
 - 远端 `127.0.0.1:51200` 通过 SSH reverse tunnel 指回本机 ClawCross `127.0.0.1:51200`。
-- 远端 Claude 通过 `~/.local/bin/clawcross-harness-agent` 读 dashboard TODO、写 harness heartbeat/status/comment。
+- 远端 Claude 通过 `~/.local/bin/clawcross-fleet-agent` 读 dashboard TODO、写 fleet heartbeat/status/comment。
 - 远端项目根目录可以维护一个 `TASK.md`，作为 plan → execution → modification → experiment/result 的本地工作日志；ClawCross 可把它和 dashboard TODO 双向同步。
 - 本机前端 `/mobile/group_chat` 通过 Tailscale 枚举远端 Claude sessions，并把项目卡片里的 TODO 和 worker session 绑定显示。
 - 每台远端电脑默认绑定一个主项目；没有 TODO 时保留一个 standby session，避免项目卡片消失。
@@ -67,7 +67,7 @@ ssh <remote-user>@<remote-tailscale-ip> 'whoami; hostname; tailscale ip -4; sudo
 
 建议后续配置好 SSH key；如果当下只用密码，也不要把密码写入 repo、dashboard 或 docs。
 
-## 3. 安装远端 harness 配置
+## 3. 安装远端 fleet 配置
 
 确保本机 ClawCross 至少启动过一次，这样 `~/.clawcross/config/.env` 里有 `INTERNAL_TOKEN`。
 
@@ -93,9 +93,9 @@ python3 scripts/configure_remote_claude_dashboard.py \
 这个脚本会在远端安装或更新：
 
 - `~/.claude/CLAUDE.md` 的 ClawCross 管理块
-- `~/.local/bin/clawcross-harness-agent`
-- `~/.clawcross/harness.env`
-- Claude Code settings 里允许的 harness/dashboard 命令
+- `~/.local/bin/clawcross-fleet-agent`
+- `~/.clawcross/fleet.env`
+- Claude Code settings 里允许的 fleet/dashboard 命令
 - `~/.local/bin/clawcross-claude` wrapper，让普通交互 Claude 默认带上 `--effort max --permission-mode auto --remote-control`
 
 脚本也会把远端 SSH 用户映射记录到本机：
@@ -108,7 +108,7 @@ ClawCross 默认会用 `tailscale status --json` 枚举在线 Linux 远端；这
 
 ## 4. 建立 reverse tunnel
 
-远端 harness client 默认访问远端本机的 `http://127.0.0.1:51200`。因此每台远端电脑都需要一条 SSH reverse tunnel 指回本机 ClawCross。
+远端 fleet client 默认访问远端本机的 `http://127.0.0.1:51200`。因此每台远端电脑都需要一条 SSH reverse tunnel 指回本机 ClawCross。
 
 在本机执行：
 
@@ -179,10 +179,10 @@ PY
 <remote-user>@<remote-tailscale-ip>::session_...
 ```
 
-让远端 session 或本机通过 harness 发 heartbeat：
+让远端 session 或本机通过 fleet 发 heartbeat：
 
 ```bash
-~/.local/bin/clawcross-harness-agent heartbeat \
+~/.local/bin/clawcross-fleet-agent heartbeat \
   --agent-id "<project-id>-<hostname-or-role>" \
   --project-id "<project-id>" \
   --status idle \
@@ -201,21 +201,21 @@ PY
 任务状态更新规范：
 
 ```bash
-~/.local/bin/clawcross-harness-agent task-status \
+~/.local/bin/clawcross-fleet-agent task-status \
   --agent-id "<agent-id>" \
   --project-id "<project-id>" \
   --task-id "<task-id>" \
   --status doing \
   --message "Started: <short plan>"
 
-~/.local/bin/clawcross-harness-agent comment \
+~/.local/bin/clawcross-fleet-agent comment \
   --agent-id "<agent-id>" \
   --project-id "<project-id>" \
   --task-id "<task-id>" \
   --kind comment \
   --message "Progress: <evidence>"
 
-~/.local/bin/clawcross-harness-agent task-status \
+~/.local/bin/clawcross-fleet-agent task-status \
   --agent-id "<agent-id>" \
   --project-id "<project-id>" \
   --task-id "<task-id>" \
@@ -240,19 +240,19 @@ PY
 
 ```bash
 cd ~/workspace/<project-repo-or-folder>
-clawcross-harness-agent task-md export --project-id <project-id> --path TASK.md
+clawcross-fleet-agent task-md export --project-id <project-id> --path TASK.md
 ```
 
-编辑 `TASK.md` 里每个 task 的 `update` JSON 字段后，把状态和日志写回 ClawCross harness：
+编辑 `TASK.md` 里每个 task 的 `update` JSON 字段后，把状态和日志写回 ClawCross fleet：
 
 ```bash
-clawcross-harness-agent task-md import --path TASK.md
+clawcross-fleet-agent task-md import --path TASK.md
 ```
 
 如果需要一条命令完成“先导入本地 `TASK.md` 更新，再从 dashboard 刷新任务列表”：
 
 ```bash
-clawcross-harness-agent task-md sync --project-id <project-id> --path TASK.md
+clawcross-fleet-agent task-md sync --project-id <project-id> --path TASK.md
 ```
 
 本机也可以直接同步任意 `TASK.md`，用于测试或从远端拉回文件后处理：
@@ -268,9 +268,9 @@ python3 scripts/sync_task_md.py \
 双向同步规则：
 
 - dashboard → TASK.md: dashboard/status/TODO/comment 会被渲染进 `TASK.md` 的托管 JSON block。
-- TASK.md → dashboard: `update.status` 和 lifecycle 字段会先写入私有 harness，再由 ClawCross 同步成 dashboard status/comment。
+- TASK.md → dashboard: `update.status` 和 lifecycle 字段会先写入私有 fleet，再由 ClawCross 同步成 dashboard status/comment。
 - `TASK.md` 上半部分是给人和 agent 快速阅读的项目工作日志，会展示每个 TODO 的描述和最新 comment；下半部分托管 JSON block 是双向同步的唯一机器源。
-- `TASK.md` 不保存 Claude session id、remote-control link、token、密码或 harness runtime state。
+- `TASK.md` 不保存 Claude session id、remote-control link、token、密码或 fleet runtime state。
 - 导入后会重写托管 block，清空已消费的 `update.*` 字段，避免重复 comment。
 
 ## 7. 项目绑定和并行 session 规则
@@ -281,9 +281,9 @@ python3 scripts/sync_task_md.py \
 - 已提交待审查的 TODO 不要自动删除对应 session；等主机验收或用户审查。
 - 不可聊天、remote-control 断开且没有可用 bridge/session id 的 session 可以归档删除。
 - session 标题格式由 conductor 管理：`<Project Label> | <Remote Hostname> [| <Task Label>]`。
-- 扫描到的普通 Claude Code session 不等于 harness worker。Project Harness 只接管已经有 `clawcross-harness-agent heartbeat` 且 `session_ref` 能匹配真实 Claude session 的 worker。
+- 扫描到的普通 Claude Code session 不等于 fleet worker。Project Fleet 只接管已经有 `clawcross-fleet-agent heartbeat` 且 `session_ref` 能匹配真实 Claude session 的 worker。
 - 其他人手动打开的 Claude Code session 会在 Remote Claude 列表里标为“未接管”，conductor 不会自动分配 TODO、不会自动发送消息、不会改名、不会清理。
-- 只有在明确需要旧式自动接管时，才可临时设置 `CLAWCROSS_HARNESS_AUTOBIND_UNBOUND_SESSIONS=1`。默认不要开启，避免误接管共享账号或他人正在使用的 session。
+- 只有在明确需要旧式自动接管时，才可临时设置 `CLAWCROSS_FLEET_AUTOBIND_UNBOUND_SESSIONS=1`。默认不要开启，避免误接管共享账号或他人正在使用的 session。
 
 ## 8. 前端验证
 
@@ -293,12 +293,12 @@ python3 scripts/sync_task_md.py \
 http://127.0.0.1:51209/mobile/group_chat
 ```
 
-Project Harness 应显示：
+Project Fleet 应显示：
 
 - 项目卡片数符合当前主项目数
 - 每个项目卡片上方是 TODO 横向列表
 - 下方是 Workers 横向列表
-- `worker 在线` 只在真实 Claude session 和 harness heartbeat 都存在时计数
+- `worker 在线` 只在真实 Claude session 和 fleet heartbeat 都存在时计数
 - `0 失联` 表示没有 stale worker
 
 点击 worker 卡片后，右侧 transcript 应能显示对应远端 Claude session 内容。可用一条无副作用消息测试：
@@ -322,10 +322,10 @@ ClawCross 连通性测试：请只回复「收到：<session-id> 在线」，不
 - remote-control URL
 - `INTERNAL_TOKEN`
 - SSH/Tailscale credentials
-- harness heartbeat/runtime state
+- fleet heartbeat/runtime state
 - Claude settings 或 CLAUDE.md 管理块
 
-ClawCross conductor 可以把 harness 中的 TODO 状态和 comment 同步回 dashboard；dashboard 不负责保存 worker runtime。
+ClawCross conductor 可以把 fleet 中的 TODO 状态和 comment 同步回 dashboard；dashboard 不负责保存 worker runtime。
 
 ## 10. 常见故障
 
@@ -363,17 +363,17 @@ cat ~/.clawcross/data/remote_claude_targets.json
 python3 scripts/configure_remote_claude_dashboard.py <remote-user>@<remote-tailscale-ip> --default-project-id <project-id> --no-batch-mode
 ```
 
-### `clawcross-harness-agent: command not found`
+### `clawcross-fleet-agent: command not found`
 
 远端使用全路径：
 
 ```bash
-~/.local/bin/clawcross-harness-agent heartbeat ...
+~/.local/bin/clawcross-fleet-agent heartbeat ...
 ```
 
 或者重新运行配置脚本，确保 `~/.local/bin` 已加入 shell 环境。
 
-### Harness heartbeat 失败
+### Fleet heartbeat 失败
 
 先验证 reverse tunnel：
 
@@ -406,7 +406,7 @@ tmux new-session -d -s clawcross-tunnel-<short-host> \
 补 heartbeat：
 
 ```bash
-~/.local/bin/clawcross-harness-agent heartbeat \
+~/.local/bin/clawcross-fleet-agent heartbeat \
   --agent-id "<agent-id>" \
   --project-id "<project-id>" \
   --status idle \

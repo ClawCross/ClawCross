@@ -15,7 +15,7 @@ NoneBot 的 bot.send 回写。
         NONEBOT_PORT=8120
         WHITELIST_FILE=data/whitelist.json    # 中心化白名单，按 channel 分段
     4. 各平台自身的 env 变量按 NoneBot 适配器文档配（如 DING_ACCESS_TOKEN, ONEBOT_ACCESS_TOKEN 等）
-    5. 启动 chatbot 即可
+    5. 启动渠道即可
 
 冲突保护：
     Slack 和通用 Webhook 由本地手写 adapter 覆盖（NoneBot 无 Slack 适配器）。
@@ -34,14 +34,14 @@ from typing import Any
 
 from dotenv import load_dotenv
 
-from chatbot.channel_catalog import get_chatbot_channel, get_nonebot_adapter_meta
+from channels.channel_catalog import get_channel, get_nonebot_adapter_meta
 from common.runtime_paths import ENV_FILE
 
 load_dotenv(dotenv_path=ENV_FILE)
 
 from .base import ChannelAdapter
 
-logger = logging.getLogger("chatbot.nonebot_bridge")
+logger = logging.getLogger("channels.nonebot_bridge")
 
 # 与现有手写 adapter 冲突的 NoneBot 模块短名（目前只有 Slack 不在 NoneBot 列表）
 _OVERLAPPING_ADAPTERS: set[str] = set()
@@ -67,7 +67,7 @@ def _looks_placeholder(value: Any) -> bool:
 
 
 def _bot_required_fields(adapter_name: str) -> list[str]:
-    channel = get_chatbot_channel(adapter_name) or {}
+    channel = get_channel(adapter_name) or {}
     fields = []
     for field in channel.get("fields") or []:
         if not isinstance(field, dict):
@@ -497,7 +497,7 @@ class NoneBotBridgeAdapter(ChannelAdapter):
                 normalized = "onebotv11"
             elif "onebot" in normalized and "v12" in normalized:
                 normalized = "onebotv12"
-            channel = get_chatbot_channel(normalized)
+            channel = get_channel(normalized)
             return str(channel.get("id") or normalized) if channel else normalized
         except Exception:
             return "nonebot"

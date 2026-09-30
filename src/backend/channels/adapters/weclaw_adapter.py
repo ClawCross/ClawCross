@@ -55,7 +55,7 @@ ensure_runtime_dirs()
 
 from .base import ChannelAdapter, MagicLink
 
-logger = logging.getLogger("chatbot.weclaw")
+logger = logging.getLogger("channels.weclaw")
 
 # QR ASCII 块字符（unicode 半/全块、白/黑、阴影）
 _QR_CHARS = set("█▀▄▌▐░▒▓ ▉▊▋▍▎▏▔▕")

@@ -1,5 +1,5 @@
 """
-Chatbot base handler - shared logic for all channel adapters.
+Channel base handler - shared logic for all channel adapters.
 
 统一处理：
 1. 权限验证（各渠道白名单）
@@ -26,15 +26,15 @@ from pathlib import Path
 
 from common.runtime_paths import DATA_DIR
 
-logger = logging.getLogger("chatbot.base")
+logger = logging.getLogger("channels.base")
 
 FRONT_COMMAND = "/front"
 CROSS_COMMAND = "/cross"
 LEGACY_CLI_COMMAND = "/cli"
 
 
-def resolve_chatbot_data_path(value: str | None, default_name: str) -> str:
-    """Resolve chatbot data files under the runtime data directory.
+def resolve_channel_data_path(value: str | None, default_name: str) -> str:
+    """Resolve channel data files under the runtime data directory.
 
     Older templates used values like data/whitelist.json. In the user-home
     runtime layout services run from CLAWCROSS_WORKSPACE_DIR, so that relative
@@ -89,7 +89,7 @@ class ChannelAdapter(ABC):
         self._agent_url = os.getenv("AI_API_URL", f"http://127.0.0.1:{os.getenv('PORT_AGENT', '51200')}/v1/chat/completions")
         self._internal_token = os.getenv("INTERNAL_TOKEN", "")
         self._llm_model = os.getenv("LLM_MODEL", "")
-        self._whitelist_file = resolve_chatbot_data_path(os.getenv("WHITELIST_FILE"), "whitelist.json")
+        self._whitelist_file = resolve_channel_data_path(os.getenv("WHITELIST_FILE"), "whitelist.json")
         self._cli_enabled: set[str] = set()
         self._cli_lock = threading.RLock()
 
@@ -221,8 +221,8 @@ class ChannelAdapter(ABC):
                 self._cli_enabled.discard(key)
                 return True, "ClawCross cross shell closed."
             self._cli_enabled.add(key)
-            from scripts.clawcross import chat_help_text, chat_welcome_text, handle_chatbot_input, load_chatbot_state
-            state = load_chatbot_state(channel, user_id, username)
+            from scripts.clawcross import chat_help_text, chat_welcome_text, handle_channel_input, load_channel_state
+            state = load_channel_state(channel, user_id, username)
             if arg in {"help", "h", "?"}:
                 return True, chat_help_text()
             if arg == "front":
@@ -230,7 +230,7 @@ class ChannelAdapter(ABC):
                 return True, self.format_cross_reply(link)
             if arg:
                 with self._cli_lock:
-                    active, reply = handle_chatbot_input(stripped, state)
+                    active, reply = handle_channel_input(stripped, state)
                 if not active:
                     self._cli_enabled.discard(key)
                     return True, "ClawCross cross shell closed."
@@ -243,10 +243,10 @@ class ChannelAdapter(ABC):
         if key not in self._cli_enabled:
             return False, None
 
-        from scripts.clawcross import handle_chatbot_input, load_chatbot_state
-        state = load_chatbot_state(channel, user_id, username)
+        from scripts.clawcross import handle_channel_input, load_channel_state
+        state = load_channel_state(channel, user_id, username)
         with self._cli_lock:
-            active, reply = handle_chatbot_input(stripped, state)
+            active, reply = handle_channel_input(stripped, state)
         if not active:
             self._cli_enabled.discard(key)
             return True, "ClawCross cross shell closed."

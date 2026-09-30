@@ -2687,7 +2687,7 @@ def proxy_update_settings():
 
 
 LOCAL_SETTINGS_FULL_URL = f"http://127.0.0.1:{PORT_AGENT}/settings/full"
-LOCAL_CHATBOT_WHITELIST_URL = f"http://127.0.0.1:{PORT_AGENT}/chatbot/whitelist"
+LOCAL_CHANNEL_WHITELIST_URL = f"http://127.0.0.1:{PORT_AGENT}/channels/whitelist"
 LOCAL_RESTART_URL = f"http://127.0.0.1:{PORT_AGENT}/restart"
 
 
@@ -2715,25 +2715,25 @@ def proxy_update_settings_full():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/proxy_chatbot_whitelist", methods=["GET"])
-def proxy_get_chatbot_whitelist():
-    """代理获取 chatbot 白名单"""
+@app.route("/proxy_channel_whitelist", methods=["GET"])
+def proxy_get_channel_whitelist():
+    """代理获取渠道白名单"""
     user_id = session.get("user_id", "")
     try:
-        r = requests.get(LOCAL_CHATBOT_WHITELIST_URL, params={"user_id": user_id}, headers=_internal_auth_headers(), timeout=10)
+        r = requests.get(LOCAL_CHANNEL_WHITELIST_URL, params={"user_id": user_id}, headers=_internal_auth_headers(), timeout=10)
         return jsonify(r.json()), r.status_code
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/proxy_chatbot_whitelist", methods=["POST"])
-def proxy_update_chatbot_whitelist():
-    """代理更新 chatbot 白名单"""
+@app.route("/proxy_channel_whitelist", methods=["POST"])
+def proxy_update_channel_whitelist():
+    """代理更新渠道白名单"""
     user_id = session.get("user_id", "")
     try:
         data = request.get_json(force=True)
         data["user_id"] = user_id
-        r = requests.post(LOCAL_CHATBOT_WHITELIST_URL, json=data, headers=_internal_auth_headers(), timeout=10)
+        r = requests.post(LOCAL_CHANNEL_WHITELIST_URL, json=data, headers=_internal_auth_headers(), timeout=10)
         return jsonify(r.json()), r.status_code
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -2952,17 +2952,17 @@ def proxy_restart_services():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/proxy_restart_chatbot", methods=["POST"])
-def proxy_restart_chatbot():
+@app.route("/proxy_restart_channels", methods=["POST"])
+def proxy_restart_channels():
     """只重启社交媒体机器人，让 channel 配置保存后尽快生效。"""
     user_id = session.get("user_id", "")
     if not user_id:
         return jsonify({"error": "not logged in"}), 401
     try:
-        restart_flag = os.path.join(str(PID_DIR), "chatbot_restart_flag")
+        restart_flag = os.path.join(str(PID_DIR), "channels_restart_flag")
         with open(restart_flag, "w") as f:
             f.write("restart")
-        return jsonify({"status": "success", "message": "chatbot 重启信号已发送"})
+        return jsonify({"status": "success", "message": "渠道重启信号已发送"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

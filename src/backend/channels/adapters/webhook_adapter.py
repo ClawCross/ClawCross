@@ -30,7 +30,7 @@ load_dotenv(dotenv_path=ENV_FILE)
 
 from .base import ChannelAdapter
 
-logger = logging.getLogger("chatbot.webhook")
+logger = logging.getLogger("channels.webhook")
 
 
 class WebhookAdapter(ChannelAdapter):

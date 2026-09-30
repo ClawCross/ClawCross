@@ -52,10 +52,10 @@ def _write_env(updates: dict[str, str]) -> None:
     write_env_settings(str(path), updates)
 
 
-def _request_chatbot_restart() -> None:
+def _request_channels_restart() -> None:
     try:
         PID_DIR.mkdir(parents=True, exist_ok=True)
-        (PID_DIR / "chatbot_restart_flag").write_text("restart", "utf-8")
+        (PID_DIR / "channels_restart_flag").write_text("restart", "utf-8")
     except Exception:
         pass
 
@@ -270,7 +270,7 @@ def cmd_clear(channel_id: str) -> str:
         if not cleared:
             return f"Channel {ch.label} is already empty."
         _write_env(updates)
-        _request_chatbot_restart()
+        _request_channels_restart()
         return f"Cleared {len(cleared)} env vars for {ch.label}: {', '.join(cleared)}."
     updates = {}
     for key in _channel_env_keys(ch):
@@ -285,8 +285,8 @@ def cmd_clear(channel_id: str) -> str:
     if not updates:
         return f"Channel {ch.label} is already empty."
     _write_env(updates)
-    _request_chatbot_restart()
-    return f"Cleared {ch.label}: {', '.join(updates)}. Chatbot restart requested."
+    _request_channels_restart()
+    return f"Cleared {ch.label}: {', '.join(updates)}. Channel restart requested."
 
 
 def _prompt_field(field: BotField, *, interactive: bool) -> str:
@@ -427,8 +427,8 @@ def cmd_setup(channel_id: str | None, *, interactive: bool) -> str:
         if not updates:
             return "Setup cancelled (no values provided)."
         _write_env(updates)
-        _request_chatbot_restart()
-        return f"Saved {len(updates)} env vars for {ch.label}: {', '.join(updates)}. Chatbot restart requested."
+        _request_channels_restart()
+        return f"Saved {len(updates)} env vars for {ch.label}: {', '.join(updates)}. Channel restart requested."
 
     env_updates = _collect_env_fields(ch, interactive=True)
     current_env = _read_env()
@@ -456,10 +456,10 @@ def cmd_setup(channel_id: str | None, *, interactive: bool) -> str:
         enabled=True,
     )
     _write_env(env_updates)
-    _request_chatbot_restart()
+    _request_channels_restart()
     if bot is None:
-        return f"Saved env fields for {ch.label}: {', '.join(env_updates)}. Chatbot restart requested."
-    return f"Saved 1 bot to {ch.env_key}. Total bots: {len(bots)}. Chatbot restart requested."
+        return f"Saved env fields for {ch.label}: {', '.join(env_updates)}. Channel restart requested."
+    return f"Saved 1 bot to {ch.env_key}. Total bots: {len(bots)}. Channel restart requested."
 
 
 # ── unified dispatcher ──────────────────────────────────────────────────────

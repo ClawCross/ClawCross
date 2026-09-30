@@ -387,7 +387,7 @@ clawcross workflow run paper_survey_workflow team paper-review-council question 
 # spawns it with `python -m oasis.python_workflow_runner --workflow … --question …`
 ```
 
-Or from the chatbot: `/cross workflow run paper_survey_workflow team paper-review-council question 审 attention is all you need`.
+Or from a chat channel: `/cross workflow run paper_survey_workflow team paper-review-council question 审 attention is all you need`.
 
 The runner sets up `ctx`, awaits `main(ctx)`, captures the result, and posts the conclusion back to the topic.
 

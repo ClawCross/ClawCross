@@ -6,7 +6,7 @@
 #   bash selfskill/scripts/run.sh start-foreground [--no-openclaw] [--no-channel]
 #       --no-tunnel     不启动 Cloudflare Tunnel（仅本机访问）
 #       --no-openclaw   不从 OpenClaw 导入 LLM、launcher 不预热 OpenClaw Gateway
-#       --no-channel    不启动社交渠道 chatbot（即使 NONEBOT_ADAPTERS / *_WEBHOOK_URL 已配置）
+#       --no-channel    不启动社交渠道（即使 NONEBOT_ADAPTERS / *_WEBHOOK_URL 已配置）
 #   bash selfskill/scripts/run.sh stop                           # 停止服务
 #   bash selfskill/scripts/run.sh status                         # 检查服务状态
 #   bash selfskill/scripts/run.sh start-tunnel                   # 启动公网隧道（自动下载+暴露前端）
@@ -119,8 +119,8 @@ CLAWCROSS_SERVICE_PATTERNS=(
     "src/backend/server.py"
     "src/frontend/server.py"
     "scripts/tunnel.py"
-    "scripts/harness_conductor.py"
-    "src/backend/chatbot/main.py"
+    "scripts/fleet_conductor.py"
+    "src/backend/channels/main.py"
     "weclaw start -f"
 )
 CLAWCROSS_CHILD_PIDFILES=(
@@ -128,8 +128,8 @@ CLAWCROSS_CHILD_PIDFILES=(
     "$CLAWCROSS_RUN_DIR/oasis_server.pid"
     "$CLAWCROSS_RUN_DIR/mainagent.pid"
     "$CLAWCROSS_RUN_DIR/front.pid"
-    "$CLAWCROSS_RUN_DIR/chatbot.pid"
-    "$CLAWCROSS_RUN_DIR/harness_conductor.pid"
+    "$CLAWCROSS_RUN_DIR/channels.pid"
+    "$CLAWCROSS_RUN_DIR/fleet_conductor.pid"
     "$CLAWCROSS_RUN_DIR/tunnel.pid"
     "$CLAWCROSS_RUN_DIR/cloudflared.pid"
 )
@@ -550,7 +550,7 @@ case "${1:-help}" in
         fi
         if [ "${NO_CHANNEL:-0}" = 1 ]; then
             export CLAWCROSS_NO_CHANNEL=1
-            echo "⏭️  已指定 --no-channel：不启动社交媒体 chatbot"
+            echo "⏭️  已指定 --no-channel：不启动社交渠道"
         else
             unset CLAWCROSS_NO_CHANNEL
         fi
@@ -691,7 +691,7 @@ case "${1:-help}" in
         fi
         if [ "${NO_CHANNEL:-0}" = 1 ]; then
             export CLAWCROSS_NO_CHANNEL=1
-            echo "⏭️  已指定 --no-channel：不启动社交媒体 chatbot"
+            echo "⏭️  已指定 --no-channel：不启动社交渠道"
         else
             unset CLAWCROSS_NO_CHANNEL
         fi
@@ -1180,7 +1180,7 @@ case "${1:-help}" in
         echo "用法: bash selfskill/scripts/run.sh <command> [args]"
         echo ""
         echo "命令:"
-        echo "  start [--no-tunnel] [--no-openclaw] [--no-channel]   后台启动；--no-channel 不启 chatbot"
+        echo "  start [--no-tunnel] [--no-openclaw] [--no-channel]   后台启动；--no-channel 不启动渠道"
         echo "  start-foreground [--no-openclaw] [--no-tunnel] [--no-channel]  前台启动；同上"
         echo "  stop                           停止服务"
         echo "  status                         检查服务状态"

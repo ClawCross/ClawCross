@@ -11,12 +11,12 @@ import shlex
 from typing import Iterable
 
 try:
-    from chatbot.channel_catalog import get_chatbot_env_keys
+    from channels.channel_catalog import get_channel_env_keys
 except Exception:  # pragma: no cover - keep settings import robust during bootstrap
     try:
-        from src.backend.chatbot.channel_catalog import get_chatbot_env_keys
+        from src.backend.channels.channel_catalog import get_channel_env_keys
     except Exception:
-        get_chatbot_env_keys = None
+        get_channel_env_keys = None
 
 
 SETTINGS_WHITELIST = [
@@ -24,7 +24,7 @@ SETTINGS_WHITELIST = [
     "TTS_MODEL", "TTS_VOICE",
     "PORT_AGENT", "PORT_SCHEDULER", "PORT_OASIS", "PORT_FRONTEND",
     "OASIS_BASE_URL",
-    # Chatbot 多渠道（NoneBot 桥接 + WeClaw 微信桥）
+    # 多渠道（NoneBot 桥接 + WeClaw 微信桥）
     "NONEBOT_ADAPTERS", "NONEBOT_HOST", "NONEBOT_PORT",
     "WHITELIST_FILE",
     "WECLAW_ENABLED", "WECLAW_BIN", "WECLAW_USERNAME", "WECLAW_CONFIG", "WECLAW_PROXY_PORT", "WECLAW_AUTO_INSTALL",
@@ -36,8 +36,8 @@ SETTINGS_WHITELIST = [
     "TINYFISH_MONITOR_DB_PATH", "TINYFISH_MONITOR_TARGETS_PATH",
     "TINYFISH_MONITOR_ENABLED", "TINYFISH_MONITOR_CRON",
 ]
-if get_chatbot_env_keys is not None:
-    for _key in get_chatbot_env_keys():
+if get_channel_env_keys is not None:
+    for _key in get_channel_env_keys():
         if _key not in SETTINGS_WHITELIST:
             SETTINGS_WHITELIST.append(_key)
 

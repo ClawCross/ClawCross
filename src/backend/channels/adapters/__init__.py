@@ -1,5 +1,5 @@
 """
-Chatbot 渠道适配器包
+渠道适配器包
 
 架构：
 - NoneBotBridgeAdapter: 一份代码桥接 NoneBot 全部 30+ 平台
@@ -8,8 +8,8 @@ Chatbot 渠道适配器包
 - WebhookAdapter: 通用 HTTP 入站，应付 NoneBot 没有 / 自定义协议的场景
 
 使用：
-    from chatbot.adapters import NoneBotBridgeAdapter, WebhookAdapter
-    from chatbot.adapters import AdapterManager, create_manager_from_env
+    from channels.adapters import NoneBotBridgeAdapter, WebhookAdapter
+    from channels.adapters import AdapterManager, create_manager_from_env
 
     manager = create_manager_from_env()
     await manager.run_all()
@@ -22,7 +22,7 @@ import logging
 
 from .base import ChannelAdapter
 
-logger = logging.getLogger("chatbot.adapters")
+logger = logging.getLogger("channels.adapters")
 
 __all__ = [
     "ChannelAdapter",

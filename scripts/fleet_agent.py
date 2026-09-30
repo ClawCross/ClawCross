@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Post worker/task/run events into the ClawCross harness control plane."""
+"""Post worker/task/run events into the ClawCross fleet control plane."""
 
 from __future__ import annotations
 
@@ -41,11 +41,11 @@ def post_event(args: argparse.Namespace, payload: dict) -> dict:
     if not token:
         raise SystemExit("INTERNAL_TOKEN is required. Start ClawCross once or pass --internal-token.")
     base_url = (args.base_url or os.getenv("CLAWCROSS_AGENT_BASE_URL") or f"http://127.0.0.1:{os.getenv('PORT_AGENT', '51200')}").rstrip("/")
-    user_id = args.user_id or os.getenv("CLAWCROSS_HARNESS_USER") or os.getenv("CLAWCROSS_USER_ID") or os.getenv("USER") or "default"
+    user_id = args.user_id or os.getenv("CLAWCROSS_FLEET_USER") or os.getenv("CLAWCROSS_USER_ID") or os.getenv("USER") or "default"
     payload = {key: value for key, value in payload.items() if value not in (None, "")}
     payload["user_id"] = user_id
     request = urllib.request.Request(
-        f"{base_url}/harness/event",
+        f"{base_url}/fleet/event",
         data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
         headers={"Content-Type": "application/json", "X-Internal-Token": token},
         method="POST",
@@ -55,10 +55,10 @@ def post_event(args: argparse.Namespace, payload: dict) -> dict:
             text = response.read().decode("utf-8")
     except urllib.error.HTTPError as exc:
         text = exc.read().decode("utf-8", errors="replace")
-        raise SystemExit(f"harness event failed: HTTP {exc.code} {text}") from exc
+        raise SystemExit(f"fleet event failed: HTTP {exc.code} {text}") from exc
     data = json.loads(text)
     if data.get("ok") is False or data.get("status") == "error":
-        raise SystemExit(f"harness event failed: {text}")
+        raise SystemExit(f"fleet event failed: {text}")
     return data
 
 
@@ -68,7 +68,7 @@ def request_json(args: argparse.Namespace, path: str, *, payload: dict | None = 
     if not token:
         raise SystemExit("INTERNAL_TOKEN is required. Start ClawCross once or pass --internal-token.")
     base_url = (args.base_url or os.getenv("CLAWCROSS_AGENT_BASE_URL") or f"http://127.0.0.1:{os.getenv('PORT_AGENT', '51200')}").rstrip("/")
-    user_id = args.user_id or os.getenv("CLAWCROSS_HARNESS_USER") or os.getenv("CLAWCROSS_USER_ID") or os.getenv("USER") or "default"
+    user_id = args.user_id or os.getenv("CLAWCROSS_FLEET_USER") or os.getenv("CLAWCROSS_USER_ID") or os.getenv("USER") or "default"
     url = f"{base_url}{path}"
     headers = {"Accept": "application/json", "X-Internal-Token": token}
     data = None
@@ -89,10 +89,10 @@ def request_json(args: argparse.Namespace, path: str, *, payload: dict | None = 
             text = response.read().decode("utf-8")
     except urllib.error.HTTPError as exc:
         text = exc.read().decode("utf-8", errors="replace")
-        raise SystemExit(f"harness request failed: HTTP {exc.code} {text}") from exc
+        raise SystemExit(f"fleet request failed: HTTP {exc.code} {text}") from exc
     data = json.loads(text)
     if data.get("ok") is False or data.get("status") == "error":
-        raise SystemExit(f"harness request failed: {text}")
+        raise SystemExit(f"fleet request failed: {text}")
     return data
 
 
@@ -111,7 +111,7 @@ def add_common(parser: argparse.ArgumentParser) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Update ClawCross harness state from an agent hook.")
+    parser = argparse.ArgumentParser(description="Update ClawCross fleet state from an agent hook.")
     parser.add_argument("--base-url", default="")
     parser.add_argument("--user-id", default="")
     parser.add_argument("--internal-token", default="")
@@ -172,7 +172,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--verifier-status", default="passed")
     run.add_argument("--verifier-exit-code", type=int, default=0)
 
-    opencli_status = sub.add_parser("opencli-status", help="Show OpenCLI availability and ClawCross harness capabilities.")
+    opencli_status = sub.add_parser("opencli-status", help="Show OpenCLI availability and ClawCross fleet capabilities.")
     opencli_status.add_argument("--query", default="")
 
     opencli_run = sub.add_parser("opencli-run", help="Run OpenCLI through the private ClawCross host.")
@@ -278,7 +278,7 @@ def main() -> None:
         }
     elif command == "opencli-status":
         query = f"?query={urllib.parse.quote(args.query)}" if args.query else ""
-        result = request_json(args, f"/harness/opencli/status{query}")
+        result = request_json(args, f"/fleet/opencli/status{query}")
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return
     else:
@@ -287,7 +287,7 @@ def main() -> None:
             opencli_args = opencli_args[1:]
         result = request_json(
             args,
-            "/harness/opencli/run",
+            "/fleet/opencli/run",
             payload={
                 "args": opencli_args,
                 "profile": args.profile,

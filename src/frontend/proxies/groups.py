@@ -2,7 +2,7 @@
 Flask 前端群聊代理路由模块
 
 - /proxy_groups/...：原样转发到 Agent 服务的 /groups/...（以当前登录用户身份）
-- 外部运行时的会话列表 / 清理、远程 Claude 会话、harness 状态
+- 外部运行时的会话列表 / 清理、远程 Claude 会话、fleet 状态
 """
 
 from urllib.parse import quote
@@ -10,7 +10,7 @@ from urllib.parse import quote
 from flask import Response, jsonify, request, session
 import requests
 
-from harness.remote_claude_agents import (
+from fleet.remote_claude_agents import (
     list_remote_claude_sessions,
     read_remote_claude_messages,
     send_remote_claude_message,
@@ -28,7 +28,7 @@ def _remote_session_keys(item: dict) -> set[str]:
 def _split_remote_user_host(remote_host: str, *, fallback_user: str = "", fallback_host: str = "") -> tuple[str, str]:
     """Normalize remote identity to separate user and host.
 
-    Harness events often send SSH-style targets such as ``user@host.example``
+    Fleet events often send SSH-style targets such as ``user@host.example``
     while the live remote payload already carries ``remote.user`` separately.  If
     both are concatenated again in the frontend, the label becomes
     ``user@user@host.example``.
@@ -48,8 +48,8 @@ def _split_remote_user_host(remote_host: str, *, fallback_user: str = "", fallba
     return user, host
 
 
-def _merge_review_harness_sessions(data: dict, harness_state: dict) -> dict:
-    """Keep review-bound harness sessions visible even after remote daemon settles."""
+def _merge_review_fleet_sessions(data: dict, fleet_state: dict) -> dict:
+    """Keep review-bound fleet sessions visible even after remote daemon settles."""
 
     sessions = data.setdefault("sessions", [])
     if not isinstance(sessions, list):
@@ -61,10 +61,10 @@ def _merge_review_harness_sessions(data: dict, harness_state: dict) -> dict:
 
     tasks = {
         str(task.get("task_id") or ""): task
-        for task in harness_state.get("tasks", [])
+        for task in fleet_state.get("tasks", [])
         if isinstance(task, dict) and task.get("task_id")
     }
-    for agent in harness_state.get("agents", []) or []:
+    for agent in fleet_state.get("agents", []) or []:
         if not isinstance(agent, dict):
             continue
         session_ref = str(agent.get("session_ref") or "").strip()
@@ -89,11 +89,11 @@ def _merge_review_harness_sessions(data: dict, harness_state: dict) -> dict:
                 "updated_at": agent.get("updated_at") or task.get("updated_at") or "",
                 "remote_host": remote_host,
                 "remote_user": agent.get("remote_user") or remote_user,
-                "harness_review_placeholder": True,
+                "fleet_review_placeholder": True,
                 "agent_id": agent.get("agent_id") or "",
                 "current_task_id": task_id,
                 "last_message": {
-                    "role": "harness",
+                    "role": "fleet",
                     "content": agent.get("message") or "TODO 已完成，等待审查；远端 Claude daemon 已结束该 live session。",
                     "timestamp": agent.get("updated_at") or "",
                 },
@@ -169,13 +169,13 @@ def register_group_routes(app, *, port_agent: int, internal_token: str) -> None:
             data = list_remote_claude_sessions(limit=max(1, min(limit, 40)))
             try:
                 r = requests.get(
-                    "http://127.0.0.1:{port}/harness/state".format(port=port_agent),
+                    "http://127.0.0.1:{port}/fleet/state".format(port=port_agent),
                     params={"user_id": user_id},
                     headers={"X-Internal-Token": internal_token},
                     timeout=5,
                 )
                 if r.ok:
-                    data = _merge_review_harness_sessions(data, r.json())
+                    data = _merge_review_fleet_sessions(data, r.json())
             except Exception:
                 pass
             return jsonify(data), 200
@@ -218,15 +218,15 @@ def register_group_routes(app, *, port_agent: int, internal_token: str) -> None:
         except Exception as e:
             return jsonify({"ok": False, "error": str(e)}), 200
 
-    @app.route("/proxy_harness_state", methods=["GET"])
-    def proxy_harness_state():
-        """Read ClawCross harness state for the mobile message center."""
+    @app.route("/proxy_fleet_state", methods=["GET"])
+    def proxy_fleet_state():
+        """Read ClawCross fleet state for the mobile message center."""
         user_id = session.get("user_id", "")
         if not user_id:
             return jsonify({"ok": False, "error": "未登录"}), 401
         try:
             r = requests.get(
-                "http://127.0.0.1:{port}/harness/state".format(port=port_agent),
+                "http://127.0.0.1:{port}/fleet/state".format(port=port_agent),
                 params={"user_id": user_id},
                 headers={"X-Internal-Token": internal_token},
                 timeout=15,
@@ -235,9 +235,9 @@ def register_group_routes(app, *, port_agent: int, internal_token: str) -> None:
         except Exception as e:
             return jsonify({"ok": False, "error": str(e), "tasks": [], "agents": [], "runs": []}), 500
 
-    @app.route("/proxy_harness_event", methods=["POST"])
-    def proxy_harness_event():
-        """Post a harness event through the logged-in user's ClawCross session."""
+    @app.route("/proxy_fleet_event", methods=["POST"])
+    def proxy_fleet_event():
+        """Post a fleet event through the logged-in user's ClawCross session."""
         user_id = session.get("user_id", "")
         if not user_id:
             return jsonify({"ok": False, "error": "未登录"}), 401
@@ -245,7 +245,7 @@ def register_group_routes(app, *, port_agent: int, internal_token: str) -> None:
         body["user_id"] = user_id
         try:
             r = requests.post(
-                "http://127.0.0.1:{port}/harness/event".format(port=port_agent),
+                "http://127.0.0.1:{port}/fleet/event".format(port=port_agent),
                 json=body,
                 headers={"X-Internal-Token": internal_token},
                 timeout=15,
