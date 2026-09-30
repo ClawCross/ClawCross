@@ -7,4 +7,7 @@
 
 Each is a ``agents.runtime.Runtime``. Inside the runtime every agent's session is
 named after its id (``session.runtime_session``).
+
+``openclaw_routes`` (over ``openclaw_config``) manages the OpenClaw agents themselves
+— the ones an ``openclaw`` agent's ``global_name`` names.
 """

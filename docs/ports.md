@@ -24,6 +24,7 @@
   - Agent 核心逻辑（工具调用、多轮对话、记忆管理）
   - `/system_trigger` 内部触发端点（定时任务回调等）
   - `/v1/agents`（本机所有 agent，WeBot 会话也在其中）、`/login`、`/tools`、`/tts`、`/settings`、`/groups` 等 API
+  - OpenClaw agent 管理 `/sessions/openclaw/*`（列表、创建、配置、频道绑定、快照/恢复）；只认 `X-Internal-Token`，文件读写限于 OpenClaw agent 的 workspace
 - **调用方**：前端 `src/frontend/server.py`（代理转发）、渠道、MCP 模块、OASIS 回调
 - **鉴权**：`X-Internal-Token` 或用户密码
 
@@ -44,7 +45,6 @@
   - 多人设讨论引擎（Topics / Experts / Sessions）
   - Town Genesis / swarm blueprint 生成
   - GraphRAG 长期记忆与 ReportAgent（尚未接入，见 oasis-reference.md）
-  - OpenClaw 快照管理
   - `/publicnet/info` 公网信息查询
   - Agent 管理与编排中心（迁移中）
 - **调用方**：`mcp_oasis.py`、前端代理、外部脚本
@@ -203,7 +203,7 @@ PORT_FRONTEND=51209
 - 第一次进入 `/studio` 时默认落在 `Chat` tab，右侧 Town 侧栏折叠、`Town Mode` 关闭、子 tab 默认是 `TOWN`
 - Town Mode、`REFORGE`、`EXPLAIN` 都在这条侧栏里，不在消息中心侧栏
 
-### OpenClaw 代理（→ :51202）
+### OpenClaw 代理（→ :51200）
 
 - `GET /proxy_openclaw_sessions` — OpenClaw 会话列表
 - `POST /proxy_openclaw_add` — 添加 OpenClaw Agent
