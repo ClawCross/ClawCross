@@ -1,16 +1,12 @@
 #!/usr/bin/env python3
-"""Run one preconfigured Cloudflare named tunnel for the frontend.
-
-A stable public URL needs a hostname routed to a named tunnel in Cloudflare.
-This script never creates a quick tunnel, downloads cloudflared, or manages DNS.
-"""
+"""Run one Cloudflare Quick Tunnel for the frontend without downloading binaries."""
 
 from __future__ import annotations
 
 import atexit
-import ipaddress
 import os
 import platform
+import queue
 import re
 import shutil
 import signal
@@ -18,9 +14,9 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
-from urllib.parse import urlsplit
 
 from dotenv import dotenv_values
 
@@ -39,33 +35,12 @@ _child: subprocess.Popen | None = None
 _public_url = ""
 _claimed = False
 _cleaned = False
+_URL_PATTERN = re.compile(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com")
 
 
 def _setting(key: str) -> str:
     values = dotenv_values(str(ENV_FILE))
     return str((values[key] if key in values else os.getenv(key)) or "").strip()
-
-
-def _public_hostname_url() -> str:
-    raw = _setting("CLOUDFLARE_PUBLIC_HOSTNAME")
-    if not raw:
-        raise RuntimeError("Set CLOUDFLARE_PUBLIC_HOSTNAME to a hostname routed to your named tunnel")
-    parsed = urlsplit(raw if "://" in raw else f"https://{raw}")
-    host = (parsed.hostname or "").lower().rstrip(".")
-    if (
-        parsed.scheme != "https" or parsed.port is not None or parsed.username
-        or parsed.password or parsed.path not in ("", "/") or parsed.query or parsed.fragment
-        or not re.fullmatch(r"[a-z0-9-]+(?:\.[a-z0-9-]+)+", host)
-        or host.endswith(".trycloudflare.com")
-    ):
-        raise RuntimeError("CLOUDFLARE_PUBLIC_HOSTNAME must be one fixed HTTPS hostname, without a path or port")
-    try:
-        ipaddress.ip_address(host)
-    except ValueError:
-        pass
-    else:
-        raise RuntimeError("CLOUDFLARE_PUBLIC_HOSTNAME must be a DNS hostname")
-    return f"https://{host}"
 
 
 def _cloudflared_binary() -> str:
@@ -79,20 +54,13 @@ def _cloudflared_binary() -> str:
 
 def _tunnel_command() -> list[str]:
     binary = _cloudflared_binary()
-    token_file = _setting("CLOUDFLARE_TUNNEL_TOKEN_FILE")
-    config_file = _setting("CLOUDFLARE_TUNNEL_CONFIG")
-    tunnel_id = _setting("CLOUDFLARE_TUNNEL_ID")
-    if bool(token_file) == bool(config_file):
-        raise RuntimeError("Set exactly one of CLOUDFLARE_TUNNEL_TOKEN_FILE or CLOUDFLARE_TUNNEL_CONFIG")
-    if token_file:
-        path = Path(token_file).expanduser().resolve()
-        if not path.is_file() or path.stat().st_size == 0:
-            raise RuntimeError("CLOUDFLARE_TUNNEL_TOKEN_FILE must name an existing nonempty file")
-        return [binary, "tunnel", "run", "--token-file", str(path)]
-    path = Path(config_file).expanduser().resolve()
-    if not path.is_file() or not tunnel_id:
-        raise RuntimeError("A local tunnel needs an existing CLOUDFLARE_TUNNEL_CONFIG and CLOUDFLARE_TUNNEL_ID")
-    return [binary, "tunnel", "--config", str(path), "run", tunnel_id]
+    try:
+        port = int(_setting("PORT_FRONTEND") or "51209")
+    except ValueError as exc:
+        raise RuntimeError("PORT_FRONTEND must be a valid port") from exc
+    if not 1 <= port <= 65535:
+        raise RuntimeError("PORT_FRONTEND must be a valid port")
+    return [binary, "tunnel", "--no-autoupdate", "--url", f"http://127.0.0.1:{port}"]
 
 
 def _pid_alive(pid: int) -> bool:
@@ -204,7 +172,6 @@ def _signal_exit(_signum, _frame) -> None:
 
 def start_tunnels() -> None:
     global _child, _public_url
-    _public_url = _public_hostname_url()
     command = _tunnel_command()
     _claim_pid()
     atexit.register(cleanup)
@@ -214,14 +181,30 @@ def start_tunnels() -> None:
     try:
         _write_public_domain("")
         popen_options = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
-        _child = subprocess.Popen(command, cwd=WORKSPACE_DIR, **popen_options)
+        _child = subprocess.Popen(
+            command, cwd=WORKSPACE_DIR, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, text=True, bufsize=1, **popen_options,
+        )
         CLOUDFLARED_PID_FILE.write_text(str(_child.pid), encoding="utf-8")
-        for _ in range(8):
-            time.sleep(0.25)
-            if _child.poll() is not None:
-                raise RuntimeError(f"cloudflared exited during startup (code {_child.returncode})")
+        found_urls: queue.Queue[str] = queue.Queue(maxsize=1)
+
+        def forward_output() -> None:
+            assert _child is not None and _child.stdout is not None
+            for line in _child.stdout:
+                print(line, end="", flush=True)
+                match = _URL_PATTERN.search(line)
+                if match and found_urls.empty():
+                    found_urls.put_nowait(match.group(0))
+
+        threading.Thread(target=forward_output, daemon=True).start()
+        try:
+            _public_url = found_urls.get(timeout=60)
+        except queue.Empty as exc:
+            raise RuntimeError("Cloudflare did not provide a public URL within 60 seconds") from exc
+        if _child.poll() is not None:
+            raise RuntimeError(f"cloudflared exited during startup (code {_child.returncode})")
         _write_public_domain(_public_url)
-        print(f"Named tunnel running at {_public_url}", flush=True)
+        print(f"Quick tunnel running at {_public_url}", flush=True)
         code = _child.wait()
         if code:
             raise RuntimeError(f"cloudflared exited with code {code}")
@@ -232,9 +215,8 @@ def start_tunnels() -> None:
 if __name__ == "__main__":
     try:
         if sys.argv[1:] == ["--check"]:
-            _public_hostname_url()
             _tunnel_command()
-            print("Named tunnel configuration is ready", flush=True)
+            print("Cloudflare Quick Tunnel is ready to start", flush=True)
         elif not sys.argv[1:]:
             start_tunnels()
         else:

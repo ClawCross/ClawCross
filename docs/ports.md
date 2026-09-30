@@ -77,7 +77,7 @@
 - **来源**：外部二进制 `bin/bark-server`
 - **职责**：接收推送请求并转发到 iOS/macOS 设备
 - **数据**：`data/bark/bark.db`
-- **公网地址**：如需暴露 Bark，另行配置 Cloudflare 路由和 `BARK_PUBLIC_URL`
+- **公网地址**：当前单一隧道不暴露 Bark，也不写入 `BARK_PUBLIC_URL`
 
 ### 18789 — OpenClaw 后端（可选）
 
@@ -108,12 +108,12 @@
 ```
 公网用户
   ↓ HTTPS
-[Cloudflare 命名隧道的固定主机名]
+[单个 Cloudflare 临时隧道]
   └─→ 127.0.0.1:51209 (frontend) → PUBLIC_DOMAIN
 ```
 
-- 此隧道只暴露前端（`src/frontend/server.py`）；Bark 需要单独配置公网路由
-- `CLOUDFLARE_PUBLIC_HOSTNAME` 配置固定地址；cloudflared 和隧道凭据必须预先准备，启动脚本不会下载或创建临时地址
+- 此隧道只暴露前端（`src/frontend/server.py`）；Bark 保持本地访问
+- 每次仅生成一个公网地址；重启后地址可能变化。`cloudflared` 必须预先安装，启动脚本不会下载
 - 所有内部服务（Agent、Scheduler、OASIS）**不对外暴露**
 - 前端到内部服务的通信全部通过前端（`src/frontend/server.py`）反向代理
 
