@@ -62,7 +62,7 @@ async def deepseek_structured_turn(
         "input": _construct_responses_api_input(messages, store=False),
         "text": {"format": {
             "type": "json_schema", "name": str(spec.get("name") or "final_reply"),
-            "schema": strict_schema, "strict": True,
+            "schema": strict_schema,
         }},
         "store": False,
     }
