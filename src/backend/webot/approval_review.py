@@ -139,7 +139,16 @@ async def run_reviewer(*, tool_name: str, args: dict, context: dict, settings, p
         model=settings.reviewer_model or None, temperature=0, max_tokens=1200,
         timeout=settings.reviewer_timeout_seconds, max_retries=0,
     )
-    reviewer = model.with_structured_output(ReviewVerdict)
+    # ChatDeepSeek maps LangChain's default structured output to a named,
+    # forced tool_choice. DeepSeek thinking mode rejects that request. JSON
+    # mode returns ordinary text; Pydantic still validates every field.
+    if "ChatDeepSeek" in {cls.__name__ for cls in type(model).__mro__}:
+        instructions += "\nReturn one JSON object matching this schema: " + json.dumps(
+            ReviewVerdict.model_json_schema(), ensure_ascii=False,
+        )
+        reviewer = model.with_structured_output(ReviewVerdict, method="json_mode")
+    else:
+        reviewer = model.with_structured_output(ReviewVerdict)
     result = await reviewer.ainvoke([
         SystemMessage(content=instructions),
         HumanMessage(content=json.dumps({"tool": tool_name, "args": args, "context": context, "policy": policy}, ensure_ascii=False)),

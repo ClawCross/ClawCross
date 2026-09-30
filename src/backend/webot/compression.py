@@ -650,7 +650,7 @@ def trim_new_input_if_oversized(
         f"original_chars={len(raw)}\n\n"
         f"{excerpt}"
     )
-    return messages[:-1] + [HumanMessage(content=body)]
+    return messages[:-1] + [last.model_copy(update={"content": body})]
 
 
 # ---------------------------------------------------------------------------

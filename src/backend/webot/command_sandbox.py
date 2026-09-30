@@ -32,6 +32,30 @@ _PRIVATE_NAMES = (
     ".npmrc", ".pypirc", ".config/gcloud",
 )
 
+# These limits apply to the wrapped command and every child it starts. The
+# existing command timeout and output cap remain in force outside SRT.
+_LIMIT_CODE = """
+import os
+import resource
+import sys
+for name, maximum in (
+    ("RLIMIT_CPU", 120),
+    ("RLIMIT_AS", 2 * 1024**3),
+    ("RLIMIT_FSIZE", 128 * 1024**2),
+    ("RLIMIT_NOFILE", 256),
+    ("RLIMIT_NPROC", 256),
+):
+    kind = getattr(resource, name, None)
+    if kind is None:
+        continue
+    soft, hard = resource.getrlimit(kind)
+    cap = min(maximum, soft) if soft != resource.RLIM_INFINITY else maximum
+    if hard != resource.RLIM_INFINITY:
+        cap = min(cap, hard)
+    resource.setrlimit(kind, (cap, hard))
+os.execvpe(sys.argv[1], sys.argv[1:], os.environ)
+"""
+
 
 def normalize_escalation(access: str, target: str, root: Path) -> str:
     """Keep each SRT exception to one explicit path or domain."""
@@ -72,7 +96,13 @@ def normalize_escalation(access: str, target: str, root: Path) -> str:
 def _srt_binary() -> str:
     binary = shutil.which("srt")
     if not binary:
-        raise SandboxUnavailable("未找到 srt；请安装 @anthropic-ai/sandbox-runtime。命令不会在宿主机直接执行。")
+        home = Path(os.environ.get("CLAWCROSS_HOME") or Path.home() / ".clawcross")
+        local_bin = Path(os.environ.get("CLAWCROSS_BIN_DIR") or home / "bin")
+        local = local_bin / "node" / "node_modules" / ".bin" / ("srt.cmd" if os.name == "nt" else "srt")
+        if local.is_file():
+            binary = str(local)
+    if not binary:
+        raise SandboxUnavailable("未找到 srt；请运行 install-component srt。命令不会在宿主机直接执行。")
     if sys.platform.startswith("linux"):
         missing = [name for name in ("bwrap", "socat", "rg") if not shutil.which(name)]
         if missing:
@@ -147,13 +177,16 @@ def build_srt_command(*, root: Path, cwd: Path, command: str, language: str,
             wrapped = ["/bin/sh", "-c", command]
     else:
         raise SandboxUnavailable("不支持的 SRT 命令语言。")
+    if os.name == "nt":
+        raise SandboxUnavailable("Windows SRT 资源限制尚不可用；已阻止本次沙盒命令。")
     binary = _srt_binary()
     fd, raw_path = tempfile.mkstemp(prefix="clawcross-srt-", suffix=".json")
     settings_path = Path(raw_path)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             json.dump(_policy(root, settings_path, access=access, target=target), handle, ensure_ascii=False)
-        return SrtCommand((binary, "--settings", str(settings_path), "--", *wrapped), settings_path)
+        limited = (sys.executable, "-c", _LIMIT_CODE, *wrapped)
+        return SrtCommand((binary, "--settings", str(settings_path), "--", *limited), settings_path)
     except BaseException:
         settings_path.unlink(missing_ok=True)
         raise

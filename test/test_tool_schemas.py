@@ -472,40 +472,15 @@ class StructuredFinalDecoding(unittest.IsolatedAsyncioTestCase):
             result = await decode_structured_final(Model(), requested, [HumanMessage(content="draft")])
         self.assertEqual(json.loads(result.content), {"content": "done"})
 
-    async def test_deepseek_requires_the_constrained_final_tool(self):
-        class Model:
-            def bind_tools(self, tools, **kwargs):
-                self.tools = tools
-                self.kwargs = kwargs
-                return self
-
-            async def ainvoke(self, messages, config=None):
-                return AIMessage(content="unconstrained text")
-
-        model = Model()
+    async def test_deepseek_final_uses_responses_text_schema(self):
+        model = object()
         with patch("webot.engine.tool_schema._model_classes", return_value={"ChatDeepSeek"}), patch(
-            "webot.engine.tool_schema.strict_tool_binding", return_value=(model, True, {"strict": True})
-        ):
-            with self.assertRaisesRegex(RuntimeError, "schema-constrained"):
-                await decode_structured_final(model, self.FORMAT, [HumanMessage(content="draft")])
-        self.assertTrue(model.tools[0]["function"]["strict"])
-
-    async def test_deepseek_final_tool_arguments_become_text(self):
-        class Model:
-            def bind_tools(self, tools, **kwargs):
-                return self
-
-            async def ainvoke(self, messages, config=None):
-                return AIMessage(content="", tool_calls=[{
-                    "name": "emit_final_reply", "args": {"content": "done"}, "id": "final-1",
-                }])
-
-        model = Model()
-        with patch("webot.engine.tool_schema._model_classes", return_value={"ChatDeepSeek"}), patch(
-            "webot.engine.tool_schema.strict_tool_binding", return_value=(model, True, {"strict": True})
-        ):
+            "webot.engine.deepseek_responses.deepseek_structured_turn",
+            return_value=AIMessage(content='{"content":"done"}'),
+        ) as response_call:
             result = await decode_structured_final(model, self.FORMAT, [HumanMessage(content="draft")])
         self.assertEqual(json.loads(result.content), {"content": "done"})
+        self.assertEqual(response_call.await_args.args[2], self.FORMAT)
 
     async def test_other_provider_uses_native_structured_output(self):
         class Model:

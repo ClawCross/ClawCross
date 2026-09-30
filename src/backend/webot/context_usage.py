@@ -17,6 +17,7 @@ from langchain_core.utils.function_calling import convert_to_openai_tool
 
 from webot.context_compressor import _approx_tokens
 from webot.compression import is_summary_message
+from webot.context import RUNTIME_DELTA_KEY
 
 CONTEXT_COMPONENTS = (
     "system_prompt",
@@ -95,6 +96,9 @@ def estimate_context_components(
     components["tools"] = count_tokens(json.dumps(tools, ensure_ascii=False)) if tools else 0
     components["runtime_state"] = count_tokens(runtime_state)
     for message in messages:
+        delta = message.additional_kwargs.get(RUNTIME_DELTA_KEY)
+        if isinstance(delta, str) and delta:
+            components["runtime_state"] += count_tokens(delta)
         if is_summary_message(message):
             key = "summary"
         elif isinstance(message, ToolMessage):

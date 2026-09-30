@@ -413,7 +413,7 @@ def get_skill(user_id: str, *, name: str, team: str = "", fallback_to_personal: 
 
 
 def _memory_prompt(user_id: str, teams: list[str] | tuple[str, ...] = (), tool_mode: str = "mcp") -> str:
-    """List the initial Memory catalog: the owner's skills and each team's; MCP file-tool
+    """List the current Memory catalog: the owner's skills and each team's; MCP file-tool
     usage lives in tool schemas."""
     from webot.skill_memory import list_memory
     groups = [(f"团队「{team}」技能：", list_memory(user_id, team, include_personal=False)) for team in teams]
@@ -432,7 +432,7 @@ def _memory_prompt(user_id: str, teams: list[str] | tuple[str, ...] = (), tool_m
 
 
 def build_user_skills_listing(user_id: str, *, teams: list[str] | tuple[str, ...] = (), tool_mode: str = "mcp") -> str:
-    """Snapshot the initial Memory catalog: the owner's skills and those of each team the
+    """Read the current Memory catalog: the owner's skills and those of each team the
     agent is in, without repeating MCP tool schemas."""
     return _memory_prompt(user_id, teams, tool_mode)
 

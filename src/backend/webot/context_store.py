@@ -264,6 +264,64 @@ class ContextStore:
             )
             await db.commit()
 
+    async def record_runtime_state(
+        self,
+        thread_id: str,
+        *,
+        source_message: BaseMessage,
+        state: str,
+        delta: str,
+    ) -> None:
+        """Attach a model-visible state transition to its stored carrier message.
+
+        Keep the message content unchanged so history APIs show only the actual
+        user input or tool result. The model request reconstructs the injection
+        from this metadata on every later call, including after a restart.
+        """
+        from webot.context import RUNTIME_DELTA_KEY, RUNTIME_STATE_KEY
+
+        lock = await self._lock_for(thread_id)
+        async with lock:
+            path = checkpoint_db_path_for_thread(thread_id, self.checkpoint_dir)
+            db = await self._connection_for(path)
+            source_id = getattr(source_message, "id", None)
+            source_tool_call_id = getattr(source_message, "tool_call_id", None)
+            match = None
+            # Almost always the latest user/tool message. A fallback covers a
+            # sanitizer that removed an unusually large trailing tool batch.
+            for limit in ("LIMIT 32", ""):
+                rows = await (await db.execute(
+                    "SELECT sequence, message_json FROM context_messages "
+                    f"WHERE thread_id = ? ORDER BY sequence DESC {limit}",
+                    (thread_id,),
+                )).fetchall()
+                for row in rows:
+                    candidate = _decode_message(row[1])
+                    if type(candidate) is not type(source_message):
+                        continue
+                    if source_id and candidate.id == source_id:
+                        match = (row[0], candidate)
+                        break
+                    if source_tool_call_id and getattr(candidate, "tool_call_id", None) == source_tool_call_id:
+                        match = (row[0], candidate)
+                        break
+                    if not source_id and not source_tool_call_id and candidate.content == source_message.content:
+                        match = (row[0], candidate)
+                        break
+                if match is not None:
+                    break
+            if match is None:
+                raise RuntimeError("Cannot find the message that carried runtime state")
+            sequence, message = match
+            message.additional_kwargs[RUNTIME_STATE_KEY] = state
+            message.additional_kwargs[RUNTIME_DELTA_KEY] = delta
+            await db.execute(
+                "UPDATE context_messages SET message_json = ? "
+                "WHERE thread_id = ? AND sequence = ?",
+                (_encode_message(message), thread_id, sequence),
+            )
+            await db.commit()
+
     async def aclose_thread(self, thread_id: str) -> None:
         self._locks.pop(thread_id, None)
         path = checkpoint_db_path_for_thread(thread_id, self.checkpoint_dir).resolve()

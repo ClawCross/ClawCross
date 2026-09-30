@@ -17,10 +17,37 @@ from webot.engine.lightweight_agent_runtime import AgentRecursionError, Lightwei
 from webot.checkpoint_paths import checkpoint_db_path_for_thread
 from webot.checkpoint_repository import delete_thread_records, delete_thread_records_like, list_thread_ids_by_prefix
 from webot.context_store import ContextStore
+from webot.context import assemble_input_messages
 from webot.session_search import session_search
 
 
 class CheckpointStorageTests(unittest.IsolatedAsyncioTestCase):
+    async def test_runtime_state_transition_survives_restart_without_polluting_history(self):
+        with TemporaryDirectory() as tmpdir:
+            checkpoint_dir = Path(tmpdir) / "agent_checkpoints"
+            thread_id = "alice#state"
+            async with ContextStore(checkpoint_dir) as store:
+                carrier = HumanMessage(content="build", id="turn-1")
+                await store.append_messages(thread_id, [carrier])
+                await store.record_runtime_state(
+                    thread_id, source_message=carrier,
+                    state="todo::pending::build", delta="todo::pending::build",
+                )
+
+            async with ContextStore(checkpoint_dir) as store:
+                history = await store.load_context(thread_id)
+                self.assertEqual(history[0].content, "build")
+                history.extend([AIMessage(content="", tool_calls=[{
+                    "name": "lookup", "args": {}, "id": "call-1", "type": "tool_call",
+                }]), ToolMessage(content="found", tool_call_id="call-1")])
+                messages, delta = assemble_input_messages(
+                    base_prompt="stable", history=history, runtime_state="todo::done::build",
+                )
+                self.assertIn("todo::pending::build", messages[1].content)
+                self.assertIn("- todo::pending::build", delta)
+                self.assertIn("+ todo::done::build", messages[-1].content)
+                self.assertEqual(history[-1].content, "found")
+
     async def test_context_store_appends_messages_in_one_shard_per_thread(self):
         with TemporaryDirectory() as tmpdir:
             checkpoint_dir = Path(tmpdir) / "agent_checkpoints"

@@ -31,13 +31,43 @@ class CommandSandboxTests(unittest.TestCase):
                 )
             try:
                 self.assertEqual(call.argv[:2], ("/usr/bin/srt", "--settings"))
-                self.assertEqual(call.argv[3:], ("--", "/opt/venv/bin/python", str(script)))
+                self.assertEqual(call.argv[3:6], ("--", sys.executable, "-c"))
+                self.assertEqual(call.argv[-2:], ("/opt/venv/bin/python", str(script)))
                 policy = json.loads(call.settings_path.read_text(encoding="utf-8"))
                 self.assertEqual(policy["network"]["allowedDomains"], [])
                 self.assertEqual(policy["network"]["allowUnixSockets"], [])
                 self.assertEqual(policy["filesystem"]["allowWrite"][0], str(root))
                 self.assertIn(str(call.settings_path), policy["filesystem"]["denyRead"])
                 self.assertFalse(call.settings_path.stat().st_mode & 0o077)
+            finally:
+                call.settings_path.unlink(missing_ok=True)
+
+    @unittest.skipIf(sys.platform.startswith("win"), "POSIX resource limits")
+    def test_srt_wrapped_command_has_cpu_memory_and_file_limits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fake_srt = root / "fake-srt"
+            fake_srt.write_text('#!/bin/sh\nshift 3\nexec "$@"\n', encoding="utf-8")
+            fake_srt.chmod(0o755)
+            import shlex
+            probe = "import json,resource; print(json.dumps({name:resource.getrlimit(getattr(resource,name))[0] for name in ('RLIMIT_CPU','RLIMIT_AS','RLIMIT_FSIZE','RLIMIT_NOFILE','RLIMIT_NPROC')}))"
+            with patch.object(command_sandbox, "_srt_binary", return_value=str(fake_srt)):
+                call = command_sandbox.build_srt_command(
+                    root=root, cwd=root,
+                    command=f"{shlex.quote(sys.executable)} -c {shlex.quote(probe)}",
+                    language="shell",
+                    python_executable=sys.executable,
+                )
+            try:
+                import subprocess
+                result = subprocess.run(call.argv, cwd=root, capture_output=True,
+                                        text=True, timeout=5, check=True)
+                limits = json.loads(result.stdout)
+                self.assertLessEqual(limits["RLIMIT_CPU"], 120)
+                self.assertLessEqual(limits["RLIMIT_AS"], 2 * 1024**3)
+                self.assertLessEqual(limits["RLIMIT_FSIZE"], 128 * 1024**2)
+                self.assertLessEqual(limits["RLIMIT_NOFILE"], 256)
+                self.assertLessEqual(limits["RLIMIT_NPROC"], 256)
             finally:
                 call.settings_path.unlink(missing_ok=True)
 
@@ -242,6 +272,25 @@ class CommandSandboxTests(unittest.TestCase):
                  patch.object(command_sandbox.shutil, "which", side_effect=lambda name: str(binary) if name == "srt" else "/usr/bin/" + name):
                 with self.assertRaisesRegex(command_sandbox.SandboxUnavailable, "0.0.77"):
                     command_sandbox._srt_binary()
+
+    def test_explicitly_installed_local_srt_is_found(self):
+        with tempfile.TemporaryDirectory() as directory:
+            local_bin = Path(directory)
+            package = local_bin / "node" / "node_modules" / "@anthropic-ai" / "sandbox-runtime"
+            (package / "dist").mkdir(parents=True)
+            (package / "package.json").write_text(
+                '{"name":"@anthropic-ai/sandbox-runtime","version":"0.0.77"}', encoding="utf-8",
+            )
+            cli = package / "dist" / "cli.js"
+            cli.write_text("", encoding="utf-8")
+            shim = local_bin / "node" / "node_modules" / ".bin" / "srt"
+            shim.parent.mkdir(parents=True)
+            shim.symlink_to(cli)
+            with patch.dict("os.environ", {"CLAWCROSS_BIN_DIR": str(local_bin)}), patch.object(
+                command_sandbox.shutil, "which",
+                side_effect=lambda name: None if name == "srt" else f"/usr/bin/{name}",
+            ):
+                self.assertEqual(command_sandbox._srt_binary(), str(shim))
 
     def test_srt_process_does_not_inherit_host_secret_environment(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,10 @@ DEFAULT_USER_INPUT_ITEM_LIMIT = 10000
 DEFAULT_CONTEXT_TOKEN_BUDGET = 12000
 DEFAULT_RECENT_MESSAGE_COUNT = 10
 DEFAULT_MAX_HISTORY_MESSAGES = 28
+RUNTIME_STATE_KEY = "framework_runtime_state"
+RUNTIME_DELTA_KEY = "framework_runtime_delta"
+_LEGACY_SKILLS_HEADING = "\n【用户技能 / Memory 条目】"
+_SOUL_HEADING = "\n【Personality (SOUL.md)】"
 _ARTIFACTS_ENV = "WEBOT_RUNTIME_ARTIFACTS_ENABLED"
 _COMPACTION_STATE_ENV = "WEBOT_COMPACTION_STATE_ENABLED"
 _COMPACTION_TRIGGER_RATIO_ENV = "WEBOT_COMPACTION_TRIGGER_RATIO"
@@ -244,12 +249,68 @@ def render_runtime_context_block(
     return "\n".join(lines)
 
 
+def render_team_skill_context(teams: list[str] | tuple[str, ...], skills_listing: str = "") -> str:
+    """Live Team membership and Skill/Memory catalog for the runtime tail."""
+    team_names = sorted({str(team).strip() for team in teams if str(team).strip()})
+    parts: list[str] = []
+    if team_names:
+        parts.append("【所属 Teams】\n" + "\n".join(f"team: {team}" for team in team_names))
+    if skills_listing.strip():
+        parts.append(skills_listing.strip())
+    return "\n\n".join(parts)
+
+
+def strip_legacy_skills_from_system_prompt(prompt: str) -> str:
+    """Remove the old frozen catalog from existing session prompts at read time."""
+    soul_start = prompt.find(_SOUL_HEADING)
+    search_end = soul_start if soul_start >= 0 else len(prompt)
+    start = prompt.rfind(_LEGACY_SKILLS_HEADING, 0, search_end)
+    if start < 0:
+        return prompt
+    catalog = prompt[start + len(_LEGACY_SKILLS_HEADING):search_end]
+    if not any(label in catalog for label in ("团队「", "个人技能：", "可用技能：", "当前暂无已注册条目。")):
+        return prompt
+    return prompt[:start].rstrip() + (prompt[soul_start:] if soul_start >= 0 else "")
+
+
+def _runtime_state_change(previous: str | None, current: str) -> str:
+    """Render an initial snapshot or only the lines changed since the last call."""
+    if previous is None:
+        return current
+    if previous == current:
+        return ""
+    old_lines = previous.splitlines()
+    new_lines = current.splitlines()
+    changes: list[str] = []
+    for operation, old_start, old_end, new_start, new_end in SequenceMatcher(
+        None, old_lines, new_lines, autojunk=False,
+    ).get_opcodes():
+        if operation in {"replace", "delete"}:
+            changes.extend(f"- {line}" for line in old_lines[old_start:old_end])
+        if operation in {"replace", "insert"}:
+            changes.extend(f"+ {line}" for line in new_lines[new_start:new_end])
+    return "【Runtime Context Update】\n" + "\n".join(changes)
+
+
+def _append_runtime_delta(message: BaseMessage, delta: str) -> BaseMessage:
+    state_text = f"\n\n---\n[系统状态]\n{delta}"
+    if isinstance(message.content, list):
+        content: Any = list(message.content) + [{"type": "text", "text": state_text}]
+    else:
+        content = f"{message.content}{state_text}"
+    provider_kwargs = {
+        key: value for key, value in message.additional_kwargs.items()
+        if key not in {RUNTIME_STATE_KEY, RUNTIME_DELTA_KEY}
+    }
+    return message.model_copy(update={"content": content, "additional_kwargs": provider_kwargs})
+
+
 def assemble_input_messages(
     *,
     base_prompt: str,
     history: list[BaseMessage],
     runtime_state: str,
-    last_sent_state: str = "",
+    force_snapshot: bool = False,
 ) -> tuple[list[BaseMessage], str]:
     """Build the request sent to the model, keeping the cacheable prefix intact.
 
@@ -258,48 +319,31 @@ def assemble_input_messages(
     1. ``base_prompt`` is the whole system message. Runtime state never gets
        appended to it — the system message renders ahead of tools and history,
        so a per-turn edit there invalidates the entire prefix every call.
-    2. Runtime state is attached to the last user query or tool result, never
-       emitted as a separate user turn. It is sent only when needed and never
-       written back to history.
+    2. Runtime state changes are attached to the last user query or tool result.
+       The checkpoint keeps the injected delta in message metadata, so later
+       model calls can replay it without changing user-visible message content.
 
     Returns the messages plus the state actually injected ("" when skipped).
     """
-    messages: list[BaseMessage] = [SystemMessage(content=base_prompt)] + list(history)
-    if not runtime_state or not history:
+    # Reconstruct earlier injections from checkpoint metadata. The stored
+    # content remains clean for history APIs and the frontend.
+    visible: list[BaseMessage] = []
+    previous: str | None = None
+    for message in history:
+        delta = message.additional_kwargs.get(RUNTIME_DELTA_KEY)
+        if isinstance(delta, str) and delta and isinstance(message, (HumanMessage, ToolMessage)):
+            visible.append(_append_runtime_delta(message, delta))
+            snapshot = message.additional_kwargs.get(RUNTIME_STATE_KEY)
+            if isinstance(snapshot, str):
+                previous = snapshot
+        else:
+            visible.append(message)
+
+    messages: list[BaseMessage] = [SystemMessage(content=base_prompt)] + visible
+    if not history or not isinstance(history[-1], (HumanMessage, ToolMessage)):
         return messages, ""
 
-    last_msg = history[-1]
-    if isinstance(last_msg, HumanMessage):
-        # 本轮首调：并进用户这条消息，模型每轮至少拿到一次当前状态。
-        # 必须排在用户原文**之后**：这条消息落库时不含状态块，所以本轮之后的每次
-        # 请求看到的都是没有状态块的原文。状态块放前面，分歧点就落在这条消息的开头，
-        # 整段用户输入在后续调用里全部重算；放后面，分歧点在末尾，用户输入仍在公共
-        # 前缀里。@file/@diff 展开后单条输入可达 24000 字符，这个差别不小。
-        state_text = f"\n\n---\n[系统状态]\n{runtime_state}"
-        if isinstance(last_msg.content, list):
-            content: Any = list(last_msg.content) + [{"type": "text", "text": state_text}]
-        else:
-            content = f"{last_msg.content}{state_text}"
-        return (
-            [SystemMessage(content=base_prompt)] + list(history[:-1]) + [HumanMessage(content=content)],
-            runtime_state,
-        )
-
-    if isinstance(last_msg, ToolMessage) and runtime_state != last_sent_state:
-        # Keep the tool result in its original role and preserve tool_call_id.
-        # A synthetic HumanMessage here starts a new user turn and can disrupt
-        # the model's continuation after a tool call.
-        state_text = f"\n\n---\n[系统状态]\n{runtime_state}"
-        if isinstance(last_msg.content, list):
-            content: Any = list(last_msg.content) + [{"type": "text", "text": state_text}]
-        else:
-            content = f"{last_msg.content}{state_text}"
-        return (
-            [SystemMessage(content=base_prompt)]
-            + list(history[:-1])
-            + [last_msg.model_copy(update={"content": content})],
-            runtime_state,
-        )
-
-    # 状态没变，或以 AIMessage 收尾（正常循环下不可达）：让请求以落库消息结尾。
-    return messages, ""
+    delta = _runtime_state_change(None if force_snapshot else previous, runtime_state)
+    if delta:
+        messages[-1] = _append_runtime_delta(messages[-1], delta)
+    return messages, delta

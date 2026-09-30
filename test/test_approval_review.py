@@ -331,6 +331,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         from webot.engine.agent import UserAwareToolNode
         node = UserAwareToolNode([], lambda: [])
         node.tool_node = AsyncMock()
+        node.tool_node._tools_by_name = {}
         async def reviewer(**kwargs):
             if kwargs["args"]["command"] == "git diff":
                 policy.save_tool_policy_config("alice", {"default_approval": "deny"})
@@ -370,6 +371,30 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         payload = structured.ainvoke.call_args.args[0]
         self.assertIn("never authorization", payload[0].content)
         self.assertEqual(json.loads(payload[1].content)["args"], self.args)
+
+    async def test_deepseek_reviewer_uses_json_text_without_forced_tool(self):
+        from unittest.mock import Mock
+
+        class ChatDeepSeek:
+            def __init__(self):
+                self.with_structured_output = Mock()
+
+        model = ChatDeepSeek()
+        structured = AsyncMock()
+        structured.ainvoke.return_value = self.verdict
+        model.with_structured_output.return_value = structured
+        with patch("common.llm_factory.create_chat_model", return_value=model):
+            result = await review.run_reviewer(
+                tool_name="run_command", args=self.args,
+                context=review.review_context(self.messages),
+                settings=runtime_settings.ApprovalSettings(), policy={},
+            )
+        self.assertEqual(result, self.verdict)
+        model.with_structured_output.assert_called_once_with(
+            review.ReviewVerdict, method="json_mode",
+        )
+        prompt = structured.ainvoke.call_args.args[0][0].content
+        self.assertIn("authorization_sources", prompt)
 
     async def test_runtime_overwrites_spoofed_origin_and_assigns_stable_ids(self):
         from webot.engine.lightweight_agent_runtime import LightweightAgentRuntime
