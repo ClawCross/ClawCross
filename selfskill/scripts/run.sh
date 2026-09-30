@@ -229,6 +229,9 @@ print_magic_links() {
     cli_output=$("$VENV_PY" "$PROJECT_ROOT/scripts/cli.py" token generate -u "$ml_user" --valid-hours 24 2>/dev/null)
     token=$(_magic_token_from_cli_output "$cli_output")
     pub="${PUBLIC_DOMAIN:-}"
+    if [ ! -f "$CLAWCROSS_RUN_DIR/tunnel.pid" ] || ! kill -0 "$(cat "$CLAWCROSS_RUN_DIR/tunnel.pid" 2>/dev/null)" 2>/dev/null; then
+        pub=""
+    fi
     echo ""
     echo "🔗 Magic link（免密登录；勿转发到不可信渠道）"
     echo "   👤 绑定的登录用户 user_id=${ml_user}（与 URL 中 ?user= 一致）"
