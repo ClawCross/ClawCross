@@ -1391,7 +1391,7 @@ def cmd_openclaw(args):
         params = {}
         if args.filter:
             params["filter"] = args.filter
-        code, body = _req("GET", f"{OASIS_BASE}/sessions/openclaw",
+        code, body = _req("GET", f"{AGENT_BASE}/sessions/openclaw", headers=_agent_headers(),
                            params=params)
         if code == 200:
             _pp(body)
@@ -1402,7 +1402,7 @@ def cmd_openclaw(args):
     elif act == "add":
         # 添加 OpenClaw Agent
         data = json.loads(args.data) if args.data else {}
-        code, body = _req("POST", f"{OASIS_BASE}/sessions/openclaw/add",
+        code, body = _req("POST", f"{AGENT_BASE}/sessions/openclaw/add", headers=_agent_headers(),
                            data=data, timeout=35)
         if code == 200:
             print("✅ Agent 已添加")
@@ -1412,7 +1412,7 @@ def cmd_openclaw(args):
 
     elif act == "default-workspace":
         # 获取默认工作区
-        code, body = _req("GET", f"{OASIS_BASE}/sessions/openclaw/default-workspace")
+        code, body = _req("GET", f"{AGENT_BASE}/sessions/openclaw/default-workspace", headers=_agent_headers())
         if code == 200:
             _pp(body)
         else:
@@ -1420,7 +1420,7 @@ def cmd_openclaw(args):
 
     elif act == "workspace-files":
         # 列出工作区文件
-        code, body = _req("GET", f"{OASIS_BASE}/sessions/openclaw/workspace-files",
+        code, body = _req("GET", f"{AGENT_BASE}/sessions/openclaw/workspace-files", headers=_agent_headers(),
                            params={"workspace": args.workspace or ""})
         if code == 200:
             _pp(body)
@@ -1429,7 +1429,7 @@ def cmd_openclaw(args):
 
     elif act == "workspace-file-read":
         # 读取工作区文件
-        code, body = _req("GET", f"{OASIS_BASE}/sessions/openclaw/workspace-file",
+        code, body = _req("GET", f"{AGENT_BASE}/sessions/openclaw/workspace-file", headers=_agent_headers(),
                            params={"workspace": args.workspace or "",
                                    "filename": args.filename or ""})
         if code == 200:
@@ -1440,7 +1440,7 @@ def cmd_openclaw(args):
     elif act == "workspace-file-save":
         # 保存工作区文件
         data = json.loads(args.data) if args.data else {}
-        code, body = _req("POST", f"{OASIS_BASE}/sessions/openclaw/workspace-file",
+        code, body = _req("POST", f"{AGENT_BASE}/sessions/openclaw/workspace-file", headers=_agent_headers(),
                            data=data, timeout=15)
         if code == 200:
             print("✅ 文件已保存")
@@ -1450,7 +1450,7 @@ def cmd_openclaw(args):
 
     elif act == "detail":
         # 获取 Agent 详情
-        code, body = _req("GET", f"{OASIS_BASE}/sessions/openclaw/agent-detail",
+        code, body = _req("GET", f"{AGENT_BASE}/sessions/openclaw/agent-detail", headers=_agent_headers(),
                            params={"name": args.name or ""}, timeout=15)
         if code == 200:
             _pp(body)
@@ -1462,7 +1462,7 @@ def cmd_openclaw(args):
         params = {}
         if args.agent:
             params["name"] = args.agent
-        code, body = _req("GET", f"{OASIS_BASE}/sessions/openclaw/skills",
+        code, body = _req("GET", f"{AGENT_BASE}/sessions/openclaw/skills", headers=_agent_headers(),
                            params=params, timeout=20)
         if code == 200:
             _pp(body)
@@ -1471,7 +1471,7 @@ def cmd_openclaw(args):
 
     elif act == "tool-groups":
         # 查看工具组
-        code, body = _req("GET", f"{OASIS_BASE}/sessions/openclaw/tool-groups")
+        code, body = _req("GET", f"{AGENT_BASE}/sessions/openclaw/tool-groups", headers=_agent_headers())
         if code == 200:
             _pp(body)
         else:
@@ -1480,7 +1480,7 @@ def cmd_openclaw(args):
     elif act == "update-config":
         # 更新配置
         data = json.loads(args.data) if args.data else {}
-        code, body = _req("POST", f"{OASIS_BASE}/sessions/openclaw/update-config",
+        code, body = _req("POST", f"{AGENT_BASE}/sessions/openclaw/update-config", headers=_agent_headers(),
                            data=data, timeout=15)
         if code == 200:
             print("✅ 配置已更新")
@@ -1490,7 +1490,7 @@ def cmd_openclaw(args):
 
     elif act == "channels":
         # 查看频道
-        code, body = _req("GET", f"{OASIS_BASE}/sessions/openclaw/channels",
+        code, body = _req("GET", f"{AGENT_BASE}/sessions/openclaw/channels", headers=_agent_headers(),
                            timeout=45)
         if code == 200:
             _pp(body)
@@ -1499,7 +1499,7 @@ def cmd_openclaw(args):
 
     elif act == "bindings":
         # 查看绑定
-        code, body = _req("GET", f"{OASIS_BASE}/sessions/openclaw/agent-bindings",
+        code, body = _req("GET", f"{AGENT_BASE}/sessions/openclaw/agent-bindings", headers=_agent_headers(),
                            params={"agent": args.agent or ""}, timeout=45)
         if code == 200:
             _pp(body)
@@ -1509,7 +1509,7 @@ def cmd_openclaw(args):
     elif act == "bind":
         # 绑定 Agent
         data = json.loads(args.data) if args.data else {}
-        code, body = _req("POST", f"{OASIS_BASE}/sessions/openclaw/agent-bind",
+        code, body = _req("POST", f"{AGENT_BASE}/sessions/openclaw/agent-bind", headers=_agent_headers(),
                            data=data, timeout=45)
         if code == 200:
             print("✅ 绑定成功")
@@ -1519,9 +1519,8 @@ def cmd_openclaw(args):
 
     elif act == "remove":
         # 删除 Agent
-        data = {"name": args.name or ""}
-        code, body = _req("DELETE", f"{OASIS_BASE}/sessions/openclaw/remove",
-                           data=data, timeout=15)
+        code, body = _req("DELETE", f"{AGENT_BASE}/sessions/openclaw/remove", headers=_agent_headers(),
+                           params={"name": args.name or ""}, timeout=15)
         if code == 200:
             print("✅ Agent 已删除")
             _pp(body)

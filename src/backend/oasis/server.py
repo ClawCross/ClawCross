@@ -13,8 +13,6 @@ Start with:
 import os
 import platform
 import secrets
-import shutil
-import subprocess
 import sys
 import asyncio
 import uuid
@@ -40,17 +38,6 @@ from common.runtime_paths import ENV_FILE, PID_DIR, USER_FILES_DIR
 
 env_path = str(ENV_FILE)
 
-
-def _resolve_openclaw_bin():
-    candidates = ["openclaw"]
-    if os.name == "nt":
-        candidates = ["openclaw.cmd", "openclaw"]
-
-    for name in candidates:
-        path = shutil.which(name)
-        if path:
-            return path
-    return None
 load_dotenv(dotenv_path=env_path)
 
 # 本机服务互调不能走桌面代理：no_proxy 里常见的 "127.*" 写法 HTTP 客户端并不匹配，
@@ -119,11 +106,6 @@ discussions: dict[str, DiscussionForum] = {}
 engines: dict[str, DiscussionEngine | PythonWorkflowEngine] = {}
 tasks: dict[str, asyncio.Task] = {}
 
-# --- Skills cache ---
-_openclaw_skills_cache: dict = {}
-_openclaw_managed_skills_dir: str = ""
-_openclaw_bundled_skills: list = []
-
 
 # --- Helpers ---
 
@@ -132,66 +114,6 @@ def _get_forum_or_404(topic_id: str) -> DiscussionForum:
     if not forum:
         raise HTTPException(404, "Topic not found")
     return forum
-
-
-def _preload_openclaw_skills():
-    """Preload OpenClaw skills information at startup to reduce latency."""
-    global _openclaw_skills_cache, _openclaw_managed_skills_dir, _openclaw_bundled_skills
-    
-    openclaw_bin = _resolve_openclaw_bin()
-    if not openclaw_bin:
-        print("[OASIS] ⚠️ openclaw CLI not available, skipping skills preload")
-        return
-    
-    try:
-        # Execute openclaw skills list --json command
-        result = subprocess.run(
-            [openclaw_bin, "skills", "list", "--json"],
-            capture_output=True, text=True, timeout=30,
-        )
-        
-        if result.returncode != 0:
-            print(f"[OASIS] ⚠️ openclaw skills list failed: {result.stderr.strip()[:200]}")
-            return
-        
-        # Parse JSON response
-        raw_output = result.stdout
-        idx = raw_output.find('{')
-        if idx < 0:
-            print("[OASIS] ⚠️ Failed to parse openclaw skills list output")
-            return
-        
-        skills_data = json.loads(raw_output[idx:])
-        
-        # Extract managed skills directory
-        _openclaw_managed_skills_dir = skills_data.get("managedSkillsDir", "")
-        
-        # Extract bundled skills
-        all_skills = skills_data.get("skills", [])
-        _openclaw_bundled_skills = [
-            skill for skill in all_skills 
-            if skill.get("source") == "openclaw-bundled"
-        ]
-        
-        # Cache the complete skills data
-        _openclaw_skills_cache = skills_data
-        
-        # 交给路由，否则这次预热等于白做：init_openclaw_routes 在导入时就执行了，
-        # 只拿到了当时的空值，而上面几行是重新绑定本模块的全局变量，路由那份看不到。
-        from oasis.openclaw_routes import publish_skills_cache
-        publish_skills_cache(
-            skills_cache=_openclaw_skills_cache,
-            managed_skills_dir=_openclaw_managed_skills_dir,
-            bundled_skills=_openclaw_bundled_skills,
-        )
-
-        print(f"[OASIS] ✅ Skills preloaded: {len(all_skills)} total skills, {len(_openclaw_bundled_skills)} bundled skills")
-        print(f"[OASIS] 📁 Managed skills directory: {_openclaw_managed_skills_dir}")
-        
-    except subprocess.TimeoutExpired:
-        print("[OASIS] ⚠️ openclaw skills list command timed out")
-    except Exception as e:
-        print(f"[OASIS] ⚠️ Failed to preload skills: {e}")
 
 
 def _check_owner(forum: DiscussionForum, user_id: str):
@@ -234,16 +156,6 @@ def _trusted_callback_url(url: str | None) -> str | None:
 # --- Lifespan ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 预热 OpenClaw 技能缓存。这是缓存预热（见 _preload_openclaw_skills 的
-    # docstring: "to reduce latency"），不是启动依赖——所有读取方都已经能应对缓存
-    # 为空。它同步跑一个 Node CLI，实测 6~13s，而 uvicorn 在 lifespan 返回之后才
-    # 绑定端口：预热挡在端口前面，launcher 的就绪检查只能干等。丢到线程里后台做，
-    # 端口先开始服务，缓存随后自己填。任务句柄要留着，否则可能被 GC 掉。
-    app.state.skills_preload_task = asyncio.create_task(
-        asyncio.to_thread(_preload_openclaw_skills)
-    )
-
-
     # Load historical discussions
     loaded = DiscussionForum.load_all()
     discussions.update(loaded)
@@ -1534,21 +1446,6 @@ async def delete_user_expert_route(tag: str, user_id: str = Query(...), team: st
         raise HTTPException(status_code=400, detail=str(e))
 
 
-
-# ------------------------------------------------------------------
-# OpenClaw 路由（从 openclaw_routes.py 引入）
-# ------------------------------------------------------------------
-
-_OPENCLAW_BIN = _resolve_openclaw_bin()
-
-from oasis.openclaw_routes import init_openclaw_routes
-app.include_router(init_openclaw_routes(
-    openclaw_bin=_OPENCLAW_BIN,
-    get_env_fn=_get_env,
-    skills_cache=_openclaw_skills_cache,
-    managed_skills_dir=_openclaw_managed_skills_dir,
-    bundled_skills=_openclaw_bundled_skills,
-))
 
 # --- System Info ---
 

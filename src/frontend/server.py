@@ -208,6 +208,7 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'     # 防止 CSRF 跨站请求携�
 # SameSite=Lax 对两种场景都已足够安全。
 
 PORT_AGENT = int(os.getenv("PORT_AGENT", "51200"))
+AGENT_BASE_URL = f"http://127.0.0.1:{PORT_AGENT}"
 # [已弃用] 旧端点 URL，已被 /v1/chat/completions 替代
 # LOCAL_AGENT_URL = f"http://127.0.0.1:{PORT_AGENT}/ask"
 # LOCAL_AGENT_STREAM_URL = f"http://127.0.0.1:{PORT_AGENT}/ask_stream"
@@ -3052,12 +3053,13 @@ def proxy_save_user_profile():
 
 @app.route("/proxy_openclaw_sessions")
 def proxy_openclaw_sessions():
-    """Proxy to fetch OpenClaw session list from OASIS server."""
+    """Proxy to fetch the OpenClaw agent list."""
 
     filter_kw = request.args.get("filter", "")
     try:
         r = requests.get(
-            f"{OASIS_BASE_URL}/sessions/openclaw",
+            f"{AGENT_BASE_URL}/sessions/openclaw",
+            headers=_internal_auth_headers(),
             params={"filter": filter_kw},
             timeout=10,
         )
@@ -3068,11 +3070,12 @@ def proxy_openclaw_sessions():
 
 @app.route("/proxy_openclaw_add", methods=["POST"])
 def proxy_openclaw_add():
-    """Proxy to create a new OpenClaw agent via OASIS server."""
+    """Proxy to create a new OpenClaw agent."""
 
     try:
         r = requests.post(
-            f"{OASIS_BASE_URL}/sessions/openclaw/add",
+            f"{AGENT_BASE_URL}/sessions/openclaw/add",
+            headers=_internal_auth_headers(),
             json=request.get_json(force=True),
             timeout=35,
         )
@@ -3086,7 +3089,7 @@ def proxy_openclaw_default_workspace():
     """Proxy to get the default OpenClaw workspace parent directory."""
 
     try:
-        r = requests.get(f"{OASIS_BASE_URL}/sessions/openclaw/default-workspace", timeout=10)
+        r = requests.get(f"{AGENT_BASE_URL}/sessions/openclaw/default-workspace", headers=_internal_auth_headers(), timeout=10)
         return jsonify(r.json()), r.status_code
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
@@ -3098,7 +3101,8 @@ def proxy_openclaw_workspace_files():
 
     try:
         r = requests.get(
-            f"{OASIS_BASE_URL}/sessions/openclaw/workspace-files",
+            f"{AGENT_BASE_URL}/sessions/openclaw/workspace-files",
+            headers=_internal_auth_headers(),
             params={"workspace": request.args.get("workspace", "")},
             timeout=10,
         )
@@ -3113,7 +3117,8 @@ def proxy_openclaw_workspace_file_read():
 
     try:
         r = requests.get(
-            f"{OASIS_BASE_URL}/sessions/openclaw/workspace-file",
+            f"{AGENT_BASE_URL}/sessions/openclaw/workspace-file",
+            headers=_internal_auth_headers(),
             params={"workspace": request.args.get("workspace", ""),
                     "filename": request.args.get("filename", "")},
             timeout=10,
@@ -3129,7 +3134,8 @@ def proxy_openclaw_workspace_file_save():
 
     try:
         r = requests.post(
-            f"{OASIS_BASE_URL}/sessions/openclaw/workspace-file",
+            f"{AGENT_BASE_URL}/sessions/openclaw/workspace-file",
+            headers=_internal_auth_headers(),
             json=request.get_json(force=True),
             timeout=15,
         )
@@ -3144,7 +3150,8 @@ def proxy_openclaw_agent_detail():
 
     try:
         r = requests.get(
-            f"{OASIS_BASE_URL}/sessions/openclaw/agent-detail",
+            f"{AGENT_BASE_URL}/sessions/openclaw/agent-detail",
+            headers=_internal_auth_headers(),
             params={"name": request.args.get("name", "")},
             timeout=15,
         )
@@ -3154,7 +3161,7 @@ def proxy_openclaw_agent_detail():
 
 @app.route("/proxy_openclaw_skills", methods=["GET"])
 def proxy_openclaw_skills():
-    """Proxy to OASIS /sessions/openclaw/skills, passing optional agent name for filtering."""
+    """Proxy to /sessions/openclaw/skills, passing optional agent name for filtering."""
 
     try:
         agent_name = request.args.get("agent", "")
@@ -3162,7 +3169,8 @@ def proxy_openclaw_skills():
         if agent_name:
             params["name"] = agent_name
         r = requests.get(
-            f"{OASIS_BASE_URL}/sessions/openclaw/skills",
+            f"{AGENT_BASE_URL}/sessions/openclaw/skills",
+            headers=_internal_auth_headers(),
             params=params,
             timeout=20,
         )
@@ -3176,7 +3184,7 @@ def proxy_openclaw_tool_groups():
     """Proxy to get available tool groups and profiles."""
 
     try:
-        r = requests.get(f"{OASIS_BASE_URL}/sessions/openclaw/tool-groups", timeout=10)
+        r = requests.get(f"{AGENT_BASE_URL}/sessions/openclaw/tool-groups", headers=_internal_auth_headers(), timeout=10)
         return jsonify(r.json()), r.status_code
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
@@ -3188,7 +3196,8 @@ def proxy_openclaw_update_config():
 
     try:
         r = requests.post(
-            f"{OASIS_BASE_URL}/sessions/openclaw/update-config",
+            f"{AGENT_BASE_URL}/sessions/openclaw/update-config",
+            headers=_internal_auth_headers(),
             json=request.get_json(force=True),
             timeout=15,
         )
@@ -3202,7 +3211,7 @@ def proxy_openclaw_channels():
     """Proxy to list all available channels."""
 
     try:
-        r = requests.get(f"{OASIS_BASE_URL}/sessions/openclaw/channels", timeout=15)
+        r = requests.get(f"{AGENT_BASE_URL}/sessions/openclaw/channels", headers=_internal_auth_headers(), timeout=15)
         return jsonify(r.json()), r.status_code
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
@@ -3214,7 +3223,8 @@ def proxy_openclaw_agent_bindings():
 
     try:
         r = requests.get(
-            f"{OASIS_BASE_URL}/sessions/openclaw/agent-bindings",
+            f"{AGENT_BASE_URL}/sessions/openclaw/agent-bindings",
+            headers=_internal_auth_headers(),
             params={"agent": request.args.get("agent", "")},
             timeout=15,
         )
@@ -3229,7 +3239,8 @@ def proxy_openclaw_agent_bind():
 
     try:
         r = requests.post(
-            f"{OASIS_BASE_URL}/sessions/openclaw/agent-bind",
+            f"{AGENT_BASE_URL}/sessions/openclaw/agent-bind",
+            headers=_internal_auth_headers(),
             json=request.get_json(force=True),
             timeout=15,
         )
@@ -3240,7 +3251,7 @@ def proxy_openclaw_agent_bind():
 
 @app.route("/proxy_openclaw_remove", methods=["DELETE"])
 def proxy_openclaw_remove():
-    """Proxy to delete an OpenClaw agent via OASIS server."""
+    """Proxy to delete an OpenClaw agent."""
 
     try:
         body = request.get_json(force=True)
@@ -3248,8 +3259,9 @@ def proxy_openclaw_remove():
         if not agent_name:
             return jsonify({"ok": False, "error": "Agent name is required"}), 400
         
-        r = requests.get(
-            f"{OASIS_BASE_URL}/sessions/openclaw/remove",
+        r = requests.delete(
+            f"{AGENT_BASE_URL}/sessions/openclaw/remove",
+            headers=_internal_auth_headers(),
             params={"name": agent_name},
             timeout=15,
         )
@@ -3358,7 +3370,7 @@ def _openclaw_members(user_id: str, team: str) -> list:
 
 
 def _fetch_openclaw_snapshot(global_name: str) -> dict:
-    r = requests.get(f"{OASIS_BASE_URL}/sessions/openclaw/agent-snapshot", params={"name": global_name}, timeout=30)
+    r = requests.get(f"{AGENT_BASE_URL}/sessions/openclaw/agent-snapshot", headers=_internal_auth_headers(), params={"name": global_name}, timeout=30)
     return r.json()
 
 
@@ -3466,7 +3478,8 @@ def _restore_openclaw_member(user_id: str, team: str, member, entry: dict, order
     target_name = target_name or restore_agent_id(team, entry, ordered)
     t_http = time.perf_counter()
     r = requests.post(
-        f"{OASIS_BASE_URL}/sessions/openclaw/agent-restore",
+        f"{AGENT_BASE_URL}/sessions/openclaw/agent-restore",
+        headers=_internal_auth_headers(),
         json={"agent_name": target_name, "display_name": restore_display_name(team, entry["name"]),
               "config": entry.get("config", {}), "workspace_files": entry.get("workspace_files", {})},
         timeout=60,
@@ -5204,7 +5217,8 @@ def preview_team_snapshot():
             agent_name = entry.get("global_name", "") or short_name
             try:
                 r = requests.get(
-                    f"{OASIS_BASE_URL}/sessions/openclaw/agent-detail",
+                    f"{AGENT_BASE_URL}/sessions/openclaw/agent-detail",
+                    headers=_internal_auth_headers(),
                     params={"name": agent_name},
                     timeout=15,
                 )
@@ -5431,7 +5445,8 @@ def download_team_snapshot():
                         if _inc("skills") and _inc_agent_skill(short_name):
                             try:
                                 r = requests.get(
-                                    f"{OASIS_BASE_URL}/sessions/openclaw/agent-detail",
+                                    f"{AGENT_BASE_URL}/sessions/openclaw/agent-detail",
+                                    headers=_internal_auth_headers(),
                                     params={"name": agent_name},
                                     timeout=15,
                                 )
@@ -5638,7 +5653,8 @@ def upload_team_snapshot():
                     try:
                         t_http = time.perf_counter()
                         r = requests.post(
-                            f"{OASIS_BASE_URL}/sessions/openclaw/agent-restore",
+                            f"{AGENT_BASE_URL}/sessions/openclaw/agent-restore",
+                            headers=_internal_auth_headers(),
                             json={
                                 "agent_name": target_name,
                                 "display_name": display_oc_name,
@@ -5700,7 +5716,8 @@ def upload_team_snapshot():
                                 try:
                                     t_fb = time.perf_counter()
                                     fb_r = requests.post(
-                                        f"{OASIS_BASE_URL}/sessions/openclaw/agent-restore",
+                                        f"{AGENT_BASE_URL}/sessions/openclaw/agent-restore",
+                                        headers=_internal_auth_headers(),
                                         json={
                                             "agent_name": fallback_agent,
                                             "display_name": display_oc_name,

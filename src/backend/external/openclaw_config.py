@@ -1,18 +1,34 @@
+"""The local OpenClaw install: its ``openclaw.json``, CLI and skills.
+
+What ``openclaw_routes`` manages OpenClaw agents with. The config is read from
+``openclaw.json`` directly when it exists, else through ``openclaw config get``.
+"""
+
 import json
 import os
+import shutil
 import subprocess
 from typing import Optional
 
 from common.logging_utils import get_logger
 
-logger = get_logger("oasis.openclaw_cli")
+logger = get_logger("external.openclaw_config")
 
 # OpenClaw 2026.x schema: agents.list[].tools.profile 仅允许下列取值
 ALLOWED_TOOLS_PROFILES = frozenset({"minimal", "coding", "messaging", "full"})
 DEFAULT_TOOLS_PROFILE = "coding"
 
+# `openclaw skills list --json`, loaded once in the background at startup (preload_skills).
+skills_info: dict = {}
+managed_skills_dir: str = ""
+bundled_skills: list = []
 
-def sanitize_tools_dict(tools: Optional[dict]) -> dict:
+
+def openclaw_bin() -> Optional[str]:
+    return (shutil.which("openclaw.cmd") if os.name == "nt" else None) or shutil.which("openclaw")
+
+
+def sanitize_tools(tools: Optional[dict]) -> dict:
     """将 tools.profile 规范为 CLI 允许的值，避免整份 openclaw.json 校验失败（删除/添加 agent 都会失败）。"""
     if not isinstance(tools, dict):
         return {}
@@ -23,67 +39,49 @@ def sanitize_tools_dict(tools: Optional[dict]) -> dict:
     s = str(prof).strip()
     if s in ALLOWED_TOOLS_PROFILES:
         return out
-    low = s.lower()
     aliases = {
         "code": "coding",
         "default": "coding",
         "dev": "coding",
         "developer": "coding",
     }
-    out["profile"] = aliases.get(low, DEFAULT_TOOLS_PROFILE)
+    out["profile"] = aliases.get(s.lower(), DEFAULT_TOOLS_PROFILE)
     return out
 
 
-def sanitize_openclaw_root_agents_tools_profiles(root: dict) -> int:
+def sanitize_root_tools_profiles(root: dict) -> int:
     """就地修正 root['agents']['list'][*].tools.profile，返回修正的 agent 条目数。"""
-    if not isinstance(root, dict):
-        return 0
-    agents = root.get("agents")
-    if not isinstance(agents, dict):
-        return 0
-    lst = agents.get("list")
+    agents = root.get("agents") if isinstance(root, dict) else None
+    lst = agents.get("list") if isinstance(agents, dict) else None
     if not isinstance(lst, list):
         return 0
     fixed = 0
     for entry in lst:
-        if not isinstance(entry, dict):
-            continue
-        tools = entry.get("tools")
-        if not isinstance(tools, dict):
-            continue
-        if "profile" not in tools:
+        tools = entry.get("tools") if isinstance(entry, dict) else None
+        if not isinstance(tools, dict) or "profile" not in tools:
             continue
         old = tools.get("profile")
-        old_s = str(old).strip() if old is not None else ""
-        if old_s in ALLOWED_TOOLS_PROFILES:
+        if (str(old).strip() if old is not None else "") in ALLOWED_TOOLS_PROFILES:
             continue
-        entry["tools"] = sanitize_tools_dict(tools)
+        entry["tools"] = sanitize_tools(tools)
         fixed += 1
     return fixed
 
 
-def openclaw_root_config_path() -> str:
-    """Resolve OpenClaw root config path.
-
-    Priority:
-    1) OPENCLAW_CONFIG_FILE (explicit file path)
-    2) OPENCLAW_HOME + /openclaw.json
-    3) default ~/.openclaw/openclaw.json
-    """
+def root_config_path() -> str:
+    """OPENCLAW_CONFIG_FILE, else $OPENCLAW_HOME/openclaw.json, else ~/.openclaw/openclaw.json."""
     env_file = (os.getenv("OPENCLAW_CONFIG_FILE", "") or "").strip()
     if env_file:
         return os.path.expanduser(env_file)
-
     env_home = (os.getenv("OPENCLAW_HOME", "") or "").strip()
     if env_home:
         return os.path.join(os.path.expanduser(env_home), "openclaw.json")
-
     return os.path.expanduser("~/.openclaw/openclaw.json")
 
 
-def load_openclaw_root_config() -> Optional[dict]:
+def load_root_config() -> Optional[dict]:
     """读取完整 openclaw.json（失败返回 None）。"""
-    path = openclaw_root_config_path()
+    path = root_config_path()
     if not os.path.isfile(path):
         return None
     try:
@@ -94,9 +92,9 @@ def load_openclaw_root_config() -> Optional[dict]:
         return None
 
 
-def save_openclaw_root_config(data: dict) -> bool:
+def save_root_config(data: dict) -> bool:
     """写回完整 openclaw.json（原子替换）。"""
-    path = openclaw_root_config_path()
+    path = root_config_path()
     try:
         parent = os.path.dirname(path)
         if parent:
@@ -112,13 +110,14 @@ def save_openclaw_root_config(data: dict) -> bool:
         return False
 
 
-def _agents_subtree_from_root(root: Optional[dict]) -> Optional[dict]:
+def _agents_subtree(root: Optional[dict]) -> Optional[dict]:
     if not root or not isinstance(root.get("agents"), dict):
         return None
     return root["agents"]
 
 
-def _parse_first_json_document(raw: str):
+def parse_first_json(raw: str):
+    """The first JSON object or array in CLI output that may start with log lines."""
     if not raw:
         return None
     idx = raw.find("{")
@@ -128,23 +127,23 @@ def _parse_first_json_document(raw: str):
     if idx < 0:
         return None
     try:
-        decoder = json.JSONDecoder()
-        data, _ = decoder.raw_decode(raw[idx:])
+        data, _ = json.JSONDecoder().raw_decode(raw[idx:])
         return data
     except json.JSONDecodeError:
         return None
 
 
-def fetch_openclaw_full_config(openclaw_bin: Optional[str]) -> Optional[dict]:
-    """优先读 ~/.openclaw/openclaw.json 的 agents 段，避免每次起 CLI。"""
-    sub = _agents_subtree_from_root(load_openclaw_root_config())
+def agents_config() -> Optional[dict]:
+    """The ``agents`` section; 优先读 openclaw.json，避免每次起 CLI。"""
+    sub = _agents_subtree(load_root_config())
     if sub is not None:
         return sub
-    if not openclaw_bin:
+    binary = openclaw_bin()
+    if not binary:
         return None
     try:
         result = subprocess.run(
-            [openclaw_bin, "config", "get", "agents"],
+            [binary, "config", "get", "agents"],
             capture_output=True,
             text=True,
             timeout=15,
@@ -152,23 +151,21 @@ def fetch_openclaw_full_config(openclaw_bin: Optional[str]) -> Optional[dict]:
         if result.returncode != 0:
             logger.warning("openclaw config get agents failed: %s", result.stderr.strip()[:200])
             return None
-        return _parse_first_json_document(result.stdout)
-    except (json.JSONDecodeError, subprocess.TimeoutExpired, Exception) as e:
+        return parse_first_json(result.stdout)
+    except Exception as e:
         logger.warning("openclaw config get agents parse error: %s", e)
         return None
 
 
-def build_agent_detail(agent_cfg: dict, defaults: dict) -> dict:
+def agent_detail(agent_cfg: dict, defaults: dict) -> dict:
     agent_id = agent_cfg.get("id", "")
     tools_cfg = agent_cfg.get("tools", {})
-    profile = tools_cfg.get("profile", "")
     also_allow = tools_cfg.get("alsoAllow", tools_cfg.get("allow", []))
     deny = tools_cfg.get("deny", [])
 
     skills_cfg = agent_cfg.get("skills", None)
     if skills_cfg == "null" or skills_cfg == "":
         skills_cfg = None
-    skills_all = not isinstance(skills_cfg, list)
 
     return {
         "id": agent_id,
@@ -182,26 +179,27 @@ def build_agent_detail(agent_cfg: dict, defaults: dict) -> dict:
             else {"primary": agent_cfg.get("model", "")}
         ),
         "tools": {
-            "profile": profile,
+            "profile": tools_cfg.get("profile", ""),
             "alsoAllow": also_allow if isinstance(also_allow, list) else [],
             "deny": deny if isinstance(deny, list) else [],
         },
         "skills": skills_cfg if isinstance(skills_cfg, list) else [],
-        "skills_all": skills_all,
+        "skills_all": not isinstance(skills_cfg, list),
     }
 
 
-def get_openclaw_default_workspace(openclaw_bin: Optional[str]) -> Optional[str]:
-    sub = _agents_subtree_from_root(load_openclaw_root_config())
+def default_workspace() -> Optional[str]:
+    sub = _agents_subtree(load_root_config())
     if sub:
         ws = (sub.get("defaults") or {}).get("workspace", "")
         if ws:
             return os.path.expanduser(str(ws))
-    if not openclaw_bin:
+    binary = openclaw_bin()
+    if not binary:
         return None
     try:
         result = subprocess.run(
-            [openclaw_bin, "config", "get", "agents.defaults.workspace"],
+            [binary, "config", "get", "agents.defaults.workspace"],
             capture_output=True,
             text=True,
             timeout=10,
@@ -214,11 +212,12 @@ def get_openclaw_default_workspace(openclaw_bin: Optional[str]) -> Optional[str]
         return None
 
 
-def get_openclaw_workspace_path(openclaw_bin: Optional[str]) -> Optional[str]:
-    if openclaw_bin:
+def workspace_path() -> Optional[str]:
+    binary = openclaw_bin()
+    if binary:
         try:
             result = subprocess.run(
-                [openclaw_bin, "config", "get", "agents.defaults.workspace"],
+                [binary, "config", "get", "agents.defaults.workspace"],
                 capture_output=True,
                 text=True,
                 timeout=10,
@@ -231,24 +230,24 @@ def get_openclaw_workspace_path(openclaw_bin: Optional[str]) -> Optional[str]:
         except Exception:
             pass
 
-    default_paths = [
+    for path in (
         os.path.expanduser("~/.openclaw/workspace"),
         os.path.expanduser("~/.moltbot/workspace"),
         "/projects/.openclaw/workspace",
         "/projects/.moltbot/workspace",
-    ]
-    for path in default_paths:
+    ):
         if os.path.isdir(path):
             return path
     return None
 
 
-def fetch_openclaw_channels(openclaw_bin: Optional[str]) -> Optional[dict]:
-    if not openclaw_bin:
+def channels() -> Optional[dict]:
+    binary = openclaw_bin()
+    if not binary:
         return None
     try:
         result = subprocess.run(
-            [openclaw_bin, "channels", "list", "--json"],
+            [binary, "channels", "list", "--json"],
             capture_output=True,
             text=True,
             timeout=45,
@@ -256,7 +255,40 @@ def fetch_openclaw_channels(openclaw_bin: Optional[str]) -> Optional[dict]:
         if result.returncode != 0:
             logger.warning("openclaw channels list failed: %s", result.stderr.strip()[:200])
             return None
-        return _parse_first_json_document(result.stdout)
-    except (json.JSONDecodeError, subprocess.TimeoutExpired, Exception) as e:
+        return parse_first_json(result.stdout)
+    except Exception as e:
         logger.warning("openclaw channels parse error: %s", e)
         return None
+
+
+def preload_skills() -> None:
+    """Fill the skills cache from ``openclaw skills list --json`` (a 6~13s Node CLI)."""
+    global skills_info, managed_skills_dir, bundled_skills
+
+    binary = openclaw_bin()
+    if not binary:
+        logger.info("openclaw CLI not available, skipping skills preload")
+        return
+    try:
+        result = subprocess.run(
+            [binary, "skills", "list", "--json"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode != 0:
+            logger.warning("openclaw skills list failed: %s", result.stderr.strip()[:200])
+            return
+        idx = result.stdout.find("{")
+        if idx < 0:
+            logger.warning("Failed to parse openclaw skills list output")
+            return
+        data = json.loads(result.stdout[idx:])
+    except Exception as e:
+        logger.warning("Failed to preload openclaw skills: %s", e)
+        return
+
+    all_skills = data.get("skills", [])
+    managed_skills_dir = data.get("managedSkillsDir", "")
+    bundled_skills = [s for s in all_skills if s.get("source") == "openclaw-bundled"]
+    skills_info = data
+    logger.info("OpenClaw skills preloaded: %d total, %d bundled, managed dir %s",
+                len(all_skills), len(bundled_skills), managed_skills_dir)

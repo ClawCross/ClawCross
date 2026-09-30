@@ -30,11 +30,11 @@ Use this file when an agent needs to **index the repo before reading code**. It 
 |---|---|
 | `server.py` | the Agent service (port 51200): every agent entrance and the routers below |
 | `agents/` | L1: the table of all agents, the gateway, `/v1/agents`, `/v1/chat/completions`, `/system_trigger` |
-| `external/` | the runtimes of external agents (ACP tools, OpenClaw, HTTP, model calls) |
+| `external/` | the runtimes of external agents (ACP tools, OpenClaw, HTTP, model calls) and OpenClaw agent management (`/sessions/openclaw/*`) |
 | `webot/` | WeBot: `engine/`, `api/`, `mcp/` (its MCP tool servers), `driver.py` (its runtime) |
 | `teams/` | teams: store, manifest (package format), Creator, presets, snapshots |
 | `groups/` | group chat: conversations, delivery, store, and the rules on top |
-| `oasis/` | OASIS workflows (its own service, port 51202) and the OpenClaw routes it hosts |
+| `oasis/` | OASIS workflows (its own service, port 51202) |
 | `scheduler/` | the scheduler service (port 51201), cron parsing, internal alarms, background-job notices |
 | `channels/` | chat channel bridges (webhook, NoneBot, WeClaw) |
 | `fleet/` | the cross-session fleet control plane |
@@ -168,7 +168,7 @@ If the task touches the UI, start here:
 
 ## OASIS and Workflow Engine
 
-Read these for workflow execution, topics, experts, and OpenClaw integration:
+Read these for workflow execution, topics, and experts:
 
 | Path | Purpose |
 |---|---|
@@ -182,8 +182,6 @@ Read these for workflow execution, topics, experts, and OpenClaw integration:
 | `src/backend/oasis/swarm_engine.py` | Town Genesis scaffold and LLM swarm blueprint generation |
 | `src/backend/oasis/graph_memory.py` | GraphRAG persistence, local SQLite fallback, optional Zep mirror, ReportAgent retrieval |
 | `src/backend/oasis/models.py` | OASIS request/response models |
-| `src/backend/oasis/openclaw_routes.py` | OpenClaw API routes |
-| `src/backend/oasis/openclaw_cli.py` | OpenClaw CLI wrappers |
 
 Pair these with:
 
@@ -367,8 +365,7 @@ Read:
 Read:
 
 - `docs/openclaw-commands.md`
-- `src/backend/oasis/openclaw_routes.py`
-- `src/backend/oasis/openclaw_cli.py`
+- `src/backend/external/openclaw.py` (the runtime), `src/backend/external/openclaw_routes.py` (agent management API), `src/backend/external/openclaw_config.py` (openclaw.json / CLI access)
 - `docs/build_team.md`
 
 ### "Clawcross and OpenClaw model settings drift"

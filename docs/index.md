@@ -103,7 +103,7 @@ If you are an agent, do **not** load everything by default. Start with `AGENTS.m
 
 1. Read [`openclaw-commands.md`](./openclaw-commands.md)
 2. Read the OpenClaw section in [`build_team.md`](./build_team.md)
-3. Inspect `src/backend/oasis/openclaw_routes.py`, `src/backend/oasis/openclaw_cli.py`, and related scripts via [`repo-index.md`](./repo-index.md)
+3. Inspect `src/backend/external/openclaw_routes.py`, `src/backend/external/openclaw_config.py`, and related scripts via [`repo-index.md`](./repo-index.md)
 
 ### Operate TinyFish monitoring
 
