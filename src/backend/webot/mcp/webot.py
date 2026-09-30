@@ -1702,7 +1702,7 @@ async def read_session_inbox(
     include_read: bool = False,
     source_session: str = "",
 ) -> str:
-    """阅读当前会话的收件箱正文；不改变已读状态。
+    """阅读当前会话的收件箱正文，并自动将本次读到的消息标记已读。
 
     :param message_ids: 指定消息 ID；留空时阅读全部未读消息
     :param include_read: 留空读取全部时是否也包含已读消息
@@ -1721,14 +1721,16 @@ async def read_session_inbox(
         missing = []
     if not records:
         return "📭 当前会话没有匹配的收件箱消息。" + (f" 未找到：{', '.join(missing)}" if missing else "")
-    lines = [f"📨 收件箱：{len(records)} 条消息（阅读不会自动标记已读）"]
+    bodies = []
     for record in records:
         source_user = record.metadata.get("source_user") or username
         sender = record.source_label or record.source_session
-        lines.append(
+        bodies.append(
             f"\n[{record.message_id}] 来自 {source_user}#{sender} · "
-            f"{'已读' if record.read_at else '未读'} · {record.created_at}\n{record.content}"
+            f"{record.created_at}\n{record.content}"
         )
+    changed = mark_inbox_read(username, session_id, [record.message_id for record in records])
+    lines = [f"📨 收件箱：{len(records)} 条消息（本次自动标记 {changed} 条为已读）", *bodies]
     if missing:
         lines.append(f"\n未找到：{', '.join(missing)}")
     return "\n".join(lines)

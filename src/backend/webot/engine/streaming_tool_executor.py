@@ -43,7 +43,6 @@ _TOOL_ACCESS_MODES: dict[str, ToolAccessMode] = {
     "list_oasis_workflows": ToolAccessMode.READ_ONLY,
     "check_oasis_discussion": ToolAccessMode.READ_ONLY,
     "read_session_plan": ToolAccessMode.READ_ONLY,
-    "read_session_inbox": ToolAccessMode.READ_ONLY,
     "list_subagents": ToolAccessMode.READ_ONLY,
     "get_subagent_history": ToolAccessMode.READ_ONLY,
     "list_tool_approvals": ToolAccessMode.READ_ONLY,
@@ -71,6 +70,8 @@ _TOOL_ACCESS_MODES: dict[str, ToolAccessMode] = {
     "send_notification": ToolAccessMode.WRITE,
     "remove_notification_channel": ToolAccessMode.WRITE,
     "send_to_session": ToolAccessMode.WRITE,
+    # Reading changes read_at, so the streaming executor treats it as a write.
+    "read_session_inbox": ToolAccessMode.WRITE,
     "mark_session_inbox_read": ToolAccessMode.WRITE,
     "send_to_group": ToolAccessMode.WRITE,
     "manage_personality": ToolAccessMode.WRITE,
