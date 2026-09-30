@@ -4185,6 +4185,9 @@ def _tunnel_running() -> tuple[bool, int | None]:
 
 def _get_public_domain() -> str:
     """Read PUBLIC_DOMAIN from .env."""
+    running, _ = _tunnel_running()
+    if not running:
+        return ""
     from dotenv import dotenv_values
     vals = dotenv_values(str(ENV_FILE))
     domain = vals.get("PUBLIC_DOMAIN", "")

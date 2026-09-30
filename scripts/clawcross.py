@@ -98,6 +98,8 @@ def _public_front_url() -> str:
     *display* (welcome banner, status output) only.
     """
     try:
+        pid = int((PID_DIR / "tunnel.pid").read_text(encoding="utf-8").strip())
+        os.kill(pid, 0)
         vals = read_env_all(str(ENV_FILE))
     except Exception:
         return FRONT_BASE

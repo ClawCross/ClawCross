@@ -138,6 +138,9 @@ function Write-MagicLinks {
         return
     }
     $pd = Get-EnvValue -Key "PUBLIC_DOMAIN"
+    if (-not (Test-TrackedProcessRunning -PidFile $tunnelPidFile)) {
+        $pd = ""
+    }
     if ($pd -and $pd -ne "wait to set") {
         Write-Host "  Remote: ${pd}/login-link/${token}?user=$mlUser"
         Write-Host "Mobile group chat: $pd/mobile_group_chat"
