@@ -370,7 +370,7 @@ _PUBLIC_ROUTES = frozenset({
     'proxy_login', 'proxy_logout', 'proxy_check_session',
     'proxy_login_with_token', 'magic_login',
     'group_chat_mobile', 'group_chat_mobile_alias', 'studio',
-    'llm_config_status', 'setup_status', 'import_openclaw_config',
+    'llm_config_status', 'setup_status',
 }) | PUBLIC_AGENT_ENDPOINTS
 
 
