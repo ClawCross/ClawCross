@@ -53,9 +53,11 @@ class WeBotRuntimeStoreTests(unittest.TestCase):
                 "alice", source_session="main", target_session="worker", content="Reply please",
                 metadata={"wait_reply": True}, db_path=db_path,
             )
-            self.assertEqual(runtime_store.mark_inbox_read("alice", "worker", db_path=db_path), 1)
+            self.assertEqual(runtime_store.mark_inbox_read("alice", "worker", db_path=db_path), 2)
             self.assertTrue(runtime_store.get_inbox_message("alice", "worker", passive.message_id, db_path=db_path).read_at)
-            self.assertEqual(runtime_store.get_inbox_message("alice", "worker", waiting.message_id, db_path=db_path).status, "queued")
+            waiting_after_read = runtime_store.get_inbox_message("alice", "worker", waiting.message_id, db_path=db_path)
+            self.assertEqual(waiting_after_read.status, "queued")
+            self.assertTrue(waiting_after_read.read_at)
             self.assertEqual(runtime_store.mark_inbox_read("alice", "worker", [waiting.message_id], db_path=db_path), 0)
 
     def test_run_leases_interrupts_and_events_follow_control_plane_semantics(self):

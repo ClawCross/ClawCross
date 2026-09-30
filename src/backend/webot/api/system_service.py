@@ -384,7 +384,7 @@ class SystemService:
         lines = [
             f"[收件箱通知] 你有 {unread_count} 条未读消息，本次新增 {len(items)} 条。",
             "这里只列摘要；正文留在收件箱。可用 read_session_inbox 阅读全部或指定 ID，"
-            "用 mark_session_inbox_read 直接标记已读。",
+            "读后自动标记已读；也可用 mark_session_inbox_read 直接标记。",
         ]
         for item in items[:10]:
             sender = item.source_label or item.source_session

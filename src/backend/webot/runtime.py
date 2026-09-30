@@ -8,6 +8,8 @@ from __future__ import annotations
 RUN_MODES = ("chat", "readonly", "bypass", "auto")
 VALID_SESSION_MODES = frozenset({*RUN_MODES, "execute", "agent", "plan", "review", "yolo"})
 MODE_ALIASES = {"manual": "chat", "read-only": "readonly"}
+# Reading inbox content records a read receipt, but remains a viewing action
+# permitted by session modes.
 READ_ONLY_TOOLS = frozenset({
     "read_file", "list_files", "web_search", "web_fetch", "search_sessions", "list_sessions",
     "list_subagents", "get_subagent_history", "read_session_plan", "list_tool_approvals", "read_session_inbox",

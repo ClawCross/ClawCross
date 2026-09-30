@@ -1490,25 +1490,39 @@ def mark_inbox_read(
             "WHERE user_id = ? AND target_session = ? AND read_at = ''",
             (user_id, target_session),
         ).fetchall()
-        eligible = [
-            row["message_id"] for row in rows
-            if (selected is None or row["message_id"] in selected)
-            # A synchronous sender is waiting for this exact turn's reply.
-            # Marking it read before the worker runs would strand its waiter.
-            and not (
-                row["delivery_status"] == "queued"
-                and _json_loads_dict(row["metadata_json"]).get("wait_reply")
-            )
-        ]
+        normal_ids: list[str] = []
+        waiting_ids: list[str] = []
+        for row in rows:
+            message_id = row["message_id"]
+            if selected is not None and message_id not in selected:
+                continue
+            # A synchronous sender still needs the inbox worker to deliver
+            # this queued message and collect its reply. Only its read receipt
+            # changes here; delivery_status must stay queued.
+            if row["delivery_status"] == "queued" and _json_loads_dict(row["metadata_json"]).get("wait_reply"):
+                waiting_ids.append(message_id)
+            else:
+                normal_ids.append(message_id)
         now = utc_now()
-        cursor = conn.executemany(
-            "UPDATE webot_session_inbox SET read_at = ?, delivery_status = 'delivered', "
-            "delivered_at = CASE WHEN delivered_at = '' THEN ? ELSE delivered_at END "
-            "WHERE user_id = ? AND target_session = ? AND message_id = ? AND read_at = ''",
-            [(now, now, user_id, target_session, message_id) for message_id in eligible],
-        )
+        changed = 0
+        if normal_ids:
+            cursor = conn.executemany(
+                "UPDATE webot_session_inbox SET read_at = ?, delivery_status = 'delivered', "
+                "delivered_at = CASE WHEN delivered_at = '' THEN ? ELSE delivered_at END "
+                "WHERE user_id = ? AND target_session = ? AND message_id = ? AND read_at = ''",
+                [(now, now, user_id, target_session, message_id) for message_id in normal_ids],
+            )
+            changed += cursor.rowcount
+        if waiting_ids:
+            cursor = conn.executemany(
+                "UPDATE webot_session_inbox SET read_at = ? "
+                "WHERE user_id = ? AND target_session = ? AND message_id = ? "
+                "AND delivery_status = 'queued' AND read_at = ''",
+                [(now, user_id, target_session, message_id) for message_id in waiting_ids],
+            )
+            changed += cursor.rowcount
         conn.commit()
-        return cursor.rowcount
+        return changed
 
 
 def mark_inbox_handled(

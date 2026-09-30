@@ -127,26 +127,26 @@ class SendToSessionTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("full private text", listed)
             self.assertNotIn(other_session.message_id, listed)
             self.assertNotIn(other_user.message_id, listed)
-            self.assertEqual(runtime_store.count_inbox_messages("alice", "worker", status="unread"), 1)
+            self.assertEqual(runtime_store.count_inbox_messages("alice", "worker", status="unread"), 0)
             missing = await webot.read_session_inbox("alice", [other_session.message_id], source_session="worker")
             self.assertIn("未找到", missing)
             marked = await webot.mark_session_inbox_read("alice", [own.message_id, other_session.message_id], source_session="worker")
-            self.assertIn("已标记 1 条", marked)
+            self.assertIn("已标记 0 条", marked)
             self.assertEqual(runtime_store.count_inbox_messages("alice", "worker", status="unread"), 0)
             self.assertEqual(runtime_store.count_inbox_messages("alice", "other", status="unread"), 1)
             self.assertTrue(runtime_store.get_inbox_message("alice", "worker", own.message_id).read_at)
             self.assertFalse(runtime_store.get_inbox_message("alice", "other", other_session.message_id).read_at)
 
-    async def test_read_all_and_mark_all_have_separate_effects(self):
+    async def test_read_all_marks_returned_messages(self):
         with TemporaryDirectory() as tmpdir, patch.object(runtime_store, "DEFAULT_DB_PATH", Path(tmpdir) / "runtime.db"):
             for body in ("first", "second"):
                 runtime_store.create_inbox_message("alice", source_session="main", target_session="worker", content=body)
             result = await webot.read_session_inbox("alice", source_session="worker")
             self.assertIn("first", result)
             self.assertIn("second", result)
-            self.assertEqual(runtime_store.count_inbox_messages("alice", "worker", status="unread"), 2)
+            self.assertEqual(runtime_store.count_inbox_messages("alice", "worker", status="unread"), 0)
             marked = await webot.mark_session_inbox_read("alice", source_session="worker")
-            self.assertIn("已标记 2 条", marked)
+            self.assertIn("已标记 0 条", marked)
             self.assertEqual(runtime_store.count_inbox_messages("alice", "worker", status="unread"), 0)
 
 
