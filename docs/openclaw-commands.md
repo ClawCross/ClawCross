@@ -9,7 +9,7 @@
 - 刷新 `OPENCLAW_API_URL`、`OPENCLAW_GATEWAY_TOKEN`、`OPENCLAW_SESSIONS_FILE`
 - 轻量修复缺失 transcript 的 sessions 坏索引
 
-这一步只处理 OpenClaw runtime 联通性，不会静默把 OpenClaw 的 LLM provider / model / key 覆盖到 Clawcross。LLM 导入仍然走首次登录向导或 `check-openclaw`。
+这一步只处理 OpenClaw runtime 联通性，不会静默把 OpenClaw 的 LLM provider / model / key 覆盖到 Clawcross。LLM 导入仍然走首次登录向导，或显式运行 `bash selfskill/scripts/run.sh import-openclaw-llm`。
 
 ## Web 入口
 
@@ -29,11 +29,10 @@
 
 已有的导入路径仍然有效：
 
-- 前端首次登录向导里的 `🦞 从 OpenClaw 导入`
-- `bash selfskill/scripts/run.sh check-openclaw`
-- `powershell -ExecutionPolicy Bypass -File .\selfskill\scripts\run.ps1 check-openclaw`
+- 首次登录向导中的 `🦞 从 OpenClaw 导入`
+- `bash selfskill/scripts/run.sh import-openclaw-llm`（Windows：`run.ps1 import-openclaw-llm`）
 
-它们会自动探测 OpenClaw 的 gateway 地址、默认模型和 provider，并尽量写回 Clawcross 的 `config/.env`。
+导入动作会读取已安装的 OpenClaw 配置，并写回 Clawcross 的 `config/.env`。`check-openclaw` 仅报告状态。
 
 ### Clawcross -> OpenClaw
 
