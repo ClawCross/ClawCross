@@ -2,13 +2,4 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export PROJECT_ROOT="$ROOT"
-source "$ROOT/selfskill/scripts/_paths.sh"
-clawcross_init_paths
-
-PY="$CLAWCROSS_VENV_DIR/bin/python"
-if [ ! -x "$PY" ]; then
-  PY="${PYTHON:-python3}"
-fi
-
-exec "$PY" "$ROOT/scripts/clawcross.py" "$@"
+exec bash "$ROOT/selfskill/scripts/run.sh" clawcross "$@"

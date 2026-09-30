@@ -194,8 +194,9 @@ def install_component(name: str, adapters: list[str]) -> None:
         if not python.is_file():
             raise RuntimeError("Prepare the Python environment before installing channel packages")
         uv = os.getenv("CLAWCROSS_UV_BIN") or shutil.which("uv")
-        command = ([uv, "pip", "install", "--python", str(python)] if uv else
-                   [str(python), "-m", "pip", "install"])
+        if not uv:
+            raise RuntimeError("uv is required to install optional Python components")
+        command = [uv, "pip", "install", "--python", str(python)]
         _run(command + ["-r", str(CHANNEL_REQUIREMENTS)])
         return
     if name == "acpx":
@@ -217,8 +218,9 @@ def install_component(name: str, adapters: list[str]) -> None:
                 raise ValueError(f"Invalid adapter name: {adapter!r}")
             packages.append("nonebot-adapter-" + adapter.split(".", 1)[0].replace("_", "-"))
         uv = os.getenv("CLAWCROSS_UV_BIN") or shutil.which("uv")
-        command = ([uv, "pip", "install", "--python", str(python)] if uv else
-                   [str(python), "-m", "pip", "install"])
+        if not uv:
+            raise RuntimeError("uv is required to install optional Python components")
+        command = [uv, "pip", "install", "--python", str(python)]
         _run(command + list(dict.fromkeys(packages)))
         return
     if name == "weclaw":

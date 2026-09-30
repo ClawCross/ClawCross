@@ -48,8 +48,8 @@ Read these first for setup or environment changes:
 
 | Path | Purpose |
 |---|---|
-| `selfskill/scripts/run.sh` | Linux / macOS Python bootstrap and legacy CLI wrapper |
-| `selfskill/scripts/run.ps1` | Windows Python bootstrap and legacy CLI wrapper |
+| `selfskill/scripts/run.sh` | Linux / macOS uv and Python bootstrap |
+| `selfskill/scripts/run.ps1` | Windows uv and Python bootstrap |
 | `scripts/runtime_control.py` | shared Python start, stop, status, and tunnel lifecycle |
 | `scripts/environment.py` | core Python dependencies and explicit optional component installs |
 | `config/requirements-channels.txt` | optional QQ, Telegram, and media dependencies |
@@ -57,10 +57,7 @@ Read these first for setup or environment changes:
 | `selfskill/scripts/configure_openclaw.py` | OpenClaw detection plus Clawcross/OpenClaw LLM sync logic |
 | `config/.env.example` | config template and inline guidance |
 | `config/tinyfish_targets.example.json` | example TinyFish search target schema |
-| `scripts/setup_apikey.sh` | legacy API key helper |
-| `scripts/setup_apikey.ps1` | legacy Windows API key helper |
-| `manual_run.sh` | manual startup helper with guardrails |
-| `manual_run.ps1` | manual Windows startup helper with guardrails |
+| `selfskill/scripts/configure.py` | API key and model configuration |
 | `selfskill/scripts/evolve_skill.py` | repo-level Markdown skill self-evolution helper with strategy presets and validation artifacts |
 
 If the issue is model detection or provider-specific behavior, inspect:
@@ -323,8 +320,6 @@ Read:
 
 - `src/backend/common/llm_factory.py`
 - `src/backend/ops/service.py`
-- `scripts/setup_apikey.sh`
-- `scripts/setup_apikey.ps1`
 - `selfskill/scripts/configure.py`
 
 ### "Workflow YAML or OASIS execution is wrong"

@@ -6,6 +6,7 @@ import hashlib
 import os
 import subprocess
 import sys
+from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -148,3 +149,56 @@ def test_stale_tunnel_domain_is_cleared_before_start(tmp_path, monkeypatch):
     monkeypatch.setattr(control, "CONFIG_DIR", tmp_path)
     control._clear_public_domain()
     assert env_file.read_text(encoding="utf-8") == "PORT_FRONTEND=51209\nPUBLIC_DOMAIN=\n"
+
+
+def test_windows_pid_probe_does_not_signal_process(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    control = _load_runtime_control()
+    pid_file = tmp_path / "service.pid"
+    pid_file.write_text("4321\n", encoding="ascii")
+    monkeypatch.setattr(control, "_is_windows", lambda: True)
+    monkeypatch.setattr(control.os, "kill", lambda *args: (_ for _ in ()).throw(AssertionError("os.kill called")))
+    monkeypatch.setattr(control.subprocess, "run", lambda *args, **kwargs:
+                        SimpleNamespace(returncode=0, stdout='"service.exe","4321","Console","1","1 K"\n'))
+    assert control._pid(pid_file) == 4321
+
+
+def test_legacy_paths_use_repository_runtime(monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    monkeypatch.setenv("CLAWCROSS_USE_LEGACY_PATHS", "1")
+    monkeypatch.setenv("CLAWCROSS_HOME", "/unused")
+    control = _load_runtime_control()
+    control._initialize_paths()
+    assert control.HOME == ROOT
+    assert control.RUN_DIR == ROOT
+    assert control.WORKSPACE_DIR == ROOT
+    assert os.environ["CLAWCROSS_VENV_DIR"] == str(ROOT / ".venv")
+
+
+def test_no_tunnel_start_stops_old_tunnel(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    control = _load_runtime_control()
+    monkeypatch.setattr(control, "RUN_DIR", tmp_path / "run")
+    monkeypatch.setattr(control, "LOG_DIR", tmp_path / "logs")
+    monkeypatch.setattr(control, "WORKSPACE_DIR", tmp_path / "workspace")
+    monkeypatch.setattr(control, "LAUNCHER_PID", tmp_path / "run" / "clawcross.pid")
+    monkeypatch.setattr(control, "TUNNEL_PID", tmp_path / "run" / "tunnel.pid")
+    monkeypatch.setattr(control, "_migrate_if_needed", lambda: None)
+    monkeypatch.setattr(control, "ensure_core", lambda: None)
+    monkeypatch.setattr(control, "_ensure_config", lambda: None)
+    monkeypatch.setattr(control, "_maybe_import_openclaw", lambda *args, **kwargs: None)
+    monkeypatch.setattr(control, "_check_model", lambda *args: None)
+    monkeypatch.setattr(control, "_process_env", lambda **kwargs: {})
+    monkeypatch.setattr(control, "_probe", lambda *args: True)
+    monkeypatch.setattr(control, "_magic_links", lambda *args, **kwargs: None)
+    stopped = []
+    monkeypatch.setattr(control, "_stop_pid", lambda path: stopped.append(path))
+    cleared = []
+    monkeypatch.setattr(control, "_clear_public_domain", lambda: cleared.append(True))
+    monkeypatch.setattr(control, "_start_tunnel", lambda *args: (_ for _ in ()).throw(AssertionError("started tunnel")))
+    monkeypatch.setattr(control.subprocess, "Popen", lambda *args, **kwargs:
+                        SimpleNamespace(pid=1234, poll=lambda: None))
+    args = SimpleNamespace(foreground=False, no_tunnel=True, no_openclaw=True, no_channel=True)
+    assert control.start(args) == 0
+    assert stopped == [control.TUNNEL_PID, control.LAUNCHER_PID]
+    assert cleared == [True]

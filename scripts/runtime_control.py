@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import os
 from pathlib import Path
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -19,15 +21,46 @@ from environment import bin_dir, component_status, ensure_core, install_componen
 
 
 ROOT = Path(__file__).resolve().parents[1]
-HOME = Path(os.getenv("CLAWCROSS_HOME") or Path.home() / ".clawcross")
-CONFIG_DIR = Path(os.getenv("CLAWCROSS_CONFIG_DIR") or HOME / "config")
-RUN_DIR = Path(os.getenv("CLAWCROSS_RUN_DIR") or HOME / "run")
-LOG_DIR = Path(os.getenv("CLAWCROSS_LOG_DIR") or HOME / "logs")
-WORKSPACE_DIR = Path(os.getenv("CLAWCROSS_WORKSPACE_DIR") or HOME / "workspace")
+TRUE_VALUES = {"1", "true", "yes", "on"}
+LEGACY_PATHS = os.getenv("CLAWCROSS_USE_LEGACY_PATHS", "").lower() in TRUE_VALUES
+HOME = ROOT if LEGACY_PATHS else Path(os.getenv("CLAWCROSS_HOME") or Path.home() / ".clawcross")
+CONFIG_DIR = HOME / "config" if LEGACY_PATHS else Path(os.getenv("CLAWCROSS_CONFIG_DIR") or HOME / "config")
+RUN_DIR = HOME if LEGACY_PATHS else Path(os.getenv("CLAWCROSS_RUN_DIR") or HOME / "run")
+LOG_DIR = HOME / "logs" if LEGACY_PATHS else Path(os.getenv("CLAWCROSS_LOG_DIR") or HOME / "logs")
+WORKSPACE_DIR = HOME if LEGACY_PATHS else Path(os.getenv("CLAWCROSS_WORKSPACE_DIR") or HOME / "workspace")
 ENV_FILE = CONFIG_DIR / ".env"
 LAUNCHER_PID = RUN_DIR / "clawcross.pid"
 TUNNEL_PID = RUN_DIR / "tunnel.pid"
-TRUE_VALUES = {"1", "true", "yes", "on"}
+
+
+def _initialize_paths() -> None:
+    """Share one runtime layout with scripts launched from this controller."""
+    legacy = LEGACY_PATHS
+    home = HOME
+    if legacy:
+        os.environ["CLAWCROSS_HOME"] = str(home)
+    else:
+        os.environ.setdefault("CLAWCROSS_HOME", str(home))
+    paths = {
+        "CLAWCROSS_VENV_DIR": home / (".venv" if legacy else "venv"),
+        "CLAWCROSS_DATA_DIR": home / "data",
+        "CLAWCROSS_LOG_DIR": home / "logs",
+        "CLAWCROSS_CONFIG_DIR": home / "config",
+        "CLAWCROSS_RUN_DIR": home if legacy else home / "run",
+        "CLAWCROSS_BIN_DIR": home / "bin",
+        "CLAWCROSS_WORKSPACE_DIR": home if legacy else home / "workspace",
+        "CLAWCROSS_STATE_DIR": home,
+    }
+    for key, path in paths.items():
+        if legacy:
+            os.environ[key] = str(path)
+        else:
+            os.environ.setdefault(key, str(path))
+    os.environ.setdefault("PYTHONPYCACHEPREFIX", str(home / "pycache"))
+
+
+def _is_windows() -> bool:
+    return os.name == "nt"
 
 
 def _read_env() -> dict[str, str]:
@@ -60,9 +93,19 @@ def _process_env(*, no_openclaw: bool = False, no_channel: bool = False) -> dict
 def _pid(path: Path) -> int | None:
     try:
         value = int(path.read_text(encoding="utf-8-sig").strip())
+        if value <= 0:
+            return None
+        if _is_windows():
+            result = subprocess.run(["tasklist", "/FI", f"PID eq {value}", "/FO", "CSV", "/NH"],
+                                    capture_output=True, text=True, check=False, timeout=5)
+            if result.returncode != 0:
+                return None
+            return value if any(len(row) > 1 and row[1] == str(value)
+                                for row in csv.reader(result.stdout.splitlines())) else None
         os.kill(value, 0)
         return value
-    except (FileNotFoundError, ValueError, ProcessLookupError, PermissionError, OSError):
+    except (FileNotFoundError, ValueError, ProcessLookupError, PermissionError, OSError,
+            subprocess.TimeoutExpired):
         return None
 
 
@@ -71,8 +114,8 @@ def _stop_pid(path: Path, *, timeout: float = 8.0) -> None:
     if pid is None:
         path.unlink(missing_ok=True)
         return
-    if os.name == "nt":
-        subprocess.run(["taskkill", "/PID", str(pid), "/T"], check=False,
+    if _is_windows():
+        subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], check=False,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     else:
         try:
@@ -224,6 +267,8 @@ def start(args: argparse.Namespace) -> int:
     RUN_DIR.mkdir(parents=True, exist_ok=True)
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
+    _stop_pid(TUNNEL_PID)
+    _clear_public_domain()
     _stop_pid(LAUNCHER_PID)
     command = [sys.executable, str(ROOT / "scripts/launcher.py")]
     if args.foreground:
@@ -300,7 +345,96 @@ def status() -> int:
     return 0
 
 
+def _run_python(relative_path: str, arguments: list[str]) -> int:
+    return subprocess.run([sys.executable, str(ROOT / relative_path), *arguments],
+                          cwd=ROOT, env=_process_env(), check=False).returncode
+
+
+def _logs(arguments: list[str]) -> int:
+    names = {"launcher": "launcher.log", "main": "launcher.log", "error": "error.log",
+             "errors": "error.log", "tunnel": "tunnel.log"}
+    if len(arguments) > 1 or (arguments and arguments[0] not in names):
+        raise ValueError("Usage: logs [launcher|error|tunnel]")
+    path = LOG_DIR / names[arguments[0] if arguments else "launcher"]
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    lines = int(os.getenv("CLAWCROSS_LOG_LINES", "200"))
+    if lines < 1:
+        raise ValueError("CLAWCROSS_LOG_LINES must be positive")
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines()[-lines:]:
+        print(line)
+    return 0
+
+
+def _legacy_command(command: str, arguments: list[str]) -> int | None:
+    scripts = {
+        "add-user": ("selfskill/scripts/adduser.py", []),
+        "configure": ("selfskill/scripts/configure.py", []),
+        "auto-model": ("selfskill/scripts/configure.py", ["--auto-model"]),
+        "sync-openclaw-llm": ("selfskill/scripts/configure_openclaw.py", ["--sync-clawcross-llm"]),
+        "import-openclaw-llm": ("selfskill/scripts/configure_openclaw.py", ["--import-clawcross-llm-from-openclaw"]),
+        "evolve-skill": ("selfskill/scripts/evolve_skill.py", []),
+        "cli": ("scripts/cli.py", []),
+        "clawcross": ("scripts/clawcross.py", []),
+        "check-openclaw": ("selfskill/scripts/configure_openclaw.py", ["--status"]),
+    }
+    if command in scripts:
+        script, prefix = scripts[command]
+        if command == "add-user" and len(arguments) != 2:
+            raise ValueError("Usage: add-user <username> <password>")
+        if command in {"cli", "clawcross", "evolve-skill"}:
+            ensure_core()
+        return _run_python(script, prefix + arguments)
+    if command == "logs":
+        return _logs(arguments)
+    if command == "doctor":
+        result = status()
+        component_status()
+        return result
+    if command == "check-openclaw-weixin":
+        executable = shutil.which("openclaw.cmd" if _is_windows() else "openclaw")
+        if not executable:
+            raise RuntimeError("OpenClaw is unavailable; no plugin was installed")
+        return subprocess.run([executable, "plugins", "list"], check=False).returncode
+    if command == "bind-openclaw-channel":
+        if len(arguments) != 2:
+            raise ValueError("Usage: bind-openclaw-channel <agent> <bind_key>")
+        executable = shutil.which("openclaw.cmd" if _is_windows() else "openclaw")
+        if not executable:
+            raise RuntimeError("OpenClaw CLI is unavailable")
+        return subprocess.run([executable, "agents", "bind", "--agent", arguments[0],
+                               "--bind", arguments[1]], check=False).returncode
+    if command == "restart":
+        _stop_pid(TUNNEL_PID)
+        _clear_public_domain()
+        _stop_pid(LAUNCHER_PID)
+        options = argparse.ArgumentParser(prog="restart")
+        options.add_argument("--no-tunnel", action="store_true")
+        options.add_argument("--no-openclaw", action="store_true")
+        options.add_argument("--no-channel", action="store_true")
+        parsed = options.parse_args(arguments)
+        parsed.foreground = False
+        return start(parsed)
+    return None
+
+
 def main() -> int:
+    _initialize_paths()
+    if len(sys.argv) < 2 or sys.argv[1] == "help":
+        print("ClawCross commands: start, start-foreground, restart, setup, stop, status, "
+              "configure, add-user, auto-model, sync-openclaw-llm, import-openclaw-llm, components, "
+              "install-component, start-tunnel, stop-tunnel, tunnel-status, logs, "
+              "doctor, cli, clawcross, evolve-skill, check-openclaw, "
+              "check-openclaw-weixin, bind-openclaw-channel")
+        return 0
+    if len(sys.argv) > 1:
+        try:
+            legacy = _legacy_command(sys.argv[1], sys.argv[2:])
+            if legacy is not None:
+                return legacy
+        except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
+            print(f"ClawCross: {exc}", file=sys.stderr)
+            return 1
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
     for name in ("start", "start-foreground", "start-fg"):
