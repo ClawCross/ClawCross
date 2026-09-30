@@ -157,9 +157,10 @@ If the user explicitly wants OpenClaw integration and it is missing, use this fl
 6. Web entry points after the gateway is up:
    - OpenClaw dashboard / Control UI: `http://127.0.0.1:18789/`
    - OpenClaw OpenAI-compatible HTTP API: `http://127.0.0.1:18789/v1/chat/completions`
-7. Sync Clawcross integration:
+7. Check the installed OpenClaw integration without installing plugins:
    - Linux / macOS: `bash selfskill/scripts/run.sh check-openclaw`
    - Windows: `powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1 check-openclaw`
+   Importing OpenClaw LLM settings is a separate, explicit action through the first-login wizard or `run.sh import-openclaw-llm` (PowerShell: `run.ps1 import-openclaw-llm`).
 8. If the OpenClaw dashboard shows `gateway token missing`, either:
    - paste `OPENCLAW_GATEWAY_TOKEN` into Control UI settings, or
    - for loopback-only local development, switch to no-auth:
