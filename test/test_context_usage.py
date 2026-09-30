@@ -20,6 +20,7 @@ from webot.checkpoint_repository import (
 )
 from webot.compression import _summary_to_message
 from webot.context_usage import count_tokens, estimate_context_components, scale_components, tool_schemas
+from webot.context import RUNTIME_DELTA_KEY
 
 
 async def _read_file(path: str) -> str:
@@ -61,6 +62,12 @@ class ContextComponentTests(unittest.TestCase):
     def test_special_token_text_is_counted(self):
         self.assertGreater(count_tokens("<|endoftext|> hi"), 0)
 
+    def test_runtime_deltas_are_counted_with_runtime_state(self):
+        message = HumanMessage(content="hello", additional_kwargs={RUNTIME_DELTA_KEY: "状态变化"})
+        parts = estimate_context_components(system_prompt="", tools=[], runtime_state="", messages=[message])
+        self.assertEqual(parts["runtime_state"], count_tokens("状态变化"))
+        self.assertEqual(parts["messages"], count_tokens("hello"))
+
     def test_tool_schemas_skip_unconvertible_entries(self):
         tool = StructuredTool.from_function(coroutine=_read_file, name="read_file", description="Read a file")
         external = {"type": "function", "function": {"name": "ext", "description": "x", "parameters": {"type": "object", "properties": {}}}}
@@ -69,6 +76,12 @@ class ContextComponentTests(unittest.TestCase):
 
 
 class ContextUsagePersistenceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_missing_component_estimate_keeps_total_accounted_for(self):
+        with TemporaryDirectory() as tmpdir:
+            agent = _bare_agent(tmpdir)
+            await agent.record_context_usage("alice#s1", input_tokens=10, output_tokens=2)
+            self.assertEqual(agent.get_thread_context_usage("alice#s1")["breakdown"], {"messages": 10, "output": 2})
+
     async def test_record_round_trip_and_delete(self):
         with TemporaryDirectory() as tmpdir:
             self.assertIsNone(get_context_usage_record(tmpdir, "alice#s1"))

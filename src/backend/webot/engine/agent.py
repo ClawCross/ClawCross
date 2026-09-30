@@ -9,7 +9,7 @@ from typing import TypedDict, Optional
 
 # Model related
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -34,7 +34,14 @@ from webot.checkpoint_repository import (
 )
 from webot.context_compressor import estimate_messages_tokens
 from webot.engine.background_compaction import BackgroundCompressionManager
-from webot.context import assemble_input_messages, render_runtime_context_block
+from webot.context import (
+    RUNTIME_DELTA_KEY,
+    RUNTIME_STATE_KEY,
+    assemble_input_messages,
+    render_runtime_context_block,
+    render_team_skill_context,
+    strip_legacy_skills_from_system_prompt,
+)
 from webot.memory import get_memory_state
 from webot.skills import build_user_profile_block
 from webot.soul import build_soul_prompt
@@ -960,12 +967,6 @@ class TeamAgent:
 
         # Per-thread execution state
         self._task_registry = TaskRegistry()
-        # 上一次真正发给模型的运行时状态块。动态块是"发了但不写回历史"的临时内容，
-        # 每发一次，本次请求写入的缓存条目就以它结尾，而下一次请求里它已不存在
-        # （被模型回复顶掉），条目永远读不回来。所以工具回合里只在状态**变化**时
-        # 才重发，没变就让请求以落库的消息收尾，缓存条目才是可复用的前缀。
-        self._last_runtime_state_sent: dict[str, str] = {}
-
         # Per-thread lock: 防止 system_trigger 和用户对话并发操作同一 checkpoint
         self._thread_state_registry = ThreadStateRegistry()
 
@@ -1078,7 +1079,7 @@ class TeamAgent:
         return None
 
     def _get_user_skills(self, user_id: str, teams: list[str] | tuple[str, ...] = ()) -> str:
-        """Snapshot the initial Skill/Memory catalog without paths."""
+        """Read the current Skill/Memory catalog without paths."""
         from webot.skills import build_user_skills_listing
 
         return build_user_skills_listing(user_id, teams=teams)
@@ -1469,6 +1470,9 @@ class TeamAgent:
         # decoding, never prompt-only formatting or retry-based repair.
         response_format = state.get("response_format")
         structured_final = bool(response_format and response_format.get("type") == "json_schema")
+        deepseek_structured = structured_final and any(
+            cls.__name__ == "ChatDeepSeek" for cls in type(base_model).__mro__
+        )
         reply_format_hint = ""
         if response_format and not structured_final:
             format_kwargs, reply_format_hint = reply_format_binding(base_model, response_format)
@@ -1493,12 +1497,12 @@ class TeamAgent:
         # Stable system prompt key
         user_id = state.get("user_id", "__global__")
         tool_state_key = f"{user_id}#{session_id or 'default'}"
-        # Freeze the entire system message at the first inference. Re-reading
-        # SOUL, profile or Skill/Memory metadata on later turns would change the
-        # prefix and invalidate the provider's KV cache. The file tools still
-        # expose current Skill/Memory entries on demand.
+        # Freeze the stable system message at the first inference. Team and
+        # Skill/Memory catalogs are read each call and travel in the dynamic
+        # tail, so changes do not rewrite the provider's cacheable prefix.
         base_prompt = await self._context_store.get_system_prompt(tool_state_key)
-        if base_prompt is None:
+        first_inference = base_prompt is None
+        if first_inference:
             if is_subagent:
                 profile_prompt = render_profile_system_prompt(subagent_profile) if subagent_profile else ""
                 base_prompt = self._prompts["base_system_subagent"]
@@ -1518,15 +1522,22 @@ class TeamAgent:
                 f"\n【Workspace】\nsession_id: {session_id or 'default'}\n"
                 f"{describe_session_workspace(user_id, session_id)}\n"
             )
-            session_meta = self._find_internal_session_meta(user_id, session_id or "") if (user_id and session_id) else None
-            session_teams = (session_meta or {}).get("teams") or []
             if (not is_subagent) or (subagent_profile and subagent_profile.include_user_profile):
                 base_prompt += build_user_profile_block(user_id)
-            if (not is_subagent) or (subagent_profile and subagent_profile.include_user_skills):
-                base_prompt += self._get_user_skills(user_id, session_teams) + "\n"
             if not is_subagent:
                 base_prompt += build_soul_prompt(user_id)
             base_prompt = await self._context_store.save_system_prompt_if_absent(tool_state_key, base_prompt)
+        # Older sessions persisted the Skill catalog inside their system
+        # prompt. Strip it from the model input once and rely on the live tail.
+        base_prompt = strip_legacy_skills_from_system_prompt(base_prompt)
+
+        session_meta = self._find_internal_session_meta(user_id, session_id or "") if (user_id and session_id) else None
+        session_teams = sorted({str(team).strip() for team in ((session_meta or {}).get("teams") or []) if str(team).strip()})
+        show_skills = (not is_subagent) or (subagent_profile and subagent_profile.include_user_skills)
+        team_skill_context = render_team_skill_context(
+            session_teams,
+            self._get_user_skills(user_id, session_teams) if show_skills else "",
+        )
 
         # The inbox worker's HumanMessage already carries its digest. For any
         # other turn, surface newly queued messages once on the first model
@@ -1582,6 +1593,8 @@ class TeamAgent:
             f"【Session Mode】\n{session_mode_prompt}\n\n"
             f"{runtime_context_block}\n"
         )
+        if team_skill_context:
+            dynamic_context_block += f"\n{team_skill_context}\n"
         if reply_format_hint:
             dynamic_context_block += f"\n[回复格式] {reply_format_hint}\n"
 
@@ -1603,7 +1616,9 @@ class TeamAgent:
                         allowed_root=cwd_path,
                     )
                     if ctx_result.references_expanded > 0:
-                        history_messages[-1] = HumanMessage(content=ctx_result.expanded_message)
+                        history_messages[-1] = history_messages[-1].model_copy(
+                            update={"content": ctx_result.expanded_message}
+                        )
                         if ctx_result.warnings:
                             print(f">>> [context-ref] warnings: {ctx_result.warnings}")
 
@@ -1748,17 +1763,14 @@ class TeamAgent:
             ):
                 msg.content = extract_text(msg.content)
 
-        # 正常对话流程（用户和系统触发共用）。动态内容（session mode/运行时状态/
-        # 工具变更/resume）只能落在消息末尾、绝不进 system message，且只在变化时
-        # 重发——两条约束和原因都在 assemble_input_messages 的 docstring 里。
+        # 动态块按可见历史里的上一份快照计算变化。已发送的变化保存在消息元数据，
+        # 后续请求会重建相同的模型输入；压缩把快照移出上下文时自动发送完整快照。
         input_messages, injected_runtime_state = assemble_input_messages(
             base_prompt=base_prompt,
             history=history_messages,
             runtime_state=dynamic_context_block,
-            last_sent_state=self._last_runtime_state_sent.get(tool_state_key, ""),
+            force_snapshot=first_inference,
         )
-        if injected_runtime_state:
-            self._last_runtime_state_sent[tool_state_key] = injected_runtime_state
 
         # # === DEBUG: dump full raw input to file for diagnosis ===
         # try:
@@ -1795,7 +1807,6 @@ class TeamAgent:
 
         # 上下文分项统计用：本轮实际发给模型的各组成部分
         context_tool_schemas = tool_schemas(bind_tools_list)
-        runtime_state_in_input = injected_runtime_state
 
         response = None
         usage_meta = {}
@@ -1809,7 +1820,14 @@ class TeamAgent:
             if structured_final:
                 # Do not stream the unconstrained ReAct draft to the client.
                 # Only the final, schema-decoded answer may leave this node.
-                response = await llm.ainvoke(input_messages, config=config)
+                if deepseek_structured:
+                    from webot.engine.deepseek_responses import deepseek_structured_turn
+
+                    response = await deepseek_structured_turn(
+                        base_model, input_messages, response_format, context_tool_schemas,
+                    )
+                else:
+                    response = await llm.ainvoke(input_messages, config=config)
             else:
                 full_response = None
                 async for chunk in llm.astream(input_messages, config=config):
@@ -1820,6 +1838,34 @@ class TeamAgent:
                 response = AIMessage(**{
                     field: getattr(full_response, field) for field in AIMessage.model_fields if field != "type"
                 })
+
+            # Only commit the transition after the provider returned it to the
+            # model. A failed call must retry with the same injection. Keeping
+            # the delta in checkpoint metadata preserves it across tool calls,
+            # user turns and process restarts without exposing it in history.
+            if injected_runtime_state:
+                carrier = history_messages[-1]
+                await self._context_store.record_runtime_state(
+                    thread_id,
+                    source_message=carrier,
+                    state=dynamic_context_block,
+                    delta=injected_runtime_state,
+                )
+                carrier.additional_kwargs[RUNTIME_STATE_KEY] = dynamic_context_block
+                carrier.additional_kwargs[RUNTIME_DELTA_KEY] = injected_runtime_state
+                for message in reversed(state["messages"]):
+                    same_id = carrier.id and message.id == carrier.id
+                    same_tool = (
+                        isinstance(carrier, ToolMessage)
+                        and isinstance(message, ToolMessage)
+                        and message.tool_call_id == carrier.tool_call_id
+                    )
+                    if not (same_id or same_tool):
+                        continue
+                    message.additional_kwargs[RUNTIME_STATE_KEY] = dynamic_context_block
+                    message.additional_kwargs[RUNTIME_DELTA_KEY] = injected_runtime_state
+                    break
+                injected_runtime_state = ""
             next_turn_count = current_turn_count + 1
 
             # --- Record token usage for budget tracking (new) ---
@@ -1874,7 +1920,9 @@ class TeamAgent:
                             estimate_context_components,
                             system_prompt=base_prompt,
                             tools=context_tool_schemas,
-                            runtime_state=runtime_state_in_input,
+                            # The current delta is now on the carrier message,
+                            # along with earlier deltas restored from history.
+                            runtime_state="",
                             messages=list(history_messages),
                         )
                     except Exception as exc:
@@ -1926,8 +1974,11 @@ class TeamAgent:
             )
             history_messages = history_messages + [response, error_tool_msg]
             history_messages = self._sanitize_messages(history_messages, external_tool_names)
-            input_messages = [SystemMessage(content=base_prompt)] + history_messages
-            runtime_state_in_input = ""
+            input_messages, _ = assemble_input_messages(
+                base_prompt=base_prompt,
+                history=history_messages,
+                runtime_state=dynamic_context_block,
+            )
             continue
 
         # --- Auto-continue check based on token budget (new) ---
@@ -1964,7 +2015,7 @@ class TeamAgent:
                 )
             )
 
-        if structured_final and not getattr(response, "tool_calls", None):
+        if structured_final and not deepseek_structured and not getattr(response, "tool_calls", None):
             response = await decode_structured_final(
                 base_model, response_format, [*input_messages, response], config,
             )
@@ -2305,10 +2356,10 @@ class TeamAgent:
                             content_list.append(p)
                         elif p:
                             content_list.append({"type": "text", "text": p})
-                    result.append(HumanMessage(content=content_list or [{"type": "text", "text": "(空消息)"}]))
+                    result.append(msg.model_copy(update={"content": content_list or [{"type": "text", "text": "(空消息)"}]}))
                 else:
                     combined = "\n".join(p for p in new_parts if isinstance(p, str) and p)
-                    result.append(HumanMessage(content=combined or "(空消息)"))
+                    result.append(msg.model_copy(update={"content": combined or "(空消息)"}))
             else:
                 result.append(msg)
         return result
@@ -2423,6 +2474,8 @@ class TeamAgent:
         context_window = max(0, int(context_window or 0))
         tokens = input_tokens + output_tokens
         breakdown = scale_components(components or {}, input_tokens)
+        if not breakdown:
+            breakdown = {"messages": input_tokens}
         breakdown["output"] = output_tokens
 
         registry = self._thread_state_registry

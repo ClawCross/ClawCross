@@ -336,20 +336,9 @@ async def decode_structured_final(model: Any, response_format: dict[str, Any], m
     classes = _model_classes(model)
 
     if "ChatDeepSeek" in classes:
-        model, strict, bind_kwargs = strict_tool_binding(model)
-        if not strict:
-            raise RuntimeError("DeepSeek structured replies require LLM_TOOL_STRICT=auto or on")
-        tool = {"type": "function", "function": {
-            "name": "emit_final_reply", "description": "Return the final answer.",
-            "parameters": strict_schema, "strict": True,
-        }}
-        raw = await model.bind_tools([tool], tool_choice="auto", **bind_kwargs).ainvoke(
-            [*final_messages, HumanMessage(content="Call emit_final_reply with the final answer.")], config=config,
-        )
-        calls = [call for call in (raw.tool_calls or []) if call.get("name") == "emit_final_reply"]
-        if not calls:
-            raise RuntimeError("DeepSeek did not use the schema-constrained final reply tool")
-        value = calls[0]["args"]
+        from webot.engine.deepseek_responses import deepseek_structured_turn
+
+        return await deepseek_structured_turn(model, final_messages, response_format)
     elif "BaseChatOpenAI" in classes:
         raw = await model.bind(response_format={"type": "json_schema", "json_schema": {
             "name": name, "strict": True, "schema": strict_schema,
