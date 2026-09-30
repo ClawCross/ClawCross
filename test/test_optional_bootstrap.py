@@ -140,6 +140,24 @@ def test_channel_packages_are_opt_in():
     assert "qq-botpy" in optional
 
 
+def test_srt_install_has_its_own_explicit_component(tmp_path, monkeypatch):
+    environment = _load_environment()
+    monkeypatch.setattr(environment, "bin_dir", lambda: tmp_path)
+    monkeypatch.setattr(environment.shutil, "which", lambda name: "/fake/npm" if name == "npm" else None)
+    commands = []
+    def fake_run(command):
+        commands.append(command)
+        shim = tmp_path / "node" / "node_modules" / ".bin" / "srt"
+        shim.parent.mkdir(parents=True)
+        shim.touch()
+    monkeypatch.setattr(environment, "_run", fake_run)
+    monkeypatch.setattr(environment, "component_status", lambda: None)
+    environment.install_component("srt", [])
+    assert len(commands) == 1
+    assert commands[0][-1] == "@anthropic-ai/sandbox-runtime@latest"
+    assert "--ignore-scripts" in commands[0]
+
+
 def test_stale_tunnel_domain_is_cleared_before_start(tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(ROOT / "scripts"))
     control = _load_runtime_control()

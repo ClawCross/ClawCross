@@ -447,7 +447,7 @@ def main() -> int:
     sub.add_parser("stop")
     sub.add_parser("components")
     install = sub.add_parser("install-component")
-    install.add_argument("component", choices=("acpx", "nonebot", "channels", "weclaw", "cloudflared"))
+    install.add_argument("component", choices=("acpx", "nonebot", "channels", "weclaw", "cloudflared", "srt"))
     install.add_argument("--adapter", action="append", default=[])
     sub.add_parser("start-tunnel")
     sub.add_parser("stop-tunnel")

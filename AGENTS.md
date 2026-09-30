@@ -93,7 +93,7 @@ If the task is narrow, inspect only the indexed files for that area instead of s
 
 The goal is a **silent, non-interactive install**. NEVER repeatedly ask the user for `LLM_API_KEY` or `LLM_BASE_URL` during installation. An empty `LLM_MODEL` allows the web UI to start; configure it in the UI before sending LLM requests. Set `CLAWCROSS_REQUIRE_LLM_MODEL=1` for strict startup validation.
 
-1. Run **`start`** (or `start-foreground`). First run **does not** require a separate `setup`: `start` prepares Python 3.11, a virtual environment, and core Python dependencies when needed. Optional integrations such as `acpx`, NoneBot, WeClaw, and cloudflared require an explicit `install-component` command. You do **not** need `configure --init` before `start` — `start` creates `config/.env` from the template if missing. The `start` command:
+1. Run **`start`** (or `start-foreground`). First run **does not** require a separate `setup`: `start` prepares Python 3.11, a virtual environment, and core Python dependencies when needed. Optional integrations such as `acpx`, NoneBot, WeClaw, cloudflared, and SRT require an explicit `install-component` command. You do **not** need `configure --init` before `start` — `start` creates `config/.env` from the template if missing. The `start` command:
    - Creates a default `.env` if missing
    - Warns if `LLM_MODEL` is empty; strict mode with `CLAWCROSS_REQUIRE_LLM_MODEL=1` stops before launching services
    - Automatically warms an installed OpenClaw gateway and refreshes runtime `OPENCLAW_*` values
