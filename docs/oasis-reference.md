@@ -161,7 +161,7 @@ For the exact YAML schema and examples, read [create_workflow.md](./create_workf
 
 ## Agents on other platforms
 
-- Codex, Claude Code, Gemini and other ACP tools run through the `acpx` CLI adapter (`src/backend/external/acpx.py`) in a session named after the agent's id (`clawcross-<owner>-<id>`); `acpx` is installed by `bash selfskill/scripts/run.sh setup`.
+- Codex, Claude Code, Gemini and other ACP tools run through the `acpx` CLI adapter (`src/backend/external/acpx.py`) in a session named after the agent's id (`clawcross-<owner>-<id>`); install `acpx` explicitly with `bash selfskill/scripts/run.sh install-component acpx`.
 - OpenClaw agents must exist on the OpenClaw side first (`openclaw sessions` / `openclaw add`); ClawCross talks to each agent in its own session key `agent:<global_name>:clawcross-<owner>-<id>`.
 - HTTP agents are called at their `api_url` with their `model`.
 - All of this is the agent layer's business (`src/backend/agents/gateway.py` hands each call to the agent's runtime in `src/backend/external/` or `src/backend/webot/driver.py`): OASIS, group chat and the API call every agent the same way.
@@ -223,6 +223,6 @@ The current Clawcross docs should treat this as the canonical Town entry, not th
 | Swarm graph never appears | verify `autogen_swarm=true`, then inspect `src/backend/oasis/swarm_engine.py` and `src/backend/oasis/graph_memory.py` |
 | ReportAgent answers look empty | verify the topic has graph memory, then inspect `/topics/{id}/report/ask` and GraphRAG provider config |
 | Expected Zep retrieval does not happen | check `ZEP_API_KEY`, `OASIS_GRAPHRAG_PROVIDER`, and fallback behavior in `config/.env.example` |
-| A Codex / Claude Code / Gemini agent never answers | verify `acpx` is installed (`which acpx`); if missing, run `npm install -g acpx@latest` or re-run `bash selfskill/scripts/run.sh setup` |
+| A Codex / Claude Code / Gemini agent never answers | Check `bash selfskill/scripts/run.sh components`; if `acpx` is missing, run `bash selfskill/scripts/run.sh install-component acpx` and restart. |
 
 For code-level debugging, inspect the OASIS files listed in [repo-index.md](./repo-index.md).

@@ -5451,7 +5451,7 @@ const SETTINGS_GROUPS_ORDERED = [
     { id: 'oasis', label: 'settings_group_oasis', keys: ['OASIS_BASE_URL'] },
     { id: 'ports', label: 'settings_group_ports', keys: ['PORT_AGENT', 'PORT_SCHEDULER', 'PORT_OASIS', 'PORT_FRONTEND', 'PORT_BARK'] },
     { id: 'network', label: 'settings_group_network', keys: ['PUBLIC_DOMAIN', 'BARK_PUBLIC_URL'] },
-    { id: 'bots', label: 'settings_group_bots', keys: ['NONEBOT_ADAPTERS', 'NONEBOT_HOST', 'NONEBOT_PORT', 'WHITELIST_FILE', 'TELEGRAM_BOTS', 'QQ_BOTS', 'QQ_IS_SANDBOX', 'WECLAW_ENABLED', 'WECLAW_BIN', 'WECLAW_USERNAME', 'WECLAW_CONFIG', 'WECLAW_PROXY_HOST', 'WECLAW_PROXY_PORT', 'WECLAW_AUTO_INSTALL'] },
+    { id: 'bots', label: 'settings_group_bots', keys: ['NONEBOT_ADAPTERS', 'NONEBOT_HOST', 'NONEBOT_PORT', 'WHITELIST_FILE', 'TELEGRAM_BOTS', 'QQ_BOTS', 'QQ_IS_SANDBOX', 'WECLAW_ENABLED', 'WECLAW_BIN', 'WECLAW_USERNAME', 'WECLAW_CONFIG', 'WECLAW_PROXY_HOST', 'WECLAW_PROXY_PORT'] },
     { id: 'comm', label: 'settings_group_comm', keys: ['OPENAI_STANDARD_MODE'] },
     { id: 'exec', label: 'settings_group_exec', keys: ['ALLOWED_COMMANDS', 'EXEC_TIMEOUT', 'MAX_OUTPUT_LENGTH'] },
     { id: 'tinyfish', label: 'settings_group_tinyfish', keys: ['TINYFISH_API_KEY', 'TINYFISH_BASE_URL', 'TINYFISH_MONITOR_DB_PATH', 'TINYFISH_MONITOR_TARGETS_PATH', 'TINYFISH_MONITOR_ENABLED', 'TINYFISH_MONITOR_CRON'] },
@@ -5498,7 +5498,6 @@ const RESTART_REQUIRED_SETTING_KEYS = new Set([
     'WECLAW_CONFIG',
     'WECLAW_PROXY_HOST',
     'WECLAW_PROXY_PORT',
-    'WECLAW_AUTO_INSTALL',
 ]);
 const RESTART_NOTICE_STORAGE_KEY = 'clawcross_restart_notice';
 const RESTART_POLL_INTERVAL_MS = 2000;

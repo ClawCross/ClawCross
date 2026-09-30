@@ -47,21 +47,21 @@ Rules:
 
 ### Quick Start (Zero Questions)
 
-The simplest path: create `config/.env`, choose an `LLM_MODEL`, then run `start`. A missing LLM API key does not block startup if a local OpenClaw import can fill it, but **an empty `LLM_MODEL` now stops startup early** so the stack does not appear healthy while agents cannot answer. If you are intentionally bringing up only the shell services, set `CLAWCROSS_ALLOW_EMPTY_LLM_MODEL=1` for that one run.
+The simplest path is `start`. It creates the runtime `.env` when needed. An empty `LLM_MODEL` allows the web UI to start, but LLM requests need a model configured in the first-login wizard. Set `CLAWCROSS_REQUIRE_LLM_MODEL=1` if strict startup validation is wanted.
 
 **How many commands?**
 
 | Situation | Typical commands |
 |---|---|
-| **Fresh machine / first clone with `LLM_MODEL` already set/importable** | **One:** **`start`** only (`start` / `start-foreground` 会按需运行与 `setup` 相同的 `setup_env`：venv、依赖、Linux 下 acpx 等). |
-| **Fresh machine with empty `LLM_MODEL`** | **Two:** configure a model first, then `start`. Use `auto-model` if you need to list available models after setting provider/key values. |
+| **Fresh machine / first clone** | **One:** **`start`** only. It prepares Python 3.11, a venv, and core Python dependencies when needed. |
+| **Fresh machine with empty `LLM_MODEL`** | **One:** `start`, then configure the model in the first-login wizard. |
 | **Optional** | `setup` — 仅当你想**单独**重装/检查环境时；日常不必先跑。 |
 
 `start` automatically runs the equivalent of `configure --init` when `config/.env` is missing, so you **do not** need a separate `configure --init` unless you want to create or inspect `.env` before launching.
 
 ```bash
 # Linux / macOS
-bash selfskill/scripts/run.sh start          # 按需 setup_env + 创建 .env + 启动服务、Tunnel、Magic links
+bash selfskill/scripts/run.sh start          # 准备 Python/venv/核心依赖，初始化 .env，启动服务
 # Optional flags (same semantics as Windows run.ps1):
 #   --no-tunnel      Do not start Cloudflare Tunnel (local-only; Magic link output has no “remote” URL).
 #   --no-openclaw    Do not import LLM from OpenClaw; launcher skips OpenClaw gateway warm / OPENCLAW_* refresh.
@@ -72,7 +72,7 @@ bash selfskill/scripts/run.sh start --no-tunnel --no-openclaw   # example: both
 ```
 
 ```powershell
-# Windows PowerShell（入口脚本会先自检 uv/venv/依赖；`start` 内若仍缺 venv 或依赖会再跑 setup_env.ps1）
+# Windows PowerShell（入口脚本只负责准备 Python；后续交给共享 Python 控制器）
 powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1 start
 # Same flags: --no-tunnel --no-openclaw (any order). start-foreground accepts --no-openclaw; --no-tunnel is ignored there (no tunnel in that mode).
 powershell -ExecutionPolicy Bypass -File .\selfskill\scripts\run.ps1 start --no-tunnel --no-openclaw
@@ -82,13 +82,26 @@ The `setup` command (optional standalone) automatically:
 1. Installs `uv` package manager if missing
 2. Creates a Python 3.11+ virtual environment
 3. Installs Python dependencies from `config/requirements.txt`
-4. **Installs `acpx` (ACP exchange plugin) via `npm install -g acpx@latest`** — used for external AI agent communication
+4. Reports optional integrations with `components`; none are downloaded by `setup`.
+
+Install external integrations explicitly, only when the feature is needed:
+
+```bash
+bash selfskill/scripts/run.sh components
+bash selfskill/scripts/run.sh install-component acpx
+bash selfskill/scripts/run.sh install-component nonebot --adapter telegram
+bash selfskill/scripts/run.sh install-component channels
+bash selfskill/scripts/run.sh install-component weclaw
+bash selfskill/scripts/run.sh install-component cloudflared
+```
+
+Use the same subcommands with `selfskill/scripts/run.ps1` on Windows. `channels` installs legacy QQ/Telegram and media packages; NoneBot adapters are installed separately. `acpx`, WeClaw, and cloudflared are placed under `CLAWCROSS_BIN_DIR` when installed through this interface. `start` may use a cloudflared binary already present on the machine, but never downloads it.
 
 The `start` command automatically:
-1. **When needed**, runs the same environment bootstrap as `setup` (`scripts/setup_env.sh` on Linux/macOS, or `setup_env.ps1` on Windows if venv/deps are still incomplete after the script’s built-in checks; on Linux/macOS, **acpx** is also installed when `npm` is present — Windows `setup_env.ps1` mirrors that)
+1. **When needed**, creates the Python environment through the platform wrapper, then installs only `config/requirements.txt` from Python. Optional integrations are installed only through `install-component`.
 2. Creates `config/.env` from template if missing
 3. **Optionally** tries to copy LLM fields from local OpenClaw into `config/.env` when the key is still empty or placeholder — failure is OK if you will configure the key later — **skipped entirely** if you pass **`--no-openclaw`**
-4. Verifies `LLM_MODEL` is set before launching services; override only for shell-only diagnostics with `CLAWCROSS_ALLOW_EMPTY_LLM_MODEL=1`
+4. Warns if `LLM_MODEL` is missing; set `CLAWCROSS_REQUIRE_LLM_MODEL=1` to require one before launching services
 5. Starts all services after the model check passes
 6. Warms an installed OpenClaw gateway and refreshes runtime `OPENCLAW_*` values in `.env` (does not overwrite a **real** user-set `LLM_API_KEY`) — **skipped** if **`--no-openclaw`** (or env `CLAWCROSS_NO_OPENCLAW=1` for the launcher process)
 7. Starts **one Cloudflare Quick Tunnel** via `scripts/tunnel.py`, then prints **`🔗 Magic link`**: **local** and **remote** (when `PUBLIC_DOMAIN` is set). An installed `cloudflared` is required; nothing is downloaded automatically. Operators and AI agents **must** pass available links to the user after install/start — **skipped** if **`--no-tunnel`**.
@@ -199,14 +212,14 @@ uv run scripts/cli.py openclaw bind --data '{"agent":"main","channel":"openclaw-
 
 ## ACP Tools Integration (Optional)
 
-Clawcross communicates with external AI coding agents via **acpx** (ACP exchange). `acpx` is installed automatically during `start` / `setup`. Each tool below is an independent CLI agent that acpx can bridge — install only the ones the user wants.
+Clawcross communicates with external AI coding agents via **acpx** (ACP exchange). Install `acpx` explicitly when you need ACP agents. Each tool below is an independent CLI agent that acpx can bridge — install only the ones the user wants.
 
-**Prerequisite for all:** `acpx` must be installed (`npm install -g acpx@latest`; done automatically by `start`).
+**Prerequisite for all:** `acpx` must be installed with `bash selfskill/scripts/run.sh install-component acpx` (Windows: `run.ps1 install-component acpx`). This installs it under the ClawCross runtime directory rather than globally.
 
 After installing any tool below, **restart Clawcross** so the switcher bar picks it up. Verify with:
 
 ```bash
-acpx --help          # lists all discovered tools
+bash selfskill/scripts/run.sh components  # includes acpx availability
 # or in browser: the switcher bar in ClawCross Studio shows available ACP tabs
 ```
 

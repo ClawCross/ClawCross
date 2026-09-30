@@ -17,15 +17,3 @@ aiosqlite
 ddgs
 pymupdf
 zep-cloud
-
-# Channel dependencies
-qq-botpy
-python-telegram-bot
-aiohttp
-aiohttp_socks
-silk-python
-pydub
-av
-static_ffmpeg
-
-agent-client-protocol
