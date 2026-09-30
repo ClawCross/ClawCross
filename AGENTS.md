@@ -91,17 +91,17 @@ If the task is narrow, inspect only the indexed files for that area instead of s
 
 ### Zero-Question Install Flow
 
-The goal is a **silent, non-interactive install**. NEVER repeatedly ask the user for `LLM_API_KEY` or `LLM_BASE_URL` during installation. `LLM_MODEL` is required by startup; if it is empty, configure a model (or run `auto-model` after provider/key values exist) before starting. For shell-only diagnostics, a single run may set `CLAWCROSS_ALLOW_EMPTY_LLM_MODEL=1`.
+The goal is a **silent, non-interactive install**. NEVER repeatedly ask the user for `LLM_API_KEY` or `LLM_BASE_URL` during installation. An empty `LLM_MODEL` allows the web UI to start; configure it in the UI before sending LLM requests. Set `CLAWCROSS_REQUIRE_LLM_MODEL=1` for strict startup validation.
 
-1. Run **`start`** (or `start-foreground`). First run **does not** require a separate `setup`: `start` **runs the same environment bootstrap as `setup` when needed** (venv, Python deps, and on Linux/macOS `acpx` when `npm` is available). You do **not** need `configure --init` before `start` — `start` creates `config/.env` from the template if missing. The `start` command:
+1. Run **`start`** (or `start-foreground`). First run **does not** require a separate `setup`: `start` prepares Python 3.11, a virtual environment, and core Python dependencies when needed. Optional integrations such as `acpx`, NoneBot, WeClaw, cloudflared, and SRT require an explicit `install-component` command. You do **not** need `configure --init` before `start` — `start` creates `config/.env` from the template if missing. The `start` command:
    - Creates a default `.env` if missing
-   - Stops early with a clear message if `LLM_MODEL` is empty, unless `CLAWCROSS_ALLOW_EMPTY_LLM_MODEL=1` is set
+   - Warns if `LLM_MODEL` is empty; strict mode with `CLAWCROSS_REQUIRE_LLM_MODEL=1` stops before launching services
    - Automatically warms an installed OpenClaw gateway and refreshes runtime `OPENCLAW_*` values
    - If `config/.env` has no real `LLM_API_KEY` (missing/placeholder), it **tries** to import OpenClaw LLM config into Clawcross (optional; **failure does not block startup**)
      (it will NOT overwrite a user-provided real `LLM_API_KEY`)
    - Attempts to start one Cloudflare Quick Tunnel for mobile remote access; requires an installed cloudflared and never downloads it automatically
    - After Tunnel (or when it is still starting), prints **Magic link** lines (local + remote when `PUBLIC_DOMAIN` is ready)
-2. **Do NOT ask the user for API credentials before starting** unless `LLM_MODEL` discovery requires a configured provider/key. The frontend provides a first-login setup wizard where the user can configure API Key and provider values — but startup itself requires `LLM_MODEL`.
+2. **Do NOT ask the user for API credentials before starting** unless `LLM_MODEL` discovery requires a configured provider/key. The frontend provides a first-login setup wizard where the user can configure API Key, provider, and model values.
 3. After `start`, **always tell the user the access URLs** — copy them from the command output into your reply (do not assume the user saw the terminal):
    - Local web UI: `http://127.0.0.1:<PORT_FRONTEND>`
    - **Magic links** (passwordless): the script prints `🔗 Magic link` with **本机** `http://127.0.0.1:.../login-link/...?user=default` and, when Tunnel is ready, **远程** `https://...trycloudflare.com/login-link/...?user=default`. HTTPS / phone login needs the remote link; **you must relay both lines when present**.

@@ -286,8 +286,6 @@ CHANNELS: dict[str, ChannelInfo] = {
                      default="~/.weclaw/config.json"),
             BotField("WECLAW_PROXY_HOST", "Proxy host (loopback)", default="127.0.0.1"),
             BotField("WECLAW_PROXY_PORT", "Proxy port", default="51298"),
-            BotField("WECLAW_AUTO_INSTALL", "Auto-install on first run (true/false)",
-                     default="true"),
         ],
         notes="WeClaw stores credentials inside its own config file; CLI only sets env vars.",
     ),

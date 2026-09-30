@@ -2640,7 +2640,7 @@ def cmd_status(args):
     else:
         print(f"\n  ⚠️  API Key 未配置 → 内部 Agent (Internal Agent) 无法使用！")
         print(f"     Clawcross 轻量级 Agent 需要 LLM_API_KEY 才能工作")
-        print(f"     请运行 bash scripts/setup_apikey.sh 或手动编辑 config/.env")
+        print("     请运行 bash selfskill/scripts/run.sh configure LLM_API_KEY <key> 或手动编辑 config/.env")
         print(f"\n  💡 即使没有 API Key，仍可使用以下外部 Agent 平台:")
         print(f"     openclaw / codex / claude (claude-code) / gemini (gemini-cli) / aider")
 
@@ -2701,7 +2701,7 @@ def cmd_status(args):
         print(f"     模型: {llm_model}  Base URL: {llm_base_url}")
     else:
         print(f"  ❌ Clawcross 轻量级 Agent：不可用 (未配置 LLM_API_KEY)")
-        print(f"     → 设置方法: bash scripts/setup_apikey.sh")
+        print("     → 设置方法: bash selfskill/scripts/run.sh configure LLM_API_KEY <key>")
 
     if available_platforms:
         print(f"\n  ✅ 可用的外部 Agent 平台 ({len(available_platforms)} 个):")

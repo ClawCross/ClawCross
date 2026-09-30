@@ -12418,7 +12418,7 @@ const MOBILE_CHANNEL_FALLBACKS = [
   { id: 'webhook', label: 'Custom Webhook', kind: 'webhook', adapter: 'webhook', env_key: '' },
 ];
 const MOBILE_CHANNEL_COMMON_KEYS = ['NONEBOT_ADAPTERS', 'NONEBOT_HOST', 'NONEBOT_PORT', 'WHITELIST_FILE'];
-const MOBILE_CHANNEL_WECLAW_KEYS = ['WECLAW_ENABLED', 'WECLAW_USERNAME', 'WECLAW_BIN', 'WECLAW_CONFIG', 'WECLAW_PROXY_HOST', 'WECLAW_PROXY_PORT', 'WECLAW_AUTO_INSTALL'];
+const MOBILE_CHANNEL_WECLAW_KEYS = ['WECLAW_ENABLED', 'WECLAW_USERNAME', 'WECLAW_BIN', 'WECLAW_CONFIG', 'WECLAW_PROXY_HOST', 'WECLAW_PROXY_PORT'];
 const MOBILE_CHANNEL_WEBHOOK_KEYS = ['WEBHOOK_WEBHOOK_URL', 'WEBHOOK_WEBHOOK_SECRET', 'WEBHOOK_REPLY_URL', 'WEBHOOK_DEFAULT_ALLOW'];
 const MOBILE_CHANNEL_CONFIG = {};
 const MOBILE_CHANNEL_DEFAULTS = {
@@ -12433,7 +12433,6 @@ const MOBILE_CHANNEL_DEFAULTS = {
   WECLAW_CONFIG: '~/.weclaw/config.json',
   WECLAW_PROXY_HOST: '127.0.0.1',
   WECLAW_PROXY_PORT: '51298',
-  WECLAW_AUTO_INSTALL: 'true',
 };
 const MOBILE_CHANNEL_TEXTAREA_KEYS = new Set();
 const MOBILE_CHANNEL_JSON_KEYS = new Set();
@@ -15652,7 +15651,7 @@ const SETTINGS_GROUPS_ORDERED = [
     { id: 'oasis',    labelKey: 'sg_oasis',    keys: ['OASIS_BASE_URL'] },
     { id: 'ports',    labelKey: 'sg_ports',    keys: ['PORT_AGENT', 'PORT_SCHEDULER', 'PORT_OASIS', 'PORT_FRONTEND', 'PORT_BARK'] },
     { id: 'network',  labelKey: 'sg_network',  keys: ['PUBLIC_DOMAIN', 'BARK_PUBLIC_URL'] },
-    { id: 'bots',     labelKey: 'sg_bots',     keys: ['NONEBOT_ADAPTERS', 'NONEBOT_HOST', 'NONEBOT_PORT', 'WHITELIST_FILE', 'TELEGRAM_BOTS', 'QQ_BOTS', 'QQ_IS_SANDBOX', 'WECLAW_ENABLED', 'WECLAW_BIN', 'WECLAW_USERNAME', 'WECLAW_CONFIG', 'WECLAW_PROXY_HOST', 'WECLAW_PROXY_PORT', 'WECLAW_AUTO_INSTALL'] },
+    { id: 'bots',     labelKey: 'sg_bots',     keys: ['NONEBOT_ADAPTERS', 'NONEBOT_HOST', 'NONEBOT_PORT', 'WHITELIST_FILE', 'TELEGRAM_BOTS', 'QQ_BOTS', 'QQ_IS_SANDBOX', 'WECLAW_ENABLED', 'WECLAW_BIN', 'WECLAW_USERNAME', 'WECLAW_CONFIG', 'WECLAW_PROXY_HOST', 'WECLAW_PROXY_PORT'] },
     { id: 'comm',     labelKey: 'sg_comm',     keys: ['OPENAI_STANDARD_MODE'] },
     { id: 'exec',     labelKey: 'sg_exec',     keys: ['ALLOWED_COMMANDS', 'EXEC_TIMEOUT', 'MAX_OUTPUT_LENGTH'] },
     { id: 'security', labelKey: 'sg_security', keys: ['INTERNAL_TOKEN'] },
@@ -15698,7 +15697,6 @@ const RESTART_REQUIRED_SETTING_KEYS = new Set([
     'WECLAW_CONFIG',
     'WECLAW_PROXY_HOST',
     'WECLAW_PROXY_PORT',
-    'WECLAW_AUTO_INSTALL',
 ]);
 const RESTART_NOTICE_STORAGE_KEY = 'clawcross_restart_notice';
 const RESTART_POLL_INTERVAL_MS = 2000;
