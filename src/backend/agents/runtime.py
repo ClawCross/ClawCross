@@ -12,8 +12,9 @@ A runtime that speaks the OpenAI chat-completions protocol itself (streaming,
 the caller's tools) also has ``chat``; any other is asked instead.
 
 Each runtime's control plane is its own: ``controls`` names the actions it has,
-``control`` runs one; ``status``, ``history`` and ``destroy`` (release everything
-when the agent is deleted) complete it.
+``control`` runs one; ``status``, ``history``, ``fork`` (start a new agent from
+one's conversation) and ``destroy`` (release everything when the agent is
+deleted) complete it.
 """
 
 from __future__ import annotations
@@ -98,6 +99,10 @@ class Runtime:
 
     async def history(self, agent: Agent, limit: int) -> list[dict[str, Any]]:
         return []
+
+    async def fork(self, parent: Agent, child: Agent) -> int:
+        """Start *child* from *parent*'s completed conversation; how many messages it got."""
+        raise ControlError(f"{parent.platform} agents do not support fork")
 
     async def destroy(self, agent: Agent) -> None:
         """Release what the runtime holds for an agent that is being deleted."""

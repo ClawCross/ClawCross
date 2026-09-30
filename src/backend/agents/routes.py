@@ -218,26 +218,13 @@ def create_agents_router(
 
     @router.post("/v1/agents/{ref}/fork")
     async def fork_agent(ref: str, body: AgentForkBody, authorization: str | None = Header(None)):
-        from webot.driver import WebotRuntime
-        from webot.profiles import is_subagent_session
-        from webot.runtime_settings import runtime_settings_payload, save_runtime_settings
-        from webot.runtime_store import get_session_mode, save_session_mode
-
         user = user_of(authorization)
         parent = lookup(user, ref)
-        if parent.driver != WEBOT:
-            raise HTTPException(status_code=400, detail="Fork currently supports WeBot agents only")
-        if is_subagent_session(parent.agent_id):
-            raise HTTPException(status_code=400, detail="Fork of isolated subagents is not supported")
-        runtime = gateway.runtime(parent)
-        if not isinstance(runtime, WebotRuntime):
-            raise HTTPException(status_code=503, detail="WeBot runtime is unavailable")
-
         child_id = body.agent_id.strip() or new_agent_id()
         config = {key: value for key, value in parent.config.items() if key not in {"teams", "fork"}}
         config["fork"] = {"parent_agent_id": parent.agent_id, "reason": body.reason.strip()}
         try:
-            child = store.create(user, driver=WEBOT, config=config,
+            child = store.create(user, driver=parent.driver, config=config,
                                  name=body.name.strip() or f"{parent.name} fork", agent_id=child_id)
         except AgentExists as exc:
             raise HTTPException(status_code=409, detail={"error": str(exc), "agent": agent_card(exc.agent)})
@@ -245,22 +232,15 @@ def create_agents_router(
             raise HTTPException(status_code=400, detail=str(exc))
 
         try:
-            message_count = await runtime.fork_history(parent, child)
-            overrides = runtime_settings_payload(user, parent.agent_id)["session_overrides"]
-            if overrides:
-                save_runtime_settings(user, session_id=child_id, settings=overrides)
-            mode = get_session_mode(user, parent.agent_id).get("mode") or "execute"
-            save_session_mode(user, child_id, mode=mode, reason=f"Fork of {parent.agent_id}")
+            message_count = await gateway.fork(parent, child)
             child = store.update(user, child_id, config={
                 **config, "fork": {**config["fork"], "source_message_count": message_count},
             })
         except Exception as exc:
-            from contextlib import suppress
-            with suppress(Exception):
-                await gateway.destroy(child)
-            with suppress(Exception):
-                save_runtime_settings(user, session_id=child_id, settings={}, reset=True)
+            await gateway.destroy(child)
             store.delete(user, child_id)
+            if isinstance(exc, ControlError):
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
             if isinstance(exc, ValueError):
                 raise HTTPException(status_code=409, detail=str(exc)) from exc
             raise
