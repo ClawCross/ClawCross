@@ -29,6 +29,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
 
     <link rel="stylesheet" href="/static/css/markdown-shared.css">
+    <link rel="stylesheet" href="/static/css/theme.css?v=20261002-ui">
     <link rel="stylesheet" href="/static/css/style.css?v=20261001-compaction-status">
 <link rel="stylesheet" href="/static/css/group-network.css?v=20261001-relay">
 </head>
@@ -182,71 +183,69 @@
             <!-- Page Switch Tab Bar -->
             <div class="page-tab-bar">
                 <div class="hamburger-menu-wrapper">
-                    <button class="hamburger-btn" onclick="toggleHamburgerMenu()" title="Menu">
-                        <span class="hamburger-icon">☰</span>
-                    </button>
+                    <button type="button" class="hamburger-btn" onclick="toggleHamburgerMenu()" title="Menu" aria-label="Menu"><svg class="ui-icon"><use href="/static/icons.svg#menu"/></svg></button>
                     <!-- Vertical slide-down panel -->
-                    <div id="hamburger-panel" class="hamburger-panel" style="display:none;">
-                        <div class="hamburger-panel-item uid-item">
-                            <span class="hamburger-item-icon">🆔</span>
-                            <span class="hamburger-item-label">UID</span>
+                    <div id="hamburger-panel" class="hamburger-panel ui-menu" style="display:none;">
+                        <div class="ui-menu-item static">
+                            <svg class="ui-icon"><use href="/static/icons.svg#id-card"/></svg>
+                            <span class="ui-menu-label">UID</span>
                             <span id="hamburger-uid" class="hamburger-uid-val"></span>
                         </div>
-                        <div class="hamburger-panel-item uid-item">
-                            <span class="hamburger-item-icon">💬</span>
-                            <span class="hamburger-item-label">Session</span>
+                        <div class="ui-menu-item static">
+                            <svg class="ui-icon"><use href="/static/icons.svg#hash"/></svg>
+                            <span class="ui-menu-label">Session</span>
                             <span id="session-display" class="hamburger-uid-val" data-i18n-title="current_session" title="当前对话号"></span>
                         </div>
-                        <div class="hamburger-panel-divider"></div>
-                        <button class="hamburger-panel-item" onclick="toggleSessionSidebar(); closeHamburgerMenu();">
-                            <span class="hamburger-item-icon">🤖</span>
-                            <span class="hamburger-item-label" data-i18n="hmenu_agents">Agents</span>
+                        <div class="ui-menu-sep"></div>
+                        <button type="button" class="ui-menu-item" onclick="toggleSessionSidebar(); closeHamburgerMenu();">
+                            <svg class="ui-icon"><use href="/static/icons.svg#users"/></svg>
+                            <span class="ui-menu-label" data-i18n="hmenu_agents">Agents</span>
                         </button>
-                        <button class="hamburger-panel-item" onclick="openAgentCenter(); closeHamburgerMenu();">
-                            <span class="hamburger-item-icon">🧭</span>
-                            <span class="hamburger-item-label" data-i18n="hmenu_agent_center">Agent Center</span>
+                        <button type="button" class="ui-menu-item" onclick="openAgentCenter(); closeHamburgerMenu();">
+                            <svg class="ui-icon"><use href="/static/icons.svg#compass"/></svg>
+                            <span class="ui-menu-label" data-i18n="hmenu_agent_center">Agent Center</span>
                         </button>
-                        <button class="hamburger-panel-item" onclick="openSettings(); closeHamburgerMenu();">
-                            <span class="hamburger-item-icon">⚙️</span>
-                            <span class="hamburger-item-label" data-i18n="hmenu_settings">Settings</span>
+                        <button type="button" class="ui-menu-item" onclick="openSettings(); closeHamburgerMenu();">
+                            <svg class="ui-icon"><use href="/static/icons.svg#settings"/></svg>
+                            <span class="ui-menu-label" data-i18n="hmenu_settings">Settings</span>
                         </button>
-                        <button class="hamburger-panel-item" onclick="openProjectUpdateModal(); closeHamburgerMenu();">
-                            <span class="hamburger-item-icon">⬆️</span>
-                            <span class="hamburger-item-label">更新项目</span>
+                        <button type="button" class="ui-menu-item" onclick="openProjectUpdateModal(); closeHamburgerMenu();">
+                            <svg class="ui-icon"><use href="/static/icons.svg#arrow-up-circle"/></svg>
+                            <span class="ui-menu-label">更新项目</span>
                         </button>
-                        <button class="hamburger-panel-item" onclick="orchOpenClawQuickConfig(); closeHamburgerMenu();">
-                            <span class="hamburger-item-icon">🦞</span>
-                            <span class="hamburger-item-label" data-i18n="hmenu_openclaw">OpenClaw</span>
+                        <button type="button" class="ui-menu-item" onclick="orchOpenClawQuickConfig(); closeHamburgerMenu();">
+                            <svg class="ui-icon"><use href="/static/icons.svg#plug"/></svg>
+                            <span class="ui-menu-label" data-i18n="hmenu_openclaw">OpenClaw</span>
                         </button>
-                        <button class="hamburger-panel-item" onclick="handleNewSession(); closeHamburgerMenu();">
-                            <span class="hamburger-item-icon">➕</span>
-                            <span class="hamburger-item-label" data-i18n="hmenu_new">New Chat</span>
+                        <button type="button" class="ui-menu-item" onclick="handleNewSession(); closeHamburgerMenu();">
+                            <svg class="ui-icon"><use href="/static/icons.svg#message-plus"/></svg>
+                            <span class="ui-menu-label" data-i18n="hmenu_new">New Chat</span>
                         </button>
-                        <button class="hamburger-panel-item" onclick="toggleOasisMobile(); closeHamburgerMenu();">
-                            <span class="hamburger-item-icon">🏛️</span>
-                            <span class="hamburger-item-label" data-i18n="hmenu_oasis">TeamsWork</span>
+                        <button type="button" class="ui-menu-item" onclick="toggleOasisMobile(); closeHamburgerMenu();">
+                            <svg class="ui-icon"><use href="/static/icons.svg#layers"/></svg>
+                            <span class="ui-menu-label" data-i18n="hmenu_oasis">TeamsWork</span>
                         </button>
-                        <div class="hamburger-panel-divider"></div>
-                        <button class="hamburger-panel-item" onclick="toggleLanguage(); closeHamburgerMenu();">
-                            <span class="hamburger-item-icon">🌐</span>
-                            <span class="hamburger-item-label" data-i18n="hmenu_lang">Language</span>
+                        <div class="ui-menu-sep"></div>
+                        <button type="button" class="ui-menu-item" onclick="toggleLanguage(); closeHamburgerMenu();">
+                            <svg class="ui-icon"><use href="/static/icons.svg#languages"/></svg>
+                            <span class="ui-menu-label" data-i18n="hmenu_lang">Language</span>
                             <span id="lang-toggle-btn" class="hamburger-badge">EN</span>
                         </button>
-                        <div class="hamburger-panel-item uid-item" id="public-toggle-wrap">
-                            <span class="hamburger-item-icon" id="public-toggle-label">🌐</span>
-                            <span class="hamburger-item-label" data-i18n="hmenu_public">Public</span>
+                        <div class="ui-menu-item static" id="public-toggle-wrap">
+                            <svg class="ui-icon" id="public-toggle-label"><use href="/static/icons.svg#globe"/></svg>
+                            <span class="ui-menu-label" data-i18n="hmenu_public">Public</span>
                             <label class="toggle-switch">
                                 <input type="checkbox" id="public-toggle" onchange="handlePublicToggle(this.checked)" disabled>
                                 <span class="toggle-slider"></span>
                             </label>
                         </div>
-                        <div id="public-url-row" class="hamburger-panel-item uid-item" style="display:none;padding-top:0;padding-bottom:8px;">
+                        <div id="public-url-row" class="ui-menu-item static" style="display:none;padding-top:0;padding-bottom:8px;">
                             <input id="public-url-input" type="text" readonly onclick="this.select();document.execCommand('copy')" style="flex:1;font-size:11px;font-family:monospace;padding:5px 8px;border:1px solid #e5e7eb;border-radius:6px;background:#f3f4f6;color:#2563eb;cursor:pointer;outline:none;" title="Click to copy" />
                         </div>
-                        <div class="hamburger-panel-divider"></div>
-                        <button class="hamburger-panel-item hamburger-logout" onclick="handleLogout(); closeHamburgerMenu();">
-                            <span class="hamburger-item-icon">🚪</span>
-                            <span class="hamburger-item-label" data-i18n="hmenu_logout">Logout</span>
+                        <div class="ui-menu-sep"></div>
+                        <button type="button" class="ui-menu-item danger" onclick="handleLogout(); closeHamburgerMenu();">
+                            <svg class="ui-icon"><use href="/static/icons.svg#log-out"/></svg>
+                            <span class="ui-menu-label" data-i18n="hmenu_logout">Logout</span>
                         </button>
                     </div>
                 </div>
@@ -258,11 +257,11 @@
                     </div>
                 </div>
                 <div class="page-tab" id="uid-display" style="display:none;"></div>
-                <div class="page-tab active" id="tab-chat" onclick="switchPage('chat')" data-i18n="tab_chat">💬 Chat</div>
-                <div class="page-tab" id="tab-agent-center" onclick="openAgentCenter()" data-i18n="tab_agent_center">🧭 Agents</div>
-                <div class="page-tab" id="tab-group" onclick="switchPage('group')" data-i18n="tab_group">👥 Team</div>
-                <div class="page-tab" id="tab-orchestrate" onclick="switchPage('orchestrate')" data-i18n="tab_orchestrate">🤝 Workflow</div>
-                <div class="page-tab" id="tab-groupchat" onclick="window.location.assign('/mobile/group_chat')" data-i18n="tab_groupchat" data-i18n-title="tip_open_msgcenter" title="打开消息中心">📨 消息中心</div>
+                <div class="page-tab active" id="tab-chat" onclick="switchPage('chat')" data-i18n="tab_chat">Chat</div>
+                <div class="page-tab" id="tab-agent-center" onclick="openAgentCenter()" data-i18n="tab_agent_center">Agents</div>
+                <div class="page-tab" id="tab-group" onclick="switchPage('group')" data-i18n="tab_group">Team</div>
+                <div class="page-tab" id="tab-orchestrate" onclick="switchPage('orchestrate')" data-i18n="tab_orchestrate">Workflow</div>
+                <div class="page-tab" id="tab-groupchat" onclick="window.location.assign('/mobile/group_chat')" data-i18n="tab_groupchat" data-i18n-title="tip_open_msgcenter" title="打开消息中心">消息中心</div>
             </div>
             <!-- === Chat Page === -->
             <div id="page-chat" class="chat-page" style="display:flex;">
@@ -362,7 +361,7 @@
                     </button>
                 </div>
 
-                <div class="p-2 sm:p-4 border-t bg-white flex-shrink-0">
+                <div class="composer-dock">
                     <div id="image-preview-area" class="image-preview-area" style="display:none;"></div>
                     <div id="file-preview-area" class="image-preview-area" style="display:none;"></div>
                     <div id="audio-preview-area" class="image-preview-area" style="display:none;"></div>
@@ -371,17 +370,17 @@
                     <div class="chat-composer-stack">
                         <div class="chat-composer-input-row">
                             <details id="studio-more-menu" class="studio-more-menu">
-                                <summary aria-label="更多操作" title="更多操作">＋</summary>
+                                <summary aria-label="更多操作" title="更多操作"><svg class="ui-icon"><use href="/static/icons.svg#plus"/></svg></summary>
                                 <div class="studio-more-content">
                                     <div class="studio-more-heading">添加内容</div>
                                     <div class="chat-composer-toolbar">
                                         <label class="image-upload-btn" title="上传图片/文件/音频">
-                                            📎 <span>上传文件</span>
+                                            <svg class="ui-icon"><use href="/static/icons.svg#paperclip"/></svg><span>上传文件</span>
                                             <input type="file" id="image-input" accept="image/*,.pdf,.txt,.md,.markdown,.rst,.adoc,.org,.tex,.bib,.csv,.tsv,.json,.ndjson,.jsonl,.xml,.yaml,.yml,.toml,.ini,.cfg,.conf,.properties,.env,.log,.html,.htm,.css,.scss,.sass,.less,.styl,.js,.mjs,.cjs,.ts,.tsx,.jsx,.vue,.svelte,.astro,.py,.pyi,.pyx,.ipynb,.rb,.gemspec,.php,.go,.rs,.java,.kt,.kts,.scala,.groovy,.gradle,.c,.h,.cpp,.cc,.cxx,.hpp,.hh,.hxx,.m,.mm,.cs,.fs,.fsx,.fsi,.vb,.swift,.dart,.lua,.pl,.pm,.tcl,.r,.jl,.nim,.zig,.cr,.ex,.exs,.erl,.hrl,.elm,.clj,.cljs,.cljc,.hs,.ml,.mli,.ocaml,.sh,.bash,.zsh,.fish,.bat,.cmd,.ps1,.psm1,.awk,.sed,.dockerfile,.makefile,.mk,.cmake,.bazel,.bzl,.sbt,.sql,.prisma,.graphql,.gql,.proto,.thrift,.tf,.hcl,.nomad,.j2,.jinja,.jinja2,.ejs,.hbs,.mustache,.twig,.liquid,.njk,.editorconfig,.gitignore,.gitattributes,.prettierrc,.eslintrc,.npmrc,.babelrc,.lock,.sum,.mod,.mp3,.wav,.ogg,.m4a,.flac,.aac,.opus,.aiff,.amr,.avi,.mp4,.mkv,.mov,.webm,.wmv,.flv,.m4v,.3gp,.ogv" multiple style="display:none;" onchange="document.getElementById('studio-more-menu').open=false; handleFileSelect(event)">
                                         </label>
-                                        <button id="record-btn" class="audio-record-btn" data-i18n-title="recording_title" title="录音" onclick="document.getElementById('studio-more-menu').open=false; toggleRecording()">🎤 <span>录音</span></button>
-                                        <button id="workflow-add-btn" class="workflow-add-btn" data-i18n-title="wf_btn_title" title="添加工作流" onclick="document.getElementById('studio-more-menu').open=false; showWorkflowPopup()"><span class="wf-label" data-i18n="wf_btn_label">添加工作流</span></button>
-                                        <button id="persona-add-btn" class="persona-add-btn" data-i18n-title="persona_btn_title" title="引入专家人设" onclick="document.getElementById('studio-more-menu').open=false; showPersonaPopup()"><span class="persona-icon">🎭</span><span class="persona-label" data-i18n="persona_btn_label">+ 人设</span></button>
+                                        <button id="record-btn" class="audio-record-btn" data-i18n-title="recording_title" title="录音" onclick="document.getElementById('studio-more-menu').open=false; toggleRecording()"><svg class="ui-icon"><use href="/static/icons.svg#mic"/></svg><span>录音</span></button>
+                                        <button id="workflow-add-btn" class="workflow-add-btn" data-i18n-title="wf_btn_title" title="添加工作流" onclick="document.getElementById('studio-more-menu').open=false; showWorkflowPopup()"><svg class="ui-icon"><use href="/static/icons.svg#workflow"/></svg><span class="wf-label" data-i18n="wf_btn_label">工作流</span></button>
+                                        <button id="persona-add-btn" class="persona-add-btn" data-i18n-title="persona_btn_title" title="引入专家人设" onclick="document.getElementById('studio-more-menu').open=false; showPersonaPopup()"><svg class="ui-icon"><use href="/static/icons.svg#sparkles"/></svg><span class="persona-label" data-i18n="persona_btn_label">人设</span></button>
                                     </div>
                                     <details class="conversation-ui-panel-menu">
                                         <summary>群聊</summary>
@@ -424,20 +423,15 @@
                                 </div>
                             </details>
                             <div class="chat-composer-textarea-wrap">
-                                <textarea id="user-input" rows="1"
-                                    class="w-full p-2 sm:p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none transition-all text-sm sm:text-base"
+                                <textarea id="user-input" rows="1" class="composer-textarea"
                                     data-i18n-placeholder="input_placeholder" placeholder="说说你想做什么…"></textarea>
                             </div>
-                            <button onclick="handleSend()" id="send-btn"
-                                class="bg-blue-600 hover:bg-blue-700 text-white px-4 sm:px-6 py-2 sm:py-3 rounded-xl transition-all font-bold shadow-lg h-[42px] sm:h-[50px] text-sm sm:text-base flex-shrink-0"
-                                data-i18n="send_btn">发送
-                            </button>
-                            <button onclick="handleCancel()" id="cancel-btn"
-                                class="bg-red-500 hover:bg-red-600 text-white px-4 sm:px-6 py-2 sm:py-3 rounded-xl transition-all font-bold shadow-lg h-[42px] sm:h-[50px] text-sm sm:text-base flex-shrink-0"
-                                style="display:none;" data-i18n="cancel_btn">终止
-                            </button>
-                            <button id="busy-btn" disabled
-                                class="busy-indicator-btn h-[42px] sm:h-[50px] text-sm sm:text-base flex-shrink-0"
+                            <button type="button" onclick="handleSend()" id="send-btn" class="composer-round-btn composer-send"
+                                data-i18n-title="send_btn" title="发送" aria-label="发送"><svg class="ui-icon"><use href="/static/icons.svg#arrow-up"/></svg></button>
+                            <button type="button" onclick="handleCancel()" id="cancel-btn" class="composer-round-btn composer-stop"
+                                style="display:none;" data-i18n-title="cancel_btn" title="终止" aria-label="终止"><svg class="ui-icon"><use href="/static/icons.svg#stop"/></svg></button>
+                            <button type="button" id="busy-btn" disabled
+                                class="busy-indicator-btn"
                                 style="display:none;" data-i18n="busy_btn">
                                 <span class="busy-spinner"></span>系统占用中
                             </button>
