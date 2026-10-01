@@ -106,6 +106,8 @@ def prepare_turn(agent: Agent, msg: AgentMessage, *, context: dict[str, Any], mo
         "bypass": "可使用本轮允许的工具；仍需遵循命令安全策略和用户授权范围。",
     }
     dynamic = {
+        "cli_entry": (f"当前命令入口：cd {shlex.quote(str(PROJECT_ROOT))} && uv run src/cli/cli.py "
+                      f"-u {shlex.quote(agent.owner)} --help；替代此前提供的旧命令路径。"),
         "teams": "\n".join(f"team: {team}" for team in teams),
         "skills": build_user_skills_listing(agent.owner, teams=teams, tool_mode="cli"),
         "workflows": "\n\n".join(filter(None, (build_team_workflow_prompt(agent.owner, team=team) for team in teams))),

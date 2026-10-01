@@ -1271,7 +1271,7 @@ def cmd_tunnel(args):
     """Use the shared, cross-platform tunnel lifecycle controller."""
     command = {"status": "tunnel-status", "start": "start-tunnel", "stop": "stop-tunnel"}[args.action]
     return subprocess.run(
-        [sys.executable, os.path.join(PROJECT_ROOT, "scripts", "runtime_control.py"), command],
+        [sys.executable, os.path.join(PROJECT_ROOT, "launch", "runtime_control.py"), command],
         cwd=WORKING_DIR,
         env=set_subprocess_env(os.environ),
         check=False,

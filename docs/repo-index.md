@@ -17,7 +17,7 @@ Use this file when an agent needs to **index the repo before reading code**. It 
 | `README.md` | Product overview |
 | `docs/` | Task docs, maintainer docs, repo index |
 | `selfskill/scripts/` | Preferred install / configure / run entrypoints |
-| `scripts/` | launch, environment preparation, runtime control, tunnel and runtime migration only |
+| `launch/` | launch, environment preparation, runtime control, tunnel and runtime migration only |
 | `src/cli/` | interactive CLI and API command interface |
 | `tools/dev/` | development and frontend/preset build tools |
 | `examples/` | manual clients and workflow examples |
@@ -53,8 +53,8 @@ Read these first for setup or environment changes:
 |---|---|
 | `selfskill/scripts/run.sh` | Linux / macOS uv and Python bootstrap |
 | `selfskill/scripts/run.ps1` | Windows uv and Python bootstrap |
-| `scripts/runtime_control.py` | shared Python start, stop, status, and tunnel lifecycle |
-| `scripts/environment.py` | core Python dependencies and explicit optional component installs |
+| `launch/runtime_control.py` | shared Python start, stop, status, and tunnel lifecycle |
+| `launch/environment.py` | core Python dependencies and explicit optional component installs |
 | `config/requirements-channels.txt` | optional QQ, Telegram, and media dependencies |
 | `selfskill/scripts/configure.py` | `.env` initialization and configuration logic |
 | `selfskill/scripts/configure_openclaw.py` | OpenClaw detection plus Clawcross/OpenClaw LLM sync logic |
@@ -80,7 +80,7 @@ These are the main services Clawcross runs:
 | `src/backend/teams/creator.py` | ClawCross Creator discovery, extraction, build, jobs, and translation pipeline |
 | `src/backend/tinyfish/monitor.py` | shared TinyFish monitor runtime used by frontend, scheduler, and CLI |
 | `src/backend/oasis/server.py` | OASIS service |
-| `scripts/launcher.py` | multi-service startup order |
+| `launch/launcher.py` | multi-service startup order |
 
 When the bug is "service does not start" or "route behaves unexpectedly", start from the matching entrypoint plus its route/service files below.
 

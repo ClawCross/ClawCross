@@ -89,7 +89,7 @@
 
 ## 启动顺序
 
-由 `scripts/launcher.py` 定义：
+由 `launch/launcher.py` 定义：
 
 在 1/5 之前，如果本机已安装 OpenClaw，launcher 会先尝试预热 OpenClaw gateway，确保 `/v1/chat/completions` 可用，并刷新 `OPENCLAW_*` 运行时配置。
 
@@ -103,7 +103,7 @@
 
 ## Tunnel 暴露策略
 
-由 `scripts/tunnel.py` 管理：
+由 `launch/tunnel.py` 管理：
 
 ```
 公网用户

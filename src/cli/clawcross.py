@@ -1347,7 +1347,7 @@ def _cmd_tunnel(arg: str = "") -> None:
             return
         log = os.path.join(str(LOGS_DIR), "tunnel.log")
         os.makedirs(os.path.dirname(log), exist_ok=True)
-        command = [sys.executable, str(PROJECT_ROOT / "scripts" / "tunnel.py")]
+        command = [sys.executable, str(PROJECT_ROOT / "launch" / "tunnel.py")]
         runtime_env = set_subprocess_env(os.environ)
         preflight = subprocess.run(
             [*command, "--check"], cwd=str(WORKSPACE_DIR), env=runtime_env,

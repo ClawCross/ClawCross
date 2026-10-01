@@ -8,7 +8,7 @@ WeBot 跨平台启动器
 - 精确管理子进程 PID
 - 安全关闭：Ctrl+C、关闭窗口、kill 信号 均能正常清理
 
-用法：python scripts/launcher.py
+用法：python launch/launcher.py
 """
 
 import sys
@@ -22,8 +22,8 @@ if sys.version_info < (3, 9):
         "Common cause: on macOS, system 'python' may point to Python 2.7.\n"
         "Solutions:\n"
         "  1. Use the canonical startup: bash selfskill/scripts/run.sh start\n"
-        "  2. Or activate the venv first: source .venv/bin/activate && python scripts/launcher.py\n"
-        "  3. Or use the venv python directly: .venv/bin/python scripts/launcher.py\n"
+        "  2. Or activate the venv first: source .venv/bin/activate && python launch/launcher.py\n"
+        "  3. Or use the venv python directly: .venv/bin/python launch/launcher.py\n"
         "\n".format(sys.version_info[0], sys.version_info[1])
     )
     sys.exit(1)
@@ -858,7 +858,7 @@ def _check_nonebot_deps(adapter_names):
         return False
     if missing:
         print(f"   ⚠️ 缺少可选 NoneBot 依赖: {', '.join(missing)}")
-        print("   需要时显式执行: python scripts/environment.py install nonebot --adapter <name>")
+        print("   需要时显式执行: python launch/environment.py install nonebot --adapter <name>")
         return False
     return True
 

@@ -187,7 +187,7 @@ def _migrate_if_needed() -> None:
         return
     if (HOME / ".migration_done").is_file():
         return
-    subprocess.run([sys.executable, str(ROOT / "scripts/migrate_to_user_home.py")],
+    subprocess.run([sys.executable, str(ROOT / "launch/migrate_to_user_home.py")],
                    cwd=ROOT, check=True)
 
 
@@ -228,7 +228,7 @@ def _magic_links(env: dict[str, str], *, tunnel: bool) -> None:
 
 
 def _start_tunnel(env: dict[str, str]) -> bool:
-    check = subprocess.run([sys.executable, str(ROOT / "scripts/tunnel.py"), "--check"],
+    check = subprocess.run([sys.executable, str(ROOT / "launch/tunnel.py"), "--check"],
                            cwd=ROOT, env=env, capture_output=True, text=True, check=False)
     if check.returncode:
         print("Cloudflare Tunnel skipped: cloudflared is unavailable. Install it explicitly if needed.")
@@ -239,7 +239,7 @@ def _start_tunnel(env: dict[str, str]) -> bool:
     with (LOG_DIR / "tunnel.log").open("a", encoding="utf-8") as log:
         kwargs = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt"
                   else {"start_new_session": True})
-        process = subprocess.Popen([sys.executable, str(ROOT / "scripts/tunnel.py")], cwd=WORKSPACE_DIR,
+        process = subprocess.Popen([sys.executable, str(ROOT / "launch/tunnel.py")], cwd=WORKSPACE_DIR,
                                    env=env, stdin=subprocess.DEVNULL, stdout=log,
                                    stderr=subprocess.STDOUT, **kwargs)
     print("Starting Cloudflare Tunnel from the installed cloudflared binary...", flush=True)
@@ -272,7 +272,7 @@ def start(args: argparse.Namespace) -> int:
     _stop_pid(TUNNEL_PID)
     _clear_public_domain()
     _stop_pid(LAUNCHER_PID)
-    command = [sys.executable, str(ROOT / "scripts/launcher.py")]
+    command = [sys.executable, str(ROOT / "launch/launcher.py")]
     if args.foreground:
         process = None
         try:

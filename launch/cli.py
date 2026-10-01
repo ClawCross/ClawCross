@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compatibility launcher for commands already negotiated with external agents.
+"""Thin launcher for the application CLI.
 
 The CLI implementation lives in src/cli; this entry contains no application logic.
 """

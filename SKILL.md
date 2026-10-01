@@ -548,8 +548,8 @@ On macOS, the system `python` may point to **Python 2.7**. Clawcross requires **
 **Fix** (in order of preference):
 
 1. Always use the canonical startup: `bash selfskill/scripts/run.sh start`
-2. Activate the venv first: `source .venv/bin/activate && python scripts/launcher.py`
-3. Use the venv python directly: `.venv/bin/python scripts/launcher.py`
+2. Activate the venv first: `source .venv/bin/activate && python launch/launcher.py`
+3. Use the venv python directly: `.venv/bin/python launch/launcher.py`
 
 **Never** run `python3 src/frontend/server.py` directly.
 
