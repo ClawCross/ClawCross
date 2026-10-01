@@ -17,7 +17,10 @@ Use this file when an agent needs to **index the repo before reading code**. It 
 | `README.md` | Product overview |
 | `docs/` | Task docs, maintainer docs, repo index |
 | `selfskill/scripts/` | Preferred install / configure / run entrypoints |
-| `scripts/` | launcher, CLI, setup/start helpers; `scripts/dev/` build helpers and manual utilities |
+| `scripts/` | launch, environment preparation, runtime control, tunnel and runtime migration only |
+| `src/cli/` | interactive CLI and API command interface |
+| `tools/dev/` | development and frontend/preset build tools |
+| `examples/` | manual clients and workflow examples |
 | `src/backend/` | every backend service, one package per module; the Python import root |
 | `src/frontend/` | the web frontend: Flask server, proxies to the backend, templates, static assets |
 | `config/` | `.env`, TinyFish target files, requirements, users |
@@ -294,7 +297,7 @@ When changing code, check the nearest validation surface:
 | `npm run test:node` | frontend pure logic tests |
 | `npm run test:browser-smoke` | browser smoke with the Flask test shell |
 | `python test/tinyfish_live_smoke.py --site <site_key>` | opt-in real TinyFish smoke test |
-| `uv run scripts/cli.py status` | smoke test services |
+| `uv run src/cli/cli.py status` | smoke test services |
 | `python -m py_compile <file>` | quick syntax check for touched Python files |
 | `node --check src/frontend/static/js/creator.js` | quick ClawCross Creator syntax check |
 | `node --check src/frontend/static/js/main.js` | quick JS syntax check |

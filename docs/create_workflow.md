@@ -442,7 +442,7 @@ Workflow YAML files are stored at:
 
 ```bash
 # Save a workflow for a team
-uv run scripts/cli.py workflows save \
+uv run src/cli/cli.py workflows save \
   --team <TEAM_NAME> \
   --name <WORKFLOW_NAME> \
   --yaml-file <PATH_TO_YAML>
@@ -464,14 +464,14 @@ After saving a workflow, you can execute and monitor it using the CLI:
 
 ```bash
 # List all workflows for a team
-uv run scripts/cli.py workflows list --team <TEAM_NAME>
+uv run src/cli/cli.py workflows list --team <TEAM_NAME>
 ```
 
 ### 9.2 Run a Workflow
 
 ```bash
 # Execute a workflow with a question
-uv run scripts/cli.py workflows run \
+uv run src/cli/cli.py workflows run \
   --team <TEAM_NAME> \
   --name <WORKFLOW_NAME> \
   --question "your question or task here" \
@@ -486,7 +486,7 @@ uv run scripts/cli.py workflows run \
 
 **Example:**
 ```bash
-uv run scripts/cli.py workflows run \
+uv run src/cli/cli.py workflows run \
   --team DevTeam \
   --name product_review_pipeline \
   --question "需要开发一个在线客服系统" \
@@ -499,14 +499,14 @@ The command will print the topic ID (e.g., `Topic created: 94a2cbb7`) for tracki
 
 ```bash
 # View workflow execution details and current status
-uv run scripts/cli.py topics show --topic-id <TOPIC_ID>
+uv run src/cli/cli.py topics show --topic-id <TOPIC_ID>
 ```
 
 ### 9.4 Get Final Conclusion
 
 ```bash
 # Wait for workflow completion and retrieve final summary
-uv run scripts/cli.py workflows conclusion \
+uv run src/cli/cli.py workflows conclusion \
   --topic-id <TOPIC_ID> \
   [--output <OUTPUT_FILE>] \
   [--timeout <SECONDS>]
@@ -520,7 +520,7 @@ uv run scripts/cli.py workflows conclusion \
 
 ```bash
 # Real-time monitoring of workflow progress
-uv run scripts/cli.py topics watch --topic-id <TOPIC_ID>
+uv run src/cli/cli.py topics watch --topic-id <TOPIC_ID>
 ```
 
 ---

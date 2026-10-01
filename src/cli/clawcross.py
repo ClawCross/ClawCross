@@ -37,7 +37,7 @@ except ImportError:  # pragma: no cover - non-Windows terminals use termios.
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = SCRIPT_DIR.parent
+PROJECT_ROOT = SCRIPT_DIR.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 from src.backend.common.runtime_paths import ENV_FILE, STATE_DIR, LOGS_DIR, PID_DIR, WORKSPACE_DIR, ensure_runtime_dirs, set_subprocess_env

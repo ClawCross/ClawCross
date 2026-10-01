@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 用户密码哈希生成工具。
-用法：python scripts/gen_password.py
+用法：python src/backend/ops/gen_password.py
 会交互式输入用户名和密码，输出追加到 config/users.json。
 """
 import hashlib
@@ -9,8 +9,9 @@ import json
 import os
 import getpass
 import sys
+from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # the checkout, for src.*
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))  # the checkout, for src.*
 from src.backend.common.runtime_paths import USERS_FILE, ensure_runtime_dirs  # noqa: E402
 
 # 用户配置文件路径

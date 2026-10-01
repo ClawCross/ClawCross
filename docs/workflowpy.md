@@ -389,7 +389,7 @@ Relevant files:
 
 - [`src/backend/oasis/workflow.py`](../src/backend/oasis/workflow.py) — single-import entry point
 - [`oasis/python_workflow_cli.py`](../oasis/python_workflow_cli.py) — underlying runtime
-- [`scripts/run_python_workflow.py`](../scripts/run_python_workflow.py)
+- [`src/backend/oasis/run_python_workflow.py`](../src/backend/oasis/run_python_workflow.py)
 - [`src/frontend/server.py`](../src/frontend/server.py)
 - [`src/backend/oasis/server.py`](../src/backend/oasis/server.py)
 

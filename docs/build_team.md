@@ -1,6 +1,6 @@
 # Build Team via CLI (Quick Reference)
 
-> 用 `scripts/cli.py` 从零搭一个团队的最短路径。浏览器里从任务描述 / SOP / 工作流画布生成团队，请看 [team-creator.md](./team-creator.md)。
+> 用 `src/cli/cli.py` 从零搭一个团队的最短路径。浏览器里从任务描述 / SOP / 工作流画布生成团队，请看 [team-creator.md](./team-creator.md)。
 
 ---
 
@@ -30,12 +30,12 @@
 ## 3. Team Management
 
 ```bash
-uv run scripts/cli.py teams create --team-name demo_team     # 新建
-uv run scripts/cli.py teams list                              # 列出
-uv run scripts/cli.py teams info --team-name demo_team        # 详情
-uv run scripts/cli.py teams members --team-name demo_team     # 成员（任何平台）
-uv run scripts/cli.py teams rename --team-name demo_team --new-name demo2
-uv run scripts/cli.py teams delete --team-name demo_team      # 只删 team 文件夹，agent 不受影响
+uv run src/cli/cli.py teams create --team-name demo_team     # 新建
+uv run src/cli/cli.py teams list                              # 列出
+uv run src/cli/cli.py teams info --team-name demo_team        # 详情
+uv run src/cli/cli.py teams members --team-name demo_team     # 成员（任何平台）
+uv run src/cli/cli.py teams rename --team-name demo_team --new-name demo2
+uv run src/cli/cli.py teams delete --team-name demo_team      # 只删 team 文件夹，agent 不受影响
 ```
 
 ---
@@ -46,14 +46,14 @@ uv run scripts/cli.py teams delete --team-name demo_team      # 只删 team 文�
 
 ```bash
 # WeBot（ClawCross 自己的 agent）；agent_id 就是会话号，不写则系统分配
-uv run scripts/cli.py agents create --name "Coder" --data '{"agent_id": "coder", "persona": "creative"}'
+uv run src/cli/cli.py agents create --name "Coder" --data '{"agent_id": "coder", "persona": "creative"}'
 
 # ACP 工具（codex / claude-code / gemini-cli / aider …）：每个 agent 是该工具里的一个会话，同一工具可以有任意多个
-uv run scripts/cli.py agents create --name "Codex Reviewer" --platform codex \
+uv run src/cli/cli.py agents create --name "Codex Reviewer" --platform codex \
   --data '{"agent_id": "codex-reviewer", "persona": "critical"}'
 
 # 任意 OpenAI 兼容 HTTP 服务
-uv run scripts/cli.py agents create --name "My Service" --platform my_service \
+uv run src/cli/cli.py agents create --name "My Service" --platform my_service \
   --data '{"agent_id": "my-service", "api_url": "http://127.0.0.1:8080/v1", "model": "gpt-4o"}'
 ```
 
@@ -62,21 +62,21 @@ uv run scripts/cli.py agents create --name "My Service" --platform my_service \
 ### 4.2 查看、修改、控制、删除
 
 ```bash
-uv run scripts/cli.py agents list [--status]
-uv run scripts/cli.py agents show   --agent coder
-uv run scripts/cli.py agents update --agent coder --name "Coder" --data '{"settings": {"persona": "coder"}}'
-uv run scripts/cli.py agents ask    --agent coder --message "你好"
-uv run scripts/cli.py agents inbox  --agent coder --message "空了看一下"   # 放进收件箱
-uv run scripts/cli.py agents status --agent coder     # 同样适用于 cancel / reset
-uv run scripts/cli.py agents delete --agent coder     # 同时退出所有 team 和群聊
+uv run src/cli/cli.py agents list [--status]
+uv run src/cli/cli.py agents show   --agent coder
+uv run src/cli/cli.py agents update --agent coder --name "Coder" --data '{"settings": {"persona": "coder"}}'
+uv run src/cli/cli.py agents ask    --agent coder --message "你好"
+uv run src/cli/cli.py agents inbox  --agent coder --message "空了看一下"   # 放进收件箱
+uv run src/cli/cli.py agents status --agent coder     # 同样适用于 cancel / reset
+uv run src/cli/cli.py agents delete --agent coder     # 同时退出所有 team 和群聊
 ```
 
 ### 4.3 加入 / 移出 team
 
 ```bash
-uv run scripts/cli.py teams add-member    --team-name demo_team --agent coder --role "Coder" [--lead]
-uv run scripts/cli.py teams set-lead      --team-name demo_team --agent coder
-uv run scripts/cli.py teams remove-member --team-name demo_team --agent coder   # agent 本身保留
+uv run src/cli/cli.py teams add-member    --team-name demo_team --agent coder --role "Coder" [--lead]
+uv run src/cli/cli.py teams set-lead      --team-name demo_team --agent coder
+uv run src/cli/cli.py teams remove-member --team-name demo_team --agent coder   # agent 本身保留
 ```
 
 `--role` 是成员在这个 team 里的名字：`demo_team.Coder` 就能找到它，team 模式的工作流里写 `agent: Coder`。省略时用 agent 名称。
@@ -87,17 +87,17 @@ OpenClaw 的 agent 住在 OpenClaw 自己的工作区里，所以先在 OpenClaw
 
 ```bash
 # 1. 查已有 / 新建 OpenClaw agent
-uv run scripts/cli.py openclaw sessions
-uv run scripts/cli.py openclaw add --data '{"name": "demo_team_researcher", "workspace": "~/.openclaw/workspace-demo_team_researcher"}'
+uv run src/cli/cli.py openclaw sessions
+uv run src/cli/cli.py openclaw add --data '{"name": "demo_team_researcher", "workspace": "~/.openclaw/workspace-demo_team_researcher"}'
 
 # 2. 登记为 ClawCross agent，并加入 team
 # global_name 指明是哪一个 OpenClaw agent
-uv run scripts/cli.py agents create --name "Researcher" --platform openclaw \
+uv run src/cli/cli.py agents create --name "Researcher" --platform openclaw \
   --data '{"agent_id": "researcher", "global_name": "demo_team_researcher", "persona": "analyst", "team": "demo_team"}'
-uv run scripts/cli.py teams add-member --team-name demo_team --agent researcher --role "Researcher"
+uv run src/cli/cli.py teams add-member --team-name demo_team --agent researcher --role "Researcher"
 
 # 3.（可选）把 OpenClaw 工作区配置存进 team，便于导出 / 迁移
-uv run scripts/cli.py openclaw-snapshot export --team demo_team --agent-name demo_team_researcher --short-name Researcher
+uv run src/cli/cli.py openclaw-snapshot export --team demo_team --agent-name demo_team_researcher --short-name Researcher
 ```
 
 深度配置（工具权限、channels 等）见 [openclaw-commands.md](openclaw-commands.md)。
@@ -129,7 +129,7 @@ uv run scripts/cli.py openclaw-snapshot export --team demo_team --agent-name dem
 
 导入：
 ```bash
-uv run scripts/cli.py teams import --team-name demo_team
+uv run src/cli/cli.py teams import --team-name demo_team
 ```
 导入后成员登记在 ClawCross 里，这两个文件被移走；导出团队（`teams snapshot-download`）时会按同样格式重新生成。
 
@@ -138,8 +138,8 @@ uv run scripts/cli.py teams import --team-name demo_team
 ## 6. Personas
 
 ```bash
-uv run scripts/cli.py personas list
-uv run scripts/cli.py personas add \
+uv run src/cli/cli.py personas list
+uv run src/cli/cli.py personas add \
   --tag architect --persona-name "🏗️ 架构师" \
   --persona "You are an experienced software architect ..." \
   --temperature 0.4 [--team demo_team]
@@ -181,18 +181,18 @@ edges:
 ## 8. Complete Example
 
 ```bash
-uv run scripts/cli.py teams create --team-name demo_team
+uv run src/cli/cli.py teams create --team-name demo_team
 
-uv run scripts/cli.py agents create --name "Coordinator" --data '{"agent_id": "coordinator", "persona": "synthesis", "team": "demo_team"}'
-uv run scripts/cli.py agents create --name "Codex Reviewer" --platform codex \
+uv run src/cli/cli.py agents create --name "Coordinator" --data '{"agent_id": "coordinator", "persona": "synthesis", "team": "demo_team"}'
+uv run src/cli/cli.py agents create --name "Codex Reviewer" --platform codex \
   --data '{"agent_id": "codex-reviewer", "persona": "critical", "team": "demo_team"}'
 
-uv run scripts/cli.py teams add-member --team-name demo_team --agent coordinator --lead
-uv run scripts/cli.py teams add-member --team-name demo_team --agent codex-reviewer
+uv run src/cli/cli.py teams add-member --team-name demo_team --agent coordinator --lead
+uv run src/cli/cli.py teams add-member --team-name demo_team --agent codex-reviewer
 
-uv run scripts/cli.py teams members --team-name demo_team
-uv run scripts/cli.py agents ask --agent demo_team.Coordinator --message "你好"
-uv run scripts/cli.py cron new --team demo_team --agent coordinator --cron "0 9 * * 1" --text "整理本周进展"
+uv run src/cli/cli.py teams members --team-name demo_team
+uv run src/cli/cli.py agents ask --agent demo_team.Coordinator --message "你好"
+uv run src/cli/cli.py cron new --team demo_team --agent coordinator --cron "0 9 * * 1" --text "整理本周进展"
 ```
 
 ---

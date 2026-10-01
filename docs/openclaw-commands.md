@@ -127,7 +127,7 @@ openclaw.cmd gateway restart
 ```powershell
 openclaw.cmd gateway status
 openclaw.cmd models status --json
-uv run scripts/cli.py openclaw bindings --agent main
+uv run src/cli/cli.py openclaw bindings --agent main
 ```
 
 ### 4. 从 OpenAI 切到 DeepSeek 不能只换 key
@@ -523,13 +523,13 @@ openclaw agents list --bindings
 
 ```bash
 # 先查看微信 channel account / bind_key
-uv run scripts/cli.py openclaw channels
+uv run src/cli/cli.py openclaw channels
 
 # 再把微信账号绑定到 main agent
-uv run scripts/cli.py openclaw bind --data '{"agent":"main","channel":"openclaw-weixin:cdb0be1f7414-im-bot"}'
+uv run src/cli/cli.py openclaw bind --data '{"agent":"main","channel":"openclaw-weixin:cdb0be1f7414-im-bot"}'
 
 # 验证绑定
-uv run scripts/cli.py openclaw bindings --agent main
+uv run src/cli/cli.py openclaw bindings --agent main
 ```
 
 Windows PowerShell 若直接敲 `openclaw` 被执行策略拦住，请改用：
@@ -590,24 +590,24 @@ openclaw.cmd agents list --bindings --json
 ### 1. 查看已有 OpenClaw Agent
 
 ```bash
-uv run scripts/cli.py -u <username> openclaw sessions
+uv run src/cli/cli.py -u <username> openclaw sessions
 ```
 
 ### 2. 读取 Agent 的 IDENTITY 文件
 
 **步骤 1: 查看 agent 详情获取 workspace 路径**
 ```bash
-uv run scripts/cli.py -u <username> openclaw detail --name <agent_name>
+uv run src/cli/cli.py -u <username> openclaw detail --name <agent_name>
 ```
 
 **步骤 2: 查看 workspace 中的文件列表**
 ```bash
-uv run scripts/cli.py -u <username> openclaw workspace-files --workspace <workspace_path>
+uv run src/cli/cli.py -u <username> openclaw workspace-files --workspace <workspace_path>
 ```
 
 **步骤 3: 读取具体文件（如 IDENTITY.md）**
 ```bash
-uv run scripts/cli.py -u <username> openclaw workspace-file-read \
+uv run src/cli/cli.py -u <username> openclaw workspace-file-read \
   --workspace <workspace_path> \
   --filename IDENTITY.md
 ```
@@ -615,7 +615,7 @@ uv run scripts/cli.py -u <username> openclaw workspace-file-read \
 ### 3. 创建新的 OpenClaw Agent
 
 ```bash
-uv run scripts/cli.py -u <username> openclaw add --data '<JSON_DATA>'
+uv run src/cli/cli.py -u <username> openclaw add --data '<JSON_DATA>'
 ```
 
 **参数说明:**
@@ -627,25 +627,25 @@ uv run scripts/cli.py -u <username> openclaw add --data '<JSON_DATA>'
 
 **示例 - 创建基础 agent:**
 ```bash
-uv run scripts/cli.py -u Avalon_01 openclaw add --data '{"name": "my_new_agent"}'
+uv run src/cli/cli.py -u Avalon_01 openclaw add --data '{"name": "my_new_agent"}'
 ```
 
 **示例 - 指定自定义工作区:**
 ```bash
-uv run scripts/cli.py -u Avalon_01 openclaw add \
+uv run src/cli/cli.py -u Avalon_01 openclaw add \
   --data '{"name": "my_new_agent", "workspace": "/custom/path"}'
 ```
 
 ### 4. 修改 Agent 配置
 
 ```bash
-uv run scripts/cli.py -u <username> openclaw update-config \
+uv run src/cli/cli.py -u <username> openclaw update-config \
   --data '<JSON_CONFIG_WITH_AGENT_NAME>'
 ```
 
 **基本配置示例：**
 ```bash
-uv run scripts/cli.py -u Avalon_01 openclaw update-config \
+uv run src/cli/cli.py -u Avalon_01 openclaw update-config \
   --data '{
     "agent_name": "my_new_agent",
     "temperature": 0.7,
@@ -657,7 +657,7 @@ uv run scripts/cli.py -u Avalon_01 openclaw update-config \
 
 使用 `tools.deny: ["*"]` 可以禁止 Agent 调用所有工具，仅保留纯文本对话能力：
 ```bash
-uv run scripts/cli.py -u Avalon_01 openclaw update-config \
+uv run src/cli/cli.py -u Avalon_01 openclaw update-config \
   --data '{
     "agent_name": "my_new_agent",
     "tools": {
@@ -673,7 +673,7 @@ uv run scripts/cli.py -u Avalon_01 openclaw update-config \
 
 **验证配置：**
 ```bash
-uv run scripts/cli.py -u Avalon_01 openclaw detail --name my_new_agent
+uv run src/cli/cli.py -u Avalon_01 openclaw detail --name my_new_agent
 ```
 
 ### 5. 常用文件操作命令速查

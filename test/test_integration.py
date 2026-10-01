@@ -13,7 +13,7 @@ if str(SRC_DIR) not in sys.path:
 
 import frontend.server as front
 from channels.adapters.base import ChannelAdapter, MagicLink
-from scripts.clawcross import chat_help_text, chat_welcome_text, handle_channel_input
+from src.cli.clawcross import chat_help_text, chat_welcome_text, handle_channel_input
 from common.env_settings import mask_all_sensitive, read_env_all, write_env_settings
 
 
@@ -106,7 +106,7 @@ class ChannelCommandTests(unittest.TestCase):
                 "__state_path": str(Path(tmpdir) / "state.json"),
                 "current": {"platform": "internal", "user": "default", "cwd": str(project_dir)},
             }
-            with mock.patch("scripts.clawcross.os.getcwd", return_value=str(project_dir)):
+            with mock.patch("src.cli.clawcross.os.getcwd", return_value=str(project_dir)):
                 _active, reply = handle_channel_input("/cross new session", state)
 
             self.assertIn("session: project-", reply)

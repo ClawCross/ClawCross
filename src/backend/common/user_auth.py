@@ -22,7 +22,7 @@ def load_users(users_path: str) -> dict:
     :return: 用户名到密码哈希的映射字典
     """
     if not os.path.exists(users_path):
-        logger.warning("未找到用户配置文件 %s，请先运行 python scripts/gen_password.py 创建用户", users_path)
+        logger.warning("未找到用户配置文件 %s，请先运行 python src/backend/ops/gen_password.py 创建用户", users_path)
         return {}
     with open(users_path, "r", encoding="utf-8") as f:
         return json.load(f)

@@ -19,7 +19,7 @@ This feature is shared by the frontend, the scheduler, and a standalone CLI wrap
 | Path | Role |
 |---|---|
 | `src/backend/tinyfish/monitor.py` | shared TinyFish client, SQLite persistence, change detection, live SSE stream handling |
-| `scripts/tinyfish_competitor_monitor.py` | thin CLI wrapper around the shared service |
+| `src/backend/tinyfish/cli.py` | thin CLI wrapper around the shared service |
 | `src/frontend/server.py` | `/api/tinyfish/*` endpoints for status, run, live crawl, and site snapshots |
 | `src/backend/scheduler/service.py` | restores the built-in TinyFish cron job from `config/.env` |
 | `config/tinyfish_targets.example.json` | example target file schema |
@@ -106,9 +106,9 @@ The TinyFish settings group supports three main operator actions:
 Use the wrapper when you want a direct operator flow without the Web UI:
 
 ```bash
-uv run python scripts/tinyfish_competitor_monitor.py run --site competitor-a
-uv run python scripts/tinyfish_competitor_monitor.py poll
-uv run python scripts/tinyfish_competitor_monitor.py report --limit 20
+uv run python src/backend/tinyfish/cli.py run --site competitor-a
+uv run python src/backend/tinyfish/cli.py poll
+uv run python src/backend/tinyfish/cli.py report --limit 20
 ```
 
 Useful switches:

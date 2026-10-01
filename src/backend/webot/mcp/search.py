@@ -35,7 +35,7 @@ except ValueError:
     DEFAULT_BROWSER_TIMEOUT = int(DEFAULT_TIMEOUT)
 DEFAULT_NODE_BIN = _os.getenv("WEB_SEARCH_NODE_BIN", "node")
 from common.runtime_paths import PROJECT_ROOT  # noqa: E402
-BROWSER_RUNNER = _os.path.join(PROJECT_ROOT, "scripts", "browser_search_runner.mjs")
+BROWSER_RUNNER = _os.path.join(_os.path.dirname(__file__), "browser_search_runner.mjs")
 MAX_RESULTS = 25
 MAX_FETCH_CHARS = 50000
 

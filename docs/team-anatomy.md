@@ -622,7 +622,7 @@ Files are re-read on every workflow run, so edits take effect immediately. Membe
 |---|---|
 | Add a persona / change a prompt / tune temperature | edit `oasis_experts.json` |
 | Add a member | `clawcross team member add <team> agent <ref> [role <r>] [lead]`, or a new agent: `… name <n> platform <p> [global <g>] [persona <tag>]` — or write `internal_agents.json` / `external_agents.json` and `clawcross team import <team>` |
-| Rename a member / make it lead | the team panel, or `PATCH /v1/teams/<team>/members/<agent>` with `{role?, is_lead?}`; `scripts/cli.py teams set-lead` |
+| Rename a member / make it lead | the team panel, or `PATCH /v1/teams/<team>/members/<agent>` with `{role?, is_lead?}`; `src/cli/cli.py teams set-lead` |
 | Change a member's persona or endpoint | `clawcross team member edit <team> <agent> [persona <tag>] [api_url <u>] [model <m>]` |
 | Remove a member | `clawcross team member remove <team> <agent>` (the agent stays) |
 | Reroute the workflow / add a parallel branch | edit `oasis/yaml/<wf>.yaml` |
