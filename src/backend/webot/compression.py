@@ -242,6 +242,8 @@ def _cap_summary_tokens(text: str, cap: int) -> str:
     # used for the history, instead of treating every token as four characters.
     lo, hi = 0, len(text)
     marker = "\n...[summary truncated]"
+    if _approx_tokens(marker) > cap:
+        marker = ""
     while lo < hi:
         mid = (lo + hi + 1) // 2
         if _approx_tokens(text[:mid] + marker) <= cap:
@@ -343,25 +345,35 @@ def _mechanical_summarizer(previous_summary: str, segment: list[BaseMessage], ta
     parseable but loses semantic understanding. Output is truncated to
     target_chars at the end if it overruns.
     """
-    _ = target_chars  # truncation handled by caller via _truncate_to_cap
-    lines = [_SUMMARY_HEADER]
+    entries = []
     prev = previous_summary.strip()
     if prev:
         if prev.startswith(_SUMMARY_HEADER):
             prev = "\n".join(prev.splitlines()[1:]).strip()
         if prev:
             prev_line = prev.replace("\n", " ")
-            if len(prev_line) > 1200:
-                prev_line = prev_line[:1200] + "..."
-            lines.append(f"- previous_summary: {prev_line}")
+            entries.append(("previous_summary", prev_line))
     for msg in segment:
         role = _role_label(msg)
         text = _stringify(msg.content).replace("\n", " ")
-        if len(text) > 280:
-            text = text[:277] + "..."
-        lines.append(f"- {role}: {text}")
+        entries.append((role, text))
         for call in getattr(msg, "tool_calls", None) or []:
-            lines.append(f"- tool_call: {json.dumps(call, ensure_ascii=False, default=str)[:280]}")
+            entries.append(("tool_call", json.dumps(call, ensure_ascii=False, default=str)))
+    lines = [_SUMMARY_HEADER]
+    # Allocate space across every entry rather than truncating the combined
+    # digest from the front and silently losing the newest decisions.
+    overhead = len(_SUMMARY_HEADER) + sum(len(role) + 5 for role, _ in entries)
+    allowance = max(0, target_chars - overhead)
+    for index, (role, text) in enumerate(entries):
+        cap = max(0, allowance // (len(entries) - index))
+        if len(text) > cap:
+            if cap >= 5:
+                head = (cap - 3) // 2
+                text = text[:head] + "..." + text[-(cap - 3 - head):]
+            else:
+                text = text[:cap]
+        allowance -= len(text)
+        lines.append(f"- {role}: {text}")
     return "\n".join(lines)
 
 
@@ -508,7 +520,18 @@ def _build_view(
 ) -> list[BaseMessage]:
     if record is None:
         return list(messages)
-    return [_summary_to_message(record.summary)] + messages[record.compacted_until:]
+    return _rebase_runtime_view([_summary_to_message(record.summary)] + messages[record.compacted_until:])
+
+
+def _rebase_runtime_view(view: list[BaseMessage]) -> list[BaseMessage]:
+    """Make the first retained state self-contained, also for token budgeting."""
+    for index, message in enumerate(view):
+        state = message.additional_kwargs.get("framework_runtime_state")
+        delta = message.additional_kwargs.get("framework_runtime_delta")
+        if isinstance(state, str) and isinstance(delta, str) and delta:
+            kwargs = {**message.additional_kwargs, "framework_runtime_delta": state}
+            return view[:index] + [message.model_copy(update={"additional_kwargs": kwargs})] + view[index + 1:]
+    return view
 
 
 def compression_view_from_record(
@@ -531,7 +554,7 @@ def temporary_bounded_view(
         return view
     prefix_count = 1 if view and is_summary_message(view[0]) else 0
     prefix = view[:prefix_count]
-    notice = HumanMessage(content="【运行时通知】较早的对话暂时省略；后台正在生成摘要。")
+    notice = HumanMessage(content="【运行时通知】为满足上下文预算，较早的对话暂时省略；原始记录仍保留在会话历史中。")
     suffix_tokens = [0] * (len(view) + 1)
     for index in range(len(view) - 1, -1, -1):
         suffix_tokens[index] = suffix_tokens[index + 1] + _msg_tokens(view[index])
@@ -542,9 +565,9 @@ def temporary_bounded_view(
     ]
     for start in starts:
         if fixed_tokens + suffix_tokens[start] <= history_token_budget:
-            return [*prefix, notice, *view[start:]]
+            return _rebase_runtime_view([*prefix, notice, *view[start:]])
     if starts:
-        return [*prefix, notice, *view[starts[-1]:]]
+        return _rebase_runtime_view([*prefix, notice, *view[starts[-1]:]])
     return view
 
 
@@ -761,7 +784,8 @@ def apply_compression(
     target_tokens = (settings.target_tokens if settings else 0) or max(1, int(history_token_budget * _target_ratio()))
     trigger_tokens = min(trigger_tokens, history_token_budget)
     target_tokens = min(target_tokens, max(1, trigger_tokens - 1))
-    summary_cap = min(settings.summary_tokens, max(128, target_tokens // 3)) if settings else 0
+    summary_cap = min(settings.summary_tokens if settings else max(1, int(history_token_budget * _summary_ratio())),
+                      max(1, target_tokens // 3))
     if settings:
         preserve_recent_val = len(messages) - _recent_turn_boundary(messages, settings.preserve_recent_turns)
 
@@ -827,7 +851,7 @@ def apply_compression(
     new_summary = _truncate_to_cap(new_summary, target_chars)
     if summary_cap:
         new_summary = _cap_summary_tokens(_summary_to_message(new_summary).content, summary_cap)
-    new_view = [_summary_to_message(new_summary)] + messages[boundary:]
+    new_view = _rebase_runtime_view([_summary_to_message(new_summary)] + messages[boundary:])
     new_tokens = estimate_messages_tokens(new_view)
     # 没有收益就不落盘（历史已很短、或摘要器无效，摘要反而更大）——避免把状态写坏。
     # 自动触发路径只在远超阈值时进入，必然有收益；这道闸主要保护手动 force 压缩。

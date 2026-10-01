@@ -54,7 +54,7 @@ def identity_sections(agent: Agent) -> dict[str, str]:
     from webot.soul import build_soul_prompt
 
     chat_rules = _prompt_file("conversation_rules.txt").replace(
-        "具体用法见 send_to_group", "使用本轮提供的命令行发送方式")
+        "工具用法见 send_to_group", "使用本轮提供的命令行发送方式")
     return {
         "base_rules": _prompt_file("base_system.txt").replace("{chat_rules}", chat_rules),
         "external_rules": _prompt_file("external_agent_system.txt"),
@@ -130,6 +130,7 @@ def prepare_turn(agent: Agent, msg: AgentMessage, *, context: dict[str, Any], mo
     """Only new information travels in this turn's user text; never replay replies."""
     from webot.skills import build_user_skills_listing
     from webot.workflow_prompt import build_team_workflow_prompt
+    from common.conversation_context import render_group_metadata
 
     teams = sorted({str(team).strip() for team in agent.teams if str(team).strip()})
     # Old successful sessions already received an identity before this state existed.
@@ -149,6 +150,7 @@ def prepare_turn(agent: Agent, msg: AgentMessage, *, context: dict[str, Any], mo
         "cli_entry": (f"当前命令入口：cd {shlex.quote(str(PROJECT_ROOT))} && uv run src/cli/cli.py "
                       f"-u {shlex.quote(agent.owner)} --help；替代此前提供的旧命令路径。"),
         "teams": "\n".join(f"team: {team}" for team in teams),
+        "groups": render_group_metadata(context.get("groups") or []),
         "skills": build_user_skills_listing(agent.owner, teams=teams, tool_mode="cli"),
         "workflows": "\n\n".join(filter(None, (build_team_workflow_prompt(agent.owner, team=team) for team in teams))),
         "instructions": msg.instructions.strip(),

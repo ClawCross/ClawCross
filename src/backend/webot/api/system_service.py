@@ -128,13 +128,16 @@ class SystemService:
                 content_parts.append({"type": "text", "text": section})
 
         if has_multimodal_parts:
-            return HumanMessage(content=content_parts)
-        return HumanMessage(content="\n\n".join(text_sections))
+            message = HumanMessage(content=content_parts)
+        else:
+            message = HumanMessage(content="\n\n".join(text_sections))
+        message.additional_kwargs["framework_groups"] = [g for item in batch for g in item.message.additional_kwargs.get("framework_groups", [])]
+        return message
 
     def _build_message_from_trigger(self, req: SystemTriggerRequest) -> HumanMessage:
         """将 SystemTriggerRequest 转为 HumanMessage，支持多模态附件。"""
         if not req.attachments:
-            return HumanMessage(content=req.text)
+            return HumanMessage(content=req.text, additional_kwargs={"framework_groups": req.groups})
 
         images: list[str] = []
         audios: list[dict] = []
@@ -185,12 +188,14 @@ class SystemService:
                         "content": f"(二进制文件: {att.name}, 类型: {att.mime_type}，无法直接展示内容)",
                     })
 
-        return build_human_message(
+        message = build_human_message(
             text=req.text,
             images=images or None,
             files=files or None,
             audios=audios or None,
         )
+        message.additional_kwargs["framework_groups"] = req.groups
+        return message
 
     def _build_system_input(self, req: SystemTriggerRequest, human_msg: HumanMessage) -> dict[str, Any]:
         state: dict[str, Any] = {
@@ -422,7 +427,8 @@ class SystemService:
                     if batch:
                         body = self._inbox_digest(batch, count_inbox_messages(user_id, session_id, status="unread"))
                         req = SystemTriggerRequest(user_id=user_id, session_id=session_id, text=body,
-                                                   attachments=self._inbox_attachments(batch))
+                                                   attachments=self._inbox_attachments(batch),
+                                                   groups=[g for item in batch for g in item.metadata.get("groups", [])])
                         ok = await self._invoke_system_message_locked(
                             req=req, human_msg=self._build_message_from_trigger(req),
                             thread_id=thread_id, config=config, batch_count=len(batch),
@@ -443,7 +449,7 @@ class SystemService:
                         if item.metadata.get("wait_reply"):
                             body += "\n（对方正在等你的回复：直接用文字回答即可。）"
                         req = SystemTriggerRequest(user_id=user_id, session_id=session_id, text=body,
-                                                   attachments=self._inbox_attachments([item]))
+                                                   attachments=self._inbox_attachments([item]), groups=item.metadata.get("groups") or [])
                         ok = await self._invoke_system_message_locked(
                             req=req, human_msg=self._build_message_from_trigger(req),
                             thread_id=thread_id, config=config, batch_count=1,
@@ -507,6 +513,7 @@ class SystemService:
                         "preformatted": True,
                         "wait_reply": req.wait_reply,
                         "attachments": [a.model_dump() for a in req.attachments or []],
+                        "groups": req.groups,
                     },
                 )
                 waiter = None

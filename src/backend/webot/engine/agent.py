@@ -40,6 +40,7 @@ from webot.context import (
     assemble_input_messages,
     render_runtime_context_block,
     render_team_skill_context,
+    render_group_context,
 )
 from webot.memory import get_memory_state
 from webot.skills import build_user_profile_block
@@ -49,7 +50,7 @@ from webot.llm_call_trace import llm_call_trace_enabled, save_llm_call
 from webot.context_references import expand_context_references
 from common.runtime_paths import PROJECT_ROOT
 from webot.context_store import ContextStore
-from webot.context_usage import estimate_context_components, scale_components, tool_schemas
+from webot.context_usage import estimate_context_components, scale_components, tool_schemas, validate_context_capacity
 from webot.smart_routing import resolve_turn_route
 from webot.permission_context import (
     create_or_reuse_permission_request,
@@ -1577,6 +1578,7 @@ class TeamAgent:
             f"【Session Mode】\n{session_mode_prompt}\n\n"
             f"{runtime_context_block}\n"
         )
+        dynamic_context_block += "\n" + render_group_context(state["messages"]) + "\n"
         if team_skill_context:
             dynamic_context_block += f"\n{team_skill_context}\n"
         if reply_format_hint:
@@ -1653,16 +1655,6 @@ class TeamAgent:
         last_real_context = self.get_thread_last_context_tokens(thread_id)
         context_window = model_window
 
-        # 1) 当轮新输入瘦身：仅当这条新输入会把上下文顶破窗口时才落盘 + excerpt。
-        # 窗口还装得下就完整保留（不再用固定字符数一刀切）。
-        history_messages = trim_new_input_if_oversized(
-            history_messages,
-            user_id=user_id,
-            session_id=session_id,
-            current_context_tokens=last_real_context,
-            context_window=context_window,
-        )
-
         # Freeze the completed summary for this entire turn. Background work
         # may publish a newer summary while tools are running; this turn keeps
         # the same view and the next turn picks up the new version.
@@ -1672,18 +1664,25 @@ class TeamAgent:
             state["_turn_compaction_record"], history_messages,
         )
         history_messages = temporary_bounded_view(history_messages, history_token_budget)
+        # Previous API usage may refer to a larger, pre-compaction history.
+        # Judge this input against the view we will actually send this turn.
+        history_messages = trim_new_input_if_oversized(
+            history_messages, user_id=user_id, session_id=session_id,
+            current_context_tokens=sum(prefix_cost.values()) + output_reserve
+                + estimate_messages_tokens(history_messages[:-1]),
+            context_window=context_window,
+        )
         view_tokens = estimate_messages_tokens(history_messages)
 
         # --- Token budget tracking ---
         # 上下文占用优先用上一轮 API 真实占用 (input+output) 相对整窗口口径，
         # 这是真实的「上下文有多满」；首轮还没有真实值时，回退到字数估算的历史口径。
         session_budget = get_session_budget(user_id, session_id)
-        if last_real_context > 0:
-            context_used = last_real_context
-            context_budget = context_window
-        else:
-            context_used = view_tokens
-            context_budget = context_window
+        # Runtime pressure follows this turn's view. A previous API total may
+        # precede compaction and must not prematurely stop the smaller turn.
+        # The UI still retains the last measured API total until the next call.
+        context_used = sum(prefix_cost.values()) + view_tokens
+        context_budget = context_window
         session_budget.update_current_context(
             used_tokens=context_used,
             budget_tokens=context_budget,
@@ -1796,6 +1795,11 @@ class TeamAgent:
         while True:
             base_prompt, prompts = self._build_live_system_prompt(user_id, session_id, is_subagent)
             input_messages[0] = SystemMessage(content=base_prompt)
+            validate_context_capacity(
+                system_prompt=base_prompt, tools=context_tool_schemas,
+                messages=input_messages[1:], context_window=context_window,
+                output_reserve=output_reserve,
+            )
             # Stream instead of a single ainvoke() call so on_llm_new_token /
             # on_chat_model_stream callbacks actually fire per token (needed
             # for the SSE stream in openai_service.py to deliver real-time

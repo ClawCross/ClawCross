@@ -39,7 +39,9 @@ Side systems
 | `src/backend/webot/engine/agent.py` | Enforces tool filtering, injects runtime context, proxies MCP tooling into session handler, budgets history with `webot_context`. |
 | `src/backend/ops/service.py` | Text-to-speech / audio proxy for voice mode; writes audio metadata into runtime payload via the frontend (`src/frontend/server.py`). |
 | `src/backend/webot/profiles.py` | Profile definitions (`general`, `research`, `planner`, `coder`, `reviewer`, `verifier`), helper `slugify`, built-in tool sets, user extension loading. |
-| `src/backend/webot/context.py` | Budgeting helpers (tool results, user inputs) that log artifacts, perform compaction, build runtime summaries. |
+| `src/backend/webot/context.py` | Runtime state assembly and deltas, including group metadata only; rebase the first retained state after compression. |
+| `src/backend/webot/compression.py` | Persistent rolling summaries, whole-turn boundaries, summary caps, temporary bounded views and oversized input artifacts. Original messages remain stored. |
+| `src/backend/webot/engine/background_compaction.py` | Prepare summaries from frozen snapshots after a turn; version checks and reset generation prevent stale commits. |
 | `src/backend/webot/workspace.py` | Worktree/remote/shared workspace resolution used when rendering runtime panel workspace text. |
 | `src/frontend/proxies/webot.py` | Additional Flask proxies for runtime mode updates, plan/todo/verification APIs, supporting UI actions. |
 | `src/backend/webot/memory.py` | Per-project memory directories, `MEMORY.md`, relevant entry recall, daily logs, dream gating, Kairos flags. |

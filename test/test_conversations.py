@@ -126,8 +126,11 @@ class TestGroupChat(GroupCase):
         text = {d["agent"].name: d["msg"].text for d in self.gateway.deliveries}
         self.assertEqual(sorted(text), ["Coder", "Codex"])
         self.assertIn("@你 说:", text["Codex"])
-        self.assertIn(f"--agent {self.codex.agent_id}", text["Codex"])  # external: CLI
-        self.assertIn(f'send_to_group(group_id="{self.group}"', text["Coder"])  # WeBot: tool
+        meta = {d["agent"].name: d["context"]["groups"][0] for d in self.gateway.deliveries}
+        self.assertIn(f"--agent {self.codex.agent_id}", meta["Codex"]["reply_channel"])
+        self.assertIn(f'send_to_group(group_id="{self.group}"', meta["Coder"]["reply_channel"])
+        self.assertEqual(meta["Codex"]["role"], "sub_agent")
+        self.assertNotIn("reply_channel", text["Codex"])
         summary = {d["agent"].name: d["msg"].summary for d in self.gateway.deliveries}
         self.assertEqual(summary["Codex"], "群聊「Dev」 alice @你: @Codex 看一下 @Coder")  # its inbox notice
 
@@ -226,7 +229,12 @@ class TestGroupsAndTeams(GroupCase):
         self.teams.remove("alice", "dev", "planner")  # the team changes; the group stays as it was made
         self.assertEqual(len(self.service.detail("alice", created["group_id"])["members"]), 3)
         await self.service.post("alice", created["group_id"], human("alice"), "hi")
-        self.assertEqual({str(d.get("context")) for d in self.gateway.deliveries}, {str({"conversation_id": created["group_id"]})})
+        for delivery in self.gateway.deliveries:
+            self.assertEqual(delivery["context"]["conversation_id"], created["group_id"])
+            meta = delivery["context"]["groups"][0]
+            self.assertEqual(meta["group_id"], created["group_id"])
+            self.assertEqual(len(meta["members"]), 3)
+            self.assertNotIn("content", meta)
 
 
 class TestGroupsApi(GroupCase):

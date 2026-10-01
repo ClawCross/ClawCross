@@ -260,6 +260,18 @@ def render_team_skill_context(teams: list[str] | tuple[str, ...], skills_listing
     return "\n\n".join(parts)
 
 
+def render_group_context(history: list[BaseMessage]) -> str:
+    """Only the current user turn defines the active conversations, not old history."""
+    current = next((m for m in reversed(history) if isinstance(m, HumanMessage)), None)
+    groups = current.additional_kwargs.get("framework_groups", []) if current else []
+    from common.conversation_context import render_group_metadata
+    metadata = render_group_metadata(groups)
+    if not metadata:
+        return "【当前群聊 / 私聊】\n无。本轮不使用历史群身份或回复通道。"
+    return ("【当前群聊 / 私聊】\n以下是当前渠道状态；替代历史中的同项信息。多群通知按各消息 group_id 回复。\n"
+            + metadata)
+
+
 def strip_legacy_skills_from_system_prompt(prompt: str) -> str:
     """Remove the old frozen catalog from existing session prompts at read time."""
     soul_start = prompt.find(_SOUL_HEADING)
@@ -300,7 +312,7 @@ def _append_runtime_delta(message: BaseMessage, delta: str) -> BaseMessage:
         content = f"{message.content}{state_text}"
     provider_kwargs = {
         key: value for key, value in message.additional_kwargs.items()
-        if key not in {RUNTIME_STATE_KEY, RUNTIME_DELTA_KEY}
+        if key not in {RUNTIME_STATE_KEY, RUNTIME_DELTA_KEY, "framework_groups"}
     }
     return message.model_copy(update={"content": content, "additional_kwargs": provider_kwargs})
 
@@ -332,12 +344,18 @@ def assemble_input_messages(
     for message in history:
         delta = message.additional_kwargs.get(RUNTIME_DELTA_KEY)
         if isinstance(delta, str) and delta and isinstance(message, (HumanMessage, ToolMessage)):
-            visible.append(_append_runtime_delta(message, delta))
             snapshot = message.additional_kwargs.get(RUNTIME_STATE_KEY)
+            # Compaction can remove the initial full snapshot while retaining
+            # later patches. Rebase the first retained transition onto its
+            # complete snapshot so patches never refer to an invisible base.
+            replay = snapshot if previous is None and isinstance(snapshot, str) else delta
+            visible.append(_append_runtime_delta(message, replay))
             if isinstance(snapshot, str):
                 previous = snapshot
         else:
-            visible.append(message)
+            provider_kwargs = {key: value for key, value in message.additional_kwargs.items()
+                               if key not in {RUNTIME_STATE_KEY, RUNTIME_DELTA_KEY, "framework_groups"}}
+            visible.append(message.model_copy(update={"additional_kwargs": provider_kwargs}))
 
     messages: list[BaseMessage] = [SystemMessage(content=base_prompt)] + visible
     if not history or not isinstance(history[-1], (HumanMessage, ToolMessage)):

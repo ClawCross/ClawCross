@@ -38,7 +38,7 @@ class BackgroundCompressionManager:
         thread_id = f"{user_id}#{session_id}"
         request = {
             "user_id": user_id, "session_id": session_id,
-            "messages": list(messages), "history_token_budget": history_token_budget,
+            "messages": copy.deepcopy(messages), "history_token_budget": history_token_budget,
             "preserve_recent": preserve_recent, "settings": settings,
             "measured_input_tokens": measured_input_tokens,
             "measured_budget": measured_budget,

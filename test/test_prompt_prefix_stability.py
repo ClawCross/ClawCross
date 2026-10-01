@@ -147,6 +147,17 @@ class RuntimeStateRidesAtTheTail(unittest.TestCase):
 
 
 class UnchangedStateIsNotResent(unittest.TestCase):
+    def test_first_retained_patch_rebases_after_compaction(self):
+        changed = STATE.replace("pending", "done")
+        retained = HumanMessage(content="retained turn")
+        self._record(retained, state=changed, delta="【Runtime Context Update】\n- pending\n+ done")
+        messages, injected = assemble_input_messages(
+            base_prompt=BASE, history=[retained, AIMessage(content="done"), HumanMessage(content="next")],
+            runtime_state=changed,
+        )
+        self.assertIn(changed, messages[1].content)
+        self.assertEqual(injected, "")
+
     @staticmethod
     def _record(message, state=STATE, delta=STATE):
         message.additional_kwargs[RUNTIME_STATE_KEY] = state

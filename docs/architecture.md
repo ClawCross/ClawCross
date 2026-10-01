@@ -18,6 +18,16 @@ ClawCross 把一台机器上所有 agent 统一成一种东西：**有编号的�
 
 ## L1：agent（`src/backend/agents/`）
 
+### 提示词与群上下文
+
+基础 system prompt 保留身份、人设和共同约束；工作流用法与操作边界在对应工具描述中，详细格式由 `get_workflow_rules` 按需读取。
+group 动态块只带 meta：ID、名称、类型、群内身份、成员、投递规则及回复通道。字段由 `common/conversation_context.py` 筛选，正文和摘要不进入 group 块。
+群消息正文仍保存在 inbox；通知和动态状态只提供摘要，agent 通过 `read_session_inbox` 读取正文。批量通知可以携带多个群的 meta。
+内部每轮使用当前 meta，正常对话撤销旧群上下文；有记忆的外部 agent 只接收发生变化的 meta，离开群时收到撤销信息。
+
+历史压缩保留原始消息，摘要不替代审核使用的原始授权证据。压缩或临时裁剪移除旧状态基准时，第一份保留的动态状态会恢复成完整快照。
+摘要生成失败可退回机械摘要；这是有限的摘录，不保证语义完整，关键内容可从原始记录恢复。token 总用量以 API 返回为准；分项和调用前预算为估算。
+
 ### 一张表：所有会话
 
 `<DATA_DIR>/agents.db` 的 `agents` 表，一个会话一行，主键是（`owner`, `agent_id`）：

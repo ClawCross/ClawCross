@@ -258,6 +258,7 @@ class DurableInboxTests(unittest.IsolatedAsyncioTestCase):
                         user_id="alice", session_id="worker",
                         text=f"private body {index} " + "x" * 110 + " SECRET",
                         inbox_source_session="main", inbox_summary=f"Task {index}",
+                        groups=[{"group_id": f"g{index}", "title": f"Group {index}"}],
                     ))
                 self.assertEqual(agent.agent_app.inputs, [])
             finally:
@@ -269,6 +270,15 @@ class DurableInboxTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("Task 1", notice)
             self.assertIn("Task 2", notice)
             self.assertNotIn("SECRET", notice)
+            delivered = agent.agent_app.inputs[0]["messages"][0]
+            from webot.context import render_group_context
+            group_block = render_group_context([delivered])
+            self.assertIn("Group 1", group_block)
+            self.assertIn("Group 2", group_block)
+            self.assertNotIn("Task 1", group_block)
+            self.assertNotIn("SECRET", group_block)
+            bodies = runtime_store.list_inbox_messages("alice", "worker", status="delivered")
+            self.assertTrue(all("SECRET" in item.content for item in bodies))
 
     async def test_what_came_with_an_entry_comes_with_its_notice(self):
         with TemporaryDirectory() as tmpdir, patch.object(runtime_store, "DEFAULT_DB_PATH", Path(tmpdir) / "runtime.db"), \
