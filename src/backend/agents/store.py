@@ -219,6 +219,25 @@ class AgentStore:
         self._run("UPDATE agents SET runtime_json = ? WHERE owner = ? AND agent_id = ?",
                   (json.dumps(runtime, ensure_ascii=False), owner, agent_id))
 
+    def patch_runtime(self, owner: str, agent_id: str, changes: dict[str, Any]) -> None:
+        """Merge runtime state atomically without overwriting another writer's fields."""
+        conn = self._connect()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT runtime_json FROM agents WHERE owner = ? AND agent_id = ?",
+                               (owner, agent_id)).fetchone()
+            if row is None:
+                raise AgentNotFound(f"no agent {agent_id!r} for {owner}")
+            runtime = {**json.loads(row["runtime_json"] or "{}"), **changes}
+            conn.execute("UPDATE agents SET runtime_json = ? WHERE owner = ? AND agent_id = ?",
+                         (json.dumps(runtime, ensure_ascii=False), owner, agent_id))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
     def delete(self, owner: str, agent_id: str) -> None:
         self._run("DELETE FROM agents WHERE owner = ? AND agent_id = ?", (owner, agent_id))
 

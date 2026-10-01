@@ -230,14 +230,18 @@ class TestGateway(StoreCase):
         self.ask(codex, mode="bypass", response_format={"type": "json_schema"})
         self.ask(other)
         first, second = self.acpx.calls
-        self.assertEqual((first["tool"], first["session_key"], first["prompt_text"]),
-                         ("codex", f"clawcross-alice-{codex.agent_id}", "hi"))
+        self.assertEqual((first["tool"], first["session_key"]),
+                         ("codex", f"clawcross-alice-{codex.agent_id}"))
         self.assertEqual(second["session_key"], f"clawcross-alice-{other.agent_id}")
-        self.assertIn("PERSONA", first["system_prompt"])  # acpx tells a new session who it is
-        self.assertIn("【群聊与私聊规则】", first["system_prompt"])  # the shared chat rules
-        self.assertIn("rules", first["system_prompt"])  # and the caller's instructions
+        self.assertIn("PERSONA", first["prompt_text"])
+        self.assertIn("【群聊与私聊规则】", first["prompt_text"])
+        self.assertIn("rules", first["prompt_text"])
+        self.assertIsNone(first["system_prompt"])  # the Agent row owns negotiation, not acpx
         self.assertEqual(first["permission_policy"], "approve-all")  # bypass
         self.assertIn("last_used_at", self.store.get("alice", codex.agent_id).runtime)
+        self.assertTrue(self.store.get("alice", codex.agent_id).runtime["negotiation_sent"])
+        self.ask(codex, mode="bypass", response_format={"type": "json_schema"})  # original stale object
+        self.assertEqual(self.acpx.calls[2]["prompt_text"], "hi")
 
     def test_openclaw_uses_the_runtime_endpoint_and_its_session_key(self):
         claw = self.store.create("alice", name="Claw", driver=OPENCLAW,
@@ -251,7 +255,7 @@ class TestGateway(StoreCase):
         self.assertEqual(body["model"], "agent:main")
         self.assertNotIn("session_id", body)  # the session is the header
 
-    def test_a_runtime_is_told_its_identity_once_and_again_when_it_changes(self):
+    def test_a_runtime_freezes_its_identity_until_reset_and_refreshes_stale_records(self):
         svc = self.store.create("alice", name="Svc", driver=HTTP, config={"platform": "svc", "api_url": "http://svc"})
         self.ask(svc)
         url, body, _headers = _Http.posts[0]
@@ -259,14 +263,74 @@ class TestGateway(StoreCase):
         told = body["messages"][0]["content"]
         self.assertIn("PERSONA", told)
         self.assertTrue(told.endswith("\n\nhi"))  # the identity comes before the message
-        svc = self.store.get("alice", svc.agent_id)
-        self.assertIn("PERSONA", svc.runtime["identity_prompt"])
-        self.ask(svc)
+        self.assertIn("PERSONA", self.store.get("alice", svc.agent_id).runtime["identity_prompt"])
+        self.store.patch_runtime("alice", svc.agent_id, {"other_runtime_field": "keep"})
+        self.ask(svc)  # keep using the original object, as a queued caller may do
         self.assertEqual(_Http.posts[1][1]["messages"][0]["content"], "hi")  # already told
+        self.assertEqual(self.store.get("alice", svc.agent_id).runtime["other_runtime_field"], "keep")
         svc = self.store.update("alice", svc.agent_id, config={**svc.config, "persona": "critic"})
         with mock.patch("webot.profiles.frame_session_identity", lambda *a: "CRITIC"):
             self.ask(svc)
-        self.assertIn("CRITIC", _Http.posts[2][1]["messages"][0]["content"])  # told again: it changed
+            self.assertNotIn("CRITIC", _Http.posts[2][1]["messages"][0]["content"])
+            asyncio.run(self.gateway.control(svc, "reset"))
+            self.ask(svc)
+        self.assertIn("CRITIC", _Http.posts[3][1]["messages"][0]["content"])
+        self.assertNotEqual(_Http.posts[0][1]["session_id"], _Http.posts[3][1]["session_id"])
+
+    def test_concurrent_external_turns_negotiate_only_once(self):
+        svc = self.store.create("alice", driver=HTTP, config={"api_url": "http://svc"})
+        async def run():
+            return await asyncio.gather(*(self.gateway.ask(svc, AgentMessage(text=f"user{i}")) for i in range(2)))
+        self.assertTrue(all(reply.ok for reply in asyncio.run(run())))
+        sent = [body["messages"] for _, body, _ in _Http.posts]
+        self.assertEqual(sum("PERSONA" in messages[0]["content"] for messages in sent), 1)
+        self.assertTrue(all(len(messages) == 1 and messages[0]["role"] == "user" for messages in sent))
+        self.assertEqual(sent[1][0]["content"], "user1")
+
+    def test_external_dynamic_catalog_changes_do_not_resend_identity(self):
+        svc = self.store.create("alice", driver=HTTP, config={"api_url": "http://svc"})
+        with mock.patch("webot.skills.build_user_skills_listing", return_value="skills-v1"):
+            self.ask(svc)
+        self.store.set_teams("alice", svc.agent_id, ["dev"])
+        with mock.patch("webot.skills.build_user_skills_listing", return_value="skills-v2"), \
+                mock.patch("webot.workflow_prompt.build_team_workflow_prompt", return_value="dev-workflow"):
+            self.ask(svc)
+        text = _Http.posts[1][1]["messages"][0]["content"]
+        self.assertNotIn("PERSONA", text)
+        self.assertNotIn("skills-v1", text)
+        self.assertIn("skills-v2", text)
+        self.assertIn("team: dev", text)
+        self.assertIn("dev-workflow", text)
+
+    def test_failed_external_delivery_does_not_mark_negotiation_sent(self):
+        svc = self.store.create("alice", driver=HTTP, config={"api_url": "http://svc"})
+        with mock.patch.object(_Http, "post", mock.AsyncMock(return_value=SimpleNamespace(status_code=503, text="offline"))):
+            reply = asyncio.run(self.gateway.ask(svc, AgentMessage(text="first")))
+        self.assertFalse(reply.ok)
+        self.assertNotIn("negotiation_sent", self.store.get("alice", svc.agent_id).runtime)
+        self.ask(svc)
+        self.assertIn("PERSONA", _Http.posts[0][1]["messages"][0]["content"])
+
+    def test_existing_successful_external_sessions_do_not_repeat_identity_on_upgrade(self):
+        svc = self.store.create("alice", driver=HTTP, config={"api_url": "http://svc"})
+        self.store.set_runtime("alice", svc.agent_id, {"last_used_at": 1})
+        self.ask(svc)
+        self.assertNotIn("PERSONA", _Http.posts[0][1]["messages"][0]["content"])
+        self.assertTrue(self.store.get("alice", svc.agent_id).runtime["negotiation_sent"])
+
+    def test_external_tool_and_reply_schemas_travel_as_text_contracts(self):
+        svc = self.store.create("alice", driver=HTTP, config={"api_url": "http://svc"})
+        reply_schema = {"type": "json_schema", "json_schema": {"name": "reply", "schema": {"type": "object"}}}
+        tools = [{"name": "read_file", "command": "clawcross read"}]
+        self.ask(svc, context={"command_tools": tools}, enabled_tools=["read_file"],
+                 mode="readonly", response_format=reply_schema)
+        body = _Http.posts[0][1]
+        self.assertNotIn("tools", body)
+        self.assertNotIn("response_format", body)
+        text = body["messages"][0]["content"]
+        self.assertIn("clawcross read", text)
+        self.assertIn("json_schema", text)
+        self.assertIn("不修改文件", text)
 
     def test_http_agent_without_endpoint_says_so(self):
         agent = self.store.create("alice", name="Svc", driver=HTTP, config={"platform": "svc"})
@@ -317,7 +381,7 @@ class TestGateway(StoreCase):
             await asyncio.gather(*self.gateway.runtimes[ACPX]._background)
 
         asyncio.run(run())
-        self.assertEqual(self.acpx.calls[0]["prompt_text"], "later")  # handed over at once,
+        self.assertTrue(self.acpx.calls[0]["prompt_text"].endswith("\n\nlater"))
         self.assertEqual(self.acpx.calls[0]["non_interactive_permissions"], "deny")  # in the mode it was sent in
 
     def test_an_external_trigger_is_sent_in_the_background_and_reports_back(self):
@@ -448,7 +512,7 @@ class TestControl(StoreCase):
         self.store.set_runtime("alice", agent.agent_id, {"identity_prompt": "P", "last_used_at": 1.0})
         self.assertEqual(asyncio.run(self.control.status(self.store.get("alice", agent.agent_id)))["state"], "online")
         self.assertEqual(asyncio.run(self.control.control(agent, "reset")), {"reset": True})
-        self.assertEqual(self.store.get("alice", agent.agent_id).runtime, {})
+        self.assertEqual(set(self.store.get("alice", agent.agent_id).runtime), {"session_generation"})
 
 
 class ApiCase(StoreCase):
@@ -639,6 +703,20 @@ class TestOpenAIRouting(StoreCase):
         if model:
             body["model"] = model
         return self.client.post("/v1/chat/completions", headers={"Authorization": auth or bearer("alice")}, json=body)
+
+    def test_external_chat_forwards_latest_user_and_textual_tool_contract_only(self):
+        tools = [{"type": "function", "function": {"name": "read_file", "description": "Read via CLI"}}]
+        response = self.chat("cx", messages=[
+            {"role": "system", "content": "session rules"},
+            {"role": "user", "content": "user1"},
+            {"role": "assistant", "content": "answer1"},
+            {"role": "user", "content": "user2"},
+        ], tools=tools, enabled_tools=["read_file"])
+        self.assertEqual(response.status_code, 200)
+        message = self.gateway.ask.await_args.args[1]
+        self.assertEqual((message.text, message.instructions), ("user2", "session rules"))
+        self.assertEqual(self.gateway.ask.await_args.kwargs["context"], {"command_tools": tools})
+        self.assertEqual(self.gateway.ask.await_args.kwargs["enabled_tools"], ["read_file"])
 
     def test_the_session_is_the_agent_and_a_new_one_is_made_with_the_named_runtime(self):
         self.assertEqual(self.chat("s1", "anything").json()["from"], "webot")  # WeBot answers it itself

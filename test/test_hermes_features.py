@@ -269,16 +269,21 @@ class TestSkillSystem(unittest.TestCase):
         prompt = build_user_skills_listing("nonexistent-user")
         self.assertIn("当前暂无已注册条目", prompt)
 
-    def test_an_external_agent_is_told_its_skills_once(self):
+    def test_external_skills_travel_in_the_dynamic_turn_not_the_fixed_identity(self):
         from agents.store import ACPX, Agent
-        from external.session import identity_prompt
+        from external.session import identity_prompt, prepare_turn
+        from agents.messages import AgentMessage
         from webot.skills import create_skill
         create_skill("alice", name="deploy-script", content=self._make_skill_content("deploy-script", "Deploy to prod"))
         agent = Agent(agent_id="cx", owner="alice", name="Critic", driver=ACPX,
                       config={"platform": "codex", "persona": "你是审稿人。"})
         prompt = identity_prompt(agent, {}, "")
-        self.assertEqual(prompt.count("【用户技能 / Memory 条目】"), 1)
+        self.assertNotIn("【用户技能 / Memory 条目】", prompt)
         self.assertIn("你是审稿人。", prompt)
+        turn = prepare_turn(agent, AgentMessage(text="hello"), context={}, mode=None,
+                            enabled_tools=None, response_format=None)
+        self.assertEqual(turn.text.count("【用户技能 / Memory 条目】"), 1)
+        self.assertIn("deploy-script", turn.dynamic_context["skills"])
 
     def test_agent_user_skills_prompt_uses_managed_skills(self):
         from webot.engine.agent import TeamAgent

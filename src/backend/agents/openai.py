@@ -112,7 +112,11 @@ async def answer_by_asking(gateway: Any, agent: Agent, req: ChatCompletionReques
     last user message, and the whole reply is sent back (as one delta when streamed)."""
     text, attachments = next(
         (parse_openai_content(m.content) for m in reversed(req.messages) if m.role == "user"), ("", []))
-    reply = await gateway.ask(agent, AgentMessage(text=text, attachments=attachments, sender=f"u:{agent.owner}"),
+    instructions = "\n\n".join(parse_openai_content(m.content)[0] for m in req.messages
+                                 if m.role in ("system", "developer"))
+    reply = await gateway.ask(agent, AgentMessage(text=text, attachments=attachments, sender=f"u:{agent.owner}",
+                                                  instructions=instructions),
+                              context={"command_tools": req.tools or []}, enabled_tools=req.enabled_tools,
                               mode=req.session_mode, response_format=req.response_format)
     if not reply.ok:
         raise HTTPException(status_code=502, detail=reply.error or "agent call failed")

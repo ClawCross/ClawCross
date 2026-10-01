@@ -1,6 +1,6 @@
 """Any OpenAI-compatible endpoint: ``POST <api_url>/v1/chat/completions`` with the
-agent's ``model``. The runtime keeps the conversation, so the identity is sent
-only when it has not been told it yet, or when it changed."""
+agent's ``model``. The Agent row records its frozen identity and dynamic context;
+only the newest user turn and context changes are sent."""
 
 from __future__ import annotations
 
@@ -55,14 +55,17 @@ class HttpRuntime(Runtime):
         return {"session_id": session.runtime_session(agent)}
 
     async def ask(self, agent: Agent, msg: AgentMessage, *, context, mode, enabled_tools, response_format, timeout) -> AgentReply:
+        async with session.turn(self._store, agent) as current:
+            return await self._ask_turn(current, msg, context=context, mode=mode, enabled_tools=enabled_tools,
+                                        response_format=response_format, timeout=timeout)
+
+    async def _ask_turn(self, agent: Agent, msg: AgentMessage, *, context, mode, enabled_tools, response_format, timeout) -> AgentReply:
         api_url, _api_key, model, headers = self.endpoint(agent)
         if not api_url:
             return AgentReply(ok=False, error=f"{agent.agent_id} has no api_url")
-        identity = session.identity_prompt(agent, context, msg.instructions)
-        # The runtime keeps the conversation: it is told who it is once, and again when that changes.
-        inject = bool(identity) and identity != agent.runtime.get("identity_prompt")
-        text = f"{identity}\n\n{msg.text}".strip() if inject else msg.text
-        messages = [{"role": "user", "content": build_openai_content(text, msg.attachments)}]
+        prepared = session.prepare_turn(agent, msg, context=context, mode=mode,
+                                        enabled_tools=enabled_tools, response_format=response_format, plain_text=False)
+        messages = [{"role": "user", "content": build_openai_content(prepared.text, msg.attachments)}]
         body = {"model": model, "messages": messages, "stream": False, **self.session_fields(agent)}
         wait = None if timeout == NO_TIMEOUT else (timeout if timeout is not None else 60)
 
@@ -79,7 +82,7 @@ class HttpRuntime(Runtime):
 
         reply = await session.exchange(agent, connect_type="http", prompt=messages, context=context, send=send)
         if reply.ok:
-            session.remember(self._store, agent, identity_prompt=identity)
+            session.remember_turn(self._store, agent, prepared)
         return reply
 
     async def status(self, agent: Agent) -> dict[str, Any]:
@@ -89,7 +92,8 @@ class HttpRuntime(Runtime):
     async def control(self, agent: Agent, action: str) -> dict[str, Any]:
         if action != "reset":
             return await super().control(agent, action)
-        session.forget(self._store, agent)
+        async with session.turn(self._store, agent) as current:
+            session.forget(self._store, current, new_session=True)
         return {"reset": True}
 
     async def history(self, agent: Agent, limit: int) -> list[dict[str, Any]]:

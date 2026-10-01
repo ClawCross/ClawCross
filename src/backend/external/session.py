@@ -5,12 +5,18 @@ what was said (``external.history``)."""
 from __future__ import annotations
 
 import logging
+import asyncio
+import json
+import shlex
 import time
+import uuid
+import weakref
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
-from agents.messages import AgentReply
+from agents.messages import AgentMessage, AgentReply, compose_text_prompt
 from agents.store import OPENCLAW, Agent, AgentStore, get_store
 from external import history
 
@@ -19,12 +25,15 @@ logger = logging.getLogger(__name__)
 from common.runtime_paths import PROJECT_ROOT  # noqa: E402
 
 _system_prompt: str | None = None
+_turn_locks = weakref.WeakKeyDictionary()
 
 
 def runtime_session(agent: Agent) -> str:
     """The agent's session inside an external runtime, named after its id; OpenClaw's
     also names which of its agents holds it."""
     key = f"clawcross-{agent.owner}-{agent.agent_id}"
+    if agent.runtime.get("session_generation"):
+        key += "-" + str(agent.runtime["session_generation"])
     if agent.driver == OPENCLAW:
         return f"agent:{agent.config.get('global_name') or 'main'}:{key}"
     return key
@@ -37,45 +46,106 @@ def _prompt_file(name: str) -> str:
         return ""
 
 
-def identity_prompt(agent: Agent, context: dict[str, Any], instructions: str) -> str:
-    """Who the agent is, as WeBot's system prompt says it: the chat rules, its own
-    persona text, the owner's profile, its skills and its teams' workflows, then
-    the caller's instructions."""
+def identity_prompt(agent: Agent, context: dict[str, Any] | None = None, instructions: str = "") -> str:
+    """The frozen first-turn identity, using the same fixed rules as WeBot."""
     from webot.profiles import frame_session_identity
-    from webot.skills import build_user_profile_block, build_user_skills_listing
-    from webot.workflow_prompt import build_team_workflow_prompt
+    from webot.skills import build_user_profile_block
 
     global _system_prompt
     if _system_prompt is None:
+        chat_rules = _prompt_file("conversation_rules.txt").replace(
+            "具体用法见 send_to_group", "使用本轮提供的命令行发送方式")
         _system_prompt = "\n\n".join(p for p in (
-            _prompt_file("external_agent_system.txt"), _prompt_file("conversation_rules.txt"),
+            _prompt_file("base_system.txt").replace("{chat_rules}", chat_rules),
+            _prompt_file("external_agent_system.txt"),
         ) if p)
-    teams = list(context.get("teams") or [])
     parts = [
         _system_prompt,
         frame_session_identity(agent.name, "", str(agent.config.get("persona") or "").strip()),
         build_user_profile_block(agent.owner),
-        build_user_skills_listing(agent.owner, teams=teams, tool_mode="cli"),
-        *(build_team_workflow_prompt(agent.owner, team=team) for team in teams),
-        instructions,
+        f"【ClawCross 会话】\nowner: {agent.owner}\nagent_id: {agent.agent_id}\n"
+        f"命令行入口：cd {shlex.quote(str(PROJECT_ROOT))} && uv run scripts/cli.py -u {shlex.quote(agent.owner)} --help",
     ]
     return "\n\n".join(p.strip() for p in parts if p and p.strip())
 
 
+@asynccontextmanager
+async def turn(store: AgentStore | None, agent: Agent):
+    """Serialize a session's turns and read its persisted negotiation state afresh."""
+    selected_store = store or get_store()
+    locks = _turn_locks.setdefault(asyncio.get_running_loop(), {})
+    key = (selected_store.db_path, agent.owner, agent.agent_id)
+    async with locks.setdefault(key, asyncio.Lock()):
+        yield selected_store.require(agent.owner, agent.agent_id)
+
+
+@dataclass(slots=True)
+class PreparedTurn:
+    text: str
+    identity: str | None
+    dynamic_context: dict[str, str]
+
+
+def prepare_turn(agent: Agent, msg: AgentMessage, *, context: dict[str, Any], mode: str | None,
+                 enabled_tools: list[str] | None, response_format: dict | None,
+                 plain_text: bool = True) -> PreparedTurn:
+    """Only new information travels in this turn's user text; never replay replies."""
+    from webot.skills import build_user_skills_listing
+    from webot.workflow_prompt import build_team_workflow_prompt
+
+    teams = sorted({str(team).strip() for team in agent.teams if str(team).strip()})
+    # Old successful sessions already received an identity before this state existed.
+    known = bool(agent.runtime.get("negotiation_sent") or agent.runtime.get("identity_prompt")
+                 or agent.runtime.get("last_used_at"))
+    same_session = agent.runtime.get("negotiation_session", runtime_session(agent)) == runtime_session(agent)
+    identity = None if known and same_session else identity_prompt(agent)
+    rules = {
+        "chat": "仅交流，不调用工具或命令。",
+        "readonly": "只查看、读取和搜索；不修改文件、运行写入命令或发送消息。",
+        "auto": "遵循原生工具审批与命令安全策略；不能自行绕过审批。",
+        "bypass": "可使用本轮允许的工具；仍需遵循命令安全策略和用户授权范围。",
+    }
+    dynamic = {
+        "teams": "\n".join(f"team: {team}" for team in teams),
+        "skills": build_user_skills_listing(agent.owner, teams=teams, tool_mode="cli"),
+        "workflows": "\n\n".join(filter(None, (build_team_workflow_prompt(agent.owner, team=team) for team in teams))),
+        "instructions": msg.instructions.strip(),
+        "mode": rules.get(mode or "", ""),
+        "tools": "" if enabled_tools is None else "本轮允许的工具：" + (", ".join(enabled_tools) or "无"),
+        "command_tools": ("以下定义是命令行工具的调用约定；使用已提供的命令，不编造命令，不输出 API tool_calls。\n"
+                          + json.dumps(context["command_tools"], ensure_ascii=False, sort_keys=True)) if context.get("command_tools") else "",
+        "reply_format": json.dumps(response_format, ensure_ascii=False, sort_keys=True) if response_format else "",
+    }
+    previous = agent.runtime.get("dynamic_context") or {}
+    delta = [f"【本轮 {name}】\n{value or '此前提供的此项信息已撤销。'}"
+             for name, value in dynamic.items() if previous.get(name, "") != value]
+    text = compose_text_prompt(msg.text, msg.attachments) if plain_text else msg.text
+    return PreparedTurn("\n\n".join(filter(None, [identity, *delta, text])), identity, dynamic)
+
+
+def remember_turn(store: AgentStore | None, agent: Agent, prepared: PreparedTurn) -> None:
+    changes = {"negotiation_sent": True, "negotiation_session": runtime_session(agent),
+               "dynamic_context": prepared.dynamic_context}
+    if prepared.identity is not None:
+        changes.update(identity_prompt=prepared.identity, negotiated_at=time.time())
+    remember(store, agent, **changes)
+
+
 def remember(store: AgentStore | None, agent: Agent, **runtime: Any) -> None:
-    """Record on the agent what its runtime now knows; temporary agents keep nothing."""
-    if agent.temporary:
+    """Record what this session knows on its Agent row, including temporary sessions."""
+    if not agent.agent_id:
         return
     try:
-        (store or get_store()).set_runtime(
-            agent.owner, agent.agent_id, {**agent.runtime, **runtime, "last_used_at": time.time()})
+        (store or get_store()).patch_runtime(
+            agent.owner, agent.agent_id, {**runtime, "last_used_at": time.time()})
     except Exception:
         logger.exception("could not record the runtime state of %s", agent.agent_id)
 
 
-def forget(store: AgentStore | None, agent: Agent) -> None:
+def forget(store: AgentStore | None, agent: Agent, *, new_session: bool = False) -> None:
     """The runtime starts over: it has been told nothing (the identity is sent again)."""
-    (store or get_store()).set_runtime(agent.owner, agent.agent_id, {})
+    (store or get_store()).set_runtime(agent.owner, agent.agent_id,
+                                     {"session_generation": uuid.uuid4().hex[:12]} if new_session else {})
 
 
 @dataclass(slots=True)

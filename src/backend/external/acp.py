@@ -9,7 +9,7 @@ from __future__ import annotations
 import shutil
 from typing import Any
 
-from agents.messages import ACPX_OVERRIDES_BY_MODE, AgentMessage, AgentReply, compose_text_prompt
+from agents.messages import ACPX_OVERRIDES_BY_MODE, AgentMessage, AgentReply
 from agents.runtime import NO_TIMEOUT, ControlError, Runtime
 from agents.store import Agent, AgentStore, canonical_platform
 from external import session
@@ -47,6 +47,11 @@ class AcpRuntime(Runtime):
         self._store = store
 
     async def ask(self, agent: Agent, msg: AgentMessage, *, context, mode, enabled_tools, response_format, timeout) -> AgentReply:
+        async with session.turn(self._store, agent) as current:
+            return await self._ask_turn(current, msg, context=context, mode=mode, enabled_tools=enabled_tools,
+                                        response_format=response_format, timeout=timeout)
+
+    async def _ask_turn(self, agent: Agent, msg: AgentMessage, *, context, mode, enabled_tools, response_format, timeout) -> AgentReply:
         from external.acpx import AcpxError, acpx_options_from_agent, get_acpx_adapter
 
         run = acpx_options_from_agent(
@@ -56,9 +61,9 @@ class AcpRuntime(Runtime):
         )
         if timeout == NO_TIMEOUT:
             run["timeout_sec"] = None
-        prompt = compose_text_prompt(msg.text, msg.attachments)
-        # acpx sends the identity to a new session itself.
-        identity = session.identity_prompt(agent, context, msg.instructions)
+        prepared = session.prepare_turn(agent, msg, context=context, mode=mode,
+                                        enabled_tools=enabled_tools, response_format=response_format)
+        prompt = prepared.text
 
         async def send() -> session.Sent:
             try:
@@ -67,7 +72,7 @@ class AcpRuntime(Runtime):
                     session_key=session.runtime_session(agent),
                     prompt_text=prompt,
                     reset_session=False,
-                    system_prompt=identity or None,
+                    system_prompt=None,
                     attachments=[dict(a) for a in msg.attachments] or None,
                     **run,
                 )
@@ -79,7 +84,7 @@ class AcpRuntime(Runtime):
 
         reply = await session.exchange(agent, connect_type="acp", prompt=prompt, context=context, send=send)
         if reply.ok:
-            session.remember(self._store, agent)
+            session.remember_turn(self._store, agent, prepared)
         return reply
 
     async def status(self, agent: Agent) -> dict[str, Any]:
@@ -89,6 +94,12 @@ class AcpRuntime(Runtime):
         return {"state": "online" if live else "idle", "sessions": live}
 
     async def control(self, agent: Agent, action: str) -> dict[str, Any]:
+        if action == "reset":
+            async with session.turn(self._store, agent) as current:
+                return await self._control(current, action)
+        return await self._control(agent, action)
+
+    async def _control(self, agent: Agent, action: str) -> dict[str, Any]:
         from external.acpx import AcpxError
 
         acpx, key = adapter(), session.runtime_session(agent)

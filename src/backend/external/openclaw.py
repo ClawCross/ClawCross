@@ -51,6 +51,12 @@ class OpenclawRuntime(HttpRuntime):
         return {"state": "online" if mine else "idle", "sessions": mine}
 
     async def control(self, agent: Agent, action: str) -> dict[str, Any]:
+        if action == "reset":
+            async with session.turn(self._store, agent) as current:
+                return await self._control(current, action)
+        return await self._control(agent, action)
+
+    async def _control(self, agent: Agent, action: str) -> dict[str, Any]:
         from external.acpx import AcpxError
 
         if action not in self.controls:
