@@ -199,25 +199,33 @@ class Conversations:
         attached = "".join(f"\n  📎 {a.get('name', '')} ({a.get('mime_type', a.get('type', ''))})"
                            for a in message.attachments)
         attach_block = f"\n\n[随消息附件]{attached}" if attached else ""
-        reply = reply_channel(member.agent, conv_id)
-
         if conversation.kind == DIRECT:
-            return (f"{digest}[私聊 group_id={conv_id}] {sender} 说:\n{message.content}{attach_block}\n\n"
-                    f"（你是「{member.name}」。）\n回复方式：{reply}")
+            return f"{digest}[私聊 group_id={conv_id}] {sender} 说:\n{message.content}{attach_block}"
 
         mentioned = member.principal in message.mentions
         head = f"[群聊「{conversation.title}」 group_id={conv_id} 成员数:{len(members)}] {sender}"
         head += " @你 说:" if mentioned else " 说:"
-        role = f"你在本群的身份是「{member.name}」"
+        return f"{digest}{head}\n{message.content}{attach_block}"
+
+    def _group_context(self, conversation: Conversation, members: list[MemberView], member: MemberView) -> dict:
+        """Current channel facts travel separately from the speaker's text."""
         lead = conversation.primary_agent
+        role = "member"
+        delivery = "群成员可见；只唤醒被 @ 的成员。"
         if lead and lead == member.principal:
-            others = "、".join(f"「{m.name}」" for m in members if m.agent is not None and m.principal != lead)
-            role += f"，是本群的主 agent，其他 agent 是你的 sub-agent：{others or '（暂无）'}；它们的发言都只送达你"
+            role = "primary_agent"
+            delivery = "群成员可见；其他 agent 的发言只送达你。"
         elif lead:
-            role += f"，是 sub-agent；你的发言（含 @ 任何人）都只送达主 agent「{self.name_of(conv_id, lead)}」"
-        must = "这条消息 @ 了你，必须回复。" if mentioned else "与你相关时再回复。"
-        return (f"{digest}{head}\n{message.content}{attach_block}\n\n"
-                f"（{role}。{must}群里人人可见你的发言，但只唤醒你 @ 的成员。）\n回复方式：{reply}")
+            role = "sub_agent"
+            delivery = f"你的发言（含 @）只送达主 agent「{self.name_of(conversation.conv_id, lead)}」。"
+        if conversation.kind == DIRECT:
+            delivery = "私聊对方可见。"
+        return {
+            "group_id": conversation.conv_id, "title": conversation.title, "kind": conversation.kind,
+            "identity": member.name, "role": role, "delivery": delivery,
+            "members": [{"name": m.name, "kind": "agent" if m.agent else "human", "muted": m.muted} for m in members],
+            "reply_channel": reply_channel(member.agent, conversation.conv_id),
+        }
 
     def _summary(self, conversation: Conversation, member: MemberView, message: Message) -> str:
         """One line for the member's inbox notice: where, who, and the start of what was said."""
@@ -240,7 +248,7 @@ class Conversations:
                 member.agent,
                 AgentMessage(text=text, attachments=list(message.attachments), sender=message.sender,
                              summary=self._summary(conversation, member, message)),
-                context={"conversation_id": conv_id},
+                context={"conversation_id": conv_id, "groups": [self._group_context(conversation, members, member)]},
                 mode=mode,
                 on_complete=settled,
             )

@@ -492,6 +492,10 @@ async def start_new_oasis(
     check_oasis_discussion. Give one workflow source — python_file,
     schedule_file, or schedule_yaml (that precedence if several);
     get_workflow_rules explains the formats, list_oasis_workflows lists saved ones.
+    Only start a workflow or sub-workflow when the user or assigned task requests
+    it. Keep intermediate work and expert discussion in the workflow channel;
+    send it to a group only when explicitly requested. If a run stalls or fails,
+    check its status and report before starting again; do not restart repeatedly.
 
     Args:
         question: the question to discuss, or the task to carry out

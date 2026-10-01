@@ -8,7 +8,7 @@
 
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class SystemTriggerAttachment(BaseModel):
@@ -45,3 +45,4 @@ class SystemTriggerRequest(BaseModel):
     inbox_source_label: str = ""
     inbox_summary: str = ""
     drain_inbox: bool = False
+    groups: list[dict] = Field(default_factory=list)

@@ -99,7 +99,11 @@ def _msg_tokens(msg: BaseMessage) -> int:
                 total += _approx_tokens(part.get("text", ""))
     else:
         total = _approx_tokens(str(content))
-    return total + _tool_calls_tokens(msg)
+    delta = getattr(msg, "additional_kwargs", {}).get("framework_runtime_delta")
+    # This metadata is injected into the actual provider request, even
+    # though history APIs keep the message content free of framework state.
+    runtime_tokens = _approx_tokens(delta) if isinstance(delta, str) and delta else 0
+    return total + _tool_calls_tokens(msg) + runtime_tokens
 
 
 def _total_tokens(messages: list[BaseMessage]) -> int:

@@ -61,6 +61,7 @@ class WebotRuntime(Runtime):
         req = SystemTriggerRequest(
             user_id=agent.owner, session_id=agent.agent_id, text=text, attachments=list(msg.attachments) or None,
             response_format=response_format, llm_override=agent.config.get("llm") or None, wait_reply=True,
+            groups=context.get("groups") or [],
             **_fields(mode, enabled_tools),
         )
         turn = asyncio.ensure_future(self.system.run(req))
@@ -87,6 +88,7 @@ class WebotRuntime(Runtime):
             text=f"{msg.text}\n\n{msg.instructions}" if msg.instructions else msg.text,
             attachments=list(msg.attachments) or None,
             coalesce_key=coalesce_key or "",
+            groups=context.get("groups") or [],
             **_fields(mode, None),
         ))
         return DeliveryReceipt(accepted=True)
@@ -102,6 +104,7 @@ class WebotRuntime(Runtime):
             inbox_source_user=str(context.get("source_user") or ""),
             inbox_source_label=str(context.get("source_label") or ""),
             attachments=list(msg.attachments) or None,
+            groups=context.get("groups") or [],
         ))
         return DeliveryReceipt(accepted=True)
 

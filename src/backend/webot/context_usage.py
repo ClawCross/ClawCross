@@ -121,3 +121,18 @@ def scale_components(components: dict[str, int], total: int) -> dict[str, int]:
     for key in sorted(shares, key=lambda k: shares[k] - scaled[k], reverse=True)[:leftover]:
         scaled[key] += 1
     return scaled
+
+
+def validate_context_capacity(*, system_prompt: str, tools: list[dict],
+                              messages: list[BaseMessage], context_window: int,
+                              output_reserve: int) -> int:
+    """Reject a request that remains too large after safe history compaction."""
+    estimate = sum(estimate_context_components(system_prompt=system_prompt, tools=tools,
+                   runtime_state="", messages=messages).values())
+    if estimate + output_reserve > context_window:
+        raise ValueError(
+            f"本轮输入约 {estimate} tokens，另需预留 {output_reserve} 输出 tokens，"
+            f"超过配置的上下文窗口 {context_window}。请缩短输入、拆分附件或调整上下文设置；"
+            "原始会话记录已保留。"
+        )
+    return estimate

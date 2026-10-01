@@ -19,7 +19,7 @@ from webot.checkpoint_repository import (
     save_context_usage_record,
 )
 from webot.compression import _summary_to_message
-from webot.context_usage import count_tokens, estimate_context_components, scale_components, tool_schemas
+from webot.context_usage import count_tokens, estimate_context_components, scale_components, tool_schemas, validate_context_capacity
 from webot.context import RUNTIME_DELTA_KEY
 
 
@@ -35,6 +35,15 @@ def _bare_agent(db_path: str) -> TeamAgent:
 
 
 class ContextComponentTests(unittest.TestCase):
+    def test_request_capacity_includes_output_reserve_and_preserves_input(self):
+        message = HumanMessage(content='中文输入' * 2000)
+        with self.assertRaisesRegex(ValueError, '上下文窗口'):
+            validate_context_capacity(system_prompt='system', tools=[], messages=[message],
+                context_window=4096, output_reserve=2048)
+        self.assertEqual(message.content, '中文输入' * 2000)
+        self.assertGreater(validate_context_capacity(system_prompt='system', tools=[], messages=[message],
+            context_window=32000, output_reserve=2048), 0)
+
     def test_scaled_parts_sum_to_api_total(self):
         scaled = scale_components({"system_prompt": 1, "tools": 1, "messages": 1, "summary": 0}, 100)
         self.assertEqual(sum(scaled.values()), 100)

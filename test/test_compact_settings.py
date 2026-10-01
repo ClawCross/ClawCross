@@ -93,3 +93,30 @@ class CompactSettingsTests(unittest.TestCase):
             self.assertLessEqual(c.estimate_messages_tokens(payload), 1600)
         self.assertEqual(summarize.stats["fallback_count"], 0)
 
+    def test_runtime_deltas_count_towards_history_budget(self):
+        message = HumanMessage(content="short", additional_kwargs={"framework_runtime_delta": "中" * 1000})
+        self.assertGreaterEqual(c.estimate_messages_tokens([message]), 1000)
+
+    def test_rebased_state_counts_full_snapshot_without_mutating_history(self):
+        message = HumanMessage(content="short", additional_kwargs={
+            "framework_runtime_state": "中" * 1000, "framework_runtime_delta": "+ changed"})
+        rebased = c._rebase_runtime_view([message])
+        self.assertGreaterEqual(c.estimate_messages_tokens(rebased), 1000)
+        self.assertEqual(message.additional_kwargs["framework_runtime_delta"], "+ changed")
+
+    def test_summary_cap_applies_without_runtime_settings(self):
+        result = c.apply_compression(user_id="alice", session_id="s", messages=self.messages,
+            history_token_budget=6000, checkpoint_store_path=self.path, preserve_recent=4,
+            summarizer=lambda *a: "中" * 4000)
+        self.assertTrue(result.triggered)
+        self.assertLessEqual(c._approx_tokens(result.view[0].content), result.metadata["target_tokens"] // 3)
+
+    def test_mechanical_fallback_retains_latest_decision_within_char_cap(self):
+        segment = [HumanMessage(content='old ' + 'x' * 1000) for _ in range(10)]
+        segment.append(HumanMessage(content='newest decision: KEEP THIS'))
+        summary = c._mechanical_summarizer('previous ' + 'y' * 2000, segment, 800)
+        self.assertLessEqual(len(summary), 800)
+        self.assertIn('KEEP THIS', summary)
+
+    def test_small_summary_token_cap_is_still_enforced(self):
+        self.assertLessEqual(c._approx_tokens(c._cap_summary_tokens('中' * 100, 3)), 3)
