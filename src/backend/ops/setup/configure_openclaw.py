@@ -6,12 +6,12 @@ OpenClaw 自动探测与配置工具。
 API token 等配置，并写入 Clawcross 的 config/.env。
 
 用法:
-    python selfskill/scripts/configure_openclaw.py --auto-detect       # 自动探测并配置（含 workspace 初始化）
-    python selfskill/scripts/configure_openclaw.py --sync-clawcross-llm # 将 Clawcross 当前 LLM 配置回写到 OpenClaw
-    python selfskill/scripts/configure_openclaw.py --status            # 仅显示检测状态
-    python selfskill/scripts/configure_openclaw.py --install-guide     # 输出 OpenClaw 安装/初始化流程
-    python selfskill/scripts/configure_openclaw.py --repair-health     # 检查并修复轻量健康问题
-    python selfskill/scripts/configure_openclaw.py --init-workspace    # 仅初始化 workspace 默认模板
+    python src/backend/ops/setup/configure_openclaw.py --auto-detect       # 自动探测并配置（含 workspace 初始化）
+    python src/backend/ops/setup/configure_openclaw.py --sync-clawcross-llm # 将 Clawcross 当前 LLM 配置回写到 OpenClaw
+    python src/backend/ops/setup/configure_openclaw.py --status            # 仅显示检测状态
+    python src/backend/ops/setup/configure_openclaw.py --install-guide     # 输出 OpenClaw 安装/初始化流程
+    python src/backend/ops/setup/configure_openclaw.py --repair-health     # 检查并修复轻量健康问题
+    python src/backend/ops/setup/configure_openclaw.py --init-workspace    # 仅初始化 workspace 默认模板
 """
 
 import copy
@@ -22,11 +22,12 @@ import shutil
 import socket
 import subprocess
 import sys
+from pathlib import Path
 import time
 
 # 复用 configure.py 的配置写入逻辑
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
+PROJECT_ROOT = str(Path(__file__).resolve().parents[4])
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 from src.backend.common.runtime_paths import ENV_FILE, ensure_runtime_dirs
@@ -298,9 +299,9 @@ def print_install_guide():
     """输出推荐的 OpenClaw 安装与初始化流程。"""
     is_windows = os.name == "nt"
     sync_cmd = (
-        r"powershell -ExecutionPolicy Bypass -File .\selfskill\scripts\run.ps1 check-openclaw"
+        r"powershell -ExecutionPolicy Bypass -File .\launch\run.ps1 check-openclaw"
         if is_windows
-        else "bash selfskill/scripts/run.sh check-openclaw"
+        else "bash launch/run.sh check-openclaw"
     )
 
     # 腾讯内网版安装提示：仅当检测到内网版运行时目录时才显示
@@ -1408,7 +1409,7 @@ def auto_detect_and_configure():
             print("   ⚠️ 无法自动探测 gateway 端口")
             print("   提示: 确保 OpenClaw gateway 正在运行 (openclaw gateway)")
             default_hint_port = INTERNAL_OPENCLAW_GATEWAY_PORT if is_internal_openclaw() else DEFAULT_GATEWAY_PORT
-            print(f"   或手动配置: bash selfskill/scripts/run.sh configure OPENCLAW_API_URL http://127.0.0.1:{default_hint_port}/v1/chat/completions")
+            print(f"   或手动配置: bash launch/run.sh configure OPENCLAW_API_URL http://127.0.0.1:{default_hint_port}/v1/chat/completions")
 
     # 2. 探测 gateway token → OPENCLAW_GATEWAY_TOKEN
     print("\n🔍 探测 Gateway Token...")
@@ -1739,8 +1740,8 @@ CLAWCROSS_BLOCK_END = "<!-- CLAWCROSS AUTO END -->"
 def _clawcross_run_prefix():
     """返回当前平台的 Clawcross 运维脚本前缀。"""
     if os.name == "nt":
-        return "powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1"
-    return "bash selfskill/scripts/run.sh"
+        return "powershell -ExecutionPolicy Bypass -File launch/run.ps1"
+    return "bash launch/run.sh"
 
 
 def _clawcross_openclaw_cmd():
@@ -2085,6 +2086,9 @@ def main():
         sys.exit(1)
 
     cmd = sys.argv[1]
+    if cmd in ("-h", "--help"):
+        print(__doc__)
+        return
 
     if cmd == "--auto-detect":
         auto_detect_and_configure()

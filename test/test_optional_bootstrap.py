@@ -53,7 +53,7 @@ def test_core_setup_only_installs_requirements_when_manifest_changes(tmp_path, m
 def test_read_only_status_does_not_prepare_python_or_download(tmp_path):
     home = tmp_path / "home"
     result = subprocess.run(
-        ["bash", str(ROOT / "selfskill/scripts/run.sh"), "status"],
+        ["bash", str(ROOT / "launch/run.sh"), "status"],
         cwd=ROOT,
         env={**os.environ, "CLAWCROSS_HOME": str(home)},
         text=True,
@@ -82,7 +82,7 @@ def test_setup_uses_uv_even_with_system_python_present(tmp_path):
         'fi\n', encoding="utf-8")
     uv.chmod(0o755)
     result = subprocess.run(
-        ["bash", str(ROOT / "selfskill/scripts/run.sh"), "setup"], cwd=ROOT,
+        ["bash", str(ROOT / "launch/run.sh"), "setup"], cwd=ROOT,
         env={**os.environ, "CLAWCROSS_HOME": str(home), "PATH": str(fake_bin) + os.pathsep + os.environ["PATH"],
              "FAKE_UV_LOG": str(log), "FAKE_PYTHON": sys.executable},
         text=True, capture_output=True, check=False)

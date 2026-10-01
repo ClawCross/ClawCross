@@ -76,7 +76,7 @@ OASIS_BASE = f"http://127.0.0.1:{PORT_OASIS}"
 FRONT_BASE = f"http://127.0.0.1:{PORT_FRONTEND}"
 
 def _default_user() -> str:
-    """Resolve the CLI user the same way clawcross_cli does.
+    """Resolve the CLI user the same way src.cli.commands does.
 
     CLAW_USER / CLI_USER env > first user in users.json > first non-empty user
     directory > "admin". A fixed "admin" default made group commands act as a
@@ -2541,7 +2541,7 @@ def cmd_status(args):
     else:
         print(f"\n  ⚠️  API Key 未配置 → 内部 Agent (Internal Agent) 无法使用！")
         print(f"     Clawcross 轻量级 Agent 需要 LLM_API_KEY 才能工作")
-        print("     请运行 bash selfskill/scripts/run.sh configure LLM_API_KEY <key> 或手动编辑 config/.env")
+        print("     请运行 bash launch/run.sh configure LLM_API_KEY <key> 或手动编辑 config/.env")
         print(f"\n  💡 即使没有 API Key，仍可使用以下外部 Agent 平台:")
         print(f"     openclaw / codex / claude (claude-code) / gemini (gemini-cli) / aider")
 
@@ -2602,7 +2602,7 @@ def cmd_status(args):
         print(f"     模型: {llm_model}  Base URL: {llm_base_url}")
     else:
         print(f"  ❌ Clawcross 轻量级 Agent：不可用 (未配置 LLM_API_KEY)")
-        print("     → 设置方法: bash selfskill/scripts/run.sh configure LLM_API_KEY <key>")
+        print("     → 设置方法: bash launch/run.sh configure LLM_API_KEY <key>")
 
     if available_platforms:
         print(f"\n  ✅ 可用的外部 Agent 平台 ({len(available_platforms)} 个):")
@@ -2622,7 +2622,7 @@ def cmd_status(args):
 
 def cmd_channel(args):
     """Channel setup/status command."""
-    from clawcross_cli.channel_cmd import handle_channel_command
+    from src.cli.commands.channel_cmd import handle_channel_command
 
     output = handle_channel_command(
         getattr(args, "channel_args", []) or [],

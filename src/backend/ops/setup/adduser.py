@@ -3,7 +3,7 @@
 非交互式用户创建工具。供外部 agent 调用。
 
 用法:
-    python selfskill/scripts/adduser.py <username> <password>
+    python src/backend/ops/setup/adduser.py <username> <password>
 
 如果用户已存在则更新密码，否则新增。
 """
@@ -11,9 +11,10 @@ import hashlib
 import json
 import os
 import sys
+from pathlib import Path
 
 # 项目根目录路径
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PROJECT_ROOT = str(Path(__file__).resolve().parents[4])
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 from src.backend.common.runtime_paths import USERS_FILE, ensure_runtime_dirs
@@ -31,7 +32,7 @@ def main():
     """主函数：创建或更新用户。"""
     # 检查命令行参数数量
     if len(sys.argv) != 3:
-        print("用法: python skill/scripts/adduser.py <username> <password>", file=sys.stderr)
+        print("用法: python src/backend/ops/setup/adduser.py <username> <password>", file=sys.stderr)
         sys.exit(1)
 
     username, password = sys.argv[1], sys.argv[2]

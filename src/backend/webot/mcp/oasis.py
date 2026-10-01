@@ -1355,7 +1355,7 @@ async def get_publicnet_info() -> str:
             lines.append(f"   PID: {tunnel.get('pid')}")
         else:
             lines.append("🌐 公网隧道: ❌ 未运行")
-            lines.append("   💡 可通过 selfskill/scripts/run.sh start-tunnel 启动")
+            lines.append("   💡 可通过 launch/run.sh start-tunnel 启动")
             lines.append("   💡 或在前端 Settings 面板中点击「启动隧道」")
 
         # Ports

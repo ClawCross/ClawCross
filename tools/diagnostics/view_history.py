@@ -1,6 +1,6 @@
 """
 查看 Agent checkpoint 历史聊天记录。
-用法: python tools/manual/view_history.py [--user USER_ID] [--limit N]
+用法: python tools/diagnostics/view_history.py [--user USER_ID] [--limit N]
 """
 
 import argparse

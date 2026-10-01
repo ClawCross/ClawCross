@@ -2,7 +2,7 @@
 # Bootstrap uv and Python, then pass every command to the Python controller.
 set -eo pipefail
 
-PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export PROJECT_ROOT
 if [ "$#" -eq 0 ]; then set -- help; fi
 if [ "$1" = dev ]; then

@@ -10,8 +10,8 @@ const path = require("node:path");
 const root = path.resolve(__dirname, "..");
 const script = path.join(root, "src", "cli", "clawcross.py");
 const runScript = process.platform === "win32"
-  ? path.join(root, "selfskill", "scripts", "run.ps1")
-  : path.join(root, "selfskill", "scripts", "run.sh");
+  ? path.join(root, "launch", "run.ps1")
+  : path.join(root, "launch", "run.sh");
 const packageJsonPath = path.join(root, "package.json");
 
 const runCommands = new Set([

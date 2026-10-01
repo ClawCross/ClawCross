@@ -86,22 +86,22 @@ powershell -ExecutionPolicy Bypass -File .\run.ps1 stop
 
 **说明**
 
-- `run.sh` / `run.ps1` 是项目根目录下的转发入口，实际仍调用 `selfskill/scripts/` 里的正式脚本。
+- `run.sh` / `run.ps1` 是项目根目录下的转发入口，实际仍调用 `launch/` 里的正式脚本。
 - `start` 自动准备 Python 3.11、虚拟环境、核心依赖、`.env` 和服务。acpx、NoneBot、WeClaw、cloudflared 等外部集成需显式执行 `install-component`；具体命令见 [SKILL.md](./SKILL.md)。
 - 如果 `LLM_MODEL` 为空，启动现在会提前停止并提示你先配置，而不是拉起一个看似在线但 Agent 不工作的服务。
 
 **原有完整路径命令仍然可用**
 
 ```bash
-bash selfskill/scripts/run.sh start
-bash selfskill/scripts/run.sh status
-bash selfskill/scripts/run.sh stop
+bash launch/run.sh start
+bash launch/run.sh status
+bash launch/run.sh stop
 ```
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\selfskill\scripts\run.ps1 start
-powershell -ExecutionPolicy Bypass -File .\selfskill\scripts\run.ps1 status
-powershell -ExecutionPolicy Bypass -File .\selfskill\scripts\run.ps1 stop
+powershell -ExecutionPolicy Bypass -File .\launch\run.ps1 start
+powershell -ExecutionPolicy Bypass -File .\launch\run.ps1 status
+powershell -ExecutionPolicy Bypass -File .\launch\run.ps1 stop
 ```
 
 </details>

@@ -102,3 +102,6 @@ data/debug_llm_payload_last.json
 
 # LangGraph 把 ":memory:" 当路径写出的残留 SQLite（不应入库）
 :memory:/
+
+# Local pytest cache
+.pytest_cache/

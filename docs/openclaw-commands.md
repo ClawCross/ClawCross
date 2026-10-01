@@ -2,14 +2,14 @@
 
 ## Clawcross 启动时会做什么
 
-普通 `start` 不检测 OpenClaw。仅在显式运行 `bash selfskill/scripts/run.sh start --with-openclaw`（PowerShell 对应命令同理）时，才会在拉起 Clawcross 服务前做一轮 runtime 预热：
+普通 `start` 不检测 OpenClaw。仅在显式运行 `bash launch/run.sh start --with-openclaw`（PowerShell 对应命令同理）时，才会在拉起 Clawcross 服务前做一轮 runtime 预热：
 
 - 尝试启动 OpenClaw gateway
 - 确保 `gateway.http.endpoints.chatCompletions.enabled=true`
 - 刷新 `OPENCLAW_API_URL`、`OPENCLAW_GATEWAY_TOKEN`、`OPENCLAW_SESSIONS_FILE`
 - 轻量修复缺失 transcript 的 sessions 坏索引
 
-如果 Clawcross 尚未配置真实的 API Key，`--with-openclaw` 也允许从现有 OpenClaw 配置导入 LLM 信息；已有真实 Key 不会被覆盖。也可以在首次登录向导中手动导入，或显式运行 `bash selfskill/scripts/run.sh import-openclaw-llm`。
+如果 Clawcross 尚未配置真实的 API Key，`--with-openclaw` 也允许从现有 OpenClaw 配置导入 LLM 信息；已有真实 Key 不会被覆盖。也可以在首次登录向导中手动导入，或显式运行 `bash launch/run.sh import-openclaw-llm`。
 
 ## Web 入口
 
@@ -30,7 +30,7 @@
 已有的导入路径仍然有效：
 
 - 首次登录向导中的 `🦞 从 OpenClaw 导入`
-- `bash selfskill/scripts/run.sh import-openclaw-llm`（Windows：`run.ps1 import-openclaw-llm`）
+- `bash launch/run.sh import-openclaw-llm`（Windows：`run.ps1 import-openclaw-llm`）
 
 导入动作会读取已安装的 OpenClaw 配置，并写回 Clawcross 的 `config/.env`。`check-openclaw` 仅报告状态。
 
@@ -39,11 +39,11 @@
 现在也支持把 Clawcross 当前 LLM 配置反向写回 OpenClaw 默认模型：
 
 ```bash
-bash selfskill/scripts/run.sh sync-openclaw-llm
+bash launch/run.sh sync-openclaw-llm
 ```
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\selfskill\scripts\run.ps1 sync-openclaw-llm
+powershell -ExecutionPolicy Bypass -File .\launch\run.ps1 sync-openclaw-llm
 ```
 
 同步内容包括：
@@ -57,7 +57,7 @@ powershell -ExecutionPolicy Bypass -File .\selfskill\scripts\run.ps1 sync-opencl
 
 ### 自动同步触发规则
 
-`selfskill/scripts/configure.py` 现在会在 OpenClaw 已安装、且 Clawcross LLM 配置完整时尝试自动同步，但只在“足够安全”的情况下触发：
+`src/backend/ops/setup/configure.py` 现在会在 OpenClaw 已安装、且 Clawcross LLM 配置完整时尝试自动同步，但只在“足够安全”的情况下触发：
 
 - 更新了 `LLM_MODEL` 或 `LLM_PROVIDER`
 - 或者一次批量更新了 `LLM_API_KEY + LLM_BASE_URL + LLM_MODEL`
@@ -137,12 +137,12 @@ uv run src/cli/cli.py openclaw bindings --agent main
 #### Clawcross 侧
 
 ```bash
-bash selfskill/scripts/run.sh configure --batch \
+bash launch/run.sh configure --batch \
   LLM_API_KEY=<deepseek_key> \
   LLM_BASE_URL=https://api.deepseek.com \
   LLM_MODEL=deepseek-chat \
   LLM_PROVIDER=deepseek
-bash selfskill/scripts/run.sh stop && bash selfskill/scripts/run.sh start
+bash launch/run.sh stop && bash launch/run.sh start
 ```
 
 #### OpenClaw 侧
@@ -216,12 +216,12 @@ curl -s http://127.0.0.1:8045/v1/models | head -c 200
 #### Clawcross 侧
 
 ```bash
-bash selfskill/scripts/run.sh configure --batch \
+bash launch/run.sh configure --batch \
   LLM_API_KEY=sk-antigravity \
   LLM_BASE_URL=http://127.0.0.1:8045 \
   LLM_MODEL=gemini-3.1-pro \
   LLM_PROVIDER=antigravity
-bash selfskill/scripts/run.sh stop && bash selfskill/scripts/run.sh start
+bash launch/run.sh stop && bash launch/run.sh start
 ```
 
 #### OpenClaw 侧
@@ -314,12 +314,12 @@ Antigravity 常用推荐模型（均通过 Google One Pro 会员免费使用）�
 #### Clawcross 侧
 
 ```bash
-bash selfskill/scripts/run.sh configure --batch \
+bash launch/run.sh configure --batch \
   LLM_API_KEY=<minimax_api_key> \
   LLM_BASE_URL=https://api.minimaxi.com \
   LLM_MODEL=MiniMax-M2.7 \
   LLM_PROVIDER=minimax
-bash selfskill/scripts/run.sh stop && bash selfskill/scripts/run.sh start
+bash launch/run.sh stop && bash launch/run.sh start
 ```
 
 #### OpenClaw 侧
@@ -408,7 +408,7 @@ MiniMax 当前可用模型：
 更稳的验证方式：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1 status
+powershell -ExecutionPolicy Bypass -File launch/run.ps1 status
 ```
 
 或者在仓库环境里直接验证 `llm_factory`：

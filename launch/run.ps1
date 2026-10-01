@@ -5,7 +5,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+$projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 if ($Command -eq "dev") {
     $env:CLAWCROSS_HOME = Join-Path $projectRoot ".clawcross-dev"
     $Command = "start"

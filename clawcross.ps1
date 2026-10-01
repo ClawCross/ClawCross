@@ -6,5 +6,5 @@ param(
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
-& (Join-Path $root "selfskill\scripts\run.ps1") clawcross @Args
+& (Join-Path $root "launch\run.ps1") clawcross @Args
 exit $LASTEXITCODE

@@ -86,22 +86,22 @@ powershell -ExecutionPolicy Bypass -File .\run.ps1 stop
 
 **Notes**
 
-- `run.sh` / `run.ps1` are root-level wrappers around the canonical scripts under `selfskill/scripts/`.
+- `run.sh` / `run.ps1` are root-level wrappers around the canonical scripts under `launch/`.
 - `start` prepares Python 3.11, a virtual environment, core dependencies, `.env`, and services. Use `install-component` only for optional integrations; see [SKILL.md](./SKILL.md).
 - If `LLM_MODEL` is missing, the web UI still starts; configure a model in the first-login wizard before sending LLM requests. Set `CLAWCROSS_REQUIRE_LLM_MODEL=1` to make startup strict.
 
-**Legacy full-path commands still work**
+**Canonical launch commands**
 
 ```bash
-bash selfskill/scripts/run.sh start
-bash selfskill/scripts/run.sh status
-bash selfskill/scripts/run.sh stop
+bash launch/run.sh start
+bash launch/run.sh status
+bash launch/run.sh stop
 ```
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\selfskill\scripts\run.ps1 start
-powershell -ExecutionPolicy Bypass -File .\selfskill\scripts\run.ps1 status
-powershell -ExecutionPolicy Bypass -File .\selfskill\scripts\run.ps1 stop
+powershell -ExecutionPolicy Bypass -File .\launch\run.ps1 start
+powershell -ExecutionPolicy Bypass -File .\launch\run.ps1 status
+powershell -ExecutionPolicy Bypass -File .\launch\run.ps1 stop
 ```
 
 </details>

@@ -346,7 +346,7 @@ def create_chat_model(
         _project_root = str(PROJECT_ROOT)
         if _project_root not in _sys.path:
             _sys.path.insert(0, _project_root)
-        from clawcross_cli.runtime_provider import resolve_active_profile
+        from src.cli.commands.runtime_provider import resolve_active_profile
 
         resolve_active_profile()
     except Exception:
@@ -364,7 +364,7 @@ def create_chat_model(
     if not model:
         raise ValueError(
             "LLM_MODEL is not configured. Set it in config/.env, or run "
-            "selfskill/scripts/configure.py --auto-model and then configure LLM_MODEL <model>."
+            "src/backend/ops/setup/configure.py --auto-model and then configure LLM_MODEL <model>."
         )
 
     supports_temp = _model_supports_temperature(model)

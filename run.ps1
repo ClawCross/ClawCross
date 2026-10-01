@@ -7,7 +7,7 @@ param(
 )
 
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$target = Join-Path $scriptRoot "selfskill\scripts\run.ps1"
+$target = Join-Path $scriptRoot "launch\run.ps1"
 
 & $target $Command @Rest
 exit $LASTEXITCODE

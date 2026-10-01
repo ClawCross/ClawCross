@@ -3,24 +3,25 @@
 非交互式 .env 配置工具。供外部 agent 调用。
 
 用法:
-    python selfskill/scripts/configure.py <KEY> <VALUE>          # 设置单个配置项
-    python selfskill/scripts/configure.py --show                 # 显示当前配置（隐藏敏感值）
-    python selfskill/scripts/configure.py --show-raw             # 显示当前配置（含原始值）
-    python selfskill/scripts/configure.py --init                 # 从 .env.example 初始化 .env（不覆盖已有）
-    python selfskill/scripts/configure.py --batch K1=V1 K2=V2    # 批量设置
-    python selfskill/scripts/configure.py --auto-model           # 查询 API 可用模型列表（供 agent 选择）
+    python src/backend/ops/setup/configure.py <KEY> <VALUE>          # 设置单个配置项
+    python src/backend/ops/setup/configure.py --show                 # 显示当前配置（隐藏敏感值）
+    python src/backend/ops/setup/configure.py --show-raw             # 显示当前配置（含原始值）
+    python src/backend/ops/setup/configure.py --init                 # 从 .env.example 初始化 .env（不覆盖已有）
+    python src/backend/ops/setup/configure.py --batch K1=V1 K2=V2    # 批量设置
+    python src/backend/ops/setup/configure.py --auto-model           # 查询 API 可用模型列表（供 agent 选择）
 
 示例:
-    python skill/scripts/configure.py LLM_API_KEY sk-xxxx
-    python skill/scripts/configure.py LLM_BASE_URL https://api.deepseek.com
-    python skill/scripts/configure.py LLM_MODEL deepseek-chat
-    python skill/scripts/configure.py --batch LLM_API_KEY=sk-xxx LLM_BASE_URL=https://api.deepseek.com LLM_MODEL=deepseek-chat
-    python skill/scripts/configure.py --auto-model
+    python src/backend/ops/setup/configure.py LLM_API_KEY sk-xxxx
+    python src/backend/ops/setup/configure.py LLM_BASE_URL https://api.deepseek.com
+    python src/backend/ops/setup/configure.py LLM_MODEL deepseek-chat
+    python src/backend/ops/setup/configure.py --batch LLM_API_KEY=sk-xxx LLM_BASE_URL=https://api.deepseek.com LLM_MODEL=deepseek-chat
+    python src/backend/ops/setup/configure.py --auto-model
 """
 import os
 import re
 import subprocess
 import sys
+from pathlib import Path
 import shutil
 
 os.environ.setdefault("PYTHONUTF8", "1")
@@ -33,7 +34,7 @@ for stream_name in ("stdout", "stderr"):
         except Exception:
             pass
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PROJECT_ROOT = str(Path(__file__).resolve().parents[4])
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 from src.backend.common.runtime_paths import ENV_FILE, env_template_path, ensure_runtime_dirs
@@ -75,8 +76,8 @@ VALID_KEYS = {
 def get_run_command():
     """返回当前平台建议使用的 Clawcross 入口命令。"""
     if os.name == "nt":
-        return "powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1"
-    return "bash selfskill/scripts/run.sh"
+        return "powershell -ExecutionPolicy Bypass -File launch/run.ps1"
+    return "bash launch/run.sh"
 
 
 def validate_key(key):
@@ -189,8 +190,8 @@ LLM_API_KEY=your_api_key_here
 LLM_BASE_URL=https://api.deepseek.com
 # LLM_MODEL 为必填项。请填写你要实际使用的模型名。
 # 如果暂时不知道模型名，先配置 LLM_API_KEY / LLM_BASE_URL，然后运行：
-#   Linux/macOS: bash selfskill/scripts/run.sh auto-model
-#   Windows PowerShell: powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1 auto-model
+#   Linux/macOS: bash launch/run.sh auto-model
+#   Windows PowerShell: powershell -ExecutionPolicy Bypass -File launch/run.ps1 auto-model
 LLM_MODEL=
 # LLM_PROVIDER: 可选，显式指定模型厂商（google / anthropic / deepseek / openai / antigravity / minimax）
 # 不设置时根据模型名自动推断（gemini→google, claude→anthropic, deepseek→deepseek），
@@ -515,6 +516,9 @@ def main():
         sys.exit(1)
 
     cmd = sys.argv[1]
+    if cmd in ("-h", "--help"):
+        print(__doc__)
+        return
 
     if cmd == "--show":
         show_env(raw=False)

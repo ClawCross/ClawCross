@@ -32,7 +32,7 @@ _TRANSPORT = ("external",)
 # The runtimes, which live in the Agent service only; other processes (OASIS, the
 # scheduler, the channels, the web front, the CLI) reach agents over its entrances (agents.client).
 _RUNTIMES = ("agents.gateway", "external", "webot.driver")
-_OTHER_PROCESSES = ("src/backend/oasis", "src/backend/channels", "src/frontend", "src/cli", "launch", "clawcross_cli")
+_OTHER_PROCESSES = ("src/backend/oasis", "src/backend/channels", "src/frontend", "src/cli", "launch")
 _OTHER_PROCESS_FILES = ("src/backend/scheduler/service.py",)
 
 
@@ -95,7 +95,7 @@ class TestLayering(unittest.TestCase):
 
     def test_no_new_direct_transport_callers(self):
         callers = set()
-        for path in _python_files("src", "launch", "clawcross_cli"):
+        for path in _python_files("src", "launch"):
             rel = str(path.relative_to(PROJECT_ROOT))
             if rel.startswith(("src/backend/agents/", "src/backend/external/")):
                 continue

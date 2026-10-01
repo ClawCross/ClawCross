@@ -27,10 +27,10 @@ This `SKILL.md` is now **self-evolving**. When you hit a real execution failure 
 
 ```bash
 # Linux / macOS
-bash selfskill/scripts/run.sh evolve-skill --skill SKILL.md --command "pytest test/test_skill_evolution.py" --strategy harden
+bash launch/run.sh evolve-skill --skill SKILL.md --command "pytest test/test_skill_evolution.py" --strategy harden
 
 # Windows PowerShell
-powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1 evolve-skill --skill SKILL.md --command "pytest test/test_skill_evolution.py" --strategy harden
+powershell -ExecutionPolicy Bypass -File launch/run.ps1 evolve-skill --skill SKILL.md --command "pytest test/test_skill_evolution.py" --strategy harden
 ```
 
 Rules:
@@ -61,11 +61,11 @@ The simplest path is `start`. It creates the runtime `.env` when needed. An empt
 
 ```bash
 # Linux / macOS
-bash selfskill/scripts/run.sh start          # 准备 Python/venv/核心依赖，初始化 .env，启动服务
+bash launch/run.sh start          # 准备 Python/venv/核心依赖，初始化 .env，启动服务
 # Optional flags (same semantics as Windows run.ps1):
 #   --tunnel         Use an already installed cloudflared binary for a public tunnel.
 #   --with-openclaw  Detect and warm an existing OpenClaw installation; allow LLM import.
-bash selfskill/scripts/run.sh start --tunnel --with-openclaw   # explicit integrations
+bash launch/run.sh start --tunnel --with-openclaw   # explicit integrations
 # → Open http://127.0.0.1:51209 (or use the printed Magic link; remote/HTTPS needs the remote link)
 # → First login: Magic link or passwordless localhost
 # → Setup wizard appears if LLM is not yet configured in Clawcross
@@ -73,9 +73,9 @@ bash selfskill/scripts/run.sh start --tunnel --with-openclaw   # explicit integr
 
 ```powershell
 # Windows PowerShell（入口脚本只负责准备 Python；后续交给共享 Python 控制器）
-powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1 start
+powershell -ExecutionPolicy Bypass -File launch/run.ps1 start
 # The same opt-in flags work on Windows. Foreground mode does not start a tunnel.
-powershell -ExecutionPolicy Bypass -File .\selfskill\scripts\run.ps1 start --tunnel --with-openclaw
+powershell -ExecutionPolicy Bypass -File .\launch\run.ps1 start --tunnel --with-openclaw
 ```
 
 The `setup` command (optional standalone) automatically:
@@ -87,16 +87,16 @@ The `setup` command (optional standalone) automatically:
 Install external integrations explicitly, only when the feature is needed:
 
 ```bash
-bash selfskill/scripts/run.sh components
-bash selfskill/scripts/run.sh install-component acpx
-bash selfskill/scripts/run.sh install-component nonebot --adapter telegram
-bash selfskill/scripts/run.sh install-component channels
-bash selfskill/scripts/run.sh install-component weclaw
-bash selfskill/scripts/run.sh install-component cloudflared
-bash selfskill/scripts/run.sh install-component srt          # optional command sandbox
+bash launch/run.sh components
+bash launch/run.sh install-component acpx
+bash launch/run.sh install-component nonebot --adapter telegram
+bash launch/run.sh install-component channels
+bash launch/run.sh install-component weclaw
+bash launch/run.sh install-component cloudflared
+bash launch/run.sh install-component srt          # optional command sandbox
 ```
 
-Use the same subcommands with `selfskill/scripts/run.ps1` on Windows. `channels` installs legacy QQ/Telegram and media packages; NoneBot adapters are installed separately. `acpx`, WeClaw, and cloudflared are placed under `CLAWCROSS_BIN_DIR` when installed through this interface. `start` may use a cloudflared binary already present on the machine, but never downloads it.
+Use the same subcommands with `launch/run.ps1` on Windows. `channels` installs legacy QQ/Telegram and media packages; NoneBot adapters are installed separately. `acpx`, WeClaw, and cloudflared are placed under `CLAWCROSS_BIN_DIR` when installed through this interface. `start` may use a cloudflared binary already present on the machine, but never downloads it.
 SRT is also explicit and stays off until a session selects `command_sandbox=srt`. On Linux it needs `bwrap`, `socat`, and `rg`; on macOS it needs `rg`. Windows additionally requires the separately elevated `srt windows-install` setup.
 
 The `start` command automatically:
@@ -161,8 +161,8 @@ If the user explicitly wants OpenClaw integration and it is missing, use this fl
    - OpenClaw dashboard / Control UI: `http://127.0.0.1:18789/`
    - OpenClaw OpenAI-compatible HTTP API: `http://127.0.0.1:18789/v1/chat/completions`
 7. Check the installed OpenClaw integration without installing plugins:
-   - Linux / macOS: `bash selfskill/scripts/run.sh check-openclaw`
-   - Windows: `powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1 check-openclaw`
+   - Linux / macOS: `bash launch/run.sh check-openclaw`
+   - Windows: `powershell -ExecutionPolicy Bypass -File launch/run.ps1 check-openclaw`
    Importing OpenClaw LLM settings is a separate, explicit action through the first-login wizard or `run.sh import-openclaw-llm` (PowerShell: `run.ps1 import-openclaw-llm`).
 8. If the OpenClaw dashboard shows `gateway token missing`, either:
    - paste `OPENCLAW_GATEWAY_TOKEN` into Control UI settings, or
@@ -200,7 +200,7 @@ openclaw.cmd gateway restart
 5. After QR login succeeds, bind the Weixin account:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1 bind-openclaw-channel main openclaw-weixin:<account_id>
+powershell -ExecutionPolicy Bypass -File launch/run.ps1 bind-openclaw-channel main openclaw-weixin:<account_id>
 ```
 
 Or via Clawcross CLI:
@@ -218,12 +218,12 @@ uv run src/cli/cli.py openclaw bind --data '{"agent":"main","channel":"openclaw-
 
 Clawcross communicates with external AI coding agents via **acpx** (ACP exchange). Install `acpx` explicitly when you need ACP agents. Each tool below is an independent CLI agent that acpx can bridge — install only the ones the user wants.
 
-**Prerequisite for all:** `acpx` must be installed with `bash selfskill/scripts/run.sh install-component acpx` (Windows: `run.ps1 install-component acpx`). This installs it under the ClawCross runtime directory rather than globally.
+**Prerequisite for all:** `acpx` must be installed with `bash launch/run.sh install-component acpx` (Windows: `run.ps1 install-component acpx`). This installs it under the ClawCross runtime directory rather than globally.
 
 After installing any tool below, **restart Clawcross** so the switcher bar picks it up. Verify with:
 
 ```bash
-bash selfskill/scripts/run.sh components  # includes acpx availability
+bash launch/run.sh components  # includes acpx availability
 # or in browser: the switcher bar in ClawCross Studio shows available ACP tabs
 ```
 
@@ -390,24 +390,24 @@ For users who prefer CLI over the web UI, or for automation scripts:
 
 ```bash
 # Linux / macOS
-bash selfskill/scripts/run.sh configure LLM_API_KEY sk-xxx
-bash selfskill/scripts/run.sh configure LLM_BASE_URL https://api.example.com
-bash selfskill/scripts/run.sh auto-model
-bash selfskill/scripts/run.sh configure LLM_MODEL <model>
+bash launch/run.sh configure LLM_API_KEY sk-xxx
+bash launch/run.sh configure LLM_BASE_URL https://api.example.com
+bash launch/run.sh auto-model
+bash launch/run.sh configure LLM_MODEL <model>
 ```
 
 ```powershell
 # Windows PowerShell
-powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1 configure LLM_API_KEY sk-xxx
-powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1 configure LLM_BASE_URL https://api.example.com
-powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1 auto-model
-powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1 configure LLM_MODEL <model>
+powershell -ExecutionPolicy Bypass -File launch/run.ps1 configure LLM_API_KEY sk-xxx
+powershell -ExecutionPolicy Bypass -File launch/run.ps1 configure LLM_BASE_URL https://api.example.com
+powershell -ExecutionPolicy Bypass -File launch/run.ps1 auto-model
+powershell -ExecutionPolicy Bypass -File launch/run.ps1 configure LLM_MODEL <model>
 ```
 
 Reverse sync to OpenClaw:
 
 ```bash
-bash selfskill/scripts/run.sh sync-openclaw-llm
+bash launch/run.sh sync-openclaw-llm
 ```
 
 `configure` auto-syncs safe LLM updates when the Clawcross config is complete. Partial edits intentionally stop short of rewriting OpenClaw.
@@ -463,7 +463,7 @@ After `start`, these services should come up:
 
 Useful checks:
 
-- `bash selfskill/scripts/run.sh status` / `run.ps1 status`
+- `bash launch/run.sh status` / `run.ps1 status`
 - `GET http://127.0.0.1:<PORT_AGENT>/v1/models`
 - Open `http://127.0.0.1:<PORT_FRONTEND>`
 
@@ -483,9 +483,9 @@ Notes:
 ### Runtime
 
 ```bash
-bash selfskill/scripts/run.sh status
-bash selfskill/scripts/run.sh stop
-bash selfskill/scripts/run.sh configure --show
+bash launch/run.sh status
+bash launch/run.sh stop
+bash launch/run.sh configure --show
 ```
 
 **Magic link** (local + remote when Tunnel is ready) is printed by **`run.sh` / `run.ps1`** after `start` (once Tunnel has run), and again by **`status`**, **`tunnel-status`**, and **`start-tunnel`** — each uses `cli.py token generate` so the HMAC token is correct. It is **not** part of `uv run src/cli/cli.py status`. Those commands also print a line **directed at AI assistants** asking them to copy the URLs into the user reply.
@@ -493,9 +493,9 @@ bash selfskill/scripts/run.sh configure --show
 **Magic link user id** defaults to **`default`** (the `user_id` in `?user=` and in `token generate -u`). To generate links for another user, set **`CLAWCROSS_MAGIC_LINK_USER`** before running the script (Linux/macOS: `export CLAWCROSS_MAGIC_LINK_USER=admin`). Note: CLI chat defaults to `admin` for `-u`; magic link scripts intentionally used `default` unless you override.
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1 status
-powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1 stop
-powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1 configure --show
+powershell -ExecutionPolicy Bypass -File launch/run.ps1 status
+powershell -ExecutionPolicy Bypass -File launch/run.ps1 stop
+powershell -ExecutionPolicy Bypass -File launch/run.ps1 configure --show
 ```
 
 ### CLI
@@ -536,7 +536,7 @@ See [docs/repo-index.md](./docs/repo-index.md) and [docs/example_team.md](./docs
 When a startup/test/CLI command fails while following this guide, refresh the managed self-evolution block first:
 
 ```bash
-bash selfskill/scripts/run.sh evolve-skill --skill SKILL.md --command "<failing command>"
+bash launch/run.sh evolve-skill --skill SKILL.md --command "<failing command>"
 ```
 
 ### Python 2 vs Python 3
@@ -547,7 +547,7 @@ On macOS, the system `python` may point to **Python 2.7**. Clawcross requires **
 
 **Fix** (in order of preference):
 
-1. Always use the canonical startup: `bash selfskill/scripts/run.sh start`
+1. Always use the canonical startup: `bash launch/run.sh start`
 2. Activate the venv first: `source .venv/bin/activate && python launch/launcher.py`
 3. Use the venv python directly: `.venv/bin/python launch/launcher.py`
 
@@ -561,7 +561,7 @@ Safety guards: `launcher.py` includes a Python version check and `run.sh` verifi
 
 **Cause**: Non-interactive terminal (agent runners, CI, piped scripts).
 
-**Fix**: Use `selfskill/scripts/run.sh start` (which backgrounds `launcher.py` correctly), or set `WEBOT_HEADLESS=1`.
+**Fix**: Use `launch/run.sh start` (which backgrounds `launcher.py` correctly), or set `WEBOT_HEADLESS=1`.
 
 ### OpenClaw Gateway Warnings
 
@@ -653,7 +653,7 @@ openclaw.cmd channels login --channel openclaw-weixin
 ## Self-Evolution Loop
 
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
-Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `selfskill/scripts/evolve_skill.py`.
+Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
 - Updated at: `2026-09-27T07:09:55.528838+00:00`
 - Strategy: `harden`

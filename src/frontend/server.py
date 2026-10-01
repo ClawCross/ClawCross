@@ -534,7 +534,7 @@ def import_openclaw_config():
         return jsonify({"error": "OpenClaw 未安装", "found": False}), 404
 
     # 复用 configure_openclaw.py 的探测逻辑
-    script_dir = os.path.join(root_dir, "selfskill", "scripts")
+    script_dir = os.path.join(root_dir, "src", "backend", "ops", "setup")
     sys_path_backup = list(sys.path)
     try:
         if script_dir not in sys.path:
@@ -726,7 +726,7 @@ def export_openclaw_config():
             "error": "api_key, base_url and model are required",
         }), 400
 
-    script_dir = os.path.join(root_dir, "selfskill", "scripts")
+    script_dir = os.path.join(root_dir, "src", "backend", "ops", "setup")
     sys_path_backup = list(sys.path)
     try:
         if script_dir not in sys.path:

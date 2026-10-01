@@ -2,6 +2,7 @@
 
 This directory contains launch and environment helpers only:
 
+- `run.sh` / `run.ps1`: platform bootstrap, then hand control to Python.
 - `environment.py`: core environment and explicit optional component installation.
 - `runtime_control.py`: shared cross-platform start, stop, status and tunnel commands.
 - `launcher.py`: service process launcher.
@@ -12,21 +13,21 @@ This directory contains launch and environment helpers only:
 
 Application CLIs live in `src/cli/`, Fleet utilities in `src/backend/fleet/`,
 and monitoring/workflow/password tools in their backend modules. Development
-build tools live in `tools/dev/`; examples live in `examples/`.
+build tools live in `tools/build/`; examples live in `examples/`.
 
 Startup is local by default. Public access requires an explicit command:
 
 ```bash
-bash selfskill/scripts/run.sh start --tunnel
+bash launch/run.sh start --tunnel
 # Or add a tunnel to an already running service:
-bash selfskill/scripts/run.sh start-tunnel
+bash launch/run.sh start-tunnel
 ```
 
 Install cloudflared separately with `install-component cloudflared` if missing.
 
 ## Startup order
 
-1. `selfskill/scripts/run.sh` or `run.ps1` locates uv, installs it if missing,
+1. `launch/run.sh` or `run.ps1` locates uv, installs it if missing,
    and creates the Python 3.11 virtual environment if missing. uv can download
    Python when a suitable interpreter is unavailable.
 2. The platform entry hands control to `launch/runtime_control.py`.
