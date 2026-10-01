@@ -3181,6 +3181,7 @@ function handleNewSession() {
     openAgentMetaModal('create', newSid, {}).then(async (meta) => {
         if (meta === null) return;  // User cancelled
         currentSessionId = newSid;
+        ConversationUiPanels.beginSession(newSid);
         sessionStorage.setItem('sessionId', currentSessionId);
         updateSessionDisplay();
         // Clear chat box for new conversation
@@ -4908,6 +4909,7 @@ async function switchToSession(sessionId, force = false, options = {}) {
         acpSaveTranscript();
     }
     currentSessionId = sessionId;
+    ConversationUiPanels.beginSession(sessionId);
     cancelTargetSessionId = null;  // 重置终止目标
     personaInjectedSession = null;  // Reset persona injection flag for new session
     sessionStorage.setItem('sessionId', sessionId);
@@ -6869,6 +6871,7 @@ function showLoginScreen() {
     projectUpdateBannerState = null;
     currentSessionId = null;
     stopHistoryPolling();
+    ConversationUiPanels.reset();
     sessionStorage.removeItem('sessionId');
     document.getElementById('chat-screen').style.display = 'none';
     document.getElementById('login-screen').style.display = 'flex';
@@ -8018,18 +8021,6 @@ document.addEventListener('pointerdown', event => {
     if (menu && menu.open && !menu.contains(event.target)) menu.open = false;
 });
 
-window.addEventListener('message', event => {
-    if (!event.data || event.data.kind !== 'clawcross_ui_panel_resize_v1') return;
-    const height = Number(event.data.height);
-    if (!Number.isFinite(height)) return;
-    for (const frame of document.querySelectorAll('.conversation-ui-panel iframe')) {
-        if (event.source === frame.contentWindow) {
-            frame.style.height = `${Math.max(120, Math.min(480, Math.ceil(height)))}px`;
-            break;
-        }
-    }
-});
-
 function parseConversationUiPanel(value) {
     try {
         const panel = typeof value === 'string' ? JSON.parse(value) : value;
@@ -8045,27 +8036,7 @@ function parseConversationUiPanel(value) {
 }
 
 function createConversationUiPanel(panel) {
-    const section = document.createElement('section');
-    section.className = 'conversation-ui-panel';
-    const heading = document.createElement('div');
-    heading.className = 'conversation-ui-panel-heading';
-    heading.textContent = panel.title;
-    section.appendChild(heading);
-    const frame = document.createElement('iframe');
-    frame.title = panel.title;
-    frame.setAttribute('sandbox', 'allow-scripts');
-    frame.setAttribute('referrerpolicy', 'no-referrer');
-    frame.setAttribute('loading', 'lazy');
-    const css = panel.css.replace(/<\/style/gi, '<\\/style');
-    const js = panel.javascript.replace(/<\/script/gi, '<\\/script');
-    const resizeScript = 'const reportSize=()=>parent.postMessage({kind:"clawcross_ui_panel_resize_v1",height:document.body.scrollHeight+4},"*");new ResizeObserver(reportSize).observe(document.body);window.addEventListener("load",reportSize);reportSize();';
-    frame.srcdoc = '<!doctype html><html><head><meta charset="utf-8">'
-        + '<meta name="viewport" content="width=device-width,initial-scale=1">'
-        + '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data: blob:; style-src \'unsafe-inline\'; script-src \'unsafe-inline\'; connect-src \'none\'; form-action \'none\'; base-uri \'none\'; frame-src \'none\'">'
-        + '<style>*,*::before,*::after{box-sizing:border-box}body{margin:0;padding:16px;font:14px system-ui,sans-serif;color:#17233d;overflow-wrap:anywhere}img,svg,video,canvas{max-width:100%}pre{overflow-x:auto}'
-        + css + '</style></head><body>' + panel.html + '<script>' + js + '</script><script>' + resizeScript + '</script></body></html>';
-    section.appendChild(frame);
-    return section;
+    return ConversationUiPanels.create(panel, currentSessionId || 'default');
 }
 
 function appendMessage(content, isUser = false, images = [], fileNames = [], audioNames = [], workflowNames = []) {
@@ -8123,6 +8094,7 @@ function showTyping() {
 function renderWeBotWelcomeMessage(message = null) {
     const chatBox = document.getElementById('chat-box');
     if (!chatBox) return;
+    ConversationUiPanels.beginSession(currentSessionId);
     chatBox.innerHTML = `
         <div class="flex justify-start">
             <div class="message-agent bg-white border p-4 max-w-[85%] shadow-sm text-gray-700">

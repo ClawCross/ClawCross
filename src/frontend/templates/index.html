@@ -29,7 +29,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
 
     <link rel="stylesheet" href="/static/css/markdown-shared.css">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260927-runtime-settings-3">
+    <link rel="stylesheet" href="/static/css/style.css?v=20261001-panels">
 </head>
 <body class="bg-gray-100 font-sans leading-normal tracking-normal">
 
@@ -382,6 +382,10 @@
                                         <button id="workflow-add-btn" class="workflow-add-btn" data-i18n-title="wf_btn_title" title="添加工作流" onclick="document.getElementById('studio-more-menu').open=false; showWorkflowPopup()"><span class="wf-label" data-i18n="wf_btn_label">添加工作流</span></button>
                                         <button id="persona-add-btn" class="persona-add-btn" data-i18n-title="persona_btn_title" title="引入专家人设" onclick="document.getElementById('studio-more-menu').open=false; showPersonaPopup()"><span class="persona-icon">🎭</span><span class="persona-label" data-i18n="persona_btn_label">+ 人设</span></button>
                                     </div>
+                                    <details id="conversation-ui-panel-menu" class="conversation-ui-panel-menu">
+                                        <summary>对话面板</summary>
+                                        <div id="conversation-ui-panel-list"><div class="conversation-ui-panel-empty">暂无对话面板</div></div>
+                                    </details>
                                     <div class="studio-more-heading">高级选项</div>
                     <!-- Tool List Panel -->
                     <div id="tool-panel-wrapper" class="mb-2">
@@ -1378,7 +1382,8 @@
     <script src="/static/js/markdown-shared.js"></script>
     <script src="/static/js/tinyfish-live-shared.js"></script>
     <script src="/static/js/tool-catalog.js?v=20260927-memory"></script>
-    <script src="/static/js/main.js?v=20260927-modes"></script>
+    <script src="/static/js/conversation-ui-panels.js?v=20261001-windows"></script>
+    <script src="/static/js/main.js?v=20261001-panels"></script>
     <script src="/static/js/runtime-settings.js?v=20260927-memory"></script>
     <script src="/static/js/oasis-town.bundle.js?v=20260327-humanfix"></script>
     <script src="/static/js/app.js?v=20260327-humanfix"></script>

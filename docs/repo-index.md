@@ -153,6 +153,12 @@ A WeBot session is its agent: listed, read, compacted and deleted through `/v1/a
 
 If the task touches the UI, start here:
 
+Tool output windows are managed by `src/frontend/static/js/conversation-ui-panels.js`:
+drag the title to move, drag the corner to resize, minimize or close using the title buttons,
+and restore them through the Studio `+` → `对话面板` submenu. Minimize retains iframe state;
+close removes its iframe and stops scripts. Layout is retained during session switches in
+the current page, and cleared on logout. Tool code remains in an isolated sandbox iframe.
+
 | Path | Purpose |
 |---|---|
 | `src/frontend/static/js/tool-catalog.js` | tool categories and grouped picker shared by desktop/mobile |
