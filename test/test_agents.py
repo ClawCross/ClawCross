@@ -271,7 +271,10 @@ class TestGateway(StoreCase):
         svc = self.store.update("alice", svc.agent_id, config={**svc.config, "persona": "critic"})
         with mock.patch("webot.profiles.frame_session_identity", lambda *a: "CRITIC"):
             self.ask(svc)
-            self.assertNotIn("CRITIC", _Http.posts[2][1]["messages"][0]["content"])
+            patched = _Http.posts[2][1]
+            self.assertIn("CRITIC", patched["messages"][0]["content"])
+            self.assertIn("系统提示词补丁", patched["messages"][0]["content"])
+            self.assertEqual(patched["session_id"], _Http.posts[0][1]["session_id"])
             asyncio.run(self.gateway.control(svc, "reset"))
             self.ask(svc)
         self.assertIn("CRITIC", _Http.posts[3][1]["messages"][0]["content"])
@@ -317,6 +320,24 @@ class TestGateway(StoreCase):
         self.ask(svc)
         self.assertNotIn("PERSONA", _Http.posts[0][1]["messages"][0]["content"])
         self.assertTrue(self.store.get("alice", svc.agent_id).runtime["negotiation_sent"])
+
+    def test_failed_identity_patch_is_retried_in_the_same_external_session(self):
+        svc = self.store.create("alice", driver=HTTP, config={"api_url": "http://svc"})
+        self.ask(svc)
+        version = self.store.get("alice", svc.agent_id).runtime["identity_version"]
+        with mock.patch("webot.profiles.frame_session_identity", return_value="NEW-PERSONA"):
+            with mock.patch.object(_Http, "post", mock.AsyncMock(
+                    return_value=SimpleNamespace(status_code=503, text="offline"))) as failed:
+                reply = asyncio.run(self.gateway.ask(svc, AgentMessage(text="hi", instructions="rules")))
+            self.assertFalse(reply.ok)
+            self.assertEqual(self.store.get("alice", svc.agent_id).runtime["identity_version"], version)
+            self.ask(svc)
+            retry = _Http.posts[-1][1]
+            self.assertEqual(retry, failed.await_args.kwargs["json"])
+            self.assertEqual(retry["session_id"], _Http.posts[0][1]["session_id"])
+            self.assertIn("系统提示词补丁", retry["messages"][0]["content"])
+            self.ask(svc)
+        self.assertEqual(_Http.posts[-1][1]["messages"][0]["content"], "hi")
 
     def test_external_tool_and_reply_schemas_travel_as_text_contracts(self):
         svc = self.store.create("alice", driver=HTTP, config={"api_url": "http://svc"})
