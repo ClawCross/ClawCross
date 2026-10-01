@@ -1,5 +1,6 @@
 // The API supplies category metadata; permissions remain on individual tools.
 const TOOL_CATEGORY_LABELS = {
+    groups: ['群聊与团队', 'Groups and teams'],
     files: ['文件与记忆', 'Files and memory'], commands: ['命令执行', 'Commands'], web: ['搜索与模型', 'Search and models'],
     sessions: ['会话与消息', 'Sessions and messages'], agents: ['Agent 与计划', 'Agents and plans'],
     workflows: ['OASIS 工作流', 'OASIS workflows'], skills: ['个性', 'Personality'],

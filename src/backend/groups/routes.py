@@ -52,6 +52,7 @@ class GroupPatch(BaseModel):
 
 class MessagePost(BaseModel):
     content: str
+    expected_title: str | None = None
     mentions: list[str] | None = None
     reply_to: int | None = None
     attachments: list[Attachment] | None = None
@@ -95,8 +96,9 @@ def create_groups_router(
             raise HTTPException(status_code=exc.status, detail=str(exc))
 
     @router.get("/groups")
-    async def list_groups(authorization: str | None = Header(None)):
-        return {"groups": service.list(user_of(authorization))}
+    async def list_groups(agent_id: str = "", authorization: str | None = Header(None)):
+        user = user_of(authorization)
+        return {"groups": service.memberships(user, call(service.agent_id, user, agent_id)) if agent_id else service.list(user)}
 
     @router.post("/groups")
     async def create_group(body: GroupCreate, authorization: str | None = Header(None)):
@@ -128,6 +130,7 @@ def create_groups_router(
                 mentions=body.mentions, reply_to=body.reply_to,
                 attachments=[a.model_dump() for a in body.attachments or []],
                 client_msg_id=body.client_msg_id, mode=body.run_mode,
+                expected_title=body.expected_title,
             )
         except GroupError as exc:
             raise HTTPException(status_code=exc.status, detail=str(exc))

@@ -99,6 +99,20 @@ class GroupService:
     def list(self, user: str) -> list[dict]:
         return [self._summary(c) for c in self.store.list_for(human(user))]
 
+    def memberships(self, user: str, agent_id: str) -> list[dict]:
+        """Live membership facts only, scoped by both owner and agent number."""
+        if self.agents.get(user, agent_id) is None:
+            return []
+        result = []
+        for conversation in sorted(self.store.list_for(agent_id), key=lambda c: c.conv_id):
+            if conversation.owner != user:
+                continue
+            members = self.conversations.members(conversation.conv_id)
+            member = next((m for m in members if m.principal == agent_id), None)
+            if member:
+                result.append(self.conversations._group_context(conversation, members, member))
+        return result
+
     def detail(self, user: str, conv_id: str) -> dict:
         return self._detail(self._get(user, conv_id))
 
@@ -166,7 +180,14 @@ class GroupService:
     # ── talking ──────────────────────────────────────────────────────────
 
     async def post(self, user: str, conv_id: str, sender: str, content: str, **fields: Any) -> dict:
-        self._get(user, conv_id)
+        conversation = self._get(user, conv_id)
+        if is_agent(sender) and (conversation.owner != user or self.agents.get(user, sender) is None):
+            raise Forbidden("不能冒用其他用户的 agent")
+        if not is_agent(sender) and sender != human(user):
+            raise Forbidden("不能冒用其他用户身份")
+        expected_title = fields.pop("expected_title", None)
+        if expected_title is not None and expected_title != conversation.title:
+            raise GroupError("群名称与预期不符，请重新查询群详情确认群号")
         message, created = await self.conversations.post(conv_id, sender, content, **fields)
         return {"message": message_card(self.conversations, message), "created": created}
 

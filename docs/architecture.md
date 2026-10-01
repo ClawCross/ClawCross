@@ -23,7 +23,8 @@ ClawCross 把一台机器上所有 agent 统一成一种东西：**有编号的�
 基础 system prompt 保留身份、人设和共同约束；工作流用法与操作边界在对应工具描述中，详细格式由 `get_workflow_rules` 按需读取。
 group 动态块只带 meta：ID、名称、类型、群内身份、成员、投递规则及回复通道。字段由 `common/conversation_context.py` 筛选，正文和摘要不进入 group 块。
 内部 WeBot 的群消息正文保存在持久 inbox；通知和动态状态只提供摘要，通过 `read_session_inbox` 读取正文。批量通知可以携带多个群的 meta。没有自身 inbox 的外部 runtime 将新消息直接作为增量文本投递，group 动态块同样只带 meta。
-内部每轮使用当前 meta，正常对话撤销旧群上下文；有记忆的外部 agent 只接收发生变化的 meta，离开群时收到撤销信息。
+所属群完整列表每次调用读取最新元信息，群号、改名、成员与角色变化进入动态块；本轮来源群单独标明，普通对话撤销旧来源而保留真实群归属。外部 agent 只接收变化补丁，reset 后重发身份和当前元信息。WeBot reset 清除旧历史、动态基准、待投递输入与用量缓存，保留群归属与安全模式。
+`GET /groups?agent_id=<id>` 查询认证用户的 agent 所在群，agent 详情返回 `groups`。查询工具为 `list_agent_groups`、`get_group_details`、`get_team_details`；发送强制验证调用 agent 和成员关系，可用 `expected_title` 核对群号对应名称。跨用户与独立群服务先按 [拆分计划](group-service-plan.md) 实施，目前仍为单机 owner 群。
 
 历史压缩保留原始消息，摘要不替代审核使用的原始授权证据。压缩或临时裁剪移除旧状态基准时，第一份保留的动态状态会恢复成完整快照。
 手动压缩折叠全部可折叠的早期历史；自动压缩按目标预算选择范围。两者都遵守“保留最近几轮原文”设置。压缩前后数字是历史估算，上方 API 实测占用在下一次调用后更新。

@@ -111,6 +111,14 @@ class ThreadStateRegistry:
             self._thread_locks_guard = asyncio.Lock()
         return self._thread_locks_guard
 
+    def forget(self, thread_id: str) -> None:
+        """Clear old usage and pending state after reset; keep the serialization lock."""
+        for mapping in (self._thread_busy_source, self._pending_system_messages,
+                        self._thread_context_usage, self._thread_last_model,
+                        self._thread_last_input_tokens, self._thread_last_output_tokens):
+            mapping.pop(thread_id, None)
+        self._context_usage_restore_claimed.discard(thread_id)
+
     async def get_lock(self, thread_id: str) -> asyncio.Lock:
         """获取指定线程的锁。"""
         guard = await self._get_locks_guard()

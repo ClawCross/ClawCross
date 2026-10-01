@@ -38,6 +38,7 @@ from groups.service import GroupService
 from teams.routes import create_teams_router
 from teams.store import get_team_store
 from common.llm_factory import extract_text as _extract_text
+from common.conversation_context import set_group_membership_provider
 from common.user_auth import load_users as load_users_from_file, verify_password as verify_password_from_file
 from fleet.routes import create_fleet_router
 from webot.api.openai_service import OpenAIChatService
@@ -152,6 +153,7 @@ team_store = get_team_store(agent_store)
 conversation_store = ConversationStore(conversations_db_path())
 conversations = Conversations(conversation_store, agent_store, gateway)
 group_service = GroupService(conversations, names=team_store.address)
+set_group_membership_provider(group_service.memberships)
 
 
 async def _reconcile_pending_in_background() -> None:
@@ -245,6 +247,7 @@ app.include_router(
     create_agents_router(
         internal_token=INTERNAL_TOKEN, verify_password=verify_password,
         store=agent_store, gateway=gateway, names=team_store.address,
+        memberships=group_service.memberships,
         on_delete=(lambda a: team_store.forget_agent(a.owner, a.agent_id),
                    lambda a: conversation_store.forget(a.owner, a.agent_id)),
     )

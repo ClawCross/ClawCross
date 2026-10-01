@@ -1,6 +1,7 @@
 """Display categories for tools; classification does not grant permissions."""
 
 TOOL_CATEGORIES = {
+    "groups": {"list_agent_groups", "get_group_details", "get_team_details"},
     "files": {"list_files", "read_file", "write_file", "delete_file"},
     "commands": {"run_command", "background_command_io", "cancel_background_command"},
     "web": {"web_search", "web_fetch", "call_llm_api"},

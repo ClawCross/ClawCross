@@ -222,8 +222,10 @@ class Conversations:
             delivery = "私聊对方可见。"
         return {
             "group_id": conversation.conv_id, "title": conversation.title, "kind": conversation.kind,
+            "owner": conversation.owner, "primary_agent": lead or "",
             "identity": member.name, "role": role, "delivery": delivery,
-            "members": [{"name": m.name, "kind": "agent" if m.agent else "human", "muted": m.muted} for m in members],
+            "members": [{"name": m.name, "kind": "agent" if m.agent else "human", "muted": m.muted,
+                         **({"agent_id": m.principal} if m.agent else {"user_id": m.principal.removeprefix(HUMAN_PREFIX)})} for m in members],
             "reply_channel": reply_channel(member.agent, conversation.conv_id),
         }
 

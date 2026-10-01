@@ -289,6 +289,9 @@ class SessionService:
         await self._close_thread_checkpoints([thread_id])
         await delete_thread_records(self.db_path, thread_id)
         delete_agent_runtime_db(user_id, session_id)
+        forget = getattr(self.agent, "forget_thread_state", None)
+        if callable(forget):
+            forget(thread_id)
         if is_subagent_session(session_id):
             delete_subagent_by_session(user_id, session_id)
 
