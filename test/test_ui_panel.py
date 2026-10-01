@@ -1,6 +1,8 @@
 """Validate the model-generated UI boundary without starting services."""
 
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -9,6 +11,17 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src/backend"))
 from webot.mcp.ui_panel import PANEL_KIND, build_ui_panel  # noqa: E402
+
+
+def test_ui_panel_loads_from_its_standalone_script_directory():
+    script = Path(__file__).resolve().parents[1] / "src/backend/webot/mcp/ui_panel.py"
+    result = subprocess.run(
+        [sys.executable, "-c", "import runpy; runpy.run_path('ui_panel.py', run_name='standalone_smoke')"],
+        cwd=script.parent,
+        env={key: value for key, value in os.environ.items() if key != "PYTHONPATH"},
+        capture_output=True, text=True, timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_ui_panel_payload_contains_all_code_fields():
