@@ -4,6 +4,21 @@ This document summarizes the runtime-related databases used by Clawcross, what t
 
 ## Database Roles
 
+- `data/agents.db`
+  - One `agents` row per owner and Agent ID for every runtime.
+  - External ACP, HTTP, and OpenClaw sessions persist negotiation in `runtime_json`:
+    `negotiation_sent`, `negotiation_session`, frozen `identity_prompt`,
+    `negotiated_at`, and the last delivered `dynamic_context`.
+  - The first successful turn delivers fixed rules/persona and the latest user input.
+    Later turns deliver only new user input and changed team/skill/tool/format blocks.
+    Replies remain in the external runtime's memory and are never replayed as input.
+  - Changing the saved persona takes effect after reset, as with an internal Agent's
+    frozen identity. Generic HTTP reset rotates the remote session ID; ACP/OpenClaw
+    use their native reset commands. Existing successful sessions are treated as
+    already negotiated, so an upgrade does not repeat their identity.
+  - A failed delivery is not marked successful. After an ambiguous remote timeout,
+    exact delivery cannot be inferred without an acknowledgement from the provider.
+
 - `data/agent_checkpoints/*.db`
   - Primary append-only conversation context store.
   - One SQLite file per `thread_id` / session.
