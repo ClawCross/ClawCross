@@ -32,7 +32,7 @@ from src.backend.common.env_settings import read_env_all, write_env_settings
 
 
 # ---------------------------------------------------------------------------
-# .env I/O (mirrors scripts/clawcross.py helpers but self-contained)
+# .env I/O (mirrors src/cli/clawcross.py helpers but self-contained)
 # ---------------------------------------------------------------------------
 
 def _find_env_file() -> Path:

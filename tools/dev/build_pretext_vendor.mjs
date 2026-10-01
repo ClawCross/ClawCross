@@ -11,7 +11,7 @@ const outdir = path.join(projectRoot, 'src', 'frontend', 'static', 'vendor');
 await mkdir(outdir, { recursive: true });
 
 await esbuild.build({
-  entryPoints: [path.join(projectRoot, 'scripts', 'dev', 'pretext_global_entry.js')],
+  entryPoints: [path.join(projectRoot, 'tools', 'dev', 'pretext_global_entry.js')],
   outfile: path.join(outdir, 'pretext.global.js'),
   bundle: true,
   format: 'iife',

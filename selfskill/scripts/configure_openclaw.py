@@ -1780,7 +1780,7 @@ Use this skill when the user wants you to control Clawcross in `{PROJECT_ROOT}`.
 ## Working Rules
 
 - Run Clawcross commands from `{PROJECT_ROOT}`.
-- Prefer `run.sh` / `run.ps1` and `uv run scripts/cli.py` over ad-hoc edits.
+- Prefer `run.sh` / `run.ps1` and `uv run src/cli/cli.py` over ad-hoc edits.
 - If OpenClaw was installed or reconfigured, run `{run_prefix} check-openclaw`.
 - Do not enable optional integrations, public exposure, or password users unless the user explicitly asks.
 - Before touching code, inspect only the files routed by `{os.path.join(PROJECT_ROOT, "docs", "repo-index.md")}` instead of scanning the whole repo.
@@ -1824,13 +1824,13 @@ Run these commands from the Clawcross repo root.
 
 ## Clawcross repo-local CLI
 
-- `uv run scripts/cli.py status`
-- `uv run scripts/cli.py openclaw`
-- `uv run scripts/cli.py openclaw detail --name main`
-- `uv run scripts/cli.py openclaw channels`
-- `uv run scripts/cli.py openclaw bindings --agent main`
-- `uv run scripts/cli.py teams`
-- `uv run scripts/cli.py visual`
+- `uv run src/cli/cli.py status`
+- `uv run src/cli/cli.py openclaw`
+- `uv run src/cli/cli.py openclaw detail --name main`
+- `uv run src/cli/cli.py openclaw channels`
+- `uv run src/cli/cli.py openclaw bindings --agent main`
+- `uv run src/cli/cli.py teams`
+- `uv run src/cli/cli.py visual`
 
 ## Reading order
 
@@ -1874,8 +1874,8 @@ For Clawcross tasks, run commands from `{PROJECT_ROOT}` and prefer the project w
 - `{run_prefix} start`
 - `{run_prefix} stop`
 - `{run_prefix} check-openclaw`
-- `uv run scripts/cli.py openclaw channels`
-- `uv run scripts/cli.py openclaw bindings --agent main`
+- `uv run src/cli/cli.py openclaw channels`
+- `uv run src/cli/cli.py openclaw bindings --agent main`
 - Read `{repo_cli}` when you need full CLI flags.
 """,
     }

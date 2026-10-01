@@ -32,7 +32,7 @@ _TRANSPORT = ("external",)
 # The runtimes, which live in the Agent service only; other processes (OASIS, the
 # scheduler, the channels, the web front, the CLI) reach agents over its entrances (agents.client).
 _RUNTIMES = ("agents.gateway", "external", "webot.driver")
-_OTHER_PROCESSES = ("src/backend/oasis", "src/backend/channels", "src/frontend", "scripts", "clawcross_cli")
+_OTHER_PROCESSES = ("src/backend/oasis", "src/backend/channels", "src/frontend", "src/cli", "scripts", "clawcross_cli")
 _OTHER_PROCESS_FILES = ("src/backend/scheduler/service.py",)
 
 

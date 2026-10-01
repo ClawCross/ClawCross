@@ -5,8 +5,9 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_PROJECT_ROOT = str(Path(__file__).resolve().parents[3])
 _BACKEND_DIR = os.path.join(_PROJECT_ROOT, "src", "backend")  # the backend's import root
 if _BACKEND_DIR not in sys.path:
     sys.path.insert(0, _BACKEND_DIR)

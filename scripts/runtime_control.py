@@ -211,7 +211,7 @@ def _check_model(env: dict[str, str]) -> None:
 
 def _magic_links(env: dict[str, str], *, tunnel: bool) -> None:
     user = env.get("CLAWCROSS_MAGIC_LINK_USER") or "default"
-    result = subprocess.run([sys.executable, str(ROOT / "scripts/cli.py"), "token", "generate",
+    result = subprocess.run([sys.executable, str(ROOT / "src/cli/cli.py"), "token", "generate",
                              "-u", user, "--valid-hours", "24"], cwd=ROOT, env=env,
                             text=True, capture_output=True, check=False)
     match = re.search(r"Token:\s*(\S+)", result.stdout)
@@ -376,8 +376,8 @@ def _legacy_command(command: str, arguments: list[str]) -> int | None:
         "sync-openclaw-llm": ("selfskill/scripts/configure_openclaw.py", ["--sync-clawcross-llm"]),
         "import-openclaw-llm": ("selfskill/scripts/configure_openclaw.py", ["--import-clawcross-llm-from-openclaw"]),
         "evolve-skill": ("selfskill/scripts/evolve_skill.py", []),
-        "cli": ("scripts/cli.py", []),
-        "clawcross": ("scripts/clawcross.py", []),
+        "cli": ("src/cli/cli.py", []),
+        "clawcross": ("src/cli/clawcross.py", []),
         "check-openclaw": ("selfskill/scripts/configure_openclaw.py", ["--status"]),
     }
     if command in scripts:
@@ -484,7 +484,11 @@ def main() -> int:
             return 0
         if args.command == "start-tunnel":
             ensure_core()
-            return 0 if _start_tunnel(_process_env()) else 1
+            env = _process_env()
+            if not _start_tunnel(env):
+                return 1
+            _magic_links(env, tunnel=True)
+            return 0
         if args.command == "stop-tunnel":
             _stop_pid(TUNNEL_PID)
             _clear_public_domain()

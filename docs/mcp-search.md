@@ -109,7 +109,7 @@ Common parameters:
 ## Local Browser Provider
 
 `WEB_SEARCH_PROVIDER=browser` (for both `web_search` and `web_fetch`) uses
-`scripts/browser_search_runner.mjs`. The runner opens a headless Chromium
+`src/backend/webot/mcp/browser_search_runner.mjs`. The runner opens a headless Chromium
 browser through Playwright, extracts visible search result links or page text,
 and returns JSON to the Python MCP server.
 

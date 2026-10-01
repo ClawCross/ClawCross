@@ -206,11 +206,11 @@ powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1 bind-openclaw
 Or via Clawcross CLI:
 
 ```bash
-uv run scripts/cli.py openclaw channels
-uv run scripts/cli.py openclaw bind --data '{"agent":"main","channel":"openclaw-weixin:<account_id>"}'
+uv run src/cli/cli.py openclaw channels
+uv run src/cli/cli.py openclaw bind --data '{"agent":"main","channel":"openclaw-weixin:<account_id>"}'
 ```
 
-6. After binding, verify: `uv run scripts/cli.py openclaw bindings --agent main`
+6. After binding, verify: `uv run src/cli/cli.py openclaw bindings --agent main`
 
 ---
 
@@ -488,7 +488,7 @@ bash selfskill/scripts/run.sh stop
 bash selfskill/scripts/run.sh configure --show
 ```
 
-**Magic link** (local + remote when Tunnel is ready) is printed by **`run.sh` / `run.ps1`** after `start` (once Tunnel has run), and again by **`status`**, **`tunnel-status`**, and **`start-tunnel`** — each uses `cli.py token generate` so the HMAC token is correct. It is **not** part of `uv run scripts/cli.py status`. Those commands also print a line **directed at AI assistants** asking them to copy the URLs into the user reply.
+**Magic link** (local + remote when Tunnel is ready) is printed by **`run.sh` / `run.ps1`** after `start` (once Tunnel has run), and again by **`status`**, **`tunnel-status`**, and **`start-tunnel`** — each uses `cli.py token generate` so the HMAC token is correct. It is **not** part of `uv run src/cli/cli.py status`. Those commands also print a line **directed at AI assistants** asking them to copy the URLs into the user reply.
 
 **Magic link user id** defaults to **`default`** (the `user_id` in `?user=` and in `token generate -u`). To generate links for another user, set **`CLAWCROSS_MAGIC_LINK_USER`** before running the script (Linux/macOS: `export CLAWCROSS_MAGIC_LINK_USER=admin`). Note: CLI chat defaults to `admin` for `-u`; magic link scripts intentionally used `default` unless you override.
 
@@ -501,12 +501,12 @@ powershell -ExecutionPolicy Bypass -File selfskill/scripts/run.ps1 configure --s
 ### CLI
 
 ```bash
-uv run scripts/cli.py --help
-uv run scripts/cli.py teams --help
-uv run scripts/cli.py workflows --help
-uv run scripts/cli.py openclaw --help
-uv run scripts/cli.py skill --help   # managed 技能 list/show/new/edit/delete
-uv run scripts/cli.py cron --help    # 定时任务 list/new/delete
+uv run src/cli/cli.py --help
+uv run src/cli/cli.py teams --help
+uv run src/cli/cli.py workflows --help
+uv run src/cli/cli.py openclaw --help
+uv run src/cli/cli.py skill --help   # managed 技能 list/show/new/edit/delete
+uv run src/cli/cli.py cron --help    # 定时任务 list/new/delete
 ```
 
 ### Workflow Monitoring
@@ -514,7 +514,7 @@ uv run scripts/cli.py cron --help    # 定时任务 list/new/delete
 Prefer non-blocking checks:
 
 ```bash
-uv run scripts/cli.py topics show --topic-id <ID>
+uv run src/cli/cli.py topics show --topic-id <ID>
 ```
 
 Avoid `topics watch` or `workflows conclusion` when you need a quick status snapshot.
@@ -616,7 +616,7 @@ print(extract_text(resp.content))
 ```bash
 openclaw.cmd gateway status
 openclaw.cmd models status --json
-uv run scripts/cli.py openclaw bindings --agent main
+uv run src/cli/cli.py openclaw bindings --agent main
 ```
 
 ### Windows PowerShell Execution Policy

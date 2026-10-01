@@ -8,7 +8,7 @@
 
 ```bash
 cd /path/to/Clawcross
-uv run scripts/cli.py [参数...]
+uv run src/cli/cli.py [参数...]
 ```
 
 **Windows PowerShell：**
@@ -24,7 +24,7 @@ uv run .\scripts\cli.py [参数...]
 ## 概览
 
 ```bash
-uv run scripts/cli.py [-u USER] <子命令> [参数...]
+uv run src/cli/cli.py [-u USER] <子命令> [参数...]
 ```
 
 **全局参数：**
@@ -68,7 +68,7 @@ uv run scripts/cli.py [-u USER] <子命令> [参数...]
 
 ```bash
 # 基本用法（-s 必填）
-uv run scripts/cli.py -u Avalon_01 chat "你好" -s mysession
+uv run src/cli/cli.py -u Avalon_01 chat "你好" -s mysession
 
 ```
 
@@ -85,13 +85,13 @@ uv run scripts/cli.py -u Avalon_01 chat "你好" -s mysession
 
 ```bash
 # 查看基本设置
-uv run scripts/cli.py settings
+uv run src/cli/cli.py settings
 
 # 查看完整设置（含高级项）
-uv run scripts/cli.py settings --full
+uv run src/cli/cli.py settings --full
 
 # 修改设置
-uv run scripts/cli.py settings --set model gpt-4o
+uv run src/cli/cli.py settings --set model gpt-4o
 ```
 
 | 参数 | 说明 | 必填 | 默认值 |
@@ -109,10 +109,10 @@ uv run scripts/cli.py settings --set model gpt-4o
 
 ```bash
 # 完整工具列表
-uv run scripts/cli.py tools
+uv run src/cli/cli.py tools
 
 # 仅显示名称
-uv run scripts/cli.py tools --brief
+uv run src/cli/cli.py tools --brief
 ```
 
 | 参数 | 说明 | 必填 | 默认值 |
@@ -126,7 +126,7 @@ uv run scripts/cli.py tools --brief
 **文字转语音**
 
 ```bash
-uv run scripts/cli.py tts "你好世界" -o hello.mp3 --voice alloy
+uv run src/cli/cli.py tts "你好世界" -o hello.mp3 --voice alloy
 ```
 
 | 参数 | 说明 | 必填 | 默认值 |
@@ -144,7 +144,7 @@ uv run scripts/cli.py tts "你好世界" -o hello.mp3 --voice alloy
 本地操作，写入 `.restart_flag` 文件触发 launcher 重启。
 
 ```bash
-uv run scripts/cli.py restart
+uv run src/cli/cli.py restart
 ```
 
 无额外参数。命令会在发起重启后继续轮询服务，恢复成功后打印 `✅ 重启完成`。
@@ -159,18 +159,18 @@ uv run scripts/cli.py restart
 
 ```bash
 # 列出所有渠道及配置状态
-uv run scripts/cli.py channel
-uv run scripts/cli.py channel list
+uv run src/cli/cli.py channel
+uv run src/cli/cli.py channel list
 
 # 查看、设置、清理指定渠道
-uv run scripts/cli.py channel show telegram
-uv run scripts/cli.py channel setup telegram
-uv run scripts/cli.py channel clear telegram
+uv run src/cli/cli.py channel show telegram
+uv run src/cli/cli.py channel setup telegram
+uv run src/cli/cli.py channel clear telegram
 
 # WeClaw 微信登录状态与扫码登录
-uv run scripts/cli.py channel status weclaw
-uv run scripts/cli.py channel login weclaw
-uv run scripts/cli.py channel logout weclaw
+uv run src/cli/cli.py channel status weclaw
+uv run src/cli/cli.py channel login weclaw
+uv run src/cli/cli.py channel logout weclaw
 ```
 
 终端交互模式下，`channel` 会先进入 channel 选择列表，再进入二级 action 列表（show/setup/clear；WeClaw 额外包含 login/logout/status）。NoneBot adapter-only 渠道（如 OneBot、Console）会写入 `NONEBOT_ADAPTERS`；env-only 渠道（如 DingTalk、Minecraft）会写对应平台环境变量。
@@ -183,26 +183,26 @@ uv run scripts/cli.py channel logout weclaw
 
 ```bash
 # 列出群聊（含私聊）
-uv run scripts/cli.py groups
+uv run src/cli/cli.py groups
 
 # 建群：成员写 agent 编号或 <team>.<名字>；群与 team 无关
-uv run scripts/cli.py groups create --name "测试群" --agents coder,dev.Reviewer
+uv run src/cli/cli.py groups create --name "测试群" --agents coder,dev.Reviewer
 
 # 详情 / 改名 / 删除
-uv run scripts/cli.py groups get --group-id g_abc123
-uv run scripts/cli.py groups update --group-id g_abc123 --name "新名字"
-uv run scripts/cli.py groups delete --group-id g_abc123
+uv run src/cli/cli.py groups get --group-id g_abc123
+uv run src/cli/cli.py groups update --group-id g_abc123 --name "新名字"
+uv run src/cli/cli.py groups delete --group-id g_abc123
 
 # 消息
-uv run scripts/cli.py groups messages --group-id g_abc123 [--after-id 100]
-uv run scripts/cli.py groups send --group-id g_abc123 --message "大家好 @coder"
+uv run src/cli/cli.py groups messages --group-id g_abc123 [--after-id 100]
+uv run src/cli/cli.py groups send --group-id g_abc123 --message "大家好 @coder"
 
 # 以群内某个 agent 的身份发言（非 WeBot agent 回复群聊时用）
-uv run scripts/cli.py -u alice groups send --group-id g_abc123 --agent alice/codex --message "已完成"
+uv run src/cli/cli.py -u alice groups send --group-id g_abc123 --agent alice/codex --message "已完成"
 
 # 免打扰：消息照常保存，但不唤醒任何 agent
-uv run scripts/cli.py groups dnd-on --group-id g_abc123
-uv run scripts/cli.py groups dnd-off --group-id g_abc123
+uv run src/cli/cli.py groups dnd-on --group-id g_abc123
+uv run src/cli/cli.py groups dnd-off --group-id g_abc123
 ```
 
 | 参数 | 说明 | 必填 | 默认值 |
@@ -226,41 +226,41 @@ uv run scripts/cli.py groups dnd-off --group-id g_abc123
 
 ```bash
 # 列出 OpenClaw 会话
-uv run scripts/cli.py openclaw
-uv run scripts/cli.py openclaw sessions --filter keyword
+uv run src/cli/cli.py openclaw
+uv run src/cli/cli.py openclaw sessions --filter keyword
 
 # 添加 Agent
-uv run scripts/cli.py openclaw add --data '{"name":"mybot","api_url":"..."}'
+uv run src/cli/cli.py openclaw add --data '{"name":"mybot","api_url":"..."}'
 
 # 查看 Agent 详情
-uv run scripts/cli.py openclaw detail --name mybot
+uv run src/cli/cli.py openclaw detail --name mybot
 
 # 查看工作区
-uv run scripts/cli.py openclaw default-workspace
-uv run scripts/cli.py openclaw workspace-files --workspace /path
-uv run scripts/cli.py openclaw workspace-file-read --workspace /path --filename main.py
+uv run src/cli/cli.py openclaw default-workspace
+uv run src/cli/cli.py openclaw workspace-files --workspace /path
+uv run src/cli/cli.py openclaw workspace-file-read --workspace /path --filename main.py
 
 # 保存文件
-uv run scripts/cli.py openclaw workspace-file-save --data '{"workspace":"/path","filename":"main.py","content":"..."}'
+uv run src/cli/cli.py openclaw workspace-file-save --data '{"workspace":"/path","filename":"main.py","content":"..."}'
 
 # 技能与工具
-uv run scripts/cli.py openclaw skills --agent mybot
-uv run scripts/cli.py openclaw tool-groups
+uv run src/cli/cli.py openclaw skills --agent mybot
+uv run src/cli/cli.py openclaw tool-groups
 
 # 频道与绑定
-uv run scripts/cli.py openclaw channels
-uv run scripts/cli.py openclaw bindings --agent mybot
-uv run scripts/cli.py openclaw bind --data '{"agent":"mybot","channel":"ch1"}'
+uv run src/cli/cli.py openclaw channels
+uv run src/cli/cli.py openclaw bindings --agent mybot
+uv run src/cli/cli.py openclaw bind --data '{"agent":"mybot","channel":"ch1"}'
 
 # 微信账号绑定示例
-uv run scripts/cli.py openclaw channels
-uv run scripts/cli.py openclaw bind --data '{"agent":"main","channel":"openclaw-weixin:cdb0be1f7414-im-bot"}'
+uv run src/cli/cli.py openclaw channels
+uv run src/cli/cli.py openclaw bind --data '{"agent":"main","channel":"openclaw-weixin:cdb0be1f7414-im-bot"}'
 
 # 更新配置
-uv run scripts/cli.py openclaw update-config --data '{"name":"mybot","config":{...}}'
+uv run src/cli/cli.py openclaw update-config --data '{"name":"mybot","config":{...}}'
 
 # 移除 Agent
-uv run scripts/cli.py openclaw remove --name mybot
+uv run src/cli/cli.py openclaw remove --name mybot
 ```
 
 | 参数 | 说明 | 必填 | 默认值 |
@@ -282,22 +282,22 @@ uv run scripts/cli.py openclaw remove --name mybot
 
 ```bash
 # 获取快照列表
-uv run scripts/cli.py -u Avalon_01 openclaw-snapshot get --team myteam
+uv run src/cli/cli.py -u Avalon_01 openclaw-snapshot get --team myteam
 
 # 导出单个快照
-uv run scripts/cli.py -u Avalon_01 openclaw-snapshot export --team myteam --agent-name "Agent全名" --short-name "显示名"
+uv run src/cli/cli.py -u Avalon_01 openclaw-snapshot export --team myteam --agent-name "Agent全名" --short-name "显示名"
 
 # 导出全部
-uv run scripts/cli.py -u Avalon_01 openclaw-snapshot export-all --team myteam
+uv run src/cli/cli.py -u Avalon_01 openclaw-snapshot export-all --team myteam
 
 # 同步全部
-uv run scripts/cli.py -u Avalon_01 openclaw-snapshot sync-all --team myteam
+uv run src/cli/cli.py -u Avalon_01 openclaw-snapshot sync-all --team myteam
 
 # 恢复单个
-uv run scripts/cli.py -u Avalon_01 openclaw-snapshot restore --team myteam --short-name "显示名" --target-name "目标Agent"
+uv run src/cli/cli.py -u Avalon_01 openclaw-snapshot restore --team myteam --short-name "显示名" --target-name "目标Agent"
 
 # 恢复全部
-uv run scripts/cli.py -u Avalon_01 openclaw-snapshot restore-all --team myteam
+uv run src/cli/cli.py -u Avalon_01 openclaw-snapshot restore-all --team myteam
 ```
 
 | 参数 | 说明 | 必填 | 默认值 |
@@ -317,25 +317,25 @@ uv run scripts/cli.py -u Avalon_01 openclaw-snapshot restore-all --team myteam
 
 ```bash
 # 人设列表
-uv run scripts/cli.py -u Avalon_01 visual personas --team myteam
+uv run src/cli/cli.py -u Avalon_01 visual personas --team myteam
 
 # 添加/删除自定义人设
-uv run scripts/cli.py -u Avalon_01 visual add-persona --data '{"tag":"myexpert","name":"我的人设","prompt":"..."}' --team myteam
-uv run scripts/cli.py -u Avalon_01 visual delete-persona --tag myexpert --team myteam
+uv run src/cli/cli.py -u Avalon_01 visual add-persona --data '{"tag":"myexpert","name":"我的人设","prompt":"..."}' --team myteam
+uv run src/cli/cli.py -u Avalon_01 visual delete-persona --tag myexpert --team myteam
 
 # 生成 YAML
-uv run scripts/cli.py -u Avalon_01 visual generate-yaml --data '{"nodes":[...],"edges":[...]}' --team myteam
-uv run scripts/cli.py -u Avalon_01 visual agent-generate-yaml --data '{"prompt":"..."}' --team myteam
+uv run src/cli/cli.py -u Avalon_01 visual generate-yaml --data '{"nodes":[...],"edges":[...]}' --team myteam
+uv run src/cli/cli.py -u Avalon_01 visual agent-generate-yaml --data '{"prompt":"..."}' --team myteam
 
 # 布局管理
-uv run scripts/cli.py -u Avalon_01 visual save-layout --data '{"name":"myflow","nodes":[...],"edges":[...]}' --team myteam
-uv run scripts/cli.py -u Avalon_01 visual load-layouts --team myteam
-uv run scripts/cli.py -u Avalon_01 visual load-layout --name myflow --team myteam
-uv run scripts/cli.py -u Avalon_01 visual load-yaml-raw --name myflow --team myteam
-uv run scripts/cli.py -u Avalon_01 visual delete-layout --name myflow --team myteam
+uv run src/cli/cli.py -u Avalon_01 visual save-layout --data '{"name":"myflow","nodes":[...],"edges":[...]}' --team myteam
+uv run src/cli/cli.py -u Avalon_01 visual load-layouts --team myteam
+uv run src/cli/cli.py -u Avalon_01 visual load-layout --name myflow --team myteam
+uv run src/cli/cli.py -u Avalon_01 visual load-yaml-raw --name myflow --team myteam
+uv run src/cli/cli.py -u Avalon_01 visual delete-layout --name myflow --team myteam
 
 # 上传 YAML
-uv run scripts/cli.py -u Avalon_01 visual upload-yaml --data '{"name":"myflow","yaml_content":"..."}' --team myteam
+uv run src/cli/cli.py -u Avalon_01 visual upload-yaml --data '{"name":"myflow","yaml_content":"..."}' --team myteam
 ```
 
 | 参数 | 说明 | 必填 | 默认值 |
@@ -354,31 +354,31 @@ uv run scripts/cli.py -u Avalon_01 visual upload-yaml --data '{"name":"myflow","
 
 ```bash
 # 列出（--status 附带运行状态，--platform 只列一个平台的，如 WeBot 会话）
-uv run scripts/cli.py agents list --status
-uv run scripts/cli.py agents list --status --platform webot
+uv run src/cli/cli.py agents list --status
+uv run src/cli/cli.py agents list --status --platform webot
 
 # 新建
-uv run scripts/cli.py agents create --name "Coder" --data '{"agent_id": "coder", "persona": "coder"}'   # WeBot
-uv run scripts/cli.py agents create --name "Codex" --platform codex --data '{"agent_id": "cx"}'            # ACP 工具的一个会话
-uv run scripts/cli.py agents create --name "Svc" --platform my_svc \
+uv run src/cli/cli.py agents create --name "Coder" --data '{"agent_id": "coder", "persona": "coder"}'   # WeBot
+uv run src/cli/cli.py agents create --name "Codex" --platform codex --data '{"agent_id": "cx"}'            # ACP 工具的一个会话
+uv run src/cli/cli.py agents create --name "Svc" --platform my_svc \
   --data '{"agent_id": "svc", "api_url": "http://127.0.0.1:8080/v1", "model": "gpt-4o"}'              # HTTP
 
 # 查看 / 修改 / 删除
-uv run scripts/cli.py agents show   --agent coder
-uv run scripts/cli.py agents update --agent coder --name "Coder 2" --data '{"settings": {"persona": "architect"}}'
-uv run scripts/cli.py agents delete --agent coder
+uv run src/cli/cli.py agents show   --agent coder
+uv run src/cli/cli.py agents update --agent coder --name "Coder 2" --data '{"settings": {"persona": "architect"}}'
+uv run src/cli/cli.py agents delete --agent coder
 
 # 对话与控制（所有平台一样）
-uv run scripts/cli.py agents ask    --agent coder --message "你好"
-uv run scripts/cli.py agents inbox  --agent coder --message "空了看一下"
-uv run scripts/cli.py agents history --agent coder -n 10 --full
-uv run scripts/cli.py agents status --agent coder
-uv run scripts/cli.py agents cancel --agent coder
-uv run scripts/cli.py agents reset  --agent coder
+uv run src/cli/cli.py agents ask    --agent coder --message "你好"
+uv run src/cli/cli.py agents inbox  --agent coder --message "空了看一下"
+uv run src/cli/cli.py agents history --agent coder -n 10 --full
+uv run src/cli/cli.py agents status --agent coder
+uv run src/cli/cli.py agents cancel --agent coder
+uv run src/cli/cli.py agents reset  --agent coder
 
 # WeBot 会话才有的
-uv run scripts/cli.py agents compact       --agent coder   # 立即压缩历史
-uv run scripts/cli.py agents deliver_inbox --agent coder   # 收件箱里排队的消息：当前这轮结束就处理
+uv run src/cli/cli.py agents compact       --agent coder   # 立即压缩历史
+uv run src/cli/cli.py agents deliver_inbox --agent coder   # 收件箱里排队的消息：当前这轮结束就处理
 ```
 
 | 参数 | 说明 | 必填 | 默认值 |
@@ -400,42 +400,42 @@ uv run scripts/cli.py agents deliver_inbox --agent coder   # 收件箱里排队�
 
 ```bash
 # 团队列表
-uv run scripts/cli.py -u Avalon_01 teams
+uv run src/cli/cli.py -u Avalon_01 teams
 
 # 一次性查看 team 完整信息（聚合成员、人设、workflows、话题等）
-uv run scripts/cli.py -u Avalon_01 teams info --team-name team2
+uv run src/cli/cli.py -u Avalon_01 teams info --team-name team2
 
 # 创建 / 删除团队
-uv run scripts/cli.py -u Avalon_01 teams create --team-name newteam --data '{"description":"..."}'
-uv run scripts/cli.py -u Avalon_01 teams delete --team-name oldteam
+uv run src/cli/cli.py -u Avalon_01 teams create --team-name newteam --data '{"description":"..."}'
+uv run src/cli/cli.py -u Avalon_01 teams delete --team-name oldteam
 
 # 成员管理：成员是 agent（任何平台），在 team 里有一个名字（<team>.<名字> 可找到它），至多一个 lead
-uv run scripts/cli.py -u Avalon_01 teams members --team-name myteam
-uv run scripts/cli.py -u Avalon_01 teams add-member --team-name myteam --agent coder --role "Coder" [--lead]
-uv run scripts/cli.py -u Avalon_01 teams set-lead --team-name myteam --agent coder
-uv run scripts/cli.py -u Avalon_01 teams remove-member --team-name myteam --agent coder     # agent 本身保留
+uv run src/cli/cli.py -u Avalon_01 teams members --team-name myteam
+uv run src/cli/cli.py -u Avalon_01 teams add-member --team-name myteam --agent coder --role "Coder" [--lead]
+uv run src/cli/cli.py -u Avalon_01 teams set-lead --team-name myteam --agent coder
+uv run src/cli/cli.py -u Avalon_01 teams remove-member --team-name myteam --agent coder     # agent 本身保留
 
 # 导入 team 文件夹里的 internal_agents.json / external_agents.json（导入后文件被移走）
-uv run scripts/cli.py -u Avalon_01 teams import --team-name myteam
+uv run src/cli/cli.py -u Avalon_01 teams import --team-name myteam
 
 # 团队人设管理
-uv run scripts/cli.py -u Avalon_01 teams personas --team-name myteam
-uv run scripts/cli.py -u Avalon_01 teams add-persona --team-name myteam --data '{"tag":"myexpert","name":"...","prompt":"..."}'
-uv run scripts/cli.py -u Avalon_01 teams update-persona --team-name myteam --tag myexpert --data '{"name":"..."}'
-uv run scripts/cli.py -u Avalon_01 teams delete-persona --team-name myteam --tag myexpert
+uv run src/cli/cli.py -u Avalon_01 teams personas --team-name myteam
+uv run src/cli/cli.py -u Avalon_01 teams add-persona --team-name myteam --data '{"tag":"myexpert","name":"...","prompt":"..."}'
+uv run src/cli/cli.py -u Avalon_01 teams update-persona --team-name myteam --tag myexpert --data '{"name":"..."}'
+uv run src/cli/cli.py -u Avalon_01 teams delete-persona --team-name myteam --tag myexpert
 
 # 团队快照 — 预览
-uv run scripts/cli.py -u Avalon_01 teams snapshot-preview --team-name myteam
+uv run src/cli/cli.py -u Avalon_01 teams snapshot-preview --team-name myteam
 
 # 团队快照 — 全量导出
-uv run scripts/cli.py -u Avalon_01 teams snapshot-download --team-name myteam -o snapshot.zip
+uv run src/cli/cli.py -u Avalon_01 teams snapshot-download --team-name myteam -o snapshot.zip
 
 # 团队快照 — 选择性导出（通过 --include JSON）
-uv run scripts/cli.py -u Avalon_01 teams snapshot-download --team-name myteam \
+uv run src/cli/cli.py -u Avalon_01 teams snapshot-download --team-name myteam \
   --include '{"agents":true,"personas":true,"skills":{"OpenClaw助手":["Clawcross","ChatBot"]},"cron":true,"workflows":true}'
 
 # 团队快照 — 上传恢复
-uv run scripts/cli.py -u Avalon_01 teams snapshot-upload --team-name myteam --file snapshot.zip
+uv run src/cli/cli.py -u Avalon_01 teams snapshot-upload --team-name myteam --file snapshot.zip
 ```
 
 | 参数 | 说明 | 必填 | 默认值 |
@@ -458,7 +458,7 @@ uv run scripts/cli.py -u Avalon_01 teams snapshot-upload --team-name myteam --fi
 预览 team 中可导出的所有内容，不实际导出：
 
 ```bash
-uv run scripts/cli.py -u Avalon_01 teams snapshot-preview --team-name myteam
+uv run src/cli/cli.py -u Avalon_01 teams snapshot-preview --team-name myteam
 ```
 
 输出示例：
@@ -529,30 +529,30 @@ uv run scripts/cli.py -u Avalon_01 teams snapshot-preview --team-name myteam
 
 ```bash
 # 1. 全量导出（默认行为，等价于不传 --include）
-uv run scripts/cli.py -u admin teams snapshot-download --team-name myteam
+uv run src/cli/cli.py -u admin teams snapshot-download --team-name myteam
 
 # 2. 只导出 agents 和 workflows
-uv run scripts/cli.py -u admin teams snapshot-download --team-name myteam \
+uv run src/cli/cli.py -u admin teams snapshot-download --team-name myteam \
   --include '{"agents":true,"workflows":true}'
 
 # 3. 导出所有内容
-uv run scripts/cli.py -u admin teams snapshot-download --team-name myteam \
+uv run src/cli/cli.py -u admin teams snapshot-download --team-name myteam \
   --include '{"agents":true,"personas":true,"skills":true,"cron":true,"workflows":true}'
 
 # 4. 只导出特定 Agent 的全部 skill
-uv run scripts/cli.py -u admin teams snapshot-download --team-name myteam \
+uv run src/cli/cli.py -u admin teams snapshot-download --team-name myteam \
   --include '{"skills":{"OpenClaw助手":true}}'
 
 # 5. 只导出特定 Agent 的特定 skill
-uv run scripts/cli.py -u admin teams snapshot-download --team-name myteam \
+uv run src/cli/cli.py -u admin teams snapshot-download --team-name myteam \
   --include '{"skills":{"OpenClaw助手":["Clawcross","ChatBot"]}}'
 
 # 6. 混合选择：导出 agents + 特定 skills + cron
-uv run scripts/cli.py -u admin teams snapshot-download --team-name myteam \
+uv run src/cli/cli.py -u admin teams snapshot-download --team-name myteam \
   --include '{"agents":true,"skills":{"OpenClaw助手":["Clawcross"]},"cron":true}'
 
 # 7. 多个 Agent，一个全选，一个选特定 skill
-uv run scripts/cli.py -u admin teams snapshot-download --team-name myteam \
+uv run src/cli/cli.py -u admin teams snapshot-download --team-name myteam \
   --include '{"skills":{"OpenClaw助手":["Clawcross"],"另一个Agent":true}}'
 ```
 
@@ -566,25 +566,25 @@ uv run scripts/cli.py -u admin teams snapshot-download --team-name myteam \
 
 ```bash
 # 列出话题
-uv run scripts/cli.py topics
-uv run scripts/cli.py topics list
+uv run src/cli/cli.py topics
+uv run src/cli/cli.py topics list
 
 # 查看话题详情（美化输出：时间线 + 发言记录 + 结论）
-uv run scripts/cli.py topics show --topic-id t123
-uv run scripts/cli.py topics show --topic-id t123 --full    # 不截断长发言
-uv run scripts/cli.py topics show --topic-id t123 --raw     # 输出原始 JSON
+uv run src/cli/cli.py topics show --topic-id t123
+uv run src/cli/cli.py topics show --topic-id t123 --full    # 不截断长发言
+uv run src/cli/cli.py topics show --topic-id t123 --raw     # 输出原始 JSON
 
 # 实时跟踪讨论过程（SSE 流式输出，Ctrl+C 退出）
-uv run scripts/cli.py topics watch --topic-id t123
+uv run src/cli/cli.py topics watch --topic-id t123
 
 # 取消讨论
-uv run scripts/cli.py topics cancel --topic-id t123
+uv run src/cli/cli.py topics cancel --topic-id t123
 
 # 清除话题
-uv run scripts/cli.py topics purge --topic-id t123
+uv run src/cli/cli.py topics purge --topic-id t123
 
 # 删除全部话题
-uv run scripts/cli.py topics delete-all
+uv run src/cli/cli.py topics delete-all
 ```
 
 | 参数 | 说明 | 必填 | 默认值 |
@@ -608,23 +608,23 @@ uv run scripts/cli.py topics delete-all
 
 ```bash
 # 列出人设
-uv run scripts/cli.py -u Avalon_01 personas
-uv run scripts/cli.py -u Avalon_01 personas list
-uv run scripts/cli.py -u Avalon_01 personas list --team team2
+uv run src/cli/cli.py -u Avalon_01 personas
+uv run src/cli/cli.py -u Avalon_01 personas list
+uv run src/cli/cli.py -u Avalon_01 personas list --team team2
 
 # 添加自定义人设
-uv run scripts/cli.py -u Avalon_01 personas add --tag my_analyst --persona-name "数据分析师" --persona "你是资深数据分析师"
-uv run scripts/cli.py -u Avalon_01 personas add --tag my_lawyer --persona-name "法律顾问" --persona "你是法律顾问" --team team2
+uv run src/cli/cli.py -u Avalon_01 personas add --tag my_analyst --persona-name "数据分析师" --persona "你是资深数据分析师"
+uv run src/cli/cli.py -u Avalon_01 personas add --tag my_lawyer --persona-name "法律顾问" --persona "你是法律顾问" --team team2
 
 # 更新人设（仅更新 persona，name 保持不变）
-uv run scripts/cli.py -u Avalon_01 personas update --tag my_analyst --persona "你是AI数据分析师，擅长深度学习"
+uv run src/cli/cli.py -u Avalon_01 personas update --tag my_analyst --persona "你是AI数据分析师，擅长深度学习"
 
 # 更新人设（同时修改 name）
-uv run scripts/cli.py -u Avalon_01 personas update --tag my_analyst --persona-name "高级分析师" --persona "你是AI数据分析师"
+uv run src/cli/cli.py -u Avalon_01 personas update --tag my_analyst --persona-name "高级分析师" --persona "你是AI数据分析师"
 
 # 删除人设
-uv run scripts/cli.py -u Avalon_01 personas delete --tag my_analyst
-uv run scripts/cli.py -u Avalon_01 personas delete --tag my_lawyer --team team2
+uv run src/cli/cli.py -u Avalon_01 personas delete --tag my_analyst
+uv run src/cli/cli.py -u Avalon_01 personas delete --tag my_lawyer --team team2
 ```
 | 参数 | 说明 | 必填 | 默认值 |
 |------|------|------|--------|
@@ -643,27 +643,27 @@ uv run scripts/cli.py -u Avalon_01 personas delete --tag my_lawyer --team team2
 
 ```bash
 # 列出 personal + 全部 team 的 YAML/Python workflow
-uv run scripts/cli.py -u Avalon_01 workflows
-uv run scripts/cli.py -u Avalon_01 workflows list
+uv run src/cli/cli.py -u Avalon_01 workflows
+uv run src/cli/cli.py -u Avalon_01 workflows list
 
 # 只看 YAML 或 Python
-uv run scripts/cli.py -u Avalon_01 workflows list --type yaml
-uv run scripts/cli.py -u Avalon_01 workflows list --type python
+uv run src/cli/cli.py -u Avalon_01 workflows list --type yaml
+uv run src/cli/cli.py -u Avalon_01 workflows list --type python
 
 # 指定 team 后，只列该 team 下的 workflow
-uv run scripts/cli.py -u Avalon_01 workflows list --team team2
+uv run src/cli/cli.py -u Avalon_01 workflows list --team team2
 
 # 查看 workflow 内容
-uv run scripts/cli.py -u Avalon_01 workflows show --name creative_critical_workflow
-uv run scripts/cli.py -u Avalon_01 workflows show --type python --name my_python_flow
-uv run scripts/cli.py -u Avalon_01 workflows show --name test2flow --team team2
+uv run src/cli/cli.py -u Avalon_01 workflows show --name creative_critical_workflow
+uv run src/cli/cli.py -u Avalon_01 workflows show --type python --name my_python_flow
+uv run src/cli/cli.py -u Avalon_01 workflows show --name test2flow --team team2
 
 # 保存 YAML workflow（从文件）
-uv run scripts/cli.py -u Avalon_01 workflows save --name my_flow --yaml-file /path/to/flow.yaml --description "我的工作流"
-uv run scripts/cli.py -u Avalon_01 workflows save --name my_flow --yaml-file /path/to/flow.yaml --team team2
+uv run src/cli/cli.py -u Avalon_01 workflows save --name my_flow --yaml-file /path/to/flow.yaml --description "我的工作流"
+uv run src/cli/cli.py -u Avalon_01 workflows save --name my_flow --yaml-file /path/to/flow.yaml --team team2
 
 # 保存 YAML workflow（直接传 YAML）
-uv run scripts/cli.py -u Avalon_01 workflows save --name quick_flow --yaml 'version: 2
+uv run src/cli/cli.py -u Avalon_01 workflows save --name quick_flow --yaml 'version: 2
 plan:
   - id: s1
     persona: creative
@@ -673,30 +673,30 @@ edges:
   - [s1, s2]'
 
 # 运行 YAML workflow（使用已保存的文件名）
-uv run scripts/cli.py -u Avalon_01 workflows run --name creative_critical_workflow --question "分析AI发展趋势"
-uv run scripts/cli.py -u Avalon_01 workflows run --name test2flow --team team2 --question "讨论产品策略"
+uv run src/cli/cli.py -u Avalon_01 workflows run --name creative_critical_workflow --question "分析AI发展趋势"
+uv run src/cli/cli.py -u Avalon_01 workflows run --name test2flow --team team2 --question "讨论产品策略"
 
 # 运行 YAML workflow（从 YAML 文件）
-uv run scripts/cli.py -u Avalon_01 workflows run --yaml-file /path/to/flow.yaml --question "分析数据"
+uv run src/cli/cli.py -u Avalon_01 workflows run --yaml-file /path/to/flow.yaml --question "分析数据"
 
 # 运行 Python workflow（已保存文件）
-uv run scripts/cli.py -u Avalon_01 workflows run --type python --name my_python_flow --question "生成报告"
-uv run scripts/cli.py -u Avalon_01 workflows run --type python --name team_flow --team team2 --question "执行任务"
+uv run src/cli/cli.py -u Avalon_01 workflows run --type python --name my_python_flow --question "生成报告"
+uv run src/cli/cli.py -u Avalon_01 workflows run --type python --name team_flow --team team2 --question "执行任务"
 
 # 运行 Python workflow（直接指定文件路径）
-uv run scripts/cli.py -u Avalon_01 workflows run --type python --python-file /path/to/flow.py --question "执行任务"
+uv run src/cli/cli.py -u Avalon_01 workflows run --type python --python-file /path/to/flow.py --question "执行任务"
 
 # 运行选项
-uv run scripts/cli.py -u Avalon_01 workflows run --name my_flow --question "问题" --max-rounds 10 --discussion true
-uv run scripts/cli.py -u Avalon_01 workflows run --name my_flow --question "问题" --early-stop
+uv run src/cli/cli.py -u Avalon_01 workflows run --name my_flow --question "问题" --max-rounds 10 --discussion true
+uv run src/cli/cli.py -u Avalon_01 workflows run --name my_flow --question "问题" --early-stop
 
 # Human 节点回复（当 workflow 正在等待人工输入时）
-uv run scripts/cli.py -u Avalon_01 topics show --topic-id abc12345 --raw
-uv run scripts/cli.py -u Avalon_01 topics human-reply --topic-id abc12345 --node-id on2 --round-num 2 --message "继续执行，风险可接受"
+uv run src/cli/cli.py -u Avalon_01 topics show --topic-id abc12345 --raw
+uv run src/cli/cli.py -u Avalon_01 topics human-reply --topic-id abc12345 --node-id on2 --round-num 2 --message "继续执行，风险可接受"
 
 # 获取结论（阻塞等待直到讨论结束）
-uv run scripts/cli.py -u Avalon_01 workflows conclusion --topic-id abc12345
-uv run scripts/cli.py -u Avalon_01 workflows conclusion --topic-id abc12345 --timeout 600
+uv run src/cli/cli.py -u Avalon_01 workflows conclusion --topic-id abc12345
+uv run src/cli/cli.py -u Avalon_01 workflows conclusion --topic-id abc12345 --timeout 600
 ```
 
 | 参数 | 说明 | 必填 | 默认值 |
@@ -746,12 +746,12 @@ uv run scripts/cli.py -u Avalon_01 workflows conclusion --topic-id abc12345 --ti
 
 ```bash
 # 查看状态
-uv run scripts/cli.py tunnel
-uv run scripts/cli.py tunnel status
+uv run src/cli/cli.py tunnel
+uv run src/cli/cli.py tunnel status
 
 # 启动 / 停止
-uv run scripts/cli.py tunnel start
-uv run scripts/cli.py tunnel stop
+uv run src/cli/cli.py tunnel start
+uv run src/cli/cli.py tunnel stop
 ```
 
 | 参数 | 说明 | 必填 | 默认值 |
@@ -770,19 +770,19 @@ uv run scripts/cli.py tunnel stop
 
 ```bash
 # 生成单用户 token
-uv run scripts/cli.py token generate --user admin
+uv run src/cli/cli.py token generate --user admin
 
 # 生成多用户 tokens
-uv run scripts/cli.py token generate --users admin,user1,user2
+uv run src/cli/cli.py token generate --users admin,user1,user2
 
 # 指定有效期
-uv run scripts/cli.py token generate --user admin --valid-hours 48
+uv run src/cli/cli.py token generate --user admin --valid-hours 48
 
 # 验证 token
-uv run scripts/cli.py token verify --token "xxx"
+uv run src/cli/cli.py token verify --token "xxx"
 
 # 解码 token
-uv run scripts/cli.py token decode --token "xxx"
+uv run src/cli/cli.py token decode --token "xxx"
 ```
 
 | 参数 | 说明 | 必填 | 默认值 |
@@ -804,7 +804,7 @@ uv run scripts/cli.py token decode --token "xxx"
 同时探测三个核心服务的健康状态。
 
 ```bash
-uv run scripts/cli.py status
+uv run src/cli/cli.py status
 ```
 
 无额外参数。
@@ -819,22 +819,22 @@ uv run scripts/cli.py status
 
 ```bash
 # 列出技能（个人 / 团队）
-uv run scripts/cli.py skill list
-uv run scripts/cli.py skill list --team myteam
+uv run src/cli/cli.py skill list
+uv run src/cli/cli.py skill list --team myteam
 
 # 查看某个技能的完整 SKILL.md 正文
-uv run scripts/cli.py skill show --name make_slides
-uv run scripts/cli.py skill show --name make_slides --team myteam
+uv run src/cli/cli.py skill show --name make_slides
+uv run src/cli/cli.py skill show --name make_slides --team myteam
 
 # 新建技能（已存在则报 409；--file 从文件读，--content 内联）
-uv run scripts/cli.py skill new --name make_slides --file ./SKILL.md
-uv run scripts/cli.py skill new --name make_slides --content "$(cat SKILL.md)" --category docs
+uv run src/cli/cli.py skill new --name make_slides --file ./SKILL.md
+uv run src/cli/cli.py skill new --name make_slides --content "$(cat SKILL.md)" --category docs
 
 # 更新（覆盖）已有技能
-uv run scripts/cli.py skill edit --name make_slides --file ./SKILL.md
+uv run src/cli/cli.py skill edit --name make_slides --file ./SKILL.md
 
 # 删除技能
-uv run scripts/cli.py skill delete --name make_slides --team myteam
+uv run src/cli/cli.py skill delete --name make_slides --team myteam
 ```
 
 | 参数 | 说明 |
@@ -856,19 +856,19 @@ uv run scripts/cli.py skill delete --name make_slides --team myteam
 
 ```bash
 # 列出定时任务
-uv run scripts/cli.py cron list
-uv run scripts/cli.py cron list --team myteam
+uv run src/cli/cli.py cron list
+uv run src/cli/cli.py cron list --team myteam
 
 # 新建：cron 周期任务（--agent 写 agent 编号或 <team>.<名字>）
-uv run scripts/cli.py cron new --team myteam --agent coder \
+uv run src/cli/cli.py cron new --team myteam --agent coder \
   --schedule-type cron --cron "0 9 * * *" --text "早报：汇总今天的待办"
 
 # 新建：单次定时触发
-uv run scripts/cli.py cron new --agent assistant \
+uv run src/cli/cli.py cron new --agent assistant \
   --schedule-type once --run-at "2026-06-01T09:00:00" --text "提醒发周报"
 
 # 删除定时任务
-uv run scripts/cli.py cron delete --task-id <task_id> --team myteam
+uv run src/cli/cli.py cron delete --task-id <task_id> --team myteam
 ```
 
 | 参数 | 说明 |
@@ -888,25 +888,25 @@ uv run scripts/cli.py cron delete --task-id <task_id> --team myteam
 
 ```bash
 # 检查服务是否正常
-uv run scripts/cli.py status
+uv run src/cli/cli.py status
 
 # 以 Avalon_01 身份管理 team2
-uv run scripts/cli.py -u Avalon_01 teams members --team-name team2
-uv run scripts/cli.py -u Avalon_01 workflows list --team team2
-uv run scripts/cli.py -u Avalon_01 workflows show --name test2flow --team team2
+uv run src/cli/cli.py -u Avalon_01 teams members --team-name team2
+uv run src/cli/cli.py -u Avalon_01 workflows list --team team2
+uv run src/cli/cli.py -u Avalon_01 workflows show --name test2flow --team team2
 
 # 聊天
-uv run scripts/cli.py -u Avalon_01 chat "帮我分析这段数据" -s analysis_session
+uv run src/cli/cli.py -u Avalon_01 chat "帮我分析这段数据" -s analysis_session
 
 # 查看聊天历史（最近 10 条，完整输出）
-uv run scripts/cli.py -u Avalon_01 agents history --agent analysis_session -n 10 --full
+uv run src/cli/cli.py -u Avalon_01 agents history --agent analysis_session -n 10 --full
 
 # 可视化编排：查看布局 → 查看 YAML
-uv run scripts/cli.py -u Avalon_01 visual load-layouts --team myteam
-uv run scripts/cli.py -u Avalon_01 visual load-yaml-raw --name myflow --team myteam
+uv run src/cli/cli.py -u Avalon_01 visual load-layouts --team myteam
+uv run src/cli/cli.py -u Avalon_01 visual load-yaml-raw --name myflow --team myteam
 
 # OpenClaw 快照：导出全部 → 恢复全部
-uv run scripts/cli.py -u Avalon_01 openclaw-snapshot export-all --team myteam
-uv run scripts/cli.py -u Avalon_01 openclaw-snapshot restore-all --team myteam
+uv run src/cli/cli.py -u Avalon_01 openclaw-snapshot export-all --team myteam
+uv run src/cli/cli.py -u Avalon_01 openclaw-snapshot restore-all --team myteam
 
 ```

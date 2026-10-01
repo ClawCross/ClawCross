@@ -420,7 +420,7 @@ def _memory_prompt(user_id: str, teams: list[str] | tuple[str, ...] = (), tool_m
     groups.append(("个人技能：" if teams else "可用技能：", list_memory(user_id)))
     lines = ["\n【用户技能 / Memory 条目】"]
     if tool_mode == "cli":
-        lines.append("按名称通过 `uv run scripts/cli.py skill list/show` 查看技能；技能存储位置由系统管理。")
+        lines.append("按名称通过 `uv run src/cli/cli.py skill list/show` 查看技能；技能存储位置由系统管理。")
     for title, entries in groups:
         if entries:
             lines.append(title)

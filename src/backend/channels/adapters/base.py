@@ -221,7 +221,7 @@ class ChannelAdapter(ABC):
                 self._cli_enabled.discard(key)
                 return True, "ClawCross cross shell closed."
             self._cli_enabled.add(key)
-            from scripts.clawcross import chat_help_text, chat_welcome_text, handle_channel_input, load_channel_state
+            from src.cli.clawcross import chat_help_text, chat_welcome_text, handle_channel_input, load_channel_state
             state = load_channel_state(channel, user_id, username)
             if arg in {"help", "h", "?"}:
                 return True, chat_help_text()
@@ -243,7 +243,7 @@ class ChannelAdapter(ABC):
         if key not in self._cli_enabled:
             return False, None
 
-        from scripts.clawcross import handle_channel_input, load_channel_state
+        from src.cli.clawcross import handle_channel_input, load_channel_state
         state = load_channel_state(channel, user_id, username)
         with self._cli_lock:
             active, reply = handle_channel_input(stripped, state)

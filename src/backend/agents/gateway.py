@@ -40,7 +40,7 @@ def reply_channel(agent: Agent, conversation_id: str) -> str:
     if agent.driver == WEBOT:
         return (f'send_to_group(group_id="{conversation_id}", content="你的回复")'
                 "（username 与 source_session 自动注入，不要手动填写）")
-    return (f"cd {shlex.quote(_PROJECT_ROOT)} && uv run scripts/cli.py -u {shlex.quote(agent.owner)} "
+    return (f"cd {shlex.quote(_PROJECT_ROOT)} && uv run src/cli/cli.py -u {shlex.quote(agent.owner)} "
             f"groups send --group-id {shlex.quote(conversation_id)} --agent {shlex.quote(agent.agent_id)} "
             "--message '你的回复'")
 

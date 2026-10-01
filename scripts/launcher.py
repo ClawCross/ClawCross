@@ -522,7 +522,11 @@ def start_fleet_conductor_if_configured():
     if enabled in ("0", "false", "no", "off"):
         print("🧭 [skip] ClawCross fleet 主控已禁用（CLAWCROSS_FLEET_CONDUCTOR=0）")
         return None
-    script = os.path.join(PROJECT_ROOT, "scripts", "fleet_conductor.py")
+    if not any((conductor_env.get(key) or "").strip()
+               for key in ("CLAWCROSS_DASHBOARD_URL", "DASHBOARD_URL")):
+        print("🧭 [skip] Fleet 主控未配置 Dashboard 地址")
+        return None
+    script = os.path.join(PROJECT_ROOT, "src", "backend", "fleet", "fleet_conductor.py")
     if not os.path.exists(script):
         return None
     print("🧭 启动 ClawCross fleet 本机主控...")

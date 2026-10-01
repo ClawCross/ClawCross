@@ -83,7 +83,7 @@ export CLAWCROSS_DASHBOARD_ROOT="<local-dashboard-repo>/dashboard"  # 只在本�
 ```bash
 cd $CLAWCROSS_REPO
 
-python3 scripts/configure_remote_claude_dashboard.py \
+python3 src/backend/fleet/configure_remote_claude_dashboard.py \
   <remote-user>@<remote-tailscale-ip> \
   --default-project-id <project-id> \
   --project-id <extra-project-id-if-needed> \
@@ -259,7 +259,7 @@ clawcross-fleet-agent task-md sync --project-id <project-id> --path TASK.md
 
 ```bash
 cd $CLAWCROSS_REPO
-python3 scripts/sync_task_md.py \
+python3 src/backend/fleet/sync_task_md.py \
   --project-id <project-id> \
   --task-md /path/to/TASK.md \
   --direction both
@@ -360,7 +360,7 @@ cat ~/.clawcross/data/remote_claude_targets.json
 如果 Tailscale hostname 不能推断正确用户，重新运行：
 
 ```bash
-python3 scripts/configure_remote_claude_dashboard.py <remote-user>@<remote-tailscale-ip> --default-project-id <project-id> --no-batch-mode
+python3 src/backend/fleet/configure_remote_claude_dashboard.py <remote-user>@<remote-tailscale-ip> --default-project-id <project-id> --no-batch-mode
 ```
 
 ### `clawcross-fleet-agent: command not found`

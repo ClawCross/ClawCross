@@ -12,8 +12,8 @@
   "scripts": {
     "clawcross": "node bin/clawcross.js",
     "pack:clawcross": "npm pack",
-    "build:pretext-vendor": "node scripts/dev/build_pretext_vendor.mjs",
-    "build:oasis-town": "node scripts/dev/build_oasis_town.mjs",
+    "build:pretext-vendor": "node tools/dev/build_pretext_vendor.mjs",
+    "build:oasis-town": "node tools/dev/build_oasis_town.mjs",
     "test:node": "node test/test_tinyfish_live_shared.js && node test/test_pretext_text_core.js",
     "test:browser-smoke": "playwright test --config playwright.config.mjs"
   },

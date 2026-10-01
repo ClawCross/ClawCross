@@ -1,6 +1,6 @@
 """Self-contained API client for ClawCross display commands.
 
-Mirrors helpers from ``scripts/cli.py`` without importing that module (which
+Mirrors helpers from ``src/cli/cli.py`` without importing that module (which
 has heavy side effects on import). All network calls degrade gracefully —
 errors come back as ``{"error": "..."}`` so callers can render friendly
 messages instead of crashing.
@@ -74,7 +74,7 @@ def _canonical_user() -> str:
 DEFAULT_USER = _canonical_user()
 
 
-# ── HTTP helpers (copied verbatim style from scripts/cli.py) ─────────────────
+# ── HTTP helpers (copied verbatim style from src/cli/cli.py) ─────────────────
 
 def _req(method: str, url: str, headers: dict | None = None,
          data: dict | list | None = None, params: dict | None = None,
@@ -147,7 +147,7 @@ def friendly_error(url: str, code: int, body: Any) -> str:
     return f"[{code}] {body}"
 
 
-# ── Workflow filesystem helpers (mirrored from scripts/cli.py) ───────────────
+# ── Workflow filesystem helpers (mirrored from src/cli/cli.py) ───────────────
 
 def _workflow_yaml_dir(user_id: str, team: str = "") -> str:
     user_root = os.path.join(str(USER_FILES_DIR), user_id)

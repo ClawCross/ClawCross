@@ -69,7 +69,7 @@ Read only the docs relevant to the current task:
 | Build a Team / use ClawCross Creator | [`docs/team-creator.md`](./docs/team-creator.md) | [`docs/build_team.md`](./docs/build_team.md) |
 | OASIS / Town Mode / GraphRAG | [`docs/oasis-reference.md`](./docs/oasis-reference.md) | [`docs/create_workflow.md`](./docs/create_workflow.md) |
 | Runtime architecture / auth | [`docs/runtime-reference.md`](./docs/runtime-reference.md) | [`docs/ports.md`](./docs/ports.md) |
-| CLI commands | [`docs/cli.md`](./docs/cli.md) | `uv run scripts/cli.py <cmd> --help` |
+| CLI commands | [`docs/cli.md`](./docs/cli.md) | `uv run src/cli/cli.py <cmd> --help` |
 | Workflow YAML | [`docs/create_workflow.md`](./docs/create_workflow.md) | [`docs/example_team.md`](./docs/example_team.md) |
 | OpenClaw integration | [`docs/openclaw-commands.md`](./docs/openclaw-commands.md) | [`docs/build_team.md`](./docs/build_team.md) |
 | ACP / acpx | [`docs/runtime-reference.md`](./docs/runtime-reference.md) | [`docs/oasis-reference.md`](./docs/oasis-reference.md) |

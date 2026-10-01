@@ -64,7 +64,7 @@ def identity_prompt(agent: Agent, context: dict[str, Any] | None = None, instruc
         frame_session_identity(agent.name, "", str(agent.config.get("persona") or "").strip()),
         build_user_profile_block(agent.owner),
         f"【ClawCross 会话】\nowner: {agent.owner}\nagent_id: {agent.agent_id}\n"
-        f"命令行入口：cd {shlex.quote(str(PROJECT_ROOT))} && uv run scripts/cli.py -u {shlex.quote(agent.owner)} --help",
+        f"命令行入口：cd {shlex.quote(str(PROJECT_ROOT))} && uv run src/cli/cli.py -u {shlex.quote(agent.owner)} --help",
     ]
     return "\n\n".join(p.strip() for p in parts if p and p.strip())
 
