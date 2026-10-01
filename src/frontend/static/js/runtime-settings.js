@@ -243,7 +243,9 @@ function renderRuntimeContextUsage(usage = {}, configuredWindow = 0) {
     const scale = total > used && used > 0 ? used / total : 1;
     const pct = Math.min(100, used / budget * 100);
     const count = value => Math.round(value).toLocaleString();
-    const label = runtimeSettingsText('历史上下文占用', 'Context usage');
+    const label = usage.source === 'api'
+        ? runtimeSettingsText('上轮上下文占用（API 实测）', 'Last context usage (API measured)')
+        : runtimeSettingsText('上下文占用（估算）', 'Context usage (estimated)');
     const percent = pct === 0 ? '0' : pct < 1 ? pct.toFixed(2) : pct.toFixed(1);
     return `<div class="runtime-context-usage">
         <div class="runtime-context-usage-heading"><span>${label}${usage.source === 'estimate' ? runtimeSettingsText(' · 估算', ' · Estimated') : ''}</span><strong>${percent}%</strong></div>
