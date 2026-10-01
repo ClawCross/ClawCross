@@ -38,8 +38,8 @@ def _run_shell(command: str, *, step: str) -> None:
 
 def _default_restart_command() -> str:
     if os.name == "nt":
-        return r'powershell -ExecutionPolicy Bypass -Command "& .\selfskill\scripts\run.ps1 stop; & .\selfskill\scripts\run.ps1 start"'
-    return "bash selfskill/scripts/run.sh stop && bash selfskill/scripts/run.sh start"
+        return r'powershell -ExecutionPolicy Bypass -Command "& .\launch\run.ps1 stop; & .\launch\run.ps1 start"'
+    return "bash launch/run.sh stop && bash launch/run.sh start"
 
 
 def _run_git(*args: str) -> None:

@@ -178,7 +178,7 @@ def _ensure_config() -> None:
     if ENV_FILE.is_file():
         return
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    subprocess.run([sys.executable, str(ROOT / "selfskill/scripts/configure.py"), "--init"],
+    subprocess.run([sys.executable, str(ROOT / "src/backend/ops/setup/configure.py"), "--init"],
                    cwd=ROOT, check=True)
 
 
@@ -194,7 +194,7 @@ def _migrate_if_needed() -> None:
 def _maybe_import_openclaw(env: dict[str, str], *, no_openclaw: bool) -> None:
     if no_openclaw or (env.get("LLM_API_KEY") or "") not in {"", "your_api_key_here"}:
         return
-    subprocess.run([sys.executable, str(ROOT / "selfskill/scripts/configure_openclaw.py"),
+    subprocess.run([sys.executable, str(ROOT / "src/backend/ops/setup/configure_openclaw.py"),
                     "--import-clawcross-llm-from-openclaw"], cwd=ROOT, check=False,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -370,15 +370,15 @@ def _logs(arguments: list[str]) -> int:
 
 def _legacy_command(command: str, arguments: list[str]) -> int | None:
     scripts = {
-        "add-user": ("selfskill/scripts/adduser.py", []),
-        "configure": ("selfskill/scripts/configure.py", []),
-        "auto-model": ("selfskill/scripts/configure.py", ["--auto-model"]),
-        "sync-openclaw-llm": ("selfskill/scripts/configure_openclaw.py", ["--sync-clawcross-llm"]),
-        "import-openclaw-llm": ("selfskill/scripts/configure_openclaw.py", ["--import-clawcross-llm-from-openclaw"]),
-        "evolve-skill": ("selfskill/scripts/evolve_skill.py", []),
+        "add-user": ("src/backend/ops/setup/adduser.py", []),
+        "configure": ("src/backend/ops/setup/configure.py", []),
+        "auto-model": ("src/backend/ops/setup/configure.py", ["--auto-model"]),
+        "sync-openclaw-llm": ("src/backend/ops/setup/configure_openclaw.py", ["--sync-clawcross-llm"]),
+        "import-openclaw-llm": ("src/backend/ops/setup/configure_openclaw.py", ["--import-clawcross-llm-from-openclaw"]),
+        "evolve-skill": ("tools/maintenance/evolve_skill.py", []),
         "cli": ("src/cli/cli.py", []),
         "clawcross": ("src/cli/clawcross.py", []),
-        "check-openclaw": ("selfskill/scripts/configure_openclaw.py", ["--status"]),
+        "check-openclaw": ("src/backend/ops/setup/configure_openclaw.py", ["--status"]),
     }
     if command in scripts:
         script, prefix = scripts[command]

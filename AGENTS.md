@@ -81,7 +81,7 @@ Read only the docs relevant to the current task:
 Before touching code, read [`docs/repo-index.md`](./docs/repo-index.md). It maps:
 
 - Runtime entrypoints (`src/backend/server.py`, `src/frontend/server.py`, `src/backend/scheduler/service.py`, `src/backend/oasis/server.py`)
-- Install scripts (`selfskill/scripts/run.*`, `configure.py`)
+- Install scripts (`launch/run.*`, `configure.py`)
 - Frontend files, OASIS Town / GraphRAG files, ACP adapter
 - Team / workflow data paths under `data/user_files/...`
 

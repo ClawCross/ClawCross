@@ -30,9 +30,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from clawcross_cli import channels as catalog
-from clawcross_cli.channels import BotField, ChannelInfo
-from clawcross_cli.picker import curses_radiolist, prompt_text
+from src.cli.commands import channels as catalog
+from src.cli.commands.channels import BotField, ChannelInfo
+from src.cli.commands.picker import curses_radiolist, prompt_text
 from src.backend.common.env_settings import read_env_all, write_env_settings
 from src.backend.common.runtime_paths import PID_DIR
 

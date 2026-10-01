@@ -16,9 +16,9 @@ import re
 import sys
 from pathlib import Path
 
-from clawcross_cli import models_store
-from clawcross_cli.picker import curses_radiolist, prompt_text
-from clawcross_cli.providers import (
+from src.cli.commands import models_store
+from src.cli.commands.picker import curses_radiolist, prompt_text
+from src.cli.commands.providers import (
     ENV_API_KEY,
     ENV_BASE_URL_KEY,
     ENV_MODEL_KEY,

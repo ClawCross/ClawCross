@@ -3,7 +3,7 @@
 ClawCross CLI entrypoint — model, team, workflow, skill, cron.
 
 Invoked by ``launch/clawcross`` bash wrapper (or directly via
-``python3 -m clawcross_cli.main``).
+``python3 -m src.cli.commands.main``).
 
 Subcommands:
   model [list|show|use|add|remove|migrate|<name>]
@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import sys
 
-from clawcross_cli.model_cmd import handle_model_command
+from src.cli.commands.model_cmd import handle_model_command
 
 
 def usage() -> None:
@@ -81,42 +81,42 @@ def main() -> None:
         if out:
             print(out)
     elif cmd == "team":
-        from clawcross_cli.display_cmd import handle_team_command
+        from src.cli.commands.display_cmd import handle_team_command
         out = handle_team_command(rest, interactive=True)
         if out:
             print(out)
     elif cmd == "workflow":
-        from clawcross_cli.display_cmd import handle_workflow_command
+        from src.cli.commands.display_cmd import handle_workflow_command
         out = handle_workflow_command(rest, interactive=True)
         if out:
             print(out)
     elif cmd == "workflow-manual":
-        from clawcross_cli.workflow_manual_cmd import handle_workflow_manual_command
+        from src.cli.commands.workflow_manual_cmd import handle_workflow_manual_command
         out = handle_workflow_manual_command(rest)
         if out:
             print(out)
     elif cmd == "skill":
-        from clawcross_cli.display_cmd import handle_skill_command
+        from src.cli.commands.display_cmd import handle_skill_command
         out = handle_skill_command(rest, interactive=True)
         if out:
             print(out)
     elif cmd == "expert":
-        from clawcross_cli.display_cmd import handle_expert_command
+        from src.cli.commands.display_cmd import handle_expert_command
         out = handle_expert_command(rest, interactive=True)
         if out:
             print(out)
     elif cmd == "cron":
-        from clawcross_cli.display_cmd import handle_cron_command
+        from src.cli.commands.display_cmd import handle_cron_command
         out = handle_cron_command(rest, interactive=True)
         if out:
             print(out)
     elif cmd == "channel":
-        from clawcross_cli.channel_cmd import handle_channel_command
+        from src.cli.commands.channel_cmd import handle_channel_command
         out = handle_channel_command(rest, interactive=True)
         if out:
             print(out)
     elif cmd == "compact":
-        from clawcross_cli.display_cmd import handle_compact_command
+        from src.cli.commands.display_cmd import handle_compact_command
         out = handle_compact_command(rest)
         if out:
             print(out)

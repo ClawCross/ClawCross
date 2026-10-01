@@ -7,7 +7,7 @@ from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT_DIR = ROOT / "selfskill" / "scripts"
+SCRIPT_DIR = ROOT / "src" / "backend" / "ops" / "setup"
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 

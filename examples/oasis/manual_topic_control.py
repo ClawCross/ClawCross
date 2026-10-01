@@ -5,7 +5,7 @@ import asyncio
 from pathlib import Path
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src/backend"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src/backend"))
 
 from oasis.forum_client import conclude_topic, create_empty_topic, publish_to_topic
 

@@ -21,7 +21,7 @@ if sys.version_info < (3, 9):
         "\n"
         "Common cause: on macOS, system 'python' may point to Python 2.7.\n"
         "Solutions:\n"
-        "  1. Use the canonical startup: bash selfskill/scripts/run.sh start\n"
+        "  1. Use the canonical startup: bash launch/run.sh start\n"
         "  2. Or activate the venv first: source .venv/bin/activate && python launch/launcher.py\n"
         "  3. Or use the venv python directly: .venv/bin/python launch/launcher.py\n"
         "\n".format(sys.version_info[0], sys.version_info[1])
@@ -66,7 +66,7 @@ PLACEHOLDER = "wait to set"
 # 检查 .env 配置文件是否存在（推荐用 run.sh/run.ps1 start，会自动 configure --init）
 if not os.path.exists(ENV_FILE_PATH):
     print(f"❌ 未找到 {ENV_FILE_PATH}。")
-    print("   请执行: bash selfskill/scripts/run.sh start（或 Windows: selfskill\\scripts\\run.ps1 start）")
+    print("   请执行: bash launch/run.sh start（或 Windows: launch\\run.ps1 start）")
     print("   会先按模板生成 .env；不必事先填写 LLM Key，可用 Magic link 登录后在网页向导配置或从 OpenClaw 导入。")
     sys.exit(1)
 
@@ -81,11 +81,11 @@ if _require_llm_model in ("1", "true", "yes", "on") and _allow_empty_llm_model n
         print("❌ LLM_MODEL 未配置，且 CLAWCROSS_REQUIRE_LLM_MODEL=1 已要求严格模式。")
         print("   请先设置模型，例如：")
         if sys.platform == "win32":
-            print("   powershell -ExecutionPolicy Bypass -File .\\selfskill\\scripts\\run.ps1 configure LLM_MODEL deepseek-chat")
-            print("   可先查看可用模型：powershell -ExecutionPolicy Bypass -File .\\selfskill\\scripts\\run.ps1 auto-model")
+            print("   powershell -ExecutionPolicy Bypass -File .\\launch\\run.ps1 configure LLM_MODEL deepseek-chat")
+            print("   可先查看可用模型：powershell -ExecutionPolicy Bypass -File .\\launch\\run.ps1 auto-model")
         else:
-            print("   bash selfskill/scripts/run.sh configure LLM_MODEL deepseek-chat")
-            print("   可先查看可用模型：bash selfskill/scripts/run.sh auto-model")
+            print("   bash launch/run.sh configure LLM_MODEL deepseek-chat")
+            print("   可先查看可用模型：bash launch/run.sh auto-model")
         print("   如需临时允许空模型启动，可设置环境变量 CLAWCROSS_ALLOW_EMPTY_LLM_MODEL=1。")
         sys.exit(1)
 
@@ -249,7 +249,7 @@ def ensure_openclaw_gateway_running():
         return
 
     try:
-        script_dir = os.path.join(PROJECT_ROOT, "selfskill", "scripts")
+        script_dir = os.path.join(PROJECT_ROOT, "src", "backend", "ops", "setup")
         if script_dir not in sys.path:
             sys.path.insert(0, script_dir)
 

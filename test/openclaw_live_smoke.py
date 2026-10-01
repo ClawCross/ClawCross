@@ -33,7 +33,7 @@ import requests
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SCRIPT_DIR = PROJECT_ROOT / "selfskill" / "scripts"
+SCRIPT_DIR = PROJECT_ROOT / "src" / "backend" / "ops" / "setup"
 
 
 def _read_env_file() -> dict[str, str]:

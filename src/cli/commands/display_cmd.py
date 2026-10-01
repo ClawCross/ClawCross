@@ -14,8 +14,8 @@ import os
 import sys
 from typing import Any, Iterable
 
-from clawcross_cli import api_client
-from clawcross_cli.picker import curses_radiolist
+from src.cli.commands import api_client
+from src.cli.commands.picker import curses_radiolist
 
 
 # ── shared helpers ──────────────────────────────────────────────────────────
@@ -207,7 +207,7 @@ def _handle_team_delete(rest: list[str], *, interactive: bool, user: str) -> str
         return "Usage: clawcross team delete <name>"
 
     if interactive and _is_tty():
-        from clawcross_cli.picker import prompt_text
+        from src.cli.commands.picker import prompt_text
         confirm = prompt_text(
             f"Delete team {name!r} and all its internal agents? "
             "Type the team name to confirm: "
@@ -229,7 +229,7 @@ def _handle_team_rename(rest: list[str], *, interactive: bool = False, user: str
     old = rest[0].strip() if rest else ""
     new = rest[1].strip() if len(rest) > 1 else ""
     if interactive and _is_tty():
-        from clawcross_cli.picker import prompt_text
+        from src.cli.commands.picker import prompt_text
         old = old or _pick_team(user, "Rename which team?")
         if old and not new:
             new = prompt_text(f"New name for {old!r}: ").strip()
@@ -363,7 +363,7 @@ def handle_team_command(args: list[str], *, interactive: bool = False, user: str
         if len(args) >= 2:
             name = args[1].strip()
         elif interactive:
-            from clawcross_cli.picker import prompt_text
+            from src.cli.commands.picker import prompt_text
             name = prompt_text("New team name: ").strip()
         else:
             return "Usage: /cross team new <name>"
@@ -598,7 +598,7 @@ def _handle_workflow_new(rest: list[str], *, interactive: bool, user: str) -> st
     Interactive (CLI tty): if no `from`, opens $EDITOR with a template.
     Channel: requires `from <path>` since there is no stdin/editor.
     """
-    from clawcross_cli.picker import prompt_text
+    from src.cli.commands.picker import prompt_text
 
     if not rest:
         if not interactive:
@@ -899,7 +899,7 @@ def handle_workflow_command(args: list[str], *, interactive: bool = False, user:
             picked = _pick_workflow_to_run(user)
             if isinstance(picked, str):  # error / cancel message
                 return picked
-            from clawcross_cli.picker import prompt_text
+            from src.cli.commands.picker import prompt_text
             question = prompt_text("Question: ").strip()
             if not question:
                 return "Workflow run cancelled (empty question)."
@@ -1024,7 +1024,7 @@ Procedural steps the agent should follow when invoking this skill.
 
 def _handle_skill_new(rest: list[str], *, interactive: bool, user: str) -> str:
     """`/cross skill new <name> [team <T>] [from <file>]`."""
-    from clawcross_cli.picker import prompt_text
+    from src.cli.commands.picker import prompt_text
 
     if not rest:
         if not interactive:
@@ -1126,7 +1126,7 @@ def _handle_skill_delete(rest: list[str], *, interactive: bool, user: str) -> st
     """`skill delete <name> [team <T>]` — delete a managed skill."""
     name, team = _parse_name_team(rest)
     if not name and interactive and _is_tty():
-        from clawcross_cli.picker import prompt_text
+        from src.cli.commands.picker import prompt_text
         name = prompt_text("Skill name to delete: ").strip()
     if not name:
         return "Usage: clawcross skill delete <name> [team <T>]"
@@ -1141,7 +1141,7 @@ def _handle_skill_show(rest: list[str], *, interactive: bool = False, user: str)
     """`skill show <name> [team <T>]` — print the SKILL.md content."""
     name, team = _parse_name_team(rest)
     if not name and interactive and _is_tty():
-        from clawcross_cli.picker import prompt_text
+        from src.cli.commands.picker import prompt_text
         name = prompt_text("Skill name to show: ").strip()
     if not name:
         return "Usage: clawcross skill show <name> [team <T>]"
@@ -1305,7 +1305,7 @@ def _handle_cron_new(rest: list[str], *, interactive: bool, user: str) -> str:
     Team is optional — omit it for a public/personal alarm. In a terminal the
     scope and target are chosen from pickers rather than typed.
     """
-    from clawcross_cli.picker import prompt_text
+    from src.cli.commands.picker import prompt_text
 
     parsed = {
         "team": "",
@@ -1613,7 +1613,7 @@ def _handle_expert_add(rest: list[str], *, interactive: bool, user: str) -> str:
     name = kv.get("name", "")
     persona = kv.get("persona", "")
     if interactive and _is_tty():
-        from clawcross_cli.picker import prompt_text
+        from src.cli.commands.picker import prompt_text
         team = team or _pick_team(user, "Add expert to which team?") or prompt_text("team: ").strip()
         tag = tag or prompt_text("tag (short id): ").strip()
         name = name or prompt_text("name: ").strip()

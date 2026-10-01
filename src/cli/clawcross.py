@@ -508,7 +508,7 @@ def _recent_lines(state: dict, width: int) -> list[str]:
 def _llm_status_hint() -> str:
     """Single-line hint shown in the welcome banner about LLM configuration."""
     try:
-        from clawcross_cli import models_store
+        from src.cli.commands import models_store
         active = models_store.get_active()
         if active is not None:
             return f"LLM: {active.provider}/{active.model} (profile {active.name!r})"
@@ -525,7 +525,7 @@ def _missing_model_hint(model: str = "default") -> str | None:
     if model and model != "default":
         return None
     try:
-        from clawcross_cli.runtime_provider import resolve_active_profile
+        from src.cli.commands.runtime_provider import resolve_active_profile
         if resolve_active_profile().model:
             return None
     except Exception:
@@ -2331,44 +2331,44 @@ def _handle_slash(command: str, state: dict) -> bool:
         _cmd_tunnel(parts[1].strip() if len(parts) >= 2 else "")
         return True
     if name == "/model":
-        from clawcross_cli.model_cmd import handle_model_command
+        from src.cli.commands.model_cmd import handle_model_command
         out = handle_model_command(parts[1:], interactive=True)
         if out:
             print(out)
         return True
     current_user = (state.get("current", {}).get("user") or "").strip() or None
     if name == "/team":
-        from clawcross_cli.display_cmd import handle_team_command
+        from src.cli.commands.display_cmd import handle_team_command
         out = handle_team_command(parts[1:], interactive=True, user=current_user)
         if out:
             print(out)
         return True
     if name == "/workflow":
-        from clawcross_cli.display_cmd import handle_workflow_command
+        from src.cli.commands.display_cmd import handle_workflow_command
         out = handle_workflow_command(parts[1:], interactive=True, user=current_user)
         if out:
             print(out)
         return True
     if name == "/skill":
-        from clawcross_cli.display_cmd import handle_skill_command
+        from src.cli.commands.display_cmd import handle_skill_command
         out = handle_skill_command(parts[1:], interactive=True, user=current_user)
         if out:
             print(out)
         return True
     if name == "/expert":
-        from clawcross_cli.display_cmd import handle_expert_command
+        from src.cli.commands.display_cmd import handle_expert_command
         out = handle_expert_command(parts[1:], interactive=True, user=current_user)
         if out:
             print(out)
         return True
     if name == "/cron":
-        from clawcross_cli.display_cmd import handle_cron_command
+        from src.cli.commands.display_cmd import handle_cron_command
         out = handle_cron_command(parts[1:], interactive=True, user=current_user)
         if out:
             print(out)
         return True
     if name == "/channel":
-        from clawcross_cli.channel_cmd import handle_channel_command
+        from src.cli.commands.channel_cmd import handle_channel_command
         out = handle_channel_command(parts[1:], interactive=True)
         if out:
             print(out)
@@ -2700,38 +2700,38 @@ def handle_channel_input(text: str, state: dict) -> tuple[bool, str]:
         _save_state(state)
         return True, f"session: {_current(state)['session']}"
     if line.startswith("/") and line.split(maxsplit=1)[0].lower() == "/model":
-        from clawcross_cli.model_cmd import handle_model_command
+        from src.cli.commands.model_cmd import handle_model_command
         rest = line.split(maxsplit=1)
         args = rest[1].strip().split() if len(rest) > 1 else []
         return True, handle_model_command(args) or ""
     current_user = (state.get("current", {}).get("user") or "").strip() or None
     if line.startswith("/") and line.split(maxsplit=1)[0].lower() == "/team":
-        from clawcross_cli.display_cmd import handle_team_command
+        from src.cli.commands.display_cmd import handle_team_command
         rest = line.split(maxsplit=1)
         args = rest[1].strip().split() if len(rest) > 1 else []
         return True, handle_team_command(args, user=current_user) or ""
     if line.startswith("/") and line.split(maxsplit=1)[0].lower() == "/workflow":
-        from clawcross_cli.display_cmd import handle_workflow_command
+        from src.cli.commands.display_cmd import handle_workflow_command
         rest = line.split(maxsplit=1)
         args = rest[1].strip().split() if len(rest) > 1 else []
         return True, handle_workflow_command(args, user=current_user) or ""
     if line.startswith("/") and line.split(maxsplit=1)[0].lower() == "/skill":
-        from clawcross_cli.display_cmd import handle_skill_command
+        from src.cli.commands.display_cmd import handle_skill_command
         rest = line.split(maxsplit=1)
         args = rest[1].strip().split() if len(rest) > 1 else []
         return True, handle_skill_command(args, user=current_user) or ""
     if line.startswith("/") and line.split(maxsplit=1)[0].lower() == "/expert":
-        from clawcross_cli.display_cmd import handle_expert_command
+        from src.cli.commands.display_cmd import handle_expert_command
         rest = line.split(maxsplit=1)
         args = rest[1].strip().split() if len(rest) > 1 else []
         return True, handle_expert_command(args, user=current_user) or ""
     if line.startswith("/") and line.split(maxsplit=1)[0].lower() == "/cron":
-        from clawcross_cli.display_cmd import handle_cron_command
+        from src.cli.commands.display_cmd import handle_cron_command
         rest = line.split(maxsplit=1)
         args = rest[1].strip().split() if len(rest) > 1 else []
         return True, handle_cron_command(args, user=current_user) or ""
     if line.startswith("/") and line.split(maxsplit=1)[0].lower() == "/channel":
-        from clawcross_cli.channel_cmd import handle_channel_command
+        from src.cli.commands.channel_cmd import handle_channel_command
         rest = line.split(maxsplit=1)
         args = rest[1].strip().split() if len(rest) > 1 else []
         return True, handle_channel_command(args) or ""
@@ -2905,49 +2905,49 @@ def main() -> int:
             args.value = []
         return cmd_config(args, state)
     if args.command == "model":
-        from clawcross_cli.model_cmd import handle_model_command
+        from src.cli.commands.model_cmd import handle_model_command
         out = handle_model_command(list(args.args or []), interactive=True)
         if out:
             print(out)
         return 0
     if args.command == "team":
-        from clawcross_cli.display_cmd import handle_team_command
+        from src.cli.commands.display_cmd import handle_team_command
         out = handle_team_command(list(args.args or []), interactive=True)
         if out:
             print(out)
         return 0
     if args.command == "workflow":
-        from clawcross_cli.display_cmd import handle_workflow_command
+        from src.cli.commands.display_cmd import handle_workflow_command
         out = handle_workflow_command(list(args.args or []), interactive=True)
         if out:
             print(out)
         return 0
     if args.command == "workflow-manual":
-        from clawcross_cli.workflow_manual_cmd import handle_workflow_manual_command
+        from src.cli.commands.workflow_manual_cmd import handle_workflow_manual_command
         out = handle_workflow_manual_command()
         if out:
             print(out)
         return 0
     if args.command == "skill":
-        from clawcross_cli.display_cmd import handle_skill_command
+        from src.cli.commands.display_cmd import handle_skill_command
         out = handle_skill_command(list(args.args or []), interactive=True)
         if out:
             print(out)
         return 0
     if args.command == "expert":
-        from clawcross_cli.display_cmd import handle_expert_command
+        from src.cli.commands.display_cmd import handle_expert_command
         out = handle_expert_command(list(args.args or []), interactive=True)
         if out:
             print(out)
         return 0
     if args.command == "cron":
-        from clawcross_cli.display_cmd import handle_cron_command
+        from src.cli.commands.display_cmd import handle_cron_command
         out = handle_cron_command(list(args.args or []), interactive=True)
         if out:
             print(out)
         return 0
     if args.command == "channel":
-        from clawcross_cli.channel_cmd import handle_channel_command
+        from src.cli.commands.channel_cmd import handle_channel_command
         out = handle_channel_command(list(args.args or []), interactive=True)
         if out:
             print(out)

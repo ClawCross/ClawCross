@@ -1204,7 +1204,7 @@ def _build_managed_section(
         "## Self-Evolution Loop",
         "",
         "This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.",
-        "Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `selfskill/scripts/evolve_skill.py`.",
+        "Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.",
         "",
         f"- Updated at: `{report.get('generated_at', _utc_now_iso())}`",
         f"- Strategy: `{(report.get('strategy') or {}).get('name', 'balanced')}`",

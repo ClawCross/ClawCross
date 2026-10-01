@@ -16,11 +16,15 @@ Use this file when an agent needs to **index the repo before reading code**. It 
 | `SKILL.md` | Agent entrypoint and task router |
 | `README.md` | Product overview |
 | `docs/` | Task docs, maintainer docs, repo index |
-| `selfskill/scripts/` | Preferred install / configure / run entrypoints |
 | `launch/` | launch, environment preparation, runtime control, tunnel and runtime migration only |
 | `src/cli/` | interactive CLI and API command interface |
-| `tools/dev/` | development and frontend/preset build tools |
-| `examples/` | manual clients and workflow examples |
+| `src/cli/commands/` | CLI subcommands, profiles, pickers and API client |
+| `src/backend/ops/setup/` | runtime configuration, user setup and optional OpenClaw configuration |
+| `tools/build/` | development and frontend/preset build tools |
+| `tools/diagnostics/` | runtime inspection tools |
+| `tools/maintenance/` | repository maintenance tools |
+| `examples/` | API and OASIS examples, grouped by subsystem |
+| `agents/` | standard skill interface metadata for root SKILL.md |
 | `src/backend/` | every backend service, one package per module; the Python import root |
 | `src/frontend/` | the web frontend: Flask server, proxies to the backend, templates, static assets |
 | `config/` | `.env`, TinyFish target files, requirements, users |
@@ -51,17 +55,17 @@ Read these first for setup or environment changes:
 
 | Path | Purpose |
 |---|---|
-| `selfskill/scripts/run.sh` | Linux / macOS uv and Python bootstrap |
-| `selfskill/scripts/run.ps1` | Windows uv and Python bootstrap |
+| `launch/run.sh` | Linux / macOS uv and Python bootstrap |
+| `launch/run.ps1` | Windows uv and Python bootstrap |
 | `launch/runtime_control.py` | shared Python start, stop, status, and tunnel lifecycle |
 | `launch/environment.py` | core Python dependencies and explicit optional component installs |
 | `config/requirements-channels.txt` | optional QQ, Telegram, and media dependencies |
-| `selfskill/scripts/configure.py` | `.env` initialization and configuration logic |
-| `selfskill/scripts/configure_openclaw.py` | OpenClaw detection plus Clawcross/OpenClaw LLM sync logic |
+| `src/backend/ops/setup/configure.py` | `.env` initialization and configuration logic |
+| `src/backend/ops/setup/configure_openclaw.py` | OpenClaw detection plus Clawcross/OpenClaw LLM sync logic |
 | `config/.env.example` | config template and inline guidance |
 | `config/tinyfish_targets.example.json` | example TinyFish search target schema |
-| `selfskill/scripts/configure.py` | API key and model configuration |
-| `selfskill/scripts/evolve_skill.py` | repo-level Markdown skill self-evolution helper with strategy presets and validation artifacts |
+| `src/backend/ops/setup/configure.py` | API key and model configuration |
+| `tools/maintenance/evolve_skill.py` | repo-level Markdown skill self-evolution helper with strategy presets and validation artifacts |
 
 If the issue is model detection or provider-specific behavior, inspect:
 
@@ -218,7 +222,7 @@ For external AI agent communication via the Agent Client Protocol:
 
 Known ACP tools (external AI agents): `openclaw`, `codex`, `claude`, `gemini`, `aider`.
 
-`acpx` is optional. Install it explicitly with `bash selfskill/scripts/run.sh install-component acpx` before using ACP agents.
+`acpx` is optional. Install it explicitly with `bash launch/run.sh install-component acpx` before using ACP agents.
 
 ## Bot Integrations
 
@@ -321,7 +325,7 @@ Read:
 
 - `src/backend/common/llm_factory.py`
 - `src/backend/ops/service.py`
-- `selfskill/scripts/configure.py`
+- `src/backend/ops/setup/configure.py`
 
 ### "Workflow YAML or OASIS execution is wrong"
 
@@ -376,8 +380,8 @@ Read:
 Read:
 
 - `docs/openclaw-commands.md`
-- `selfskill/scripts/configure_openclaw.py`
-- `selfskill/scripts/configure.py`
+- `src/backend/ops/setup/configure_openclaw.py`
+- `src/backend/ops/setup/configure.py`
 - `config/.env.example`
 
 ### "TinyFish search agent or data extraction is wrong"

@@ -2,4 +2,4 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec bash "$ROOT/selfskill/scripts/run.sh" clawcross "$@"
+exec bash "$ROOT/launch/run.sh" clawcross "$@"

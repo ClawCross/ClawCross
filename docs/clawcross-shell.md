@@ -11,14 +11,14 @@
 Equivalent repo-local launcher:
 
 ```bash
-bash selfskill/scripts/run.sh clawcross
+bash launch/run.sh clawcross
 ```
 
 PowerShell launcher:
 
 ```powershell
 .\clawcross.ps1
-.\selfskill\scripts\run.ps1 clawcross
+.\launch\run.ps1 clawcross
 ```
 
 NPM entrypoints:

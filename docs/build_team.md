@@ -9,7 +9,7 @@
 - Clawcross services must be running (Agent, Scheduler, OASIS, Frontend)
 - Check service status:
   ```bash
-  bash selfskill/scripts/run.sh status
+  bash launch/run.sh status
   ```
 - Default ports: Agent(51200), Scheduler(51201), OASIS(51202), Frontend(51209)
 
