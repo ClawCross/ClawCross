@@ -22,7 +22,7 @@ ClawCross 把一台机器上所有 agent 统一成一种东西：**有编号的�
 
 基础 system prompt 保留身份、人设和共同约束；工作流用法与操作边界在对应工具描述中，详细格式由 `get_workflow_rules` 按需读取。
 group 动态块只带 meta：ID、名称、类型、群内身份、成员、投递规则及回复通道。字段由 `common/conversation_context.py` 筛选，正文和摘要不进入 group 块。
-群消息正文仍保存在 inbox；通知和动态状态只提供摘要，agent 通过 `read_session_inbox` 读取正文。批量通知可以携带多个群的 meta。
+内部 WeBot 的群消息正文保存在持久 inbox；通知和动态状态只提供摘要，通过 `read_session_inbox` 读取正文。批量通知可以携带多个群的 meta。没有自身 inbox 的外部 runtime 将新消息直接作为增量文本投递，group 动态块同样只带 meta。
 内部每轮使用当前 meta，正常对话撤销旧群上下文；有记忆的外部 agent 只接收发生变化的 meta，离开群时收到撤销信息。
 
 历史压缩保留原始消息，摘要不替代审核使用的原始授权证据。压缩或临时裁剪移除旧状态基准时，第一份保留的动态状态会恢复成完整快照。
