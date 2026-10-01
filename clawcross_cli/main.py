@@ -2,7 +2,7 @@
 """
 ClawCross CLI entrypoint — model, team, workflow, skill, cron.
 
-Invoked by ``scripts/clawcross`` bash wrapper (or directly via
+Invoked by ``launch/clawcross`` bash wrapper (or directly via
 ``python3 -m clawcross_cli.main``).
 
 Subcommands:

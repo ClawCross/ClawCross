@@ -83,5 +83,5 @@ if (-not $env:CLAWCROSS_UV_BIN) {
 }
 $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"
-& $python (Join-Path $projectRoot "scripts\runtime_control.py") $Command @Rest
+& $python (Join-Path $projectRoot "launch\runtime_control.py") $Command @Rest
 exit $LASTEXITCODE

@@ -4163,7 +4163,7 @@ import platform as _platform
 
 _IS_WINDOWS = _platform.system().lower() == "windows"
 _TUNNEL_PIDFILE = os.path.join(str(PID_DIR), "tunnel.pid")
-_TUNNEL_SCRIPT = os.path.join(root_dir, "scripts", "tunnel.py")
+_TUNNEL_SCRIPT = os.path.join(root_dir, "launch", "tunnel.py")
 
 
 def _tunnel_running() -> tuple[bool, int | None]:

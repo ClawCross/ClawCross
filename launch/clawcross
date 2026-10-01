@@ -2,9 +2,9 @@
 # ClawCross CLI launcher — model profile management
 #
 # Usage:
-#   ./scripts/clawcross model              # interactive model selection
-#   ./scripts/clawcross model gpt-4o       # set LLM_MODEL directly
-#   ./scripts/clawcross model add myapi    # create a full model profile
+#   ./launch/clawcross model              # interactive model selection
+#   ./launch/clawcross model gpt-4o       # set LLM_MODEL directly
+#   ./launch/clawcross model add myapi    # create a full model profile
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"

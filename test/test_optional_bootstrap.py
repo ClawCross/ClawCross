@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _load_environment():
-    spec = importlib.util.spec_from_file_location("clawcross_environment", ROOT / "scripts/environment.py")
+    spec = importlib.util.spec_from_file_location("clawcross_environment", ROOT / "launch/environment.py")
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)
@@ -21,7 +21,7 @@ def _load_environment():
 
 
 def _load_runtime_control():
-    spec = importlib.util.spec_from_file_location("clawcross_runtime_control", ROOT / "scripts/runtime_control.py")
+    spec = importlib.util.spec_from_file_location("clawcross_runtime_control", ROOT / "launch/runtime_control.py")
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)
@@ -159,7 +159,7 @@ def test_srt_install_has_its_own_explicit_component(tmp_path, monkeypatch):
 
 
 def test_stale_tunnel_domain_is_cleared_before_start(tmp_path, monkeypatch):
-    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    monkeypatch.syspath_prepend(str(ROOT / "launch"))
     control = _load_runtime_control()
     env_file = tmp_path / ".env"
     env_file.write_text("PORT_FRONTEND=51209\nPUBLIC_DOMAIN=https://old.trycloudflare.com\n", encoding="utf-8")
@@ -170,7 +170,7 @@ def test_stale_tunnel_domain_is_cleared_before_start(tmp_path, monkeypatch):
 
 
 def test_windows_pid_probe_does_not_signal_process(tmp_path, monkeypatch):
-    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    monkeypatch.syspath_prepend(str(ROOT / "launch"))
     control = _load_runtime_control()
     pid_file = tmp_path / "service.pid"
     pid_file.write_text("4321\n", encoding="ascii")
@@ -182,7 +182,7 @@ def test_windows_pid_probe_does_not_signal_process(tmp_path, monkeypatch):
 
 
 def test_legacy_paths_use_repository_runtime(monkeypatch):
-    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    monkeypatch.syspath_prepend(str(ROOT / "launch"))
     monkeypatch.setenv("CLAWCROSS_USE_LEGACY_PATHS", "1")
     monkeypatch.setenv("CLAWCROSS_HOME", "/unused")
     control = _load_runtime_control()
@@ -194,7 +194,7 @@ def test_legacy_paths_use_repository_runtime(monkeypatch):
 
 
 def test_default_start_is_local_and_skips_openclaw(tmp_path, monkeypatch):
-    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    monkeypatch.syspath_prepend(str(ROOT / "launch"))
     control = _load_runtime_control()
     monkeypatch.setattr(control, "RUN_DIR", tmp_path / "run")
     monkeypatch.setattr(control, "LOG_DIR", tmp_path / "logs")

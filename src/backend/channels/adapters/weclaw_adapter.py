@@ -390,7 +390,7 @@ class WeClawAdapter(ChannelAdapter):
         if not bin_path:
             logger.error(
                 f"找不到 weclaw 二进制 ({self._bin})。"
-                f"如需使用，请显式执行: python scripts/environment.py install weclaw"
+                f"如需使用，请显式执行: python launch/environment.py install weclaw"
             )
             return
 

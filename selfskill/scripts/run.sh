@@ -62,4 +62,4 @@ if command -v uv >/dev/null 2>&1; then
     export CLAWCROSS_UV_BIN="$(command -v uv)"
 fi
 export PATH="$(dirname "$PYTHON"):$PATH"
-exec "$PYTHON" "$PROJECT_ROOT/scripts/runtime_control.py" "$@"
+exec "$PYTHON" "$PROJECT_ROOT/launch/runtime_control.py" "$@"

@@ -15,11 +15,11 @@ uv run src/cli/cli.py [参数...]
 
 ```powershell
 Set-Location C:\path\to\Clawcross
-uv run .\scripts\cli.py [参数...]
+uv run .\launch\cli.py [参数...]
 ```
 
 > 不需要额外安装 `clawcross` 命令或设置 alias。直接在项目目录下用 `uv run` 即可，它会自动解析项目依赖并执行。
-> 如果你更想复用当前虚拟环境，也可以直接运行 `.venv\Scripts\python.exe .\scripts\cli.py [参数...]`。
+> 如果你更想复用当前虚拟环境，也可以直接运行 `.venv\Scripts\python.exe .\launch\cli.py [参数...]`。
 
 ## 概览
 
@@ -740,7 +740,7 @@ uv run src/cli/cli.py -u Avalon_01 workflows conclusion --topic-id abc12345 --ti
 
 **Cloudflare Tunnel 管理**
 
-本地进程操作，通过 `scripts/tunnel.py` 和 pid 文件管理。
+本地进程操作，通过 `launch/tunnel.py` 和 pid 文件管理。
 
 启动一个临时隧道，只暴露本机前端服务。`cloudflared` 必须预先安装；此命令不会自动下载。地址可能在重启后变化。
 
