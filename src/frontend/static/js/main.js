@@ -2801,7 +2801,9 @@ async function compactCurrentSession(event) {
             if (reason === 'empty') {
                 sessionCompactStatus = zh ? '会话为空，无需压缩' : 'Session empty, nothing to compress';
             } else if (reason === 'no_benefit') {
-                sessionCompactStatus = zh ? '已是最简，无可压缩空间' : 'Already minimal, nothing to save';
+                sessionCompactStatus = zh ? '摘要未减少占用；近期原文仍按设置保留' : 'Summary did not reduce usage; recent turns remain intact';
+            } else if (reason === 'preserved_recent_turns') {
+                sessionCompactStatus = zh ? '没有可折叠的早期对话；近期原文按设置保留' : 'No eligible older turns; recent turns are preserved';
             } else {
                 sessionCompactStatus = zh ? '未压缩（未达条件）' : 'Not compressed';
             }
@@ -2811,8 +2813,16 @@ async function compactCurrentSession(event) {
             const saved = Number(data.saved_tokens || 0);
             const pct = before > 0 ? Math.round(saved / before * 100) : 0;
             sessionCompactStatus = zh
-                ? `已压缩：${before.toLocaleString()} → ${after.toLocaleString()} tokens（省 ${saved.toLocaleString()}，-${pct}%）`
-                : `Compressed: ${before.toLocaleString()} → ${after.toLocaleString()} tokens (saved ${saved.toLocaleString()}, -${pct}%)`;
+                ? `历史估算已压缩：${before.toLocaleString()} → ${after.toLocaleString()} tokens（省 ${saved.toLocaleString()}，-${pct}%）`
+                : `Estimated history compressed: ${before.toLocaleString()} → ${after.toLocaleString()} tokens (saved ${saved.toLocaleString()}, -${pct}%)`;
+            const meta = data.metadata || {};
+            if (Number.isFinite(meta.preserved_tokens)) {
+                sessionCompactStatus += zh
+                    ? `；近期保留原文约 ${meta.preserved_tokens.toLocaleString()} tokens`
+                    : `; preserved recent content ~${meta.preserved_tokens.toLocaleString()} tokens`;
+            }
+            sessionCompactStatus += zh ? '。当前占用仍是上轮 API 实测值，下次调用后更新。'
+                : '. Current usage remains the last API measurement until the next call.';
             // 刷新上下文徽章
             try {
                 const status = await fetchSessionStatus(currentSessionId);

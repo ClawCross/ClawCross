@@ -818,7 +818,10 @@ def apply_compression(
         messages,
         current_until=current_until,
         preserve_recent=preserve_recent_val,
-        target_tokens=max(1, target_tokens - summary_cap),
+        # A manual request means fold all eligible old context, even when
+        # the configured window is much larger than the current history.
+        # Automatic compaction keeps the earliest boundary meeting its target.
+        target_tokens=0 if force else max(1, target_tokens - summary_cap),
         min_new=min_new,
         whole_turns=settings is not None,
     )
@@ -830,7 +833,7 @@ def apply_compression(
             triggered=False,
             summary=previous_summary,
             compacted_until=current_until,
-            reason="min_new_messages",
+            reason="preserved_recent_turns" if force else "min_new_messages",
             view_tokens=view_tokens,
         )
 
@@ -872,6 +875,9 @@ def apply_compression(
         "summarizer": getattr(summarize, "stats", {"backend": "mechanical" if summarizer is None else "custom"}),
         "target_met": new_tokens <= target_tokens,
         "source_range": [current_until, boundary],
+        "strategy": "manual_all_eligible" if force else "automatic_target",
+        "preserved_tokens": estimate_messages_tokens(_rebase_runtime_view(messages[boundary:])),
+        "preserve_recent_turns": settings.preserve_recent_turns if settings else None,
     }
     result = CompressionResult(
         view=new_view,

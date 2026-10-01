@@ -120,3 +120,12 @@ class CompactSettingsTests(unittest.TestCase):
 
     def test_small_summary_token_cap_is_still_enforced(self):
         self.assertLessEqual(c._approx_tokens(c._cap_summary_tokens('中' * 100, 3)), 3)
+
+    def test_manual_compression_folds_all_eligible_history_with_a_large_window(self):
+        result = c.apply_compression(user_id='alice', session_id='s', messages=self.messages,
+            history_token_budget=800000, checkpoint_store_path=self.path, force=True,
+            settings=ContextSettings(preserve_recent_turns=2), summarizer=lambda *a: 'key decisions')
+        self.assertTrue(result.triggered)
+        self.assertEqual(result.compacted_until, len(self.messages) - 8)
+        self.assertEqual(result.metadata['strategy'], 'manual_all_eligible')
+        self.assertEqual(result.view[-8:], self.messages[-8:])
