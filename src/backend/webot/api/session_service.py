@@ -4,6 +4,7 @@ session list shows of it, its messages, compaction, deletion and context use."""
 import asyncio
 import contextlib
 import secrets
+import time
 from typing import Any, Callable
 
 from webot.checkpoint_repository import delete_thread_records, fetch_thread_checkpoint_times
@@ -33,7 +34,7 @@ class SessionService:
         previous = self._compaction_jobs.get(thread_id)
         if previous and not previous["task"].done():
             return self.compaction_status(user_id, session_id)
-        job = {"job_id": secrets.token_hex(8), "state": "running"}
+        job = {"job_id": secrets.token_hex(8), "state": "running", "kind": "manual", "started_at": time.time()}
         self._compaction_jobs[thread_id] = job
 
         async def run():
@@ -53,7 +54,20 @@ class SessionService:
         job = self._compaction_jobs.get(f"{user_id}#{session_id}")
         if not job:
             return {"state": "missing", "error": "压缩任务不存在或服务已重启，请重新发起。"}
-        return {key: value for key, value in job.items() if key != "task"}
+        status = {key: value for key, value in job.items() if key != "task"}
+        if status["state"] == "running":
+            status["elapsed_seconds"] = max(0, int(time.time() - status["started_at"]))
+        return status
+
+    def visible_compaction_status(self, user_id: str, session_id: str) -> dict:
+        thread_id = f"{user_id}#{session_id}"
+        manual = self.compaction_status(user_id, session_id) if thread_id in self._compaction_jobs else {"state": "idle"}
+        auto_status = getattr(self.agent, "get_background_compaction_status", None)
+        automatic = auto_status(thread_id) if callable(auto_status) else {"state": "idle"}
+        for status in (manual, automatic):
+            if status.get("state") in {"checking", "running"}:
+                return status
+        return max((manual, automatic), key=lambda status: status.get("started_at", 0))
 
     async def cancel_compaction(self, user_id: str, session_id: str) -> None:
         thread_id = f"{user_id}#{session_id}"

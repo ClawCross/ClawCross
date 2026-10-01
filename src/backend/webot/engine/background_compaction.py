@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import logging
+import time
 from typing import Any
 
 from langchain_core.messages import BaseMessage
@@ -27,6 +28,13 @@ class BackgroundCompressionManager:
         self._pending: dict[str, dict[str, Any]] = {}
         self._generation: dict[str, int] = {}
         self._commit_locks: dict[str, asyncio.Lock] = {}
+        self._statuses: dict[str, dict] = {}
+
+    def status(self, thread_id: str) -> dict:
+        status = dict(self._statuses.get(thread_id) or {"state": "idle", "kind": "automatic"})
+        if status.get("state") in {"checking", "running"}:
+            status["elapsed_seconds"] = max(0, int(time.time() - status["started_at"]))
+        return status
 
     def schedule(
         self, *, user_id: str, session_id: str, messages: list[BaseMessage],
@@ -48,6 +56,8 @@ class BackgroundCompressionManager:
             self._pending[thread_id] = request
             return
         generation = self._generation.get(thread_id, 0)
+        status = {"state": "checking", "kind": "automatic", "started_at": time.time(), "job_id": str(time.time_ns())}
+        self._statuses[thread_id] = status
         task = asyncio.create_task(self._prepare_and_commit(
             thread_id=thread_id, generation=generation, **request,
         ))
@@ -62,6 +72,7 @@ class BackgroundCompressionManager:
             if not done.cancelled():
                 error = done.exception()
                 if error is not None:
+                    status.update(state="failed", error=str(error))
                     logger.warning("background compression failed for %s: %s", thread_id, error)
 
         task.add_done_callback(finished)
@@ -72,6 +83,8 @@ class BackgroundCompressionManager:
         preserve_recent: int, settings: ContextSettings,
         measured_input_tokens: int, measured_budget: int, generation: int,
     ) -> None:
+        status = self._statuses.get(thread_id, {})
+        loop = asyncio.get_running_loop()
         # Start before the foreground 90% watermark so the next user turn can
         # use an already finished summary. Explicit trigger settings win.
         early_trigger = settings.trigger_tokens or max(1, int(history_token_budget * 0.70))
@@ -85,6 +98,7 @@ class BackgroundCompressionManager:
             snapshot = copy.deepcopy(messages)
 
             def before_summary() -> None:
+                loop.call_soon_threadsafe(lambda: status.update(state="running"))
                 run_tool_policy_hooks(
                     get_tool_policy(user_id), event="pre_compact",
                     user_id=user_id, session_id=session_id, tool_name="__session__",
@@ -115,6 +129,7 @@ class BackgroundCompressionManager:
 
         result = await asyncio.to_thread(prepare)
         if not result.triggered:
+            status.update(state="idle", reason=result.reason)
             return
 
         lock = self._commit_locks.setdefault(thread_id, asyncio.Lock())
@@ -125,6 +140,7 @@ class BackgroundCompressionManager:
             # exist; a reset or deletion must not be resurrected by this task.
             count = await fetch_thread_message_count(self.checkpoint_store_path, thread_id)
             if count < result.source_message_count:
+                status.update(state="cancelled")
                 return
             try:
                 await asyncio.to_thread(
@@ -134,7 +150,9 @@ class BackgroundCompressionManager:
             except RuntimeError as exc:
                 if "version changed" not in str(exc):
                     raise
+                status.update(state="cancelled")
                 return
+        status.update(state="completed", result={"saved_tokens": result.metadata.get("before_tokens", 0) - result.view_tokens})
         logger.info("background compression committed for %s through message %s",
                     thread_id, result.compacted_until)
 
@@ -145,6 +163,7 @@ class BackgroundCompressionManager:
             self._generation[thread_id] = self._generation.get(thread_id, 0) + 1
         task = self._tasks.pop(thread_id, None)
         self._pending.pop(thread_id, None)
+        self._statuses.pop(thread_id, None)
         if task is not None:
             task.cancel()
 

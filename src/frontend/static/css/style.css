@@ -5228,3 +5228,11 @@ body.session-panel-resizing * {
 .conversation-ui-panel-menu-item > small, .conversation-ui-panel-empty { color: #8190a8; font-size: 12px; }
 .conversation-ui-panel-empty { padding: 9px; }
 .studio-more-menu[open] { z-index: 3000; }
+.session-compaction-indicator {
+    padding: 4px 2px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-secondary, #52627d);
+    overflow-wrap: anywhere;
+}
+.session-compaction-indicator[hidden] { display: none; }

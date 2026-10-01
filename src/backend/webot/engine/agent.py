@@ -1272,6 +1272,9 @@ class TeamAgent:
     async def invalidate_background_compression(self, thread_id: str) -> None:
         await self._background_compression.invalidate(thread_id)
 
+    def get_background_compaction_status(self, thread_id: str) -> dict:
+        return self._background_compression.status(thread_id)
+
     def _queue_background_compression(self, state: dict) -> None:
         """Schedule summarization only after the final reply is persisted."""
         config = state.get("_background_compaction_config")

@@ -2650,6 +2650,31 @@ const CONTEXT_BREAKDOWN_LABELS = {
 // 手动压缩按钮状态（持久化到 re-render 之间）
 let sessionCompactBusy = false;
 let sessionCompactStatus = '';
+let sessionBackendCompaction = null;
+
+function backendCompactionLabel(status) {
+    if (!status) return '';
+    const zh = currentLang === 'zh-CN';
+    const kind = status.kind === 'automatic' ? (zh ? '自动' : 'Automatic') : (zh ? '手动' : 'Manual');
+    if (status.state === 'checking') return zh ? '正在检查对话容量…' : 'Checking conversation size…';
+    if (status.state === 'running') return zh
+        ? `正在整理对话 · ${kind} · ${Number(status.elapsed_seconds || 0)} 秒`
+        : `Compacting conversation · ${kind} · ${Number(status.elapsed_seconds || 0)}s`;
+    if (status.state === 'completed') return zh ? '对话整理已完成' : 'Conversation compaction completed';
+    if (status.state === 'failed') return zh ? '对话整理失败，请展开加号查看详情' : 'Compaction failed; open + for details';
+    return '';
+}
+
+function updateBackendCompactionStatus(status) {
+    sessionBackendCompaction = status || null;
+    const indicator = document.getElementById('session-compaction-indicator');
+    if (indicator) {
+        indicator.textContent = backendCompactionLabel(status);
+        indicator.hidden = !indicator.textContent;
+        indicator.title = status?.error || '';
+    }
+    renderSessionContextDetail();
+}
 
 function formatContextTokenCount(value) {
     const n = Number(value);
@@ -2721,6 +2746,7 @@ function renderSessionContextDetail() {
     const percentLabel = currentLang === 'zh-CN' ? '占比' : 'Percent';
     const compactLabel = currentLang === 'zh-CN' ? '压缩历史' : 'Compress history';
     const compactBusyLabel = currentLang === 'zh-CN' ? '压缩中…' : 'Compressing…';
+    const backendBusy = ['checking', 'running'].includes(sessionBackendCompaction?.state);
 
     detail.innerHTML = `
         <div class="oc-context-usage-detail-row">
@@ -2745,11 +2771,12 @@ function renderSessionContextDetail() {
             <button type="button" id="session-compact-btn" class="oc-context-compact-btn"
                 onclick="compactCurrentSession(event)"
                 style="cursor:pointer;padding:5px 10px;border-radius:6px;border:1px solid var(--oc-border,#3a3a3a);background:transparent;color:inherit;font-size:12px;"
-                ${sessionCompactBusy ? 'disabled' : ''}>
-                ${sessionCompactBusy ? compactBusyLabel : compactLabel}
+                ${sessionCompactBusy || backendBusy ? 'disabled' : ''}>
+                ${sessionCompactBusy || backendBusy ? compactBusyLabel : compactLabel}
             </button>
             <div class="oc-context-compact-result" style="font-size:11px;opacity:.85;"
                 ${sessionCompactStatus ? '' : 'hidden'}>${sessionCompactStatus}</div>
+            <div class="oc-context-compact-result" role="status">${escapeHtml(backendCompactionLabel(sessionBackendCompaction))}${sessionBackendCompaction?.error ? ': ' + escapeHtml(sessionBackendCompaction.error) : ''}</div>
             <button type="button" class="oc-context-compact-btn" onclick="openRuntimeSettings(currentSessionId)">${t('runtime_settings')}</button>
         </div>
     `;
@@ -2784,7 +2811,7 @@ function closeSessionContextDetail() {
 // 手动压缩当前会话历史（绕过自动触发阈值）。
 async function compactCurrentSession(event) {
     if (event) event.stopPropagation();
-    if (sessionCompactBusy) return;
+    if (sessionCompactBusy || ['checking', 'running'].includes(sessionBackendCompaction?.state)) return;
     const zh = currentLang === 'zh-CN';
     if (!currentSessionId) {
         sessionCompactStatus = zh ? '无活动会话' : 'No active session';
@@ -2799,6 +2826,7 @@ async function compactCurrentSession(event) {
     try {
         let job = await agentApi('POST', compactPath, {action: 'compact_async'});
         if (currentSessionId !== compactSessionId) return;
+        updateBackendCompactionStatus(job);
         const jobId = job.job_id;
         while (job.state === 'running') {
             sessionCompactStatus = zh ? '正在后台整理早期对话…' : 'Summarizing older conversations in the background…';
@@ -2806,6 +2834,8 @@ async function compactCurrentSession(event) {
             await new Promise(resolve => setTimeout(resolve, 2000));
             if (currentSessionId !== compactSessionId) return;
             job = await agentApi('POST', compactPath, {action: 'compact_status'});
+            if (currentSessionId !== compactSessionId) return;
+            updateBackendCompactionStatus(job);
             if (job.job_id && job.job_id !== jobId) throw new Error(zh ? '压缩任务已被替换' : 'Compaction job changed');
         }
         if (job.state !== 'completed') throw new Error(job.error || (zh ? '压缩任务已取消' : 'Compaction was cancelled'));
@@ -3076,7 +3106,9 @@ async function fetchWebotSessions() {
 // A session's status ({state, source, mode, context, …}); idle for one not made yet.
 async function fetchSessionStatus(sessionId) {
     const agent = await _sessionAgent(sessionId);
-    return agent ? agent.status : {state: 'idle'};
+    const status = agent ? agent.status : {state: 'idle'};
+    if (sessionId === currentSessionId) updateBackendCompactionStatus(status.compaction);
+    return status;
 }
 
 function showSessionContextUsage(context) {
@@ -4934,6 +4966,7 @@ async function switchToSession(sessionId, force = false, options = {}) {
         acpSaveTranscript();
     }
     currentSessionId = sessionId;
+    updateBackendCompactionStatus(null);
     ConversationUiPanels.beginSession(sessionId);
     cancelTargetSessionId = null;  // 重置终止目标
     personaInjectedSession = null;  // Reset persona injection flag for new session
@@ -6896,6 +6929,7 @@ function showLoginScreen() {
     projectUpdateBannerState = null;
     currentSessionId = null;
     stopHistoryPolling();
+    updateBackendCompactionStatus(null);
     ConversationUiPanels.reset();
     sessionStorage.removeItem('sessionId');
     document.getElementById('chat-screen').style.display = 'none';
@@ -11646,10 +11680,8 @@ let _sessionStatusPolling = false;
 async function pollCurrentSessionStatus() {
     if (!currentUserId || !currentSessionId) return;
     if (_ocChatMode !== 'internal') return;
-    // Browser-owned streams already have exact state. Backend-only runs must
-    // still be polled so Send can become Stop (and later return to Send).
-    const activeRun = currentActiveChatRun();
-    if (activeRun && ['running', 'cancelling'].includes(activeRun.status)) return;
+    // Compression runs independently of browser streams, so always query its
+    // backend state. Stream-owned Send/Stop controls are updated separately.
     if (_sessionStatusPolling) return;
     _sessionStatusPolling = true;
     const contextKey = chatRunContextKey();

@@ -29,7 +29,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
 
     <link rel="stylesheet" href="/static/css/markdown-shared.css">
-    <link rel="stylesheet" href="/static/css/style.css?v=20261001-panels">
+    <link rel="stylesheet" href="/static/css/style.css?v=20261001-compaction-status">
 </head>
 <body class="bg-gray-100 font-sans leading-normal tracking-normal">
 
@@ -436,6 +436,7 @@
                                 <span class="busy-spinner"></span>系统占用中
                             </button>
                         </div>
+                        <div id="session-compaction-indicator" class="session-compaction-indicator" role="status" aria-live="polite" hidden></div>
                     </div>
                 </div>
             </div>
@@ -1383,7 +1384,7 @@
     <script src="/static/js/tinyfish-live-shared.js"></script>
     <script src="/static/js/tool-catalog.js?v=20260927-memory"></script>
     <script src="/static/js/conversation-ui-panels.js?v=20261001-windows"></script>
-    <script src="/static/js/main.js?v=20261001-async-compaction"></script>
+    <script src="/static/js/main.js?v=20261001-compaction-status"></script>
     <script src="/static/js/runtime-settings.js?v=20261001-usage-source"></script>
     <script src="/static/js/oasis-town.bundle.js?v=20260327-humanfix"></script>
     <script src="/static/js/app.js?v=20260327-humanfix"></script>
