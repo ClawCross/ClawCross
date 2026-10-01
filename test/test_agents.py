@@ -559,6 +559,18 @@ class ApiCase(StoreCase):
 
 class TestAgentsApi(ApiCase):
 
+    def test_inbox_rpc_preserves_context_and_only_internal_callers_set_source(self):
+        body = {'text': 'group body', 'context': {'groups': [{'group_id': 'g1'}], 'delivery_id': 'one'}, 'mode': 'readonly',
+                'inbox_sender': 'group-member', 'inbox_summary': 'group notice'}
+        result = self.call('POST', '/v1/agents/group-recipient/inbox', json=body)
+        self.assertEqual(result.status_code, 200)
+        msg = self.gateway.inbox.await_args.args[1]
+        self.assertEqual((msg.sender, msg.summary), ('group-member', 'group notice'))
+        self.assertEqual(self.gateway.inbox.await_args.kwargs['context'], body['context'])
+        self.assertEqual(self.gateway.inbox.await_args.kwargs['mode'], 'readonly')
+        response = self.client.post('/v1/agents/group-recipient/inbox', headers={'Authorization': 'Bearer alice:pw'}, json=body)
+        self.assertEqual(response.status_code, 403)
+
     def test_failed_webot_cleanup_does_not_delete_agent_registration(self):
         self.webot()
         with mock.patch.object(self.gateway.runtimes[WEBOT], 'destroy', mock.AsyncMock(side_effect=RuntimeError('database busy'))):

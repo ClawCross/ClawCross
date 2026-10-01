@@ -4673,6 +4673,8 @@ html, body { background: #f5f7fc; }
 .tool-policy-category-items { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; }
 </style>
 <script src="/static/js/tool-catalog.js?v=20261001-groups"></script>
+<script src="/static/js/group-network-ui.js?v=20261001-relay"></script>
+<link rel="stylesheet" href="/static/css/group-network.css?v=20261001-relay">
 </head>
 <body>
 
@@ -4727,6 +4729,9 @@ html, body { background: #f5f7fc; }
         <button class="create-menu-item" onclick="hideCreateMenu();showCreateGroupModal()">
           <span class="menu-icon">👥</span>
           <span class="menu-label" data-i18n="create_new_group">创建新群聊</span>
+        </button>
+        <button class="create-menu-item" onclick="hideCreateMenu();GroupNetworkUI.join()">
+          <span class="menu-icon">🌐</span><span class="menu-label">加入群聊</span>
         </button>
         <button class="create-menu-item" id="cross-device-menu-item" onclick="hideCreateMenu();toggleFleetVisible()">
           <span class="menu-icon">🖥️</span>
@@ -4784,6 +4789,7 @@ html, body { background: #f5f7fc; }
       <button class="header-btn" id="chat-more-btn" onclick="toggleChatActions()" data-i18n-title="tip_more" title="更多" style="font-size:20px;font-weight:700;min-width:36px;">⋮</button>
     </div>
   </div>
+  <div id="group-network-status" style="display:none;padding:6px 14px;font-size:12px;color:var(--text-secondary);overflow-wrap:anywhere" role="status"></div>
   <div class="approval-strip" id="approval-strip"></div>
   <div class="chat-body" id="chat-body"></div>
   <div id="new-msg-banner" onclick="dismissNewMsgBanner()">
@@ -4916,6 +4922,12 @@ html, body { background: #f5f7fc; }
   <div class="chat-action-item" onclick="closeChatActions(); openSessionRuntimeSheet();">
     <span class="chat-action-icon">🔍</span>
     <span data-i18n="session_runtime">会话运行状态</span>
+  </div>
+  <div class="chat-action-item" id="action-group-sharing" style="display:none" onclick="closeChatActions();GroupNetworkUI.sharing(currentGroupId)">
+    <span class="chat-action-icon">🌐</span><span>邀请朋友 / 群聊地址</span>
+  </div>
+  <div class="chat-action-item danger" id="action-group-leave" style="display:none" onclick="closeChatActions();GroupNetworkUI.leave(currentGroupId)">
+    <span class="chat-action-icon">↩</span><span>退出群聊</span>
   </div>
   <div class="chat-action-item danger" onclick="closeChatActions(); deleteGroup();">
     <span class="chat-action-icon">🗑️</span>
@@ -10319,7 +10331,7 @@ function updateGroupNamePreview() {
   const customName = customNameInput.value.trim();
 
   if (!teamName) {
-    previewEl.textContent = t('please_select_team');
+    previewEl.textContent = customName || '新群聊';
     return;
   }
 
@@ -10331,15 +10343,10 @@ async function submitCreateGroup() {
   const teamName = document.getElementById('create-team-select').value;
   const customName = document.getElementById('create-custom-name').value.trim();
 
-  if (!teamName) {
-    toast(t('please_select_team'));
-    return;
-  }
-
   // The group starts with the team's agents; after that it is a group like any other.
-  const title = customName || teamName;
+  const title = customName || teamName || '新群聊';
   try {
-    const card = await api('GET', `/v1/teams/${encodeURIComponent(teamName)}`);
+    const card = teamName ? await api('GET', `/v1/teams/${encodeURIComponent(teamName)}`) : {members: []};
     const agents = (card.members || []).map(m => m.agent.agent_id);
     const data = await api('POST', '/proxy_groups', { title, agents });
     toast(t('group_created') + ': ' + data.title);
@@ -10357,6 +10364,11 @@ function applyGroupDetail(detail) {
   if (!detail) return;
   _cacheSet(__mobileGroupDetailCache, detail.group_id, detail);
   if (detail.group_id !== currentGroupId) return;
+  const networkStatus = document.getElementById('group-network-status');
+  networkStatus.style.display = detail.federated ? '' : 'none';
+  networkStatus.textContent = detail.federated ? (detail.connection_error || '群连接正常') : '';
+  document.getElementById('action-group-sharing').style.display = detail.federated ? '' : 'none';
+  document.getElementById('action-group-leave').style.display = detail.federated && String(detail.owner || '').startsWith('remote:') ? '' : 'none';
   currentGroupPrimaryAgent = detail.primary_agent || '';
   isMuted = !!detail.dnd;
   if (isMuted) mutedGroupIds.add(detail.group_id); else mutedGroupIds.delete(detail.group_id);
@@ -13536,7 +13548,7 @@ function renderMembers(members) {
         <div class="member-avatar owner">${esc(initial)}</div>
         <div class="member-info" style="flex:1;">
           <div class="member-name">${esc(name)}</div>
-          <div class="member-tag">${t('owner')}</div>
+          <div class="member-tag">${m.remote ? esc(m.user_id || '群成员') + ' · 远端成员' : t('owner')}</div>
         </div>
       </div>`;
     }
@@ -13546,7 +13558,7 @@ function renderMembers(members) {
     // A team group's members and primary agent follow its team.
     const primaryBtn = `<button onclick="event.stopPropagation();togglePrimaryAgent('${jsPrincipal}', '${jsName}')" class="member-action-btn" title="${isPrimary ? '取消主 agent' : '设为主 agent（其他 agent 发言只投递给主 agent）'}" style="${isPrimary ? 'background:#fde68a;color:#92400e;border-color:#fcd34d;' : ''}">${isPrimary ? '⭐ 取消主' : '⭐ 设为主'}</button>`;
     const removeBtn = `<button onclick="event.stopPropagation();removeMemberFromGroup('${jsPrincipal}','${jsName}')" style="background:none;border:none;color:var(--text-secondary);font-size:16px;padding:4px 8px;cursor:pointer;" title="${t('tip_remove')}">✕</button>`;
-    const actionBtns = `
+    const actionBtns = m.remote ? `<div class="member-tag">远端 agent · ${esc(m.user_id || '')}</div>` : `
         <div class="member-actions" style="display:flex;gap:4px;margin-top:4px;">
           <button onclick="event.stopPropagation();controlMemberAgent('${jsPrincipal}','cancel','${jsName}')" class="member-action-btn member-action-danger" title="${t('tip_cancel_task')}">${t('btn_cancel_task')}</button>
           <button onclick="event.stopPropagation();controlMemberAgent('${jsPrincipal}','reset','${jsName}')" class="member-action-btn" title="${t('tip_reset_agent')}">${t('btn_reset_agent')}</button>
@@ -14188,7 +14200,8 @@ async function showAgentDetail(agentId) {
   overlay.style.display = 'flex';
   requestAnimationFrame(() => { overlay.classList.add('open'); });
   try {
-    const agent = await api('GET', `/v1/agents/${encodeURIComponent(agentId)}`);
+    const remote = currentMembers.find(m => m.remote && m.principal === agentId);
+    const agent = remote ? {...remote.agent, groups: [{title: '当前群聊', group_id: currentGroupId}]} : await api('GET', `/v1/agents/${encodeURIComponent(agentId)}`);
     if (__agentDetailRenderSeq !== renderSeq) return;
     title.textContent = `🤖 ${agent.name}`;
     body.innerHTML = renderAgentBasicInfo(agent);
@@ -14483,6 +14496,7 @@ function renderAgentBasicInfo(agent) {
       </div>
     </div>`;
   }
+  if (agent.remote) return html + '<div class="agent-detail-section">远端 agent 的设置和运行状态由所属设备管理。</div>';
   const button = (onclick, label, color, filled = false) =>
     `<button onclick="${escapeHtml(onclick)}" style="width:100%;padding:14px;background:${filled ? color : 'transparent'};color:${filled ? 'white' : color};border:${filled ? 'none' : '2px solid ' + color};border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;">${label}</button>`;
   html += `<div style="padding:16px;display:flex;flex-direction:column;gap:10px;">
@@ -16725,7 +16739,7 @@ async function showAgentStatus(agentId, name) {
 }
 
 async function resetAllGroupAgents() {
-  const agents = currentMembers.filter(m => m.is_agent);
+  const agents = currentMembers.filter(m => m.is_agent && !m.remote);
   if (!agents.length) {
     toast(t('reset_all_none'));
     return;
@@ -17137,5 +17151,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 </div><!-- end body-layout -->
 
+<script>
+window.addEventListener('group-network-changed', async event => {
+  await refreshGroups();
+  if (event.detail) await openChat(event.detail.group_id, event.detail.title);
+  else if (currentGroupId) { try { await reloadGroupDetail(); } catch (_) { goBack(); } }
+});
+</script>
 </body>
 </html>

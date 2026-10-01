@@ -1,0 +1,12 @@
+.group-network-dialog {box-sizing:border-box;width:min(440px,calc(100vw - 24px));max-height:calc(100dvh - 32px);overflow:auto;border:1px solid var(--border,#d7dee8);border-radius:18px;padding:20px;background:var(--bg-card,#fff);color:var(--text,#182233);box-shadow:0 20px 80px #0003;font:14px/1.5 system-ui,sans-serif;}
+.group-network-dialog::backdrop {background:#10203777;backdrop-filter:blur(3px);}
+.group-network-dialog header {display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px;}
+.group-network-dialog header button {border:0;background:transparent;color:inherit;font-size:24px;cursor:pointer;padding:4px 10px;}
+.group-network-fields {display:grid;gap:14px;}
+.group-network-fields label {display:grid;gap:6px;overflow-wrap:anywhere;}
+.group-network-fields input {box-sizing:border-box;width:100%;min-width:0;padding:10px;border:1px solid var(--border,#d7dee8);border-radius:9px;color:inherit;background:var(--bg,#f7f9fc);font:inherit;}
+.group-network-fields input[type=checkbox] {width:18px;height:18px;}
+.group-network-fields p {margin:0;color:var(--text-secondary,#566577);overflow-wrap:anywhere;}
+.group-network-dialog [role=status] {overflow-wrap:anywhere;}
+.group-network-submit {width:100%;padding:11px;border:0;border-radius:10px;background:var(--primary,#2563eb);color:white;font:inherit;cursor:pointer;}
+.group-network-submit:disabled {opacity:.6;cursor:wait;}

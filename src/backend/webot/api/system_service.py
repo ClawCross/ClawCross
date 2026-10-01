@@ -528,6 +528,7 @@ class SystemService:
                     target_session=req.session_id,
                     content=req.text,
                     title=req.inbox_summary,
+                    message_id=req.inbox_message_id or None,
                     source_label=req.inbox_source_label,
                     metadata={
                         "source_user": req.inbox_source_user or req.user_id,
@@ -538,13 +539,14 @@ class SystemService:
                     },
                 )
                 waiter = None
-                if req.wait_reply:
-                    waiter = asyncio.get_running_loop().create_future()
+                if req.wait_reply and record.status == 'queued':
+                    previous = self._inbox_waiters.get(record.message_id)
+                    waiter = previous[1] if previous else asyncio.get_running_loop().create_future()
                     self._inbox_waiters[record.message_id] = (thread_id, waiter)
                 self._ensure_inbox_worker(req.user_id, req.session_id)
             if waiter is not None:
                 return await asyncio.shield(waiter)
-            return {"status": "queued", "message_id": record.message_id}
+            return {"status": record.status, "message_id": record.message_id}
 
         if req.drain_inbox:
             async with self._inbox_guard:

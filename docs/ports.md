@@ -1,6 +1,6 @@
 # Clawcross 端口大全
 
-> 最后更新：2026-04-01
+> 最后更新：2026-10-01
 
 ## 端口总览
 
@@ -9,6 +9,7 @@
 | **51200** | `PORT_AGENT` | `src/backend/server.py` | AI Agent 主服务（OpenAI 兼容 API） | `127.0.0.1` | 否 |
 | **51201** | `PORT_SCHEDULER` | `src/backend/scheduler/service.py` | 定时任务调度中心 | `127.0.0.1` | 否 |
 | **51202** | `PORT_OASIS` | `src/backend/oasis/server.py` | OASIS 论坛 / Agent 管理与编排中心 | `127.0.0.1` | 否 |
+| **51203** | `PORT_GROUPS` | `src/backend/groups/server.py` | 独立群聊服务器、群连接与转发 | `127.0.0.1`（可显式更改） | 默认否 |
 | **51209** | `PORT_FRONTEND` | `src/frontend/server.py` | 前端 Web UI（Flask） | `0.0.0.0` | 是 Tunnel |
 | **51210** | —（硬编码） | `src/frontend/visual.py` | 可视化编排系统（开发用） | `0.0.0.0` | 否 |
 | **58010** | `PORT_BARK` | 外部二进制 `bin/bark-server` | Bark 推送服务器 | — | 是 Tunnel |
@@ -49,6 +50,14 @@
   - Agent 管理与编排中心（迁移中）
 - **调用方**：`mcp_oasis.py`、前端代理、外部脚本
 - **注意**：默认绑定 `127.0.0.1`；WSL 下或设置了 `CLAWCROSS_SERVER_HOST` 时会绑定到其他地址。此时只有本机回环地址的调用可以免 token，其他主机的请求必须带 `X-Internal-Token: $INTERNAL_TOKEN`，否则返回 401。
+
+### 51203 — 独立群聊服务
+
+默认本机运行，旧群通过机器凭证 RPC 访问，新群通过群客户端连接。
+显式 `GROUP_SERVER_HOST=0.0.0.0` 后，其他设备可凭群号和密码加入。
+远端仅接触 `/relay` 群协议，不获得 Agent API 的 INTERNAL_TOKEN。
+前端 Tunnel 只公开网页，不自动公开群服务器。公网群服务器应通过 HTTPS/WSS 代理。
+使用方式见 [跨设备群聊](group-network.md)。
 
 ### 51209 — 前端 Web UI
 

@@ -79,6 +79,8 @@ class AgentMessageRequest(BaseModel):
     response_format: dict | None = None  # OpenAI response_format
     timeout: float | None = None  # seconds; 0 waits as long as the agent takes; none: the runtime's default
     platform: str = ""       # the runtime of a new agent
+    inbox_sender: str = Field('', max_length=160)  # trusted local composition only
+    inbox_summary: str = Field('', max_length=256)
 
 
 class AgentControlBody(BaseModel):
@@ -276,8 +278,13 @@ def create_agents_router(
     @router.post("/v1/agents/{ref}/inbox")
     async def post_to_inbox(ref: str, body: AgentMessageRequest, authorization: str | None = Header(None)):
         user = user_of(authorization)
+        if (body.inbox_sender or body.inbox_summary) and (not internal_token or authorization != f'Bearer {internal_token}:{user}'):
+            raise HTTPException(403, '只有本机服务可以指定 inbox 来源')
         agent = target(user, ref, body.platform)
-        receipt = await gateway.inbox(agent, message(user, body))
+        msg = message(user, body)
+        msg.sender = body.inbox_sender or msg.sender
+        msg.summary = body.inbox_summary
+        receipt = await gateway.inbox(agent, msg, context=body.context, mode=body.mode)
         return {"agent": agent_card(agent), "accepted": receipt.accepted, "error": receipt.error}
 
     @router.post("/v1/agents/{ref}/control")

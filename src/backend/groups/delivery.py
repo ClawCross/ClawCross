@@ -16,6 +16,37 @@ def mentions_everyone(content: str) -> bool:
     return bool(_MENTION_ALL.search(content or ""))
 
 
+_ASCII_WORD_CHAR = re.compile(r"[A-Za-z0-9_]")
+
+
+def resolve_text_mentions(content: str, members: list[tuple[str, str]]) -> list[str]:
+    """Principals written as ``@name`` in *content*; *members* is ``(name, principal)``.
+
+    Longer names claim their text first (``@Code Reviewer`` is not also ``@Code``);
+    a name ending in an ASCII word character needs a boundary after it (``@Codex``
+    is not ``@Code``); an ``@`` glued to a preceding word (``a@b.io``) is no mention.
+    """
+    lowered = (content or "").lower()
+    claimed = [False] * len(lowered)
+    found: list[str] = []
+    for name, principal in sorted(members, key=lambda item: len(item[0]), reverse=True):
+        needle = "@" + name.lower()
+        start = 0
+        while (idx := lowered.find(needle, start)) >= 0:
+            start = idx + 1
+            end = idx + len(needle)
+            if any(claimed[idx:end]):
+                continue
+            if idx > 0 and _ASCII_WORD_CHAR.match(lowered[idx - 1]):
+                continue
+            if _ASCII_WORD_CHAR.match(needle[-1]) and end < len(lowered) and _ASCII_WORD_CHAR.match(lowered[end]):
+                continue
+            claimed[idx:end] = [True] * (end - idx)
+            if principal not in found:
+                found.append(principal)
+    return found
+
+
 @dataclass(slots=True)
 class WakeRequest:
     """Everything the wake rule needs to know about one message."""

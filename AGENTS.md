@@ -21,6 +21,7 @@ metadata:
     agent: 51200
     scheduler: 51201
     oasis: 51202
+    groups: 51203
     frontend: 51209
   auth_methods:
     - "user_password"

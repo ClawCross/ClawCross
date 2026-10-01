@@ -40,7 +40,7 @@ Use this file when an agent needs to **index the repo before reading code**. It 
 | `external/` | the runtimes of external agents (ACP tools, OpenClaw, HTTP, model calls) and OpenClaw agent management (`/sessions/openclaw/*`) |
 | `webot/` | WeBot: `engine/`, `api/`, `mcp/` (its MCP tool servers), `driver.py` (its runtime) |
 | `teams/` | teams: store, manifest (package format), Creator, presets, snapshots |
-| `groups/` | group chat: conversations, delivery, store, and the rules on top |
+| `groups/` | independent group server, relay store/API, device client, legacy local group compatibility |
 | `oasis/` | OASIS workflows (its own service, port 51202) |
 | `scheduler/` | the scheduler service (port 51201), cron parsing, internal alarms, background-job notices |
 | `channels/` | chat channel bridges (webhook, NoneBot, WeClaw) |
@@ -79,6 +79,8 @@ These are the main services Clawcross runs:
 | Path | Service |
 |---|---|
 | `src/backend/server.py` | Agent API bootstrap and router composition |
+| `src/backend/groups/server.py` | independent group relay and local compatibility (51203) |
+| `src/backend/groups/admin.py` | host-only group administration |
 | `src/frontend/server.py` | Flask frontend and proxy gateway |
 | `src/backend/scheduler/service.py` | scheduler service |
 | `src/backend/teams/creator.py` | ClawCross Creator discovery, extraction, build, jobs, and translation pipeline |
@@ -109,6 +111,7 @@ A WeBot session is its agent: listed, read, compacted and deleted through `/v1/a
 ### Agents and their compositions (see `docs/architecture.md`)
 
 - L1 agents: `src/backend/agents/store.py` (the table of all sessions: session number = agent id), `src/backend/agents/gateway.py` (ask / trigger / inbox and the control plane, handed to the agent's runtime), `src/backend/agents/runtime.py` (what a runtime offers), `src/backend/webot/driver.py` and `src/backend/external/` (the runtimes: WeBot, acp, openclaw, http, llm), `src/backend/agents/routes.py` (`/v1/agents`), `src/backend/webot/api/openai_service.py` (`/v1/chat/completions`), `src/backend/agents/trigger.py` (`/system_trigger`)
+- Network group protocol/client: `src/backend/groups/relay_store.py`, `relay_api.py`, `client.py`, `facade.py`; see `docs/group-network.md`.
 - L2 group chat: `src/backend/groups/store.py` (conversations.db), `src/backend/groups/conversations.py` (post + wake), `src/backend/groups/delivery.py` (wake rule, storm guard, unread digest), `src/backend/groups/`
 - L2 teams: `src/backend/teams/store.py` (members.json in the team folder, `<team>.<name>`), `src/backend/teams/manifest.py` (internal_agents.json / external_agents.json import/export), `src/backend/teams/routes.py` (`/v1/teams`)
 

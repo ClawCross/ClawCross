@@ -165,6 +165,19 @@ class UserAwareToolNodeTests(unittest.IsolatedAsyncioTestCase):
         args = fake_tool_node.captured_state["messages"][-1].tool_calls[0]["args"]
         self.assertEqual((args["username"], args["source_session"]), ("alice", "actual"))
 
+    async def test_join_cannot_spoof_another_user_or_agent(self):
+        node = UserAwareToolNode([], lambda: [])
+        fake = _FakeToolNode()
+        node.tool_node = fake
+        permission = type("Permission", (), {"allowed": True, "requires_approval": False, "reason": "", "matched_rule": None, "policy": {}, "approval": None})()
+        state = {"user_id": "alice", "session_id": "actual", "session_mode": "bypass", "messages": [AIMessage(content="", tool_calls=[{
+            "name": "join_group", "args": {"username": "bob", "source_session": "other", "group_id": "g_invited", "password": "secret"}, "id": "join", "type": "tool_call"}])]}
+        with patch("webot.engine.agent.resolve_permission_context", return_value=permission), patch("webot.engine.agent.run_tool_policy_hooks", side_effect=_passthrough_hook_outcome):
+            await node(state, config={})
+        args = fake.captured_state["messages"][-1].tool_calls[0]['args']
+        self.assertEqual((args['username'], args['source_session']), ('alice', 'actual'))
+
+
 
 async def _add(a: int, b: int) -> str:
     return str(a + b)

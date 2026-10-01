@@ -282,8 +282,10 @@ def start(args: argparse.Namespace) -> int:
             agent = _port(env, "PORT_AGENT", 51200)
             oasis = _port(env, "PORT_OASIS", 51202)
             frontend = _port(env, "PORT_FRONTEND", 51209)
+            groups = _port(env, "PORT_GROUPS", 51203)
             while process.poll() is None and time.monotonic() < deadline:
-                if (_probe(f"http://127.0.0.1:{agent}/v1/models") and
+                if (_probe(f"http://127.0.0.1:{groups}/relay/health") and
+                _probe(f"http://127.0.0.1:{agent}/v1/models") and
                         _probe(f"http://127.0.0.1:{oasis}/experts") and
                         _probe(f"http://127.0.0.1:{frontend}/")):
                     print(f"Local web UI: http://127.0.0.1:{frontend}", flush=True)
@@ -306,12 +308,14 @@ def start(args: argparse.Namespace) -> int:
     agent = _port(env, "PORT_AGENT", 51200)
     oasis = _port(env, "PORT_OASIS", 51202)
     frontend = _port(env, "PORT_FRONTEND", 51209)
+    groups = _port(env, "PORT_GROUPS", 51203)
     deadline = time.monotonic() + 120
     ready = False
     while time.monotonic() < deadline:
         if process.poll() is not None:
             break
-        if (_probe(f"http://127.0.0.1:{agent}/v1/models") and
+        if (_probe(f"http://127.0.0.1:{groups}/relay/health") and
+                _probe(f"http://127.0.0.1:{agent}/v1/models") and
                 _probe(f"http://127.0.0.1:{oasis}/experts") and
                 _probe(f"http://127.0.0.1:{frontend}/")):
             ready = True
@@ -342,7 +346,7 @@ def status() -> int:
         return 1
     print(f"ClawCross launcher PID: {pid}")
     for name, default in (("PORT_AGENT", 51200), ("PORT_SCHEDULER", 51201),
-                          ("PORT_OASIS", 51202), ("PORT_FRONTEND", 51209)):
+                          ("PORT_OASIS", 51202), ("PORT_GROUPS", 51203), ("PORT_FRONTEND", 51209)):
         print(f"{name}: {_port(env, name, default)}")
     return 0
 
