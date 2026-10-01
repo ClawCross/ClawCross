@@ -2,13 +2,31 @@ import asyncio
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src' / 'backend'))
 from webot.api.session_service import SessionService
 
 
 class ManualCompactionJobTests(unittest.IsolatedAsyncioTestCase):
+    async def test_visible_status_restores_auto_progress_and_prefers_active_manual_job(self):
+        agent = Mock()
+        agent.get_background_compaction_status.return_value = {'state': 'running', 'kind': 'automatic', 'elapsed_seconds': 12}
+        service = SessionService(db_path='/tmp/unused', agent=agent, extract_text=str)
+        self.assertEqual(service.visible_compaction_status('alice', 's')['kind'], 'automatic')
+        agent.get_background_compaction_status.assert_called_with('alice#s')
+        gate = asyncio.Event()
+        async def slow(*args):
+            await gate.wait()
+        with patch.object(service, 'compact', AsyncMock(side_effect=slow)):
+            service.start_compaction('alice', 's')
+            visible = service.visible_compaction_status('alice', 's')
+            self.assertEqual(visible['kind'], 'manual')
+            self.assertIn('elapsed_seconds', visible)
+            await service.cancel_compaction('alice', 's')
+        self.assertEqual(service.visible_compaction_status('alice', 's')['kind'], 'automatic')
+        await service.close()
+
     async def test_slow_summary_returns_immediately_and_reuses_running_job(self):
         service = SessionService(db_path='/tmp/unused', agent=None, extract_text=str)
         gate = asyncio.Event()

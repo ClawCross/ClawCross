@@ -1,6 +1,7 @@
 import asyncio
 import sys
 import unittest
+import threading
 from unittest.mock import AsyncMock, patch
 from pathlib import Path
 
@@ -12,6 +13,39 @@ from webot.compression import CompressionResult
 
 
 class BackgroundCompactionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_automatic_progress_is_visible_until_completion(self):
+        manager = BackgroundCompressionManager('/tmp/unused-context.db')
+        gate = threading.Event()
+        result = CompressionResult([], True, 'summary', 4, 'prepared', 10, source_message_count=8)
+        def prepare(**kwargs):
+            kwargs['before_summary']()
+            gate.wait(5)
+            return result
+        with patch('webot.engine.background_compaction.make_llm_summarizer', return_value=None), \
+                patch('webot.engine.background_compaction.run_tool_policy_hooks'), \
+                patch('webot.engine.background_compaction.apply_compression', side_effect=prepare), \
+                patch('webot.engine.background_compaction.fetch_thread_message_count', AsyncMock(return_value=8)), \
+                patch('webot.engine.background_compaction.commit_prepared_compression'):
+            manager.schedule(user_id='alice', session_id='s', messages=[HumanMessage(content='old')],
+                history_token_budget=6000, preserve_recent=8, settings=ContextSettings())
+            self.assertEqual(manager.status('alice#s')['state'], 'checking')
+            task = manager._tasks['alice#s']
+            try:
+                for _ in range(100):
+                    if manager.status('alice#s')['state'] == 'running':
+                        break
+                    await asyncio.sleep(.01)
+                status = manager.status('alice#s')
+                self.assertEqual(status['state'], 'running')
+                self.assertEqual(status['kind'], 'automatic')
+                self.assertIn('elapsed_seconds', status)
+            finally:
+                gate.set()
+            await task
+        self.assertEqual(manager.status('alice#s')['state'], 'completed')
+        await manager.invalidate('alice#s')
+        self.assertEqual(manager.status('alice#s')['state'], 'idle')
+
     async def test_scheduled_input_is_frozen_before_the_worker_runs(self):
         manager = BackgroundCompressionManager('/tmp/unused-context.db')
         prepared = AsyncMock()

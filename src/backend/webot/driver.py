@@ -164,12 +164,14 @@ class WebotRuntime(Runtime):
 
         state = self._thread_state(agent)
         busy = self.is_busy(agent)
+        compaction_status = getattr(self.sessions, "visible_compaction_status", None)
         return {
             "state": "running" if busy else "idle",
             "source": state.get("source", "") if busy else "",
             "pending": state.get("pending_system", 0),
             "mode": effective_session_mode(agent.owner, agent.agent_id),
             "context": await self.sessions.context_usage(agent.owner, agent.agent_id),
+            "compaction": compaction_status(agent.owner, agent.agent_id) if callable(compaction_status) else {"state": "idle"},
             **await self.sessions.summary(agent.owner, agent.agent_id),
         }
 
