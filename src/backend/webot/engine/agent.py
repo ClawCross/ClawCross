@@ -9,7 +9,7 @@ from typing import TypedDict, Optional
 
 # Model related
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -40,7 +40,6 @@ from webot.context import (
     assemble_input_messages,
     render_runtime_context_block,
     render_team_skill_context,
-    strip_legacy_skills_from_system_prompt,
 )
 from webot.memory import get_memory_state
 from webot.skills import build_user_profile_block
@@ -48,7 +47,7 @@ from webot.soul import build_soul_prompt
 from webot.trajectory import auto_trajectory_enabled, save_trajectory
 from webot.llm_call_trace import llm_call_trace_enabled, save_llm_call
 from webot.context_references import expand_context_references
-from common.runtime_paths import PROJECT_ROOT, USER_FILES_DIR
+from common.runtime_paths import PROJECT_ROOT
 from webot.context_store import ContextStore
 from webot.context_usage import estimate_context_components, scale_components, tool_schemas
 from webot.smart_routing import resolve_turn_route
@@ -975,15 +974,12 @@ class TeamAgent:
         self._tool_registry = LazyToolRegistry()
         self._cache_manager = SystemPromptCacheManager()
 
-        # 启动时一次性加载 prompt 模板
-        self._prompts = self._load_prompts()
-
     # ------------------------------------------------------------------
-    # Prompt loader (启动时读取一次)
+    # Prompt loader (每次模型请求重新读取)
     # ------------------------------------------------------------------
     @staticmethod
     def _load_prompts() -> dict[str, str]:
-        """从 data/prompts/ 加载所有 prompt 模板文件，服务启动时调用一次。"""
+        """从 data/prompts/ 加载所有 prompt 模板文件，每次模型请求调用。"""
         prompts_dir = os.path.join(str(PROJECT_ROOT), "data", "prompts")
         prompt_files = {
             "base_system": "base_system.txt",
@@ -997,13 +993,9 @@ class TeamAgent:
             try:
                 with open(filepath, "r", encoding="utf-8") as f:
                     loaded[key] = f.read().strip()
-                print(f"[prompts] ✅ 已加载 {filename}")
             except FileNotFoundError:
                 print(f"[prompts] ⚠️ 未找到 {filepath}，将使用内置默认值")
                 loaded[key] = ""
-
-        # 记录 user_files 根目录路径（用户画像存在各用户目录下）
-        loaded["_user_files_dir"] = str(USER_FILES_DIR)
 
         return loaded
 
@@ -1103,9 +1095,28 @@ class TeamAgent:
         persona = str(meta.get("persona") or "").strip()
         return frame_session_identity(meta.get("name") or session_id, "", persona) if persona else ""
 
-    def _build_fixed_chat_rules(self) -> str:
-        """Group and private chat rules, shared with every other agent; stable across turns."""
-        return self._prompts.get("conversation_rules", "")
+    def _build_live_system_prompt(self, user_id: str, session_id: str, is_subagent: bool) -> tuple[str, dict[str, str]]:
+        """Read current templates/persona/profile/SOUL for every provider request."""
+        prompts = self._load_prompts()
+        subagent_meta = parse_subagent_session_id(session_id) if session_id else None
+        profile = get_agent_profile(subagent_meta["agent_type"], user_id=user_id) if subagent_meta else None
+        if is_subagent:
+            base = prompts["base_system_subagent"]
+            if profile:
+                base += "\n\n" + render_profile_system_prompt(profile)
+        else:
+            base = prompts["base_system"].replace("{chat_rules}", prompts["conversation_rules"])
+            if user_id and session_id:
+                persona = self._get_internal_session_persona_prompt(user_id, session_id)
+                if persona:
+                    base += f"\n{persona}\n"
+        base += (f"\n【Workspace】\nsession_id: {session_id or 'default'}\n"
+                 f"{describe_session_workspace(user_id, session_id)}\n")
+        if not is_subagent or (profile and profile.include_user_profile):
+            base += build_user_profile_block(user_id)
+        if not is_subagent:
+            base += build_soul_prompt(user_id)
+        return base, prompts
 
     # ------------------------------------------------------------------
     # Properties
@@ -1496,45 +1507,13 @@ class TeamAgent:
             llm = llm.bind(cache_control={"type": "ephemeral"})
 
         # Session mode can change mid-session; it belongs in the runtime tail,
-        # never in the immutable system prompt.
+        # never in the system identity assembled from live sources.
         session_mode_prompt = build_session_mode_message(runtime_mode_name, runtime_mode_payload.get('reason', ''))
 
-        # Stable system prompt key
+        # Rebuild from live files and Agent metadata; persisted first-turn
+        # prompts are legacy data and must never override current settings.
         user_id = state.get("user_id", "__global__")
-        tool_state_key = f"{user_id}#{session_id or 'default'}"
-        # Freeze the stable system message at the first inference. Team and
-        # Skill/Memory catalogs are read each call and travel in the dynamic
-        # tail, so changes do not rewrite the provider's cacheable prefix.
-        base_prompt = await self._context_store.get_system_prompt(tool_state_key)
-        first_inference = base_prompt is None
-        if first_inference:
-            if is_subagent:
-                profile_prompt = render_profile_system_prompt(subagent_profile) if subagent_profile else ""
-                base_prompt = self._prompts["base_system_subagent"]
-                if profile_prompt:
-                    base_prompt += "\n\n" + profile_prompt
-            else:
-                chat_rules = self._build_fixed_chat_rules()
-                base_prompt = self._prompts["base_system"].replace("{chat_rules}", chat_rules)
-
-            session_persona_prompt = self._get_internal_session_persona_prompt(
-                user_id, session_id or "",
-            ) if (not is_subagent and user_id and session_id) else ""
-            if session_persona_prompt:
-                base_prompt += f"\n{session_persona_prompt}\n"
-
-            base_prompt += (
-                f"\n【Workspace】\nsession_id: {session_id or 'default'}\n"
-                f"{describe_session_workspace(user_id, session_id)}\n"
-            )
-            if (not is_subagent) or (subagent_profile and subagent_profile.include_user_profile):
-                base_prompt += build_user_profile_block(user_id)
-            if not is_subagent:
-                base_prompt += build_soul_prompt(user_id)
-            base_prompt = await self._context_store.save_system_prompt_if_absent(tool_state_key, base_prompt)
-        # Older sessions persisted the Skill catalog inside their system
-        # prompt. Strip it from the model input once and rely on the live tail.
-        base_prompt = strip_legacy_skills_from_system_prompt(base_prompt)
+        base_prompt, prompts = self._build_live_system_prompt(user_id, session_id, is_subagent)
 
         session_meta = self._find_internal_session_meta(user_id, session_id or "") if (user_id and session_id) else None
         session_teams = sorted({str(team).strip() for team in ((session_meta or {}).get("teams") or []) if str(team).strip()})
@@ -1590,8 +1569,8 @@ class TeamAgent:
         # Everything that can legitimately change every turn (session mode,
         # live runtime state) is assembled here as
         # one block and attached to the current turn's message further below —
-        # never folded into base_prompt — so the system prompt stays
-        # byte-identical turn to turn (required for KV/prompt-cache reuse).
+        # never folded into base_prompt. Unchanged source files produce the
+        # same system prefix; actual edits take effect on the next request.
         # Context grows by appending new content, not by rewriting the stable
         # prefix.
         dynamic_context_block = (
@@ -1750,10 +1729,10 @@ class TeamAgent:
             original_message = history_messages[-1]
             original_content = original_message.content
             if isinstance(original_content, list):
-                prefix = self._prompts["system_trigger"].format(original_text="")
+                prefix = prompts["system_trigger"].format(original_text="")
                 content = [{"type": "text", "text": prefix}, *original_content]
             else:
-                content = self._prompts["system_trigger"].format(original_text=original_content)
+                content = prompts["system_trigger"].format(original_text=original_content)
             history_messages = history_messages[:-1] + [original_message.model_copy(update={"content": content})]
 
         # 发往 LLM 前最后一次 tool 序列校验：须在 compact/compress 与系统触发改写之后，
@@ -1774,7 +1753,6 @@ class TeamAgent:
             base_prompt=base_prompt,
             history=history_messages,
             runtime_state=dynamic_context_block,
-            force_snapshot=first_inference,
         )
 
         # # === DEBUG: dump full raw input to file for diagnosis ===
@@ -1816,6 +1794,8 @@ class TeamAgent:
         response = None
         usage_meta = {}
         while True:
+            base_prompt, prompts = self._build_live_system_prompt(user_id, session_id, is_subagent)
+            input_messages[0] = SystemMessage(content=base_prompt)
             # Stream instead of a single ainvoke() call so on_llm_new_token /
             # on_chat_model_stream callbacks actually fire per token (needed
             # for the SSE stream in openai_service.py to deliver real-time
@@ -2021,6 +2001,8 @@ class TeamAgent:
             )
 
         if structured_final and not deepseek_structured and not getattr(response, "tool_calls", None):
+            base_prompt, _ = self._build_live_system_prompt(user_id, session_id, is_subagent)
+            input_messages[0] = SystemMessage(content=base_prompt)
             response = await decode_structured_final(
                 base_model, response_format, [*input_messages, response], config,
             )

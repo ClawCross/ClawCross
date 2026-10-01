@@ -292,7 +292,6 @@ class TestSkillSystem(unittest.TestCase):
         create_skill("alice", name="deploy-script", content=self._make_skill_content("deploy-script", "Deploy to prod"))
 
         agent = TeamAgent(str(SRC_DIR), str(self.tmppath / "checkpoints.db"))
-        agent._prompts["_user_files_dir"] = str(self.tmppath / "user_files")
 
         prompt = agent._get_user_skills("alice")
         self.assertIn("deploy-script", prompt)
@@ -309,7 +308,6 @@ class TestSkillSystem(unittest.TestCase):
         create_skill("alice", name="dev-skill", content=self._make_skill_content("dev-skill", "Dev"), team="dev")
 
         agent = TeamAgent(str(SRC_DIR), str(self.tmppath / "checkpoints.db"))
-        agent._prompts["_user_files_dir"] = str(self.tmppath / "user_files")
 
         prompt = agent._get_user_skills("alice", ["dev", "ops"])  # an agent in two teams
         for section, skill in (("团队「dev」技能", "dev-skill"), ("团队「ops」技能", "ops-skill"), ("个人技能", "shared-skill")):

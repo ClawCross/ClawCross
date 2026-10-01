@@ -7,6 +7,8 @@ from __future__ import annotations
 import logging
 import asyncio
 import json
+import hashlib
+import difflib
 import shlex
 import time
 import uuid
@@ -24,7 +26,6 @@ logger = logging.getLogger(__name__)
 
 from common.runtime_paths import PROJECT_ROOT  # noqa: E402
 
-_system_prompt: str | None = None
 _turn_locks = weakref.WeakKeyDictionary()
 
 
@@ -46,27 +47,63 @@ def _prompt_file(name: str) -> str:
         return ""
 
 
-def identity_prompt(agent: Agent, context: dict[str, Any] | None = None, instructions: str = "") -> str:
-    """The frozen first-turn identity, using the same fixed rules as WeBot."""
+def identity_sections(agent: Agent) -> dict[str, str]:
+    """Read live identity sources; external sessions receive only changed blocks."""
     from webot.profiles import frame_session_identity
     from webot.skills import build_user_profile_block
+    from webot.soul import build_soul_prompt
 
-    global _system_prompt
-    if _system_prompt is None:
-        chat_rules = _prompt_file("conversation_rules.txt").replace(
-            "具体用法见 send_to_group", "使用本轮提供的命令行发送方式")
-        _system_prompt = "\n\n".join(p for p in (
-            _prompt_file("base_system.txt").replace("{chat_rules}", chat_rules),
-            _prompt_file("external_agent_system.txt"),
-        ) if p)
-    parts = [
-        _system_prompt,
-        frame_session_identity(agent.name, "", str(agent.config.get("persona") or "").strip()),
-        build_user_profile_block(agent.owner),
-        f"【ClawCross 会话】\nowner: {agent.owner}\nagent_id: {agent.agent_id}\n"
-        f"命令行入口：cd {shlex.quote(str(PROJECT_ROOT))} && uv run src/cli/cli.py -u {shlex.quote(agent.owner)} --help",
-    ]
-    return "\n\n".join(p.strip() for p in parts if p and p.strip())
+    chat_rules = _prompt_file("conversation_rules.txt").replace(
+        "具体用法见 send_to_group", "使用本轮提供的命令行发送方式")
+    return {
+        "base_rules": _prompt_file("base_system.txt").replace("{chat_rules}", chat_rules),
+        "external_rules": _prompt_file("external_agent_system.txt"),
+        "persona": frame_session_identity(agent.name, "", str(agent.config.get("persona") or "").strip()),
+        "user_profile": build_user_profile_block(agent.owner),
+        "soul": build_soul_prompt(agent.owner),
+        "session": f"【ClawCross 会话】\nowner: {agent.owner}\nagent_id: {agent.agent_id}\n"
+                   f"命令行入口：cd {shlex.quote(str(PROJECT_ROOT))} && uv run src/cli/cli.py -u {shlex.quote(agent.owner)} --help",
+    }
+
+
+def _join_identity(sections: dict[str, str]) -> str:
+    return "\n\n".join(p.strip() for p in sections.values() if p and p.strip())
+
+
+def _identity_version(prompt: str) -> str:
+    return hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+
+
+def identity_prompt(agent: Agent, context: dict[str, Any] | None = None, instructions: str = "") -> str:
+    return _join_identity(identity_sections(agent))
+
+
+def _identity_patch(agent: Agent, sections: dict[str, str]) -> str:
+    previous = agent.runtime.get("identity_sections")
+    current_prompt = _join_identity(sections)
+    previous_prompt = str(agent.runtime.get("identity_prompt") or "")
+    if previous is not None:
+        changed = {key: value for key, value in sections.items() if previous.get(key, "") != value}
+        removed = [key for key in previous if key not in sections or (key in changed and not changed[key])]
+        if not changed and not removed:
+            return ""
+        patch = json.dumps({"base_version": agent.runtime.get("identity_version"),
+                            "version": _identity_version(current_prompt),
+                            "replace": {key: value for key, value in changed.items() if value},
+                            "remove": removed}, ensure_ascii=False, sort_keys=True)
+    elif previous_prompt and previous_prompt != current_prompt:
+        # Older rows know only the complete delivered prompt. Upgrade through
+        # a line patch, without replaying their entire first-turn identity.
+        patch = (f"base_version: {_identity_version(previous_prompt)}\n"
+                 f"version: {_identity_version(current_prompt)}\n" +
+                 "\n".join(difflib.unified_diff(previous_prompt.splitlines(), current_prompt.splitlines(),
+                                               fromfile="previous identity", tofile="current identity", lineterm="")))
+    else:
+        return ""
+    return ("【ClawCross 系统提示词补丁】\n"
+            "在当前会话应用此补丁，保留历史与任务状态。replace 替换同名区块，remove 撤销区块；"
+            "旧版行补丁中的 - 行已撤销，+ 行为当前规则。新规则替代相应旧规则，不重复叠加；"
+            "已应用的相同版本不重复应用，版本不匹配时报告而不要重建会话。\n" + patch)
 
 
 @asynccontextmanager
@@ -84,6 +121,7 @@ class PreparedTurn:
     text: str
     identity: str | None
     dynamic_context: dict[str, str]
+    identity_sections: dict[str, str]
 
 
 def prepare_turn(agent: Agent, msg: AgentMessage, *, context: dict[str, Any], mode: str | None,
@@ -98,7 +136,9 @@ def prepare_turn(agent: Agent, msg: AgentMessage, *, context: dict[str, Any], mo
     known = bool(agent.runtime.get("negotiation_sent") or agent.runtime.get("identity_prompt")
                  or agent.runtime.get("last_used_at"))
     same_session = agent.runtime.get("negotiation_session", runtime_session(agent)) == runtime_session(agent)
-    identity = None if known and same_session else identity_prompt(agent)
+    sections = identity_sections(agent)
+    identity = None if known and same_session else _join_identity(sections)
+    patch = _identity_patch(agent, sections) if known and same_session else ""
     rules = {
         "chat": "仅交流，不调用工具或命令。",
         "readonly": "只查看、读取和搜索；不修改文件、运行写入命令或发送消息。",
@@ -122,14 +162,18 @@ def prepare_turn(agent: Agent, msg: AgentMessage, *, context: dict[str, Any], mo
     delta = [f"【本轮 {name}】\n{value or '此前提供的此项信息已撤销。'}"
              for name, value in dynamic.items() if previous.get(name, "") != value]
     text = compose_text_prompt(msg.text, msg.attachments) if plain_text else msg.text
-    return PreparedTurn("\n\n".join(filter(None, [identity, *delta, text])), identity, dynamic)
+    version = f"【ClawCross 系统提示词版本】\nversion: {_identity_version(identity)}" if identity else ""
+    return PreparedTurn("\n\n".join(filter(None, [version, identity, patch, *delta, text])), identity, dynamic, sections)
 
 
 def remember_turn(store: AgentStore | None, agent: Agent, prepared: PreparedTurn) -> None:
     changes = {"negotiation_sent": True, "negotiation_session": runtime_session(agent),
-               "dynamic_context": prepared.dynamic_context}
+               "dynamic_context": prepared.dynamic_context,
+               "identity_sections": prepared.identity_sections,
+               "identity_prompt": _join_identity(prepared.identity_sections),
+               "identity_version": _identity_version(_join_identity(prepared.identity_sections))}
     if prepared.identity is not None:
-        changes.update(identity_prompt=prepared.identity, negotiated_at=time.time())
+        changes.update(negotiated_at=time.time())
     remember(store, agent, **changes)
 
 

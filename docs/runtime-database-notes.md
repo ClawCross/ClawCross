@@ -7,15 +7,18 @@ This document summarizes the runtime-related databases used by Clawcross, what t
 - `data/agents.db`
   - One `agents` row per owner and Agent ID for every runtime.
   - External ACP, HTTP, and OpenClaw sessions persist negotiation in `runtime_json`:
-    `negotiation_sent`, `negotiation_session`, frozen `identity_prompt`,
-    `negotiated_at`, and the last delivered `dynamic_context`.
+    `negotiation_sent`, `negotiation_session`, latest delivered `identity_prompt`,
+    `identity_sections`, `identity_version`, `negotiated_at`, and `dynamic_context`.
   - The first successful turn delivers fixed rules/persona and the latest user input.
-    Later turns deliver only new user input and changed team/skill/tool/format blocks.
+    Later turns deliver only new user input, changed team/skill/tool/format blocks,
+    and patches for changed identity/rules/profile/SOUL sections.
     Replies remain in the external runtime's memory and are never replayed as input.
-  - Changing the saved persona takes effect after reset, as with an internal Agent's
-    frozen identity. Generic HTTP reset rotates the remote session ID; ACP/OpenClaw
-    use their native reset commands. Existing successful sessions are treated as
-    already negotiated, so an upgrade does not repeat their identity.
+  - Prompt sources are read each turn. Identity patches replace or revoke only
+    changed sections in the existing external session; they never reset it.
+    Old rows with only `identity_prompt` use a line patch. Rows with no recorded
+    identity adopt a baseline on the next successful turn without replaying it.
+    Explicit user-requested reset remains available. Generic HTTP reset rotates
+    the remote session ID; ACP/OpenClaw use their native reset commands.
   - A failed delivery is not marked successful. After an ambiguous remote timeout,
     exact delivery cannot be inferred without an acknowledgement from the provider.
 
@@ -26,6 +29,10 @@ This document summarizes the runtime-related databases used by Clawcross, what t
     `checkpoints`, and `writes` tables may remain after an upgrade.
   - Purpose: persist conversation context without forcing all sessions
     to contend on one shared SQLite writer.
+  - Internal WeBot reads templates, Agent persona, user profile and SOUL and
+    assembles a fresh system message before every provider request (including
+    repair retries and terminal structured decoding). Legacy persisted system
+    prompts are not used for inference. Unchanged sources keep identical bytes.
 
 - `data/webot_agents/<user>#<agent>.db`
   - One SQLite file per Agent for its inbox, approvals, execution permits, runs,
