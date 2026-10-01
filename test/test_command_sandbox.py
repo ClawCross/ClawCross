@@ -17,6 +17,21 @@ import webot.mcp.commander as commander
 
 
 class CommandSandboxTests(unittest.TestCase):
+    def test_per_user_srt_seccomp_helper_is_readable_without_allowing_its_parent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "workspace"
+            root.mkdir()
+            package = Path(directory) / "runtime"
+            (package / "dist").mkdir(parents=True)
+            helper = package / "vendor" / "seccomp"
+            helper.mkdir(parents=True)
+            binary = package / "dist" / "cli.js"
+            binary.touch()
+            with patch.object(command_sandbox.sys, "platform", "linux"):
+                policy = command_sandbox._policy(root, root / "settings.json", srt_binary=str(binary))
+            self.assertIn(str(helper), policy["filesystem"]["allowRead"])
+            self.assertNotIn(str(package), policy["filesystem"]["allowRead"])
+
     def test_srt_uses_exact_arguments_and_private_policy(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
