@@ -115,7 +115,7 @@ const i18n = {
         hmenu_logout: '退出',
         hmenu_lang: '语言',
         hmenu_public: '公开',
-        tab_agent_center: '🧭 Agents',
+        tab_agent_center: 'Agents',
         agent_center_kicker: '探索 · 观察 · 培养',
         agent_center_title: 'Agent 图鉴',
         agent_center_refresh_status: '刷新状态',
@@ -351,10 +351,10 @@ const i18n = {
         oasis_action_fail: '操作失败',
 
         // 页面切换
-        tab_chat: '💬 对话',
-        tab_group: '👥 团队',
-        tab_orchestrate: '🤝 工作流',
-        tab_groupchat: '📨 消息中心',
+        tab_chat: '对话',
+        tab_group: '团队',
+        tab_orchestrate: '工作流',
+        tab_groupchat: '消息中心',
         tip_open_msgcenter: '打开消息中心',
 
         // 群聊
@@ -715,7 +715,7 @@ orch_openclaw_sessions: '🦞 OpenClaw',
 
         // Add Workflow
         wf_btn_title: '添加工作流',
-        wf_btn_label: '+ 工作流',
+        wf_btn_label: '工作流',
         wf_popup_title: '选择工作流',
         wf_no_workflows: '暂无已保存的工作流',
         wf_team_no_layouts: '该团队暂无已保存工作流',
@@ -725,7 +725,7 @@ orch_openclaw_sessions: '🦞 OpenClaw',
 
         // Persona
         persona_btn_title: '引入专家人设',
-        persona_btn_label: '+ 人设',
+        persona_btn_label: '人设',
         persona_popup_title: '🎭 选择专家人设',
         persona_no_experts: '暂无可用专家',
         persona_cancel: '取消',
@@ -970,7 +970,7 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         hmenu_logout: 'Logout',
         hmenu_lang: 'Language',
         hmenu_public: 'Public',
-        tab_agent_center: '🧭 Agents',
+        tab_agent_center: 'Agents',
         agent_center_kicker: 'Discover · Observe · Grow',
         agent_center_title: 'Agent Field Guide',
         agent_center_refresh_status: 'Refresh status',
@@ -1206,10 +1206,10 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         oasis_action_fail: 'Action failed',
 
         // Page switch
-        tab_chat: '💬 Chat',
-        tab_group: '👥 Team',
-        tab_orchestrate: '🤝 Workflow',
-        tab_groupchat: '📨 Messages',
+        tab_chat: 'Chat',
+        tab_group: 'Team',
+        tab_orchestrate: 'Workflow',
+        tab_groupchat: 'Messages',
         tip_open_msgcenter: 'Open Message Center',
 
         // Group chat
@@ -1578,7 +1578,7 @@ orch_openclaw_sessions: '🦞 OpenClaw',
 
         // Add Workflow
         wf_btn_title: 'Add Workflow',
-        wf_btn_label: '+ Workflow',
+        wf_btn_label: 'Workflow',
         wf_popup_title: 'Select Workflow',
         wf_no_workflows: 'No saved workflows',
         wf_team_no_layouts: 'No saved workflows for this team',
@@ -1588,7 +1588,7 @@ orch_openclaw_sessions: '🦞 OpenClaw',
 
         // Persona
         persona_btn_title: 'Use Expert Persona',
-        persona_btn_label: '+ Persona',
+        persona_btn_label: 'Persona',
         persona_popup_title: '🎭 Select Expert Persona',
         persona_no_experts: 'No experts available',
         persona_cancel: 'Cancel',
@@ -6776,7 +6776,6 @@ function _scheduleTunnelPendingRefresh() {
 
 async function _syncPublicToggle() {
     const toggle = document.getElementById('public-toggle');
-    const label = document.getElementById('public-toggle-label');
     const urlRow = document.getElementById('public-url-row');
     const urlInput = document.getElementById('public-url-input');
     if (!toggle) return;
@@ -6788,7 +6787,6 @@ async function _syncPublicToggle() {
         _tunnelPublicDomain = publicDomain;
         toggle.checked = _tunnelRunning;
         toggle.disabled = false;
-        label.textContent = '🌐';
         if (_tunnelRunning) {
             _showTunnelUrlState(urlRow, urlInput, publicDomain);
             if (publicDomain) {
