@@ -3,6 +3,7 @@ session list shows of it, its messages, compaction, deletion and context use."""
 
 import asyncio
 import contextlib
+import secrets
 from typing import Any, Callable
 
 from webot.checkpoint_repository import delete_thread_records, fetch_thread_checkpoint_times
@@ -10,7 +11,7 @@ from common.logging_utils import get_logger
 from webot.context_compressor import estimate_messages_tokens
 from webot.context_limits import resolve_history_message_limits
 from webot.session_summary import build_session_summary
-from webot.compression import apply_compression, make_llm_summarizer, static_compression_view
+from webot.compression import apply_compression, commit_prepared_compression, make_llm_summarizer, static_compression_view
 from webot.profiles import is_subagent_session
 from webot.runtime_settings import get_runtime_settings, resolve_context_window, resolve_context_history_budget, context_usage_with_window
 from webot.runtime_store import delete_agent_runtime_db
@@ -24,6 +25,48 @@ class SessionService:
         self.db_path = db_path
         self.agent = agent
         self.extract_text = extract_text
+        self._compaction_jobs: dict[str, dict] = {}
+        self._compaction_generations: dict[str, int] = {}
+
+    def start_compaction(self, user_id: str, session_id: str) -> dict:
+        thread_id = f"{user_id}#{session_id}"
+        previous = self._compaction_jobs.get(thread_id)
+        if previous and not previous["task"].done():
+            return self.compaction_status(user_id, session_id)
+        job = {"job_id": secrets.token_hex(8), "state": "running"}
+        self._compaction_jobs[thread_id] = job
+
+        async def run():
+            try:
+                job["result"] = await self.compact(user_id, session_id)
+                job["state"] = "completed"
+            except asyncio.CancelledError:
+                job["state"] = "cancelled"
+            except Exception as exc:
+                logger.exception("manual compaction job failed for %s", thread_id)
+                job.update(state="failed", error=str(exc.__cause__ or exc))
+
+        job["task"] = asyncio.create_task(run())
+        return self.compaction_status(user_id, session_id)
+
+    def compaction_status(self, user_id: str, session_id: str) -> dict:
+        job = self._compaction_jobs.get(f"{user_id}#{session_id}")
+        if not job:
+            return {"state": "missing", "error": "压缩任务不存在或服务已重启，请重新发起。"}
+        return {key: value for key, value in job.items() if key != "task"}
+
+    async def cancel_compaction(self, user_id: str, session_id: str) -> None:
+        thread_id = f"{user_id}#{session_id}"
+        self._compaction_generations[thread_id] = self._compaction_generations.get(thread_id, 0) + 1
+        job = self._compaction_jobs.pop(thread_id, None)
+        if job and not job["task"].done():
+            job["task"].cancel()
+            await asyncio.gather(job["task"], return_exceptions=True)
+
+    async def close(self) -> None:
+        for thread_id in list(self._compaction_jobs):
+            user_id, session_id = thread_id.split("#", 1)
+            await self.cancel_compaction(user_id, session_id)
 
     async def _close_thread_checkpoints(self, thread_ids: list[str]) -> None:
         close_checkpoint = getattr(self.agent, "close_thread_checkpoint", None)
@@ -147,6 +190,7 @@ class SessionService:
         logger.info("compact_session user=%s session=%s", user_id, session_id)
 
         thread_id = f"{user_id}#{session_id}"
+        generation = self._compaction_generations.get(thread_id, 0)
         invalidate = getattr(self.agent, "invalidate_background_compression", None)
         if callable(invalidate):
             await invalidate(thread_id)
@@ -190,7 +234,13 @@ class SessionService:
                 ),
                 force=True,
                 settings=settings,
+                persist=False,
             )
+            if self._compaction_generations.get(thread_id, 0) != generation:
+                raise RuntimeError("会话已重置或删除，本次摘要未发布。")
+            if result.triggered and getattr(result, "source_message_count", 0):
+                commit_prepared_compression(store_path, thread_id, result)
+                result.reason = "compressed"
             if result.reason == "persistence_failed":
                 raise RuntimeError("compaction persistence failed")
         except Exception as exc:
@@ -220,6 +270,7 @@ class SessionService:
     async def delete(self, user_id: str, session_id: str) -> None:
         """Stop and delete one session: its task, checkpoints, runtime state and sub-agent record."""
         thread_id = f"{user_id}#{session_id}"
+        await self.cancel_compaction(user_id, session_id)
         await self.agent.cancel_task(thread_id)
         await self._close_thread_checkpoints([thread_id])
         await delete_thread_records(self.db_path, thread_id)

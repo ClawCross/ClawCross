@@ -463,7 +463,7 @@ class TestControl(StoreCase):
 
         self.assertEqual((status["mode"], status["title"], status["message_count"]),
                          (effective_session_mode("alice", "s1"), "hi", 1))
-        self.assertEqual(status["actions"], ["status", "cancel", "reset", "compact", "deliver_inbox"])
+        self.assertEqual(status["actions"], ["status", "cancel", "reset", "compact", "deliver_inbox", "compact_async", "compact_status"])
         self.assertTrue(self.control.is_busy(coder))
         self.assertEqual(asyncio.run(self.control.control(coder, "cancel")), {"cancelled": True})
         self.assertEqual(asyncio.run(self.control.control(coder, "reset")), {"reset": True})

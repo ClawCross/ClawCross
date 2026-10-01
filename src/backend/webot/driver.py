@@ -39,7 +39,7 @@ def _fields(mode: str | None, enabled_tools: list[str] | None) -> dict[str, Any]
 
 
 class WebotRuntime(Runtime):
-    controls = ("cancel", "reset", "compact", "deliver_inbox")
+    controls = ("cancel", "reset", "compact", "deliver_inbox", "compact_async", "compact_status")
 
     def __init__(self, *, engine: Any, chat_service: Any, system: Any, sessions: Any):
         super().__init__()
@@ -179,6 +179,10 @@ class WebotRuntime(Runtime):
             return {"cancelled": bool(await engine.cancel_task(thread))}
         if action == "compact":
             return await self.sessions.compact(agent.owner, agent.agent_id)
+        if action == "compact_async":
+            return self.sessions.start_compaction(agent.owner, agent.agent_id)
+        if action == "compact_status":
+            return self.sessions.compaction_status(agent.owner, agent.agent_id)
         if action == "deliver_inbox":
             # The session's inbox worker takes what is queued once the current turn ends.
             from webot.api.system_models import SystemTriggerRequest
@@ -190,6 +194,9 @@ class WebotRuntime(Runtime):
             return await super().control(agent, action)
         from webot.checkpoint_repository import delete_thread_records
 
+        cancel_compaction = getattr(self.sessions, "cancel_compaction", None)
+        if callable(cancel_compaction):
+            await cancel_compaction(agent.owner, agent.agent_id)
         await engine.cancel_task(thread)
         close = getattr(engine, "close_thread_checkpoint", None)
         if callable(close):

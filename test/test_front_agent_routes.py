@@ -54,6 +54,12 @@ class FrontAgentRoutesTests(unittest.TestCase):
         call = self.relay("post", "/v1/agents/coder/messages", json={"text": "hi"})
         self.assertEqual(call.kwargs["timeout"], 900)
 
+    def test_sync_compaction_has_a_long_timeout_but_job_polling_is_short(self):
+        call = self.relay('post', '/v1/agents/coder/control', json={'action': 'compact'})
+        self.assertEqual(call.kwargs['timeout'], 900)
+        call = self.relay('post', '/v1/agents/coder/control', json={'action': 'compact_status'})
+        self.assertEqual(call.kwargs['timeout'], 60)
+
 
 if __name__ == "__main__":
     unittest.main()

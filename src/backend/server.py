@@ -181,6 +181,7 @@ async def lifespan(app: FastAPI):
     # 随后自己做。任务句柄要留着，否则可能被 GC 掉。
     app.state.reconcile_task = asyncio.create_task(_reconcile_pending_in_background())
     yield
+    await session_service.close()
     await agent.shutdown()
 
 
