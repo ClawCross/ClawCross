@@ -77,6 +77,8 @@ _TOOL_ACCESS_MODES: dict[str, ToolAccessMode] = {
     "read_session_inbox": ToolAccessMode.WRITE,
     "mark_session_inbox_read": ToolAccessMode.WRITE,
     "send_to_group": ToolAccessMode.WRITE,
+    "join_group": ToolAccessMode.WRITE,
+    "leave_group": ToolAccessMode.WRITE,
     "manage_personality": ToolAccessMode.WRITE,
     "set_session_mode": ToolAccessMode.WRITE,
 }

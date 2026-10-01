@@ -61,6 +61,8 @@ COMMAND_TOOLS = (
 MESSAGE_TOOLS = (
     "send_to_session",
     "send_to_group",
+    "join_group",
+    "leave_group",
     "set_notification_channel",
     "remove_notification_channel",
     "send_notification",

@@ -572,6 +572,23 @@ def cmd_groups(args):
         print("❌ 请指定 --group-id", file=sys.stderr)
         return
 
+    if args.action in {"join", "sharing", "leave", "invite"}:
+        if args.action == "join":
+            password = sys.stdin.readline().rstrip('\r\n') if args.password_stdin else ""
+            data = {"server_url": args.server_url or "", "group_id": args.group_id,
+                    "password": password, "agents": [a.strip() for a in (args.agents or "").split(",") if a.strip()]}
+            code, body = _req("POST", base + "/join", headers=hdrs, data=data)
+        elif args.action == "sharing":
+            if not args.password_stdin and not args.data:
+                return _err(400, {"detail": "请用 --password-stdin 提供新密码；空行关闭远程加入"})
+            data = json.loads(args.data) if args.data else {"password": sys.stdin.readline().rstrip('\r\n'), "revoke_connections": args.revoke_connections}
+            code, body = _req("POST", f"{base}/{gid}/sharing", headers=hdrs, data=data)
+        elif args.action == "leave":
+            code, body = _req("POST", f"{base}/{gid}/leave", headers=hdrs, data={})
+        else:
+            code, body = _req("GET", f"{base}/{gid}/invite", headers=hdrs)
+        return _pp(body) if code == 200 else _err(code, body)
+
     if args.action == "list":
         code, body = _req("GET", base, headers=hdrs)
         if code != 200:
@@ -2681,7 +2698,7 @@ def build_parser():
     # groups
     c = sub.add_parser("groups", help="群组管理")
     c.add_argument("action", nargs="?", default="list",
-                   choices=["list", "create", "get", "update", "delete", "messages", "send", "dnd-on", "dnd-off"],
+                   choices=["list", "create", "join", "sharing", "leave", "invite", "get", "update", "delete", "messages", "send", "dnd-on", "dnd-off"],
                    help="操作 (默认: list)")
     c.add_argument("--group-id", help="群组 ID")
     c.add_argument("--name", help="群组名称 (create / update 时)")
@@ -2691,6 +2708,9 @@ def build_parser():
     c.add_argument("--agent", help="以哪个 agent 身份发言 (send 时)：agent 编号，或 team.名字")
     c.add_argument("--data", help="JSON 数据")
     c.add_argument("--after-id", help="增量获取消息 (messages 时)")
+    c.add_argument("--server-url", help="群服务器地址，留空为本机 (join 时)")
+    c.add_argument("--password-stdin", action="store_true", help="从标准输入的一行读取群密码")
+    c.add_argument("--revoke-connections", action="store_true", help="换密码时撤销其他成员连接 (sharing 时)")
 
     # profile
     c = sub.add_parser("profile", help="用户画像管理")

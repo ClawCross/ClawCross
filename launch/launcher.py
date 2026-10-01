@@ -94,6 +94,7 @@ PORT_SCHEDULER = os.getenv("PORT_SCHEDULER", "51201")
 PORT_AGENT = os.getenv("PORT_AGENT", "51200")
 PORT_FRONTEND = os.getenv("PORT_FRONTEND", "51209")
 PORT_OASIS = os.getenv("PORT_OASIS", "51202")
+PORT_GROUPS = os.getenv("PORT_GROUPS", "51203")
 
 # 使用当前 Python 解释器（虚拟环境已由 run.sh/run.ps1 激活）
 venv_python = sys.executable
@@ -642,6 +643,12 @@ ensure_openclaw_gateway_running()
 
 # 服务配置列表
 services = [
+    {
+        "message": f"👥 启动独立群聊服务 (port {PORT_GROUPS})...",
+        "label": "群聊服务", "script": "src/backend/groups/server.py",
+        "port": PORT_GROUPS, "timeout": 60.0,
+        "health_url": f"http://127.0.0.1:{PORT_GROUPS}/relay/health", "pid_name": "group_server",
+    },
     {
         "message": f"⏰ [1/5] 启动定时调度中心 (port {PORT_SCHEDULER})...",
         "label": "定时调度中心",

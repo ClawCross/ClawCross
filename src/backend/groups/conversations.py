@@ -18,13 +18,12 @@ from typing import Any
 from agents.gateway import AgentGateway, reply_channel
 from agents.messages import AgentMessage, AgentReply
 from agents.store import Agent, AgentStore
-from groups.delivery import StormGuard, WakeRequest, mentions_everyone, render_digest, select_wake_targets
+from groups.delivery import StormGuard, WakeRequest, mentions_everyone, render_digest, select_wake_targets, resolve_text_mentions
 from groups.store import DIRECT, HUMAN_PREFIX, Conversation, ConversationStore, Message, human, is_agent
 
 logger = logging.getLogger(__name__)
 
 _DIGEST_LIMIT = 15
-_ASCII_WORD_CHAR = re.compile(r"[A-Za-z0-9_]")
 _TYPING_TIMEOUT_SEC = 120
 
 
@@ -32,32 +31,7 @@ class NotAMember(PermissionError):
     pass
 
 
-def resolve_text_mentions(content: str, members: list[tuple[str, str]]) -> list[str]:
-    """Principals written as ``@name`` in *content*; *members* is ``(name, principal)``.
 
-    Longer names claim their text first (``@Code Reviewer`` is not also ``@Code``);
-    a name ending in an ASCII word character needs a boundary after it (``@Codex``
-    is not ``@Code``); an ``@`` glued to a preceding word (``a@b.io``) is no mention.
-    """
-    lowered = (content or "").lower()
-    claimed = [False] * len(lowered)
-    found: list[str] = []
-    for name, principal in sorted(members, key=lambda item: len(item[0]), reverse=True):
-        needle = "@" + name.lower()
-        start = 0
-        while (idx := lowered.find(needle, start)) >= 0:
-            start = idx + 1
-            end = idx + len(needle)
-            if any(claimed[idx:end]):
-                continue
-            if idx > 0 and _ASCII_WORD_CHAR.match(lowered[idx - 1]):
-                continue
-            if _ASCII_WORD_CHAR.match(needle[-1]) and end < len(lowered) and _ASCII_WORD_CHAR.match(lowered[end]):
-                continue
-            claimed[idx:end] = [True] * (end - idx)
-            if principal not in found:
-                found.append(principal)
-    return found
 
 
 @dataclass(frozen=True, slots=True)

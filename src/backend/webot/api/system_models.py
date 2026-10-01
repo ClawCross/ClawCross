@@ -44,5 +44,6 @@ class SystemTriggerRequest(BaseModel):
     inbox_source_user: str = ""
     inbox_source_label: str = ""
     inbox_summary: str = ""
+    inbox_message_id: str = Field('', max_length=200)
     drain_inbox: bool = False
     groups: list[dict] = Field(default_factory=list)

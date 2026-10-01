@@ -2,6 +2,7 @@ flask
 requests
 fastapi
 uvicorn
+websockets>=14,<17
 pydantic
 langchain-openai
 langchain-google-genai

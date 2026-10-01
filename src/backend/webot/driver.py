@@ -101,6 +101,7 @@ class WebotRuntime(Runtime):
         await self.system.run(SystemTriggerRequest(
             user_id=agent.owner, session_id=agent.agent_id, text=msg.text,
             inbox_source_session=msg.sender or "system", inbox_summary=msg.summary,
+            inbox_message_id=str(context.get('delivery_id') or ''),
             inbox_source_user=str(context.get("source_user") or ""),
             inbox_source_label=str(context.get("source_label") or ""),
             attachments=list(msg.attachments) or None,

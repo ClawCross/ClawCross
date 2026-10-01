@@ -150,10 +150,8 @@ async def send_to_group(
         username: (auto-injected) current user identity; do NOT set manually
         group_id: The group_id given in the message you are answering
         content: The message. Write @name to wake that member; without an @mention,
-            other agents are not woken. Only the group owner or main agent may
-            use @所有人. Do not expose internal session or agent IDs in the post.
-            When sharing a local file for preview or download, send its absolute
-            path on its own line without a code block or extra explanation.
+            plain agent messages wake nobody. Only the main agent may use @所有人.
+            Do not publish internal IDs. For local file preview, send its absolute path on its own line.
         source_session: (auto-injected) current session ID; do NOT set manually
         expected_title: Optional exact group name to verify against group_id; query
             list_agent_groups or get_group_details before choosing an unfamiliar target.
@@ -191,6 +189,52 @@ async def _read_context(username: str, path: str, **params) -> dict:
                                     headers=internal_headers(username), params=params)
     response.raise_for_status()
     return response.json()
+
+
+@mcp.tool()
+async def join_group(username: str, group_id: str, server_url: str = "", password: str = "", source_session: str = "") -> str:
+    """Join at the user's request as yourself. Return the local group_id. Never share credentials.
+
+    Args:
+        username: (auto-injected) current user.
+        group_id: Server group ID from the invitation.
+        server_url: Server URL with port; empty uses this device.
+        password: Invitation password; empty for local joins.
+        source_session: (auto-injected) current agent.
+    """
+    if not source_session or not _INTERNAL_TOKEN:
+        return "❌ 缺少调用 agent 身份或本机服务凭证。"
+    from webot.mcp.caller_agent import internal_headers
+    try:
+        async with httpx.AsyncClient(timeout=30, trust_env=False) as client:
+            response = await client.post(f"http://127.0.0.1:{_AGENT_PORT}/groups/join", headers=internal_headers(username),
+                                         json={"group_id": group_id, "server_url": server_url, "password": password, "agents": [source_session]})
+        if response.status_code != 200:
+            return f"❌ 加入群聊失败 (HTTP {response.status_code})"
+        group = response.json()
+        return json.dumps({"group_id": group['group_id'], "title": group['title'], "server_url": group['server_url']}, ensure_ascii=False)
+    except httpx.HTTPError:
+        return "❌ 无法连接群服务器。"
+
+
+@mcp.tool()
+async def leave_group(username: str, group_id: str, source_session: str = "") -> str:
+    """Leave as this agent; keep the human and other agents.
+
+    Args:
+        username: (auto-injected) current user.
+        group_id: Local group ID from list_agent_groups.
+        source_session: (auto-injected) current agent.
+    """
+    if not source_session or not _INTERNAL_TOKEN:
+        return "❌ 缺少调用 agent 身份或本机服务凭证。"
+    from webot.mcp.caller_agent import internal_headers
+    try:
+        async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
+            response = await client.delete(f"http://127.0.0.1:{_AGENT_PORT}/groups/{quote(group_id, safe='')}/members/{quote(source_session, safe='')}", headers=internal_headers(username))
+        return "✅ 已退出群聊。" if response.status_code == 200 else f"❌ 退出群聊失败 (HTTP {response.status_code})"
+    except httpx.HTTPError:
+        return "❌ 无法连接群服务器。"
 
 
 @mcp.tool()

@@ -171,7 +171,7 @@ USER_INJECTED_TOOLS = {
     # LLM API access tools
     "call_llm_api", "send_to_session", "read_session_inbox", "mark_session_inbox_read",
     # Group chat tools
-    "send_to_group", "list_agent_groups", "get_group_details", "get_team_details",
+    "send_to_group", "join_group", "leave_group", "list_agent_groups", "get_group_details", "get_team_details",
     # WeBot subagent tools
     "spawn_subagent", "list_subagents",
     "send_subagent_message", "get_subagent_history", "cancel_subagent", "delete_subagent",
@@ -203,6 +203,8 @@ SESSION_INJECTED_TOOLS = {
     "read_session_inbox": "source_session",
     "mark_session_inbox_read": "source_session",
     "send_to_group": "source_session",
+    "join_group": "source_session",
+    "leave_group": "source_session",
     "list_agent_groups": "source_session",
     "get_group_details": "source_session",
     "spawn_subagent": "parent_session",
@@ -233,7 +235,7 @@ SESSION_FORCE_INJECTED_TOOLS: frozenset[str] = frozenset({
     "run_command", "background_command_io",
     "send_to_session",
     "read_session_inbox", "mark_session_inbox_read",
-    "send_to_group", "list_agent_groups", "get_group_details",
+    "send_to_group", "join_group", "leave_group", "list_agent_groups", "get_group_details",
     "send_notification",
     "spawn_subagent",
     "send_subagent_message",

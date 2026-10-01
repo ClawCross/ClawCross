@@ -1392,7 +1392,7 @@ def create_inbox_message(
     with _connect_agent(user_id, record.target_session, db_path) as conn:
         conn.execute(
             """
-            INSERT INTO webot_session_inbox (
+            INSERT OR IGNORE INTO webot_session_inbox (
                 message_id, user_id, source_session, target_session, target_agent_id,
                 title, content, delivery_status, wait_for_idle, metadata_json,
                 created_at, delivered_at
@@ -1413,8 +1413,11 @@ def create_inbox_message(
                 record.delivered_at,
             ),
         )
+        stored = conn.execute('SELECT * FROM webot_session_inbox WHERE message_id=?', (record.message_id,)).fetchone()
+        if stored['user_id'] != user_id or stored['target_session'] != record.target_session:
+            raise ValueError('Inbox message ID belongs to another recipient')
         conn.commit()
-    return record
+    return _row_to_inbox_message(stored)
 
 
 def list_inbox_messages(

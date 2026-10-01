@@ -31,10 +31,9 @@ from agents.openai import create_openai_router
 from agents.trigger import create_trigger_router
 from agents.routes import create_agents_router
 from agents.store import WEBOT, get_store
-from groups.conversations import Conversations
-from groups.store import ConversationStore, default_db_path as conversations_db_path
 from groups.routes import create_groups_router
-from groups.service import GroupService
+from groups.client import ClientStore, GroupClient
+from groups.facade import GroupFacade, client_router
 from teams.routes import create_teams_router
 from teams.store import get_team_store
 from common.llm_factory import extract_text as _extract_text
@@ -51,7 +50,7 @@ from webot.api.routes import create_webot_router
 from webot.message_builder import build_human_message
 from common.logging_utils import get_logger, request_id_ctx
 from webot.checkpoint_paths import DEFAULT_CHECKPOINT_DB_DIR
-from common.runtime_paths import ENV_FILE, USERS_FILE, ensure_runtime_dirs
+from common.runtime_paths import ENV_FILE, USERS_FILE, DATA_DIR, ensure_runtime_dirs
 
 # --- Path setup ---
 current_dir = os.path.dirname(os.path.abspath(__file__))  # src/backend: the import root
@@ -150,9 +149,8 @@ webot = WebotRuntime(engine=agent, chat_service=chat_service, system=system_serv
 gateway = AgentGateway(store=agent_store, runtimes={WEBOT: webot})
 set_gateway(gateway)
 team_store = get_team_store(agent_store)
-conversation_store = ConversationStore(conversations_db_path())
-conversations = Conversations(conversation_store, agent_store, gateway)
-group_service = GroupService(conversations, names=team_store.address)
+group_client = GroupClient(ClientStore(DATA_DIR / 'group-client.db'), agent_store, gateway)
+group_service = GroupFacade(group_client, names=team_store.address)
 set_group_membership_provider(group_service.memberships)
 
 
@@ -174,6 +172,7 @@ async def _reconcile_pending_in_background() -> None:
 async def lifespan(app: FastAPI):
     await agent.startup()
     await system_service.resume_queued_inbox()
+    await group_client.start()
     # 后台任务完成通知是事件驱动的（detached runner 跑完会 POST /internal/bg_job_done）。
     # 这里只做一次性对账（非轮询），补发「本进程宕机期间已完成」的任务通知。
     #
@@ -183,6 +182,7 @@ async def lifespan(app: FastAPI):
     # 随后自己做。任务句柄要留着，否则可能被 GC 掉。
     app.state.reconcile_task = asyncio.create_task(_reconcile_pending_in_background())
     yield
+    await group_client.close()
     await session_service.close()
     await agent.shutdown()
 
@@ -201,6 +201,7 @@ app.add_middleware(
 # --- Request ID 传播 ---
 app.add_middleware(RequestIdMiddleware)
 
+app.include_router(client_router(group_service, internal_token=INTERNAL_TOKEN, verify_password=verify_password))
 app.include_router(
     create_groups_router(internal_token=INTERNAL_TOKEN, verify_password=verify_password, service=group_service)
 )
@@ -249,7 +250,7 @@ app.include_router(
         store=agent_store, gateway=gateway, names=team_store.address,
         memberships=group_service.memberships,
         on_delete=(lambda a: team_store.forget_agent(a.owner, a.agent_id),
-                   lambda a: conversation_store.forget(a.owner, a.agent_id)),
+                   lambda a: group_service.forget(a.owner, a.agent_id)),
     )
 )
 # L2: teams are namespaces of agents.
