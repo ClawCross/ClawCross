@@ -29,13 +29,15 @@ def register_agent_routes(app, *, port_agent: int, internal_token: str) -> None:
 
     def _relay(path: str):
         # Asking an agent may take as long as the agent does.
-        timeout = 900 if path.endswith("/messages") else 60
+        body = request.get_json(silent=True) if request.method in ("POST", "PATCH") else None
+        long_control = path.endswith("/control") and isinstance(body, dict) and body.get("action") == "compact"
+        timeout = 900 if path.endswith("/messages") or long_control else 60
         try:
             response = requests.request(
                 request.method,
                 f"{base_url}{path}",
                 params=request.args,
-                json=request.get_json(silent=True) if request.method in ("POST", "PATCH") else None,
+                json=body,
                 headers=_auth_headers(),
                 timeout=timeout,
             )

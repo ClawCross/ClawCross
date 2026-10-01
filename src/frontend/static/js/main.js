@@ -2794,8 +2794,22 @@ async function compactCurrentSession(event) {
     sessionCompactBusy = true;
     sessionCompactStatus = '';
     renderSessionContextDetail();
+    const compactSessionId = currentSessionId;
+    const compactPath = `/v1/agents/${encodeURIComponent(compactSessionId)}/control`;
     try {
-        const data = await agentApi('POST', `/v1/agents/${encodeURIComponent(currentSessionId)}/control`, {action: 'compact'});
+        let job = await agentApi('POST', compactPath, {action: 'compact_async'});
+        if (currentSessionId !== compactSessionId) return;
+        const jobId = job.job_id;
+        while (job.state === 'running') {
+            sessionCompactStatus = zh ? '正在后台整理早期对话…' : 'Summarizing older conversations in the background…';
+            renderSessionContextDetail();
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            if (currentSessionId !== compactSessionId) return;
+            job = await agentApi('POST', compactPath, {action: 'compact_status'});
+            if (job.job_id && job.job_id !== jobId) throw new Error(zh ? '压缩任务已被替换' : 'Compaction job changed');
+        }
+        if (job.state !== 'completed') throw new Error(job.error || (zh ? '压缩任务已取消' : 'Compaction was cancelled'));
+        const data = job.result;
         if (!data.triggered) {
             const reason = data.reason || '';
             if (reason === 'empty') {
@@ -2830,6 +2844,7 @@ async function compactCurrentSession(event) {
             } catch (e) { /* 徽章刷新失败不影响结果展示 */ }
         }
     } catch (e) {
+        if (currentSessionId !== compactSessionId) return;
         sessionCompactStatus = (zh ? '压缩失败：' : 'Failed: ') + (e && e.message ? e.message : e);
     } finally {
         sessionCompactBusy = false;
