@@ -139,6 +139,7 @@ async def send_to_group(
     group_id: str,
     content: str,
     source_session: str = "",
+    expected_title: str | None = None,
 ) -> str:
     """
     Post into a group chat or private chat you are a member of: the reply to a
@@ -154,12 +155,16 @@ async def send_to_group(
             When sharing a local file for preview or download, send its absolute
             path on its own line without a code block or extra explanation.
         source_session: (auto-injected) current session ID; do NOT set manually
+        expected_title: Optional exact group name to verify against group_id; query
+            list_agent_groups or get_group_details before choosing an unfamiliar target.
 
     Returns:
         Confirmation of message delivery
     """
     if not _INTERNAL_TOKEN:
         return "❌ 系统未配置 INTERNAL_TOKEN，无法发送群聊消息。"
+    if not source_session or not (group_id or "").strip():
+        return "❌ 缺少调用 agent 身份或群号，不能以用户身份代发。"
     from webot.mcp.caller_agent import internal_headers
 
     agent = source_session  # the session is the agent
@@ -169,13 +174,70 @@ async def send_to_group(
             response = await client.post(
                 f"http://127.0.0.1:{_AGENT_PORT}/groups/{gid}/messages",
                 headers=internal_headers(username),
-                json={"content": content, "agent": agent},
+                json={"content": content, "agent": agent, "expected_title": expected_title},
             )
             if response.status_code != 200:
                 return f"❌ 发送失败 (HTTP {response.status_code}): {response.text[:500]}"
             return f"✅ 消息已发送到群聊 [{group_id}]"
     except Exception as e:
         return f"❌ 发送群聊消息失败: {type(e).__name__}: {str(e)}"
+
+async def _read_context(username: str, path: str, **params) -> dict:
+    from webot.mcp.caller_agent import internal_headers
+    if not _INTERNAL_TOKEN:
+        raise RuntimeError("系统未配置 INTERNAL_TOKEN")
+    async with httpx.AsyncClient(timeout=15) as client:
+        response = await client.get(f"http://127.0.0.1:{_AGENT_PORT}{path}",
+                                    headers=internal_headers(username), params=params)
+    response.raise_for_status()
+    return response.json()
+
+
+@mcp.tool()
+async def list_agent_groups(username: str, source_session: str = "") -> str:
+    """List this agent's live group/private-chat membership, group IDs, names and roles.
+    username and source_session are injected; do not set them. No conversation bodies.
+    Use these exact group IDs when choosing where to send a message.
+    """
+    if not source_session:
+        return "❌ 缺少调用 agent 身份。"
+    try:
+        return json.dumps(await _read_context(username, '/groups', agent_id=source_session), ensure_ascii=False)
+    except Exception as exc:
+        return f"❌ 查询群归属失败: {exc}"
+
+
+@mcp.tool()
+async def get_group_details(username: str, group_id: str, source_session: str = "") -> str:
+    """Read one of this agent's groups: exact group ID/title, owner, members, roles and reply channel.
+    No conversation bodies. username/source_session are injected. Non-members cannot read it.
+
+    Args:
+        group_id: Exact group ID from the live membership list, never a guessed name.
+    """
+    if not source_session:
+        return "❌ 缺少调用 agent 身份。"
+    try:
+        groups = (await _read_context(username, '/groups', agent_id=source_session)).get('groups', [])
+        group = next((g for g in groups if g['group_id'] == group_id), None)
+        return json.dumps(group, ensure_ascii=False) if group else "❌ 你不在这个群里，或群已删除。"
+    except Exception as exc:
+        return f"❌ 查询群详情失败: {exc}"
+
+
+@mcp.tool()
+async def get_team_details(username: str, team: str) -> str:
+    """Read an owned team's agents, IDs, roles and lead. username is injected.
+    Call when team details are needed; do not infer roles from old conversation history.
+
+    Args:
+        team: Exact owned team namespace shown in the current team metadata.
+    """
+    try:
+        return json.dumps(await _read_context(username, '/v1/teams/' + quote(team, safe='')), ensure_ascii=False)
+    except Exception as exc:
+        return f"❌ 查询 team 详情失败: {exc}"
+
 
 if __name__ == "__main__":
     mcp.run(transport="stdio")

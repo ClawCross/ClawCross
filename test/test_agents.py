@@ -559,6 +559,14 @@ class ApiCase(StoreCase):
 
 class TestAgentsApi(ApiCase):
 
+    def test_failed_webot_cleanup_does_not_delete_agent_registration(self):
+        self.webot()
+        with mock.patch.object(self.gateway.runtimes[WEBOT], 'destroy', mock.AsyncMock(side_effect=RuntimeError('database busy'))):
+            result = self.call('DELETE', '/v1/agents/s1')
+        self.assertEqual(result.status_code, 409)
+        self.assertIsNotNone(self.store.get('alice', 's1'))
+        self.assertEqual(self.forgotten, [])
+
     def test_create_list_update_and_delete_any_platform(self):
         webot = self.call("POST", "/v1/agents", json={"name": "Coder", "persona": "coder"}).json()
         codex = self.call("POST", "/v1/agents", json={

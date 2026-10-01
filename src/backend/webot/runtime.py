@@ -11,6 +11,7 @@ MODE_ALIASES = {"manual": "chat", "read-only": "readonly"}
 # Reading inbox content records a read receipt, but remains a viewing action
 # permitted by session modes.
 READ_ONLY_TOOLS = frozenset({
+    "list_agent_groups", "get_group_details", "get_team_details",
     "read_file", "list_files", "web_search", "web_fetch", "search_sessions", "list_sessions",
     "list_subagents", "get_subagent_history", "read_session_plan", "list_tool_approvals", "read_session_inbox",
     "list_oasis_experts", "check_oasis_discussion", "list_oasis_workflows",

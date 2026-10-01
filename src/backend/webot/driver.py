@@ -195,7 +195,11 @@ class WebotRuntime(Runtime):
         if action != "reset":
             return await super().control(agent, action)
         from webot.checkpoint_repository import delete_thread_records
+        from webot.runtime_store import delete_agent_runtime_db, get_session_mode, save_session_mode
 
+        cancel_delivery = getattr(self.system, "cancel_session", None)
+        if callable(cancel_delivery):
+            await cancel_delivery(thread)
         cancel_compaction = getattr(self.sessions, "cancel_compaction", None)
         if callable(cancel_compaction):
             await cancel_compaction(agent.owner, agent.agent_id)
@@ -205,6 +209,12 @@ class WebotRuntime(Runtime):
             await close(thread)
         if getattr(engine, "_db_path", ""):
             await delete_thread_records(engine._db_path, thread)
+            mode = get_session_mode(agent.owner, agent.agent_id)["mode"]
+            delete_agent_runtime_db(agent.owner, agent.agent_id)
+            save_session_mode(agent.owner, agent.agent_id, mode=mode)
+        forget = getattr(engine, "forget_thread_state", None)
+        if callable(forget):
+            forget(thread)
         return {"reset": True}
 
     async def history(self, agent: Agent, limit: int) -> list[dict[str, Any]]:
@@ -212,4 +222,7 @@ class WebotRuntime(Runtime):
         return (await self.sessions.messages(agent.owner, agent.agent_id))[-limit:]
 
     async def destroy(self, agent: Agent) -> None:
+        cancel_delivery = getattr(self.system, "cancel_session", None)
+        if callable(cancel_delivery):
+            await cancel_delivery(self.thread(agent))
         await self.sessions.delete(agent.owner, agent.agent_id)

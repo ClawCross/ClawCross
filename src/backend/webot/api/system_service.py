@@ -53,6 +53,27 @@ class SystemService:
     def _thread_id(req: SystemTriggerRequest) -> str:
         return f"{req.user_id}#{req.session_id}"
 
+    async def cancel_session(self, thread_id: str) -> None:
+        """Stop queued delivery so reset/deletion cannot replay old group inputs."""
+        tasks = []
+        async with self._inbox_guard:
+            task = self._inbox_tasks.pop(thread_id, None)
+            if task:
+                tasks.append(task)
+        async with self._coalesce_lock:
+            for key in list(self._coalesce_tasks):
+                if key.startswith(thread_id + '\0'):
+                    tasks.append(self._coalesce_tasks.pop(key))
+                    self._coalesce_queues.pop(key, None)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        for key, (target, future) in list(self._inbox_waiters.items()):
+            if target == thread_id:
+                self._inbox_waiters.pop(key, None)
+                if not future.done():
+                    future.cancel()
+
     @staticmethod
     def _queue_key(thread_id: str, coalesce_key: str) -> str:
         return f"{thread_id}\0{coalesce_key}"

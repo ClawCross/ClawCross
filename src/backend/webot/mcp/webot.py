@@ -585,6 +585,8 @@ async def _delete_internal_session(
         response = await client.delete(f"{_AGENTS_URL}/{session_id}", headers=_agent_auth(username))
     if response.status_code == 404:  # no turn yet: nothing of it in the agent service
         return {}
+    if response.status_code == 204:
+        return {}
     if response.status_code != 200:
         raise RuntimeError(f"删除子 Agent session 失败 (HTTP {response.status_code}): {response.text[:500]}")
     return response.json()
@@ -1288,7 +1290,9 @@ async def delete_subagent(
     await _recover_background_runs(username)
     record = _resolve_subagent_ref(username, agent_ref)
     if record is None:
-        return f"❌ 未找到子 Agent: {agent_ref}"
+        return f"🗑️ 子 Agent 已删除或不存在: {agent_ref}"
+    if source_session and source_session == record.session_id:
+        return "❌ 不能通过子 Agent 工具删除当前正在执行该工具的会话。"
 
     latest_run = get_latest_run_for_agent(username, record.agent_id)
     if latest_run is not None and latest_run.status in {"queued", "running", "cancelling"}:
@@ -1305,6 +1309,19 @@ async def delete_subagent(
     with contextlib.suppress(Exception):
         await _cancel_internal_subagent(username=username, session_id=record.session_id)
 
+    worker = _BACKGROUND_TASKS.pop(record.agent_id, None)
+    if worker is not None and worker is not asyncio.current_task():
+        worker.cancel()
+        await asyncio.gather(worker, return_exceptions=True)
+
+    # Record cancellation before deleting the runtime DB. Writing child plans
+    # or run events afterwards recreates its database and can fail after the
+    # Agent service has already reported a successful deletion.
+    if latest_run is not None:
+        update_run_status(latest_run.run_id, username, status="cancelled",
+                          last_result="子 Agent 正在删除。", last_error="delete_requested",
+                          interrupt_requested=False, clear_worker=True)
+
     try:
         delete_resp = await _delete_internal_session(username=username, session_id=record.session_id)
     except Exception as exc:
@@ -1313,27 +1330,8 @@ async def delete_subagent(
     # Deleting the agent removes the registry row for subagent sessions.
     # Keep this idempotent cleanup for MCP-only/runtime edge cases.
     registry_deleted = delete_subagent_by_session(username, record.session_id)
-    plan_deleted = delete_session_plan(username, record.session_id)
-    todos_deleted = delete_session_todos(username, record.session_id)
-
-    if latest_run is not None:
-        update_run_status(
-            latest_run.run_id,
-            username,
-            status="cancelled",
-            last_result="子 Agent session 已删除。",
-            last_error="deleted",
-            interrupt_requested=False,
-            clear_worker=True,
-        )
-        record_run_event(
-            username,
-            latest_run.run_id,
-            record.session_id,
-            event_type="deleted",
-            status="cancelled",
-            message=f"子 Agent 已删除: {record.name}",
-        )
+    from webot.runtime_store import delete_agent_runtime_db
+    delete_agent_runtime_db(username, record.session_id)
 
     parent_session = source_session or record.parent_session
     if parent_session:
@@ -1370,8 +1368,7 @@ async def delete_subagent(
         f"type: {record.agent_type}\n"
         f"session_id: {record.session_id}\n"
         f"registry_deleted_extra: {registry_deleted}\n"
-        f"plan_deleted: {plan_deleted}\n"
-        f"todos_deleted: {todos_deleted}\n"
+        f"runtime_state: removed with session\n"
         f"delete_session: {delete_resp.get('message') or delete_resp.get('status') or 'ok'}"
     )
 

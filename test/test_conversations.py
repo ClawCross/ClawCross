@@ -108,6 +108,26 @@ class GroupCase(unittest.IsolatedAsyncioTestCase):
 
 
 class TestGroupChat(GroupCase):
+    async def test_live_memberships_change_and_are_scoped_by_owner_and_agent(self):
+        meta = self.service.memberships('alice', 'coder')
+        self.assertEqual(meta[0]['group_id'], self.group)
+        self.assertNotIn('messages', meta[0])
+        self.service.update('alice', self.group, title='Renamed')
+        self.assertEqual(self.service.memberships('alice', 'coder')[0]['title'], 'Renamed')
+        self.agents.create('bob', driver=WEBOT, name='Other Coder', agent_id='coder')
+        self.assertEqual(self.service.memberships('bob', 'coder'), [])
+        self.service.remove_member('alice', self.group, 'coder')
+        self.assertEqual(self.service.memberships('alice', 'coder'), [])
+        with self.assertRaises(NotAMember):
+            await self.say('cannot send after leaving', sender='coder')
+
+    async def test_wrong_group_title_does_not_post(self):
+        before = self.conversations.store.message_count(self.group)
+        with self.assertRaises(GroupError):
+            await self.say('wrong target', sender='coder', expected_title='Other group')
+        self.assertEqual(self.conversations.store.message_count(self.group), before)
+        await self.say('right target', sender='coder', expected_title='Dev')
+
     async def test_members_are_agents_and_people_with_names(self):
         detail = self.service.detail("alice", self.group)
         self.assertEqual([m["name"] for m in detail["members"]], ["alice", "Planner", "Coder", "Codex"])
@@ -250,6 +270,16 @@ class TestGroupsApi(GroupCase):
         if token:
             headers["X-Internal-Token"] = token
         return self.client.post(f"/groups/{self.group}/messages", json=body, headers=headers)
+
+    def test_query_agent_memberships_and_verify_expected_target(self):
+        headers = {'Authorization': f'Bearer {TOKEN}:alice'}
+        response = self.client.get('/groups?agent_id=coder', headers=headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['groups'][0]['group_id'], self.group)
+        self.assertNotIn('messages', response.json()['groups'][0])
+        rejected = self.post({'content': 'wrong', 'agent': 'coder', 'expected_title': 'Other'}, token=TOKEN)
+        self.assertEqual(rejected.status_code, 400)
+        self.assertEqual(self.conversations.store.message_count(self.group), 0)
 
     def test_only_local_services_post_for_an_agent_and_only_the_owners(self):
         self.assertEqual(self.post({"content": "hi", "agent": "coder"}).status_code, 403)

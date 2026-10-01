@@ -14,6 +14,45 @@ from webot.context import render_group_context
 
 
 class GroupContextTests(unittest.TestCase):
+    def test_live_membership_survives_plain_chat_and_removes_stale_delivery_identity(self):
+        live = [{'group_id': 'g1', 'title': 'Renamed', 'identity': 'Builder'}]
+        rendered = render_group_context([HumanMessage(content='normal chat')], memberships=live)
+        self.assertIn('Renamed', rendered)
+        self.assertIn('无。本轮', rendered)
+        grouped = [HumanMessage(content='secret message', additional_kwargs={
+            'framework_groups': [{'group_id': 'g1', 'title': 'old'}]})]
+        self.assertNotIn('old', render_group_context(grouped, memberships=live))
+        self.assertNotIn('secret message', render_group_context(grouped, memberships=live))
+        self.assertIn('不得向该群发送', render_group_context(grouped, memberships=[]))
+        self.assertIn('Renamed', render_group_context([], memberships=live))
+
+    def test_external_membership_patch_is_incremental_and_reset_resends(self):
+        from external.session import forget
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch('external.session.identity_sections', return_value={'base_rules': 'rules'}), \
+                patch('webot.skills.build_user_skills_listing', return_value=''), \
+                patch('webot.workflow_prompt.build_team_workflow_prompt', return_value=''), \
+                patch('common.conversation_context._membership_provider') as provider:
+            provider.return_value = [{'group_id': 'g1', 'title': 'First'}]
+            store = AgentStore(Path(tmp) / 'agents.db')
+            agent = store.create('alice', driver=HTTP, config={'api_url': 'http://unused'})
+            def turn():
+                current = store.require('alice', agent.agent_id)
+                return current, prepare_turn(current, AgentMessage(text='hello'), context={}, mode=None,
+                                             enabled_tools=None, response_format=None)
+            current, first = turn()
+            self.assertIn('First', first.text)
+            remember_turn(store, current, first)
+            self.assertEqual(turn()[1].text, 'hello')
+            provider.return_value = [{'group_id': 'g1', 'title': 'Renamed'}]
+            current, changed = turn()
+            self.assertIn('Renamed', changed.text)
+            self.assertIsNone(changed.identity)
+            remember_turn(store, current, changed)
+            forget(store, store.require('alice', agent.agent_id))
+            self.assertIsNotNone(turn()[1].identity)
+            self.assertIn('Renamed', turn()[1].text)
+
     def test_metadata_excludes_dialogue_and_deduplicates_latest_group(self):
         groups = [{"group_id": "g1", "title": "old", "content": "secret", "summary": "digest"},
                   {"group_id": "g1", "title": "new", "messages": ["secret"],

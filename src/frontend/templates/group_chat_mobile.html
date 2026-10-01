@@ -4672,7 +4672,7 @@ html, body { background: #f5f7fc; }
 .tool-policy-category small { float: right; color: var(--text-hint); font-weight: 400; }
 .tool-policy-category-items { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; }
 </style>
-<script src="/static/js/tool-catalog.js?v=20260927-memory"></script>
+<script src="/static/js/tool-catalog.js?v=20261001-groups"></script>
 </head>
 <body>
 
@@ -14463,6 +14463,10 @@ function renderAgentBasicInfo(agent) {
   <div class="agent-detail-section">
     <div class="agent-detail-label">${t('agent_address')}</div>
     <div class="agent-detail-value" style="font-family:monospace;font-size:13px;">${esc(agent.agent_id)}<br><span style="color:var(--text-secondary);">${esc(agent.agent_id)}</span></div>
+  </div>`;
+  html += `<div class="agent-detail-section">
+    <div class="agent-detail-label">${_currentLang === 'zh' ? '所在群聊' : 'Conversations'}</div>
+    <div class="agent-detail-value" style="overflow-wrap:anywhere;">${esc((agent.groups || []).map(g => `${g.title} (${g.group_id})`).join(', ') || '-')}</div>
   </div>`;
   if (settings.persona) {
     html += `<div class="agent-detail-section">

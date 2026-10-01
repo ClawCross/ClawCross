@@ -158,6 +158,7 @@ def create_agents_router(
     gateway: AgentGateway,
     names: Callable[[str, str], Agent | None] | None = None,
     on_delete: Iterable[Callable[[Agent], None]] = (),
+    memberships: Callable[[str, str], list[dict]] | None = None,
 ) -> APIRouter:
     """``names`` finds an agent by a name other than its id (``<team>.<name>``);
     ``on_delete`` is what else holds agent ids (teams, conversations) forgetting one."""
@@ -190,7 +191,8 @@ def create_agents_router(
         return store.ensure(user, ref, driver=driver, config=config)
 
     async def with_status(agent: Agent) -> dict[str, Any]:
-        return {**agent_card(agent), "status": await gateway.status(agent)}
+        return {**agent_card(agent), "groups": memberships(agent.owner, agent.agent_id) if memberships else [],
+                "status": await gateway.status(agent)}
 
     def message(user: str, body: AgentMessageRequest) -> AgentMessage:
         return AgentMessage(text=body.text, attachments=body.attachments, sender=f"u:{user}",
@@ -314,7 +316,10 @@ def create_agents_router(
     @router.delete("/v1/agents/{ref}")
     async def delete_agent(ref: str, authorization: str | None = Header(None)):
         agent = lookup(user_of(authorization), ref)
-        await gateway.destroy(agent)
+        try:
+            await gateway.destroy(agent)
+        except ControlError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         store.delete(agent.owner, agent.agent_id)
         for forget in on_delete:
             forget(agent)

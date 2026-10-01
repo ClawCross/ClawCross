@@ -174,8 +174,10 @@ class AgentGateway:
         """Release what the runtime holds for an agent that is being deleted."""
         try:
             await self.runtime(agent).destroy(agent)
-        except Exception:
+        except Exception as exc:
             logger.exception("cleanup of %s failed", agent.agent_id)
+            if agent.driver == WEBOT:
+                raise ControlError(f"WeBot cleanup failed: {exc}") from exc
 
 
 _GATEWAY: AgentGateway | None = None

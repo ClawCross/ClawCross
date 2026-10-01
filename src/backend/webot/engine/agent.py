@@ -171,7 +171,7 @@ USER_INJECTED_TOOLS = {
     # LLM API access tools
     "call_llm_api", "send_to_session", "read_session_inbox", "mark_session_inbox_read",
     # Group chat tools
-    "send_to_group",
+    "send_to_group", "list_agent_groups", "get_group_details", "get_team_details",
     # WeBot subagent tools
     "spawn_subagent", "list_subagents",
     "send_subagent_message", "get_subagent_history", "cancel_subagent", "delete_subagent",
@@ -203,6 +203,8 @@ SESSION_INJECTED_TOOLS = {
     "read_session_inbox": "source_session",
     "mark_session_inbox_read": "source_session",
     "send_to_group": "source_session",
+    "list_agent_groups": "source_session",
+    "get_group_details": "source_session",
     "spawn_subagent": "parent_session",
     "send_subagent_message": "source_session",
     "cancel_subagent": "source_session",
@@ -231,7 +233,7 @@ SESSION_FORCE_INJECTED_TOOLS: frozenset[str] = frozenset({
     "run_command", "background_command_io",
     "send_to_session",
     "read_session_inbox", "mark_session_inbox_read",
-    "send_to_group",
+    "send_to_group", "list_agent_groups", "get_group_details",
     "send_notification",
     "spawn_subagent",
     "send_subagent_message",
@@ -1275,6 +1277,9 @@ class TeamAgent:
     def get_background_compaction_status(self, thread_id: str) -> dict:
         return self._background_compression.status(thread_id)
 
+    def forget_thread_state(self, thread_id: str) -> None:
+        self._thread_state_registry.forget(thread_id)
+
     def _queue_background_compression(self, state: dict) -> None:
         """Schedule summarization only after the final reply is persisted."""
         config = state.get("_background_compaction_config")
@@ -1581,7 +1586,9 @@ class TeamAgent:
             f"【Session Mode】\n{session_mode_prompt}\n\n"
             f"{runtime_context_block}\n"
         )
-        dynamic_context_block += "\n" + render_group_context(state["messages"]) + "\n"
+        from common.conversation_context import group_memberships
+        dynamic_context_block += "\n" + render_group_context(
+            state["messages"], memberships=group_memberships(user_id, session_id)) + "\n"
         if team_skill_context:
             dynamic_context_block += f"\n{team_skill_context}\n"
         if reply_format_hint:

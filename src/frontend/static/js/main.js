@@ -2092,6 +2092,7 @@ function renderAgentCenterDetail() {
                     <dt>Platform</dt><dd>${agentCenterEscape(agent.platform)}</dd>
                     <dt>Persona</dt><dd>${agentCenterEscape(personaText ? (personaText.length > 80 ? personaText.slice(0, 80) + '…' : personaText) : '-')}</dd>
                     <dt>Team</dt><dd>${agentCenterEscape(teams.length ? teams.join(', ') : t('agent_center_public'))}</dd>
+                    <dt>${currentLang === 'zh-CN' ? '所在群聊' : 'Conversations'}</dt><dd>${agentCenterEscape((agent.groups || []).map(g => `${g.title} (${g.group_id})`).join(', ') || '-')}</dd>
                     <dt>${agentCenterEscape(t('agent_center_connection'))}</dt><dd>${agentCenterEscape(state)}</dd>
                 </dl>
             </section>

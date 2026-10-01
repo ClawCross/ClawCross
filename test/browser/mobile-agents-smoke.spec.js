@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+test.use({ launchOptions: { executablePath: process.env.CLAWCROSS_TEST_CHROME || '/usr/bin/google-chrome' } });
 
 // The mobile message center speaks to agents by id: groups, members, @mentions and
 // contacts all come from /proxy_groups and /v1/agents, the same for every platform.
@@ -48,7 +49,7 @@ async function stub(page, calls) {
     calls.control.push(route.request().postDataJSON());
     return json(route, { agent: CODEX, actions: ['status', 'cancel', 'reset'], state: 'idle' });
   });
-  await page.route(/\/v1\/agents\/ag_codex00001$/, (route) => json(route, { ...CODEX, status: { state: 'idle', actions: ['status'] } }));
+  await page.route(/\/v1\/agents\/ag_codex00001$/, (route) => json(route, { ...CODEX, groups: [{group_id: 'g_dev', title: 'Dev'}], status: { state: 'idle', actions: ['status'] } }));
   await page.route(/\/proxy_groups(\?.*)?$/, (route) => json(route, { groups: [GROUP] }));
   await page.route(/\/proxy_groups\/g_dev\/messages/, (route) => {
     if (route.request().method() === 'POST') {
@@ -91,6 +92,9 @@ test('mobile message center works with agents of any platform by id', async ({ p
   await expect(page.locator('#member-list')).toContainText('WeBot');
   await page.evaluate(() => controlMemberAgent('ag_codex00001', 'reset', 'Codex'));
   expect(calls.control).toEqual([{ action: 'reset' }]);
+  await page.evaluate(() => showAgentDetail('ag_codex00001'));
+  await expect(page.locator('#agent-detail-body')).toContainText('Dev (g_dev)');
+  await page.evaluate(() => closeAgentDetail());
 
   // An @ picked from the list is sent as the agent's id
   await page.locator('#msg-input').fill('@Co');
