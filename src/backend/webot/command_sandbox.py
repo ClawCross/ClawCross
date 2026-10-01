@@ -131,12 +131,18 @@ def _srt_binary() -> str:
     return binary
 
 
-def _policy(root: Path, settings_path: Path, *, access: str = "default", target: str = "") -> dict:
+def _policy(root: Path, settings_path: Path, *, access: str = "default", target: str = "", srt_binary: str = "") -> dict:
     home = Path.home().resolve()
     deny_read = [str(home)]
     deny_read.extend(str(path) for name in _PRIVATE_NAMES if (path := home / name).exists())
     deny_read.append(str(settings_path))
     allow_read = list(dict.fromkeys(str(path.resolve()) for path in (root, Path(sys.prefix), Path(sys.base_prefix))))
+    if sys.platform.startswith("linux") and srt_binary:
+        # SRT executes its seccomp helper inside the sandbox. Its explicit
+        # per-user install path is otherwise hidden by denyRead(home).
+        seccomp = Path(srt_binary).resolve().parent.parent / "vendor" / "seccomp"
+        if seccomp.is_dir():
+            allow_read.append(str(seccomp))
     allow_write = list(dict.fromkeys((str(root), str(Path(tempfile.gettempdir()).resolve()))))
     if access in {"read_path", "write_path"}:
         allow_read.append(target)
@@ -184,7 +190,7 @@ def build_srt_command(*, root: Path, cwd: Path, command: str, language: str,
     settings_path = Path(raw_path)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(_policy(root, settings_path, access=access, target=target), handle, ensure_ascii=False)
+            json.dump(_policy(root, settings_path, access=access, target=target, srt_binary=binary), handle, ensure_ascii=False)
         limited = (sys.executable, "-c", _LIMIT_CODE, *wrapped)
         return SrtCommand((binary, "--settings", str(settings_path), "--", *limited), settings_path)
     except BaseException:
