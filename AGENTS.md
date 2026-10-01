@@ -113,6 +113,8 @@ The goal is a **silent, non-interactive install**. NEVER repeatedly ask the user
 
 ### General Rules
 
+Do not add AI tool or model names as authors or `Co-authored-by` trailers. Preserve the user's configured Git identity; add co-authorship only when the user explicitly requests it.
+
 4. Do not install or configure OpenClaw unless the user explicitly asks for it.
 5. Cloudflare Tunnel requires `start --tunnel` or `start-tunnel` and an already installed cloudflared binary.
 6. On Windows, prefer the PowerShell flow. Use WSL only if the user prefers it.
