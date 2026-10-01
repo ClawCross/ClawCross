@@ -2007,6 +2007,12 @@ class TeamAgent:
         if structured_final and not deepseek_structured and not getattr(response, "tool_calls", None):
             base_prompt, _ = self._build_live_system_prompt(user_id, session_id, is_subagent)
             input_messages[0] = SystemMessage(content=base_prompt)
+            validate_context_capacity(
+                system_prompt=base_prompt, tools=[response_format],
+                messages=[*input_messages[1:], response,
+                          HumanMessage(content="Give the final answer in the requested schema.")],
+                context_window=context_window, output_reserve=output_reserve,
+            )
             response = await decode_structured_final(
                 base_model, response_format, [*input_messages, response], config,
             )
