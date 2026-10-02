@@ -35,7 +35,7 @@ from webot.mcp_tool_docs import DocumentedFastMCP as FastMCP
 from common.runtime_paths import ENV_FILE, PROJECT_ROOT as _PROJECT_ROOT, USER_FILES_DIR
 
 from webot.workspace import resolve_session_workspace
-from webot.command_sandbox import build_srt_command, normalize_escalation, SandboxUnavailable, SrtCommand
+from webot.command_sandbox import build_srt_command, normalize_escalation, SandboxUnavailable, SrtCommand, sandbox_failure_hint
 from webot.approval_review import authorize_action, policy_binding
 from webot.approval_actions import canonical_action_args
 from webot.runtime_store import consume_execution_permit, get_session_mode
@@ -159,10 +159,6 @@ DEFAULT_BACKGROUND_READ_CHARS = 12000
 MAX_BACKGROUND_READ_CHARS = 50000
 _BACKGROUND_JOBS: dict[str, "BackgroundJob"] = {}
 _DETACHED_RUNNERS: list[subprocess.Popen] = []
-_SANDBOX_RETRY_HINT = (
-    "沙盒报告了权限拒绝。核对具体路径或域名后，可用同一 run_command 的 "
-    "sandbox_access 与 escalation_target 申请单次提权；本次命令不会自动重跑。"
-)
 
 
 @dataclass
@@ -777,8 +773,9 @@ def _job_summary(job: BackgroundJob) -> str:
         lines.append(f"⚠️ error: {job.error}")
     if job.status in {"failed", "completed"}:
         with contextlib.suppress(OSError):
-            if "<sandbox_violations>" in Path(job.stderr_path).read_text(encoding="utf-8", errors="replace"):
-                lines.append(_SANDBOX_RETRY_HINT)
+            hint = sandbox_failure_hint(Path(job.stderr_path).read_text(encoding="utf-8", errors="replace"))
+            if hint:
+                lines.append(hint)
     lines.append(f"📤 stdout: {job.stdout_path}")
     lines.append(f"📤 stderr: {job.stderr_path}")
     return "\n".join(lines)
@@ -1064,8 +1061,10 @@ async def _run_foreground(
         parts.append(f"📤 标准输出:\n{out}")
     if err:
         parts.append(f"📤 标准错误:\n{err}")
-    if sandbox is not None and "<sandbox_violations>" in err:
-        parts.append(_SANDBOX_RETRY_HINT)
+    if sandbox is not None:
+        hint = sandbox_failure_hint(err)
+        if hint:
+            parts.append(hint)
     if not out and not err:
         parts.append("(无输出)")
     return "\n\n".join(parts)

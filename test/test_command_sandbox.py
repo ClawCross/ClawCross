@@ -17,6 +17,19 @@ import webot.mcp.commander as commander
 
 
 class CommandSandboxTests(unittest.TestCase):
+    def test_initialization_failure_does_not_suggest_host_escalation(self):
+        error = ('apply-seccomp: write /proc/self/setgroups '
+                 '(nested userns is capability-restricted; caller must provide CAP_SYS_ADMIN): Permission denied')
+        hint = command_sandbox.sandbox_failure_hint(error + '\n<sandbox_violations>')
+        self.assertIn('命令尚未启动', hint)
+        self.assertIn('不要为此自动申请 host', hint)
+        self.assertNotIn('申请单次提权', hint)
+
+    def test_workload_denial_retains_scoped_escalation_hint(self):
+        hint = command_sandbox.sandbox_failure_hint('<sandbox_violations> denied write')
+        self.assertIn('申请单次提权', hint)
+        self.assertEqual(command_sandbox.sandbox_failure_hint('ordinary command error'), '')
+
     def test_per_user_srt_seccomp_helper_is_readable_without_allowing_its_parent(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "workspace"
