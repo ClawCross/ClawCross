@@ -112,7 +112,10 @@ The browser uses these APIs for runtime inspection and controls. Studio refreshe
 
 Studio: 上下文与审核 → 工具审核 → 命令沙盒。Mobile: 加号里的运行模式 → 命令沙盒。
 SRT 默认关闭；旁边显示组件状态及显式下载按钮。下载安装不会打开沙盒。
+关闭沙盒时，`run_command` 在服务进程的宿主账号下执行；工作目录和关键词黑名单不提供 OS 隔离，自动审核也不能替代隔离。
 Node.js/npm、Linux bwrap/socat/rg 等缺失依赖会在同一处提示；Debian/Ubuntu 提供单独的系统依赖安装按钮（需服务器管理员权限），macOS 使用已有 Homebrew，其余平台提示手动步骤；缺少隔离能力时命令拒绝执行，不回退到宿主机。
+`apply-seccomp` 写入 `setgroups`、`uid_map` 或 `gid_map` 失败属于隔离初始化故障，不能通过普通路径/域名提权解决，也不能据此认定沙盒已验证安全。管理员需检查 AppArmor 的 `bwrap//&unpriv_bwrap` 策略及嵌套 user namespace 支持；不得自动关闭 seccomp、开放所有 Unix socket 或切换到宿主执行。
+管理员明确批准并安装 root 所有的 `/usr/local/libexec/clawcross/bwrap` 后，ClawCross 可通过 SRT 的 `bwrapPath` 使用专用 AppArmor 配置；二进制及其所有上级目录必须由 root 持有且不可由普通用户修改。程序不会自行安装该配置或修改全局 sysctl。
 新建 Agent 可以选择 ACP 连接方式；表单内提供 acpx 显式安装按钮。运行编号可留空自动生成，中文显示名不需要手填编号。
 
 ACP 运行状态轮询仅检查本机任务锁，不启动外部适配器；会话追踪使用 `sessions list --local`，只显示登录用户已注册 Agent 的会话。查询和关闭接口需要认证，关闭操作验证会话所有权。外部 Agent 的 `model` 设置通过 acpx `--model` 传递，只影响该 Agent；留空时使用外部程序默认配置。初始化使用 Agent 的超时设置，保留 acpx 默认适配器下载行为。压缩后的用量估算按摘要版本与 API 用量基准复用，避免页面轮询反复读取并分词整个历史。

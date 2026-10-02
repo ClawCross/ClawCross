@@ -21,6 +21,26 @@ class SandboxUnavailable(RuntimeError):
     """The requested native sandbox cannot be used safely."""
 
 
+def sandbox_failure_hint(stderr: str) -> str:
+    """Distinguish sandbox startup failures from denied workload operations."""
+    if "apply-seccomp:" in stderr and any(marker in stderr for marker in (
+        "setgroups", "uid_map", "gid_map", "unshare", "Operation not permitted",
+    )):
+        return (
+            "❌ SRT 隔离初始化失败：嵌套 user namespace 被系统策略拒绝，命令尚未启动。"
+            "需要管理员检查 AppArmor/bwrap 与 SRT 的兼容性；这不是工作区路径或域名提权问题。"
+            "不要为此自动申请 host 执行、关闭 seccomp 或降级沙盒。"
+        )
+    if "Sandbox dependencies not available" in stderr or "bwrap: Creating new namespace failed" in stderr:
+        return "❌ 沙盒初始化失败，命令尚未启动；请检查 SRT 依赖和系统 namespace 策略。不会降级为宿主机执行。"
+    if "<sandbox_violations>" in stderr:
+        return (
+            "沙盒报告了权限拒绝。核对具体路径或域名后，可用同一 run_command 的 "
+            "sandbox_access 与 escalation_target 申请单次提权；本次命令不会自动重跑。"
+        )
+    return ""
+
+
 @dataclass(frozen=True)
 class SrtCommand:
     argv: tuple[str, ...]
@@ -148,7 +168,7 @@ def _policy(root: Path, settings_path: Path, *, access: str = "default", target:
         allow_read.append(target)
     if access == "write_path":
         allow_write.append(target)
-    return {
+    policy = {
         "network": {
             "allowedDomains": [target] if access == "network" else [], "deniedDomains": [],
             "allowUnixSockets": [], "allowLocalBinding": False,
@@ -161,6 +181,17 @@ def _policy(root: Path, settings_path: Path, *, access: str = "default", target:
         "enableWeakerNetworkIsolation": False,
         "allowAppleEvents": False,
     }
+    if sys.platform.startswith("linux"):
+        # Optional administrator-installed binary with a dedicated AppArmor
+        # profile. Never trust a user-writable replacement for this launcher.
+        dedicated = Path("/usr/local/libexec/clawcross/bwrap")
+        if dedicated.is_file():
+            for path in (dedicated, *dedicated.parents):
+                info = path.stat()
+                if path.is_symlink() or info.st_uid != 0 or info.st_mode & 0o022:
+                    raise SandboxUnavailable("ClawCross 专用 bwrap 必须由 root 持有，且其路径不能允许普通用户修改。")
+            policy["bwrapPath"] = str(dedicated)
+    return policy
 
 
 def build_srt_command(*, root: Path, cwd: Path, command: str, language: str,
