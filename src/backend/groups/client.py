@@ -273,7 +273,10 @@ class GroupClient:
                 agent = {'agent_id': principal, 'name': member['name'], 'platform': member['platform'],
                          'remote': not local, 'settings': {'persona': '', 'tools': [], 'teams': []},
                          'status': {'state': 'remote' if not local else 'idle', 'actions': []}}
-            members.append({**member, 'principal': principal, 'agent': agent, 'nickname': '', 'remote': not local})
+            members.append({**member, 'principal': principal, 'agent': agent, 'nickname': '', 'remote': not local,
+                            'is_owner': not member['is_agent'] and member['connection_id'] == group.get('owner'),
+                            'can_remove': (group.get('owner') == row['connection_id'] and member['connection_id'] != group.get('owner'))
+                                          or (member['is_agent'] and local)})
         primary = None
         for original, visible in zip([m for m in group.get('members', []) if not (m['connection_id'] == row['connection_id'] and m['agent_id'] and m['agent_id'] not in allowed)], members):
             if original['principal'] == group.get('primary_agent'):

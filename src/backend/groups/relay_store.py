@@ -61,13 +61,22 @@ class RelayStore:
                     sender TEXT, client_id TEXT, UNIQUE(group_id, sender, client_id)
                 );
                 CREATE INDEX IF NOT EXISTS relay_events_group ON relay_events(group_id, id);
+                CREATE TABLE IF NOT EXISTS relay_guest_tokens (
+                    token_hash TEXT PRIMARY KEY,
+                    connection_id TEXT NOT NULL REFERENCES relay_connections(id) ON DELETE CASCADE,
+                    created_at REAL NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS relay_guest_invites (
                     group_id TEXT PRIMARY KEY REFERENCES relay_groups(id) ON DELETE CASCADE,
                     token_hash TEXT UNIQUE NOT NULL
                 );
             ''')
-            if 'guest' not in {r[1] for r in db.execute('PRAGMA table_info(relay_connections)')}:
-                db.execute('ALTER TABLE relay_connections ADD COLUMN guest INTEGER NOT NULL DEFAULT 0')
+            columns = {r[1] for r in db.execute('PRAGMA table_info(relay_connections)')}
+            for column, definition in [('guest', 'INTEGER NOT NULL DEFAULT 0'),
+                                       ('guest_salt', "TEXT NOT NULL DEFAULT ''"),
+                                       ('guest_password_hash', "TEXT NOT NULL DEFAULT ''")]:
+                if column not in columns:
+                    db.execute(f'ALTER TABLE relay_connections ADD COLUMN {column} {definition}')
         if os.name != 'nt':
             self.path.chmod(0o600)
 
@@ -85,6 +94,9 @@ class RelayStore:
     @staticmethod
     def auth(db, token: str):
         row = db.execute('SELECT * FROM relay_connections WHERE token_hash=? AND revoked=0', (digest(token),)).fetchone()
+        if row is None:
+            row = db.execute('''SELECT c.* FROM relay_connections c JOIN relay_guest_tokens t ON t.connection_id=c.id
+                                WHERE t.token_hash=? AND c.revoked=0 AND c.guest=1''', (digest(token),)).fetchone()
         if row is None:
             raise RelayError('群凭证无效、已退出或被撤销', 401)
         return row
@@ -186,22 +198,58 @@ class RelayStore:
             row = db.execute('SELECT group_id FROM relay_guest_invites WHERE token_hash=?', (digest(invite),)).fetchone()
             if not row:
                 raise RelayError('分享链接已失效', 403)
-            return {'title': self._card(db, row['group_id'])['title']}
+            return {'title': self._card(db, row['group_id'])['title'], 'group_id': row['group_id']}
 
-    def guest_join(self, invite, name):
+    @staticmethod
+    def _guest_password(password):
+        if not isinstance(password, str) or not 6 <= len(password) <= 128:
+            raise RelayError('密码需要 6 至 128 个字符')
+
+    def guest_join(self, invite, name, password=''):
         name = name.strip()
+        self._guest_password(password)
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
             row = db.execute('SELECT group_id FROM relay_guest_invites WHERE token_hash=?', (digest(invite),)).fetchone()
             if not row:
                 raise RelayError('分享链接已失效', 403)
             gid = row['group_id']
+            normalized = unicodedata.normalize('NFKC', name).casefold()
+            existing = next((m for m in db.execute('''SELECT m.name,c.* FROM relay_members m
+                JOIN relay_connections c ON c.id=m.connection_id WHERE m.group_id=? AND c.revoked=0''', (gid,))
+                if unicodedata.normalize('NFKC', m['name'].strip()).casefold() == normalized), None)
+            if existing:
+                if not existing['guest'] or not existing['guest_password_hash']:
+                    raise RelayError('这个名字已有人使用；旧访客请在原浏览器设置密码，或请群主移除后重新加入', 409)
+                if not hmac.compare_digest(existing['guest_password_hash'], password_hash(password, existing['guest_salt'])):
+                    raise RelayError('名字或密码不正确', 403)
+                token = secrets.token_urlsafe(32)
+                db.execute('INSERT INTO relay_guest_tokens VALUES(?,?,?)', (digest(token), existing['id'], time.time()))
+                # Bound stored browser credentials while retaining concurrent devices.
+                db.execute('''DELETE FROM relay_guest_tokens WHERE connection_id=? AND token_hash NOT IN
+                              (SELECT token_hash FROM relay_guest_tokens WHERE connection_id=? ORDER BY created_at DESC LIMIT 16)''',
+                           (existing['id'], existing['id']))
+                return {'token': token, 'name': existing['name'], 'password_set': True}
             self._unique_name(db, gid, name)
             cid, token = self._connect(db, gid, node_id='guest', user_id='guest_' + secrets.token_hex(12), display_name=name)
-            db.execute('UPDATE relay_connections SET guest=1 WHERE id=?', (cid,))
+            salt = secrets.token_hex(16)
+            db.execute('UPDATE relay_connections SET guest=1,guest_salt=?,guest_password_hash=? WHERE id=?',
+                       (salt, password_hash(password, salt), cid))
             db.execute('UPDATE relay_groups SET version=version+1 WHERE id=?', (gid,))
             self._event(db, gid, 'joined', {'connection_id': cid, 'display_name': name})
-            return {'token': token, 'name': name}
+            return {'token': token, 'name': name, 'password_set': True}
+
+    def guest_set_password(self, token, password):
+        self._guest_password(password)
+        with self.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            conn = self.auth(db, token)
+            if not conn['guest']:
+                raise RelayError('需要访客身份', 403)
+            salt = secrets.token_hex(16)
+            db.execute('UPDATE relay_connections SET guest_salt=?,guest_password_hash=? WHERE id=?',
+                       (salt, password_hash(password, salt), conn['id']))
+            return {'password_set': True}
 
     def guest_identity(self, token):
         with self.db() as db:
@@ -232,7 +280,7 @@ class RelayStore:
                 if row['kind'] == 'message':
                     message = json.loads(row['body'])['message']
                     messages.append({k: message[k] for k in ('sender', 'sender_name', 'content', 'created_at')} | {'id': row['id']})
-            return {'title': group['title'], 'members': [{k: m[k] for k in ('principal', 'name', 'is_agent')} for m in group['members']],
+            return {'group_id': conn['group_id'], 'password_set': bool(conn['guest_password_hash']), 'title': group['title'], 'members': [{k: m[k] for k in ('principal', 'name', 'is_agent')} for m in group['members']],
                     'messages': messages, 'cursor': cursor, 'has_more': more, 'principal': member['principal'], 'name': member['name']}
 
     def guest_rename(self, token, name):
