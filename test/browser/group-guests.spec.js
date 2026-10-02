@@ -27,6 +27,7 @@ for (const mobile of [false, true]) {
       await route.fulfill({status,contentType:'application/json',body:JSON.stringify(result)});
     });
     await page.goto('/group-guest#test-invite');
+    await page.locator('#password').fill('guest-password');
     await page.locator('#name').fill('Alice'); await page.getByRole('button',{name:'进入群聊'}).click();
     await expect(page.locator('#status')).toContainText('已有人使用');
     await page.locator('#name').fill('Bob'); await page.getByRole('button',{name:'进入群聊'}).click();
@@ -60,3 +61,45 @@ for (const mobile of [false, true]) {
     await expect(page.getByRole('button',{name:/管理|添加.*agent/i})).toHaveCount(0);
   });
 }
+
+
+test('guest identity survives a new invitation and a closed page; password restores it in a fresh browser', async ({page,context,browser}) => {
+  let joins=0;
+  const mock=async route=>{
+    const action=new URL(route.request().url()).pathname.split('/').pop();
+    const state={title:'Friends',identity_key:'same-group',password_set:true,principal:'bob',name:'Bob',members:[{principal:'bob',name:'Bob'}],messages:[],cursor:0};
+    if (action==='info') return route.fulfill({json:{title:'Friends',identity_key:'same-group'}});
+    if (action==='join') {
+      joins++;
+      const body=route.request().postDataJSON();
+      if (body.password!=='correct-password') return route.fulfill({status:403,json:{detail:'名字或密码不正确'}});
+      return route.fulfill({json:{token:'bob-token',name:'Bob'}});
+    }
+    if (action==='state') {
+      expect(route.request().headers()['x-guest-token']).toBe('bob-token');
+      return route.fulfill({json:state});
+    }
+    return route.fulfill({json:{password_set:true}});
+  };
+  await context.route('**/group-guest-api/**',mock);
+  await page.goto('/group-guest#first-link');
+  await page.locator('#name').fill('Bob');await page.locator('#password').fill('correct-password');
+  await page.getByRole('button',{name:'进入群聊'}).click();
+  await expect(page.locator('#chat')).toBeVisible();
+  await page.close();
+  const reopened=await context.newPage();await reopened.goto('/group-guest#new-link');
+  await expect(reopened.locator('#chat')).toBeVisible();expect(joins).toBe(1);
+  const fresh=await browser.newContext();
+  try {
+    await fresh.route('**/group-guest-api/**',mock);
+    const another=await fresh.newPage();await another.goto(new URL('/group-guest#new-link',reopened.url()).href);
+    await another.locator('#name').fill('Bob');await another.locator('#password').fill('wrong-password');
+    await another.getByRole('button',{name:'进入群聊'}).click();
+    await expect(another.locator('#status')).toContainText('密码不正确');
+    await another.locator('#password').fill('correct-password');await another.getByRole('button',{name:'进入群聊'}).click();
+    await expect(another.locator('#chat')).toBeVisible();
+    await another.locator('#password-open').click();await another.locator('#new-password').fill('changed-password');
+    await another.getByRole('button',{name:'保存密码'}).click();
+    await expect(another.locator('#status')).toContainText('密码已保存');
+  } finally {await fresh.close();}
+});

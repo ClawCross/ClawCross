@@ -35,8 +35,13 @@ class AgentJoin(BaseModel):
 
 
 class GuestJoin(BaseModel):
+    password: str = Field(min_length=6, max_length=128)
     invite: str = Field(min_length=20, max_length=100)
     name: str = Field(min_length=1, max_length=40)
+
+
+class GuestPassword(BaseModel):
+    password: str = Field(min_length=6, max_length=128)
 
 
 class GuestName(BaseModel):
@@ -161,7 +166,7 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
     async def guest_join(body: GuestJoin, request: Request):
         limited('guest-join:global', 120)
         limited('guest-join:' + (request.client.host if request.client else '?'), 12)
-        return await invoke(store.guest_join, body.invite, body.name)
+        return await invoke(store.guest_join, body.invite, body.name, body.password)
 
     @router.get('/guest/state')
     async def guest_state(after_id: int = -1, authorization: str | None = Header(None)):
@@ -178,6 +183,13 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
             raise HTTPException(400, '消息不能为空')
         result = await invoke(store.post, credential, **body.model_dump())
         return {'id': result['message']['id']}
+
+    @router.post('/guest/password')
+    async def guest_password(body: GuestPassword, authorization: str | None = Header(None)):
+        credential = token(authorization)
+        from groups.relay_store import digest
+        limited('guest-password:' + digest(credential), 12)
+        return await invoke(store.guest_set_password, credential, body.password)
 
     @router.post('/guest/rename')
     async def guest_rename(body: GuestName, authorization: str | None = Header(None)):

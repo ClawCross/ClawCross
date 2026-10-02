@@ -3,17 +3,22 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>朋友群聊</title>
-  <link rel="stylesheet" href="/static/css/group-guest.css">
-  <script defer src="/static/js/group-guest.js"></script>
+  <link rel="stylesheet" href="/static/css/group-guest.css?v=20261002-password">
+  <script defer src="/static/js/group-guest.js?v=20261002-password"></script>
 </head>
 <body>
 <main>
-  <header><div><span class="eyebrow">一起聊聊</span><h1 id="title">群聊</h1></div><button id="rename" hidden>改名</button></header>
+  <header><div><span class="eyebrow">一起聊聊</span><h1 id="title">群聊</h1></div><div class="identity-actions"><button id="password-open" hidden>设置密码</button><button id="rename" hidden>改名</button></div></header>
   <p id="status" role="status" aria-live="polite">正在打开群聊…</p>
   <form id="join" hidden>
-    <h2>怎么称呼你？</h2><p>取个名字，和大家一起聊聊。</p>
-    <label for="name">你的名字</label><input id="name" maxlength="40" required autocomplete="nickname">
+    <h2>进入群聊</h2><p>首次使用这个名字时设置密码；再次进入时输入原名字和密码。</p>
+    <label for="name">你的名字</label><input id="name" maxlength="40" required autocomplete="username">
+    <label for="password">你的密码</label><input id="password" type="password" minlength="6" maxlength="128" required autocomplete="current-password">
     <button type="submit">进入群聊</button>
+  </form>
+  <form id="password-form" hidden>
+    <label for="new-password">设置或修改你的密码</label><input id="new-password" type="password" minlength="6" maxlength="128" required autocomplete="new-password">
+    <div><button type="submit">保存密码</button><button id="password-cancel" type="button">取消</button></div>
   </form>
   <section id="chat" hidden>
     <details id="members"><summary id="member-count">群成员</summary><ul id="member-list"></ul></details>

@@ -1,5 +1,6 @@
 """Guest invitation isolation, identity collisions, and the public browser proxy."""
 import concurrent.futures
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -9,8 +10,9 @@ from unittest.mock import patch, Mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src' / 'backend'))
 sys.path.insert(0, str(ROOT / 'src'))
-from groups.relay_store import RelayStore, RelayError
+from groups.relay_store import RelayStore, RelayError, digest
 from groups.server import create_app
+from groups.client import ClientStore, GroupClient
 from fastapi.testclient import TestClient
 from flask import Flask
 from frontend.proxies.group_guests import register_guest_routes
@@ -25,20 +27,21 @@ class GuestTests(unittest.TestCase):
         self.invite = self.store.guest_invite(self.host['token'])['invite']
 
     def test_name_collisions_and_concurrent_join(self):
-        with self.assertRaises(RelayError): self.store.guest_join(self.invite, ' alice ')
-        with self.assertRaises(RelayError): self.store.guest_join(self.invite, '\u200b')
+        with self.assertRaises(RelayError): self.store.guest_join(self.invite, ' alice ', 'guest-password')
+        with self.assertRaises(RelayError): self.store.guest_join(self.invite, '\u200b', 'guest-password')
         def join():
-            try: return self.store.guest_join(self.invite, 'Bob')
+            try: return self.store.guest_join(self.invite, 'Bob', 'guest-password')
             except RelayError as exc: return exc.status
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
             results = list(pool.map(lambda _: join(), range(2)))
-        self.assertEqual(sum(isinstance(r, dict) for r in results), 1)
-        self.assertIn(409, results)
-        with self.assertRaises(RelayError): self.store.guest_join(self.invite, 'ＢＯＢ')
+        self.assertTrue(all(isinstance(r, dict) for r in results))
+        self.assertEqual(len(self.store.detail(self.host['token'])['members']), 2)
+        self.assertEqual(self.store.guest_identity(results[0]['token'])['principal'], self.store.guest_identity(results[1]['token'])['principal'])
+        with self.assertRaises(RelayError): self.store.guest_join(self.invite, 'ＢＯＢ', 'wrong-password')
         with self.assertRaises(RelayError): self.store.add_agent(self.host['token'], agent_id='a', name='bob', platform='webot')
 
     def test_guest_can_chat_and_rename_but_cannot_manage_or_add_agents(self):
-        guest = self.store.guest_join(self.invite, 'Bob')
+        guest = self.store.guest_join(self.invite, 'Bob', 'guest-password')
         token = guest['token']
         posted = self.store.post(token, content='Hello', client_msg_id='one')
         self.assertFalse(self.store.post(token, content='Hello', client_msg_id='one')['created'])
@@ -58,13 +61,61 @@ class GuestTests(unittest.TestCase):
         self.store.manage(self.host['token'], 'remove_member', {'principal': state['principal']})
         with self.assertRaises(RelayError): self.store.guest_state(token)
 
+    def test_password_login_reuses_member_and_preserves_browser_tokens(self):
+        first = self.store.guest_join(self.invite, 'Bob', 'correct-password')
+        self.store.post(first['token'], content='Before closing')
+        with self.assertRaises(RelayError) as error:
+            self.store.guest_join(self.invite, 'Bob', 'wrong-password')
+        self.assertEqual(error.exception.status, 403)
+        self.store.guest_set_password(first['token'], 'new-password')
+        with self.assertRaises(RelayError): self.store.guest_join(self.invite, 'Bob', 'correct-password')
+        second = self.store.guest_join(self.invite, 'ＢＯＢ', 'new-password')
+        self.assertNotEqual(first['token'], second['token'])
+        state = self.store.guest_state(second['token'])
+        self.assertEqual(state['principal'], self.store.guest_state(first['token'])['principal'])
+        self.assertEqual(len(state['members']), 2)
+        self.assertEqual(state['messages'][0]['content'], 'Before closing')
+        self.store.guest_rename(second['token'], 'Carol')
+        third = self.store.guest_join(self.invite, 'Carol', 'new-password')
+        self.assertEqual(self.store.guest_state(third['token'])['principal'], state['principal'])
+        self.store.manage(self.host['token'], 'remove_member', {'principal':state['principal']})
+        for token in (first['token'], second['token'], third['token']):
+            with self.assertRaises(RelayError): self.store.guest_state(token)
+        self.assertTrue(self.store.guest_join(self.invite, 'Carol', 'fresh-password'))
+
+    def test_legacy_guest_requires_existing_identity_to_set_password(self):
+        guest = self.store.guest_join(self.invite, 'Old guest', 'first-password')
+        with self.store.db() as db:
+            db.execute("UPDATE relay_connections SET guest_password_hash='',guest_salt='' WHERE token_hash=?", (digest(guest['token']),))
+        self.assertFalse(self.store.guest_state(guest['token'])['password_set'])
+        with self.assertRaises(RelayError) as error: self.store.guest_join(self.invite, 'Old guest', 'new-password')
+        self.assertEqual(error.exception.status, 409)
+        self.store.guest_set_password(guest['token'], 'new-password')
+        restored = self.store.guest_join(self.invite, 'Old guest', 'new-password')
+        self.assertEqual(self.store.guest_identity(restored['token']), self.store.guest_identity(guest['token']))
+        with self.assertRaises(RelayError): self.store.guest_set_password(self.host['token'], 'new-password')
+
+    def test_client_exposes_human_removal_only_to_group_owner(self):
+        self.store.guest_join(self.invite, 'Bob', 'guest-password')
+        cache = ClientStore(Path(self.temp.name) / 'client.db')
+        alias = cache.save('alice', 'http://127.0.0.1:51203', self.host)
+        group = self.store.detail(self.host['token'])
+        cache.update('alice', alias, metadata=json.dumps(group))
+        client = GroupClient(cache, Mock(), Mock())
+        owner = client.card(cache.get('alice', alias))
+        humans = {m['name']:m for m in owner['members'] if not m['is_agent']}
+        self.assertFalse(humans['Alice']['can_remove'])
+        self.assertTrue(humans['Bob']['can_remove'])
+        nonowner = dict(cache.get('alice', alias));nonowner['connection_id'] = 'another-device'
+        self.assertFalse(any(m['can_remove'] for m in client.card(nonowner)['members']))
+
     def test_invite_rotation_and_restart_do_not_eject_existing_guests(self):
-        guest = self.store.guest_join(self.invite, 'Bob')
+        guest = self.store.guest_join(self.invite, 'Bob', 'guest-password')
         new = self.store.guest_invite(self.host['token'])['invite']
-        with self.assertRaises(RelayError): self.store.guest_join(self.invite, 'Old')
+        with self.assertRaises(RelayError): self.store.guest_join(self.invite, 'Old', 'guest-password')
         reopened = RelayStore(self.store.path)
         self.assertEqual(reopened.guest_identity(guest['token'])['name'], 'Bob')
-        self.assertTrue(reopened.guest_join(new, 'New'))
+        self.assertTrue(reopened.guest_join(new, 'New', 'guest-password'))
         reopened.guest_invite(self.host['token'], disable=True)
         with self.assertRaises(RelayError): reopened.guest_info(new)
 
@@ -72,7 +123,7 @@ class GuestTests(unittest.TestCase):
         card = self.store.add_agent(self.host['token'], agent_id='creative', name='创意专家', platform='webot')
         agent = next(m['principal'] for m in card['members'] if m['is_agent'])
         with TestClient(create_app(data_dir=self.temp.name, control_key='key', legacy=False)) as client:
-            response = client.post('/relay/guest/join', json={'invite':self.invite,'name':'Bob'})
+            response = client.post('/relay/guest/join', json={'invite':self.invite,'name':'Bob','password':'guest-password'})
             self.assertEqual(response.status_code, 200)
             headers = {'Authorization':'Bearer ' + response.json()['token']}
             state = client.get('/relay/guest/state', headers=headers)
@@ -110,9 +161,9 @@ class GuestProxyTests(unittest.TestCase):
         transport.request.return_value.json.return_value = {'token':'guest'}
         with patch('frontend.proxies.group_guests.requests.Session') as factory:
             factory.return_value.__enter__.return_value=transport
-            result = self.client.post('/group-guest-api/join', headers={'X-Group-Invite':ticket}, json={'name':'Bob','agent_id':'forged'})
+            result = self.client.post('/group-guest-api/join', headers={'X-Group-Invite':ticket}, json={'name':'Bob','password':'guest-password','agent_id':'forged'})
         self.assertEqual(result.status_code, 200)
-        self.assertEqual(transport.request.call_args.kwargs['json'], {'invite':'a'*43,'name':'Bob'})
+        self.assertEqual(transport.request.call_args.kwargs['json'], {'invite':'a'*43,'name':'Bob','password':'guest-password'})
         with self.client.session_transaction() as session: self.assertNotIn('user_id', session)
 
 

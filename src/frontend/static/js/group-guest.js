@@ -3,9 +3,15 @@
   'use strict';
   const el = id => document.getElementById(id);
   const ticket = location.hash.slice(1);
-  const storageKey = 'group-guest:' + ticket;
-  let saved = {};
-  try { saved = JSON.parse(localStorage.getItem(storageKey) || '{}'); } catch (_) {}
+  const legacyStorageKey = 'group-guest:' + ticket;
+  let storageKey = legacyStorageKey;
+  function stored(key) {
+    try { return JSON.parse(localStorage.getItem(key) || '{}') || {}; } catch (_) { return {}; }
+  }
+  let saved = stored(storageKey);
+  function identityKey(data) {
+    if (data.identity_key) storageKey = 'group-guest-identity:' + data.identity_key;
+  }
   let credential = saved.token || '', principal = '', cursor = -1, timer, polling = false;
   const seen = new Set();
   let pendingSend = null;
@@ -64,7 +70,14 @@
   });
   el('mention').addEventListener('click', () => { mentionRange = null; showMentions(); });
   function status(text, error = false) { el('status').textContent = text; el('status').classList.toggle('error', error); }
-  function remember() { try { localStorage.setItem(storageKey, JSON.stringify({token: credential, name: el('name').value})); } catch (_) {} }
+  function remember() {
+    try {
+      const value = JSON.stringify({token: credential, name: el('name').value});
+      localStorage.setItem(storageKey, value);
+      // Keep old links usable while migrating existing identities to the per-group key.
+      localStorage.setItem(legacyStorageKey, value);
+    } catch (_) {}
+  }
   async function api(action, body) {
     const response = await fetch('/group-guest-api/' + action + (action === 'state' ? '?after_id=' + cursor : ''), {
       method: body === undefined ? 'GET' : 'POST', credentials: 'omit',
@@ -79,8 +92,10 @@
     }
     return data;
   }
-  function showJoin() { clearTimeout(timer); el('join').hidden = false; el('chat').hidden = true; el('rename').hidden = true; }
+  function showJoin() { clearTimeout(timer); el('join').hidden = false; el('chat').hidden = true; el('rename').hidden = true; el('password-open').hidden = true; el('password-form').hidden = true; }
   function render(data) {
+    identityKey(data);
+    el('password-open').textContent = data.password_set ? '修改密码' : '设置密码';
     principal = data.principal; el('title').textContent = data.title; el('name').value = data.name;
     members = data.members;
     el('member-count').textContent = '群成员 · ' + data.members.length;
@@ -110,7 +125,7 @@
     let delay = 2000;
     try {
       const data = await api('state');
-      el('join').hidden = true; el('chat').hidden = false; el('rename').hidden = false;
+      el('join').hidden = true; el('chat').hidden = false; el('rename').hidden = false; el('password-open').hidden = false;
       render(data); status('以 ' + data.name + ' 的身份参与');
       if (data.has_more) delay = 100;
     } catch (error) {
@@ -120,7 +135,7 @@
   }
   el('join').addEventListener('submit', async event => {
     event.preventDefault(); const button = el('join').querySelector('button'); button.disabled = true;
-    try { const data = await api('join', {name:el('name').value.trim()}); credential = data.token; cursor = -1; seen.clear(); el('messages').replaceChildren(); remember(); await poll(); }
+    try { const data = await api('join', {name:el('name').value.trim(), password:el('password').value}); credential = data.token; el('password').value = ''; cursor = -1; seen.clear(); el('messages').replaceChildren(); remember(); await poll(); }
     catch (error) { status(error.message, true); } finally { button.disabled = false; }
   });
   el('send').addEventListener('submit', async event => {
@@ -131,6 +146,17 @@
     try { await api('messages', pendingSend); pendingSend = null; el('text').value = ''; selectedMentions = []; previousDraft = ''; hideMentions(); await poll(); }
     catch (error) { status(error.message, true); } finally { button.disabled = false; }
   });
+  el('password-open').addEventListener('click', () => { el('password-form').hidden = false; el('new-password').focus(); });
+  el('password-cancel').addEventListener('click', () => { el('password-form').hidden = true; el('new-password').value = ''; });
+  el('password-form').addEventListener('submit', async event => {
+    event.preventDefault(); const button = el('password-form').querySelector('button'); button.disabled = true;
+    try {
+      await api('password', {password:el('new-password').value});
+      el('new-password').value = ''; el('password-form').hidden = true;
+      el('password-open').textContent = '修改密码';
+      status('密码已保存，之后可用这个名字和密码重新进入');
+    } catch (error) { status(error.message, true); } finally { button.disabled = false; }
+  });
   el('rename').addEventListener('click', async () => {
     const name = prompt('你的新名字', el('name').value); if (name === null) return;
     try { await api('rename', {name:name.trim()}); await poll(); } catch (error) { status(error.message, true); }
@@ -140,7 +166,20 @@
     if (!ticket) { status('请从朋友发来的分享链接进入', true); return; }
     el('name').value = saved.name || '朋友' + Math.floor(1000 + Math.random() * 9000);
     if (credential) { await poll(); return; }
-    try { const data = await api('info', {}); el('title').textContent = data.title; status('欢迎加入'); showJoin(); }
+    try {
+      const data = await api('info', {});
+      identityKey(data);
+      saved = stored(storageKey);
+      el('title').textContent = data.title;
+      if (saved.token) {
+        credential = saved.token;
+        el('name').value = saved.name || el('name').value;
+        await poll();
+        return;
+      }
+      if (saved.name) el('name').value = saved.name;
+      status('欢迎加入'); showJoin();
+    }
     catch (error) { status(error.message, true); }
   }
   void start();

@@ -1,5 +1,6 @@
 """Public, capability-scoped human chat; never establishes a main-site session."""
 from urllib.parse import quote
+from hashlib import sha256
 
 import requests
 from flask import jsonify, render_template, request
@@ -42,7 +43,7 @@ def register_guest_routes(app, *, port_agent, internal_token, public_base=lambda
 
     @app.route('/group-guest-api/<action>', methods=['GET', 'POST'])
     def group_guest_api(action):
-        methods = {'info': 'POST', 'join': 'POST', 'state': 'GET', 'messages': 'POST', 'rename': 'POST'}
+        methods = {'info': 'POST', 'join': 'POST', 'state': 'GET', 'messages': 'POST', 'rename': 'POST', 'password': 'POST'}
         if methods.get(action) != request.method:
             return jsonify(error='不支持的操作'), 405
         ticket = request.headers.get('X-Group-Invite', '')
@@ -58,7 +59,9 @@ def register_guest_routes(app, *, port_agent, internal_token, public_base=lambda
         if action == 'info':
             body = {'invite': target['invite']}
         elif action == 'join':
-            body = {'invite': target['invite'], 'name': body.get('name', '')}
+            body = {'invite': target['invite'], 'name': body.get('name', ''), 'password': body.get('password', '')}
+        elif action == 'password':
+            body = {'password': body.get('password', '')}
         elif action == 'rename':
             body = {'name': body.get('name', '')}
         elif action == 'messages':
@@ -77,7 +80,11 @@ def register_guest_routes(app, *, port_agent, internal_token, public_base=lambda
                     headers=headers, json=body if request.method == 'POST' else None,
                     params={'after_id': request.args.get('after_id', '0')} if action == 'state' else None,
                     timeout=15, allow_redirects=False)
-            result = jsonify(response.json())
+            data = response.json()
+            if response.status_code == 200 and action in {'info', 'state'} and isinstance(data, dict) and data.get('group_id'):
+                # Scope browser identity to the server and group, independent of invitation rotation.
+                data['identity_key'] = sha256((target['url'].rstrip('/') + '\0' + data['group_id']).encode()).hexdigest()
+            result = jsonify(data)
             result.status_code = response.status_code
             result.headers['Cache-Control'] = 'no-store'
             return result

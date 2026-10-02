@@ -201,3 +201,24 @@ test('external agent accepts a Chinese name without a manual runtime id and offe
   await page.evaluate(() => mobileSubmitCreateAcpAgent());
   expect(await page.evaluate(() => window.__createdFields)).toEqual({name:'中文助手',platform:'codex'});
 });
+
+
+test('group owner can remove a human guest; other members have no human removal controls', async ({page})=>{
+  await stub(page,{posts:[],control:[]});
+  const members=[{principal:'u:tester',name:'tester',is_agent:false,is_owner:true,can_remove:false},
+    {principal:'p_bob',name:'Bob',is_agent:false,remote:true,can_remove:true}];
+  await page.route(/\/proxy_groups\/g_dev$/,route=>route.fulfill({json:{...GROUP,federated:true,members}}));
+  const removed=[];
+  await page.route('**/proxy_groups/g_dev/members/p_bob',route=>{
+    expect(route.request().method()).toBe('DELETE');removed.push('Bob');members.pop();
+    return route.fulfill({json:{...GROUP,federated:true,members}});
+  });
+  await page.addInitScript(()=>{window.confirm=()=>true;localStorage.setItem('clawcross_lang','zh');});
+  await page.goto('/mobile/group_chat');await page.locator('.group-item',{hasText:'Dev'}).first().click();
+  await page.evaluate(()=>toggleDrawer());
+  await page.getByRole('button',{name:'移除 Bob',exact:true}).click();
+  await expect(page.locator('#member-list')).not.toContainText('Bob');
+  expect(removed).toEqual(['Bob']);
+  await page.evaluate(()=>renderMembers([{principal:'p_bob',name:'Bob',is_agent:false,remote:true,can_remove:false}]));
+  await expect(page.getByRole('button',{name:'移除 Bob',exact:true})).toHaveCount(0);
+});

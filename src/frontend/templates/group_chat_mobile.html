@@ -13468,13 +13468,15 @@ function renderMembers(members) {
     const jsName = escapeHtml(name.replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
     const initial = getInitial(name);
     if (!m.is_agent) {
+      const removeHuman = m.can_remove ? `<button type="button" onclick="event.stopPropagation();removeMemberFromGroup('${jsPrincipal}','${jsName}')" class="member-action-btn member-action-danger" title="${t('tip_remove')}" aria-label="${t('tip_remove')} ${esc(name)}">${t('tip_remove')}</button>` : '';
       return `
       <div class="member-item">
         <div class="member-avatar owner">${esc(initial)}</div>
         <div class="member-info" style="flex:1;">
           <div class="member-name">${esc(name)}</div>
-          <div class="member-tag">${m.remote ? esc(m.user_id || '群成员') + ' · 远端成员' : t('owner')}</div>
+          <div class="member-tag">${m.is_owner || (m.is_owner === undefined && !m.remote) ? t('owner') : (_currentLang === 'zh' ? '群成员' : 'Member')}</div>
         </div>
+        ${removeHuman}
       </div>`;
     }
     const agent = m.agent;
