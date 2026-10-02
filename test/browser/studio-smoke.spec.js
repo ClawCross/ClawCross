@@ -686,52 +686,6 @@ test('studio settings export button allows keyless ollama sync', async ({ page }
   expect(pageErrors).toEqual([]);
 });
 
-test('studio explicit external creation surfaces backend errors inline', async ({ page }) => {
-  const calls = {
-    importOpenClaw: 0,
-    exportOpenClaw: 0,
-    tinyfishRun: 0,
-    lastExportPayload: null,
-    approvalActions: [],
-    agentCreates: [],
-  };
-  const pageErrors = [];
-
-  page.on('pageerror', (error) => pageErrors.push(error.message));
-  page.on('dialog', async (dialog) => {
-    pageErrors.push(`unexpected dialog: ${dialog.message()}`);
-    await dialog.dismiss();
-  });
-
-  await stubStudioNetwork(page, calls, {
-    acpxStatusPayload: { available: true, tools: ['cursor'] },
-    agentCreatePayload: { detail: 'Failed to spawn agent command: cursor-agent acp' },
-    agentCreateStatus: 502,
-  });
-  await page.addInitScript(() => {
-    window.alert = (message) => {
-      throw new Error(`unexpected alert: ${message}`);
-    };
-    window.confirm = () => true;
-  });
-
-  await page.goto('/studio');
-  await page.locator('.studio-conversation-switcher > summary').click();
-  await page.getByRole('button', { name: 'Cursor' }).click();
-  await expect(page.locator('#studio-new-conversation')).toBeVisible();
-  // Switching the platform is read-only; only the explicit button creates an Agent.
-  expect(calls.agentCreates).toEqual([]);
-
-  await page.locator('.oc-acp-session-ensure').click();
-
-  await expect.poll(() => calls.agentCreates.length).toBe(1);
-  expect(calls.agentCreates[0]).toMatchObject({ platform: 'cursor' });  // the session is made as an agent
-  expect(calls.agentCreates[0].agent_id).toMatch(/^cursor-/);
-  await expect(page.locator('#oc-acp-session-status')).toContainText(/创建失败|Creation failed/);
-  await expect(page.locator('#oc-acp-session-status')).toContainText('cursor-agent acp');
-  expect(pageErrors).toEqual([]);
-});
-
 test('studio webot runtime sidebar shows runtime state and resolves approvals', async ({ page }) => {
   const calls = {
     importOpenClaw: 0,
@@ -1173,10 +1127,11 @@ test('Agent Center replaces the hamburger Agents entry and update controls follo
 
 test('conversation rail lists history and has a separate New button without a manual refresh', async ({page}) => {
   const calls = {};
-  await stubStudioNetwork(page, calls, {agents:[
+  const agents=[
     {agent_id:'history-one',name:'First conversation',platform:'webot',settings:{},status:{state:'idle',title:'First conversation'}},
     {agent_id:'history-two',name:'Second conversation',platform:'webot',settings:{},status:{state:'idle',title:'Second conversation'}}
-  ]});
+  ];
+  await stubStudioNetwork(page, calls, {agents});
   await page.goto('/studio');
   await expect(page.locator('#refresh-chat-btn')).toHaveCount(0);
   await page.locator('.studio-conversation-switcher > summary').click();
@@ -1187,7 +1142,21 @@ test('conversation rail lists history and has a separate New button without a ma
   await page.locator('.studio-conversation-item[data-session-id="history-one"]').click();
   await expect(page.locator('.studio-conversation-item[data-session-id="history-one"]')).toHaveAttribute('aria-current','true');
   await page.locator('#studio-new-conversation').click();
-  await expect(page.locator('.studio-conversation-item[aria-current="true"]')).not.toHaveAttribute('data-session-id','history-one');
+  await expect(page.locator('.studio-conversation-item[aria-current="true"]')).toHaveCount(0);
+  await expect(page.locator('.studio-conversation-item')).toHaveCount(2);
+  await expect(page.locator('#studio-new-conversation')).toContainText('新建 Agent');
+  await expect(page.locator('.hamburger-btn use')).toHaveAttribute('href','/static/icons.svg#settings');
+  let sentId='';
+  await page.route('**/v1/chat/completions',route=>{
+    sentId=route.request().postDataJSON().session_id;
+    agents.push({agent_id:sentId,name:'First request',platform:'webot',settings:{},status:{state:'idle',title:'First request'}});
+    return route.fulfill({contentType:'text/event-stream',body:'data: {"choices":[{"delta":{"content":"DRAFT_SENT_OK"}}]}\n\ndata: [DONE]\n\n'});
+  });
+  await page.locator('#user-input').fill('First request');
+  await page.locator('#send-btn').click();
+  await expect.poll(()=>sentId).not.toBe('');
+  await expect(page.locator(`.studio-conversation-item[data-session-id="${sentId}"]`)).toBeVisible();
+  await expect(page.locator('.studio-conversation-item')).toHaveCount(3);
   expect(calls.agentCreates).toEqual([]);
   await page.screenshot({path:'/tmp/clawcross-conversation-rail-desktop.png'});
   await page.setViewportSize({width:390,height:844});
@@ -1200,7 +1169,7 @@ test('conversation rail lists history and has a separate New button without a ma
 });
 
 
-test('external conversation rail switches platforms read-only and creates a distinct session explicitly', async ({page}) => {
+test('external New Agent stays a draft until the first message request', async ({page}) => {
   const calls = {};
   const agents = [{agent_id:'codex-old',name:'Old Codex',platform:'codex',settings:{},status:{state:'idle'}}];
   await stubStudioNetwork(page, calls, {acpxStatusPayload:{available:true,tools:['codex','claude']},agents});
@@ -1221,11 +1190,21 @@ test('external conversation rail switches platforms read-only and creates a dist
   await page.locator('.studio-conversation-item[data-session-id="codex-old"]').click();
   await expect(page.locator('.studio-conversation-item[data-session-id="codex-old"]')).toHaveAttribute('aria-current','true');
   await page.locator('#studio-new-conversation').click();
-  await expect.poll(()=>calls.agentCreates.length).toBe(1);
-  const id=calls.agentCreates[0].agent_id;
+  expect(calls.agentCreates).toEqual([]);
+  await expect(page.locator('.studio-conversation-item')).toHaveCount(1);
+  await expect(page.locator('.studio-conversation-item[aria-current="true"]')).toHaveCount(0);
+  let id='';
+  await page.route('**/v1/chat/completions', route => {
+    const payload=route.request().postDataJSON();id=payload.session_id;
+    agents.push({agent_id:id,name:'First request',platform:'codex',settings:{},status:{state:'idle'}});
+    return route.fulfill({contentType:'text/event-stream',body:'data: {"choices":[{"delta":{"content":"DRAFT_SENT_OK"}}]}\n\ndata: [DONE]\n\n'});
+  });
+  await page.locator('#user-input').fill('First request');
+  await page.locator('#send-btn').click();
+  await expect.poll(()=>id).not.toBe('');
   expect(id).not.toBe('codex-old');
-  await expect(page.locator(`.studio-conversation-item[data-session-id="${id}"]`)).toHaveAttribute('aria-current','true');
+  await expect(page.locator(`.studio-conversation-item[data-session-id="${id}"]`)).toBeVisible();
   await page.locator('[data-acp-tool="claude"]').click();
   await expect(page.locator('.studio-conversation-item[data-session-id="codex-old"]')).toHaveCount(0);
-  expect(calls.agentCreates.length).toBe(1);
+  expect(calls.agentCreates).toEqual([]);
 });

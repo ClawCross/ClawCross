@@ -30,7 +30,7 @@
 
     <link rel="stylesheet" href="/static/css/markdown-shared.css">
     <link rel="stylesheet" href="/static/css/theme.css?v=20261002-fold">
-    <link rel="stylesheet" href="/static/css/style.css?v=20261002-conversation-rail">
+    <link rel="stylesheet" href="/static/css/style.css?v=20261002-agent-drafts">
 <link rel="stylesheet" href="/static/css/group-network.css?v=20261001-relay">
 </head>
 <body class="bg-gray-100 font-sans leading-normal tracking-normal">
@@ -183,7 +183,7 @@
             <!-- Page Switch Tab Bar -->
             <div class="page-tab-bar">
                 <div class="hamburger-menu-wrapper">
-                    <button type="button" class="hamburger-btn" onclick="toggleHamburgerMenu()" title="Menu" aria-label="Menu"><svg class="ui-icon"><use href="/static/icons.svg#menu"/></svg></button>
+                    <button type="button" class="hamburger-btn" onclick="toggleHamburgerMenu()" data-i18n-title="hmenu_settings" title="Settings" aria-label="Settings"><svg class="ui-icon"><use href="/static/icons.svg#settings"/></svg></button>
                     <!-- Vertical slide-down panel -->
                     <div id="hamburger-panel" class="hamburger-panel ui-menu" style="display:none;">
                         <div class="ui-menu-item static">
@@ -293,9 +293,9 @@
 
             <div id="chat-standard-shell" class="chat-standard-shell flex flex-col flex-1 min-h-0">
                 <details class="studio-conversation-switcher">
-                    <summary data-i18n-title="studio_conversations" title="对话"><svg class="ui-icon"><use href="/static/icons.svg#menu"/></svg><span data-i18n="studio_conversations">对话</span></summary>
+                    <summary data-i18n-title="studio_conversations" title="Agents"><svg class="ui-icon"><use href="/static/icons.svg#menu"/></svg><span data-i18n="studio_conversations">Agents</span></summary>
                 <div class="studio-session-rail-body">
-                    <button type="button" id="studio-new-conversation" class="studio-new-conversation oc-acp-session-ensure" onclick="studioNewConversation()"><svg class="ui-icon"><use href="/static/icons.svg#message-plus"/></svg><span data-i18n="studio_new_conversation">新建对话</span></button>
+                    <button type="button" id="studio-new-conversation" class="studio-new-conversation oc-acp-session-ensure" onclick="studioNewConversation()"><svg class="ui-icon"><use href="/static/icons.svg#message-plus"/></svg><span data-i18n="studio_new_conversation">新建 Agent</span></button>
                 <!-- OpenClaw Agent Switcher Bar -->
                 <div id="openclaw-chat-switcher" class="openclaw-chat-switcher" style="display:none;">
                     <div class="oc-switcher-inner">
@@ -322,8 +322,8 @@
                 <div id="oc-internal-session-row" hidden>
                     <select id="oc-internal-session-pick" hidden tabindex="-1"><option value=""></option></select>
                 </div>
-                <div class="studio-session-list-heading" data-i18n="studio_history">最近对话</div>
-                <div id="studio-conversation-list" class="studio-conversation-list" aria-label="对话历史"></div>
+                <div class="studio-session-list-heading" data-i18n="studio_history">最近 Agent</div>
+                <div id="studio-conversation-list" class="studio-conversation-list" aria-label="Recent Agents"></div>
                 <span id="oc-acp-session-status" class="oc-acp-session-status" aria-live="polite"></span>
                 </div>
                 </details>
@@ -1307,7 +1307,7 @@
         <section class="agent-center-modal" role="dialog" aria-modal="true" aria-labelledby="agent-center-title">
             <header class="agent-center-header">
                 <div>
-                    <div class="agent-center-kicker" data-i18n="agent_center_kicker">你的协作空间</div>
+                    <div class="agent-center-kicker" data-i18n="agent_center_kicker">观察 · 互动 · 培养</div>
                     <h2 id="agent-center-title" data-i18n="agent_center_title">Agent 中心</h2>
                 </div>
                 <div class="agent-center-header-actions">
@@ -1372,7 +1372,7 @@
 <script src="/static/js/group-network-ui.js?v=20261001-relay"></script>
     <script src="/static/js/conversation-ui-panels.js?v=20261001-windows"></script>
     <script src="/static/js/components.js?v=20261002-runtime-menu"></script>
-    <script src="/static/js/main.js?v=20261002-conversation-rail"></script>
+    <script src="/static/js/main.js?v=20261002-agent-drafts"></script>
     <link rel="stylesheet" href="/static/css/external-agent-settings.css?v=20261002-connect">
     <script src="/static/js/runtime-presentation.js?v=20261002-fold"></script>
 <script src="/static/js/external-agent-settings.js?v=20261002-explicit-create"></script>
