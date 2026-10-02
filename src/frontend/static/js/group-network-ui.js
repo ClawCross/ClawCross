@@ -67,7 +67,31 @@
         const hint = note('更改密码不会默认踢出已加入的成员。服务器需要开放该地址的端口才能跨设备加入。');
         const fields = [address.wrapper, id.wrapper, note(invite.password_enabled ? '当前已开放密码加入。' : '当前未开放远程加入。')];
         const localOwner = !String(group.owner || '').startsWith('remote:');
-        if (localOwner) fields.push(password.wrapper, revoke.wrapper, hint);
+        if (localOwner) {
+          const guestLink = field('朋友聊天链接', 'guest-link', {readOnly: true, placeholder: '点击生成链接'});
+          const generate = document.createElement('button'); generate.type = 'button'; generate.textContent = '生成朋友聊天链接';
+          generate.addEventListener('click', async () => {
+            generate.disabled = true;
+            try {
+              const data = await request('POST', `/${encodeURIComponent(gid)}/guest-link`, {});
+              guestLink.input.value = data.url; guestLink.input.focus(); guestLink.input.select();
+              generate.textContent = '重新生成（旧链接失效）';
+            } catch (error) { window.alert(error.message); } finally { generate.disabled = false; }
+          });
+          const copy = document.createElement('button'); copy.type = 'button'; copy.textContent = '复制链接';
+          copy.addEventListener('click', async () => {
+            if (!guestLink.input.value) return;
+            try { await navigator.clipboard.writeText(guestLink.input.value); copy.textContent = '已复制'; }
+            catch (_) { guestLink.input.focus(); guestLink.input.select(); }
+          });
+          const close = document.createElement('button'); close.type = 'button'; close.textContent = '关闭访客邀请';
+          close.addEventListener('click', async () => {
+            try { await request('POST', `/${encodeURIComponent(gid)}/guest-link`, {disable:true}); guestLink.input.value = ''; }
+            catch (error) { window.alert(error.message); }
+          });
+          fields.push(guestLink.wrapper, generate, copy, close,
+            note('朋友打开链接取名即可聊天，无需账号。链接 30 天有效；重建或关闭只影响新加入者。'), password.wrapper, revoke.wrapper, hint);
+        }
         dialog(localOwner ? '邀请朋友加入' : '群聊地址', fields, localOwner ? '保存' : '完成', async () => {
           if (localOwner) {
             await request('POST', `/${encodeURIComponent(gid)}/sharing`, { password: password.input.value, local_join: group.local_join, revoke_connections: revoke.input.checked });

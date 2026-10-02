@@ -98,7 +98,9 @@ class WeClawAdapter(ChannelAdapter):
 
     def __init__(self):
         super().__init__()
-        self._bin = os.getenv("WECLAW_BIN", "weclaw")
+        from ops.components import binary_path
+        configured_bin = os.getenv("WECLAW_BIN", "weclaw")
+        self._bin = (binary_path("weclaw") or configured_bin) if configured_bin == "weclaw" else configured_bin
         self._username = os.getenv("WECLAW_USERNAME", "default")
         self._config_path = os.path.expanduser(
             os.getenv("WECLAW_CONFIG", "~/.weclaw/config.json")

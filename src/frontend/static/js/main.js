@@ -2103,7 +2103,7 @@ function renderAgentCenterDetail() {
                 <div class="agent-dex-context-meter"><span style="width:${contextPercent}%"></span></div>
                 <div class="agent-dex-context-row"><span>${agentCenterFormatTokens(context.tokens)} / ${agentCenterFormatTokens(context.budget)} tokens</span><span>${agentCenterEscape(t('agent_center_remaining'))} ${agentCenterFormatTokens(context.remaining)}</span></div>
                 <div class="agent-dex-actions" style="margin-top:10px;"><button class="agent-center-btn" type="button" onclick="compactAgentFromCenter(this)">${agentCenterEscape(t('agent_center_compact'))}</button><button class="agent-center-btn" type="button" onclick="openAgentRuntimeSettings()">${agentCenterEscape(t('runtime_settings'))}</button></div>
-            </section>` : ''}
+            </section>` : !['openclaw', 'http', 'llm'].includes(agent.platform) ? `<section class="agent-dex-section"><button class="agent-center-btn" type="button" onclick="openExternalAgentSettings('${agent.agent_id}')">模型、思考强度与 ClawCross 工具</button></section>` : ''}
             <section class="agent-dex-section">
                 <div class="agent-dex-section-title">${agentCenterEscape(t('agent_center_tools'))}</div>
                 <div class="agent-dex-fields">
@@ -2668,6 +2668,10 @@ function backendCompactionLabel(status) {
 
 function updateBackendCompactionStatus(status) {
     sessionBackendCompaction = status || null;
+    if (status && ['completed', 'failed', 'cancelled', 'missing', 'idle'].includes(status.state)) {
+        sessionCompactBusy = false;
+        if (sessionCompactStatus.includes('正在后台整理') || sessionCompactStatus.includes('Summarizing older')) sessionCompactStatus = '';
+    }
     const indicator = document.getElementById('session-compaction-indicator');
     if (indicator) {
         indicator.textContent = backendCompactionLabel(status);
@@ -2730,8 +2734,8 @@ function renderContextBreakdown(state) {
             <div class="oc-context-usage-detail-title">${zh ? '组成' : 'Breakdown'}</div>
             ${rows.join('')}
             <div class="oc-context-usage-detail-note">${zh
-                ? '合计为 API 实测值，各项按本地分词比例分摊'
-                : 'Total is API-reported; items are split by local tokenizer ratio'}</div>
+                ? (state.source === 'api' ? '合计为 API 实测值；分项采用稳定输入差分或本地分词估算' : '当前占用为估算；压缩后已按新上下文更新，待下一次 API 调用校准')
+                : (state.source === 'api' ? 'API total; components inferred from stable input differences or local tokenization' : 'Estimated from the compacted context; awaiting next API measurement')}</div>
         </div>`;
 }
 
@@ -2866,8 +2870,8 @@ async function compactCurrentSession(event) {
                     ? `；近期保留原文约 ${meta.preserved_tokens.toLocaleString()} tokens`
                     : `; preserved recent content ~${meta.preserved_tokens.toLocaleString()} tokens`;
             }
-            sessionCompactStatus += zh ? '。当前占用仍是上轮 API 实测值，下次调用后更新。'
-                : '. Current usage remains the last API measurement until the next call.';
+            sessionCompactStatus += zh ? '。当前占用已按压缩后上下文估算，待下次 API 调用校准。'
+                : '. Current usage reflects the compacted context estimate; the next API call will calibrate it.';
             // 刷新上下文徽章
             try {
                 const status = await fetchSessionStatus(currentSessionId);
@@ -2923,10 +2927,11 @@ function updateSessionContextUsageBadge(percent, remaining, tokens, budget, sour
             : `. About ${validRemaining.toLocaleString()} tokens remaining`);
     const badgePercent = formatContextBadgePercent(validPercent);
     const detailPercent = formatContextDetailPercent(validPercent);
-    badge.textContent = t('context_usage').replace('{percent}', badgePercent);
+    badge.textContent = t('context_usage').replace('{percent}', badgePercent) + (source === 'estimate' ? (currentLang === 'zh-CN' ? '（估算）' : ' (estimated)') : '');
     badge.title = (currentLang === 'zh-CN'
         ? `当前会话上下文已使用 ${detailPercent}%${remainingText}；点击查看已用和总量`
         : `Current session context is ${detailPercent}% used${remainingText}. Click for used and total tokens`);
+    if (source === 'estimate') badge.title += currentLang === 'zh-CN' ? '；待下一次 API 调用校准' : '; awaiting the next API measurement';
     badge.style.display = 'inline-flex';
     badge.classList.toggle('warn', validPercent >= 80 && validPercent < 95);
     badge.classList.toggle('critical', validPercent >= 95);
@@ -2940,6 +2945,12 @@ let _agentMetaSessionId = null;
 async function openAgentMetaModal(mode, sessionId, existingMeta) {
     _agentMetaMode = mode;
     _agentMetaSessionId = sessionId;
+    document.getElementById('agent-meta-error').textContent = '';
+    document.getElementById('agent-meta-platform-field').hidden = mode !== 'create';
+    const platformSelect = document.getElementById('agent-meta-platform');
+    platformSelect.innerHTML = '<option value="webot">WeBot</option>' + ADD_EXT_PLATFORM_FALLBACK.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(addExtPlatformLabel(p))}</option>`).join('');
+    platformSelect.value = 'webot';
+    agentMetaPlatformChanged();
     const modal = document.getElementById('agent-meta-modal');
     document.getElementById('agent-meta-modal-title').textContent =
         mode === 'edit' ? '✏️ Edit Agent Settings' : '🤖 New Agent Settings';
@@ -2987,6 +2998,12 @@ async function openAgentMetaModal(mode, sessionId, existingMeta) {
     return new Promise(resolve => { _agentMetaCallback = resolve; });
 }
 
+function agentMetaPlatformChanged() {
+    const container = document.getElementById('agent-meta-component');
+    container.innerHTML = document.getElementById('agent-meta-platform').value === 'webot' ? '' : componentControlMarkup('acpx');
+    initComponentControls(container);
+}
+
 let _agentMetaPersonas = [];
 
 function _agentMetaCopyPersona(index) {
@@ -3013,6 +3030,7 @@ function _collectAgentMeta() {
     const tools = checkboxes.length && checkedNames.length < allTools.length ? checkedNames : null;
 
     const meta = { persona, tools };
+    if (_agentMetaMode === 'create') meta.platform = document.getElementById('agent-meta-platform').value;
     if (name !== null) meta.name = name;
     return meta;
 }
@@ -3064,7 +3082,7 @@ function onAgentTeamChange() {
 async function _loadAgentMetaMap(team = '') {
     try {
         const [agents, teams] = await Promise.all([agentApi('GET', '/v1/agents'), agentApi('GET', '/v1/teams')]);
-        const webot = (agents.data || []).filter(a => a.platform === 'webot');
+        const webot = agents.data || [];
         const membership = new Map();
         for (const card of teams.data || []) {
             for (const m of card.members || []) {
@@ -3078,7 +3096,7 @@ async function _loadAgentMetaMap(team = '') {
             const member = membership.get(a.agent_id);
             map[a.agent_id] = {
                 agent_id: a.agent_id, name: member?.role || a.name, persona: a.settings.persona || '',
-                tools: a.settings.tools, is_primary: Boolean(member?.is_lead), updated_at_ts: a.updated_at,
+                platform: a.platform, tools: a.settings.tools, is_primary: Boolean(member?.is_lead), updated_at_ts: a.updated_at,
             };
         }
         return { map, allKnown: new Set(webot.map(a => a.agent_id)) };
@@ -3098,7 +3116,7 @@ async function _sessionAgent(sessionId) {
 // {session_id, title, last_message, message_count, created_at, updated_at, busy, source, …}.
 // One nobody has written to yet has no title.
 async function fetchWebotSessions() {
-    const {data} = await agentApi('GET', '/v1/agents?status=1&platform=webot');
+    const {data} = await agentApi('GET', '/v1/agents?status=1');
     return (data || []).map(agent => ({
         ...agent.status, session_id: agent.agent_id, busy: agent.status?.state === 'running',
     }));
@@ -3106,9 +3124,10 @@ async function fetchWebotSessions() {
 
 // A session's status ({state, source, mode, context, …}); idle for one not made yet.
 async function fetchSessionStatus(sessionId) {
+    const contextKey = chatRunContextKey();
     const agent = await _sessionAgent(sessionId);
     const status = agent ? agent.status : {state: 'idle'};
-    if (sessionId === currentSessionId) updateBackendCompactionStatus(status.compaction);
+    if (sessionId === currentSessionId && contextKey === chatRunContextKey()) updateBackendCompactionStatus(status.compaction);
     return status;
 }
 
@@ -3128,7 +3147,7 @@ async function saveSessionAgent(sessionId, meta, team = _currentAgentTeam) {
         agent = await agentApi('PATCH', `/v1/agents/${encodeURIComponent(agent.agent_id)}`, {name: meta.name || undefined, settings});
     } else {
         agent = await agentApi('POST', '/v1/agents', {
-            agent_id: sessionId, name: meta.name || sessionId, persona: settings.persona || '',
+            agent_id: sessionId, platform: meta.platform || 'webot', name: meta.name || sessionId, persona: settings.persona || '',
             tools: settings.tools ?? null,
         });
     }
@@ -3238,6 +3257,12 @@ function handleNewSession() {
     const newSid = generateSessionId();
     openAgentMetaModal('create', newSid, {}).then(async (meta) => {
         if (meta === null) return;  // User cancelled
+        try {
+            await saveSessionAgent(newSid, meta);
+        } catch (e) {
+            alert(e.message || '创建 Agent 失败');
+            return;
+        }
         currentSessionId = newSid;
         ConversationUiPanels.beginSession(newSid);
         sessionStorage.setItem('sessionId', currentSessionId);
@@ -3250,9 +3275,7 @@ function handleNewSession() {
                     ${t('new_session_message')}
                 </div>
             </div>`;
-        try {
-            await saveSessionAgent(newSid, meta);
-        } catch (e) { console.warn('Failed to create the agent', e); }
+        await loadSessionList();
     });
 }
 
@@ -4967,6 +4990,7 @@ async function switchToSession(sessionId, force = false, options = {}) {
         acpSaveTranscript();
     }
     currentSessionId = sessionId;
+    if (window.ExternalAgentSettings) ExternalAgentSettings.syncMenu();
     updateBackendCompactionStatus(null);
     ConversationUiPanels.beginSession(sessionId);
     cancelTargetSessionId = null;  // 重置终止目标
@@ -5030,7 +5054,7 @@ async function switchToSession(sessionId, force = false, options = {}) {
                 parts.push(`
                     <div class="flex justify-end">
                         <div class="message-user bg-blue-600 text-white p-4 max-w-[85%] shadow-sm">
-                            ${imagesHtml}${imagesHtml ? '<div style="margin-top:6px">' : ''}${escapeHtml(textContent || '('+t('image_placeholder')+')')}${imagesHtml ? '</div>' : ''}
+                            ${imagesHtml}${imagesHtml ? '<div style="margin-top:6px">' : ''}${RuntimePresentation.user(textContent || '('+t('image_placeholder')+')', msg)}${imagesHtml ? '</div>' : ''}
                         </div>
                     </div>`);
             } else if (msg.role === 'tool') {
@@ -5044,7 +5068,7 @@ async function switchToSession(sessionId, force = false, options = {}) {
                     <div class="flex justify-start">
                         <div class="bg-gray-100 border border-dashed border-gray-300 p-3 max-w-[85%] shadow-sm text-xs text-gray-500 rounded-lg">
                             <div class="font-semibold text-gray-600 mb-1">🔧 ${t('tool_return')}: ${escapeHtml(msg.tool_name || '')}</div>
-                            ${renderToolPager(msg.content, { title: t('tool_full_output') })}
+                            ${RuntimePresentation.tool(renderToolPager(msg.content, { title: t('tool_full_output') }), msg.tool_name || '工具轨迹')}
                         </div>
                     </div>`);
             } else {
@@ -5678,11 +5702,14 @@ function renderSettings(settings) {
     let html = `<div class="settings-hint">${t('settings_restart_hint')}</div>`;
     html += _renderCurrentUserPasswordCard();
 
+    html += `<div class="settings-group" id="settings-external-agents"><div class="settings-group-title" onclick="this.parentElement.classList.toggle('collapsed')">外部 Agent <span class="settings-chevron">▼</span></div><div class="settings-group-body">${componentSettingsMarkup('agents')}</div></div>`;
+
     // Tunnel control section
     html += `<div class="settings-group">`;
     html += `<div class="settings-group-title" onclick="this.parentElement.classList.toggle('collapsed')">${t('settings_group_tunnel')} <span class="settings-chevron">▼</span></div>`;
     html += `<div class="settings-group-body">`;
     html += `<div class="settings-field" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">`;
+    html += componentControlMarkup('cloudflared');
     html += `<span id="tunnel-status-text" style="font-size:13px;color:#888;">⏳ ${t('loading')}...</span>`;
     html += `<button id="tunnel-toggle-btn" onclick="toggleTunnel()" style="padding:4px 14px;border-radius:6px;border:1px solid #444;background:#222;color:#ddd;cursor:pointer;font-size:12px;" disabled>${t('tunnel_start')}</button>`;
     html += `</div>`;
@@ -5702,6 +5729,8 @@ function renderSettings(settings) {
         });
         if (group.id === 'llm') {
             html += _renderLlmGroup(settings);
+        } else if (group.id === 'bots') {
+            html += _renderGroup({title:t(group.label),help:SETTINGS_GROUP_HELP_KEYS[group.id] ? t(SETTINGS_GROUP_HELP_KEYS[group.id]) : '',components:'channels'}, groupKeys, settings);
         } else if (group.id === 'tinyfish') {
             html += _renderTinyfishGroup(settings);
         } else {
@@ -5719,6 +5748,7 @@ function renderSettings(settings) {
     }
 
     body.innerHTML = html;
+    initComponentControls(body);
     _refreshTunnelStatus();
     _initSettingsLlmGroup(settings);
     refreshTinyfishMonitorPanel(true);
@@ -6394,6 +6424,7 @@ function _renderGroup(groupMeta, keys, settings) {
     if (groupHelp) {
         html += `<div style="margin-bottom:10px;font-size:12px;line-height:1.5;color:#9ca3af;">${escapeHtml(groupHelp)}</div>`;
     }
+    if (groupMeta.components) html += componentSettingsMarkup(groupMeta.components);
     for (const key of keys) {
         const val = settings[key] || '';
         const isPassword = /KEY|TOKEN|SECRET|PASSWORD/i.test(key);
@@ -7021,10 +7052,15 @@ function setRunMode(mode) {
     }
 }
 
-function onRunModeChange() {
+async function onRunModeChange() {
     const sel = document.getElementById('oc-run-mode');
     setRunMode(sel ? sel.value : RUN_MODE_DEFAULT);
-    if (currentSessionId) updateWeBotSessionMode(currentSessionId, getRunMode());
+    if (currentSessionId) {
+        const target = window.ExternalAgentSettings?.currentTarget() || currentSessionId;
+        let card;
+        try { card = await window.ExternalAgentSettings?.capabilities(target); } catch (_) { /* New WeBot session. */ }
+        if ((!card || card.transport === 'webot') && target === (window.ExternalAgentSettings?.currentTarget() || currentSessionId)) updateWeBotSessionMode(target, getRunMode());
+    }
 }
 
 function initRunModeUI() {
@@ -8436,15 +8472,17 @@ async function handleSend() {
                         detailsEl.innerHTML = renderToolPager(payload, { title: t('tool_full_output') });
                         detailsEl.style.display = '';
                     }
+                    indicator.open = false;
                 }
                 return;
             }
             const w = document.createElement('div');
             w.className = 'flex justify-start animate-in fade-in duration-200';
-            const d = document.createElement('div');
+            const d = document.createElement('details');
+            d.open = true;
             d.className = 'stream-tool-indicator';
             d.dataset.toolName = toolName;
-            d.innerHTML = `<div><span class="stream-tool-icon">🔧</span> <span class="stream-tool-name">${escapeHtml(toolName)}</span> <span class="stream-tool-status stream-tool-running">…</span></div><div class="stream-tool-result" style="display:none;margin-top:8px;"></div>`;
+            d.innerHTML = `<summary><span class="stream-tool-icon">🔧</span> <span class="stream-tool-name">${escapeHtml(toolName)}</span> <span class="stream-tool-status stream-tool-running">…</span></summary><div class="stream-tool-result" style="display:none;margin-top:8px;"></div>`;
             w.appendChild(d);
             chatBox.appendChild(w);
             scrollChatToBottom(chatBox, { settle: false });
@@ -8478,15 +8516,16 @@ async function handleSend() {
             if (!indicator) {
                 const w = document.createElement('div');
                 w.className = 'flex justify-start animate-in fade-in duration-200';
-                const d = document.createElement('div');
+                const d = document.createElement('details');
+                d.open = true;
                 d.className = 'stream-tool-indicator';
                 d.dataset.toolCallId = toolCallId;
                 d.innerHTML = `
-                    <div>
+                    <summary>
                         <span class="stream-tool-icon">🔧</span>
                         <span class="stream-tool-name"></span>
                         <span class="stream-tool-status stream-tool-running">…</span>
-                    </div>
+                    </summary>
                     <div class="stream-tool-result" style="display:none;margin-top:8px;">
                         <pre class="whitespace-pre-wrap break-words" style="margin:0;max-height:360px;overflow:auto;"></pre>
                     </div>`;
@@ -8524,16 +8563,18 @@ async function handleSend() {
 
         function finishAcpxToolIndicator(meta = {}) {
             const toolCallId = String(meta.tool_call_id || '').trim();
-            const indicator = toolCallId ? acpxToolIndicators.get(toolCallId) : null;
+            const indicator = toolCallId ? upsertAcpxToolIndicator(meta) : null;
             if (!indicator) return;
+            updateAcpxToolIndicator(meta);
             // acpx_tool_end 仍会带 title，补一次名字（防止 update 过程已把名字洗成 id）
             _acpxApplyName(indicator.querySelector('.stream-tool-name'), meta, toolCallId);
             const statusEl = indicator.querySelector('.stream-tool-status');
             if (statusEl) {
-                statusEl.textContent = '✅';
+                statusEl.textContent = meta.status === 'failed' ? '❌' : '✅';
                 statusEl.classList.remove('stream-tool-running');
                 statusEl.classList.add('stream-tool-done');
             }
+            indicator.open = false;
             scrollChatToBottom(chatBox, { settle: false });
         }
 
@@ -8567,12 +8608,15 @@ async function handleSend() {
                         } else if (m.type === 'acpx_tool_start') {
                             sawToolActivity = true;
                             upsertAcpxToolIndicator(m);
+                            updateAcpxToolIndicator(m);
                         } else if (m.type === 'acpx_tool_update') {
                             sawToolActivity = true;
                             updateAcpxToolIndicator(m);
                         } else if (m.type === 'acpx_tool_end') {
                             sawToolActivity = true;
                             finishAcpxToolIndicator(m);
+                        } else if (m.type === 'error') {
+                            chatRun.error = m.message || 'Agent call failed';
                         } else if (m.type === 'tools_start') {
                             // LLM 回复结束，即将调工具 → 封存当前气泡
                             sawToolActivity = true;
@@ -8611,6 +8655,7 @@ async function handleSend() {
                 }
             }
         }
+        if (chatRun.error) throw new Error(chatRun.error);
         chatRun.status = 'completed';
 
         // 流完成时若仍在别的 session/平台，不触碰当前 DOM；完整结果由该
@@ -8633,8 +8678,8 @@ async function handleSend() {
             scrollChatToBottom(chatBox);
         }
 
-        if (!fullText && allSegmentTexts.length === 0) {
-            agentDiv.innerHTML = `<span class="text-gray-400">${t('no_response')}</span>`;
+        if (!fullText && allSegmentTexts.length === 0 && agentDiv) {
+            agentDiv.innerHTML = `<span class="text-gray-400">${sawToolActivity ? '本轮没有文本回复，请查看工具结果。' : t('no_response')}</span>`;
         }
 
         const hasRenderedToolIndicators = !!chatBox.querySelector('.stream-tool-indicator');
@@ -8642,7 +8687,8 @@ async function handleSend() {
             acpRefreshCurrentTranscriptFromHistory({ showLoading: false }).catch((e) => {
                 console.warn('acpRefreshCurrentTranscriptFromHistory failed', e);
             });
-        } else if ((sawToolActivity || hasRenderedToolIndicators) && _ocChatMode === 'internal' && currentSessionId) {
+        } else if ((sawToolActivity || hasRenderedToolIndicators) && _ocChatMode === 'internal' && currentSessionId &&
+                   window.ExternalAgentSettings?.peek(currentSessionId)?.transport !== 'acpx') {
             await new Promise((resolve) => setTimeout(resolve, 300));
             await switchToSession(currentSessionId, true, { quiet: true });
         }
@@ -13256,12 +13302,13 @@ function showAddTeamMemberModal() {
             
             <!-- ACP agent form (codex, claude, gemini, …) -->
             <div id="form-external" style="display:none;">
+                ${typeof componentControlMarkup === 'function' ? componentControlMarkup('acpx') : ''}
                 <div style="display:flex;flex-direction:column;gap:8px;">
                     <label style="font-size:11px;font-weight:600;color:#374151;">名称
                         <input id="add-ext-name" type="text" placeholder="输入Agent名称" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-top:2px;">
                     </label>
-                    <label style="font-size:11px;font-weight:600;color:#374151;">Global Name
-                        <input id="add-ext-global-name" type="text" placeholder="输入Global Name" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-top:2px;">
+                    <label style="font-size:11px;font-weight:600;color:#374151;">运行编号（可留空，自动生成）
+                        <input id="add-ext-global-name" type="text" placeholder="留空自动生成" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-top:2px;">
                     </label>
                     <label style="font-size:11px;font-weight:600;color:#374151;">标签 (Tag)
                         <div style="display:flex;gap:4px;margin-top:2px;">
@@ -13606,6 +13653,7 @@ function toggleAddOasisTagList(forceOpen) {
 }
 
 function switchAddMemberTab(tab) {
+    if (tab === 'external' && typeof initComponentControls === 'function') initComponentControls(document.getElementById('form-external'));
     document.getElementById('form-oasis').style.display = tab === 'oasis' ? 'block' : 'none';
     document.getElementById('form-external').style.display = tab === 'external' ? 'block' : 'none';
     document.getElementById('form-openclaw').style.display = tab === 'openclaw' ? 'block' : 'none';
@@ -13632,7 +13680,7 @@ async function personaTextFor(tag, team = '') {
 async function createTeamAgent(fields, role, tag = '') {
     const persona = await personaTextFor(tag, currentGroupId);
     const agent = await agentApi('POST', '/v1/agents', {...fields, persona});
-    await agentApi('POST', `/v1/teams/${encodeURIComponent(currentGroupId)}/members`, {agent: agent.agent_id, role: role || agent.name, tag});
+    if (currentGroupId) await agentApi('POST', `/v1/teams/${encodeURIComponent(currentGroupId)}/members`, {agent: agent.agent_id, role: role || agent.name, tag});
     return agent;
 }
 
@@ -13705,11 +13753,11 @@ async function addExternalMember(event) {
     const tagSelect = document.getElementById('add-ext-tag-select').value;
     const tag = tagCustom || (tagSelect !== 'custom' ? tagSelect : '');
     
-    if (!name || !globalName) {
+    if (!name || (platform === 'openclaw' && !globalName)) {
         if (typeof orchToast === 'function') {
-            orchToast('请输入名称和Global Name');
+            orchToast('请输入名称；OpenClaw 还需要已有 Agent 的编号');
         } else {
-            alert('请输入名称和Global Name');
+            alert('请输入名称；OpenClaw 还需要已有 Agent 的编号');
         }
         return;
     }
@@ -13731,7 +13779,7 @@ async function addExternalMember(event) {
     
     try {
         // OpenClaw: which of its agents; any other runtime: the new agent's number (its session)
-        const runtimeField = platform === 'openclaw' ? { global_name: globalName } : { agent_id: globalName };
+        const runtimeField = platform === 'openclaw' ? { global_name: globalName } : (globalName ? { agent_id: globalName } : {});
         await createTeamAgent({ name, platform, ...runtimeField }, name, tag);
 
         if (typeof orchToast === 'function') {
@@ -15696,6 +15744,7 @@ function acpUpdateSessionInputsDisabledState() {
 function acpNotifySessionContextChanged() {
     if (_ocChatMode !== 'acp' || !_acpTool) return;
     const newKey = acpComputeTranscriptKey();
+    if (window.ExternalAgentSettings) ExternalAgentSettings.syncMenu();
     if (newKey === _acpLastTranscriptKey) return;
     const chatBox = document.getElementById('chat-box');
     if (chatBox && _acpLastTranscriptKey) {
@@ -15820,10 +15869,10 @@ function acpRenderToolUses(toolUses) {
         const name = escapeHtml(String(toolUse.name || toolUse.tool_name || 'tool'));
         const input = toolUse.input ? escapeHtml(JSON.stringify(toolUse.input, null, 2)) : '';
         return `
-            <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3 text-xs text-amber-900">
-                <div class="font-semibold mb-1">🛠 ${name}</div>
+            <details class="completed-tool-details">
+                <summary>🛠 ${name}</summary>
                 ${input ? `<pre class="whitespace-pre-wrap break-all text-[11px] leading-5">${input}</pre>` : ''}
-            </div>
+            </details>
         `;
     }).join('');
 }
@@ -15865,7 +15914,7 @@ function acpRenderSessionMessages(messages) {
                 html += `
                     <div class="flex justify-end">
                         <div class="message-user bg-blue-600 text-white p-4 max-w-[85%] shadow-sm">
-                            ${escapeHtml(text || '(empty)')}
+                            ${RuntimePresentation.user(text || '(empty)')}
                         </div>
                     </div>`;
             } else {
@@ -16049,7 +16098,7 @@ function ocRenderOpenClawHistoryHtml(messages) {
             parts.push(
                 '<div class="flex justify-end animate-in fade-in duration-300">' +
                 '<div class="p-4 max-w-[85%] shadow-sm bg-blue-600 text-white message-user">' +
-                escapeHtml(content) +
+                RuntimePresentation.user(content, msg) +
                 '</div></div>'
             );
         } else if (direction === 'recv' || role === 'assistant') {
@@ -16059,6 +16108,9 @@ function ocRenderOpenClawHistoryHtml(messages) {
                 renderMarkdown(content) +
                 '</div></div>'
             );
+        } else if (role === 'tool') {
+            parts.push('<div class="flex justify-start"><div class="message-agent">' +
+                RuntimePresentation.tool(renderToolPager(content, {title: t('tool_full_output')}), msg.tool_name || '工具轨迹') + '</div></div>');
         } else if (direction === 'error') {
             parts.push(
                 '<div class="flex justify-start">' +
@@ -16067,7 +16119,7 @@ function ocRenderOpenClawHistoryHtml(messages) {
                 '</div></div>'
             );
         }
-        // tool_call / tool_result currently hidden in main chat; visible in detail view if added later.
+        // Historical tool rows stay collapsed until explicitly expanded.
     }
     return parts.join('');
 }
@@ -16168,6 +16220,7 @@ async function ocSwitchTo(mode, acpTool) {
     await syncCurrentChatRunUI();
 
     ocSyncSessionSubrowsVisibility();
+    if (window.ExternalAgentSettings) await ExternalAgentSettings.syncMenu();
     if (_ocChatMode === 'internal') {
         ocInternalSyncNameInput();
         ocInternalRepaintSessionPick();

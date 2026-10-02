@@ -7,8 +7,6 @@ from __future__ import annotations
 import logging
 import asyncio
 import json
-import hashlib
-import difflib
 import shlex
 import time
 import uuid
@@ -19,7 +17,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from agents.messages import AgentMessage, AgentReply, compose_text_prompt
-from agents.store import OPENCLAW, Agent, AgentStore, get_store
+from agents.store import ACPX, OPENCLAW, Agent, AgentStore, get_store
 from external import history
 
 logger = logging.getLogger(__name__)
@@ -52,58 +50,35 @@ def identity_sections(agent: Agent) -> dict[str, str]:
     from webot.profiles import frame_session_identity
     from webot.skills import build_user_profile_block
     from webot.soul import build_soul_prompt
+    from agents.gateway import cli_entry
 
-    chat_rules = _prompt_file("conversation_rules.txt").replace(
-        "工具用法见 send_to_group", "使用本轮提供的命令行发送方式")
-    return {
-        "base_rules": _prompt_file("base_system.txt").replace("{chat_rules}", chat_rules),
-        "external_rules": _prompt_file("external_agent_system.txt"),
-        "persona": frame_session_identity(agent.name, "", str(agent.config.get("persona") or "").strip()),
-        "user_profile": build_user_profile_block(agent.owner),
-        "soul": build_soul_prompt(agent.owner),
-        "session": f"【ClawCross 会话】\nowner: {agent.owner}\nagent_id: {agent.agent_id}\n"
-                   f"命令行入口：cd {shlex.quote(str(PROJECT_ROOT))} && uv run src/cli/cli.py -u {shlex.quote(agent.owner)} --help",
-    }
+    from common.agent_prompt import identity_sections as shared_identity
+    sections = shared_identity(
+        base=_prompt_file("base_system.txt"), conversation=_prompt_file("conversation_rules.txt"),
+        persona=frame_session_identity(agent.name, "", str(agent.config.get("persona") or "").strip()),
+        user_profile=build_user_profile_block(agent.owner), soul=build_soul_prompt(agent.owner),
+        session=f"【ClawCross 会话】\nowner: {agent.owner}\nagent_id: {agent.agent_id}")
+    return {"base_rules": sections.pop("base_rules"),
+            "external_rules": _prompt_file("external_agent_system.txt"), **sections}
 
 
 def _join_identity(sections: dict[str, str]) -> str:
     return "\n\n".join(p.strip() for p in sections.values() if p and p.strip())
 
 
-def _identity_version(prompt: str) -> str:
-    return hashlib.sha256(prompt.encode("utf-8")).hexdigest()
-
-
 def identity_prompt(agent: Agent, context: dict[str, Any] | None = None, instructions: str = "") -> str:
     return _join_identity(identity_sections(agent))
 
 
-def _identity_patch(agent: Agent, sections: dict[str, str]) -> str:
-    previous = agent.runtime.get("identity_sections")
-    current_prompt = _join_identity(sections)
-    previous_prompt = str(agent.runtime.get("identity_prompt") or "")
-    if previous is not None:
-        changed = {key: value for key, value in sections.items() if previous.get(key, "") != value}
-        removed = [key for key in previous if key not in sections or (key in changed and not changed[key])]
-        if not changed and not removed:
-            return ""
-        patch = json.dumps({"base_version": agent.runtime.get("identity_version"),
-                            "version": _identity_version(current_prompt),
-                            "replace": {key: value for key, value in changed.items() if value},
-                            "remove": removed}, ensure_ascii=False, sort_keys=True)
-    elif previous_prompt and previous_prompt != current_prompt:
-        # Older rows know only the complete delivered prompt. Upgrade through
-        # a line patch, without replaying their entire first-turn identity.
-        patch = (f"base_version: {_identity_version(previous_prompt)}\n"
-                 f"version: {_identity_version(current_prompt)}\n" +
-                 "\n".join(difflib.unified_diff(previous_prompt.splitlines(), current_prompt.splitlines(),
-                                               fromfile="previous identity", tofile="current identity", lineterm="")))
-    else:
-        return ""
-    return ("【ClawCross 系统提示词补丁】\n"
-            "在当前会话应用此补丁，保留历史与任务状态。replace 替换同名区块，remove 撤销区块；"
-            "旧版行补丁中的 - 行已撤销，+ 行为当前规则。新规则替代相应旧规则，不重复叠加；"
-            "已应用的相同版本不重复应用，版本不匹配时报告而不要重建会话。\n" + patch)
+def delivered_context(agent: Agent) -> dict[str, str]:
+    """One delivery state; migrate old identity snapshots without resetting native memory."""
+    if agent.runtime.get('negotiation_session', runtime_session(agent)) != runtime_session(agent):
+        return {}
+    previous = dict(agent.runtime.get('dynamic_context') or {})
+    if agent.runtime.get('prompt_context_version') != 2:
+        previous.update({'identity_' + name: value for name, value in
+                         (agent.runtime.get('identity_sections') or {}).items()})
+    return previous
 
 
 @asynccontextmanager
@@ -116,65 +91,77 @@ async def turn(store: AgentStore | None, agent: Agent):
         yield selected_store.require(agent.owner, agent.agent_id)
 
 
+def is_busy(store: AgentStore | None, agent: Agent) -> bool:
+    """Inspect our turn lock without starting an external adapter."""
+    selected_store = store or get_store()
+    locks = _turn_locks.get(asyncio.get_running_loop(), {})
+    lock = locks.get((selected_store.db_path, agent.owner, agent.agent_id))
+    return bool(lock and lock.locked())
+
+
 @dataclass(slots=True)
 class PreparedTurn:
     text: str
     identity: str | None
     dynamic_context: dict[str, str]
     identity_sections: dict[str, str]
+    runtime_context: str = ""
+    user_input: str = ""
+
+
+def build_dynamic_context(agent: Agent, msg: AgentMessage, *, context: dict[str, Any],
+                          mode: str | None, enabled_tools: list[str] | None,
+                          response_format: dict | None, identity: dict[str, str] | None = None) -> dict[str, str]:
+    from webot.skills import build_user_skills_listing
+    from webot.workflow_prompt import build_team_workflow_prompt
+    from webot.runtime import build_session_mode_message
+    from common.agent_prompt import render_team_skill_context
+    from common.conversation_context import group_memberships, render_group_metadata, current_group_metadata
+    from agents.gateway import cli_entry
+    teams = sorted({str(team).strip() for team in agent.teams if str(team).strip()})
+    connected = agent.driver == ACPX and ((agent.config.get('meta') or {}).get('acp') or {}).get('clawcross_tools', True)
+    memberships = group_memberships(agent.owner, agent.agent_id)
+    dynamic = {
+        **{"identity_" + name: value for name, value in (identity if identity is not None else identity_sections(agent)).items()},
+        "cli_entry": "" if connected else f"当前命令入口：{cli_entry(agent.owner)} --help；替代此前提供的旧命令路径。",
+        "teams": render_team_skill_context(teams),
+        "groups": render_group_metadata(current_group_metadata(context.get("groups") or [], memberships)),
+        "group_memberships": render_group_metadata(memberships),
+        "skills": build_user_skills_listing(agent.owner, teams=teams, tool_mode="mcp" if connected else "cli"),
+        "workflows": "" if connected else "\n\n".join(filter(None, (build_team_workflow_prompt(agent.owner, team=team) for team in teams))),
+        "instructions": msg.instructions.strip(),
+        "mode": build_session_mode_message(mode) if mode else "",
+        "tools": "" if enabled_tools is None else "本轮允许的工具：" + (", ".join(enabled_tools) or "无"),
+        "tool_connector": ("ClawCross MCP 已开启：通过 tool_search 查询准确参数，再用 tool_call 调用；"
+                           "身份由服务器注入，工具受当前模式、名单与审核约束。")
+                          if connected
+                          else 'ClawCross MCP 未开启；使用原生工具及明确提供的命令行入口。',
+        "command_tools": ("以下定义是命令行工具的调用约定；使用已提供的命令，不编造命令，不输出 API tool_calls。\n"
+                          + json.dumps(context["command_tools"], ensure_ascii=False, sort_keys=True)) if context.get("command_tools") else "",
+        "reply_format": json.dumps(response_format, ensure_ascii=False, sort_keys=True) if response_format else "",
+    }
+    return dynamic
 
 
 def prepare_turn(agent: Agent, msg: AgentMessage, *, context: dict[str, Any], mode: str | None,
                  enabled_tools: list[str] | None, response_format: dict | None,
                  plain_text: bool = True) -> PreparedTurn:
     """Only new information travels in this turn's user text; never replay replies."""
-    from webot.skills import build_user_skills_listing
-    from webot.workflow_prompt import build_team_workflow_prompt
-    from common.conversation_context import group_memberships, render_group_metadata
-
-    teams = sorted({str(team).strip() for team in agent.teams if str(team).strip()})
-    # Old successful sessions already received an identity before this state existed.
-    known = bool(agent.runtime.get("negotiation_sent") or agent.runtime.get("identity_prompt")
-                 or agent.runtime.get("last_used_at"))
-    same_session = agent.runtime.get("negotiation_session", runtime_session(agent)) == runtime_session(agent)
+    from common.agent_prompt import render_section_updates
     sections = identity_sections(agent)
-    identity = None if known and same_session else _join_identity(sections)
-    patch = _identity_patch(agent, sections) if known and same_session else ""
-    rules = {
-        "chat": "仅交流，不调用工具或命令。",
-        "readonly": "只查看、读取和搜索；不修改文件、运行写入命令或发送消息。",
-        "auto": "遵循原生工具审批与命令安全策略；不能自行绕过审批。",
-        "bypass": "可使用本轮允许的工具；仍需遵循命令安全策略和用户授权范围。",
-    }
-    dynamic = {
-        "cli_entry": (f"当前命令入口：cd {shlex.quote(str(PROJECT_ROOT))} && uv run src/cli/cli.py "
-                      f"-u {shlex.quote(agent.owner)} --help；替代此前提供的旧命令路径。"),
-        "teams": "\n".join(f"team: {team}" for team in teams),
-        "groups": render_group_metadata(context.get("groups") or []),
-        "group_memberships": render_group_metadata(group_memberships(agent.owner, agent.agent_id)),
-        "skills": build_user_skills_listing(agent.owner, teams=teams, tool_mode="cli"),
-        "workflows": "\n\n".join(filter(None, (build_team_workflow_prompt(agent.owner, team=team) for team in teams))),
-        "instructions": msg.instructions.strip(),
-        "mode": rules.get(mode or "", ""),
-        "tools": "" if enabled_tools is None else "本轮允许的工具：" + (", ".join(enabled_tools) or "无"),
-        "command_tools": ("以下定义是命令行工具的调用约定；使用已提供的命令，不编造命令，不输出 API tool_calls。\n"
-                          + json.dumps(context["command_tools"], ensure_ascii=False, sort_keys=True)) if context.get("command_tools") else "",
-        "reply_format": json.dumps(response_format, ensure_ascii=False, sort_keys=True) if response_format else "",
-    }
-    previous = agent.runtime.get("dynamic_context") or {}
-    delta = [f"【本轮 {name}】\n{value or '此前提供的此项信息已撤销。'}"
-             for name, value in dynamic.items() if previous.get(name, "") != value]
+    previous = delivered_context(agent)
+    dynamic = build_dynamic_context(agent, msg, context=context, mode=mode,
+                                    enabled_tools=enabled_tools, response_format=response_format, identity=sections)
+    delta = render_section_updates(previous, dynamic)
     text = compose_text_prompt(msg.text, msg.attachments) if plain_text else msg.text
-    version = f"【ClawCross 系统提示词版本】\nversion: {_identity_version(identity)}" if identity else ""
-    return PreparedTurn("\n\n".join(filter(None, [version, identity, patch, *delta, text])), identity, dynamic, sections)
+    # Compatibility indicator only; identity content is sent through delta exactly once.
+    identity = None if any(key.startswith('identity_') for key in previous) else _join_identity(sections)
+    return PreparedTurn("\n\n".join(filter(None, [delta, text])), identity, dynamic, sections, delta, text)
 
 
 def remember_turn(store: AgentStore | None, agent: Agent, prepared: PreparedTurn) -> None:
     changes = {"negotiation_sent": True, "negotiation_session": runtime_session(agent),
-               "dynamic_context": prepared.dynamic_context,
-               "identity_sections": prepared.identity_sections,
-               "identity_prompt": _join_identity(prepared.identity_sections),
-               "identity_version": _identity_version(_join_identity(prepared.identity_sections))}
+               "dynamic_context": prepared.dynamic_context, "prompt_context_version": 2}
     if prepared.identity is not None:
         changes.update(negotiated_at=time.time())
     remember(store, agent, **changes)
@@ -208,10 +195,12 @@ class Sent:
 
 
 async def exchange(agent: Agent, *, connect_type: str, prompt: Any, context: dict[str, Any],
-                   send: Callable[[], Awaitable[Sent]]) -> AgentReply:
+                   send: Callable[[], Awaitable[Sent]], prepared: PreparedTurn | None = None) -> AgentReply:
     """Send, and log both sides in the agent's exchange log (a failed log never fails the send)."""
     options = history.attach_history_context(
         {}, user_id=agent.owner, group_id=str(context.get("conversation_id") or ""), global_name=agent.agent_id)
+    if prepared is not None:
+        options.update(display_input=prepared.user_input, display_runtime_context=prepared.runtime_context)
     where = {"platform": agent.platform, "session_key": runtime_session(agent), "connect_type": connect_type}
     request_id = None
     try:
@@ -236,11 +225,44 @@ async def log(agent: Agent, limit: int) -> list[dict[str, Any]]:
     """What was said in the agent's session, oldest first: ``[{role, content}]``."""
     rows = await (await history.get_store()).list_messages(
         platform=agent.platform, session_key=runtime_session(agent), limit=5000)
-    return [
-        {"role": row.get("role") or ("user" if row.get("direction") == "send" else "assistant"),
-         "content": row.get("content") or ""}
-        for row in rows[-limit:]
-    ]
+    messages = []
+    for row in rows[-limit:]:
+        role = row.get('role') or ('user' if row.get('direction') == 'send' else 'assistant')
+        content = row.get('content') or ''
+        if row.get('direction') == 'error' and '{"jsonrpc"' in content:
+            import re
+            from external.acpx import public_command_error
+            match = re.search(r'acpx failed \((\d+)\)', content)
+            content = public_command_error(content[content.index('{"jsonrpc"'):],
+                                           int(match[1]) if match else 1)
+        if role == 'assistant' and content.lstrip().startswith('{"jsonrpc"'):
+            # Older tool-only turns stored protocol output as assistant text.
+            # Clean the presentation without changing the original audit log.
+            from external.acpx import AcpxAdapter
+            trace = AcpxAdapter._extract_trace(content)
+            for call, result in zip(trace.tool_uses, trace.tool_results):
+                messages.append({'role': 'tool', 'tool_name': call.get('name', ''),
+                                 'content': result.get('content', ''), 'status': result.get('status')})
+            content = trace.text
+            if not content:
+                continue
+        if role == 'tool':
+            try:
+                item = json.loads(content)
+            except (ValueError, TypeError):
+                item = None
+            if isinstance(item, dict) and row.get('direction') in ('tool_call', 'tool_result'):
+                messages.append({'role': 'tool', 'tool_name': item.get('name') or item.get('tool_name') or '',
+                                 'content': json.dumps(item.get('input', {}), ensure_ascii=False)
+                                 if row['direction'] == 'tool_call' else str(item.get('content', '')),
+                                 'status': item.get('status')})
+                continue
+        item = {'role': role, 'content': content}
+        meta = row.get('meta') or {}
+        if role == 'user' and isinstance(meta.get('display_input'), str):
+            item.update(user_input=meta['display_input'], runtime_context=meta.get('display_runtime_context', ''))
+        messages.append(item)
+    return messages[-limit:]
 
 
 async def drop_log(agent: Agent) -> None:

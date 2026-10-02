@@ -171,3 +171,32 @@ test('remote group join and sharing stay usable on a narrow phone', async ({ pag
   expect(sharing).toEqual([{ password: 'rotated', local_join: true, revoke_connections: true }]);
   expect(errors).toEqual([]);
 });
+
+test('external agent accepts a Chinese name without a manual runtime id and offers explicit install', async ({ page }) => {
+  await page.setViewportSize({width:390,height:844});
+  await stub(page, {posts:[],control:[]});
+  const installs = [], created = [];
+  await page.route('**/proxy_components/acpx', route => {
+    if (route.request().method() === 'POST') installs.push('acpx');
+    return route.fulfill({contentType:'application/json',body:JSON.stringify({name:'acpx',installed:installs.length > 0,ready:installs.length > 0,missing:[],can_install:true,state:installs.length ? 'complete' : '',platform:'linux'})});
+  });
+  await page.addInitScript(() => { localStorage.setItem('clawcross_lang','zh'); });
+  await page.goto('/mobile/group_chat');
+  await page.evaluate(async () => {
+    window.registerAgent = async fields => { window.__createdFields = fields; return {agent_id:'ag_generated'}; };
+    window.startPrivateChat = async () => true;
+    setCreateAgentMode('acp');
+    await renderCreateAgentAcpPanel();
+    document.getElementById('create-agent-modal').classList.add('show');
+  });
+  await expect(page.locator('[data-component-status]')).toContainText('尚未安装');
+  expect(installs).toEqual([]);
+  await page.locator('[data-component-install]').click();
+  await expect(page.locator('[data-component-status]')).toContainText('已安装');
+  expect(installs).toEqual(['acpx']);
+  await page.locator('#ca-acp-platform').selectOption('codex');
+  await page.locator('#ca-acp-name').fill('中文助手');
+  await expect(page.locator('#ca-acp-runtime')).toHaveValue('');
+  await page.evaluate(() => mobileSubmitCreateAcpAgent());
+  expect(await page.evaluate(() => window.__createdFields)).toEqual({name:'中文助手',platform:'codex'});
+});

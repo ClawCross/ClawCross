@@ -242,6 +242,8 @@ app.include_router(
 )
 
 app.include_router(create_trigger_router(internal_token=INTERNAL_TOKEN, store=agent_store, gateway=gateway))
+from external.tool_bridge import bridge_router
+app.include_router(bridge_router())
 
 # L1: every agent on this machine by its number.
 app.include_router(

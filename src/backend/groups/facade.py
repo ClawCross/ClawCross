@@ -197,6 +197,15 @@ def client_router(facade, *, internal_token, verify_password):
         except ClientError as exc:
             raise HTTPException(exc.status, str(exc)) from exc
 
+    @router.post('/groups/{gid}/guest-invite')
+    async def guest_invite(gid: str, body: dict, authorization: str | None = Header(None)):
+        try:
+            row = facade.client.require(user_of(authorization), gid)
+            result = await asyncio.to_thread(facade.client.request, row, 'POST', '/guest-invites', body)
+            return {**result, 'server_url': row['url']}
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
     @router.get('/groups/{gid}/invite')
     async def invite(gid: str, authorization: str | None = Header(None)):
         user = user_of(authorization)

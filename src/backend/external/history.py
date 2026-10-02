@@ -315,7 +315,8 @@ class ExternalAgentHistoryStore:
                 ts=ts,
             )
             content = _coerce_text(prompt)
-            meta: dict[str, Any] = {}
+            meta: dict[str, Any] = {key: options[key] for key in ('display_input', 'display_runtime_context')
+                                    if isinstance((options or {}).get(key), str)}
             if isinstance(prompt, list):
                 meta["prompt_kind"] = "messages"
             elif not isinstance(prompt, str):

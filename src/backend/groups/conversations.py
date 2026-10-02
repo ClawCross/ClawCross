@@ -220,11 +220,18 @@ class Conversations:
             self._typing_stop(conv_id, member.principal)
 
         try:
+            source = next((m for m in members if m.principal == message.sender), None)
+            human_requests = []
+            if source and not source.agent and message.sender.startswith('u:'):
+                human_requests = [{'id': f'group:{conv_id}:{message.id}', 'text': message.content,
+                    'source_kind': 'group_human', 'sender_user': message.sender[2:],
+                    'sender_name': self.name_of(conv_id, message.sender), 'group_id': conv_id}]
             receipt = await self.gateway.inbox(
                 member.agent,
                 AgentMessage(text=text, attachments=list(message.attachments), sender=message.sender,
                              summary=self._summary(conversation, member, message)),
-                context={"conversation_id": conv_id, "groups": [self._group_context(conversation, members, member)]},
+                context={"conversation_id": conv_id, 'group_human_requests': human_requests,
+                         "groups": [self._group_context(conversation, members, member)]},
                 mode=mode,
                 on_complete=settled,
             )

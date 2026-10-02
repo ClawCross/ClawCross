@@ -541,6 +541,8 @@ class WeBotService:
             if hasattr(self.agent, "get_thread_context_usage"):
                 if hasattr(self.agent, "restore_context_usage"):
                     await self.agent.restore_context_usage(thread_id)
+                if hasattr(self.agent, "refresh_compacted_context_usage"):
+                    await self.agent.refresh_compacted_context_usage(thread_id)
                 usage = dict(self.agent.get_thread_context_usage(thread_id))
                 if not usage.get("tokens") and hasattr(self.agent, "agent_app"):
                     from webot.compression import static_compression_view

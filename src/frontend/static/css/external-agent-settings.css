@@ -1,0 +1,16 @@
+.external-settings-overlay{position:fixed;inset:0;z-index:12000;background:rgba(15,23,42,.38);display:flex;align-items:center;justify-content:center;padding:16px;color:var(--ui-text,#1d1d1f);font:14px/1.5 var(--ui-font,system-ui)}
+.external-settings-dialog{background:var(--ui-surface,#fff);border-radius:20px;width:min(560px,100%);max-height:calc(100dvh - 32px);overflow:auto;box-shadow:0 20px 60px #0002;padding:24px}
+.external-settings-dialog header,.external-settings-dialog footer{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.external-settings-dialog h2{font-size:18px;margin:0}.external-settings-dialog p{color:var(--ui-text-2,#6e6e73);margin:12px 0}
+.external-settings-dialog button{background:var(--ui-surface-2,#f2f2f5);color:var(--ui-text,#1d1d1f);border:0;border-radius:10px;padding:9px 16px;cursor:pointer}
+.external-settings-dialog [data-close]{font-size:22px;background:transparent;padding:2px 10px}.external-settings-dialog [data-save]{background:var(--ui-accent,#0071e3);color:white}
+.external-settings-fields{display:grid;gap:14px}.external-settings-fields label{display:grid;gap:6px;min-width:0}
+.external-settings-fields select,.external-settings-fields input:not([type=checkbox]){font:inherit;background:var(--ui-surface-2,#f2f2f5);border:1px solid var(--ui-hairline-strong,#ddd);border-radius:9px;padding:9px;width:100%;min-width:0}
+.external-settings-fields .external-settings-toggle{display:flex;align-items:center;gap:8px}.external-settings-fields small{color:var(--ui-text-2,#6e6e73);font-size:12px;overflow-wrap:anywhere}
+.external-settings-fields details label{margin-top:12px}.external-settings-dialog footer{margin-top:22px}.external-settings-dialog [data-status]{overflow-wrap:anywhere}
+.acp-mobile-tools{margin:8px 12px;padding:10px 12px;background:var(--ui-surface,#fff);border:1px solid var(--ui-hairline,#eee);border-radius:12px;font-size:12px;overflow-wrap:anywhere}.acp-mobile-tools pre{white-space:pre-wrap;max-height:220px;overflow:auto;margin-top:8px}
+[data-webot-runtime][hidden],#studio-external-settings[hidden],#external-runtime-hint[hidden],.oc-context-usage-wrap[hidden],#tool-panel[hidden],#tool-toggle-btn[hidden]{display:none!important}
+
+.external-settings-dialog,.external-settings-fields input,.external-settings-fields select{box-sizing:border-box}.external-settings-fields input[type=checkbox]{accent-color:var(--ui-accent,#0071e3)}
+
+.external-settings-dialog footer>div{flex-shrink:0}.external-settings-dialog button:disabled{opacity:.55;cursor:wait}@media(max-width:480px){.external-settings-dialog footer{flex-wrap:wrap}.external-settings-dialog footer>div{margin-left:auto}}

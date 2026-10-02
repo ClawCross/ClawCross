@@ -7,7 +7,7 @@ import secrets
 import time
 from typing import Any, Callable
 
-from webot.checkpoint_repository import delete_thread_records, fetch_thread_checkpoint_times
+from webot.checkpoint_repository import delete_thread_records, fetch_thread_checkpoint_times, get_context_compaction
 from common.logging_utils import get_logger
 from webot.context_compressor import estimate_messages_tokens
 from webot.context_limits import resolve_history_message_limits
@@ -149,7 +149,7 @@ class SessionService:
 
             if real_ctx > 0:
                 # 推理/恢复路径已写入 API 实测值和分项，只在缺失时补一份，不用估算覆盖
-                if self.agent.get_thread_context_usage(thread_id).get("source") != "api":
+                if not self.agent.get_thread_context_usage(thread_id).get("tokens"):
                     window = resolve_context_window(get_runtime_settings(user_id, session_id).context, last_model or None)
                     self.agent.set_thread_context_usage(
                         thread_id, real_ctx, max(window, real_ctx), source="api",
@@ -262,13 +262,15 @@ class SessionService:
             raise RuntimeError("compaction failed") from exc
 
         after_tokens = result.view_tokens
-        # 已有 API 真值时不用字数估算覆盖；压缩效果在下一次调用后由真值体现
-        has_real_usage = hasattr(self.agent, "get_thread_last_context_tokens") and int(
-            self.agent.get_thread_last_context_tokens(thread_id) or 0
-        ) > 0
-        if not has_real_usage:
-            with contextlib.suppress(Exception):
-                self.agent.set_thread_context_usage(thread_id, after_tokens, budget)
+        if result.triggered and hasattr(self.agent, "project_compacted_context_usage"):
+            try:
+                self.agent.project_compacted_context_usage(thread_id, get_context_compaction(store_path, thread_id), msgs)
+            except Exception:
+                # The summary is already committed. A display refresh must not
+                # keep its task running or turn a successful commit into failure.
+                logger.exception("post-compaction usage projection failed for %s", thread_id)
+        elif not self.agent.get_thread_context_usage(thread_id).get("tokens"):
+            self.agent.set_thread_context_usage(thread_id, after_tokens, budget, source="estimate")
 
         return {
             "triggered": result.triggered,
@@ -304,6 +306,8 @@ class SessionService:
 
     async def context_usage(self, user_id: str, session_id: str) -> dict:
         """The session's context use against its window; read back from disk after a restart."""
+        if hasattr(self.agent, "refresh_compacted_context_usage"):
+            await self.agent.refresh_compacted_context_usage(f"{user_id}#{session_id}")
         usage = self._configured_context_usage(user_id, session_id)
         if not usage.get("tokens") and hasattr(self.agent, "restore_context_usage"):
             if await self.agent.restore_context_usage(f"{user_id}#{session_id}"):

@@ -50,7 +50,7 @@ from webot.llm_call_trace import llm_call_trace_enabled, save_llm_call
 from webot.context_references import expand_context_references
 from common.runtime_paths import PROJECT_ROOT
 from webot.context_store import ContextStore
-from webot.context_usage import estimate_context_components, scale_components, tool_schemas, validate_context_capacity
+from webot.context_usage import estimate_context_components, scale_components, tool_schemas, validate_context_capacity, compaction_key, request_accounting, difference_components, compacted_components
 from webot.smart_routing import resolve_turn_route
 from webot.permission_context import (
     create_or_reuse_permission_request,
@@ -388,7 +388,8 @@ def discovery_tool_schemas(registry: LazyToolRegistry, long_tail_names: set[str]
         "name": "tool_call",
         "description": (
             "Call one tool returned by tool_search. Supply its exact tool name and an arguments_json "
-            "string containing a JSON object that matches the parameters returned by tool_search."
+            "string containing a JSON object that matches the parameters returned by tool_search. "
+            "If any parameter is uncertain, use tool_search first; do not invent arguments."
         ),
         "parameters": {
             "type": "object", "properties": {
@@ -1105,22 +1106,21 @@ class TeamAgent:
         prompts = self._load_prompts()
         subagent_meta = parse_subagent_session_id(session_id) if session_id else None
         profile = get_agent_profile(subagent_meta["agent_type"], user_id=user_id) if subagent_meta else None
-        if is_subagent:
-            base = prompts["base_system_subagent"]
-            if profile:
-                base += "\n\n" + render_profile_system_prompt(profile)
-        else:
-            base = prompts["base_system"].replace("{chat_rules}", prompts["conversation_rules"])
-            if user_id and session_id:
-                persona = self._get_internal_session_persona_prompt(user_id, session_id)
-                if persona:
-                    base += f"\n{persona}\n"
-        base += (f"\n【Workspace】\nsession_id: {session_id or 'default'}\n"
-                 f"{describe_session_workspace(user_id, session_id)}\n")
-        if not is_subagent or (profile and profile.include_user_profile):
-            base += build_user_profile_block(user_id)
+        workspace = (f"【Workspace】\nsession_id: {session_id or 'default'}\n"
+                     f"{describe_session_workspace(user_id, session_id)}")
         if not is_subagent:
-            base += build_soul_prompt(user_id)
+            from common.agent_prompt import identity_sections, join_sections
+            persona = self._get_internal_session_persona_prompt(user_id, session_id) if user_id and session_id else ""
+            return join_sections(identity_sections(
+                base=prompts["base_system"], conversation=prompts["conversation_rules"],
+                persona=persona, user_profile=build_user_profile_block(user_id),
+                soul=build_soul_prompt(user_id), session=workspace)), prompts
+        base = prompts["base_system_subagent"]
+        if profile:
+            base += "\n\n" + render_profile_system_prompt(profile)
+        base += f"\n{workspace}\n"
+        if profile and profile.include_user_profile:
+            base += build_user_profile_block(user_id)
         return base, prompts
 
     # ------------------------------------------------------------------
@@ -1281,6 +1281,8 @@ class TeamAgent:
 
     def forget_thread_state(self, thread_id: str) -> None:
         self._thread_state_registry.forget(thread_id)
+        getattr(self, "_usage_measurements", {}).pop(thread_id, None)
+        getattr(self, "_compacted_usage_projections", {}).pop(thread_id, None)
 
     def _queue_background_compression(self, state: dict) -> None:
         """Schedule summarization only after the final reply is persisted."""
@@ -1692,7 +1694,7 @@ class TeamAgent:
         session_budget = get_session_budget(user_id, session_id)
         # Runtime pressure follows this turn's view. A previous API total may
         # precede compaction and must not prematurely stop the smaller turn.
-        # The UI still retains the last measured API total until the next call.
+        # After compaction the UI projects the smaller view until API calibration.
         context_used = sum(prefix_cost.values()) + view_tokens
         context_budget = context_window
         session_budget.update_current_context(
@@ -1929,6 +1931,10 @@ class TeamAgent:
                     except Exception as exc:
                         logging.getLogger("agent").warning("context breakdown failed: %s", exc)
                         context_components = {}
+                    accounting = request_accounting(base_prompt, context_tool_schemas, history_messages, response, model_name)
+                    differential = difference_components(getattr(self, "_usage_measurements", {}).get(thread_id, {}), accounting, history_messages, total_input_tokens)
+                    if differential is not None:
+                        accounting["difference_breakdown"] = differential
                     await self.record_context_usage(
                         thread_id,
                         input_tokens=total_input_tokens,
@@ -1937,6 +1943,8 @@ class TeamAgent:
                         model=model_name,
                         context_window=context_window,
                         components=context_components,
+                        accounting=accounting,
+                        view_key=compaction_key(state.get("_turn_compaction_record")),
                     )
 
             # --- Per-call LLM trace (new, default-off via CLAWCROSS_LLM_CALL_TRACE) ---
@@ -2469,11 +2477,13 @@ class TeamAgent:
         model: str = "",
         context_window: int = 0,
         components: dict[str, int] | None = None,
+        accounting: dict | None = None,
+        view_key: str | None = None,
     ) -> None:
         """把一次 LLM 调用的 API 实测用量记为该 thread 的上下文占用，并落盘。
 
-        占用 = input + output；分项按本地分词比例分摊到真实 input 总数，
-        另加 output 一项。落盘后服务重启也能读回。
+        占用 = input + output；稳定输入采用差分归因，其余按本地分词比例分摊。
+        测量绑定输入压缩视图，落盘后服务重启也能读回。
         """
         input_tokens = max(0, int(input_tokens or 0))
         if input_tokens <= 0:
@@ -2482,7 +2492,8 @@ class TeamAgent:
         cache_read_tokens = max(0, int(cache_read_tokens or 0))
         context_window = max(0, int(context_window or 0))
         tokens = input_tokens + output_tokens
-        breakdown = scale_components(components or {}, input_tokens)
+        # The caller computes the stable-message delta before persisting this measurement.
+        breakdown = (accounting or {}).get("difference_breakdown") or scale_components(components or {}, input_tokens)
         if not breakdown:
             breakdown = {"messages": input_tokens}
         breakdown["output"] = output_tokens
@@ -2504,11 +2515,52 @@ class TeamAgent:
             "context_window": context_window,
             "model": model or "",
             "breakdown": breakdown,
+            "components": components or {},
+            "compaction_key": view_key if view_key is not None else compaction_key(get_context_compaction(self._db_path, thread_id)),
+            "request_accounting": accounting or {},
         }
+        if not hasattr(self, "_usage_measurements"):
+            self._usage_measurements = {}
+        self._usage_measurements[thread_id] = record
         try:
             await asyncio.to_thread(save_context_usage_record, self._db_path, thread_id, record)
         except Exception as exc:
             logging.getLogger("agent").warning("persist context usage failed for %s: %s", thread_id, exc)
+
+    async def refresh_compacted_context_usage(self, thread_id: str) -> bool:
+        await self.restore_context_usage(thread_id)
+        record = await asyncio.to_thread(get_context_compaction, self._db_path, thread_id)
+        if not record:
+            return False
+        measured = getattr(self, "_usage_measurements", {}).get(thread_id, {})
+        key = compaction_key(record)
+        if measured.get("compaction_key") == key:
+            return False
+        projected = getattr(self, "_compacted_usage_projections", {}).get(thread_id)
+        if projected and projected[0] == key and projected[1] is measured:
+            return False  # This exact summary and API baseline were already projected.
+        snapshot = await self.agent_app.aget_state({"configurable": {"thread_id": thread_id}})
+        messages = list(snapshot.values.get("messages", [])) if snapshot and snapshot.values else []
+        if getattr(self, "_usage_measurements", {}).get(thread_id, {}) is not measured:
+            return False  # A newer API measurement arrived while reading the view.
+        self.project_compacted_context_usage(thread_id, record, messages)
+        return True
+
+    def project_compacted_context_usage(self, thread_id, record, messages):
+        """Publish a prepared view without waiting for another history read."""
+        measured = getattr(self, "_usage_measurements", {}).get(thread_id, {})
+        parts = compacted_components(record, messages)
+        local_before = sum((measured.get("components") or {}).values())
+        ratio = int(measured.get("input_tokens", 0)) / local_before if local_before else 1
+        parts = {name: round(value * ratio) for name, value in parts.items()}
+        for name in ("system_prompt", "tools"):
+            parts[name] = int((measured.get("breakdown") or {}).get(name, 0))
+        previous = self.get_thread_context_usage(thread_id)
+        self.set_thread_context_usage(thread_id, sum(parts.values()), previous.get("budget", 0),
+            source="estimate", breakdown=parts, cache_read_tokens=0)
+        if not hasattr(self, "_compacted_usage_projections"):
+            self._compacted_usage_projections = {}
+        self._compacted_usage_projections[thread_id] = (compaction_key(record), measured)
 
     async def restore_context_usage(self, thread_id: str) -> bool:
         """内存里没有真值时，从磁盘读回上一轮 API 用量；每个 thread 每个进程只读一次库。"""
@@ -2521,6 +2573,9 @@ class TeamAgent:
             logging.getLogger("agent").warning("load context usage failed for %s: %s", thread_id, exc)
             return False
         record = record or {}
+        if not hasattr(self, "_usage_measurements"):
+            self._usage_measurements = {}
+        self._usage_measurements[thread_id] = record
         input_tokens = max(0, int(record.get("input_tokens") or 0))
         if input_tokens <= 0:
             return False

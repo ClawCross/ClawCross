@@ -31,7 +31,7 @@ def register_agent_routes(app, *, port_agent: int, internal_token: str) -> None:
         # Asking an agent may take as long as the agent does.
         body = request.get_json(silent=True) if request.method in ("POST", "PATCH") else None
         long_control = path.endswith("/control") and isinstance(body, dict) and body.get("action") == "compact"
-        timeout = 900 if path.endswith("/messages") or long_control else 60
+        timeout = 900 if path.endswith("/messages") or long_control else 120 if path.endswith("/test-connection") else 60
         try:
             response = requests.request(
                 request.method,

@@ -5,8 +5,14 @@ function runtimeSettingsText(zh, en) {
     return currentLang === 'zh-CN' ? zh : en;
 }
 
-async function openRuntimeSettings(sessionId = '') {
+async function openRuntimeSettings(sessionId = '', tab = 'context') {
     const targetSession = sessionId || currentSessionId || '';
+    if (targetSession && window.ExternalAgentSettings) {
+        try {
+            const card = await ExternalAgentSettings.capabilities(targetSession);
+            if (card.transport === 'acpx') return ExternalAgentSettings.open(targetSession);
+        } catch (_) { /* An unsaved WeBot session still uses its normal settings. */ }
+    }
     let overlay = document.getElementById('runtime-settings-modal');
     if (!overlay) {
         overlay = document.createElement('div');
@@ -45,7 +51,7 @@ async function openRuntimeSettings(sessionId = '') {
                 <button id="runtime-settings-save" type="button" class="runtime-settings-btn runtime-settings-btn-primary" onclick="saveRuntimeSettingsForm()">${runtimeSettingsText('保存设置', 'Save settings')}</button>
             </div>
         </div></div>`;
-    runtimeSettingsView = { targetSession, original: null, activeTab: 'context', returnFocus: document.activeElement };
+    runtimeSettingsView = { targetSession, original: null, activeTab: tab, returnFocus: document.activeElement };
     overlay.querySelector('.runtime-settings-close').focus();
     await loadRuntimeSettingsScope();
 }
@@ -123,7 +129,8 @@ async function loadRuntimeSettingsScope() {
                     <select data-section="approval" data-key="command_sandbox" class="runtime-settings-input">
                         <option value="off" ${approval.command_sandbox !== 'srt' ? 'selected' : ''}>${text('关闭 · 命令在宿主机执行', 'Off · Commands run on host')}</option>
                         <option value="srt" ${approval.command_sandbox === 'srt' ? 'selected' : ''}>${text('SRT · 前台、后台、交互命令', 'SRT · Foreground, background, interactive')}</option>
-                    </select><small>${text('需预装 Anthropic Sandbox Runtime。沿用本机 Python 环境；禁用网络、限制写入，沙盒不可用时拒绝执行。Windows 支持仍为 alpha。', 'Requires Anthropic Sandbox Runtime. Uses the host Python environment; blocks network and limits writes. Unavailable sandbox blocks execution. Windows support is alpha.')}</small></label>
+                    </select><small>${text('开启前请在下方安装沙盒组件。沿用本机 Python 环境；禁用网络、限制写入，沙盒不可用时拒绝执行。Windows 支持仍为 alpha。', 'Requires Anthropic Sandbox Runtime. Uses the host Python environment; blocks network and limits writes. Unavailable sandbox blocks execution. Windows support is alpha.')}</small></label>
+                ${typeof componentControlMarkup === 'function' ? componentControlMarkup('srt') : ''}
                 ${instructions('approval', 'reviewer_policy', approval.reviewer_policy, '补充审核要求', 'Additional review instructions', '例如：安装依赖可以代审，删除文件需先问我', 'For example: review installs for me, but ask before deleting files')}
                 <details class="runtime-settings-advanced"><summary>${text('高级审核设置', 'Advanced review settings')}<span>${text('模型与等待时间', 'Model and timeout')}</span></summary>
                     <div class="runtime-settings-advanced-body runtime-settings-grid">
@@ -134,6 +141,7 @@ async function loadRuntimeSettingsScope() {
             </section>`;
         showRuntimeSettingsTab(view.activeTab);
         updateRuntimeReviewerHint();
+        if (typeof initComponentControls === 'function') initComponentControls(document.getElementById('runtime-settings-fields'));
         const compact = payload.last_compaction;
         status.textContent = compact && Number.isFinite(compact.before_tokens) && Number.isFinite(compact.after_tokens) ? runtimeSettingsText(
             `上次压缩：约 ${compact.before_tokens} → ${compact.after_tokens} tokens，${compact.duration_ms} ms${compact.target_met === false ? '；近期保留内容超过目标' : ''}`,
@@ -245,10 +253,10 @@ function renderRuntimeContextUsage(usage = {}, configuredWindow = 0) {
     const count = value => Math.round(value).toLocaleString();
     const label = usage.source === 'api'
         ? runtimeSettingsText('上轮上下文占用（API 实测）', 'Last context usage (API measured)')
-        : runtimeSettingsText('上下文占用（估算）', 'Context usage (estimated)');
+        : runtimeSettingsText('当前上下文占用（估算，待 API 校准）', 'Current context usage (estimated; awaiting API measurement)');
     const percent = pct === 0 ? '0' : pct < 1 ? pct.toFixed(2) : pct.toFixed(1);
     return `<div class="runtime-context-usage">
-        <div class="runtime-context-usage-heading"><span>${label}${usage.source === 'estimate' ? runtimeSettingsText(' · 估算', ' · Estimated') : ''}</span><strong>${percent}%</strong></div>
+        <div class="runtime-context-usage-heading"><span>${label}</span><strong>${percent}%</strong></div>
         <div class="runtime-context-usage-count">${count(used)} / ${count(budget)} tokens</div>
         <div class="runtime-context-usage-bar" role="meter" aria-label="${label}" aria-valuemin="0" aria-valuemax="${budget}" aria-valuenow="${Math.min(used, budget)}">
             ${groups.filter(g => g.value > 0).map(g => `<span style="width:${Math.min(100, g.value * scale / budget * 100)}%;background:${g.color}" title="${g.label}: ${count(g.value * scale)} tokens"></span>`).join('')}

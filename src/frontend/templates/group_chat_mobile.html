@@ -30,7 +30,11 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" crossorigin="anonymous"></script>
 <script src="{{ url_for('static', filename='js/snapshot_zip_progress.js') }}?v=20260331-progress"></script>
 <link rel="stylesheet" href="/static/css/markdown-shared.css">
-<link rel="stylesheet" href="/static/css/theme.css?v=20261002-ui">
+<link rel="stylesheet" href="/static/css/theme.css?v=20261002-fold">
+<script src="/static/js/components.js?v=20261002-runtime-menu"></script>
+<link rel="stylesheet" href="/static/css/external-agent-settings.css?v=20261002-connect">
+<script src="/static/js/runtime-presentation.js?v=20261002-fold"></script>
+<script src="/static/js/external-agent-settings.js?v=20261002-connect"></script>
 <script src="/static/js/markdown-shared.js"></script>
 <script src="/static/js/tinyfish-live-shared.js"></script>
 <script src="/static/vendor/pretext.global.js?v=20260402-pretext"></script>
@@ -4699,6 +4703,9 @@
             <svg class="ui-icon"><use href="/static/icons.svg#mic"/></svg><span class="ui-menu-label" data-i18n="voice_short">语音</span>
           </button>
           <div class="ui-menu-heading" data-i18n="advanced_options">高级选项</div>
+          <button type="button" class="ui-menu-item" id="action-external-settings" style="display:none" onclick="closeInputActions(); openExternalAgentSettings(_findPrivateChatAgent()?.agent?.agent_id)">
+            <svg class="ui-icon"><use href="/static/icons.svg#sliders"/></svg><span class="ui-menu-label">模型、思考与工具</span>
+          </button>
           <button type="button" class="ui-menu-item" id="action-main-history" style="display:none" onclick="closeInputActions(); openPrivateChatAgentHistory();">
             <svg class="ui-icon"><use href="/static/icons.svg#history"/></svg><span class="ui-menu-label" data-i18n="action_main_history">主端历史</span>
           </button>
@@ -4896,6 +4903,14 @@
     <div class="run-mode-option" data-mode="auto" onclick="selectRunMode('auto')">
         <div class="run-mode-option-info"><div class="run-mode-option-title" data-i18n="run_mode_auto">Auto · 替我审核</div>
         <div class="run-mode-option-desc" data-i18n="run_mode_auto_desc">内置 Agent 根据你的任务代审；无法确定时交给你决定</div></div><div class="run-mode-option-check">✓</div>
+    </div>
+    <div style="padding:12px 16px;border-top:1px solid var(--border)">
+      <label style="display:flex;justify-content:space-between;gap:12px;align-items:center">命令沙盒
+        <input type="checkbox" id="mobile-command-sandbox" onchange="saveMobileSandbox(this)">
+      </label>
+      <p style="font-size:12px;color:var(--text-secondary)">默认关闭。开启后限制命令网络、写入和资源使用；组件不可用时拒绝执行。保存到当前用户，已有会话的单独设置优先。</p>
+      <div id="mobile-sandbox-component"></div>
+      <div id="mobile-sandbox-result" role="status" style="font-size:12px"></div>
     </div>
     <div class="run-mode-warning" id="run-mode-warning-manual" style="display:none;" data-i18n="run_mode_warning_manual">⚠️ 群聊中 交流模式下 Agent 无法回到群里发言（缺工具调用权限）。如需"先看再决定"请改用只读模式。</div>
     <div class="run-mode-hint" data-i18n="run_mode_hint">该设置仅在本浏览器生效；CLI 与其他设备各自独立设置。</div>
@@ -9883,15 +9898,17 @@ async function renderCreateAgentAcpPanel() {
       <div style="font-weight:700;margin-bottom:6px;color:var(--text);">${esc(t('mobile_add_acp_title'))}</div>
       <label>${esc(t('mobile_add_ext_platform'))}</label>
       <select id="ca-acp-platform">${platformOpts}</select>
+      ${componentControlMarkup('acpx')}
       <label>${esc(t('mobile_add_ext_name'))}</label>
       <input type="text" id="ca-acp-name" placeholder="my_agent" autocomplete="off">
       <label>${esc(t('mobile_add_runtime_name'))}</label>
-      <input type="text" id="ca-acp-runtime" placeholder="coder" autocomplete="off">
+      <input type="text" id="ca-acp-runtime" placeholder="留空自动生成 / Automatic" autocomplete="off">
       <label>${esc(t('mobile_add_ext_tag'))}</label>
       <select id="ca-acp-tag" class="ext-tag-select">${tagOpts}</select>
       <input type="text" id="ca-acp-tag-custom" class="ext-tag-custom" placeholder="${esc(t('agent_tag_placeholder'))}" style="margin-top:8px;display:none;">
       <button type="button" class="form-submit" id="ca-acp-submit" onclick="mobileSubmitCreateAcpAgent()">${esc(t('mobile_create_ext_submit'))}</button>
     </div>`;
+  initComponentControls(panel);
   const tagSel = document.getElementById('ca-acp-tag');
   const tagCust = document.getElementById('ca-acp-tag-custom');
   tagSel.onchange = () => { tagCust.style.display = tagSel.value === 'custom' ? 'block' : 'none'; };
@@ -9916,7 +9933,7 @@ async function mobileSubmitCreateAcpAgent() {
   const name = String((document.getElementById('ca-acp-name') || {}).value || '').trim();
   const runtime = String((document.getElementById('ca-acp-runtime') || {}).value || '').trim();
   const platform = String((document.getElementById('ca-acp-platform') || {}).value || '');
-  if (!name || !runtime) {
+  if (!name) {
     toast(t('mobile_add_enter_name'));
     return;
   }
@@ -9927,7 +9944,7 @@ async function mobileSubmitCreateAcpAgent() {
   if (btn) { btn.disabled = true; btn.dataset.orig = btn.textContent; btn.textContent = t('adding'); }
   try {
     // The runtime name is the new agent's number: its session in that runtime.
-    const agent = await registerAgent({ name, platform, agent_id: runtime }, team, _mobilePickedTag('ca-acp-tag', 'ca-acp-tag-custom'));
+    const agent = await registerAgent({ name, platform, ...(runtime ? { agent_id: runtime } : {}) }, team, _mobilePickedTag('ca-acp-tag', 'ca-acp-tag-custom'));
     if (await startPrivateChat(agent.agent_id)) {
       closeCreateAgentModal();
       invalidateContactsPrefetch();
@@ -10747,6 +10764,12 @@ function toggleInputActions(event) {
   const show = !menu.classList.contains('show');
   // 私聊（你 + 一个 agent）才有「主端历史」
   if (show) document.getElementById('action-main-history').style.display = _findPrivateChatAgent() ? '' : 'none';
+  if (show) {
+    const member = _findPrivateChatAgent();
+    const item = document.getElementById('action-external-settings');
+    if (item) item.style.display = member && !member.remote && member.agent &&
+      !['webot', 'http', 'llm', 'openclaw'].includes(member.agent.platform) ? '' : 'none';
+  }
   menu.classList.toggle('show', show);
   btn.classList.toggle('active', show);
 }
@@ -13287,8 +13310,62 @@ async function pollTypingStatus() {
   try {
     const data = await api('GET', `/proxy_groups/${encodeURIComponent(currentGroupId)}/typing`);
     updateTypingBar(data.typing || []);
+    await pollExternalToolActivity(data.typing || []);
   } catch (_) {
     // silent - don't break polling on error
+  }
+}
+
+const _externalToolCursors = new Map();
+const _externalToolRows = new Map();
+let _externalToolGroup = null;
+let _externalToolBusy = new Set();
+async function pollExternalToolActivity(typing) {
+  const groupId = currentGroupId;
+  if (_externalToolGroup !== groupId) {
+    _externalToolGroup = groupId;
+    _externalToolRows.clear();
+    _externalToolBusy.clear();
+    document.getElementById('acp-mobile-tool-activity')?.remove();
+  }
+  const members = (currentMembers || []).filter(m => m.is_agent && !m.remote &&
+    m.agent && !['webot', 'openclaw', 'http', 'llm'].includes(m.agent.platform));
+  const busy = new Set(members.filter(m => typing.includes(m.name)).map(m => m.agent.agent_id));
+  const selected = members.filter(m => busy.has(m.agent.agent_id) || _externalToolBusy.has(m.agent.agent_id));
+  _externalToolBusy = busy;
+  const completedThisPoll = new Set();
+  await Promise.all(selected.slice(0, 8).map(async member => {
+    const id = member.agent.agent_id;
+    try {
+      const data = await api('GET', `/v1/agents/${encodeURIComponent(id)}/events?after=${_externalToolCursors.get(id) || 0}`);
+      if (currentGroupId !== groupId) return;
+      _externalToolCursors.set(id, data.cursor || 0);
+      for (const event of data.events || []) {
+        if (event.group_id !== groupId || !event.type.startsWith('acpx_tool_')) continue;
+        const key = id + ':' + event.tool_call_id;
+        if (event.type === 'acpx_tool_end') completedThisPoll.add(member.name + ':' + event.tool_call_id);
+        _externalToolRows.set(key, {...(_externalToolRows.get(key) || {}), ...event, agentName: member.name});
+      }
+    } catch (_) { /* Foreign or removed agents expose no events. */ }
+  }));
+  if (currentGroupId !== groupId || !_externalToolRows.size) return;
+  let panel = document.getElementById('acp-mobile-tool-activity');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'acp-mobile-tool-activity';
+    panel.className = 'acp-mobile-tools';
+    panel.setAttribute('aria-live', 'polite');
+    document.getElementById('chat-body').appendChild(panel);
+  }
+  const rows = [..._externalToolRows.values()].slice(-6);
+  const previouslyOpen = new Set([...panel.querySelectorAll('details[open]')].map(el => el.dataset.key));
+  panel.innerHTML = rows.map(event => `<details data-key="${esc(event.agentName + ':' + event.tool_call_id)}" ${!['completed','failed'].includes(event.status) || (previouslyOpen.has(event.agentName + ':' + event.tool_call_id) && !completedThisPoll.has(event.agentName + ':' + event.tool_call_id)) ? 'open' : ''}><summary>${esc(event.agentName)} · ${esc(event.title || event.kind || '工具')} · ${event.status === 'failed' ? '失败' : event.status === 'completed' ? '完成' : '调用中'}</summary><pre>${esc(event.content_text || '')}</pre></details>`).join('');
+  // Keep only the displayed recent calls, including pending calls.
+  if (_externalToolRows.size > 24) {
+    const pending = [..._externalToolRows.entries()].filter(([, e]) => !['failed', 'completed'].includes(e.status));
+    const recent = [..._externalToolRows.entries()].slice(-12);
+    _externalToolRows.clear();
+    [...pending, ...recent].forEach(([key, value]) => _externalToolRows.set(key, value));
   }
 }
 
@@ -13340,6 +13417,15 @@ function toggleChatActions() {
   updateMuteBtn();
   const pinLabel = document.getElementById('pin-action-label');
   if (pinLabel) pinLabel.textContent = isPinned(currentGroupId) ? t('unpin_chat') : t('pin_chat');
+  // 二级菜单：私聊（两人群：用户 + 一个 agent）时显示「主端历史」入口
+  const historyItem = document.getElementById('action-main-history');
+  if (historyItem) {
+    historyItem.style.display = _findPrivateChatAgent() ? '' : 'none';
+  }
+  const member = _findPrivateChatAgent();
+  const externalItem = document.getElementById('action-external-settings');
+  if (externalItem) externalItem.style.display = member && !member.remote && member.agent &&
+    !['webot', 'http', 'llm', 'openclaw'].includes(member.agent.platform) ? '' : 'none';
 }
 
 // 取当前群组的"唯一 agent"（两人群：1 用户 + 1 agent）。其他场景返回 null。
@@ -14240,7 +14326,7 @@ function _ahRenderMessages(messages) {
           }
         }
       }
-      const body = textContent ? esc(textContent) : `(${esc(t('ah_image_placeholder'))})`;
+      const body = textContent ? RuntimePresentation.user(textContent, msg) : `(${esc(t('ah_image_placeholder'))})`;
       parts.push(`<div class="ah-row user">
         <div class="ah-bubble user">${imagesHtml}${body}</div>
       </div>`);
@@ -14249,7 +14335,7 @@ function _ahRenderMessages(messages) {
       parts.push(`<div class="ah-row tool">
         <div class="ah-bubble tool">
           <div class="ah-tool-title">🔧 ${esc(t('ah_tool_return'))}: ${toolName}</div>
-          ${_ahRenderPager(msg.content, t('ah_tool_full_output'))}
+          ${RuntimePresentation.tool(_ahRenderPager(msg.content, t('ah_tool_full_output')), msg.tool_name || '工具轨迹')}
         </div>
       </div>`);
     } else {
@@ -14395,6 +14481,11 @@ async function openAgentSettingsSheet(agentId) {
   }
   const s = agent.settings || {};
   const webot = agent.platform === 'webot';
+  let externalAcp = false;
+  if (!webot && window.ExternalAgentSettings) {
+    try { externalAcp = (await ExternalAgentSettings.capabilities(agentId)).transport === 'acpx'; }
+    catch (_) { /* Leave common settings available if capability lookup fails. */ }
+  }
   const meta = (s.meta && typeof s.meta === 'object') ? s.meta : {};
   const acp = (meta.acp && typeof meta.acp === 'object') ? meta.acp : {};
   const zh = _currentLang === 'zh';
@@ -14420,17 +14511,17 @@ async function openAgentSettingsSheet(agentId) {
       <div class="tc-sheet-body" style="display:flex;flex-direction:column;gap:10px;">
         ${field('agent-settings-name', zh ? '名称' : 'Name', agent.name)}
         <label>${esc(zh ? '人设' : 'Persona')}</label><textarea id="agent-settings-persona" rows="5" style="resize:vertical;">${esc(s.persona || '')}</textarea>
-        ${webot ? '' : `
-          ${field('agent-settings-model', zh ? '模型 / Session 标记' : 'Model / session marker', s.model || '', 'placeholder="agent:name:clawcrosschat"')}
+        ${externalAcp ? '<button type="button" id="agent-native-settings">模型、思考强度与 ClawCross 工具</button>' : webot ? '' : `
+          ${field('agent-settings-model', zh ? '模型' : 'Model', s.model || '')}
           ${field('agent-settings-timeout', zh ? '超时（秒）' : 'Timeout (seconds)', acp.timeout_sec || '', 'inputmode="numeric" placeholder="180"')}
-          ${field('agent-settings-perms', zh ? '权限策略' : 'Permission policy', acp.non_interactive_permissions || '', 'placeholder="read-only / workspace-write / ..."')}
+          ${field('agent-settings-perms', zh ? '无人值守权限策略' : 'Non-interactive permission policy', acp.non_interactive_permissions || '', 'placeholder="deny / fail"')}
           <label>${esc(zh ? '自动批准' : 'Approve all')}</label>
           <select id="agent-settings-approve">
             <option value="" ${typeof acp.approve_all === 'boolean' ? '' : 'selected'}>${esc(zh ? '使用环境默认' : 'Use env default')}</option>
             <option value="true" ${acp.approve_all === true ? 'selected' : ''}>${esc(zh ? '开启' : 'On')}</option>
             <option value="false" ${acp.approve_all === false ? 'selected' : ''}>${esc(zh ? '关闭' : 'Off')}</option>
           </select>
-          ${field('agent-settings-ttl', 'TTL', acp.ttl_sec || '', 'inputmode="numeric" placeholder="86400"')}`}
+          ${field('agent-settings-ttl', 'TTL', acp.ttl_sec || '', 'inputmode="numeric" placeholder="300"')}`}
         <div class="field-note">${esc(agent.agent_id)}</div>
       </div>
       <div class="tc-sheet-footer">
@@ -14441,6 +14532,7 @@ async function openAgentSettingsSheet(agentId) {
   const close = () => { overlay.remove(); sheet.remove(); };
   overlay.addEventListener('click', close);
   sheet.querySelector('#agent-settings-close').addEventListener('click', close);
+  sheet.querySelector('#agent-native-settings')?.addEventListener('click', () => ExternalAgentSettings.open(agentId));
   const val = (id) => String((document.getElementById(id) || {}).value || '').trim();
   sheet.querySelector('#agent-settings-save').addEventListener('click', async () => {
     const name = val('agent-settings-name');
@@ -14449,7 +14541,7 @@ async function openAgentSettingsSheet(agentId) {
       return;
     }
     const settings = { persona: val('agent-settings-persona') };
-    if (!webot) {
+    if (!webot && !externalAcp) {
       const nextAcp = Object.assign({}, acp);
       const setOrDrop = (key, value) => { if (value === '' || value == null) delete nextAcp[key]; else nextAcp[key] = value; };
       setOrDrop('timeout_sec', val('agent-settings-timeout') ? Number(val('agent-settings-timeout')) : '');
@@ -14603,9 +14695,32 @@ function refreshRunModeUI() {
 }
 
 function openRunModeSheet() {
+  loadMobileSandbox();
   refreshRunModeUI();
   document.getElementById('run-mode-sheet-overlay').classList.add('show');
   document.getElementById('run-mode-sheet').classList.add('show');
+}
+
+async function loadMobileSandbox() {
+  const field = document.getElementById('mobile-command-sandbox');
+  field.disabled = true;
+  const container = document.getElementById('mobile-sandbox-component');
+  container.innerHTML = componentControlMarkup('srt');
+  initComponentControls(container);
+  try {
+    const data = await api('GET', '/proxy_webot_runtime_settings');
+    field.checked = data.settings.approval.command_sandbox === 'srt';
+    document.getElementById('mobile-sandbox-result').textContent = '';
+    field.disabled = false;
+  } catch (error) { document.getElementById('mobile-sandbox-result').textContent = error.message; }
+}
+async function saveMobileSandbox(field) {
+  field.disabled = true;
+  try {
+    await api('POST', '/proxy_webot_runtime_settings', {session_id:'', settings:{approval:{command_sandbox: field.checked ? 'srt' : 'off'}}});
+    document.getElementById('mobile-sandbox-result').textContent = '已保存，下次调用生效。';
+  } catch (error) { field.checked = !field.checked; document.getElementById('mobile-sandbox-result').textContent = error.message; }
+  finally { field.disabled = false; }
 }
 
 function closeRunModeSheet() {
@@ -15695,11 +15810,14 @@ function renderSettings(settings) {
     let html = `<div class="settings-hint">${t('settings_hint')}</div>`;
     html += _renderCurrentUserPasswordCard();
 
+    html += `<div class="settings-group" id="settings-external-agents"><div class="settings-group-title" onclick="this.parentElement.classList.toggle('collapsed')">外部 Agent <span class="settings-chevron">▼</span></div><div class="settings-group-body">${componentSettingsMarkup('agents')}</div></div>`;
+
     // Tunnel control section
     html += '<div class="settings-group">';
     html += `<div class="settings-group-title" onclick="this.parentElement.classList.toggle('collapsed')">${t('tunnel_control')} <span class="settings-chevron">▼</span></div>`;
     html += '<div class="settings-group-body">';
     html += '<div class="settings-field" style="display:flex;flex-direction:row;align-items:center;gap:8px;flex-wrap:wrap;">';
+    html += componentControlMarkup('cloudflared');
     html += `<span id="tunnel-status-text" style="font-size:13px;color:#888;">${t('tunnel_loading')}</span>`;
     html += `<button id="tunnel-toggle-btn" onclick="toggleTunnel()" style="padding:4px 14px;border-radius:6px;border:1px solid #ccc;background:#f5f5f5;color:#333;cursor:pointer;font-size:12px;" disabled>${t('tunnel_start')}</button>`;
     html += '</div>';
@@ -15720,6 +15838,8 @@ function renderSettings(settings) {
         });
         if (group.id === 'llm') {
             html += _renderLlmGroup(settings);
+        } else if (group.id === 'bots') {
+            html += _renderGroup({title:t(group.labelKey),help:SETTINGS_GROUP_HELP[group.id] ? t(SETTINGS_GROUP_HELP[group.id]) : '',components:'channels'}, groupKeys, settings);
         } else if (group.id === 'tinyfish') {
             html += _renderTinyfishGroup(settings);
         } else {
@@ -15737,6 +15857,7 @@ function renderSettings(settings) {
     }
 
     body.innerHTML = html;
+    initComponentControls(body);
     _refreshTunnelStatus();
     _initSettingsLlmGroup(settings);
     refreshTinyfishMonitorPanel(true);
@@ -15790,6 +15911,7 @@ function _renderGroup(groupMeta, keys, settings) {
     if (groupHelp) {
         html += '<div style="margin-bottom:10px;font-size:12px;line-height:1.5;color:#6b7280;">' + escapeHtml(groupHelp) + '</div>';
     }
+    if (groupMeta.components) html += componentSettingsMarkup(groupMeta.components);
     for (const key of keys) {
         const val = settings[key] || '';
         const isPassword = /KEY|TOKEN|SECRET|PASSWORD/i.test(key);
@@ -16568,7 +16690,7 @@ async function showAgentStatus(agentId, name) {
     const s = await agentControl(agentId, 'status');
     const emoji = s.state === 'running' ? '🟢' : s.state === 'idle' ? '⚪' : '🔴';
     let msg = `${emoji} ${name}\n${t('acp_status_label')}: ${s.state || 'unknown'}`;
-    if (s.context && s.context.percent != null) msg += `\ncontext: ${s.context.percent}%`;
+    if (s.context && s.context.percent != null) msg += `\ncontext: ${s.context.percent}%${s.context.source === 'estimate' ? ' (估算 / estimated)' : ''}`;
     if (s.pending) msg += `\npending: ${s.pending}`;
     if (s.detail) msg += `\n${t('acp_reason_label')}: ${s.detail}`;
     alert(msg);
@@ -16800,7 +16922,7 @@ async function openSessionsSubpage() {
         html += '<div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:8px;">' + esc(p) + ' (' + sessions.length + ')</div>';
         sessions.forEach(function(s) {
           html += '<div style="font-size:12px;padding:3px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">';
-          html += '<span style="color:var(--text-secondary);word-break:break-all;flex:1;" title="' + esc(s.session_id || '') + '">' + esc(s.name || s.session_id || '-') + '</span>';
+          html += '<span style="color:var(--text-secondary);word-break:break-all;flex:1;" title="' + esc(s.session_id || '') + '">' + esc(s.agent_name || s.name || s.session_id || '-') + '</span>';
           html += '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">';
           html += '<span style="color:var(--text-secondary);white-space:nowrap;font-size:11px;">' + esc(s.last_used_at || '-') + '</span>';
           html += '<button onclick="closeAcpSession(\'' + esc(p).replace(/'/g, "\\'") + '\',\'' + esc(s.name || '').replace(/'/g, "\\'") + '\',\'' + esc(s.cwd || '').replace(/'/g, "\\'") + '\')" style="padding:2px 8px;border-radius:4px;font-size:11px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;cursor:pointer;">\u5173\u95ed</button>';

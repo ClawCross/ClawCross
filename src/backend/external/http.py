@@ -80,7 +80,7 @@ class HttpRuntime(Runtime):
             data = response.json()
             return session.Sent(ok=True, content=_reply_text(data), raw=data)
 
-        reply = await session.exchange(agent, connect_type="http", prompt=messages, context=context, send=send)
+        reply = await session.exchange(agent, connect_type="http", prompt=messages, context=context, send=send, prepared=prepared)
         if reply.ok:
             session.remember_turn(self._store, agent, prepared)
         return reply

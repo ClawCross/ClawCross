@@ -141,7 +141,11 @@ class LazyToolRegistry:
         Only includes names and short descriptions, not full schemas.
         This reduces prompt size significantly.
         """
-        lines = ["Long-tail tools available through tool_call. Use tool_search for their parameters:"]
+        lines = [
+            "Long-tail tools available through tool_call. If you are unsure of a tool's "
+            "parameters, required fields, or accepted values, use tool_search first; do not guess. "
+            "Search by capability or exact tool name to retrieve its full schema:"
+        ]
 
         # Group by category
         by_category: dict[str, list[ToolRegistryEntry]] = {}
