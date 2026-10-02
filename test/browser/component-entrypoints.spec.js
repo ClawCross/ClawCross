@@ -5,6 +5,8 @@ const settings={context:{auto_compact:true,context_window_tokens:1000000,history
 test('Studio plus keeps runtime settings while global settings expose contextual component downloads',async({page})=>{
   const installs=[];
   await page.route('**/proxy_check_session',route=>route.fulfill({contentType:'application/json',body:'{"valid":true,"user_id":"tester"}'}));
+  await page.route('**/api/llm_config_status',route=>route.fulfill({contentType:'application/json',body:'{"configured":true}'}));
+  await page.route('**/api/setup_status',route=>route.fulfill({contentType:'application/json',body:'{"llm_configured":true}'}));
   await page.route('**/proxy_webot_runtime_settings**',route=>route.fulfill({contentType:'application/json',body:JSON.stringify({settings})}));
   await page.route('**/proxy_components/*',route=>{
     const name=new URL(route.request().url()).pathname.split('/').pop();
@@ -13,6 +15,8 @@ test('Studio plus keeps runtime settings while global settings expose contextual
   });
   await page.goto('/studio');
   await page.evaluate(()=>{currentLang='zh-CN';currentSessionId='s1';document.getElementById('login-screen').style.display='none';document.getElementById('chat-screen').style.display='flex';});
+  await expect(page.locator('#app-splash')).toBeHidden();
+  await expect(page.locator('#setup-wizard-modal')).toBeHidden();
   const menu=page.locator('#studio-more-menu');
   await menu.locator(':scope > summary').click();
   await page.locator('#studio-runtime-menu > summary').click();
