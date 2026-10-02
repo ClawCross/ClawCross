@@ -94,10 +94,10 @@ const i18n = {
         agent_center_native_settings: "模型、思考强度与 ClawCross 工具",
         agent_center_runtime_control: "运行控制",
         agent_center_runtime_details: "运行详情与审核",
-        studio_conversations: "对话",
-        studio_new_conversation: "新建对话",
-        studio_history: "最近对话",
-        studio_history_empty: "暂无历史对话",
+        studio_conversations: "Agents",
+        studio_new_conversation: "新建 Agent",
+        studio_history: "最近 Agent",
+        studio_history_empty: "暂无 Agent",
         studio_openclaw_new_hint: "OpenClaw 会话请在 Agent 中心管理。",
 
         project_update_banner: '发现新版本 {latest}，点击查看并更新',
@@ -139,7 +139,7 @@ const i18n = {
         hmenu_lang: '语言',
         hmenu_public: '公开',
         tab_agent_center: 'Agents',
-        agent_center_kicker: '你的协作空间',
+        agent_center_kicker: '观察 · 互动 · 培养',
         agent_center_title: 'Agent 中心',
         agent_center_refresh_status: '刷新状态',
         agent_center_search: '查找',
@@ -972,10 +972,10 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         agent_center_native_settings: "Model, reasoning and ClawCross tools",
         agent_center_runtime_control: "Runtime controls",
         agent_center_runtime_details: "Runtime details and approvals",
-        studio_conversations: "Conversations",
-        studio_new_conversation: "New conversation",
-        studio_history: "Recent conversations",
-        studio_history_empty: "No conversations yet",
+        studio_conversations: "Agents",
+        studio_new_conversation: "New Agent",
+        studio_history: "Recent Agents",
+        studio_history_empty: "No Agents yet",
         studio_openclaw_new_hint: "Manage OpenClaw sessions in Agent Center.",
 
         project_update_banner: 'New version {latest} is available. Click to review and update.',
@@ -1017,7 +1017,7 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         hmenu_lang: 'Language',
         hmenu_public: 'Public',
         tab_agent_center: 'Agents',
-        agent_center_kicker: 'Your workspace',
+        agent_center_kicker: 'Observe · Interact · Grow',
         agent_center_title: 'Agent Center',
         agent_center_refresh_status: 'Refresh status',
         agent_center_search: 'Find',
@@ -5166,9 +5166,6 @@ function renderStudioConversations() {
     const selected = mode === 'acp' ? acpResolveSessionName() : mode === 'openclaw' ? (_ocSelectedAgent?.name || '') : currentSessionId;
     const options = [...(select?.options || [])].filter(option => option.value);
     const items = options.map(option => ({id: option.value, title: option.textContent}));
-    if (mode !== 'openclaw' && selected && !items.some(item => item.id === selected)) {
-        items.unshift({id: selected, title: t('studio_new_conversation')});
-    }
     host.replaceChildren();
     for (const item of items) {
         const button = document.createElement('button');
@@ -5187,9 +5184,7 @@ function renderStudioConversations() {
             if (mode === 'internal') await openAgentSession(item.id);
             else if (mode === 'openclaw') { select.value = item.id; ocOnAgentChange(); }
             else {
-                // An unsent draft has no select option yet; its identity stays in the hidden input.
-                if (options.some(option => option.value === item.id)) select.value = item.id;
-                else { select.value = ''; document.getElementById('oc-acp-session-name').value = item.id; }
+                select.value = item.id;
                 acpOnSessionPickChange();
             }
             renderStudioConversations();
@@ -5221,9 +5216,6 @@ async function studioNewConversation() {
             document.getElementById('oc-acp-session-name').value = id;
             localStorage.setItem('clawcross_acp_session_name_' + _acpTool, id);
             acpNotifySessionContextChanged();
-            const created = await acpEnsureSession();
-            if (created) await acpLoadSessionsList();
-            if (created && [...pick.options].some(option => option.value === id)) { pick.value = id; acpOnSessionPickChange(); }
         }
     } finally {
         renderStudioConversations();
@@ -5236,10 +5228,6 @@ function ocInternalRepaintSessionPick() {
     if (!sel || _ocChatMode !== 'internal') return;
     const agentMap = _cachedAgentMap || {};
     let list = Array.isArray(_mergedSessionsCache) ? _mergedSessionsCache.filter(item => !agentMap[item.session_id]?.platform || agentMap[item.session_id].platform === 'webot') : [];
-    const ids = new Set(list.map((s) => s.session_id));
-    if (currentSessionId && !ids.has(currentSessionId)) {
-        list = [{ session_id: currentSessionId, title: '', message_count: 0 }, ...list];
-    }
     const prev = sel.value;
     sel.innerHTML = '';
     const o0 = document.createElement('option');
@@ -8448,6 +8436,12 @@ async function handleSend() {
             return;
         }
         if (!response.ok) throw new Error(await extractErrorMessageFromResponse(response, "Agent error"));
+
+        // Unsent drafts stay out of the rail. Refresh persisted Agents after the first request.
+        if (streamOwns()) {
+            if (chatRun.mode === 'internal') void loadSessionList();
+            else if (chatRun.mode === 'acp') void acpLoadSessionsList();
+        }
 
         if (streamOwns()) {
             agentDiv = appendMessage('', false);
@@ -15851,30 +15845,6 @@ async function acpLoadSessionsList() {
     } finally {
         sel.disabled = false;
         renderStudioConversations();
-    }
-}
-
-async function acpEnsureSession() {
-    if (_ocChatMode !== 'acp' || !_acpTool) {
-        alert(t('oc_select_acp_hint'));
-        return;
-    }
-    const ensureBtn = document.querySelector('.oc-acp-session-ensure');
-    const agentId = acpComputeSessionNameFromInputs();
-    acpSetSessionStatus(t('oc_acp_session_warming'), '');
-    if (ensureBtn) ensureBtn.disabled = true;
-    try {
-        await studioEnsureAgent(agentId, { platform: _acpTool });
-        acpRememberResolvedSessionName(agentId);
-        acpSetSessionStatus(t('oc_acp_session_ready') + ': ' + agentId, 'ok');
-        return true;
-    } catch (e) {
-        const msg = e && e.message ? e.message : String(e || '');
-        console.error('acpEnsureSession failed', e);
-        acpSetSessionStatus(t('oc_acp_session_failed') + ': ' + msg, 'error');
-        return false;
-    } finally {
-        if (ensureBtn) ensureBtn.disabled = false;
     }
 }
 
