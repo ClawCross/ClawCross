@@ -81,6 +81,30 @@ def _ensure_context_compaction_table(conn: sqlite3.Connection) -> None:
         )
         """
     )
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS context_compaction_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            thread_id TEXT NOT NULL,
+            summary TEXT NOT NULL DEFAULT '',
+            compacted_until INTEGER NOT NULL DEFAULT 0,
+            source_message_count INTEGER NOT NULL DEFAULT 0,
+            summary_token_estimate INTEGER NOT NULL DEFAULT 0,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            updated_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(thread_id, updated_at)
+        )
+    """)
+    # Seed existing latest-only records once, without changing the read path
+    # or the compare-and-swap protection used by current workers.
+    conn.execute("""
+        INSERT OR IGNORE INTO context_compaction_history
+        (thread_id, summary, compacted_until, source_message_count,
+         summary_token_estimate, metadata_json, updated_at, created_at)
+        SELECT thread_id, summary, compacted_until, source_message_count,
+               summary_token_estimate, metadata_json, updated_at, created_at
+        FROM context_compactions
+    """)
 
 
 def _row_to_context_compaction(row: sqlite3.Row | None) -> ContextCompactionRecord | None:
@@ -134,9 +158,9 @@ def save_context_compaction(
     now = _utc_now()
     with sqlite3.connect(path, timeout=30) as conn:
         conn.row_factory = sqlite3.Row
+        conn.execute("BEGIN IMMEDIATE")
         _ensure_context_compaction_table(conn)
         if expected_updated_at is not None:
-            conn.execute("BEGIN IMMEDIATE")
             current = conn.execute(
                 "SELECT updated_at FROM context_compactions WHERE thread_id = ?", (thread_id,),
             ).fetchone()
@@ -167,6 +191,14 @@ def save_context_compaction(
                 now,
             ),
         )
+        conn.execute("""
+            INSERT INTO context_compaction_history
+            (thread_id, summary, compacted_until, source_message_count,
+             summary_token_estimate, metadata_json, updated_at, created_at)
+            SELECT thread_id, summary, compacted_until, source_message_count,
+                   summary_token_estimate, metadata_json, updated_at, created_at
+            FROM context_compactions WHERE thread_id = ?
+        """, (thread_id,))
         conn.commit()
         row = conn.execute(
             """
@@ -186,17 +218,12 @@ def delete_context_compaction(
 ) -> None:
     for path in candidate_checkpoint_db_paths_for_thread(store_path, thread_id):
         with sqlite3.connect(path, timeout=30) as conn:
-            try:
-                conn.execute(
-                    """
-                    DELETE FROM context_compactions
-                    WHERE thread_id = ?
-                    """,
-                    (thread_id,),
-                )
-            except sqlite3.OperationalError as exc:
-                if not _is_missing_table_error(exc):
-                    raise
+            for table in ("context_compactions", "context_compaction_history"):
+                try:
+                    conn.execute(f"DELETE FROM {table} WHERE thread_id = ?", (thread_id,))
+                except sqlite3.OperationalError as exc:
+                    if not _is_missing_table_error(exc):
+                        raise
             conn.commit()
 
 
@@ -463,7 +490,7 @@ async def delete_thread_records(db_path: str, thread_id: str) -> None:
     """
     for path in candidate_checkpoint_db_paths_for_thread(db_path, thread_id):
         async with aiosqlite.connect(path) as db:
-            for table in ("context_messages", "session_system_prompts", "context_compactions", "agent_state", "context_usage", "checkpoints", "writes"):
+            for table in ("context_messages", "session_system_prompts", "context_compactions", "context_compaction_history", "agent_state", "context_usage", "checkpoints", "writes"):
                 try:
                     await db.execute(f"DELETE FROM {table} WHERE thread_id = ?", (thread_id,))
                 except sqlite3.OperationalError as exc:
@@ -481,7 +508,7 @@ async def delete_thread_records_like(db_path: str, pattern: str) -> None:
     """
     for path in iter_checkpoint_db_paths(db_path):
         async with aiosqlite.connect(path) as db:
-            for table in ("context_messages", "session_system_prompts", "context_compactions", "agent_state", "context_usage", "checkpoints", "writes"):
+            for table in ("context_messages", "session_system_prompts", "context_compactions", "context_compaction_history", "agent_state", "context_usage", "checkpoints", "writes"):
                 try:
                     await db.execute(f"DELETE FROM {table} WHERE thread_id LIKE ?", (pattern,))
                 except sqlite3.OperationalError as exc:
@@ -516,6 +543,7 @@ async def _maybe_delete_empty_checkpoint_db(path: Path, store_path: str) -> bool
         total_rows += await _table_row_count(db, "context_messages")
         total_rows += await _table_row_count(db, "session_system_prompts")
         total_rows += await _table_row_count(db, "context_compactions")
+        total_rows += await _table_row_count(db, "context_compaction_history")
 
     if total_rows > 0:
         return False
