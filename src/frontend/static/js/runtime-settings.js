@@ -120,7 +120,7 @@ async function loadRuntimeSettingsScope() {
                     <select data-section="approval" data-key="mode" class="runtime-settings-input" onchange="updateRuntimeReviewerHint()">
                         <option value="chat" ${approval.mode === 'chat' ? 'selected' : ''}>${text('交流模式 · 无工具', 'Chat · No tools')}</option>
                         <option value="readonly" ${approval.mode === 'readonly' ? 'selected' : ''}>${text('只读模式', 'Read-only')}</option>
-                        <option value="bypass" ${approval.mode === 'bypass' ? 'selected' : ''}>${text('Bypass · 全工具', 'Bypass · All tools')}</option>
+                        <option value="bypass" ${approval.mode === 'bypass' ? 'selected' : ''}>${text('Manual · 全工具', 'Manual · All tools')}</option>
                         <option value="auto" ${(approval.mode || 'auto') === 'auto' ? 'selected' : ''}>${text('Auto · 替我审核', 'Auto · Review for me')}</option>
                     </select>
                 </label>

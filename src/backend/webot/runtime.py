@@ -99,7 +99,7 @@ def build_session_mode_message(mode: str | None, reason: str = "") -> str:
     elif normalized_mode == "auto":
         base = "当前会话处于 Auto 模式。工具策略标记为需要批准的操作由独立模型代审；允许和禁止规则保持原样，依据不足时由用户决定。"
     elif normalized_mode == "bypass":
-        base = "当前会话处于 Bypass 模式。工具操作跳过批准确认；显式禁止规则和命令硬拦截仍然生效。"
+        base = "当前会话处于 Manual 模式。工具操作跳过批准确认；显式禁止规则和命令硬拦截仍然生效。"
     elif normalized_mode == "execute":
         base = "当前会话处于 execute 模式。优先直接落地实现、运行验证，并及时维护 plan/todo。"
     elif normalized_mode == "agent":

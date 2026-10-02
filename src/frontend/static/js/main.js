@@ -918,11 +918,11 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         oc_internal_session_refresh_title: '从服务器刷新 WeBot 会话列表',
         // Run mode (permission mode)
         run_mode_label: '模式',
-        run_mode_bypass: 'Bypass · 全工具',
+        run_mode_bypass: 'Manual · 全工具',
         run_mode_readonly: '只读模式',
         run_mode_chat: '交流模式 · 无工具',
         run_mode_auto: 'Auto · 替我审核',
-        run_mode_title: '交流：无工具；只读：查看和搜索；Bypass：跳过确认；Auto：独立模型代审',
+        run_mode_title: '交流：无工具；只读：查看和搜索；Manual：跳过确认；Auto：独立模型代审',
     },
     'en': {
         // General
@@ -1804,11 +1804,11 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         oc_internal_session_refresh_title: 'Refresh WeBot session list from server',
         // Run mode (permission mode)
         run_mode_label: 'Mode',
-        run_mode_bypass: 'Bypass · All tools',
+        run_mode_bypass: 'Manual · All tools',
         run_mode_readonly: 'Read-only',
         run_mode_chat: 'Chat · No tools',
         run_mode_auto: 'Auto · Review for me',
-        run_mode_title: 'Chat: no tools; Read-only: view and search; Bypass: skip confirmation; Auto: independent review',
+        run_mode_title: 'Chat: no tools; Read-only: view and search; Manual: skip confirmation; Auto: independent review',
     }
 };
 
@@ -3921,9 +3921,32 @@ function _escapeHtmlStrip(str) {
 }
 
 function renderStudioApprovalStrip(approvals) {
-    // Authorization is requested in the conversation, shared with CLI/social channels.
     const strip = document.getElementById('studio-approval-strip');
-    if (strip) { strip.style.display = 'none'; strip.innerHTML = ''; }
+    if (!strip) return;
+    const pending = approvals.filter(a => a.status === 'pending' && (a.review?.conversation_reply || a.review?.verdict?.decision === 'ask_user' || a.review?.reviewer === 'user'));
+    if (!pending.length) {
+        strip.style.display = 'none';
+        strip.innerHTML = '';
+        return;
+    }
+    strip.style.display = 'flex';
+    strip.innerHTML = pending.map(item => {
+        const aid = _escapeHtmlStrip(item.approval_id || '');
+        const sid = _escapeHtmlStrip(item.session_id || '');
+        const reason = _escapeHtmlStrip((item.request_reason || '').slice(0, 120));
+        const tool = _escapeHtmlStrip(item.tool_name || '');
+        return `<div class="studio-approval-card">
+            <div class="studio-approval-card-title">${t('approval_required_title')}</div>
+            <div class="studio-approval-card-meta"><strong>${tool}</strong>${reason ? ' · ' + reason : ''}</div>
+            <details><summary>${currentLang === 'zh-CN' ? '查看具体操作' : 'View exact action'}</summary><pre style="white-space:pre-wrap;max-height:160px;overflow:auto;">${_escapeHtmlStrip(JSON.stringify(item.args || {}, null, 2))}</pre></details>
+            ${item.review?.verdict ? `<div class="studio-approval-card-meta">${_escapeHtmlStrip(item.review.verdict.reason || '')}</div>` : ''}
+            <div class="studio-approval-card-actions">
+                <button class="studio-approval-btn approve" onclick="resolveStudioApproval('${aid}','approve',false,'${sid}',this)">${t('approval_approve')}</button>
+                <button class="studio-approval-btn approve-remember" onclick="resolveStudioApproval('${aid}','approve',true,'${sid}',this)">${t('approval_approve_remember')}</button>
+                <button class="studio-approval-btn deny" onclick="resolveStudioApproval('${aid}','deny',false,'${sid}',this)">${t('approval_deny')}</button>
+            </div>
+        </div>`;
+    }).join('');
 }
 
 async function refreshStudioApprovalStrip() {
@@ -4016,7 +4039,7 @@ function _buildRuntimeApprovalList(item, runtimeOverride = null) {
     return approvals.map(approval => {
         const approvalId = encodeURIComponent(approval.approval_id || '');
         const sessionId = encodeURIComponent(item.session_id || '');
-        const canResolve = false; // Reply in the conversation input instead.
+        const canResolve = approval.status === 'pending' && (approval.review?.conversation_reply || approval.review?.verdict?.decision === 'ask_user' || approval.review?.reviewer === 'user');
         return `
             <div class="webot-runtime-block${canResolve ? ' webot-approval-block-pending' : ''}">
                 <div class="webot-runtime-row">

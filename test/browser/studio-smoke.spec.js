@@ -5,6 +5,7 @@ async function stubStudioNetwork(page, calls, options = {}) {
     approvals: [
       {
         approval_id: 'approval-1',
+        review: { reviewer: 'auto_review', conversation_reply: true, verdict: { decision: 'ask_user', reason: '请确认操作' } },
         tool_name: 'run_command',
         status: 'pending',
         request_reason: 'Need shell access for verification',
@@ -369,6 +370,9 @@ async function stubStudioNetwork(page, calls, options = {}) {
     target.mode = { mode: workflow.mode, reason: `workflow:${workflow.preset_id}` };
     return json(route, { status: 'success', preset: workflow });
   });
+  await page.route('**/proxy_webot_tool_approvals?*', (route) =>
+    json(route, { status: 'success', approvals: webotState.approvals.filter(a => a.status === 'pending') })
+  );
   await page.route('**/proxy_webot_tool_approval_resolve', async (route) => {
     calls.approvalActions.push(await route.request().postDataJSON());
     webotState.approvals = [
@@ -732,9 +736,11 @@ test('studio webot runtime sidebar shows runtime state and resolves approvals', 
   await expect(page.locator('#webot-subagent-detail')).toContainText('/tmp/clawcross/worktree/curie');
   await expect(page.locator('#webot-subagent-detail')).toContainText('Flask proxy chain');
 
-  await expect(page.locator('#webot-subagent-detail button').filter({ hasText: /批准并记住|Approve \+ remember/ })).toHaveCount(0);
-  expect(calls.approvalActions).toEqual([]);
-  await expect(page.locator('#studio-approval-strip')).toBeHidden();
+  await expect(page.locator('#studio-approval-strip')).toBeVisible();
+  await page.locator('#webot-subagent-detail button').filter({ hasText: /批准并记住|Approve \+ remember/ }).click();
+  await expect.poll(() => calls.approvalActions.length).toBe(1);
+  expect(calls.approvalActions[0]).toMatchObject({approval_id: 'approval-1', action: 'approve', remember: true, session_id: 'subagent__coder__curie'});
+  await expect(page.locator('#webot-subagent-detail')).toContainText(/approved|APPROVED/);
 
   expect(pageErrors).toEqual([]);
 });
