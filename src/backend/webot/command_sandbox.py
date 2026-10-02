@@ -35,8 +35,8 @@ def sandbox_failure_hint(stderr: str) -> str:
         return "❌ 沙盒初始化失败，命令尚未启动；请检查 SRT 依赖和系统 namespace 策略。不会降级为宿主机执行。"
     if "<sandbox_violations>" in stderr:
         return (
-            "沙盒报告了权限拒绝。核对具体路径或域名后，可用同一 run_command 的 "
-            "sandbox_access 与 escalation_target 申请单次提权；本次命令不会自动重跑。"
+            "沙盒报告了权限拒绝。系统仅在能定位具体目标且未超出管理员权限上限时申请审核；"
+            "不会交给 Agent 申请宿主执行。"
         )
     return ""
 
@@ -45,6 +45,67 @@ def sandbox_failure_hint(stderr: str) -> str:
 class SrtCommand:
     argv: tuple[str, ...]
     settings_path: Path
+
+
+def escalation_ceiling() -> dict[str, list[str]]:
+    """Operator configuration, separate from agent/session settings. Empty denies."""
+    result = {}
+    for access, suffix in (('read_path', 'READ_PATHS'), ('write_path', 'WRITE_PATHS'), ('network', 'DOMAINS')):
+        try:
+            values = json.loads(os.environ.get('CLAWCROSS_SANDBOX_MAX_' + suffix, '[]'))
+        except ValueError:
+            values = []
+        result[access] = values if isinstance(values, list) and all(isinstance(v, str) for v in values) else []
+    return result
+
+
+def bounded_escalation(access: str, target: str, root: Path) -> str:
+    if access not in {'read_path', 'write_path', 'network'}:
+        raise SandboxUnavailable('系统提权不能退出沙盒或使用宿主权限。')
+    original_target = target
+    target = normalize_escalation(access, target, root)
+    if target != original_target:
+        raise SandboxUnavailable('提权目标已改变，必须重新审核。')
+    maximum = escalation_ceiling()[access]
+    if access == 'network':
+        allowed = target in maximum  # Exact host/port only, no wildcard expansion.
+    else:
+        path = Path(target)
+        if any(path.is_relative_to(prefix) for prefix in (Path('/proc'), Path('/sys'), Path('/dev'), Path('/etc'))):
+            raise SandboxUnavailable('系统、设备和账户配置路径不能自动提权。')
+        allowed = any(Path(v).is_absolute() and path.is_relative_to(Path(v).resolve()) for v in maximum)
+    if not allowed:
+        raise SandboxUnavailable('所需权限超出管理员设置的沙盒提权上限；审核不能解除此限制。')
+    return target
+
+
+def permission_failure_target(stderr: str, root: Path) -> tuple[str, str] | None:
+    """Failure evidence is untrusted: at most one bounded exception, still reviewed.
+
+    Ambiguous EACCES cannot distinguish read from write, so is not widened.
+    No general command error or sandbox initialization error causes escalation.
+    """
+    if '初始化失败' in sandbox_failure_hint(stderr):
+        return None
+    for line in stderr.splitlines():
+        access = ''
+        if 'Read-only file system' in line:
+            access = 'write_path'
+        elif 'Permission denied' in line and re.match(r'^(?:cat|head|tail|less|more): ', line):
+            access = 'read_path'
+        if access:
+            paths = re.findall(r"(?:^|[\s:'\"])(/[^\s:'\"]+)", line)
+            if len(paths) != 1:
+                continue
+            target = Path(paths[0])
+            # Writes may fail when creating a file: grant only its existing parent.
+            if access == 'write_path' and not target.exists():
+                target = target.parent
+            return access, bounded_escalation(access, str(target), root)
+        network = re.search(r'(?:blocked|denied|not allowed).*?(?:https?://)?([a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+(?::[0-9]+)?)', line, re.I)
+        if network and any(marker in line.lower() for marker in ('proxy', 'domain', 'network', 'connect')):
+            return 'network', bounded_escalation('network', network.group(1).lower(), root)
+    return None
 
 
 _PRIVATE_NAMES = (
@@ -105,11 +166,14 @@ def normalize_escalation(access: str, target: str, root: Path) -> str:
     path = path.resolve()
     root = root.resolve()
     home = Path.home().resolve()
+    from common.runtime_paths import CONFIG_DIR, USER_FILES_DIR, STATE_DIR
+    private_paths = [home / name for name in _PRIVATE_NAMES]
+    private_paths.extend(p.resolve() for p in (CONFIG_DIR, USER_FILES_DIR, STATE_DIR))
     if path == Path("/") or root.is_relative_to(path) or path.is_relative_to(root):
         raise SandboxUnavailable("路径提权仅用于工作区外的具体目标，不能指定工作区或其上级目录。")
     if path == home or home.is_relative_to(path) or any(
         path.is_relative_to(private) or private.is_relative_to(path)
-        for private in (home / name for name in _PRIVATE_NAMES)
+        for private in private_paths
     ):
         raise SandboxUnavailable("常见凭据目录或其上级目录不能作为路径提权目标。")
     return str(path)
@@ -204,7 +268,7 @@ def build_srt_command(*, root: Path, cwd: Path, command: str, language: str,
     root, cwd = root.resolve(), cwd.resolve()
     if not cwd.is_relative_to(root):
         raise SandboxUnavailable("命令工作目录超出会话工作区。")
-    target = normalize_escalation(access, target, root)
+    target = bounded_escalation(access, target, root) if access != 'default' else normalize_escalation(access, target, root)
     if language == "python":
         if script_path is None or not script_path.resolve().is_relative_to(root):
             raise SandboxUnavailable("Python 脚本超出会话工作区。")

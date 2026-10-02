@@ -4902,7 +4902,7 @@
     </div>
     <div class="run-mode-option" data-mode="auto" onclick="selectRunMode('auto')">
         <div class="run-mode-option-info"><div class="run-mode-option-title" data-i18n="run_mode_auto">Auto · 替我审核</div>
-        <div class="run-mode-option-desc" data-i18n="run_mode_auto_desc">内置 Agent 根据你的任务代审；无法确定时交给你决定</div></div><div class="run-mode-option-check">✓</div>
+        <div class="run-mode-option-desc" data-i18n="run_mode_auto_desc">按任务代审；授权不足时拒绝，可在后续对话明确同意</div></div><div class="run-mode-option-check">✓</div>
     </div>
     <div style="padding:12px 16px;border-top:1px solid var(--border)">
       <label style="display:flex;justify-content:space-between;gap:12px;align-items:center">命令沙盒
@@ -5892,7 +5892,7 @@ const I18N = {
     run_mode_warning_manual: '⚠️ 群聊中 交流模式下 Agent 无法回到群里发言（缺工具调用权限）。如需"先看再决定"请改用只读模式。',
     run_mode_badge_bypass: 'Manual',
     run_mode_auto: 'Auto · 替我审核',
-    run_mode_auto_desc: '内置 Agent 根据你的任务代审；无法确定时交给你决定',
+    run_mode_auto_desc: '按任务代审；授权不足时拒绝，可在后续对话明确同意',
     run_mode_badge_auto: 'Auto',
     run_mode_badge_readonly: '只读',
     run_mode_badge_chat: '交流',
@@ -6532,7 +6532,7 @@ const I18N = {
     run_mode_warning_manual: '⚠️ In Chat mode, agents in this group cannot post replies back (no tool-call permission). Use Read-only mode if you want "look-then-decide" behavior.',
     run_mode_badge_bypass: 'Manual',
     run_mode_auto: 'Auto · Review for me',
-    run_mode_auto_desc: 'Built-in agents review actions for you; uncertain decisions return to you',
+    run_mode_auto_desc: 'Reviews task actions; insufficient authorization denies the action. You can explicitly authorize it in the next message.',
     run_mode_badge_auto: 'Auto',
     run_mode_badge_readonly: 'Plan',
     run_mode_badge_chat: 'Manual',
@@ -10496,7 +10496,7 @@ async function resolveMobileToolApproval(approvalId, action, remember, sessionId
 }
 
 function renderPendingApprovalCards(approvals) {
-  approvals = approvals.filter(a => a.status === 'pending' && (a.review?.conversation_reply || a.review?.verdict?.decision === 'ask_user' || a.review?.reviewer === 'user'));
+  approvals = approvals.filter(a => a.status === 'pending' && (a.review?.reviewer === 'user' || (a.review?.conversation_reply && a.review?.reviewer !== 'auto_review')));
   const strip = document.getElementById('approval-strip');
   if (!strip) return;
   if (!approvals.length) {

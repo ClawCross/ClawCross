@@ -97,7 +97,7 @@ def build_session_mode_message(mode: str | None, reason: str = "") -> str:
     elif normalized_mode == "readonly":
         base = "当前会话处于只读模式。只能查看、搜索和分析；不修改文件、不执行命令、不向其他会话或外部服务发消息。"
     elif normalized_mode == "auto":
-        base = "当前会话处于 Auto 模式。工具策略标记为需要批准的操作由独立模型代审；允许和禁止规则保持原样，依据不足时由用户决定。"
+        base = "当前会话处于 Auto 模式。工具策略标记为需要批准的操作由独立模型代审；允许和禁止规则保持原样，依据不足或审核失败时拒绝；用户在后续对话明确授权后可重新审核。沙盒命令先运行，权限拒绝由系统申请有限提权，不由 Agent 调用提权工具。"
     elif normalized_mode == "bypass":
         base = "当前会话处于 Manual 模式。工具操作跳过批准确认；显式禁止规则和命令硬拦截仍然生效。"
     elif normalized_mode == "execute":

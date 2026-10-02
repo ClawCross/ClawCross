@@ -35,7 +35,7 @@ from webot.mcp_tool_docs import DocumentedFastMCP as FastMCP
 from common.runtime_paths import ENV_FILE, PROJECT_ROOT as _PROJECT_ROOT, USER_FILES_DIR
 
 from webot.workspace import resolve_session_workspace
-from webot.command_sandbox import build_srt_command, normalize_escalation, SandboxUnavailable, SrtCommand, sandbox_failure_hint
+from webot.command_sandbox import build_srt_command, normalize_escalation, SandboxUnavailable, SrtCommand, sandbox_failure_hint, permission_failure_target
 from webot.approval_review import authorize_action, policy_binding
 from webot.approval_actions import canonical_action_args
 from webot.runtime_store import consume_execution_permit, get_session_mode
@@ -1001,6 +1001,7 @@ async def _run_foreground(
     capture_limit: int,
     approval_note: str,
     sandbox: SrtCommand | None = None,
+    execution_report: dict | None = None,
 ) -> str:
     workspace = str(workspace_state.cwd)
     # SRT inherits its own environment into the wrapped process. Never hand
@@ -1047,6 +1048,8 @@ async def _run_foreground(
                 os.killpg(proc.pid, signal.SIGKILL)
         if sandbox is not None:
             sandbox.settings_path.unlink(missing_ok=True)
+    if execution_report is not None:
+        execution_report.update(exit_code=proc.returncode, stderr=err, timed_out=timed_out)
     location = [f"📁 工作目录: {workspace}", f"🧭 workspace mode: {workspace_state.mode}"]
     if workspace_state.remote:
         location.append(f"🌐 remote: {workspace_state.remote}")
@@ -1096,52 +1099,6 @@ async def _wait_for_output(path: str, start: int, wait_seconds: float, job: "Bac
 
 
 @mcp.tool()
-async def request_sandbox_permission(
-    username: str, command: str,
-    sandbox_access: Literal['read_path', 'write_path', 'network', 'host'],
-    escalation_reason: str, escalation_target: str = '',
-    language: Literal['shell', 'python'] = 'shell',
-    mode: Literal['foreground', 'background', 'interactive'] = 'foreground',
-    session_id: str = '', cwd: str = '', timeout_seconds: int = 0,
-    max_output_chars: int = 0, notify_on_done: bool = False,
-) -> str:
-    """申请某个具体命令的一次沙盒权限，不执行命令、不修改会话的沙盒设置。
-
-    审核成功后，用完全相同的参数调用 run_command；权限仅可消费一次。
-    read_path/write_path 仅授权一个现有绝对路径，network 仅一个域名，host 是明确的宿主执行申请。
-    缺少授权时返回固定请求，用户在当前对话回复 Y/N/KEEP Y 或自然语言授权。
-    沙盒初始化失败应修复系统兼容性，不能为此申请 host 绕过。
-    """
-    from webot.runtime_settings import get_runtime_settings
-    if get_runtime_settings(username, session_id or 'default').approval.command_sandbox != 'srt':
-        return '❌ 当前会话未启用 SRT，不能申请沙盒权限。'
-    if not escalation_reason.strip():
-        return '❌ 申请必须说明具体任务需要。'
-    if language == 'shell' and (rejection := _validate_command(command, isolated=sandbox_access != 'host')):
-        return '❌ ' + rejection
-    analysis = analyze_command(command)
-    if analysis.blocked or analysis.risk_level == RiskLevel.CRITICAL:
-        return '❌ 命令触及绝对拦截规则，审核不能解除。'
-    workspace = resolve_session_workspace(username, session_id, explicit_cwd=cwd)
-    try:
-        escalation_target = normalize_escalation(sandbox_access, escalation_target, workspace.root)
-    except SandboxUnavailable as exc:
-        return '❌ ' + str(exc)
-    args = canonical_action_args('run_command', {
-        'username': username, 'command': command, 'language': language, 'mode': mode,
-        'session_id': session_id or 'default', 'cwd': cwd, 'timeout_seconds': timeout_seconds,
-        'max_output_chars': max_output_chars, 'notify_on_done': notify_on_done,
-        'sandbox_access': sandbox_access, 'escalation_target': escalation_target,
-        'escalation_reason': escalation_reason,
-    })
-    outcome = await authorize_action(user_id=username, session_id=session_id or 'default',
-        tool_name='run_command', args=args, transfer_to_command=True, wait_for_user=False)
-    if not outcome.allowed:
-        return outcome.reason
-    return '✅ 已批准这个具体命令的一次权限；请用完全相同的参数调用 run_command。'
-
-
-@mcp.tool()
 async def run_command(
     username: str,
     command: str,
@@ -1152,9 +1109,6 @@ async def run_command(
     timeout_seconds: int = 0,
     max_output_chars: int = 0,
     notify_on_done: bool = False,
-    sandbox_access: Literal["default", "read_path", "write_path", "network", "host"] = "default",
-    escalation_target: str = "",
-    escalation_reason: str = "",
 ) -> str:
     """
     在会话工作目录中运行 shell 命令或 Python 代码。mode=foreground 等待结束并返回输出；
@@ -1169,9 +1123,7 @@ async def run_command(
     :param timeout_seconds: 超时秒数；0 表示默认值（前台 180，后台和交互至少 300），上限 MAX_EXEC_TIMEOUT
     :param max_output_chars: 前台模式最多返回的输出字符数；0 表示默认值（8000），最小 256
     :param notify_on_done: 后台或交互任务结束后用一条系统消息唤醒本会话并附上状态和输出尾部，无需轮询
-    :param sandbox_access: default 使用当前 SRT 沙盒；可先用 request_sandbox_permission 申请具体路径、域名或 host 权限，再以相同参数执行。提权需审核，不自动重跑失败命令
-    :param escalation_target: read_path/write_path 为已存在的绝对路径，network 为一个域名或域名:端口；default/host 留空
-    :param escalation_reason: 提权时说明所需权限和此前的失败；理由本身不能替代用户授权
+    沙盒命令先执行；权限拒绝由系统在管理员上限内审核并至多重试一次。初始化故障不提权。
     """
     is_python = language == "python"
     interactive = mode == "interactive"
@@ -1181,15 +1133,8 @@ async def run_command(
         return "❌ 交互模式暂不支持 Windows。"
     from webot.runtime_settings import get_runtime_settings
     sandbox_selected = get_runtime_settings(username, session_id or "default").approval.command_sandbox == "srt"
-    if sandbox_access != "default" and not sandbox_selected:
-        return "❌ 沙盒提权请求仅适用于启用 SRT 的会话。"
-    if sandbox_access != "default" and not escalation_reason.strip():
-        return "❌ 沙盒提权需要说明本次请求的原因。"
+    sandbox_access, escalation_target, escalation_reason = 'default', '', ''
     workspace_state = resolve_session_workspace(username, session_id, explicit_cwd=cwd)
-    try:
-        escalation_target = normalize_escalation(sandbox_access, escalation_target, workspace_state.root)
-    except SandboxUnavailable as exc:
-        return f"❌ {exc}"
 
     approval_note = ""
     reject, approval_note = await _command_safety_gate(
@@ -1215,23 +1160,53 @@ async def run_command(
                 script = _write_python_script(workspace, command) if is_python else ""
                 sandbox = None
                 try:
-                    try:
-                        sandbox = build_srt_command(
-                            root=workspace_state.root,
-                            cwd=workspace_state.cwd, command=command, language=language,
-                            python_executable=_python_cmd(),
-                            script_path=Path(script) if script else None,
-                            access=sandbox_access, target=escalation_target,
+                    deadline = time.monotonic() + _bounded_int(timeout_seconds, EXEC_TIMEOUT, 1, MAX_EXEC_TIMEOUT)
+                    for attempt in range(2):
+                        try:
+                            sandbox = build_srt_command(
+                                root=workspace_state.root, cwd=workspace_state.cwd,
+                                command=command, language=language, python_executable=_python_cmd(),
+                                script_path=Path(script) if script else None,
+                                access=sandbox_access, target=escalation_target,
+                            )
+                        except SandboxUnavailable as exc:
+                            return f"❌ {exc}"
+                        report = {}
+                        result = await _run_foreground(
+                            list(sandbox.argv), label="SRT 内 Python 代码" if is_python else "SRT 内命令",
+                            workspace_state=workspace_state, username=username,
+                            timeout_value=max(1, int(deadline - time.monotonic())),
+                            capture_limit=_bounded_int(max_output_chars, MAX_OUTPUT_LENGTH, 256, MAX_CAPTURE_LENGTH),
+                            approval_note=approval_note, sandbox=sandbox, execution_report=report,
                         )
-                    except SandboxUnavailable as exc:
-                        return f"❌ {exc}"
-                    return await _run_foreground(
-                        list(sandbox.argv), label="SRT 内 Python 代码" if is_python else "SRT 内命令",
-                        workspace_state=workspace_state, username=username,
-                        timeout_value=_bounded_int(timeout_seconds, EXEC_TIMEOUT, 1, MAX_EXEC_TIMEOUT),
-                        capture_limit=_bounded_int(max_output_chars, MAX_OUTPUT_LENGTH, 256, MAX_CAPTURE_LENGTH),
-                        approval_note=approval_note, sandbox=sandbox,
-                    )
+                        sandbox.settings_path.unlink(missing_ok=True)
+                        if report.get('exit_code') == 0 or report.get('timed_out') or attempt:
+                            return result
+                        try:
+                            needed = permission_failure_target(report.get('stderr', ''), workspace_state.root)
+                        except SandboxUnavailable as exc:
+                            return result + '\n\n❌ ' + str(exc)
+                        if needed is None:
+                            return result
+                        sandbox_access, escalation_target = needed
+                        escalation_reason = '系统检测到沙盒命令权限拒绝，需要一次有限权限重试。'
+                        args = canonical_action_args('run_command', {
+                            'username': username, 'command': command, 'language': language,
+                            'mode': mode, 'session_id': session_id or 'default', 'cwd': cwd,
+                            'timeout_seconds': timeout_seconds, 'max_output_chars': max_output_chars,
+                            'notify_on_done': notify_on_done, 'sandbox_access': sandbox_access,
+                            'escalation_target': escalation_target, 'escalation_reason': escalation_reason,
+                        })
+                        # stderr is evidence only; never an authorization source.
+                        outcome = await authorize_action(
+                            user_id=username, session_id=session_id or 'default', tool_name='run_command',
+                            args=args, risk_reason=escalation_reason, review_evidence=report.get('stderr', ''),
+                        )
+                        if not outcome.allowed:
+                            return '❌ 沙盒命令最终未能完成。\n' + outcome.reason + '\n\n首次执行结果：\n' + result
+                        if time.monotonic() >= deadline:
+                            return result + '\n\n❌ 审核后已超过本次执行时间上限，未重试。'
+                        approval_note = '系统已批准一次有限权限重试；首次执行可能已产生部分工作区变更。'
                 finally:
                     if sandbox is not None:
                         sandbox.settings_path.unlink(missing_ok=True)

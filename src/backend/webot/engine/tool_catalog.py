@@ -3,7 +3,7 @@
 TOOL_CATEGORIES = {
     "groups": {"join_group", "leave_group", "list_agent_groups", "get_group_details", "get_team_details"},
     "files": {"list_files", "read_file", "write_file", "delete_file"},
-    "commands": {"run_command", "request_sandbox_permission", "background_command_io", "cancel_background_command"},
+    "commands": {"run_command", "background_command_io", "cancel_background_command"},
     "web": {"web_search", "web_fetch", "call_llm_api"},
     "sessions": {"list_sessions", "fork_session", "search_sessions", "send_to_session", "read_session_inbox", "mark_session_inbox_read", "send_to_group"},
     "agents": {"spawn_subagent", "list_subagents", "send_subagent_message", "get_subagent_history", "cancel_subagent", "delete_subagent", "write_session_plan", "read_session_plan", "clear_session_plan", "list_tool_approvals", "set_session_mode", "claude_code_status", "probe_claude_code", "configure_claude_keepalive"},

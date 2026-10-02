@@ -92,6 +92,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reviewer.call_args.kwargs["args"]["_resolved_path"], str(outside))
 
     async def test_outside_file_approval_survives_until_same_action_retries(self):
+        store.save_session_mode('alice', 's', mode='agent')
         from webot.permission_context import resolve_permission_context, resolve_permission_request
         root = Path(self.tmp.name) / "workspace"
         root.mkdir()
@@ -128,15 +129,15 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result.allowed)
         reviewer.assert_not_called()
 
-    async def test_host_escalation_is_reviewed_even_when_tool_is_allowed(self):
+    async def test_host_escalation_is_outside_maximum_even_when_tool_is_allowed(self):
         policy.save_tool_policy_config("alice", {"default_approval": "allow"})
         runtime_settings.save_runtime_settings("alice", settings={"approval": {"command_sandbox": "srt"}})
         args = {**self.args, "sandbox_access": "host", "escalation_reason": "sandbox denied a required system call"}
         with patch.object(review, "run_reviewer", return_value=self.verdict) as reviewer:
             result = await review.authorize_action(user_id="alice", session_id="s", tool_name="run_command",
                 args=args, messages=self.messages)
-        self.assertTrue(result.allowed)
-        reviewer.assert_awaited_once()
+        self.assertFalse(result.allowed)
+        reviewer.assert_not_called()
 
     async def test_agent_mode_sandbox_escalation_goes_to_user(self):
         policy.save_tool_policy_config("alice", {"default_approval": "allow"})
@@ -144,7 +145,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         runtime_settings.save_runtime_settings("alice", settings={"approval": {"command_sandbox": "srt"}})
         args = {**self.args, "sandbox_access": "network", "escalation_target": "example.org:443",
                 "escalation_reason": "sandbox denied the needed domain"}
-        with patch.object(review, "run_reviewer") as reviewer, self.approve_pending():
+        with patch.dict("os.environ", {"CLAWCROSS_SANDBOX_MAX_DOMAINS": '["example.org:443"]'}), patch.object(review, "run_reviewer") as reviewer, self.approve_pending():
             result = await review.authorize_action(user_id="alice", session_id="s", tool_name="run_command",
                 args=args, messages=self.messages)
         self.assertTrue(result.allowed)
@@ -171,18 +172,19 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse((await self.authorize()).allowed)
         reviewer.assert_not_called()
 
-    async def test_invalid_verdict_and_timeout_fall_back_to_human(self):
+    async def test_invalid_verdict_and_timeout_deny_without_human_popup(self):
         for response, error in (
             ({"decision": "approve"}, None),
             (self.verdict.model_copy(update={"authorization_sources": ["assistant-summary"]}), None),
             (None, TimeoutError("model timeout")),
             (None, RuntimeError("unsupported structured output")),
         ):
-            with self.subTest(response=response, error=error), patch.object(review, "run_reviewer", return_value=response, side_effect=error), self.approve_pending():
+            with self.subTest(response=response, error=error), patch.object(review, "run_reviewer", return_value=response, side_effect=error):
                 result = await self.authorize()
-            self.assertTrue(result.allowed)
+            self.assertFalse(result.allowed)
+            self.assertFalse(result.pending)
             metadata = json.loads(store.get_tool_approval(result.approval_id, "alice").review_metadata_json)
-            self.assertEqual(metadata["verdict"]["decision"], "ask_user")
+            self.assertEqual(metadata["verdict"]["decision"], "deny")
 
     async def test_default_user_review_does_not_call_model(self):
         store.save_session_mode("alice", "s", mode="agent")
@@ -224,7 +226,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
                 result = await self.authorize(messages=messages)
             self.assertTrue(result.allowed)
             reviewer.assert_not_called()
-            self.assertEqual(json.loads(store.get_tool_approval(result.approval_id, "alice").review_metadata_json)["verdict"]["decision"], "ask_user")
+            self.assertEqual(json.loads(store.get_tool_approval(result.approval_id, "alice").review_metadata_json)["verdict"]["decision"], "deny")
             self.assertNotIn('ValueError', json.loads(store.get_tool_approval(result.approval_id, "alice").review_metadata_json)['verdict']['reason'])
 
     async def test_original_group_human_request_reaches_reviewer_with_attribution(self):
@@ -259,6 +261,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(context["untrusted_evidence"]), 2)
 
     async def test_button_approval_retries_in_next_turn_without_second_review(self):
+        store.save_session_mode('alice', 's', mode='agent')
         from webot.permission_context import resolve_permission_request
         ask = review.ReviewVerdict(decision='ask_user', reason='请确认', risk='low', authorization_sources=[])
         with patch.object(review, 'run_reviewer', return_value=ask):
@@ -273,7 +276,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(review, 'run_reviewer', return_value=ask) as reviewer:
             second = await self.authorize(messages=resumed)
         self.assertTrue(second.pending)
-        reviewer.assert_awaited_once()
+        reviewer.assert_not_called()
 
     async def test_policy_change_invalidates_an_approved_action(self):
         async def changed(**kwargs):
@@ -420,6 +423,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):review.parse_review_verdict(value)
 
     async def test_chat_approval_reply_is_exact_and_single_use(self):
+        store.save_session_mode('alice', 's', mode='agent')
         ask = self.verdict.model_copy(update={'decision':'ask_user'})
         with patch.object(review, 'run_reviewer', return_value=ask):
             pending = await self.authorize()
@@ -437,6 +441,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(store.get_tool_approval(pending.approval_id, 'alice').status, 'used')
 
     async def test_group_guest_cannot_approve_owner_sandbox_access(self):
+        store.save_session_mode('alice', 's', mode='agent')
         ask = self.verdict.model_copy(update={'decision':'ask_user'})
         with patch.object(review, 'run_reviewer', return_value=ask): pending = await self.authorize()
         context = {'user_requests':[{'id':'reply','text':'Y '+pending.approval_id,'source_kind':'group_human','sender_user':'bob','group_id':'g'}]}
@@ -444,6 +449,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(store.get_tool_approval(pending.approval_id,'alice').status,'pending')
 
     async def test_n_denies_in_chat_and_keep_y_remembers_only_exact_action(self):
+        store.save_session_mode('alice', 's', mode='agent')
         ask = self.verdict.model_copy(update={'decision':'ask_user'})
         with patch.object(review, 'run_reviewer', return_value=ask): pending = await self.authorize()
         context = review.review_context(self.messages + [HumanMessage(content='N',id='no-1',additional_kwargs={'input_origin':'user'})])
@@ -457,6 +463,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(policy.evaluate_tool_policy(saved,'run_command',canonical_action_args('run_command',self.args | {'command':'git reset --hard'})).requires_approval)
 
     async def test_y_requires_id_with_multiple_requests_and_cannot_approve_new_request(self):
+        store.save_session_mode('alice', 's', mode='agent')
         ask = self.verdict.model_copy(update={'decision':'ask_user'})
         with patch.object(review, 'run_reviewer', return_value=ask):
             first = await self.authorize()
@@ -484,6 +491,28 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(actual.additional_kwargs["input_origin"], "system")
         self.assertNotEqual(actual.id, "chosen-by-caller")
         self.assertEqual(context_store.append_messages.call_args_list[0].args[1][0].id, actual.id)
+
+    async def test_auto_denial_is_reconsidered_after_original_user_authorizes(self):
+        deny = self.verdict.model_copy(update={'decision': 'ask_user', 'reason': '授权不足'})
+        with patch.object(review, 'run_reviewer', return_value=deny):
+            result = await self.authorize()
+        self.assertFalse(result.pending)
+        self.assertEqual(store.get_tool_approval(result.approval_id, 'alice').status, 'denied')
+        messages = self.messages + [HumanMessage(content='我明确同意这次检查仓库状态', id='explicit-yes', additional_kwargs={'input_origin': 'user'})]
+        approved = self.verdict.model_copy(update={'authorization_sources': ['explicit-yes']})
+        with patch.object(review, 'run_reviewer', return_value=approved) as reviewer:
+            retry = await self.authorize(messages=messages)
+        self.assertTrue(retry.allowed)
+        self.assertIn('explicit-yes', [r['id'] for r in reviewer.await_args.kwargs['context']['user_requests']])
+
+    async def test_sandbox_default_executes_before_manual_tool_review_but_deny_still_blocks(self):
+        runtime_settings.save_runtime_settings('alice', settings={'approval': {'command_sandbox': 'srt'}})
+        with patch.object(review, 'run_reviewer') as reviewer:
+            result = await self.authorize()
+        self.assertTrue(result.allowed)
+        reviewer.assert_not_called()
+        policy.save_tool_policy_config('alice', {'tools': {'run_command': {'approval': 'deny'}}})
+        self.assertFalse((await self.authorize()).allowed)
 
     async def test_auto_mode_does_not_review_allowed_workspace_write(self):
         policy.save_tool_policy_config('alice', {'default_approval': 'allow'})
@@ -516,7 +545,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
     async def test_unwatched_turn_leaves_the_request_pending_instead_of_waiting(self):
         from webot.permission_context import resolve_permission_request
         policy.save_tool_policy_config('alice', {'tools': {'write_file': {'approval': 'manual'}}})
-        store.save_session_mode('alice', 's', mode='auto')
+        store.save_session_mode('alice', 's', mode='agent')
         woken = [HumanMessage(content='定时任务：整理笔记', id='sys-1', additional_kwargs={'input_origin': 'system'})]
         args = {'filename': 'notes.md', 'content': 'hello'}
         with patch.dict('os.environ', {'COMMAND_APPROVAL_WAIT_SECONDS': '600'}):

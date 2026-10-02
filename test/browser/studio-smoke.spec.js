@@ -5,7 +5,7 @@ async function stubStudioNetwork(page, calls, options = {}) {
     approvals: [
       {
         approval_id: 'approval-1',
-        review: { reviewer: 'auto_review', conversation_reply: true, verdict: { decision: 'ask_user', reason: '请确认操作' } },
+        review: { reviewer: 'user', conversation_reply: true, verdict: { decision: 'ask_user', reason: '请确认操作' } },
         tool_name: 'run_command',
         status: 'pending',
         request_reason: 'Need shell access for verification',
