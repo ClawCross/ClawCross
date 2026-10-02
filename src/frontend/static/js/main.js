@@ -77,6 +77,29 @@ const i18n = {
         local_login_banner_action: '去设置',
         context_usage: '上下文已用 {percent}%',
         llm_not_configured: 'LLM API 未配置，请先前往设置填写 API Key',
+        project_update_title: "项目更新",
+        project_update_hint: "检查远端 Git 更新，确认后拉取最新代码并重启服务。完整更新会使用远端覆盖本地冲突或未提交改动。",
+        project_update_branch_optional: "分支（可选）",
+        project_update_branch_placeholder: "留空使用当前分支，例如 main",
+        project_update_logs: "最近日志",
+        project_update_check: "检查更新",
+        project_update_start: "完整更新",
+        project_update_login: "请先登录。",
+        project_update_check_failed: "检查更新失败: {error}",
+        project_update_done: "更新完成，页面即将刷新。",
+        project_update_failed: "更新失败。",
+        project_update_restarting: "服务暂时不可用，可能正在重启：{error}",
+        project_update_started: "更新任务已启动。",
+        project_update_start_failed: "启动更新失败: {error}",
+        agent_center_native_settings: "模型、思考强度与 ClawCross 工具",
+        agent_center_runtime_control: "运行控制",
+        agent_center_runtime_details: "运行详情与审核",
+        studio_conversations: "对话",
+        studio_new_conversation: "新建对话",
+        studio_history: "最近对话",
+        studio_history_empty: "暂无历史对话",
+        studio_openclaw_new_hint: "OpenClaw 会话请在 Agent 中心管理。",
+
         project_update_banner: '发现新版本 {latest}，点击查看并更新',
         project_update_banner_dirty: '发现新版本 {latest}，但本地有未提交改动',
         project_update_summary_placeholder: '点击"检查更新"后显示版本信息。',
@@ -116,8 +139,8 @@ const i18n = {
         hmenu_lang: '语言',
         hmenu_public: '公开',
         tab_agent_center: 'Agents',
-        agent_center_kicker: '探索 · 观察 · 培养',
-        agent_center_title: 'Agent 图鉴',
+        agent_center_kicker: '你的协作空间',
+        agent_center_title: 'Agent 中心',
         agent_center_refresh_status: '刷新状态',
         agent_center_search: '查找',
         agent_center_search_placeholder: '名称、ID、标签',
@@ -151,7 +174,7 @@ const i18n = {
         agent_center_delete_ok: 'Agent 已删除',
         agent_center_delete_failed: '删除 Agent 失败',
         agent_center_load_failed: '加载 Agent 列表失败',
-        agent_center_open_detail: '点击查看图鉴',
+        agent_center_open_detail: '查看详情',
         agent_center_profile: '身份档案',
         agent_center_context: '上下文管理',
         agent_center_tools: '工具设置',
@@ -889,9 +912,9 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         oc_acp_session_placeholder: '可选；留空则按左侧 Clawcross 会话区分',
         oc_acp_session_ensure: '预热',
         oc_acp_session_ensure_title: '仅创建/预热 ACP 会话，不发送消息',
-        oc_acp_session_warming: '预热中...',
+        oc_acp_session_warming: '创建中…',
         oc_acp_session_ready: 'ACP 会话已就绪',
-        oc_acp_session_failed: '预热失败',
+        oc_acp_session_failed: '创建失败',
         oc_internal_session_refresh_title: '从服务器刷新 WeBot 会话列表',
         // Run mode (permission mode)
         run_mode_label: '模式',
@@ -932,6 +955,29 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         local_login_banner_action: 'Open Settings',
         context_usage: 'Context {percent}% used',
         llm_not_configured: 'LLM API not configured. Click here to set up API Key.',
+        project_update_title: "Project update",
+        project_update_hint: "Check for remote Git updates, then download the latest code and restart services. A full update overwrites local conflicts and uncommitted changes.",
+        project_update_branch_optional: "Branch (optional)",
+        project_update_branch_placeholder: "Leave empty for the current branch, e.g. main",
+        project_update_logs: "Recent logs",
+        project_update_check: "Check for updates",
+        project_update_start: "Full update",
+        project_update_login: "Please sign in first.",
+        project_update_check_failed: "Update check failed: {error}",
+        project_update_done: "Update complete. Reloading the page.",
+        project_update_failed: "Update failed.",
+        project_update_restarting: "Service temporarily unavailable; it may be restarting: {error}",
+        project_update_started: "Update started.",
+        project_update_start_failed: "Could not start the update: {error}",
+        agent_center_native_settings: "Model, reasoning and ClawCross tools",
+        agent_center_runtime_control: "Runtime controls",
+        agent_center_runtime_details: "Runtime details and approvals",
+        studio_conversations: "Conversations",
+        studio_new_conversation: "New conversation",
+        studio_history: "Recent conversations",
+        studio_history_empty: "No conversations yet",
+        studio_openclaw_new_hint: "Manage OpenClaw sessions in Agent Center.",
+
         project_update_banner: 'New version {latest} is available. Click to review and update.',
         project_update_banner_dirty: 'New version {latest} is available, but local changes block auto update.',
         project_update_summary_placeholder: 'Click "Check for updates" to view version info.',
@@ -971,8 +1017,8 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         hmenu_lang: 'Language',
         hmenu_public: 'Public',
         tab_agent_center: 'Agents',
-        agent_center_kicker: 'Discover · Observe · Grow',
-        agent_center_title: 'Agent Field Guide',
+        agent_center_kicker: 'Your workspace',
+        agent_center_title: 'Agent Center',
         agent_center_refresh_status: 'Refresh status',
         agent_center_search: 'Find',
         agent_center_search_placeholder: 'Name, ID, or tag',
@@ -1006,7 +1052,7 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         agent_center_delete_ok: 'Agent deleted',
         agent_center_delete_failed: 'Failed to delete Agent',
         agent_center_load_failed: 'Failed to load Agent catalog',
-        agent_center_open_detail: 'Open field guide entry',
+        agent_center_open_detail: 'View details',
         agent_center_profile: 'Identity profile',
         agent_center_context: 'Context management',
         agent_center_tools: 'Tool settings',
@@ -1752,9 +1798,9 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         oc_acp_session_placeholder: 'Optional; empty = scope by Clawcross session',
         oc_acp_session_ensure: 'Warm up',
         oc_acp_session_ensure_title: 'Create/warm ACP session only (no message sent)',
-        oc_acp_session_warming: 'Warming up...',
+        oc_acp_session_warming: 'Creating…',
         oc_acp_session_ready: 'ACP session ready',
-        oc_acp_session_failed: 'Warm up failed',
+        oc_acp_session_failed: 'Creation failed',
         oc_internal_session_refresh_title: 'Refresh WeBot session list from server',
         // Run mode (permission mode)
         run_mode_label: 'Mode',
@@ -2081,7 +2127,7 @@ function renderAgentCenterDetail() {
         <div class="agent-dex-hero ${webot ? 'internal' : 'external'}">
             <button class="agent-dex-close" type="button" onclick="closeAgentCenterDetail()" aria-label="Close">×</button>
             <div class="agent-dex-portrait">${webot ? '🧠' : '◈'}</div>
-            <div class="agent-dex-index">FIELD ENTRY NO.${String(index).padStart(3, '0')} · ${agentCenterEscape(state)}</div>
+            <div class="agent-dex-index">${agentCenterEscape(agent.platform)} · ${agentCenterEscape(state)}</div>
             <div class="agent-dex-title">${agentCenterEscape(agent.name)}</div>
             <div class="agent-dex-subtitle">${agentCenterEscape(agent.agent_id)} · ${agentCenterEscape(agent.platform)}</div>
         </div>
@@ -2103,7 +2149,7 @@ function renderAgentCenterDetail() {
                 <div class="agent-dex-context-meter"><span style="width:${contextPercent}%"></span></div>
                 <div class="agent-dex-context-row"><span>${agentCenterFormatTokens(context.tokens)} / ${agentCenterFormatTokens(context.budget)} tokens</span><span>${agentCenterEscape(t('agent_center_remaining'))} ${agentCenterFormatTokens(context.remaining)}</span></div>
                 <div class="agent-dex-actions" style="margin-top:10px;"><button class="agent-center-btn" type="button" onclick="compactAgentFromCenter(this)">${agentCenterEscape(t('agent_center_compact'))}</button><button class="agent-center-btn" type="button" onclick="openAgentRuntimeSettings()">${agentCenterEscape(t('runtime_settings'))}</button></div>
-            </section>` : !['openclaw', 'http', 'llm'].includes(agent.platform) ? `<section class="agent-dex-section"><button class="agent-center-btn" type="button" onclick="openExternalAgentSettings('${agent.agent_id}')">模型、思考强度与 ClawCross 工具</button></section>` : ''}
+            </section>` : !['openclaw', 'http', 'llm'].includes(agent.platform) ? `<section class="agent-dex-section"><button class="agent-center-btn" type="button" onclick="openExternalAgentSettings('${agent.agent_id}')">${agentCenterEscape(t('agent_center_native_settings'))}</button></section>` : ''}
             <section class="agent-dex-section">
                 <div class="agent-dex-section-title">${agentCenterEscape(t('agent_center_tools'))}</div>
                 <div class="agent-dex-fields">
@@ -2113,10 +2159,10 @@ function renderAgentCenterDetail() {
                 ${webot ? `
                 <div class="agent-dex-context-row" style="margin:12px 0 7px;"><span>${agentCenterEscape(unrestricted ? t('agent_center_unrestricted_tools') : (noTools ? t('agent_center_no_tools') : `${enabledTools.size}/${allTools.length}`))}</span><span><button class="agent-center-btn" type="button" onclick="document.querySelectorAll('.agent-dex-tool-checkbox').forEach(el=>el.checked=true)">All</button> <button class="agent-center-btn" type="button" onclick="document.querySelectorAll('.agent-dex-tool-checkbox').forEach(el=>el.checked=false)">None</button></span></div>
                 <div class="agent-dex-tools">${toolsMarkup}</div>` : ''}
-                <button class="agent-center-btn primary" style="margin-top:11px;width:100%;background:#245f46;color:#fff;" type="button" onclick="saveAgentCenterSettings(this)">${agentCenterEscape(t('agent_center_save'))}</button>
+                <button class="agent-center-btn primary" style="margin-top:11px;width:100%;" type="button" onclick="saveAgentCenterSettings(this)">${agentCenterEscape(t('agent_center_save'))}</button>
             </section>
             <section class="agent-dex-section">
-                <div class="agent-dex-section-title">Runtime control</div>
+                <div class="agent-dex-section-title">${agentCenterEscape(t('agent_center_runtime_control'))}</div>
                 <div class="agent-dex-actions">${button('cancel', 'agent_center_stop')}${button('reset', 'agent_center_reset')}<button class="agent-center-btn danger" type="button" onclick="deleteAgentFromCenter(this)">${agentCenterEscape(t('agent_center_delete'))}</button></div>
             </section>
             <div id="agent-dex-note" class="agent-dex-note"></div>
@@ -4982,7 +5028,6 @@ async function switchToSession(sessionId, force = false, options = {}) {
     const closeSidebar = options.closeSidebar === true;
     if (!force && sessionId === currentSessionId) { if (closeSidebar) closeSessionSidebar(); return; }
     if (!quiet) showPageLoading();
-    hideNewMsgBanner();
     // 切换前先重置按钮到 idle 状态（避免旧 session 的 streaming/busy 状态残留）
     setStreamingUI(false);
     setSystemBusyUI(false);
@@ -5102,7 +5147,6 @@ async function switchToSession(sessionId, force = false, options = {}) {
     if (_ocChatMode === 'internal') {
         restoreActiveChatRunForCurrentContext();
         await syncCurrentChatRunUI();
-        ocInternalSyncNameInput();
         ocInternalRepaintSessionPick();
         scrollChatToBottom(chatBox, { force: true });
     }
@@ -5110,13 +5154,80 @@ async function switchToSession(sessionId, force = false, options = {}) {
 }
 
 function ocSyncSessionSubrowsVisibility() {
-    const intRow = document.getElementById('oc-internal-session-row');
-    const acpRow = document.getElementById('oc-acp-session-row');
-    if (intRow) {
-        intRow.style.display = (_ocChatMode === 'internal') ? 'flex' : 'none';
+    // Legacy selects are state holders; the conversation rail is the visible picker.
+    renderStudioConversations();
+}
+
+function renderStudioConversations() {
+    const host = document.getElementById('studio-conversation-list');
+    if (!host) return;
+    const mode = _ocChatMode;
+    const select = document.getElementById(mode === 'acp' ? 'oc-acp-session-pick' : mode === 'openclaw' ? 'oc-agent-select' : 'oc-internal-session-pick');
+    const selected = mode === 'acp' ? acpResolveSessionName() : mode === 'openclaw' ? (_ocSelectedAgent?.name || '') : currentSessionId;
+    const options = [...(select?.options || [])].filter(option => option.value);
+    const items = options.map(option => ({id: option.value, title: option.textContent}));
+    if (mode !== 'openclaw' && selected && !items.some(item => item.id === selected)) {
+        items.unshift({id: selected, title: t('studio_new_conversation')});
     }
-    if (acpRow) {
-        acpRow.style.display = (_ocChatMode === 'acp' && _acpAvailable) ? 'flex' : 'none';
+    host.replaceChildren();
+    for (const item of items) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'studio-conversation-item' + (item.id === selected ? ' is-active' : '');
+        button.dataset.sessionId = item.id;
+        button.title = item.title + ' · ' + item.id;
+        button.setAttribute('aria-current', item.id === selected ? 'true' : 'false');
+        const title = document.createElement('span');
+        title.textContent = item.title.replace(/ · #[^ ]+$/, '') || t('studio_new_conversation');
+        const detail = document.createElement('small');
+        detail.textContent = '#' + item.id.slice(-6);
+        button.append(title, detail);
+        button.onclick = async () => {
+            if (mode !== _ocChatMode) return;
+            if (mode === 'internal') await openAgentSession(item.id);
+            else if (mode === 'openclaw') { select.value = item.id; ocOnAgentChange(); }
+            else {
+                // An unsent draft has no select option yet; its identity stays in the hidden input.
+                if (options.some(option => option.value === item.id)) select.value = item.id;
+                else { select.value = ''; document.getElementById('oc-acp-session-name').value = item.id; }
+                acpOnSessionPickChange();
+            }
+            renderStudioConversations();
+            if (window.matchMedia('(max-width: 768px)').matches) document.querySelector('.studio-conversation-switcher').open = false;
+        };
+        host.appendChild(button);
+    }
+    if (!items.length) {
+        const empty = document.createElement('p');
+        empty.className = 'studio-conversation-empty';
+        empty.textContent = t('studio_history_empty');
+        host.appendChild(empty);
+    }
+    const create = document.getElementById('studio-new-conversation');
+    if (create) { create.disabled = mode === 'openclaw'; create.title = mode === 'openclaw' ? t('studio_openclaw_new_hint') : t('studio_new_conversation'); }
+}
+
+async function studioNewConversation() {
+    const button = document.getElementById('studio-new-conversation');
+    if (button) button.disabled = true;
+    try {
+        if (_ocChatMode === 'internal') await ocInternalQuickNewSession();
+        else if (_ocChatMode === 'acp') {
+            // A fresh explicit identity cannot accidentally resume the previously selected session.
+            const id = _acpTool + '-' + generateSessionId();
+            const pick = document.getElementById('oc-acp-session-pick');
+            pick.value = '';
+            localStorage.removeItem('clawcross_acp_session_pick_' + _acpTool);
+            document.getElementById('oc-acp-session-name').value = id;
+            localStorage.setItem('clawcross_acp_session_name_' + _acpTool, id);
+            acpNotifySessionContextChanged();
+            const created = await acpEnsureSession();
+            if (created) await acpLoadSessionsList();
+            if (created && [...pick.options].some(option => option.value === id)) { pick.value = id; acpOnSessionPickChange(); }
+        }
+    } finally {
+        renderStudioConversations();
+        if (button) button.disabled = _ocChatMode === 'openclaw';
     }
 }
 
@@ -5124,7 +5235,7 @@ function ocInternalRepaintSessionPick() {
     const sel = document.getElementById('oc-internal-session-pick');
     if (!sel || _ocChatMode !== 'internal') return;
     const agentMap = _cachedAgentMap || {};
-    let list = Array.isArray(_mergedSessionsCache) ? _mergedSessionsCache.slice() : [];
+    let list = Array.isArray(_mergedSessionsCache) ? _mergedSessionsCache.filter(item => !agentMap[item.session_id]?.platform || agentMap[item.session_id].platform === 'webot') : [];
     const ids = new Set(list.map((s) => s.session_id));
     if (currentSessionId && !ids.has(currentSessionId)) {
         list = [{ session_id: currentSessionId, title: '', message_count: 0 }, ...list];
@@ -5151,51 +5262,14 @@ function ocInternalRepaintSessionPick() {
     } else {
         sel.value = '';
     }
-}
-
-function ocInternalSyncNameInput() {
-    const inp = document.getElementById('oc-internal-session-name');
-    if (!inp || _ocChatMode !== 'internal') return;
-    const meta = _cachedAgentMap[currentSessionId];
-    inp.value = (meta && meta.name) ? meta.name : '';
-}
-
-function ocInternalOnSessionPickChange() {
-    if (_ocChatMode !== 'internal') return;
-    const sel = document.getElementById('oc-internal-session-pick');
-    if (!sel) return;
-    const v = sel.value;
-    if (!v) {
-        ocInternalQuickNewSession();
-        return;
-    }
-    if (v === currentSessionId) return;
-    openAgentSession(v);
+    renderStudioConversations();
 }
 
 async function ocInternalQuickNewSession() {
     if (_ocChatMode !== 'internal') return;
     const newSid = generateSessionId();
     await switchToSession(newSid, true, { quiet: true });
-    ocInternalSyncNameInput();
     await loadSessionList();
-}
-
-async function ocInternalSessionRefresh() {
-    await loadSessionList();
-    ocInternalSyncNameInput();
-}
-
-async function ocInternalOnSessionNameBlur() {
-    if (_ocChatMode !== 'internal' || !currentSessionId) return;
-    const inp = document.getElementById('oc-internal-session-name');
-    const raw = inp ? String(inp.value || '').trim() : '';
-    try {
-        await saveSessionAgent(currentSessionId, raw ? { name: raw } : {});
-        await loadSessionList();
-    } catch (e) {
-        console.warn('ocInternalOnSessionNameBlur', e);
-    }
 }
 
 // ===== 本机免密登录 =====
@@ -7684,20 +7758,6 @@ const inputField = document.getElementById('user-input');
 const sendBtn = document.getElementById('send-btn');
 const cancelBtn = document.getElementById('cancel-btn');
 const busyBtn = document.getElementById('busy-btn');
-const refreshChatBtn = document.getElementById('refresh-chat-btn');
-let _hasUnreadSystemMsg = 0;  // 0=无未读, 1=有未读
-
-function showNewMsgBanner() {
-    if (_hasUnreadSystemMsg) return;
-    _hasUnreadSystemMsg = 1;
-    refreshChatBtn.classList.add('has-new');
-}
-
-function hideNewMsgBanner() {
-    _hasUnreadSystemMsg = 0;
-    refreshChatBtn.classList.remove('has-new');
-}
-
 let _chatBottomStickCleanup = null;
 let _chatUserPinnedToBottom = true;
 const _chatPinTrackerBoxes = new WeakSet();
@@ -7849,11 +7909,6 @@ function keepChatPinnedToBottomUntilStable(box, apply) {
         stop();
     }
     return stop;
-}
-
-function handleNewMsgRefresh() {
-    hideNewMsgBanner();
-    switchToSession(currentSessionId, true);
 }
 
 // 按钮三态：idle(发送) / streaming(终止) / busy(系统占用中)
@@ -8737,7 +8792,6 @@ async function handleSend() {
                 currentAbortController = null;
             }
             setStreamingUI(false);
-            hideNewMsgBanner();
         }
     }
 }
@@ -9667,7 +9721,7 @@ function closeProjectUpdateModal() {
 
 async function checkProjectUpdate(refreshRemote = true) {
     if (!currentUserId) {
-        _projectUpdateToast('请先登录。');
+        _projectUpdateToast(t('project_update_login'));
         return;
     }
     const checkBtn = document.getElementById('project-update-check-btn');
@@ -9678,7 +9732,7 @@ async function checkProjectUpdate(refreshRemote = true) {
         });
         _renderProjectUpdateSummary(update);
     } catch (err) {
-        _projectUpdateToast(`检查更新失败: ${err.message}`);
+        _projectUpdateToast(t('project_update_check_failed', {error: err.message}));
     } finally {
         if (checkBtn) checkBtn.disabled = false;
     }
@@ -9696,15 +9750,15 @@ async function pollProjectUpdateStatus() {
         }
         _stopProjectUpdatePolling();
         if (update.status === 'done') {
-            _projectUpdateToast('更新完成，页面即将刷新。');
+            _projectUpdateToast(t('project_update_done'));
             setTimeout(() => window.location.reload(), 1500);
         } else if (update.status === 'failed') {
-            _projectUpdateToast(update.message || '更新失败。');
+            _projectUpdateToast(update.message || t('project_update_failed'));
         }
     } catch (err) {
         _renderProjectUpdateSummary({
             status: 'restarting',
-            message: `服务暂时不可用，通常表示正在重启：${err.message}`,
+            message: t('project_update_restarting', {error: err.message}),
             log_tail: [],
         });
         _stopProjectUpdatePolling();
@@ -9714,7 +9768,7 @@ async function pollProjectUpdateStatus() {
 
 async function startProjectUpdate() {
     if (!currentUserId) {
-        _projectUpdateToast('请先登录。');
+        _projectUpdateToast(t('project_update_login'));
         return;
     }
     const startBtn = document.getElementById('project-update-start-btn');
@@ -9724,11 +9778,11 @@ async function startProjectUpdate() {
     try {
         const update = await _fetchProjectUpdate('/proxy_update_start', { branch });
         _renderProjectUpdateSummary(update);
-        _projectUpdateToast('更新任务已启动。');
+        _projectUpdateToast(t('project_update_started'));
         _stopProjectUpdatePolling();
         projectUpdatePollTimer = setTimeout(pollProjectUpdateStatus, 1500);
     } catch (err) {
-        _projectUpdateToast(`启动更新失败: ${err.message}`);
+        _projectUpdateToast(t('project_update_start_failed', {error: err.message}));
         if (startBtn) startBtn.disabled = false;
     }
 }
@@ -11736,7 +11790,8 @@ async function pollCurrentSessionStatus() {
         const wasBusy = cancelBtn.style.display !== 'none';
         setSystemBusyUI(busy);
         if (!busy && wasBusy) {
-            showNewMsgBanner();
+            // Completed background turns appear automatically, without a manual refresh button.
+            await switchToSession(sessionId, true, {quiet: true});
         }
         if (status.context) showSessionContextUsage(status.context);
     } catch(e) {
@@ -15750,14 +15805,7 @@ function acpNotifySessionContextChanged() {
     _acpLastTranscriptKey = newKey;
     acpRememberResolvedSessionName(acpComputeSessionNameFromInputs(), newKey);
     acpPaintTranscript();
-}
-
-function acpOnSessionNameBlur() {
-    if (_ocChatMode !== 'acp' || !_acpTool) return;
-    const inp = document.getElementById('oc-acp-session-name');
-    if (inp) localStorage.setItem('clawcross_acp_session_name_' + _acpTool, String(inp.value || '').trim());
-    acpSetSessionStatus('');
-    acpNotifySessionContextChanged();
+    renderStudioConversations();
 }
 
 function acpOnSessionPickChange() {
@@ -15802,6 +15850,7 @@ async function acpLoadSessionsList() {
         alert(t('error') + ': ' + (e && e.message ? e.message : e));
     } finally {
         sel.disabled = false;
+        renderStudioConversations();
     }
 }
 
@@ -15818,10 +15867,12 @@ async function acpEnsureSession() {
         await studioEnsureAgent(agentId, { platform: _acpTool });
         acpRememberResolvedSessionName(agentId);
         acpSetSessionStatus(t('oc_acp_session_ready') + ': ' + agentId, 'ok');
+        return true;
     } catch (e) {
         const msg = e && e.message ? e.message : String(e || '');
         console.error('acpEnsureSession failed', e);
         acpSetSessionStatus(t('oc_acp_session_failed') + ': ' + msg, 'error');
+        return false;
     } finally {
         if (ensureBtn) ensureBtn.disabled = false;
     }
@@ -16219,7 +16270,6 @@ async function ocSwitchTo(mode, acpTool) {
     ocSyncSessionSubrowsVisibility();
     if (window.ExternalAgentSettings) await ExternalAgentSettings.syncMenu();
     if (_ocChatMode === 'internal') {
-        ocInternalSyncNameInput();
         ocInternalRepaintSessionPick();
     }
 }
@@ -16270,6 +16320,7 @@ function ocOnAgentChange() {
     }
     restoreActiveChatRunForCurrentContext();
     void syncCurrentChatRunUI();
+    renderStudioConversations();
 }
 
 /**

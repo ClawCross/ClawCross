@@ -91,18 +91,30 @@ test('ACP tabs use the selected external Agent rather than the WeBot session', a
   await expect(page.locator('#studio-sandbox-settings')).toBeVisible();
 });
 
-test('uncreated ACP profile shows settings without passively creating a session', async ({page}) => {
+test('uncreated ACP profile opens settings without creation and creates only on explicit save', async ({page}) => {
   await setup(page);
   let created=0;
   await page.route('**/v1/agents/new-codex/capabilities',route=>route.fulfill({status:404,json:{detail:'no agent'}}));
   await page.evaluate(()=>{
     window._ocChatMode='acp';window._acpTool='codex';
     window.acpResolveSessionName=()=> 'new-codex';
+    window.studioEnsureAgent=(id,fields)=>fetch('/v1/agents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({agent_id:id,...fields})});
   });
   await page.route('**/v1/agents',route=>{created++;return route.fulfill({json:{agent_id:'new-codex'}});});
   await page.evaluate(()=>ExternalAgentSettings.syncMenu());
   await expect(page.locator('#studio-external-settings')).toBeVisible();
   expect(created).toBe(0);
+  await page.evaluate(()=>openExternalAgentSettings());
+  await expect(page.locator('#external-agent-settings')).toBeVisible();
+  await expect(page.locator('[data-save]')).toHaveText('创建并保存');
+  expect(created).toBe(0);
+  await page.route('**/v1/agents/new-codex/acp-settings', route=>route.fulfill({json:{platform:'codex',transport:'acpx',clawcross_tools:true,settings:{}}}));
+  await page.locator('[data-save]').click();
+  await expect(page.locator('[data-status]')).toContainText('已保存');
+  expect(created).toBe(1);
+  await page.locator('[data-save]').click();
+  await expect(page.locator('[data-status]')).toContainText('已保存');
+  expect(created).toBe(1);
 });
 
 

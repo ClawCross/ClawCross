@@ -686,7 +686,7 @@ test('studio settings export button allows keyless ollama sync', async ({ page }
   expect(pageErrors).toEqual([]);
 });
 
-test('studio ACP warmup surfaces backend errors inline', async ({ page }) => {
+test('studio explicit external creation surfaces backend errors inline', async ({ page }) => {
   const calls = {
     importOpenClaw: 0,
     exportOpenClaw: 0,
@@ -718,14 +718,16 @@ test('studio ACP warmup surfaces backend errors inline', async ({ page }) => {
   await page.goto('/studio');
   await page.locator('.studio-conversation-switcher > summary').click();
   await page.getByRole('button', { name: 'Cursor' }).click();
-  await expect(page.locator('#oc-acp-session-row')).toBeVisible();
+  await expect(page.locator('#studio-new-conversation')).toBeVisible();
+  // Switching the platform is read-only; only the explicit button creates an Agent.
+  expect(calls.agentCreates).toEqual([]);
 
   await page.locator('.oc-acp-session-ensure').click();
 
   await expect.poll(() => calls.agentCreates.length).toBe(1);
   expect(calls.agentCreates[0]).toMatchObject({ platform: 'cursor' });  // the session is made as an agent
   expect(calls.agentCreates[0].agent_id).toMatch(/^cursor-/);
-  await expect(page.locator('#oc-acp-session-status')).toContainText(/预热失败|Warm up failed/);
+  await expect(page.locator('#oc-acp-session-status')).toContainText(/创建失败|Creation failed/);
   await expect(page.locator('#oc-acp-session-status')).toContainText('cursor-agent acp');
   expect(pageErrors).toEqual([]);
 });
@@ -754,8 +756,9 @@ test('studio webot runtime sidebar shows runtime state and resolves approvals', 
   });
 
   await page.goto('/studio');
-  await page.locator('.hamburger-btn').click();
-  await page.locator('#hamburger-panel button[onclick*="toggleSessionSidebar(); closeHamburgerMenu();"]').click();
+  await page.locator('#studio-more-menu > summary').click();
+  await page.locator('#studio-runtime-menu > summary').click();
+  await page.locator('#studio-runtime-details').click();
 
   await expect(page.locator('#session-sidebar')).toBeVisible();
   const runtimePanel = page.locator('#webot-subagent-panel');
@@ -819,8 +822,9 @@ test('studio webot runtime surfaces recovery hints and applies workflow presets'
   });
 
   await page.goto('/studio');
-  await page.locator('.hamburger-btn').click();
-  await page.locator('#hamburger-panel button[onclick*="toggleSessionSidebar(); closeHamburgerMenu();"]').click();
+  await page.locator('#studio-more-menu > summary').click();
+  await page.locator('#studio-runtime-menu > summary').click();
+  await page.locator('#studio-runtime-details').click();
 
   await expect(page.locator('#webot-subagent-detail')).toContainText('Workflow');
   await expect(page.locator('#webot-subagent-detail')).toContainText('Resolve the pending tool approval');
@@ -1136,4 +1140,92 @@ test('oasis town runtime mounts, draws canvas, and accepts live updates', async 
   expect(canvasState.variedPixels).toBeGreaterThan(20);
   expect(canvasState.dataUrlLength).toBeGreaterThan(1000);
   expect(pageErrors).toEqual([]);
+});
+
+
+test('Agent Center replaces the hamburger Agents entry and update controls follow English', async ({page}) => {
+  const calls = {};
+  await stubStudioNetwork(page, calls, {agents:[{agent_id:'test-codex',name:'Codex',platform:'codex',settings:{},status:{state:'idle'}}]});
+  await page.addInitScript(() => localStorage.setItem('lang', 'en'));
+  await page.goto('/studio');
+  await page.locator('.hamburger-btn').click();
+  await expect(page.locator('#hamburger-panel button[onclick*="toggleSessionSidebar"]')).toHaveCount(0);
+  await page.locator('#hamburger-panel button[onclick*="openAgentCenter"]').click();
+  await expect(page.locator('#agent-center-title')).toHaveText('Agent Center');
+  await expect(page.locator('.agent-center-card').first()).toBeVisible();
+  await page.screenshot({path:'/tmp/clawcross-agent-center-desktop.png'});
+  await page.setViewportSize({width:390,height:844});
+  const modal = await page.locator('.agent-center-modal').boundingBox();
+  expect(modal.x).toBeGreaterThanOrEqual(0);
+  expect(modal.x + modal.width).toBeLessThanOrEqual(390);
+  await page.locator('.agent-center-card').first().click();
+  await expect(page.locator('#agent-center-detail')).toBeVisible();
+  await page.screenshot({path:'/tmp/clawcross-agent-center-mobile.png'});
+  await page.locator('.agent-dex-close').click();
+  await page.locator('.agent-center-close').click();
+  await page.evaluate(() => openProjectUpdateModal());
+  await expect(page.locator('#project-update-modal h2')).toHaveText('Project update');
+  await expect(page.locator('#project-update-check-btn')).toHaveText('Check for updates');
+  await expect(page.locator('#project-update-start-btn')).toHaveText('Full update');
+  await expect(page.locator('#project-update-branch')).toHaveAttribute('placeholder', 'Leave empty for the current branch, e.g. main');
+});
+
+
+test('conversation rail lists history and has a separate New button without a manual refresh', async ({page}) => {
+  const calls = {};
+  await stubStudioNetwork(page, calls, {agents:[
+    {agent_id:'history-one',name:'First conversation',platform:'webot',settings:{},status:{state:'idle',title:'First conversation'}},
+    {agent_id:'history-two',name:'Second conversation',platform:'webot',settings:{},status:{state:'idle',title:'Second conversation'}}
+  ]});
+  await page.goto('/studio');
+  await expect(page.locator('#refresh-chat-btn')).toHaveCount(0);
+  await page.locator('.studio-conversation-switcher > summary').click();
+  await expect(page.locator('.studio-conversation-item[data-session-id="history-one"]')).toBeVisible();
+  await expect(page.locator('.studio-conversation-item[data-session-id="history-two"]')).toBeVisible();
+  await expect(page.locator('#oc-internal-session-pick')).toBeHidden();
+  expect(calls.agentCreates).toEqual([]);
+  await page.locator('.studio-conversation-item[data-session-id="history-one"]').click();
+  await expect(page.locator('.studio-conversation-item[data-session-id="history-one"]')).toHaveAttribute('aria-current','true');
+  await page.locator('#studio-new-conversation').click();
+  await expect(page.locator('.studio-conversation-item[aria-current="true"]')).not.toHaveAttribute('data-session-id','history-one');
+  expect(calls.agentCreates).toEqual([]);
+  await page.screenshot({path:'/tmp/clawcross-conversation-rail-desktop.png'});
+  await page.setViewportSize({width:390,height:844});
+  await page.locator('.studio-conversation-item[data-session-id="history-two"]').click();
+  await expect(page.locator('.studio-conversation-switcher')).not.toHaveAttribute('open','');
+  const composer = await page.locator('#user-input').boundingBox();
+  expect(composer.x + composer.width).toBeLessThanOrEqual(390);
+  await page.locator('.studio-conversation-switcher > summary').click();
+  await page.screenshot({path:'/tmp/clawcross-conversation-rail-mobile.png'});
+});
+
+
+test('external conversation rail switches platforms read-only and creates a distinct session explicitly', async ({page}) => {
+  const calls = {};
+  const agents = [{agent_id:'codex-old',name:'Old Codex',platform:'codex',settings:{},status:{state:'idle'}}];
+  await stubStudioNetwork(page, calls, {acpxStatusPayload:{available:true,tools:['codex','claude']},agents});
+  await page.route(/\/v1\/agents(\?.*)?$/, async route => {
+    if (route.request().method() === 'POST') {
+      const body=route.request().postDataJSON();calls.agentCreates.push(body);
+      const agent={...body,name:body.agent_id,settings:{},status:{state:'idle'}};
+      agents.push(agent);
+      return route.fulfill({json:agent});
+    }
+    return route.fulfill({json:{data:agents}});
+  });
+  await page.goto('/studio');
+  await page.locator('.studio-conversation-switcher > summary').click();
+  await page.locator('[data-acp-tool="codex"]').click();
+  await expect(page.locator('.studio-conversation-item[data-session-id="codex-old"]')).toBeVisible();
+  expect(calls.agentCreates).toEqual([]);
+  await page.locator('.studio-conversation-item[data-session-id="codex-old"]').click();
+  await expect(page.locator('.studio-conversation-item[data-session-id="codex-old"]')).toHaveAttribute('aria-current','true');
+  await page.locator('#studio-new-conversation').click();
+  await expect.poll(()=>calls.agentCreates.length).toBe(1);
+  const id=calls.agentCreates[0].agent_id;
+  expect(id).not.toBe('codex-old');
+  await expect(page.locator(`.studio-conversation-item[data-session-id="${id}"]`)).toHaveAttribute('aria-current','true');
+  await page.locator('[data-acp-tool="claude"]').click();
+  await expect(page.locator('.studio-conversation-item[data-session-id="codex-old"]')).toHaveCount(0);
+  expect(calls.agentCreates.length).toBe(1);
 });
