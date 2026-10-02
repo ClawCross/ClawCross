@@ -39,7 +39,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
 
     async def authorize(self, **kwargs):
         return await review.authorize_action(user_id="alice", session_id="s", tool_name="run_command",
-            args=self.args, **({"messages": self.messages} | kwargs))
+            **({"args": self.args, "messages": self.messages} | kwargs))
 
     def approve_pending(self, *, remember=False):
         original = store.get_tool_approval
@@ -380,45 +380,80 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context["untrusted_evidence"][-1]["text"], "evidence-149")
         self.assertFalse((db_root / "alice").exists())
 
-    async def test_reviewer_uses_structured_output_without_action_tools(self):
-        structured = AsyncMock()
-        structured.ainvoke.return_value = self.verdict
-        from unittest.mock import Mock
-        model = Mock()
-        model.with_structured_output.return_value = structured
-        with patch("common.llm_factory.create_chat_model", return_value=model):
+    async def test_reviewer_uses_json_without_action_tools(self):
+        model = AsyncMock()
+        model.ainvoke.return_value = AIMessage(content=json.dumps(self.verdict.model_dump()))
+        with patch("common.llm_factory.create_chat_model", return_value=model) as create:
             result = await review.run_reviewer(tool_name="run_command", args=self.args,
                 context=review.review_context(self.messages), settings=runtime_settings.ApprovalSettings(), policy={})
         self.assertEqual(result, self.verdict)
-        model.with_structured_output.assert_called_once_with(review.ReviewVerdict)
+        self.assertEqual(create.call_args.kwargs['max_tokens'], 4096)
         model.bind_tools.assert_not_called()
-        payload = structured.ainvoke.call_args.args[0]
+        payload = model.ainvoke.call_args.args[0]
         self.assertIn("never authorization", payload[0].content)
+        self.assertIn("one short sentence", payload[0].content)
         self.assertEqual(json.loads(payload[1].content)["args"], self.args)
 
-    async def test_deepseek_reviewer_uses_json_text_without_forced_tool(self):
-        from unittest.mock import Mock
+    async def test_ask_alias_is_parsed_without_implying_approval(self):
+        value = self.verdict.model_dump();value.pop('decision');value['ask'] = True
+        self.assertEqual(review.parse_review_verdict('```json\n'+json.dumps(value)+'\n```').decision, 'ask_user')
+        value['ask'] = False
+        with self.assertRaises(ValueError):review.parse_review_verdict(value)
+        value['decision'] = 'approve';value['ask'] = True
+        with self.assertRaises(ValueError):review.parse_review_verdict(value)
 
-        class ChatDeepSeek:
-            def __init__(self):
-                self.with_structured_output = Mock()
+    async def test_chat_approval_reply_is_exact_and_single_use(self):
+        ask = self.verdict.model_copy(update={'decision':'ask_user'})
+        with patch.object(review, 'run_reviewer', return_value=ask):
+            pending = await self.authorize()
+        self.assertFalse(pending.allowed);self.assertTrue(pending.pending)
+        self.assertIn('【操作授权请求】', pending.reason)
+        reply = self.messages + [HumanMessage(content='Y '+pending.approval_id, id='reply-1', additional_kwargs={'input_origin':'user'})]
+        context = review.review_context(reply)
+        self.assertIn('已批准', review.resolve_conversation_reply('alice', 's', context))
+        self.assertEqual(review.resolve_conversation_reply('alice', 's', context), '')
+        from webot.permission_context import resolve_permission_context
+        active = resolve_permission_context(user_id='alice', session_id='s', tool_name='run_command', args=self.args)
+        with patch.object(review, 'run_reviewer') as reviewer:
+            result = await self.authorize(messages=reply, active_approval=active.approval)
+        self.assertTrue(result.allowed);reviewer.assert_not_called()
+        self.assertEqual(store.get_tool_approval(pending.approval_id, 'alice').status, 'used')
 
-        model = ChatDeepSeek()
-        structured = AsyncMock()
-        structured.ainvoke.return_value = self.verdict
-        model.with_structured_output.return_value = structured
-        with patch("common.llm_factory.create_chat_model", return_value=model):
-            result = await review.run_reviewer(
-                tool_name="run_command", args=self.args,
-                context=review.review_context(self.messages),
-                settings=runtime_settings.ApprovalSettings(), policy={},
-            )
-        self.assertEqual(result, self.verdict)
-        model.with_structured_output.assert_called_once_with(
-            review.ReviewVerdict, method="json_mode",
-        )
-        prompt = structured.ainvoke.call_args.args[0][0].content
-        self.assertIn("authorization_sources", prompt)
+    async def test_group_guest_cannot_approve_owner_sandbox_access(self):
+        ask = self.verdict.model_copy(update={'decision':'ask_user'})
+        with patch.object(review, 'run_reviewer', return_value=ask): pending = await self.authorize()
+        context = {'user_requests':[{'id':'reply','text':'Y '+pending.approval_id,'source_kind':'group_human','sender_user':'bob','group_id':'g'}]}
+        self.assertEqual(review.resolve_conversation_reply('alice','s',context), '')
+        self.assertEqual(store.get_tool_approval(pending.approval_id,'alice').status,'pending')
+
+    async def test_n_denies_in_chat_and_keep_y_remembers_only_exact_action(self):
+        ask = self.verdict.model_copy(update={'decision':'ask_user'})
+        with patch.object(review, 'run_reviewer', return_value=ask): pending = await self.authorize()
+        context = review.review_context(self.messages + [HumanMessage(content='N',id='no-1',additional_kwargs={'input_origin':'user'})])
+        self.assertIn('已拒绝', review.resolve_conversation_reply('alice','s',context))
+        self.assertEqual(store.get_tool_approval(pending.approval_id,'alice').status,'denied')
+        with patch.object(review, 'run_reviewer', return_value=ask): pending = await self.authorize()
+        context = review.review_context(self.messages + [HumanMessage(content='KEEP Y '+pending.approval_id,id='yes-2',additional_kwargs={'input_origin':'user'})])
+        self.assertIn('已批准', review.resolve_conversation_reply('alice','s',context))
+        saved = policy.get_tool_policy('alice')
+        self.assertTrue(policy.evaluate_tool_policy(saved,'run_command',canonical_action_args('run_command',self.args)).allowed)
+        self.assertTrue(policy.evaluate_tool_policy(saved,'run_command',canonical_action_args('run_command',self.args | {'command':'git reset --hard'})).requires_approval)
+
+    async def test_y_requires_id_with_multiple_requests_and_cannot_approve_new_request(self):
+        ask = self.verdict.model_copy(update={'decision':'ask_user'})
+        with patch.object(review, 'run_reviewer', return_value=ask):
+            first = await self.authorize()
+            second = await self.authorize(args=self.args | {'command':'git diff'})
+        reply = HumanMessage(content='Y',id='yes-1',additional_kwargs={'input_origin':'user'})
+        context = review.review_context(self.messages + [reply])
+        self.assertEqual(review.resolve_conversation_reply('alice','s',context),'')
+        reply.content='Y '+first.approval_id
+        self.assertIn('已批准',review.resolve_conversation_reply('alice','s',review.review_context(self.messages+[reply])))
+        self.assertEqual(store.get_tool_approval(second.approval_id,'alice').status,'pending')
+        with patch.object(review,'run_reviewer',return_value=ask):
+            new = await self.authorize(args=self.args | {'command':'git log'},messages=self.messages+[reply])
+        self.assertEqual(review.resolve_conversation_reply('alice','s',review.review_context(self.messages+[reply])), '')
+        self.assertEqual(store.get_tool_approval(new.approval_id,'alice').status,'pending')
 
     async def test_runtime_overwrites_spoofed_origin_and_assigns_stable_ids(self):
         from webot.engine.lightweight_agent_runtime import LightweightAgentRuntime

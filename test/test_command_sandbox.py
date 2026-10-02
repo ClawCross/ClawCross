@@ -17,6 +17,29 @@ import webot.mcp.commander as commander
 
 
 class CommandSandboxTests(unittest.TestCase):
+    def test_permission_request_does_not_execute_and_binds_exact_command(self):
+        from webot.approval_review import ApprovalResult
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            workspace = SessionWorkspace(root=root, cwd=root, mode='shared', remote='')
+            options = SimpleNamespace(approval=SimpleNamespace(command_sandbox='srt'))
+            with patch('webot.runtime_settings.get_runtime_settings', return_value=options), \
+                 patch.object(commander, 'resolve_session_workspace', return_value=workspace), \
+                 patch.object(commander, 'authorize_action', new=AsyncMock(return_value=ApprovalResult(True))) as authorize, \
+                 patch.object(commander, '_run_foreground', new=AsyncMock()) as runner:
+                result = asyncio.run(commander.request_sandbox_permission('alice', 'echo ok', 'network',
+                    '用户指定从 example.org 下载任务资料', 'example.org', session_id='s'))
+            self.assertIn('完全相同的参数', result)
+            runner.assert_not_awaited()
+            self.assertEqual(authorize.await_args.kwargs['tool_name'], 'run_command')
+            self.assertEqual(authorize.await_args.kwargs['args']['sandbox_access'], 'network')
+            self.assertTrue(authorize.await_args.kwargs['transfer_to_command'])
+
+    def test_root_deletion_stays_absolute_but_workspace_rm_uses_isolation(self):
+        self.assertIsNotNone(commander._validate_command('rm -rf /', isolated=True))
+        self.assertIsNotNone(commander._validate_command('rm -rf /', isolated=False))
+        self.assertIsNone(commander._validate_command('rm obsolete.txt', isolated=True))
+        self.assertIsNotNone(commander._validate_command('rm obsolete.txt', isolated=False))
     def test_initialization_failure_does_not_suggest_host_escalation(self):
         error = ('apply-seccomp: write /proc/self/setgroups '
                  '(nested userns is capability-restricted; caller must provide CAP_SYS_ADMIN): Permission denied')
@@ -78,7 +101,7 @@ class CommandSandboxTests(unittest.TestCase):
             fake_srt.write_text('#!/bin/sh\nshift 3\nexec "$@"\n', encoding="utf-8")
             fake_srt.chmod(0o755)
             import shlex
-            probe = "import json,resource; print(json.dumps({name:resource.getrlimit(getattr(resource,name))[0] for name in ('RLIMIT_CPU','RLIMIT_AS','RLIMIT_FSIZE','RLIMIT_NOFILE','RLIMIT_NPROC')}))"
+            probe = "import json,resource; print(json.dumps({name:resource.getrlimit(getattr(resource,name)) for name in ('RLIMIT_CPU','RLIMIT_AS','RLIMIT_FSIZE','RLIMIT_NOFILE','RLIMIT_NPROC')}))"
             with patch.object(command_sandbox, "_srt_binary", return_value=str(fake_srt)):
                 call = command_sandbox.build_srt_command(
                     root=root, cwd=root,
@@ -90,7 +113,9 @@ class CommandSandboxTests(unittest.TestCase):
                 import subprocess
                 result = subprocess.run(call.argv, cwd=root, capture_output=True,
                                         text=True, timeout=5, check=True)
-                limits = json.loads(result.stdout)
+                pairs = json.loads(result.stdout)
+                for soft, hard in pairs.values(): self.assertEqual(soft, hard)
+                limits = {name: pair[0] for name,pair in pairs.items()}
                 self.assertLessEqual(limits["RLIMIT_CPU"], 120)
                 self.assertLessEqual(limits["RLIMIT_AS"], 2 * 1024**3)
                 self.assertLessEqual(limits["RLIMIT_FSIZE"], 128 * 1024**2)

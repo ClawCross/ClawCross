@@ -732,21 +732,9 @@ test('studio webot runtime sidebar shows runtime state and resolves approvals', 
   await expect(page.locator('#webot-subagent-detail')).toContainText('/tmp/clawcross/worktree/curie');
   await expect(page.locator('#webot-subagent-detail')).toContainText('Flask proxy chain');
 
-  await page
-    .locator('#webot-subagent-detail button')
-    .filter({ hasText: /批准并记住|Approve \+ remember/ })
-    .click();
-
-  await expect.poll(() => calls.approvalActions.length).toBe(1);
-  expect(calls.approvalActions[0]).toMatchObject({
-    approval_id: 'approval-1',
-    action: 'approve',
-    remember: true,
-    session_id: 'subagent__coder__curie',
-  });
-
-  await expect(page.locator('#webot-policy-status')).toContainText(/Approval 已处理|Approval resolved/);
-  await expect(page.locator('#webot-subagent-detail')).toContainText(/approved|APPROVED/);
+  await expect(page.locator('#webot-subagent-detail button').filter({ hasText: /批准并记住|Approve \+ remember/ })).toHaveCount(0);
+  expect(calls.approvalActions).toEqual([]);
+  await expect(page.locator('#studio-approval-strip')).toBeHidden();
 
   expect(pageErrors).toEqual([]);
 });

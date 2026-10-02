@@ -141,7 +141,7 @@ if IS_WINDOWS:
     ]
 else:
     BLOCKED_PATTERNS = [
-        "rm -rf /", "rm -rf /*", "mkfs", "dd if=", ":(){ :", "fork bomb",
+        "mkfs", "dd if=", ":(){ :", "fork bomb",
         "> /dev/sd", "chmod 777 /", "chown root", "/etc/passwd", "/etc/shadow",
         "sudo", "su ", "shutdown", "reboot", "halt", "poweroff",
         "systemctl", "service ", "init ",
@@ -629,13 +629,16 @@ def _user_workspace(username: str, session_id: str = "", cwd: str = "") -> str:
     """获取用户独立工作目录，自动创建"""
     return str(resolve_session_workspace(username, session_id, explicit_cwd=cwd).cwd)
 
-def _validate_command(command: str) -> str | None:
+def _validate_command(command: str, *, isolated: bool = False) -> str | None:
     """
     验证命令安全性，返回 None 表示通过，返回字符串表示拒绝原因
     """
     stripped = command.strip()
     if not stripped:
         return "命令不能为空"
+    analysis = analyze_command(command)
+    if analysis.blocked or analysis.risk_level == RiskLevel.CRITICAL:
+        return "安全策略拒绝：" + '; '.join(analysis.reasons)
 
     lowered = stripped.lower()
     for pattern in BLOCKED_PATTERNS:
@@ -661,7 +664,7 @@ def _validate_command(command: str) -> str | None:
         if not cmd_name:
             continue
 
-        if COMMANDER_COMMAND_MODE == "blacklist" and cmd_name.lower() in BLOCKED_COMMANDS:
+        if COMMANDER_COMMAND_MODE == "blacklist" and cmd_name.lower() in BLOCKED_COMMANDS and not (isolated and cmd_name.lower() == 'rm'):
             return f"安全策略拒绝：命令 '{cmd_name}' 在黑名单中。"
         if COMMANDER_COMMAND_MODE == "whitelist" and cmd_name not in ALLOWED_COMMANDS:
             return f"安全策略拒绝：命令 '{cmd_name}' 不在白名单中。允许的命令：{', '.join(sorted(ALLOWED_COMMANDS))}"
@@ -970,7 +973,10 @@ async def _command_safety_gate(
     if mode in {"chat", "readonly", "plan", "review"}:
         return f"❌ 当前会话处于 {mode} 模式，禁止执行命令或输入。", ""
     if check_names:
-        reject_reason = _validate_command(command)
+        from webot.runtime_settings import get_runtime_settings
+        isolated = (get_runtime_settings(username, normalized_session).approval.command_sandbox == 'srt'
+                    and normalized_args.get('sandbox_access') != 'host')
+        reject_reason = _validate_command(command, isolated=isolated)
         if reject_reason:
             return f"❌ {reject_reason}", ""
     cmd_analysis = analyze_command(command)
@@ -1090,6 +1096,52 @@ async def _wait_for_output(path: str, start: int, wait_seconds: float, job: "Bac
 
 
 @mcp.tool()
+async def request_sandbox_permission(
+    username: str, command: str,
+    sandbox_access: Literal['read_path', 'write_path', 'network', 'host'],
+    escalation_reason: str, escalation_target: str = '',
+    language: Literal['shell', 'python'] = 'shell',
+    mode: Literal['foreground', 'background', 'interactive'] = 'foreground',
+    session_id: str = '', cwd: str = '', timeout_seconds: int = 0,
+    max_output_chars: int = 0, notify_on_done: bool = False,
+) -> str:
+    """申请某个具体命令的一次沙盒权限，不执行命令、不修改会话的沙盒设置。
+
+    审核成功后，用完全相同的参数调用 run_command；权限仅可消费一次。
+    read_path/write_path 仅授权一个现有绝对路径，network 仅一个域名，host 是明确的宿主执行申请。
+    缺少授权时返回固定请求，用户在当前对话回复 Y/N/KEEP Y 或自然语言授权。
+    沙盒初始化失败应修复系统兼容性，不能为此申请 host 绕过。
+    """
+    from webot.runtime_settings import get_runtime_settings
+    if get_runtime_settings(username, session_id or 'default').approval.command_sandbox != 'srt':
+        return '❌ 当前会话未启用 SRT，不能申请沙盒权限。'
+    if not escalation_reason.strip():
+        return '❌ 申请必须说明具体任务需要。'
+    if language == 'shell' and (rejection := _validate_command(command, isolated=sandbox_access != 'host')):
+        return '❌ ' + rejection
+    analysis = analyze_command(command)
+    if analysis.blocked or analysis.risk_level == RiskLevel.CRITICAL:
+        return '❌ 命令触及绝对拦截规则，审核不能解除。'
+    workspace = resolve_session_workspace(username, session_id, explicit_cwd=cwd)
+    try:
+        escalation_target = normalize_escalation(sandbox_access, escalation_target, workspace.root)
+    except SandboxUnavailable as exc:
+        return '❌ ' + str(exc)
+    args = canonical_action_args('run_command', {
+        'username': username, 'command': command, 'language': language, 'mode': mode,
+        'session_id': session_id or 'default', 'cwd': cwd, 'timeout_seconds': timeout_seconds,
+        'max_output_chars': max_output_chars, 'notify_on_done': notify_on_done,
+        'sandbox_access': sandbox_access, 'escalation_target': escalation_target,
+        'escalation_reason': escalation_reason,
+    })
+    outcome = await authorize_action(user_id=username, session_id=session_id or 'default',
+        tool_name='run_command', args=args, transfer_to_command=True, wait_for_user=False)
+    if not outcome.allowed:
+        return outcome.reason
+    return '✅ 已批准这个具体命令的一次权限；请用完全相同的参数调用 run_command。'
+
+
+@mcp.tool()
 async def run_command(
     username: str,
     command: str,
@@ -1117,7 +1169,7 @@ async def run_command(
     :param timeout_seconds: 超时秒数；0 表示默认值（前台 180，后台和交互至少 300），上限 MAX_EXEC_TIMEOUT
     :param max_output_chars: 前台模式最多返回的输出字符数；0 表示默认值（8000），最小 256
     :param notify_on_done: 后台或交互任务结束后用一条系统消息唤醒本会话并附上状态和输出尾部，无需轮询
-    :param sandbox_access: default 使用当前 SRT 沙盒；read_path / write_path / network 仅放宽一个目标；host 请求本次命令在宿主机运行。提权均需单次审核，不自动重跑失败命令
+    :param sandbox_access: default 使用当前 SRT 沙盒；可先用 request_sandbox_permission 申请具体路径、域名或 host 权限，再以相同参数执行。提权需审核，不自动重跑失败命令
     :param escalation_target: read_path/write_path 为已存在的绝对路径，network 为一个域名或域名:端口；default/host 留空
     :param escalation_reason: 提权时说明所需权限和此前的失败；理由本身不能替代用户授权
     """

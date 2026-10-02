@@ -53,6 +53,13 @@ def connector_file(agent):
 @contextmanager
 def active_turn(agent, msg, context, mode, enabled_tools, *, prepared=None, response_format=None):
     key = (agent.owner, agent.agent_id)
+    from langchain_core.messages import HumanMessage
+    from webot.approval_review import review_context, resolve_conversation_reply
+    group_requests = context.get('group_human_requests') or []
+    human = HumanMessage(content=msg.text, additional_kwargs={
+        'input_origin': 'user' if not group_requests and msg.sender == f'u:{agent.owner}' else 'system',
+        'framework_group_requests': group_requests})
+    resolve_conversation_reply(*key, review_context([human]))
     _active[key] = {'agent': agent, 'message': msg, 'context': context, 'mode': mode,
                     'enabled_tools': enabled_tools, 'lock': asyncio.Lock(),
                     'review_counters': {}, 'dynamic_context': prepared.dynamic_context if prepared else None,
@@ -135,8 +142,10 @@ def bridge_router():
         request = turn['message']
         group_requests = turn['context'].get('group_human_requests') or []
         human = HumanMessage(content=request.text, additional_kwargs={
-            'input_origin': 'system' if group_requests or not request.sender.startswith('u:') else 'user',
+            'input_origin': 'user' if not group_requests and request.sender == f'u:{key[0]}' else 'system',
             'framework_group_requests': group_requests})
+        from webot.approval_review import review_context, resolve_conversation_reply
+        resolve_conversation_reply(*key, review_context([human]))
         call = {'name': body.name, 'args': body.arguments, 'id': 'bridge-' + secrets.token_hex(8)}
         node = UserAwareToolNode(tools, lambda: tools, find_internal_session_meta_fn=meta,
                                  tool_registry=engine._tool_registry)

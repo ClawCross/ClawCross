@@ -10497,28 +10497,7 @@ async function resolveMobileToolApproval(approvalId, action, remember, sessionId
 
 function renderPendingApprovalCards(approvals) {
   const strip = document.getElementById('approval-strip');
-  if (!strip) return;
-  if (!approvals.length) {
-    strip.classList.remove('show');
-    strip.innerHTML = '';
-    return;
-  }
-  strip.classList.add('show');
-  strip.innerHTML = approvals.map(item => `
-    <div class="approval-card">
-      <div class="approval-card-title">${t('approval_required_title')}</div>
-      <div class="approval-card-meta"><strong>${esc(item.tool_name || '')}</strong></div>
-      <div class="approval-card-meta">${t('approval_reason')}: ${esc(item.request_reason || '')}</div>
-      <details><summary>${_currentLang === 'zh' ? '查看具体操作' : 'View exact action'}</summary><pre style="white-space:pre-wrap;max-height:160px;overflow:auto;">${esc(JSON.stringify(item.args || {}, null, 2))}</pre></details>
-      ${item.review?.verdict ? `<div class="approval-card-meta">${esc(item.review.verdict.reason || '')}</div>` : ''}
-      <div class="approval-card-meta" style="font-family:monospace;">approval_id: ${esc(item.approval_id || '')}</div>
-      <div class="approval-card-actions">
-        <button class="approval-card-btn approve" onclick="resolveMobileToolApproval('${esc(item.approval_id || '')}','approve',false,'${esc(item.session_id || '')}',this)">${t('approval_approve')}</button>
-        <button class="approval-card-btn approve-remember" onclick="resolveMobileToolApproval('${esc(item.approval_id || '')}','approve',true,'${esc(item.session_id || '')}',this)">${t('approval_approve_remember')}</button>
-        <button class="approval-card-btn deny" onclick="resolveMobileToolApproval('${esc(item.approval_id || '')}','deny',false,'${esc(item.session_id || '')}',this)">${t('approval_deny')}</button>
-      </div>
-    </div>
-  `).join('');
+  if (strip) { strip.classList.remove('show'); strip.innerHTML = ''; }
 }
 
 async function refreshPendingApprovalsForCurrentGroup() {

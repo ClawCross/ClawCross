@@ -136,6 +136,7 @@ async function loadRuntimeSettingsScope() {
                     <div class="runtime-settings-advanced-body runtime-settings-grid">
                         ${model('approval', 'reviewer_model', approval.reviewer_model)}
                         <label class="runtime-settings-field"><span>${text('审核等待上限（秒）', 'Review timeout (seconds)')}</span><input data-section="approval" data-key="reviewer_timeout_seconds" type="number" min="5" max="120" value="${approval.reviewer_timeout_seconds}" class="runtime-settings-input"></label>
+                        <label class="runtime-settings-field"><span>${text('审核输出预算（tokens）', 'Review output budget (tokens)')}</span><input data-section="approval" data-key="reviewer_max_tokens" type="number" min="1024" max="16384" value="${approval.reviewer_max_tokens || 4096}" class="runtime-settings-input"></label>
                     </div>
                 </details>
             </section>`;
@@ -202,7 +203,7 @@ function updateRuntimeReviewerHint() {
         chat: ['仅通过文字交流，不调用工具。', 'Text conversation only, with no tool calls.'],
         readonly: ['可以查看文件、搜索和分析；不能写入、执行命令或发送消息。', 'View files, search and analyze. No writes, commands, or messages.'],
         bypass: ['开放工具并跳过操作确认。显式禁止规则仍然生效。', 'Tools are available without confirmation. Explicit deny rules still apply.'],
-        auto: ['根据你的任务代审写入和需要批准的操作；依据不足或审核超时时，交给你决定。', 'Reviews writes and approval requests for you. If evidence is insufficient or review times out, you decide.'],
+        auto: ['根据你的任务代审写入和需要批准的操作；依据不足或审核失败时不执行操作，在当前对话中请求明确授权。', 'Reviews writes and approval requests for you. If authorization is insufficient or review fails, the action is blocked and you can reply in the conversation.'],
     };
     document.getElementById('runtime-settings-reviewer-hint').textContent = runtimeSettingsText(...hints[mode]);
 }
