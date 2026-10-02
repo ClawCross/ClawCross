@@ -39,12 +39,16 @@ test('backend status restores automatic compaction without clicking and isolates
   await page.addScriptTag({content: `
     window.currentSessionId = 's1'; window.currentLang = 'zh-CN';
     window.sessionBackendCompaction = null; window.renderSessionContextDetail = () => {};
+    window.sessionCompactBusy = false; window.sessionCompactStatus = '';
     window.backendStatus = {state: 'running', kind: 'automatic', elapsed_seconds: 12};
     window._sessionAgent = async () => ({status: {compaction: backendStatus}});
+    window._ocChatMode = 'internal'; window._ocSelectedAgent = null; window._acpTool = null;
   `});
   const source = fs.readFileSync('src/frontend/static/js/main.js', 'utf8');
   await page.addScriptTag({content: source.slice(source.indexOf('function backendCompactionLabel('), source.indexOf('function formatContextTokenCount('))});
   const start = source.indexOf('async function fetchSessionStatus(');
+  const contextStart = source.indexOf('function chatRunContextKey(');
+  await page.addScriptTag({content: source.slice(contextStart, source.indexOf('\nfunction ', contextStart + 10))});
   await page.addScriptTag({content: source.slice(start, source.indexOf('\nfunction ', start))});
   await page.evaluate(() => fetchSessionStatus('s1'));
   await expect(page.locator('#session-compaction-indicator')).toHaveText('正在整理对话 · 自动 · 12 秒');

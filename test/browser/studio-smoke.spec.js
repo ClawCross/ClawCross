@@ -716,6 +716,7 @@ test('studio ACP warmup surfaces backend errors inline', async ({ page }) => {
   });
 
   await page.goto('/studio');
+  await page.locator('.studio-conversation-switcher > summary').click();
   await page.getByRole('button', { name: 'Cursor' }).click();
   await expect(page.locator('#oc-acp-session-row')).toBeVisible();
 
