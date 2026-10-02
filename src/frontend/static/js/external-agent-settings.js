@@ -33,12 +33,10 @@
     if (!id) return;
     let card;
     try { card = refreshed?.card || await capabilities(id); } catch (error) {
-      // Show settings before the first chat without starting acpx or an adapter.
-      if (error.status === 404 && isAcpTab() && id === currentTarget() && typeof studioEnsureAgent === 'function') {
-        try {
-          await studioEnsureAgent(id, {platform: _acpTool});
-          card = await capabilities(id);
-        } catch (failure) { window.alert(failure.message); return; }
+      // Inspecting an uncreated profile is read-only. Creation requires a button click.
+      if (error.status === 404 && isAcpTab() && id === currentTarget()) {
+        card = {platform: _acpTool, transport: 'acpx', uncreated: true,
+          settings: {clawcross_tools: true}, config_options: []};
       } else { window.alert(error.message); return; }
     }
     if (card.transport !== 'acpx') return;
@@ -50,10 +48,21 @@
     overlay.setAttribute('role', 'dialog');
     overlay.setAttribute('aria-modal', 'true');
     overlay.setAttribute('aria-labelledby', 'external-settings-title');
+    let uncreated = Boolean(card.uncreated);
+    const createIfNeeded = async () => {
+      if (!uncreated) return;
+      await studioEnsureAgent(id, {platform: card.platform});
+      uncreated = false;
+      cache.delete(id);
+      overlay.querySelector('[data-save]').textContent = '保存';
+      overlay.querySelector('[data-test]').textContent = '测试连接';
+      overlay.querySelector('[data-uncreated]')?.remove();
+    };
     const settings = card.settings || {};
     const options = Array.isArray(card.config_options) ? card.config_options : [];
     overlay.innerHTML = `<section class="external-settings-dialog">
       <header><h2 id="external-settings-title">${escape(card.platform)} · Agent 设置</h2><button type="button" data-close aria-label="关闭">×</button></header>
+      ${uncreated ? '<p role="status" data-uncreated>此 Agent 尚未创建。点击下方创建按钮后才会创建。</p>' : ''}
       <p>设置仅用于这个 Agent，从下一轮调用生效。原生模式和权限由外部 Agent 执行。</p>
       <div class="external-settings-fields">${options.length ? options.map((item, index) => {
         const selected = settings.config_options?.[item.id] ?? item.currentValue ?? '';
@@ -69,7 +78,7 @@
         <label>允许的 ClawCross 工具<input id="external-tool-list" value="${escape((settings.tools || []).join(', '))}" placeholder="留空跟随全部可用工具；用逗号分隔工具名"></label>
         <small>工具仍受每轮选择与服务器审核限制。关闭连接器可禁止该 Agent 调用 ClawCross 工具。</small>
       </details></div>
-      <footer><span role="status" data-status>${escape(refreshed?.status || '')}</span><div><button type="button" data-test>测试连接</button> <button type="button" data-save>保存</button></div></footer>
+      <footer><span role="status" data-status>${escape(refreshed?.status || '')}</span><div><button type="button" data-test>${uncreated ? '创建并测试连接' : '测试连接'}</button> <button type="button" data-save>${uncreated ? '创建并保存' : '保存'}</button></div></footer>
     </section>`;
     const previousFocus = refreshed?.focus || document.activeElement;
     const close = () => { overlay.remove(); previousFocus?.focus(); };
@@ -99,6 +108,7 @@
         ttl_sec: Number(overlay.querySelector('#external-ttl').value)};
       const toolList = overlay.querySelector('#external-tool-list').value;
       try {
+        await createIfNeeded();
         const fresh = await request('/v1/agents/' + encodeURIComponent(id) + '/test-connection', 'POST');
         cache.set(id, {value:fresh, at:Date.now()});
         if (!overlay.isConnected) return;
@@ -120,6 +130,7 @@
         const config_options = {};
         overlay.querySelectorAll('[data-option]').forEach(el => { if (el.value) config_options[el.dataset.option] = el.value; });
         const names = overlay.querySelector('#external-tool-list').value.split(/[,，\s]+/).filter(Boolean);
+        await createIfNeeded();
         const saved = await request('/v1/agents/' + encodeURIComponent(id) + '/acp-settings', 'PATCH', {
           config_options, clawcross_tools: overlay.querySelector('#external-tools').checked,
           timeout_sec: Number(overlay.querySelector('#external-timeout').value),
@@ -137,7 +148,7 @@
     let card;
     try { card = await capabilities(id); } catch (error) {
       if (error.status === 404 && isAcpTab() && id === currentTarget()) {
-        card = {transport: 'acpx', clawcross_tools: true};
+        card = {transport: 'acpx', clawcross_tools: true, uncreated: true};
       } else if (error.status === 404 && id === currentTarget()) {
         card = {transport: 'webot'};
       } else { return; }
@@ -150,7 +161,7 @@
     const context = document.querySelector('.oc-context-usage-wrap');
     if (context) context.hidden = acp;
     const hint = document.getElementById('external-runtime-hint');
-    if (hint) { hint.hidden = !acp; hint.textContent = card.clawcross_tools ?
+    if (hint) { hint.hidden = !acp; hint.textContent = card.uncreated ? '尚未创建 Agent；发送消息或明确点击创建后才会创建。' : card.clawcross_tools ?
       'ClawCross 工具已连接；本轮模式约束 ClawCross 工具。原生工具权限见 Agent 设置。' :
       '当前使用原生工具；ClawCross 工具未连接。原生权限与思考强度见 Agent 设置。'; }
     const wrapper = document.getElementById('tool-panel');
