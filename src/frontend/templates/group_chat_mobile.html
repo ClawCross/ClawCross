@@ -4906,9 +4906,14 @@
     </div>
     <div style="padding:12px 16px;border-top:1px solid var(--border)">
       <label style="display:flex;justify-content:space-between;gap:12px;align-items:center">命令沙盒
-        <input type="checkbox" id="mobile-command-sandbox" onchange="saveMobileSandbox(this)">
+        <select id="mobile-command-sandbox" onchange="saveMobileSandbox(this)">
+          <option value="off">关闭 / Off</option>
+          <option value="auto">自动 / Auto · SRT / Landlock</option>
+          <option value="srt">SRT</option>
+          <option value="landlock">Linux Landlock</option>
+        </select>
       </label>
-      <p style="font-size:12px;color:var(--text-secondary)">默认关闭。开启后限制命令网络、写入和资源使用；组件不可用时拒绝执行。保存到当前用户，已有会话的单独设置优先。</p>
+      <p style="font-size:12px;color:var(--text-secondary)">默认关闭。自动模式在 Linux 上探测 SRT，不兼容时使用 Landlock；Landlock 禁止全部网络。资源上限为每进程/文件上限，非进程树总额。缺少能力时拒绝执行；已有会话单独设置优先。</p>
       <div id="mobile-sandbox-component"></div>
       <div id="mobile-sandbox-result" role="status" style="font-size:12px"></div>
     </div>
@@ -14712,7 +14717,8 @@ async function loadMobileSandbox() {
   initComponentControls(container);
   try {
     const data = await api('GET', '/proxy_webot_runtime_settings');
-    field.checked = data.settings.approval.command_sandbox === 'srt';
+    field.value = data.settings.approval.command_sandbox || 'off';
+    field.dataset.savedValue = field.value;
     document.getElementById('mobile-sandbox-result').textContent = '';
     field.disabled = false;
   } catch (error) { document.getElementById('mobile-sandbox-result').textContent = error.message; }
@@ -14720,9 +14726,10 @@ async function loadMobileSandbox() {
 async function saveMobileSandbox(field) {
   field.disabled = true;
   try {
-    await api('POST', '/proxy_webot_runtime_settings', {session_id:'', settings:{approval:{command_sandbox: field.checked ? 'srt' : 'off'}}});
+    await api('POST', '/proxy_webot_runtime_settings', {session_id:'', settings:{approval:{command_sandbox: field.value}}});
+    field.dataset.savedValue = field.value;
     document.getElementById('mobile-sandbox-result').textContent = '已保存，下次调用生效。';
-  } catch (error) { field.checked = !field.checked; document.getElementById('mobile-sandbox-result').textContent = error.message; }
+  } catch (error) { field.value = field.dataset.savedValue || 'off'; document.getElementById('mobile-sandbox-result').textContent = error.message; }
   finally { field.disabled = false; }
 }
 

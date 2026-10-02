@@ -21,6 +21,7 @@ from collections import deque
 import json
 import re
 import shlex
+import shutil
 import signal
 import subprocess
 from dataclasses import dataclass, field
@@ -35,7 +36,7 @@ from webot.mcp_tool_docs import DocumentedFastMCP as FastMCP
 from common.runtime_paths import ENV_FILE, PROJECT_ROOT as _PROJECT_ROOT, USER_FILES_DIR
 
 from webot.workspace import resolve_session_workspace
-from webot.command_sandbox import build_srt_command, normalize_escalation, SandboxUnavailable, SrtCommand, sandbox_failure_hint, permission_failure_target
+from webot.command_sandbox import build_landlock_command, select_sandbox_backend, build_srt_command, normalize_escalation, SandboxUnavailable, SrtCommand, sandbox_failure_hint, permission_failure_target
 from webot.approval_review import authorize_action, policy_binding
 from webot.approval_actions import canonical_action_args
 from webot.runtime_store import consume_execution_permit, get_session_mode
@@ -418,6 +419,9 @@ def main():
                     os.unlink(path)
                 except OSError:
                     pass
+        if cfg.get("sandbox_temporary_dir"):
+            import shutil
+            shutil.rmtree(cfg["sandbox_temporary_dir"], ignore_errors=True)
     # Terminal meta is written on every path above — push the completion event.
     _notify_done(cfg)
 
@@ -462,6 +466,7 @@ def _launch_detached_background_job(
         "stdin_path": job.stdin_path,
         "exec_argv": list(sandbox.argv) if sandbox is not None else None,
         "sandbox_settings_path": str(sandbox.settings_path) if sandbox is not None else "",
+        "sandbox_temporary_dir": str(sandbox.temporary_dir) if sandbox is not None and sandbox.temporary_dir else "",
         "cleanup_script": cleanup_script,
     }
     if job.notify_on_done and job.session_id:
@@ -921,6 +926,9 @@ def main():
                 os.unlink(path)
             except OSError:
                 pass
+    if cfg.get("sandbox_temporary_dir"):
+        import shutil
+        shutil.rmtree(cfg["sandbox_temporary_dir"], ignore_errors=True)
     _notify_done(cfg)
 
 
@@ -974,7 +982,7 @@ async def _command_safety_gate(
         return f"❌ 当前会话处于 {mode} 模式，禁止执行命令或输入。", ""
     if check_names:
         from webot.runtime_settings import get_runtime_settings
-        isolated = (get_runtime_settings(username, normalized_session).approval.command_sandbox == 'srt'
+        isolated = (get_runtime_settings(username, normalized_session).approval.command_sandbox in {'srt', 'auto', 'landlock'}
                     and normalized_args.get('sandbox_access') != 'host')
         reject_reason = _validate_command(command, isolated=isolated)
         if reject_reason:
@@ -1009,7 +1017,7 @@ async def _run_foreground(
     env = _sandbox_env(workspace, username)
     if sandbox is not None:
         env["PATH"] = os.environ.get("PATH", env["PATH"])
-        env["TMPDIR"] = str(Path(sandbox.settings_path).parent)
+        env["TMPDIR"] = str(sandbox.temporary_dir or sandbox.settings_path.parent)
     if isinstance(argv_or_command, str):
         proc = await asyncio.create_subprocess_shell(
             argv_or_command,
@@ -1048,6 +1056,8 @@ async def _run_foreground(
                 os.killpg(proc.pid, signal.SIGKILL)
         if sandbox is not None:
             sandbox.settings_path.unlink(missing_ok=True)
+            if sandbox.temporary_dir is not None:
+                shutil.rmtree(sandbox.temporary_dir, ignore_errors=True)
     if execution_report is not None:
         execution_report.update(exit_code=proc.returncode, stderr=err, timed_out=timed_out)
     location = [f"📁 工作目录: {workspace}", f"🧭 workspace mode: {workspace_state.mode}"]
@@ -1132,7 +1142,8 @@ async def run_command(
     if interactive and IS_WINDOWS:
         return "❌ 交互模式暂不支持 Windows。"
     from webot.runtime_settings import get_runtime_settings
-    sandbox_selected = get_runtime_settings(username, session_id or "default").approval.command_sandbox == "srt"
+    sandbox_backend = get_runtime_settings(username, session_id or "default").approval.command_sandbox
+    sandbox_selected = sandbox_backend in {"srt", "auto", "landlock"}
     sandbox_access, escalation_target, escalation_reason = 'default', '', ''
     workspace_state = resolve_session_workspace(username, session_id, explicit_cwd=cwd)
 
@@ -1155,6 +1166,10 @@ async def run_command(
 
     try:
         use_srt = sandbox_selected and sandbox_access != "host"
+        if use_srt and sandbox_backend == "auto":
+            sandbox_backend = await asyncio.to_thread(select_sandbox_backend, sandbox_backend,
+                root=workspace_state.root, cwd=workspace_state.cwd, env=_sandbox_env(workspace, username))
+        build_sandbox = build_landlock_command if sandbox_backend == "landlock" else build_srt_command
         if mode == "foreground":
             if use_srt:
                 script = _write_python_script(workspace, command) if is_python else ""
@@ -1163,7 +1178,7 @@ async def run_command(
                     deadline = time.monotonic() + _bounded_int(timeout_seconds, EXEC_TIMEOUT, 1, MAX_EXEC_TIMEOUT)
                     for attempt in range(2):
                         try:
-                            sandbox = build_srt_command(
+                            sandbox = build_sandbox(
                                 root=workspace_state.root, cwd=workspace_state.cwd,
                                 command=command, language=language, python_executable=_python_cmd(),
                                 script_path=Path(script) if script else None,
@@ -1173,7 +1188,7 @@ async def run_command(
                             return f"❌ {exc}"
                         report = {}
                         result = await _run_foreground(
-                            list(sandbox.argv), label="SRT 内 Python 代码" if is_python else "SRT 内命令",
+                            list(sandbox.argv), label=f"{sandbox.backend.upper()} 内 " + ("Python 代码" if is_python else "命令"),
                             workspace_state=workspace_state, username=username,
                             timeout_value=max(1, int(deadline - time.monotonic())),
                             capture_limit=_bounded_int(max_output_chars, MAX_OUTPUT_LENGTH, 256, MAX_CAPTURE_LENGTH),
@@ -1189,6 +1204,8 @@ async def run_command(
                         if needed is None:
                             return result
                         sandbox_access, escalation_target = needed
+                        if sandbox_backend == "landlock" and sandbox_access == "network":
+                            return result + "\n\n❌ Landlock 后端不支持网络提权，未请求审核。"
                         escalation_reason = '系统检测到沙盒命令权限拒绝，需要一次有限权限重试。'
                         args = canonical_action_args('run_command', {
                             'username': username, 'command': command, 'language': language,
@@ -1210,6 +1227,8 @@ async def run_command(
                 finally:
                     if sandbox is not None:
                         sandbox.settings_path.unlink(missing_ok=True)
+                        if sandbox.temporary_dir is not None:
+                            shutil.rmtree(sandbox.temporary_dir, ignore_errors=True)
                     if script:
                         with contextlib.suppress(OSError):
                             os.remove(script)
@@ -1239,7 +1258,7 @@ async def run_command(
         try:
             if use_srt:
                 try:
-                    sandbox = build_srt_command(
+                    sandbox = build_sandbox(
                         root=workspace_state.root, cwd=workspace_state.cwd,
                         command=command, language=language, python_executable=_python_cmd(),
                         script_path=Path(script) if script else None, interactive=interactive,
@@ -1274,13 +1293,15 @@ async def run_command(
                 env["PYTHON_BASIC_REPL"] = "1"
             if sandbox is not None:
                 env["PATH"] = os.environ.get("PATH", env["PATH"])
-                env["TMPDIR"] = str(sandbox.settings_path.parent)
+                env["TMPDIR"] = str(sandbox.temporary_dir or sandbox.settings_path.parent)
             _launch_detached_background_job(job, env, sandbox=sandbox, cleanup_script=script)
             launched = True
         finally:
             if not launched:
                 if sandbox is not None:
                     sandbox.settings_path.unlink(missing_ok=True)
+                    if sandbox.temporary_dir is not None:
+                        shutil.rmtree(sandbox.temporary_dir, ignore_errors=True)
                 if script:
                     Path(script).unlink(missing_ok=True)
         _BACKGROUND_JOBS[job_id] = job
