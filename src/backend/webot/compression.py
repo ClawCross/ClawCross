@@ -537,7 +537,7 @@ def _rebase_runtime_view(view: list[BaseMessage]) -> list[BaseMessage]:
 def compression_view_from_record(
     record: Optional[ContextCompactionRecord], messages: list[BaseMessage],
 ) -> list[BaseMessage]:
-    """Build a view from a version frozen at the start of one agent turn."""
+    """Build the model-visible view from a committed compaction version."""
     return _build_view(_valid_record(record, messages), messages)
 
 
@@ -727,6 +727,7 @@ def apply_compression(
     settings: ContextSettings | None = None,
     persist: bool = True,
     before_summary: Callable[[], None] | None = None,
+    emergency: bool = False,
 ) -> CompressionResult:
     """Single-pass compression: load summary, maybe extend it, return view.
 
@@ -788,15 +789,19 @@ def apply_compression(
                       max(1, target_tokens // 3))
     if settings:
         preserve_recent_val = len(messages) - _recent_turn_boundary(messages, settings.preserve_recent_turns)
+    if emergency:
+        # A single tool-heavy turn can fill the window. Keep its latest
+        # complete tool exchange raw, while summarizing earlier exchanges.
+        preserve_recent_val = 1
 
     # force=True（用户手动压缩）跳过阈值判断，直接进入折叠。否则触发判断优先用调用方
     # 传入的真实 input_tokens（含 system+工具+历史，相对整窗口）——这是「上下文有多满」
     # 的真值，由 LLM API 上一轮返回。没有真值（首轮）时回退到历史视图的字数估算。
     # 折叠多少仍按历史估算挑边界（target_tokens 不变）。
-    if force:
+    if force or emergency:
         over_trigger = True
     elif measured_input_tokens > 0 and measured_budget > 0:
-        measured_trigger = max(1, int(measured_budget * _trigger_ratio()))
+        measured_trigger = min(trigger_tokens, max(1, int(measured_budget * _trigger_ratio())))
         # API usage includes the full prompt; the configured history budget
         # is a separate limit and must still apply to the current view.
         over_trigger = measured_input_tokens > measured_trigger or view_tokens > trigger_tokens
@@ -813,7 +818,7 @@ def apply_compression(
             view_tokens=view_tokens,
         )
 
-    min_new = 1 if force else _min_new_messages()
+    min_new = 1 if force or emergency else _min_new_messages()
     boundary = _pick_boundary(
         messages,
         current_until=current_until,
@@ -823,7 +828,7 @@ def apply_compression(
         # Automatic compaction keeps the earliest boundary meeting its target.
         target_tokens=0 if force else max(1, target_tokens - summary_cap),
         min_new=min_new,
-        whole_turns=settings is not None,
+        whole_turns=settings is not None and not emergency,
     )
     new_count = boundary - current_until
     # 手动压缩放宽防抖到 1 条：只要有可折叠的新内容就压。
@@ -875,7 +880,7 @@ def apply_compression(
         "summarizer": getattr(summarize, "stats", {"backend": "mechanical" if summarizer is None else "custom"}),
         "target_met": new_tokens <= target_tokens,
         "source_range": [current_until, boundary],
-        "strategy": "manual_all_eligible" if force else "automatic_target",
+        "strategy": "emergency_tool_boundary" if emergency else "manual_all_eligible" if force else "automatic_target",
         "preserved_tokens": estimate_messages_tokens(_rebase_runtime_view(messages[boundary:])),
         "preserve_recent_turns": settings.preserve_recent_turns if settings else None,
     }

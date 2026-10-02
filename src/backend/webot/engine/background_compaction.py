@@ -1,4 +1,4 @@
-"""Prepare conversation summaries after a turn without delaying the next reply."""
+"""Prepare summaries between model calls and after turns; wait at the window limit."""
 
 from __future__ import annotations
 
@@ -8,10 +8,11 @@ import logging
 import time
 from typing import Any
 
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import BaseMessage, HumanMessage
 
-from webot.checkpoint_repository import fetch_thread_message_count
-from webot.compression import apply_compression, commit_prepared_compression, make_llm_summarizer
+from webot.checkpoint_repository import fetch_thread_message_count, get_context_compaction
+from webot.compression import apply_compression, commit_prepared_compression, make_llm_summarizer, compression_view_from_record
+from webot.context_compressor import estimate_messages_tokens
 from webot.policy import get_tool_policy, run_tool_policy_hooks
 from webot.runtime import effective_session_mode
 from webot.runtime_settings import ContextSettings
@@ -40,7 +41,9 @@ class BackgroundCompressionManager:
         self, *, user_id: str, session_id: str, messages: list[BaseMessage],
         history_token_budget: int, preserve_recent: int, settings: ContextSettings,
         measured_input_tokens: int = 0, measured_budget: int = 0,
-    ) -> None:
+        emergency: bool = False, model: str = "",
+        queue_latest: bool = True,
+    ) -> asyncio.Task | None:
         if not settings.auto_compact or not messages or history_token_budget <= 0:
             return
         thread_id = f"{user_id}#{session_id}"
@@ -50,11 +53,13 @@ class BackgroundCompressionManager:
             "preserve_recent": preserve_recent, "settings": settings,
             "measured_input_tokens": measured_input_tokens,
             "measured_budget": measured_budget,
+            "emergency": emergency, "model": model,
         }
         current = self._tasks.get(thread_id)
         if current is not None and not current.done():
-            self._pending[thread_id] = request
-            return
+            if queue_latest:
+                self._pending[thread_id] = request
+            return current
         generation = self._generation.get(thread_id, 0)
         status = {"state": "checking", "kind": "automatic", "started_at": time.time(), "job_id": str(time.time_ns())}
         self._statuses[thread_id] = status
@@ -76,18 +81,68 @@ class BackgroundCompressionManager:
                     logger.warning("background compression failed for %s: %s", thread_id, error)
 
         task.add_done_callback(finished)
+        return task
+
+    async def prepare_for_model(
+        self, *, user_id: str, session_id: str, messages: list[BaseMessage],
+        history_token_budget: int, preserve_recent: int, settings: ContextSettings,
+        prefix_tokens: int, output_reserve: int, context_window: int,
+        model: str = "", measured_input_tokens: int = 0,
+    ):
+        """Use fresh summaries mid-turn, and never send an overflowing turn.
+
+        The caller supplies API usage only when it measured this compaction
+        version. After a new summary, occupancy is estimated until recalibrated.
+        """
+        thread_id = f"{user_id}#{session_id}"
+        record = await asyncio.to_thread(get_context_compaction, self.checkpoint_store_path, thread_id)
+        if not settings.auto_compact:
+            return record
+        view = compression_view_from_record(record, messages)
+        occupancy = max(measured_input_tokens, prefix_tokens + estimate_messages_tokens(view))
+        critical = occupancy + output_reserve >= int(context_window * .95)
+        trigger = min(settings.trigger_tokens or int(history_token_budget * .70),
+                      int(context_window * .80))
+        if occupancy < trigger and not critical:
+            return record
+        # Summarize an oversized tool loop before the hard watermark, even
+        # when normal recent-turn retention protects the entire loop.
+        last_user = max((i for i, item in enumerate(view) if isinstance(item, HumanMessage)), default=0)
+        long_turn = estimate_messages_tokens(view[last_user:]) >= int(history_token_budget * .80)
+        request = dict(user_id=user_id, session_id=session_id, messages=messages,
+            history_token_budget=history_token_budget, preserve_recent=preserve_recent,
+            settings=settings, measured_input_tokens=occupancy,
+            measured_budget=context_window, model=model, queue_latest=False)
+        task = self.schedule(**request, emergency=critical or long_turn)
+        if not critical:
+            return record
+        # An existing normal job may preserve this entire long turn. If it
+        # cannot free enough space, follow it with one tool-boundary job.
+        for attempt in range(2):
+            if task is not None:
+                await asyncio.shield(task)
+            record = await asyncio.to_thread(get_context_compaction, self.checkpoint_store_path, thread_id)
+            view = compression_view_from_record(record, messages)
+            if prefix_tokens + estimate_messages_tokens(view) + output_reserve < int(context_window * .95):
+                return record
+            if attempt == 0:
+                task = self.schedule(**request, emergency=True)
+        raise RuntimeError("上下文压缩后仍超过安全窗口；当前输入或最新工具结果过大，请缩小输入或调整上下文设置。")
 
     async def _prepare_and_commit(
         self, *, thread_id: str, user_id: str, session_id: str,
         messages: list[BaseMessage], history_token_budget: int,
         preserve_recent: int, settings: ContextSettings,
         measured_input_tokens: int, measured_budget: int, generation: int,
+        emergency: bool = False, model: str = "",
     ) -> None:
         status = self._statuses.get(thread_id, {})
         loop = asyncio.get_running_loop()
         # Start before the foreground 90% watermark so the next user turn can
-        # use an already finished summary. Explicit trigger settings win.
-        early_trigger = settings.trigger_tokens or max(1, int(history_token_budget * 0.70))
+        # use an already finished summary. Clamp late triggers to 80% of the
+        # complete window, since tools keep returning while we summarize.
+        early_trigger = min(settings.trigger_tokens or max(1, int(history_token_budget * 0.70)),
+                            max(1, int(measured_budget * .80)) if measured_budget else history_token_budget)
         target = settings.target_tokens or max(1, int(history_token_budget * 0.55))
         target = min(target, max(1, early_trigger - 1))
         prepared_settings = settings.model_copy(update={
@@ -115,7 +170,7 @@ class BackgroundCompressionManager:
                 checkpoint_store_path=self.checkpoint_store_path,
                 preserve_recent=preserve_recent,
                 summarizer=make_llm_summarizer(
-                    model=settings.summarizer_model or None,
+                    model=settings.summarizer_model or model or None,
                     max_output_tokens=settings.summary_tokens,
                     input_token_budget=settings.summarizer_input_tokens,
                     preserve_instructions=settings.preserve_instructions,
@@ -125,6 +180,7 @@ class BackgroundCompressionManager:
                 settings=prepared_settings,
                 persist=False,
                 before_summary=before_summary,
+                emergency=emergency,
             )
 
         result = await asyncio.to_thread(prepare)

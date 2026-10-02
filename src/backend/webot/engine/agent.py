@@ -1301,6 +1301,7 @@ class TeamAgent:
             settings=config["settings"],
             measured_input_tokens=self.get_thread_last_context_tokens(f"{user_id}#{session_id}"),
             measured_budget=config["context_window"],
+            model=config.get("model", ""),
         )
 
     async def purge_checkpoints(self, thread_id: str, keep: int = 1) -> int:
@@ -1654,6 +1655,7 @@ class TeamAgent:
             "preserve_recent": preserve_recent_messages,
             "settings": compact_settings,
             "context_window": model_window,
+            "model": current_model_name or "",
         }
         # 记下本轮模型，供静态路径（session_history / session_status）后续使用
         self._thread_state_registry.set_thread_model(
@@ -1669,11 +1671,20 @@ class TeamAgent:
         last_real_context = self.get_thread_last_context_tokens(thread_id)
         context_window = model_window
 
-        # Freeze the completed summary for this entire turn. Background work
-        # may publish a newer summary while tools are running; this turn keeps
-        # the same view and the next turn picks up the new version.
-        if "_turn_compaction_record" not in state:
-            state["_turn_compaction_record"] = get_context_compaction(self._db_path, thread_id)
+        # Each model call can pick up a newly completed summary, including
+        # within a long tool loop. Ignore API usage from an older summary.
+        current_record = get_context_compaction(self._db_path, thread_id)
+        measurement = getattr(self, "_usage_measurements", {}).get(thread_id, {})
+        state["_turn_compaction_record"] = await self._background_compression.prepare_for_model(
+            user_id=user_id, session_id=session_id, messages=history_messages,
+            history_token_budget=history_token_budget, preserve_recent=preserve_recent_messages,
+            settings=compact_settings, prefix_tokens=sum(prefix_cost.values()),
+            output_reserve=output_reserve, context_window=model_window,
+            model=current_model_name or "",
+            measured_input_tokens=last_real_context if measurement.get("compaction_key") == compaction_key(current_record) else 0,
+        )
+        if compaction_key(current_record) != compaction_key(state["_turn_compaction_record"]):
+            self.project_compacted_context_usage(thread_id, state["_turn_compaction_record"], state["messages"])
         history_messages = compression_view_from_record(
             state["_turn_compaction_record"], history_messages,
         )

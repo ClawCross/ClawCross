@@ -1,5 +1,6 @@
 import sys
 import tempfile
+import sqlite3
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -8,10 +9,47 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "backend"))
 from webot import compression as c
 from webot.runtime_settings import ContextSettings
-from webot.checkpoint_repository import save_context_compaction, get_context_compaction
+from webot.checkpoint_repository import save_context_compaction, get_context_compaction, delete_context_compaction
 
 
 class CompactSettingsTests(unittest.TestCase):
+    def test_compaction_history_keeps_versions_and_reset_removes_them(self):
+        first = save_context_compaction(self.path, 'alice#s', summary='first',
+            compacted_until=2, source_message_count=4, summary_token_estimate=2,
+            expected_updated_at='')
+        # Simulate an existing latest-only database from before this change.
+        with sqlite3.connect(self.path) as db:
+            db.execute('DROP TABLE context_compaction_history')
+        save_context_compaction(self.path, 'alice#s', summary='second',
+            compacted_until=4, source_message_count=6, summary_token_estimate=2,
+            expected_updated_at=first.updated_at)
+        with self.assertRaises(RuntimeError):
+            save_context_compaction(self.path, 'alice#s', summary='stale',
+                compacted_until=1, source_message_count=2, summary_token_estimate=2,
+                expected_updated_at=first.updated_at)
+        with sqlite3.connect(self.path) as db:
+            self.assertEqual(db.execute('SELECT summary FROM context_compaction_history ORDER BY id').fetchall(),
+                             [('first',), ('second',)])
+        delete_context_compaction(self.path, 'alice#s')
+        with sqlite3.connect(self.path) as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM context_compaction_history').fetchone()[0], 0)
+
+    def test_emergency_compacts_inside_one_turn_without_orphaning_tools(self):
+        self.messages = [HumanMessage(content='Original authorization: inspect files')]
+        for i in range(8):
+            self.messages.extend([
+                AIMessage(content='', tool_calls=[{'name': 'read_file', 'args': {}, 'id': str(i)}]),
+                ToolMessage(content='中' * 1000, tool_call_id=str(i)),
+            ])
+        options = ContextSettings(summary_tokens=256)
+        self.assertFalse(self.compact(settings=options).triggered)
+        result = self.compact(settings=options, emergency=True)
+        self.assertTrue(result.triggered)
+        self.assertEqual(result.metadata['strategy'], 'emergency_tool_boundary')
+        self.assertIsInstance(self.messages[result.compacted_until], AIMessage)
+        self.assertEqual(result.view[-2:], self.messages[-2:])
+        self.assertEqual(self.messages[0].content, 'Original authorization: inspect files')
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)

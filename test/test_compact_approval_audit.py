@@ -198,6 +198,7 @@ class ApprovalExecutionAuditTests(unittest.IsolatedAsyncioTestCase):
             agent_app=SimpleNamespace(aget_state=AsyncMock(return_value=SimpleNamespace(values={"messages": messages}))),
             get_thread_model=lambda thread: "",
             get_thread_last_context_tokens=lambda thread: 0,
+            get_thread_context_usage=lambda thread: {},
             set_thread_context_usage=Mock(),
         )
         service = SessionService(db_path=":memory:", agent=agent, extract_text=str)

@@ -242,7 +242,7 @@ class SessionService:
                 checkpoint_store_path=store_path,
                 preserve_recent=preserve_recent,
                 summarizer=make_llm_summarizer(
-                    model=settings.summarizer_model or None, max_output_tokens=settings.summary_tokens,
+                    model=settings.summarizer_model or last_model or None, max_output_tokens=settings.summary_tokens,
                     input_token_budget=settings.summarizer_input_tokens,
                     preserve_instructions=settings.preserve_instructions,
                 ),
