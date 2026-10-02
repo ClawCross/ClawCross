@@ -15,6 +15,11 @@ import re
 import shutil
 import sys
 import tempfile
+import subprocess
+import signal
+import platform
+import ctypes
+import ctypes.util
 
 
 class SandboxUnavailable(RuntimeError):
@@ -23,6 +28,10 @@ class SandboxUnavailable(RuntimeError):
 
 def sandbox_failure_hint(stderr: str) -> str:
     """Distinguish sandbox startup failures from denied workload operations."""
+    if "ClawCross Landlock 初始化失败:" in stderr:
+        return "❌ Landlock 沙盒初始化失败，命令尚未启动；不会降级为宿主执行。"
+    if "listen EPERM" in stderr and "srt-" in stderr:
+        return "❌ SRT 沙盒初始化失败：当前环境禁止创建代理 socket；命令尚未启动。可选择 Linux Landlock 后端。"
     if "apply-seccomp:" in stderr and any(marker in stderr for marker in (
         "setgroups", "uid_map", "gid_map", "unshare", "Operation not permitted",
     )):
@@ -45,6 +54,8 @@ def sandbox_failure_hint(stderr: str) -> str:
 class SrtCommand:
     argv: tuple[str, ...]
     settings_path: Path
+    backend: str = "srt"
+    temporary_dir: Path | None = None
 
 
 def escalation_ceiling() -> dict[str, list[str]]:
@@ -91,10 +102,13 @@ def permission_failure_target(stderr: str, root: Path) -> tuple[str, str] | None
         access = ''
         if 'Read-only file system' in line:
             access = 'write_path'
+        elif 'Permission denied' in line and re.search(r'(?:cannot create|cannot create regular file)', line, re.I):
+            access = 'write_path'
         elif 'Permission denied' in line and re.match(r'^(?:cat|head|tail|less|more): ', line):
             access = 'read_path'
         if access:
-            paths = re.findall(r"(?:^|[\s:'\"])(/[^\s:'\"]+)", line)
+            target_line = re.sub(r"^/[^:]+:\s*(?:[0-9]+:\s*)?", "", line)
+            paths = re.findall(r"(?:^|[\s:'\"])(/[^\s:'\"]+)", target_line)
             if len(paths) != 1:
                 continue
             target = Path(paths[0])
@@ -293,3 +307,81 @@ def build_srt_command(*, root: Path, cwd: Path, command: str, language: str,
     except BaseException:
         settings_path.unlink(missing_ok=True)
         raise
+
+
+def landlock_available() -> bool:
+    """Capability hint only; the launcher still verifies every filter installation."""
+    if sys.platform != "linux" or platform.machine() not in {"x86_64", "aarch64"} or os.geteuid() == 0:
+        return False
+    return ctypes.CDLL(None, use_errno=True).syscall(444, 0, 0, 1) >= 6 and ctypes.util.find_library("seccomp") is not None
+
+
+def build_landlock_command(*, root: Path, cwd: Path, command: str, language: str,
+                           python_executable: str, script_path: Path | None = None,
+                           interactive: bool = False, access: str = "default", target: str = "") -> SrtCommand:
+    if not landlock_available():
+        raise SandboxUnavailable("Landlock 需要 Linux x86_64/aarch64、ABI ≥ 6、libseccomp 及非 root 账号；不会降级为宿主执行。")
+    root, cwd = root.resolve(), cwd.resolve()
+    if not cwd.is_relative_to(root):
+        raise SandboxUnavailable("命令工作目录超出会话工作区。")
+    if access == "network":
+        raise SandboxUnavailable("Landlock 后端禁用全部网络，尚不支持网络提权。")
+    target = bounded_escalation(access, target, root) if access != "default" else normalize_escalation(access, target, root)
+    if language == "python":
+        if script_path is None or not script_path.resolve().is_relative_to(root):
+            raise SandboxUnavailable("Python 脚本超出会话工作区。")
+        wrapped = [python_executable, *(["-i"] if interactive else []), str(script_path.resolve())]
+    elif language == "shell":
+        wrapped = ["/bin/sh", "-c", command]
+    else:
+        raise SandboxUnavailable("不支持的沙盒命令语言。")
+    # Private per-command temporary directory, covered by the workspace rule.
+    temporary_dir = Path(tempfile.mkdtemp(prefix=".command-tmp-", dir=root))
+    fd, raw_path = tempfile.mkstemp(prefix="clawcross-landlock-", suffix=".json")
+    settings_path = Path(raw_path)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump({"root": str(root), "read_paths": [target] if access == "read_path" else [],
+                       "write_paths": [target] if access == "write_path" else []}, handle)
+        launcher = Path(__file__).with_name("landlock_launcher.py")
+        return SrtCommand((sys.executable, str(launcher), str(settings_path), *wrapped), settings_path,
+                          backend="landlock", temporary_dir=temporary_dir)
+    except BaseException:
+        settings_path.unlink(missing_ok=True)
+        shutil.rmtree(temporary_dir, ignore_errors=True)
+        raise
+
+
+def select_sandbox_backend(requested: str, *, root: Path, cwd: Path, env: dict) -> str:
+    """Auto probes only a harmless command before executing any user workload.
+
+    Never replay a user command to discover which backend works. Explicit SRT
+    retains fail-closed behavior. Auto on Linux may use the Landlock alternative.
+    """
+    if requested != "auto":
+        return requested
+    if sys.platform != "linux":
+        return "srt"
+    sandbox = None
+    proc = None
+    try:
+        sandbox = build_srt_command(root=root, cwd=cwd, command="true", language="shell", python_executable=sys.executable)
+        proc = subprocess.Popen(sandbox.argv, cwd=cwd, env=env, stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL, start_new_session=True)
+        if proc.wait(timeout=5) == 0:
+            return "srt"
+    except (SandboxUnavailable, OSError, subprocess.TimeoutExpired):
+        pass
+    finally:
+        if proc is not None:
+            # Also clean any proxy helpers spawned by the probe.
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            proc.wait()
+        if sandbox is not None:
+            sandbox.settings_path.unlink(missing_ok=True)
+    if landlock_available():
+        return "landlock"
+    raise SandboxUnavailable("SRT 探测失败，且当前内核不支持 Landlock + seccomp；命令未启动。")

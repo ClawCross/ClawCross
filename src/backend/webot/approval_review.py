@@ -282,8 +282,8 @@ async def authorize_action(
         if not mode_allows_tool(mode, tool_name, args):
             return ApprovalResult(False, "当前交流或只读模式不允许该操作。")
         elevated_command = tool_name == "run_command" and args.get("sandbox_access") != "default"
-        if elevated_command and get_runtime_settings(user_id, session_id).approval.command_sandbox != "srt":
-            return ApprovalResult(False, "当前会话没有启用 SRT，不能申请沙盒提权。")
+        if elevated_command and get_runtime_settings(user_id, session_id).approval.command_sandbox not in {"srt", "auto", "landlock"}:
+            return ApprovalResult(False, "当前会话没有启用命令沙盒，不能申请沙盒提权。")
         if elevated_command and not str(args.get("escalation_reason") or "").strip():
             return ApprovalResult(False, "沙盒提权需要说明本次提权原因。")
         if elevated_command:
@@ -317,7 +317,7 @@ async def authorize_action(
         sandboxed_command = (
             tool_name == "run_command"
             and args.get("sandbox_access") == "default"
-            and get_runtime_settings(user_id, session_id).approval.command_sandbox == "srt"
+            and get_runtime_settings(user_id, session_id).approval.command_sandbox in {"srt", "auto", "landlock"}
         )
         if sandboxed_command:
             # Explicit deny and absolute command blocks were checked above.

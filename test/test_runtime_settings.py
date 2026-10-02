@@ -25,6 +25,9 @@ class RuntimeSettingsTests(unittest.TestCase):
         self.assertEqual(settings.get_runtime_settings("alice").approval.command_sandbox, "off")
         settings.save_runtime_settings("alice", session_id="s", settings={"approval": {"command_sandbox": "srt"}})
         self.assertEqual(settings.get_runtime_settings("alice", "s").approval.command_sandbox, "srt")
+        for backend in ('auto', 'landlock'):
+            settings.save_runtime_settings("alice", session_id=backend, settings={"approval": {"command_sandbox": backend}})
+            self.assertEqual(settings.get_runtime_settings("alice", backend).approval.command_sandbox, backend)
         self.assertEqual(settings.ApprovalSettings.model_validate({"command_sandbox": "container"}).command_sandbox, "srt")
         settings.save_runtime_settings("alice", settings={"context": {"history_tokens": 10000}})
         settings.save_runtime_settings("alice", session_id="s", settings={"context": {"preserve_recent_turns": 2}})

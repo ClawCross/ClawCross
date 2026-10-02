@@ -127,9 +127,11 @@ async function loadRuntimeSettingsScope() {
                 <p id="runtime-settings-reviewer-hint" class="runtime-settings-note"></p>
                 <label class="runtime-settings-field"><span>${text('命令沙盒', 'Command sandbox')}</span>
                     <select data-section="approval" data-key="command_sandbox" class="runtime-settings-input">
-                        <option value="off" ${approval.command_sandbox !== 'srt' ? 'selected' : ''}>${text('关闭 · 命令在宿主机执行', 'Off · Commands run on host')}</option>
+                        <option value="off" ${!approval.command_sandbox || approval.command_sandbox === 'off' ? 'selected' : ''}>${text('关闭 · 命令在宿主机执行', 'Off · Commands run on host')}</option>
+                        <option value="auto" ${approval.command_sandbox === 'auto' ? 'selected' : ''}>${text('自动 · SRT / Linux Landlock', 'Auto · SRT / Linux Landlock')}</option>
+                        <option value="landlock" ${approval.command_sandbox === 'landlock' ? 'selected' : ''}>${text('Linux Landlock · 禁用网络', 'Linux Landlock · No network')}</option>
                         <option value="srt" ${approval.command_sandbox === 'srt' ? 'selected' : ''}>${text('SRT · 前台、后台、交互命令', 'SRT · Foreground, background, interactive')}</option>
-                    </select><small>${text('开启前请在下方安装沙盒组件。沿用本机 Python 环境；禁用网络、限制写入，沙盒不可用时拒绝执行。Windows 支持仍为 alpha。', 'Requires Anthropic Sandbox Runtime. Uses the host Python environment; blocks network and limits writes. Unavailable sandbox blocks execution. Windows support is alpha.')}</small></label>
+                    </select><small>${text('SRT 需显式安装；Linux Landlock 使用内核和 libseccomp，无需新容器。自动模式先探测 SRT，Linux 不兼容时使用 Landlock。Landlock 禁用全部网络；资源上限按进程/文件计算，非整个进程树总额。不满足要求时拒绝执行。', 'SRT requires explicit installation. Linux Landlock uses the kernel and libseccomp without a new container. Auto probes SRT first, then Landlock on Linux. Landlock blocks all networking; resource limits are per process/file, not aggregate. Missing capabilities block execution.')}</small></label>
                 ${typeof componentControlMarkup === 'function' ? componentControlMarkup('srt') : ''}
                 ${instructions('approval', 'reviewer_policy', approval.reviewer_policy, '补充审核要求', 'Additional review instructions', '例如：允许安装任务所需依赖；删除文件没有明确授权时拒绝', 'For example: allow task dependencies; deny deletion without explicit authorization')}
                 <details class="runtime-settings-advanced"><summary>${text('高级审核设置', 'Advanced review settings')}<span>${text('模型与等待时间', 'Model and timeout')}</span></summary>
