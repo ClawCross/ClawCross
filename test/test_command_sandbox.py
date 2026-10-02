@@ -17,23 +17,72 @@ import webot.mcp.commander as commander
 
 
 class CommandSandboxTests(unittest.TestCase):
-    def test_permission_request_does_not_execute_and_binds_exact_command(self):
-        from webot.approval_review import ApprovalResult
+    def test_agent_cannot_request_escalation_through_tool_schema(self):
+        import inspect
+        self.assertFalse(hasattr(commander, 'request_sandbox_permission'))
+        self.assertNotIn('sandbox_access', inspect.signature(commander.run_command).parameters)
+        self.assertNotIn('escalation_target', inspect.signature(commander.run_command).parameters)
+
+    def test_failure_scope_respects_maximum_and_rejects_ambiguous_errors(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            workspace = SessionWorkspace(root=root, cwd=root, mode='shared', remote='')
-            options = SimpleNamespace(approval=SimpleNamespace(command_sandbox='srt'))
-            with patch('webot.runtime_settings.get_runtime_settings', return_value=options), \
-                 patch.object(commander, 'resolve_session_workspace', return_value=workspace), \
-                 patch.object(commander, 'authorize_action', new=AsyncMock(return_value=ApprovalResult(True))) as authorize, \
-                 patch.object(commander, '_run_foreground', new=AsyncMock()) as runner:
-                result = asyncio.run(commander.request_sandbox_permission('alice', 'echo ok', 'network',
-                    '用户指定从 example.org 下载任务资料', 'example.org', session_id='s'))
-            self.assertIn('完全相同的参数', result)
-            runner.assert_not_awaited()
-            self.assertEqual(authorize.await_args.kwargs['tool_name'], 'run_command')
-            self.assertEqual(authorize.await_args.kwargs['args']['sandbox_access'], 'network')
-            self.assertTrue(authorize.await_args.kwargs['transfer_to_command'])
+            root = Path(directory) / 'workspace'; root.mkdir()
+            outside = Path(directory) / 'allowed'; outside.mkdir()
+            target = outside / 'notes.txt'; target.write_text('hello')
+            error = f"cat: {target}: Permission denied"
+            with patch.dict('os.environ', {'CLAWCROSS_SANDBOX_MAX_READ_PATHS': '[]'}):
+                with self.assertRaises(command_sandbox.SandboxUnavailable):
+                    command_sandbox.permission_failure_target(error, root)
+            with patch.dict('os.environ', {'CLAWCROSS_SANDBOX_MAX_READ_PATHS': json.dumps([str(outside)])}):
+                self.assertEqual(command_sandbox.permission_failure_target(error, root), ('read_path', str(target)))
+                self.assertIsNone(command_sandbox.permission_failure_target(f"PermissionError: '{target}'", root))
+                with self.assertRaises(command_sandbox.SandboxUnavailable):
+                    command_sandbox.bounded_escalation('host', '', root)
+
+    def test_command_failure_is_reviewed_by_system_then_retried_once(self):
+        from webot.approval_review import ApprovalResult
+        for allowed in (True, False):
+            with self.subTest(allowed=allowed), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory) / 'workspace'; root.mkdir()
+                target = Path(directory) / 'notes.txt'; target.write_text('hello')
+                workspace = SessionWorkspace(root=root, cwd=root, mode='shared', remote='')
+                options = SimpleNamespace(approval=SimpleNamespace(command_sandbox='srt'))
+                calls = []
+                async def run(*args, **kwargs):
+                    calls.append(args)
+                    kwargs['execution_report'].update(exit_code=1 if len(calls) == 1 else 0,
+                        timed_out=False, stderr=f'cat: {target}: Permission denied' if len(calls) == 1 else '')
+                    return 'first denied' if len(calls) == 1 else 'retry succeeded'
+                with patch.dict('os.environ', {'CLAWCROSS_SANDBOX_MAX_READ_PATHS': json.dumps([str(target)])}), \
+                     patch('webot.runtime_settings.get_runtime_settings', return_value=options), \
+                     patch.object(commander, '_command_safety_gate', new=AsyncMock(return_value=(None, ''))), \
+                     patch.object(commander, 'resolve_session_workspace', return_value=workspace), \
+                     patch.object(command_sandbox, '_srt_binary', return_value='/usr/bin/srt'), \
+                     patch.object(commander, '_run_foreground', side_effect=run), \
+                     patch.object(commander, 'authorize_action', new=AsyncMock(return_value=ApprovalResult(allowed, '审核拒绝'))) as reviewer:
+                    result = asyncio.run(commander.run_command('alice', f'cat {target}', session_id='s'))
+                self.assertEqual(len(calls), 2 if allowed else 1)
+                self.assertIn('retry succeeded' if allowed else '审核拒绝', result)
+                self.assertEqual(reviewer.await_args.kwargs['args']['escalation_target'], str(target))
+                self.assertIn('Permission denied', reviewer.await_args.kwargs['review_evidence'])
+
+    def test_success_and_sandbox_initialization_failure_never_request_escalation(self):
+        for code, stderr in ((0, 'cat: /tmp/test: Permission denied'), (1, 'apply-seccomp: write /proc/self/setgroups: Permission denied')):
+            with self.subTest(code=code), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                workspace = SessionWorkspace(root=root, cwd=root, mode='shared', remote='')
+                async def run(*args, **kwargs):
+                    kwargs['execution_report'].update(exit_code=code, stderr=stderr, timed_out=False)
+                    return 'result'
+                options = SimpleNamespace(approval=SimpleNamespace(command_sandbox='srt'))
+                with patch('webot.runtime_settings.get_runtime_settings', return_value=options), \
+                     patch.object(commander, '_command_safety_gate', new=AsyncMock(return_value=(None, ''))), \
+                     patch.object(commander, 'resolve_session_workspace', return_value=workspace), \
+                     patch.object(command_sandbox, '_srt_binary', return_value='/usr/bin/srt'), \
+                     patch.object(commander, '_run_foreground', side_effect=run) as runner, \
+                     patch.object(commander, 'authorize_action', new=AsyncMock()) as reviewer:
+                    self.assertEqual(asyncio.run(commander.run_command('alice', 'echo ok')), 'result')
+                runner.assert_awaited_once()
+                reviewer.assert_not_awaited()
 
     def test_root_deletion_stays_absolute_but_workspace_rm_uses_isolation(self):
         self.assertIsNotNone(commander._validate_command('rm -rf /', isolated=True))
@@ -50,7 +99,7 @@ class CommandSandboxTests(unittest.TestCase):
 
     def test_workload_denial_retains_scoped_escalation_hint(self):
         hint = command_sandbox.sandbox_failure_hint('<sandbox_violations> denied write')
-        self.assertIn('申请单次提权', hint)
+        self.assertIn('管理员权限上限', hint)
         self.assertEqual(command_sandbox.sandbox_failure_hint('ordinary command error'), '')
 
     def test_per_user_srt_seccomp_helper_is_readable_without_allowing_its_parent(self):
@@ -201,7 +250,11 @@ class CommandSandboxTests(unittest.TestCase):
             outside = Path(directory) / "outside.txt"
             root.mkdir()
             outside.write_text("hello", encoding="utf-8")
-            with patch.object(command_sandbox, "_srt_binary", return_value="/usr/bin/srt"):
+            with patch.dict('os.environ', {
+                    'CLAWCROSS_SANDBOX_MAX_READ_PATHS': json.dumps([str(outside)]),
+                    'CLAWCROSS_SANDBOX_MAX_WRITE_PATHS': json.dumps([str(outside)]),
+                    'CLAWCROSS_SANDBOX_MAX_DOMAINS': '["example.org:443"]',
+                }), patch.object(command_sandbox, "_srt_binary", return_value="/usr/bin/srt"):
                 for access, target in (("read_path", str(outside)), ("write_path", str(outside)), ("network", "example.org:443")):
                     with self.subTest(access=access):
                         call = command_sandbox.build_srt_command(

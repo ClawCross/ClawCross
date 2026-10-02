@@ -131,7 +131,7 @@ async function loadRuntimeSettingsScope() {
                         <option value="srt" ${approval.command_sandbox === 'srt' ? 'selected' : ''}>${text('SRT · 前台、后台、交互命令', 'SRT · Foreground, background, interactive')}</option>
                     </select><small>${text('开启前请在下方安装沙盒组件。沿用本机 Python 环境；禁用网络、限制写入，沙盒不可用时拒绝执行。Windows 支持仍为 alpha。', 'Requires Anthropic Sandbox Runtime. Uses the host Python environment; blocks network and limits writes. Unavailable sandbox blocks execution. Windows support is alpha.')}</small></label>
                 ${typeof componentControlMarkup === 'function' ? componentControlMarkup('srt') : ''}
-                ${instructions('approval', 'reviewer_policy', approval.reviewer_policy, '补充审核要求', 'Additional review instructions', '例如：安装依赖可以代审，删除文件需先问我', 'For example: review installs for me, but ask before deleting files')}
+                ${instructions('approval', 'reviewer_policy', approval.reviewer_policy, '补充审核要求', 'Additional review instructions', '例如：允许安装任务所需依赖；删除文件没有明确授权时拒绝', 'For example: allow task dependencies; deny deletion without explicit authorization')}
                 <details class="runtime-settings-advanced"><summary>${text('高级审核设置', 'Advanced review settings')}<span>${text('模型与等待时间', 'Model and timeout')}</span></summary>
                     <div class="runtime-settings-advanced-body runtime-settings-grid">
                         ${model('approval', 'reviewer_model', approval.reviewer_model)}

@@ -3923,7 +3923,7 @@ function _escapeHtmlStrip(str) {
 function renderStudioApprovalStrip(approvals) {
     const strip = document.getElementById('studio-approval-strip');
     if (!strip) return;
-    const pending = approvals.filter(a => a.status === 'pending' && (a.review?.conversation_reply || a.review?.verdict?.decision === 'ask_user' || a.review?.reviewer === 'user'));
+    const pending = approvals.filter(a => a.status === 'pending' && (a.review?.reviewer === 'user' || (a.review?.conversation_reply && a.review?.reviewer !== 'auto_review')));
     if (!pending.length) {
         strip.style.display = 'none';
         strip.innerHTML = '';
@@ -4039,7 +4039,7 @@ function _buildRuntimeApprovalList(item, runtimeOverride = null) {
     return approvals.map(approval => {
         const approvalId = encodeURIComponent(approval.approval_id || '');
         const sessionId = encodeURIComponent(item.session_id || '');
-        const canResolve = approval.status === 'pending' && (approval.review?.conversation_reply || approval.review?.verdict?.decision === 'ask_user' || approval.review?.reviewer === 'user');
+        const canResolve = approval.status === 'pending' && (approval.review?.reviewer === 'user' || (approval.review?.conversation_reply && approval.review?.reviewer !== 'auto_review'));
         return `
             <div class="webot-runtime-block${canResolve ? ' webot-approval-block-pending' : ''}">
                 <div class="webot-runtime-row">
