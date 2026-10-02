@@ -258,6 +258,23 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context["user_requests"], [{"id": "user-1", "text": "检查当前仓库状态"}])
         self.assertEqual(len(context["untrusted_evidence"]), 2)
 
+    async def test_button_approval_retries_in_next_turn_without_second_review(self):
+        from webot.permission_context import resolve_permission_request
+        ask = review.ReviewVerdict(decision='ask_user', reason='请确认', risk='low', authorization_sources=[])
+        with patch.object(review, 'run_reviewer', return_value=ask):
+            pending = await self.authorize()
+        resolve_permission_request(user_id='alice', approval_id=pending.approval_id, action='approved')
+        resumed = self.messages + [HumanMessage(content='继续', id='resume-1', additional_kwargs={'input_origin': 'user'})]
+        with patch.object(review, 'run_reviewer') as reviewer:
+            retry = await self.authorize(messages=resumed)
+        self.assertTrue(retry.allowed)
+        reviewer.assert_not_called()
+        self.assertEqual(store.get_tool_approval(pending.approval_id, 'alice').status, 'used')
+        with patch.object(review, 'run_reviewer', return_value=ask) as reviewer:
+            second = await self.authorize(messages=resumed)
+        self.assertTrue(second.pending)
+        reviewer.assert_awaited_once()
+
     async def test_policy_change_invalidates_an_approved_action(self):
         async def changed(**kwargs):
             policy.save_tool_policy_config("alice", {"default_approval": "deny"})

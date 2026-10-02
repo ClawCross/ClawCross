@@ -190,6 +190,9 @@ def resolve_permission_request(
     )
     if updated is None:
         return None
+    metadata = json.loads(updated.review_metadata_json or '{}')
+    metadata['human_resolution'] = normalized
+    set_approval_review_metadata(approval_id, user_id, metadata)
     if remember and normalized == "approved":
         try:
             remember_approval_in_policy(

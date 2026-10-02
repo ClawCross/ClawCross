@@ -322,7 +322,16 @@ async def authorize_action(
 
         context = approval_context(user_id, session_id, messages)
         binding = {"policy_hash": policy_binding(user_id, session_id), "context_hash": _hash(context["user_requests"])}
-        request = active_approval
+        request = active_approval or store.find_active_approval_for_action(user_id, session_id, tool_name, args)
+        if request is not None and request.status == 'approved':
+            granted = json.loads(request.review_metadata_json or '{}')
+            if (granted.get('human_resolution') == 'approved'
+                    and granted.get('binding', {}).get('policy_hash') == binding['policy_hash']):
+                # An authenticated button click and a chat Y grant the same
+                # exact operation, valid when it is retried in a later turn.
+                granted['binding'] = binding
+                store.set_approval_review_metadata(request.approval_id, user_id, granted)
+                request = store.get_tool_approval(request.approval_id, user_id)
         if request is not None and json.loads(request.review_metadata_json or "{}").get("binding") != binding:
             store.update_tool_approval_status(request.approval_id, user_id, status="expired")
             request = None

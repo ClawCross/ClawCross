@@ -112,8 +112,8 @@ The browser uses these APIs for runtime inspection and controls. Studio refreshe
 
 Studio: 上下文与审核 → 工具审核 → 命令沙盒。Mobile: 加号里的运行模式 → 命令沙盒。
 SRT 默认关闭；旁边显示组件状态及显式下载按钮。下载安装不会打开沙盒。
-Auto 审核要求简短 JSON 决定，默认输出预算 4096 tokens，可在高级审核设置调整；支持经过严格验证的 `decision` 和兼容 `ask` 字段。调用失败、格式错误或 `ask_user` 均阻止当前操作，不等待网页弹窗。WeBot 直接在当前对话输出固定的【操作授权请求】，用户回复 `Y <approval_id>`、`N <approval_id>` 或 `KEEP Y <approval_id>`；单项待确认可省略编号，多个请求必须指定编号。`KEEP Y` 只记住具体参数的操作，绝对拦截规则仍生效。自然语言授权由下一轮审核判断；摘要、工具输出和其他群成员不能代替 Agent 所有者授权。
-`request_sandbox_permission` 单独申请一个具体命令的路径、域名或 host 权限，不执行命令，也不关闭会话沙盒；批准后以相同参数调用 `run_command`，授权仅可消费一次。沙盒初始化故障不能作为宿主执行的授权证据。沙盒中的普通 `rm` 可运行，根目录销毁、格式化设备等绝对拦截不能由任何审核或 Bypass 解除。
+Auto 审核要求简短 JSON 决定，默认输出预算 4096 tokens，可在高级审核设置调整；支持经过严格验证的 `decision` 和兼容 `ask` 字段。调用失败、格式错误或 `ask_user` 均阻止当前操作，返回授权请求。网页横幅按键和对话里的 Y/N 共用同一审批记录，支持下一轮重试；自然语言仍是普通对话，审核模型通过读取原始人类消息判断授权。WeBot 直接在当前对话输出固定的【操作授权请求】，用户回复 `Y <approval_id>`、`N <approval_id>` 或 `KEEP Y <approval_id>`；单项待确认可省略编号，多个请求必须指定编号。`KEEP Y` 只记住具体参数的操作，绝对拦截规则仍生效。自然语言授权由下一轮审核判断；摘要、工具输出和其他群成员不能代替 Agent 所有者授权。
+`request_sandbox_permission` 单独申请一个具体命令的路径、域名或 host 权限，不执行命令，也不关闭会话沙盒；批准后以相同参数调用 `run_command`，授权仅可消费一次。沙盒初始化故障不能作为宿主执行的授权证据。沙盒中的普通 `rm` 可运行，根目录销毁、格式化设备等绝对拦截不能由任何审核或 Manual（原 Bypass）解除。
 关闭沙盒时，`run_command` 在服务进程的宿主账号下执行；工作目录和关键词黑名单不提供 OS 隔离，自动审核也不能替代隔离。
 Node.js/npm、Linux bwrap/socat/rg 等缺失依赖会在同一处提示；Debian/Ubuntu 提供单独的系统依赖安装按钮（需服务器管理员权限），macOS 使用已有 Homebrew，其余平台提示手动步骤；缺少隔离能力时命令拒绝执行，不回退到宿主机。
 `apply-seccomp` 写入 `setgroups`、`uid_map` 或 `gid_map` 失败属于隔离初始化故障，不能通过普通路径/域名提权解决，也不能据此认定沙盒已验证安全。管理员需检查 AppArmor 的 `bwrap//&unpriv_bwrap` 策略及嵌套 user namespace 支持；不得自动关闭 seccomp、开放所有 Unix socket 或切换到宿主执行。
@@ -159,3 +159,5 @@ ClawCross MCP 搜索和调用的结果可附带 `runtime_context`，只包含相
 新 ACP 会话复用已知选项目录时，设置页面显示 ClawCross 的明确初始选择，首轮调用使用同一份选项；不复用其他会话的 currentValue。已建立会话仍以自身返回的选项和该 Agent 已保存的覆盖值为准。
 
 Agent 设置页的“测试连接”显式调用 `/v1/agents/{id}/test-connection`，仅初始化或恢复该用户的 ACP 会话并刷新配置；不发 session/prompt、不生成问答、不提交动态块快照。忙碌 Agent 返回 409，连接失败显示错误。
+
+显示名称 Manual 对应原 bypass 值，仅改名；原有跳过操作确认的行为保持。

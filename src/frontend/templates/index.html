@@ -379,7 +379,7 @@
                                 <span id="tool-count" class="text-xs text-gray-400"></span>
                                 <span id="tool-toggle-icon" class="tool-toggle-icon text-xs">▼</span>
                             </div>
-                            <div class="oc-mode-selector" data-i18n-title="run_mode_title" title="交流：无工具；只读：查看和搜索；Bypass：跳过确认；Auto：替我审核">
+                            <div class="oc-mode-selector" data-i18n-title="run_mode_title" title="交流：无工具；只读：查看和搜索；Manual：跳过确认；Auto：替我审核">
                                 <div class="oc-context-usage-wrap">
                                     <span id="session-context-usage" class="oc-context-usage-badge" role="button" tabindex="0" aria-expanded="false" onclick="toggleSessionContextDetail(event)" onkeydown="handleSessionContextDetailKeydown(event)">上下文已用 0%</span>
                                     <div id="session-context-detail" class="oc-context-usage-detail" hidden></div>
@@ -388,7 +388,7 @@
                                 <select id="oc-run-mode" class="oc-mode-select" onchange="onRunModeChange()">
                                     <option value="chat" data-i18n="run_mode_chat">交流模式 · 无工具</option>
                                     <option value="readonly" data-i18n="run_mode_readonly">只读模式</option>
-                                    <option value="bypass" data-i18n="run_mode_bypass">Bypass · 全工具</option>
+                                    <option value="bypass" data-i18n="run_mode_bypass">Manual · 全工具</option>
                                     <option value="auto" data-i18n="run_mode_auto">Auto · 替我审核</option>
                                 </select>
                             </div>
@@ -1372,11 +1372,11 @@
 <script src="/static/js/group-network-ui.js?v=20261001-relay"></script>
     <script src="/static/js/conversation-ui-panels.js?v=20261001-windows"></script>
     <script src="/static/js/components.js?v=20261002-runtime-menu"></script>
-    <script src="/static/js/main.js?v=20261002-chat-approvals"></script>
+    <script src="/static/js/main.js?v=20261002-approval-banner"></script>
     <link rel="stylesheet" href="/static/css/external-agent-settings.css?v=20261002-connect">
     <script src="/static/js/runtime-presentation.js?v=20261002-fold"></script>
 <script src="/static/js/external-agent-settings.js?v=20261002-explicit-create"></script>
-    <script src="/static/js/runtime-settings.js?v=20261002-chat-approvals"></script>
+    <script src="/static/js/runtime-settings.js?v=20261002-approval-banner"></script>
     <script src="/static/js/oasis-town.bundle.js?v=20260327-humanfix"></script>
     <script src="/static/js/app.js?v=20260327-humanfix"></script>
     <script>
