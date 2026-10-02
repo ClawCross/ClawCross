@@ -96,6 +96,8 @@ data/
 - `/webot/voice`, `/webot/kairos`, `/webot/dream` – browser endpoints for voice, Kairos, and dream.
 - `/webot/tool-policy` – read/write policy and hook definitions.
 - `/webot/tool-approvals/resolve` – resolve manual approvals.
+
+Automatic review uses complete original human requests, including human group messages with server-recorded sender and group identity. Inbox summaries and agent messages remain evidence, not authorization. Group requests authorize task work in the agent workspace; broader host operations still need specific justification. If the inference view was compacted, review recovers original requests from persisted history. Missing originals produce a normal request for confirmation, rather than a reviewer exception.
 - `/proxy_webot_*` (Flask) – front-end-friendly proxies for runtime data, policies, approvals, session mode, and tool approvals.
 
 The browser uses these APIs for runtime inspection and controls. Studio refreshes runtime status through HTTP polling.
@@ -105,3 +107,50 @@ The browser uses these APIs for runtime inspection and controls. Studio refreshe
 - [`webot-agent-runtime.md`](./webot-agent-runtime.md) – deep dive on runtime concepts and hooks.
 - [`webot-claude-gap-analysis.md`](./webot-claude-gap-analysis.md) – matrix vs Claude Code and outstanding parity items.
 - [`ports.md`](./ports.md) – route/port map.
+
+### Frontend optional components
+
+Studio: 上下文与审核 → 工具审核 → 命令沙盒。Mobile: 加号里的运行模式 → 命令沙盒。
+SRT 默认关闭；旁边显示组件状态及显式下载按钮。下载安装不会打开沙盒。
+Node.js/npm、Linux bwrap/socat/rg 等缺失依赖会在同一处提示；Debian/Ubuntu 提供单独的系统依赖安装按钮（需服务器管理员权限），macOS 使用已有 Homebrew，其余平台提示手动步骤；缺少隔离能力时命令拒绝执行，不回退到宿主机。
+新建 Agent 可以选择 ACP 连接方式；表单内提供 acpx 显式安装按钮。运行编号可留空自动生成，中文显示名不需要手填编号。
+
+ACP 运行状态轮询仅检查本机任务锁，不启动外部适配器；会话追踪使用 `sessions list --local`，只显示登录用户已注册 Agent 的会话。查询和关闭接口需要认证，关闭操作验证会话所有权。外部 Agent 的 `model` 设置通过 acpx `--model` 传递，只影响该 Agent；留空时使用外部程序默认配置。初始化使用 Agent 的超时设置，保留 acpx 默认适配器下载行为。压缩后的用量估算按摘要版本与 API 用量基准复用，避免页面轮询反复读取并分词整个历史。
+
+### 外部 Agent 设置与工具通道
+
+统一使用 acpx，Codex 的 ACP 适配器连接 Codex App Server；不再额外解析原生 CLI 文本。`GET /v1/agents/{id}/capabilities` 从该 Agent 的本地 acpx 记录读取实际配置选项，不启动适配器。Studio 加号的运行设置、Agent 详情及手机设置支持原生模型、模式、思考强度和连接时限。Codex 的 `reasoning_effort` 与 Claude 的 `effort` 分别使用适配器返回的值；通过 `PATCH /v1/agents/{id}/acp-settings` 独立保存，下一轮只应用变化的设置。acpx 0.19 持久会话使用 `set`，`--config-option` 仅用于一次性 `exec`。
+
+ClawCross MCP 工具默认启用，可按 Agent 关闭。启用时每个 Agent 使用独立的凭证及 MCP 配置，连接器只暴露 `tool_search` 和 `tool_call`；工具搜索返回准确参数。服务端验证当前用户、Agent、活动调用、工具名单、每轮模式，并通过 WeBot 的工具执行节点执行命令规则和审核。身份参数不能由外部 Agent 覆盖。acpx 权限策略仅将带 ClawCross 完整命名空间的两个 MCP 包装器委托给后端审核，不对原生 shell 自动放行；否则 Claude 的只读批准会拒绝通用 MCP 包装器。原生 CLI 工具继续使用自身的沙盒与审批；ClawCross 的自动审核不接管原生 shell。群聊通过 MCP 发送时使用相同的身份与群成员校验；未启用时提供已安装 Python 的 CLI 命令，避免 `uv run` 因缓存写入触发额外审核。
+
+ACP 工具事件在调用期间通过 gateway SSE 转发；手机端通过有用户认证的 `/v1/agents/{id}/events?after=...` 读取当前群的最近活动，保留最多 256 个事件。失败工具显示失败。工具完成但没有普通文本属于合法结束，JSON-RPC 请求、通知、用量和原始提示词不会回退为正文；旧审计记录仅在展示时过滤协议日志，不修改原始记录。
+
+acpx 0.19 的 MCP 配置固定在队列连接生命周期内。更换连接器时，仅在收到 `QUEUE_MCP_CONFIG_CONFLICT` 后调用该安装版本的 lease 校验与传输清理函数，保留未关闭的 acpx 记录和原生 session ID，再连接原会话；不执行 `sessions close`。此兼容层依赖 acpx 导出的 `terminateQueueOwnerForSession`，未来版本缺少该函数时明确报错并保留原会话，不隐式重置。
+组件安装只接受登录用户的同源操作和固定白名单，不在启动或打开表单时自动下载。
+
+### Context usage after compaction
+
+API 实测用量绑定到该次调用使用的压缩视图。摘要提交后，状态接口立即按新摘要和保留原文重算当前占用，
+沿用上次实测的系统提示词/工具定义分摊，并用上次 API 与本地计数的比例校准历史。显示明确标为估算，
+旧输出不重复计入，旧缓存命中量清零。重启后仍根据已存 API 测量及最新压缩视图计算；下一次调用重新采用 API 实测值。
+
+模型、系统提示词、工具定义和原有消息前缀一致时，新增纯用户输入或工具结果可用
+`当前 input - 上次 input - 上次 output` 归因；动态块变化、多种消息混合、推理输出等不能单独归因时，
+回退到本地分词分摊。差分分项仍是推断：输出转为输入的序列化成本可能不同，多条新增消息只有整体增量可知。
+
+Studio 加号二级菜单仅保留当前对话运行选项：沙盒与审核、上下文与压缩、模式、工具、人设、工作流、对话面板与附件。全局设置 → 外部 Agent 提供 acpx 安装；机器人集成中提供 WeClaw / NoneBot / QQ / Telegram 安装；公网访问设置中提供 cloudflared 安装。群聊加入操作位于消息中心。安装不自动开启渠道、Agent 或公网通道。手动摘要提交后，用量投影失败不影响任务完成；终态清除前端残留的压缩忙状态。
+
+
+### 内外 Agent 的提示词与动态状态
+
+WeBot 与外部 Agent 共享基础对话规则、Team/Skill 目录、模式说明和群元信息校验。
+WeBot 每次请求读取并重组系统提示词；有记忆的外部会话首次收到身份，身份成分也纳入同一动态块交付快照，后续只接收发生变化的块，reset 清空整个快照并重新发送完整状态。
+ACP 启用 ClawCross MCP 时使用 MCP 版技能目录，工作流规则按需通过工具获取；关闭时保留 CLI 入口和兼容说明。
+ClawCross MCP 搜索和调用的结果可附带 `runtime_context`，只包含相对本轮已交付快照的变化，成功结束后记在 Agent 表上。群成员变化可在同轮工具调用后生效；来源群以最新成员资格校验，正文仍由当前输入或 inbox 提供，不注入群元信息。
+此机制不改写 Codex/Claude 的原生工具结果，也不接管它们的历史压缩或内部循环。外部 Agent 仍使用原生持久会话与审批，MCP 走 ClawCross 的工具执行和审核节点。
+
+外部提示词交付使用统一状态机（`prompt_context_version=2`）：`identity_*` 与群聊、Team、技能、模式一起存入 `dynamic_context`，首次全量、后续增量、成功才提交、reset 全清。旧版 identity_sections 可迁入快照，不再输出独立版本号或系统提示词补丁。原生历史中的旧消息不会被物理删除。
+
+新 ACP 会话复用已知选项目录时，设置页面显示 ClawCross 的明确初始选择，首轮调用使用同一份选项；不复用其他会话的 currentValue。已建立会话仍以自身返回的选项和该 Agent 已保存的覆盖值为准。
+
+Agent 设置页的“测试连接”显式调用 `/v1/agents/{id}/test-connection`，仅初始化或恢复该用户的 ACP 会话并刷新配置；不发 session/prompt、不生成问答、不提交动态块快照。忙碌 Agent 返回 409，连接失败显示错误。

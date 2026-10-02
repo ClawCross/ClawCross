@@ -249,22 +249,14 @@ def render_runtime_context_block(
     return "\n".join(lines)
 
 
-def render_team_skill_context(teams: list[str] | tuple[str, ...], skills_listing: str = "") -> str:
-    """Live Team membership and Skill/Memory catalog for the runtime tail."""
-    team_names = sorted({str(team).strip() for team in teams if str(team).strip()})
-    parts: list[str] = []
-    if team_names:
-        parts.append("【所属 Teams】\n" + "\n".join(f"team: {team}" for team in team_names))
-    if skills_listing.strip():
-        parts.append(skills_listing.strip())
-    return "\n\n".join(parts)
+from common.agent_prompt import render_team_skill_context
 
 
 def render_group_context(history: list[BaseMessage], *, memberships: list[dict] | None = None) -> str:
     """Live membership is separate from this turn's source channel and old history."""
     current = next((m for m in reversed(history) if isinstance(m, HumanMessage)), None)
     groups = current.additional_kwargs.get("framework_groups", []) if current else []
-    from common.conversation_context import normalize_group_metadata, render_group_metadata
+    from common.conversation_context import normalize_group_metadata, render_group_metadata, current_group_metadata
     groups = normalize_group_metadata(groups)
     metadata = render_group_metadata(groups)
     membership_block = ("【所属群聊 / 私聊】\n以下是当前完整群归属，替代历史列表；移出或删除的群不再属于你。群号用于明确选择发送目标。\n"
@@ -272,8 +264,7 @@ def render_group_context(history: list[BaseMessage], *, memberships: list[dict] 
     if not metadata:
         return membership_block + "\n【当前群聊 / 私聊】\n无。本轮不使用历史群身份或回复通道。"
     if memberships is not None:
-        source_ids = {source['group_id'] for source in groups}
-        groups = [g for g in memberships if g.get("group_id") in source_ids]
+        groups = current_group_metadata(groups, memberships)
         metadata = render_group_metadata(groups) or "来源群已退出或删除，不得向该群发送。"
     return membership_block + "\n【当前群聊 / 私聊】\n以下仅说明本轮消息来源，不改变所属群列表；按各消息 group_id 回复。\n" + metadata
 

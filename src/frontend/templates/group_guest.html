@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>朋友群聊</title>
+  <link rel="stylesheet" href="/static/css/group-guest.css">
+  <script defer src="/static/js/group-guest.js"></script>
+</head>
+<body>
+<main>
+  <header><div><span class="eyebrow">一起聊聊</span><h1 id="title">群聊</h1></div><button id="rename" hidden>改名</button></header>
+  <p id="status" role="status" aria-live="polite">正在打开群聊…</p>
+  <form id="join" hidden>
+    <h2>怎么称呼你？</h2><p>取个名字，和大家一起聊聊。</p>
+    <label for="name">你的名字</label><input id="name" maxlength="40" required autocomplete="nickname">
+    <button type="submit">进入群聊</button>
+  </form>
+  <section id="chat" hidden>
+    <details id="members"><summary id="member-count">群成员</summary><ul id="member-list"></ul></details>
+    <div id="messages" role="log" aria-label="群聊消息" aria-live="polite"></div>
+    <div id="composer">
+      <div id="mention-menu" role="listbox" aria-label="选择要提及的群成员" hidden></div>
+      <form id="send"><button id="mention" type="button" aria-label="提及群成员">@</button><label class="sr-only" for="text">消息</label><textarea id="text" rows="2" maxlength="8000" placeholder="说点什么…输入 @ 选择成员" required aria-controls="mention-menu" aria-expanded="false"></textarea><button type="submit">发送</button></form>
+    </div>
+  </section>
+</main>
+</body></html>

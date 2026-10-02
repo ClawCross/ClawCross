@@ -55,7 +55,7 @@ def test_internal_rereads_files_persona_profile_and_soul(prompt_sources, monkeyp
     assert "same-session" in updated
 
 
-def test_external_only_patches_changed_blocks_and_retries_until_delivered(prompt_sources, tmp_path):
+def test_external_identity_uses_the_dynamic_snapshot_and_retries_until_delivered(prompt_sources, tmp_path):
     store = AgentStore(tmp_path / "agents.db")
     agent = store.create("alice", driver=HTTP, config={"api_url": "http://unused"})
     key = session.runtime_session(agent)
@@ -64,17 +64,16 @@ def test_external_only_patches_changed_blocks_and_retries_until_delivered(prompt
     assert prepared(current).text == "next user input"
     (prompt_sources / "conversation_rules.txt").write_text("RULES-2")
     pending = prepared(current)
-    patch = json.loads(next(line for line in pending.text.splitlines() if line.startswith("{")))
-    assert set(patch["replace"]) == {"base_rules"}
-    assert "RULES-2" in patch["replace"]["base_rules"]
-    assert "EXTERNAL-1" not in pending.text
-    assert "PROFILE-1" not in pending.text
+    assert '【本轮 identity_base_rules】' in pending.text
+    assert 'RULES-2' in pending.text
+    assert '系统提示词补丁' not in pending.text
+    assert 'EXTERNAL-1' not in pending.text
     assert prepared(store.require("alice", agent.agent_id)).text == pending.text
     session.remember_turn(store, current, pending)
     delivered = store.require("alice", agent.agent_id)
     assert prepared(delivered).text == "next user input"
     assert session.runtime_session(delivered) == key
-    assert delivered.runtime["identity_version"] == patch["version"]
+    assert 'RULES-2' in delivered.runtime['dynamic_context']['identity_base_rules']
 
 
 def test_internal_subagent_template_is_live(prompt_sources):
@@ -96,18 +95,20 @@ def test_external_revokes_removed_persona_and_soul(prompt_sources, tmp_path):
     with mock.patch("webot.profiles.frame_session_identity", return_value=""), \
             mock.patch("webot.soul.build_soul_prompt", return_value=""):
         change = prepared(current)
-    assert '"remove": ["persona", "soul"]' in change.text
+    assert '【本轮 identity_persona】\n此前提供的此项信息已撤销。' in change.text
+    assert '【本轮 identity_soul】\n此前提供的此项信息已撤销。' in change.text
     assert "PERSONA-1" not in change.text
 
 
-def test_external_legacy_prompt_changes_use_line_patch(prompt_sources, tmp_path):
+def test_external_legacy_snapshot_migrates_without_resending_unchanged_identity(prompt_sources, tmp_path):
     store = AgentStore(tmp_path / "agents.db")
     agent = store.create("alice", driver=HTTP, config={"api_url": "http://unused"})
-    old = session.identity_prompt(agent)
-    store.set_runtime("alice", agent.agent_id, {"identity_prompt": old, "last_used_at": 1})
+    store.set_runtime("alice", agent.agent_id, {"identity_sections": session.identity_sections(agent), "last_used_at": 1})
     (prompt_sources / "external_agent_system.txt").write_text("EXTERNAL-2")
     change = prepared(store.require("alice", agent.agent_id))
     assert change.identity is None
-    assert "-EXTERNAL-1" in change.text
-    assert "+EXTERNAL-2" in change.text
-    assert "系统提示词补丁" in change.text
+    assert '【本轮 identity_external_rules】' in change.text
+    assert 'EXTERNAL-2' in change.text
+    assert 'EXTERNAL-1' not in change.text
+    assert 'PROFILE-1' not in change.text
+    assert '系统提示词补丁' not in change.text

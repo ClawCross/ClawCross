@@ -136,5 +136,54 @@ class ContextUsagePersistenceTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(agent._thread_state_registry.claim_context_usage_restore("alice#never"))
 
 
+
+
+class DifferentialAndCompactionUsageTests(unittest.IsolatedAsyncioTestCase):
+    async def test_compaction_updates_usage_and_survives_restart_before_next_api_call(self):
+        from unittest.mock import AsyncMock
+        from types import SimpleNamespace
+        from webot.checkpoint_repository import save_context_compaction
+        with TemporaryDirectory() as tmp:
+            agent = _bare_agent(tmp)
+            old = HumanMessage(content='earlier history ' * 1000)
+            recent = HumanMessage(content='recent query')
+            response = AIMessage(content='recent answer')
+            components = estimate_context_components(system_prompt='system instructions', tools=[], runtime_state='', messages=[old,recent])
+            await agent.record_context_usage('alice#s1', input_tokens=10000, output_tokens=100, components=components, context_window=128000)
+            record = save_context_compaction(tmp, 'alice#s1', summary='short summary', compacted_until=1, source_message_count=3, summary_token_estimate=5)
+            agent._agent_app = SimpleNamespace(aget_state=AsyncMock(return_value=SimpleNamespace(values={'messages':[old,recent,response]})))
+            self.assertTrue(await agent.refresh_compacted_context_usage('alice#s1'))
+            self.assertFalse(await agent.refresh_compacted_context_usage('alice#s1'))
+            agent.agent_app.aget_state.assert_awaited_once()
+            usage = agent.get_thread_context_usage('alice#s1')
+            self.assertEqual(usage['source'],'estimate')
+            self.assertLess(usage['tokens'],1000)
+            self.assertEqual(usage['tokens'],sum(usage['breakdown'].values()))
+            self.assertEqual(usage['cache_read_tokens'],0)
+            self.assertNotIn('output',usage['breakdown'])
+            restarted = _bare_agent(tmp)
+            restarted._agent_app = agent.agent_app
+            await restarted.refresh_compacted_context_usage('alice#s1')
+            self.assertEqual(restarted.get_thread_context_usage('alice#s1'),usage)
+            await agent.record_context_usage('alice#s1',input_tokens=200,output_tokens=10,context_window=128000)
+            self.assertFalse(await agent.refresh_compacted_context_usage('alice#s1'))
+            self.assertEqual(agent.get_thread_context_usage('alice#s1')['source'],'api')
+
+    async def test_stable_tool_and_user_increments_are_attributed_by_api_difference(self):
+        from webot.context_usage import request_accounting,difference_components
+        user=HumanMessage(content='first query')
+        reply=AIMessage(content='answer')
+        for added,key in [(ToolMessage(content='result',tool_call_id='c1'),'tool_results'),(HumanMessage(content='next query'),'messages')]:
+            previous={'request_accounting':request_accounting('same',[],[user],reply,'model'), 'input_tokens':100,'output_tokens':20,'breakdown':{'system_prompt':10,'messages':90,'output':20}}
+            request=[user,reply,added]
+            current=request_accounting('same',[],request,reply,'model')
+            parts=difference_components(previous,current,request,150)
+            self.assertEqual(sum(parts.values()),150)
+            self.assertEqual(parts[key],30 if key=='tool_results' else 140)
+            self.assertIsNone(difference_components(previous,request_accounting('changed',[],request,reply,'model'),request,150))
+            added.additional_kwargs[RUNTIME_DELTA_KEY]='changed dynamic state'
+            self.assertIsNone(difference_components(previous,request_accounting('same',[],request,reply,'model'),request,150))
+
+
 if __name__ == "__main__":
     unittest.main()

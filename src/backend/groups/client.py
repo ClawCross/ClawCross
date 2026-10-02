@@ -370,11 +370,20 @@ class GroupClient:
                     if not visible:
                         continue
                     message = event['message']
+                    source = next((m for m in packet['group'].get('members', []) if m['principal'] == message['sender']), None)
+                    human_requests = []
+                    if source and not source['is_agent'] and not message.get('sender_agent_id'):
+                        human_requests = [{'id': f'group:{row["remote_id"]}:{event["id"]}',
+                            'text': message['content'], 'source_kind': 'group_human',
+                            'sender_user': source['user_id'], 'sender_name': source['name'],
+                            'group_id': row['alias']}]
                     text = self.store.unread_digest(row, aid, event['id']) + f'[群聊「{card["title"]}」 group_id={row["alias"]}] {message["sender_name"]} 说:\n{message["content"]}'
                     receipt = await self.gateway.inbox(agent, AgentMessage(text=text, sender=message['sender'],
                         summary=f'群聊「{card["title"]}」 {message["sender_name"]}: {message["content"][:60]}',
                         attachments=message.get('attachments', [])), context={'conversation_id': row['alias'],
-                        'delivery_id': f'relay:{row["alias"]}:{event["id"]}:{aid}', 'groups': [{**self.metadata(card, visible), 'reply_channel': reply_channel(agent, row['alias'])}]})
+                        'delivery_id': f'relay:{row["alias"]}:{event["id"]}:{aid}',
+                        'group_human_requests': human_requests,
+                        'groups': [{**self.metadata(card, visible), 'reply_channel': reply_channel(agent, row['alias'])}]})
                     if not receipt.accepted:
                         raise ClientError('本机 agent 暂未接受群消息，稍后重试', 503)
                     self.store.mark_delivered(row, event['id'], aid)

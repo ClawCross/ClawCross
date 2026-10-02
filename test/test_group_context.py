@@ -76,7 +76,8 @@ class GroupContextTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, \
                 patch('external.session.identity_sections', return_value={'base_rules': 'rules'}), \
                 patch('webot.skills.build_user_skills_listing', return_value=''), \
-                patch('webot.workflow_prompt.build_team_workflow_prompt', return_value=''):
+                patch('webot.workflow_prompt.build_team_workflow_prompt', return_value=''), \
+                patch('common.conversation_context._membership_provider', return_value=[{'group_id':'g1', 'title':'Group'}]):
             store = AgentStore(Path(tmp) / 'agents.db')
             agent = store.create('alice', driver=HTTP, config={'api_url': 'http://unused'})
             def turn(context):

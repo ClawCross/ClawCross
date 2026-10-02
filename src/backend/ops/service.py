@@ -171,57 +171,31 @@ class OpsService:
         return {"status": "success", "update": snapshot}
 
     async def list_all_sessions(self, user_id: str) -> dict:
-        """Return the acpx sessions (``acpx <tool> sessions list``)."""
-        acpx_sessions: list[dict] = []
-        platforms = ["openclaw", "claude", "gemini", "codex", "aider"]
-        acpx_bin = shutil.which("acpx")
-        if not acpx_bin:
-            platforms = []  # fallback: try direct binary names
-        # ``acpx <plat> sessions list`` is a global registry view (not scoped to
-        # cwd), so it lists every session regardless of where we run it. Each row
-        # carries the session's own cwd (column 3 below) — that cwd is what
-        # close_acp_session must reuse to actually close it.
-        for plat_name in platforms:
-            bin_path = acpx_bin if acpx_bin else shutil.which(plat_name)
-            if not bin_path:
-                continue
-            try:
-                args = [acpx_bin, plat_name, "sessions", "list"] if acpx_bin else [bin_path, "sessions"]
-                proc = await asyncio.create_subprocess_exec(
-                    *args,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=20)
-                if proc.returncode != 0:
+        """Only the caller's registered ACP agents, using local acpx records."""
+        from agents.store import ACPX, canonical_platform, get_store
+        from external.session import runtime_session
+        from external.acpx import get_acpx_adapter
+        from ops.components import binary_path
+
+        owned = {(canonical_platform(agent.platform), runtime_session(agent)): agent
+                 for agent in get_store().list(user_id) if agent.driver == ACPX}
+        if not owned or not binary_path("acpx"):
+            return {"status": "success", "acpx_sessions": []}
+        adapter = get_acpx_adapter()
+        rows = []
+        for platform in sorted({key[0] for key in owned}):
+            for row in await adapter.list_sessions(tool=platform):
+                agent = owned.get((platform, row["name"]))
+                if agent is None:
                     continue
-                lines = stdout.decode("utf-8", errors="replace").strip().splitlines()
-                for line in lines:
-                    if not line.strip():
-                        continue
-                    parts = line.split("	")
-                    if len(parts) < 2:
-                        continue
-                    session_id = parts[0].replace(" [closed]", "").strip()
-                    name = parts[1].strip() if len(parts) > 1 else ""
-                    cwd = parts[2].strip() if len(parts) > 2 else ""
-                    last_used = parts[3].strip() if len(parts) > 3 else ""
-                    closed = "[closed]" in parts[0]
-                    acpx_sessions.append({
-                        "platform": plat_name,
-                        "session_id": session_id,
-                        "name": name,
-                        "cwd": cwd,
-                        "last_used_at": last_used,
-                        "closed": closed,
-                    })
-            except (asyncio.TimeoutError, Exception):
-                continue
-
-        return {"status": "success", "acpx_sessions": acpx_sessions}
+                rows.append({"platform": platform, "session_id": row.get("acpxRecordId"),
+                             "name": row["name"], "agent_id": agent.agent_id,
+                             "agent_name": agent.name, "cwd": row.get("cwd"),
+                             "last_used_at": row.get("lastUsedAt"), "closed": row.get("closed", False)})
+        return {"status": "success", "acpx_sessions": rows}
 
 
-    async def close_acp_session(self, platform: str, session_name: str, cwd: str = "") -> dict:
+    async def close_acp_session(self, platform: str, session_name: str, cwd: str = "", *, user_id: str) -> dict:
         """Close an acpx session via 'acpx --cwd <session_cwd> <platform> sessions close <name>'.
 
         ``acpx`` binds every session to the cwd it was created in, and
@@ -233,7 +207,20 @@ class OpsService:
         old fixed-``WORKSPACE_DIR/acpx`` path silently no-oped for every
         session created elsewhere while the UI reported success.
         """
-        acpx_bin = shutil.which("acpx")
+        from agents.store import ACPX, canonical_platform, get_store
+        from external.session import runtime_session
+        from external.acpx import get_acpx_adapter
+        from ops.components import binary_path
+        owned = next((agent for agent in get_store().list(user_id)
+                      if agent.driver == ACPX and canonical_platform(agent.platform) == canonical_platform(platform)
+                      and runtime_session(agent) == session_name), None)
+        if owned is None:
+            raise HTTPException(404, "No owned ACP session")
+        # The runtime owns cwd; never let a browser select another user's record.
+        adapter = get_acpx_adapter()
+        cwd = adapter._cwd
+        platform = canonical_platform(owned.platform)
+        acpx_bin = binary_path("acpx")
         if not acpx_bin:
             return {"status": "error", "reason": "acpx not found"}
         acpx_cwd = (cwd or "").strip() or None

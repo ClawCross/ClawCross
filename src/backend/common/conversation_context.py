@@ -35,3 +35,12 @@ def normalize_group_metadata(groups: list[dict]) -> list[dict]:
 def render_group_metadata(groups: list[dict]) -> str:
     current = normalize_group_metadata(groups)
     return json.dumps(current, ensure_ascii=False, sort_keys=True) if current else ""
+
+
+def current_group_metadata(sources: list[dict], memberships: list[dict] | None = None) -> list[dict]:
+    """Resolve source channels against live membership, never stale delivery details."""
+    sources = normalize_group_metadata(sources)
+    if memberships is None:
+        return sources
+    source_ids = {group['group_id'] for group in sources}
+    return [group for group in normalize_group_metadata(memberships) if group['group_id'] in source_ids]

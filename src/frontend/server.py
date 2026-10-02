@@ -38,6 +38,7 @@ from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 from scheduler.internal_alarm import export_team_alarms, restore_team_alarms, team_alarm_targets
 from common.llm_factory import create_chat_model, extract_text, infer_provider
 from frontend.proxies.groups import register_group_routes
+from frontend.proxies.group_guests import register_guest_routes
 from frontend.proxies.agents import PUBLIC_AGENT_ENDPOINTS, register_agent_routes
 from frontend.proxies.oasis import register_oasis_routes
 from frontend.proxies.webot import register_webot_routes
@@ -324,7 +325,11 @@ def login_token_expire_ts(token: str) -> int | None:
         return None
 
 
+from frontend.proxies.components import register_component_routes
+register_component_routes(app)
+
 register_group_routes(app, port_agent=PORT_AGENT, internal_token=INTERNAL_TOKEN)
+register_guest_routes(app, port_agent=PORT_AGENT, internal_token=INTERNAL_TOKEN, public_base=lambda: _get_public_domain())
 register_agent_routes(
     app,
     port_agent=PORT_AGENT,
@@ -366,6 +371,7 @@ def _user_exists_in_users_json(username: str) -> bool:
 # --- Unified auth: before_request hook ---
 # Routes that do NOT require login
 _PUBLIC_ROUTES = frozenset({
+    'group_guest_page', 'group_guest_api',
     'index', 'manifest', 'service_worker', 'static',
     'proxy_openai_completions', 'proxy_openai_models',
     'proxy_login', 'proxy_logout', 'proxy_check_session',
@@ -3275,10 +3281,10 @@ def _list_acpx_tools() -> list[str]:
 
 @app.route("/proxy_acpx_status", methods=["GET"])
 def proxy_acpx_status():
-    """Return whether the acpx CLI is on PATH (main chat ACP modes)."""
-    import shutil
+    """Return availability, including explicitly installed local components."""
+    from ops.components import binary_path
 
-    available = bool(shutil.which("acpx"))
+    available = bool(binary_path("acpx"))
     return jsonify({"available": available, "tools": _list_acpx_tools() if available else []})
 
 

@@ -51,11 +51,13 @@ def create_ops_router(
 
     @router.post("/sessions_list")
     async def sessions_list(req: SessionsListRequest, x_internal_token: str | None = Header(None)):
+        service.verify_auth_or_token(req.user_id, req.password, x_internal_token)
         return await service.list_all_sessions(req.user_id)
 
     @router.post("/sessions_close")
     async def sessions_close(req: SessionsCloseRequest, x_internal_token: str | None = Header(None)):
-        return await service.close_acp_session(req.platform, req.session_name, req.cwd)
+        service.verify_auth_or_token(req.user_id, req.password, x_internal_token)
+        return await service.close_acp_session(req.platform, req.session_name, req.cwd, user_id=req.user_id)
 
     @router.post("/update_check")
     async def update_check(req: UpdateCheckRequest, x_internal_token: str | None = Header(None)):

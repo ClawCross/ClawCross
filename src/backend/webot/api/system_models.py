@@ -47,3 +47,4 @@ class SystemTriggerRequest(BaseModel):
     inbox_message_id: str = Field('', max_length=200)
     drain_inbox: bool = False
     groups: list[dict] = Field(default_factory=list)
+    group_human_requests: list[dict] = Field(default_factory=list)

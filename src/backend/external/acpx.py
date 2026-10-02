@@ -6,6 +6,7 @@ import os
 import shlex
 import shutil
 import tempfile
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -17,6 +18,45 @@ class AcpxError(RuntimeError):
 
 
 logger = logging.getLogger(__name__)
+
+
+def public_command_error(output: str, code: int) -> str:
+    """Never send initialization credentials or prompts back as error text."""
+    protocol = False
+    errors = []
+    for line in output.splitlines():
+        try:
+            packet = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(packet, dict) or packet.get('jsonrpc') != '2.0':
+            continue
+        protocol = True
+        error = packet.get('error') or {}
+        if isinstance(error, dict) and isinstance(error.get('message'), str):
+            detail = (error.get('data') or {}).get('detailCode') if isinstance(error.get('data'), dict) else None
+            errors.append((str(detail) + ': ' if detail else '') + error['message'][:500])
+    if errors:
+        return '; '.join(errors[-3:])
+    if protocol:
+        return 'External Agent tool permission denied' if code == 5 else f'External Agent command failed (exit {code})'
+    return output.strip()[:800] or f'exit={code}'
+
+
+def bridge_permission_flags(cmd: list[str], mcp_config: str | None):
+    if not mcp_config:
+        return
+    try:
+        servers = json.loads(Path(mcp_config).read_text()).get('mcpServers', [])
+    except (OSError, ValueError):
+        return
+    if not any(server.get('name') == 'ClawCross' for server in servers):
+        return
+    # Delegate only our two scoped MCP wrappers to the central tool node.
+    # Native tools retain the chosen acpx permission policy.
+    policy = {'autoApprove': ['mcp__ClawCross__tool_search', 'mcp__ClawCross__tool_call',
+                              'mcp.ClawCross.tool_search', 'mcp.ClawCross.tool_call']}
+    cmd.extend(['--permission-policy', json.dumps(policy, separators=(',', ':'))])
 
 
 @dataclass(slots=True)
@@ -223,7 +263,8 @@ class AcpxAdapter:
     """Minimal async wrapper around acpx CLI sessions/prompt."""
 
     def __init__(self, *, cwd: str | None = None):
-        self._acpx_bin = shutil.which("acpx")
+        from ops.components import binary_path
+        self._acpx_bin = binary_path("acpx")
         self._cwd = cwd or _default_acpx_cwd()
         self._pending_initial_prompt: dict[str, str] = {}
         if not self._acpx_bin:
@@ -245,27 +286,62 @@ class AcpxAdapter:
         session_key: str,
         acpx_session: str,
         system_prompt: str | None = None,
+        timeout_sec: int | None = 180,
         ttl_sec: int = 300,
         approve_all: bool | None = None,
         permission_policy: str | None = None,
         non_interactive_permissions: str | None = None,
         allowed_tools: str | None = None,
+        model: str | None = None,
+        mcp_config: str | None = None,
     ) -> bool:
         existed_before = await self._session_exists(tool=tool, acpx_session=acpx_session)
-        await self._run_json(
-            self._command_prefix(tool=tool, session_key=session_key) + ["sessions", "ensure", "--name", acpx_session],
-            timeout_sec=20,
-            allow_nonzero=False,
-            ttl_sec=ttl_sec,
-            approve_all=approve_all,
-            permission_policy=permission_policy,
-            non_interactive_permissions=non_interactive_permissions,
-            allowed_tools=allowed_tools,
-        )
+        args = self._command_prefix(tool=tool, session_key=session_key) + ["sessions", "ensure", "--name", acpx_session]
+        options = dict(timeout_sec=timeout_sec, allow_nonzero=False, ttl_sec=ttl_sec,
+                       approve_all=approve_all, permission_policy=permission_policy,
+                       non_interactive_permissions=non_interactive_permissions,
+                       allowed_tools=allowed_tools, model=model, mcp_config=mcp_config)
+        try:
+            await self._run_json(args, **options)
+        except AcpxError as exc:
+            if 'QUEUE_MCP_CONFIG_CONFLICT' not in str(exc):
+                raise
+            await self._reconnect_transport(acpx_session)
+            await self._run_json(args, **options)
         created = existed_before is False
         if created and system_prompt and system_prompt.strip():
             self._pending_initial_prompt[self._pending_prompt_key(tool=tool, acpx_session=acpx_session)] = system_prompt.strip()
         return created
+
+    async def _reconnect_transport(self, name: str) -> None:
+        """acpx 0.19 keeps MCP config fixed for a queue owner's lifetime.
+
+        Retire only this transport using acpx's own lease-safe cleanup. Unlike
+        `sessions close`, this preserves the open record and native session ID.
+        Fail closed if a future acpx no longer exports this compatibility hook.
+        """
+        record_id = None
+        for path in (Path.home() / '.acpx' / 'sessions').glob('*.json'):
+            try:
+                if path.stat().st_size > 16 * 1024 * 1024:
+                    continue
+                record = json.loads(path.read_text())
+                if record.get('name') == name and record.get('cwd') == self._cwd and not record.get('closed'):
+                    record_id = record.get('acpx_record_id')
+                    break
+            except (OSError, ValueError):
+                continue
+        modules = list(Path(self._acpx_bin).resolve().parent.glob('ipc-*.js'))
+        node = shutil.which('node')
+        if not record_id or len(modules) != 1 or not node:
+            raise AcpxError('This acpx version cannot reconnect MCP without resetting; existing conversation preserved')
+        script = '''const ipc = await import(process.argv[1]);
+const fn = Object.values(ipc).find(v => typeof v === "function" && v.name === "terminateQueueOwnerForSession");
+if (!fn) throw Error("acpx transport reconnect hook unavailable; conversation preserved");
+await fn(process.argv[2]);'''
+        await self._run_json_command([node, '--input-type=module', '-e', script,
+                                      modules[0].as_uri(), str(record_id)],
+                                     timeout_sec=20, allow_nonzero=False)
 
     def consume_initial_prompt(
         self,
@@ -482,7 +558,7 @@ class AcpxAdapter:
         err = err_b.decode("utf-8", errors="replace")
         rc = proc.returncode if proc.returncode is not None else -1
         if rc != 0 and not allow_nonzero:
-            msg = err.strip() or out.strip() or f"exit={rc}"
+            msg = public_command_error(err.strip() or out, rc)
             raise AcpxError(f"acpx failed ({rc}): {msg}")
         return out
 
@@ -495,7 +571,9 @@ class AcpxAdapter:
         tool_n = aliases.get((tool or "").strip().lower(), (tool or "").strip().lower())
         if tool_n == "openclaw":
             raise AcpxError("sessions list is not supported for openclaw agent mode")
-        raw = await self._run_json([tool_n, "sessions", "list"], timeout_sec=45, allow_nonzero=False)
+        # Agent-side session/list starts the adapter and may enumerate unrelated
+        # Codex/Claude histories. Status probes only need acpx's local records.
+        raw = await self._run_json([tool_n, "sessions", "list", "--local"], timeout_sec=10, allow_nonzero=False)
         text = raw.strip()
         if not text:
             return []
@@ -602,6 +680,7 @@ class AcpxAdapter:
         permission_policy: str | None = None,
         non_interactive_permissions: str | None = None,
         allowed_tools: str | None = None,
+        model: str | None = None,
     ) -> str:
         """
         Send a prompt to the agent.
@@ -637,6 +716,7 @@ class AcpxAdapter:
             session_key=session_key,
             acpx_session=acpx_session,
             system_prompt=system_prompt,
+            timeout_sec=timeout_sec,
             ttl_sec=ttl_sec,
             approve_all=approve_all,
             permission_policy=permission_policy,
@@ -662,6 +742,7 @@ class AcpxAdapter:
             permission_policy=permission_policy,
             non_interactive_permissions=non_interactive_permissions,
             allowed_tools=allowed_tools,
+            model=model,
         )
 
         text = self._extract_text(output)
@@ -684,6 +765,10 @@ class AcpxAdapter:
         permission_policy: str | None = None,
         non_interactive_permissions: str | None = None,
         allowed_tools: str | None = None,
+        model: str | None = None,
+        mcp_config: str | None = None,
+        config_options: dict | None = None,
+        on_event=None,
     ) -> AcpxPromptTrace:
         acpx_session = self.to_acpx_session_name(tool=tool, session_key=session_key)
         if reset_session:
@@ -703,12 +788,28 @@ class AcpxAdapter:
             session_key=session_key,
             acpx_session=acpx_session,
             system_prompt=system_prompt,
+            timeout_sec=timeout_sec,
             ttl_sec=ttl_sec,
             approve_all=approve_all,
             permission_policy=permission_policy,
             non_interactive_permissions=non_interactive_permissions,
             allowed_tools=allowed_tools,
+            model=model,
+            mcp_config=mcp_config,
         )
+
+        # Persistent sessions expose `set`; --config-option belongs to `exec`
+        # only in acpx 0.19. Avoid replaying unchanged settings every turn.
+        current = self._local_config_values(acpx_session) if config_options else {}
+        for key, value in (config_options or {}).items():
+            if key == 'model' or current.get(key) == value:
+                continue
+            await self._run_json(
+                self._command_prefix(tool=tool, session_key=session_key) +
+                ['set', key, str(value), '-s', acpx_session], timeout_sec=timeout_sec,
+                allow_nonzero=False, ttl_sec=ttl_sec, approve_all=approve_all,
+                permission_policy=permission_policy, non_interactive_permissions=non_interactive_permissions,
+                allowed_tools=allowed_tools, model=model, mcp_config=mcp_config)
 
         effective_prompt, _identity_injected = self.consume_initial_prompt(
             tool=tool,
@@ -728,6 +829,10 @@ class AcpxAdapter:
             permission_policy=permission_policy,
             non_interactive_permissions=non_interactive_permissions,
             allowed_tools=allowed_tools,
+            model=model,
+            mcp_config=mcp_config,
+            config_options=config_options,
+            on_event=on_event,
         )
         return self._extract_trace(output)
 
@@ -759,6 +864,10 @@ class AcpxAdapter:
         permission_policy: str | None,
         non_interactive_permissions: str | None,
         allowed_tools: str | None,
+        model: str | None = None,
+        mcp_config: str | None = None,
+        config_options: dict | None = None,
+        on_event=None,
     ) -> str:
         prompt_args, temp_path = self.prepare_prompt_command(
             tool=tool,
@@ -771,12 +880,16 @@ class AcpxAdapter:
             permission_policy=permission_policy,
             non_interactive_permissions=non_interactive_permissions,
             allowed_tools=allowed_tools,
+            model=model,
+            mcp_config=mcp_config,
+            config_options=config_options,
         )
         try:
             return await self._run_json_command(
                 prompt_args,
                 timeout_sec=timeout_sec,
                 allow_nonzero=False,
+                on_event=on_event,
             )
         finally:
             try:
@@ -797,6 +910,9 @@ class AcpxAdapter:
         permission_policy: str | None,
         non_interactive_permissions: str | None,
         allowed_tools: str | None,
+        model: str | None = None,
+        mcp_config: str | None = None,
+        config_options: dict | None = None,
     ) -> tuple[list[str], str]:
         """Build the exact acpx prompt command plus temp JSON payload path."""
         assert self._acpx_bin is not None
@@ -864,10 +980,28 @@ class AcpxAdapter:
             non_interactive_permissions=nip,
             allowed_tools=allowed_tools,
         )
+        if model and model.strip():
+            cmd.extend(["--model", model.strip()])
+        if mcp_config:
+            cmd.extend(["--mcp-config", mcp_config])
+        bridge_permission_flags(cmd, mcp_config)
         cmd.extend(["--format", "json", "--json-strict"])
         cmd.extend(self._command_prefix(tool=tool, session_key=session_key))
         cmd.extend(["prompt", "-s", acpx_session, "--file", temp_path])
         return cmd, temp_path
+
+    def _local_config_values(self, name: str) -> dict:
+        for path in (Path.home() / '.acpx' / 'sessions').glob('*.json'):
+            try:
+                if path.stat().st_size > 16 * 1024 * 1024:
+                    continue
+                record = json.loads(path.read_text())
+                if record.get('name') == name and record.get('cwd') == self._cwd and not record.get('closed'):
+                    return {item['id']: item.get('currentValue') for item in
+                            (record.get('acpx') or {}).get('config_options', []) if 'id' in item}
+            except (OSError, ValueError, TypeError):
+                continue
+        return {}
 
     async def _run_json(
         self,
@@ -880,6 +1014,8 @@ class AcpxAdapter:
         permission_policy: str | None = None,
         non_interactive_permissions: str | None = None,
         allowed_tools: str | None = None,
+        model: str | None = None,
+        mcp_config: str | None = None,
     ) -> str:
         assert self._acpx_bin is not None
         # Headless subprocess: no TTY for permission prompts — default --approve-all so tool/exec turns can finish.
@@ -902,6 +1038,11 @@ class AcpxAdapter:
             non_interactive_permissions=nip,
             allowed_tools=allowed_tools,
         )
+        if model:
+            cmd.extend(['--model', model])
+        if mcp_config:
+            cmd.extend(['--mcp-config', mcp_config])
+        bridge_permission_flags(cmd, mcp_config)
         cmd.extend(
             [
                 "--format",
@@ -923,6 +1064,11 @@ class AcpxAdapter:
                 out_b, err_b = await proc.communicate()
             else:
                 out_b, err_b = await asyncio.wait_for(proc.communicate(), timeout=timeout_sec)
+        except asyncio.CancelledError:
+            with contextlib.suppress(ProcessLookupError):
+                proc.kill()
+            await proc.wait()
+            raise
         except asyncio.TimeoutError as e:
             _acp_mark("acpx.aux.timeout", pid=proc.pid, op=_aux_tail)
             with contextlib.suppress(Exception):
@@ -940,7 +1086,7 @@ class AcpxAdapter:
             stdout_chars=len(out),
         )
         if proc.returncode != 0 and not allow_nonzero:
-            msg = err.strip() or out.strip() or f"exit={proc.returncode}"
+            msg = public_command_error(err.strip() or out, proc.returncode)
             raise AcpxError(f"acpx failed ({proc.returncode}): {msg}")
         return out
 
@@ -950,6 +1096,7 @@ class AcpxAdapter:
         *,
         timeout_sec: int | None,
         allow_nonzero: bool,
+        on_event=None,
     ) -> str:
         # Cheap fingerprint of the command for trace correlation without leaking prompts.
         _cmd_tail = " ".join(cmd[-4:]) if len(cmd) > 4 else " ".join(cmd)
@@ -958,6 +1105,7 @@ class AcpxAdapter:
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=None,
+            limit=2 * 1024 * 1024,
         )
         _acp_mark("acpx.spawn.post", pid=proc.pid)
         stdout_chunks: list[bytes] = []
@@ -999,6 +1147,18 @@ class AcpxAdapter:
                     line_no += 1
                     total_stdout_bytes += len(line)
                     stdout_chunks.append(line)
+                    if on_event:
+                        from external.acp_events import normalize_event
+                        try:
+                            packet = json.loads(line)
+                        except (ValueError, UnicodeDecodeError):
+                            packet = None
+                        event = normalize_event(packet)
+                        if event:
+                            result = on_event(event)
+                            if asyncio.iscoroutine(result):
+                                await result
+
                     _acp_mark(
                         "acpx.stdout.line",
                         pid=proc.pid,
@@ -1017,6 +1177,11 @@ class AcpxAdapter:
                 returncode=returncode,
                 wait_elapsed=f"{loop.time() - wait_t0:.3f}s",
             )
+        except asyncio.CancelledError:
+            with contextlib.suppress(ProcessLookupError):
+                proc.kill()
+            await proc.wait()
+            raise
         except asyncio.TimeoutError as e:
             _acp_mark("acpx.timeout", pid=proc.pid, timeout_sec=timeout_sec)
             with contextlib.suppress(Exception):
@@ -1033,7 +1198,7 @@ class AcpxAdapter:
             stdout_chars=len(out),
         )
         if returncode != 0 and not allow_nonzero:
-            msg = out.strip() or f"exit={returncode}"
+            msg = public_command_error(out, returncode)
             raise AcpxError(f"acpx failed ({returncode}): {msg}")
         return out
 
@@ -1137,6 +1302,7 @@ class AcpxAdapter:
         """Parse acpx stdout: JSON-RPC stream (session/update … agent_message_chunk) or legacy summary JSON."""
         message_parts: list[str] = []
         legacy: str | None = None
+        protocol = False
         for line in output.splitlines():
             line = line.strip()
             if not line.startswith("{"):
@@ -1148,13 +1314,16 @@ class AcpxAdapter:
             part = AcpxAdapter._extract_acpx_agent_message_chunks(obj)
             if part is not None:
                 message_parts.append(part)
+            if isinstance(obj, dict) and obj.get('jsonrpc') == '2.0':
+                protocol = True
+                continue
             cand = AcpxAdapter._pick_text(obj)
             if cand:
                 legacy = cand
         assembled = "".join(message_parts).strip()
         if assembled:
             return assembled
-        return legacy
+        return '' if protocol else legacy
 
     @staticmethod
     def _extract_trace(output: str) -> AcpxPromptTrace:
@@ -1202,10 +1371,27 @@ class AcpxAdapter:
             if cand:
                 legacy = cand
 
+        from external.acp_events import normalize_event
+        tools = {}
+        for line in output.splitlines():
+            try:
+                event = normalize_event(json.loads(line))
+            except ValueError:
+                continue
+            if event and event['type'].startswith('acpx_tool_'):
+                tools.setdefault(event['tool_call_id'], {}).update(event)
+        if tools:
+            tool_uses.extend({'id': key, 'name': item.get('title', key), 'input': item.get('input', {})}
+                             for key, item in tools.items())
+            tool_results.extend({'tool_call_id': key, 'name': item.get('title', key), 'status': item.get('status'),
+                                 'content': item.get('content_text', '')} for key, item in tools.items())
+
         # Keep the primary assistant text extraction identical to the legacy
         # prompt() path so main-page chat rendering stays stable.
         extracted_text = AcpxAdapter._extract_text(output)
-        assembled = (extracted_text or "").strip() or (legacy or output.strip())
+        # A legitimate tool-only turn has no assistant text. Protocol traffic
+        # includes the incoming prompt and must never become the reply.
+        assembled = extracted_text if extracted_text is not None else (legacy or output.strip())
         return AcpxPromptTrace(
             text=assembled,
             message_chunks=message_parts,

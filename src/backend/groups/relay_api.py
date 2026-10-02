@@ -34,6 +34,21 @@ class AgentJoin(BaseModel):
     platform: str = Field('agent', max_length=50)
 
 
+class GuestJoin(BaseModel):
+    invite: str = Field(min_length=20, max_length=100)
+    name: str = Field(min_length=1, max_length=40)
+
+
+class GuestName(BaseModel):
+    name: str = Field(min_length=1, max_length=40)
+
+
+class GuestPost(BaseModel):
+    content: str = Field(min_length=1, max_length=8000)
+    client_msg_id: str = Field('', max_length=160)
+    mentions: list[str] = Field(default_factory=list, max_length=128)
+
+
 class Post(BaseModel):
     content: str = Field(max_length=65536)
     agent_id: str = Field('', max_length=100)
@@ -132,6 +147,41 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
     @router.post('/agents')
     async def add_agent(body: AgentJoin, authorization: str | None = Header(None)):
         return await invoke(store.add_agent, token(authorization), **body.model_dump())
+
+    @router.post('/guest-invites')
+    async def guest_invite(body: dict, authorization: str | None = Header(None)):
+        return await invoke(store.guest_invite, token(authorization), disable=body.get('disable') is True)
+
+    @router.post('/guest/info')
+    async def guest_info(body: dict, request: Request):
+        limited('guest-info:' + (request.client.host if request.client else '?'), 120)
+        return await invoke(store.guest_info, str(body.get('invite', ''))[:100])
+
+    @router.post('/guest/join')
+    async def guest_join(body: GuestJoin, request: Request):
+        limited('guest-join:global', 120)
+        limited('guest-join:' + (request.client.host if request.client else '?'), 12)
+        return await invoke(store.guest_join, body.invite, body.name)
+
+    @router.get('/guest/state')
+    async def guest_state(after_id: int = -1, authorization: str | None = Header(None)):
+        credential = token(authorization)
+        return await invoke(store.guest_state, credential, after_id)
+
+    @router.post('/guest/messages')
+    async def guest_post(body: GuestPost, authorization: str | None = Header(None)):
+        credential = token(authorization)
+        await invoke(store.guest_identity, credential)
+        from groups.relay_store import digest
+        limited('post:' + digest(credential), 30)
+        if not body.content.strip():
+            raise HTTPException(400, '消息不能为空')
+        result = await invoke(store.post, credential, **body.model_dump())
+        return {'id': result['message']['id']}
+
+    @router.post('/guest/rename')
+    async def guest_rename(body: GuestName, authorization: str | None = Header(None)):
+        return await invoke(store.guest_rename, token(authorization), body.name)
 
     @router.post('/manage/{action}')
     async def manage(action: str, body: dict, authorization: str | None = Header(None)):

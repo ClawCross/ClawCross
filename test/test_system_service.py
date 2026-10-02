@@ -223,6 +223,18 @@ class SystemTriggerWaitReplyTests(unittest.IsolatedAsyncioTestCase):
 
 
 class DurableInboxTests(unittest.IsolatedAsyncioTestCase):
+    async def test_group_human_original_survives_inbox_digest_without_becoming_notice_text(self):
+        request = {'id':'group:g:1','text':'完整原始请求 SECRET','source_kind':'group_human','sender_user':'cathy','group_id':'rg_g'}
+        with TemporaryDirectory() as tmpdir, patch.object(runtime_store, 'DEFAULT_DB_PATH', Path(tmpdir) / 'runtime.db'):
+            agent = _FakeAgent(); service = SystemService(agent=agent)
+            await service.run(SystemTriggerRequest(user_id='alice', session_id='worker', text='完整正文 SECRET',
+                inbox_source_session='p_cathy', inbox_summary='摘要', group_human_requests=[request]))
+            await _wait_for(lambda: len(runtime_store.list_inbox_messages('alice','worker',status='delivered')) == 1)
+            delivered = agent.agent_app.inputs[0]['messages'][0]
+            self.assertEqual(delivered.additional_kwargs['framework_group_requests'], [request])
+            self.assertNotIn('SECRET', delivered.content)
+            self.assertEqual(runtime_store.list_inbox_messages('alice','worker',status='delivered')[0].metadata['group_human_requests'], [request])
+
     async def test_cross_session_message_waits_for_idle_then_marks_delivered(self):
         with TemporaryDirectory() as tmpdir, patch.object(runtime_store, "DEFAULT_DB_PATH", Path(tmpdir) / "runtime.db"):
             agent = _FakeAgent()

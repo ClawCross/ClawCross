@@ -32,6 +32,7 @@ from agents.store import (
     HTTP,
     LLM,
     WEBOT,
+    ACPX,
     Agent,
     AgentExists,
     AgentStore,
@@ -225,6 +226,52 @@ def create_agents_router(
             raise HTTPException(status_code=400, detail=str(exc))
         return agent_card(agent)
 
+    @router.get("/v1/agents/{ref}/capabilities")
+    async def agent_capabilities(ref: str, authorization: str | None = Header(None)):
+        agent = lookup(user_of(authorization), ref)
+        if agent.driver == ACPX:
+            from external.acp_settings import capability_card
+            return capability_card(agent)
+        return {"platform": agent.platform, "transport": agent.driver,
+                "supports": {"clawcross_compaction": agent.driver == WEBOT, "tool_bridge": False}}
+
+    @router.post("/v1/agents/{ref}/test-connection")
+    async def test_agent_connection(ref: str, authorization: str | None = Header(None)):
+        agent = lookup(user_of(authorization), ref)
+        if agent.driver != ACPX:
+            raise HTTPException(400, "This Agent does not use ACP")
+        runtime = gateway.runtime(agent)
+        if runtime.is_busy(agent):
+            raise HTTPException(409, "Agent 正在运行，请在本轮结束后测试连接")
+        try:
+            await runtime.test_connection(agent)
+        except ControlError as exc:
+            raise HTTPException(502, str(exc)) from exc
+        from external.acp_settings import capability_card
+        return capability_card(store.require(agent.owner, agent.agent_id))
+
+    @router.patch("/v1/agents/{ref}/acp-settings")
+    async def acp_settings(ref: str, body: dict[str, Any], authorization: str | None = Header(None)):
+        agent = lookup(user_of(authorization), ref)
+        if agent.driver != ACPX:
+            raise HTTPException(400, "This Agent does not use ACP")
+        from external.acp_settings import validate_settings, capability_card
+        try:
+            settings = validate_settings(agent, body)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        meta = {**(agent.config.get('meta') or {})}
+        meta['acp'] = {**(meta.get('acp') or {}), **settings}
+        model = (settings.get('config_options') or {}).get('model', agent.config.get('model', ''))
+        updated = store.update(agent.owner, agent.agent_id, config={**agent.config, 'meta': meta, 'model': model})
+        return capability_card(updated)
+
+    @router.get('/v1/agents/{ref}/events')
+    async def agent_events(ref: str, after: int = Query(0, ge=0), authorization: str | None = Header(None)):
+        agent = lookup(user_of(authorization), ref)
+        runtime = gateway.runtime(agent)
+        return runtime.events(agent, after) if agent.driver == ACPX else {'events': [], 'cursor': 0}
+
     @router.post("/v1/agents/{ref}/fork")
     async def fork_agent(ref: str, body: AgentForkBody, authorization: str | None = Header(None)):
         user = user_of(authorization)
@@ -278,7 +325,7 @@ def create_agents_router(
     @router.post("/v1/agents/{ref}/inbox")
     async def post_to_inbox(ref: str, body: AgentMessageRequest, authorization: str | None = Header(None)):
         user = user_of(authorization)
-        if (body.inbox_sender or body.inbox_summary) and (not internal_token or authorization != f'Bearer {internal_token}:{user}'):
+        if (body.inbox_sender or body.inbox_summary or body.context.get('group_human_requests')) and (not internal_token or authorization != f'Bearer {internal_token}:{user}'):
             raise HTTPException(403, '只有本机服务可以指定 inbox 来源')
         agent = target(user, ref, body.platform)
         msg = message(user, body)

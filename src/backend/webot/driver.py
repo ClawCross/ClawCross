@@ -106,6 +106,7 @@ class WebotRuntime(Runtime):
             inbox_source_label=str(context.get("source_label") or ""),
             attachments=list(msg.attachments) or None,
             groups=context.get("groups") or [],
+            group_human_requests=context.get("group_human_requests") or [],
         ))
         return DeliveryReceipt(accepted=True)
 

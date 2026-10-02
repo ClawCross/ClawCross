@@ -263,7 +263,7 @@ class TestGateway(StoreCase):
         told = body["messages"][0]["content"]
         self.assertIn("PERSONA", told)
         self.assertTrue(told.endswith("\n\nhi"))  # the identity comes before the message
-        self.assertIn("PERSONA", self.store.get("alice", svc.agent_id).runtime["identity_prompt"])
+        self.assertIn("PERSONA", self.store.get("alice", svc.agent_id).runtime["dynamic_context"]["identity_persona"])
         self.store.patch_runtime("alice", svc.agent_id, {"other_runtime_field": "keep"})
         self.ask(svc)  # keep using the original object, as a queued caller may do
         self.assertEqual(_Http.posts[1][1]["messages"][0]["content"], "hi")  # already told
@@ -273,7 +273,7 @@ class TestGateway(StoreCase):
             self.ask(svc)
             patched = _Http.posts[2][1]
             self.assertIn("CRITIC", patched["messages"][0]["content"])
-            self.assertIn("系统提示词补丁", patched["messages"][0]["content"])
+            self.assertIn("【本轮 identity_persona】", patched["messages"][0]["content"])
             self.assertEqual(patched["session_id"], _Http.posts[0][1]["session_id"])
             asyncio.run(self.gateway.control(svc, "reset"))
             self.ask(svc)
@@ -316,7 +316,7 @@ class TestGateway(StoreCase):
 
     def test_existing_successful_external_sessions_do_not_repeat_identity_on_upgrade(self):
         svc = self.store.create("alice", driver=HTTP, config={"api_url": "http://svc"})
-        self.store.set_runtime("alice", svc.agent_id, {"last_used_at": 1})
+        self.store.set_runtime("alice", svc.agent_id, {"last_used_at": 1, "identity_sections": __import__("external.session", fromlist=["identity_sections"]).identity_sections(svc)})
         self.ask(svc)
         self.assertNotIn("PERSONA", _Http.posts[0][1]["messages"][0]["content"])
         self.assertTrue(self.store.get("alice", svc.agent_id).runtime["negotiation_sent"])
@@ -324,18 +324,18 @@ class TestGateway(StoreCase):
     def test_failed_identity_patch_is_retried_in_the_same_external_session(self):
         svc = self.store.create("alice", driver=HTTP, config={"api_url": "http://svc"})
         self.ask(svc)
-        version = self.store.get("alice", svc.agent_id).runtime["identity_version"]
+        version = self.store.get("alice", svc.agent_id).runtime["dynamic_context"]
         with mock.patch("webot.profiles.frame_session_identity", return_value="NEW-PERSONA"):
             with mock.patch.object(_Http, "post", mock.AsyncMock(
                     return_value=SimpleNamespace(status_code=503, text="offline"))) as failed:
                 reply = asyncio.run(self.gateway.ask(svc, AgentMessage(text="hi", instructions="rules")))
             self.assertFalse(reply.ok)
-            self.assertEqual(self.store.get("alice", svc.agent_id).runtime["identity_version"], version)
+            self.assertEqual(self.store.get("alice", svc.agent_id).runtime["dynamic_context"], version)
             self.ask(svc)
             retry = _Http.posts[-1][1]
             self.assertEqual(retry, failed.await_args.kwargs["json"])
             self.assertEqual(retry["session_id"], _Http.posts[0][1]["session_id"])
-            self.assertIn("系统提示词补丁", retry["messages"][0]["content"])
+            self.assertIn("【本轮 identity_persona】", retry["messages"][0]["content"])
             self.ask(svc)
         self.assertEqual(_Http.posts[-1][1]["messages"][0]["content"], "hi")
 
@@ -426,7 +426,9 @@ class TestGateway(StoreCase):
     def test_reply_channel_depends_on_the_runtime(self):
         self.assertIn('send_to_group(group_id="g_1"', reply_channel(self.webot(), "g_1"))
         codex = self.codex()
-        self.assertIn(f"groups send --group-id g_1 --agent {codex.agent_id}", reply_channel(codex, "g_1"))
+        self.assertIn('ClawCross MCP tool_call', reply_channel(codex, "g_1"))
+        disabled = self.store.update('alice', codex.agent_id, config={**codex.config, 'meta':{'acp':{'clawcross_tools':False}}})
+        self.assertIn(f"groups send --group-id g_1 --agent {codex.agent_id}", reply_channel(disabled, "g_1"))
 
 
 class _FakeWebot:
@@ -541,6 +543,7 @@ class ApiCase(StoreCase):
         super().setUp()
         self.gateway = AgentGateway(store=self.store, runtimes={WEBOT: webot_runtime(engine=_FakeWebot())})
         self.gateway.ask = mock.AsyncMock(return_value=AgentReply(ok=True, content="pong"))
+        self.gateway.runtimes[ACPX].ask = self.gateway.ask  # ACP now serves its own chat/stream path; never launch a real CLI in this test.
         self.gateway.inbox = mock.AsyncMock(return_value=DeliveryReceipt(accepted=True))
         self.forgotten = []
         names = {"dev.Critic": "s1"}
@@ -558,6 +561,22 @@ class ApiCase(StoreCase):
 
 
 class TestAgentsApi(ApiCase):
+    def test_connection_is_owned_explicit_and_does_not_send_a_chat(self):
+        agent = self.codex()
+        runtime = self.gateway.runtimes[ACPX]
+        with mock.patch.object(runtime, 'test_connection', mock.AsyncMock()) as connect:
+            result = self.call('POST', f'/v1/agents/{agent.agent_id}/test-connection')
+            self.assertEqual(result.status_code, 200)
+            connect.assert_awaited_once()
+            self.gateway.ask.assert_not_awaited()
+            self.assertEqual(self.store.require('alice', agent.agent_id).runtime, {})
+            connect.reset_mock()
+            self.assertEqual(self.call('POST', f'/v1/agents/{agent.agent_id}/test-connection', user='bob').status_code,404)
+            connect.assert_not_awaited()
+            with mock.patch.object(runtime, 'is_busy', return_value=True):
+                self.assertEqual(self.call('POST', f'/v1/agents/{agent.agent_id}/test-connection').status_code,409)
+                connect.assert_not_awaited()
+
 
     def test_inbox_rpc_preserves_context_and_only_internal_callers_set_source(self):
         body = {'text': 'group body', 'context': {'groups': [{'group_id': 'g1'}], 'delivery_id': 'one'}, 'mode': 'readonly',
@@ -680,6 +699,7 @@ class TestSystemTrigger(StoreCase):
 
         self.gateway = mock.Mock()
         self.gateway.ask = mock.AsyncMock(return_value=AgentReply(ok=True, content="pong"))
+        self.gateway.runtimes[ACPX].ask = self.gateway.ask  # ACP now serves its own chat/stream path; never launch a real CLI in this test.
         self.gateway.inbox = mock.AsyncMock(return_value=DeliveryReceipt(accepted=True))
         self.gateway.trigger = mock.AsyncMock(return_value=DeliveryReceipt(accepted=True))
         app = FastAPI()
@@ -731,6 +751,7 @@ class TestOpenAIRouting(StoreCase):
         self.services = _WebotServices()
         self.gateway = AgentGateway(store=self.store, runtimes={WEBOT: webot_runtime(self.services)})
         self.gateway.ask = mock.AsyncMock(return_value=AgentReply(ok=True, content="pong"))
+        self.gateway.runtimes[ACPX].ask = self.gateway.ask  # ACP now serves its own chat/stream path; never launch a real CLI in this test.
         names = {"dev.Critic": "s1"}
         app = FastAPI()
         app.include_router(create_openai_router(
@@ -756,7 +777,7 @@ class TestOpenAIRouting(StoreCase):
         self.assertEqual(response.status_code, 200)
         message = self.gateway.ask.await_args.args[1]
         self.assertEqual((message.text, message.instructions), ("user2", "session rules"))
-        self.assertEqual(self.gateway.ask.await_args.kwargs["context"], {"command_tools": tools})
+        self.assertEqual(self.gateway.ask.await_args.kwargs["context"], {"teams": [], "command_tools": tools})
         self.assertEqual(self.gateway.ask.await_args.kwargs["enabled_tools"], ["read_file"])
 
     def test_the_session_is_the_agent_and_a_new_one_is_made_with_the_named_runtime(self):

@@ -20,7 +20,9 @@ HTTP entrances (``agents.client``).
 from __future__ import annotations
 
 import logging
+import json
 import shlex
+import sys
 from pathlib import Path
 from typing import Any, Callable
 
@@ -35,12 +37,20 @@ from common.runtime_paths import PROJECT_ROOT  # noqa: E402
 _PROJECT_ROOT = str(PROJECT_ROOT)
 
 
+def cli_entry(user: str) -> str:
+    """Use the running project's Python; no uv cache writes in native sandboxes."""
+    return f'{shlex.quote(sys.executable)} {shlex.quote(str(PROJECT_ROOT / "src" / "cli" / "cli.py"))} -u {shlex.quote(user)}'
+
+
 def reply_channel(agent: Agent, conversation_id: str) -> str:
     """How this agent posts into a ClawCross conversation: a tool for WeBot, the CLI otherwise."""
     if agent.driver == WEBOT:
         return (f'send_to_group(group_id="{conversation_id}", content="你的回复")'
                 "（username 与 source_session 自动注入，不要手动填写）")
-    return (f"cd {shlex.quote(_PROJECT_ROOT)} && uv run src/cli/cli.py -u {shlex.quote(agent.owner)} "
+    if agent.driver == ACPX and ((agent.config.get('meta') or {}).get('acp') or {}).get('clawcross_tools', True):
+        args = json.dumps({'group_id': conversation_id, 'content': '你的回复'}, ensure_ascii=False)
+        return f'通过 ClawCross MCP tool_call 调用 send_to_group，arguments_json={args}；身份自动注入。'
+    return (f'{cli_entry(agent.owner)} '
             f"groups send --group-id {shlex.quote(conversation_id)} --agent {shlex.quote(agent.agent_id)} "
             "--message '你的回复'")
 

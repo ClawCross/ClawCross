@@ -2,8 +2,9 @@
 
 Providers report a single ``input_tokens`` total per call. Each component
 (system prompt, tool schemas, runtime state, history, ...) is measured locally
-with tiktoken and the counts are scaled so they add up to that real total —
-only the total is exact, the split is proportional.
+with tiktoken and scaled to the real total. Stable append-only requests also
+allow incremental allocation by input/output difference. Component allocation
+remains inferred; after compaction the active view is explicitly estimated.
 """
 
 from __future__ import annotations
@@ -136,3 +137,71 @@ def validate_context_capacity(*, system_prompt: str, tools: list[dict],
             "原始会话记录已保留。"
         )
     return estimate
+
+
+def compaction_key(record) -> str:
+    """Identify the committed view; API usage for another view is stale."""
+    if not record:
+        return ""
+    import hashlib
+    return hashlib.sha256(json.dumps([record.compacted_until, record.summary, record.updated_at], ensure_ascii=False).encode()).hexdigest()
+
+
+def message_fingerprint(message) -> str:
+    import hashlib
+    payload = [message.type, message.content, getattr(message, "tool_calls", None),
+               getattr(message, "tool_call_id", None), message.additional_kwargs]
+    return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def request_accounting(system_prompt, tools, messages, response, model):
+    import hashlib
+    prefix = hashlib.sha256(json.dumps([model, system_prompt, tools], ensure_ascii=False, sort_keys=True, default=str).encode()).hexdigest()
+    return {"prefix": prefix, "messages": [message_fingerprint(m) for m in messages],
+            "response": message_fingerprint(response),
+            "reasoning_output": bool(response.additional_kwargs.get("reasoning_content") or
+                ((getattr(response, "usage_metadata", None) or {}).get("output_token_details") or {}).get("reasoning"))}
+
+
+def difference_components(previous, current, messages, input_tokens):
+    """Attribute a stable append-only request increment; otherwise keep estimates.
+
+    Output tokens are not guaranteed to equal their serialized input cost, so
+    even this API difference remains an inferred component allocation.
+    """
+    old = previous.get("request_accounting") or {}
+    old_messages = old.get("messages") or []
+    if old.get("reasoning_output") or not old_messages or old.get("prefix") != current.get("prefix"):
+        return None
+    boundary = len(old_messages)
+    if current["messages"][:boundary] != old_messages or len(messages) <= boundary + 1:
+        return None
+    if current["messages"][boundary] != old.get("response"):
+        return None
+    appended = messages[boundary + 1:]
+    # A runtime delta or multiple kinds of messages cannot be separated exactly
+    # from a single input total. Fall back to local allocation.
+    if any(m.additional_kwargs.get(RUNTIME_DELTA_KEY) for m in appended):
+        return None
+    kinds = {"tool_results" if isinstance(m, ToolMessage) else "messages" if m.type == "human" else "other" for m in appended}
+    if len(kinds) != 1 or "other" in kinds:
+        return None
+    delta = input_tokens - int(previous.get("input_tokens", 0)) - int(previous.get("output_tokens", 0))
+    if delta < 0:
+        return None
+    parts = dict(previous.get("breakdown") or {})
+    output = parts.pop("output", 0)
+    parts["messages"] = parts.get("messages", 0) + output
+    key = next(iter(kinds))
+    parts[key] = parts.get(key, 0) + delta
+    if sum(parts.values()) != input_tokens:
+        return None
+    return parts
+
+
+def compacted_components(record, messages):
+    """Re-estimate the active view, retaining measured static-prefix allocation."""
+    from webot.compression import compression_view_from_record
+    parts = estimate_context_components(system_prompt="", tools=[], runtime_state="",
+        messages=compression_view_from_record(record, messages))
+    return parts

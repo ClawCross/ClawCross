@@ -1,0 +1,48 @@
+"""Minimal stdio MCP connector; it has no tool execution authority of its own."""
+import sys
+import os
+# Executing this file must not let sibling external/http.py shadow stdlib http.
+if sys.path and sys.path[0] == os.path.dirname(__file__):
+    sys.path.pop(0)
+import json
+import httpx
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP('ClawCross')
+
+
+async def request(body):
+    async with httpx.AsyncClient(timeout=180, trust_env=False) as client:
+        response = await client.post(os.environ['CLAWCROSS_BRIDGE_URL'], json=body,
+            headers={'Authorization': 'Bearer ' + os.environ['CLAWCROSS_BRIDGE_TOKEN']})
+        if response.status_code != 200:
+            return {'ok': False, 'error': response.json().get('detail', 'Tool request rejected')}
+        return response.json()
+
+
+@mcp.tool()
+async def tool_search(query: str) -> str:
+    """Find ClawCross tools and their exact parameters. Search first when parameters are uncertain."""
+    return json.dumps(await request({'action': 'search', 'query': query}), ensure_ascii=False)
+
+
+@mcp.tool()
+async def tool_call(tool_name: str, arguments_json: str) -> str:
+    """Call an enabled ClawCross tool with the JSON object described by tool_search.
+
+    Identity is supplied by the connector. Do not send username or source_session.
+    The server enforces the Agent's tool list, command rules and approval policy.
+    """
+    if len(arguments_json) > 200_000:
+        return json.dumps({'ok': False, 'error': 'Arguments too large'})
+    try:
+        arguments = json.loads(arguments_json)
+    except ValueError:
+        return json.dumps({'ok': False, 'error': 'arguments_json must be a JSON object'})
+    if not isinstance(arguments, dict):
+        return json.dumps({'ok': False, 'error': 'arguments_json must be a JSON object'})
+    return json.dumps(await request({'action': 'call', 'name': tool_name, 'arguments': arguments}), ensure_ascii=False)
+
+
+if __name__ == '__main__':
+    mcp.run(transport='stdio')
