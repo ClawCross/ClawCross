@@ -6,7 +6,7 @@ const defaults = {
   context: { auto_compact: true, context_window_tokens: 1000000, history_tokens: 0, trigger_tokens: 0, target_tokens: 0,
     preserve_recent_turns: 4, summary_tokens: 2000, summarizer_input_tokens: 8000,
     summarizer_model: '', preserve_instructions: '' },
-  approval: { mode: 'auto', approvals_reviewer: 'user', reviewer_model: '', reviewer_policy: '', reviewer_timeout_seconds: 30, command_sandbox: 'off' },
+  approval: { mode: 'auto', approvals_reviewer: 'user', reviewer_model: '', reviewer_policy: '', reviewer_timeout_seconds: 30, reviewer_max_tokens: 4096, command_sandbox: 'off' },
 };
 
 async function setup(page, options = {}) {

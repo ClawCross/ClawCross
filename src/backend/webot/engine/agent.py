@@ -442,6 +442,7 @@ class AgentState(TypedDict):
     response_format: Optional[dict]
     _approval_review_counters: dict
     _approval_review_blocked: bool
+    _conversation_approval_prompts: list[str]
 
 
 # Mirrors langgraph.prebuilt.ToolNode (default handle_tool_errors) so dropping
@@ -556,6 +557,8 @@ class UserAwareToolNode:
         approval_id: str = "",
     ) -> str:
         if requires_approval:
+            if reason.startswith('【操作授权请求】'):
+                return reason
             approval_hint = f"\napproval_id: {approval_id}" if approval_id else ""
             return (
                 f"⏸️ 工具 '{tool_name}' 当前需要人工批准。\n"
@@ -935,7 +938,8 @@ class UserAwareToolNode:
                 except Exception as exc:
                     print(f">>> [tools] ⚠️ tool policy after_error hook failed: {exc}")
 
-        return {"messages": result_messages}
+        return {"messages": result_messages,
+                "_conversation_approval_prompts": [reason for _, reason, pending, _ in blocked_calls if pending]}
 
 
 def _mcp_instance_env() -> dict[str, str]:
@@ -1357,11 +1361,16 @@ class TeamAgent:
     # ------------------------------------------------------------------
     async def _call_model(self, state: AgentState, config: RunnableConfig | None = None):
         """Invoke the LLM with dynamic tool binding and tool-state notification."""
+        if state.get('_conversation_approval_prompts'):
+            return {'messages': [AIMessage(content='\n\n'.join(state['_conversation_approval_prompts']))],
+                    '_conversation_approval_prompts': []}
         if state.get("_approval_review_blocked"):
             return {"messages": [AIMessage(content="自动审核连续拒绝三次，本轮已停止执行。请查看拒绝原因并给出新的指示。")], "_approval_review_blocked": False}
 
         user_id = state.get("user_id", "__global__")
         session_id = state.get("session_id", "")
+        from webot.approval_review import review_context, resolve_conversation_reply
+        resolve_conversation_reply(user_id, session_id, review_context(state.get('messages') or []))
         subagent_meta = parse_subagent_session_id(session_id) if session_id else None
         subagent_profile = (
             get_agent_profile(subagent_meta["agent_type"], user_id=user_id) if subagent_meta else None

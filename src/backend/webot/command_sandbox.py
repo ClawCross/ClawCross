@@ -50,6 +50,8 @@ class SrtCommand:
 _PRIVATE_NAMES = (
     ".ssh", ".aws", ".gnupg", ".kube", ".docker", ".claude", ".codex",
     ".npmrc", ".pypirc", ".config/gcloud",
+    ".clawcross/config", ".clawcross/data/user_files", ".clawcross/data/agent_checkpoints",
+    ".clawcross/data/webot_agents", ".clawcross/state",
 )
 
 # These limits apply to the wrapped command and every child it starts. The
@@ -72,7 +74,7 @@ for name, maximum in (
     cap = min(maximum, soft) if soft != resource.RLIM_INFINITY else maximum
     if hard != resource.RLIM_INFINITY:
         cap = min(cap, hard)
-    resource.setrlimit(kind, (cap, hard))
+    resource.setrlimit(kind, (cap, cap))
 os.execvpe(sys.argv[1], sys.argv[1:], os.environ)
 """
 
