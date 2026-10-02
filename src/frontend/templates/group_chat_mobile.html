@@ -4619,7 +4619,7 @@
   </div>
   <div class="chat-scroll-area" id="chat-scroll-area">
     <div class="agent-ops-scroll" id="agent-ops-scroll">
-      <div class="fleet-section" id="fleet-section">
+      <div class="fleet-section" id="fleet-section" style="display:none;">
         <div class="fleet-head">
           <div class="fleet-head-top">
             <div class="fleet-title">Project Fleet</div>
@@ -7971,7 +7971,7 @@ function applyFleetVisibility() {
   const sec = document.getElementById('fleet-section');
   const label = document.getElementById('cross-device-menu-label');
   if (!sec) return;
-  const hidden = localStorage.getItem(FLEET_HIDDEN_LS_KEY) === '1';
+  const hidden = localStorage.getItem(FLEET_HIDDEN_LS_KEY) !== '0';
   sec.style.display = hidden ? 'none' : '';
   if (label) {
     label.textContent = hidden
@@ -7981,7 +7981,7 @@ function applyFleetVisibility() {
 }
 
 function toggleFleetVisible() {
-  const hidden = localStorage.getItem(FLEET_HIDDEN_LS_KEY) === '1';
+  const hidden = localStorage.getItem(FLEET_HIDDEN_LS_KEY) !== '0';
   localStorage.setItem(FLEET_HIDDEN_LS_KEY, hidden ? '0' : '1');
   applyFleetVisibility();
 }
@@ -12290,8 +12290,8 @@ function buildClawcrossHubUrl() {
 }
 
 function openClawcrossStudio() {
-  // 当前窗口进入 Studio（与主站同一标签，便于会话/登录延续），默认打开「团队」Tab
-  window.location.assign('/studio?tab=group');
+  // 当前窗口进入 Studio，使用默认对话页并延续当前登录。
+  window.location.assign('/studio');
 }
 
 function openTeamHubSite() {

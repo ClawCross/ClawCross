@@ -79,6 +79,7 @@ test('mobile message center works with agents of any platform by id', async ({ p
 
   await page.goto('/mobile/group_chat');
   await expect(page.locator('#group-list-container')).toContainText('Dev');
+  await expect(page.locator('#fleet-section')).toBeHidden();
   await expect(page.locator('#group-list-container')).toContainText('好的，已完成');  // last message preview
 
   await page.locator('.group-item', { hasText: 'Dev' }).first().click();

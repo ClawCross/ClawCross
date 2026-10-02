@@ -7279,10 +7279,7 @@ async function applyStudioInitialTabAfterAuth() {
                 refreshOasisTopics();
                 startHistoryPolling();
                 _syncPublicToggle();
-                // Apply ?tab= param if present, otherwise default to chat page
-                const _tabParam = new URLSearchParams(window.location.search).get('tab');
-                await _applyTabParam();
-                if (!_tabParam) switchPage('chat');
+                await applyStudioInitialTabAfterAuth();
                 _checkAndShowSetupWizard();
                 void autoCheckProjectUpdate(true);
                 return;
