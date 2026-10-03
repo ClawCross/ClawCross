@@ -22,7 +22,7 @@ Landlock 在可管理的 systemd 主机上使用每条命令临时的非 root un
 
 Agent 只调用 `run_command`。前台权限失败时系统根据明确错误定位一个目标，检查管理员最大范围后送审核，批准则新建受限进程重放原命令一次。读授权不允许删除；单文件写授权不允许删除父目录内容。首次执行可能已有部分副作用，系统不承诺事务。模糊权限错误和初始化失败不提权。后台/交互暂不自动重放。
 
-最大范围由 `CLAWCROSS_SANDBOX_MAX_READ_PATHS`、`CLAWCROSS_SANDBOX_MAX_WRITE_PATHS`、`CLAWCROSS_SANDBOX_MAX_DOMAINS` 的 JSON 数组定义；默认全空。任何审核不能突破上限或解除隔离。Landlock 可在受控联网可用时接受 network 扩展；始终禁止 host 扩展。
+最大范围由 `CLAWCROSS_SANDBOX_MAX_READ_PATHS`、`CLAWCROSS_SANDBOX_MAX_WRITE_PATHS`、`CLAWCROSS_SANDBOX_MAX_DOMAINS` 的 JSON 数组定义；文件提权上限默认空，网络上限未设置时为 `["*"]`，允许对具体公网目标送审，批准后只授予这个目标。显式设置 `[]` 或无效配置继续禁用网络提权。`*` 仅用于管理员上限，不是脚本的无限网络授权；用户直接放行列表仍只接受具体域名/IP 和可选端口。任何审核不能突破上限或解除隔离。Landlock 可在受控联网可用时接受 network 扩展；始终禁止 host 扩展。
 
 ## 资源限制与边界
 

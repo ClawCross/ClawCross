@@ -59,11 +59,16 @@ class SrtCommand:
 
 
 def escalation_ceiling() -> dict[str, list[str]]:
-    """Operator configuration, separate from agent/session settings. Empty denies."""
+    """Empty explicitly denies. Unset network ceiling permits scoped review.
+
+    '*' in the operator ceiling permits reviewing a specific public target;
+    it never becomes an unrestricted proxy grant or removes kernel isolation.
+    File access remains closed until the operator configures a path ceiling.
+    """
     result = {}
     for access, suffix in (('read_path', 'READ_PATHS'), ('write_path', 'WRITE_PATHS'), ('network', 'DOMAINS')):
         try:
-            values = json.loads(os.environ.get('CLAWCROSS_SANDBOX_MAX_' + suffix, '[]'))
+            values = json.loads(os.environ.get('CLAWCROSS_SANDBOX_MAX_' + suffix, '["*"]' if access == 'network' else '[]'))
         except ValueError:
             values = []
         result[access] = values if isinstance(values, list) and all(isinstance(v, str) for v in values) else []
@@ -79,7 +84,7 @@ def bounded_escalation(access: str, target: str, root: Path) -> str:
         raise SandboxUnavailable('提权目标已改变，必须重新审核。')
     maximum = escalation_ceiling()[access]
     if access == 'network':
-        allowed = target in maximum or target.rsplit(':',1)[0] in maximum  # Exact hostname; a bare host ceiling covers its ports.
+        allowed = '*' in maximum or target in maximum or target.rsplit(':',1)[0] in maximum
     else:
         path = Path(target)
         if any(path.is_relative_to(prefix) for prefix in (Path('/proc'), Path('/sys'), Path('/dev'), Path('/etc'))):

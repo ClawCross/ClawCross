@@ -56,9 +56,13 @@ class ApprovalSettings(BaseModel):
 
     @model_validator(mode='after')
     def validate_domains(self):
-        from webot.command_sandbox import normalize_escalation
+        from webot.command_sandbox import normalize_escalation, SandboxUnavailable
         from pathlib import Path
-        self.sandbox_allowed_domains = list(dict.fromkeys(normalize_escalation('network', value, Path.cwd()) for value in self.sandbox_allowed_domains))
+        try:
+            self.sandbox_allowed_domains = list(dict.fromkeys(normalize_escalation('network', value, Path.cwd()) for value in self.sandbox_allowed_domains))
+        except SandboxUnavailable as exc:
+            # Pydantic/API validation must return a field error rather than HTTP 500.
+            raise ValueError(str(exc)) from exc
         return self
 
     @model_validator(mode="before")
@@ -170,6 +174,7 @@ def runtime_settings_payload(user_id: str, session_id: str = "") -> dict:
     data = _load(user_id)
     from common.llm_factory import infer_provider
     from common.model_capabilities import model_capabilities
+    from webot.command_sandbox import escalation_ceiling
     model = os.getenv("LLM_MODEL", "")
     provider = infer_provider(model=model, provider=os.getenv("LLM_PROVIDER", ""), base_url=os.getenv("LLM_BASE_URL", ""))
     return {
@@ -177,6 +182,7 @@ def runtime_settings_payload(user_id: str, session_id: str = "") -> dict:
         "user_overrides": data.get("user", {}),
         "session_overrides": data.get("sessions", {}).get(session_id, {}) if session_id else {},
         "model_capabilities": model_capabilities(model, provider),
+        "sandbox_network_maximum": escalation_ceiling()["network"],
     }
 
 

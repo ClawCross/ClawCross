@@ -17,6 +17,20 @@ import webot.mcp.commander as commander
 
 
 class CommandSandboxTests(unittest.TestCase):
+    def test_unset_network_ceiling_allows_review_of_specific_public_target_only(self):
+        key = 'CLAWCROSS_SANDBOX_MAX_DOMAINS'
+        with patch.dict('os.environ'):
+            __import__('os').environ.pop(key, None)
+            self.assertEqual(command_sandbox.escalation_ceiling()['network'], ['*'])
+            self.assertEqual(command_sandbox.bounded_escalation('network', 'example.com:443', Path.cwd()), 'example.com:443')
+            for target in ('*', 'localhost', '127.0.0.1', '10.0.0.1', '169.254.169.254'):
+                with self.subTest(target=target), self.assertRaises(command_sandbox.SandboxUnavailable):
+                    command_sandbox.bounded_escalation('network', target, Path.cwd())
+        for value in ('[]', 'invalid', '"*"'):
+            with self.subTest(value=value), patch.dict('os.environ', {key: value}), \
+                 self.assertRaises(command_sandbox.SandboxUnavailable):
+                command_sandbox.bounded_escalation('network', 'example.com:443', Path.cwd())
+
     def test_agent_cannot_request_escalation_through_tool_schema(self):
         import inspect
         self.assertFalse(hasattr(commander, 'request_sandbox_permission'))

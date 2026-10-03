@@ -48,6 +48,8 @@ class RuntimeSettingsTests(unittest.TestCase):
             {"context": {"auto_compact": "true"}},
             {"approval": {"approvals_reviewer": "allow_all"}},
             {"approval": {"command_sandbox": "host"}},
+            {"approval": {"sandbox_allowed_domains": ["*"]}},
+            {"approval": {"sandbox_allowed_domains": ["https://example.com"]}},
             {"context": {"summarizer_input_tokens": 1024}},
             {"unknown": {}},
         ):
