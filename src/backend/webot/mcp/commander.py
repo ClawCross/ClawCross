@@ -36,7 +36,11 @@ from webot.mcp_tool_docs import DocumentedFastMCP as FastMCP
 from common.runtime_paths import ENV_FILE, PROJECT_ROOT as _PROJECT_ROOT, USER_FILES_DIR
 
 from webot.workspace import resolve_session_workspace
-from webot.command_sandbox import build_landlock_command, select_sandbox_backend, build_srt_command, normalize_escalation, SandboxUnavailable, SrtCommand, sandbox_failure_hint, permission_failure_target
+from webot.command_sandbox import (
+    build_landlock_command, select_sandbox_backend, build_srt_command,
+    normalize_escalation, SandboxUnavailable, SrtCommand, sandbox_failure_hint,
+    permission_failure_target, proxy_denied_network_target,
+)
 from webot.approval_review import authorize_action, policy_binding
 from webot.approval_actions import canonical_action_args
 from webot.runtime_store import consume_execution_permit, get_session_mode
@@ -1071,7 +1075,9 @@ async def _run_foreground(
             parts.append(f"📤 截止超时前的标准错误:\n{err}")
         return "\n\n".join(parts)
     parts = [approval_note] if approval_note else []
-    if proc.returncode == 0:
+    if sandbox is not None and proxy_denied_network_target(err):
+        parts.append(f"⚠️ {label}的网络访问被沙盒代理拒绝 (exit code: {proc.returncode})")
+    elif proc.returncode == 0:
         parts.append(f"✅ {label}执行成功 (exit code: 0)")
     else:
         parts.append(f"⚠️ {label}执行完毕 (exit code: {proc.returncode})")
@@ -1213,7 +1219,9 @@ async def run_command(
                             approval_note=approval_note, sandbox=sandbox, execution_report=report,
                         )
                         sandbox.settings_path.unlink(missing_ok=True)
-                        if report.get('exit_code') == 0 or report.get('timed_out') or attempt == attempts - 1:
+                        proxy_denied = proxy_denied_network_target(report.get('stderr', ''))
+                        if ((report.get('exit_code') == 0 and not proxy_denied)
+                                or report.get('timed_out') or attempt == attempts - 1):
                             return result
                         try:
                             needed = permission_failure_target(report.get('stderr', ''), workspace_state.root)

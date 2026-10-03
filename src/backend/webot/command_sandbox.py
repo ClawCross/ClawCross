@@ -96,6 +96,19 @@ def bounded_escalation(access: str, target: str, root: Path) -> str:
     return target
 
 
+def proxy_denied_network_target(stderr: str) -> str | None:
+    """Read the proxy supervisor's denial marker, even if the client exits 0.
+
+    This remains untrusted evidence; a target still needs bounds and review.
+    Ordinary HTTP 403 responses from an upstream site have no such marker.
+    """
+    match = re.search(
+        r'^ClawCross proxy denied network target: ([^\s()]+) \([^\r\n]*\)$',
+        stderr, re.MULTILINE,
+    )
+    return match.group(1).lower() if match else None
+
+
 def permission_failure_target(stderr: str, root: Path) -> tuple[str, str] | None:
     """Failure evidence is untrusted: at most one bounded exception, still reviewed.
 
@@ -104,6 +117,9 @@ def permission_failure_target(stderr: str, root: Path) -> tuple[str, str] | None
     """
     if '初始化失败' in sandbox_failure_hint(stderr):
         return None
+    proxy_target = proxy_denied_network_target(stderr)
+    if proxy_target:
+        return 'network', bounded_escalation('network', proxy_target, root)
     for line in stderr.splitlines():
         access = ''
         if 'Read-only file system' in line:

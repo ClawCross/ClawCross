@@ -279,7 +279,40 @@ class CommandLandlockIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertRegex(denied, 'Operation not permitted|Permission denied')
 
     @unittest.skipUnless(__import__('os').environ.get('CLAWCROSS_NETWORK_INTEGRATION') == '1', 'explicit real public-network integration')
+    async def test_auto_http_zero_exit_reviews_network_and_retries_once(self):
+        context = review.review_context([HumanMessage(content='允许本次测试通过代理访问 http://example.com。',
+            id='network-test-user', additional_kwargs={'input_origin':'user'})])
+        verdict = review.ReviewVerdict(decision='approve', reason='用户明确授权这个公开网站',
+            risk='low', authorization_sources=['network-test-user'])
+        command = "curl --max-time 10 -sS -o /dev/null -w 'AUTO_HTTP_OK %{http_code}' http://example.com"
+        with patch.dict('os.environ', {'CLAWCROSS_SANDBOX_MAX_DOMAINS':'["*"]'}), \
+             patch.object(review, 'approval_context', return_value=context), \
+             patch.object(review, 'run_reviewer', new=AsyncMock(return_value=verdict)) as model:
+            result = await self.execute(command, timeout_seconds=25)
+        self.assertIn('AUTO_HTTP_OK 200', result, result)
+        self.assertEqual(self.foreground.await_count, 2)
+        model.assert_awaited_once()
+        self.assertEqual(store.list_tool_approvals(self.user, self.session, status='pending'), [])
+        self.assertEqual(runtime_settings.get_runtime_settings(self.user, self.session).approval.sandbox_allowed_domains, [])
+
+    @unittest.skipUnless(__import__('os').environ.get('CLAWCROSS_NETWORK_INTEGRATION') == '1', 'explicit real public-network integration')
     async def test_manual_https_approval_reaches_real_mcp_tool_and_retries_once(self):
+        code = 'import urllib.request; print("MCP_HTTPS_OK", urllib.request.urlopen("https://example.com", timeout=10).status)'
+        await self._manual_network_approval_reaches_real_mcp_tool(code, 'python', 'example.com:443', 'MCP_HTTPS_OK 200')
+
+    @unittest.skipUnless(__import__('os').environ.get('CLAWCROSS_NETWORK_INTEGRATION') == '1', 'explicit real public-network integration')
+    async def test_manual_http_curl_zero_exit_still_requests_network_approval(self):
+        command = "curl --max-time 10 -sS -o /dev/null -w 'MCP_HTTP_OK %{http_code}' http://example.com"
+        await self._manual_network_approval_reaches_real_mcp_tool(command, 'shell', 'example.com:80', 'MCP_HTTP_OK 200', zero_exit=True)
+
+    @unittest.skipUnless(__import__('os').environ.get('CLAWCROSS_NETWORK_INTEGRATION') == '1', 'explicit real public-network integration')
+    async def test_manual_python_caught_http_error_still_requests_network_approval(self):
+        code = ('import urllib.request, urllib.error\n'
+                'try:\n    print("MCP_CAUGHT_OK", urllib.request.urlopen("http://example.com", timeout=10).status)\n'
+                'except urllib.error.HTTPError as exc:\n    print("CAUGHT_HTTP_ERROR", exc.code)')
+        await self._manual_network_approval_reaches_real_mcp_tool(code, 'python', 'example.com:80', 'MCP_CAUGHT_OK 200', zero_exit=True)
+
+    async def _manual_network_approval_reaches_real_mcp_tool(self, command, language, target, expected, *, zero_exit=False):
         from types import SimpleNamespace
         from langchain_core.tools import StructuredTool
         from webot.api.service import WeBotService
@@ -287,13 +320,17 @@ class CommandLandlockIntegrationTests(unittest.IsolatedAsyncioTestCase):
         from webot.engine.agent import TeamAgent, UserAwareToolNode, _visible_tool_parameters
         runtime_settings.save_runtime_settings(self.user, settings={'approval':{'mode':'manual','command_sandbox':'landlock'}})
         store.save_session_mode(self.user, self.session, mode='manual')
-        code = 'import urllib.request; print("MCP_HTTPS_OK", urllib.request.urlopen("https://example.com", timeout=10).status)'
-        with patch.dict('os.environ', {'CLAWCROSS_SANDBOX_MAX_DOMAINS':'["example.com:443"]'}):
+        with patch.dict('os.environ', {'CLAWCROSS_SANDBOX_MAX_DOMAINS':json.dumps([target])}):
             initial = await commander.mcp.call_tool('run_command', {'username':self.user,'session_id':self.session,
-                'command':code,'language':'python','timeout_seconds':25})
+                'command':command,'language':language,'timeout_seconds':25})
             self.assertIn('【操作授权请求】', str(initial))
+            if zero_exit:
+                self.assertEqual(self.foreground.await_args.kwargs['execution_report']['exit_code'], 0)
+                self.assertNotIn('执行成功 (exit code: 0)', str(initial))
+                self.assertIn('网络访问被沙盒代理拒绝', str(initial))
             record = store.list_tool_approvals(self.user, self.session, status='pending')[0]
             self.assertEqual(json.loads(record.args_json)['sandbox_access'], 'network')
+            self.assertEqual(json.loads(record.args_json)['escalation_target'], target)
             system = SimpleNamespace(run=AsyncMock(return_value={'status':'received'}))
             service = WeBotService(agent=None,system=system,verify_auth_or_token=lambda *a:None,extract_text=str)
             with patch('agents.store.get_store',return_value=SimpleNamespace(get=lambda *a:None)):
@@ -315,7 +352,8 @@ class CommandLandlockIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 return {'messages':[ToolMessage(content=str(content),tool_call_id=call['id'],name=call['name'])]}
             node.tool_node.ainvoke=invoke_mcp
             result = await node(state, {})
-        self.assertIn('MCP_HTTPS_OK 200', result['messages'][0].content, result)
+        self.assertIn(expected, result['messages'][0].content, result)
+        self.assertNotIn('ClawCross proxy denied network target:', result['messages'][0].content)
         self.assertEqual(self.foreground.await_count,2)
         self.assertEqual(store.get_tool_approval(record.approval_id,self.user).status,'used')
         self.assertEqual(runtime_settings.get_runtime_settings(self.user,self.session).approval.sandbox_allowed_domains,[])
