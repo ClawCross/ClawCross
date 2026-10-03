@@ -125,6 +125,7 @@ USER_INJECTED_TOOLS = {
     "list_files", "read_file", "write_file", "delete_file",
     # Command execution tools
     "run_command", "background_command_io", "cancel_background_command",
+    "web_search", "web_fetch",
     # Alarm management tools
     "get_current_time", "add_alarm", "list_alarms", "delete_alarm",
     # Notification push tools (multi-channel)
@@ -155,6 +156,8 @@ USER_INJECTED_TOOLS = {
 
 # Tools that need session_id auto-injected (in addition to username)
 SESSION_INJECTED_TOOLS = {
+    "web_search": "session_id",
+    "web_fetch": "session_id",
     "list_files": "session_id",
     "read_file": "session_id",
     "write_file": "session_id",
@@ -202,6 +205,7 @@ TEAM_INJECTED_TOOLS: frozenset[str] = frozenset({
 # Session-related tool args that must always match runtime session (model cannot override).
 SESSION_FORCE_INJECTED_TOOLS: frozenset[str] = frozenset({
     "run_command", "background_command_io",
+    "web_search", "web_fetch",
     "send_to_session",
     "read_session_inbox", "mark_session_inbox_read",
     "send_to_group", "join_group", "leave_group", "list_agent_groups", "get_group_details",
@@ -548,6 +552,7 @@ _MODE_BLOCK_MESSAGES = {
 _MODE_BLOCKED_TOOLS = {"plan": PLAN_MODE_BLOCKED_TOOLS, "review": REVIEW_MODE_BLOCKED_TOOLS}
 _COMMAND_PERMIT_TOOLS = frozenset({
     "run_command", "background_command_io", "list_files", "read_file", "write_file", "delete_file",
+    "web_search", "web_fetch",
 })
 
 

@@ -77,6 +77,89 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         reviewer.assert_not_called()
         self.assertEqual(store.list_tool_approvals("alice"), [])
 
+    async def test_web_tools_require_review_even_with_default_allow_policy(self):
+        for name, args in (('web_fetch', {'url':'https://example.com'}), ('web_search', {'query':'Python documentation'})):
+            with self.subTest(tool=name), patch.object(review, 'run_reviewer', return_value=self.verdict) as reviewer:
+                result = await review.authorize_action(user_id='alice',session_id='s',tool_name=name,
+                    args=args,messages=self.messages)
+            self.assertTrue(result.allowed)
+            reviewer.assert_awaited_once()
+            self.assertEqual(reviewer.await_args.kwargs['tool_name'], name)
+
+    async def test_denied_web_tools_never_reach_network(self):
+        from webot.mcp import search
+        deny = self.verdict.model_copy(update={'decision':'deny','reason':'用户没有授权此联网操作'})
+        with patch.object(review, 'load_review_history', return_value=self.messages), \
+             patch.object(review, 'run_reviewer', return_value=deny), \
+             patch.object(search, '_fetch_url_provider_payload', new=AsyncMock()) as fetch, \
+             patch.object(search, '_build_search_provider_payload', new=AsyncMock()) as searcher:
+            page = json.loads(await search.web_fetch('https://example.com', username='alice', session_id='s'))
+            result = await search.web_search('private data', username='alice', session_id='s')
+        self.assertFalse(page['ok'])
+        self.assertIn('没有授权', result)
+        fetch.assert_not_awaited()
+        searcher.assert_not_awaited()
+
+    async def test_web_fetch_runtime_and_mcp_share_one_exact_review(self):
+        from langchain_core.tools import StructuredTool
+        from webot.engine.agent import UserAwareToolNode, _visible_tool_parameters
+        from webot.mcp import search
+        tool = StructuredTool.from_function(coroutine=search.web_fetch, name='web_fetch', description='Fetch a public page')
+        self.assertFalse({'username','session_id'} & set(_visible_tool_parameters(tool)['properties']))
+        node = UserAwareToolNode([tool])
+        async def invoke_mcp(state, config=None):
+            call=state['messages'][-1].tool_calls[0]
+            content=await search.mcp.call_tool(call['name'],call['args'])
+            return {'messages':[ToolMessage(content=str(content),tool_call_id=call['id'],name=call['name'])]}
+        node.tool_node.ainvoke=invoke_mcp
+        state={'user_id':'alice','session_id':'s','session_mode':'auto','enabled_tools':['web_fetch'],
+            'messages':self.messages+[AIMessage(content='',tool_calls=[{
+                'id':'fetch-page','name':'web_fetch','args':{'url':'https://example.com','username':'attacker','session_id':'other'}}])]}
+        with patch.object(review, 'load_review_history', return_value=self.messages), \
+             patch.object(review, 'run_reviewer', return_value=self.verdict) as reviewer, \
+             patch.object(search, '_fetch_url_provider_payload', new=AsyncMock(return_value={'ok':True,'text':'WEB_FETCH_OK'})) as fetch:
+            result=await node(state,{})
+        self.assertIn('WEB_FETCH_OK',result['messages'][0].content)
+        reviewer.assert_awaited_once()
+        self.assertEqual(reviewer.await_args.kwargs['args']['username'],'alice')
+        self.assertEqual(reviewer.await_args.kwargs['args']['session_id'],'s')
+        fetch.assert_awaited_once()
+
+    async def test_web_search_fetch_top_reviews_each_result_url(self):
+        from webot.mcp import search
+        urls=['https://example.com/a','https://docs.python.org/3/']
+        payload={'ok':True,'results':[{'url':url,'rank':i} for i,url in enumerate(urls,1)]}
+        with patch.object(review, 'load_review_history', return_value=self.messages), \
+             patch.object(review, 'run_reviewer', return_value=self.verdict) as reviewer, \
+             patch.object(search, '_build_search_provider_payload', new=AsyncMock(return_value=payload)), \
+             patch.object(search, '_fetch_url_provider_payload', new=AsyncMock(return_value={'ok':True,'text':'page'})) as fetch:
+            result=json.loads(await search.web_search('Python documentation',fetch_top=2,username='alice',session_id='s'))
+        self.assertEqual(len(result['fetched_pages']),2)
+        self.assertEqual(reviewer.await_count,3)
+        self.assertEqual([call.kwargs['args'].get('url') for call in reviewer.await_args_list[1:]],urls)
+        self.assertEqual(fetch.await_count,2)
+
+    async def test_manual_web_approval_waits_before_network_and_bypass_keeps_hard_deny(self):
+        from webot.mcp import search
+        store.save_session_mode('alice','s',mode='manual')
+        with patch.object(review, 'load_review_history', return_value=self.messages), \
+             patch.object(review, 'run_reviewer') as model, \
+             patch.object(search, '_fetch_url_provider_payload', new=AsyncMock()) as fetch:
+            result=json.loads(await search.web_fetch('https://example.com',username='alice',session_id='s'))
+        self.assertIn('【操作授权请求】',result['error'])
+        fetch.assert_not_awaited();model.assert_not_called()
+        store.save_session_mode('alice','s',mode='bypass')
+        policy.save_tool_policy_config('alice',{'tools':{'web_fetch':{'approval':'deny'}}})
+        with patch.object(search, '_fetch_url_provider_payload', new=AsyncMock()) as fetch:
+            result=json.loads(await search.web_fetch('https://example.com',username='alice',session_id='s'))
+        self.assertIn('明确禁用',result['error']);fetch.assert_not_awaited()
+
+    async def test_web_tool_without_runtime_identity_does_not_connect(self):
+        from webot.mcp import search
+        with patch.object(search, '_fetch_url_provider_payload', new=AsyncMock()) as fetch:
+            result=json.loads(await search.web_fetch('https://example.com'))
+        self.assertIn('身份',result['error']);fetch.assert_not_awaited()
+
     async def test_outside_workspace_file_requires_exact_review(self):
         root = Path(self.tmp.name) / "workspace"
         root.mkdir()

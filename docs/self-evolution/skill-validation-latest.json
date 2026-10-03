@@ -1,8 +1,8 @@
 {
   "type": "ValidationReport",
   "schema_version": "clawcross.skill-evolution/1.0",
-  "id": "vr_20261003115903863638",
-  "candidate_id": "blended-verification-loop-structured-output-approval-auth",
+  "id": "vr_20261003121454669679",
+  "candidate_id": "blended-verification-loop-approval-auth-structured-output",
   "skill_name": "repo-skill",
   "strategy": "repair-only",
   "env_fingerprint": {
@@ -14,18 +14,18 @@
     "user_id": "",
     "skill_name": "repo-skill",
     "present_env_keys": [],
-    "captured_at": "2026-10-03T11:59:03.863603+00:00"
+    "captured_at": "2026-10-03T12:14:54.669653+00:00"
   },
   "commands": [
     {
       "command": "(external failure context)",
       "ok": true,
-      "stdout": "Reported runtime failure: automatic reviewer returned JSONDecodeError at line 1 column 1.\nOld reviewer used prompt-only JSON, without a provider schema request.\nRegression initially failed: AttributeError: coroutine object has no attribute ainvoke.\nThe test had mocked synchronous model.bind as AsyncMock; corrected that fixture to Mock.\nVerification: pytest test/test_approval_review.py test/test_tool_schemas.py: 91 passed, 259 subtests passed.\nActual DeepSeek JSON Schema review approved the original request; production Landlock command ran twice and clawcross.net returned HTTP 200.",
+      "stdout": "Runtime gap: web_search/web_fetch default policy allowed network I/O without review, and the MCP service had no identity-bound gate.\nRegression exposed duplicate review: expected reviewer once, awaited 2 times.\nCause: the model could supply another session; now web identity and session are forcibly bound to the calling runtime, and one exact permit transfers to MCP.\nVerification: 128 tests passed, 261 subtests passed across approval, search, continuation, schemas and ACP bridge.\nReal provider + actual MCP HTTP integration: one DeepSeek JSON Schema review, valid original-user authorization, Example Domain received with HTTP 200.\nSandbox grants were not changed: one-time approval does not create a session domain/path whitelist; KEEP Y records exact parameters.",
       "stderr": ""
     }
   ],
   "overall_ok": true,
   "duration_ms": null,
-  "created_at": "2026-10-03T11:59:03.863664+00:00",
-  "asset_id": "sha256:98ad8e47ab87274bb38d5e3e010f3cb19a5c2b426bacbad518b4a898aa6c73f6"
+  "created_at": "2026-10-03T12:14:54.669700+00:00",
+  "asset_id": "sha256:ea94bd1a05cdf6d4ea09a8c1bdf6b9725de896a2ad7ffe45cd80f2ff4de39655"
 }

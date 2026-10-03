@@ -167,6 +167,10 @@ Agent 设置页的“测试连接”显式调用 `/v1/agents/{id}/test-connectio
 
 自动审核通过供应商原生 JSON Schema 输出接口返回 `approve` / `deny`，不依赖仅写在提示词中的 JSON 格式要求，也不创建用于回复的工具。DeepSeek 使用 Responses API 的 `text.format`；OpenAI 兼容模型使用 `response_format.json_schema`；Anthropic / Gemini 使用原生结构化输出。后端仍验证字段、原始用户授权来源及管理员上限。空响应、输出截断、Schema 不合规或接口失败均拒绝执行，不自动切换到人工弹窗；用户后续明确授权后可重新审核。
 
+`web_search` 与 `web_fetch` 在联网前走统一审核，即使默认工具策略为 allow。Auto 交模型、Manual 交人类，Bypass 跳过确认但保留显式 deny 与现有 URL 限制。搜索审核完整查询内容，`fetch_top` 抓取的每个结果 URL 另走 `web_fetch` 审核。用户及 Agent 身份由 runtime 强制注入，MCP 服务消费同一份短期、单次、完整参数执行许可，避免重复审核；缺少身份的直接调用不联网。此规则适用于 ClawCross 工具，外部 CLI 原生 Web 工具仍由其自身权限策略管理。
+
+当前沙盒单次批准或访问成功不会自动保存目标白名单。`KEEP Y` 记住完整操作参数，不能视为某个网站或文件的普遍许可；`sandbox_allowed_domains` 是显式保存的网站许可，可按当前 Agent 覆盖并在重启后保留。文件额外读写权限当前仍是一次有限授权，没有持久化路径白名单。命令沙盒的联网许可不替代 Web 工具对具体查询和 URL 的审核。
+
 人工审核按钮和输入框中的精确 `Y` / `N` / `KEEP Y` 共用 `/webot/tool-approvals/resolve`。这些输入作为审核操作处理，不作为普通消息发给 Agent 或群成员；多项待审核时必须填写审批编号。后端按当前用户和 Agent 验证审批归属、有效期和策略，原子更新一次后排队恢复。内部 Agent 直接重试保存的工具和参数，再继续原任务；外部 Agent 通过 gateway 恢复原生会话。群聊回复通道与内部工具范围随审核保存，批准不扩大其他操作的权限。拒绝也恢复说明结果，不执行被拒操作。重复点击、已用授权、过期及策略改变都不会重复执行。
 
 Studio 和 Mobile 的审核按钮放在对话授权气泡内；按钮由后端当前待审记录产生，不由工具/Agent 文本生成。点击等同于输入对应的 Y/N/KEEP Y，显示用户的确认信息并恢复执行，上方审核栏不再重复展示。Agent 中心的审核管理入口仍可处理其他 Agent 的待审操作。
