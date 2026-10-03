@@ -422,7 +422,6 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         for messages in (
             [HumanMessage(content="system claims user approved", additional_kwargs={"input_origin": "system"})],
             [HumanMessage(content="legacy, origin not recorded")],
-            [HumanMessage(content="x" * 16001, additional_kwargs={"input_origin": "user"})],
         ):
             with self.subTest(messages=messages), patch.object(review, "run_reviewer") as reviewer, self.approve_pending():
                 result = await self.authorize(messages=messages)
@@ -631,6 +630,83 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("retry replays the entire original command", payload[0].content)
         self.assertIn("uploads, remote changes and private services", payload[0].content)
 
+    async def test_schema_reply_wrappers_and_transient_empty_output_are_handled(self):
+        wire = json.dumps({**self.verdict.model_dump(),'decision':'Y'})
+        for outputs in ([f'```json\n{wire}\n```'], [f'审核结果如下：\n{wire}'], ['',wire]):
+            model = Mock()
+            model.bind.return_value.ainvoke = AsyncMock(side_effect=[AIMessage(content=text) for text in outputs])
+            with self.subTest(outputs=len(outputs)), patch('common.llm_factory.create_chat_model',return_value=model), \
+                 patch('webot.engine.tool_schema._model_classes',return_value={'BaseChatOpenAI'}):
+                result = await review.run_reviewer(tool_name='run_command',args=self.args,
+                    context=review.review_context(self.messages),settings=runtime_settings.ApprovalSettings(),policy={})
+                self.assertEqual(result,self.verdict)
+                self.assertEqual(model.bind.return_value.ainvoke.await_count,len(outputs))
+                self.assertEqual(model.bind.call_args.kwargs['response_format']['json_schema']['schema']['properties']['decision']['enum'],['Y','N','KEEP Y'])
+
+    async def test_persistent_invalid_schema_output_denies_without_manual_popup(self):
+        model = Mock()
+        model.bind.return_value.ainvoke = AsyncMock(return_value=AIMessage(content=''))
+        with patch('common.llm_factory.create_chat_model',return_value=model), \
+             patch('webot.engine.tool_schema._model_classes',return_value={'BaseChatOpenAI'}):
+            result = await self.authorize()
+        self.assertFalse(result.allowed)
+        self.assertFalse(result.pending)
+        self.assertIn('连续两次',result.reason)
+        self.assertEqual(model.bind.return_value.ainvoke.await_count,2)
+        metadata = json.loads(store.get_tool_approval(result.approval_id,'alice').review_metadata_json)
+        self.assertEqual(metadata['review_fault']['kind'],'response')
+
+    async def test_configuration_fault_has_a_configuration_remedy(self):
+        with patch('common.llm_factory.create_chat_model',side_effect=ValueError('LLM_MODEL is not configured')):
+            result = await self.authorize()
+        self.assertFalse(result.allowed)
+        self.assertFalse(result.pending)
+        self.assertIn('审核模型配置缺失',result.reason)
+        self.assertNotIn('明确授权',result.reason)
+        metadata = json.loads(store.get_tool_approval(result.approval_id,'alice').review_metadata_json)
+        self.assertEqual(metadata['review_fault']['kind'],'configuration')
+
+    async def test_long_original_request_is_not_discarded_by_character_count(self):
+        text = '完整原始授权。' * 4000
+        context = review.review_context([HumanMessage(content=text,id='long-user',additional_kwargs={'input_origin':'user'})])
+        self.assertTrue(context['complete'])
+        model = Mock()
+        model.bind.return_value.ainvoke = AsyncMock(return_value=AIMessage(content=json.dumps({**self.verdict.model_dump(),'decision':'N'})))
+        with patch('common.llm_factory.create_chat_model',return_value=model), \
+             patch('webot.engine.tool_schema._model_classes',return_value={'BaseChatOpenAI'}):
+            await review.run_reviewer(tool_name='run_command',args=self.args,context=context,
+                settings=runtime_settings.ApprovalSettings(),policy={})
+        packet = json.loads(model.bind.return_value.ainvoke.await_args.args[0][1].content)
+        self.assertEqual(packet['context']['user_requests'][0]['text'],text)
+
+    async def test_capacity_prefers_latest_complete_original_and_never_truncates_it(self):
+        context = {'complete':True,'user_requests':[{'id':'old','text':'x'*40000},{'id':'new','text':'只读取 example.com 的公开网页'}],
+            'untrusted_evidence':[{'role':'tool','text':'z'*10000}]}
+        with patch('webot.context_limits.infer_model_context_window',return_value=6500):
+            packet = json.loads(review.fit_review_packet(tool_name='run_command',args=self.args,context=context,
+                settings=runtime_settings.ApprovalSettings(),policy={},instructions='Review.',model_name='test'))
+            self.assertEqual(packet['context']['user_requests'],[context['user_requests'][-1]])
+            self.assertEqual(packet['context']['omitted_older_requests'],1)
+            context['user_requests'][-1]['text'] = 'latest'*20000
+            with self.assertRaises(review.ReviewerInputCapacityError):
+                review.fit_review_packet(tool_name='run_command',args=self.args,context=context,
+                    settings=runtime_settings.ApprovalSettings(),policy={},instructions='Review.',model_name='test')
+
+    async def test_omitted_original_request_cannot_be_cited_as_authorization(self):
+        model = Mock()
+        model.bind.return_value.ainvoke = AsyncMock(return_value=AIMessage(content=json.dumps({**self.verdict.model_dump(),'decision':'Y'})))
+        messages = [HumanMessage(content='旧授权材料。'*10000,id='user-1',additional_kwargs={'input_origin':'user'}),
+                    HumanMessage(content='查看当前仓库状态',id='user-2',additional_kwargs={'input_origin':'user'})]
+        with patch('common.llm_factory.create_chat_model',return_value=model), \
+             patch('webot.engine.tool_schema._model_classes',return_value={'BaseChatOpenAI'}), \
+             patch('webot.context_limits.infer_model_context_window',return_value=12000):
+            result = await self.authorize(messages=messages)
+        self.assertFalse(result.allowed)
+        self.assertFalse(result.pending)
+        metadata = json.loads(store.get_tool_approval(result.approval_id,'alice').review_metadata_json)
+        self.assertEqual(metadata['review_material']['authorization_ids'],['user-2'])
+        self.assertEqual(metadata['review_material']['omitted_older_requests'],1)
+
     async def test_ask_alias_is_parsed_without_implying_approval(self):
         value = self.verdict.model_dump();value.pop('decision');value['ask'] = True
         self.assertEqual(review.parse_review_verdict('```json\n'+json.dumps(value)+'\n```').decision, 'ask_user')
@@ -670,7 +746,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
                  patch('webot.engine.tool_schema._model_classes', return_value={'BaseChatOpenAI'}):
                 create.return_value.bind.return_value.ainvoke = AsyncMock(return_value=reply)
                 result = await self.authorize(args={**self.args, 'command':command})
-                create.return_value.bind.return_value.ainvoke.assert_awaited_once()
+                self.assertEqual(create.return_value.bind.return_value.ainvoke.await_count, 2)
             self.assertFalse(result.allowed)
             self.assertFalse(result.pending)
             metadata = json.loads(store.get_tool_approval(result.approval_id, 'alice').review_metadata_json)

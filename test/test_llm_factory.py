@@ -14,6 +14,30 @@ import common.llm_factory as llm_factory
 
 
 class LlmFactoryTests(unittest.TestCase):
+    def test_worker_without_exported_llm_variables_reads_runtime_profile(self):
+        import os
+        import tempfile
+        captured = {}
+        class FakeChatOpenAI:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ):
+            root = Path(directory)
+            (root/'config').mkdir()
+            (root/'config'/'.env').write_text('LLM_MODEL=gpt-4o-mini\nLLM_PROVIDER=openai\nLLM_API_KEY=test-key\nLLM_BASE_URL=https://configured.example/v1\n')
+            os.environ['CLAWCROSS_HOME'] = directory
+            for key in ('LLM_MODEL','LLM_PROVIDER','LLM_API_KEY','LLM_BASE_URL'):
+                os.environ.pop(key,None)
+            with mock.patch.dict(sys.modules, {'langchain_openai':types.SimpleNamespace(ChatOpenAI=FakeChatOpenAI)}):
+                llm_factory.create_chat_model()
+                self.assertEqual(captured['model'],'gpt-4o-mini')
+                self.assertEqual(captured['api_key'],'test-key')
+                self.assertEqual(captured['base_url'],'https://configured.example/v1')
+                llm_factory.create_chat_model(model='gpt-4.1-mini',api_key='override-key',base_url='https://override.example/v1')
+                self.assertEqual(captured['model'],'gpt-4.1-mini')
+                self.assertEqual(captured['api_key'],'override-key')
+                self.assertEqual(captured['base_url'],'https://override.example/v1')
+
     def test_infer_provider_detects_ollama_from_provider_alias(self):
         provider = llm_factory.infer_provider(
             model="qwen2.5:1.5b",

@@ -197,6 +197,9 @@ def resolve_permission_request(
     )
     if updated is None:
         return None
+    if normalized == 'denied' and updated.tool_name == 'run_command':
+        from webot.runtime_store import close_sandbox_retry_chain
+        close_sandbox_retry_chain(user_id, updated.session_id, json.loads(updated.args_json or '{}').get('sandbox_approval_chain', []))
     metadata = json.loads(updated.review_metadata_json or '{}')
     metadata['human_resolution'] = normalized
     set_approval_review_metadata(approval_id, user_id, metadata)

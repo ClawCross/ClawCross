@@ -26,6 +26,43 @@ class SandboxUnavailable(RuntimeError):
     """The requested native sandbox cannot be used safely."""
 
 
+MAX_PERMISSION_RETRIES = 8
+
+
+def approved_retry_chain(user_id: str, session_id: str, args: dict, root: Path) -> list[dict]:
+    """Recover only the linked, consumed approvals for this exact command call."""
+    from webot import runtime_store as store
+    from webot.approval_actions import canonical_action_args
+    chain = args.get('sandbox_approval_chain') or []
+    if not isinstance(chain, list) or len(chain) > MAX_PERMISSION_RETRIES or any(not isinstance(key, str) for key in chain) or len(set(chain)) != len(chain):
+        raise SandboxUnavailable('沙盒重试审批链无效。')
+    if chain and args.get('sandbox_access', 'default') == 'default':
+        raise SandboxUnavailable('已批准权限仅用于系统恢复的沙盒重试。')
+    fields = {'sandbox_access', 'escalation_target', 'escalation_reason', 'sandbox_approval_chain'}
+    def original_action(value):
+        return {k:v for k,v in canonical_action_args('run_command', value).items() if k not in fields}
+    action = original_action(args)
+    grants = []
+    for index, key in enumerate(chain):
+        record = store.get_tool_approval(key, user_id)
+        if (record is None or record.session_id != session_id or record.tool_name != 'run_command'
+                or record.status != 'used' or record.expires_at <= store.utc_now()):
+            raise SandboxUnavailable('此前沙盒授权已失效或不属于本次命令。')
+        prior = json.loads(record.args_json or '{}')
+        metadata = json.loads(record.review_metadata_json or '{}')
+        if (original_action(prior) != action or prior.get('sandbox_approval_chain', []) != chain[:index]
+                or metadata.get('sandbox_permissions', {}).get('workspace_root') != str(root.resolve())):
+            raise SandboxUnavailable('此前沙盒授权的命令、工作区或审批链不匹配。')
+        if metadata.get('sandbox_retry_closed'):
+            raise SandboxUnavailable('该命令调用已结束，不能复用此前一次性授权。')
+        access = prior.get('sandbox_access', 'default')
+        target = bounded_escalation(access, prior.get('escalation_target', ''), root)
+        grants.append({'access':access, 'target':target, 'approval_id':key,
+                       'decision':(metadata.get('verdict') or {}).get('decision') or metadata.get('human_resolution', ''),
+                       'reason':record.resolution_reason})
+    return grants
+
+
 def sandbox_failure_hint(stderr: str) -> str:
     """Distinguish sandbox startup failures from denied workload operations."""
     if "ClawCross Landlock 初始化失败:" in stderr:

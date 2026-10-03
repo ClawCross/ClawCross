@@ -11,7 +11,7 @@ from langchain_core.messages import AIMessage, BaseMessage
 from langchain_openai.chat_models.base import _construct_responses_api_input
 from openai import AsyncOpenAI
 
-from webot.engine.tool_schema import drop_null_optionals, to_strict_parameters
+from webot.engine.tool_schema import drop_null_optionals, to_strict_parameters, parse_schema_json
 
 
 def _base_url(model: Any) -> str:
@@ -98,7 +98,7 @@ async def deepseek_structured_turn(
     if not calls:
         if not content.strip():
             raise RuntimeError('DeepSeek schema-constrained response was empty')
-        value = json.loads(content)
+        value = parse_schema_json(content)
         validate(value, strict_schema)
         value = drop_null_optionals(value, schema)
         validate(value, schema)

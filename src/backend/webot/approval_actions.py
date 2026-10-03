@@ -18,6 +18,7 @@ def canonical_action_args(tool_name: str, args: dict) -> dict:
             "language": "shell", "mode": "foreground", "session_id": "", "cwd": "",
             "timeout_seconds": 0, "max_output_chars": 0, "notify_on_done": False,
             "sandbox_access": "default", "escalation_target": "", "escalation_reason": "",
+            "sandbox_approval_chain": [],
         }
     elif tool_name == "background_command_io":
         defaults = {

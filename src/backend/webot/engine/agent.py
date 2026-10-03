@@ -238,7 +238,7 @@ def hide_injected_params(tool):
     """
     hidden = {name for name in (SESSION_INJECTED_TOOLS.get(tool.name),) if name}
     if tool.name == 'run_command':
-        hidden.update({'sandbox_access', 'escalation_target', 'escalation_reason'})
+        hidden.update({'sandbox_access', 'escalation_target', 'escalation_reason', 'sandbox_approval_chain'})
     if tool.name in USER_INJECTED_TOOLS:
         hidden.add("username")
     if not hidden:
@@ -728,7 +728,7 @@ class UserAwareToolNode:
             # those so the tool applies its own default, as before strict mode.
             if tc["name"] in tools_by_name and isinstance(tc.get("args"), dict):
                 tc["args"] = drop_null_optionals(tc["args"], _tool_input_schema(tools_by_name[tc["name"]]))
-            if (tc['name'] == 'run_command' and tc['args'].get('sandbox_access', 'default') != 'default'
+            if (tc['name'] == 'run_command' and (tc['args'].get('sandbox_access', 'default') != 'default' or tc['args'].get('sandbox_approval_chain'))
                     and tc['id'] != state.get('_approval_resume_call_id')):
                 blocked_calls.append((tc, '沙盒权限由系统在执行失败后审核，不接受 Agent 自行申请提权。', False, ''))
                 continue

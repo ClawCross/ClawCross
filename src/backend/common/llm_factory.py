@@ -340,6 +340,7 @@ def create_chat_model(
     explicit_model = (model or "").strip()
     explicit_provider = (provider or "").strip().lower()
 
+    runtime_profile = None
     try:
         import sys as _sys
         from common.runtime_paths import PROJECT_ROOT
@@ -349,7 +350,7 @@ def create_chat_model(
             _sys.path.insert(0, _project_root)
         from src.cli.commands.runtime_provider import resolve_active_profile
 
-        resolve_active_profile()
+        runtime_profile = resolve_active_profile()
     except Exception:
         pass
 
@@ -358,10 +359,10 @@ def create_chat_model(
     env_model = (os.getenv("LLM_MODEL") or "").strip()
     env_provider = os.getenv("LLM_PROVIDER", "").strip().lower()
 
-    api_key = explicit_api_key or env_api_key
-    base_url = explicit_base_url or env_base_url
-    model = explicit_model or env_model
-    provider = explicit_provider or env_provider
+    api_key = explicit_api_key or env_api_key or (runtime_profile.api_key if runtime_profile else "")
+    base_url = explicit_base_url or os.getenv("LLM_BASE_URL", "").strip() or (runtime_profile.base_url if runtime_profile else "") or env_base_url
+    model = explicit_model or env_model or (runtime_profile.model if runtime_profile else "")
+    provider = explicit_provider or env_provider or (runtime_profile.provider if runtime_profile else "")
     if not model:
         raise ValueError(
             "LLM_MODEL is not configured. Set it in config/.env, or run "
