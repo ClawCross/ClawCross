@@ -38,6 +38,9 @@ export default defineConfig({
     baseURL: `http://127.0.0.1:${port}`,
     headless: true,
     trace: 'retain-on-failure',
+    launchOptions: process.env.CLAWCROSS_TEST_CHROME
+      ? { executablePath: process.env.CLAWCROSS_TEST_CHROME }
+      : fs.existsSync('/usr/bin/google-chrome') ? { executablePath: '/usr/bin/google-chrome' } : {},
   },
   webServer: {
     command: `${pythonBin} test/browser/mock_frontend_server.py`,

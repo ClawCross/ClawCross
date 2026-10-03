@@ -22,110 +22,16 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "src
 
 
 # ============================================================================
-# P0: Streaming Tool Executor
+# P0: Tool Result Payload
 # ============================================================================
-
-class TestStreamingToolExecutor:
-    """Test streaming tool execution with concurrency control."""
-
-    def test_tool_access_classification(self):
-        from webot.engine.streaming_tool_executor import classify_tool_access, ToolAccessMode
-        assert classify_tool_access("read_file") == ToolAccessMode.READ_ONLY
-        assert classify_tool_access("write_file") == ToolAccessMode.WRITE
-        assert classify_tool_access("run_command") == ToolAccessMode.WRITE
-        assert classify_tool_access("list_files") == ToolAccessMode.READ_ONLY
-        assert classify_tool_access("unknown_tool") == ToolAccessMode.UNKNOWN
-
-    def test_register_custom_tool_mode(self):
-        from webot.engine.streaming_tool_executor import register_tool_access_mode, classify_tool_access, ToolAccessMode
-        register_tool_access_mode("my_custom_tool", ToolAccessMode.READ_ONLY)
-        assert classify_tool_access("my_custom_tool") == ToolAccessMode.READ_ONLY
-
-    def test_executor_creation(self):
-        from webot.engine.streaming_tool_executor import StreamingToolExecutor
-        executor = StreamingToolExecutor(max_concurrent_reads=4)
-        assert executor.max_concurrent_reads == 4
-        assert executor.result_char_budget == 12000
-
-    @pytest.mark.asyncio
-    async def test_execute_tool_calls(self):
-        from webot.engine.streaming_tool_executor import StreamingToolExecutor, ToolExecutionResult
-
-        async def mock_executor(tc):
-            await asyncio.sleep(0.01)
-            return f"result_{tc['name']}"
-
-        executor = StreamingToolExecutor()
-        calls = [
-            {"name": "read_file", "id": "tc1", "args": {}},
-            {"name": "list_files", "id": "tc2", "args": {}},
-        ]
-
-        results = []
-        async for result in executor.execute_tool_calls(calls, mock_executor):
-            results.append(result)
-
-        assert len(results) == 2
-        assert all(isinstance(r, ToolExecutionResult) for r in results)
-        assert all(r.success for r in results)
-
-    @pytest.mark.asyncio
-    async def test_execute_with_truncation(self):
-        from webot.engine.streaming_tool_executor import StreamingToolExecutor
-
-        async def large_result_executor(tc):
-            return "x" * 20000  # Exceeds default budget
-
-        executor = StreamingToolExecutor(result_char_budget=1000)
-        calls = [{"name": "read_file", "id": "tc1", "args": {}}]
-
-        results = []
-        async for result in executor.execute_tool_calls(calls, large_result_executor):
-            results.append(result)
-
-        assert len(results) == 1
-        assert results[0].truncated
-        assert results[0].original_length == 20000
-        assert len(results[0].content) < 20000
-
-    @pytest.mark.asyncio
-    async def test_execute_with_error(self):
-        from webot.engine.streaming_tool_executor import StreamingToolExecutor
-
-        async def failing_executor(tc):
-            raise ValueError("test error")
-
-        executor = StreamingToolExecutor()
-        calls = [{"name": "run_command", "id": "tc1", "args": {}}]
-
-        results = []
-        async for result in executor.execute_tool_calls(calls, failing_executor):
-            results.append(result)
-
-        assert len(results) == 1
-        assert not results[0].success
-        assert "test error" in results[0].content
-
-    def test_to_tool_messages(self):
-        from webot.engine.streaming_tool_executor import StreamingToolExecutor, ToolExecutionResult
-        executor = StreamingToolExecutor()
-        results = [
-            ToolExecutionResult(tool_call_id="tc1", tool_name="read_file", content="hello"),
-            ToolExecutionResult(tool_call_id="tc2", tool_name="list_files", content="files"),
-        ]
-        messages = executor.to_tool_messages(results)
-        assert len(messages) == 2
-        assert messages[0].content == "hello"
-        assert messages[1].content == "files"
-
 
 class TestToolResultPayload:
     """Test structured tool result payloads returned to the model."""
 
     def test_build_tool_result_payload_error_shape(self):
-        from webot.engine.agent import TeamAgent
+        from webot.engine.agent import tool_result_payload
 
-        payload = TeamAgent._build_tool_result_payload(
+        payload = tool_result_payload(
             "write_file",
             ok=False,
             error_type="invalid_tool_arguments",
@@ -249,80 +155,27 @@ class TestContextLimits:
         monkeypatch.delenv("WEBOT_CONTEXT_TOKEN_BUDGET", raising=False)
         monkeypatch.setenv("LLM_MODEL", "MiniMax-M2.7")
 
-        assert infer_model_context_window() == 1_000_000
-        # 80% of 1M window, no main-agent cap → 800k
-        assert resolve_history_token_budget() == 800_000
+        from common.model_capabilities import model_capabilities
+        capacity = model_capabilities("MiniMax-M2.7").get("max_input_tokens")
+        assert infer_model_context_window() == capacity
+        assert resolve_history_token_budget() == int(capacity * 0.8)
 
     def test_context_limits_known_model_windows(self, monkeypatch):
         from webot.context_limits import infer_model_context_window, resolve_history_token_budget
-
+        from common.model_capabilities import model_capabilities
         monkeypatch.delenv("LLM_CONTEXT_WINDOW", raising=False)
         monkeypatch.delenv("WEBOT_CONTEXT_TOKEN_BUDGET", raising=False)
-
-        monkeypatch.setenv("LLM_MODEL", "gpt-5.4")
-        assert infer_model_context_window() == 1_000_000
-        assert resolve_history_token_budget() == 800_000
-
-        monkeypatch.setenv("LLM_MODEL", "gpt-5.4-mini")
-        assert infer_model_context_window() == 400_000
-        assert resolve_history_token_budget() == 320_000
-
-        monkeypatch.setenv("LLM_MODEL", "deepseek-v4-pro")
-        assert infer_model_context_window() == 1_000_000
-        assert resolve_history_token_budget() == 800_000
+        for model in ("gpt-5.4", "gpt-5.4-mini", "deepseek-v4-pro"):
+            monkeypatch.setenv("LLM_MODEL", model)
+            capacity = model_capabilities(model).get("max_input_tokens")
+            assert infer_model_context_window() == capacity
+            assert resolve_history_token_budget() == int(capacity * 0.8)
 
     def test_context_limits_user_override(self, monkeypatch):
         from webot.context_limits import resolve_history_token_budget
 
         monkeypatch.setenv("WEBOT_CONTEXT_TOKEN_BUDGET", "77777")
         assert resolve_history_token_budget() == 77777
-
-
-# ============================================================================
-# P0: Cache Boundary
-# ============================================================================
-
-class TestCacheBoundary:
-    """Test system prompt cache boundary management."""
-
-    def test_set_sections(self):
-        from webot.cache_boundary import SystemPromptCacheManager
-        mgr = SystemPromptCacheManager()
-        mgr.set_section("identity", "I am WeBot")
-        mgr.set_section("tools", "Available tools: read_file, write_file")
-        mgr.set_section("runtime_context", "Current plan: none")
-        boundary = mgr.compute_boundary()
-        assert len(boundary.sections) == 3
-        assert boundary.static_chars > 0
-
-    def test_cache_breakpoint(self):
-        from webot.cache_boundary import SystemPromptCacheManager
-        mgr = SystemPromptCacheManager()
-        mgr.set_section("identity", "I am WeBot")
-        mgr.set_section("tools", "Tools list")
-        mgr.set_section("session_mode", "execute mode")  # This is dynamic
-        mgr.set_section("runtime_context", "Runtime data")
-        boundary = mgr.compute_boundary()
-        # identity and tools should be before breakpoint (cacheable)
-        assert boundary.cache_breakpoint_index == 2
-
-    def test_build_single_prompt(self):
-        from webot.cache_boundary import SystemPromptCacheManager
-        mgr = SystemPromptCacheManager()
-        mgr.set_section("identity", "Part 1")
-        mgr.set_section("runtime_context", "Part 2")
-        prompt = mgr.build_single_prompt()
-        assert "Part 1" in prompt
-        assert "Part 2" in prompt
-
-    def test_cache_stats(self):
-        from webot.cache_boundary import SystemPromptCacheManager
-        mgr = SystemPromptCacheManager()
-        mgr.set_section("identity", "x" * 1000)
-        mgr.set_section("runtime_context", "y" * 200)
-        stats = mgr.get_cache_stats()
-        assert stats["total_sections"] == 2
-        assert stats["cache_ratio"] > 0
 
 
 # ============================================================================
@@ -472,107 +325,6 @@ class TestLazyToolDiscovery:
 
 
 # ============================================================================
-# P2: Agent Orchestrator
-# ============================================================================
-
-class TestAgentOrchestrator:
-    """Test fork, coordinator, council, and consensus."""
-
-    def test_create_fork(self):
-        from webot.engine.agent_orchestrator import create_fork, get_fork, ForkMode
-        fork = create_fork(
-            parent_session="main_session",
-            task="Implement feature X",
-            mode=ForkMode.INHERIT,
-        )
-        assert fork.fork_id.startswith("fork_")
-        assert fork.status == "running"
-        assert get_fork(fork.fork_id) is not None
-
-    def test_complete_fork(self):
-        from webot.engine.agent_orchestrator import create_fork, complete_fork
-        fork = create_fork(parent_session="test", task="Test task")
-        completed = complete_fork(fork.fork_id, "Done!")
-        assert completed.status == "completed"
-        assert completed.result == "Done!"
-
-    def test_list_forks(self):
-        from webot.engine.agent_orchestrator import create_fork, list_forks
-        create_fork(parent_session="parent_a", task="Task 1")
-        create_fork(parent_session="parent_a", task="Task 2")
-        forks = list_forks("parent_a")
-        assert len(forks) >= 2
-
-    def test_coordinator_run(self):
-        from webot.engine.agent_orchestrator import (
-            start_coordinator_run, advance_coordinator_phase,
-            get_coordinator_prompt, CoordinatorPhase,
-        )
-        run = start_coordinator_run(user_id="u1", session_id="s1", task="Build feature")
-        assert run.current_phase == CoordinatorPhase.RESEARCH
-
-        prompt = get_coordinator_prompt(run)
-        assert "调研" in prompt
-
-        advance_coordinator_phase(run.run_id, "Research findings...")
-        assert run.current_phase == CoordinatorPhase.SYNTHESIS
-
-        advance_coordinator_phase(run.run_id, "Synthesis plan...")
-        assert run.current_phase == CoordinatorPhase.IMPLEMENTATION
-
-        advance_coordinator_phase(run.run_id, "Implementation done...")
-        assert run.current_phase == CoordinatorPhase.VERIFICATION
-
-        advance_coordinator_phase(run.run_id, "All verified!")
-        assert run.status == "completed"
-
-    def test_council_session(self):
-        from webot.engine.agent_orchestrator import (
-            create_council_session, submit_council_vote,
-            evaluate_council_consensus,
-        )
-        council = create_council_session(question="Should we merge?", threshold=0.6)
-        assert council.status == "deliberating"
-
-        submit_council_vote(
-            council.council_id,
-            voter_id="model_a", model="gpt-4", decision="approve",
-            reasoning="Code looks good", confidence=0.8,
-        )
-        submit_council_vote(
-            council.council_id,
-            voter_id="model_b", model="claude", decision="approve",
-            reasoning="Tests pass", confidence=0.9,
-        )
-        submit_council_vote(
-            council.council_id,
-            voter_id="model_c", model="deepseek", decision="reject",
-            reasoning="Missing edge case", confidence=0.3,
-        )
-
-        result = evaluate_council_consensus(council.council_id)
-        assert result.consensus == "approved"
-        assert result.consensus_confidence > 0.6
-
-    @pytest.mark.asyncio
-    async def test_build_consensus(self):
-        from webot.engine.agent_orchestrator import build_consensus
-
-        async def approve_voter(question):
-            return ("approve", "Looks good", 0.8)
-
-        async def reject_voter(question):
-            return ("reject", "Not ready", 0.4)
-
-        result = await build_consensus(
-            "Should we deploy?",
-            voters=[approve_voter, approve_voter, reject_voter],
-        )
-        assert result["consensus"] == "approved"
-        assert result["vote_count"] == 3
-
-
-# ============================================================================
 # P3: Cost Tracker
 # ============================================================================
 
@@ -659,197 +411,6 @@ class TestEffortController:
 
 
 # ============================================================================
-# P4: Workflow Engines
-# ============================================================================
-
-class TestWorkflowEngines:
-    """Test Ralph loop, deep interview, autopilot, context gate, HUD."""
-
-    def test_ralph_loop(self):
-        from webot.engine.workflow_engines import create_ralph_loop, get_ralph_prompt
-        loop = create_ralph_loop(
-            user_id="u1", session_id="s1",
-            task="Fix the bug", verification_criteria="All tests pass",
-        )
-        assert loop.status.value in ("starting", "executing")
-        prompt = get_ralph_prompt(loop)
-        assert "首次执行" in prompt
-
-    def test_ralph_iterations(self):
-        from webot.engine.workflow_engines import create_ralph_loop
-        loop = create_ralph_loop(
-            user_id="u1", session_id="s1",
-            task="Fix bug", verification_criteria="Tests pass",
-            max_retries=3,
-        )
-        loop.record_iteration("Fixed code", "Tests still fail", False)
-        assert loop.status.value == "fixing"
-        assert loop.can_retry
-
-        loop.record_iteration("Fixed code v2", "All tests pass!", True)
-        assert loop.status.value == "complete"
-
-    def test_ralph_max_retries(self):
-        from webot.engine.workflow_engines import create_ralph_loop
-        loop = create_ralph_loop(
-            user_id="u1", session_id="s1",
-            task="Fix bug", verification_criteria="Tests pass",
-            max_retries=2,
-        )
-        loop.record_iteration("Try 1", "Fail", False)
-        loop.record_iteration("Try 2", "Fail again", False)
-        assert loop.status.value == "failed"
-        assert not loop.can_retry
-
-    def test_deep_interview(self):
-        from webot.engine.workflow_engines import (
-            create_deep_interview, add_interview_question,
-            answer_interview_question, complete_interview,
-        )
-        interview = create_deep_interview(user_id="u1", session_id="s1", topic="New Feature")
-        q = add_interview_question(interview.interview_id, "What is the target audience?")
-        assert q is not None
-
-        answered = answer_interview_question(interview.interview_id, q.question_id, "Developers")
-        assert answered
-
-        complete_interview(interview.interview_id, "Spec: Build for developers...")
-        assert interview.status == "complete"
-
-    def test_autopilot(self):
-        from webot.engine.workflow_engines import set_autopilot, get_autopilot, disable_autopilot, AutopilotConfig
-        config = AutopilotConfig(enabled=True, max_turns=20, allow_network=False)
-        set_autopilot("u1", "s1", config)
-        retrieved = get_autopilot("u1", "s1")
-        assert retrieved.enabled
-        assert not retrieved.allow_network
-        disable_autopilot("u1", "s1")
-        assert get_autopilot("u1", "s1") is None
-
-    def test_context_gate(self):
-        from webot.engine.workflow_engines import check_context_gate
-        result = check_context_gate(
-            task="implement feature",
-            available_context={"task": "implement feature", "workspace": "/tmp"},
-        )
-        assert result.sufficient
-
-        result = check_context_gate(
-            task="implement feature",
-            available_context={"task": "implement feature"},
-            required_signals=["task", "workspace"],
-        )
-        assert not result.sufficient
-        assert "workspace" in result.missing_context
-
-    def test_session_fork(self):
-        from webot.engine.workflow_engines import fork_session, list_session_forks
-        fork = fork_session(user_id="u1", source_session="main", reason="Try alternative")
-        assert fork.fork_id.startswith("sfork_")
-        forks = list_session_forks("u1", "main")
-        assert len(forks) >= 1
-
-    def test_hud(self):
-        from webot.engine.workflow_engines import get_hud, update_hud
-        hud = get_hud("u1", "s1")
-        assert not hud.active
-
-        update_hud("u1", "s1", active=True, current_task="Building feature", progress=0.5)
-        hud = get_hud("u1", "s1")
-        assert hud.active
-        assert hud.progress == 0.5
-
-        display = hud.format_display()
-        assert "Building feature" in display
-        assert "50%" in display
-
-
-# ============================================================================
-# P5-P6: Notifications, TTL, Broadcast, Session Resume, Model Swap
-# ============================================================================
-
-class TestNotificationSystem:
-    """Test notifications, TTL, broadcast, session resume."""
-
-    def test_send_notification(self):
-        from webot.notification_system import send_notification, get_notifications
-        notif = send_notification(
-            user_id="u1", session_id="s1",
-            level="info", title="Test", body="Hello",
-        )
-        assert notif.notification_id.startswith("notif_")
-
-        notifs = get_notifications("u1")
-        assert len(notifs) >= 1
-
-    def test_unread_notifications(self):
-        from webot.notification_system import send_notification, get_notifications, mark_notification_read
-        send_notification(user_id="u_notif_test", title="A", body="1")
-        send_notification(user_id="u_notif_test", title="B", body="2")
-
-        unread = get_notifications("u_notif_test", unread_only=True)
-        assert len(unread) == 2
-
-        mark_notification_read("u_notif_test", unread[0].notification_id)
-        unread = get_notifications("u_notif_test", unread_only=True)
-        assert len(unread) == 1
-
-    def test_ttl_registration(self):
-        from webot.notification_system import register_ttl, get_ttl_stats
-        register_ttl("test_key_1", "test_category", ttl_seconds=3600)
-        stats = get_ttl_stats()
-        assert stats["total_entries"] >= 1
-
-    def test_ttl_cleanup(self):
-        from webot.notification_system import register_ttl, run_ttl_cleanup
-        # Register an already-expired entry
-        register_ttl("expired_key", "test", ttl_seconds=0)
-        time.sleep(0.01)
-        counts = run_ttl_cleanup()
-        assert counts.get("test", 0) >= 1
-
-    def test_broadcast(self):
-        from webot.notification_system import create_broadcast, mark_broadcast_delivered, get_broadcast
-        msg = create_broadcast(
-            sender_user_id="u1", sender_session_id="s1",
-            target_sessions=["s2", "s3"],
-            content="Hello everyone!",
-        )
-        assert msg.broadcast_id.startswith("broadcast_")
-        mark_broadcast_delivered(msg.broadcast_id, "s2")
-        retrieved = get_broadcast(msg.broadcast_id)
-        assert "s2" in retrieved.delivered_to
-
-    def test_session_checkpoint(self):
-        from webot.notification_system import save_session_checkpoint, get_session_checkpoint, build_resume_prompt
-        checkpoint = save_session_checkpoint(
-            user_id="u1", session_id="s1",
-            state_summary="Working on feature X",
-            pending_tasks=["Finish implementation", "Write tests"],
-        )
-        assert checkpoint.checkpoint_id.startswith("ckpt_")
-
-        retrieved = get_session_checkpoint("u1", "s1")
-        assert retrieved is not None
-        assert "feature X" in retrieved.state_summary
-
-        prompt = build_resume_prompt(retrieved)
-        assert "会话恢复" in prompt
-        assert "Finish implementation" in prompt
-
-    def test_model_hot_swap(self):
-        from webot.notification_system import request_model_swap, get_pending_model_swap, consume_model_swap
-        request_model_swap("u1", "s1", "gpt-4o", reason="Need better reasoning")
-        pending = get_pending_model_swap("u1", "s1")
-        assert pending is not None
-        assert pending.target_model == "gpt-4o"
-
-        consumed = consume_model_swap("u1", "s1")
-        assert consumed.target_model == "gpt-4o"
-        assert get_pending_model_swap("u1", "s1") is None
-
-
-# ============================================================================
 # Integration test: multiple features working together
 # ============================================================================
 
@@ -864,53 +425,6 @@ class TestIntegration:
         config = resolve_effort("u1", "s1", "architect a complete system redesign")
         budget = SessionTokenBudget(max_context_tokens=config.max_context_tokens)
         assert budget.max_context_tokens >= 32000  # Expert level
-
-    def test_ralph_with_hud(self):
-        """Ralph loop updates should reflect in HUD."""
-        from webot.engine.workflow_engines import create_ralph_loop, get_hud, update_hud
-
-        loop = create_ralph_loop(
-            user_id="u1", session_id="s1",
-            task="Fix CI", verification_criteria="CI passes",
-        )
-        update_hud("u1", "s1",
-            active=True,
-            current_task=f"Ralph: {loop.task}",
-            phase="iteration_1",
-        )
-        hud = get_hud("u1", "s1")
-        assert "Fix CI" in hud.current_task
-
-    def test_council_with_notification(self):
-        """Council conclusion should trigger notification."""
-        from webot.engine.agent_orchestrator import create_council_session, submit_council_vote, evaluate_council_consensus
-        from webot.notification_system import send_notification
-
-        council = create_council_session(question="Deploy to prod?")
-        submit_council_vote(council.council_id, voter_id="v1", model="a", decision="approve", reasoning="ok", confidence=0.9)
-        submit_council_vote(council.council_id, voter_id="v2", model="b", decision="approve", reasoning="ok", confidence=0.8)
-        result = evaluate_council_consensus(council.council_id)
-
-        notif = send_notification(
-            user_id="u1",
-            title=f"Council: {result.consensus}",
-            body=f"Confidence: {result.consensus_confidence:.0%}",
-        )
-        assert "approved" in notif.title
-
-    def test_fork_with_cost_tracking(self):
-        """Forked sessions should have independent cost tracking."""
-        from webot.engine.agent_orchestrator import create_fork
-        from webot.cost_tracker import get_cost_tracker
-
-        fork = create_fork(parent_session="main", task="Explore alternative")
-        parent_tracker = get_cost_tracker("u1", "main")
-        child_tracker = get_cost_tracker("u1", fork.child_session)
-
-        parent_tracker.record("gpt-4o", input_tokens=1000, output_tokens=500)
-        child_tracker.record("gpt-4o-mini", input_tokens=500, output_tokens=200)
-
-        assert parent_tracker.total_cost != child_tracker.total_cost
 
     def test_bash_safety_with_policy(self):
         """Bash safety should work alongside existing policy system."""

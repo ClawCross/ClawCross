@@ -33,7 +33,7 @@ uv run src/cli/cli.py [-u USER] <子命令> [参数...]
 |------|------|--------|
 | `-u`, `--user` | 用户名（通过 `X-User-Id` header 传递给后端） | 环境变量 `CLAW_USER` / `CLI_USER`，否则取 `users.json` 的第一个用户，都没有时为 `admin` |
 
-> `-u` 对所有需要用户身份的命令生效（agents / teams / groups / visual / openclaw-snapshot / skill / cron 等）。
+> `-u` 对所有需要用户身份的命令生效（agents / teams / groups / visual / skill / cron 等）。
 
 ---
 
@@ -46,19 +46,17 @@ uv run src/cli/cli.py [-u USER] <子命令> [参数...]
 5. [restart](#5-restart) — 重启 Agent
 6. [channel](#6-channel) — 渠道管理（NoneBot / WeClaw 等）
 7. [groups](#7-groups) — 群组管理
-8. [openclaw](#8-openclaw) — OpenClaw Agent 管理
-9. [openclaw-snapshot](#9-openclaw-snapshot) — OpenClaw 快照管理
-10. [visual](#10-visual) — 可视化编排管理
-11. [agents](#11-agents) — Agent 管理（本机所有平台的 agent，一套命令）
-12. [teams](#12-teams) — Team 管理
-13. [topics](#13-topics) — OASIS 话题管理
-14. [personas](#14-personas) — 人设管理
-15. [workflows](#15-workflows) — YAML / Python Workflow 管理
-16. [tunnel](#16-tunnel) — Cloudflare Tunnel 管理
-17. [token](#17-token) — Token 生成与验证
-18. [status](#18-status) — 服务状态检查
-19. [skill](#19-skill) — Managed 技能管理
-20. [cron](#20-cron) — 定时任务 / 闹钟管理
+8. [visual](#8-visual) — 可视化编排管理
+9. [agents](#9-agents) — Agent 管理（本机所有平台的 agent，一套命令）
+10. [teams](#10-teams) — Team 管理
+11. [topics](#11-topics) — OASIS 话题管理
+12. [personas](#12-personas) — 人设管理
+13. [workflows](#13-workflows) — YAML / Python Workflow 管理
+14. [tunnel](#14-tunnel) — Cloudflare Tunnel 管理
+15. [token](#15-token) — Token 生成与验证
+16. [status](#16-status) — 服务状态检查
+17. [skill](#17-skill) — Managed 技能管理
+18. [cron](#18-cron) — 定时任务 / 闹钟管理
 
 ---
 
@@ -220,98 +218,7 @@ uv run src/cli/cli.py groups dnd-off --group-id g_abc123
 
 ---
 
-## 8. openclaw
-
-**OpenClaw Agent 管理**
-
-```bash
-# 列出 OpenClaw 会话
-uv run src/cli/cli.py openclaw
-uv run src/cli/cli.py openclaw sessions --filter keyword
-
-# 添加 Agent
-uv run src/cli/cli.py openclaw add --data '{"name":"mybot","api_url":"..."}'
-
-# 查看 Agent 详情
-uv run src/cli/cli.py openclaw detail --name mybot
-
-# 查看工作区
-uv run src/cli/cli.py openclaw default-workspace
-uv run src/cli/cli.py openclaw workspace-files --workspace /path
-uv run src/cli/cli.py openclaw workspace-file-read --workspace /path --filename main.py
-
-# 保存文件
-uv run src/cli/cli.py openclaw workspace-file-save --data '{"workspace":"/path","filename":"main.py","content":"..."}'
-
-# 技能与工具
-uv run src/cli/cli.py openclaw skills --agent mybot
-uv run src/cli/cli.py openclaw tool-groups
-
-# 频道与绑定
-uv run src/cli/cli.py openclaw channels
-uv run src/cli/cli.py openclaw bindings --agent mybot
-uv run src/cli/cli.py openclaw bind --data '{"agent":"mybot","channel":"ch1"}'
-
-# 微信账号绑定示例
-uv run src/cli/cli.py openclaw channels
-uv run src/cli/cli.py openclaw bind --data '{"agent":"main","channel":"openclaw-weixin:cdb0be1f7414-im-bot"}'
-
-# 更新配置
-uv run src/cli/cli.py openclaw update-config --data '{"name":"mybot","config":{...}}'
-
-# 移除 Agent
-uv run src/cli/cli.py openclaw remove --name mybot
-```
-
-| 参数 | 说明 | 必填 | 默认值 |
-|------|------|------|--------|
-| `action` | 操作 | 否 | `sessions` |
-| `--filter` | 过滤关键词 | 否 | — |
-| `--name` | Agent 名称 | 视操作 | — |
-| `--agent` | Agent 名称 | 视操作 | — |
-| `--workspace` | 工作区路径 | 视操作 | — |
-| `--filename` | 文件名 | 视操作 | — |
-| `--data` | JSON 数据 | 视操作 | — |
-
-
----
-
-## 9. openclaw-snapshot
-
-**OpenClaw 快照管理**
-
-```bash
-# 获取快照列表
-uv run src/cli/cli.py -u Avalon_01 openclaw-snapshot get --team myteam
-
-# 导出单个快照
-uv run src/cli/cli.py -u Avalon_01 openclaw-snapshot export --team myteam --agent-name "Agent全名" --short-name "显示名"
-
-# 导出全部
-uv run src/cli/cli.py -u Avalon_01 openclaw-snapshot export-all --team myteam
-
-# 同步全部
-uv run src/cli/cli.py -u Avalon_01 openclaw-snapshot sync-all --team myteam
-
-# 恢复单个
-uv run src/cli/cli.py -u Avalon_01 openclaw-snapshot restore --team myteam --short-name "显示名" --target-name "目标Agent"
-
-# 恢复全部
-uv run src/cli/cli.py -u Avalon_01 openclaw-snapshot restore-all --team myteam
-```
-
-| 参数 | 说明 | 必填 | 默认值 |
-|------|------|------|--------|
-| `action` | 操作 | 否 | `get` |
-| `--team` | Team 名称 | 是 | — |
-| `--agent-name` | Agent 全名 | export 时 | — |
-| `--short-name` | 显示名 | export/restore 时 | — |
-| `--target-name` | 恢复目标 Agent 名 | restore 时 | — |
-
-
----
-
-## 10. visual
+## 8. visual
 
 **可视化编排管理**
 
@@ -348,7 +255,7 @@ uv run src/cli/cli.py -u Avalon_01 visual upload-yaml --data '{"name":"myflow","
 
 ---
 
-## 11. agents
+## 9. agents
 
 **Agent 管理**：WeBot、Codex、Claude Code、Gemini、OpenClaw、任意 HTTP 服务都是同一种 agent，用同一套命令。每个 agent 是一个会话，编号就是会话号；`--agent` 写编号或 `<team>.<名字>`。给没用过的编号发信息（ask / inbox）就新建一个 agent（WeBot）。
 
@@ -394,7 +301,7 @@ uv run src/cli/cli.py agents deliver_inbox --agent coder   # 收件箱里排队�
 
 ---
 
-## 12. teams
+## 10. teams
 
 **Team 管理**
 
@@ -432,7 +339,7 @@ uv run src/cli/cli.py -u Avalon_01 teams snapshot-download --team-name myteam -o
 
 # 团队快照 — 选择性导出（通过 --include JSON）
 uv run src/cli/cli.py -u Avalon_01 teams snapshot-download --team-name myteam \
-  --include '{"agents":true,"personas":true,"skills":{"OpenClaw助手":["Clawcross","ChatBot"]},"cron":true,"workflows":true}'
+  --include '{"agents":true,"personas":true,"skills":{"_managed_team":["Clawcross"]},"cron":true,"workflows":true}'
 
 # 团队快照 — 上传恢复
 uv run src/cli/cli.py -u Avalon_01 teams snapshot-upload --team-name myteam --file snapshot.zip
@@ -451,7 +358,7 @@ uv run src/cli/cli.py -u Avalon_01 teams snapshot-upload --team-name myteam --fi
 | `--file` | 上传文件路径 | snapshot-upload 时 | — |
 | `--include` | 选择性导出 JSON（snapshot-download 时） | 否 | 全量导出 |
 
-> `info` 命令一次性聚合调用多个 API（成员、人设、workflows、话题、OpenClaw 快照），美化输出该 team 的完整信息快照，不直接对应单个接口。
+> `info` 命令一次性聚合调用多个 API（成员、人设、workflows、话题），美化输出该 team 的完整信息快照，不直接对应单个接口。
 
 ### 快照预览 (`snapshot-preview`)
 
@@ -461,45 +368,7 @@ uv run src/cli/cli.py -u Avalon_01 teams snapshot-upload --team-name myteam --fi
 uv run src/cli/cli.py -u Avalon_01 teams snapshot-preview --team-name myteam
 ```
 
-输出示例：
-```
-════════════════════════════════════════════════════════════
-📋 Team 'myteam' 可导出内容预览
-════════════════════════════════════════════════════════════
-
-🤖 agents — 成员 (2 个):
-  • ChatBot  [assistant]
-  • Coder    [developer]
-
-🧑‍🏫 personas — 自定义人设 (3 个):
-  • [creative] 创意专家
-  • [critical] 批判分析师
-  • [summary] 总结专家
-
-🔧 skills — OpenClaw Agent 技能 (1 个 Agent):
-  • OpenClaw助手  (global: main)  — 5 skills:
-    - Clawcross
-    - ChatBot
-    - WebSearch
-    - CodeHelper
-    - DataAnalyzer
-  📦 managed skills (1 个):
-    - some_managed_skill
-
-⏰ cron — 定时任务 (共 2 个):
-  • OpenClaw助手 (2 个):
-    - 日报汇总  [0 9 * * *]
-    - 周报提醒  [0 10 * * 1]
-
-📐 workflows — YAML 文件 (3 个):
-  • oasis/yaml/brainstorm_workflow.yaml
-  • oasis/yaml/product_review_workflow.yaml
-  • oasis/yaml/creative_critical_workflow.yaml
-
-════════════════════════════════════════════════════════════
-💡 选择性导出示例:
-  ...
-```
+返回 JSON：`sections` 下有 `agents`、`personas`、`external_agents`、`skills`（`clawcross_personal` / `clawcross_team`）、`cron`、`workflows` 等。
 
 ### 选择性导出 (`--include`)
 
@@ -511,19 +380,17 @@ uv run src/cli/cli.py -u Avalon_01 teams snapshot-preview --team-name myteam
 |---------|------|----------|
 | `agents` | 成员 | `internal_agents.json` / `external_agents.json` |
 | `personas` | 自定义人设 | `oasis_experts.json` |
-| `skills` | OpenClaw Agent 技能文件夹 | `external_agents.json` + workspace skills |
+| `skills` | 个人与团队技能 | `skills/clawcross_personal/` / `skills/clawcross_team/` |
 | `cron` | 定时任务 | `external_agents.json` + `cron_jobs.json` |
 | `workflows` | YAML workflow 文件 | `oasis/yaml/*.yaml` |
 
-#### `skills` 的 3 种选择模式
-
-`skills` 字段支持层级 JSON，可以精确到每个 Agent 和每个 Skill：
+#### `skills` 的选择模式
 
 | 模式 | 格式 | 含义 |
 |------|------|------|
-| 全量 | `"skills": true` | 导出所有 Agent 的所有 skill |
-| 按 Agent | `"skills": {"OpenClaw助手": true}` | 只导出该 Agent 的全部 skill |
-| 按 Skill | `"skills": {"OpenClaw助手": ["Clawcross", "ChatBot"]}` | 只导出该 Agent 下指定的 skill |
+| 全量 | `"skills": true` | 导出个人和团队的全部技能 |
+| 按范围 | `"skills": {"_managed_team": true}` | 只导出团队技能（个人技能用 `_managed_personal`） |
+| 按技能 | `"skills": {"_managed_personal": ["Clawcross"]}` | 只导出指定技能 |
 
 #### 使用示例
 
@@ -539,28 +406,20 @@ uv run src/cli/cli.py -u admin teams snapshot-download --team-name myteam \
 uv run src/cli/cli.py -u admin teams snapshot-download --team-name myteam \
   --include '{"agents":true,"personas":true,"skills":true,"cron":true,"workflows":true}'
 
-# 4. 只导出特定 Agent 的全部 skill
+# 4. 只导出团队技能
 uv run src/cli/cli.py -u admin teams snapshot-download --team-name myteam \
-  --include '{"skills":{"OpenClaw助手":true}}'
+  --include '{"skills":{"_managed_team":true}}'
 
-# 5. 只导出特定 Agent 的特定 skill
+# 5. 只导出指定的个人技能，加上 agents 和 cron
 uv run src/cli/cli.py -u admin teams snapshot-download --team-name myteam \
-  --include '{"skills":{"OpenClaw助手":["Clawcross","ChatBot"]}}'
-
-# 6. 混合选择：导出 agents + 特定 skills + cron
-uv run src/cli/cli.py -u admin teams snapshot-download --team-name myteam \
-  --include '{"agents":true,"skills":{"OpenClaw助手":["Clawcross"]},"cron":true}'
-
-# 7. 多个 Agent，一个全选，一个选特定 skill
-uv run src/cli/cli.py -u admin teams snapshot-download --team-name myteam \
-  --include '{"skills":{"OpenClaw助手":["Clawcross"],"另一个Agent":true}}'
+  --include '{"agents":true,"skills":{"_managed_personal":["Clawcross"]},"cron":true}'
 ```
 
 > 先运行 `snapshot-preview` 查看可导出内容，再根据预览结果构造 `--include` JSON。`snapshot-preview` 命令末尾也会自动生成选择性导出的示例命令。
 
 ---
 
-## 13. topics
+## 11. topics
 
 **OASIS 话题管理**
 
@@ -600,7 +459,7 @@ uv run src/cli/cli.py topics delete-all
 > - `conclusion` (在 workflows 子命令中) — 阻塞等待直到讨论结束并返回结论
 
 
-## 14. personas
+## 12. personas
 
 **OASIS 人设管理**
 
@@ -637,7 +496,7 @@ uv run src/cli/cli.py -u Avalon_01 personas delete --tag my_lawyer --team team2
 
 ---
 
-## 15. workflows
+## 13. workflows
 
 **OASIS YAML / Python Workflow 管理**
 
@@ -736,7 +595,7 @@ uv run src/cli/cli.py -u Avalon_01 workflows conclusion --topic-id abc12345 --ti
 
 ---
 
-## 16. tunnel
+## 14. tunnel
 
 **Cloudflare Tunnel 管理**
 
@@ -762,7 +621,7 @@ uv run src/cli/cli.py tunnel stop
 
 ---
 
-## 17. token
+## 15. token
 
 **Token 生成与验证**
 
@@ -797,7 +656,7 @@ uv run src/cli/cli.py token decode --token "xxx"
 
 ---
 
-## 18. status
+## 16. status
 
 **检查各服务状态**
 
@@ -811,7 +670,7 @@ uv run src/cli/cli.py status
 
 ---
 
-## 19. skill
+## 17. skill
 
 **Managed 技能管理**
 
@@ -848,7 +707,7 @@ uv run src/cli/cli.py skill delete --name make_slides --team myteam
 
 ---
 
-## 20. cron
+## 18. cron
 
 **定时任务 / 闹钟管理**
 
@@ -905,8 +764,5 @@ uv run src/cli/cli.py -u Avalon_01 agents history --agent analysis_session -n 10
 uv run src/cli/cli.py -u Avalon_01 visual load-layouts --team myteam
 uv run src/cli/cli.py -u Avalon_01 visual load-yaml-raw --name myflow --team myteam
 
-# OpenClaw 快照：导出全部 → 恢复全部
-uv run src/cli/cli.py -u Avalon_01 openclaw-snapshot export-all --team myteam
-uv run src/cli/cli.py -u Avalon_01 openclaw-snapshot restore-all --team myteam
 
 ```

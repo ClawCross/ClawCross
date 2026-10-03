@@ -193,7 +193,7 @@ def test_legacy_paths_use_repository_runtime(monkeypatch):
     assert os.environ["CLAWCROSS_VENV_DIR"] == str(ROOT / ".venv")
 
 
-def test_default_start_is_local_and_skips_openclaw(tmp_path, monkeypatch):
+def test_default_start_is_local_and_skips_the_openclaw_import(tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(ROOT / "launch"))
     control = _load_runtime_control()
     monkeypatch.setattr(control, "RUN_DIR", tmp_path / "run")
@@ -205,7 +205,7 @@ def test_default_start_is_local_and_skips_openclaw(tmp_path, monkeypatch):
     monkeypatch.setattr(control, "ensure_core", lambda: None)
     monkeypatch.setattr(control, "_ensure_config", lambda: None)
     imports = []
-    monkeypatch.setattr(control, "_maybe_import_openclaw", lambda *args, **kwargs: imports.append(kwargs))
+    monkeypatch.setattr(control, "_maybe_import_openclaw", lambda env: imports.append(env))
     monkeypatch.setattr(control, "_check_model", lambda *args: None)
     process_flags = []
     monkeypatch.setattr(control, "_process_env", lambda **kwargs: process_flags.append(kwargs) or {})
@@ -222,5 +222,5 @@ def test_default_start_is_local_and_skips_openclaw(tmp_path, monkeypatch):
     assert control.start(args) == 0
     assert stopped == [control.TUNNEL_PID, control.LAUNCHER_PID]
     assert cleared == [True]
-    assert imports == [{"no_openclaw": True}]
-    assert all(flags.get("no_openclaw") is True for flags in process_flags)
+    assert imports == []
+    assert process_flags and all(flags == {"no_channel": True} for flags in process_flags)

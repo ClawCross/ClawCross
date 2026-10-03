@@ -23,7 +23,6 @@ For the example below: `~/.clawcross/data/user_files/default/teams/paper-review-
 ```
 paper-review-council/
 ├── oasis_experts.json                # persona prompts (required)
-├── team_settings.json                # team-level settings (optional)
 ├── clawcross_preset_manifest.json    # preset stamp (optional)
 ├── clawcross_preset_source_map.json  # preset stamp (optional)
 ├── src/backend/oasis/
@@ -83,14 +82,13 @@ A team *package* — a preset, a snapshot zip, or a folder written by hand or by
 ```json
 [
   { "name": "Codex Reviewer", "tag": "critical", "platform": "codex", "global_name": "codex_reviewer" },
-  { "name": "Researcher", "tag": "analyst", "platform": "openclaw", "global_name": "paper_researcher",
-    "meta": { "model": "agent:paper_researcher" } }
+  { "name": "Researcher", "tag": "analyst", "platform": "openclaw", "global_name": "paper_researcher" }
 ]
 ```
 
 - `name` — the role name; `tag` — the persona the agent wears; `is_primary` — the lead.
 - `platform` — `codex` / `claude-code` / `gemini-cli` / `openclaw` / any HTTP service name; `meta` — `api_url`, `model`, `headers` (never an `api_key` in a package).
-- `session` (internal) and `global_name` (external) are the agent's id on this machine; for OpenClaw, `global_name` is which OpenClaw agent.
+- `session` (internal) and `global_name` (external) are the agent's id on this machine.
 - An entry whose name is already a member of the team is that member; one naming an existing agent id is that agent; any other entry creates a new agent.
 
 Importing (`clawcross team import "<team>"`, `POST /v1/teams/<team>/import`, installing a preset, uploading a snapshot) turns the entries into agents and memberships and removes the two files from the team folder. Exporting a snapshot writes them again in the same shape, leaving out this machine's agent ids and any secrets so that importing elsewhere creates fresh agents.
@@ -135,9 +133,7 @@ A flat list of **prompts**, not agents. Several members may wear the same `tag`,
 
 ## 5. Members on other platforms
 
-A Codex, Claude Code or Gemini member runs through `acpx` in the session named by its `global_name`; an HTTP member is called at its `api_url`. Nothing else about them differs from a WeBot member — same commands, same workflow syntax, same group chat.
-
-An OpenClaw member is an agent that lives in OpenClaw's own workspace, so it must exist there first (`openclaw add`, or pick one from `openclaw sessions`). Its workspace files and tool configuration can be saved into the team (`openclaw-snapshot export` / `export-all`), which is what lets a snapshot recreate the OpenClaw side on another machine.
+A Codex, Claude Code, Gemini or OpenClaw member runs through `acpx` in the session named by its `global_name`; an HTTP member is called at its `api_url`. Nothing else about them differs from a WeBot member — same commands, same workflow syntax, same group chat. An OpenClaw member talks to OpenClaw's `main` agent; ClawCross never changes OpenClaw's own configuration.
 
 ---
 
@@ -627,7 +623,6 @@ Files are re-read on every workflow run, so edits take effect immediately. Membe
 | Remove a member | `clawcross team member remove <team> <agent>` (the agent stays) |
 | Reroute the workflow / add a parallel branch | edit `oasis/yaml/<wf>.yaml` |
 | Rewrite the dynamic orchestration | edit `oasis/python/<wf>.py` |
-| Change the team-wide fallback agent | edit `team_settings.json` |
 
 ### 11.3 Things to keep consistent
 
@@ -639,7 +634,6 @@ Files are re-read on every workflow run, so edits take effect immediately. Membe
 
 ### 11.4 When CLI / Creator is still better
 
-- **OpenClaw members** need the OpenClaw side to exist: `openclaw add` (or pick from `openclaw sessions`), then register the member; `openclaw-snapshot export` stores its workspace config with the team.
 - A **ZIP snapshot** should come from `teams snapshot-download` / the Creator, which write the import format with runtime fields and secrets left out.
 
 ---
@@ -665,7 +659,7 @@ oasis/python/<wf>.py  ── ctx.send_agent("<role>", prompt)     → a member
 | Workflow runs but the agent has the wrong personality | the member's persona tag is missing from `oasis_experts.json` → fallback to a public-pool persona. |
 | "agent '<x>' not found; skipping" in the topic log | `agent: <x>` is not a member's role name (check `clawcross team "<team>" members`). |
 | `internal_agents.json` still in the team folder | it was never imported — run `clawcross team import "<team>"`. |
-| An OpenClaw member does not answer | the agent does not exist on the OpenClaw side (`openclaw sessions`), or OpenClaw is not running. |
+| An OpenClaw member does not answer | acpx is not installed, or the `openclaw` CLI or its gateway is not running. |
 | Python workflow crashes before `main` | venv missing a package, or `from oasis.workflow import …` couldn't reach the project root. |
 
 ---
@@ -702,5 +696,5 @@ ls oasis/yaml/  oasis/python/  skills/
 - [`workflowpy.md`](./workflowpy.md) — Python-script workflow mode in more depth (Agent Center, forum helpers).
 - [`oasis-reference.md`](./oasis-reference.md) — OASIS runtime model (Town Mode, GraphRAG, ReportAgent).
 - [`example_team.md`](./example_team.md) — alternative case study: `demo_team` with a selector-based workflow.
-- [`openclaw-commands.md`](./openclaw-commands.md) — OpenClaw agent configuration and snapshots.
+- [`openclaw-commands.md`](./openclaw-commands.md) — OpenClaw as an ACP agent.
 - [`repo-index.md`](./repo-index.md) — where the runtime code that reads each file lives.

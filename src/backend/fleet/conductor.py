@@ -88,7 +88,6 @@ SAFE_ALLOW_TEXT = (
 )
 
 LLM_JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
-OPENCLAW_GATEWAY_BASE_URL = "http://127.0.0.1:18789/v1"
 CLAWCROSS_AGENT_COMPLETIONS_URL = "http://127.0.0.1:51200/v1/chat/completions"
 CODEX_REVIEW_ACTIONS = {"accept", "reopen", "needs_user", "skip"}
 CODEX_REVIEW_STATUSES = {"active", "blocked", "needs_user", "review"}
@@ -252,19 +251,6 @@ def _call_webot_llm_json(prompt: str) -> dict[str, Any]:
         )
     if os.getenv("LLM_MODEL", "").strip():
         attempts.append(("webot_env", {}))
-    if _env_truthy("CLAWCROSS_FLEET_CONDUCTOR_OPENCLAW_FALLBACK", False):
-        attempts.append(
-            (
-                "openclaw_gateway",
-                {
-                    "model": os.getenv("CLAWCROSS_FLEET_CONDUCTOR_OPENCLAW_MODEL", "openclaw").strip() or "openclaw",
-                    "api_key": os.getenv("CLAWCROSS_FLEET_CONDUCTOR_OPENCLAW_API_KEY", "openclaw").strip() or "openclaw",
-                    "base_url": os.getenv("CLAWCROSS_FLEET_CONDUCTOR_OPENCLAW_BASE_URL", OPENCLAW_GATEWAY_BASE_URL).strip()
-                    or OPENCLAW_GATEWAY_BASE_URL,
-                    "provider": "openai",
-                },
-            )
-        )
 
     try:
         from common.llm_factory import create_chat_model, extract_text

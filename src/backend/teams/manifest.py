@@ -7,9 +7,8 @@ the team folder. Exporting writes them again in the same shape.
 
     internal entry: {"name", "tag", "persona"?, "session"?, "is_primary"?, …}  — ``session`` is the agent's id
     external entry: {"name", "tag", "persona"?, "platform", "global_name", "meta": {api_url, api_key, model,
-                     headers, …}, "is_primary"?}  — ``global_name`` is the agent's id, or for OpenClaw which
-                     OpenClaw agent; an OpenClaw entry may also carry that agent's snapshot
-                     ("config", "workspace_files"), kept with the membership and exported as is
+                     headers, …}, "is_primary"?}  — ``global_name`` is the agent's id; other keys stay
+                     with the membership and are exported as is
 
 An entry whose name is already a member of the team is that member; one that
 names an agent of this owner is that agent; any other becomes a new agent.
@@ -22,10 +21,11 @@ first). The tag stays with the membership, and both are exported again.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
-from agents.store import OPENCLAW, WEBOT, Agent, canonical_platform, driver_for_platform, valid_agent_id
+from agents.store import WEBOT, Agent, canonical_platform, driver_for_platform, valid_agent_id
 from teams.store import Member, TeamStore
 
 INTERNAL_FILE = "internal_agents.json"
@@ -97,12 +97,11 @@ def agent_for_external_entry(teams: TeamStore, owner: str, team: str, entry: dic
         **{key: meta.pop(key) for key in _EXTERNAL_CONFIG if key in meta},
         "meta": meta,
     }
-    if driver == OPENCLAW:
-        config["global_name"] = ref
-    found = _member(teams, owner, team, entry) or (teams.agents.get(owner, ref) if ref and driver != OPENCLAW else None)
+    found = _member(teams, owner, team, entry) or (teams.agents.get(owner, ref) if ref else None)
     if found is not None:
         return teams.agents.update(owner, found.agent_id, config={**found.config, **config})
-    return teams.agents.create(owner, driver=driver, config=config, name=str(entry["name"]).strip())
+    return teams.agents.create(owner, driver=driver, config=config, name=str(entry["name"]).strip(),
+                               agent_id=ref if valid_agent_id(ref) else "")
 
 
 def import_entries(teams: TeamStore, owner: str, team: str, internal: list[dict], external: list[dict]) -> list[Member]:
@@ -167,7 +166,7 @@ def export_entries(teams: TeamStore, owner: str, team: str, *, portable: bool) -
         if config.get("persona"):
             entry["persona"] = config["persona"]
         if not portable:
-            entry["global_name"] = config.get("global_name", "") if m.agent.driver == OPENCLAW else m.agent.agent_id
+            entry["global_name"] = m.agent.agent_id
         entry["meta"] = meta
         if m.is_lead:
             entry["is_primary"] = True
@@ -177,3 +176,27 @@ def export_entries(teams: TeamStore, owner: str, team: str, *, portable: bool) -
 
 def dumps(entries: list[dict]) -> str:
     return json.dumps(entries, ensure_ascii=False, indent=2)
+
+
+def _ascii_slug(text: str, fallback: str, limit: int) -> str:
+    """Lowercase ``a-z0-9`` only, starting with a letter; *fallback* plus a number when nothing is left."""
+    slug = re.sub(r"[^a-z0-9]+", "", (text or "").strip().lower())
+    if not slug:
+        slug = f"{fallback}{abs(hash(text)) % 900_000 + 100_000}"
+    if slug[0].isdigit():
+        slug = fallback[0] + slug
+    return slug[:limit]
+
+
+def imported_agent_id(team: str, entry: dict, external: list[dict]) -> str:
+    """A stable ASCII id for an external member imported from a package:
+    ``<team>_<name>``, numbered when several entries share the name."""
+    base = f"{_ascii_slug(team, 'team', 48)}_{_ascii_slug(entry.get('name', ''), 'agent', 32)}"
+    name = (entry.get("name", "") or "").strip()
+    same_name = [e for e in external if isinstance(e, dict) and (e.get("name", "") or "").strip() == name]
+    if len(same_name) < 2:
+        return base
+    try:
+        return f"{base}_{same_name.index(entry) + 1}"
+    except ValueError:
+        return f"{base}_1"

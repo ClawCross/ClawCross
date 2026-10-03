@@ -64,7 +64,7 @@ The simplest path is `start`. It creates the runtime `.env` when needed. An empt
 bash launch/run.sh start          # 准备 Python/venv/核心依赖，初始化 .env，启动服务
 # Optional flags (same semantics as Windows run.ps1):
 #   --tunnel         Use an already installed cloudflared binary for a public tunnel.
-#   --with-openclaw  Detect and warm an existing OpenClaw installation; allow LLM import.
+#   --with-openclaw  Import LLM settings from an existing OpenClaw install when ClawCross has no key.
 bash launch/run.sh start --tunnel --with-openclaw   # explicit integrations
 # → Open http://127.0.0.1:51209 (or use the printed Magic link; remote/HTTPS needs the remote link)
 # → First login: Magic link or passwordless localhost
@@ -102,11 +102,10 @@ SRT is also explicit and stays off until a session selects `command_sandbox=srt`
 The `start` command automatically:
 1. **When needed**, creates the Python environment through the platform wrapper, then installs only `config/requirements.txt` from Python. Optional integrations are installed only through `install-component`.
 2. Creates `config/.env` from template if missing
-3. Imports LLM fields from an existing OpenClaw installation only with `--with-openclaw` and only when the local key is empty or placeholder.
+3. Imports LLM fields from an existing OpenClaw installation (read-only) only with `--with-openclaw` and only when the local key is empty or placeholder.
 4. Warns if `LLM_MODEL` is missing; set `CLAWCROSS_REQUIRE_LLM_MODEL=1` to require one before launching services
 5. Starts all services after the model check passes
-6. Warms OpenClaw and refreshes `OPENCLAW_*` only with `--with-openclaw`.
-7. Prints a local Magic link. With `--tunnel`, it also starts an already installed Cloudflare Quick Tunnel and prints a remote link when available. Startup never downloads cloudflared.
+6. Prints a local Magic link. With `--tunnel`, it also starts an already installed Cloudflare Quick Tunnel and prints a remote link when available. Startup never downloads cloudflared.
 
 After startup, the frontend setup wizard handles remaining LLM configuration via the web UI. The wizard detects local OpenClaw and Antigravity-Manager and offers one-click import buttons.
 
@@ -115,14 +114,14 @@ After startup, the frontend setup wizard handles remaining LLM configuration via
 | Flag | When to use | Behavior |
 |------|-------------|----------|
 | **`--tunnel`** | Public access is explicitly requested. | Background `start` uses an already installed cloudflared binary. Foreground mode remains local. |
-| **`--with-openclaw`** | OpenClaw integration is explicitly requested. | Allows LLM import and gateway warm. |
+| **`--with-openclaw`** | The user wants ClawCross to reuse OpenClaw's LLM settings. | Reads OpenClaw's config into `config/.env` while ClawCross has no key; never writes OpenClaw. |
 | **`--no-tunnel`, `--no-openclaw`** | Older scripts or automation still pass these flags. | Accepted for compatibility; they preserve the local-only default. |
 
-Environment variables (for advanced/manual launcher runs): **`CLAWCROSS_NO_OPENCLAW`** and **`CLAWCROSS_NO_TUNNEL`** may be set to `1` / `true` / `yes` / `on` where documented; scripts set them when the flags above are used.
+Environment variable (for advanced/manual launcher runs): **`CLAWCROSS_NO_TUNNEL`** may be set to `1` / `true` / `yes` / `on` where documented; scripts set them when the flags above are used.
 
 ### For agents using this SKILL (settings are documented — startup does not enforce them)
 
-Follow **[For AI agents that read this SKILL](#for-ai-agents-that-read-this-skill)** before running `start`. Use the rest of this file when the user **wants** to configure something: **OpenClaw Integration**, **Advanced: Manual CLI Configuration** (`configure`, `auto-model`, `sync-openclaw-llm`), **Magic link** / `add-user`, provider tables, etc. **None of that blocks `start`:** the stack comes up with a template `.env`; the human signs in and finishes LLM/account choices in the UI or CLI when ready.
+Follow **[For AI agents that read this SKILL](#for-ai-agents-that-read-this-skill)** before running `start`. Use the rest of this file when the user **wants** to configure something: **OpenClaw**, **Advanced: Manual CLI Configuration** (`configure`, `auto-model`), **Magic link** / `add-user`, provider tables, etc. **None of that blocks `start`:** the stack comes up with a template `.env`; the human signs in and finishes LLM/account choices in the UI or CLI when ready.
 
 ### Optional: auto-import OpenClaw LLM at startup
 
@@ -132,85 +131,20 @@ With `--with-openclaw`, startup may import provider/model/key from an existing O
 
 After the first login, users can send these prompts to their AI code CLI agent:
 
-- `阅读SKILL帮我安装并配置OpenClaw/AntiGravity`
+- `阅读SKILL帮我安装并配置AntiGravity`
 - `帮我自动选择目前能用的最好的LLM模型`
-- `帮OpenClaw安装微信插件并绑定`
 
 ---
 
-## OpenClaw Integration (Optional)
+## OpenClaw (Optional)
 
-Only install OpenClaw when the user explicitly asks for it.
-
-Check whether OpenClaw exists:
-
-- Linux / macOS: `command -v openclaw >/dev/null 2>&1`
-- Windows PowerShell: `Get-Command openclaw -ErrorAction SilentlyContinue`
-
-If the user explicitly wants OpenClaw integration and it is missing, use this flow:
-
-1. Ensure `Node.js >= 22`
-2. Install CLI: `npm install -g openclaw@latest --ignore-scripts`
-3. Run onboarding:
-   - Windows / automation: `openclaw onboard --non-interactive --accept-risk --install-daemon`
-   - If you want OpenClaw to reuse an existing OpenAI key: append `--openai-api-key <LLM_API_KEY>`
-   - Linux / macOS local interactive flow: `openclaw onboard --install-daemon`
-4. Enable HTTP compatibility: `openclaw config set gateway.http.endpoints.chatCompletions.enabled true`
-5. Restart gateway: `openclaw gateway restart`
-6. Web entry points after the gateway is up:
-   - OpenClaw dashboard / Control UI: `http://127.0.0.1:18789/`
-   - OpenClaw OpenAI-compatible HTTP API: `http://127.0.0.1:18789/v1/chat/completions`
-7. Check the installed OpenClaw integration without installing plugins:
-   - Linux / macOS: `bash launch/run.sh check-openclaw`
-   - Windows: `powershell -ExecutionPolicy Bypass -File launch/run.ps1 check-openclaw`
-   Importing OpenClaw LLM settings is a separate, explicit action through the first-login wizard or `run.sh import-openclaw-llm` (PowerShell: `run.ps1 import-openclaw-llm`).
-8. If the OpenClaw dashboard shows `gateway token missing`, either:
-   - paste `OPENCLAW_GATEWAY_TOKEN` into Control UI settings, or
-   - for loopback-only local development, switch to no-auth:
-     - `openclaw config set gateway.auth.mode none`
-     - `openclaw config unset gateway.auth.token`
-     - `openclaw gateway restart`
-9. If Clawcross was already running before OpenClaw was installed or reconfigured, restart Clawcross so OASIS reloads the `openclaw` CLI.
+OpenClaw is an ACP agent like Codex: ClawCross reaches it through acpx (`openclaw acp`) and never changes OpenClaw's own configuration. It needs `install-component acpx` and an `openclaw` CLI whose gateway runs; install or configure OpenClaw itself only when the user explicitly asks, with OpenClaw's own documentation. See [docs/openclaw-commands.md](./docs/openclaw-commands.md).
 
 ### Provider Switching Notes
 
-- **DeepSeek**: Update Clawcross `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`, and `LLM_PROVIDER` together. For OpenClaw, define a DeepSeek custom provider in `~/.openclaw/openclaw.json`. See [docs/openclaw-commands.md § 4](./docs/openclaw-commands.md) for the full JSON snippet. Tested stable pair: Clawcross `LLM_BASE_URL=https://api.deepseek.com`, `LLM_MODEL=deepseek-chat`, `LLM_PROVIDER=deepseek`.
-- **Antigravity-Manager** (local reverse proxy, free 67+ models via Google One Pro): `LLM_BASE_URL=http://127.0.0.1:8045`, `LLM_API_KEY=sk-antigravity`, `LLM_MODEL=gemini-3.1-pro`, `LLM_PROVIDER=antigravity`. See [docs/openclaw-commands.md § 4.1](./docs/openclaw-commands.md).
-- **MiniMax** (1M context): `LLM_BASE_URL=https://api.minimaxi.com`, `LLM_MODEL=MiniMax-M2.7`, `LLM_PROVIDER=minimax`. See [docs/openclaw-commands.md § 4.2](./docs/openclaw-commands.md).
-
-### OpenClaw Weixin Channel
-
-Use this only when the user explicitly wants Weixin / 微信 integration.
-
-Windows-specific notes:
-
-1. In PowerShell, use `openclaw.cmd`, not bare `openclaw`, if script execution policy blocks `openclaw.ps1`.
-2. The official installer may fail on Windows PowerShell (`npx -y @tencent-weixin/openclaw-weixin-cli@latest install`) because it shells out to `which openclaw`.
-3. If that happens, use the manual Windows flow:
-
-```powershell
-openclaw.cmd plugins install "@tencent-weixin/openclaw-weixin"
-openclaw.cmd config set plugins.entries.openclaw-weixin.enabled true
-openclaw.cmd channels login --channel openclaw-weixin
-openclaw.cmd channels list --json
-openclaw.cmd gateway restart
-```
-
-4. `openclaw status` showing `openclaw-weixin | ON | SETUP | no token` means the plugin is installed but login hasn't completed.
-5. After QR login succeeds, bind the Weixin account:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File launch/run.ps1 bind-openclaw-channel main openclaw-weixin:<account_id>
-```
-
-Or via Clawcross CLI:
-
-```bash
-uv run src/cli/cli.py openclaw channels
-uv run src/cli/cli.py openclaw bind --data '{"agent":"main","channel":"openclaw-weixin:<account_id>"}'
-```
-
-6. After binding, verify: `uv run src/cli/cli.py openclaw bindings --agent main`
+- **DeepSeek**: Update Clawcross `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`, and `LLM_PROVIDER` together. Tested stable pair: Clawcross `LLM_BASE_URL=https://api.deepseek.com`, `LLM_MODEL=deepseek-chat`, `LLM_PROVIDER=deepseek`.
+- **Antigravity-Manager** (local reverse proxy, free 67+ models via Google One Pro): `LLM_BASE_URL=http://127.0.0.1:8045`, `LLM_API_KEY=sk-antigravity`, `LLM_MODEL=gemini-3.1-pro`, `LLM_PROVIDER=antigravity`.
+- **MiniMax** (1M context): `LLM_BASE_URL=https://api.minimaxi.com`, `LLM_MODEL=MiniMax-M2.7`, `LLM_PROVIDER=minimax`.
 
 ---
 
@@ -404,14 +338,6 @@ powershell -ExecutionPolicy Bypass -File launch/run.ps1 auto-model
 powershell -ExecutionPolicy Bypass -File launch/run.ps1 configure LLM_MODEL <model>
 ```
 
-Reverse sync to OpenClaw:
-
-```bash
-bash launch/run.sh sync-openclaw-llm
-```
-
-`configure` auto-syncs safe LLM updates when the Clawcross config is complete. Partial edits intentionally stop short of rewriting OpenClaw.
-
 For managed terminals, CI, or agent runners that clean up child processes, use `start-foreground` instead of `start`.
 
 ### Windows WSL Fallback
@@ -504,7 +430,6 @@ powershell -ExecutionPolicy Bypass -File launch/run.ps1 configure --show
 uv run src/cli/cli.py --help
 uv run src/cli/cli.py teams --help
 uv run src/cli/cli.py workflows --help
-uv run src/cli/cli.py openclaw --help
 uv run src/cli/cli.py skill --help   # managed 技能 list/show/new/edit/delete
 uv run src/cli/cli.py cron --help    # 定时任务 list/new/delete
 ```
@@ -563,27 +488,6 @@ Safety guards: `launcher.py` includes a Python version check and `run.sh` verifi
 
 **Fix**: Use `launch/run.sh start` (which backgrounds `launcher.py` correctly), or set `WEBOT_HEADLESS=1`.
 
-### OpenClaw Gateway Warnings
-
-**Symptom**: `openclaw gateway status` prints RPC probe warning even when things work.
-
-**Fix**: Confirm real health via:
-- Browser: `http://127.0.0.1:18789/`
-- API: `http://127.0.0.1:18789/v1/chat/completions`
-- CLI: `openclaw.cmd channels list --json`
-
-### OpenClaw 401 After Provider Switch
-
-**Symptom**: HTTP 401 from OpenClaw after switching to Antigravity or another provider.
-
-**Fix**: Check `openclaw config get gateway.auth`. If mode is `token`, switch to no-auth for local use:
-
-```bash
-openclaw config set gateway.auth.mode none
-openclaw config unset gateway.auth.token
-openclaw gateway restart
-```
-
 ### Clawcross API Returns "认证失败"
 
 **Symptom**: Direct POST to `http://127.0.0.1:<PORT_AGENT>/v1/chat/completions` returns auth error.
@@ -607,28 +511,6 @@ print(extract_text(resp.content))
 
 **Fix**: On Windows, ports may auto-remap. Always trust `config/.env` or `status` output, not hardcoded ports. See [docs/ports.md](./docs/ports.md) for the complete service map.
 
-### OpenClaw onboard Overwrites Config
-
-**Symptom**: Re-running `openclaw onboard` changes gateway auth, default model, or provider.
-
-**Fix**: After every `onboard`, re-check:
-
-```bash
-openclaw.cmd gateway status
-openclaw.cmd models status --json
-uv run src/cli/cli.py openclaw bindings --agent main
-```
-
-### Windows PowerShell Execution Policy
-
-**Symptom**: `openclaw` commands fail with `PSSecurityException`.
-
-**Fix**: Use `openclaw.cmd` instead of bare `openclaw`:
-
-```powershell
-openclaw.cmd channels login --channel openclaw-weixin
-```
-
 ---
 
 ## Reference Docs
@@ -645,7 +527,7 @@ openclaw.cmd channels login --channel openclaw-weixin
 - [docs/build_team.md](./docs/build_team.md) — Team creation and member config
 - [docs/create_workflow.md](./docs/create_workflow.md) — workflow YAML format
 - [docs/example_team.md](./docs/example_team.md) — example Team files
-- [docs/openclaw-commands.md](./docs/openclaw-commands.md) — OpenClaw commands
+- [docs/openclaw-commands.md](./docs/openclaw-commands.md) — OpenClaw as an ACP agent
 - [docs/tinyfish-monitor.md](./docs/tinyfish-monitor.md) — TinyFish monitor
 - [docs/ports.md](./docs/ports.md) — service map and ports
 

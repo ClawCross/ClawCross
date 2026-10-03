@@ -192,14 +192,12 @@ async def _read_context(username: str, path: str, **params) -> dict:
 
 
 @mcp.tool()
-async def join_group(username: str, group_id: str, server_url: str = "", password: str = "", source_session: str = "") -> str:
-    """Join at the user's request as yourself. Return the local group_id. Never share credentials.
+async def join_group(username: str, invite: str, source_session: str = "") -> str:
+    """Join at the user's request as yourself. Return the local group_id. Never share the invitation.
 
     Args:
         username: (auto-injected) current user.
-        group_id: Server group ID from the invitation.
-        server_url: Server URL with port; empty uses this device.
-        password: Invitation password; empty for local joins.
+        invite: The invitation link the user gave you (…/group-guest#…).
         source_session: (auto-injected) current agent.
     """
     if not source_session or not _INTERNAL_TOKEN:
@@ -208,7 +206,7 @@ async def join_group(username: str, group_id: str, server_url: str = "", passwor
     try:
         async with httpx.AsyncClient(timeout=30, trust_env=False) as client:
             response = await client.post(f"http://127.0.0.1:{_AGENT_PORT}/groups/join", headers=internal_headers(username),
-                                         json={"group_id": group_id, "server_url": server_url, "password": password, "agents": [source_session]})
+                                         json={"invite": invite, "agents": [source_session]})
         if response.status_code != 200:
             return f"❌ 加入群聊失败 (HTTP {response.status_code})"
         group = response.json()

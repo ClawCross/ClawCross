@@ -15,7 +15,7 @@ if str(SRC_DIR) not in sys.path:
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-from agents.store import ACPX, OPENCLAW, WEBOT, AgentStore  # noqa: E402
+from agents.store import ACPX, WEBOT, AgentStore  # noqa: E402
 from teams.manifest import dumps, export_entries, import_entries, import_folder  # noqa: E402
 from teams.routes import create_teams_router  # noqa: E402
 from teams.store import TeamStore  # noqa: E402
@@ -92,8 +92,8 @@ class TestManifest(TeamCase):
         {"name": "Coder", "tag": "coder", "session": "s1", "note": "kept"},
     ]
     EXTERNAL = [
-        {"name": "Claw", "tag": "openclaw", "platform": "openclaw", "global_name": "main",
-         "meta": {"api_url": "http://oc", "model": "agent:main"}, "config": {"agents": {}}, "workspace_files": {"a": "1"}},
+        {"name": "Claw", "tag": "openclaw", "platform": "openclaw", "global_name": "claw",
+         "meta": {"model": "m1"}, "config": {"agents": {}}, "workspace_files": {"a": "1"}},
     ]
 
     def setUp(self):
@@ -107,15 +107,14 @@ class TestManifest(TeamCase):
         existing = self.agents.create("alice", driver=WEBOT, name="Coder", agent_id="s1")
         import_entries(self.teams, "alice", "dev", self.INTERNAL, self.EXTERNAL)
 
-        self.assertEqual(self.roles(), [("Planner", WEBOT, True), ("Coder", WEBOT, False), ("Claw", OPENCLAW, False)])
+        self.assertEqual(self.roles(), [("Planner", WEBOT, True), ("Coder", WEBOT, False), ("Claw", ACPX, False)])
         coder = self.teams.member("alice", "dev", "Coder")
         self.assertEqual(coder.agent.agent_id, existing.agent_id)  # "session" is the id of an agent already there
         planner = self.teams.member("alice", "dev", "Planner").agent
         # A new agent gets its own copy of the team persona its tag names.
         self.assertEqual((planner.config["persona"], planner.teams), ("你负责规划。", ["dev"]))
         claw = self.teams.member("alice", "dev", "Claw").agent
-        self.assertEqual((claw.config["api_url"], claw.config["model"], claw.config["global_name"]),
-                         ("http://oc", "agent:main", "main"))
+        self.assertEqual((claw.platform, claw.config["model"]), ("openclaw", "m1"))
 
     def test_reimport_follows_the_entries_and_keeps_agents(self):
         import_entries(self.teams, "alice", "dev", self.INTERNAL, [])
@@ -133,8 +132,8 @@ class TestManifest(TeamCase):
         self.assertEqual(internal[1], {"name": "Coder", "tag": "coder", "note": "kept", "session": "s1"})
         self.assertEqual((internal[0]["tag"], internal[0]["persona"]), ("plan", "你负责规划。"))
         self.assertTrue(internal[0]["is_primary"])
-        self.assertEqual(external[0]["global_name"], "main")
-        self.assertEqual(external[0]["workspace_files"], {"a": "1"})  # the OpenClaw snapshot travels along
+        self.assertEqual(external[0]["global_name"], self.teams.member("alice", "dev", "Claw").agent.agent_id)
+        self.assertEqual(external[0]["workspace_files"], {"a": "1"})  # unknown keys travel along
 
         internal, external = export_entries(self.teams, "alice", "dev", portable=True)
         self.assertNotIn("session", internal[0])

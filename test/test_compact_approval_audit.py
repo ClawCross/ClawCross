@@ -224,7 +224,7 @@ class ApprovalExecutionAuditTests(unittest.IsolatedAsyncioTestCase):
         from webot.engine.agent import UserAwareToolNode
         from webot.policy import ToolHookOutcome, ToolPolicyDecision
 
-        node = UserAwareToolNode([], lambda: [])
+        node = UserAwareToolNode([])
 
         class Capture:
             captured = None
@@ -263,7 +263,7 @@ class ApprovalExecutionAuditTests(unittest.IsolatedAsyncioTestCase):
     async def test_review_blocks_interactive_input(self):
         from webot.engine.agent import UserAwareToolNode
 
-        node = UserAwareToolNode([], lambda: [])
+        node = UserAwareToolNode([])
         state = {
             "user_id": "alice", "session_id": "s", "session_mode": "review",
             "messages": [AIMessage(content="", tool_calls=[{

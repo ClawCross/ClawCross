@@ -172,7 +172,6 @@ KNOWN_PLATFORMS = {
     "acp": "Generic ACP connector",
     "http": "Generic HTTP connector",
     "temp": "Temporary connector",
-    "openclaw:main": "OpenClaw main agent (planned route)",
     "team:default": "ClawCross team route (planned route)",
 }
 ACP_PLATFORMS = {
@@ -481,7 +480,7 @@ def _format_command_rows(rows: list[tuple[str, str]], width: int) -> list[str]:
 
 
 def _platform_status_line(name: str) -> str:
-    if name in {"openclaw:main", "team:default"}:
+    if name == "team:default":
         return "planned"
     tool = _acpx_tool(name)
     if tool in ACP_PLATFORMS:
@@ -2840,7 +2839,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("workflow-manual", help="Print the OASIS workflowpy authoring manual")
 
-    skill = sub.add_parser("skill", help="List skills exposed by OpenClaw agents")
+    skill = sub.add_parser("skill", help="List personal and team skills")
     skill.add_argument("args", nargs="*", help="[<agent>]")
 
     expert = sub.add_parser("expert", help="Manage team personas/experts (list/show/add/edit/delete)")

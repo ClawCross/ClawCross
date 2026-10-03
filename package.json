@@ -15,7 +15,8 @@
     "build:pretext-vendor": "node tools/build/build_pretext_vendor.mjs",
     "build:oasis-town": "node tools/build/build_oasis_town.mjs",
     "test:node": "node test/test_tinyfish_live_shared.js && node test/test_pretext_text_core.js",
-    "test:browser-smoke": "playwright test --config playwright.config.mjs"
+    "test:browser-smoke": "playwright test --config playwright.config.mjs",
+    "build:css": "tailwindcss -c tools/build/tailwind.config.cjs -i tools/build/tailwind.input.css -o src/frontend/static/css/tailwind.css --minify"
   },
   "dependencies": {
     "@chenglou/pretext": "^0.0.7",
@@ -25,6 +26,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",
-    "esbuild": "^0.25.3"
+    "esbuild": "^0.25.3",
+    "tailwindcss": "3.4.17"
   }
 }

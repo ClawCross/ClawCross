@@ -78,6 +78,9 @@ async function loadRuntimeSettingsScope() {
         view.scope = scope;
         const context = payload.settings.context;
         const approval = payload.settings.approval;
+        const inference = payload.settings.inference || {reasoning_effort:''};
+        const capabilities = payload.model_capabilities || {};
+        const levels = capabilities.reasoning_effort_levels || [];
         if (scope === 'session' && ['chat', 'readonly', 'bypass', 'auto'].includes(payload.effective_mode)) approval.mode = payload.effective_mode;
         const escape = value => escapeHtml(String(value)).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         const text = runtimeSettingsText;
@@ -91,12 +94,13 @@ async function loadRuntimeSettingsScope() {
         const autoHint = text('0 表示自动，根据上面设置的窗口调整', '0 = automatic, based on the configured window');
         document.getElementById('runtime-settings-fields').innerHTML = `
             <section id="runtime-settings-context" role="tabpanel" aria-labelledby="runtime-settings-context-tab">
+                ${levels.length ? `<label class="runtime-settings-field"><span>${text('思考强度', 'Reasoning effort')}</span><select data-section="inference" data-key="reasoning_effort" class="runtime-settings-input"><option value="">${text('使用模型预设', 'Use model preset')}${capabilities.reasoning_effort_default ? ' · ' + escape(capabilities.reasoning_effort_default) : ''}</option>${levels.map(level => `<option value="${escape(level)}" ${inference.reasoning_effort === level ? 'selected' : ''}>${escape(level)}</option>`).join('')}</select><small>${escape(capabilities.model || '')}</small></label>` : ''}
                 <div id="runtime-settings-usage">${renderRuntimeContextUsage(payload.context_usage || (typeof sessionContextUsageState !== 'undefined' ? sessionContextUsageState : {}), context.context_window_tokens)}</div>
                 <div class="runtime-settings-toggle-row">
                     <div><h3>${text('自动压缩', 'Automatic compaction')}</h3><p>${text('上下文变长时，整理早期对话并保留近期原文。', 'Summarize older conversations while keeping recent turns intact.')}</p></div>
                     <label class="runtime-settings-switch"><input type="checkbox" data-section="context" data-key="auto_compact" aria-label="${text('自动压缩上下文', 'Compact automatically')}" ${context.auto_compact ? 'checked' : ''}><span aria-hidden="true"></span></label>
                 </div>
-                <label class="runtime-settings-field runtime-settings-capacity"><span>${text('上下文窗口（tokens）', 'Context window (tokens)')}</span><input type="number" data-section="context" data-key="context_window_tokens" min="4096" max="4000000" value="${context.context_window_tokens || 1000000}" class="runtime-settings-input"><small>${text('默认 1M；手动值控制运行预算，请填写服务商支持的容量', 'Default: 1M. Your value controls the budget; use a capacity supported by your provider.')}</small></label>
+                <label class="runtime-settings-field runtime-settings-capacity"><span>${text('上下文窗口（tokens）', 'Context window (tokens)')}</span><input type="number" data-section="context" data-key="context_window_tokens" min="0" max="4000000" value="${context.context_window_tokens}" class="runtime-settings-input"><small>${text('0 表示跟随本地模型目录；手动值优先，请填写服务商支持的容量', '0 follows the local model catalog. An explicit capacity overrides it.')}</small></label>
                 <div class="runtime-settings-grid">
                     ${number('trigger_tokens', '开始压缩时的 token 数', 'Trigger at (tokens)', 0, 4000000, autoHint)}
                     ${number('target_tokens', '压缩后的目标 token 数', 'Compact to (tokens)', 0, 4000000, autoHint)}
@@ -159,7 +163,7 @@ async function saveRuntimeSettingsForm(reset = false) {
     const settings = {};
     for (const input of document.querySelectorAll('#runtime-settings-fields [data-key]')) {
         if (!reset && !input.checkValidity()) {
-            showRuntimeSettingsTab(input.dataset.section);
+            showRuntimeSettingsTab(input.dataset.section === 'inference' ? 'context' : input.dataset.section);
             const advanced = input.closest('details');
             if (advanced) advanced.open = true;
             input.reportValidity();

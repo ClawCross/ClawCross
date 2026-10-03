@@ -120,15 +120,14 @@ class OldNameCalls(unittest.IsolatedAsyncioTestCase):
 
     async def _run(self, node, calls, **state_extra):
         state = {"session_mode": "bypass", "user_id": "alice", "session_id": "s1", "messages": [AIMessage(content="", tool_calls=calls)], **state_extra}
-        with patch("webot.engine.agent.get_session_mode", return_value={"mode": "default"}), \
-                patch("webot.engine.agent.resolve_permission_context", side_effect=_allow_all_permission), \
+        with patch("webot.engine.agent.resolve_permission_context", side_effect=_allow_all_permission), \
                 patch("webot.engine.agent.run_tool_policy_hooks", side_effect=_passthrough_hook_outcome):
             return await node(state, config={})
 
     async def test_an_old_name_runs_the_replacement(self):
         received = {}
         tool = self._write_file_tool(received)
-        node = UserAwareToolNode([tool], lambda: [tool])
+        node = UserAwareToolNode([tool])
         await self._run(node, [{"name": "append_file", "args": {"filename": "a.txt", "content": "x"}, "id": "c1", "type": "tool_call"}])
         self.assertEqual(received["mode"], "append")
         self.assertEqual(received["filename"], "a.txt")
@@ -136,7 +135,7 @@ class OldNameCalls(unittest.IsolatedAsyncioTestCase):
     async def test_stored_enabled_tools_with_old_names_still_allow_the_call(self):
         received = {}
         tool = self._write_file_tool(received)
-        node = UserAwareToolNode([tool], lambda: [tool])
+        node = UserAwareToolNode([tool])
         await self._run(
             node,
             [{"name": "write_file", "args": {"filename": "a.txt", "content": "x"}, "id": "c1", "type": "tool_call"}],
