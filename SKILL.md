@@ -537,14 +537,14 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-10-03T10:23:22.282350+00:00`
+- Updated at: `2026-10-03T10:51:08.477091+00:00`
 - Strategy: `repair-only`
-- Heuristic candidate: `blended-approval-auth-verification-loop-workspace-preflight`
-- Heuristic score: `0.737`
+- Heuristic candidate: `blended-verification-loop-workspace-preflight-approval-auth`
+- Heuristic score: `0.741`
 
 ### Trigger Summary
 
-Human approval continuation regression: the service fixture omitted its system trigger. Fixed and verified.
+Verified the distinction between private MCP retry arguments and public Agent tool schemas after fixing manual network continuation.
 
 ### Strategy Rationale
 
@@ -553,23 +553,24 @@ Human approval continuation regression: the service fixture omitted its system t
 
 ### Latest Trigger Command
 
-`pytest test/test_webot_service.py`
+`pytest test/test_command_sandbox.py test/test_tool_schemas.py`
 
 ### Latest Error Excerpt
 
 ```text
-pytest test/test_webot_service.py: test_session_runtime_and_approval_resolution failed with
-AttributeError: 'NoneType' object has no attribute 'run'. The old fixture supplied system=None;
-human resolution now needs SystemService to schedule the saved action. Fixed the fixture with
-an AsyncMock and verified that approval schedules continuation once, preserves group/tool scope,
-and rejects duplicate, stale, wrong-session and Auto-review overrides.
+Approval/network regression initially failed because test_agent_cannot_request_escalation_through_tool_schema
+checked the private Python transport signature instead of the schema bound to the model. MCP inventory also
+classified the new server-only retry fields as model-visible. Updated both checks to assert those fields are
+hidden in the model/discovery schemas. Agent-supplied escalation is rejected by the execution node.
+The real MCP command test now approves a blocked HTTPS request and executes its exact retry once (HTTP 200).
 ```
 
 ### Verified Resolution
 
-`test_manual_approval_continuation.py`, `test_approval_review.py`, `test_compact_approval_audit.py`,
-`test_agents.py`, `test_system_service.py`, `test_webot_service.py`, `test_skill_evolution.py`:
-141 passed, 35 subtests passed. Studio/Mobile approval controls: 4 browser checks passed.
+`test_manual_approval_continuation.py`, `test_approval_review.py`, `test_command_sandbox.py`,
+`test_tool_schemas.py`, `test_acp_stream_and_bridge.py`, `test_command_landlock_integration.py`:
+149 passed, 2 background cases deselected, 277 subtests passed. Studio/Mobile inline approvals:
+4 browser checks passed. KEEP Y remembers the exact command only; allowed-domain settings stay unchanged.
 
 ### Governance Snapshot
 
@@ -591,15 +592,15 @@ and rejects duplicate, stale, wrong-session and Auto-review overrides.
 
 ### Recent Evidence
 
-- `2026-10-03T10:23:22.282350+00:00` `repo-skill` — ....F.                                                                   [100%]
-=================================== FAILURES ================= ...[truncated]
+- `2026-10-03T10:51:08.477091+00:00` `repo-skill` — ...................................................... [ 36%]
+.F....................................F......................................... ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `blended-approval-auth-verification-loop-workspace-preflight` score `0.737` — Blend the strongest recent failure patterns (intent `repair`)
-- `approval-auth-4` score `0.697` — Preflight auth and approval constraints (intent `repair`)
-- `verification-loop-3` score `0.659` — Tighten verification loops (intent `repair`)
-- `workspace-preflight-1` score `0.584` — Add repo/workspace preflight checks (intent `repair`)
+- `blended-verification-loop-workspace-preflight-approval-auth` score `0.741` — Blend the strongest recent failure patterns (intent `repair`)
+- `verification-loop-5` score `0.701` — Tighten verification loops (intent `repair`)
+- `workspace-preflight-2` score `0.608` — Add repo/workspace preflight checks (intent `repair`)
+- `approval-auth-1` score `0.577` — Preflight auth and approval constraints (intent `repair`)
 
 ### Local State Snapshot
 

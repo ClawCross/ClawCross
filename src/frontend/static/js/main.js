@@ -3729,31 +3729,19 @@ function _escapeHtmlStrip(str) {
 
 function renderStudioApprovalStrip(approvals) {
     const strip = document.getElementById('studio-approval-strip');
-    if (!strip) return;
-    const pending = approvals.filter(a => a.status === 'pending' && (a.review?.reviewer === 'user' || (a.review?.conversation_reply && a.review?.reviewer !== 'auto_review')));
-    if (!pending.length) {
-        strip.style.display = 'none';
-        strip.innerHTML = '';
-        return;
-    }
-    strip.style.display = 'flex';
-    strip.innerHTML = pending.map(item => {
-        const aid = _escapeHtmlStrip(item.approval_id || '');
-        const sid = _escapeHtmlStrip(item.session_id || '');
-        const reason = _escapeHtmlStrip((item.request_reason || '').slice(0, 120));
-        const tool = _escapeHtmlStrip(item.tool_name || '');
-        return `<div class="studio-approval-card">
-            <div class="studio-approval-card-title">${t('approval_required_title')}</div>
-            <div class="studio-approval-card-meta"><strong>${tool}</strong>${reason ? ' · ' + reason : ''}</div>
-            <details><summary>${currentLang === 'zh-CN' ? '查看具体操作' : 'View exact action'}</summary><pre style="white-space:pre-wrap;max-height:160px;overflow:auto;">${_escapeHtmlStrip(JSON.stringify(item.args || {}, null, 2))}</pre></details>
-            ${item.review?.verdict ? `<div class="studio-approval-card-meta">${_escapeHtmlStrip(item.review.verdict.reason || '')}</div>` : ''}
-            <div class="studio-approval-card-actions">
-                <button class="studio-approval-btn approve" onclick="resolveStudioApproval('${aid}','approve',false,'${sid}',this)">${t('approval_approve')}</button>
-                <button class="studio-approval-btn approve-remember" onclick="resolveStudioApproval('${aid}','approve',true,'${sid}',this)">${t('approval_approve_remember')}</button>
-                <button class="studio-approval-btn deny" onclick="resolveStudioApproval('${aid}','deny',false,'${sid}',this)">${t('approval_deny')}</button>
-            </div>
-        </div>`;
-    }).join('');
+    if (strip) { strip.style.display = 'none'; strip.innerHTML = ''; }
+    ClawcrossApproval.sync(document.getElementById('chat-box'), approvals.filter(a => a.session_id === currentSessionId), {
+        appendRequest: raw => appendMessage(raw, false),
+        onReply: reply => {
+            const text = reply.action === 'deny' ? (currentLang === 'zh-CN' ? '拒绝这次操作' : 'Deny this action') :
+                reply.remember ? (currentLang === 'zh-CN' ? '同意并记住这次操作' : 'Allow and remember this action') :
+                (currentLang === 'zh-CN' ? '同意这次操作' : 'Allow this action');
+            const bubble = appendMessage(text, true);
+            bubble.dataset.approvalReply = reply.approval_id;
+        },
+        onResolved: sid => { watchApprovalContinuation(sid); void refreshStudioApprovalStrip(); },
+        onError: error => _projectUpdateToast(error.message),
+    });
 }
 
 async function refreshStudioApprovalStrip() {

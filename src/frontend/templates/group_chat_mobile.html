@@ -30,14 +30,14 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" crossorigin="anonymous"></script>
 <script src="{{ url_for('static', filename='js/snapshot_zip_progress.js') }}?v=20260331-progress"></script>
-<link rel="stylesheet" href="/static/css/markdown-shared.css?v=20261003-approval">
+<link rel="stylesheet" href="/static/css/markdown-shared.css?v=20261003-inline-approval">
 <link rel="stylesheet" href="/static/css/theme.css?v=20261002-fold">
 <script src="/static/js/components.js?v=20261002-runtime-menu"></script>
 <link rel="stylesheet" href="/static/css/external-agent-settings.css?v=20261002-connect">
 <script src="/static/js/runtime-presentation.js?v=20261002-fold"></script>
 <script src="/static/js/external-agent-settings.js?v=20261002-connect"></script>
-<script src="/static/js/approval-ui.js?v=20261003-approval"></script>
-<script src="/static/js/markdown-shared.js?v=20261003-approval"></script>
+<script src="/static/js/approval-ui.js?v=20261003-inline-approval"></script>
+<script src="/static/js/markdown-shared.js?v=20261003-inline-approval"></script>
 <script src="/static/js/tinyfish-live-shared.js"></script>
 <script src="/static/vendor/pretext.global.js?v=20260402-pretext"></script>
 <script src="/static/js/pretext_text_core.js?v=20260402-pretext"></script>
@@ -10332,30 +10332,27 @@ async function resolveMobileToolApproval(approvalId, action, remember, sessionId
 }
 
 function renderPendingApprovalCards(approvals) {
-  approvals = approvals.filter(a => a.status === 'pending' && (a.review?.reviewer === 'user' || (a.review?.conversation_reply && a.review?.reviewer !== 'auto_review')));
   const strip = document.getElementById('approval-strip');
-  if (!strip) return;
-  if (!approvals.length) {
-    strip.classList.remove('show');
-    strip.innerHTML = '';
-    return;
-  }
-  strip.classList.add('show');
-  strip.innerHTML = approvals.map(item => `
-    <div class="approval-card">
-      <div class="approval-card-title">${t('approval_required_title')}</div>
-      <div class="approval-card-meta"><strong>${esc(item.tool_name || '')}</strong></div>
-      <div class="approval-card-meta">${t('approval_reason')}: ${esc(item.request_reason || '')}</div>
-      <details><summary>${_currentLang === 'zh' ? '查看具体操作' : 'View exact action'}</summary><pre style="white-space:pre-wrap;max-height:160px;overflow:auto;">${esc(JSON.stringify(item.args || {}, null, 2))}</pre></details>
-      ${item.review?.verdict ? `<div class="approval-card-meta">${esc(item.review.verdict.reason || '')}</div>` : ''}
-      <div class="approval-card-meta" style="font-family:monospace;">approval_id: ${esc(item.approval_id || '')}</div>
-      <div class="approval-card-actions">
-        <button class="approval-card-btn approve" onclick="resolveMobileToolApproval('${esc(item.approval_id || '')}','approve',false,'${esc(item.session_id || '')}',this)">${t('approval_approve')}</button>
-        <button class="approval-card-btn approve-remember" onclick="resolveMobileToolApproval('${esc(item.approval_id || '')}','approve',true,'${esc(item.session_id || '')}',this)">${t('approval_approve_remember')}</button>
-        <button class="approval-card-btn deny" onclick="resolveMobileToolApproval('${esc(item.approval_id || '')}','deny',false,'${esc(item.session_id || '')}',this)">${t('approval_deny')}</button>
-      </div>
-    </div>
-  `).join('');
+  if (strip) { strip.classList.remove('show'); strip.innerHTML = ''; }
+  ClawcrossApproval.sync(document.getElementById('chat-body'), approvals, {
+    appendRequest: raw => {
+      document.getElementById('chat-body').insertAdjacentHTML('beforeend', renderOneMsgHTML({
+        sender: 'system', sender_name: _currentLang === 'zh' ? '系统' : 'System', content: raw,
+      }));
+      scrollToBottom();
+    },
+    onReply: reply => {
+      const text = reply.action === 'deny' ? (_currentLang === 'zh' ? '拒绝这次操作' : 'Deny this action') :
+        reply.remember ? (_currentLang === 'zh' ? '同意并记住这次操作' : 'Allow and remember this action') :
+        (_currentLang === 'zh' ? '同意这次操作' : 'Allow this action');
+      document.getElementById('chat-body').insertAdjacentHTML('beforeend', renderOneMsgHTML({
+        sender: selfPrincipal(), sender_name: window.__currentUser || '', content: text,
+      }));
+      scrollToBottom();
+    },
+    onResolved: () => { void refreshPendingApprovalsForCurrentGroup(); },
+    onError: error => toast(error.message),
+  });
 }
 
 async function refreshPendingApprovalsForCurrentGroup() {

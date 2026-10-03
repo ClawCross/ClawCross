@@ -32,10 +32,12 @@ class CommandSandboxTests(unittest.TestCase):
                 command_sandbox.bounded_escalation('network', 'example.com:443', Path.cwd())
 
     def test_agent_cannot_request_escalation_through_tool_schema(self):
-        import inspect
+        from langchain_core.tools import StructuredTool
+        from webot.engine.agent import _visible_tool_parameters
         self.assertFalse(hasattr(commander, 'request_sandbox_permission'))
-        self.assertNotIn('sandbox_access', inspect.signature(commander.run_command).parameters)
-        self.assertNotIn('escalation_target', inspect.signature(commander.run_command).parameters)
+        tool = StructuredTool.from_function(coroutine=commander.run_command,name='run_command',description='Command')
+        fields = _visible_tool_parameters(tool)['properties']
+        self.assertFalse({'sandbox_access','escalation_target','escalation_reason'} & set(fields))
 
     def test_failure_scope_respects_maximum_and_rejects_ambiguous_errors(self):
         with tempfile.TemporaryDirectory() as directory:

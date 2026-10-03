@@ -1119,6 +1119,9 @@ async def run_command(
     timeout_seconds: int = 0,
     max_output_chars: int = 0,
     notify_on_done: bool = False,
+    sandbox_access: Literal["default", "read_path", "write_path", "network"] = "default",
+    escalation_target: str = "",
+    escalation_reason: str = "",
 ) -> str:
     """
     在会话工作目录中运行 shell 命令或 Python 代码。mode=foreground 等待结束并返回输出；
@@ -1134,6 +1137,8 @@ async def run_command(
     :param max_output_chars: 前台模式最多返回的输出字符数；0 表示默认值（8000），最小 256
     :param notify_on_done: 后台或交互任务结束后用一条系统消息唤醒本会话并附上状态和输出尾部，无需轮询
     沙盒命令先执行；权限拒绝由系统在管理员上限内审核并至多重试一次。初始化故障不提权。
+    受控联网使用 HTTP_PROXY/HTTPS_PROXY/ALL_PROXY。curl、Python urllib/requests 可使用这些代理；
+    原始 socket 或忽略代理的客户端仍受限制，需要配置客户端使用代理。
     """
     is_python = language == "python"
     interactive = mode == "interactive"
@@ -1146,8 +1151,15 @@ async def run_command(
     sandbox_backend = sandbox_options.command_sandbox
     allowed_domains = getattr(sandbox_options, 'sandbox_allowed_domains', [])
     sandbox_selected = sandbox_backend in {"srt", "auto", "landlock"}
-    sandbox_access, escalation_target, escalation_reason = 'default', '', ''
     workspace_state = resolve_session_workspace(username, session_id, explicit_cwd=cwd)
+    if sandbox_access != 'default':
+        if not sandbox_selected:
+            return '❌ 未启用沙盒，不能重试沙盒权限授权。'
+        from webot.command_sandbox import bounded_escalation
+        try:
+            escalation_target = bounded_escalation(sandbox_access, escalation_target, workspace_state.root)
+        except SandboxUnavailable as exc:
+            return '❌ ' + str(exc)
 
     approval_note = ""
     reject, approval_note = await _command_safety_gate(
@@ -1178,7 +1190,10 @@ async def run_command(
                 sandbox = None
                 try:
                     deadline = time.monotonic() + _bounded_int(timeout_seconds, EXEC_TIMEOUT, 1, MAX_EXEC_TIMEOUT)
-                    for attempt in range(2):
+                    # A resumed, already-approved retry must execute once, with
+                    # its exact grant. It must not repeat the unprivileged attempt.
+                    attempts = 1 if sandbox_access != 'default' else 2
+                    for attempt in range(attempts):
                         try:
                             sandbox = build_sandbox(
                                 root=workspace_state.root, cwd=workspace_state.cwd,
@@ -1198,7 +1213,7 @@ async def run_command(
                             approval_note=approval_note, sandbox=sandbox, execution_report=report,
                         )
                         sandbox.settings_path.unlink(missing_ok=True)
-                        if report.get('exit_code') == 0 or report.get('timed_out') or attempt:
+                        if report.get('exit_code') == 0 or report.get('timed_out') or attempt == attempts - 1:
                             return result
                         try:
                             needed = permission_failure_target(report.get('stderr', ''), workspace_state.root)

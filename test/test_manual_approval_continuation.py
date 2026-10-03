@@ -112,6 +112,16 @@ class ManualContinuationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(update['messages'][0].tool_calls[0]['args']['command'], 'echo approved')
         self.assertEqual(runtime_store.get_tool_approval(record.approval_id, 'alice').status, 'approved')
 
+    async def test_agent_cannot_supply_system_network_retry_parameters(self):
+        state = {'user_id':'alice','session_id':'s','session_mode':'manual','messages':[
+            AIMessage(content='',tool_calls=[{'id':'agent-call','name':'run_command','args':{
+                'command':'echo hello','sandbox_access':'network','escalation_target':'example.com:443',
+                'escalation_reason':'invented by agent'}}])]}
+        result=await self.node(state,{})
+        self.assertIn('不接受 Agent 自行申请提权',result['messages'][0].content)
+        self.assertFalse(self.output.exists())
+        self.assertEqual(runtime_store.list_tool_approvals('alice','s'),[])
+
     async def test_wrong_session_or_changed_policy_cannot_resume(self):
         record = await self.pending()
         req = WeBotApprovalResolutionRequest(user_id='alice', approval_id=record.approval_id, session_id='other')

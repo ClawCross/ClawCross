@@ -319,7 +319,7 @@ async def authorize_action(
             # Explicit deny and absolute command blocks were checked above.
             # Sandbox permissions are reviewed only after a failed execution.
             decision = ToolPolicyDecision(allowed=True)
-        needs_review = ((high_risk and not remembered and not sandboxed_command) or elevated_command) and not bypass
+        needs_review = ((high_risk and not remembered and not sandboxed_command) or (elevated_command and not remembered)) and not bypass
         if decision.allowed and not needs_review and active_approval is not None and active_approval.status == "pending":
             # A trusted policy hook or YOLO may allow a formerly manual request.
             # Close its obsolete queue entry; approved records still require

@@ -37,7 +37,8 @@ def sandbox_failure_hint(stderr: str) -> str:
     )):
         return (
             "❌ SRT 隔离初始化失败：嵌套 user namespace 被系统策略拒绝，命令尚未启动。"
-            "需要管理员检查 AppArmor/bwrap 与 SRT 的兼容性；这不是工作区路径或域名提权问题。"
+            "Linux 上可选择自动或 Landlock 后端，无需修改 AppArmor；固定 SRT 不会自动切换。"
+            "这不是工作区路径或域名提权问题。"
             "不要为此自动申请 host 执行、关闭 seccomp 或降级沙盒。"
         )
     if "Sandbox dependencies not available" in stderr or "bwrap: Creating new namespace failed" in stderr:
