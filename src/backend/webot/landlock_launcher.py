@@ -1,6 +1,6 @@
 """Linux command launcher: inherited Landlock + seccomp, without new namespaces.
 
-No host fallback, network proxy or aggregate process-tree quota.
+No host fallback. Optional supervisor supplies a loopback proxy fence and task cgroup limits.
 The policy is read before restrictions; exec happens only after all filters apply.
 """
 import ctypes
@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import platform
 import resource
+import socket
 import sys
 
 LIBC = ctypes.CDLL(None, use_errno=True)
@@ -46,7 +47,7 @@ def process_budget():
     return max(64, count + 64)
 
 
-def restrict(workspace, extra_read, extra_write):
+def restrict(workspace, extra_read, extra_write, network_ports=()):
     nproc = process_budget()
     if sys.platform != 'linux' or platform.machine() not in {'x86_64', 'aarch64'}:
         raise RuntimeError('Landlock requires Linux x86_64 / aarch64')
@@ -59,6 +60,11 @@ def restrict(workspace, extra_read, extra_write):
     fs = (1 << 16) - 1
     attr = Ruleset(fs, 3, 3)
     fd = check(LIBC.syscall(444, ctypes.byref(attr), ctypes.sizeof(attr), 0), 'create ruleset')
+    class NetRule(ctypes.Structure):
+        _fields_ = [('access', ctypes.c_uint64), ('port', ctypes.c_uint64)]
+    for port in network_ports:
+        rule = NetRule(2, port)  # CONNECT_TCP, never BIND_TCP.
+        check(LIBC.syscall(445, fd, 2, ctypes.byref(rule), 0), 'allow proxy port')
     read = (1 << 0) | (1 << 2) | (1 << 3)
     # Workspace permits ordinary files / directories, never device creation.
     rw = fs & ~((1 << 6) | (1 << 11) | (1 << 15))
@@ -66,6 +72,7 @@ def restrict(workspace, extra_read, extra_write):
     paths += [(p, read) for p in ('/usr', '/bin', '/lib', '/lib64', sys.prefix, sys.base_prefix) if Path(p).exists()]
     paths += [(p, (1 << 2) | (1 << 1)) for p in ('/dev/null',) if Path(p).exists()]
     paths += [(p, 1 << 2) for p in ('/dev/urandom',) if Path(p).exists()]
+    paths += [(p, (1 << 2) | (1 << 3)) for p in ('/etc/ssl/certs', '/etc/pki/tls/certs') if Path(p).exists()]
     paths += [(p, read if Path(p).is_dir() else 1 << 2) for p in extra_read]
     paths += [(p, rw if Path(p).is_dir() else (1 << 1) | (1 << 2) | (1 << 14)) for p in extra_write]
     try:
@@ -92,11 +99,12 @@ def restrict(workspace, extra_read, extra_write):
     if not ctx:
         raise RuntimeError('seccomp_init failed')
     try:
-        for name in ('socket', 'socketpair', 'ptrace', 'process_vm_readv', 'process_vm_writev',
+        denied_calls = (() if network_ports else ('socket',)) + ('socketpair', 'ptrace', 'process_vm_readv', 'process_vm_writev',
                      'setsid', 'setpgid', 'mount', 'umount2', 'pivot_root', 'chroot', 'setns', 'unshare', 'bpf',
                      'perf_event_open', 'open_by_handle_at', 'io_uring_setup',
                      'shmget', 'shmat', 'shmctl', 'shmdt', 'semget', 'semop', 'semtimedop', 'semctl',
-                     'msgget', 'msgsnd', 'msgrcv', 'msgctl', 'chmod', 'fchmod', 'fchmodat', 'fchmodat2', 'chown', 'fchown', 'lchown', 'fchownat'):
+                     'msgget', 'msgsnd', 'msgrcv', 'msgctl', 'chmod', 'fchmod', 'fchmodat', 'fchmodat2', 'chown', 'fchown', 'lchown', 'fchownat')
+        for name in denied_calls:
             number = sec.seccomp_syscall_resolve_name(name.encode())
             if number >= 0:
                 result = sec.seccomp_rule_add(ctx, 0x50000 | errno.EPERM, number, 0)
@@ -107,6 +115,16 @@ def restrict(workspace, extra_read, extra_write):
             _fields_ = [('arg', ctypes.c_uint), ('op', ctypes.c_int),
                         ('a', ctypes.c_uint64), ('b', ctypes.c_uint64)]
         sec.seccomp_rule_add_array.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_int, ctypes.c_uint, ctypes.POINTER(ArgCompare)]
+        if network_ports:
+            number = sec.seccomp_syscall_resolve_name(b'socket')
+            filters = [ArgCompare(0, 1, socket.AF_INET, 0), ArgCompare(2, 6, 6, 0)]
+            # Only IPv4 TCP sockets to the local proxy. The proxy can resolve
+            # IPv4/IPv6 upstreams; UDP, UNIX, raw/SCTP sockets are never allowed.
+            filters += [ArgCompare(1, 7, 15, kind) for kind in range(16) if kind != socket.SOCK_STREAM]
+            filters += [ArgCompare(2, 4, proto, 0) for proto in range(1,6)]
+            for comparison in filters:
+                if sec.seccomp_rule_add_array(ctx, 0x50000 | errno.EPERM, number, 1, ctypes.byref(comparison)) != 0:
+                    raise RuntimeError('seccomp network rule failed')
         number = sec.seccomp_syscall_resolve_name(b'prlimit64')
         if number >= 0 and sec.seccomp_rule_add_array(ctx, 0x50000 | errno.EPERM, number, 1, ctypes.byref(ArgCompare(0, 1, 0, 0))) != 0:
             raise RuntimeError('seccomp prlimit64 rule failed')
@@ -128,7 +146,23 @@ def restrict(workspace, extra_read, extra_write):
 
 def main():
     settings = json.loads(Path(sys.argv[1]).read_text())
-    restrict(settings['root'], settings.get('read_paths', []), settings.get('write_paths', []))
+    ports = settings.get('network_ports', [])
+    if ports:
+        # A kernel that silently skips systemd's BPF policy must never run the
+        # command. The supervisor verified this endpoint is reachable outside
+        # the fence; this unit must reach loopback and fail non-loopback access.
+        host, port = settings['network_probe']
+        with socket.create_connection(('127.0.0.1', port), timeout=.7) as probe:
+            if probe.recv(64) != b'clawcross-fence-probe':
+                raise RuntimeError('Loopback proxy fence probe failed')
+        try:
+            probe = socket.create_connection((host, port), timeout=.3)
+        except OSError:
+            pass
+        else:
+            probe.close()
+            raise RuntimeError('Network fence is not enforced')
+    restrict(settings['root'], settings.get('read_paths', []), settings.get('write_paths', []), ports)
     os.execv(sys.argv[2], sys.argv[2:])
 
 

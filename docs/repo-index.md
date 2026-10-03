@@ -139,7 +139,9 @@ A WeBot session is its agent: listed, read, compacted and deleted through `/v1/a
 - `src/backend/webot/compression.py`
 - `src/backend/webot/runtime_settings.py`
 - `src/backend/webot/approval_review.py`
-- `src/backend/webot/command_sandbox.py` — SRT command isolation and scoped escalation policies
+- `src/backend/webot/command_sandbox.py` — SRT/Landlock command isolation and scoped escalation policies
+- `src/backend/webot/landlock_network.py` — temporary systemd network fence and per-command HTTP/SOCKS proxies
+- `src/backend/webot/landlock_launcher.py` — inherited kernel restrictions and basic resource limits
 - `src/backend/webot/approval_actions.py`
 - `src/backend/webot/permission_context.py`
 - `src/backend/webot/policy.py`

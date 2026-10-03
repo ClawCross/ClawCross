@@ -1,7 +1,7 @@
-"""Native SRT isolation for commands in Auto approval mode.
+"""Command isolation backends and bounded system-managed permission retries.
 
 The model reviewer remains responsible for authorization.  This module only
-constructs a bounded SRT process with an explicit, per-command policy.
+constructs a bounded sandbox process with an explicit, per-command policy.
 """
 
 from __future__ import annotations
@@ -79,7 +79,7 @@ def bounded_escalation(access: str, target: str, root: Path) -> str:
         raise SandboxUnavailable('提权目标已改变，必须重新审核。')
     maximum = escalation_ceiling()[access]
     if access == 'network':
-        allowed = target in maximum  # Exact host/port only, no wildcard expansion.
+        allowed = target in maximum or target.rsplit(':',1)[0] in maximum  # Exact hostname; a bare host ceiling covers its ports.
     else:
         path = Path(target)
         if any(path.is_relative_to(prefix) for prefix in (Path('/proc'), Path('/sys'), Path('/dev'), Path('/etc'))):
@@ -164,6 +164,8 @@ def normalize_escalation(access: str, target: str, root: Path) -> str:
         domain = target.strip().lower()
         if not re.fullmatch(r"[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::[0-9]{1,5})?", domain) or ".." in domain:
             raise SandboxUnavailable("网络提权只能指定一个域名或域名:端口，不接受通配符、URL 或 IP 范围。")
+        if ':' in domain and not 1 <= int(domain.rsplit(':',1)[1]) <= 65535:
+            raise SandboxUnavailable('网络目标端口必须在 1–65535 范围内。')
         host = domain.split(":", 1)[0]
         try:
             address = ipaddress.ip_address(host)
@@ -277,7 +279,7 @@ def _policy(root: Path, settings_path: Path, *, access: str = "default", target:
 def build_srt_command(*, root: Path, cwd: Path, command: str, language: str,
                       python_executable: str, script_path: Path | None = None,
                       interactive: bool = False, access: str = "default",
-                      target: str = "") -> SrtCommand:
+                      target: str = "", allowed_domains: list[str] | None = None, wall_timeout: int = 180) -> SrtCommand:
     """Create an SRT invocation with a private settings file; never use a host shell."""
     root, cwd = root.resolve(), cwd.resolve()
     if not cwd.is_relative_to(root):
@@ -301,7 +303,9 @@ def build_srt_command(*, root: Path, cwd: Path, command: str, language: str,
     settings_path = Path(raw_path)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(_policy(root, settings_path, access=access, target=target, srt_binary=binary), handle, ensure_ascii=False)
+            config = _policy(root, settings_path, access=access, target=target, srt_binary=binary)
+            config['network']['allowedDomains'] = list(dict.fromkeys([*(allowed_domains or []), *([target] if access == 'network' else [])]))
+            json.dump(config, handle, ensure_ascii=False)
         limited = (sys.executable, "-c", _LIMIT_CODE, *wrapped)
         return SrtCommand((binary, "--settings", str(settings_path), "--", *limited), settings_path)
     except BaseException:
@@ -318,14 +322,16 @@ def landlock_available() -> bool:
 
 def build_landlock_command(*, root: Path, cwd: Path, command: str, language: str,
                            python_executable: str, script_path: Path | None = None,
-                           interactive: bool = False, access: str = "default", target: str = "") -> SrtCommand:
+                           interactive: bool = False, access: str = "default", target: str = "",
+                           allowed_domains: list[str] | None = None, wall_timeout: int = 180) -> SrtCommand:
     if not landlock_available():
         raise SandboxUnavailable("Landlock 需要 Linux x86_64/aarch64、ABI ≥ 6、libseccomp 及非 root 账号；不会降级为宿主执行。")
     root, cwd = root.resolve(), cwd.resolve()
     if not cwd.is_relative_to(root):
         raise SandboxUnavailable("命令工作目录超出会话工作区。")
-    if access == "network":
-        raise SandboxUnavailable("Landlock 后端禁用全部网络，尚不支持网络提权。")
+    controlled_network = network_fence_available()
+    if not controlled_network and (access == "network" or allowed_domains):
+        raise SandboxUnavailable("受控联网需要可管理的 systemd/cgroup 网络规则；当前环境不支持，未执行命令。")
     target = bounded_escalation(access, target, root) if access != "default" else normalize_escalation(access, target, root)
     if language == "python":
         if script_path is None or not script_path.resolve().is_relative_to(root):
@@ -342,8 +348,10 @@ def build_landlock_command(*, root: Path, cwd: Path, command: str, language: str
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             json.dump({"root": str(root), "read_paths": [target] if access == "read_path" else [],
-                       "write_paths": [target] if access == "write_path" else []}, handle)
-        launcher = Path(__file__).with_name("landlock_launcher.py")
+                       "write_paths": [target] if access == "write_path" else [],
+                       "allowed_domains": list(dict.fromkeys([*(allowed_domains or []), *([target] if access == 'network' else [])])),
+                       "wall_timeout": max(1, int(wall_timeout))}, handle)
+        launcher = Path(__file__).with_name("landlock_network.py" if controlled_network else "landlock_launcher.py")
         return SrtCommand((sys.executable, str(launcher), str(settings_path), *wrapped), settings_path,
                           backend="landlock", temporary_dir=temporary_dir)
     except BaseException:
@@ -385,3 +393,19 @@ def select_sandbox_backend(requested: str, *, root: Path, cwd: Path, env: dict) 
     if landlock_available():
         return "landlock"
     raise SandboxUnavailable("SRT 探测失败，且当前内核不支持 Landlock + seccomp；命令未启动。")
+
+
+def network_fence_available() -> bool:
+    """A hint; each unit verifies actual network enforcement before exec."""
+    if sys.platform != 'linux':
+        return False
+    try:
+        if Path('/proc/1/comm').read_text().strip() != 'systemd':
+            return False
+        if not all(shutil.which(name) for name in ('sudo','systemd-run','ip')):
+            return False
+        # Test this exact trusted operation, never rely on a TTY/polkit prompt.
+        return subprocess.run(['sudo','-n','systemctl','show','--property=Version'],
+            stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=2).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
