@@ -278,7 +278,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue((await self.authorize()).allowed)
         reviewer.assert_not_called()
 
-    async def test_keep_y_remembers_exact_network_retry_without_widening_session(self):
+    async def test_human_keep_y_saves_only_current_session_network_capability(self):
         from webot.permission_context import resolve_permission_request
         store.save_session_mode('alice','s',mode='manual')
         runtime_settings.save_runtime_settings('alice',settings={'approval':{'command_sandbox':'landlock'}})
@@ -290,13 +290,110 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(pending.pending)
             resolve_permission_request(user_id='alice',approval_id=pending.approval_id,action='approved',remember=True)
             self.assertTrue((await self.authorize(args=args)).allowed)
-            remembered=await self.authorize(args=args)
-            self.assertTrue(remembered.allowed)
-            self.assertEqual(remembered.approval_id,'')
             different=await self.authorize(args={**args,'command':'git log'})
             self.assertTrue(different.pending)
         reviewer.assert_not_called()
-        self.assertEqual(runtime_settings.get_runtime_settings('alice','s').approval.sandbox_allowed_domains,[])
+        settings = runtime_settings.get_runtime_settings('alice','s').approval
+        self.assertEqual(settings.sandbox_allowed_domains, [])
+        self.assertEqual([g.model_dump() for g in settings.sandbox_grants],
+                         [{'access':'network','target':'example.org:443'}])
+        self.assertEqual(runtime_settings.get_runtime_settings('alice','other').approval.sandbox_grants, [])
+
+    async def test_ai_keep_y_remembers_only_exact_action_in_authenticated_session(self):
+        verdict = self.verdict.model_copy(update={'decision':'keep'})
+        with patch.object(review, 'run_reviewer', return_value=verdict) as model:
+            approved = await self.authorize(transfer_to_command=True)
+            self.assertTrue(approved.allowed, approved.reason)
+            self.assertTrue(store.consume_execution_permit('alice', 's', 'run_command', canonical_action_args('run_command',self.args), approved.binding_hash))
+            again = await self.authorize()
+            self.assertTrue(again.allowed, again.reason)
+            self.assertEqual(again.approval_id, '')
+            model.assert_awaited_once()
+            await self.authorize(args={**self.args,'command':'git log'})
+            self.assertEqual(model.await_count, 2)
+            await review.authorize_action(user_id='alice', session_id='other', tool_name='run_command',
+                args={**self.args, '_approval_session':'s'}, messages=self.messages)
+            self.assertEqual(model.await_count, 3)
+        metadata = json.loads(store.get_tool_approval(approved.approval_id, 'alice').review_metadata_json)
+        self.assertTrue(metadata['remembered'])
+        self.assertEqual(metadata['verdict']['decision'], 'keep')
+
+    async def test_ai_keep_y_works_for_web_url_but_not_other_urls_or_agents(self):
+        policy.save_tool_policy_config('alice', {'tools':{'web_fetch':{'approval':'allow'}}})
+        verdict = self.verdict.model_copy(update={'decision':'keep'})
+        args = {'url':'https://example.com', 'username':'alice', 'session_id':'s'}
+        with patch.object(review, 'run_reviewer', return_value=verdict) as model:
+            async def fetch(arguments=args, session='s'):
+                return await review.authorize_action(user_id='alice', session_id=session,
+                    tool_name='web_fetch', args=arguments, messages=self.messages)
+            self.assertTrue((await fetch()).allowed)
+            self.assertEqual((await fetch()).approval_id, '')
+            model.assert_awaited_once()
+            await fetch({**args,'url':'https://example.org'})
+            self.assertEqual(model.await_count, 2)
+            await fetch({**args,'session_id':'other'}, session='other')
+            self.assertEqual(model.await_count, 3)
+        policy.save_tool_policy_config('alice', {'tools':{'web_fetch':{'approval':'deny'}}})
+        with patch.object(review, 'run_reviewer') as model:
+            denied = await review.authorize_action(user_id='alice', session_id='s', tool_name='web_fetch',
+                args=args, messages=self.messages)
+            self.assertFalse(denied.allowed)
+            model.assert_not_called()
+
+    async def test_ai_network_keep_y_requires_authorization_and_ceiling(self):
+        runtime_settings.save_runtime_settings('alice',settings={'approval':{'command_sandbox':'landlock'}})
+        args={**self.args,'sandbox_access':'network','escalation_target':'example.org:443',
+              'escalation_reason':'系统检测到代理拒绝此目标。'}
+        invalid = self.verdict.model_copy(update={'decision':'keep','authorization_sources':[]})
+        with patch.dict('os.environ',{'CLAWCROSS_SANDBOX_MAX_DOMAINS':'["example.org:443"]'}), \
+             patch.object(review,'run_reviewer',return_value=invalid) as model:
+            result = await self.authorize(args=args)
+            self.assertFalse(result.allowed)
+            self.assertFalse(result.pending)
+            self.assertEqual(runtime_settings.get_runtime_settings('alice','s').approval.sandbox_grants, [])
+        verdict = self.verdict.model_copy(update={'decision':'keep'})
+        with patch.dict('os.environ',{'CLAWCROSS_SANDBOX_MAX_DOMAINS':'[]'}), \
+             patch.object(review,'run_reviewer',return_value=verdict) as model:
+            result = await self.authorize(args=args)
+            self.assertFalse(result.allowed)
+            model.assert_not_called()
+        with patch.dict('os.environ',{'CLAWCROSS_SANDBOX_MAX_DOMAINS':'["example.org:443"]'}), \
+             patch.object(review,'run_reviewer',return_value=verdict) as model:
+            # A new trusted request makes the previously denied action eligible again.
+            messages = [*self.messages, HumanMessage(content='此会话以后持续访问 example.org 的公开网页',
+                id='user-2', additional_kwargs={'input_origin':'user'})]
+            result = await self.authorize(args=args, messages=messages, transfer_to_command=True)
+            self.assertTrue(result.allowed, result.reason)
+            self.assertTrue(store.consume_execution_permit('alice','s','run_command',canonical_action_args('run_command',args),result.binding_hash))
+        self.assertEqual([g.model_dump() for g in runtime_settings.get_runtime_settings('alice','s').approval.sandbox_grants],
+                         [{'access':'network','target':'example.org:443'}])
+        self.assertEqual(runtime_settings.get_runtime_settings('alice','other').approval.sandbox_grants, [])
+
+    async def test_ai_y_does_not_save_permissions(self):
+        with patch.object(review,'run_reviewer',return_value=self.verdict) as model:
+            self.assertTrue((await self.authorize()).allowed)
+            self.assertTrue((await self.authorize()).allowed)
+            self.assertEqual(model.await_count, 2)
+        self.assertEqual(runtime_settings.get_runtime_settings('alice','s').approval.sandbox_grants, [])
+        self.assertFalse(policy.get_tool_policy('alice').tools['run_command'].approved_args)
+
+    async def test_ai_keep_save_failure_denies_without_execution_permit(self):
+        verdict = self.verdict.model_copy(update={'decision':'keep'})
+        with patch.object(review,'run_reviewer',return_value=verdict), \
+             patch('webot.permission_context.remember_approval_in_policy',side_effect=ValueError('grant limit')):
+            result = await self.authorize(transfer_to_command=True)
+        self.assertFalse(result.allowed)
+        self.assertFalse(result.pending)
+        self.assertIn('无法保存 KEEP Y',result.reason)
+        self.assertFalse(store.consume_execution_permit('alice','s','run_command',canonical_action_args('run_command',self.args),review.policy_binding('alice','s')))
+        metadata = json.loads(store.get_tool_approval(result.approval_id,'alice').review_metadata_json)
+        self.assertEqual(metadata['remember_error'],'ValueError')
+
+    async def test_wire_y_n_and_keep_y_are_normalized(self):
+        for wire, decision in [('Y','approve'),('N','deny'),('KEEP Y','keep'),('keepy','keep')]:
+            with self.subTest(wire=wire):
+                verdict = review.parse_review_verdict({**self.verdict.model_dump(),'decision':wire})
+                self.assertEqual(verdict.decision,decision)
 
     async def test_user_decision_wins_if_reviewer_finishes_later(self):
         from webot.permission_context import resolve_permission_request
@@ -406,7 +503,8 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
             result = await self.authorize()
         self.assertTrue(result.allowed)
         self.assertTrue((await self.authorize()).allowed)
-        self.assertTrue(policy.evaluate_tool_policy(policy.get_tool_policy("alice"), "run_command", self.args).allowed)
+        self.assertTrue(policy.evaluate_tool_policy(policy.get_tool_policy("alice"), "run_command", {**self.args,'_approval_session':'s'}).allowed)
+        self.assertFalse(policy.evaluate_tool_policy(policy.get_tool_policy("alice"), "run_command", {**self.args,'_approval_session':'other'}).allowed)
         self.assertTrue(policy.evaluate_tool_policy(policy.get_tool_policy("alice"), "run_command", self.args | {"cwd": "other"}).requires_approval)
 
     async def test_auto_denials_stop_after_three_without_extra_model_call(self):
@@ -507,7 +605,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_reviewer_uses_api_json_schema_without_action_tools(self):
         model = Mock()
-        model.bind.return_value.ainvoke = AsyncMock(return_value=AIMessage(content=json.dumps(self.verdict.model_dump())))
+        model.bind.return_value.ainvoke = AsyncMock(return_value=AIMessage(content=json.dumps({**self.verdict.model_dump(),'decision':'Y'})))
         with patch("common.llm_factory.create_chat_model", return_value=model) as create, \
              patch('webot.engine.tool_schema._model_classes', return_value={'BaseChatOpenAI'}):
             result = await review.run_reviewer(tool_name="run_command", args=self.args,
@@ -519,7 +617,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         spec = model.bind.call_args.kwargs['response_format']['json_schema']
         self.assertEqual(spec['name'], 'approval_verdict')
         self.assertTrue(spec['strict'])
-        self.assertEqual(spec['schema']['properties']['decision']['enum'], ['approve', 'deny'])
+        self.assertEqual(spec['schema']['properties']['decision']['enum'], ['Y', 'N', 'KEEP Y'])
         self.assertFalse(spec['schema']['additionalProperties'])
         self.assertEqual(set(spec['schema']['required']), {'decision', 'reason', 'risk', 'authorization_sources'})
         payload = model.bind.return_value.ainvoke.call_args.args[0]
@@ -548,7 +646,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
             timeout=17, max_retries=0, max_tokens=4096)
         client = AsyncMock()
         client.responses.create.return_value = SimpleNamespace(status='completed', output=[],
-            output_text=json.dumps(self.verdict.model_dump()), usage=None)
+            output_text=json.dumps({**self.verdict.model_dump(),'decision':'Y'}), usage=None)
         with patch('common.llm_factory.create_chat_model', return_value=model), \
              patch('webot.engine.deepseek_responses.AsyncOpenAI', return_value=client) as sdk:
             result = await review.run_reviewer(tool_name='run_command', args=self.args,
@@ -556,7 +654,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, self.verdict)
         request = client.responses.create.call_args.kwargs
         self.assertEqual(request['text']['format']['type'], 'json_schema')
-        self.assertEqual(request['text']['format']['schema']['properties']['decision']['enum'], ['approve', 'deny'])
+        self.assertEqual(request['text']['format']['schema']['properties']['decision']['enum'], ['Y', 'N', 'KEEP Y'])
         self.assertEqual(request['max_output_tokens'], 4096)
         self.assertNotIn('tools', request)
         self.assertNotIn('tool_choice', request)
@@ -615,8 +713,8 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         context = review.review_context(self.messages + [HumanMessage(content='KEEP Y '+pending.approval_id,id='yes-2',additional_kwargs={'input_origin':'user'})])
         self.assertIn('已批准', review.resolve_conversation_reply('alice','s',context))
         saved = policy.get_tool_policy('alice')
-        self.assertTrue(policy.evaluate_tool_policy(saved,'run_command',canonical_action_args('run_command',self.args)).allowed)
-        self.assertTrue(policy.evaluate_tool_policy(saved,'run_command',canonical_action_args('run_command',self.args | {'command':'git reset --hard'})).requires_approval)
+        self.assertTrue(policy.evaluate_tool_policy(saved,'run_command',canonical_action_args('run_command',{**self.args,'_approval_session':'s'})).allowed)
+        self.assertTrue(policy.evaluate_tool_policy(saved,'run_command',canonical_action_args('run_command',self.args | {'command':'git reset --hard','_approval_session':'s'})).requires_approval)
 
     async def test_y_requires_id_with_multiple_requests_and_cannot_approve_new_request(self):
         store.save_session_mode('alice', 's', mode='agent')

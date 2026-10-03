@@ -142,6 +142,16 @@ async function loadRuntimeSettingsScope() {
                     <textarea data-section="approval" data-key="sandbox_allowed_domains" data-value-type="lines" class="runtime-settings-input" rows="2" placeholder="example.com:443">${escapeHtml((approval.sandbox_allowed_domains || []).join('\n'))}</textarea>
                     <small>${text('每行一个域名或公网 IP，可加端口；不接受 URL 或通配符。留空时不直接放行任何网站，新目标按当前模式审核。脚本须使用沙盒提供的 HTTP/SOCKS 代理；直接连接仍被阻止。', 'One domain or public IP per line, optionally with a port; no URLs or wildcards. An empty list grants no direct access; new destinations are reviewed under the current mode. Scripts must use the sandbox HTTP/SOCKS proxies; direct connections remain blocked.')}</small>
                     ${networkClosed ? `<small class="runtime-settings-error">${text('管理员显式关闭了网络提权，未列出的目标不能送审。', 'The administrator explicitly disabled network escalation; unlisted destinations cannot be reviewed.')}</small>` : ''}</label>
+                <input type="hidden" data-section="approval" data-key="sandbox_grants" data-value-type="json" value="${escape(JSON.stringify(approval.sandbox_grants || []))}">
+                <details class="runtime-settings-advanced"><summary>${text('已记住的沙盒权限', 'Remembered sandbox permissions')}<span>${(approval.sandbox_grants || []).length}</span></summary>
+                    <div class="runtime-settings-advanced-body">
+                        <p class="runtime-settings-note">${text('KEEP Y 保存具体目标和访问类型，下次命令自动使用；仍受管理员权限上限约束。移除后点击保存设置。', 'KEEP Y saves the specific target and access type for later commands, subject to administrator limits. Save settings after removing an entry.')}</p>
+                        ${(approval.sandbox_grants || []).map(grant => `<div class="runtime-settings-field" data-sandbox-grant>
+                            <span style="overflow-wrap:anywhere">${text({network:'联网',read_path:'只读',write_path:'读写'}[grant.access], {network:'Network',read_path:'Read',write_path:'Read/write'}[grant.access])} · ${escapeHtml(grant.target)}</span>
+                            <button type="button" class="btn btn-secondary" data-access="${escape(grant.access)}" data-target="${escape(grant.target)}" onclick="removeRememberedSandboxGrant(this)">${text('移除', 'Remove')}</button>
+                        </div>`).join('')}
+                    </div>
+                </details>
                 ${typeof componentControlMarkup === 'function' ? componentControlMarkup('srt') : ''}
                 ${instructions('approval', 'reviewer_policy', approval.reviewer_policy, '补充审核要求', 'Additional review instructions', '例如：允许安装任务所需依赖；删除文件没有明确授权时拒绝', 'For example: allow task dependencies; deny deletion without explicit authorization')}
                 <details class="runtime-settings-advanced"><summary>${text('高级审核设置', 'Advanced review settings')}<span>${text('模型与等待时间', 'Model and timeout')}</span></summary>
@@ -177,7 +187,7 @@ async function saveRuntimeSettingsForm(reset = false) {
             input.reportValidity();
             return;
         }
-        const value = input.dataset.valueType === 'lines' ? input.value.split(/\n/).map(v => v.trim()).filter(Boolean) : input.type === 'checkbox' ? input.checked : input.type === 'number' ? Number(input.value) : input.value;
+        const value = input.dataset.valueType === 'json' ? JSON.parse(input.value) : input.dataset.valueType === 'lines' ? input.value.split(/\n/).map(v => v.trim()).filter(Boolean) : input.type === 'checkbox' ? input.checked : input.type === 'number' ? Number(input.value) : input.value;
         const {section, key} = input.dataset;
         if (JSON.stringify(value) !== JSON.stringify(view.original[section][key])) (settings[section] ||= {})[key] = value;
     }
@@ -209,6 +219,17 @@ function showRuntimeSettingsTab(section) {
     }
 }
 
+function removeRememberedSandboxGrant(button) {
+    const input = document.querySelector('#runtime-settings-fields [data-key="sandbox_grants"]');
+    const grants = JSON.parse(input.value);
+    input.value = JSON.stringify(grants.filter(grant => grant.access !== button.dataset.access || grant.target !== button.dataset.target));
+    const row = button.closest('[data-sandbox-grant]');
+    const count = row.closest('details').querySelector('summary span');
+    row.remove();
+    count.textContent = JSON.parse(input.value).length;
+    document.getElementById('runtime-settings-result').textContent = runtimeSettingsText('已移除，请保存设置。', 'Removed. Save settings to apply.');
+}
+
 function updateRuntimeReviewerHint() {
     const mode = document.querySelector('#runtime-settings-fields [data-key="mode"]').value;
     const hints = {
@@ -216,7 +237,7 @@ function updateRuntimeReviewerHint() {
         readonly: ['可以查看文件、搜索和分析；不能写入、执行命令或发送消息。', 'View files, search and analyze. No writes, commands, or messages.'],
         manual: ['全部工具可用；允许的操作直接执行，需要批准的操作由你通过按钮或当前对话中的 Y/N/KEEP Y 确认。', 'All tools are available. Allowed actions run directly; approval requests are confirmed by you using buttons or Y/N/KEEP Y in the conversation.'],
         bypass: ['开放工具并跳过操作确认。显式禁止规则仍然生效。', 'Tools are available without confirmation. Explicit deny rules still apply.'],
-        auto: ['允许的操作直接执行；需要批准的操作由 AI 审核。依据不足或审核失败时不执行操作，可在后续对话中明确授权。', 'Allowed actions run directly; AI reviews approval requests. If authorization is insufficient or review fails, the action is blocked; you can give explicit authorization in a later message.'],
+        auto: ['允许的操作直接执行；需要批准的操作由 AI 选择 Y、N 或 KEEP Y。KEEP Y 在当前 Agent 记住授权；依据不足或审核失败时不执行，可在后续对话中明确授权。', 'Allowed actions run directly; AI chooses Y, N, or KEEP Y for approval requests. KEEP Y remembers permission for this Agent; insufficient authorization or review failure blocks execution. You can authorize it in a later message.'],
     };
     document.getElementById('runtime-settings-reviewer-hint').textContent = runtimeSettingsText(...hints[mode]);
 }

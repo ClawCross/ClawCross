@@ -537,14 +537,14 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-10-03T12:14:54.669795+00:00`
+- Updated at: `2026-10-03T12:49:09.947940+00:00`
 - Strategy: `repair-only`
-- Heuristic candidate: `blended-verification-loop-approval-auth-structured-output`
-- Heuristic score: `0.722`
+- Heuristic candidate: `blended-verification-loop-approval-auth-bounded-execution`
+- Heuristic score: `0.756`
 
 ### Trigger Summary
 
-Command exited with code 0. Command: (external failure context). Signals: verification-loop, approval-auth, structured-output. stdout was used as fallback failure evidence.
+Command exited with code 1. Command: (external failure context). Signals: verification-loop, bounded-execution, approval-auth. stdout was used as fallback failure evidence.
 
 ### Strategy Rationale
 
@@ -553,17 +553,17 @@ Command exited with code 0. Command: (external failure context). Signals: verifi
 
 ### Latest Trigger Command
 
-`PYTHONPATH=src:src/backend:. python -m pytest test/test_approval_review.py test/test_mcp_search.py test/test_manual_approval_continuation.py test/test_tool_schemas.py test/test_acp_stream_and_bridge.py -q`
+`PYTHONPATH=src:src/backend:. python -m pytest test/test_approval_review.py test/test_runtime_settings.py test/test_command_sandbox.py test/test_command_landlock_integration.py test/test_manual_approval_continuation.py test/test_tool_schemas.py test/test_webot_policy.py -k "not background_command" -q`
 
 ### Latest Error Excerpt
 
 ```text
-Runtime gap: web_search/web_fetch default policy allowed network I/O without review, and the MCP service had no identity-bound gate.
-Regression exposed duplicate review: expected reviewer once, awaited 2 times.
-Cause: the model could supply another session; now web identity and session are forcibly bound to the calling runtime, and one exact permit transfers to MCP.
-Verification: 128 tests passed, 261 subtests passed across approval, search, continuation, schemas and ACP bridge.
-Real provider + actual MCP HTTP integration: one DeepSeek JSON Schema review, valid original-user authorization, Example Domain received with HTTP 200.
-Sandbox grants were not changed: one-time approval does not create a session domain/path whitelist; KEEP Y records exact parameters.
+Regression: KEEP Y permission was saved, but the generic metadata updater ignored used approvals.
+Fix: record_approval_memory updates only a consumed approval and preserves its execution metadata.
+Other fixes: scope remembered actions to the authenticated session; normalize permit arguments; retain the 40,000-character tool schema budget; locate the permission summary independently of its count.
+Verification: 168 backend tests and 302 subtests passed in the focused batch; its 2 failed cases both passed after fixes. Three added boundary tests and 4 subtests passed. Three focused browser tests passed (the grant removal case was fixed and rerun).
+Actual Landlock: persistent read cannot delete, another Agent requires review, ceiling/revocation removes access; remembered HTTPS destination works without a second review.
+Actual configured reviewer: native JSON Schema returned KEEP Y with a valid original-user source.
 ```
 
 ### Governance Snapshot
@@ -571,14 +571,15 @@ Sandbox grants were not changed: one-time approval does not create a session dom
 - Suppressed signals: (none)
 - Consecutive repair cycles: `0`
 - Consecutive empty cycles: `0`
-- Recent failure ratio: `0.0`
+- Recent failure ratio: `1.0`
 
 ### Operating Adjustments
 
 1. Start from the narrowest reproducible failure before broad retries.
 2. Record repo/cwd/entrypoint assumptions explicitly when failures mention paths or imports.
 3. End every fix attempt with an explicit verifier command and observed result.
-4. Web tools review before network I/O and force the current user/session. Transfer one exact permit into MCP to avoid double review; fetching search results requires per-URL review. Successful sandbox access is not persistent permission.
+4. Web tools review before network I/O and force the current user/session. Transfer one exact permit into MCP to avoid double review; fetching search results requires per-URL review.
+5. Only KEEP Y persists a permission. Revalidate sandbox grants against current ceilings and resolved targets for every command; bind other remembered actions to the authenticated session. Record saved authorization after atomic consumption without reopening the approval. Keep the strict tool schema within its existing budget.
 
 ### Validation Loop
 
@@ -587,15 +588,14 @@ Sandbox grants were not changed: one-time approval does not create a session dom
 
 ### Recent Evidence
 
-- `2026-10-03T12:14:54.669795+00:00` `repo-skill` — Runtime gap: web_search/web_fetch default policy allowed network I/O without review, and the MCP service had no identity-bound gate.
-Regressio ...[truncated]
+- Verified: KEEP Y: session capabilities and exact-action grants verified; consumed approvals need a dedicated audit update; canonical arguments and scoped hashes are required.
 
 ### Candidate Frontier Snapshot
 
-- `blended-verification-loop-approval-auth-structured-output` score `0.722` — Blend the strongest recent failure patterns (intent `repair`)
-- `verification-loop-4` score `0.682` — Tighten verification loops (intent `repair`)
-- `approval-auth-2` score `0.614` — Preflight auth and approval constraints (intent `repair`)
-- `structured-output-2` score `0.614` — Harden structured-output handling (intent `repair`)
+- `blended-verification-loop-approval-auth-bounded-execution` score `0.756` — Blend the strongest recent failure patterns (intent `repair`)
+- `verification-loop-3` score `0.716` — Tighten verification loops (intent `repair`)
+- `approval-auth-1` score `0.603` — Preflight auth and approval constraints (intent `repair`)
+- `bounded-execution-2` score `0.467` — Bound long-running and flaky execution (intent `optimize`)
 
 ### Local State Snapshot
 

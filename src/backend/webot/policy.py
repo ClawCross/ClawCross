@@ -362,9 +362,9 @@ def evaluate_tool_policy(
             reason=f"工具 {tool_name} 已被当前策略明确禁用。",
             matched_rule=matched_rule,
         )
+    if rule and approval_args_key(canonical_action_args(tool_name, args)) in rule.approved_args:
+        return ToolPolicyDecision(allowed=True, matched_rule=matched_rule, reason="已匹配当前会话记住的完整参数批准。")
     if approval == "manual":
-        if rule and approval_args_key(canonical_action_args(tool_name, args)) in rule.approved_args:
-            return ToolPolicyDecision(allowed=True, matched_rule=matched_rule, reason="已匹配用户记住的完整参数批准。")
         return ToolPolicyDecision(
             allowed=False,
             requires_approval=True,

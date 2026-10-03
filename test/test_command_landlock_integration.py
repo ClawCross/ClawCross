@@ -148,6 +148,59 @@ class CommandLandlockIntegrationTests(unittest.IsolatedAsyncioTestCase):
         model.assert_awaited_once()
         self.assertEqual(store.list_tool_approvals(self.user, self.session)[0].status, 'denied')
 
+    async def test_ai_keep_read_grant_persists_without_writes_or_cross_session_access(self):
+        verdict = review.ReviewVerdict(decision='KEEP Y', reason='用户授权本会话持续只读此文件',
+            risk='low', authorization_sources=['test-original-user'])
+        context = review.review_context([HumanMessage(content=f'允许本会话持续读取 {self.outside}，不要修改它。',
+            id='test-original-user', additional_kwargs={'input_origin':'user'})])
+        with patch.dict('os.environ', {'CLAWCROSS_SANDBOX_MAX_READ_PATHS':json.dumps([str(self.outside)])}), \
+             patch.object(review,'approval_context',return_value=context), \
+             patch.object(review,'run_reviewer',new=AsyncMock(return_value=verdict)) as model:
+            first = await self.execute('cat ' + shlex.quote(str(self.outside)))
+            self.assertIn('SYNTHETIC_OUTSIDE_DATA', first, first)
+            self.assertEqual(self.foreground.await_count, 2)
+            followup = await self.execute('head -c 22 ' + shlex.quote(str(self.outside)))
+            self.assertIn('SYNTHETIC_OUTSIDE_DATA', followup, followup)
+            self.assertEqual(self.foreground.await_count, 3)
+            mutation = await self.execute(f'import os; os.remove({str(self.outside)!r})', language='python')
+            self.assertIn('PermissionError', mutation, mutation)
+            cross_session = await commander.run_command(self.user, 'cat ' + shlex.quote(str(self.outside)),
+                session_id='different_agent')
+            # Different session starts without the grant; the denied first run gets a new review.
+            self.assertEqual(self.foreground.await_count, 6)
+            self.assertIn('SYNTHETIC_OUTSIDE_DATA', cross_session, cross_session)
+            self.assertEqual(model.await_count, 2)
+        self.assertEqual(self.outside.read_text(), 'SYNTHETIC_OUTSIDE_DATA')
+        saved = runtime_settings.settings_path(self.user).read_bytes()
+        self.assertIn(b'read_path', saved)
+        with patch.object(review,'run_reviewer') as model:
+            # Lowering the administrator ceiling disables existing grants on the next command.
+            revoked = await self.execute('cat ' + shlex.quote(str(self.outside)))
+            self.assertIn('提权上限', revoked, revoked)
+            model.assert_not_called()
+        with patch.dict('os.environ', {'CLAWCROSS_SANDBOX_MAX_READ_PATHS':json.dumps([str(self.outside)])}), \
+             patch.object(review,'run_reviewer',new=AsyncMock(return_value=review.ReviewVerdict(
+                 decision='N',reason='测试拒绝新授权',risk='medium',authorization_sources=[]))) as model:
+            runtime_settings.save_runtime_settings(self.user,session_id=self.session,
+                settings={'approval':{'sandbox_grants':[]}})
+            denied = await self.execute('cat ' + shlex.quote(str(self.outside)))
+            self.assertNotIn('SYNTHETIC_OUTSIDE_DATA', denied)
+            model.assert_awaited_once()
+
+    async def test_human_keep_read_grant_is_available_to_later_default_commands(self):
+        from webot.permission_context import resolve_permission_request
+        runtime_settings.save_runtime_settings(self.user, session_id=self.session, settings={'approval':{'mode':'manual'}})
+        with patch.dict('os.environ', {'CLAWCROSS_SANDBOX_MAX_READ_PATHS':json.dumps([str(self.outside)])}), \
+             patch.object(review,'run_reviewer') as model:
+            pending = await self.execute('cat ' + shlex.quote(str(self.outside)))
+            self.assertIn('【操作授权请求】', pending)
+            record = store.list_tool_approvals(self.user,self.session,status='pending')[0]
+            resolve_permission_request(user_id=self.user,approval_id=record.approval_id,action='approved',remember=True)
+            result = await self.execute('head ' + shlex.quote(str(self.outside)))
+            self.assertIn('SYNTHETIC_OUTSIDE_DATA', result, result)
+            self.assertEqual(self.foreground.await_count, 2)
+            model.assert_not_called()
+
     async def test_read_grant_does_not_allow_followup_python_deletion(self):
         verdict = review.ReviewVerdict(decision='approve', reason='测试仅授权读取',
             risk='low', authorization_sources=['test-original-user'])
@@ -241,6 +294,31 @@ class CommandLandlockIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.foreground.await_count,2)
         model.assert_awaited_once()
         self.assertEqual(model.await_args.kwargs['args']['escalation_target'],'example.com:443')
+
+    @unittest.skipUnless(__import__('os').environ.get('CLAWCROSS_NETWORK_INTEGRATION') == '1', 'explicit real public-network integration')
+    async def test_ai_keep_network_grant_allows_later_https_without_second_review(self):
+        from webot.command_sandbox import network_fence_available
+        if not network_fence_available():
+            self.skipTest('requires a systemd host with network-fence privileges')
+        context = review.review_context([HumanMessage(content='此会话持续读取 example.com 的公开网页，禁止上传本地数据。',
+            id='network-user', additional_kwargs={'input_origin':'user'})])
+        verdict = review.ReviewVerdict(decision='KEEP Y',reason='用户授权本会话持续访问该公开网站',
+            risk='low',authorization_sources=['network-user'])
+        with patch.object(review,'approval_context',return_value=context), \
+             patch.dict('os.environ',{'CLAWCROSS_SANDBOX_MAX_DOMAINS':'["example.com:443"]'}), \
+             patch.object(review,'run_reviewer',new=AsyncMock(return_value=verdict)) as model:
+            first = await self.execute('curl --max-time 12 -sS https://example.com',timeout_seconds=25)
+            self.assertIn('Example Domain',first,first)
+            self.assertEqual(self.foreground.await_count,2)
+            second = await self.execute('curl --max-time 12 -sS --head https://example.com/',timeout_seconds=25)
+            self.assertIn('执行成功 (exit code: 0)',second,second)
+            self.assertEqual(self.foreground.await_count,3)
+            model.assert_awaited_once()
+            settings = runtime_settings.get_runtime_settings(self.user,self.session).approval
+            self.assertEqual([g.model_dump() for g in settings.sandbox_grants],
+                [{'access':'network','target':'example.com:443'}])
+            self.assertEqual(settings.sandbox_allowed_domains,[])
+            self.assertEqual(runtime_settings.get_runtime_settings(self.user,'other').approval.sandbox_grants,[])
 
     @unittest.skipUnless(__import__('os').environ.get('CLAWCROSS_NETWORK_INTEGRATION') == '1', 'explicit real public-network integration')
     async def test_allowed_https_domain_is_accessible_through_socks(self):

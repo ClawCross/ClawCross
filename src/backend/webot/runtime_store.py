@@ -2672,6 +2672,28 @@ def set_approval_review_metadata(approval_id: str, user_id: str, metadata: dict)
         conn.commit()
 
 
+def record_approval_memory(approval_id: str, user_id: str, *, binding: dict | None = None, error: str = '') -> None:
+    """Annotate the consumed authorization without reopening it or losing execution metadata."""
+    session_id = _record_session("webot_tool_approvals", "approval_id", approval_id, user_id)
+    if session_id is None:
+        return
+    with _connect_agent(user_id, session_id) as conn:
+        conn.execute('BEGIN IMMEDIATE')
+        row = conn.execute("SELECT review_metadata_json FROM webot_tool_approvals WHERE approval_id = ? AND user_id = ? AND status = 'used'",
+                           (approval_id, user_id)).fetchone()
+        if row is None:
+            return
+        metadata = json.loads(row['review_metadata_json'] or '{}')
+        if error:
+            metadata['remember_error'] = error
+        else:
+            metadata['remembered'] = True
+            metadata['binding'] = binding
+        conn.execute("UPDATE webot_tool_approvals SET review_metadata_json = ? WHERE approval_id = ? AND user_id = ?",
+                     (_json_dumps(metadata), approval_id, user_id))
+        conn.commit()
+
+
 def record_tool_execution(approval_id: str, user_id: str, *, status: str, detail: str = "") -> None:
     if not approval_id:
         return

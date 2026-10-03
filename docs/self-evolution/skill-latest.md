@@ -1,26 +1,8 @@
-# Repository Skill Self-Evolution Report
+# KEEP Y verification
 
-- Skill file: `/home/ubuntu/work2/ClawCross/SKILL.md`
-- Generated at: `2026-10-03T12:14:54.669795+00:00`
-- Exit code: `0`
-
-## Summary
-
-Command exited with code 0. Command: (external failure context). Signals: verification-loop, approval-auth, structured-output. stdout was used as fallback failure evidence.
-
-## stderr
-
-```text
-(empty)
-```
-
-## stdout
-
-```text
-Runtime gap: web_search/web_fetch default policy allowed network I/O without review, and the MCP service had no identity-bound gate.
-Regression exposed duplicate review: expected reviewer once, awaited 2 times.
-Cause: the model could supply another session; now web identity and session are forcibly bound to the calling runtime, and one exact permit transfers to MCP.
-Verification: 128 tests passed, 261 subtests passed across approval, search, continuation, schemas and ACP bridge.
-Real provider + actual MCP HTTP integration: one DeepSeek JSON Schema review, valid original-user authorization, Example Domain received with HTTP 200.
-Sandbox grants were not changed: one-time approval does not create a session domain/path whitelist; KEEP Y records exact parameters.
-```
+Regression: KEEP Y permission was saved, but the generic metadata updater ignored used approvals.
+Fix: record_approval_memory updates only a consumed approval and preserves its execution metadata.
+Other fixes: scope remembered actions to the authenticated session; normalize permit arguments; retain the 40,000-character tool schema budget; locate the permission summary independently of its count.
+Verification: 168 backend tests and 302 subtests passed in the focused batch; its 2 failed cases both passed after fixes. Three added boundary tests and 4 subtests passed. Three focused browser tests passed (the grant removal case was fixed and rerun).
+Actual Landlock: persistent read cannot delete, another Agent requires review, ceiling/revocation removes access; remembered HTTPS destination works without a second review.
+Actual configured reviewer: native JSON Schema returned KEEP Y with a valid original-user source.

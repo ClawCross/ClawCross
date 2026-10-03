@@ -43,6 +43,12 @@ class ContextSettings(BaseModel):
         return self
 
 
+class SandboxGrant(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    access: Literal['network', 'read_path', 'write_path']
+    target: str = Field(min_length=1, max_length=4096)
+
+
 class ApprovalSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     mode: Literal["chat", "readonly", "manual", "auto", "bypass"] = "auto"
@@ -53,6 +59,7 @@ class ApprovalSettings(BaseModel):
     reviewer_max_tokens: int = Field(default=4096, ge=1024, le=16384)
     command_sandbox: Literal["off", "srt", "auto", "landlock"] = "off"
     sandbox_allowed_domains: list[str] = Field(default_factory=list, max_length=64)
+    sandbox_grants: list[SandboxGrant] = Field(default_factory=list, max_length=64)
 
     @model_validator(mode='after')
     def validate_domains(self):
@@ -212,8 +219,7 @@ def _serialize_settings(fn):
     return locked
 
 
-@_serialize_settings
-def save_runtime_settings(user_id: str, *, settings: dict, session_id: str = "", reset: bool = False) -> dict:
+def _save_runtime_settings(user_id: str, *, settings: dict, session_id: str = "", reset: bool = False) -> dict:
     # A user update also validates every existing session against the new defaults.
     data = _load(user_id)
     data.setdefault("user", {})
@@ -241,3 +247,23 @@ def save_runtime_settings(user_id: str, *, settings: dict, session_id: str = "",
         if os.path.exists(temporary):
             os.unlink(temporary)
     return runtime_settings_payload(user_id, session_id)
+
+
+@_serialize_settings
+def save_runtime_settings(user_id: str, *, settings: dict, session_id: str = "", reset: bool = False) -> dict:
+    return _save_runtime_settings(user_id, settings=settings, session_id=session_id, reset=reset)
+
+
+@_serialize_settings
+def remember_sandbox_grant(user_id: str, *, session_id: str, access: str, target: str) -> dict:
+    """Atomically save an approved exact capability only in this session."""
+    if not session_id:
+        raise ValueError('记住沙盒权限需要当前 Agent。')
+    from webot.command_sandbox import bounded_escalation
+    from webot.workspace import resolve_session_workspace
+    target = bounded_escalation(access, target, resolve_session_workspace(user_id, session_id).root)
+    grants = [grant.model_dump() for grant in get_runtime_settings(user_id, session_id).approval.sandbox_grants]
+    grant = SandboxGrant(access=access, target=target).model_dump()
+    if grant not in grants:
+        grants.append(grant)
+    return _save_runtime_settings(user_id, settings={'approval': {'sandbox_grants': grants}}, session_id=session_id)
