@@ -27,7 +27,7 @@ class SystemTriggerRequest(BaseModel):
     attachments: Optional[list[SystemTriggerAttachment]] = None
     coalesce_key: str = ""
     # Per-trigger permission overrides: chat / readonly / manual / auto / bypass.
-    # enabled_tools=[] is the explicit "no tools" signal (manual mode); None = default.
+    # enabled_tools=[] is the explicit "no tools" signal; None = default.
     session_mode: Optional[str] = None
     enabled_tools: Optional[list[str]] = None
     # OpenAI-shaped forced reply format for this trigger's turn — same
@@ -48,3 +48,5 @@ class SystemTriggerRequest(BaseModel):
     drain_inbox: bool = False
     groups: list[dict] = Field(default_factory=list)
     group_human_requests: list[dict] = Field(default_factory=list)
+    # Server-originated continuation; the tool node still validates/consumes the grant.
+    approval_resume_id: str = ""

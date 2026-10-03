@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20261003102322282208",
+  "candidate_id": "blended-approval-auth-verification-loop-workspace-preflight",
+  "skill_name": "repo-skill",
+  "strategy": "repair-only",
+  "env_fingerprint": {
+    "python_version": "3.11.16",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-10-03T10:23:22.282161+00:00"
+  },
+  "commands": [
+    {
+      "command": "(external failure context)",
+      "ok": false,
+      "stdout": "....F.                                                                   [100%]\n=================================== FAILURES ===================================\n________ WeBotServiceTests.test_session_runtime_and_approval_resolution ________\n\nself = <test.test_webot_service.WeBotServiceTests testMethod=test_session_runtime_and_approval_resolution>\n\n    async def test_session_runtime_and_approval_resolution(self):\n        with TemporaryDirectory() as tmpdir:\n            import webot.subagents as store\n            original_db_path = store.DEFAULT_DB_PATH\n            original_runtime_db_path = runtime_store.DEFAULT_DB_PATH\n            original_policy_root = policy.PROJECT_ROOT\n            store.DEFAULT_DB_PATH = Path(tmpdir) / \"subagents.db\"\n            runtime_store.DEFAULT_DB_PATH = Path(tmpdir) / \"runtime.db\"\n            policy.PROJECT_ROOT = Path(tmpdir)\n            try:\n                service = WeBotService(system=None,\n                    agent=_FakeAgent({}, active_keys=set(), statuses={}),\n                    verify_auth_or_token=lambda user_id, password, token: None,\n                    extract_text=lambda content: content if isinstance(content, str) else str(content),\n                )\n    \n                await service.update_session_plan(\n                    WeBotPlanUpdateRequest(\n                        user_id=\"alice\",\n                        session_id=\"default\",\n                        title=\"Implement runtime\",\n                        items=[{\"step\": \"Patch agent\", \"status\": \"in_progress\"}],\n                    ),\n                    None,\n                )\n                await service.update_session_todos(\n                    WeBotTodoUpdateRequest(\n                        user_id=\"alice\",\n                        session_id=\"default\",\n                        items=[{\"step\": \"Run tests\", \"status\": \"pending\"}],\n                    ),\n                    None,\n                )\n                await service.record_verification(\n                    WeBotVerificationCreateRequest(\n                        user_id=\"alice\",\n                        session_id=\"default\",\n                        title=\"Smoke test\",\n                        status=\"passed\",\n                        details=\"ok\",\n                    ),\n                    None,\n                )\n                policy.save_tool_policy_config(\n                    \"alice\",\n                    {\"tools\": {\"run_command\": {\"approval\": \"manual\"}}},\n                    project_root=tmpdir,\n                )\n                approval = runtime_store.create_tool_approval_request(\n                    \"alice\",\n                    \"default\",\n                    approval_id=\"approval-1\",\n                    tool_name=\"run_command\",\n                    args={\"command\": \"ls\"},\n                    request_reason=\"approve ls\",\n                )\n>               resolved = await service.resolve_tool_approval(\n                    WeBotApprovalResolutionRequest(\n                        user_id=\"alice\",\n                        approval_id=approval.approval_id,\n                        action=\"approve\",\n                        reason=\"ok\",\n                    ),\n                    None,\n                )\n\ntest/test_webot_service.py:218: \n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ \n\nself = <webot.api.service.WeBotService object at 0x7bb068435090>\nreq = WeBotApprovalResolutionRequest(user_id='alice', password='', approval_id='approval-1', action='approve', reason='ok', remember=False, session_id='')\nx_internal_token = None\n\n    async def resolve_tool_approval(\n        self,\n        req: WeBotApprovalResolutionRequest,\n        x_internal_token: str | None,\n    ):\n        self.verify_auth_or_token(req.user_id, req.password, x_internal_token)\n        from webot.approval_review import policy_binding\n        from webot.runtime_store import get_tool_approval, utc_now\n        record = get_tool_approval(req.approval_id, req.user_id) ...[truncated]",
+      "stderr": ""
+    }
+  ],
+  "overall_ok": false,
+  "duration_ms": null,
+  "created_at": "2026-10-03T10:23:22.282230+00:00",
+  "asset_id": "sha256:b7eb2f2c65c737017cedaf971c3b6097977edf246800e58009159df5673628d3"
+}

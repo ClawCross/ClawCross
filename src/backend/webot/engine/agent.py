@@ -454,6 +454,7 @@ class AgentState(TypedDict):
     _approval_review_counters: dict
     _approval_review_blocked: bool
     _conversation_approval_prompts: list[str]
+    _approval_resume_id: str
 
 
 # Mirrors langgraph.prebuilt.ToolNode (default handle_tool_errors) so dropping
@@ -768,6 +769,7 @@ class UserAwareToolNode:
                 user_id=user_id, session_id=session_id, tool_name=tc["name"], args=tc["args"],
                 decision=final_decision, messages=state["messages"], policy=permission.policy,
                 counters=counters, active_approval=permission.approval,
+                continuation={'enabled_tools': state.get('enabled_tools')},
                 # Nobody watches a group- or schedule-triggered turn; leave
                 # the request for the user instead of holding the session.
                 wait_for_user=state.get("trigger_source") != "system",
@@ -1239,6 +1241,32 @@ class TeamAgent:
     # ------------------------------------------------------------------
     async def _call_model(self, state: AgentState, config: RunnableConfig | None = None):
         """One model step: build the request from live state, call the model, record usage."""
+        if (not state.get('_approval_resume_id') and not state.get('turn_count')
+                and state.get('messages') and isinstance(state['messages'][-1], HumanMessage)):
+            # CLI/social transports may send the button equivalent as text.
+            # Resolve it before inference and use the same exact-action retry.
+            resolution = resolve_conversation_reply(state['user_id'], state['session_id'], review_context(state['messages']))
+            if resolution.startswith('已批准 '):
+                state = {**state, '_approval_resume_id': resolution.split(' ', 1)[1]}
+            elif resolution.startswith('已拒绝 '):
+                original = state['messages'][-1]
+                notification = original.model_copy(update={'content': '[操作授权结果] ' + resolution + '。不要重试或绕过此拒绝；说明未执行的原因。',
+                    'additional_kwargs': {**original.additional_kwargs, 'input_origin': 'system'}})
+                state = {**state, 'messages': state['messages'][:-1] + [notification]}
+        if state.get('_approval_resume_id'):
+            from uuid import uuid4
+            record = get_tool_approval(state['_approval_resume_id'], state['user_id'])
+            if (record is not None and record.session_id == state['session_id']
+                    and record.status == 'approved' and record.expires_at > utc_now()
+                    and json.loads(record.review_metadata_json or '{}').get('human_resolution') == 'approved'):
+                # Retry the saved operation directly, without asking the model to
+                # reconstruct it or repeat other completed tool calls.
+                return {'messages': [AIMessage(content='', tool_calls=[{
+                    'id': 'approval-resume-' + uuid4().hex, 'name': record.tool_name,
+                    'args': {k: v for k, v in json.loads(record.args_json or '{}').items() if not k.startswith('_')},
+                }])], '_approval_resume_id': ''}
+            return {'messages': [AIMessage(content='授权已失效，未继续执行。请重新发起操作。')],
+                    '_approval_resume_id': ''}
         if state.get('_conversation_approval_prompts'):
             return {'messages': [AIMessage(content='\n\n'.join(state['_conversation_approval_prompts']))],
                     '_conversation_approval_prompts': []}

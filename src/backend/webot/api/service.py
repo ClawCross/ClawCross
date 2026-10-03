@@ -1040,6 +1040,21 @@ class WeBotService:
         x_internal_token: str | None,
     ):
         self.verify_auth_or_token(req.user_id, req.password, x_internal_token)
+        from webot.approval_review import policy_binding
+        from webot.runtime_store import get_tool_approval, utc_now
+        record = get_tool_approval(req.approval_id, req.user_id)
+        if record is None or (req.session_id and req.session_id != record.session_id):
+            raise HTTPException(status_code=404, detail='未找到当前 Agent 的审核请求。')
+        metadata = _safe_json_loads(record.review_metadata_json)
+        if metadata.get('reviewer') == 'auto_review':
+            raise HTTPException(status_code=409, detail='自动审核不能通过人工按钮覆盖，请在对话中明确授权后重新审核。')
+        if record.status != 'pending' or record.expires_at <= utc_now():
+            raise HTTPException(status_code=409, detail='此审核已处理或已过期。')
+        binding = metadata.get('binding') or {}
+        if binding and binding.get('policy_hash') != policy_binding(req.user_id, record.session_id):
+            raise HTTPException(status_code=409, detail='工具策略已变化，请重新发起操作。')
+        if req.action.lower() not in {'approve', 'approved', 'allow', 'deny', 'denied'}:
+            raise HTTPException(status_code=400, detail='无效的审核选项。')
         normalized_action = "approved" if req.action.lower() in {"approve", "approved", "allow"} else "denied"
         approval = resolve_permission_request(
             user_id=req.user_id,
@@ -1049,9 +1064,31 @@ class WeBotService:
             remember=req.remember,
         )
         if approval is None:
-            raise HTTPException(status_code=404, detail=f"未找到 tool approval: {req.approval_id}")
+            raise HTTPException(status_code=409, detail='此审核已被处理，未重复执行。')
+        continuation = metadata.get('continuation') or {}
+        text = (f'[操作授权结果] {approval.approval_id}：'
+                + ('用户已批准此具体操作。系统将重试原操作，完成后继续原任务。' if normalized_action == 'approved'
+                   else '用户已拒绝此操作。不要重试或改写绕过拒绝；说明未执行的原因并继续可以完成的部分。'))
+        from agents.store import get_store, WEBOT
+        target = get_store().get(req.user_id, approval.session_id)
+        if target is None or target.driver == WEBOT:
+            from webot.api.system_models import SystemTriggerRequest
+            await self.system.run(SystemTriggerRequest(
+                user_id=req.user_id, session_id=approval.session_id, text=text,
+                session_mode=continuation.get('mode'), groups=continuation.get('groups') or [],
+                enabled_tools=continuation.get('enabled_tools'),
+                approval_resume_id=approval.approval_id if normalized_action == 'approved' else '',
+            ))
+        else:
+            from agents.gateway import get_gateway
+            from agents.messages import AgentMessage
+            receipt = await get_gateway().trigger(target, AgentMessage(text=text, sender='system'),
+                context={'groups': continuation.get('groups') or []}, mode=continuation.get('mode'))
+            if not receipt.accepted:
+                raise HTTPException(status_code=503, detail=receipt.error or '审核已记录，但无法恢复 Agent。')
         return {
             "status": "success",
+            "continuation": "queued",
             "approval": {
                 "approval_id": approval.approval_id,
                 "tool_name": approval.tool_name,

@@ -367,6 +367,8 @@
 
     function render(content) {
         const raw = normalizeEscapedNewlines(content == null ? '' : String(content));
+        const approval = global.ClawcrossApproval?.renderPrompt(raw);
+        if (approval != null) return approval;
         configureMarked();
         if (!raw) return '';
         if (typeof global.marked === 'undefined') {

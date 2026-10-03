@@ -537,32 +537,39 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-09-27T07:09:55.528838+00:00`
-- Strategy: `harden`
-- Heuristic candidate: `blended-verification-loop-workspace-preflight-structured-output`
-- Heuristic score: `0.628`
+- Updated at: `2026-10-03T10:23:22.282350+00:00`
+- Strategy: `repair-only`
+- Heuristic candidate: `blended-approval-auth-verification-loop-workspace-preflight`
+- Heuristic score: `0.737`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: (external failure context). Signals: verification-loop, workspace-preflight, structured-output. stderr carried the strongest failure evidence.
+Human approval continuation regression: the service fixture omitted its system trigger. Fixed and verified.
 
 ### Strategy Rationale
 
-- Intent mix: repair `0.4`, optimize `0.4`, innovate `0.2`
-- Shift toward stability, bounded retries, and verifier quality.
+- Intent mix: repair `0.8`, optimize `0.2`, innovate `0.0`
+- Emergency mode for repeated failures where repair guidance must dominate.
 
 ### Latest Trigger Command
 
-`(external failure context)`
+`pytest test/test_webot_service.py`
 
 ### Latest Error Excerpt
 
 ```text
-During the memory-tool migration, pytest found a SyntaxError at src/backend/webot/skill_evolution.py:1206: nested quotes around write_file(storage="memory") in a Python string. Corrected to storage='memory'.
-Standalone test/test_skill_memory.py also initially failed collection with ModuleNotFoundError: No module named 'mcp_servers'. Added its explicit repository src import path, consistent with the other standalone tests.
-The first full regression found test_session_status_includes_context_usage still expected the cached 64K denominator (100%); the runtime now correctly recalculates against the current configured 1M window (6%). Updated the test to explicitly control settings and assert the new denominator while preserving measured tokens.
-Keep memory entry storage paths out of agent results and injected prompts. Validate both personal and Team scopes, symlink exclusion, stable IDs, metadata preservation, and concurrent sha256-protected writes.
+pytest test/test_webot_service.py: test_session_runtime_and_approval_resolution failed with
+AttributeError: 'NoneType' object has no attribute 'run'. The old fixture supplied system=None;
+human resolution now needs SystemService to schedule the saved action. Fixed the fixture with
+an AsyncMock and verified that approval schedules continuation once, preserves group/tool scope,
+and rejects duplicate, stale, wrong-session and Auto-review overrides.
 ```
+
+### Verified Resolution
+
+`test_manual_approval_continuation.py`, `test_approval_review.py`, `test_compact_approval_audit.py`,
+`test_agents.py`, `test_system_service.py`, `test_webot_service.py`, `test_skill_evolution.py`:
+141 passed, 35 subtests passed. Studio/Mobile approval controls: 4 browser checks passed.
 
 ### Governance Snapshot
 
@@ -584,18 +591,19 @@ Keep memory entry storage paths out of agent results and injected prompts. Valid
 
 ### Recent Evidence
 
-- `2026-09-27T07:09:55.528838+00:00` `repo-skill` — During the memory-tool migration, pytest found a SyntaxError at src/backend/webot/skill_evolution.py:1206: nested quotes around write_file(storage="me ...[truncated]
+- `2026-10-03T10:23:22.282350+00:00` `repo-skill` — ....F.                                                                   [100%]
+=================================== FAILURES ================= ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `blended-verification-loop-workspace-preflight-structured-output` score `0.628` — Blend the strongest recent failure patterns (intent `repair`)
-- `verification-loop-6` score `0.588` — Tighten verification loops (intent `repair`)
-- `workspace-preflight-2` score `0.475` — Add repo/workspace preflight checks (intent `repair`)
-- `structured-output-2` score `0.475` — Harden structured-output handling (intent `repair`)
+- `blended-approval-auth-verification-loop-workspace-preflight` score `0.737` — Blend the strongest recent failure patterns (intent `repair`)
+- `approval-auth-4` score `0.697` — Preflight auth and approval constraints (intent `repair`)
+- `verification-loop-3` score `0.659` — Tighten verification loops (intent `repair`)
+- `workspace-preflight-1` score `0.584` — Add repo/workspace preflight checks (intent `repair`)
 
 ### Local State Snapshot
 
-- Python/platform: `3.14.4` / `Linux-7.0.0-14-generic-x86_64-with-glibc2.43`
+- Python/platform: `3.11.16` / `Linux-7.0.0-14-generic-x86_64-with-glibc2.43`
 - Feedback history entries: `0`
 - Runtime failure entries: `0`
 <!-- clawcross:self-evolution:end -->

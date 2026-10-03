@@ -231,6 +231,7 @@ class SystemService:
             "max_turns": None,
             "turn_count": 0,
             "response_format": req.response_format,
+            "_approval_resume_id": req.approval_resume_id,
         }
         if req.llm_override:
             state["llm_override"] = req.llm_override
