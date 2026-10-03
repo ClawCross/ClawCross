@@ -96,6 +96,20 @@ def bounded_escalation(access: str, target: str, root: Path) -> str:
     return target
 
 
+def active_sandbox_grants(grants, root: Path) -> dict[str, list[str]]:
+    """Revalidate stored capabilities; revoked ceilings/changed paths grant nothing."""
+    active = {'network': [], 'read_path': [], 'write_path': []}
+    for grant in grants:
+        try:
+            access = grant.access
+            target = bounded_escalation(access, grant.target, root)
+        except SandboxUnavailable:
+            continue
+        if target not in active[access]:
+            active[access].append(target)
+    return active
+
+
 def proxy_denied_network_target(stderr: str) -> str | None:
     """Read the proxy supervisor's denial marker, even if the client exits 0.
 
@@ -316,7 +330,9 @@ def _policy(root: Path, settings_path: Path, *, access: str = "default", target:
 def build_srt_command(*, root: Path, cwd: Path, command: str, language: str,
                       python_executable: str, script_path: Path | None = None,
                       interactive: bool = False, access: str = "default",
-                      target: str = "", allowed_domains: list[str] | None = None, wall_timeout: int = 180) -> SrtCommand:
+                      target: str = "", allowed_domains: list[str] | None = None,
+                      allowed_read_paths: list[str] | None = None, allowed_write_paths: list[str] | None = None,
+                      wall_timeout: int = 180) -> SrtCommand:
     """Create an SRT invocation with a private settings file; never use a host shell."""
     root, cwd = root.resolve(), cwd.resolve()
     if not cwd.is_relative_to(root):
@@ -342,6 +358,10 @@ def build_srt_command(*, root: Path, cwd: Path, command: str, language: str,
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             config = _policy(root, settings_path, access=access, target=target, srt_binary=binary)
             config['network']['allowedDomains'] = list(dict.fromkeys([*(allowed_domains or []), *([target] if access == 'network' else [])]))
+            reads = [bounded_escalation('read_path', path, root) for path in (allowed_read_paths or [])]
+            writes = [bounded_escalation('write_path', path, root) for path in (allowed_write_paths or [])]
+            config['filesystem']['allowRead'].extend(reads + writes)
+            config['filesystem']['allowWrite'].extend(writes)
             json.dump(config, handle, ensure_ascii=False)
         limits = _LIMIT_CODE.replace('(\"RLIMIT_NPROC\", 256)', f'(\"RLIMIT_NPROC\", {_process_limit()})')
         limited = (sys.executable, "-c", limits, *wrapped)
@@ -361,7 +381,9 @@ def landlock_available() -> bool:
 def build_landlock_command(*, root: Path, cwd: Path, command: str, language: str,
                            python_executable: str, script_path: Path | None = None,
                            interactive: bool = False, access: str = "default", target: str = "",
-                           allowed_domains: list[str] | None = None, wall_timeout: int = 180) -> SrtCommand:
+                           allowed_domains: list[str] | None = None,
+                           allowed_read_paths: list[str] | None = None, allowed_write_paths: list[str] | None = None,
+                           wall_timeout: int = 180) -> SrtCommand:
     if not landlock_available():
         raise SandboxUnavailable("Landlock 需要 Linux x86_64/aarch64、ABI ≥ 6、libseccomp 及非 root 账号；不会降级为宿主执行。")
     root, cwd = root.resolve(), cwd.resolve()
@@ -371,6 +393,8 @@ def build_landlock_command(*, root: Path, cwd: Path, command: str, language: str
     if not controlled_network and (access == "network" or allowed_domains):
         raise SandboxUnavailable("受控联网需要可管理的 systemd/cgroup 网络规则；当前环境不支持，未执行命令。")
     target = bounded_escalation(access, target, root) if access != "default" else normalize_escalation(access, target, root)
+    reads = [bounded_escalation('read_path', path, root) for path in (allowed_read_paths or [])]
+    writes = [bounded_escalation('write_path', path, root) for path in (allowed_write_paths or [])]
     if language == "python":
         if script_path is None or not script_path.resolve().is_relative_to(root):
             raise SandboxUnavailable("Python 脚本超出会话工作区。")
@@ -385,8 +409,8 @@ def build_landlock_command(*, root: Path, cwd: Path, command: str, language: str
     settings_path = Path(raw_path)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump({"root": str(root), "read_paths": [target] if access == "read_path" else [],
-                       "write_paths": [target] if access == "write_path" else [],
+            json.dump({"root": str(root), "read_paths": list(dict.fromkeys([*reads, *([target] if access == "read_path" else [])])),
+                       "write_paths": list(dict.fromkeys([*writes, *([target] if access == "write_path" else [])])),
                        "allowed_domains": list(dict.fromkeys([*(allowed_domains or []), *([target] if access == 'network' else [])])),
                        "wall_timeout": max(1, int(wall_timeout))}, handle)
         launcher = Path(__file__).with_name("landlock_network.py" if controlled_network else "landlock_launcher.py")

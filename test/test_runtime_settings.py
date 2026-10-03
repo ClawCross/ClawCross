@@ -57,6 +57,38 @@ class RuntimeSettingsTests(unittest.TestCase):
                 settings.save_runtime_settings("alice", settings=change)
             self.assertEqual(settings.settings_path("alice").read_bytes(), original)
 
+    def test_concurrent_keep_grants_persist_atomically_and_reset_with_session(self):
+        import json
+        from webot.command_sandbox import active_sandbox_grants
+        targets = ['example.com:443', 'example.org:80', 'example.net:443']
+        with patch.dict('os.environ', {'CLAWCROSS_SANDBOX_MAX_DOMAINS':json.dumps(targets)}):
+            with ThreadPoolExecutor(max_workers=3) as pool:
+                list(pool.map(lambda target: settings.remember_sandbox_grant('alice',session_id='s',
+                    access='network',target=target), targets))
+            grants = settings.get_runtime_settings('alice','s').approval.sandbox_grants
+            self.assertEqual({g.target for g in grants}, set(targets))
+            self.assertEqual(settings.get_runtime_settings('alice','other').approval.sandbox_grants, [])
+            with patch.dict('os.environ', {'CLAWCROSS_SANDBOX_MAX_DOMAINS':'["example.org:80"]'}):
+                self.assertEqual(active_sandbox_grants(grants,Path(self.tmp.name))['network'], ['example.org:80'])
+            settings.save_runtime_settings('alice',session_id='s',settings={},reset=True)
+            self.assertEqual(settings.get_runtime_settings('alice','s').approval.sandbox_grants, [])
+
+    def test_saved_read_grant_does_not_follow_changed_symlink(self):
+        import json
+        from webot.command_sandbox import active_sandbox_grants
+        root = Path(self.tmp.name) / 'workspace'
+        root.mkdir()
+        target = Path(self.tmp.name) / 'public.txt'
+        replacement = Path(self.tmp.name) / 'another.txt'
+        target.write_text('PUBLIC')
+        replacement.write_text('OTHER')
+        grant = settings.SandboxGrant(access='read_path',target=str(target))
+        with patch.dict('os.environ',{'CLAWCROSS_SANDBOX_MAX_READ_PATHS':json.dumps([str(target),str(replacement)])}):
+            self.assertEqual(active_sandbox_grants([grant],root)['read_path'],[str(target)])
+            target.unlink()
+            target.symlink_to(replacement)
+            self.assertEqual(active_sandbox_grants([grant],root)['read_path'],[])
+
     def test_manual_and_bypass_persist_as_distinct_modes(self):
         settings.save_runtime_settings("alice", settings={"approval": {"mode": "manual"}})
         settings.save_runtime_settings("alice", session_id="s", settings={"approval": {"mode": "bypass"}})

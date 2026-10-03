@@ -154,7 +154,13 @@ def remember_approval_in_policy(
     user_id: str,
     tool_name: str,
     args: dict[str, Any],
+    session_id: str = '',
 ) -> None:
+    if (tool_name == 'run_command' and args.get('sandbox_access', 'default') != 'default'):
+        from webot.runtime_settings import remember_sandbox_grant
+        remember_sandbox_grant(user_id, session_id=session_id or args.get('session_id', ''),
+            access=args['sandbox_access'], target=args['escalation_target'])
+        return
     current = serialize_tool_policy(get_tool_policy(user_id))
     current.pop("source", None)
     current.pop("definition_path", None)
@@ -163,7 +169,8 @@ def remember_approval_in_policy(
     tool_entry = dict(tools.get(tool_name) or tools.get("*") or {})
     tool_entry.setdefault("approval", "manual")
     approved_args = list(tool_entry.get("approved_args") or [])
-    key = approval_args_key(canonical_action_args(tool_name, args))
+    scoped = {**args, '_approval_session': session_id} if session_id else args
+    key = approval_args_key(canonical_action_args(tool_name, scoped))
     if key not in approved_args:
         approved_args.append(key)
     tool_entry["approved_args"] = approved_args
@@ -199,6 +206,7 @@ def resolve_permission_request(
                 user_id=user_id,
                 tool_name=updated.tool_name,
                 args=json.loads(updated.args_json or "{}"),
+                session_id=updated.session_id,
             )
             from webot.approval_review import policy_binding
             metadata = json.loads(updated.review_metadata_json or "{}")

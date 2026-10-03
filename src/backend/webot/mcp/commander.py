@@ -40,6 +40,7 @@ from webot.command_sandbox import (
     build_landlock_command, select_sandbox_backend, build_srt_command,
     normalize_escalation, SandboxUnavailable, SrtCommand, sandbox_failure_hint,
     permission_failure_target, proxy_denied_network_target,
+    active_sandbox_grants,
 )
 from webot.approval_review import authorize_action, policy_binding
 from webot.approval_actions import canonical_action_args
@@ -1130,10 +1131,8 @@ async def run_command(
     escalation_reason: str = "",
 ) -> str:
     """
-    在会话工作目录中运行 shell 命令或 Python 代码。mode=foreground 等待结束并返回输出；
-    background 立即返回 job_id，适合长任务；interactive 在终端里启动交互式程序（如
-    python、bash、ssh），之后用 background_command_io 输入并查看输出。检查代码可直接
-    运行 python -m py_compile、node --check 或 npx tsc --noEmit。
+    在会话工作目录运行 shell 或 Python。foreground 返回结果；background 返回 job_id；
+    interactive 启动交互程序，用 background_command_io 输入和读取输出。
 
     :param command: shell 命令；language=python 时是 Python 代码（interactive 下先执行它再进入 REPL，可为空）
     :param language: shell 或 python
@@ -1158,6 +1157,8 @@ async def run_command(
     allowed_domains = getattr(sandbox_options, 'sandbox_allowed_domains', [])
     sandbox_selected = sandbox_backend in {"srt", "auto", "landlock"}
     workspace_state = resolve_session_workspace(username, session_id, explicit_cwd=cwd)
+    grants = active_sandbox_grants(getattr(sandbox_options, 'sandbox_grants', []), workspace_state.root)
+    allowed_domains = list(dict.fromkeys([*allowed_domains, *grants['network']]))
     if sandbox_access != 'default':
         if not sandbox_selected:
             return '❌ 未启用沙盒，不能重试沙盒权限授权。'
@@ -1206,6 +1207,7 @@ async def run_command(
                                 command=command, language=language, python_executable=_python_cmd(),
                                 script_path=Path(script) if script else None,
                                 access=sandbox_access, target=escalation_target, allowed_domains=allowed_domains,
+                                allowed_read_paths=grants['read_path'], allowed_write_paths=grants['write_path'],
                                 wall_timeout=max(1, int(deadline-time.monotonic())),
                             )
                         except SandboxUnavailable as exc:
@@ -1287,6 +1289,7 @@ async def run_command(
                         command=command, language=language, python_executable=_python_cmd(),
                         script_path=Path(script) if script else None, interactive=interactive,
                         access=sandbox_access, target=escalation_target, allowed_domains=allowed_domains,
+                        allowed_read_paths=grants['read_path'], allowed_write_paths=grants['write_path'],
                         wall_timeout=_bounded_int(timeout_seconds, BACKGROUND_EXEC_TIMEOUT, 1, MAX_EXEC_TIMEOUT),
                     )
                 except SandboxUnavailable as exc:

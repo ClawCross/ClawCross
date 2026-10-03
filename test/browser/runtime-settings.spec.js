@@ -6,7 +6,7 @@ const defaults = {
   context: { auto_compact: true, context_window_tokens: 1000000, history_tokens: 0, trigger_tokens: 0, target_tokens: 0,
     preserve_recent_turns: 4, summary_tokens: 2000, summarizer_input_tokens: 8000,
     summarizer_model: '', preserve_instructions: '' },
-  approval: { mode: 'auto', approvals_reviewer: 'user', reviewer_model: '', reviewer_policy: '', reviewer_timeout_seconds: 30, reviewer_max_tokens: 4096, command_sandbox: 'off', sandbox_allowed_domains: [] },
+  approval: { mode: 'auto', approvals_reviewer: 'user', reviewer_model: '', reviewer_policy: '', reviewer_timeout_seconds: 30, reviewer_max_tokens: 4096, command_sandbox: 'off', sandbox_allowed_domains: [], sandbox_grants: [] },
   inference: {reasoning_effort: ''},
 };
 
@@ -14,7 +14,8 @@ async function setup(page, options = {}) {
   const requests = [];
   const user = structuredClone(defaults);
   Object.assign(user.context, options.context || {});
-  let session = {};
+  Object.assign(user.approval, options.approval || {});
+  let session = structuredClone(options.session || {});
   await page.route('**/studio', route => route.fulfill({ contentType: 'text/html', body: '<html><body></body></html>' }));
   await page.route('**/proxy_webot_runtime_settings**', async route => {
     const request = route.request();
@@ -83,6 +84,21 @@ test('Manual and Bypass are distinct selectable modes with different saved value
   await page.locator('#runtime-settings-save').click();
   await expect(page.locator('#runtime-settings-result')).toContainText('已保存');
   expect(requests[1].settings.approval.mode).toBe('bypass');
+});
+
+test('remembered sandbox permissions are removable without changing other settings', async ({ page }) => {
+  const grants = [{access:'network',target:'example.com:443'}, {access:'read_path',target:'/tmp/approved-public-file.txt'}];
+  const requests = await setup(page, {session:{approval:{sandbox_grants:grants}}});
+  await page.evaluate(() => openRuntimeSettings('session-1'));
+  await page.getByRole('tab',{name:'工具审核'}).click();
+  await page.locator('summary').filter({hasText:'已记住的沙盒权限'}).click();
+  await expect(page.locator('[data-sandbox-grant]')).toHaveCount(2);
+  await page.locator('[data-sandbox-grant]').filter({hasText:'example.com:443'}).getByRole('button',{name:'移除'}).click();
+  await expect(page.locator('[data-sandbox-grant]')).toHaveCount(1);
+  expect(requests).toHaveLength(0);
+  await page.locator('#runtime-settings-save').click();
+  await expect(page.locator('#runtime-settings-result')).toContainText('已保存');
+  expect(requests[0]).toEqual({session_id:'session-1',settings:{approval:{sandbox_grants:[grants[1]]}},reset:false});
 });
 
 test('model and summary instructions render as literal text', async ({ page }) => {
