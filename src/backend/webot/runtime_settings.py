@@ -55,8 +55,8 @@ class ApprovalSettings(BaseModel):
     approvals_reviewer: Literal["user", "auto_review"] = "user"
     reviewer_model: str = Field(default="", max_length=200)
     reviewer_policy: str = Field(default="", max_length=4000)
-    reviewer_timeout_seconds: int = Field(default=30, ge=5, le=120)
-    reviewer_max_tokens: int = Field(default=4096, ge=1024, le=16384)
+    reviewer_timeout_seconds: int = Field(default=120, ge=5, le=120)
+    reviewer_max_tokens: int = Field(default=16384, ge=1024, le=16384)
     command_sandbox: Literal["off", "srt", "auto", "landlock"] = "off"
     sandbox_allowed_domains: list[str] = Field(default_factory=list, max_length=64)
     sandbox_grants: list[SandboxGrant] = Field(default_factory=list, max_length=64)

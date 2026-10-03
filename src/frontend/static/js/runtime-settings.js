@@ -158,7 +158,7 @@ async function loadRuntimeSettingsScope() {
                     <div class="runtime-settings-advanced-body runtime-settings-grid">
                         ${model('approval', 'reviewer_model', approval.reviewer_model)}
                         <label class="runtime-settings-field"><span>${text('审核等待上限（秒）', 'Review timeout (seconds)')}</span><input data-section="approval" data-key="reviewer_timeout_seconds" type="number" min="5" max="120" value="${approval.reviewer_timeout_seconds}" class="runtime-settings-input"></label>
-                        <label class="runtime-settings-field"><span>${text('审核输出预算（tokens）', 'Review output budget (tokens)')}</span><input data-section="approval" data-key="reviewer_max_tokens" type="number" min="1024" max="16384" value="${approval.reviewer_max_tokens || 4096}" class="runtime-settings-input"></label>
+                        <label class="runtime-settings-field"><span>${text('审核输出上限（含思考 tokens）', 'Review output limit (including reasoning tokens)')}</span><input data-section="approval" data-key="reviewer_max_tokens" type="number" min="1024" max="16384" value="${approval.reviewer_max_tokens || 16384}" class="runtime-settings-input"></label>
                     </div>
                 </details>
             </section>`;
