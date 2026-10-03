@@ -2616,6 +2616,25 @@ LOCAL_CHANNEL_WHITELIST_URL = f"http://127.0.0.1:{PORT_AGENT}/channels/whitelist
 LOCAL_RESTART_URL = f"http://127.0.0.1:{PORT_AGENT}/restart"
 
 
+@app.route('/proxy_channel_setup', methods=['GET', 'POST'])
+def proxy_channel_setup():
+    user_id = session.get('user_id', '')
+    if not user_id:
+        return jsonify({'error': 'not logged in'}), 401
+    url = f'http://127.0.0.1:{PORT_AGENT}/channels/setup'
+    try:
+        if request.method == 'GET':
+            response = requests.get(url, params={'user_id': user_id, 'session_id': request.args.get('session_id', '')}, headers=_internal_auth_headers(), timeout=10)
+        else:
+            data = request.get_json(force=True)
+            data['user_id'] = user_id
+            data.pop('password', None)
+            response = requests.post(url, json=data, headers=_internal_auth_headers(), timeout=10)
+        return jsonify(response.json()), response.status_code
+    except Exception:
+        return jsonify({'error': 'Channel setup service unavailable'}), 502
+
+
 @app.route("/proxy_settings_full", methods=["GET"])
 def proxy_get_settings_full():
     """代理获取全量系统配置（不受白名单限制）"""

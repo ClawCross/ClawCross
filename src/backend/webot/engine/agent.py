@@ -130,6 +130,7 @@ USER_INJECTED_TOOLS = {
     "get_current_time", "add_alarm", "list_alarms", "delete_alarm",
     # Notification push tools (multi-channel)
     "set_notification_channel", "send_notification", "get_notification_status",
+    "get_channel_setup", "request_channel_setup",
     "remove_notification_channel",
     # OASIS forum tools
     "start_new_oasis", "check_oasis_discussion", "cancel_oasis_discussion",
@@ -156,6 +157,7 @@ USER_INJECTED_TOOLS = {
 
 # Tools that need session_id auto-injected (in addition to username)
 SESSION_INJECTED_TOOLS = {
+    "request_channel_setup": "session_id",
     "web_search": "session_id",
     "web_fetch": "session_id",
     "list_files": "session_id",

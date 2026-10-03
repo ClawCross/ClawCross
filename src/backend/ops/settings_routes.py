@@ -9,9 +9,9 @@
 
 from typing import Callable
 
-from fastapi import APIRouter, Header
+from fastapi import APIRouter, Header, HTTPException
 
-from ops.settings_models import ChannelWhitelistUpdateRequest, SettingsUpdateRequest
+from ops.settings_models import ChannelWhitelistUpdateRequest, SettingsUpdateRequest, ChannelSetupRequest
 from ops.settings_service import SettingsService
 
 
@@ -26,6 +26,23 @@ def create_settings_router(
         env_path=env_path,
         verify_auth_or_token=verify_auth_or_token,
     )
+
+    @router.get('/channels/setup')
+    async def channel_setup(user_id: str, session_id: str = '', password: str = '', x_internal_token: str | None = Header(None)):
+        verify_auth_or_token(user_id, password, x_internal_token)
+        from channels.setup_requests import describe, list_requests
+        return {'channels': describe(), 'requests': list_requests(user_id, session_id)}
+
+    @router.post('/channels/setup')
+    async def channel_setup_submit(req: ChannelSetupRequest, x_internal_token: str | None = Header(None)):
+        verify_auth_or_token(req.user_id, req.password, x_internal_token)
+        from channels.setup_requests import create, submit
+        try:
+            if req.request_id:
+                return submit(req.user_id, req.request_id, req.values, cancel=req.cancel)
+            return create(req.user_id, req.session_id, req.channel, req.values)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
 
     @router.get("/settings")
     async def get_settings(user_id: str, password: str = "", x_internal_token: str | None = Header(None)):

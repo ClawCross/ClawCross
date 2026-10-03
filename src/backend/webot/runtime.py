@@ -16,7 +16,7 @@ READ_ONLY_TOOLS = frozenset({
     "list_subagents", "get_subagent_history", "read_session_plan", "list_tool_approvals", "read_session_inbox",
     "list_oasis_experts", "check_oasis_discussion", "list_oasis_workflows",
     "get_workflow_rules", "list_oasis_agent_catalog", "get_publicnet_info", "get_current_time",
-    "list_alarms", "get_notification_status", "skill_evolution_report", "usage_status", "claude_code_status",
+    "list_alarms", "get_notification_status", "get_channel_setup", "skill_evolution_report", "usage_status", "claude_code_status",
 })
 
 PLAN_MODE_BLOCKED_TOOLS = frozenset(

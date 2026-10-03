@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20261003173845146567",
+  "candidate_id": "blended-verification-loop-approval-auth",
+  "skill_name": "repo-skill",
+  "strategy": "repair-only",
+  "env_fingerprint": {
+    "python_version": "3.11.16",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-10-03T17:38:45.146536+00:00"
+  },
+  "commands": [
+    {
+      "command": "(external failure context)",
+      "ok": false,
+      "stdout": "",
+      "stderr": "Browser verification in the outer Codex sandbox failed to start its isolated Flask test server: PermissionError: [Errno 1] Operation not permitted at socket.socket. FastAPI TestClient also stalled because the same outer sandbox disallows sockets. Stop only the owned test process and rerun authenticated route/browser tests with approved host execution and a temporary CLAWCROSS_HOME; never use production credentials. Host verification succeeded: 6 channel tests and 3 subtests, 2 desktop/mobile browser tests. This is a test environment limitation, not evidence that ClawCross channel forms are broken."
+    }
+  ],
+  "overall_ok": false,
+  "duration_ms": null,
+  "created_at": "2026-10-03T17:38:45.146590+00:00",
+  "asset_id": "sha256:eff46824c29b15c24444c74595ae2ef3da9cdb310ad0f3f9c147439f76b690ef"
+}

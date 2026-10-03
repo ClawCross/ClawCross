@@ -537,14 +537,14 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-10-03T17:12:43.694189+00:00`
+- Updated at: `2026-10-03T17:39:50.457909+00:00`
 - Strategy: `repair-only`
-- Heuristic candidate: `blended-verification-loop-approval-auth-capability-gap`
-- Heuristic score: `0.813`
+- Heuristic candidate: `blended-verification-loop-approval-auth-structured-output`
+- Heuristic score: `0.756`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: (external failure context). Signals: verification-loop, approval-auth, capability-gap. stderr carried the strongest failure evidence.
+Command exited with code 1. Command: (external failure context). Signals: verification-loop, approval-auth, structured-output. stderr carried the strongest failure evidence.
 
 ### Strategy Rationale
 
@@ -558,14 +558,7 @@ Command exited with code 1. Command: (external failure context). Signals: verifi
 ### Latest Error Excerpt
 
 ```text
-Formal Landlock command verification failed:
-test/test_command_landlock_integration.py::CommandLandlockIntegrationTests::test_resource_queries_work_without_exposing_process_environment
-AssertionError: Error, do this: mount -t proc proc /proc
-LANDLOCK command exit code: 47
-
-Observed: explicit read permission for /proc/meminfo and the launcher's process status works. ps starts after the Landlock rules are established and cannot read its own new PID's procfs files. A per-PID snapshot does not provide general compatibility for processes created later.
-Full verification on the host: 1 failed, 148 passed, 9 skipped, 70 subtests passed in 37.74s.
-Earlier verification inside Codex's outer PID namespace stalled and was explicitly stopped; that run is not treated as a passing or completed verifier.
+Formal MCP inventory verification failed for the new request_channel_setup tool: free-form dict schema cannot bind strict, identity arguments were not injected, and display category/parameter docs were missing. Fix with a fixed name/value list model, register username/session injection and notification category, then rerun test/test_tool_schemas.py and test/test_channel_setup.py. No credentials are allowed in model-visible draft fields.
 ```
 
 ### Governance Snapshot
@@ -588,15 +581,14 @@ Earlier verification inside Codex's outer PID namespace stalled and was explicit
 
 ### Recent Evidence
 
-- `2026-10-03T17:12:43.694189+00:00` `repo-skill` — Formal Landlock command verification failed:
-test/test_command_landlock_integration.py::CommandLandlockIntegrationTests::test_resource_queries ...[truncated]
+- `2026-10-03T17:39:50.457909+00:00` `repo-skill` — Formal MCP inventory verification failed for the new request_channel_setup tool: free-form dict schema cannot bind strict, identity arguments ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `blended-verification-loop-approval-auth-capability-gap` score `0.813` — Blend the strongest recent failure patterns (intent `repair`)
-- `verification-loop-4` score `0.773` — Tighten verification loops (intent `repair`)
+- `blended-verification-loop-approval-auth-structured-output` score `0.756` — Blend the strongest recent failure patterns (intent `repair`)
+- `verification-loop-3` score `0.716` — Tighten verification loops (intent `repair`)
 - `approval-auth-1` score `0.603` — Preflight auth and approval constraints (intent `repair`)
-- `capability-gap-1` score `0.347` — Capture missing capabilities explicitly (intent `innovate`)
+- `structured-output-1` score `0.603` — Harden structured-output handling (intent `repair`)
 
 ### Local State Snapshot
 

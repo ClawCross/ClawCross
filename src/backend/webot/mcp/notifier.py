@@ -30,6 +30,7 @@ import json
 import os
 import re
 from dataclasses import dataclass
+from pydantic import BaseModel, Field
 from typing import Awaitable, Callable
 from urllib.parse import urlparse
 
@@ -40,6 +41,58 @@ from webot.mcp_tool_docs import DocumentedFastMCP as FastMCP
 from common.runtime_paths import DATA_DIR, ENV_FILE, USER_FILES_DIR
 
 mcp = FastMCP("Notifier")
+
+
+class ChannelFieldValue(BaseModel):
+    name: str = Field(description='get_channel_setup 返回的非敏感字段名')
+    value: str = Field(description='字段值；布尔值使用 true/false 文本，不传入密钥')
+
+
+@mcp.tool()
+async def get_channel_setup(username: str, channel: str = "", request_id: str = "") -> str:
+    """查看机器人连接设置的字段说明，或查看设置请求是否已完成；不返回密钥。
+
+    渠道连接是主机的机器人配置，访问白名单决定消息身份，通知目标是接收推送的用户/群。
+    连接准备用 request_channel_setup；通知收件地址用 set_notification_channel。
+    用户忘记设置项时先查询这里，不要让用户把密钥发到对话。
+    :param username: 用户身份，由系统注入
+    :param channel: 平台名，留空列出平台；填平台返回详细字段。
+    :param request_id: 填写请求编号；仅返回 pending/completed/cancelled/expired。
+    """
+    from channels.setup_requests import describe, status
+    try:
+        if request_id:
+            return json.dumps(status(username, request_id), ensure_ascii=False)
+        items = describe(channel)
+        if not channel:
+            items = [{'id': ch['id'], 'label': ch['label'], 'help': ch.get('help', '')} for ch in items]
+        return json.dumps(items, ensure_ascii=False)
+    except ValueError as exc:
+        return '❌ ' + str(exc)
+
+
+@mcp.tool()
+async def request_channel_setup(username: str, channel: str, values: list[ChannelFieldValue] | None = None, session_id: str = "") -> str:
+    """在当前对话展示渠道设置填写气泡，用户确认后才保存主机连接设置。
+
+    非敏感项如备注、App ID、消息选项可用 values 预填。先 get_channel_setup 查字段；
+    human_only 的密钥、URL、程序路径只能由用户在表单输入，不能传入 values。
+    用户输入直接发送后端，不发给 LLM、不进入工具结果或对话。结果只有填写状态；
+    之后可 get_channel_setup(request_id=...) 查询。无网页时打开渠道设置页填写，
+    不要求用户在普通聊天中发送密钥。保存不安装组件、不自动发送测试消息。
+    :param username: 用户身份，由系统注入
+    :param channel: get_channel_setup 返回的平台编号
+    :param values: 非敏感预填列表，如 [{"name":"name","value":"My bot"}]；密钥留给用户私密填写
+    :param session_id: 当前 Agent，由系统注入
+    """
+    from channels.setup_requests import create
+    try:
+        draft = {field.name: field.value for field in values or []}
+        if len(draft) != len(values or []):
+            raise ValueError('Duplicate field names')
+        return json.dumps(create(username, session_id or 'default', channel, draft), ensure_ascii=False)
+    except ValueError as exc:
+        return '❌ ' + str(exc)
 
 load_dotenv(dotenv_path=ENV_FILE)
 
@@ -439,7 +492,11 @@ async def set_notification_channel(
     make_default: bool = False,
 ) -> str:
     """
-    为用户设置某个推送通道的目标地址（同步到中心化白名单），或把已配置的通道设为默认。
+    设置推送收件地址（同步到访问白名单），或设为默认通知通道。这不是机器人连接设置。
+    Telegram 的 target_id 是数字 chat_id，不是 Bot token；webhook 是推送地址。
+    主机尚未配置机器人时先 get_channel_setup / request_channel_setup，让用户私密填写凭证。
+    不要索要或传入 API key / Bot token。QQ/微信等消息路由由渠道白名单管理；
+    此工具支持的推送渠道以 get_notification_status 为准。不会自动下载组件。
 
     :param username: 用户标识符（系统自动注入，无需手动传递）
     :param channel: 通道名（如 "telegram"）。可用值见 get_notification_status。

@@ -3745,6 +3745,7 @@ function renderStudioApprovalStrip(approvals) {
 }
 
 async function refreshStudioApprovalStrip() {
+    void ClawcrossChannelSetup.sync(document.getElementById('chat-box'), [currentSessionId]).catch(() => {});
     try {
         const resp = await fetch('/proxy_webot_tool_approvals?status=pending&limit=20');
         if (!resp.ok) return;
@@ -5602,7 +5603,7 @@ function renderSettings(settings) {
         if (group.id === 'llm') {
             html += _renderLlmGroup(settings);
         } else if (group.id === 'bots') {
-            html += _renderGroup({title:t(group.label),help:SETTINGS_GROUP_HELP_KEYS[group.id] ? t(SETTINGS_GROUP_HELP_KEYS[group.id]) : '',components:'channels'}, groupKeys, settings);
+            html += `<div id="channel-setup-settings"></div>${componentSettingsMarkup('channels')}<details class="settings-group"><summary style="padding:16px;cursor:pointer;">${currentLang === 'zh-CN' ? '高级连接参数与原始配置' : 'Advanced connection settings'}</summary>${_renderGroup({title:t(group.label)}, groupKeys, settings)}</details>`;
         } else if (group.id === 'tinyfish') {
             html += _renderTinyfishGroup(settings);
         } else {
@@ -5620,6 +5621,7 @@ function renderSettings(settings) {
     }
 
     body.innerHTML = html;
+    void ClawcrossChannelSetup.mount(document.getElementById('channel-setup-settings'));
     initComponentControls(body);
     _refreshTunnelStatus();
     _initSettingsLlmGroup(settings);
