@@ -53,6 +53,10 @@ async def deepseek_structured_turn(
     if not key:
         raise RuntimeError("DeepSeek API key is missing")
     client_kwargs = {"api_key": key, "base_url": _base_url(model)}
+    if getattr(model, 'request_timeout', None) is not None:
+        client_kwargs['timeout'] = model.request_timeout
+    if getattr(model, 'max_retries', None) is not None:
+        client_kwargs['max_retries'] = model.max_retries
     http_client = getattr(model, "http_async_client", None)
     if http_client is not None:
         client_kwargs["http_client"] = http_client
@@ -92,6 +96,8 @@ async def deepseek_structured_turn(
             })
     content = response.output_text or ""
     if not calls:
+        if not content.strip():
+            raise RuntimeError('DeepSeek schema-constrained response was empty')
         value = json.loads(content)
         validate(value, strict_schema)
         value = drop_null_optionals(value, schema)

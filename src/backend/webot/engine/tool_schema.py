@@ -343,7 +343,12 @@ async def decode_structured_final(model: Any, response_format: dict[str, Any], m
         raw = await model.bind(response_format={"type": "json_schema", "json_schema": {
             "name": name, "strict": True, "schema": strict_schema,
         }}).ainvoke(final_messages, config=config)
-        value = json.loads(extract_text(raw.content))
+        if getattr(raw, 'response_metadata', {}).get('finish_reason') == 'length':
+            raise RuntimeError('Schema-constrained response exceeded its output token limit')
+        content = extract_text(raw.content)
+        if not content.strip():
+            raise RuntimeError('Schema-constrained response was empty')
+        value = json.loads(content)
     elif classes & {"ChatAnthropic", "ChatGoogleGenerativeAI"}:
         result = await model.with_structured_output(
             {**strict_schema, "title": name}, method="json_schema", include_raw=True,
