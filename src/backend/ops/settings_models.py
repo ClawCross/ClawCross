@@ -17,3 +17,13 @@ class ChannelWhitelistUpdateRequest(BaseModel):
     user_id: str
     password: str = ""
     whitelist: dict
+
+
+class ChannelSetupRequest(BaseModel):
+    user_id: str
+    password: str = ''
+    session_id: str = 'default'
+    channel: str = ''
+    request_id: str = ''
+    values: dict = {}
+    cancel: bool = False

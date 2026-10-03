@@ -37,6 +37,8 @@
 <script src="/static/js/runtime-presentation.js?v=20261002-fold"></script>
 <script src="/static/js/external-agent-settings.js?v=20261002-connect"></script>
 <script src="/static/js/approval-ui.js?v=20261003-inline-approval"></script>
+<link rel="stylesheet" href="/static/css/channel-setup.css?v=1">
+<script src="/static/js/channel-setup.js?v=1"></script>
 <script src="/static/js/markdown-shared.js?v=20261003-inline-approval"></script>
 <script src="/static/js/tinyfish-live-shared.js"></script>
 <script src="/static/vendor/pretext.global.js?v=20260402-pretext"></script>
@@ -5226,9 +5228,11 @@
     <button class="drawer-header-back" onclick="closeMobileChannelConfig()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
     </button>
-    <span class="drawer-header-title">Channel 设置</span>
+    <span class="drawer-header-title">消息渠道</span>
   </div>
   <div class="drawer-body" style="padding:16px;display:flex;flex-direction:column;gap:12px;">
+    <div id="mobile-channel-setup"></div>
+    <details><summary style="padding:10px 0;cursor:pointer;">高级连接与访问身份</summary>
     <div class="channel-config-picker">
       <select class="channel-config-select" id="mobile-channel-select" onchange="switchMobileChannel(this.value)"></select>
       <div class="channel-card" id="mobile-channel-summary"></div>
@@ -5254,6 +5258,7 @@
       <button type="button" onclick="loadMobileChannelConfig()">刷新</button>
       <button type="button" onclick="saveMobileChannelConfig()">保存设置</button>
     </div>
+    </details>
   </div>
 </div>
 
@@ -10362,6 +10367,7 @@ async function refreshPendingApprovalsForCurrentGroup() {
     .filter(m => m.agent)
     .map(m => m.agent.agent_id)
     .filter(Boolean);
+  void ClawcrossChannelSetup.sync(document.getElementById('chat-body'), sessions).catch(() => {});
   try {
     const data = await api('GET', '/proxy_webot_tool_approvals?status=pending&limit=50');
     const allApprovals = Array.isArray(data.approvals) ? data.approvals : [];
@@ -12292,6 +12298,7 @@ function switchMobileChannel(channel) {
 }
 
 function renderMobileChannelConfig() {
+  void ClawcrossChannelSetup.mount(document.getElementById('mobile-channel-setup'));
   const channel = getMobileChannel();
   renderMobileChannelSettings('mobile-channel-settings', getMobileChannelKeys(channel));
   renderMobileChannelSettings('mobile-channel-common-settings', MOBILE_CHANNEL_COMMON_KEYS);
