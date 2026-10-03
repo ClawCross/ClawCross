@@ -142,6 +142,7 @@ def bridge_router():
         request = turn['message']
         group_requests = turn['context'].get('group_human_requests') or []
         human = HumanMessage(content=request.text, additional_kwargs={
+            'framework_groups': turn['context'].get('groups') or [],
             'input_origin': 'user' if not group_requests and request.sender == f'u:{key[0]}' else 'system',
             'framework_group_requests': group_requests})
         from webot.approval_review import review_context, resolve_conversation_reply

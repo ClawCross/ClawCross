@@ -303,3 +303,14 @@ body.cc-local-file-preview-open {
     -webkit-overflow-scrolling: touch;
     min-width: 0;
 }
+/* Human authorization uses the same presentation in Studio and mobile. */
+.cc-approval-bubble { padding: 4px 0; max-width: 100%; }
+.cc-approval-heading { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.cc-approval-status, .cc-approval-hint, .cc-approval-bubble small { color: var(--text-secondary, #8290a2); font-size: 12px; }
+.cc-approval-tool { font-family: monospace; margin: 10px 0 4px; }
+.cc-approval-bubble details { margin: 8px 0; }
+.cc-approval-bubble summary { cursor: pointer; }
+.cc-approval-bubble pre { max-height: 180px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cc-approval-bubble small { overflow-wrap: anywhere; }
+.cc-approval-bubble kbd { padding: 2px 5px; border: 1px solid currentColor; border-radius: 4px; white-space: nowrap; }
+.cc-approval-bubble.resolved { opacity: .75; }

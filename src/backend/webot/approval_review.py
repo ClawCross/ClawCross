@@ -203,7 +203,7 @@ def conversation_approval_prompt(record, reason: str) -> str:
     }, ensure_ascii=False) + '\n本次操作未执行。请在当前对话回复：'
         f'Y {record.approval_id}（仅本次允许）、N {record.approval_id}（拒绝）、'
         f'KEEP Y {record.approval_id}（记住这个具体操作）。'
-        '\n只有一项待确认时可省略编号；也可以用自然语言明确授权。')
+        '\n只有一项待确认时可省略编号。批准后自动继续；拒绝后说明结果。')
 
 
 def action_risk(tool_name: str, args: dict) -> tuple[bool, bool, str]:
@@ -261,6 +261,7 @@ async def authorize_action(
     counters: dict | None = None, transfer_to_command: bool = False,
     risk_reason: str = "",
     review_evidence: str = "",
+    continuation: dict | None = None,
     active_approval=None,
     wait_for_user: bool = True,
 ) -> ApprovalResult:
@@ -333,7 +334,8 @@ async def authorize_action(
                 store.issue_execution_permit(user_id, session_id, tool_name, args, binding_hash)
             return ApprovalResult(True, high_risk=high_risk, binding_hash=binding_hash)
 
-        context = approval_context(user_id, session_id, messages)
+        source_messages = messages if messages is not None else load_review_history(user_id, session_id)
+        context = approval_context(user_id, session_id, source_messages)
         context['review_scope'] = {'owner_user_id': user_id, 'session_id': session_id}
         if elevated_command:
             context['sandbox_maximum'] = escalation_ceiling()
@@ -366,6 +368,12 @@ async def authorize_action(
             metadata = {}
         metadata["binding"] = binding
         metadata.setdefault('request_ids', [item['id'] for item in context['user_requests']])
+        # Preserve the reply channel when a human resumes a group-triggered turn.
+        groups = next((m.additional_kwargs['framework_groups'] for m in reversed(source_messages)
+                       if isinstance(m, HumanMessage) and 'framework_groups' in m.additional_kwargs), [])
+        metadata.setdefault('continuation', {'mode': mode, 'groups': groups})
+        if continuation is not None:
+            metadata['continuation'].update(continuation)
         options = get_runtime_settings(user_id, session_id).approval
         options = options.model_copy(update={
             "approvals_reviewer": "auto_review" if mode == "auto" else "user"

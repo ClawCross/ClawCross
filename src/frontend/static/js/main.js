@@ -3770,19 +3770,48 @@ async function resolveStudioApproval(approvalId, action, remember, sessionId, bt
     const btns = card ? Array.from(card.querySelectorAll('.studio-approval-btn')) : [];
     btns.forEach(b => { b.disabled = true; if (b === btn) b.textContent = t('approval_working'); });
     try {
-        const resp = await fetch('/proxy_webot_tool_approval_resolve', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ approval_id: approvalId, action, remember: !!remember, session_id: sessionId || '' }),
-        });
-        const data = await resp.json();
-        if (!resp.ok || data.status !== 'success') throw new Error(data.detail || data.error || t('subagent_runtime_approval_failed'));
+        const data = await ClawcrossApproval.resolve(approvalId, action, remember, sessionId);
+        watchApprovalContinuation(sessionId);
         if (card) card.innerHTML = `<div class="studio-approval-card-title">${t('approval_done')} · ${_escapeHtmlStrip(data.approval?.tool_name || '')}</div>`;
         setTimeout(() => refreshStudioApprovalStrip(), 800);
     } catch (e) {
         btns.forEach(b => { b.disabled = false; });
         if (btn) btn.textContent = action === 'deny' ? t('approval_deny') : (remember ? t('approval_approve_remember') : t('approval_approve'));
+        _setWeBotPolicyStatus(String(e.message), 'error');
+        _projectUpdateToast(String(e.message));
     }
+}
+
+let _approvalContinuationTimer = null;
+function watchApprovalContinuation(sessionId) {
+    if (sessionId !== currentSessionId) return;
+    if (_approvalContinuationTimer) clearInterval(_approvalContinuationTimer);
+    const contextKey = chatRunContextKey();
+    setSystemBusyUI(true);
+    let polling = false;
+    _approvalContinuationTimer = setInterval(async () => {
+        if (contextKey !== chatRunContextKey()) {
+            clearInterval(_approvalContinuationTimer);
+            _approvalContinuationTimer = null;
+            return;
+        }
+        if (polling) return;
+        polling = true;
+        try {
+            const status = await fetchSessionStatus(sessionId);
+            if (contextKey !== chatRunContextKey()) return;
+            if (!['running', 'queued'].includes(status.state)) {
+                clearInterval(_approvalContinuationTimer);
+                _approvalContinuationTimer = null;
+                if (_ocChatMode === 'acp' && _acpTool) {
+                    await acpRefreshCurrentTranscriptFromHistory({showLoading: false});
+                    setSystemBusyUI(false);
+                } else {
+                    await switchToSession(sessionId, true, {quiet: true});
+                }
+            }
+        } catch (_) {} finally { polling = false; }
+    }, 1000);
 }
 
 function _renderSubagentStatus(status) {
@@ -4267,20 +4296,8 @@ async function ensureSubagentRuntimeLoaded(agentRef, force = false) {
 
 async function resolveWeBotApproval(approvalId, action, remember, sessionId) {
     try {
-        const resp = await fetch('/proxy_webot_tool_approval_resolve', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                approval_id: approvalId,
-                action,
-                remember: !!remember,
-                session_id: sessionId || '',
-            }),
-        });
-        const data = await resp.json();
-        if (!resp.ok || data.status !== 'success') {
-            throw new Error(data.detail || data.error || t('subagent_runtime_approval_failed'));
-        }
+        await ClawcrossApproval.resolve(approvalId, action, remember, sessionId);
+        watchApprovalContinuation(sessionId);
         _setWeBotPolicyStatus(t('subagent_runtime_approval_ok'), 'success');
         if (sessionId) {
             delete _subagentRuntimeCache[sessionId];
@@ -7990,6 +8007,22 @@ function renderWeBotWelcomeMessage(message = null) {
 async function handleSend() {
     const text = inputField.value.trim();
     if (!text && pendingImages.length === 0 && pendingFiles.length === 0 && pendingAudios.length === 0 && pendingWorkflows.length === 0) return;
+    if (text && !pendingImages.length && !pendingFiles.length && !pendingAudios.length && !pendingWorkflows.length) {
+        try {
+            const result = await ClawcrossApproval.reply(text, [currentSessionId]);
+            if (result) {
+                inputField.value = '';
+                inputField.style.height = 'auto';
+                await refreshStudioApprovalStrip();
+                watchApprovalContinuation(result.session_id);
+                return;
+            }
+        } catch (e) {
+            _setWeBotPolicyStatus(String(e.message), 'error');
+            _projectUpdateToast(String(e.message));
+            return;
+        }
+    }
     if (sendBtn.disabled) return;
 
     if (_ocChatMode === 'acp' && !_acpTool) {

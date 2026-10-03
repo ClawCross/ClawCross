@@ -1105,3 +1105,35 @@ test('external New Agent stays a draft until the first message request', async (
   await expect(page.locator('.studio-conversation-item[data-session-id="codex-old"]')).toHaveCount(0);
   expect(calls.agentCreates).toEqual([]);
 });
+
+test('Studio approval buttons and typed replies use the same control without sending Y to the agent', async ({page}) => {
+  const calls = {importOpenClaw: 0, tinyfishRun: 0, approvalActions: []};
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await stubStudioNetwork(page, calls);
+  await page.goto('/studio');
+  const sid = await page.evaluate(() => currentSessionId);
+  let pending = true;
+  const item = {approval_id:'approval-chat123',session_id:sid,tool_name:'run_command',status:'pending',
+    args:{command:'echo safe'},request_reason:'需要确认',review:{reviewer:'user',conversation_reply:true}};
+  await page.route('**/proxy_webot_tool_approvals?*',route => route.fulfill({json:{status:'success',approvals:pending?[item]:[]}}));
+  await page.route('**/proxy_webot_tool_approval_resolve',route => {
+    calls.approvalActions.push(route.request().postDataJSON()); pending=false;
+    return route.fulfill({json:{status:'success',continuation:'queued',approval:{approval_id:item.approval_id,tool_name:item.tool_name,status:'approved'}}});
+  });
+  let prompts = 0;
+  await page.route('**/v1/chat/completions',route => {prompts++;return route.fulfill({json:{}});});
+  await page.evaluate(item => {
+    appendMessage('【操作授权请求】\n'+JSON.stringify({id:item.approval_id,tool:item.tool_name,args:item.args,reason:item.request_reason})+'\n本次操作未执行。请回复 Y/N。',false);
+    renderStudioApprovalStrip([item]);
+  },item);
+  await expect(page.locator('.cc-approval-bubble details')).not.toHaveAttribute('open','');
+  await expect(page.locator('.cc-approval-bubble')).toContainText('操作需要确认');
+  await page.locator('#user-input').fill('KEEP Y');
+  await page.evaluate(() => handleSend());
+  expect(calls.approvalActions).toEqual([{approval_id:item.approval_id,action:'approve',remember:true,session_id:sid}]);
+  expect(prompts).toBe(0);
+  await expect(page.locator('#user-input')).toHaveValue('');
+  await expect(page.locator('.cc-approval-status')).toContainText('已批准');
+  expect(errors).toEqual([]);
+});

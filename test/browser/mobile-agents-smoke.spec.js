@@ -240,3 +240,30 @@ test('group owner can remove a human guest; other members have no human removal 
   await page.evaluate(()=>renderMembers([{principal:'p_bob',name:'Bob',is_agent:false,remote:true,can_remove:false}]));
   await expect(page.getByRole('button',{name:'移除 Bob',exact:true})).toHaveCount(0);
 });
+
+test('mobile accepts Y/N as scoped approval controls for external agents without a group message', async ({page}) => {
+  const calls={posts:[],control:[]};
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await stub(page,calls);
+  await page.addInitScript(()=>localStorage.setItem('clawcross_lang','zh'));
+  const decisions=[];
+  let pending=true;
+  const item={approval_id:'approval-mobile123',session_id:CODEX.agent_id,tool_name:'write_file',status:'pending',
+    request_reason:'确认写入',args:{filename:'hello.txt'},review:{reviewer:'user',conversation_reply:true}};
+  await page.route('**/proxy_webot_tool_approvals?*',route=>route.fulfill({json:{approvals:pending?[item]:[]}}));
+  await page.route('**/proxy_webot_tool_approval_resolve',route=>{
+    decisions.push(route.request().postDataJSON());pending=false;
+    return route.fulfill({json:{status:'success',continuation:'queued',approval:{tool_name:'write_file',status:'denied'}}});
+  });
+  await page.goto('/mobile/group_chat');
+  await page.locator('.group-item',{hasText:'Dev'}).first().click();
+  await page.evaluate(()=>refreshPendingApprovalsForCurrentGroup());
+  await expect(page.locator('#approval-strip')).toBeVisible();
+  await page.locator('#msg-input').fill('N');
+  await page.evaluate(()=>sendMessage());
+  expect(decisions).toEqual([{approval_id:item.approval_id,action:'deny',remember:false,session_id:CODEX.agent_id}]);
+  expect(calls.posts).toEqual([]);
+  await expect(page.locator('#msg-input')).toHaveValue('');
+  await expect(page.locator('#approval-strip')).not.toBeVisible();
+  expect(errors).toEqual([]);
+});

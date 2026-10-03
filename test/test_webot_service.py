@@ -3,6 +3,7 @@ import types
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import AsyncMock
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -169,7 +170,7 @@ class WeBotServiceTests(unittest.IsolatedAsyncioTestCase):
             runtime_store.DEFAULT_DB_PATH = Path(tmpdir) / "runtime.db"
             policy.PROJECT_ROOT = Path(tmpdir)
             try:
-                service = WeBotService(system=None,
+                service = WeBotService(system=types.SimpleNamespace(run=AsyncMock(return_value={'status': 'received'})),
                     agent=_FakeAgent({}, active_keys=set(), statuses={}),
                     verify_auth_or_token=lambda user_id, password, token: None,
                     extract_text=lambda content: content if isinstance(content, str) else str(content),

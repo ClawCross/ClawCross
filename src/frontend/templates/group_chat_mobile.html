@@ -30,13 +30,14 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" crossorigin="anonymous"></script>
 <script src="{{ url_for('static', filename='js/snapshot_zip_progress.js') }}?v=20260331-progress"></script>
-<link rel="stylesheet" href="/static/css/markdown-shared.css">
+<link rel="stylesheet" href="/static/css/markdown-shared.css?v=20261003-approval">
 <link rel="stylesheet" href="/static/css/theme.css?v=20261002-fold">
 <script src="/static/js/components.js?v=20261002-runtime-menu"></script>
 <link rel="stylesheet" href="/static/css/external-agent-settings.css?v=20261002-connect">
 <script src="/static/js/runtime-presentation.js?v=20261002-fold"></script>
 <script src="/static/js/external-agent-settings.js?v=20261002-connect"></script>
-<script src="/static/js/markdown-shared.js"></script>
+<script src="/static/js/approval-ui.js?v=20261003-approval"></script>
+<script src="/static/js/markdown-shared.js?v=20261003-approval"></script>
 <script src="/static/js/tinyfish-live-shared.js"></script>
 <script src="/static/vendor/pretext.global.js?v=20260402-pretext"></script>
 <script src="/static/js/pretext_text_core.js?v=20260402-pretext"></script>
@@ -10310,20 +10311,7 @@ async function resolveMobileToolApproval(approvalId, action, remember, sessionId
     if (node === btn) node.textContent = t('approval_working');
   });
   try {
-    const resp = await fetch('/proxy_webot_tool_approval_resolve', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        approval_id: approvalId,
-        action,
-        remember: !!remember,
-        session_id: sessionId || ''
-      }),
-    });
-    const data = await resp.json();
-    if (!resp.ok || data.status !== 'success') {
-      throw new Error(data.detail || data.error || t('approval_failed'));
-    }
+    const data = await ClawcrossApproval.resolve(approvalId, action, remember, sessionId);
     if (wrapper) {
       wrapper.innerHTML = `<div class="approval-card-title">${t('approval_done')}</div>
         <div class="approval-card-meta" style="margin-top:8px;">${esc(data.approval?.tool_name || '')} · ${esc(data.approval?.status || '')}</div>`;
@@ -10372,10 +10360,10 @@ function renderPendingApprovalCards(approvals) {
 
 async function refreshPendingApprovalsForCurrentGroup() {
   if (!currentGroupId) return;
-  // Tool approvals belong to WeBot sessions; show the ones of this group's WeBot agents.
+  // Both internal and external agents use the ClawCross approval broker.
   const sessions = (currentMembers || [])
-    .filter(m => m.agent && m.agent.platform === 'webot')
-    .map(m => m.agent.platform === 'webot' ? m.agent.agent_id : '')
+    .filter(m => m.agent)
+    .map(m => m.agent.agent_id)
     .filter(Boolean);
   try {
     const data = await api('GET', '/proxy_webot_tool_approvals?status=pending&limit=50');
@@ -10826,6 +10814,19 @@ async function sendMessage() {
   const text = input.value.trim();
   if (!text && !pendingAttachments.length && !mcPendingAudios.length && !selectedOasisContexts.length) return;  // need text, attachments, audios, or task context
   if (!currentGroupId) return;
+  if (text && !pendingAttachments.length && !mcPendingAudios.length && !selectedOasisContexts.length && !selectedWorkflow) {
+    try {
+      const sessions = (currentMembers || []).filter(m => m.agent).map(m => String(m.agent.agent_id));
+      const result = await ClawcrossApproval.reply(text, sessions);
+      if (result) {
+        input.value = '';
+        closeInputActions();
+        toast(t('approval_done'));
+        await refreshPendingApprovalsForCurrentGroup();
+        return;
+      }
+    } catch (e) { toast(e.message); return; }
+  }
   closeInputActions();
 
   const btn = document.getElementById('send-btn');
