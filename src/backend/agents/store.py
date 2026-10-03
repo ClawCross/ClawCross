@@ -1,7 +1,7 @@
 """Every agent on this machine, one record each: the table of all sessions.
 
 An agent is a session, of any runtime — a WeBot session, a codex / claude /
-gemini session over ACP, an OpenClaw session, a service over HTTP. Its
+gemini / openclaw session over ACP, a service over HTTP. Its
 ``agent_id`` is its session number: unique within its owner's space, the way an
 address is unique within one network. A number that is not there yet is a new
 agent. What the agent is inside is its runtime's business: this table only
@@ -11,8 +11,7 @@ already knows (``runtime``).
 Drivers and their config:
 
 * ``webot``    — ClawCross's own agent runtime.
-* ``acpx``     — codex, claude code, gemini … over ACP: ``platform``, ….
-* ``openclaw`` — an OpenClaw agent: ``global_name`` (which OpenClaw agent), ….
+* ``acpx``     — codex, claude code, gemini, openclaw … over ACP: ``platform``, ….
 * ``http``     — any OpenAI-compatible endpoint: ``api_url``, ``api_key``, ``model``, ….
 """
 
@@ -35,11 +34,10 @@ _AGENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 WEBOT = "webot"
 ACPX = "acpx"
-OPENCLAW = "openclaw"
 HTTP = "http"
 # A model call with a persona: no tools, remembers nothing between messages.
 LLM = "llm"
-DRIVERS = (WEBOT, ACPX, OPENCLAW, HTTP, LLM)
+DRIVERS = (WEBOT, ACPX, HTTP, LLM)
 
 # Agents made for one task (OASIS personas) start with this; they are deleted,
 # record and all, when their task ends.
@@ -106,7 +104,7 @@ def driver_for_platform(platform: str) -> str:
     pl = canonical_platform(platform)
     if pl in ("", WEBOT):
         return WEBOT
-    if pl in (OPENCLAW, LLM):
+    if pl == LLM:
         return pl
     from agents.platforms import acpx_agent_tags_with_legacy
     if pl in {canonical_platform(t) for t in acpx_agent_tags_with_legacy()}:
@@ -144,6 +142,13 @@ class AgentStore:
         if not self._ready:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(_SCHEMA)
+            # OpenClaw agents once had their own driver over the OpenClaw HTTP
+            # gateway; they are ACP agents now. Their sessions keep their keys.
+            conn.execute(
+                "UPDATE agents SET driver = 'acpx', config_json = json_set("
+                "json_remove(config_json, '$.api_url', '$.api_key', '$.headers', '$.model'),"
+                " '$.platform', 'openclaw') WHERE driver = 'openclaw'"
+            )
             self._ready = True
         return conn
 

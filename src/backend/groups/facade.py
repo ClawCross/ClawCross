@@ -11,8 +11,6 @@ from groups.config import service_key, service_url
 
 
 class GroupFacade:
-    supports_remote = True
-
     def __init__(self, client: GroupClient, names=None):
         self.client, self.names = client, names
         self.agents = client.agents
@@ -38,9 +36,9 @@ class GroupFacade:
             raise ClientError('此 agent 不属于当前用户或不存在', 404)
         return agent.agent_id
 
-    def create(self, user, *, title, kind='group', agents=(), password='', local_join=True):
+    def create(self, user, *, title, kind='group', agents=()):
         ids = [self.agent_id(user, a) for a in agents]
-        card = self.client.create(user, title=title or '私聊', kind=kind, agents=ids, password=password, local_join=local_join)
+        card = self.client.create(user, title=title or '私聊', kind=kind, agents=ids)
         self.client.ensure(user, card['group_id'])
         return card
 
@@ -154,15 +152,8 @@ def client_router(facade, *, internal_token, verify_password):
     from agents.routes import authenticate
 
     class JoinBody(BaseModel):
-        server_url: str = Field('', max_length=512)
-        group_id: str = Field(min_length=1, max_length=100)
-        password: str = Field('', max_length=256)
+        invite: str = Field(min_length=1, max_length=5000)  # the invitation link
         agents: list[str] = Field(default_factory=list, max_length=32)
-
-    class ShareBody(BaseModel):
-        password: str = Field('', max_length=256)
-        local_join: bool = True
-        revoke_connections: bool = False
 
     router = APIRouter()
 
@@ -173,9 +164,8 @@ def client_router(facade, *, internal_token, verify_password):
     async def join(body: JoinBody, authorization: str | None = Header(None)):
         user = user_of(authorization)
         try:
-            fields = body.model_dump()
-            fields['agents'] = [facade.agent_id(user, a) for a in fields['agents']]
-            card = await asyncio.to_thread(facade.client.join, user, **fields)
+            agents = [facade.agent_id(user, a) for a in body.agents]
+            card = await asyncio.to_thread(facade.client.join_link, user, link=body.invite, agents=agents)
             facade.client.ensure(user, card['group_id'])
             return card
         except ClientError as exc:
@@ -190,30 +180,12 @@ def client_router(facade, *, internal_token, verify_password):
         except ClientError as exc:
             raise HTTPException(exc.status, str(exc)) from exc
 
-    @router.post('/groups/{gid}/sharing')
-    async def sharing(gid: str, body: ShareBody, authorization: str | None = Header(None)):
-        try:
-            return await asyncio.to_thread(facade.client.manage, user_of(authorization), gid, 'patch', body.model_dump())
-        except ClientError as exc:
-            raise HTTPException(exc.status, str(exc)) from exc
-
     @router.post('/groups/{gid}/guest-invite')
     async def guest_invite(gid: str, body: dict, authorization: str | None = Header(None)):
         try:
             row = facade.client.require(user_of(authorization), gid)
             result = await asyncio.to_thread(facade.client.request, row, 'POST', '/guest-invites', body)
-            return {**result, 'server_url': row['url']}
-        except ClientError as exc:
-            raise HTTPException(exc.status, str(exc)) from exc
-
-    @router.get('/groups/{gid}/invite')
-    async def invite(gid: str, authorization: str | None = Header(None)):
-        user = user_of(authorization)
-        try:
-            row = facade.client.require(user, gid)
-            advertised = os.getenv('GROUP_PUBLIC_URL') if row['url'] == service_url() else None
-            return {'server_url': advertised or row['url'], 'group_id': row['remote_id'],
-                    'password_enabled': json.loads(row['metadata']).get('password_enabled', False)}
+            return {**result, 'server_url': row['url']}  # the group server the link joins
         except ClientError as exc:
             raise HTTPException(exc.status, str(exc)) from exc
 

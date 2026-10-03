@@ -6,7 +6,8 @@ const defaults = {
   context: { auto_compact: true, context_window_tokens: 1000000, history_tokens: 0, trigger_tokens: 0, target_tokens: 0,
     preserve_recent_turns: 4, summary_tokens: 2000, summarizer_input_tokens: 8000,
     summarizer_model: '', preserve_instructions: '' },
-  approval: { mode: 'auto', approvals_reviewer: 'user', reviewer_model: '', reviewer_policy: '', reviewer_timeout_seconds: 30, reviewer_max_tokens: 4096, command_sandbox: 'off' },
+  approval: { mode: 'auto', approvals_reviewer: 'user', reviewer_model: '', reviewer_policy: '', reviewer_timeout_seconds: 30, reviewer_max_tokens: 4096, command_sandbox: 'off', sandbox_allowed_domains: [] },
+  inference: {reasoning_effort: ''},
 };
 
 async function setup(page, options = {}) {
@@ -30,7 +31,7 @@ async function setup(page, options = {}) {
     }
     const settings = structuredClone(user);
     if (scoped) for (const [section, patch] of Object.entries(session)) Object.assign(settings[section], patch);
-    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ settings, context_usage: options.usage, last_compaction: scoped ? { before_tokens: 12000, after_tokens: 4000, duration_ms: 50, target_met: true } : null }) });
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ settings, model_capabilities: options.capabilities, context_usage: options.usage, last_compaction: scoped ? { before_tokens: 12000, after_tokens: 4000, duration_ms: 50, target_met: true } : null }) });
   });
   await page.goto('/studio');
   await page.evaluate(() => {
@@ -171,4 +172,17 @@ test('compacted context displays the smaller estimate instead of claiming the ol
   await page.evaluate(() => { currentLang='zh-CN'; currentSessionId='session-1'; updateSessionContextUsageBadge(3,967900,32100,1000000,'estimate',{system_prompt:600,tools:8000,summary:500,messages:21000,tool_results:2000},0); });
   await expect(page.locator('#session-context-detail')).toContainText('待下一次 API 调用校准');
   await expect(page.locator('#session-context-detail')).not.toContainText('合计为 API 实测值');
+});
+
+test('known reasoning levels save a session override while unknown models hide the field', async ({page}) => {
+  const requests = await setup(page, {capabilities:{model:'known-model',reasoning_effort_levels:['low','high'],reasoning_effort_default:'low'}});
+  await page.evaluate(()=>openRuntimeSettings('session-1'));
+  await expect(page.locator('[data-key="reasoning_effort"]')).toBeVisible();
+  await page.locator('[data-key="reasoning_effort"]').selectOption('high');
+  await page.locator('#runtime-settings-save').click();
+  await expect(page.locator('#runtime-settings-result')).toContainText('已保存');
+  expect(requests[0].settings).toEqual({inference:{reasoning_effort:'high'}});
+  await page.route('**/proxy_webot_runtime_settings**', route=>route.fulfill({json:{settings:defaults,model_capabilities:{model:'unknown',reasoning_effort_levels:[]}}}));
+  await page.evaluate(()=>loadRuntimeSettingsScope());
+  await expect(page.locator('[data-key="reasoning_effort"]')).toHaveCount(0);
 });

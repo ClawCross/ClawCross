@@ -13,7 +13,6 @@
 | **51209** | `PORT_FRONTEND` | `src/frontend/server.py` | 前端 Web UI（Flask） | `0.0.0.0` | 是 Tunnel |
 | **51210** | —（硬编码） | `src/frontend/visual.py` | 可视化编排系统（开发用） | `0.0.0.0` | 否 |
 | **58010** | `PORT_BARK` | 外部二进制 `bin/bark-server` | Bark 推送服务器 | — | 是 Tunnel |
-| **18789** | `OPENCLAW_API_URL`（可选） | 外部服务 | OpenClaw 后端（外部集成） | 不适用 | 不适用 |
 
 ## 详细说明
 
@@ -25,7 +24,6 @@
   - Agent 核心逻辑（工具调用、多轮对话、记忆管理）
   - `/system_trigger` 内部触发端点（定时任务回调等）
   - `/v1/agents`（本机所有 agent，WeBot 会话也在其中）、`/login`、`/tools`、`/tts`、`/settings`、`/groups` 等 API
-  - OpenClaw agent 管理 `/sessions/openclaw/*`（列表、创建、配置、频道绑定、快照/恢复）；只认 `X-Internal-Token`，文件读写限于 OpenClaw agent 的 workspace
 - **调用方**：前端 `src/frontend/server.py`（代理转发）、渠道、MCP 模块、OASIS 回调
 - **鉴权**：`X-Internal-Token` 或用户密码
 
@@ -88,19 +86,9 @@
 - **数据**：`data/bark/bark.db`
 - **公网地址**：当前单一隧道不暴露 Bark，也不写入 `BARK_PUBLIC_URL`
 
-### 18789 — OpenClaw 后端（可选）
-
-- **来源**：外部 OpenClaw Gateway 服务
-- **职责**：OpenClaw agent 的运行时；ClawCross 的 openclaw agent 通过它对话
-- **条件**：仅在配置了 OpenClaw 集成时使用
-- **浏览器入口**：`http://127.0.0.1:18789/`
-- **HTTP API**：`http://127.0.0.1:18789/v1/chat/completions`
-
 ## 启动顺序
 
 由 `launch/launcher.py` 定义：
-
-在 1/5 之前，如果本机已安装 OpenClaw，launcher 会先尝试预热 OpenClaw gateway，确保 `/v1/chat/completions` 可用，并刷新 `OPENCLAW_*` 运行时配置。
 
 | 步骤 | 服务 | 端口 | 等待时间 |
 |------|------|------|----------|
@@ -211,32 +199,6 @@ PORT_FRONTEND=51209
 - `GET /studio` 页面内包含 ClawCross Studio 主画布和右侧 `🏘️ OASIS Town` 侧栏
 - 第一次进入 `/studio` 时默认落在 `Chat` tab，右侧 Town 侧栏折叠、`Town Mode` 关闭、子 tab 默认是 `TOWN`
 - Town Mode、`REFORGE`、`EXPLAIN` 都在这条侧栏里，不在消息中心侧栏
-
-### OpenClaw 代理（→ :51200）
-
-- `GET /proxy_openclaw_sessions` — OpenClaw 会话列表
-- `POST /proxy_openclaw_add` — 添加 OpenClaw Agent
-- `GET /proxy_openclaw_default_workspace` — 默认工作区
-- `GET /proxy_openclaw_workspace_files` — 工作区文件列表
-- `GET /proxy_openclaw_workspace_file` — 读取工作区文件
-- `POST /proxy_openclaw_workspace_file` — 保存工作区文件
-- `GET /proxy_openclaw_agent_detail` — Agent 详情
-- `GET /proxy_openclaw_skills` — 技能列表
-- `GET /proxy_openclaw_tool_groups` — 工具组列表
-- `POST /proxy_openclaw_update_config` — 更新配置
-- `GET /proxy_openclaw_channels` — 频道列表
-- `GET /proxy_openclaw_agent_bindings` — Agent 绑定
-- `POST /proxy_openclaw_agent_bind` — 绑定 Agent
-- `DELETE /proxy_openclaw_remove` — 移除 Agent
-
-### OpenClaw 快照
-
-- `GET /team_openclaw_snapshot` — 获取快照
-- `POST /team_openclaw_snapshot/export` — 导出单个快照
-- `POST /team_openclaw_snapshot/export_all` — 导出全部快照
-- `POST /team_openclaw_snapshot/sync_all` — 同步全部快照
-- `POST /team_openclaw_snapshot/restore` — 恢复单个快照
-- `POST /team_openclaw_snapshot/restore_all` — 恢复全部快照
 
 ### TinyFish 搜索代理（前端本地处理 + TinyFish Web Agent）
 

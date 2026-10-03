@@ -75,7 +75,7 @@ def _read_env() -> dict[str, str]:
     return result
 
 
-def _process_env(*, no_openclaw: bool = False, no_channel: bool = False) -> dict[str, str]:
+def _process_env(*, no_channel: bool = False) -> dict[str, str]:
     env = dict(_read_env())
     env.update(os.environ)
     env.setdefault("CLAWCROSS_HOME", str(HOME))
@@ -83,8 +83,6 @@ def _process_env(*, no_openclaw: bool = False, no_channel: bool = False) -> dict
     local_node_bin = bin_dir() / "node" / "node_modules" / ".bin"
     env["PATH"] = os.pathsep.join((str(bin_dir()), str(local_node_bin), env.get("PATH", "")))
     env["WEBOT_HEADLESS"] = "1"
-    if no_openclaw:
-        env["CLAWCROSS_NO_OPENCLAW"] = "1"
     if no_channel:
         env["CLAWCROSS_NO_CHANNEL"] = "1"
     return env
@@ -191,8 +189,9 @@ def _migrate_if_needed() -> None:
                    cwd=ROOT, check=True)
 
 
-def _maybe_import_openclaw(env: dict[str, str], *, no_openclaw: bool) -> None:
-    if no_openclaw or (env.get("LLM_API_KEY") or "") not in {"", "your_api_key_here"}:
+def _maybe_import_openclaw(env: dict[str, str]) -> None:
+    """Read OpenClaw's LLM settings into ClawCross while ClawCross has no key of its own."""
+    if (env.get("LLM_API_KEY") or "") not in {"", "your_api_key_here"}:
         return
     subprocess.run([sys.executable, str(ROOT / "src/backend/ops/setup/configure_openclaw.py"),
                     "--import-clawcross-llm-from-openclaw"], cwd=ROOT, check=False,
@@ -262,9 +261,10 @@ def start(args: argparse.Namespace) -> int:
     _migrate_if_needed()
     ensure_core()
     _ensure_config()
-    env = _process_env(no_openclaw=not use_openclaw, no_channel=args.no_channel)
-    _maybe_import_openclaw(env, no_openclaw=not use_openclaw)
-    env = _process_env(no_openclaw=not use_openclaw, no_channel=args.no_channel)
+    env = _process_env(no_channel=args.no_channel)
+    if use_openclaw:
+        _maybe_import_openclaw(env)
+        env = _process_env(no_channel=args.no_channel)
     _check_model(env)
     RUN_DIR.mkdir(parents=True, exist_ok=True)
     LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -289,8 +289,7 @@ def start(args: argparse.Namespace) -> int:
                         _probe(f"http://127.0.0.1:{oasis}/experts") and
                         _probe(f"http://127.0.0.1:{frontend}/")):
                     print(f"Local web UI: http://127.0.0.1:{frontend}", flush=True)
-                    _magic_links(_process_env(no_openclaw=not use_openclaw,
-                                              no_channel=args.no_channel), tunnel=False)
+                    _magic_links(_process_env(no_channel=args.no_channel), tunnel=False)
                     break
                 time.sleep(0.5)
             return process.wait()
@@ -377,12 +376,10 @@ def _legacy_command(command: str, arguments: list[str]) -> int | None:
         "add-user": ("src/backend/ops/setup/adduser.py", []),
         "configure": ("src/backend/ops/setup/configure.py", []),
         "auto-model": ("src/backend/ops/setup/configure.py", ["--auto-model"]),
-        "sync-openclaw-llm": ("src/backend/ops/setup/configure_openclaw.py", ["--sync-clawcross-llm"]),
         "import-openclaw-llm": ("src/backend/ops/setup/configure_openclaw.py", ["--import-clawcross-llm-from-openclaw"]),
         "evolve-skill": ("tools/maintenance/evolve_skill.py", []),
         "cli": ("src/cli/cli.py", []),
         "clawcross": ("src/cli/clawcross.py", []),
-        "check-openclaw": ("src/backend/ops/setup/configure_openclaw.py", ["--status"]),
     }
     if command in scripts:
         script, prefix = scripts[command]
@@ -397,19 +394,6 @@ def _legacy_command(command: str, arguments: list[str]) -> int | None:
         result = status()
         component_status()
         return result
-    if command == "check-openclaw-weixin":
-        executable = shutil.which("openclaw.cmd" if _is_windows() else "openclaw")
-        if not executable:
-            raise RuntimeError("OpenClaw is unavailable; no plugin was installed")
-        return subprocess.run([executable, "plugins", "list"], check=False).returncode
-    if command == "bind-openclaw-channel":
-        if len(arguments) != 2:
-            raise ValueError("Usage: bind-openclaw-channel <agent> <bind_key>")
-        executable = shutil.which("openclaw.cmd" if _is_windows() else "openclaw")
-        if not executable:
-            raise RuntimeError("OpenClaw CLI is unavailable")
-        return subprocess.run([executable, "agents", "bind", "--agent", arguments[0],
-                               "--bind", arguments[1]], check=False).returncode
     if command == "restart":
         _stop_pid(TUNNEL_PID)
         _clear_public_domain()
@@ -430,10 +414,9 @@ def main() -> int:
     _initialize_paths()
     if len(sys.argv) < 2 or sys.argv[1] == "help":
         print("ClawCross commands: start, start-foreground, restart, setup, stop, status, "
-              "configure, add-user, auto-model, sync-openclaw-llm, import-openclaw-llm, components, "
+              "configure, add-user, auto-model, import-openclaw-llm, components, "
               "install-component, start-tunnel, stop-tunnel, tunnel-status, logs, "
-              "doctor, cli, clawcross, evolve-skill, check-openclaw, "
-              "check-openclaw-weixin, bind-openclaw-channel")
+              "doctor, cli, clawcross, evolve-skill")
         return 0
     if len(sys.argv) > 1:
         try:

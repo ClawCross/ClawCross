@@ -96,6 +96,15 @@ class AgentClient:
             return DeliveryReceipt(accepted=False, error=_error(response))
         return DeliveryReceipt(accepted=True)
 
+    async def update(self, ref: str, *, name: str | None = None, settings: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Rename an agent or change its settings (``PATCH /v1/agents/{ref}``)."""
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.patch(f"{self.base_url}/v1/agents/{ref}", headers=self._auth(),
+                                          json={"name": name, "settings": settings or {}})
+        if response.status_code >= 400:
+            raise RuntimeError(_error(response))
+        return response.json()
+
     async def delete(self, ref: str) -> bool:
         """Delete an agent, its session and its record."""
         async with httpx.AsyncClient(timeout=60) as client:

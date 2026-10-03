@@ -185,11 +185,11 @@ def create_openai_router(
 
     @router.get("/v1/models")
     async def list_models():
-        """The runtimes a new agent can have: ``webot``, each ACP agent, ``openclaw``."""
+        """The runtimes a new agent can have: ``webot`` and each ACP agent."""
         from agents.platforms import acpx_agent_tags_with_legacy
 
         created = int(time.time())
-        runtimes = ["webot", *sorted({canonical_platform(t) for t in acpx_agent_tags_with_legacy()}), "openclaw"]
+        runtimes = ["webot", *sorted({canonical_platform(t) for t in acpx_agent_tags_with_legacy()})]
         return {"object": "list", "data": [
             {"id": r, "object": "model", "created": created, "owned_by": "webot" if r == "webot" else "clawcross"}
             for r in runtimes

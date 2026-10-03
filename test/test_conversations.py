@@ -147,7 +147,9 @@ class TestGroupChat(GroupCase):
         self.assertEqual(sorted(text), ["Coder", "Codex"])
         self.assertIn("@你 说:", text["Codex"])
         meta = {d["agent"].name: d["context"]["groups"][0] for d in self.gateway.deliveries}
-        self.assertIn(f"--agent {self.codex.agent_id}", meta["Codex"]["reply_channel"])
+        self.assertIn('ClawCross MCP', meta["Codex"]["reply_channel"])
+        self.assertIn('send_to_group', meta["Codex"]["reply_channel"])
+        self.assertIn(self.group, meta["Codex"]["reply_channel"])
         self.assertIn(f'send_to_group(group_id="{self.group}"', meta["Coder"]["reply_channel"])
         self.assertEqual(meta["Codex"]["role"], "sub_agent")
         self.assertNotIn("reply_channel", text["Codex"])

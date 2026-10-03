@@ -28,7 +28,7 @@ from typing import Any, Callable
 
 from agents.messages import AgentMessage, AgentReply, DeliveryReceipt, normalize_run_mode
 from agents.runtime import ControlError, Runtime
-from agents.store import ACPX, HTTP, LLM, OPENCLAW, WEBOT, Agent, AgentStore
+from agents.store import ACPX, HTTP, LLM, WEBOT, Agent, AgentStore
 
 logger = logging.getLogger(__name__)
 
@@ -63,11 +63,9 @@ class AgentGateway:
         from external.acp import AcpRuntime
         from external.http import HttpRuntime
         from external.llm import LlmRuntime
-        from external.openclaw import OpenclawRuntime
 
         self.runtimes: dict[str, Runtime] = {
             ACPX: AcpRuntime(store),
-            OPENCLAW: OpenclawRuntime(store),
             HTTP: HttpRuntime(store),
             LLM: LlmRuntime(),
             **(runtimes or {}),

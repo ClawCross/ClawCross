@@ -1,4 +1,4 @@
-"""Network-facing relay protocol, with password joins and scoped duplex sessions."""
+"""Network-facing relay protocol, with invitation-link joins and scoped duplex sessions."""
 import asyncio
 from collections import defaultdict, deque
 import hmac
@@ -11,8 +11,7 @@ from groups.relay_store import RelayError, RelayStore
 
 
 class Join(BaseModel):
-    group_id: str = Field(max_length=100)
-    password: str = Field('', max_length=256)
+    invite: str = Field(min_length=20, max_length=100)
     node_id: str = Field(max_length=100)
     user_id: str = Field(max_length=100)
     display_name: str = Field(max_length=160)
@@ -23,9 +22,7 @@ class Create(BaseModel):
     node_id: str = Field(max_length=100)
     user_id: str = Field(max_length=100)
     display_name: str = Field(max_length=160)
-    password: str = Field('', max_length=256)
     kind: str = 'group'
-    local_join: bool = True
 
 
 class AgentJoin(BaseModel):
@@ -130,8 +127,18 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
         limited('join:global', 120)
         limited('join:' + (request.client.host if request.client else '?'), 12)
         fields = body.model_dump()
-        gid = fields.pop('group_id')
-        return await invoke(store.join, gid, **fields, trusted_local=local_control(request, key))
+        return await invoke(store.join, fields.pop('invite'), **fields)
+
+    @router.post('/poll')
+    async def poll(body: dict, authorization: str | None = Header(None)):
+        """The WebSocket stream over plain HTTP, for members reached through a web front
+        end: acknowledge ``cursor`` and receive the events after it."""
+        credential = token(authorization)
+        cursor = body.get('cursor', 0)
+        if not isinstance(cursor, int) or cursor < 0:
+            raise HTTPException(400, '无效的游标')
+        await invoke(store.acknowledge, credential, cursor)
+        return {'type': 'events', **await invoke(store.events, credential, cursor)}
 
     @router.get('/group')
     async def group(authorization: str | None = Header(None)):

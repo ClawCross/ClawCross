@@ -17,17 +17,30 @@ from websockets.asyncio.client import connect
 
 from agents.messages import AgentMessage
 from agents.gateway import reply_channel
-from groups.config import service_key, service_url
+from groups.config import frontend_url, own_front_ends, service_key, service_url
 from groups.delivery import render_digest
 from groups.service import GroupError
 
 logger = logging.getLogger(__name__)
+
+# A member reached through a web front end polls; the front end carries no WebSocket.
+POLL_SECONDS = 2
 
 
 class ClientError(GroupError):
     def __init__(self, message, status=400):
         super().__init__(message)
         self.status = status
+
+
+def parse_invite_link(link: str) -> tuple[str, str]:
+    """``(front-end base URL, ticket)`` of an invitation link ``<base>/group-guest#<ticket>``."""
+    parsed = urlsplit((link or '').strip())
+    if parsed.scheme not in {'http', 'https'} or not parsed.hostname or parsed.path.rstrip('/') != '/group-guest' or not parsed.fragment:
+        raise ClientError('请粘贴完整的邀请链接（…/group-guest#…）')
+    if len(parsed.fragment) > 4096:
+        raise ClientError('邀请链接无效')
+    return normalize_url(f'{parsed.scheme}://{parsed.netloc}'), parsed.fragment
 
 
 def normalize_url(value: str) -> str:
@@ -57,7 +70,8 @@ class ClientStore:
                     owner TEXT NOT NULL, alias TEXT NOT NULL, url TEXT NOT NULL, remote_id TEXT NOT NULL,
                     connection_id TEXT NOT NULL, token TEXT NOT NULL, cursor INTEGER NOT NULL DEFAULT 0,
                     allowed_agents TEXT NOT NULL DEFAULT '[]', metadata TEXT NOT NULL DEFAULT '{}',
-                    active INTEGER NOT NULL DEFAULT 1, error TEXT NOT NULL DEFAULT '', PRIMARY KEY(owner,alias)
+                    active INTEGER NOT NULL DEFAULT 1, error TEXT NOT NULL DEFAULT '',
+                    via TEXT NOT NULL DEFAULT '', PRIMARY KEY(owner,alias)
                 );
                 CREATE TABLE IF NOT EXISTS group_client_events(
                     owner TEXT NOT NULL,alias TEXT NOT NULL,id INTEGER NOT NULL,body TEXT NOT NULL,
@@ -68,6 +82,9 @@ class ClientStore:
                     PRIMARY KEY(owner,alias,event_id,agent_id)
                 );
             ''')
+            # ``via``: the invitation ticket of a member that reaches the group through a web front end.
+            if 'via' not in {c[1] for c in db.execute('PRAGMA table_info(group_client_connections)')}:
+                db.execute("ALTER TABLE group_client_connections ADD COLUMN via TEXT NOT NULL DEFAULT ''")
             db.execute('INSERT OR IGNORE INTO group_client_identity VALUES(1,?)', ('device_' + secrets.token_hex(16),))
             self.node_id = db.execute('SELECT node_id FROM group_client_identity WHERE id=1').fetchone()[0]
         if os.name != 'nt':
@@ -93,7 +110,7 @@ class ClientStore:
             row = db.execute('SELECT * FROM group_client_connections WHERE owner=? AND alias=?', (owner, alias)).fetchone()
             return dict(row) if row else None
 
-    def save(self, owner, url, result):
+    def save(self, owner, url, result, via=''):
         gid = result['group']['group_id']
         alias = 'rg_' + hashlib.sha256((url + '/' + gid).encode()).hexdigest()[:24]
         with self.db() as db:
@@ -104,11 +121,12 @@ class ClientStore:
                 own = db.execute('SELECT COUNT(*) FROM group_client_connections WHERE owner=? AND active=1', (owner,)).fetchone()[0]
                 if total >= 128 or own >= 32:
                     raise ClientError('设备最多连接 128 个群，每个用户最多连接 32 个群', 409)
-            db.execute('''INSERT INTO group_client_connections(owner,alias,url,remote_id,connection_id,token,metadata)
-                       VALUES(?,?,?,?,?,?,?) ON CONFLICT(owner,alias) DO UPDATE SET
+            db.execute('''INSERT INTO group_client_connections(owner,alias,url,remote_id,connection_id,token,metadata,via)
+                       VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(owner,alias) DO UPDATE SET
                        connection_id=excluded.connection_id,token=excluded.token,metadata=excluded.metadata,
-                       cursor=0,allowed_agents='[]',active=1,error='正在连接' ''',
-                       (owner, alias, url, gid, result['connection_id'], result['token'], json.dumps(result['group'], ensure_ascii=False)))
+                       via=excluded.via,cursor=0,allowed_agents='[]',active=1,error='正在连接' ''',
+                       (owner, alias, url, gid, result['connection_id'], result['token'],
+                        json.dumps(result['group'], ensure_ascii=False), via))
         return alias
 
     def update(self, owner, alias, **fields):
@@ -159,48 +177,64 @@ class GroupClient:
 
     @staticmethod
     def headers(row):
-        return {'Authorization': 'Bearer ' + row['token']}
+        headers = {'Authorization': 'Bearer ' + row['token']}
+        if row['via']:
+            headers['X-Group-Invite'] = row['via']
+        return headers
+
+    @staticmethod
+    def _refusal(response):
+        try:
+            body = response.json()
+        except ValueError:
+            body = {}
+        return ClientError(str(body.get('detail') or body.get('error') or '群服务器拒绝请求'), response.status_code)
 
     def request(self, row, method, path, body=None):
         try:
-            with httpx.Client(timeout=10, trust_env=False) as client:
+            with httpx.Client(timeout=20, trust_env=False) as client:
                 response = client.request(method, row['url'] + '/relay' + path, headers=self.headers(row), json=body)
             if response.status_code >= 400:
-                raise ClientError(str(response.json().get('detail', '群服务器拒绝请求')), response.status_code)
+                raise self._refusal(response)
             return response.json()
-        except httpx.HTTPError as exc:
+        except (httpx.HTTPError, ValueError) as exc:
             raise ClientError('无法连接群服务器', 503) from exc
 
-    @staticmethod
-    def enroll(url, path, headers, body):
+    @classmethod
+    def enroll(cls, url, path, headers, body):
         try:
-            with httpx.Client(timeout=15, trust_env=False) as client:
-                response = client.post(url + '/relay/' + path, headers=headers, json=body)
+            with httpx.Client(timeout=20, trust_env=False) as client:
+                response = client.post(url + path, headers=headers, json=body)
             if response.status_code >= 400:
-                raise ClientError(str(response.json().get('detail', '群服务器拒绝请求')), response.status_code)
+                raise cls._refusal(response)
             return response.json()
         except (httpx.HTTPError, ValueError) as exc:
             raise ClientError('无法连接群服务器或服务器响应无效', 503) from exc
 
-    def join(self, owner, *, server_url='', group_id, password='', agents=()):
-        url = normalize_url(server_url)
-        known = next((r for r in self.store.rows(owner) if r['url'] == url and r['remote_id'] == group_id and r['active']), None)
-        if known:
-            for aid in agents:
-                self.add_agent(owner, known['alias'], aid)
-            return self.card(self.require(owner, known['alias']))
+    def join_link(self, owner, *, link, agents=()):
+        """Join as a full member with an invitation link. Through another machine's
+        front end the membership polls; through this machine's own it is a local one."""
+        base, ticket = parse_invite_link(link)
         for aid in agents:
             if self.agents.get(owner, aid) is None:
                 raise ClientError('只能引入自己拥有的 agent', 403)
-        headers = {'X-Group-Service-Key': service_key()} if url == service_url() else {}
-        result = self.enroll(url, 'join', headers, {'group_id': group_id, 'password': password,
-                             'node_id': self.store.node_id, 'user_id': owner, 'display_name': owner})
-        alias = self.store.save(owner, url, result)
+        own = base in own_front_ends()
+        front = frontend_url() if own else base
+        invitation = {'X-Group-Invite': ticket}
+        group_id = self.enroll(front, '/group-guest-api/info', invitation, {})['group_id']
+        url, via = (service_url(), '') if own else (base, ticket)
+        known = next((r for r in self.store.rows(owner) if r['url'] == url and r['remote_id'] == group_id and r['active']), None)
+        if known is None:
+            result = self.enroll(front, '/relay/join', invitation, {
+                'node_id': self.store.node_id, 'user_id': owner, 'display_name': owner})
+            alias = self.store.save(owner, url, result, via=via)
+        else:
+            alias = known['alias']
         for aid in agents:
             self.add_agent(owner, alias, aid)
         return self.card(self.require(owner, alias))
 
-    def create(self, owner, *, title, kind='group', agents=(), password='', local_join=True):
+    def create(self, owner, *, title, kind='group', agents=()):
         if kind == 'direct':
             if len(agents) != 1:
                 raise ClientError('私聊需要且只能引入一个 agent')
@@ -211,8 +245,8 @@ class GroupClient:
             if self.agents.get(owner, aid) is None:
                 raise ClientError('只能引入自己拥有的 agent', 403)
         url = service_url()
-        result = self.enroll(url, 'create', {'X-Group-Service-Key': service_key()}, {
-            'title': title, 'kind': kind, 'password': password, 'local_join': local_join,
+        result = self.enroll(url, '/relay/create', {'X-Group-Service-Key': service_key()}, {
+            'title': title, 'kind': kind,
             'node_id': self.store.node_id, 'user_id': owner, 'display_name': owner})
         alias = self.store.save(owner, url, result)
         for aid in agents:
@@ -404,34 +438,62 @@ class GroupClient:
                     self.tasks.pop(key, None)
             task.add_done_callback(finished)
 
+    async def _receive(self, owner, alias, packet):
+        """Apply one events packet; returns the cursor to acknowledge."""
+        row = self.require(owner, alias)
+        # A deleted local agent loses permission immediately, including offline deletes.
+        for member in list(packet['group'].get('members', [])):
+            if member['connection_id'] == row['connection_id'] and member.get('agent_id') and self.agents.get(owner, member['agent_id']) is None:
+                packet['group'] = await asyncio.to_thread(self.request, row, 'POST', '/manage/remove_member', {'principal': member['principal']})
+        await self.consume(self.require(owner, alias), packet)
+        return self.require(owner, alias)['cursor']
+
+    async def _stream(self, owner, alias, connected):
+        row = self.require(owner, alias)
+        uri = row['url'].replace('https://', 'wss://', 1).replace('http://', 'ws://', 1) + '/relay/ws'
+        async with connect(uri, open_timeout=10, max_size=2 * 1024 * 1024, proxy=None) as ws:
+            await ws.send(json.dumps({'token': row['token'], 'cursor': row['cursor']}))
+            connected()
+            async for raw in ws:
+                packet = json.loads(raw)
+                if packet.get('type') == 'events':
+                    await ws.send(json.dumps({'type': 'ack', 'cursor': await self._receive(owner, alias, packet)}))
+
+    async def _poll(self, owner, alias, connected):
+        version = None
+        while not self.closed:
+            row = self.require(owner, alias)
+            packet = await asyncio.to_thread(self.request, row, 'POST', '/poll', {'cursor': row['cursor']})
+            connected()
+            if packet['events'] or packet['group'].get('version') != version:
+                await self._receive(owner, alias, packet)
+                version = packet['group'].get('version')
+            if not packet['events']:
+                await asyncio.sleep(POLL_SECONDS)
+
     async def worker(self, owner, alias):
         delay = 1
+
+        def connected():
+            nonlocal delay
+            delay = 1
+
         while not self.closed:
             row = self.store.get(owner, alias)
             if not row or not row['active']:
                 return
             try:
-                uri = row['url'].replace('https://', 'wss://', 1).replace('http://', 'ws://', 1) + '/relay/ws'
-                async with connect(uri, open_timeout=10, max_size=2 * 1024 * 1024, proxy=None) as ws:
-                    await ws.send(json.dumps({'token': row['token'], 'cursor': row['cursor']}))
-                    delay = 1
-                    async for raw in ws:
-                        packet = json.loads(raw)
-                        if packet.get('type') != 'events':
-                            continue
-                        # A deleted local agent loses permission immediately, including offline deletes.
-                        for member in list(packet['group'].get('members', [])):
-                            if member['connection_id'] == row['connection_id'] and member.get('agent_id') and self.agents.get(owner, member['agent_id']) is None:
-                                packet['group'] = await asyncio.to_thread(self.request, row, 'POST', '/manage/remove_member', {'principal': member['principal']})
-                        await self.consume(self.require(owner, alias), packet)
-                        cursor = self.require(owner, alias)['cursor']
-                        await ws.send(json.dumps({'type': 'ack', 'cursor': cursor}))
+                await (self._poll if row['via'] else self._stream)(owner, alias, connected)
+                if self.closed:
+                    return
                 raise ConnectionError("group connection closed")
             except asyncio.CancelledError:
                 return
             except Exception as exc:
                 from websockets.exceptions import ConnectionClosed
-                if isinstance(exc, ConnectionClosed) and exc.rcvd and exc.rcvd.code == 1008:
+                revoked = (isinstance(exc, ConnectionClosed) and exc.rcvd and exc.rcvd.code == 1008) or (
+                    isinstance(exc, ClientError) and exc.status in {401, 403})
+                if revoked:
                     self.store.update(owner, alias, active=0, error='群凭证已失效或成员关系已撤销')
                     return
                 self.store.update(owner, alias, error='连接中断，正在重连')

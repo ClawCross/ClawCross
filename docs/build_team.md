@@ -83,24 +83,15 @@ uv run src/cli/cli.py teams remove-member --team-name demo_team --agent coder   
 
 ### 4.4 OpenClaw agent
 
-OpenClaw 的 agent 住在 OpenClaw 自己的工作区里，所以先在 OpenClaw 里建（或选一个已有的），再登记成 ClawCross agent：
+OpenClaw 和 Codex 一样是 ACP 工具，经 acpx 的 `openclaw acp` 对话，连 OpenClaw 的 `main` agent；ClawCross 不改 OpenClaw 的配置：
 
 ```bash
-# 1. 查已有 / 新建 OpenClaw agent
-uv run src/cli/cli.py openclaw sessions
-uv run src/cli/cli.py openclaw add --data '{"name": "demo_team_researcher", "workspace": "~/.openclaw/workspace-demo_team_researcher"}'
-
-# 2. 登记为 ClawCross agent，并加入 team
-# global_name 指明是哪一个 OpenClaw agent
 uv run src/cli/cli.py agents create --name "Researcher" --platform openclaw \
-  --data '{"agent_id": "researcher", "global_name": "demo_team_researcher", "persona": "analyst", "team": "demo_team"}'
+  --data '{"agent_id": "researcher", "persona": "analyst"}'
 uv run src/cli/cli.py teams add-member --team-name demo_team --agent researcher --role "Researcher"
-
-# 3.（可选）把 OpenClaw 工作区配置存进 team，便于导出 / 迁移
-uv run src/cli/cli.py openclaw-snapshot export --team demo_team --agent-name demo_team_researcher --short-name Researcher
 ```
 
-深度配置（工具权限、channels 等）见 [openclaw-commands.md](openclaw-commands.md)。
+前提和限制见 [openclaw-commands.md](openclaw-commands.md)。
 
 ---
 
@@ -124,7 +115,7 @@ uv run src/cli/cli.py openclaw-snapshot export --team demo_team --agent-name dem
 ```
 
 - `name` = 角色名，`tag` = 人设，`is_primary` = lead（至多一条）
-- `session`（内部）/ `global_name`（外部）是本机的 agent 编号；OpenClaw 条目的 `global_name` 是 OpenClaw agent 名
+- `session`（内部）/ `global_name`（外部）是本机的 agent 编号
 - team 里已有同名成员就是那个成员；条目指向已有编号就用那个 agent；否则新建
 
 导入：

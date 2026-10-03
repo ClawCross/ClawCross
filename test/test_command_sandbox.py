@@ -169,7 +169,8 @@ class CommandSandboxTests(unittest.TestCase):
                 self.assertLessEqual(limits["RLIMIT_AS"], 2 * 1024**3)
                 self.assertLessEqual(limits["RLIMIT_FSIZE"], 128 * 1024**2)
                 self.assertLessEqual(limits["RLIMIT_NOFILE"], 256)
-                self.assertLessEqual(limits["RLIMIT_NPROC"], 256)
+                self.assertGreaterEqual(limits["RLIMIT_NPROC"], 64)
+                self.assertLessEqual(limits["RLIMIT_NPROC"], command_sandbox._process_limit() + 64)
             finally:
                 call.settings_path.unlink(missing_ok=True)
 

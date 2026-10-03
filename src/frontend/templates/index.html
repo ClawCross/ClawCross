@@ -23,7 +23,7 @@
     <link rel="manifest" href="/manifest.json">
     <link rel="icon" href="/static/assets/clawcross-mark.svg" type="image/svg+xml">
     
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/static/css/tailwind.css?v=20261003-local">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.2/marked.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
@@ -31,7 +31,7 @@
     <link rel="stylesheet" href="/static/css/markdown-shared.css">
     <link rel="stylesheet" href="/static/css/theme.css?v=20261002-fold">
     <link rel="stylesheet" href="/static/css/style.css?v=20261002-agent-drafts">
-<link rel="stylesheet" href="/static/css/group-network.css?v=20261001-relay">
+<link rel="stylesheet" href="/static/css/group-network.css?v=20261003-invite">
 </head>
 <body class="bg-gray-100 font-sans leading-normal tracking-normal">
 
@@ -209,10 +209,6 @@
                             <svg class="ui-icon"><use href="/static/icons.svg#arrow-up-circle"/></svg>
                             <span class="ui-menu-label" data-i18n="project_update_title">更新项目</span>
                         </button>
-                        <button type="button" class="ui-menu-item" onclick="orchOpenClawQuickConfig(); closeHamburgerMenu();">
-                            <svg class="ui-icon"><use href="/static/icons.svg#plug"/></svg>
-                            <span class="ui-menu-label" data-i18n="hmenu_openclaw">OpenClaw</span>
-                        </button>
                         <button type="button" class="ui-menu-item" onclick="handleNewSession(); closeHamburgerMenu();">
                             <svg class="ui-icon"><use href="/static/icons.svg#message-plus"/></svg>
                             <span class="ui-menu-label" data-i18n="hmenu_new">New Chat</span>
@@ -296,21 +292,15 @@
                     <summary data-i18n-title="studio_conversations" title="Agents"><svg class="ui-icon"><use href="/static/icons.svg#menu"/></svg><span data-i18n="studio_conversations">Agents</span></summary>
                 <div class="studio-session-rail-body">
                     <button type="button" id="studio-new-conversation" class="studio-new-conversation oc-acp-session-ensure" onclick="studioNewConversation()"><svg class="ui-icon"><use href="/static/icons.svg#message-plus"/></svg><span data-i18n="studio_new_conversation">新建 Agent</span></button>
-                <!-- OpenClaw Agent Switcher Bar -->
-                <div id="openclaw-chat-switcher" class="openclaw-chat-switcher" style="display:none;">
+                <!-- Chat runtime switcher: WeBot or an ACP tool -->
+                <div id="studio-chat-switcher" class="studio-chat-switcher" style="display:none;">
                     <div class="oc-switcher-inner">
                         <div class="oc-switcher-row-main">
                             <div class="oc-switcher-tabs">
                                 <button class="oc-switcher-tab active" id="oc-tab-internal" onclick="ocSwitchTo('internal')" data-i18n="oc_tab_internal">
                                     🤖 WeBot
                                 </button>
-                                <button class="oc-switcher-tab" id="oc-tab-openclaw" onclick="ocSwitchTo('openclaw')" data-i18n="oc_tab_openclaw">
-                                    🦞 OpenClaw
-                                </button>
                                 <span id="oc-acp-tabs" class="oc-acp-tabs" style="display:none;"></span>
-                            </div>
-                            <div id="oc-agent-selector" hidden>
-                                <select id="oc-agent-select" hidden tabindex="-1"><option value=""></option></select>
                             </div>
                         </div>
                         <div id="oc-acp-session-row" hidden>
@@ -521,7 +511,6 @@
   </div>
 </div>
                                 <button onclick="toggleTeamMembersView()" class="text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 px-2 py-1 rounded border border-blue-200" title="团队成员">👥 成员</button>
-                                <button onclick="orchOpenClawQuickConfig()" class="text-xs bg-purple-50 text-purple-600 hover:bg-purple-100 px-2 py-1 rounded border border-purple-200" title="OpenClaw Agent 配置">🦞</button>
 <button onclick="deleteTeam()" class="text-xs bg-red-50 text-red-600 hover:bg-red-100 px-2 py-1 rounded border border-red-200" title="删除团队" style="display:none;">🗑️</button>
                             </div>
                         </div>
@@ -1013,6 +1002,8 @@
                 <div id="agent-meta-error" role="status" style="color:#dc2626;font-size:12px"></div>
                 <label class="agent-meta-label">Name</label>
                 <input type="text" id="agent-meta-name" class="agent-meta-input" placeholder="(None)">
+                <label class="agent-meta-label" data-i18n="agent_meta_title">会话标题</label>
+                <input type="text" id="agent-meta-title" class="agent-meta-input" maxlength="80" data-i18n-placeholder="agent_meta_title_placeholder" placeholder="留空则显示第一条消息">
                 <label class="agent-meta-label">Tools</label>
                 <div id="agent-meta-tools-container" class="agent-meta-tools-container" style="max-height:150px;overflow-y:auto;border:1px solid #d1d5db;border-radius:8px;padding:8px;">
                     <span style="color:#9ca3af;font-size:12px;">Loading tools...</span>
@@ -1129,13 +1120,10 @@
                     <div style="font-size:12px;color:#4b5563;margin-bottom:8px;">安装时使用的 AI 编程助手也可以帮你完成更多配置，试试发送：</div>
                     <div style="display:flex;flex-direction:column;gap:6px;">
                         <div onclick="copyMagicPrompt(this)" style="padding:8px 12px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;color:#374151;cursor:pointer;transition:all .15s;" onmouseover="this.style.borderColor='#3b82f6';this.style.background='#eff6ff'" onmouseout="this.style.borderColor='#e5e7eb';this.style.background='#fff'">
-                            📋 <code>阅读SKILL帮我安装并配置OpenClaw/AntiGravity</code>
+                            📋 <code>阅读SKILL帮我安装并配置AntiGravity</code>
                         </div>
                         <div onclick="copyMagicPrompt(this)" style="padding:8px 12px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;color:#374151;cursor:pointer;transition:all .15s;" onmouseover="this.style.borderColor='#3b82f6';this.style.background='#eff6ff'" onmouseout="this.style.borderColor='#e5e7eb';this.style.background='#fff'">
                             📋 <code>帮我自动选择目前能用的最好的LLM模型</code>
-                        </div>
-                        <div onclick="copyMagicPrompt(this)" style="padding:8px 12px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;color:#374151;cursor:pointer;transition:all .15s;" onmouseover="this.style.borderColor='#3b82f6';this.style.background='#eff6ff'" onmouseout="this.style.borderColor='#e5e7eb';this.style.background='#fff'">
-                            📋 <code>帮OpenClaw安装微信插件并绑定</code>
                         </div>
                     </div>
                 </div>
@@ -1369,15 +1357,15 @@
     <script src="/static/js/markdown-shared.js"></script>
     <script src="/static/js/tinyfish-live-shared.js"></script>
     <script src="/static/js/tool-catalog.js?v=20261001-groups"></script>
-<script src="/static/js/group-network-ui.js?v=20261001-relay"></script>
+<script src="/static/js/group-network-ui.js?v=20261003-invite"></script>
     <script src="/static/js/conversation-ui-panels.js?v=20261001-windows"></script>
     <script src="/static/js/components.js?v=20261002-runtime-menu"></script>
-    <script src="/static/js/main.js?v=20261003-landlock-network"></script>
+    <script src="/static/js/attachment-utils.js?v=20261003-media"></script>
+    <script src="/static/js/main.js?v=20261003-combined"></script>
     <link rel="stylesheet" href="/static/css/external-agent-settings.css?v=20261002-connect">
     <script src="/static/js/runtime-presentation.js?v=20261002-fold"></script>
 <script src="/static/js/external-agent-settings.js?v=20261002-explicit-create"></script>
-    <script src="/static/js/runtime-settings.js?v=20261003-landlock-network"></script>
-    <script src="/static/js/oasis-town.bundle.js?v=20260327-humanfix"></script>
+    <script src="/static/js/runtime-settings.js?v=20261003-combined"></script>
     <script src="/static/js/app.js?v=20260327-humanfix"></script>
     <script>
     // Check LLM API config on page load & preload setup status for wizard

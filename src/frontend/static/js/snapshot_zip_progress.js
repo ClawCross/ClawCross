@@ -1,12 +1,10 @@
 /**
- * Team snapshot zip: peek external_agents.json and show a compact upload progress bar.
- * Depends on global JSZip (load jszip.min.js before this file).
+ * Team snapshot zip: show a compact upload progress bar while the server restores it.
  */
 (function () {
   'use strict';
 
-  var MS_PER_OPENCLAW = 5000;
-  var BASE_MS = 2500;
+  var ESTIMATED_MS = 3500;
   /** Above LLM banner (~99999) and mobile overlays (~10k); avoid huge values (some engines clamp oddly). */
   var PANEL_Z = 500000;
 
@@ -19,41 +17,6 @@
     } catch (e) {
       return true;
     }
-  }
-
-  /**
-   * @param {File|Blob} file
-   * @returns {Promise<{ openclaw: number }>}
-   */
-  function teamSnapshotCountOpenclawInZip(file) {
-    if (!file || typeof JSZip === 'undefined') {
-      return Promise.resolve({ openclaw: 0 });
-    }
-    return JSZip.loadAsync(file)
-      .then(function (zip) {
-        var f = zip.file('external_agents.json');
-        if (!f) return { openclaw: 0 };
-        return f.async('string').then(function (text) {
-          var data;
-          try {
-            data = JSON.parse(text);
-          } catch (e) {
-            return { openclaw: 0 };
-          }
-          if (!Array.isArray(data)) return { openclaw: 0 };
-          var openclaw = 0;
-          for (var i = 0; i < data.length; i++) {
-            var a = data[i];
-            if (!a || String(a.tag).toLowerCase() !== 'openclaw') continue;
-            openclaw++;
-          }
-          return { openclaw: openclaw };
-        });
-      })
-      .catch(function (e) {
-        // console.warn('[snapshot_zip_progress] zip peek failed', e);
-        return { openclaw: 0 };
-      });
   }
 
   function _ensurePanel() {
@@ -100,12 +63,10 @@
   }
 
   /**
-   * @param {{ openclaw: number }} counts
    * @param {() => Promise<Response>} doFetch
    * @returns {Promise<Response>}
    */
-  function teamSnapshotUploadWithProgress(counts, doFetch) {
-    var openclawCount = counts && typeof counts.openclaw === 'number' ? counts.openclaw : 0;
+  function teamSnapshotUploadWithProgress(doFetch) {
     var panel = _ensurePanel();
     var bar = document.getElementById('team-snapshot-progress-bar');
     var pctEl = document.getElementById('team-snapshot-progress-pct');
@@ -113,15 +74,8 @@
     var detailEl = document.getElementById('team-snapshot-progress-detail');
     var zh = _langZh();
     titleEl.textContent = zh ? '正在恢复快照…' : 'Restoring team snapshot…';
-    detailEl.textContent =
-      openclawCount > 0
-        ? zh
-          ? '共 ' + openclawCount + ' 个外部 Agent（OpenClaw）'
-          : openclawCount + ' external agent(s) (OpenClaw)'
-        : zh
-          ? '未在 zip 中发现 OpenClaw 外部 Agent'
-          : 'No OpenClaw external agents in zip';
-    var estimated = Math.max(3500, BASE_MS + openclawCount * MS_PER_OPENCLAW);
+    detailEl.textContent = zh ? '正在导入成员、技能和定时任务…' : 'Importing members, skills and alarms…';
+    var estimated = ESTIMATED_MS;
     _setPanelVisible(panel, true);
     bar.style.width = '8%';
     pctEl.textContent = '8%';
@@ -177,7 +131,7 @@
     var detailEl = document.getElementById('team-snapshot-progress-detail');
     var zh = _langZh();
     titleEl.textContent = zh ? '正在恢复快照…' : 'Restoring team snapshot…';
-    detailEl.textContent = zh ? '正在读取 zip…' : 'Reading zip…';
+    detailEl.textContent = zh ? '正在上传…' : 'Uploading…';
     _setPanelVisible(panel, true);
     bar.style.width = '5%';
     pctEl.textContent = '…';
@@ -189,18 +143,15 @@
         });
       });
     }).then(function () {
-      return teamSnapshotCountOpenclawInZip(file).then(function (counts) {
-        return teamSnapshotUploadWithProgress(counts, function () {
-          return fetch('/teams/snapshot/upload', {
-            method: 'POST',
-            body: formData,
-          });
+      return teamSnapshotUploadWithProgress(function () {
+        return fetch('/teams/snapshot/upload', {
+          method: 'POST',
+          body: formData,
         });
       });
     });
   }
 
-  window.teamSnapshotCountOpenclawInZip = teamSnapshotCountOpenclawInZip;
   window.teamSnapshotUploadWithProgress = teamSnapshotUploadWithProgress;
   window.teamSnapshotUploadZipWithProgress = teamSnapshotUploadZipWithProgress;
 })();

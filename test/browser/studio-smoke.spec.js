@@ -239,14 +239,6 @@ async function stubStudioNetwork(page, calls, options = {}) {
     options.importOpenClawPayload || {}
   );
   const discoverModelsPayload = options.discoverModelsPayload || { models: ['gpt-5.4', 'gpt-4o'] };
-  const exportOpenClawPayload = Object.assign(
-    {
-      ok: true,
-      model_ref: 'openai/gpt-5.4',
-      restarted: true,
-    },
-    options.exportOpenClawResponse || {}
-  );
 
   const json = (route, payload, status = 200) =>
     route.fulfill({
@@ -298,7 +290,6 @@ async function stubStudioNetwork(page, calls, options = {}) {
   await page.route('**/proxy_tunnel/status', (route) => json(route, { running: false, public_domain: '' }));
   await page.route('**/teams', (route) => json(route, { teams: ['Smoke Team'] }));
   await page.route('**/proxy_visual/experts*', (route) => json(route, []));
-  await page.route('**/proxy_openclaw_sessions', (route) => json(route, { available: true, agents: [] }));
   await page.route('**/proxy_acpx_status', (route) => json(route, acpxStatusPayload));
   await page.route(/\/v1\/agents(\?.*)?$/, async (route) => {
     if (route.request().method() === 'POST') {
@@ -549,12 +540,6 @@ async function stubStudioNetwork(page, calls, options = {}) {
     });
   });
   await page.route('**/api/discover_models', (route) => json(route, discoverModelsPayload));
-  await page.route('**/api/export_openclaw_config', async (route) => {
-    calls.exportOpenClaw += 1;
-    const payload = await route.request().postDataJSON();
-    calls.lastExportPayload = payload;
-    return json(route, exportOpenClawPayload);
-  });
   await page.route('**/api/tinyfish/run', async (route) => {
     calls.tinyfishRun += 1;
     return json(route, {
@@ -567,9 +552,7 @@ async function stubStudioNetwork(page, calls, options = {}) {
 test('studio workflow tab and settings actions stay responsive', async ({ page }) => {
   const calls = {
     importOpenClaw: 0,
-    exportOpenClaw: 0,
     tinyfishRun: 0,
-    lastExportPayload: null,
     approvalActions: [],
   };
   const pageErrors = [];
@@ -609,19 +592,12 @@ test('studio workflow tab and settings actions stay responsive', async ({ page }
   await page.locator('#hamburger-panel button[onclick*="openSettings(); closeHamburgerMenu();"]').click();
 
   await expect(page.locator('#settings-modal')).toBeVisible();
-  await expect(page.locator('#settings-export-openclaw-btn')).toBeEnabled();
+  await expect(page.locator('#settings-import-openclaw-btn')).toBeEnabled();
+  await expect(page.locator('#settings-export-openclaw-btn')).toHaveCount(0);
   await expect(page.locator('#tinyfish-run-btn')).toBeVisible();
 
   await page.locator('#settings-import-openclaw-btn').click();
   await expect.poll(() => calls.importOpenClaw).toBe(1);
-
-  await page.locator('#settings-export-openclaw-btn').click();
-  await expect.poll(() => calls.exportOpenClaw).toBe(1);
-  expect(calls.lastExportPayload).toMatchObject({
-    provider: 'openai',
-    base_url: 'https://api.openai.com',
-    model: 'gpt-5.4',
-  });
 
   await page.locator('#tinyfish-run-btn').click();
   await expect.poll(() => calls.tinyfishRun).toBe(1);
@@ -629,73 +605,10 @@ test('studio workflow tab and settings actions stay responsive', async ({ page }
   expect(pageErrors).toEqual([]);
 });
 
-test('studio settings export button allows keyless ollama sync', async ({ page }) => {
-  const calls = {
-    importOpenClaw: 0,
-    exportOpenClaw: 0,
-    tinyfishRun: 0,
-    lastExportPayload: null,
-    approvalActions: [],
-  };
-  const pageErrors = [];
-
-  page.on('pageerror', (error) => pageErrors.push(error.message));
-  page.on('dialog', async (dialog) => {
-    pageErrors.push(`unexpected dialog: ${dialog.message()}`);
-    await dialog.dismiss();
-  });
-
-  await stubStudioNetwork(page, calls, {
-    setupStatus: {
-      current_provider: 'ollama',
-      current_model: 'llama3.2:latest',
-      current_base_url: 'http://127.0.0.1:11434',
-    },
-    proxySettings: {
-      LLM_PROVIDER: 'ollama',
-      LLM_API_KEY: '',
-      LLM_BASE_URL: 'http://127.0.0.1:11434',
-      LLM_MODEL: 'llama3.2:latest',
-    },
-    discoverModelsPayload: { models: ['llama3.2:latest', 'qwen2.5:latest'] },
-    exportOpenClawResponse: {
-      ok: true,
-      model_ref: 'ollama/llama3.2:latest',
-      restarted: true,
-    },
-  });
-  await page.addInitScript(() => {
-    window.alert = () => {};
-    window.confirm = () => true;
-    localStorage.removeItem('clawcrossStudioFirstVisitV2');
-  });
-
-  await page.goto('/studio');
-  await page.locator('.hamburger-btn').click();
-  await page.locator('#hamburger-panel button[onclick*="openSettings(); closeHamburgerMenu();"]').click();
-
-  await expect(page.locator('#settings-modal')).toBeVisible();
-  await expect(page.locator('#settings-llm-provider')).toHaveValue('ollama');
-  await expect(page.locator('#settings-llm-key')).toHaveValue('');
-  await page.locator('#settings-export-openclaw-btn').click();
-
-  await expect.poll(() => calls.exportOpenClaw).toBe(1);
-  expect(calls.lastExportPayload).toMatchObject({
-    provider: 'ollama',
-    api_key: '',
-    base_url: 'http://127.0.0.1:11434',
-    model: 'llama3.2:latest',
-  });
-
-  expect(pageErrors).toEqual([]);
-});
-
 test('studio webot runtime sidebar shows runtime state and resolves approvals', async ({ page }) => {
   const calls = {
     importOpenClaw: 0,
-    exportOpenClaw: 0,
     tinyfishRun: 0,
-    lastExportPayload: null,
     approvalActions: [],
   };
   const pageErrors = [];
@@ -748,9 +661,7 @@ test('studio webot runtime sidebar shows runtime state and resolves approvals', 
 test('studio webot runtime surfaces recovery hints and applies workflow presets', async ({ page }) => {
   const calls = {
     importOpenClaw: 0,
-    exportOpenClaw: 0,
     tinyfishRun: 0,
-    lastExportPayload: null,
     approvalActions: [],
     workflowApply: [],
   };
@@ -792,9 +703,7 @@ test('studio webot runtime surfaces recovery hints and applies workflow presets'
 test('studio builtin preset modal installs team presets', async ({ page }) => {
   const calls = {
     importOpenClaw: 0,
-    exportOpenClaw: 0,
     tinyfishRun: 0,
-    lastExportPayload: null,
     approvalActions: [],
     teamPresetInstall: [],
     teamPresetList: 0,
@@ -861,9 +770,7 @@ test('studio builtin preset modal installs team presets', async ({ page }) => {
 test('studio oasis swarm uses pretext-backed multiline labels', async ({ page }) => {
   const calls = {
     importOpenClaw: 0,
-    exportOpenClaw: 0,
     tinyfishRun: 0,
-    lastExportPayload: null,
     approvalActions: [],
   };
   const pageErrors = [];
@@ -928,9 +835,7 @@ test('studio oasis swarm uses pretext-backed multiline labels', async ({ page })
 test('oasis town runtime mounts, draws canvas, and accepts live updates', async ({ page }) => {
   const calls = {
     importOpenClaw: 0,
-    exportOpenClaw: 0,
     tinyfishRun: 0,
-    lastExportPayload: null,
     approvalActions: [],
   };
   const pageErrors = [];
@@ -943,6 +848,9 @@ test('oasis town runtime mounts, draws canvas, and accepts live updates', async 
   });
 
   await page.goto('/studio');
+  expect(await page.evaluate(() => Boolean(window.OasisTown))).toBe(false);
+  expect(await page.evaluate(() => performance.getEntriesByType('resource').some(e => e.name.includes('cdn.tailwindcss.com')))).toBe(false);
+  await page.evaluate(() => loadOasisTownBundle());
   await expect.poll(() => page.evaluate(() => Boolean(window.OasisTown))).toBe(true);
   // Page startup ends by syncing the page's own Town (tearing down any other mount): let it finish first.
   await expect(page.locator('#chat-screen')).toBeVisible();
@@ -1000,13 +908,8 @@ test('oasis town runtime mounts, draws canvas, and accepts live updates', async 
 
   expect(mounted.hasRuntime).toBeTruthy();
   await expect(page.locator('#oasis-town-runtime-smoke-host canvas')).toBeVisible();
-  await expect.poll(() =>
-    page.locator('#oasis-town-runtime-smoke-host canvas').evaluate((canvas) => ({
-      width: canvas.width,
-      height: canvas.height,
-    }))
-  ).toMatchObject({ width: expect.any(Number), height: expect.any(Number) });
-
+  // Verify real dimensions and rendered pixels below; a second locator poll
+  // adds frame waits without checking any additional rendering behavior.
   const canvasState = await page.evaluate(async () => {
     const canvas = document.querySelector('#oasis-town-runtime-smoke-host canvas');
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));

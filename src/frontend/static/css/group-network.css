@@ -1,12 +1,70 @@
-.group-network-dialog {box-sizing:border-box;width:min(440px,calc(100vw - 24px));max-height:calc(100dvh - 32px);overflow:auto;border:1px solid var(--border,#d7dee8);border-radius:18px;padding:20px;background:var(--bg-card,#fff);color:var(--text,#182233);box-shadow:0 20px 80px #0003;font:14px/1.5 system-ui,sans-serif;}
-.group-network-dialog::backdrop {background:#10203777;backdrop-filter:blur(3px);}
-.group-network-dialog header {display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px;}
-.group-network-dialog header button {border:0;background:transparent;color:inherit;font-size:24px;cursor:pointer;padding:4px 10px;}
-.group-network-fields {display:grid;gap:14px;}
-.group-network-fields label {display:grid;gap:6px;overflow-wrap:anywhere;}
-.group-network-fields input {box-sizing:border-box;width:100%;min-width:0;padding:10px;border:1px solid var(--border,#d7dee8);border-radius:9px;color:inherit;background:var(--bg,#f7f9fc);font:inherit;}
-.group-network-fields input[type=checkbox] {width:18px;height:18px;}
-.group-network-fields p {margin:0;color:var(--text-secondary,#566577);overflow-wrap:anywhere;}
-.group-network-dialog [role=status] {overflow-wrap:anywhere;}
-.group-network-submit {width:100%;padding:11px;border:0;border-radius:10px;background:var(--primary,#2563eb);color:white;font:inherit;cursor:pointer;}
-.group-network-submit:disabled {opacity:.6;cursor:wait;}
+/* Group invitation dialogs (join by link, invite friends). Tokens come from theme.css. */
+.group-network-dialog {
+  box-sizing: border-box;
+  width: min(440px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  margin: auto;
+  padding: 22px 22px 18px;
+  border: none;
+  border-radius: var(--ui-radius-xl);
+  background: var(--ui-surface);
+  color: var(--ui-text);
+  box-shadow: var(--ui-shadow-pop);
+  font: 15px/1.5 var(--ui-font);
+}
+.group-network-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.32);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+.gn-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.gn-title { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
+.gn-subtitle { margin: 2px 0 0; color: var(--ui-text-2); font-size: 14px; overflow-wrap: anywhere; }
+.gn-close {
+  display: grid; place-items: center; flex-shrink: 0;
+  width: 32px; height: 32px; padding: 0;
+  border: none; border-radius: 50%;
+  background: var(--ui-surface-2); color: var(--ui-text-2);
+  cursor: pointer; transition: background 0.15s var(--ui-ease);
+}
+.gn-close:hover { background: var(--ui-surface-3); }
+.gn-close .ui-icon { width: 16px; height: 16px; }
+.gn-body { display: grid; gap: 12px; }
+.gn-input {
+  box-sizing: border-box; width: 100%; min-width: 0;
+  padding: 12px 14px;
+  border: none; border-radius: var(--ui-radius);
+  background: var(--ui-surface-2); color: var(--ui-text);
+  font: 14px/1.45 var(--ui-font);
+  transition: box-shadow 0.15s var(--ui-ease), background 0.15s var(--ui-ease);
+}
+.gn-input:focus { outline: none; background: var(--ui-surface); box-shadow: 0 0 0 3px var(--ui-accent-ring); }
+.gn-link-input { resize: none; word-break: break-all; }
+.gn-link { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 13px; color: var(--ui-text-2); text-overflow: ellipsis; }
+.gn-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.gn-actions .gn-btn { flex: 1 1 auto; }
+.gn-btn {
+  min-height: 42px; padding: 0 18px;
+  border: none; border-radius: 999px;
+  font: 500 15px/1 var(--ui-font);
+  cursor: pointer; transition: background 0.15s var(--ui-ease), opacity 0.15s var(--ui-ease);
+}
+.gn-btn[hidden] { display: none; }
+.gn-btn:disabled { opacity: 0.45; cursor: default; }
+.gn-btn-primary { background: var(--ui-accent); color: var(--ui-on-accent); }
+.gn-btn-primary:not(:disabled):hover { background: var(--ui-accent-hover); }
+.gn-btn-primary:not(:disabled):active { background: var(--ui-accent-press); }
+.gn-btn-secondary { background: var(--ui-accent-tint); color: var(--ui-accent); }
+.gn-btn-secondary:not(:disabled):hover { background: rgba(0, 113, 227, 0.16); }
+.gn-btn-quiet { background: transparent; color: var(--ui-danger); }
+.gn-btn-quiet:not(:disabled):hover { background: var(--ui-danger-tint); }
+.gn-note { margin: 0; color: var(--ui-text-2); font-size: 13px; overflow-wrap: anywhere; }
+.gn-steps { margin: 4px 0 0; padding: 12px 14px 12px 30px; border-radius: var(--ui-radius); background: var(--ui-surface-2); color: var(--ui-text-2); font-size: 13px; }
+.gn-steps li + li { margin-top: 6px; }
+.gn-status { min-height: 1.4em; margin: 10px 0 0; color: var(--ui-text-2); font-size: 13px; overflow-wrap: anywhere; }
+.gn-status.is-error { color: var(--ui-danger); }
+@media (max-width: 480px) {
+  .group-network-dialog { width: calc(100vw - 24px); padding: 18px 16px 14px; }
+  .gn-actions .gn-btn { flex: 1 1 100%; }
+}

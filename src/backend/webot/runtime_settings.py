@@ -17,7 +17,7 @@ from common.runtime_paths import USER_FILES_DIR
 class ContextSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     auto_compact: bool = True
-    context_window_tokens: int = Field(default=1_000_000, ge=4096, le=4_000_000)
+    context_window_tokens: int = Field(default=0, ge=0, le=4_000_000)
     history_tokens: int = Field(default=0, ge=0, le=4_000_000)
     trigger_tokens: int = Field(default=0, ge=0, le=4_000_000)
     target_tokens: int = Field(default=0, ge=0, le=4_000_000)
@@ -30,6 +30,8 @@ class ContextSettings(BaseModel):
     @model_validator(mode="after")
     def validate_budgets(self):
         from webot.context_compressor import _approx_tokens
+        if 0 < self.context_window_tokens < 4096:
+            raise ValueError("context_window_tokens must be 0 (automatic) or at least 4096")
         if self.trigger_tokens and self.target_tokens >= self.trigger_tokens:
             raise ValueError("target_tokens must be smaller than trigger_tokens")
         if self.history_tokens and self.trigger_tokens > self.history_tokens:
@@ -68,8 +70,9 @@ class ApprovalSettings(BaseModel):
 
 
 def resolve_context_window(settings: ContextSettings, model: str | None = None) -> int:
-    """The user's configured capacity is authoritative; model names are not a cap."""
-    return settings.context_window_tokens
+    """Explicit capacity wins; 0 follows local model data without network access."""
+    from webot.context_limits import infer_model_context_window
+    return settings.context_window_tokens or infer_model_context_window(model)
 
 
 def resolve_context_history_budget(settings: ContextSettings, *, is_subagent: bool = False,
@@ -94,10 +97,16 @@ def context_usage_with_window(usage: dict, window: int) -> dict:
             "remaining": max(0, window - tokens)}
 
 
+class InferenceSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    reasoning_effort: Literal["", "none", "off", "minimal", "low", "medium", "high", "xhigh", "max"] = ""
+
+
 class RuntimeSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     context: ContextSettings = Field(default_factory=ContextSettings)
     approval: ApprovalSettings = Field(default_factory=ApprovalSettings)
+    inference: InferenceSettings = Field(default_factory=InferenceSettings)
 
 
 def settings_path(user_id: str) -> Path:
@@ -123,11 +132,11 @@ def _load(user_id: str) -> dict:
 
 
 def _merge(base: dict, override: dict) -> dict:
-    if any(key not in {"context", "approval"} or not isinstance(value, dict) for key, value in base.items()):
+    if any(key not in {"context", "approval", "inference"} or not isinstance(value, dict) for key, value in base.items()):
         raise ValueError("Invalid runtime settings section")
     result = {k: dict(v) for k, v in base.items()}
     for section, values in override.items():
-        if section not in {"context", "approval"} or not isinstance(values, dict):
+        if section not in {"context", "approval", "inference"} or not isinstance(values, dict):
             raise ValueError("Invalid runtime settings section")
         result.setdefault(section, {}).update(values)
     return result
@@ -159,10 +168,15 @@ def get_runtime_settings(user_id: str, session_id: str = "") -> RuntimeSettings:
 
 def runtime_settings_payload(user_id: str, session_id: str = "") -> dict:
     data = _load(user_id)
+    from common.llm_factory import infer_provider
+    from common.model_capabilities import model_capabilities
+    model = os.getenv("LLM_MODEL", "")
+    provider = infer_provider(model=model, provider=os.getenv("LLM_PROVIDER", ""), base_url=os.getenv("LLM_BASE_URL", ""))
     return {
         "settings": get_runtime_settings(user_id, session_id).model_dump(),
         "user_overrides": data.get("user", {}),
         "session_overrides": data.get("sessions", {}).get(session_id, {}) if session_id else {},
+        "model_capabilities": model_capabilities(model, provider),
     }
 
 

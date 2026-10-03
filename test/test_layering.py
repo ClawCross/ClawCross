@@ -23,7 +23,7 @@ _CONVERSATION_FILES = ("conversations.py", "delivery.py", "store.py")
 _ABOVE_L2 = ("ops.", "frontend", "webot", "teams", "oasis", "groups.service", "groups.routes")
 
 # The runtime an agent lives in: driver names and the driver's own config.
-_DRIVER_NAMES = {"WEBOT", "ACPX", "OPENCLAW", "HTTP", "LLM", "DRIVERS", "runtime_key", "driver_for_platform"}
+_DRIVER_NAMES = {"WEBOT", "ACPX", "HTTP", "LLM", "DRIVERS", "runtime_key", "driver_for_platform"}
 _DRIVER_ATTRS = {"driver", "config"}
 
 # The external runtimes and their transports: only the agent layer reaches them.

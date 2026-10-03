@@ -8,7 +8,7 @@ window.addEventListener('load', () => {
             splash.classList.add('fade-out');
             setTimeout(() => splash.remove(), 600);
         }
-    }, 800);
+    }, 100);
 });
 
 // 2. Prevent pull-to-refresh and overscroll bounce

@@ -32,7 +32,7 @@ case "$1" in
             exit 0
         fi
         ;;
-    status|stop|components|stop-tunnel|tunnel-status|logs|doctor|check-openclaw|check-openclaw-weixin)
+    status|stop|components|stop-tunnel|tunnel-status|logs|doctor)
         if [ ! -x "$PYTHON" ] && command -v python3 >/dev/null 2>&1; then
             PYTHON="$(command -v python3)"
         fi
