@@ -41,6 +41,16 @@ def canonical_action_args(tool_name: str, args: dict) -> dict:
         }
     elif tool_name == "delete_file":
         defaults = {"session_id": "", "storage": "file", "team": ""}
+    elif tool_name == "web_fetch":
+        defaults = {"max_chars": 12000, "timeout": 15, "username": "", "session_id": ""}
+    elif tool_name == "web_search":
+        defaults = {
+            "kind": "web", "format": "markdown", "max_results": 5,
+            "region": os.getenv("WEB_SEARCH_REGION", "us-en"),
+            "safesearch": os.getenv("WEB_SEARCH_SAFESEARCH", "moderate"),
+            "freshness": "", "include_domains": "", "exclude_domains": "",
+            "fetch_top": 0, "max_chars_per_page": 4000, "username": "", "session_id": "",
+        }
     return {**defaults, **args}
 
 

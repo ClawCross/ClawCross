@@ -16,6 +16,9 @@ from urllib.parse import urlparse
 import httpx
 from ddgs import DDGS
 from webot.mcp_tool_docs import DocumentedFastMCP as FastMCP
+from webot.approval_actions import canonical_action_args
+from webot.approval_review import authorize_action, policy_binding
+from webot.runtime_store import consume_execution_permit
 
 mcp = FastMCP("WebSearcher")
 
@@ -752,6 +755,26 @@ def _normalize_format(value: str) -> str:
     return value if value in _VALID_FORMATS else "markdown"
 
 
+async def _web_access_gate(username: str, session_id: str, tool_name: str, args: dict) -> str | None:
+    """Review before network I/O, consuming the runtime's exact permit once."""
+    if not username or not session_id:
+        return '❌ Web 工具需要当前用户和 Agent 身份，不能跳过统一审核。'
+    bound = canonical_action_args(tool_name, {**args, 'username': username, 'session_id': session_id})
+    if consume_execution_permit(username, session_id, tool_name, bound, policy_binding(username, session_id)):
+        return None
+    outcome = await authorize_action(user_id=username, session_id=session_id, tool_name=tool_name, args=bound,
+        risk_reason='联网操作需要检查原始用户请求、搜索内容和访问目标。')
+    return None if outcome.allowed else '❌ ' + outcome.reason
+
+
+async def _reviewed_fetch_payload(url: str, *, username: str, session_id: str, max_chars: int, timeout: int) -> dict:
+    reject = await _web_access_gate(username, session_id, 'web_fetch',
+        {'url': url, 'max_chars': max_chars, 'timeout': timeout})
+    if reject:
+        return {'ok': False, 'url': url, 'error': reject}
+    return await _fetch_url_provider_payload(url, max_chars=max_chars, timeout=timeout, provider=DEFAULT_PROVIDER)
+
+
 @mcp.tool()
 async def web_search(
     query: str,
@@ -765,11 +788,14 @@ async def web_search(
     exclude_domains: str = "",
     fetch_top: int = 0,
     max_chars_per_page: int = 4000,
+    username: str = "",
+    session_id: str = "",
 ) -> str:
     """
     Search the web and return ranked results (title, url, snippet). Set
     fetch_top to also fetch the cleaned text of the top results; to read one
-    specific page, use web_fetch.
+    specific page, use web_fetch. Searches and each fetched page follow the
+    current Agent's approval mode.
 
     :param query: Search query
     :param kind: "web" (default) or "news"
@@ -786,6 +812,14 @@ async def web_search(
     kind_norm = _normalize_kind(kind)
     safe_fetch_top = _clamp_int(fetch_top, default=0, minimum=0, maximum=5)
     format_norm = "json" if safe_fetch_top else _normalize_format(format)
+    reject = await _web_access_gate(username, session_id, 'web_search', {
+        'query': query, 'kind': kind, 'format': format, 'max_results': max_results,
+        'region': region, 'safesearch': safesearch, 'freshness': freshness,
+        'include_domains': include_domains, 'exclude_domains': exclude_domains,
+        'fetch_top': fetch_top, 'max_chars_per_page': max_chars_per_page,
+    })
+    if reject:
+        return _json({'ok': False, 'query': query, 'error': reject, 'results': []}) if format_norm == 'json' else reject
     if format_norm == "markdown":
         capped_max = min(_clamp_int(max_results, default=5, minimum=1, maximum=10), 10)
     else:
@@ -808,11 +842,11 @@ async def web_search(
     if safe_fetch_top and payload.get("ok"):
         pages: list[dict] = []
         for result in (payload.get("results") or [])[:safe_fetch_top]:
-            page = await _fetch_url_provider_payload(
+            page = await _reviewed_fetch_payload(
                 result.get("url") or "",
+                username=username, session_id=session_id,
                 max_chars=max_chars_per_page,
                 timeout=int(DEFAULT_TIMEOUT),
-                provider=DEFAULT_PROVIDER,
             )
             page["rank"] = result.get("rank")
             pages.append(page)
@@ -829,23 +863,26 @@ async def web_fetch(
     url: str,
     max_chars: int = 12000,
     timeout: int = 15,
+    username: str = "",
+    session_id: str = "",
 ) -> str:
     """
     Fetch a public web URL and return its cleaned page text as JSON.
 
     Private/local IP literals and localhost are blocked. Intended for public
-    pages discovered by web_search.
+    pages discovered by web_search. The URL is reviewed before fetching under
+    the current Agent's approval mode.
 
     :param url: Public http(s) URL
     :param max_chars: Maximum characters of page text to return (500-50000)
     :param timeout: Request timeout in seconds
     """
     return _json(
-        await _fetch_url_provider_payload(
+        await _reviewed_fetch_payload(
             url,
+            username=username, session_id=session_id,
             max_chars=max_chars,
             timeout=timeout,
-            provider=DEFAULT_PROVIDER,
         )
     )
 

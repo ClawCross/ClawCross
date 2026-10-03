@@ -537,14 +537,14 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-10-03T11:59:03.863775+00:00`
+- Updated at: `2026-10-03T12:14:54.669795+00:00`
 - Strategy: `repair-only`
-- Heuristic candidate: `blended-verification-loop-structured-output-approval-auth`
-- Heuristic score: `0.756`
+- Heuristic candidate: `blended-verification-loop-approval-auth-structured-output`
+- Heuristic score: `0.722`
 
 ### Trigger Summary
 
-Command exited with code 0. Command: (external failure context). Signals: verification-loop, structured-output, approval-auth. stdout was used as fallback failure evidence.
+Command exited with code 0. Command: (external failure context). Signals: verification-loop, approval-auth, structured-output. stdout was used as fallback failure evidence.
 
 ### Strategy Rationale
 
@@ -553,17 +553,17 @@ Command exited with code 0. Command: (external failure context). Signals: verifi
 
 ### Latest Trigger Command
 
-`PYTHONPATH=src:src/backend:. python -m pytest test/test_approval_review.py test/test_tool_schemas.py -q`
+`PYTHONPATH=src:src/backend:. python -m pytest test/test_approval_review.py test/test_mcp_search.py test/test_manual_approval_continuation.py test/test_tool_schemas.py test/test_acp_stream_and_bridge.py -q`
 
 ### Latest Error Excerpt
 
 ```text
-Reported runtime failure: automatic reviewer returned JSONDecodeError at line 1 column 1.
-Old reviewer used prompt-only JSON, without a provider schema request.
-Regression initially failed: AttributeError: coroutine object has no attribute ainvoke.
-The test had mocked synchronous model.bind as AsyncMock; corrected that fixture to Mock.
-Verification: pytest test/test_approval_review.py test/test_tool_schemas.py: 91 passed, 259 subtests passed.
-Actual DeepSeek JSON Schema review approved the original request; production Landlock command ran twice and clawcross.net returned HTTP 200.
+Runtime gap: web_search/web_fetch default policy allowed network I/O without review, and the MCP service had no identity-bound gate.
+Regression exposed duplicate review: expected reviewer once, awaited 2 times.
+Cause: the model could supply another session; now web identity and session are forcibly bound to the calling runtime, and one exact permit transfers to MCP.
+Verification: 128 tests passed, 261 subtests passed across approval, search, continuation, schemas and ACP bridge.
+Real provider + actual MCP HTTP integration: one DeepSeek JSON Schema review, valid original-user authorization, Example Domain received with HTTP 200.
+Sandbox grants were not changed: one-time approval does not create a session domain/path whitelist; KEEP Y records exact parameters.
 ```
 
 ### Governance Snapshot
@@ -578,7 +578,7 @@ Actual DeepSeek JSON Schema review approved the original request; production Lan
 1. Start from the narrowest reproducible failure before broad retries.
 2. Record repo/cwd/entrypoint assumptions explicitly when failures mention paths or imports.
 3. End every fix attempt with an explicit verifier command and observed result.
-4. Approval review must use a provider-constrained JSON Schema request. DeepSeek uses Responses API text.format; do not replace it with prompt-only JSON or an action tool. Validate the verdict and original human authorization IDs independently; empty, truncated or invalid output denies execution.
+4. Web tools review before network I/O and force the current user/session. Transfer one exact permit into MCP to avoid double review; fetching search results requires per-URL review. Successful sandbox access is not persistent permission.
 
 ### Validation Loop
 
@@ -587,15 +587,15 @@ Actual DeepSeek JSON Schema review approved the original request; production Lan
 
 ### Recent Evidence
 
-- `2026-10-03T11:59:03.863775+00:00` `repo-skill` — Reported runtime failure: automatic reviewer returned JSONDecodeError at line 1 column 1.
-Old reviewer used prompt-only JSON, without a provid ...[truncated]
+- `2026-10-03T12:14:54.669795+00:00` `repo-skill` — Runtime gap: web_search/web_fetch default policy allowed network I/O without review, and the MCP service had no identity-bound gate.
+Regressio ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `blended-verification-loop-structured-output-approval-auth` score `0.756` — Blend the strongest recent failure patterns (intent `repair`)
-- `verification-loop-4` score `0.716` — Tighten verification loops (intent `repair`)
-- `structured-output-3` score `0.673` — Harden structured-output handling (intent `repair`)
-- `approval-auth-1` score `0.589` — Preflight auth and approval constraints (intent `repair`)
+- `blended-verification-loop-approval-auth-structured-output` score `0.722` — Blend the strongest recent failure patterns (intent `repair`)
+- `verification-loop-4` score `0.682` — Tighten verification loops (intent `repair`)
+- `approval-auth-2` score `0.614` — Preflight auth and approval constraints (intent `repair`)
+- `structured-output-2` score `0.614` — Harden structured-output handling (intent `repair`)
 
 ### Local State Snapshot
 
