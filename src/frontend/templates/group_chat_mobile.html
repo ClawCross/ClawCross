@@ -4913,7 +4913,7 @@
           <option value="landlock">Linux Landlock</option>
         </select>
       </label>
-      <p style="font-size:12px;color:var(--text-secondary)">默认关闭。自动模式在 Linux 上探测 SRT，不兼容时使用 Landlock；Landlock 禁止全部网络。资源上限为每进程/文件上限，非进程树总额。缺少能力时拒绝执行；已有会话单独设置优先。</p>
+      <p style="font-size:12px;color:var(--text-secondary)">默认关闭。自动模式在 Linux 上探测 SRT，不兼容时使用 Landlock；Landlock 在支持的 systemd 主机上可受控联网，其他环境保持禁网；保留基础资源上限。缺少能力时拒绝执行；已有会话单独设置优先。</p>
       <div id="mobile-sandbox-component"></div>
       <div id="mobile-sandbox-result" role="status" style="font-size:12px"></div>
     </div>

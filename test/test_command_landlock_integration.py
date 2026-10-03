@@ -87,8 +87,8 @@ class CommandLandlockIntegrationTests(unittest.IsolatedAsyncioTestCase):
         model.assert_not_called()
 
     async def test_network_is_blocked_by_real_kernel_filter(self):
-        result = await self.execute('import socket; socket.socket(socket.AF_INET)', language='python')
-        self.assertIn('Operation not permitted', result)
+        result = await self.execute("import socket; s=socket.socket(socket.AF_INET); s.connect(('127.0.0.1',1))", language='python')
+        self.assertRegex(result, 'Operation not permitted|Permission denied')
 
     async def test_missing_permission_exceeding_ceiling_does_not_call_reviewer(self):
         with patch.object(review, 'run_reviewer') as model:
@@ -203,6 +203,31 @@ class CommandLandlockIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 await commander.cancel_background_command(job_id, username=self.user, session_id=self.session)
             commander._BACKGROUND_JOBS.pop(job_id, None)
             commander._reap_detached_runners()
+
+    @unittest.skipUnless(__import__('os').environ.get('CLAWCROSS_NETWORK_INTEGRATION') == '1', 'explicit real public-network integration')
+    async def test_https_permission_failure_is_reviewed_and_retried_once(self):
+        from webot.command_sandbox import network_fence_available
+        if not network_fence_available():
+            self.skipTest('requires a systemd host with network-fence privileges')
+        context=review.review_context([HumanMessage(content='读取 https://example.com 的公开网页，禁止上传本地数据。',id='network-user',additional_kwargs={'input_origin':'user'})])
+        verdict=review.ReviewVerdict(decision='approve',reason='用户授权公开网页读取',risk='low',authorization_sources=['network-user'])
+        with patch.object(review,'approval_context',return_value=context), \
+             patch.dict('os.environ',{'CLAWCROSS_SANDBOX_MAX_DOMAINS':'["example.com:443"]'}), \
+             patch.object(review,'run_reviewer',new=AsyncMock(return_value=verdict)) as model:
+            result=await self.execute('curl --max-time 12 -sS https://example.com',timeout_seconds=25)
+        self.assertIn('执行成功 (exit code: 0)',result,result)
+        self.assertIn('Example Domain',result)
+        self.assertEqual(self.foreground.await_count,2)
+        model.assert_awaited_once()
+        self.assertEqual(model.await_args.kwargs['args']['escalation_target'],'example.com:443')
+
+    @unittest.skipUnless(__import__('os').environ.get('CLAWCROSS_NETWORK_INTEGRATION') == '1', 'explicit real public-network integration')
+    async def test_allowed_https_domain_is_accessible_through_socks(self):
+        runtime_settings.save_runtime_settings(self.user,settings={'approval':{'mode':'auto','command_sandbox':'landlock','sandbox_allowed_domains':['example.com:443']}})
+        result=await self.execute('curl --max-time 12 -sS --proxy "$ALL_PROXY" https://example.com',timeout_seconds=20)
+        self.assertIn('执行成功 (exit code: 0)',result,result)
+        self.assertIn('Example Domain',result)
+        self.assertEqual(self.foreground.await_count,1)
 
 
 if __name__ == '__main__':

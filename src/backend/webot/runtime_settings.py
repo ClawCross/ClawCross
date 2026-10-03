@@ -50,6 +50,14 @@ class ApprovalSettings(BaseModel):
     reviewer_timeout_seconds: int = Field(default=30, ge=5, le=120)
     reviewer_max_tokens: int = Field(default=4096, ge=1024, le=16384)
     command_sandbox: Literal["off", "srt", "auto", "landlock"] = "off"
+    sandbox_allowed_domains: list[str] = Field(default_factory=list, max_length=64)
+
+    @model_validator(mode='after')
+    def validate_domains(self):
+        from webot.command_sandbox import normalize_escalation
+        from pathlib import Path
+        self.sandbox_allowed_domains = list(dict.fromkeys(normalize_escalation('network', value, Path.cwd()) for value in self.sandbox_allowed_domains))
+        return self
 
     @model_validator(mode="before")
     @classmethod

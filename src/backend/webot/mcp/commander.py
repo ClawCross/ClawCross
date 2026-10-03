@@ -1142,7 +1142,9 @@ async def run_command(
     if interactive and IS_WINDOWS:
         return "❌ 交互模式暂不支持 Windows。"
     from webot.runtime_settings import get_runtime_settings
-    sandbox_backend = get_runtime_settings(username, session_id or "default").approval.command_sandbox
+    sandbox_options = get_runtime_settings(username, session_id or "default").approval
+    sandbox_backend = sandbox_options.command_sandbox
+    allowed_domains = getattr(sandbox_options, 'sandbox_allowed_domains', [])
     sandbox_selected = sandbox_backend in {"srt", "auto", "landlock"}
     sandbox_access, escalation_target, escalation_reason = 'default', '', ''
     workspace_state = resolve_session_workspace(username, session_id, explicit_cwd=cwd)
@@ -1182,7 +1184,8 @@ async def run_command(
                                 root=workspace_state.root, cwd=workspace_state.cwd,
                                 command=command, language=language, python_executable=_python_cmd(),
                                 script_path=Path(script) if script else None,
-                                access=sandbox_access, target=escalation_target,
+                                access=sandbox_access, target=escalation_target, allowed_domains=allowed_domains,
+                                wall_timeout=max(1, int(deadline-time.monotonic())),
                             )
                         except SandboxUnavailable as exc:
                             return f"❌ {exc}"
@@ -1204,8 +1207,6 @@ async def run_command(
                         if needed is None:
                             return result
                         sandbox_access, escalation_target = needed
-                        if sandbox_backend == "landlock" and sandbox_access == "network":
-                            return result + "\n\n❌ Landlock 后端不支持网络提权，未请求审核。"
                         escalation_reason = '系统检测到沙盒命令权限拒绝，需要一次有限权限重试。'
                         args = canonical_action_args('run_command', {
                             'username': username, 'command': command, 'language': language,
@@ -1262,7 +1263,8 @@ async def run_command(
                         root=workspace_state.root, cwd=workspace_state.cwd,
                         command=command, language=language, python_executable=_python_cmd(),
                         script_path=Path(script) if script else None, interactive=interactive,
-                        access=sandbox_access, target=escalation_target,
+                        access=sandbox_access, target=escalation_target, allowed_domains=allowed_domains,
+                        wall_timeout=_bounded_int(timeout_seconds, BACKGROUND_EXEC_TIMEOUT, 1, MAX_EXEC_TIMEOUT),
                     )
                 except SandboxUnavailable as exc:
                     return f"❌ {exc}"

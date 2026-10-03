@@ -129,9 +129,12 @@ async function loadRuntimeSettingsScope() {
                     <select data-section="approval" data-key="command_sandbox" class="runtime-settings-input">
                         <option value="off" ${!approval.command_sandbox || approval.command_sandbox === 'off' ? 'selected' : ''}>${text('关闭 · 命令在宿主机执行', 'Off · Commands run on host')}</option>
                         <option value="auto" ${approval.command_sandbox === 'auto' ? 'selected' : ''}>${text('自动 · SRT / Linux Landlock', 'Auto · SRT / Linux Landlock')}</option>
-                        <option value="landlock" ${approval.command_sandbox === 'landlock' ? 'selected' : ''}>${text('Linux Landlock · 禁用网络', 'Linux Landlock · No network')}</option>
+                        <option value="landlock" ${approval.command_sandbox === 'landlock' ? 'selected' : ''}>${text('Linux Landlock · 文件与网络', 'Linux Landlock · Files and network')}</option>
                         <option value="srt" ${approval.command_sandbox === 'srt' ? 'selected' : ''}>${text('SRT · 前台、后台、交互命令', 'SRT · Foreground, background, interactive')}</option>
-                    </select><small>${text('SRT 需显式安装；Linux Landlock 使用内核和 libseccomp，无需新容器。自动模式先探测 SRT，Linux 不兼容时使用 Landlock。Landlock 禁用全部网络；资源上限按进程/文件计算，非整个进程树总额。不满足要求时拒绝执行。', 'SRT requires explicit installation. Linux Landlock uses the kernel and libseccomp without a new container. Auto probes SRT first, then Landlock on Linux. Landlock blocks all networking; resource limits are per process/file, not aggregate. Missing capabilities block execution.')}</small></label>
+                    </select><small>${text('SRT 需显式安装；Linux Landlock 使用内核和 libseccomp，无需新容器。自动模式先探测 SRT，Linux 不兼容时使用 Landlock。Landlock 在支持的 systemd 主机上提供受控联网，其他环境保持禁网；保留基础资源上限。不满足要求时拒绝执行。', 'SRT requires explicit installation. Linux Landlock uses the kernel and libseccomp without a new container. Auto probes SRT first, then Landlock on Linux. Landlock provides controlled networking on supported systemd hosts; other environments remain offline. Basic resource limits apply. Missing capabilities block execution.')}</small></label>
+                <label class="runtime-settings-field"><span>${text('允许直接访问的网站', 'Allowed network destinations')}</span>
+                    <textarea data-section="approval" data-key="sandbox_allowed_domains" data-value-type="lines" class="runtime-settings-input" rows="2" placeholder="example.com:443">${escapeHtml((approval.sandbox_allowed_domains || []).join('\n'))}</textarea>
+                    <small>${text('每行一个域名或公网 IP，可加端口；留空时访问新目标需在管理员上限内审核。', 'One domain or public IP per line, optionally with a port. New destinations require review within the administrator ceiling.')}</small></label>
                 ${typeof componentControlMarkup === 'function' ? componentControlMarkup('srt') : ''}
                 ${instructions('approval', 'reviewer_policy', approval.reviewer_policy, '补充审核要求', 'Additional review instructions', '例如：允许安装任务所需依赖；删除文件没有明确授权时拒绝', 'For example: allow task dependencies; deny deletion without explicit authorization')}
                 <details class="runtime-settings-advanced"><summary>${text('高级审核设置', 'Advanced review settings')}<span>${text('模型与等待时间', 'Model and timeout')}</span></summary>
@@ -167,9 +170,9 @@ async function saveRuntimeSettingsForm(reset = false) {
             input.reportValidity();
             return;
         }
-        const value = input.type === 'checkbox' ? input.checked : input.type === 'number' ? Number(input.value) : input.value;
+        const value = input.dataset.valueType === 'lines' ? input.value.split(/\n/).map(v => v.trim()).filter(Boolean) : input.type === 'checkbox' ? input.checked : input.type === 'number' ? Number(input.value) : input.value;
         const {section, key} = input.dataset;
-        if (value !== view.original[section][key]) (settings[section] ||= {})[key] = value;
+        if (JSON.stringify(value) !== JSON.stringify(view.original[section][key])) (settings[section] ||= {})[key] = value;
     }
     try {
         document.getElementById('runtime-settings-save').disabled = true;
