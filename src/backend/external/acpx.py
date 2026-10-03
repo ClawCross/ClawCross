@@ -294,9 +294,12 @@ class AcpxAdapter:
         allowed_tools: str | None = None,
         model: str | None = None,
         mcp_config: str | None = None,
+        resume_session_id: str | None = None,
     ) -> bool:
         existed_before = await self._session_exists(tool=tool, acpx_session=acpx_session)
         args = self._command_prefix(tool=tool, session_key=session_key) + ["sessions", "ensure", "--name", acpx_session]
+        if resume_session_id and not existed_before:
+            args.extend(['--resume-session', resume_session_id])
         options = dict(timeout_sec=timeout_sec, allow_nonzero=False, ttl_sec=ttl_sec,
                        approve_all=approve_all, permission_policy=permission_policy,
                        non_interactive_permissions=non_interactive_permissions,
@@ -308,6 +311,25 @@ class AcpxAdapter:
                 raise
             await self._reconnect_transport(acpx_session)
             await self._run_json(args, **options)
+        if resume_session_id and not model:
+            # Some native adapters resume history with the host's current model,
+            # even when that model is absent from this login's advertised list.
+            # Keep valid native choices; repair only an unavailable selection.
+            for item in self._local_config_options(acpx_session):
+                if item.get('id') != 'model':
+                    continue
+                # codex-acp inserts an unknown current model as an option with
+                # description=null. It is a display placeholder, not a model
+                # returned by model/list (ModelConfigOption.ts).
+                choices = [choice['value'] for choice in item.get('options', []) if choice.get('value')
+                           and not (tool == 'codex' and choice.get('description', '') is None)]
+                if not choices or item.get('currentValue') in choices:
+                    break
+                preferred = 'gpt-5.5' if tool == 'codex' else 'sonnet'
+                selected = preferred if preferred in choices else next((value for value in choices if value != 'default'), choices[0])
+                await self._run_json(self._command_prefix(tool=tool, session_key=session_key) +
+                                     ['set', 'model', selected, '-s', acpx_session], **options)
+                break
         created = existed_before is False
         if created and system_prompt and system_prompt.strip():
             self._pending_initial_prompt[self._pending_prompt_key(tool=tool, acpx_session=acpx_session)] = system_prompt.strip()
@@ -592,6 +614,26 @@ await fn(process.argv[2]);'''
             )
         return out
 
+    async def list_native_sessions(self, *, tool: str, cursor: str = '') -> dict:
+        """Explicit native metadata query; never used by passive status polling."""
+        if tool not in {'codex', 'claude'}:
+            raise AcpxError('Native session browsing supports Codex and Claude')
+        args = [tool, 'sessions', 'list']
+        if cursor:
+            args.extend(['--cursor', cursor])
+        raw = await self._run_json(args, timeout_sec=30, allow_nonzero=False,
+                                   approve_all=False, permission_policy='deny-all', non_interactive_permissions='deny', offline=True)
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            raise AcpxError('Native session list did not return JSON') from None
+        if not isinstance(data, dict) or not isinstance(data.get('sessions'), list):
+            raise AcpxError('This adapter did not return a native session list')
+        return {'sessions': [{'session_id': str(row['sessionId']), 'cwd': str(row.get('cwd') or ''),
+                              'title': str(row.get('title') or '')[:160], 'updated_at': row.get('updatedAt')}
+                             for row in data['sessions'] if isinstance(row, dict) and row.get('sessionId')],
+                'next_cursor': data.get('nextCursor')}
+
     async def show_session(self, *, tool: str, name: str) -> dict[str, Any]:
         """Run `acpx <tool> sessions show <name>` and return parsed metadata."""
         raw = await self._run_json(
@@ -602,7 +644,16 @@ await fn(process.argv[2]);'''
         text = raw.strip()
         if not text:
             return {}
-        # `sessions show` is plain text, not JSON.
+        # Current acpx honors --format json; retain older text compatibility.
+        try:
+            data = json.loads(text)
+        except ValueError:
+            data = None
+        if isinstance(data, dict):
+            return {'id': data.get('acpxRecordId'), 'sessionId': data.get('acpSessionId'),
+                    'agentSessionId': data.get('agentSessionId'), 'name': data.get('name'),
+                    'cwd': data.get('cwd'), 'closed': data.get('closed'),
+                    'lastActivity': data.get('lastUsedAt')}
         result: dict[str, Any] = {}
         for line in text.splitlines():
             if ":" not in line:
@@ -744,6 +795,7 @@ await fn(process.argv[2]);'''
         mcp_config: str | None = None,
         config_options: dict | None = None,
         on_event=None,
+        resume_session_id: str | None = None,
     ) -> AcpxPromptTrace:
         acpx_session = self.to_acpx_session_name(tool=tool, session_key=session_key)
         if reset_session:
@@ -771,7 +823,13 @@ await fn(process.argv[2]);'''
             allowed_tools=allowed_tools,
             model=model,
             mcp_config=mcp_config,
+            resume_session_id=resume_session_id,
         )
+
+        if resume_session_id and not model:
+            # Pass the native selection on prompt as well: a restarted queue
+            # owner can otherwise fall back to the host default again.
+            model = self._local_config_values(acpx_session).get('model') or None
 
         # Persistent sessions expose `set`; --config-option belongs to `exec`
         # only in acpx 0.19. Avoid replaying unchanged settings every turn.
@@ -965,18 +1023,20 @@ await fn(process.argv[2]);'''
         cmd.extend(["prompt", "-s", acpx_session, "--file", temp_path])
         return cmd, temp_path
 
-    def _local_config_values(self, name: str) -> dict:
+    def _local_config_options(self, name: str) -> list[dict]:
         for path in (Path.home() / '.acpx' / 'sessions').glob('*.json'):
             try:
                 if path.stat().st_size > 16 * 1024 * 1024:
                     continue
                 record = json.loads(path.read_text())
                 if record.get('name') == name and record.get('cwd') == self._cwd and not record.get('closed'):
-                    return {item['id']: item.get('currentValue') for item in
-                            (record.get('acpx') or {}).get('config_options', []) if 'id' in item}
+                    return (record.get('acpx') or {}).get('config_options', [])
             except (OSError, ValueError, TypeError):
                 continue
-        return {}
+        return []
+
+    def _local_config_values(self, name: str) -> dict:
+        return {item['id']: item.get('currentValue') for item in self._local_config_options(name) if 'id' in item}
 
     async def _run_json(
         self,
@@ -991,6 +1051,7 @@ await fn(process.argv[2]);'''
         allowed_tools: str | None = None,
         model: str | None = None,
         mcp_config: str | None = None,
+        offline: bool = False,
     ) -> str:
         assert self._acpx_bin is not None
         # Headless subprocess: no TTY for permission prompts — default --approve-all so tool/exec turns can finish.
@@ -1032,6 +1093,7 @@ await fn(process.argv[2]);'''
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            **({'env': {**os.environ, 'npm_config_offline':'true'}} if offline else {}),
         )
         _acp_mark("acpx.aux.spawn.post", pid=proc.pid, op=_aux_tail)
         try:

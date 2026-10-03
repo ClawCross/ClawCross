@@ -324,6 +324,7 @@ register_agent_routes(
     app,
     port_agent=PORT_AGENT,
     internal_token=INTERNAL_TOKEN,
+    is_host_request=lambda: _is_direct_local_request(),
 )
 register_oasis_routes(app, oasis_base_url=OASIS_BASE_URL)
 register_webot_routes(

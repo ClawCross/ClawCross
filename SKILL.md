@@ -537,14 +537,14 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-10-03T17:39:50.457909+00:00`
+- Updated at: `2026-10-03T18:25:36.665837+00:00`
 - Strategy: `repair-only`
-- Heuristic candidate: `blended-verification-loop-approval-auth-structured-output`
-- Heuristic score: `0.756`
+- Heuristic candidate: `blended-verification-loop-workspace-preflight-approval-auth`
+- Heuristic score: `0.683`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: (external failure context). Signals: verification-loop, approval-auth, structured-output. stderr carried the strongest failure evidence.
+Command exited with code 1. Command: (external failure context). Signals: verification-loop, workspace-preflight, capability-gap. stderr carried the strongest failure evidence.
 
 ### Strategy Rationale
 
@@ -558,7 +558,8 @@ Command exited with code 1. Command: (external failure context). Signals: verifi
 ### Latest Error Excerpt
 
 ```text
-Formal MCP inventory verification failed for the new request_channel_setup tool: free-form dict schema cannot bind strict, identity arguments were not injected, and display category/parameter docs were missing. Fix with a fixed name/value list model, register username/session injection and notification category, then rerun test/test_tool_schemas.py and test/test_channel_setup.py. No credentials are allowed in model-visible draft fields.
+Native restore verification exposed a host model incompatibility: gpt-6.1-sol is absent from the actual Codex model catalog and returns HTTP 400 with ChatGPT authentication. A fresh imported session inherited that host default even though the original test thread used gpt-5.5. Repair only an unavailable native model using the actual advertised choices when no explicit model is configured. Preserve valid native choices and all explicit user selections, never edit the host global config or recreate the history. Verification must test a dedicated persisted fixture, same native ID, remembered marker after resume, and the formal AcpRuntime cwd/seed path. Empty sessions are not a persistence test. Never return full acpx show records containing messages.
+Codex adapter ModelConfigOption.ts synthesizes an unknown current model into config options with description=null. Mere membership is insufficient; distinguish that compatibility placeholder, retain real model choices, and forward the resolved model on prompt so a queue restart cannot restore the host default. A set command alone did not pass the real memory test; do not claim a stub test verifies native behavior.
 ```
 
 ### Governance Snapshot
@@ -581,14 +582,14 @@ Formal MCP inventory verification failed for the new request_channel_setup tool:
 
 ### Recent Evidence
 
-- `2026-10-03T17:39:50.457909+00:00` `repo-skill` — Formal MCP inventory verification failed for the new request_channel_setup tool: free-form dict schema cannot bind strict, identity arguments ...[truncated]
+- `2026-10-03T18:25:36.665837+00:00` `repo-skill` — Native restore verification exposed a host model incompatibility: gpt-6.1-sol is absent from the actual Codex model catalog and returns HTTP 4 ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `blended-verification-loop-approval-auth-structured-output` score `0.756` — Blend the strongest recent failure patterns (intent `repair`)
-- `verification-loop-3` score `0.716` — Tighten verification loops (intent `repair`)
-- `approval-auth-1` score `0.603` — Preflight auth and approval constraints (intent `repair`)
-- `structured-output-1` score `0.603` — Harden structured-output handling (intent `repair`)
+- `blended-verification-loop-workspace-preflight-approval-auth` score `0.683` — Blend the strongest recent failure patterns (intent `repair`)
+- `verification-loop-2` score `0.643` — Tighten verification loops (intent `repair`)
+- `workspace-preflight-2` score `0.643` — Add repo/workspace preflight checks (intent `repair`)
+- `approval-auth-1` score `0.595` — Preflight auth and approval constraints (intent `repair`)
 
 ### Local State Snapshot
 

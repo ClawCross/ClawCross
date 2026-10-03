@@ -20,7 +20,7 @@ def native_options(agent):
             continue
         if record.get('closed'):
             continue
-        if Path(record.get('cwd', '')).resolve() != Path(_default_acpx_cwd()).resolve():
+        if Path(record.get('cwd', '')).resolve() != Path(agent.runtime.get('acp_cwd') or _default_acpx_cwd()).resolve():
             continue
         options = (record.get('acpx') or {}).get('config_options') or []
         if record.get('name') == runtime_session(agent) and options:

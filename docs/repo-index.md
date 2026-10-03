@@ -243,6 +243,7 @@ Known ACP tools (external AI agents): `openclaw`, `codex`, `claude`, `gemini`, `
 | `src/backend/channels/adapters/` | webhook, NoneBot and WeClaw bridges |
 | `src/backend/channels/channel_catalog.py` | the channel catalog (`config/channels.json`) |
 | `src/backend/channels/setup_requests.py` | authenticated setup requests; credentials bypass tool history |
+| `src/backend/agents/native_sessions.py` | explicit native Codex/Claude catalog and user-bound registration |
 
 ## Team and User Data
 

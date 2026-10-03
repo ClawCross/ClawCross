@@ -17,7 +17,7 @@ PUBLIC_AGENT_ENDPOINTS = frozenset({"public_agents", "public_teams"})
 _METHODS = ["GET", "POST", "PATCH", "DELETE"]
 
 
-def register_agent_routes(app, *, port_agent: int, internal_token: str) -> None:
+def register_agent_routes(app, *, port_agent: int, internal_token: str, is_host_request=lambda: False) -> None:
     base_url = f"http://127.0.0.1:{port_agent}"
 
     def _auth_headers():
@@ -32,13 +32,16 @@ def register_agent_routes(app, *, port_agent: int, internal_token: str) -> None:
         body = request.get_json(silent=True) if request.method in ("POST", "PATCH") else None
         long_control = path.endswith("/control") and isinstance(body, dict) and body.get("action") == "compact"
         timeout = 900 if path.endswith("/messages") or long_control else 120 if path.endswith("/test-connection") else 60
+        headers = _auth_headers()
+        if path == '/v1/agents/native-sessions' and session.get('user_id') and is_host_request():
+            headers['X-ClawCross-Host-Browse'] = internal_token
         try:
             response = requests.request(
                 request.method,
                 f"{base_url}{path}",
                 params=request.args,
                 json=body,
-                headers=_auth_headers(),
+                headers=headers,
                 timeout=timeout,
             )
         except requests.RequestException as exc:

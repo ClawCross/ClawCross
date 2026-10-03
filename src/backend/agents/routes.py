@@ -97,6 +97,11 @@ class AgentForkBody(BaseModel):
     reason: str = Field("", max_length=500)
 
 
+class NativeSessionImport(BaseModel):
+    ticket: str = Field(max_length=160)
+    name: str = Field('', max_length=160)
+
+
 def authenticate(authorization: str | None, *, internal_token: str, verify_password: Callable[[str, str], bool]) -> str:
     """The user a request acts for: ``Bearer <internal>:<user>`` or ``Bearer <user>:<password>``."""
     parts = parse_bearer_parts(authorization)
@@ -226,6 +231,37 @@ def create_agents_router(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         return agent_card(agent)
+
+    def host_access(user: str, authorization: str | None, proof: str | None):
+        from agents.native_sessions import allowed
+        import hmac
+        authenticated_host = bool(internal_token and proof and hmac.compare_digest(proof, internal_token)
+                                  and is_internal_bearer(parse_bearer_parts(authorization) or [], internal_token))
+        if not authenticated_host and not allowed(user):
+            raise HTTPException(403, '原生会话属于主机账户，仅供本机访问；远程需主机配置 CLAWCROSS_NATIVE_SESSION_USERS。')
+
+    @router.get('/v1/agents/native-sessions')
+    async def native_sessions(platform: str = 'codex', cursor: str = '', authorization: str | None = Header(None),
+                              x_clawcross_host_browse: str | None = Header(None)):
+        user = user_of(authorization)
+        host_access(user, authorization, x_clawcross_host_browse)
+        from agents.native_sessions import catalog
+        from external.acpx import AcpxError
+        try:
+            return await catalog(user, platform, cursor=cursor, store=store)
+        except (AcpxError, ValueError) as exc:
+            raise HTTPException(502, str(exc)) from None
+
+    @router.post('/v1/agents/native-sessions')
+    async def import_native_session(body: NativeSessionImport, authorization: str | None = Header(None),
+                                    x_clawcross_host_browse: str | None = Header(None)):
+        user = user_of(authorization)
+        host_access(user, authorization, x_clawcross_host_browse)
+        from agents.native_sessions import register
+        try:
+            return agent_card(register(user, body.ticket, body.name, store))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
 
     @router.get("/v1/agents/{ref}/capabilities")
     async def agent_capabilities(ref: str, authorization: str | None = Header(None)):
@@ -378,6 +414,8 @@ def create_agents_router(
         except ControlError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         store.delete(agent.owner, agent.agent_id)
+        from agents.native_sessions import release_agent
+        release_agent(agent.owner, agent.agent_id)
         for forget in on_delete:
             forget(agent)
         return {"deleted": agent.agent_id}

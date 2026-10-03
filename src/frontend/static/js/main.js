@@ -139,6 +139,7 @@ const i18n = {
         agent_center_kicker: '观察 · 互动 · 培养',
         agent_center_title: 'Agent 中心',
         agent_center_refresh_status: '刷新状态',
+        native_session_register: '登记外部会话',
         agent_center_search: '查找',
         agent_center_search_placeholder: '名称、ID、标签',
         agent_center_kind: '类型',
@@ -932,6 +933,7 @@ const i18n = {
         agent_center_kicker: 'Observe · Interact · Grow',
         agent_center_title: 'Agent Center',
         agent_center_refresh_status: 'Refresh status',
+        native_session_register: 'Register external session',
         agent_center_search: 'Find',
         agent_center_search_placeholder: 'Name, ID, or tag',
         agent_center_kind: 'Kind',
@@ -15369,3 +15371,5 @@ async function ocInitSwitcher() {
         ocSyncSessionSubrowsVisibility();
     }
 }
+
+window.addEventListener("clawcross:agent-imported", () => { void refreshAgentCenter(); });
