@@ -5,9 +5,9 @@ Small pure helpers for WeBot delegated runtime behavior.
 from __future__ import annotations
 
 
-RUN_MODES = ("chat", "readonly", "bypass", "auto")
+RUN_MODES = ("chat", "readonly", "manual", "auto", "bypass")
 VALID_SESSION_MODES = frozenset({*RUN_MODES, "execute", "agent", "plan", "review", "yolo"})
-MODE_ALIASES = {"manual": "chat", "read-only": "readonly"}
+MODE_ALIASES = {"read-only": "readonly"}
 # Reading inbox content records a read receipt, but remains a viewing action
 # permitted by session modes.
 READ_ONLY_TOOLS = frozenset({
@@ -84,7 +84,7 @@ def filter_tools_for_mode(tool_names: list[str], mode: str | None) -> list[str]:
         return []
     if normalized_mode == "readonly":
         return [name for name in tool_names if mode_allows_tool(normalized_mode, name)]
-    if normalized_mode in {"execute", "agent", "yolo", "bypass", "auto"}:
+    if normalized_mode in {"execute", "agent", "yolo", "manual", "bypass", "auto"}:
         return list(tool_names)
     blocked = PLAN_MODE_BLOCKED_TOOLS if normalized_mode == "plan" else REVIEW_MODE_BLOCKED_TOOLS
     return [tool_name for tool_name in tool_names if tool_name not in blocked]
@@ -98,8 +98,10 @@ def build_session_mode_message(mode: str | None, reason: str = "") -> str:
         base = "当前会话处于只读模式。只能查看、搜索和分析；不修改文件、不执行命令、不向其他会话或外部服务发消息。"
     elif normalized_mode == "auto":
         base = "当前会话处于 Auto 模式。工具策略标记为需要批准的操作由独立模型代审；允许和禁止规则保持原样，依据不足或审核失败时拒绝；用户在后续对话明确授权后可重新审核。沙盒命令先运行，权限拒绝由系统申请有限提权，不由 Agent 调用提权工具。"
+    elif normalized_mode == "manual":
+        base = "当前会话处于 Manual 模式。全部工具可用；允许的操作直接执行，需要批准的操作交给人类审核。通过批准按钮或当前对话中的 Y/N/KEEP Y 确认；待批准或被拒绝的操作不执行。沙盒权限拒绝由系统申请有限提权并交给人类审核。"
     elif normalized_mode == "bypass":
-        base = "当前会话处于 Manual 模式。工具操作跳过批准确认；显式禁止规则和命令硬拦截仍然生效。"
+        base = "当前会话处于 Bypass 模式。工具操作跳过批准确认；显式禁止规则、命令硬拦截和沙盒限制仍然生效。"
     elif normalized_mode == "execute":
         base = "当前会话处于 execute 模式。优先直接落地实现、运行验证，并及时维护 plan/todo。"
     elif normalized_mode == "agent":

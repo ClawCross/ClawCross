@@ -75,6 +75,27 @@ class CommandLandlockIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('WORKSPACE_OK', shell)
         model.assert_not_called()
 
+    async def test_manual_command_does_not_execute_until_the_user_approves(self):
+        runtime_settings.save_runtime_settings(self.user, settings={'approval': {
+            'mode': 'manual', 'command_sandbox': 'off'}})
+        marker = self.root / 'human-approved.txt'
+        code = "from pathlib import Path; Path('human-approved.txt').write_text('MANUAL_OK'); print('MANUAL_OK')"
+        with patch.object(review, 'run_reviewer') as model:
+            pending = await self.execute(code, language='python')
+            self.assertIn('【操作授权请求】', pending)
+            self.assertFalse(marker.exists())
+            self.foreground.assert_not_called()
+            record = store.list_tool_approvals(self.user, self.session, status='pending')[0]
+            reply = review.review_context([HumanMessage(content='Y ' + record.approval_id,
+                id='formal-manual-yes', additional_kwargs={'input_origin': 'user'})])
+            self.assertIn('已批准', review.resolve_conversation_reply(self.user, self.session, reply))
+            result = await self.execute(code, language='python')
+        self.assertIn('MANUAL_OK', result)
+        self.assertEqual(marker.read_text(), 'MANUAL_OK')
+        self.foreground.assert_awaited_once()
+        model.assert_not_called()
+        self.assertEqual(store.get_tool_approval(record.approval_id, self.user).status, 'used')
+
     async def test_encoded_python_child_cannot_delete_outside_workspace(self):
         import base64
         encoded = base64.b64encode(f'import os; os.remove({str(self.outside)!r})'.encode()).decode()

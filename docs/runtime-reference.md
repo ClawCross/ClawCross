@@ -163,4 +163,4 @@ ClawCross MCP 搜索和调用的结果可附带 `runtime_context`，只包含相
 
 Agent 设置页的“测试连接”显式调用 `/v1/agents/{id}/test-connection`，仅初始化或恢复该用户的 ACP 会话并刷新配置；不发 session/prompt、不生成问答、不提交动态块快照。忙碌 Agent 返回 409，连接失败显示错误。
 
-显示名称 Manual 对应原 bypass 值，仅改名；原有跳过操作确认的行为保持。
+运行模式在 CLI、Studio、Mobile 和 Agent API 中使用相同值：`chat` 不开放工具；`readonly` 只开放只读工具；`manual` 开放全部工具、允许的操作直接执行，需要批准的操作交给人类；`auto` 开放全部工具，需要批准的操作交给 AI；`bypass` 开放全部工具并跳过审核。Manual 的批准按钮与当前对话中的 Y/N/KEEP Y 使用同一审批单，待批准或拒绝时不执行。显式禁止规则、命令硬拦截和沙盒限制在所有模式下生效。外部 Agent 的 ClawCross MCP 工具遵循该模式；原生 CLI 工具继续使用适配器的权限机制。

@@ -112,7 +112,7 @@ def _public_front_url() -> str:
 
 # Unified CLI permission modes, sent as ``session_mode``; each runtime (WeBot, or an
 # ACP agent through acpx) applies it its own way.
-VALID_MODES = ("chat", "readonly", "bypass", "auto")
+VALID_MODES = ("chat", "readonly", "manual", "auto", "bypass")
 _DEFAULT_MODE = "auto"
 
 
@@ -125,11 +125,11 @@ def _normalize_mode(mode: str | None) -> str:
     """Normalize to one of VALID_MODES.
 
     Legacy values (``execute`` / ``review``) and unknown strings collapse to
-    the default (currently ``bypass``), preserving the prior 'full tools +
-    auto-approve' behavior for users who never set a mode.
+    the default (currently ``auto``). Manual keeps tools available and sends
+    actions requiring approval to the human approval broker.
     """
     raw = (mode or "").strip().lower()
-    raw = {"manual": "chat", "plan": "readonly", "yolo": "bypass"}.get(raw, raw)
+    raw = {"plan": "readonly", "yolo": "bypass"}.get(raw, raw)
     return raw if raw in VALID_MODES else _DEFAULT_MODE
 def _resolve_default_user() -> str:
     """Pick the canonical CLI user from env, users.json, or 'admin' fallback."""
@@ -200,7 +200,7 @@ SLASH_COMMANDS = [
     ("/resume", "pick a session and replay the last 10 messages"),
     ("/resume <id>", "switch session by id (no history replay)"),
     ("/new session", "create and switch to a new session"),
-    ("/mode [<mode>]", "permission mode picker (or `/mode chat|readonly|bypass|auto` direct)"),
+    ("/mode [<mode>]", "permission mode picker (or `/mode chat|readonly|manual|auto|bypass` direct)"),
     ("/state", "show persisted state"),
     ("/restart", "restart the ClawCross backend"),
     ("/cancel", "cancel generation on the current platform (internal or ACP)"),
@@ -219,7 +219,7 @@ SLASH_MENU = [
     ("/resume", "pick session and replay recent history", "/resume", True),
     ("/new session", "create a new session", "/new session", True),
     ("/login", "show current user; change it or keep", "/login", True),
-    ("/mode", "permission mode: chat / readonly / bypass / auto", "/mode", True),
+    ("/mode", "permission mode: chat / readonly / manual / auto / bypass", "/mode", True),
     ("/model", "model actions (list / use / add / migrate / remove)", "/model", True),
     ("/team [<name>]", "team actions (list / new / rename / delete / member)", "/team", True),
     ("/workflow", "workflow actions (list / show / run / new / delete)", "/workflow", True),
@@ -262,7 +262,7 @@ CHAT_SLASH_COMMANDS = [
     ("/cross resume", "list sessions for current platform"),
     ("/cross resume <id>", "switch session by id"),
     ("/cross new session", "create and switch to a new session"),
-    ("/cross mode [<mode>]", "permission mode picker: chat / readonly / bypass / auto"),
+    ("/cross mode [<mode>]", "permission mode picker: chat / readonly / manual / auto / bypass"),
     ("/cross model [name]", "select/set LLM model"),
     ("/cross team [name|new|rename|delete|member ...]", "list/show teams, create/rename/delete, manage members"),
     ("/cross workflow", "list workflows (`show`/`run`/`new`/`delete`/`runs`/`log <id>`)"),
@@ -995,7 +995,7 @@ def _run_internal(prompt: str, state: dict, *, model: str = "default") -> None:
         "session_mode": mode,
     }
     if mode == "chat":
-        # manual: agent must answer with text only; no tool calls allowed.
+        # Chat: agent must answer with text only; no tool calls allowed.
         payload["enabled_tools"] = []
     _print_sse_text(_post_stream(
         f"{AGENT_BASE}/v1/chat/completions",
@@ -1889,6 +1889,7 @@ def _choose_platform(state: dict) -> bool:
 
 
 _MODE_DESCRIPTIONS: dict[str, str] = {
+    "manual": "all tools; human review for actions requiring approval",
     "bypass": "all tools, skip confirmation",
     "auto": "review actions for me (built-in agents); external agents allow reads",
     "readonly": "read-only — writes denied non-interactively",
@@ -2417,7 +2418,7 @@ _HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("/resume <name>", "switch to / create session by name (no replay)"),
         ("/session", "legacy alias for /resume"),
         ("/new session", "create timestamped session (e.g. ClawCross-20260512-031544)"),
-        ("/mode", "picker over chat / readonly / bypass / auto (or `/mode <name>` direct)"),
+        ("/mode", "picker over chat / readonly / manual / auto / bypass (or `/mode <name>` direct)"),
         ("/cancel", "cancel in-flight generation (internal agent, or close the active ACP session)"),
         ("/login [<name>]", "show current user; pick /change or /cancel (or set directly with a name)"),
     ]),
@@ -2514,7 +2515,7 @@ _CHAT_HELP_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("/cross resume <id>", "switch to / create session by id"),
         ("/cross session", "legacy alias for /cross resume"),
         ("/cross new session", "create timestamped session"),
-        ("/cross mode [<mode>]", "picker over chat / readonly / bypass / auto (or pass name direct)"),
+        ("/cross mode [<mode>]", "picker over chat / readonly / manual / auto / bypass (or pass name direct)"),
         ("/cross restart", "request a backend restart"),
         ("/cross cancel", "cancel in-flight generation (internal agent, or close the active ACP session)"),
     ]),
@@ -2797,7 +2798,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("-p", "--platform", help="Platform, e.g. internal, codex, claude")
     run.add_argument("-s", "--session", help="Session id")
     run.add_argument("-u", "--user", help="User id")
-    run.add_argument("--mode", choices=list(VALID_MODES), help="Permission mode: chat / readonly / bypass / auto")
+    run.add_argument("--mode", choices=list(VALID_MODES), help="Permission mode: chat / readonly / manual / auto / bypass")
     run.add_argument("-m", "--model", help="Model name for internal route")
 
     use = sub.add_parser("use", help="Persist the current platform")

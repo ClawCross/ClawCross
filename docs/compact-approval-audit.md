@@ -20,7 +20,7 @@
 | `context.summarizer_input_tokens` | 8000；分块摘要输入预算，扣除先前摘要和指示，限制在摘要模型窗口内 |
 | `context.summarizer_model` | 空；使用当前会话的模型，没有会话模型时使用默认模型；兼容 `WEBOT_SUMMARIZER_MODEL` |
 | `context.preserve_instructions` | 空；额外保留要求，默认摘要已保留目标、限制、决定、证据、待办和恢复位置 |
-| `approval.mode` | `auto`；交流 chat、只读 readonly、全工具 bypass、代审 auto |
+| `approval.mode` | `auto`；交流 chat、只读 readonly、人工审核 manual、代审 auto、无审核 bypass |
 | `approval.approvals_reviewer` | 旧 API 兼容字段；审核者由模式决定：Auto 用独立模型，其余非 Bypass 模式由用户审核 |
 | `approval.reviewer_model` | 空；使用默认模型 |
 | `approval.reviewer_policy` | 空；补充审核要求，不能解除明确禁止规则 |
@@ -53,7 +53,7 @@
 
 ## 审核流程
 
-工具策略的 allow / deny / manual 与审核者设置分开。Auto 只把审核者从用户换成独立模型；allow 直接执行，deny 始终拒绝，manual 才进入审核。沙盒提权和文件工具访问工作区外目标也要求单次批准。Bypass 跳过批准但保留明确禁止规则。未启用沙盒时，命令的既有高风险检查仍进入审核。
+工具策略的 allow / deny / manual 与会话运行模式分开。会话 Manual 让需要批准的操作交给人类，Auto 换成独立模型；策略 allow 直接执行，deny 始终拒绝，manual 才进入审核。沙盒提权和文件工具访问工作区外目标也要求单次批准。Bypass 跳过批准但保留明确禁止规则。未启用沙盒时，命令的既有高风险检查仍进入审核。
 
 审批记录查询保留原有的流程豁免，避免禁止策略让 Agent 无法查看拒绝原因。
 
@@ -101,9 +101,9 @@ FastAPI 入口（现有用户认证或内部 token）：
 
 ## 四种运行模式与占用条
 
-交流模式在解码绑定和执行端都不提供工具。只读模式以明确的读取工具集合过滤，拒绝写文件、发送消息、启动子 Agent、执行命令及终端输入；后台输出仍可读。Bypass 跳过人工和模型确认，但保留显式 deny 和关键命令硬拦截。Auto 仅代审工具策略中标记 manual 的调用，以及沙盒提权、工作区外文件访问；来源不足、模型失败或超时时仍转交人工。模式随用户默认/会话覆盖保存，桌面、手机和 CLI 使用同一组名称；旧 manual/plan/yolo 值兼容。
+交流模式在解码绑定和执行端都不提供工具。只读模式以明确的读取工具集合过滤，拒绝写文件、发送消息、启动子 Agent、执行命令及终端输入；后台输出仍可读。Manual 开放全部工具，需要批准的操作交给人类，使用批准按钮或当前对话中的 Y/N/KEEP Y。Bypass 跳过人工和模型确认，但保留显式 deny、关键命令硬拦截和沙盒限制。Auto 代审工具策略中标记 manual 的调用，以及沙盒提权、工作区外文件访问；来源不足、模型失败或超时时拒绝，用户后续明确授权后可重新审核。模式随用户默认/会话覆盖保存，桌面、手机和 CLI 使用同一组名称；旧 plan/yolo 值兼容，manual 作为独立人工审核模式。
 
-Auto 代审目前只接入内置 Agent；外部 ACP Agent 不具备这个审核通道，Auto 使用 approve-reads + deny，拒绝写操作，避免静默放行。
+外部 ACP Agent 的 ClawCross MCP 工具也使用统一工具执行和审核节点，Manual 交人类，Auto 交 AI。其原生 CLI 工具继续使用适配器自身权限策略，不经 ClawCross 审核。
 
 命令沙盒与审核模式独立，默认关闭。`approval.command_sandbox=srt` 时，前台、后台、交互的 shell 与 Python 命令使用当前机器的解释器和虚拟环境，在原生 SRT 沙盒内执行。默认策略禁止网络及 Unix socket，只允许写会话工作区与临时目录，阻止读取用户主目录中工作区以外的数据及常见凭据。系统目录仍可读，以便程序加载依赖。后台 runner 持有策略文件至任务结束再清理；交互输入仍逐条经过工具策略和模式限制。沙盒拒绝后不会自动重跑可能已有副作用的命令；Agent 可用同一 `run_command` 明确申请 `read_path`（一个已存在的工作区外路径）、`write_path`（一个已存在的工作区外路径）、`network`（一个域名）或 `host`（本次命令跳出沙盒），附上失败原因。每次提权绑定完整命令和参数；Auto 交独立模型，其他非 Bypass 执行模式交用户，Bypass 依其定义跳过确认。明确 deny 与命令硬拦截不能提权覆盖。SRT 或依赖不可用时默认命令拒绝执行，不自动回退宿主机。需要 SRT 0.0.77 或更新版本；Linux 需要 `bwrap`、`socat`、`rg`，macOS 需要 `rg`，Windows 支持为 alpha。旧 `container` 设置会安全迁移到 `srt`。
 

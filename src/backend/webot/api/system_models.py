@@ -26,7 +26,7 @@ class SystemTriggerRequest(BaseModel):
     session_id: str  # the number of the agent it is for
     attachments: Optional[list[SystemTriggerAttachment]] = None
     coalesce_key: str = ""
-    # Per-trigger permission overrides. session_mode: "manual" | "plan" | "bypass".
+    # Per-trigger permission overrides: chat / readonly / manual / auto / bypass.
     # enabled_tools=[] is the explicit "no tools" signal (manual mode); None = default.
     session_mode: Optional[str] = None
     enabled_tools: Optional[list[str]] = None

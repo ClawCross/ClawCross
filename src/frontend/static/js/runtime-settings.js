@@ -81,7 +81,7 @@ async function loadRuntimeSettingsScope() {
         const inference = payload.settings.inference || {reasoning_effort:''};
         const capabilities = payload.model_capabilities || {};
         const levels = capabilities.reasoning_effort_levels || [];
-        if (scope === 'session' && ['chat', 'readonly', 'bypass', 'auto'].includes(payload.effective_mode)) approval.mode = payload.effective_mode;
+        if (scope === 'session' && ['chat', 'readonly', 'manual', 'auto', 'bypass'].includes(payload.effective_mode)) approval.mode = payload.effective_mode;
         const escape = value => escapeHtml(String(value)).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         const text = runtimeSettingsText;
         const number = (key, zh, en, min, max, hint = '') => `<label class="runtime-settings-field"><span>${text(zh, en)}</span>
@@ -124,8 +124,9 @@ async function loadRuntimeSettingsScope() {
                     <select data-section="approval" data-key="mode" class="runtime-settings-input" onchange="updateRuntimeReviewerHint()">
                         <option value="chat" ${approval.mode === 'chat' ? 'selected' : ''}>${text('交流模式 · 无工具', 'Chat · No tools')}</option>
                         <option value="readonly" ${approval.mode === 'readonly' ? 'selected' : ''}>${text('只读模式', 'Read-only')}</option>
-                        <option value="bypass" ${approval.mode === 'bypass' ? 'selected' : ''}>${text('Manual · 全工具', 'Manual · All tools')}</option>
+                        <option value="manual" ${approval.mode === 'manual' ? 'selected' : ''}>${text('Manual · 人工审核', 'Manual · Human review')}</option>
                         <option value="auto" ${(approval.mode || 'auto') === 'auto' ? 'selected' : ''}>${text('Auto · 替我审核', 'Auto · Review for me')}</option>
+                        <option value="bypass" ${approval.mode === 'bypass' ? 'selected' : ''}>${text('Bypass · 无审核', 'Bypass · No review')}</option>
                     </select>
                 </label>
                 <p id="runtime-settings-reviewer-hint" class="runtime-settings-note"></p>
@@ -211,8 +212,9 @@ function updateRuntimeReviewerHint() {
     const hints = {
         chat: ['仅通过文字交流，不调用工具。', 'Text conversation only, with no tool calls.'],
         readonly: ['可以查看文件、搜索和分析；不能写入、执行命令或发送消息。', 'View files, search and analyze. No writes, commands, or messages.'],
+        manual: ['全部工具可用；允许的操作直接执行，需要批准的操作由你通过按钮或当前对话中的 Y/N/KEEP Y 确认。', 'All tools are available. Allowed actions run directly; approval requests are confirmed by you using buttons or Y/N/KEEP Y in the conversation.'],
         bypass: ['开放工具并跳过操作确认。显式禁止规则仍然生效。', 'Tools are available without confirmation. Explicit deny rules still apply.'],
-        auto: ['根据你的任务代审写入和需要批准的操作；依据不足或审核失败时不执行操作，在当前对话中请求明确授权。', 'Reviews writes and approval requests for you. If authorization is insufficient or review fails, the action is blocked and you can reply in the conversation.'],
+        auto: ['允许的操作直接执行；需要批准的操作由 AI 审核。依据不足或审核失败时不执行操作，可在后续对话中明确授权。', 'Allowed actions run directly; AI reviews approval requests. If authorization is insufficient or review fails, the action is blocked; you can give explicit authorization in a later message.'],
     };
     document.getElementById('runtime-settings-reviewer-hint').textContent = runtimeSettingsText(...hints[mode]);
 }

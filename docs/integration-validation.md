@@ -4,6 +4,12 @@
 源提交：`260b7d3`（Landlock 受控联网）和 `5156416`（交接任务及补齐）。
 保留最近的审核提示词、权限上限、系统重试与 Linux Landlock 改动。
 
+## 人工审核模式修正（同日）
+
+新增独立的 `manual` 值，移除其到 `chat` 的旧映射；前端原来标为 Manual 的 `bypass` 恢复为 Bypass。五种模式在 Studio、Mobile、CLI、Agent 消息和 ACP 工具能力中一致：Chat 无工具，Read-only 限制工具范围，Manual 仅把需要审核的操作交人类，Auto 交 AI，Bypass 跳过审核。已有 Bypass 设置不改成 Manual，显式禁止和沙盒限制继续生效。
+
+验证使用临时用户和模拟对话：64 项运行模式/审核/设置测试、24 项 ACP 工具桥/工具注入测试通过；另有 1 项正式 `run_command` 测试确认人工批准前不创建目标文件，回复 Y 后才执行一次且不调用审核模型。4 项浏览器用例通过，包含五种 Mobile 模式请求值、Manual/Bypass 保存值和人工审核按钮。未调用在线 LLM，不修改线上会话。
+
 ## 完成内容
 
 - Linux Landlock 文件隔离、HTTP/SOCKS 受控联网、域名/公网地址和端口检查、DNS 重绑定防护。

@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 # Per-message permission mode, shared by CLI, PC web and mobile group chat.
-VALID_RUN_MODES = ("chat", "readonly", "bypass", "auto")
+VALID_RUN_MODES = ("chat", "readonly", "manual", "auto", "bypass")
 
 # The same modes expressed as acpx run options.
 ACPX_OVERRIDES_BY_MODE: dict[str, dict[str, Any]] = {
@@ -24,6 +24,9 @@ ACPX_OVERRIDES_BY_MODE: dict[str, dict[str, Any]] = {
         "non_interactive_permissions": "deny",
     },
     "auto": {"permission_policy": "approve-reads", "non_interactive_permissions": "deny"},
+    # Native ACP permissions stay with the adapter. ClawCross MCP actions
+    # use the human approval broker in manual mode, including chat Y/N replies.
+    "manual": {"permission_policy": "approve-reads", "non_interactive_permissions": "deny"},
     "bypass": {
         "permission_policy": "approve-all",
         "non_interactive_permissions": "",
@@ -34,10 +37,10 @@ ACPX_OVERRIDES_BY_MODE: dict[str, dict[str, Any]] = {
 def normalize_run_mode(mode: str | None) -> str | None:
     """Return one of VALID_RUN_MODES, or None (no override) for empty/invalid input.
 
-    The earlier names manual / plan / yolo still arrive from old clients.
+    The earlier names plan / yolo still arrive from old clients.
     """
     raw = (mode or "").strip().lower()
-    raw = {"manual": "chat", "plan": "readonly", "yolo": "bypass"}.get(raw, raw)
+    raw = {"plan": "readonly", "yolo": "bypass"}.get(raw, raw)
     return raw if raw in VALID_RUN_MODES else None
 
 

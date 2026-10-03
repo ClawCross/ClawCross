@@ -45,7 +45,7 @@ class ContextSettings(BaseModel):
 
 class ApprovalSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    mode: Literal["chat", "readonly", "bypass", "auto"] = "auto"
+    mode: Literal["chat", "readonly", "manual", "auto", "bypass"] = "auto"
     approvals_reviewer: Literal["user", "auto_review"] = "user"
     reviewer_model: str = Field(default="", max_length=200)
     reviewer_policy: str = Field(default="", max_length=4000)

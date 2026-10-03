@@ -378,8 +378,9 @@
                                 <select id="oc-run-mode" class="oc-mode-select" onchange="onRunModeChange()">
                                     <option value="chat" data-i18n="run_mode_chat">交流模式 · 无工具</option>
                                     <option value="readonly" data-i18n="run_mode_readonly">只读模式</option>
-                                    <option value="bypass" data-i18n="run_mode_bypass">Manual · 全工具</option>
+                                    <option value="manual" data-i18n="run_mode_manual">Manual · 人工审核</option>
                                     <option value="auto" data-i18n="run_mode_auto">Auto · 替我审核</option>
+                                    <option value="bypass" data-i18n="run_mode_bypass">Bypass · 无审核</option>
                                 </select>
                             </div>
                         </div>
@@ -1361,11 +1362,11 @@
     <script src="/static/js/conversation-ui-panels.js?v=20261001-windows"></script>
     <script src="/static/js/components.js?v=20261002-runtime-menu"></script>
     <script src="/static/js/attachment-utils.js?v=20261003-media"></script>
-    <script src="/static/js/main.js?v=20261003-combined"></script>
+    <script src="/static/js/main.js?v=20261003-modes"></script>
     <link rel="stylesheet" href="/static/css/external-agent-settings.css?v=20261002-connect">
     <script src="/static/js/runtime-presentation.js?v=20261002-fold"></script>
 <script src="/static/js/external-agent-settings.js?v=20261002-explicit-create"></script>
-    <script src="/static/js/runtime-settings.js?v=20261003-combined"></script>
+    <script src="/static/js/runtime-settings.js?v=20261003-modes"></script>
     <script src="/static/js/app.js?v=20260327-humanfix"></script>
     <script>
     // Check LLM API config on page load & preload setup status for wizard
