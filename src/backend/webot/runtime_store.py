@@ -2660,6 +2660,30 @@ def get_tool_approval(
     return _row_to_approval(row)
 
 
+def find_consumed_approval_for_action(user_id: str, session_id: str, tool_name: str, args: dict) -> ToolApprovalRecord | None:
+    with _connect_agent(user_id, session_id) as conn:
+        row = conn.execute("SELECT * FROM webot_tool_approvals WHERE user_id = ? AND session_id = ? AND tool_name = ? AND args_hash = ? AND status = 'used' AND expires_at > ? ORDER BY updated_at DESC LIMIT 1",
+            (user_id, session_id, tool_name, _stable_args_hash(tool_name, args), utc_now())).fetchone()
+    return _row_to_approval(row)
+
+
+def close_sandbox_retry_chain(user_id: str, session_id: str, approval_ids: list[str]) -> None:
+    if not approval_ids:
+        return
+    ids = list(dict.fromkeys(approval_ids))
+    with _connect_agent(user_id, session_id) as conn:
+        conn.execute('BEGIN IMMEDIATE')
+        placeholders = ','.join('?' for _ in ids)
+        rows = conn.execute("SELECT approval_id,review_metadata_json FROM webot_tool_approvals WHERE user_id = ? AND session_id = ? AND tool_name = 'run_command' AND status = 'used' AND approval_id IN ("+placeholders+")",
+                            (user_id, session_id, *ids)).fetchall()
+        for row in rows:
+            metadata = json.loads(row['review_metadata_json'] or '{}')
+            metadata['sandbox_retry_closed'] = True
+            conn.execute('UPDATE webot_tool_approvals SET review_metadata_json = ? WHERE approval_id = ? AND user_id = ?',
+                         (_json_dumps(metadata), row['approval_id'], user_id))
+        conn.commit()
+
+
 def set_approval_review_metadata(approval_id: str, user_id: str, metadata: dict) -> None:
     session_id = _record_session("webot_tool_approvals", "approval_id", approval_id, user_id)
     if session_id is None:

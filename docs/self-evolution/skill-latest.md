@@ -1,8 +1,7 @@
-# KEEP Y verification
+# Cumulative command approval verification
 
-Regression: KEEP Y permission was saved, but the generic metadata updater ignored used approvals.
-Fix: record_approval_memory updates only a consumed approval and preserves its execution metadata.
-Other fixes: scope remembered actions to the authenticated session; normalize permit arguments; retain the 40,000-character tool schema budget; locate the permission summary independently of its count.
-Verification: 168 backend tests and 302 subtests passed in the focused batch; its 2 failed cases both passed after fixes. Three added boundary tests and 4 subtests passed. Three focused browser tests passed (the grant removal case was fixed and rerun).
-Actual Landlock: persistent read cannot delete, another Agent requires review, ceiling/revocation removes access; remembered HTTPS destination works without a second review.
-Actual configured reviewer: native JSON Schema returned KEEP Y with a valid original-user source.
+Failure: old tests assumed one schema-output attempt and discarded original user messages above 16,000 characters; a schema check found missing parameter docs and an outdated private-field list.
+Fix: profile fallback for workers without exported LLM variables; two attempts under native JSON Schema, wrapper parsing with strict validation; full original requests selected by actual reviewer token budget.
+Command retry: up to eight scoped reviews in one call; each reviewer sees previous grants and decides on their union. Linked approvals bind command/user/session/workspace, survive pending human Y, and close at completion/denial. KEEP Y persists only the new scope.
+Verification: focused batch 173 tests and 299 subtests passed; failed cases were fixed and verified by 4 targeted tests and 5 subtests. Seven real-chain/limit cases passed. Seven final material/audit cases and 3 subtests passed. Schema budget remains 40,000 characters.
+Live verification: a worker with all LLM_* variables removed used the configured profile; real DeepSeek API approved two successive destinations. One real command executed three times, the second review saw the first grant, both approvals closed, and no temporary permission persisted.

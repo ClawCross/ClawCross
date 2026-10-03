@@ -316,6 +316,28 @@ def forced_tool_choice_supported(model: Any) -> bool:
     return "ChatDeepSeek" not in _model_classes(model)
 
 
+def parse_schema_json(content: str):
+    """Read a complete JSON value, tolerating wrappers but rejecting ambiguity."""
+    raw = content.strip()
+    if not raw:
+        raise RuntimeError('Schema-constrained response was empty')
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        # Some compatible providers wrap a constrained object in markdown or
+        # a short introduction. Never choose between multiple returned objects.
+        start = raw.find('{')
+        if start < 0:
+            raise ValueError('Schema-constrained response contained no JSON object') from None
+        try:
+            value, end = json.JSONDecoder().raw_decode(raw[start:])
+        except json.JSONDecodeError:
+            raise ValueError('Schema-constrained response contained incomplete or invalid JSON') from None
+        if any(char in raw[:start] + raw[start+end:] for char in '{}[]'):
+            raise ValueError('Schema-constrained response contained ambiguous JSON objects')
+        return value
+
+
 async def decode_structured_final(model: Any, response_format: dict[str, Any], messages: list[Any], config: Any = None):
     """Make one provider-constrained final call after the ReAct tool loop.
 
@@ -348,7 +370,7 @@ async def decode_structured_final(model: Any, response_format: dict[str, Any], m
         content = extract_text(raw.content)
         if not content.strip():
             raise RuntimeError('Schema-constrained response was empty')
-        value = json.loads(content)
+        value = parse_schema_json(content)
     elif classes & {"ChatAnthropic", "ChatGoogleGenerativeAI"}:
         result = await model.with_structured_output(
             {**strict_schema, "title": name}, method="json_schema", include_raw=True,

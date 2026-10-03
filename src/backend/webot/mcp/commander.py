@@ -41,6 +41,7 @@ from webot.command_sandbox import (
     normalize_escalation, SandboxUnavailable, SrtCommand, sandbox_failure_hint,
     permission_failure_target, proxy_denied_network_target,
     active_sandbox_grants,
+    approved_retry_chain, MAX_PERMISSION_RETRIES,
 )
 from webot.approval_review import authorize_action, policy_binding
 from webot.approval_actions import canonical_action_args
@@ -975,6 +976,7 @@ def _write_python_script(workspace: str, code: str) -> str:
 async def _command_safety_gate(
     username: str, session_id: str, command: str, *, check_names: bool = True,
     tool_name: str = "run_command", action_args: dict | None = None,
+    approval_state: dict | None = None,
 ) -> tuple[str | None, str]:
     """Run the command checks; return (rejection message or None, approval note)."""
     normalized_session = session_id or "default"
@@ -996,11 +998,18 @@ async def _command_safety_gate(
     if cmd_analysis.blocked or cmd_analysis.risk_level == RiskLevel.CRITICAL:
         return f"❌ 命令被安全策略阻止: {'; '.join(cmd_analysis.reasons)}", ""
     if consume_execution_permit(username, normalized_session, tool_name, normalized_args, policy_binding(username, normalized_session)):
+        if approval_state is not None:
+            from webot.runtime_store import find_consumed_approval_for_action
+            record = find_consumed_approval_for_action(username, normalized_session, tool_name, normalized_args)
+            if record is not None:
+                approval_state['approval_id'] = record.approval_id
         return None, "✅ 当前操作已通过统一审核。"
     result = await authorize_action(
         user_id=username, session_id=normalized_session, tool_name=tool_name, args=normalized_args,
         risk_reason=f"高风险命令需批准: {'; '.join(cmd_analysis.reasons)}" if cmd_analysis.risk_level == RiskLevel.HIGH else "",
     )
+    if result.allowed and approval_state is not None:
+        approval_state['approval_id'] = result.approval_id
     return (None, result.reason) if result.allowed else ("❌ " + result.reason, "")
 
 
@@ -1129,21 +1138,21 @@ async def run_command(
     sandbox_access: Literal["default", "read_path", "write_path", "network"] = "default",
     escalation_target: str = "",
     escalation_reason: str = "",
+    sandbox_approval_chain: list[str] | None = None,
 ) -> str:
     """
-    在会话工作目录运行 shell 或 Python。foreground 返回结果；background 返回 job_id；
-    interactive 启动交互程序，用 background_command_io 输入和读取输出。
+    在会话工作目录运行 shell/Python。foreground 返回结果，background 返回 job_id，
+    interactive 用 background_command_io 输入/读输出。
 
     :param command: shell 命令；language=python 时是 Python 代码（interactive 下先执行它再进入 REPL，可为空）
     :param language: shell 或 python
-    :param mode: foreground / background / interactive
-    :param cwd: 工作目录，相对当前会话工作区解析；留空用会话工作区根目录
-    :param timeout_seconds: 超时秒数；0 表示默认值（前台 180，后台和交互至少 300），上限 MAX_EXEC_TIMEOUT
-    :param max_output_chars: 前台模式最多返回的输出字符数；0 表示默认值（8000），最小 256
-    :param notify_on_done: 后台或交互任务结束后用一条系统消息唤醒本会话并附上状态和输出尾部，无需轮询
-    沙盒命令先执行；权限拒绝由系统在管理员上限内审核并至多重试一次。初始化故障不提权。
-    受控联网使用 HTTP_PROXY/HTTPS_PROXY/ALL_PROXY。curl、Python urllib/requests 可使用这些代理；
-    原始 socket 或忽略代理的客户端仍受限制，需要配置客户端使用代理。
+    :param mode: 前台、后台或交互
+    :param cwd: 相对工作区解析，留空用根目录
+    :param timeout_seconds: 0 用默认值（前台 180，后台/交互 300 秒），上限 MAX_EXEC_TIMEOUT
+    :param max_output_chars: 输出字符上限，0=8000，最小 256
+    :param notify_on_done: 后台/交互结束后通知会话并附输出尾部
+    沙盒权限拒绝由系统逐项审核，批准后累计权限重试，最多 8 次且共用执行期限。初始化故障不提权。
+    联网须用 HTTP_PROXY/HTTPS_PROXY/ALL_PROXY（curl、urllib/requests 支持）；原始 socket/直连被阻止。
     """
     is_python = language == "python"
     interactive = mode == "interactive"
@@ -1158,6 +1167,19 @@ async def run_command(
     sandbox_selected = sandbox_backend in {"srt", "auto", "landlock"}
     workspace_state = resolve_session_workspace(username, session_id, explicit_cwd=cwd)
     grants = active_sandbox_grants(getattr(sandbox_options, 'sandbox_grants', []), workspace_state.root)
+    action_args = canonical_action_args('run_command', {
+        "username":username,"command":command,"language":language,"mode":mode,"cwd":cwd,
+        "session_id":session_id or 'default',"timeout_seconds":timeout_seconds,"max_output_chars":max_output_chars,
+        "notify_on_done":notify_on_done,"sandbox_access":sandbox_access,"escalation_target":escalation_target,
+        "escalation_reason":escalation_reason,"sandbox_approval_chain":sandbox_approval_chain or [],
+    })
+    try:
+        prior_grants = approved_retry_chain(username, session_id or 'default', action_args, workspace_state.root)
+    except SandboxUnavailable as exc:
+        return '❌ ' + str(exc)
+    for grant in prior_grants:
+        if grant['target'] not in grants[grant['access']]:
+            grants[grant['access']].append(grant['target'])
     allowed_domains = list(dict.fromkeys([*allowed_domains, *grants['network']]))
     if sandbox_access != 'default':
         if not sandbox_selected:
@@ -1169,16 +1191,11 @@ async def run_command(
             return '❌ ' + str(exc)
 
     approval_note = ""
+    approval_state = {}
     reject, approval_note = await _command_safety_gate(
             username, session_id, command,
             check_names=not is_python,
-            action_args={
-                "command": command, "language": language, "mode": mode,
-                "cwd": cwd, "session_id": session_id, "timeout_seconds": timeout_seconds,
-                "max_output_chars": max_output_chars, "notify_on_done": notify_on_done,
-                "sandbox_access": sandbox_access, "escalation_target": escalation_target,
-                "escalation_reason": escalation_reason,
-            },
+            action_args=action_args, approval_state=approval_state,
     )
     if reject:
         return reject
@@ -1195,12 +1212,19 @@ async def run_command(
             if use_srt:
                 script = _write_python_script(workspace, command) if is_python else ""
                 sandbox = None
+                review_ids = list(sandbox_approval_chain or [])
+                pending_replay = False
                 try:
                     deadline = time.monotonic() + _bounded_int(timeout_seconds, EXEC_TIMEOUT, 1, MAX_EXEC_TIMEOUT)
-                    # A resumed, already-approved retry must execute once, with
-                    # its exact grant. It must not repeat the unprivileged attempt.
-                    attempts = 1 if sandbox_access != 'default' else 2
-                    for attempt in range(attempts):
+                    reviewed = len(review_ids)
+                    if sandbox_access != 'default':
+                        grants[sandbox_access].append(escalation_target)
+                        if sandbox_access == 'network' and escalation_target not in allowed_domains:
+                            allowed_domains.append(escalation_target)
+                        reviewed += 1
+                        if approval_state.get('approval_id'):
+                            review_ids.append(approval_state['approval_id'])
+                    for attempt in range(MAX_PERMISSION_RETRIES + 1):
                         try:
                             sandbox = build_sandbox(
                                 root=workspace_state.root, cwd=workspace_state.cwd,
@@ -1223,7 +1247,7 @@ async def run_command(
                         sandbox.settings_path.unlink(missing_ok=True)
                         proxy_denied = proxy_denied_network_target(report.get('stderr', ''))
                         if ((report.get('exit_code') == 0 and not proxy_denied)
-                                or report.get('timed_out') or attempt == attempts - 1):
+                                or report.get('timed_out')):
                             return result
                         try:
                             needed = permission_failure_target(report.get('stderr', ''), workspace_state.root)
@@ -1231,14 +1255,19 @@ async def run_command(
                             return result + '\n\n❌ ' + str(exc)
                         if needed is None:
                             return result
+                        if needed[1] in grants[needed[0]] or (needed[0] == 'network' and needed[1] in allowed_domains):
+                            return result + '\n\n❌ 已批准该权限仍执行失败，停止重复提权。'
+                        if reviewed >= MAX_PERMISSION_RETRIES:
+                            return result + '\n\n❌ 本次命令已达到 8 次权限审核上限。'
                         sandbox_access, escalation_target = needed
-                        escalation_reason = '系统检测到沙盒命令权限拒绝，需要一次有限权限重试。'
+                        escalation_reason = f'系统检测到新的沙盒权限拒绝，需要第 {reviewed + 1} 次有限权限重试；此前已批准权限将累计使用。'
                         args = canonical_action_args('run_command', {
                             'username': username, 'command': command, 'language': language,
                             'mode': mode, 'session_id': session_id or 'default', 'cwd': cwd,
                             'timeout_seconds': timeout_seconds, 'max_output_chars': max_output_chars,
                             'notify_on_done': notify_on_done, 'sandbox_access': sandbox_access,
                             'escalation_target': escalation_target, 'escalation_reason': escalation_reason,
+                            'sandbox_approval_chain':review_ids,
                         })
                         # stderr is evidence only; never an authorization source.
                         outcome = await authorize_action(
@@ -1246,10 +1275,19 @@ async def run_command(
                             args=args, risk_reason=escalation_reason, review_evidence=report.get('stderr', ''),
                         )
                         if not outcome.allowed:
-                            return '❌ 沙盒命令最终未能完成。\n' + outcome.reason + '\n\n首次执行结果：\n' + result
+                            pending_replay = outcome.pending
+                            return '❌ 沙盒命令最终未能完成。\n' + outcome.reason + '\n\n最近一次执行结果：\n' + result
+                        reviewed += 1
+                        if outcome.approval_id:
+                            review_ids.append(outcome.approval_id)
                         if time.monotonic() >= deadline:
                             return result + '\n\n❌ 审核后已超过本次执行时间上限，未重试。'
-                        approval_note = '系统已批准一次有限权限重试；首次执行可能已产生部分工作区变更。'
+                        if outcome.binding_hash and policy_binding(username, session_id or 'default') != outcome.binding_hash:
+                            return result + '\n\n❌ 审核后策略发生变化，未重试。'
+                        grants[sandbox_access].append(escalation_target)
+                        if sandbox_access == 'network':
+                            allowed_domains.append(escalation_target)
+                        approval_note = f'系统已累计批准 {reviewed} 项有限权限；重放整条命令可能重复此前的部分变更。'
                 finally:
                     if sandbox is not None:
                         sandbox.settings_path.unlink(missing_ok=True)
@@ -1258,6 +1296,9 @@ async def run_command(
                     if script:
                         with contextlib.suppress(OSError):
                             os.remove(script)
+                    if not pending_replay:
+                        from webot.runtime_store import close_sandbox_retry_chain
+                        close_sandbox_retry_chain(username, session_id or 'default', review_ids)
             script = _write_python_script(workspace, command) if is_python else ""
             try:
                 return await _run_foreground(

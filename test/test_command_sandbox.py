@@ -37,7 +37,52 @@ class CommandSandboxTests(unittest.TestCase):
         self.assertFalse(hasattr(commander, 'request_sandbox_permission'))
         tool = StructuredTool.from_function(coroutine=commander.run_command,name='run_command',description='Command')
         fields = _visible_tool_parameters(tool)['properties']
-        self.assertFalse({'sandbox_access','escalation_target','escalation_reason'} & set(fields))
+        self.assertFalse({'sandbox_access','escalation_target','escalation_reason','sandbox_approval_chain'} & set(fields))
+
+    def test_repeated_permission_failure_stops_without_repeated_review(self):
+        from webot.approval_review import ApprovalResult
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)/'workspace';root.mkdir()
+            target=Path(directory)/'outside.txt';target.write_text('SYNTHETIC')
+            workspace=SessionWorkspace(root=root,cwd=root,mode='shared',remote='')
+            async def run(*args,**kwargs):
+                kwargs['execution_report'].update(exit_code=1,timed_out=False,stderr=f'cat: {target}: Permission denied')
+                return 'still denied'
+            with patch.dict('os.environ',{'CLAWCROSS_SANDBOX_MAX_READ_PATHS':json.dumps([str(target)])}), \
+                 patch('webot.runtime_settings.get_runtime_settings',return_value=SimpleNamespace(approval=SimpleNamespace(command_sandbox='srt'))), \
+                 patch.object(commander,'_command_safety_gate',new=AsyncMock(return_value=(None,''))), \
+                 patch.object(commander,'resolve_session_workspace',return_value=workspace), \
+                 patch.object(command_sandbox,'_srt_binary',return_value='/usr/bin/srt'), \
+                 patch.object(commander,'_run_foreground',side_effect=run) as execute, \
+                 patch.object(commander,'authorize_action',new=AsyncMock(return_value=ApprovalResult(True))) as model:
+                result=asyncio.run(commander.run_command('alice',f'cat {target}',session_id='s'))
+            self.assertIn('停止重复提权',result)
+            self.assertEqual(execute.await_count,2)
+            model.assert_awaited_once()
+
+    def test_one_command_stops_at_eight_distinct_permission_reviews(self):
+        from webot.approval_review import ApprovalResult
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)/'workspace';root.mkdir()
+            targets=[Path(directory)/f'outside-{i}.txt' for i in range(9)]
+            for path in targets:path.write_text('SYNTHETIC')
+            workspace=SessionWorkspace(root=root,cwd=root,mode='shared',remote='')
+            calls=[]
+            async def run(*args,**kwargs):
+                target=targets[len(calls)];calls.append(target)
+                kwargs['execution_report'].update(exit_code=1,timed_out=False,stderr=f'cat: {target}: Permission denied')
+                return 'permission denied'
+            with patch.dict('os.environ',{'CLAWCROSS_SANDBOX_MAX_READ_PATHS':json.dumps([str(p) for p in targets])}), \
+                 patch('webot.runtime_settings.get_runtime_settings',return_value=SimpleNamespace(approval=SimpleNamespace(command_sandbox='srt'))), \
+                 patch.object(commander,'_command_safety_gate',new=AsyncMock(return_value=(None,''))), \
+                 patch.object(commander,'resolve_session_workspace',return_value=workspace), \
+                 patch.object(command_sandbox,'_srt_binary',return_value='/usr/bin/srt'), \
+                 patch.object(commander,'_run_foreground',side_effect=run), \
+                 patch.object(commander,'authorize_action',new=AsyncMock(return_value=ApprovalResult(True))) as model:
+                result=asyncio.run(commander.run_command('alice','cat synthetic-files',session_id='s'))
+            self.assertIn('8 次权限审核上限',result)
+            self.assertEqual(len(calls),9)
+            self.assertEqual(model.await_count,8)
 
     def test_failure_scope_respects_maximum_and_rejects_ambiguous_errors(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -148,6 +148,93 @@ class CommandLandlockIntegrationTests(unittest.IsolatedAsyncioTestCase):
         model.assert_awaited_once()
         self.assertEqual(store.list_tool_approvals(self.user, self.session)[0].status, 'denied')
 
+    async def test_multiple_y_reviews_accumulate_only_in_one_command_call(self):
+        second = self.base/'second.txt'
+        second.write_text('SECOND_ALLOWED_DATA')
+        command = 'cat ' + shlex.quote(str(self.outside)) + ' && cat ' + shlex.quote(str(second))
+        context = review.review_context([HumanMessage(content=f'读取 {self.outside} 和 {second}，不修改任何文件。',
+            id='test-original-user',additional_kwargs={'input_origin':'user'})])
+        verdict = review.ReviewVerdict(decision='Y',reason='用户授权读取两个指定文件',risk='low',authorization_sources=['test-original-user'])
+        with patch.dict('os.environ',{'CLAWCROSS_SANDBOX_MAX_READ_PATHS':json.dumps([str(self.outside),str(second)])}), \
+             patch.object(review,'approval_context',return_value=context), \
+             patch.object(review,'run_reviewer',new=AsyncMock(return_value=verdict)) as model:
+            result = await self.execute(command)
+            self.assertIn('SYNTHETIC_OUTSIDE_DATA',result,result)
+            self.assertIn('SECOND_ALLOWED_DATA',result,result)
+            self.assertEqual(self.foreground.await_count,3)
+            self.assertEqual(model.await_count,2)
+            snapshot = model.await_args_list[1].kwargs['context']['sandbox_permissions']
+            self.assertEqual(snapshot['requested'],{'access':'read_path','target':str(second)})
+            self.assertEqual(snapshot['review_number'],2)
+            self.assertEqual([(g['access'],g['target']) for g in snapshot['already_granted']], [('read_path',str(self.outside))])
+            self.assertTrue(model.await_args_list[1].kwargs['args']['sandbox_approval_chain'])
+            self.assertEqual(runtime_settings.get_runtime_settings(self.user,self.session).approval.sandbox_grants,[])
+            model.return_value = review.ReviewVerdict(decision='N',reason='新调用不继承此前 Y',risk='medium',authorization_sources=[])
+            fresh = await self.execute('cat ' + shlex.quote(str(self.outside)))
+            self.assertIn('新调用不继承',fresh)
+            self.assertEqual(self.foreground.await_count,4)
+            self.assertEqual(model.await_count,3)
+
+    async def test_second_review_can_deny_continuing_after_first_y(self):
+        second = self.base/'second.txt'
+        second.write_text('SECOND_NOT_ALLOWED')
+        y = review.ReviewVerdict(decision='Y',reason='批准首次只读',risk='low',authorization_sources=['test-original-user'])
+        n = review.ReviewVerdict(decision='N',reason='累计权限超出任务授权',risk='medium',authorization_sources=[])
+        with patch.dict('os.environ',{'CLAWCROSS_SANDBOX_MAX_READ_PATHS':json.dumps([str(self.outside),str(second)])}), \
+             patch.object(review,'run_reviewer',new=AsyncMock(side_effect=[y,n])) as model:
+            result = await self.execute('cat '+shlex.quote(str(self.outside))+' && cat '+shlex.quote(str(second)))
+        self.assertIn('累计权限超出任务授权',result)
+        self.assertNotIn('SECOND_NOT_ALLOWED',result)
+        self.assertEqual(self.foreground.await_count,2)
+        self.assertEqual(model.await_count,2)
+
+    async def test_manual_y_continuation_retains_previous_grants_and_reviews_next_target(self):
+        from webot.permission_context import resolve_permission_request
+        runtime_settings.save_runtime_settings(self.user,session_id=self.session,settings={'approval':{'mode':'manual'}})
+        second = self.base/'second.txt'
+        second.write_text('SECOND_MANUAL_ALLOWED')
+        command = 'cat '+shlex.quote(str(self.outside))+' && cat '+shlex.quote(str(second))
+        async def resume(record):
+            args = json.loads(record.args_json)
+            args.pop('username'); args.pop('session_id')
+            return await self.execute(**args)
+        with patch.dict('os.environ',{'CLAWCROSS_SANDBOX_MAX_READ_PATHS':json.dumps([str(self.outside),str(second)])}), \
+             patch.object(review,'run_reviewer') as model:
+            first = await self.execute(command)
+            self.assertIn('【操作授权请求】',first)
+            one = store.list_tool_approvals(self.user,self.session,status='pending')[0]
+            resolve_permission_request(user_id=self.user,approval_id=one.approval_id,action='approved')
+            next_request = await resume(one)
+            self.assertIn('【操作授权请求】',next_request,next_request)
+            two = store.list_tool_approvals(self.user,self.session,status='pending')[0]
+            self.assertEqual(json.loads(two.args_json)['sandbox_approval_chain'],[one.approval_id])
+            snapshot = json.loads(two.review_metadata_json)['sandbox_permissions']
+            self.assertEqual(snapshot['already_granted'][0]['target'],str(self.outside))
+            resolve_permission_request(user_id=self.user,approval_id=two.approval_id,action='approved')
+            result = await resume(two)
+        self.assertIn('SECOND_MANUAL_ALLOWED',result,result)
+        self.assertEqual(self.foreground.await_count,3)
+        model.assert_not_called()
+        self.assertEqual(runtime_settings.get_runtime_settings(self.user,self.session).approval.sandbox_grants,[])
+
+    async def test_retry_chain_cannot_be_forged_or_moved_to_another_command(self):
+        verdict = review.ReviewVerdict(decision='Y',reason='测试授权读取',risk='low',authorization_sources=['test-original-user'])
+        with patch.dict('os.environ',{'CLAWCROSS_SANDBOX_MAX_READ_PATHS':json.dumps([str(self.outside)])}), \
+             patch.object(review,'run_reviewer',new=AsyncMock(return_value=verdict)):
+            await self.execute('cat '+shlex.quote(str(self.outside)))
+            record = store.list_tool_approvals(self.user,self.session)[0]
+            calls = self.foreground.await_count
+            other = await self.execute('head '+shlex.quote(str(self.outside)),sandbox_access='read_path',
+                escalation_target=str(self.outside),escalation_reason='恢复',sandbox_approval_chain=[record.approval_id])
+            forged = await self.execute('cat '+shlex.quote(str(self.outside)),sandbox_access='read_path',
+                escalation_target=str(self.outside),escalation_reason='恢复',sandbox_approval_chain=['approval-doesnotexist'])
+            old = await self.execute('cat '+shlex.quote(str(self.outside)),sandbox_access='read_path',
+                escalation_target=str(self.outside),escalation_reason='恢复',sandbox_approval_chain=[record.approval_id])
+            self.assertIn('不匹配',other)
+            self.assertIn('已失效',forged)
+            self.assertIn('调用已结束',old)
+            self.assertEqual(self.foreground.await_count,calls)
+
     async def test_ai_keep_read_grant_persists_without_writes_or_cross_session_access(self):
         verdict = review.ReviewVerdict(decision='KEEP Y', reason='用户授权本会话持续只读此文件',
             risk='low', authorization_sources=['test-original-user'])
