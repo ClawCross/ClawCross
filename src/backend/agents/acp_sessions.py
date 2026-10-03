@@ -48,7 +48,7 @@ async def close_acp_session(platform: str, session_name: str, cwd: str = "", *, 
     if owned is None:
         raise HTTPException(404, "No owned ACP session")
     # The runtime owns cwd; never let a browser select another user's record.
-    adapter = get_acpx_adapter()
+    adapter = get_acpx_adapter(cwd=owned.runtime['acp_cwd']) if owned.runtime.get('acp_cwd') else get_acpx_adapter()
     cwd = adapter._cwd
     platform = canonical_platform(owned.platform)
     if not acpx_bin:

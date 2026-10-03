@@ -39,6 +39,8 @@
 <script src="/static/js/approval-ui.js?v=20261003-inline-approval"></script>
 <link rel="stylesheet" href="/static/css/channel-setup.css?v=1">
 <script src="/static/js/channel-setup.js?v=1"></script>
+<link rel="stylesheet" href="/static/css/native-session-browser.css?v=1">
+<script src="/static/js/native-session-browser.js?v=1"></script>
 <script src="/static/js/markdown-shared.js?v=20261003-inline-approval"></script>
 <script src="/static/js/tinyfish-live-shared.js"></script>
 <script src="/static/vendor/pretext.global.js?v=20260402-pretext"></script>
@@ -5340,6 +5342,7 @@
           <button onclick="submitCreateAgent()" class="side-panel-primary-btn" data-i18n="create_agent_btn">🤖 创建 Agent</button>
         </div>
       </div>
+      <button type="button" class="side-panel-secondary-btn" onclick="ClawcrossNativeSessions.open()" data-i18n="native_session_register">登记已有 Codex / Claude 会话</button>
       <div id="create-agent-panel-acp" style="display:none;"></div>
     </div>
   </div>
@@ -5999,6 +6002,7 @@ const I18N = {
     agent_team_label: '所属团队',
     create_agent_hint: '💡 创建后将自动开启与该 Agent 的私聊对话',
     create_agent_btn: '🤖 创建 Agent',
+    native_session_register: '登记已有 Codex / Claude 会话',
     agent_name_required: '请输入 Agent 名称',
     agent_created: '✅ Agent 创建成功',
     agent_create_failed: 'Agent 创建失败',
@@ -6622,6 +6626,7 @@ const I18N = {
     agent_team_label: 'Team',
     create_agent_hint: '💡 A private chat will be opened automatically after creation',
     create_agent_btn: '🤖 Create Agent',
+    native_session_register: 'Register existing Codex / Claude session',
     agent_name_required: 'Please enter an Agent name',
     agent_created: '✅ Agent created',
     agent_create_failed: 'Failed to create Agent',
@@ -8295,6 +8300,8 @@ async function refreshRemoteClaudeSessions(showToast = false) {
     if (btn) btn.disabled = false;
   }
 }
+
+window.addEventListener('clawcross:agent-imported', () => { void refreshAgentOps(); });
 
 async function refreshAgentOps(showToast = false) {
   const btn = document.getElementById('fleet-refresh');

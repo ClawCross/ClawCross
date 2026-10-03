@@ -17,14 +17,14 @@ from agents.store import Agent, AgentStore, canonical_platform
 from external import session
 
 
-def adapter():
+def adapter(agent: Agent | None = None):
     from external.acpx import AcpxError, get_acpx_adapter
 
     from ops.components import binary_path
     if not binary_path("acpx"):
         raise ControlError("acpx is not installed")
     try:
-        return get_acpx_adapter()
+        return get_acpx_adapter(cwd=agent.runtime['acp_cwd']) if agent and agent.runtime.get('acp_cwd') else get_acpx_adapter()
     except AcpxError as exc:
         raise ControlError(str(exc)) from exc
 
@@ -180,13 +180,15 @@ class AcpRuntime(Runtime):
         async def send() -> session.Sent:
             try:
                 with active_turn(agent, msg, context, mode, enabled_tools, prepared=prepared, response_format=response_format):
-                    trace = await get_acpx_adapter().prompt_with_trace(
+                    selected = get_acpx_adapter(cwd=agent.runtime['acp_cwd']) if agent.runtime.get('acp_cwd') else get_acpx_adapter()
+                    trace = await selected.prompt_with_trace(
                         tool=canonical_platform(agent.platform),
                         session_key=session.runtime_session(agent),
                         prompt_text=prompt, reset_session=False, system_prompt=None,
                         attachments=[dict(a) for a in msg.attachments] or None,
                         model=model, mcp_config=connector, config_options=native_config,
                         on_event=on_event, **run,
+                        **({'resume_session_id': agent.runtime['native_resume_id']} if agent.runtime.get('native_resume_id') else {}),
                     )
             except (AcpxError, RuntimeError) as exc:
                 return session.Sent(ok=False, error=str(exc))
@@ -209,10 +211,12 @@ class AcpRuntime(Runtime):
             options['timeout_sec'] = min(options.get('timeout_sec') or 60, 90)
             model, connector, _ = self._native_session(current)
             try:
-                await get_acpx_adapter().ensure_session(
+                selected = get_acpx_adapter(cwd=current.runtime['acp_cwd']) if current.runtime.get('acp_cwd') else get_acpx_adapter()
+                await selected.ensure_session(
                     tool=canonical_platform(current.platform), session_key=session.runtime_session(current),
                     acpx_session=session.runtime_session(current), system_prompt=None,
-                    model=model, mcp_config=connector, **options)
+                    model=model, mcp_config=connector, **options,
+                    **({'resume_session_id': current.runtime['native_resume_id']} if current.runtime.get('native_resume_id') else {}))
             except (AcpxError, RuntimeError) as exc:
                 raise ControlError(str(exc)) from exc
 
@@ -233,7 +237,7 @@ class AcpRuntime(Runtime):
     async def _control(self, agent: Agent, action: str) -> dict[str, Any]:
         from external.acpx import AcpxError
 
-        acpx, key = adapter(), session.runtime_session(agent)
+        acpx, key = adapter(agent), session.runtime_session(agent)
         try:
             if action == "cancel":
                 await acpx.ops_cancel(
@@ -254,7 +258,7 @@ class AcpRuntime(Runtime):
         return await session.log(agent, limit)
 
     async def destroy(self, agent: Agent) -> None:
-        acpx, key = adapter(), session.runtime_session(agent)
+        acpx, key = adapter(agent), session.runtime_session(agent)
         await acpx.close_session(
             tool=agent.platform, session_key=key, acpx_session=acpx.to_acpx_session_name(tool=agent.platform, session_key=key),
             **command_options(agent, long=False),

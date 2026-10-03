@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20261003180432421368",
+  "candidate_id": "blended-verification-loop-structured-output-workspace-preflight",
+  "skill_name": "repo-skill",
+  "strategy": "repair-only",
+  "env_fingerprint": {
+    "python_version": "3.11.16",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-10-03T18:04:32.421339+00:00"
+  },
+  "commands": [
+    {
+      "command": "(external failure context)",
+      "ok": false,
+      "stdout": "",
+      "stderr": "Native restore exploration: an empty Claude session was not persisted and resume returned Resource not found; an empty Codex restore returned Internal error. Use a dedicated persisted fixture, not existing user history. After a single fixed fixture prompt both agents produced the expected text, but the old AcpxAdapter.show_session parser failed with KeyError: sessionId because current acpx --format json returns a JSON record, not colon-delimited text. Fix JSON-first slim metadata parsing with legacy text fallback; never return the record messages. Re-run test/test_native_sessions.py, existing ACP regression tests, and isolated persisted-fixture create/resume. Temporary CLAWCROSS_HOME needs explicit CLAWCROSS_BIN_DIR pointing to the installed acpx; do not install dependencies in tests."
+    }
+  ],
+  "overall_ok": false,
+  "duration_ms": null,
+  "created_at": "2026-10-03T18:04:32.421426+00:00",
+  "asset_id": "sha256:b3fb8e7c50d28c258ceddd8ef07eb5e8360f83b6b399ed88c3468d7aea8917cb"
+}

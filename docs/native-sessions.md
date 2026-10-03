@@ -1,0 +1,23 @@
+# 登记原生 Codex / Claude 会话
+
+Agent 中心的「登记外部会话」和 Mobile 新建 Agent 的「登记已有 Codex / Claude 会话」打开目录。页面打开和切换平台都不查询、不创建；点击读取才执行原生 `session/list`，点击登记才创建 ClawCross Agent。
+
+当前 acpx 支持：
+
+- `sessions list --local`：本机 acpx 记录。原有会话追踪保持此路径，只显示登录用户已登记的 Agent，轮询不启动适配器。
+- `sessions list`：调用适配器原生目录。Codex 使用 App Server `thread/list`，Claude 使用 SDK `listSessions`。返回标题、目录、时间和原生 ID，支持适配器返回的分页游标。
+- `sessions ensure --name <name> --resume-session <id>`：为 ClawCross 名字绑定已有原生会话。首次连接恢复，不重放旧问答；后续复用 acpx 记录。
+
+目录是主机 CLI 账户的历史，不是所有 ClawCross 用户共享的历史。默认只允许经过前端验证的本机直连。远程访问需要主机管理员在环境中明确配置 `CLAWCROSS_NATIVE_SESSION_USERS=alice,avalon`。普通用户的 Bearer 认证或伪造请求头不能代替主机证明。已有其他用户的 ClawCross 会话与已登记的原生 ID 会从目录中过滤。
+
+登记使用与用户绑定、十分钟有效的选择票据，不接受任意 ID/目录。重复登记同一会话返回已有 Agent，跨用户占用拒绝。登记本身不加载原生会话、不调用 LLM，也不复制历史到 ClawCross。下一条消息或「测试连接」用原有目录恢复，ClawCross 工具默认启用。原生历史由 Codex/Claude 自己保存；ClawCross 对话页从接入后的新消息开始记录。
+
+重置会清空首次交付状态和原生恢复种子，创建新会话，保留原有工作目录；不会每次重置后又接回旧上下文。原生权限仍由外部 CLI 管理，ClawCross 工具使用平台的审核与命令沙盒。
+
+恢复时保留适配器支持的现有模型，以及用户明确指定的模型。如果主机默认模型不在当前登录方式返回的可用目录里，登记会话会切换到目录中实际支持的模型；Codex 优先使用已支持的 `gpt-5.5`，其他情况选择目录中的具体值。不会修改主机全局配置。设置页显示切换后的实际值，仍可自行更改。当前主机的 `gpt-6.1-sol` 在 ChatGPT 登录方式下不受支持，验证中已重现其 400 错误。
+
+旧 acpx 或适配器缺少原生列表能力时返回明确错误，不把本地记录冒充原生目录。原生目录查询设置 deny-all、非交互拒绝，并使用 npm 离线模式，缺少适配器时不会为浏览目录下载组件。尚未发送消息的原生空会话可能没有持久记录，不能以空会话恢复失败判断已有历史也无法恢复。
+
+验证：已安装适配器真实读取 Codex 23 条、Claude 12 条元信息，没有展示或重放正文。Codex、Claude 的独立持久测试会话均验证了恢复后 ID 不变，之前记住的代号保留。隔离数据库与模拟适配器验证用户/票据约束、显式创建、正式 runtime 的原目录与恢复种子传递、重置、删除释放、被动轮询回归：47 项测试、8 项子测试通过，真实模型测试默认跳过。手机浏览器 1 项通过，验证先读取后登记、不自动创建与无横向溢出。正在运行的原生会话可能由适配器拒绝恢复，此时保留原会话并报错，不自动终止其他会话，也不另建空白会话冒充恢复成功。
+
+可重跑的真实恢复验证：`CLAWCROSS_NATIVE_SESSION_INTEGRATION=1 PYTHONPATH=src:src/backend:. python -m pytest -q test/test_native_session_resume_integration.py`。需要已安装组件、主机 CLI 登录和联网；默认跳过。只创建、关闭专用测试会话，不触碰现有用户历史。

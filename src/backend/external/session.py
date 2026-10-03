@@ -184,8 +184,10 @@ def remember(store: AgentStore | None, agent: Agent, **runtime: Any) -> None:
 
 def forget(store: AgentStore | None, agent: Agent, *, new_session: bool = False) -> None:
     """The runtime starts over: it has been told nothing (the identity is sent again)."""
-    (store or get_store()).set_runtime(agent.owner, agent.agent_id,
-                                     {"session_generation": uuid.uuid4().hex[:12]} if new_session else {})
+    runtime = {"session_generation": uuid.uuid4().hex[:12]} if new_session else {}
+    if agent.runtime.get('acp_cwd'):
+        runtime['acp_cwd'] = agent.runtime['acp_cwd']
+    (store or get_store()).set_runtime(agent.owner, agent.agent_id, runtime)
 
 
 @dataclass(slots=True)
