@@ -537,14 +537,14 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-10-03T13:47:04.712832+00:00`
+- Updated at: `2026-10-03T17:12:43.694189+00:00`
 - Strategy: `repair-only`
-- Heuristic candidate: `blended-verification-loop-approval-auth-structured-output`
-- Heuristic score: `0.799`
+- Heuristic candidate: `blended-verification-loop-approval-auth-capability-gap`
+- Heuristic score: `0.813`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: (external failure context). Signals: verification-loop, approval-auth, structured-output. stdout was used as fallback failure evidence.
+Command exited with code 1. Command: (external failure context). Signals: verification-loop, approval-auth, capability-gap. stderr carried the strongest failure evidence.
 
 ### Strategy Rationale
 
@@ -553,16 +553,19 @@ Command exited with code 1. Command: (external failure context). Signals: verifi
 
 ### Latest Trigger Command
 
-`PYTHONPATH=src:src/backend:. python -m pytest test/test_approval_review.py test/test_command_sandbox.py test/test_command_landlock_integration.py test/test_manual_approval_continuation.py test/test_llm_factory.py test/test_tool_schemas.py -k "not background_command" -q`
+`(external failure context)`
 
 ### Latest Error Excerpt
 
 ```text
-Failure: old tests assumed one schema-output attempt and discarded original user messages above 16,000 characters; a schema check found missing parameter docs and an outdated private-field list.
-Fix: profile fallback for workers without exported LLM variables; two attempts under native JSON Schema, wrapper parsing with strict validation; full original requests selected by actual reviewer token budget.
-Command retry: up to eight scoped reviews in one call; each reviewer sees previous grants and decides on their union. Linked approvals bind command/user/session/workspace, survive pending human Y, and close at completion/denial. KEEP Y persists only the new scope.
-Verification: focused batch 173 tests and 299 subtests passed; failed cases were fixed and verified by 4 targeted tests and 5 subtests. Seven real-chain/limit cases passed. Seven final material/audit cases and 3 subtests passed. Schema budget remains 40,000 characters.
-Live verification: a worker with all LLM_* variables removed used the configured profile; real DeepSeek API approved two successive destinations. One real command executed three times, the second review saw the first grant, both approvals closed, and no temporary permission persisted.
+Formal Landlock command verification failed:
+test/test_command_landlock_integration.py::CommandLandlockIntegrationTests::test_resource_queries_work_without_exposing_process_environment
+AssertionError: Error, do this: mount -t proc proc /proc
+LANDLOCK command exit code: 47
+
+Observed: explicit read permission for /proc/meminfo and the launcher's process status works. ps starts after the Landlock rules are established and cannot read its own new PID's procfs files. A per-PID snapshot does not provide general compatibility for processes created later.
+Full verification on the host: 1 failed, 148 passed, 9 skipped, 70 subtests passed in 37.74s.
+Earlier verification inside Codex's outer PID namespace stalled and was explicitly stopped; that run is not treated as a passing or completed verifier.
 ```
 
 ### Governance Snapshot
@@ -577,10 +580,6 @@ Live verification: a worker with all LLM_* variables removed used the configured
 1. Start from the narrowest reproducible failure before broad retries.
 2. Record repo/cwd/entrypoint assumptions explicitly when failures mention paths or imports.
 3. End every fix attempt with an explicit verifier command and observed result.
-4. Review ClawCross web tools before I/O, force user/session identity, and transfer exact single-use permits to MCP; fetched search URLs need individual review.
-5. Only KEEP Y persists a specific permission. Revalidate saved grants against current ceilings and resolved targets. Bind other remembered actions to the authenticated session and record persistence after atomic consumption.
-6. Multiple Y grants accumulate only in one command call. Link prior approvals to the original command and workspace, disclose their union to each reviewer, and close the chain on completion or rejection. Bound retries and total execution time.
-7. Resolve missing worker LLM configuration from the returned profile; keep format retries under native Schema constraints; fit full authorization messages by model token capacity and reject references to omitted originals.
 
 ### Validation Loop
 
@@ -589,14 +588,15 @@ Live verification: a worker with all LLM_* variables removed used the configured
 
 ### Recent Evidence
 
-- Verified multi-round approvals and configuration/response/capacity fault repairs with synthetic fixtures and the actual configured reviewer.
+- `2026-10-03T17:12:43.694189+00:00` `repo-skill` — Formal Landlock command verification failed:
+test/test_command_landlock_integration.py::CommandLandlockIntegrationTests::test_resource_queries ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `blended-verification-loop-approval-auth-structured-output` score `0.799` — Blend the strongest recent failure patterns (intent `repair`)
-- `verification-loop-5` score `0.759` — Tighten verification loops (intent `repair`)
-- `approval-auth-1` score `0.589` — Preflight auth and approval constraints (intent `repair`)
-- `structured-output-1` score `0.589` — Harden structured-output handling (intent `repair`)
+- `blended-verification-loop-approval-auth-capability-gap` score `0.813` — Blend the strongest recent failure patterns (intent `repair`)
+- `verification-loop-4` score `0.773` — Tighten verification loops (intent `repair`)
+- `approval-auth-1` score `0.603` — Preflight auth and approval constraints (intent `repair`)
+- `capability-gap-1` score `0.347` — Capture missing capabilities explicitly (intent `innovate`)
 
 ### Local State Snapshot
 

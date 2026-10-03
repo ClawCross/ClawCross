@@ -47,7 +47,23 @@ def process_budget():
     return max(64, count + 64)
 
 
-def restrict(workspace, extra_read, extra_write, network_ports=()):
+def process_read_paths():
+    """Read resource statistics and existing process metadata, never memory/FDs.
+
+    Refresh for each invocation. Landlock grants refer to inodes, so granting
+    all of /proc would also expose other processes' environment and open files.
+    Processes created later can still be managed by the background runner.
+    """
+    yield '/proc', 1 << 3
+    for name in ('stat', 'meminfo', 'cpuinfo', 'loadavg', 'uptime', 'version',
+                 'vmstat', 'diskstats', 'partitions', 'swaps'):
+        yield '/proc/' + name, 1 << 2
+    for directory in Path('/proc').glob('[0-9]*'):
+        for name in ('stat', 'statm', 'status', 'comm', 'cmdline', 'wchan'):
+            yield str(directory / name), 1 << 2
+
+
+def restrict(workspace, extra_read, extra_write, network_ports=(), *, strict=False):
     nproc = process_budget()
     if sys.platform != 'linux' or platform.machine() not in {'x86_64', 'aarch64'}:
         raise RuntimeError('Landlock requires Linux x86_64 / aarch64')
@@ -73,11 +89,22 @@ def restrict(workspace, extra_read, extra_write, network_ports=()):
     paths += [(p, (1 << 2) | (1 << 1)) for p in ('/dev/null',) if Path(p).exists()]
     paths += [(p, 1 << 2) for p in ('/dev/urandom',) if Path(p).exists()]
     paths += [(p, (1 << 2) | (1 << 3)) for p in ('/etc/ssl/certs', '/etc/pki/tls/certs') if Path(p).exists()]
+    # Standard mode follows the usual CLI sandbox read model: process and
+    # system statistics are visible, but signals, writes and ptrace remain
+    # restricted. This includes OS-readable process environments; it is not
+    # an isolation boundary between tenants sharing the same Unix account.
+    # Strict mode must not expose service credentials through /proc/environ.
+    paths += list(process_read_paths()) if strict else [('/proc', (1 << 2) | (1 << 3))]
     paths += [(p, read if Path(p).is_dir() else 1 << 2) for p in extra_read]
     paths += [(p, rw if Path(p).is_dir() else (1 << 1) | (1 << 2) | (1 << 14)) for p in extra_write]
     try:
         for path, rights in paths:
-            path_fd = os.open(path, os.O_PATH | os.O_CLOEXEC)
+            try:
+                path_fd = os.open(path, os.O_PATH | os.O_CLOEXEC)
+            except (FileNotFoundError, ProcessLookupError, PermissionError):
+                if path.startswith('/proc/'):
+                    continue  # A process may exit while its metadata is pinned.
+                raise
             try:
                 rule = PathRule(rights, path_fd)
                 check(LIBC.syscall(445, fd, 1, ctypes.byref(rule), 0), 'allow ' + path)
@@ -99,7 +126,7 @@ def restrict(workspace, extra_read, extra_write, network_ports=()):
     if not ctx:
         raise RuntimeError('seccomp_init failed')
     try:
-        denied_calls = (() if network_ports else ('socket',)) + ('socketpair', 'ptrace', 'process_vm_readv', 'process_vm_writev',
+        denied_calls = (() if network_ports else ('socket',)) + ('ptrace', 'process_vm_readv', 'process_vm_writev',
                      'setsid', 'setpgid', 'mount', 'umount2', 'pivot_root', 'chroot', 'setns', 'unshare', 'bpf',
                      'perf_event_open', 'open_by_handle_at', 'io_uring_setup',
                      'shmget', 'shmat', 'shmctl', 'shmdt', 'semget', 'semop', 'semtimedop', 'semctl',
@@ -115,6 +142,11 @@ def restrict(workspace, extra_read, extra_write, network_ports=()):
             _fields_ = [('arg', ctypes.c_uint), ('op', ctypes.c_int),
                         ('a', ctypes.c_uint64), ('b', ctypes.c_uint64)]
         sec.seccomp_rule_add_array.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_int, ctypes.c_uint, ctypes.POINTER(ArgCompare)]
+        # An anonymous local socket pair is IPC within a command's process
+        # tree, needed by asyncio and multiprocessing; it grants no host socket.
+        number = sec.seccomp_syscall_resolve_name(b'socketpair')
+        if number >= 0 and sec.seccomp_rule_add_array(ctx, 0x50000 | errno.EPERM, number, 1, ctypes.byref(ArgCompare(0, 1, socket.AF_UNIX, 0))) != 0:
+            raise RuntimeError('seccomp socketpair rule failed')
         if network_ports:
             number = sec.seccomp_syscall_resolve_name(b'socket')
             filters = [ArgCompare(0, 1, socket.AF_INET, 0), ArgCompare(2, 6, 6, 0)]
@@ -162,7 +194,8 @@ def main():
         else:
             probe.close()
             raise RuntimeError('Network fence is not enforced')
-    restrict(settings['root'], settings.get('read_paths', []), settings.get('write_paths', []), ports)
+    restrict(settings['root'], settings.get('read_paths', []), settings.get('write_paths', []), ports,
+             strict=settings.get('strict', False))
     os.execv(sys.argv[2], sys.argv[2:])
 
 

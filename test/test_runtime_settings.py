@@ -13,6 +13,25 @@ from webot import runtime_settings as settings
 
 
 class RuntimeSettingsTests(unittest.TestCase):
+    def test_legacy_controls_migrate_once_and_workspace_copy_cannot_override(self):
+        import json
+        legacy = settings.USER_FILES_DIR / 'alice' / 'webot_runtime_settings.json'
+        legacy.parent.mkdir(parents=True)
+        legacy.write_text(json.dumps({'user': {'approval': {'mode': 'manual'}}, 'sessions': {}}))
+        self.assertEqual(settings.get_runtime_settings('alice').approval.mode, 'manual')
+        self.assertIn('.control', settings.settings_path('alice').parts)
+        self.assertFalse(legacy.exists())
+        legacy.write_text(json.dumps({'user': {'approval': {'mode': 'bypass'}}, 'sessions': {}}))
+        self.assertEqual(settings.get_runtime_settings('alice').approval.mode, 'manual')
+
+    def test_strict_security_requires_sandbox_and_rejects_remembered_escalation(self):
+        options = settings.ApprovalSettings(sandbox_security='strict', command_sandbox='off')
+        self.assertEqual(options.command_sandbox, 'auto')
+        settings.save_runtime_settings('alice', session_id='strict-agent', settings={
+            'approval': {'sandbox_security': 'strict'}})
+        with self.assertRaises(ValueError):
+            settings.remember_sandbox_grant('alice', session_id='strict-agent', access='network', target='example.com:443')
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)

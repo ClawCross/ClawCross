@@ -1,8 +1,8 @@
 {
   "type": "ValidationReport",
   "schema_version": "clawcross.skill-evolution/1.0",
-  "id": "vr_20261003134704712729",
-  "candidate_id": "blended-verification-loop-approval-auth-structured-output",
+  "id": "vr_20261003171243694075",
+  "candidate_id": "blended-verification-loop-approval-auth-capability-gap",
   "skill_name": "repo-skill",
   "strategy": "repair-only",
   "env_fingerprint": {
@@ -14,25 +14,18 @@
     "user_id": "",
     "skill_name": "repo-skill",
     "present_env_keys": [],
-    "captured_at": "2026-10-03T13:47:04.712699+00:00"
+    "captured_at": "2026-10-03T17:12:43.694046+00:00"
   },
   "commands": [
     {
       "command": "(external failure context)",
       "ok": false,
-      "stdout": "pytest approval, command sandbox, real Landlock, continuation, factory and tool schemas: 173 passed, 299 subtests passed; two old assertions and three format-retry subcases failed.\nOld assertions: a 16,001-character original user request was treated as unavailable; schema output failure was expected to call the model only once.\nA real schema documentation check also found missing language/mode descriptions and an outdated hidden-argument list.\nFix: retain complete originals subject to model capacity, retry invalid native-schema output once, restore argument descriptions and hide the system approval chain.",
-      "stderr": ""
+      "stdout": "",
+      "stderr": "Formal Landlock command verification failed:\ntest/test_command_landlock_integration.py::CommandLandlockIntegrationTests::test_resource_queries_work_without_exposing_process_environment\nAssertionError: Error, do this: mount -t proc proc /proc\nLANDLOCK command exit code: 47\n\nObserved: explicit read permission for /proc/meminfo and the launcher's process status works. ps starts after the Landlock rules are established and cannot read its own new PID's procfs files. A per-PID snapshot does not provide general compatibility for processes created later.\nFull verification on the host: 1 failed, 148 passed, 9 skipped, 70 subtests passed in 37.74s.\nEarlier verification inside Codex's outer PID namespace stalled and was explicitly stopped; that run is not treated as a passing or completed verifier."
     }
   ],
   "overall_ok": false,
   "duration_ms": null,
-  "created_at": "2026-10-03T13:47:04.712750+00:00",
-  "asset_id": "sha256:9968fb82957461c2db8103c52a588d1bbaa39bb507f37ab45ba69d17090c12ef",
-  "verified_resolution": {
-    "summary": "Cumulative scoped command approvals and reviewer configuration/response/capacity faults fixed.",
-    "evidence": "Failure: old tests assumed one schema-output attempt and discarded original user messages above 16,000 characters; a schema check found missing parameter docs and an outdated private-field list.\nFix: profile fallback for workers without exported LLM variables; two attempts under native JSON Schema, wrapper parsing with strict validation; full original requests selected by actual reviewer token budget.\nCommand retry: up to eight scoped reviews in one call; each reviewer sees previous grants and decides on their union. Linked approvals bind command/user/session/workspace, survive pending human Y, and close at completion/denial. KEEP Y persists only the new scope.\nVerification: focused batch 173 tests and 299 subtests passed; failed cases were fixed and verified by 4 targeted tests and 5 subtests. Seven real-chain/limit cases passed. Seven final material/audit cases and 3 subtests passed. Schema budget remains 40,000 characters.\nLive verification: a worker with all LLM_* variables removed used the configured profile; real DeepSeek API approved two successive destinations. One real command executed three times, the second review saw the first grant, both approvals closed, and no temporary permission persisted.\n",
-    "real_command_executions": 3,
-    "real_model_reviews": 2,
-    "temporary_grants_persisted": false
-  }
+  "created_at": "2026-10-03T17:12:43.694095+00:00",
+  "asset_id": "sha256:e584f69fdda236b639eda3b8c1c69f4836a70220ef88d2f54004670829191d70"
 }

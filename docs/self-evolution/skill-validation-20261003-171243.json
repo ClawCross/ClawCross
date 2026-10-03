@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20261003171243694075",
+  "candidate_id": "blended-verification-loop-approval-auth-capability-gap",
+  "skill_name": "repo-skill",
+  "strategy": "repair-only",
+  "env_fingerprint": {
+    "python_version": "3.11.16",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-10-03T17:12:43.694046+00:00"
+  },
+  "commands": [
+    {
+      "command": "(external failure context)",
+      "ok": false,
+      "stdout": "",
+      "stderr": "Formal Landlock command verification failed:\ntest/test_command_landlock_integration.py::CommandLandlockIntegrationTests::test_resource_queries_work_without_exposing_process_environment\nAssertionError: Error, do this: mount -t proc proc /proc\nLANDLOCK command exit code: 47\n\nObserved: explicit read permission for /proc/meminfo and the launcher's process status works. ps starts after the Landlock rules are established and cannot read its own new PID's procfs files. A per-PID snapshot does not provide general compatibility for processes created later.\nFull verification on the host: 1 failed, 148 passed, 9 skipped, 70 subtests passed in 37.74s.\nEarlier verification inside Codex's outer PID namespace stalled and was explicitly stopped; that run is not treated as a passing or completed verifier."
+    }
+  ],
+  "overall_ok": false,
+  "duration_ms": null,
+  "created_at": "2026-10-03T17:12:43.694095+00:00",
+  "asset_id": "sha256:e584f69fdda236b639eda3b8c1c69f4836a70220ef88d2f54004670829191d70"
+}

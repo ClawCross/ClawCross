@@ -19,6 +19,25 @@ from webot.workspace import SessionWorkspace
 
 
 class FileManagerTests(unittest.TestCase):
+    def test_strict_file_tools_read_write_and_deny_outside_even_in_bypass(self):
+        from webot import runtime_settings
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            root = base / 'workspace'; root.mkdir()
+            outside = base / 'outside.txt'; outside.write_text('PRIVATE')
+            workspace = SessionWorkspace(root=root, cwd=root, mode='strict', remote='')
+            with patch.object(runtime_settings, 'USER_FILES_DIR', base / 'users'), \
+                 patch.object(filemanager, 'resolve_session_workspace', return_value=workspace), \
+                 patch('webot.workspace.resolve_session_workspace', return_value=workspace):
+                runtime_settings.save_runtime_settings('strict-test', settings={'approval': {
+                    'mode': 'bypass', 'sandbox_security': 'strict'}})
+                result = asyncio.run(filemanager.write_file('strict-test', 'nested/a.txt', 'INSIDE'))
+                self.assertIn('已', result)
+                self.assertIn('INSIDE', asyncio.run(filemanager.read_file('strict-test', 'nested/a.txt')))
+                self.assertIn('严格', asyncio.run(filemanager.read_file('strict-test', str(outside))))
+                self.assertIn('严格', asyncio.run(filemanager.write_file('strict-test', str(outside), 'ATTACK')))
+                self.assertEqual(outside.read_text(), 'PRIVATE')
+
     def test_read_file_supports_offset_pagination(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

@@ -29,6 +29,36 @@ class SandboxUnavailable(RuntimeError):
 MAX_PERMISSION_RETRIES = 8
 
 
+def protected_control_paths() -> list[Path]:
+    from common.runtime_paths import CONFIG_DIR
+    from webot import runtime_settings, policy
+    return list(dict.fromkeys(path.resolve() for path in (
+        CONFIG_DIR, runtime_settings.USER_FILES_DIR / '.control',
+        policy.get_tool_policy_path('control_probe').parent.parent,
+    )))
+
+
+def validate_workspace_root(root: Path, *, strict: bool = False) -> None:
+    """An allow rule must never encompass the backend's control plane."""
+    protected = protected_control_paths() + [Path(sys.prefix)]
+    if strict:
+        from common.runtime_paths import PROJECT_ROOT
+        protected.append(PROJECT_ROOT)
+    root = root.resolve()
+    for path in protected:
+        path = path.resolve()
+        if root.is_relative_to(path) or path.is_relative_to(root):
+            raise SandboxUnavailable('工作区与后端配置、运行环境或受保护源代码重叠，拒绝执行。')
+
+
+def _command_settings_file(prefix: str) -> tuple[int, Path]:
+    from common.runtime_paths import CONFIG_DIR
+    directory = CONFIG_DIR / 'sandbox' / 'commands'
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    fd, path = tempfile.mkstemp(prefix=prefix, suffix='.json', dir=directory)
+    return fd, Path(path)
+
+
 def approved_retry_chain(user_id: str, session_id: str, args: dict, root: Path) -> list[dict]:
     """Recover only the linked, consumed approvals for this exact command call."""
     from webot import runtime_store as store
@@ -273,6 +303,7 @@ def normalize_escalation(access: str, target: str, root: Path) -> str:
     from common.runtime_paths import CONFIG_DIR, USER_FILES_DIR, STATE_DIR
     private_paths = [home / name for name in _PRIVATE_NAMES]
     private_paths.extend(p.resolve() for p in (CONFIG_DIR, USER_FILES_DIR, STATE_DIR))
+    private_paths.extend(protected_control_paths())
     if path == Path("/") or root.is_relative_to(path) or path.is_relative_to(root):
         raise SandboxUnavailable("路径提权仅用于工作区外的具体目标，不能指定工作区或其上级目录。")
     if path == home or home.is_relative_to(path) or any(
@@ -321,19 +352,33 @@ def _srt_binary() -> str:
     return binary
 
 
-def _policy(root: Path, settings_path: Path, *, access: str = "default", target: str = "", srt_binary: str = "") -> dict:
+def _policy(root: Path, settings_path: Path, *, access: str = "default", target: str = "", srt_binary: str = "", strict: bool = False, temporary_dir: Path | None = None) -> dict:
     home = Path.home().resolve()
     deny_read = [str(home)]
     deny_read.extend(str(path) for name in _PRIVATE_NAMES if (path := home / name).exists())
     deny_read.append(str(settings_path))
     allow_read = list(dict.fromkeys(str(path.resolve()) for path in (root, Path(sys.prefix), Path(sys.base_prefix))))
+    deny_read.extend(str(path) for path in protected_control_paths())
+    if strict:
+        from common.runtime_paths import PROJECT_ROOT
+        # Keep SRT's platform runtime defaults. Strict changes escalation and
+        # the workspace, rather than disabling OS libraries and normal tools.
+        deny_read.append(str(PROJECT_ROOT.resolve()))
+    if sys.platform == 'linux':
+        # SRT reads broadly by default; avoid exposing process environments,
+        # memory and descriptor aliases even in the ordinary security level.
+        deny_read.extend(f'/proc/{entry.name}/{name}'
+                         for entry in Path('/proc').glob('[0-9]*')
+                         for name in ('environ', 'mem', 'fd', 'root', 'cwd', 'map_files'))
     if sys.platform.startswith("linux") and srt_binary:
         # SRT executes its seccomp helper inside the sandbox. Its explicit
         # per-user install path is otherwise hidden by denyRead(home).
         seccomp = Path(srt_binary).resolve().parent.parent / "vendor" / "seccomp"
         if seccomp.is_dir():
             allow_read.append(str(seccomp))
-    allow_write = list(dict.fromkeys((str(root), str(Path(tempfile.gettempdir()).resolve()))))
+    allow_write = [str(root)]
+    if temporary_dir is not None:
+        allow_write.append(str(temporary_dir))
     if access in {"read_path", "write_path"}:
         allow_read.append(target)
     if access == "write_path":
@@ -345,7 +390,7 @@ def _policy(root: Path, settings_path: Path, *, access: str = "default", target:
         },
         "filesystem": {
             "denyRead": deny_read, "allowRead": allow_read,
-            "allowWrite": allow_write, "denyWrite": [str(settings_path)],
+            "allowWrite": allow_write, "denyWrite": [str(settings_path), *(str(path) for path in protected_control_paths())],
         },
         "enableWeakerNestedSandbox": False,
         "enableWeakerNetworkIsolation": False,
@@ -369,9 +414,12 @@ def build_srt_command(*, root: Path, cwd: Path, command: str, language: str,
                       interactive: bool = False, access: str = "default",
                       target: str = "", allowed_domains: list[str] | None = None,
                       allowed_read_paths: list[str] | None = None, allowed_write_paths: list[str] | None = None,
-                      wall_timeout: int = 180) -> SrtCommand:
+                      wall_timeout: int = 180, strict: bool = False) -> SrtCommand:
     """Create an SRT invocation with a private settings file; never use a host shell."""
     root, cwd = root.resolve(), cwd.resolve()
+    validate_workspace_root(root, strict=strict)
+    if strict and (access != 'default' or allowed_read_paths or allowed_write_paths):
+        raise SandboxUnavailable('严格安全模式不允许提权或使用历史文件授权。')
     if not cwd.is_relative_to(root):
         raise SandboxUnavailable("命令工作目录超出会话工作区。")
     target = bounded_escalation(access, target, root) if access != 'default' else normalize_escalation(access, target, root)
@@ -389,11 +437,11 @@ def build_srt_command(*, root: Path, cwd: Path, command: str, language: str,
     if os.name == "nt":
         raise SandboxUnavailable("Windows SRT 资源限制尚不可用；已阻止本次沙盒命令。")
     binary = _srt_binary()
-    fd, raw_path = tempfile.mkstemp(prefix="clawcross-srt-", suffix=".json")
-    settings_path = Path(raw_path)
+    temporary_dir = Path(tempfile.mkdtemp(prefix='.command-tmp-', dir=root))
+    fd, settings_path = _command_settings_file('clawcross-srt-')
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            config = _policy(root, settings_path, access=access, target=target, srt_binary=binary)
+            config = _policy(root, settings_path, access=access, target=target, srt_binary=binary, strict=strict, temporary_dir=temporary_dir)
             config['network']['allowedDomains'] = list(dict.fromkeys([*(allowed_domains or []), *([target] if access == 'network' else [])]))
             reads = [bounded_escalation('read_path', path, root) for path in (allowed_read_paths or [])]
             writes = [bounded_escalation('write_path', path, root) for path in (allowed_write_paths or [])]
@@ -402,9 +450,10 @@ def build_srt_command(*, root: Path, cwd: Path, command: str, language: str,
             json.dump(config, handle, ensure_ascii=False)
         limits = _LIMIT_CODE.replace('(\"RLIMIT_NPROC\", 256)', f'(\"RLIMIT_NPROC\", {_process_limit()})')
         limited = (sys.executable, "-c", limits, *wrapped)
-        return SrtCommand((binary, "--settings", str(settings_path), "--", *limited), settings_path)
+        return SrtCommand((binary, "--settings", str(settings_path), "--", *limited), settings_path, temporary_dir=temporary_dir)
     except BaseException:
         settings_path.unlink(missing_ok=True)
+        shutil.rmtree(temporary_dir, ignore_errors=True)
         raise
 
 
@@ -420,10 +469,13 @@ def build_landlock_command(*, root: Path, cwd: Path, command: str, language: str
                            interactive: bool = False, access: str = "default", target: str = "",
                            allowed_domains: list[str] | None = None,
                            allowed_read_paths: list[str] | None = None, allowed_write_paths: list[str] | None = None,
-                           wall_timeout: int = 180) -> SrtCommand:
+                           wall_timeout: int = 180, strict: bool = False) -> SrtCommand:
     if not landlock_available():
         raise SandboxUnavailable("Landlock 需要 Linux x86_64/aarch64、ABI ≥ 6、libseccomp 及非 root 账号；不会降级为宿主执行。")
     root, cwd = root.resolve(), cwd.resolve()
+    validate_workspace_root(root, strict=strict)
+    if strict and (access != 'default' or allowed_read_paths or allowed_write_paths):
+        raise SandboxUnavailable('严格安全模式不允许提权或使用历史文件授权。')
     if not cwd.is_relative_to(root):
         raise SandboxUnavailable("命令工作目录超出会话工作区。")
     controlled_network = network_fence_available()
@@ -442,14 +494,13 @@ def build_landlock_command(*, root: Path, cwd: Path, command: str, language: str
         raise SandboxUnavailable("不支持的沙盒命令语言。")
     # Private per-command temporary directory, covered by the workspace rule.
     temporary_dir = Path(tempfile.mkdtemp(prefix=".command-tmp-", dir=root))
-    fd, raw_path = tempfile.mkstemp(prefix="clawcross-landlock-", suffix=".json")
-    settings_path = Path(raw_path)
+    fd, settings_path = _command_settings_file('clawcross-landlock-')
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             json.dump({"root": str(root), "read_paths": list(dict.fromkeys([*reads, *([target] if access == "read_path" else [])])),
                        "write_paths": list(dict.fromkeys([*writes, *([target] if access == "write_path" else [])])),
                        "allowed_domains": list(dict.fromkeys([*(allowed_domains or []), *([target] if access == 'network' else [])])),
-                       "wall_timeout": max(1, int(wall_timeout))}, handle)
+                       "strict": strict, "wall_timeout": max(1, int(wall_timeout))}, handle)
         launcher = Path(__file__).with_name("landlock_network.py" if controlled_network else "landlock_launcher.py")
         return SrtCommand((sys.executable, str(launcher), str(settings_path), *wrapped), settings_path,
                           backend="landlock", temporary_dir=temporary_dir)
@@ -489,6 +540,8 @@ def select_sandbox_backend(requested: str, *, root: Path, cwd: Path, env: dict) 
             proc.wait()
         if sandbox is not None:
             sandbox.settings_path.unlink(missing_ok=True)
+            if sandbox.temporary_dir is not None:
+                shutil.rmtree(sandbox.temporary_dir, ignore_errors=True)
     if landlock_available():
         return "landlock"
     raise SandboxUnavailable("SRT 探测失败，且当前内核不支持 Landlock + seccomp；命令未启动。")

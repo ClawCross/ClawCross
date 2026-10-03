@@ -9,16 +9,18 @@ import base64
 import hashlib
 import json
 import tempfile
+import stat
 from contextlib import ExitStack
 from typing import Literal
 from mcp.types import CallToolResult, ImageContent, TextContent
 from webot.mcp_tool_docs import DocumentedFastMCP as FastMCP
 
 from webot.workspace import resolve_session_workspace
-from webot.approval_actions import bind_file_target, file_target_outside_workspace
+from webot.approval_actions import bind_file_target, file_target_outside_workspace, file_access_violation
 from webot.approval_review import authorize_action, policy_binding
 from webot.policy import evaluate_tool_policy, get_tool_policy
 from webot.runtime_store import consume_execution_permit
+from webot.confined_files import ConfinedPath, confined_operation, file_open, file_exists, file_isdir, file_size
 
 mcp = FastMCP("FileManager")
 
@@ -34,7 +36,7 @@ MAX_IMAGE_BYTES = 20 * 1024 * 1024
 
 
 def _detect_image_mime(path: str) -> str:
-    with open(path, "rb") as handle:
+    with file_open(path, "rb") as handle:
         head = handle.read(16)
     if head.startswith(b"\x89PNG\r\n\x1a\n"):
         return "image/png"
@@ -51,7 +53,7 @@ def _detect_image_mime(path: str) -> str:
 
 
 def _image_result(path: str, mime_type: str) -> CallToolResult:
-    size = os.path.getsize(path)
+    size = file_size(path)
     if size > MAX_IMAGE_BYTES:
         return CallToolResult(
             isError=True,
@@ -69,7 +71,7 @@ def _image_result(path: str, mime_type: str) -> CallToolResult:
             "sha256": _file_sha256(path),
         }],
     }
-    with open(path, "rb") as handle:
+    with file_open(path, "rb") as handle:
         encoded = base64.b64encode(handle.read()).decode("ascii")
     return CallToolResult(content=[
         TextContent(type="text", text=json.dumps(metadata, ensure_ascii=False)),
@@ -97,18 +99,26 @@ async def _file_access_gate(username: str, session_id: str, tool_name: str, args
     bound = bind_file_target(tool_name, {**args, "username": username, "session_id": normalized_session},
                              username, normalized_session, workspace=workspace)
     path = bound["_resolved_path"]
+    violation = file_access_violation(bound, username, normalized_session)
+    if violation:
+        return '❌ ' + violation, path
+    from webot.runtime_settings import get_runtime_settings
+    def permitted_path():
+        if get_runtime_settings(username, normalized_session).approval.sandbox_security == 'strict':
+            return ConfinedPath(path, workspace.root, create_parents=tool_name == 'write_file')
+        return path
     if consume_execution_permit(username, normalized_session, tool_name, bound,
                                 policy_binding(username, normalized_session)):
-        return None, path
+        return None, permitted_path()
     if not file_target_outside_workspace(bound):
         policy_decision = evaluate_tool_policy(get_tool_policy(username), tool_name, bound)
         if policy_decision.allowed:
-            return None, path
+            return None, permitted_path()
         if not policy_decision.requires_approval:
             return "❌ " + policy_decision.reason, path
     result = await authorize_action(user_id=username, session_id=normalized_session,
                                     tool_name=tool_name, args=bound)
-    return (None if result.allowed else "❌ " + result.reason), path
+    return (None, permitted_path()) if result.allowed else ('❌ ' + result.reason, path)
 
 
 async def _memory_access_gate(username: str, session_id: str, tool_name: str, args: dict) -> str | None:
@@ -135,14 +145,14 @@ async def _memory_access_gate(username: str, session_id: str, tool_name: str, ar
 
 def _file_sha256(path: str) -> str:
     digest = hashlib.sha256()
-    with open(path, "rb") as handle:
+    with file_open(path, "rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
 
 
 def _read_binary_preview(path: str, preview_bytes: int = 256) -> bytes:
-    with open(path, "rb") as handle:
+    with file_open(path, "rb") as handle:
         return handle.read(preview_bytes)
 
 
@@ -175,7 +185,7 @@ def _format_size(size: int) -> str:
 def _read_text_chunk(path: str, *, offset: int = 0, limit: int = DEFAULT_READ_CHARS, encoding: str = "utf-8") -> tuple[str, int, int]:
     safe_offset = max(0, int(offset or 0))
     safe_limit = _limit_value(limit, DEFAULT_READ_CHARS, MAX_READ_CHARS)
-    with open(path, "r", encoding=encoding, errors="replace") as handle:
+    with file_open(path, "r", encoding=encoding, errors="replace") as handle:
         handle.seek(safe_offset)
         content = handle.read(safe_limit)
         next_offset = handle.tell()
@@ -188,7 +198,7 @@ def _read_text_lines(path: str, *, start_line: int = 1, line_count: int = DEFAUL
     end_line = safe_start + safe_count - 1
     collected: list[str] = []
     has_more = False
-    with open(path, "r", encoding=encoding, errors="replace") as handle:
+    with file_open(path, "r", encoding=encoding, errors="replace") as handle:
         for idx, line in enumerate(handle, start=1):
             if idx < safe_start:
                 continue
@@ -200,10 +210,13 @@ def _read_text_lines(path: str, *, start_line: int = 1, line_count: int = DEFAUL
 
 
 def _atomic_write_text(path: str, content: str, *, encoding: str = "utf-8", atomic: bool = True) -> None:
+    if isinstance(path, ConfinedPath):
+        path.write_text(content, encoding)
+        return
     parent = os.path.dirname(path)
     os.makedirs(parent, exist_ok=True)
     if not atomic:
-        with open(path, "w", encoding=encoding) as handle:
+        with file_open(path, "w", encoding=encoding) as handle:
             handle.write(content)
         return
 
@@ -220,6 +233,7 @@ def _atomic_write_text(path: str, content: str, *, encoding: str = "utf-8", atom
                 pass
 
 @mcp.tool()
+@confined_operation
 async def list_files(username: str, session_id: str = "", folder: str = ".", storage: Literal["file", "memory"] = "file", team: str | None = None) -> str:
     """
     列出目录文件，或用 storage="memory" 列出 Skill/记忆条目（编号、名称、说明，无路径）。
@@ -247,20 +261,27 @@ async def list_files(username: str, session_id: str = "", folder: str = ".", sto
             {"folder": folder, "storage": storage, "team": team})
         if reject:
             return reject
-        if not os.path.exists(user_path):
+        if not file_exists(user_path):
             return f"❌ 目录 '{folder}' 不存在。"
-        if not os.path.isdir(user_path):
+        if not file_isdir(user_path):
             return f"❌ '{folder}' 不是目录。"
+        if isinstance(user_path, ConfinedPath):
+            entries = user_path.entries()
+            result = f"📂 目录 '{user_path}' 的文件列表：\n"
+            for name, info in entries:
+                suffix = '/' if stat.S_ISDIR(info.st_mode) else (' → 链接' if stat.S_ISLNK(info.st_mode) else f' ({_format_size(info.st_size)})')
+                result += f'  - {name}{suffix}\n'
+            return result if entries else f"📂 目录 '{folder}' 没有任何文件。"
         files = os.listdir(user_path)
         if not files:
             return f"📂 目录 '{folder}' 没有任何文件。"
         result = f"📂 目录 '{user_path}' 的文件列表：\n"
         for file_name in sorted(files):
             file_path = os.path.join(user_path, file_name)
-            if os.path.isdir(file_path):
+            if file_isdir(file_path):
                 result += f"  - {file_name}/\n"
                 continue
-            size = os.path.getsize(file_path)
+            size = file_size(file_path)
             size_str = _format_size(size)
             result += f"  - {file_name} ({size_str})\n"
         return result
@@ -272,6 +293,7 @@ async def list_files(username: str, session_id: str = "", folder: str = ".", sto
         return f"⚠️ 列出文件失败: {str(e)}"
 
 @mcp.tool(structured_output=False)
+@confined_operation
 async def read_file(
     username: str,
     filename: str,
@@ -324,16 +346,16 @@ async def read_file(
                 return reject
         else:
             return "❌ 不支持的 storage。"
-        if not os.path.exists(file_path):
+        if not file_exists(file_path):
             return f"❌ 文件 '{filename}' 不存在。"
-        if os.path.isdir(file_path):
+        if file_isdir(file_path):
             return f"❌ '{filename}' 是目录，不是文件。"
 
         mime_type = _detect_image_mime(file_path) if storage == "file" else ""
         if mime_type:
             return _image_result(file_path, mime_type)
 
-        size = os.path.getsize(file_path)
+        size = file_size(file_path)
         preview = _read_binary_preview(file_path)
         sha_text = f"\n🔐 sha256: {_file_sha256(file_path)}" if include_sha256 else ""
         if _is_binary_preview(preview):
@@ -390,6 +412,7 @@ async def read_file(
         return f"⚠️ 读取文件失败: {str(e)}"
 
 @mcp.tool()
+@confined_operation
 async def write_file(
     username: str,
     filename: str,
@@ -465,14 +488,14 @@ async def write_file(
                 return reject
         else:
             return "❌ 不支持的 storage。"
-        existing = os.path.exists(file_path)
+        existing = file_exists(file_path)
         if entry is not None and normalized_mode_check in {"create", "update"}:
             if normalized_mode_check == "create" and existing:
                 return "❌ Memory entry already exists; read it before updating."
             mode = normalized_mode_check = "overwrite"
         existing_text = ""
         if existing:
-            if os.path.isdir(file_path):
+            if file_isdir(file_path):
                 return f"❌ '{filename}' 是目录，不能直接写入。"
             if expected_sha256:
                 actual_sha = _file_sha256(file_path)
@@ -482,7 +505,7 @@ async def write_file(
                         f"当前: {actual_sha}\n"
                         f"期望: {expected_sha256}"
                     )
-            with open(file_path, "r", encoding=encoding, errors="replace") as handle:
+            with file_open(file_path, "r", encoding=encoding, errors="replace") as handle:
                 existing_text = handle.read()
         elif normalized_mode_check not in {"overwrite", "append"}:
             return f"❌ 文件 '{filename}' 不存在，模式 '{mode}' 需要已有文件。"
@@ -556,6 +579,7 @@ async def write_file(
         guard.close()
 
 @mcp.tool()
+@confined_operation
 async def delete_file(username: str, filename: str, session_id: str = "", storage: Literal["file", "memory"] = "file", team: str | None = None) -> str:
     """
     删除用户的指定文件。
@@ -585,9 +609,9 @@ async def delete_file(username: str, filename: str, session_id: str = "", storag
             {"filename": filename, "storage": storage, "team": team})
         if reject:
             return reject
-        if not os.path.exists(file_path):
+        if not file_exists(file_path):
             return f"❌ 文件 '{filename}' 不存在，无法删除。"
-        os.remove(file_path)
+        file_path.unlink() if isinstance(file_path, ConfinedPath) else os.remove(file_path)
         return f"🗑️ 文件 '{filename}' 已删除。"
     except ValueError as e:
         return f"❌ {str(e)}"
