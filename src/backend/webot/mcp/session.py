@@ -9,6 +9,7 @@ MCP Tool Server: Session Management
 
 Exposes tools for the Agent to be aware of its own session context
 and query existing sessions:
+  - set_session_title: Names the work this session is doing (its sidebar title)
   - list_sessions: Lists all sessions for the current user with summaries
 
 Runs as a stdio MCP server, just like the other mcp_*.py tools.
@@ -52,6 +53,30 @@ async def fork_session(username: str = "", current_session_id: str = "", name: s
     except Exception as exc:
         return f"❌ 创建分支失败: {exc}"
     return json.dumps(result, ensure_ascii=False)
+
+@mcp.tool()
+async def set_session_title(title: str, username: str = "", source_session: str = "") -> str:
+    """Set the title this conversation shows in the sidebar: a short phrase naming the
+    work, e.g. "排查登录超时" or "Q3 sales report". Call it once the work is clear and
+    again when it changes; it replaces any earlier title, including one the user set.
+    Your own agent name stays as it is.
+
+    :param title: The work title, one line, at most 30 characters
+    :param username: Current user, injected by the runtime
+    :param source_session: Current session, injected by the runtime
+    """
+    if not username or not source_session:
+        return "❌ 无法获取当前会话。"
+    title = " ".join(str(title or "").split())
+    if not title:
+        return "❌ title 不能为空。"
+    try:
+        token = os.getenv("INTERNAL_TOKEN", "").strip() or str(dotenv_values(ENV_FILE).get("INTERNAL_TOKEN") or "")
+        agent = await AgentClient(username, internal_token=token).update(source_session, settings={"title": title})
+    except Exception as exc:
+        return f"❌ 设置标题失败: {exc}"
+    return f"✅ 会话标题：{agent['settings'].get('title', title)}"
+
 
 @mcp.tool()
 async def list_sessions(

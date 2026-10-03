@@ -121,8 +121,7 @@ class RelayStore:
         return {'group_id': gid, 'title': group['title'], 'kind': group['kind'],
                 'owner': group['owner_connection'], 'primary_agent': group['primary_member'],
                 'dnd': bool(group['dnd']), 'version': group['version'], 'members': members,
-                'member_count': len(members), 'password_enabled': bool(group['password_hash']),
-                'local_join': bool(group['local_join'])}
+                'member_count': len(members)}
 
     def _connect(self, db, gid: str, *, node_id: str, user_id: str, display_name: str):
         self._unique_name(db, gid, display_name, guests_only=True)
@@ -137,32 +136,27 @@ class RelayStore:
                    ('p_' + secrets.token_hex(12), gid, cid, '', display_name, 'human'))
         return cid, token
 
-    def create(self, *, title: str, node_id: str, user_id: str, display_name: str,
-               password: str = '', kind: str = 'group', local_join: bool = True) -> dict:
+    def create(self, *, title: str, node_id: str, user_id: str, display_name: str, kind: str = 'group') -> dict:
         if kind not in {'group', 'direct'} or not title.strip():
             raise RelayError('群类型或名称无效')
-        gid, salt = 'g_' + secrets.token_hex(12), secrets.token_hex(16)
+        gid = 'g_' + secrets.token_hex(12)
         with self.db() as db:
+            # password_hash/salt/local_join are columns of the password joins that invitation links replaced.
             db.execute('INSERT INTO relay_groups(id,title,kind,owner_connection,password_hash,salt,local_join,created_at) VALUES(?,?,?,?,?,?,?,?)',
-                       (gid, title.strip(), kind, '', password_hash(password, salt) if password else '', salt, int(local_join), time.time()))
+                       (gid, title.strip(), kind, '', '', '', 0, time.time()))
             cid, token = self._connect(db, gid, node_id=node_id, user_id=user_id, display_name=display_name)
             db.execute('UPDATE relay_groups SET owner_connection=? WHERE id=?', (cid, gid))
             self._event(db, gid, 'metadata', {})
             return {'token': token, 'connection_id': cid, 'group': self._card(db, gid)}
 
-    def join(self, gid: str, *, password: str, node_id: str, user_id: str, display_name: str,
-             trusted_local: bool = False) -> dict:
+    def join(self, invite: str, *, node_id: str, user_id: str, display_name: str) -> dict:
+        """A new member connection, by the group's invitation link."""
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
-            group = db.execute('SELECT * FROM relay_groups WHERE id=?', (gid,)).fetchone()
-            if group is None:
-                raise RelayError('群不存在', 404)
-            if group['kind'] == 'direct':
-                raise RelayError('私聊不接受加入', 403)
-            local_allowed = trusted_local and group['local_join']
-            if not local_allowed and (not group['password_hash'] or not password or
-                    not hmac.compare_digest(group['password_hash'], password_hash(password, group['salt']))):
-                raise RelayError('群密码无效，或群未开放远程加入', 403)
+            row = db.execute('SELECT group_id FROM relay_guest_invites WHERE token_hash=?', (digest(invite),)).fetchone()
+            if not row:
+                raise RelayError('邀请链接已失效', 403)
+            gid = row['group_id']
             cid, token = self._connect(db, gid, node_id=node_id, user_id=user_id, display_name=display_name)
             db.execute('UPDATE relay_groups SET version=version+1 WHERE id=?', (gid,))
             self._event(db, gid, 'joined', {'connection_id': cid, 'display_name': display_name})
@@ -373,22 +367,13 @@ class RelayStore:
             elif action == 'patch':
                 if not owner:
                     raise RelayError('只有群主可以管理群', 403)
-                for key in ('title', 'dnd', 'local_join'):
+                for key in ('title', 'dnd'):
                     if key in fields and fields[key] is not None:
                         if key == 'title' and (not isinstance(fields[key], str) or not fields[key].strip() or len(fields[key]) > 160):
                             raise RelayError('群名称需要 1 至 160 个字符')
                         if key != 'title' and not isinstance(fields[key], bool):
                             raise RelayError('群设置必须为布尔值')
                         db.execute(f'UPDATE relay_groups SET {key}=? WHERE id=?', (fields[key], conn['group_id']))
-                if 'password' in fields and fields['password'] is not None:
-                    salt = secrets.token_hex(16)
-                    password = fields['password']
-                    if not isinstance(password, str) or len(password) > 256:
-                        raise RelayError('密码最长 256 个字符')
-                    db.execute('UPDATE relay_groups SET salt=?,password_hash=? WHERE id=?',
-                               (salt, password_hash(password, salt) if password else '', conn['group_id']))
-                    if fields.get('revoke_connections'):
-                        db.execute('UPDATE relay_connections SET revoked=1 WHERE group_id=? AND id!=?', (conn['group_id'], conn['id']))
             elif action == 'primary':
                 if not owner:
                     raise RelayError('只有群主可以设置主 agent', 403)

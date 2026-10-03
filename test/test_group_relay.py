@@ -29,22 +29,21 @@ class RelayStoreTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.store = RelayStore(Path(self.temp.name) / 'group-relay.db')
-        self.host = self.store.create(title='Friends', node_id='one', user_id='alice', display_name='Alice', password='secret')
+        self.host = self.store.create(title='Friends', node_id='one', user_id='alice', display_name='Alice')
         self.gid = self.host['group']['group_id']
+        self.invite = self.store.guest_invite(self.host['token'])['invite']
 
-    def join(self, **kwargs):
-        return self.store.join(self.gid, password=kwargs.pop('password', 'secret'), node_id='two', user_id='bob', display_name='Bob', **kwargs)
+    def join(self, invite=None, name='Bob'):
+        return self.store.join(invite or self.invite, node_id='two', user_id=name.lower(), display_name=name)
 
-    def test_explicit_password_join_local_default_and_join_notification(self):
-        with self.assertRaises(RelayError): self.join(password='wrong')
+    def test_only_a_current_invitation_joins_and_members_are_notified(self):
+        with self.assertRaises(RelayError): self.join('x' * 43)
         other = self.join()
         self.assertEqual(self.store.events(self.host['token'], 0)['events'][-1]['kind'], 'joined')
         self.assertEqual(len(other['group']['members']), 2)
-        self.store.manage(self.host['token'], 'patch', {'password': ''})
-        with self.assertRaises(RelayError): self.join()
-        self.assertTrue(self.join(password='', trusted_local=True))
-        self.store.manage(self.host['token'], 'patch', {'local_join': False})
-        with self.assertRaises(RelayError): self.join(password='', trusted_local=True)
+        self.store.guest_invite(self.host['token'], disable=True)
+        with self.assertRaises(RelayError): self.join(name='Carol')
+        self.assertEqual(self.store.detail(other['token'])['title'], 'Friends')
 
     def test_same_agent_id_on_two_devices_never_shares_write_identity(self):
         other = self.join()
@@ -65,19 +64,18 @@ class RelayStoreTests(unittest.TestCase):
     def test_management_is_scoped_and_revocation_survives_restart(self):
         other = self.join()
         with self.assertRaises(RelayError): self.store.manage(other['token'], 'patch', {'title': 'takeover'})
-        self.store.manage(self.host['token'], 'patch', {'password': 'new', 'revoke_connections': True})
+        bob = next(m['principal'] for m in other['group']['members'] if m['connection_id'] == other['connection_id'])
+        self.store.manage(self.host['token'], 'remove_member', {'principal': bob})
         with self.assertRaises(RelayError): self.store.detail(other['token'])
         reopened = RelayStore(self.store.path)
         with self.assertRaises(RelayError): reopened.detail(other['token'])
-        with self.assertRaises(RelayError): self.join()
-        self.assertTrue(self.join(password='new'))
         self.assertNotIn('token', json.dumps(reopened.admin_list()))
         reopened.manage('', 'patch', {'title': 'Host-managed'}, admin_group=self.gid)
         self.assertEqual(reopened.detail(self.host['token'])['title'], 'Host-managed')
 
     def test_private_groups_and_muted_members_and_packet_bounds(self):
-        private = self.store.create(title='Private', kind='direct', node_id='one', user_id='alice', display_name='Alice', password='secret')
-        with self.assertRaises(RelayError): self.store.join(private['group']['group_id'], password='secret', node_id='two', user_id='bob', display_name='Bob')
+        private = self.store.create(title='Private', kind='direct', node_id='one', user_id='alice', display_name='Alice')
+        with self.assertRaises(RelayError): self.store.guest_invite(private['token'])  # a private chat has no invitation
         group = self.store.add_agent(self.host['token'], agent_id='a', name='A', platform='webot')
         p = next(m['principal'] for m in group['members'] if m['is_agent'])
         self.store.manage(self.host['token'], 'member_patch', {'principal': p, 'muted': True})
@@ -90,7 +88,7 @@ class RelayStoreTests(unittest.TestCase):
             self.assertEqual(api.get('/relay/admin/groups').status_code, 403)
             headers = {'X-Group-Service-Key': 'machine-control'}
             self.assertEqual(api.get('/relay/admin/groups', headers=headers).status_code, 200)
-            joined = api.post('/relay/join', json={'group_id': self.gid, 'password': 'secret', 'node_id': 'x', 'user_id': 'bob', 'display_name': 'Bob'}).json()
+            joined = api.post('/relay/join', json={'invite': self.invite, 'node_id': 'x', 'user_id': 'bob', 'display_name': 'Bob'}).json()
             with api.websocket_connect('/relay/ws') as ws:
                 ws.send_json({'token': joined['token'], 'cursor': 0})
                 packet = ws.receive_json()
@@ -140,13 +138,16 @@ class TwoDeviceTests(unittest.IsolatedAsyncioTestCase):
         else: self.fail('group process did not start')
         self.key = self.key_path.read_text()
         async with httpx.AsyncClient(trust_env=False) as api:
-            self.host = (await api.post(self.url + '/relay/create', headers={'X-Group-Service-Key': self.key}, json={'title': 'Friends', 'node_id': 'host', 'user_id': 'host', 'display_name': 'Host', 'password': 'secret'})).json()
-        for index, user in enumerate(('alice', 'bob')):
-            client = GroupClient(ClientStore(root / f'device{index}/client.db'), FakeAgents(user), FakeGateway())
-            self.clients.append(client)
-            card = await asyncio.to_thread(client.join, user, server_url=self.url, group_id=self.host['group']['group_id'], password='secret', agents=['same'])
-            client.alias = card['group_id']; client.user = user
-            client.ensure(user, client.alias)
+            self.host = (await api.post(self.url + '/relay/create', headers={'X-Group-Service-Key': self.key}, json={'title': 'Friends', 'node_id': 'host', 'user_id': 'host', 'display_name': 'Host'})).json()
+            invite = (await api.post(self.url + '/relay/guest-invites', headers={'Authorization': 'Bearer ' + self.host['token']}, json={})).json()['invite']
+            for index, user in enumerate(('alice', 'bob')):
+                client = GroupClient(ClientStore(root / f'device{index}/client.db'), FakeAgents(user), FakeGateway())
+                self.clients.append(client)
+                # What join_link does once the front end has checked the link; the member then streams over WebSocket.
+                joined = (await api.post(self.url + '/relay/join', json={'invite': invite, 'node_id': client.store.node_id, 'user_id': user, 'display_name': user})).json()
+                client.alias = client.store.save(user, self.url, joined); client.user = user
+                await asyncio.to_thread(client.add_agent, user, client.alias, 'same')
+                client.ensure(user, client.alias)
         await self.until(lambda: all(json.loads(c.store.get(c.user, c.alias)['metadata'])['member_count'] == 5 for c in self.clients))
 
     async def asyncTearDown(self):
@@ -212,8 +213,9 @@ class TwoDeviceTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ClientError): await b.consume(row, {**packet, 'connection_id': 'wrong'})
         # Restore the cursor after the artificial packet, then revoke via the actual host.
         b.store.update(b.user, b.alias, cursor=0)
+        human = next(m['principal'] for m in group['members'] if m['connection_id'] == row['connection_id'] and not m['agent_id'])
         async with httpx.AsyncClient(trust_env=False) as api:
-            response = await api.post(self.url + '/relay/manage/patch', headers={'Authorization': 'Bearer ' + self.host['token']}, json={'password': 'changed', 'revoke_connections': True})
+            response = await api.post(self.url + '/relay/manage/remove_member', headers={'Authorization': 'Bearer ' + self.host['token']}, json={'principal': human})
             self.assertEqual(response.status_code, 200)
         await self.until(lambda: not b.store.get(b.user, b.alias)['active'])
         with self.assertRaises(ClientError): await b.post(b.user, b.alias, 'same', 'revoked')

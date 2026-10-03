@@ -119,6 +119,27 @@ class GuestTests(unittest.TestCase):
         reopened.guest_invite(self.host['token'], disable=True)
         with self.assertRaises(RelayError): reopened.guest_info(new)
 
+    def test_the_invitation_link_also_joins_a_device_as_a_full_member(self):
+        joined = self.store.join(self.invite, node_id='laptop', user_id='bob', display_name='Bob')
+        card = self.store.add_agent(joined['token'], agent_id='helper', name='Helper', platform='codex')
+        self.assertTrue(any(m['is_agent'] and m['agent_id'] == 'helper' for m in card['members']))
+        self.store.guest_invite(self.host['token'])  # a new link: the old one no longer joins
+        with self.assertRaises(RelayError):
+            self.store.join(self.invite, node_id='other', user_id='carol', display_name='Carol')
+        self.assertEqual(self.store.detail(joined['token'])['title'], 'Friends')  # joined members stay
+
+    def test_poll_carries_the_websocket_stream_over_http(self):
+        joined = self.store.join(self.invite, node_id='laptop', user_id='bob', display_name='Bob')
+        self.store.post(self.host['token'], content='hello')
+        with TestClient(create_app(data_dir=self.temp.name, control_key='key', legacy=False)) as client:
+            headers = {'Authorization': 'Bearer ' + joined['token']}
+            first = client.post('/relay/poll', headers=headers, json={'cursor': 0}).json()
+            self.assertEqual(first['events'][-1]['message']['content'], 'hello')
+            cursor = first['events'][-1]['id']
+            self.assertEqual(client.post('/relay/poll', headers=headers, json={'cursor': cursor}).json()['events'], [])
+            self.assertEqual(client.post('/relay/poll', headers=headers, json={'cursor': -1}).status_code, 400)
+            self.assertEqual(client.post('/relay/poll', json={'cursor': 0}).status_code, 401)
+
     def test_api_requires_guest_token_and_filters_private_metadata(self):
         card = self.store.add_agent(self.host['token'], agent_id='creative', name='创意专家', platform='webot')
         agent = next(m['principal'] for m in card['members'] if m['is_agent'])
@@ -166,5 +187,76 @@ class GuestProxyTests(unittest.TestCase):
         self.assertEqual(transport.request.call_args.kwargs['json'], {'invite':'a'*43,'name':'Bob','password':'guest-password'})
         with self.client.session_transaction() as session: self.assertNotIn('user_id', session)
 
+
+    def _ticket(self):
+        with self.client.session_transaction() as session: session['user_id'] = 'alice'
+        reply = Mock(status_code=200); reply.json.return_value={'server_url':'http://127.0.0.1:51203','invite':'a'*43}
+        with patch('frontend.proxies.group_guests.requests.post', return_value=reply):
+            link = self.client.post('/proxy_groups/rg_x/guest-link', json={}).json['url']
+        with self.client.session_transaction() as session: session.clear()
+        return link.split('#')[1]
+
+    def test_a_device_joins_through_the_link_and_keeps_its_own_credential(self):
+        ticket = self._ticket()
+        self.assertEqual(self.client.post('/relay/join', headers={'X-Group-Invite': ticket + 'bad'}, json={}).status_code, 403)
+        self.assertEqual(self.client.post('/relay/create', headers={'X-Group-Invite': ticket}, json={}).status_code, 404)
+        self.assertEqual(self.client.post('/relay/guest-invites', headers={'X-Group-Invite': ticket}, json={}).status_code, 404)
+        self.assertEqual(self.client.get('/relay/group', headers={'X-Group-Invite': ticket}).status_code, 401)
+        transport = Mock(); transport.request.return_value = Mock(status_code=200)
+        transport.request.return_value.json.return_value = {'token': 'device'}
+        with patch('frontend.proxies.group_guests.requests.Session') as factory:
+            factory.return_value.__enter__.return_value = transport
+            joined = self.client.post('/relay/join', headers={'X-Group-Invite': ticket},
+                                      json={'node_id': 'laptop', 'user_id': 'bob', 'display_name': 'Bob', 'password': 'x'})
+            self.assertEqual(joined.status_code, 200)
+            self.assertEqual(transport.request.call_args.args[1], 'http://127.0.0.1:51203/relay/join')
+            self.assertEqual(transport.request.call_args.kwargs['json'],
+                             {'invite': 'a'*43, 'node_id': 'laptop', 'user_id': 'bob', 'display_name': 'Bob'})
+            polled = self.client.post('/relay/poll', headers={'X-Group-Invite': ticket, 'Authorization': 'Bearer device'},
+                                      json={'cursor': 3})
+            self.assertEqual(polled.status_code, 200)
+            self.assertEqual(transport.request.call_args.kwargs['headers'], {'Authorization': 'Bearer device'})
+            self.assertEqual(transport.request.call_args.kwargs['json'], {'cursor': 3})
+
+
+class JoinLinkTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.store = ClientStore(Path(self.temp.name) / 'client.db')
+        self.client = GroupClient(self.store, Mock(), Mock())
+        self.calls = []
+        def enroll(url, path, headers, body):
+            self.calls.append((url, path, headers))
+            if path.endswith('/info'):
+                return {'group_id': 'g_1', 'title': 'Friends'}
+            return {'token': 't', 'connection_id': 'c', 'group': {'group_id': 'g_1', 'title': 'Friends', 'members': []}}
+        patcher = patch.object(GroupClient, 'enroll', side_effect=enroll)
+        patcher.start(); self.addCleanup(patcher.stop)
+
+    def test_another_machines_link_polls_through_its_front_end(self):
+        with patch('groups.client.own_front_ends', return_value={'https://me.example'}):
+            card = self.client.join_link('bob', link='https://host.example/group-guest#ticket')
+        row = self.store.get('bob', card['group_id'])
+        self.assertEqual((row['url'], row['via']), ('https://host.example', 'ticket'))
+        self.assertEqual(self.calls[-1], ('https://host.example', '/relay/join', {'X-Group-Invite': 'ticket'}))
+        self.assertEqual(GroupClient.headers(row), {'Authorization': 'Bearer t', 'X-Group-Invite': 'ticket'})
+        again = self.client.join_link('bob', link='https://host.example/group-guest#ticket')
+        self.assertEqual(again['group_id'], card['group_id'])
+        self.assertEqual([path for _url, path, _h in self.calls].count('/relay/join'), 1)  # joined once
+
+    def test_this_machines_own_link_becomes_a_local_member(self):
+        with patch('groups.client.own_front_ends', return_value={'https://me.example'}), \
+                patch('groups.client.frontend_url', return_value='http://127.0.0.1:51209'), \
+                patch('groups.client.service_url', return_value='http://127.0.0.1:51203'):
+            card = self.client.join_link('bob', link='https://me.example/group-guest#ticket')
+        row = self.store.get('bob', card['group_id'])
+        self.assertEqual((row['url'], row['via']), ('http://127.0.0.1:51203', ''))
+        self.assertEqual(self.calls[-1][0], 'http://127.0.0.1:51209')
+
+    def test_only_an_invitation_link_is_accepted(self):
+        for bad in ('', 'g_1', 'https://host.example/studio#x', 'ftp://host.example/group-guest#x', 'https://host.example/group-guest'):
+            with self.subTest(bad=bad), self.assertRaises(Exception):
+                self.client.join_link('bob', link=bad)
 
 if __name__ == '__main__': unittest.main()

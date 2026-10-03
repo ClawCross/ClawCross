@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from agents.messages import AgentMessage, AgentReply, compose_text_prompt
-from agents.store import ACPX, OPENCLAW, Agent, AgentStore, get_store
+from agents.store import ACPX, Agent, AgentStore, get_store
 from external import history
 
 logger = logging.getLogger(__name__)
@@ -28,12 +28,16 @@ _turn_locks = weakref.WeakKeyDictionary()
 
 
 def runtime_session(agent: Agent) -> str:
-    """The agent's session inside an external runtime, named after its id; OpenClaw's
-    also names which of its agents holds it."""
+    """The agent's session inside an external runtime, named after its id.
+
+    ``openclaw acp`` takes an OpenClaw gateway session key, which also names the
+    OpenClaw agent that holds it: ``main``, or for an agent made before OpenClaw
+    ran over ACP, the one kept in ``global_name``.
+    """
     key = f"clawcross-{agent.owner}-{agent.agent_id}"
     if agent.runtime.get("session_generation"):
         key += "-" + str(agent.runtime["session_generation"])
-    if agent.driver == OPENCLAW:
+    if agent.platform == "openclaw":
         return f"agent:{agent.config.get('global_name') or 'main'}:{key}"
     return key
 

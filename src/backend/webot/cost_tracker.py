@@ -21,37 +21,20 @@ from pathlib import Path
 from typing import Any
 
 
-# Default pricing per 1M tokens (in USD)
-_MODEL_PRICING: dict[str, dict[str, float]] = {
-    # Anthropic
-    "claude-sonnet-4-20250514": {"input": 3.0, "output": 15.0, "cache_read": 0.3, "cache_write": 3.75},
-    "claude-3-5-sonnet": {"input": 3.0, "output": 15.0, "cache_read": 0.3, "cache_write": 3.75},
-    "claude-3-opus": {"input": 15.0, "output": 75.0, "cache_read": 1.5, "cache_write": 18.75},
-    "claude-3-haiku": {"input": 0.25, "output": 1.25, "cache_read": 0.03, "cache_write": 0.3},
-    # OpenAI
-    "gpt-4o": {"input": 2.5, "output": 10.0, "cache_read": 1.25, "cache_write": 0},
-    "gpt-4o-mini": {"input": 0.15, "output": 0.6, "cache_read": 0.075, "cache_write": 0},
-    "gpt-4-turbo": {"input": 10.0, "output": 30.0, "cache_read": 5.0, "cache_write": 0},
-    "o3": {"input": 10.0, "output": 40.0, "cache_read": 2.5, "cache_write": 0},
-    "o3-mini": {"input": 1.1, "output": 4.4, "cache_read": 0.55, "cache_write": 0},
-    # DeepSeek
-    "deepseek-chat": {"input": 0.14, "output": 0.28, "cache_read": 0.014, "cache_write": 0},
-    "deepseek-reasoner": {"input": 0.55, "output": 2.19, "cache_read": 0.055, "cache_write": 0},
-    # Google
-    "gemini-2.5-pro": {"input": 1.25, "output": 10.0, "cache_read": 0.31, "cache_write": 0},
-    "gemini-2.5-flash": {"input": 0.15, "output": 0.6, "cache_read": 0.0375, "cache_write": 0},
-    # Default fallback
-    "_default": {"input": 1.0, "output": 3.0, "cache_read": 0.1, "cache_write": 0},
-}
+# Explicit overrides are exact model keys; pricing otherwise comes from the fixed catalog.
+_MODEL_PRICING: dict[str, dict[str, float]] = {}
 
 
-def _get_model_pricing(model: str) -> dict[str, float]:
-    """Get pricing for a model, with fuzzy matching."""
-    model_lower = model.lower()
-    for key, pricing in _MODEL_PRICING.items():
-        if key in model_lower or model_lower.startswith(key.split("-")[0]):
-            return pricing
-    return _MODEL_PRICING["_default"]
+def _get_model_pricing(model: str) -> dict:
+    from common.model_capabilities import catalog_model
+    if model in _MODEL_PRICING:
+        return {**_MODEL_PRICING[model], "status": "custom"}
+    raw = catalog_model(model).get("pricing", {})
+    known = raw.get("status") == "known" and raw.get("currency") == "USD"
+    return {"input": float(raw.get("input", 0) or 0), "output": float(raw.get("output", 0) or 0),
+            "cache_read": float(raw.get("cacheRead", 0) or 0),
+            "cache_write": float(raw.get("cacheWrite", 0) or 0),
+            "status": "snapshot_estimate" if known else "unavailable", "tiers": raw.get("tieredPricing", [])}
 
 
 @dataclass
@@ -63,11 +46,20 @@ class CostEntry:
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
     cost_usd: float = 0.0
+    pricing_status: str = "unavailable"
     timestamp: float = field(default_factory=time.time)
 
     def calculate_cost(self) -> float:
         """Calculate cost based on token counts and model pricing."""
         pricing = _get_model_pricing(self.model)
+        self.pricing_status = pricing["status"]
+        # Select the applicable long-context tier, including cached input.
+        for tier in pricing.get("tiers", []):
+            bounds = tier.get("range", [0])
+            if bounds and self.input_tokens + self.cache_read_tokens >= bounds[0]:
+                pricing = {**pricing, **{k: tier[k] for k in ("input", "output") if k in tier},
+                           "cache_read": tier.get("cacheRead", pricing["cache_read"]),
+                           "cache_write": tier.get("cacheWrite", pricing["cache_write"])}
         cost = (
             (self.input_tokens / 1_000_000) * pricing["input"]
             + (self.output_tokens / 1_000_000) * pricing["output"]
@@ -137,6 +129,7 @@ class SessionCostTracker:
                     "input_tokens": 0,
                     "output_tokens": 0,
                     "cost_usd": 0.0,
+                    "pricing_status": entry.pricing_status,
                 }
             by_model[entry.model]["calls"] += 1
             by_model[entry.model]["input_tokens"] += entry.input_tokens
@@ -145,6 +138,7 @@ class SessionCostTracker:
 
         return {
             "total_cost_usd": round(self.total_cost, 4),
+            "pricing_status": "partial_unavailable" if any(e.pricing_status == "unavailable" for e in self.entries) else "snapshot_estimate",
             "total_calls": len(self.entries),
             "total_input_tokens": self.total_input_tokens,
             "total_output_tokens": self.total_output_tokens,

@@ -45,7 +45,6 @@ class UserAwareToolNodeTests(unittest.IsolatedAsyncioTestCase):
     async def test_team_tools_auto_inject_username_and_team(self):
         node = UserAwareToolNode(
             [],
-            lambda: [],
             find_internal_session_meta_fn=lambda user_id, session_id: {"teams": ["alpha"]},
         )
         fake_tool_node = _FakeToolNode()
@@ -62,7 +61,7 @@ class UserAwareToolNodeTests(unittest.IsolatedAsyncioTestCase):
             ],
         }
 
-        with patch("webot.engine.agent.get_session_mode", return_value={"mode": "default"}), patch(
+        with patch(
             "webot.engine.agent.resolve_permission_context",
             return_value=type(
                 "Permission",
@@ -86,7 +85,7 @@ class UserAwareToolNodeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(injected_call["args"]["team"], "alpha")
 
     async def test_memory_scope_defaults_to_team_but_explicit_empty_means_personal(self):
-        node = UserAwareToolNode([], lambda: [], find_internal_session_meta_fn=lambda *a: {"teams": ["alpha"]})
+        node = UserAwareToolNode([], find_internal_session_meta_fn=lambda *a: {"teams": ["alpha"]})
         fake = _FakeToolNode()
         fake._tools_by_name = {"list_files": StructuredTool(name="list_files", description="list", func=lambda **a: "ok",
             args_schema={"type": "object", "properties": {"team": {"type": ["string", "null"], "default": None}}})}
@@ -102,7 +101,7 @@ class UserAwareToolNodeTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(fake.captured_state["messages"][-1].tool_calls[0]["args"]["team"], expected)
 
     async def test_session_runtime_tools_auto_inject_username(self):
-        node = UserAwareToolNode([], lambda: [])
+        node = UserAwareToolNode([])
         fake_tool_node = _FakeToolNode()
         node.tool_node = fake_tool_node
 
@@ -124,7 +123,7 @@ class UserAwareToolNodeTests(unittest.IsolatedAsyncioTestCase):
             ],
         }
 
-        with patch("webot.engine.agent.get_session_mode", return_value={"mode": "default"}), patch(
+        with patch(
             "webot.engine.agent.resolve_permission_context",
             return_value=type(
                 "Permission",
@@ -148,7 +147,7 @@ class UserAwareToolNodeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(injected_call["args"]["source_session"], "exp_entrepreneur_mo0yixp1")
 
     async def test_inbox_tool_cannot_select_another_users_session(self):
-        node = UserAwareToolNode([], lambda: [])
+        node = UserAwareToolNode([])
         fake_tool_node = _FakeToolNode()
         node.tool_node = fake_tool_node
         permission = type("Permission", (), {"allowed": True, "requires_approval": False,
@@ -166,12 +165,12 @@ class UserAwareToolNodeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((args["username"], args["source_session"]), ("alice", "actual"))
 
     async def test_join_cannot_spoof_another_user_or_agent(self):
-        node = UserAwareToolNode([], lambda: [])
+        node = UserAwareToolNode([])
         fake = _FakeToolNode()
         node.tool_node = fake
         permission = type("Permission", (), {"allowed": True, "requires_approval": False, "reason": "", "matched_rule": None, "policy": {}, "approval": None})()
         state = {"user_id": "alice", "session_id": "actual", "session_mode": "bypass", "messages": [AIMessage(content="", tool_calls=[{
-            "name": "join_group", "args": {"username": "bob", "source_session": "other", "group_id": "g_invited", "password": "secret"}, "id": "join", "type": "tool_call"}])]}
+            "name": "join_group", "args": {"username": "bob", "source_session": "other", "invite": "https://host.example/group-guest#ticket"}, "id": "join", "type": "tool_call"}])]}
         with patch("webot.engine.agent.resolve_permission_context", return_value=permission), patch("webot.engine.agent.run_tool_policy_hooks", side_effect=_passthrough_hook_outcome):
             await node(state, config={})
         args = fake.captured_state["messages"][-1].tool_calls[0]['args']
@@ -243,7 +242,7 @@ class DirectToolNodeErrorHandlingTests(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_plan_mode_blocks_typing_into_an_interactive_job_but_not_reading_it(self):
-        node = UserAwareToolNode([], lambda: [])
+        node = UserAwareToolNode([])
         fake_tool_node = _FakeToolNode()
         node.tool_node = fake_tool_node
 

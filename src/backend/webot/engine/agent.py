@@ -5,9 +5,9 @@ import asyncio
 import contextlib
 import sys
 import logging
+from dataclasses import dataclass
 from typing import TypedDict, Optional
 
-# Model related
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
@@ -15,91 +15,49 @@ from langchain_core.utils.function_calling import convert_to_openai_tool
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from pydantic import ValidationError
 
-from webot.engine.agent_runtime_state import TaskRegistry, ThreadStateRegistry
-from webot.engine.lightweight_agent_runtime import LightweightAgentRuntime
-from webot.policy import (
-    ToolPolicyDecision,
-    get_tool_policy,
-    run_tool_policy_hooks,
+from common import llm_factory
+from common.llm_factory import extract_text
+from common.logging_utils import get_logger
+from common.runtime_paths import PROJECT_ROOT
+from webot.approval_actions import bind_file_target
+from webot.approval_review import authorize_action, policy_binding, resolve_conversation_reply, review_context
+from webot.checkpoint_repository import (
+    get_context_compaction,
+    get_context_usage_record,
+    save_context_usage_record,
 )
 from webot.compression import (
     compression_view_from_record,
     temporary_bounded_view,
     trim_new_input_if_oversized,
 )
-from webot.checkpoint_repository import (
-    get_context_compaction,
-    get_context_usage_record,
-    save_context_usage_record,
-)
-from webot.context_compressor import estimate_messages_tokens
-from webot.engine.background_compaction import BackgroundCompressionManager
 from webot.context import (
     RUNTIME_DELTA_KEY,
     RUNTIME_STATE_KEY,
     assemble_input_messages,
+    render_group_context,
     render_runtime_context_block,
     render_team_skill_context,
-    render_group_context,
 )
-from webot.memory import get_memory_state
-from webot.skills import build_user_profile_block
-from webot.soul import build_soul_prompt
-from webot.trajectory import auto_trajectory_enabled, save_trajectory
-from webot.llm_call_trace import llm_call_trace_enabled, save_llm_call
+from webot.context_compressor import estimate_messages_tokens
+from webot.context_limits import infer_model_context_window, resolve_history_message_limits
 from webot.context_references import expand_context_references
-from common.runtime_paths import PROJECT_ROOT
 from webot.context_store import ContextStore
-from webot.context_usage import estimate_context_components, scale_components, tool_schemas, validate_context_capacity, compaction_key, request_accounting, difference_components, compacted_components
-from webot.smart_routing import resolve_turn_route
-from webot.permission_context import (
-    create_or_reuse_permission_request,
-    resolve_permission_context,
+from webot.context_usage import (
+    compacted_components,
+    compaction_key,
+    difference_components,
+    estimate_context_components,
+    request_accounting,
+    scale_components,
+    tool_schemas,
+    validate_context_capacity,
 )
-from webot.profiles import frame_session_identity, get_agent_profile, parse_subagent_session_id, render_profile_system_prompt
-from webot.runtime import (
-    PLAN_MODE_BLOCKED_TOOLS,
-    REVIEW_MODE_BLOCKED_TOOLS,
-    build_session_mode_message,
-    build_turn_limit_message,
-    filter_tools_for_mode,
-    normalize_session_mode,
-    effective_session_mode,
-    mode_allows_tool,
-    resolve_max_turns,
-    should_stop_for_turn_limit,
-)
-from webot.runtime_store import (
-    count_inbox_messages,
-    get_session_state,
-    get_session_mode,
-    save_session_mode,
-    list_inbox_messages,
-    list_tool_approvals,
-    update_tool_approval_status,
-    get_tool_approval,
-    utc_now,
-)
-from webot.workspace import describe_session_workspace
-
-# --- New feature modules (ported from Claude Code / openclaw / oh-my-codex) ---
-from webot.engine.streaming_tool_executor import (
-    StreamingToolExecutor, get_streaming_executor,
-    classify_tool_access, ToolAccessMode, ToolExecutionResult,
-)
-from webot.token_budget import get_session_budget
-from webot.context_limits import (
-    infer_model_context_window,
-    resolve_history_message_limits,
-    resolve_history_token_budget,
-)
-from webot.runtime_settings import get_runtime_settings, resolve_context_window, resolve_context_history_budget
-from webot.approval_review import authorize_action, policy_binding
-from webot.approval_actions import bind_file_target, canonical_action_args
-from webot.runtime_store import record_tool_execution, issue_execution_permit
-from webot.cache_boundary import SystemPromptCacheManager
-from common.logging_utils import get_logger
+from webot.cost_tracker import get_cost_tracker
+from webot.engine.agent_runtime_state import TaskRegistry, ThreadStateRegistry
+from webot.engine.background_compaction import BackgroundCompressionManager
 from webot.engine.lazy_tool_discovery import LazyToolRegistry
+from webot.engine.lightweight_agent_runtime import LightweightAgentRuntime
 from webot.engine.tool_aliases import canonical_tool_name, canonical_tool_names, resolve_tool_call
 from webot.engine.tool_schema import (
     StrictSchemaError,
@@ -110,27 +68,40 @@ from webot.engine.tool_schema import (
     strict_violations,
     to_strict_parameters,
 )
-from webot.engine.agent_orchestrator import (
-    create_fork, complete_fork, get_fork, list_forks, ForkMode,
-    start_coordinator_run, advance_coordinator_phase, get_coordinator_run,
-    create_council_session, submit_council_vote, evaluate_council_consensus,
+from webot.llm_call_trace import llm_call_trace_enabled, save_llm_call
+from webot.memory import get_memory_state
+from webot.permission_context import resolve_permission_context
+from webot.policy import ToolPolicyDecision, get_tool_policy, run_tool_policy_hooks
+from webot.profiles import frame_session_identity, get_agent_profile, parse_subagent_session_id, render_profile_system_prompt
+from webot.runtime import (
+    PLAN_MODE_BLOCKED_TOOLS,
+    REVIEW_MODE_BLOCKED_TOOLS,
+    build_session_mode_message,
+    build_turn_limit_message,
+    effective_session_mode,
+    filter_tools_for_mode,
+    mode_allows_tool,
+    resolve_max_turns,
+    should_stop_for_turn_limit,
 )
-from webot.cost_tracker import get_cost_tracker
-from webot.engine.workflow_engines import (
-    get_ralph_loop, create_ralph_loop, get_ralph_prompt,
-    create_deep_interview, get_interview_prompt,
-    get_autopilot, AutopilotConfig,
-    check_context_gate,
-    get_hud, update_hud,
-    fork_session, get_session_fork,
+from webot.runtime_settings import get_runtime_settings, resolve_context_history_budget, resolve_context_window
+from webot.runtime_store import (
+    count_inbox_messages,
+    get_session_state,
+    get_tool_approval,
+    issue_execution_permit,
+    list_inbox_messages,
+    list_tool_approvals,
+    record_tool_execution,
+    save_session_mode,
+    utc_now,
 )
-from webot.notification_system import (
-    send_notification, get_notifications, NotificationLevel,
-    run_ttl_cleanup, register_ttl,
-    get_pending_model_swap, consume_model_swap,
-    save_session_checkpoint, get_session_checkpoint, build_resume_prompt,
-    create_broadcast,
-)
+from webot.skills import build_user_profile_block
+from webot.smart_routing import resolve_turn_route
+from webot.soul import build_soul_prompt
+from webot.token_budget import get_session_budget
+from webot.trajectory import auto_trajectory_enabled, save_trajectory
+from webot.workspace import describe_session_workspace
 
 logger = get_logger("agent")
 
@@ -148,9 +119,6 @@ def should_inject_new_inbox_notice(state: dict, turn_count: int) -> bool:
     )
 
 
-# 调试导出（已关闭）：原 _maybe_debug_dump_llm_payload_for_minimax 在 CLAWCROSS_DEBUG_LLM_PAYLOAD=1 时
-# 将 ainvoke 前消息写入 data/debug_llm_payload_last.json；实现已从默认分支移除，需排障时查 git 历史。
-
 # --- Tools that need automatic username injection ---
 USER_INJECTED_TOOLS = {
     # File management tools
@@ -167,7 +135,7 @@ USER_INJECTED_TOOLS = {
     "list_oasis_experts", "save_oasis_expert", "delete_oasis_expert",
     "save_oasis_workflow", "list_oasis_workflows", "list_oasis_agent_catalog",
     # Session management tools
-    "list_sessions", "fork_session",
+    "list_sessions", "fork_session", "set_session_title",
     # LLM API access tools
     "call_llm_api", "send_to_session", "read_session_inbox", "mark_session_inbox_read",
     # Group chat tools
@@ -198,6 +166,7 @@ SESSION_INJECTED_TOOLS = {
     "start_new_oasis": "notify_session",
     "list_sessions": "current_session_id",
     "fork_session": "current_session_id",
+    "set_session_title": "source_session",
     "send_notification": "source_session",
     "send_to_session": "source_session",
     "read_session_inbox": "source_session",
@@ -244,6 +213,7 @@ SESSION_FORCE_INJECTED_TOOLS: frozenset[str] = frozenset({
     "set_session_mode",
     "list_sessions",
     "fork_session",
+    "set_session_title",
     "start_new_oasis",
 })
 
@@ -325,14 +295,55 @@ def external_tool_schema(func_def: dict, *, strict: bool) -> dict:
     return {"type": "function", "function": function}
 
 
-def _external_tool_names(state) -> set[str]:
-    """Names of the caller-supplied tools bound for this request."""
-    names = set()
+def _external_tool_defs(state) -> list[dict]:
+    """Caller-supplied function definitions, OpenAI ``{"type":"function","function":…}`` or bare."""
+    defs = []
     for ext_tool in state.get("external_tools") or []:
         func_def = ext_tool.get("function", {}) if ext_tool.get("type") == "function" else ext_tool
         if func_def.get("name") and func_def["name"] not in {"tool_search", "tool_call"}:
-            names.add(func_def["name"])
-    return names
+            defs.append(func_def)
+    return defs
+
+
+def _external_tool_names(state) -> set[str]:
+    """Names of the caller-supplied tools bound for this request."""
+    return {func_def["name"] for func_def in _external_tool_defs(state)}
+
+
+def tool_result_payload(tool_name: str, *, ok: bool, message: str, error_type: str = "",
+                        retryable: bool = False, details: dict | None = None) -> str:
+    """A structured tool result the model can parse reliably."""
+    payload = {"ok": ok, "tool": tool_name, "message": message}
+    if not ok:
+        payload["error_type"] = error_type or "tool_error"
+        payload["retryable"] = bool(retryable)
+    if details:
+        payload["details"] = details
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def _usage_tokens(usage: dict) -> tuple[int, int, int, int, int]:
+    """``(total_input, fresh_input, output, cache_read, cache_write)`` from usage metadata.
+
+    LangChain's normalized shape nests cache counts in ``input_token_details`` and
+    folds them into ``input_tokens``; raw provider shapes report them at the top
+    level and exclude them from ``input_tokens``. Fresh input is billed at the
+    full rate, the cached portion at its own rates.
+    """
+    input_tokens = int(usage.get("input_tokens", 0) or 0)
+    output_tokens = int(usage.get("output_tokens", 0) or 0)
+    details = usage.get("input_token_details")
+    if isinstance(details, dict) and details:
+        cache_read = int(details.get("cache_read", 0) or 0)
+        cache_write = int(details.get("cache_creation", 0) or 0)
+        return input_tokens, max(0, input_tokens - cache_read - cache_write), output_tokens, cache_read, cache_write
+    cache_read = int(usage.get("cache_read_input_tokens", 0) or 0)
+    cache_write = int(usage.get("cache_creation_input_tokens", 0) or 0)
+    return input_tokens + cache_read + cache_write, input_tokens, output_tokens, cache_read, cache_write
+
+
+def _model_name(model) -> str:
+    return getattr(model, "model_name", "") or getattr(model, "model", "") or ""
 
 
 def _tool_input_schema(tool) -> dict | None:
@@ -526,16 +537,49 @@ class DirectToolNode:
         return {"messages": list(await asyncio.gather(*(invoke(tc) for tc in calls)))}
 
 
+_MODE_BLOCK_MESSAGES = {
+    "plan": "当前会话处于 plan 模式。请先完成调研、计划和 todo，再退出 plan 模式后执行改动。",
+    "review": "当前会话处于 review 模式。请保持只读审查，避免直接修改文件或外部状态。",
+}
+_MODE_BLOCKED_TOOLS = {"plan": PLAN_MODE_BLOCKED_TOOLS, "review": REVIEW_MODE_BLOCKED_TOOLS}
+_COMMAND_PERMIT_TOOLS = frozenset({
+    "run_command", "background_command_io", "list_files", "read_file", "write_file", "delete_file",
+})
+
+
+def _mode_blocks_call(mode: str, tc: dict) -> bool:
+    """Plan and review restrictions that depend on the call's arguments."""
+    if mode not in _MODE_BLOCK_MESSAGES:
+        return False
+    args = tc.get("args") or {}
+    # Typing into an interactive job runs commands; reading its output does not.
+    if tc["name"] == "background_command_io" and args.get("input"):
+        return True
+    return (mode == "plan" and tc["name"] == "spawn_subagent"
+            and str(args.get("agent_type") or "").strip().lower() in {"general", "coder"})
+
+
+def _policy_decision(permission) -> ToolPolicyDecision:
+    return ToolPolicyDecision(
+        allowed=permission.allowed,
+        requires_approval=permission.requires_approval,
+        reason=permission.reason,
+        matched_rule=permission.matched_rule,
+    )
+
+
 class UserAwareToolNode:
+    """Execute a model's tool calls for one session.
+
+    Discovery calls (``tool_search``/``tool_call``) are answered here. Every
+    other call gets the session's identity injected, then passes mode, enabled
+    tool, policy-hook and approval checks before it runs; a blocked call becomes
+    an error ToolMessage for that call only.
     """
-    Custom tool node:
-    1. Reads thread_id from RunnableConfig, auto-injects as username for file/command tools
-    2. Intercepts calls to disabled tools at runtime, returns error ToolMessage
-    """
-    def __init__(self, tools, get_mcp_tools_fn, find_internal_session_meta_fn=None,
+
+    def __init__(self, tools, find_internal_session_meta_fn=None,
                  tool_registry: LazyToolRegistry | None = None):
         self.tool_node = DirectToolNode(tools)
-        self._get_mcp_tools = get_mcp_tools_fn
         self._find_internal_session_meta_fn = find_internal_session_meta_fn
         self._tool_registry = tool_registry
 
@@ -546,7 +590,7 @@ class UserAwareToolNode:
         try:
             return resolver(user_id, session_id)
         except Exception as exc:
-            print(f">>> [tools] ⚠️ resolve internal session meta failed: {exc}")
+            logger.warning("resolve internal session meta failed: %s", exc)
             return None
 
     @staticmethod
@@ -570,45 +614,84 @@ class UserAwareToolNode:
             f"原因：{reason or '该工具调用不满足当前策略要求。'}"
         )
 
-    @staticmethod
-    def _build_tool_result_payload(
-        tool_name: str,
-        *,
-        ok: bool,
-        message: str,
-        error_type: str = "",
-        retryable: bool = False,
-        details: dict | None = None,
-    ) -> str:
-        payload = {
-            "ok": ok,
-            "tool": tool_name,
-            "message": message,
-        }
-        if not ok:
-            payload["error_type"] = error_type or "tool_error"
-            payload["retryable"] = bool(retryable)
-        if details:
-            payload["details"] = details
-        return json.dumps(payload, ensure_ascii=False)
+    def _discover(self, tc: dict, *, tools_by_name: dict, long_tail_names: set[str]) -> ToolMessage | None:
+        """Answer ``tool_search``, or resolve ``tool_call`` into its target call in place.
+
+        Returns the ToolMessage that answers the call, or None when *tc* is now
+        an ordinary call that still has to pass every check below.
+        """
+        if tc["name"] == "tool_search":
+            if not self._tool_registry or not long_tail_names:
+                return ToolMessage(content="No searchable tools are enabled in this session.",
+                                   name="tool_search", tool_call_id=tc["id"], status="error")
+            search_args = tc.get("args") if isinstance(tc.get("args"), dict) else {}
+            query = str(search_args.get("query") or "").strip()[:200]
+            matches = self._tool_registry.search_tools(query, limit=6, enabled_names=long_tail_names)
+            for match in matches:
+                match["parameters"] = _visible_tool_parameters(tools_by_name[match["name"]])
+            return ToolMessage(content=json.dumps({"tools": matches}, ensure_ascii=False),
+                               name="tool_search", tool_call_id=tc["id"])
+        if tc["name"] != "tool_call":
+            return None
+        call_args = tc.get("args") if isinstance(tc.get("args"), dict) else {}
+        target_name = str(call_args.get("tool_name") or "")
+        raw_json = call_args.get("arguments_json")
+        try:
+            if target_name not in long_tail_names or target_name not in tools_by_name:
+                raise ValueError("This tool is not available through tool_call in the current session")
+            if not isinstance(raw_json, str) or len(raw_json) > 200_000:
+                raise ValueError("arguments_json must be a JSON object string under 200 KB")
+            parsed_args = json.loads(raw_json)
+            if not isinstance(parsed_args, dict):
+                raise ValueError("arguments_json must contain a JSON object")
+            schema = _visible_tool_parameters(tools_by_name[target_name])
+            parsed_args = drop_null_optionals(parsed_args, schema)
+            from jsonschema import validate
+            validate(parsed_args, {**schema, "additionalProperties": False})
+        except Exception as exc:
+            return ToolMessage(content=f"Invalid tool_call: {type(exc).__name__}: {str(exc)[:300]}",
+                               name="tool_call", tool_call_id=tc["id"], status="error")
+        # From here on the call is the original tool: every mode, enablement,
+        # policy, approval and MCP permit check applies to it.
+        tc["name"], tc["args"] = target_name, parsed_args
+        return None
+
+    def _inject_identity(self, tc: dict, user_id: str, session_id: str, *, defaults: bool) -> None:
+        """Set the caller identity the model must not choose.
+
+        Forced session arguments and ``username`` always overwrite the model's
+        values. With *defaults*, a missing session argument and the agent's only
+        team are filled in as well.
+        """
+        name, args = tc["name"], tc["args"]
+        if name in USER_INJECTED_TOOLS:
+            args["username"] = user_id
+        param = SESSION_INJECTED_TOOLS.get(name)
+        if param and (name in SESSION_FORCE_INJECTED_TOOLS or (defaults and not args.get(param))):
+            args[param] = session_id
+        if not defaults or name not in TEAM_INJECTED_TOOLS:
+            return
+        memory_file_tool = name in {"list_files", "read_file", "write_file", "delete_file"}
+        if "team" not in args if memory_file_tool else not args.get("team"):
+            teams = (self._resolve_internal_session_meta(user_id, session_id) or {}).get("teams") or []
+            if len(teams) == 1:  # in several teams, the call names the one it means
+                args["team"] = teams[0]
 
     async def __call__(self, state, config: RunnableConfig):
-        # Get user_id directly from state (injected by mainagent) instead of
-        # parsing thread_id, because user_id itself may contain the separator.
+        # user_id comes from state rather than thread_id: it may contain the separator.
         user_id = state.get("user_id") or "anonymous"
         session_id = state.get("session_id") or "default"
-        runtime_mode_name = effective_session_mode(user_id, session_id, state.get("session_mode"))
+        mode = effective_session_mode(user_id, session_id, state.get("session_mode"))
         if state.get("session_mode"):
-            save_session_mode(user_id, session_id, mode=runtime_mode_name)
+            save_session_mode(user_id, session_id, mode=mode)
 
         last_message = state["messages"][-1]
-        if not hasattr(last_message, "tool_calls") or not last_message.tool_calls:
+        if not getattr(last_message, "tool_calls", None):
             return {"messages": []}
 
-        # Separate blocked and allowed calls
         modified_message = copy.deepcopy(last_message)
-        blocked_calls: list[tuple[dict, str, bool, str]] = []
-        discovery_messages: list[ToolMessage] = []
+        result_messages: list[ToolMessage] = []
+        blocked_calls: list[tuple[dict, str, bool, str]] = []  # (call, reason, pending approval, approval_id)
         allowed_calls = []
         allowed_call_meta: dict[str, tuple[str, dict, object, str]] = {}
         allowed_bindings: dict[str, str] = {}
@@ -621,51 +704,14 @@ class UserAwareToolNode:
             self._tool_registry.always_loaded_names if self._tool_registry else frozenset()
         )
         external_names = _external_tool_names(state)
+        counters = state.setdefault("_approval_review_counters", {})
+        review_blocked = False
+
         for tc in modified_message.tool_calls:
-            if tc["name"] == "tool_search":
-                if not self._tool_registry or not long_tail_names:
-                    discovery_messages.append(ToolMessage(
-                        content="No searchable tools are enabled in this session.",
-                        name="tool_search", tool_call_id=tc["id"], status="error",
-                    ))
-                    continue
-                search_args = tc.get("args") if isinstance(tc.get("args"), dict) else {}
-                query = str(search_args.get("query") or "").strip()[:200]
-                matches = self._tool_registry.search_tools(
-                    query, limit=6, enabled_names=long_tail_names,
-                )
-                for match in matches:
-                    match["parameters"] = _visible_tool_parameters(tools_by_name[match["name"]])
-                discovery_messages.append(ToolMessage(
-                    content=json.dumps({"tools": matches}, ensure_ascii=False),
-                    name="tool_search", tool_call_id=tc["id"],
-                ))
+            answer = self._discover(tc, tools_by_name=tools_by_name, long_tail_names=long_tail_names)
+            if answer is not None:
+                result_messages.append(answer)
                 continue
-            if tc["name"] == "tool_call":
-                call_args = tc.get("args") if isinstance(tc.get("args"), dict) else {}
-                target_name = str(call_args.get("tool_name") or "")
-                raw_json = call_args.get("arguments_json")
-                try:
-                    if target_name not in long_tail_names or target_name not in tools_by_name:
-                        raise ValueError("This tool is not available through tool_call in the current session")
-                    if not isinstance(raw_json, str) or len(raw_json) > 200_000:
-                        raise ValueError("arguments_json must be a JSON object string under 200 KB")
-                    parsed_args = json.loads(raw_json)
-                    if not isinstance(parsed_args, dict):
-                        raise ValueError("arguments_json must contain a JSON object")
-                    schema = _visible_tool_parameters(tools_by_name[target_name])
-                    parsed_args = drop_null_optionals(parsed_args, schema)
-                    from jsonschema import validate
-                    validate(parsed_args, {**schema, "additionalProperties": False})
-                except Exception as exc:
-                    discovery_messages.append(ToolMessage(
-                        content=f"Invalid tool_call: {type(exc).__name__}: {str(exc)[:300]}",
-                        name="tool_call", tool_call_id=tc["id"], status="error",
-                    ))
-                    continue
-                # From this point on the call is the original tool. All normal
-                # mode, enablement, policy, approval and MCP permit checks apply.
-                tc["name"], tc["args"] = target_name, parsed_args
             # A retired tool name (merged or removed) runs as the tool that replaced it.
             if tc["name"] not in external_names and tc["name"] not in tools_by_name:
                 tc["name"], tc["args"] = resolve_tool_call(tc["name"], tc.get("args"))
@@ -673,149 +719,71 @@ class UserAwareToolNode:
             # those so the tool applies its own default, as before strict mode.
             if tc["name"] in tools_by_name and isinstance(tc.get("args"), dict):
                 tc["args"] = drop_null_optionals(tc["args"], _tool_input_schema(tools_by_name[tc["name"]]))
-            if not mode_allows_tool(runtime_mode_name, tc["name"], tc.get("args")):
+            if not mode_allows_tool(mode, tc["name"], tc.get("args")):
                 blocked_calls.append((tc, "当前模式不允许该工具操作。交流模式无工具；只读模式只允许查看和搜索。", False, ""))
                 continue
-            if runtime_mode_name == "plan":
-                requested_agent_type = str(tc.get("args", {}).get("agent_type") or "").strip().lower()
-                if tc["name"] in PLAN_MODE_BLOCKED_TOOLS or (
-                    tc["name"] == "spawn_subagent" and requested_agent_type in {"general", "coder"}
-                ) or (
-                    # Typing into an interactive job runs commands; reading its output does not.
-                    tc["name"] == "background_command_io" and tc.get("args", {}).get("input")
-                ):
-                    blocked_calls.append((
-                        tc,
-                        "当前会话处于 plan 模式。请先完成调研、计划和 todo，再退出 plan 模式后执行改动。",
-                        False,
-                        "",
-                    ))
-                    continue
-            elif runtime_mode_name == "review":
-                if tc["name"] in REVIEW_MODE_BLOCKED_TOOLS or (
-                    tc["name"] == "background_command_io" and tc.get("args", {}).get("input")
-                ):
-                    blocked_calls.append((
-                        tc,
-                        "当前会话处于 review 模式。请保持只读审查，避免直接修改文件或外部状态。",
-                        False,
-                        "",
-                    ))
-                    continue
+            if tc["name"] in _MODE_BLOCKED_TOOLS.get(mode, ()) or _mode_blocks_call(mode, tc):
+                blocked_calls.append((tc, _MODE_BLOCK_MESSAGES[mode], False, ""))
+                continue
             if tc["name"] in tools_by_name and tc["name"] not in available_names:
-                blocked_calls.append((
-                    tc,
-                    "该工具当前未在会话的 enabled_tools 列表中。",
-                    False,
-                    "",
-                ))
-                print(f">>> [tools] 🚫 拦截禁用工具调用: {tc['name']}")
-            else:
-                if tc["name"] in USER_INJECTED_TOOLS:
-                    tc["args"]["username"] = user_id
-                memory_file_tool = tc["name"] in {"list_files", "read_file", "write_file", "delete_file"}
-                inject_team = "team" not in tc["args"] if memory_file_tool else not tc["args"].get("team")
-                if tc["name"] in TEAM_INJECTED_TOOLS and inject_team:
-                    session_meta = self._resolve_internal_session_meta(user_id, session_id)
-                    teams = (session_meta or {}).get("teams") or []
-                    if len(teams) == 1:  # in several teams, the call names the one it means
-                        tc["args"]["team"] = teams[0]
-                # Auto-inject session-related args; SESSION_FORCE_INJECTED_TOOLS always overwrites model args.
-                if tc["name"] in SESSION_INJECTED_TOOLS:
-                    param_name = SESSION_INJECTED_TOOLS[tc["name"]]
-                    if tc["name"] in SESSION_FORCE_INJECTED_TOOLS:
-                        tc["args"][param_name] = session_id
-                    elif not tc["args"].get(param_name):
-                        tc["args"][param_name] = session_id
+                logger.info("blocked disabled tool call: %s", tc["name"])
+                blocked_calls.append((tc, "该工具当前未在会话的 enabled_tools 列表中。", False, ""))
+                continue
 
-                permission = resolve_permission_context(
-                    user_id=user_id,
-                    session_id=session_id,
-                    tool_name=tc["name"],
-                    args=tc["args"],
-                )
-                base_decision = ToolPolicyDecision(
-                    allowed=permission.allowed,
-                    requires_approval=permission.requires_approval,
-                    reason=permission.reason,
-                    matched_rule=permission.matched_rule,
-                )
-                hook_outcome = run_tool_policy_hooks(
-                    permission.policy,
-                    event="before",
-                    user_id=user_id,
-                    session_id=session_id,
-                    tool_name=tc["name"],
-                    args=tc["args"],
-                    decision=base_decision,
-                )
-                tc["args"] = dict(hook_outcome.args)
-                # Hooks may rewrite arguments. Recheck the actual action and
-                # restore identities before considering a hook's verdict.
-                if tc["name"] in USER_INJECTED_TOOLS:
-                    tc["args"]["username"] = user_id
-                if tc["name"] in SESSION_FORCE_INJECTED_TOOLS:
-                    tc["args"][SESSION_INJECTED_TOOLS[tc["name"]]] = session_id
-                if not mode_allows_tool(runtime_mode_name, tc["name"], tc["args"]):
-                    blocked_calls.append((tc, "当前模式禁止执行 hook 修改后的操作。", False, ""))
-                    continue
-                if runtime_mode_name in {"plan", "review"} and (
-                    tc["name"] == "background_command_io" and tc["args"].get("input")
-                    or runtime_mode_name == "plan" and tc["name"] == "spawn_subagent"
-                    and str(tc["args"].get("agent_type") or "").strip().lower() in {"general", "coder"}
-                ):
-                    blocked_calls.append((tc, f"当前会话处于 {runtime_mode_name} 模式，禁止执行该操作。", False, ""))
-                    continue
-                permission = resolve_permission_context(
-                    user_id=user_id,
-                    session_id=session_id,
-                    tool_name=tc["name"],
-                    args=tc["args"],
-                    policy=permission.policy,
-                )
+            self._inject_identity(tc, user_id, session_id, defaults=True)
+            permission = resolve_permission_context(
+                user_id=user_id, session_id=session_id, tool_name=tc["name"], args=tc["args"],
+            )
+            base_decision = _policy_decision(permission)
+            hook_outcome = run_tool_policy_hooks(
+                permission.policy, event="before", user_id=user_id, session_id=session_id,
+                tool_name=tc["name"], args=tc["args"], decision=base_decision,
+            )
+            # Hooks may rewrite arguments. Restore the identity and recheck the
+            # actual action before considering a hook's verdict.
+            tc["args"] = dict(hook_outcome.args)
+            self._inject_identity(tc, user_id, session_id, defaults=False)
+            if not mode_allows_tool(mode, tc["name"], tc["args"]):
+                blocked_calls.append((tc, "当前模式禁止执行 hook 修改后的操作。", False, ""))
+                continue
+            if _mode_blocks_call(mode, tc):
+                blocked_calls.append((tc, _MODE_BLOCK_MESSAGES[mode], False, ""))
+                continue
+            permission = resolve_permission_context(
+                user_id=user_id, session_id=session_id, tool_name=tc["name"], args=tc["args"],
+                policy=permission.policy,
+            )
+            final_decision = _policy_decision(permission)
+            hard_denied = not permission.allowed and not permission.requires_approval
+            if not hard_denied and hook_outcome.decision is not None and hook_outcome.decision != base_decision:
+                final_decision = hook_outcome.decision
+            if (mode in {"yolo", "bypass"} and not final_decision.allowed
+                    and getattr(final_decision, "requires_approval", False)):
                 final_decision = ToolPolicyDecision(
-                    allowed=permission.allowed,
-                    requires_approval=permission.requires_approval,
-                    reason=permission.reason,
-                    matched_rule=permission.matched_rule,
+                    allowed=True, requires_approval=False,
+                    reason="YOLO mode auto-approved a manual tool-policy request.",
+                    matched_rule=getattr(final_decision, "matched_rule", "") or permission.matched_rule,
                 )
-                hard_denied = not permission.allowed and not permission.requires_approval
-                if not hard_denied and hook_outcome.decision is not None and hook_outcome.decision != base_decision:
-                    final_decision = hook_outcome.decision
-                if (
-                    runtime_mode_name in {"yolo", "bypass"}
-                    and not final_decision.allowed
-                    and getattr(final_decision, "requires_approval", False)
-                ):
-                    final_decision = ToolPolicyDecision(
-                        allowed=True,
-                        requires_approval=False,
-                        reason="YOLO mode auto-approved a manual tool-policy request.",
-                        matched_rule=getattr(final_decision, "matched_rule", "") or permission.matched_rule,
+            outcome = await authorize_action(
+                user_id=user_id, session_id=session_id, tool_name=tc["name"], args=tc["args"],
+                decision=final_decision, messages=state["messages"], policy=permission.policy,
+                counters=counters, active_approval=permission.approval,
+                # Nobody watches a group- or schedule-triggered turn; leave
+                # the request for the user instead of holding the session.
+                wait_for_user=state.get("trigger_source") != "system",
+            )
+            if not outcome.allowed:
+                blocked_calls.append((tc, outcome.reason, outcome.pending, outcome.approval_id))
+                with contextlib.suppress(Exception):
+                    run_tool_policy_hooks(
+                        permission.policy, event="deny", user_id=user_id, session_id=session_id,
+                        tool_name=tc["name"], args=tc["args"], decision=final_decision,
                     )
-                counters = state.setdefault("_approval_review_counters", {})
-                outcome = await authorize_action(
-                    user_id=user_id, session_id=session_id, tool_name=tc["name"], args=tc["args"],
-                    decision=final_decision, messages=state["messages"], policy=permission.policy,
-                    counters=counters, active_approval=permission.approval,
-                    # Nobody watches a group- or schedule-triggered turn; leave
-                    # the request for the user instead of holding the session.
-                    wait_for_user=state.get("trigger_source") != "system",
-                )
-                if not outcome.allowed:
-                    blocked_calls.append((tc, outcome.reason, outcome.pending, outcome.approval_id))
-                    with contextlib.suppress(Exception):
-                        run_tool_policy_hooks(
-                            permission.policy, event="deny", user_id=user_id, session_id=session_id,
-                            tool_name=tc["name"], args=tc["args"], decision=final_decision,
-                        )
-                    if counters.get("consecutive_denials", 0) >= 3:
-                        state["_approval_review_blocked"] = True
-                    continue
-                allowed_calls.append(tc)
-                allowed_bindings[tc["id"]] = outcome.binding_hash
-                allowed_call_meta[tc["id"]] = (tc["name"], dict(tc["args"]), permission.policy, outcome.approval_id)
-                print(f">>> [tools] ✅ 调用工具: {tc['name']}")
+                review_blocked = review_blocked or counters.get("consecutive_denials", 0) >= 3
+                continue
+            allowed_calls.append(tc)
+            allowed_bindings[tc["id"]] = outcome.binding_hash
+            allowed_call_meta[tc["id"]] = (tc["name"], dict(tc["args"]), permission.policy, outcome.approval_id)
 
         # Waiting for a later approval can take minutes. Recheck earlier
         # authorizations, and issue short-lived MCP permits only now.
@@ -828,118 +796,71 @@ class UserAwareToolNode:
                 allowed_calls.remove(tc)
                 blocked_calls.append((tc, "审核后策略、模式或工作区发生变化，未执行，请重新审核。", False, approval_id))
                 record_tool_execution(approval_id, user_id, status="not_executed")
-            elif tool_name in {"run_command", "background_command_io", "list_files", "read_file", "write_file", "delete_file"}:
-                normalized_session = session_id or "default"
-                issue_execution_permit(user_id, normalized_session, tool_name,
-                    bind_file_target(tool_name, tool_args, user_id, normalized_session), binding)
+            elif tool_name in _COMMAND_PERMIT_TOOLS:
+                issue_execution_permit(user_id, session_id, tool_name,
+                                       bind_file_target(tool_name, tool_args, user_id, session_id), binding)
 
-        result_messages = discovery_messages
-
-        # For blocked tools, return error ToolMessages directly
         for tc, reason, requires_approval, approval_id in blocked_calls:
-            result_messages.append(
-                ToolMessage(
-                    content=self._format_policy_block_message(
-                        tc["name"],
-                        reason,
-                        requires_approval,
-                        approval_id,
-                    ),
-                    tool_call_id=tc["id"],
-                )
-            )
-
-        # For allowed tools, execute normally via ToolNode
+            result_messages.append(ToolMessage(
+                content=self._format_policy_block_message(tc["name"], reason, requires_approval, approval_id),
+                tool_call_id=tc["id"],
+            ))
+        update = {
+            "messages": result_messages,
+            "_approval_review_counters": counters,
+            "_conversation_approval_prompts": [reason for _, reason, pending, _ in blocked_calls if pending],
+        }
+        if review_blocked:
+            update["_approval_review_blocked"] = True
         if allowed_calls:
             modified_message.tool_calls = allowed_calls
-            modified_state = {**state, "messages": state["messages"][:-1] + [modified_message]}
-            try:
-                tool_result = await self.tool_node.ainvoke(modified_state, config)
-            except Exception as exc:
-                error_text = str(exc).strip() or exc.__class__.__name__
-                logger.exception(
-                    "tool execution failed user=%s session=%s tools=%s error=%s",
-                    user_id,
-                    session_id,
-                    [tc["name"] for tc in allowed_calls],
-                    error_text,
-                )
-                for tc in allowed_calls:
-                    meta = allowed_call_meta.get(tc["id"])
-                    if meta is None:
-                        continue
-                    tool_name, tool_args, tool_policy, _approval_id = meta
-                    record_tool_execution(_approval_id, user_id, status="error", detail=error_text)
-                    with contextlib.suppress(Exception):
-                        run_tool_policy_hooks(
-                            tool_policy,
-                            event="after_error",
-                            user_id=user_id,
-                            session_id=session_id,
-                            tool_name=tool_name,
-                            args=tool_args,
-                            result=error_text,
-                        )
-                    result_messages.append(
-                        ToolMessage(
-                            content=self._build_tool_result_payload(
-                                tool_name,
-                                ok=False,
-                                error_type="tool_execution_error",
-                                retryable=True,
-                                message=(
-                                    "工具调用失败。请检查参数是否符合工具定义后重试；"
-                                    "如果问题来自工具运行期异常，请修正输入或改用更合适的工具。"
-                                ),
-                                details={
-                                    "error": error_text,
-                                },
-                            ),
-                            tool_call_id=tc["id"],
-                            name=tool_name,
-                        )
-                    )
-                return {"messages": result_messages}
-            tool_messages = tool_result.get("messages", [])
-            result_messages.extend(tool_messages)
-            for msg in tool_messages:
-                tool_call_id = getattr(msg, "tool_call_id", "")
-                meta = allowed_call_meta.get(tool_call_id)
-                if meta is None:
-                    continue
-                tool_name, tool_args, tool_policy, approval_id = meta
-                result_text = getattr(msg, "content", "")
-                failed = getattr(msg, "status", "") == "error" or str(result_text).startswith(("❌", "⚠️", "Error"))
-                record_tool_execution(approval_id, user_id, status="error" if failed else "returned")
-                try:
-                    run_tool_policy_hooks(
-                        tool_policy,
-                        event="after",
-                        user_id=user_id,
-                        session_id=session_id,
-                        tool_name=tool_name,
-                        args=tool_args,
-                        result=result_text,
-                    )
-                except Exception as exc:
-                    print(f">>> [tools] ⚠️ tool policy after hook failed: {exc}")
-                try:
-                    result_preview = str(result_text)
-                    if result_preview.startswith(("❌", "⚠️")):
-                        run_tool_policy_hooks(
-                            tool_policy,
-                            event="after_error",
-                            user_id=user_id,
-                            session_id=session_id,
-                            tool_name=tool_name,
-                            args=tool_args,
-                            result=result_text,
-                        )
-                except Exception as exc:
-                    print(f">>> [tools] ⚠️ tool policy after_error hook failed: {exc}")
+            result_messages.extend(await self._execute(
+                {**state, "messages": state["messages"][:-1] + [modified_message]}, config,
+                allowed_calls, allowed_call_meta, user_id=user_id, session_id=session_id,
+            ))
+        return update
 
-        return {"messages": result_messages,
-                "_conversation_approval_prompts": [reason for _, reason, pending, _ in blocked_calls if pending]}
+    async def _execute(self, state, config, calls, call_meta, *, user_id: str, session_id: str) -> list[ToolMessage]:
+        """Run the authorized calls; record each outcome and run the after hooks."""
+        try:
+            tool_messages = (await self.tool_node.ainvoke(state, config)).get("messages", [])
+        except Exception as exc:
+            error_text = str(exc).strip() or exc.__class__.__name__
+            logger.exception("tool execution failed user=%s session=%s tools=%s error=%s",
+                             user_id, session_id, [tc["name"] for tc in calls], error_text)
+            failed = []
+            for tc in calls:
+                tool_name, tool_args, tool_policy, approval_id = call_meta[tc["id"]]
+                record_tool_execution(approval_id, user_id, status="error", detail=error_text)
+                with contextlib.suppress(Exception):
+                    run_tool_policy_hooks(tool_policy, event="after_error", user_id=user_id, session_id=session_id,
+                                          tool_name=tool_name, args=tool_args, result=error_text)
+                failed.append(ToolMessage(
+                    content=tool_result_payload(
+                        tool_name, ok=False, error_type="tool_execution_error", retryable=True,
+                        message="工具调用失败。请检查参数是否符合工具定义后重试；如果问题来自工具运行期异常，请修正输入或改用更合适的工具。",
+                        details={"error": error_text},
+                    ),
+                    tool_call_id=tc["id"], name=tool_name,
+                ))
+            return failed
+        for msg in tool_messages:
+            meta = call_meta.get(getattr(msg, "tool_call_id", ""))
+            if meta is None:
+                continue
+            tool_name, tool_args, tool_policy, approval_id = meta
+            result_text = getattr(msg, "content", "")
+            preview = str(result_text)
+            failed = getattr(msg, "status", "") == "error" or preview.startswith(("❌", "⚠️", "Error"))
+            record_tool_execution(approval_id, user_id, status="error" if failed else "returned")
+            events = ["after"] + (["after_error"] if preview.startswith(("❌", "⚠️")) else [])
+            for event in events:
+                try:
+                    run_tool_policy_hooks(tool_policy, event=event, user_id=user_id, session_id=session_id,
+                                          tool_name=tool_name, args=tool_args, result=result_text)
+                except Exception as exc:
+                    logger.warning("tool policy %s hook failed: %s", event, exc)
+        return tool_messages
 
 
 def _mcp_instance_env() -> dict[str, str]:
@@ -949,6 +870,25 @@ def _mcp_instance_env() -> dict[str, str]:
         for key, value in os.environ.items()
         if key.startswith(("CLAWCROSS_", "PORT_")) or key in {"INTERNAL_TOKEN", "OASIS_BASE_URL"}
     }
+
+
+@dataclass(frozen=True)
+class _Turn:
+    """What one model call resolves once from the agent state."""
+    user_id: str
+    session_id: str
+    is_subagent: bool
+    profile: object | None  # the subagent profile, for a subagent session
+    mode: str
+    mode_payload: dict
+    policy: object
+    turn_count: int
+    max_turns: int | None
+    max_tokens: int | None
+
+    @property
+    def thread_id(self) -> str:
+        return f"{self.user_id}#{self.session_id}"
 
 
 class TeamAgent:
@@ -979,10 +919,17 @@ class TeamAgent:
         # Per-thread lock: 防止 system_trigger 和用户对话并发操作同一 checkpoint
         self._thread_state_registry = ThreadStateRegistry()
 
-        # --- New feature instances ---
-        self._streaming_executor = get_streaming_executor()
         self._tool_registry = LazyToolRegistry()
-        self._cache_manager = SystemPromptCacheManager()
+
+    @property
+    def _measurements(self) -> dict[str, dict]:
+        """thread_id -> the last API usage measurement and the view it measured."""
+        return self.__dict__.setdefault("_usage_measurements", {})
+
+    @property
+    def _projections(self) -> dict[str, tuple]:
+        """thread_id -> (summary key, measurement) of the last projected compacted usage."""
+        return self.__dict__.setdefault("_compacted_usage_projections", {})
 
     # ------------------------------------------------------------------
     # Prompt loader (每次模型请求重新读取)
@@ -1004,80 +951,37 @@ class TeamAgent:
                 with open(filepath, "r", encoding="utf-8") as f:
                     loaded[key] = f.read().strip()
             except FileNotFoundError:
-                print(f"[prompts] ⚠️ 未找到 {filepath}，将使用内置默认值")
+                logger.warning("prompt template %s not found; using an empty template", filepath)
                 loaded[key] = ""
 
         return loaded
 
     @staticmethod
-    def _build_tool_result_payload(
-        tool_name: str,
-        *,
-        ok: bool,
-        message: str,
-        error_type: str = "",
-        retryable: bool = False,
-        details: dict | None = None,
-    ) -> str:
-        """Build a structured tool result payload for the model to parse reliably."""
-        payload = {
-            "ok": ok,
-            "tool": tool_name,
-            "message": message,
-        }
-        if not ok:
-            payload["error_type"] = error_type or "tool_error"
-            payload["retryable"] = bool(retryable)
-        if details:
-            payload["details"] = details
-        return json.dumps(payload, ensure_ascii=False)
-
-    @staticmethod
     def _find_invalid_tool_feedback(response) -> tuple[ToolMessage, str] | None:
-        """Build a repair ToolMessage for the first invalid tool call, if any."""
-        import json as _json
-        import logging
-
-        for _tc_list_name in ("tool_calls", "invalid_tool_calls"):
-            for _tc in getattr(response, _tc_list_name, None) or []:
-                _args = _tc.get("args") if _tc_list_name == "tool_calls" else _tc.get("args", "")
-                if _args is None or _args == "" or _args == {}:
-                    if _tc_list_name == "tool_calls":
-                        _tc["args"] = {}
+        """A repair ToolMessage for the first tool call whose arguments are not JSON."""
+        for list_name in ("tool_calls", "invalid_tool_calls"):
+            for call in getattr(response, list_name, None) or []:
+                args = call.get("args") if list_name == "tool_calls" else call.get("args", "")
+                if args is None or args == "" or args == {}:
+                    if list_name == "tool_calls":
+                        call["args"] = {}
                     continue
-                if isinstance(_args, str):
-                    try:
-                        _json.loads(_args)
-                    except (ValueError, TypeError):
-                        logging.getLogger("agent.call_model").warning(
-                            "LLM 返回的 tool_call arguments 不是合法 JSON (可能被截断), "
-                            "name=%s, id=%s, args_len=%d, 进入本轮修复重试",
-                            _tc.get("name", "?"), _tc.get("id", "?"), len(_args) if _args else 0,
-                        )
-                        _tc_id = _tc.get("id", "unknown")
-                        _tc_name = _tc.get("name", "unknown")
-                        return (
-                            ToolMessage(
-                                content=TeamAgent._build_tool_result_payload(
-                                    _tc_name,
-                                    ok=False,
-                                    error_type="invalid_tool_arguments",
-                                    retryable=True,
-                                    message=(
-                                        "本次工具调用参数不是合法 JSON。"
-                                        "请仅重发同一个工具调用，确保 args 是完整且合法的 JSON，"
-                                        "不要输出额外解释。"
-                                    ),
-                                    details={
-                                        "tool_call_id": _tc_id,
-                                        "raw_args": _args,
-                                    },
-                                ),
-                                tool_call_id=_tc_id,
-                                name=_tc_name,
-                            ),
-                            _tc_name,
-                        )
+                if not isinstance(args, str):
+                    continue
+                try:
+                    json.loads(args)
+                    continue
+                except (ValueError, TypeError):
+                    pass
+                call_id, name = call.get("id", "unknown"), call.get("name", "unknown")
+                logger.warning("tool_call arguments are not valid JSON (possibly truncated): "
+                               "name=%s id=%s args_len=%d; repairing in this turn", name, call_id, len(args))
+                content = tool_result_payload(
+                    name, ok=False, error_type="invalid_tool_arguments", retryable=True,
+                    message="本次工具调用参数不是合法 JSON。请仅重发同一个工具调用，确保 args 是完整且合法的 JSON，不要输出额外解释。",
+                    details={"tool_call_id": call_id, "raw_args": args},
+                )
+                return ToolMessage(content=content, tool_call_id=call_id, name=name), name
         return None
 
     def _get_user_skills(self, user_id: str, teams: list[str] | tuple[str, ...] = ()) -> str:
@@ -1224,7 +1128,7 @@ class TeamAgent:
         # Mark essential tools as always-loaded
         self._tool_registry.set_always_loaded({
             # No "search_files" — no server defines one; grep through run_command.
-            "read_file", "write_file", "list_files", "run_command", "show_ui_panel",
+            "read_file", "write_file", "list_files", "run_command", "show_ui_panel", "set_session_title",
         })
 
         # 4. Build the fixed model -> tools -> model loop.  A general-purpose
@@ -1235,7 +1139,6 @@ class TeamAgent:
 
         tool_node = UserAwareToolNode(
             self._mcp_tools,
-            lambda: self._mcp_tools,
             find_internal_session_meta_fn=self._find_internal_session_meta,
             tool_registry=self._tool_registry,
         )
@@ -1246,12 +1149,6 @@ class TeamAgent:
             context_store=self._context_store,
             on_turn_complete=self._queue_background_compression,
         )
-
-        # 5. Run initial TTL cleanup (new)
-        with contextlib.suppress(Exception):
-            cleanup_counts = run_ttl_cleanup()
-            if cleanup_counts:
-                print(f"[startup] TTL cleanup: {cleanup_counts}")
 
         print("--- Agent 服务已启动，外部定时/用户输入双兼容就绪 ---")
         print(f"    工具注册: {self._tool_registry.tool_count} tools"
@@ -1275,7 +1172,7 @@ class TeamAgent:
         try:
             await self._context_store_ctx.aclose_thread(thread_id)
         except Exception as e:
-            logging.getLogger("agent").warning("close_thread_checkpoint failed for %s: %s", thread_id, e)
+            logger.warning("close_thread_checkpoint failed for %s: %s", thread_id, e)
 
     async def invalidate_background_compression(self, thread_id: str) -> None:
         await self._background_compression.invalidate(thread_id)
@@ -1285,8 +1182,8 @@ class TeamAgent:
 
     def forget_thread_state(self, thread_id: str) -> None:
         self._thread_state_registry.forget(thread_id)
-        getattr(self, "_usage_measurements", {}).pop(thread_id, None)
-        getattr(self, "_compacted_usage_projections", {}).pop(thread_id, None)
+        self._measurements.pop(thread_id, None)
+        self._projections.pop(thread_id, None)
 
     def _queue_background_compression(self, state: dict) -> None:
         """Schedule summarization only after the final reply is persisted."""
@@ -1317,196 +1214,50 @@ class TeamAgent:
         try:
             return await purge_old_checkpoints(self._db_path, thread_id, keep=keep)
         except Exception as e:
-            import logging
-            logging.getLogger("agent").warning("purge_checkpoints failed for %s: %s", thread_id, e)
+            logger.warning("purge_checkpoints failed for %s: %s", thread_id, e)
             return 0
 
     # ------------------------------------------------------------------
-    # Model factory
-    # ------------------------------------------------------------------
-    # 模型名 -> 厂商 映射已移至 src/llm_factory.py（全局共享）
-
-    @staticmethod
-    def _get_model(max_tokens: int | None = None) -> BaseChatModel:
-        from common.llm_factory import create_chat_model
-        if max_tokens is not None and max_tokens > 0:
-            return create_chat_model(max_tokens=max_tokens)
-        return create_chat_model()
-
-    # ------------------------------------------------------------------
-    # Conditional edge: route internal tools vs external tools vs end
+    # Loop routing
     # ------------------------------------------------------------------
     def _should_continue(self, state: AgentState) -> bool:
-        """
-        条件路由：
-        - 无 tool_calls → "end" (正常结束)
-        - 所有 tool_calls 都是内部工具 → "tools" (继续内部循环)
-        - 存在外部工具调用 → "end" (中断返回 tool_calls 给调用方)
-        """
+        """Run tools only when every call is one of ours; a caller-supplied
+        (external) tool call ends the loop and goes back to the caller."""
         last_msg = state["messages"][-1]
-        if not hasattr(last_msg, "tool_calls") or not last_msg.tool_calls:
+        if not getattr(last_msg, "tool_calls", None):
             return False
-
         external_names = _external_tool_names(state)
         for tc in last_msg.tool_calls:
             name = tc["name"]
             if name in external_names or canonical_tool_name(name) not in self._internal_tool_names:
-                # 发现外部工具调用，中断循环让调用方处理
-                print(f">>> [route] 🔀 外部工具调用检测: {tc['name']}，中断返回给调用方")
+                logger.info("external tool call %s: returning it to the caller", name)
                 return False
         return True
 
     # ------------------------------------------------------------------
-    # Core graph node
+    # Model step
     # ------------------------------------------------------------------
     async def _call_model(self, state: AgentState, config: RunnableConfig | None = None):
-        """Invoke the LLM with dynamic tool binding and tool-state notification."""
+        """One model step: build the request from live state, call the model, record usage."""
         if state.get('_conversation_approval_prompts'):
             return {'messages': [AIMessage(content='\n\n'.join(state['_conversation_approval_prompts']))],
                     '_conversation_approval_prompts': []}
         if state.get("_approval_review_blocked"):
-            return {"messages": [AIMessage(content="自动审核连续拒绝三次，本轮已停止执行。请查看拒绝原因并给出新的指示。")], "_approval_review_blocked": False}
+            return {"messages": [AIMessage(content="自动审核连续拒绝三次，本轮已停止执行。请查看拒绝原因并给出新的指示。")],
+                    "_approval_review_blocked": False}
 
-        user_id = state.get("user_id", "__global__")
-        session_id = state.get("session_id", "")
-        from webot.approval_review import review_context, resolve_conversation_reply
-        resolve_conversation_reply(user_id, session_id, review_context(state.get('messages') or []))
-        subagent_meta = parse_subagent_session_id(session_id) if session_id else None
-        subagent_profile = (
-            get_agent_profile(subagent_meta["agent_type"], user_id=user_id) if subagent_meta else None
-        )
-        is_subagent = bool(subagent_meta) or (session_id.startswith("oasis_") if session_id else False)
-        response_max_tokens = state.get("max_tokens")
-        effective_max_turns = resolve_max_turns(
-            state.get("max_turns"),
-            subagent_profile.max_turns if subagent_profile else None,
-        )
-        current_turn_count = state.get("turn_count") or 0
-        runtime_mode = get_session_state(user_id, session_id)
-        runtime_mode_name = effective_session_mode(user_id, session_id, state.get("session_mode"))
-        if state.get("session_mode") and current_turn_count == 0:
-            save_session_mode(user_id, session_id, mode=runtime_mode_name)
-        runtime_mode_payload = {
-            "mode": runtime_mode_name,
-            "status": runtime_mode.get("status", "active") if isinstance(runtime_mode, dict) else getattr(runtime_mode, "status", "active"),
-            "reason": runtime_mode.get("summary", "") if isinstance(runtime_mode, dict) else getattr(runtime_mode, "summary", ""),
-        }
-        session_policy = get_tool_policy(user_id)
-        if current_turn_count == 0 or len(state.get("messages") or []) <= 1:
-            with contextlib.suppress(Exception):
-                run_tool_policy_hooks(
-                    session_policy,
-                    event="session_start",
-                    user_id=user_id,
-                    session_id=session_id,
-                    tool_name="__session__",
-                    args={
-                        "mode": runtime_mode_name,
-                        "is_subagent": is_subagent,
-                    },
-                )
-        last_input_message = state["messages"][-1] if state.get("messages") else None
-        if isinstance(last_input_message, HumanMessage):
-            with contextlib.suppress(Exception):
-                run_tool_policy_hooks(
-                    session_policy,
-                    event="user_prompt_submit",
-                    user_id=user_id,
-                    session_id=session_id,
-                    tool_name="__session__",
-                    args={
-                        "mode": runtime_mode_name,
-                        "trigger_source": state.get("trigger_source") or "user",
-                        "content": str(last_input_message.content)[:500],
-                    },
-                )
+        turn = self._begin_turn(state)
+        external_defs = _external_tool_defs(state)
+        external_tool_names = {func_def["name"] for func_def in external_defs}
 
-        # The model sees core schemas plus compact discovery for eligible tail
-        # tools. The execution node recomputes this same allow set before calls.
-        allowed_names = available_internal_tool_names(
-            self._mcp_tools, user_id=user_id, session_id=session_id,
-            state=state, find_session_meta=self._find_internal_session_meta,
-        )
-        filtered_tools = [tool for tool in self._mcp_tools
-                          if tool.name in allowed_names and tool.name in self._tool_registry.always_loaded_names]
-        long_tail_names = allowed_names - self._tool_registry.always_loaded_names
-
-        # Only send tools the agent may call in this session. The tool node
-        # enforces the same list again at execution time.
-        external_tools_defs = state.get("external_tools") or []
-        external_func_defs: list[dict] = []
-        for ext_tool in external_tools_defs:
-            # 支持 OpenAI 标准格式: {"type":"function","function":{...}} 或简化格式 {"name":...,"parameters":...}
-            if ext_tool.get("type") == "function":
-                func_def = ext_tool.get("function", {})
-            else:
-                func_def = ext_tool
-            if func_def.get("name") and func_def["name"] not in {"tool_search", "tool_call"}:
-                external_func_defs.append(func_def)
-        external_tool_names: set[str] = {func_def["name"] for func_def in external_func_defs}
-
-        base_model = self._get_model(response_max_tokens)
-
-        # Per-request LLM override (OASIS SessionExpert, etc.) — read before cheap routing
-        llm_ov = state.get("llm_override")
-
-        # --- Smart model routing (new: ported from Hermes Agent) ---
-        # Route simple messages to cheaper model if configured
-        if not is_subagent and not llm_ov and isinstance(last_input_message, HumanMessage):
-            msg_text = str(last_input_message.content) if isinstance(last_input_message.content, str) else ""
-            if msg_text:
-                cheap_route = resolve_turn_route(msg_text)
-                if cheap_route and cheap_route.get("model"):
-                    from common.llm_factory import create_chat_model as _create_cheap
-                    base_model = _create_cheap(
-                        model=cheap_route["model"],
-                        provider=cheap_route.get("provider"),
-                        api_key=cheap_route.get("api_key"),
-                        base_url=cheap_route.get("base_url"),
-                        max_tokens=response_max_tokens or 2048,
-                    )
-                    print(f">>> [routing] cheap model route: {cheap_route['model']} reason={cheap_route.get('routing_reason')}")
-
-        # --- Model hot-swap: check for pending model swap request ---
-        model_swap = consume_model_swap(user_id, session_id)
-        if model_swap:
-            from common.llm_factory import create_chat_model as _create
-            base_model = _create(
-                model=model_swap.target_model,
-                max_tokens=response_max_tokens or 2048,
-            )
-            print(f">>> [model] 🔄 hot-swap to {model_swap.target_model} reason={model_swap.reason}")
-
-        # Apply llm_override (already read above for routing guard)
-        if llm_ov:
-            from common.llm_factory import create_chat_model as _create
-            base_model = _create(
-                model=llm_ov.get("model"),
-                api_key=llm_ov.get("api_key"),
-                base_url=llm_ov.get("base_url"),
-                provider=llm_ov.get("provider"),
-                max_tokens=response_max_tokens or 2048,
-            )
-        elif subagent_profile and subagent_profile.preferred_model:
-            from common.llm_factory import create_chat_model as _create
-            base_model = _create(
-                model=subagent_profile.preferred_model,
-                max_tokens=response_max_tokens or 2048,
-            )
-
-        # 工具参数在解码端按 JSON schema 强约束（strict tool calling）。
-        # 只发送本轮可用工具；启用列表改变时 tools 前缀也会改变。
-        base_model, strict_tools, bind_kwargs = strict_tool_binding(base_model)
-        bind_tools_list: list = [bind_tool_schema(t, strict=strict_tools) for t in filtered_tools]
-        bind_tools_list.extend(discovery_tool_schemas(self._tool_registry, long_tail_names, strict=strict_tools))
-        # 以 OpenAI function 格式传入 bind_tools（LangChain 支持 dict 格式）
-        if runtime_mode_name not in {"chat", "readonly"}:
-            bind_tools_list += [external_tool_schema(d, strict=strict_tools) for d in external_func_defs]
+        # Tool arguments are constrained at decode time by their JSON schema.
+        # Only tools this session may call this turn are sent.
+        base_model, strict_tools, bind_kwargs = strict_tool_binding(self._select_model(state, turn))
+        bind_tools_list = self._turn_tool_schemas(state, turn, external_defs, strict=strict_tools)
         llm = base_model.bind_tools(bind_tools_list, **bind_kwargs) if bind_tools_list else base_model
 
         # A JSON schema applies only to the terminal text answer, after ReAct
-        # finishes using tools. The terminal call uses provider-constrained
-        # decoding, never prompt-only formatting or retry-based repair.
+        # finishes using tools, and is decoded with provider constraints.
         response_format = state.get("response_format")
         structured_final = bool(response_format and response_format.get("type") == "json_schema")
         deepseek_structured = structured_final and any(
@@ -1517,535 +1268,118 @@ class TeamAgent:
             format_kwargs, reply_format_hint = reply_format_binding(base_model, response_format)
             if format_kwargs:
                 llm = llm.bind(**format_kwargs)
-
-        # Anthropic prompt caching is opt-in (needs an explicit cache_control
-        # breakpoint per request; unlike OpenAI/DeepSeek it does not cache
-        # automatically). langchain_anthropic places this on the last eligible
-        # content block, i.e. the tail of the current request — the standard
-        # "mark the tail each turn" pattern so next turn's (longer) prefix
-        # hits cache up through this point. Safe to always set: a no-op cost
-        # if the resulting prefix isn't actually stable turn-to-turn yet.
+        # Anthropic caches only at an explicit breakpoint; marking the request
+        # tail every turn lets the next, longer prefix hit the cache.
         from langchain_anthropic import ChatAnthropic
         if isinstance(base_model, ChatAnthropic):
             llm = llm.bind(cache_control={"type": "ephemeral"})
-
-        # Session mode can change mid-session; it belongs in the runtime tail,
-        # never in the system identity assembled from live sources.
-        session_mode_prompt = build_session_mode_message(runtime_mode_name, runtime_mode_payload.get('reason', ''))
-
-        # Rebuild from live files and Agent metadata; persisted first-turn
-        # prompts are legacy data and must never override current settings.
-        user_id = state.get("user_id", "__global__")
-        base_prompt, prompts = self._build_live_system_prompt(user_id, session_id, is_subagent)
-
-        session_meta = self._find_internal_session_meta(user_id, session_id or "") if (user_id and session_id) else None
-        session_teams = sorted({str(team).strip() for team in ((session_meta or {}).get("teams") or []) if str(team).strip()})
-        show_skills = (not is_subagent) or (subagent_profile and subagent_profile.include_user_skills)
-        team_skill_context = render_team_skill_context(
-            session_teams,
-            self._get_user_skills(user_id, session_teams) if show_skills else "",
-        )
-
-        # The inbox worker's HumanMessage already carries its digest. For any
-        # other turn, surface newly queued messages once on the first model
-        # call; unread messages previously notified stay in the inbox only.
-        runtime_inbox = []
-        runtime_inbox_count = 0
-        runtime_inbox_new_count = 0
-        if should_inject_new_inbox_notice(state, current_turn_count):
-            runtime_inbox_new_count = count_inbox_messages(user_id, session_id, status="queued")
-            if runtime_inbox_new_count:
-                runtime_inbox_count = count_inbox_messages(user_id, session_id, status="unread")
-                runtime_inbox = [
-                    {
-                        "message_id": item.message_id,
-                        "source_session": item.source_session,
-                        "source_label": item.source_label,
-                        "summary": item.summary,
-                        "status": item.status,
-                    }
-                    for item in list_inbox_messages(user_id, session_id, status="queued", limit=3)
-                ]
-        pending_approvals = [
-            {
-                "approval_id": approval.approval_id,
-                "tool_name": approval.tool_name,
-                "status": approval.status,
-            }
-            for approval in list_tool_approvals(user_id, session_id, status="pending", limit=5)
-        ]
-        # Reading memory for a model call must not rewrite its index and
-        # upsert runtime metadata when no memory entry changed.
-        memory_state = get_memory_state(user_id, session_id)
-        runtime_context_block = render_runtime_context_block(
-            mode=runtime_mode_payload,
-            pending_approvals=pending_approvals,
-            inbox=runtime_inbox,
-            inbox_unread_count=runtime_inbox_count,
-            inbox_new_count=runtime_inbox_new_count,
-            memory=memory_state,
-        )
-        # Not appended to base_prompt — this is live per-turn state (inbox,
-        # pending approvals, ...), it belongs in the dynamic tail
-        # below, not baked into the stable system prompt.
-
-        # Everything that can legitimately change every turn (session mode,
-        # live runtime state) is assembled here as
-        # one block and attached to the current turn's message further below —
-        # never folded into base_prompt. Unchanged source files produce the
-        # same system prefix; actual edits take effect on the next request.
-        # Context grows by appending new content, not by rewriting the stable
-        # prefix.
-        dynamic_context_block = (
-            f"【Session Mode】\n{session_mode_prompt}\n\n"
-            f"{runtime_context_block}\n"
-        )
-        from common.conversation_context import group_memberships
-        dynamic_context_block += "\n" + render_group_context(
-            state["messages"], memberships=group_memberships(user_id, session_id)) + "\n"
-        if team_skill_context:
-            dynamic_context_block += f"\n{team_skill_context}\n"
-        if reply_format_hint:
-            dynamic_context_block += f"\n[回复格式] {reply_format_hint}\n"
-
-        history_messages = list(state["messages"])
-
-        # --- Context references expansion (new: ported from Hermes Agent) ---
-        # Expand @file:, @diff, @staged, @folder:, @git: references in latest user message
-        if history_messages and isinstance(history_messages[-1], HumanMessage):
-            last_content = history_messages[-1].content
-            if isinstance(last_content, str) and "@" in last_content:
-                from webot.workspace import resolve_session_workspace
-                ws = resolve_session_workspace(user_id, session_id)
-                cwd_path = str(ws.cwd or ws.root or "")
-                if cwd_path:
-                    ctx_result = await expand_context_references(
-                        last_content,
-                        cwd=cwd_path,
-                        context_limit=12000 if is_subagent else 24000,
-                        allowed_root=cwd_path,
-                    )
-                    if ctx_result.references_expanded > 0:
-                        history_messages[-1] = history_messages[-1].model_copy(
-                            update={"content": ctx_result.expanded_message}
-                        )
-                        if ctx_result.warnings:
-                            print(f">>> [context-ref] warnings: {ctx_result.warnings}")
-
-        # 清理历史消息中的多模态内容（file/image/audio parts），只保留文本
-        # 避免旧的二进制附件在后续轮次反复发送给 LLM 导致上游 API 报错
-        # 注意：保留最后一条 HumanMessage 的多模态内容（当前轮用户输入）
-        if len(history_messages) > 1:
-            history_messages = self._strip_multimodal_parts(history_messages[:-1]) + [history_messages[-1]]
-
-        # 用本轮实际生效的模型名（可能被 cheap_route / model_swap / llm_override 改过）
-        # 反推 budget，而不是回退到 LLM_MODEL env。
-        current_model_name = (
-            getattr(llm, "model_name", "") or getattr(llm, "model", "") or ""
-        ) or None
-        compact_settings = get_runtime_settings(user_id, session_id).context
-        prefix_cost = estimate_context_components(
-            system_prompt=base_prompt,
-            tools=tool_schemas(bind_tools_list), runtime_state=dynamic_context_block,
-            messages=[],
-        )
-        model_window = resolve_context_window(compact_settings, current_model_name)
-        output_reserve = max(2048, int(response_max_tokens or getattr(base_model, "max_tokens", 0) or 0))
-        history_token_budget = resolve_context_history_budget(
-            compact_settings, is_subagent=is_subagent, model=current_model_name,
-            prefix_tokens=sum(prefix_cost.values()), output_reserve=output_reserve,
-        )
-        _, preserve_recent_messages = resolve_history_message_limits(
-            is_subagent=is_subagent,
-            token_budget=history_token_budget,
-        )
-        state["_background_compaction_config"] = {
-            "history_token_budget": history_token_budget,
-            "preserve_recent": preserve_recent_messages,
-            "settings": compact_settings,
-            "context_window": model_window,
-            "model": current_model_name or "",
-        }
-        # 记下本轮模型，供静态路径（session_history / session_status）后续使用
-        self._thread_state_registry.set_thread_model(
-            f"{user_id}#{session_id}", current_model_name or ""
-        )
-
-        # 上一轮 API 真实返回的占用 (input+output) = 真实上下文占用。直接拿它做本轮
-        # 新输入瘦身 / 压缩判断，无需字数估算：上下文是逐轮增长的，上一轮真值是当前占用
-        # 的可靠下界。带上 output 因为它还没并入任何已测 input。
-        thread_id = f"{user_id}#{session_id}"
-        # 服务重启后内存里没有真值：先读回落盘的上一轮 API 用量
-        await self.restore_context_usage(thread_id)
-        last_real_context = self.get_thread_last_context_tokens(thread_id)
-        context_window = model_window
-
-        # Each model call can pick up a newly completed summary, including
-        # within a long tool loop. Ignore API usage from an older summary.
-        current_record = get_context_compaction(self._db_path, thread_id)
-        measurement = getattr(self, "_usage_measurements", {}).get(thread_id, {})
-        state["_turn_compaction_record"] = await self._background_compression.prepare_for_model(
-            user_id=user_id, session_id=session_id, messages=history_messages,
-            history_token_budget=history_token_budget, preserve_recent=preserve_recent_messages,
-            settings=compact_settings, prefix_tokens=sum(prefix_cost.values()),
-            output_reserve=output_reserve, context_window=model_window,
-            model=current_model_name or "",
-            measured_input_tokens=last_real_context if measurement.get("compaction_key") == compaction_key(current_record) else 0,
-        )
-        if compaction_key(current_record) != compaction_key(state["_turn_compaction_record"]):
-            self.project_compacted_context_usage(thread_id, state["_turn_compaction_record"], state["messages"])
-        history_messages = compression_view_from_record(
-            state["_turn_compaction_record"], history_messages,
-        )
-        history_messages = temporary_bounded_view(history_messages, history_token_budget)
-        # Previous API usage may refer to a larger, pre-compaction history.
-        # Judge this input against the view we will actually send this turn.
-        history_messages = trim_new_input_if_oversized(
-            history_messages, user_id=user_id, session_id=session_id,
-            current_context_tokens=sum(prefix_cost.values()) + output_reserve
-                + estimate_messages_tokens(history_messages[:-1]),
-            context_window=context_window,
-        )
-        view_tokens = estimate_messages_tokens(history_messages)
-
-        # --- Token budget tracking ---
-        # 上下文占用优先用上一轮 API 真实占用 (input+output) 相对整窗口口径，
-        # 这是真实的「上下文有多满」；首轮还没有真实值时，回退到字数估算的历史口径。
-        session_budget = get_session_budget(user_id, session_id)
-        # Runtime pressure follows this turn's view. A previous API total may
-        # precede compaction and must not prematurely stop the smaller turn.
-        # After compaction the UI projects the smaller view until API calibration.
-        context_used = sum(prefix_cost.values()) + view_tokens
-        context_budget = context_window
-        session_budget.update_current_context(
-            used_tokens=context_used,
-            budget_tokens=context_budget,
-        )
-        if last_real_context <= 0:
-            # 只有还没有 API 真值时才写估算；有真值时占用和分项已由
-            # record_context_usage 写入，不能用估算覆盖。
-            self.set_thread_context_usage(
-                thread_id,
-                context_used,
-                context_budget,
-            )
-        budget_notice = session_budget.format_budget_notice()
-        if budget_notice:
-            dynamic_context_block += f"\n{budget_notice}\n"
-
-        # --- Cost tracking notice (new) ---
-        cost_tracker = get_cost_tracker(user_id, session_id)
-        cost_notice = cost_tracker.format_cost_notice()
-        if cost_notice:
-            dynamic_context_block += f"\n{cost_notice}\n"
-
-        # --- HUD update (new) ---
-        hud = get_hud(user_id, session_id)
-        if hud.active:
-            hud.update(
-                turns_completed=current_turn_count,
-                turns_remaining=max(0, (effective_max_turns or 50) - current_turn_count),
-            )
-
-        # --- Session resume prompt (new) ---
-        # 只在 turn 0 出现，即逐轮变化：进 base_prompt 会让 turn 1 的 system 与
-        # turn 0 不一致，整条前缀（含工具定义）作废。放进动态块随本轮消息走。
-        if current_turn_count == 0:
-            checkpoint = get_session_checkpoint(user_id, session_id)
-            if checkpoint:
-                resume_prompt = build_resume_prompt(checkpoint)
-                dynamic_context_block += f"\n{resume_prompt}\n"
-
-        # 内部触发仍是 HumanMessage：只给用户查询加文字说明，保留原始多模态内容。
-        is_system = state.get("trigger_source") == "system"
-        if is_system and history_messages and isinstance(history_messages[-1], HumanMessage):
-            original_message = history_messages[-1]
-            original_content = original_message.content
-            if isinstance(original_content, list):
-                prefix = prompts["system_trigger"].format(original_text="")
-                content = [{"type": "text", "text": prefix}, *original_content]
-            else:
-                content = prompts["system_trigger"].format(original_text=original_content)
-            history_messages = history_messages[:-1] + [original_message.model_copy(update={"content": content})]
-
-        # 发往 LLM 前最后一次 tool 序列校验：须在 compact/compress 与系统触发改写之后，
-        # 否则摘要截断可能再次产生「孤儿 Tool / 悬空 tool_calls」。
-        history_messages = self._sanitize_messages(history_messages, external_tool_names)
-        from common.llm_factory import extract_text
-        for msg in history_messages:
-            if (
-                isinstance(msg, ToolMessage)
-                and isinstance(msg.content, list)
-                and not self._tool_message_content_has_image(msg.content)
-            ):
-                msg.content = extract_text(msg.content)
-
-        # 动态块按可见历史里的上一份快照计算变化。已发送的变化保存在消息元数据，
-        # 后续请求会重建相同的模型输入；压缩把快照移出上下文时自动发送完整快照。
-        input_messages, injected_runtime_state = assemble_input_messages(
-            base_prompt=base_prompt,
-            history=history_messages,
-            runtime_state=dynamic_context_block,
-        )
-
-        # # === DEBUG: dump full raw input to file for diagnosis ===
-        # try:
-        #     import json, datetime, os as _os
-        #     _dump_dir = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "test")
-        #     _dump_path = _os.path.join(_dump_dir, "llm_input_dump.txt")
-        #     with open(_dump_path, "w", encoding="utf-8") as _f:
-        #         _f.write(f"=== LLM INPUT DUMP @ {datetime.datetime.now().isoformat()} ===\n")
-        #         _f.write(f"Thread: {state.get('user_id','?')}#{state.get('session_id','?')}\n")
-        #         _f.write(f"Total messages: {len(input_messages)}\n")
-        #         _f.write(f"LLM model: {llm.model_name if hasattr(llm, 'model_name') else '?'}\n")
-        #         _f.write(f"LLM base_url: {llm.openai_api_base if hasattr(llm, 'openai_api_base') else '?'}\n\n")
-        #         # Dump each message as full dict via langchain serialization
-        #         from langchain_openai.chat_models.base import _convert_message_to_dict
-        #         for _i, _m in enumerate(input_messages):
-        #             _f.write(f"--- [{_i}] {type(_m).__name__} ---\n")
-        #             try:
-        #                 _d = _convert_message_to_dict(_m)
-        #                 _f.write(json.dumps(_d, ensure_ascii=False, indent=2))
-        #             except Exception as _e:
-        #                 _f.write(f"(serialization error: {_e})\n")
-        #                 _f.write(f"raw __dict__: {_m.__dict__}")
-        #             _f.write("\n\n")
-        # except Exception:
-        #     pass
-        # # === END DEBUG ===
-
-        # _maybe_debug_dump_llm_payload_for_minimax(
-        #     input_messages,
-        #     llm,
-        #     user_id=user_id,
-        #     session_id=session_id,
-        # )
-
-        # 上下文分项统计用：本轮实际发给模型的各组成部分
+        model_name = _model_name(llm)
         context_tool_schemas = tool_schemas(bind_tools_list)
 
-        response = None
-        usage_meta = {}
+        # Rebuilt from live files and Agent metadata on every request. Anything
+        # that changes per turn goes in the dynamic block, never in this prefix.
+        base_prompt, prompts = self._build_live_system_prompt(turn.user_id, turn.session_id, turn.is_subagent)
+        dynamic_context = self._dynamic_context(state, turn, reply_format_hint)
+        history = await self._prepare_history(state, turn)
+
+        settings = get_runtime_settings(turn.user_id, turn.session_id).context
+        prefix_tokens = sum(estimate_context_components(
+            system_prompt=base_prompt, tools=context_tool_schemas, runtime_state=dynamic_context, messages=[],
+        ).values())
+        # Budgets follow the model actually used this turn (route, override).
+        context_window = resolve_context_window(settings, model_name or None)
+        output_reserve = max(2048, int(turn.max_tokens or getattr(base_model, "max_tokens", 0) or 0))
+        history_budget = resolve_context_history_budget(
+            settings, is_subagent=turn.is_subagent, model=model_name or None,
+            prefix_tokens=prefix_tokens, output_reserve=output_reserve,
+        )
+        _, preserve_recent = resolve_history_message_limits(is_subagent=turn.is_subagent, token_budget=history_budget)
+        compaction_config = {
+            "history_token_budget": history_budget,
+            "preserve_recent": preserve_recent,
+            "settings": settings,
+            "context_window": context_window,
+            "model": model_name,
+        }
+        # Static paths (session history / status) read the model used last.
+        self._thread_state_registry.set_thread_model(turn.thread_id, model_name)
+        history, view_record, measured_context = await self._history_view(
+            state, turn, history, settings=settings, history_budget=history_budget,
+            preserve_recent=preserve_recent, prefix_tokens=prefix_tokens,
+            output_reserve=output_reserve, context_window=context_window, model_name=model_name,
+        )
+
+        # Runtime pressure follows this turn's view: a previous API total may
+        # predate compaction. The UI shows the estimate until the API measures.
+        session_budget = get_session_budget(turn.user_id, turn.session_id)
+        cost_tracker = get_cost_tracker(turn.user_id, turn.session_id)
+        context_used = prefix_tokens + estimate_messages_tokens(history)
+        session_budget.update_current_context(used_tokens=context_used, budget_tokens=context_window)
+        if measured_context <= 0:
+            # Once the API has measured the context, an estimate never replaces it.
+            self.set_thread_context_usage(turn.thread_id, context_used, context_window)
+        for notice in (session_budget.format_budget_notice(), cost_tracker.format_cost_notice()):
+            if notice:
+                dynamic_context += f"\n{notice}\n"
+
+        history = self._mark_system_trigger(state, history, prompts)
+        # Validate tool sequences last, after compaction and rewriting, so a
+        # summary cut cannot leave orphan tool results or dangling tool calls.
+        history = self._sanitize_messages(history, external_tool_names)
+        for msg in history:
+            if (isinstance(msg, ToolMessage) and isinstance(msg.content, list)
+                    and not self._tool_message_content_has_image(msg.content)):
+                msg.content = extract_text(msg.content)
+        # The dynamic block is sent as the change since the snapshot visible in
+        # history; compaction that drops the snapshot sends it whole again.
+        input_messages, injected_runtime_state = assemble_input_messages(
+            base_prompt=base_prompt, history=history, runtime_state=dynamic_context,
+        )
+
+        next_turn_count = turn.turn_count + 1
         while True:
-            base_prompt, prompts = self._build_live_system_prompt(user_id, session_id, is_subagent)
+            base_prompt, prompts = self._build_live_system_prompt(turn.user_id, turn.session_id, turn.is_subagent)
             input_messages[0] = SystemMessage(content=base_prompt)
             validate_context_capacity(
                 system_prompt=base_prompt, tools=context_tool_schemas,
-                messages=input_messages[1:], context_window=context_window,
-                output_reserve=output_reserve,
+                messages=input_messages[1:], context_window=context_window, output_reserve=output_reserve,
             )
-            # Stream instead of a single ainvoke() call so on_llm_new_token /
-            # on_chat_model_stream callbacks actually fire per token (needed
-            # for the SSE stream in openai_service.py to deliver real-time
-            # output) — chunks accumulate via AIMessageChunk.__add__ into the
-            # same complete-message shape (.content/.tool_calls/.usage_metadata)
-            # the rest of this function already expects from ainvoke().
-            if structured_final:
-                # Do not stream the unconstrained ReAct draft to the client.
-                # Only the final, schema-decoded answer may leave this node.
-                if deepseek_structured:
-                    from webot.engine.deepseek_responses import deepseek_structured_turn
-
-                    response = await deepseek_structured_turn(
-                        base_model, input_messages, response_format, context_tool_schemas,
-                    )
-                else:
-                    response = await llm.ainvoke(input_messages, config=config)
-            else:
-                full_response = None
-                async for chunk in llm.astream(input_messages, config=config):
-                    full_response = chunk if full_response is None else full_response + chunk
-                if full_response is None:
-                    raise RuntimeError("LLM stream produced no chunks")
-                # Keep the concrete AIMessage class for session history readers.
-                response = AIMessage(**{
-                    field: getattr(full_response, field) for field in AIMessage.model_fields if field != "type"
-                })
-
-            # Only commit the transition after the provider returned it to the
-            # model. A failed call must retry with the same injection. Keeping
-            # the delta in checkpoint metadata preserves it across tool calls,
-            # user turns and process restarts without exposing it in history.
+            response = await self._invoke(
+                llm, base_model, input_messages, config, response_format=response_format,
+                tools=context_tool_schemas, structured_final=structured_final,
+                deepseek_structured=deepseek_structured,
+            )
+            # Commit the injected change only once the provider returned it to
+            # the model, so a failed call retries with the same injection.
             if injected_runtime_state:
-                carrier = history_messages[-1]
-                await self._context_store.record_runtime_state(
-                    thread_id,
-                    source_message=carrier,
-                    state=dynamic_context_block,
-                    delta=injected_runtime_state,
-                )
-                carrier.additional_kwargs[RUNTIME_STATE_KEY] = dynamic_context_block
-                carrier.additional_kwargs[RUNTIME_DELTA_KEY] = injected_runtime_state
-                for message in reversed(state["messages"]):
-                    same_id = carrier.id and message.id == carrier.id
-                    same_tool = (
-                        isinstance(carrier, ToolMessage)
-                        and isinstance(message, ToolMessage)
-                        and message.tool_call_id == carrier.tool_call_id
-                    )
-                    if not (same_id or same_tool):
-                        continue
-                    message.additional_kwargs[RUNTIME_STATE_KEY] = dynamic_context_block
-                    message.additional_kwargs[RUNTIME_DELTA_KEY] = injected_runtime_state
-                    break
+                await self._commit_runtime_state(state, turn.thread_id, history[-1],
+                                                 dynamic_context, injected_runtime_state)
                 injected_runtime_state = ""
-            next_turn_count = current_turn_count + 1
-
-            # --- Record token usage for budget tracking (new) ---
             usage_meta = getattr(response, "usage_metadata", None) or {}
-            if isinstance(usage_meta, dict) and usage_meta:
-                input_tokens = int(usage_meta.get("input_tokens", 0) or 0)
-                output_tokens = int(usage_meta.get("output_tokens", 0) or 0)
-                # Cache token counts live in the nested ``input_token_details`` for
-                # the LangChain-normalized shape (ChatAnthropic et al.); older /
-                # raw-provider shapes expose them at the top level instead. Reading
-                # only the top level made cache hits silently count as 0.
-                details = usage_meta.get("input_token_details")
-                if isinstance(details, dict) and details:
-                    cache_read_tokens = int(details.get("cache_read", 0) or 0)
-                    cache_creation_tokens = int(details.get("cache_creation", 0) or 0)
-                    # LangChain folds cache tokens into ``input_tokens``, so it is the
-                    # true total context size. The freshly-billed (non-cached) input
-                    # is the remainder; bill only that at the full input rate so the
-                    # cached portion is not double-charged via cache_read/write.
-                    total_input_tokens = input_tokens
-                    fresh_input_tokens = max(0, input_tokens - cache_read_tokens - cache_creation_tokens)
-                else:
-                    cache_read_tokens = int(usage_meta.get("cache_read_input_tokens", 0) or 0)
-                    cache_creation_tokens = int(usage_meta.get("cache_creation_input_tokens", 0) or 0)
-                    # Raw shape: ``input_tokens`` already excludes cache tokens.
-                    fresh_input_tokens = input_tokens
-                    total_input_tokens = input_tokens + cache_read_tokens + cache_creation_tokens
-                if total_input_tokens or output_tokens or cache_creation_tokens or cache_read_tokens:
-                    # Budget tracks the true total context (input incl. cache) so
-                    # context pressure / effective_input reflect reality.
-                    session_budget.record_turn(
-                        input_tokens=total_input_tokens,
-                        output_tokens=output_tokens,
-                        cache_creation_tokens=cache_creation_tokens,
-                        cache_read_tokens=cache_read_tokens,
-                    )
-                    model_name = getattr(llm, "model_name", "") or getattr(llm, "model", "") or ""
-                    # Cost bills the fresh input at full rate and the cached portion
-                    # separately at its (cheaper) cache rates.
-                    cost_tracker.record(
-                        model=model_name,
-                        input_tokens=fresh_input_tokens,
-                        output_tokens=output_tokens,
-                        cache_read_tokens=cache_read_tokens,
-                        cache_write_tokens=cache_creation_tokens,
-                    )
-                    # 记下本轮真实 input/output 作为下一轮压缩判断 / 上下文占用显示的
-                    # 真值依据。占用 = input + output：本轮输出还没并入任何已测 input，
-                    # 要下一轮才被吸收，所以两轮之间得带上它。
-                    try:
-                        context_components = await asyncio.to_thread(
-                            estimate_context_components,
-                            system_prompt=base_prompt,
-                            tools=context_tool_schemas,
-                            # The current delta is now on the carrier message,
-                            # along with earlier deltas restored from history.
-                            runtime_state="",
-                            messages=list(history_messages),
-                        )
-                    except Exception as exc:
-                        logging.getLogger("agent").warning("context breakdown failed: %s", exc)
-                        context_components = {}
-                    accounting = request_accounting(base_prompt, context_tool_schemas, history_messages, response, model_name)
-                    differential = difference_components(getattr(self, "_usage_measurements", {}).get(thread_id, {}), accounting, history_messages, total_input_tokens)
-                    if differential is not None:
-                        accounting["difference_breakdown"] = differential
-                    await self.record_context_usage(
-                        thread_id,
-                        input_tokens=total_input_tokens,
-                        output_tokens=output_tokens,
-                        cache_read_tokens=cache_read_tokens,
-                        model=model_name,
-                        context_window=context_window,
-                        components=context_components,
-                        accounting=accounting,
-                        view_key=compaction_key(state.get("_turn_compaction_record")),
-                    )
-
-            # --- Per-call LLM trace (new, default-off via CLAWCROSS_LLM_CALL_TRACE) ---
-            # One record per ainvoke (incl. tool-retry calls): session + full input/output
-            # + real API token usage. Fire-and-forget so it never blocks the agent.
-            if llm_call_trace_enabled():
-                try:
-                    _trace_input = [
-                        {"role": type(m).__name__.replace("Message", "").lower(),
-                         "content": extract_text(m.content)}
-                        for m in input_messages
-                    ]
-                    asyncio.create_task(asyncio.to_thread(
-                        save_llm_call,
-                        user_id=user_id,
-                        session_id=session_id,
-                        model=getattr(llm, "model_name", "") or getattr(llm, "model", "") or "",
-                        input_messages=_trace_input,
-                        output=extract_text(response.content),
-                        tool_calls=[{"name": tc.get("name"), "args": tc.get("args"), "id": tc.get("id")}
-                                    for tc in (getattr(response, "tool_calls", None) or [])],
-                        token_usage=usage_meta if isinstance(usage_meta, dict) else {},
-                        turn=next_turn_count,
-                    ))
-                except Exception:
-                    pass
-
+            await self._record_call_usage(
+                turn, usage_meta, response=response, model_name=model_name, base_prompt=base_prompt,
+                tools=context_tool_schemas, history=history, context_window=context_window,
+                view_record=view_record, session_budget=session_budget, cost_tracker=cost_tracker,
+            )
+            self._trace_call(turn, model_name, input_messages, response, usage_meta, next_turn_count)
             invalid_feedback = self._find_invalid_tool_feedback(response)
             if invalid_feedback is None:
                 break
-
             error_tool_msg, invalid_tool_name = invalid_feedback
-            logging.getLogger("agent.call_model").warning(
-                "invalid tool call repair retrying: name=%s",
-                invalid_tool_name,
-            )
-            history_messages = history_messages + [response, error_tool_msg]
-            history_messages = self._sanitize_messages(history_messages, external_tool_names)
+            logger.warning("invalid tool call repair retrying: name=%s", invalid_tool_name)
+            history = self._sanitize_messages(history + [response, error_tool_msg], external_tool_names)
             input_messages, _ = assemble_input_messages(
-                base_prompt=base_prompt,
-                history=history_messages,
-                runtime_state=dynamic_context_block,
+                base_prompt=base_prompt, history=history, runtime_state=dynamic_context,
             )
-            continue
 
-        # --- Auto-continue check based on token budget (new) ---
-        if not session_budget.should_auto_continue(min_utility=0.15):
-            print(f">>> [budget] ⚡ marginal utility low ({session_budget.marginal_utility():.2f}), "
-                  f"pressure={session_budget.context_pressure:.1%}")
-
-        if should_stop_for_turn_limit(
-            next_turn_count,
-            effective_max_turns,
-            getattr(response, "tool_calls", None),
-            self._internal_tool_names,
-        ):
-            with contextlib.suppress(Exception):
-                run_tool_policy_hooks(
-                    session_policy,
-                    event="stop",
-                    user_id=user_id,
-                    session_id=session_id,
-                    tool_name="__session__",
-                    args={
-                        "mode": runtime_mode_name,
-                        "reason": "max_turns",
-                    },
-                    result={
-                        "next_turn_count": next_turn_count,
-                        "max_turns": effective_max_turns,
-                    },
-                )
-            response = AIMessage(
-                content=build_turn_limit_message(
-                    extract_text(response.content),
-                    effective_max_turns,
-                )
-            )
+        if should_stop_for_turn_limit(next_turn_count, turn.max_turns,
+                                      getattr(response, "tool_calls", None), self._internal_tool_names):
+            self._session_hook(turn, "stop", {"reason": "max_turns"},
+                               result={"next_turn_count": next_turn_count, "max_turns": turn.max_turns})
+            response = AIMessage(content=build_turn_limit_message(extract_text(response.content), turn.max_turns))
 
         if structured_final and not deepseek_structured and not getattr(response, "tool_calls", None):
-            base_prompt, _ = self._build_live_system_prompt(user_id, session_id, is_subagent)
+            base_prompt, _ = self._build_live_system_prompt(turn.user_id, turn.session_id, turn.is_subagent)
             input_messages[0] = SystemMessage(content=base_prompt)
             validate_context_capacity(
                 system_prompt=base_prompt, tools=[response_format],
@@ -2053,89 +1387,345 @@ class TeamAgent:
                           HumanMessage(content="Give the final answer in the requested schema.")],
                 context_window=context_window, output_reserve=output_reserve,
             )
-            response = await decode_structured_final(
-                base_model, response_format, [*input_messages, response], config,
-            )
+            response = await decode_structured_final(base_model, response_format, [*input_messages, response], config)
             final_usage = getattr(response, "usage_metadata", None) or {}
-            if isinstance(final_usage, dict) and final_usage:
-                final_input = int(final_usage.get("input_tokens", 0) or 0)
-                final_output = int(final_usage.get("output_tokens", 0) or 0)
-                final_details = final_usage.get("input_token_details") or {}
-                final_cache_read = int(final_details.get("cache_read", 0) or 0)
-                final_cache_write = int(final_details.get("cache_creation", 0) or 0)
-                session_budget.record_turn(
-                    input_tokens=final_input, output_tokens=final_output,
-                    cache_creation_tokens=final_cache_write,
-                    cache_read_tokens=final_cache_read,
-                )
-                cost_tracker.record(
-                    model=getattr(base_model, "model_name", "") or getattr(base_model, "model", "") or "",
-                    input_tokens=max(0, final_input - final_cache_read - final_cache_write),
-                    output_tokens=final_output,
-                    cache_read_tokens=final_cache_read,
-                    cache_write_tokens=final_cache_write,
-                )
+            if isinstance(final_usage, dict) and self._bill_usage(final_usage, session_budget, cost_tracker, model_name):
                 usage_meta = {
-                    "input_tokens": int(usage_meta.get("input_tokens", 0) or 0) + final_input,
-                    "output_tokens": int(usage_meta.get("output_tokens", 0) or 0) + final_output,
+                    "input_tokens": int(usage_meta.get("input_tokens", 0) or 0) + int(final_usage.get("input_tokens", 0) or 0),
+                    "output_tokens": int(usage_meta.get("output_tokens", 0) or 0) + int(final_usage.get("output_tokens", 0) or 0),
                 }
 
-        with contextlib.suppress(Exception):
-            run_tool_policy_hooks(
-                session_policy,
-                event="session_end",
-                user_id=user_id,
-                session_id=session_id,
-                tool_name="__session__",
-                args={
-                    "mode": runtime_mode_name,
-                    "turn_count": next_turn_count,
-                    "has_tool_calls": bool(getattr(response, "tool_calls", None)),
-                },
-                result={
-                    "content": extract_text(response.content)[:500],
-                },
-            )
-
-        # --- Trajectory saving (new: ported from Hermes Agent) ---
-        # Save conversation trajectory when no more tool calls (session ending)
-        # Fire-and-forget: spawn in background thread to never block the agent
+        self._session_hook(turn, "session_end", {
+            "turn_count": next_turn_count,
+            "has_tool_calls": bool(getattr(response, "tool_calls", None)),
+        }, result={"content": extract_text(response.content)[:500]})
         if auto_trajectory_enabled() and not getattr(response, "tool_calls", None) and next_turn_count > 1:
-            model_name = getattr(llm, "model_name", "") or getattr(llm, "model", "") or ""
-            traj_messages = [
-                {"role": type(m).__name__.replace("Message", "").lower(), "content": extract_text(m.content)}
-                for m in history_messages[:20]
-            ]
-            traj_messages.append({"role": "assistant", "content": extract_text(response.content)[:2000]})
-            token_usage = {
-                "input_tokens": usage_meta.get("input_tokens", 0) if isinstance(usage_meta, dict) else 0,
-                "output_tokens": usage_meta.get("output_tokens", 0) if isinstance(usage_meta, dict) else 0,
-            }
-            # Non-blocking: run save in thread pool so agent can continue immediately
-            # Fire-and-forget: failures are silently ignored to avoid impacting the agent
-            try:
-                asyncio.create_task(
-                    asyncio.to_thread(
-                        save_trajectory,
-                        user_id=user_id,
-                        session_id=session_id,
-                        messages=traj_messages,
-                        model=model_name,
-                        completed=True,
-                        tool_calls_count=current_turn_count,
-                        token_usage=token_usage,
-                    )
-                )
-            except Exception:
-                pass
+            self._save_trajectory(turn, model_name, history, response, usage_meta)
 
-        # The tool node recomputes the same allow set. Keep the caller's
-        # requested enabled_tools intact so a mode change can expose tools
-        # again on a later model turn.
+        # The tool node recomputes the same allow set. The caller's requested
+        # enabled_tools stay intact so a mode change can expose tools again.
         return {
             "messages": [response],
             "turn_count": next_turn_count,
+            "_background_compaction_config": compaction_config,
         }
+
+    def _begin_turn(self, state: AgentState) -> "_Turn":
+        """Resolve who is calling in which mode, and run the session-level hooks."""
+        user_id = state.get("user_id", "__global__")
+        session_id = state.get("session_id", "")
+        resolve_conversation_reply(user_id, session_id, review_context(state.get("messages") or []))
+        subagent_meta = parse_subagent_session_id(session_id) if session_id else None
+        profile = get_agent_profile(subagent_meta["agent_type"], user_id=user_id) if subagent_meta else None
+        turn_count = state.get("turn_count") or 0
+        stored = get_session_state(user_id, session_id)
+        mode = effective_session_mode(user_id, session_id, state.get("session_mode"))
+        if state.get("session_mode") and turn_count == 0:
+            save_session_mode(user_id, session_id, mode=mode)
+        turn = _Turn(
+            user_id=user_id,
+            session_id=session_id,
+            is_subagent=bool(subagent_meta) or session_id.startswith("oasis_"),
+            profile=profile,
+            mode=mode,
+            mode_payload={"mode": mode, "status": stored.status, "reason": stored.summary},
+            policy=get_tool_policy(user_id),
+            turn_count=turn_count,
+            max_turns=resolve_max_turns(state.get("max_turns"), profile.max_turns if profile else None),
+            max_tokens=state.get("max_tokens"),
+        )
+        if turn_count == 0 or len(state.get("messages") or []) <= 1:
+            self._session_hook(turn, "session_start", {"is_subagent": turn.is_subagent})
+        last_input = state["messages"][-1] if state.get("messages") else None
+        if isinstance(last_input, HumanMessage):
+            self._session_hook(turn, "user_prompt_submit", {
+                "trigger_source": state.get("trigger_source") or "user",
+                "content": str(last_input.content)[:500],
+            })
+        return turn
+
+    @staticmethod
+    def _session_hook(turn: "_Turn", event: str, args: dict, result=None) -> None:
+        """A session-level policy hook; its failure never affects the turn."""
+        with contextlib.suppress(Exception):
+            run_tool_policy_hooks(turn.policy, event=event, user_id=turn.user_id, session_id=turn.session_id,
+                                  tool_name="__session__", args={"mode": turn.mode, **args}, result=result)
+
+    @staticmethod
+    def _select_model(state: AgentState, turn: "_Turn") -> BaseChatModel:
+        """The model for this call: per-request override, else the subagent's
+        preferred model, else a cheap route for a simple user message, else the default."""
+        max_tokens = turn.max_tokens
+        effort = get_runtime_settings(turn.user_id, turn.session_id).inference.reasoning_effort
+        inference = {"reasoning_effort": effort} if effort else {}
+        override = state.get("llm_override")
+        if override:
+            return llm_factory.create_chat_model(
+                model=override.get("model"), api_key=override.get("api_key"),
+                base_url=override.get("base_url"), provider=override.get("provider"),
+                max_tokens=max_tokens or 2048, **inference,
+            )
+        if turn.profile and turn.profile.preferred_model:
+            return llm_factory.create_chat_model(model=turn.profile.preferred_model, max_tokens=max_tokens or 2048, **inference)
+        last_input = (state.get("messages") or [None])[-1]
+        if (not turn.is_subagent and isinstance(last_input, HumanMessage)
+                and isinstance(last_input.content, str) and last_input.content):
+            route = resolve_turn_route(last_input.content)
+            if route and route.get("model"):
+                logger.info("cheap model route: %s reason=%s", route["model"], route.get("routing_reason"))
+                return llm_factory.create_chat_model(
+                    model=route["model"], provider=route.get("provider"), api_key=route.get("api_key"),
+                    base_url=route.get("base_url"), max_tokens=max_tokens or 2048, **inference,
+                )
+        if max_tokens is not None and max_tokens > 0:
+            return llm_factory.create_chat_model(max_tokens=max_tokens, **inference)
+        return llm_factory.create_chat_model(**inference)
+
+    def _turn_tool_schemas(self, state: AgentState, turn: "_Turn", external_defs: list[dict], *, strict: bool) -> list:
+        """Core tool schemas, discovery for the eligible long tail, and caller tools.
+
+        The tool node recomputes the same allow set before it executes a call.
+        """
+        allowed = available_internal_tool_names(
+            self._mcp_tools, user_id=turn.user_id, session_id=turn.session_id,
+            state=state, find_session_meta=self._find_internal_session_meta,
+        )
+        always_loaded = self._tool_registry.always_loaded_names
+        schemas = [bind_tool_schema(tool, strict=strict) for tool in self._mcp_tools
+                   if tool.name in allowed and tool.name in always_loaded]
+        schemas.extend(discovery_tool_schemas(self._tool_registry, allowed - always_loaded, strict=strict))
+        if turn.mode not in {"chat", "readonly"}:
+            schemas.extend(external_tool_schema(func_def, strict=strict) for func_def in external_defs)
+        return schemas
+
+    def _dynamic_context(self, state: AgentState, turn: "_Turn", reply_format_hint: str) -> str:
+        """Per-turn state sent with the current message: mode, inbox, approvals,
+        memory, groups and team skills. Never part of the stable system prefix."""
+        user_id, session_id = turn.user_id, turn.session_id
+        session_meta = self._find_internal_session_meta(user_id, session_id) if (user_id and session_id) else None
+        session_teams = sorted({str(team).strip() for team in ((session_meta or {}).get("teams") or []) if str(team).strip()})
+        show_skills = (not turn.is_subagent) or (turn.profile and turn.profile.include_user_skills)
+        team_skill_context = render_team_skill_context(
+            session_teams, self._get_user_skills(user_id, session_teams) if show_skills else "",
+        )
+        # The inbox worker's HumanMessage already carries its digest. Any other
+        # turn surfaces newly queued messages once, on its first model call.
+        inbox, inbox_unread, inbox_new = [], 0, 0
+        if should_inject_new_inbox_notice(state, turn.turn_count):
+            inbox_new = count_inbox_messages(user_id, session_id, status="queued")
+            if inbox_new:
+                inbox_unread = count_inbox_messages(user_id, session_id, status="unread")
+                inbox = [
+                    {"message_id": item.message_id, "source_session": item.source_session,
+                     "source_label": item.source_label, "summary": item.summary, "status": item.status}
+                    for item in list_inbox_messages(user_id, session_id, status="queued", limit=3)
+                ]
+        pending_approvals = [
+            {"approval_id": approval.approval_id, "tool_name": approval.tool_name, "status": approval.status}
+            for approval in list_tool_approvals(user_id, session_id, status="pending", limit=5)
+        ]
+        runtime_block = render_runtime_context_block(
+            mode=turn.mode_payload, pending_approvals=pending_approvals, inbox=inbox,
+            inbox_unread_count=inbox_unread, inbox_new_count=inbox_new,
+            # Reading memory must not rewrite its index when no entry changed.
+            memory=get_memory_state(user_id, session_id),
+        )
+        from common.conversation_context import group_memberships
+        block = (
+            f"【Session Mode】\n{build_session_mode_message(turn.mode, turn.mode_payload['reason'])}\n\n"
+            f"{runtime_block}\n"
+            "\n" + render_group_context(state["messages"], memberships=group_memberships(user_id, session_id)) + "\n"
+        )
+        if team_skill_context:
+            block += f"\n{team_skill_context}\n"
+        if reply_format_hint:
+            block += f"\n[回复格式] {reply_format_hint}\n"
+        return block
+
+    async def _prepare_history(self, state: AgentState, turn: "_Turn") -> list:
+        """The stored history with @references in the newest user message expanded
+        and older attachments reduced to text placeholders."""
+        history = list(state["messages"])
+        last = history[-1] if history else None
+        if isinstance(last, HumanMessage) and isinstance(last.content, str) and "@" in last.content:
+            from webot.workspace import resolve_session_workspace
+            workspace = resolve_session_workspace(turn.user_id, turn.session_id)
+            cwd_path = str(workspace.cwd or workspace.root or "")
+            if cwd_path:
+                expanded = await expand_context_references(
+                    last.content, cwd=cwd_path, context_limit=12000 if turn.is_subagent else 24000,
+                    allowed_root=cwd_path,
+                )
+                if expanded.references_expanded > 0:
+                    history[-1] = last.model_copy(update={"content": expanded.expanded_message})
+                    if expanded.warnings:
+                        logger.info("context reference warnings: %s", expanded.warnings)
+        # Old binary attachments are not resent every turn; the current input keeps its parts.
+        if len(history) > 1:
+            history = self._strip_multimodal_parts(history[:-1]) + [history[-1]]
+        return history
+
+    async def _history_view(self, state: AgentState, turn: "_Turn", history: list, *, settings,
+                            history_budget: int, preserve_recent: int, prefix_tokens: int,
+                            output_reserve: int, context_window: int, model_name: str):
+        """``(view, compaction record, measured context)``: the history to send,
+        built on the newest completed summary and bounded to the budget."""
+        thread_id = turn.thread_id
+        # After a restart, the last API measurement is read back from disk.
+        await self.restore_context_usage(thread_id)
+        measured_context = self.get_thread_last_context_tokens(thread_id)
+        # Each model call can pick up a newly completed summary, also within a
+        # long tool loop. API usage measured against an older summary is ignored.
+        current = get_context_compaction(self._db_path, thread_id)
+        measurement = self._measurements.get(thread_id, {})
+        record = await self._background_compression.prepare_for_model(
+            user_id=turn.user_id, session_id=turn.session_id, messages=history,
+            history_token_budget=history_budget, preserve_recent=preserve_recent,
+            settings=settings, prefix_tokens=prefix_tokens, output_reserve=output_reserve,
+            context_window=context_window, model=model_name,
+            measured_input_tokens=measured_context if measurement.get("compaction_key") == compaction_key(current) else 0,
+        )
+        if compaction_key(current) != compaction_key(record):
+            self.project_compacted_context_usage(thread_id, record, state["messages"])
+        view = temporary_bounded_view(compression_view_from_record(record, history), history_budget)
+        # The previous API total may describe a larger, pre-compaction history:
+        # judge the new input against the view actually sent this turn.
+        view = trim_new_input_if_oversized(
+            view, user_id=turn.user_id, session_id=turn.session_id,
+            current_context_tokens=prefix_tokens + output_reserve + estimate_messages_tokens(view[:-1]),
+            context_window=context_window,
+        )
+        return view, record, measured_context
+
+    @staticmethod
+    def _mark_system_trigger(state: AgentState, history: list, prompts: dict[str, str]) -> list:
+        """An internal trigger still arrives as a HumanMessage; prefix its notice
+        and keep its original (possibly multimodal) content."""
+        if state.get("trigger_source") != "system" or not history or not isinstance(history[-1], HumanMessage):
+            return history
+        original = history[-1]
+        if isinstance(original.content, list):
+            content = [{"type": "text", "text": prompts["system_trigger"].format(original_text="")}, *original.content]
+        else:
+            content = prompts["system_trigger"].format(original_text=original.content)
+        return history[:-1] + [original.model_copy(update={"content": content})]
+
+    @staticmethod
+    async def _invoke(llm, base_model, input_messages: list, config, *, response_format, tools,
+                      structured_final: bool, deepseek_structured: bool) -> AIMessage:
+        """Call the provider. Streaming fires per-token callbacks for SSE clients;
+        a structured turn never streams its unconstrained ReAct draft."""
+        if structured_final:
+            if deepseek_structured:
+                from webot.engine.deepseek_responses import deepseek_structured_turn
+                return await deepseek_structured_turn(base_model, input_messages, response_format, tools)
+            return await llm.ainvoke(input_messages, config=config)
+        full_response = None
+        async for chunk in llm.astream(input_messages, config=config):
+            full_response = chunk if full_response is None else full_response + chunk
+        if full_response is None:
+            raise RuntimeError("LLM stream produced no chunks")
+        # Keep the concrete AIMessage class for session history readers.
+        return AIMessage(**{field: getattr(full_response, field) for field in AIMessage.model_fields if field != "type"})
+
+    async def _commit_runtime_state(self, state: AgentState, thread_id: str, carrier,
+                                    dynamic_context: str, delta: str) -> None:
+        """Keep the sent runtime-state change in the carrier's metadata, so tool
+        calls, later turns and restarts rebuild the same model input."""
+        await self._context_store.record_runtime_state(
+            thread_id, source_message=carrier, state=dynamic_context, delta=delta,
+        )
+        carrier.additional_kwargs[RUNTIME_STATE_KEY] = dynamic_context
+        carrier.additional_kwargs[RUNTIME_DELTA_KEY] = delta
+        for message in reversed(state["messages"]):
+            same_id = carrier.id and message.id == carrier.id
+            same_tool = (isinstance(carrier, ToolMessage) and isinstance(message, ToolMessage)
+                         and message.tool_call_id == carrier.tool_call_id)
+            if same_id or same_tool:
+                message.additional_kwargs[RUNTIME_STATE_KEY] = dynamic_context
+                message.additional_kwargs[RUNTIME_DELTA_KEY] = delta
+                break
+
+    @staticmethod
+    def _bill_usage(usage: dict, session_budget, cost_tracker, model_name: str):
+        """Record one call's tokens in the session budget and cost; the parsed
+        counts, or None when the provider reported nothing."""
+        if not usage:
+            return None
+        counts = _usage_tokens(usage)
+        total_input, fresh_input, output, cache_read, cache_write = counts
+        if not (total_input or output or cache_read or cache_write):
+            return None
+        session_budget.record_turn(input_tokens=total_input, output_tokens=output,
+                                   cache_creation_tokens=cache_write, cache_read_tokens=cache_read)
+        cost_tracker.record(model=model_name, input_tokens=fresh_input, output_tokens=output,
+                            cache_read_tokens=cache_read, cache_write_tokens=cache_write)
+        return counts
+
+    async def _record_call_usage(self, turn: "_Turn", usage: dict, *, response, model_name: str,
+                                 base_prompt: str, tools: list, history: list, context_window: int,
+                                 view_record, session_budget, cost_tracker) -> None:
+        """Bill the call and keep its API-measured context occupancy (input +
+        output: this output is not yet part of any measured input)."""
+        if not isinstance(usage, dict):
+            return
+        counts = self._bill_usage(usage, session_budget, cost_tracker, model_name)
+        if counts is None:
+            return
+        total_input, _, output, cache_read, _ = counts
+        try:
+            components = await asyncio.to_thread(
+                # The current delta is on the carrier message now, with earlier
+                # deltas restored from history.
+                estimate_context_components, system_prompt=base_prompt, tools=tools,
+                runtime_state="", messages=list(history),
+            )
+        except Exception as exc:
+            logger.warning("context breakdown failed: %s", exc)
+            components = {}
+        accounting = request_accounting(base_prompt, tools, history, response, model_name)
+        differential = difference_components(self._measurements.get(turn.thread_id, {}),
+                                             accounting, history, total_input)
+        if differential is not None:
+            accounting["difference_breakdown"] = differential
+        await self.record_context_usage(
+            turn.thread_id, input_tokens=total_input, output_tokens=output, cache_read_tokens=cache_read,
+            model=model_name, context_window=context_window, components=components,
+            accounting=accounting, view_key=compaction_key(view_record),
+        )
+
+    @staticmethod
+    def _trace_call(turn: "_Turn", model_name: str, input_messages: list, response, usage: dict, turn_number: int) -> None:
+        """One record per provider call, when CLAWCROSS_LLM_CALL_TRACE is on; never blocks the agent."""
+        if not llm_call_trace_enabled():
+            return
+        with contextlib.suppress(Exception):
+            asyncio.create_task(asyncio.to_thread(
+                save_llm_call,
+                user_id=turn.user_id, session_id=turn.session_id, model=model_name,
+                input_messages=[{"role": type(m).__name__.replace("Message", "").lower(),
+                                 "content": extract_text(m.content)} for m in input_messages],
+                output=extract_text(response.content),
+                tool_calls=[{"name": tc.get("name"), "args": tc.get("args"), "id": tc.get("id")}
+                            for tc in (getattr(response, "tool_calls", None) or [])],
+                token_usage=usage if isinstance(usage, dict) else {},
+                turn=turn_number,
+            ))
+
+    @staticmethod
+    def _save_trajectory(turn: "_Turn", model_name: str, history: list, response, usage: dict) -> None:
+        """Save the finished conversation in the background; failures are ignored."""
+        messages = [{"role": type(m).__name__.replace("Message", "").lower(), "content": extract_text(m.content)}
+                    for m in history[:20]]
+        messages.append({"role": "assistant", "content": extract_text(response.content)[:2000]})
+        with contextlib.suppress(Exception):
+            asyncio.create_task(asyncio.to_thread(
+                save_trajectory,
+                user_id=turn.user_id, session_id=turn.session_id, messages=messages, model=model_name,
+                completed=True, tool_calls_count=turn.turn_count,
+                token_usage={"input_tokens": usage.get("input_tokens", 0) if isinstance(usage, dict) else 0,
+                             "output_tokens": usage.get("output_tokens", 0) if isinstance(usage, dict) else 0},
+            ))
 
     # ------------------------------------------------------------------
     # Public interface: tools info
@@ -2217,7 +1807,6 @@ class TeamAgent:
         注意：MiniMax/Anthropic 适配下，tool_use 可能只留在 ``content`` 列表里而 ``tool_calls``
         为空（checkpoint/合并异常）；必须通过 content 里的 ``type=="tool_use"`` 块一并检测。
         """
-        import logging
         _log = logging.getLogger("agent.sanitize")
 
         if not external_tool_names:
@@ -2539,36 +2128,34 @@ class TeamAgent:
             "compaction_key": view_key if view_key is not None else compaction_key(get_context_compaction(self._db_path, thread_id)),
             "request_accounting": accounting or {},
         }
-        if not hasattr(self, "_usage_measurements"):
-            self._usage_measurements = {}
-        self._usage_measurements[thread_id] = record
+        self._measurements[thread_id] = record
         try:
             await asyncio.to_thread(save_context_usage_record, self._db_path, thread_id, record)
         except Exception as exc:
-            logging.getLogger("agent").warning("persist context usage failed for %s: %s", thread_id, exc)
+            logger.warning("persist context usage failed for %s: %s", thread_id, exc)
 
     async def refresh_compacted_context_usage(self, thread_id: str) -> bool:
         await self.restore_context_usage(thread_id)
         record = await asyncio.to_thread(get_context_compaction, self._db_path, thread_id)
         if not record:
             return False
-        measured = getattr(self, "_usage_measurements", {}).get(thread_id, {})
+        measured = self._measurements.get(thread_id, {})
         key = compaction_key(record)
         if measured.get("compaction_key") == key:
             return False
-        projected = getattr(self, "_compacted_usage_projections", {}).get(thread_id)
+        projected = self._projections.get(thread_id)
         if projected and projected[0] == key and projected[1] is measured:
             return False  # This exact summary and API baseline were already projected.
         snapshot = await self.agent_app.aget_state({"configurable": {"thread_id": thread_id}})
         messages = list(snapshot.values.get("messages", [])) if snapshot and snapshot.values else []
-        if getattr(self, "_usage_measurements", {}).get(thread_id, {}) is not measured:
+        if self._measurements.get(thread_id, {}) is not measured:
             return False  # A newer API measurement arrived while reading the view.
         self.project_compacted_context_usage(thread_id, record, messages)
         return True
 
     def project_compacted_context_usage(self, thread_id, record, messages):
         """Publish a prepared view without waiting for another history read."""
-        measured = getattr(self, "_usage_measurements", {}).get(thread_id, {})
+        measured = self._measurements.get(thread_id, {})
         parts = compacted_components(record, messages)
         local_before = sum((measured.get("components") or {}).values())
         ratio = int(measured.get("input_tokens", 0)) / local_before if local_before else 1
@@ -2578,9 +2165,7 @@ class TeamAgent:
         previous = self.get_thread_context_usage(thread_id)
         self.set_thread_context_usage(thread_id, sum(parts.values()), previous.get("budget", 0),
             source="estimate", breakdown=parts, cache_read_tokens=0)
-        if not hasattr(self, "_compacted_usage_projections"):
-            self._compacted_usage_projections = {}
-        self._compacted_usage_projections[thread_id] = (compaction_key(record), measured)
+        self._projections[thread_id] = (compaction_key(record), measured)
 
     async def restore_context_usage(self, thread_id: str) -> bool:
         """内存里没有真值时，从磁盘读回上一轮 API 用量；每个 thread 每个进程只读一次库。"""
@@ -2590,12 +2175,10 @@ class TeamAgent:
         try:
             record = await asyncio.to_thread(get_context_usage_record, self._db_path, thread_id)
         except Exception as exc:
-            logging.getLogger("agent").warning("load context usage failed for %s: %s", thread_id, exc)
+            logger.warning("load context usage failed for %s: %s", thread_id, exc)
             return False
         record = record or {}
-        if not hasattr(self, "_usage_measurements"):
-            self._usage_measurements = {}
-        self._usage_measurements[thread_id] = record
+        self._measurements[thread_id] = record
         input_tokens = max(0, int(record.get("input_tokens") or 0))
         if input_tokens <= 0:
             return False

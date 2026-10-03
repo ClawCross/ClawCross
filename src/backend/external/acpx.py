@@ -8,7 +8,7 @@ import shutil
 import tempfile
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any
 
 from external.oasis_acp_log import mark as _acp_mark
 
@@ -425,32 +425,7 @@ await fn(process.argv[2]);'''
 
     # ── OpsService /acp_control only (do not use from group_chat prompt path) ──
 
-    async def ops_openclaw_exec_slash(
-        self,
-        *,
-        session_key: str,
-        slash: Literal["/new", "/stop"],
-        timeout_sec: int = 180,
-        ttl_sec: int = 300,
-        approve_all: bool | None = None,
-        permission_policy: str | None = None,
-        non_interactive_permissions: str | None = None,
-        allowed_tools: str | None = None,
-    ) -> None:
-        """``acpx … --agent 'openclaw acp --session <key>' exec '/new'|'/stop'``; no acpx ``-s``."""
-        raw = f"openclaw acp --session {shlex.quote(session_key)}"
-        await self._ops_run_acpx(
-            ["--agent", raw, "exec", slash],
-            timeout_sec=timeout_sec,
-            allow_nonzero=True,
-            ttl_sec=ttl_sec,
-            approve_all=approve_all,
-            permission_policy=permission_policy,
-            non_interactive_permissions=non_interactive_permissions,
-            allowed_tools=allowed_tools,
-        )
-
-    async def ops_non_openclaw_reset_session(
+    async def ops_reset_session(
         self,
         *,
         tool: str,
@@ -476,7 +451,7 @@ await fn(process.argv[2]);'''
             allowed_tools=allowed_tools,
         )
 
-    async def ops_non_openclaw_cancel(
+    async def ops_cancel(
         self,
         *,
         tool: str,

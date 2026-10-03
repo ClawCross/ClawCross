@@ -1,7 +1,7 @@
 """What a runtime offers the agent layer.
 
 A runtime runs the sessions of agents: WeBot (``webot.driver``) and the external
-ones (``external``: acp, openclaw, http, llm). The calls are the same for every
+ones (``external``: acp, http, llm). The calls are the same for every
 runtime:
 
 * ``ask``     — send and wait for the reply;

@@ -378,12 +378,6 @@ _DOC_HINTS = {
         "  📖 docs/create_workflow.md  — 工作流中的人设类型说明\n"
         "  ❗ 不阅读文档直接操作可能导致配置错误或功能异常！\n"
     ),
-    "openclaw": (
-        "\n⚠️  【必读】在操作 OpenClaw Agent 之前，请务必先阅读以下文档：\n"
-        "  📖 docs/openclaw-commands.md — OpenClaw agent 集成命令详解\n"
-        "  📖 docs/build_team.md        — 将 OpenClaw agent 加入 Team\n"
-        "  ❗ 不阅读文档直接操作可能导致配置错误或功能异常！\n"
-    ),
     "agents": (
         "\n📖 docs/build_team.md — agent 与 team 的关系、如何把 agent 加进 team\n"
     ),
@@ -392,7 +386,7 @@ _DOC_HINTS = {
         "  📖 docs/build_team.md       — 创建/配置 Team (成员、人设、JSON 文件)\n"
         "  📖 docs/create_workflow.md  — 创建 OASIS 工作流 YAML\n"
         "  📖 docs/cli.md              — 完整 CLI 命令参考和示例\n"
-        "  📖 docs/openclaw-commands.md — OpenClaw agent 集成命令\n"
+        "  📖 docs/openclaw-commands.md — OpenClaw agent（与 codex 相同，经 acpx）\n"
         "  📖 docs/ports.md            — 端口配置和冲突处理\n"
         "  ❗ 执行操作前务必先阅读相关文档，否则可能导致配置错误！\n"
     ),
@@ -568,25 +562,23 @@ def cmd_groups(args):
     hdrs = _group_headers(args.user)
     base = f"{AGENT_BASE}/groups"
     gid = _quote_group_id(args.group_id) if args.group_id else ""
-    if args.action not in {"list", "create"} and not gid:
+    if args.action == "join" and not args.invite:
+        print("❌ 请用 --invite 指定邀请链接", file=sys.stderr)
+        return
+    if args.action not in {"list", "create", "join"} and not gid:
         print("❌ 请指定 --group-id", file=sys.stderr)
         return
 
-    if args.action in {"join", "sharing", "leave", "invite"}:
+    if args.action in {"join", "leave", "invite"}:
         if args.action == "join":
-            password = sys.stdin.readline().rstrip('\r\n') if args.password_stdin else ""
-            data = {"server_url": args.server_url or "", "group_id": args.group_id,
-                    "password": password, "agents": [a.strip() for a in (args.agents or "").split(",") if a.strip()]}
+            data = {"invite": args.invite, "agents": [a.strip() for a in (args.agents or "").split(",") if a.strip()]}
             code, body = _req("POST", base + "/join", headers=hdrs, data=data)
-        elif args.action == "sharing":
-            if not args.password_stdin and not args.data:
-                return _err(400, {"detail": "请用 --password-stdin 提供新密码；空行关闭远程加入"})
-            data = json.loads(args.data) if args.data else {"password": sys.stdin.readline().rstrip('\r\n'), "revoke_connections": args.revoke_connections}
-            code, body = _req("POST", f"{base}/{gid}/sharing", headers=hdrs, data=data)
         elif args.action == "leave":
             code, body = _req("POST", f"{base}/{gid}/leave", headers=hdrs, data={})
         else:
-            code, body = _req("GET", f"{base}/{gid}/invite", headers=hdrs)
+            # The invitation link comes from the front end, which signs it.
+            code, body = _req("POST", f"{FRONT_BASE}/proxy_groups/{gid}/guest-link",
+                              headers=_front_headers(args), data={})
         return _pp(body) if code == 200 else _err(code, body)
 
     if args.action == "list":
@@ -1295,162 +1287,7 @@ def cmd_tunnel(args):
     ).returncode
 
 
-# ── openclaw: OpenClaw Agent 管理 ─────────────────────────────────────────
-def cmd_openclaw(args):
-    """OpenClaw Agent 管理
-
-    参数：
-        args: 命令行参数对象
-    """
-    _check_token()
-    act = args.action
-
-    if act == "sessions":
-        # 查看 OpenClaw 会话列表
-        params = {}
-        if args.filter:
-            params["filter"] = args.filter
-        code, body = _req("GET", f"{AGENT_BASE}/sessions/openclaw", headers=_agent_headers(),
-                           params=params)
-        if code == 200:
-            _pp(body)
-            _print_doc_hint("openclaw")
-        else:
-            _err(code, body)
-
-    elif act == "add":
-        # 添加 OpenClaw Agent
-        data = json.loads(args.data) if args.data else {}
-        code, body = _req("POST", f"{AGENT_BASE}/sessions/openclaw/add", headers=_agent_headers(),
-                           data=data, timeout=35)
-        if code == 200:
-            print("✅ Agent 已添加")
-            _pp(body)
-        else:
-            _err(code, body)
-
-    elif act == "default-workspace":
-        # 获取默认工作区
-        code, body = _req("GET", f"{AGENT_BASE}/sessions/openclaw/default-workspace", headers=_agent_headers())
-        if code == 200:
-            _pp(body)
-        else:
-            _err(code, body)
-
-    elif act == "workspace-files":
-        # 列出工作区文件
-        code, body = _req("GET", f"{AGENT_BASE}/sessions/openclaw/workspace-files", headers=_agent_headers(),
-                           params={"workspace": args.workspace or ""})
-        if code == 200:
-            _pp(body)
-        else:
-            _err(code, body)
-
-    elif act == "workspace-file-read":
-        # 读取工作区文件
-        code, body = _req("GET", f"{AGENT_BASE}/sessions/openclaw/workspace-file", headers=_agent_headers(),
-                           params={"workspace": args.workspace or "",
-                                   "filename": args.filename or ""})
-        if code == 200:
-            _pp(body)
-        else:
-            _err(code, body)
-
-    elif act == "workspace-file-save":
-        # 保存工作区文件
-        data = json.loads(args.data) if args.data else {}
-        code, body = _req("POST", f"{AGENT_BASE}/sessions/openclaw/workspace-file", headers=_agent_headers(),
-                           data=data, timeout=15)
-        if code == 200:
-            print("✅ 文件已保存")
-            _pp(body)
-        else:
-            _err(code, body)
-
-    elif act == "detail":
-        # 获取 Agent 详情
-        code, body = _req("GET", f"{AGENT_BASE}/sessions/openclaw/agent-detail", headers=_agent_headers(),
-                           params={"name": args.name or ""}, timeout=15)
-        if code == 200:
-            _pp(body)
-        else:
-            _err(code, body)
-
-    elif act == "skills":
-        # 查看 Agent 技能
-        params = {}
-        if args.agent:
-            params["name"] = args.agent
-        code, body = _req("GET", f"{AGENT_BASE}/sessions/openclaw/skills", headers=_agent_headers(),
-                           params=params, timeout=20)
-        if code == 200:
-            _pp(body)
-        else:
-            _err(code, body)
-
-    elif act == "tool-groups":
-        # 查看工具组
-        code, body = _req("GET", f"{AGENT_BASE}/sessions/openclaw/tool-groups", headers=_agent_headers())
-        if code == 200:
-            _pp(body)
-        else:
-            _err(code, body)
-
-    elif act == "update-config":
-        # 更新配置
-        data = json.loads(args.data) if args.data else {}
-        code, body = _req("POST", f"{AGENT_BASE}/sessions/openclaw/update-config", headers=_agent_headers(),
-                           data=data, timeout=15)
-        if code == 200:
-            print("✅ 配置已更新")
-            _pp(body)
-        else:
-            _err(code, body)
-
-    elif act == "channels":
-        # 查看频道
-        code, body = _req("GET", f"{AGENT_BASE}/sessions/openclaw/channels", headers=_agent_headers(),
-                           timeout=45)
-        if code == 200:
-            _pp(body)
-        else:
-            _err(code, body)
-
-    elif act == "bindings":
-        # 查看绑定
-        code, body = _req("GET", f"{AGENT_BASE}/sessions/openclaw/agent-bindings", headers=_agent_headers(),
-                           params={"agent": args.agent or ""}, timeout=45)
-        if code == 200:
-            _pp(body)
-        else:
-            _err(code, body)
-
-    elif act == "bind":
-        # 绑定 Agent
-        data = json.loads(args.data) if args.data else {}
-        code, body = _req("POST", f"{AGENT_BASE}/sessions/openclaw/agent-bind", headers=_agent_headers(),
-                           data=data, timeout=45)
-        if code == 200:
-            print("✅ 绑定成功")
-            _pp(body)
-        else:
-            _err(code, body)
-
-    elif act == "remove":
-        # 删除 Agent
-        code, body = _req("DELETE", f"{AGENT_BASE}/sessions/openclaw/remove", headers=_agent_headers(),
-                           params={"name": args.name or ""}, timeout=15)
-        if code == 200:
-            print("✅ Agent 已删除")
-            _pp(body)
-        else:
-            _err(code, body)
-
-    else:
-        print(f"❌ 未知操作: {act}", file=sys.stderr)
-
-
-# ── openclaw-snapshot: OpenClaw 快照管理 ────────────────────────────────────
+# ── 前端接口的请求头 ─────────────────────────────────────────────────────
 def _front_headers(args=None):
     """前端接口的请求头（带 session cookie 模拟 + 用户身份）
 
@@ -1468,87 +1305,6 @@ def _front_headers(args=None):
     if uid:
         h["X-User-Id"] = uid
     return h
-
-
-def cmd_openclaw_snapshot(args):
-    """OpenClaw 快照管理 (通过 front.py 接口)
-
-    参数：
-        args: 命令行参数对象
-    """
-    _check_token()
-    act = args.action
-
-    if act == "get":
-        # 获取快照
-        code, body = _req("GET", f"{FRONT_BASE}/team_openclaw_snapshot",
-                           headers=_front_headers(),
-                           params={"team": args.team or ""})
-        if code == 200:
-            _pp(body)
-        else:
-            _err(code, body)
-
-    elif act == "export":
-        # 导出快照
-        data = {"team": args.team or "", "agent_name": args.agent_name or "",
-                "short_name": args.short_name or ""}
-        code, body = _req("POST", f"{FRONT_BASE}/team_openclaw_snapshot/export",
-                           headers=_front_headers(), data=data, timeout=30)
-        if code == 200:
-            print("✅ 导出成功")
-            _pp(body)
-        else:
-            _err(code, body)
-
-    elif act == "sync-all":
-        # 同步所有快照
-        data = {"team": args.team or ""}
-        code, body = _req("POST", f"{FRONT_BASE}/team_openclaw_snapshot/sync_all",
-                           headers=_front_headers(), data=data, timeout=60)
-        if code == 200:
-            print("✅ 同步完成")
-            _pp(body)
-        else:
-            _err(code, body)
-
-    elif act == "restore":
-        # 恢复快照
-        data = {"team": args.team or "", "short_name": args.short_name or ""}
-        if args.target_name:
-            data["target_agent_name"] = args.target_name
-        code, body = _req("POST", f"{FRONT_BASE}/team_openclaw_snapshot/restore",
-                           headers=_front_headers(), data=data, timeout=60)
-        if code == 200:
-            print("✅ 恢复成功")
-            _pp(body)
-        else:
-            _err(code, body)
-
-    elif act == "export-all":
-        # 导出所有快照
-        data = {"team": args.team or ""}
-        code, body = _req("POST", f"{FRONT_BASE}/team_openclaw_snapshot/export_all",
-                           headers=_front_headers(), data=data, timeout=120)
-        if code == 200:
-            print("✅ 全部导出完成")
-            _pp(body)
-        else:
-            _err(code, body)
-
-    elif act == "restore-all":
-        # 恢复所有快照
-        data = {"team": args.team or ""}
-        code, body = _req("POST", f"{FRONT_BASE}/team_openclaw_snapshot/restore_all",
-                           headers=_front_headers(), data=data, timeout=120)
-        if code == 200:
-            print("✅ 全部恢复完成")
-            _pp(body)
-        else:
-            _err(code, body)
-
-    else:
-        print(f"❌ 未知操作: {act}", file=sys.stderr)
 
 
 # ── visual: 可视化编排 ─────────────────────────────────────────────────────
@@ -1947,27 +1703,6 @@ def cmd_teams(args):
                 print("  📭 暂无话题")
         else:
             print(f"  ⚠️ 获取话题失败: [{code4}]", file=sys.stderr)
-
-        # 5. OpenClaw 快照
-        code5, body5 = _req("GET", f"{FRONT_BASE}/team_openclaw_snapshot",
-                             headers=hdrs, params={"team": team_name})
-        if code5 == 200:
-            snapshots = body5.get("snapshots", body5.get("agents", []))
-            if isinstance(body5, dict) and not snapshots:
-                # 尝试其他可能的字段
-                for k, v in body5.items():
-                    if isinstance(v, list) and v:
-                        snapshots = v
-                        break
-            if snapshots:
-                print(f"\n📸 OpenClaw 快照 ({len(snapshots)} 个):")
-                for snapshot in snapshots:
-                    sname = snapshot.get("short_name", snapshot.get("name", "?"))
-                    agent_name = snapshot.get("agent_name", "")
-                    line = f"  • {sname}"
-                    if agent_name:
-                        line += f"  → {agent_name}"
-                    print(line)
 
         print(f"\n{'═' * 60}")
         _print_doc_hint("team")
@@ -2599,17 +2334,6 @@ def cmd_status(args):
         else:
             print(f"  ❌ {display_name:14s} — 未安装 (命令 '{cmd_name}' 不在 PATH 中)")
 
-    # OpenClaw 额外检查: API URL 和 sessions file
-    openclaw_api_url = env_vars.get("OPENCLAW_API_URL", "")
-    openclaw_sessions = env_vars.get("OPENCLAW_SESSIONS_FILE", "")
-    if shutil.which("openclaw"):
-        if openclaw_api_url:
-            print(f"\n  📡 OpenClaw API URL     = {openclaw_api_url}")
-        if openclaw_sessions:
-            exists = os.path.isfile(openclaw_sessions)
-            icon = "✅" if exists else "⚠️"
-            print(f"  {icon} OpenClaw Sessions   = {openclaw_sessions}")
-
     # 4. 综合总结
     print(f"\n{'─' * 50}")
     print("📋 总结:\n")
@@ -2662,7 +2386,7 @@ def build_parser():
   📖 docs/create_workflow.md  — 创建 OASIS 工作流 YAML (图格式、人设类型、示例)
   📖 docs/cli.md              — 完整 CLI 命令参考和示例
   📖 docs/example_team.md     — 示例 Team 文件结构和内容
-  📖 docs/openclaw-commands.md — OpenClaw agent 集成命令
+  📖 docs/openclaw-commands.md — OpenClaw agent（与 codex 相同，经 acpx）
   📖 docs/ports.md            — 端口配置和冲突处理
 
 提示: 使用 'clawcross <command> --help' 查看各命令的详细用法
@@ -2698,7 +2422,7 @@ def build_parser():
     # groups
     c = sub.add_parser("groups", help="群组管理")
     c.add_argument("action", nargs="?", default="list",
-                   choices=["list", "create", "join", "sharing", "leave", "invite", "get", "update", "delete", "messages", "send", "dnd-on", "dnd-off"],
+                   choices=["list", "create", "join", "leave", "invite", "get", "update", "delete", "messages", "send", "dnd-on", "dnd-off"],
                    help="操作 (默认: list)")
     c.add_argument("--group-id", help="群组 ID")
     c.add_argument("--name", help="群组名称 (create / update 时)")
@@ -2708,9 +2432,7 @@ def build_parser():
     c.add_argument("--agent", help="以哪个 agent 身份发言 (send 时)：agent 编号，或 team.名字")
     c.add_argument("--data", help="JSON 数据")
     c.add_argument("--after-id", help="增量获取消息 (messages 时)")
-    c.add_argument("--server-url", help="群服务器地址，留空为本机 (join 时)")
-    c.add_argument("--password-stdin", action="store_true", help="从标准输入的一行读取群密码")
-    c.add_argument("--revoke-connections", action="store_true", help="换密码时撤销其他成员连接 (sharing 时)")
+    c.add_argument("--invite", help="邀请链接 (join 时)。invite 操作会生成新的邀请链接，旧链接随之失效")
 
     # profile
     c = sub.add_parser("profile", help="用户画像管理")
@@ -2718,41 +2440,6 @@ def build_parser():
                    help="操作 (默认: get)")
     c.add_argument("-c", "--content", help="画像内容 (set 时)")
     c.add_argument("-f", "--file", dest="file", help="从文件读取画像内容 (set 时)")
-
-    # openclaw
-    c = sub.add_parser("openclaw", help="OpenClaw Agent 管理",
-                       epilog="""
-⚠️  【必读】操作 OpenClaw Agent 前务必先阅读以下文档：
-  📖 docs/openclaw-commands.md — OpenClaw agent 集成命令详解
-  📖 docs/build_team.md        — 将 OpenClaw agent 加入 Team
-  📖 docs/cli.md               — 完整 CLI 命令参考
-  ❗ 不阅读文档直接操作可能导致配置错误或功能异常！
-""",
-                       formatter_class=argparse.RawDescriptionHelpFormatter)
-    c.add_argument("action", nargs="?", default="sessions",
-                   choices=["sessions", "add", "default-workspace",
-                            "workspace-files", "workspace-file-read",
-                            "workspace-file-save", "detail", "skills",
-                            "tool-groups", "update-config", "channels",
-                            "bindings", "bind", "remove"],
-                   help="操作 (默认: sessions)")
-    c.add_argument("--filter", help="过滤关键词 (sessions 时)")
-    c.add_argument("--name", help="Agent 名称 (detail/remove 时)")
-    c.add_argument("--agent", help="Agent 名称 (skills/bindings 时)")
-    c.add_argument("--workspace", help="工作区路径")
-    c.add_argument("--filename", help="文件名 (workspace-file-read 时)")
-    c.add_argument("--data", help="JSON 数据")
-
-    # openclaw-snapshot
-    c = sub.add_parser("openclaw-snapshot", help="OpenClaw 快照管理")
-    c.add_argument("action", nargs="?", default="get",
-                   choices=["get", "export", "sync-all", "restore",
-                            "export-all", "restore-all"],
-                   help="操作 (默认: get)")
-    c.add_argument("--team", help="Team 名称 (必需)")
-    c.add_argument("--agent-name", help="Agent 全名 (export 时)")
-    c.add_argument("--short-name", help="显示名 (export/restore 时)")
-    c.add_argument("--target-name", help="恢复目标 Agent 名 (restore 时)")
 
     # visual
     c = sub.add_parser("visual", help="可视化编排管理")
@@ -2942,8 +2629,6 @@ def main():
         "restart": cmd_restart,
         "groups": cmd_groups,
         "profile": cmd_profile,
-        "openclaw": cmd_openclaw,
-        "openclaw-snapshot": cmd_openclaw_snapshot,
         "visual": cmd_visual,
         "agents": cmd_agents,
         "teams": cmd_teams,

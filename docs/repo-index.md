@@ -4,7 +4,7 @@ Use this file when an agent needs to **index the repo before reading code**. It 
 
 ## Fast Indexing Checklist
 
-1. Confirm the task area: install, runtime, frontend, workflow, OpenClaw, bots, or maintenance.
+1. Confirm the task area: install, runtime, frontend, workflow, ACP agents, bots, or maintenance.
 2. Read only the matching section below.
 3. Open the referenced files for the subsystem you are changing.
 4. Only expand outward if the first-hop files are insufficient.
@@ -19,7 +19,7 @@ Use this file when an agent needs to **index the repo before reading code**. It 
 | `launch/` | launch, environment preparation, runtime control, tunnel and runtime migration only |
 | `src/cli/` | interactive CLI and API command interface |
 | `src/cli/commands/` | CLI subcommands, profiles, pickers and API client |
-| `src/backend/ops/setup/` | runtime configuration, user setup and optional OpenClaw configuration |
+| `src/backend/ops/setup/` | runtime configuration, user setup and the read-only OpenClaw LLM import |
 | `tools/build/` | development and frontend/preset build tools |
 | `tools/diagnostics/` | runtime inspection tools |
 | `tools/maintenance/` | repository maintenance tools |
@@ -37,7 +37,7 @@ Use this file when an agent needs to **index the repo before reading code**. It 
 |---|---|
 | `server.py` | the Agent service (port 51200): every agent entrance and the routers below |
 | `agents/` | L1: the table of all agents, the gateway, `/v1/agents`, `/v1/chat/completions`, `/system_trigger` |
-| `external/` | the runtimes of external agents (ACP tools, OpenClaw, HTTP, model calls) and OpenClaw agent management (`/sessions/openclaw/*`) |
+| `external/` | the runtimes of external agents (ACP tools including OpenClaw, HTTP, model calls) |
 | `webot/` | WeBot: `engine/`, `api/`, `mcp/` (its MCP tool servers), `driver.py` (its runtime) |
 | `teams/` | teams: store, manifest (package format), Creator, presets, snapshots |
 | `groups/` | independent group server, relay store/API, device client, legacy local group compatibility |
@@ -61,7 +61,7 @@ Read these first for setup or environment changes:
 | `launch/environment.py` | core Python dependencies and explicit optional component installs |
 | `config/requirements-channels.txt` | optional QQ, Telegram, and media dependencies |
 | `src/backend/ops/setup/configure.py` | `.env` initialization and configuration logic |
-| `src/backend/ops/setup/configure_openclaw.py` | OpenClaw detection plus Clawcross/OpenClaw LLM sync logic |
+| `src/backend/ops/setup/configure_openclaw.py` | read-only import of OpenClaw's LLM settings into `config/.env` |
 | `config/.env.example` | config template and inline guidance |
 | `config/tinyfish_targets.example.json` | example TinyFish search target schema |
 | `src/backend/ops/setup/configure.py` | API key and model configuration |
@@ -263,7 +263,6 @@ data/
     └── teams/{team_name}/            # the team's namespace
         ├── members.json
         ├── oasis_experts.json
-        ├── team_settings.json
         ├── oasis/yaml/*.yaml
         ├── oasis/python/*.py
         └── skills/
@@ -299,13 +298,12 @@ When changing code, check the nearest validation surface:
 | `test/test_team_creator_zip.py` | ClawCross Creator ZIP export tests |
 | `test/test_proxy_login_i18n.py` | frontend i18n and login proxy coverage |
 | `test/test_tinyfish_monitor.py` | TinyFish target loading, persistence, and polling tests |
-| `test/test_configure_openclaw_sync.py` | Clawcross/OpenClaw LLM sync tests |
+| `test/test_configure_openclaw_sync.py` | OpenClaw LLM import tests |
 | `test/test_oasis_swarm_engine.py` | swarm scaffold / blueprint normalization tests |
 | `test/test_oasis_graph_memory.py` | GraphRAG persistence, retrieval, and ReportAgent fallback tests |
 | `test/browser/creator-smoke.spec.js` | Playwright smoke for `/creator` direct mentor/colleague generation flows |
 | `test/browser/studio-smoke.spec.js` | Playwright smoke for `/studio` tabs, settings actions, and WeBot runtime sidebar |
 | `test/llm_live_smoke.py` | opt-in real provider LLM smoke test |
-| `test/openclaw_live_smoke.py` | opt-in isolated OpenClaw gateway smoke test |
 | `test/cloudflare_live_smoke.py` | opt-in Cloudflare quick tunnel smoke test |
 | `npm run test:node` | frontend pure logic tests |
 | `npm run test:browser-smoke` | browser smoke with the Flask test shell |
@@ -376,22 +374,12 @@ Read:
 - `test/test_team_creator_workflow.py`
 - `test/test_team_creator_zip.py`
 
-### "OpenClaw integration is wrong"
+### "An OpenClaw agent does not answer"
 
-Read:
-
-- `docs/openclaw-commands.md`
-- `src/backend/external/openclaw.py` (the runtime), `src/backend/external/openclaw_routes.py` (agent management API), `src/backend/external/openclaw_config.py` (openclaw.json / CLI access)
-- `docs/build_team.md`
-
-### "Clawcross and OpenClaw model settings drift"
-
-Read:
+OpenClaw is an ACP agent like Codex. Read:
 
 - `docs/openclaw-commands.md`
-- `src/backend/ops/setup/configure_openclaw.py`
-- `src/backend/ops/setup/configure.py`
-- `config/.env.example`
+- `src/backend/external/acp.py` (the ACP runtime), `src/backend/external/acpx.py` (`openclaw acp --session …`), `src/backend/external/session.py` (`runtime_session`)
 
 ### "TinyFish search agent or data extraction is wrong"
 
@@ -419,3 +407,10 @@ Read:
 - Start here for docs routing: [`index.md`](./index.md)
 - Start here for operator workflow: [`../SKILL.md`](../SKILL.md)
 - Use [`../README.md`](../README.md) for product-facing explanation, not code indexing
+
+## 模型能力与前端构建
+
+- `src/backend/common/model_capabilities.py` / `model_catalog.json`：本地能力与固定目录；`docs/model-capabilities.md` 说明优先级。
+- `tools/maintenance/update_model_catalog.py`：维护者手动更新，不在启动路径。
+- `tools/build/tailwind.config.cjs` / `tailwind.input.css`：静态 CSS 的构建输入；`npm run build:css`。
+- `src/frontend/static/js/attachment-utils.js`：共用图片压缩和群消息大小校验。

@@ -1,4 +1,4 @@
-"""Codex, Claude Code, Gemini and other ACP tools, through the acpx CLI.
+"""Codex, Claude Code, Gemini, OpenClaw and other ACP tools, through the acpx CLI.
 
 acpx keeps a queue per session, so a message sent while the agent is busy waits
 its turn: the runtime needs no inbox of its own.
@@ -121,6 +121,16 @@ class AcpRuntime(Runtime):
                     await asyncio.gather(task, return_exceptions=True)
         return streaming(generate())
 
+    def _native_session(self, agent: Agent) -> tuple[str | None, str | None, dict]:
+        """``(model, MCP connector file, native config options)`` of the agent's ACP session."""
+        from external.acp_settings import initial_config_options
+        from external.tool_bridge import connector_file
+
+        acp_meta = (agent.config.get('meta') or {}).get('acp') or {}
+        native_config = {**initial_config_options(agent), **(acp_meta.get('config_options') or {})}
+        model = str(agent.config.get("model") or native_config.get("model") or "").strip() or None
+        return model, connector_file(agent), native_config
+
     async def ask(self, agent: Agent, msg: AgentMessage, *, context, mode, enabled_tools, response_format, timeout) -> AgentReply:
         async with session.turn(self._store, agent) as current:
             if context.get('_acp_turn_started'):
@@ -149,11 +159,8 @@ class AcpRuntime(Runtime):
         prepared = session.prepare_turn(agent, msg, context=context, mode=mode,
                                         enabled_tools=enabled_tools, response_format=response_format)
         prompt = prepared.text
-        acp = (agent.config.get('meta') or {}).get('acp') or {}
-        from external.acp_settings import initial_config_options
-        native_config = {**initial_config_options(agent), **(acp.get('config_options') or {})}
-        from external.tool_bridge import active_turn, connector_file
-        connector = connector_file(agent)
+        model, connector, native_config = self._native_session(agent)
+        from external.tool_bridge import active_turn
 
         tool_output = {}
         async def on_event(event):
@@ -178,8 +185,7 @@ class AcpRuntime(Runtime):
                         session_key=session.runtime_session(agent),
                         prompt_text=prompt, reset_session=False, system_prompt=None,
                         attachments=[dict(a) for a in msg.attachments] or None,
-                        model=str(agent.config.get("model") or native_config.get("model") or "").strip() or None,
-                        mcp_config=connector, config_options=native_config,
+                        model=model, mcp_config=connector, config_options=native_config,
                         on_event=on_event, **run,
                     )
             except (AcpxError, RuntimeError) as exc:
@@ -198,18 +204,15 @@ class AcpRuntime(Runtime):
         if self.is_busy(agent):
             raise ControlError('Agent 正在运行，请在本轮结束后测试连接')
         from external.acpx import AcpxError, acpx_options_from_agent, get_acpx_adapter
-        from external.acp_settings import initial_config_options
-        from external.tool_bridge import connector_file
         async with session.turn(self._store, agent) as current:
             options = acpx_options_from_agent(current.config, default_timeout_sec=60)
             options['timeout_sec'] = min(options.get('timeout_sec') or 60, 90)
-            initial = initial_config_options(current)
+            model, connector, _ = self._native_session(current)
             try:
                 await get_acpx_adapter().ensure_session(
                     tool=canonical_platform(current.platform), session_key=session.runtime_session(current),
                     acpx_session=session.runtime_session(current), system_prompt=None,
-                    model=str(current.config.get('model') or initial.get('model') or '').strip() or None,
-                    mcp_config=connector_file(current), **options)
+                    model=model, mcp_config=connector, **options)
             except (AcpxError, RuntimeError) as exc:
                 raise ControlError(str(exc)) from exc
 
@@ -233,12 +236,14 @@ class AcpRuntime(Runtime):
         acpx, key = adapter(), session.runtime_session(agent)
         try:
             if action == "cancel":
-                await acpx.ops_non_openclaw_cancel(
+                await acpx.ops_cancel(
                     tool=agent.platform, session_key=key, **command_options(agent, long=False))
             elif action == "reset":
-                await acpx.ops_non_openclaw_reset_session(
+                await acpx.ops_reset_session(
                     tool=agent.platform, session_key=key, **command_options(agent, long=True))
-                session.forget(self._store, agent)
+                # A new session key: OpenClaw keeps a conversation per gateway key,
+                # so reopening the same key would resume it.
+                session.forget(self._store, agent, new_session=True)
             else:
                 return await super().control(agent, action)
         except AcpxError as exc:

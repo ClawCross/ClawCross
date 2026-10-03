@@ -94,6 +94,7 @@ class RuntimeSettingsTests(unittest.TestCase):
 
 
     def test_configured_window_overrides_model_name_guess(self):
+        settings.save_runtime_settings('alice', settings={'context': {'context_window_tokens': 1_000_000}})
         config = settings.get_runtime_settings('alice').context
         self.assertEqual(config.context_window_tokens, 1_000_000)
         with patch('webot.context_limits.infer_model_context_window', return_value=64_000):

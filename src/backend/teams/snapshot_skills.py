@@ -9,8 +9,6 @@ from webot.skills import USER_FILES_DIR, _rebuild_index
 
 
 SNAPSHOT_SKILLS_ROOT = "skills"
-SNAPSHOT_OPENCLAW_AGENTS_DIR = f"{SNAPSHOT_SKILLS_ROOT}/openclaw_agents"
-SNAPSHOT_OPENCLAW_MANAGED_DIR = f"{SNAPSHOT_SKILLS_ROOT}/openclaw_managed"
 SNAPSHOT_USER_SKILLS_DIR = f"{SNAPSHOT_SKILLS_ROOT}/clawcross_personal"
 SNAPSHOT_TEAM_SKILLS_DIR = f"{SNAPSHOT_SKILLS_ROOT}/clawcross_team"
 
