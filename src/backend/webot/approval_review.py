@@ -221,6 +221,7 @@ def action_risk(tool_name: str, args: dict) -> tuple[bool, bool, str]:
 
 async def run_reviewer(*, tool_name: str, args: dict, context: dict, settings, policy: dict) -> ReviewVerdict:
     from common.llm_factory import create_chat_model
+    from webot.engine.tool_schema import decode_structured_final
     instructions = """You review exactly one proposed tool action. You cannot execute tools or change permissions.
 
 AUTHORITY
@@ -245,9 +246,12 @@ Return exactly one JSON object matching the supplied schema, no markdown, tools 
     schema = ReviewVerdict.model_json_schema()
     schema['properties']['decision']['enum'] = ['approve', 'deny']
     instructions += "\nJSON schema: " + json.dumps(schema, ensure_ascii=False)
-    # Plain JSON avoids forced tool_choice incompatibilities in thinking models.
-    # A response is never trusted until the complete verdict has been validated.
-    result = await model.ainvoke([
+    # Constrain the actual provider request, without introducing a reply tool.
+    # Authorization sources still need independent validation by the broker.
+    result = await decode_structured_final(model, {
+        'type': 'json_schema',
+        'json_schema': {'name': 'approval_verdict', 'strict': True, 'schema': schema},
+    }, [
         SystemMessage(content=instructions),
         HumanMessage(content=json.dumps({"tool": tool_name, "args": args, "context": context, "policy": policy,
                                          "user_review_policy": settings.reviewer_policy}, ensure_ascii=False)),

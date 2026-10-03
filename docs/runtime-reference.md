@@ -165,6 +165,8 @@ Agent 设置页的“测试连接”显式调用 `/v1/agents/{id}/test-connectio
 
 运行模式在 CLI、Studio、Mobile 和 Agent API 中使用相同值：`chat` 不开放工具；`readonly` 只开放只读工具；`manual` 开放全部工具、允许的操作直接执行，需要批准的操作交给人类；`auto` 开放全部工具，需要批准的操作交给 AI；`bypass` 开放全部工具并跳过审核。Manual 的批准按钮与当前对话中的 Y/N/KEEP Y 使用同一审批单，待批准或拒绝时不执行。显式禁止规则、命令硬拦截和沙盒限制在所有模式下生效。外部 Agent 的 ClawCross MCP 工具遵循该模式；原生 CLI 工具继续使用适配器的权限机制。
 
+自动审核通过供应商原生 JSON Schema 输出接口返回 `approve` / `deny`，不依赖仅写在提示词中的 JSON 格式要求，也不创建用于回复的工具。DeepSeek 使用 Responses API 的 `text.format`；OpenAI 兼容模型使用 `response_format.json_schema`；Anthropic / Gemini 使用原生结构化输出。后端仍验证字段、原始用户授权来源及管理员上限。空响应、输出截断、Schema 不合规或接口失败均拒绝执行，不自动切换到人工弹窗；用户后续明确授权后可重新审核。
+
 人工审核按钮和输入框中的精确 `Y` / `N` / `KEEP Y` 共用 `/webot/tool-approvals/resolve`。这些输入作为审核操作处理，不作为普通消息发给 Agent 或群成员；多项待审核时必须填写审批编号。后端按当前用户和 Agent 验证审批归属、有效期和策略，原子更新一次后排队恢复。内部 Agent 直接重试保存的工具和参数，再继续原任务；外部 Agent 通过 gateway 恢复原生会话。群聊回复通道与内部工具范围随审核保存，批准不扩大其他操作的权限。拒绝也恢复说明结果，不执行被拒操作。重复点击、已用授权、过期及策略改变都不会重复执行。
 
 Studio 和 Mobile 的审核按钮放在对话授权气泡内；按钮由后端当前待审记录产生，不由工具/Agent 文本生成。点击等同于输入对应的 Y/N/KEEP Y，显示用户的确认信息并恢复执行，上方审核栏不再重复展示。Agent 中心的审核管理入口仍可处理其他 Agent 的待审操作。
