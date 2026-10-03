@@ -278,6 +278,48 @@ class CommandLandlockIntegrationTests(unittest.IsolatedAsyncioTestCase):
             language='python', timeout_seconds=10)
         self.assertRegex(denied, 'Operation not permitted|Permission denied')
 
+    @unittest.skipUnless(__import__('os').environ.get('CLAWCROSS_NETWORK_INTEGRATION') == '1', 'explicit real public-network integration')
+    async def test_manual_https_approval_reaches_real_mcp_tool_and_retries_once(self):
+        from types import SimpleNamespace
+        from langchain_core.tools import StructuredTool
+        from webot.api.service import WeBotService
+        from webot.models import WeBotApprovalResolutionRequest
+        from webot.engine.agent import TeamAgent, UserAwareToolNode, _visible_tool_parameters
+        runtime_settings.save_runtime_settings(self.user, settings={'approval':{'mode':'manual','command_sandbox':'landlock'}})
+        store.save_session_mode(self.user, self.session, mode='manual')
+        code = 'import urllib.request; print("MCP_HTTPS_OK", urllib.request.urlopen("https://example.com", timeout=10).status)'
+        with patch.dict('os.environ', {'CLAWCROSS_SANDBOX_MAX_DOMAINS':'["example.com:443"]'}):
+            initial = await commander.mcp.call_tool('run_command', {'username':self.user,'session_id':self.session,
+                'command':code,'language':'python','timeout_seconds':25})
+            self.assertIn('【操作授权请求】', str(initial))
+            record = store.list_tool_approvals(self.user, self.session, status='pending')[0]
+            self.assertEqual(json.loads(record.args_json)['sandbox_access'], 'network')
+            system = SimpleNamespace(run=AsyncMock(return_value={'status':'received'}))
+            service = WeBotService(agent=None,system=system,verify_auth_or_token=lambda *a:None,extract_text=str)
+            with patch('agents.store.get_store',return_value=SimpleNamespace(get=lambda *a:None)):
+                await service.resolve_tool_approval(WeBotApprovalResolutionRequest(user_id=self.user,
+                    session_id=self.session,approval_id=record.approval_id,action='approve'),None)
+            engine = TeamAgent.__new__(TeamAgent)
+            state = {'user_id':self.user,'session_id':self.session,'session_mode':'manual',
+                     'enabled_tools':['run_command'],'messages':[], '_approval_resume_id':record.approval_id}
+            update = await engine._call_model(state)
+            state.update(update)
+            tool = StructuredTool.from_function(coroutine=commander.run_command, name='run_command', description='Command')
+            self.assertNotIn('sandbox_access', _visible_tool_parameters(tool)['properties'])
+            node = UserAwareToolNode([tool])
+            # Run through FastMCP's argument validation, as the production RPC does.
+            async def invoke_mcp(call_state, config):
+                from langchain_core.messages import ToolMessage
+                call=call_state['messages'][-1].tool_calls[0]
+                content=await commander.mcp.call_tool(call['name'],call['args'])
+                return {'messages':[ToolMessage(content=str(content),tool_call_id=call['id'],name=call['name'])]}
+            node.tool_node.ainvoke=invoke_mcp
+            result = await node(state, {})
+        self.assertIn('MCP_HTTPS_OK 200', result['messages'][0].content, result)
+        self.assertEqual(self.foreground.await_count,2)
+        self.assertEqual(store.get_tool_approval(record.approval_id,self.user).status,'used')
+        self.assertEqual(runtime_settings.get_runtime_settings(self.user,self.session).approval.sandbox_allowed_domains,[])
+
 
 if __name__ == '__main__':
     unittest.main()

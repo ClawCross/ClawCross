@@ -258,12 +258,15 @@ test('mobile accepts Y/N as scoped approval controls for external agents without
   await page.goto('/mobile/group_chat');
   await page.locator('.group-item',{hasText:'Dev'}).first().click();
   await page.evaluate(()=>refreshPendingApprovalsForCurrentGroup());
-  await expect(page.locator('#approval-strip')).toBeVisible();
+  await expect(page.locator('#approval-strip')).not.toBeVisible();
+  await expect(page.locator('#chat-body .cc-approval-actions button')).toHaveCount(3);
   await page.locator('#msg-input').fill('N');
   await page.evaluate(()=>sendMessage());
   expect(decisions).toEqual([{approval_id:item.approval_id,action:'deny',remember:false,session_id:CODEX.agent_id}]);
   expect(calls.posts).toEqual([]);
   await expect(page.locator('#msg-input')).toHaveValue('');
   await expect(page.locator('#approval-strip')).not.toBeVisible();
+  await expect(page.locator('.msg-row.self').last()).toContainText('拒绝这次操作');
+  await expect(page.locator('.cc-approval-actions')).toHaveCount(0);
   expect(errors).toEqual([]);
 });

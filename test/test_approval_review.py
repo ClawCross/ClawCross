@@ -195,6 +195,26 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue((await self.authorize()).allowed)
         reviewer.assert_not_called()
 
+    async def test_keep_y_remembers_exact_network_retry_without_widening_session(self):
+        from webot.permission_context import resolve_permission_request
+        store.save_session_mode('alice','s',mode='manual')
+        runtime_settings.save_runtime_settings('alice',settings={'approval':{'command_sandbox':'landlock'}})
+        args={**self.args,'sandbox_access':'network','escalation_target':'example.org:443',
+              'escalation_reason':'系统检测到沙盒命令权限拒绝，需要一次有限权限重试。'}
+        with patch.dict('os.environ',{'CLAWCROSS_SANDBOX_MAX_DOMAINS':'["example.org:443"]'}), \
+             patch.object(review,'run_reviewer') as reviewer:
+            pending=await self.authorize(args=args)
+            self.assertTrue(pending.pending)
+            resolve_permission_request(user_id='alice',approval_id=pending.approval_id,action='approved',remember=True)
+            self.assertTrue((await self.authorize(args=args)).allowed)
+            remembered=await self.authorize(args=args)
+            self.assertTrue(remembered.allowed)
+            self.assertEqual(remembered.approval_id,'')
+            different=await self.authorize(args={**args,'command':'git log'})
+            self.assertTrue(different.pending)
+        reviewer.assert_not_called()
+        self.assertEqual(runtime_settings.get_runtime_settings('alice','s').approval.sandbox_allowed_domains,[])
+
     async def test_user_decision_wins_if_reviewer_finishes_later(self):
         from webot.permission_context import resolve_permission_request
         for user_action, model_action, expected_allowed in (("approved", "deny", True), ("denied", "approve", False)):

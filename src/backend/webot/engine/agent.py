@@ -233,6 +233,8 @@ def hide_injected_params(tool):
     binding must never silently lose a tool.
     """
     hidden = {name for name in (SESSION_INJECTED_TOOLS.get(tool.name),) if name}
+    if tool.name == 'run_command':
+        hidden.update({'sandbox_access', 'escalation_target', 'escalation_reason'})
     if tool.name in USER_INJECTED_TOOLS:
         hidden.add("username")
     if not hidden:
@@ -455,6 +457,7 @@ class AgentState(TypedDict):
     _approval_review_blocked: bool
     _conversation_approval_prompts: list[str]
     _approval_resume_id: str
+    _approval_resume_call_id: str
 
 
 # Mirrors langgraph.prebuilt.ToolNode (default handle_tool_errors) so dropping
@@ -720,6 +723,10 @@ class UserAwareToolNode:
             # those so the tool applies its own default, as before strict mode.
             if tc["name"] in tools_by_name and isinstance(tc.get("args"), dict):
                 tc["args"] = drop_null_optionals(tc["args"], _tool_input_schema(tools_by_name[tc["name"]]))
+            if (tc['name'] == 'run_command' and tc['args'].get('sandbox_access', 'default') != 'default'
+                    and tc['id'] != state.get('_approval_resume_call_id')):
+                blocked_calls.append((tc, '沙盒权限由系统在执行失败后审核，不接受 Agent 自行申请提权。', False, ''))
+                continue
             if not mode_allows_tool(mode, tc["name"], tc.get("args")):
                 blocked_calls.append((tc, "当前模式不允许该工具操作。交流模式无工具；只读模式只允许查看和搜索。", False, ""))
                 continue
@@ -811,6 +818,7 @@ class UserAwareToolNode:
             "messages": result_messages,
             "_approval_review_counters": counters,
             "_conversation_approval_prompts": [reason for _, reason, pending, _ in blocked_calls if pending],
+            "_approval_resume_call_id": '',
         }
         if review_blocked:
             update["_approval_review_blocked"] = True
@@ -1261,10 +1269,11 @@ class TeamAgent:
                     and json.loads(record.review_metadata_json or '{}').get('human_resolution') == 'approved'):
                 # Retry the saved operation directly, without asking the model to
                 # reconstruct it or repeat other completed tool calls.
+                call_id = 'approval-resume-' + uuid4().hex
                 return {'messages': [AIMessage(content='', tool_calls=[{
-                    'id': 'approval-resume-' + uuid4().hex, 'name': record.tool_name,
+                    'id': call_id, 'name': record.tool_name,
                     'args': {k: v for k, v in json.loads(record.args_json or '{}').items() if not k.startswith('_')},
-                }])], '_approval_resume_id': ''}
+                }])], '_approval_resume_id': '', '_approval_resume_call_id': call_id}
             return {'messages': [AIMessage(content='授权已失效，未继续执行。请重新发起操作。')],
                     '_approval_resume_id': ''}
         if state.get('_conversation_approval_prompts'):

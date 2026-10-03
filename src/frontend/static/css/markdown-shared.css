@@ -314,3 +314,8 @@ body.cc-local-file-preview-open {
 .cc-approval-bubble small { overflow-wrap: anywhere; }
 .cc-approval-bubble kbd { padding: 2px 5px; border: 1px solid currentColor; border-radius: 4px; white-space: nowrap; }
 .cc-approval-bubble.resolved { opacity: .75; }
+.cc-approval-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.cc-approval-button { border: 1px solid var(--ui-border, #8493a540); border-radius: 8px; padding: 7px 12px; background: var(--ui-surface, transparent); color: inherit; font: inherit; font-size: 13px; cursor: pointer; }
+.cc-approval-button.approve { color: var(--ui-accent, #3b82f6); }
+.cc-approval-button.deny { color: var(--ui-danger, #d65c6b); }
+.cc-approval-button:disabled { opacity: .5; cursor: wait; }

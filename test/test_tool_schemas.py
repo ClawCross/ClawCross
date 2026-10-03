@@ -83,6 +83,8 @@ def _as_structured_tool(mcp_tool) -> StructuredTool:
 
 def _hidden_arguments(tool_name: str) -> set[str]:
     hidden = {SESSION_INJECTED_TOOLS.get(tool_name)} - {None}
+    if tool_name == 'run_command':
+        hidden.update({'sandbox_access','escalation_target','escalation_reason'})
     if tool_name in USER_INJECTED_TOOLS:
         hidden.add("username")
     return hidden
