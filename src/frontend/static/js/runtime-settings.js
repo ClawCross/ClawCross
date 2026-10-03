@@ -81,6 +81,7 @@ async function loadRuntimeSettingsScope() {
         const inference = payload.settings.inference || {reasoning_effort:''};
         const capabilities = payload.model_capabilities || {};
         const levels = capabilities.reasoning_effort_levels || [];
+        const networkClosed = Array.isArray(payload.sandbox_network_maximum) && !payload.sandbox_network_maximum.length;
         if (scope === 'session' && ['chat', 'readonly', 'manual', 'auto', 'bypass'].includes(payload.effective_mode)) approval.mode = payload.effective_mode;
         const escape = value => escapeHtml(String(value)).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         const text = runtimeSettingsText;
@@ -139,7 +140,8 @@ async function loadRuntimeSettingsScope() {
                     </select><small>${text('SRT 需显式安装；Linux Landlock 使用内核和 libseccomp，无需新容器。自动模式先探测 SRT，Linux 不兼容时使用 Landlock。Landlock 在支持的 systemd 主机上提供受控联网，其他环境保持禁网；保留基础资源上限。不满足要求时拒绝执行。', 'SRT requires explicit installation. Linux Landlock uses the kernel and libseccomp without a new container. Auto probes SRT first, then Landlock on Linux. Landlock provides controlled networking on supported systemd hosts; other environments remain offline. Basic resource limits apply. Missing capabilities block execution.')}</small></label>
                 <label class="runtime-settings-field"><span>${text('允许直接访问的网站', 'Allowed network destinations')}</span>
                     <textarea data-section="approval" data-key="sandbox_allowed_domains" data-value-type="lines" class="runtime-settings-input" rows="2" placeholder="example.com:443">${escapeHtml((approval.sandbox_allowed_domains || []).join('\n'))}</textarea>
-                    <small>${text('每行一个域名或公网 IP，可加端口；留空时访问新目标需在管理员上限内审核。', 'One domain or public IP per line, optionally with a port. New destinations require review within the administrator ceiling.')}</small></label>
+                    <small>${text('每行一个域名或公网 IP，可加端口；不接受 URL 或通配符。留空时不直接放行任何网站，新目标按当前模式审核。脚本须使用沙盒提供的 HTTP/SOCKS 代理；直接连接仍被阻止。', 'One domain or public IP per line, optionally with a port; no URLs or wildcards. An empty list grants no direct access; new destinations are reviewed under the current mode. Scripts must use the sandbox HTTP/SOCKS proxies; direct connections remain blocked.')}</small>
+                    ${networkClosed ? `<small class="runtime-settings-error">${text('管理员显式关闭了网络提权，未列出的目标不能送审。', 'The administrator explicitly disabled network escalation; unlisted destinations cannot be reviewed.')}</small>` : ''}</label>
                 ${typeof componentControlMarkup === 'function' ? componentControlMarkup('srt') : ''}
                 ${instructions('approval', 'reviewer_policy', approval.reviewer_policy, '补充审核要求', 'Additional review instructions', '例如：允许安装任务所需依赖；删除文件没有明确授权时拒绝', 'For example: allow task dependencies; deny deletion without explicit authorization')}
                 <details class="runtime-settings-advanced"><summary>${text('高级审核设置', 'Advanced review settings')}<span>${text('模型与等待时间', 'Model and timeout')}</span></summary>

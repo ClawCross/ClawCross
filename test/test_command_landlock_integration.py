@@ -250,6 +250,34 @@ class CommandLandlockIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('Example Domain',result)
         self.assertEqual(self.foreground.await_count,1)
 
+    @unittest.skipUnless(__import__('os').environ.get('CLAWCROSS_NETWORK_INTEGRATION') == '1', 'explicit real public-network integration')
+    async def test_default_network_ceiling_reviews_python_https_without_operator_setup(self):
+        import os
+        context = review.review_context([HumanMessage(content='用 Python 读取 https://example.com 公开网页。',
+            id='python-network-user', additional_kwargs={'input_origin': 'user'})])
+        verdict = review.ReviewVerdict(decision='approve', reason='用户授权公开网页读取',
+            risk='low', authorization_sources=['python-network-user'])
+        with patch.dict('os.environ'), patch.object(review, 'approval_context', return_value=context), \
+             patch.object(review, 'run_reviewer', new=AsyncMock(return_value=verdict)) as model:
+            os.environ.pop('CLAWCROSS_SANDBOX_MAX_DOMAINS', None)
+            result = await self.execute('import urllib.request; print(urllib.request.urlopen("https://example.com", timeout=10).read(1000).decode())',
+                language='python', timeout_seconds=25)
+        self.assertIn('Example Domain', result, result)
+        self.assertEqual(self.foreground.await_count, 2)
+        model.assert_awaited_once()
+        self.assertEqual(model.await_args.kwargs['args']['escalation_target'], 'example.com:443')
+
+    @unittest.skipUnless(__import__('os').environ.get('CLAWCROSS_NETWORK_INTEGRATION') == '1', 'explicit real public-network integration')
+    async def test_python_requests_uses_granted_proxy_and_direct_sockets_stay_blocked(self):
+        runtime_settings.save_runtime_settings(self.user, settings={'approval': {
+            'mode': 'auto', 'command_sandbox': 'landlock', 'sandbox_allowed_domains': ['example.com:443']}})
+        result = await self.execute('import requests; print("HTTPS_STATUS", requests.get("https://example.com", timeout=10).status_code)',
+            language='python', timeout_seconds=20)
+        self.assertIn('HTTPS_STATUS 200', result, result)
+        denied = await self.execute('import socket; socket.create_connection(("1.1.1.1", 443), timeout=1)',
+            language='python', timeout_seconds=10)
+        self.assertRegex(denied, 'Operation not permitted|Permission denied')
+
 
 if __name__ == '__main__':
     unittest.main()
