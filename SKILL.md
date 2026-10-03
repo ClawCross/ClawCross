@@ -537,14 +537,14 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-10-03T10:51:08.477091+00:00`
+- Updated at: `2026-10-03T11:28:02.066865+00:00`
 - Strategy: `repair-only`
-- Heuristic candidate: `blended-verification-loop-workspace-preflight-approval-auth`
-- Heuristic score: `0.741`
+- Heuristic candidate: `blended-verification-loop-approval-auth`
+- Heuristic score: `0.756`
 
 ### Trigger Summary
 
-Verified the distinction between private MCP retry arguments and public Agent tool schemas after fixing manual network continuation.
+Command exited with code 0. Command: (external failure context). Signals: verification-loop, approval-auth. stdout was used as fallback failure evidence.
 
 ### Strategy Rationale
 
@@ -553,37 +553,33 @@ Verified the distinction between private MCP retry arguments and public Agent to
 
 ### Latest Trigger Command
 
-`pytest test/test_command_sandbox.py test/test_tool_schemas.py`
+`CLAWCROSS_NETWORK_INTEGRATION=1 PYTHONPATH=src:src/backend:. python -m pytest test/test_command_sandbox.py test/test_command_landlock_integration.py -k 'not background_command' -q`
 
 ### Latest Error Excerpt
 
 ```text
-Approval/network regression initially failed because test_agent_cannot_request_escalation_through_tool_schema
-checked the private Python transport signature instead of the schema bound to the model. MCP inventory also
-classified the new server-only retry fields as model-visible. Updated both checks to assert those fields are
-hidden in the model/discovery schemas. Agent-supplied escalation is rejected by the execution node.
-The real MCP command test now approves a blocked HTTPS request and executes its exact retry once (HTTP 200).
+Observed production Landlock bug before repair:
+HTTP proxy 403=True; classified_success=True; human_approval=False; proxy_denial=True.
+A curl HTTP 403 exits 0; the foreground supervisor skipped permission review.
+Verified repair: 43 command sandbox/integration tests passed, 2 background tests deselected, 25 subtests passed.
+Additional automatic-review integration: 1 passed; exact public target approved, retry returned HTTP 200.
+Real client checks: wget --version and nc -h execute; granted wget HTTPS returns the Example Domain page.
+Ordinary upstream HTTP 403 does not request sandbox permissions; direct sockets stay blocked.
 ```
-
-### Verified Resolution
-
-`test_manual_approval_continuation.py`, `test_approval_review.py`, `test_command_sandbox.py`,
-`test_tool_schemas.py`, `test_acp_stream_and_bridge.py`, `test_command_landlock_integration.py`:
-149 passed, 2 background cases deselected, 277 subtests passed. Studio/Mobile inline approvals:
-4 browser checks passed. KEEP Y remembers the exact command only; allowed-domain settings stay unchanged.
 
 ### Governance Snapshot
 
 - Suppressed signals: (none)
 - Consecutive repair cycles: `0`
 - Consecutive empty cycles: `0`
-- Recent failure ratio: `1.0`
+- Recent failure ratio: `0.0`
 
 ### Operating Adjustments
 
 1. Start from the narrowest reproducible failure before broad retries.
 2. Record repo/cwd/entrypoint assumptions explicitly when failures mention paths or imports.
 3. End every fix attempt with an explicit verifier command and observed result.
+4. Do not treat exit code 0 as network success when the sandbox proxy reports a denied destination. curl without --fail and scripts that catch HTTPError can exit 0; review only the bounded target and retry at most once. An upstream site's HTTP 403 is not sandbox denial evidence.
 
 ### Validation Loop
 
@@ -592,15 +588,15 @@ The real MCP command test now approves a blocked HTTPS request and executes its 
 
 ### Recent Evidence
 
-- `2026-10-03T10:51:08.477091+00:00` `repo-skill` — ...................................................... [ 36%]
-.F....................................F......................................... ...[truncated]
+- `2026-10-03T11:28:02.066865+00:00` `repo-skill` — Observed production Landlock bug before repair:
+HTTP proxy 403=True; classified_success=True; human_approval=False; proxy_denial=True.
+A curl ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `blended-verification-loop-workspace-preflight-approval-auth` score `0.741` — Blend the strongest recent failure patterns (intent `repair`)
-- `verification-loop-5` score `0.701` — Tighten verification loops (intent `repair`)
-- `workspace-preflight-2` score `0.608` — Add repo/workspace preflight checks (intent `repair`)
-- `approval-auth-1` score `0.577` — Preflight auth and approval constraints (intent `repair`)
+- `blended-verification-loop-approval-auth` score `0.756` — Blend the strongest recent failure patterns (intent `repair`)
+- `verification-loop-3` score `0.716` — Tighten verification loops (intent `repair`)
+- `approval-auth-3` score `0.716` — Preflight auth and approval constraints (intent `repair`)
 
 ### Local State Snapshot
 

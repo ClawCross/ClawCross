@@ -82,7 +82,9 @@ class CommandSandboxTests(unittest.TestCase):
                 self.assertIn('Permission denied', reviewer.await_args.kwargs['review_evidence'])
 
     def test_success_and_sandbox_initialization_failure_never_request_escalation(self):
-        for code, stderr in ((0, 'cat: /tmp/test: Permission denied'), (1, 'apply-seccomp: write /proc/self/setgroups: Permission denied')):
+        for code, stderr in ((0, 'cat: /tmp/test: Permission denied'),
+                             (0, 'HTTP 403 Forbidden from example.com'),
+                             (1, 'apply-seccomp: write /proc/self/setgroups: Permission denied')):
             with self.subTest(code=code), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 workspace = SessionWorkspace(root=root, cwd=root, mode='shared', remote='')
@@ -99,6 +101,37 @@ class CommandSandboxTests(unittest.TestCase):
                     self.assertEqual(asyncio.run(commander.run_command('alice', 'echo ok')), 'result')
                 runner.assert_awaited_once()
                 reviewer.assert_not_awaited()
+
+    def test_proxy_denial_with_zero_exit_is_reviewed_and_retried_once(self):
+        from webot.approval_review import ApprovalResult
+        for allowed, ceiling in ((True, '["*"]'), (False, '["*"]'), (True, '[]')):
+            with self.subTest(allowed=allowed, ceiling=ceiling), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                workspace = SessionWorkspace(root=root, cwd=root, mode='shared', remote='')
+                options = SimpleNamespace(approval=SimpleNamespace(command_sandbox='srt'))
+                calls = []
+                denial = 'ClawCross proxy denied network target: example.com:80 (destination not allowed)'
+                async def run(*args, **kwargs):
+                    calls.append(args)
+                    kwargs['execution_report'].update(exit_code=0, timed_out=False,
+                        stderr=denial if len(calls) == 1 else '')
+                    return 'HTTP 403' if len(calls) == 1 else 'HTTP 200'
+                with patch.dict('os.environ', {'CLAWCROSS_SANDBOX_MAX_DOMAINS': ceiling}), \
+                     patch('webot.runtime_settings.get_runtime_settings', return_value=options), \
+                     patch.object(commander, '_command_safety_gate', new=AsyncMock(return_value=(None, ''))), \
+                     patch.object(commander, 'resolve_session_workspace', return_value=workspace), \
+                     patch.object(command_sandbox, '_srt_binary', return_value='/usr/bin/srt'), \
+                     patch.object(commander, '_run_foreground', side_effect=run), \
+                     patch.object(commander, 'authorize_action', new=AsyncMock(return_value=ApprovalResult(allowed, '审核拒绝'))) as reviewer:
+                    result = asyncio.run(commander.run_command('alice', 'curl http://example.com', session_id='s'))
+                self.assertEqual(len(calls), 2 if allowed and ceiling != '[]' else 1)
+                if ceiling == '[]':
+                    self.assertIn('提权上限', result)
+                    reviewer.assert_not_awaited()
+                else:
+                    reviewer.assert_awaited_once()
+                    self.assertEqual(reviewer.await_args.kwargs['args']['escalation_target'], 'example.com:80')
+                    self.assertIn('HTTP 200' if allowed else '审核拒绝', result)
 
     def test_root_deletion_stays_absolute_but_workspace_rm_uses_isolation(self):
         self.assertIsNotNone(commander._validate_command('rm -rf /', isolated=True))

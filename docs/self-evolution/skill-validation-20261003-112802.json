@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20261003112802066757",
+  "candidate_id": "blended-verification-loop-approval-auth",
+  "skill_name": "repo-skill",
+  "strategy": "repair-only",
+  "env_fingerprint": {
+    "python_version": "3.11.16",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-10-03T11:28:02.066720+00:00"
+  },
+  "commands": [
+    {
+      "command": "(external failure context)",
+      "ok": true,
+      "stdout": "Observed production Landlock bug before repair:\nHTTP proxy 403=True; classified_success=True; human_approval=False; proxy_denial=True.\nA curl HTTP 403 exits 0; the foreground supervisor skipped permission review.\nVerified repair: 43 command sandbox/integration tests passed, 2 background tests deselected, 25 subtests passed.\nAdditional automatic-review integration: 1 passed; exact public target approved, retry returned HTTP 200.\nReal client checks: wget --version and nc -h execute; granted wget HTTPS returns the Example Domain page.\nOrdinary upstream HTTP 403 does not request sandbox permissions; direct sockets stay blocked.",
+      "stderr": ""
+    }
+  ],
+  "overall_ok": true,
+  "duration_ms": null,
+  "created_at": "2026-10-03T11:28:02.066778+00:00",
+  "asset_id": "sha256:047e40c5d1a70627698e6e0ea4d5b709832cdafd4db9670689c1fe4ff5b12567"
+}
