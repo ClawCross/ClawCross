@@ -147,7 +147,7 @@ def bridge_router():
         from webot.approval_review import review_context, resolve_conversation_reply
         resolve_conversation_reply(*key, review_context([human]))
         call = {'name': body.name, 'args': body.arguments, 'id': 'bridge-' + secrets.token_hex(8)}
-        node = UserAwareToolNode(tools, lambda: tools, find_internal_session_meta_fn=meta,
+        node = UserAwareToolNode(tools, find_internal_session_meta_fn=meta,
                                  tool_registry=engine._tool_registry)
         async with turn['lock']:
             if _active.get(key) is not turn:

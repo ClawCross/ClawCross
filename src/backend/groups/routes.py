@@ -43,8 +43,6 @@ class GroupCreate(BaseModel):
     title: str = ""
     kind: str = GROUP         # "group" | "direct"
     agents: list[str] = Field(default_factory=list)
-    password: str = Field('', max_length=256)
-    local_join: bool = True
 
 
 class GroupPatch(BaseModel):
@@ -104,8 +102,7 @@ def create_groups_router(
 
     @router.post("/groups")
     async def create_group(body: GroupCreate, authorization: str | None = Header(None)):
-        options = {'password': body.password, 'local_join': body.local_join} if getattr(service, 'supports_remote', False) else {}
-        return call(service.create, user_of(authorization), title=body.title, kind=body.kind, agents=body.agents, **options)
+        return call(service.create, user_of(authorization), title=body.title, kind=body.kind, agents=body.agents)
 
     @router.get("/groups/{conv_id}/messages")
     async def list_messages(conv_id: str, after_id: int = 0, authorization: str | None = Header(None)):

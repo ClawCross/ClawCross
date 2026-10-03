@@ -128,11 +128,11 @@ test('remote group join and sharing stay usable on a narrow phone', async ({ pag
   await stub(page, calls);
   await page.addInitScript(() => { window.alert = () => {}; window.confirm = () => true; localStorage.setItem('clawcross_lang', 'zh'); });
   const remote = { ...CODEX, agent_id: 'p_remote', name: 'Remote friend', remote: true };
-  const group = { ...GROUP, group_id: 'rg_network', federated: true, local_join: true, owner: 'tester',
+  const group = { ...GROUP, group_id: 'rg_network', federated: true, owner: 'tester',
     members: [{ principal: 'u:tester', name: 'tester', is_agent: false, muted: false },
       { ...member(remote), remote: true, user_id: 'bob', node_id: 'another-device' }], messages: [] };
   let joined = false;
-  const joins = [], sharing = [];
+  const joins = [], links = [];
   await page.route(/\/proxy_groups(\?.*)?$/, route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ groups: joined ? [GROUP, group] : [GROUP] }) }));
   await page.route('**/proxy_groups/join', route => {
     joins.push(route.request().postDataJSON()); joined = true;
@@ -141,22 +141,20 @@ test('remote group join and sharing stay usable on a narrow phone', async ({ pag
   await page.route('**/proxy_groups/rg_network', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(group) }));
   await page.route('**/proxy_groups/rg_network/messages*', route => route.fulfill({ contentType: 'application/json', body: '{"messages":[]}' }));
   await page.route('**/proxy_groups/rg_network/typing', route => route.fulfill({ contentType: 'application/json', body: '{"typing":[],"names":[]}' }));
-  await page.route('**/proxy_groups/rg_network/invite', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ server_url: 'https://friends.example', group_id: 'g_remote', password_enabled: true }) }));
-  await page.route('**/proxy_groups/rg_network/sharing', route => {
-    sharing.push(route.request().postDataJSON());
-    return route.fulfill({ contentType: 'application/json', body: JSON.stringify(group) });
+  await page.route('**/proxy_groups/rg_network/guest-link', route => {
+    links.push(route.request().postDataJSON());
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ url: 'https://me.example/group-guest#new-ticket' }) });
   });
   await page.goto('/mobile/group_chat');
   await page.evaluate(() => GroupNetworkUI.join());
   const dialog = page.locator('.group-network-dialog');
-  await dialog.locator('input[name=server]').fill('https://friends.example');
-  await dialog.locator('input[name=group]').fill('g_remote');
-  await dialog.locator('input[name=password]').fill('secret');
+  await expect(dialog.locator('input, textarea')).toHaveCount(1);  // only the link: no address or password
+  await dialog.locator('textarea').fill('https://friends.example/group-guest#ticket');
   const bounds = await dialog.boundingBox();
   expect(bounds.x).toBeGreaterThanOrEqual(0); expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
-  await dialog.locator('button[type=submit]').click();
+  await dialog.getByRole('button', { name: '加入' }).click();
   await expect(dialog).toHaveCount(0);
-  expect(joins).toEqual([{ server_url: 'https://friends.example', group_id: 'g_remote', password: 'secret', agents: [] }]);
+  expect(joins).toEqual([{ invite: 'https://friends.example/group-guest#ticket', agents: [] }]);
   await expect(page.locator('#member-list')).toContainText('Remote friend');
   await expect(page.locator('#member-list')).not.toContainText('取消任务');
   await page.evaluate(() => showAgentDetail('p_remote'));
@@ -164,12 +162,11 @@ test('remote group join and sharing stay usable on a narrow phone', async ({ pag
   await expect(page.locator('#agent-detail-body')).not.toContainText('删除 Agent');
   await page.evaluate(() => closeAgentDetail());
   await page.evaluate(() => GroupNetworkUI.sharing('rg_network'));
-  await expect(dialog.locator('input[name=group]')).toHaveValue('g_remote');
-  await dialog.locator('input[name=password]').fill('rotated');
-  await dialog.locator('input[name=revoke]').check();
-  await dialog.locator('button[type=submit]').click();
-  await expect(dialog).toHaveCount(0);
-  expect(sharing).toEqual([{ password: 'rotated', local_join: true, revoke_connections: true }]);
+  await expect(dialog.locator('input[type=password]')).toHaveCount(0);
+  await dialog.getByRole('button', { name: '生成邀请链接' }).click();
+  await expect(dialog.locator('.gn-link')).toHaveValue('https://me.example/group-guest#new-ticket');
+  await expect(dialog.getByRole('button', { name: '复制链接' })).toBeVisible();
+  expect(links).toEqual([{}]);
   expect(errors).toEqual([]);
 });
 

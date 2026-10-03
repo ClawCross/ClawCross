@@ -142,7 +142,6 @@ _AUDIO_DEFAULTS: dict[str, dict[str, str]] = {
     },
 }
 
-_NO_TEMPERATURE_PREFIXES = ("gpt-5", "o1", "o3", "o4")
 _RESPONSES_API_PREFIXES = ("gpt-5", "o1", "o3", "o4")
 _OPENAI_ENDPOINT_SUFFIXES = (
     "/v1/chat/completions",
@@ -191,8 +190,9 @@ def _model_has_prefix(model: str, prefix: str) -> bool:
     return len(model_lower) == len(prefix) or model_lower[len(prefix)] in "-_."
 
 
-def _model_supports_temperature(model: str) -> bool:
-    return not any(_model_has_prefix(model, prefix) for prefix in _NO_TEMPERATURE_PREFIXES)
+def _model_supports_temperature(model: str, provider: str = "") -> bool:
+    from common.model_capabilities import model_capabilities
+    return model_capabilities(model, provider).get("temperature", True)
 
 
 def _normalize_openai_base_url(base_url: str) -> str:
@@ -313,6 +313,7 @@ def create_chat_model(
     api_key: str | None = None,
     base_url: str | None = None,
     provider: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> BaseChatModel:
     """从环境变量创建聊天模型实例。
 
@@ -367,14 +368,16 @@ def create_chat_model(
             "src/backend/ops/setup/configure.py --auto-model and then configure LLM_MODEL <model>."
         )
 
-    supports_temp = _model_supports_temperature(model)
-
     provider = infer_provider(
         model=model,
         base_url=base_url,
         provider=provider,
         api_key=api_key,
     )
+    supports_temp = _model_supports_temperature(model, provider)
+    from common.model_capabilities import reasoning_effort as supported_effort
+    effort = supported_effort(model, provider, reasoning_effort or "")
+    inference_kwargs = {"reasoning_effort": effort} if effort else {}
 
     if provider == "ollama":
         env_base_url_is_ollama = infer_provider(
@@ -402,7 +405,7 @@ def create_chat_model(
             kwargs["temperature"] = temperature
         if base_url:
             kwargs["base_url"] = base_url
-        return ChatGoogleGenerativeAI(**kwargs)
+        return ChatGoogleGenerativeAI(**kwargs, **inference_kwargs)
 
     if provider == "anthropic":
         from langchain_anthropic import ChatAnthropic
@@ -418,7 +421,7 @@ def create_chat_model(
             kwargs["temperature"] = temperature
         if base_url:
             kwargs["base_url"] = base_url
-        return ChatAnthropic(**kwargs)
+        return ChatAnthropic(**kwargs, **inference_kwargs)
 
     if provider == "deepseek":
         from langchain_deepseek import ChatDeepSeek
@@ -437,7 +440,7 @@ def create_chat_model(
         }
         if supports_temp:
             kwargs["temperature"] = temperature
-        return ClawCrossChatDeepSeek(**kwargs)
+        return ClawCrossChatDeepSeek(**kwargs, **inference_kwargs)
 
     if provider == "minimax":
         from langchain_anthropic import ChatAnthropic
@@ -454,7 +457,7 @@ def create_chat_model(
             kwargs["temperature"] = temperature
         if anthropic_base:
             kwargs["base_url"] = anthropic_base
-        return ChatAnthropic(**kwargs)
+        return ChatAnthropic(**kwargs, **inference_kwargs)
 
     from langchain_openai import ChatOpenAI
 
@@ -472,4 +475,4 @@ def create_chat_model(
     if _should_use_responses_api(model, openai_base):
         kwargs["use_responses_api"] = True
 
-    return ChatOpenAI(**kwargs)
+    return ChatOpenAI(**kwargs, **inference_kwargs)

@@ -43,19 +43,11 @@ def _is_vision_model() -> bool:
     if explicit:
         return explicit == "true"
 
-    model = os.getenv("LLM_MODEL", "").lower()
-    vision_patterns = (
-        "gpt-4o", "gpt-4-vision", "gpt-5", "gpt-o",
-        "o1", "o3", "o4",
-        "gemini",
-        "claude",
-        # Antigravity reverse-proxy may use original model names (gemini-*, claude-*)
-        # which are already covered above; no extra patterns needed
-    )
-    for pattern in vision_patterns:
-        if pattern in model:
-            return True
-    return False
+    from common.llm_factory import infer_provider
+    from common.model_capabilities import model_capabilities
+    model = os.getenv("LLM_MODEL", "")
+    provider = infer_provider(model=model, provider=os.getenv("LLM_PROVIDER", ""), base_url=os.getenv("LLM_BASE_URL", ""))
+    return bool(model_capabilities(model, provider).get("image_inputs", False))
 
 
 def build_human_message(

@@ -218,85 +218,6 @@ def cleanup():
     print("✅ 所有服务已关闭")
 
 
-def resolve_openclaw_cli():
-    """Return the preferred OpenClaw CLI binary path when available.
-
-    优先使用腾讯内网版 wrapper（~/.local/lib/openclaw-internal/bin/openclaw），
-    因为它会自动 source 运行时环境。
-    """
-    # 优先检测内网版 wrapper
-    internal_wrapper = os.path.expanduser(
-        "~/.local/lib/openclaw-internal/bin/openclaw"
-    )
-    if os.path.isfile(internal_wrapper) and os.access(internal_wrapper, os.X_OK):
-        return internal_wrapper
-
-    candidates = ["openclaw.cmd", "openclaw"] if sys.platform == "win32" else ["openclaw"]
-    for candidate in candidates:
-        path = shutil.which(candidate)
-        if path:
-            return path
-    return None
-
-
-def ensure_openclaw_gateway_running():
-    """Best-effort startup for OpenClaw Gateway when the CLI is installed."""
-    _no_oc = (os.getenv("CLAWCROSS_NO_OPENCLAW") or "").strip().lower()
-    if _no_oc in ("1", "true", "yes", "on"):
-        print("⏭️  已跳过 OpenClaw 联动（CLAWCROSS_NO_OPENCLAW）— 不预热 Gateway、不刷新 OPENCLAW_*")
-        return
-    openclaw_cli = resolve_openclaw_cli()
-    if not openclaw_cli:
-        return
-
-    try:
-        script_dir = os.path.join(PROJECT_ROOT, "src", "backend", "ops", "setup")
-        if script_dir not in sys.path:
-            sys.path.insert(0, script_dir)
-
-        from configure_openclaw import sync_openclaw_runtime_for_clawcross_startup
-    except Exception as exc:
-        print(f"🦞 OpenClaw 已安装，但运行时预检查不可用: {exc}")
-        return
-
-    print("🦞 检测 OpenClaw Gateway...")
-
-    try:
-        result = sync_openclaw_runtime_for_clawcross_startup()
-        load_dotenv(dotenv_path=ENV_FILE_PATH, override=True)
-
-        runtime_after = result.get("runtime_after")
-        api_url = result.get("api_url")
-        auth_mode = result.get("auth_mode") or "unknown"
-        sessions_file = result.get("sessions_file")
-        env_updates = result.get("env_updates") or []
-
-        if runtime_after == "running":
-            detail_parts = []
-            if result.get("gateway_started"):
-                detail_parts.append("gateway started")
-            if result.get("chat_completions_enabled"):
-                if result.get("chat_completions_changed"):
-                    detail_parts.append("chatCompletions enabled")
-                else:
-                    detail_parts.append("chatCompletions ready")
-            if api_url:
-                detail_parts.append(api_url)
-            detail = ", ".join(detail_parts) if detail_parts else "gateway running"
-            print(f"   ✅ OpenClaw 已就绪 ({detail})")
-            print(f"   ℹ️ Auth: {auth_mode}")
-            if sessions_file:
-                print(f"   ℹ️ Sessions: {sessions_file}")
-            if env_updates:
-                print(f"   ℹ️ 已刷新 .env: {', '.join(env_updates)}")
-            return
-
-        detail = result.get("gateway_start_error") or runtime_after or "gateway unavailable"
-        print(f"   ⚠️ OpenClaw 已安装，但未能准备好 runtime: {detail}")
-    except Exception as exc:
-        print(f"   ⚠️ OpenClaw 已安装，但启动预热失败: {exc}")
-
-
 def _command_output(args):
     try:
         result = subprocess.run(
@@ -639,7 +560,6 @@ if not os.getenv("INTERNAL_TOKEN"):
     os.environ["INTERNAL_TOKEN"] = _token
     print(f"🔑 已自动生成 INTERNAL_TOKEN 并写入 .env")
 
-ensure_openclaw_gateway_running()
 
 # 服务配置列表
 services = [
@@ -976,7 +896,6 @@ try:
 
             # 重新加载 .env 配置
             load_dotenv(dotenv_path=ENV_FILE_PATH, override=True)
-            ensure_openclaw_gateway_running()
 
             # 重新启动所有服务
             child_procs.clear()

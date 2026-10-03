@@ -77,8 +77,6 @@ from teams.creator import (
 )
 from teams.preset_assets import install_team_preset, list_team_presets
 from teams.snapshot_skills import (
-    SNAPSHOT_OPENCLAW_AGENTS_DIR,
-    SNAPSHOT_OPENCLAW_MANAGED_DIR,
     add_team_skills_to_zip,
     add_user_skills_to_zip,
     restore_skills_from_team_dir,
@@ -239,14 +237,6 @@ import secrets
 import hmac
 import hashlib
 from common.logging_utils import get_logger
-from teams.openclaw_restore_naming import (
-    openclaw_entries_ordered,
-    restore_agent_id,
-    restore_display_name,
-    restore_external_global_name,
-)
-
-_logger_oc_restore = get_logger("clawcross.openclaw_restore")
 _logger_history = get_logger("clawcross.external_history")
 
 def generate_login_token(user_id: str, valid_hours: int = 24) -> str:
@@ -371,7 +361,7 @@ def _user_exists_in_users_json(username: str) -> bool:
 # --- Unified auth: before_request hook ---
 # Routes that do NOT require login
 _PUBLIC_ROUTES = frozenset({
-    'group_guest_page', 'group_guest_api',
+    'group_guest_page', 'group_guest_api', 'group_device_relay',
     'index', 'manifest', 'service_worker', 'static',
     'proxy_openai_completions', 'proxy_openai_models',
     'proxy_login', 'proxy_logout', 'proxy_check_session',
@@ -653,27 +643,6 @@ def _llm_config_complete(config: dict[str, str]) -> bool:
     return bool(api_key) and api_key != "your_api_key_here"
 
 
-def _read_saved_openclaw_runtime_config():
-    settings = read_env_all(str(ENV_FILE))
-    gateway_token = (settings.get("OPENCLAW_GATEWAY_TOKEN") or os.getenv("OPENCLAW_GATEWAY_TOKEN") or "").strip()
-    api_key = (settings.get("OPENCLAW_API_KEY") or os.getenv("OPENCLAW_API_KEY") or "").strip()
-    return {
-        "api_url": (settings.get("OPENCLAW_API_URL") or os.getenv("OPENCLAW_API_URL") or "").strip(),
-        "api_key": gateway_token or api_key,
-    }
-
-
-def _normalize_openclaw_chat_url(api_url: str) -> str:
-    """Point OPENCLAW_API_URL at /v1/chat/completions when only the gateway root was set."""
-    u = (api_url or "").strip().rstrip("/")
-    if not u:
-        return ""
-    path = (urlparse(u).path or "").lower()
-    if "chat/completions" in path:
-        return u
-    return urljoin(u + "/", "v1/chat/completions").rstrip("/")
-
-
 def _resolve_clawcross_llm_config(data: dict | None):
     payload = data or {}
     saved = _read_saved_clawcross_llm_config()
@@ -703,55 +672,6 @@ def _resolve_clawcross_llm_config(data: dict | None):
             api_key=resolved["api_key"],
         )
     return resolved
-
-
-@app.route("/api/export_openclaw_config", methods=["POST"])
-def export_openclaw_config():
-    """将当前 Clawcross LLM 设置写回 OpenClaw 默认 provider/model。"""
-    import shutil
-    import sys
-
-    oc_bin = shutil.which("openclaw")
-    if not oc_bin:
-        return jsonify({"ok": False, "error": "OpenClaw 未安装"}), 404
-
-    resolved = _resolve_clawcross_llm_config(request.get_json(force=True) or {})
-    api_key = resolved["api_key"]
-    base_url = resolved["base_url"] or _default_base_url_for_provider(resolved["provider"])
-    model = resolved["model"]
-    provider = resolved["provider"]
-
-    if not base_url or not model:
-        return jsonify({
-            "ok": False,
-            "error": "base_url and model are required",
-        }), 400
-    if not api_key and not _provider_is_local_keyless(provider, base_url):
-        return jsonify({
-            "ok": False,
-            "error": "api_key, base_url and model are required",
-        }), 400
-
-    script_dir = os.path.join(root_dir, "src", "backend", "ops", "setup")
-    sys_path_backup = list(sys.path)
-    try:
-        if script_dir not in sys.path:
-            sys.path.insert(0, script_dir)
-        from configure_openclaw import export_llm_config_to_openclaw
-        result = export_llm_config_to_openclaw(
-            api_key=api_key,
-            base_url=base_url,
-            model=model,
-            provider=provider,
-        )
-    except ValueError as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
-    except Exception as e:
-        return jsonify({"ok": False, "error": f"写入 OpenClaw 配置失败: {e}"}), 500
-    finally:
-        sys.path[:] = sys_path_backup
-
-    return jsonify(result)
 
 
 @app.route("/api/discover_models", methods=["POST"])
@@ -3055,225 +2975,6 @@ def proxy_save_user_profile():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/proxy_openclaw_sessions")
-def proxy_openclaw_sessions():
-    """Proxy to fetch the OpenClaw agent list."""
-
-    filter_kw = request.args.get("filter", "")
-    try:
-        r = requests.get(
-            f"{AGENT_BASE_URL}/sessions/openclaw",
-            headers=_internal_auth_headers(),
-            params={"filter": filter_kw},
-            timeout=10,
-        )
-        return jsonify(r.json()), r.status_code
-    except Exception as e:
-        return jsonify({"error": str(e), "sessions": [], "available": False}), 500
-
-
-@app.route("/proxy_openclaw_add", methods=["POST"])
-def proxy_openclaw_add():
-    """Proxy to create a new OpenClaw agent."""
-
-    try:
-        r = requests.post(
-            f"{AGENT_BASE_URL}/sessions/openclaw/add",
-            headers=_internal_auth_headers(),
-            json=request.get_json(force=True),
-            timeout=35,
-        )
-        return jsonify(r.json()), r.status_code
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/proxy_openclaw_default_workspace", methods=["GET"])
-def proxy_openclaw_default_workspace():
-    """Proxy to get the default OpenClaw workspace parent directory."""
-
-    try:
-        r = requests.get(f"{AGENT_BASE_URL}/sessions/openclaw/default-workspace", headers=_internal_auth_headers(), timeout=10)
-        return jsonify(r.json()), r.status_code
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/proxy_openclaw_workspace_files", methods=["GET"])
-def proxy_openclaw_workspace_files():
-    """Proxy to list core files in an OpenClaw agent's workspace."""
-
-    try:
-        r = requests.get(
-            f"{AGENT_BASE_URL}/sessions/openclaw/workspace-files",
-            headers=_internal_auth_headers(),
-            params={"workspace": request.args.get("workspace", "")},
-            timeout=10,
-        )
-        return jsonify(r.json()), r.status_code
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/proxy_openclaw_workspace_file", methods=["GET"])
-def proxy_openclaw_workspace_file_read():
-    """Proxy to read a single workspace file."""
-
-    try:
-        r = requests.get(
-            f"{AGENT_BASE_URL}/sessions/openclaw/workspace-file",
-            headers=_internal_auth_headers(),
-            params={"workspace": request.args.get("workspace", ""),
-                    "filename": request.args.get("filename", "")},
-            timeout=10,
-        )
-        return jsonify(r.json()), r.status_code
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/proxy_openclaw_workspace_file", methods=["POST"])
-def proxy_openclaw_workspace_file_save():
-    """Proxy to save a workspace file."""
-
-    try:
-        r = requests.post(
-            f"{AGENT_BASE_URL}/sessions/openclaw/workspace-file",
-            headers=_internal_auth_headers(),
-            json=request.get_json(force=True),
-            timeout=15,
-        )
-        return jsonify(r.json()), r.status_code
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/proxy_openclaw_agent_detail", methods=["GET"])
-def proxy_openclaw_agent_detail():
-    """Proxy to get detailed agent config (skills, tools, profile)."""
-
-    try:
-        r = requests.get(
-            f"{AGENT_BASE_URL}/sessions/openclaw/agent-detail",
-            headers=_internal_auth_headers(),
-            params={"name": request.args.get("name", "")},
-            timeout=15,
-        )
-        return jsonify(r.json()), r.status_code
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 502
-
-@app.route("/proxy_openclaw_skills", methods=["GET"])
-def proxy_openclaw_skills():
-    """Proxy to /sessions/openclaw/skills, passing optional agent name for filtering."""
-
-    try:
-        agent_name = request.args.get("agent", "")
-        params = {}
-        if agent_name:
-            params["name"] = agent_name
-        r = requests.get(
-            f"{AGENT_BASE_URL}/sessions/openclaw/skills",
-            headers=_internal_auth_headers(),
-            params=params,
-            timeout=20,
-        )
-        return jsonify(r.json()), r.status_code
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/proxy_openclaw_tool_groups", methods=["GET"])
-def proxy_openclaw_tool_groups():
-    """Proxy to get available tool groups and profiles."""
-
-    try:
-        r = requests.get(f"{AGENT_BASE_URL}/sessions/openclaw/tool-groups", headers=_internal_auth_headers(), timeout=10)
-        return jsonify(r.json()), r.status_code
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/proxy_openclaw_update_config", methods=["POST"])
-def proxy_openclaw_update_config():
-    """Proxy to update an agent's skills/tools config."""
-
-    try:
-        r = requests.post(
-            f"{AGENT_BASE_URL}/sessions/openclaw/update-config",
-            headers=_internal_auth_headers(),
-            json=request.get_json(force=True),
-            timeout=15,
-        )
-        return jsonify(r.json()), r.status_code
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/proxy_openclaw_channels", methods=["GET"])
-def proxy_openclaw_channels():
-    """Proxy to list all available channels."""
-
-    try:
-        r = requests.get(f"{AGENT_BASE_URL}/sessions/openclaw/channels", headers=_internal_auth_headers(), timeout=15)
-        return jsonify(r.json()), r.status_code
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/proxy_openclaw_agent_bindings", methods=["GET"])
-def proxy_openclaw_agent_bindings():
-    """Proxy to get an agent's current channel bindings."""
-
-    try:
-        r = requests.get(
-            f"{AGENT_BASE_URL}/sessions/openclaw/agent-bindings",
-            headers=_internal_auth_headers(),
-            params={"agent": request.args.get("agent", "")},
-            timeout=15,
-        )
-        return jsonify(r.json()), r.status_code
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/proxy_openclaw_agent_bind", methods=["POST"])
-def proxy_openclaw_agent_bind():
-    """Proxy to bind/unbind a channel to an agent."""
-
-    try:
-        r = requests.post(
-            f"{AGENT_BASE_URL}/sessions/openclaw/agent-bind",
-            headers=_internal_auth_headers(),
-            json=request.get_json(force=True),
-            timeout=15,
-        )
-        return jsonify(r.json()), r.status_code
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/proxy_openclaw_remove", methods=["DELETE"])
-def proxy_openclaw_remove():
-    """Proxy to delete an OpenClaw agent."""
-
-    try:
-        body = request.get_json(force=True)
-        agent_name = body.get("name", "")
-        if not agent_name:
-            return jsonify({"ok": False, "error": "Agent name is required"}), 400
-        
-        r = requests.delete(
-            f"{AGENT_BASE_URL}/sessions/openclaw/remove",
-            headers=_internal_auth_headers(),
-            params={"name": agent_name},
-            timeout=15,
-        )
-        return jsonify(r.json()), r.status_code
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
 def _list_acpx_tools() -> list[str]:
     """Agent subcommands from `acpx --help` (cached)."""
     return sorted(acpx_agent_command_names())
@@ -3289,17 +2990,8 @@ def proxy_acpx_status():
 
 
 # ------------------------------------------------------------------
-# Team OpenClaw Snapshot — export/restore agent configs in team folder
+# Team alarms
 # ------------------------------------------------------------------
-
-def _team_storage_dir(user_id: str, team: str) -> str:
-    runtime_path = os.path.join(str(USER_FILES_DIR), user_id, "teams", team)
-    if app.config.get("TESTING"):
-        legacy_path = os.path.join(str(root_dir), "data", "user_files", user_id, "teams", team)
-        if os.path.exists(legacy_path):
-            return legacy_path
-    return runtime_path
-
 
 def _teams():
     from teams.store import get_team_store
@@ -3358,199 +3050,6 @@ def delete_team_alarm(team_name, task_id):
         return jsonify(data), resp.status_code
     except Exception as e:
         return jsonify({"error": f"Scheduler unavailable: {e}"}), 502
-
-
-def _openclaw_members(user_id: str, team: str) -> list:
-    """``(member, entry)`` for the team's OpenClaw members; ``entry`` in the team-package shape."""
-    result = []
-    for m in _teams().members(user_id, team):
-        if m.agent.driver != "openclaw":
-            continue
-        entry = {"name": m.role, "tag": "openclaw", "platform": "openclaw",
-                 "global_name": m.agent.config.get("global_name", "")}
-        entry.update({k: m.extra[k] for k in ("config", "workspace_files") if k in m.extra})
-        result.append((m, entry))
-    return result
-
-
-def _fetch_openclaw_snapshot(global_name: str) -> dict:
-    r = requests.get(f"{AGENT_BASE_URL}/sessions/openclaw/agent-snapshot", headers=_internal_auth_headers(), params={"name": global_name}, timeout=30)
-    return r.json()
-
-
-def _keep_openclaw_snapshot(user_id: str, team: str, member, snapshot: dict, *, drop_channels: bool = False) -> None:
-    config = dict(snapshot.get("config") or {})
-    if drop_channels:
-        config.pop("channels", None)
-        config.pop("bindings", None)
-    _teams().add(user_id, team, member.agent.agent_id, role=member.role, is_lead=member.is_lead,
-                 extra={**member.extra, "config": config, "workspace_files": snapshot.get("workspace_files", {})})
-
-
-@app.route("/team_openclaw_snapshot", methods=["GET"])
-def team_openclaw_snapshot_get():
-    """The team's OpenClaw members with their saved snapshots. Query: ?team=<name>"""
-    user_id = session.get("user_id", "")
-    team = request.args.get("team", "")
-    if not team:
-        return jsonify({"ok": False, "error": "team is required"}), 400
-    return jsonify({"ok": True, "agents": [entry for _m, entry in _openclaw_members(user_id, team)]})
-
-
-@app.route("/team_openclaw_snapshot/export", methods=["POST"])
-def team_openclaw_snapshot_export():
-    """Save an OpenClaw agent's config and workspace into the team (adding it as a member).
-    Body: { "team", "agent_name": OpenClaw agent name, "short_name": role name in the team }
-    """
-    user_id = session.get("user_id", "")
-    body = request.get_json(force=True)
-    team = body.get("team", "")
-    agent_name = body.get("agent_name", "")
-    short_name = body.get("short_name", "") or agent_name
-    if not team or not agent_name:
-        return jsonify({"ok": False, "error": "team and agent_name are required"}), 400
-    teams = _teams()
-    if not teams.exists(user_id, team):
-        return jsonify({"ok": False, "error": "Team not found"}), 404
-    try:
-        snapshot = _fetch_openclaw_snapshot(agent_name)
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-    if not snapshot.get("ok"):
-        return jsonify({"ok": False, "error": snapshot.get("error", "Export failed")}), 502
-
-    try:
-        agent = teams.member(user_id, team, short_name).agent
-    except LookupError:
-        agent = teams.agents.create(user_id, name=short_name, driver="openclaw",
-                                    config={"platform": "openclaw", "global_name": agent_name, "persona": ""})
-    member = teams.add(user_id, team, agent.agent_id, role=short_name)
-    _keep_openclaw_snapshot(user_id, team, member, snapshot)
-    file_count = len(snapshot.get("workspace_files", {}))
-    return jsonify({
-        "ok": True, "short_name": short_name, "agent_name": agent_name, "file_count": file_count, "cron_count": 0,
-        "message": f"Exported '{agent_name}' → team snapshot as '{short_name}' ({file_count} files)",
-    })
-
-
-def _refresh_openclaw_snapshots(user_id: str, team: str, *, drop_channels: bool) -> tuple[int, list[str]]:
-    refreshed, errors = 0, []
-    for member, entry in _openclaw_members(user_id, team):
-        name = entry["global_name"]
-        try:
-            snapshot = _fetch_openclaw_snapshot(name)
-        except Exception as e:
-            errors.append(f"{name}: {e}")
-            continue
-        if not snapshot.get("ok"):
-            errors.append(f"{name}: {snapshot.get('error', 'failed')}")
-            continue
-        _keep_openclaw_snapshot(user_id, team, member, snapshot, drop_channels=drop_channels)
-        refreshed += 1
-    return refreshed, errors
-
-
-@app.route("/team_openclaw_snapshot/sync_all", methods=["POST"])
-def team_openclaw_snapshot_sync_all():
-    """Refresh the saved snapshot of every OpenClaw member (channels and bindings left out)."""
-    user_id = session.get("user_id", "")
-    team = (request.get_json(force=True) or {}).get("team", "")
-    if not _teams().exists(user_id, team):
-        return jsonify({"ok": False, "error": "Team not found"}), 404
-    synced, errors = _refresh_openclaw_snapshots(user_id, team, drop_channels=True)
-    resp = {"ok": True, "synced": synced, "agents": [e for _m, e in _openclaw_members(user_id, team)]}
-    if errors:
-        resp["warnings"] = errors
-    return jsonify(resp)
-
-
-@app.route("/team_openclaw_snapshot/export_all", methods=["POST"])
-def team_openclaw_snapshot_export_all():
-    """Refresh the saved snapshot of every OpenClaw member."""
-    user_id = session.get("user_id", "")
-    team = (request.get_json(force=True) or {}).get("team", "")
-    if not _teams().exists(user_id, team):
-        return jsonify({"ok": False, "error": "Team not found"}), 404
-    total = len(_openclaw_members(user_id, team))
-    exported, errors = _refresh_openclaw_snapshots(user_id, team, drop_channels=False)
-    return jsonify({"ok": True, "exported": exported, "total": total, "errors": errors,
-                    "message": f"Exported {exported}/{total} agents to team snapshot"})
-
-
-def _restore_openclaw_member(user_id: str, team: str, member, entry: dict, ordered: list, target_name: str = "") -> dict:
-    """Recreate an OpenClaw agent from its saved snapshot and point the member's agent at it."""
-    target_name = target_name or restore_agent_id(team, entry, ordered)
-    t_http = time.perf_counter()
-    r = requests.post(
-        f"{AGENT_BASE_URL}/sessions/openclaw/agent-restore",
-        headers=_internal_auth_headers(),
-        json={"agent_name": target_name, "display_name": restore_display_name(team, entry["name"]),
-              "config": entry.get("config", {}), "workspace_files": entry.get("workspace_files", {})},
-        timeout=60,
-    )
-    result = r.json()
-    result["agent"] = target_name
-    result["client_http_ms"] = round((time.perf_counter() - t_http) * 1000, 2)
-    result["status_code"] = r.status_code
-    _logger_oc_restore.info("[clawcross-restore] agent=%s status=%s client_http_ms=%s oasis=%s",
-                            target_name, r.status_code, result["client_http_ms"], result.get("restore_timing_ms"))
-    if result.get("ok"):
-        agents = _teams().agents
-        agents.update(user_id, member.agent.agent_id, config={**member.agent.config, "global_name": target_name})
-    return result
-
-
-@app.route("/team_openclaw_snapshot/restore", methods=["POST"])
-def team_openclaw_snapshot_restore():
-    """Recreate one OpenClaw member from the team snapshot.
-    Body: { "team", "short_name": role name, "target_agent_name": optional ASCII id }
-    """
-    user_id = session.get("user_id", "")
-    body = request.get_json(force=True)
-    team, short_name = body.get("team", ""), body.get("short_name", "")
-    if not team or not short_name:
-        return jsonify({"ok": False, "error": "team and short_name are required"}), 400
-    members = _openclaw_members(user_id, team)
-    found = next(((m, e) for m, e in members if e["name"] == short_name), None)
-    if not found:
-        return jsonify({"ok": False, "error": f"No snapshot found for '{short_name}' in team '{team}'"}), 404
-    try:
-        result = _restore_openclaw_member(user_id, team, *found, [e for _m, e in members],
-                                          body.get("target_agent_name", ""))
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-    return jsonify(result), result.pop("status_code")
-
-
-@app.route("/team_openclaw_snapshot/restore_all", methods=["POST"])
-def team_openclaw_snapshot_restore_all():
-    """Recreate every OpenClaw member from the team snapshot."""
-    user_id = session.get("user_id", "")
-    team = (request.get_json(force=True) or {}).get("team", "")
-    if not team:
-        return jsonify({"ok": False, "error": "team is required"}), 400
-    members = _openclaw_members(user_id, team)
-    if not members:
-        return jsonify({"ok": True, "restored": 0, "message": "No openclaw snapshots found"}), 200
-    ordered = [e for _m, e in members]
-    restored, errors, rows = 0, [], []
-    for member, entry in members:
-        try:
-            result = _restore_openclaw_member(user_id, team, member, entry, ordered)
-        except Exception as e:
-            errors.append(f"{entry['name']}: {e}")
-            rows.append({"agent": entry["name"], "ok": False, "exception": str(e)})
-            continue
-        rows.append({"agent": result["agent"], "ok": bool(result.get("ok")), "client_http_ms": result["client_http_ms"],
-                     "oasis_timing_ms": result.get("restore_timing_ms"), "errors": result.get("errors")})
-        if result.get("ok"):
-            restored += 1
-        else:
-            errors.append(f"{result['agent']}: {result.get('errors', result.get('error', 'failed'))}")
-    return jsonify({
-        "ok": True, "openclaw_per_agent_restore": rows, "restored": restored, "total": len(members),
-        "errors": errors, "message": f"Restored {restored}/{len(members)} agents from team snapshot",
-    })
 
 
 # ──────────────────────────────────────────────────────────────
@@ -4424,68 +3923,6 @@ def delete_team(team_name):
     return jsonify({"success": True, "message": f"Team '{team_name}' deleted"})
 
 
-def _team_settings_path(user_id: str, team_name: str) -> str:
-    return os.path.join(str(USER_FILES_DIR), user_id, "teams", team_name, "team_settings.json")
-
-
-def _team_settings_load(user_id: str, team_name: str) -> dict:
-    """Load team settings. Returns default empty dict if not found."""
-    path = _team_settings_path(user_id, team_name)
-    if not os.path.isfile(path):
-        return {}
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f) or {}
-    except Exception:
-        return {}
-
-
-def _team_settings_save(user_id: str, team_name: str, settings: dict) -> None:
-    """Save team settings."""
-    team_dir = os.path.join(str(USER_FILES_DIR), user_id, "teams", team_name)
-    os.makedirs(team_dir, exist_ok=True)
-    path = _team_settings_path(user_id, team_name)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(settings, f, ensure_ascii=False, indent=2)
-
-
-@app.route("/teams/<team_name>/settings", methods=["GET"])
-def get_team_settings(team_name):
-    """Get team-level settings including fallback_agent."""
-    user_id = session.get("user_id", "")
-    if not user_id:
-        return jsonify({"error": "Unauthorized"}), 401
-    if "/" in team_name or "\\" in team_name or team_name.startswith("."):
-        return jsonify({"error": "Invalid team name"}), 400
-    team_dir = os.path.join(str(USER_FILES_DIR), user_id, "teams", team_name)
-    if not os.path.exists(team_dir):
-        return jsonify({"error": "Team not found"}), 404
-    settings = _team_settings_load(user_id, team_name)
-    return jsonify({"ok": True, "settings": settings})
-
-
-@app.route("/teams/<team_name>/settings", methods=["PUT"])
-def update_team_settings(team_name):
-    """Update team-level settings (e.g., fallback_agent)."""
-    user_id = session.get("user_id", "")
-    if not user_id:
-        return jsonify({"error": "Unauthorized"}), 401
-    if "/" in team_name or "\\" in team_name or team_name.startswith("."):
-        return jsonify({"error": "Invalid team name"}), 400
-    team_dir = os.path.join(str(USER_FILES_DIR), user_id, "teams", team_name)
-    if not os.path.exists(team_dir):
-        return jsonify({"error": "Team not found"}), 404
-    body = request.get_json(force=True) or {}
-    settings = _team_settings_load(user_id, team_name)
-    # Only update provided fields
-    if "fallback_agent" in body:
-        settings["fallback_agent"] = str(body["fallback_agent"] or "").strip()
-    if "fallback_agent_config" in body:
-        settings["fallback_agent_config"] = body["fallback_agent_config"]
-    _team_settings_save(user_id, team_name, settings)
-    return jsonify({"ok": True, "settings": settings})
-
-
 @app.route("/teams/<team_name>/skills", methods=["GET"])
 def get_team_skills(team_name):
     """List team-scoped and shared managed skills for a team."""
@@ -5155,7 +4592,7 @@ def preview_team_snapshot():
     """Preview what would be exported in a team snapshot.
     Returns a JSON summary of all exportable sections:
     agents (internal_agents), personas (oasis_experts),
-    skills (openclaw workspace/managed skills), cron jobs, workflows (yaml/python files),
+    skills (ClawCross personal and team skills), cron jobs, workflows (yaml/python files),
     and preset metadata files.
     """
     user_id = session.get("user_id", "")
@@ -5205,61 +4642,10 @@ def preview_team_snapshot():
          "global_name": e.get("global_name", "")}
         for e in ext_data
     ]
-    openclaw_info = [{"name": e["name"], "global_name": e.get("global_name", "")}
-                     for e in ext_data if e.get("platform") == "openclaw"]
     result["sections"]["external_agents"] = {"count": len(external_agents_info), "items": external_agents_info}
 
-    # --- 4. skills (workspace + managed) for openclaw agents + ClawCross managed skills ---
-    skills_info = []
-    managed_skills_info = []  # [{"name": ..., "source": "managed"}]
-    if isinstance(ext_data, list):
-        managed_collected = False
-        for entry in ext_data:
-            if entry.get("platform") != "openclaw":
-                continue
-            short_name = entry.get("name", "")
-            agent_name = entry.get("global_name", "") or short_name
-            try:
-                r = requests.get(
-                    f"{AGENT_BASE_URL}/sessions/openclaw/agent-detail",
-                    headers=_internal_auth_headers(),
-                    params={"name": agent_name},
-                    timeout=15,
-                )
-                resp = r.json()
-                if not resp.get("ok"):
-                    continue
-                agent_detail = resp.get("agent", {})
-                workspace = agent_detail.get("workspace", "")
-
-                # List workspace skill directory names only (no file contents)
-                ws_skill_names = []
-                if workspace:
-                    ws_skills_dir = os.path.join(os.path.expanduser(workspace), "skills")
-                    if os.path.isdir(ws_skills_dir):
-                        for item in sorted(os.listdir(ws_skills_dir)):
-                            if os.path.isdir(os.path.join(ws_skills_dir, item)):
-                                ws_skill_names.append(item)
-
-                skills_info.append({
-                    "agent": short_name,
-                    "skills": ws_skill_names,
-                })
-
-                # Collect managed skills (once)
-                if not managed_collected:
-                    user_skills = resp.get("user_skills", [])
-                    for sk in user_skills:
-                        if sk.get("source") == "managed" and sk.get("name"):
-                            managed_skills_info.append({"name": sk["name"]})
-                    managed_collected = True
-            except Exception:
-                skills_info.append({"agent": short_name, "skills": []})
-    result["sections"]["skills"] = {
-        "agents": openclaw_info,
-        "details": skills_info,
-        "managed": managed_skills_info,
-    }
+    # --- 4. ClawCross managed skills ---
+    result["sections"]["skills"] = {}
     try:
         from webot.skills import list_skills as list_managed_skills
 
@@ -5316,12 +4702,11 @@ def download_team_snapshot():
     """Download a compressed snapshot of the team's data.
     Includes: the members as internal_agents.json / external_agents.json (without this
              machine's sessions, global_names or api keys), oasis_experts.json, preset
-             metadata, all .yaml/.yml/.py workflow files, and skill folders (workspace +
-             managed) for each OpenClaw member.
+             metadata, all .yaml/.yml/.py workflow files, and the ClawCross skill folders.
     Supports selective export via 'include' field in request body.
     Simple mode: {"team": "...", "include": {"agents": true, "personas": true, "skills": true, "cron": true, "workflows": true}}
-    Granular mode for skills — select per-agent and per-skill:
-      {"include": {"skills": {"AgentName": ["Skill1", "Skill2"], "Agent2": true}}}
+    Granular mode for skills — select per scope and per skill:
+      {"include": {"skills": {"_managed_personal": ["Skill1"], "_managed_team": true}}}
     If 'include' is omitted, all sections are exported.
     """
     user_id = session.get("user_id", "")
@@ -5342,29 +4727,6 @@ def download_team_snapshot():
         if isinstance(val, dict):
             return True  # dict means granular selection — section is included
         return bool(val)
-
-    def _inc_agent_skill(agent_short_name, skill_name=None):
-        """Check if a specific agent's skill should be included.
-        include.skills can be: True, False, or {"AgentName": true/[skill_list], ...}
-        """
-        if include is None:
-            return True
-        skills_val = include.get("skills", False)
-        if skills_val is True:
-            return True
-        if skills_val is False or not skills_val:
-            return False
-        if isinstance(skills_val, dict):
-            agent_val = skills_val.get(agent_short_name, False)
-            if agent_val is True:
-                return True
-            if agent_val is False or not agent_val:
-                return False
-            if isinstance(agent_val, list):
-                if skill_name is None:
-                    return True  # agent is selected, check skills individually
-                return skill_name in agent_val
-        return True
 
     def _inc_managed_skill(scope: str, skill_name: str | None = None) -> bool:
         if include is None:
@@ -5433,71 +4795,6 @@ def download_team_snapshot():
                             rel_path = os.path.relpath(file_path, team_dir)
                             zipf.write(file_path, rel_path)
 
-            # --- Add skill folders for each OpenClaw member, and the members' scheduled tasks ---
-            managed_skills_added = False
-
-            if _inc("skills"):
-                ext_data = export_entries(teams, user_id, team, portable=False)[1]
-                if isinstance(ext_data, list):
-                    for entry in ext_data:
-                        if entry.get("platform") != "openclaw":
-                            continue
-                        short_name = entry.get("name", "")
-                        agent_name = entry.get("global_name", "") or short_name
-                        
-                        # Fetch agent detail from oasis server to get workspace path and user_skills
-                        if _inc("skills") and _inc_agent_skill(short_name):
-                            try:
-                                r = requests.get(
-                                    f"{AGENT_BASE_URL}/sessions/openclaw/agent-detail",
-                                    headers=_internal_auth_headers(),
-                                    params={"name": agent_name},
-                                    timeout=15,
-                                )
-                                resp = r.json()
-                                if resp.get("ok"):
-                                    agent_detail = resp.get("agent", {})
-                                    workspace = agent_detail.get("workspace", "")
-
-                                    # 1. Add workspace skills to zip: skills/openclaw_agents/{short_name}/
-                                    if workspace:
-                                        ws_skills_dir = os.path.join(os.path.expanduser(workspace), "skills")
-                                        if os.path.isdir(ws_skills_dir):
-                                            for item in os.listdir(ws_skills_dir):
-                                                item_path = os.path.join(ws_skills_dir, item)
-                                                if not os.path.isdir(item_path):
-                                                    continue
-                                                # Check if this specific skill is selected
-                                                if not _inc_agent_skill(short_name, item):
-                                                    continue
-                                                for dirpath, dirnames, filenames in os.walk(item_path):
-                                                    for fname in filenames:
-                                                        abs_path = os.path.join(dirpath, fname)
-                                                        rel_in_skills = os.path.relpath(abs_path, ws_skills_dir)
-                                                        zip_path = os.path.join(
-                                                            SNAPSHOT_OPENCLAW_AGENTS_DIR,
-                                                            short_name,
-                                                            rel_in_skills,
-                                                        )
-                                                        zipf.write(abs_path, zip_path)
-
-                                    # 2. Add managed skills to zip: skills/openclaw_managed/ (once)
-                                    if not managed_skills_added:
-                                        user_skills = resp.get("user_skills", [])
-                                        for sk in user_skills:
-                                            if sk.get("source") == "managed" and sk.get("path"):
-                                                sk_path = sk["path"]
-                                                if os.path.isdir(sk_path):
-                                                    for dirpath, dirnames, filenames in os.walk(sk_path):
-                                                        for fname in filenames:
-                                                            abs_path = os.path.join(dirpath, fname)
-                                                            rel_in_sk = os.path.relpath(abs_path, sk_path)
-                                                            zip_path = os.path.join(SNAPSHOT_OPENCLAW_MANAGED_DIR, sk["name"], rel_in_sk)
-                                                            zipf.write(abs_path, zip_path)
-                                    managed_skills_added = True
-
-                            except Exception:
-                                pass
             # Save internal scheduler alarms to zip: cron_jobs.json
             if _inc("cron"):
                 alarm_jobs_data = export_team_alarms(teams, user_id=user_id, team=team)
@@ -5616,178 +4913,14 @@ def upload_team_snapshot():
         temp_path = None
         
         # The package lists the team's members; this machine gives them runtimes.
-        from teams.manifest import EXTERNAL_FILE, INTERNAL_FILE, import_entries, read_folder
+        from teams.manifest import EXTERNAL_FILE, INTERNAL_FILE, import_entries, imported_agent_id, read_folder
 
-        internal_entries, openclaw_data = read_folder(Path(team_dir))
-
-        # External members get runtime names here; OpenClaw ones are recreated first.
-        openclaw_restored = 0
-        openclaw_errors = []
-        openclaw_restore_details = []
-
-        # Load team settings for fallback agent
-        team_settings = _team_settings_load(user_id, team)
-        fallback_agent = team_settings.get("fallback_agent", "")
-        fallback_agent_config = team_settings.get("fallback_agent_config", {})
-
-        # Paths for extracted skill folders
-        extracted_skills_dir = os.path.join(skills_extract_root, "skills")
-        extracted_openclaw_agents_dir = os.path.join(skills_extract_root, SNAPSHOT_OPENCLAW_AGENTS_DIR)
-        managed_skills_src = os.path.join(skills_extract_root, SNAPSHOT_OPENCLAW_MANAGED_DIR)
-        legacy_managed_skills_src = os.path.join(extracted_skills_dir, "_managed")
-
-        if openclaw_data:
-            try:
-                external_ordered = [e for e in openclaw_data if isinstance(e, dict)]
-                for agent_entry in external_ordered:
-                    if agent_entry.get("platform") == "openclaw":
-                        continue
-                    agent_entry["global_name"] = restore_external_global_name(
-                        team, agent_entry, external_ordered
-                    )
-
-                oc_ordered = openclaw_entries_ordered(openclaw_data)
-                for agent_entry in openclaw_data:
-                    if agent_entry.get("platform") != "openclaw":
-                        continue
-                    short_name = agent_entry.get("name", "")
-                    agent_snapshot = agent_entry
-                    target_name = restore_agent_id(team, agent_entry, oc_ordered)
-                    display_oc_name = restore_display_name(team, short_name)
-                    try:
-                        t_http = time.perf_counter()
-                        r = requests.post(
-                            f"{AGENT_BASE_URL}/sessions/openclaw/agent-restore",
-                            headers=_internal_auth_headers(),
-                            json={
-                                "agent_name": target_name,
-                                "display_name": display_oc_name,
-                                "config": agent_snapshot.get("config", {}),
-                                "workspace_files": agent_snapshot.get("workspace_files", {}),
-                            },
-                            timeout=60,
-                        )
-                        client_http_ms = round((time.perf_counter() - t_http) * 1000, 2)
-                        result = r.json()
-                        skills_ms = None
-                        if result.get("ok"):
-                            openclaw_restored += 1
-                            # Update global_name in JSON to reflect the new agent name
-                            agent_entry["global_name"] = target_name
-                            # --- Restore skill folders into agent workspace ---
-                            workspace = result.get("workspace", "")
-                            if workspace:
-                                t_skills = time.perf_counter()
-                                ws_skills_target = os.path.join(os.path.expanduser(workspace), "skills")
-                                agent_skills_src = os.path.join(extracted_openclaw_agents_dir, short_name)
-                                legacy_agent_skills_src = os.path.join(extracted_skills_dir, short_name)
-
-                                # Clear existing skills folder and rebuild
-                                if os.path.isdir(ws_skills_target):
-                                    shutil.rmtree(ws_skills_target)
-                                os.makedirs(ws_skills_target, exist_ok=True)
-
-                                # Copy workspace skills from snapshot
-                                skills_source_dir = agent_skills_src if os.path.isdir(agent_skills_src) else legacy_agent_skills_src
-                                if os.path.isdir(skills_source_dir):
-                                    for item in os.listdir(skills_source_dir):
-                                        src_item = os.path.join(skills_source_dir, item)
-                                        dst_item = os.path.join(ws_skills_target, item)
-                                        if os.path.isdir(src_item):
-                                            shutil.copytree(src_item, dst_item, dirs_exist_ok=True)
-                                        else:
-                                            shutil.copy2(src_item, dst_item)
-
-                                # Merge managed skills into the same workspace skills folder
-                                managed_source_dir = managed_skills_src if os.path.isdir(managed_skills_src) else legacy_managed_skills_src
-                                if os.path.isdir(managed_source_dir):
-                                    for item in os.listdir(managed_source_dir):
-                                        src_item = os.path.join(managed_source_dir, item)
-                                        dst_item = os.path.join(ws_skills_target, item)
-                                        if os.path.isdir(src_item) and not os.path.exists(dst_item):
-                                            shutil.copytree(src_item, dst_item)
-                                        elif os.path.isdir(src_item):
-                                            shutil.copytree(src_item, dst_item, dirs_exist_ok=True)
-                                skills_ms = round((time.perf_counter() - t_skills) * 1000, 2)
-                        else:
-                            # Restore failed — try fallback agent if configured
-                            if fallback_agent and fallback_agent_config:
-                                _logger_oc_restore.info(
-                                    "[clawcross-restore] route=snapshot_upload agent=%s restore failed, trying fallback=%s",
-                                    target_name,
-                                    fallback_agent,
-                                )
-                                try:
-                                    t_fb = time.perf_counter()
-                                    fb_r = requests.post(
-                                        f"{AGENT_BASE_URL}/sessions/openclaw/agent-restore",
-                                        headers=_internal_auth_headers(),
-                                        json={
-                                            "agent_name": fallback_agent,
-                                            "display_name": display_oc_name,
-                                            "config": fallback_agent_config,
-                                            "workspace_files": {},
-                                        },
-                                        timeout=60,
-                                    )
-                                    fb_result = fb_r.json()
-                                    fb_ms = round((time.perf_counter() - t_fb) * 1000, 2)
-                                    if fb_result.get("ok"):
-                                        result = fb_result
-                                        result["fallback_used"] = True
-                                        openclaw_restored += 1
-                                        agent_entry["global_name"] = fallback_agent
-                                        agent_entry["_fallback"] = True
-                                        _logger_oc_restore.info(
-                                            "[clawcross-restore] route=snapshot_upload agent=%s fallback=ok agent=%s",
-                                            target_name,
-                                            fallback_agent,
-                                        )
-                                    else:
-                                        openclaw_errors.append(
-                                            f"{target_name}: {result.get('errors', result.get('error', 'failed'))} (fallback={fallback_agent} also failed)"
-                                        )
-                                except Exception as fb_e:
-                                    openclaw_errors.append(
-                                        f"{target_name}: {result.get('errors', result.get('error', 'failed'))} (fallback exception: {fb_e})"
-                                    )
-                            else:
-                                openclaw_errors.append(
-                                    f"{target_name}: {result.get('errors', result.get('error', 'failed'))}"
-                                )
-                        detail = {
-                            "agent": target_name,
-                            "ok": bool(result.get("ok")),
-                            "client_http_ms": client_http_ms,
-                            "skills_copy_ms": skills_ms,
-                            "oasis_timing_ms": result.get("restore_timing_ms"),
-                            "errors": result.get("errors"),
-                        }
-                        openclaw_restore_details.append(detail)
-                        _logger_oc_restore.info(
-                            "[clawcross-restore] route=snapshot_upload agent=%s client_http_ms=%s skills_copy_ms=%s oasis=%s ok=%s",
-                            target_name,
-                            client_http_ms,
-                            skills_ms,
-                            result.get("restore_timing_ms"),
-                            result.get("ok"),
-                        )
-                    except Exception as e:
-                        openclaw_errors.append(f"{target_name}: {e}")
-                        openclaw_restore_details.append(
-                            {"agent": target_name, "ok": False, "exception": str(e)}
-                        )
-                        _logger_oc_restore.warning(
-                            "[clawcross-restore] route=snapshot_upload agent=%s failed: %s",
-                            target_name,
-                            e,
-                        )
-            except Exception as e:
-                openclaw_errors.append(f"Failed to restore external agents: {e}")
-
-        # An OpenClaw member that could not be recreated has no runtime to join with.
-        restorable = [e for e in openclaw_data if isinstance(e, dict) and e.get("global_name")]
-        members = import_entries(_teams(), user_id, team, internal_entries, restorable)
+        internal_entries, external_entries = read_folder(Path(team_dir))
+        # External members get this machine's agent ids, stable per team and name.
+        external_entries = [e for e in external_entries if isinstance(e, dict)]
+        for entry in external_entries:
+            entry["global_name"] = imported_agent_id(team, entry, external_entries)
+        members = import_entries(_teams(), user_id, team, internal_entries, external_entries)
         for name in (INTERNAL_FILE, EXTERNAL_FILE):
             (Path(team_dir) / name).unlink(missing_ok=True)
 
@@ -5825,8 +4958,6 @@ def upload_team_snapshot():
         )
         if restored_skills_total:
             msg_parts.append(f"{restored_skills_total} managed skills restored")
-        if openclaw_restored > 0 or openclaw_errors:
-            msg_parts.append(f"{openclaw_restored} OpenClaw agents restored")
         if cron_restored_total > 0 or cron_errors:
             msg_parts.append(f"{cron_restored_total} cron jobs restored")
         
@@ -5834,8 +4965,6 @@ def upload_team_snapshot():
             "success": True,
             "message": ", ".join(msg_parts),
             "skill_restore": skill_restore_result,
-            "openclaw_errors": openclaw_errors if openclaw_errors else None,
-            "openclaw_restore_details": openclaw_restore_details if openclaw_restore_details else None,
             "cron_errors": cron_errors if cron_errors else None,
         })
     except zipfile.BadZipFile:

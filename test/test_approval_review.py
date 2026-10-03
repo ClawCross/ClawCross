@@ -350,7 +350,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
     async def test_batch_wait_does_not_issue_early_execution_permits(self):
         from webot.engine.agent import UserAwareToolNode
         from webot.mcp import commander
-        node = UserAwareToolNode([], lambda: [])
+        node = UserAwareToolNode([])
         owner = self
         class Tools:
             async def ainvoke(self, state, config):
@@ -375,7 +375,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_batch_rechecks_an_earlier_approval_after_policy_change(self):
         from webot.engine.agent import UserAwareToolNode
-        node = UserAwareToolNode([], lambda: [])
+        node = UserAwareToolNode([])
         node.tool_node = AsyncMock()
         node.tool_node._tools_by_name = {}
         async def reviewer(**kwargs):

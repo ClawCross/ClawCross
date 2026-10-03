@@ -22,14 +22,6 @@ def _skill_content(name: str, description: str) -> str:
     return f"---\nname: {name}\ndescription: {description}\n---\n\nBody"
 
 
-class _MockJsonResponse:
-    def __init__(self, payload):
-        self._payload = payload
-
-    def json(self):
-        return self._payload
-
-
 class TeamSnapshotUploadTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -78,42 +70,25 @@ class TeamSnapshotUploadTests(unittest.TestCase):
                 (user_files_dir / "upload-user" / "teams" / "demo" / "skills" / "clawcross_team").exists()
             )
 
-    def test_upload_restores_new_format_openclaw_agent_and_managed_skills(self):
+    def test_upload_imports_an_old_openclaw_entry_as_an_acp_member_without_touching_openclaw(self):
         snapshot_zip = io.BytesIO()
         with zipfile.ZipFile(snapshot_zip, "w", zipfile.ZIP_DEFLATED) as zip_file:
             zip_file.writestr(
                 "external_agents.json",
-                json.dumps(
-                    [
-                        {
-                            "name": "architect",
-                            "platform": "openclaw",
-                            "global_name": "source_architect",
-                            "config": {},
-                            "workspace_files": {},
-                        }
-                    ]
-                ),
+                json.dumps([{"name": "architect", "platform": "openclaw", "global_name": "source_architect",
+                             "config": {}, "workspace_files": {}}]),
             )
-            zip_file.writestr(
-                "skills/openclaw_agents/architect/agent-skill/SKILL.md",
-                _skill_content("agent-skill", "agent skill"),
-            )
-            zip_file.writestr(
-                "skills/openclaw_managed/managed-skill/SKILL.md",
-                _skill_content("managed-skill", "managed skill"),
-            )
+            # Folders an older ClawCross exported for OpenClaw; nothing reads them now.
+            zip_file.writestr("skills/openclaw_agents/architect/agent-skill/SKILL.md",
+                              _skill_content("agent-skill", "agent skill"))
         snapshot_zip.seek(0)
 
         with TemporaryDirectory() as tmpdir:
-            workspace = Path(tmpdir) / "restored_workspace"
             user_files_dir = Path(tmpdir) / "data" / "user_files"
             with mock.patch.object(front, "root_dir", tmpdir), mock.patch.object(
                 snapshot_skills, "USER_FILES_DIR", user_files_dir
             ), mock.patch.object(webot_skills, "USER_FILES_DIR", user_files_dir), mock.patch.object(
-                front.requests,
-                "post",
-                return_value=_MockJsonResponse({"ok": True, "workspace": str(workspace)}),
+                front.requests, "post", side_effect=AssertionError("must not call OpenClaw")
             ):
                 response = self.client.post(
                     "/teams/snapshot/upload",
@@ -122,11 +97,10 @@ class TeamSnapshotUploadTests(unittest.TestCase):
                 )
 
             self.assertEqual(response.status_code, 200)
-            payload = response.get_json()
-            self.assertTrue(payload["success"])
-            self.assertIn("1 OpenClaw agents restored", payload["message"])
-            self.assertTrue((workspace / "skills" / "agent-skill" / "SKILL.md").is_file())
-            self.assertTrue((workspace / "skills" / "managed-skill" / "SKILL.md").is_file())
+            self.assertTrue(response.get_json()["success"])
+            member = front._teams().member("upload-user", "demo", "architect")
+            self.assertEqual((member.agent.driver, member.agent.platform), ("acpx", "openclaw"))
+            self.assertEqual(member.agent.agent_id, "demo_architect")
 
 
 if __name__ == "__main__":

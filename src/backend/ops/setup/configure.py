@@ -52,8 +52,6 @@ VALID_KEYS = {
     "PORT_AGENT", "PORT_SCHEDULER", "PORT_OASIS", "PORT_FRONTEND",
     # Audio配置
     "TTS_MODEL", "TTS_VOICE", "STT_MODEL", "WHISPER_MODEL",
-    # OpenClaw配置
-    "OPENCLAW_API_URL", "OPENCLAW_GATEWAY_TOKEN", "OPENCLAW_SESSIONS_FILE",
     # 内部配置
     "INTERNAL_TOKEN", "OPENAI_STANDARD_MODE",
     "LLM_CONTEXT_WINDOW", "WEBOT_CONTEXT_TOKEN_BUDGET", "WEBOT_SUBAGENT_CONTEXT_TOKEN_BUDGET",
@@ -264,35 +262,7 @@ AI_API_URL=http://127.0.0.1:51200/v1/chat/completions
 # 留空时默认复用 LLM_MODEL
 AI_MODEL_QQ=
 AI_MODEL_TG=
-
-# === OpenClaw 集成配置（默认自动探测，也可手动覆盖）===
-# OPENCLAW_API_URL: 默认通过 openclaw config get gateway.port 自动探测
-# 如需手动指定，取消注释并填写完整地址（含 /v1/chat/completions）
-# OPENCLAW_API_URL=http://127.0.0.1:23001/v1/chat/completions
-# OPENCLAW_GATEWAY_TOKEN: 自动探测，不在前端暴露
-# 注：Agents 通过 openclaw agents list CLI 实时获取
 """
-
-
-# def _enable_openclaw_chat_completions():
-#     """确保 OpenClaw 的 ChatCompletions 端点已开启"""
-#     # 不再需要：OpenClaw agent 现已优先使用 CLI 调用，无需开启 OpenAI 兼容端口
-#     try:
-#         result = subprocess.run(
-#             ["openclaw", "config", "set",
-#              "gateway.http.endpoints.chatCompletions.enabled", "true"],
-#             capture_output=True, text=True, timeout=10
-#         )
-#         if result.returncode == 0:
-#             print("✅ OpenClaw ChatCompletions 端点已开启")
-#         else:
-#             print(f"⚠️  开启 ChatCompletions 端点失败: {result.stderr.strip()}")
-#     except FileNotFoundError:
-#         pass  # openclaw 不存在，后续 detect 会统一报错
-#     except subprocess.TimeoutExpired:
-#         print("⚠️  openclaw config set 命令超时")
-#     except Exception as e:
-#         print(f"⚠️  开启 ChatCompletions 端点失败: {e}")
 
 
 import json
@@ -399,101 +369,6 @@ def auto_detect_model():
     return all_ids
 
 
-def detect_openclaw_api_url():
-    """通过 gateway.port 自动探测 OPENCLAW_API_URL"""
-    try:
-        result = subprocess.run(
-            ["openclaw", "config", "get", "gateway.port"],
-            capture_output=True, text=True, timeout=10
-        )
-        if result.returncode == 0:
-            # 从输出中提取纯数字端口号（跳过 banner 行）
-            for line in result.stdout.strip().splitlines():
-                port = line.strip()
-                if port.isdigit():
-                    url = f"http://127.0.0.1:{port}/v1/chat/completions"
-                    print(f"🔍 自动探测到 OpenClaw gateway 端口: {port}")
-                    print(f"✅ OPENCLAW_API_URL={url}")
-                    return url
-    except FileNotFoundError:
-        print("⚠️  openclaw 命令未找到，跳过 OPENCLAW_API_URL 自动探测")
-    except subprocess.TimeoutExpired:
-        print("⚠️  openclaw 命令超时，跳过 OPENCLAW_API_URL 自动探测")
-    except Exception as e:
-        print(f"⚠️  探测 OpenClaw 端口失败: {e}")
-    return None
-
-
-_OPENCLAW_SYNC_TRIGGER_KEYS = {"LLM_API_KEY", "LLM_BASE_URL", "LLM_MODEL", "LLM_PROVIDER"}
-_OPENCLAW_SYNC_SAFE_KEYS = {"LLM_MODEL", "LLM_PROVIDER"}
-_OPENCLAW_SYNC_BATCH_KEYS = {"LLM_API_KEY", "LLM_BASE_URL", "LLM_MODEL"}
-
-
-def _has_complete_clawcross_llm_config(kvs):
-    placeholder_values = {"", "your_api_key_here"}
-    required_keys = ("LLM_API_KEY", "LLM_BASE_URL", "LLM_MODEL")
-    for key in required_keys:
-        value = (kvs.get(key, "") or "").strip()
-        if value in placeholder_values:
-            return False
-    return True
-
-
-def _should_auto_sync_openclaw(updated_keys):
-    keys = set(updated_keys or [])
-    return bool(
-        keys & _OPENCLAW_SYNC_SAFE_KEYS
-        or _OPENCLAW_SYNC_BATCH_KEYS.issubset(keys)
-    )
-
-
-def _sync_openclaw_from_clawcross(updated_keys):
-    keys = set(updated_keys or [])
-    if not (keys & _OPENCLAW_SYNC_TRIGGER_KEYS):
-        return
-    if not shutil.which("openclaw"):
-        return
-
-    _, kvs = read_env()
-    if not _has_complete_clawcross_llm_config(kvs):
-        return
-
-    run_command = get_run_command()
-    if not _should_auto_sync_openclaw(keys):
-        print("ℹ️ 检测到 OpenClaw 已安装，但本次只更新了部分 LLM 字段。")
-        print("   为避免在切换 provider 的过程中把半成品配置写回 OpenClaw，")
-        print(f"   请在确认 LLM_MODEL / LLM_PROVIDER 后再次执行 configure，或手动运行: {run_command} sync-openclaw-llm")
-        return
-
-    script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "configure_openclaw.py")
-    print("🦞 检测到 OpenClaw 已安装，正在同步 Clawcross 当前 LLM 配置...")
-    try:
-        result = subprocess.run(
-            [sys.executable, script_path, "--sync-clawcross-llm"],
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-    except subprocess.TimeoutExpired:
-        print("⚠️ OpenClaw 配置同步超时，请稍后手动执行 sync-openclaw-llm")
-        return
-    except Exception as e:
-        print(f"⚠️ OpenClaw 配置同步失败: {e}")
-        return
-
-    stdout = (result.stdout or "").strip()
-    stderr = (result.stderr or "").strip()
-    if stdout:
-        print(stdout)
-    if result.returncode != 0:
-        if stderr:
-            print(stderr)
-        print("⚠️ Clawcross 配置已写入 .env，但 OpenClaw 自动同步失败")
-
-
-
-
-
 def init_env():
     """从 .env.example 初始化 .env（不覆盖已有）；若模板不存在则使用内置默认值"""
     if os.path.exists(ENV_PATH):
@@ -564,8 +439,7 @@ def main():
                 success_count += 1
                 updated_keys.add(k)
 
-        _sync_openclaw_from_clawcross(updated_keys)
-        
+
         print("-" * 60)
         print(f"📊 批量配置完成: {success_count}/{total_count} 项成功设置")
         if success_count < total_count:
@@ -584,7 +458,6 @@ def main():
         print("-" * 60)
         
         if set_env_with_validation(key, value):
-            _sync_openclaw_from_clawcross({key})
             print("-" * 60)
             print("✅ 配置完成")
         else:

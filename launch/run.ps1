@@ -18,7 +18,7 @@ if ($env:CLAWCROSS_USE_LEGACY_PATHS -in @("1", "true", "yes", "on")) {
     if (-not $env:CLAWCROSS_VENV_DIR) { $env:CLAWCROSS_VENV_DIR = Join-Path $env:CLAWCROSS_HOME "venv" }
 }
 $python = Join-Path $env:CLAWCROSS_VENV_DIR "Scripts\python.exe"
-$readOnly = @("status", "stop", "components", "stop-tunnel", "tunnel-status", "logs", "doctor", "check-openclaw", "check-openclaw-weixin")
+$readOnly = @("status", "stop", "components", "stop-tunnel", "tunnel-status", "logs", "doctor")
 $needsUv = @("start", "start-foreground", "start-fg", "restart", "setup", "install-component", "start-tunnel", "cli", "clawcross", "evolve-skill")
 if ($Command -in @("help", "-h", "--help") -and -not (Test-Path $python)) {
     Write-Host "ClawCross commands: start, setup, stop, status, configure, components, install-component, logs, cli, help"

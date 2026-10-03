@@ -154,6 +154,21 @@ os.execvpe(sys.argv[1], sys.argv[1:], os.environ)
 """
 
 
+def _process_limit() -> int:
+    """NPROC counts the shared UID, including host tasks outside SRT's PID view."""
+    if not sys.platform.startswith('linux'):
+        return 256
+    count = 0
+    for path in Path('/proc').glob('[0-9]*/status'):
+        try:
+            fields = dict(line.split(':', 1) for line in path.read_text().splitlines() if ':' in line)
+            if int(fields['Uid'].split()[0]) == os.getuid():
+                count += int(fields.get('Threads', '1').strip())
+        except (OSError, KeyError, ValueError):
+            continue
+    return max(256, count + 64)
+
+
 def normalize_escalation(access: str, target: str, root: Path) -> str:
     """Keep each SRT exception to one explicit path or domain."""
     if access in {"default", "host"}:
@@ -306,7 +321,8 @@ def build_srt_command(*, root: Path, cwd: Path, command: str, language: str,
             config = _policy(root, settings_path, access=access, target=target, srt_binary=binary)
             config['network']['allowedDomains'] = list(dict.fromkeys([*(allowed_domains or []), *([target] if access == 'network' else [])]))
             json.dump(config, handle, ensure_ascii=False)
-        limited = (sys.executable, "-c", _LIMIT_CODE, *wrapped)
+        limits = _LIMIT_CODE.replace('(\"RLIMIT_NPROC\", 256)', f'(\"RLIMIT_NPROC\", {_process_limit()})')
+        limited = (sys.executable, "-c", limits, *wrapped)
         return SrtCommand((binary, "--settings", str(settings_path), "--", *limited), settings_path)
     except BaseException:
         settings_path.unlink(missing_ok=True)

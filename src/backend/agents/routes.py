@@ -14,8 +14,6 @@
 id that is not there yet makes that agent — ``platform`` says of which runtime
 (WeBot when not given).
 
-    /sessions/openclaw/*               the OpenClaw agents of the local OpenClaw install
-                                       (what an openclaw agent's ``global_name`` names): external.openclaw_routes
 """
 
 from __future__ import annotations
@@ -42,12 +40,18 @@ from agents.store import (
     valid_agent_id,
 )
 from common.auth_utils import extract_user_password_session, is_internal_bearer, parse_bearer_parts
-from external.openclaw_routes import create_openclaw_router
 
 # Settings a caller may set; everything else in a driver's config is its own.
-_SHARED_SETTINGS = ("persona",)
+# ``title`` names the work the session is doing (the agent or the user sets it).
+_SHARED_SETTINGS = ("persona", "title")
+TITLE_MAX = 80
+
+
+def session_title(text: str) -> str:
+    """A one-line display title: whitespace collapsed, at most ``TITLE_MAX`` characters."""
+    return " ".join(str(text or "").split())[:TITLE_MAX]
 _WEBOT_SETTINGS = ("tools",)
-_EXTERNAL_SETTINGS = ("api_url", "api_key", "model", "headers", "meta", "global_name")
+_EXTERNAL_SETTINGS = ("api_url", "api_key", "model", "headers", "meta")
 
 
 class AgentCreate(BaseModel):
@@ -56,7 +60,6 @@ class AgentCreate(BaseModel):
     platform: str = WEBOT
     persona: str = ""        # its persona: the text itself (a library persona is copied in)
     tools: list[str] | None = None  # the tools it has; none: all of them
-    global_name: str = ""    # openclaw: which OpenClaw agent
     api_url: str = ""
     api_key: str = ""
     model: str = ""
@@ -143,7 +146,6 @@ def new_agent_config(body: AgentCreate) -> tuple[str, dict[str, Any]]:
             config["llm"] = dict(body.llm)
         return driver, config
     config.update({
-        "global_name": body.global_name.strip(),
         "api_url": body.api_url.strip(),
         "api_key": body.api_key,
         "model": body.model.strip(),
@@ -166,7 +168,6 @@ def create_agents_router(
     """``names`` finds an agent by a name other than its id (``<team>.<name>``);
     ``on_delete`` is what else holds agent ids (teams, conversations) forgetting one."""
     router = APIRouter()
-    router.include_router(create_openclaw_router(internal_token=internal_token))
 
     def user_of(authorization: str | None) -> str:
         return authenticate(authorization, internal_token=internal_token, verify_password=verify_password)
@@ -363,6 +364,8 @@ def create_agents_router(
         if unknown:
             raise HTTPException(status_code=400, detail=f"unknown settings for {agent.platform}: {unknown}")
         config = {**agent.config, **body.settings}
+        if "title" in body.settings:
+            config["title"] = session_title(body.settings["title"])
         if agent.driver != WEBOT and body.settings.get("api_key") == "":
             config["api_key"] = agent.config.get("api_key", "")  # an empty field keeps the saved key
         return agent_card(store.update(user, agent.agent_id, name=body.name, config=config))
@@ -380,3 +383,9 @@ def create_agents_router(
         return {"deleted": agent.agent_id}
 
     return router
+
+
+def create_bridge_router():
+    """Assemble the scoped ACP tool bridge at the agent layer."""
+    from external.tool_bridge import bridge_router
+    return bridge_router()

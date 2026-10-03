@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Agent 消息中心</title>
+<script src="/static/js/attachment-utils.js?v=20261003-media"></script>
 <script>
   // Early language detection to avoid flash of wrong lang
   (function(){
@@ -4546,8 +4547,8 @@
 .tool-policy-category-items { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; }
 </style>
 <script src="/static/js/tool-catalog.js?v=20261001-groups"></script>
-<script src="/static/js/group-network-ui.js?v=20261001-relay"></script>
-<link rel="stylesheet" href="/static/css/group-network.css?v=20261001-relay">
+<script src="/static/js/group-network-ui.js?v=20261003-invite"></script>
+<link rel="stylesheet" href="/static/css/group-network.css?v=20261003-invite">
 </head>
 <body>
 
@@ -4776,7 +4777,7 @@
     <svg class="ui-icon"><use href="/static/icons.svg#user-plus"/></svg><span class="ui-menu-label" data-i18n="add_member">添加成员</span>
   </button>
   <button type="button" class="ui-menu-item" id="action-group-sharing" style="display:none" onclick="closeChatActions();GroupNetworkUI.sharing(currentGroupId)">
-    <svg class="ui-icon"><use href="/static/icons.svg#link"/></svg><span class="ui-menu-label">邀请朋友 / 群聊地址</span>
+    <svg class="ui-icon"><use href="/static/icons.svg#link"/></svg><span class="ui-menu-label">邀请朋友</span>
   </button>
   <div class="ui-menu-sep"></div>
   <button type="button" class="ui-menu-item" onclick="closeChatActions(); togglePinChat();">
@@ -5303,7 +5304,6 @@
     <div id="create-agent-mode-bar" role="tablist">
       <button type="button" class="add-agent-mode-btn active" data-mode="webot" onclick="setCreateAgentMode('webot')">WeBot</button>
       <button type="button" class="add-agent-mode-btn" data-mode="acp" data-i18n="mobile_create_agent_mode_acp" onclick="setCreateAgentMode('acp')">ACP 工具</button>
-      <button type="button" class="add-agent-mode-btn" data-mode="openclaw" onclick="setCreateAgentMode('openclaw')">OpenClaw</button>
     </div>
     <div id="create-agent-panels-scroll">
       <div id="create-agent-panel-webot">
@@ -5328,7 +5328,6 @@
         </div>
       </div>
       <div id="create-agent-panel-acp" style="display:none;"></div>
-      <div id="create-agent-panel-openclaw" style="display:none;"></div>
     </div>
   </div>
 </div>
@@ -5958,9 +5957,7 @@ const I18N = {
 
     mobile_add_agent_mode_list: '列表',
     mobile_create_ext_submit: '保存并开始私聊',
-    mobile_create_oc_submit: '创建并开始私聊',
     mobile_create_agent_team_hint: '顶部可选团队：会写入该团队的 external；不选也可直接开始私聊。',
-    mobile_add_oc_title: '新建 OpenClaw Agent',
     mobile_add_ext_name: '显示名称',
     mobile_add_ext_tag: '人设标签（Tag）',
     mobile_add_ext_platform: '平台',
@@ -5969,18 +5966,10 @@ const I18N = {
     mobile_add_ext_model: '模型（可选）',
     mobile_add_ext_headers: 'Headers JSON（可选）',
     mobile_add_ext_advanced: '高级',
-    mobile_add_oc_short: 'Agent 短名',
-    mobile_add_oc_ws: 'Workspace 目录',
-    mobile_add_oc_ws_reset: '重置路径',
     mobile_add_team_prefix_hint: '实际 Agent 名将为：{prefix}_短名',
-    mobile_add_oc_global_hint: '完整名称：{name}',
     mobile_add_enter_name: '请填写名称与 Global Name',
     mobile_add_ext_url_required: 'HTTP 平台需要填写 API URL（openclaw tag 除外）',
     mobile_add_headers_json_err: 'Headers 不是合法 JSON',
-    mobile_add_oc_name_invalid: '仅允许字母、数字、下划线与连字符',
-    mobile_add_oc_workspace_required: '请填写 Workspace 路径',
-    mobile_add_oc_exists: '该名称已存在',
-    mobile_add_oc_failed: '创建 OpenClaw 失败',
 
     // ── Create menu ──
     create_new_agent: '创建新Agent',
@@ -6153,17 +6142,9 @@ const I18N = {
     settings_openclaw_import: '🦞 从 OpenClaw 导入',
     settings_openclaw_import_hint_ready: '自动读取已配置的 API Key、模型和 Provider',
     settings_openclaw_import_hint_missing: '⚠️ 未检测到 OpenClaw（未安装）',
-    settings_openclaw_export: '🦞 导出到 OpenClaw',
-    settings_openclaw_export_hint_ready: '把当前 Clawcross 的 LLM 设置写回 OpenClaw 默认模型',
-    settings_openclaw_export_hint_missing: '⚠️ 未检测到 OpenClaw（未安装）',
     settings_openclaw_importing: '正在从 OpenClaw 读取配置...',
     settings_openclaw_imported: '✅ 已从 OpenClaw 导入配置',
-    settings_openclaw_exporting: '正在把当前配置导出到 OpenClaw...',
-    settings_openclaw_exported: '✅ 已导出到 OpenClaw',
-    settings_openclaw_export_missing: '⚠️ 请先填写 Base URL 和模型；远程 provider 还需要 API Key',
     settings_openclaw_detect_hint: '，点击“检测模型”确认',
-    settings_openclaw_gateway_restarted: 'OpenClaw Gateway 已自动重载',
-    settings_openclaw_gateway_restart_failed: '已写入配置，但 Gateway 重载失败',
     settings_antigravity_ready_subtitle: '通过 Google One Pro 会员免费访问 Claude / Gemini / GPT',
     settings_antigravity_missing_subtitle: '⚠️ Antigravity 未运行（未启动或无法连接）',
     sg_tts_help: '留空时会自动跟随当前 LLM provider。检测到 OpenAI 时默认使用 gpt-4o-mini-tts / alloy / whisper-1；检测到 Gemini 时默认使用 gemini-2.5-flash-preview-tts / charon。',
@@ -6597,9 +6578,7 @@ const I18N = {
 
     mobile_add_agent_mode_list: 'Pick',
     mobile_create_ext_submit: 'Save & start DM',
-    mobile_create_oc_submit: 'Create & start DM',
     mobile_create_agent_team_hint: 'Optional team above saves to that team\x27s externals; you can start a DM without a team.',
-    mobile_add_oc_title: 'New OpenClaw agent',
     mobile_add_ext_name: 'Display name',
     mobile_add_ext_tag: 'Persona Tag',
     mobile_add_ext_platform: 'Platform',
@@ -6608,18 +6587,10 @@ const I18N = {
     mobile_add_ext_model: 'Model (optional)',
     mobile_add_ext_headers: 'Headers JSON (optional)',
     mobile_add_ext_advanced: 'Advanced',
-    mobile_add_oc_short: 'Short name',
-    mobile_add_oc_ws: 'Workspace path',
-    mobile_add_oc_ws_reset: 'Reset path',
     mobile_add_team_prefix_hint: 'Agent name will be: {prefix}_short',
-    mobile_add_oc_global_hint: 'Full name: {name}',
     mobile_add_enter_name: 'Enter display name and global name',
     mobile_add_ext_url_required: 'HTTP platform requires API URL (except openclaw tag)',
     mobile_add_headers_json_err: 'Headers must be valid JSON',
-    mobile_add_oc_name_invalid: 'Only letters, digits, underscore and hyphen',
-    mobile_add_oc_workspace_required: 'Workspace path is required',
-    mobile_add_oc_exists: 'That agent name already exists',
-    mobile_add_oc_failed: 'Failed to create OpenClaw agent',
 
     create_new_agent: 'Create New Agent',
     create_new_group: 'Create New Group',
@@ -6783,17 +6754,9 @@ const I18N = {
     settings_openclaw_import: '🦞 Import from OpenClaw',
     settings_openclaw_import_hint_ready: 'Read the configured API key, model, and provider from OpenClaw',
     settings_openclaw_import_hint_missing: '⚠️ OpenClaw was not detected',
-    settings_openclaw_export: '🦞 Export to OpenClaw',
-    settings_openclaw_export_hint_ready: 'Write the current Clawcross LLM settings back to OpenClaw defaults',
-    settings_openclaw_export_hint_missing: '⚠️ OpenClaw was not detected',
     settings_openclaw_importing: 'Reading configuration from OpenClaw...',
     settings_openclaw_imported: '✅ Imported configuration from OpenClaw',
-    settings_openclaw_exporting: 'Writing the current configuration to OpenClaw...',
-    settings_openclaw_exported: '✅ Exported configuration to OpenClaw',
-    settings_openclaw_export_missing: '⚠️ Base URL and model are required; remote providers also need an API key',
     settings_openclaw_detect_hint: '. Tap "Detect Models" to confirm.',
-    settings_openclaw_gateway_restarted: 'OpenClaw Gateway reloaded automatically',
-    settings_openclaw_gateway_restart_failed: 'Config was saved, but Gateway reload failed',
     settings_antigravity_ready_subtitle: 'Use Claude / Gemini / GPT via Google One Pro',
     settings_antigravity_missing_subtitle: '⚠️ Antigravity is not running or cannot be reached',
     sg_tts_help: 'When empty, automatically follows the current LLM provider. OpenAI uses gpt-4o-mini-tts / alloy / whisper-1; Gemini uses gemini-2.5-flash-preview-tts / charon.',
@@ -9859,7 +9822,7 @@ function selectCreateAgentTag(tag) {
 }
 
 
-/** @type {'webot'|'acp'|'openclaw'} */
+/** @type {'webot'|'acp'} */
 let mobileCreateAgentMode = 'webot';
 
 function mobileGetCreateAgentTeam() {
@@ -9874,20 +9837,15 @@ function _syncCreateAgentModeButtons() {
 }
 
 function setCreateAgentMode(mode) {
-  if (!['webot', 'acp', 'openclaw'].includes(mode)) return;
+  if (!['webot', 'acp'].includes(mode)) return;
   mobileCreateAgentMode = mode;
   _syncCreateAgentModeButtons();
   const pWebot = document.getElementById('create-agent-panel-webot');
   const pAcp = document.getElementById('create-agent-panel-acp');
-  const pOc = document.getElementById('create-agent-panel-openclaw');
   if (pWebot) pWebot.style.display = mode === 'webot' ? '' : 'none';
   if (pAcp) {
     pAcp.style.display = mode === 'acp' ? '' : 'none';
     if (mode === 'acp') renderCreateAgentAcpPanel();
-  }
-  if (pOc) {
-    pOc.style.display = mode === 'openclaw' ? '' : 'none';
-    if (mode === 'openclaw') renderCreateAgentOpenClawPanel();
   }
 }
 
@@ -9962,137 +9920,11 @@ async function mobileSubmitCreateAcpAgent() {
   }
 }
 
-async function renderCreateAgentOpenClawPanel() {
-  const panel = document.getElementById('create-agent-panel-openclaw');
-  if (!panel) return;
-  const team = mobileGetCreateAgentTeam();
-  panel.innerHTML = `<div class="mobile-add-agent-form"><div style="text-align:center;padding:20px;">${t('loading')}</div></div>`;
-  const tagOpts = await _mobilePersonaTagOptionsHtml(team);
-  panel.innerHTML = `
-    <div class="mobile-add-agent-form">
-      <p class="form-hint">${esc(t('mobile_create_agent_team_hint'))}</p>
-      <div style="font-weight:700;margin-bottom:6px;color:var(--text);">${esc(t('mobile_add_oc_title'))}</div>
-      ${team ? `<p class="form-hint">${esc(t('mobile_add_team_prefix_hint', { prefix: team + '_' }))}</p>` : ''}
-      <label>${esc(t('mobile_add_oc_short'))}</label>
-      <input type="text" id="ca-oc-short" placeholder="work / research" autocomplete="off">
-      <label>${esc(t('mobile_add_ext_tag'))}</label>
-      <select id="ca-oc-tag" class="ext-tag-select">${tagOpts}</select>
-      <div class="field-note">${esc(_currentLang === 'zh' ? 'tag 表示人设标签。' : 'Tag is the persona label.')}</div>
-      <input type="text" id="ca-oc-tag-custom" class="ext-tag-custom" placeholder="${esc(t('agent_tag_placeholder'))}" style="margin-top:8px;display:none;">
-      <p class="form-hint" id="ca-oc-global-hint"></p>
-      <label>${esc(t('mobile_add_oc_ws'))}</label>
-      <div style="display:flex;gap:6px;align-items:stretch;">
-        <input type="text" id="ca-oc-ws" style="flex:1;" placeholder="..." autocomplete="off">
-        <button type="button" id="ca-oc-ws-reset" style="padding:0 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg);font-size:12px;">${esc(t('mobile_add_oc_ws_reset'))}</button>
-      </div>
-      <button type="button" class="form-submit" id="ca-oc-submit" onclick="mobileSubmitCreateOpenClawAgent()">${esc(t('mobile_create_oc_submit'))}</button>
-    </div>`;
-  const shortInp = document.getElementById('ca-oc-short');
-  const wsInp = document.getElementById('ca-oc-ws');
-  const hintEl = document.getElementById('ca-oc-global-hint');
-  const tagSel = document.getElementById('ca-oc-tag');
-  const tagCust = document.getElementById('ca-oc-tag-custom');
-  if (tagSel && tagCust) {
-    tagSel.onchange = () => { tagCust.style.display = tagSel.value === 'custom' ? 'block' : 'none'; };
-  }
-  let parentDir = '';
-  let wsManual = false;
-
-  function fullGlobalName() {
-    const s = shortInp && shortInp.value.trim();
-    if (!s) return '';
-    const tm = mobileGetCreateAgentTeam();
-    return tm ? (tm + '_' + s) : s;
-  }
-
-  function syncWsFromName() {
-    if (!wsInp || wsManual) return;
-    const gn = fullGlobalName();
-    if (gn && parentDir) wsInp.value = parentDir + '/workspace-' + gn;
-    else if (!gn) wsInp.value = '';
-  }
-
-  function syncHint() {
-    const gn = fullGlobalName();
-    if (hintEl) hintEl.textContent = gn ? t('mobile_add_oc_global_hint', { name: gn }) : '';
-  }
-
-  try {
-    const wr = await fetch('/proxy_openclaw_default_workspace');
-    const j = await wr.json().catch(() => ({}));
-    if (j && j.ok && j.parent_dir) {
-      parentDir = j.parent_dir;
-      if (wsInp) wsInp.placeholder = parentDir + '/workspace-...';
-    }
-  } catch (_) { /* ignore */ }
-
-  if (shortInp) {
-    shortInp.addEventListener('input', () => {
-      syncWsFromName();
-      syncHint();
-    });
-  }
-  if (wsInp) {
-    wsInp.addEventListener('input', () => { wsManual = true; });
-  }
-  const resetBtn = document.getElementById('ca-oc-ws-reset');
-  if (resetBtn) {
-    resetBtn.addEventListener('click', () => {
-      wsManual = false;
-      syncWsFromName();
-    });
-  }
-  syncHint();
-  syncWsFromName();
-}
-
-async function mobileSubmitCreateOpenClawAgent() {
-  const team = mobileGetCreateAgentTeam();
-  const shortName = String((document.getElementById('ca-oc-short') || {}).value || '').trim();
-  const tag = _mobilePickedTag('ca-oc-tag', 'ca-oc-tag-custom');
-  const workspace = String((document.getElementById('ca-oc-ws') || {}).value || '').trim();
-  const globalName = team ? (team + '_' + shortName) : shortName;
-  if (!shortName) {
-    toast(t('agent_name_required'));
-    return;
-  }
-  if (!workspace) {
-    toast(t('mobile_add_oc_workspace_required'));
-    return;
-  }
-  const btn = document.getElementById('ca-oc-submit');
-  if (btn) { btn.disabled = true; btn.dataset.orig = btn.textContent; btn.textContent = t('adding'); }
-  try {
-    // OpenClaw keeps its agents in its own workspace: create it there, then register it.
-    const r = await fetch('/proxy_openclaw_add', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: globalName, workspace }),
-    });
-    const res = await r.json().catch(() => ({}));
-    if (!r.ok || !res.ok) {
-      toast(r.status === 409 ? t('mobile_add_oc_exists') : (res.error || t('mobile_add_oc_failed')));
-      return;
-    }
-    const agent = await registerAgent({ name: shortName, platform: 'openclaw', global_name: globalName }, team, tag);
-    if (await startPrivateChat(agent.agent_id)) {
-      closeCreateAgentModal();
-      invalidateContactsPrefetch();
-      if (typeof loadContactsForTeam === 'function') loadContactsForTeam();
-    }
-  } catch (e) {
-    toast((e && e.message) ? e.message : t('mobile_add_oc_failed'));
-  } finally {
-    if (btn) { btn.disabled = false; if (btn.dataset.orig) btn.textContent = btn.dataset.orig; }
-  }
-}
-
 async function onCreateAgentTeamChange() {
   const select = document.getElementById('create-agent-team');
   const currentTag = (document.getElementById('create-agent-tag') || {}).value || '';
   await loadCreateAgentTags(select ? select.value : '', currentTag);
   if (mobileCreateAgentMode === 'acp') await renderCreateAgentAcpPanel();
-  else if (mobileCreateAgentMode === 'openclaw') renderCreateAgentOpenClawPanel();
 }
 
 function _resetCreateAgentPanels() {
@@ -10100,10 +9932,8 @@ function _resetCreateAgentPanels() {
   _syncCreateAgentModeButtons();
   const pWebot = document.getElementById('create-agent-panel-webot');
   const pAcp = document.getElementById('create-agent-panel-acp');
-  const pOc = document.getElementById('create-agent-panel-openclaw');
   if (pWebot) pWebot.style.display = '';
   if (pAcp) { pAcp.style.display = 'none'; pAcp.innerHTML = ''; }
-  if (pOc) { pOc.style.display = 'none'; pOc.innerHTML = ''; }
 }
 
 async function showCreateAgentModal(preferredTeam = '') {
@@ -10569,8 +10399,6 @@ const MC_MAX_FILE_SIZE = 512 * 1024;          // 512KB per text
 const MC_MAX_PDF_SIZE = 10 * 1024 * 1024;     // 10MB per PDF
 const MC_MAX_VIDEO_SIZE = 50 * 1024 * 1024;   // 50MB per video
 // 注意：录音专用上限 MC_MAX_AUDIO_SIZE 在录音功能段（25MB）
-const MC_MAX_IMAGE_SIZE = 10 * 1024 * 1024;   // 图片压缩目标 10MB
-const MC_MAX_IMAGE_DIMENSION = 2048;
 
 // 各品类数量上限（对齐主页面）
 const MC_MAX_IMAGES = 5;
@@ -10592,29 +10420,7 @@ const _extMimeMap = {
 
 // 图片压缩（行为对齐 main.js compressImage）：返回 dataURL
 function mcCompressImage(file) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      let { width, height } = img;
-      if (width > MC_MAX_IMAGE_DIMENSION || height > MC_MAX_IMAGE_DIMENSION) {
-        const scale = MC_MAX_IMAGE_DIMENSION / Math.max(width, height);
-        width = Math.round(width * scale);
-        height = Math.round(height * scale);
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-      let quality = 0.85;
-      let result = canvas.toDataURL('image/jpeg', quality);
-      while (result.length > MC_MAX_IMAGE_SIZE * 1.37 && quality > 0.3) {
-        quality -= 0.1;
-        result = canvas.toDataURL('image/jpeg', quality);
-      }
-      resolve(result);
-    };
-    img.src = URL.createObjectURL(file);
-  });
+  return ClawCrossAttachments.prepareImage(file, {maxBytes: 64 * 1024, maxSide: 1280});
 }
 
 // 计数辅助
@@ -10639,7 +10445,7 @@ function handleAttachFiles(files) {
     const ext = '.' + (file.name.split('.').pop() || '').toLowerCase();
     const mime = _guessMime(file);
     // 分流优先级：MIME > 扩展名；.webm 等以 MIME 决定（video 优先于 audio）
-    const isImage = mime.startsWith('image/');
+    const isImage = mime.startsWith('image/') || ['.heic','.heif','.jpg','.jpeg','.png','.webp','.gif'].includes(ext);
     const isVideo = mime.startsWith('video/') || (!file.type && MC_VIDEO_EXTENSIONS.has(ext));
     const isAudio = (!isVideo) && (mime.startsWith('audio/') || (!file.type && MC_AUDIO_EXTENSIONS.has(ext)));
     const isPdf = mime === 'application/pdf' || ext === '.pdf';
@@ -10654,13 +10460,10 @@ function handleAttachFiles(files) {
         });
         renderAttachPreview();
       };
-      if (file.size <= MC_MAX_IMAGE_SIZE) {
-        const reader = new FileReader();
-        reader.onload = () => pushImage(reader.result);
-        reader.readAsDataURL(file);
-      } else {
-        mcCompressImage(file).then(pushImage);
-      }
+      mcCompressImage(file).then(data => {
+        if (_mcCountByType('image') >= MC_MAX_IMAGES) { toast(t('max_images')); return; }
+        pushImage(data);
+      }).catch(error => toast(`${file.name}: ${error.message}`));
       return;
     }
     if (isAudio) {
@@ -10774,7 +10577,7 @@ function toggleInputActions(event) {
     const member = _findPrivateChatAgent();
     const item = document.getElementById('action-external-settings');
     if (item) item.style.display = member && !member.remote && member.agent &&
-      !['webot', 'http', 'llm', 'openclaw'].includes(member.agent.platform) ? '' : 'none';
+      !['webot', 'http', 'llm'].includes(member.agent.platform) ? '' : 'none';
   }
   menu.classList.toggle('show', show);
   btn.classList.toggle('active', show);
@@ -11048,6 +10851,7 @@ async function sendMessage() {
           body.attachments.push({ type: 'audio', name: audio.name, data: raw, mime_type: 'audio/wav' });
         }
       }
+      ClawCrossAttachments.assertGroupSize(body.content, body.attachments || []);
       await api('POST', `/proxy_groups/${encodeURIComponent(currentGroupId)}/messages`, body);
       // Poll will pick up the message
       await pollNewMessages();
@@ -13335,7 +13139,7 @@ async function pollExternalToolActivity(typing) {
     document.getElementById('acp-mobile-tool-activity')?.remove();
   }
   const members = (currentMembers || []).filter(m => m.is_agent && !m.remote &&
-    m.agent && !['webot', 'openclaw', 'http', 'llm'].includes(m.agent.platform));
+    m.agent && !['webot', 'http', 'llm'].includes(m.agent.platform));
   const busy = new Set(members.filter(m => typing.includes(m.name)).map(m => m.agent.agent_id));
   const selected = members.filter(m => busy.has(m.agent.agent_id) || _externalToolBusy.has(m.agent.agent_id));
   _externalToolBusy = busy;
@@ -13431,7 +13235,7 @@ function toggleChatActions() {
   const member = _findPrivateChatAgent();
   const externalItem = document.getElementById('action-external-settings');
   if (externalItem) externalItem.style.display = member && !member.remote && member.agent &&
-    !['webot', 'http', 'llm', 'openclaw'].includes(member.agent.platform) ? '' : 'none';
+    !['webot', 'http', 'llm'].includes(member.agent.platform) ? '' : 'none';
 }
 
 // 取当前群组的"唯一 agent"（两人群：1 用户 + 1 agent）。其他场景返回 null。
@@ -13752,7 +13556,7 @@ function onAddAgentTeamChanged() {
 
 
 const MOBILE_ACP_PLATFORM_FALLBACK = [
-  'codex', 'claude', 'claude-code', 'gemini', 'gemini-cli', 'aider', 'cursor', 'copilot', 'droid',
+  'openclaw', 'codex', 'claude', 'claude-code', 'gemini', 'gemini-cli', 'aider', 'cursor', 'copilot', 'droid',
   'iflow', 'kilocode', 'kimi', 'kiro', 'opencode', 'pi', 'qoder', 'qwen', 'trae',
 ];
 let _mobileAcpPlatformsCache = null;
@@ -13767,7 +13571,7 @@ async function _mobileFetchAcpPlatforms() {
   } catch (_) {
     tools = [];
   }
-  const merged = tools.filter((x) => x && x !== 'openclaw');
+  const merged = tools.filter(Boolean);
   _mobileAcpPlatformsCache = merged.concat(MOBILE_ACP_PLATFORM_FALLBACK.filter((x) => !merged.includes(x)));
   return _mobileAcpPlatformsCache;
 }
@@ -14441,12 +14245,7 @@ function renderAgentBasicInfo(agent) {
   return html;
 }
 
-function canDeleteOpenClawAgentMobile(agentName) {
-  return !!agentName && String(agentName).toLowerCase() !== 'main';
-}
-
-// Delete an agent: it leaves every team and conversation, and the OpenClaw agent behind
-// it (never `main`) is removed too.
+// Delete an agent: it leaves every team and conversation.
 async function deleteAgentFromDetail(agentId) {
   let agent;
   try {
@@ -14455,18 +14254,8 @@ async function deleteAgentFromDetail(agentId) {
     toast(t('agent_delete_failed') + ': ' + e.message);
     return;
   }
-  const openclawName = agent.platform === 'openclaw' ? (agent.settings?.global_name || '') : '';
   if (!confirm(t('delete_agent_confirm').replace('{name}', agent.name))) return;
   try {
-    if (openclawName && canDeleteOpenClawAgentMobile(openclawName)) {
-      const resp = await fetch('/proxy_openclaw_remove', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: openclawName }),
-      });
-      const data = await resp.json().catch(() => ({}));
-      if (!resp.ok || !data.ok) throw new Error(data.error || 'OpenClaw remove failed');
-    }
     await api('DELETE', `/v1/agents/${encodeURIComponent(agentId)}`);
     toast(t('agent_deleted') + ': ' + agent.name);
     closeAgentDetail();
@@ -15260,7 +15049,6 @@ function invalidateContactsPrefetch() {
   __contactsPrefetchPromise = null;
 }
 
-/** Collapsible HTML for external groups (2.1 OpenClaw + ACP/tool buckets). */
 function personaDisplayName(exp) {
   const isZh = (_currentLang === 'zh');
   return (isZh ? (exp.name_zh || exp.name) : (exp.name_en || exp.name)) || exp.tag || t('unnamed');
@@ -15984,7 +15772,6 @@ function _renderLlmGroup(settings) {
     html += '<div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:8px;">' + escapeHtml(t('settings_llm_sync_title')) + '</div>';
     html += '<div style="display:flex;flex-direction:column;gap:8px;">';
     html += renderActionButton('settings-import-openclaw-btn', 'settings_openclaw_import', 'settings-openclaw-import-subtitle', 'settingsImportOpenClaw()');
-    html += renderActionButton('settings-export-openclaw-btn', 'settings_openclaw_export', 'settings-openclaw-export-subtitle', 'settingsExportOpenClaw()');
     html += renderActionButton('settings-use-antigravity-btn', 'sg_antigravity_apply', 'settings-antigravity-subtitle', 'settingsUseAntigravity()');
     html += '</div>';
     html += '<div id="settings-llm-sync-status" style="margin-top:6px;font-size:11px;color:var(--text-secondary);"></div>';
@@ -16318,16 +16105,12 @@ function _initSettingsLlmGroup(settings) {
     // Async check import button availability
     fetch('/api/setup_status').then(r => r.json()).then(status => {
         const openclawImportBtn = document.getElementById('settings-import-openclaw-btn');
-        const openclawExportBtn = document.getElementById('settings-export-openclaw-btn');
         const antigravityBtn = document.getElementById('settings-use-antigravity-btn');
         const openclawImportSub = document.getElementById('settings-openclaw-import-subtitle');
-        const openclawExportSub = document.getElementById('settings-openclaw-export-subtitle');
         const antigravitySub = document.getElementById('settings-antigravity-subtitle');
         const openclawAvailable = Boolean(status && status.openclaw_installed);
         _setSettingsActionButtonState(openclawImportBtn, openclawAvailable);
-        _setSettingsActionButtonState(openclawExportBtn, openclawAvailable);
         if (openclawImportSub) openclawImportSub.textContent = t(openclawAvailable ? 'settings_openclaw_import_hint_ready' : 'settings_openclaw_import_hint_missing');
-        if (openclawExportSub) openclawExportSub.textContent = t(openclawAvailable ? 'settings_openclaw_export_hint_ready' : 'settings_openclaw_export_hint_missing');
 
         const antigravityAvailable = Boolean(status && status.antigravity_running);
         _setSettingsActionButtonState(antigravityBtn, antigravityAvailable);
@@ -16475,55 +16258,6 @@ async function settingsImportOpenClaw() {
 }
 
 /** 一键导出当前配置到 OpenClaw */
-async function settingsExportOpenClaw() {
-    const btn = document.getElementById('settings-export-openclaw-btn');
-    const statusEl = document.getElementById('settings-llm-sync-status');
-    if (!btn || !statusEl) return;
-
-    const payload = _collectSettingsLlmConfigForActions();
-    const isLocalKeyless = _isLocalKeylessProvider(payload.provider, payload.base_url);
-    if ((!payload.api_key && !payload.has_saved_api_key && !isLocalKeyless) || !payload.base_url || !payload.model) {
-        statusEl.textContent = t('settings_openclaw_export_missing');
-        return;
-    }
-
-    btn.disabled = true;
-    btn.style.opacity = '0.6';
-    statusEl.textContent = t('settings_openclaw_exporting');
-
-    try {
-        const resp = await fetch('/api/export_openclaw_config', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                provider: payload.provider,
-                api_key: payload.api_key,
-                base_url: payload.base_url,
-                model: payload.model,
-            }),
-        });
-        const data = await resp.json();
-
-        if (!resp.ok || data.ok === false || data.error) {
-            statusEl.textContent = '⚠️ ' + (data.error || '导出失败');
-            return;
-        }
-
-        let suffix = '';
-        if (data.gateway_running && data.gateway_restarted) {
-            suffix = ' · ' + t('settings_openclaw_gateway_restarted');
-        } else if (data.gateway_running && !data.gateway_restarted && data.restart_error) {
-            suffix = ' · ' + t('settings_openclaw_gateway_restart_failed');
-        }
-        statusEl.textContent = t('settings_openclaw_exported') + (data.model_ref ? ' (' + data.model_ref + ')' : '') + suffix;
-    } catch (e) {
-        statusEl.textContent = '⚠️ ' + e.message;
-    } finally {
-        btn.disabled = false;
-        btn.style.opacity = '1';
-    }
-}
-
 /** 一键使用 Antigravity */
 async function settingsUseAntigravity() {
     const btn = document.getElementById('settings-use-antigravity-btn');

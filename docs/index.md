@@ -40,9 +40,9 @@ If you are an agent, do **not** load everything by default. Start with `AGENTS.m
 | Debug a Team that already exists (wrong persona, missing member, dead workflow edge) | [`team-anatomy.md`](./team-anatomy.md) | [`build_team.md`](./build_team.md), [`create_workflow.md`](./create_workflow.md) |
 | Convert a workflow canvas into a Team | [`team-creator.md`](./team-creator.md) | [`build_team.md`](./build_team.md), [`create_workflow.md`](./create_workflow.md) |
 | Create / debug workflow YAML | [`create_workflow.md`](./create_workflow.md) | [`example_team.md`](./example_team.md) |
-| Configure OpenClaw or other agent runtimes | [`openclaw-commands.md`](./openclaw-commands.md) | [`build_team.md`](./build_team.md) |
+| Use OpenClaw (an ACP agent, like Codex) | [`openclaw-commands.md`](./openclaw-commands.md) | [`build_team.md`](./build_team.md) |
 | Add or debug remote Claude computers in Project Fleet | [`remote-claude-fleet.md`](./remote-claude-fleet.md) | [`ports.md`](./ports.md), [`runtime-reference.md`](./runtime-reference.md), [`repo-index.md`](./repo-index.md) |
-| Configure or debug ACP / acpx (Codex / Claude Code / Gemini agents) | [`runtime-reference.md`](./runtime-reference.md) | [`build_team.md`](./build_team.md), [`oasis-reference.md`](./oasis-reference.md), [`repo-index.md`](./repo-index.md) |
+| Configure or debug ACP / acpx (Codex / Claude Code / Gemini / OpenClaw agents) | [`runtime-reference.md`](./runtime-reference.md) | [`build_team.md`](./build_team.md), [`oasis-reference.md`](./oasis-reference.md), [`repo-index.md`](./repo-index.md) |
 | Configure TinyFish internet search agent | [`tinyfish-monitor.md`](./tinyfish-monitor.md) | [`runtime-reference.md`](./runtime-reference.md), [`repo-index.md`](./repo-index.md) |
 | Inspect ports, proxies, or service boundaries | [`ports.md`](./ports.md) | [`repo-index.md`](./repo-index.md) |
 
@@ -66,7 +66,7 @@ If you are an agent, do **not** load everything by default. Start with `AGENTS.m
 - [`webot-claude-gap-analysis.md`](./webot-claude-gap-analysis.md): feature matrix vs Claude Code and the outstanding parity checklist
 - [`team-anatomy.md`](./team-anatomy.md): single-file runtime reference — folder layout, every file schema, cross-file bindings, runtime-only vs persistent fields, debug checklist
 - [`example_team.md`](./example_team.md): concrete file layout for a Team
-- [`openclaw-commands.md`](./openclaw-commands.md): OpenClaw command and config reference
+- [`openclaw-commands.md`](./openclaw-commands.md): OpenClaw as an ACP agent, and the read-only LLM import
 - [`remote-claude-fleet.md`](./remote-claude-fleet.md): Tailscale/SSH/Claude setup for remote Claude workers in Project Fleet
 - [`tinyfish-monitor.md`](./tinyfish-monitor.md): TinyFish internet search agent, live crawl, and data persistence
 - [`ports.md`](./ports.md): ports, proxy routes, exposure rules
@@ -104,7 +104,7 @@ If you are an agent, do **not** load everything by default. Start with `AGENTS.m
 
 1. Read [`openclaw-commands.md`](./openclaw-commands.md)
 2. Read the OpenClaw section in [`build_team.md`](./build_team.md)
-3. Inspect `src/backend/external/openclaw_routes.py`, `src/backend/external/openclaw_config.py`, and related scripts via [`repo-index.md`](./repo-index.md)
+3. Inspect the ACP runtime (`src/backend/external/acp.py`, `src/backend/external/acpx.py`) via [`repo-index.md`](./repo-index.md)
 
 ### Operate TinyFish monitoring
 

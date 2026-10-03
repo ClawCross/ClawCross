@@ -1,4 +1,11 @@
-"""Public, capability-scoped human chat; never establishes a main-site session."""
+"""Public, capability-scoped group access through an invitation link; never
+establishes a main-site session.
+
+The link ``<public base>/group-guest#<ticket>`` is one invitation: opened in a
+browser it is the guest chat page; pasted into another ClawCross it joins that
+device as a full member, whose group traffic then goes through ``/relay/*`` here.
+"""
+import re
 from urllib.parse import quote
 from hashlib import sha256
 
@@ -32,6 +39,47 @@ def register_guest_routes(app, *, port_agent, internal_token, public_base=lambda
             return jsonify(url=base + '/group-guest#' + ticket)
         except (requests.RequestException, ValueError):
             return jsonify(error='群服务暂时不可用'), 503
+
+    # A device joined by link reaches the group server only through these calls.
+    device_calls = {('POST', 'join'), ('POST', 'poll'), ('GET', 'group'), ('GET', 'messages'),
+                    ('POST', 'messages'), ('POST', 'agents')}
+
+    @app.route('/relay/<path:call>', methods=['GET', 'POST'])
+    def group_device_relay(call):
+        allowed = (request.method, call) in device_calls or (
+            request.method == 'POST' and re.fullmatch(r'manage/[a-z_]{1,40}', call))
+        if not allowed:
+            return jsonify(error='不支持的群操作'), 404
+        ticket = request.headers.get('X-Group-Invite', '')
+        if len(ticket) > 4096:
+            return jsonify(error='邀请链接无效'), 403
+        try:
+            # Joining needs a current link; a joined device keeps working after the link expires.
+            target = signer.loads(ticket, max_age=30 * 86400 if call == 'join' else None)
+        except BadSignature:
+            return jsonify(error='邀请链接无效或已过期'), 403
+        body = request.get_json(silent=True) if request.method == 'POST' else None
+        headers = {}
+        if call == 'join':
+            body = body if isinstance(body, dict) else {}
+            body = {'invite': target['invite'], **{k: str(body.get(k, ''))[:160] for k in ('node_id', 'user_id', 'display_name')}}
+        else:
+            credential = request.headers.get('Authorization', '')
+            if not credential.startswith('Bearer ') or len(credential) > 200:
+                return jsonify(error='需要群连接凭证'), 401
+            headers['Authorization'] = credential
+        try:
+            with requests.Session() as client:
+                client.trust_env = False
+                response = client.request(request.method, target['url'] + '/relay/' + call, headers=headers, json=body,
+                                          params={'after_id': request.args.get('after_id', '0')} if call == 'messages' else None,
+                                          timeout=20, allow_redirects=False)
+            result = jsonify(response.json())
+            result.status_code = response.status_code
+            result.headers['Cache-Control'] = 'no-store'
+            return result
+        except (requests.RequestException, ValueError):
+            return jsonify(error='暂时无法连接群服务器，请稍后重试'), 503
 
     @app.get('/group-guest')
     def group_guest_page():

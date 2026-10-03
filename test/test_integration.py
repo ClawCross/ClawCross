@@ -260,21 +260,6 @@ class FrontendIntegrationTests(unittest.TestCase):
         self.assertEqual(payload["qr"], "")
         self.assertIn("weclaw", payload["message"].lower())
 
-    def test_proxy_openclaw_sessions_forwards_filter_and_preserves_shape(self):
-        with mock.patch.object(
-            front.requests,
-            "get",
-            return_value=_MockJsonResponse({"available": True, "agents": []}, 200),
-        ) as mock_get:
-            response = self.client.get("/proxy_openclaw_sessions?filter=main")
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.get_json(), {"available": True, "agents": []})
-        mock_get.assert_called_once()
-        _, kwargs = mock_get.call_args
-        self.assertEqual(kwargs["params"], {"filter": "main"})
-        self.assertEqual(kwargs["timeout"], 10)
-
     def test_proxy_webot_subagents_forwards_user_context(self):
         with mock.patch.object(
             front.requests,
@@ -729,66 +714,6 @@ class FrontendIntegrationTests(unittest.TestCase):
             recent_run_limit=5,
             latest_site_limit=3,
             snapshots_per_site=2,
-        )
-
-    def test_export_openclaw_config_falls_back_to_saved_masked_values(self):
-        stub_module = types.SimpleNamespace(
-            export_llm_config_to_openclaw=mock.Mock(
-                return_value={"ok": True, "model_ref": "openai/gpt-5.4"}
-            )
-        )
-        payload = {
-            "api_key": "****masked****",
-            "base_url": "",
-            "model": "",
-            "provider": "",
-        }
-        saved = {
-            "api_key": "saved-key",
-            "base_url": "https://api.openai.com",
-            "model": "gpt-5.4",
-            "provider": "openai",
-        }
-
-        with mock.patch("shutil.which", return_value="/usr/local/bin/openclaw"), mock.patch.object(
-            front, "_read_saved_clawcross_llm_config", return_value=saved
-        ), mock.patch.dict(sys.modules, {"configure_openclaw": stub_module}):
-            response = self.client.post("/api/export_openclaw_config", json=payload)
-
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.get_json()["ok"])
-        stub_module.export_llm_config_to_openclaw.assert_called_once_with(
-            api_key="saved-key",
-            base_url="https://api.openai.com",
-            model="gpt-5.4",
-            provider="openai",
-        )
-
-    def test_export_openclaw_config_allows_keyless_ollama(self):
-        stub_module = types.SimpleNamespace(
-            export_llm_config_to_openclaw=mock.Mock(
-                return_value={"ok": True, "model_ref": "ollama/llama3.2:latest"}
-            )
-        )
-        payload = {
-            "api_key": "",
-            "base_url": "http://127.0.0.1:11434",
-            "model": "llama3.2:latest",
-            "provider": "ollama",
-        }
-
-        with mock.patch("shutil.which", return_value="/usr/local/bin/openclaw"), mock.patch.dict(
-            sys.modules, {"configure_openclaw": stub_module}
-        ):
-            response = self.client.post("/api/export_openclaw_config", json=payload)
-
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.get_json()["ok"])
-        stub_module.export_llm_config_to_openclaw.assert_called_once_with(
-            api_key="",
-            base_url="http://127.0.0.1:11434",
-            model="llama3.2:latest",
-            provider="ollama",
         )
 
     def test_save_current_user_password_persists_hashed_credential(self):

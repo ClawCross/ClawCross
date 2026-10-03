@@ -570,7 +570,7 @@ class ToolNodeDropsStrictNulls(unittest.IsolatedAsyncioTestCase):
             },
             func=record,
         )
-        node = UserAwareToolNode([tool], lambda: [tool])
+        node = UserAwareToolNode([tool])
         state = {
             "user_id": "alice",
             "session_mode": "bypass",
@@ -579,8 +579,7 @@ class ToolNodeDropsStrictNulls(unittest.IsolatedAsyncioTestCase):
                 {"name": "echo_tool", "args": {"text": "hi", "limit": None}, "id": "c1", "type": "tool_call"},
             ])],
         }
-        with patch("webot.engine.agent.get_session_mode", return_value={"mode": "default"}), \
-                patch("webot.engine.agent.resolve_permission_context", side_effect=_allow_all_permission), \
+        with patch("webot.engine.agent.resolve_permission_context", side_effect=_allow_all_permission), \
                 patch("webot.engine.agent.run_tool_policy_hooks", side_effect=_passthrough_hook_outcome):
             await node(state, config={})
         self.assertEqual(received, {"text": "hi"})

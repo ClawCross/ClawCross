@@ -554,6 +554,10 @@ class WeBotService:
                     usage = {"tokens": sum(parts.values()), "breakdown": parts, "source": "estimate"}
                 from webot.runtime_settings import ContextSettings, resolve_context_window, context_usage_with_window
                 model = self.agent.get_thread_model(thread_id) if hasattr(self.agent, "get_thread_model") else None
+                if model:
+                    from common.llm_factory import infer_provider
+                    from common.model_capabilities import model_capabilities
+                    payload["model_capabilities"] = model_capabilities(model, infer_provider(model=model))
                 usage = context_usage_with_window(usage, resolve_context_window(ContextSettings.model_validate(payload["settings"]["context"]), model))
                 payload["context_usage"] = usage
         return {"status": "success", **payload}

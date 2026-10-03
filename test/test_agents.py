@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import os
 import sys
 import tempfile
 import unittest
@@ -30,7 +29,6 @@ from agents.store import (  # noqa: E402
     ACPX,
     HTTP,
     LLM,
-    OPENCLAW,
     WEBOT,
     AgentExists,
     AgentNotFound,
@@ -94,7 +92,7 @@ class TestStore(StoreCase):
 
     def test_driver_follows_the_platform(self):
         self.assertEqual(driver_for_platform("webot"), WEBOT)
-        self.assertEqual(driver_for_platform("openclaw"), OPENCLAW)
+        self.assertEqual(driver_for_platform("openclaw"), ACPX)
         self.assertEqual(driver_for_platform("claude-code"), ACPX)
         self.assertEqual(driver_for_platform("some-service"), HTTP)
 
@@ -243,17 +241,27 @@ class TestGateway(StoreCase):
         self.ask(codex, mode="bypass", response_format={"type": "json_schema"})  # original stale object
         self.assertEqual(self.acpx.calls[2]["prompt_text"], "hi")
 
-    def test_openclaw_uses_the_runtime_endpoint_and_its_session_key(self):
-        claw = self.store.create("alice", name="Claw", driver=OPENCLAW,
-                                 config={"platform": "openclaw", "global_name": "main", "api_url": "http://saved"})
-        with mock.patch.dict(os.environ, {"OPENCLAW_API_URL": "http://device:18789", "OPENCLAW_GATEWAY_TOKEN": "gw"}):
-            self.ask(claw)
-        url, body, headers = _Http.posts[0]
-        self.assertEqual(url, "http://device:18789/v1/chat/completions")
-        self.assertEqual(headers["x-openclaw-session-key"], f"agent:main:clawcross-alice-{claw.agent_id}")
-        self.assertEqual(headers["Authorization"], "Bearer gw")
-        self.assertEqual(body["model"], "agent:main")
-        self.assertNotIn("session_id", body)  # the session is the header
+    def test_openclaw_is_an_acp_agent_on_the_main_agent(self):
+        claw = self.store.create("alice", name="Claw", driver=ACPX, config={"platform": "openclaw"})
+        self.ask(claw)
+        call = self.acpx.calls[0]
+        self.assertEqual((call["tool"], call["session_key"]),
+                         ("openclaw", f"agent:main:clawcross-alice-{claw.agent_id}"))
+
+    def test_gateway_era_openclaw_agents_become_acp_agents_once(self):
+        import sqlite3
+        db = Path(self.tmp.name) / "legacy.db"
+        AgentStore(db).create("alice", driver=WEBOT, agent_id="seed")
+        with sqlite3.connect(db) as conn:
+            conn.execute(
+                "INSERT INTO agents (owner, agent_id, name, driver, config_json, created_at, updated_at)"
+                " VALUES ('alice', 'oc-claw', 'Claw', 'openclaw', ?, 0, 0)",
+                (json.dumps({"global_name": "research", "api_url": "http://gw", "api_key": "k",
+                             "model": "agent:research", "persona": "p"}),))
+        claw = AgentStore(db).require("alice", "oc-claw")
+        self.assertEqual((claw.driver, claw.platform), (ACPX, "openclaw"))
+        self.assertEqual(claw.config, {"global_name": "research", "persona": "p", "platform": "openclaw"})
+        self.assertEqual(runtime_session(claw), "agent:research:clawcross-alice-oc-claw")  # its OpenClaw session
 
     def test_a_runtime_freezes_its_identity_until_reset_and_refreshes_stale_records(self):
         svc = self.store.create("alice", name="Svc", driver=HTTP, config={"platform": "svc", "api_url": "http://svc"})
@@ -699,7 +707,6 @@ class TestSystemTrigger(StoreCase):
 
         self.gateway = mock.Mock()
         self.gateway.ask = mock.AsyncMock(return_value=AgentReply(ok=True, content="pong"))
-        self.gateway.runtimes[ACPX].ask = self.gateway.ask  # ACP now serves its own chat/stream path; never launch a real CLI in this test.
         self.gateway.inbox = mock.AsyncMock(return_value=DeliveryReceipt(accepted=True))
         self.gateway.trigger = mock.AsyncMock(return_value=DeliveryReceipt(accepted=True))
         app = FastAPI()

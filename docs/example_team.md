@@ -34,7 +34,7 @@ WeBot members. `name` is the member's role name in the team, `tag` the persona i
 
 ### external_agents.json
 
-Members on other platforms: `platform` says which runtime, `global_name` is the agent's name there (an OpenClaw agent must already exist in OpenClaw). `meta` may carry `api_url` / `model` / `headers`; a package never carries an `api_key`.
+Members on other platforms: `platform` says which runtime, `global_name` is the agent's id on this machine. `meta` may carry `api_url` / `model` / `headers`; a package never carries an `api_key`.
 
 ```json
 [

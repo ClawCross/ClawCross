@@ -4735,7 +4735,7 @@ body.session-panel-resizing * {
 /* ============================================================ */
 /* OpenClaw Chat Switcher                                        */
 /* ============================================================ */
-.openclaw-chat-switcher {
+.studio-chat-switcher {
     flex-shrink: 0;
     border-bottom: 1px solid #e5e7eb;
     background: linear-gradient(180deg, #fafbfc 0%, #f3f4f6 100%);
@@ -5050,36 +5050,6 @@ body.session-panel-resizing * {
     color: #1f2937;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
-.oc-switcher-tab.active[id="oc-tab-openclaw"] {
-    background: linear-gradient(135deg, #f0fdf4, #ecfdf5);
-    color: #059669;
-    box-shadow: 0 1px 3px rgba(5,150,105,0.15);
-}
-.oc-agent-selector {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex: 1;
-    min-width: 0;
-}
-.oc-agent-select {
-    flex: 1;
-    min-width: 120px;
-    max-width: 280px;
-    padding: 4px 8px;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    font-size: 12px;
-    background: #fff;
-    color: #374151;
-    cursor: pointer;
-    transition: border-color 0.15s;
-}
-.oc-agent-select:focus {
-    outline: none;
-    border-color: #10b981;
-    box-shadow: 0 0 0 2px rgba(16,185,129,0.15);
-}
 .oc-refresh-btn {
     background: none;
     border: 1px solid #d1d5db;
@@ -5109,14 +5079,13 @@ body.session-panel-resizing * {
     white-space: nowrap;
 }
 @media (max-width: 768px) {
-    .openclaw-chat-switcher { padding: 4px 8px; }
+    .studio-chat-switcher { padding: 4px 8px; }
     .oc-switcher-row-main { align-items: flex-start; }
     .oc-switcher-tabs { width: 100%; }
     .oc-acp-tabs { max-width: none; }
     .oc-switcher-tab { flex-shrink: 0; }
     .oc-switcher-tab { padding: 4px 10px; font-size: 11px; }
-    .oc-agent-select { max-width: 180px; font-size: 11px; }
-}
+    }
 
 /* Studio keeps the conversation as the primary surface. */
 #page-chat { min-width: 0; background: var(--ui-canvas); font-family: var(--ui-font); }
@@ -5148,7 +5117,7 @@ body.session-panel-resizing * {
 .studio-conversation-item:hover { background: var(--ui-surface-2); color: var(--ui-text); }
 .studio-conversation-item.is-active { color: var(--ui-accent); background: var(--ui-accent-tint); font-weight: 600; }
 .studio-conversation-empty { color: var(--ui-text-3); font-size: 12px; padding: 12px 6px; }
-.studio-conversation-switcher .openclaw-chat-switcher { padding: 0; border: 0; background: transparent; }
+.studio-conversation-switcher .studio-chat-switcher { padding: 0; border: 0; background: transparent; }
 .studio-conversation-switcher .oc-switcher-inner, .studio-conversation-switcher .oc-switcher-tabs { width: 100%; flex-wrap: wrap; gap: 6px; }
 .studio-conversation-switcher .oc-acp-tabs { flex-wrap: wrap; }
 .studio-conversation-switcher .oc-switcher-tab { flex: 0 0 auto; font-size: 11px; padding: 5px 9px; }

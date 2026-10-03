@@ -26,7 +26,7 @@ Agent 只调用 `run_command`。前台权限失败时系统根据明确错误定
 
 ## 资源限制与边界
 
-硬限制：每进程 CPU 120 秒、地址空间 2 GiB、文件大小 128 MiB、FD 256。宿主监督器限制墙钟时间、输出并清理进程组。Landlock 进程/线程上限按相同 UID 当前用量加 64 设置，因为 RLIMIT_NPROC 是共享账号限制，不能固定成 256 而导致繁忙服务器无法 fork。
+硬限制：每进程 CPU 120 秒、地址空间 2 GiB、文件大小 128 MiB、FD 256。宿主监督器限制墙钟时间、输出并清理进程组。Linux Landlock/SRT 的进程/线程上限考虑相同 UID 当前用量加 64，因为 RLIMIT_NPROC 是共享账号限制，不能固定成 256 而导致繁忙服务器无法 fork；SRT 在进入 PID 隔离前计算宿主用量。
 
 受控联网的临时 unit 同时使用 MemoryMax=2G、TasksMax=128、RuntimeMaxSec 与整组清理，限制任务及子进程的合计内存和进程数。CPU 仍为每进程时间上限，磁盘仍为每文件上限，不提供 CPU 占用率或工作区总容量配额；没有 systemd 的离线模式仅使用基础 rlimit。Landlock 禁止 setsid/setpgid，阻止子进程脱离受监督进程组。
 

@@ -98,7 +98,6 @@ const i18n = {
         studio_new_conversation: "新建 Agent",
         studio_history: "最近 Agent",
         studio_history_empty: "暂无 Agent",
-        studio_openclaw_new_hint: "OpenClaw 会话请在 Agent 中心管理。",
 
         project_update_banner: '发现新版本 {latest}，点击查看并更新',
         project_update_banner_dirty: '发现新版本 {latest}，但本地有未提交改动',
@@ -126,13 +125,11 @@ const i18n = {
         menu_history: '🤖 Agents',
         menu_new: '➕ 新对话',
         menu_oasis: '🏛️ TeamsWork',
-        menu_openclaw_cfg: '🦞 OpenClaw 配置',
         menu_logout: '🚪 退出',
         // 汉堡菜单 (no emoji, icon is separate)
         hmenu_agents: 'Agents',
         hmenu_agent_center: 'Agent 中心',
         hmenu_settings: '设置',
-        hmenu_openclaw: 'OpenClaw 配置',
         hmenu_new: '新对话',
         hmenu_oasis: 'TeamsWork',
         hmenu_logout: '退出',
@@ -194,6 +191,8 @@ const i18n = {
         // 聊天区域
         welcome_message: '你好，想做什么直接告诉我。',
         new_session_message: '新对话已开始。想做什么直接告诉我。',
+        agent_meta_title: '会话标题',
+        agent_meta_title_placeholder: '留空则显示第一条消息',
         input_placeholder: '说说你想做什么…',
         send_btn: '发送',
         cancel_btn: '终止',
@@ -405,17 +404,12 @@ const i18n = {
         group_msg_count: '条消息',
         group_member_count: '人',
         group_ext_platform: '连接方式',
-        group_ext_platform_auto: '自动（按标签：openclaw→HTTP，其余 acpx→ACP）',
         group_ext_platform_acp: '本地 ACP（acpx，可不填 API URL）',
-        group_ext_platform_http: 'OpenAI 兼容 HTTP（需 API URL；OpenClaw 可用环境变量）',
         group_ext_tag_none: '（无标签）',
         group_ext_tag_custom: '自定义…',
         group_ext_url_optional: 'API URL（可选）',
         group_ext_url_optional_acp: 'API URL（ACP 模式可不填）',
-        group_ext_url_required_http: 'API URL（HTTP 模式必填，OpenClaw 除外）',
         group_ext_url_hint_generic: '仅在使用 HTTP 网关时需要；纯 acpx 外部成员可留空。',
-        group_ext_url_hint_http: 'OpenClaw 标签可留空，将使用 OPENCLAW_API_URL。',
-        group_ext_url_required_toast: 'HTTP 模式需要填写 API URL（OpenClaw 标签可用环境变量）',
 
         // 离线提示
         offline_banner: '⚠️ 网络已断开，请检查连接',
@@ -447,70 +441,6 @@ const i18n = {
         orch_ia_tag_placeholder: '可拖入专家设置，或手动输入',
         orch_ia_created: 'Agent 已创建',
         orch_ia_tag_set: 'Tag 已设置为',
-orch_openclaw_sessions: '🦞 OpenClaw',
-        orch_add_openclaw_title: '新建 OpenClaw Agent',
-        orch_openclaw_agent_name: 'Agent 名称',
-        orch_openclaw_ws_path: '路径',
-        orch_openclaw_ws_loading: '加载默认路径...',
-        orch_openclaw_ws_fallback: '输入 workspace 路径',
-        orch_openclaw_ws_required: 'Workspace 路径不能为空',
-        orch_openclaw_ws_reset: '重置为默认路径',
-        orch_openclaw_workspace_hint: '💡 自动从默认 Agent 目录推导；可自定义',
-        orch_openclaw_create_btn: '创建 Agent',
-        orch_openclaw_creating: '创建中...',
-        orch_openclaw_created: 'Agent "{name}" 创建成功！',
-        orch_openclaw_exists: 'Agent "{name}" 已存在，请换一个名称',
-        orch_openclaw_name_required: '请输入 Agent 名称',
-        orch_openclaw_name_invalid: '名称只允许字母、数字、下划线、连字符',
-        orch_oc_delete: '删除 Agent',
-        orch_oc_delete_confirm: '确定删除 OpenClaw Agent "{name}"？此操作会删除真实 Agent。',
-        orch_oc_delete_success: '已删除 OpenClaw Agent "{name}"',
-        orch_oc_delete_failed: '删除 OpenClaw Agent "{name}" 失败',
-        orch_oc_delete_main_blocked: 'main Agent 不能被删除',
-        orch_oc_edit_files: '编辑核心文件',
-        orch_oc_config: '配置',
-        orch_oc_select_file: '← 点击文件查看/编辑',
-        orch_oc_import_expert: '导入专家人设',
-        orch_oc_import_expert_to_identity: '导入专家人设到 IDENTITY.md',
-        orch_oc_create_import_expert: '可选：导入专家人设作为 Agent 身份',
-        orch_oc_create_pick_expert: '选择专家',
-        orch_oc_import_expert_tip: '从预设/自定义人设导入人设到此文件',
-        orch_oc_import_expert_title: '导入专家人设',
-        orch_oc_import_expert_desc: '选择一个专家，将其人设（persona）导入到当前文件中。',
-        orch_oc_import_replace: '替换内容',
-        orch_oc_import_append: '追加到末尾',
-        orch_oc_import_search_ph: '搜索专家名称/标签...',
-        orch_oc_import_no_result: '没有匹配的专家',
-        orch_oc_import_public: '公共专家',
-        orch_oc_import_agency: 'Agency 专家',
-        orch_oc_import_custom: '自定义人设',
-        orch_oc_import_done: '已导入 {name} 的人设',
-        orch_oc_file_missing: '缺失',
-        orch_oc_new_file: '新文件',
-        orch_oc_save: '保存',
-        orch_oc_saved: '已保存',
-        orch_oc_unsaved: '未保存',
-        orch_oc_cfg_loaded: '配置已加载',
-        orch_oc_cfg_tools: 'Tools 权限',
-        orch_oc_cfg_profile: '权限模式',
-        orch_oc_cfg_no_profile: '（未设置）',
-        orch_oc_cfg_tool_toggles: '单独工具开关（⚪默认 ✅允许 🚫禁止，点击切换）',
-        orch_oc_cfg_skills: 'Skills 技能',
-        orch_oc_cfg_skills_all: '全部可用（不限制）',
-        orch_oc_cfg_saved: '"{name}" 配置已保存',
-        orch_oc_quick_btn: '🦞 Setting OpenClaw Agent',
-        orch_oc_quick_title: 'Setting OpenClaw Agent',
-        orch_oc_quick_no_agents: 'OpenClaw 不可用',
-        orch_oc_quick_empty: '暂无 Agent，点击下方按钮新建',
-        orch_oc_quick_select: '选择要配置的 Agent：',
-        orch_oc_quick_add: '新建 OpenClaw Agent',
-        orch_oc_tab_files: '核心文件',
-        orch_oc_tab_config: 'Skills & Tools',
-        orch_oc_tab_channels: 'Channels 绑定',
-        orch_oc_ch_empty: '暂无可用 Channel',
-        orch_oc_ch_guide_title: '如何添加 Channel：',
-        orch_oc_ch_guide_docs: '完整文档：',
-        orch_oc_ch_desc: '点击 Channel 账号切换绑定状态（🔗已绑定 ⚪未绑定）',
         orch_manual_inject: '手动注入',
         orch_start_node: '开始节点',
         orch_end_node: '结束节点',
@@ -782,7 +712,6 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         menu_settings: '⚙️ 设置',
         settings_group_llm: 'LLM 模型配置',
         settings_group_tts: '音频配置',
-        settings_group_openclaw: 'OpenClaw 集成',
         settings_group_oasis: 'OASIS 论坛',
         settings_group_ports: '端口配置',
         settings_group_network: '公网地址',
@@ -813,17 +742,9 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         settings_openclaw_import: '🦞 从 OpenClaw 导入',
         settings_openclaw_import_hint_ready: '自动读取已配置的 API Key、模型和 Provider',
         settings_openclaw_import_hint_missing: '⚠️ 未检测到 OpenClaw（未安装）',
-        settings_openclaw_export: '🦞 导出到 OpenClaw',
-        settings_openclaw_export_hint_ready: '把当前 Clawcross 的 LLM 设置写回 OpenClaw 默认模型',
-        settings_openclaw_export_hint_missing: '⚠️ 未检测到 OpenClaw（未安装）',
         settings_openclaw_importing: '正在从 OpenClaw 读取配置...',
         settings_openclaw_imported: '✅ 已从 OpenClaw 导入配置',
-        settings_openclaw_exporting: '正在把当前配置导出到 OpenClaw...',
-        settings_openclaw_exported: '✅ 已导出到 OpenClaw',
-        settings_openclaw_export_missing: '⚠️ 请先填写 Base URL 和模型；远程 provider 还需要 API Key',
         settings_openclaw_detect_hint: '，点击“检测模型”确认',
-        settings_openclaw_gateway_restarted: 'OpenClaw Gateway 已自动重载',
-        settings_openclaw_gateway_restart_failed: '已写入配置，但 Gateway 重载失败',
         settings_antigravity_ready_subtitle: '通过 Google One Pro 会员免费访问 Claude / Gemini / GPT',
         settings_antigravity_missing_subtitle: '⚠️ Antigravity 未运行（未启动或无法连接）',
         settings_help_audio_group: '留空时会自动跟随当前 LLM provider。检测到 OpenAI 时默认使用 gpt-4o-mini-tts / alloy / whisper-1；检测到 Gemini 时默认使用 gemini-2.5-flash-preview-tts / charon。',
@@ -888,18 +809,11 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         tunnel_url_pending: '公网地址生成中...',
         tunnel_url_hint: '点击复制公网地址',
 
-        // OpenClaw 对话切换
+        // 对话切换（WeBot / ACP 工具）
         oc_tab_internal: '🤖 WeBot',
-        oc_tab_openclaw: '🦞 OpenClaw',
         oc_tab_codex: 'Codex',
         oc_tab_claude: 'Claude',
         oc_tab_gemini: 'Gemini',
-        oc_select_agent: '-- 选择 Agent --',
-        oc_no_agents: '没有可用的 OpenClaw Agent',
-        oc_chatting_with: '正在与 {name} 对话',
-        oc_load_failed: '加载 OpenClaw Agent 失败',
-        oc_not_configured: 'OpenClaw 未配置',
-        oc_select_agent_hint: '请先选择一个 OpenClaw Agent',
         oc_select_acp_hint: '请先选择一个 ACP 工具标签',
         oc_acp_unavailable: '未检测到 acpx（请安装并加入 PATH）',
         oc_acp_via: '经 acpx（ACP）连接本地 CLI；上下文由该会话内的 CLI 保持。',
@@ -976,7 +890,6 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         studio_new_conversation: "New Agent",
         studio_history: "Recent Agents",
         studio_history_empty: "No Agents yet",
-        studio_openclaw_new_hint: "Manage OpenClaw sessions in Agent Center.",
 
         project_update_banner: 'New version {latest} is available. Click to review and update.',
         project_update_banner_dirty: 'New version {latest} is available, but local changes block auto update.',
@@ -1004,13 +917,11 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         menu_history: '🤖 Agents',
         menu_new: '➕ New Chat',
         menu_oasis: '🏛️ TeamsWork',
-        menu_openclaw_cfg: '🦞 OpenClaw Config',
         menu_logout: '🚪 Logout',
         // Hamburger menu (no emoji, icon is separate)
         hmenu_agents: 'Agents',
         hmenu_agent_center: 'Agent Center',
         hmenu_settings: 'Settings',
-        hmenu_openclaw: 'OpenClaw Config',
         hmenu_new: 'New Chat',
         hmenu_oasis: 'TeamsWork',
         hmenu_logout: 'Logout',
@@ -1072,6 +983,8 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         // Chat area
         welcome_message: 'Hi, tell me what you would like to do.',
         new_session_message: 'New conversation started. Tell me what you would like to do.',
+        agent_meta_title: 'Conversation title',
+        agent_meta_title_placeholder: 'Empty: the first message is shown',
         input_placeholder: 'Tell me what you would like to do…',
         send_btn: 'Send',
         cancel_btn: 'Stop',
@@ -1283,17 +1196,12 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         group_msg_count: 'messages',
         group_member_count: 'members',
         group_ext_platform: 'Connection',
-        group_ext_platform_auto: 'Auto (openclaw→HTTP, other acpx tools→ACP)',
         group_ext_platform_acp: 'Local ACP (acpx; API URL optional)',
-        group_ext_platform_http: 'OpenAI-compatible HTTP (URL required; OpenClaw can use env)',
         group_ext_tag_none: '(no tag)',
         group_ext_tag_custom: 'Custom…',
         group_ext_url_optional: 'API URL (optional)',
         group_ext_url_optional_acp: 'API URL (optional for ACP)',
-        group_ext_url_required_http: 'API URL (required for HTTP; except OpenClaw via env)',
         group_ext_url_hint_generic: 'Only needed for HTTP routing; leave empty for acpx-only members.',
-        group_ext_url_hint_http: 'OpenClaw tag may be empty; OPENCLAW_API_URL is used.',
-        group_ext_url_required_toast: 'HTTP mode requires API URL (OpenClaw may use env)',
 
         // Offline
         offline_banner: '⚠️ Network disconnected, please check connection',
@@ -1325,70 +1233,6 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         orch_ia_tag_placeholder: 'Drag an expert to set, or type manually',
         orch_ia_created: 'Agent created',
         orch_ia_tag_set: 'Tag set to',
-orch_openclaw_sessions: '🦞 OpenClaw',
-        orch_add_openclaw_title: 'New OpenClaw Agent',
-        orch_openclaw_agent_name: 'Agent Name',
-        orch_openclaw_ws_path: 'Path',
-        orch_openclaw_ws_loading: 'Loading default path...',
-        orch_openclaw_ws_fallback: 'Enter workspace path',
-        orch_openclaw_ws_required: 'Workspace path is required',
-        orch_openclaw_ws_reset: 'Reset to default path',
-        orch_openclaw_workspace_hint: '💡 Auto-derived from default agent directory; you can customize it',
-        orch_openclaw_create_btn: 'Create Agent',
-        orch_openclaw_creating: 'Creating...',
-        orch_openclaw_created: 'Agent "{name}" created!',
-        orch_openclaw_exists: 'Agent "{name}" already exists, please choose another name',
-        orch_openclaw_name_required: 'Agent name is required',
-        orch_openclaw_name_invalid: 'Name must be alphanumeric (a-z, 0-9, -, _)',
-        orch_oc_delete: 'Delete Agent',
-        orch_oc_delete_confirm: 'Delete OpenClaw agent "{name}"? This removes the real agent.',
-        orch_oc_delete_success: 'Deleted OpenClaw agent "{name}"',
-        orch_oc_delete_failed: 'Failed to delete OpenClaw agent "{name}"',
-        orch_oc_delete_main_blocked: 'The main agent cannot be deleted',
-        orch_oc_edit_files: 'Edit Core Files',
-        orch_oc_config: 'Config',
-        orch_oc_select_file: '← Click a file to view/edit',
-        orch_oc_import_expert: 'Import Expert',
-        orch_oc_import_expert_to_identity: 'Import Expert to IDENTITY.md',
-        orch_oc_create_import_expert: 'Optional: Import expert persona as Agent identity',
-        orch_oc_create_pick_expert: 'Pick Expert',
-        orch_oc_import_expert_tip: 'Import persona from preset/custom experts into this file',
-        orch_oc_import_expert_title: 'Import Expert Persona',
-        orch_oc_import_expert_desc: 'Select an expert to import their persona into the current file.',
-        orch_oc_import_replace: 'Replace content',
-        orch_oc_import_append: 'Append to end',
-        orch_oc_import_search_ph: 'Search expert name/tag...',
-        orch_oc_import_no_result: 'No matching experts',
-        orch_oc_import_public: 'Public Experts',
-        orch_oc_import_agency: 'Agency Experts',
-        orch_oc_import_custom: 'Custom Experts',
-        orch_oc_import_done: 'Imported persona of {name}',
-        orch_oc_file_missing: 'Missing',
-        orch_oc_new_file: 'New file',
-        orch_oc_save: 'Save',
-        orch_oc_saved: 'Saved',
-        orch_oc_unsaved: 'Unsaved',
-        orch_oc_cfg_loaded: 'Config loaded',
-        orch_oc_cfg_tools: 'Tool Permissions',
-        orch_oc_cfg_profile: 'Permission Profile',
-        orch_oc_cfg_no_profile: '(Not set)',
-        orch_oc_cfg_tool_toggles: 'Individual tool toggles (⚪default ✅allow 🚫deny, click to cycle)',
-        orch_oc_cfg_skills: 'Skills',
-        orch_oc_cfg_skills_all: 'All available (unrestricted)',
-        orch_oc_cfg_saved: '"{name}" config saved',
-        orch_oc_quick_btn: '🦞 Setting OpenClaw Agent',
-        orch_oc_quick_title: 'Setting OpenClaw Agent',
-        orch_oc_quick_no_agents: 'OpenClaw not available',
-        orch_oc_quick_empty: 'No agents yet. Click below to create one',
-        orch_oc_quick_select: 'Select an agent to configure:',
-        orch_oc_quick_add: 'New OpenClaw Agent',
-        orch_oc_tab_files: 'Core Files',
-        orch_oc_tab_config: 'Skills & Tools',
-        orch_oc_tab_channels: 'Channels',
-        orch_oc_ch_empty: 'No channels available',
-        orch_oc_ch_guide_title: 'How to add a channel:',
-        orch_oc_ch_guide_docs: 'Full docs:',
-        orch_oc_ch_desc: 'Click a channel account to toggle binding (🔗bound ⚪unbound)',
         orch_manual_inject: 'Manual Inject',
         orch_start_node: 'Start Node',
         orch_end_node: 'End Node',
@@ -1668,7 +1512,6 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         menu_settings: '⚙️ Settings',
         settings_group_llm: 'LLM Model',
         settings_group_tts: 'Audio',
-        settings_group_openclaw: 'OpenClaw Integration',
         settings_group_oasis: 'OASIS Forum',
         settings_group_ports: 'Ports',
         settings_group_network: 'Public URLs',
@@ -1699,17 +1542,9 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         settings_openclaw_import: '🦞 Import from OpenClaw',
         settings_openclaw_import_hint_ready: 'Read the configured API key, model, and provider from OpenClaw',
         settings_openclaw_import_hint_missing: '⚠️ OpenClaw was not detected',
-        settings_openclaw_export: '🦞 Export to OpenClaw',
-        settings_openclaw_export_hint_ready: 'Write the current Clawcross LLM settings back to OpenClaw defaults',
-        settings_openclaw_export_hint_missing: '⚠️ OpenClaw was not detected',
         settings_openclaw_importing: 'Reading configuration from OpenClaw...',
         settings_openclaw_imported: '✅ Imported configuration from OpenClaw',
-        settings_openclaw_exporting: 'Writing the current configuration to OpenClaw...',
-        settings_openclaw_exported: '✅ Exported configuration to OpenClaw',
-        settings_openclaw_export_missing: '⚠️ Base URL and model are required; remote providers also need an API key',
         settings_openclaw_detect_hint: '. Click "Detect Models" to confirm.',
-        settings_openclaw_gateway_restarted: 'OpenClaw Gateway reloaded automatically',
-        settings_openclaw_gateway_restart_failed: 'Config was saved, but Gateway reload failed',
         settings_antigravity_ready_subtitle: 'Use Claude / Gemini / GPT via Google One Pro',
         settings_antigravity_missing_subtitle: '⚠️ Antigravity is not running or cannot be reached',
         settings_help_audio_group: 'Leave these blank to follow the current LLM provider automatically. OpenAI defaults to gpt-4o-mini-tts / alloy / whisper-1; Gemini defaults to gemini-2.5-flash-preview-tts / charon.',
@@ -1774,18 +1609,11 @@ orch_openclaw_sessions: '🦞 OpenClaw',
         tunnel_url_pending: 'Public URL is still being generated...',
         tunnel_url_hint: 'Click to copy public URL',
 
-        // OpenClaw Chat Switcher
+        // Chat switcher (WeBot / ACP tools)
         oc_tab_internal: '🤖 WeBot',
-        oc_tab_openclaw: '🦞 OpenClaw',
         oc_tab_codex: 'Codex',
         oc_tab_claude: 'Claude',
         oc_tab_gemini: 'Gemini',
-        oc_select_agent: '-- Select Agent --',
-        oc_no_agents: 'No OpenClaw agents available',
-        oc_chatting_with: 'Chatting with {name}',
-        oc_load_failed: 'Failed to load OpenClaw agents',
-        oc_not_configured: 'OpenClaw not configured',
-        oc_select_agent_hint: 'Please select an OpenClaw Agent first',
         oc_select_acp_hint: 'Pick an ACP tool tab first',
         oc_acp_unavailable: 'acpx not found (install and add to PATH)',
         oc_acp_via: 'Via acpx (ACP); the local CLI keeps context for this chat session.',
@@ -2149,7 +1977,7 @@ function renderAgentCenterDetail() {
                 <div class="agent-dex-context-meter"><span style="width:${contextPercent}%"></span></div>
                 <div class="agent-dex-context-row"><span>${agentCenterFormatTokens(context.tokens)} / ${agentCenterFormatTokens(context.budget)} tokens</span><span>${agentCenterEscape(t('agent_center_remaining'))} ${agentCenterFormatTokens(context.remaining)}</span></div>
                 <div class="agent-dex-actions" style="margin-top:10px;"><button class="agent-center-btn" type="button" onclick="compactAgentFromCenter(this)">${agentCenterEscape(t('agent_center_compact'))}</button><button class="agent-center-btn" type="button" onclick="openAgentRuntimeSettings()">${agentCenterEscape(t('runtime_settings'))}</button></div>
-            </section>` : !['openclaw', 'http', 'llm'].includes(agent.platform) ? `<section class="agent-dex-section"><button class="agent-center-btn" type="button" onclick="openExternalAgentSettings('${agent.agent_id}')">${agentCenterEscape(t('agent_center_native_settings'))}</button></section>` : ''}
+            </section>` : !['http', 'llm'].includes(agent.platform) ? `<section class="agent-dex-section"><button class="agent-center-btn" type="button" onclick="openExternalAgentSettings('${agent.agent_id}')">${agentCenterEscape(t('agent_center_native_settings'))}</button></section>` : ''}
             <section class="agent-dex-section">
                 <div class="agent-dex-section-title">${agentCenterEscape(t('agent_center_tools'))}</div>
                 <div class="agent-dex-fields">
@@ -2370,34 +2198,9 @@ const MAX_FILE_SIZE = 512 * 1024; // 512KB per text file
 const MAX_PDF_SIZE = 10 * 1024 * 1024; // 10MB per PDF
 const MAX_AUDIO_SIZE = 25 * 1024 * 1024; // 25MB per audio
 const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50MB per video
-const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 压缩目标：10MB
-const MAX_IMAGE_DIMENSION = 2048; // 最大边长
 
 function compressImage(file) {
-    return new Promise((resolve) => {
-        const img = new Image();
-        img.onload = () => {
-            let { width, height } = img;
-            if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION) {
-                const scale = MAX_IMAGE_DIMENSION / Math.max(width, height);
-                width = Math.round(width * scale);
-                height = Math.round(height * scale);
-            }
-            const canvas = document.createElement('canvas');
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, width, height);
-            let quality = 0.85;
-            let result = canvas.toDataURL('image/jpeg', quality);
-            while (result.length > MAX_IMAGE_SIZE * 1.37 && quality > 0.3) {
-                quality -= 0.1;
-                result = canvas.toDataURL('image/jpeg', quality);
-            }
-            resolve(result);
-        };
-        img.src = URL.createObjectURL(file);
-    });
+    return ClawCrossAttachments.prepareImage(file);
 }
 
 // ===== File Upload Logic (images + text files + PDF + audio) =====
@@ -2408,25 +2211,17 @@ function handleFileSelect(event) {
         const ext = '.' + (file.name.split('.').pop() || '').toLowerCase();
         const mime = file.type || '';
         // 分流优先级：MIME > 扩展名。video/audio 都接受的 .webm 以 MIME 决定。
-        const isImage = mime.startsWith('image/');
+        const isImage = mime.startsWith('image/') || ['.heic','.heif','.jpg','.jpeg','.png','.webp','.gif'].includes(ext);
         const isVideo = mime.startsWith('video/') || (!mime && VIDEO_EXTENSIONS.has(ext));
         const isAudio = (!isVideo) && (mime.startsWith('audio/') || (!mime && AUDIO_EXTENSIONS.has(ext)));
         const isPdf = mime === 'application/pdf' || ext === '.pdf';
         if (isImage) {
             if (pendingImages.length >= 5) { alert(t('max_images')); break; }
-            if (file.size <= MAX_IMAGE_SIZE) {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    pendingImages.push({ base64: e.target.result, name: file.name });
-                    renderImagePreviews();
-                };
-                reader.readAsDataURL(file);
-            } else {
-                compressImage(file).then((compressed) => {
-                    pendingImages.push({ base64: compressed, name: file.name });
-                    renderImagePreviews();
-                });
-            }
+            compressImage(file).then((compressed) => {
+                if (pendingImages.length >= 5) { alert(t('max_images')); return; }
+                pendingImages.push({ base64: compressed, name: file.name });
+                renderImagePreviews();
+            }).catch(error => alert(`${file.name}: ${error.message}`));
         } else if (isAudio) {
             if (file.size > MAX_AUDIO_SIZE) { alert(`${file.name}: ${t('audio_too_large')} (${(file.size/1024/1024).toFixed(1)}MB)`); continue; }
             if (pendingAudios.length >= 2) { alert(t('max_audios')); break; }
@@ -3001,6 +2796,7 @@ async function openAgentMetaModal(mode, sessionId, existingMeta) {
     document.getElementById('agent-meta-modal-title').textContent =
         mode === 'edit' ? '✏️ Edit Agent Settings' : '🤖 New Agent Settings';
     document.getElementById('agent-meta-name').value = (existingMeta && existingMeta.name) || '';
+    document.getElementById('agent-meta-title').value = (existingMeta && existingMeta.title) || '';
 
     // ── Populate tools checkbox list ──
     const toolsContainer = document.getElementById('agent-meta-tools-container');
@@ -3076,6 +2872,7 @@ function _collectAgentMeta() {
     const tools = checkboxes.length && checkedNames.length < allTools.length ? checkedNames : null;
 
     const meta = { persona, tools };
+    if (_agentMetaMode === 'edit') meta.title = document.getElementById('agent-meta-title').value.trim();
     if (_agentMetaMode === 'create') meta.platform = document.getElementById('agent-meta-platform').value;
     if (name !== null) meta.name = name;
     return meta;
@@ -3141,7 +2938,7 @@ async function _loadAgentMetaMap(team = '') {
         for (const a of webot.filter(inScope)) {
             const member = membership.get(a.agent_id);
             map[a.agent_id] = {
-                agent_id: a.agent_id, name: member?.role || a.name, persona: a.settings.persona || '',
+                agent_id: a.agent_id, name: member?.role || a.name, title: a.settings.title || '', persona: a.settings.persona || '',
                 platform: a.platform, tools: a.settings.tools, is_primary: Boolean(member?.is_lead), updated_at_ts: a.updated_at,
             };
         }
@@ -3188,6 +2985,7 @@ async function saveSessionAgent(sessionId, meta, team = _currentAgentTeam) {
     const settings = {};
     if (meta.persona !== undefined) settings.persona = meta.persona || '';
     if (meta.tools !== undefined) settings.tools = meta.tools;
+    if (meta.title !== undefined) settings.title = meta.title;
     let agent = await _sessionAgent(sessionId);
     if (agent) {
         agent = await agentApi('PATCH', `/v1/agents/${encodeURIComponent(agent.agent_id)}`, {name: meta.name || undefined, settings});
@@ -3210,10 +3008,17 @@ async function saveSessionAgent(sessionId, meta, team = _currentAgentTeam) {
 }
 
 // Resolve display title: prefer agent meta name, fallback to original title
+// A conversation shows the work it is doing: the title the agent or the user set,
+// else its first user message; the agent's own name is shown beside it.
 function _resolveTitle(originalTitle, sessionId, agentMap) {
-    const meta = agentMap[sessionId];
-    if (meta && meta.name) return meta.name;
-    return originalTitle;
+    const meta = agentMap[sessionId] || {};
+    return meta.title || originalTitle || meta.name || '';
+}
+
+// "<agent name> · " when the session's row title is not already the name.
+function _sessionAgentLabel(session, agentMap) {
+    const name = (agentMap[session.session_id] || {}).name;
+    return name && name !== _resolveTitle(session.title, session.session_id, agentMap) ? name + ' · ' : '';
 }
 
 function _timeValue(value) {
@@ -4758,7 +4563,7 @@ async function loadSessionList() {
             div.dataset.sessionId = s.session_id;
             div.innerHTML = `
                 <div class="session-title">${escapeHtml(displayTitle)}</div>
-                <div class="session-meta">#${s.session_id.slice(-6)} · ${s.message_count}${t('messages_count')}</div>
+                <div class="session-meta">${escapeHtml(_sessionAgentLabel(s, agentMap))}#${s.session_id.slice(-6)} · ${s.message_count}${t('messages_count')}</div>
                 <button class="session-edit" onclick="event.stopPropagation(); editAgentMeta('${s.session_id}')">✏️</button>
                 <button class="session-delete" onclick="event.stopPropagation(); deleteSession('${s.session_id}')">${t('delete_session')}</button>
             `;
@@ -4837,7 +4642,7 @@ async function refreshHistoryList() {
                 const metaEl = div.querySelector('.session-meta');
                 if (metaEl) {
                     const badge = metaEl.querySelector('.session-busy-badge');
-                    const newMeta = `#${s.session_id.slice(-6)} · ${s.message_count}${t('messages_count')}`;
+                    const newMeta = `${_sessionAgentLabel(s, agentMap)}#${s.session_id.slice(-6)} · ${s.message_count}${t('messages_count')}`;
                     // 只更新文本部分，保留badge
                     const textNode = metaEl.firstChild;
                     if (textNode && textNode.nodeType === 3) {
@@ -4861,7 +4666,7 @@ async function refreshHistoryList() {
                 const displayTitle = _resolveTitle(s.title, s.session_id, agentMap);
                 div.innerHTML = `
                     <div class="session-title">${escapeHtml(displayTitle)}</div>
-                    <div class="session-meta">#${s.session_id.slice(-6)} · ${s.message_count}${t('messages_count')}</div>
+                    <div class="session-meta">${escapeHtml(_sessionAgentLabel(s, agentMap))}#${s.session_id.slice(-6)} · ${s.message_count}${t('messages_count')}</div>
                     <button class="session-edit" onclick="event.stopPropagation(); editAgentMeta('${s.session_id}')">✏️</button>
                     <button class="session-delete" onclick="event.stopPropagation(); deleteSession('${s.session_id}')">${t('delete_session')}</button>
                 `;
@@ -5162,27 +4967,26 @@ function renderStudioConversations() {
     const host = document.getElementById('studio-conversation-list');
     if (!host) return;
     const mode = _ocChatMode;
-    const select = document.getElementById(mode === 'acp' ? 'oc-acp-session-pick' : mode === 'openclaw' ? 'oc-agent-select' : 'oc-internal-session-pick');
-    const selected = mode === 'acp' ? acpResolveSessionName() : mode === 'openclaw' ? (_ocSelectedAgent?.name || '') : currentSessionId;
+    const select = document.getElementById(mode === 'acp' ? 'oc-acp-session-pick' : 'oc-internal-session-pick');
+    const selected = mode === 'acp' ? acpResolveSessionName() : currentSessionId;
     const options = [...(select?.options || [])].filter(option => option.value);
-    const items = options.map(option => ({id: option.value, title: option.textContent}));
+    const items = options.map(option => ({id: option.value, title: option.textContent, agent: option.dataset.agentName || ''}));
     host.replaceChildren();
     for (const item of items) {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'studio-conversation-item' + (item.id === selected ? ' is-active' : '');
         button.dataset.sessionId = item.id;
-        button.title = item.title + ' · ' + item.id;
+        button.title = [item.title, item.agent, item.id].filter(Boolean).join(' · ');
         button.setAttribute('aria-current', item.id === selected ? 'true' : 'false');
         const title = document.createElement('span');
-        title.textContent = item.title.replace(/ · #[^ ]+$/, '') || t('studio_new_conversation');
+        title.textContent = item.title || t('studio_new_conversation');
         const detail = document.createElement('small');
-        detail.textContent = '#' + item.id.slice(-6);
+        detail.textContent = (item.agent && item.agent !== item.title ? item.agent + ' · ' : '') + '#' + item.id.slice(-6);
         button.append(title, detail);
         button.onclick = async () => {
             if (mode !== _ocChatMode) return;
             if (mode === 'internal') await openAgentSession(item.id);
-            else if (mode === 'openclaw') { select.value = item.id; ocOnAgentChange(); }
             else {
                 select.value = item.id;
                 acpOnSessionPickChange();
@@ -5199,7 +5003,7 @@ function renderStudioConversations() {
         host.appendChild(empty);
     }
     const create = document.getElementById('studio-new-conversation');
-    if (create) { create.disabled = mode === 'openclaw'; create.title = mode === 'openclaw' ? t('studio_openclaw_new_hint') : t('studio_new_conversation'); }
+    if (create) create.title = t('studio_new_conversation');
 }
 
 async function studioNewConversation() {
@@ -5219,7 +5023,7 @@ async function studioNewConversation() {
         }
     } finally {
         renderStudioConversations();
-        if (button) button.disabled = _ocChatMode === 'openclaw';
+        if (button) button.disabled = false;
     }
 }
 
@@ -5238,9 +5042,8 @@ function ocInternalRepaintSessionPick() {
         if (!s.session_id) continue;
         const opt = document.createElement('option');
         opt.value = s.session_id;
-        const displayTitle = _resolveTitle(s.title, s.session_id, agentMap);
-        const short = s.session_id.slice(-6);
-        opt.textContent = displayTitle + ' · #' + short;
+        opt.textContent = _resolveTitle(s.title, s.session_id, agentMap);
+        opt.dataset.agentName = agentMap[s.session_id]?.name || '';
         sel.appendChild(opt);
     }
     if (currentSessionId && Array.from(sel.options).some((o) => o.value === currentSessionId)) {
@@ -5892,7 +5695,6 @@ function _renderLlmGroup(settings) {
     html += `<div style="font-size:12px;font-weight:700;color:#6b7280;margin-bottom:8px;">${t('settings_llm_sync_title')}</div>`;
     html += `<div style="display:flex;flex-direction:column;gap:8px;">`;
     html += renderActionButton('settings-import-openclaw-btn', 'settings_openclaw_import', 'settings-openclaw-import-subtitle', 'settingsImportOpenClaw()');
-    html += renderActionButton('settings-export-openclaw-btn', 'settings_openclaw_export', 'settings-openclaw-export-subtitle', 'settingsExportOpenClaw()');
     html += renderActionButton('settings-use-antigravity-btn', 'settings_antigravity_apply', 'settings-antigravity-subtitle', 'settingsUseAntigravity()');
     html += `</div>`;
     html += `<div id="settings-llm-sync-status" style="margin-top:6px;font-size:11px;color:#6b7280;"></div>`;
@@ -6261,54 +6063,6 @@ async function settingsImportOpenClaw() {
     }
 }
 
-async function settingsExportOpenClaw() {
-    const btn = document.getElementById('settings-export-openclaw-btn');
-    const statusEl = document.getElementById('settings-llm-sync-status');
-    if (!btn || !statusEl) return;
-
-    const payload = _collectSettingsLlmConfigForActions();
-    const isLocalKeyless = _isLocalKeylessProvider(payload.provider, payload.base_url);
-    if ((!payload.api_key && !payload.has_saved_api_key && !isLocalKeyless) || !payload.base_url || !payload.model) {
-        statusEl.textContent = t('settings_openclaw_export_missing');
-        return;
-    }
-
-    btn.disabled = true;
-    btn.style.opacity = '0.6';
-    statusEl.textContent = t('settings_openclaw_exporting');
-
-    try {
-        const resp = await fetch('/api/export_openclaw_config', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                provider: payload.provider,
-                api_key: payload.api_key,
-                base_url: payload.base_url,
-                model: payload.model,
-            }),
-        });
-        const data = await resp.json();
-        if (!resp.ok || data.ok === false || data.error) {
-            statusEl.textContent = '⚠️ ' + (data.error || 'Export failed');
-            return;
-        }
-
-        let suffix = '';
-        if (data.gateway_running && data.gateway_restarted) {
-            suffix = ' · ' + t('settings_openclaw_gateway_restarted');
-        } else if (data.gateway_running && !data.gateway_restarted && data.restart_error) {
-            suffix = ' · ' + t('settings_openclaw_gateway_restart_failed');
-        }
-        statusEl.textContent = t('settings_openclaw_exported') + (data.model_ref ? ` (${data.model_ref})` : '') + suffix;
-    } catch (e) {
-        statusEl.textContent = '⚠️ ' + e.message;
-    } finally {
-        btn.disabled = false;
-        btn.style.opacity = '1';
-    }
-}
-
 async function settingsUseAntigravity() {
     const btn = document.getElementById('settings-use-antigravity-btn');
     const statusEl = document.getElementById('settings-llm-sync-status');
@@ -6453,20 +6207,14 @@ function _initSettingsLlmGroup(settings) {
     }
     fetch('/api/setup_status').then((r) => r.json()).then((status) => {
         const openclawImportBtn = document.getElementById('settings-import-openclaw-btn');
-        const openclawExportBtn = document.getElementById('settings-export-openclaw-btn');
         const antigravityBtn = document.getElementById('settings-use-antigravity-btn');
         const openclawImportSub = document.getElementById('settings-openclaw-import-subtitle');
-        const openclawExportSub = document.getElementById('settings-openclaw-export-subtitle');
         const antigravitySub = document.getElementById('settings-antigravity-subtitle');
 
         const openclawAvailable = Boolean(status && status.openclaw_installed);
         _setSettingsActionButtonState(openclawImportBtn, openclawAvailable);
-        _setSettingsActionButtonState(openclawExportBtn, openclawAvailable);
         if (openclawImportSub) {
             openclawImportSub.textContent = t(openclawAvailable ? 'settings_openclaw_import_hint_ready' : 'settings_openclaw_import_hint_missing');
-        }
-        if (openclawExportSub) {
-            openclawExportSub.textContent = t(openclawAvailable ? 'settings_openclaw_export_hint_ready' : 'settings_openclaw_export_hint_missing');
         }
 
         const antigravityAvailable = Boolean(status && status.antigravity_running);
@@ -7934,11 +7682,10 @@ function setSystemBusyUI(busy) {
     }
 }
 
-function chatRunContextKey(mode = _ocChatMode, sessionId = currentSessionId, agent = _ocSelectedAgent, acpTool = _acpTool) {
+function chatRunContextKey(mode = _ocChatMode, sessionId = currentSessionId, acpTool = _acpTool) {
     return JSON.stringify({
         mode: mode || 'internal',
         sid: sessionId || '',
-        agent: agent && agent.name ? agent.name : null,
         acp: acpTool || null,
     });
 }
@@ -7966,7 +7713,7 @@ async function syncCurrentChatRunUI() {
         return true;
     }
 
-    // ACP/OpenClaw do not expose their running state through the Internal
+    // ACP agents do not expose their running state through the Internal
     // session-status endpoint. Their browser-side run map remains authoritative.
     if (_ocChatMode !== 'internal' || !currentSessionId) {
         currentAbortController = null;
@@ -8243,11 +7990,6 @@ async function handleSend() {
     if (!text && pendingImages.length === 0 && pendingFiles.length === 0 && pendingAudios.length === 0 && pendingWorkflows.length === 0) return;
     if (sendBtn.disabled) return;
 
-    // Guard: if in OpenClaw mode but no agent selected, prompt user
-    if (_ocChatMode === 'openclaw' && !_ocSelectedAgent) {
-        alert(t('oc_select_agent_hint'));
-        return;
-    }
     if (_ocChatMode === 'acp' && !_acpTool) {
         alert(t('oc_select_acp_hint'));
         return;
@@ -8310,7 +8052,6 @@ async function handleSend() {
         key: _streamOwnerKey,
         mode: _ocChatMode,
         sessionId: currentSessionId,
-        agentName: _ocSelectedAgent ? _ocSelectedAgent.name : null,
         acpTool: _acpTool || null,
         acpTranscriptKey: (_ocChatMode === 'acp' && _acpTool) ? _acpTranscriptKey() : '',
         controller: streamAbortController,
@@ -8392,14 +8133,9 @@ async function handleSend() {
         messages.push({ role: 'user', content: msgContent });
 
         // Every agent is talked to by its number (session_id); ``model`` names the runtime of a new one.
-        const isOpenClawChat = (_ocChatMode === 'openclaw' && _ocSelectedAgent);
         const isAcpChat = (_ocChatMode === 'acp' && _acpTool);
         let openaiPayload;
-        if (isOpenClawChat) {
-            const agentId = ocAgentIdFor(_ocSelectedAgent.name);
-            await studioEnsureAgent(agentId, { name: _ocSelectedAgent.name, platform: 'openclaw', global_name: _ocSelectedAgent.name });
-            openaiPayload = { model: 'openclaw', messages: messages, stream: true, session_id: agentId };
-        } else if (isAcpChat) {
+        if (isAcpChat) {
             const agentId = acpResolveSessionName();
             openaiPayload = { model: _acpTool, messages: messages, stream: true, session_id: agentId };
         } else {
@@ -8772,9 +8508,7 @@ async function handleSend() {
             appendMessage(t('agent_error') + ': ' + errText, false);
         }
     } finally {
-        if (chatRun.mode === 'openclaw' && chatRun.agentName) {
-            delete _ocTranscriptByAgent[chatRun.agentName];
-        } else if (chatRun.mode === 'acp' && chatRun.acpTranscriptKey) {
+        if (chatRun.mode === 'acp' && chatRun.acpTranscriptKey) {
             delete _acpTranscriptByKey[chatRun.acpTranscriptKey];
         }
         if (activeChatRuns.get(_streamOwnerKey) === chatRun) {
@@ -9020,19 +8754,14 @@ async function addWorkflowToContext(name, team, mode = 'yaml', target = 'chat') 
 var selectedPersona = null;  // { name, tag, persona, source }
 var personaInjectedSession = null;  // session ID where persona was already injected (avoid repeated prompt)
 
-// ── OpenClaw Chat Mode State ──
-var _ocChatMode = 'internal';       // 'internal' | 'openclaw' | 'acp'
-var _ocSelectedAgent = null;        // { name: string } — currently selected OpenClaw agent
-var _ocAgentsCache = [];            // cached list of OpenClaw agents from /proxy_openclaw_sessions
-var _ocAvailable = false;           // whether OpenClaw is available (detected at init)
+// ── Studio chat mode: WeBot or one ACP tool (codex, claude, openclaw, …) ──
+var _ocChatMode = 'internal';       // 'internal' | 'acp'
 var _acpAvailable = false;
 var _acpToolsCache = [];
 var _acpTool = null;                // selected acpx tool when _ocChatMode === 'acp'
 var _acpTranscriptByKey = Object.create(null);
 var _acpResolvedSessionNameByKey = Object.create(null);
 var _acpLastTranscriptKey = '';
-/** Per–OpenClaw-agent chat HTML while switching away from OpenClaw tab (WeBot uses server history). */
-var _ocTranscriptByAgent = Object.create(null);
 
 function _acpDisplayLabel(tool) {
     const tName = String(tool || '').trim();
@@ -9346,6 +9075,19 @@ function destroyOasisTownRuntime() {
     if (canvas) canvas.innerHTML = '';
 }
 
+let oasisTownBundlePromise = null;
+function loadOasisTownBundle() {
+    if (window.OasisTown) return Promise.resolve();
+    if (!oasisTownBundlePromise) oasisTownBundlePromise = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = '/static/js/oasis-town.bundle.js?v=20260327-humanfix';
+        script.onload = resolve;
+        script.onerror = () => { script.remove(); oasisTownBundlePromise = null; reject(new Error('Town download failed')); };
+        document.head.appendChild(script);
+    });
+    return oasisTownBundlePromise;
+}
+
 function syncOasisTownRuntime(detail) {
     ensureOasisTownPlacement();
     const canvas = document.getElementById('oasis-town-canvas');
@@ -9354,7 +9096,9 @@ function syncOasisTownRuntime(detail) {
         return;
     }
     if (!window.OasisTown || typeof window.OasisTown.mount !== 'function') {
-        console.warn('[OASIS] Town bundle is not ready');
+        loadOasisTownBundle().then(() => {
+            if (oasisTownModeEnabled) syncOasisTownRuntime(detail);
+        }).catch(error => console.warn('[OASIS]', error));
         return;
     }
     if (oasisTownMountedTopicId !== detail.topic_id) {
@@ -11846,7 +11590,7 @@ async function switchPage(page) {
             groupPage.classList.remove('mobile-chat-open');
             if (orchPage) orchPage.classList.remove('active');
             stopGroupListPolling();
-            // Lazy-init OpenClaw chat switcher on first visit to Chat tab
+            // Lazy-init the WeBot / ACP chat switcher on first visit to Chat tab
             if (!window._ocSwitcherInitialized && typeof ocInitSwitcher === 'function') {
                 window._ocSwitcherInitialized = true;
                 ocInitSwitcher();
@@ -12248,16 +11992,12 @@ async function loadTeamMembers() {
         tbody.innerHTML = _teamMembersCache.map(m => {
             const agent = m.agent;
             const id = escapeHtml(agent.agent_id);
-            const openclaw = agent.platform === 'openclaw';
-            const badgeClass = agent.platform === 'webot' ? 'bg-blue-50 text-blue-600'
-                : (openclaw ? 'bg-purple-50 text-purple-600' : 'bg-green-50 text-green-600');
+            const badgeClass = agent.platform === 'webot' ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-600';
             const safeRole = escapeHtml(m.role || agent.name);
             const persona = escapeHtml(m.tag || '-');  // the team persona it wears
             const lead = m.is_lead;
             const leadBtn = `<button onclick="toggleTeamMemberPrimary('${id}', ${lead ? 'false' : 'true'})" class="${lead ? 'text-amber-700 bg-amber-50 border border-amber-300 hover:bg-amber-100' : 'text-gray-500 hover:text-amber-600 hover:bg-amber-50'} text-xs px-2 py-1 rounded" title="${lead ? '点击取消团队主 agent' : '设为团队主 agent（团队群里代表团队发言）'}">${lead ? '取消主' : '设为主'}</button>`;
-            const configBtn = openclaw
-                ? `<button onclick="orchShowAgentConfigModal('${escapeHtml(agent.settings?.global_name || '')}')" class="text-purple-500 hover:text-purple-700 text-xs px-2 py-1 rounded hover:bg-purple-50" title="OpenClaw 配置 (Files / Tools / Channels)">🦞⚙️</button>`
-                : `<button onclick="showAgentConfigModal('${id}')" class="text-blue-500 hover:text-blue-700 text-xs px-2 py-1 rounded hover:bg-blue-50" title="配置">⚙️</button>`;
+            const configBtn = `<button onclick="showAgentConfigModal('${id}')" class="text-blue-500 hover:text-blue-700 text-xs px-2 py-1 rounded hover:bg-blue-50" title="配置">⚙️</button>`;
             return `
                 <tr>
                     <td class="team-member-cell font-medium text-gray-800" title="${safeRole}">${safeRole}${lead ? ' <span class="text-xs text-amber-600" title="团队主 agent">· 主 agent</span>' : ''}</td>
@@ -12292,7 +12032,7 @@ async function toggleTeamMemberPrimary(agentId, makeLead) {
 
 // Store preview data for export
 let _exportPreviewData = null;
-let _exportSelectedSkills = new Set(); // Store selected skill IDs: "agent/skill", "managed_personal/skill", or "managed_team/skill"
+let _exportSelectedSkills = new Set(); // Store selected skill IDs: "managed_personal/skill" or "managed_team/skill"
 let _teamSkillCurrentName = '';
 let _teamSkillCurrentScope = 'team';
 
@@ -12481,61 +12221,12 @@ function renderExportPreview(data) {
         personasListEl.innerHTML = '<div class="text-gray-400 italic">' + t('export_preview_empty') + '</div>';
     }
     
-    // Skills - Render by agent with individual checkboxes
-    const skills = sections.skills || { agents: [], details: [], managed: [], clawcross_personal: [], clawcross_team: [] };
+    // Skills - personal and team, each with its own checkbox
+    const skills = sections.skills || { clawcross_personal: [], clawcross_team: [] };
     let totalSkills = 0;
     const skillsListEl = document.getElementById('export-skills-list');
     let skillsHtml = '';
     
-    // Calculate total and build HTML
-    if (skills.details && skills.details.length > 0) {
-        skills.details.forEach(d => {
-            if (d.skills && d.skills.length > 0) {
-                totalSkills += d.skills.length;
-                const agentName = escapeHtml(d.agent);
-                // Agent header
-                skillsHtml += `<div class="mt-2 mb-1 font-medium text-gray-700 text-xs uppercase tracking-wide border-b border-gray-200 pb-1">${agentName}</div>`;
-                // Skills for this agent
-                d.skills.forEach(s => {
-                    const skillId = `${d.agent}/${s}`;
-                    const isChecked = _exportSelectedSkills.has(skillId);
-                    skillsHtml += `
-                        <div class="flex items-center gap-2 py-0.5 hover:bg-gray-100 rounded">
-                            <input type="checkbox" id="skill-${escapeHtml(skillId.replace(/\//g, '-'))}" 
-                                class="export-skill-checkbox" 
-                                data-skill-id="${escapeHtml(skillId)}"
-                                ${isChecked ? 'checked' : ''}
-                                onchange="toggleSkill('${escapeHtml(skillId)}', this.checked)">
-                            <label for="skill-${escapeHtml(skillId.replace(/\//g, '-'))}" class="text-gray-700 cursor-pointer select-none text-sm flex-1">
-                                ${escapeHtml(s)}
-                            </label>
-                        </div>`;
-                });
-            }
-        });
-    }
-    
-    // OpenClaw managed skills section
-    if (skills.managed && skills.managed.length > 0) {
-        totalSkills += skills.managed.length;
-        skillsHtml += `<div class="mt-3 mb-1 font-medium text-gray-700 text-xs uppercase tracking-wide border-b border-gray-200 pb-1">${t('export_managed_skills')}</div>`;
-        skills.managed.forEach(s => {
-            const skillId = `managed/${s.name}`;
-            const isChecked = _exportSelectedSkills.has(skillId);
-            skillsHtml += `
-                <div class="flex items-center gap-2 py-0.5 hover:bg-gray-100 rounded">
-                    <input type="checkbox" id="skill-${escapeHtml(skillId.replace(/\//g, '-'))}" 
-                        class="export-skill-checkbox" 
-                        data-skill-id="${escapeHtml(skillId)}"
-                        ${isChecked ? 'checked' : ''}
-                        onchange="toggleSkill('${escapeHtml(skillId)}', this.checked)">
-                    <label for="skill-${escapeHtml(skillId.replace(/\//g, '-'))}" class="text-gray-700 cursor-pointer select-none text-sm flex-1">
-                        ${escapeHtml(s.name)}
-                    </label>
-                </div>`;
-        });
-    }
-
     // ClawCross personal managed skills
     if (skills.clawcross_personal && skills.clawcross_personal.length > 0) {
         totalSkills += skills.clawcross_personal.length;
@@ -12651,10 +12342,8 @@ async function confirmExportTeam() {
     }
     
     // Handle granular skills selection - only if some skills are selected but not all
-    const skills = _exportPreviewData.sections?.skills || { details: [], managed: [], clawcross_personal: [], clawcross_team: [] };
+    const skills = _exportPreviewData.sections?.skills || { clawcross_personal: [], clawcross_team: [] };
     let allSkillsCount = 0;
-    skills.details?.forEach(d => { if (d.skills) allSkillsCount += d.skills.length; });
-    if (skills.managed) allSkillsCount += skills.managed.length;
     if (skills.clawcross_personal) allSkillsCount += skills.clawcross_personal.length;
     if (skills.clawcross_team) allSkillsCount += skills.clawcross_team.length;
     
@@ -12663,23 +12352,9 @@ async function confirmExportTeam() {
         // Build granular skills selection map
         const granularSkills = {};
         _exportSelectedSkills.forEach(skillId => {
-            const [agent, ...skillParts] = skillId.split('/');
+            const [scope, ...skillParts] = skillId.split('/');
             const skillName = skillParts.join('/'); // skill name might contain '/'
-            const targetKey = agent === 'managed_personal'
-                ? '_managed_personal'
-                : agent === 'managed_team'
-                    ? '_managed_team'
-                    : agent;
-            if (!granularSkills[targetKey]) {
-                granularSkills[targetKey] = [];
-            }
-            if (agent === 'managed') {
-                if (!granularSkills[agent]) {
-                    granularSkills[agent] = [];
-                }
-                granularSkills[agent].push(skillName);
-                return;
-            }
+            const targetKey = scope === 'managed_team' ? '_managed_team' : '_managed_personal';
             if (!granularSkills[targetKey]) {
                 granularSkills[targetKey] = [];
             }
@@ -13080,23 +12755,17 @@ window.addEventListener('message', (event) => {
 // Track ongoing deletion to prevent double-clicks
 let _deletingTeamMember = false;
 
-function canDeleteOpenClawAgent(agentName) {
-    return !!agentName && agentName.toLowerCase() !== 'main';
-}
-
 function acpxToolFromPlatform(platform) {
     const raw = String(platform || '').trim().toLowerCase();
     if (!raw) return '';
     if (raw === 'claudecode' || raw === 'claude-code') return 'claude-code';
     if (raw === 'gemini-cli') return 'gemini-cli';
-    if (raw === 'openclaw' || raw === 'http' || raw === 'api') return raw;
     return raw;
 }
 
 function platformNeedsApiUrl(platform) {
     const raw = String(platform || '').trim().toLowerCase();
     if (!raw) return true;
-    if (raw === 'openclaw') return false;
     return !ADD_EXT_PLATFORM_FALLBACK.includes(raw);
 }
 
@@ -13104,8 +12773,6 @@ function shouldShowExternalApiFields(platform) {
     return platformNeedsApiUrl(platform);
 }
 
-// A member that belongs to no other team is deleted with its agent (and, for
-// OpenClaw, the OpenClaw agent itself unless it is main); otherwise it only leaves this team.
 // Take an agent out of a team. One that belongs to no other team is deleted outright
 // (see deleteAgent). Returns whether anything changed.
 async function removeAgentFromTeam(team, agent, name) {
@@ -13121,23 +12788,9 @@ async function removeAgentFromTeam(team, agent, name) {
     return true;
 }
 
-// Delete an agent: it leaves every team and conversation, and the OpenClaw agent
-// behind it (never `main`) is removed too. Returns whether it was deleted.
+// Delete an agent: it leaves every team and conversation. Returns whether it was deleted.
 async function deleteAgent(agent, name) {
-    const openclawName = agent.platform === 'openclaw' ? (agent.settings?.global_name || '') : '';
-    const removeOpenClaw = openclawName && canDeleteOpenClawAgent(openclawName);
-    const question = removeOpenClaw
-        ? `确定删除 "${name}"？\n这会同时删除真实的 OpenClaw Agent "${openclawName}"。`
-        : `确定删除 "${name}"？它会离开所有团队和群聊。`;
-    if (!confirm(question)) return false;
-    if (removeOpenClaw) {
-        const resp = await fetch('/proxy_openclaw_remove', {
-            method: 'DELETE', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({name: openclawName}),
-        });
-        const result = await resp.json().catch(() => ({}));
-        if (!resp.ok || !result.ok) throw new Error(result.error || '删除 OpenClaw Agent 失败');
-    }
+    if (!confirm(`确定删除 "${name}"？它会离开所有团队和群聊。`)) return false;
     await agentApi('DELETE', `/v1/agents/${encodeURIComponent(agent.agent_id)}`);
     return true;
 }
@@ -13163,10 +12816,11 @@ async function deleteTeamMember(agentId) {
 }
 
 function addExtOnPlatformChange() {
-    // External agents are now restricted to OpenClaw + ACPX platforms.
+    // External agents are ACP tools (codex, claude, openclaw, …).
 }
 
 const ADD_EXT_PLATFORM_FALLBACK = [
+    'openclaw',
     'codex',
     'claude',
     'claude-code',
@@ -13225,7 +12879,7 @@ function renderAddExtPlatformOptions(options, selected = '') {
     }
     for (const raw of (Array.isArray(options) ? options : [])) {
         const value = String(raw || '').trim().toLowerCase();
-        if (!value || value === 'openclaw' || value === 'http' || value === 'api' || seen.has(value)) continue;
+        if (!value || value === 'http' || value === 'api' || seen.has(value)) continue;
         seen.add(value);
         rows.push(`<option value="${escapeHtml(value)}"${value === selectedValue ? ' selected' : ''}>${escapeHtml(addExtPlatformLabel(value))}</option>`);
     }
@@ -13246,7 +12900,7 @@ async function fetchAddExtPlatformOptions() {
     } catch (_) {
         tools = [];
     }
-    const merged = tools.filter((t) => t && t !== 'openclaw' && t !== 'http' && t !== 'api');
+    const merged = tools.filter((t) => t && t !== 'http' && t !== 'api');
     const fallback = ADD_EXT_PLATFORM_FALLBACK.filter((t) => !merged.includes(t));
     _addExtPlatformOptionsCache = merged.concat(fallback);
     return _addExtPlatformOptionsCache;
@@ -13306,7 +12960,6 @@ function showAddTeamMemberModal() {
             
             <div style="display:flex;gap:6px;margin-bottom:12px;">
                 <button id="tab-oasis" onclick="switchAddMemberTab('oasis')" style="flex:1;padding:7px;border:1px solid #d1d5db;border-radius:6px;background:#2563eb;color:white;font-size:11px;cursor:pointer;">🤖 WeBot</button>
-                <button id="tab-openclaw" onclick="switchAddMemberTab('openclaw')" style="flex:1;padding:7px;border:1px solid #d1d5db;border-radius:6px;background:#f9fafb;color:#374151;font-size:11px;cursor:pointer;">🦞 OpenClaw</button>
                 <button id="tab-external" onclick="switchAddMemberTab('external')" style="flex:1;padding:7px;border:1px solid #d1d5db;border-radius:6px;background:#f9fafb;color:#374151;font-size:11px;cursor:pointer;">🔌 ACP</button>
             </div>
             
@@ -13377,51 +13030,6 @@ function showAddTeamMemberModal() {
                 </div>
             </div>
 
-            <!-- OpenClaw Agent Form -->
-            <div id="form-openclaw" style="display:none;">
-                <div style="display:flex;flex-direction:column;gap:8px;">
-                    <label style="font-size:11px;font-weight:600;color:#374151;">
-                        Team内名称
-                        <input id="add-oc-name" type="text" placeholder="work, research, coding"
-                               style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-top:2px;">
-                        <div style="font-size:10px;color:#6b7280;margin-top:3px;">
-                            🔗 Global Name 将自动生成为安全 ID：<b id="add-oc-global-preview">加载中...</b>
-                        </div>
-                    </label>
-                    <label style="font-size:11px;font-weight:600;color:#374151;">标签 (Tag)
-                        <div style="display:flex;gap:4px;margin-top:2px;">
-                            <select id="add-oc-tag-select" onchange="document.getElementById('add-oc-tag-custom').value=this.value" style="flex:1;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;background:white;">
-                                <option value="">（无标签）</option>
-                            </select>
-                            <input id="add-oc-tag-custom" type="text" placeholder="或输入自定义 tag" style="flex:1;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;">
-                        </div>
-                    </label>
-                    <label style="font-size:11px;font-weight:600;color:#374151;">
-                        工作空间路径
-                        <div style="display:flex;gap:4px;align-items:center;margin-top:2px;">
-                            <input id="add-oc-workspace" type="text" placeholder="加载中..."
-                                   style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:11px;font-family:monospace;color:#374151;">
-                            <button id="add-oc-ws-reset" type="button" title="重置"
-                                    style="padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:#f9fafb;cursor:pointer;font-size:11px;white-space:nowrap;">↺</button>
-                        </div>
-                    </label>
-                    <div style="font-size:10px;color:#6b7280;background:#f9fafb;border-radius:6px;padding:8px;">
-                        📂 工作空间是OpenClaw Agent存储文件和配置的地方，建议使用绝对路径
-                    </div>
-                    <div style="border:1px dashed #c4b5fd;border-radius:8px;padding:10px;background:#faf5ff;">
-                        <div style="display:flex;align-items:center;justify-content:space-between;">
-                            <span style="font-size:11px;font-weight:600;color:#7c3aed;">📥 导入专家人设 (可选)</span>
-                            <button id="add-oc-pick-expert" type="button" style="padding:3px 10px;border-radius:4px;border:1px solid #8b5cf6;background:#f5f3ff;color:#7c3aed;cursor:pointer;font-size:10px;font-weight:500;">选择专家</button>
-                        </div>
-                        <div id="add-oc-expert-preview" style="display:none;margin-top:8px;padding:6px 8px;background:white;border-radius:6px;border:1px solid #e5e7eb;font-size:11px;color:#374151;"></div>
-                    </div>
-                </div>
-                <div class="orch-modal-btns" style="margin-top:12px;">
-                    <button onclick="document.getElementById('add-team-member-overlay').remove()" style="padding:6px 14px;border-radius:6px;border:1px solid #d1d5db;background:white;color:#374151;cursor:pointer;font-size:12px;">取消</button>
-                    <button onclick="showImportOpenClawModal()" style="padding:6px 14px;border-radius:6px;border:1px solid #7c3aed;background:#faf5ff;color:#7c3aed;cursor:pointer;font-size:12px;">📥 导入已有</button>
-                    <button onclick="addOpenClawMember()" style="padding:6px 14px;border-radius:6px;border:none;background:#7c3aed;color:white;cursor:pointer;font-size:12px;">🦞 新建</button>
-                </div>
-            </div>
         </div>
     `;
     
@@ -13430,7 +13038,6 @@ function showAddTeamMemberModal() {
     addExtOnPlatformChange();
     void populateAddExtPlatformOptions();
     void populateAddExtTagSelectOptions();
-    void populateAddOpenClawTagSelectOptions();
 
     // Load persona tags for the WeBot form
     (async () => {
@@ -13491,123 +13098,12 @@ function showAddTeamMemberModal() {
         });
     }
 
-    // ── OpenClaw Agent Form Setup ──
-    const ocNameInp = document.getElementById('add-oc-name');
-    const ocWsInp = document.getElementById('add-oc-workspace');
-    const ocGlobalPreview = document.getElementById('add-oc-global-preview');
-    let ocParentDir = '';
-    let ocWsManualEdit = false;
-
-    // Fetch default workspace parent dir
-    fetch('/proxy_openclaw_default_workspace').then(r => r.json()).then(res => {
-        if (res.ok && res.parent_dir) {
-            ocParentDir = res.parent_dir;
-            // If name already typed, populate workspace
-            const wn = _ocWsAgentName();
-            if (wn && !ocWsManualEdit) {
-                ocWsInp.value = ocParentDir + '/workspace-' + wn;
-            }
-            ocWsInp.placeholder = ocParentDir + '/workspace-...';
-        } else {
-            ocWsInp.placeholder = '请输入工作空间路径';
-        }
-    }).catch(() => { ocWsInp.placeholder = '请输入工作空间路径'; });
-
-    // Derive workspace-friendly agent name (includes team prefix)
-    function _ocSafeSlugPart(raw) {
-        const source = String(raw || '').trim();
-        if (!source) return '';
-        const parts = Array.from(source).map((ch) => {
-            if (/[a-zA-Z0-9_-]/.test(ch)) return ch;
-            return 'u' + ch.codePointAt(0).toString(16);
-        });
-        return parts.join('_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
-    }
-
-    function _ocGlobalName() {
-        const n = ocNameInp.value.trim();
-        if (!n) return '';
-        const safeTeam = _ocSafeSlugPart(currentGroupId || 'team');
-        const safeName = _ocSafeSlugPart(n);
-        if (!safeName) return '';
-        return safeTeam ? `${safeTeam}_${safeName}` : safeName;
-    }
-
-    function _ocWsAgentName() {
-        const n = ocNameInp.value.trim();
-        if (!n) return '';
-        return currentGroupId ? (currentGroupId + '_' + n) : n;
-    }
-
-    function _ocSyncDerivedFields() {
-        const globalName = _ocGlobalName();
-        if (ocGlobalPreview) {
-            ocGlobalPreview.textContent = globalName || '(等待输入名称)';
-        }
-        if (!ocWsManualEdit) {
-            const wn = _ocWsAgentName();
-            if (wn) {
-                ocWsInp.value = (ocParentDir || '') + '/workspace-' + wn;
-            } else {
-                ocWsInp.value = '';
-            }
-        }
-    }
-
-    // Name changes → auto-update workspace (unless user has manually edited it)
-    ocNameInp.addEventListener('input', () => {
-        ocNameInp.style.borderColor = '#d1d5db';
-        ocNameInp.style.background = '';
-        _ocSyncDerivedFields();
-    });
-
-    // Track manual workspace edits
-    ocWsInp.addEventListener('input', () => { ocWsManualEdit = true; });
-
-    // Reset button: revert workspace to auto-derived value
-    overlay.querySelector('#add-oc-ws-reset').addEventListener('click', () => {
-        ocWsManualEdit = false;
-        _ocSyncDerivedFields();
-        ocWsInp.style.borderColor = '#d1d5db';
-    });
-
-    // Expert import picker
-    const ocExpertPreview = overlay.querySelector('#add-oc-expert-preview');
-    overlay.querySelector('#add-oc-pick-expert').addEventListener('click', () => {
-        showExpertPickerForTeam((expert) => {
-            const content = '# ' + (expert.name || expert.tag) + '\n\n' + (expert.persona || '');
-            // Store selected expert content on the button for later access
-            overlay.querySelector('#add-oc-pick-expert')._selectedExpertContent = content;
-            overlay.querySelector('#add-oc-pick-expert')._selectedExpertTag = expert.tag || '';
-            const ocTagCustom = document.getElementById('add-oc-tag-custom');
-            const ocTagSelect = document.getElementById('add-oc-tag-select');
-            if (expert.tag && ocTagCustom && !ocTagCustom.value.trim()) {
-                ocTagCustom.value = expert.tag;
-                if (ocTagSelect) ocTagSelect.value = expert.tag;
-            }
-            
-            ocExpertPreview.style.display = 'block';
-            ocExpertPreview.innerHTML = '<div style="display:flex;align-items:center;gap:6px;"><span style="font-size:16px;">' + (expert.emoji || '⭐') + '</span><span style="font-weight:600;">' + escapeHtml(expert.name) + '</span><button id="add-oc-clear-expert" type="button" style="margin-left:auto;padding:1px 6px;border:1px solid #d1d5db;border-radius:4px;background:#f9fafb;cursor:pointer;font-size:10px;color:#6b7280;">✕</button></div>'
-                + '<div style="font-size:10px;color:#6b7280;margin-top:4px;">tag: ' + escapeHtml(expert.tag || '-') + '</div>'
-                + '<div style="font-size:10px;color:#6b7280;margin-top:4px;max-height:60px;overflow:hidden;white-space:pre-wrap;word-break:break-all;">' + escapeHtml((expert.persona || '').slice(0, 120) + ((expert.persona || '').length > 120 ? '…' : '')) + '</div>';
-            ocExpertPreview.querySelector('#add-oc-clear-expert').addEventListener('click', (ev) => {
-                ev.stopPropagation();
-                overlay.querySelector('#add-oc-pick-expert')._selectedExpertContent = null;
-                overlay.querySelector('#add-oc-pick-expert')._selectedExpertTag = '';
-                ocExpertPreview.style.display = 'none';
-                ocExpertPreview.innerHTML = '';
-            });
-        });
-    });
-    
     // Click outside to close
     overlay.addEventListener('click', (e) => {
         if (e.target === overlay) {
             overlay.remove();
         }
     });
-
-    _ocSyncDerivedFields();
 }
 
 let addOasisTagOptions = [];
@@ -13702,12 +13198,9 @@ function switchAddMemberTab(tab) {
     if (tab === 'external' && typeof initComponentControls === 'function') initComponentControls(document.getElementById('form-external'));
     document.getElementById('form-oasis').style.display = tab === 'oasis' ? 'block' : 'none';
     document.getElementById('form-external').style.display = tab === 'external' ? 'block' : 'none';
-    document.getElementById('form-openclaw').style.display = tab === 'openclaw' ? 'block' : 'none';
     
     document.getElementById('tab-oasis').style.background = tab === 'oasis' ? '#2563eb' : '#f9fafb';
     document.getElementById('tab-oasis').style.color = tab === 'oasis' ? 'white' : '#374151';
-    document.getElementById('tab-openclaw').style.background = tab === 'openclaw' ? '#7c3aed' : '#f9fafb';
-    document.getElementById('tab-openclaw').style.color = tab === 'openclaw' ? 'white' : '#374151';
     document.getElementById('tab-external').style.background = tab === 'external' ? '#10b981' : '#f9fafb';
     document.getElementById('tab-external').style.color = tab === 'external' ? 'white' : '#374151';
 }
@@ -13799,11 +13292,11 @@ async function addExternalMember(event) {
     const tagSelect = document.getElementById('add-ext-tag-select').value;
     const tag = tagCustom || (tagSelect !== 'custom' ? tagSelect : '');
     
-    if (!name || (platform === 'openclaw' && !globalName)) {
+    if (!name) {
         if (typeof orchToast === 'function') {
-            orchToast('请输入名称；OpenClaw 还需要已有 Agent 的编号');
+            orchToast('请输入名称');
         } else {
-            alert('请输入名称；OpenClaw 还需要已有 Agent 的编号');
+            alert('请输入名称');
         }
         return;
     }
@@ -13824,9 +13317,8 @@ async function addExternalMember(event) {
     }
     
     try {
-        // OpenClaw: which of its agents; any other runtime: the new agent's number (its session)
-        const runtimeField = platform === 'openclaw' ? { global_name: globalName } : (globalName ? { agent_id: globalName } : {});
-        await createTeamAgent({ name, platform, ...runtimeField }, name, tag);
+        // The new agent's number (its session), when given
+        await createTeamAgent({ name, platform, ...(globalName ? { agent_id: globalName } : {}) }, name, tag);
 
         if (typeof orchToast === 'function') {
             orchToast('成员添加成功');
@@ -13851,37 +13343,6 @@ async function addExternalMember(event) {
             }
         }
     }
-}
-
-async function populateAddOpenClawTagSelectOptions() {
-    const sel = document.getElementById('add-oc-tag-select');
-    if (!sel) return;
-    let experts = [];
-    try {
-        const teamExpertsUrl = currentGroupId
-            ? `/proxy_visual/experts?team=${encodeURIComponent(currentGroupId)}`
-            : '/proxy_visual/experts';
-        const r = await fetch(teamExpertsUrl);
-        experts = await r.json();
-    } catch (e) {
-        /* ignore */
-    }
-    const seen = new Set();
-    sel.innerHTML = '';
-    const addOpt = (v, text = v) => {
-        if (seen.has(v)) return;
-        seen.add(v);
-        const o = document.createElement('option');
-        o.value = v;
-        o.textContent = text;
-        sel.appendChild(o);
-    };
-    addOpt('', '（无标签）');
-    for (const exp of (Array.isArray(experts) ? experts : [])) {
-        const tag = String((exp && exp.tag) || '').trim();
-        if (tag) addOpt(tag, tag);
-    }
-    addOpt('custom', '自定义');
 }
 
 // ===== Orchestration Mobile Toggle Functions =====
@@ -15275,148 +14736,6 @@ async function deleteTeamExpert(tag, name) {
     }
 }
 
-// ── Add OpenClaw Member Function ──
-async function addOpenClawMember() {
-    const overlay = document.getElementById('add-team-member-overlay');
-    if (!overlay) return;
-
-    const ocNameInp = document.getElementById('add-oc-name');
-    const ocWsInp = document.getElementById('add-oc-workspace');
-    const ocTagCustom = document.getElementById('add-oc-tag-custom');
-    const ocTagSelect = document.getElementById('add-oc-tag-select');
-    
-    const shortName = ocNameInp.value.trim();
-    const workspace = ocWsInp.value.trim();
-    const selectedTag = (ocTagCustom && ocTagCustom.value.trim())
-        || ((ocTagSelect && ocTagSelect.value !== 'custom') ? ocTagSelect.value : '');
-    
-    if (!shortName) {
-        if (typeof orchToast === 'function') {
-            orchToast('请输入Agent名称');
-        } else {
-            alert('请输入Agent名称');
-        }
-        return;
-    }
-    if (!workspace) {
-        if (typeof orchToast === 'function') {
-            orchToast('请输入工作空间路径');
-        } else {
-            alert('请输入工作空间路径');
-        }
-        return;
-    }
-
-    // Auto-generate global name: team + "_" + shortName
-    const safeTeam = String(currentGroupId || 'team')
-        .trim()
-        .split('')
-        .map((ch) => /[a-zA-Z0-9_-]/.test(ch) ? ch : 'u' + ch.codePointAt(0).toString(16))
-        .join('_')
-        .replace(/_+/g, '_')
-        .replace(/^_+|_+$/g, '');
-    const safeShortName = String(shortName)
-        .trim()
-        .split('')
-        .map((ch) => /[a-zA-Z0-9_-]/.test(ch) ? ch : 'u' + ch.codePointAt(0).toString(16))
-        .join('_')
-        .replace(/_+/g, '_')
-        .replace(/^_+|_+$/g, '');
-    const globalName = (safeTeam ? `${safeTeam}_` : '') + safeShortName;
-    if (!safeShortName) {
-        if (typeof orchToast === 'function') {
-            orchToast('名称不能为空');
-        } else {
-            alert('名称不能为空');
-        }
-        return;
-    }
-
-    const btn = overlay.querySelector('#form-openclaw button[onclick="addOpenClawMember()"]');
-    btn.disabled = true;
-    btn.textContent = '⏳ 创建中...';
-
-    // Get selected expert content
-    const pickBtn = overlay.querySelector('#add-oc-pick-expert');
-    const selectedExpertContent = pickBtn ? pickBtn._selectedExpertContent : null;
-    const selectedExpertTag = pickBtn ? (pickBtn._selectedExpertTag || '') : '';
-
-    try {
-        // 1. Create the agent on OASIS server (use globalName as the OASIS agent name)
-        const r = await fetch('/proxy_openclaw_add', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: globalName, workspace }),
-        });
-        const res = await r.json();
-        
-        if (r.ok && res.ok) {
-            // 2. If expert was selected, write IDENTITY.md
-            if (selectedExpertContent) {
-                try {
-                    await fetch('/proxy_openclaw_workspace_file', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            workspace,
-                            filename: 'IDENTITY.md',
-                            content: selectedExpertContent
-                        }),
-                    });
-                } catch(e) { console.warn('Failed to write IDENTITY.md:', e); }
-            }
-
-            // 3. The OpenClaw agent becomes a ClawCross agent in this team.
-            try {
-                await createTeamAgent({ name: shortName, platform: 'openclaw', global_name: globalName }, shortName,
-                                      selectedTag || selectedExpertTag);
-            } catch(e) { console.warn('Failed to add the OpenClaw agent to the team:', e); }
-            
-            if (typeof orchToast === 'function') {
-                orchToast('🦞 OpenClaw Agent创建成功！');
-            }
-            overlay.remove();
-            await loadTeamMembers();
-            // Ensure members overlay stays visible after refresh
-            const membersOverlay = document.getElementById('team-members-overlay');
-            if (membersOverlay) membersOverlay.style.display = 'flex';
-
-            // Auto-open the full config modal (files/tools/channels) for the new agent
-            setTimeout(() => orchShowAgentConfigModal(globalName), 500);
-        } else {
-            if (r.status === 409) {
-                if (typeof orchToast === 'function') {
-                    orchToast('⚠️ Agent名称已存在，请使用其他名称');
-                } else {
-                    alert('⚠️ Agent名称已存在，请使用其他名称');
-                }
-                ocNameInp.style.borderColor = '#ef4444';
-                ocNameInp.style.background = '#fef2f2';
-                ocNameInp.focus();
-                ocNameInp.select();
-            } else {
-                const errMsg = res.error || '创建失败';
-                if (typeof orchToast === 'function') {
-                    orchToast('❌ ' + errMsg);
-                } else {
-                    alert('❌ ' + errMsg);
-                }
-            }
-            btn.disabled = false;
-            btn.textContent = '🦞 新建';
-        }
-    } catch(e) {
-        if (typeof orchToast === 'function') {
-            orchToast('❌ 网络错误');
-        } else {
-            alert('❌ 网络错误');
-        }
-        btn.disabled = false;
-        btn.textContent = '🦞 新建';
-    }
-}
-
-
 // ─── Add one of the user's agents to the team ───
 let _importSelectedAgent = null;
 
@@ -15507,200 +14826,9 @@ async function _doImportAgent() {
     }
 }
 
-// ─── Import existing OpenClaw Agent into team ───
-let _importSelectedOC = null;
-let _importSelectedOCTag = '';
-
-function showImportOpenClawModal() {
-    // Close the add-member modal
-    const addOverlay = document.getElementById('add-team-member-overlay');
-    if (addOverlay) addOverlay.remove();
-
-    const overlay = document.createElement('div');
-    overlay.className = 'orch-modal-overlay';
-    overlay.id = 'import-oc-overlay';
-    overlay.innerHTML = `
-        <div class="orch-modal" style="min-width:380px;max-width:500px;">
-            <h3>📥 导入 OpenClaw Agent</h3>
-            <div style="font-size:11px;color:#6b7280;margin-bottom:8px;">从全局 OpenClaw Agents 列表中选择，导入到当前团队：</div>
-            <div id="import-oc-list" style="max-height:260px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px;padding:4px;">
-                <div style="padding:12px;text-align:center;font-size:11px;color:#9ca3af;">⏳ 加载中...</div>
-            </div>
-            <label style="font-size:11px;font-weight:600;color:#374151;margin-top:8px;display:block;">
-                Team内名称 (可选，留空则使用原名)
-                <input id="import-oc-team-name" type="text" placeholder="留空使用原名"
-                       style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;margin-top:2px;"
-                       pattern="[a-zA-Z0-9_-]+" title="仅支持字母、数字、下划线、短横线">
-            </label>
-            <div style="border:1px dashed #c4b5fd;border-radius:8px;padding:10px;background:#faf5ff;margin-top:8px;">
-                <div style="display:flex;align-items:center;justify-content:space-between;">
-                    <span style="font-size:11px;font-weight:600;color:#7c3aed;">📥 绑定专家人设 (可选)</span>
-                    <button id="import-oc-pick-expert" type="button" style="padding:3px 10px;border-radius:4px;border:1px solid #8b5cf6;background:#f5f3ff;color:#7c3aed;cursor:pointer;font-size:10px;font-weight:500;">选择专家</button>
-                </div>
-                <div id="import-oc-expert-preview" style="display:none;margin-top:8px;padding:6px 8px;background:white;border-radius:6px;border:1px solid #e5e7eb;font-size:11px;color:#374151;"></div>
-            </div>
-            <div class="orch-modal-btns" style="margin-top:12px;">
-                <button onclick="document.getElementById('import-oc-overlay').remove()" style="padding:6px 14px;border-radius:6px;border:1px solid #d1d5db;background:white;color:#374151;cursor:pointer;font-size:12px;">取消</button>
-                <button id="import-oc-join-btn" onclick="_doImportOpenClaw()" disabled style="padding:6px 14px;border-radius:6px;border:none;background:#7c3aed;color:white;cursor:pointer;font-size:12px;opacity:0.5;">🦞 加入团队</button>
-            </div>
-        </div>
-    `;
-    document.body.appendChild(overlay);
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
-
-    _importSelectedOC = null;
-    _importSelectedOCTag = '';
-    const preview = overlay.querySelector('#import-oc-expert-preview');
-    overlay.querySelector('#import-oc-pick-expert').addEventListener('click', () => {
-        showExpertPickerForTeam((expert) => {
-            _importSelectedOCTag = expert.tag || '';
-            preview.style.display = 'block';
-            preview.innerHTML = '<div style="display:flex;align-items:center;gap:6px;"><span style="font-size:16px;">' + (expert.emoji || '⭐') + '</span><span style="font-weight:600;">' + escapeHtml(expert.name) + '</span><button id="import-oc-clear-expert" type="button" style="margin-left:auto;padding:1px 6px;border:1px solid #d1d5db;border-radius:4px;background:#f9fafb;cursor:pointer;font-size:10px;color:#6b7280;">✕</button></div>'
-                + '<div style="font-size:10px;color:#6b7280;margin-top:4px;">tag: ' + escapeHtml(expert.tag || '-') + '</div>';
-            preview.querySelector('#import-oc-clear-expert').addEventListener('click', (ev) => {
-                ev.stopPropagation();
-                _importSelectedOCTag = '';
-                preview.style.display = 'none';
-                preview.innerHTML = '';
-            });
-        });
-    });
-    _loadImportOCList();
-}
-
-async function _loadImportOCList() {
-    const listEl = document.getElementById('import-oc-list');
-    if (!listEl) return;
-    try {
-        const resp = await fetch('/proxy_openclaw_sessions');
-        const data = await resp.json();
-
-        if (!data.available) {
-            listEl.innerHTML = '<div style="padding:12px;text-align:center;font-size:11px;color:#9ca3af;">🚫 OpenClaw 未配置</div>';
-            return;
-        }
-
-        const agents = _sortAgentEntriesByTime((data.agents || []).slice());
-
-        if (agents.length === 0) {
-            listEl.innerHTML = '<div style="padding:12px;text-align:center;font-size:11px;color:#9ca3af;">没有可导入的 OpenClaw Agent</div>';
-            return;
-        }
-
-        listEl.innerHTML = agents.map(a => {
-            const name = a.name || '';
-            const model = a.model || '';
-            const workspace = a.workspace || '';
-            return `<div class="import-item" data-name="${escapeHtml(name)}" data-workspace="${escapeHtml(workspace)}"
-                         onclick="_selectImportOC(this)"
-                         style="padding:8px 10px;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:8px;transition:background .15s;border:2px solid transparent;">
-                <div style="width:32px;height:32px;border-radius:50%;background:#faf5ff;display:flex;align-items:center;justify-content:center;font-size:14px;">🦞</div>
-                <div style="flex:1;min-width:0;">
-                    <div style="font-size:12px;font-weight:600;color:#374151;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(name)}</div>
-                    <div style="font-size:10px;color:#9ca3af;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(model)}${workspace ? ' \u00b7 ' + escapeHtml(workspace) : ''}</div>
-                </div>
-            </div>`;
-        }).join('');
-    } catch(e) {
-        listEl.innerHTML = '<div style="padding:12px;text-align:center;font-size:11px;color:#ef4444;">加载失败: ' + e.message + '</div>';
-    }
-}
-
-function _selectImportOC(el) {
-    el.parentElement.querySelectorAll('.import-item').forEach(item => {
-        item.style.borderColor = 'transparent';
-        item.style.background = '';
-    });
-    el.style.borderColor = '#7c3aed';
-    el.style.background = '#faf5ff';
-    _importSelectedOC = { name: el.dataset.name, workspace: el.dataset.workspace };
-    const btn = document.getElementById('import-oc-join-btn');
-    if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
-}
-
-async function _doImportOpenClaw() {
-    if (!_importSelectedOC) { alert('请先选择一个 OpenClaw Agent'); return; }
-
-    const ocGlobalName = _importSelectedOC.name;
-    const teamNameInput = document.getElementById('import-oc-team-name');
-    const shortName = (teamNameInput && teamNameInput.value.trim()) || ocGlobalName;
-
-    try {
-        const persona = await personaTextFor(_importSelectedOCTag, currentGroupId);
-        const agent = await ensureAgent({ name: shortName, platform: 'openclaw', global_name: ocGlobalName,
-                                          persona });
-        await agentApi('POST', `/v1/teams/${encodeURIComponent(currentGroupId)}/members`,
-                       { agent: agent.agent_id, role: shortName, tag: _importSelectedOCTag || '' });
-        alert('🦞 OpenClaw Agent 已导入团队');
-        document.getElementById('import-oc-overlay').remove();
-        loadTeamMembers();
-        const membersOverlay = document.getElementById('team-members-overlay');
-        if (membersOverlay) membersOverlay.style.display = 'flex';
-    } catch (e) {
-        console.error('Failed to import openclaw agent:', e);
-        alert('导入失败: ' + e.message);
-    }
-}
-
 // ================================================================
-// ===== OpenClaw Chat Switcher Logic =====
+// ===== Studio chat switcher: WeBot or an ACP tool =====
 // ================================================================
-
-/**
- * Load available OpenClaw agents from /proxy_openclaw_sessions
- * and populate the <select> dropdown.
- */
-async function ocLoadAgents() {
-    const select = document.getElementById('oc-agent-select');
-    if (!select) return;
-
-    // Show loading state
-    select.innerHTML = '<option value="">⏳ ' + t('loading') + '</option>';
-    select.disabled = true;
-
-    try {
-        const resp = await fetch('/proxy_openclaw_sessions');
-        const data = await resp.json();
-
-        if (!data.available) {
-            select.innerHTML = '<option value="">🚫 ' + t('oc_not_configured') + '</option>';
-            _ocAvailable = false;
-            return;
-        }
-        _ocAvailable = true;
-        _ocAgentsCache = _sortAgentEntriesByTime((data.agents || []).slice());
-
-        select.innerHTML = '<option value="">' + t('oc_select_agent') + '</option>';
-        for (const agent of _ocAgentsCache) {
-            const opt = document.createElement('option');
-            opt.value = agent.name;
-            opt.textContent = '🦞 ' + agent.name;
-            select.appendChild(opt);
-        }
-
-        // Restore previous selection if still available
-        if (_ocSelectedAgent) {
-            const found = _ocAgentsCache.find(a => a.name === _ocSelectedAgent.name);
-            if (found) {
-                select.value = found.name;
-            } else {
-                _ocSelectedAgent = null;
-            }
-        }
-    } catch (e) {
-        console.error('ocLoadAgents failed:', e);
-        select.innerHTML = '<option value="">❌ ' + t('oc_load_failed') + '</option>';
-    } finally {
-        select.disabled = false;
-    }
-}
-
-function ocSaveOpenClawTranscript() {
-    const agent = _ocSelectedAgent && _ocSelectedAgent.name;
-    const chatBox = document.getElementById('chat-box');
-    if (!agent || !chatBox) return;
-    _ocTranscriptByAgent[agent] = chatBox.innerHTML;
-}
 
 function acpSanitizeSessionSlug(s) {
     let t = String(s || '').trim();
@@ -15831,7 +14959,8 @@ async function acpLoadSessionsList() {
         for (const a of sessions) {
             const opt = document.createElement('option');
             opt.value = a.agent_id;
-            opt.textContent = a.name === a.agent_id ? a.agent_id : `${a.name} · ${a.agent_id}`;
+            opt.textContent = a.settings?.title || a.name;
+            opt.dataset.agentName = a.name;
             sel.appendChild(opt);
         }
         const stored = localStorage.getItem('clawcross_acp_session_pick_' + _acpTool);
@@ -16056,37 +15185,6 @@ function ocRefreshTtsButtonsIn(chatBox) {
     highlightMarkdownIn(chatBox);
 }
 
-function ocRenderOpenClawWelcomeForAgent(name) {
-    const chatBox = document.getElementById('chat-box');
-    if (!chatBox) return;
-    const safe = escapeHtml(name);
-    chatBox.innerHTML =
-        '<div class="flex justify-start">' +
-        '<div class="message-agent bg-white border p-4 max-w-[85%] shadow-sm text-gray-700">' +
-        t('oc_chatting_with', { name: safe }) +
-        '<br><span style="font-size:0.85em;color:#6b7280;">OpenClaw Agent — ' +
-        safe +
-        '</span></div></div>';
-    scrollChatToBottom(chatBox, { force: true });
-}
-
-function ocRenderOpenClawSelectPrompt() {
-    const chatBox = document.getElementById('chat-box');
-    if (!chatBox) return;
-    chatBox.innerHTML =
-        '<div class="flex justify-start">' +
-        '<div class="message-agent bg-white border p-4 max-w-[85%] shadow-sm text-gray-700">' +
-        escapeHtml(t('oc_select_agent_hint')) +
-        '<br><span style="font-size:0.85em;color:#6b7280;">OpenClaw</span></div></div>';
-    scrollChatToBottom(chatBox, { force: true });
-}
-
-// Outside WeBot the Studio still talks to agents by number: an OpenClaw agent is one
-// ClawCross agent, the chosen ACP session is one agent.
-function ocAgentIdFor(openclawName) {
-    return 'oc-' + acpSanitizeSessionSlug(openclawName);
-}
-
 async function studioEnsureAgent(agentId, fields) {
     try {
         await agentApi('POST', '/v1/agents', { agent_id: agentId, ...fields });
@@ -16098,13 +15196,13 @@ async function studioEnsureAgent(agentId, fields) {
 async function studioAgentHistoryHtml(agentId) {
     try {
         const data = await agentApi('GET', `/v1/agents/${encodeURIComponent(agentId)}/history?limit=200`);
-        return ocRenderOpenClawHistoryHtml(data.messages || []) || null;
+        return studioHistoryHtml(data.messages || []) || null;
     } catch (e) {
         return null;  // not made yet
     }
 }
 
-function ocRenderOpenClawHistoryHtml(messages) {
+function studioHistoryHtml(messages) {
     if (!Array.isArray(messages) || messages.length === 0) return '';
     const parts = [];
     for (const msg of messages) {
@@ -16142,39 +15240,8 @@ function ocRenderOpenClawHistoryHtml(messages) {
     return parts.join('');
 }
 
-async function ocLoadOpenClawHistoryFromDB(agentName) {
-    if (!agentName) return null;
-    return studioAgentHistoryHtml(ocAgentIdFor(agentName));
-}
-
-async function ocPaintOpenClawChatFromCache() {
-    const chatBox = document.getElementById('chat-box');
-    if (!chatBox) return;
-    const agent = _ocSelectedAgent && _ocSelectedAgent.name;
-    if (agent) {
-        if (_ocTranscriptByAgent[agent]) {
-            chatBox.innerHTML = _ocTranscriptByAgent[agent];
-            ocRefreshTtsButtonsIn(chatBox);
-        } else {
-            chatBox.innerHTML = '<div class="text-xs text-gray-400 text-center py-4">' +
-                escapeHtml(t('history_loading_msg') || 'Loading history…') + '</div>';
-            const html = await ocLoadOpenClawHistoryFromDB(agent);
-            if (html) {
-                _ocTranscriptByAgent[agent] = html;
-                chatBox.innerHTML = html;
-                ocRefreshTtsButtonsIn(chatBox);
-            } else {
-                ocRenderOpenClawWelcomeForAgent(agent);
-            }
-        }
-    } else {
-        ocRenderOpenClawSelectPrompt();
-    }
-    scrollChatToBottom(chatBox, { force: true });
-}
-
 /**
- * Switch between WeBot (internal), OpenClaw (HTTP gateway), and ACP local CLIs (codex / claude / gemini via acpx).
+ * Switch between WeBot (internal) and an ACP tool (codex / claude / openclaw / … via acpx).
  */
 async function ocSwitchTo(mode, acpTool) {
     const nextAcp = (mode === 'acp' && acpTool) ? String(acpTool).toLowerCase() : null;
@@ -16186,9 +15253,6 @@ async function ocSwitchTo(mode, acpTool) {
     const modeChanged = prevMode !== mode;
     const acpToolChanged = mode === 'acp' && prevAcpTool !== nextAcp;
 
-    if (_ocChatMode === 'openclaw' && mode !== 'openclaw') {
-        ocSaveOpenClawTranscript();
-    }
     if (_ocChatMode === 'acp' && (mode !== 'acp' || nextAcp !== _acpTool)) {
         acpSaveTranscript();
     }
@@ -16200,37 +15264,22 @@ async function ocSwitchTo(mode, acpTool) {
     }
 
     const tabInternal = document.getElementById('oc-tab-internal');
-    const tabOpenclaw = document.getElementById('oc-tab-openclaw');
     const acpTabs = document.getElementById('oc-acp-tabs');
-    const agentSelector = document.getElementById('oc-agent-selector');
 
     if (tabInternal) tabInternal.classList.toggle('active', mode === 'internal');
-    if (tabOpenclaw) tabOpenclaw.classList.toggle('active', mode === 'openclaw');
     if (acpTabs) {
         acpTabs.querySelectorAll('.oc-switcher-tab[data-acp-tool]').forEach((btn) => {
             btn.classList.toggle('active', mode === 'acp' && btn.dataset.acpTool === _acpTool);
         });
     }
 
-    if (mode === 'openclaw') {
-        if (agentSelector) agentSelector.style.display = 'flex';
-        if (_ocAgentsCache.length === 0) {
-            await ocLoadAgents();
-        }
-        const select = document.getElementById('oc-agent-select');
-        if (select && select.value) {
-            _ocSelectedAgent = { name: select.value };
-        }
-        await ocPaintOpenClawChatFromCache();
-    } else if (mode === 'acp') {
-        if (agentSelector) agentSelector.style.display = 'none';
+    if (mode === 'acp') {
         acpSyncSessionInputFromStorage();
         if (modeChanged || acpToolChanged) {
             await acpLoadSessionsList();
         }
         await acpPaintTranscript();
     } else {
-        if (agentSelector) agentSelector.style.display = 'none';
         await switchToSession(currentSessionId, modeChanged, { quiet: true });
     }
 
@@ -16245,70 +15294,16 @@ async function ocSwitchTo(mode, acpTool) {
 }
 
 /**
- * Handle agent selection change from the dropdown.
- */
-function ocOnAgentChange() {
-    const select = document.getElementById('oc-agent-select');
-    if (!select) return;
-
-    const prevName = _ocSelectedAgent && _ocSelectedAgent.name;
-    const chatBox = document.getElementById('chat-box');
-    if (_ocChatMode === 'openclaw' && prevName && chatBox) {
-        _ocTranscriptByAgent[prevName] = chatBox.innerHTML;
-    }
-
-    const agentName = select.value;
-    if (agentName) {
-        _ocSelectedAgent = { name: agentName };
-        if (_ocChatMode === 'openclaw' && chatBox) {
-            if (_ocTranscriptByAgent[agentName]) {
-                chatBox.innerHTML = _ocTranscriptByAgent[agentName];
-                ocRefreshTtsButtonsIn(chatBox);
-                scrollChatToBottom(chatBox, { force: true });
-            } else {
-                chatBox.innerHTML = '<div class="text-xs text-gray-400 text-center py-4">' +
-                    escapeHtml(t('history_loading_msg') || 'Loading history…') + '</div>';
-                ocLoadOpenClawHistoryFromDB(agentName).then((html) => {
-                    if (_ocSelectedAgent && _ocSelectedAgent.name === agentName) {
-                        if (html) {
-                            _ocTranscriptByAgent[agentName] = html;
-                            chatBox.innerHTML = html;
-                            ocRefreshTtsButtonsIn(chatBox);
-                        } else {
-                            ocRenderOpenClawWelcomeForAgent(agentName);
-                        }
-                        scrollChatToBottom(chatBox, { force: true });
-                    }
-                });
-            }
-        }
-    } else {
-        _ocSelectedAgent = null;
-        if (_ocChatMode === 'openclaw') {
-            ocRenderOpenClawSelectPrompt();
-        }
-    }
-    restoreActiveChatRunForCurrentContext();
-    void syncCurrentChatRunUI();
-    renderStudioConversations();
-}
-
-/**
- * Initialize the chat backend switcher (WeBot / OpenClaw / ACP CLIs).
- * Shows the bar when OpenClaw agents exist or acpx is available on the server.
+ * Initialize the chat backend switcher (WeBot / ACP tools). Shown when acpx is available.
  */
 async function ocInitSwitcher() {
-    const switcher = document.getElementById('openclaw-chat-switcher');
+    const switcher = document.getElementById('studio-chat-switcher');
     if (!switcher) return;
 
     const acpTabs = document.getElementById('oc-acp-tabs');
 
     try {
-        const [ocResp, acpResp] = await Promise.all([
-            fetch('/proxy_openclaw_sessions'),
-            fetch('/proxy_acpx_status'),
-        ]);
-        const data = await ocResp.json();
+        const acpResp = await fetch('/proxy_acpx_status');
         let acpData = { available: false };
         try {
             acpData = await acpResp.json();
@@ -16328,26 +15323,7 @@ async function ocInitSwitcher() {
             _acpTool = null;
             ocRenderAcpTabs([]);
         }
-        const ocOk = !!(data && data.available && data.agents && data.agents.length > 0);
-        if (ocOk) {
-            _ocAvailable = true;
-            _ocAgentsCache = data.agents;
-            const select = document.getElementById('oc-agent-select');
-            if (select) {
-                select.innerHTML = '<option value="">' + t('oc_select_agent') + '</option>';
-                for (const agent of _ocAgentsCache) {
-                    const opt = document.createElement('option');
-                    opt.value = agent.name;
-                    opt.textContent = '🦞 ' + agent.name;
-                    select.appendChild(opt);
-                }
-            }
-        } else {
-            _ocAvailable = false;
-            _ocAgentsCache = [];
-        }
-
-        if (ocOk || _acpAvailable) {
+        if (_acpAvailable) {
             switcher.style.display = '';
             if (acpTabs) {
                 acpTabs.style.display = _acpAvailable ? 'inline-flex' : 'none';
@@ -16358,7 +15334,6 @@ async function ocInitSwitcher() {
         }
         ocSyncSessionSubrowsVisibility();
     } catch (e) {
-        _ocAvailable = false;
         _acpAvailable = false;
         _acpToolsCache = [];
         _acpTool = null;
