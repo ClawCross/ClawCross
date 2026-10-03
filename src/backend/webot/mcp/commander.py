@@ -17,6 +17,7 @@ import sys
 import asyncio
 import contextlib
 import hashlib
+import tempfile
 from collections import deque
 import json
 import re
@@ -192,12 +193,16 @@ class BackgroundJob:
 
 
 def _jobs_dir(workspace: str) -> Path:
-    path = Path(workspace) / ".mcp_jobs"
-    path.mkdir(parents=True, exist_ok=True)
+    from common.runtime_paths import CONFIG_DIR
+    key = hashlib.sha256(str(Path(workspace).resolve()).encode()).hexdigest()[:32]
+    path = CONFIG_DIR / 'sandbox' / 'jobs' / key
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
     return path
 
 
 def _job_meta_path(workspace: str, job_id: str) -> Path:
+    if not re.fullmatch(r'[a-zA-Z0-9_-]{1,64}', job_id):
+        raise ValueError('Invalid background job ID')
     return _jobs_dir(workspace) / f"{job_id}.json"
 
 
@@ -314,12 +319,16 @@ def _resolve_background_job(job_id: str, username: str = "", session_id: str = "
         return None
     live = _BACKGROUND_JOBS.get(key)
     if live is not None:
+        if (username and live.username != username) or (session_id and (live.session_id or 'default') != session_id):
+            return None
         refreshed = _refresh_background_job(live)
         _BACKGROUND_JOBS[key] = refreshed
         return refreshed
     workspace_state = resolve_session_workspace(username, session_id, explicit_cwd=cwd)
     job = _load_job_from_workspace(str(workspace_state.cwd), key)
     if job is None:
+        return None
+    if (username and job.username != username) or (session_id and (job.session_id or 'default') != session_id):
         return None
     return _refresh_background_job(job)
 
@@ -968,8 +977,10 @@ def _quote_command(parts: list[str]) -> str:
 
 def _write_python_script(workspace: str, code: str) -> str:
     """Write *code* to its own file: concurrent calls must not share one script path."""
-    path = _jobs_dir(workspace) / f"py_{uuid.uuid4().hex[:12]}.py"
-    path.write_text(code, encoding="utf-8")
+    fd, raw_path = tempfile.mkstemp(prefix='.command-python-', suffix='.py', dir=workspace)
+    path = Path(raw_path)
+    with os.fdopen(fd, 'w', encoding='utf-8') as handle:
+        handle.write(code)
     return str(path)
 
 
@@ -1143,6 +1154,9 @@ async def run_command(
     """
     在会话工作目录运行 shell/Python。foreground 返回结果，background 返回 job_id，
     interactive 用 background_command_io 输入/读输出。
+    后台任务可跨轮通过 background_command_io 查看，cancel_background_command 停止。
+    Linux 普通模式支持 ps/top/free；严格模式仅开放资源统计和启动时的进程基本信息。
+    跨轮后台任务使用管理工具，不能用任意 PID 控制宿主进程；严格模式不可提权。
 
     :param command: shell 命令；language=python 时是 Python 代码（interactive 下先执行它再进入 REPL，可为空）
     :param language: shell 或 python
@@ -1163,10 +1177,16 @@ async def run_command(
     from webot.runtime_settings import get_runtime_settings
     sandbox_options = get_runtime_settings(username, session_id or "default").approval
     sandbox_backend = sandbox_options.command_sandbox
+    strict_sandbox = getattr(sandbox_options, 'sandbox_security', 'standard') == 'strict'
+    if strict_sandbox and sandbox_backend == 'off':
+        sandbox_backend = 'auto'
     allowed_domains = getattr(sandbox_options, 'sandbox_allowed_domains', [])
     sandbox_selected = sandbox_backend in {"srt", "auto", "landlock"}
     workspace_state = resolve_session_workspace(username, session_id, explicit_cwd=cwd)
-    grants = active_sandbox_grants(getattr(sandbox_options, 'sandbox_grants', []), workspace_state.root)
+    grants = ({'network': [], 'read_path': [], 'write_path': []} if strict_sandbox else
+              active_sandbox_grants(getattr(sandbox_options, 'sandbox_grants', []), workspace_state.root))
+    if strict_sandbox and (sandbox_access != 'default' or sandbox_approval_chain):
+        return '❌ 严格安全模式不允许沙盒提权或恢复历史提权。'
     action_args = canonical_action_args('run_command', {
         "username":username,"command":command,"language":language,"mode":mode,"cwd":cwd,
         "session_id":session_id or 'default',"timeout_seconds":timeout_seconds,"max_output_chars":max_output_chars,
@@ -1233,6 +1253,7 @@ async def run_command(
                                 access=sandbox_access, target=escalation_target, allowed_domains=allowed_domains,
                                 allowed_read_paths=grants['read_path'], allowed_write_paths=grants['write_path'],
                                 wall_timeout=max(1, int(deadline-time.monotonic())),
+                                strict=strict_sandbox,
                             )
                         except SandboxUnavailable as exc:
                             return f"❌ {exc}"
@@ -1249,6 +1270,8 @@ async def run_command(
                         if ((report.get('exit_code') == 0 and not proxy_denied)
                                 or report.get('timed_out')):
                             return result
+                        if strict_sandbox:
+                            return result + '\n\n❌ 严格安全模式禁止提权；命令保持在独立工作区和预设网络范围内。'
                         try:
                             needed = permission_failure_target(report.get('stderr', ''), workspace_state.root)
                         except SandboxUnavailable as exc:
@@ -1332,6 +1355,7 @@ async def run_command(
                         access=sandbox_access, target=escalation_target, allowed_domains=allowed_domains,
                         allowed_read_paths=grants['read_path'], allowed_write_paths=grants['write_path'],
                         wall_timeout=_bounded_int(timeout_seconds, BACKGROUND_EXEC_TIMEOUT, 1, MAX_EXEC_TIMEOUT),
+                        strict=strict_sandbox,
                     )
                 except SandboxUnavailable as exc:
                     return f"❌ {exc}"
@@ -1495,7 +1519,7 @@ async def cancel_background_command(job_id: str, username: str = "", session_id:
     """
     取消一个后台命令任务。
 
-    :param job_id: start_background_command 返回的 job_id
+    :param job_id: run_command(mode="background" 或 "interactive") 返回的 job_id
     :param cwd: 通常留空；只有启动任务时指定了 cwd，才传同一个值以定位任务
     """
     job = _resolve_background_job(job_id, username=username, session_id=session_id, cwd=cwd)

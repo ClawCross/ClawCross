@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from webot.bash_safety import RiskLevel, analyze_command
 from webot.checkpoint_paths import candidate_checkpoint_db_paths_for_thread
-from webot.approval_actions import bind_file_target, canonical_action_args, file_target_outside_workspace
+from webot.approval_actions import bind_file_target, canonical_action_args, file_target_outside_workspace, file_access_violation
 from webot.policy import WeBotToolPolicy, ToolPolicyDecision, get_tool_policy, serialize_tool_policy, evaluate_tool_policy, run_tool_policy_hooks
 from webot.permission_context import create_or_reuse_permission_request, _POLICY_EXEMPT_TOOLS
 from webot.runtime_settings import get_runtime_settings
@@ -354,11 +354,16 @@ async def authorize_action(
     try:
         policy = policy if isinstance(policy, WeBotToolPolicy) else get_tool_policy(user_id)
         args = bind_file_target(tool_name, args, user_id, session_id)
+        violation = file_access_violation(args, user_id, session_id)
+        if violation:
+            return ApprovalResult(False, violation)
         args.pop('_approval_session', None)  # Policy scope comes only from the authenticated runtime.
         mode = effective_session_mode(user_id, session_id)
         if not mode_allows_tool(mode, tool_name, args):
             return ApprovalResult(False, "当前交流或只读模式不允许该操作。")
         elevated_command = tool_name == "run_command" and args.get("sandbox_access") != "default"
+        if elevated_command and get_runtime_settings(user_id, session_id).approval.sandbox_security == 'strict':
+            return ApprovalResult(False, '严格安全模式不允许沙盒提权，审核和 Bypass 均不能解除。')
         if elevated_command and get_runtime_settings(user_id, session_id).approval.command_sandbox not in {"srt", "auto", "landlock"}:
             return ApprovalResult(False, "当前会话没有启用命令沙盒，不能申请沙盒提权。")
         if elevated_command and not str(args.get("escalation_reason") or "").strip():

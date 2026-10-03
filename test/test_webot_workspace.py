@@ -3,6 +3,8 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -17,7 +19,26 @@ from webot.workspace import resolve_session_workspace
 
 
 class WeBotWorkspaceTests(unittest.TestCase):
-    def test_shared_workspace_exposes_runtime_teams_alias(self):
+    def test_security_levels_use_clean_roots_without_moving_existing_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            existing = base / 'user_files' / 'alice' / 'existing.txt'
+            existing.parent.mkdir(parents=True)
+            existing.write_text('KEEP_EXISTING_DATA')
+            with patch.object(webot_workspace, 'WORKSPACE_DIR', base / 'workspace'), \
+                 patch.object(webot_workspace, 'USER_FILES_DIR', base / 'user_files'):
+                normal = resolve_session_workspace('alice', 'agent-one')
+                with patch('webot.runtime_settings.get_runtime_settings', return_value=SimpleNamespace(
+                        approval=SimpleNamespace(sandbox_security='strict'))):
+                    strict = resolve_session_workspace('alice', 'agent-one')
+                    second = resolve_session_workspace('alice', 'agent-two')
+                self.assertNotEqual(normal.root, strict.root)
+                self.assertNotEqual(strict.root, second.root)
+                self.assertEqual(list(normal.root.iterdir()), [])
+                self.assertEqual(list(strict.root.iterdir()), [])
+                self.assertEqual(existing.read_text(), 'KEEP_EXISTING_DATA')
+
+    def test_shared_workspace_is_separate_from_runtime_data(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             original_workspace_dir = webot_workspace.WORKSPACE_DIR
@@ -28,13 +49,10 @@ class WeBotWorkspaceTests(unittest.TestCase):
             webot_workspace.USER_FILES_DIR = root / "user_files"
 
             workspace = resolve_session_workspace("alice", "")
-            teams_alias = workspace.root / "teams"
-            runtime_teams = root / "user_files" / "alice" / "teams"
-
             self.assertEqual(workspace.mode, "shared")
-            self.assertTrue(runtime_teams.exists())
-            self.assertTrue(teams_alias.exists())
-            self.assertEqual(teams_alias.resolve(), runtime_teams.resolve())
+            self.assertEqual(workspace.root, root / "workspace" / "users" / "alice")
+            self.assertFalse(workspace.root.is_relative_to(root / "user_files"))
+            self.assertEqual(list(workspace.root.iterdir()), [])
 
     def test_isolated_workspace_uses_subagent_root_and_cwd(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -76,8 +94,7 @@ class WeBotWorkspaceTests(unittest.TestCase):
             webot_workspace.WORKSPACE_DIR = workspace_root
             webot_workspace.USER_FILES_DIR = user_files
             store.DEFAULT_DB_PATH = Path(tmpdir) / "subagents.db"
-            # With USER_FILES_DIR overridden, user workspaces resolve under user_files/<user>.
-            repo_root = user_files / "alice" / "repo"
+            repo_root = workspace_root / "users" / "alice" / "repo"
             repo_root.mkdir(parents=True, exist_ok=True)
             subprocess.run(["git", "init"], cwd=repo_root, check=True, capture_output=True)
             (repo_root / "README.md").write_text("hello", encoding="utf-8")

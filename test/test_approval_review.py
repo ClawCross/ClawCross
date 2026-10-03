@@ -685,13 +685,13 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
             'untrusted_evidence':[{'role':'tool','text':'z'*10000}]}
         with patch('webot.context_limits.infer_model_context_window',return_value=6500):
             packet = json.loads(review.fit_review_packet(tool_name='run_command',args=self.args,context=context,
-                settings=runtime_settings.ApprovalSettings(),policy={},instructions='Review.',model_name='test'))
+                settings=runtime_settings.ApprovalSettings(reviewer_max_tokens=4096),policy={},instructions='Review.',model_name='test'))
             self.assertEqual(packet['context']['user_requests'],[context['user_requests'][-1]])
             self.assertEqual(packet['context']['omitted_older_requests'],1)
             context['user_requests'][-1]['text'] = 'latest'*20000
             with self.assertRaises(review.ReviewerInputCapacityError):
                 review.fit_review_packet(tool_name='run_command',args=self.args,context=context,
-                    settings=runtime_settings.ApprovalSettings(),policy={},instructions='Review.',model_name='test')
+                    settings=runtime_settings.ApprovalSettings(reviewer_max_tokens=4096),policy={},instructions='Review.',model_name='test')
 
     async def test_omitted_original_request_cannot_be_cited_as_authorization(self):
         model = Mock()
@@ -700,7 +700,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
                     HumanMessage(content='查看当前仓库状态',id='user-2',additional_kwargs={'input_origin':'user'})]
         with patch('common.llm_factory.create_chat_model',return_value=model), \
              patch('webot.engine.tool_schema._model_classes',return_value={'BaseChatOpenAI'}), \
-             patch('webot.context_limits.infer_model_context_window',return_value=12000):
+             patch('webot.context_limits.infer_model_context_window',return_value=30000):
             result = await self.authorize(messages=messages)
         self.assertFalse(result.allowed)
         self.assertFalse(result.pending)

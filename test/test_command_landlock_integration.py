@@ -339,6 +339,85 @@ class CommandLandlockIntegrationTests(unittest.IsolatedAsyncioTestCase):
         result = await self.execute('import os; os.setsid()', language='python')
         self.assertIn('Operation not permitted', result)
 
+    async def test_standard_resource_queries_support_new_child_processes(self):
+        for command in ('ps -eo pid,comm', 'free -m', 'top -b -n 1'):
+            result = await self.execute(command)
+            self.assertIn('exit code: 0', result, result)
+
+    async def test_strict_resource_statistics_do_not_expose_process_environment(self):
+        runtime_settings.save_runtime_settings(self.user, settings={'approval': {
+            'mode': 'bypass', 'command_sandbox': 'landlock', 'sandbox_security': 'strict'}})
+        code = """from pathlib import Path
+import os, subprocess
+assert 'MemTotal:' in Path('/proc/meminfo').read_text()
+assert Path('/proc/self/status').read_text()
+assert str(os.getpid()) in os.listdir('/proc')
+for field in ('environ', 'mem'):
+    try:
+        Path('/proc/self/' + field).read_bytes()
+    except PermissionError:
+        pass
+    else:
+        raise AssertionError('private process data exposed: ' + field)
+print('RESOURCE_QUERY_OK')
+"""
+        result = await self.execute(code, language='python')
+        self.assertIn('RESOURCE_QUERY_OK', result, result)
+
+    async def test_socketpair_and_child_signals_work_inside_command(self):
+        code = """import asyncio, socket, subprocess, sys
+left, right = socket.socketpair()
+left.sendall(b'ok')
+assert right.recv(2) == b'ok'
+left.close(); right.close()
+asyncio.run(asyncio.sleep(0))
+child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])
+try:
+    child.terminate()
+    child.wait(timeout=5)
+finally:
+    if child.poll() is None:
+        child.kill(); child.wait()
+print('CHILD_CONTROL_OK')
+"""
+        result = await self.execute(code, language='python')
+        self.assertIn('CHILD_CONTROL_OK', result, result)
+
+    async def test_strict_mode_denies_escalation_before_review_even_in_bypass(self):
+        runtime_settings.save_runtime_settings(self.user, settings={'approval': {
+            'mode': 'bypass', 'command_sandbox': 'landlock', 'sandbox_security': 'strict'}})
+        with patch.dict('os.environ', {'CLAWCROSS_SANDBOX_MAX_READ_PATHS': json.dumps([str(self.outside)])}), \
+             patch.object(review, 'run_reviewer') as model:
+            result = await self.execute('cat ' + shlex.quote(str(self.outside)))
+        self.assertIn('Permission denied', result)
+        self.assertEqual(self.foreground.await_count, 1)
+        model.assert_not_called()
+
+    async def test_background_can_be_managed_later_only_by_its_owner(self):
+        previous = set(commander._BACKGROUND_JOBS)
+        await self.execute('import time; print("OWN_JOB_READY", flush=True); time.sleep(30)',
+                           language='python', mode='background')
+        job_id = (set(commander._BACKGROUND_JOBS) - previous).pop()
+        job = commander._BACKGROUND_JOBS[job_id]
+        try:
+            for _ in range(60):
+                fresh = commander._load_job_from_workspace(job.workspace, job_id)
+                if fresh is not None:
+                    job = fresh
+                if job.status != 'starting':
+                    break
+                await asyncio.sleep(.05)
+            status = await commander.background_command_io(job_id, username=self.user, session_id=self.session)
+            self.assertIn(job_id, status)
+            denied = await commander.cancel_background_command(job_id, username=self.user, session_id='another-agent')
+            self.assertIn('未找到', denied)
+            result = await commander.cancel_background_command(job_id, username=self.user, session_id=self.session)
+            self.assertIn('已取消', result)
+        finally:
+            commander._terminate_background_job(job)
+            commander._BACKGROUND_JOBS.pop(job_id, None)
+            commander._reap_detached_runners()
+
     async def test_background_command_uses_real_backend_and_cleans_temporary_directory(self):
         previous = set(commander._BACKGROUND_JOBS)
         await self.execute("printf BACKGROUND_LANDLOCK_OK", mode='background', notify_on_done=False)

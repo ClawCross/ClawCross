@@ -69,7 +69,8 @@ def get_tool_policy_path(
 ) -> Path | None:
     if not user_id:
         return None
-    return _user_dir(user_id, project_root=project_root) / DEFAULT_POLICY_FILENAME
+    from webot.control_storage import control_path
+    return control_path(_user_dir(user_id, project_root=project_root).parent, user_id, DEFAULT_POLICY_FILENAME)
 
 
 @dataclass(frozen=True)
@@ -229,6 +230,9 @@ def get_tool_policy(
     project_root: str | Path | None = None,
 ) -> WeBotToolPolicy:
     path = get_tool_policy_path(user_id, project_root=project_root)
+    if path is not None:
+        from webot.control_storage import migrate_control_file
+        migrate_control_file(_user_dir(user_id, project_root=project_root) / DEFAULT_POLICY_FILENAME, path)
     if path is None or not path.is_file():
         return WeBotToolPolicy()
     try:

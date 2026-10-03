@@ -58,6 +58,7 @@ class ApprovalSettings(BaseModel):
     reviewer_timeout_seconds: int = Field(default=120, ge=5, le=120)
     reviewer_max_tokens: int = Field(default=16384, ge=1024, le=16384)
     command_sandbox: Literal["off", "srt", "auto", "landlock"] = "off"
+    sandbox_security: Literal["standard", "strict"] = "standard"
     sandbox_allowed_domains: list[str] = Field(default_factory=list, max_length=64)
     sandbox_grants: list[SandboxGrant] = Field(default_factory=list, max_length=64)
 
@@ -70,6 +71,12 @@ class ApprovalSettings(BaseModel):
         except SandboxUnavailable as exc:
             # Pydantic/API validation must return a field error rather than HTTP 500.
             raise ValueError(str(exc)) from exc
+        return self
+
+    @model_validator(mode='after')
+    def enforce_strict_sandbox(self):
+        if self.sandbox_security == 'strict' and self.command_sandbox == 'off':
+            self.command_sandbox = 'auto'
         return self
 
     @model_validator(mode="before")
@@ -121,17 +128,14 @@ class RuntimeSettings(BaseModel):
 
 
 def settings_path(user_id: str) -> Path:
-    if not user_id or user_id in {".", ".."} or Path(user_id).name != user_id or "\\" in user_id:
-        raise ValueError("Invalid user ID")
-    root = USER_FILES_DIR.resolve()
-    path = (root / user_id / "webot_runtime_settings.json").resolve()
-    if not user_id or not path.is_relative_to(root) or path.parent == root:
-        raise ValueError("Invalid user ID")
-    return path
+    from webot.control_storage import control_path
+    return control_path(USER_FILES_DIR, user_id, 'webot_runtime_settings.json')
 
 
 def _load(user_id: str) -> dict:
     path = settings_path(user_id)
+    from webot.control_storage import migrate_control_file
+    migrate_control_file(USER_FILES_DIR / user_id / 'webot_runtime_settings.json', path)
     if not path.exists():
         return {"user": {}, "sessions": {}}
     raw = json.loads(path.read_text(encoding="utf-8"))
@@ -259,6 +263,8 @@ def remember_sandbox_grant(user_id: str, *, session_id: str, access: str, target
     """Atomically save an approved exact capability only in this session."""
     if not session_id:
         raise ValueError('记住沙盒权限需要当前 Agent。')
+    if get_runtime_settings(user_id, session_id).approval.sandbox_security == 'strict':
+        raise ValueError('严格安全模式不允许保存提权授权。')
     from webot.command_sandbox import bounded_escalation
     from webot.workspace import resolve_session_workspace
     target = bounded_escalation(access, target, resolve_session_workspace(user_id, session_id).root)

@@ -5,6 +5,7 @@ Workspace resolution for WeBot sessions and subagents.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 import os
 from pathlib import Path
 import subprocess
@@ -16,8 +17,6 @@ from webot.subagents import get_subagent_by_session
 from common.runtime_paths import PROJECT_ROOT  # noqa: E402
 from common.runtime_paths import USER_FILES_DIR, WORKSPACE_DIR
 
-_DEFAULT_USER_FILES_DIR = USER_FILES_DIR
-_DEFAULT_WORKSPACE_DIR = WORKSPACE_DIR
 
 
 @dataclass(frozen=True)
@@ -30,50 +29,14 @@ class SessionWorkspace:
 
 def _user_root(user_id: str) -> Path:
     safe_user = os.path.basename(user_id or "anonymous")
-    if WORKSPACE_DIR != _DEFAULT_WORKSPACE_DIR and USER_FILES_DIR == _DEFAULT_USER_FILES_DIR:
-        root = WORKSPACE_DIR / "users" / safe_user
-    else:
-        root = USER_FILES_DIR / safe_user
-    root.mkdir(parents=True, exist_ok=True)
-    _ensure_runtime_aliases(user_id, root)
+    base = WORKSPACE_DIR
+    if base.resolve().is_relative_to(PROJECT_ROOT.resolve()):
+        base = Path.home() / ".clawcross" / "workspace"
+    root = _ensure_within(base, base / "users" / safe_user)
+    from webot.command_sandbox import validate_workspace_root
+    validate_workspace_root(root)
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
     return root
-
-
-def _ensure_runtime_aliases(user_id: str, workspace_root: Path) -> None:
-    """Expose stable runtime paths inside the shared workspace.
-
-    Team-building personas and docs assume the session sandbox root contains a
-    ``teams/`` subtree. The real runtime loader, however, reads from
-    ``USER_FILES_DIR/<user>/teams``. We bridge that gap here with a best-effort
-    directory alias so relative paths like ``teams/<team>/oasis_experts.json``
-    resolve to the actual runtime team storage.
-    """
-    runtime_user_root = USER_FILES_DIR / os.path.basename(user_id or "anonymous")
-    teams_target = runtime_user_root / "teams"
-    teams_target.mkdir(parents=True, exist_ok=True)
-
-    alias_path = workspace_root / "teams"
-    if alias_path.exists() or alias_path.is_symlink():
-        return
-
-    try:
-        os.symlink(teams_target, alias_path, target_is_directory=True)
-        return
-    except (AttributeError, NotImplementedError, OSError):
-        pass
-
-    if os.name == "nt":
-        try:
-            subprocess.run(
-                ["cmd", "/c", "mklink", "/J", str(alias_path), str(teams_target)],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-        except Exception:
-            # Best effort only. Without link support the workspace still works,
-            # but relative `teams/...` paths won't bridge to runtime storage.
-            pass
 
 
 def _ensure_within(base: Path, candidate: Path) -> Path:
@@ -92,6 +55,19 @@ def _resolve_relative(base: Path, value: str) -> Path:
     if candidate.is_absolute():
         return _ensure_within(base, candidate)
     return _ensure_within(base, base / candidate)
+
+
+def _stored_root(user_id: str, value: str) -> Path:
+    """Honor already configured legacy roots without moving the user's files."""
+    base = _user_root(user_id)
+    legacy = USER_FILES_DIR / os.path.basename(user_id or "anonymous")
+    candidate = Path(value)
+    legacy_candidate = candidate if candidate.is_absolute() else legacy / candidate
+    if legacy_candidate.exists() and legacy_candidate.resolve().is_relative_to(legacy.resolve()):
+        from webot.command_sandbox import validate_workspace_root
+        validate_workspace_root(legacy_candidate)
+        return legacy_candidate.resolve()
+    return _resolve_relative(base, value)
 
 
 def _default_subagent_root(user_id: str, agent_id: str, mode: str) -> Path:
@@ -130,6 +106,19 @@ def resolve_session_workspace(
     *,
     explicit_cwd: str = "",
 ) -> SessionWorkspace:
+    from webot.runtime_settings import get_runtime_settings
+    if getattr(get_runtime_settings(user_id, session_id or 'default').approval, 'sandbox_security', 'standard') == 'strict':
+        from webot.command_sandbox import validate_workspace_root
+        base = WORKSPACE_DIR / 'strict'
+        if base.resolve().is_relative_to(PROJECT_ROOT.resolve()):
+            base = Path.home() / '.clawcross' / 'strict-workspaces'
+        key = hashlib.sha256((session_id or 'default').encode()).hexdigest()[:24]
+        root = _ensure_within(base, base / os.path.basename(user_id or 'anonymous') / key)
+        validate_workspace_root(root, strict=True)
+        root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        cwd = _resolve_relative(root, explicit_cwd)
+        cwd.mkdir(parents=True, exist_ok=True)
+        return SessionWorkspace(root=root, cwd=cwd, mode='strict', remote='')
     user_root = _user_root(user_id)
     session_key = session_id or "default"
     subagent_meta = parse_subagent_session_id(session_key)
@@ -153,12 +142,12 @@ def resolve_session_workspace(
     elif mode == "isolated":
         root = _default_subagent_root(user_id, record.agent_id, mode)
         if workspace_root:
-            root = _resolve_relative(_user_root(user_id), workspace_root)
+            root = _stored_root(user_id, workspace_root)
             root.mkdir(parents=True, exist_ok=True)
     elif mode == "worktree":
         root = _default_subagent_root(user_id, record.agent_id, mode)
         if workspace_root:
-            base_repo = _resolve_relative(_user_root(user_id), workspace_root)
+            base_repo = _stored_root(user_id, workspace_root)
             try:
                 root = _ensure_git_worktree(base_repo, root)
             except Exception:
@@ -171,11 +160,11 @@ def resolve_session_workspace(
     elif mode == "remote":
         root = _default_subagent_root(user_id, record.agent_id, mode)
         if workspace_root:
-            root = _resolve_relative(_user_root(user_id), workspace_root)
+            root = _stored_root(user_id, workspace_root)
             root.mkdir(parents=True, exist_ok=True)
     elif mode == "custom":
         base = _user_root(user_id)
-        root = _resolve_relative(base, workspace_root) if workspace_root else base
+        root = _stored_root(user_id, workspace_root) if workspace_root else base
         root.mkdir(parents=True, exist_ok=True)
     else:
         root = _default_subagent_root(user_id, record.agent_id, "isolated")
