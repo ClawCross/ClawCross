@@ -57,7 +57,7 @@ def capability_card(agent):
     return {'platform': agent.platform, 'transport': 'acpx', 'streaming_tools': True,
             'clawcross_tools': bool(acp.get('clawcross_tools', True)),
             'config_options': native_options(agent), 'settings': {'clawcross_tools': True, **acp},
-            'modes': ['chat', 'readonly', 'auto', 'bypass'],
+            'modes': ['chat', 'readonly', 'manual', 'auto', 'bypass'],
             'supports': {'native_config': True, 'tool_bridge': True,
                          'clawcross_compaction': False, 'native_tools': True}}
 

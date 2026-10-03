@@ -65,6 +65,26 @@ test('settings save only changes to the selected scope and reset inheritance', a
   expect(requests[1].reset).toBe(true);
 });
 
+test('Manual and Bypass are distinct selectable modes with different saved values', async ({ page }) => {
+  const requests = await setup(page);
+  await page.evaluate(() => openRuntimeSettings('session-1'));
+  await page.getByRole('tab', { name: '工具审核' }).click();
+  const select = page.locator('[data-key="mode"]');
+  await expect(select.locator('option')).toHaveCount(5);
+  await select.selectOption({ label: 'Manual · 人工审核' });
+  await expect(select).toHaveValue('manual');
+  await expect(page.locator('#runtime-settings-reviewer-hint')).toContainText('需要批准的操作由你');
+  await page.locator('#runtime-settings-save').click();
+  await expect(page.locator('#runtime-settings-result')).toContainText('已保存');
+  expect(requests[0].settings.approval.mode).toBe('manual');
+  await select.selectOption({ label: 'Bypass · 无审核' });
+  await expect(select).toHaveValue('bypass');
+  await expect(page.locator('#runtime-settings-reviewer-hint')).toContainText('跳过操作确认');
+  await page.locator('#runtime-settings-save').click();
+  await expect(page.locator('#runtime-settings-result')).toContainText('已保存');
+  expect(requests[1].settings.approval.mode).toBe('bypass');
+});
+
 test('model and summary instructions render as literal text', async ({ page }) => {
   const model = 'gpt" autofocus onfocus="window.injected=true';
   const instructions = '</textarea><img src=x onerror="window.injected=true">';

@@ -120,6 +120,27 @@ test('mobile message center works with agents of any platform by id', async ({ p
   expect(pageErrors).toEqual([]);
 });
 
+test('mobile sends five distinct permission modes and keeps Manual separate from Bypass', async ({ page }) => {
+  const calls = { posts: [], control: [] };
+  await stub(page, calls);
+  await page.addInitScript(() => {
+    window.alert = () => {};
+    localStorage.setItem('clawcross_lang', 'zh');
+  });
+  await page.goto('/mobile/group_chat');
+  await page.locator('.group-item', { hasText: 'Dev' }).first().click();
+  for (const mode of ['chat', 'readonly', 'manual', 'auto', 'bypass']) {
+    await page.evaluate(() => openRunModeSheet());
+    await page.locator(`#run-mode-sheet [data-mode="${mode}"]`).click();
+    expect(await page.evaluate(() => getRunMode())).toBe(mode);
+    await page.evaluate(() => closeRunModeSheet());
+    await page.locator('#msg-input').fill(`测试模式 ${mode}`);
+    await page.locator('#send-btn').click();
+    await expect.poll(() => calls.posts.length).toBe(['chat', 'readonly', 'manual', 'auto', 'bypass'].indexOf(mode) + 1);
+    expect(calls.posts.at(-1).run_mode).toBe(mode);
+  }
+});
+
 test('remote group join and sharing stay usable on a narrow phone', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const calls = { posts: [], control: [] };

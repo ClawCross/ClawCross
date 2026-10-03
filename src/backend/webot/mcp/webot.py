@@ -1596,10 +1596,10 @@ async def set_session_mode(
     source_session: str = "",
 ) -> str:
     """
-    切换当前会话工具模式：chat 交流无工具；readonly 只读；bypass 全工具跳过确认；
+    切换当前会话工具模式：chat 交流无工具；readonly 只读；manual 全工具、按策略人工审核；bypass 全工具跳过确认；
     auto 由独立审核模型代审操作。
 
-    :param mode: chat / readonly / bypass / auto (legacy plan / review / agent / execute / yolo accepted)
+    :param mode: chat / readonly / manual / auto / bypass (legacy plan / review / agent / execute / yolo accepted)
     :param reason: 切换原因
     """
     session_id = source_session or "default"

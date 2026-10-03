@@ -583,6 +583,68 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(review, 'action_risk', return_value=(True, True, 'hard block')):
             self.assertFalse((await self.authorize()).allowed)
 
+    async def test_manual_allowed_actions_run_without_review(self):
+        policy.save_tool_policy_config('alice', {'default_approval': 'allow'})
+        store.save_session_mode('alice', 's', mode='manual')
+        with patch.object(review, 'run_reviewer') as reviewer:
+            result = await review.authorize_action(user_id='alice', session_id='s', tool_name='write_file',
+                args={'filename': 'notes.md', 'content': 'hello'}, messages=self.messages)
+        self.assertTrue(result.allowed)
+        reviewer.assert_not_called()
+        self.assertEqual(store.list_tool_approvals('alice'), [])
+
+    async def test_manual_requests_human_confirmation_and_y_grants_exact_action_once(self):
+        store.save_session_mode('alice', 's', mode='manual')
+        # Even a saved auto reviewer setting must not replace the human in Manual.
+        with patch.object(review, 'run_reviewer') as reviewer:
+            pending = await self.authorize(transfer_to_command=True)
+            self.assertFalse(pending.allowed)
+            self.assertTrue(pending.pending)
+            record = store.get_tool_approval(pending.approval_id, 'alice')
+            metadata = json.loads(record.review_metadata_json)
+            self.assertEqual(metadata['reviewer'], 'user')
+            self.assertTrue(metadata['conversation_reply'])
+            binding = review.policy_binding('alice', 's')
+            action = canonical_action_args('run_command', self.args)
+            self.assertFalse(store.consume_execution_permit('alice', 's', 'run_command', action, binding))
+            yes = HumanMessage(content='Y', id='human-yes', additional_kwargs={'input_origin': 'user'})
+            resolved = review.resolve_conversation_reply('alice', 's', review.review_context([yes]))
+            self.assertIsNotNone(resolved)
+            result = await self.authorize(messages=[*self.messages, yes], transfer_to_command=True)
+        reviewer.assert_not_called()
+        self.assertTrue(result.allowed)
+        self.assertEqual(store.get_tool_approval(pending.approval_id, 'alice').status, 'used')
+        self.assertFalse(store.consume_execution_permit('alice', 's', 'run_command', action | {'command': 'git diff'}, binding))
+        self.assertTrue(store.consume_execution_permit('alice', 's', 'run_command', action, binding))
+        self.assertFalse(store.consume_execution_permit('alice', 's', 'run_command', action, binding))
+        self.assertTrue((await self.authorize()).pending)  # Y is single-use.
+
+    async def test_manual_n_blocks_and_bypass_skips_the_same_policy_request(self):
+        store.save_session_mode('alice', 's', mode='manual')
+        with patch.object(review, 'run_reviewer') as reviewer:
+            pending = await self.authorize()
+            no = HumanMessage(content='N', id='human-no', additional_kwargs={'input_origin': 'user'})
+            review.resolve_conversation_reply('alice', 's', review.review_context([no]))
+            self.assertFalse((await self.authorize(messages=[*self.messages, no])).allowed)
+            store.save_session_mode('alice', 's', mode='bypass')
+            result = await self.authorize()
+        reviewer.assert_not_called()
+        self.assertTrue(result.allowed)
+        self.assertFalse(result.pending)
+
+    async def test_manual_high_risk_action_requires_human_and_hard_deny_is_preserved(self):
+        policy.save_tool_policy_config('alice', {'default_approval': 'allow'})
+        store.save_session_mode('alice', 's', mode='manual')
+        with patch.object(review, 'run_reviewer') as reviewer, \
+             patch.object(review, 'action_risk', return_value=(False, True, 'high risk')):
+            self.assertTrue((await self.authorize()).pending)
+        reviewer.assert_not_called()
+        policy.save_tool_policy_config('alice', {'tools': {'run_command': {'approval': 'deny'}}})
+        for mode in ('manual', 'auto', 'bypass'):
+            store.save_session_mode('alice', 's', mode=mode)
+            with self.subTest(mode=mode):
+                self.assertFalse((await self.authorize()).allowed)
+
     async def test_chat_and_readonly_block_tools_at_execution(self):
         policy.save_tool_policy_config('alice', {'default_approval': 'allow'})
         for mode, name, args, allowed in (

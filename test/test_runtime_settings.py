@@ -55,6 +55,12 @@ class RuntimeSettingsTests(unittest.TestCase):
                 settings.save_runtime_settings("alice", settings=change)
             self.assertEqual(settings.settings_path("alice").read_bytes(), original)
 
+    def test_manual_and_bypass_persist_as_distinct_modes(self):
+        settings.save_runtime_settings("alice", settings={"approval": {"mode": "manual"}})
+        settings.save_runtime_settings("alice", session_id="s", settings={"approval": {"mode": "bypass"}})
+        self.assertEqual(settings.get_runtime_settings("alice").approval.mode, "manual")
+        self.assertEqual(settings.get_runtime_settings("alice", "s").approval.mode, "bypass")
+
     def test_rejects_user_path_traversal(self):
         for user in ("", "../bob", "alice/../bob", "/tmp/bob", "alice\\..\\bob", ".", ".."):
             with self.subTest(user=user), self.assertRaises(ValueError):

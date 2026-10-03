@@ -4894,9 +4894,16 @@
       </div>
       <div class="run-mode-option-check">✓</div>
     </div>
+    <div class="run-mode-option" data-mode="manual" onclick="selectRunMode('manual')">
+      <div class="run-mode-option-info">
+        <div class="run-mode-option-title" data-i18n="run_mode_manual">Manual · 人工审核</div>
+        <div class="run-mode-option-desc" data-i18n="run_mode_manual_desc">全工具可用，需要批准的操作交给你确认</div>
+      </div>
+      <div class="run-mode-option-check">✓</div>
+    </div>
     <div class="run-mode-option" data-mode="bypass" onclick="selectRunMode('bypass')">
       <div class="run-mode-option-info">
-        <div class="run-mode-option-title" data-i18n="run_mode_bypass">Manual · 全工具</div>
+        <div class="run-mode-option-title" data-i18n="run_mode_bypass">Bypass · 无审核</div>
         <div class="run-mode-option-desc" data-i18n="run_mode_bypass_desc">全工具开放，跳过操作确认</div>
       </div>
       <div class="run-mode-option-check">✓</div>
@@ -5886,7 +5893,10 @@ const I18N = {
     tool_policy_hint: '默认策略是兜底规则；单个工具可单独覆盖为允许、手动批准或拒绝',
     run_mode_action: '运行模式',
     run_mode_title_sheet: '运行模式',
-    run_mode_bypass: 'Manual · 全工具',
+    run_mode_manual: 'Manual · 人工审核',
+    run_mode_manual_desc: '全工具可用，需要批准的操作交给你确认',
+    run_mode_badge_manual: '人工审核',
+    run_mode_bypass: 'Bypass · 无审核',
     run_mode_readonly: '只读模式',
     run_mode_chat: '交流模式 · 无工具',
     run_mode_bypass_desc: '全工具开放，跳过操作确认',
@@ -5894,7 +5904,7 @@ const I18N = {
     run_mode_chat_desc: '不调用工具，仅通过文字交流',
     run_mode_hint: '该设置仅在本浏览器生效；CLI 与其他设备各自独立设置。',
     run_mode_warning_manual: '⚠️ 群聊中 交流模式下 Agent 无法回到群里发言（缺工具调用权限）。如需"先看再决定"请改用只读模式。',
-    run_mode_badge_bypass: 'Manual',
+    run_mode_badge_bypass: 'Bypass',
     run_mode_auto: 'Auto · 替我审核',
     run_mode_auto_desc: '按任务代审；授权不足时拒绝，可在后续对话明确同意',
     run_mode_badge_auto: 'Auto',
@@ -6508,7 +6518,10 @@ const I18N = {
     tool_policy_hint: 'Default policy is the fallback; each tool can override it with allow, manual, or deny',
     run_mode_action: 'Run mode',
     run_mode_title_sheet: 'Run mode',
-    run_mode_bypass: 'Manual · All tools',
+    run_mode_manual: 'Manual · Human review',
+    run_mode_manual_desc: 'All tools available; you confirm approval requests',
+    run_mode_badge_manual: 'Manual',
+    run_mode_bypass: 'Bypass · No review',
     run_mode_readonly: 'Read-only',
     run_mode_chat: 'Chat · No tools',
     run_mode_bypass_desc: 'All tools available, confirmation skipped',
@@ -6516,7 +6529,7 @@ const I18N = {
     run_mode_chat_desc: 'No tool calls — text reply only',
     run_mode_hint: 'Only applies in this browser. CLI and other devices each store their own setting.',
     run_mode_warning_manual: '⚠️ In Chat mode, agents in this group cannot post replies back (no tool-call permission). Use Read-only mode if you want "look-then-decide" behavior.',
-    run_mode_badge_bypass: 'Manual',
+    run_mode_badge_bypass: 'Bypass',
     run_mode_auto: 'Auto · Review for me',
     run_mode_auto_desc: 'Reviews task actions; insufficient authorization denies the action. You can explicitly authorize it in the next message.',
     run_mode_badge_auto: 'Auto',
@@ -14450,18 +14463,18 @@ async function importPersonalSkill() {
 }
 
 // ════════════════════════════════════════════════════
-// ── Run Mode (chat / readonly / bypass / auto) ──
+// ── Run Mode (chat / readonly / manual / auto / bypass) ──
 // Shares localStorage key 'clawRunMode' with PC main chat so the
 // three surfaces (CLI / PC web / mobile) stay in sync.
 // ════════════════════════════════════════════════════
-const RUN_MODE_VALID = ['chat', 'readonly', 'bypass', 'auto'];
+const RUN_MODE_VALID = ['chat', 'readonly', 'manual', 'auto', 'bypass'];
 const RUN_MODE_DEFAULT = 'auto';
 const RUN_MODE_STORAGE_KEY = 'clawRunMode';
 
 function getRunMode() {
   try {
     const raw = (localStorage.getItem(RUN_MODE_STORAGE_KEY) || '').trim().toLowerCase();
-    const mode = {manual: 'chat', plan: 'readonly', yolo: 'bypass'}[raw] || raw;
+    const mode = {plan: 'readonly', yolo: 'bypass'}[raw] || raw;
     return RUN_MODE_VALID.includes(mode) ? mode : RUN_MODE_DEFAULT;
   } catch (e) {
     return RUN_MODE_DEFAULT;
@@ -14480,7 +14493,7 @@ function refreshRunModeUI() {
   document.querySelectorAll('#run-mode-sheet .run-mode-option').forEach(el => {
     el.classList.toggle('active', el.dataset.mode === mode);
   });
-  // Manual mode in group chat = agent can't post replies back; warn explicitly.
+  // Chat mode has no tool to post a reply back to the group.
   const warn = document.getElementById('run-mode-warning-manual');
   if (warn) warn.style.display = (mode === 'chat') ? '' : 'none';
   // Update the chat-actions inline badge
@@ -14529,7 +14542,7 @@ function closeRunModeSheet() {
 
 function selectRunMode(mode) {
   setRunMode(mode);
-  // For manual: keep the sheet open so the user has time to read the warning
+  // For chat: keep the sheet open so the user has time to read the warning
   // about agents not being able to reply back. For other modes, auto-dismiss.
   if (mode === 'chat') return;
   setTimeout(closeRunModeSheet, 120);

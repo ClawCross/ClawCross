@@ -1,6 +1,7 @@
 import unittest
 
 from webot.runtime import (
+    build_session_mode_message,
     build_turn_limit_message,
     filter_tools_for_mode,
     normalize_session_mode,
@@ -20,6 +21,18 @@ class WeBotRuntimeTests(unittest.TestCase):
         self.assertEqual(filter_tools_for_mode(tools, "plan"), ["read_file", "list_files"])
         self.assertEqual(filter_tools_for_mode(tools, "agent"), tools)
         self.assertEqual(filter_tools_for_mode(tools, "yolo"), tools)
+
+    def test_manual_is_a_distinct_full_tool_mode_across_entrypoints(self):
+        from agents.messages import normalize_run_mode, ACPX_OVERRIDES_BY_MODE
+        from src.cli.clawcross import _normalize_mode
+        tools = ["read_file", "write_file", "run_command", "send_to_group"]
+        self.assertEqual(normalize_session_mode("manual"), "manual")
+        self.assertEqual(normalize_run_mode("manual"), "manual")
+        self.assertEqual(_normalize_mode("manual"), "manual")
+        self.assertEqual(filter_tools_for_mode(tools, "manual"), tools)
+        self.assertIn("人类审核", build_session_mode_message("manual"))
+        self.assertIn("Bypass", build_session_mode_message("bypass"))
+        self.assertNotEqual(ACPX_OVERRIDES_BY_MODE["manual"], ACPX_OVERRIDES_BY_MODE["bypass"])
 
     def test_resolve_max_turns_prefers_request_override(self):
         self.assertEqual(resolve_max_turns(4, 10), 4)

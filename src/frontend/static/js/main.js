@@ -832,7 +832,8 @@ const i18n = {
         oc_internal_session_refresh_title: '从服务器刷新 WeBot 会话列表',
         // Run mode (permission mode)
         run_mode_label: '模式',
-        run_mode_bypass: 'Manual · 全工具',
+        run_mode_manual: 'Manual · 人工审核',
+        run_mode_bypass: 'Bypass · 无审核',
         run_mode_readonly: '只读模式',
         run_mode_chat: '交流模式 · 无工具',
         run_mode_auto: 'Auto · 替我审核',
@@ -1632,7 +1633,8 @@ const i18n = {
         oc_internal_session_refresh_title: 'Refresh WeBot session list from server',
         // Run mode (permission mode)
         run_mode_label: 'Mode',
-        run_mode_bypass: 'Manual · All tools',
+        run_mode_manual: 'Manual · Human review',
+        run_mode_bypass: 'Bypass · No review',
         run_mode_readonly: 'Read-only',
         run_mode_chat: 'Chat · No tools',
         run_mode_auto: 'Auto · Review for me',
@@ -3374,8 +3376,8 @@ function _escapeAndFormatText(value) {
 }
 
 function _modeActionButtons(sessionId, currentMode) {
-    const modes = ['chat', 'readonly', 'bypass', 'auto'];
-    currentMode = {manual: 'chat', plan: 'readonly', review: 'readonly', yolo: 'bypass', execute: 'auto', agent: 'auto'}[currentMode] || currentMode;
+    const modes = ['chat', 'readonly', 'manual', 'auto', 'bypass'];
+    currentMode = {plan: 'readonly', review: 'readonly', yolo: 'bypass', execute: 'auto', agent: 'auto'}[currentMode] || currentMode;
     return `<div class="webot-mode-actions">${modes
         .map(mode => {
             const active = currentMode === mode;
@@ -6841,14 +6843,14 @@ function getEnabledTools() {
 }
 
 // ── Run mode (permission mode) ──────────────────────────────────────────────
-// Chat / read-only / bypass / automatic review. Persisted in localStorage.
-const RUN_MODE_VALID = ['chat', 'readonly', 'bypass', 'auto'];
+// Chat / read-only / human review / automatic review / bypass. Persisted in localStorage.
+const RUN_MODE_VALID = ['chat', 'readonly', 'manual', 'auto', 'bypass'];
 const RUN_MODE_DEFAULT = 'auto';
 const RUN_MODE_STORAGE_KEY = 'clawRunMode';
 
 function getRunMode() {
     const raw = (localStorage.getItem(RUN_MODE_STORAGE_KEY) || '').trim().toLowerCase();
-    const mode = {manual: 'chat', plan: 'readonly', yolo: 'bypass'}[raw] || raw;
+    const mode = {plan: 'readonly', yolo: 'bypass'}[raw] || raw;
     return RUN_MODE_VALID.includes(mode) ? mode : RUN_MODE_DEFAULT;
 }
 

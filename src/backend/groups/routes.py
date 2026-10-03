@@ -57,7 +57,7 @@ class MessagePost(BaseModel):
     reply_to: int | None = None
     attachments: list[Attachment] | None = None
     client_msg_id: str | None = None
-    run_mode: str | None = None   # chat / readonly / auto / bypass for the agents it wakes
+    run_mode: str | None = None   # chat / readonly / manual / auto / bypass for the agents it wakes
     agent: str | None = None      # post for this agent (internal callers only)
 
 
