@@ -1,12 +1,12 @@
 # Repository Skill Self-Evolution Report
 
 - Skill file: `/home/ubuntu/work2/ClawCross/SKILL.md`
-- Generated at: `2026-10-04T06:17:05.174189+00:00`
+- Generated at: `2026-10-04T09:13:06.396265+00:00`
 - Exit code: `1`
 
 ## Summary
 
-Command exited with code 1. Command: (external failure context). Signals: verification-loop, workspace-preflight, bounded-execution. stdout was used as fallback failure evidence.
+Command exited with code 1. Command: (external failure context). Signals: verification-loop, workspace-preflight, structured-output. stdout was used as fallback failure evidence.
 
 ## stderr
 
@@ -17,21 +17,25 @@ Command exited with code 1. Command: (external failure context). Signals: verifi
 ## stdout
 
 ```text
-.............F............................................. [ 88%]
-........                                                          [100%]
+..F............................F..................       [100%]
 =================================== FAILURES ===================================
-_ TestGateway.test_a_runtime_freezes_its_identity_until_reset_and_refreshes_stale_records _
+_ ReasoningLevelsTests.test_mapping_uses_supported_choices_with_monotonic_conservative_fallback _
 
-self = <test.test_agents.TestGateway testMethod=test_a_runtime_freezes_its_identity_until_reset_and_refreshes_stale_records>
+self = <test.test_reasoning_levels.ReasoningLevelsTests testMethod=test_mapping_uses_supported_choices_with_monotonic_conservative_fallback>
 
-    def test_a_runtime_freezes_its_identity_until_reset_and_refreshes_stale_records(self):
-        svc = self.store.create("alice", name="Svc", driver=HTTP, config={"platform": "svc", "api_url": "http://svc"})
-        self.ask(svc)
-        url, body, _headers = _Http.posts[0]
-        self.assertEqual((url, body["session_id"]), ("http://svc/v1/chat/completions", f"clawcross-alice-{svc.agent_id}"))
-        told = body["messages"][0]["content"]
-        self.assertIn("PERSONA", told)
-        self.assertTrue(told.endswith("\n\nhi"))  # the identity comes before the message
-        self.assertIn("PERSONA", self.store.get("alice", svc.agent_id).runtime["dynamic_context"]["identity_persona"])
-        self.store.patch_runtime("alice", svc.ag ...[truncated]
+    def test_mapping_uses_supported_choices_with_monotonic_conservative_fallback(self):
+        self.assertEqual(list(level_map(['high','low','medium']).values()),
+                         ['low','low','low','medium','high','high','high'])
+>       self.assertEqual(list(level_map(['none','low','medium','high','xhigh']).values()),
+                         ['none','low','low','medium','high','xhigh','xhigh'])
+E       AssertionError: Lists differ: ['none', 'none', 'low', 'medium', 'high', 'xhigh', 'xhigh'] != ['none', 'low', 'low', 'medium', 'high', 'xhigh', 'xhigh']
+E
+E       First differing element 1:
+E       'none'
+E       'low'
+E
+E       - ['none', 'none', 'low', 'medium', 'high', 'xhigh', 'xhigh']
+E       ?          --------
+E
+E       + ['none', 'low', 'low', 'med ...[truncated]
 ```

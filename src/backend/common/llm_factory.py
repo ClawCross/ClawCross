@@ -314,6 +314,7 @@ def create_chat_model(
     base_url: str | None = None,
     provider: str | None = None,
     reasoning_effort: str | None = None,
+    reasoning_level: int = 0,
 ) -> BaseChatModel:
     """从环境变量创建聊天模型实例。
 
@@ -377,7 +378,7 @@ def create_chat_model(
     )
     supports_temp = _model_supports_temperature(model, provider)
     from common.model_capabilities import reasoning_effort as supported_effort
-    effort = supported_effort(model, provider, reasoning_effort or "")
+    effort = supported_effort(model, provider, reasoning_effort or "", level=reasoning_level)
     inference_kwargs = {"reasoning_effort": effort} if effort else {}
 
     if provider == "ollama":

@@ -128,6 +128,8 @@ class AcpRuntime(Runtime):
 
         acp_meta = (agent.config.get('meta') or {}).get('acp') or {}
         native_config = {**initial_config_options(agent), **(acp_meta.get('config_options') or {})}
+        if 'reasoning_level' in acp_meta:
+            native_config['_clawcross_reasoning_level'] = acp_meta['reasoning_level']
         model = str(agent.config.get("model") or native_config.get("model") or "").strip() or None
         return model, connector_file(agent), native_config
 

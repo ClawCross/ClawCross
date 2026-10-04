@@ -44,6 +44,9 @@
     const capabilities = runtime.model_capabilities || {};
     const effort = runtime.settings?.inference?.reasoning_effort || '';
     const levels = capabilities.reasoning_effort_levels || [];
+    const levelMap = capabilities.reasoning_level_map || {};
+    const unified = window.ReasoningLevels && Object.keys(levelMap).length;
+    const selectedLevel = unified ? ReasoningLevels.selected(runtime.settings?.inference?.reasoning_level, effort) : 0;
     const platformLabel = text('平台默认', 'Platform default') + ' · ' + (library.default.model || text('未配置', 'Not configured'));
     overlay.innerHTML = `<section class="external-settings-dialog model-profile-dialog">
       <header><h2 id="agent-model-title">${text('模型与思考', 'Model and reasoning')}</h2><button type="button" data-close aria-label="${text('关闭', 'Close')}">×</button></header>
@@ -56,8 +59,9 @@
           ${saved.model && (!selected || !library.profiles.some(p => p.id === selected)) ? `<option value="__current__" selected>${esc(saved.model)} · ${text('当前独立配置', 'Current custom configuration')}</option>` : ''}
           ${library.profiles.map(p => `<option value="${esc(p.id)}" ${p.id === selected ? 'selected' : ''}>${esc(p.name)} · ${esc(p.model)}${p.id.startsWith('platform:') ? ' · ' + text('平台配置', 'Platform profile') : ''}</option>`).join('')}
         </select></label>
+        <small data-profile-count>${text('已保存','Saved')} ${library.profiles.length} ${text('套模型配置；可在下方添加多套配置。','model profiles. Add more below.')}</small>
         ${selected && !library.profiles.some(p => p.id === selected) ? `<small>${text('原配置已不在列表中；当前 Agent 仍保留已应用的配置。', 'The original profile is no longer listed; this Agent keeps its applied configuration.')}</small>` : ''}
-        ${levels.length ? `<label>${text('思考强度', 'Reasoning effort')}<select data-effort><option value="">${text('模型预设', 'Model preset')}${capabilities.reasoning_effort_default ? ' · ' + esc(capabilities.reasoning_effort_default) : ''}</option>${levels.map(value => `<option value="${esc(value)}" ${value === effort ? 'selected' : ''}>${esc(value)}</option>`).join('')}</select><small>${text('按当前模型显示可用值，独立保存在这个 Agent。', 'Available values follow the current model and are saved for this Agent.')}</small></label>` : `<small>${text('当前模型没有可设置的思考强度。', 'This model has no configurable reasoning effort.')}</small>`}
+        <div data-effort-area>${unified ? `<label>${text('思考强度 · 7 级','Reasoning effort · 7 levels')}<select data-effort data-unified>${ReasoningLevels.options(levelMap,selectedLevel,text('自动 · 模型预设','Automatic · Model preset'))}</select><small>${text('箭头后是实际原生档位；部分级别会重复。按 Agent 保存，切换模型会重新映射。','The arrow shows the native setting; some levels repeat. Saved per Agent and remapped when switching models.')}</small></label>` : levels.length ? `<label>${text('思考强度', 'Reasoning effort')}<select data-effort><option value="">${text('模型预设', 'Model preset')}${capabilities.reasoning_effort_default ? ' · ' + esc(capabilities.reasoning_effort_default) : ''}</option>${levels.map(value => `<option value="${esc(value)}" ${value === effort ? 'selected' : ''}>${esc(value)}</option>`).join('')}</select><small>${text('按当前模型显示可用值，独立保存在这个 Agent。', 'Available values follow the current model and are saved for this Agent.')}</small></label>` : `<small>${text('此模型未声明可配置的思考强度，使用模型预设。', 'This model advertises no configurable effort; using its preset.')}</small>`}</div>
         <details class="model-profile-create"><summary>${text('保存或更新模型配置', 'Save or update a model profile')}</summary>
           <form data-profile-form>
             <label>${text('配置名称', 'Profile name')}<input name="name" required maxlength="100" autocomplete="off" placeholder="${text('例如：日常、编程', 'For example: everyday, coding')}"></label>
@@ -73,6 +77,22 @@
       <footer><span role="status" data-status></span><button type="button" data-save>${text('应用到当前 Agent', 'Apply to this Agent')}</button></footer>
     </section>`;
     const previousFocus = document.activeElement;
+    let pendingLevel = runtime.settings?.inference?.reasoning_level || (window.ReasoningLevels ? ReasoningLevels.selected(0,effort) : 0);
+    const renderSelectedEffort = () => {
+      const previous = overlay.querySelector('[data-effort][data-unified]');
+      if (previous) pendingLevel = Number(previous.value);
+      const profileId = overlay.querySelector('[data-profile]').value;
+      const chosen = profileId === '__current__' || profileId === selected && saved.model ? capabilities : profileId ? library.profiles.find(p=>p.id===profileId)?.model_capabilities : library.default.model_capabilities;
+      const map = chosen?.reasoning_level_map || {};
+      if (!window.ReasoningLevels || !chosen) return; // Compatibility with older capability responses.
+      const host = overlay.querySelector('[data-effort-area]');
+      host.innerHTML = Object.keys(map).length ? `<label>${text('思考强度 · 7 级','Reasoning effort · 7 levels')}<select data-effort data-unified>${ReasoningLevels.options(map,pendingLevel,text('自动 · 模型预设','Automatic · Model preset'))}</select><small>${text('箭头后是所选模型的实际档位；部分级别会重复。','The arrow shows the selected model’s native setting; some levels repeat.')}</small></label>` : `<small>${text('此模型未声明可配置的思考强度，使用模型预设。','This model advertises no configurable effort; using its preset.')}</small>`;
+    };
+    overlay.querySelector('[data-profile]').onchange = () => {
+      const input = overlay.querySelector('[data-effort][data-unified]');
+      if (input) pendingLevel = Number(input.value);
+      renderSelectedEffort();
+    };
     const close = () => { ++sequence; overlay.remove(); previousFocus?.focus(); };
     overlay.querySelector('[data-close]').onclick = close;
     overlay.onclick = event => { if (event.target === overlay) close(); };
@@ -90,7 +110,11 @@
         const profile_id = overlay.querySelector('[data-profile]').value;
         if (profile_id !== '__current__') await request('/v1/agents/' + encodeURIComponent(id) + '/model-profile', 'POST', {profile_id});
         const effortInput = overlay.querySelector('[data-effort]');
-        if (effortInput && effortInput.value !== effort) await request('/proxy_webot_runtime_settings', 'POST', {
+        if (effortInput?.hasAttribute('data-unified')) {
+          const level = Number(effortInput.value);
+          if (level !== (runtime.settings?.inference?.reasoning_level || 0) || effort) await request('/proxy_webot_runtime_settings', 'POST', {
+            session_id:id, settings:{inference:{reasoning_level:level,reasoning_effort:''}}});
+        } else if (effortInput && effortInput.value !== effort) await request('/proxy_webot_runtime_settings', 'POST', {
           session_id:id, settings:{inference:{reasoning_effort:effortInput.value}}});
         document.dispatchEvent(new CustomEvent('clawcross:runtime-settings-saved', {detail:{agentId:id}}));
         if (overlay.isConnected) {
@@ -107,12 +131,16 @@
       button.disabled = true;
       try {
         const profile = await request('/v1/agents/model-profiles', 'POST', Object.fromEntries(new FormData(form)));
+        const index = library.profiles.findIndex(p=>p.id===profile.id);
+        if (index>=0) library.profiles[index]=profile; else library.profiles.push(profile);
+        overlay.querySelector('[data-profile-count]').textContent = text('已保存','Saved') + ' ' + library.profiles.length + ' ' + text('套模型配置。','model profiles.');
         form.elements.api_key.value = '';
         const selector = overlay.querySelector('[data-profile]');
         let option = [...selector.options].find(item => item.value === profile.id);
         if (!option) { option = document.createElement('option'); selector.appendChild(option); }
         option.value = profile.id; option.textContent = profile.name + ' · ' + profile.model;
         selector.value = profile.id;
+        renderSelectedEffort();
         status.textContent = text('配置已保存；点击“应用到当前 Agent”切换。', 'Profile saved. Apply it to switch this Agent.');
       } catch (error) { status.textContent = error.message; }
       finally { button.disabled = false; }

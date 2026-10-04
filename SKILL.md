@@ -537,14 +537,14 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-10-04T06:17:05.174189+00:00`
+- Updated at: `2026-10-04T09:13:06.396265+00:00`
 - Strategy: `harden`
-- Heuristic candidate: `blended-verification-loop-workspace-preflight-bounded-execution`
-- Heuristic score: `0.685`
+- Heuristic candidate: `blended-verification-loop-workspace-preflight-structured-output`
+- Heuristic score: `0.652`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: (external failure context). Signals: verification-loop, workspace-preflight, bounded-execution. stdout was used as fallback failure evidence.
+Command exited with code 1. Command: (external failure context). Signals: verification-loop, workspace-preflight, structured-output. stdout was used as fallback failure evidence.
 
 ### Strategy Rationale
 
@@ -558,33 +558,41 @@ Command exited with code 1. Command: (external failure context). Signals: verifi
 ### Latest Error Excerpt
 
 ```text
-.............F............................................. [ 88%]
-........                                                          [100%]
+..F............................F..................       [100%]
 =================================== FAILURES ===================================
-_ TestGateway.test_a_runtime_freezes_its_identity_until_reset_and_refreshes_stale_records _
+_ ReasoningLevelsTests.test_mapping_uses_supported_choices_with_monotonic_conservative_fallback _
 
-self = <test.test_agents.TestGateway testMethod=test_a_runtime_freezes_its_identity_until_reset_and_refreshes_stale_records>
+self = <test.test_reasoning_levels.ReasoningLevelsTests testMethod=test_mapping_uses_supported_choices_with_monotonic_conservative_fallback>
 
-    def test_a_runtime_freezes_its_identity_until_reset_and_refreshes_stale_records(self):
-        svc = self.store.create("alice", name="Svc", driver=HTTP, config={"platform": "svc", "api_url": "http://svc"})
-        self.ask(svc)
-        url, body, _headers = _Http.posts[0]
-        self.assertEqual((url, body["session_id"]), ("http://svc/v1/chat/completions", f"clawcross-alice-{svc.agent_id}"))
-        told = body["messages"][0]["content"]
-        self.assertIn("PERSONA", told)
-        self.assertTrue(told.endswith("
+    def test_mapping_uses_supported_choices_with_monotonic_conservative_fallback(self):
+        self.assertEqual(list(level_map(['high','low','medium']).values()),
+                         ['low','low','low','medium','high','high','high'])
+>       self.assertEqual(list(level_map(['none','low','medium','high','xhigh']).values()),
+                         ['none','low','low','medium','high','xhigh','xhigh'])
+E       AssertionError: Lists differ: ['none', 'none', 'low', 'medium', 'high', 'xhigh', 'xhigh'] != ['none', 'low', 'low', 'medium', 'high', 'xhigh', 'xhigh']
+E
+E       First differing element 1:
+E       'none'
+E       'low'
+E
+E       - ['none', 'none', 'low', 'medium', 'high', 'xhigh', 'xhigh']
+E       ?          --------
+E
+E       + ['none', 'low', 'low', 'medium', 'high', 'xhigh', 'xhigh']
+E       ?                +++++++
 
-hi"))  # the identity comes before the message
-        self.assertIn("PERSONA", self.store.get("alice", svc.agent_id).runtime["dynamic_context"]["identity_persona"])
-        self.store.patch_runtime("alice", svc.agent_id, {"other_runtime_field": "keep"})
-        self.ask(svc)  # keep using the original object, as a queued caller may do
->       self.assertEqual(_Http.posts[1][1]["messages"][0]["content"], "hi")  # already told
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E       AssertionError: '【本轮 workspace】
-{"cwd": "/tmp/clawcross-a[409 chars]
-hi' != 'hi'
-E       - 【本轮 workspace】
-E       - {"cwd": "/tmp/clawcross-agent-profiles-tests/workspace/users/alice", "files": {"directories": ["skills"], "files": [], "limited": false, "observed_entries": 1, "recent_changes": {"added": ["skills"], "modified": [], "removed": []}, "revision": "66a317f74e659c4f", "scope": "文件名与元数据的有界观察，不读取正文；跳过依赖及缓存目录，非完整文件清单。"}, "mode": "shared", "root": "/tmp/clawcross-agent-profiles-tests/work ...[truncated]
+test/test_reasoning_levels.py:14: AssertionError
+_ ConnectionProbeTests.test_connection_initializes_without_prompt_or_identity_delivery _
+
+self = <test.test_acp_stream_and_bridge.ConnectionProbeTests testMethod=test_connection_initializes_without_prompt_or_identity_delivery>
+
+    async def test_connection_initializes_without_prompt_or_identity_delivery(self):
+        with TemporaryDirectory() as tmp:
+            store = AgentStore(Path(tmp)/'agents.db')
+            agent = store.create('alice', driver=ACPX, config={'platform':'codex','model':'gpt-5.5'})
+            runtime = AcpRuntime(store=store)
+            adapter = SimpleNamespace(ensure_session=AsyncMock(), prompt_with_trace=AsyncMock())
+            with patch('externa ...[truncated]
 ```
 
 ### Governance Snapshot
@@ -607,16 +615,15 @@ E       - {"cwd": "/tmp/clawcross-agent-profiles-tests/workspace/users/alice", "
 
 ### Recent Evidence
 
-- `2026-10-04T06:17:05.174189+00:00` `repo-skill` — .............F............................................. [ 88%]
-........                                                          [100%]
-== ...[truncated]
+- `2026-10-04T09:13:06.396265+00:00` `repo-skill` — ..F............................F..................       [100%]
+=================================== FAILURES ================================= ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `blended-verification-loop-workspace-preflight-bounded-execution` score `0.685` — Blend the strongest recent failure patterns (intent `repair`)
-- `verification-loop-4` score `0.645` — Tighten verification loops (intent `repair`)
-- `workspace-preflight-1` score `0.475` — Add repo/workspace preflight checks (intent `repair`)
-- `bounded-execution-1` score `0.475` — Bound long-running and flaky execution (intent `optimize`)
+- `blended-verification-loop-workspace-preflight-structured-output` score `0.652` — Blend the strongest recent failure patterns (intent `repair`)
+- `verification-loop-4` score `0.612` — Tighten verification loops (intent `repair`)
+- `workspace-preflight-2` score `0.515` — Add repo/workspace preflight checks (intent `repair`)
+- `structured-output-1` score `0.467` — Harden structured-output handling (intent `repair`)
 
 ### Local State Snapshot
 

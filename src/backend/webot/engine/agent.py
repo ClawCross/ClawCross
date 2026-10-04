@@ -1499,8 +1499,10 @@ class TeamAgent:
         """The model for this call: request override, Agent selection, profile
         preference, cheap route, then platform default."""
         max_tokens = turn.max_tokens
-        effort = get_runtime_settings(turn.user_id, turn.session_id).inference.reasoning_effort
-        inference = {"reasoning_effort": effort} if effort else {}
+        configured = get_runtime_settings(turn.user_id, turn.session_id).inference
+        effort = configured.reasoning_effort
+        level = getattr(configured, 'reasoning_level', 0)
+        inference = {'reasoning_level':level} if level else ({"reasoning_effort": effort} if effort else {})
         override = state.get("llm_override")
         if override:
             return llm_factory.create_chat_model(
