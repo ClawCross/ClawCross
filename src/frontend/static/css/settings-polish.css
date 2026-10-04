@@ -1,0 +1,50 @@
+/* Shared settings and mobile creation surfaces. Controls keep their existing actions. */
+#settings-modal{padding:24px;background:rgba(21,30,46,.32);backdrop-filter:blur(10px);box-sizing:border-box;align-items:center;justify-content:center;flex-direction:row}
+#settings-modal .settings-modal{width:760px;max-width:100%;max-height:calc(100dvh - 48px);border:1px solid var(--ui-hairline,#e4e8ee);border-radius:22px;background:var(--ui-surface,#fff);box-shadow:0 24px 80px rgba(25,36,57,.18);overflow:hidden;color:var(--ui-text,#263247)}
+#settings-modal .settings-header{padding:22px 26px;gap:14px;min-height:70px;height:auto;flex-shrink:0;background:var(--ui-surface,#fff);border-bottom:1px solid var(--ui-hairline,#e4e8ee)}
+#settings-modal .settings-header h2{font-size:19px;letter-spacing:-.35px;font-weight:650;color:inherit}
+#settings-modal .settings-close-btn{display:grid;place-items:center;min-width:36px;min-height:36px;border-radius:10px;background:var(--ui-hover,#f1f4f8);color:var(--ui-text-2,#65728a)}
+#settings-modal .settings-body{padding:24px;min-height:0;overflow-x:hidden;background:var(--ui-canvas,#f6f8fb);scrollbar-gutter:stable}
+#settings-modal .settings-hint{padding:12px 15px;margin-bottom:20px;border:0;background:transparent;color:var(--ui-text-2,#65728a);line-height:1.65;font-size:13px}
+#settings-modal .settings-group{margin-bottom:16px;border:1px solid var(--ui-hairline,#e4e8ee);border-radius:15px;background:var(--ui-surface,#fff)}
+#settings-modal .settings-group-title{padding:16px 18px;background:transparent;color:inherit;font-size:14px;font-weight:650;line-height:1.5}
+#settings-modal .settings-group-title:hover{background:var(--ui-hover,#f1f4f8)}
+#settings-modal .settings-group-body{padding:4px 18px 18px}
+#settings-modal .settings-field{gap:7px;margin-bottom:17px;min-width:0}
+#settings-modal .settings-label{font-family:inherit;font-size:12px;letter-spacing:0;color:var(--ui-text-2,#65728a);overflow-wrap:anywhere}
+#settings-modal .settings-input{width:100%;max-width:100%;min-width:0;box-sizing:border-box;padding:11px 12px;border-radius:10px;border:1px solid var(--ui-hairline,#dce2eb);font:inherit;font-size:14px;line-height:1.5;background:var(--ui-surface,#fff);color:inherit}
+#settings-modal .settings-footer{padding:16px 24px;gap:10px;flex-wrap:wrap;background:var(--ui-surface,#fff);border-top:1px solid var(--ui-hairline,#e4e8ee)}
+#settings-modal .settings-btn{min-height:40px;border-radius:10px;padding:10px 17px;font-size:13px;font-weight:600;box-shadow:none}
+#settings-modal .settings-btn-restart{background:var(--ui-hover,#f1f4f8);color:var(--ui-text-2,#65728a);border:1px solid var(--ui-hairline,#dce2eb)}
+#settings-modal :is(button,input,select,textarea):focus-visible{outline:2px solid var(--ui-accent,#4476db);outline-offset:2px}
+#settings-modal .cc-channel-picker{margin:0 0 22px;padding:22px;background:var(--ui-surface,#fff);border-color:var(--ui-hairline,#e4e8ee)}
+#settings-modal .cc-channel-form{background:var(--ui-canvas,#f6f8fb)}
+@media(max-width:600px){
+  #settings-modal{padding:0}
+  #settings-modal .settings-modal{width:100%;height:100dvh;max-height:100dvh;border:0;border-radius:0}
+  #settings-modal .settings-header{padding:16px 18px;padding-top:max(16px,env(safe-area-inset-top))}
+  #settings-modal .settings-body{padding:16px}
+  #settings-modal .settings-footer{padding:12px 16px;padding-bottom:max(12px,env(safe-area-inset-bottom))}
+  #settings-modal .settings-input{font-size:16px}
+  #settings-modal .settings-footer>div:empty{display:none}
+  #settings-modal .settings-footer .settings-btn{flex:1;padding:10px 8px}
+  #settings-modal .cc-channel-picker{padding:17px}
+}
+/* Creation, channel and alarm drawers share one compact visual vocabulary. */
+:is(#create-agent-modal,#mobile-alarm-modal,#mobile-channel-config,#create-modal,#add-agent-modal,#mobile-skill-detail) .drawer-header{padding:14px 18px;gap:12px;border-bottom:1px solid var(--border);background:var(--bg-card)}
+:is(#create-agent-modal,#mobile-alarm-modal,#mobile-channel-config,#create-modal,#add-agent-modal) .drawer-header-title{font-size:17px;font-weight:650;letter-spacing:-.25px}
+:is(#create-agent-modal,#mobile-alarm-modal,#mobile-channel-config,#create-modal,#add-agent-modal) .drawer-header{flex-shrink:0;min-height:56px}
+:is(#create-agent-modal,#mobile-alarm-modal,#mobile-channel-config,#create-modal,#add-agent-modal) .drawer-header>.header-btn{margin-left:auto}
+:is(#create-agent-modal,#mobile-alarm-modal,#mobile-channel-config,#create-modal,#add-agent-modal) .side-panel-form{padding:0}
+:is(#create-agent-modal,#mobile-alarm-modal,#mobile-channel-config,#create-modal,#add-agent-modal) .drawer-body{padding:18px!important;gap:18px!important;background:var(--bg);min-width:0;overflow-x:hidden;box-sizing:border-box}
+:is(#create-agent-modal,#mobile-alarm-modal,#mobile-channel-config,#create-modal,#add-agent-modal) .side-panel-section{padding:17px;border:1px solid var(--border);border-radius:15px;background:var(--bg-card);min-width:0;box-sizing:border-box}
+:is(#create-agent-modal,#mobile-alarm-modal,#mobile-channel-config,#create-modal,#add-agent-modal) :is(.side-panel-label,.side-panel-hint){line-height:1.65;overflow-wrap:anywhere}
+:is(#create-agent-modal,#mobile-alarm-modal,#mobile-channel-config,#create-modal,#add-agent-modal) :is(input:not([type=checkbox]):not([type=radio]),textarea,select){min-width:0;max-width:100%;box-sizing:border-box;border-radius:10px;font-size:16px;padding:11px 12px;line-height:1.4}
+:is(#create-agent-modal,#mobile-alarm-modal,#mobile-channel-config,#create-modal,#add-agent-modal) :is(.side-panel-primary-btn,.side-panel-secondary-btn){min-height:44px;border-radius:12px;box-shadow:none;font-weight:600}
+#mobile-channel-config details{border:1px solid var(--border);border-radius:14px;padding:12px;background:var(--bg-card)}
+#mobile-channel-config details>summary{font-size:13px;font-weight:600;line-height:1.5;color:var(--text-secondary)}
+#mobile-alarm-modal .side-panel-form{gap:18px}
+.discover-section{border:1px solid var(--border);border-radius:17px;margin-bottom:17px}
+.discover-card{padding:16px}.discover-card-desc{line-height:1.5}.discover-card-icon{border-radius:13px}
+#llm-warning-banner{z-index:300!important}
+@media(prefers-reduced-motion:reduce){#settings-modal .settings-modal{animation:none}}
