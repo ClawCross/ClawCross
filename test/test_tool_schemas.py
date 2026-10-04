@@ -52,10 +52,10 @@ SESSION_ARGUMENTS = {"source_session", "session_id", "parent_session", "notify_s
 
 # JSON size of the strict-bound tool array. The array renders ahead of the
 # system prompt on every request; growing it should be a decision, not drift.
-# Two requested channel setup tools add fixed field-list schemas and private
-# input instructions. Keep a measured cap; lazy discovery still controls the
-# subset sent to a live model request.
-STRICT_TOOL_ARRAY_BUDGET_CHARS = 42_000
+# General configuration and local help add three requested tools (measured
+# full inventory: 43,584 chars). Initial requests still contain only compact
+# names/descriptions and tool_search/tool_call, not this full schema array.
+STRICT_TOOL_ARRAY_BUDGET_CHARS = 44_000
 
 _inventory_cache = None
 

@@ -1,29 +1,28 @@
 # Repository Skill Self-Evolution Report
 
 - Skill file: `/home/ubuntu/work2/ClawCross/SKILL.md`
-- Generated at: `2026-10-04T04:08:53.605787+00:00`
+- Generated at: `2026-10-04T04:13:12.673489+00:00`
 - Exit code: `1`
 
 ## Summary
 
-Command exited with code 1. Command: (external failure context). Signals: verification-loop. stderr carried the strongest failure evidence.
+Command exited with code 1. Command: (external failure context). Signals: verification-loop, structured-output. stderr carried the strongest failure evidence.
 
 ## stderr
 
 ```text
 ======================================================================
-ERROR: test_agent_runtime_form_preserves_other_fields_and_scopes (test.test_configuration_setup.ConfigurationTests.test_agent_runtime_form_preserves_other_fields_and_scopes)
+FAIL: test_strict_tool_array_stays_within_budget (test.test_tool_schemas.McpToolInventory.test_strict_tool_array_stays_within_budget)
 ----------------------------------------------------------------------
 Traceback (most recent call last):
-  File "/home/ubuntu/work2/ClawCross/test/test_configuration_setup.py", line 46, in test_agent_runtime_form_preserves_other_fields_and_scopes
-    self.assertEqual(runtime_store.get_session_mode('alice','one').mode,'manual')
-                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-AttributeError: 'dict' object has no attribute 'mode'
+  File "/home/ubuntu/work2/ClawCross/test/test_tool_schemas.py", line 307, in test_strict_tool_array_stays_within_budget
+    self.assertLessEqual(
+AssertionError: 43584 not less than or equal to 42000 : strict tool array is 43584 chars; raise the budget only on purpose
 
 ----------------------------------------------------------------------
-Ran 12 tests in 1.468s
+Ran 43 tests in 2.775s
 
-FAILED (errors=1)
+FAILED (failures=1)
 ```
 
 ## stdout
