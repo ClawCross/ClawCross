@@ -50,6 +50,7 @@ class ChatCompletionRequest(BaseModel):
     tool_choice: Optional[Any] = None
     user: Optional[str] = None
     session_id: Optional[str] = None  # the number of the agent to talk to
+    workspace_root: str = ""  # creation only; an existing Agent keeps its workspace
     password: Optional[str] = None
     enabled_tools: Optional[list[str]] = None
     llm_override: Optional[dict] = None  # the model for this request
@@ -162,7 +163,7 @@ def create_openai_router(
             raise HTTPException(status_code=401, detail="认证失败")
         return user, session
 
-    def target(user: str, ref: str, model: str | None) -> Agent:
+    def target(user: str, ref: str, model: str | None, workspace_root: str = '') -> Agent:
         agent = store.get(user, ref) or (names(user, ref) if names else None)
         if agent is not None:
             return agent
@@ -173,6 +174,12 @@ def create_openai_router(
         driver, config = runtime_of(model or "")
         if driver == HTTP:  # a model name, not a runtime: the agent is WeBot's
             driver, config = WEBOT, {}
+        if workspace_root:
+            from webot.workspace import configured_workspace_root
+            try:
+                config['workspace_root'] = configured_workspace_root(workspace_root)
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from exc
         return store.ensure(user, ref, driver=driver, config=config)
 
     @router.post("/v1/chat/completions")
@@ -181,7 +188,7 @@ def create_openai_router(
         ref = (session or req.session_id or "").strip()
         if not ref:
             raise HTTPException(status_code=400, detail="session_id is required: it is the number of the agent")
-        return await gateway.chat(target(user, ref, req.model), req)
+        return await gateway.chat(target(user, ref, req.model, req.workspace_root), req)
 
     @router.get("/v1/models")
     async def list_models():

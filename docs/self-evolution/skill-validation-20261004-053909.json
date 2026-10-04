@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20261004053909706045",
+  "candidate_id": "blended-verification-loop-approval-auth-bounded-execution",
+  "skill_name": "repo-skill",
+  "strategy": "harden",
+  "env_fingerprint": {
+    "python_version": "3.11.16",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-10-04T05:39:09.706012+00:00"
+  },
+  "commands": [
+    {
+      "command": "(external failure context)",
+      "ok": false,
+      "stdout": "",
+      "stderr": "Command: node /tmp/clawcross-agent-preview.cjs\nlocator.click: Timeout 30000ms exceeded.\nLocator: #runtime-settings-approval-tab\nThe element is visible, enabled and stable, but is outside of the viewport.\nCause: Mobile .settings-modal-overlay inherited transform: translateX(100%); the shared runtime dialog did not reset the transform.\nFix: scope transform:none and flex:0 1 auto to #runtime-settings-modal; verify actual pointer clicks, not forced clicks."
+    }
+  ],
+  "overall_ok": false,
+  "duration_ms": null,
+  "created_at": "2026-10-04T05:39:09.706069+00:00",
+  "asset_id": "sha256:81d29a1a4a7c0bea139246ead7dcfc371570bbdb8fa4976f35805af86204363b"
+}

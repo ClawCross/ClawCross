@@ -64,6 +64,8 @@ uv run src/cli/cli.py [-u USER] <子命令> [参数...]
 
 **发送消息（流式输出）**
 
+首次创建指定 Agent 时，以 CLI 当前目录作为工作区。继续已有 Agent 时保留其已保存目录；严格沙盒仍使用独立目录。`agents create`、首次 `agents ask` 同样遵循这个规则；create 的 `--data` 可显式设置 `workspace_root`（空字符串采用干净的用户工作区）。工作区状态通过动态块告知 Agent。
+
 ```bash
 # 基本用法（-s 必填）
 uv run src/cli/cli.py -u Avalon_01 chat "你好" -s mysession

@@ -27,6 +27,23 @@ class SessionWorkspace:
     remote: str
 
 
+def configured_workspace_root(value: str) -> str:
+    """Validate an explicitly chosen directory without creating or moving files."""
+    if not isinstance(value, str):
+        raise ValueError('workspace_root 必须是目录路径')
+    if not value.strip():
+        return ''
+    root = Path(value.strip()).expanduser()
+    if not root.is_absolute() or not root.is_dir():
+        raise ValueError('workspace_root 必须是已存在的绝对目录路径')
+    from webot.command_sandbox import SandboxUnavailable, validate_workspace_root
+    try:
+        validate_workspace_root(root)
+    except SandboxUnavailable as exc:
+        raise ValueError(str(exc)) from exc
+    return str(root.resolve())
+
+
 def _user_root(user_id: str) -> Path:
     safe_user = os.path.basename(user_id or "anonymous")
     base = WORKSPACE_DIR
@@ -105,6 +122,7 @@ def resolve_session_workspace(
     session_id: str | None = None,
     *,
     explicit_cwd: str = "",
+    agent_config: dict | None = None,
 ) -> SessionWorkspace:
     from webot.runtime_settings import get_runtime_settings
     if getattr(get_runtime_settings(user_id, session_id or 'default').approval, 'sandbox_security', 'standard') == 'strict':
@@ -119,12 +137,19 @@ def resolve_session_workspace(
         cwd = _resolve_relative(root, explicit_cwd)
         cwd.mkdir(parents=True, exist_ok=True)
         return SessionWorkspace(root=root, cwd=cwd, mode='strict', remote='')
-    user_root = _user_root(user_id)
     session_key = session_id or "default"
     subagent_meta = parse_subagent_session_id(session_key)
     if not subagent_meta:
-        cwd = _resolve_relative(user_root, explicit_cwd)
-        return SessionWorkspace(root=user_root, cwd=cwd, mode="shared", remote="")
+        if agent_config is None:
+            from agents.store import get_store
+            agent = get_store().get(user_id, session_key)
+            agent_config = agent.config if agent else {}
+        chosen = configured_workspace_root(agent_config.get('workspace_root', ''))
+        root = Path(chosen) if chosen else _user_root(user_id)
+        cwd = _resolve_relative(root, explicit_cwd)
+        return SessionWorkspace(root=root, cwd=cwd, mode="custom" if chosen else "shared", remote="")
+
+    user_root = _user_root(user_id)
 
     record = get_subagent_by_session(session_key, user_id)
     if record is None:

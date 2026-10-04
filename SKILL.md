@@ -537,10 +537,10 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-10-04T04:17:24.816895+00:00`
-- Strategy: `repair-only`
-- Heuristic candidate: `blended-verification-loop-approval-auth-workspace-preflight`
-- Heuristic score: `0.737`
+- Updated at: `2026-10-04T05:39:09.706163+00:00`
+- Strategy: `harden`
+- Heuristic candidate: `blended-verification-loop-approval-auth-bounded-execution`
+- Heuristic score: `0.571`
 
 ### Trigger Summary
 
@@ -548,8 +548,8 @@ Command exited with code 1. Command: (external failure context). Signals: verifi
 
 ### Strategy Rationale
 
-- Intent mix: repair `0.8`, optimize `0.2`, innovate `0.0`
-- Emergency mode for repeated failures where repair guidance must dominate.
+- Intent mix: repair `0.4`, optimize `0.4`, innovate `0.2`
+- Shift toward stability, bounded retries, and verifier quality.
 
 ### Latest Trigger Command
 
@@ -558,24 +558,12 @@ Command exited with code 1. Command: (external failure context). Signals: verifi
 ### Latest Error Excerpt
 
 ```text
-[2m[WebServer] [22m2026-10-04 12:16:16,590 INFO [werkzeug] [req:-] [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
-[2m[WebServer] [22m * Running on http://127.0.0.1:51229
-[2m[WebServer] [22m2026-10-04 12:16:16,590 INFO [werkzeug] [req:-] [33mPress CTRL+C to quit[0m
-[2m[WebServer] [22m2026-10-04 12:16:17,598 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 12:16:17] "GET /studio HTTP/1.1" 200 -
-
-Running 2 tests using 1 worker
-
-(node:1699387) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
-(Use `node --trace-warnings ...` to show where the warning was created)
-(node:1699387) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
-(Use `node --trace-warnings ...` to show where the warning was created)
-[2m[WebServer] [22m2026-10-04 12:16:20,655 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 12:16:20] "GET /studio HTTP/1.1" 200 -
-[2m[WebServer] [22m2026-10-04 12:16:20,718 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 12:16:20] "GET /static/css/tailwind.css?v=20261003-local HTTP/1.1" 200 -
-[2m[WebServer] [22m2026-10-04 12:16:20,735 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 12:16:20] "GET /static/css/group-network.css?v=20261003-invite HTTP/1.1" 200 -
-[2m[WebServer] [22m2026-10-04 12:16:20,736 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 12:16:20] "GET /static/css/style.css?v=20261002-agent-drafts HTTP/1.1" 200 -
-[2m[WebServer] [22m2026-10-04 12:16:20,738 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 12:16:20] "GET /static/css/markdown-shared.css?v=20261003-inline-approval HTTP/1.1" 200 -
-[2m[WebServer] [22m2026-10-04 12:16:20,739 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 12:16:20] "GET /static/css/settings-polish.css?v=20261004-settings HTTP/1.1" 200 -
-[2m[WebServer] [22m2026-10-04 12:16:20,742 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 12:16:20] " ...[truncated]
+Command: node /tmp/clawcross-agent-preview.cjs
+locator.click: Timeout 30000ms exceeded.
+Locator: #runtime-settings-approval-tab
+The element is visible, enabled and stable, but is outside of the viewport.
+Cause: Mobile .settings-modal-overlay inherited transform: translateX(100%); the shared runtime dialog did not reset the transform.
+Fix: scope transform:none and flex:0 1 auto to #runtime-settings-modal; verify actual pointer clicks, not forced clicks.
 ```
 
 ### Governance Snapshot
@@ -598,14 +586,17 @@ Running 2 tests using 1 worker
 
 ### Recent Evidence
 
-- `2026-10-04T04:17:24.816895+00:00` `repo-skill` — [2m[WebServer] [22m2026-10-04 12:16:16,590 INFO [werkzeug] [req:-] [31m[1mWARNING: This is a development server. Do not use it in a produc ...[truncated]
+- `2026-10-04T05:39:09.706163+00:00` `repo-skill` — Command: node /tmp/clawcross-agent-preview.cjs
+locator.click: Timeout 30000ms exceeded.
+Locator: #runtime-settings-approval-tab
+The element is ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `blended-verification-loop-approval-auth-workspace-preflight` score `0.737` — Blend the strongest recent failure patterns (intent `repair`)
-- `verification-loop-4` score `0.697` — Tighten verification loops (intent `repair`)
-- `approval-auth-2` score `0.622` — Preflight auth and approval constraints (intent `repair`)
-- `workspace-preflight-1` score `0.584` — Add repo/workspace preflight checks (intent `repair`)
+- `blended-verification-loop-approval-auth-bounded-execution` score `0.571` — Blend the strongest recent failure patterns (intent `repair`)
+- `verification-loop-1` score `0.531` — Tighten verification loops (intent `repair`)
+- `approval-auth-1` score `0.531` — Preflight auth and approval constraints (intent `repair`)
+- `bounded-execution-1` score `0.531` — Bound long-running and flaky execution (intent `optimize`)
 
 ### Local State Snapshot
 

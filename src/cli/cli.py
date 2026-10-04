@@ -438,6 +438,7 @@ def cmd_chat(args):
         "user": args.user,
     }
     payload["session_id"] = args.session
+    payload['workspace_root'] = os.path.realpath(os.getcwd())
     hdrs = {"Authorization": f"Bearer {INTERNAL_TOKEN}:{args.user}"}
 
     collected = []
@@ -1484,6 +1485,7 @@ def cmd_agents(args):
         data = json.loads(args.data) if args.data else {}
         data.setdefault("name", args.name or "")
         data.setdefault("platform", args.platform or "webot")
+        data.setdefault('workspace_root', os.path.realpath(os.getcwd()))
         code, body = _req("POST", base, headers=hdrs, data=data)
         if code == 200:
             print(f"✅ Agent 已创建: {body['agent_id']} ({body['platform']})")
@@ -1505,7 +1507,7 @@ def cmd_agents(args):
         else:
             _err(code, body)
     elif act == "ask":
-        code, body = _req("POST", f"{base}/{ref}/messages", headers=hdrs, data={"text": args.message or ""},
+        code, body = _req("POST", f"{base}/{ref}/messages", headers=hdrs, data={"text": args.message or "", "workspace_root": os.path.realpath(os.getcwd())},
                           timeout=900)
         if code != 200:
             return _err(code, body)

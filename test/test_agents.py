@@ -569,6 +569,22 @@ class ApiCase(StoreCase):
 
 
 class TestAgentsApi(ApiCase):
+    def test_workspace_is_per_agent_and_creation_context_does_not_overwrite_it(self):
+        root = Path(self.tmp.name) / 'launch'; root.mkdir()
+        other = Path(self.tmp.name) / 'other'; other.mkdir()
+        created = self.call('POST', '/v1/agents', json={'agent_id': 'cli-agent', 'workspace_root': str(root)})
+        self.assertEqual(created.status_code, 200)
+        self.assertEqual(created.json()['settings']['workspace_root'], str(root))
+        self.call('POST', '/v1/agents/cli-agent/messages', json={'text':'hi', 'workspace_root': str(other)})
+        self.assertEqual(self.store.require('alice', 'cli-agent').config['workspace_root'], str(root))
+        sent = self.call('POST', '/v1/agents/cli-new/messages', json={'text':'hi', 'workspace_root': str(other)})
+        self.assertEqual(sent.status_code, 200)
+        self.assertEqual(self.store.require('alice', 'cli-new').config['workspace_root'], str(other))
+        from common.runtime_paths import CONFIG_DIR
+        denied = self.call('PATCH', '/v1/agents/cli-agent', json={'settings':{'workspace_root':str(CONFIG_DIR)}})
+        self.assertEqual(denied.status_code, 400)
+        self.assertEqual(self.store.require('alice', 'cli-agent').config['workspace_root'], str(root))
+
     def test_connection_is_owned_explicit_and_does_not_send_a_chat(self):
         agent = self.codex()
         runtime = self.gateway.runtimes[ACPX]
@@ -772,6 +788,13 @@ class TestOpenAIRouting(StoreCase):
         if model:
             body["model"] = model
         return self.client.post("/v1/chat/completions", headers={"Authorization": auth or bearer("alice")}, json=body)
+
+    def test_cli_chat_directory_is_bound_only_when_creating(self):
+        root = Path(self.tmp.name) / 'launch'; root.mkdir()
+        with mock.patch.object(self.gateway, 'chat', mock.AsyncMock(return_value={'ok':True})):
+            self.assertEqual(self.chat('cli-new', workspace_root=str(root)).status_code, 200)
+            self.assertEqual(self.chat('cli-new', workspace_root='/no/such/directory').status_code, 200)
+        self.assertEqual(self.store.require('alice', 'cli-new').config['workspace_root'], str(root))
 
     def test_external_chat_forwards_latest_user_and_textual_tool_contract_only(self):
         tools = [{"type": "function", "function": {"name": "read_file", "description": "Read via CLI"}}]

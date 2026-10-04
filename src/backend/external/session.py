@@ -113,6 +113,29 @@ class PreparedTurn:
     user_input: str = ""
 
 
+def native_workspace_cwd(agent: Agent) -> str:
+    """Keep an existing native session in its directory; new CLI Agents use launch cwd."""
+    if agent.runtime.get('acp_cwd'):
+        return agent.runtime['acp_cwd']
+    if not agent.runtime.get('negotiation_sent') and not agent.runtime.get('native_resume_id'):
+        if agent.config.get('workspace_root'):
+            from webot.workspace import configured_workspace_root
+            return configured_workspace_root(agent.config['workspace_root'])
+    from external.acpx import _default_acpx_cwd
+    return _default_acpx_cwd()
+
+
+def workspace_context(agent: Agent) -> str:
+    from webot.workspace import resolve_session_workspace
+    workspace = resolve_session_workspace(agent.owner, agent.agent_id, agent_config=agent.config)
+    value = {'session_id': agent.agent_id, 'root': str(workspace.root),
+             'cwd': str(workspace.cwd), 'mode': workspace.mode}
+    if agent.driver == ACPX:
+        value['native_cwd'] = native_workspace_cwd(agent)
+        value['scope'] = 'root/cwd 是 ClawCross command 工具工作区；native_cwd 是外部 CLI 工作目录，原生工具遵循自身权限。'
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
 def build_dynamic_context(agent: Agent, msg: AgentMessage, *, context: dict[str, Any],
                           mode: str | None, enabled_tools: list[str] | None,
                           response_format: dict | None, identity: dict[str, str] | None = None) -> dict[str, str]:
@@ -128,6 +151,7 @@ def build_dynamic_context(agent: Agent, msg: AgentMessage, *, context: dict[str,
     dynamic = {
         **{"identity_" + name: value for name, value in (identity if identity is not None else identity_sections(agent)).items()},
         "cli_entry": "" if connected else f"当前命令入口：{cli_entry(agent.owner)} --help；替代此前提供的旧命令路径。",
+        "workspace": workspace_context(agent),
         "teams": render_team_skill_context(teams),
         "groups": render_group_metadata(current_group_metadata(context.get("groups") or [], memberships)),
         "group_memberships": render_group_metadata(memberships),

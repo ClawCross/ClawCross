@@ -214,10 +214,6 @@
                             <svg class="ui-icon"><use href="/static/icons.svg#message-plus"/></svg>
                             <span class="ui-menu-label" data-i18n="hmenu_new">New Chat</span>
                         </button>
-                        <button type="button" class="ui-menu-item" onclick="toggleOasisMobile(); closeHamburgerMenu();">
-                            <svg class="ui-icon"><use href="/static/icons.svg#layers"/></svg>
-                            <span class="ui-menu-label" data-i18n="hmenu_oasis">TeamsWork</span>
-                        </button>
                         <div class="ui-menu-sep"></div>
                         <button type="button" class="ui-menu-item" onclick="toggleLanguage(); closeHamburgerMenu();">
                             <svg class="ui-icon"><use href="/static/icons.svg#languages"/></svg>
@@ -347,6 +343,7 @@
                                         </label>
                                         <button id="record-btn" class="audio-record-btn" data-i18n-title="recording_title" title="录音" onclick="document.getElementById('studio-more-menu').open=false; toggleRecording()"><svg class="ui-icon"><use href="/static/icons.svg#mic"/></svg><span>录音</span></button>
                                         <button id="workflow-add-btn" class="workflow-add-btn" data-i18n-title="wf_btn_title" title="添加工作流" onclick="document.getElementById('studio-more-menu').open=false; showWorkflowPopup()"><svg class="ui-icon"><use href="/static/icons.svg#workflow"/></svg><span class="wf-label" data-i18n="wf_btn_label">工作流</span></button>
+                                        <button type="button" id="workflow-runs-btn" onclick="document.getElementById('studio-more-menu').open=false; openWorkflowRuns()"><svg class="ui-icon"><use href="/static/icons.svg#layers"/></svg><span data-i18n="hmenu_oasis">工作流运行</span></button>
                                         <button id="persona-add-btn" class="persona-add-btn" data-i18n-title="persona_btn_title" title="引入专家人设" onclick="document.getElementById('studio-more-menu').open=false; showPersonaPopup()"><svg class="ui-icon"><use href="/static/icons.svg#sparkles"/></svg><span class="persona-label" data-i18n="persona_btn_label">人设</span></button>
                                     </div>
                                     <details id="conversation-ui-panel-menu" class="conversation-ui-panel-menu">
@@ -356,7 +353,7 @@
                                     <details class="conversation-ui-panel-menu" id="studio-runtime-menu">
                                         <summary>运行设置</summary>
                                         <button type="button" id="studio-runtime-details" data-webot-runtime data-i18n="agent_center_runtime_details" onclick="document.getElementById('studio-more-menu').open=false; toggleSessionSidebar()">运行详情与审核</button>
-                                        <button type="button" id="studio-sandbox-settings" data-webot-runtime onclick="document.getElementById('studio-more-menu').open=false; openRuntimeSettings(currentSessionId, 'approval')">沙盒与审核</button>
+                                        <button type="button" id="studio-sandbox-settings" onclick="document.getElementById('studio-more-menu').open=false; openRuntimeSettings(runtimeSettingsCurrentAgent(), 'approval')">沙盒与审核</button>
                                         <button type="button" data-webot-runtime onclick="document.getElementById('studio-more-menu').open=false; openRuntimeSettings(currentSessionId)">上下文与压缩</button>
                                         <button type="button" id="studio-external-settings" hidden onclick="document.getElementById('studio-more-menu').open=false; openExternalAgentSettings()">外部 Agent · 模型、思考与工具</button>
                                         <p id="external-runtime-hint" hidden style="font-size:12px;color:#64748b;max-width:320px;white-space:normal;"></p>
@@ -1369,11 +1366,11 @@
     <script src="/static/js/conversation-ui-panels.js?v=20261001-windows"></script>
     <script src="/static/js/components.js?v=20261002-runtime-menu"></script>
     <script src="/static/js/attachment-utils.js?v=20261003-media"></script>
-    <script src="/static/js/main.js?v=20261004-config-assistant"></script>
+    <script src="/static/js/main.js?v=20261004-agent-workflows"></script>
     <link rel="stylesheet" href="/static/css/external-agent-settings.css?v=20261002-connect">
-    <script src="/static/js/runtime-presentation.js?v=20261002-fold"></script>
-<script src="/static/js/external-agent-settings.js?v=20261002-explicit-create"></script>
-    <script src="/static/js/runtime-settings.js?v=20261003-network-review"></script>
+    <script src="/static/js/runtime-presentation.js?v=20261004-workspace"></script>
+<script src="/static/js/external-agent-settings.js?v=20261004-agent-mode"></script>
+    <script src="/static/js/runtime-settings.js?v=20261004-agent"></script>
     <script src="/static/js/app.js?v=20260327-humanfix"></script>
     <script>
     // Check LLM API config on page load & preload setup status for wizard

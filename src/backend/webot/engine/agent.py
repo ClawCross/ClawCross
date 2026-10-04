@@ -1033,19 +1033,16 @@ class TeamAgent:
         prompts = self._load_prompts()
         subagent_meta = parse_subagent_session_id(session_id) if session_id else None
         profile = get_agent_profile(subagent_meta["agent_type"], user_id=user_id) if subagent_meta else None
-        workspace = (f"【Workspace】\nsession_id: {session_id or 'default'}\n"
-                     f"{describe_session_workspace(user_id, session_id)}")
         if not is_subagent:
             from common.agent_prompt import identity_sections, join_sections
             persona = self._get_internal_session_persona_prompt(user_id, session_id) if user_id and session_id else ""
             return join_sections(identity_sections(
                 base=prompts["base_system"], conversation=prompts["conversation_rules"],
                 persona=persona, user_profile=build_user_profile_block(user_id),
-                soul=build_soul_prompt(user_id), session=workspace)), prompts
+                soul=build_soul_prompt(user_id))), prompts
         base = prompts["base_system_subagent"]
         if profile:
             base += "\n\n" + render_profile_system_prompt(profile)
-        base += f"\n{workspace}\n"
         if profile and profile.include_user_profile:
             base += build_user_profile_block(user_id)
         return base, prompts
@@ -1571,6 +1568,7 @@ class TeamAgent:
             for approval in list_tool_approvals(user_id, session_id, status="pending", limit=5)
         ]
         runtime_block = render_runtime_context_block(
+            workspace=f"session_id={session_id or 'default'} {describe_session_workspace(user_id, session_id)}",
             mode=turn.mode_payload, pending_approvals=pending_approvals, inbox=inbox,
             inbox_unread_count=inbox_unread, inbox_new_count=inbox_new,
             # Reading memory must not rewrite its index when no entry changed.

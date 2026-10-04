@@ -170,6 +170,7 @@
     if (toggle) toggle.hidden = acp && !card.clawcross_tools;
     const mode = document.getElementById('oc-run-mode');
     if (mode) mode.title = acp ? 'ClawCross 工具按此模式审核；原生工具由适配器权限控制' : '';
+    if (typeof syncAgentRunMode === 'function') syncAgentRunMode(id);
   }
   window.ExternalAgentSettings = {open, capabilities, syncMenu, currentTarget, peek: id => cache.get(id)?.value};
   window.openExternalAgentSettings = id => open(id || currentTarget());

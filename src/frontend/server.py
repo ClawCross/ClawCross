@@ -8,7 +8,7 @@ for _path in (_SRC_DIR, _os.path.join(_SRC_DIR, "backend")):
         _sys.path.insert(0, _path)
 
 from flask import Flask, render_template, request, jsonify, session, Response, redirect, stream_with_context, send_file
-from werkzeug.middleware.proxy_fix import ProxyFix
+from frontend.https_access import register_https_access
 import hashlib
 import base64
 import requests
@@ -107,10 +107,8 @@ app = Flask(__name__,
             static_folder=os.path.join(current_dir, 'static'),
             static_url_path='/static')
 
-# 信任反向代理的 X-Forwarded-Proto / X-Forwarded-For 等头
-# 这样 Cloudflare Tunnel 转发的 HTTPS 请求会被正确识别为 HTTPS，
-# Flask 才会在 HTTP 内部连接上正确读取 Secure cookie
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+# Local Caddy/cloudflared terminate HTTPS; direct remote HTTP is redirected.
+register_https_access(app, lambda: _get_public_domain())
 
 # 基于 INTERNAL_TOKEN 生成稳定的 secret_key，避免每次重启时所有 session 失效
 _token = os.getenv("INTERNAL_TOKEN", "")
@@ -5036,4 +5034,4 @@ def import_team_from_url():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT_FRONTEND", "51209")), debug=False, threaded=True)
+    app.run(host=os.getenv("FRONTEND_BIND_HOST", "127.0.0.1"), port=int(os.getenv("PORT_FRONTEND", "51209")), debug=False, threaded=True)

@@ -8,6 +8,10 @@
 
 已有外部 Codex/Claude 原生会话保留自己的原始 cwd，不为了整理工作区重建会话或丢失上下文。ClawCross MCP 命令工具仍按当前用户、Agent 的工作区和沙盒设置执行；外部 CLI 原生工具由自身权限策略约束。
 
+CLI 的 `agents create`、首次 `agents ask` 和首次 `chat -s <编号>` 保存调用者当前目录为该 Agent 的 `workspace_root`；显式 create JSON 可覆盖此值。继续已有 Agent 不因 CLI 启动目录变化而改工作区。Web 新建仍使用干净的用户工作区；严格等级始终使用独立严格目录。显式工作区必须已存在，不允许覆盖后端配置、凭证控制目录或运行环境。
+
+工作区是动态状态，不写入稳定 system prompt。WeBot 每次模型调用解析当前 root/cwd/mode，放入 Runtime Context；外部 Agent 首次完整发送 `workspace` 区块，后续只发送变化，reset 清除已发送状态后再次完整发送。外部区块同时注明 `native_cwd`，它和 ClawCross command 工作区可能不同；已有原生会话目录保持不变。
+
 ## 技能目录
 
 - 用户共享技能：`users/<用户>/skills/<技能>/SKILL.md`。
