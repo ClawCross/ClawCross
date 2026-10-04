@@ -1,0 +1,153 @@
+/* The "Me" tab: a quiet account header and full-width grouped rows. */
+#tab-profile {
+  background: color-mix(in srgb, var(--ui-canvas) 96%, var(--ui-text));
+}
+
+#tab-profile > .header {
+  background: var(--bg-card);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+#tab-profile .profile-area {
+  margin-top: calc(var(--header-h) + env(safe-area-inset-top, 0px));
+  padding-bottom: 24px;
+  overflow-x: hidden;
+}
+
+#tab-profile .profile-card {
+  gap: 20px;
+  margin: 0 0 10px;
+  padding: 22px 24px 36px;
+  min-height: 138px;
+  border-radius: 0;
+}
+
+#tab-profile .profile-avatar-large {
+  width: 64px;
+  height: 64px;
+  border-radius: 10px;
+  background: #e0f1e8;
+  color: #168455;
+  font-size: 28px;
+  font-weight: 600;
+}
+
+#tab-profile .profile-info {
+  min-width: 0;
+  margin-left: 0;
+}
+
+#tab-profile .profile-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 23px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+#tab-profile .profile-id {
+  margin-top: 9px;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#tab-profile .profile-section {
+  margin: 0 0 10px;
+  border-radius: 0;
+}
+
+#tab-profile .profile-row {
+  width: 100%;
+  min-height: 56px;
+  padding: 14px 20px;
+  border: none;
+  border-radius: 0;
+  background: var(--bg-card);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#tab-profile .profile-row:active {
+  background: var(--ui-press);
+}
+
+#tab-profile .profile-row + .profile-row::before {
+  left: 62px;
+  right: 0;
+  background: var(--ui-hairline);
+}
+
+#tab-profile .profile-row-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  flex: 0 0 24px;
+  margin-right: 18px;
+}
+
+#tab-profile .profile-row-icon .ui-icon {
+  width: 23px;
+  height: 23px;
+  stroke-width: 1.8;
+}
+
+#tab-profile .profile-icon-green { color: #1aab62; }
+#tab-profile .profile-icon-blue { color: #4387e5; }
+#tab-profile .profile-icon-amber { color: #dc982a; }
+#tab-profile .profile-icon-gray { color: var(--ui-text-2); }
+
+#tab-profile .profile-row-label {
+  min-width: 0;
+  font-size: 16px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+#tab-profile .profile-row-value {
+  margin-left: 8px;
+  font-size: 13px;
+}
+
+#tab-profile .profile-row-arrow {
+  display: flex;
+  margin-left: 10px;
+  color: var(--ui-text-3);
+}
+
+#tab-profile .profile-row-arrow .ui-icon {
+  width: 17px;
+  height: 17px;
+  stroke-width: 1.6;
+}
+
+#tab-profile .profile-language-row { cursor: default; }
+#tab-profile .profile-language-row:active { background: var(--bg-card); }
+#tab-profile .segmented { flex-shrink: 0; margin-left: 8px; }
+#tab-profile .segmented > button { padding: 6px 10px; }
+
+#tab-profile .profile-logout-btn {
+  width: 100%;
+  min-height: 54px;
+  margin: 0;
+  border-radius: 0;
+  color: var(--text);
+  font-size: 16px;
+}
+
+#tab-profile button:focus-visible {
+  outline: 2px solid #1aab62;
+  outline-offset: -3px;
+}
+
+@media (min-width: 1024px) and (hover: hover) and (pointer: fine) {
+  #tab-profile .profile-area { margin-top: 0; }
+}

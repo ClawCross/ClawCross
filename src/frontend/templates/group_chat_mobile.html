@@ -4555,6 +4555,7 @@
 <script src="/static/js/group-network-ui.js?v=20261003-invite"></script>
 <link rel="stylesheet" href="/static/css/group-network.css?v=20261003-invite">
 <link rel="stylesheet" href="/static/css/settings-polish.css?v=20261004-settings">
+<link rel="stylesheet" href="/static/css/mobile-profile.css?v=20261004-profile">
 </head>
 <body>
 
@@ -5147,7 +5148,7 @@
 <div id="tab-profile" class="tab-page">
   <div class="header">
     <div style="width:32px"></div>
-    <div class="header-title" data-i18n="header_profile">个人</div>
+    <div class="header-title" data-i18n="header_profile">我</div>
     <div style="width:32px"></div>
   </div>
   <div class="profile-area" id="profile-area">
@@ -5197,7 +5198,7 @@
     <div class="tab-icon">
       <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg>
     </div>
-    <span class="tab-label" data-i18n="tab_profile">个人</span>
+    <span class="tab-label" data-i18n="tab_profile">我</span>
   </div>
 </div>
 
@@ -5706,7 +5707,7 @@ const I18N = {
     page_title: 'Agent 消息中心',
     header_agent_msg: 'Agent消息',
     header_contacts: '通讯录',
-    header_profile: '个人',
+    header_profile: '我',
     tab_chats: '对话',
     tab_contacts: '通讯录',
     tab_team: 'Team',
@@ -5740,7 +5741,7 @@ const I18N = {
     mobile_alarm_delete_confirm: '删除这个闹钟？',
     mobile_alarm_deleted: '闹钟已删除',
     mobile_alarm_delete_failed: '删除闹钟失败',
-    tab_profile: '个人',
+    tab_profile: '我',
 
     // ── Common ──
     back: '返回',
@@ -6339,7 +6340,7 @@ const I18N = {
     page_title: 'Agent Message Center',
     header_agent_msg: 'Messages',
     header_contacts: 'Contacts',
-    header_profile: 'Profile',
+    header_profile: 'Me',
     tab_chats: 'Chats',
     tab_contacts: 'Contacts',
     tab_team: 'Team',
@@ -15306,6 +15307,14 @@ async function loadProfile() {
   const container = document.getElementById('profile-area');
   const userId = window.__currentUser || t('not_logged_in');
   const initial = avatarLabelFromDisplayName(userId);
+  const icon = (name) => `<svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg#${name}"></use></svg>`;
+  const row = (label, symbol, action, tone, value = '') => `
+    <button type="button" class="profile-row" onclick="${action}">
+      <span class="profile-row-icon profile-icon-${tone}">${icon(symbol)}</span>
+      <span class="profile-row-label">${esc(label)}</span>
+      ${value}
+      <span class="profile-row-arrow">${icon('chevron-right')}</span>
+    </button>`;
 
   // Try to load user profile
   userProfileText = '';
@@ -15322,59 +15331,35 @@ async function loadProfile() {
       <div class="profile-avatar-large">${esc(initial)}</div>
       <div class="profile-info">
         <div class="profile-name">${esc(userId)}</div>
-        <div class="profile-id">ID: ${esc(userId)}</div>
+        <div class="profile-id">${_currentLang === 'zh' ? 'ClawCross 账号：' : 'ClawCross ID: '}${esc(userId)}</div>
       </div>
     </div>
 
     <div class="profile-section">
-      <div class="profile-row" onclick="openProfileSubpage()">
-        <span class="profile-row-icon">📋</span>
-        <span class="profile-row-label">${t('user_profile_title')}</span>
-        <span class="profile-row-value" id="profile-status">${userProfileText ? t('profile_set') : t('profile_not_set')}</span>
-        <span class="profile-row-arrow">›</span>
-      </div>
+      ${row(t('user_profile_title'), 'id-card', 'openProfileSubpage()', 'green',
+        `<span class="profile-row-value" id="profile-status">${userProfileText ? t('profile_set') : t('profile_not_set')}</span>`)}
+      ${row(t('session_tracker'), 'history', 'openSessionsSubpage()', 'blue')}
     </div>
 
     <div class="profile-section">
-      <div class="profile-row" onclick="showSettingsInfo()">
-        <span class="profile-row-icon">⚙️</span>
-        <span class="profile-row-label">${t('system_settings')}</span>
-        <span class="profile-row-arrow">›</span>
-      </div>
-      <div class="profile-row" onclick="restartClawcross()">
-        <span class="profile-row-icon">🔄</span>
-        <span class="profile-row-label">${t('restart_clawcross')}</span>
-        <span class="profile-row-arrow">›</span>
-      </div>
-      <div class="profile-row" onclick="openMobileUpdateModal()">
-        <span class="profile-row-icon">⬆️</span>
-        <span class="profile-row-label">${_currentLang === 'zh' ? '检查更新' : 'Check Update'}</span>
-        <span class="profile-row-arrow">›</span>
-      </div>
-      <div class="profile-row" onclick="showAbout()">
-        <span class="profile-row-icon">ℹ️</span>
-        <span class="profile-row-label">${t('about')}</span>
-        <span class="profile-row-arrow">›</span>
-      </div>
-      <div class="profile-row" onclick="openSessionsSubpage()">
-        <span class="profile-row-icon">🔍</span>
-        <span class="profile-row-label">${t('session_tracker') || '会话追踪'}</span>
-        <span class="profile-row-arrow">›</span>
-      </div>
-    </div>
-
-    <div class="profile-section">
-      <div class="profile-row" style="display:flex;align-items:center;gap:8px;padding:12px 14px;">
-        <span class="profile-row-icon">🌐</span>
-        <span class="profile-row-label" style="flex:1;">${t('language_label')}</span>
-        <div class="segmented">
-          <button type="button" onclick="setLang('zh')" class="${_currentLang === 'zh' ? 'active' : ''}">中文</button>
-          <button type="button" onclick="setLang('en')" class="${_currentLang === 'en' ? 'active' : ''}">English</button>
+      ${row(t('system_settings'), 'settings', 'showSettingsInfo()', 'gray')}
+      <div class="profile-row profile-language-row">
+        <span class="profile-row-icon profile-icon-blue">${icon('languages')}</span>
+        <span class="profile-row-label">${t('language_label')}</span>
+        <div class="segmented" role="group" aria-label="${esc(t('language_label'))}">
+          <button type="button" onclick="setLang('zh')" aria-pressed="${_currentLang === 'zh'}" class="${_currentLang === 'zh' ? 'active' : ''}">中文</button>
+          <button type="button" onclick="setLang('en')" aria-pressed="${_currentLang === 'en'}" class="${_currentLang === 'en' ? 'active' : ''}">English</button>
         </div>
       </div>
     </div>
 
-    <button class="profile-logout-btn" onclick="doLogout()">${t('logout')}</button>
+    <div class="profile-section">
+      ${row(_currentLang === 'zh' ? '检查更新' : 'Check for Updates', 'arrow-up-circle', 'openMobileUpdateModal()', 'green')}
+      ${row(t('about'), 'compass', 'showAbout()', 'amber')}
+      ${row(t('restart_clawcross'), 'refresh', 'restartClawcross()', 'gray')}
+    </div>
+
+    <button type="button" class="profile-logout-btn" onclick="doLogout()">${t('logout')}</button>
   `;
 }
 
