@@ -14,7 +14,7 @@ from webot.context_limits import resolve_history_message_limits
 from webot.session_summary import build_session_summary
 from webot.compression import apply_compression, commit_prepared_compression, make_llm_summarizer, static_compression_view
 from webot.profiles import is_subagent_session
-from webot.runtime_settings import get_runtime_settings, resolve_context_window, resolve_context_history_budget, context_usage_with_window
+from webot.runtime_settings import get_runtime_settings, resolve_context_window, resolve_context_history_budget, context_usage_with_window, resolve_compaction_target, resolve_compaction_summary_budget
 from webot.runtime_store import delete_agent_runtime_db
 from webot.subagents import delete_subagent_by_session
 
@@ -242,7 +242,8 @@ class SessionService:
                 checkpoint_store_path=store_path,
                 preserve_recent=preserve_recent,
                 summarizer=make_llm_summarizer(
-                    model=settings.summarizer_model or last_model or None, max_output_tokens=settings.summary_tokens,
+                    model=settings.summarizer_model or last_model or None,
+                    max_output_tokens=resolve_compaction_summary_budget(settings, min(budget, resolve_compaction_target(settings, budget))),
                     input_token_budget=settings.summarizer_input_tokens,
                     preserve_instructions=settings.preserve_instructions,
                 ),

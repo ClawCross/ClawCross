@@ -38,7 +38,7 @@ from webot.checkpoint_repository import (
     save_context_compaction,
 )
 from webot.context_compressor import _msg_tokens, estimate_messages_tokens, _approx_tokens
-from webot.runtime_settings import ContextSettings, resolve_compaction_target
+from webot.runtime_settings import ContextSettings, resolve_compaction_target, resolve_compaction_summary_budget
 
 # Lazy imports for things that pull heavy modules
 # - webot.context._store_runtime_text / _runtime_artifacts_enabled
@@ -381,8 +381,8 @@ def _mechanical_summarizer(previous_summary: str, segment: list[BaseMessage], ta
 def make_llm_summarizer(
     *,
     model: Optional[str] = None,
-    max_output_tokens: int = 2000,
-    input_token_budget: int = 8000,
+    max_output_tokens: int = 8000,
+    input_token_budget: int = 32000,
     preserve_instructions: str = "",
 ) -> SummarizerFn:
     """Build a summarizer that calls an LLM to compress the segment.
@@ -787,8 +787,8 @@ def apply_compression(
                      else max(1, min(10_000, int(history_token_budget * _target_ratio()))))
     trigger_tokens = min(trigger_tokens, history_token_budget)
     target_tokens = min(target_tokens, max(1, trigger_tokens - 1))
-    summary_cap = min(settings.summary_tokens if settings else max(1, int(history_token_budget * _summary_ratio())),
-                      max(1, target_tokens // 3))
+    summary_cap = (resolve_compaction_summary_budget(settings, target_tokens) if settings else
+                   min(max(1, int(history_token_budget * _summary_ratio())), max(1, target_tokens * 4 // 5)))
     if settings:
         preserve_recent_val = len(messages) - _recent_turn_boundary(messages, settings.preserve_recent_turns)
     if emergency:
@@ -888,6 +888,7 @@ def apply_compression(
         )
     metadata = {
         "trigger_tokens": trigger_tokens, "target_tokens": target_tokens,
+        "summary_budget_tokens": summary_cap,
         "preserve_recent": preserve_recent_val, "new_message_count": new_count,
         "before_tokens": view_tokens, "after_tokens": new_tokens,
         "duration_ms": round((time.monotonic() - started) * 1000),

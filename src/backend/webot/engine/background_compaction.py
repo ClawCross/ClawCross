@@ -15,7 +15,7 @@ from webot.compression import apply_compression, commit_prepared_compression, ma
 from webot.context_compressor import estimate_messages_tokens
 from webot.policy import get_tool_policy, run_tool_policy_hooks
 from webot.runtime import effective_session_mode
-from webot.runtime_settings import ContextSettings, resolve_compaction_target
+from webot.runtime_settings import ContextSettings, resolve_compaction_target, resolve_compaction_summary_budget
 
 logger = logging.getLogger("webot.background_compaction")
 
@@ -171,7 +171,7 @@ class BackgroundCompressionManager:
                 preserve_recent=preserve_recent,
                 summarizer=make_llm_summarizer(
                     model=settings.summarizer_model or model or None,
-                    max_output_tokens=settings.summary_tokens,
+                    max_output_tokens=resolve_compaction_summary_budget(prepared_settings, target),
                     input_token_budget=settings.summarizer_input_tokens,
                     preserve_instructions=settings.preserve_instructions,
                 ),

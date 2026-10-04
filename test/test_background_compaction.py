@@ -10,11 +10,50 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src' / 'backend'))
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from webot.engine.background_compaction import BackgroundCompressionManager
 from webot.runtime_settings import ContextSettings
-from webot.compression import CompressionResult
+from webot.compression import CompressionResult, compression_view_from_record
 from webot.checkpoint_repository import get_context_compaction
 
 
 class BackgroundCompactionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_messages_appended_during_compression_are_spliced_once_after_the_summary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            manager = BackgroundCompressionManager(str(Path(tmp) / 'context.db'))
+            messages = [message for i in range(12) for message in (
+                HumanMessage(content=f'old request {i}: ' + '中' * 1000), AIMessage(content=f'old reply {i}'))]
+            snapshot_count = len(messages)
+            started, release = threading.Event(), threading.Event()
+            def summarize(*args):
+                started.set()
+                if not release.wait(5):
+                    raise RuntimeError('test did not release the summarizer')
+                return '- Task state: original requests and completed work.'
+            with patch('webot.engine.background_compaction.make_llm_summarizer', return_value=summarize) as factory, \
+                    patch('webot.engine.background_compaction.fetch_thread_message_count',
+                          AsyncMock(side_effect=lambda *a: len(messages))):
+                manager.schedule(user_id='alice', session_id='s', messages=messages,
+                    history_token_budget=10_000, preserve_recent=8, settings=ContextSettings())
+                task = manager._tasks['alice#s']
+                try:
+                    self.assertTrue(await asyncio.to_thread(started.wait, 2))
+                    appended = [HumanMessage(content='NEW REQUEST DURING COMPRESSION'),
+                        AIMessage(content='', tool_calls=[{'name':'read_file','args':{},'id':'new-call'}]),
+                        ToolMessage(content='NEW TOOL RESULT DURING COMPRESSION', tool_call_id='new-call'),
+                        AIMessage(content='NEW REPLY DURING COMPRESSION')]
+                    messages.extend(appended)
+                finally:
+                    release.set()
+                await task
+            record = get_context_compaction(manager.checkpoint_store_path, 'alice#s')
+            self.assertEqual(record.source_message_count, snapshot_count)
+            self.assertLessEqual(record.compacted_until, snapshot_count)
+            view = compression_view_from_record(record, messages)
+            self.assertEqual(view[1:], messages[record.compacted_until:])
+            self.assertEqual(view[-len(appended):], appended)
+            self.assertEqual(sum(msg.content == appended[0].content for msg in view), 1)
+            self.assertEqual(sum(isinstance(msg, ToolMessage) and msg.tool_call_id == 'new-call' for msg in view), 1)
+            self.assertEqual(factory.call_args.kwargs['max_output_tokens'], record.metadata['summary_budget_tokens'])
+            await manager.close()
+
     async def test_one_tool_turn_compacts_to_a_small_target_without_waiting_for_overflow(self):
         with tempfile.TemporaryDirectory() as tmp:
             manager = BackgroundCompressionManager(str(Path(tmp) / 'context.db'))

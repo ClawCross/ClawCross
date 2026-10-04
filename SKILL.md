@@ -537,14 +537,14 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-10-04T12:05:44.523064+00:00`
+- Updated at: `2026-10-04T12:28:33.594669+00:00`
 - Strategy: `harden`
-- Heuristic candidate: `blended-verification-loop-structured-output`
+- Heuristic candidate: `blended-verification-loop-workspace-preflight-approval-auth`
 - Heuristic score: `0.685`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: (external failure context). Signals: verification-loop, structured-output. stdout was used as fallback failure evidence.
+Command exited with code 1. Command: (external failure context). Signals: verification-loop, workspace-preflight, approval-auth. stdout was used as fallback failure evidence.
 
 ### Strategy Rationale
 
@@ -558,9 +558,37 @@ Command exited with code 1. Command: (external failure context). Signals: verifi
 ### Latest Error Excerpt
 
 ```text
-Restricted execution test stalled after 21 cases. The same isolated test suite passed outside the restricted execution environment: 45 passed, 18 subtests passed in 2.67s.
-The first cleanup script tried parsing the ps header as a PID: ValueError: invalid literal for int() with base 10: PID. Fixed by matching the known numeric PID as a string.
-Run background compaction tests that use cross-thread asyncio callbacks with local event-loop communication permitted. Always skip process table headers and match only the task-specific test command when cleaning up.
+.......F.........F................................     [100%]
+=================================== FAILURES ===================================
+_ CompactSettingsTests.test_manual_compression_folds_all_eligible_history_with_a_large_window _
+
+self = <test.test_compact_settings.CompactSettingsTests testMethod=test_manual_compression_folds_all_eligible_history_with_a_large_window>
+
+    def test_manual_compression_folds_all_eligible_history_with_a_large_window(self):
+        result = c.apply_compression(user_id='alice', session_id='s', messages=self.messages,
+            history_token_budget=800000, checkpoint_store_path=self.path, force=True,
+            settings=ContextSettings(preserve_recent_turns=2), summarizer=lambda *a: 'key decisions')
+        self.assertTrue(result.triggered)
+>       self.assertEqual(result.compacted_until, len(self.messages) - 8)
+E       AssertionError: 43 != 40
+
+test/test_compact_settings.py:244: AssertionError
+____ CompactSettingsTests.test_summary_cap_applies_without_runtime_settings ____
+
+self = <test.test_compact_settings.CompactSettingsTests testMethod=test_summary_cap_applies_without_runtime_settings>
+
+    def test_summary_cap_applies_without_runtime_settings(self):
+        result = c.apply_compression(user_id="alice", session_id="s", messages=self.messages,
+            history_token_budget=6000, checkpoint_store_path=self.path, preserve_recent=4,
+            summarizer=lambda *a: "中" * 4000)
+        self.assertTrue(result.triggered)
+>       self.assertLessEqual(c._approx_tokens(result.view[0].content), result.metadata["target_tokens"] // 3)
+E       AssertionError: 480 not less than or equal to 200
+
+test/test_compact_settings.py:227: AssertionError
+=========================== short test summary info ============================
+FAILED test/test_compact_settings.py::CompactSettingsTests::test_manual_compression_folds_all_eligible_history_with_a_large_window
+FAILED test/test_compact_settings.py::CompactSettingsTests::test_ ...[truncated]
 ```
 
 ### Governance Snapshot
@@ -583,13 +611,15 @@ Run background compaction tests that use cross-thread asyncio callbacks with loc
 
 ### Recent Evidence
 
-- `2026-10-04T12:05:44.523064+00:00` `repo-skill` — Restricted execution test stalled after 21 cases. The same isolated test suite passed outside the restricted execution environment: 45 passed, ...[truncated]
+- `2026-10-04T12:28:33.594669+00:00` `repo-skill` — .......F.........F................................     [100%]
+=================================== FAILURES =================================== ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `blended-verification-loop-structured-output` score `0.685` — Blend the strongest recent failure patterns (intent `repair`)
-- `verification-loop-2` score `0.645` — Tighten verification loops (intent `repair`)
-- `structured-output-1` score `0.531` — Harden structured-output handling (intent `repair`)
+- `blended-verification-loop-workspace-preflight-approval-auth` score `0.685` — Blend the strongest recent failure patterns (intent `repair`)
+- `verification-loop-4` score `0.645` — Tighten verification loops (intent `repair`)
+- `workspace-preflight-1` score `0.475` — Add repo/workspace preflight checks (intent `repair`)
+- `approval-auth-1` score `0.475` — Preflight auth and approval constraints (intent `repair`)
 
 ### Local State Snapshot
 

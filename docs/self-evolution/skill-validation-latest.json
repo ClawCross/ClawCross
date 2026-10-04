@@ -1,8 +1,8 @@
 {
   "type": "ValidationReport",
   "schema_version": "clawcross.skill-evolution/1.0",
-  "id": "vr_20261004120544522901",
-  "candidate_id": "blended-verification-loop-structured-output",
+  "id": "vr_20261004122833594522",
+  "candidate_id": "blended-verification-loop-workspace-preflight-approval-auth",
   "skill_name": "repo-skill",
   "strategy": "harden",
   "env_fingerprint": {
@@ -14,18 +14,18 @@
     "user_id": "",
     "skill_name": "repo-skill",
     "present_env_keys": [],
-    "captured_at": "2026-10-04T12:05:44.522843+00:00"
+    "captured_at": "2026-10-04T12:28:33.594490+00:00"
   },
   "commands": [
     {
       "command": "(external failure context)",
       "ok": false,
-      "stdout": "Restricted execution test stalled after 21 cases. The same isolated test suite passed outside the restricted execution environment: 45 passed, 18 subtests passed in 2.67s.\nThe first cleanup script tried parsing the ps header as a PID: ValueError: invalid literal for int() with base 10: PID. Fixed by matching the known numeric PID as a string.\nRun background compaction tests that use cross-thread asyncio callbacks with local event-loop communication permitted. Always skip process table headers and match only the task-specific test command when cleaning up.",
+      "stdout": ".......F.........F................................     [100%]\n=================================== FAILURES ===================================\n_ CompactSettingsTests.test_manual_compression_folds_all_eligible_history_with_a_large_window _\n\nself = <test.test_compact_settings.CompactSettingsTests testMethod=test_manual_compression_folds_all_eligible_history_with_a_large_window>\n\n    def test_manual_compression_folds_all_eligible_history_with_a_large_window(self):\n        result = c.apply_compression(user_id='alice', session_id='s', messages=self.messages,\n            history_token_budget=800000, checkpoint_store_path=self.path, force=True,\n            settings=ContextSettings(preserve_recent_turns=2), summarizer=lambda *a: 'key decisions')\n        self.assertTrue(result.triggered)\n>       self.assertEqual(result.compacted_until, len(self.messages) - 8)\nE       AssertionError: 43 != 40\n\ntest/test_compact_settings.py:244: AssertionError\n____ CompactSettingsTests.test_summary_cap_applies_without_runtime_settings ____\n\nself = <test.test_compact_settings.CompactSettingsTests testMethod=test_summary_cap_applies_without_runtime_settings>\n\n    def test_summary_cap_applies_without_runtime_settings(self):\n        result = c.apply_compression(user_id=\"alice\", session_id=\"s\", messages=self.messages,\n            history_token_budget=6000, checkpoint_store_path=self.path, preserve_recent=4,\n            summarizer=lambda *a: \"中\" * 4000)\n        self.assertTrue(result.triggered)\n>       self.assertLessEqual(c._approx_tokens(result.view[0].content), result.metadata[\"target_tokens\"] // 3)\nE       AssertionError: 480 not less than or equal to 200\n\ntest/test_compact_settings.py:227: AssertionError\n=========================== short test summary info ============================\nFAILED test/test_compact_settings.py::CompactSettingsTests::test_manual_compression_folds_all_eligible_history_with_a_large_window\nFAILED test/test_compact_settings.py::CompactSettingsTests::test_summary_cap_applies_without_runtime_settings\n2 failed, 48 passed, 18 subtests passed in 2.89s",
       "stderr": ""
     }
   ],
   "overall_ok": false,
   "duration_ms": null,
-  "created_at": "2026-10-04T12:05:44.522931+00:00",
-  "asset_id": "sha256:64d7931bfe33c37982923f386e233769e276ea30a4e1feab6dad1e40b1a1fae0"
+  "created_at": "2026-10-04T12:28:33.594545+00:00",
+  "asset_id": "sha256:56b5ff3937e031920b7a4670821f0d6ab4af6211e16380bb14a22d26a131e3b6"
 }

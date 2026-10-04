@@ -1,12 +1,12 @@
 # Repository Skill Self-Evolution Report
 
 - Skill file: `/home/ubuntu/work2/ClawCross/SKILL.md`
-- Generated at: `2026-10-04T12:05:44.523064+00:00`
+- Generated at: `2026-10-04T12:28:33.594669+00:00`
 - Exit code: `1`
 
 ## Summary
 
-Command exited with code 1. Command: (external failure context). Signals: verification-loop, structured-output. stdout was used as fallback failure evidence.
+Command exited with code 1. Command: (external failure context). Signals: verification-loop, workspace-preflight, approval-auth. stdout was used as fallback failure evidence.
 
 ## stderr
 
@@ -17,7 +17,24 @@ Command exited with code 1. Command: (external failure context). Signals: verifi
 ## stdout
 
 ```text
-Restricted execution test stalled after 21 cases. The same isolated test suite passed outside the restricted execution environment: 45 passed, 18 subtests passed in 2.67s.
-The first cleanup script tried parsing the ps header as a PID: ValueError: invalid literal for int() with base 10: PID. Fixed by matching the known numeric PID as a string.
-Run background compaction tests that use cross-thread asyncio callbacks with local event-loop communication permitted. Always skip process table headers and match only the task-specific test command when cleaning up.
+.......F.........F................................     [100%]
+=================================== FAILURES ===================================
+_ CompactSettingsTests.test_manual_compression_folds_all_eligible_history_with_a_large_window _
+
+self = <test.test_compact_settings.CompactSettingsTests testMethod=test_manual_compression_folds_all_eligible_history_with_a_large_window>
+
+    def test_manual_compression_folds_all_eligible_history_with_a_large_window(self):
+        result = c.apply_compression(user_id='alice', session_id='s', messages=self.messages,
+            history_token_budget=800000, checkpoint_store_path=self.path, force=True,
+            settings=ContextSettings(preserve_recent_turns=2), summarizer=lambda *a: 'key decisions')
+        self.assertTrue(result.triggered)
+>       self.assertEqual(result.compacted_until, len(self.messages) - 8)
+E       AssertionError: 43 != 40
+
+test/test_compact_settings.py:244: AssertionError
+____ CompactSettingsTests.test_summary_cap_applies_without_runtime_settings ____
+
+self = <test.test_compact_settings.CompactSettingsTests testMethod=test_summary_cap_applies_without_runtime_settings>
+
+    def test_summary_cap_applies_w ...[truncated]
 ```
