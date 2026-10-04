@@ -19,6 +19,30 @@ from webot.workspace import resolve_session_workspace
 
 
 class WeBotWorkspaceTests(unittest.TestCase):
+    def test_agent_launch_directory_is_effective_but_strict_ignores_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            project = base / 'project'; project.mkdir()
+            config = {'workspace_root': str(project)}
+            with patch.object(webot_workspace, 'WORKSPACE_DIR', base / 'workspace'):
+                normal = resolve_session_workspace('alice', 'cli-agent', agent_config=config)
+                self.assertEqual(normal.root, project)
+                self.assertEqual(normal.cwd, project)
+                with self.assertRaises(ValueError):
+                    resolve_session_workspace('alice', 'cli-agent', explicit_cwd='..', agent_config=config)
+                with patch('webot.runtime_settings.get_runtime_settings', return_value=SimpleNamespace(
+                        approval=SimpleNamespace(sandbox_security='strict'))):
+                    strict = resolve_session_workspace('alice', 'cli-agent', agent_config=config)
+                self.assertEqual(strict.mode, 'strict')
+                self.assertFalse(strict.root.is_relative_to(project))
+
+    def test_workspace_cannot_encompass_backend_controls(self):
+        from common.runtime_paths import CONFIG_DIR
+        with self.assertRaises(ValueError):
+            webot_workspace.configured_workspace_root(str(CONFIG_DIR))
+        with self.assertRaises(ValueError):
+            webot_workspace.configured_workspace_root('relative/path')
+
     def test_security_levels_use_clean_roots_without_moving_existing_files(self):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)

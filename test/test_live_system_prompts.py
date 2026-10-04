@@ -52,7 +52,7 @@ def test_internal_rereads_files_persona_profile_and_soul(prompt_sources, monkeyp
     for part in ("BASE", "RULES", "PERSONA", "PROFILE", "SOUL"):
         assert f"{part}-2" in updated
         assert f"{part}-1" not in updated
-    assert "same-session" in updated
+    assert "WORKSPACE" not in updated  # current workspace belongs in the dynamic block
 
 
 def test_external_identity_uses_the_dynamic_snapshot_and_retries_until_delivered(prompt_sources, tmp_path):

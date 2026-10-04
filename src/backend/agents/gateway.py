@@ -170,8 +170,15 @@ class AgentGateway:
             raise ControlError(f"{agent.platform} agents do not support {action}")
         return await self.runtime(agent).control(agent, action)
 
-    async def history(self, agent: Agent, limit: int = 200) -> list[dict[str, Any]]:
+    async def history(self, agent: Agent, limit: int = 200, *, source: str = 'clawcross') -> list[dict[str, Any]]:
         """The agent's own conversation, oldest first: ``[{role, content, tool_calls?}]``."""
+        if source == 'acpx':
+            read = getattr(self.runtime(agent), 'transport_history', None)
+            if read is None:
+                raise ControlError('This Agent does not use acpx')
+            return await read(agent, limit)
+        if source != 'clawcross':
+            raise ControlError('Unknown history source')
         return await self.runtime(agent).history(agent, limit)
 
     async def fork(self, parent: Agent, child: Agent) -> int:

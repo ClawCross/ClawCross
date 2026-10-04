@@ -18,7 +18,7 @@ id that is not there yet makes that agent — ``platform`` says of which runtime
 
 from __future__ import annotations
 
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Literal
 
 from fastapi import APIRouter, Header, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -43,7 +43,7 @@ from common.auth_utils import extract_user_password_session, is_internal_bearer,
 
 # Settings a caller may set; everything else in a driver's config is its own.
 # ``title`` names the work the session is doing (the agent or the user sets it).
-_SHARED_SETTINGS = ("persona", "title")
+_SHARED_SETTINGS = ("persona", "title", "workspace_root")
 TITLE_MAX = 80
 
 
@@ -59,6 +59,7 @@ class AgentCreate(BaseModel):
     name: str = ""
     platform: str = WEBOT
     persona: str = ""        # its persona: the text itself (a library persona is copied in)
+    workspace_root: str = ""  # empty: clean user workspace; CLI creation supplies its cwd
     tools: list[str] | None = None  # the tools it has; none: all of them
     api_url: str = ""
     api_key: str = ""
@@ -83,6 +84,7 @@ class AgentMessageRequest(BaseModel):
     response_format: dict | None = None  # OpenAI response_format
     timeout: float | None = None  # seconds; 0 waits as long as the agent takes; none: the runtime's default
     platform: str = ""       # the runtime of a new agent
+    workspace_root: str = ""  # only used when this message creates the Agent
     inbox_sender: str = Field('', max_length=160)  # trusted local composition only
     inbox_summary: str = Field('', max_length=256)
 
@@ -142,8 +144,11 @@ def runtime_of(platform: str) -> tuple[str, dict[str, Any]]:
 
 
 def new_agent_config(body: AgentCreate) -> tuple[str, dict[str, Any]]:
+    from webot.workspace import configured_workspace_root
     driver, config = runtime_of(body.platform)
     config.update({"persona": body.persona.strip()})
+    if body.workspace_root:
+        config['workspace_root'] = configured_workspace_root(body.workspace_root)
     if driver == WEBOT and body.tools is not None:
         config["tools"] = body.tools
     if driver in (WEBOT, LLM):
@@ -187,7 +192,7 @@ def create_agents_router(
             raise HTTPException(status_code=404, detail=f"no agent {ref!r}")
         return agent
 
-    def target(user: str, ref: str, platform: str) -> Agent:
+    def target(user: str, ref: str, platform: str, workspace_root: str = '') -> Agent:
         """The agent a message goes to; an id not seen before is a new agent."""
         agent = find(user, ref)
         if agent is not None:
@@ -195,6 +200,12 @@ def create_agents_router(
         if not valid_agent_id(ref):
             raise HTTPException(status_code=404, detail=f"no agent {ref!r}")
         driver, config = runtime_of(platform)
+        if workspace_root:
+            from webot.workspace import configured_workspace_root
+            try:
+                config['workspace_root'] = configured_workspace_root(workspace_root)
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from exc
         if driver == HTTP:
             raise HTTPException(status_code=400, detail=f"{platform!r} needs an endpoint: create it with POST /v1/agents")
         return store.ensure(user, ref, driver=driver, config=config)
@@ -352,7 +363,7 @@ def create_agents_router(
     @router.post("/v1/agents/{ref}/messages")
     async def message_agent(ref: str, body: AgentMessageRequest, authorization: str | None = Header(None)):
         user = user_of(authorization)
-        agent = target(user, ref, body.platform)
+        agent = target(user, ref, body.platform, body.workspace_root)
         reply = await gateway.ask(
             agent, message(user, body), context=body.context, mode=body.mode, enabled_tools=body.enabled_tools,
             response_format=body.response_format, timeout=NO_TIMEOUT if body.timeout == 0 else body.timeout,
@@ -364,7 +375,7 @@ def create_agents_router(
         user = user_of(authorization)
         if (body.inbox_sender or body.inbox_summary or body.context.get('group_human_requests')) and (not internal_token or authorization != f'Bearer {internal_token}:{user}'):
             raise HTTPException(403, '只有本机服务可以指定 inbox 来源')
-        agent = target(user, ref, body.platform)
+        agent = target(user, ref, body.platform, body.workspace_root)
         msg = message(user, body)
         msg.sender = body.inbox_sender or msg.sender
         msg.summary = body.inbox_summary
@@ -380,10 +391,11 @@ def create_agents_router(
             raise HTTPException(status_code=400, detail=str(exc))
 
     @router.get("/v1/agents/{ref}/history")
-    async def agent_history(ref: str, limit: int = Query(200, ge=1, le=1000), authorization: str | None = Header(None)):
+    async def agent_history(ref: str, limit: int = Query(200, ge=1, le=1000), source: Literal['clawcross', 'acpx'] = Query('clawcross'), authorization: str | None = Header(None)):
         agent = lookup(user_of(authorization), ref)
         try:
-            return {"agent": agent_card(agent), "messages": await gateway.history(agent, limit)}
+            messages = await gateway.history(agent, limit, source=source) if source == 'acpx' else await gateway.history(agent, limit)
+            return {"agent": agent_card(agent), "messages": messages, "source": source}
         except ControlError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
@@ -400,6 +412,12 @@ def create_agents_router(
         if unknown:
             raise HTTPException(status_code=400, detail=f"unknown settings for {agent.platform}: {unknown}")
         config = {**agent.config, **body.settings}
+        if 'workspace_root' in body.settings:
+            from webot.workspace import configured_workspace_root
+            try:
+                config['workspace_root'] = configured_workspace_root(body.settings['workspace_root'])
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from exc
         if "title" in body.settings:
             config["title"] = session_title(body.settings["title"])
         if agent.driver != WEBOT and body.settings.get("api_key") == "":

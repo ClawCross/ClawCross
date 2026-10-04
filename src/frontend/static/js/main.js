@@ -131,7 +131,7 @@ const i18n = {
         hmenu_agent_center: 'Agent 中心',
         hmenu_settings: '设置',
         hmenu_new: '新对话',
-        hmenu_oasis: 'TeamsWork',
+        hmenu_oasis: '工作流运行',
         hmenu_logout: '退出',
         hmenu_lang: '语言',
         hmenu_public: '公开',
@@ -345,11 +345,11 @@ const i18n = {
         file_placeholder: '(文件)',
 
         // OASIS
-        oasis_title: 'TeamsWork 讨论论坛',
-        oasis_subtitle: '多专家并行讨论系统',
-        oasis_topics: '📋 讨论话题',
+        oasis_title: '工作流运行',
+        oasis_subtitle: '查看运行中和已结束的工作流实例',
+        oasis_topics: '运行列表',
         oasis_topics_count: '个话题',
-        oasis_no_topics: '暂无讨论话题',
+        oasis_no_topics: '暂无工作流运行记录',
         oasis_start_hint: '在聊天中让 Agent 发起 TeamsWork 讨论',
         oasis_back: '← 返回',
         oasis_conclusion: '讨论结论',
@@ -925,7 +925,7 @@ const i18n = {
         hmenu_agent_center: 'Agent Center',
         hmenu_settings: 'Settings',
         hmenu_new: 'New Chat',
-        hmenu_oasis: 'TeamsWork',
+        hmenu_oasis: 'Workflow runs',
         hmenu_logout: 'Logout',
         hmenu_lang: 'Language',
         hmenu_public: 'Public',
@@ -1139,11 +1139,11 @@ const i18n = {
         file_placeholder: '(file)',
 
         // OASIS
-        oasis_title: 'TeamsWork Discussion Forum',
-        oasis_subtitle: 'Multi-Expert Parallel Discussion System',
-        oasis_topics: '📋 Discussion Topics',
+        oasis_title: 'Workflow runs',
+        oasis_subtitle: 'Active and completed workflow instances',
+        oasis_topics: 'Run list',
         oasis_topics_count: 'topics',
-        oasis_no_topics: 'No discussion topics',
+        oasis_no_topics: 'No workflow runs yet',
         oasis_start_hint: 'Ask Agent to start a TeamsWork discussion in chat',
         oasis_back: '← Back',
         oasis_conclusion: 'Conclusion',
@@ -6854,20 +6854,25 @@ function getEnabledTools() {
 }
 
 // ── Run mode (permission mode) ──────────────────────────────────────────────
-// Chat / read-only / human review / automatic review / bypass. Persisted in localStorage.
+// Per-Agent server settings are authoritative; localStorage is a display cache.
 const RUN_MODE_VALID = ['chat', 'readonly', 'manual', 'auto', 'bypass'];
 const RUN_MODE_DEFAULT = 'auto';
 const RUN_MODE_STORAGE_KEY = 'clawRunMode';
 
+function agentRunModeKey() {
+    const target = window.ExternalAgentSettings?.currentTarget() || currentSessionId || '';
+    return RUN_MODE_STORAGE_KEY + ':' + (currentUserId || '') + ':' + target;
+}
+
 function getRunMode() {
-    const raw = (localStorage.getItem(RUN_MODE_STORAGE_KEY) || '').trim().toLowerCase();
+    const raw = (localStorage.getItem(agentRunModeKey()) || '').trim().toLowerCase();
     const mode = {plan: 'readonly', yolo: 'bypass'}[raw] || raw;
     return RUN_MODE_VALID.includes(mode) ? mode : RUN_MODE_DEFAULT;
 }
 
 function setRunMode(mode) {
     const normalized = RUN_MODE_VALID.includes(mode) ? mode : RUN_MODE_DEFAULT;
-    localStorage.setItem(RUN_MODE_STORAGE_KEY, normalized);
+    localStorage.setItem(agentRunModeKey(), normalized);
     const sel = document.getElementById('oc-run-mode');
     if (sel) {
         sel.value = normalized;
@@ -6878,11 +6883,16 @@ function setRunMode(mode) {
 async function onRunModeChange() {
     const sel = document.getElementById('oc-run-mode');
     setRunMode(sel ? sel.value : RUN_MODE_DEFAULT);
-    if (currentSessionId) {
-        const target = window.ExternalAgentSettings?.currentTarget() || currentSessionId;
-        let card;
-        try { card = await window.ExternalAgentSettings?.capabilities(target); } catch (_) { /* New WeBot session. */ }
-        if ((!card || card.transport === 'webot') && target === (window.ExternalAgentSettings?.currentTarget() || currentSessionId)) updateWeBotSessionMode(target, getRunMode());
+    const target = window.ExternalAgentSettings?.currentTarget() || currentSessionId;
+    if (target) {
+        try {
+            const response = await fetch('/proxy_webot_runtime_settings', {method:'POST', headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({session_id:target, settings:{approval:{mode:getRunMode()}}})});
+            if (!response.ok) throw new Error('Failed to save Agent mode');
+        } catch (error) {
+            if (typeof showToast === 'function') showToast(error.message);
+            syncAgentRunMode(target);
+        }
     }
 }
 
@@ -6890,16 +6900,27 @@ function initRunModeUI() {
     const sel = document.getElementById('oc-run-mode');
     if (!sel) return;
     setRunMode(getRunMode());
+    syncAgentRunMode();
 }
 
-// Apply run-mode semantics to an outgoing chat payload.
-// Every runtime takes the run mode as session_mode and applies it its own way.
+let agentModeLoadSequence = 0;
+async function syncAgentRunMode(target = window.ExternalAgentSettings?.currentTarget() || currentSessionId) {
+    if (!target) return;
+    const sequence = ++agentModeLoadSequence;
+    try {
+        const response = await fetch('/proxy_webot_runtime_settings?session_id=' + encodeURIComponent(target));
+        if (!response.ok) return;
+        const data = await response.json();
+        if (sequence !== agentModeLoadSequence || target !== (window.ExternalAgentSettings?.currentTarget() || currentSessionId)) return;
+        setRunMode(data.effective_mode || data.settings.approval.mode);
+    } catch (_) { /* Keep the cached label; the backend still applies its saved mode. */ }
+}
+
+// Persisted Agent mode is resolved by the backend for all chat transports.
 function applyRunModeToPayload(payload) {
-    const mode = getRunMode();
-    payload.session_mode = mode;  // each runtime applies it its own way
-    if (mode === 'chat') {
-        payload.enabled_tools = [];
-    }
+    // The backend reads this Agent's persisted mode; browser caches never
+    // override another Agent or a setting changed in another browser.
+    delete payload.session_mode;
 }
 
 async function loadTools() {
@@ -9330,6 +9351,15 @@ function toggleOasisTownAudio() {
 function formatTime(ts) {
     const d = new Date(ts * 1000);
     return d.toLocaleTimeString(currentLang === 'zh-CN' ? 'zh-CN' : 'en-US', { hour: '2-digit', minute: '2-digit' });
+}
+
+function openWorkflowRuns() {
+    const panel = document.getElementById('oasis-panel');
+    oasisPanelOpen = true;
+    panel.classList.remove('collapsed-panel');
+    panel.classList.toggle('mobile-open', window.innerWidth < 768);
+    showOasisTopicList();
+    syncOasisTownAudioState();
 }
 
 function toggleOasisPanel() {

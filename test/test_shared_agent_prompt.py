@@ -86,7 +86,8 @@ class SharedPromptTests(unittest.TestCase):
                  patch.object(engine,'_get_internal_session_persona_prompt',return_value='PERSONA'):
                 first=engine._build_live_system_prompt('alice','same-session',False)[0]
                 self.assertIn('BASE RULE ONE',first)
-                for part in ('PERSONA','PROFILE','SOUL','WORKSPACE'):self.assertIn(part,first)
+                for part in ('PERSONA','PROFILE','SOUL'):self.assertIn(part,first)
+                self.assertNotIn('WORKSPACE',first)
                 (prompts/'conversation_rules.txt').write_text('RULE TWO')
                 current=engine._build_live_system_prompt('alice','same-session',False)[0]
                 self.assertIn('BASE RULE TWO',current)

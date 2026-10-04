@@ -110,6 +110,14 @@ The browser uses these APIs for runtime inspection and controls. Studio refreshe
 
 ### Frontend optional components
 
+Studio 和 Mobile 的上下文、审核模式和命令沙盒设置均保存到当前 Agent，不从页面向整个群聊广播同一模式。群聊唤醒各 Agent 时使用其自身持久化模式。外部 Agent 的页面仅设置 ClawCross 工具的审核与沙盒；原生模型窗口与压缩由外部运行时负责。
+
+Studio 的输入框加号、Mobile 首页加号及对话输入框加号提供“工作流运行”，打开 OASIS 工作流实例列表。Mobile 顶部不再放工作流按钮；消息首页和对话页顶部提供直接进入 `/studio` 的按钮。
+
+Mobile Agent 详情提供当前 Agent 设置；主端历史默认显示 ClawCross 最近 200 条记录，可折叠系统/动态信息和工具结果。外部 ACP Agent 可切换到 acpx 捕获的对话文本，读取不会创建或启动适配器会话；这不保证包含接入前的原生历史或完整工具轨迹。加载错误显式显示，旧请求不会覆盖新打开的 Agent 历史。
+
+前端默认绑定 `127.0.0.1`；`FRONTEND_BIND_HOST` 可显式覆盖。远端访问必须经 HTTPS：loopback 上的反向代理可提供转发头，其他来源的转发头不被信任。HTTP 远端请求仅重定向到配置的 HTTPS `PUBLIC_DOMAIN`，没有安全入口时拒绝；本机直接 HTTP 仍可用。独立 TLS 反代（如 Caddy）与显式 Cloudflare Tunnel 均可接入。
+
 Studio: 上下文与审核 → 工具审核 → 命令沙盒。Mobile: 加号里的运行模式 → 命令沙盒。
 命令沙盒默认关闭；可选 SRT、Linux Landlock 或自动选择。SRT 旁边显示组件状态及显式下载按钮，下载安装不会打开沙盒。自动选择只执行无副作用的探测命令，Linux SRT 不兼容时改用 Landlock；绝不把用户命令作为后端探测或退出隔离执行。Landlock 要求 Linux x86_64/aarch64、内核 ABI ≥ 6、libseccomp 和非 root 账号，不需要新容器或修改 AppArmor。x86_64 Linux 已实测；其他平台不据此声称已验证。
 普通安全等级允许在管理员上限内审核提权；严格等级使用独立工作区，强制隔离且不接受提权或历史授权。新默认工作区在 `~/.clawcross/workspace/users/`，严格工作区在 `workspace/strict/`，不移动已有对话或用户文件。安全设置与工具策略在 `USER_FILES_DIR/.control/`，命令配置与后台控制文件在 `CONFIG_DIR/sandbox/`，均不进入工作区。普通 Landlock 只读开放 `/proc` 以支持 `ps/top/free`；同一 Unix 账号下可读的进程环境也可见。严格 Landlock 仅开放资源统计和启动时 PID 元数据，保护进程环境，但新 PID 的 `ps/top` 查询受限。两者均可管理同一命令的子进程，跨轮后台任务使用已有查看/取消工具，不能任意控制宿主进程。详见 [命令隔离后端](command-isolation-plan.md)。

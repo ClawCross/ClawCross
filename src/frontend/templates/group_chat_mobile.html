@@ -34,8 +34,8 @@
 <link rel="stylesheet" href="/static/css/theme.css?v=20261002-fold">
 <script src="/static/js/components.js?v=20261002-runtime-menu"></script>
 <link rel="stylesheet" href="/static/css/external-agent-settings.css?v=20261002-connect">
-<script src="/static/js/runtime-presentation.js?v=20261002-fold"></script>
-<script src="/static/js/external-agent-settings.js?v=20261002-connect"></script>
+<script src="/static/js/runtime-presentation.js?v=20261004-workspace"></script>
+<script src="/static/js/external-agent-settings.js?v=20261004-agent-mode"></script>
 <script src="/static/js/approval-ui.js?v=20261003-inline-approval"></script>
 <link rel="stylesheet" href="/static/css/channel-setup.css?v=2">
 <script src="/static/js/channel-setup.js?v=2"></script>
@@ -4555,7 +4555,9 @@
 <script src="/static/js/group-network-ui.js?v=20261003-invite"></script>
 <link rel="stylesheet" href="/static/css/group-network.css?v=20261003-invite">
 <link rel="stylesheet" href="/static/css/settings-polish.css?v=20261004-settings">
-<link rel="stylesheet" href="/static/css/mobile-profile.css?v=20261004-profile">
+<link rel="stylesheet" href="/static/css/mobile-profile.css?v=20261004-navigation">
+<link rel="stylesheet" href="/static/css/runtime-settings.css?v=20261004-agent">
+<script src="/static/js/runtime-settings.js?v=20261004-agent"></script>
 </head>
 <body>
 
@@ -4596,7 +4598,7 @@
 <!-- ═══════════════ Tab: 对话 (Chats) ═══════════════ -->
 <div id="tab-chats" class="tab-page active">
   <div class="header">
-    <div style="width:32px"></div>
+    <a class="mobile-studio-link" href="/studio" title="打开 Studio"><svg class="ui-icon"><use href="/static/icons.svg#monitor"/></svg><span>Studio</span></a>
     <div class="header-title" data-i18n="header_agent_msg">Agent消息</div>
     <div style="display:flex;gap:4px;position:relative;margin-left:auto;">
       <button type="button" class="header-btn" onclick="toggleCreateMenu(event)" data-i18n-title="tip_new" title="新建"><svg class="ui-icon"><use href="/static/icons.svg#plus"/></svg></button>
@@ -4613,10 +4615,10 @@
         <button type="button" class="ui-menu-item" id="cross-device-menu-item" onclick="hideCreateMenu();toggleFleetVisible()">
           <svg class="ui-icon"><use href="/static/icons.svg#monitor"/></svg><span class="ui-menu-label" id="cross-device-menu-label">跨设备调用</span>
         </button>
+        <button type="button" class="ui-menu-item" id="mobile-workflow-runs" onclick="hideCreateMenu();openOasisSidebar()">
+          <svg class="ui-icon"><use href="/static/icons.svg#layers"/></svg><span class="ui-menu-label" data-i18n="workflow_runs">工作流运行</span>
+        </button>
       </div>
-      <button class="header-btn with-label workflow-header-btn" onclick="toggleOasisSidebar()" data-i18n-title="tip_workflow" title="选择工作流">
-        <span class="btn-label" data-i18n="workflow_short">工作流</span>
-      </button>
     </div>
   </div>
   <div class="chat-search-bar">
@@ -4659,9 +4661,7 @@
     </button>
     <div class="header-title" id="chat-title" data-i18n="header_agent_msg">Agent消息</div>
     <div style="display:flex;gap:2px;align-items:center;margin-left:auto;">
-      <button class="header-btn with-label workflow-header-btn" onclick="toggleOasisSidebar()" data-i18n-title="tip_workflow" title="选择工作流">
-        <span class="btn-label" data-i18n="workflow_short">工作流</span>
-      </button>
+      <a class="mobile-studio-link" href="/studio" title="打开 Studio"><svg class="ui-icon"><use href="/static/icons.svg#monitor"/></svg><span>Studio</span></a>
       <button type="button" class="header-btn" id="chat-more-btn" onclick="toggleChatActions()" data-i18n-title="tip_more" title="更多"><svg class="ui-icon"><use href="/static/icons.svg#more"/></svg></button>
     </div>
   </div>
@@ -4701,6 +4701,9 @@
       <div class="input-actions" id="input-actions">
         <button type="button" class="input-actions-toggle" id="input-actions-btn" onclick="toggleInputActions(event)" data-i18n-title="tip_more" title="更多"><svg class="ui-icon"><use href="/static/icons.svg#plus"/></svg></button>
         <div class="input-actions-menu ui-menu" id="input-actions-menu">
+          <button type="button" class="ui-menu-item" id="mobile-chat-workflow-runs" onclick="closeInputActions();openOasisSidebar()">
+            <svg class="ui-icon"><use href="/static/icons.svg#layers"/></svg><span class="ui-menu-label" data-i18n="workflow_runs">工作流运行</span>
+          </button>
           <button type="button" class="ui-menu-item input-action-item workflow-btn" id="workflow-btn" onclick="openWorkflowFromInputActions(event)" data-i18n-title="tip_workflow" title="选择工作流">
             <svg class="ui-icon"><use href="/static/icons.svg#workflow"/></svg><span class="ui-menu-label" data-i18n="workflow_short">工作流</span>
           </button>
@@ -4887,6 +4890,9 @@
     <button class="tc-sheet-close" onclick="closeRunModeSheet()">✕</button>
   </div>
   <div class="tc-sheet-body">
+    <label for="mobile-runtime-agent">选择要设置的 Agent</label>
+    <select id="mobile-runtime-agent" aria-label="Agent" onchange="loadMobileSandbox()" style="width:100%;min-height:44px;margin-bottom:12px;"></select>
+    <button type="button" onclick="closeRunModeSheet(); openRuntimeSettings(getMobileRuntimeAgentId());" style="width:100%;padding:12px;margin-bottom:12px;border:0;border-radius:10px;background:var(--ui-surface-2);color:var(--primary);">上下文、审核与沙盒设置</button>
     <div class="run-mode-option" data-mode="chat" onclick="selectRunMode('chat')">
       <div class="run-mode-option-info">
         <div class="run-mode-option-title" data-i18n="run_mode_chat">交流模式 · 无工具</div>
@@ -5625,7 +5631,7 @@
     </button>
     <div class="oasis-header-title">
       <span>🏛️</span>
-      <span id="oasis-header-label" data-i18n="team_task_label">Team Task</span>
+      <span id="oasis-header-label" data-i18n="workflow_runs">工作流运行</span>
     </div>
     <div class="oasis-header-actions">
       <button class="oasis-header-btn" id="oasis-back-btn" onclick="showOasisTopicList()" data-i18n-title="tip_back_list" title="返回列表" style="display:none;">←</button>
@@ -5771,6 +5777,7 @@ const I18N = {
 
     // ── Workflow ──
     workflow_short: '工作流',
+    workflow_runs: '工作流运行',
     select_workflow: '选择工作流',
     no_workflows: '暂无工作流',
     no_workflows_hint: '请在可视化编排中创建',
@@ -6213,10 +6220,10 @@ const I18N = {
     tinyfish_live_result_title: '本次实时任务结果',
 
     // ── OASIS sidebar ──
-    oasis_topics: '📋 讨论话题',
+    oasis_topics: '运行列表',
     oasis_clear_all: '🗑️ 清空',
-    oasis_n_topics: '{n} 个话题',
-    oasis_no_topics: '暂无讨论话题',
+    oasis_n_topics: '{n} 个实例',
+    oasis_no_topics: '暂无工作流运行记录',
     oasis_topic_detail: '话题详情',
     oasis_posts: '条',
     oasis_rounds: '轮',
@@ -6401,6 +6408,7 @@ const I18N = {
     view_detail: 'View details',
 
     workflow_short: 'Workflow',
+    workflow_runs: 'Workflow runs',
     select_workflow: 'Select Workflow',
     no_workflows: 'No workflows',
     no_workflows_hint: 'Create one in Visual Orchestrator',
@@ -6828,10 +6836,10 @@ const I18N = {
     tinyfish_live_missing_target: 'Choose a target site first',
     tinyfish_live_result_title: 'Live Run Result',
 
-    oasis_topics: '📋 Discussion Topics',
+    oasis_topics: 'Run list',
     oasis_clear_all: '🗑️ Clear All',
-    oasis_n_topics: '{n} topics',
-    oasis_no_topics: 'No discussion topics',
+    oasis_n_topics: '{n} runs',
+    oasis_no_topics: 'No workflow runs yet',
     oasis_topic_detail: 'Topic Detail',
     oasis_posts: 'posts',
     oasis_rounds: 'rounds',
@@ -10865,8 +10873,8 @@ async function sendMessage() {
       await startWorkflow(finalText, selectedWorkflow.name, selectedWorkflow.team, selectedWorkflow.mode);
       clearWorkflow();
     } else {
-      // The run mode applies to every agent the message wakes.
-      const body = { content: finalText || '(attachment)', run_mode: getRunMode() };
+      // Each woken Agent uses its own persisted mode and permissions.
+      const body = { content: finalText || '(attachment)' };
       if (mentions.length) body.mentions = mentions;
       if (attachToSend) body.attachments = attachToSend;
       if (audiosToSend) {
@@ -11325,7 +11333,7 @@ function showOasisTopicList() {
   document.getElementById('oasis-detail-view').classList.remove('show');
   document.getElementById('oasis-back-btn').style.display = 'none';
   document.getElementById('oasis-launch-wf-btn').style.display = '';
-  document.getElementById('oasis-header-label').textContent = t('team_task_label');
+  document.getElementById('oasis-header-label').textContent = t('workflow_runs');
 }
 
 // ── Launch Workflow Panel ──
@@ -13965,7 +13973,7 @@ async function showAgentDetail(agentId) {
   requestAnimationFrame(() => { overlay.classList.add('open'); });
   try {
     const remote = currentMembers.find(m => m.remote && m.principal === agentId);
-    const agent = remote ? {...remote.agent, groups: [{title: '当前群聊', group_id: currentGroupId}]} : await api('GET', `/v1/agents/${encodeURIComponent(agentId)}`);
+    const agent = remote ? {...remote.agent, remote: true, agent_id: remote.agent?.agent_id || agentId, name: remote.name || remote.agent?.name || agentId, groups: [{title: groups.find(g => g.group_id === currentGroupId)?.title || '当前群聊', group_id: currentGroupId}]} : await api('GET', `/v1/agents/${encodeURIComponent(agentId)}`);
     if (__agentDetailRenderSeq !== renderSeq) return;
     title.textContent = `🤖 ${agent.name}`;
     body.innerHTML = renderAgentBasicInfo(agent);
@@ -14018,9 +14026,10 @@ async function lookupPersonaByTag(tag, team) {
 }
 
 function closeAgentDetail() {
+  ++__agentDetailRenderSeq;
   const overlay = document.getElementById('agent-detail-overlay');
   overlay.classList.remove('open');
-  setTimeout(() => { overlay.style.display = 'none'; }, 300);
+  setTimeout(() => { if (!overlay.classList.contains('open')) overlay.style.display = 'none'; }, 300);
 }
 
 // ── Agent history viewer ──
@@ -14028,6 +14037,7 @@ function closeAgentDetail() {
 const AH_PAGER_CHARS = 1800;
 let _ahPagerSeq = 0;
 const _ahPagerStore = {};
+let _ahHistorySeq = 0;
 
 function _ahNormalize(value) {
   if (value == null) return '';
@@ -14105,7 +14115,7 @@ function ahPagerNext(key) {
 function _ahRenderToolCallBadges(toolCalls) {
   if (!Array.isArray(toolCalls) || toolCalls.length === 0) return '';
   return `<div class="ah-tool-badges">` + toolCalls.map((tc) => {
-    const name = esc((tc && tc.name) || '');
+    const name = esc(tc?.name || tc?.function?.name || '');
     return `<span class="ah-tool-badge">🔧 ${name}</span>`;
   }).join('') + `</div>`;
 }
@@ -14113,14 +14123,14 @@ function _ahRenderToolCallBadges(toolCalls) {
 function _ahRenderToolCallDetails(toolCalls) {
   if (!Array.isArray(toolCalls) || toolCalls.length === 0) return '';
   const items = toolCalls.map((tc, idx) => {
-    const name = esc((tc && tc.name) || ('tool_' + (idx + 1)));
-    const args = (tc && Object.prototype.hasOwnProperty.call(tc, 'args')) ? tc.args : {};
+    const name = esc(tc?.name || tc?.function?.name || ('tool_' + (idx + 1)));
+    const args = tc?.args ?? tc?.function?.arguments ?? {};
     return `<details class="ah-tool-details">
       <summary>🔧 ${name}</summary>
       <div>${_ahRenderPager(args, t('ah_tool_call_args'))}</div>
     </details>`;
   }).join('');
-  return _ahRenderToolCallBadges(toolCalls) + `<div class="ah-tool-list">${items}</div>`;
+  return `<div class="ah-tool-list">${items}</div>`;
 }
 
 function _ahRenderMarkdown(content) {
@@ -14159,7 +14169,7 @@ function _ahRenderMessages(messages) {
       } else if (Array.isArray(msg.content)) {
         for (const part of msg.content) {
           if (!part || typeof part !== 'object') continue;
-          if (part.type === 'text') textContent = part.text || '';
+          if (part.type === 'text') textContent += part.text || '';
           else if (part.type === 'image_url' && part.image_url && part.image_url.url) {
             imagesHtml += `<img src="${esc(part.image_url.url)}" class="ah-inline-image">`;
           }
@@ -14169,6 +14179,8 @@ function _ahRenderMessages(messages) {
       parts.push(`<div class="ah-row user">
         <div class="ah-bubble user">${imagesHtml}${body}</div>
       </div>`);
+    } else if (msg.role === 'system') {
+      parts.push(`<details class="ah-system-context"><summary>${_currentLang === 'zh' ? '系统信息' : 'System context'}</summary>${_ahRenderPager(msg.content, '')}</details>`);
     } else if (msg.role === 'tool') {
       const toolName = esc(msg.tool_name || '');
       parts.push(`<div class="ah-row tool">
@@ -14181,7 +14193,7 @@ function _ahRenderMessages(messages) {
       const toolCallsHtml = _ahRenderToolCallDetails(msg.tool_calls);
       const contentHtml = msg.content
         ? `<div class="markdown-body tc-markdown">${_ahRenderMarkdown(msg.content)}</div>`
-        : `<span style="color:#9ca3af;font-size:12px;">${esc(t('ah_tool_calling'))}</span>`;
+        : `<span style="color:#9ca3af;font-size:12px;">${esc(_currentLang === 'zh' ? '本条记录无文本回复' : 'No text reply in this record')}</span>`;
       parts.push(`<div class="ah-row assistant">
         <div class="ah-bubble assistant">${toolCallsHtml}${contentHtml}</div>
       </div>`);
@@ -14191,30 +14203,56 @@ function _ahRenderMessages(messages) {
 }
 
 // The agent's own conversation (outside this group), whatever its platform.
-async function showAgentHistory(agentId, displayName) {
+async function showAgentHistory(agentId, displayName, source = 'clawcross') {
+  const sequence = ++_ahHistorySeq;
+  for (const key of Object.keys(_ahPagerStore)) delete _ahPagerStore[key];
   const overlay = document.getElementById('agent-history-overlay');
   const body = document.getElementById('agent-history-body');
   const titleEl = document.getElementById('agent-history-title');
   if (!overlay || !body) return;
   if (titleEl) titleEl.textContent = `📜 ${displayName || ''}`;
   body.innerHTML = `<div class="agent-history-loading">${esc(t('agent_history_loading'))}</div>`;
+  document.getElementById('agent-history-source')?.remove();
   overlay.style.display = 'flex';
   requestAnimationFrame(() => { overlay.classList.add('open'); });
   try {
-    const data = await api('GET', `/v1/agents/${encodeURIComponent(agentId)}/history?limit=200`);
+    const data = await api('GET', `/v1/agents/${encodeURIComponent(agentId)}/history?limit=200&source=${encodeURIComponent(source)}`);
+    if (sequence !== _ahHistorySeq) return;
+    const toolbar = document.createElement('div');
+    toolbar.id = 'agent-history-source';
+    toolbar.className = 'ah-history-source';
+    const isAcp = ['codex','claude','claudecode','openclaw','gemini','acp','trae','cursor','aider'].includes(data.agent?.platform);
+    const hint = source === 'acpx'
+      ? (_currentLang === 'zh' ? 'acpx 已捕获的对话文本；可能不含接入前历史和工具轨迹。' : 'Text captured by acpx; earlier provider history and tool traces may be absent.')
+      : (_currentLang === 'zh' ? 'ClawCross 记录 · 最近 200 条，动态块与工具结果可展开。' : 'ClawCross records · latest 200 messages. Context and tools can be expanded.');
+    const select = document.createElement('select');
+    select.setAttribute('aria-label', _currentLang === 'zh' ? '历史来源' : 'History source');
+    for (const [value, label] of [['clawcross','ClawCross'], ...(isAcp ? [['acpx','acpx']] : [])]) {
+      const option = document.createElement('option'); option.value = value; option.textContent = label; option.selected = value === source; select.appendChild(option);
+    }
+    select.onchange = () => showAgentHistory(agentId, displayName, select.value);
+    const note = document.createElement('span'); note.textContent = hint;
+    toolbar.append(select, note); body.before(toolbar);
     body.innerHTML = _ahRenderMessages(data.messages);
     _ahHighlight(body);
     body.scrollTop = body.scrollHeight;
   } catch (e) {
+    if (sequence !== _ahHistorySeq) return;
     body.innerHTML = `<div class="agent-history-error">${esc(t('agent_history_error'))}: ${esc(e && e.message || String(e))}</div>`;
+    if (source === 'acpx') {
+      const back = document.createElement('button'); back.type = 'button'; back.textContent = _currentLang === 'zh' ? '查看 ClawCross 记录' : 'View ClawCross records';
+      back.onclick = () => showAgentHistory(agentId, displayName); body.appendChild(back);
+    }
   }
 }
 
 function closeAgentHistory() {
+  ++_ahHistorySeq;
   const overlay = document.getElementById('agent-history-overlay');
   if (!overlay) return;
   overlay.classList.remove('open');
   setTimeout(() => {
+    if (overlay.classList.contains('open')) return;
     overlay.style.display = 'none';
     const body = document.getElementById('agent-history-body');
     if (body) body.innerHTML = '';
@@ -14239,7 +14277,7 @@ function renderAgentBasicInfo(agent) {
   </div>
   <div class="agent-detail-section">
     <div class="agent-detail-label">${t('agent_address')}</div>
-    <div class="agent-detail-value" style="font-family:monospace;font-size:13px;">${esc(agent.agent_id)}<br><span style="color:var(--text-secondary);">${esc(agent.agent_id)}</span></div>
+    <div class="agent-detail-value mono" style="overflow-wrap:anywhere;">${esc(agent.agent_id)}</div>
   </div>`;
   html += `<div class="agent-detail-section">
     <div class="agent-detail-label">${_currentLang === 'zh' ? '所在群聊' : 'Conversations'}</div>
@@ -14267,6 +14305,7 @@ function renderAgentBasicInfo(agent) {
     ${button(`startPrivateChat('${jsId}')`, t('start_private_chat'), 'var(--primary)', true)}
     ${button(`showAgentHistory('${jsId}','${jsName}')`, t('view_main_history'), 'var(--primary)')}
     ${button(`openAgentSettingsSheet('${jsId}')`, t('edit_agent'), 'var(--primary)')}
+    ${button(`openRuntimeSettings('${jsId}')`, _currentLang === 'zh' ? '上下文、模式与沙盒' : 'Context, mode and sandbox', 'var(--primary)')}
     ${button(`deleteAgentFromDetail('${jsId}')`, t('delete_agent'), 'var(--ui-danger)')}
   </div>`;
   return html;
@@ -14325,7 +14364,7 @@ async function openAgentSettingsSheet(agentId) {
   sheet.id = sheetId;
   sheet.className = 'tc-sheet show';
   const field = (id, label, value, extra = '') =>
-    `<label>${esc(label)}</label><input id="${id}" type="text" value="${esc(value == null ? '' : String(value))}" autocomplete="off" ${extra}>`;
+    `<label>${esc(label)}</label><input id="${id}" type="text" value="${escapeHtml(value == null ? '' : String(value))}" autocomplete="off" ${extra}>`;
   sheet.innerHTML = `
       <div class="tc-sheet-handle"></div>
       <div class="tc-sheet-header">
@@ -14483,11 +14522,20 @@ async function importPersonalSkill() {
 // ════════════════════════════════════════════════════
 const RUN_MODE_VALID = ['chat', 'readonly', 'manual', 'auto', 'bypass'];
 const RUN_MODE_DEFAULT = 'auto';
-const RUN_MODE_STORAGE_KEY = 'clawRunMode';
+function getMobileRuntimeAgentId() {
+  const select = document.getElementById('mobile-runtime-agent');
+  const candidates = currentMembers.filter(member => member.is_agent && !member.remote);
+  if (candidates.some(member => member.principal === select?.value)) return select.value;
+  return candidates[0]?.principal || '';
+}
+
+function mobileRunModeKey() {
+  return 'clawRunMode:' + (window.__currentUser || '') + ':' + getMobileRuntimeAgentId();
+}
 
 function getRunMode() {
   try {
-    const raw = (localStorage.getItem(RUN_MODE_STORAGE_KEY) || '').trim().toLowerCase();
+    const raw = (localStorage.getItem(mobileRunModeKey()) || '').trim().toLowerCase();
     const mode = {plan: 'readonly', yolo: 'bypass'}[raw] || raw;
     return RUN_MODE_VALID.includes(mode) ? mode : RUN_MODE_DEFAULT;
   } catch (e) {
@@ -14497,7 +14545,7 @@ function getRunMode() {
 
 function setRunMode(mode) {
   const normalized = RUN_MODE_VALID.includes(mode) ? mode : RUN_MODE_DEFAULT;
-  try { localStorage.setItem(RUN_MODE_STORAGE_KEY, normalized); } catch (e) {}
+  try { localStorage.setItem(mobileRunModeKey(), normalized); } catch (e) {}
   refreshRunModeUI();
 }
 
@@ -14519,6 +14567,17 @@ function refreshRunModeUI() {
 }
 
 function openRunModeSheet() {
+  const target = getMobileRuntimeAgentId();
+  const select = document.getElementById('mobile-runtime-agent');
+  select.replaceChildren();
+  for (const member of currentMembers.filter(member => member.is_agent && !member.remote)) {
+    const option = document.createElement('option');
+    option.value = member.principal;
+    option.textContent = member.name || member.principal;
+    option.selected = member.principal === target;
+    select.appendChild(option);
+  }
+  if (!select.value) { toast(_currentLang === 'zh' ? '当前群没有可设置的本机 Agent。' : 'No local Agent in this conversation.'); return; }
   loadMobileSandbox();
   refreshRunModeUI();
   document.getElementById('run-mode-sheet-overlay').classList.add('show');
@@ -14526,23 +14585,30 @@ function openRunModeSheet() {
 }
 
 async function loadMobileSandbox() {
+  const target = getMobileRuntimeAgentId();
   const field = document.getElementById('mobile-command-sandbox');
   field.disabled = true;
+  field.dataset.agentId = target;
+  if (!target) return;
   const container = document.getElementById('mobile-sandbox-component');
   container.innerHTML = componentControlMarkup('srt');
   initComponentControls(container);
   try {
-    const data = await api('GET', '/proxy_webot_runtime_settings');
+    const data = await api('GET', '/proxy_webot_runtime_settings?session_id=' + encodeURIComponent(target));
+    if (field.dataset.agentId !== target) return;
     field.value = data.settings.approval.command_sandbox || 'off';
+    setRunMode(data.effective_mode || data.settings.approval.mode);
     field.dataset.savedValue = field.value;
     document.getElementById('mobile-sandbox-result').textContent = '';
     field.disabled = false;
   } catch (error) { document.getElementById('mobile-sandbox-result').textContent = error.message; }
 }
 async function saveMobileSandbox(field) {
+  const target = field.dataset.agentId;
+  if (!target) return;
   field.disabled = true;
   try {
-    await api('POST', '/proxy_webot_runtime_settings', {session_id:'', settings:{approval:{command_sandbox: field.value}}});
+    await api('POST', '/proxy_webot_runtime_settings', {session_id:target, settings:{approval:{command_sandbox: field.value}}});
     field.dataset.savedValue = field.value;
     document.getElementById('mobile-sandbox-result').textContent = '已保存，下次调用生效。';
   } catch (error) { field.value = field.dataset.savedValue || 'off'; document.getElementById('mobile-sandbox-result').textContent = error.message; }
@@ -14554,7 +14620,13 @@ function closeRunModeSheet() {
   document.getElementById('run-mode-sheet').classList.remove('show');
 }
 
-function selectRunMode(mode) {
+async function selectRunMode(mode) {
+  const target = getMobileRuntimeAgentId();
+  if (!target) return;
+  try {
+    await api('POST', '/proxy_webot_runtime_settings', {session_id:target, settings:{approval:{mode}}});
+  } catch (error) { toast(error.message); return; }
+  if (getMobileRuntimeAgentId() !== target) return;
   setRunMode(mode);
   // For chat: keep the sheet open so the user has time to read the warning
   // about agents not being able to reply back. For other modes, auto-dismiss.

@@ -10,7 +10,7 @@
         `<span class="runtime-user-input">${escape(message.user_input)}</span>`;
     }
     const text = String(value || '');
-    if (/^【(?:本轮 (?:identity_|groups|group_memberships|teams|skills|mode|cli_entry|tool_connector)|ClawCross 系统提示词(?:补丁|版本))/.test(text.trimStart())) {
+    if (/^【(?:本轮 (?:identity_|groups|group_memberships|teams|skills|mode|workspace|cli_entry|tool_connector)|ClawCross 系统提示词(?:补丁|版本))/.test(text.trimStart())) {
       // Older records have no reliable input boundary. Keep the complete record;
       // never guess where a multi-paragraph user message begins.
       return contextDetails(text, true);

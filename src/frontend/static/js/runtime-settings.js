@@ -2,15 +2,25 @@
 let runtimeSettingsView = null;
 
 function runtimeSettingsText(zh, en) {
-    return currentLang === 'zh-CN' ? zh : en;
+    return !document.documentElement.lang.startsWith('en') ? zh : en;
+}
+
+function runtimeSettingsCurrentAgent() {
+    if (typeof getMobileRuntimeAgentId === 'function') return getMobileRuntimeAgentId();
+    return window.ExternalAgentSettings?.currentTarget() || (typeof currentSessionId !== 'undefined' ? currentSessionId : '') || '';
 }
 
 async function openRuntimeSettings(sessionId = '', tab = 'context') {
-    const targetSession = sessionId || currentSessionId || '';
+    const targetSession = sessionId || runtimeSettingsCurrentAgent();
+    if (!targetSession) {
+        if (typeof toast === 'function') toast(runtimeSettingsText('请先选择一个 Agent。', 'Choose an Agent first.'));
+        return;
+    }
+    let external = false;
     if (targetSession && window.ExternalAgentSettings) {
         try {
             const card = await ExternalAgentSettings.capabilities(targetSession);
-            if (card.transport === 'acpx') return ExternalAgentSettings.open(targetSession);
+            external = card.transport === 'acpx';
         } catch (_) { /* An unsaved WeBot session still uses its normal settings. */ }
     }
     let overlay = document.getElementById('runtime-settings-modal');
@@ -28,19 +38,18 @@ async function openRuntimeSettings(sessionId = '', tab = 'context') {
     overlay.innerHTML = `<div class="settings-modal runtime-settings-dialog">
         <div class="runtime-settings-header">
             <div><h2 id="runtime-settings-title">${runtimeSettingsText('上下文与审核', 'Context and approvals')}</h2>
-            <p>${runtimeSettingsText('让 Agent 记住重点，按你的要求执行。', 'Keep what matters. Choose how actions are reviewed.')}</p></div>
+            <p>${runtimeSettingsText('仅修改这个 Agent，其他 Agent 不受影响。', 'Applies only to this Agent.')}</p></div>
             <button type="button" class="runtime-settings-close" onclick="closeRuntimeSettings()" aria-label="${runtimeSettingsText('关闭', 'Close')}">×</button>
         </div>
         <div class="runtime-settings-scope-row">
             <label for="runtime-settings-scope">${runtimeSettingsText('应用到', 'Apply to')}</label>
             <select id="runtime-settings-scope" class="runtime-settings-input" onchange="loadRuntimeSettingsScope()">
-                <option value="user">${runtimeSettingsText('我的默认设置', 'My defaults')}</option>
-                ${targetSession ? `<option value="session" ${sessionId ? 'selected' : ''}>${runtimeSettingsText('当前会话', 'This session')}</option>` : ''}
+                <option value="session" selected>${runtimeSettingsText('当前 Agent', 'This Agent')}</option>
             </select>
-            <span>${runtimeSettingsText('会话设置优先于默认设置', 'Session settings override your defaults')}</span>
+            <span>${external ? runtimeSettingsText('审核和沙盒仅约束 ClawCross 工具；原生工具由外部程序管理。', 'Approvals and sandbox govern ClawCross tools; native tools follow their own permissions.') : runtimeSettingsText('上下文、模式与沙盒均独立保存', 'Context, mode and sandbox are saved separately for each Agent')}</span>
         </div>
         <div class="runtime-settings-tabs" role="tablist" aria-label="${runtimeSettingsText('设置分类', 'Settings categories')}">
-            <button id="runtime-settings-context-tab" type="button" role="tab" aria-selected="true" aria-controls="runtime-settings-context" onclick="showRuntimeSettingsTab('context')">${runtimeSettingsText('上下文压缩', 'Context')}</button>
+            <button id="runtime-settings-context-tab" type="button" role="tab" aria-selected="true" aria-controls="runtime-settings-context" ${external ? 'disabled' : ''} onclick="showRuntimeSettingsTab('context')">${runtimeSettingsText('上下文压缩', 'Context')}</button>
             <button id="runtime-settings-approval-tab" type="button" role="tab" aria-selected="false" aria-controls="runtime-settings-approval" tabindex="-1" onclick="showRuntimeSettingsTab('approval')">${runtimeSettingsText('工具审核', 'Approvals')}</button>
         </div>
         <div id="runtime-settings-fields" class="runtime-settings-body"></div>
@@ -51,20 +60,20 @@ async function openRuntimeSettings(sessionId = '', tab = 'context') {
                 <button id="runtime-settings-save" type="button" class="runtime-settings-btn runtime-settings-btn-primary" onclick="saveRuntimeSettingsForm()">${runtimeSettingsText('保存设置', 'Save settings')}</button>
             </div>
         </div></div>`;
-    runtimeSettingsView = { targetSession, original: null, activeTab: tab, returnFocus: document.activeElement };
+    runtimeSettingsView = { targetSession, original: null, activeTab: external ? 'approval' : tab, external, returnFocus: document.activeElement };
     overlay.querySelector('.runtime-settings-close').focus();
     await loadRuntimeSettingsScope();
 }
 
 function openAgentRuntimeSettings() {
     const agent = agentCenterSelectedAgent();
-    if (agent && agent.kind === 'internal') openRuntimeSettings(agent.session_id || agent.identity || '');
+    if (agent && ['internal','external'].includes(agent.kind)) openRuntimeSettings(agent.agent_id || agent.session_id || agent.identity || '');
 }
 
 async function loadRuntimeSettingsScope() {
     const view = runtimeSettingsView;
     const scope = document.getElementById('runtime-settings-scope').value;
-    const sessionId = scope === 'session' ? view.targetSession : '';
+    const sessionId = view.targetSession;
     const status = document.getElementById('runtime-settings-result');
     view.original = null;
     document.getElementById('runtime-settings-save').disabled = true;
@@ -200,12 +209,12 @@ async function saveRuntimeSettingsForm(reset = false) {
         document.getElementById('runtime-settings-save').disabled = true;
         const response = await fetch('/proxy_webot_runtime_settings', {
             method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({session_id: view.scope === 'session' ? view.targetSession : '', settings, reset}),
+            body: JSON.stringify({session_id: view.targetSession, settings, reset}),
         });
         const payload = await response.json();
         if (!response.ok) throw new Error(JSON.stringify(payload.detail || payload.error));
         await loadRuntimeSettingsScope();
-        if (view.scope === 'session' && view.targetSession === currentSessionId && typeof setRunMode === 'function') setRunMode(view.original.approval.mode);
+        if (view.targetSession === runtimeSettingsCurrentAgent() && typeof setRunMode === 'function') setRunMode(view.original.approval.mode);
         status.textContent = runtimeSettingsText('已保存，下次调用生效。', 'Saved. Applies on the next call.');
     } catch (error) { status.textContent = String(error.message || error); }
     finally { document.getElementById('runtime-settings-save').disabled = false; }
@@ -213,6 +222,7 @@ async function saveRuntimeSettingsForm(reset = false) {
 
 function showRuntimeSettingsTab(section) {
     if (!runtimeSettingsView) return;
+    if (runtimeSettingsView.external && section === 'context') section = 'approval';
     runtimeSettingsView.activeTab = section;
     for (const name of ['context', 'approval']) {
         const selected = name === section;

@@ -187,8 +187,7 @@ def render_runtime_context_block(
     memory: dict[str, Any] | None = None,
     voice: dict[str, Any] | None = None,
 ) -> str:
-    # workspace is optional: it is fixed per session, so the caller carries it
-    # in the stable system prompt rather than re-sending it here every turn.
+    # Resolve current workspace for each invocation; runtime snapshots track changes.
     lines = ["【Runtime Context】"]
     if workspace:
         lines.append(f"workspace: {workspace}")

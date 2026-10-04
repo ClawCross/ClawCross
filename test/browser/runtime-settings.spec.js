@@ -6,7 +6,7 @@ const defaults = {
   context: { auto_compact: true, context_window_tokens: 1000000, history_tokens: 0, trigger_tokens: 0, target_tokens: 0,
     preserve_recent_turns: 4, summary_tokens: 2000, summarizer_input_tokens: 8000,
     summarizer_model: '', preserve_instructions: '' },
-  approval: { mode: 'auto', approvals_reviewer: 'user', reviewer_model: '', reviewer_policy: '', reviewer_timeout_seconds: 120, reviewer_max_tokens: 16384, command_sandbox: 'off', sandbox_allowed_domains: [], sandbox_grants: [] },
+  approval: { mode: 'auto', approvals_reviewer: 'user', reviewer_model: '', reviewer_policy: '', reviewer_timeout_seconds: 120, reviewer_max_tokens: 16384, command_sandbox: 'off', sandbox_security: 'standard', sandbox_allowed_domains: [], sandbox_grants: [] },
   inference: {reasoning_effort: ''},
 };
 
@@ -16,7 +16,7 @@ async function setup(page, options = {}) {
   Object.assign(user.context, options.context || {});
   Object.assign(user.approval, options.approval || {});
   let session = structuredClone(options.session || {});
-  await page.route('**/studio', route => route.fulfill({ contentType: 'text/html', body: '<html><body></body></html>' }));
+  await page.route('**/studio', route => route.fulfill({ contentType: 'text/html', body: '<html lang="zh"><body></body></html>' }));
   await page.route('**/proxy_webot_runtime_settings**', async route => {
     const request = route.request();
     const body = request.method() === 'POST' ? request.postDataJSON() : null;
@@ -45,7 +45,7 @@ async function setup(page, options = {}) {
   return requests;
 }
 
-test('settings save only changes to the selected scope and reset inheritance', async ({ page }) => {
+test('settings save only this Agent and reset its inheritance without a user-wide scope', async ({ page }) => {
   const requests = await setup(page);
   await page.evaluate(() => openRuntimeSettings('session-1'));
   await expect(page.locator('#runtime-settings-scope')).toHaveValue('session');
@@ -56,10 +56,7 @@ test('settings save only changes to the selected scope and reset inheritance', a
   await page.locator('#runtime-settings-save').click();
   await expect(page.locator('#runtime-settings-result')).toContainText('已保存');
   expect(requests[0]).toEqual({ session_id: 'session-1', settings: { context: { preserve_recent_turns: 2 }, approval: { mode: 'readonly' } }, reset: false });
-  await page.locator('#runtime-settings-scope').selectOption('user');
-  await expect(page.locator('[data-key="preserve_recent_turns"]')).toHaveValue('4');
-  await expect(page.locator('[data-key="mode"]')).toHaveValue('auto');
-  await page.locator('#runtime-settings-scope').selectOption('session');
+  await expect(page.locator('#runtime-settings-scope option')).toHaveCount(1);
   await expect(page.locator('[data-key="preserve_recent_turns"]')).toHaveValue('2');
   await page.getByRole('button', { name: '恢复继承设置' }).click();
   await expect(page.locator('[data-key="preserve_recent_turns"]')).toHaveValue('4');
