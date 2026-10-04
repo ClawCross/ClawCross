@@ -508,6 +508,14 @@ def run_tool_policy_hooks(
     if not hooks:
         return ToolHookOutcome(args=args or {}, decision=decision, result=result)
 
+    from webot.runtime_settings import get_runtime_settings
+    if get_runtime_settings(user_id, session_id).approval.sandbox_security == 'strict':
+        # User-defined shell hooks execute on the host, and write_jsonl paths
+        # can name arbitrary files. Neither is an OS-sandboxed tool. Keep the
+        # base policy, but never grant these capabilities to a strict Agent.
+        return ToolHookOutcome(args=args or {}, decision=decision, result=result,
+                               notes=('strict_custom_hooks_disabled',))
+
     current_args = dict(args or {})
     current_decision = decision
     current_result = result

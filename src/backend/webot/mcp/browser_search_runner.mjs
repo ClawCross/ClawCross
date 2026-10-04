@@ -86,11 +86,12 @@ async function loadChromium() {
   }
 }
 
-async function createBrowser(timeoutMs) {
+async function createBrowser(timeoutMs, proxy) {
   const chromium = await loadChromium();
   const browser = await chromium.launch({
     headless: true,
     timeout: timeoutMs,
+    args: ["--proxy-bypass-list=<-loopback>", "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"],
   });
   const context = await browser.newContext({
     userAgent:
@@ -98,12 +99,14 @@ async function createBrowser(timeoutMs) {
       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36 ClawCrossWebSearch/1.0",
     locale: "en-US",
     viewport: { width: 1365, height: 900 },
+    proxy,
+    serviceWorkers: "block",
   });
   return { browser, context };
 }
 
-async function withPage(timeoutMs, callback) {
-  const { browser, context } = await createBrowser(timeoutMs);
+async function withPage(timeoutMs, callback, proxy) {
+  const { browser, context } = await createBrowser(timeoutMs, proxy);
   try {
     const page = await context.newPage();
     page.setDefaultTimeout(timeoutMs);
@@ -273,7 +276,7 @@ async function runSearch(input) {
       result_count: rawResults.length,
       raw_results: rawResults,
     };
-  });
+  }, input.proxy);
 }
 
 async function runFetch(input) {
@@ -304,7 +307,7 @@ async function runFetch(input) {
       truncated: text.length > maxChars,
       chars: Math.min(text.length, maxChars),
     };
-  });
+  }, input.proxy);
 }
 
 async function main() {

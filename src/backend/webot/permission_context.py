@@ -56,6 +56,12 @@ def resolve_permission_context(
 ) -> PermissionContext:
     effective_policy = policy or get_tool_policy(user_id)
     normalized_args = bind_file_target(tool_name, dict(args or {}), user_id, session_id)
+    from webot.approval_actions import file_access_violation
+    from webot.web_security import web_access_violation
+    violation = (file_access_violation(normalized_args, user_id, session_id)
+                 or web_access_violation(tool_name, normalized_args, user_id, session_id))
+    if violation:
+        return PermissionContext('deny', False, False, violation, '', tool_name, normalized_args, effective_policy)
     if tool_name in _POLICY_EXEMPT_TOOLS:
         return PermissionContext(
             decision="allow",

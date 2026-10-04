@@ -21,6 +21,8 @@ Windows 首次使用需要明确初始化：在沙盒组件设置中点击“初
 - 普通默认目录是 `CLAWCROSS_WORKSPACE_DIR/users/<user>`；严格目录是 `CLAWCROSS_WORKSPACE_DIR/strict/<user>/<session-hash>`。没有显式路径时，工作区基础目录是 `~/.clawcross/workspace`。工作区基础目录位于项目源码内时，改用源码外的默认目录。旧用户文件保留在原位置，不自动搬迁，也不把 `teams/` 配置目录链接进新工作区。
 - 运行设置和工具策略存放在 `USER_FILES_DIR/.control/<user>/`；命令沙盒配置及后台任务控制文件位于 `CONFIG_DIR/sandbox/`，工作区不能覆盖这些目录。已有设置第一次读取时保留内容迁移到控制目录。
 
+严格等级也适用于 ClawCross 文件和 Web 工具：文件操作限定到独立工作区；Web 搜索与抓取执行同一网站许可列表，空列表离线，审批不可扩大范围。自定义策略 hook 在严格模式禁用。Windows 文件工具用原生句柄固定路径，不依赖 POSIX API。详细的平台差异、验证范围与恶意用户/API 风险见 [严格模式安全审查](strict-security-review.md)；不能把可由用户关闭的 Agent 设置当作恶意租户隔离。
+
 ### 进程操作
 
 普通模式只读开放 `/proc`，支持 `ps`、`top`、`free` 和新子进程的资源查询，写入、跨隔离域信号、ptrace 仍被内核拒绝。这个选择接近 CLI 沙盒的宽读限制写模型，但不提供同一 Unix 账号下的租户隐私：操作系统原本允许读取的进程环境也可见。需要隔离服务凭证时使用严格模式，不要把普通模式当作多租户隔离边界。

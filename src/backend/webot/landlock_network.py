@@ -49,9 +49,12 @@ class ProxyPolicy:
                 self.denied.append((f'{host}:{port}', reason))
         raise NetworkDenied(reason)
 
+    def allows_destination(self, host, port):
+        return host in self.allowed or f'{host}:{port}' in self.allowed
+
     def connect(self, host, port):
         host, port = normalize_destination(host, port)
-        if host not in self.allowed and f'{host}:{port}' not in self.allowed:
+        if not self.allows_destination(host, port):
             self.reject(host, port, 'destination not allowed')
         try:
             records = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
