@@ -1,6 +1,30 @@
 from flask import Flask
 from ops import components
+from webot import command_sandbox
 from frontend.proxies.components import register_component_routes
+
+
+def test_windows_initialization_is_separate_and_explicit(monkeypatch):
+    monkeypatch.setattr(components.sys, 'platform', 'win32')
+    monkeypatch.setattr(components, 'binary_path', lambda name: 'srt.cmd')
+    monkeypatch.setattr(components.shutil, 'which', lambda name: name)
+    monkeypatch.setattr(command_sandbox, 'windows_srt_status', lambda: {
+        'ready': False, 'errors': ['not provisioned'], 'can_initialize': True, 'needs_update': False})
+    state = components.component_status('srt')
+    assert state['installed'] and not state['ready']
+    assert state['missing'] == ['windows-install']
+    setup = components.component_status('srt-system')
+    assert not setup['installed'] and setup['can_install']
+    calls = []
+    monkeypatch.setattr(command_sandbox, 'windows_srt_operation', lambda mode: ('node.exe', 'trusted-bridge', mode))
+    def run(argv, **kwargs):
+        calls.append(argv)
+        assert not kwargs.get('shell')
+        return type('Result', (), {'returncode': 0})()
+    monkeypatch.setattr(components.subprocess, 'run', run)
+    components._install('srt-system')
+    assert calls == [['node.exe', 'trusted-bridge', 'install']]
+    components._jobs.clear()
 
 
 def test_local_component_discovery_and_missing_dependencies(tmp_path, monkeypatch):

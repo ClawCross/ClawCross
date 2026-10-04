@@ -26,6 +26,15 @@ def component_status(name):
     if name not in COMPONENTS:
         raise ValueError("Unsupported component")
     if name == "srt-system":
+        if sys.platform == 'win32':
+            from webot.command_sandbox import windows_srt_status
+            status = windows_srt_status()
+            with _lock:
+                job = dict(_jobs.get(name, {}))
+            return {'name': name, 'installed': status['ready'], 'ready': status['ready'],
+                    'missing': [] if status['ready'] else ['windows-install'],
+                    'platform': sys.platform, 'can_install': status['can_initialize'],
+                    'detail': '\n'.join(status['errors']), **job}
         dependencies = ["bwrap", "socat", "rg"] if sys.platform.startswith("linux") else ["rg"] if sys.platform == "darwin" else []
         missing = [item for item in dependencies if not shutil.which(item)]
         supported = bool(shutil.which("apt-get")) if sys.platform.startswith("linux") else bool(shutil.which("brew")) if sys.platform == "darwin" else False
@@ -52,10 +61,18 @@ def component_status(name):
         prerequisites += ["bwrap", "socat", "rg"] if sys.platform.startswith("linux") else ["rg"] if sys.platform == "darwin" else []
     missing = [item for item in prerequisites if not shutil.which(item)]
     installed = bool(binary_path(name))
+    windows_status = None
+    if name == 'srt' and installed and sys.platform == 'win32':
+        from webot.command_sandbox import windows_srt_status
+        windows_status = windows_srt_status()
+        if not windows_status['ready']:
+            missing.append('srt-update' if windows_status['needs_update'] else 'windows-install')
     runtime_missing = [item for item in missing if not item.startswith("npm")]
     with _lock:
         job = dict(_jobs.get(name, {}))
     return {"name": name, "installed": installed, "ready": installed and not runtime_missing,
+            'needs_update': bool(windows_status and windows_status['needs_update']),
+            'detail': '\n'.join(windows_status['errors']) if windows_status else '',
             "missing": missing, "platform": sys.platform, "can_install": not any(item.startswith("npm") for item in missing), **job}
 
 
@@ -65,7 +82,10 @@ def _install(name):
         with tempfile.TemporaryFile() as output:
             command = [sys.executable, str(PROJECT_ROOT / "launch" / "environment.py"), "install", name]
             if name == "srt-system":
-                if sys.platform.startswith("linux") and shutil.which("apt-get"):
+                if sys.platform == 'win32':
+                    from webot.command_sandbox import windows_srt_operation
+                    command = list(windows_srt_operation('install'))
+                elif sys.platform.startswith("linux") and shutil.which("apt-get"):
                     command = [shutil.which("apt-get"), "install", "--yes", "--no-upgrade", "bubblewrap", "socat", "ripgrep"]
                     if os.geteuid() != 0:
                         sudo = shutil.which("sudo")

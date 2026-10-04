@@ -8,6 +8,24 @@ on:
   pull_request:
 
 jobs:
+  ci-windows-sandbox:
+    name: ci-windows / sandbox
+    runs-on: windows-latest
+    env:
+      CLAWCROSS_HOME: ${{ runner.temp }}/clawcross-windows-ci
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - name: Install focused test dependency
+        run: python -m pip install pytest
+      - name: Verify native Job Objects and SRT bridge contracts
+        run: python -m pytest test/test_windows_resource_limits.py test/test_windows_srt.py -q
+
   ci-fast-python:
     name: ci-fast / python
     runs-on: ubuntu-latest

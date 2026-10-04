@@ -142,7 +142,9 @@ class CommanderTests(unittest.TestCase):
                     username="alice",
                     session_id="sess-detached",
                 )
-                return start, status, output, root / ".mcp_jobs" / f"{job_id}.stdout.log"
+                stdout_path = commander._jobs_dir(str(root)) / f"{job_id}.stdout.log"
+                self.assertFalse(stdout_path.is_relative_to(root))
+                return start, status, output, stdout_path
 
             with patch.object(commander, "resolve_session_workspace", return_value=workspace), patch.object(
                 commander, "ALLOWED_COMMANDS", {Path(sys.executable).name}

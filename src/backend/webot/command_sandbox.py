@@ -7,6 +7,7 @@ constructs a bounded sandbox process with an explicit, per-command policy.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import base64
 import ipaddress
 import json
 import os
@@ -97,6 +98,10 @@ def sandbox_failure_hint(stderr: str) -> str:
     """Distinguish sandbox startup failures from denied workload operations."""
     if "ClawCross Landlock 初始化失败:" in stderr:
         return "❌ Landlock 沙盒初始化失败，命令尚未启动；不会降级为宿主执行。"
+    if 'ClawCross Windows resource initialization failed:' in stderr:
+        return '❌ Windows 资源限制初始化失败，命令未能启动；不会降级为宿主执行。'
+    if 'ClawCross Windows sandbox initialization failed:' in stderr:
+        return '❌ Windows 沙盒初始化失败；请在沙盒组件设置中检查并初始化 Windows 隔离。不会降级为宿主执行。'
     if "listen EPERM" in stderr and "srt-" in stderr:
         return "❌ SRT 沙盒初始化失败：当前环境禁止创建代理 socket；命令尚未启动。可选择 Linux Landlock 后端。"
     if "apply-seccomp:" in stderr and any(marker in stderr for marker in (
@@ -314,6 +319,66 @@ def normalize_escalation(access: str, target: str, root: Path) -> str:
     return str(path)
 
 
+def _srt_manifest(binary: str) -> tuple[Path, dict]:
+    executable = Path(binary).resolve()
+    candidates = (
+        executable.parent.parent / 'package.json',  # POSIX .bin symlink
+        executable.parent / 'node_modules/@anthropic-ai/sandbox-runtime/package.json',  # global Windows shim
+        executable.parent.parent / '@anthropic-ai/sandbox-runtime/package.json',  # local Windows .bin shim
+    )
+    for path in candidates:
+        try:
+            manifest = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        if manifest.get('name') == '@anthropic-ai/sandbox-runtime':
+            return path.parent, manifest
+    raise SandboxUnavailable('无法确认 SRT 安装版本；请在组件设置中重新安装 SRT。')
+
+
+def _windows_srt_runtime(binary: str) -> tuple[str, Path]:
+    package, manifest = _srt_manifest(binary)
+    version = re.fullmatch(r'(\d+)\.(\d+)\.(\d+)', str(manifest.get('version', '')))
+    if not version or tuple(map(int, version.groups())) < (0, 0, 78):
+        raise SandboxUnavailable('Windows 需要 SRT 0.0.78 或更新版本；请更新沙盒组件。')
+    arch = {'amd64': 'x64', 'x86_64': 'x64', 'arm64': 'arm64', 'aarch64': 'arm64'}.get(platform.machine().lower())
+    if not arch or not (package / 'vendor/srt-win' / arch / 'srt-win.exe').is_file():
+        raise SandboxUnavailable('缺少适合本机架构的 Windows SRT helper；请重新安装沙盒组件。')
+    node = shutil.which('node.exe') or shutil.which('node')
+    entry = package / 'dist/index.js'
+    if not node or not entry.is_file():
+        raise SandboxUnavailable('Windows SRT 需要 Node.js 和完整的运行包；请重新安装沙盒组件。')
+    return node, entry
+
+
+def windows_srt_operation(mode: str) -> tuple[str, ...]:
+    """Only trusted component controls can initialize the Windows backend."""
+    if mode not in {'status', 'install'}:
+        raise ValueError('Unsupported Windows SRT operation')
+    binary = _srt_binary()
+    node, entry = _windows_srt_runtime(binary)
+    return node, str(Path(__file__).with_name('windows_srt_bridge.mjs')), str(entry), mode
+
+
+def windows_srt_status() -> dict:
+    try:
+        argv = windows_srt_operation('status')
+    except (SandboxUnavailable, OSError, ValueError) as exc:
+        return {'ready': False, 'errors': [str(exc)], 'can_initialize': False, 'needs_update': True}
+    try:
+        result = subprocess.run(argv, capture_output=True, text=True, timeout=20, check=False)
+        if result.returncode:
+            raise SandboxUnavailable(result.stderr.strip()[-1500:] or 'Windows SRT 状态检查失败。')
+        status = json.loads(result.stdout)
+        if (not isinstance(status, dict) or not isinstance(status.get('ready'), bool)
+                or not isinstance(status.get('errors'), list)
+                or any(not isinstance(error, str) for error in status['errors'])):
+            raise ValueError('Invalid Windows SRT status')
+        return {**status, 'can_initialize': True, 'needs_update': False}
+    except (SandboxUnavailable, OSError, ValueError, subprocess.TimeoutExpired) as exc:
+        return {'ready': False, 'errors': [str(exc)], 'can_initialize': True, 'needs_update': False}
+
+
 def _srt_binary() -> str:
     binary = shutil.which("srt")
     if not binary:
@@ -332,23 +397,12 @@ def _srt_binary() -> str:
             )
     elif sys.platform == "darwin" and not shutil.which("rg"):
         raise SandboxUnavailable("SRT 缺少 macOS 依赖 rg。命令不会在宿主机直接执行。")
-    executable = Path(binary).resolve()
-    candidates = (
-        executable.parent.parent / "package.json",  # npm .bin symlink -> dist/cli.js
-        executable.parent / "node_modules/@anthropic-ai/sandbox-runtime/package.json",  # Windows .cmd shim
-    )
-    manifest = None
-    for path in candidates:
-        try:
-            candidate = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            continue
-        if candidate.get("name") == "@anthropic-ai/sandbox-runtime":
-            manifest = candidate
-            break
+    _, manifest = _srt_manifest(binary)
     match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", str((manifest or {}).get("version", "")))
     if not match or tuple(map(int, match.groups())) < (0, 0, 77):
         raise SandboxUnavailable("需要 SRT 0.0.77 或更新版本；命令不会在宿主机直接执行。")
+    if sys.platform == 'win32':
+        _windows_srt_runtime(binary)
     return binary
 
 
@@ -428,15 +482,14 @@ def build_srt_command(*, root: Path, cwd: Path, command: str, language: str,
             raise SandboxUnavailable("Python 脚本超出会话工作区。")
         wrapped = [python_executable, *(["-i"] if interactive else []), str(script_path.resolve())]
     elif language == "shell":
-        if os.name == "nt":
-            wrapped = [os.environ.get("COMSPEC", "cmd.exe"), "/c", command]
+        if sys.platform == 'win32':
+            wrapped = [os.environ.get('COMSPEC') or str(Path(os.environ.get('SYSTEMROOT', 'C:/Windows')) / 'System32/cmd.exe'), '/d', '/s', '/c', command]
         else:
             wrapped = ["/bin/sh", "-c", command]
     else:
         raise SandboxUnavailable("不支持的 SRT 命令语言。")
-    if os.name == "nt":
-        raise SandboxUnavailable("Windows SRT 资源限制尚不可用；已阻止本次沙盒命令。")
     binary = _srt_binary()
+    windows_runtime = _windows_srt_runtime(binary) if sys.platform == 'win32' else None
     temporary_dir = Path(tempfile.mkdtemp(prefix='.command-tmp-', dir=root))
     fd, settings_path = _command_settings_file('clawcross-srt-')
     try:
@@ -448,6 +501,13 @@ def build_srt_command(*, root: Path, cwd: Path, command: str, language: str,
             config['filesystem']['allowRead'].extend(reads + writes)
             config['filesystem']['allowWrite'].extend(writes)
             json.dump(config, handle, ensure_ascii=False)
+        if windows_runtime:
+            node, entry = windows_runtime
+            payload = base64.b64encode(json.dumps({'argv': wrapped, 'timeout': wall_timeout}, ensure_ascii=False).encode()).decode('ascii')
+            module = Path(__file__)
+            argv = (node, str(module.with_name('windows_srt_bridge.mjs')), str(entry), 'run',
+                    str(settings_path), python_executable, str(module.with_name('windows_resource_limits.py')), payload)
+            return SrtCommand(argv, settings_path, temporary_dir=temporary_dir)
         limits = _LIMIT_CODE.replace('(\"RLIMIT_NPROC\", 256)', f'(\"RLIMIT_NPROC\", {_process_limit()})')
         limited = (sys.executable, "-c", limits, *wrapped)
         return SrtCommand((binary, "--settings", str(settings_path), "--", *limited), settings_path, temporary_dir=temporary_dir)
