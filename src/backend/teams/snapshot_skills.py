@@ -21,11 +21,13 @@ def _user_root(user_id: str) -> Path:
 
 
 def _user_skills_dir(user_id: str) -> Path:
-    return _user_root(user_id) / "skills"
+    from webot.skills import _skills_dir
+    return _skills_dir(user_id)
 
 
 def _team_skills_dir(user_id: str, team: str) -> Path:
-    return _user_root(user_id) / "teams" / team / "skills"
+    from webot.skills import _team_skills_dir as team_skills
+    return team_skills(user_id,team)
 
 
 def _add_skills_dir_to_zip(zipf: Any, base: Path, zip_root: str, selected_names: set[str] | None = None) -> tuple[int, int]:

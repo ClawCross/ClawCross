@@ -21,12 +21,15 @@ class TeamSnapshotSkillsTests(unittest.TestCase):
         self.tmppath = Path(self.tmpdir.name)
         self.orig_user_files_skills = webot_skills.USER_FILES_DIR
         self.orig_user_files_snapshot = snapshot_skills.USER_FILES_DIR
+        self.orig_workspace = webot_skills.WORKSPACE_DIR
+        webot_skills.WORKSPACE_DIR = self.tmppath / 'workspace'
         webot_skills.USER_FILES_DIR = self.tmppath / "user_files"
         snapshot_skills.USER_FILES_DIR = self.tmppath / "user_files"
 
     def tearDown(self):
         webot_skills.USER_FILES_DIR = self.orig_user_files_skills
         snapshot_skills.USER_FILES_DIR = self.orig_user_files_snapshot
+        webot_skills.WORKSPACE_DIR = self.orig_workspace
         self.tmpdir.cleanup()
 
     def _make_skill(self, user_id: str, name: str) -> None:
@@ -65,7 +68,7 @@ class TeamSnapshotSkillsTests(unittest.TestCase):
             zf.extractall(team_dir)
 
         shutil_target = snapshot_skills._user_skills_dir("bob")
-        self.assertFalse(shutil_target.exists())
+        self.assertFalse((shutil_target / 'deploy-script').exists())
         result = snapshot_skills.restore_skills_from_team_dir(team_dir, "bob", "ops")
 
         restored_skill = snapshot_skills._user_skills_dir("bob") / "deploy-script" / "SKILL.md"

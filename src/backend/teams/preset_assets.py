@@ -113,6 +113,9 @@ def install_team_preset(
     skills_count = 0
     if skills_source.exists() and skills_source.is_dir():
         skills_target = team_dir / "skills"
+        if teams.user_files_dir.resolve() == get_team_store().user_files_dir.resolve():
+            from webot.skills import _team_skills_dir
+            skills_target = _team_skills_dir(user_id, team_name)
         skills_target.mkdir(parents=True, exist_ok=True)
         for item in sorted(skills_source.iterdir()):
             target = skills_target / item.name

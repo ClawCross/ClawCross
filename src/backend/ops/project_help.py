@@ -12,7 +12,7 @@ TOPICS = {
     'agents': ('外部 Agent 与会话导入', 'native-sessions.md', 'Codex/Claude 原生会话的登记与恢复'),
     'groups': ('群聊与分享', 'group-network.md', '群服务器、加入凭证、人类参与者'),
     'teams': ('团队与工作流', 'team-creator.md', '协作角色与 ClawCross Creator'),
-    'skills': ('工作区与技能', 'skills-tool-audit.md', '技能管理工具与文件布局'),
+    'skills': ('工作区与技能', 'workspaces-and-skills.md', '共享技能、干净工作区与严格模式'),
     'cli': ('命令行', 'cli.md', 'CLI 命令和用法'),
     'launch': ('启动与组件', 'npm-packaging.md', 'npm 入口、Python 启动和显式组件安装'),
 }

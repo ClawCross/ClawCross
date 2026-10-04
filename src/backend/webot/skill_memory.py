@@ -16,15 +16,7 @@ from webot import skills
 def _root(user_id: str, team: str = "") -> Path:
     if not user_id or user_id in {".", ".."} or Path(user_id).name != user_id or "\\" in user_id:
         raise ValueError("Invalid user ID")
-    base = skills.USER_FILES_DIR.resolve()
-    parts = [user_id, "teams", skills._validate_team(team), "skills"] if team else [user_id, "skills"]
-    current = base
-    for part in parts:
-        current = current / part
-        if current.is_symlink():
-            raise ValueError("Memory storage cannot use symbolic links")
-    current.mkdir(parents=True, exist_ok=True)
-    return current
+    return skills._scope_skills_dir(user_id, team)
 
 
 def _identifier(team: str, key: str) -> str:

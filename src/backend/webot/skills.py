@@ -20,7 +20,7 @@ from typing import Any
 from webot.profiles import slugify
 
 from common.runtime_paths import PROJECT_ROOT  # noqa: E402
-from common.runtime_paths import USER_FILES_DIR
+from common.runtime_paths import USER_FILES_DIR, WORKSPACE_DIR
 
 _MAX_SKILL_SIZE = 100 * 1024        # 100KB per SKILL.md
 _MAX_SUPPORT_FILE_SIZE = 1 * 1024 * 1024  # 1MB per supporting file
@@ -45,18 +45,63 @@ _DANGEROUS_PATTERNS: list[tuple[str, str]] = [
 ]
 
 
-def _skills_dir(user_id: str) -> Path:
-    """Per-user skills directory."""
-    root = USER_FILES_DIR / (user_id or "anonymous") / "skills"
-    root.mkdir(parents=True, exist_ok=True)
+def _workspace_skill_root(user_id: str, team: str = '') -> Path:
+    """Shared per-user skills live in the clean workspace, never with controls."""
+    user_id = user_id or 'anonymous'
+    if user_id in {'.', '..'} or Path(user_id).name != user_id or '\\' in user_id:
+        raise ValueError('Invalid user ID')
+    base = WORKSPACE_DIR
+    if base.resolve().is_relative_to(PROJECT_ROOT.resolve()):
+        base = Path.home() / '.clawcross' / 'workspace'
+    parts = ['users',user_id,'teams',_validate_team(team),'skills'] if team else ['users',user_id,'skills']
+    root = base
+    for part in parts:
+        root = root / part
+        if root.is_symlink(): raise ValueError('Skill storage cannot use symbolic links')
+    from webot.command_sandbox import validate_workspace_root
+    validate_workspace_root(base / 'users' / user_id)
+    legacy = USER_FILES_DIR / user_id
+    legacy = legacy / 'teams' / _validate_team(team) / 'skills' if team else legacy / 'skills'
+    if legacy.is_symlink(): raise ValueError('Skill storage cannot use symbolic links')
+    if legacy.is_dir() and legacy.resolve() != root.resolve():
+        root.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+        if not root.exists():
+            try: shutil.move(str(legacy), str(root))
+            except FileNotFoundError:
+                if not root.is_dir(): raise
+        else:
+            _merge_legacy_skills(legacy,root)
+    root.mkdir(parents=True, mode=0o700, exist_ok=True)
     return root
+
+
+def _merge_legacy_skills(source: Path, target: Path):
+    """Import missing files only; conflicting legacy files are retained intact."""
+    for item in source.iterdir():
+        destination = target / item.name
+        if item.is_symlink():
+            if not destination.exists() and not destination.is_symlink():
+                destination.symlink_to(os.readlink(item)); item.unlink()
+        elif item.is_dir():
+            if destination.is_symlink() or destination.is_file(): continue
+            destination.mkdir(mode=0o700, exist_ok=True)
+            _merge_legacy_skills(item,destination)
+        elif item.is_file():
+            try:
+                with destination.open('xb') as out, item.open('rb') as inp:
+                    shutil.copyfileobj(inp,out)
+            except FileExistsError: continue
+            shutil.copystat(item,destination);item.unlink()
+    if not any(source.iterdir()): source.rmdir()
+
+
+def _skills_dir(user_id: str) -> Path:
+    return _workspace_skill_root(user_id)
 
 
 def _team_skills_dir(user_id: str, team: str) -> Path:
     """Per-team skills directory."""
-    root = USER_FILES_DIR / (user_id or "anonymous") / "teams" / _validate_team(team) / "skills"
-    root.mkdir(parents=True, exist_ok=True)
-    return root
+    return _workspace_skill_root(user_id, team)
 
 
 def _scope_skills_dir(user_id: str, team: str = "") -> Path:

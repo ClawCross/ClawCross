@@ -23,6 +23,8 @@ class MemoryFilesTests(unittest.TestCase):
         patched = patch.object(skills, "USER_FILES_DIR", self.root / "users")
         patched.start()
         self.addCleanup(patched.stop)
+        patched = patch.object(skills, 'WORKSPACE_DIR', self.root / 'workspace')
+        patched.start(); self.addCleanup(patched.stop)
 
     def write(self, name, content="经验正文", **kwargs):
         return asyncio.run(filemanager.write_file("alice", name, content, storage="memory", **kwargs))
@@ -46,7 +48,7 @@ class MemoryFilesTests(unittest.TestCase):
         self.assertIn(entry_id, prompt)
         self.assertNotIn(str(self.root), prompt)
         self.assertNotIn("skill_manage", prompt)
-        index = self.root / "users/alice/skills/SKILLS_INDEX.md"
+        index = self.root / "workspace/users/alice/skills/SKILLS_INDEX.md"
         self.assertIn("中文经验", index.read_text())
 
     def test_existing_skills_are_available_without_migration(self):
