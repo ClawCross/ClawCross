@@ -54,28 +54,31 @@ test('saved profile and reasoning apply to the selected Agent only',async({page}
   const writes=await setup(page);
   await expect(page.locator('.model-profile-current')).toContainText('gpt-5.5');
   await page.locator('[data-profile]').selectOption('user:coding');
-  await page.locator('[data-effort]').selectOption('high');
+  await page.locator('[data-effort]').press('End');
   await page.locator('[data-save]').click();
   await expect(page.locator('[data-status]')).toContainText('已保存');
   expect(writes).toEqual([{path:'apply',profile_id:'user:coding'},
     {path:'effort',session_id:'one',settings:{inference:{reasoning_effort:'high'}}}]);
   await expect(page.locator('[data-profile]')).toHaveValue('user:coding');
-  await expect(page.locator('[data-effort]')).toHaveValue('high');
+  await expect(page.locator('[data-effort]')).toHaveValue('3');
+  await expect(page.locator('[data-reasoning-output]')).toHaveText('high');
 });
 
 test('DeepSeek effort control is visible, saved per Agent and remapped after model selection',async({page})=>{
   const writes = await setup(page,{deepseek:true});
   await expect(page.locator('[data-effort]')).toBeVisible();
   await expect(page.locator('[data-effort]')).toBeEnabled();
-  await expect(page.locator('[data-effort] option')).toHaveCount(8);
-  await expect(page.locator('[data-effort] option[value="0"]')).toContainText('high');
-  await expect(page.locator('[data-effort] option[value="7"]')).toContainText('max');
-  await page.locator('[data-effort]').selectOption('7');
+  await expect(page.locator('[data-effort]')).toHaveAttribute('type','range');
+  await expect(page.locator('[data-effort]')).toHaveAttribute('max','7');
+  await page.locator('[data-effort]').press('Home');
+  await expect(page.locator('[data-reasoning-output]')).toContainText('自动 · 模型预设 · high');
+  await page.locator('[data-effort]').press('End');
+  await expect(page.locator('[data-reasoning-output]')).toContainText('7 · 最高 → max');
   await page.locator('[data-profile]').selectOption('user:coding');
-  await expect(page.locator('[data-effort] option[value="7"]')).toContainText('xhigh');
+  await expect(page.locator('[data-reasoning-output]')).toContainText('xhigh');
   await page.locator('[data-profile]').selectOption('');
   await expect(page.locator('[data-effort]')).toHaveValue('7');
-  await expect(page.locator('[data-effort] option[value="7"]')).toContainText('max');
+  await expect(page.locator('[data-reasoning-output]')).toContainText('max');
   await page.locator('[data-save]').click();
   await expect(page.locator('[data-status]')).toContainText('已保存');
   expect(writes).toEqual([{path:'apply',profile_id:''},
@@ -96,7 +99,7 @@ test('profile selection retains controls for native levels without a unified map
   const writes = await setup(page,{legacyProfile:true});
   await page.locator('[data-profile]').selectOption('user:coding');
   await expect(page.locator('[data-effort]')).toBeEnabled();
-  await page.locator('[data-effort]').selectOption('high');
+  await page.locator('[data-effort]').press('End');
   await page.locator('[data-save]').click();
   await expect(page.locator('[data-status]')).toContainText('已保存');
   expect(writes.at(-1)).toEqual({path:'effort',session_id:'one',settings:{inference:{reasoning_effort:'high'}}});
@@ -133,15 +136,38 @@ test('unsaved conversation remains uncreated; profile form fits 320px',async({pa
 
 test('seven effort levels preview the selected model mapping and remain Agent-local',async({page})=>{
   const writes=await setup(page,{unified:true});
-  await expect(page.locator('[data-effort] option')).toHaveCount(8);
-  await expect(page.locator('[data-effort] option[value="7"]')).toContainText('xhigh');
-  await page.locator('[data-effort]').selectOption('7');
+  await expect(page.locator('[data-effort]')).toHaveAttribute('type','range');
+  await page.locator('[data-effort]').press('End');
+  await expect(page.locator('[data-reasoning-output]')).toContainText('xhigh');
   await page.locator('[data-profile]').selectOption('user:coding');
   await expect(page.locator('[data-effort]')).toHaveValue('7');
-  await expect(page.locator('[data-effort] option[value="7"]')).toContainText('max');
+  await expect(page.locator('[data-reasoning-output]')).toContainText('max');
   await page.locator('[data-save]').click();
   await expect(page.locator('[data-status]')).toContainText('已保存');
   expect(writes).toEqual([{path:'apply',profile_id:'user:coding'},
     {path:'effort',session_id:'one',settings:{inference:{reasoning_level:7,reasoning_effort:''}}}]);
   await expect(page.locator('[data-effort]')).toHaveValue('7');
+});
+
+test('effort slider supports pointer and keyboard changes, and saves automatic mode',async({page})=>{
+  await page.setViewportSize({width:320,height:640});
+  const writes=await setup(page,{unified:true});
+  const slider=page.locator('[data-effort]');
+  await expect(slider).toHaveAttribute('min','0');
+  await expect(slider).toHaveAttribute('step','1');
+  const box=await slider.boundingBox();
+  expect(box.x+box.width).toBeLessThanOrEqual(320);
+  await slider.click({position:{x:box.width-8,y:box.height/2}});
+  await expect(slider).toHaveValue('7');
+  await expect(slider).toHaveAttribute('aria-valuetext','7 · 最高 → xhigh');
+  await slider.press('Home');
+  await expect(slider).toHaveValue('0');
+  await expect(page.locator('[data-reasoning-output]')).toContainText('自动');
+  await slider.press('ArrowRight');
+  await expect(slider).toHaveValue('1');
+  await expect(page.locator('[data-reasoning-output]')).toContainText('1 · 最低 → none');
+  await slider.press('Home');
+  await page.locator('[data-save]').click();
+  await expect(page.locator('[data-status]')).toContainText('已保存');
+  expect(writes.at(-1)).toMatchObject({path:'effort',settings:{inference:{reasoning_level:0,reasoning_effort:''}}});
 });

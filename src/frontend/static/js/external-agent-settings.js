@@ -71,8 +71,9 @@
         const selected = settings.config_options?.[item.id] ?? item.currentValue ?? '';
         if (window.ReasoningLevels && Object.keys(item.reasoning_level_map || {}).length) {
           const level = settings.reasoning_level === 0 ? 0 : ReasoningLevels.selected(settings.reasoning_level,selected);
-          return `<label>${escape(item.name || item.id)} · 7 级<select data-option="${escape(item.id)}" data-unified-effort data-initial-value="${level}">${ReasoningLevels.options(item.reasoning_level_map,level,'自动 · 保持原生设置')}</select><small>箭头后是当前模型的实际档位；切换模型后，下次调用会按新模型重新映射。</small></label>`;
+          return `<label>${escape(item.name || item.id)} · 7 级${ReasoningLevels.slider({mapping:item.reasoning_level_map,level,autoLabel:'自动 · ' + (item.currentValue || selected || '保持原生设置'),attributes:`data-option="${escape(item.id)}" data-unified-effort data-initial-value="${level}"`})}<small>箭头后是当前模型的实际档位；切换模型后，下次调用会按新模型重新映射。</small></label>`;
         }
+        if (['reasoning_effort','effort'].includes(item.id) && item.options?.length) return `<label>${escape(item.name || item.id)}${ReasoningLevels.slider({choices:item.options.map(choice=>({value:choice.value,label:choice.name || choice.value})),value:selected,attributes:`data-option="${escape(item.id)}" data-initial-value="${escape(selected)}"`})}${item.description ? `<small>${escape(item.description)}</small>` : ''}</label>`;
         return `<label>${escape(item.name || item.id)}<select data-option="${escape(item.id)}" id="external-option-${index}" data-initial-value="${escape(selected)}">
           ${(item.options || []).map(choice => `<option value="${escape(choice.value)}" ${String(selected) === String(choice.value) ? 'selected' : ''}>${escape(choice.name || choice.value)}</option>`).join('')}
           </select>${item.description ? `<small>${escape(item.description)}</small>` : ''}</label>`;
@@ -114,7 +115,8 @@
         // Preserve edits made while automatic connection testing was in flight.
         const changed = {};
         overlay.querySelectorAll('[data-option]').forEach(el => {
-          if (!el.hasAttribute('data-unified-effort') && el.value !== el.dataset.initialValue) changed[el.dataset.option] = el.value;
+          const value = ReasoningLevels.value(el);
+          if (!el.hasAttribute('data-unified-effort') && value !== el.dataset.initialValue) changed[el.dataset.option] = value;
         });
         const draft = {clawcross_tools: overlay.querySelector('#external-tools').checked,
           timeout_sec: Number(overlay.querySelector('#external-timeout').value),
@@ -138,7 +140,7 @@
       status.textContent = '保存中…';
       try {
         const config_options = {};
-        overlay.querySelectorAll('[data-option]').forEach(el => { if (el.value && !el.hasAttribute('data-unified-effort')) config_options[el.dataset.option] = el.value; });
+        overlay.querySelectorAll('[data-option]').forEach(el => { const value = ReasoningLevels.value(el); if (value && !el.hasAttribute('data-unified-effort')) config_options[el.dataset.option] = value; });
         const effortInput = overlay.querySelector('[data-unified-effort]');
         const names = overlay.querySelector('#external-tool-list').value.split(/[,，\s]+/).filter(Boolean);
         await createIfNeeded();
