@@ -6,7 +6,21 @@
     const resolutions = new Map();
     const inFlight = new Set();
     const views = new Map();
-    const statusLabel = action => action === 'deny' ? (zh() ? '已拒绝' : 'Denied') : (zh() ? '已批准' : 'Approved');
+    const statusLabel = decision => decision.action === 'expired' ? (zh() ? '已失效' : 'Expired') :
+        decision.action === 'deny' ? (zh() ? '已拒绝' : 'Denied') :
+        decision.remember ? (zh() ? '已批准并记住' : 'Approved and remembered') : (zh() ? '已批准' : 'Approved');
+
+    function finishBubble(node, decision) {
+        const completed = node.classList.contains('resolved');
+        const status = node.querySelector('.cc-approval-status');
+        if (status) status.textContent = statusLabel(decision);
+        node.classList.add('resolved');
+        const disclosure = node.querySelector('.cc-approval-disclosure');
+        if (disclosure && !completed) disclosure.open = false;
+        node.querySelector('.cc-approval-actions')?.remove();
+        const hint = node.querySelector('.cc-approval-hint');
+        if (hint) hint.hidden = true;
+    }
 
     async function resolve(approvalId, action, remember, sessionId) {
         if (inFlight.has(approvalId)) throw new Error(zh() ? '此操作正在确认，请稍候。' : 'This approval is being processed.');
@@ -18,18 +32,17 @@
         });
         const data = await response.json();
         if (!response.ok || data.status !== 'success') throw new Error(data.detail || data.error || (zh() ? '审核处理失败' : 'Approval failed'));
-        resolutions.set(approvalId, action);
+        const outcome = data.approval?.status === 'denied' ? 'deny' : action;
+        const decision = {action: outcome, remember: outcome !== 'deny' && (data.approval?.remember ?? !!remember)};
+        resolutions.set(approvalId, decision);
         document.querySelectorAll('[data-approval-bubble]').forEach(node => {
             if (node.dataset.approvalBubble !== approvalId) return;
-            const status = node.querySelector('.cc-approval-status');
-            if (status) status.textContent = statusLabel(action);
-            node.classList.add('resolved');
-            node.querySelector('.cc-approval-actions')?.remove();
+            finishBubble(node, decision);
         });
         const view = views.get(sessionId)?.options;
         if (view) {
-            view.onReply?.({approval_id: approvalId, session_id: sessionId, action, remember: !!remember,
-                text: (remember ? 'KEEP Y' : action === 'deny' ? 'N' : 'Y') + ' ' + approvalId});
+            view.onReply?.({approval_id: approvalId, session_id: sessionId, action: outcome, remember: decision.remember,
+                text: (outcome === 'deny' ? 'N' : decision.remember ? 'KEEP Y' : 'Y') + ' ' + approvalId});
             view.onResolved?.(sessionId, data);
         }
         return data;
@@ -63,11 +76,13 @@
             found = true;
             const decision = resolutions.get(info.id);
             return `<section class="cc-approval-bubble${decision ? ' resolved' : ''}" data-approval-bubble="${escape(info.id)}">
-                <div class="cc-approval-heading"><strong>${zh() ? '操作需要确认' : 'Approval needed'}</strong><span class="cc-approval-status">${decision ? statusLabel(decision) : (zh() ? '等待确认' : 'Awaiting approval')}</span></div>
+                <details class="cc-approval-disclosure"${decision ? '' : ' open'}>
+                <summary class="cc-approval-heading"><strong>${escape(info.tool)}</strong><span class="cc-approval-status">${decision ? statusLabel(decision) : (zh() ? '等待确认' : 'Awaiting approval')}</span></summary>
                 <div class="cc-approval-tool">${escape(info.tool)}</div><p>${escape(info.reason)}</p>
                 <details><summary>${zh() ? '查看具体操作' : 'View exact action'}</summary><pre>${escape(JSON.stringify(info.args || {}, null, 2))}</pre></details>
-                <p class="cc-approval-hint">${zh() ? '点击确认，或在输入框回复' : 'Confirm here, or reply'} <kbd>Y</kbd> / <kbd>N</kbd> / <kbd>KEEP Y</kbd></p>
+                <p class="cc-approval-hint"${decision ? ' hidden' : ''}>${zh() ? '点击确认，或在输入框回复' : 'Confirm here, or reply'} <kbd>Y</kbd> / <kbd>N</kbd> / <kbd>KEEP Y</kbd></p>
                 <small>${escape(info.id)}</small>
+                </details>
             </section>`;
         }).join('');
         return found ? html : null;
@@ -75,6 +90,17 @@
 
     function sync(root, approvals, options) {
         if (!root) return;
+        approvals.forEach(item => {
+            if (!['approved', 'used', 'denied', 'expired'].includes(item.status)) return;
+            resolutions.set(item.approval_id, {
+                action: item.status === 'expired' ? 'expired' : item.status === 'denied' ? 'deny' : 'approve',
+                remember: !!item.review?.remembered,
+            });
+        });
+        root.querySelectorAll('[data-approval-bubble]').forEach(node => {
+            const decision = resolutions.get(node.dataset.approvalBubble);
+            if (decision) finishBubble(node, decision);
+        });
         const pending = approvals.filter(humanPending);
         for (const [sid, view] of views) if (view.root === root) views.delete(sid);
         pending.forEach(item => views.set(item.session_id, {root, options}));

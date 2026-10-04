@@ -30,7 +30,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" crossorigin="anonymous"></script>
 <script src="{{ url_for('static', filename='js/snapshot_zip_progress.js') }}?v=20260331-progress"></script>
-<link rel="stylesheet" href="/static/css/markdown-shared.css?v=20261003-inline-approval">
+<link rel="stylesheet" href="/static/css/markdown-shared.css?v=20261004-fold-approval">
 <link rel="stylesheet" href="/static/css/theme.css?v=20261002-fold">
 <script src="/static/js/components.js?v=20261002-runtime-menu"></script>
 <link rel="stylesheet" href="/static/css/external-agent-settings.css?v=20261004-profiles">
@@ -38,7 +38,7 @@
 <script src="/static/js/reasoning-levels.js?v=20261004-seven"></script>
 <script src="/static/js/external-agent-settings.js?v=20261004-seven"></script>
 <script src="/static/js/model-profiles.js?v=20261004-seven"></script>
-<script src="/static/js/approval-ui.js?v=20261003-inline-approval"></script>
+<script src="/static/js/approval-ui.js?v=20261004-fold-approval"></script>
 <link rel="stylesheet" href="/static/css/channel-setup.css?v=2">
 <script src="/static/js/channel-setup.js?v=2"></script>
 <link rel="stylesheet" href="/static/css/native-session-browser.css?v=1">
@@ -10391,12 +10391,10 @@ async function refreshPendingApprovalsForCurrentGroup() {
     .filter(Boolean);
   void ClawcrossChannelSetup.sync(document.getElementById('chat-body'), sessions).catch(() => {});
   try {
-    const data = await api('GET', '/proxy_webot_tool_approvals?status=pending&limit=50');
+    const data = await api('GET', '/proxy_webot_tool_approvals?status=&limit=100');
     const allApprovals = Array.isArray(data.approvals) ? data.approvals : [];
     renderPendingApprovalCards(allApprovals.filter(item => sessions.includes(String(item.session_id || ''))));
-  } catch (_) {
-    renderPendingApprovalCards([]);
-  }
+  } catch (_) {}
 }
 
 // ── Attachments state ──
