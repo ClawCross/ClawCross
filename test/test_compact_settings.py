@@ -3,13 +3,37 @@ import tempfile
 import sqlite3
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "backend"))
 from webot import compression as c
 from webot.runtime_settings import ContextSettings
 from webot.checkpoint_repository import save_context_compaction, get_context_compaction, delete_context_compaction
+
+
+class HistoryViewRetentionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_model_input_respects_recent_turns_and_disabled_compaction(self):
+        from webot.engine.agent import TeamAgent
+        engine = TeamAgent.__new__(TeamAgent)
+        engine._db_path = '/tmp/unused-history-retention.db'
+        engine.restore_context_usage = AsyncMock()
+        engine.get_thread_last_context_tokens = lambda _: 0
+        engine._background_compression = SimpleNamespace(prepare_for_model=AsyncMock(return_value=None))
+        turn = SimpleNamespace(user_id='alice', session_id='s', thread_id='alice#s')
+        history = [message for index in range(8) for message in (
+            HumanMessage(content=f'user-{index} ' + '中' * 500), AIMessage(content=f'reply-{index}'))]
+        for enabled in (True, False):
+            with self.subTest(auto_compact=enabled), \
+                    patch('webot.engine.agent.get_context_compaction', return_value=None):
+                view, _, _ = await engine._history_view({'messages': history}, turn, history,
+                    settings=ContextSettings(auto_compact=enabled, preserve_recent_turns=3),
+                    history_budget=600, preserve_recent=8, prefix_tokens=10,
+                    output_reserve=100, context_window=100000, model_name='test')
+                self.assertEqual(view[-6:], history[-6:])
+                if not enabled:
+                    self.assertEqual(view, history)
 
 
 class CompactSettingsTests(unittest.TestCase):
@@ -91,6 +115,22 @@ class CompactSettingsTests(unittest.TestCase):
         self.assertTrue(result.triggered)
         self.assertEqual(result.view[-16:], self.messages[-16:])
         self.assertFalse(result.metadata["target_met"])
+
+    def test_temporary_budget_keeps_protected_turns_and_tool_pairs(self):
+        original = list(self.messages)
+        view = c.temporary_bounded_view(self.messages, 1000, preserve_recent_turns=4)
+        self.assertEqual(view[-16:], original[-16:])
+        self.assertGreater(c.estimate_messages_tokens(view), 1000)
+        self.assertEqual(self.messages, original)
+
+    def test_temporary_budget_does_not_omit_a_short_history(self):
+        recent = self.messages[-12:]
+        self.assertEqual(c.temporary_bounded_view(recent, 1000, preserve_recent_turns=4), recent)
+
+    def test_temporary_budget_preserves_summary_and_protected_turns(self):
+        result = self.compact(settings=ContextSettings(preserve_recent_turns=4, summary_tokens=256))
+        view = c.temporary_bounded_view(result.view, 1000, preserve_recent_turns=4)
+        self.assertEqual(view, result.view)
 
     def test_minimum_new_messages_selects_a_later_whole_turn(self):
         boundary = c._pick_boundary(self.messages, current_until=0, preserve_recent=8,

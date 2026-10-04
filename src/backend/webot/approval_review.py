@@ -91,6 +91,34 @@ class ApprovalResult:
     pending: bool = False  # a request is waiting for the user; retrying after approval runs it
 
 
+_WAITING_APPROVALS: set[str] = set()
+
+
+def has_live_approval_waiter(record) -> bool:
+    """A live call owns this approval, including a separate local MCP process."""
+    pid = json.loads(record.review_metadata_json or '{}').get('waiter_pid')
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    if pid == os.getpid():
+        return record.approval_id in _WAITING_APPROVALS
+    if os.name == 'nt':
+        # Windows os.kill(pid, 0) can terminate a process; use a read-only query.
+        import csv
+        import subprocess
+        try:
+            result = subprocess.run(['tasklist', '/FI', f'PID eq {pid}', '/FO', 'CSV', '/NH'],
+                capture_output=True, text=True, check=False, timeout=5)
+            return result.returncode == 0 and any(len(row) > 1 and row[1] == str(pid)
+                for row in csv.reader(result.stdout.splitlines()))
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+    try:
+        os.kill(pid, 0)
+    except (OSError, OverflowError):
+        return False
+    return True
+
+
 def _hash(value) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
 
@@ -177,7 +205,7 @@ def approval_context(user_id, session_id, messages=None):
     return context
 
 
-def resolve_conversation_reply(user_id: str, session_id: str, context: dict) -> str:
+def resolve_conversation_reply(user_id: str, session_id: str, context: dict, *, live_only: bool = False) -> str:
     """Accept exact chat replies only from a trusted human, scoped to this agent."""
     requests = context.get('user_requests') or []
     if not requests:
@@ -192,6 +220,8 @@ def resolve_conversation_reply(user_id: str, session_id: str, context: dict) -> 
     candidates = []
     for record in records:
         meta = json.loads(record.review_metadata_json or '{}')
+        if live_only and not has_live_approval_waiter(record):
+            continue
         if (meta.get('reviewer') != 'auto_review' and meta.get('conversation_reply') and human['id'] not in meta.get('request_ids', [])
                 and record.expires_at > store.utc_now()
                 and (not match[2] or match[2] == record.approval_id)):
@@ -203,7 +233,8 @@ def resolve_conversation_reply(user_id: str, session_id: str, context: dict) -> 
         return ''
     from webot.permission_context import resolve_permission_request
     command = match[1].upper()
-    meta['binding']['context_hash'] = _hash(requests)
+    if not has_live_approval_waiter(record):
+        meta['binding']['context_hash'] = _hash(requests)
     meta['human_reply_id'] = human['id']
     store.set_approval_review_metadata(record.approval_id, user_id, meta)
     approved = command != 'N'
@@ -345,10 +376,10 @@ async def authorize_action(
     active_approval=None,
     wait_for_user: bool = True,
 ) -> ApprovalResult:
-    """Decide one call; human authorization is requested in the next chat turn.
+    """Wait for human confirmation inside the original tool call.
 
-    ``wait_for_user`` remains for existing callers. Pending requests always
-    return immediately, on web, CLI and group/scheduled turns alike.
+    Only explicitly detached callers receive a pending result. Auto review
+    always produces a final approval or denial, without human fallback.
     """
     request = None
     try:
@@ -552,16 +583,18 @@ async def authorize_action(
             if verdict.decision == "deny" and counters is not None:
                 counters["consecutive_denials"] = counters.get("consecutive_denials", 0) + 1
 
-        # Human input arrives on a later turn, including on CLI/social channels.
-        # Never hold this turn waiting for a web confirmation button.
         record = store.get_tool_approval(request.approval_id, user_id)
         if record is not None and record.status == 'pending':
             metadata = json.loads(record.review_metadata_json or '{}')
             metadata['conversation_reply'] = True
+            if wait_for_user:
+                _WAITING_APPROVALS.add(request.approval_id)
+                metadata['waiter_pid'] = os.getpid()
             store.set_approval_review_metadata(request.approval_id, user_id, metadata)
-            reason = (metadata.get('verdict') or {}).get('reason') or record.request_reason
-            return ApprovalResult(False, conversation_approval_prompt(record, reason), request.approval_id, pending=True)
-        wait_seconds = 0
+            if not wait_for_user:
+                reason = (metadata.get('verdict') or {}).get('reason') or record.request_reason
+                return ApprovalResult(False, conversation_approval_prompt(record, reason), request.approval_id, pending=True)
+        wait_seconds = max(1, float(os.getenv('COMMAND_APPROVAL_WAIT_SECONDS', '600'))) if wait_for_user else 0
         deadline = time.monotonic() + wait_seconds
         while True:
             record = store.get_tool_approval(request.approval_id, user_id)
@@ -607,3 +640,11 @@ async def authorize_action(
         if request is not None:
             store.update_tool_approval_status(request.approval_id, user_id, status="expired")
         raise
+    finally:
+        if request is not None and request.approval_id in _WAITING_APPROVALS:
+            _WAITING_APPROVALS.discard(request.approval_id)
+            fresh = store.get_tool_approval(request.approval_id, user_id)
+            if fresh is not None:
+                metadata = json.loads(fresh.review_metadata_json or '{}')
+                metadata.pop('waiter_pid', None)
+                store.set_approval_review_metadata(request.approval_id, user_id, metadata)

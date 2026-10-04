@@ -1040,7 +1040,7 @@ class WeBotService:
         x_internal_token: str | None,
     ):
         self.verify_auth_or_token(req.user_id, req.password, x_internal_token)
-        from webot.approval_review import policy_binding
+        from webot.approval_review import policy_binding, has_live_approval_waiter
         from webot.runtime_store import get_tool_approval, utc_now
         record = get_tool_approval(req.approval_id, req.user_id)
         if record is None or (req.session_id and req.session_id != record.session_id):
@@ -1056,6 +1056,7 @@ class WeBotService:
         if req.action.lower() not in {'approve', 'approved', 'allow', 'deny', 'denied'}:
             raise HTTPException(status_code=400, detail='无效的审核选项。')
         normalized_action = "approved" if req.action.lower() in {"approve", "approved", "allow"} else "denied"
+        waiting = has_live_approval_waiter(record)
         approval = resolve_permission_request(
             user_id=req.user_id,
             approval_id=req.approval_id,
@@ -1068,6 +1069,18 @@ class WeBotService:
         # KEEP Y can fail while persisting its scope. Continue according to the
         # recorded outcome, never the button the user originally pressed.
         normalized_action = approval.status
+        result = {
+            "status": "success", "continuation": "resumed" if waiting else "queued",
+            "approval": {
+                "approval_id": approval.approval_id, "tool_name": approval.tool_name,
+                "status": approval.status,
+                "remember": bool(json.loads(approval.review_metadata_json or '{}').get('remembered')),
+            },
+        }
+        if waiting:
+            # The original tool call receives this decision and continues.
+            # A new trigger would duplicate or interrupt its execution.
+            return result
         continuation = metadata.get('continuation') or {}
         text = (f'[操作授权结果] {approval.approval_id}：'
                 + ('用户已批准此具体操作。系统将重试原操作，完成后继续原任务。' if normalized_action == 'approved'
@@ -1089,13 +1102,4 @@ class WeBotService:
                 context={'groups': continuation.get('groups') or []}, mode=continuation.get('mode'))
             if not receipt.accepted:
                 raise HTTPException(status_code=503, detail=receipt.error or '审核已记录，但无法恢复 Agent。')
-        return {
-            "status": "success",
-            "continuation": "queued",
-            "approval": {
-                "approval_id": approval.approval_id,
-                "tool_name": approval.tool_name,
-                "status": approval.status,
-                "remember": bool(json.loads(approval.review_metadata_json or '{}').get('remembered')),
-            },
-        }
+        return result

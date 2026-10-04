@@ -160,6 +160,45 @@ class ConnectionProbeTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ScopedBridgeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_ending_native_turn_cancels_an_unfinished_bridge_call(self):
+        import httpx
+        from fastapi import FastAPI
+        from langchain_core.tools import tool
+        @tool
+        def safe_read(path: str) -> str:
+            """Read safe test data."""
+            return path
+        started, cancelled = asyncio.Event(), asyncio.Event()
+        async def blocked(*args):
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+        with TemporaryDirectory() as tmp:
+            store = AgentStore(Path(tmp) / 'agents.db')
+            agent = store.create('alice', driver=ACPX, config={'platform':'codex'})
+            engine = SimpleNamespace(_mcp_tools=[safe_read], _tool_registry=None)
+            app = FastAPI(); app.include_router(tool_bridge.bridge_router())
+            tool_bridge._tokens['cancel-token'] = ('alice', agent.agent_id)
+            try:
+                with patch('external.tool_bridge.get_store', return_value=store), \
+                     patch('external.tool_bridge.get_gateway', return_value=SimpleNamespace(runtimes={'webot':SimpleNamespace(engine=engine)})), \
+                     patch('webot.engine.agent.available_internal_tool_names', return_value={'safe_read'}), \
+                     patch('webot.engine.agent.UserAwareToolNode', return_value=AsyncMock(side_effect=blocked)):
+                    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://bridge') as client:
+                        with tool_bridge.active_turn(agent, AgentMessage(text='Read',sender='u:alice'), {}, 'manual', ['safe_read']):
+                            request = asyncio.create_task(client.post('/external/tool-bridge',
+                                headers={'Authorization':'Bearer cancel-token'},
+                                json={'action':'call','name':'safe_read','arguments':{'path':'x'}}))
+                            await asyncio.wait_for(started.wait(), 2)
+                            self.assertFalse(request.done())
+                        await asyncio.wait_for(cancelled.wait(), 2)
+                        with self.assertRaises(asyncio.CancelledError):
+                            await request
+            finally:
+                tool_bridge._tokens.pop('cancel-token', None)
+
     async def test_tools_default_enabled_and_explicit_disable_is_preserved(self):
         with TemporaryDirectory() as tmp:
             store = AgentStore(Path(tmp) / 'agents.db')

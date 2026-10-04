@@ -537,14 +537,14 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-10-04T09:13:06.396265+00:00`
+- Updated at: `2026-10-04T09:38:29.162292+00:00`
 - Strategy: `harden`
-- Heuristic candidate: `blended-verification-loop-workspace-preflight-structured-output`
-- Heuristic score: `0.652`
+- Heuristic candidate: `blended-verification-loop-approval-auth-structured-output`
+- Heuristic score: `0.564`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: (external failure context). Signals: verification-loop, workspace-preflight, structured-output. stdout was used as fallback failure evidence.
+Command exited with code 1. Command: (external failure context). Signals: verification-loop, approval-auth, structured-output. stdout was used as fallback failure evidence.
 
 ### Strategy Rationale
 
@@ -558,41 +558,26 @@ Command exited with code 1. Command: (external failure context). Signals: verifi
 ### Latest Error Excerpt
 
 ```text
-..F............................F..................       [100%]
-=================================== FAILURES ===================================
-_ ReasoningLevelsTests.test_mapping_uses_supported_choices_with_monotonic_conservative_fallback _
+============================= test session starts ==============================
+platform linux -- Python 3.11.16, pytest-9.1.1, pluggy-1.6.0 -- /home/ubuntu/.clawcross/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/ubuntu/work2/ClawCross
+configfile: pytest.ini
+plugins: langsmith-0.14.2, asyncio-1.4.0, anyio-4.15.1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 81 items
 
-self = <test.test_reasoning_levels.ReasoningLevelsTests testMethod=test_mapping_uses_supported_choices_with_monotonic_conservative_fallback>
-
-    def test_mapping_uses_supported_choices_with_monotonic_conservative_fallback(self):
-        self.assertEqual(list(level_map(['high','low','medium']).values()),
-                         ['low','low','low','medium','high','high','high'])
->       self.assertEqual(list(level_map(['none','low','medium','high','xhigh']).values()),
-                         ['none','low','low','medium','high','xhigh','xhigh'])
-E       AssertionError: Lists differ: ['none', 'none', 'low', 'medium', 'high', 'xhigh', 'xhigh'] != ['none', 'low', 'low', 'medium', 'high', 'xhigh', 'xhigh']
-E
-E       First differing element 1:
-E       'none'
-E       'low'
-E
-E       - ['none', 'none', 'low', 'medium', 'high', 'xhigh', 'xhigh']
-E       ?          --------
-E
-E       + ['none', 'low', 'low', 'medium', 'high', 'xhigh', 'xhigh']
-E       ?                +++++++
-
-test/test_reasoning_levels.py:14: AssertionError
-_ ConnectionProbeTests.test_connection_initializes_without_prompt_or_identity_delivery _
-
-self = <test.test_acp_stream_and_bridge.ConnectionProbeTests testMethod=test_connection_initializes_without_prompt_or_identity_delivery>
-
-    async def test_connection_initializes_without_prompt_or_identity_delivery(self):
-        with TemporaryDirectory() as tmp:
-            store = AgentStore(Path(tmp)/'agents.db')
-            agent = store.create('alice', driver=ACPX, config={'platform':'codex','model':'gpt-5.5'})
-            runtime = AcpRuntime(store=store)
-            adapter = SimpleNamespace(ensure_session=AsyncMock(), prompt_with_trace=AsyncMock())
-            with patch('externa ...[truncated]
+test/test_manual_approval_continuation.py::ManualContinuationTests::test_agent_cannot_supply_system_network_retry_parameters PASSED [  1%]
+test/test_manual_approval_continuation.py::ManualContinuationTests::test_auto_result_cannot_be_overridden_by_human_button PASSED [  2%]
+test/test_manual_approval_continuation.py::ManualContinuationTests::test_button_continues_original_tool_once_without_pending_result_or_new_turn PASSED [  3%]
+test/test_manual_approval_continuation.py::ManualContinuationTests::test_cancellation_expires_waiter_without_executing PASSED [  4%]
+test/test_manual_approval_continuation.py::ManualContinuationTests::test_cli_text_reply_continues_without_sending_bare_y_to_model PASSED [  6%]
+test/test_manual_approval_continuation.py::ManualContinuationTests::test_deny_returns_only_final_denial_without_executing PASSED [  7%]
+test/test_manual_approval_continuation.py::ManualContinuationTests::test_detached_old_request_still_queues_its_saved_action PASSED [  8%]
+test/test_manual_approval_continuation.py::ManualContinuationTests::test_external_agent_approval_does_not_prompt_native_agent_again PASSED [  9%]
+test/test_manual_approval_continuation.py::ManualContinuationTests::test_failed_keep_registration_returns_final_denial PASSED [ 11%]
+test/test_manual_approval_continuation.py::ManualContinuationTests::test_gateway_chat_y_does_not_cancel_or_start_an_agent_turn PASSED [ 12%]
+test/test_manual_approval_continuation.py::ManualContinuationTests::test_system_trigger_owner_y_is ...[truncated]
 ```
 
 ### Governance Snapshot
@@ -615,15 +600,15 @@ self = <test.test_acp_stream_and_bridge.ConnectionProbeTests testMethod=test_con
 
 ### Recent Evidence
 
-- `2026-10-04T09:13:06.396265+00:00` `repo-skill` — ..F............................F..................       [100%]
-=================================== FAILURES ================================= ...[truncated]
+- `2026-10-04T09:38:29.162292+00:00` `repo-skill` — ============================= test session starts ==============================
+platform linux -- Python 3.11.16, pytest-9.1.1, pluggy-1.6.0 ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `blended-verification-loop-workspace-preflight-structured-output` score `0.652` — Blend the strongest recent failure patterns (intent `repair`)
-- `verification-loop-4` score `0.612` — Tighten verification loops (intent `repair`)
-- `workspace-preflight-2` score `0.515` — Add repo/workspace preflight checks (intent `repair`)
-- `structured-output-1` score `0.467` — Harden structured-output handling (intent `repair`)
+- `blended-verification-loop-approval-auth-structured-output` score `0.564` — Blend the strongest recent failure patterns (intent `repair`)
+- `verification-loop-5` score `0.524` — Tighten verification loops (intent `repair`)
+- `approval-auth-3` score `0.482` — Preflight auth and approval constraints (intent `repair`)
+- `structured-output-3` score `0.482` — Harden structured-output handling (intent `repair`)
 
 ### Local State Snapshot
 

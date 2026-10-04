@@ -37,6 +37,18 @@ from common.runtime_paths import PROJECT_ROOT  # noqa: E402
 _PROJECT_ROOT = str(PROJECT_ROOT)
 
 
+def _live_approval_reply(agent: Agent, msg: AgentMessage, context: dict) -> str:
+    """Consume button-equivalent human input before a runtime cancels/queues it."""
+    from langchain_core.messages import HumanMessage
+    from webot.approval_review import resolve_conversation_reply, review_context
+    group_requests = context.get('group_human_requests') or []
+    human = HumanMessage(content=msg.text, additional_kwargs={
+        'input_origin': 'user' if msg.sender == f'u:{agent.owner}' and not group_requests else 'system',
+        'framework_group_requests': group_requests,
+    })
+    return resolve_conversation_reply(agent.owner, agent.agent_id, review_context([human]), live_only=True)
+
+
 def cli_entry(user: str) -> str:
     """Use the running project's Python; no uv cache writes in native sandboxes."""
     return f'{shlex.quote(sys.executable)} {shlex.quote(str(PROJECT_ROOT / "src" / "cli" / "cli.py"))} -u {shlex.quote(user)}'
@@ -96,6 +108,9 @@ class AgentGateway:
         it as it can, or not at all.
         """
         context = {"teams": agent.teams, **(context or {})}
+        resolution = _live_approval_reply(agent, msg, context)
+        if resolution:
+            return AgentReply(ok=True, content=resolution)
         try:
             return await self.runtime(agent).ask(agent, msg, context=context, mode=normalize_run_mode(mode),
                                                  enabled_tools=enabled_tools, response_format=response_format,
@@ -107,6 +122,21 @@ class AgentGateway:
     async def chat(self, agent: Agent, request: Any) -> Any:
         """An OpenAI chat completion (``agents.openai.ChatCompletionRequest``), streamed or
         not: the runtime's own when it speaks the protocol, otherwise the agent is asked."""
+        from agents.messages import parse_openai_content
+        text, attachments = next((parse_openai_content(message.content) for message in reversed(request.messages)
+                                  if message.role == 'user'), ('', []))
+        resolution = '' if attachments else _live_approval_reply(agent, AgentMessage(text=text, sender=f'u:{agent.owner}'), {})
+        if resolution:
+            from agents.openai import chunk, completion_id, response, streaming
+            model = request.model or agent.platform
+            if not request.stream:
+                return response(resolution, model=model)
+            async def acknowledge():
+                cid = completion_id()
+                yield chunk(completion_id=cid, content=resolution, model=model)
+                yield chunk(completion_id=cid, model=model, finish_reason='stop')
+                yield 'data: [DONE]\n\n'
+            return streaming(acknowledge())
         runtime = self.runtime(agent)
         if runtime.chat is not None:
             return await runtime.chat(agent, request)
@@ -128,6 +158,8 @@ class AgentGateway:
         without a queue of its own is asked in the background, its direct reply handed
         to *on_complete* (the agent speaks through the conversation's own channel)."""
         context = {"teams": agent.teams, **(context or {})}
+        if _live_approval_reply(agent, msg, context):
+            return DeliveryReceipt(accepted=True)
         return await self.runtime(agent).trigger(agent, msg, context=context, mode=normalize_run_mode(mode),
                                                  coalesce_key=coalesce_key, on_complete=on_complete)
 
@@ -144,6 +176,8 @@ class AgentGateway:
         runs it in the session's own mode; a runtime without an inbox is handed it at
         once, in *mode*."""
         context = {"teams": agent.teams, **(context or {})}
+        if _live_approval_reply(agent, msg, context):
+            return DeliveryReceipt(accepted=True)
         return await self.runtime(agent).inbox(agent, msg, context=context, mode=normalize_run_mode(mode),
                                                on_complete=on_complete)
 

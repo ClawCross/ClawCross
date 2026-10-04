@@ -3777,10 +3777,26 @@ function _escapeHtmlStrip(str) {
     return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+let _studioPendingApproval = false;
+function syncStudioApprovalInput() {
+    if (_studioPendingApproval) {
+        inputField.disabled = false;
+        sendBtn.disabled = false;
+        sendBtn.style.display = 'inline-block';
+    } else if (cancelTargetSessionId === currentSessionId && cancelTargetSessionId) {
+        inputField.disabled = true;
+        sendBtn.disabled = true;
+        sendBtn.style.display = 'none';
+    }
+}
+
 function renderStudioApprovalStrip(approvals) {
     const strip = document.getElementById('studio-approval-strip');
     if (strip) { strip.style.display = 'none'; strip.innerHTML = ''; }
-    ClawcrossApproval.sync(document.getElementById('chat-box'), approvals.filter(a => a.session_id === currentSessionId), {
+    const scoped = approvals.filter(a => a.session_id === currentSessionId);
+    _studioPendingApproval = scoped.some(ClawcrossApproval.humanPending);
+    syncStudioApprovalInput();
+    ClawcrossApproval.sync(document.getElementById('chat-box'), scoped, {
         appendRequest: raw => appendMessage(raw, false),
         onReply: reply => {
             const text = reply.action === 'deny' ? (currentLang === 'zh-CN' ? '拒绝这次操作' : 'Deny this action') :
@@ -3789,7 +3805,10 @@ function renderStudioApprovalStrip(approvals) {
             const bubble = appendMessage(text, true);
             bubble.dataset.approvalReply = reply.approval_id;
         },
-        onResolved: sid => { watchApprovalContinuation(sid); void refreshStudioApprovalStrip(); },
+        onResolved: (sid, data) => {
+            if (data.continuation !== 'resumed') watchApprovalContinuation(sid);
+            void refreshStudioApprovalStrip();
+        },
         onError: error => _projectUpdateToast(error.message),
     });
 }
@@ -3810,7 +3829,7 @@ async function resolveStudioApproval(approvalId, action, remember, sessionId, bt
     btns.forEach(b => { b.disabled = true; if (b === btn) b.textContent = t('approval_working'); });
     try {
         const data = await ClawcrossApproval.resolve(approvalId, action, remember, sessionId);
-        watchApprovalContinuation(sessionId);
+        if (data.continuation !== 'resumed') watchApprovalContinuation(sessionId);
         if (card) card.innerHTML = `<div class="studio-approval-card-title">${t('approval_done')} · ${_escapeHtmlStrip(data.approval?.tool_name || '')}</div>`;
         setTimeout(() => refreshStudioApprovalStrip(), 800);
     } catch (e) {
@@ -7745,6 +7764,7 @@ function setStreamingUI(streaming) {
         inputField.disabled = false;
         cancelTargetSessionId = null;
     }
+    syncStudioApprovalInput();
 }
 
 function setSystemBusyUI(busy) {
@@ -7762,6 +7782,7 @@ function setSystemBusyUI(busy) {
         inputField.disabled = false;
         cancelTargetSessionId = null;
     }
+    syncStudioApprovalInput();
 }
 
 function chatRunContextKey(mode = _ocChatMode, sessionId = currentSessionId, acpTool = _acpTool) {
@@ -8077,7 +8098,7 @@ async function handleSend() {
                 inputField.value = '';
                 inputField.style.height = 'auto';
                 await refreshStudioApprovalStrip();
-                watchApprovalContinuation(result.session_id);
+                if (result.continuation !== 'resumed') watchApprovalContinuation(result.session_id);
                 return;
             }
         } catch (e) {
@@ -8085,6 +8106,10 @@ async function handleSend() {
             _projectUpdateToast(String(e.message));
             return;
         }
+    }
+    if (_studioPendingApproval) {
+        _projectUpdateToast(currentLang === 'zh-CN' ? '请确认当前操作：同意、拒绝或回复 Y / N / KEEP Y。' : 'Confirm the current action with Allow, Deny, or Y / N / KEEP Y.');
+        return;
     }
     if (sendBtn.disabled) return;
 

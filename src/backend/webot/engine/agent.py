@@ -786,9 +786,8 @@ class UserAwareToolNode:
                 decision=final_decision, messages=state["messages"], policy=permission.policy,
                 counters=counters, active_approval=permission.approval,
                 continuation={'enabled_tools': state.get('enabled_tools')},
-                # Nobody watches a group- or schedule-triggered turn; leave
-                # the request for the user instead of holding the session.
-                wait_for_user=state.get("trigger_source") != "system",
+                # Human controls resolve this live call without a model turn.
+                wait_for_user=True,
             )
             if not outcome.allowed:
                 blocked_calls.append((tc, outcome.reason, outcome.pending, outcome.approval_id))
@@ -1640,7 +1639,10 @@ class TeamAgent:
         )
         if compaction_key(current) != compaction_key(record):
             self.project_compacted_context_usage(thread_id, record, state["messages"])
-        view = temporary_bounded_view(compression_view_from_record(record, history), history_budget)
+        view = compression_view_from_record(record, history)
+        if settings.auto_compact:
+            view = temporary_bounded_view(view, history_budget,
+                preserve_recent_turns=settings.preserve_recent_turns)
         # The previous API total may describe a larger, pre-compaction history:
         # judge the new input against the view actually sent this turn.
         view = trim_new_input_if_oversized(
