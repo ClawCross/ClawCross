@@ -118,6 +118,9 @@ class Conversations:
     ) -> tuple[Message, bool]:
         """Store the message and wake whom it is for; ``created`` is False for a repeat."""
         conversation = self.require_member(conv_id, sender)
+        if reply_to is not None:
+            if not isinstance(reply_to,int) or isinstance(reply_to,bool) or reply_to <= 0 or self.store.message(conv_id,reply_to) is None:
+                raise ValueError('引用消息不在当前群聊中')
         members = self.members(conv_id)
         found = list(mentions or [])
         for principal in resolve_text_mentions(content, [(m.name, m.principal) for m in members]):
@@ -173,6 +176,9 @@ class Conversations:
         attached = "".join(f"\n  📎 {a.get('name', '')} ({a.get('mime_type', a.get('type', ''))})"
                            for a in message.attachments)
         attach_block = f"\n\n[随消息附件]{attached}" if attached else ""
+        reference = self.store.message(conv_id,message.reply_to) if message.reply_to else None
+        if reference:
+            attach_block += f'\n\n[引用消息 #{reference.id}] {self.name_of(conv_id,reference.sender)}:\n{reference.content[:500]}\n[引用结束]'
         if conversation.kind == DIRECT:
             return f"{digest}[私聊 group_id={conv_id}] {sender} 说:\n{message.content}{attach_block}"
 
@@ -253,6 +259,8 @@ def message_card(conversations: Conversations, message: Message) -> dict[str, An
         "content": message.content,
         "mentions": message.mentions,
         "reply_to": message.reply_to,
+        "reply": ({"id":reference.id,"sender_name":conversations.name_of(message.conv_id,reference.sender),"content":reference.content[:500]}
+                  if message.reply_to and (reference := conversations.store.message(message.conv_id,message.reply_to)) else None),
         "attachments": message.attachments,
         "created_at": message.created_at,
     }

@@ -108,6 +108,10 @@ def create_groups_router(
     async def list_messages(conv_id: str, after_id: int = 0, authorization: str | None = Header(None)):
         return {"messages": call(service.messages, user_of(authorization), conv_id, after_id)}
 
+    @router.get('/groups/{conv_id}/search')
+    async def search_messages(conv_id: str, query: str, before_id: int = 0, limit: int = 50, authorization: str | None = Header(None)):
+        return call(service.search_messages, user_of(authorization), conv_id, query, max(0,before_id), limit)
+
     @router.post("/groups/{conv_id}/messages")
     async def post_message(
         conv_id: str,

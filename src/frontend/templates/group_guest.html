@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>朋友群聊</title>
-  <link rel="stylesheet" href="/static/css/group-guest.css?v=20261002-password">
-  <script defer src="/static/js/group-guest.js?v=20261002-password"></script>
+  <link rel="stylesheet" href="/static/css/group-guest.css?v=20261004-history">
+  <script defer src="/static/js/group-guest.js?v=20261004-history"></script>
 </head>
 <body>
 <main>
@@ -22,9 +22,14 @@
   </form>
   <section id="chat" hidden>
     <details id="members"><summary id="member-count">群成员</summary><ul id="member-list"></ul></details>
+    <details id="history"><summary>查找聊天记录</summary>
+      <form id="history-search"><label class="sr-only" for="history-query">搜索聊天记录</label><input id="history-query" type="search" maxlength="120" required placeholder="关键词或成员名字"><button type="submit">搜索</button></form>
+      <div id="history-results"></div><button id="history-more" type="button" hidden>更早的结果</button><p id="history-status" role="status"></p>
+    </details>
     <div id="messages" role="log" aria-label="群聊消息" aria-live="polite"></div>
     <div id="composer">
       <div id="mention-menu" role="listbox" aria-label="选择要提及的群成员" hidden></div>
+      <div id="reply-preview" hidden><div><strong id="reply-name"></strong><p id="reply-text"></p></div><button id="reply-cancel" type="button" aria-label="取消引用">×</button></div>
       <form id="send"><button id="mention" type="button" aria-label="提及群成员">@</button><label class="sr-only" for="text">消息</label><textarea id="text" rows="2" maxlength="8000" placeholder="说点什么…输入 @ 选择成员" required aria-controls="mention-menu" aria-expanded="false"></textarea><button type="submit">发送</button></form>
     </div>
   </section>

@@ -14,7 +14,17 @@
   }
   let credential = saved.token || '', principal = '', cursor = -1, timer, polling = false;
   const seen = new Set();
-  let pendingSend = null;
+  let pendingSend = null, replyContext = null;
+  let historyBefore = 0, historyQuery = '', historyGeneration = 0;
+  const messageCache = new Map();
+  function setReply(message) {
+    replyContext = message;
+    el('reply-name').textContent = '引用 ' + message.sender_name;
+    el('reply-text').textContent = message.content || '(附件)';
+    el('reply-preview').hidden = false; el('text').focus();
+  }
+  function clearReply() { replyContext = null; el('reply-preview').hidden = true; }
+  el('reply-cancel').addEventListener('click', clearReply);
   let members = [], mentionRange = null, selectedMentions = [], previousDraft = '', activeOption = 0;
   function hideMentions() { el('mention-menu').hidden = true; el('text').setAttribute('aria-expanded', 'false'); mentionRange = null; }
   function updateDraft() {
@@ -78,8 +88,8 @@
       localStorage.setItem(legacyStorageKey, value);
     } catch (_) {}
   }
-  async function api(action, body) {
-    const response = await fetch('/group-guest-api/' + action + (action === 'state' ? '?after_id=' + cursor : ''), {
+  async function api(action, body, params = '') {
+    const response = await fetch('/group-guest-api/' + action + (action === 'state' ? '?after_id=' + cursor : params ? '?' + params : ''), {
       method: body === undefined ? 'GET' : 'POST', credentials: 'omit',
       headers: {'Content-Type': 'application/json', 'X-Group-Invite': ticket, 'X-Guest-Token': credential},
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -107,11 +117,20 @@
     const box = el('messages'), nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 100;
     for (const m of data.messages) {
       if (seen.has(m.id)) continue;
-      seen.add(m.id);
+      seen.add(m.id); messageCache.set(m.id, m);
+      if (messageCache.size > 500) messageCache.delete(messageCache.keys().next().value);
       const article = document.createElement('article'); article.className = 'message' + (m.sender === principal ? ' own' : '');
       const by = document.createElement('div'); by.className = 'byline';
       by.textContent = m.sender_name + ' · ' + new Date(m.created_at * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
       const bubble = document.createElement('div'); bubble.className = 'bubble'; bubble.textContent = m.content;
+      const reply = document.createElement('button'); reply.type = 'button'; reply.className = 'quote-action'; reply.textContent = '引用';
+      reply.setAttribute('aria-label', '引用消息 ' + m.id); reply.addEventListener('click', () => setReply(m)); by.append(' ', reply);
+      const reference = m.reply || messageCache.get(m.reply_to);
+      if (reference || m.reply_to) {
+        const quote = document.createElement('div'); quote.className = 'quote';
+        quote.textContent = reference ? reference.sender_name + '：' + reference.content : '引用消息 #' + m.reply_to;
+        bubble.prepend(quote);
+      }
       article.append(by, bubble); box.append(article);
       if (box.children.length > 500) box.firstElementChild.remove();
     }
@@ -142,10 +161,37 @@
     event.preventDefault(); const text = el('text').value.trim(); if (!text) return;
     const mentions = [...new Set(selectedMentions.filter(m => members.some(member => member.principal === m.principal) && el('text').value.slice(m.start,m.end) === m.label).map(m => m.principal))];
     const button = el('send').querySelector('button'); button.disabled = true;
-    if (!pendingSend || pendingSend.content !== text || JSON.stringify(pendingSend.mentions) !== JSON.stringify(mentions)) pendingSend = {content:text, mentions, client_msg_id:crypto.randomUUID()};
-    try { await api('messages', pendingSend); pendingSend = null; el('text').value = ''; selectedMentions = []; previousDraft = ''; hideMentions(); await poll(); }
+    const replying = replyContext, reply_to = replying ? replying.id : null;
+    if (!pendingSend || pendingSend.content !== text || pendingSend.reply_to !== reply_to || JSON.stringify(pendingSend.mentions) !== JSON.stringify(mentions)) pendingSend = {content:text, mentions, reply_to, client_msg_id:crypto.randomUUID()};
+    try { await api('messages', pendingSend); pendingSend = null; if(replyContext === replying) clearReply(); el('text').value = ''; selectedMentions = []; previousDraft = ''; hideMentions(); await poll(); }
     catch (error) { status(error.message, true); } finally { button.disabled = false; }
   });
+  async function searchHistory(reset) {
+    const generation = reset ? ++historyGeneration : historyGeneration;
+    if (reset) { historyQuery = el('history-query').value.trim(); historyBefore = 0; el('history-results').replaceChildren(); el('history-more').hidden = true; }
+    if (!historyQuery) return;
+    const button = reset ? el('history-search').querySelector('button') : el('history-more'); button.disabled = true;
+    el('history-status').textContent = '正在查找…';
+    try {
+      const data = await api('search', undefined, new URLSearchParams({query:historyQuery,before_id:historyBefore,limit:50}));
+      if (generation !== historyGeneration) return;
+      for (const message of data.messages || []) {
+        const row = document.createElement('article'); row.className = 'history-result';
+        const author = document.createElement('strong'); author.textContent = message.sender_name;
+        const date = document.createElement('small'); date.textContent = new Date(message.created_at * 1000).toLocaleString();
+        const text = document.createElement('p'); text.textContent = message.content;
+        const reply = document.createElement('button'); reply.type = 'button'; reply.textContent = '引用回复';
+        reply.addEventListener('click', () => { el('history').open = false; setReply(message); });
+        row.append(author,date,text,reply); el('history-results').append(row);
+      }
+      historyBefore = data.next_before_id || 0; el('history-more').hidden = !historyBefore;
+      const count = el('history-results').children.length;
+      el('history-status').textContent = count ? `已找到 ${count} 条消息` : '没有找到匹配的消息';
+    } catch (error) { if (generation === historyGeneration) el('history-status').textContent = error.message; }
+    finally { button.disabled = false; }
+  }
+  el('history-search').addEventListener('submit', event => { event.preventDefault(); void searchHistory(true); });
+  el('history-more').addEventListener('click', () => { void searchHistory(false); });
   el('password-open').addEventListener('click', () => { el('password-form').hidden = false; el('new-password').focus(); });
   el('password-cancel').addEventListener('click', () => { el('password-form').hidden = true; el('new-password').value = ''; });
   el('password-form').addEventListener('submit', async event => {

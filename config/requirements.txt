@@ -1,5 +1,6 @@
 flask
 requests
+qrcode>=8,<9
 fastapi
 uvicorn
 websockets>=14,<17

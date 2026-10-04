@@ -66,6 +66,12 @@ class GroupFacade:
             return self.client.messages(user, gid, after_id)
         return self.rpc(user, 'GET', '/' + quote(gid, safe='') + '/messages', params={'after_id': after_id})['messages']
 
+    def search_messages(self, user, gid, query, before_id=0, limit=50):
+        if gid.startswith('rg_'):
+            return self.client.search_messages(user, gid, query, before_id, limit)
+        return self.rpc(user, 'GET', '/' + quote(gid, safe='') + '/search',
+                        params={'query':query,'before_id':before_id,'limit':limit})
+
     def update(self, user, gid, *, title=None, dnd=None):
         fields = {k: v for k, v in {'title': title, 'dnd': dnd}.items() if v is not None}
         if gid.startswith('rg_'):

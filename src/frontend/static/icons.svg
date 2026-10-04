@@ -44,4 +44,5 @@
 <symbol id="chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
 <symbol id="window" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 8h20"/><path d="M6 4v4"/><path d="M10 4v4"/></symbol>
 <symbol id="switch-layout" viewBox="0 0 24 24"><path d="M4 7h16m-4-4 4 4-4 4M20 17H4m4-4-4 4 4 4"/></symbol>
+<symbol id="pencil" viewBox="0 0 24 24"><path d="m16 3 5 5-13 13H3v-5z"/><path d="m14 5 5 5"/></symbol>
 </svg>

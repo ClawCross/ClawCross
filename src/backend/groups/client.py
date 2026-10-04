@@ -337,6 +337,10 @@ class GroupClient:
                            'mentions': [mapping.get(m, m) for m in message.get('mentions', [])]})
         return result
 
+    def search_messages(self, owner, alias, query, before_id=0, limit=50):
+        row = self.require(owner, alias)
+        return self.request(row, 'GET', '/search', params={'query':query,'before_id':before_id,'limit':limit})
+
     def memberships(self, owner, aid):
         result = []
         for row in self.store.rows(owner):
@@ -414,7 +418,9 @@ class GroupClient:
                             'text': message['content'], 'source_kind': 'group_human',
                             'sender_user': source['user_id'], 'sender_name': source['name'],
                             'group_id': row['alias']}]
-                    text = self.store.unread_digest(row, aid, event['id']) + f'[群聊「{card["title"]}」 group_id={row["alias"]}] {message["sender_name"]} 说:\n{message["content"]}'
+                    quote = message.get('reply')
+                    reference = f'\n[引用消息 #{quote["id"]}] {quote["sender_name"]}:\n{quote["content"]}\n[引用结束]\n' if quote else ''
+                    text = self.store.unread_digest(row, aid, event['id']) + f'[群聊「{card["title"]}」 group_id={row["alias"]}] {message["sender_name"]} 说:\n{reference}{message["content"]}'
                     receipt = await self.gateway.inbox(agent, AgentMessage(text=text, sender=message['sender'],
                         summary=f'群聊「{card["title"]}」 {message["sender_name"]}: {message["content"][:60]}',
                         attachments=message.get('attachments', [])), context={'conversation_id': row['alias'],
