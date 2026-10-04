@@ -4554,8 +4554,10 @@
 .tool-policy-category-items { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; }
 </style>
 <script src="/static/js/tool-catalog.js?v=20261001-groups"></script>
-<script src="/static/js/group-network-ui.js?v=20261004-group-history"></script>
-<link rel="stylesheet" href="/static/css/group-network.css?v=20261004-group-history">
+<link rel="stylesheet" href="/static/css/group-message-menu.css?v=20261004-message-menu">
+<script src="/static/js/group-message-menu.js?v=20261004-message-menu"></script>
+<script src="/static/js/group-network-ui.js?v=20261004-message-menu"></script>
+<link rel="stylesheet" href="/static/css/group-network.css?v=20261004-message-menu">
 <link rel="stylesheet" href="/static/css/settings-polish.css?v=20261004-settings">
 <link rel="stylesheet" href="/static/css/mobile-profile.css?v=20261004-studio-header">
 <link rel="stylesheet" href="/static/css/runtime-settings.css?v=20261004-keepy-manager">
@@ -10149,6 +10151,7 @@ async function reloadGroupDetail() {
 
 
 async function openChat(groupId, name) {
+  GroupMessageMenu.close();
   clearGroupReply();
   currentGroupId = groupId;
   currentGroupName = name;
@@ -10201,6 +10204,7 @@ async function openChat(groupId, name) {
 }
 
 function goBack() {
+  GroupMessageMenu.close();
   stopPolling();
   stopOasisPolling();
   clearAttachments();  // clear pending attachments
@@ -10227,7 +10231,7 @@ function setGroupReply(message) {
   preview.querySelector('[data-reply-text]').textContent=message.content || '(附件)';
   document.getElementById('msg-input').focus();
 }
-function replyToGroupMessage(id) {const message=groupReplyMessages.get(id);if(message) setGroupReply(message);}
+GroupMessageMenu.bind(document.getElementById('chat-body'), id => groupReplyMessages.get(id), setGroupReply);
 function renderMessages(msgs) {
   groupReplyMessages.clear();
   const body = document.getElementById('chat-body');
@@ -10363,8 +10367,8 @@ function renderOneMsgHTML(m) {
       <div class="msg-avatar ${isAgent ? 'clickable' : ''}" style="background:${stringToColor(sender)}"${avatarAttrs}>${esc(initial)}</div>
       <div class="msg-body">
         <div class="msg-sender">${esc(displayName)}</div>
-        <div class="${bubbleClass}">${quoteHTML}${contentHTML}${attachHTML}</div>
-        <div class="msg-time">${ts}${Number.isSafeInteger(Number(m.id)) ? `<button type="button" class="msg-reply-action" onclick="replyToGroupMessage(${Number(m.id)})" aria-label="引用消息 ${Number(m.id)}">引用</button>` : ''}</div>
+        <div class="${bubbleClass}"${Number.isSafeInteger(Number(m.id)) ? ` data-group-message-id="${Number(m.id)}" tabindex="0"` : ''}>${quoteHTML}${contentHTML}${attachHTML}</div>
+        <div class="msg-time">${ts}</div>
       </div>
     </div>`;
 }

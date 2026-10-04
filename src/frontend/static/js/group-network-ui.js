@@ -94,10 +94,12 @@
       form.append(input,submit);
       const results = el('div','gn-search-results');
       let before=0, query='', generation=0;
+      const messages = new Map();
+      GroupMessageMenu.bind(results, id => messages.get(id), message => { view.done(); if(window.setGroupReply) window.setGroupReply(message); });
       const more = button('更早的结果','secondary',()=>search(false)); more.hidden=true;
       async function search(reset) {
         const requestGeneration = reset ? ++generation : generation;
-        if (reset) {query=input.value.trim();before=0;results.replaceChildren();more.hidden=true;}
+        if (reset) {query=input.value.trim();before=0;results.replaceChildren();messages.clear();more.hidden=true;}
         if (!query) return;
         await busy(reset ? submit : more, view.status,'正在查找…',async()=>{
           const data = await request('GET','/' + encodeURIComponent(gid) + '/search?' + new URLSearchParams({query,before_id:before,limit:50}));
@@ -105,7 +107,7 @@
           for (const message of data.messages || []) {
             const row=el('article','gn-search-result');
             row.append(el('strong','',message.sender_name || message.sender),el('small','',new Date(message.created_at * 1000).toLocaleString()),el('p','',message.content));
-            row.append(button('引用回复','secondary',()=>{view.done(); if(window.setGroupReply) window.setGroupReply(message);}));
+            messages.set(message.id,message); row.dataset.groupMessageId=message.id;row.tabIndex=0;
             results.append(row);
           }
           before=data.next_before_id || 0;more.hidden=!before;
