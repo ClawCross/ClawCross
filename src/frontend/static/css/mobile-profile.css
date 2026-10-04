@@ -151,6 +151,19 @@
 @media (min-width: 1024px) and (hover: hover) and (pointer: fine) {
   #tab-profile .profile-area { margin-top: 0; }
 }
-.mobile-studio-link { display:inline-flex; align-items:center; gap:5px; flex-shrink:0; min-height:34px; padding:0 10px; border:1px solid var(--border); border-radius:9px; background:var(--bg-card); color:var(--primary); text-decoration:none; font-size:13px; font-weight:600; }
-.mobile-studio-link .ui-icon { width:16px; height:16px; }
-.mobile-studio-link:active { background:var(--ui-press); }
+.tab-bar .mobile-studio-link { text-decoration:none; color:var(--primary); }
+.tab-bar .mobile-studio-link .ui-icon { width:23px; height:23px; fill:none; stroke:currentColor; }
+.tab-bar .mobile-studio-link:active .tab-icon { background:var(--ui-press); }
+@media (min-width:1024px) and (hover:hover) and (pointer:fine) {
+  .tab-bar .mobile-studio-link { margin-top:auto; border-top:1px solid var(--border); padding-top:8px; }
+}
+
+.input-actions-menu.ui-menu{padding:10px;gap:8px;max-height:min(580px,70dvh);overflow-y:auto}
+.input-actions-menu .ui-menu-item,.create-menu-popup .ui-menu-item{border:1px solid var(--ui-hairline-strong,#dbe2ea);border-radius:11px;background:var(--ui-surface,#fff);min-height:42px;padding:10px 12px;margin:4px 0;cursor:pointer}
+.input-actions-menu .ui-menu-item:active,.create-menu-popup .ui-menu-item:active{background:var(--ui-press,#edf4ff)}
+.input-actions-menu .ui-menu-label{white-space:normal}
+.input-actions-menu .ui-menu-heading{margin:8px 0 4px}
+.mobile-agent-advanced{padding:14px;border:1px solid var(--border);border-radius:12px}
+.mobile-agent-advanced summary{cursor:pointer;font-size:14px;font-weight:600}
+.mobile-agent-advanced p{font-size:12px;line-height:1.6;color:var(--text-secondary);margin:12px 0}
+.mobile-agent-advanced button{margin-top:8px}

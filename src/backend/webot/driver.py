@@ -60,7 +60,7 @@ class WebotRuntime(Runtime):
         text = f"[来自调度方的指令]\n{msg.instructions}\n\n---\n{msg.text}" if msg.instructions else msg.text
         req = SystemTriggerRequest(
             user_id=agent.owner, session_id=agent.agent_id, text=text, attachments=list(msg.attachments) or None,
-            response_format=response_format, llm_override=agent.config.get("llm") or None, wait_reply=True,
+            response_format=response_format, wait_reply=True,
             groups=context.get("groups") or [],
             **_fields(mode, enabled_tools),
         )

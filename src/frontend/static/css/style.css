@@ -5137,6 +5137,24 @@ body.session-panel-resizing * {
 .studio-more-heading { color: var(--ui-text-3); font-size: 12px; font-weight: 600; letter-spacing: .02em; margin: 0 2px 8px; }
 .studio-more-heading:not(:first-child) { margin-top: 16px; }
 .studio-more-content .chat-composer-toolbar { display: flex; flex-wrap: wrap; width: 100%; gap: 8px; }
+.studio-more-content .chat-composer-toolbar > button,
+.studio-more-content .chat-composer-toolbar > label { display:inline-flex; align-items:center; justify-content:flex-start; gap:9px; min-height:42px; padding:10px 12px; border:1px solid var(--ui-hairline); border-radius:11px; background:var(--ui-surface); color:var(--ui-text); font:inherit; font-size:13px; cursor:pointer; box-sizing:border-box; }
+.studio-more-content .chat-composer-toolbar { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+.studio-more-content .chat-composer-toolbar .ui-icon { width:18px; height:18px; flex-shrink:0; }
+.studio-more-content .chat-composer-toolbar > button:hover,
+.studio-more-content .chat-composer-toolbar > label:hover { background:var(--ui-surface-2); border-color:var(--ui-accent); }
+.studio-more-content .chat-composer-toolbar > button:active { transform:translateY(1px); }
+.agent-dex-advanced > summary { display:flex; align-items:center; gap:8px; list-style:none; cursor:pointer; font-size:13px; font-weight:600; }
+.agent-dex-advanced > summary::-webkit-details-marker { display:none; }
+.agent-dex-advanced > summary .ui-icon { width:17px; height:17px; }
+.agent-dex-advanced > summary .ui-icon:last-child { margin-left:auto; }
+.agent-dex-advanced[open] > summary { margin-bottom:16px; }
+.agent-dex-advanced [data-runtime-summary] h4 { margin:16px 0 8px; font-size:12px; }
+.agent-dex-grants { padding:0; margin:0 0 14px; list-style:none; }
+.agent-dex-grants li { display:flex; align-items:center; gap:8px; padding:9px 0; border-bottom:1px solid var(--ui-hairline); font-size:11px; overflow-wrap:anywhere; }
+.agent-dex-grants li span { flex:1; min-width:0; }
+.agent-dex-grants button { flex-shrink:0; }
+.studio-more-content .conversation-ui-panel-menu > button { min-height:40px; margin:6px 0; padding:9px 12px; border:1px solid var(--ui-hairline); border-radius:10px; background:var(--ui-surface); font-size:13px; }
 .studio-more-content .oc-mode-selector { flex-wrap: wrap; justify-content: flex-start; }
 .studio-more-content .oc-context-usage-wrap { flex-direction: column; align-items: flex-start; }
 .studio-more-content .oc-context-usage-detail { position: static; min-width: 0; width: 100%; box-sizing: border-box; margin-top: 7px; }
@@ -5161,7 +5179,7 @@ body.session-panel-resizing * {
 .conversation-ui-panel-heading { color: #304a78; font-size: 13px; font-weight: 700; margin: 2px 4px 10px; }
 .conversation-ui-panel iframe { display: block; width: 100%; height: 160px; max-height: 480px; border: 1px solid #e6ebf3; border-radius: 12px; background: #fff; }
 @media (max-width: 640px) {
-    .studio-more-content { max-height: min(60vh, 440px); }
+    .studio-more-content { position:fixed; left:12px; right:12px; bottom:84px; width:auto; max-height:min(60vh,440px); }
     #chat-box { padding: 14px 12px; }
     #chat-box .message-agent, #chat-box .message-user { max-width: 92%; }
     .composer-dock { padding: 4px 10px 10px; }

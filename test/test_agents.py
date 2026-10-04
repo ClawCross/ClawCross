@@ -199,7 +199,7 @@ class TestGateway(StoreCase):
         self.assertTrue(req.text.startswith("[来自调度方的指令]\nrules") and req.text.endswith("hi"))
         self.assertEqual((req.session_mode, req.enabled_tools), ("readonly", ["read_file"]))
         self.assertEqual(req.response_format, reply_format)  # WeBot enforces it itself
-        self.assertEqual(req.llm_override, {"model": "m1"})
+        self.assertIsNone(req.llm_override)  # saved Agent model is refreshed before each model call
         self.assertEqual(self.services.turns, [])  # not the chat window's call
 
     def test_the_chat_window_call_is_webots_own_completion(self):
@@ -274,7 +274,9 @@ class TestGateway(StoreCase):
         self.assertIn("PERSONA", self.store.get("alice", svc.agent_id).runtime["dynamic_context"]["identity_persona"])
         self.store.patch_runtime("alice", svc.agent_id, {"other_runtime_field": "keep"})
         self.ask(svc)  # keep using the original object, as a queued caller may do
-        self.assertEqual(_Http.posts[1][1]["messages"][0]["content"], "hi")  # already told
+        next_prompt = _Http.posts[1][1]["messages"][0]["content"]
+        self.assertNotIn('【本轮 identity_persona】', next_prompt)  # identity already delivered
+        self.assertTrue(next_prompt.endswith('hi'))  # a newly observed workspace change may precede it
         self.assertEqual(self.store.get("alice", svc.agent_id).runtime["other_runtime_field"], "keep")
         svc = self.store.update("alice", svc.agent_id, config={**svc.config, "persona": "critic"})
         with mock.patch("webot.profiles.frame_session_identity", lambda *a: "CRITIC"):

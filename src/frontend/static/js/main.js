@@ -1980,8 +1980,14 @@ function renderAgentCenterDetail() {
                 <div class="agent-dex-context-row"><span>${agentCenterEscape(t('agent_center_used'))}</span><strong>${contextPercent}%</strong></div>
                 <div class="agent-dex-context-meter"><span style="width:${contextPercent}%"></span></div>
                 <div class="agent-dex-context-row"><span>${agentCenterFormatTokens(context.tokens)} / ${agentCenterFormatTokens(context.budget)} tokens</span><span>${agentCenterEscape(t('agent_center_remaining'))} ${agentCenterFormatTokens(context.remaining)}</span></div>
-                <div class="agent-dex-actions" style="margin-top:10px;"><button class="agent-center-btn" type="button" onclick="compactAgentFromCenter(this)">${agentCenterEscape(t('agent_center_compact'))}</button><button class="agent-center-btn" type="button" onclick="openAgentRuntimeSettings()">${agentCenterEscape(t('runtime_settings'))}</button></div>
+                <div class="agent-dex-actions" style="margin-top:10px;"><button class="agent-center-btn" type="button" onclick="compactAgentFromCenter(this)">${agentCenterEscape(t('agent_center_compact'))}</button></div>
             </section>` : !['http', 'llm'].includes(agent.platform) ? `<section class="agent-dex-section"><button class="agent-center-btn" type="button" onclick="openExternalAgentSettings('${agent.agent_id}')">${agentCenterEscape(t('agent_center_native_settings'))}</button></section>` : ''}
+            <details class="agent-dex-section agent-dex-advanced" data-agent-id="${agentCenterEscape(agent.agent_id)}" ontoggle="if(this.open) loadAgentCenterRuntimeSettings(this)">
+                <summary><svg class="ui-icon"><use href="/static/icons.svg#sliders"/></svg><span>${currentLang === 'zh-CN' ? '高级设置' : 'Advanced settings'}</span><svg class="ui-icon"><use href="/static/icons.svg#chevron-down"/></svg></summary>
+                <div data-runtime-summary role="status"></div>
+                <p class="agent-dex-note">${currentLang === 'zh-CN' ? 'Y 仅允许一次；KEEP Y 记住当前 Agent 的具体授权。沙盒授权限定目标和读写类型，其他工具限定完整参数；严格模式不使用提权记录。' : 'Y allows once; KEEP Y remembers a specific grant for this Agent. Sandbox grants cover a target and access type; other tools cover exact arguments. Strict mode ignores escalation grants.'}</p>
+                <div class="agent-dex-actions"><button type="button" class="agent-center-btn" onclick="openAgentRuntimeSettings('approval')">${currentLang === 'zh-CN' ? '配置模式、沙盒与授权' : 'Configure mode, sandbox and grants'}</button>${webot ? `<button type="button" class="agent-center-btn" onclick="openAgentRuntimeSettings('context')">${currentLang === 'zh-CN' ? '上下文与压缩' : 'Context and compaction'}</button><button type="button" class="agent-center-btn" onclick="openAgentModelSettings('${agentCenterEscape(agent.agent_id)}')">${currentLang === 'zh-CN' ? '模型与思考' : 'Model and reasoning'}</button>` : ''}</div>
+            </details>
             <section class="agent-dex-section">
                 <div class="agent-dex-section-title">${agentCenterEscape(t('agent_center_tools'))}</div>
                 <div class="agent-dex-fields">
@@ -2000,6 +2006,48 @@ function renderAgentCenterDetail() {
             <div id="agent-dex-note" class="agent-dex-note"></div>
         </div>`;
 }
+
+async function loadAgentCenterRuntimeSettings(details) {
+    const id = details.dataset.agentId;
+    const host = details.querySelector('[data-runtime-summary]');
+    host.textContent = t('loading');
+    try {
+        const [data, remembered] = await Promise.all([
+            agentApi('GET', '/proxy_webot_runtime_settings?session_id=' + encodeURIComponent(id)),
+            agentApi('GET', '/v1/agents/' + encodeURIComponent(id) + '/remembered-approvals'),
+        ]);
+        if (!details.isConnected || id !== agentCenterSelectedKey) return;
+        const approval = data.settings.approval;
+        const zh = currentLang === 'zh-CN';
+        const mode = data.effective_mode || approval.mode;
+        const modeLabels = zh ? {chat:'纯文字',readonly:'只读',manual:'人工审核',auto:'AI 审核',bypass:'无需审核'} : {chat:'Chat',readonly:'Read only',manual:'Human review',auto:'AI review',bypass:'No review'};
+        const sandboxLabels = zh ? {off:'关闭',auto:'自动选择',srt:'SRT',landlock:'Linux Landlock'} : {off:'Off',auto:'Automatic',srt:'SRT',landlock:'Linux Landlock'};
+        const grants = approval.sandbox_grants || [];
+        const actions = remembered.actions || [];
+        host.innerHTML = `<dl class="agent-dex-facts"><dt>${zh?'模式':'Mode'}</dt><dd>${agentCenterEscape(modeLabels[mode] || mode)}</dd>
+            <dt>${zh?'命令沙盒':'Command sandbox'}</dt><dd>${agentCenterEscape(sandboxLabels[approval.command_sandbox] || approval.command_sandbox)}</dd>
+            <dt>${zh?'安全等级':'Security'}</dt><dd>${approval.sandbox_security === 'strict' ? (zh?'严格 · 禁止提权':'Strict · No escalation') : (zh?'普通 · 审核后有限提权':'Standard · Reviewed escalation')}</dd>
+            <dt>${zh?'预设网站':'Allowed websites'}</dt><dd>${agentCenterEscape((approval.sandbox_allowed_domains || []).join(', ') || (zh?'无':'None'))}</dd></dl>
+            <h4>${zh?'KEEP Y · 已记住的授权':'KEEP Y · Remembered grants'} <span>${grants.length + actions.length}</span></h4>
+            ${grants.length ? `<ul class="agent-dex-grants">${grants.map(grant=>`<li>${agentCenterEscape(({network:zh?'联网':'Network',read_path:zh?'只读':'Read',write_path:zh?'读写':'Read/write'})[grant.access] || grant.access)} · ${agentCenterEscape(grant.target)}</li>`).join('')}</ul>` : ''}
+            ${actions.length ? `<ul class="agent-dex-grants">${actions.map(action=>`<li><span>${agentCenterEscape(action.tool)} · ${agentCenterEscape(action.summary)}</span><button type="button" class="agent-center-btn" data-tool="${agentCenterEscape(action.tool)}" data-key="${agentCenterEscape(action.key)}" onclick="revokeAgentCenterApproval(this)">${zh?'移除':'Remove'}</button></li>`).join('')}</ul>` : ''}
+            ${!grants.length && !actions.length ? `<p class="agent-dex-note">${zh?'当前 Agent 没有已记住的授权。':'No remembered grants for this Agent.'}</p>` : ''}`;
+    } catch (error) { if (details.isConnected) host.textContent = error.message; }
+}
+
+async function revokeAgentCenterApproval(button) {
+    const details = button.closest('[data-agent-id]');
+    button.disabled = true;
+    try {
+        await agentApi('DELETE', '/v1/agents/' + encodeURIComponent(details.dataset.agentId) + '/remembered-approvals/' + encodeURIComponent(button.dataset.tool) + '/' + encodeURIComponent(button.dataset.key));
+        await loadAgentCenterRuntimeSettings(details);
+    } catch (error) { button.disabled = false; setAgentCenterDetailNotice(error.message, true); }
+}
+
+document.addEventListener('clawcross:runtime-settings-saved', event => {
+    const details = document.querySelector('.agent-dex-advanced[open]');
+    if (details?.dataset.agentId === event.detail.agentId) loadAgentCenterRuntimeSettings(details);
+});
 
 async function openAgentCenterDetail(agentId) {
     agentCenterSelectedKey = agentId;

@@ -72,9 +72,9 @@ def store_exists() -> bool:
     return _store_path().is_file()
 
 
-def load() -> ModelsStore:
+def load(*, path: Path | None = None) -> ModelsStore:
     """Read models.json; return an empty store if absent or malformed."""
-    path = _store_path()
+    path = path or _store_path()
     if not path.is_file():
         return ModelsStore()
     try:
@@ -103,9 +103,9 @@ def load() -> ModelsStore:
     )
 
 
-def save(store: ModelsStore) -> None:
+def save(store: ModelsStore, *, path: Path | None = None) -> None:
     """Write models.json atomically with 0600 permissions."""
-    path = _store_path()
+    path = path or _store_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "version": store.version or SCHEMA_VERSION,

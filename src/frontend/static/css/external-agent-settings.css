@@ -14,3 +14,13 @@
 .external-settings-dialog,.external-settings-fields input,.external-settings-fields select{box-sizing:border-box}.external-settings-fields input[type=checkbox]{accent-color:var(--ui-accent,#0071e3)}
 
 .external-settings-dialog footer>div{flex-shrink:0}.external-settings-dialog button:disabled{opacity:.55;cursor:wait}@media(max-width:480px){.external-settings-dialog footer{flex-wrap:wrap}.external-settings-dialog footer>div{margin-left:auto}}
+
+.model-profile-current{display:flex;align-items:center;gap:10px;padding:12px 14px;margin-bottom:16px;background:var(--ui-surface-2,#f2f2f5);border-radius:12px;flex-wrap:wrap;overflow-wrap:anywhere}
+.model-profile-current small{color:var(--ui-text-2,#6e6e73)}
+.model-profile-create{border:1px solid var(--ui-hairline-strong,#ddd);border-radius:12px;padding:12px}
+.model-profile-create summary{cursor:pointer;font-weight:600}
+.model-profile-create form{display:grid;gap:12px;padding-top:6px}
+.model-profile-create form label{margin-top:0}
+.model-profile-create form button{justify-self:start;border:1px solid var(--ui-hairline-strong,#ddd)}
+.model-profile-dialog footer{flex-wrap:wrap}
+.model-profile-dialog footer button{margin-left:auto}

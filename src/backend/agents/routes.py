@@ -104,6 +104,18 @@ class NativeSessionImport(BaseModel):
     name: str = Field('', max_length=160)
 
 
+class ModelProfileBody(BaseModel):
+    name: str = Field(max_length=100)
+    model: str = Field(max_length=200)
+    provider: str = Field(max_length=40)
+    base_url: str = Field('', max_length=2000)
+    api_key: str = Field('', max_length=4096)
+
+
+class ModelProfileSelection(BaseModel):
+    profile_id: str = Field('', max_length=120)
+
+
 def authenticate(authorization: str | None, *, internal_token: str, verify_password: Callable[[str, str], bool]) -> str:
     """The user a request acts for: ``Bearer <internal>:<user>`` or ``Bearer <user>:<password>``."""
     parts = parse_bearer_parts(authorization)
@@ -124,6 +136,9 @@ def agent_card(agent: Agent) -> dict[str, Any]:
     settings["teams"] = agent.teams  # changed only by joining or leaving a team
     if agent.driver == WEBOT:
         settings["tools"] = config.get("tools")
+        llm = config.get('llm') or {}
+        settings['llm'] = {key: llm[key] for key in ('model', 'provider', 'base_url', 'profile_id', 'profile_name') if key in llm}
+        settings['llm']['has_api_key'] = bool(llm.get('api_key'))
     elif agent.driver != LLM:
         settings.update({key: config.get(key) for key in _EXTERNAL_SETTINGS if key != "api_key"})
         settings["has_api_key"] = bool(config.get("api_key"))
@@ -230,6 +245,36 @@ def create_agents_router(
         else:
             cards = [agent_card(a) for a in agents]
         return {"object": "list", "data": list(cards)}
+
+    @router.get('/v1/agents/model-profiles')
+    async def list_model_profiles(authorization: str | None = Header(None)):
+        from agents.model_profiles import catalog
+        return catalog(user_of(authorization))
+
+    @router.post('/v1/agents/model-profiles')
+    async def save_model_profile(body: ModelProfileBody, authorization: str | None = Header(None)):
+        from agents.model_profiles import save_profile
+        try:
+            return save_profile(user_of(authorization), **body.model_dump())
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @router.post('/v1/agents/{ref}/model-profile')
+    async def select_model_profile(ref: str, body: ModelProfileSelection, authorization: str | None = Header(None)):
+        user = user_of(authorization)
+        agent = find(user, ref)
+        if agent and agent.driver != WEBOT:
+            raise HTTPException(400, '外部 Agent 的模型与思考强度请通过它自己的连接设置修改')
+        from agents.model_profiles import profile_override
+        try:
+            override = profile_override(user, body.profile_id)
+            if agent is None:
+                if not valid_agent_id(ref):
+                    raise ValueError('无效的 Agent 编号')
+                agent = store.ensure(user, ref, driver=WEBOT)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return agent_card(store.update(agent.owner, agent.agent_id, config={**agent.config, 'llm': override}))
 
     @router.post("/v1/agents")
     async def create_agent(body: AgentCreate, authorization: str | None = Header(None)):
@@ -423,6 +468,20 @@ def create_agents_router(
         if agent.driver != WEBOT and body.settings.get("api_key") == "":
             config["api_key"] = agent.config.get("api_key", "")  # an empty field keeps the saved key
         return agent_card(store.update(user, agent.agent_id, name=body.name, config=config))
+
+    @router.get('/v1/agents/{ref}/remembered-approvals')
+    async def remembered_approvals(ref: str, authorization: str | None = Header(None)):
+        agent = lookup(user_of(authorization), ref)
+        from webot.remembered_approvals import remembered_tool_actions
+        return {'actions': remembered_tool_actions(agent.owner, agent.agent_id)}
+
+    @router.delete('/v1/agents/{ref}/remembered-approvals/{tool_name}/{key}')
+    async def revoke_remembered_approval(ref: str, tool_name: str, key: str, authorization: str | None = Header(None)):
+        agent = lookup(user_of(authorization), ref)
+        from webot.remembered_approvals import revoke_tool_action
+        if not revoke_tool_action(agent.owner, agent.agent_id, tool_name, key):
+            raise HTTPException(404, '当前 Agent 没有这条已记住的授权')
+        return {'revoked': True}
 
     @router.delete("/v1/agents/{ref}")
     async def delete_agent(ref: str, authorization: str | None = Header(None)):

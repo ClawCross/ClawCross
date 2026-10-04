@@ -537,14 +537,14 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-10-04T05:39:09.706163+00:00`
+- Updated at: `2026-10-04T06:17:05.174189+00:00`
 - Strategy: `harden`
-- Heuristic candidate: `blended-verification-loop-approval-auth-bounded-execution`
-- Heuristic score: `0.571`
+- Heuristic candidate: `blended-verification-loop-workspace-preflight-bounded-execution`
+- Heuristic score: `0.685`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: (external failure context). Signals: verification-loop, approval-auth, bounded-execution. stderr carried the strongest failure evidence.
+Command exited with code 1. Command: (external failure context). Signals: verification-loop, workspace-preflight, bounded-execution. stdout was used as fallback failure evidence.
 
 ### Strategy Rationale
 
@@ -558,12 +558,33 @@ Command exited with code 1. Command: (external failure context). Signals: verifi
 ### Latest Error Excerpt
 
 ```text
-Command: node /tmp/clawcross-agent-preview.cjs
-locator.click: Timeout 30000ms exceeded.
-Locator: #runtime-settings-approval-tab
-The element is visible, enabled and stable, but is outside of the viewport.
-Cause: Mobile .settings-modal-overlay inherited transform: translateX(100%); the shared runtime dialog did not reset the transform.
-Fix: scope transform:none and flex:0 1 auto to #runtime-settings-modal; verify actual pointer clicks, not forced clicks.
+.............F............................................. [ 88%]
+........                                                          [100%]
+=================================== FAILURES ===================================
+_ TestGateway.test_a_runtime_freezes_its_identity_until_reset_and_refreshes_stale_records _
+
+self = <test.test_agents.TestGateway testMethod=test_a_runtime_freezes_its_identity_until_reset_and_refreshes_stale_records>
+
+    def test_a_runtime_freezes_its_identity_until_reset_and_refreshes_stale_records(self):
+        svc = self.store.create("alice", name="Svc", driver=HTTP, config={"platform": "svc", "api_url": "http://svc"})
+        self.ask(svc)
+        url, body, _headers = _Http.posts[0]
+        self.assertEqual((url, body["session_id"]), ("http://svc/v1/chat/completions", f"clawcross-alice-{svc.agent_id}"))
+        told = body["messages"][0]["content"]
+        self.assertIn("PERSONA", told)
+        self.assertTrue(told.endswith("
+
+hi"))  # the identity comes before the message
+        self.assertIn("PERSONA", self.store.get("alice", svc.agent_id).runtime["dynamic_context"]["identity_persona"])
+        self.store.patch_runtime("alice", svc.agent_id, {"other_runtime_field": "keep"})
+        self.ask(svc)  # keep using the original object, as a queued caller may do
+>       self.assertEqual(_Http.posts[1][1]["messages"][0]["content"], "hi")  # already told
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: '【本轮 workspace】
+{"cwd": "/tmp/clawcross-a[409 chars]
+hi' != 'hi'
+E       - 【本轮 workspace】
+E       - {"cwd": "/tmp/clawcross-agent-profiles-tests/workspace/users/alice", "files": {"directories": ["skills"], "files": [], "limited": false, "observed_entries": 1, "recent_changes": {"added": ["skills"], "modified": [], "removed": []}, "revision": "66a317f74e659c4f", "scope": "文件名与元数据的有界观察，不读取正文；跳过依赖及缓存目录，非完整文件清单。"}, "mode": "shared", "root": "/tmp/clawcross-agent-profiles-tests/work ...[truncated]
 ```
 
 ### Governance Snapshot
@@ -586,17 +607,16 @@ Fix: scope transform:none and flex:0 1 auto to #runtime-settings-modal; verify a
 
 ### Recent Evidence
 
-- `2026-10-04T05:39:09.706163+00:00` `repo-skill` — Command: node /tmp/clawcross-agent-preview.cjs
-locator.click: Timeout 30000ms exceeded.
-Locator: #runtime-settings-approval-tab
-The element is ...[truncated]
+- `2026-10-04T06:17:05.174189+00:00` `repo-skill` — .............F............................................. [ 88%]
+........                                                          [100%]
+== ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `blended-verification-loop-approval-auth-bounded-execution` score `0.571` — Blend the strongest recent failure patterns (intent `repair`)
-- `verification-loop-1` score `0.531` — Tighten verification loops (intent `repair`)
-- `approval-auth-1` score `0.531` — Preflight auth and approval constraints (intent `repair`)
-- `bounded-execution-1` score `0.531` — Bound long-running and flaky execution (intent `optimize`)
+- `blended-verification-loop-workspace-preflight-bounded-execution` score `0.685` — Blend the strongest recent failure patterns (intent `repair`)
+- `verification-loop-4` score `0.645` — Tighten verification loops (intent `repair`)
+- `workspace-preflight-1` score `0.475` — Add repo/workspace preflight checks (intent `repair`)
+- `bounded-execution-1` score `0.475` — Bound long-running and flaky execution (intent `optimize`)
 
 ### Local State Snapshot
 
