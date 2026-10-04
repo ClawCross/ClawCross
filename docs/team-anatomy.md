@@ -88,7 +88,9 @@ A team *package* — a preset, a snapshot zip, or a folder written by hand or by
 
 Importing (`clawcross team import "<team>"`, `POST /v1/teams/<team>/import`, installing a preset, uploading a snapshot) turns the entries into agents and memberships and removes the two files from the team folder. Exporting a snapshot writes them again in the same shape, leaving out this machine's agent ids and any secrets so that importing elsewhere creates fresh agents.
 
-Both member files must contain JSON arrays with non-empty, unique role names. Invalid manifests are rejected before changing memberships. Importing a folder whose member files have already been consumed leaves the team unchanged; a snapshot containing only assets or skills also preserves its current members. An explicit empty member manifest still represents an empty membership list.
+Both member files must contain JSON arrays with non-empty, unique role names. Invalid manifests are rejected before changing memberships. The CLI folder-import bootstrap leaves the team unchanged when its member files have already been consumed.
+
+Frontend ZIP and Hub imports create a new team. A name conflict returns HTTP 409 (`team_exists`); confirming replacement sends `replace=true` and rebuilds the team from the package, with fresh member sessions. Old team workflows and team-scoped skills are removed, and the team's old scheduled tasks are deleted through the scheduler. Scheduler failures are reported in `cron_errors`. Previous agents and their histories remain in Agent Center, following team deletion semantics. Team assets, memberships and team skills are restored if installation fails. A package without member manifests creates a team with no members; it never merges into the old team. User-global skills remain independent of team replacement.
 
 Portable exports omit structured credential fields (including API keys, authentication headers and persona credentials), agent ids and conversation history. Credentials embedded in arbitrary workflow code or prompt text are not automatically redacted.
 

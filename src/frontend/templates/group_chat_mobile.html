@@ -29,7 +29,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" crossorigin="anonymous"></script>
-<script src="{{ url_for('static', filename='js/snapshot_zip_progress.js') }}?v=20260331-progress"></script>
+<script src="{{ url_for('static', filename='js/snapshot_zip_progress.js') }}?v=20261005-team-import"></script>
 <link rel="stylesheet" href="/static/css/markdown-shared.css?v=20261004-fold-approval">
 <link rel="stylesheet" href="/static/css/theme.css?v=20261002-fold">
 <script src="/static/js/components.js?v=20261004-windows-sandbox"></script>
@@ -6308,8 +6308,8 @@ const I18N = {
     confirm_hub_import: '将从 Hub 下载并导入团队 "{name}"，确定继续吗？',
     downloading_hub: '⏳ 正在从 Hub 下载...',
     import_success: '✅ 导入成功！',
-    enter_import_team: '请输入要导入到的团队名称：',
-    confirm_zip_import: '确定要导入团队快照吗？这将恢复团队 "{name}" 的Agent配置。',
+    enter_import_team: '请输入导入后新建的团队名称：',
+    confirm_zip_import: '导入快照并新建团队 "{name}"。同名团队需要确认替换。',
     importing_snapshot: '⏳ 正在导入团队快照...',
     unknown_error: '未知错误',
     load_teams_failed: '加载团队列表失败',
@@ -6919,8 +6919,8 @@ const I18N = {
     confirm_hub_import: 'Download and import team "{name}" from Hub?',
     downloading_hub: '⏳ Downloading from Hub...',
     import_success: '✅ Imported successfully!',
-    enter_import_team: 'Enter the team name to import into:',
-    confirm_zip_import: 'Import team snapshot? This will restore Agent config for team "{name}".',
+    enter_import_team: 'Name the team to create from this import:',
+    confirm_zip_import: 'Import snapshot as a new team "{name}". Replacing an existing team requires confirmation.',
     importing_snapshot: '⏳ Importing team snapshot...',
     unknown_error: 'Unknown error',
     load_teams_failed: 'Failed to load teams',
@@ -9623,11 +9623,12 @@ function _parseHubInput(raw) {
 
 async function _performHubImportFromUrl(url, teamName, options = {}) {
   const { silent = false, closeAreas = false } = options;
-  const resp = await fetch('/teams/snapshot/import_from_url', {
+  const resp = await teamSnapshotImport(replace => fetch('/teams/snapshot/import_from_url', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url, team: teamName })
-  });
+    body: JSON.stringify({ url, team: teamName, replace })
+  }), teamName);
+  if (!resp) return false;
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
     throw new Error(err.error || resp.statusText || 'import failed');
@@ -9726,11 +9727,6 @@ async function importTeamFromZip(input) {
     if (!guessedTeam) { input.value = ''; return; }
   }
 
-  if (!confirm(t('confirm_zip_import', {name: guessedTeam}))) {
-    input.value = '';
-    return;
-  }
-
   const formData = new FormData();
   formData.append('file', file);
   formData.append('team', guessedTeam);
@@ -9740,6 +9736,7 @@ async function importTeamFromZip(input) {
       typeof teamSnapshotUploadZipWithProgress === 'function'
         ? await teamSnapshotUploadZipWithProgress(file, formData)
         : await fetch('/teams/snapshot/upload', { method: 'POST', body: formData });
+    if (!resp) { input.value = ''; return; }
     if (!resp.ok) {
       const err = await resp.json();
       toast(t('import_failed') + ': ' + (err.error || t('unknown_error')));

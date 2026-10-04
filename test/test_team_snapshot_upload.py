@@ -40,6 +40,7 @@ class TeamSnapshotUploadTests(unittest.TestCase):
         self.teams = TeamStore(self.agents, self.user_files)
         for target, name, value in (
             (front, "USER_FILES_DIR", self.user_files),
+            (internal_alarm, "TASKS_FILE", str(self.root / "tasks.json")),
             (front, "_teams", lambda: self.teams),
             (snapshot_skills, "USER_FILES_DIR", self.user_files),
             (webot_skills, "USER_FILES_DIR", self.user_files),
@@ -55,14 +56,14 @@ class TeamSnapshotUploadTests(unittest.TestCase):
         with self.client.session_transaction() as session:
             session["user_id"] = owner
 
-    def upload(self, files, team="demo"):
+    def upload(self, files, team="demo", *, replace=False):
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as archive:
             for name, content in files.items():
                 archive.writestr(name, content)
         buf.seek(0)
         return self.client.post("/teams/snapshot/upload", data={
-            "team": team, "file": (buf, "snapshot.zip"),
+            "team": team, "file": (buf, "snapshot.zip"), "replace": "true" if replace else "false",
         }, content_type="multipart/form-data")
 
     def test_upload_restores_new_format_personal_and_team_skills(self):
@@ -118,14 +119,86 @@ class TeamSnapshotUploadTests(unittest.TestCase):
         self.assertTrue(response.get_json()["success"])
         member = self.teams.member("upload-user", "demo", "architect")
         self.assertEqual((member.agent.driver, member.agent.platform), ("acpx", "openclaw"))
-        self.assertEqual(member.agent.agent_id, "demo_architect")
+        self.assertTrue(member.agent.agent_id.startswith("ag_"))
+        self.assertNotEqual(member.agent.agent_id, "source_architect")
 
-    def test_assets_only_upload_preserves_members(self):
+    def test_same_name_requires_confirmation_and_assets_only_replacement_is_fresh(self):
         import_entries(self.teams, "upload-user", "demo", [{"name": "Writer", "persona": "write"}], [])
         before = self.teams.members("upload-user", "demo")
-        response = self.upload({"oasis/yaml/flow.yaml": "version: 2\nplan: []\n"})
-        self.assertEqual(response.status_code, 200)
+        files = {"oasis/yaml/flow.yaml": "version: 2\nplan: []\n"}
+        response = self.upload(files)
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.get_json()["code"], "team_exists")
         self.assertEqual(self.teams.members("upload-user", "demo"), before)
+        replaced = self.upload(files, replace=True)
+        self.assertEqual(replaced.status_code, 200, replaced.get_json())
+        self.assertEqual(self.teams.members("upload-user", "demo"), [])
+        self.assertIsNotNone(self.agents.get("upload-user", before[0].agent.agent_id))
+
+    def test_replacement_clears_old_assets_skills_and_uses_fresh_agents(self):
+        import_entries(self.teams, "upload-user", "demo", [{"name": "Writer", "session": "original", "persona": "old"}], [])
+        old_agent = self.teams.member("upload-user", "demo", "Writer").agent
+        self.teams.create("upload-user", "other")
+        self.teams.add("upload-user", "other", old_agent.agent_id)
+        folder = self.teams.folder("upload-user", "demo")
+        (folder / "oasis/yaml").mkdir(parents=True)
+        (folder / "oasis/yaml/obsolete.yaml").write_text("obsolete")
+        webot_skills.create_skill("upload-user", name="obsolete", content=_skill_content("obsolete", "old"), team="demo")
+        alarm_path = self.root / "tasks.json"
+        alarm_path.write_text(json.dumps({
+            "old": {"user_id": "upload-user", "team": "demo", "agent": old_agent.agent_id},
+            "other": {"user_id": "upload-user", "team": "other", "agent": old_agent.agent_id},
+            "foreign": {"user_id": "someone-else", "team": "demo", "agent": old_agent.agent_id},
+        }))
+        with mock.patch.object(front.requests, "delete", return_value=mock.Mock(status_code=200)) as delete:
+            response = self.upload({
+                "internal_agents.json": json.dumps([{"name": "Writer", "session": "original", "persona": "new"}]),
+                "oasis/yaml/new.yaml": "version: 2\nplan: []\n",
+                "skills/clawcross_team/new/SKILL.md": _skill_content("new", "new"),
+            }, replace=True)
+        self.assertEqual(response.status_code, 200, response.get_json())
+        delete.assert_called_once_with(front.SCHEDULER_TASKS_URL + "/old", timeout=10)
+        current = self.teams.member("upload-user", "demo", "Writer").agent
+        self.assertNotEqual(current.agent_id, old_agent.agent_id)
+        self.assertEqual(current.config["persona"], "new")
+        self.assertEqual(self.agents.get("upload-user", old_agent.agent_id).teams, ["other"])
+        self.assertFalse((folder / "oasis/yaml/obsolete.yaml").exists())
+        skill_root = snapshot_skills._team_skills_dir("upload-user", "demo")
+        self.assertFalse((skill_root / "obsolete").exists())
+        self.assertTrue((skill_root / "new/SKILL.md").is_file())
+
+    def test_failed_replacement_restores_original_team_and_skills(self):
+        import_entries(self.teams, "upload-user", "demo", [{"name": "Writer", "persona": "original", "is_primary": True}], [])
+        before = self.teams.members("upload-user", "demo")
+        folder = self.teams.folder("upload-user", "demo")
+        (folder / "original.json").write_text('{}')
+        webot_skills.create_skill("upload-user", name="original", content=_skill_content("original", "old"), team="demo")
+        with mock.patch("teams.snapshot.restore_skills_from_team_dir", side_effect=RuntimeError("restore failed")):
+            response = self.upload({"internal_agents.json": '[{"name":"New"}]'}, replace=True)
+        self.assertEqual(response.status_code, 500)
+        restored = self.teams.members("upload-user", "demo")
+        self.assertEqual(len(restored), 1)
+        self.assertEqual((restored[0].role, restored[0].is_lead, restored[0].extra),
+                         (before[0].role, before[0].is_lead, before[0].extra))
+        self.assertEqual(restored[0].agent.agent_id, before[0].agent.agent_id)
+        self.assertEqual(restored[0].agent.config, before[0].agent.config)
+        self.assertEqual(restored[0].agent.runtime, before[0].agent.runtime)
+        self.assertEqual(len(self.agents.list("upload-user")), 1)
+        self.assertTrue((folder / "original.json").is_file())
+        self.assertTrue((snapshot_skills._team_skills_dir("upload-user", "demo") / "original/SKILL.md").is_file())
+
+    def test_url_import_requires_explicit_replacement(self):
+        import_entries(self.teams, "upload-user", "demo", [{"name": "Writer", "persona": "old"}], [])
+        zip_data = io.BytesIO()
+        with zipfile.ZipFile(zip_data, "w") as archive:
+            archive.writestr("internal_agents.json", '[{"name":"New"}]')
+        download = mock.Mock(content=zip_data.getvalue())
+        with mock.patch.object(front.requests, "get", return_value=download):
+            conflict = self.client.post("/teams/snapshot/import_from_url", json={"team": "demo", "url": "https://hub.example/team.zip"})
+            self.assertEqual(conflict.status_code, 409)
+            replaced = self.client.post("/teams/snapshot/import_from_url", json={"team": "demo", "url": "https://hub.example/team.zip", "replace": True})
+        self.assertEqual(replaced.status_code, 200, replaced.get_json())
+        self.assertEqual([m.role for m in self.teams.members("upload-user", "demo")], ["New"])
 
     def test_invalid_manifest_does_not_replace_members_or_assets(self):
         import_entries(self.teams, "upload-user", "demo", [{"name": "Writer", "persona": "write"}], [])
@@ -134,7 +207,7 @@ class TeamSnapshotUploadTests(unittest.TestCase):
         before = self.teams.members("upload-user", "demo")
         for invalid in ("broken", "{}", '[{}]', '[{"name":"X"},{"name":"x"}]'):
             with self.subTest(invalid=invalid):
-                response = self.upload({"oasis_experts.json": "overwrite", "internal_agents.json": invalid})
+                response = self.upload({"oasis_experts.json": "overwrite", "internal_agents.json": invalid}, replace=True)
                 self.assertEqual(response.status_code, 400)
                 self.assertEqual(self.teams.members("upload-user", "demo"), before)
                 self.assertEqual((folder / "oasis_experts.json").read_text(), "[]")
