@@ -26,7 +26,7 @@ CATALOG = {
         field('trigger_tokens', '压缩触发点', '0 自动；不能超过历史预算。', type='number', min=0, max=4000000),
         field('target_tokens', '压缩目标', '摘要与保留原文的总量；0 为历史预算的 10%，最多 10,000 tokens；应小于触发点。', type='number', min=0, max=4000000),
         field('preserve_recent_turns', '优先保留最近轮次', '在 token 预算内优先保留原文；过长轮次可以按完整工具交换边界压缩。', type='number', min=1, max=100),
-        field('summary_tokens', '摘要预算', '摘要的最大 token 预算。', type='number', min=128, max=32000),
+        field('summary_tokens', '摘要预算', '默认上限 8,000；摘要优先占总目标的最多 80%，小窗口自动缩减，剩余用于最新完整工具交换。', type='number', min=128, max=32000),
         field('summarizer_input_tokens', '摘要输入预算', '给摘要模型留出历史、旧摘要和规则空间。', type='number', min=1024, max=128000),
         field('summarizer_model', '摘要模型', '留空沿用当前内部模型。'),
         field('preserve_instructions', '压缩保留事项', '说明摘要应保留的任务事实；不改变工具权限。', type='textarea')]},

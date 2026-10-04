@@ -22,8 +22,8 @@ class ContextSettings(BaseModel):
     trigger_tokens: int = Field(default=0, ge=0, le=4_000_000)
     target_tokens: int = Field(default=0, ge=0, le=4_000_000)
     preserve_recent_turns: int = Field(default=4, ge=1, le=100)
-    summary_tokens: int = Field(default=2000, ge=128, le=32000)
-    summarizer_input_tokens: int = Field(default=8000, ge=1024, le=128000)
+    summary_tokens: int = Field(default=8000, ge=128, le=32000)
+    summarizer_input_tokens: int = Field(default=32000, ge=1024, le=128000)
     summarizer_model: str = Field(default="", max_length=200)
     preserve_instructions: str = Field(default="", max_length=4000)
 
@@ -36,9 +36,8 @@ class ContextSettings(BaseModel):
             raise ValueError("target_tokens must be smaller than trigger_tokens")
         if self.history_tokens and self.trigger_tokens > self.history_tokens:
             raise ValueError("trigger_tokens must not exceed history_tokens")
-        if self.target_tokens and self.summary_tokens >= self.target_tokens:
-            raise ValueError("summary_tokens must be smaller than target_tokens")
-        if self.summarizer_input_tokens <= self.summary_tokens + _approx_tokens(self.preserve_instructions) + 512:
+        input_summary_cap = min(self.summary_tokens, self.summarizer_input_tokens // 2)
+        if self.summarizer_input_tokens <= input_summary_cap + _approx_tokens(self.preserve_instructions) + 512:
             raise ValueError("summarizer_input_tokens must leave room for the previous summary and instructions")
         return self
 
@@ -110,6 +109,16 @@ def resolve_context_history_budget(settings: ContextSettings, *, is_subagent: bo
 def resolve_compaction_target(settings: ContextSettings | None, history_token_budget: int) -> int:
     """Keep automatic summaries and their raw tail small, even in large windows."""
     return (settings.target_tokens if settings else 0) or max(1, min(10_000, history_token_budget // 10))
+
+
+def resolve_compaction_summary_budget(settings: ContextSettings, target_tokens: int) -> int:
+    """Prioritize the summary, leaving space for the latest complete exchange.
+
+    A smaller input budget also leaves room for new transcript chunks beside
+    the previous summary, including legacy 8,000-token input configurations.
+    """
+    return min(settings.summary_tokens, max(1, target_tokens * 4 // 5),
+               max(1, settings.summarizer_input_tokens // 2))
 
 
 def context_usage_with_window(usage: dict, window: int) -> dict:

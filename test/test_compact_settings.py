@@ -151,10 +151,23 @@ class CompactSettingsTests(unittest.TestCase):
             settings=ContextSettings(trigger_tokens=20_000), summarizer=lambda *a: 'Task: inspect files; never delete.')
         self.assertTrue(result.triggered)
         self.assertEqual(result.metadata['target_tokens'], 10_000)
+        self.assertEqual(result.metadata['summary_budget_tokens'], 8000)
         self.assertLessEqual(result.view_tokens, 10_000)
         self.assertEqual(result.view[-2:], messages[-2:])
         self.assertIn('never delete', result.summary)
         self.assertEqual(messages[0].content, 'Inspect the files; do not delete anything.')
+
+    def test_summary_can_use_most_of_the_target_and_scales_for_legacy_small_inputs(self):
+        from webot.runtime_settings import resolve_compaction_summary_budget
+        defaults = ContextSettings()
+        self.assertEqual(defaults.summary_tokens, 8000)
+        self.assertEqual(defaults.summarizer_input_tokens, 32000)
+        self.assertEqual(resolve_compaction_summary_budget(defaults, 10000), 8000)
+        self.assertEqual(resolve_compaction_summary_budget(defaults, 1000), 800)
+        legacy = ContextSettings(summarizer_input_tokens=8000)
+        self.assertEqual(resolve_compaction_summary_budget(legacy, 10000), 4000)
+        small_target = ContextSettings(target_tokens=1000)
+        self.assertEqual(resolve_compaction_summary_budget(small_target, 1000), 800)
 
     def test_minimum_new_messages_selects_a_later_whole_turn(self):
         boundary = c._pick_boundary(self.messages, current_until=0, preserve_recent=8,
@@ -211,7 +224,7 @@ class CompactSettingsTests(unittest.TestCase):
             history_token_budget=6000, checkpoint_store_path=self.path, preserve_recent=4,
             summarizer=lambda *a: "中" * 4000)
         self.assertTrue(result.triggered)
-        self.assertLessEqual(c._approx_tokens(result.view[0].content), result.metadata["target_tokens"] // 3)
+        self.assertLessEqual(c._approx_tokens(result.view[0].content), result.metadata["target_tokens"] * 4 // 5)
 
     def test_mechanical_fallback_retains_latest_decision_within_char_cap(self):
         segment = [HumanMessage(content='old ' + 'x' * 1000) for _ in range(10)]
@@ -226,7 +239,7 @@ class CompactSettingsTests(unittest.TestCase):
     def test_manual_compression_folds_all_eligible_history_with_a_large_window(self):
         result = c.apply_compression(user_id='alice', session_id='s', messages=self.messages,
             history_token_budget=800000, checkpoint_store_path=self.path, force=True,
-            settings=ContextSettings(preserve_recent_turns=2), summarizer=lambda *a: 'key decisions')
+            settings=ContextSettings(preserve_recent_turns=2, summary_tokens=256), summarizer=lambda *a: 'key decisions')
         self.assertTrue(result.triggered)
         self.assertEqual(result.compacted_until, len(self.messages) - 8)
         self.assertEqual(result.metadata['strategy'], 'manual_all_eligible')

@@ -125,7 +125,7 @@ async function loadRuntimeSettingsScope() {
                     <div class="runtime-settings-advanced-body">
                         ${model('context', 'summarizer_model', context.summarizer_model)}
                         <div class="runtime-settings-grid">
-                            ${number('summary_tokens', '摘要 token 上限', 'Summary token limit', 128, 32000)}
+                            ${number('summary_tokens', '摘要 token 上限', 'Summary token limit', 128, 32000, text('默认 8,000；摘要优先占总目标的最多 80%，小窗口自动缩减', 'Default 8,000; the summary may use up to 80% of the total target, scaled down for small windows'))}
                             ${number('summarizer_input_tokens', '摘要模型输入预算', 'Summarizer input budget (tokens)', 1024, 128000)}
                         </div>
                     </div>
