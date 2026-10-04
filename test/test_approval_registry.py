@@ -40,6 +40,7 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(record.status, 'denied')
         entry = approval_registry('alice', 'one')['records'][0]
         self.assertEqual(entry['remember_error'], 'ValueError')
+        self.assertEqual(entry['decision'], 'denied')
         self.assertFalse(entry['remembered'])
 
     def test_expired_pending_records_are_not_reported_as_waiting(self):

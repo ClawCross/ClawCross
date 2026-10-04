@@ -57,7 +57,6 @@ from webot.runtime_store import (
     list_recoverable_runs,
     list_runs_for_parent_session,
     list_runs_for_session,
-    list_tool_approvals as list_tool_approval_records,
     mark_inbox_read,
     record_claude_keepalive_result,
     record_run_event,
