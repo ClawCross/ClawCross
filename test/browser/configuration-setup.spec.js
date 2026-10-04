@@ -23,3 +23,33 @@ for(const width of [390,1280]) test(`private general configuration fits ${width}
   expect(await page.locator('body').textContent()).not.toContain('PRIVATE_API_KEY');
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
+
+for (const outcome of ['cancelled','expired']) test(`configuration form clears private input on ${outcome}`, async ({page}) => {
+  const submitted = [];
+  const item = {id:'config-final',topic:'model',session_id:'one',status:'pending',draft:{},schema:{label:'模型连接',fields:[
+    {name:'LLM_API_KEY',label:'密钥',type:'password',human_only:true}]}};
+  await page.route('**/proxy_configuration_setup**',route => {
+    if (route.request().method() === 'POST') {
+      submitted.push(route.request().postDataJSON()); item.status = 'cancelled';
+      return route.fulfill({json:{status:'cancelled'}});
+    }
+    return route.fulfill({json:{requests:[item]}});
+  });
+  await page.goto('/studio'); await page.setContent('<html lang="zh"><body><div id="chat"></div></body></html>');
+  await page.addScriptTag({path:path.resolve('src/frontend/static/js/channel-setup.js')});
+  await page.evaluate(() => ClawcrossChannelSetup.sync(document.querySelector('#chat'),['one']));
+  await page.locator('[name=LLM_API_KEY]').fill('PRIVATE_NOT_SUBMITTED');
+  if (outcome === 'cancelled') {
+    await page.getByRole('button',{name:'取消',exact:true}).click();
+    await expect(page.locator('.cc-channel-form')).toContainText('已取消');
+    expect(submitted).toEqual([{request_id:'config-final',values:{},cancel:true}]);
+  } else {
+    item.status = 'expired';
+    await page.evaluate(() => ClawcrossChannelSetup.sync(document.querySelector('#chat'),['one']));
+    await expect(page.locator('.cc-channel-form')).toContainText('已超时');
+    expect(submitted).toEqual([]);
+  }
+  await expect(page.locator('input')).toHaveCount(0);
+  await expect(page.locator('.cc-channel-actions')).toHaveCount(0);
+  expect(await page.locator('body').textContent()).not.toContain('PRIVATE_NOT_SUBMITTED');
+});

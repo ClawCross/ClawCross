@@ -537,14 +537,14 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-10-04T09:38:29.162292+00:00`
+- Updated at: `2026-10-04T11:02:29.934694+00:00`
 - Strategy: `harden`
-- Heuristic candidate: `blended-verification-loop-approval-auth-structured-output`
-- Heuristic score: `0.564`
+- Heuristic candidate: `blended-verification-loop-structured-output-workspace-preflight`
+- Heuristic score: `0.579`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: (external failure context). Signals: verification-loop, approval-auth, structured-output. stdout was used as fallback failure evidence.
+Command exited with code 1. Command: (external failure context). Signals: verification-loop, structured-output, workspace-preflight. stdout was used as fallback failure evidence.
 
 ### Strategy Rationale
 
@@ -558,26 +558,34 @@ Command exited with code 1. Command: (external failure context). Signals: verifi
 ### Latest Error Excerpt
 
 ```text
-============================= test session starts ==============================
-platform linux -- Python 3.11.16, pytest-9.1.1, pluggy-1.6.0 -- /home/ubuntu/.clawcross/venv/bin/python
-cachedir: .pytest_cache
-rootdir: /home/ubuntu/work2/ClawCross
-configfile: pytest.ini
-plugins: langsmith-0.14.2, asyncio-1.4.0, anyio-4.15.1
-asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
-collecting ... collected 81 items
+.................                                    [100%]
+=================================== FAILURES ===================================
+_ ConfigurationToolWaitTests.test_real_mcp_process_waits_for_backend_save_or_cancel (channel=False, cancel=True) _
 
-test/test_manual_approval_continuation.py::ManualContinuationTests::test_agent_cannot_supply_system_network_retry_parameters PASSED [  1%]
-test/test_manual_approval_continuation.py::ManualContinuationTests::test_auto_result_cannot_be_overridden_by_human_button PASSED [  2%]
-test/test_manual_approval_continuation.py::ManualContinuationTests::test_button_continues_original_tool_once_without_pending_result_or_new_turn PASSED [  3%]
-test/test_manual_approval_continuation.py::ManualContinuationTests::test_cancellation_expires_waiter_without_executing PASSED [  4%]
-test/test_manual_approval_continuation.py::ManualContinuationTests::test_cli_text_reply_continues_without_sending_bare_y_to_model PASSED [  6%]
-test/test_manual_approval_continuation.py::ManualContinuationTests::test_deny_returns_only_final_denial_without_executing PASSED [  7%]
-test/test_manual_approval_continuation.py::ManualContinuationTests::test_detached_old_request_still_queues_its_saved_action PASSED [  8%]
-test/test_manual_approval_continuation.py::ManualContinuationTests::test_external_agent_approval_does_not_prompt_native_agent_again PASSED [  9%]
-test/test_manual_approval_continuation.py::ManualContinuationTests::test_failed_keep_registration_returns_final_denial PASSED [ 11%]
-test/test_manual_approval_continuation.py::ManualContinuationTests::test_gateway_chat_y_does_not_cancel_or_start_an_agent_turn PASSED [ 12%]
-test/test_manual_approval_continuation.py::ManualContinuationTests::test_system_trigger_owner_y_is ...[truncated]
+self = <test.test_configuration_tool_wait.ConfigurationToolWaitTests testMethod=test_real_mcp_process_waits_for_backend_save_or_cancel>
+
+    async def test_real_mcp_process_waits_for_backend_save_or_cancel(self):
+        script = Path(__file__).resolve().parents[1] / 'src/backend/webot/mcp/notifier.py'
+        client = MultiServerMCPClient({'notifier': {
+            'command':sys.executable, 'args':[str(script)], 'transport':'stdio',
+            'env':{'CLAWCROSS_HOME':str(self.root), 'CLAWCROSS_FORM_WAIT_SECONDS':'30'},
+        }})
+        tools = await client.get_tools()
+        node = DirectToolNode(tools)
+        for channel, cancel in ((False, True), (True, False)):
+            with self.subTest(channel=channel, cancel=cancel):
+                name = 'request_channel_setup' if channel else 'request_configuration'
+                call = {'name':name, 'args':{'username':'alice','session_id':'one',
+                        **({'channel':'telegram'} if channel else {'topic':'model'})},
+                        'id':'mcp-original-call','type':'tool_call'}
+                task = asyncio.create_task(node.ainvoke({'messages':[AIMessage(content='',tool_calls=[call])]}, {}))
+                self.addAsyncCleanup(self.stop_task, task)
+                request = await self.pending()
+                self.assertFalse(task.done())
+                setup.submit('alice', request['id'], {} if cancel else {'token':'PRIVATE_MCP_TOKEN'}, cancel=cancel)
+                message = (await asyncio.wait_for(task, 15))['messages'][0]
+                self.assertEqual(message.tool_call_id, 'mcp-original-call')
+>               self.assertEqual(json.loads(message.content)['status'], 'cancelled' if cancel else 'completed') ...[truncated]
 ```
 
 ### Governance Snapshot
@@ -600,15 +608,16 @@ test/test_manual_approval_continuation.py::ManualContinuationTests::test_system_
 
 ### Recent Evidence
 
-- `2026-10-04T09:38:29.162292+00:00` `repo-skill` — ============================= test session starts ==============================
-platform linux -- Python 3.11.16, pytest-9.1.1, pluggy-1.6.0 ...[truncated]
+- `2026-10-04T11:02:29.934694+00:00` `repo-skill` — .................                                    [100%]
+=================================== FAILURES ===================================
+_ ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `blended-verification-loop-approval-auth-structured-output` score `0.564` — Blend the strongest recent failure patterns (intent `repair`)
-- `verification-loop-5` score `0.524` — Tighten verification loops (intent `repair`)
-- `approval-auth-3` score `0.482` — Preflight auth and approval constraints (intent `repair`)
-- `structured-output-3` score `0.482` — Harden structured-output handling (intent `repair`)
+- `blended-verification-loop-structured-output-workspace-preflight` score `0.579` — Blend the strongest recent failure patterns (intent `repair`)
+- `verification-loop-5` score `0.539` — Tighten verification loops (intent `repair`)
+- `structured-output-5` score `0.539` — Harden structured-output handling (intent `repair`)
+- `workspace-preflight-2` score `0.467` — Add repo/workspace preflight checks (intent `repair`)
 
 ### Local State Snapshot
 

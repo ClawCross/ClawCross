@@ -32,7 +32,7 @@ def create_settings_router(
         verify_auth_or_token(user_id, password, x_internal_token)
         from ops.configuration_requests import describe, list_requests
         return {'topics': describe(user_id, session_id, env_path=env_path),
-                'requests': list_requests(user_id, session_id, env_path=env_path)}
+                'requests': list_requests(user_id, session_id, env_path=env_path, include_finished=True)}
 
     @router.post('/configuration/setup')
     async def configuration_submit(req: ConfigurationSetupRequest, x_internal_token: str | None = Header(None)):
@@ -49,7 +49,7 @@ def create_settings_router(
     async def channel_setup(user_id: str, session_id: str = '', password: str = '', x_internal_token: str | None = Header(None)):
         verify_auth_or_token(user_id, password, x_internal_token)
         from channels.setup_requests import describe, list_requests
-        return {'channels': describe(), 'requests': list_requests(user_id, session_id)}
+        return {'channels': describe(), 'requests': list_requests(user_id, session_id, include_finished=True)}
 
     @router.post('/channels/setup')
     async def channel_setup_submit(req: ChannelSetupRequest, x_internal_token: str | None = Header(None)):

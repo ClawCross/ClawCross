@@ -92,11 +92,11 @@ def create(user_id: str, session_id: str, channel_id: str, values: dict | None =
             'message': '请在设置气泡中填写并保存。密钥不进入对话；无网页时请打开渠道设置页面。'}
 
 
-def list_requests(user_id: str, session_id: str = '') -> list[dict]:
+def list_requests(user_id: str, session_id: str = '', *, include_finished: bool = False) -> list[dict]:
     with _connect() as db:
-        rows = db.execute("SELECT * FROM requests WHERE user_id=? AND status='pending' AND created>? "
+        rows = db.execute("SELECT * FROM requests WHERE user_id=? AND (? OR status='pending') AND created>? "
                           "AND (?='' OR session_id=?) ORDER BY created DESC LIMIT 20",
-                          (user_id, time.time() - 86400, session_id, session_id)).fetchall()
+                          (user_id, include_finished, time.time() - 86400, session_id, session_id)).fetchall()
     return [{**dict(row), 'draft': json.loads(row['draft']), 'schema': describe(row['channel'])[0]} for row in rows]
 
 
@@ -107,6 +107,16 @@ def status(user_id: str, request_id: str) -> dict:
     if row is None:
         raise ValueError('Setup request not found')
     return {'id': request_id, 'channel': row['channel'], 'status': 'expired' if row['status'] == 'pending' and row['created'] < time.time()-86400 else row['status']}
+
+
+def close_pending(user_id: str, request_id: str, state: str) -> dict:
+    """Close a waiting tool's form without overwriting a simultaneous submission."""
+    if state not in {'cancelled', 'expired'}:
+        raise ValueError('Invalid final form state')
+    with _connect() as db:
+        db.execute("UPDATE requests SET status=?,draft='{}' WHERE id=? AND user_id=? AND status='pending'",
+                   (state, request_id, user_id))
+    return status(user_id, request_id)
 
 
 def _apply(channel: dict, values: dict, env_path: Path) -> None:
@@ -171,12 +181,7 @@ def submit(user_id: str, request_id: str, values: dict, *, cancel=False, env_pat
             _apply(channel, _values(channel, {**json.loads(row['draft']), **values}), env_path or ENV_FILE)
         state = 'cancelled' if cancel else 'completed'
         db.execute('UPDATE requests SET status=?,draft=? WHERE id=?', (state, '{}', request_id))
-    # Only a status notification reaches the Agent. No form input is copied.
-    from webot.runtime_store import create_inbox_message
-    if row['session_id'] != 'settings':
-        create_inbox_message(user_id=user_id, target_session=row['session_id'], source_label='渠道设置',
-                             message_id=request_id, content=f"[渠道设置] {row['channel']}: {state}。用户填写值不会提供给模型。")
     if not cancel:
         PID_DIR.mkdir(parents=True, exist_ok=True)
         (PID_DIR / 'channels_restart_flag').write_text('restart')
-    return {'id': request_id, 'status': state}
+    return {'id': request_id, 'status': state, 'message': '已取消。' if cancel else '已保存，渠道将在后台重新连接。'}

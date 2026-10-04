@@ -27,3 +27,26 @@ for (const width of [390, 1280]) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });
 }
+
+test('channel cancel returns only cancellation and no credential values', async ({page}) => {
+  const submitted = [];
+  const item = {id:'setup-cancel',topic:'channel:telegram',session_id:'one',status:'pending',draft:{},schema:{label:'Telegram',fields:[
+    {name:'token',label:'Token',type:'password',human_only:true}]}};
+  await page.route('**/proxy_configuration_setup**',route => {
+    if (route.request().method() === 'POST') {
+      submitted.push(route.request().postDataJSON()); item.status = 'cancelled';
+      return route.fulfill({json:{status:'cancelled'}});
+    }
+    return route.fulfill({json:{requests:[item]}});
+  });
+  await page.goto('/studio'); await page.setContent('<html lang="zh"><body><div id="chat"></div></body></html>');
+  await page.addScriptTag({path:path.resolve('src/frontend/static/js/channel-setup.js')});
+  await page.evaluate(() => ClawcrossChannelSetup.sync(document.querySelector('#chat'),['one']));
+  await page.locator('[name=token]').fill('PRIVATE_NOT_SUBMITTED');
+  await page.getByRole('button',{name:'取消',exact:true}).click();
+  await expect(page.locator('.cc-channel-form')).toContainText('已取消');
+  expect(submitted).toEqual([{request_id:'setup-cancel',values:{},cancel:true}]);
+  await page.evaluate(() => ClawcrossChannelSetup.sync(document.querySelector('#chat'),['one']));
+  await expect(page.locator('.cc-channel-form')).toHaveCount(1);
+  await expect(page.locator('input')).toHaveCount(0);
+});

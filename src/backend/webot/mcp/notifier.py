@@ -70,17 +70,20 @@ async def request_configuration(username: str, topic: str, values: list[ChannelF
     """在对话内展示配置表单；先 get_configuration 查字段，预填非敏感项，用户保存后生效。
 
     human_only 字段由用户直接交给后端，不进入模型、聊天或工具结果；不能传入 values。
-    仅返回请求编号与状态。不安装组件、不测试连接、不自动重启。无网页时引导用户到设置页私密填写。
+    等待用户保存或取消后才返回 completed/cancelled；等待超时返回 expired。
+    结果只有编号、最终状态与生效说明，不另发收件箱通知。
+    不安装组件、不测试连接、不自动重启。无网页时引导用户到设置页私密填写。
     :param username: 系统注入用户
     :param topic: get_configuration 返回的分类编号
     :param values: 非敏感字段列表；布尔 true/false、数字使用文本
     :param session_id: 系统注入当前 Agent
     """
-    from ops.configuration_requests import create
+    from ops.configuration_requests import create, wait_for_result
     try:
         draft = {field.name: field.value for field in values or []}
         if len(draft) != len(values or []): raise ValueError('Duplicate field names')
-        return json.dumps(create(username, session_id or 'default', topic, draft), ensure_ascii=False)
+        request = create(username, session_id or 'default', topic, draft)
+        return json.dumps(await wait_for_result(username, request), ensure_ascii=False)
     except ValueError as exc:
         return '❌ ' + str(exc)
 
@@ -114,8 +117,9 @@ async def request_channel_setup(username: str, channel: str, values: list[Channe
 
     非敏感项如备注、App ID、消息选项可用 values 预填。先 get_channel_setup 查字段；
     human_only 的密钥、URL、程序路径只能由用户在表单输入，不能传入 values。
-    用户输入直接发送后端，不发给 LLM、不进入工具结果或对话。结果只有填写状态；
-    之后可 get_channel_setup(request_id=...) 查询。无网页时打开渠道设置页填写，
+    用户输入直接发送后端，不发给 LLM、不进入工具结果或对话。
+    等待保存或取消后返回 completed/cancelled；等待超时返回 expired，不另发收件箱通知。
+    无网页时打开渠道设置页填写，
     不要求用户在普通聊天中发送密钥。保存不安装组件、不自动发送测试消息。
     :param username: 用户身份，由系统注入
     :param channel: get_channel_setup 返回的平台编号
@@ -123,11 +127,13 @@ async def request_channel_setup(username: str, channel: str, values: list[Channe
     :param session_id: 当前 Agent，由系统注入
     """
     from channels.setup_requests import create
+    from ops.configuration_requests import wait_for_result
     try:
         draft = {field.name: field.value for field in values or []}
         if len(draft) != len(values or []):
             raise ValueError('Duplicate field names')
-        return json.dumps(create(username, session_id or 'default', channel, draft), ensure_ascii=False)
+        request = create(username, session_id or 'default', channel, draft)
+        return json.dumps(await wait_for_result(username, request), ensure_ascii=False)
     except ValueError as exc:
         return '❌ ' + str(exc)
 
