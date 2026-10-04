@@ -240,6 +240,10 @@ class ConversationStore:
 
     # ── messages ─────────────────────────────────────────────────────────
 
+    def message(self, conv_id: str, message_id: int) -> Message | None:
+        rows = self._run('SELECT * FROM conversation_messages WHERE conv_id=? AND id=?', (conv_id,message_id))
+        return self._message(rows[0]) if rows else None
+
     def add_message(self, conv_id: str, sender: str, content: str, *, mentions: list[str] = (),
                     reply_to: int | None = None, attachments: list[dict] = (), client_msg_id: str | None = None,
                     created_at: float | None = None) -> tuple[Message, bool]:
@@ -283,6 +287,13 @@ class ConversationStore:
     def last_message(self, conv_id: str) -> Message | None:
         found = self.messages(conv_id, limit=1, latest=True)
         return found[0] if found else None
+
+    def search_messages(self, conv_id: str, query: str, before_id: int = 0, limit: int = 50) -> list[Message]:
+        pattern = '%' + query.replace('\\','\\\\').replace('%','\\%').replace('_','\\_') + '%'
+        rows = self._run("""SELECT * FROM conversation_messages WHERE conv_id=? AND (?=0 OR id<?)
+                           AND content LIKE ? ESCAPE '\\' ORDER BY id DESC LIMIT ?""",
+                         (conv_id,before_id,before_id,pattern,min(50,max(1,limit))))
+        return [self._message(row) for row in rows]
 
     def message_count(self, conv_id: str) -> int:
         return self._run("SELECT COUNT(*) FROM conversation_messages WHERE conv_id = ?", (conv_id,))[0][0]

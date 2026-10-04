@@ -49,6 +49,7 @@ class GuestPost(BaseModel):
     content: str = Field(min_length=1, max_length=8000)
     client_msg_id: str = Field('', max_length=160)
     mentions: list[str] = Field(default_factory=list, max_length=128)
+    reply_to: int | None = Field(None, ge=1)
 
 
 class Post(BaseModel):
@@ -147,6 +148,22 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
     @router.get('/messages')
     async def messages(after_id: int = 0, authorization: str | None = Header(None)):
         return {'messages': await invoke(store.messages, token(authorization), max(0, after_id))}
+
+    @router.get('/search')
+    @router.get('/guest/search')
+    async def search(request: Request, query: str, before_id: int = 0, limit: int = 50, authorization: str | None = Header(None)):
+        credential = token(authorization)
+        await invoke(store.detail, credential)
+        from groups.relay_store import digest
+        limited('search:' + digest(credential), 60)
+        guest = request.url.path.endswith('/guest/search')
+        if guest:
+            await invoke(store.guest_identity, credential)
+        result = await invoke(store.search_messages, credential, query, max(0,before_id), limit)
+        if guest:
+            result['messages'] = [{k:m.get(k) for k in ('id','sender','sender_name','content','created_at','reply_to','reply')}
+                                  for m in result['messages']]
+        return result
 
     @router.post('/messages')
     async def post(body: Post, authorization: str | None = Header(None)):

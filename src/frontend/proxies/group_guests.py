@@ -6,7 +6,7 @@ browser it is the guest chat page; pasted into another ClawCross it joins that
 device as a full member, whose group traffic then goes through ``/relay/*`` here.
 """
 import re
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 from hashlib import sha256
 
 import requests
@@ -16,6 +16,28 @@ from itsdangerous import BadSignature, URLSafeTimedSerializer
 
 def register_guest_routes(app, *, port_agent, internal_token, public_base=lambda: ''):
     signer = URLSafeTimedSerializer(app.secret_key, salt='group-human-invite-v1')
+
+    @app.post('/proxy_groups/<gid>/guest-qr')
+    def existing_invitation_qr(gid):
+        from flask import session
+        if not session.get('user_id'):
+            return jsonify(error='请先登录'), 401
+        body = request.get_json(silent=True)
+        link = body.get('url', '') if isinstance(body,dict) else ''
+        try:
+            if not isinstance(link,str) or len(link)>6000:
+                raise ValueError('invalid link')
+            parsed = urlsplit(link)
+            if parsed.path != '/group-guest' or parsed.scheme not in {'http','https'} or not parsed.hostname:
+                raise ValueError('invalid link')
+            base = public_base().strip().rstrip('/') or request.url_root.rstrip('/')
+            if not base.startswith(('http://','https://')): base = 'https://' + base
+            if parsed.netloc != urlsplit(base).netloc: raise ValueError('invalid origin')
+            signer.loads(parsed.fragment,max_age=30 * 86400)
+        except (BadSignature,ValueError):
+            return jsonify(error='邀请链接无效或已过期，请生成新链接'), 400
+        from frontend.invite_qr import invitation_qr
+        return jsonify(qr=invitation_qr(link))
 
     @app.post('/proxy_groups/<gid>/guest-link')
     def create_guest_link(gid):
@@ -36,12 +58,14 @@ def register_guest_routes(app, *, port_agent, internal_token, public_base=lambda
             base = public_base().strip().rstrip('/') or request.url_root.rstrip('/')
             if not base.startswith(('http://', 'https://')):
                 base = 'https://' + base
-            return jsonify(url=base + '/group-guest#' + ticket)
+            from frontend.invite_qr import invitation_qr
+            link = base + '/group-guest#' + ticket
+            return jsonify(url=link, qr=invitation_qr(link))
         except (requests.RequestException, ValueError):
             return jsonify(error='群服务暂时不可用'), 503
 
     # A device joined by link reaches the group server only through these calls.
-    device_calls = {('POST', 'join'), ('POST', 'poll'), ('GET', 'group'), ('GET', 'messages'),
+    device_calls = {('POST', 'join'), ('POST', 'poll'), ('GET', 'group'), ('GET', 'messages'), ('GET', 'search'),
                     ('POST', 'messages'), ('POST', 'agents')}
 
     @app.route('/relay/<path:call>', methods=['GET', 'POST'])
@@ -72,7 +96,8 @@ def register_guest_routes(app, *, port_agent, internal_token, public_base=lambda
             with requests.Session() as client:
                 client.trust_env = False
                 response = client.request(request.method, target['url'] + '/relay/' + call, headers=headers, json=body,
-                                          params={'after_id': request.args.get('after_id', '0')} if call == 'messages' else None,
+                                          params=({'after_id': request.args.get('after_id', '0')} if call == 'messages'
+                                                  else {key: request.args.get(key, default) for key,default in (('query',''),('before_id','0'),('limit','50'))} if call == 'search' else None),
                                           timeout=20, allow_redirects=False)
             result = jsonify(response.json())
             result.status_code = response.status_code
@@ -91,7 +116,7 @@ def register_guest_routes(app, *, port_agent, internal_token, public_base=lambda
 
     @app.route('/group-guest-api/<action>', methods=['GET', 'POST'])
     def group_guest_api(action):
-        methods = {'info': 'POST', 'join': 'POST', 'state': 'GET', 'messages': 'POST', 'rename': 'POST', 'password': 'POST'}
+        methods = {'info': 'POST', 'join': 'POST', 'state': 'GET', 'messages': 'POST', 'search':'GET', 'rename': 'POST', 'password': 'POST'}
         if methods.get(action) != request.method:
             return jsonify(error='不支持的操作'), 405
         ticket = request.headers.get('X-Group-Invite', '')
@@ -114,7 +139,7 @@ def register_guest_routes(app, *, port_agent, internal_token, public_base=lambda
             body = {'name': body.get('name', '')}
         elif action == 'messages':
             body = {'content': body.get('content', ''), 'client_msg_id': body.get('client_msg_id', ''),
-                    'mentions': body.get('mentions', [])}
+                    'mentions': body.get('mentions', []), 'reply_to':body.get('reply_to')}
         headers = {}
         if action not in {'info', 'join'}:
             credential = request.headers.get('X-Guest-Token', '')
@@ -126,7 +151,8 @@ def register_guest_routes(app, *, port_agent, internal_token, public_base=lambda
                 client.trust_env = False
                 response = client.request(request.method, target['url'] + '/relay/guest/' + action,
                     headers=headers, json=body if request.method == 'POST' else None,
-                    params={'after_id': request.args.get('after_id', '0')} if action == 'state' else None,
+                    params=({'after_id': request.args.get('after_id', '0')} if action == 'state'
+                            else {key:request.args.get(key, default) for key, default in (('query',''),('before_id','0'),('limit','50'))} if action == 'search' else None),
                     timeout=15, allow_redirects=False)
             data = response.json()
             if response.status_code == 200 and action in {'info', 'state'} and isinstance(data, dict) and data.get('group_id'):

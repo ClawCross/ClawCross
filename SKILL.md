@@ -537,14 +537,14 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-10-04T15:17:17.463879+00:00`
+- Updated at: `2026-10-04T15:41:03.645040+00:00`
 - Strategy: `harden`
-- Heuristic candidate: `blended-verification-loop-bounded-execution`
-- Heuristic score: `0.73`
+- Heuristic candidate: `blended-verification-loop-approval-auth-workspace-preflight`
+- Heuristic score: `0.594`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: (external failure context). Signals: verification-loop, bounded-execution. stdout was used as fallback failure evidence.
+Command exited with code 1. Command: (external failure context). Signals: verification-loop, approval-auth, workspace-preflight. stdout was used as fallback failure evidence.
 
 ### Strategy Rationale
 
@@ -558,40 +558,34 @@ Command exited with code 1. Command: (external failure context). Signals: verifi
 ### Latest Error Excerpt
 
 ```text
-1) test/browser/runtime-settings.spec.js:152:1 › strict KEEP Y shows inactive sandbox grants and prevents adding expansions
+Dependency install: /home/ubuntu/.clawcross/venv/bin/python -m pip failed: No module named pip. Use uv pip install --python <venv python>.
+..F..F.........................                                     [100%]
+=================================== FAILURES ===================================
+___________ GroupChatFeatures.test_legacy_group_reference_and_search ___________
 
-    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeDisabled[2m([22m[2m)[22m failed
+self = <test.test_group_chat_features.GroupChatFeatures testMethod=test_legacy_group_reference_and_search>
 
-    Locator:  locator('[name=kind] option[value=network]')
-    Expected: disabled
-    Received: enabled
-    Timeout:  5000ms
+    def test_legacy_group_reference_and_search(self):
+        store=ConversationStore(Path(self.temp.name)/'old.db'); conversations=Conversations(store,Mock(),Mock()); service=GroupService(conversations)
+>       one=store.create(owner='alice',title='Old',members=[human('alice')]); other=store.create(owner='bob',title='Other',members=[human('bob')])
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: ConversationStore.create() missing 1 required positional argument: 'kind'
 
-    Call log:
-    [2m  - Expect "toBeDisabled" with timeout 5000ms[22m
-    [2m  - waiting for locator('[name=kind] option[value=network]')[22m
-    [2m    9 × locator resolved to <option disabled value="network">联网</option>[22m
-    [2m      - unexpected value "enabled"[22m
+test/test_group_chat_features.py:101: TypeError
+__ GroupChatFeatures.test_search_api_authentication_guest_privacy_and_revoke ___
 
+self = <test.test_group_chat_features.GroupChatFeatures testMethod=test_search_api_authentication_guest_privacy_and_revoke>
 
-      158 |   await page.locator('.remembered-add > summary').click();
-      159 |   await expect(page.locator('[name=kind]')).toHaveValue('tool');
-    > 160 |   await expect(page.locator('[name=kind] option[value=network]')).toBeDisabled();
-          |                                                                   ^
-      161 |   await expect(page.locator('[data-tool-fields]')).toBeVisible();
-      162 | });
-      163 |
-        at /home/ubuntu/work2/ClawCross/test/browser/runtime-settings.spec.js:160:67
-
-    Error Context: test-results/runtime-settings-strict-KE-eede9--prevents-adding-expansions/error-context.md
-
-    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
-    test-results/runtime-settings-strict-KE-eede9--prevents-adding-expansions/trace.zip
-    Usage:
-
-        npx playwright show-trace test-results/runtime-settings-strict-KE-eede9--prevents-adding-expansions/trace.zip
-
-    ────────────────────────────────────────────────────────────────────────────────────────────────
+    def test_search_api_authentication_guest_privacy_and_revoke(self):
+        self.store.post(self.host['token'],content='find me')
+        with TestClient(create_app(data_dir=self.temp.name,control_key='key',legacy=False)) as api:
+            self.assertEqual(api.get('/relay/search',params={'query':'find'}).status_code,401)
+            headers={'Authorization':'Bearer '+self.guest['token']}
+            response=api.get('/relay/guest/search',params={'query':'find'},headers=headers)
+            self.assertEqual(response.status_code,200)
+            self.assertNotIn('sender_connection',response.text)
+            self.assertNotIn('sender_agent_id',response.text)
+            self.assertEqual(api.get('/relay/guest/ ...[truncated]
 ```
 
 ### Governance Snapshot
@@ -614,15 +608,15 @@ Command exited with code 1. Command: (external failure context). Signals: verifi
 
 ### Recent Evidence
 
-- `2026-10-04T15:17:17.463879+00:00` `repo-skill` — 1) test/browser/runtime-settings.spec.js:152:1 › strict KEEP Y shows inactive sandbox grants and prevents adding expansions
-
-    Error: [2me ...[truncated]
+- `2026-10-04T15:41:03.645040+00:00` `repo-skill` — Dependency install: /home/ubuntu/.clawcross/venv/bin/python -m pip failed: No module named pip. Use uv pip install --python <venv python>.
+..F ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `blended-verification-loop-bounded-execution` score `0.73` — Blend the strongest recent failure patterns (intent `repair`)
-- `verification-loop-4` score `0.69` — Tighten verification loops (intent `repair`)
-- `bounded-execution-1` score `0.486` — Bound long-running and flaky execution (intent `optimize`)
+- `blended-verification-loop-approval-auth-workspace-preflight` score `0.594` — Blend the strongest recent failure patterns (intent `repair`)
+- `verification-loop-4` score `0.554` — Tighten verification loops (intent `repair`)
+- `approval-auth-4` score `0.554` — Preflight auth and approval constraints (intent `repair`)
+- `workspace-preflight-1` score `0.452` — Add repo/workspace preflight checks (intent `repair`)
 
 ### Local State Snapshot
 

@@ -273,7 +273,8 @@ class RelayStore:
             for row in rows:
                 if row['kind'] == 'message':
                     message = json.loads(row['body'])['message']
-                    messages.append({k: message[k] for k in ('sender', 'sender_name', 'content', 'created_at')} | {'id': row['id']})
+                    messages.append({k: message[k] for k in ('sender', 'sender_name', 'content', 'created_at')} |
+                                    {'id': row['id'], 'reply_to':message.get('reply_to'), 'reply':message.get('reply')})
             return {'group_id': conn['group_id'], 'password_set': bool(conn['guest_password_hash']), 'title': group['title'], 'members': [{k: m[k] for k in ('principal', 'name', 'is_agent')} for m in group['members']],
                     'messages': messages, 'cursor': cursor, 'has_more': more, 'principal': member['principal'], 'name': member['name']}
 
@@ -414,9 +415,16 @@ class RelayStore:
                 raise RelayError('发送者未加入群或已被禁言', 403)
             if expected_title is not None and expected_title != group['title']:
                 raise RelayError('群名称与预期不符，请确认目标群')
-            if reply_to and not db.execute('SELECT 1 FROM relay_events WHERE id=? AND group_id=? AND kind=?',
-                                          (reply_to, conn['group_id'], 'message')).fetchone():
-                raise RelayError('回复引用不属于本群')
+            quote = None
+            if reply_to is not None:
+                if not isinstance(reply_to, int) or isinstance(reply_to, bool) or reply_to <= 0:
+                    raise RelayError('无效的回复引用')
+                original = db.execute('SELECT body FROM relay_events WHERE id=? AND group_id=? AND kind=?',
+                                      (reply_to, conn['group_id'], 'message')).fetchone()
+                if not original:
+                    raise RelayError('回复引用不属于本群')
+                source = json.loads(original['body'])['message']
+                quote = {'id':reply_to, 'sender_name':source['sender_name'], 'content':source['content'][:500]}
             if client_msg_id:
                 previous = db.execute('SELECT * FROM relay_events WHERE group_id=? AND sender=? AND client_id=?',
                                       (conn['group_id'], sender['principal'], client_msg_id)).fetchone()
@@ -447,7 +455,7 @@ class RelayStore:
                     targets = []
             message = {'sender': sender['principal'], 'sender_name': sender['name'], 'sender_agent_id': agent_id,
                        'sender_connection': conn['id'], 'content': content, 'mentions': mentioned,
-                       'reply_to': reply_to, 'attachments': list(attachments), 'created_at': time.time()}
+                       'reply_to': reply_to, 'reply':quote, 'attachments': list(attachments), 'created_at': time.time()}
             cursor = db.execute('INSERT INTO relay_events(group_id,kind,body,created_at,sender,client_id) VALUES(?,?,?,?,?,?)',
                                 (conn['group_id'], 'message', json.dumps({'message': message, 'targets': targets}, ensure_ascii=False),
                                  message['created_at'], sender['principal'], client_msg_id or None))
@@ -476,6 +484,21 @@ class RelayStore:
             rows = db.execute("SELECT * FROM relay_events WHERE group_id=? AND kind='message' AND id>? ORDER BY id DESC LIMIT 100",
                               (conn['group_id'], after)).fetchall()
             return [{**json.loads(r['body'])['message'], 'id': r['id']} for r in reversed(rows)]
+
+    def search_messages(self, token: str, query: str, before_id: int = 0, limit: int = 50) -> dict:
+        query = query.strip()
+        if not query or len(query) > 120:
+            raise RelayError('搜索词需要 1–120 个字符')
+        limit = min(50, max(1, limit))
+        with self.db() as db:
+            conn = self.auth(db, token)
+            pattern = '%' + query.replace('\\','\\\\').replace('%','\\%').replace('_','\\_') + '%'
+            rows = db.execute("""SELECT id,body FROM relay_events WHERE group_id=? AND kind='message'
+                AND (?=0 OR id<?) AND (json_extract(body,'$.message.content') LIKE ? ESCAPE '\\'
+                OR json_extract(body,'$.message.sender_name') LIKE ? ESCAPE '\\') ORDER BY id DESC LIMIT ?""",
+                (conn['group_id'],before_id,before_id,pattern,pattern,limit)).fetchall()
+            return {'messages':[{**json.loads(row['body'])['message'],'id':row['id']} for row in rows],
+                    'next_before_id':rows[-1]['id'] if len(rows) == limit else 0}
 
     def acknowledge(self, token: str, cursor: int):
         with self.db() as db:

@@ -120,6 +120,15 @@ class GroupService:
         self._get(user, conv_id)
         return [message_card(self.conversations, m) for m in self.store.messages(conv_id, after_id=after_id)]
 
+    def search_messages(self, user, conv_id, query, before_id=0, limit=50):
+        self._get(user, conv_id)
+        query = query.strip()
+        if not query or len(query) > 120:
+            raise GroupError('搜索词需要 1–120 个字符')
+        messages = self.store.search_messages(conv_id, query, before_id, limit)
+        return {'messages':[message_card(self.conversations,m) for m in messages],
+                'next_before_id':messages[-1].id if len(messages) == min(50,max(1,limit)) else 0}
+
     def update(self, user: str, conv_id: str, *, title: str | None = None, dnd: bool | None = None) -> dict:
         self._get(user, conv_id, manage=True)
         changes: dict[str, Any] = {}
@@ -188,7 +197,10 @@ class GroupService:
         expected_title = fields.pop("expected_title", None)
         if expected_title is not None and expected_title != conversation.title:
             raise GroupError("群名称与预期不符，请重新查询群详情确认群号")
-        message, created = await self.conversations.post(conv_id, sender, content, **fields)
+        try:
+            message, created = await self.conversations.post(conv_id, sender, content, **fields)
+        except ValueError as exc:
+            raise GroupError(str(exc)) from exc
         return {"message": message_card(self.conversations, message), "created": created}
 
     def typing(self, user: str, conv_id: str) -> dict:

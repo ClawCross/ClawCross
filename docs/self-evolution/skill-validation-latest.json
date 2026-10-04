@@ -1,8 +1,8 @@
 {
   "type": "ValidationReport",
   "schema_version": "clawcross.skill-evolution/1.0",
-  "id": "vr_20261004151717463753",
-  "candidate_id": "blended-verification-loop-bounded-execution",
+  "id": "vr_20261004154103644916",
+  "candidate_id": "blended-verification-loop-approval-auth-workspace-preflight",
   "skill_name": "repo-skill",
   "strategy": "harden",
   "env_fingerprint": {
@@ -14,18 +14,18 @@
     "user_id": "",
     "skill_name": "repo-skill",
     "present_env_keys": [],
-    "captured_at": "2026-10-04T15:17:17.463713+00:00"
+    "captured_at": "2026-10-04T15:41:03.644885+00:00"
   },
   "commands": [
     {
       "command": "(external failure context)",
       "ok": false,
-      "stdout": "1) test/browser/runtime-settings.spec.js:152:1 › strict KEEP Y shows inactive sandbox grants and prevents adding expansions \n\n    Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeDisabled\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\n    Locator:  locator('[name=kind] option[value=network]')\n    Expected: disabled\n    Received: enabled\n    Timeout:  5000ms\n\n    Call log:\n    \u001b[2m  - Expect \"toBeDisabled\" with timeout 5000ms\u001b[22m\n    \u001b[2m  - waiting for locator('[name=kind] option[value=network]')\u001b[22m\n    \u001b[2m    9 × locator resolved to <option disabled value=\"network\">联网</option>\u001b[22m\n    \u001b[2m      - unexpected value \"enabled\"\u001b[22m\n\n\n      158 |   await page.locator('.remembered-add > summary').click();\n      159 |   await expect(page.locator('[name=kind]')).toHaveValue('tool');\n    > 160 |   await expect(page.locator('[name=kind] option[value=network]')).toBeDisabled();\n          |                                                                   ^\n      161 |   await expect(page.locator('[data-tool-fields]')).toBeVisible();\n      162 | });\n      163 |\n        at /home/ubuntu/work2/ClawCross/test/browser/runtime-settings.spec.js:160:67\n\n    Error Context: test-results/runtime-settings-strict-KE-eede9--prevents-adding-expansions/error-context.md\n\n    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────\n    test-results/runtime-settings-strict-KE-eede9--prevents-adding-expansions/trace.zip\n    Usage:\n\n        npx playwright show-trace test-results/runtime-settings-strict-KE-eede9--prevents-adding-expansions/trace.zip\n\n    ────────────────────────────────────────────────────────────────────────────────────────────────",
+      "stdout": "Dependency install: /home/ubuntu/.clawcross/venv/bin/python -m pip failed: No module named pip. Use uv pip install --python <venv python>.\n..F..F.........................                                     [100%]\n=================================== FAILURES ===================================\n___________ GroupChatFeatures.test_legacy_group_reference_and_search ___________\n\nself = <test.test_group_chat_features.GroupChatFeatures testMethod=test_legacy_group_reference_and_search>\n\n    def test_legacy_group_reference_and_search(self):\n        store=ConversationStore(Path(self.temp.name)/'old.db'); conversations=Conversations(store,Mock(),Mock()); service=GroupService(conversations)\n>       one=store.create(owner='alice',title='Old',members=[human('alice')]); other=store.create(owner='bob',title='Other',members=[human('bob')])\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       TypeError: ConversationStore.create() missing 1 required positional argument: 'kind'\n\ntest/test_group_chat_features.py:101: TypeError\n__ GroupChatFeatures.test_search_api_authentication_guest_privacy_and_revoke ___\n\nself = <test.test_group_chat_features.GroupChatFeatures testMethod=test_search_api_authentication_guest_privacy_and_revoke>\n\n    def test_search_api_authentication_guest_privacy_and_revoke(self):\n        self.store.post(self.host['token'],content='find me')\n        with TestClient(create_app(data_dir=self.temp.name,control_key='key',legacy=False)) as api:\n            self.assertEqual(api.get('/relay/search',params={'query':'find'}).status_code,401)\n            headers={'Authorization':'Bearer '+self.guest['token']}\n            response=api.get('/relay/guest/search',params={'query':'find'},headers=headers)\n            self.assertEqual(response.status_code,200)\n            self.assertNotIn('sender_connection',response.text)\n            self.assertNotIn('sender_agent_id',response.text)\n            self.assertEqual(api.get('/relay/guest/search',params={'query':'find'},headers={'Authorization':'Bearer '+self.host['token']}).status_code,403)\n            self.store.manage(self.host['token'],'remove_member',{'principal':self.store.guest_identity(self.guest['token'])['principal']})\n>           self.assertEqual(api.get('/relay/guest/search',params={'query':'find'},headers=headers).status_code,403)\nE           AssertionError: 401 != 403\n\ntest/test_group_chat_features.py:88: AssertionError\n=========================== short test summary info ============================\nFAILED test/test_group_chat_features.py::GroupChatFeatures::test_legacy_group_reference_and_search\nFAILED test/test_group_chat_features.py::GroupChatFeatures::test_search_api_authentication_guest_privacy_and_revoke\n2 failed, 29 passed, 5 subtests passed in 11.42s",
       "stderr": ""
     }
   ],
   "overall_ok": false,
   "duration_ms": null,
-  "created_at": "2026-10-04T15:17:17.463773+00:00",
-  "asset_id": "sha256:7f00e0dbc37340ae1e6b11e1311ec3d949cd29ae4205a6f8e060641fe57b1ccb"
+  "created_at": "2026-10-04T15:41:03.644936+00:00",
+  "asset_id": "sha256:a5973627729219913b1eb5c05459ba0323946e78def2f8ec64c7935a786de74c"
 }

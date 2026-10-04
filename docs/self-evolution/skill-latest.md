@@ -1,12 +1,12 @@
 # Repository Skill Self-Evolution Report
 
 - Skill file: `/home/ubuntu/work2/ClawCross/SKILL.md`
-- Generated at: `2026-10-04T15:17:17.463879+00:00`
+- Generated at: `2026-10-04T15:41:03.645040+00:00`
 - Exit code: `1`
 
 ## Summary
 
-Command exited with code 1. Command: (external failure context). Signals: verification-loop, bounded-execution. stdout was used as fallback failure evidence.
+Command exited with code 1. Command: (external failure context). Signals: verification-loop, approval-auth, workspace-preflight. stdout was used as fallback failure evidence.
 
 ## stderr
 
@@ -17,30 +17,21 @@ Command exited with code 1. Command: (external failure context). Signals: verifi
 ## stdout
 
 ```text
-1) test/browser/runtime-settings.spec.js:152:1 › strict KEEP Y shows inactive sandbox grants and prevents adding expansions
+Dependency install: /home/ubuntu/.clawcross/venv/bin/python -m pip failed: No module named pip. Use uv pip install --python <venv python>.
+..F..F.........................                                     [100%]
+=================================== FAILURES ===================================
+___________ GroupChatFeatures.test_legacy_group_reference_and_search ___________
 
-    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeDisabled[2m([22m[2m)[22m failed
+self = <test.test_group_chat_features.GroupChatFeatures testMethod=test_legacy_group_reference_and_search>
 
-    Locator:  locator('[name=kind] option[value=network]')
-    Expected: disabled
-    Received: enabled
-    Timeout:  5000ms
+    def test_legacy_group_reference_and_search(self):
+        store=ConversationStore(Path(self.temp.name)/'old.db'); conversations=Conversations(store,Mock(),Mock()); service=GroupService(conversations)
+>       one=store.create(owner='alice',title='Old',members=[human('alice')]); other=store.create(owner='bob',title='Other',members=[human('bob')])
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: ConversationStore.create() missing 1 required positional argument: 'kind'
 
-    Call log:
-    [2m  - Expect "toBeDisabled" with timeout 5000ms[22m
-    [2m  - waiting for locator('[name=kind] option[value=network]')[22m
-    [2m    9 × locator resolved to <option disabled value="network">联网</option>[22m
-    [2m      - unexpected value "enabled"[22m
+test/test_group_chat_features.py:101: TypeError
+__ GroupChatFeatures.test_search_api_authentication_guest_privacy_and_revoke ___
 
-
-      158 |   await page.locator('.remembered-add > summary').click();
-      159 |   await expect(page.locator('[name=kind]')).toHaveValue('tool');
-    > 160 |   await expect(page.locator('[name=kind] option[value=network]')).toBeDisabled();
-          |                                                                   ^
-      161 |   await expect(page.locator('[data-tool-fields]')).toBeVisible();
-      162 | });
-      163 |
-        at /home/ubuntu/work2/ClawCross/test/browser/runtime-settings.spec.js:160:67
-
-    Error Context: test-results/runti ...[truncated]
+self = <test.test_group_chat_features.GroupCh ...[truncated]
 ```

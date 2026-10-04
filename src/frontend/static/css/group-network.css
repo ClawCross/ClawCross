@@ -64,6 +64,24 @@
 .gn-steps li + li { margin-top: 6px; }
 .gn-status { min-height: 1.4em; margin: 10px 0 0; color: var(--ui-text-2); font-size: 13px; overflow-wrap: anywhere; }
 .gn-status.is-error { color: var(--ui-danger); }
+.gn-qr { width:min(260px,100%); height:auto; justify-self:center; background:white; padding:8px; border-radius:12px; box-sizing:border-box; }
+.gn-qr-caption { text-align:center; }
+.gn-btn[href] { display:inline-flex; align-items:center; justify-content:center; text-decoration:none; }
+.gn-qr[hidden],.gn-qr-caption[hidden],.gn-btn[hidden] { display:none; }
+.gn-search-form { display:flex; gap:8px; }
+.gn-search-form .gn-input { flex:1; }
+.gn-search-results { display:grid; gap:12px; }
+.gn-search-result { padding:12px; border-radius:12px; background:var(--ui-surface-2); overflow-wrap:anywhere; }
+.gn-search-result small { display:block; color:var(--ui-text-2); margin:4px 0; }
+.gn-search-result p { white-space:pre-wrap; max-height:160px; overflow:auto; }
+.gn-search-result .gn-btn { min-height:32px; font-size:12px; }
+.group-reply-preview { display:flex; align-items:center; gap:10px; margin:0 12px 8px; padding:10px 12px; background:var(--ui-surface-2); border-left:3px solid var(--ui-accent); border-radius:8px; font-size:12px; }
+.group-reply-preview[hidden] { display:none; }
+.group-reply-preview>div { min-width:0; flex:1; }
+.group-reply-preview p { margin:3px 0 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--ui-text-2); }
+.group-reply-preview button,.msg-reply-action { border:0; background:transparent; color:var(--ui-text-2); cursor:pointer; font:inherit; padding:5px 8px; }
+.msg-reply-quote { margin:0 0 8px; border-left:3px solid var(--ui-accent); padding:5px 9px; border-radius:4px; background:var(--ui-surface-2); color:var(--ui-text-2); font-size:12px; overflow-wrap:anywhere; }
+.msg-reply-quote p { margin:3px 0 0; white-space:pre-wrap; max-height:80px; overflow:auto; }
 @media (max-width: 480px) {
   .group-network-dialog { width: calc(100vw - 24px); padding: 18px 16px 14px; }
   .gn-actions .gn-btn { flex: 1 1 100%; }

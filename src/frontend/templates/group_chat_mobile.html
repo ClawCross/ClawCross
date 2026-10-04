@@ -4554,8 +4554,8 @@
 .tool-policy-category-items { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; }
 </style>
 <script src="/static/js/tool-catalog.js?v=20261001-groups"></script>
-<script src="/static/js/group-network-ui.js?v=20261003-invite"></script>
-<link rel="stylesheet" href="/static/css/group-network.css?v=20261003-invite">
+<script src="/static/js/group-network-ui.js?v=20261004-group-history"></script>
+<link rel="stylesheet" href="/static/css/group-network.css?v=20261004-group-history">
 <link rel="stylesheet" href="/static/css/settings-polish.css?v=20261004-settings">
 <link rel="stylesheet" href="/static/css/mobile-profile.css?v=20261004-studio-header">
 <link rel="stylesheet" href="/static/css/runtime-settings.css?v=20261004-keepy-manager">
@@ -4679,6 +4679,10 @@
     <span id="typing-text"></span>
   </div>
   <div class="input-bar-wrap">
+    <div id="group-reply-preview" class="group-reply-preview" hidden>
+      <div><strong data-reply-name></strong><p data-reply-text></p></div>
+      <button type="button" onclick="clearGroupReply()" aria-label="取消引用">×</button>
+    </div>
     <!-- Workflow selector popup (absolute positioned above input-bar-wrap) -->
     <div class="workflow-popup" id="workflow-popup">
       <div class="workflow-popup-header">
@@ -4792,6 +4796,12 @@
     <svg class="ui-icon"><use href="/static/icons.svg#link"/></svg><span class="ui-menu-label">邀请朋友</span>
   </button>
   <div class="ui-menu-sep"></div>
+  <button type="button" class="ui-menu-item" id="action-group-rename" onclick="closeChatActions();GroupNetworkUI.rename(currentGroupId)">
+    <svg class="ui-icon"><use href="/static/icons.svg#pencil"/></svg><span class="ui-menu-label">修改群名</span>
+  </button>
+  <button type="button" class="ui-menu-item" onclick="closeChatActions();GroupNetworkUI.search(currentGroupId)">
+    <svg class="ui-icon"><use href="/static/icons.svg#search"/></svg><span class="ui-menu-label">查找聊天记录</span>
+  </button>
   <button type="button" class="ui-menu-item" onclick="closeChatActions(); togglePinChat();">
     <svg class="ui-icon"><use href="/static/icons.svg#pin"/></svg><span class="ui-menu-label" id="pin-action-label" data-i18n="toggle_pin">置顶对话</span>
   </button>
@@ -8920,6 +8930,11 @@ async function refreshGroups(options = {}) {
     mutedGroupIds = new Set(nextGroups.filter(g => g.dnd).map(getGroupId));
     syncGroupSnapshotsAndUnread(nextGroups);
     groups = nextGroups;
+    const activeGroup = groups.find(group => getGroupId(group) === currentGroupId);
+    if (activeGroup && activeGroup.title) {
+      currentGroupName = activeGroup.title;
+      document.getElementById('chat-title').textContent = activeGroup.title;
+    }
     renderGroupList(groups);
     prefetchTopGroupDetails(nextGroups);
   } catch (e) {
@@ -10112,6 +10127,8 @@ function applyGroupDetail(detail) {
   if (!detail) return;
   _cacheSet(__mobileGroupDetailCache, detail.group_id, detail);
   if (detail.group_id !== currentGroupId) return;
+  if(detail.title) {currentGroupName=detail.title;document.getElementById('chat-title').textContent=detail.title;}
+  document.getElementById('action-group-rename').style.display = String(detail.owner || '').startsWith('remote:') ? 'none' : '';
   const networkStatus = document.getElementById('group-network-status');
   networkStatus.style.display = detail.federated ? '' : 'none';
   networkStatus.textContent = detail.federated ? (detail.connection_error || '群连接正常') : '';
@@ -10132,6 +10149,7 @@ async function reloadGroupDetail() {
 
 
 async function openChat(groupId, name) {
+  clearGroupReply();
   currentGroupId = groupId;
   currentGroupName = name;
   lastMsgId = 0;
@@ -10195,7 +10213,23 @@ function goBack() {
 }
 
 // ── Render messages ──
+let groupReplyContext=null;
+const groupReplyMessages=new Map();
+function clearGroupReply() {
+  groupReplyContext=null;
+  document.getElementById('group-reply-preview').hidden=true;
+}
+function setGroupReply(message) {
+  if(!currentGroupId || !Number.isSafeInteger(Number(message.id)) || Number(message.id)<=0) return;
+  groupReplyContext={...message,group_id:currentGroupId};
+  const preview=document.getElementById('group-reply-preview');preview.hidden=false;
+  preview.querySelector('[data-reply-name]').textContent='引用 ' + (message.sender_name || message.sender);
+  preview.querySelector('[data-reply-text]').textContent=message.content || '(附件)';
+  document.getElementById('msg-input').focus();
+}
+function replyToGroupMessage(id) {const message=groupReplyMessages.get(id);if(message) setGroupReply(message);}
 function renderMessages(msgs) {
+  groupReplyMessages.clear();
   const body = document.getElementById('chat-body');
   if (!msgs.length) {
     body.innerHTML = `<div class="refresh-hint">${t('no_messages')}</div>`;
@@ -10282,6 +10316,10 @@ function updateLastMsgId(msgs) {
 }
 
 function renderOneMsgHTML(m) {
+  if(Number.isSafeInteger(Number(m.id))) groupReplyMessages.set(Number(m.id),m);
+  if(groupReplyMessages.size>1000) groupReplyMessages.delete(groupReplyMessages.keys().next().value);
+  const reference=m.reply || (m.reply_to ? groupReplyMessages.get(Number(m.reply_to)) : null);
+  const quoteHTML=reference ? `<div class="msg-reply-quote"><strong>${esc(reference.sender_name || reference.sender || '引用消息')}</strong><p>${esc(reference.content || '(附件)')}</p></div>` : m.reply_to ? `<div class="msg-reply-quote">引用消息 #${Number(m.reply_to)}</div>` : '';
   const sender = m.sender || '';
   const isSelf = sender === selfPrincipal();
   const displayName = m.sender_name || sender;
@@ -10325,8 +10363,8 @@ function renderOneMsgHTML(m) {
       <div class="msg-avatar ${isAgent ? 'clickable' : ''}" style="background:${stringToColor(sender)}"${avatarAttrs}>${esc(initial)}</div>
       <div class="msg-body">
         <div class="msg-sender">${esc(displayName)}</div>
-        <div class="${bubbleClass}">${contentHTML}${attachHTML}</div>
-        <div class="msg-time">${ts}</div>
+        <div class="${bubbleClass}">${quoteHTML}${contentHTML}${attachHTML}</div>
+        <div class="msg-time">${ts}${Number.isSafeInteger(Number(m.id)) ? `<button type="button" class="msg-reply-action" onclick="replyToGroupMessage(${Number(m.id)})" aria-label="引用消息 ${Number(m.id)}">引用</button>` : ''}</div>
       </div>
     </div>`;
 }
@@ -10878,6 +10916,8 @@ async function sendMessage() {
     } else {
       // Each woken Agent uses its own persisted mode and permissions.
       const body = { content: finalText || '(attachment)' };
+      const replying=groupReplyContext;
+      if(replying && replying.group_id===currentGroupId) body.reply_to=Number(replying.id);
       if (mentions.length) body.mentions = mentions;
       if (attachToSend) body.attachments = attachToSend;
       if (audiosToSend) {
@@ -10890,6 +10930,7 @@ async function sendMessage() {
       }
       ClawCrossAttachments.assertGroupSize(body.content, body.attachments || []);
       await api('POST', `/proxy_groups/${encodeURIComponent(currentGroupId)}/messages`, body);
+      if(groupReplyContext===replying) clearGroupReply();
       // Poll will pick up the message
       await pollNewMessages();
       scrollToBottom();  // 发消息后滚到底（对齐 main-local）
