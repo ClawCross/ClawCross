@@ -4554,6 +4554,7 @@
 <script src="/static/js/tool-catalog.js?v=20261001-groups"></script>
 <script src="/static/js/group-network-ui.js?v=20261003-invite"></script>
 <link rel="stylesheet" href="/static/css/group-network.css?v=20261003-invite">
+<link rel="stylesheet" href="/static/css/settings-polish.css?v=20261004-settings">
 </head>
 <body>
 
@@ -15632,6 +15633,7 @@ function renderSettings(settings) {
     const body = document.getElementById('settings-body');
     let html = `<div class="settings-hint">${t('settings_hint')}</div>`;
     html += _renderCurrentUserPasswordCard();
+    html += '<div id="mobile-configuration-assistant"></div>';
 
     html += `<div class="settings-group" id="settings-external-agents"><div class="settings-group-title" onclick="this.parentElement.classList.toggle('collapsed')">外部 Agent <span class="settings-chevron">▼</span></div><div class="settings-group-body">${componentSettingsMarkup('agents')}</div></div>`;
 
@@ -15680,6 +15682,7 @@ function renderSettings(settings) {
     }
 
     body.innerHTML = html;
+    void ClawcrossChannelSetup.mount(document.getElementById('mobile-configuration-assistant'), {general: true, sessionId: currentGroupPrimaryAgent || 'settings'});
     initComponentControls(body);
     _refreshTunnelStatus();
     _initSettingsLlmGroup(settings);

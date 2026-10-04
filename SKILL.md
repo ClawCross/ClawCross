@@ -537,14 +537,14 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-10-04T04:13:12.673489+00:00`
+- Updated at: `2026-10-04T04:17:24.816895+00:00`
 - Strategy: `repair-only`
-- Heuristic candidate: `blended-verification-loop-structured-output`
-- Heuristic score: `0.858`
+- Heuristic candidate: `blended-verification-loop-approval-auth-workspace-preflight`
+- Heuristic score: `0.737`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: (external failure context). Signals: verification-loop, structured-output. stderr carried the strongest failure evidence.
+Command exited with code 1. Command: (external failure context). Signals: verification-loop, approval-auth, bounded-execution. stderr carried the strongest failure evidence.
 
 ### Strategy Rationale
 
@@ -558,18 +558,24 @@ Command exited with code 1. Command: (external failure context). Signals: verifi
 ### Latest Error Excerpt
 
 ```text
-======================================================================
-FAIL: test_strict_tool_array_stays_within_budget (test.test_tool_schemas.McpToolInventory.test_strict_tool_array_stays_within_budget)
-----------------------------------------------------------------------
-Traceback (most recent call last):
-  File "/home/ubuntu/work2/ClawCross/test/test_tool_schemas.py", line 307, in test_strict_tool_array_stays_within_budget
-    self.assertLessEqual(
-AssertionError: 43584 not less than or equal to 42000 : strict tool array is 43584 chars; raise the budget only on purpose
+[2m[WebServer] [22m2026-10-04 12:16:16,590 INFO [werkzeug] [req:-] [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+[2m[WebServer] [22m * Running on http://127.0.0.1:51229
+[2m[WebServer] [22m2026-10-04 12:16:16,590 INFO [werkzeug] [req:-] [33mPress CTRL+C to quit[0m
+[2m[WebServer] [22m2026-10-04 12:16:17,598 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 12:16:17] "GET /studio HTTP/1.1" 200 -
 
-----------------------------------------------------------------------
-Ran 43 tests in 2.775s
+Running 2 tests using 1 worker
 
-FAILED (failures=1)
+(node:1699387) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1699387) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[2m[WebServer] [22m2026-10-04 12:16:20,655 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 12:16:20] "GET /studio HTTP/1.1" 200 -
+[2m[WebServer] [22m2026-10-04 12:16:20,718 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 12:16:20] "GET /static/css/tailwind.css?v=20261003-local HTTP/1.1" 200 -
+[2m[WebServer] [22m2026-10-04 12:16:20,735 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 12:16:20] "GET /static/css/group-network.css?v=20261003-invite HTTP/1.1" 200 -
+[2m[WebServer] [22m2026-10-04 12:16:20,736 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 12:16:20] "GET /static/css/style.css?v=20261002-agent-drafts HTTP/1.1" 200 -
+[2m[WebServer] [22m2026-10-04 12:16:20,738 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 12:16:20] "GET /static/css/markdown-shared.css?v=20261003-inline-approval HTTP/1.1" 200 -
+[2m[WebServer] [22m2026-10-04 12:16:20,739 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 12:16:20] "GET /static/css/settings-polish.css?v=20261004-settings HTTP/1.1" 200 -
+[2m[WebServer] [22m2026-10-04 12:16:20,742 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 12:16:20] " ...[truncated]
 ```
 
 ### Governance Snapshot
@@ -592,14 +598,14 @@ FAILED (failures=1)
 
 ### Recent Evidence
 
-- `2026-10-04T04:13:12.673489+00:00` `repo-skill` — ======================================================================
-FAIL: test_strict_tool_array_stays_within_budget (test.test_tool_schema ...[truncated]
+- `2026-10-04T04:17:24.816895+00:00` `repo-skill` — [2m[WebServer] [22m2026-10-04 12:16:16,590 INFO [werkzeug] [req:-] [31m[1mWARNING: This is a development server. Do not use it in a produc ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `blended-verification-loop-structured-output` score `0.858` — Blend the strongest recent failure patterns (intent `repair`)
-- `verification-loop-4` score `0.818` — Tighten verification loops (intent `repair`)
-- `structured-output-1` score `0.614` — Harden structured-output handling (intent `repair`)
+- `blended-verification-loop-approval-auth-workspace-preflight` score `0.737` — Blend the strongest recent failure patterns (intent `repair`)
+- `verification-loop-4` score `0.697` — Tighten verification loops (intent `repair`)
+- `approval-auth-2` score `0.622` — Preflight auth and approval constraints (intent `repair`)
+- `workspace-preflight-1` score `0.584` — Add repo/workspace preflight checks (intent `repair`)
 
 ### Local State Snapshot
 
