@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -202,5 +203,8 @@ def resolve_session_workspace(
 
 
 def describe_session_workspace(user_id: str, session_id: str | None = None, *, explicit_cwd: str = "") -> str:
+    from webot.workspace_state import observe_workspace
     workspace = resolve_session_workspace(user_id, session_id, explicit_cwd=explicit_cwd)
-    return f"mode={workspace.mode} cwd={workspace.cwd} root={workspace.root} remote={workspace.remote or '(local)'}"
+    state = observe_workspace(workspace.root, user_id=user_id, session_id=session_id or 'default')
+    return (f"mode={workspace.mode} cwd={workspace.cwd} root={workspace.root} remote={workspace.remote or '(local)'}"
+            '\nworkspace_files: ' + json.dumps(state, ensure_ascii=False, sort_keys=True))
