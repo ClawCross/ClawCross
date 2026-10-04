@@ -5576,6 +5576,7 @@ function renderSettings(settings) {
     const body = document.getElementById('settings-body');
     let html = `<div class="settings-hint">${t('settings_restart_hint')}</div>`;
     html += _renderCurrentUserPasswordCard();
+    html += '<div id="configuration-assistant"></div>';
 
     html += `<div class="settings-group" id="settings-external-agents"><div class="settings-group-title" onclick="this.parentElement.classList.toggle('collapsed')">外部 Agent <span class="settings-chevron">▼</span></div><div class="settings-group-body">${componentSettingsMarkup('agents')}</div></div>`;
 
@@ -5623,6 +5624,7 @@ function renderSettings(settings) {
     }
 
     body.innerHTML = html;
+    void ClawcrossChannelSetup.mount(document.getElementById('configuration-assistant'), {general: true, sessionId: currentSessionId || 'settings'});
     void ClawcrossChannelSetup.mount(document.getElementById('channel-setup-settings'));
     initComponentControls(body);
     _refreshTunnelStatus();

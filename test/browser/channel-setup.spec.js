@@ -8,7 +8,7 @@ for (const width of [390, 1280]) {
     const item = {id:'setup-test',session_id:'agent-one',channel:'telegram',draft:{name:'My bot'},schema:{label:'Telegram',fields:[
       {name:'token',label:'Bot token',type:'password',required:true,human_only:true},
       {name:'name',label:'Name',type:'text'}]}};
-    await page.route('**/proxy_channel_setup**', route => {
+    await page.route(/\/proxy_(?:configuration|channel)_setup/, route => {
       if(route.request().method()==='POST') {submitted.push(route.request().postDataJSON());return route.fulfill({json:{status:'completed'}});}
       return route.fulfill({json:{requests:[item],channels:[item.schema]}});
     });

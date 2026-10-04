@@ -537,14 +537,14 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-10-04T04:02:27.198691+00:00`
+- Updated at: `2026-10-04T04:08:53.605787+00:00`
 - Strategy: `repair-only`
-- Heuristic candidate: `blended-verification-loop-approval-auth`
-- Heuristic score: `0.813`
+- Heuristic candidate: `verification-loop-4`
+- Heuristic score: `0.886`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: (external failure context). Signals: verification-loop, approval-auth. stderr carried the strongest failure evidence.
+Command exited with code 1. Command: (external failure context). Signals: verification-loop. stderr carried the strongest failure evidence.
 
 ### Strategy Rationale
 
@@ -558,7 +558,19 @@ Command exited with code 1. Command: (external failure context). Signals: verifi
 ### Latest Error Excerpt
 
 ```text
-Approval regression: test_remember_approves_only_complete_same_action and test_remember_keeps_wildcard_restrictions failed: remembered grants contain _approval_session but resolve_permission_context evaluated without it. Preserve session binding when evaluating grants; direct policy tests must explicitly identify the session. Local TestClient requires socket-capable test execution. Use the managed Python interpreter, not an assumed python command.
+======================================================================
+ERROR: test_agent_runtime_form_preserves_other_fields_and_scopes (test.test_configuration_setup.ConfigurationTests.test_agent_runtime_form_preserves_other_fields_and_scopes)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/ubuntu/work2/ClawCross/test/test_configuration_setup.py", line 46, in test_agent_runtime_form_preserves_other_fields_and_scopes
+    self.assertEqual(runtime_store.get_session_mode('alice','one').mode,'manual')
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'dict' object has no attribute 'mode'
+
+----------------------------------------------------------------------
+Ran 12 tests in 1.468s
+
+FAILED (errors=1)
 ```
 
 ### Governance Snapshot
@@ -570,24 +582,23 @@ Approval regression: test_remember_approves_only_complete_same_action and test_r
 
 ### Operating Adjustments
 
-1. Start from the narrowest reproducible failure before broad retries.
-2. Record repo/cwd/entrypoint assumptions explicitly when failures mention paths or imports.
-3. End every fix attempt with an explicit verifier command and observed result.
+1. State the exact failure mode before editing anything.
+2. Choose the narrowest reproducer first, then a broader regression command.
+3. Record pass/fail status immediately after each attempted fix.
 
 ### Validation Loop
 
-1. Run the minimal reproducer first, then the broader regression command.
-2. Persist the command and result summary in the evolution report.
+1. Rerun the minimal reproducer before any broad test suite.
+2. When a fix passes, note the exact verifier command in the skill.
 
 ### Recent Evidence
 
-- `2026-10-04T04:02:27.198691+00:00` `repo-skill` — Approval regression: test_remember_approves_only_complete_same_action and test_remember_keeps_wildcard_restrictions failed: remembered grants ...[truncated]
+- `2026-10-04T04:08:53.605787+00:00` `repo-skill` — ======================================================================
+ERROR: test_agent_runtime_form_preserves_other_fields_and_scopes (test. ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `blended-verification-loop-approval-auth` score `0.813` — Blend the strongest recent failure patterns (intent `repair`)
-- `verification-loop-4` score `0.773` — Tighten verification loops (intent `repair`)
-- `approval-auth-2` score `0.659` — Preflight auth and approval constraints (intent `repair`)
+- `verification-loop-4` score `0.886` — Tighten verification loops (intent `repair`)
 
 ### Local State Snapshot
 

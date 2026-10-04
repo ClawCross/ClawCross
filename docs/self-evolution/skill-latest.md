@@ -1,17 +1,29 @@
 # Repository Skill Self-Evolution Report
 
 - Skill file: `/home/ubuntu/work2/ClawCross/SKILL.md`
-- Generated at: `2026-10-04T04:02:27.198691+00:00`
+- Generated at: `2026-10-04T04:08:53.605787+00:00`
 - Exit code: `1`
 
 ## Summary
 
-Command exited with code 1. Command: (external failure context). Signals: verification-loop, approval-auth. stderr carried the strongest failure evidence.
+Command exited with code 1. Command: (external failure context). Signals: verification-loop. stderr carried the strongest failure evidence.
 
 ## stderr
 
 ```text
-Approval regression: test_remember_approves_only_complete_same_action and test_remember_keeps_wildcard_restrictions failed: remembered grants contain _approval_session but resolve_permission_context evaluated without it. Preserve session binding when evaluating grants; direct policy tests must explicitly identify the session. Local TestClient requires socket-capable test execution. Use the managed Python interpreter, not an assumed python command.
+======================================================================
+ERROR: test_agent_runtime_form_preserves_other_fields_and_scopes (test.test_configuration_setup.ConfigurationTests.test_agent_runtime_form_preserves_other_fields_and_scopes)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/ubuntu/work2/ClawCross/test/test_configuration_setup.py", line 46, in test_agent_runtime_form_preserves_other_fields_and_scopes
+    self.assertEqual(runtime_store.get_session_mode('alice','one').mode,'manual')
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'dict' object has no attribute 'mode'
+
+----------------------------------------------------------------------
+Ran 12 tests in 1.468s
+
+FAILED (errors=1)
 ```
 
 ## stdout

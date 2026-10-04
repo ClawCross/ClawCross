@@ -2618,11 +2618,13 @@ LOCAL_RESTART_URL = f"http://127.0.0.1:{PORT_AGENT}/restart"
 
 
 @app.route('/proxy_channel_setup', methods=['GET', 'POST'])
+@app.route('/proxy_configuration_setup', methods=['GET', 'POST'])
 def proxy_channel_setup():
     user_id = session.get('user_id', '')
     if not user_id:
         return jsonify({'error': 'not logged in'}), 401
-    url = f'http://127.0.0.1:{PORT_AGENT}/channels/setup'
+    endpoint = 'configuration/setup' if request.path == '/proxy_configuration_setup' else 'channels/setup'
+    url = f'http://127.0.0.1:{PORT_AGENT}/{endpoint}'
     try:
         if request.method == 'GET':
             response = requests.get(url, params={'user_id': user_id, 'session_id': request.args.get('session_id', '')}, headers=_internal_auth_headers(), timeout=10)
