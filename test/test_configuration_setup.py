@@ -27,7 +27,7 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(read_env_all(str(self.env))['LLM_API_KEY'],'PRIVATE_KEY')
         self.assertNotIn('PRIVATE_KEY',json.dumps(result))
         self.assertNotIn('PRIVATE_KEY',(self.root/'forms.db').read_bytes().decode('latin1'))
-        self.assertNotIn('PRIVATE_KEY',(self.root/'runtime.db').read_bytes().decode('latin1'))
+        self.assertFalse((self.root/'runtime.db').exists())  # No second inbox delivery.
         self.assertEqual(setup.status('alice',request['id'])['status'],'completed')
 
     def test_agent_cannot_prefill_secret_endpoint_or_security_mode(self):

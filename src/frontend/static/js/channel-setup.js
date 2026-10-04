@@ -9,6 +9,17 @@
         if (!response.ok) throw new Error(data.detail || data.error || text('设置服务不可用', 'Setup service unavailable'));
         return data;
     }
+    function finish(node, state, message = '') {
+        if (node.dataset.formStatus === state) return;
+        node.dataset.formStatus = state;
+        const label = state === 'completed' ? text('已保存', 'Saved') :
+            state === 'cancelled' ? text('已取消', 'Cancelled') : text('已超时', 'Expired');
+        node.querySelector('.cc-channel-heading span').textContent = label;
+        // Remove all fields, including private inputs, when the request ends.
+        const body = node.querySelector('form');
+        body.replaceChildren();
+        body.textContent = message || label;
+    }
     function form(item) {
         const node = document.createElement('section');
         node.className = 'cc-channel-form'; node.dataset.channelRequest = item.id;
@@ -35,12 +46,12 @@
             inputs.forEach(input => {input.disabled = true;});
             try {
                 const result = await api('POST', {request_id: item.id, values: cancel ? {} : values, cancel}, '', general);
-                // Remove values from DOM and local variables before notifying chat.
+                // Credentials never become chat text or a tool result.
                 Object.keys(values).forEach(key => {delete values[key];});
-                node.querySelector('form').replaceChildren();
-                node.querySelector('form').textContent = result.status === 'completed' ? (result.message || text('已保存，渠道将在后台重新连接。', 'Saved. The channel will reconnect in the background.')) : text('已取消', 'Cancelled');
+                finish(node, result.status, result.message || '');
             } catch (error) {
                 Object.keys(values).forEach(key => {delete values[key];});
+                if (node.dataset.formStatus) return;
                 node.querySelector('[role="status"]').textContent = error.message;
                 inputs.forEach(input => {input.disabled = false;});
             }
@@ -53,7 +64,13 @@
         if (!root || !sessionIds?.length) return;
         const data = await api('GET', null, '', true);
         for (const item of data.requests || []) {
-            if (!sessionIds.includes(item.session_id) || [...root.querySelectorAll('[data-channel-request]')].some(node => node.dataset.channelRequest === item.id)) continue;
+            if (!sessionIds.includes(item.session_id)) continue;
+            const existing = [...root.querySelectorAll('[data-channel-request]')].find(node => node.dataset.channelRequest === item.id);
+            if (item.status && item.status !== 'pending') {
+                if (existing) finish(existing, item.status);
+                continue;
+            }
+            if (existing) continue;
             root.appendChild(form(item));
         }
     }

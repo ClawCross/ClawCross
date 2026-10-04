@@ -1,8 +1,10 @@
-"""Private, authenticated configuration forms; only completion enters Agent memory."""
+"""Private configuration forms; waiting tools return only their final status."""
 from __future__ import annotations
 
 import copy
+import asyncio
 import json
+import os
 import sqlite3
 import time
 import uuid
@@ -88,13 +90,13 @@ def create(user_id: str, session_id: str, topic: str, values=None) -> dict:
             'message':'请在对话中的设置表单填写并保存。密钥只交给后端；无网页时请到设置页面填写，不要在聊天中发送密钥。'}
 
 
-def list_requests(user_id: str, session_id: str = '', *, env_path=None) -> list[dict]:
+def list_requests(user_id: str, session_id: str = '', *, env_path=None, include_finished: bool = False) -> list[dict]:
     with _connect() as db:
-        rows = db.execute("SELECT * FROM requests WHERE user_id=? AND status='pending' AND created>? AND (?='' OR session_id=?) ORDER BY created DESC LIMIT 20",
-            (user_id,time.time()-86400,session_id,session_id)).fetchall()
+        rows = db.execute("SELECT * FROM requests WHERE user_id=? AND (? OR status='pending') AND created>? AND (?='' OR session_id=?) ORDER BY created DESC LIMIT 20",
+            (user_id,include_finished,time.time()-86400,session_id,session_id)).fetchall()
     from channels.setup_requests import list_requests as channel_requests
     return [{**dict(row), 'draft':json.loads(row['draft']), 'schema':describe(user_id,row['session_id'],row['topic'],env_path=env_path)[0]} for row in rows] + [
-        {**row, 'topic':'channel:'+row['channel']} for row in channel_requests(user_id,session_id)]
+        {**row, 'topic':'channel:'+row['channel']} for row in channel_requests(user_id,session_id,include_finished=include_finished)]
 
 
 def status(user_id, request_id):
@@ -105,6 +107,49 @@ def status(user_id, request_id):
         row = db.execute('SELECT topic,status,created FROM requests WHERE id=? AND user_id=?',(request_id,user_id)).fetchone()
     if row is None: raise ValueError('Configuration request not found')
     return {'id':request_id,'topic':row['topic'],'status':'expired' if row['status']=='pending' and row['created'] < time.time()-86400 else row['status']}
+
+
+def close_pending(user_id: str, request_id: str, state: str) -> dict:
+    if request_id.startswith('setup-'):
+        from channels.setup_requests import close_pending as close_channel
+        return close_channel(user_id, request_id, state)
+    if state not in {'cancelled', 'expired'}:
+        raise ValueError('Invalid final form state')
+    with _connect() as db:
+        db.execute("UPDATE requests SET status=?,draft='{}' WHERE id=? AND user_id=? AND status='pending'",
+                   (state, request_id, user_id))
+    return status(user_id, request_id)
+
+
+async def wait_for_result(user_id: str, request: dict, *, timeout: float | None = None, poll_interval: float = 0.5) -> dict:
+    """Wait across MCP/API processes using server-owned state; never return fields."""
+    seconds = timeout if timeout is not None else float(os.getenv('CLAWCROSS_FORM_WAIT_SECONDS', '600'))
+    deadline = time.monotonic() + max(0, min(seconds, 86400))
+    request_id = request['id']
+    try:
+        while True:
+            result = status(user_id, request_id)
+            if result['status'] != 'pending':
+                break
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                result = close_pending(user_id, request_id, 'expired')
+                break
+            await asyncio.sleep(min(max(0.01, poll_interval), remaining))
+    except asyncio.CancelledError:
+        close_pending(user_id, request_id, 'cancelled')
+        raise
+    state = result['status']
+    message = {'completed': '设置已保存。', 'cancelled': '用户已取消，未保存设置。',
+               'expired': '表单等待超时，未保存设置。'}[state]
+    if state == 'completed':
+        if request_id.startswith('setup-'):
+            message = '连接设置已保存，渠道将在后台重新连接。'
+        elif CATALOG[request['topic']]['scope'] == 'host':
+            message = '设置已保存，需要重新加载服务后生效。'
+        else:
+            message = '设置已保存，下次调用生效。'
+    return {**result, 'message': message}
 
 
 def submit(user_id, request_id, values, *, cancel=False, env_path=None):
@@ -131,8 +176,5 @@ def submit(user_id, request_id, values, *, cancel=False, env_path=None):
                     save_session_mode(user_id,row['session_id'],mode=validated['mode'],reason='用户通过配置表单选择')
         state = 'cancelled' if cancel else 'completed'
         db.execute('UPDATE requests SET status=?,draft=? WHERE id=?',(state,'{}',request_id))
-    if row['session_id']!='settings':
-        from webot.runtime_store import create_inbox_message
-        create_inbox_message(user_id=user_id,target_session=row['session_id'],source_label='配置填写',message_id=request_id,
-            content=f"[配置填写] {row['topic']}: {state}。用户填写值不提供给模型。")
-    return {'id':request_id,'status':state,'message': '已保存。主机设置需要重新加载服务后生效。' if schema['scope']=='host' else '已保存，下次调用生效。'}
+    return {'id':request_id,'status':state,'message': '已取消。' if cancel else
+            '已保存。主机设置需要重新加载服务后生效。' if schema['scope']=='host' else '已保存，下次调用生效。'}

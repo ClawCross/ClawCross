@@ -28,7 +28,7 @@ class ChannelSetupTests(unittest.TestCase):
         self.assertEqual(json.loads(raw['TELEGRAM_BOTS'])[0], {'name': 'My bot', 'token': secret})
         self.assertIn('telegram', raw['NONEBOT_ADAPTERS'])
         self.assertNotIn(secret, (self.root / 'requests.db').read_bytes().decode('latin1'))
-        self.assertNotIn(secret, (self.root / 'runtime.db').read_bytes().decode('latin1'))
+        self.assertFalse((self.root / 'runtime.db').exists())  # No second inbox delivery.
         self.assertNotIn(secret, json.dumps(setup.status('alice', request['id'])))
         with self.assertRaises(ValueError): setup.submit('alice', request['id'], {'token': secret})
 
