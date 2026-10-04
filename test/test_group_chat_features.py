@@ -24,6 +24,7 @@ from frontend.invite_qr import invitation_qr
 from fastapi.testclient import TestClient
 from flask import Flask
 import qrcode
+import httpx
 
 
 class GroupChatFeatures(unittest.TestCase):
@@ -90,11 +91,20 @@ class GroupChatFeatures(unittest.TestCase):
     def test_client_search_uses_server_not_cache_and_requires_owner(self):
         cache=ClientStore(Path(self.temp.name)/'client.db'); alias=cache.save('alice','http://127.0.0.1:51203',self.host)
         client=GroupClient(cache,Mock(),Mock())
-        with patch.object(client,'request',return_value={'messages':[]}) as request:
-            client.search_messages('alice',alias,'older',12,10)
-            self.assertEqual(request.call_args.args[1:3],('GET','/search'))
-            self.assertEqual(request.call_args.kwargs['params'],{'query':'older','before_id':12,'limit':10})
+        original_client = httpx.Client
+        calls = []
+        def respond(request):
+            calls.append(request)
+            return httpx.Response(200,json={'messages':[],'next_before_id':0})
+        def transport_client(**kwargs):
+            return original_client(transport=httpx.MockTransport(respond),**kwargs)
+        with patch('groups.client.httpx.Client',side_effect=transport_client):
+            client.search_messages('alice',alias,'旧消息 &%_\\',12,10)
+            self.assertEqual(calls[0].url.path,'/relay/search')
+            self.assertEqual(dict(calls[0].url.params),{'query':'旧消息 &%_\\','before_id':'12','limit':'10'})
+            self.assertEqual(calls[0].headers['Authorization'],'Bearer '+self.host['token'])
             with self.assertRaises(ClientError): client.search_messages('bob',alias,'older')
+            self.assertEqual(len(calls),1)
 
     def test_legacy_group_reference_and_search(self):
         store=ConversationStore(Path(self.temp.name)/'old.db'); conversations=Conversations(store,Mock(),Mock()); service=GroupService(conversations)

@@ -1,8 +1,8 @@
 {
   "type": "ValidationReport",
   "schema_version": "clawcross.skill-evolution/1.0",
-  "id": "vr_20261004160014537335",
-  "candidate_id": "blended-verification-loop-approval-auth-bounded-execution",
+  "id": "vr_20261004161525936690",
+  "candidate_id": "blended-verification-loop-structured-output",
   "skill_name": "repo-skill",
   "strategy": "harden",
   "env_fingerprint": {
@@ -14,18 +14,18 @@
     "user_id": "",
     "skill_name": "repo-skill",
     "present_env_keys": [],
-    "captured_at": "2026-10-04T16:00:14.537268+00:00"
+    "captured_at": "2026-10-04T16:15:25.936653+00:00"
   },
   "commands": [
     {
       "command": "(external failure context)",
       "ok": false,
-      "stdout": "\u001b[2m[WebServer] \u001b[22m2026-10-04 23:58:38,669 INFO [werkzeug] [req:-] \u001b[31m\u001b[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.\u001b[0m\n\u001b[2m[WebServer] \u001b[22m * Running on http://127.0.0.1:51229\n\u001b[2m[WebServer] \u001b[22m2026-10-04 23:58:38,669 INFO [werkzeug] [req:-] \u001b[33mPress CTRL+C to quit\u001b[0m\n\u001b[2m[WebServer] \u001b[22m2026-10-04 23:58:39,660 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58:39] \"GET /studio HTTP/1.1\" 200 -\n\nRunning 3 tests using 1 worker\n\n(node:1949385) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.\n(Use `node --trace-warnings ...` to show where the warning was created)\n(node:1949385) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.\n(Use `node --trace-warnings ...` to show where the warning was created)\n\u001b[2m[WebServer] \u001b[22m2026-10-04 23:58:43,117 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58:43] \"GET /mobile/group_chat HTTP/1.1\" 200 -\n\u001b[2m[WebServer] \u001b[22m2026-10-04 23:58:43,203 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58:43] \"GET /static/js/attachment-utils.js?v=20261003-media HTTP/1.1\" 200 -\n\u001b[2m[WebServer] \u001b[22m2026-10-04 23:58:43,214 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58:43] \"GET /static/js/snapshot_zip_progress.js?v=20260331-progress HTTP/1.1\" 200 -\n\u001b[2m[WebServer] \u001b[22m2026-10-04 23:58:43,216 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58:43] \"GET /static/css/markdown-shared.css?v=20261004-fold-approval HTTP/1.1\" 200 -\n\u001b[2m[WebServer] \u001b[22m2026-10-04 23:58:43,218 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58:43] \"GET /static/css/external-agent-settings.css?v=20261004-effort-stops HTTP/1.1\" 200 -\n\u001b[2m[WebServer] \u001b[22m2026-10-04 23:58:43,221 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58:43] \"GET /static/js/components.js?v=20261004-windows-sandbox HTTP/1.1\" 200 -\n\u001b[2m[WebServer] \u001b[22m2026-10-04 23:58:43,224 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58:43] \"GET /static/css/theme.css?v=20261002-fold HTTP/1.1\" 200 -\n\u001b[2m[WebServer] \u001b[22m2026-10-04 23:58:43,230 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58:43] \"GET /static/css/channel-setup.css?v=2 HTTP/1.1\" 200 -\n\u001b[2m[WebServer] \u001b[22m2026-10-04 23:58:43,235 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58:43] \"GET /static/css/native-session-browser.css?v=1 HTTP/1.1\" 200 -\n\u001b[2m[WebServer] \u001b[22m2026-10-04 23:58:43,269 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58:43] \"GET /static/css/group-message-menu.css?v=20261004-message-menu HTTP/1.1\" 200 -\n\u001b[2m[WebServer] \u001b[22m2026-10-04 23:58:43,277 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58:43] \"GET /static/css/mobile-profile.css?v=20261004-studio-header HTTP/1.1\" 200 -\n\u001b[2m[WebServer] \u001b[22m2026-10-04 23:58:43,278 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58:43] \"GET /static/js/runtime-presentation.js?v=20261004-workspace HTTP/1.1\" 200 -\n\u001b[2m[WebServer] \u001b[22m2026-10-04 23:58:43,278 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58:43] \"GET /static/js/reasoning-levels.js?v=20261004-effort-stops HTTP/1.1\" 200 -\n\u001b[2m[WebServer] \u001b[22m2026-10-04 23:58:43,279 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58:43] \"GET /static/css/group-network.css?v=20261004-message-menu HTTP/1.1\" 200 -\n\u001b[2m[WebServer] \u001b[22m2026-10-04 23:58:43,280 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58:43] \"GET /static/css/settings-polish.css?v=20261004-settings HTTP/1.1\" 200 -\n\u001b[2m[WebServer] \u001b[22m2026-10-04 23:58:43,294 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58:43] \"GET /static/css/runtime-settings.css?v=20261004-keepy-manager HTTP/1.1\" 200 -\n\u001b[2m[WebServer] \u001b[22m2026-10-04 23:58:43,296 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58:43] \"GET /static/js/external-agent-settings.js?v=20261004-effort-slider HTTP/1.1\" 200 -\n\u001b[2m[WebServer] \u001b[22m2026-10-04 23:58:43,301 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58 ...[truncated]",
+      "stdout": "Actual group history search failed with HTTP 500 because search_messages calls request(params=...) but GroupClient.request lacks params.\nTypeError: GroupClient.request() got an unexpected keyword argument 'params'\nPrevious test mocked request(), so it missed the incompatible signature. Fix the request signature and test the real HTTP transport.",
       "stderr": ""
     }
   ],
   "overall_ok": false,
   "duration_ms": null,
-  "created_at": "2026-10-04T16:00:14.537360+00:00",
-  "asset_id": "sha256:444ef75e678b8501cc445d8a0e134ebc38b857ca84002bcc2133cb701f7c476e"
+  "created_at": "2026-10-04T16:15:25.936719+00:00",
+  "asset_id": "sha256:3dd3fff598ea8615b70293fcb294d01977d0507691b06fcdd37d879b4dee8d46"
 }

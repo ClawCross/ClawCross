@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20261004161525936690",
+  "candidate_id": "blended-verification-loop-structured-output",
+  "skill_name": "repo-skill",
+  "strategy": "harden",
+  "env_fingerprint": {
+    "python_version": "3.11.16",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-10-04T16:15:25.936653+00:00"
+  },
+  "commands": [
+    {
+      "command": "(external failure context)",
+      "ok": false,
+      "stdout": "Actual group history search failed with HTTP 500 because search_messages calls request(params=...) but GroupClient.request lacks params.\nTypeError: GroupClient.request() got an unexpected keyword argument 'params'\nPrevious test mocked request(), so it missed the incompatible signature. Fix the request signature and test the real HTTP transport.",
+      "stderr": ""
+    }
+  ],
+  "overall_ok": false,
+  "duration_ms": null,
+  "created_at": "2026-10-04T16:15:25.936719+00:00",
+  "asset_id": "sha256:3dd3fff598ea8615b70293fcb294d01977d0507691b06fcdd37d879b4dee8d46"
+}
