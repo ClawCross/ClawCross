@@ -36,7 +36,8 @@ test('ACP menu and settings follow native capabilities and save only this Agent'
   await page.locator('#return-focus').focus();
   await page.evaluate(() => openExternalAgentSettings('session-1'));
   await expect(page.locator('#external-tools')).not.toBeChecked();
-  await page.locator(`[data-option="${key}"]`).selectOption('high');
+  await expect(page.locator('[data-status]')).toContainText('连接成功');
+  await page.locator(`[data-option="${key}"]`).press('End');
   await page.locator('#external-tools').check();
   await page.getByText('连接与工具范围', {exact:true}).click();
   await page.locator('#external-tool-list').fill('get_current_time');
@@ -138,11 +139,12 @@ test('opening settings tests connection automatically and keeps edits without se
     ]}});
   });
   await page.evaluate(()=>openExternalAgentSettings('session-1'));
-  await page.locator('[data-option="reasoning_effort"]').selectOption('high');
+  await page.locator('[data-option="reasoning_effort"]').press('End');
   release();
   await expect(page.locator('[data-status]')).toContainText('连接成功');
   await expect(page.locator('[data-option="model"]')).toHaveValue('gpt-5.5');
-  await expect(page.locator('[data-option="reasoning_effort"]')).toHaveValue('high');
+  await expect(page.locator('[data-option="reasoning_effort"]')).toHaveValue('2');
+  await expect(page.locator('[data-reasoning-output]')).toHaveText('High');
   expect(probes).toBe(1);expect(chats).toEqual([]);
 });
 
@@ -159,9 +161,11 @@ test('external seven-level effort persists a preference instead of a model-speci
   });
   await page.evaluate(()=>openExternalAgentSettings('session-1'));
   await expect(page.locator('[data-status]')).toContainText('连接成功');
-  const select=page.locator('[data-option="effort"]');
-  await expect(select.locator('option')).toHaveCount(8);
-  await select.selectOption('7');
+  const slider=page.locator('[data-option="effort"]');
+  await expect(slider).toHaveAttribute('type','range');
+  await expect(slider).toHaveAttribute('max','7');
+  await slider.press('End');
+  await expect(page.locator('[data-reasoning-output]')).toContainText('7 · 最高 → max');
   await page.locator('[data-save]').click();
   await expect(page.locator('[data-status]')).toContainText('已保存');
   expect(writes[0].reasoning_level).toBe(7);

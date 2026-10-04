@@ -49,9 +49,9 @@
       const map = caps?.reasoning_level_map || {};
       const levels = caps?.reasoning_effort_levels || [];
       const preset = text('自动 · 模型预设','Automatic · Model preset') + (caps?.reasoning_effort_default ? ' · ' + caps.reasoning_effort_default : '');
-      if (window.ReasoningLevels && Object.keys(map).length) return `<label>${text('思考强度 · 7 级','Reasoning effort · 7 levels')}<select data-effort data-unified>${ReasoningLevels.options(map,pendingLevel,preset)}</select><small>${text('箭头后是当前模型的实际档位；部分级别会重复。按 Agent 保存，切换模型会重新映射。','The arrow shows the current model’s native setting; some levels repeat. Saved per Agent and remapped when switching models.')}</small></label>`;
-      if (levels.length) return `<label>${text('思考强度','Reasoning effort')}<select data-effort><option value="">${esc(preset)}</option>${levels.map(value => `<option value="${esc(value)}" ${value === pendingEffort ? 'selected' : ''}>${esc(value)}</option>`).join('')}</select><small>${text('按当前模型显示可用值，独立保存在这个 Agent。','Available values follow the current model and are saved for this Agent.')}</small></label>`;
-      return `<label>${text('思考强度','Reasoning effort')}<select data-effort disabled><option value="">${text('暂无可用档位','No available levels')}</option></select><small>${text('此模型尚无可用的思考档位信息，无法调整；选择支持此设置的模型后可用。','No reasoning levels are available for this model. Choose a supported model to adjust effort.')}</small></label>`;
+      if (Object.keys(map).length) return `<label>${text('思考强度 · 7 级','Reasoning effort · 7 levels')}${ReasoningLevels.slider({mapping:map,level:pendingLevel,autoLabel:preset,attributes:'data-effort data-unified'})}<small>${text('箭头后是当前模型的实际档位；部分级别会重复。按 Agent 保存，切换模型会重新映射。','The arrow shows the current model’s native setting; some levels repeat. Saved per Agent and remapped when switching models.')}</small></label>`;
+      if (levels.length) return `<label>${text('思考强度','Reasoning effort')}${ReasoningLevels.slider({choices:[{value:'',label:preset},...levels.map(value=>({value,label:value}))],value:pendingEffort,attributes:'data-effort'})}<small>${text('按当前模型显示可用值，独立保存在这个 Agent。','Available values follow the current model and are saved for this Agent.')}</small></label>`;
+      return `<label>${text('思考强度','Reasoning effort')}${ReasoningLevels.slider({choices:[{value:'',label:text('暂无可用档位','No available levels')}],disabled:true,attributes:'data-effort'})}<small>${text('此模型尚无可用的思考档位信息，无法调整；选择支持此设置的模型后可用。','No reasoning levels are available for this model. Choose a supported model to adjust effort.')}</small></label>`;
     };
     const platformLabel = text('平台默认', 'Platform default') + ' · ' + (library.default.model || text('未配置', 'Not configured'));
     overlay.innerHTML = `<section class="external-settings-dialog model-profile-dialog">
@@ -87,7 +87,7 @@
       const previous = overlay.querySelector('[data-effort]');
       if (previous && !previous.disabled) {
         if (previous.hasAttribute('data-unified')) pendingLevel = Number(previous.value);
-        else pendingEffort = previous.value;
+        else pendingEffort = ReasoningLevels.value(previous);
       }
       const profileId = overlay.querySelector('[data-profile]').value;
       const chosen = profileId === '__current__' || selected && profileId === selected && saved.model ? capabilities : profileId ? library.profiles.find(p=>p.id===profileId)?.model_capabilities : library.default.model_capabilities;
@@ -121,8 +121,8 @@
           const level = Number(effortInput.value);
           if (level !== (runtime.settings?.inference?.reasoning_level || 0) || effort) await request('/proxy_webot_runtime_settings', 'POST', {
             session_id:id, settings:{inference:{reasoning_level:level,reasoning_effort:''}}});
-        } else if (effortInput && effortInput.value !== effort) await request('/proxy_webot_runtime_settings', 'POST', {
-          session_id:id, settings:{inference:{reasoning_effort:effortInput.value}}});
+        } else if (effortInput && ReasoningLevels.value(effortInput) !== effort) await request('/proxy_webot_runtime_settings', 'POST', {
+          session_id:id, settings:{inference:{reasoning_effort:ReasoningLevels.value(effortInput)}}});
         document.dispatchEvent(new CustomEvent('clawcross:runtime-settings-saved', {detail:{agentId:id}}));
         if (overlay.isConnected) {
           await open(id);

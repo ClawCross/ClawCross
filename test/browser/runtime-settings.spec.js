@@ -42,6 +42,7 @@ async function setup(page, options = {}) {
     window.escapeHtml = text => { const el = document.createElement('div'); el.textContent = text; return el.innerHTML; };
   });
   await page.addStyleTag({ path: path.resolve('src/frontend/static/css/style.css') });
+  await page.addStyleTag({ path: path.resolve('src/frontend/static/css/external-agent-settings.css') });
   await page.addScriptTag({ path: path.resolve('src/frontend/static/js/runtime-settings.js') });
   return requests;
 }
@@ -212,7 +213,7 @@ test('known reasoning levels save a session override while unknown models hide t
   const requests = await setup(page, {capabilities:{model:'known-model',reasoning_effort_levels:['low','high'],reasoning_effort_default:'low'}});
   await page.evaluate(()=>openRuntimeSettings('session-1'));
   await expect(page.locator('[data-key="reasoning_effort"]')).toBeVisible();
-  await page.locator('[data-key="reasoning_effort"]').selectOption('high');
+  await page.locator('[data-key="reasoning_effort"]').press('End');
   await page.locator('#runtime-settings-save').click();
   await expect(page.locator('#runtime-settings-result')).toContainText('已保存');
   expect(requests[0].settings).toEqual({inference:{reasoning_effort:'high'}});
@@ -225,10 +226,10 @@ test('unified effort saves a numeric Agent level without changing retained turns
   const map={'1':'low','2':'low','3':'low','4':'medium','5':'high','6':'high','7':'max'};
   const requests=await setup(page,{capabilities:{model:'claude-opus-4-6',reasoning_effort_levels:['low','medium','high','max'],reasoning_level_map:map}});
   await page.evaluate(()=>openRuntimeSettings('session-1'));
-  const select=page.locator('[data-key="reasoning_level"]');
-  await expect(select.locator('option')).toHaveCount(8);
-  await expect(select.locator('option[value="7"]')).toContainText('max');
-  await select.selectOption('7');
+  const slider=page.locator('[data-key="reasoning_level"]');
+  await expect(slider).toHaveAttribute('type','range');
+  await slider.press('End');
+  await expect(page.locator('[data-reasoning-output]')).toContainText('max');
   await page.locator('#runtime-settings-save').click();
   await expect(page.locator('#runtime-settings-result')).toContainText('已保存');
   expect(requests[0]).toMatchObject({session_id:'session-1',settings:{inference:{reasoning_level:7,reasoning_effort:''}}});

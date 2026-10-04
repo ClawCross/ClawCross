@@ -24,3 +24,10 @@
 .model-profile-create form button{justify-self:start;border:1px solid var(--ui-hairline-strong,#ddd)}
 .model-profile-dialog footer{flex-wrap:wrap}
 .model-profile-dialog footer button{margin-left:auto}
+
+.reasoning-slider{display:grid;gap:2px;min-width:0}
+.reasoning-slider output{font-size:13px;font-weight:600;color:var(--ui-accent,#0071e3);overflow-wrap:anywhere}
+.reasoning-slider input[type=range]{box-sizing:border-box;width:100%;min-width:0;min-height:36px;margin:0;padding:0;border:0;border-radius:0;background:transparent;accent-color:var(--ui-accent,#0071e3);cursor:pointer}
+.reasoning-slider input[type=range]:disabled{opacity:.45;cursor:default}
+.reasoning-slider input[type=range]:focus-visible{outline:2px solid var(--ui-accent,#0071e3);outline-offset:2px;border-radius:4px}
+.reasoning-slider-scale{display:flex;justify-content:space-between;gap:12px;font-size:11px;color:var(--ui-text-2,#6e6e73);overflow-wrap:anywhere}
