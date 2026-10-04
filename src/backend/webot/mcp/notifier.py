@@ -49,6 +49,43 @@ class ChannelFieldValue(BaseModel):
 
 
 @mcp.tool()
+async def get_configuration(username: str, topic: str = '', request_id: str = '', session_id: str = '') -> str:
+    """查询项目设置分类、字段用途和非敏感当前值，或配置表单的完成状态；不返回密钥。
+
+    :param username: 系统注入用户
+    :param topic: 留空列分类；model/voice/search/context/approval/inference/channel:平台名 查字段
+    :param request_id: 表单编号；仅查询填写状态
+    :param session_id: 系统注入当前 Agent
+    """
+    from ops.configuration_requests import describe, status
+    try:
+        result = status(username, request_id) if request_id else describe(username, session_id or 'default', topic)
+        return json.dumps(result, ensure_ascii=False)
+    except ValueError as exc:
+        return '❌ ' + str(exc)
+
+
+@mcp.tool()
+async def request_configuration(username: str, topic: str, values: list[ChannelFieldValue] | None = None, session_id: str = '') -> str:
+    """在对话内展示配置表单；先 get_configuration 查字段，预填非敏感项，用户保存后生效。
+
+    human_only 字段由用户直接交给后端，不进入模型、聊天或工具结果；不能传入 values。
+    仅返回请求编号与状态。不安装组件、不测试连接、不自动重启。无网页时引导用户到设置页私密填写。
+    :param username: 系统注入用户
+    :param topic: get_configuration 返回的分类编号
+    :param values: 非敏感字段列表；布尔 true/false、数字使用文本
+    :param session_id: 系统注入当前 Agent
+    """
+    from ops.configuration_requests import create
+    try:
+        draft = {field.name: field.value for field in values or []}
+        if len(draft) != len(values or []): raise ValueError('Duplicate field names')
+        return json.dumps(create(username, session_id or 'default', topic, draft), ensure_ascii=False)
+    except ValueError as exc:
+        return '❌ ' + str(exc)
+
+
+@mcp.tool()
 async def get_channel_setup(username: str, channel: str = "", request_id: str = "") -> str:
     """查看机器人连接设置的字段说明，或查看设置请求是否已完成；不返回密钥。
 

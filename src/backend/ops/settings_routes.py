@@ -11,7 +11,7 @@ from typing import Callable
 
 from fastapi import APIRouter, Header, HTTPException
 
-from ops.settings_models import ChannelWhitelistUpdateRequest, SettingsUpdateRequest, ChannelSetupRequest
+from ops.settings_models import ChannelWhitelistUpdateRequest, SettingsUpdateRequest, ChannelSetupRequest, ConfigurationSetupRequest
 from ops.settings_service import SettingsService
 
 
@@ -26,6 +26,24 @@ def create_settings_router(
         env_path=env_path,
         verify_auth_or_token=verify_auth_or_token,
     )
+
+    @router.get('/configuration/setup')
+    async def configuration_setup(user_id: str, session_id: str = '', password: str = '', x_internal_token: str | None = Header(None)):
+        verify_auth_or_token(user_id, password, x_internal_token)
+        from ops.configuration_requests import describe, list_requests
+        return {'topics': describe(user_id, session_id, env_path=env_path),
+                'requests': list_requests(user_id, session_id, env_path=env_path)}
+
+    @router.post('/configuration/setup')
+    async def configuration_submit(req: ConfigurationSetupRequest, x_internal_token: str | None = Header(None)):
+        verify_auth_or_token(req.user_id, req.password, x_internal_token)
+        from ops.configuration_requests import create, submit
+        try:
+            if req.request_id:
+                return submit(req.user_id, req.request_id, req.values, cancel=req.cancel, env_path=env_path)
+            return create(req.user_id, req.session_id, req.topic or ('channel:'+req.channel if req.channel else ''), req.values)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
 
     @router.get('/channels/setup')
     async def channel_setup(user_id: str, session_id: str = '', password: str = '', x_internal_token: str | None = Header(None)):

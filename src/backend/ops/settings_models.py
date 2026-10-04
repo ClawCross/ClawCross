@@ -27,3 +27,7 @@ class ChannelSetupRequest(BaseModel):
     request_id: str = ''
     values: dict = {}
     cancel: bool = False
+
+
+class ConfigurationSetupRequest(ChannelSetupRequest):
+    topic: str = ''

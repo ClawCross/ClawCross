@@ -69,6 +69,8 @@ MESSAGE_TOOLS = (
     "get_notification_status",
     "get_channel_setup",
     "request_channel_setup",
+    "get_configuration",
+    "request_configuration",
 )
 
 SCHEDULER_TOOLS = (
