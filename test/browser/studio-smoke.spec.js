@@ -1066,6 +1066,94 @@ test('conversation rail lists history and has a separate New button without a ma
 });
 
 
+for (const platform of ['webot', 'codex']) {
+  test(`recent Agents remove a deleted ${platform} Agent immediately through Agent Center`, async ({page}) => {
+    const calls = {};
+    const agents = [{agent_id:'delete-me', name:'Delete me', platform, settings:{}, status:{state:'idle', title:'Delete me'}}];
+    await stubStudioNetwork(page, calls, {agents, acpxStatusPayload:{available:true, tools:['codex','claude']}});
+    await page.route('**/v1/agents/delete-me', route => {
+      if (route.request().method() !== 'DELETE') return route.fallback();
+      agents.splice(0);
+      return route.fulfill({json:{deleted:true}});
+    });
+    page.on('dialog', dialog => dialog.accept());
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.goto('/studio');
+    await page.locator('.studio-conversation-switcher > summary').click();
+    if (platform === 'codex') await page.locator('[data-acp-tool="codex"]').click();
+    const row = page.locator('.studio-conversation-item[data-session-id="delete-me"]');
+    await expect(row).toBeVisible();
+    await row.click();
+    await page.evaluate(() => openAgentCenter());
+    await page.locator('.agent-center-card[data-agent="delete-me"]').click();
+    await page.locator('button[onclick="deleteAgentFromCenter(this)"]').click();
+    await expect(row).toHaveCount(0);
+    await expect(page.locator('option[value="delete-me"]')).toHaveCount(0);
+    const state = await page.evaluate(() => ({
+      current: _ocChatMode === 'acp' ? acpResolveSessionName() : currentSessionId,
+      saved: Object.keys(localStorage).filter(key => key.startsWith('clawcross_acp_')).map(key => localStorage.getItem(key)),
+      cached: _mergedSessionsCache.map(item => item.session_id),
+    }));
+    expect(state.current).not.toBe('delete-me');
+    expect(state.saved).not.toContain('delete-me');
+    expect(state.cached).not.toContain('delete-me');
+    expect(calls.agentCreates).toEqual([]);
+    expect(errors).toEqual([]);
+  });
+}
+
+test('recent Agents retain an Agent when deletion fails', async ({page}) => {
+  const agents = [{agent_id:'keep-me',name:'Keep me',platform:'webot',settings:{},status:{state:'idle',title:'Keep me'}}];
+  await stubStudioNetwork(page, {}, {agents});
+  await page.route('**/v1/agents/keep-me', route => route.request().method() === 'DELETE'
+    ? route.fulfill({status:500,json:{detail:'Deletion failed'}}) : route.fallback());
+  page.on('dialog', dialog => dialog.accept());
+  await page.goto('/studio');
+  await page.locator('.studio-conversation-switcher > summary').click();
+  await expect(page.locator('.studio-conversation-item[data-session-id="keep-me"]')).toBeVisible();
+  const result = await page.evaluate(() => deleteAgent({agent_id:'keep-me'}, 'Keep me').catch(error => error.message));
+  expect(result).toBe('Deletion failed');
+  await expect(page.locator('.studio-conversation-item[data-session-id="keep-me"]')).toBeVisible();
+});
+
+test('recent Agents refresh on opening after deletion in another page', async ({page}) => {
+  const agents = [{agent_id:'gone-elsewhere',name:'Old Agent',platform:'webot',settings:{},status:{state:'idle',title:'Old Agent'}}];
+  await stubStudioNetwork(page, {}, {agents});
+  await page.goto('/studio');
+  await page.locator('.studio-conversation-switcher > summary').click();
+  await expect(page.locator('.studio-conversation-item[data-session-id="gone-elsewhere"]')).toBeVisible();
+  await page.locator('.studio-conversation-switcher > summary').click();
+  agents.splice(0);
+  await page.locator('.studio-conversation-switcher > summary').click();
+  await expect(page.locator('.studio-conversation-item')).toHaveCount(0);
+});
+
+test('recent Agents ignore list responses started before deletion', async ({page}) => {
+  const agents = [{agent_id:'delete-race',name:'Old response',platform:'webot',settings:{},status:{state:'idle',title:'Old response'}}];
+  await stubStudioNetwork(page, {}, {agents});
+  page.on('dialog', dialog => dialog.accept());
+  await page.goto('/studio');
+  await page.locator('.studio-conversation-switcher > summary').click();
+  await expect(page.locator('.studio-conversation-item[data-session-id="delete-race"]')).toBeVisible();
+  let release;
+  const delayed = new Promise(resolve => {release = resolve;});
+  let held = 0;
+  const oldAgents = JSON.parse(JSON.stringify(agents));
+  await page.route(/\/v1\/agents(\?.*)?$/, async route => {
+    held++;
+    await delayed;
+    await route.fulfill({json:{data:oldAgents}});
+  });
+  await page.evaluate(() => {window.oldListRequest = loadSessionList();});
+  await expect.poll(() => held).toBeGreaterThanOrEqual(2);
+  await page.evaluate(() => deleteAgent({agent_id:'delete-race'}, 'Old response'));
+  await expect(page.locator('.studio-conversation-item')).toHaveCount(0);
+  release();
+  await page.evaluate(() => window.oldListRequest);
+  await expect(page.locator('.studio-conversation-item')).toHaveCount(0);
+});
+
 test('external New Agent stays a draft until the first message request', async ({page}) => {
   const calls = {};
   const agents = [{agent_id:'codex-old',name:'Old Codex',platform:'codex',settings:{},status:{state:'idle'}}];

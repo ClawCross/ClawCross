@@ -309,6 +309,11 @@ body.cc-local-file-preview-open {
 .cc-approval-status, .cc-approval-hint, .cc-approval-bubble small { color: var(--text-secondary, #8290a2); font-size: 12px; }
 .cc-approval-tool { font-family: monospace; margin: 10px 0 4px; }
 .cc-approval-bubble details { margin: 8px 0; }
+.cc-approval-bubble > .cc-approval-disclosure { margin: 0; }
+.cc-approval-disclosure > .cc-approval-heading { list-style: none; gap: 8px; }
+.cc-approval-disclosure > .cc-approval-heading::-webkit-details-marker { display: none; }
+.cc-approval-disclosure > .cc-approval-heading::before { content: '▸'; }
+.cc-approval-disclosure[open] > .cc-approval-heading::before { content: '▾'; }
 .cc-approval-bubble summary { cursor: pointer; }
 .cc-approval-bubble pre { max-height: 180px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .cc-approval-bubble small { overflow-wrap: anywhere; }

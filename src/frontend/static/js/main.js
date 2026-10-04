@@ -3816,7 +3816,7 @@ function renderStudioApprovalStrip(approvals) {
 async function refreshStudioApprovalStrip() {
     void ClawcrossChannelSetup.sync(document.getElementById('chat-box'), [currentSessionId]).catch(() => {});
     try {
-        const resp = await fetch('/proxy_webot_tool_approvals?status=pending&limit=20');
+        const resp = await fetch(`/proxy_webot_tool_approvals?status=&limit=50&session_id=${encodeURIComponent(currentSessionId)}`);
         if (!resp.ok) return;
         const data = await resp.json();
         renderStudioApprovalStrip(Array.isArray(data.approvals) ? data.approvals : []);
@@ -4569,6 +4569,8 @@ let _cachedAgentMap = {};
 let _allKnownSessions = new Set();
 // Last merged session list (+ named-only from agent map), for chat-bar session picker
 let _mergedSessionsCache = [];
+// A deletion invalidates list requests started before it completed.
+let _agentListRevision = 0;
 
 function isNamedSession(sessionId) {
     const meta = _cachedAgentMap[sessionId];
@@ -4597,6 +4599,7 @@ function toggleNamedSessionsVisible() {
 }
 
 async function loadSessionList() {
+    const revision = _agentListRevision;
     const listEl = document.getElementById('session-list');
     if (!listEl.querySelector('.session-item')) {
         listEl.innerHTML = `<div class="text-xs text-gray-400 text-center py-4">${t('loading')}</div>`;
@@ -4604,6 +4607,7 @@ async function loadSessionList() {
     try {
         // Load sessions and agent meta in parallel
         const [webotSessions, agentResult] = await Promise.all([fetchWebotSessions(), _loadAgentMetaMap(_currentAgentTeam)]);
+        if (revision !== _agentListRevision) return;
         _cachedAgentMap = agentResult.map;
         _allKnownSessions = agentResult.allKnown;
         const agentMap = agentResult.map;
@@ -4652,6 +4656,7 @@ async function loadSessionList() {
         }
         paintSessionBusy(webotSessions);
     } catch (e) {
+        if (revision !== _agentListRevision) return;
         listEl.innerHTML = `<div class="text-xs text-red-400 text-center py-4">${t('history_error')}</div>`;
         _mergedSessionsCache = [];
         ocInternalRepaintSessionPick();
@@ -4660,11 +4665,13 @@ async function loadSessionList() {
 
 // 增量刷新：不重建DOM，只更新标题/计数 + 状态发光
 async function refreshHistoryList() {
+    const revision = _agentListRevision;
     try {
         const [webotSessions, agentResult] = await Promise.all([
             fetchWebotSessions(),
             _loadAgentMetaMap(_currentAgentTeam)
         ]);
+        if (revision !== _agentListRevision) return;
         _cachedAgentMap = agentResult.map;
         _allKnownSessions = agentResult.allKnown;
         const agentMap = agentResult.map;
@@ -4829,6 +4836,52 @@ async function deleteSessionAgent(sessionId) {
     } catch (e) {
         if (e.status !== 404) throw e;
     }
+    forgetDeletedAgent(sessionId);
+}
+
+function forgetDeletedAgent(sessionId) {
+    const externalSelected = _ocChatMode === 'acp' && acpResolveSessionName() === sessionId;
+    _agentListRevision++;
+    _mergedSessionsCache = _mergedSessionsCache.filter(item => item.session_id !== sessionId);
+    delete _cachedAgentMap[sessionId];
+    _allKnownSessions.delete(sessionId);
+    for (const id of ['oc-internal-session-pick', 'oc-acp-session-pick']) {
+        const select = document.getElementById(id);
+        for (const option of [...(select?.options || [])]) {
+            if (option.value === sessionId) option.remove();
+        }
+    }
+    document.querySelectorAll('.session-item[data-session-id]').forEach(node => {
+        if (node.dataset.sessionId === sessionId) node.remove();
+    });
+    for (const [key, id] of Object.entries(_acpResolvedSessionNameByKey)) {
+        if (id !== sessionId) continue;
+        delete _acpResolvedSessionNameByKey[key];
+        delete _acpTranscriptByKey[key];
+    }
+    for (let index = localStorage.length - 1; index >= 0; index--) {
+        const key = localStorage.key(index);
+        if (/^clawcross_acp_(session_pick_|session_name_|resolved_session_)/.test(key)
+            && localStorage.getItem(key) === sessionId) localStorage.removeItem(key);
+    }
+    if (currentSessionId === sessionId) {
+        currentSessionId = generateSessionId();
+        sessionStorage.setItem('sessionId', currentSessionId);
+        updateSessionDisplay();
+        if (_ocChatMode === 'internal') renderWeBotWelcomeMessage(t('new_session_message'));
+    }
+    if (externalSelected) {
+        // A replacement stays a draft; deletion must not create another Agent.
+        const draftId = _acpTool + '-' + generateSessionId();
+        document.getElementById('oc-acp-session-pick').value = '';
+        document.getElementById('oc-acp-session-name').value = draftId;
+        localStorage.setItem('clawcross_acp_session_name_' + _acpTool, draftId);
+        _acpLastTranscriptKey = '';
+        acpUpdateSessionInputsDisabledState();
+        acpNotifySessionContextChanged();
+    }
+    ocInternalRepaintSessionPick();
+    renderStudioConversations();
 }
 
 async function deleteSession(sessionId) {
@@ -5038,6 +5091,12 @@ async function switchToSession(sessionId, force = false, options = {}) {
 function ocSyncSessionSubrowsVisibility() {
     // Legacy selects are state holders; the conversation rail is the visible picker.
     renderStudioConversations();
+}
+
+async function refreshStudioConversations() {
+    if (!currentUserId) return;
+    if (_ocChatMode === 'acp') await acpLoadSessionsList();
+    else await loadSessionList();
 }
 
 function renderStudioConversations() {
@@ -12923,7 +12982,7 @@ async function removeAgentFromTeam(team, agent, name) {
 // Delete an agent: it leaves every team and conversation. Returns whether it was deleted.
 async function deleteAgent(agent, name) {
     if (!confirm(`确定删除 "${name}"？它会离开所有团队和群聊。`)) return false;
-    await agentApi('DELETE', `/v1/agents/${encodeURIComponent(agent.agent_id)}`);
+    await deleteSessionAgent(agent.agent_id);
     return true;
 }
 
@@ -15076,13 +15135,19 @@ async function acpLoadSessionsList() {
     if (!_acpTool) return;
     const sel = document.getElementById('oc-acp-session-pick');
     if (!sel) return;
+    const revision = _agentListRevision;
+    const tool = _acpTool;
     const prev = sel.value;
     sel.disabled = true;
     acpSetSessionStatus('');
     try {
         // The sessions of this tool are its agents.
         const j = await agentApi('GET', '/v1/agents');
-        const sessions = (j.data || []).filter((a) => a.platform === _acpTool);
+        if (revision !== _agentListRevision || tool !== _acpTool) return;
+        const sessions = (j.data || []).filter((a) => a.platform === tool);
+        const stored = localStorage.getItem('clawcross_acp_session_pick_' + tool);
+        const missing = new Set([prev, stored].filter(id => id && !(j.data || []).some(a => a.agent_id === id)));
+        for (const id of missing) forgetDeletedAgent(id);
         sel.innerHTML = '';
         const o0 = document.createElement('option');
         o0.value = '';
@@ -15095,12 +15160,12 @@ async function acpLoadSessionsList() {
             opt.dataset.agentName = a.name;
             sel.appendChild(opt);
         }
-        const stored = localStorage.getItem('clawcross_acp_session_pick_' + _acpTool);
         if (stored && Array.from(sel.options).some((o) => o.value === stored)) sel.value = stored;
         else if (prev && Array.from(sel.options).some((o) => o.value === prev)) sel.value = prev;
         else sel.value = '';
         acpUpdateSessionInputsDisabledState();
     } catch (e) {
+        if (revision !== _agentListRevision || tool !== _acpTool) return;
         console.error('acpLoadSessionsList', e);
         alert(t('error') + ': ' + (e && e.message ? e.message : e));
     } finally {
