@@ -1,7 +1,7 @@
 {
   "name": "clawcross",
-  "version": "0.0.27",
-  "description": "ClawCross multi-platform agent CLI shell with full project source.",
+  "version": "0.0.28",
+  "description": "ClawCross multi-platform agent CLI with Python services and web interface.",
   "license": "MIT",
   "engines": {
     "node": ">=18"
@@ -9,9 +9,56 @@
   "bin": {
     "clawcross": "bin/clawcross.js"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ClawCross/ClawCross.git"
+  },
+  "files": [
+    "bin/clawcross.js",
+    "clawcross",
+    "clawcross.ps1",
+    "run.sh",
+    "run.ps1",
+    "launch/*.py",
+    "launch/run.sh",
+    "launch/run.ps1",
+    "launch/clawcross",
+    "launch/README.md",
+    "src/backend/**/*.py",
+    "src/backend/**/*.mjs",
+    "src/backend/common/model_catalog.json",
+    "src/cli/**/*.py",
+    "src/frontend/**/*.py",
+    "src/frontend/templates/**",
+    "src/frontend/static/**",
+    "config/.env.example",
+    "config/users.json.example",
+    "config/tinyfish_targets.example.json",
+    "config/channels.json",
+    "config/requirements.txt",
+    "config/requirements-channels.txt",
+    "data/prompts/**",
+    "data/team_presets/**",
+    "agents/**",
+    "docs/*.md",
+    "docs/*.py",
+    "docs/poster_en.png",
+    "docs/media/clawcross-demo-poster-en.png",
+    "examples/**/*.py",
+    "examples/**/*.md",
+    "tools/build/*.py",
+    "tools/build/*.js",
+    "tools/build/*.mjs",
+    "tools/build/*.cjs",
+    "tools/build/*.css",
+    "tools/maintenance/*.py",
+    "AGENTS.md",
+    "SKILL.md",
+    "README_CN.md"
+  ],
   "scripts": {
     "clawcross": "node bin/clawcross.js",
-    "pack:clawcross": "npm pack",
+    "pack:clawcross": "node -e \"require('node:fs').mkdirSync('dist',{recursive:true})\" && npm pack --pack-destination dist",
     "build:pretext-vendor": "node tools/build/build_pretext_vendor.mjs",
     "build:oasis-town": "node tools/build/build_oasis_town.mjs",
     "test:node": "node test/test_tinyfish_live_shared.js && node test/test_pretext_text_core.js",
@@ -19,12 +66,12 @@
     "build:css": "tailwindcss -c tools/build/tailwind.config.cjs -i tools/build/tailwind.input.css -o src/frontend/static/css/tailwind.css --minify"
   },
   "dependencies": {
-    "@chenglou/pretext": "^0.0.7",
-    "easystarjs": "^0.4.4",
-    "phaser": "^3.90.0",
     "playwright": "^1.58.2"
   },
   "devDependencies": {
+    "@chenglou/pretext": "^0.0.7",
+    "easystarjs": "^0.4.4",
+    "phaser": "^3.90.0",
     "@playwright/test": "^1.55.0",
     "esbuild": "^0.25.3",
     "tailwindcss": "3.4.17"
