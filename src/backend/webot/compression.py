@@ -9,10 +9,11 @@ Design goals:
   into a capped-length summary. Mechanical fallback if LLM unavailable.
 - No segment duplication on disk: persistent agent state already keeps every
   original message, so audit replay reads from there using compacted_until.
-- Low frequency: trigger only when accumulated tokens cross a high
-  threshold (default 75% of history budget) AND enough new messages
+- Low frequency: trigger only when accumulated tokens cross the configured
+  threshold AND enough new messages
   have accrued since last compression (min_new_messages防抖).
-- Newest messages never compressed: preserve_recent tail stays raw.
+- Recent turns are preferred within the token target; the latest complete
+  tool exchange stays raw when an entire turn cannot fit.
 - Idempotent read path: static_compression_view reproduces the same
   view without writing, so endpoints (session_history) can show the
   badge without side effects.
@@ -37,7 +38,7 @@ from webot.checkpoint_repository import (
     save_context_compaction,
 )
 from webot.context_compressor import _msg_tokens, estimate_messages_tokens, _approx_tokens
-from webot.runtime_settings import ContextSettings
+from webot.runtime_settings import ContextSettings, resolve_compaction_target
 
 # Lazy imports for things that pull heavy modules
 # - webot.context._store_runtime_text / _runtime_artifacts_enabled
@@ -46,7 +47,7 @@ from webot.runtime_settings import ContextSettings
 
 _SUMMARY_HEADER = "以下为早期对话的持久压缩摘要："
 _DEFAULT_TRIGGER_RATIO = 0.90
-_DEFAULT_TARGET_RATIO = 0.55
+_DEFAULT_TARGET_RATIO = 0.10
 _DEFAULT_PRESERVE_RECENT = 8
 _DEFAULT_MIN_NEW_MESSAGES = 6
 _DEFAULT_SUMMARY_RATIO = 0.20  # summary 字符上限 = budget tokens × 4 × 此比例
@@ -546,10 +547,9 @@ def temporary_bounded_view(
 ) -> list[BaseMessage]:
     """Trim older complete turns when a background summary is pending.
 
-    This view is never persisted. Whole user turns are retained so tool calls
-    and their results stay together. Protected recent turns may exceed this
-    soft budget; only the emergency summarizer may compact them, never this
-    temporary omission of older history.
+    This view is never persisted. Prefer recent complete turns that fit the
+    budget. An oversized latest turn is handled by the summarizer; temporary
+    omission must never split a tool call from its results.
     """
     if history_token_budget <= 0 or estimate_messages_tokens(view) <= history_token_budget:
         return view
@@ -560,10 +560,9 @@ def temporary_bounded_view(
     for index in range(len(view) - 1, -1, -1):
         suffix_tokens[index] = suffix_tokens[index + 1] + _msg_tokens(view[index])
     fixed_tokens = sum(_msg_tokens(message) for message in prefix) + _msg_tokens(notice)
-    protected_start = _recent_turn_boundary(view[prefix_count:], max(1, preserve_recent_turns)) + prefix_count
     starts = [
         index for index in range(prefix_count + 1, len(view))
-        if isinstance(view[index], HumanMessage) and index <= protected_start
+        if isinstance(view[index], HumanMessage)
     ]
     for start in starts:
         if fixed_tokens + suffix_tokens[start] <= history_token_budget:
@@ -784,7 +783,8 @@ def apply_compression(
     if not enabled and not force:
         return CompressionResult(view, False, previous_summary, current_until, "disabled", view_tokens)
     trigger_tokens = (settings.trigger_tokens if settings else 0) or max(1, int(history_token_budget * _trigger_ratio()))
-    target_tokens = (settings.target_tokens if settings else 0) or max(1, int(history_token_budget * _target_ratio()))
+    target_tokens = (resolve_compaction_target(settings, history_token_budget) if settings
+                     else max(1, min(10_000, int(history_token_budget * _target_ratio()))))
     trigger_tokens = min(trigger_tokens, history_token_budget)
     target_tokens = min(target_tokens, max(1, trigger_tokens - 1))
     summary_cap = min(settings.summary_tokens if settings else max(1, int(history_token_budget * _summary_ratio())),
@@ -832,6 +832,18 @@ def apply_compression(
         min_new=min_new,
         whole_turns=settings is not None and not emergency,
     )
+    budget_limited = False
+    if settings and not emergency and estimate_messages_tokens(messages[boundary:]) > max(1, target_tokens - summary_cap):
+        # Recent-turn retention is a preference, not permission to keep an
+        # unbounded tool loop. Relax it at complete tool exchange boundaries.
+        bounded = _pick_boundary(messages, current_until=current_until,
+            preserve_recent=1, target_tokens=max(1, target_tokens - summary_cap),
+            min_new=1, whole_turns=False)
+        if bounded > boundary:
+            boundary = bounded
+            preserve_recent_val = len(messages) - boundary
+            min_new = 1
+            budget_limited = True
     new_count = boundary - current_until
     # 手动压缩放宽防抖到 1 条：只要有可折叠的新内容就压。
     if boundary <= current_until or new_count < min_new:
@@ -845,7 +857,7 @@ def apply_compression(
         )
 
     segment = messages[current_until:boundary]
-    target_chars = _max_summary_chars(history_token_budget)
+    target_chars = min(_max_summary_chars(history_token_budget), max(64, summary_cap * 4))
     summarize = summarizer or _mechanical_summarizer
     if before_summary is not None:
         try:
@@ -882,7 +894,8 @@ def apply_compression(
         "summarizer": getattr(summarize, "stats", {"backend": "mechanical" if summarizer is None else "custom"}),
         "target_met": new_tokens <= target_tokens,
         "source_range": [current_until, boundary],
-        "strategy": "emergency_tool_boundary" if emergency else "manual_all_eligible" if force else "automatic_target",
+        "strategy": "emergency_tool_boundary" if emergency else "token_budget" if budget_limited else "manual_all_eligible" if force else "automatic_target",
+        "retention_limited_by_budget": budget_limited,
         "preserved_tokens": estimate_messages_tokens(_rebase_runtime_view(messages[boundary:])),
         "preserve_recent_turns": settings.preserve_recent_turns if settings else None,
     }

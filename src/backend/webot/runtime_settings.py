@@ -107,6 +107,11 @@ def resolve_context_history_budget(settings: ContextSettings, *, is_subagent: bo
     return min(history, available)
 
 
+def resolve_compaction_target(settings: ContextSettings | None, history_token_budget: int) -> int:
+    """Keep automatic summaries and their raw tail small, even in large windows."""
+    return (settings.target_tokens if settings else 0) or max(1, min(10_000, history_token_budget // 10))
+
+
 def context_usage_with_window(usage: dict, window: int) -> dict:
     """Refresh the denominator without replacing measured tokens or breakdown."""
     tokens = int(usage.get("tokens", 0) or 0)
