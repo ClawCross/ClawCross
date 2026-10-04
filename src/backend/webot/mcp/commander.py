@@ -405,7 +405,19 @@ def main():
                 )
             except subprocess.TimeoutExpired:
                 if os.name == "nt":
-                    proc.kill()
+                    try:
+                        proc.send_signal(signal.CTRL_BREAK_EVENT)
+                        proc.wait(timeout=2)
+                    except (OSError, subprocess.TimeoutExpired):
+                        pass
+                    if proc.poll() is None:
+                        try:
+                            subprocess.run(['taskkill', '/PID', str(proc.pid), '/T', '/F'],
+                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+                        except (OSError, subprocess.TimeoutExpired):
+                            pass
+                    if proc.poll() is None:
+                        proc.kill()
                 else:
                     os.killpg(proc.pid, signal.SIGKILL)
                 return_code = proc.wait()
@@ -736,6 +748,23 @@ async def _consume_stream(stream: asyncio.StreamReader | None, capture: _Streami
 async def _stop_sandbox_group(proc: asyncio.subprocess.Process) -> None:
     """Give SRT a chance to restore mounts/ACLs, then stop stragglers."""
     if os.name == "nt":
+        try:
+            proc.send_signal(signal.CTRL_BREAK_EVENT)
+            await asyncio.wait_for(proc.wait(), timeout=2)
+            return
+        except (OSError, AttributeError, asyncio.TimeoutError):
+            pass
+        try:
+            killer = await asyncio.create_subprocess_exec(
+                'taskkill', '/PID', str(proc.pid), '/T', '/F',
+                stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+            try:
+                await asyncio.wait_for(killer.wait(), timeout=5)
+            except asyncio.TimeoutError:
+                killer.kill()
+                await killer.wait()
+        except OSError:
+            pass
         with contextlib.suppress(ProcessLookupError):
             proc.kill()
         await proc.wait()
@@ -1043,6 +1072,8 @@ async def _run_foreground(
     if sandbox is not None:
         env["PATH"] = os.environ.get("PATH", env["PATH"])
         env["TMPDIR"] = str(sandbox.temporary_dir or sandbox.settings_path.parent)
+        if IS_WINDOWS:
+            env['TEMP'] = env['TMP'] = env['TMPDIR']
     if isinstance(argv_or_command, str):
         proc = await asyncio.create_subprocess_shell(
             argv_or_command,
@@ -1059,6 +1090,7 @@ async def _run_foreground(
             cwd=workspace,
             env=env,
             start_new_session=sandbox is not None and os.name != "nt",
+            creationflags=getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0) if sandbox is not None and IS_WINDOWS else 0,
         )
     try:
         timed_out, out, err = await _collect_process_output(
@@ -1387,6 +1419,8 @@ async def run_command(
             if sandbox is not None:
                 env["PATH"] = os.environ.get("PATH", env["PATH"])
                 env["TMPDIR"] = str(sandbox.temporary_dir or sandbox.settings_path.parent)
+                if IS_WINDOWS:
+                    env['TEMP'] = env['TMP'] = env['TMPDIR']
             _launch_detached_background_job(job, env, sandbox=sandbox, cleanup_script=script)
             launched = True
         finally:

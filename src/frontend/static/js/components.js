@@ -13,19 +13,23 @@ async function refreshComponentControl(container) {
         if (!response.ok) throw new Error(data.error || '无法检查组件');
         const installing = data.state === 'installing';
         status.textContent = installing ? '正在下载并安装…' : data.state === 'failed' ? `安装失败：${data.detail}` : data.installed ? `${name === 'srt-system' ? '沙盒系统依赖' : name.toUpperCase()} 已安装` : `${name === 'srt-system' ? '沙盒系统依赖' : name.toUpperCase()} 尚未安装`;
-        if (name === 'srt' && data.missing.some(x => !x.startsWith('npm'))) {
+        if (name === 'srt' && data.missing.some(x => !x.startsWith('npm') && x !== 'srt-update')) {
             let dependencies = container.querySelector('[data-component="srt-system"]');
             if (!dependencies) {
                 container.insertAdjacentHTML('beforeend', componentControlMarkup('srt-system'));
                 dependencies = container.querySelector('[data-component="srt-system"]');
-                dependencies.querySelector('button').textContent = '安装系统依赖（需要服务器管理员权限）';
+                dependencies.querySelector('button').textContent = data.platform === 'win32' ? '初始化 Windows 沙盒（需管理员确认）' : '安装系统依赖（需要服务器管理员权限）';
                 refreshComponentControl(dependencies);
             }
         }
         if (!installing && data.missing.includes('uv')) status.textContent += '；未找到 uv，请检查服务器启动环境。';
-        if (!installing && data.missing.length && !data.missing.includes('uv')) status.textContent += `；缺少 ${data.missing.join('、')}，请在服务器安装${data.missing.some(x => x.startsWith('npm')) ? ' Node.js 20.11+（含 npm）' : '系统依赖'}。`;
-        if (name === 'srt' && data.platform === 'win32') status.textContent += '；Windows 还需管理员运行 srt windows-install（alpha）。';
-        button.hidden = data.installed || installing;
+        const ordinaryMissing = data.missing.filter(x => !['uv', 'windows-install', 'srt-update'].includes(x));
+        if (!installing && ordinaryMissing.length) status.textContent += `；缺少 ${ordinaryMissing.join('、')}，请在服务器安装${ordinaryMissing.some(x => x.startsWith('npm')) ? ' Node.js 20.11+（含 npm）' : '系统依赖'}。`;
+        if (!installing && data.missing.includes('srt-update')) status.textContent += '；请更新至包含 Windows 后端的 SRT 0.0.78+。';
+        if (!installing && data.missing.includes('windows-install')) status.textContent += '；需要在 Windows 主机初始化专用沙盒账号和网络隔离（会请求管理员确认）。';
+        if (name === 'srt-system' && data.platform === 'win32') button.textContent = '初始化 Windows 沙盒（需管理员确认）';
+        else if (data.needs_update) button.textContent = '更新沙盒组件';
+        button.hidden = (data.installed && !data.needs_update) || installing;
         button.disabled = !data.can_install;
         button.onclick = async () => {
             button.disabled = true;

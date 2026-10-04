@@ -4,11 +4,13 @@
 
 ## 平台与选择
 
-- `srt`：现有 Anthropic Sandbox Runtime。Linux 使用 bwrap，macOS 使用原生隔离。当前 ClawCross Windows 路径因资源限制未适配而拒绝执行；不能宣称 Windows 已通过测试。
+- `srt`：Anthropic Sandbox Runtime。Linux 使用 bwrap，macOS 使用原生隔离，Windows 使用 SRT 0.0.78+ 的专用账号、文件 ACL 和 WFP 网络隔离。Windows 命令通过原生 argv 接口进入隔离，再用嵌套 Job Object 限制资源；不经宿主 `.cmd` 解析用户命令。缺少组件、系统初始化或资源限制能力时拒绝执行。
 - `landlock`：Linux 内核 Landlock + libseccomp，直接在现有容器/虚拟机中执行，不创建容器或 user namespace，不改变 AppArmor。要求 ABI ≥ 6、x86_64/aarch64、非 root 账号。正式执行前验证所有过滤器，失败不 exec 用户命令。
 - `auto`：Linux 先以无副作用的 `true` 探测 SRT；失败时选择 Landlock。macOS/Windows 仍选择 SRT。显式选择 SRT 时不会擅自切换后端。
 
-Linux x86_64 真实内核与正式 `run_command` 已测试；aarch64、macOS、Windows 未在本服务器验证。
+Linux x86_64 真实内核与正式 `run_command` 已测试；aarch64、macOS、Windows 未在本服务器实测。Windows 增加独立 CI，验证真实 Job Object 和 SRT 接口契约；完整 SRT 隔离另有显式开启的真机测试，不能把接口模拟测试当作完整隔离验证。
+
+Windows 首次使用需要明确初始化：在沙盒组件设置中点击“初始化 Windows 沙盒（需管理员确认）”，或管理员运行 `srt windows-install`。SRT 创建专用账号并安装该账号的 WFP 网络规则，可能出现 UAC 确认；启动和执行命令不会自动安装或初始化。组件页面分别显示 npm 包与系统隔离是否就绪，旧包可显式更新。文件/网络策略、普通/严格等级及已有审批机制仍共用；初始化故障不触发路径/域名提权，不降级宿主执行。SRT Windows 后端仍为 alpha。
 
 ## 文件、网络与提权
 
@@ -46,6 +48,10 @@ Agent 只调用 `run_command`。前台权限失败时系统根据明确错误定
 ## 资源限制与边界
 
 硬限制：每进程 CPU 120 秒、地址空间 2 GiB、文件大小 128 MiB、FD 256。宿主监督器限制墙钟时间、输出并清理进程组。Linux Landlock/SRT 的进程/线程上限考虑相同 UID 当前用量加 64，因为 RLIMIT_NPROC 是共享账号限制，不能固定成 256 而导致繁忙服务器无法 fork；SRT 在进入 PID 隔离前计算宿主用量。
+
+上述 rlimit 适用于 Linux/macOS。Windows 使用 Job Object：每进程及整组用户态 CPU 时间 120 秒、每进程及整组提交内存 2 GiB、128 个进程，并限制命令墙钟时间。工作进程以挂起状态创建，设置限制并归入 Job 后才恢复；禁止 breakaway，关闭 Job handle 会终止剩余子进程。Windows 暂无与 RLIMIT_FSIZE/NOFILE 等价的每文件大小和 FD 限制，不提供工作区磁盘总额配额。命令超时/取消先尝试让 SRT 清理，再清理进程树。
+
+Windows 真机完整测试需先显式安装并初始化 SRT，然后在 PowerShell 运行：`$env:CLAWCROSS_WINDOWS_SRT_INTEGRATION='1'; python -m pytest test/test_windows_resource_limits.py test/test_windows_srt.py -q`。该测试只访问临时合成文件，不读取真实用户文件；普通 CI 不自动初始化 SRT 或更改网络规则。
 
 受控联网的临时 unit 同时使用 MemoryMax=2G、TasksMax=128、RuntimeMaxSec 与整组清理，限制任务及子进程的合计内存和进程数。CPU 仍为每进程时间上限，磁盘仍为每文件上限，不提供 CPU 占用率或工作区总容量配额；没有 systemd 的离线模式仅使用基础 rlimit。Landlock 禁止 setsid/setpgid，阻止子进程脱离受监督进程组。
 

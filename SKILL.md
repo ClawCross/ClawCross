@@ -537,14 +537,14 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-10-04T12:28:33.594669+00:00`
+- Updated at: `2026-10-04T13:40:21.495819+00:00`
 - Strategy: `harden`
-- Heuristic candidate: `blended-verification-loop-workspace-preflight-approval-auth`
-- Heuristic score: `0.685`
+- Heuristic candidate: `blended-verification-loop-approval-auth-workspace-preflight`
+- Heuristic score: `0.552`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: (external failure context). Signals: verification-loop, workspace-preflight, approval-auth. stdout was used as fallback failure evidence.
+Command exited with code 1. Command: (external failure context). Signals: verification-loop, approval-auth, workspace-preflight. stdout was used as fallback failure evidence.
 
 ### Strategy Rationale
 
@@ -558,37 +558,38 @@ Command exited with code 1. Command: (external failure context). Signals: verifi
 ### Latest Error Excerpt
 
 ```text
-.......F.........F................................     [100%]
-=================================== FAILURES ===================================
-_ CompactSettingsTests.test_manual_compression_folds_all_eligible_history_with_a_large_window _
+.....sss..F......FF.F....F...F..F...FF.....F... [ 79%]
+............                                                             [100%]
+pytest: =================================== FAILURES ===================================
+_________ test_windows_command_uses_shared_policy_and_opaque_workload __________
 
-self = <test.test_compact_settings.CompactSettingsTests testMethod=test_manual_compression_folds_all_eligible_history_with_a_large_window>
+tmp_path = PosixPath('/tmp/pytest-of-ubuntu/pytest-23/test_windows_command_uses_shar0')
 
-    def test_manual_compression_folds_all_eligible_history_with_a_large_window(self):
-        result = c.apply_compression(user_id='alice', session_id='s', messages=self.messages,
-            history_token_budget=800000, checkpoint_store_path=self.path, force=True,
-            settings=ContextSettings(preserve_recent_turns=2), summarizer=lambda *a: 'key decisions')
-        self.assertTrue(result.triggered)
->       self.assertEqual(result.compacted_until, len(self.messages) - 8)
-E       AssertionError: 43 != 40
+    def test_windows_command_uses_shared_policy_and_opaque_workload(tmp_path):
+        workspace = tmp_path / 'workspace'; workspace.mkdir()
+        controls = tmp_path / 'controls'; controls.mkdir()
+        shim, _ = install_fixture(tmp_path)
+        command = 'echo "中文 & spaces" & echo %PATH%'
+        def private_file(prefix):
+            fd, path = tempfile.mkstemp(prefix=prefix, suffix='.json', dir=controls)
+            return fd, Path(path)
+        with patch.object(sandbox.sys, 'platform', 'win32'), \
+                patch.object(sandbox.platform, 'machine', return_value='AMD64'), \
+                patch.object(sandbox.shutil, 'which', return_value='node.exe'), \
+                patch.object(sandbox, '_srt_binary', return_value=str(shim)), \
+                patch.object(sandbox, 'validate_workspace_root'), \
+                patch.object(sandbox, 'protected_control_paths', return_value=[controls]), \
+                patch.object(sandbox, '_command_settings_file', side_effect=private_file):
+>           call = sandbox.build_srt_command(root=workspace, cwd=workspace, command=command,
+                language='shell', python_executable=sys.executable, allowed_domains=['example.com:443'])
 
-test/test_compact_settings.py:244: AssertionError
-____ CompactSettingsTests.test_summary_cap_applies_without_runtime_settings ____
+test/test_windows_srt.py:57:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src/backend/webot/command_sandbox.py:503: in build_srt_command
+    json.dump(config, handle, ensure_ascii=False)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
-self = <test.test_compact_settings.CompactSettingsTests testMethod=test_summary_cap_applies_without_runtime_settings>
-
-    def test_summary_cap_applies_without_runtime_settings(self):
-        result = c.apply_compression(user_id="alice", session_id="s", messages=self.messages,
-            history_token_budget=6000, checkpoint_store_path=self.path, preserve_recent=4,
-            summarizer=lambda *a: "中" * 4000)
-        self.assertTrue(result.triggered)
->       self.assertLessEqual(c._approx_tokens(result.view[0].content), result.metadata["target_tokens"] // 3)
-E       AssertionError: 480 not less than or equal to 200
-
-test/test_compact_settings.py:227: AssertionError
-=========================== short test summary info ============================
-FAILED test/test_compact_settings.py::CompactSettingsTests::test_manual_compression_folds_all_eligible_history_with_a_large_window
-FAILED test/test_compact_settings.py::CompactSettingsTests::test_ ...[truncated]
+obj = {'network': {'allowedDomains': ['example.com:443'], 'deniedDomains': [], ' ...[truncated]
 ```
 
 ### Governance Snapshot
@@ -611,15 +612,16 @@ FAILED test/test_compact_settings.py::CompactSettingsTests::test_ ...[truncated]
 
 ### Recent Evidence
 
-- `2026-10-04T12:28:33.594669+00:00` `repo-skill` — .......F.........F................................     [100%]
-=================================== FAILURES =================================== ...[truncated]
+- `2026-10-04T13:40:21.495819+00:00` `repo-skill` — .....sss..F......FF.F....F...F..F...FF.....F... [ 79%]
+............                                                             [100%]
+pytest: ======= ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `blended-verification-loop-workspace-preflight-approval-auth` score `0.685` — Blend the strongest recent failure patterns (intent `repair`)
-- `verification-loop-4` score `0.645` — Tighten verification loops (intent `repair`)
-- `workspace-preflight-1` score `0.475` — Add repo/workspace preflight checks (intent `repair`)
-- `approval-auth-1` score `0.475` — Preflight auth and approval constraints (intent `repair`)
+- `blended-verification-loop-approval-auth-workspace-preflight` score `0.552` — Blend the strongest recent failure patterns (intent `repair`)
+- `verification-loop-5` score `0.512` — Tighten verification loops (intent `repair`)
+- `approval-auth-5` score `0.512` — Preflight auth and approval constraints (intent `repair`)
+- `workspace-preflight-4` score `0.494` — Add repo/workspace preflight checks (intent `repair`)
 
 ### Local State Snapshot
 
