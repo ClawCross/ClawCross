@@ -12615,25 +12615,25 @@ async function uploadTeam(input) {
     const file = input.files[0];
     if (!file) return;
     
-    if (!confirm(`确定要上传并恢复团队快照吗？这将覆盖当前团队的内部Agent配置。`)) {
-        input.value = '';
-        return;
-    }
-
+    const match = file.name.match(/^team_(.+?)(?:_snapshot|\.zip)/);
+    const zh = String(localStorage.getItem('clawcross_lang') || document.documentElement.lang || 'zh').startsWith('zh');
+    const teamName = (prompt(zh ? '导入并新建团队，请输入团队名称：' : 'Name the team to create from this import:', match ? match[1] : '') || '').trim();
+    if (!teamName) { input.value = ''; return; }
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('team', currentGroupId);
+    formData.append('team', teamName);
 
     try {
         const resp = await teamSnapshotUploadZipWithProgress(file, formData);
+        if (!resp) { input.value = ''; return; }
         if (!resp.ok) {
             const err = await resp.json();
             alert('上传失败: ' + (err.error || '未知错误'));
             return;
         }
-        alert('上传成功！');
-        loadGroupList();
-        loadTeamMembers();
+        alert('导入成功！');
+        await loadGroupList();
+        await openGroup(teamName);
     } catch (e) {
         alert('上传失败: ' + e.message);
     }
@@ -12845,11 +12845,12 @@ function _parseHubInput(raw) {
 
 async function _performHubImportFromUrl(url, teamName, options = {}) {
     const { silent = false, closeModal = false } = options;
-    const resp = await fetch('/teams/snapshot/import_from_url', {
+    const resp = await teamSnapshotImport(replace => fetch('/teams/snapshot/import_from_url', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, team: teamName })
-    });
+        body: JSON.stringify({ url, team: teamName, replace })
+    }), teamName);
+    if (!resp) return false;
     if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
         throw new Error(err.error || resp.statusText || 'import failed');

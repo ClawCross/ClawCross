@@ -537,14 +537,14 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-10-04T17:31:49.736468+00:00`
+- Updated at: `2026-10-04T18:06:16.194368+00:00`
 - Strategy: `harden`
-- Heuristic candidate: `blended-verification-loop-structured-output-approval-auth`
-- Heuristic score: `0.652`
+- Heuristic candidate: `blended-verification-loop-structured-output`
+- Heuristic score: `0.73`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: (external failure context). Signals: verification-loop, structured-output, approval-auth. stdout was used as fallback failure evidence.
+Command exited with code 1. Command: (external failure context). Signals: verification-loop, structured-output. stdout was used as fallback failure evidence.
 
 ### Strategy Rationale
 
@@ -558,53 +558,35 @@ Command exited with code 1. Command: (external failure context). Signals: verifi
 ### Latest Error Excerpt
 
 ```text
-......F                                                              [100%]
+F.......................                                             [100%]
 =================================== FAILURES ===================================
-______ OasisRuntimeTests.test_saved_yaml_parallel_agents_and_human_resume ______
+_ TeamSnapshotUploadTests.test_failed_replacement_restores_original_team_and_skills _
 
-self = <test.test_oasis_runtime.OasisRuntimeTests testMethod=test_saved_yaml_parallel_agents_and_human_resume>
+self = <test.test_team_snapshot_upload.TeamSnapshotUploadTests testMethod=test_failed_replacement_restores_original_team_and_skills>
 
-        def test_saved_yaml_parallel_agents_and_human_resume(self):
-            schedule = """version: 2
-    repeat: false
-    discussion: false
-    plan:
-      - id: start
-        manual:
-          author: host
-          content: RUNTIME_START
-      - id: pair
-        parallel:
-          - agent: Writer
-          - agent: Reviewer
-      - id: confirm
-        human:
-          author: host
-          prompt: continue?
-      - id: finish
-        manual:
-          author: host
-          content: RUNTIME_FINISHED
-    edges:
-      - [start, pair]
-      - [pair, confirm]
-      - [confirm, finish]
-    """
-            saved = self.client.post("/workflows", json={
-                "user_id": "tester", "team": "runtime", "name": "smoke", "schedule_yaml": schedule,
-            })
-            self.assertEqual(saved.status_code, 200, saved.text)
-            workflow = self.teams.folder("tester", "runtime") / "oasis/yaml/smoke.yaml"
-            self.assertTrue(workflow.is_file())
-            response = self.client.post("/topics", json={
-                "question": "runtime test", "user_id": "tester", "team": "runtime",
-                "schedule_file": str(workflow), "discussion": False, "max_rounds": 1,
-            })
->           self.assertEqual(response.status_code, 200, response.text)
-E           AssertionError: 500 != 200 : {"detail":"Engine init failed: LLM_MODEL is not configured. Set it in config/.env, or run src/backend/ops/setup/configure.py --auto-model and then configure LLM_MODEL <model>."}
-
-test/test_oasis_runtime.py:156: AssertionError
-=========================== short test summary info =================== ...[truncated]
+    def test_failed_replacement_restores_original_team_and_skills(self):
+        import_entries(self.teams, "upload-user", "demo", [{"name": "Writer", "persona": "original", "is_primary": True}], [])
+        before = self.teams.members("upload-user", "demo")
+        folder = self.teams.folder("upload-user", "demo")
+        (folder / "original.json").write_text('{}')
+        webot_skills.create_skill("upload-user", name="original", content=_skill_content("original", "old"), team="demo")
+        with mock.patch("teams.snapshot.restore_skills_from_team_dir", side_effect=RuntimeError("restore failed")):
+            response = self.upload({"internal_agents.json": '[{"name":"New"}]'}, replace=True)
+        self.assertEqual(response.status_code, 500)
+>       self.assertEqual(self.teams.members("upload-user", "demo"), before)
+E       AssertionError: Lists differ: [Memb[194 chars]at=1791137059.4139214), role='Writer', is_lead=True, extra={})] != [Memb[194 chars]at=1791137059.3681393), role='Writer', is_lead=True, extra={})]
+E
+E       First differing element 0:
+E       Membe[192 chars]_at=1791137059.4139214), role='Writer', is_lead=True, extra={})
+E       Membe[192 chars]_at=1791137059.3681393), role='Writer', is_lead=True, extra={})
+E
+E         [Member(agent=Agent(agent_id='ag_hc9e3dxrxn',
+E                             owner='upload-user',
+E                             name='Writer',
+E                             driver='webot',
+E                             config={'persona': 'original', 'teams': ['demo']},
+E                             runtime={},
+E ...[truncated]
 ```
 
 ### Governance Snapshot
@@ -627,15 +609,14 @@ test/test_oasis_runtime.py:156: AssertionError
 
 ### Recent Evidence
 
-- `2026-10-04T17:31:49.736468+00:00` `repo-skill` — ......F                                                              [100%]
+- `2026-10-04T18:06:16.194368+00:00` `repo-skill` — F.......................                                             [100%]
 =================================== FAILURES ===================== ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `blended-verification-loop-structured-output-approval-auth` score `0.652` — Blend the strongest recent failure patterns (intent `repair`)
-- `verification-loop-4` score `0.612` — Tighten verification loops (intent `repair`)
-- `structured-output-2` score `0.515` — Harden structured-output handling (intent `repair`)
-- `approval-auth-1` score `0.467` — Preflight auth and approval constraints (intent `repair`)
+- `blended-verification-loop-structured-output` score `0.73` — Blend the strongest recent failure patterns (intent `repair`)
+- `verification-loop-4` score `0.69` — Tighten verification loops (intent `repair`)
+- `structured-output-1` score `0.486` — Harden structured-output handling (intent `repair`)
 
 ### Local State Snapshot
 

@@ -4855,9 +4855,7 @@ def download_team_snapshot():
 
 @app.route("/teams/snapshot/upload", methods=["POST"])
 def upload_team_snapshot():
-    """Upload and restore a team snapshot from a zip file.
-    Extracts the assets to the team folder and makes the listed members agents of this user.
-    """
+    """Import a snapshot as a new team; same-name replacement requires replace=true."""
     user_id = session.get("user_id", "")
     
     # Get team name from form data
@@ -4882,9 +4880,10 @@ def upload_team_snapshot():
     
     team_dir = os.path.join(str(USER_FILES_DIR), user_id, "teams", team)
     
-    # Create team directory if it doesn't exist
-    os.makedirs(team_dir, exist_ok=True)
-    
+    replace = request.form.get("replace", "").lower() in {"true", "1"}
+    from teams.snapshot import TeamExistsError, install_snapshot
+    from scheduler.internal_alarm import load_alarm_tasks
+
     import zipfile
     import tempfile
     import shutil
@@ -4933,38 +4932,25 @@ def upload_team_snapshot():
         os.unlink(temp_path)
         temp_path = None
         
-        # The package lists the team's members; this machine gives them runtimes.
-        from teams.manifest import EXTERNAL_FILE, INTERNAL_FILE, import_entries, imported_agent_id, read_folder
+        old_alarms = {
+            task_id: info for task_id, info in load_alarm_tasks().items()
+            if replace and isinstance(info, dict) and info.get("user_id") == user_id and info.get("team") == team
+        }
+        members, skill_restore_result = install_snapshot(
+            _teams(), user_id, team, Path(assets_extract_root), Path(skills_extract_root), replace=replace,
+        )
 
-        assets_root = Path(assets_extract_root)
-        internal_entries, external_entries = read_folder(assets_root)
-        has_members = any((assets_root / name).is_file() for name in (INTERNAL_FILE, EXTERNAL_FILE))
-        names = [entry["name"].strip().casefold() for entry in internal_entries + external_entries]
-        if len(names) != len(set(names)):
-            raise ValueError("Team member names must be unique")
-        # Parse all manifests before replacing existing assets or memberships.
-        # Persona libraries must be in place before resolving member tags.
-        for source in assets_root.rglob("*"):
-            if source.is_file() and source.name not in (INTERNAL_FILE, EXTERNAL_FILE):
-                target = Path(team_dir) / source.relative_to(assets_root)
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(source, target)
-        teams = _teams()
-        if has_members:
-            # External members get this machine's agent ids, stable per team and name.
-            for entry in external_entries:
-                entry["global_name"] = imported_agent_id(team, entry, external_entries)
-            members = import_entries(teams, user_id, team, internal_entries, external_entries)
-        else:
-            teams.create(user_id, team)
-            members = teams.members(user_id, team)
-
-        skill_restore_result = restore_skills_from_team_dir(skills_extract_root, user_id, team)
-        
         # --- Restore internal scheduler alarms from cron_jobs.json ---
         cron_jobs_path = os.path.join(team_dir, "cron_jobs.json")
         cron_restored_total = 0
         cron_errors = []
+        for task_id in old_alarms:
+            try:
+                deleted = requests.delete(f"{SCHEDULER_TASKS_URL}/{task_id}", timeout=10)
+                if deleted.status_code not in (200, 404):
+                    cron_errors.append(f"Failed to remove old team alarm {task_id}: HTTP {deleted.status_code}")
+            except requests.RequestException as exc:
+                cron_errors.append(f"Failed to remove old team alarm {task_id}: {exc}")
         
         if os.path.exists(cron_jobs_path):
             try:
@@ -5002,6 +4988,8 @@ def upload_team_snapshot():
             "skill_restore": skill_restore_result,
             "cron_errors": cron_errors if cron_errors else None,
         })
+    except TeamExistsError as e:
+        return jsonify({"error": str(e), "code": "team_exists", "team": team}), 409
     except zipfile.BadZipFile:
         return jsonify({"error": "Invalid zip file"}), 400
     except ValueError as e:
@@ -5024,6 +5012,7 @@ def import_team_from_url():
     data = request.get_json(force=True, silent=True) or {}
     url = (data.get("url") or "").strip()
     team = (data.get("team") or "").strip()
+    replace = data.get("replace") is True
 
     if not url:
         return jsonify({"error": "url is required"}), 400
@@ -5047,6 +5036,7 @@ def import_team_from_url():
         resp = c.post("/teams/snapshot/upload", data={
             "team": team,
             "file": (io.BytesIO(zip_bytes), "team_import.zip"),
+            "replace": "true" if replace else "false",
         }, content_type="multipart/form-data")
 
     return resp.data, resp.status_code, dict(resp.headers)

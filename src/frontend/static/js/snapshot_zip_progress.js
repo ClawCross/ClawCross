@@ -117,6 +117,27 @@
       });
   }
 
+  async function teamSnapshotImport(doImport, team) {
+    async function finish(response) {
+      if (response.ok) {
+        var result = await response.clone().json().catch(function () { return {}; });
+        if (result.cron_errors && result.cron_errors.length) {
+          window.alert((_langZh() ? '团队导入完成，但部分闹钟未处理：\n' : 'Team imported, but some alarms need attention:\n') + result.cron_errors.join('\n'));
+        }
+      }
+      return response;
+    }
+    var response = await doImport(false);
+    if (response.status !== 409) return finish(response);
+    var error = await response.clone().json().catch(function () { return {}; });
+    if (error.code !== 'team_exists') return response;
+    var message = _langZh()
+      ? '团队「' + team + '」已存在。替换会清除旧团队的成员关系、工作流、团队技能和闹钟，并创建新成员会话；原 Agent 和聊天记录保留在 Agent 中心。确定替换？'
+      : 'Team "' + team + '" already exists. Replace its membership, workflows, team skills and alarms with a fresh import? New members get new sessions; previous agents and chats stay in Agent Center.';
+    if (!window.confirm(message)) return null;
+    return finish(await doImport(true));
+  }
+
   /**
    * Show panel while reading zip, then run upload + progress (single entry for upload UIs).
    * @param {File} file
@@ -144,14 +165,15 @@
       });
     }).then(function () {
       return teamSnapshotUploadWithProgress(function () {
-        return fetch('/teams/snapshot/upload', {
-          method: 'POST',
-          body: formData,
-        });
+        return teamSnapshotImport(function (replace) {
+          formData.set('replace', replace ? 'true' : 'false');
+          return fetch('/teams/snapshot/upload', { method: 'POST', body: formData });
+        }, formData.get('team'));
       });
     });
   }
 
+  window.teamSnapshotImport = teamSnapshotImport;
   window.teamSnapshotUploadWithProgress = teamSnapshotUploadWithProgress;
   window.teamSnapshotUploadZipWithProgress = teamSnapshotUploadZipWithProgress;
 })();

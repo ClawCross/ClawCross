@@ -1,8 +1,8 @@
 {
   "type": "ValidationReport",
   "schema_version": "clawcross.skill-evolution/1.0",
-  "id": "vr_20261004173149736315",
-  "candidate_id": "blended-verification-loop-structured-output-approval-auth",
+  "id": "vr_20261004180616194247",
+  "candidate_id": "blended-verification-loop-structured-output",
   "skill_name": "repo-skill",
   "strategy": "harden",
   "env_fingerprint": {
@@ -14,18 +14,18 @@
     "user_id": "",
     "skill_name": "repo-skill",
     "present_env_keys": [],
-    "captured_at": "2026-10-04T17:31:49.736280+00:00"
+    "captured_at": "2026-10-04T18:06:16.194208+00:00"
   },
   "commands": [
     {
       "command": "(external failure context)",
       "ok": false,
-      "stdout": "......F                                                              [100%]\n=================================== FAILURES ===================================\n______ OasisRuntimeTests.test_saved_yaml_parallel_agents_and_human_resume ______\n\nself = <test.test_oasis_runtime.OasisRuntimeTests testMethod=test_saved_yaml_parallel_agents_and_human_resume>\n\n        def test_saved_yaml_parallel_agents_and_human_resume(self):\n            schedule = \"\"\"version: 2\n    repeat: false\n    discussion: false\n    plan:\n      - id: start\n        manual:\n          author: host\n          content: RUNTIME_START\n      - id: pair\n        parallel:\n          - agent: Writer\n          - agent: Reviewer\n      - id: confirm\n        human:\n          author: host\n          prompt: continue?\n      - id: finish\n        manual:\n          author: host\n          content: RUNTIME_FINISHED\n    edges:\n      - [start, pair]\n      - [pair, confirm]\n      - [confirm, finish]\n    \"\"\"\n            saved = self.client.post(\"/workflows\", json={\n                \"user_id\": \"tester\", \"team\": \"runtime\", \"name\": \"smoke\", \"schedule_yaml\": schedule,\n            })\n            self.assertEqual(saved.status_code, 200, saved.text)\n            workflow = self.teams.folder(\"tester\", \"runtime\") / \"oasis/yaml/smoke.yaml\"\n            self.assertTrue(workflow.is_file())\n            response = self.client.post(\"/topics\", json={\n                \"question\": \"runtime test\", \"user_id\": \"tester\", \"team\": \"runtime\",\n                \"schedule_file\": str(workflow), \"discussion\": False, \"max_rounds\": 1,\n            })\n>           self.assertEqual(response.status_code, 200, response.text)\nE           AssertionError: 500 != 200 : {\"detail\":\"Engine init failed: LLM_MODEL is not configured. Set it in config/.env, or run src/backend/ops/setup/configure.py --auto-model and then configure LLM_MODEL <model>.\"}\n\ntest/test_oasis_runtime.py:156: AssertionError\n=========================== short test summary info ============================\nFAILED test/test_oasis_runtime.py::OasisRuntimeTests::test_saved_yaml_parallel_agents_and_human_resume\n1 failed, 6 passed, 4 subtests passed in 4.46s",
+      "stdout": "F.......................                                             [100%]\n=================================== FAILURES ===================================\n_ TeamSnapshotUploadTests.test_failed_replacement_restores_original_team_and_skills _\n\nself = <test.test_team_snapshot_upload.TeamSnapshotUploadTests testMethod=test_failed_replacement_restores_original_team_and_skills>\n\n    def test_failed_replacement_restores_original_team_and_skills(self):\n        import_entries(self.teams, \"upload-user\", \"demo\", [{\"name\": \"Writer\", \"persona\": \"original\", \"is_primary\": True}], [])\n        before = self.teams.members(\"upload-user\", \"demo\")\n        folder = self.teams.folder(\"upload-user\", \"demo\")\n        (folder / \"original.json\").write_text('{}')\n        webot_skills.create_skill(\"upload-user\", name=\"original\", content=_skill_content(\"original\", \"old\"), team=\"demo\")\n        with mock.patch(\"teams.snapshot.restore_skills_from_team_dir\", side_effect=RuntimeError(\"restore failed\")):\n            response = self.upload({\"internal_agents.json\": '[{\"name\":\"New\"}]'}, replace=True)\n        self.assertEqual(response.status_code, 500)\n>       self.assertEqual(self.teams.members(\"upload-user\", \"demo\"), before)\nE       AssertionError: Lists differ: [Memb[194 chars]at=1791137059.4139214), role='Writer', is_lead=True, extra={})] != [Memb[194 chars]at=1791137059.3681393), role='Writer', is_lead=True, extra={})]\nE       \nE       First differing element 0:\nE       Membe[192 chars]_at=1791137059.4139214), role='Writer', is_lead=True, extra={})\nE       Membe[192 chars]_at=1791137059.3681393), role='Writer', is_lead=True, extra={})\nE       \nE         [Member(agent=Agent(agent_id='ag_hc9e3dxrxn',\nE                             owner='upload-user',\nE                             name='Writer',\nE                             driver='webot',\nE                             config={'persona': 'original', 'teams': ['demo']},\nE                             runtime={},\nE                             created_at=1791137059.364727,\nE       -                     updated_at=1791137059.4139214),\nE       ?                                           ^   ^^^\nE       \nE       +                     updated_at=1791137059.3681393),\nE       ?                                           ^^^   ^\nE       \nE                 role='Writer',\nE                 is_lead=True,\nE                 extra={})]\n\ntest/test_team_snapshot_upload.py:179: AssertionError\n=========================== short test summary info ============================\nFAILED test/test_team_snapshot_upload.py::TeamSnapshotUploadTests::test_failed_replacement_restores_original_team_and_skills\n1 failed, 23 passed, 4 subtests passed in 1.50s",
       "stderr": ""
     }
   ],
   "overall_ok": false,
   "duration_ms": null,
-  "created_at": "2026-10-04T17:31:49.736336+00:00",
-  "asset_id": "sha256:cb88b0b8b876cc2f4fe1d6717bca31629c0831548a6e622c37052b42da9352f9"
+  "created_at": "2026-10-04T18:06:16.194268+00:00",
+  "asset_id": "sha256:907dffa926cd3e20e315b0e711114598cd7bc40f3965ef77cd8f35caa4b79f10"
 }
