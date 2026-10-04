@@ -32,8 +32,9 @@ def database():
 
 
 def allowed(user_id: str) -> bool:
-    """Remote enumeration is opt-in per host operator, never all users."""
-    return user_id in [item.strip() for item in os.getenv('CLAWCROSS_NATIVE_SESSION_USERS', '').split(',') if item.strip()]
+    """Authenticated users can import by default; an explicit host list can narrow it."""
+    users = [item.strip() for item in os.getenv('CLAWCROSS_NATIVE_SESSION_USERS', '').split(',') if item.strip()]
+    return bool(user_id) and (not users or user_id in users)
 
 
 def _foreign_native_ids(platform: str, owner: str, store=None) -> set[str]:

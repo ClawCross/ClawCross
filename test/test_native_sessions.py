@@ -140,14 +140,18 @@ class NativeSessionTests(unittest.IsolatedAsyncioTestCase):
         rows = await native_sessions.catalog('bob', 'codex', adapter=self.adapter)
         self.assertEqual(len(rows['sessions']), 1)
 
-    async def test_routes_require_host_proof_or_explicit_remote_user(self):
+    async def test_routes_allow_all_authenticated_users_by_default(self):
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
         from agents.routes import create_agents_router
         app=FastAPI();app.include_router(create_agents_router(internal_token='internal',verify_password=lambda u,p:p=='pass',store=self.store,gateway=AsyncMock()))
         client=TestClient(app)
         with patch.dict('os.environ', {'CLAWCROSS_NATIVE_SESSION_USERS':''}), patch.object(native_sessions,'catalog',new=self.adapter.list_native_sessions):
-            self.assertEqual(client.get('/v1/agents/native-sessions',headers={'Authorization':'Bearer alice:pass'}).status_code,403)
-            self.assertEqual(client.get('/v1/agents/native-sessions',headers={'Authorization':'Bearer alice:pass','X-ClawCross-Host-Browse':'internal'}).status_code,403)
+            self.assertEqual(client.get('/v1/agents/native-sessions',headers={'Authorization':'Bearer alice:pass'}).status_code,200)
+            self.assertEqual(client.get('/v1/agents/native-sessions',headers={'Authorization':'Bearer bob:pass'}).status_code,200)
+            self.assertEqual(client.get('/v1/agents/native-sessions').status_code,401)
             result=client.get('/v1/agents/native-sessions',headers={'Authorization':'Bearer internal:alice','X-ClawCross-Host-Browse':'internal'})
             self.assertEqual(result.status_code,200,result.text)
+        with patch.dict('os.environ', {'CLAWCROSS_NATIVE_SESSION_USERS':'alice'}), patch.object(native_sessions,'catalog',new=self.adapter.list_native_sessions):
+            self.assertEqual(client.get('/v1/agents/native-sessions',headers={'Authorization':'Bearer bob:pass'}).status_code,403)
+            self.assertEqual(client.get('/v1/agents/native-sessions',headers={'Authorization':'Bearer alice:pass'}).status_code,200)
