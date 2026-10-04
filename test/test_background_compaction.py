@@ -15,6 +15,27 @@ from webot.checkpoint_repository import get_context_compaction
 
 
 class BackgroundCompactionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_one_tool_turn_compacts_to_a_small_target_without_waiting_for_overflow(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            manager = BackgroundCompressionManager(str(Path(tmp) / 'context.db'))
+            messages = [HumanMessage(content='inspect files')]
+            for i in range(40):
+                messages.extend([AIMessage(content='', tool_calls=[{'name':'read_file','args':{},'id':str(i)}]),
+                                 ToolMessage(content='中' * 1000, tool_call_id=str(i))])
+            with patch('webot.engine.background_compaction.make_llm_summarizer', return_value=lambda *a: 'key evidence'), \
+                    patch('webot.engine.background_compaction.fetch_thread_message_count', AsyncMock(return_value=len(messages))):
+                record = await manager.prepare_for_model(user_id='alice', session_id='s', messages=messages,
+                    history_token_budget=1_000_000, preserve_recent=8,
+                    settings=ContextSettings(trigger_tokens=20_000), prefix_tokens=100,
+                    output_reserve=500, context_window=1_000_000)
+                self.assertIsNone(record)
+                await manager._tasks['alice#s']
+            record = get_context_compaction(manager.checkpoint_store_path, 'alice#s')
+            self.assertEqual(record.metadata['target_tokens'], 10_000)
+            self.assertLessEqual(record.metadata['after_tokens'], 10_000)
+            self.assertTrue(record.metadata['retention_limited_by_budget'])
+            await manager.close()
+
     async def test_critical_compaction_failure_is_propagated(self):
         manager = BackgroundCompressionManager('/tmp/unused-context.db')
         with patch('webot.engine.background_compaction.get_context_compaction', return_value=None), \

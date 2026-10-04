@@ -1,8 +1,8 @@
 {
   "type": "ValidationReport",
   "schema_version": "clawcross.skill-evolution/1.0",
-  "id": "vr_20261004110229934519",
-  "candidate_id": "blended-verification-loop-structured-output-workspace-preflight",
+  "id": "vr_20261004120544522901",
+  "candidate_id": "blended-verification-loop-structured-output",
   "skill_name": "repo-skill",
   "strategy": "harden",
   "env_fingerprint": {
@@ -14,18 +14,18 @@
     "user_id": "",
     "skill_name": "repo-skill",
     "present_env_keys": [],
-    "captured_at": "2026-10-04T11:02:29.934446+00:00"
+    "captured_at": "2026-10-04T12:05:44.522843+00:00"
   },
   "commands": [
     {
       "command": "(external failure context)",
       "ok": false,
-      "stdout": ".................                                    [100%]\n=================================== FAILURES ===================================\n_ ConfigurationToolWaitTests.test_real_mcp_process_waits_for_backend_save_or_cancel (channel=False, cancel=True) _\n\nself = <test.test_configuration_tool_wait.ConfigurationToolWaitTests testMethod=test_real_mcp_process_waits_for_backend_save_or_cancel>\n\n    async def test_real_mcp_process_waits_for_backend_save_or_cancel(self):\n        script = Path(__file__).resolve().parents[1] / 'src/backend/webot/mcp/notifier.py'\n        client = MultiServerMCPClient({'notifier': {\n            'command':sys.executable, 'args':[str(script)], 'transport':'stdio',\n            'env':{'CLAWCROSS_HOME':str(self.root), 'CLAWCROSS_FORM_WAIT_SECONDS':'30'},\n        }})\n        tools = await client.get_tools()\n        node = DirectToolNode(tools)\n        for channel, cancel in ((False, True), (True, False)):\n            with self.subTest(channel=channel, cancel=cancel):\n                name = 'request_channel_setup' if channel else 'request_configuration'\n                call = {'name':name, 'args':{'username':'alice','session_id':'one',\n                        **({'channel':'telegram'} if channel else {'topic':'model'})},\n                        'id':'mcp-original-call','type':'tool_call'}\n                task = asyncio.create_task(node.ainvoke({'messages':[AIMessage(content='',tool_calls=[call])]}, {}))\n                self.addAsyncCleanup(self.stop_task, task)\n                request = await self.pending()\n                self.assertFalse(task.done())\n                setup.submit('alice', request['id'], {} if cancel else {'token':'PRIVATE_MCP_TOKEN'}, cancel=cancel)\n                message = (await asyncio.wait_for(task, 15))['messages'][0]\n                self.assertEqual(message.tool_call_id, 'mcp-original-call')\n>               self.assertEqual(json.loads(message.content)['status'], 'cancelled' if cancel else 'completed')\n                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n\ntest/test_configuration_tool_wait.py:139: \n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ \n\ns = [{'type': 'text', 'text': '{\"id\": \"config-ccb9a2be21364d7a967a6041a584d897\", \"topic\": \"model\", \"status\": \"cancelled\", \"message\": \"用户已取消，未保存设置。\"}', 'id': 'lc_5ba3d15f-5231-4fae-b49e-8f0dcf31fc3a'}]\ncls = None, object_hook = None, parse_float = None, parse_int = None\nparse_constant = None, object_pairs_hook = None, kw = {}\n\n    def loads(s, *, cls=None, object_hook=None, parse_float=None,\n            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):\n        \"\"\"Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance\n        containing a JSON document) to a Python object.\n    \n        ``object_hook`` is an optional function that will be called with the\n        result of any object literal decode (a ``dict``). The return value of\n        ``object_hook`` will be used instead of the ``dict``. This feature\n        can be used to implement custom decoders (e.g. JSON-RPC class hinting).\n    \n        ``object_pairs_hook`` is an optional function that will be called with the\n        result of any object literal decoded with an ordered list of pairs.  The\n        return value of ``object_pairs_hook`` will be used instead of the ``dict``.\n        This feature can be used to implement custom decoders.  If ``object_hook``\n        is also defined, the ``object_pairs_hook`` takes priority.\n    \n        ``parse_float``, if specified, will be called with the string\n        of every JSON float to be decoded. By default this is equivalent to\n        float(num_str). This can be used to use another datatype or parser\n        for JSON floats (e.g. decimal.Decimal).\n    \n        ``parse_int``, if specified, will be called with the string\n        of every JSON int to be decoded. By default this is equivalent to\n        int(num_str). This can be used to use another datatype or parser ...[truncated]",
+      "stdout": "Restricted execution test stalled after 21 cases. The same isolated test suite passed outside the restricted execution environment: 45 passed, 18 subtests passed in 2.67s.\nThe first cleanup script tried parsing the ps header as a PID: ValueError: invalid literal for int() with base 10: PID. Fixed by matching the known numeric PID as a string.\nRun background compaction tests that use cross-thread asyncio callbacks with local event-loop communication permitted. Always skip process table headers and match only the task-specific test command when cleaning up.",
       "stderr": ""
     }
   ],
   "overall_ok": false,
   "duration_ms": null,
-  "created_at": "2026-10-04T11:02:29.934546+00:00",
-  "asset_id": "sha256:e99132d1c98d748471163ca0f697f31b7bc3946212272a78601806ba19f071bf"
+  "created_at": "2026-10-04T12:05:44.522931+00:00",
+  "asset_id": "sha256:64d7931bfe33c37982923f386e233769e276ea30a4e1feab6dad1e40b1a1fae0"
 }

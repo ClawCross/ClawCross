@@ -15,7 +15,7 @@ from webot.compression import apply_compression, commit_prepared_compression, ma
 from webot.context_compressor import estimate_messages_tokens
 from webot.policy import get_tool_policy, run_tool_policy_hooks
 from webot.runtime import effective_session_mode
-from webot.runtime_settings import ContextSettings
+from webot.runtime_settings import ContextSettings, resolve_compaction_target
 
 logger = logging.getLogger("webot.background_compaction")
 
@@ -143,7 +143,7 @@ class BackgroundCompressionManager:
         # complete window, since tools keep returning while we summarize.
         early_trigger = min(settings.trigger_tokens or max(1, int(history_token_budget * 0.70)),
                             max(1, int(measured_budget * .80)) if measured_budget else history_token_budget)
-        target = settings.target_tokens or max(1, int(history_token_budget * 0.55))
+        target = resolve_compaction_target(settings, history_token_budget)
         target = min(target, max(1, early_trigger - 1))
         prepared_settings = settings.model_copy(update={
             "trigger_tokens": early_trigger, "target_tokens": target,

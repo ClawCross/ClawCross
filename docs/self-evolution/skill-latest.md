@@ -1,12 +1,12 @@
 # Repository Skill Self-Evolution Report
 
 - Skill file: `/home/ubuntu/work2/ClawCross/SKILL.md`
-- Generated at: `2026-10-04T11:02:29.934694+00:00`
+- Generated at: `2026-10-04T12:05:44.523064+00:00`
 - Exit code: `1`
 
 ## Summary
 
-Command exited with code 1. Command: (external failure context). Signals: verification-loop, structured-output, workspace-preflight. stdout was used as fallback failure evidence.
+Command exited with code 1. Command: (external failure context). Signals: verification-loop, structured-output. stdout was used as fallback failure evidence.
 
 ## stderr
 
@@ -17,22 +17,7 @@ Command exited with code 1. Command: (external failure context). Signals: verifi
 ## stdout
 
 ```text
-.................                                    [100%]
-=================================== FAILURES ===================================
-_ ConfigurationToolWaitTests.test_real_mcp_process_waits_for_backend_save_or_cancel (channel=False, cancel=True) _
-
-self = <test.test_configuration_tool_wait.ConfigurationToolWaitTests testMethod=test_real_mcp_process_waits_for_backend_save_or_cancel>
-
-    async def test_real_mcp_process_waits_for_backend_save_or_cancel(self):
-        script = Path(__file__).resolve().parents[1] / 'src/backend/webot/mcp/notifier.py'
-        client = MultiServerMCPClient({'notifier': {
-            'command':sys.executable, 'args':[str(script)], 'transport':'stdio',
-            'env':{'CLAWCROSS_HOME':str(self.root), 'CLAWCROSS_FORM_WAIT_SECONDS':'30'},
-        }})
-        tools = await client.get_tools()
-        node = DirectToolNode(tools)
-        for channel, cancel in ((False, True), (True, False)):
-            with self.subTest(channel=channel, cancel=cancel):
-                name = 'request_channel_setup' if channel else 'request_configuration'
-                call = {'name':name, 'args':{'username':'alice','session_id':'one', ...[truncated]
+Restricted execution test stalled after 21 cases. The same isolated test suite passed outside the restricted execution environment: 45 passed, 18 subtests passed in 2.67s.
+The first cleanup script tried parsing the ps header as a PID: ValueError: invalid literal for int() with base 10: PID. Fixed by matching the known numeric PID as a string.
+Run background compaction tests that use cross-thread asyncio callbacks with local event-loop communication permitted. Always skip process table headers and match only the task-specific test command when cleaning up.
 ```

@@ -116,8 +116,8 @@ async function loadRuntimeSettingsScope() {
                 <label class="runtime-settings-field runtime-settings-capacity"><span>${text('上下文窗口（tokens）', 'Context window (tokens)')}</span><input type="number" data-section="context" data-key="context_window_tokens" min="0" max="4000000" value="${context.context_window_tokens}" class="runtime-settings-input"><small>${text('0 表示跟随本地模型目录；手动值优先，请填写服务商支持的容量', '0 follows the local model catalog. An explicit capacity overrides it.')}</small></label>
                 <div class="runtime-settings-grid">
                     ${number('trigger_tokens', '开始压缩时的 token 数', 'Trigger at (tokens)', 0, 4000000, autoHint)}
-                    ${number('target_tokens', '压缩后的目标 token 数', 'Compact to (tokens)', 0, 4000000, autoHint)}
-                    ${number('preserve_recent_turns', '保留最近几轮原文', 'Recent turns to retain', 1, 100, text('这些对话不参与摘要', 'Keep these turns outside the summary'))}
+                    ${number('target_tokens', '压缩后的目标 token 数', 'Compact to (tokens)', 0, 4000000, text('摘要与保留原文的总量；0 自动：历史预算的 10%，最多 10,000 tokens', 'Summary plus raw history; 0 = 10% of the history budget, capped at 10,000 tokens'))}
+                    ${number('preserve_recent_turns', '优先保留最近几轮原文', 'Recent turns to prefer', 1, 100, text('在 token 预算内优先保留；过长的轮次按完整工具交换边界继续压缩', 'Prefer these turns within the token budget; long turns can be summarized at complete tool exchange boundaries'))}
                     ${number('history_tokens', '历史上下文预算', 'History budget (tokens)', 0, 4000000, autoHint)}
                 </div>
                 ${instructions('context', 'preserve_instructions', context.preserve_instructions, '希望保留什么', 'What should be retained?', '例如：任务目标、已确认的决定、未完成的工作', 'For example: goals, decisions, and unfinished work')}
@@ -184,8 +184,8 @@ async function loadRuntimeSettingsScope() {
         if (typeof initComponentControls === 'function') initComponentControls(document.getElementById('runtime-settings-fields'));
         const compact = payload.last_compaction;
         status.textContent = compact && Number.isFinite(compact.before_tokens) && Number.isFinite(compact.after_tokens) ? runtimeSettingsText(
-            `上次压缩：约 ${compact.before_tokens} → ${compact.after_tokens} tokens，${compact.duration_ms} ms${compact.target_met === false ? '；近期保留内容超过目标' : ''}`,
-            `Last compaction: ~${compact.before_tokens} → ${compact.after_tokens} tokens, ${compact.duration_ms} ms${compact.target_met === false ? '; retained turns exceed target' : ''}`,
+            `上次压缩：约 ${compact.before_tokens} → ${compact.after_tokens} tokens，${compact.duration_ms} ms${compact.target_met === false ? '；最新交换或摘要超过目标' : ''}`,
+            `Last compaction: ~${compact.before_tokens} → ${compact.after_tokens} tokens, ${compact.duration_ms} ms${compact.target_met === false ? '; latest exchange or summary exceeds target' : ''}`,
         ) : '';
         document.getElementById('runtime-settings-save').disabled = false;
     } catch (error) { status.textContent = String(error.message || error); }

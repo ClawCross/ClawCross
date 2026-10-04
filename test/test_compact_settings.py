@@ -31,8 +31,10 @@ class HistoryViewRetentionTests(unittest.IsolatedAsyncioTestCase):
                     settings=ContextSettings(auto_compact=enabled, preserve_recent_turns=3),
                     history_budget=600, preserve_recent=8, prefix_tokens=10,
                     output_reserve=100, context_window=100000, model_name='test')
-                self.assertEqual(view[-6:], history[-6:])
-                if not enabled:
+                if enabled:
+                    self.assertEqual(view[-2:], history[-2:])
+                    self.assertLessEqual(c.estimate_messages_tokens(view), 600)
+                else:
                     self.assertEqual(view, history)
 
 
@@ -66,7 +68,11 @@ class CompactSettingsTests(unittest.TestCase):
                 ToolMessage(content='中' * 1000, tool_call_id=str(i)),
             ])
         options = ContextSettings(summary_tokens=256)
-        self.assertFalse(self.compact(settings=options).triggered)
+        automatic = self.compact(settings=options)
+        self.assertTrue(automatic.triggered)
+        self.assertTrue(automatic.metadata['retention_limited_by_budget'])
+        self.assertEqual(automatic.view[-2:], self.messages[-2:])
+        delete_context_compaction(self.path, 'alice#s')
         result = self.compact(settings=options, emergency=True)
         self.assertTrue(result.triggered)
         self.assertEqual(result.metadata['strategy'], 'emergency_tool_boundary')
@@ -93,7 +99,7 @@ class CompactSettingsTests(unittest.TestCase):
             summarizer=lambda *a: "- 已完成: 保留关键决定", **kwargs)
 
     def test_retains_whole_turns_and_persisted_metrics(self):
-        result = self.compact(settings=ContextSettings(preserve_recent_turns=2, summary_tokens=256))
+        result = self.compact(settings=ContextSettings(preserve_recent_turns=2, summary_tokens=256, target_tokens=5000))
         self.assertTrue(result.triggered)
         self.assertIsInstance(self.messages[result.compacted_until], HumanMessage)
         self.assertLessEqual(result.compacted_until, len(self.messages) - 8)
@@ -110,27 +116,45 @@ class CompactSettingsTests(unittest.TestCase):
         self.assertTrue(manual.triggered)
         self.assertEqual(self.compact(settings=options).view, manual.view)
 
-    def test_recent_turns_can_exceed_target_without_being_dropped(self):
+    def test_token_target_takes_priority_over_recent_turn_count(self):
         result = self.compact(settings=ContextSettings(preserve_recent_turns=4, trigger_tokens=4000, target_tokens=3000, summary_tokens=256))
         self.assertTrue(result.triggered)
-        self.assertEqual(result.view[-16:], self.messages[-16:])
-        self.assertFalse(result.metadata["target_met"])
+        self.assertTrue(result.metadata["target_met"])
+        self.assertTrue(result.metadata['retention_limited_by_budget'])
+        self.assertLessEqual(result.view_tokens, 3000)
+        call_ids = {call['id'] for msg in result.view for call in getattr(msg, 'tool_calls', [])}
+        self.assertTrue(all(msg.tool_call_id in call_ids for msg in result.view if isinstance(msg, ToolMessage)))
 
-    def test_temporary_budget_keeps_protected_turns_and_tool_pairs(self):
+    def test_temporary_budget_keeps_complete_turns_that_fit(self):
         original = list(self.messages)
-        view = c.temporary_bounded_view(self.messages, 1000, preserve_recent_turns=4)
-        self.assertEqual(view[-16:], original[-16:])
-        self.assertGreater(c.estimate_messages_tokens(view), 1000)
+        view = c.temporary_bounded_view(self.messages, 5000, preserve_recent_turns=4)
+        self.assertEqual(view[-8:], original[-8:])
+        self.assertLessEqual(c.estimate_messages_tokens(view), 5000)
         self.assertEqual(self.messages, original)
 
     def test_temporary_budget_does_not_omit_a_short_history(self):
-        recent = self.messages[-12:]
+        recent = [HumanMessage(content='hello'), AIMessage(content='hi')]
         self.assertEqual(c.temporary_bounded_view(recent, 1000, preserve_recent_turns=4), recent)
 
     def test_temporary_budget_preserves_summary_and_protected_turns(self):
         result = self.compact(settings=ContextSettings(preserve_recent_turns=4, summary_tokens=256))
         view = c.temporary_bounded_view(result.view, 1000, preserve_recent_turns=4)
         self.assertEqual(view, result.view)
+
+    def test_large_window_uses_a_small_automatic_target(self):
+        messages = [HumanMessage(content='Inspect the files; do not delete anything.')]
+        for i in range(40):
+            messages.extend([AIMessage(content='', tool_calls=[{'name':'read_file','args':{},'id':str(i)}]),
+                             ToolMessage(content='中' * 1000, tool_call_id=str(i))])
+        result = c.apply_compression(user_id='alice', session_id='s', messages=messages,
+            history_token_budget=1_000_000, checkpoint_store_path=self.path,
+            settings=ContextSettings(trigger_tokens=20_000), summarizer=lambda *a: 'Task: inspect files; never delete.')
+        self.assertTrue(result.triggered)
+        self.assertEqual(result.metadata['target_tokens'], 10_000)
+        self.assertLessEqual(result.view_tokens, 10_000)
+        self.assertEqual(result.view[-2:], messages[-2:])
+        self.assertIn('never delete', result.summary)
+        self.assertEqual(messages[0].content, 'Inspect the files; do not delete anything.')
 
     def test_minimum_new_messages_selects_a_later_whole_turn(self):
         boundary = c._pick_boundary(self.messages, current_until=0, preserve_recent=8,
