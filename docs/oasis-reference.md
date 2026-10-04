@@ -134,6 +134,8 @@ OASIS has two orthogonal switches:
 - workflows behave more like staged task pipelines
 - this is useful when you care more about delivery than debate
 
+Execution mode collects node outputs without a summarizer, so manual/script workflows and agents with their own providers can run without a global `LLM_MODEL`. Discussion mode creates the summary model only when generating its final conclusion; that step needs global model configuration.
+
 Execution-mode special steps:
 
 - `manual` injects a fixed post and completes immediately

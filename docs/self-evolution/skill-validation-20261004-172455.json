@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20261004172455570349",
+  "candidate_id": "blended-verification-loop-workspace-preflight-structured-output",
+  "skill_name": "repo-skill",
+  "strategy": "harden",
+  "env_fingerprint": {
+    "python_version": "3.11.16",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-10-04T17:24:55.570260+00:00"
+  },
+  "commands": [
+    {
+      "command": "(external failure context)",
+      "ok": false,
+      "stdout": ".............F...........................                   [100%]\n=================================== FAILURES ===================================\n_ TeamSnapshotUploadTests.test_upload_restores_new_format_personal_and_team_skills _\n\nself = <test.test_team_snapshot_upload.TeamSnapshotUploadTests testMethod=test_upload_restores_new_format_personal_and_team_skills>\n\n    def test_upload_restores_new_format_personal_and_team_skills(self):\n        snapshot_zip = io.BytesIO()\n        with zipfile.ZipFile(snapshot_zip, \"w\", zipfile.ZIP_DEFLATED) as zip_file:\n            zip_file.writestr(\n                \"skills/clawcross_personal/personal-helper/SKILL.md\",\n                _skill_content(\"personal-helper\", \"personal helper\"),\n            )\n            zip_file.writestr(\n                \"skills/clawcross_team/team-helper/SKILL.md\",\n                _skill_content(\"team-helper\", \"team helper\"),\n            )\n        snapshot_zip.seek(0)\n    \n        with TemporaryDirectory() as tmpdir:\n            user_files_dir = Path(tmpdir) / \"data\" / \"user_files\"\n            with mock.patch.object(front, \"root_dir\", tmpdir), mock.patch.object(\n                snapshot_skills, \"USER_FILES_DIR\", user_files_dir\n            ), mock.patch.object(webot_skills, \"USER_FILES_DIR\", user_files_dir):\n                response = self.client.post(\n                    \"/teams/snapshot/upload\",\n                    data={\"team\": \"demo\", \"file\": (snapshot_zip, \"snapshot.zip\")},\n                    content_type=\"multipart/form-data\",\n                )\n    \n            self.assertEqual(response.status_code, 200)\n            payload = response.get_json()\n            self.assertTrue(payload[\"success\"])\n            self.assertEqual(payload[\"skill_restore\"][\"restored_user_skill_dirs\"], 1)\n            self.assertEqual(payload[\"skill_restore\"][\"restored_team_skill_dirs\"], 1)\n    \n            personal_skill = user_files_dir / \"upload-user\" / \"skills\" / \"personal-helper\" / \"SKILL.md\"\n            team_skill = user_files_dir / \"upload-user\" / \"teams\" / \"demo\" / \"skills\" / \"team-helper\" / \"SKILL.md\"\n>           self.assertTrue(personal_skill.is_file())\nE           AssertionError: False is not true\n\ntest/test_team_snapshot_upload.py:67: AssertionError\n=========================== short test summary info ============================\nFAILED test/test_team_snapshot_upload.py::TeamSnapshotUploadTests::test_upload_restores_new_format_personal_and_team_skills\n1 failed, 40 passed, 13 subtests passed in 2.85s",
+      "stderr": ""
+    }
+  ],
+  "overall_ok": false,
+  "duration_ms": null,
+  "created_at": "2026-10-04T17:24:55.570399+00:00",
+  "asset_id": "sha256:af7237a621bc1db3350572e73ebb6617eec95672e9da6f599f84b7294665db07"
+}

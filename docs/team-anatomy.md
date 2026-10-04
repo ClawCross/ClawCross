@@ -25,20 +25,15 @@ paper-review-council/
 ├── oasis_experts.json                # persona prompts (required)
 ├── clawcross_preset_manifest.json    # preset stamp (optional)
 ├── clawcross_preset_source_map.json  # preset stamp (optional)
-├── src/backend/oasis/
+├── oasis/
 │   ├── yaml/
 │   │   └── paper_review_council.yaml      # YAML workflow plan
 │   └── python/
 │       └── paper_survey_workflow.py       # Python workflow
-└── skills/
-    ├── SKILLS_INDEX.md
-    └── paper-survey/
-        ├── SKILL.md
-        ├── run.sh
-        ├── run.py
-        ├── pyproject.toml
-        └── runtime_config.example.json
+└── members.json                     # runtime membership references
 ```
+
+Team SKILL files live separately under `<CLAWCROSS_WORKSPACE_DIR>/users/<user_id>/teams/<team_name>/skills/`; the workspace defaults to `<CLAWCROSS_HOME>/workspace`. Snapshot ZIPs include these files under `skills/clawcross_team/`.
 
 The team's **members** are agents from ClawCross's table of agents (`<DATA_DIR>/agents.db`); the team folder's `members.json` records which agents belong to it, under which name, and which one leads. See §3.
 
@@ -92,6 +87,10 @@ A team *package* — a preset, a snapshot zip, or a folder written by hand or by
 - An entry whose name is already a member of the team is that member; one naming an existing agent id is that agent; any other entry creates a new agent.
 
 Importing (`clawcross team import "<team>"`, `POST /v1/teams/<team>/import`, installing a preset, uploading a snapshot) turns the entries into agents and memberships and removes the two files from the team folder. Exporting a snapshot writes them again in the same shape, leaving out this machine's agent ids and any secrets so that importing elsewhere creates fresh agents.
+
+Both member files must contain JSON arrays with non-empty, unique role names. Invalid manifests are rejected before changing memberships. Importing a folder whose member files have already been consumed leaves the team unchanged; a snapshot containing only assets or skills also preserves its current members. An explicit empty member manifest still represents an empty membership list.
+
+Portable exports omit structured credential fields (including API keys, authentication headers and persona credentials), agent ids and conversation history. Credentials embedded in arbitrary workflow code or prompt text are not automatically redacted.
 
 ---
 
@@ -405,7 +404,7 @@ A SKILL is a small instruction pack (`SKILL.md` + optional scripts) that an agen
 ### 8.1 User-global skills
 
 ```
-<CLAWCROSS_HOME>/data/user_files/<user_id>/skills/
+<CLAWCROSS_WORKSPACE_DIR>/users/<user_id>/skills/
 ├── SKILLS_INDEX.md
 ├── docx/SKILL.md
 ├── xlsx/SKILL.md
@@ -416,12 +415,12 @@ A SKILL is a small instruction pack (`SKILL.md` + optional scripts) that an agen
 
 Every team that user owns can use these. This is where general-purpose skills go — file format helpers (docx / xlsx / pdf / pptx), self-improvement loggers, doc co-authoring, etc.
 
-For the `default` user on this machine: `~/.clawcross/data/user_files/default/skills/`.
+For the `default` user on this machine: `~/.clawcross/workspace/users/default/skills/`.
 
 ### 8.2 Team-scoped skills
 
 ```
-<CLAWCROSS_HOME>/data/user_files/<user_id>/teams/<team_name>/skills/
+<CLAWCROSS_WORKSPACE_DIR>/users/<user_id>/teams/<team_name>/skills/
 ├── SKILLS_INDEX.md                     # auto-regenerated; don't edit by hand
 └── paper-survey/
     ├── SKILL.md
@@ -438,8 +437,8 @@ Only that one team sees these. Use this scope when the SKILL is meaningless outs
 When the runtime (`src/backend/webot/skills.py::_scope_skills_dir`) builds the SKILL list for an agent in team T, it merges:
 
 ```
-team scope:     <user_files>/<user>/teams/<T>/skills/
-personal scope: <user_files>/<user>/skills/
+team scope:     <workspace>/users/<user>/teams/<T>/skills/
+personal scope: <workspace>/users/<user>/skills/
 ```
 
 Team-scoped wins on name collision. `SKILLS_INDEX.md` in each scope is regenerated when a SKILL is added/removed.

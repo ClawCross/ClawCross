@@ -208,7 +208,9 @@ class DiscussionEngine:
                 self._expert_map.setdefault(participant.tag, participant)
         self._total_node_execs = 0  # safety counter for Pregel super-step execution
 
-        self.summarizer = _get_summarizer()
+        # Execution workflows may use only manual/script nodes or agents with
+        # their own providers. They do not need a global summary model.
+        self.summarizer = None
 
     def _unique_name(self, name: str) -> str:
         """Forum authors are told apart by name."""
@@ -956,6 +958,8 @@ class DiscussionEngine:
             )
 
         try:
+            if self.summarizer is None:
+                self.summarizer = _get_summarizer()
             resp = await self.summarizer.ainvoke([HumanMessage(content=prompt)])
             return extract_text(resp.content)
         except Exception as e:

@@ -116,6 +116,21 @@ class EngineCase(unittest.TestCase):
 
 
 class TestParticipants(EngineCase):
+    def test_summary_model_is_created_only_when_summarizing(self):
+        built = self.engine("  - id: a\n    manual:\n      author: host\n      content: hello\n")
+        model = mock.Mock()
+        model.ainvoke = mock.AsyncMock(return_value=mock.Mock(content="SUMMARY_OK"))
+        with mock.patch("oasis.engine.create_chat_model", return_value=model) as factory:
+            self.assertIsNone(built.summarizer)
+
+            async def summarize():
+                await built.forum.publish(author="host", content="hello")
+                self.assertEqual(await built._summarize(), "SUMMARY_OK")
+                self.assertEqual(await built._summarize(), "SUMMARY_OK")
+
+            asyncio.run(summarize())
+            factory.assert_called_once()
+
     def test_agents_are_found_by_team_name_or_id_and_a_new_id_is_a_new_agent(self):
         built = self.engine("  - id: a\n    agent: Builder\n  - id: b\n    agent: codex\n  - id: c\n    agent: dev.Nobody\n"
                             "  - id: d\n    agent: fresh\n")
