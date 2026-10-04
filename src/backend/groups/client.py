@@ -190,10 +190,10 @@ class GroupClient:
             body = {}
         return ClientError(str(body.get('detail') or body.get('error') or '群服务器拒绝请求'), response.status_code)
 
-    def request(self, row, method, path, body=None):
+    def request(self, row, method, path, body=None, params=None):
         try:
             with httpx.Client(timeout=20, trust_env=False) as client:
-                response = client.request(method, row['url'] + '/relay' + path, headers=self.headers(row), json=body)
+                response = client.request(method, row['url'] + '/relay' + path, headers=self.headers(row), json=body, params=params)
             if response.status_code >= 400:
                 raise self._refusal(response)
             return response.json()

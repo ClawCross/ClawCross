@@ -170,6 +170,10 @@ class TwoDeviceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(b.gateway.received[0][0], 'same')
         await b.post(b.user, b.alias, 'same', 'answer from Bob agent')
         await self.until(lambda: any(m['content'] == 'answer from Bob agent' for m in a.messages(a.user, a.alias)))
+        # Keep the real facade/client/HTTP chain: mocking request() hides parameter mismatches.
+        found = GroupFacade(b).search_messages(b.user, b.alias, 'answer from Bob agent', 0, 10)
+        self.assertEqual([m['content'] for m in found['messages']], ['answer from Bob agent'])
+        self.assertEqual(found['next_before_id'], 0)
         # No uninvited local agent is woken. A plain agent reply does not form a loop.
         self.assertEqual([r[0] for r in a.gateway.received], ['same'])
         await b.close()

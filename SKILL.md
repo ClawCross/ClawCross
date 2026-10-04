@@ -537,14 +537,14 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-10-04T16:00:14.537508+00:00`
+- Updated at: `2026-10-04T16:15:25.936842+00:00`
 - Strategy: `harden`
-- Heuristic candidate: `blended-verification-loop-approval-auth-bounded-execution`
-- Heuristic score: `0.604`
+- Heuristic candidate: `blended-verification-loop-structured-output`
+- Heuristic score: `0.73`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: (external failure context). Signals: verification-loop, approval-auth, bounded-execution. stdout was used as fallback failure evidence.
+Command exited with code 1. Command: (external failure context). Signals: verification-loop, structured-output. stdout was used as fallback failure evidence.
 
 ### Strategy Rationale
 
@@ -558,24 +558,9 @@ Command exited with code 1. Command: (external failure context). Signals: verifi
 ### Latest Error Excerpt
 
 ```text
-[2m[WebServer] [22m2026-10-04 23:58:38,669 INFO [werkzeug] [req:-] [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
-[2m[WebServer] [22m * Running on http://127.0.0.1:51229
-[2m[WebServer] [22m2026-10-04 23:58:38,669 INFO [werkzeug] [req:-] [33mPress CTRL+C to quit[0m
-[2m[WebServer] [22m2026-10-04 23:58:39,660 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58:39] "GET /studio HTTP/1.1" 200 -
-
-Running 3 tests using 1 worker
-
-(node:1949385) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
-(Use `node --trace-warnings ...` to show where the warning was created)
-(node:1949385) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
-(Use `node --trace-warnings ...` to show where the warning was created)
-[2m[WebServer] [22m2026-10-04 23:58:43,117 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58:43] "GET /mobile/group_chat HTTP/1.1" 200 -
-[2m[WebServer] [22m2026-10-04 23:58:43,203 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58:43] "GET /static/js/attachment-utils.js?v=20261003-media HTTP/1.1" 200 -
-[2m[WebServer] [22m2026-10-04 23:58:43,214 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58:43] "GET /static/js/snapshot_zip_progress.js?v=20260331-progress HTTP/1.1" 200 -
-[2m[WebServer] [22m2026-10-04 23:58:43,216 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58:43] "GET /static/css/markdown-shared.css?v=20261004-fold-approval HTTP/1.1" 200 -
-[2m[WebServer] [22m2026-10-04 23:58:43,218 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58:43] "GET /static/css/external-agent-settings.css?v=20261004-effort-stops HTTP/1.1" 200 -
-[2m[WebServer] [22m2026-10-04 23:58:43,221 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58:43] "GET /static/js/components.js?v=20261004-windows-sandbox HTTP/1.1" 200 -
-[2m[WebServer] [22m2026-10-04 23:58:43,224 INFO [werkzeug] [req: ...[truncated]
+Actual group history search failed with HTTP 500 because search_messages calls request(params=...) but GroupClient.request lacks params.
+TypeError: GroupClient.request() got an unexpected keyword argument 'params'
+Previous test mocked request(), so it missed the incompatible signature. Fix the request signature and test the real HTTP transport.
 ```
 
 ### Governance Snapshot
@@ -598,14 +583,14 @@ Running 3 tests using 1 worker
 
 ### Recent Evidence
 
-- `2026-10-04T16:00:14.537508+00:00` `repo-skill` — [2m[WebServer] [22m2026-10-04 23:58:38,669 INFO [werkzeug] [req:-] [31m[1mWARNING: This is a development server. Do not use it in a produc ...[truncated]
+- `2026-10-04T16:15:25.936842+00:00` `repo-skill` — Actual group history search failed with HTTP 500 because search_messages calls request(params=...) but GroupClient.request lacks params.
+TypeE ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `blended-verification-loop-approval-auth-bounded-execution` score `0.604` — Blend the strongest recent failure patterns (intent `repair`)
-- `verification-loop-3` score `0.564` — Tighten verification loops (intent `repair`)
-- `approval-auth-2` score `0.515` — Preflight auth and approval constraints (intent `repair`)
-- `bounded-execution-1` score `0.467` — Bound long-running and flaky execution (intent `optimize`)
+- `blended-verification-loop-structured-output` score `0.73` — Blend the strongest recent failure patterns (intent `repair`)
+- `verification-loop-4` score `0.69` — Tighten verification loops (intent `repair`)
+- `structured-output-1` score `0.486` — Harden structured-output handling (intent `repair`)
 
 ### Local State Snapshot
 
