@@ -19,6 +19,21 @@ from webot.workspace import SessionWorkspace
 
 
 class FileManagerTests(unittest.TestCase):
+    def test_strict_reads_reject_hardlink_to_outside_synthetic_file(self):
+        import os
+        from webot.confined_files import ConfinedPath, confined_operation
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            root = base / 'workspace'; root.mkdir()
+            outside = base / 'outside.txt'; outside.write_text('PRIVATE')
+            os.link(outside, root / 'alias.txt')
+            @confined_operation
+            async def read():
+                return ConfinedPath(root / 'alias.txt', root).open().read()
+            with self.assertRaisesRegex(ValueError, '硬链接'):
+                asyncio.run(read())
+            self.assertEqual(outside.read_text(), 'PRIVATE')
+
     def test_strict_file_tools_read_write_and_deny_outside_even_in_bypass(self):
         from webot import runtime_settings
         with tempfile.TemporaryDirectory() as directory:

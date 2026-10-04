@@ -65,7 +65,18 @@ def bind_file_target(tool_name: str, args: dict, user_id: str, session_id: str, 
         from webot.workspace import resolve_session_workspace
         workspace = resolve_session_workspace(user_id, session_id)
     requested = Path(os.path.expanduser(str(bound.get(field) or ("." if field == "folder" else ""))))
-    target = (requested if requested.is_absolute() else workspace.cwd / requested).resolve()
+    candidate = requested if requested.is_absolute() else workspace.cwd / requested
+    from webot.runtime_settings import get_runtime_settings
+    strict_windows = os.name == 'nt' and get_runtime_settings(user_id, session_id).approval.sandbox_security == 'strict'
+    if strict_windows:
+        from webot.windows_confined_files import validate_components
+        # resolve() can follow a UNC junction and initiate SMB authentication
+        # before approval. Strict Windows tools pin and reject every reparse
+        # component during execution, so bind a lexical path instead.
+        validate_components(str(candidate))
+        target = candidate.absolute()
+    else:
+        target = candidate.resolve()
     bound["_resolved_path"] = str(target)
     bound["_workspace_root"] = str(workspace.root.resolve())
     return bound
@@ -82,10 +93,11 @@ def file_access_violation(args: dict, user_id: str, session_id: str) -> str:
     if not target:
         return ''
     from webot.command_sandbox import protected_control_paths
-    path = Path(target).resolve()
+    from webot.runtime_settings import get_runtime_settings
+    strict = get_runtime_settings(user_id, session_id).approval.sandbox_security == 'strict'
+    path = Path(target).absolute() if os.name == 'nt' and strict else Path(target).resolve()
     if any(path.is_relative_to(control) or control.is_relative_to(path) for control in protected_control_paths()):
         return '后端安全配置属于受保护区域，Agent 文件工具不能访问或修改。'
-    from webot.runtime_settings import get_runtime_settings
-    if get_runtime_settings(user_id, session_id).approval.sandbox_security == 'strict' and file_target_outside_workspace(args):
+    if strict and file_target_outside_workspace(args):
         return '严格安全模式只允许访问独立工作区，不允许提权。'
     return ''

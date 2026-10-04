@@ -386,6 +386,9 @@ async def authorize_action(
         policy = policy if isinstance(policy, WeBotToolPolicy) else get_tool_policy(user_id)
         args = bind_file_target(tool_name, args, user_id, session_id)
         violation = file_access_violation(args, user_id, session_id)
+        if not violation:
+            from webot.web_security import web_access_violation
+            violation = web_access_violation(tool_name, args, user_id, session_id)
         if violation:
             return ApprovalResult(False, violation)
         args.pop('_approval_session', None)  # Policy scope comes only from the authenticated runtime.

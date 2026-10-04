@@ -59,7 +59,7 @@ def process_read_paths():
                  'vmstat', 'diskstats', 'partitions', 'swaps'):
         yield '/proc/' + name, 1 << 2
     for directory in Path('/proc').glob('[0-9]*'):
-        for name in ('stat', 'statm', 'status', 'comm', 'cmdline', 'wchan'):
+        for name in ('stat', 'statm', 'status', 'comm', 'wchan'):
             yield str(directory / name), 1 << 2
 
 

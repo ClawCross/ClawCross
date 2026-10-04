@@ -19,13 +19,16 @@ def confined_operation(function):
             return await function(*args, **kwargs)
         finally:
             for fd in reversed(handles):
-                os.close(fd)
+                fd.close() if hasattr(fd, 'close') else os.close(fd)
             _handles.reset(token)
     return wrapped
 
 
 class ConfinedPath(str):
     def __new__(cls, target, root, *, create_parents=False):
+        if os.name == 'nt':
+            from webot.windows_confined_files import WindowsConfinedPath
+            return WindowsConfinedPath(target, root, create_parents=create_parents)
         if os.name != 'posix' or os.open not in os.supports_dir_fd or not hasattr(os, 'O_NOFOLLOW'):
             raise ValueError('当前平台不支持严格文件工具所需的安全目录句柄；未访问文件。')
         handles = _handles.get()
@@ -58,9 +61,10 @@ class ConfinedPath(str):
         if mode not in {'r', 'rb'}:
             raise ValueError('Strict writes require atomic replacement')
         fd = os.open(self.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=self.parent_fd)
-        if not stat.S_ISREG(os.fstat(fd).st_mode):
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
             os.close(fd)
-            raise ValueError('严格文件工具只读取普通文件。')
+            raise ValueError('严格文件工具只读取无硬链接的普通文件。')
         return os.fdopen(fd, mode, **kwargs)
 
     def entries(self):

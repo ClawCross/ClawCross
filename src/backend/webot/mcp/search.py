@@ -19,6 +19,8 @@ from webot.mcp_tool_docs import DocumentedFastMCP as FastMCP
 from webot.approval_actions import canonical_action_args
 from webot.approval_review import authorize_action, policy_binding
 from webot.runtime_store import consume_execution_permit
+from webot.web_security import (public_web_proxy, strict_network_active,
+                                web_access_violation, with_agent_network)
 
 mcp = FastMCP("WebSearcher")
 
@@ -41,6 +43,7 @@ from common.runtime_paths import PROJECT_ROOT  # noqa: E402
 BROWSER_RUNNER = _os.path.join(_os.path.dirname(__file__), "browser_search_runner.mjs")
 MAX_RESULTS = 25
 MAX_FETCH_CHARS = 50000
+MAX_FETCH_BYTES = 2 * 1024 * 1024
 
 _VALID_SAFESEARCH = {"on", "moderate", "off"}
 _VALID_FRESHNESS = {"", "d", "w", "m", "y"}
@@ -292,11 +295,12 @@ def _build_search_payload(
         if freshness_value:
             search_kwargs["timelimit"] = freshness_value
 
-        with DDGS(timeout=DEFAULT_TIMEOUT) as ddgs:
-            if kind == "news":
-                raw_results = list(ddgs.news(rewritten_query, **search_kwargs))
-            else:
-                raw_results = list(ddgs.text(rewritten_query, **search_kwargs))
+        with public_web_proxy() as proxy:
+            with DDGS(timeout=DEFAULT_TIMEOUT, proxy=proxy) as ddgs:
+                if kind == "news":
+                    raw_results = list(ddgs.news(rewritten_query, **search_kwargs))
+                else:
+                    raw_results = list(ddgs.text(rewritten_query, **search_kwargs))
 
         results = _dedupe_and_filter(
             raw_results,
@@ -349,6 +353,19 @@ def _attempt_summary(payload: dict) -> dict:
 
 
 async def _run_browser_runner(payload: dict, *, timeout: int) -> dict:
+    if strict_network_active():
+        return {'ok': False, 'provider': 'browser',
+                'error': '严格安全模式不启动宿主浏览器；请使用受控 HTTP 抓取或 DDGS 搜索。'}
+    with public_web_proxy() as proxy:
+        parsed = urlparse(proxy)
+        payload = {**payload, 'proxy': {
+            'server': f'http://{parsed.hostname}:{parsed.port}',
+            'username': parsed.username, 'password': parsed.password,
+        }}
+        return await _execute_browser_runner(payload, timeout=timeout)
+
+
+async def _execute_browser_runner(payload: dict, *, timeout: int) -> dict:
     if not _os.path.exists(BROWSER_RUNNER):
         return {
             "ok": False,
@@ -537,7 +554,7 @@ async def _build_search_provider_payload(
             browser_engine=browser_engine,
         )
 
-    ddgs_payload = _build_search_payload(
+    ddgs_payload = await asyncio.to_thread(_build_search_payload,
         query=query,
         kind=kind,
         max_results=max_results,
@@ -609,6 +626,8 @@ async def _fetch_url_payload(url: str, *, max_chars: int = 12000, timeout: int =
         parsed = urlparse((url or "").strip())
         if parsed.scheme not in {"http", "https"}:
             raise ValueError("only http and https URLs are supported")
+        if parsed.username is not None or parsed.password is not None:
+            raise ValueError('URLs with credentials are unsupported')
         if _is_blocked_fetch_host(parsed.hostname or ""):
             raise ValueError("blocked private/local URL")
         safe_max_chars = _clamp_int(max_chars, default=12000, minimum=500, maximum=MAX_FETCH_CHARS)
@@ -619,14 +638,19 @@ async def _fetch_url_payload(url: str, *, max_chars: int = 12000, timeout: int =
                 "(KHTML, like Gecko) ClawCrossWebSearch/1.0 Safari/537.36"
             )
         }
-        async with httpx.AsyncClient(
-            timeout=safe_timeout,
-            follow_redirects=True,
-            headers=headers,
-        ) as client:
-            resp = await client.get(url)
+        with public_web_proxy() as proxy:
+            async with httpx.AsyncClient(
+                timeout=safe_timeout, follow_redirects=True,
+                headers=headers, proxy=proxy, trust_env=False,
+            ) as client:
+                async with client.stream('GET', url) as resp:
+                    body = bytearray()
+                    async for chunk in resp.aiter_bytes(chunk_size=65536):
+                        if len(body) + len(chunk) > MAX_FETCH_BYTES:
+                            raise ValueError('Web response exceeds the 2 MiB safety limit')
+                        body.extend(chunk)
+                    text = body.decode(resp.encoding or 'utf-8', errors='replace')
         content_type = resp.headers.get("content-type", "")
-        text = resp.text
         title = ""
         if "html" in content_type.lower() or "<html" in text[:500].lower():
             title, text = _clean_html_text(text)
@@ -634,8 +658,9 @@ async def _fetch_url_payload(url: str, *, max_chars: int = 12000, timeout: int =
             text = text.strip()
         truncated = len(text) > safe_max_chars
         return {
-            "ok": True,
+            "ok": resp.is_success,
             "provider": "http",
+            **({} if resp.is_success else {'error': f'HTTP {resp.status_code}'}),
             "url": url,
             "final_url": str(resp.url),
             "status_code": resp.status_code,
@@ -759,6 +784,9 @@ async def _web_access_gate(username: str, session_id: str, tool_name: str, args:
     """Review before network I/O, consuming the runtime's exact permit once."""
     if not username or not session_id:
         return '❌ Web 工具需要当前用户和 Agent 身份，不能跳过统一审核。'
+    violation = web_access_violation(tool_name, args, username, session_id)
+    if violation:
+        return '❌ ' + violation
     bound = canonical_action_args(tool_name, {**args, 'username': username, 'session_id': session_id})
     if consume_execution_permit(username, session_id, tool_name, bound, policy_binding(username, session_id)):
         return None
@@ -767,6 +795,7 @@ async def _web_access_gate(username: str, session_id: str, tool_name: str, args:
     return None if outcome.allowed else '❌ ' + outcome.reason
 
 
+@with_agent_network
 async def _reviewed_fetch_payload(url: str, *, username: str, session_id: str, max_chars: int, timeout: int) -> dict:
     reject = await _web_access_gate(username, session_id, 'web_fetch',
         {'url': url, 'max_chars': max_chars, 'timeout': timeout})
@@ -776,6 +805,7 @@ async def _reviewed_fetch_payload(url: str, *, username: str, session_id: str, m
 
 
 @mcp.tool()
+@with_agent_network
 async def web_search(
     query: str,
     kind: str = "web",
@@ -795,7 +825,9 @@ async def web_search(
     Search the web and return ranked results (title, url, snippet). Set
     fetch_top to also fetch the cleaned text of the top results; to read one
     specific page, use web_fetch. Searches and each fetched page follow the
-    current Agent's approval mode.
+    current Agent's approval mode. Strict security also enforces the Agent's
+    sandbox_allowed_domains for every provider connection and fetched page;
+    an empty list means offline. Strict mode never starts a host browser.
 
     :param query: Search query
     :param kind: "web" (default) or "news"
@@ -869,9 +901,10 @@ async def web_fetch(
     """
     Fetch a public web URL and return its cleaned page text as JSON.
 
-    Private/local IP literals and localhost are blocked. Intended for public
-    pages discovered by web_search. The URL is reviewed before fetching under
-    the current Agent's approval mode.
+    Private/local destinations are blocked after DNS resolution, including
+    redirects. The URL is reviewed before fetching under the Agent's approval
+    mode. Strict security additionally requires sandbox_allowed_domains and
+    cannot expand access through approval or Bypass.
 
     :param url: Public http(s) URL
     :param max_chars: Maximum characters of page text to return (500-50000)

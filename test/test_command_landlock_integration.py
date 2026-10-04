@@ -352,7 +352,7 @@ import os, subprocess
 assert 'MemTotal:' in Path('/proc/meminfo').read_text()
 assert Path('/proc/self/status').read_text()
 assert str(os.getpid()) in os.listdir('/proc')
-for field in ('environ', 'mem'):
+for field in ('environ', 'mem', 'cmdline'):
     try:
         Path('/proc/self/' + field).read_bytes()
     except PermissionError:
