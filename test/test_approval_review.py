@@ -39,7 +39,7 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
 
     async def authorize(self, **kwargs):
         return await review.authorize_action(user_id="alice", session_id="s", tool_name="run_command",
-            **({"args": self.args, "messages": self.messages} | kwargs))
+            **({"args": self.args, "messages": self.messages, "wait_for_user": False} | kwargs))
 
     def approve_pending(self, *, remember=False):
         original = store.get_tool_approval
@@ -145,8 +145,19 @@ class ApprovalReviewTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(review, 'load_review_history', return_value=self.messages), \
              patch.object(review, 'run_reviewer') as model, \
              patch.object(search, '_fetch_url_provider_payload', new=AsyncMock()) as fetch:
-            result=json.loads(await search.web_fetch('https://example.com',username='alice',session_id='s'))
-        self.assertIn('【操作授权请求】',result['error'])
+            task = asyncio.create_task(search.web_fetch('https://example.com',username='alice',session_id='s'))
+            for _ in range(100):
+                pending = store.list_tool_approvals('alice', 's', status='pending')
+                if pending:
+                    break
+                await asyncio.sleep(.01)
+            self.assertTrue(pending)
+            self.assertFalse(task.done())
+            fetch.assert_not_awaited()
+            from webot.permission_context import resolve_permission_request
+            resolve_permission_request(user_id='alice', approval_id=pending[0].approval_id, action='denied')
+            result = json.loads(await asyncio.wait_for(task, 2))
+        self.assertIn('拒绝',result['error'])
         fetch.assert_not_awaited();model.assert_not_called()
         store.save_session_mode('alice','s',mode='bypass')
         policy.save_tool_policy_config('alice',{'tools':{'web_fetch':{'approval':'deny'}}})

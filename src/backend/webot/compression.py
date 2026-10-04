@@ -542,13 +542,14 @@ def compression_view_from_record(
 
 
 def temporary_bounded_view(
-    view: list[BaseMessage], history_token_budget: int,
+    view: list[BaseMessage], history_token_budget: int, *, preserve_recent_turns: int = 4,
 ) -> list[BaseMessage]:
     """Trim older complete turns when a background summary is pending.
 
     This view is never persisted. Whole user turns are retained so tool calls
-    and their results stay together. A single oversized turn may still exceed
-    the budget; the next turn can use a completed summary.
+    and their results stay together. Protected recent turns may exceed this
+    soft budget; only the emergency summarizer may compact them, never this
+    temporary omission of older history.
     """
     if history_token_budget <= 0 or estimate_messages_tokens(view) <= history_token_budget:
         return view
@@ -559,9 +560,10 @@ def temporary_bounded_view(
     for index in range(len(view) - 1, -1, -1):
         suffix_tokens[index] = suffix_tokens[index + 1] + _msg_tokens(view[index])
     fixed_tokens = sum(_msg_tokens(message) for message in prefix) + _msg_tokens(notice)
+    protected_start = _recent_turn_boundary(view[prefix_count:], max(1, preserve_recent_turns)) + prefix_count
     starts = [
         index for index in range(prefix_count + 1, len(view))
-        if isinstance(view[index], HumanMessage)
+        if isinstance(view[index], HumanMessage) and index <= protected_start
     ]
     for start in starts:
         if fixed_tokens + suffix_tokens[start] <= history_token_budget:

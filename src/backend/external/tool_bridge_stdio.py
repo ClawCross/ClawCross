@@ -12,7 +12,9 @@ mcp = FastMCP('ClawCross')
 
 
 async def request(body):
-    async with httpx.AsyncClient(timeout=180, trust_env=False) as client:
+    # The backend bounds approval waits and command execution. A separate
+    # HTTP read deadline must not terminate a tool while its human is deciding.
+    async with httpx.AsyncClient(timeout=httpx.Timeout(connect=10, read=None, write=30, pool=10), trust_env=False) as client:
         response = await client.post(os.environ['CLAWCROSS_BRIDGE_URL'], json=body,
             headers={'Authorization': 'Bearer ' + os.environ['CLAWCROSS_BRIDGE_TOKEN']})
         if response.status_code != 200:

@@ -63,11 +63,14 @@ def active_turn(agent, msg, context, mode, enabled_tools, *, prepared=None, resp
     _active[key] = {'agent': agent, 'message': msg, 'context': context, 'mode': mode,
                     'enabled_tools': enabled_tools, 'lock': asyncio.Lock(),
                     'review_counters': {}, 'dynamic_context': prepared.dynamic_context if prepared else None,
-                    'response_format': response_format}
+                    'response_format': response_format, 'tasks': set()}
     try:
         yield
     finally:
-        _active.pop(key, None)
+        turn = _active.pop(key, None)
+        if turn:
+            for task in turn['tasks']:
+                task.cancel()
 
 
 def attach_runtime_context(payload, current, turn):
@@ -155,8 +158,13 @@ def bridge_router():
                 raise HTTPException(403, 'Agent turn finished')
             if turn['review_counters'].get('consecutive_denials', 0) >= 3:
                 raise HTTPException(403, 'Too many denied tool requests in this turn')
-            result = await node({**state, 'messages': [human, AIMessage(content='', tool_calls=[call])]},
-                                {'configurable': {'thread_id': key[0] + '#' + key[1]}})
+            task = asyncio.create_task(node({**state, 'messages': [human, AIMessage(content='', tool_calls=[call])]},
+                                {'configurable': {'thread_id': key[0] + '#' + key[1]}}))
+            turn['tasks'].add(task)
+            try:
+                result = await task
+            finally:
+                turn['tasks'].discard(task)
         current = get_store().require(*key)
         return attach_runtime_context({'results': [{'content': message.content, 'status': message.status}
                             for message in result['messages']]}, current, turn)

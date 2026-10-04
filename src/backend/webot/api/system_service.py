@@ -526,6 +526,14 @@ class SystemService:
         its sender, otherwise a turn now (queued behind the session's current one)."""
         thread_id = self._thread_id(req)
 
+        if req.group_human_requests and not req.attachments:
+            from webot.approval_review import resolve_conversation_reply, review_context
+            human = HumanMessage(content=req.text, additional_kwargs={
+                'input_origin': 'system', 'framework_group_requests': req.group_human_requests})
+            resolution = resolve_conversation_reply(req.user_id, req.session_id, review_context([human]), live_only=True)
+            if resolution:
+                return {'status': 'received', 'reply': resolution}
+
         if req.inbox_source_session:
             async with self._inbox_guard:
                 record = create_inbox_message(
