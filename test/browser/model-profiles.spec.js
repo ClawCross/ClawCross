@@ -1,15 +1,21 @@
 const {test, expect} = require('@playwright/test');
 const path = require('node:path');
 
-async function setup(page, {uncreated=false, unified=false} = {}) {
+async function setup(page, {uncreated=false, unified=false, deepseek=false, unknown=false, legacyProfile=false} = {}) {
   const writes = [];
   let llm = {};
   let effort = 'medium';
   let level = 0;
   const baseMap = {'1':'none','2':'none','3':'low','4':'medium','5':'high','6':'xhigh','7':'xhigh'};
   const otherMap = {'1':'low','2':'low','3':'low','4':'medium','5':'high','6':'high','7':'max'};
+  const deepseekMap = {'1':'none','2':'none','3':'low','4':'low','5':'high','6':'high','7':'max'};
+  const defaultCaps = deepseek ? {model:'deepseek-flash',reasoning_effort_levels:['none','low','high','max'],reasoning_effort_default:'high',reasoning_level_map:deepseekMap} :
+    unknown ? {model:'private-model',reasoning_effort_levels:[],reasoning_level_map:{}} :
+    {model:'gpt-5.5',reasoning_effort_levels:['low','medium','high'],reasoning_effort_default:'medium',...(unified?{reasoning_level_map:baseMap}:{})};
   const profiles = [{id:'user:coding',name:'编程',model:'gpt-5.5',provider:'openai',has_api_key:true}];
   if (unified) Object.assign(profiles[0],{model:'claude-opus-4-6',provider:'anthropic',model_capabilities:{reasoning_level_map:otherMap}});
+  if (deepseek) profiles[0].model_capabilities = {reasoning_level_map:baseMap};
+  if (legacyProfile) profiles[0].model_capabilities = {reasoning_effort_levels:['low','medium','high']};
   await page.route('**/studio',route=>route.fulfill({contentType:'text/html',body:'<html lang="zh-CN"><button id="open">模型</button></html>'}));
   await page.route('**/v1/agents/model-profiles',route=>{
     if(route.request().method()==='POST') {
@@ -17,7 +23,7 @@ async function setup(page, {uncreated=false, unified=false} = {}) {
       const item={id:'user:'+body.name,name:body.name,model:body.model,provider:body.provider,has_api_key:true};
       profiles.push(item); return route.fulfill({json:item});
     }
-    return route.fulfill({json:{default:{model:'gpt-5.5',provider:'openai',...(unified?{model_capabilities:{reasoning_level_map:baseMap}}:{})},profiles}});
+    return route.fulfill({json:{default:{model:defaultCaps.model,provider:deepseek?'deepseek':'openai',model_capabilities:defaultCaps},profiles}});
   });
   await page.route('**/v1/agents/one',route=>route.fulfill(uncreated ? {status:404,json:{detail:'no Agent'}} : {json:{agent_id:'one',name:'我的助理',platform:'webot',settings:{llm}}}));
   await page.route('**/v1/agents/one/model-profile',route=>{
@@ -33,7 +39,7 @@ async function setup(page, {uncreated=false, unified=false} = {}) {
       level=body.settings.inference.reasoning_level || 0;
       return route.fulfill({json:{}});
     }
-    return route.fulfill({json:{settings:{inference:{reasoning_effort:effort,reasoning_level:level}},model_capabilities:{model:'gpt-5.5',reasoning_effort_levels:['low','medium','high'],reasoning_effort_default:'medium',...(unified?{reasoning_level_map:llm.profile_id?otherMap:baseMap}:{})}}});
+    return route.fulfill({json:{settings:{inference:{reasoning_effort:effort,reasoning_level:level}},model_capabilities:{...defaultCaps,...(llm.profile_id && profiles.find(p=>p.id===llm.profile_id)?.model_capabilities || {})}}});
   });
   await page.goto('/studio');
   await page.addStyleTag({path:path.resolve('src/frontend/static/css/external-agent-settings.css')});
@@ -55,6 +61,45 @@ test('saved profile and reasoning apply to the selected Agent only',async({page}
     {path:'effort',session_id:'one',settings:{inference:{reasoning_effort:'high'}}}]);
   await expect(page.locator('[data-profile]')).toHaveValue('user:coding');
   await expect(page.locator('[data-effort]')).toHaveValue('high');
+});
+
+test('DeepSeek effort control is visible, saved per Agent and remapped after model selection',async({page})=>{
+  const writes = await setup(page,{deepseek:true});
+  await expect(page.locator('[data-effort]')).toBeVisible();
+  await expect(page.locator('[data-effort]')).toBeEnabled();
+  await expect(page.locator('[data-effort] option')).toHaveCount(8);
+  await expect(page.locator('[data-effort] option[value="0"]')).toContainText('high');
+  await expect(page.locator('[data-effort] option[value="7"]')).toContainText('max');
+  await page.locator('[data-effort]').selectOption('7');
+  await page.locator('[data-profile]').selectOption('user:coding');
+  await expect(page.locator('[data-effort] option[value="7"]')).toContainText('xhigh');
+  await page.locator('[data-profile]').selectOption('');
+  await expect(page.locator('[data-effort]')).toHaveValue('7');
+  await expect(page.locator('[data-effort] option[value="7"]')).toContainText('max');
+  await page.locator('[data-save]').click();
+  await expect(page.locator('[data-status]')).toContainText('已保存');
+  expect(writes).toEqual([{path:'apply',profile_id:''},
+    {path:'effort',session_id:'one',settings:{inference:{reasoning_level:7,reasoning_effort:''}}}]);
+});
+
+test('models without effort metadata show a disabled control and do not overwrite effort',async({page})=>{
+  const writes = await setup(page,{unknown:true});
+  await expect(page.locator('[data-effort]')).toBeVisible();
+  await expect(page.locator('[data-effort]')).toBeDisabled();
+  await expect(page.locator('[data-effort-area]')).toContainText('暂无可用档位');
+  await page.locator('[data-save]').click();
+  await expect(page.locator('[data-status]')).toContainText('已保存');
+  expect(writes).toEqual([{path:'apply',profile_id:''}]);
+});
+
+test('profile selection retains controls for native levels without a unified mapping',async({page})=>{
+  const writes = await setup(page,{legacyProfile:true});
+  await page.locator('[data-profile]').selectOption('user:coding');
+  await expect(page.locator('[data-effort]')).toBeEnabled();
+  await page.locator('[data-effort]').selectOption('high');
+  await page.locator('[data-save]').click();
+  await expect(page.locator('[data-status]')).toContainText('已保存');
+  expect(writes.at(-1)).toEqual({path:'effort',session_id:'one',settings:{inference:{reasoning_effort:'high'}}});
 });
 
 test('saving a profile does not apply it and clears the secret field',async({page})=>{

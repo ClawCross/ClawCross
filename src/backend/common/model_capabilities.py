@@ -12,6 +12,9 @@ from pathlib import Path
 _PACKAGES = {"openai": "langchain_openai", "anthropic": "langchain_anthropic",
              "google": "langchain_google_genai", "deepseek": "langchain_deepseek"}
 _ALIASES = {"gemini": "google", "claude": "anthropic"}
+# The installed SDK/catalog omits these documented Chat Completions options.
+# https://api-docs.deepseek.com/api/create-chat-completion/
+_DEEPSEEK_EFFORT_MODELS = frozenset({'deepseek-flash', 'deepseek-v4-pro'})
 
 
 @lru_cache(maxsize=1)
@@ -71,6 +74,10 @@ def model_capabilities(model: str, provider: str = "", profile: dict | None = No
     levels = resolved.get("reasoning_effort_levels") or []
     if not levels and vendor in {"openai", "deepseek"}:
         levels = row.get("compat", {}).get("supportedReasoningEfforts", [])
+    if vendor == 'deepseek' and name.split('/', 1)[-1].lower() in _DEEPSEEK_EFFORT_MODELS:
+        levels = ['none', 'low', 'high', 'max']
+        result['reasoning_effort_default'] = 'high'
+        result['reasoning_effort_source'] = 'https://api-docs.deepseek.com/api/create-chat-completion/'
     result["reasoning_effort_levels"] = [v for v in levels if isinstance(v, str)]
     from common.reasoning_levels import level_map
     result['reasoning_level_map'] = level_map(result['reasoning_effort_levels'])

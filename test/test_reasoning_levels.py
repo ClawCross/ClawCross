@@ -36,6 +36,29 @@ class ReasoningLevelsTests(unittest.TestCase):
         from common.model_capabilities import reasoning_effort
         self.assertIsNone(reasoning_effort('unknown-private-model','openai','high',level=7))
 
+    def test_deepseek_documented_levels_fill_missing_sdk_metadata(self):
+        from common.model_capabilities import model_capabilities, reasoning_effort
+        for name in ('deepseek-flash', 'deepseek-v4-pro'):
+            with self.subTest(model=name):
+                caps = model_capabilities(name, 'deepseek', profile={})
+                self.assertEqual(caps['reasoning_effort_levels'], ['none','low','high','max'])
+                self.assertEqual(caps['reasoning_effort_default'], 'high')
+                self.assertEqual(caps['reasoning_level_map']['1'], 'none')
+                self.assertEqual(caps['reasoning_level_map']['7'], 'max')
+                self.assertEqual(reasoning_effort(name,'deepseek','',level=7), 'max')
+        self.assertEqual(model_capabilities('unknown-private-model','deepseek',profile={})['reasoning_level_map'], {})
+
+    def test_deepseek_selected_effort_reaches_chat_completion_payload(self):
+        from common.llm_factory import create_chat_model
+        from langchain_core.messages import HumanMessage
+        for name in ('deepseek-flash','deepseek-v4-pro'):
+            for level, expected in ((0,None),(1,'none'),(3,'low'),(5,'high'),(7,'max')):
+                with self.subTest(model=name, level=level):
+                    model = create_chat_model(model=name,provider='deepseek',api_key='test',
+                                              base_url='https://api.deepseek.com',reasoning_level=level)
+                    payload = model._get_request_payload([HumanMessage('test')])
+                    self.assertEqual(payload.get('reasoning_effort'), expected)
+
     def test_unified_level_is_persisted_per_agent_and_preserves_recent_turn_setting(self):
         from webot import runtime_settings as settings
         with TemporaryDirectory() as tmp, patch.object(settings,'USER_FILES_DIR',Path(tmp)):
