@@ -22,6 +22,8 @@ const runCommands = new Set([
   "stop",
   "restart",
   "setup",
+  "components",
+  "install-component",
   "status",
   "logs",
   "doctor",

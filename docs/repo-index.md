@@ -21,6 +21,7 @@ Use this file when an agent needs to **index the repo before reading code**. It 
 | `src/cli/commands/` | CLI subcommands, profiles, pickers and API client |
 | `src/backend/ops/setup/` | runtime configuration, user setup and the read-only OpenClaw LLM import |
 | `tools/build/` | development and frontend/preset build tools |
+| `package.json` / `docs/npm-packaging.md` | npm runtime file list and direct source packaging; tarballs go to `dist/` |
 | `tools/diagnostics/` | runtime inspection tools |
 | `tools/maintenance/` | repository maintenance tools |
 | `examples/` | API and OASIS examples, grouped by subsystem |

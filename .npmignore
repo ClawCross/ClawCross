@@ -5,6 +5,8 @@
 __pycache__/
 *.pyc
 *.pyo
+/pycache/
+:memory:/
 
 # 环境变量配置（含密钥）
 config/.env
@@ -103,6 +105,11 @@ data/debug_llm_payload_last.json
 .git/
 .github/
 .pytest_cache/
+test/
+playwright.config.mjs
+pytest.ini
+HANDOFF.md
+docs/self-evolution/
 
 # 显式排除大体积二进制（npm 对 bin/ 字段所在目录有强制保留）
 bin/cloudflared
