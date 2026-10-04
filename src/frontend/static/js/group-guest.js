@@ -25,6 +25,9 @@
   }
   function clearReply() { replyContext = null; el('reply-preview').hidden = true; }
   el('reply-cancel').addEventListener('click', clearReply);
+  GroupMessageMenu.bind(el('messages'), id => messageCache.get(id), setReply);
+  const historyMessages = new Map();
+  GroupMessageMenu.bind(el('history-results'), id => historyMessages.get(id), message => { el('history').open = false; setReply(message); });
   let members = [], mentionRange = null, selectedMentions = [], previousDraft = '', activeOption = 0;
   function hideMentions() { el('mention-menu').hidden = true; el('text').setAttribute('aria-expanded', 'false'); mentionRange = null; }
   function updateDraft() {
@@ -123,8 +126,7 @@
       const by = document.createElement('div'); by.className = 'byline';
       by.textContent = m.sender_name + ' · ' + new Date(m.created_at * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
       const bubble = document.createElement('div'); bubble.className = 'bubble'; bubble.textContent = m.content;
-      const reply = document.createElement('button'); reply.type = 'button'; reply.className = 'quote-action'; reply.textContent = '引用';
-      reply.setAttribute('aria-label', '引用消息 ' + m.id); reply.addEventListener('click', () => setReply(m)); by.append(' ', reply);
+      bubble.dataset.groupMessageId = m.id; bubble.tabIndex = 0;
       const reference = m.reply || messageCache.get(m.reply_to);
       if (reference || m.reply_to) {
         const quote = document.createElement('div'); quote.className = 'quote';
@@ -168,7 +170,7 @@
   });
   async function searchHistory(reset) {
     const generation = reset ? ++historyGeneration : historyGeneration;
-    if (reset) { historyQuery = el('history-query').value.trim(); historyBefore = 0; el('history-results').replaceChildren(); el('history-more').hidden = true; }
+    if (reset) { historyQuery = el('history-query').value.trim(); historyBefore = 0; el('history-results').replaceChildren(); historyMessages.clear(); el('history-more').hidden = true; }
     if (!historyQuery) return;
     const button = reset ? el('history-search').querySelector('button') : el('history-more'); button.disabled = true;
     el('history-status').textContent = '正在查找…';
@@ -180,9 +182,8 @@
         const author = document.createElement('strong'); author.textContent = message.sender_name;
         const date = document.createElement('small'); date.textContent = new Date(message.created_at * 1000).toLocaleString();
         const text = document.createElement('p'); text.textContent = message.content;
-        const reply = document.createElement('button'); reply.type = 'button'; reply.textContent = '引用回复';
-        reply.addEventListener('click', () => { el('history').open = false; setReply(message); });
-        row.append(author,date,text,reply); el('history-results').append(row);
+        historyMessages.set(message.id,message); row.dataset.groupMessageId = message.id; row.tabIndex = 0;
+        row.append(author,date,text); el('history-results').append(row);
       }
       historyBefore = data.next_before_id || 0; el('history-more').hidden = !historyBefore;
       const count = el('history-results').children.length;

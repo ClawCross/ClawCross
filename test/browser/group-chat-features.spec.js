@@ -32,11 +32,42 @@ async function mobileSetup(page) {
   return {errors,calls};
 }
 
+async function holdMessage(locator) {
+  await locator.evaluate(target => {
+    const box = target.getBoundingClientRect();
+    target.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerType:'touch',pointerId:7,isPrimary:true,clientX:box.left+20,clientY:box.top+20}));
+  });
+  await expect(locator.page().getByRole('menu',{name:'消息操作'})).toBeVisible();
+  await locator.evaluate(target => target.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerType:'touch',pointerId:7,isPrimary:true})));
+}
+
 for(const mobile of [false,true]) {
   test(`group features: ${mobile?'mobile':'desktop'} rename, search, quote and invite QR`,async({page})=>{
     await page.setViewportSize(mobile?{width:390,height:844}:{width:1200,height:850});
     const {errors,calls}=await mobileSetup(page);
     await expect(page.locator('#chat-body')).toContainText('旧消息');
+    await expect(page.locator('.msg-reply-action')).toHaveCount(0);
+    const bubble = page.locator('#chat-body [data-group-message-id="10"]');
+    if (mobile) await holdMessage(bubble); else await bubble.click({button:'right'});
+    await expect(page.getByRole('menu',{name:'消息操作'})).toBeVisible();
+    const bounds = await page.getByRole('menu').boundingBox();
+    expect(bounds.x >= 0 && bounds.y >= 0 && bounds.x+bounds.width <= page.viewportSize().width && bounds.y+bounds.height <= page.viewportSize().height).toBe(true);
+    await page.getByRole('menuitem',{name:'引用回复',exact:true}).click();
+    await expect(page.locator('#group-reply-preview')).toContainText('旧消息');
+    await page.getByRole('button',{name:'取消引用',exact:true}).click();
+    await bubble.focus(); await bubble.press('Shift+F10');
+    await expect(page.getByRole('menu')).toBeVisible(); await page.keyboard.press('Escape');
+    await expect(page.getByRole('menu')).toHaveCount(0);
+    await bubble.click({button:'right'}); await page.locator('#msg-input').click();
+    await expect(page.getByRole('menu')).toHaveCount(0);
+    if (mobile) {
+      await bubble.evaluate(target => {
+        target.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerType:'touch',pointerId:8,isPrimary:true,clientX:60,clientY:160}));
+        target.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerType:'touch',pointerId:8,isPrimary:true,clientX:60,clientY:220}));
+      });
+      await page.waitForTimeout(600);
+      await expect(page.getByRole('menu')).toHaveCount(0);
+    }
     await page.evaluate(()=>GroupNetworkUI.rename('rg_one'));
     await page.getByRole('textbox',{name:'群名',exact:true}).fill('我们的新群');
     await page.getByRole('button',{name:'保存群名',exact:true}).click();
@@ -47,7 +78,8 @@ for(const mobile of [false,true]) {
     await page.getByRole('button',{name:'搜索',exact:true}).click();
     await expect(page.locator('.gn-search-results')).toContainText('早期历史 <img');
     await expect(page.locator('.gn-search-results img')).toHaveCount(0);
-    await page.getByRole('button',{name:'引用回复',exact:true}).click();
+    await page.locator('.gn-search-result').click({button:'right'});
+    await page.getByRole('menuitem',{name:'引用回复',exact:true}).click();
     await expect(page.locator('#group-reply-preview')).toBeVisible();
     await expect(page.locator('#group-reply-preview')).toContainText('Bob');
     await page.locator('#msg-input').fill('答复旧消息');
@@ -96,11 +128,16 @@ test('guest history search quotes older messages and preserves the reference on 
   await page.getByRole('button',{name:'进入群聊',exact:true}).click();await expect(page.locator('#chat')).toBeVisible();
   await page.locator('#history summary').click();await page.locator('#history-query').fill('旧消息');await page.getByRole('button',{name:'搜索',exact:true}).click();
   await expect(page.locator('#history-results')).toContainText('旧消息 <script>');
-  await page.getByRole('button',{name:'引用回复',exact:true}).click();await expect(page.locator('#reply-preview')).toBeVisible();
+  await page.locator('.history-result').click({button:'right'});
+  await page.getByRole('menuitem',{name:'引用回复',exact:true}).click();await expect(page.locator('#reply-preview')).toBeVisible();
   await page.locator('#text').fill('引用回答');await page.getByRole('button',{name:'发送',exact:true}).click();
   await expect(page.locator('#status')).toContainText('暂时断线');await expect(page.locator('#reply-preview')).toBeVisible();
   await page.getByRole('button',{name:'发送',exact:true}).click();await expect(page.locator('#reply-preview')).toBeHidden();
   await expect(page.locator('#messages .quote')).toContainText('旧消息 <script>');
   await page.reload();await expect(page.locator('#messages .quote')).toContainText('旧消息');
+  await expect(page.locator('.quote-action')).toHaveCount(0);
+  await holdMessage(page.locator('#messages [data-group-message-id="100"]'));
+  await page.getByRole('menuitem',{name:'引用回复',exact:true}).click();
+  await expect(page.locator('#reply-preview')).toContainText('最近的消息');
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);expect(errors).toEqual([]);
 });

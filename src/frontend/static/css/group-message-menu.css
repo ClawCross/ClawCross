@@ -1,0 +1,35 @@
+.group-message-menu {
+  position: fixed;
+  z-index: 10000;
+  display: grid;
+  min-width: 148px;
+  max-width: calc(100vw - 16px);
+  padding: 5px;
+  border: 1px solid var(--ui-border, #dfe6df);
+  border-radius: 12px;
+  background: var(--ui-surface, #fff);
+  color: var(--ui-text, #23312b);
+  box-shadow: 0 8px 30px #172b2029;
+  font: 14px/1.4 system-ui, sans-serif;
+}
+.group-message-menu button {
+  min-height: 40px;
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  padding: 9px 14px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.group-message-menu button:hover, .group-message-menu button:focus-visible {
+  background: var(--ui-surface-2, #edf3ed);
+  outline: none;
+}
+[data-group-message-id] { -webkit-touch-callout: none; }
+[data-group-message-id]:focus-visible { outline: 2px solid var(--ui-accent, #679b7e); outline-offset: 3px; }
+@media (pointer: coarse) {
+  [data-group-message-id] { -webkit-user-select: none; user-select: none; }
+}

@@ -537,14 +537,14 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-10-04T15:41:03.645040+00:00`
+- Updated at: `2026-10-04T16:00:14.537508+00:00`
 - Strategy: `harden`
-- Heuristic candidate: `blended-verification-loop-approval-auth-workspace-preflight`
-- Heuristic score: `0.594`
+- Heuristic candidate: `blended-verification-loop-approval-auth-bounded-execution`
+- Heuristic score: `0.604`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: (external failure context). Signals: verification-loop, approval-auth, workspace-preflight. stdout was used as fallback failure evidence.
+Command exited with code 1. Command: (external failure context). Signals: verification-loop, approval-auth, bounded-execution. stdout was used as fallback failure evidence.
 
 ### Strategy Rationale
 
@@ -558,34 +558,24 @@ Command exited with code 1. Command: (external failure context). Signals: verifi
 ### Latest Error Excerpt
 
 ```text
-Dependency install: /home/ubuntu/.clawcross/venv/bin/python -m pip failed: No module named pip. Use uv pip install --python <venv python>.
-..F..F.........................                                     [100%]
-=================================== FAILURES ===================================
-___________ GroupChatFeatures.test_legacy_group_reference_and_search ___________
+[2m[WebServer] [22m2026-10-04 23:58:38,669 INFO [werkzeug] [req:-] [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+[2m[WebServer] [22m * Running on http://127.0.0.1:51229
+[2m[WebServer] [22m2026-10-04 23:58:38,669 INFO [werkzeug] [req:-] [33mPress CTRL+C to quit[0m
+[2m[WebServer] [22m2026-10-04 23:58:39,660 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58:39] "GET /studio HTTP/1.1" 200 -
 
-self = <test.test_group_chat_features.GroupChatFeatures testMethod=test_legacy_group_reference_and_search>
+Running 3 tests using 1 worker
 
-    def test_legacy_group_reference_and_search(self):
-        store=ConversationStore(Path(self.temp.name)/'old.db'); conversations=Conversations(store,Mock(),Mock()); service=GroupService(conversations)
->       one=store.create(owner='alice',title='Old',members=[human('alice')]); other=store.create(owner='bob',title='Other',members=[human('bob')])
-            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E       TypeError: ConversationStore.create() missing 1 required positional argument: 'kind'
-
-test/test_group_chat_features.py:101: TypeError
-__ GroupChatFeatures.test_search_api_authentication_guest_privacy_and_revoke ___
-
-self = <test.test_group_chat_features.GroupChatFeatures testMethod=test_search_api_authentication_guest_privacy_and_revoke>
-
-    def test_search_api_authentication_guest_privacy_and_revoke(self):
-        self.store.post(self.host['token'],content='find me')
-        with TestClient(create_app(data_dir=self.temp.name,control_key='key',legacy=False)) as api:
-            self.assertEqual(api.get('/relay/search',params={'query':'find'}).status_code,401)
-            headers={'Authorization':'Bearer '+self.guest['token']}
-            response=api.get('/relay/guest/search',params={'query':'find'},headers=headers)
-            self.assertEqual(response.status_code,200)
-            self.assertNotIn('sender_connection',response.text)
-            self.assertNotIn('sender_agent_id',response.text)
-            self.assertEqual(api.get('/relay/guest/ ...[truncated]
+(node:1949385) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1949385) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[2m[WebServer] [22m2026-10-04 23:58:43,117 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58:43] "GET /mobile/group_chat HTTP/1.1" 200 -
+[2m[WebServer] [22m2026-10-04 23:58:43,203 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58:43] "GET /static/js/attachment-utils.js?v=20261003-media HTTP/1.1" 200 -
+[2m[WebServer] [22m2026-10-04 23:58:43,214 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58:43] "GET /static/js/snapshot_zip_progress.js?v=20260331-progress HTTP/1.1" 200 -
+[2m[WebServer] [22m2026-10-04 23:58:43,216 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58:43] "GET /static/css/markdown-shared.css?v=20261004-fold-approval HTTP/1.1" 200 -
+[2m[WebServer] [22m2026-10-04 23:58:43,218 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58:43] "GET /static/css/external-agent-settings.css?v=20261004-effort-stops HTTP/1.1" 200 -
+[2m[WebServer] [22m2026-10-04 23:58:43,221 INFO [werkzeug] [req:-] 127.0.0.1 - - [04/Oct/2026 23:58:43] "GET /static/js/components.js?v=20261004-windows-sandbox HTTP/1.1" 200 -
+[2m[WebServer] [22m2026-10-04 23:58:43,224 INFO [werkzeug] [req: ...[truncated]
 ```
 
 ### Governance Snapshot
@@ -608,15 +598,14 @@ self = <test.test_group_chat_features.GroupChatFeatures testMethod=test_search_a
 
 ### Recent Evidence
 
-- `2026-10-04T15:41:03.645040+00:00` `repo-skill` — Dependency install: /home/ubuntu/.clawcross/venv/bin/python -m pip failed: No module named pip. Use uv pip install --python <venv python>.
-..F ...[truncated]
+- `2026-10-04T16:00:14.537508+00:00` `repo-skill` — [2m[WebServer] [22m2026-10-04 23:58:38,669 INFO [werkzeug] [req:-] [31m[1mWARNING: This is a development server. Do not use it in a produc ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `blended-verification-loop-approval-auth-workspace-preflight` score `0.594` — Blend the strongest recent failure patterns (intent `repair`)
-- `verification-loop-4` score `0.554` — Tighten verification loops (intent `repair`)
-- `approval-auth-4` score `0.554` — Preflight auth and approval constraints (intent `repair`)
-- `workspace-preflight-1` score `0.452` — Add repo/workspace preflight checks (intent `repair`)
+- `blended-verification-loop-approval-auth-bounded-execution` score `0.604` — Blend the strongest recent failure patterns (intent `repair`)
+- `verification-loop-3` score `0.564` — Tighten verification loops (intent `repair`)
+- `approval-auth-2` score `0.515` — Preflight auth and approval constraints (intent `repair`)
+- `bounded-execution-1` score `0.467` — Bound long-running and flaky execution (intent `optimize`)
 
 ### Local State Snapshot
 
