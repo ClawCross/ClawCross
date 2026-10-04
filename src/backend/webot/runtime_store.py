@@ -2527,6 +2527,11 @@ def list_tool_approvals(
         params.append(session_id)
     if session_id:
         with _connect_agent(user_id, session_id, db_path) as conn:
+            if status:
+                query.append('AND status = ?')
+                params.append(status)
+            query.append('ORDER BY updated_at DESC LIMIT ?')
+            params.append(max(1, limit))
             rows = conn.execute(" ".join(query), params).fetchall()
     else:
         rows = _query_agent_rows(" ".join(query), params, db_path=db_path, identity="approval_id")

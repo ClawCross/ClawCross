@@ -66,9 +66,13 @@ def _workspace_skill_root(user_id: str, team: str = '') -> Path:
     if legacy.is_dir() and legacy.resolve() != root.resolve():
         root.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
         if not root.exists():
-            try: shutil.move(str(legacy), str(root))
+            try: legacy.rename(root)
             except FileNotFoundError:
                 if not root.is_dir(): raise
+            except OSError as exc:
+                import errno
+                if exc.errno != errno.EXDEV: raise
+                shutil.move(str(legacy), str(root))
         else:
             _merge_legacy_skills(legacy,root)
     root.mkdir(parents=True, mode=0o700, exist_ok=True)

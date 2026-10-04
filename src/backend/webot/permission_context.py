@@ -219,6 +219,7 @@ def resolve_permission_request(
             set_approval_review_metadata(approval_id, user_id, metadata)
         except Exception as exc:
             metadata['remember_error'] = type(exc).__name__
+            metadata['human_resolution'] = 'denied'
             set_approval_review_metadata(approval_id, user_id, metadata)
             return update_tool_approval_status(approval_id, user_id, status='denied',
                 resolution_reason='无法保存 KEEP Y 授权，本次操作未执行。', expected_status='approved')

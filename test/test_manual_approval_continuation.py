@@ -155,3 +155,14 @@ class ManualContinuationTests(unittest.IsolatedAsyncioTestCase):
         gateway.trigger.assert_awaited_once()
         self.assertEqual(gateway.trigger.await_args.kwargs['context']['groups'], self.groups)
         self.system.run.assert_not_awaited()
+
+    async def test_failed_keep_registration_does_not_resume_as_an_approval(self):
+        record = await self.pending()
+        with patch('webot.permission_context.remember_approval_in_policy', side_effect=OSError('save failed')):
+            result = await self.resolve(record, remember=True)
+        self.assertEqual(result['approval']['status'], 'denied')
+        self.assertFalse(result['approval']['remember'])
+        request = self.system.run.await_args.args[0]
+        self.assertEqual(request.approval_resume_id, '')
+        self.assertNotIn('系统将重试原操作', request.text)
+        self.assertFalse(self.output.exists())

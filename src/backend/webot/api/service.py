@@ -1065,10 +1065,13 @@ class WeBotService:
         )
         if approval is None:
             raise HTTPException(status_code=409, detail='此审核已被处理，未重复执行。')
+        # KEEP Y can fail while persisting its scope. Continue according to the
+        # recorded outcome, never the button the user originally pressed.
+        normalized_action = approval.status
         continuation = metadata.get('continuation') or {}
         text = (f'[操作授权结果] {approval.approval_id}：'
                 + ('用户已批准此具体操作。系统将重试原操作，完成后继续原任务。' if normalized_action == 'approved'
-                   else '用户已拒绝此操作。不要重试或改写绕过拒绝；说明未执行的原因并继续可以完成的部分。'))
+                   else '此操作未获批准或保存授权失败。不要重试或改写绕过拒绝；说明未执行的原因并继续可以完成的部分。'))
         from agents.store import get_store, WEBOT
         target = get_store().get(req.user_id, approval.session_id)
         if target is None or target.driver == WEBOT:
@@ -1093,6 +1096,6 @@ class WeBotService:
                 "approval_id": approval.approval_id,
                 "tool_name": approval.tool_name,
                 "status": approval.status,
-                "remember": req.remember,
+                "remember": bool(json.loads(approval.review_metadata_json or '{}').get('remembered')),
             },
         }

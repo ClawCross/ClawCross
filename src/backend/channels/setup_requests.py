@@ -106,7 +106,7 @@ def status(user_id: str, request_id: str) -> dict:
                          (request_id, user_id)).fetchone()
     if row is None:
         raise ValueError('Setup request not found')
-    return {'id': request_id, 'channel': row['channel'], 'status': 'expired' if row['created'] < time.time()-86400 else row['status']}
+    return {'id': request_id, 'channel': row['channel'], 'status': 'expired' if row['status'] == 'pending' and row['created'] < time.time()-86400 else row['status']}
 
 
 def _apply(channel: dict, values: dict, env_path: Path) -> None:
