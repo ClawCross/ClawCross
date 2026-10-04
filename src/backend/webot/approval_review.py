@@ -210,7 +210,7 @@ def resolve_conversation_reply(user_id: str, session_id: str, context: dict) -> 
     updated = resolve_permission_request(user_id=user_id, approval_id=record.approval_id,
         action='approved' if approved else 'denied', reason='用户在当前对话回复 ' + command,
         remember=command.startswith('KEEP'))
-    return ('已批准' if approved else '已拒绝') + ' ' + record.approval_id if updated else ''
+    return ('已批准' if updated.status == 'approved' else '已拒绝') + ' ' + record.approval_id if updated else ''
 
 
 def conversation_approval_prompt(record, reason: str) -> str:

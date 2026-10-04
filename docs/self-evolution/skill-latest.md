@@ -1,17 +1,17 @@
 # Repository Skill Self-Evolution Report
 
 - Skill file: `/home/ubuntu/work2/ClawCross/SKILL.md`
-- Generated at: `2026-10-04T03:51:52.972641+00:00`
+- Generated at: `2026-10-04T04:02:27.198691+00:00`
 - Exit code: `1`
 
 ## Summary
 
-Command exited with code 1. Command: (external failure context). Signals: verification-loop, structured-output. stderr carried the strongest failure evidence.
+Command exited with code 1. Command: (external failure context). Signals: verification-loop, approval-auth. stderr carried the strongest failure evidence.
 
 ## stderr
 
 ```text
-Actual npm tarball verification detected tools/build/__pycache__/*.pyc and examples/**/__pycache__/*.pyc. Root .npmignore does not override the package.json files whitelist: tools/build/* also selects cache directories recursively. Fix build/example entries to explicit source extension globs, regenerate the tarball, then verify the archive itself rather than trusting ignore rules. Check packaged CLI version/help/components and import new runtime modules using a temporary CLAWCROSS_HOME. No publish or automatic binary install.
+Approval regression: test_remember_approves_only_complete_same_action and test_remember_keeps_wildcard_restrictions failed: remembered grants contain _approval_session but resolve_permission_context evaluated without it. Preserve session binding when evaluating grants; direct policy tests must explicitly identify the session. Local TestClient requires socket-capable test execution. Use the managed Python interpreter, not an assumed python command.
 ```
 
 ## stdout

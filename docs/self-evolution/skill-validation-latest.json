@@ -1,8 +1,8 @@
 {
   "type": "ValidationReport",
   "schema_version": "clawcross.skill-evolution/1.0",
-  "id": "vr_20261004035152972523",
-  "candidate_id": "blended-verification-loop-structured-output",
+  "id": "vr_20261004040227198578",
+  "candidate_id": "blended-verification-loop-approval-auth",
   "skill_name": "repo-skill",
   "strategy": "repair-only",
   "env_fingerprint": {
@@ -14,18 +14,18 @@
     "user_id": "",
     "skill_name": "repo-skill",
     "present_env_keys": [],
-    "captured_at": "2026-10-04T03:51:52.972446+00:00"
+    "captured_at": "2026-10-04T04:02:27.198546+00:00"
   },
   "commands": [
     {
       "command": "(external failure context)",
       "ok": false,
       "stdout": "",
-      "stderr": "Actual npm tarball verification detected tools/build/__pycache__/*.pyc and examples/**/__pycache__/*.pyc. Root .npmignore does not override the package.json files whitelist: tools/build/* also selects cache directories recursively. Fix build/example entries to explicit source extension globs, regenerate the tarball, then verify the archive itself rather than trusting ignore rules. Check packaged CLI version/help/components and import new runtime modules using a temporary CLAWCROSS_HOME. No publish or automatic binary install."
+      "stderr": "Approval regression: test_remember_approves_only_complete_same_action and test_remember_keeps_wildcard_restrictions failed: remembered grants contain _approval_session but resolve_permission_context evaluated without it. Preserve session binding when evaluating grants; direct policy tests must explicitly identify the session. Local TestClient requires socket-capable test execution. Use the managed Python interpreter, not an assumed python command."
     }
   ],
   "overall_ok": false,
   "duration_ms": null,
-  "created_at": "2026-10-04T03:51:52.972547+00:00",
-  "asset_id": "sha256:29ff367a3ad6ec882bb97f72bac6a5f37405dbcd430f2d987342abcf43f42681"
+  "created_at": "2026-10-04T04:02:27.198599+00:00",
+  "asset_id": "sha256:678d3af45e709a1bbb583ed86510b14a210f416bdc017d36a7c2ac9129135c19"
 }
