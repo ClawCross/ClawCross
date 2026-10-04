@@ -74,6 +74,13 @@ class AgentPatch(BaseModel):
     settings: dict[str, Any] = Field(default_factory=dict)
 
 
+class RememberedPermissionCreate(BaseModel):
+    kind: Literal['tool', 'network', 'read_path', 'write_path']
+    target: str = Field('', max_length=4096)
+    tool_name: str = Field('', max_length=100)
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
 class AgentMessageRequest(BaseModel):
     text: str
     attachments: list[dict] = Field(default_factory=list)
@@ -472,8 +479,27 @@ def create_agents_router(
     @router.get('/v1/agents/{ref}/remembered-approvals')
     async def remembered_approvals(ref: str, authorization: str | None = Header(None)):
         agent = lookup(user_of(authorization), ref)
-        from webot.remembered_approvals import remembered_tool_actions
-        return {'actions': remembered_tool_actions(agent.owner, agent.agent_id)}
+        from webot.remembered_approvals import remembered_permissions
+        return remembered_permissions(agent.owner, agent.agent_id)
+
+    @router.post('/v1/agents/{ref}/remembered-approvals')
+    async def add_remembered_approval(ref: str, body: RememberedPermissionCreate, authorization: str | None = Header(None)):
+        agent = lookup(user_of(authorization), ref)
+        from webot.remembered_approvals import add_permission, remembered_permissions
+        from webot.command_sandbox import SandboxUnavailable
+        try:
+            add_permission(agent.owner, agent.agent_id, **body.model_dump())
+        except (ValueError, SandboxUnavailable) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return remembered_permissions(agent.owner, agent.agent_id)
+
+    @router.delete('/v1/agents/{ref}/remembered-approvals/sandbox/{access}/{key}')
+    async def revoke_remembered_sandbox_permission(ref: str, access: str, key: str, authorization: str | None = Header(None)):
+        agent = lookup(user_of(authorization), ref)
+        from webot.remembered_approvals import revoke_sandbox_permission
+        if not revoke_sandbox_permission(agent.owner, agent.agent_id, access, key):
+            raise HTTPException(404, '当前 Agent 没有这条已记住的沙盒权限')
+        return {'revoked': True}
 
     @router.delete('/v1/agents/{ref}/remembered-approvals/{tool_name}/{key}')
     async def revoke_remembered_approval(ref: str, tool_name: str, key: str, authorization: str | None = Header(None)):

@@ -25,13 +25,15 @@
     }
     const index = Math.max(0, choices.findIndex(choice => String(choice.value) === String(value)));
     const current = choices[index].label;
-    return `<span class="reasoning-slider">
+    disabled = disabled || choices.length < 2;
+    return `<span class="reasoning-slider" style="--reasoning-progress:${choices.length > 1 ? index / (choices.length - 1) * 100 : 0}%">
       <output data-reasoning-output>${escape(current)}</output>
       <input type="range" min="0" max="${Math.max(1, choices.length - 1)}" step="1" value="${index}"
         data-reasoning-slider data-reasoning-choices="${escape(JSON.stringify(choices))}"
         aria-label="${escape(label || (en ? 'Reasoning effort' : '思考强度'))}" aria-valuetext="${escape(current)}"
         ${disabled ? 'disabled' : ''} ${attributes}>
-      ${disabled ? '' : `<span class="reasoning-slider-scale" aria-hidden="true"><span>${escape(mapping ? (en ? 'Auto' : '自动') : choices[0].label)}</span><span>${escape(mapping ? (en ? 'Highest' : '最高') : choices.at(-1).label)}</span></span>`}
+      <span class="reasoning-slider-stops" style="--reasoning-stop-count:${choices.length}" aria-hidden="true">${choices.map((item, stop) => `<span data-reasoning-stop="${stop}" data-selected="${stop === index}" title="${escape(item.label)}"><i></i>${escape(mapping ? (stop ? stop : (en ? 'Auto' : '自动')) : stop + 1)}</span>`).join('')}</span>
+      ${disabled || mapping ? '' : `<span class="reasoning-slider-scale" aria-hidden="true"><span>${escape(choices[0].label)}</span><span>${escape(choices.at(-1).label)}</span></span>`}
     </span>`;
   }
   function choice(input) {
@@ -44,7 +46,12 @@
     const input = event.target;
     if (!input.matches('[data-reasoning-slider]')) return;
     const current = choice(input).label;
-    input.closest('.reasoning-slider').querySelector('[data-reasoning-output]').textContent = current;
+    const slider = input.closest('.reasoning-slider');
+    slider.querySelector('[data-reasoning-output]').textContent = current;
+    slider.style.setProperty('--reasoning-progress', `${Number(input.value) / Number(input.max) * 100}%`);
+    slider.querySelectorAll('[data-reasoning-stop]').forEach(stop => {
+      stop.dataset.selected = String(Number(stop.dataset.reasoningStop) === Number(input.value));
+    });
     input.setAttribute('aria-valuetext', current);
   });
   window.ReasoningLevels = {selected, options, slider, value};

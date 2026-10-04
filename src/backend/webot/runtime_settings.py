@@ -322,3 +322,23 @@ def remember_sandbox_grant(user_id: str, *, session_id: str, access: str, target
     if grant not in grants:
         grants.append(grant)
     return _save_runtime_settings(user_id, settings={'approval': {'sandbox_grants': grants}}, session_id=session_id)
+
+
+def stored_sandbox_grants(user_id: str, session_id: str) -> list[dict]:
+    """Include inactive grants so the owner can remove them in strict mode."""
+    data = _load(user_id)
+    defaults = _merge(_env_defaults(), data.get('user', {}))
+    own = RuntimeSettings.model_validate(_merge(defaults, data.get('sessions', {}).get(session_id, {})))
+    return [grant.model_dump() for grant in own.approval.sandbox_grants]
+
+
+@_serialize_settings
+def forget_sandbox_grant(user_id: str, *, session_id: str, access: str, target: str) -> bool:
+    if not session_id:
+        raise ValueError('移除沙盒权限需要当前 Agent。')
+    grants = stored_sandbox_grants(user_id, session_id)
+    remaining = [grant for grant in grants if grant != {'access': access, 'target': target}]
+    if len(remaining) == len(grants):
+        return False
+    _save_runtime_settings(user_id, settings={'approval': {'sandbox_grants': remaining}}, session_id=session_id)
+    return True

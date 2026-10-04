@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20261004151717463753",
+  "candidate_id": "blended-verification-loop-bounded-execution",
+  "skill_name": "repo-skill",
+  "strategy": "harden",
+  "env_fingerprint": {
+    "python_version": "3.11.16",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-10-04T15:17:17.463713+00:00"
+  },
+  "commands": [
+    {
+      "command": "(external failure context)",
+      "ok": false,
+      "stdout": "1) test/browser/runtime-settings.spec.js:152:1 › strict KEEP Y shows inactive sandbox grants and prevents adding expansions \n\n    Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeDisabled\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\n    Locator:  locator('[name=kind] option[value=network]')\n    Expected: disabled\n    Received: enabled\n    Timeout:  5000ms\n\n    Call log:\n    \u001b[2m  - Expect \"toBeDisabled\" with timeout 5000ms\u001b[22m\n    \u001b[2m  - waiting for locator('[name=kind] option[value=network]')\u001b[22m\n    \u001b[2m    9 × locator resolved to <option disabled value=\"network\">联网</option>\u001b[22m\n    \u001b[2m      - unexpected value \"enabled\"\u001b[22m\n\n\n      158 |   await page.locator('.remembered-add > summary').click();\n      159 |   await expect(page.locator('[name=kind]')).toHaveValue('tool');\n    > 160 |   await expect(page.locator('[name=kind] option[value=network]')).toBeDisabled();\n          |                                                                   ^\n      161 |   await expect(page.locator('[data-tool-fields]')).toBeVisible();\n      162 | });\n      163 |\n        at /home/ubuntu/work2/ClawCross/test/browser/runtime-settings.spec.js:160:67\n\n    Error Context: test-results/runtime-settings-strict-KE-eede9--prevents-adding-expansions/error-context.md\n\n    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────\n    test-results/runtime-settings-strict-KE-eede9--prevents-adding-expansions/trace.zip\n    Usage:\n\n        npx playwright show-trace test-results/runtime-settings-strict-KE-eede9--prevents-adding-expansions/trace.zip\n\n    ────────────────────────────────────────────────────────────────────────────────────────────────",
+      "stderr": ""
+    }
+  ],
+  "overall_ok": false,
+  "duration_ms": null,
+  "created_at": "2026-10-04T15:17:17.463773+00:00",
+  "asset_id": "sha256:7f00e0dbc37340ae1e6b11e1311ec3d949cd29ae4205a6f8e060641fe57b1ccb"
+}

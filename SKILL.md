@@ -537,14 +537,14 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-10-04T13:40:21.495819+00:00`
+- Updated at: `2026-10-04T15:17:17.463879+00:00`
 - Strategy: `harden`
-- Heuristic candidate: `blended-verification-loop-approval-auth-workspace-preflight`
-- Heuristic score: `0.552`
+- Heuristic candidate: `blended-verification-loop-bounded-execution`
+- Heuristic score: `0.73`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: (external failure context). Signals: verification-loop, approval-auth, workspace-preflight. stdout was used as fallback failure evidence.
+Command exited with code 1. Command: (external failure context). Signals: verification-loop, bounded-execution. stdout was used as fallback failure evidence.
 
 ### Strategy Rationale
 
@@ -558,38 +558,40 @@ Command exited with code 1. Command: (external failure context). Signals: verifi
 ### Latest Error Excerpt
 
 ```text
-.....sss..F......FF.F....F...F..F...FF.....F... [ 79%]
-............                                                             [100%]
-pytest: =================================== FAILURES ===================================
-_________ test_windows_command_uses_shared_policy_and_opaque_workload __________
+1) test/browser/runtime-settings.spec.js:152:1 › strict KEEP Y shows inactive sandbox grants and prevents adding expansions
 
-tmp_path = PosixPath('/tmp/pytest-of-ubuntu/pytest-23/test_windows_command_uses_shar0')
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeDisabled[2m([22m[2m)[22m failed
 
-    def test_windows_command_uses_shared_policy_and_opaque_workload(tmp_path):
-        workspace = tmp_path / 'workspace'; workspace.mkdir()
-        controls = tmp_path / 'controls'; controls.mkdir()
-        shim, _ = install_fixture(tmp_path)
-        command = 'echo "中文 & spaces" & echo %PATH%'
-        def private_file(prefix):
-            fd, path = tempfile.mkstemp(prefix=prefix, suffix='.json', dir=controls)
-            return fd, Path(path)
-        with patch.object(sandbox.sys, 'platform', 'win32'), \
-                patch.object(sandbox.platform, 'machine', return_value='AMD64'), \
-                patch.object(sandbox.shutil, 'which', return_value='node.exe'), \
-                patch.object(sandbox, '_srt_binary', return_value=str(shim)), \
-                patch.object(sandbox, 'validate_workspace_root'), \
-                patch.object(sandbox, 'protected_control_paths', return_value=[controls]), \
-                patch.object(sandbox, '_command_settings_file', side_effect=private_file):
->           call = sandbox.build_srt_command(root=workspace, cwd=workspace, command=command,
-                language='shell', python_executable=sys.executable, allowed_domains=['example.com:443'])
+    Locator:  locator('[name=kind] option[value=network]')
+    Expected: disabled
+    Received: enabled
+    Timeout:  5000ms
 
-test/test_windows_srt.py:57:
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-src/backend/webot/command_sandbox.py:503: in build_srt_command
-    json.dump(config, handle, ensure_ascii=False)
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+    Call log:
+    [2m  - Expect "toBeDisabled" with timeout 5000ms[22m
+    [2m  - waiting for locator('[name=kind] option[value=network]')[22m
+    [2m    9 × locator resolved to <option disabled value="network">联网</option>[22m
+    [2m      - unexpected value "enabled"[22m
 
-obj = {'network': {'allowedDomains': ['example.com:443'], 'deniedDomains': [], ' ...[truncated]
+
+      158 |   await page.locator('.remembered-add > summary').click();
+      159 |   await expect(page.locator('[name=kind]')).toHaveValue('tool');
+    > 160 |   await expect(page.locator('[name=kind] option[value=network]')).toBeDisabled();
+          |                                                                   ^
+      161 |   await expect(page.locator('[data-tool-fields]')).toBeVisible();
+      162 | });
+      163 |
+        at /home/ubuntu/work2/ClawCross/test/browser/runtime-settings.spec.js:160:67
+
+    Error Context: test-results/runtime-settings-strict-KE-eede9--prevents-adding-expansions/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/runtime-settings-strict-KE-eede9--prevents-adding-expansions/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/runtime-settings-strict-KE-eede9--prevents-adding-expansions/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
 ```
 
 ### Governance Snapshot
@@ -612,16 +614,15 @@ obj = {'network': {'allowedDomains': ['example.com:443'], 'deniedDomains': [], '
 
 ### Recent Evidence
 
-- `2026-10-04T13:40:21.495819+00:00` `repo-skill` — .....sss..F......FF.F....F...F..F...FF.....F... [ 79%]
-............                                                             [100%]
-pytest: ======= ...[truncated]
+- `2026-10-04T15:17:17.463879+00:00` `repo-skill` — 1) test/browser/runtime-settings.spec.js:152:1 › strict KEEP Y shows inactive sandbox grants and prevents adding expansions
+
+    Error: [2me ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `blended-verification-loop-approval-auth-workspace-preflight` score `0.552` — Blend the strongest recent failure patterns (intent `repair`)
-- `verification-loop-5` score `0.512` — Tighten verification loops (intent `repair`)
-- `approval-auth-5` score `0.512` — Preflight auth and approval constraints (intent `repair`)
-- `workspace-preflight-4` score `0.494` — Add repo/workspace preflight checks (intent `repair`)
+- `blended-verification-loop-bounded-execution` score `0.73` — Blend the strongest recent failure patterns (intent `repair`)
+- `verification-loop-4` score `0.69` — Tighten verification loops (intent `repair`)
+- `bounded-execution-1` score `0.486` — Bound long-running and flaky execution (intent `optimize`)
 
 ### Local State Snapshot
 

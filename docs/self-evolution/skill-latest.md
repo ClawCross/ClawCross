@@ -1,12 +1,12 @@
 # Repository Skill Self-Evolution Report
 
 - Skill file: `/home/ubuntu/work2/ClawCross/SKILL.md`
-- Generated at: `2026-10-04T13:40:21.495819+00:00`
+- Generated at: `2026-10-04T15:17:17.463879+00:00`
 - Exit code: `1`
 
 ## Summary
 
-Command exited with code 1. Command: (external failure context). Signals: verification-loop, approval-auth, workspace-preflight. stdout was used as fallback failure evidence.
+Command exited with code 1. Command: (external failure context). Signals: verification-loop, bounded-execution. stdout was used as fallback failure evidence.
 
 ## stderr
 
@@ -17,24 +17,30 @@ Command exited with code 1. Command: (external failure context). Signals: verifi
 ## stdout
 
 ```text
-.....sss..F......FF.F....F...F..F...FF.....F... [ 79%]
-............                                                             [100%]
-pytest: =================================== FAILURES ===================================
-_________ test_windows_command_uses_shared_policy_and_opaque_workload __________
+1) test/browser/runtime-settings.spec.js:152:1 › strict KEEP Y shows inactive sandbox grants and prevents adding expansions
 
-tmp_path = PosixPath('/tmp/pytest-of-ubuntu/pytest-23/test_windows_command_uses_shar0')
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeDisabled[2m([22m[2m)[22m failed
 
-    def test_windows_command_uses_shared_policy_and_opaque_workload(tmp_path):
-        workspace = tmp_path / 'workspace'; workspace.mkdir()
-        controls = tmp_path / 'controls'; controls.mkdir()
-        shim, _ = install_fixture(tmp_path)
-        command = 'echo "中文 & spaces" & echo %PATH%'
-        def private_file(prefix):
-            fd, path = tempfile.mkstemp(prefix=prefix, suffix='.json', dir=controls)
-            return fd, Path(path)
-        with patch.object(sandbox.sys, 'platform', 'win32'), \
-                patch.object(sandbox.platform, 'machine', return_value='AMD64'), \
-                patch.object(sandbox.shutil, 'which', return_value='node.exe'), \
-                patch.object(sandbox, '_srt_binary', return_value=str(shim)), \
-                patch.object(sandbox, ...[truncated]
+    Locator:  locator('[name=kind] option[value=network]')
+    Expected: disabled
+    Received: enabled
+    Timeout:  5000ms
+
+    Call log:
+    [2m  - Expect "toBeDisabled" with timeout 5000ms[22m
+    [2m  - waiting for locator('[name=kind] option[value=network]')[22m
+    [2m    9 × locator resolved to <option disabled value="network">联网</option>[22m
+    [2m      - unexpected value "enabled"[22m
+
+
+      158 |   await page.locator('.remembered-add > summary').click();
+      159 |   await expect(page.locator('[name=kind]')).toHaveValue('tool');
+    > 160 |   await expect(page.locator('[name=kind] option[value=network]')).toBeDisabled();
+          |                                                                   ^
+      161 |   await expect(page.locator('[data-tool-fields]')).toBeVisible();
+      162 | });
+      163 |
+        at /home/ubuntu/work2/ClawCross/test/browser/runtime-settings.spec.js:160:67
+
+    Error Context: test-results/runti ...[truncated]
 ```

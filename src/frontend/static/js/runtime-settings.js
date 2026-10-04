@@ -159,16 +159,7 @@ async function loadRuntimeSettingsScope() {
                     <textarea data-section="approval" data-key="sandbox_allowed_domains" data-value-type="lines" class="runtime-settings-input" rows="2" placeholder="example.com:443">${escapeHtml((approval.sandbox_allowed_domains || []).join('\n'))}</textarea>
                     <small>${text('每行一个域名或公网 IP，可加端口；不接受 URL 或通配符。严格模式下，命令、Web 搜索和抓取都受此列表限制；留空即离线，审批不能扩大范围，搜索服务自身的域名也需要许可。普通模式中新目标按当前模式审核。命令须使用沙盒代理；外部 CLI 的原生工具仍由其自身权限管理。', 'One domain or public IP per line, optionally with a port; no URLs or wildcards. Strict mode applies this list to commands, Web search and fetch: empty means offline, approval cannot expand it, and search provider domains need permission too. Standard mode reviews new destinations. Commands use sandbox proxies; external CLI native tools retain their own permissions.')}</small>
                     ${networkClosed ? `<small class="runtime-settings-error">${text('管理员显式关闭了网络提权，未列出的目标不能送审。', 'The administrator explicitly disabled network escalation; unlisted destinations cannot be reviewed.')}</small>` : ''}</label>
-                <input type="hidden" data-section="approval" data-key="sandbox_grants" data-value-type="json" value="${escape(JSON.stringify(approval.sandbox_grants || []))}">
-                <details class="runtime-settings-advanced"><summary>${text('已记住的沙盒权限', 'Remembered sandbox permissions')}<span>${(approval.sandbox_grants || []).length}</span></summary>
-                    <div class="runtime-settings-advanced-body">
-                        <p class="runtime-settings-note">${text('KEEP Y 保存具体目标和访问类型，下次命令自动使用；仍受管理员权限上限约束。移除后点击保存设置。', 'KEEP Y saves the specific target and access type for later commands, subject to administrator limits. Save settings after removing an entry.')}</p>
-                        ${(approval.sandbox_grants || []).map(grant => `<div class="runtime-settings-field" data-sandbox-grant>
-                            <span style="overflow-wrap:anywhere">${text({network:'联网',read_path:'只读',write_path:'读写'}[grant.access], {network:'Network',read_path:'Read',write_path:'Read/write'}[grant.access])} · ${escapeHtml(grant.target)}</span>
-                            <button type="button" class="btn btn-secondary" data-access="${escape(grant.access)}" data-target="${escape(grant.target)}" onclick="removeRememberedSandboxGrant(this)">${text('移除', 'Remove')}</button>
-                        </div>`).join('')}
-                    </div>
-                </details>
+                <div id="runtime-settings-remembered"></div>
                 ${typeof componentControlMarkup === 'function' ? componentControlMarkup('srt') : ''}
                 ${instructions('approval', 'reviewer_policy', approval.reviewer_policy, '补充审核要求', 'Additional review instructions', '例如：允许安装任务所需依赖；删除文件没有明确授权时拒绝', 'For example: allow task dependencies; deny deletion without explicit authorization')}
                 <details class="runtime-settings-advanced"><summary>${text('高级审核设置', 'Advanced review settings')}<span>${text('模型与等待时间', 'Model and timeout')}</span></summary>
@@ -181,6 +172,7 @@ async function loadRuntimeSettingsScope() {
             </section>`;
         showRuntimeSettingsTab(view.activeTab);
         updateRuntimeReviewerHint();
+        if (window.RememberedApprovals) RememberedApprovals.mount(document.getElementById('runtime-settings-remembered'), view.targetSession);
         if (typeof initComponentControls === 'function') initComponentControls(document.getElementById('runtime-settings-fields'));
         const compact = payload.last_compaction;
         status.textContent = compact && Number.isFinite(compact.before_tokens) && Number.isFinite(compact.after_tokens) ? runtimeSettingsText(
@@ -238,17 +230,6 @@ function showRuntimeSettingsTab(section) {
         const panel = document.getElementById(`runtime-settings-${name}`);
         if (panel) panel.hidden = !selected;
     }
-}
-
-function removeRememberedSandboxGrant(button) {
-    const input = document.querySelector('#runtime-settings-fields [data-key="sandbox_grants"]');
-    const grants = JSON.parse(input.value);
-    input.value = JSON.stringify(grants.filter(grant => grant.access !== button.dataset.access || grant.target !== button.dataset.target));
-    const row = button.closest('[data-sandbox-grant]');
-    const count = row.closest('details').querySelector('summary span');
-    row.remove();
-    count.textContent = JSON.parse(input.value).length;
-    document.getElementById('runtime-settings-result').textContent = runtimeSettingsText('已移除，请保存设置。', 'Removed. Save settings to apply.');
 }
 
 function updateRuntimeReviewerHint() {
