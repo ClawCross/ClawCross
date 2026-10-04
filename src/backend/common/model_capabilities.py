@@ -72,13 +72,18 @@ def model_capabilities(model: str, provider: str = "", profile: dict | None = No
     if not levels and vendor in {"openai", "deepseek"}:
         levels = row.get("compat", {}).get("supportedReasoningEfforts", [])
     result["reasoning_effort_levels"] = [v for v in levels if isinstance(v, str)]
+    from common.reasoning_levels import level_map
+    result['reasoning_level_map'] = level_map(result['reasoning_effort_levels'])
     return result
 
 
-def reasoning_effort(model: str, provider: str, requested: str) -> str | None:
+def reasoning_effort(model: str, provider: str, requested: str, *, level: int = 0) -> str | None:
     """Only send a parameter supported by this model and adapter."""
     caps = model_capabilities(model, provider)
     levels = caps["reasoning_effort_levels"]
+    if level:
+        from common.reasoning_levels import mapped_effort
+        return mapped_effort(levels, level)
     if requested and requested in levels:
         return requested
     return None

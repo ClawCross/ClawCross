@@ -90,6 +90,9 @@ async function loadRuntimeSettingsScope() {
         const inference = payload.settings.inference || {reasoning_effort:''};
         const capabilities = payload.model_capabilities || {};
         const levels = capabilities.reasoning_effort_levels || [];
+        const levelMap = capabilities.reasoning_level_map || {};
+        const unified = window.ReasoningLevels && Object.keys(levelMap).length;
+        const selectedLevel = unified ? ReasoningLevels.selected(inference.reasoning_level, inference.reasoning_effort) : 0;
         const networkClosed = Array.isArray(payload.sandbox_network_maximum) && !payload.sandbox_network_maximum.length;
         if (scope === 'session' && ['chat', 'readonly', 'manual', 'auto', 'bypass'].includes(payload.effective_mode)) approval.mode = payload.effective_mode;
         const escape = value => escapeHtml(String(value)).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -104,7 +107,7 @@ async function loadRuntimeSettingsScope() {
         const autoHint = text('0 表示自动，根据上面设置的窗口调整', '0 = automatic, based on the configured window');
         document.getElementById('runtime-settings-fields').innerHTML = `
             <section id="runtime-settings-context" role="tabpanel" aria-labelledby="runtime-settings-context-tab">
-                ${levels.length ? `<label class="runtime-settings-field"><span>${text('思考强度', 'Reasoning effort')}</span><select data-section="inference" data-key="reasoning_effort" class="runtime-settings-input"><option value="">${text('使用模型预设', 'Use model preset')}${capabilities.reasoning_effort_default ? ' · ' + escape(capabilities.reasoning_effort_default) : ''}</option>${levels.map(level => `<option value="${escape(level)}" ${inference.reasoning_effort === level ? 'selected' : ''}>${escape(level)}</option>`).join('')}</select><small>${escape(capabilities.model || '')}</small></label>` : ''}
+                ${unified ? `<label class="runtime-settings-field"><span>${text('思考强度 · 7 级', 'Reasoning effort · 7 levels')}</span><select data-section="inference" data-key="reasoning_level" data-value-type="number" class="runtime-settings-input">${ReasoningLevels.options(levelMap,selectedLevel,text('自动 · 模型预设','Automatic · Model preset'))}</select><small>${escape(capabilities.model || '')} · ${text('箭头后是实际原生档位；部分级别会重复。','The arrow shows the native setting; some levels repeat.')}</small></label>` : levels.length ? `<label class="runtime-settings-field"><span>${text('思考强度', 'Reasoning effort')}</span><select data-section="inference" data-key="reasoning_effort" class="runtime-settings-input"><option value="">${text('使用模型预设', 'Use model preset')}${capabilities.reasoning_effort_default ? ' · ' + escape(capabilities.reasoning_effort_default) : ''}</option>${levels.map(level => `<option value="${escape(level)}" ${inference.reasoning_effort === level ? 'selected' : ''}>${escape(level)}</option>`).join('')}</select><small>${escape(capabilities.model || '')}</small></label>` : ''}
                 <div id="runtime-settings-usage">${renderRuntimeContextUsage(payload.context_usage || (typeof sessionContextUsageState !== 'undefined' ? sessionContextUsageState : {}), context.context_window_tokens)}</div>
                 <div class="runtime-settings-toggle-row">
                     <div><h3>${text('自动压缩', 'Automatic compaction')}</h3><p>${text('上下文变长时，整理早期对话并保留近期原文。', 'Summarize older conversations while keeping recent turns intact.')}</p></div>
@@ -201,10 +204,11 @@ async function saveRuntimeSettingsForm(reset = false) {
             input.reportValidity();
             return;
         }
-        const value = input.dataset.valueType === 'json' ? JSON.parse(input.value) : input.dataset.valueType === 'lines' ? input.value.split(/\n/).map(v => v.trim()).filter(Boolean) : input.type === 'checkbox' ? input.checked : input.type === 'number' ? Number(input.value) : input.value;
+        const value = input.dataset.valueType === 'json' ? JSON.parse(input.value) : input.dataset.valueType === 'lines' ? input.value.split(/\n/).map(v => v.trim()).filter(Boolean) : input.type === 'checkbox' ? input.checked : input.type === 'number' || input.dataset.valueType === 'number' ? Number(input.value) : input.value;
         const {section, key} = input.dataset;
         if (JSON.stringify(value) !== JSON.stringify(view.original[section][key])) (settings[section] ||= {})[key] = value;
     }
+    if (settings.inference?.reasoning_level !== undefined) settings.inference.reasoning_effort = '';
     try {
         document.getElementById('runtime-settings-save').disabled = true;
         const response = await fetch('/proxy_webot_runtime_settings', {

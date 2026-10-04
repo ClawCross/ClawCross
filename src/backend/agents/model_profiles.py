@@ -20,9 +20,10 @@ def _user_path(user: str):
 
 
 def public_profile(profile, profile_id: str) -> dict:
+    from common.model_capabilities import model_capabilities
     return {'id': profile_id, 'name': profile.name, 'provider': profile.provider,
             'model': profile.model, 'base_url': profile.base_url,
-            'has_api_key': bool(profile.auth.api_key)}
+            'has_api_key': bool(profile.auth.api_key), 'model_capabilities':model_capabilities(profile.model, profile.provider)}
 
 
 def platform_default() -> dict:
@@ -36,9 +37,12 @@ def platform_default() -> dict:
 
 
 def catalog(user: str) -> dict:
+    from common.model_capabilities import model_capabilities
     own = models_store.load(path=_user_path(user))
     platform = models_store.load()
-    return {'default': platform_default(), 'profiles': [
+    default = platform_default()
+    default['model_capabilities'] = model_capabilities(default['model'], default['provider'])
+    return {'default': default, 'profiles': [
         *[public_profile(p, 'user:' + p.name) for p in own.profiles.values()],
         *[public_profile(p, 'platform:' + p.name) for p in platform.profiles.values()],
     ]}

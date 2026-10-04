@@ -833,6 +833,21 @@ await fn(process.argv[2]);'''
 
         # Persistent sessions expose `set`; --config-option belongs to `exec`
         # only in acpx 0.19. Avoid replaying unchanged settings every turn.
+        config_options = dict(config_options or {})
+        unified_level = config_options.pop('_clawcross_reasoning_level', None)
+        if unified_level is not None:
+            # Model selection has already run during ensure. Map against this
+            # session's current options, never another model's cached choices.
+            from common.reasoning_levels import mapped_effort
+            config_options.pop('reasoning_effort', None)
+            config_options.pop('effort', None)
+            if unified_level:
+                for item in self._local_config_options(acpx_session):
+                    if item.get('id') not in {'reasoning_effort', 'effort'}:
+                        continue
+                    native = mapped_effort([choice.get('value') for choice in item.get('options', [])], unified_level)
+                    if native:
+                        config_options[item['id']] = native
         current = self._local_config_values(acpx_session) if config_options else {}
         for key, value in (config_options or {}).items():
             if key == 'model' or current.get(key) == value:

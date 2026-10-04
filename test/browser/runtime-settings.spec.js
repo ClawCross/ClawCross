@@ -35,6 +35,7 @@ async function setup(page, options = {}) {
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ settings, model_capabilities: options.capabilities, context_usage: options.usage, last_compaction: scoped ? { before_tokens: 12000, after_tokens: 4000, duration_ms: 50, target_met: true } : null }) });
   });
   await page.goto('/studio');
+  await page.addScriptTag({path:path.resolve('src/frontend/static/js/reasoning-levels.js')});
   await page.evaluate(() => {
     window.currentLang = 'zh-CN';
     window.currentSessionId = 'session-1';
@@ -218,4 +219,19 @@ test('known reasoning levels save a session override while unknown models hide t
   await page.route('**/proxy_webot_runtime_settings**', route=>route.fulfill({json:{settings:defaults,model_capabilities:{model:'unknown',reasoning_effort_levels:[]}}}));
   await page.evaluate(()=>loadRuntimeSettingsScope());
   await expect(page.locator('[data-key="reasoning_effort"]')).toHaveCount(0);
+});
+
+test('unified effort saves a numeric Agent level without changing retained turns', async ({page}) => {
+  const map={'1':'low','2':'low','3':'low','4':'medium','5':'high','6':'high','7':'max'};
+  const requests=await setup(page,{capabilities:{model:'claude-opus-4-6',reasoning_effort_levels:['low','medium','high','max'],reasoning_level_map:map}});
+  await page.evaluate(()=>openRuntimeSettings('session-1'));
+  const select=page.locator('[data-key="reasoning_level"]');
+  await expect(select.locator('option')).toHaveCount(8);
+  await expect(select.locator('option[value="7"]')).toContainText('max');
+  await select.selectOption('7');
+  await page.locator('#runtime-settings-save').click();
+  await expect(page.locator('#runtime-settings-result')).toContainText('已保存');
+  expect(requests[0]).toMatchObject({session_id:'session-1',settings:{inference:{reasoning_level:7,reasoning_effort:''}}});
+  expect(requests[0].settings.context).toBeUndefined();
+  await expect(page.locator('[data-key="preserve_recent_turns"]')).toHaveValue('4');
 });

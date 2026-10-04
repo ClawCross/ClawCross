@@ -53,10 +53,14 @@ def initial_config_options(agent):
 
 
 def capability_card(agent):
+    from common.reasoning_levels import level_map
     acp = (agent.config.get('meta') or {}).get('acp') or {}
+    options = native_options(agent)
+    options = [{**item, 'reasoning_level_map':level_map([choice.get('value') for choice in item.get('options', [])])}
+               if item.get('id') in {'reasoning_effort', 'effort'} else item for item in options]
     return {'platform': agent.platform, 'transport': 'acpx', 'streaming_tools': True,
             'clawcross_tools': bool(acp.get('clawcross_tools', True)),
-            'config_options': native_options(agent), 'settings': {'clawcross_tools': True, **acp},
+            'config_options': options, 'settings': {'clawcross_tools': True, **acp},
             'modes': ['chat', 'readonly', 'manual', 'auto', 'bypass'],
             'supports': {'native_config': True, 'tool_bridge': True,
                          'clawcross_compaction': False, 'native_tools': True}}
@@ -65,11 +69,14 @@ def capability_card(agent):
 def validate_settings(agent, value):
     if not isinstance(value, dict):
         raise ValueError('ACP settings must be an object')
-    allowed = {'clawcross_tools', 'config_options', 'timeout_sec', 'ttl_sec', 'tools'}
+    allowed = {'clawcross_tools', 'config_options', 'timeout_sec', 'ttl_sec', 'tools', 'reasoning_level'}
     if set(value) - allowed:
         raise ValueError('Unknown ACP setting')
     if 'clawcross_tools' in value and not isinstance(value['clawcross_tools'], bool):
         raise ValueError('clawcross_tools must be a boolean')
+    if 'reasoning_level' in value:
+        if type(value['reasoning_level']) is not int or not 0 <= value['reasoning_level'] <= 7:
+            raise ValueError('reasoning_level must be an integer between 0 and 7')
     tools = value.get('tools')
     if tools is not None and (not isinstance(tools, list) or len(tools) > 500 or any(
             not isinstance(name, str) or not re.fullmatch(r'[A-Za-z0-9_.-]{1,160}', name) for name in tools)):
@@ -80,6 +87,9 @@ def validate_settings(agent, value):
     options = value.get('config_options', {})
     if not isinstance(options, dict) or len(options) > 24:
         raise ValueError('Invalid config_options')
+    if 'reasoning_level' in value:
+        options = {key:selected for key, selected in options.items() if key not in {'reasoning_effort', 'effort'}}
+        value = {**value, 'config_options':options}
     advertised = {item['id']: item for item in native_options(agent) if item.get('id')}
     for key, selected in options.items():
         if not re.fullmatch(r'[A-Za-z0-9_.-]{1,80}', key) or not isinstance(selected, str) or len(selected) > 200:

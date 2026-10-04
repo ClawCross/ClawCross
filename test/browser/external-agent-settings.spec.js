@@ -22,6 +22,7 @@ async function setup(page, platform = 'codex') {
   await page.goto('/studio');
   await page.evaluate(() => {window.currentSessionId = 'session-1';});
   await page.addStyleTag({path:path.resolve('src/frontend/static/css/external-agent-settings.css')});
+  await page.addScriptTag({path:path.resolve('src/frontend/static/js/reasoning-levels.js')});
   await page.addScriptTag({path:path.resolve('src/frontend/static/js/external-agent-settings.js')});
   return {writes, key};
 }
@@ -143,4 +144,26 @@ test('opening settings tests connection automatically and keeps edits without se
   await expect(page.locator('[data-option="model"]')).toHaveValue('gpt-5.5');
   await expect(page.locator('[data-option="reasoning_effort"]')).toHaveValue('high');
   expect(probes).toBe(1);expect(chats).toEqual([]);
+});
+
+test('external seven-level effort persists a preference instead of a model-specific value',async({page})=>{
+  await setup(page);
+  const map={'1':'low','2':'low','3':'low','4':'medium','5':'high','6':'high','7':'max'};
+  const card={platform:'claude',transport:'acpx',settings:{},config_options:[{id:'effort',name:'思考强度',currentValue:'medium',reasoning_level_map:map,
+    options:['low','medium','high','max'].map(value=>({value,name:value}))}]};
+  await page.route('**/v1/agents/session-1/capabilities',route=>route.fulfill({json:card}));
+  await page.route('**/v1/agents/session-1/test-connection',route=>route.fulfill({json:card}));
+  const writes=[];
+  await page.route('**/v1/agents/session-1/acp-settings',route=>{
+    writes.push(route.request().postDataJSON());card.settings=writes.at(-1);return route.fulfill({json:card});
+  });
+  await page.evaluate(()=>openExternalAgentSettings('session-1'));
+  await expect(page.locator('[data-status]')).toContainText('连接成功');
+  const select=page.locator('[data-option="effort"]');
+  await expect(select.locator('option')).toHaveCount(8);
+  await select.selectOption('7');
+  await page.locator('[data-save]').click();
+  await expect(page.locator('[data-status]')).toContainText('已保存');
+  expect(writes[0].reasoning_level).toBe(7);
+  expect(writes[0].config_options).toEqual({});
 });

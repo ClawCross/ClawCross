@@ -117,6 +117,7 @@ def context_usage_with_window(usage: dict, window: int) -> dict:
 
 class InferenceSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
+    reasoning_level: int = Field(default=0, ge=0, le=7)
     reasoning_effort: Literal["", "none", "off", "minimal", "low", "medium", "high", "xhigh", "max"] = ""
 
 

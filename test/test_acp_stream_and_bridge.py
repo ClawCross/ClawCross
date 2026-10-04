@@ -155,7 +155,8 @@ class ConnectionProbeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(adapter.ensure_session.call_args.kwargs['system_prompt'])
             self.assertEqual(adapter.ensure_session.call_args.kwargs['model'],'gpt-5.5')
             adapter.prompt_with_trace.assert_not_awaited()
-            self.assertEqual(store.require('alice',agent.agent_id).runtime,{})
+            state=store.require('alice',agent.agent_id).runtime
+            self.assertEqual(set(state),{'acp_cwd','last_used_at'})  # connection pins cwd without delivering identity
 
 
 class ScopedBridgeTests(unittest.IsolatedAsyncioTestCase):
