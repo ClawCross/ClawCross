@@ -34,14 +34,42 @@ EXTERNAL_FILE = "external_agents.json"
 _INTERNAL_KEYS = {"name", "persona", "session", "session_id", "is_primary"}
 _EXTERNAL_KEYS = {"name", "persona", "platform", "global_name", "meta", "is_primary"}
 _EXTERNAL_CONFIG = ("api_url", "api_key", "model", "headers")
+_SECRET_KEYS = {
+    "apikey", "authorization", "proxyauthorization", "xapikey", "cookie", "setcookie",
+    "password", "secret", "token", "accesstoken", "refreshtoken", "idtoken", "clientsecret",
+    "xauthtoken",
+}
+
+
+def without_secrets(value: Any) -> Any:
+    """Remove explicit credential fields from portable JSON, preserving public settings."""
+    if isinstance(value, dict):
+        return {key: without_secrets(item) for key, item in value.items()
+                if re.sub(r"[^a-z0-9]", "", key.lower()) not in _SECRET_KEYS}
+    if isinstance(value, list):
+        return [without_secrets(item) for item in value]
+    return value
+
+
+def _validate_entries(data: Any, label: str) -> list[dict]:
+    if not isinstance(data, list):
+        raise ValueError(f"{label}: expected a JSON array of members")
+    for index, entry in enumerate(data):
+        if not isinstance(entry, dict) or not isinstance(entry.get("name"), str) or not entry["name"].strip():
+            raise ValueError(f"{label}: member {index + 1} requires a non-empty name")
+        if "meta" in entry and not isinstance(entry["meta"], dict):
+            raise ValueError(f"{label}: member {index + 1} meta must be an object")
+    return data
 
 
 def _entries(path: Path) -> list[dict]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except FileNotFoundError:
         return []
-    return [e for e in data if isinstance(e, dict) and str(e.get("name") or "").strip()] if isinstance(data, list) else []
+    except ValueError as exc:
+        raise ValueError(f"{path.name}: invalid JSON") from exc
+    return _validate_entries(data, path.name)
 
 
 def read_folder(folder: Path) -> tuple[list[dict], list[dict]]:
@@ -109,6 +137,11 @@ def import_entries(teams: TeamStore, owner: str, team: str, internal: list[dict]
 
     Members the entries no longer list leave the team; their agents stay.
     """
+    _validate_entries(internal, INTERNAL_FILE)
+    _validate_entries(external, EXTERNAL_FILE)
+    names = [entry["name"].strip().casefold() for entry in internal + external]
+    if len(names) != len(set(names)):
+        raise ValueError("Team member names must be unique")
     teams.create(owner, team)
     wanted: list[tuple[Agent, dict, dict]] = []
     for entry in internal:
@@ -130,6 +163,8 @@ def import_entries(teams: TeamStore, owner: str, team: str, internal: list[dict]
 def import_folder(teams: TeamStore, owner: str, team: str) -> list[Member]:
     """Import the manifest files in the team's folder, then remove them."""
     folder = teams.folder(owner, team)
+    if not any((folder / name).is_file() for name in (INTERNAL_FILE, EXTERNAL_FILE)):
+        return teams.members(owner, team)
     internal, external = read_folder(folder)
     members = import_entries(teams, owner, team, internal, external)
     for name in (INTERNAL_FILE, EXTERNAL_FILE):
@@ -154,14 +189,12 @@ def export_entries(teams: TeamStore, owner: str, team: str, *, portable: bool) -
                 entry["is_primary"] = True
             if not portable:
                 entry["session"] = m.agent.agent_id
-            internal.append(entry)
+            internal.append(without_secrets(entry) if portable else entry)
             continue
         meta = dict(config.get("meta") or {})
         for key in _EXTERNAL_CONFIG:
             if config.get(key) not in (None, "", {}):
                 meta[key] = config[key]
-        if portable:
-            meta.pop("api_key", None)
         entry = {"name": m.role, "platform": config.get("platform", ""), **m.extra}
         if config.get("persona"):
             entry["persona"] = config["persona"]
@@ -170,7 +203,7 @@ def export_entries(teams: TeamStore, owner: str, team: str, *, portable: bool) -
         entry["meta"] = meta
         if m.is_lead:
             entry["is_primary"] = True
-        external.append(entry)
+        external.append(without_secrets(entry) if portable else entry)
     return internal, external
 
 

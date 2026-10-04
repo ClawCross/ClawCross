@@ -161,6 +161,23 @@ class TestManifest(TeamCase):
         self.assertFalse((folder / "internal_agents.json").exists())
 
 
+    def test_repeated_folder_import_preserves_members(self):
+        folder = self.teams.folder("alice", "dev")
+        (folder / "internal_agents.json").write_text(dumps(self.INTERNAL))
+        original = import_folder(self.teams, "alice", "dev")
+        self.assertEqual(import_folder(self.teams, "alice", "dev"), original)
+
+    def test_invalid_manifest_preserves_members_and_manifest(self):
+        import_entries(self.teams, "alice", "dev", self.INTERNAL, [])
+        original = self.teams.members("alice", "dev")
+        path = self.teams.folder("alice", "dev") / "internal_agents.json"
+        path.write_text("broken")
+        with self.assertRaises(ValueError):
+            import_folder(self.teams, "alice", "dev")
+        self.assertEqual(self.teams.members("alice", "dev"), original)
+        self.assertEqual(path.read_text(), "broken")
+
+
 class TestPreset(TeamCase):
     def test_install_makes_every_role_an_agent(self):
         from teams.preset_assets import get_team_preset_bundle, install_team_preset

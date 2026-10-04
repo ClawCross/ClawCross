@@ -4783,7 +4783,7 @@ def download_team_snapshot():
         with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zipf:
             # The team's members in the package format, without this machine's
             # runtimes (sessions / global_names) or secrets.
-            from teams.manifest import dumps, export_entries
+            from teams.manifest import dumps, export_entries, without_secrets
 
             teams = _teams()
             portable_internal, portable_external = export_entries(teams, user_id, team, portable=True)
@@ -4793,7 +4793,9 @@ def download_team_snapshot():
                 zipf.writestr("external_agents.json", dumps(portable_external))
             experts_file = os.path.join(team_dir, "oasis_experts.json")
             if _inc("personas") and os.path.exists(experts_file):
-                zipf.write(experts_file, "oasis_experts.json")
+                with open(experts_file, encoding="utf-8") as source:
+                    experts = without_secrets(json.load(source))
+                zipf.writestr("oasis_experts.json", json.dumps(experts, ensure_ascii=False, indent=2))
 
             # Add preset metadata files
             for preset_file in ("clawcross_preset_manifest.json", "clawcross_preset_source_map.json"):
@@ -4889,6 +4891,7 @@ def upload_team_snapshot():
 
     temp_path = None
     skills_extract_root = None
+    assets_extract_root = None
     try:
         # Save uploaded file to temp location
         with tempfile.NamedTemporaryFile(delete=False, suffix='.zip') as temp_file:
@@ -4896,6 +4899,7 @@ def upload_team_snapshot():
             temp_path = temp_file.name
 
         skills_extract_root = tempfile.mkdtemp(prefix="team_snapshot_skills_")
+        assets_extract_root = tempfile.mkdtemp(prefix="team_snapshot_assets_")
 
         # Extract zip file
         with zipfile.ZipFile(temp_path, 'r') as zip_ref:
@@ -4919,7 +4923,7 @@ def upload_team_snapshot():
                     if not filename.endswith(('.json', '.yaml', '.yml', '.py')):
                         return jsonify({"error": f"Invalid file type in zip: {filename}"}), 400
                 # Preserve relative directory structure from zip
-                target_root = skills_extract_root if is_skill_payload else team_dir
+                target_root = skills_extract_root if is_skill_payload else assets_extract_root
                 target_path = os.path.join(target_root, filename)
                 os.makedirs(os.path.dirname(target_path), exist_ok=True)
                 with zip_ref.open(file_info) as source, open(target_path, 'wb') as target:
@@ -4932,14 +4936,28 @@ def upload_team_snapshot():
         # The package lists the team's members; this machine gives them runtimes.
         from teams.manifest import EXTERNAL_FILE, INTERNAL_FILE, import_entries, imported_agent_id, read_folder
 
-        internal_entries, external_entries = read_folder(Path(team_dir))
-        # External members get this machine's agent ids, stable per team and name.
-        external_entries = [e for e in external_entries if isinstance(e, dict)]
-        for entry in external_entries:
-            entry["global_name"] = imported_agent_id(team, entry, external_entries)
-        members = import_entries(_teams(), user_id, team, internal_entries, external_entries)
-        for name in (INTERNAL_FILE, EXTERNAL_FILE):
-            (Path(team_dir) / name).unlink(missing_ok=True)
+        assets_root = Path(assets_extract_root)
+        internal_entries, external_entries = read_folder(assets_root)
+        has_members = any((assets_root / name).is_file() for name in (INTERNAL_FILE, EXTERNAL_FILE))
+        names = [entry["name"].strip().casefold() for entry in internal_entries + external_entries]
+        if len(names) != len(set(names)):
+            raise ValueError("Team member names must be unique")
+        # Parse all manifests before replacing existing assets or memberships.
+        # Persona libraries must be in place before resolving member tags.
+        for source in assets_root.rglob("*"):
+            if source.is_file() and source.name not in (INTERNAL_FILE, EXTERNAL_FILE):
+                target = Path(team_dir) / source.relative_to(assets_root)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, target)
+        teams = _teams()
+        if has_members:
+            # External members get this machine's agent ids, stable per team and name.
+            for entry in external_entries:
+                entry["global_name"] = imported_agent_id(team, entry, external_entries)
+            members = import_entries(teams, user_id, team, internal_entries, external_entries)
+        else:
+            teams.create(user_id, team)
+            members = teams.members(user_id, team)
 
         skill_restore_result = restore_skills_from_team_dir(skills_extract_root, user_id, team)
         
@@ -4986,6 +5004,8 @@ def upload_team_snapshot():
         })
     except zipfile.BadZipFile:
         return jsonify({"error": "Invalid zip file"}), 400
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
@@ -4993,6 +5013,8 @@ def upload_team_snapshot():
             os.unlink(temp_path)
         if skills_extract_root and os.path.isdir(skills_extract_root):
             shutil.rmtree(skills_extract_root, ignore_errors=True)
+        if assets_extract_root and os.path.isdir(assets_extract_root):
+            shutil.rmtree(assets_extract_root, ignore_errors=True)
 
 
 @app.route("/teams/snapshot/import_from_url", methods=["POST"])

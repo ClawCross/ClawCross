@@ -1,12 +1,12 @@
 # Repository Skill Self-Evolution Report
 
 - Skill file: `/home/ubuntu/work2/ClawCross/SKILL.md`
-- Generated at: `2026-10-04T16:15:25.936842+00:00`
+- Generated at: `2026-10-04T17:31:49.736468+00:00`
 - Exit code: `1`
 
 ## Summary
 
-Command exited with code 1. Command: (external failure context). Signals: verification-loop, structured-output. stdout was used as fallback failure evidence.
+Command exited with code 1. Command: (external failure context). Signals: verification-loop, structured-output, approval-auth. stdout was used as fallback failure evidence.
 
 ## stderr
 
@@ -17,7 +17,40 @@ Command exited with code 1. Command: (external failure context). Signals: verifi
 ## stdout
 
 ```text
-Actual group history search failed with HTTP 500 because search_messages calls request(params=...) but GroupClient.request lacks params.
-TypeError: GroupClient.request() got an unexpected keyword argument 'params'
-Previous test mocked request(), so it missed the incompatible signature. Fix the request signature and test the real HTTP transport.
+......F                                                              [100%]
+=================================== FAILURES ===================================
+______ OasisRuntimeTests.test_saved_yaml_parallel_agents_and_human_resume ______
+
+self = <test.test_oasis_runtime.OasisRuntimeTests testMethod=test_saved_yaml_parallel_agents_and_human_resume>
+
+        def test_saved_yaml_parallel_agents_and_human_resume(self):
+            schedule = """version: 2
+    repeat: false
+    discussion: false
+    plan:
+      - id: start
+        manual:
+          author: host
+          content: RUNTIME_START
+      - id: pair
+        parallel:
+          - agent: Writer
+          - agent: Reviewer
+      - id: confirm
+        human:
+          author: host
+          prompt: continue?
+      - id: finish
+        manual:
+          author: host
+          content: RUNTIME_FINISHED
+    edges:
+      - [start, pair]
+      - [pair, confirm]
+      - [confirm, finish]
+    """
+            saved = self.client.post("/workflows", json={
+                "user_id": "tester", "team": "runtime", "name": "smoke", "schedule_yaml": schedule,
+            })
+            self.assertEqual(saved.status_code, 200, ...[truncated]
 ```
