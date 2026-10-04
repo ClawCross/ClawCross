@@ -537,14 +537,14 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-10-04T04:08:53.605787+00:00`
+- Updated at: `2026-10-04T04:13:12.673489+00:00`
 - Strategy: `repair-only`
-- Heuristic candidate: `verification-loop-4`
-- Heuristic score: `0.886`
+- Heuristic candidate: `blended-verification-loop-structured-output`
+- Heuristic score: `0.858`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: (external failure context). Signals: verification-loop. stderr carried the strongest failure evidence.
+Command exited with code 1. Command: (external failure context). Signals: verification-loop, structured-output. stderr carried the strongest failure evidence.
 
 ### Strategy Rationale
 
@@ -559,18 +559,17 @@ Command exited with code 1. Command: (external failure context). Signals: verifi
 
 ```text
 ======================================================================
-ERROR: test_agent_runtime_form_preserves_other_fields_and_scopes (test.test_configuration_setup.ConfigurationTests.test_agent_runtime_form_preserves_other_fields_and_scopes)
+FAIL: test_strict_tool_array_stays_within_budget (test.test_tool_schemas.McpToolInventory.test_strict_tool_array_stays_within_budget)
 ----------------------------------------------------------------------
 Traceback (most recent call last):
-  File "/home/ubuntu/work2/ClawCross/test/test_configuration_setup.py", line 46, in test_agent_runtime_form_preserves_other_fields_and_scopes
-    self.assertEqual(runtime_store.get_session_mode('alice','one').mode,'manual')
-                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-AttributeError: 'dict' object has no attribute 'mode'
+  File "/home/ubuntu/work2/ClawCross/test/test_tool_schemas.py", line 307, in test_strict_tool_array_stays_within_budget
+    self.assertLessEqual(
+AssertionError: 43584 not less than or equal to 42000 : strict tool array is 43584 chars; raise the budget only on purpose
 
 ----------------------------------------------------------------------
-Ran 12 tests in 1.468s
+Ran 43 tests in 2.775s
 
-FAILED (errors=1)
+FAILED (failures=1)
 ```
 
 ### Governance Snapshot
@@ -582,23 +581,25 @@ FAILED (errors=1)
 
 ### Operating Adjustments
 
-1. State the exact failure mode before editing anything.
-2. Choose the narrowest reproducer first, then a broader regression command.
-3. Record pass/fail status immediately after each attempted fix.
+1. Start from the narrowest reproducible failure before broad retries.
+2. Record repo/cwd/entrypoint assumptions explicitly when failures mention paths or imports.
+3. End every fix attempt with an explicit verifier command and observed result.
 
 ### Validation Loop
 
-1. Rerun the minimal reproducer before any broad test suite.
-2. When a fix passes, note the exact verifier command in the skill.
+1. Run the minimal reproducer first, then the broader regression command.
+2. Persist the command and result summary in the evolution report.
 
 ### Recent Evidence
 
-- `2026-10-04T04:08:53.605787+00:00` `repo-skill` — ======================================================================
-ERROR: test_agent_runtime_form_preserves_other_fields_and_scopes (test. ...[truncated]
+- `2026-10-04T04:13:12.673489+00:00` `repo-skill` — ======================================================================
+FAIL: test_strict_tool_array_stays_within_budget (test.test_tool_schema ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `verification-loop-4` score `0.886` — Tighten verification loops (intent `repair`)
+- `blended-verification-loop-structured-output` score `0.858` — Blend the strongest recent failure patterns (intent `repair`)
+- `verification-loop-4` score `0.818` — Tighten verification loops (intent `repair`)
+- `structured-output-1` score `0.614` — Harden structured-output handling (intent `repair`)
 
 ### Local State Snapshot
 

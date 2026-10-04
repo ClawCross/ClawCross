@@ -104,6 +104,7 @@ WEBOT_SUBAGENT_TOOLS = (
 )
 
 WEBOT_RUNTIME_TOOLS = (
+    "get_clawcross_help",
     "write_session_plan",
     "read_session_plan",
     "clear_session_plan",
