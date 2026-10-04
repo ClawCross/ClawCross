@@ -127,9 +127,11 @@ def native_workspace_cwd(agent: Agent) -> str:
 
 def workspace_context(agent: Agent) -> str:
     from webot.workspace import resolve_session_workspace
+    from webot.workspace_state import observe_workspace
     workspace = resolve_session_workspace(agent.owner, agent.agent_id, agent_config=agent.config)
     value = {'session_id': agent.agent_id, 'root': str(workspace.root),
-             'cwd': str(workspace.cwd), 'mode': workspace.mode}
+             'cwd': str(workspace.cwd), 'mode': workspace.mode,
+             'files': observe_workspace(workspace.root, user_id=agent.owner, session_id=agent.agent_id)}
     if agent.driver == ACPX:
         value['native_cwd'] = native_workspace_cwd(agent)
         value['scope'] = 'root/cwd 是 ClawCross command 工具工作区；native_cwd 是外部 CLI 工作目录，原生工具遵循自身权限。'

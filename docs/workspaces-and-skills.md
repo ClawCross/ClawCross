@@ -12,6 +12,8 @@ CLI 的 `agents create`、首次 `agents ask` 和首次 `chat -s <编号>` 保�
 
 工作区是动态状态，不写入稳定 system prompt。WeBot 每次模型调用解析当前 root/cwd/mode，放入 Runtime Context；外部 Agent 首次完整发送 `workspace` 区块，后续只发送变化，reset 清除已发送状态后再次完整发送。外部区块同时注明 `native_cwd`，它和 ClawCross command 工作区可能不同；已有原生会话目录保持不变。
 
+动态工作区还包含当前文件概览和最近检测到的新增、修改、删除。WeBot 在每次模型调用前重新观察；外部 Agent 在 ClawCross 工具查询/执行结果返回时重新观察，把变化附在 `runtime_context`，无需等下一轮用户输入。未发生变化时不重复发送，不额外唤醒或打断 Agent。只读取文件名和 stat 元数据，不读取正文，不安装文件监听组件。观察最多 512 个条目、64 个目录、6 层递归，跳过依赖/缓存目录；输出明确注明不完整，并限制每类展示 24 个路径。扫描不完整或目录无法读取时，不据此报告删除。外部原生工具的结果不由 ClawCross 改写；完全只使用原生工具时，更新在下一次 ClawCross 交互送达。
+
 ## 技能目录
 
 - 用户共享技能：`users/<用户>/skills/<技能>/SKILL.md`。
