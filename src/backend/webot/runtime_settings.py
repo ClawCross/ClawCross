@@ -186,8 +186,10 @@ def runtime_settings_payload(user_id: str, session_id: str = "") -> dict:
     from common.llm_factory import infer_provider
     from common.model_capabilities import model_capabilities
     from webot.command_sandbox import escalation_ceiling
-    model = os.getenv("LLM_MODEL", "")
-    provider = infer_provider(model=model, provider=os.getenv("LLM_PROVIDER", ""), base_url=os.getenv("LLM_BASE_URL", ""))
+    from agents.model_profiles import agent_model_override, platform_default
+    llm = {**platform_default(), **{key: value for key, value in agent_model_override(user_id, session_id).items() if value}}
+    model = llm.get('model', '')
+    provider = infer_provider(model=model, provider=llm.get('provider', ''), base_url=llm.get('base_url', ''))
     return {
         "settings": get_runtime_settings(user_id, session_id).model_dump(),
         "user_overrides": data.get("user", {}),

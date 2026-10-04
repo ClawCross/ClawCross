@@ -1496,8 +1496,8 @@ class TeamAgent:
 
     @staticmethod
     def _select_model(state: AgentState, turn: "_Turn") -> BaseChatModel:
-        """The model for this call: per-request override, else the subagent's
-        preferred model, else a cheap route for a simple user message, else the default."""
+        """The model for this call: request override, Agent selection, profile
+        preference, cheap route, then platform default."""
         max_tokens = turn.max_tokens
         effort = get_runtime_settings(turn.user_id, turn.session_id).inference.reasoning_effort
         inference = {"reasoning_effort": effort} if effort else {}
@@ -1507,6 +1507,13 @@ class TeamAgent:
                 model=override.get("model"), api_key=override.get("api_key"),
                 base_url=override.get("base_url"), provider=override.get("provider"),
                 max_tokens=max_tokens or 2048, **inference,
+            )
+        from agents.model_profiles import agent_model_override
+        saved = agent_model_override(turn.user_id, turn.session_id)
+        if saved:
+            return llm_factory.create_chat_model(
+                model=saved.get('model'), provider=saved.get('provider'), api_key=saved.get('api_key'),
+                base_url=saved.get('base_url'), max_tokens=max_tokens or 2048, **inference,
             )
         if turn.profile and turn.profile.preferred_model:
             return llm_factory.create_chat_model(model=turn.profile.preferred_model, max_tokens=max_tokens or 2048, **inference)

@@ -139,6 +139,9 @@ A WeBot session is its agent: listed, read, compacted and deleted through `/v1/a
 - `src/backend/webot/context.py`
 - `src/backend/webot/compression.py`
 - `src/backend/webot/runtime_settings.py`
+- `src/backend/agents/model_profiles.py` — user model profile catalog and per-Agent model selection; shared CLI serialization in `src/cli/commands/models_store.py`
+- `src/backend/webot/remembered_approvals.py` — inspect and revoke only the current Agent's exact KEEP Y grants
+- `src/frontend/static/js/model-profiles.js` — Studio/Mobile model profile selector and direct API key form
 - `src/backend/webot/approval_review.py`
 - `src/backend/webot/command_sandbox.py` — SRT/Landlock command isolation and scoped escalation policies
 - `src/backend/webot/landlock_network.py` — temporary systemd network fence and per-command HTTP/SOCKS proxies

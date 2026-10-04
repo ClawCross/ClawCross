@@ -33,9 +33,10 @@
 <link rel="stylesheet" href="/static/css/markdown-shared.css?v=20261003-inline-approval">
 <link rel="stylesheet" href="/static/css/theme.css?v=20261002-fold">
 <script src="/static/js/components.js?v=20261002-runtime-menu"></script>
-<link rel="stylesheet" href="/static/css/external-agent-settings.css?v=20261002-connect">
+<link rel="stylesheet" href="/static/css/external-agent-settings.css?v=20261004-profiles">
 <script src="/static/js/runtime-presentation.js?v=20261004-workspace"></script>
-<script src="/static/js/external-agent-settings.js?v=20261004-agent-mode"></script>
+<script src="/static/js/external-agent-settings.js?v=20261004-auto-connect"></script>
+<script src="/static/js/model-profiles.js?v=20261004-profiles"></script>
 <script src="/static/js/approval-ui.js?v=20261003-inline-approval"></script>
 <link rel="stylesheet" href="/static/css/channel-setup.css?v=2">
 <script src="/static/js/channel-setup.js?v=2"></script>
@@ -4555,9 +4556,9 @@
 <script src="/static/js/group-network-ui.js?v=20261003-invite"></script>
 <link rel="stylesheet" href="/static/css/group-network.css?v=20261003-invite">
 <link rel="stylesheet" href="/static/css/settings-polish.css?v=20261004-settings">
-<link rel="stylesheet" href="/static/css/mobile-profile.css?v=20261004-navigation">
+<link rel="stylesheet" href="/static/css/mobile-profile.css?v=20261004-plus-navigation">
 <link rel="stylesheet" href="/static/css/runtime-settings.css?v=20261004-agent">
-<script src="/static/js/runtime-settings.js?v=20261004-agent"></script>
+<script src="/static/js/runtime-settings.js?v=20261004-agent-advanced"></script>
 </head>
 <body>
 
@@ -4598,7 +4599,7 @@
 <!-- ═══════════════ Tab: 对话 (Chats) ═══════════════ -->
 <div id="tab-chats" class="tab-page active">
   <div class="header">
-    <a class="mobile-studio-link" href="/studio" title="打开 Studio"><svg class="ui-icon"><use href="/static/icons.svg#monitor"/></svg><span>Studio</span></a>
+    <div style="width:32px"></div>
     <div class="header-title" data-i18n="header_agent_msg">Agent消息</div>
     <div style="display:flex;gap:4px;position:relative;margin-left:auto;">
       <button type="button" class="header-btn" onclick="toggleCreateMenu(event)" data-i18n-title="tip_new" title="新建"><svg class="ui-icon"><use href="/static/icons.svg#plus"/></svg></button>
@@ -4661,7 +4662,6 @@
     </button>
     <div class="header-title" id="chat-title" data-i18n="header_agent_msg">Agent消息</div>
     <div style="display:flex;gap:2px;align-items:center;margin-left:auto;">
-      <a class="mobile-studio-link" href="/studio" title="打开 Studio"><svg class="ui-icon"><use href="/static/icons.svg#monitor"/></svg><span>Studio</span></a>
       <button type="button" class="header-btn" id="chat-more-btn" onclick="toggleChatActions()" data-i18n-title="tip_more" title="更多"><svg class="ui-icon"><use href="/static/icons.svg#more"/></svg></button>
     </div>
   </div>
@@ -4714,8 +4714,8 @@
             <svg class="ui-icon"><use href="/static/icons.svg#mic"/></svg><span class="ui-menu-label" data-i18n="voice_short">语音</span>
           </button>
           <div class="ui-menu-heading" data-i18n="advanced_options">高级选项</div>
-          <button type="button" class="ui-menu-item" id="action-external-settings" style="display:none" onclick="closeInputActions(); openExternalAgentSettings(_findPrivateChatAgent()?.agent?.agent_id)">
-            <svg class="ui-icon"><use href="/static/icons.svg#sliders"/></svg><span class="ui-menu-label">模型、思考与工具</span>
+          <button type="button" class="ui-menu-item" id="action-external-settings" style="display:none" onclick="closeInputActions(); openAgentModelSettings(getMobileRuntimeAgentId())">
+            <svg class="ui-icon"><use href="/static/icons.svg#sliders"/></svg><span class="ui-menu-label">模型与思考</span>
           </button>
           <button type="button" class="ui-menu-item" id="action-main-history" style="display:none" onclick="closeInputActions(); openPrivateChatAgentHistory();">
             <svg class="ui-icon"><use href="/static/icons.svg#history"/></svg><span class="ui-menu-label" data-i18n="action_main_history">主端历史</span>
@@ -5206,6 +5206,10 @@
     </div>
     <span class="tab-label" data-i18n="tab_profile">我</span>
   </div>
+  <a class="tab-item mobile-studio-link" href="/studio" title="切换到 Studio" aria-label="切换到 Studio">
+    <div class="tab-icon"><svg class="ui-icon"><use href="/static/icons.svg#switch-layout"/></svg></div>
+    <span class="tab-label">Studio</span>
+  </a>
 </div>
 
 </div><!-- end app-container -->
@@ -10597,8 +10601,7 @@ function toggleInputActions(event) {
   if (show) {
     const member = _findPrivateChatAgent();
     const item = document.getElementById('action-external-settings');
-    if (item) item.style.display = member && !member.remote && member.agent &&
-      !['webot', 'http', 'llm'].includes(member.agent.platform) ? '' : 'none';
+    if (item) item.style.display = getMobileRuntimeAgentId() ? '' : 'none';
   }
   menu.classList.toggle('show', show);
   btn.classList.toggle('active', show);
@@ -14305,7 +14308,12 @@ function renderAgentBasicInfo(agent) {
     ${button(`startPrivateChat('${jsId}')`, t('start_private_chat'), 'var(--primary)', true)}
     ${button(`showAgentHistory('${jsId}','${jsName}')`, t('view_main_history'), 'var(--primary)')}
     ${button(`openAgentSettingsSheet('${jsId}')`, t('edit_agent'), 'var(--primary)')}
-    ${button(`openRuntimeSettings('${jsId}')`, _currentLang === 'zh' ? '上下文、模式与沙盒' : 'Context, mode and sandbox', 'var(--primary)')}
+    <details class="mobile-agent-advanced"><summary>${_currentLang === 'zh' ? '高级设置' : 'Advanced settings'}</summary>
+      <p>${_currentLang === 'zh' ? 'Y 仅批准一次；KEEP Y 记住这个 Agent 的具体授权。严格沙盒不允许提权。' : 'Y allows once; KEEP Y remembers a specific grant for this Agent. Strict sandbox disables escalation.'}</p>
+      ${button(`openRuntimeSettings('${jsId}','approval')`, _currentLang === 'zh' ? '模式、沙盒与授权' : 'Mode, sandbox and grants', 'var(--primary)')}
+      ${button(`openAgentModelSettings('${jsId}')`, _currentLang === 'zh' ? '模型与思考' : 'Model and reasoning', 'var(--primary)')}
+      ${agent.platform === 'webot' ? button(`openRuntimeSettings('${jsId}','context')`, _currentLang === 'zh' ? '上下文与压缩' : 'Context and compaction', 'var(--primary)') : ''}
+    </details>
     ${button(`deleteAgentFromDetail('${jsId}')`, t('delete_agent'), 'var(--ui-danger)')}
   </div>`;
   return html;

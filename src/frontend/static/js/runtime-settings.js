@@ -65,9 +65,9 @@ async function openRuntimeSettings(sessionId = '', tab = 'context') {
     await loadRuntimeSettingsScope();
 }
 
-function openAgentRuntimeSettings() {
+function openAgentRuntimeSettings(tab = 'context') {
     const agent = agentCenterSelectedAgent();
-    if (agent && ['internal','external'].includes(agent.kind)) openRuntimeSettings(agent.agent_id || agent.session_id || agent.identity || '');
+    if (agent) openRuntimeSettings(agent.agent_id || agent.session_id || agent.identity || '', tab);
 }
 
 async function loadRuntimeSettingsScope() {
@@ -216,6 +216,7 @@ async function saveRuntimeSettingsForm(reset = false) {
         await loadRuntimeSettingsScope();
         if (view.targetSession === runtimeSettingsCurrentAgent() && typeof setRunMode === 'function') setRunMode(view.original.approval.mode);
         status.textContent = runtimeSettingsText('已保存，下次调用生效。', 'Saved. Applies on the next call.');
+        document.dispatchEvent(new CustomEvent('clawcross:runtime-settings-saved', {detail:{agentId:view.targetSession}}));
     } catch (error) { status.textContent = String(error.message || error); }
     finally { document.getElementById('runtime-settings-save').disabled = false; }
 }

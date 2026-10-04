@@ -112,7 +112,11 @@ The browser uses these APIs for runtime inspection and controls. Studio refreshe
 
 Studio 和 Mobile 的上下文、审核模式和命令沙盒设置均保存到当前 Agent，不从页面向整个群聊广播同一模式。群聊唤醒各 Agent 时使用其自身持久化模式。外部 Agent 的页面仅设置 ClawCross 工具的审核与沙盒；原生模型窗口与压缩由外部运行时负责。
 
-Studio 的输入框加号、Mobile 首页加号及对话输入框加号提供“工作流运行”，打开 OASIS 工作流实例列表。Mobile 顶部不再放工作流按钮；消息首页和对话页顶部提供直接进入 `/studio` 的按钮。
+Studio 的输入框加号、Mobile 首页加号及对话输入框加号提供“工作流运行”，打开 OASIS 工作流实例列表。Mobile 顶部不再放工作流按钮；导航栏末尾提供带切换图标的 `/studio` 入口，桌面布局位于左侧栏底部。
+
+输入框加号的“模型与思考”按 Agent 保存。WeBot 支持选择平台默认、已有 CLI `config/models.json` 配置，或保存当前用户独立的 API 配置；选择只复制到当前 Agent，不更改平台默认或其他 Agent。用户配置保存在 `CONFIG_DIR/model-profiles/`（0600），API 响应只返回密钥是否存在；更新同名配置时空密钥保留原值，更新后须重新应用。查看新对话的配置不会创建 Agent；显式应用配置时才创建，以便首次对话使用所选模型。Agent 模型每次调用都会读取，思考强度来自当前 Agent 的运行设置，页面按实际模型显示支持的值。Codex/Claude 等外部 Agent 使用各自原生模型与思考选项，打开已创建 Agent 的设置时自动测试连接以获取选项，不发送聊天消息；查看未创建的外部配置不会自动创建。
+
+Agent 中心的“高级设置”可查看模式、沙盒等级和 KEEP Y 已记住的权限。沙盒授权可在运行设置中删除；其他工具的精确参数授权按当前 Agent 列出并可单独撤销，不展示敏感参数值。
 
 Mobile Agent 详情提供当前 Agent 设置；主端历史默认显示 ClawCross 最近 200 条记录，可折叠系统/动态信息和工具结果。外部 ACP Agent 可切换到 acpx 捕获的对话文本，读取不会创建或启动适配器会话；这不保证包含接入前的原生历史或完整工具轨迹。加载错误显式显示，旧请求不会覆盖新打开的 Agent 历史。
 

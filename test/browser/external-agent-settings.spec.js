@@ -13,6 +13,7 @@ async function setup(page, platform = 'codex') {
     <p id="external-runtime-hint" hidden></p><div class="oc-context-usage-wrap"></div>
     <button id="tool-toggle-btn" style="display:flex">Tools</button><div id="tool-panel"></div><select id="oc-run-mode"></select>`}));
   await page.route('**/v1/agents/session-1/capabilities', route => route.fulfill({json:card}));
+  await page.route('**/v1/agents/session-1/test-connection', route => route.fulfill({json:card}));
   await page.route('**/v1/agents/session-1/acp-settings', route => {
     const value = route.request().postDataJSON(); writes.push(value);
     card.settings = {...card.settings, ...value}; card.clawcross_tools = value.clawcross_tools;
@@ -62,6 +63,8 @@ test('ACP tabs use the selected external Agent rather than the WeBot session', a
   await setup(page);
   const writes=[];
   await page.route('**/v1/agents/codex-selected/capabilities',route=>route.fulfill({json:{
+    platform:'codex',transport:'acpx',clawcross_tools:false,settings:{},config_options:[]}}));
+  await page.route('**/v1/agents/codex-selected/test-connection',route=>route.fulfill({json:{
     platform:'codex',transport:'acpx',clawcross_tools:false,settings:{},config_options:[]}}));
   await page.route('**/v1/agents/codex-selected/acp-settings',route=>{
     writes.push(route.request().postDataJSON());
@@ -118,13 +121,16 @@ test('uncreated ACP profile opens settings without creation and creates only on 
 });
 
 
-test('test connection refreshes configuration without sending a chat', async ({page}) => {
+test('opening settings tests connection automatically and keeps edits without sending a chat', async ({page}) => {
   await setup(page);
   let probes=0;
   const chats=[];
   await page.route('**/v1/chat/completions',route=>{chats.push(route.request().url());return route.abort();});
-  await page.route('**/v1/agents/session-1/test-connection',route=>{
+  let release;
+  const responseReady = new Promise(resolve => {release = resolve;});
+  await page.route('**/v1/agents/session-1/test-connection',async route=>{
     probes++;
+    await responseReady;
     return route.fulfill({json:{platform:'codex',transport:'acpx',clawcross_tools:true,settings:{},config_options:[
       {id:'model',name:'模型',currentValue:'gpt-5.5',options:[{value:'gpt-5.5',name:'gpt-5.5'}]},
       {id:'reasoning_effort',name:'思考强度',currentValue:'medium',options:[{value:'low',name:'Low'},{value:'medium',name:'Medium'},{value:'high',name:'High'}]}
@@ -132,7 +138,7 @@ test('test connection refreshes configuration without sending a chat', async ({p
   });
   await page.evaluate(()=>openExternalAgentSettings('session-1'));
   await page.locator('[data-option="reasoning_effort"]').selectOption('high');
-  await page.locator('[data-test]').click();
+  release();
   await expect(page.locator('[data-status]')).toContainText('连接成功');
   await expect(page.locator('[data-option="model"]')).toHaveValue('gpt-5.5');
   await expect(page.locator('[data-option="reasoning_effort"]')).toHaveValue('high');
