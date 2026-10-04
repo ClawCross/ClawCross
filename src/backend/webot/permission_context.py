@@ -67,7 +67,8 @@ def resolve_permission_context(
             args=normalized_args,
             policy=effective_policy,
         )
-    base_decision = evaluate_tool_policy(effective_policy, tool_name, normalized_args)
+    base_decision = evaluate_tool_policy(effective_policy, tool_name,
+                                         {**normalized_args, '_approval_session': session_id})
     if file_target_outside_workspace(normalized_args) and (base_decision.allowed or base_decision.requires_approval):
         from webot.policy import ToolPolicyDecision
         base_decision = ToolPolicyDecision(
@@ -212,10 +213,14 @@ def resolve_permission_request(
                 session_id=updated.session_id,
             )
             from webot.approval_review import policy_binding
-            metadata = json.loads(updated.review_metadata_json or "{}")
+            metadata['remembered'] = True
             if metadata.get("binding"):
                 metadata["binding"]["policy_hash"] = policy_binding(user_id, updated.session_id)
-                set_approval_review_metadata(approval_id, user_id, metadata)
-        except Exception:
-            pass
-    return updated
+            set_approval_review_metadata(approval_id, user_id, metadata)
+        except Exception as exc:
+            metadata['remember_error'] = type(exc).__name__
+            set_approval_review_metadata(approval_id, user_id, metadata)
+            return update_tool_approval_status(approval_id, user_id, status='denied',
+                resolution_reason='无法保存 KEEP Y 授权，本次操作未执行。', expected_status='approved')
+    from webot.runtime_store import get_tool_approval
+    return get_tool_approval(approval_id, user_id)

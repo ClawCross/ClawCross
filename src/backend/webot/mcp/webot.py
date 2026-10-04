@@ -1560,33 +1560,21 @@ async def configure_claude_keepalive(
 async def list_tool_approvals(
     username: str,
     source_session: str = "",
-    status: str = "pending",
+    status: str = "",
     limit: int = 20,
 ) -> str:
-    """列出当前会话的工具审批记录，默认只看还在等待批准的。
+    """查看当前 Agent 的审批登记、执行结果和 KEEP Y 已保存权限；不会批准操作。
 
-    :param status: 按状态过滤：pending / approved / denied；留空列出全部
+    :param status: pending / approved / denied / used / expired；留空查看全部和有效保存权限
     :param limit: 最多返回多少条（1-50）
     """
-    session_id = source_session or None
-    approvals = list_tool_approval_records(
-        username,
-        session_id,
-        status=(status or "").strip().lower() or None,
-        limit=max(1, min(limit, 50)),
-    )
-    if not approvals:
-        return "📭 当前没有匹配的 tool approval 请求。"
-    lines = ["🪪 Tool Approval 列表"]
-    for approval in approvals:
-        lines.append(
-            f"- {approval.approval_id}\n"
-            f"  session_id: {approval.session_id}\n"
-            f"  tool: {approval.tool_name}\n"
-            f"  status: {approval.status}\n"
-            f"  reason: {_trim(approval.request_reason, 160)}"
-        )
-    return "\n".join(lines)
+    from webot.approval_registry import approval_registry
+    try:
+        return json.dumps(approval_registry(username, source_session or 'default', status=status,
+                                           limit=max(1, min(limit, 50))), ensure_ascii=False)
+    except ValueError as exc:
+        return '❌ ' + str(exc)
+
 
 @mcp.tool()
 async def set_session_mode(

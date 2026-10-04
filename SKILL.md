@@ -537,14 +537,14 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-10-04T03:51:52.972641+00:00`
+- Updated at: `2026-10-04T04:02:27.198691+00:00`
 - Strategy: `repair-only`
-- Heuristic candidate: `blended-verification-loop-structured-output`
-- Heuristic score: `0.756`
+- Heuristic candidate: `blended-verification-loop-approval-auth`
+- Heuristic score: `0.813`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: (external failure context). Signals: verification-loop, structured-output. stderr carried the strongest failure evidence.
+Command exited with code 1. Command: (external failure context). Signals: verification-loop, approval-auth. stderr carried the strongest failure evidence.
 
 ### Strategy Rationale
 
@@ -558,7 +558,7 @@ Command exited with code 1. Command: (external failure context). Signals: verifi
 ### Latest Error Excerpt
 
 ```text
-Actual npm tarball verification detected tools/build/__pycache__/*.pyc and examples/**/__pycache__/*.pyc. Root .npmignore does not override the package.json files whitelist: tools/build/* also selects cache directories recursively. Fix build/example entries to explicit source extension globs, regenerate the tarball, then verify the archive itself rather than trusting ignore rules. Check packaged CLI version/help/components and import new runtime modules using a temporary CLAWCROSS_HOME. No publish or automatic binary install.
+Approval regression: test_remember_approves_only_complete_same_action and test_remember_keeps_wildcard_restrictions failed: remembered grants contain _approval_session but resolve_permission_context evaluated without it. Preserve session binding when evaluating grants; direct policy tests must explicitly identify the session. Local TestClient requires socket-capable test execution. Use the managed Python interpreter, not an assumed python command.
 ```
 
 ### Governance Snapshot
@@ -581,13 +581,13 @@ Actual npm tarball verification detected tools/build/__pycache__/*.pyc and examp
 
 ### Recent Evidence
 
-- `2026-10-04T03:51:52.972641+00:00` `repo-skill` — Actual npm tarball verification detected tools/build/__pycache__/*.pyc and examples/**/__pycache__/*.pyc. Root .npmignore does not override th ...[truncated]
+- `2026-10-04T04:02:27.198691+00:00` `repo-skill` — Approval regression: test_remember_approves_only_complete_same_action and test_remember_keeps_wildcard_restrictions failed: remembered grants ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `blended-verification-loop-structured-output` score `0.756` — Blend the strongest recent failure patterns (intent `repair`)
-- `verification-loop-1` score `0.716` — Tighten verification loops (intent `repair`)
-- `structured-output-1` score `0.716` — Harden structured-output handling (intent `repair`)
+- `blended-verification-loop-approval-auth` score `0.813` — Blend the strongest recent failure patterns (intent `repair`)
+- `verification-loop-4` score `0.773` — Tighten verification loops (intent `repair`)
+- `approval-auth-2` score `0.659` — Preflight auth and approval constraints (intent `repair`)
 
 ### Local State Snapshot
 
