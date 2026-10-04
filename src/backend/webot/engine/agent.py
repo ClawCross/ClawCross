@@ -383,6 +383,18 @@ def available_internal_tool_names(tools, *, user_id: str, session_id: str,
             names.intersection_update(profile.allowed_tools)
     if state.get("enabled_tools") is not None:
         names.intersection_update(canonical_tool_names(state["enabled_tools"]))
+    from webot.subagent_permissions import parent_sessions
+    for parent_session in parent_sessions(user_id, session_id):
+        parent_tools = (find_session_meta(user_id, parent_session) or {}).get("tools")
+        if parent_tools is not None:
+            names.intersection_update(canonical_tool_names(parent_tools))
+        parent_profile = parse_subagent_session_id(parent_session)
+        if parent_profile:
+            profile = get_agent_profile(parent_profile["agent_type"], user_id=user_id)
+            if profile.allowed_tools is not None:
+                names.intersection_update(profile.allowed_tools)
+        names.intersection_update(filter_tools_for_mode(
+            sorted(names), effective_session_mode(user_id, parent_session)))
     mode = effective_session_mode(user_id, session_id, state.get("session_mode"))
     return set(filter_tools_for_mode(sorted(names), mode))
 

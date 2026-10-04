@@ -40,6 +40,7 @@ Use this file when an agent needs to **index the repo before reading code**. It 
 | `agents/` | L1: the table of all agents, the gateway, `/v1/agents`, `/v1/chat/completions`, `/system_trigger` |
 | `external/` | the runtimes of external agents (ACP tools including OpenClaw, HTTP, model calls) |
 | `webot/` | WeBot: `engine/`, `api/`, `mcp/` (its MCP tool servers), `driver.py` (its runtime) |
+| `webot/subagent_permissions.py` | Persistent parent relationships and narrower inherited network scopes; used by runtime settings, modes and tool filtering. |
 | `teams/` | teams: store, manifest (package format), Creator, presets, snapshots |
 | `groups/` | independent group server, relay store/API, device client, legacy local group compatibility |
 | `oasis/` | OASIS workflows (its own service, port 51202) |

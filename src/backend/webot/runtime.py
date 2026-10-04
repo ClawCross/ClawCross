@@ -59,9 +59,20 @@ def normalize_session_mode(mode: str | None) -> str:
 def effective_session_mode(user_id: str, session_id: str, requested: str | None = None) -> str:
     from webot.runtime_store import get_session_mode
     from webot.runtime_settings import get_runtime_settings
+    stored = normalize_session_mode(requested or get_session_mode(user_id, session_id).get("mode"))
+    from webot.subagent_permissions import parent_sessions
+    parents = parent_sessions(user_id, session_id)
+    if parents:
+        inherited = get_runtime_settings(user_id, session_id).approval.mode
+        if inherited == "chat" or stored == "chat":
+            return "chat"
+        if inherited == "readonly" or stored == "readonly":
+            return "readonly"
+        # A stored/requested Bypass must not override the parent's reviewer.
+        if stored not in {"plan", "review"}:
+            return inherited
     if requested:
-        return normalize_session_mode(requested)
-    stored = normalize_session_mode(get_session_mode(user_id, session_id).get("mode"))
+        return stored
     # Legacy execute is the store's sentinel for a session without an override.
     if stored == "execute":
         return get_runtime_settings(user_id, session_id).approval.mode

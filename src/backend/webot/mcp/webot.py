@@ -630,7 +630,8 @@ async def spawn_subagent(
 ) -> str:
     """
     创建或继续一个 WeBot 子 Agent，处理可分工的独立任务（调研、规划、实现、审查、验证），
-    让中间过程留在它自己的上下文里。
+    让中间过程留在它自己的上下文里。审核与沙盒权限继承当前父 Agent；
+    工具范围取父 Agent 与子角色的交集，KEEP Y 不跨 Agent 复制。
 
     Args:
         username: 当前用户（系统自动注入）
@@ -934,6 +935,7 @@ async def send_subagent_message(
 ) -> str:
     """
     向一个已存在的子 Agent 继续发送消息。
+    保留子 Agent 的历史；审核、沙盒及工具权限受当前父 Agent 限制。
 
     :param agent_ref: 子 Agent 的 agent_id、session_id 或创建时的 name
     :param content: 要发送给子 Agent 的消息

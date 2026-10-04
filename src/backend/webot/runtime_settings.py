@@ -190,10 +190,42 @@ def _env_defaults() -> dict:
 
 def get_runtime_settings(user_id: str, session_id: str = "") -> RuntimeSettings:
     data = _load(user_id)
-    raw = _merge(_env_defaults(), data.get("user", {}))
-    if session_id:
-        raw = _merge(raw, data.get("sessions", {}).get(session_id, {}))
-    return RuntimeSettings.model_validate(raw)
+    defaults = _merge(_env_defaults(), data.get("user", {}))
+    from webot.subagent_permissions import parent_sessions, intersect_domains
+    from webot.runtime_store import get_session_mode
+    chain = [session_id, *parent_sessions(user_id, session_id)] if session_id else [""]
+    parent = None
+    for current in reversed(chain):
+        override = data.get("sessions", {}).get(current, {})
+        settings = RuntimeSettings.model_validate(_merge(defaults, override))
+        # A legacy explicit mode is another restriction, not a way to
+        # overwrite an inherited reviewer farther up the chain.
+        if current != session_id:
+            stored = get_session_mode(user_id, current).get("mode")
+            if stored in {"chat", "readonly", "manual", "auto", "bypass"}:
+                settings.approval.mode = stored
+            elif stored == "yolo":
+                settings.approval.mode = "bypass"
+        if parent is not None:
+            # Approval and sandbox policy follow the live parent. The child's
+            # own stricter restrictions remain; KEEP Y never crosses Agents.
+            inherited = parent.approval.model_dump()
+            own = settings.approval
+            inherited["sandbox_grants"] = [grant.model_dump() for grant in own.sandbox_grants]
+            if own.sandbox_security == "strict":
+                inherited["sandbox_security"] = "strict"
+            if parent.approval.command_sandbox == "off" and own.command_sandbox != "off":
+                inherited["command_sandbox"] = own.command_sandbox
+            if own.mode == "chat" or (own.mode == "readonly" and inherited["mode"] != "chat"):
+                inherited["mode"] = own.mode
+            if "sandbox_allowed_domains" in override.get("approval", {}):
+                inherited["sandbox_allowed_domains"] = intersect_domains(
+                    parent.approval.sandbox_allowed_domains, own.sandbox_allowed_domains)
+            if inherited["sandbox_security"] == "strict":
+                inherited["sandbox_grants"] = []
+            settings.approval = ApprovalSettings.model_validate(inherited)
+        parent = settings
+    return parent
 
 
 def runtime_settings_payload(user_id: str, session_id: str = "") -> dict:
