@@ -238,7 +238,7 @@ def create_agents_router(
         authenticated_host = bool(internal_token and proof and hmac.compare_digest(proof, internal_token)
                                   and is_internal_bearer(parse_bearer_parts(authorization) or [], internal_token))
         if not authenticated_host and not allowed(user):
-            raise HTTPException(403, '原生会话属于主机账户，仅供本机访问；远程需主机配置 CLAWCROSS_NATIVE_SESSION_USERS。')
+            raise HTTPException(403, '主机配置的 CLAWCROSS_NATIVE_SESSION_USERS 未允许此用户导入外部会话。')
 
     @router.get('/v1/agents/native-sessions')
     async def native_sessions(platform: str = 'codex', cursor: str = '', authorization: str | None = Header(None),

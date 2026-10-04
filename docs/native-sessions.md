@@ -8,7 +8,7 @@ Agent 中心的「登记外部会话」和 Mobile 新建 Agent 的「登记已�
 - `sessions list`：调用适配器原生目录。Codex 使用 App Server `thread/list`，Claude 使用 SDK `listSessions`。返回标题、目录、时间和原生 ID，支持适配器返回的分页游标。
 - `sessions ensure --name <name> --resume-session <id>`：为 ClawCross 名字绑定已有原生会话。首次连接恢复，不重放旧问答；后续复用 acpx 记录。
 
-目录是主机 CLI 账户的历史，不是所有 ClawCross 用户共享的历史。默认只允许经过前端验证的本机直连。远程访问需要主机管理员在环境中明确配置 `CLAWCROSS_NATIVE_SESSION_USERS=alice,avalon`。普通用户的 Bearer 认证或伪造请求头不能代替主机证明。已有其他用户的 ClawCross 会话与已登记的原生 ID 会从目录中过滤。
+目录来自主机 CLI 账户。所有已登录用户默认可在本机或远程读取尚未登记的会话目录并显式导入，不需要额外开启用户权限。未登录不能访问。可选环境配置 `CLAWCROSS_NATIVE_SESSION_USERS=alice,avalon` 会主动收窄远程导入范围；留空表示所有已登录用户。已有其他用户的 ClawCross 会话与已登记的原生 ID 会从目录中过滤，跨用户登记仍被拒绝。
 
 登记使用与用户绑定、十分钟有效的选择票据，不接受任意 ID/目录。重复登记同一会话返回已有 Agent，跨用户占用拒绝。登记本身不加载原生会话、不调用 LLM，也不复制历史到 ClawCross。下一条消息或「测试连接」用原有目录恢复，ClawCross 工具默认启用。原生历史由 Codex/Claude 自己保存；ClawCross 对话页从接入后的新消息开始记录。
 
