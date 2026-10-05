@@ -112,7 +112,7 @@ class AgentModelProfilesTests(ApiCase):
 
     def test_remembered_approvals_list_and_revoke_only_own_agent_exact_action(self):
         from webot import remembered_approvals, policy
-        first = json.dumps({'command':'SECRET_COMMAND', '_approval_session':'one'})
+        first = json.dumps({'command':'ls', '_approval_session':'one'})
         other = json.dumps({'command':'other', '_approval_session':'two'})
         legacy = json.dumps({'command':'legacy'})
         rules = policy._normalize_policy({'tools':{'run_command':{'approved_args':[first,other,legacy]}}},
@@ -120,8 +120,8 @@ class AgentModelProfilesTests(ApiCase):
         with patch.object(remembered_approvals, 'get_tool_policy', return_value=rules), \
              patch.object(remembered_approvals, 'save_tool_policy_config') as save:
             result = self.call('GET', '/v1/agents/one/remembered-approvals')
-            self.assertNotIn('SECRET', result.text)
-            self.assertEqual(len(result.json()['actions']), 1)
+            # The owner sees the exact remembered action, without internal fields.
+            self.assertEqual([action['arguments'] for action in result.json()['actions']], [{'command':'ls'}])
             key = result.json()['actions'][0]['key']
             path = f'/v1/agents/one/remembered-approvals/run_command/{key}'
             self.assertEqual(self.call('DELETE', path, user='bob').status_code, 404)
