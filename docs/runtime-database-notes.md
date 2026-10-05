@@ -59,7 +59,7 @@ This document summarizes the runtime-related databases used by Clawcross, what t
 - Other state tables
   - `webot_session_state`, `webot_session_plans`, `webot_session_todos`
   - `webot_verifications`, `webot_tool_approvals`, `webot_execution_permits`
-  - `webot_memory_state`, `webot_voice_state`, `webot_claude_keepalive`
+  - `webot_memory_state`, `webot_claude_keepalive`
 
 ## Runtime Artifacts: What Is Stored
 

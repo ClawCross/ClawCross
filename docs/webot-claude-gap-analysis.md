@@ -16,7 +16,7 @@
 | Kairos / autoDream | `services/autoDream` background agent + logs. | `webot_memory.py` + `webot_service.py` + `mcp_webot.py` now expose Kairos enable/disable, dream execution, daily logs, memory summary artifacts, and runtime-state persistence. | Not ported (Claude web). | Not implemented. |
 | Ultraplan | Remote CCR session plan polling, teleport flag. | No dedicated tool (removed); planning runs as a `planner` subagent in a worktree via `spawn_subagent`. | Session-manager includes plan prompt, remote session state. | No implementation. |
 | Ultrareview | Reviewer fleet, 20 angles, coordinator. | No dedicated tool (removed); parallel `reviewer` subagents via `spawn_subagent`. | Council review workflow built-in. | Not implemented. |
-| Voice Mode | CLI / CCR voice (requires OAuth). | WeBot reuses the existing audio/TTS stack and now persists voice mode state per session, surfaces it in runtime DTO/UI, and exposes BFF + MCP controls. | Session-manager voice stub. | CLI audio limited to placeholder functions. |
+| Voice Mode | CLI / CCR voice (requires OAuth). | WeBot reuses the existing audio/TTS stack: host-wide TTS settings, per-message read-aloud, recorded audio sent to the model. No per-session voice mode. | Session-manager voice stub. | CLI audio limited to placeholder functions. |
 | Frontend Runtime Visibility | Runtime panel showing plan/todos/runs/workspaces. | Studio now renders the current session as a first-class runtime card alongside subagents, with mode/verifications/approvals/runs/inbox/artifacts/relationships plus voice/memory controls mapped to the canonical runtime DTO. | Panel via session-manager UI. | Not a UI. |
 
 ## Current Parity Status

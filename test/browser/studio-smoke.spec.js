@@ -88,16 +88,6 @@ async function stubStudioNetwork(page, calls, options = {}) {
       kairos_enabled: false,
       relevant_entries: [{ name: 'deploy_notes' }],
     },
-    voice: {
-      enabled: false,
-      auto_read_aloud: false,
-      recording_supported: true,
-      tts_model: 'gpt-4o-mini-tts',
-      tts_voice: 'alloy',
-      stt_model: 'whisper-1',
-      last_transcript: '',
-      status: 'disabled',
-    },
   };
   const subagentRuntimeState = {
     status: 'success',
@@ -156,16 +146,6 @@ async function stubStudioNetwork(page, calls, options = {}) {
       },
     ],
     approvals: webotState.approvals,
-    voice: {
-      enabled: false,
-      auto_read_aloud: false,
-      recording_supported: true,
-      tts_model: 'gpt-4o-mini-tts',
-      tts_voice: 'alloy',
-      stt_model: 'whisper-1',
-      last_transcript: '',
-      status: 'disabled',
-    },
     memory: {
       summary: '2 entries · kairos off',
       project_slug: 'clawcross-curie',
@@ -391,22 +371,6 @@ async function stubStudioNetwork(page, calls, options = {}) {
       return json(route, { scheduled: true });
     }
     return json(route, {});
-  });
-  await page.route('**/proxy_webot_voice', async (route) => {
-    const payload = await route.request().postDataJSON();
-    calls.voiceUpdates = calls.voiceUpdates || [];
-    calls.voiceUpdates.push(payload);
-    currentRuntimeState.voice = {
-      ...currentRuntimeState.voice,
-      enabled: !!payload.enabled,
-      status: payload.enabled ? 'enabled' : 'disabled',
-      auto_read_aloud: !!payload.auto_read_aloud,
-      tts_model: payload.tts_model || currentRuntimeState.voice.tts_model,
-      tts_voice: payload.tts_voice || currentRuntimeState.voice.tts_voice,
-      stt_model: payload.stt_model || currentRuntimeState.voice.stt_model,
-      last_transcript: payload.last_transcript || currentRuntimeState.voice.last_transcript,
-    };
-    return json(route, { status: 'success', voice: currentRuntimeState.voice });
   });
   await page.route('**/proxy_webot_kairos', async (route) => {
     const payload = await route.request().postDataJSON();

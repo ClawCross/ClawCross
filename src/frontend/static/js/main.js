@@ -282,7 +282,6 @@ const i18n = {
         subagent_runtime_claude_probe_ok: 'Claude Code 探测成功',
         subagent_runtime_claude_probe_failed: 'Claude Code 探测失败',
         subagent_runtime_keepalive_updated: 'Claude keepalive 已更新',
-        voice_mode: 'Voice',
         subagent_runtime_no_plan: '暂无计划',
         subagent_runtime_no_todos: '暂无 Todo',
         subagent_runtime_no_verifications: '暂无验证记录',
@@ -1077,7 +1076,6 @@ const i18n = {
         subagent_runtime_claude_probe_ok: 'Claude Code probe passed',
         subagent_runtime_claude_probe_failed: 'Claude Code probe failed',
         subagent_runtime_keepalive_updated: 'Claude keepalive updated',
-        voice_mode: 'Voice',
         subagent_runtime_no_plan: 'No plan yet',
         subagent_runtime_no_todos: 'No todos yet',
         subagent_runtime_no_verifications: 'No verifications yet',
@@ -3493,20 +3491,6 @@ function _buildExtendedSections(runtime, item) {
             </div>
         `);
     }
-    if (runtime?.voice) {
-        const voice = runtime.voice || {};
-        sections.push(`
-            <div class="webot-runtime-section">
-                <div class="webot-runtime-title">${t('voice_mode')}</div>
-                <div class="webot-runtime-detail">${_escapeAndFormatText(voice.status || (voice.enabled ? 'enabled' : 'disabled'))}</div>
-                <div class="webot-runtime-detail">${_escapeAndFormatText(`${voice.stt_model || ''} · ${voice.tts_model || ''} · ${voice.tts_voice || ''}`)}</div>
-                <div class="webot-runtime-detail">${_escapeAndFormatText(voice.last_transcript || '')}</div>
-                <div class="webot-runtime-actions">
-                    <button class="webot-subagent-btn" type="button" onclick="toggleWeBotVoice('${encodeURIComponent(sessionId)}', ${voice.enabled ? 'false' : 'true'})">${voice.enabled ? 'Disable' : 'Enable'}</button>
-                </div>
-            </div>
-        `);
-    }
     if (runtime?.memory) {
         const memory = runtime.memory || {};
         const relevant = Array.isArray(memory.relevant_entries) ? memory.relevant_entries.slice(0, 2).map(entry => entry.name || entry.path || '').filter(Boolean).join(' · ') : '';
@@ -3569,34 +3553,6 @@ async function deliverWeBotInbox(sessionId) {
         await refreshSubagentPanel();
     } catch (e) {
         _setWeBotPolicyStatus(String(e.message || 'Inbox delivery failed'), 'error');
-    }
-}
-
-async function toggleWeBotVoice(sessionId, enabled) {
-    if (!sessionId) return;
-    try {
-        const runtime = sessionId === currentSessionId ? (_currentSessionRuntime || {}) : (_subagentRuntimeCache[sessionId] || {});
-        const voice = runtime.voice || {};
-        const resp = await fetch('/proxy_webot_voice', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                session_id: sessionId,
-                enabled: !!enabled,
-                auto_read_aloud: !!voice.auto_read_aloud,
-                last_transcript: voice.last_transcript || '',
-                tts_model: voice.tts_model || '',
-                tts_voice: voice.tts_voice || '',
-                stt_model: voice.stt_model || '',
-            }),
-        });
-        const data = await resp.json();
-        if (!resp.ok || data.status !== 'success') {
-            throw new Error(data.detail || data.error || 'Voice update failed');
-        }
-        await refreshSubagentPanel();
-    } catch (e) {
-        _setWeBotPolicyStatus(String(e.message || 'Voice update failed'), 'error');
     }
 }
 

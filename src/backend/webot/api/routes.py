@@ -25,7 +25,6 @@ from webot.models import (
     WeBotToolPolicyUpdateRequest,
     WeBotRuntimeSettingsUpdateRequest,
     WeBotVerificationCreateRequest,
-    WeBotVoiceStateUpdateRequest,
     WeBotWorkflowPresetApplyRequest,
 )
 from webot.api.service import WeBotService
@@ -238,13 +237,6 @@ def create_webot_router(
         x_internal_token: str | None = Header(None),
     ):
         return await service.record_verification(req, x_internal_token)
-
-    @router.post("/webot/voice")
-    async def update_voice_state(
-        req: WeBotVoiceStateUpdateRequest,
-        x_internal_token: str | None = Header(None),
-    ):
-        return await service.update_voice_state(req, x_internal_token)
 
     @router.post("/webot/kairos")
     async def update_kairos_state(
