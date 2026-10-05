@@ -15320,6 +15320,7 @@ async function acpLoadSessionHistory(force = false, options = {}) {
             _acpTranscriptByKey[cacheKey] = html;
             if (applyToChat) {
                 chatBox.innerHTML = html;
+                ClawcrossNativeSessions.attachHistoryPager({agentId:sessionName,container:chatBox,nextBefore:studioHistoryCursors.get(sessionName),render:studioHistoryHtml});
                 ocRefreshTtsButtonsIn(chatBox);
                 scrollChatToBottom(chatBox, { force: true });
             }
@@ -15391,9 +15392,12 @@ async function studioEnsureAgent(agentId, fields) {
     }
 }
 
+const studioHistoryCursors = new Map();
+
 async function studioAgentHistoryHtml(agentId) {
     try {
         const data = await agentApi('GET', `/v1/agents/${encodeURIComponent(agentId)}/history?limit=200`);
+        studioHistoryCursors.set(agentId, data.next_before);
         return studioHistoryHtml(data.messages || []) || null;
     } catch (e) {
         return null;  // not made yet
@@ -15425,6 +15429,8 @@ function studioHistoryHtml(messages) {
         } else if (role === 'tool') {
             parts.push('<div class="flex justify-start"><div class="message-agent">' +
                 RuntimePresentation.tool(renderToolPager(content, {title: t('tool_full_output')}), msg.tool_name || '工具轨迹') + '</div></div>');
+        } else if (role === 'system') {
+            parts.push('<details class="runtime-context-details"><summary>思考 / Thinking</summary><div class="markdown-body">' + renderMarkdown(content) + '</div></details>');
         } else if (direction === 'error') {
             parts.push(
                 '<div class="flex justify-start">' +

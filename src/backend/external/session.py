@@ -255,10 +255,20 @@ async def exchange(agent: Agent, *, connect_type: str, prompt: Any, context: dic
 
 async def log(agent: Agent, limit: int) -> list[dict[str, Any]]:
     """What was said in the agent's session, oldest first: ``[{role, content}]``."""
-    rows = await (await history.get_store()).list_messages(
-        platform=agent.platform, session_key=runtime_session(agent), limit=5000)
+    page = await (await history.get_store()).message_page(
+        platform=agent.platform, session_key=runtime_session(agent), limit=limit)
+    return present_log(page['rows'])
+
+
+async def log_page(agent: Agent, limit: int, before: int | None = None) -> dict:
+    page = await (await history.get_store()).message_page(
+        platform=agent.platform, session_key=runtime_session(agent), limit=limit, before=before)
+    return {'messages':present_log(page.pop('rows')), **page}
+
+
+def present_log(rows: list[dict]) -> list[dict]:
     messages = []
-    for row in rows[-limit:]:
+    for row in rows:
         role = row.get('role') or ('user' if row.get('direction') == 'send' else 'assistant')
         content = row.get('content') or ''
         if row.get('direction') == 'error' and '{"jsonrpc"' in content:
@@ -283,18 +293,25 @@ async def log(agent: Agent, limit: int) -> list[dict[str, Any]]:
                 item = json.loads(content)
             except (ValueError, TypeError):
                 item = None
-            if isinstance(item, dict) and row.get('direction') in ('tool_call', 'tool_result'):
+            if isinstance(item, dict) and row.get('direction') in ('tool_call', 'tool_result') and (row.get('meta') or {}).get('source') != 'native':
                 messages.append({'role': 'tool', 'tool_name': item.get('name') or item.get('tool_name') or '',
                                  'content': json.dumps(item.get('input', {}), ensure_ascii=False)
                                  if row['direction'] == 'tool_call' else str(item.get('content', '')),
                                  'status': item.get('status')})
                 continue
-        item = {'role': role, 'content': content}
         meta = row.get('meta') or {}
+        item = {'role': role, 'content': content, 'rowid':row.get('rowid'), 'direction':row.get('direction'),
+                'source':meta.get('source', 'clawcross')}
+        if role == 'tool':
+            item.update(tool_name=meta.get('tool_name', ''), status=meta.get('status'), tool_call_id=meta.get('tool_call_id'))
+        if row.get('direction') == 'thought':
+            item['role'] = 'system'
+        if meta.get('content_blocks'):
+            item['content_blocks'] = meta['content_blocks']
         if role == 'user' and isinstance(meta.get('display_input'), str):
             item.update(user_input=meta['display_input'], runtime_context=meta.get('display_runtime_context', ''))
         messages.append(item)
-    return messages[-limit:]
+    return messages
 
 
 async def drop_log(agent: Agent) -> None:

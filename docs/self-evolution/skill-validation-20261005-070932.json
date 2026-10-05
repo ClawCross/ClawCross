@@ -1,0 +1,31 @@
+{
+  "type": "ValidationReport",
+  "schema_version": "clawcross.skill-evolution/1.0",
+  "id": "vr_20261005070932529886",
+  "candidate_id": "blended-verification-loop-approval-auth",
+  "skill_name": "repo-skill",
+  "strategy": "harden",
+  "env_fingerprint": {
+    "python_version": "3.11.16",
+    "platform": "Linux",
+    "platform_detail": "Linux-7.0.0-14-generic-x86_64-with-glibc2.43",
+    "cwd": "/home/ubuntu/work2/ClawCross",
+    "repo_root": "/home/ubuntu/work2/ClawCross",
+    "user_id": "",
+    "skill_name": "repo-skill",
+    "present_env_keys": [],
+    "captured_at": "2026-10-05T07:09:32.529853+00:00"
+  },
+  "commands": [
+    {
+      "command": "(external failure context)",
+      "ok": false,
+      "stdout": "> clawcross@0.0.28 test:browser-smoke\n> playwright test --config playwright.config.mjs --grep native list|mobile contacts|runtime\n\n\u001b[2m[WebServer] \u001b[22mTraceback (most recent call last):\n\u001b[2m[WebServer] \u001b[22m  File \"/home/ubuntu/work2/ClawCross/test/browser/mock_frontend_server.py\", line 16, in <module>\n\u001b[2m[WebServer] \u001b[22m    front.app.run(host=\"127.0.0.1\", port=port, debug=False, use_reloader=False)\n\u001b[2m[WebServer] \u001b[22m  File \"/home/ubuntu/.clawcross/venv/lib/python3.11/site-packages/flask/app.py\", line 662, in run\n\u001b[2m[WebServer] \u001b[22m    run_simple(t.cast(str, host), port, self, **options)\n\u001b[2m[WebServer] \u001b[22m  File \"/home/ubuntu/.clawcross/venv/lib/python3.11/site-packages/werkzeug/serving.py\", line 1097, in run_simple\n\u001b[2m[WebServer] \u001b[22m    srv = make_server(\n\u001b[2m[WebServer] \u001b[22m          ^^^^^^^^^^^^\n\u001b[2m[WebServer] \u001b[22m  File \"/home/ubuntu/.clawcross/venv/lib/python3.11/site-packages/werkzeug/serving.py\", line 934, in make_server\n\u001b[2m[WebServer] \u001b[22m    return ThreadedWSGIServer(\n\u001b[2m[WebServer] \u001b[22m           ^^^^^^^^^^^^^^^^^^^\n\u001b[2m[WebServer] \u001b[22m  File \"/home/ubuntu/.clawcross/venv/lib/python3.11/site-packages/werkzeug/serving.py\", line 754, in __init__\n\u001b[2m[WebServer] \u001b[22m    super().__init__(\n\u001b[2m[WebServer] \u001b[22m  File \"/home/ubuntu/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/socketserver.py\", line 452, in __init__\n\u001b[2m[WebServer] \u001b[22m    self.socket = socket.socket(self.address_family,\n\u001b[2m[WebServer] \u001b[22m                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n\u001b[2m[WebServer] \u001b[22m  File \"/home/ubuntu/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/socket.py\", line 232, in __init__\n\u001b[2m[WebServer] \u001b[22m    _socket.socket.__init__(self, family, type, proto, fileno)\n\u001b[2m[WebServer] \u001b[22mPermissionError: [Errno 1] Operation not permitted\nError: Process from config.webServer was not able to start. Exit code: 1",
+      "stderr": ""
+    }
+  ],
+  "overall_ok": false,
+  "duration_ms": null,
+  "created_at": "2026-10-05T07:09:32.529921+00:00",
+  "asset_id": "sha256:ce5d37dbe1dc131165d3cf0d658d51a7c73ae7ef36599634a72d3e7eed2e3561"
+}

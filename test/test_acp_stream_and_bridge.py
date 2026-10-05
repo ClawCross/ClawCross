@@ -31,11 +31,11 @@ class ACPStreamTests(unittest.IsolatedAsyncioTestCase):
             agent=store.create('alice',driver=ACPX,config={'platform':'claude'})
             content='acpx failed (5): '+json.dumps({'jsonrpc':'2.0','method':'session/resume','params':{'token':'private-secret'}})
             history=AsyncMock()
-            history.list_messages.return_value=[{'role':'assistant','direction':'error','content':content}]
+            history.message_page.return_value={'rows':[{'role':'assistant','direction':'error','content':content}], 'has_more':False, 'next_before':None}
             with patch('external.history.get_store',AsyncMock(return_value=history)):
                 result=await session.log(agent,20)
             self.assertEqual(result[0]['content'],'External Agent tool permission denied')
-            self.assertEqual(history.list_messages.return_value[0]['content'],content)
+            self.assertEqual(history.message_page.return_value['rows'][0]['content'],content)
 
     async def test_permission_error_does_not_expose_protocol_credentials(self):
         output = json.dumps({'jsonrpc':'2.0','method':'session/resume','params':{

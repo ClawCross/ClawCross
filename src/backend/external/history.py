@@ -478,6 +478,62 @@ class ExternalAgentHistoryStore:
                     ctx=ctx,
                 )
 
+    async def import_native_messages(self, *, platform: str, session_key: str, native_id: str,
+                                     messages: list[dict], user_id: str) -> int:
+        """Prepend one idempotent snapshot; keep locally recorded turns and their IDs."""
+        path = self.db_path(platform, session_key)
+        await self._ensure_schema(path)
+        request_id = 'native:' + native_id
+        async with aiosqlite.connect(path) as db:
+            await db.execute('BEGIN IMMEDIATE')
+            cursor = await db.execute('SELECT COUNT(*) FROM messages WHERE request_id=?', (request_id,))
+            count = (await cursor.fetchone())[0]
+            if count:
+                return count
+            # Some registered Agents have already spoken through ClawCross. Stop
+            # the native snapshot at the first managed prompt to avoid duplicating it.
+            cursor = await db.execute("SELECT content FROM messages WHERE direction='send' AND rowid>0 ORDER BY rowid LIMIT 1")
+            boundary = await cursor.fetchone()
+            if boundary:
+                for index, row in enumerate(messages):
+                    if row.get('role') == 'user' and row.get('content') == boundary[0]:
+                        messages = messages[:index]
+                        break
+            stamp = time.time()
+            values = [(-len(messages)+index, stamp, request_id, row.get('direction') or 'recv',
+                       row.get('role') or 'assistant', str(row.get('content') or ''),
+                       _json_dump({**(row.get('meta') or {}), 'source':'native', 'native_id':native_id}), user_id, '')
+                      for index, row in enumerate(messages)]
+            await db.executemany('INSERT INTO messages (rowid,ts,request_id,direction,role,content,meta_json,user_id,group_id) VALUES (?,?,?,?,?,?,?,?,?)', values)
+            await db.commit()
+        await self._touch_session(path, platform=platform, session_key=session_key, connect_type='acpx',
+                                  ctx=HistoryContext(user_id=user_id), ts=stamp)
+        return len(messages)
+
+    async def message_page(self, *, platform: str, session_key: str, limit: int = 200,
+                           before: int | None = None) -> dict:
+        """Page backwards using stable row IDs, even while new turns are appended."""
+        path = self.db_path(platform, session_key)
+        if not path.exists():
+            return {'rows':[], 'has_more':False, 'next_before':None}
+        await self._ensure_schema(path)
+        async with aiosqlite.connect(path) as db:
+            db.row_factory = aiosqlite.Row
+            clause = 'WHERE rowid < ?' if before is not None else ''
+            values = (before, limit+1) if before is not None else (limit+1,)
+            cursor = await db.execute(f'SELECT * FROM messages {clause} ORDER BY rowid DESC LIMIT ?', values)
+            rows = await cursor.fetchall()
+        has_more = len(rows) > limit
+        out = []
+        for row in reversed(rows[:limit]):
+            item = dict(row)
+            try:
+                item['meta'] = json.loads(item.pop('meta_json') or '{}')
+            except (TypeError, ValueError):
+                item['meta'] = {}
+            out.append(item)
+        return {'rows':out, 'has_more':has_more, 'next_before':out[0]['rowid'] if has_more else None}
+
     async def list_messages(
         self,
         *,

@@ -184,6 +184,9 @@ def new_agent_config(body: AgentCreate) -> tuple[str, dict[str, Any]]:
         "headers": dict(body.headers),
         "meta": dict(body.meta),
     })
+    if driver == ACPX and body.tools is not None:
+        acp = {**(config['meta'].get('acp') or {}), 'tools':body.tools}
+        config['meta'] = {**config['meta'], 'acp':acp}
     return driver, config
 
 
@@ -320,9 +323,23 @@ def create_agents_router(
                                     x_clawcross_host_browse: str | None = Header(None)):
         user = user_of(authorization)
         host_access(user, authorization, x_clawcross_host_browse)
-        from agents.native_sessions import register
+        from agents.native_sessions import register, import_history
         try:
-            return agent_card(register(user, body.ticket, body.name, store))
+            agent = register(user, body.ticket, body.name, store)
+            state = await import_history(agent, store)
+            return {**agent_card(store.require(user, agent.agent_id)), 'native_history':state}
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+
+    @router.post('/v1/agents/{ref}/native-history')
+    async def load_native_history(ref: str, authorization: str | None = Header(None),
+                                  x_clawcross_host_browse: str | None = Header(None)):
+        user = user_of(authorization)
+        host_access(user, authorization, x_clawcross_host_browse)
+        agent = lookup(user, ref)
+        from agents.native_sessions import import_history
+        try:
+            return await import_history(agent, store)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from None
 
@@ -443,9 +460,15 @@ def create_agents_router(
             raise HTTPException(status_code=400, detail=str(exc))
 
     @router.get("/v1/agents/{ref}/history")
-    async def agent_history(ref: str, limit: int = Query(200, ge=1, le=1000), source: Literal['clawcross', 'acpx'] = Query('clawcross'), authorization: str | None = Header(None)):
+    async def agent_history(ref: str, limit: int = Query(200, ge=1, le=1000), source: Literal['clawcross', 'acpx'] = Query('clawcross'), before: int | None = Query(None), authorization: str | None = Header(None)):
         agent = lookup(user_of(authorization), ref)
         try:
+            if agent.driver == ACPX and source == 'clawcross':
+                from external.session import log_page
+                return {'agent':agent_card(agent), 'source':source,
+                        'native_history':agent.runtime.get('native_history') or {},
+                        'can_load_native':bool(agent.runtime.get('native_resume_id')),
+                        **await log_page(agent, limit, before)}
             messages = await gateway.history(agent, limit, source=source) if source == 'acpx' else await gateway.history(agent, limit)
             return {"agent": agent_card(agent), "messages": messages, "source": source}
         except ControlError as exc:

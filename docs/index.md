@@ -66,6 +66,7 @@ If you are an agent, do **not** load everything by default. Start with `AGENTS.m
 - [`webot-claude-gap-analysis.md`](./webot-claude-gap-analysis.md): feature matrix vs Claude Code and the outstanding parity checklist
 - [`team-anatomy.md`](./team-anatomy.md): single-file runtime reference — folder layout, every file schema, cross-file bindings, runtime-only vs persistent fields, debug checklist
 - [`example_team.md`](./example_team.md): concrete file layout for a Team
+- [`native-session-import.md`](./native-session-import.md): 登记各 ACP 平台原生会话、读取历史、SQLite 保存与分页展示
 - [`openclaw-commands.md`](./openclaw-commands.md): OpenClaw as an ACP agent, and the read-only LLM import
 - [`remote-claude-fleet.md`](./remote-claude-fleet.md): Tailscale/SSH/Claude setup for remote Claude workers in Project Fleet
 - [`tinyfish-monitor.md`](./tinyfish-monitor.md): TinyFish internet search agent, live crawl, and data persistence

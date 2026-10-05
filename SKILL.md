@@ -537,14 +537,14 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-10-04T18:06:16.194368+00:00`
+- Updated at: `2026-10-05T07:16:49.142664+00:00`
 - Strategy: `harden`
-- Heuristic candidate: `blended-verification-loop-structured-output`
-- Heuristic score: `0.73`
+- Heuristic candidate: `blended-verification-loop-approval-auth-workspace-preflight`
+- Heuristic score: `0.628`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: (external failure context). Signals: verification-loop, structured-output. stdout was used as fallback failure evidence.
+Command exited with code 1. Command: (external failure context). Signals: verification-loop, approval-auth, workspace-preflight. stdout was used as fallback failure evidence.
 
 ### Strategy Rationale
 
@@ -558,35 +558,26 @@ Command exited with code 1. Command: (external failure context). Signals: verifi
 ### Latest Error Excerpt
 
 ```text
-F.......................                                             [100%]
-=================================== FAILURES ===================================
-_ TeamSnapshotUploadTests.test_failed_replacement_restores_original_team_and_skills _
+> clawcross@0.0.28 test:browser-smoke
+> playwright test --config playwright.config.mjs --grep native list|ACP session browser|contact creation|external agent accepts|Studio plus keeps runtime
 
-self = <test.test_team_snapshot_upload.TeamSnapshotUploadTests testMethod=test_failed_replacement_restores_original_team_and_skills>
+[2m[WebServer] [22m2026-10-05 15:13:59,772 INFO [werkzeug] [req:-] [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+[2m[WebServer] [22m * Running on http://127.0.0.1:51219
+[2m[WebServer] [22m2026-10-05 15:13:59,772 INFO [werkzeug] [req:-] [33mPress CTRL+C to quit[0m
+[2m[WebServer] [22m2026-10-05 15:14:00,749 INFO [werkzeug] [req:-] 127.0.0.1 - - [05/Oct/2026 15:14:00] "GET /studio HTTP/1.1" 200 -
 
-    def test_failed_replacement_restores_original_team_and_skills(self):
-        import_entries(self.teams, "upload-user", "demo", [{"name": "Writer", "persona": "original", "is_primary": True}], [])
-        before = self.teams.members("upload-user", "demo")
-        folder = self.teams.folder("upload-user", "demo")
-        (folder / "original.json").write_text('{}')
-        webot_skills.create_skill("upload-user", name="original", content=_skill_content("original", "old"), team="demo")
-        with mock.patch("teams.snapshot.restore_skills_from_team_dir", side_effect=RuntimeError("restore failed")):
-            response = self.upload({"internal_agents.json": '[{"name":"New"}]'}, replace=True)
-        self.assertEqual(response.status_code, 500)
->       self.assertEqual(self.teams.members("upload-user", "demo"), before)
-E       AssertionError: Lists differ: [Memb[194 chars]at=1791137059.4139214), role='Writer', is_lead=True, extra={})] != [Memb[194 chars]at=1791137059.3681393), role='Writer', is_lead=True, extra={})]
-E
-E       First differing element 0:
-E       Membe[192 chars]_at=1791137059.4139214), role='Writer', is_lead=True, extra={})
-E       Membe[192 chars]_at=1791137059.3681393), role='Writer', is_lead=True, extra={})
-E
-E         [Member(agent=Agent(agent_id='ag_hc9e3dxrxn',
-E                             owner='upload-user',
-E                             name='Writer',
-E                             driver='webot',
-E                             config={'persona': 'original', 'teams': ['demo']},
-E                             runtime={},
-E ...[truncated]
+Running 5 tests using 1 worker
+
+(node:2248556) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:2248556) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[2m[WebServer] [22m2026-10-05 15:14:04,008 INFO [werkzeug] [req:-] 127.0.0.1 - - [05/Oct/2026 15:14:04] "GET /studio HTTP/1.1" 200 -
+[2m[WebServer] [22m2026-10-05 15:14:04,084 INFO [werkzeug] [req:-] 127.0.0.1 - - [05/Oct/2026 15:14:04] "GET /static/css/tailwind.css?v=20261003-local HTTP/1.1" 200 -
+[2m[WebServer] [22m2026-10-05 15:14:04,086 INFO [werkzeug] [req:-] 127.0.0.1 - - [05/Oct/2026 15:14:04] "GET /static/css/markdown-shared.css?v=20261004-fold-approval HTTP/1.1" 200 -
+[2m[WebServer] [22m2026-10-05 15:14:04,092 INFO [werkzeug] [req:-] 127.0.0.1 - - [05/Oct/2026 15:14:04] "GET /static/css/theme.css?v=20261002-fold HTTP/1.1" 200 -
+[2m[WebServer] [22m2026-10-05 15:14:04,123 INFO [werkzeug] [req:-] 127.0.0.1 - - [05/Oct/2026 15:14:04] "GET /static/css/style.css?v=20261004-plus-settings HTTP/1.1" 200 -
+[2m[WebServer] [22m2026-10-05 15:14:04,124 INFO [werkzeug] [req:-] 127.0.0.1 - - [05/Oct/2026 15:14:04 ...[truncated]
 ```
 
 ### Governance Snapshot
@@ -609,14 +600,15 @@ E ...[truncated]
 
 ### Recent Evidence
 
-- `2026-10-04T18:06:16.194368+00:00` `repo-skill` — F.......................                                             [100%]
-=================================== FAILURES ===================== ...[truncated]
+- `2026-10-05T07:16:49.142664+00:00` `repo-skill` — > clawcross@0.0.28 test:browser-smoke
+> playwright test --config playwright.config.mjs --grep native list|ACP session browser|contact creation ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `blended-verification-loop-structured-output` score `0.73` — Blend the strongest recent failure patterns (intent `repair`)
-- `verification-loop-4` score `0.69` — Tighten verification loops (intent `repair`)
-- `structured-output-1` score `0.486` — Harden structured-output handling (intent `repair`)
+- `blended-verification-loop-approval-auth-workspace-preflight` score `0.628` — Blend the strongest recent failure patterns (intent `repair`)
+- `verification-loop-4` score `0.588` — Tighten verification loops (intent `repair`)
+- `approval-auth-2` score `0.503` — Preflight auth and approval constraints (intent `repair`)
+- `workspace-preflight-1` score `0.461` — Add repo/workspace preflight checks (intent `repair`)
 
 ### Local State Snapshot
 
