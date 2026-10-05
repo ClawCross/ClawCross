@@ -33,6 +33,8 @@
         overlay.addEventListener('keydown', event => {
             if (event.key === 'Escape') { event.stopPropagation(); close(); }
             if (event.key === 'Tab') {
+                // Keep underlying modal focus traps from stealing this key.
+                event.stopPropagation();
                 const controls = [...overlay.querySelectorAll('button,input,textarea,summary')].filter(el=>!el.disabled && el.getClientRects().length);
                 if (!controls.length) return;
                 const first=controls[0],last=controls[controls.length-1];
