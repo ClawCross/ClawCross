@@ -79,13 +79,15 @@ def bind_file_target(tool_name: str, args: dict, user_id: str, session_id: str, 
         target = candidate.resolve()
     bound["_resolved_path"] = str(target)
     bound["_workspace_root"] = str(workspace.root.resolve())
+    bound["_workspace_roots"] = [str(root.resolve()) for root in getattr(workspace, "roots", (workspace.root,))]
     return bound
 
 
 def file_target_outside_workspace(args: dict) -> bool:
     target = args.get("_resolved_path")
     root = args.get("_workspace_root")
-    return bool(target and root and not Path(target).is_relative_to(Path(root)))
+    roots = args.get("_workspace_roots") or ([root] if root else [])
+    return bool(target and roots and not any(Path(target).is_relative_to(Path(folder)) for folder in roots))
 
 
 def file_access_violation(args: dict, user_id: str, session_id: str) -> str:
@@ -99,5 +101,5 @@ def file_access_violation(args: dict, user_id: str, session_id: str) -> str:
     if any(path.is_relative_to(control) or control.is_relative_to(path) for control in protected_control_paths()):
         return '后端安全配置属于受保护区域，Agent 文件工具不能访问或修改。'
     if strict and file_target_outside_workspace(args):
-        return '严格安全模式只允许访问独立工作区，不允许提权。'
+        return '严格安全模式只允许访问已配置的工作区目录，不允许提权。'
     return ''

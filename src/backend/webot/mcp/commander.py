@@ -1226,7 +1226,7 @@ async def run_command(
         "escalation_reason":escalation_reason,"sandbox_approval_chain":sandbox_approval_chain or [],
     })
     try:
-        prior_grants = approved_retry_chain(username, session_id or 'default', action_args, workspace_state.root)
+        prior_grants = approved_retry_chain(username, session_id or 'default', action_args, workspace_state.root, roots=getattr(workspace_state, "roots", (workspace_state.root,)))
     except SandboxUnavailable as exc:
         return '❌ ' + str(exc)
     for grant in prior_grants:
@@ -1280,6 +1280,7 @@ async def run_command(
                         try:
                             sandbox = build_sandbox(
                                 root=workspace_state.root, cwd=workspace_state.cwd,
+                                workspace_roots=getattr(workspace_state, "roots", (workspace_state.root,)),
                                 command=command, language=language, python_executable=_python_cmd(),
                                 script_path=Path(script) if script else None,
                                 access=sandbox_access, target=escalation_target, allowed_domains=allowed_domains,
@@ -1382,6 +1383,7 @@ async def run_command(
                 try:
                     sandbox = build_sandbox(
                         root=workspace_state.root, cwd=workspace_state.cwd,
+                        workspace_roots=getattr(workspace_state, "roots", (workspace_state.root,)),
                         command=command, language=language, python_executable=_python_cmd(),
                         script_path=Path(script) if script else None, interactive=interactive,
                         access=sandbox_access, target=escalation_target, allowed_domains=allowed_domains,

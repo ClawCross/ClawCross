@@ -63,7 +63,7 @@ def process_read_paths():
             yield str(directory / name), 1 << 2
 
 
-def restrict(workspace, extra_read, extra_write, network_ports=(), *, strict=False):
+def restrict(workspace, extra_read, extra_write, network_ports=(), *, strict=False, workspace_roots=None):
     nproc = process_budget()
     if sys.platform != 'linux' or platform.machine() not in {'x86_64', 'aarch64'}:
         raise RuntimeError('Landlock requires Linux x86_64 / aarch64')
@@ -84,7 +84,7 @@ def restrict(workspace, extra_read, extra_write, network_ports=(), *, strict=Fal
     read = (1 << 0) | (1 << 2) | (1 << 3)
     # Workspace permits ordinary files / directories, never device creation.
     rw = fs & ~((1 << 6) | (1 << 11) | (1 << 15))
-    paths = [(workspace, rw)]
+    paths = [(path, rw) for path in dict.fromkeys(workspace_roots or [workspace])]
     paths += [(p, read) for p in ('/usr', '/bin', '/lib', '/lib64', sys.prefix, sys.base_prefix) if Path(p).exists()]
     paths += [(p, (1 << 2) | (1 << 1)) for p in ('/dev/null',) if Path(p).exists()]
     paths += [(p, 1 << 2) for p in ('/dev/urandom',) if Path(p).exists()]
@@ -195,7 +195,7 @@ def main():
             probe.close()
             raise RuntimeError('Network fence is not enforced')
     restrict(settings['root'], settings.get('read_paths', []), settings.get('write_paths', []), ports,
-             strict=settings.get('strict', False))
+             strict=settings.get('strict', False), workspace_roots=settings.get('workspace_roots'))
     os.execv(sys.argv[2], sys.argv[2:])
 
 

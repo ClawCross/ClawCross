@@ -28,6 +28,9 @@ class TeamCase(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         root = Path(self.tmp.name)
+        for module in ('webot.workspace', 'webot.skills'):
+            patched = mock.patch(module + '.WORKSPACE_DIR', root / 'workspace')
+            patched.start(); self.addCleanup(patched.stop)
         self.agents = AgentStore(root / "agents.db")
         self.teams = TeamStore(self.agents, root / "user_files")
         self.teams.create("alice", "dev")

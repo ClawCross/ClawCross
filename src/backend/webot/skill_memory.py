@@ -13,10 +13,49 @@ import re
 from webot import skills
 
 
-def _root(user_id: str, team: str = "") -> Path:
+def _root(user_id: str, team: str = "", session_id: str = "") -> Path:
     if not user_id or user_id in {".", ".."} or Path(user_id).name != user_id or "\\" in user_id:
         raise ValueError("Invalid user ID")
+    if session_id:
+        roots = _catalog_roots(user_id, session_id, team)
+        if not roots: raise ValueError('No Skill workspace is available')
+        return roots[0][0]
     return skills._scope_skills_dir(user_id, team)
+
+
+def _catalog_roots(user_id: str, session_id: str, team: str = '', agent_config: dict | None = None) -> list[tuple[Path, str, str]]:
+    from webot.workspace import resolve_session_workspace
+    state = resolve_session_workspace(user_id, session_id, agent_config=agent_config)
+    folders = list(state.folders) or [{'path':str(state.root), 'source':'user' if state.mode == 'shared' else state.mode, 'team':''}]
+    if team:
+        folders = [folder for folder in folders if folder.get('team') == team]
+        if not folders:
+            raise ValueError('Team workspace is not enabled for this Agent')
+    result = []
+    for folder in folders:
+        source, selected_team = folder['source'], folder.get('team', '')
+        if source == 'team':
+            root = skills._team_skills_dir(user_id, selected_team)
+            namespace = selected_team
+        elif source == 'user':
+            root = skills._skills_dir(user_id)
+            namespace = ''
+        else:
+            root = Path(folder['path']) / 'skills'
+            namespace = source + ':' + (session_id if source == 'companion' else str(Path(folder['path']).resolve()))
+        if root.is_symlink() or not root.resolve().is_relative_to(Path(folder['path']).resolve()):
+            raise ValueError('Skill storage must remain inside its workspace')
+        result.append((root, namespace, selected_team if source == 'team' else ''))
+    return result
+
+
+def _catalog(user_id: str, session_id: str, team: str = '', agent_config: dict | None = None) -> list[dict]:
+    entries, seen = [], set()
+    for root, namespace, selected_team in _catalog_roots(user_id, session_id, team, agent_config):
+        for entry in _entries(user_id, selected_team, root=root, namespace=namespace):
+            if entry['_path'] not in seen:
+                seen.add(entry['_path']); entries.append(entry)
+    return entries
 
 
 def _identifier(team: str, key: str) -> str:
@@ -31,8 +70,8 @@ def _name(value: str) -> str:
     return value
 
 
-def _entries(user_id: str, team: str = "") -> list[dict]:
-    root = _root(user_id, team)
+def _entries(user_id: str, team: str = "", *, root: Path | None = None, namespace: str | None = None) -> list[dict]:
+    root = root if root is not None else _root(user_id, team)
     entries = []
     for path in sorted(root.rglob("SKILL.md")):
         if path.parent == root:
@@ -46,7 +85,7 @@ def _entries(user_id: str, team: str = "") -> list[dict]:
         meta, _ = skills._parse_frontmatter(content)
         key = relative.parent.as_posix()
         entries.append({
-            "id": _identifier(team, key), "name": meta.get("name") or path.parent.name,
+            "id": _identifier(team if namespace is None else namespace, key), "name": meta.get("name") or path.parent.name,
             "description": meta.get("description", ""), "category": meta.get("category", ""),
             "scope": "team" if team else "personal", "team": team,
             "_path": path, "_key": path.parent.name,
@@ -58,17 +97,19 @@ def public_entry(entry: dict) -> dict:
     return {key: value for key, value in entry.items() if not key.startswith("_")}
 
 
-def list_memory(user_id: str, team: str = "", *, include_personal: bool = True) -> list[dict]:
+def list_memory(user_id: str, team: str = "", *, include_personal: bool = True, session_id: str = "", agent_config: dict | None = None, include_paths: bool = False) -> list[dict]:
+    if session_id:
+        return [{**public_entry(entry), **({'path':str(entry['_path'])} if include_paths else {})} for entry in _catalog(user_id, session_id, team, agent_config)]
     entries = _entries(user_id, team)
     if team and include_personal:
         entries += _entries(user_id)
     return [public_entry(entry) for entry in entries]
 
 
-def memory_target(user_id: str, selector: str, team: str = "", *, create: bool = False, shared: bool = False) -> dict:
+def memory_target(user_id: str, selector: str, team: str = "", *, create: bool = False, shared: bool = False, session_id: str = "") -> dict:
     selector = _name(selector)
-    entries = _entries(user_id, team)
-    if team and shared:
+    entries = _catalog(user_id, session_id, team) if session_id else _entries(user_id, team)
+    if team and shared and not session_id:
         entries += _entries(user_id)
     matches = [entry for entry in entries if selector == entry["id"]]
     if not matches:
@@ -83,20 +124,28 @@ def memory_target(user_id: str, selector: str, team: str = "", *, create: bool =
         key = skills._validate_name(selector)
     except ValueError:
         key = "memory-" + hashlib.sha256(selector.encode()).hexdigest()[:20]
-    root = _root(user_id, team)
+    if session_id:
+        root, namespace, selected_team = _catalog_roots(user_id, session_id, team)[0]
+        team = selected_team
+    else:
+        root, namespace = _root(user_id, team), team
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
     target = root / key / "SKILL.md"
     if target.parent.is_symlink() or target.is_symlink() or not target.resolve().is_relative_to(root):
         raise ValueError("Invalid memory storage")
-    return {"id": _identifier(team, key), "name": selector, "description": "", "category": "",
+    return {"id": _identifier(namespace, key), "name": selector, "description": "", "category": "",
             "scope": "team" if team else "personal", "team": team, "_path": target, "_key": key}
 
 
-def prepare_content(entry: dict, content: str) -> str:
+def prepare_content(entry: dict, content: str, *, file_path=None) -> str:
     """Accept plain Markdown; retain existing metadata when replacing a body."""
     if not content.startswith("---"):
         meta = {"name": entry["name"], "description": entry.get("description") or entry["name"]}
-        if entry["_path"].exists():
-            old_content = entry["_path"].read_text(encoding="utf-8")
+        from webot.confined_files import file_exists, file_open
+        target = file_path if file_path is not None else entry['_path']
+        if file_exists(target):
+            with file_open(target, 'r', encoding='utf-8') as handle:
+                old_content = handle.read()
             end = old_content.find("---", 3) if old_content.startswith("---") else -1
             if end != -1:
                 content = old_content[:end + 3] + "\n\n" + content
@@ -115,20 +164,22 @@ def prepare_content(entry: dict, content: str) -> str:
     return content
 
 
-def refresh_index(user_id: str, team: str = "") -> None:
-    root = _root(user_id, team)
+def refresh_index(user_id: str, team: str = "", *, session_id: str = "") -> None:
+    root = _root(user_id, team, session_id)
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
     path = root / "SKILLS_INDEX.md"
     if path.is_symlink():
         raise ValueError("Memory index cannot use symbolic links")
-    entries = list_memory(user_id, team, include_personal=False)
+    entries = list_memory(user_id, team, include_personal=False, session_id=session_id)
     text = "# Skills Index\n\n" + "\n".join(f"- **{e['name']}**: {e['description']}" for e in entries) + "\n"
     from webot.mcp.filemanager import _atomic_write_text
     _atomic_write_text(str(path), text)
 
 
 @contextmanager
-def memory_lock(user_id: str, team: str = ""):
-    root = _root(user_id, team)
+def memory_lock(user_id: str, team: str = "", *, session_id: str = ""):
+    root = _root(user_id, team, session_id)
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
     path = root / ".memory.lock"
     if path.is_symlink():
         raise ValueError("Memory lock cannot use symbolic links")

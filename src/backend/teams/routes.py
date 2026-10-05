@@ -52,12 +52,16 @@ def member_card(m: Member) -> dict[str, Any]:
 
 
 def team_card(teams: TeamStore, owner: str, team: str) -> dict[str, Any]:
+    from webot.workspace import team_workspace
     members = teams.members(owner, team)
     lead = next((m for m in members if m.is_lead), None)
     return {
         "team": team,
         "lead": lead.agent.agent_id if lead else None,
         "members": [member_card(m) for m in members],
+        "is_default":team == '__default__',
+        "title":'默认项目' if team == '__default__' else team,
+        "workspace":str(team_workspace(owner,team)),
     }
 
 
@@ -115,13 +119,18 @@ def create_teams_router(
             member = teams.update(user, team, agent_id(user, ref), role=body.role, is_lead=body.is_lead, tag=body.tag)
         except LookupError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
         return member_card(member)
 
     @router.delete("/v1/teams/{team}/members/{ref:path}")
     async def remove_member(team: str, ref: str, authorization: str | None = Header(None)):
         user = user_of(authorization)
         require(user, team)
-        teams.remove(user, team, agent_id(user, ref))
+        try:
+            teams.remove(user, team, agent_id(user, ref))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
         return team_card(teams, user, team)
 
     @router.post("/v1/teams/{team}/import")
@@ -129,6 +138,8 @@ def create_teams_router(
         user = user_of(authorization)
         require(user, team)
         try:
+            if team == '__default__':
+                raise ValueError('默认项目不能通过导入替换')
             import_folder(teams, user, team)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
@@ -150,13 +161,18 @@ def create_teams_router(
             teams.rename(user, team, body.name.strip())
         except FileExistsError as exc:
             raise HTTPException(status_code=409, detail=str(exc))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
         return team_card(teams, user, body.name.strip())
 
     @router.delete("/v1/teams/{team}")
     async def delete_team(team: str, authorization: str | None = Header(None)):
         user = user_of(authorization)
         require(user, team)
-        teams.delete(user, team)
+        try:
+            teams.delete(user, team)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
         return {"deleted": team}
 
     return router

@@ -4567,7 +4567,9 @@
 <link rel="stylesheet" href="/static/css/mobile-profile.css?v=20261004-studio-header">
 <link rel="stylesheet" href="/static/css/runtime-settings.css?v=20261004-keepy-manager">
 <script src="/static/js/remembered-approvals-ui.js?v=20261004-keepy-manager"></script>
-<script src="/static/js/runtime-settings.js?v=20261004-keepy-manager"></script>
+<script src="/static/js/runtime-settings.js?v=20261005-workspaces"></script>
+<script src="/static/js/workspace-settings.js?v=20261005"></script>
+<link rel="stylesheet" href="/static/css/workspace-settings.css?v=20261005">
 </head>
 <body>
 
@@ -8561,7 +8563,7 @@ async function loadMobileAlarmScopes() {
     const teams = Array.isArray(data) ? data : (data.teams || []);
     const current = select.value || '__public__';
     select.innerHTML = `<option value="__public__">${escapeHtml(t('public_agent'))}</option>` +
-      teams.map(team => `<option value="${escapeHtml(team)}">${escapeHtml(team)}</option>`).join('');
+      teams.map(team => `<option value="${escapeHtml(team)}">${escapeHtml(typeof workspaceTeamLabel === 'function' ? workspaceTeamLabel(team) : team)}</option>`).join('');
     if ([...select.options].some(opt => opt.value === current)) select.value = current;
     mobileAlarmTeamsLoaded = true;
   } catch (_e) {
@@ -10027,7 +10029,7 @@ async function showCreateAgentModal(preferredTeam = '') {
     const teams = data.teams || [];
     const select = document.getElementById('create-agent-team');
     select.innerHTML = `<option value="">${t('no_team')}</option>` +
-      teams.map(tm => `<option value="${esc(tm)}">${esc(tm)}</option>`).join('');
+      teams.map(tm => `<option value="${esc(tm)}">${esc(typeof workspaceTeamLabel === 'function' ? workspaceTeamLabel(tm) : tm)}</option>`).join('');
   } catch (e) {
     console.error('Load teams for agent failed:', e);
   }
@@ -13054,7 +13056,7 @@ async function loadMobileSkillTeams() {
   try {
     const data = await api('GET', '/teams');
     const teams = data.teams || data || [];
-    select.innerHTML = teams.map(tm => `<option value="${esc(tm)}">${esc(tm)}</option>`).join('');
+    select.innerHTML = teams.map(tm => `<option value="${esc(tm)}">${esc(typeof workspaceTeamLabel === 'function' ? workspaceTeamLabel(tm) : tm)}</option>`).join('');
   } catch (e) {
     select.innerHTML = '';
     mobileSkillStatus('加载团队失败: ' + e.message);
@@ -13767,7 +13769,7 @@ async function showAddAgentModal() {
     const data = await api('GET', '/teams');
     const teams = data.teams || [];
     select.innerHTML = `<option value="">${t('all_agents')}</option>` +
-      teams.map(tm => `<option value="${esc(tm)}">${esc(tm)}</option>`).join('');
+      teams.map(tm => `<option value="${esc(tm)}">${esc(typeof workspaceTeamLabel === 'function' ? workspaceTeamLabel(tm) : tm)}</option>`).join('');
   } catch (e) {
     select.innerHTML = `<option value="">${t('load_failed')}</option>`;
   }
@@ -14411,6 +14413,7 @@ function renderAgentBasicInfo(agent) {
     ${button(`openAgentSettingsSheet('${jsId}')`, t('edit_agent'), 'var(--primary)')}
     <details class="mobile-agent-advanced"><summary>${_currentLang === 'zh' ? '高级设置' : 'Advanced settings'}</summary>
       <p>${_currentLang === 'zh' ? 'Y 仅批准一次；KEEP Y 记住这个 Agent 的具体授权。严格沙盒不允许提权。' : 'Y allows once; KEEP Y remembers a specific grant for this Agent. Strict sandbox disables escalation.'}</p>
+      ${button(`openWorkspaceSettings('${jsId}')`, _currentLang === 'zh' ? '工作区' : 'Workspaces', 'var(--primary)')}
       ${button(`openRuntimeSettings('${jsId}','approval')`, _currentLang === 'zh' ? '模式、沙盒与授权' : 'Mode, sandbox and grants', 'var(--primary)')}
       ${button(`openAgentModelSettings('${jsId}')`, _currentLang === 'zh' ? '模型与思考' : 'Model and reasoning', 'var(--primary)')}
       ${agent.platform === 'webot' ? button(`openRuntimeSettings('${jsId}','context')`, _currentLang === 'zh' ? '上下文与压缩' : 'Context and compaction', 'var(--primary)') : ''}

@@ -24,7 +24,7 @@ def test_workspace_delta_and_reset_preserve_native_cwd(tmp_path):
         session.remember_turn(store, agent, first)
         current = store.require('alice', agent.agent_id)
         assert prepare(current).text == 'USER'
-        current = store.update('alice', agent.agent_id, config={**current.config, 'workspace_root':str(next_root)})
+        current = store.update('alice', agent.agent_id, config={**current.config, 'workspaces':{**current.config['workspaces'], 'paths':[str(next_root)]}})
         changed = prepare(current)
         assert '【本轮 workspace】' in changed.text
         workspace = json.loads(changed.dynamic_context['workspace'])
@@ -56,7 +56,7 @@ def test_file_changes_arrive_in_current_tool_result_without_new_user_turn(tmp_pa
         (root / 'new.txt').write_text('new contents')
         update = tool_bridge.attach_runtime_context({'results':[{'content':'tool completed'}]}, agent, turn)
         assert '【本轮 workspace】' in update['runtime_context']
-        changes = json.loads(turn['dynamic_context']['workspace'])['files']['recent_changes']
+        changes = json.loads(turn['dynamic_context']['workspace'])['files'][str(root)]['recent_changes']
         assert changes == {'added':['new.txt'], 'modified':['existing.txt'], 'removed':['removed.txt']}
         assert 'runtime_context' not in tool_bridge.attach_runtime_context({'tools':[]}, agent, turn)
         # An unchanged observation must not erase the change before a failed delivery retries.

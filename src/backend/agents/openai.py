@@ -50,7 +50,8 @@ class ChatCompletionRequest(BaseModel):
     tool_choice: Optional[Any] = None
     user: Optional[str] = None
     session_id: Optional[str] = None  # the number of the agent to talk to
-    workspace_root: str = ""  # creation only; an existing Agent keeps its workspace
+    workspace_root: str = ""  # legacy custom folder
+    cli_workspace: str = ""  # current CLI launch context, never a stored path
     password: Optional[str] = None
     enabled_tools: Optional[list[str]] = None
     llm_override: Optional[dict] = None  # the model for this request
@@ -163,9 +164,20 @@ def create_openai_router(
             raise HTTPException(status_code=401, detail="认证失败")
         return user, session
 
-    def target(user: str, ref: str, model: str | None, workspace_root: str = '') -> Agent:
+    def target(user: str, ref: str, model: str | None, workspace_root: str = '', cli_directory: str = '') -> Agent:
         agent = store.get(user, ref) or (names(user, ref) if names else None)
+        if cli_directory:
+            from webot.workspace import normalize_workspace_config, set_cli_workspace, workspace_config
+            try:
+                normalize_workspace_config({'paths':[cli_directory]}, user_id=user)
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from exc
         if agent is not None:
+            if cli_directory:
+                set_cli_workspace(user, agent.agent_id, cli_directory)
+                if 'workspaces' not in agent.config:
+                    settings = {**workspace_config(agent.config), 'cli':True}
+                    agent = store.update(user,agent.agent_id,config={**agent.config,'workspaces':settings})
             return agent
         if not valid_agent_id(ref):
             raise HTTPException(status_code=404, detail=f"no agent {ref!r}")
@@ -180,7 +192,9 @@ def create_openai_router(
                 config['workspace_root'] = configured_workspace_root(workspace_root)
             except ValueError as exc:
                 raise HTTPException(400, str(exc)) from exc
-        return store.ensure(user, ref, driver=driver, config=config)
+        agent = store.ensure(user, ref, driver=driver, config=config)
+        if cli_directory: set_cli_workspace(user, agent.agent_id, cli_directory)
+        return agent
 
     @router.post("/v1/chat/completions")
     async def chat_completions(req: ChatCompletionRequest, authorization: str | None = Header(None)):
@@ -188,7 +202,7 @@ def create_openai_router(
         ref = (session or req.session_id or "").strip()
         if not ref:
             raise HTTPException(status_code=400, detail="session_id is required: it is the number of the agent")
-        return await gateway.chat(target(user, ref, req.model, req.workspace_root), req)
+        return await gateway.chat(target(user, ref, req.model, req.workspace_root, req.cli_workspace), req)
 
     @router.get("/v1/models")
     async def list_models():
