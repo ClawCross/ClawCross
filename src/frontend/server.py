@@ -3857,7 +3857,12 @@ def _clear_public_domain():
 @app.route("/teams", methods=["GET"])
 def list_teams():
     """List all team names for the current user."""
-    return jsonify({"status": "success", "teams": _teams().teams(session.get("user_id", ""))})
+    names = _teams().teams(session.get("user_id", ""))
+    return jsonify({"status": "success", "teams": names, "team_info": [
+        {"team": name, "title": "用户空间" if name == "__default__" else name,
+         "kind": "user_space" if name == "__default__" else "team", "virtual": name == "__default__"}
+        for name in names
+    ]})
 
 
 @app.route("/teams", methods=["POST"])
@@ -3948,8 +3953,7 @@ def get_team_skills(team_name):
         return jsonify({"error": "Unauthorized"}), 401
     if "/" in team_name or "\\" in team_name or team_name.startswith("."):
         return jsonify({"error": "Invalid team name"}), 400
-    team_dir = os.path.join(str(USER_FILES_DIR), user_id, "teams", team_name)
-    if not os.path.exists(team_dir):
+    if not _teams().exists(user_id, team_name):
         return jsonify({"error": "Team not found"}), 404
 
     from webot.skills import list_skills
@@ -3958,7 +3962,7 @@ def get_team_skills(team_name):
         "ok": True,
         "team": team_name,
         "skills": {
-            "team": list_skills(user_id, team=team_name),
+            "team": list_skills(user_id, team=team_name) if team_name != "__default__" else [],
             "personal": list_skills(user_id),
         },
     })
@@ -4169,8 +4173,7 @@ def import_team_skill_zip(team_name):
         return jsonify({"error": "Unauthorized"}), 401
     if "/" in team_name or "\\" in team_name or team_name.startswith("."):
         return jsonify({"error": "Invalid team name"}), 400
-    team_dir = os.path.join(str(USER_FILES_DIR), user_id, "teams", team_name)
-    if not os.path.exists(team_dir):
+    if not _teams().exists(user_id, team_name):
         return jsonify({"error": "Team not found"}), 404
 
     file = request.files.get("file")
@@ -4221,8 +4224,7 @@ def get_team_skill_detail(team_name, skill_name):
         return jsonify({"error": "Unauthorized"}), 401
     if "/" in team_name or "\\" in team_name or team_name.startswith("."):
         return jsonify({"error": "Invalid team name"}), 400
-    team_dir = os.path.join(str(USER_FILES_DIR), user_id, "teams", team_name)
-    if not os.path.exists(team_dir):
+    if not _teams().exists(user_id, team_name):
         return jsonify({"error": "Team not found"}), 404
 
     scope = str(request.args.get("scope") or "team").strip().lower()
@@ -4246,8 +4248,7 @@ def update_team_skill_detail(team_name, skill_name):
         return jsonify({"error": "Unauthorized"}), 401
     if "/" in team_name or "\\" in team_name or team_name.startswith("."):
         return jsonify({"error": "Invalid team name"}), 400
-    team_dir = os.path.join(str(USER_FILES_DIR), user_id, "teams", team_name)
-    if not os.path.exists(team_dir):
+    if not _teams().exists(user_id, team_name):
         return jsonify({"error": "Team not found"}), 404
 
     scope = str(request.args.get("scope") or "team").strip().lower()
@@ -4277,8 +4278,7 @@ def create_team_skill_detail(team_name, skill_name):
         return jsonify({"error": "Unauthorized"}), 401
     if "/" in team_name or "\\" in team_name or team_name.startswith("."):
         return jsonify({"error": "Invalid team name"}), 400
-    team_dir = os.path.join(str(USER_FILES_DIR), user_id, "teams", team_name)
-    if not os.path.exists(team_dir):
+    if not _teams().exists(user_id, team_name):
         return jsonify({"error": "Team not found"}), 404
 
     scope = str(request.args.get("scope") or "team").strip().lower()
@@ -4313,8 +4313,7 @@ def delete_team_skill_detail(team_name, skill_name):
         return jsonify({"error": "Unauthorized"}), 401
     if "/" in team_name or "\\" in team_name or team_name.startswith("."):
         return jsonify({"error": "Invalid team name"}), 400
-    team_dir = os.path.join(str(USER_FILES_DIR), user_id, "teams", team_name)
-    if not os.path.exists(team_dir):
+    if not _teams().exists(user_id, team_name):
         return jsonify({"error": "Team not found"}), 404
 
     scope = str(request.args.get("scope") or "team").strip().lower()
@@ -4414,6 +4413,9 @@ def delete_mobile_alarm(task_id):
 
 def _team_experts_path(user_id: str, team_name: str) -> str:
     """Return the oasis_experts.json path for a team."""
+    if team_name == "__default__":
+        from oasis.experts import _user_experts_path
+        return _user_experts_path(user_id)
     return os.path.join(str(USER_FILES_DIR), user_id, "teams", team_name, "oasis_experts.json")
 
 
@@ -4444,10 +4446,16 @@ def get_team_experts(team_name):
     user_id = session.get("user_id", "")
     if "/" in team_name or "\\" in team_name or team_name.startswith("."):
         return jsonify({"error": "Invalid team name"}), 400
-    team_dir = os.path.join(str(USER_FILES_DIR), user_id, "teams", team_name)
-    if not os.path.exists(team_dir):
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+    if not _teams().exists(user_id, team_name):
         return jsonify({"error": "Team not found"}), 404
-    experts = _team_experts_load(user_id, team_name)
+    if team_name == "__default__":
+        from oasis.experts import get_all_experts
+        experts = get_all_experts(user_id)
+    else:
+        experts = [{**expert, "source": "team"} for expert in _team_experts_load(user_id, team_name)]
+    experts = [{**expert, "deletable": expert.get("source") not in {"public", "agency"}} for expert in experts]
     return jsonify({"status": "success", "team": team_name, "experts": experts})
 
 
@@ -4457,8 +4465,9 @@ def add_team_expert(team_name):
     user_id = session.get("user_id", "")
     if "/" in team_name or "\\" in team_name or team_name.startswith("."):
         return jsonify({"error": "Invalid team name"}), 400
-    team_dir = os.path.join(str(USER_FILES_DIR), user_id, "teams", team_name)
-    if not os.path.exists(team_dir):
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+    if not _teams().exists(user_id, team_name):
         return jsonify({"error": "Team not found"}), 404
 
     body = request.get_json(force=True)
@@ -4493,8 +4502,9 @@ def update_team_expert(team_name, tag):
     user_id = session.get("user_id", "")
     if "/" in team_name or "\\" in team_name or team_name.startswith("."):
         return jsonify({"error": "Invalid team name"}), 400
-    team_dir = os.path.join(str(USER_FILES_DIR), user_id, "teams", team_name)
-    if not os.path.exists(team_dir):
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+    if not _teams().exists(user_id, team_name):
         return jsonify({"error": "Team not found"}), 404
 
     body = request.get_json(force=True)
@@ -4527,8 +4537,9 @@ def delete_team_expert(team_name, tag):
     user_id = session.get("user_id", "")
     if "/" in team_name or "\\" in team_name or team_name.startswith("."):
         return jsonify({"error": "Invalid team name"}), 400
-    team_dir = os.path.join(str(USER_FILES_DIR), user_id, "teams", team_name)
-    if not os.path.exists(team_dir):
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+    if not _teams().exists(user_id, team_name):
         return jsonify({"error": "Team not found"}), 404
 
     experts = _team_experts_load(user_id, team_name)

@@ -1816,7 +1816,7 @@ function fillAgentCenterFilter(id, values) {
     const previous = select.value;
     const options = [...new Set(values)].filter(Boolean).sort((a, b) => String(a).localeCompare(String(b)));
     select.innerHTML = `<option value="">${agentCenterEscape(t('agent_center_all'))}</option>` + options
-        .map(value => `<option value="${agentCenterEscape(value)}">${agentCenterEscape(value)}</option>`)
+        .map(value => `<option value="${agentCenterEscape(value)}">${agentCenterEscape(id === 'agent-center-team-filter' ? workspaceTeamLabel(value) : value)}</option>`)
         .join('');
     if (options.includes(previous)) select.value = previous;
 }
@@ -1872,7 +1872,7 @@ function renderAgentCenterGrid() {
     grid.innerHTML = rows.map(agent => {
         const state = agentCenterState(agent);
         const teams = agent.teams || [];
-        const teamLabel = teams.length ? teams.join(', ') : t('agent_center_public');
+        const teamLabel = teams.length ? teams.map(workspaceTeamLabel).join(', ') : t('agent_center_public');
         const index = Math.max(1, agentCenterAgents.indexOf(agent) + 1);
         const webot = agent.platform === 'webot';
         const contextPercent = Math.max(0, Math.min(100, Number(agent.status?.context?.percent || 0)));
@@ -1896,7 +1896,7 @@ function renderAgentCenterGrid() {
                     </div>
                     <div class="agent-center-badges">
                         <span class="agent-center-badge">${agentCenterEscape(agent.platform)}</span>
-                        ${teams.slice(0, 1).map(item => `<span class="agent-center-badge">${agentCenterEscape(item)}</span>`).join('')}
+                        ${teams.slice(0, 1).map(item => `<span class="agent-center-badge">${agentCenterEscape(workspaceTeamLabel(item))}</span>`).join('')}
                     </div>
                     <dl class="agent-center-meta">
                         <dt>Team</dt><dd title="${agentCenterEscape(teamLabel)}">${agentCenterEscape(teamLabel)}</dd>
@@ -1971,7 +1971,7 @@ function renderAgentCenterDetail() {
                 <dl class="agent-dex-facts">
                     <dt>Platform</dt><dd>${agentCenterEscape(agent.platform)}</dd>
                     <dt>Persona</dt><dd>${agentCenterEscape(personaText ? (personaText.length > 80 ? personaText.slice(0, 80) + '…' : personaText) : '-')}</dd>
-                    <dt>Team</dt><dd>${agentCenterEscape(teams.length ? teams.join(', ') : t('agent_center_public'))}</dd>
+                    <dt>Team</dt><dd>${agentCenterEscape(teams.length ? teams.map(workspaceTeamLabel).join(', ') : t('agent_center_public'))}</dd>
                     <dt>${currentLang === 'zh-CN' ? '所在群聊' : 'Conversations'}</dt><dd>${agentCenterEscape((agent.groups || []).map(g => `${g.title} (${g.group_id})`).join(', ') || '-')}</dd>
                     <dt>${agentCenterEscape(t('agent_center_connection'))}</dt><dd>${agentCenterEscape(state)}</dd>
                 </dl>
@@ -11862,16 +11862,19 @@ function renderGroupList(teams) {
             hintEl.setAttribute('data-i18n', 'group_select_hint');
         }
     }
-    container.innerHTML = teams.map(team => {
+    const ordered = ['__default__', ...teams.filter(team => team !== '__default__')].filter(team => teams.includes(team));
+    container.innerHTML = ordered.map(team => {
         const isActive = team === currentGroupId;
+        const virtual = team === '__default__';
         // encodeURIComponent 放入 onclick 内层单引号字符串，避免 JSON.stringify 的双引号截断 HTML 属性
-        const te = encodeURIComponent(team);
+        const te = encodeURIComponent(team).replace(/'/g, '%27');
         return `
-            <div class="group-item ${isActive ? 'active' : ''}" onclick="void openGroup(decodeURIComponent('${te}'))">
-                <div class="group-name">${escapeHtml(team)}</div>
-                <div class="group-meta">${escapeHtml(t('group_item_open_hint'))}</div>
+            <div class="group-item ${isActive ? 'active' : ''} ${virtual ? 'user-space-item' : ''}" data-team="${te}" onclick="void openGroup(decodeURIComponent('${te}'))">
+                <div class="group-name">${escapeHtml(virtual ? (currentLang === 'en' ? 'User space' : '用户空间') : team)}${virtual ? `<span class="user-space-badge">${currentLang === 'en' ? 'Fixed view' : '固定视图'}</span>` : ''}</div>
+                <div class="group-meta">${escapeHtml(virtual ? (currentLang === 'en' ? 'All your Agents · Virtual' : '该用户的全部 Agent · 虚拟') : t('group_item_open_hint'))}</div>
+                ${virtual ? '' : `
                 <button type="button" class="group-rename-btn" title="${escapeHtml(t('group_rename_team'))}" aria-label="${escapeHtml(t('group_rename_team'))}" onclick="event.stopPropagation(); renameTeamByName(decodeURIComponent('${te}'))">✏️</button>
-                <button type="button" class="group-delete-btn" title="删除团队" onclick="event.stopPropagation(); deleteTeamByName(decodeURIComponent('${te}'))">🗑️</button>
+                <button type="button" class="group-delete-btn" title="删除团队" onclick="event.stopPropagation(); deleteTeamByName(decodeURIComponent('${te}'))">🗑️</button>`}
             </div>`;
     }).join('');
 }
@@ -11888,8 +11891,8 @@ async function openGroup(teamName) {
     activeChat.style.display = 'flex';
 
     // 设置团队名称和ID
-    document.getElementById('group-active-name').textContent = teamName;
-    document.getElementById('group-active-id').textContent = '#Team';
+    document.getElementById('group-active-name').textContent = workspaceTeamLabel(teamName);
+    document.getElementById('group-active-id').textContent = teamName === '__default__' ? (currentLang === 'en' ? 'Virtual user space' : '虚拟用户空间') : '#Team';
 
     // 清空消息框内容（保留成员表格）
     const box = document.getElementById('group-messages-box');
@@ -12029,6 +12032,8 @@ async function openGroup(teamName) {
 
 
     // 默认加载并显示成员表
+    const addMember = box.querySelector('[onclick="showAddTeamMemberModal()"]');
+    if (addMember) addMember.hidden = teamName === '__default__';
     await loadTeamMembers();
 
     // 更新团队列表选中状态
@@ -12198,9 +12203,9 @@ async function loadTeamMembers() {
                     <td class="team-member-cell" title="${persona}">${persona}</td>
                     <td class="team-member-cell team-member-cell--mono" title="${id}">${id}</td>
                     <td class="team-member-cell team-member-cell--actions">
-                        ${leadBtn}
+                        ${currentGroupId === '__default__' ? '' : leadBtn}
                         ${configBtn}
-                        <button onclick="deleteTeamMember('${id}')" class="text-red-500 hover:text-red-700 text-xs px-2 py-1 rounded hover:bg-red-50" title="删除成员">🗑️</button>
+                        ${currentGroupId === '__default__' ? '' : `<button onclick="deleteTeamMember('${id}')" class="text-red-500 hover:text-red-700 text-xs px-2 py-1 rounded hover:bg-red-50" title="删除成员">🗑️</button>`}
                     </td>
                 </tr>`;
         }).join('');
@@ -14434,8 +14439,8 @@ async function loadTeamExperts() {
     try {
         const resp = await fetch(`/teams/${encodeURIComponent(currentGroupId)}/experts`, { cache: 'no-store' });
         if (!resp.ok) {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-red-400 py-8">加载失败</td></tr>';
-            return;
+            const failure = await resp.json().catch(() => ({}));
+            throw new Error(failure.error || `HTTP ${resp.status}`);
         }
         const data = await resp.json();
         const experts = data.experts || [];
@@ -14452,14 +14457,15 @@ async function loadTeamExperts() {
                     <td style="max-width:300px;white-space:pre-wrap;word-break:break-all;font-size:11px;color:#6b7280;">${escapeHtml(personaPreview)}</td>
                     <td class="text-center text-xs text-gray-500">${e.temperature ?? 0.7}</td>
                     <td style="text-align:right;white-space:nowrap;">
-                        <button onclick="editTeamExpert('${escapeHtml(e.tag)}')" class="text-blue-500 hover:text-blue-700 text-xs px-2 py-1 rounded hover:bg-blue-50" title="编辑">✏️</button>
-                        <button onclick="deleteTeamExpert('${escapeHtml(e.tag)}', '${escapeHtml(e.name)}')" class="text-red-500 hover:text-red-700 text-xs px-2 py-1 rounded hover:bg-red-50" title="删除">🗑️</button>
+                        ${e.deletable === false ? '<span class="user-space-badge">预设 · 只读</span>' : `
+                        <button onclick="editTeamExpert(decodeURIComponent('${encodeURIComponent(e.tag).replace(/'/g, '%27')}'))" class="text-blue-500 hover:text-blue-700 text-xs px-2 py-1 rounded hover:bg-blue-50" title="编辑">✏️</button>
+                        <button onclick="deleteTeamExpert(decodeURIComponent('${encodeURIComponent(e.tag).replace(/'/g, '%27')}'), decodeURIComponent('${encodeURIComponent(e.name).replace(/'/g, '%27')}'))" class="text-red-500 hover:text-red-700 text-xs px-2 py-1 rounded hover:bg-red-50" title="删除">🗑️</button>`}
                     </td>
                 </tr>`;
         }).join('');
     } catch (err) {
         console.error('Failed to load team experts:', err);
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-red-400 py-8">加载失败: ' + err.message + '</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-red-400 py-8">加载失败: ' + escapeHtml(err.message) + '</td></tr>';
     }
 }
 
@@ -14525,9 +14531,10 @@ async function loadTeamSkills() {
             html += `<div style="font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin:6px 0 4px;">${escapeHtml(title)}</div>`;
             items.forEach(skill => {
                 const name = skill.name || '';
+                const key = skill.id || name;
                 const category = skill.category ? ` · ${skill.category}` : '';
                 html += `
-                    <button onclick="loadTeamSkillDetail('${escapeHtml(name)}','${scope}')" style="width:100%;text-align:left;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;background:white;cursor:pointer;margin-bottom:6px;">
+                    <button onclick="loadTeamSkillDetail(decodeURIComponent('${encodeURIComponent(key).replace(/'/g, '%27')}'),'${scope}')" style="width:100%;text-align:left;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;background:white;cursor:pointer;margin-bottom:6px;">
                         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
                             <span style="font-size:13px;font-weight:600;color:#111827;">${escapeHtml(name)}</span>
                             <span style="font-size:10px;padding:2px 6px;border-radius:999px;background:${badgeColor};color:white;">${scope}</span>
@@ -14537,7 +14544,7 @@ async function loadTeamSkills() {
             });
         };
         renderSection('团队 Skill', teamSkills, 'team', '#f59e0b');
-        renderSection('共享 Skill', personalSkills, 'personal', '#6b7280');
+        renderSection('用户空间 Skill', personalSkills, 'personal', '#6b7280');
         listEl.innerHTML = html || '<div class="text-gray-400 text-xs">暂无 Skill</div>';
     } catch (e) {
         listEl.innerHTML = '<div class="text-red-400 text-xs">加载失败: ' + escapeHtml(e.message) + '</div>';
@@ -14560,7 +14567,7 @@ async function loadTeamSkillDetail(skillName, scope) {
     if (nameEl) nameEl.textContent = skillName;
     if (metaEl) metaEl.textContent = '加载中...';
     if (statusEl) statusEl.textContent = '';
-    contentEl.textContent = '';
+    contentEl.value = '';
 
     try {
         const resp = await fetch(`/teams/${encodeURIComponent(currentGroupId)}/skills/${encodeURIComponent(skillName)}?scope=${encodeURIComponent(scope)}`, { cache: 'no-store' });
@@ -14572,10 +14579,10 @@ async function loadTeamSkillDetail(skillName, scope) {
         const skill = data.skill || {};
         if (nameEl) nameEl.textContent = skill.name || skillName;
         if (metaEl) metaEl.textContent = `${scope === 'team' ? '团队' : '共享'} · ${skill.category || 'uncategorized'} · ${skill.path || ''}`;
-        contentEl.textContent = skill.content || '';
+        contentEl.value = skill.content || '';
     } catch (e) {
         if (metaEl) metaEl.textContent = '加载失败';
-        contentEl.textContent = String(e.message || e);
+        contentEl.value = String(e.message || e);
     }
 }
 

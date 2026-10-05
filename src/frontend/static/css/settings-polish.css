@@ -48,3 +48,21 @@
 .discover-card{padding:16px}.discover-card-desc{line-height:1.5}.discover-card-icon{border-radius:13px}
 #llm-warning-banner{z-index:300!important}
 @media(prefers-reduced-motion:reduce){#settings-modal .settings-modal{animation:none}}
+/* Skill names and source paths may be longer than a phone panel. */
+#mobile-skill-list button,
+#mobile-skill-detail,
+#team-skills-list button,
+#team-skill-view-meta {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+@media (max-width: 760px) {
+    #team-panel-skills > div { flex-direction: column; }
+    #team-panel-skills > div > div:first-child {
+        width: auto !important;
+        border-right: 0 !important;
+        border-bottom: 1px solid #e5e7eb;
+        max-height: 220px;
+        flex-shrink: 0;
+    }
+}

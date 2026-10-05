@@ -391,6 +391,8 @@ def remove_skill_file(user_id: str, *, name: str, file_path: str, team: str = ""
 
 def list_skills(user_id: str, *, team: str = "", include_personal: bool = False) -> list[dict[str, Any]]:
     """List all skills for a user."""
+    if team == "__default__":
+        team = ""
     skills: list[dict[str, Any]] = []
     scopes: list[tuple[str, str, Path]] = []
     if team:
@@ -406,6 +408,7 @@ def list_skills(user_id: str, *, team: str = "", include_personal: bool = False)
             skill_dir = skill_md.parent
             rel = skill_dir.relative_to(base)
             skills.append({
+                "id": skill_dir.name,
                 "name": meta.get("name", skill_dir.name),
                 "description": meta.get("description", ""),
                 "category": meta.get("category", str(rel.parent) if str(rel.parent) != "." else ""),
@@ -453,6 +456,7 @@ def get_skill(user_id: str, *, name: str, team: str = "", fallback_to_personal: 
     ]
 
     return {
+        "id": skill_dir.name,
         "name": meta.get("name", skill_dir.name),
         "description": meta.get("description", ""),
         "category": meta.get("category", ""),

@@ -8,7 +8,14 @@
         ['cli', 'CLI 工作区', 'CLI workspace', '使用 CLI 本次启动的目录；服务重启后重新取得', 'Use the CLI launch directory; reacquired after a service restart'],
         ['teams', '团队工作区', 'Team workspaces', '随加入或退出团队自动更新', 'Update automatically when joining or leaving Teams'],
     ];
-    window.workspaceTeamLabel = team => team === '__default__' ? text('默认项目','Default project') : team;
+    window.workspaceTeamIsVirtual = team => team === '__default__';
+    window.workspaceTeamLabel = team => workspaceTeamIsVirtual(team) ? text('用户空间 · 固定视图','User space · Fixed view') : team;
+    window.workspaceTeamOptions = (teams, escapeLabel = escape) => {
+        const real = (teams || []).filter(team => !workspaceTeamIsVirtual(team));
+        const fixed = (teams || []).includes('__default__')
+            ? `<option value="__default__">${escapeLabel(workspaceTeamLabel('__default__'))}</option>` : '';
+        return fixed + (real.length ? `<optgroup label="${text('团队','Teams')}">${real.map(team => `<option value="${escape(team)}">${escapeLabel(team)}</option>`).join('')}</optgroup>` : '');
+    };
     window.openWorkspaceSettings = async target => {
         const agent = target || (typeof runtimeSettingsCurrentAgent === 'function' ? runtimeSettingsCurrentAgent() : '');
         if (!agent) return;

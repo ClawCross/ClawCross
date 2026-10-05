@@ -1,8 +1,8 @@
 {
   "type": "ValidationReport",
   "schema_version": "clawcross.skill-evolution/1.0",
-  "id": "vr_20261005084657694910",
-  "candidate_id": "blended-verification-loop-approval-auth-workspace-preflight",
+  "id": "vr_20261005092225336352",
+  "candidate_id": "blended-verification-loop-workspace-preflight-bounded-execution",
   "skill_name": "repo-skill",
   "strategy": "harden",
   "env_fingerprint": {
@@ -14,18 +14,18 @@
     "user_id": "",
     "skill_name": "repo-skill",
     "present_env_keys": [],
-    "captured_at": "2026-10-05T08:46:57.694879+00:00"
+    "captured_at": "2026-10-05T09:22:25.336305+00:00"
   },
   "commands": [
     {
       "command": "(external failure context)",
       "ok": false,
-      "stdout": "..F........................................................... [ 38%]\n.....................................................................................................                   [100%]\n=================================== FAILURES ===================================\n___ test_all_selected_roots_are_available_to_files_but_strict_denies_outside ___\n\nsetup = (<agents.store.AgentStore object at 0x7526577aa0d0>, <teams.store.TeamStore object at 0x752657077c50>)\ntmp_path = PosixPath('/tmp/pytest-of-ubuntu/pytest-30/test_all_selected_roots_are_av0')\nmonkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x752657582810>\n\n    def test_all_selected_roots_are_available_to_files_but_strict_denies_outside(setup, tmp_path, monkeypatch):\n        store, _ = setup\n        other = tmp_path / 'second'; other.mkdir(); inside = other / 'inside.txt'; inside.write_text('INSIDE')\n        outside = tmp_path / 'outside.txt'; outside.write_text('OUTSIDE')\n        agent = store.create('alice',driver=WEBOT,config={'workspaces':workspace.normalize_workspace_config({'paths':[str(other)]})})\n        state = workspace.resolve_session_workspace('alice',agent.agent_id)\n        bound = bind_file_target('read_file', {'filename':str(inside)},'alice',agent.agent_id,workspace=state)\n        assert not file_target_outside_workspace(bound)\n        monkeypatch.setattr('webot.runtime_settings.get_runtime_settings',lambda *_:SimpleNamespace(approval=SimpleNamespace(sandbox_security='strict', mode='bypass')))\n        from webot.approval_actions import file_access_violation\n        forbidden = bind_file_target('read_file', {'filename':str(outside)},'alice',agent.agent_id,workspace=state)\n        assert file_access_violation(forbidden,'alice',agent.agent_id)\n>       assert asyncio.run(filemanager.read_file('alice',str(inside),session_id=agent.agent_id)) == 'INSIDE'\nE       assert \"📄 文件 '/tmp/p...: 6\\n\\nINSIDE\" == 'INSIDE'\nE         \nE         + 📄 文件 '/tmp/pytest-of-ubuntu/pytest-30/test_all_selected_roots_are_av0/second/inside.txt' 的内容片段：\nE         + 📦 大小: 6 B\nE         + 📍 offset: 0\nE         + 📏 returned_chars: 6\nE         + \nE           INSIDE\n\ntest/test_workspace_collection.py:87: AssertionError\n=========================== short test summary info ============================\nFAILED test/test_workspace_collection.py::test_all_selected_roots_are_available_to_files_but_strict_denies_outside\n1 failed, 162 passed, 35 subtests passed in 9.25s",
+      "stdout": "Editor command failed: python was not found on PATH; use /home/ubuntu/.clawcross/venv/bin/python. Two patch attempts failed context matching and applied no changes; use complete ordered patch contexts.",
       "stderr": ""
     }
   ],
   "overall_ok": false,
   "duration_ms": null,
-  "created_at": "2026-10-05T08:46:57.694931+00:00",
-  "asset_id": "sha256:11ff61e28d19c07af7d6eb252211db1bc2ffa038cf783044122be7795250064f"
+  "created_at": "2026-10-05T09:22:25.336403+00:00",
+  "asset_id": "sha256:53d8d728fd7cc4d0e4bef23184bcee6f078960c442c456b06045a097479937ff"
 }

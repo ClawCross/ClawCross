@@ -36,6 +36,29 @@ CLI 每次调用带入当前目录，服务只在内存保留这个来源。MCP 
 
 每个用户有一个虚拟默认项目 `__default__`，成员来自该用户的完整 Agent 登记表。属于默认项目不等于开启用户共享目录；共享开关仍单独控制文件访问。默认项目不能删除、改名或由导入替换。普通 Team 加入、退出和改名会更新有效工作区；改名保留工作区文件。删除 Team 不删除可写工作区文件，退出后不再授予其自动来源。
 
+前端将虚拟默认项目显示为固定的「用户空间」，与普通 Team 分开。它没有独立的 `members.json`，其 Skills 使用用户共享工作区的目录，列表不会重复列出同一批 Skills。
+
+## Team 目录结构
+
+真实 Team 的配置与可写工作区分开。以下路径按运行时目录设置解析，默认根目录为 `~/.clawcross`：
+
+```text
+data/user_files/<用户>/teams/<Team>/
+├── members.json              # 成员、角色、主 Agent
+├── oasis_experts.json         # 可选人设池
+└── oasis/
+    ├── yaml/                 # YAML 工作流
+    └── python/               # Python 工作流
+
+workspace/teams/<用户>/<Team>/workspace/
+├── skills/<Skill目录>/
+│   ├── SKILL.md
+│   └── scripts/、references/、assets/ 等支持文件
+└── 其他项目文件
+```
+
+`internal_agents.json`、`external_agents.json` 是导入导出清单，导入后成员登记到 Agent 数据库，并非独立的在线 Agent 表。定时任务由调度服务统一保存，关联用户、Agent 或 Team。虚拟「用户空间」没有上述 Team 配置实体，它的共享工作区是 `workspace/users/<用户>/`；是否允许 Agent 访问仍由 `user_shared` 开关决定。
+
 旧 Agent 没有 `workspaces` 设置时保留旧单目录行为，已有聊天、配置和用户文件不整体迁移。首次从 CLI 调用旧 Agent 会只增加 CLI 来源开关，保留原有目录。旧子 Agent 的 worktree、custom、remote 配置仍兼容；新的委派在默认 isolated/shared 模式下从父 Agent 动态继承项目目录，isolated 使用自己的伴生目录，shared 也开放父伴生目录。继承不把自动目录路径复制进子 Agent 设置。
 
 ## Skills 和权限
