@@ -102,8 +102,11 @@ def register(owner: str, ticket: str, name: str, store):
         if not Path(row['cwd']).is_dir():
             raise ValueError('The original session workspace no longer exists')
         agent = store.create(owner, driver=ACPX, name=name.strip()[:160] or row['title'] or row['platform'],
-                             config={'platform':row['platform'], 'meta':{'acp':{'clawcross_tools':True}}})
+                             config={'platform':row['platform'], 'meta':{'acp':{'clawcross_tools':True}},
+                                     'workspaces':{'companion':True,'user_shared':False,'cli':True,'teams':True,'paths':[]}})
         try:
+            from webot.workspace import set_cli_workspace
+            set_cli_workspace(owner, agent.agent_id, row['cwd'])
             store.set_runtime(owner, agent.agent_id, {'native_resume_id':row['native_id'], 'acp_cwd':row['cwd']})
             db.execute('INSERT INTO claims VALUES (?,?,?,?)', (row['platform'], row['native_id'], owner, agent.agent_id))
         except BaseException:

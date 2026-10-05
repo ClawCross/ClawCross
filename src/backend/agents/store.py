@@ -179,6 +179,9 @@ class AgentStore:
             raise ValueError("an agent needs an owner")
         if not valid_agent_id(agent_id):
             raise ValueError(f"invalid agent id {agent_id!r}: letters, digits, '_' and '-', at most 64")
+        from webot.workspace import normalize_workspace_config
+        config = dict(config or {})
+        config['workspaces'] = normalize_workspace_config(config.get('workspaces'), user_id=owner, legacy_root=config.get('workspace_root',''))
         now = time.time()
         try:
             self._run(

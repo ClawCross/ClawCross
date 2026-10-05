@@ -354,6 +354,7 @@
                                         <summary>运行设置</summary>
                                         <button type="button" id="studio-model-settings" data-webot-runtime onclick="document.getElementById('studio-more-menu').open=false; openAgentModelSettings()"><svg class="ui-icon"><use href="/static/icons.svg#sliders"/></svg><span>模型与思考</span></button>
                                         <button type="button" id="studio-runtime-details" data-webot-runtime data-i18n="agent_center_runtime_details" onclick="document.getElementById('studio-more-menu').open=false; toggleSessionSidebar()">运行详情与审核</button>
+                                        <button type="button" onclick="document.getElementById('studio-more-menu').open=false; openWorkspaceSettings(runtimeSettingsCurrentAgent())" data-i18n="agent_workspaces">工作区</button>
                                         <button type="button" id="studio-sandbox-settings" onclick="document.getElementById('studio-more-menu').open=false; openRuntimeSettings(runtimeSettingsCurrentAgent(), 'approval')">沙盒与审核</button>
                                         <button type="button" data-webot-runtime onclick="document.getElementById('studio-more-menu').open=false; openRuntimeSettings(currentSessionId)">上下文与压缩</button>
                                         <button type="button" id="studio-external-settings" hidden onclick="document.getElementById('studio-more-menu').open=false; openExternalAgentSettings()">外部 Agent · 模型、思考与工具</button>
@@ -1369,7 +1370,7 @@
     <script src="/static/js/conversation-ui-panels.js?v=20261001-windows"></script>
     <script src="/static/js/components.js?v=20261004-windows-sandbox"></script>
     <script src="/static/js/attachment-utils.js?v=20261003-media"></script>
-    <script src="/static/js/main.js?v=20261005-native-history"></script>
+    <script src="/static/js/main.js?v=20261005-workspaces"></script>
     <link rel="stylesheet" href="/static/css/external-agent-settings.css?v=20261004-effort-stops">
     <link rel="stylesheet" href="/static/css/runtime-settings.css?v=20261004-keepy-manager">
     <script src="/static/js/runtime-presentation.js?v=20261004-workspace"></script>
@@ -1377,7 +1378,9 @@
 <script src="/static/js/external-agent-settings.js?v=20261004-effort-slider"></script>
 <script src="/static/js/model-profiles.js?v=20261004-effort-slider"></script>
     <script src="/static/js/remembered-approvals-ui.js?v=20261004-keepy-manager"></script>
-    <script src="/static/js/runtime-settings.js?v=20261004-keepy-manager"></script>
+    <script src="/static/js/runtime-settings.js?v=20261005-workspaces"></script>
+<script src="/static/js/workspace-settings.js?v=20261005"></script>
+<link rel="stylesheet" href="/static/css/workspace-settings.css?v=20261005">
     <script src="/static/js/app.js?v=20260327-humanfix"></script>
     <script>
     // Check LLM API config on page load & preload setup status for wizard

@@ -127,7 +127,10 @@ def policy_binding(user_id: str, session_id: str) -> str:
     from webot.profiles import parse_subagent_session_id
     from webot.subagents import get_subagent_by_session
     agent = get_subagent_by_session(session_id, user_id) if parse_subagent_session_id(session_id) else None
+    from webot.workspace import resolve_session_workspace
+    workspace = resolve_session_workspace(user_id, session_id)
     return _hash({
+        "workspace_folders":[str(path) for path in getattr(workspace,'roots',(workspace.root,))],
         "policy": serialize_tool_policy(get_tool_policy(user_id)),
         "reviewer": get_runtime_settings(user_id, session_id).approval.model_dump(),
         "mode": effective_session_mode(user_id, session_id),
@@ -406,9 +409,10 @@ async def authorize_action(
             from webot.command_sandbox import bounded_escalation, SandboxUnavailable, approved_retry_chain, active_sandbox_grants, MAX_PERMISSION_RETRIES
             from webot.workspace import resolve_session_workspace
             try:
-                root = resolve_session_workspace(user_id, session_id).root
+                workspace = resolve_session_workspace(user_id, session_id)
+                root = workspace.root
                 bounded_escalation(args['sandbox_access'], str(args.get('escalation_target') or ''), root)
-                retry_chain = approved_retry_chain(user_id, session_id, args, root)
+                retry_chain = approved_retry_chain(user_id, session_id, args, root, roots=getattr(workspace,'roots',(root,)))
                 if len(retry_chain) >= MAX_PERMISSION_RETRIES:
                     raise SandboxUnavailable('本次命令已达到 8 次权限审核上限。')
                 saved = active_sandbox_grants(get_runtime_settings(user_id, session_id).approval.sandbox_grants, root)
@@ -416,7 +420,7 @@ async def authorize_action(
                 granted.extend({'access':'network','target':target,'source':'settings'}
                     for target in get_runtime_settings(user_id, session_id).approval.sandbox_allowed_domains)
                 granted.extend(retry_chain)
-                sandbox_permissions = {'workspace_root':str(root.resolve()), 'already_granted':granted,
+                sandbox_permissions = {'workspace_root':str(root.resolve()), 'workspace_roots':[str(path) for path in getattr(workspace,'roots',(root,))], 'already_granted':granted,
                     'requested':{'access':args['sandbox_access'],'target':args['escalation_target']},
                     'review_number':len(retry_chain)+1,'max_reviews':MAX_PERMISSION_RETRIES}
             except SandboxUnavailable as exc:

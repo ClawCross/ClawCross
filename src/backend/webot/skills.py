@@ -53,13 +53,14 @@ def _workspace_skill_root(user_id: str, team: str = '') -> Path:
     base = WORKSPACE_DIR
     if base.resolve().is_relative_to(PROJECT_ROOT.resolve()):
         base = Path.home() / '.clawcross' / 'workspace'
-    parts = ['users',user_id,'teams',_validate_team(team),'skills'] if team else ['users',user_id,'skills']
+    parts = ['teams',user_id,_validate_team(team),'workspace','skills'] if team and team != '__default__' else ['users',user_id,'skills']
     root = base
     for part in parts:
         root = root / part
         if root.is_symlink(): raise ValueError('Skill storage cannot use symbolic links')
     from webot.command_sandbox import validate_workspace_root
     validate_workspace_root(base / 'users' / user_id)
+    previous = base / 'users' / user_id / 'teams' / _validate_team(team) / 'skills' if team and team != '__default__' else None
     legacy = USER_FILES_DIR / user_id
     legacy = legacy / 'teams' / _validate_team(team) / 'skills' if team else legacy / 'skills'
     if legacy.is_symlink(): raise ValueError('Skill storage cannot use symbolic links')
@@ -76,6 +77,9 @@ def _workspace_skill_root(user_id: str, team: str = '') -> Path:
         else:
             _merge_legacy_skills(legacy,root)
     root.mkdir(parents=True, mode=0o700, exist_ok=True)
+    if previous and previous.is_dir() and previous != root:
+        if previous.is_symlink(): raise ValueError('Skill storage cannot use symbolic links')
+        _merge_legacy_skills(previous, root)
     return root
 
 
@@ -461,29 +465,32 @@ def get_skill(user_id: str, *, name: str, team: str = "", fallback_to_personal: 
     }
 
 
-def _memory_prompt(user_id: str, teams: list[str] | tuple[str, ...] = (), tool_mode: str = "mcp") -> str:
+def _memory_prompt(user_id: str, teams: list[str] | tuple[str, ...] = (), tool_mode: str = "mcp", session_id: str = "", agent_config: dict | None = None) -> str:
     """List the current Memory catalog: the owner's skills and each team's; MCP file-tool
     usage lives in tool schemas."""
     from webot.skill_memory import list_memory
-    groups = [(f"团队「{team}」技能：", list_memory(user_id, team, include_personal=False)) for team in teams]
-    groups.append(("个人技能：" if teams else "可用技能：", list_memory(user_id)))
+    groups = [("当前工作区技能：", list_memory(user_id, session_id=session_id, agent_config=agent_config, include_paths=True))] if session_id else [
+        (f"团队「{team}」技能：", list_memory(user_id, team, include_personal=False)) for team in teams]
+    if not session_id:
+        groups.append(("个人技能：" if teams else "可用技能：", list_memory(user_id)))
     lines = ["\n【用户技能 / Memory 条目】"]
     if tool_mode == "cli":
-        lines.append("按名称通过 `uv run src/cli/cli.py skill list/show` 查看技能；技能存储位置由系统管理。")
+        lines.append("通过下列 SKILL.md 路径阅读说明，支持文件和脚本在其同目录内。")
     for title, entries in groups:
         if entries:
             lines.append(title)
             for entry in entries[:30]:
-                lines.append(f"  - {entry['id']} | {entry['name']}: {entry['description'][:100]}")
+                lines.append(f"  - {entry['id']} | {entry['name']}: {entry['description'][:100]}"
+                             + (f" | {entry['path']}" if entry.get('path') else ''))
     if not any(entries for _title, entries in groups):
         lines.append("当前暂无已注册条目。")
     return "\n".join(lines)
 
 
-def build_user_skills_listing(user_id: str, *, teams: list[str] | tuple[str, ...] = (), tool_mode: str = "mcp") -> str:
+def build_user_skills_listing(user_id: str, *, teams: list[str] | tuple[str, ...] = (), tool_mode: str = "mcp", session_id: str = "", agent_config: dict | None = None) -> str:
     """Read the current Memory catalog: the owner's skills and those of each team the
     agent is in, without repeating MCP tool schemas."""
-    return _memory_prompt(user_id, teams, tool_mode)
+    return _memory_prompt(user_id, teams, tool_mode, session_id, agent_config)
 
 
 def build_user_profile_block(user_id: str) -> str:

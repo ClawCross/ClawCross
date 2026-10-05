@@ -323,6 +323,7 @@ const i18n = {
         policy_panel_empty: '当前未配置用户级 WeBot policy，将使用内置默认 allow。',
         policy_default_approval: '默认审批',
         runtime_settings: '上下文与审核',
+        agent_workspaces: '工作区',
         policy_panel_format: '格式化',
         policy_panel_save: '保存',
         policy_panel_saved: 'Tool policy 已保存',
@@ -1117,6 +1118,7 @@ const i18n = {
         policy_panel_empty: 'No user WeBot policy is configured yet. Built-in default allow is active.',
         policy_default_approval: 'Default approval',
         runtime_settings: 'Context and approvals',
+        agent_workspaces: 'Workspaces',
         policy_panel_format: 'Format',
         policy_panel_save: 'Save',
         policy_panel_saved: 'Tool policy saved',
@@ -1986,7 +1988,7 @@ function renderAgentCenterDetail() {
                 <summary><svg class="ui-icon"><use href="/static/icons.svg#sliders"/></svg><span>${currentLang === 'zh-CN' ? '高级设置' : 'Advanced settings'}</span><svg class="ui-icon"><use href="/static/icons.svg#chevron-down"/></svg></summary>
                 <div data-runtime-summary role="status"></div>
                 <p class="agent-dex-note">${currentLang === 'zh-CN' ? 'Y 仅允许一次；KEEP Y 记住当前 Agent 的具体授权。沙盒授权限定目标和读写类型，其他工具限定完整参数；严格模式不使用提权记录。' : 'Y allows once; KEEP Y remembers a specific grant for this Agent. Sandbox grants cover a target and access type; other tools cover exact arguments. Strict mode ignores escalation grants.'}</p>
-                <div class="agent-dex-actions"><button type="button" class="agent-center-btn" onclick="openAgentRuntimeSettings('approval')">${currentLang === 'zh-CN' ? '配置模式、沙盒与授权' : 'Configure mode, sandbox and grants'}</button>${webot ? `<button type="button" class="agent-center-btn" onclick="openAgentRuntimeSettings('context')">${currentLang === 'zh-CN' ? '上下文与压缩' : 'Context and compaction'}</button><button type="button" class="agent-center-btn" onclick="openAgentModelSettings('${agentCenterEscape(agent.agent_id)}')">${currentLang === 'zh-CN' ? '模型与思考' : 'Model and reasoning'}</button>` : ''}</div>
+                <div class="agent-dex-actions"><button type="button" class="agent-center-btn" onclick="openWorkspaceSettings('${agentCenterEscape(agent.agent_id)}')">${currentLang === 'zh-CN' ? '工作区' : 'Workspaces'}</button><button type="button" class="agent-center-btn" onclick="openAgentRuntimeSettings('approval')">${currentLang === 'zh-CN' ? '配置模式、沙盒与授权' : 'Configure mode, sandbox and grants'}</button>${webot ? `<button type="button" class="agent-center-btn" onclick="openAgentRuntimeSettings('context')">${currentLang === 'zh-CN' ? '上下文与压缩' : 'Context and compaction'}</button><button type="button" class="agent-center-btn" onclick="openAgentModelSettings('${agentCenterEscape(agent.agent_id)}')">${currentLang === 'zh-CN' ? '模型与思考' : 'Model and reasoning'}</button>` : ''}</div>
             </details>
             <section class="agent-dex-section">
                 <div class="agent-dex-section-title">${agentCenterEscape(t('agent_center_tools'))}</div>
@@ -2955,7 +2957,7 @@ async function loadAgentTeams() {
             for (const team of data.teams) {
                 const opt = document.createElement('option');
                 opt.value = team;
-                opt.textContent = team;
+                opt.textContent = typeof workspaceTeamLabel === 'function' ? workspaceTeamLabel(team) : team;
                 select.appendChild(opt);
             }
         }

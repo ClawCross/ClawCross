@@ -114,15 +114,15 @@ class PreparedTurn:
 
 
 def native_workspace_cwd(agent: Agent) -> str:
-    """Keep an existing native session in its directory; new CLI Agents use launch cwd."""
+    # Native session continuity metadata belongs to the adapter; workspace
+    # settings contain only source switches and user-supplied custom directories.
     if agent.runtime.get('acp_cwd'):
-        return agent.runtime['acp_cwd']
-    if not agent.runtime.get('negotiation_sent') and not agent.runtime.get('native_resume_id'):
-        if agent.config.get('workspace_root'):
-            from webot.workspace import configured_workspace_root
-            return configured_workspace_root(agent.config['workspace_root'])
+        return str(agent.runtime['acp_cwd'])
+    if 'workspaces' in agent.config:
+        from webot.workspace import resolve_session_workspace
+        return str(resolve_session_workspace(agent.owner, agent.agent_id, agent_config=agent.config).cwd)
     from external.acpx import _default_acpx_cwd
-    return _default_acpx_cwd()
+    return agent.config.get('workspace_root') or _default_acpx_cwd()
 
 
 def workspace_context(agent: Agent) -> str:
@@ -131,7 +131,8 @@ def workspace_context(agent: Agent) -> str:
     workspace = resolve_session_workspace(agent.owner, agent.agent_id, agent_config=agent.config)
     value = {'session_id': agent.agent_id, 'root': str(workspace.root),
              'cwd': str(workspace.cwd), 'mode': workspace.mode,
-             'files': observe_workspace(workspace.root, user_id=agent.owner, session_id=agent.agent_id)}
+             'folders':list(workspace.folders) or [{'path':str(workspace.root),'source':workspace.mode}],
+             'files': {str(root):observe_workspace(root, user_id=agent.owner, session_id=agent.agent_id) for root in workspace.roots}}
     if agent.driver == ACPX:
         value['native_cwd'] = native_workspace_cwd(agent)
         value['scope'] = 'root/cwd 是 ClawCross command 工具工作区；native_cwd 是外部 CLI 工作目录，原生工具遵循自身权限。'
@@ -157,7 +158,7 @@ def build_dynamic_context(agent: Agent, msg: AgentMessage, *, context: dict[str,
         "teams": render_team_skill_context(teams),
         "groups": render_group_metadata(current_group_metadata(context.get("groups") or [], memberships)),
         "group_memberships": render_group_metadata(memberships),
-        "skills": build_user_skills_listing(agent.owner, teams=teams, tool_mode="mcp" if connected else "cli"),
+        "skills": build_user_skills_listing(agent.owner, session_id=agent.agent_id, agent_config=agent.config, teams=teams, tool_mode="mcp" if connected else "cli"),
         "workflows": "" if connected else "\n\n".join(filter(None, (build_team_workflow_prompt(agent.owner, team=team) for team in teams))),
         "instructions": msg.instructions.strip(),
         "mode": build_session_mode_message(mode) if mode else "",

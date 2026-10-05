@@ -60,7 +60,7 @@ def _command_settings_file(prefix: str) -> tuple[int, Path]:
     return fd, Path(path)
 
 
-def approved_retry_chain(user_id: str, session_id: str, args: dict, root: Path) -> list[dict]:
+def approved_retry_chain(user_id: str, session_id: str, args: dict, root: Path, *, roots=None) -> list[dict]:
     """Recover only the linked, consumed approvals for this exact command call."""
     from webot import runtime_store as store
     from webot.approval_actions import canonical_action_args
@@ -82,7 +82,8 @@ def approved_retry_chain(user_id: str, session_id: str, args: dict, root: Path) 
         prior = json.loads(record.args_json or '{}')
         metadata = json.loads(record.review_metadata_json or '{}')
         if (original_action(prior) != action or prior.get('sandbox_approval_chain', []) != chain[:index]
-                or metadata.get('sandbox_permissions', {}).get('workspace_root') != str(root.resolve())):
+                or metadata.get('sandbox_permissions', {}).get('workspace_root') != str(root.resolve())
+                or sorted(metadata.get('sandbox_permissions', {}).get('workspace_roots', [str(root.resolve())])) != sorted(str(Path(path).resolve()) for path in (roots or [root]))):
             raise SandboxUnavailable('此前沙盒授权的命令、工作区或审批链不匹配。')
         if metadata.get('sandbox_retry_closed'):
             raise SandboxUnavailable('该命令调用已结束，不能复用此前一次性授权。')
@@ -406,12 +407,12 @@ def _srt_binary() -> str:
     return binary
 
 
-def _policy(root: Path, settings_path: Path, *, access: str = "default", target: str = "", srt_binary: str = "", strict: bool = False, temporary_dir: Path | None = None) -> dict:
+def _policy(root: Path, settings_path: Path, *, access: str = "default", target: str = "", srt_binary: str = "", strict: bool = False, temporary_dir: Path | None = None, workspace_roots=None) -> dict:
     home = Path.home().resolve()
     deny_read = [str(home)]
     deny_read.extend(str(path) for name in _PRIVATE_NAMES if (path := home / name).exists())
     deny_read.append(str(settings_path))
-    allow_read = list(dict.fromkeys(str(path.resolve()) for path in (root, Path(sys.prefix), Path(sys.base_prefix))))
+    allow_read = list(dict.fromkeys(str(path.resolve()) for path in (*(workspace_roots or [root]), Path(sys.prefix), Path(sys.base_prefix))))
     deny_read.extend(str(path) for path in protected_control_paths())
     if strict:
         from common.runtime_paths import PROJECT_ROOT
@@ -430,7 +431,7 @@ def _policy(root: Path, settings_path: Path, *, access: str = "default", target:
         seccomp = Path(srt_binary).resolve().parent.parent / "vendor" / "seccomp"
         if seccomp.is_dir():
             allow_read.append(str(seccomp))
-    allow_write = [str(root)]
+    allow_write = [str(Path(path).resolve()) for path in (workspace_roots or [root])]
     if temporary_dir is not None:
         allow_write.append(str(temporary_dir))
     if access in {"read_path", "write_path"}:
@@ -468,17 +469,21 @@ def build_srt_command(*, root: Path, cwd: Path, command: str, language: str,
                       interactive: bool = False, access: str = "default",
                       target: str = "", allowed_domains: list[str] | None = None,
                       allowed_read_paths: list[str] | None = None, allowed_write_paths: list[str] | None = None,
-                      wall_timeout: int = 180, strict: bool = False) -> SrtCommand:
+                      wall_timeout: int = 180, strict: bool = False, workspace_roots=None) -> SrtCommand:
     """Create an SRT invocation with a private settings file; never use a host shell."""
     root, cwd = root.resolve(), cwd.resolve()
-    validate_workspace_root(root, strict=strict)
+    roots = tuple(dict.fromkeys(Path(path).resolve() for path in (workspace_roots or [root])))
+    if root not in roots:
+        raise SandboxUnavailable('主目录必须属于配置的工作区集合。')
+    for folder in roots:
+        validate_workspace_root(folder, strict=strict)
     if strict and (access != 'default' or allowed_read_paths or allowed_write_paths):
         raise SandboxUnavailable('严格安全模式不允许提权或使用历史文件授权。')
-    if not cwd.is_relative_to(root):
+    if not any(cwd.is_relative_to(folder) for folder in roots):
         raise SandboxUnavailable("命令工作目录超出会话工作区。")
     target = bounded_escalation(access, target, root) if access != 'default' else normalize_escalation(access, target, root)
     if language == "python":
-        if script_path is None or not script_path.resolve().is_relative_to(root):
+        if script_path is None or not any(script_path.resolve().is_relative_to(folder) for folder in roots):
             raise SandboxUnavailable("Python 脚本超出会话工作区。")
         wrapped = [python_executable, *(["-i"] if interactive else []), str(script_path.resolve())]
     elif language == "shell":
@@ -494,7 +499,7 @@ def build_srt_command(*, root: Path, cwd: Path, command: str, language: str,
     fd, settings_path = _command_settings_file('clawcross-srt-')
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            config = _policy(root, settings_path, access=access, target=target, srt_binary=binary, strict=strict, temporary_dir=temporary_dir)
+            config = _policy(root, settings_path, access=access, target=target, srt_binary=binary, strict=strict, temporary_dir=temporary_dir, workspace_roots=roots)
             config['network']['allowedDomains'] = list(dict.fromkeys([*(allowed_domains or []), *([target] if access == 'network' else [])]))
             reads = [bounded_escalation('read_path', path, root) for path in (allowed_read_paths or [])]
             writes = [bounded_escalation('write_path', path, root) for path in (allowed_write_paths or [])]
@@ -529,14 +534,18 @@ def build_landlock_command(*, root: Path, cwd: Path, command: str, language: str
                            interactive: bool = False, access: str = "default", target: str = "",
                            allowed_domains: list[str] | None = None,
                            allowed_read_paths: list[str] | None = None, allowed_write_paths: list[str] | None = None,
-                           wall_timeout: int = 180, strict: bool = False) -> SrtCommand:
+                           wall_timeout: int = 180, strict: bool = False, workspace_roots=None) -> SrtCommand:
     if not landlock_available():
         raise SandboxUnavailable("Landlock 需要 Linux x86_64/aarch64、ABI ≥ 6、libseccomp 及非 root 账号；不会降级为宿主执行。")
     root, cwd = root.resolve(), cwd.resolve()
-    validate_workspace_root(root, strict=strict)
+    roots = tuple(dict.fromkeys(Path(path).resolve() for path in (workspace_roots or [root])))
+    if root not in roots:
+        raise SandboxUnavailable('主目录必须属于配置的工作区集合。')
+    for folder in roots:
+        validate_workspace_root(folder, strict=strict)
     if strict and (access != 'default' or allowed_read_paths or allowed_write_paths):
         raise SandboxUnavailable('严格安全模式不允许提权或使用历史文件授权。')
-    if not cwd.is_relative_to(root):
+    if not any(cwd.is_relative_to(folder) for folder in roots):
         raise SandboxUnavailable("命令工作目录超出会话工作区。")
     controlled_network = network_fence_available()
     if not controlled_network and (access == "network" or allowed_domains):
@@ -545,7 +554,7 @@ def build_landlock_command(*, root: Path, cwd: Path, command: str, language: str
     reads = [bounded_escalation('read_path', path, root) for path in (allowed_read_paths or [])]
     writes = [bounded_escalation('write_path', path, root) for path in (allowed_write_paths or [])]
     if language == "python":
-        if script_path is None or not script_path.resolve().is_relative_to(root):
+        if script_path is None or not any(script_path.resolve().is_relative_to(folder) for folder in roots):
             raise SandboxUnavailable("Python 脚本超出会话工作区。")
         wrapped = [python_executable, *(["-i"] if interactive else []), str(script_path.resolve())]
     elif language == "shell":
@@ -557,7 +566,7 @@ def build_landlock_command(*, root: Path, cwd: Path, command: str, language: str
     fd, settings_path = _command_settings_file('clawcross-landlock-')
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump({"root": str(root), "read_paths": list(dict.fromkeys([*reads, *([target] if access == "read_path" else [])])),
+            json.dump({"root": str(root), "workspace_roots":[str(path) for path in roots], "read_paths": list(dict.fromkeys([*reads, *([target] if access == "read_path" else [])])),
                        "write_paths": list(dict.fromkeys([*writes, *([target] if access == "write_path" else [])])),
                        "allowed_domains": list(dict.fromkeys([*(allowed_domains or []), *([target] if access == 'network' else [])])),
                        "strict": strict, "wall_timeout": max(1, int(wall_timeout))}, handle)

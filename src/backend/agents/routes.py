@@ -43,7 +43,7 @@ from common.auth_utils import extract_user_password_session, is_internal_bearer,
 
 # Settings a caller may set; everything else in a driver's config is its own.
 # ``title`` names the work the session is doing (the agent or the user sets it).
-_SHARED_SETTINGS = ("persona", "title", "workspace_root")
+_SHARED_SETTINGS = ("persona", "title", "workspace_root", "workspaces")
 TITLE_MAX = 80
 
 
@@ -59,7 +59,9 @@ class AgentCreate(BaseModel):
     name: str = ""
     platform: str = WEBOT
     persona: str = ""        # its persona: the text itself (a library persona is copied in)
-    workspace_root: str = ""  # empty: clean user workspace; CLI creation supplies its cwd
+    workspace_root: str = ""  # legacy single custom folder
+    workspaces: dict[str, Any] | None = None
+    cli_workspace: str = ""  # directory captured by an actual CLI caller
     tools: list[str] | None = None  # the tools it has; none: all of them
     api_url: str = ""
     api_key: str = ""
@@ -91,7 +93,8 @@ class AgentMessageRequest(BaseModel):
     response_format: dict | None = None  # OpenAI response_format
     timeout: float | None = None  # seconds; 0 waits as long as the agent takes; none: the runtime's default
     platform: str = ""       # the runtime of a new agent
-    workspace_root: str = ""  # only used when this message creates the Agent
+    workspace_root: str = ""  # legacy root used on creation
+    cli_workspace: str = ""  # caller's CLI directory
     inbox_sender: str = Field('', max_length=160)  # trusted local composition only
     inbox_summary: str = Field('', max_length=256)
 
@@ -156,6 +159,7 @@ def agent_card(agent: Agent) -> dict[str, Any]:
         "settings": settings,
         "created_at": agent.created_at,
         "updated_at": agent.updated_at,
+        "default_team": "__default__",
     }
 
 
@@ -171,6 +175,9 @@ def new_agent_config(body: AgentCreate) -> tuple[str, dict[str, Any]]:
     config.update({"persona": body.persona.strip()})
     if body.workspace_root:
         config['workspace_root'] = configured_workspace_root(body.workspace_root)
+    from webot.workspace import normalize_workspace_config
+    workspace_settings = dict(body.workspaces or {})
+    config['workspaces'] = normalize_workspace_config(workspace_settings, legacy_root=body.workspace_root)
     if driver == WEBOT and body.tools is not None:
         config["tools"] = body.tools
     if driver in (WEBOT, LLM):
@@ -217,14 +224,29 @@ def create_agents_router(
             raise HTTPException(status_code=404, detail=f"no agent {ref!r}")
         return agent
 
-    def target(user: str, ref: str, platform: str, workspace_root: str = '') -> Agent:
+    def target(user: str, ref: str, platform: str, workspace_root: str = '', cli_workspace: str = '') -> Agent:
         """The agent a message goes to; an id not seen before is a new agent."""
         agent = find(user, ref)
         if agent is not None:
+            if cli_workspace:
+                from webot.workspace import set_cli_workspace, workspace_config
+                try:
+                    set_cli_workspace(user, agent.agent_id, cli_workspace)
+                    if 'workspaces' not in agent.config:
+                        settings = {**workspace_config(agent.config), 'cli':True}
+                        agent = store.update(user,agent.agent_id,config={**agent.config,'workspaces':settings})
+                except ValueError as exc:
+                    raise HTTPException(400, str(exc)) from exc
             return agent
         if not valid_agent_id(ref):
             raise HTTPException(status_code=404, detail=f"no agent {ref!r}")
         driver, config = runtime_of(platform)
+        from webot.workspace import normalize_workspace_config
+        try:
+            config['workspaces'] = normalize_workspace_config(None,
+                                                               user_id=user, legacy_root=workspace_root)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
         if workspace_root:
             from webot.workspace import configured_workspace_root
             try:
@@ -233,7 +255,13 @@ def create_agents_router(
                 raise HTTPException(400, str(exc)) from exc
         if driver == HTTP:
             raise HTTPException(status_code=400, detail=f"{platform!r} needs an endpoint: create it with POST /v1/agents")
-        return store.ensure(user, ref, driver=driver, config=config)
+        if cli_workspace:
+            normalize_workspace_config({'paths':[cli_workspace]}, user_id=user)
+        agent = store.ensure(user, ref, driver=driver, config=config)
+        if cli_workspace:
+            from webot.workspace import set_cli_workspace
+            set_cli_workspace(user, agent.agent_id, cli_workspace)
+        return agent
 
     async def with_status(agent: Agent) -> dict[str, Any]:
         return {**agent_card(agent), "groups": memberships(agent.owner, agent.agent_id) if memberships else [],
@@ -291,7 +319,14 @@ def create_agents_router(
         user = user_of(authorization)
         try:
             driver, config = new_agent_config(body)
+            from webot.workspace import normalize_workspace_config
+            if body.cli_workspace:
+                normalize_workspace_config({'paths':[body.cli_workspace]}, user_id=user)
+            config['workspaces'] = normalize_workspace_config(config['workspaces'], user_id=user)
             agent = store.create(user, driver=driver, config=config, name=body.name, agent_id=body.agent_id)
+            if body.cli_workspace:
+                from webot.workspace import set_cli_workspace
+                set_cli_workspace(user, agent.agent_id, body.cli_workspace)
         except AgentExists as exc:
             raise HTTPException(status_code=409, detail={"error": str(exc), "agent": agent_card(exc.agent)})
         except ValueError as exc:
@@ -342,6 +377,17 @@ def create_agents_router(
             return await import_history(agent, store)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from None
+
+    @router.get('/v1/agents/{ref}/workspaces')
+    async def agent_workspaces(ref: str, authorization: str | None = Header(None)):
+        user = user_of(authorization)
+        agent = lookup(user, ref)
+        from webot.workspace import workspace_card, workspace_config
+        try:
+            return {'agent_id':agent.agent_id, 'settings':workspace_config(agent.config),
+                    **workspace_card(user, agent.agent_id, agent_config=agent.config)}
+        except (ValueError, RuntimeError) as exc:
+            return {'agent_id':agent.agent_id, 'settings':agent.config.get('workspaces') or {'companion':False,'user_shared':True,'cli':False,'teams':False,'paths':[agent.config['workspace_root']] if agent.config.get('workspace_root') else []}, 'folders':[], 'error':str(exc)}
 
     @router.get("/v1/agents/{ref}/capabilities")
     async def agent_capabilities(ref: str, authorization: str | None = Header(None)):
@@ -429,10 +475,19 @@ def create_agents_router(
             {"agent": agent_card(child), "fork": child.config["fork"]} for child in children
         ]}
 
+    @router.get('/v1/agents/{ref}/workspace-origin')
+    async def workspace_origin(ref: str, authorization: str | None = Header(None)):
+        user = user_of(authorization)
+        if not internal_token or authorization != f'Bearer {internal_token}:{user}':
+            raise HTTPException(403, 'Internal runtime access only')
+        agent = lookup(user, ref)
+        from webot.workspace import cli_workspace
+        return {'cli':cli_workspace(user, agent.agent_id)}
+
     @router.post("/v1/agents/{ref}/messages")
     async def message_agent(ref: str, body: AgentMessageRequest, authorization: str | None = Header(None)):
         user = user_of(authorization)
-        agent = target(user, ref, body.platform, body.workspace_root)
+        agent = target(user, ref, body.platform, body.workspace_root, body.cli_workspace)
         reply = await gateway.ask(
             agent, message(user, body), context=body.context, mode=body.mode, enabled_tools=body.enabled_tools,
             response_format=body.response_format, timeout=NO_TIMEOUT if body.timeout == 0 else body.timeout,
@@ -444,7 +499,7 @@ def create_agents_router(
         user = user_of(authorization)
         if (body.inbox_sender or body.inbox_summary or body.context.get('group_human_requests')) and (not internal_token or authorization != f'Bearer {internal_token}:{user}'):
             raise HTTPException(403, '只有本机服务可以指定 inbox 来源')
-        agent = target(user, ref, body.platform, body.workspace_root)
+        agent = target(user, ref, body.platform, body.workspace_root, body.cli_workspace)
         msg = message(user, body)
         msg.sender = body.inbox_sender or msg.sender
         msg.summary = body.inbox_summary
@@ -493,6 +548,18 @@ def create_agents_router(
                 config['workspace_root'] = configured_workspace_root(body.settings['workspace_root'])
             except ValueError as exc:
                 raise HTTPException(400, str(exc)) from exc
+        if 'workspaces' in body.settings:
+            from webot.workspace import normalize_workspace_config, workspace_card
+            try:
+                config['workspaces'] = normalize_workspace_config(body.settings['workspaces'], user_id=user)
+                workspace_card(user, agent.agent_id, agent_config=config)
+            except (ValueError, RuntimeError) as exc:
+                raise HTTPException(400, str(exc)) from exc
+        elif 'workspace_root' in body.settings:
+            from webot.workspace import normalize_workspace_config, workspace_config
+            settings = workspace_config(config)
+            settings['paths'] = [config['workspace_root']] if config['workspace_root'] else []
+            config['workspaces'] = normalize_workspace_config(settings, user_id=user)
         if "title" in body.settings:
             config["title"] = session_title(body.settings["title"])
         if agent.driver != WEBOT and body.settings.get("api_key") == "":
@@ -539,6 +606,8 @@ def create_agents_router(
             await gateway.destroy(agent)
         except ControlError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        from webot.workspace import clear_cli_workspace
+        clear_cli_workspace(agent.owner, agent.agent_id)
         store.delete(agent.owner, agent.agent_id)
         from agents.native_sessions import release_agent
         release_agent(agent.owner, agent.agent_id)

@@ -137,3 +137,5 @@ The important split is:
 - `docs/repo-index.md`: code and data index
 
 This keeps `AGENTS.md` short enough for agents while making the full repository discoverable via `SKILL.md` and topic docs.
+
+- [工作区配置](workspaces.md)：Agent 的伴生、用户共享、CLI、Team 和自定义目录集合。

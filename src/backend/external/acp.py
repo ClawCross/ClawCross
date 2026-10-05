@@ -135,6 +135,9 @@ class AcpRuntime(Runtime):
 
     async def ask(self, agent: Agent, msg: AgentMessage, *, context, mode, enabled_tools, response_format, timeout) -> AgentReply:
         async with session.turn(self._store, agent) as current:
+            if current.runtime.get('native_resume_id') and current.runtime.get('acp_cwd'):
+                from webot.workspace import set_cli_workspace
+                set_cli_workspace(current.owner, current.agent_id, current.runtime['acp_cwd'])
             if context.get('_acp_turn_started'):
                 context['_acp_turn_started'].set()
             try:

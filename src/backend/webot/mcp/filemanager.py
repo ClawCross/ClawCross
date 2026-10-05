@@ -88,6 +88,17 @@ def _limit_value(value: int, default: int, maximum: int) -> int:
         parsed = default
     return min(parsed, maximum)
 
+def _memory_file_path(path, username: str, session_id: str, *, create_parents: bool = False):
+    from webot.runtime_settings import get_runtime_settings
+    if get_runtime_settings(username, session_id or 'default').approval.sandbox_security != 'strict':
+        return str(path)
+    state = resolve_session_workspace(username, session_id)
+    root = state.containing_root(path)
+    if root is None:
+        raise ValueError('Memory entry is outside this Agent workspace')
+    return ConfinedPath(str(path), root, create_parents=create_parents)
+
+
 async def _file_access_gate(username: str, session_id: str, tool_name: str, args: dict) -> tuple[str | None, str]:
     """Require one exact approval when a file tool crosses the workspace root."""
     normalized_session = session_id or "default"
@@ -105,7 +116,8 @@ async def _file_access_gate(username: str, session_id: str, tool_name: str, args
     from webot.runtime_settings import get_runtime_settings
     def permitted_path():
         if get_runtime_settings(username, normalized_session).approval.sandbox_security == 'strict':
-            return ConfinedPath(path, workspace.root, create_parents=tool_name == 'write_file')
+            root = workspace.containing_root(path) if hasattr(workspace, 'containing_root') else workspace.root
+            return ConfinedPath(path, root, create_parents=tool_name == 'write_file')
         return path
     if consume_execution_permit(username, normalized_session, tool_name, bound,
                                 policy_binding(username, normalized_session)):
@@ -254,7 +266,7 @@ async def list_files(username: str, session_id: str = "", folder: str = ".", sto
                 {"folder": folder, "storage": storage, "team": team})
             if reject:
                 return reject
-            return json.dumps({"storage": "memory", "items": list_memory(username, team)}, ensure_ascii=False)
+            return json.dumps({"storage": "memory", "items": list_memory(username, team, session_id=session_id)}, ensure_ascii=False)
         if storage != "file":
             return "❌ 不支持的 storage。"
         reject, user_path = await _file_access_gate(username, session_id, "list_files",
@@ -334,7 +346,7 @@ async def read_file(
             })
             if reject:
                 return reject
-            file_path = str(memory_target(username, filename, team, shared=True)["_path"])
+            file_path = _memory_file_path(memory_target(username, filename, team, shared=True, session_id=session_id)["_path"], username, session_id)
             encoding = "utf-8"
         elif storage == "file":
             reject, file_path = await _file_access_gate(username, session_id, "read_file", {
@@ -472,9 +484,9 @@ async def write_file(
             })
             if reject:
                 return reject
-            guard.enter_context(memory_lock(username, team))
-            entry = memory_target(username, filename, team, create=normalized_mode_check in {"overwrite", "append", "create"})
-            file_path = str(entry["_path"])
+            guard.enter_context(memory_lock(username, team, session_id=session_id))
+            entry = memory_target(username, filename, team, create=normalized_mode_check in {"overwrite", "append", "create"}, session_id=session_id)
+            file_path = _memory_file_path(entry["_path"], username, session_id, create_parents=True)
             encoding = "utf-8"
         elif storage == "file":
             reject, file_path = await _file_access_gate(username, session_id, "write_file", {
@@ -549,11 +561,11 @@ async def write_file(
             return f"❌ 不支持的写入模式 '{mode}'。"
 
         if entry is not None:
-            new_content = prepare_content(entry, new_content)
+            new_content = prepare_content(entry, new_content, file_path=file_path)
         _atomic_write_text(file_path, new_content, encoding=encoding, atomic=True)
         if entry is not None:
-            refresh_index(username, team)
-            saved = memory_target(username, entry["id"], team)
+            refresh_index(username, team, session_id=session_id)
+            saved = memory_target(username, entry["id"], team, session_id=session_id)
             return json.dumps({"success": True, "storage": "memory", **public_entry(saved),
                                "sha256": _file_sha256(file_path), "chars": len(new_content)}, ensure_ascii=False)
         action = {
@@ -598,10 +610,11 @@ async def delete_file(username: str, filename: str, session_id: str = "", storag
                 {"filename": filename, "storage": storage, "team": team})
             if reject:
                 return reject
-            with memory_lock(username, team):
-                entry = memory_target(username, filename, team)
-                entry["_path"].unlink()
-                refresh_index(username, team)
+            with memory_lock(username, team, session_id=session_id):
+                entry = memory_target(username, filename, team, session_id=session_id)
+                target = _memory_file_path(entry["_path"], username, session_id)
+                target.unlink() if isinstance(target, ConfinedPath) else os.remove(target)
+                refresh_index(username, team, session_id=session_id)
                 return json.dumps({"success": True, "deleted": public_entry(entry)}, ensure_ascii=False)
         if storage != "file":
             return "❌ 不支持的 storage。"

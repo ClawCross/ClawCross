@@ -53,7 +53,7 @@ async def skill_evolution_report(
     from webot.skill_evolution import analyze_skill_evolution
 
     from webot.skill_memory import memory_target, public_entry
-    entry = memory_target(username, name, team, shared=True)
+    entry = memory_target(username, name, team, shared=True, session_id=session_id)
     from webot.skills import _parse_frontmatter
     content = entry["_path"].read_text(encoding="utf-8")
     _, body = _parse_frontmatter(content)

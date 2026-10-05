@@ -24,6 +24,7 @@ from typing import Any, Iterator
 from agents.store import Agent, AgentStore
 
 MEMBERS_FILE = "members.json"
+DEFAULT_TEAM = "__default__"
 
 
 class TeamNotFound(LookupError):
@@ -57,12 +58,11 @@ class TeamStore:
 
     def teams(self, owner: str) -> list[str]:
         root = self.user_files_dir / owner / "teams"
-        if not root.is_dir():
-            return []
-        return sorted(p.name for p in root.iterdir() if p.is_dir() and valid_team_name(p.name))
+        explicit = sorted(p.name for p in root.iterdir() if p.is_dir() and valid_team_name(p.name) and p.name != DEFAULT_TEAM) if root.is_dir() else []
+        return [DEFAULT_TEAM, *explicit]
 
     def exists(self, owner: str, team: str) -> bool:
-        return valid_team_name(team) and self.folder(owner, team).is_dir()
+        return team == DEFAULT_TEAM or (valid_team_name(team) and self.folder(owner, team).is_dir())
 
     def require(self, owner: str, team: str) -> None:
         if not self.exists(owner, team):
@@ -73,15 +73,32 @@ class TeamStore:
 
     def delete(self, owner: str, team: str) -> None:
         """Remove the team and its assets; its agents stay."""
+        if team == DEFAULT_TEAM:
+            raise ValueError('The default user project cannot be deleted')
         for entry in self._read(owner, team):
             self._retag(owner, entry["agent"], team, None)
         shutil.rmtree(self.folder(owner, team), ignore_errors=True)
 
     def rename(self, owner: str, old: str, new: str) -> None:
+        if DEFAULT_TEAM in (old,new):
+            raise ValueError('The default user project cannot be renamed')
         src, dst = self.folder(owner, old), self.folder(owner, new)
         if dst.exists():
             raise FileExistsError(f"team {new!r} already exists")
+        from webot.skills import _team_skills_dir
+        _team_skills_dir(owner, old)
+        from webot.workspace import workspace_base
+        workspace_src = workspace_base() / 'teams' / owner / old
+        workspace_dst = workspace_base() / 'teams' / owner / new
+        if workspace_src.exists() and workspace_dst.exists():
+            raise FileExistsError(f'Team workspace {new!r} already exists')
         src.rename(dst)
+        if workspace_src.exists():
+            try:
+                workspace_src.rename(workspace_dst)
+            except OSError:
+                dst.rename(src)
+                raise
         for entry in self._read(owner, new):
             self._retag(owner, entry["agent"], old, new)
 
@@ -114,6 +131,8 @@ class TeamStore:
             os.replace(tmp, folder / MEMBERS_FILE)
 
     def members(self, owner: str, team: str) -> list[Member]:
+        if team == DEFAULT_TEAM:
+            return [Member(agent, agent.name, False) for agent in self.agents.list(owner)]
         if not valid_team_name(team):
             return []
         result = []
@@ -151,6 +170,8 @@ class TeamStore:
     def add(self, owner: str, team: str, agent_id: str, *, role: str = "", is_lead: bool = False,
             extra: dict[str, Any] | None = None) -> Member:
         self.require(owner, team)
+        if team == DEFAULT_TEAM:
+            return self.member(owner, team, agent_id)
         agent = self.agents.get(owner, agent_id)
         if agent is None:
             raise LookupError(f"no agent {agent_id!r} for {owner}")
@@ -174,6 +195,8 @@ class TeamStore:
     def update(self, owner: str, team: str, agent_id: str, *, role: str | None = None,
                is_lead: bool | None = None, tag: str | None = None) -> Member:
         """``tag``: the team persona the member wears ("" for none)."""
+        if team == DEFAULT_TEAM:
+            raise ValueError('Default project membership follows the Agent registry')
         current = self.member(owner, team, agent_id)
         extra = dict(current.extra)
         if tag is not None:
@@ -188,6 +211,8 @@ class TeamStore:
         )
 
     def remove(self, owner: str, team: str, agent_id: str) -> None:
+        if team == DEFAULT_TEAM:
+            raise ValueError('Agents belong to the default user project automatically')
         if not self.exists(owner, team):
             return
         with self._editing(owner, team) as entries:

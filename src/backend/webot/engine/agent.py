@@ -1014,11 +1014,11 @@ class TeamAgent:
                 return ToolMessage(content=content, tool_call_id=call_id, name=name), name
         return None
 
-    def _get_user_skills(self, user_id: str, teams: list[str] | tuple[str, ...] = ()) -> str:
+    def _get_user_skills(self, user_id: str, teams: list[str] | tuple[str, ...] = (), session_id: str = "") -> str:
         """Read the current Skill/Memory catalog without paths."""
         from webot.skills import build_user_skills_listing
 
-        return build_user_skills_listing(user_id, teams=teams)
+        return build_user_skills_listing(user_id, teams=teams, session_id=session_id)
 
     def _find_internal_session_meta(self, user_id: str, session_id: str) -> dict | None:
         """``{"teams", "name", "persona", "tools"}`` of the agent this session is: the
@@ -1144,7 +1144,8 @@ class TeamAgent:
         instance_env = _mcp_instance_env()
         for server in mcp_servers.values():
             if server.get("transport") == "stdio":
-                server["env"] = {**instance_env, **server.get("env", {})}
+                server["env"] = {**instance_env, **server.get("env", {}),
+                    "CLAWCROSS_WORKSPACE_ORIGIN_SERVICE": f'http://127.0.0.1:{os.getenv("PORT_AGENT", "51200")}'}
         self._mcp_client = MultiServerMCPClient(mcp_servers)
 
         # 3. Fetch tool definitions (new API: no context manager needed)
@@ -1569,7 +1570,7 @@ class TeamAgent:
         session_teams = sorted({str(team).strip() for team in ((session_meta or {}).get("teams") or []) if str(team).strip()})
         show_skills = (not turn.is_subagent) or (turn.profile and turn.profile.include_user_skills)
         team_skill_context = render_team_skill_context(
-            session_teams, self._get_user_skills(user_id, session_teams) if show_skills else "",
+            session_teams, self._get_user_skills(user_id, session_teams, session_id) if show_skills else "",
         )
         # The inbox worker's HumanMessage already carries its digest. Any other
         # turn surfaces newly queued messages once, on its first model call.

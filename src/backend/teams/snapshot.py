@@ -24,6 +24,8 @@ def install_snapshot(teams: TeamStore, owner: str, team: str, assets: Path, skil
     Snapshot members always get new agent ids. Existing agents remain in the
     owner's agent registry, following TeamStore.delete's ownership semantics.
     """
+    if team == '__default__':
+        raise ValueError('The default user project cannot be replaced by a Team import')
     internal, external = read_folder(assets)
     names = [entry["name"].strip().casefold() for entry in internal + external]
     if len(names) != len(set(names)):
