@@ -14,7 +14,7 @@ FastAPI services
     -> `src/backend/webot/api/service.py` (serializes runtime DTOs, policy/plan/todo persistence)
     -> `src/backend/webot/mcp/webot.py` (MCP tools: subagents, session messages, inbox, plans and todos)
     -> `src/backend/ops/service.py` (voice/TTS + direct connect hooks for audio uploads)
-    -> `src/backend/webot/memory.py` / `src/backend/webot/voice.py` (memory and voice services)
+    -> `src/backend/webot/memory.py` (memory service)
 Persistence
     -> `data/webot_agents/<user>#<agent>.db` (runs, inbox, approvals, permits, artifacts, session state, memory, voice)
     -> `data/webot_subagents.db` (subagent metadata)
@@ -37,7 +37,7 @@ Side systems
 | `src/backend/webot/runtime.py` | Mode normalization, blocked tool lists, turn-limit messaging, surgical heuristics for plan/execute/review. |
 | `src/backend/webot/policy.py` | Normalizes tool policies, events (`session_start`, `permission_request`, `stop`, etc.), hook definitions, serialization, router for `save_tool_policy_config`. |
 | `src/backend/webot/engine/agent.py` | Enforces tool filtering, injects runtime context, proxies MCP tooling into session handler, budgets history with `webot_context`. |
-| `src/backend/ops/service.py` | Text-to-speech / audio proxy for voice mode; writes audio metadata into runtime payload via the frontend (`src/frontend/server.py`). |
+| `src/backend/ops/service.py` | Text-to-speech (`/tts`) with the host-wide `TTS_MODEL` / `TTS_VOICE` settings. |
 | `src/backend/webot/profiles.py` | Profile definitions (`general`, `research`, `planner`, `coder`, `reviewer`, `verifier`), helper `slugify`, built-in tool sets, user extension loading. |
 | `src/backend/webot/context.py` | Runtime state assembly and deltas, including group metadata only; rebase the first retained state after compression. |
 | `src/backend/webot/compression.py` | Persistent rolling summaries, whole-turn boundaries, summary caps, temporary bounded views and oversized input artifacts. Original messages remain stored. |
@@ -45,7 +45,6 @@ Side systems
 | `src/backend/webot/workspace.py` | Worktree/remote/shared workspace resolution used when rendering runtime panel workspace text. |
 | `src/frontend/proxies/webot.py` | Additional Flask proxies for runtime mode updates, plan/todo/verification APIs, supporting UI actions. |
 | `src/backend/webot/memory.py` | Per-project memory directories, `MEMORY.md`, relevant entry recall, daily logs, dream gating, Kairos flags. |
-| `src/backend/webot/voice.py` | Voice defaults + persisted per-session voice state derived from current LLM/audio provider. |
 
 ## Runtime DTO
 
@@ -93,7 +92,7 @@ data/
 - `/webot/session-inbox` – list a session's inbox. Sending is `send_to_session` (or `POST /v1/agents/<id>/inbox`); delivering what is queued is `POST /v1/agents/<id>/control` `{"action": "deliver_inbox"}`.
 - `/webot/runs/interrupt` – request interruption for an active runtime run.
 - `/webot/session-plan`, `/webot/session-todos`, `/webot/verifications` – plan/todo/verification CRUD.
-- `/webot/voice`, `/webot/kairos`, `/webot/dream` – browser endpoints for voice, Kairos, and dream.
+- `/webot/kairos`, `/webot/dream` – browser endpoints for Kairos and dream.
 - `/webot/tool-policy` – read/write policy and hook definitions.
 - `/webot/tool-approvals/resolve` – resolve manual approvals.
 

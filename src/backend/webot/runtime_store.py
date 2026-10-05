@@ -251,25 +251,8 @@ def _connect(db_path: str | os.PathLike | None = None) -> sqlite3.Connection:
         ON webot_memory_state(user_id, updated_at DESC)
         """
     )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS webot_voice_state (
-            user_id TEXT NOT NULL,
-            session_id TEXT NOT NULL,
-            enabled INTEGER NOT NULL DEFAULT 0,
-            auto_read_aloud INTEGER NOT NULL DEFAULT 0,
-            recording_supported INTEGER NOT NULL DEFAULT 1,
-            tts_model TEXT NOT NULL DEFAULT '',
-            tts_voice TEXT NOT NULL DEFAULT '',
-            stt_model TEXT NOT NULL DEFAULT '',
-            last_transcript TEXT NOT NULL DEFAULT '',
-            metadata_json TEXT NOT NULL DEFAULT '{}',
-            updated_at TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            PRIMARY KEY (user_id, session_id)
-        )
-        """
-    )
+    # Per-session voice settings were never read; audio uses the global TTS settings.
+    conn.execute("DROP TABLE IF EXISTS webot_voice_state")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS webot_session_plans (
@@ -716,26 +699,6 @@ class MemoryStateRecord:
 
 
 @dataclass(frozen=True)
-class VoiceStateRecord:
-    user_id: str
-    session_id: str
-    enabled: bool
-    auto_read_aloud: bool
-    recording_supported: bool
-    tts_model: str
-    tts_voice: str
-    stt_model: str
-    last_transcript: str
-    metadata: dict[str, Any] = field(default_factory=dict)
-    updated_at: str = ""
-    created_at: str = ""
-
-    @property
-    def metadata_json(self) -> str:
-        return _json_dumps(self.metadata)
-
-
-@dataclass(frozen=True)
 class ClaudeKeepaliveRecord:
     user_id: str
     session_id: str
@@ -818,17 +781,6 @@ def _row_to_memory_state(row: sqlite3.Row | None) -> MemoryStateRecord | None:
     data["kairos_enabled"] = bool(data["kairos_enabled"])
     data["metadata"] = _json_loads_dict(data.pop("metadata_json", ""))
     return MemoryStateRecord(**data)
-
-
-def _row_to_voice_state(row: sqlite3.Row | None) -> VoiceStateRecord | None:
-    if row is None:
-        return None
-    data = dict(row)
-    data["enabled"] = bool(data["enabled"])
-    data["auto_read_aloud"] = bool(data["auto_read_aloud"])
-    data["recording_supported"] = bool(data["recording_supported"])
-    data["metadata"] = _json_loads_dict(data.pop("metadata_json", ""))
-    return VoiceStateRecord(**data)
 
 
 def _row_to_claude_keepalive(row: sqlite3.Row | None) -> ClaudeKeepaliveRecord | None:
@@ -2851,93 +2803,6 @@ def get_memory_state(
         active_run_id="",
         last_dream_at="",
         daily_log_path="",
-        metadata={},
-        updated_at=now,
-        created_at=now,
-    )
-
-
-def save_voice_state(
-    user_id: str,
-    session_id: str,
-    *,
-    enabled: bool = False,
-    auto_read_aloud: bool = False,
-    recording_supported: bool = True,
-    tts_model: str = "",
-    tts_voice: str = "",
-    stt_model: str = "",
-    last_transcript: str = "",
-    metadata: dict[str, Any] | None = None,
-    db_path: str | os.PathLike | None = None,
-) -> VoiceStateRecord:
-    now = utc_now()
-    with _connect_agent(user_id, session_id, db_path) as conn:
-        conn.execute(
-            """
-            INSERT INTO webot_voice_state (
-                user_id, session_id, enabled, auto_read_aloud, recording_supported,
-                tts_model, tts_voice, stt_model, last_transcript, metadata_json,
-                updated_at, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(user_id, session_id) DO UPDATE SET
-                enabled=excluded.enabled,
-                auto_read_aloud=excluded.auto_read_aloud,
-                recording_supported=excluded.recording_supported,
-                tts_model=excluded.tts_model,
-                tts_voice=excluded.tts_voice,
-                stt_model=excluded.stt_model,
-                last_transcript=excluded.last_transcript,
-                metadata_json=excluded.metadata_json,
-                updated_at=excluded.updated_at
-            """,
-            (
-                user_id,
-                session_id,
-                1 if enabled else 0,
-                1 if auto_read_aloud else 0,
-                1 if recording_supported else 0,
-                tts_model,
-                tts_voice,
-                stt_model,
-                last_transcript,
-                _json_dumps(metadata or {}),
-                now,
-                now,
-            ),
-        )
-        conn.commit()
-        row = conn.execute(
-            "SELECT * FROM webot_voice_state WHERE user_id = ? AND session_id = ?",
-            (user_id, session_id),
-        ).fetchone()
-    return _row_to_voice_state(row)  # type: ignore[arg-type]
-
-
-def get_voice_state(
-    user_id: str,
-    session_id: str,
-    db_path: str | os.PathLike | None = None,
-) -> VoiceStateRecord:
-    with _connect_agent(user_id, session_id, db_path) as conn:
-        row = conn.execute(
-            "SELECT * FROM webot_voice_state WHERE user_id = ? AND session_id = ?",
-            (user_id, session_id),
-        ).fetchone()
-    record = _row_to_voice_state(row)
-    if record is not None:
-        return record
-    now = utc_now()
-    return VoiceStateRecord(
-        user_id=user_id,
-        session_id=session_id,
-        enabled=False,
-        auto_read_aloud=False,
-        recording_supported=True,
-        tts_model="",
-        tts_voice="",
-        stt_model="",
-        last_transcript="",
         metadata={},
         updated_at=now,
         created_at=now,

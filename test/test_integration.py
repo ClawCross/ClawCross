@@ -496,41 +496,6 @@ class FrontendIntegrationTests(unittest.TestCase):
                 },
             )
 
-        with self.subTest("voice"):
-            with mock.patch.object(
-                front.requests,
-                "post",
-                return_value=_MockJsonResponse({"status": "success"}, 200),
-            ) as mock_post:
-                response = self.client.post(
-                    "/proxy_webot_voice",
-                    json={
-                        "session_id": "default",
-                        "enabled": True,
-                        "auto_read_aloud": True,
-                        "last_transcript": "ship it",
-                        "tts_model": "gpt-4o-mini-tts",
-                        "tts_voice": "alloy",
-                        "stt_model": "gpt-4o-mini-transcribe",
-                    },
-                )
-            self.assertEqual(response.status_code, 200)
-            _, kwargs = mock_post.call_args
-            self.assertEqual(
-                kwargs["json"],
-                {
-                    "user_id": "integration-user",
-                    "session_id": "default",
-                    "enabled": True,
-                    "auto_read_aloud": True,
-                    "last_transcript": "ship it",
-                    "tts_model": "gpt-4o-mini-tts",
-                    "tts_voice": "alloy",
-                    "stt_model": "gpt-4o-mini-transcribe",
-                },
-            )
-            self.assertEqual(kwargs["headers"], {"X-Internal-Token": front.INTERNAL_TOKEN})
-
         with self.subTest("lsp diagnostics"):
             with mock.patch.object(
                 front.requests,

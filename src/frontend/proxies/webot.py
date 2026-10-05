@@ -370,30 +370,6 @@ def register_webot_routes(
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
-    @app.route("/proxy_webot_voice", methods=["POST"])
-    def proxy_webot_voice():
-        user_id = session.get("user_id", "")
-        body = request.get_json(force=True) if request.is_json else {}
-        try:
-            response = requests.post(
-                f"{base_url}/webot/voice",
-                json={
-                    "user_id": user_id,
-                    "session_id": body.get("session_id", ""),
-                    "enabled": bool(body.get("enabled", False)),
-                    "auto_read_aloud": bool(body.get("auto_read_aloud", False)),
-                    "last_transcript": body.get("last_transcript", ""),
-                    "tts_model": body.get("tts_model", ""),
-                    "tts_voice": body.get("tts_voice", ""),
-                    "stt_model": body.get("stt_model", ""),
-                },
-                headers=_internal_auth_headers(),
-                timeout=15,
-            )
-            return jsonify(response.json()), response.status_code
-        except Exception as exc:
-            return jsonify({"error": str(exc)}), 500
-
     @app.route("/proxy_webot_kairos", methods=["POST"])
     def proxy_webot_kairos():
         user_id = session.get("user_id", "")

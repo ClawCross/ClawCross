@@ -1487,21 +1487,6 @@
     background: var(--ui-surface-2); color: var(--text);
     min-width: 140px; max-width: 200px;
   }
-  .tc-toggle {
-    width: 51px; height: 31px; border-radius: 16px;
-    background: var(--ui-surface-3); border: none; cursor: pointer;
-    position: relative; flex-shrink: 0; transition: background 0.2s;
-    outline: none; -webkit-appearance: none;
-  }
-  .tc-toggle::after {
-    content: ''; position: absolute;
-    width: 27px; height: 27px; border-radius: 50%;
-    background: #fff; top: 2px; left: 2px;
-    transition: transform 0.2s var(--ui-ease);
-    box-shadow: 0 2px 6px rgba(0,0,0,0.15), 0 0 0 0.5px rgba(0,0,0,0.04);
-  }
-  .tc-toggle.on { background: var(--ui-success); }
-  .tc-toggle.on::after { transform: translateX(20px); }
   .tc-sheet-footer {
     padding: 10px 16px calc(12px + env(safe-area-inset-bottom, 0px));
     flex-shrink: 0;
@@ -4747,9 +4732,6 @@
           <button type="button" class="ui-menu-item" onclick="closeInputActions(); openSubagentPanel();">
             <svg class="ui-icon"><use href="/static/icons.svg#bot"/></svg><span class="ui-menu-label" data-i18n="subagent_mgmt">子 Agent 管理</span>
           </button>
-          <button type="button" class="ui-menu-item" onclick="closeInputActions(); openVoiceConfigSheet();">
-            <svg class="ui-icon"><use href="/static/icons.svg#volume"/></svg><span class="ui-menu-label" data-i18n="voice_config">语音配置</span>
-          </button>
           <button type="button" class="ui-menu-item" onclick="closeInputActions(); resetAllGroupAgents();">
             <svg class="ui-icon"><use href="/static/icons.svg#rotate"/></svg><span class="ui-menu-label" data-i18n="reset_all_agents">一次重置所有 agent</span>
           </button>
@@ -4837,52 +4819,6 @@
   </div>
   <div class="subagent-panel-body" id="subagent-panel-body">
     <div style="text-align:center;padding:40px;color:var(--text-hint);" data-i18n="subagent_loading">正在加载子 Agent...</div>
-  </div>
-</div>
-
-<!-- ═══════════════ Voice Config Bottom Sheet ═══════════════ -->
-<div class="tc-sheet-overlay" id="voice-sheet-overlay" onclick="closeVoiceConfigSheet()"></div>
-<div class="tc-sheet" id="voice-sheet">
-  <div class="tc-sheet-handle"></div>
-  <div class="tc-sheet-header">
-    <span data-i18n="voice_config">语音配置</span>
-    <button class="tc-sheet-close" onclick="closeVoiceConfigSheet()">✕</button>
-  </div>
-  <div class="tc-sheet-body">
-    <div class="tc-form-row">
-      <div>
-        <div class="tc-form-label" data-i18n="voice_enabled">启用语音</div>
-      </div>
-      <button class="tc-toggle" id="voice-enabled-toggle" onclick="tcToggle(this)"></button>
-    </div>
-    <div class="tc-form-row">
-      <div>
-        <div class="tc-form-label" data-i18n="voice_auto_read">自动朗读回复</div>
-      </div>
-      <button class="tc-toggle" id="voice-auto-read-toggle" onclick="tcToggle(this)"></button>
-    </div>
-    <div class="tc-form-row">
-      <div class="tc-form-label" data-i18n="voice_tts_model">TTS 模型</div>
-      <input class="tc-form-input" id="voice-tts-model" placeholder="自动" data-i18n-placeholder="auto">
-    </div>
-    <div class="tc-form-row">
-      <div class="tc-form-label" data-i18n="voice_tts_voice">TTS 声音</div>
-      <input class="tc-form-input" id="voice-tts-voice" placeholder="自动" data-i18n-placeholder="auto">
-    </div>
-    <div class="tc-form-row">
-      <div class="tc-form-label" data-i18n="voice_stt_model">STT 模型</div>
-      <input class="tc-form-input" id="voice-stt-model" placeholder="自动" data-i18n-placeholder="auto">
-    </div>
-    <div class="tc-form-row">
-      <div>
-        <div class="tc-form-label" data-i18n="voice_session_id">会话 ID（留空则自动）</div>
-        <div class="tc-form-hint">留空时对当前用户的活跃会话生效</div>
-      </div>
-      <input class="tc-form-input" id="voice-session-id" placeholder="" style="min-width:100px;">
-    </div>
-  </div>
-  <div class="tc-sheet-footer">
-    <button class="tc-btn-primary" id="voice-save-btn" onclick="saveVoiceConfig()" data-i18n="voice_save">保存语音设置</button>
   </div>
 </div>
 
@@ -5914,15 +5850,6 @@ const I18N = {
     subagent_status_running: '运行中',
     subagent_status_idle: '空闲',
     subagent_refresh: '刷新',
-    voice_config: '语音配置',
-    voice_enabled: '启用语音',
-    voice_auto_read: '自动朗读回复',
-    voice_tts_model: 'TTS 模型',
-    voice_tts_voice: 'TTS 声音',
-    voice_stt_model: 'STT 模型',
-    voice_session_id: '会话 ID（留空则自动）',
-    voice_save: '保存语音设置',
-    voice_saved: '✅ 语音设置已保存',
     tool_policy: '工具权限管理',
     tool_policy_loading: '正在加载工具权限...',
     tool_policy_empty: '暂无工具权限数据',
@@ -6546,15 +6473,6 @@ const I18N = {
     subagent_status_running: 'Running',
     subagent_status_idle: 'Idle',
     subagent_refresh: 'Refresh',
-    voice_config: 'Voice Config',
-    voice_enabled: 'Enable Voice',
-    voice_auto_read: 'Auto Read Replies',
-    voice_tts_model: 'TTS Model',
-    voice_tts_voice: 'TTS Voice',
-    voice_stt_model: 'STT Model',
-    voice_session_id: 'Session ID (auto if empty)',
-    voice_save: 'Save Voice Settings',
-    voice_saved: '✅ Voice settings saved',
     tool_policy: 'Tool Permissions',
     tool_policy_loading: 'Loading tool policy...',
     tool_policy_empty: 'No tool policy data',
@@ -14812,52 +14730,6 @@ async function cancelSubagent(agentRef) {
     setTimeout(() => loadSubagents(), 800);
   } catch (e) {
     toast('❌ ' + e.message);
-  }
-}
-
-// ════════════════════════════════════════════════════
-// ── Generic Toggle Helper ──
-// ════════════════════════════════════════════════════
-function tcToggle(btn) {
-  btn.classList.toggle('on');
-}
-
-function tcIsOn(btn) {
-  return btn ? btn.classList.contains('on') : false;
-}
-
-// ════════════════════════════════════════════════════
-// ── Voice Config Sheet ──
-// ════════════════════════════════════════════════════
-function openVoiceConfigSheet() {
-  document.getElementById('voice-sheet-overlay').classList.add('show');
-  document.getElementById('voice-sheet').classList.add('show');
-}
-
-function closeVoiceConfigSheet() {
-  document.getElementById('voice-sheet-overlay').classList.remove('show');
-  document.getElementById('voice-sheet').classList.remove('show');
-}
-
-async function saveVoiceConfig() {
-  const btn = document.getElementById('voice-save-btn');
-  btn.disabled = true;
-  try {
-    const payload = {
-      session_id: document.getElementById('voice-session-id').value.trim(),
-      enabled: tcIsOn(document.getElementById('voice-enabled-toggle')),
-      auto_read_aloud: tcIsOn(document.getElementById('voice-auto-read-toggle')),
-      tts_model: document.getElementById('voice-tts-model').value.trim(),
-      tts_voice: document.getElementById('voice-tts-voice').value.trim(),
-      stt_model: document.getElementById('voice-stt-model').value.trim(),
-    };
-    await api('POST', '/proxy_webot_voice', payload);
-    toast(t('voice_saved'));
-    closeVoiceConfigSheet();
-  } catch (e) {
-    toast('❌ ' + e.message);
-  } finally {
-    btn.disabled = false;
   }
 }
 

@@ -33,7 +33,6 @@ from webot.models import (
     WeBotSessionRuntimeRequest,
     WeBotTodoUpdateRequest,
     WeBotVerificationCreateRequest,
-    WeBotVoiceStateUpdateRequest,
     WeBotWorkflowPresetApplyRequest,
 )
 import webot.memory as webot_memory
@@ -327,16 +326,6 @@ class WeBotServiceTests(unittest.IsolatedAsyncioTestCase):
                     extract_text=lambda content: content if isinstance(content, str) else str(content),
                 )
 
-                voice = await service.update_voice_state(
-                    WeBotVoiceStateUpdateRequest(
-                        user_id="alice",
-                        session_id="default",
-                        enabled=True,
-                        auto_read_aloud=True,
-                        last_transcript="ship it",
-                    ),
-                    None,
-                )
                 kairos = await service.update_kairos_state(
                     WeBotKairosUpdateRequest(
                         user_id="alice",
@@ -356,12 +345,9 @@ class WeBotServiceTests(unittest.IsolatedAsyncioTestCase):
                 )
                 runtime_view = await service.get_session_runtime("alice", "default", "", None)
 
-                self.assertTrue(voice["voice"]["enabled"])
-                self.assertEqual(voice["voice"]["status"], "enabled")
                 self.assertTrue(kairos["memory"]["kairos_enabled"])
                 self.assertIn("state", dream["memory"])
                 self.assertIn("memory", runtime_view)
-                self.assertIn("voice", runtime_view)
             finally:
                 store.DEFAULT_DB_PATH = original_db_path
                 runtime_store.DEFAULT_DB_PATH = original_runtime_db_path

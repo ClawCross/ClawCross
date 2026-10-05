@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import json
-import os
 from typing import Any, Callable
 
 from fastapi import HTTPException
 
-from common.llm_factory import get_provider_audio_defaults, infer_provider
 from webot.memory import ensure_memory_state, run_auto_dream
 from webot.models import (
     WeBotApprovalResolutionRequest,
@@ -26,7 +24,6 @@ from webot.models import (
     WeBotTodoUpdateRequest,
     WeBotToolPolicyUpdateRequest,
     WeBotVerificationCreateRequest,
-    WeBotVoiceStateUpdateRequest,
     WeBotWorkflowPresetApplyRequest,
 )
 from webot.claude_code import detect_claude_code_cached, probe_claude_acp, run_claude_cli_prompt
@@ -49,7 +46,6 @@ from webot.runtime_store import (
     get_session_mode,
     get_session_plan,
     get_session_todos,
-    get_voice_state,
     list_inbox_messages,
     list_run_events,
     list_runs_for_session,
@@ -63,7 +59,6 @@ from webot.runtime_store import (
     save_session_mode,
     save_session_plan,
     save_session_todos,
-    save_voice_state,
     update_run_status,
 )
 from webot.subagents import (
@@ -293,35 +288,6 @@ class WeBotService:
             return [{"target_session": target_record.session_id, "target_agent_id": target_record.agent_id}]
         return [{"target_session": normalized_ref or source_session or "default", "target_agent_id": ""}]
 
-    @staticmethod
-    def _voice_defaults() -> dict[str, str]:
-        api_key = os.getenv("LLM_API_KEY", "")
-        base_url = os.getenv("LLM_BASE_URL", "").rstrip("/")
-        provider = infer_provider(
-            model=os.getenv("LLM_MODEL", ""),
-            base_url=base_url,
-            provider=os.getenv("LLM_PROVIDER", ""),
-            api_key=api_key,
-        )
-        return get_provider_audio_defaults(provider)
-
-    def _serialize_voice_payload(self, user_id: str, session_id: str) -> dict[str, Any]:
-        defaults = self._voice_defaults()
-        state = get_voice_state(user_id, session_id)
-        return {
-            "enabled": state.enabled,
-            "auto_read_aloud": state.auto_read_aloud,
-            "recording_supported": state.recording_supported,
-            "tts_model": state.tts_model or defaults.get("tts_model", ""),
-            "tts_voice": state.tts_voice or defaults.get("tts_voice", ""),
-            "stt_model": state.stt_model or defaults.get("stt_model", ""),
-            "last_transcript": state.last_transcript,
-            "status": "enabled" if state.enabled else "disabled",
-            "tts_available": bool(state.tts_model or defaults.get("tts_model", "")),
-            "metadata": dict(state.metadata),
-            "updated_at": state.updated_at,
-        }
-
     def _serialize_memory_payload(self, user_id: str, session_id: str) -> dict[str, Any]:
         state = ensure_memory_state(user_id, session_id)
         summary_parts = [f"{int(state.get('entry_count', 0))} entries"]
@@ -365,7 +331,6 @@ class WeBotService:
             for approval in list_tool_approvals(user_id, session_id, limit=20)
         ]
         memory = self._serialize_memory_payload(user_id, session_id)
-        voice = self._serialize_voice_payload(user_id, session_id)
         return {
             "status": "success",
             "session_id": session_id,
@@ -410,7 +375,6 @@ class WeBotService:
                 "created_at": record.created_at,
             },
             "memory": memory,
-            "voice": voice,
             "claude_code": {
                 "status": detect_claude_code_cached(ttl_seconds=60),
                 "keepalive": self._serialize_claude_keepalive(keepalive),
@@ -968,27 +932,6 @@ class WeBotService:
             "verification_id": verification_id,
             "verifications": verifications,
         }
-
-    async def update_voice_state(
-        self,
-        req: WeBotVoiceStateUpdateRequest,
-        x_internal_token: str | None,
-    ):
-        self.verify_auth_or_token(req.user_id, req.password, x_internal_token)
-        defaults = self._voice_defaults()
-        state = save_voice_state(
-            req.user_id,
-            req.session_id,
-            enabled=req.enabled,
-            auto_read_aloud=req.auto_read_aloud,
-            recording_supported=True,
-            tts_model=req.tts_model or defaults.get("tts_model", ""),
-            tts_voice=req.tts_voice or defaults.get("tts_voice", ""),
-            stt_model=req.stt_model or defaults.get("stt_model", ""),
-            last_transcript=req.last_transcript,
-        )
-        payload = self._serialize_voice_payload(req.user_id, req.session_id)
-        return {"status": "success", "voice": payload}
 
     async def update_kairos_state(
         self,

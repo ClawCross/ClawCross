@@ -52,7 +52,6 @@ This document records the current, running WeBot delegated runtime that is now c
 | `src/backend/webot/policy.py` | Policy normalization, hook/approval parsing, event enumeration |
 | `src/backend/webot/engine/agent.py` | Permits MCP tools, enforces tool filtering, injects runtime prompts, loads `webot_runtime` helpers |
 | `src/backend/webot/memory.py` | Per-project memory directories, Kairos state, daily logs, dream summaries |
-| `src/backend/webot/voice.py` | Session voice defaults/state adapter layered on top of existing audio providers |
 | `src/frontend/proxies/webot.py` | Flask proxies for runtime APIs, bridging the JS UI with FastAPI backends |
 | `src/backend/webot/profiles.py` | Profile definitions plus helper to build/parse `subagent__...` session ids |
 | `src/backend/webot/workspace.py` | Worktree/remote/shared workspace resolution describing `workspace_mode` for the runtime card |

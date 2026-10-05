@@ -77,15 +77,6 @@ class WeBotRunInterruptRequest(WeBotSessionRuntimeRequest):
     agent_ref: str = ""
 
 
-class WeBotVoiceStateUpdateRequest(WeBotSessionRuntimeRequest):
-    enabled: bool = False
-    auto_read_aloud: bool = False
-    last_transcript: str = ""
-    tts_model: str = ""
-    tts_voice: str = ""
-    stt_model: str = ""
-
-
 class WeBotKairosUpdateRequest(WeBotSessionRuntimeRequest):
     enabled: bool = False
     reason: str = ""
