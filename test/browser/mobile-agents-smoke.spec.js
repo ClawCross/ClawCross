@@ -270,3 +270,31 @@ test('mobile accepts Y/N as scoped approval controls for external agents without
   await expect(page.locator('.cc-approval-actions')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
+
+test('contact creation preserves drafts and offers persona and scoped ClawCross tools', async ({page})=>{
+  await page.setViewportSize({width:390,height:844});
+  await stub(page,{posts:[],control:[]});
+  await page.route('**/proxy_acpx_status',route=>route.fulfill({json:{tools:['codex','claude','gemini','qwen']}}));
+  await page.addInitScript(()=>{localStorage.setItem('clawcross_lang','zh');});
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.goto('/mobile/group_chat');
+  await page.evaluate(async()=>{
+    window.registerAgent=async fields=>{window.__createdFields=fields;return {agent_id:'ag_new'};};
+    window.startPrivateChat=async()=>true;
+    await showCreateAgentModal();setCreateAgentMode('acp');
+  });
+  await expect(page.locator('#ca-acp-name')).toBeVisible();
+  await page.locator('#ca-acp-platform').selectOption('qwen');
+  await page.locator('#ca-acp-name').fill('Research');
+  await page.locator('#create-agent-panel-acp summary').click();
+  await page.locator('#ca-acp-persona').fill('Help me research');
+  await page.locator('#ca-acp-tools').fill('read_file, send_to_group');
+  await page.evaluate(()=>{setCreateAgentMode('webot');setCreateAgentMode('acp');});
+  await expect(page.locator('#ca-acp-name')).toHaveValue('Research');
+  await expect(page.locator('#ca-acp-persona')).toHaveValue('Help me research');
+  expect(await page.evaluate(()=>window.__createdFields)).toBeUndefined();
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.locator('#ca-acp-submit').click();
+  expect(await page.evaluate(()=>window.__createdFields)).toEqual({name:'Research',platform:'qwen',persona:'Help me research',tools:['read_file','send_to_group'],meta:{acp:{clawcross_tools:true,tools:['read_file','send_to_group']}}});
+  expect(errors).toEqual([]);
+});

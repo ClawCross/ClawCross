@@ -8,7 +8,7 @@ import sqlite3
 import time
 
 from common.runtime_paths import CONFIG_DIR
-from agents.store import ACPX
+from agents.store import ACPX, canonical_platform, driver_for_platform
 
 DB_PATH = CONFIG_DIR / 'native-sessions.sqlite3'
 
@@ -44,7 +44,6 @@ def _foreign_native_ids(platform: str, owner: str, store=None) -> set[str]:
     from agents.store import get_store
     from external.session import runtime_session
     owned_names = {runtime_session(agent) for agent in (store or get_store()).list(owner) if agent.platform == platform}
-    package = {'codex':'codex-acp', 'claude':'claude-agent-acp'}[platform]
     for path in (Path.home() / '.acpx' / 'sessions').glob('*.json'):
         try:
             if path.stat().st_size > 16 * 1024 * 1024:
@@ -53,15 +52,15 @@ def _foreign_native_ids(platform: str, owner: str, store=None) -> set[str]:
         except (OSError, ValueError):
             continue
         name = row.get('name') or ''
-        if (name.startswith('clawcross-') and name not in owned_names
-                and package in (row.get('agent_command') or '')):
-            result.update(str(row[key]) for key in ('agent_session_id', 'acp_session_id') if row.get(key))
+        if name.startswith('clawcross-') and name not in owned_names:
+            result.update(str(row[key]) for key in ('agent_session_id', 'acp_session_id', 'agentSessionId', 'acpSessionId') if row.get(key))
     return result
 
 
 async def catalog(owner: str, platform: str, *, cursor: str = '', adapter=None, store=None) -> dict:
-    if platform not in {'codex', 'claude'}:
-        raise ValueError('Only Codex and Claude native sessions are supported')
+    platform = canonical_platform(platform)
+    if driver_for_platform(platform) != ACPX:
+        raise ValueError('Choose an ACP platform available in the platform list')
     if adapter is None:
         from external.acpx import get_acpx_adapter
         adapter = get_acpx_adapter()
@@ -86,7 +85,7 @@ async def catalog(owner: str, platform: str, *, cursor: str = '', adapter=None, 
 
 
 def register(owner: str, ticket: str, name: str, store):
-    """Register only a catalog result; no prompt, native load or history copy."""
+    """Register only a catalog result; no prompt; history loading is a separate read operation."""
     with database() as db:
         db.execute('BEGIN IMMEDIATE')
         row = db.execute('SELECT * FROM tickets WHERE ticket=? AND owner=? AND expires>?', (ticket, owner, time.time())).fetchone()
@@ -118,3 +117,40 @@ def release_agent(owner: str, agent_id: str) -> None:
         return
     with database() as db:
         db.execute('DELETE FROM claims WHERE owner=? AND agent_id=?', (owner, agent_id))
+
+
+async def import_history(agent, store, *, adapter=None, history_store=None) -> dict:
+    """Load a native snapshot once. Later managed turns are appended to the same DB."""
+    from external import history, session
+    native_id = agent.runtime.get('native_resume_id')
+    if not native_id:
+        raise ValueError('This Agent is not registered to an existing native session')
+    if session.is_busy(store, agent):
+        return {'status':'busy', 'detail':'Agent is processing a message. Load native history when it becomes idle.'}
+    async with session.turn(store, agent):
+        current = store.require(agent.owner, agent.agent_id)
+        if current.runtime.get('native_resume_id') != native_id:
+            raise ValueError('The native session changed; reopen the history view')
+        previous = current.runtime.get('native_history') or {}
+        if previous.get('status') == 'loaded':
+            return previous
+        try:
+            if adapter is None:
+                from external.acp import adapter as choose_adapter
+                adapter = choose_adapter(current)
+            result = await adapter.load_native_history(tool=current.platform, session_id=native_id,
+                                                       cwd=current.runtime['acp_cwd'])
+        except Exception:
+            result = {'status':'error', 'detail':'Native history loading failed. Check the installed ACP adapter.'}
+        state = {key: result[key] for key in ('status', 'detail') if key in result}
+        if result.get('status') == 'loaded':
+            target = history_store or await history.get_store()
+            state['message_count'] = await target.import_native_messages(
+                platform=current.platform, session_key=session.runtime_session(current),
+                native_id=native_id, messages=result.get('messages', []), user_id=current.owner)
+            state['loaded_at'] = time.time()
+        # A reset may happen during loading: do not write the old session's state back.
+        fresh = store.get(current.owner, current.agent_id)
+        if fresh and fresh.runtime.get('native_resume_id') == native_id:
+            store.patch_runtime(current.owner, current.agent_id, {'native_history':state})
+        return state

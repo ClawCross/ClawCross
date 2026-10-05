@@ -41,8 +41,8 @@
 <script src="/static/js/approval-ui.js?v=20261004-fold-approval"></script>
 <link rel="stylesheet" href="/static/css/channel-setup.css?v=2">
 <script src="/static/js/channel-setup.js?v=20261004-tool-result"></script>
-<link rel="stylesheet" href="/static/css/native-session-browser.css?v=1">
-<script src="/static/js/native-session-browser.js?v=1"></script>
+<link rel="stylesheet" href="/static/css/native-session-browser.css?v=2">
+<script src="/static/js/native-session-browser.js?v=2"></script>
 <script src="/static/js/markdown-shared.js?v=20261003-inline-approval"></script>
 <script src="/static/js/tinyfish-live-shared.js"></script>
 <script src="/static/vendor/pretext.global.js?v=20260402-pretext"></script>
@@ -3150,6 +3150,11 @@
     white-space: nowrap;
   }
   /* Agent source tabs: internal | Ext | OpenClaw (create-agent modal)；群内添加成员仅列表，无此栏 */
+  .create-agent-advanced { margin-top: 16px; padding: 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg); }
+  .create-agent-advanced summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+  .create-agent-advanced[open] summary { margin-bottom: 14px; }
+  .create-agent-advanced .side-panel-label { display: block; margin-top: 14px; }
+  .create-agent-advanced textarea { resize: vertical; width: 100%; box-sizing: border-box; }
   #create-agent-mode-bar {
     display: flex;
     gap: 4px;
@@ -5351,16 +5356,19 @@
         <div class="side-panel-form">
           <div class="side-panel-section">
             <div class="side-panel-field">
-              <label class="side-panel-label" data-i18n="agent_tag_label">Tag 标签（人设prompt） <span style="color:var(--text-hint);" data-i18n="custom_name_optional">(可选)</span></label>
-              <input type="hidden" id="create-agent-tag" value="">
-              <div id="create-agent-tag-list" class="side-panel-tag-list">
-                <div class="side-panel-tag-empty" data-i18n="loading">加载中...</div>
-              </div>
-            </div>
-            <div class="side-panel-field">
               <label class="side-panel-label" data-i18n="agent_name_label">Agent 名称</label>
               <input type="text" id="create-agent-name" class="side-panel-input" placeholder="my_agent" onkeydown="if(event.key==='Enter')submitCreateAgent()">
             </div>
+            <details class="create-agent-advanced"><summary data-i18n="agent_creation_advanced">人设与工具 · 高级设置</summary>
+              <label class="side-panel-label" data-i18n="agent_creation_persona">希望这个 Agent 怎么帮助你？</label>
+              <textarea id="create-agent-persona" class="side-panel-input" rows="3"></textarea>
+              <label class="side-panel-label" data-i18n="agent_creation_library">或选择已有的人设</label>
+              <input type="hidden" id="create-agent-tag" value="">
+              <div id="create-agent-tag-list" class="side-panel-tag-list"></div>
+              <label class="side-panel-label" data-i18n="agent_creation_tools">允许的工具</label>
+              <input id="create-agent-tools" class="side-panel-input" placeholder="留空使用全部可用工具 / All available tools">
+              <p class="side-panel-hint" data-i18n="agent_creation_tools_hint">填写工具名，用逗号分隔；以后也可以在 Agent 设置中调整。</p>
+            </details>
           </div>
           <div class="side-panel-section">
             <div class="side-panel-hint" data-i18n="create_agent_hint">💡 创建后将自动开启与该 Agent 的私聊对话</div>
@@ -5368,7 +5376,7 @@
           <button onclick="submitCreateAgent()" class="side-panel-primary-btn" data-i18n="create_agent_btn">🤖 创建 Agent</button>
         </div>
       </div>
-      <button type="button" class="side-panel-secondary-btn" onclick="ClawcrossNativeSessions.open()" data-i18n="native_session_register">登记已有 Codex / Claude 会话</button>
+      <button type="button" class="side-panel-secondary-btn" onclick="openMobileNativeSessions()" data-i18n="native_session_register">登记已有外部会话</button>
       <div id="create-agent-panel-acp" style="display:none;"></div>
     </div>
   </div>
@@ -6019,6 +6027,11 @@ const I18N = {
 
     // ── Create menu ──
     create_new_agent: '创建新Agent',
+    agent_creation_advanced: '人设与工具 · 高级设置',
+    agent_creation_persona: '希望这个 Agent 怎么帮助你？',
+    agent_creation_library: '或选择已有的人设',
+    agent_creation_tools: '允许的工具',
+    agent_creation_tools_hint: '填写工具名，用逗号分隔；以后也可以在 Agent 设置中调整。',
     create_new_group: '创建新群聊',
     agent_name_label: 'Agent 名称',
     agent_tag_label: 'Tag 标签（人设prompt）',
@@ -6029,7 +6042,7 @@ const I18N = {
     agent_team_label: '所属团队',
     create_agent_hint: '💡 创建后将自动开启与该 Agent 的私聊对话',
     create_agent_btn: '🤖 创建 Agent',
-    native_session_register: '登记已有 Codex / Claude 会话',
+    native_session_register: '登记已有外部会话',
     agent_name_required: '请输入 Agent 名称',
     agent_created: '✅ Agent 创建成功',
     agent_create_failed: 'Agent 创建失败',
@@ -6644,6 +6657,11 @@ const I18N = {
     mobile_add_headers_json_err: 'Headers must be valid JSON',
 
     create_new_agent: 'Create New Agent',
+    agent_creation_advanced: 'Persona and tools · Advanced',
+    agent_creation_persona: 'How should this Agent help you?',
+    agent_creation_library: 'Or choose an existing persona',
+    agent_creation_tools: 'Allowed tools',
+    agent_creation_tools_hint: 'Comma-separated tool names. You can change these in Agent settings later.',
     create_new_group: 'Create New Group',
     agent_name_label: 'Agent Name',
     agent_tag_label: 'Tag (persona prompt)',
@@ -6654,7 +6672,7 @@ const I18N = {
     agent_team_label: 'Team',
     create_agent_hint: '💡 A private chat will be opened automatically after creation',
     create_agent_btn: '🤖 Create Agent',
-    native_session_register: 'Register existing Codex / Claude session',
+    native_session_register: 'Register existing external session',
     agent_name_required: 'Please enter an Agent name',
     agent_created: '✅ Agent created',
     agent_create_failed: 'Failed to create Agent',
@@ -7429,7 +7447,7 @@ async function ensureAgent(fields) {
 // A new agent (in *team*, when given) wearing the library persona *tag*: its text is copied into the agent.
 async function registerAgent(fields, team = '', tag = '') {
   const persona = tag ? (((await lookupPersonaByTag(tag, team)) || {}).persona || '') : '';
-  const agent = await ensureAgent({ ...fields, persona });
+  const agent = await ensureAgent({ ...fields, persona: fields.persona || persona });
   if (team) {
     await api('POST', `/v1/teams/${encodeURIComponent(team)}/members`, { agent: agent.agent_id, role: fields.name, tag });
   }
@@ -9901,16 +9919,19 @@ function setCreateAgentMode(mode) {
   if (pWebot) pWebot.style.display = mode === 'webot' ? '' : 'none';
   if (pAcp) {
     pAcp.style.display = mode === 'acp' ? '' : 'none';
-    if (mode === 'acp') renderCreateAgentAcpPanel();
+    if (mode === 'acp' && !pAcp.dataset.ready) void renderCreateAgentAcpPanel();
   }
 }
 
 async function renderCreateAgentAcpPanel() {
   const panel = document.getElementById('create-agent-panel-acp');
   if (!panel) return;
+  const generation = Number(panel.dataset.generation || 0) + 1;
+  panel.dataset.generation = String(generation); panel.dataset.ready = 'loading';
   panel.innerHTML = `<div class="agent-detail-loading">${t('loading')}</div>`;
   const tagOpts = await _mobilePersonaTagOptionsHtml(mobileGetCreateAgentTeam());
   const platformOpts = await _mobileAcpPlatformOptionsHtml();
+  if (Number(panel.dataset.generation) !== generation) return;
   panel.innerHTML = `
     <div class="mobile-add-agent-form">
       <p class="form-hint">${esc(t('mobile_create_agent_team_hint'))}</p>
@@ -9920,24 +9941,25 @@ async function renderCreateAgentAcpPanel() {
       ${componentControlMarkup('acpx')}
       <label>${esc(t('mobile_add_ext_name'))}</label>
       <input type="text" id="ca-acp-name" placeholder="my_agent" autocomplete="off">
-      <label>${esc(t('mobile_add_runtime_name'))}</label>
-      <input type="text" id="ca-acp-runtime" placeholder="留空自动生成 / Automatic" autocomplete="off">
-      <label>${esc(t('mobile_add_ext_tag'))}</label>
-      <select id="ca-acp-tag" class="ext-tag-select">${tagOpts}</select>
-      <input type="text" id="ca-acp-tag-custom" class="ext-tag-custom" placeholder="${esc(t('agent_tag_placeholder'))}" style="margin-top:8px;display:none;">
+      <details class="create-agent-advanced"><summary>${esc(t('agent_creation_advanced'))}</summary>
+        <label>${esc(t('agent_creation_persona'))}</label>
+        <textarea id="ca-acp-persona" rows="3"></textarea>
+        <label>${esc(t('agent_creation_library'))}</label>
+        <select id="ca-acp-tag" class="ext-tag-select">${tagOpts}</select>
+        <input type="text" id="ca-acp-tag-custom" class="ext-tag-custom" placeholder="${esc(t('agent_tag_placeholder'))}" style="margin-top:8px;display:none;">
+        <label>${esc(t('agent_creation_tools'))}</label>
+        <input id="ca-acp-tools" placeholder="${esc(_currentLang === 'zh' ? '留空使用全部可用工具' : 'All available tools')}">
+        <p class="form-hint">${esc(t('agent_creation_tools_hint'))}</p>
+        <label>${esc(t('mobile_add_runtime_name'))}</label>
+        <input type="text" id="ca-acp-runtime" placeholder="留空自动生成 / Automatic" autocomplete="off">
+      </details>
       <button type="button" class="form-submit" id="ca-acp-submit" onclick="mobileSubmitCreateAcpAgent()">${esc(t('mobile_create_ext_submit'))}</button>
     </div>`;
   initComponentControls(panel);
   const tagSel = document.getElementById('ca-acp-tag');
   const tagCust = document.getElementById('ca-acp-tag-custom');
   tagSel.onchange = () => { tagCust.style.display = tagSel.value === 'custom' ? 'block' : 'none'; };
-  const nameInp = document.getElementById('ca-acp-name');
-  const runtimeInp = document.getElementById('ca-acp-runtime');
-  let runtimeEdited = false;
-  runtimeInp.addEventListener('input', () => { runtimeEdited = true; });
-  nameInp.addEventListener('input', () => {
-    if (!runtimeEdited) runtimeInp.value = nameInp.value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
-  });
+  panel.dataset.ready = 'true';
 }
 
 function _mobilePickedTag(selectId, customId) {
@@ -9963,7 +9985,7 @@ async function mobileSubmitCreateAcpAgent() {
   if (btn) { btn.disabled = true; btn.dataset.orig = btn.textContent; btn.textContent = t('adding'); }
   try {
     // The runtime name is the new agent's number: its session in that runtime.
-    const agent = await registerAgent({ name, platform, ...(runtime ? { agent_id: runtime } : {}) }, team, _mobilePickedTag('ca-acp-tag', 'ca-acp-tag-custom'));
+    const agent = await registerAgent({ name, platform, ...mobileCreateAgentExtras('ca-acp'), ...(runtime ? { agent_id: runtime } : {}) }, team, _mobilePickedTag('ca-acp-tag', 'ca-acp-tag-custom'));
     if (await startPrivateChat(agent.agent_id)) {
       closeCreateAgentModal();
       invalidateContactsPrefetch();
@@ -9980,7 +10002,8 @@ async function onCreateAgentTeamChange() {
   const select = document.getElementById('create-agent-team');
   const currentTag = (document.getElementById('create-agent-tag') || {}).value || '';
   await loadCreateAgentTags(select ? select.value : '', currentTag);
-  if (mobileCreateAgentMode === 'acp') await renderCreateAgentAcpPanel();
+  const tagSelect = document.getElementById('ca-acp-tag');
+  if (tagSelect) tagSelect.innerHTML = await _mobilePersonaTagOptionsHtml(mobileGetCreateAgentTeam());
 }
 
 function _resetCreateAgentPanels() {
@@ -9989,7 +10012,7 @@ function _resetCreateAgentPanels() {
   const pWebot = document.getElementById('create-agent-panel-webot');
   const pAcp = document.getElementById('create-agent-panel-acp');
   if (pWebot) pWebot.style.display = '';
-  if (pAcp) { pAcp.style.display = 'none'; pAcp.innerHTML = ''; }
+  if (pAcp) { pAcp.style.display = 'none'; pAcp.innerHTML = ''; delete pAcp.dataset.ready; pAcp.dataset.generation = String(Number(pAcp.dataset.generation || 0) + 1); }
 }
 
 async function showCreateAgentModal(preferredTeam = '') {
@@ -10017,12 +10040,30 @@ function closeCreateAgentModal() {
   document.getElementById('create-agent-modal').classList.remove('show');
   document.getElementById('create-agent-overlay').classList.remove('show');
   document.getElementById('create-agent-name').value = '';
+  document.getElementById('create-agent-persona').value = '';
+  document.getElementById('create-agent-tools').value = '';
   document.getElementById('create-agent-tag').value = '';
   document.getElementById('create-agent-team').value = '';
   const list = document.getElementById('create-agent-tag-list');
   if (list) list.innerHTML = `<div class="side-panel-tag-empty">${t('loading')}</div>`;
   createAgentTagOptions = [];
   _resetCreateAgentPanels();
+}
+
+function openMobileNativeSessions() {
+  const team = mobileGetCreateAgentTeam();
+  ClawcrossNativeSessions.open({onRegister: async agent => {
+    if (team) await api('POST', `/v1/teams/${encodeURIComponent(team)}/members`, {agent:agent.agent_id,role:agent.name});
+    invalidateContactsPrefetch();
+    await loadContactsForTeam();
+  }});
+}
+
+function mobileCreateAgentExtras(prefix) {
+  const persona = document.getElementById(prefix + '-persona')?.value.trim() || '';
+  const names = (document.getElementById(prefix + '-tools')?.value || '').split(/[,，\s]+/).filter(Boolean);
+  const tools = names.length ? [...new Set(names)] : null;
+  return { ...(persona ? {persona} : {}), ...(tools ? {tools, meta: {acp: {clawcross_tools: true, tools}}} : {}) };
 }
 
 async function submitCreateAgent() {
@@ -10034,7 +10075,7 @@ async function submitCreateAgent() {
     return;
   }
   try {
-    const agent = await registerAgent({ name, platform: 'webot' }, team, tag);
+    const agent = await registerAgent({ name, platform: 'webot', ...mobileCreateAgentExtras('create-agent') }, team, tag);
     toast(t('agent_created') + ': ' + name);
     closeCreateAgentModal();
     await startPrivateChat(agent.agent_id);
@@ -14266,10 +14307,11 @@ async function showAgentHistory(agentId, displayName, source = 'clawcross') {
     const toolbar = document.createElement('div');
     toolbar.id = 'agent-history-source';
     toolbar.className = 'ah-history-source';
-    const isAcp = ['codex','claude','claudecode','openclaw','gemini','acp','trae','cursor','aider'].includes(data.agent?.platform);
+    const isAcp = (await _mobileFetchAcpPlatforms()).includes(data.agent?.platform);
+    if (sequence !== _ahHistorySeq) return;
     const hint = source === 'acpx'
       ? (_currentLang === 'zh' ? 'acpx 已捕获的对话文本；可能不含接入前历史和工具轨迹。' : 'Text captured by acpx; earlier provider history and tool traces may be absent.')
-      : (_currentLang === 'zh' ? 'ClawCross 记录 · 最近 200 条，动态块与工具结果可展开。' : 'ClawCross records · latest 200 messages. Context and tools can be expanded.');
+      : (_currentLang === 'zh' ? 'ClawCross 历史 · 可以加载更早记录，动态块与工具结果可展开。' : 'ClawCross history · Load earlier messages; expand context and tools.');
     const select = document.createElement('select');
     select.setAttribute('aria-label', _currentLang === 'zh' ? '历史来源' : 'History source');
     for (const [value, label] of [['clawcross','ClawCross'], ...(isAcp ? [['acpx','acpx']] : [])]) {
@@ -14278,7 +14320,24 @@ async function showAgentHistory(agentId, displayName, source = 'clawcross') {
     select.onchange = () => showAgentHistory(agentId, displayName, select.value);
     const note = document.createElement('span'); note.textContent = hint;
     toolbar.append(select, note); body.before(toolbar);
+    if (data.can_load_native && data.native_history?.status !== 'loaded') {
+      const load = document.createElement('button'); load.type = 'button';
+      load.textContent = _currentLang === 'zh' ? '加载原生历史' : 'Load native history';
+      load.onclick = async () => {
+        load.disabled = true;
+        try {
+          const state = await api('POST', `/v1/agents/${encodeURIComponent(agentId)}/native-history`, {});
+          if (sequence !== _ahHistorySeq) return;
+          if (state.status === 'loaded') await showAgentHistory(agentId, displayName);
+          else note.textContent = state.detail || state.status;
+        } catch (error) { if (sequence === _ahHistorySeq) note.textContent = error.message; }
+        finally { load.disabled = false; }
+      };
+      toolbar.append(load);
+      if (data.native_history?.detail) note.textContent = data.native_history.detail;
+    }
     body.innerHTML = _ahRenderMessages(data.messages);
+    if (source === 'clawcross') ClawcrossNativeSessions.attachHistoryPager({agentId,container:body,nextBefore:data.next_before,render:_ahRenderMessages});
     _ahHighlight(body);
     body.scrollTop = body.scrollHeight;
   } catch (e) {

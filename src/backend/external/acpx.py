@@ -616,8 +616,6 @@ await fn(process.argv[2]);'''
 
     async def list_native_sessions(self, *, tool: str, cursor: str = '') -> dict:
         """Explicit native metadata query; never used by passive status polling."""
-        if tool not in {'codex', 'claude'}:
-            raise AcpxError('Native session browsing supports Codex and Claude')
         args = [tool, 'sessions', 'list']
         if cursor:
             args.extend(['--cursor', cursor])
@@ -633,6 +631,40 @@ await fn(process.argv[2]);'''
                               'title': str(row.get('title') or '')[:160], 'updated_at': row.get('updatedAt')}
                              for row in data['sessions'] if isinstance(row, dict) and row.get('sessionId')],
                 'next_cursor': data.get('nextCursor')}
+
+    async def load_native_history(self, *, tool: str, session_id: str, cwd: str) -> dict:
+        """Use installed ACP adapters only; loading history never calls session/prompt."""
+        from external.native_replay import normalize_updates
+        node = shutil.which('node')
+        if not node or not self._acpx_bin:
+            return {'status': 'unavailable', 'detail': 'Node/acpx is not installed', 'messages': []}
+        proc = await asyncio.create_subprocess_exec(
+            node, str(Path(__file__).with_name('native_history.mjs')),
+            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+        package_cli = Path(self._acpx_bin).resolve()
+        if package_cli.suffix != '.js':
+            candidate = Path(self._acpx_bin).parent.parent / 'acpx' / 'dist' / 'cli.js'
+            if candidate.is_file():
+                package_cli = candidate
+        payload = json.dumps({'acpx': str(package_cli), 'platform': tool, 'session_id': session_id, 'cwd': cwd}).encode()
+        try:
+            output, _ = await asyncio.wait_for(proc.communicate(payload), timeout=50)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            if proc.returncode is None:
+                proc.terminate()
+            await proc.wait()
+            if asyncio.current_task().cancelling():
+                raise
+            return {'status':'error', 'detail':'Native history loading timed out', 'messages':[]}
+        updates = []
+        result = {'status':'error', 'detail':'Native history loader exited without a result'}
+        for line in output.splitlines():
+            packet = json.loads(line)
+            if packet.get('type') == 'update':
+                updates.append(packet['update'])
+            elif packet.get('type') == 'result':
+                result = packet
+        return {**result, 'messages': normalize_updates(updates) if result['status'] == 'loaded' else []}
 
     async def show_session(self, *, tool: str, name: str) -> dict[str, Any]:
         """Run `acpx <tool> sessions show <name>` and return parsed metadata."""

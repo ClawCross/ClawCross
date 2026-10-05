@@ -32,7 +32,7 @@ test('Studio plus keeps runtime settings while global settings expose contextual
   await page.evaluate(()=>openSettings());
   await expect(page.locator('#settings-external-agents [data-component="acpx"] button')).toBeVisible();
   for(const name of ['weclaw','nonebot','channels','cloudflared']) await expect(page.locator(`#settings-body [data-component="${name}"] button`)).toBeVisible();
-  await expect(page.locator('#settings-body .settings-group').filter({has:page.locator('[data-component="weclaw"]')})).toContainText('机器人集成');
+  await expect(page.locator('#settings-body details.settings-group > summary')).toContainText('高级连接参数与原始配置');
   expect(installs).toEqual([]);
   await page.locator('#settings-body [data-component="weclaw"] button').click();
   await expect(page.locator('#settings-body [data-component="weclaw"]')).toContainText('已安装');
