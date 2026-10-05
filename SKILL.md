@@ -537,14 +537,14 @@ print(extract_text(resp.content))
 This block is auto-maintained by ClawCross's lightweight EvoSkill adapter.
 Read `skill_evolution_report`, then update the entry with `write_file(storage='memory')`; repository operators can use `tools/maintenance/evolve_skill.py`.
 
-- Updated at: `2026-10-05T08:46:57.695060+00:00`
+- Updated at: `2026-10-05T09:22:25.336513+00:00`
 - Strategy: `harden`
-- Heuristic candidate: `blended-verification-loop-approval-auth-workspace-preflight`
-- Heuristic score: `0.652`
+- Heuristic candidate: `blended-verification-loop-workspace-preflight-bounded-execution`
+- Heuristic score: `0.571`
 
 ### Trigger Summary
 
-Command exited with code 1. Command: (external failure context). Signals: verification-loop, approval-auth, workspace-preflight. stdout was used as fallback failure evidence.
+Command exited with code 1. Command: (external failure context). Signals: verification-loop, workspace-preflight, bounded-execution. stdout was used as fallback failure evidence.
 
 ### Strategy Rationale
 
@@ -558,33 +558,7 @@ Command exited with code 1. Command: (external failure context). Signals: verifi
 ### Latest Error Excerpt
 
 ```text
-..F........................................................... [ 38%]
-.....................................................................................................                   [100%]
-=================================== FAILURES ===================================
-___ test_all_selected_roots_are_available_to_files_but_strict_denies_outside ___
-
-setup = (<agents.store.AgentStore object at 0x7526577aa0d0>, <teams.store.TeamStore object at 0x752657077c50>)
-tmp_path = PosixPath('/tmp/pytest-of-ubuntu/pytest-30/test_all_selected_roots_are_av0')
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x752657582810>
-
-    def test_all_selected_roots_are_available_to_files_but_strict_denies_outside(setup, tmp_path, monkeypatch):
-        store, _ = setup
-        other = tmp_path / 'second'; other.mkdir(); inside = other / 'inside.txt'; inside.write_text('INSIDE')
-        outside = tmp_path / 'outside.txt'; outside.write_text('OUTSIDE')
-        agent = store.create('alice',driver=WEBOT,config={'workspaces':workspace.normalize_workspace_config({'paths':[str(other)]})})
-        state = workspace.resolve_session_workspace('alice',agent.agent_id)
-        bound = bind_file_target('read_file', {'filename':str(inside)},'alice',agent.agent_id,workspace=state)
-        assert not file_target_outside_workspace(bound)
-        monkeypatch.setattr('webot.runtime_settings.get_runtime_settings',lambda *_:SimpleNamespace(approval=SimpleNamespace(sandbox_security='strict', mode='bypass')))
-        from webot.approval_actions import file_access_violation
-        forbidden = bind_file_target('read_file', {'filename':str(outside)},'alice',agent.agent_id,workspace=state)
-        assert file_access_violation(forbidden,'alice',agent.agent_id)
->       assert asyncio.run(filemanager.read_file('alice',str(inside),session_id=agent.agent_id)) == 'INSIDE'
-E       assert "📄 文件 '/tmp/p...: 6
-
-INSIDE" == 'INSIDE'
-E
-E         + 📄 文件 '/tmp/pytest-of-ubuntu/pytest-30/t ...[truncated]
+Editor command failed: python was not found on PATH; use /home/ubuntu/.clawcross/venv/bin/python. Two patch attempts failed context matching and applied no changes; use complete ordered patch contexts.
 ```
 
 ### Governance Snapshot
@@ -607,15 +581,14 @@ E         + 📄 文件 '/tmp/pytest-of-ubuntu/pytest-30/t ...[truncated]
 
 ### Recent Evidence
 
-- `2026-10-05T08:46:57.695060+00:00` `repo-skill` — ..F........................................................... [ 38%]
-........................................................................ ...[truncated]
+- `2026-10-05T09:22:25.336513+00:00` `repo-skill` — Editor command failed: python was not found on PATH; use /home/ubuntu/.clawcross/venv/bin/python. Two patch attempts failed context matching a ...[truncated]
 
 ### Candidate Frontier Snapshot
 
-- `blended-verification-loop-approval-auth-workspace-preflight` score `0.652` — Blend the strongest recent failure patterns (intent `repair`)
-- `verification-loop-4` score `0.612` — Tighten verification loops (intent `repair`)
-- `approval-auth-2` score `0.515` — Preflight auth and approval constraints (intent `repair`)
-- `workspace-preflight-1` score `0.467` — Add repo/workspace preflight checks (intent `repair`)
+- `blended-verification-loop-workspace-preflight-bounded-execution` score `0.571` — Blend the strongest recent failure patterns (intent `repair`)
+- `verification-loop-2` score `0.531` — Tighten verification loops (intent `repair`)
+- `workspace-preflight-2` score `0.531` — Add repo/workspace preflight checks (intent `repair`)
+- `bounded-execution-1` score `0.475` — Bound long-running and flaky execution (intent `optimize`)
 
 ### Local State Snapshot
 

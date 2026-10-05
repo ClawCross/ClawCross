@@ -60,7 +60,9 @@ def team_card(teams: TeamStore, owner: str, team: str) -> dict[str, Any]:
         "lead": lead.agent.agent_id if lead else None,
         "members": [member_card(m) for m in members],
         "is_default":team == '__default__',
-        "title":'默认项目' if team == '__default__' else team,
+        "title":'用户空间' if team == '__default__' else team,
+        "kind": 'user_space' if team == '__default__' else 'team',
+        "virtual": team == '__default__',
         "workspace":str(team_workspace(owner,team)),
     }
 

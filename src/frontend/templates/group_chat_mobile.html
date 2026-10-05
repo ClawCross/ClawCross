@@ -4563,13 +4563,13 @@
 <script src="/static/js/group-message-menu.js?v=20261004-message-menu"></script>
 <script src="/static/js/group-network-ui.js?v=20261004-message-menu"></script>
 <link rel="stylesheet" href="/static/css/group-network.css?v=20261004-message-menu">
-<link rel="stylesheet" href="/static/css/settings-polish.css?v=20261004-settings">
+<link rel="stylesheet" href="/static/css/settings-polish.css?v=20261005-team-skills">
 <link rel="stylesheet" href="/static/css/mobile-profile.css?v=20261004-studio-header">
 <link rel="stylesheet" href="/static/css/runtime-settings.css?v=20261004-keepy-manager">
 <script src="/static/js/remembered-approvals-ui.js?v=20261004-keepy-manager"></script>
 <script src="/static/js/runtime-settings.js?v=20261005-workspaces"></script>
-<script src="/static/js/workspace-settings.js?v=20261005-modal-fix"></script>
-<link rel="stylesheet" href="/static/css/workspace-settings.css?v=20261005-modal-fix">
+<script src="/static/js/workspace-settings.js?v=20261005-team-skills"></script>
+<link rel="stylesheet" href="/static/css/workspace-settings.css?v=20261005-team-skills">
 </head>
 <body>
 
@@ -5308,7 +5308,7 @@
   </div>
   <div class="drawer-body" style="padding:16px;display:flex;flex-direction:column;gap:12px;">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-      <button id="mobile-skill-scope-global" type="button" onclick="setMobileSkillScope('global')" style="padding:9px;border:1px solid var(--primary);border-radius:8px;background:var(--primary);color:#fff;font-size:13px;font-weight:700;">全局 Skill</button>
+      <button id="mobile-skill-scope-global" type="button" onclick="setMobileSkillScope('global')" style="padding:9px;border:1px solid var(--primary);border-radius:8px;background:var(--primary);color:#fff;font-size:13px;font-weight:700;">用户空间 Skill</button>
       <button id="mobile-skill-scope-team" type="button" onclick="setMobileSkillScope('team')" style="padding:9px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);color:var(--text);font-size:13px;font-weight:700;">Team Skill</button>
     </div>
     <select id="mobile-skill-team-select" onchange="loadMobileSkills()" style="display:none;width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);color:var(--text);font-size:14px;"></select>
@@ -10117,7 +10117,7 @@ async function loadTeamsForCreate() {
     const data = await api('GET', '/teams');
     const teams = data.teams || data || [];
     select.innerHTML = `<option value="">${t('select_team_placeholder')}</option>` +
-      teams.map(tm => `<option value="${tm}">${tm}</option>`).join('');
+      workspaceTeamOptions(teams, esc);
   } catch (e) {
     toast(t('load_teams_failed') + ': ' + e.message);
   }
@@ -13055,8 +13055,8 @@ async function loadMobileSkillTeams() {
   if (!select) return;
   try {
     const data = await api('GET', '/teams');
-    const teams = data.teams || data || [];
-    select.innerHTML = teams.map(tm => `<option value="${esc(tm)}">${esc(typeof workspaceTeamLabel === 'function' ? workspaceTeamLabel(tm) : tm)}</option>`).join('');
+    const teams = (data.teams || data || []).filter(tm => tm !== '__default__');
+    select.innerHTML = workspaceTeamOptions(teams, esc);
   } catch (e) {
     select.innerHTML = '';
     mobileSkillStatus('加载团队失败: ' + e.message);
@@ -13090,6 +13090,8 @@ function mobileSkillBasePath() {
 async function loadMobileSkills() {
   const list = document.getElementById('mobile-skill-list');
   if (!list) return;
+  mobileSkillCurrentName = '';
+  document.getElementById('mobile-skill-detail').style.display = 'none';
   const base = mobileSkillBasePath();
   if (!base) {
     list.innerHTML = '<div style="font-size:12px;color:var(--text-secondary);">请选择团队</div>';
@@ -13108,9 +13110,10 @@ async function loadMobileSkills() {
     }
     list.innerHTML = skills.map(skill => {
       const name = skill.name || '';
+      const key = skill.id || name;
       const desc = skill.description || '';
       const category = skill.category ? ` · ${skill.category}` : '';
-      return `<button type="button" onclick="loadMobileSkillDetail('${esc(name)}')" style="text-align:left;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);color:var(--text);">
+      return `<button type="button" onclick="loadMobileSkillDetail(decodeURIComponent('${encodeURIComponent(key).replace(/'/g, '%27')}'))" style="text-align:left;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);color:var(--text);">
         <div style="font-size:14px;font-weight:800;">${esc(name)}</div>
         <div style="font-size:11px;color:var(--text-secondary);margin-top:3px;line-height:1.4;">${esc(desc + category)}</div>
       </button>`;
@@ -13131,7 +13134,7 @@ async function loadMobileSkillDetail(name) {
     const skill = data.skill || {};
     document.getElementById('mobile-skill-detail').style.display = 'block';
     document.getElementById('mobile-skill-detail-name').textContent = skill.name || name;
-    document.getElementById('mobile-skill-detail-meta').textContent = `${mobileSkillScope === 'team' ? 'Team' : 'Global'} · ${skill.category || 'uncategorized'}`;
+    document.getElementById('mobile-skill-detail-meta').textContent = `${mobileSkillScope === 'team' ? '团队' : '用户空间'} · ${skill.category || 'uncategorized'}`;
     document.getElementById('mobile-skill-detail-content').value = skill.content || '';
     mobileSkillStatus('');
   } catch (e) {
@@ -15209,8 +15212,9 @@ async function loadContacts() {
 
   const fillTeamSelect = (list) => {
     contactsTeamList = Array.isArray(list) ? list : [];
-    select.innerHTML = `<option value="">${t('public_agent')}</option>` +
-      contactsTeamList.map(tm => `<option value="${tm}">${tm}</option>`).join('');
+    // The empty value is the fixed user-space view; named Teams follow.
+    select.innerHTML = `<option value="">${esc(workspaceTeamLabel('__default__'))}</option>` +
+      workspaceTeamOptions(contactsTeamList.filter(tm => tm !== '__default__'), esc);
     if (prevTeamVal !== undefined && prevTeamVal !== null &&
         [...select.options].some(o => o.value === prevTeamVal)) {
       select.value = prevTeamVal;

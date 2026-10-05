@@ -2495,6 +2495,27 @@ header {
 .group-msg-time { font-size: 10px; color: #9ca3af; margin-top: 2px; }
 
 /* Team members table overlay */
+.group-item.user-space-item {
+    background: #f0f5fc;
+    border: 1px solid #d6e3f3;
+    border-radius: 10px;
+}
+.group-item.user-space-item .group-name {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.user-space-badge {
+    border: 1px solid #c7d8ee;
+    border-radius: 6px;
+    padding: 2px 6px;
+    font-size: 10px;
+    font-weight: 500;
+    color: #46658d;
+    background: #e6eef8;
+}
+.group-item.user-space-item.active { background: #e4eefb; }
 .team-members-overlay {
     position: absolute;
     inset: 0;
