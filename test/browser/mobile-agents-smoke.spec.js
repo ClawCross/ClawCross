@@ -59,6 +59,57 @@ const GROUP = {
   member_names: ['Lead', 'Codex', 'tester'], message_count: 2, last_message: MESSAGES[1], dnd: false, updated_at: 1790000010,
 };
 
+test('mobile empty chats create a first companion once and open its private conversation',async({page})=>{
+  await page.setViewportSize({width:390,height:844});
+  await stub(page,{posts:[],control:[]});
+  await page.addInitScript(()=>localStorage.setItem('clawcross_lang','zh'));
+  const created=[],privateChats=[];
+  let agent=null,conversation=null,release;
+  const held=new Promise(resolve=>{release=resolve;});
+  await page.route(/\/v1\/agents(\?.*)?$/,async route=>{
+    if(route.request().method()==='POST'){
+      const body=route.request().postDataJSON();created.push(body);await held;
+      agent={...body,agent_id:'first-companion',settings:{},status:{state:'idle'}};
+      return route.fulfill({json:agent});
+    }
+    return route.fulfill({json:{data:agent?[agent]:[]}});
+  });
+  await page.route(/\/proxy_groups(\?.*)?$/,route=>{
+    if(route.request().method()==='POST'){
+      privateChats.push(route.request().postDataJSON());
+      conversation={group_id:'g_first',kind:'direct',title:agent.name,owner:'tester',members:[member(agent)],messages:[]};
+      return route.fulfill({json:conversation});
+    }
+    return route.fulfill({json:{groups:conversation?[conversation]:[]}});
+  });
+  await page.route('**/proxy_groups/g_first**',route=>route.fulfill({json:route.request().url().includes('/messages')?{messages:[]}:conversation}));
+  await page.goto('/mobile/group_chat');
+  await expect(page.locator('#first-companion-create')).toHaveText('创建我的第一个伙伴');
+  expect(created).toHaveLength(0);expect(privateChats).toHaveLength(0);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.locator('#first-companion-create').click();
+  await expect.poll(()=>created.length).toBe(1);
+  await expect(page.locator('#first-companion-create')).toBeDisabled();
+  await page.evaluate(()=>createFirstCompanion());
+  expect(created).toHaveLength(1);
+  release();
+  await expect.poll(()=>privateChats.length).toBe(1);
+  expect(created[0]).toMatchObject({name:'我的伙伴',platform:'webot',creation_template:'personal'});
+  expect(privateChats[0]).toEqual({kind:'direct',agents:['first-companion']});
+  await expect(page.locator('#chat-title')).toHaveText('我的伙伴');
+  await expect(page.locator('#first-companion-create')).toHaveCount(0);
+});
+
+test('mobile search with no matching chat does not show first-companion onboarding',async({page})=>{
+  await stub(page,{posts:[],control:[]});
+  await page.goto('/mobile/group_chat');
+  await expect(page.locator('.group-item')).toHaveCount(1);
+  await page.locator('#chat-search-input').fill('no-such-conversation');
+  await page.locator('#chat-search-input').dispatchEvent('input');
+  await expect(page.locator('.empty-state')).toBeVisible();
+  await expect(page.locator('#first-companion-create')).toHaveCount(0);
+});
+
 function member(agent) {
   return { principal: agent.agent_id, name: agent.name, is_agent: true, agent, muted: false, nickname: '' };
 }
