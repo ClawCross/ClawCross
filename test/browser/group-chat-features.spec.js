@@ -5,6 +5,7 @@ async function mobileSetup(page) {
   await page.addInitScript(()=>{localStorage.setItem('clawcross_lang','zh');window.alert=()=>{};});
   await page.route('**/proxy_check_session',route=>route.fulfill({json:{valid:true,user_id:'alice',has_password:true,mode:'local'}}));
   await page.route('**/api/llm_config_status',route=>route.fulfill({json:{configured:true}}));
+  await page.route('**/proxy_tunnel/status',route=>route.fulfill({json:{running:false,public_domain:'https://chat.example'}}));
   let title='朋友们';
   const messages=[{id:10,sender:'u:alice',sender_name:'Alice',content:'旧消息 <script>bad</script>',created_at:1790000000}];
   const calls=[];
@@ -93,7 +94,7 @@ for(const mobile of [false,true]) {
     await expect(page.locator('.gn-link')).toHaveValue('https://chat.example/group-guest#exact-ticket');
     await expect(page.getByRole('link',{name:'保存二维码'})).toHaveAttribute('download','group-invite.svg');
     expect(await page.locator('.gn-qr').evaluate(img=>img.complete&&img.naturalWidth>0)).toBe(true);
-    await page.getByRole('button',{name:'关闭',exact:true}).click();
+    await page.locator('.group-network-dialog').getByRole('button',{name:'关闭',exact:true}).click();
     await page.evaluate(()=>GroupNetworkUI.sharing('rg_one'));
     await expect(page.getByAltText('扫描二维码加入群聊')).toBeVisible();
     expect(calls.filter(call=>call.path.endsWith('/guest-link')).length).toBe(1);

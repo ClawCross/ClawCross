@@ -1143,7 +1143,10 @@ for (const platform of ['webot', 'codex']) {
     page.on('pageerror', error => errors.push(error.message));
     await page.goto('/studio');
     await page.locator('.studio-conversation-switcher > summary').click();
-    if (platform === 'codex') await page.locator('[data-acp-tool="codex"]').click();
+    if (platform === 'codex') {
+      await page.locator('.studio-platform-picker > summary').click();
+      await page.locator('[data-acp-tool="codex"]').click();
+    }
     const row = page.locator('.studio-conversation-item[data-session-id="delete-me"]');
     await expect(row).toBeVisible();
     await row.click();
@@ -1231,6 +1234,7 @@ test('external New Agent stays a draft until the first message request', async (
   });
   await page.goto('/studio');
   await page.locator('.studio-conversation-switcher > summary').click();
+  await page.locator('.studio-platform-picker > summary').click();
   await page.locator('[data-acp-tool="codex"]').click();
   await expect(page.locator('.studio-conversation-item[data-session-id="codex-old"]')).toBeVisible();
   expect(calls.agentCreates).toEqual([]);
@@ -1277,8 +1281,9 @@ test('Studio approval buttons and typed replies use the same control without sen
     appendMessage('【操作授权请求】\n'+JSON.stringify({id:item.approval_id,tool:item.tool_name,args:item.args,reason:item.request_reason})+'\n本次操作未执行。请回复 Y/N。',false);
     renderStudioApprovalStrip([item]);
   },item);
-  await expect(page.locator('.cc-approval-bubble details')).not.toHaveAttribute('open','');
-  await expect(page.locator('.cc-approval-bubble')).toContainText('操作需要确认');
+  await expect(page.locator('.cc-approval-bubble .cc-approval-disclosure')).toHaveAttribute('open','');
+  await expect(page.locator('.cc-approval-bubble details details')).not.toHaveAttribute('open','');
+  await expect(page.locator('.cc-approval-status')).toContainText('等待确认');
   await expect(page.locator('.cc-approval-actions button')).toHaveCount(3);
   await expect(page.locator('#studio-approval-strip')).not.toBeVisible();
   await page.locator('#user-input').fill('KEEP Y');
@@ -1289,6 +1294,7 @@ test('Studio approval buttons and typed replies use the same control without sen
   await expect(page.locator('.cc-approval-status')).toContainText('已批准');
   await expect(page.locator('[data-approval-reply]')).toContainText('同意并记住这次操作');
   await expect(page.locator('.cc-approval-actions')).toHaveCount(0);
+  await expect(page.locator('.cc-approval-bubble .cc-approval-disclosure')).not.toHaveAttribute('open','');
   expect(errors).toEqual([]);
 });
 
