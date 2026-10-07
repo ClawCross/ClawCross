@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const creation=require('./agent-creation-fixture');
 test.use({ launchOptions: { executablePath: process.env.CLAWCROSS_TEST_CHROME || "/usr/bin/google-chrome" } });
 const path = require('node:path');
 
@@ -259,6 +260,7 @@ test('desktop new agent can select an external runtime and persists that platfor
   });
   await page.route(/\/v1\/agents\/[^/?]+$/,route => route.fulfill({status:404,contentType:'application/json',body:'{}'}));
   await page.route('**/v1/teams*',route => route.fulfill({contentType:'application/json',body:'{"data":[]}'}));
+  await page.route('**/v1/agents/creation-templates',route=>route.fulfill({json:{data:creation.templates}}));
   await page.goto('/studio');
   await page.evaluate(() => handleNewSession());
   await page.locator('#agent-meta-platform').selectOption('codex');

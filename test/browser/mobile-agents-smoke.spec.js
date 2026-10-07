@@ -74,6 +74,15 @@ async function stub(page, calls) {
   }
   await page.route('**/proxy_check_session', (route) => json(route, { valid: true, user_id: 'tester', has_password: true, mode: 'local' }));
   await page.route('**/api/llm_config_status', (route) => json(route, { configured: true }));
+  const modes=new Map();
+  calls.runtimeSettings ||= [];
+  await page.route('**/proxy_webot_runtime_settings**',route=>{
+    const request=route.request(),body=request.method()==='POST'?request.postDataJSON():null;
+    const id=body?.session_id || new URL(request.url()).searchParams.get('session_id');
+    if(body?.settings?.approval?.mode){modes.set(id,body.settings.approval.mode);calls.runtimeSettings.push(body);}
+    const mode=modes.get(id) || 'auto';
+    return json(route,{settings:{approval:{mode,command_sandbox:'off'}},effective_mode:mode});
+  });
   await page.route('**/v1/agents/creation-templates',route=>json(route,{data:creation.templates}));
   await page.route('**/teams', (route) => json(route, { teams: ['dev'] }));
   await page.route(/\/proxy_visual\/experts/, (route) => json(route, [
@@ -161,7 +170,7 @@ test('mobile message center works with agents of any platform by id', async ({ p
   expect(pageErrors).toEqual([]);
 });
 
-test('mobile sends five distinct permission modes and keeps Manual separate from Bypass', async ({ page }) => {
+test('mobile saves five distinct permission modes per Agent and keeps Manual separate from Bypass', async ({ page }) => {
   const calls = { posts: [], control: [] };
   await stub(page, calls);
   await page.addInitScript(() => {
@@ -170,15 +179,18 @@ test('mobile sends five distinct permission modes and keeps Manual separate from
   });
   await page.goto('/mobile/group_chat');
   await page.locator('.group-item', { hasText: 'Dev' }).first().click();
+  const target=await page.evaluate(()=>getMobileRuntimeAgentId());
+  expect(target).toBe(LEAD.agent_id);
   for (const mode of ['chat', 'readonly', 'manual', 'auto', 'bypass']) {
     await page.evaluate(() => openRunModeSheet());
     await page.locator(`#run-mode-sheet [data-mode="${mode}"]`).click();
-    expect(await page.evaluate(() => getRunMode())).toBe(mode);
+    await expect.poll(()=>page.evaluate(() => getRunMode())).toBe(mode);
     await page.evaluate(() => closeRunModeSheet());
     await page.locator('#msg-input').fill(`测试模式 ${mode}`);
     await page.locator('#send-btn').click();
     await expect.poll(() => calls.posts.length).toBe(['chat', 'readonly', 'manual', 'auto', 'bypass'].indexOf(mode) + 1);
-    expect(calls.posts.at(-1).run_mode).toBe(mode);
+    expect(calls.runtimeSettings.at(-1)).toEqual({session_id:target,settings:{approval:{mode}}});
+    expect(calls.posts.at(-1)).not.toHaveProperty('run_mode');
   }
 });
 
@@ -188,6 +200,7 @@ test('remote group join and sharing stay usable on a narrow phone', async ({ pag
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await stub(page, calls);
+  await page.route('**/proxy_tunnel/status',route=>route.fulfill({json:{running:false,public_domain:'https://me.example'}}));
   await page.addInitScript(() => { window.alert = () => {}; window.confirm = () => true; localStorage.setItem('clawcross_lang', 'zh'); });
   const remote = { ...CODEX, agent_id: 'p_remote', name: 'Remote friend', remote: true };
   const group = { ...GROUP, group_id: 'rg_network', federated: true, owner: 'tester',
@@ -258,7 +271,7 @@ test('external agent accepts a Chinese name without a manual runtime id and offe
   await page.locator('#ca-acp-name').fill('中文助手');
   await expect(page.locator('#ca-acp-runtime')).toHaveValue('');
   await page.evaluate(() => mobileSubmitCreateAcpAgent());
-  expect(await page.evaluate(() => window.__createdFields)).toEqual({name:'中文助手',platform:'codex'});
+  expect(await page.evaluate(() => window.__createdFields)).toEqual({name:'中文助手',platform:'codex',creation_template:'personal',tools:null});
 });
 
 
