@@ -85,6 +85,7 @@ jobs:
           .venv/bin/python -m pytest
           test/test_integration.py
           test/test_proxy_login_i18n.py
+          test/test_frontend_https.py
           -q
 
   ci-smoke-browser:

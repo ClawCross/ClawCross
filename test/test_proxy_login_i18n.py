@@ -37,6 +37,7 @@ class ProxyLoginI18nTests(unittest.TestCase):
         response = self.client.post(
             "/proxy_login",
             json={"user_id": "alice", "password": ""},
+            base_url="https://clawcross.example",
             environ_overrides={"REMOTE_ADDR": "203.0.113.10"},
         )
 
@@ -53,6 +54,7 @@ class ProxyLoginI18nTests(unittest.TestCase):
         response = self.client.post(
             "/proxy_login",
             json={"user_id": "", "password": ""},
+            base_url="https://clawcross.example",
             environ_overrides={"REMOTE_ADDR": "203.0.113.10"},
         )
 
@@ -89,6 +91,7 @@ class ProxyLoginI18nTests(unittest.TestCase):
         response = self.client.post(
             "/proxy_login",
             json={"user_id": "alice", "password": "secret"},
+            base_url="https://clawcross.example",
             environ_overrides={"REMOTE_ADDR": "203.0.113.10"},
         )
 
