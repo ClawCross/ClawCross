@@ -924,6 +924,20 @@
   }
   .empty-state .icon { font-size: 56px; margin-bottom: 16px; }
   .empty-state .text { font-size: 15px; }
+  .first-chat-guide {
+    max-width: 350px; margin: 44px auto; padding: 28px 22px;
+    text-align: center; color: var(--text); box-sizing: border-box;
+  }
+  .first-chat-guide img { width: 72px; height: 72px; margin-bottom: 20px; }
+  .first-chat-guide h2 { margin: 0 0 12px; font-size: 23px; line-height: 1.4; font-weight: 650; }
+  .first-chat-guide p { margin: 0 0 24px; color: var(--text-hint); font-size: 14px; line-height: 1.75; }
+  .first-chat-guide button {
+    width: 100%; min-height: 48px; padding: 12px 16px; border: 0;
+    border-radius: 14px; background: var(--primary); color: #fff;
+    font-size: 16px; font-weight: 600; cursor: pointer;
+  }
+  .first-chat-guide button:disabled { opacity: .65; cursor: wait; }
+  .first-chat-guide .first-chat-hint { margin: 14px 0 0; font-size: 12px; }
 
   /* ── Chat page ── */
   .chat-page {
@@ -5799,7 +5813,15 @@ const I18N = {
     oasis_launch_select_hint: '点击选择',
 
     // ── Group list ──
-    no_groups: '暂无群聊，点击右上角 ➕ 创建',
+    no_groups: '还没有对话',
+    first_chat_title: '从你的第一个伙伴开始',
+    first_chat_description: '聊想法、问问题，或让它帮你处理事情。创建后，就能直接开始对话。',
+    first_chat_create: '创建我的第一个伙伴',
+    first_chat_continue: '打开我的伙伴',
+    first_chat_creating: '正在为你准备伙伴…',
+    first_chat_hint: '不用先了解设置，直接说出你想做的事。',
+    first_chat_name: '我的伙伴',
+    first_chat_failed: '暂时没有创建成功，请再试一次',
     members: '成员',
     messages_count: '条消息',
     swipe_pin: '置顶',
@@ -6435,7 +6457,15 @@ const I18N = {
     oasis_launch_no_task: 'Please enter a task description',
     oasis_launch_select_hint: 'Click to select',
 
-    no_groups: 'No chats yet. Tap ➕ to create one',
+    no_groups: 'No conversations yet',
+    first_chat_title: 'Meet your first companion',
+    first_chat_description: 'Share an idea, ask a question, or get help with a task. Create your companion and start talking.',
+    first_chat_create: 'Create my first companion',
+    first_chat_continue: 'Open my companion',
+    first_chat_creating: 'Getting your companion ready…',
+    first_chat_hint: 'Start with what you want to do. You can explore settings later.',
+    first_chat_name: 'My companion',
+    first_chat_failed: 'Could not create your companion. Please try again',
     members: 'members',
     messages_count: 'msgs',
     swipe_pin: 'Pin',
@@ -8879,6 +8909,32 @@ async function startMobileUpdate() {
 
 // ── Group list ──
 let chatSearchKeyword = '';
+let firstCompanionCreating = false;
+let firstCompanionAgent = null;
+
+async function createFirstCompanion() {
+  if (firstCompanionCreating) return;
+  if (!window.__currentUser) { toast(t('not_logged_in')); return; }
+  firstCompanionCreating = true;
+  renderGroupList(groups);
+  try {
+    if (!firstCompanionAgent) {
+      firstCompanionAgent = await registerAgent({
+        name: t('first_chat_name'), platform: 'webot', creation_template: 'personal',
+        persona: '你是用户的智能伙伴。用自然、清楚的语言交流，帮助用户整理想法和处理事情。跟随用户使用的语言，按当前工具权限完成任务。'
+      });
+    }
+    if (await startPrivateChat(firstCompanionAgent.agent_id)) {
+      invalidateContactsPrefetch();
+      await refreshGroups({silent:true});
+    }
+  } catch (error) {
+    toast(t('first_chat_failed') + ': ' + error.message);
+  } finally {
+    firstCompanionCreating = false;
+    renderGroupList(groups);
+  }
+}
 const PINNED_KEY = 'clawcross_pinned_groups';
 
 function getPinnedIds() {
@@ -9000,7 +9056,19 @@ function renderGroupList(list) {
 
   if (!filtered.length) {
     _swipeActiveWrapper = null;
-    container.innerHTML = `<div class="empty-state"><div class="icon">🔍</div><div class="text">${keyword ? t('no_search_result') : t('no_groups')}</div></div>`;
+    if (!keyword && !list.length) {
+      container.innerHTML = `<section class="first-chat-guide" aria-labelledby="first-chat-title">
+        <img src="/static/assets/clawcross-mark.svg" alt="">
+        <h2 id="first-chat-title">${t('first_chat_title')}</h2>
+        <p>${t('first_chat_description')}</p>
+        <button id="first-companion-create" type="button" onclick="createFirstCompanion()" ${firstCompanionCreating?'disabled aria-busy="true"':''}>
+          ${firstCompanionCreating?t('first_chat_creating'):firstCompanionAgent?t('first_chat_continue'):t('first_chat_create')}
+        </button>
+        <p class="first-chat-hint" role="status">${t('first_chat_hint')}</p>
+      </section>`;
+    } else {
+      container.innerHTML = `<div class="empty-state"><div class="icon">🔍</div><div class="text">${t('no_search_result')}</div></div>`;
+    }
     return;
   }
 
