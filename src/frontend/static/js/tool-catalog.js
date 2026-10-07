@@ -15,7 +15,7 @@ function groupToolsByCategory(tools) {
         grouped.get(category).push(tool);
     }
     return Object.keys(TOOL_CATEGORY_LABELS).filter(key => grouped.has(key)).map(key => ({
-        key, label: TOOL_CATEGORY_LABELS[key][typeof currentLang === 'undefined' || currentLang === 'zh-CN' ? 0 : 1],
+        key, label: TOOL_CATEGORY_LABELS[key][typeof currentLang === 'undefined' ? (document.documentElement.lang.startsWith('en') ? 1 : 0) : currentLang === 'zh-CN' ? 0 : 1],
         tools: grouped.get(key),
     }));
 }

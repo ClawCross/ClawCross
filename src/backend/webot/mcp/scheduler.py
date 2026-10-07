@@ -74,26 +74,27 @@ async def add_alarm(
     username: str,
     cron: str,
     text: str,
-    session_id: str = "default",
-    agent: str = "",
+    session_id: str = "",
     team: str = "",
     schedule_type: str = "cron",
     run_at: str = "",
 ) -> str:
     """
-    Schedule a task: at the time, *text* is delivered to an agent as a message.
+    Schedule your own reminder: at the time, text is delivered to this Agent.
+    To schedule another owned Agent, explicitly enable manage_agent_alarms.
 
     :param username: 用户唯一标识符（系统自动注入，无需手动传递）
     :param cron: Cron 表达式 (分 时 日 月 周)，例如 "0 1 * * *" 代表凌晨1点。schedule_type=once 时可留空。
     :param text: 到点时交给 agent 的指令内容
     :param session_id: 会话ID（系统自动注入，无需手动传递）
-    :param agent: 接收任务的 agent（agent 编号，或 team.名字）；留空表示你自己
     :param team: 所属 team 名称，仅用于归类
     :param schedule_type: cron 或 once。once 表示一次性任务。
     :param run_at: 一次性任务的触发时间，ISO/local datetime，例如 2026-04-25T09:00。
     :return: 操作结果的描述信息
     """
-    target = agent.strip() or session_id  # the session is the agent
+    target = session_id  # The runtime injects the caller, never a model-selected target.
+    if not username or not target:
+        return '❌ 缺少当前 Agent 身份'
     async with httpx.AsyncClient() as client:
         try:
             payload = {
@@ -114,12 +115,13 @@ async def add_alarm(
             return f"⚠️ 无法连接到定时服务器: {str(e)}"
 
 @mcp.tool()
-async def list_alarms(username: str) -> str:
+async def list_alarms(username: str, session_id: str = '') -> str:
     """
-    获取当前用户已设置的定时任务列表。
+    获取当前 Agent 已设置的定时任务列表；其他 Agent 的任务使用 manage_agent_alarms。
 
     :param username: 用户唯一标识符（系统自动注入，无需手动传递）
-    :return: 用户所有定时任务的列表描述
+    :param session_id: 当前 Agent ID（系统自动注入）
+    :return: 当前 Agent 的定时任务列表
     """
     async with httpx.AsyncClient() as client:
         try:
@@ -130,7 +132,7 @@ async def list_alarms(username: str) -> str:
             if not isinstance(tasks, list):
                 return "❌ 读取列表失败，服务器返回的数据格式不正确。"
             # 过滤只显示该用户的任务
-            user_tasks = [t for t in tasks if t.get("user_id") == username]
+            user_tasks = [t for t in tasks if t.get("user_id") == username and t.get('agent') == session_id]
             if not user_tasks:
                 return "📭 您当前没有设定任何闹钟。"
 
@@ -145,12 +147,13 @@ async def list_alarms(username: str) -> str:
             return f"⚠️ 读取列表失败: {str(e)}"
 
 @mcp.tool()
-async def delete_alarm(username: str, task_id: str) -> str:
+async def delete_alarm(username: str, task_id: str, session_id: str = '') -> str:
     """
-    根据任务 ID 删除指定的定时任务（仅限本人创建的任务）。
+    根据任务 ID 删除当前 Agent 的定时任务；其他 Agent 的任务使用 manage_agent_alarms。
 
     :param username: 用户唯一标识符（系统自动注入，无需手动传递）
     :param task_id: 之前创建任务时分配的 8 位 ID
+    :param session_id: 当前 Agent ID（系统自动注入）
     :return: 删除操作的结果描述
     """
     async with httpx.AsyncClient() as client:
@@ -168,6 +171,8 @@ async def delete_alarm(username: str, task_id: str) -> str:
                 return f"❌ 未找到任务 {task_id}。"
             if target_task.get("user_id") != username:
                 return f"❌ 无权删除任务 {task_id}，该任务不属于您。"
+            if not session_id or target_task.get('agent') != session_id:
+                return '❌ 此工具只能删除当前 Agent 的闹钟；管理其他 Agent 请使用 manage_agent_alarms。'
 
             # 验证通过，执行删除
             resp = await client.delete(f"{SCHEDULER_URL}/{task_id}", timeout=10.0)

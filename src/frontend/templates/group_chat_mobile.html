@@ -42,7 +42,7 @@
 <link rel="stylesheet" href="/static/css/channel-setup.css?v=2">
 <script src="/static/js/channel-setup.js?v=20261004-tool-result"></script>
 <link rel="stylesheet" href="/static/css/native-session-browser.css?v=2">
-<script src="/static/js/native-session-browser.js?v=2"></script>
+<script src="/static/js/native-session-browser.js?v=20261006-acpx"></script>
 <script src="/static/js/markdown-shared.js?v=20261003-inline-approval"></script>
 <script src="/static/js/tinyfish-live-shared.js"></script>
 <script src="/static/vendor/pretext.global.js?v=20260402-pretext"></script>
@@ -1957,6 +1957,7 @@
   .side-panel-overlay.drawer-overlay {
     background: rgba(0,0,0,0.2);
     z-index: 312;
+    transition: opacity .24s cubic-bezier(.2,.7,.2,1);
   }
   .side-drawer.drawer {
     position: fixed;
@@ -1973,7 +1974,7 @@
     z-index: 313;
     opacity: 0;
     pointer-events: none;
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
+    transition: transform .3s cubic-bezier(.2,.7,.2,1), opacity .22s ease, box-shadow .22s ease;
   }
   .side-drawer.drawer.show { opacity: 1; pointer-events: auto; }
   .side-panel-form {
@@ -2224,7 +2225,7 @@
     background: var(--bg);
     display: flex; flex-direction: column;
     transform: translateX(100%);
-    transition: transform .28s cubic-bezier(.4,0,.2,1);
+    transition: transform .32s cubic-bezier(.2,.7,.2,1), opacity .22s ease;
   }
   .agent-detail-overlay.open { transform: translateX(0); }
   .agent-detail-dialog {
@@ -3331,6 +3332,8 @@
   .contact-avatar.preset { background: linear-gradient(135deg, #0ea5e9, #14b8a6); }
 
   .contact-name { margin-left: 12px; font-size: 16px; flex: 1; }
+  .expert-item .contact-name { min-width: 0; flex: 1 1 auto; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .expert-item .contact-type-pill, .expert-item .contact-tag { flex: 0 1 auto; max-width: 88px; }
   .contact-main {
     margin-left: 12px;
     min-width: 0;
@@ -4275,6 +4278,9 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
+    .expert-item .contact-name { margin-left: 0; flex: 1 1 auto; }
+    .expert-item .contact-type-pill { max-width: 54px; padding-left: 5px; padding-right: 5px; }
+    .expert-item .contact-tag { max-width: 64px; }
     .contact-main {
       margin-left: 0;
       min-width: 0;
@@ -4543,10 +4549,14 @@
 .tool-policy-category small { float: right; color: var(--text-hint); font-weight: 400; }
 .tool-policy-category-items { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; }
 </style>
-<script src="/static/js/tool-catalog.js?v=20261001-groups"></script>
+<link rel="stylesheet" href="/static/css/mobile-agent-create.css?v=20261006-group-roles">
+<link rel="stylesheet" href="/static/css/agent-creation-presets.css?v=20261006-agent-templates">
+<script src="/static/js/agent-creation-presets.js?v=20261006-group-roles"></script>
+<script src="/static/js/tool-catalog.js?v=20261006-agent-templates"></script>
+<script src="/static/js/mobile-agent-create-tools.js?v=20261006-tool-table"></script>
 <link rel="stylesheet" href="/static/css/group-message-menu.css?v=20261004-message-menu">
 <script src="/static/js/group-message-menu.js?v=20261004-message-menu"></script>
-<script src="/static/js/group-network-ui.js?v=20261004-message-menu"></script>
+<script src="/static/js/group-network-ui.js?v=20261006-network-pause"></script>
 <link rel="stylesheet" href="/static/css/group-network.css?v=20261004-message-menu">
 <link rel="stylesheet" href="/static/css/settings-polish.css?v=20261005-team-skills">
 <link rel="stylesheet" href="/static/css/mobile-profile.css?v=20261004-studio-header">
@@ -4803,7 +4813,13 @@
   <button type="button" class="ui-menu-item danger" id="action-group-leave" style="display:none" onclick="closeChatActions();GroupNetworkUI.leave(currentGroupId)">
     <svg class="ui-icon"><use href="/static/icons.svg#log-out"/></svg><span class="ui-menu-label">退出群聊</span>
   </button>
-  <button type="button" class="ui-menu-item danger" onclick="closeChatActions(); deleteGroup();">
+  <button type="button" class="ui-menu-item danger" id="action-group-disconnect-external" style="display:none" onclick="closeChatActions();GroupNetworkUI.toggleExternalAccess(currentGroupId)">
+    <svg class="ui-icon"><use href="/static/icons.svg#shield"/></svg><span class="ui-menu-label" id="group-external-access-label" data-i18n="group_disconnect_external">关闭所有非主机连接</span>
+  </button>
+  <button type="button" class="ui-menu-item danger" id="action-group-remove-local" style="display:none" onclick="closeChatActions();GroupNetworkUI.removeLocal(currentGroupId)">
+    <svg class="ui-icon"><use href="/static/icons.svg#trash"/></svg><span class="ui-menu-label" data-i18n="group_remove_local">从本机移除</span>
+  </button>
+  <button type="button" class="ui-menu-item danger" id="action-group-dissolve" onclick="closeChatActions(); deleteGroup();">
     <svg class="ui-icon"><use href="/static/icons.svg#trash"/></svg><span class="ui-menu-label" data-i18n="dissolve_group">解散群聊</span>
   </button>
 </div>
@@ -4895,8 +4911,8 @@
       <div id="mobile-sandbox-component"></div>
       <div id="mobile-sandbox-result" role="status" style="font-size:12px"></div>
     </div>
-    <div class="run-mode-warning" id="run-mode-warning-manual" style="display:none;" data-i18n="run_mode_warning_manual">⚠️ 群聊中 交流模式下 Agent 无法回到群里发言（缺工具调用权限）。如需"先看再决定"请改用只读模式。</div>
-    <div class="run-mode-hint" data-i18n="run_mode_hint">该设置仅在本浏览器生效；CLI 与其他设备各自独立设置。</div>
+    <div class="run-mode-warning" id="run-mode-warning-manual" style="display:none;" data-i18n="run_mode_warning_manual">交流模式不调用工具，Agent 无法调用群发送工具。</div>
+    <div class="run-mode-hint" data-i18n="run_mode_hint">设置按当前 Agent 保存，Studio 与 Mobile 读取同一配置。</div>
   </div>
 </div>
 
@@ -5022,7 +5038,7 @@
       </div>
     </div>
     <!-- 添加 Agent -->
-    <div onclick="showCreateAgentModal(document.getElementById('contacts-team-select').value)" style="display:flex;align-items:center;gap:8px;padding:12px 16px;cursor:pointer;user-select:none;background:var(--bg-card);border-bottom:0.5px solid var(--border);">
+    <div onclick="showCreateAgentModal(document.getElementById('contacts-team-select').value,'group')" style="display:flex;align-items:center;gap:8px;padding:12px 16px;cursor:pointer;user-select:none;background:var(--bg-card);border-bottom:0.5px solid var(--border);">
       <span style="font-size:18px;">🤖</span>
       <span style="font-size:15px;font-weight:500;color:var(--text);" data-i18n="contacts_experts_btn">添加 Agent</span>
     </div>
@@ -5271,31 +5287,30 @@
 
 <!-- ═══════════════ Create Agent Modal ═══════════════ -->
 <div class="drawer-overlay side-panel-overlay" id="create-agent-overlay" onclick="if(event.target===this)closeCreateAgentModal()"></div>
-<div class="drawer side-drawer" id="create-agent-modal">
+<div class="drawer side-drawer" id="create-agent-modal" role="dialog" aria-modal="true" aria-labelledby="create-agent-title">
   <div class="drawer-header">
-    <button class="drawer-header-back" onclick="closeCreateAgentModal()">
+    <button type="button" class="drawer-header-back" onclick="closeCreateAgentModal()" aria-label="关闭">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
     </button>
-    <span class="drawer-header-title" data-i18n="create_new_agent">创建新Agent</span>
+    <span class="drawer-header-title" id="create-agent-title" data-i18n="create_new_agent">新建 Agent</span>
   </div>
   <div class="drawer-body create-agent-drawer-body">
-    <div id="create-agent-team-row">
-      <label class="side-panel-label" data-i18n="agent_team_label">所属团队 <span style="color:var(--text-hint);" data-i18n="custom_name_optional">(可选)</span></label>
-      <select id="create-agent-team" class="side-panel-input" onchange="onCreateAgentTeamChange()" style="width:100%;margin-top:6px;">
-        <option value="" data-i18n="no_team">不加入团队</option>
-      </select>
-    </div>
-    <div id="create-agent-mode-bar" role="tablist">
-      <button type="button" class="add-agent-mode-btn active" data-mode="webot" onclick="setCreateAgentMode('webot')">WeBot</button>
-      <button type="button" class="add-agent-mode-btn" data-mode="acp" data-i18n="mobile_create_agent_mode_acp" onclick="setCreateAgentMode('acp')">ACP 工具</button>
+    <p class="create-agent-intro" data-i18n="agent_creation_intro">取个名字，就可以开始对话。</p>
+    <div id="create-agent-mode-bar" role="tablist" aria-label="Agent 平台" onkeydown="handleCreateAgentTabKey(event)">
+      <button type="button" class="add-agent-mode-btn active" data-mode="webot" role="tab" aria-selected="true" aria-controls="create-agent-panel-webot" onclick="setCreateAgentMode('webot')"><svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg#bot"/></svg><span>WeBot</span></button>
+      <button type="button" class="add-agent-mode-btn" data-mode="acp" role="tab" aria-selected="false" aria-controls="create-agent-panel-acp" tabindex="-1" onclick="setCreateAgentMode('acp')"><svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg#plug"/></svg><span data-i18n="mobile_create_agent_mode_acp">外部 Agent</span></button>
     </div>
     <div id="create-agent-panels-scroll">
-      <div id="create-agent-panel-webot">
-        <div class="side-panel-form">
-          <div class="side-panel-section">
+      <div id="mobile-group-role-picker" hidden></div>
+      <details id="mobile-agent-capability-presets" class="create-agent-advanced"><summary id="mobile-agent-capability-summary">能力与工具 · 高级设置</summary>
+        <div id="mobile-agent-creation-presets"></div>
+        <p id="mobile-agent-template-hint" class="agent-creation-preset-hint"></p>
+      </details>
+      <div id="create-agent-panel-webot" role="tabpanel">
+        <div class="create-agent-form">
             <div class="side-panel-field">
-              <label class="side-panel-label" data-i18n="agent_name_label">Agent 名称</label>
-              <input type="text" id="create-agent-name" class="side-panel-input" placeholder="my_agent" onkeydown="if(event.key==='Enter')submitCreateAgent()">
+              <label class="side-panel-label" for="create-agent-name" data-i18n="agent_name_label">Agent 名称</label>
+              <input type="text" id="create-agent-name" class="side-panel-input" maxlength="160" autocomplete="off" data-i18n="agent_creation_name_placeholder" placeholder="例如：写作助手" onkeydown="if(event.key==='Enter')submitCreateAgent()">
             </div>
             <details class="create-agent-advanced"><summary data-i18n="agent_creation_advanced">人设与工具 · 高级设置</summary>
               <label class="side-panel-label" data-i18n="agent_creation_persona">希望这个 Agent 怎么帮助你？</label>
@@ -5304,18 +5319,30 @@
               <input type="hidden" id="create-agent-tag" value="">
               <div id="create-agent-tag-list" class="side-panel-tag-list"></div>
               <label class="side-panel-label" data-i18n="agent_creation_tools">允许的工具</label>
-              <input id="create-agent-tools" class="side-panel-input" placeholder="留空使用全部可用工具 / All available tools">
-              <p class="side-panel-hint" data-i18n="agent_creation_tools_hint">填写工具名，用逗号分隔；以后也可以在 Agent 设置中调整。</p>
+              <div id="create-agent-tools-picker" class="create-agent-tools-picker"></div>
+              <input id="create-agent-tools" type="hidden">
             </details>
-          </div>
-          <div class="side-panel-section">
-            <div class="side-panel-hint" data-i18n="create_agent_hint">💡 创建后将自动开启与该 Agent 的私聊对话</div>
-          </div>
-          <button onclick="submitCreateAgent()" class="side-panel-primary-btn" data-i18n="create_agent_btn">🤖 创建 Agent</button>
         </div>
       </div>
-      <button type="button" class="side-panel-secondary-btn" onclick="openMobileNativeSessions()" data-i18n="native_session_register">登记已有外部会话</button>
-      <div id="create-agent-panel-acp" style="display:none;"></div>
+      <div id="create-agent-panel-acp" role="tabpanel" style="display:none;"></div>
+      <details id="create-agent-team-row" class="create-agent-advanced create-agent-team-options">
+        <summary data-i18n="agent_creation_team_options">加入 Team · 可选</summary>
+        <label class="side-panel-label" for="create-agent-team" data-i18n="agent_team_label">所属团队</label>
+        <select id="create-agent-team" class="side-panel-input" onchange="onCreateAgentTeamChange()">
+          <option value="" data-i18n="no_team">不加入团队</option>
+        </select>
+      </details>
+      <div id="create-agent-native-entry" hidden>
+        <button type="button" class="create-agent-native-btn" onclick="openMobileNativeSessions()"><svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg#history"/></svg><span data-i18n="native_session_register">登记已有外部会话</span><svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg#chevron-right"/></svg></button>
+      </div>
+    </div>
+    <div class="create-agent-footer">
+      <p class="side-panel-hint" data-i18n="create_agent_hint">创建后直接进入与这个 Agent 的对话</p>
+      <div class="create-agent-footer-actions">
+        <button type="button" class="create-agent-cancel" onclick="closeCreateAgentModal()" data-i18n="cancel">取消</button>
+        <button type="button" id="create-agent-submit" onclick="submitCreateAgent()" class="side-panel-primary-btn" data-i18n="create_agent_btn">创建 Agent</button>
+        <button type="button" id="ca-acp-submit" onclick="mobileSubmitCreateAcpAgent()" class="side-panel-primary-btn" data-i18n="create_agent_btn" hidden>创建 Agent</button>
+      </div>
     </div>
   </div>
 </div>
@@ -5397,6 +5424,14 @@
   </div>
   <div class="drawer-body" style="padding:16px;">
 
+    <div style="margin-bottom:16px;">
+      <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px;" data-i18n="group_title_label">群聊名称</label>
+      <input type="text" id="create-custom-name" data-i18n="group_title_placeholder" placeholder="例如：周末读书会" style="width:100%;padding:12px;border:1px solid var(--border);border-radius:10px;font-size:16px;background:var(--bg-card);" oninput="updateGroupNamePreview()" onkeydown="if(event.key==='Enter')submitCreateGroup()">
+    </div>
+
+    <details id="create-group-advanced" style="margin-bottom:16px;border:1px solid var(--border);border-radius:10px;background:var(--bg-card);">
+    <summary style="padding:12px 14px;cursor:pointer;color:var(--text-secondary);font-size:13px;font-weight:600;" data-i18n="group_advanced_options">高级选项 · 导入 Team 或添加 Team 成员</summary>
+    <div style="padding:0 12px 12px;">
     <!-- ── 导入团队区域 ── -->
     <div style="margin-bottom:16px;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--bg-card);">
       <div onclick="toggleImportPanel()" style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;cursor:pointer;user-select:none;">
@@ -5444,20 +5479,17 @@
       </div>
     </div>
 
-    <!-- ── 原有的创建群聊表单 ── -->
+    <!-- 可选 Team：将其成员加入新群聊 -->
     <div style="margin-bottom:16px;">
-      <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px;" data-i18n="select_team">选择团队</label>
+      <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px;" data-i18n="select_team_optional">导入 Team 成员（可选）</label>
       <select id="create-team-select" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;background:var(--bg-card);" onchange="onTeamSelectChange()">
         <option value="" data-i18n="select_team_placeholder">请选择团队...</option>
       </select>
     </div>
-    <div style="margin-bottom:16px;">
-      <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px;"><span data-i18n="custom_name">自定义标识</span> <span style="color:var(--text-hint);" data-i18n="custom_name_optional">(可选)</span></label>
-      <input type="text" id="create-custom-name" data-i18n="custom_name_placeholder" placeholder="用于区分同一团队的不同群聊，例如：每日站会" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;background:var(--bg-card);" oninput="updateGroupNamePreview()" onkeydown="if(event.key==='Enter')submitCreateGroup()">
-    </div>
+    </div></details>
     <div style="margin-bottom:16px;padding:12px;background:var(--bg);border-radius:8px;border:1px solid var(--border);">
       <label style="display:block;font-size:12px;color:var(--text-hint);margin-bottom:4px;" data-i18n="group_name_preview">群聊名称预览</label>
-      <div id="group-name-preview" style="font-size:16px;font-weight:600;color:var(--text);" data-i18n="please_select_team">请选择团队</div>
+      <div id="group-name-preview" style="font-size:16px;font-weight:600;color:var(--text);" data-i18n="create_new_group">创建新群聊</div>
     </div>
     <button onclick="submitCreateGroup()" style="width:100%;padding:12px;background:var(--primary);color:#fff;border:none;border-radius:8px;font-size:16px;font-weight:600;cursor:pointer;" data-i18n="create_group">创建群聊</button>
   </div>
@@ -5793,6 +5825,10 @@ const I18N = {
 
     // ── Create group ──
     create_group: '创建群聊',
+    group_title_label: '群聊名称',
+    group_title_placeholder: '例如：周末读书会',
+    group_advanced_options: '高级选项 · 导入 Team 或添加 Team 成员',
+    select_team_optional: '导入 Team 成员（可选）',
     import_team: '导入团队',
     import_preset: '预设型（内置制度）',
     import_preset_desc: 'Hub / ZIP 之外的第三种：一键安装明·唐·企业制等模板',
@@ -5865,6 +5901,9 @@ const I18N = {
     tool_policy_saved: '✅ 权限设置已保存',
     tool_policy_hint: '默认策略是兜底规则；单个工具可单独覆盖为允许、手动批准或拒绝',
     run_mode_action: '运行模式',
+    group_remove_local: '从本机移除',
+    group_disconnect_external: '关闭所有非主机连接',
+    group_resume_external: '恢复外部联网',
     run_mode_title_sheet: '运行模式',
     run_mode_manual: 'Manual · 人工审核',
     run_mode_manual_desc: '全工具可用，需要批准的操作交给你确认',
@@ -5875,8 +5914,8 @@ const I18N = {
     run_mode_bypass_desc: '全工具开放，跳过操作确认',
     run_mode_readonly_desc: '只允许查看、搜索和分析',
     run_mode_chat_desc: '不调用工具，仅通过文字交流',
-    run_mode_hint: '该设置仅在本浏览器生效；CLI 与其他设备各自独立设置。',
-    run_mode_warning_manual: '⚠️ 群聊中 交流模式下 Agent 无法回到群里发言（缺工具调用权限）。如需"先看再决定"请改用只读模式。',
+    run_mode_hint: '设置按当前 Agent 保存，Studio 与 Mobile 读取同一配置。',
+    run_mode_warning_manual: '交流模式不调用工具；纯聊天模板的群回复由系统送达。',
     run_mode_badge_bypass: 'Bypass',
     run_mode_auto: 'Auto · 替我审核',
     run_mode_auto_desc: '按任务代审；授权不足时拒绝，可在后续对话明确同意',
@@ -5926,7 +5965,7 @@ const I18N = {
     agent_control_confirm: '对 {name} 执行「{action}」？',
     mobile_add_acp_title: '新建 ACP 工具 Agent（Codex / Claude Code / Gemini …）',
     mobile_add_runtime_name: '运行时名称（该工具上的会话名）',
-    mobile_create_agent_mode_acp: 'ACP 工具',
+    mobile_create_agent_mode_acp: '外部 Agent',
     public_agent: '全部 Agent',
     no_addable_members: '暂无可添加的成员',
     selected_n: '已选择 {n} 个成员',
@@ -5955,7 +5994,10 @@ const I18N = {
     mobile_add_headers_json_err: 'Headers 不是合法 JSON',
 
     // ── Create menu ──
-    create_new_agent: '创建新Agent',
+    create_new_agent: '新建 Agent',
+    agent_creation_intro: '取个名字，就可以开始对话。',
+    agent_creation_name_placeholder: '例如：写作助手',
+    agent_creation_team_options: '加入 Team · 可选',
     agent_creation_advanced: '人设与工具 · 高级设置',
     agent_creation_persona: '希望这个 Agent 怎么帮助你？',
     agent_creation_library: '或选择已有的人设',
@@ -5964,13 +6006,13 @@ const I18N = {
     create_new_group: '创建新群聊',
     agent_name_label: 'Agent 名称',
     agent_tag_label: 'Tag 标签（人设prompt）',
-    create_agent_no_tags: '当前 team 下没有可选 tag，可直接输入名字创建普通 Agent',
-    create_agent_public_tags: '公共 Prompt',
-    create_agent_team_tags: '团队 Prompt',
+    create_agent_no_tags: '暂无预设人设，可以直接描述你需要的帮助。',
+    create_agent_public_tags: '预设人设',
+    create_agent_team_tags: 'Team 人设',
     agent_tag_placeholder: '例如：assistant, coder, analyst',
     agent_team_label: '所属团队',
-    create_agent_hint: '💡 创建后将自动开启与该 Agent 的私聊对话',
-    create_agent_btn: '🤖 创建 Agent',
+    create_agent_hint: '创建后直接进入与这个 Agent 的对话',
+    create_agent_btn: '创建 Agent',
     native_session_register: '登记已有外部会话',
     agent_name_required: '请输入 Agent 名称',
     agent_created: '✅ Agent 创建成功',
@@ -6417,6 +6459,10 @@ const I18N = {
     delete_failed: 'Delete failed',
 
     create_group: 'Create Group',
+    group_title_label: 'Group name',
+    group_title_placeholder: 'For example: Weekend book club',
+    group_advanced_options: 'Advanced · Import a Team or add its members',
+    select_team_optional: 'Add Team members (optional)',
     import_team: 'Import Team',
     import_preset: 'Preset (built-in)',
     import_preset_desc: 'Third option besides Hub / ZIP: install Ming/Tang/enterprise templates',
@@ -6488,6 +6534,9 @@ const I18N = {
     tool_policy_saved: '✅ Permissions saved',
     tool_policy_hint: 'Default policy is the fallback; each tool can override it with allow, manual, or deny',
     run_mode_action: 'Run mode',
+    group_remove_local: 'Remove from this device',
+    group_disconnect_external: 'Close all non-host connections',
+    group_resume_external: 'Resume external access',
     run_mode_title_sheet: 'Run mode',
     run_mode_manual: 'Manual · Human review',
     run_mode_manual_desc: 'All tools available; you confirm approval requests',
@@ -6498,14 +6547,14 @@ const I18N = {
     run_mode_bypass_desc: 'All tools available, confirmation skipped',
     run_mode_readonly_desc: 'View, search and analyze; writes are denied',
     run_mode_chat_desc: 'No tool calls — text reply only',
-    run_mode_hint: 'Only applies in this browser. CLI and other devices each store their own setting.',
-    run_mode_warning_manual: '⚠️ In Chat mode, agents in this group cannot post replies back (no tool-call permission). Use Read-only mode if you want "look-then-decide" behavior.',
+    run_mode_hint: 'Saved for this Agent. Studio and Mobile read the same configuration.',
+    run_mode_warning_manual: 'Chat mode disables tools. Chat-only templates send their group replies through the system.',
     run_mode_badge_bypass: 'Bypass',
     run_mode_auto: 'Auto · Review for me',
     run_mode_auto_desc: 'Reviews task actions; insufficient authorization denies the action. You can explicitly authorize it in the next message.',
     run_mode_badge_auto: 'Auto',
-    run_mode_badge_readonly: 'Plan',
-    run_mode_badge_chat: 'Manual',
+    run_mode_badge_readonly: 'Read-only',
+    run_mode_badge_chat: 'Chat',
     approval_required_title: 'Tool call needs approval',
     approval_reason: 'Reason',
     approval_approve: 'Approve',
@@ -6548,7 +6597,7 @@ const I18N = {
     agent_control_confirm: 'Run "{action}" on {name}?',
     mobile_add_acp_title: 'New ACP tool agent (Codex / Claude Code / Gemini …)',
     mobile_add_runtime_name: 'Runtime name (the session name in that tool)',
-    mobile_create_agent_mode_acp: 'ACP tools',
+    mobile_create_agent_mode_acp: 'External Agent',
     public_agent: 'All agents',
     no_addable_members: 'No available members to add',
     selected_n: '{n} selected',
@@ -6576,7 +6625,10 @@ const I18N = {
     mobile_add_ext_url_required: 'HTTP platform requires API URL (except openclaw tag)',
     mobile_add_headers_json_err: 'Headers must be valid JSON',
 
-    create_new_agent: 'Create New Agent',
+    create_new_agent: 'New Agent',
+    agent_creation_intro: 'Give your Agent a name to start chatting.',
+    agent_creation_name_placeholder: 'For example: Writing assistant',
+    agent_creation_team_options: 'Join a Team · Optional',
     agent_creation_advanced: 'Persona and tools · Advanced',
     agent_creation_persona: 'How should this Agent help you?',
     agent_creation_library: 'Or choose an existing persona',
@@ -6585,13 +6637,13 @@ const I18N = {
     create_new_group: 'Create New Group',
     agent_name_label: 'Agent Name',
     agent_tag_label: 'Tag (persona prompt)',
-    create_agent_no_tags: 'No tags available for this team. You can still create a plain Agent by name.',
+    create_agent_no_tags: 'No presets available. Describe the help you need.',
     create_agent_public_tags: 'Public Prompt',
     create_agent_team_tags: 'Team Prompt',
     agent_tag_placeholder: 'e.g. assistant, coder, analyst',
     agent_team_label: 'Team',
-    create_agent_hint: '💡 A private chat will be opened automatically after creation',
-    create_agent_btn: '🤖 Create Agent',
+    create_agent_hint: 'Open a conversation with this Agent after creation',
+    create_agent_btn: 'Create Agent',
     native_session_register: 'Register existing external session',
     agent_name_required: 'Please enter an Agent name',
     agent_created: '✅ Agent created',
@@ -7367,7 +7419,7 @@ async function ensureAgent(fields) {
 // A new agent (in *team*, when given) wearing the library persona *tag*: its text is copied into the agent.
 async function registerAgent(fields, team = '', tag = '') {
   const persona = tag ? (((await lookupPersonaByTag(tag, team)) || {}).persona || '') : '';
-  const agent = await ensureAgent({ ...fields, persona: fields.persona || persona });
+  const agent = await api('POST', '/v1/agents', { ...fields, persona: fields.persona || persona });
   if (team) {
     await api('POST', `/v1/teams/${encodeURIComponent(team)}/members`, { agent: agent.agent_id, role: fields.name, tag });
   }
@@ -9319,6 +9371,11 @@ function swipeDeleteStep(btn, gid) {
 }
 
 async function swipeDeleteGroup(gid) {
+  const group = groups.find(item => getGroupId(item) === gid);
+  if (group?.federated && String(group.owner || '').startsWith('remote:')) {
+    await GroupNetworkUI.removeLocal(gid);
+    return;
+  }
   try {
     await api('DELETE', `/proxy_groups/${encodeURIComponent(gid)}`);
     // Remove from pinned if pinned
@@ -9794,8 +9851,8 @@ async function loadCreateAgentTags(team = '', selectedTag = '') {
         return {
           tag: exp.tag,
           avatar,
-          title: exp.tag,
-          meta: `${getCreateAgentPromptLabel(team)} · ${promptName || exp.tag}`
+          title: promptName || exp.tag,
+          meta: getCreateAgentPromptLabel(team)
         };
       });
 
@@ -9818,6 +9875,53 @@ function selectCreateAgentTag(tag) {
 
 /** @type {'webot'|'acp'} */
 let mobileCreateAgentMode = 'webot';
+let mobileCreateAgentSubmitting = false;
+let mobileCreateTemplateGeneration = 0;
+let mobileCreateAgentPurpose = '';
+let mobileCreationPermissionsCustomized = false;
+let mobileGroupRole = 'companion';
+const mobileGroupRoles = {
+  companion:{zh:'聊天伙伴',en:'Chat companion',hintZh:'一起聊天，把话题说清楚',hintEn:'Join conversations and clarify ideas',persona:'你是一位友好的群聊伙伴，用清楚自然的语言交流，认真回应问题，帮助大家把话题说清楚。'},
+  advisor:{zh:'专家顾问',en:'Expert advisor',hintZh:'分析问题，提供专业建议',hintEn:'Analyze questions and offer advice',persona:'你是一位群聊中的专业顾问，先理解问题和已有事实，说明依据与不确定性，给出简明、可操作的建议。专业领域以用户选定的人设或当前任务为准。'},
+  host:{zh:'讨论主持',en:'Discussion host',hintZh:'协调讨论，梳理共识与分歧',hintEn:'Coordinate discussion and summarize outcomes',persona:'你负责协调群聊中的讨论，帮助明确问题、梳理观点、归纳共识和分歧，适时邀请相关成员补充。你是讨论主持，不因此获得群主或管理员权限。'},
+};
+
+function renderMobileGroupRoles() {
+  const host=document.getElementById('mobile-group-role-picker');
+  host.hidden=mobileCreateAgentPurpose!=='group';if(host.hidden)return;
+  const english=_currentLang!=='zh';host.replaceChildren();
+  const label=document.createElement('p');label.className='side-panel-label';label.textContent=english?'What should this Agent do in the group?':'让这个 Agent 在群里做什么？';host.append(label);
+  const choices=document.createElement('div');choices.className='agent-creation-presets';choices.setAttribute('role','group');
+  for(const [id,role] of Object.entries(mobileGroupRoles)){
+    const button=document.createElement('button');button.type='button';button.dataset.groupRole=id;
+    button.className='agent-creation-preset'+(id===mobileGroupRole?' is-selected':'');button.setAttribute('aria-pressed',String(id===mobileGroupRole));
+    const title=document.createElement('strong');title.textContent=english?role.en:role.zh;
+    const hint=document.createElement('small');hint.textContent=english?role.hintEn:role.hintZh;
+    button.append(title,hint);button.onclick=()=>{mobileGroupRole=id;renderMobileGroupRoles();};choices.append(button);
+  }
+  host.append(choices);
+}
+
+function markMobileCreationPermissions(event) {
+  if(event.target.closest('[data-preset]'))mobileCreationPermissionsCustomized=true;
+}
+
+function applyMobileCreationTemplate(row, changed = true) {
+  if(!row){_syncCreateAgentModeButtons();return;}
+  if(mobileCreateAgentPurpose==='group' && !mobileCreationPermissionsCustomized){
+    const initial=mobileCreateAgentMode==='acp'?'personal':'group';
+    if(row.id!==initial && AgentCreationPresets.select('mobile-agent-creation-presets',initial))return;
+  }
+  if(changed)mobileCreateTemplateGeneration++;
+  const prefix=mobileCreateAgentMode==='acp'?'ca-acp':'create-agent';
+  const panel=document.getElementById(mobileCreateAgentMode==='acp'?'create-agent-panel-acp':'create-agent-panel-webot');
+  if(mobileCreateAgentMode==='acp' && panel.dataset.ready!=='true')return;
+  if(!changed && panel.dataset.templateGeneration===String(mobileCreateTemplateGeneration))return;
+  MobileAgentCreationTools.set(prefix,row.tools);
+  panel.dataset.templateGeneration=String(mobileCreateTemplateGeneration);
+  document.getElementById('mobile-agent-template-hint').textContent=_currentLang==='zh' ? (row.id==='admin'?'高权限：可管理其他 Agent、Team、群聊和闹钟，默认人工审核。':row.id==='group'?'独立工作区，严格沙盒，不开放跨会话指挥和管理工具。':'这是初始配置，创建后可单独调整。') : (row.id==='admin'?'High authority: manage Agents, Teams, groups and alarms, with human review.':row.id==='group'?'Private workspace and strict isolation. No cross-session control or administration.':'Initial settings can be adjusted after creation.');
+  _syncCreateAgentModeButtons();
+}
 
 function mobileGetCreateAgentTeam() {
   const sel = document.getElementById('create-agent-team');
@@ -9826,13 +9930,35 @@ function mobileGetCreateAgentTeam() {
 
 function _syncCreateAgentModeButtons() {
   document.querySelectorAll('#create-agent-mode-bar .add-agent-mode-btn').forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.mode === mobileCreateAgentMode);
+    const active = btn.dataset.mode === mobileCreateAgentMode;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', String(active));
+    btn.tabIndex = active ? 0 : -1;
   });
+  const external = mobileCreateAgentMode === 'acp';
+  const incompatible = external && ['chat','group'].includes(AgentCreationPresets.selected('mobile-agent-creation-presets')?.id);
+  AgentCreationPresets.platform('mobile-agent-creation-presets',external);
+  if(incompatible)document.getElementById('mobile-agent-template-hint').textContent=_currentLang==='zh'?'此隔离模板需要 WeBot，请切换平台或选择其他模板。':'This isolated template requires WeBot. Change platform or template.';
+  const internalButton = document.getElementById('create-agent-submit');
+  const externalButton = document.getElementById('ca-acp-submit');
+  const ready=!!AgentCreationPresets.selected('mobile-agent-creation-presets');
+  if (internalButton) { internalButton.hidden = external; internalButton.disabled = mobileCreateAgentSubmitting || !ready; }
+  if (externalButton) { externalButton.hidden = !external; externalButton.disabled = mobileCreateAgentSubmitting || !ready || incompatible || document.getElementById('create-agent-panel-acp').dataset.ready !== 'true'; }
+  document.getElementById('create-agent-native-entry').hidden = !external || incompatible;
+}
+
+function handleCreateAgentTabKey(event) {
+  if (!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
+  event.preventDefault();
+  const mode = event.key === 'Home' ? 'webot' : event.key === 'End' ? 'acp' : mobileCreateAgentMode === 'webot' ? 'acp' : 'webot';
+  setCreateAgentMode(mode);
+  document.querySelector(`#create-agent-mode-bar [data-mode="${mode}"]`).focus();
 }
 
 function setCreateAgentMode(mode) {
   if (!['webot', 'acp'].includes(mode)) return;
   mobileCreateAgentMode = mode;
+  if(mobileCreateAgentPurpose==='group' && !mobileCreationPermissionsCustomized)AgentCreationPresets.select('mobile-agent-creation-presets',mode==='acp'?'personal':'group');
   _syncCreateAgentModeButtons();
   const pWebot = document.getElementById('create-agent-panel-webot');
   const pAcp = document.getElementById('create-agent-panel-acp');
@@ -9841,6 +9967,8 @@ function setCreateAgentMode(mode) {
     pAcp.style.display = mode === 'acp' ? '' : 'none';
     if (mode === 'acp' && !pAcp.dataset.ready) void renderCreateAgentAcpPanel();
   }
+  const template=AgentCreationPresets.selected('mobile-agent-creation-presets');
+  if(template)applyMobileCreationTemplate(template,false);
 }
 
 async function renderCreateAgentAcpPanel() {
@@ -9853,33 +9981,33 @@ async function renderCreateAgentAcpPanel() {
   const platformOpts = await _mobileAcpPlatformOptionsHtml();
   if (Number(panel.dataset.generation) !== generation) return;
   panel.innerHTML = `
-    <div class="mobile-add-agent-form">
-      <p class="form-hint">${esc(t('mobile_create_agent_team_hint'))}</p>
-      <div style="font-weight:700;margin-bottom:6px;color:var(--text);">${esc(t('mobile_add_acp_title'))}</div>
-      <label>${esc(t('mobile_add_ext_platform'))}</label>
-      <select id="ca-acp-platform">${platformOpts}</select>
-      ${componentControlMarkup('acpx')}
-      <label>${esc(t('mobile_add_ext_name'))}</label>
-      <input type="text" id="ca-acp-name" placeholder="my_agent" autocomplete="off">
+    <div class="create-agent-form">
+      <div class="side-panel-field"><label class="side-panel-label" for="ca-acp-name">${esc(t('agent_name_label'))}</label>
+      <input type="text" id="ca-acp-name" class="side-panel-input" maxlength="160" placeholder="${esc(t('agent_creation_name_placeholder'))}" autocomplete="off"></div>
+      <label class="side-panel-label" for="ca-acp-platform">${esc(t('mobile_add_ext_platform'))}</label>
+      <select id="ca-acp-platform" class="side-panel-input">${platformOpts}</select>
+      <div class="create-agent-component"><p>${esc(_currentLang === 'zh' ? '通过 acpx 连接 Codex、Claude 等平台；需要时可在这里下载。ClawCross 模式与沙盒约束接入工具，原生 CLI 工具由其自身权限控制。' : 'Connect Codex, Claude and other platforms through acpx. ClawCross policies govern its tools; native CLI tools use their own permissions.')}</p>${componentControlMarkup('acpx')}</div>
       <details class="create-agent-advanced"><summary>${esc(t('agent_creation_advanced'))}</summary>
-        <label>${esc(t('agent_creation_persona'))}</label>
-        <textarea id="ca-acp-persona" rows="3"></textarea>
-        <label>${esc(t('agent_creation_library'))}</label>
-        <select id="ca-acp-tag" class="ext-tag-select">${tagOpts}</select>
-        <input type="text" id="ca-acp-tag-custom" class="ext-tag-custom" placeholder="${esc(t('agent_tag_placeholder'))}" style="margin-top:8px;display:none;">
-        <label>${esc(t('agent_creation_tools'))}</label>
-        <input id="ca-acp-tools" placeholder="${esc(_currentLang === 'zh' ? '留空使用全部可用工具' : 'All available tools')}">
-        <p class="form-hint">${esc(t('agent_creation_tools_hint'))}</p>
-        <label>${esc(t('mobile_add_runtime_name'))}</label>
-        <input type="text" id="ca-acp-runtime" placeholder="留空自动生成 / Automatic" autocomplete="off">
+        <label class="side-panel-label" for="ca-acp-persona">${esc(t('agent_creation_persona'))}</label>
+        <textarea id="ca-acp-persona" class="side-panel-input" rows="3"></textarea>
+        <label class="side-panel-label" for="ca-acp-tag">${esc(t('agent_creation_library'))}</label>
+        <select id="ca-acp-tag" class="side-panel-input">${tagOpts}</select>
+        <input type="text" id="ca-acp-tag-custom" class="side-panel-input" placeholder="${esc(t('agent_tag_placeholder'))}" style="margin-top:8px;display:none;">
+        <label class="side-panel-label">${esc(t('agent_creation_tools'))}</label>
+        <div id="ca-acp-tools-picker" class="create-agent-tools-picker"></div><input id="ca-acp-tools" type="hidden">
+        <label class="side-panel-label" for="ca-acp-runtime">${esc(t('mobile_add_runtime_name'))}</label>
+        <input type="text" id="ca-acp-runtime" class="side-panel-input" placeholder="${esc(_currentLang === 'zh' ? '留空自动生成' : 'Generated automatically')}" autocomplete="off">
       </details>
-      <button type="button" class="form-submit" id="ca-acp-submit" onclick="mobileSubmitCreateAcpAgent()">${esc(t('mobile_create_ext_submit'))}</button>
     </div>`;
   initComponentControls(panel);
+  void MobileAgentCreationTools.mount('ca-acp');
   const tagSel = document.getElementById('ca-acp-tag');
   const tagCust = document.getElementById('ca-acp-tag-custom');
   tagSel.onchange = () => { tagCust.style.display = tagSel.value === 'custom' ? 'block' : 'none'; };
   panel.dataset.ready = 'true';
+  const template=AgentCreationPresets.selected('mobile-agent-creation-presets');
+  if(template)applyMobileCreationTemplate(template,false);
+  _syncCreateAgentModeButtons();
 }
 
 function _mobilePickedTag(selectId, customId) {
@@ -9889,32 +10017,38 @@ function _mobilePickedTag(selectId, customId) {
 }
 
 async function mobileSubmitCreateAcpAgent() {
+  if (mobileCreateAgentSubmitting) return;
   const team = mobileGetCreateAgentTeam();
   const btn = document.getElementById('ca-acp-submit');
   const name = String((document.getElementById('ca-acp-name') || {}).value || '').trim();
   const runtime = String((document.getElementById('ca-acp-runtime') || {}).value || '').trim();
   const platform = String((document.getElementById('ca-acp-platform') || {}).value || '');
   if (!name) {
-    toast(t('mobile_add_enter_name'));
+    toast(t('agent_name_required'));
+    document.getElementById('ca-acp-name')?.focus();
     return;
   }
   if (!platform) {
     toast(_currentLang === 'zh' ? '请选择平台' : 'Please choose a platform');
+    document.getElementById('ca-acp-platform')?.focus();
     return;
   }
-  if (btn) { btn.disabled = true; btn.dataset.orig = btn.textContent; btn.textContent = t('adding'); }
+  mobileCreateAgentSubmitting = true;
+  _syncCreateAgentModeButtons();
+  if (btn) { btn.dataset.orig = btn.textContent; btn.textContent = t('adding'); }
   try {
     // The runtime name is the new agent's number: its session in that runtime.
     const agent = await registerAgent({ name, platform, ...mobileCreateAgentExtras('ca-acp'), ...(runtime ? { agent_id: runtime } : {}) }, team, _mobilePickedTag('ca-acp-tag', 'ca-acp-tag-custom'));
-    if (await startPrivateChat(agent.agent_id)) {
-      closeCreateAgentModal();
-      invalidateContactsPrefetch();
-      if (typeof loadContactsForTeam === 'function') loadContactsForTeam();
-    }
+    closeCreateAgentModal();
+    invalidateContactsPrefetch();
+    await startPrivateChat(agent.agent_id);
+    if (typeof loadContactsForTeam === 'function') loadContactsForTeam();
   } catch (e) {
     toast((e && e.message) ? e.message : t('add_failed'));
   } finally {
-    if (btn) { btn.disabled = false; if (btn.dataset.orig) btn.textContent = btn.dataset.orig; }
+    mobileCreateAgentSubmitting = false;
+    if (btn && btn.dataset.orig) btn.textContent = btn.dataset.orig;
+    _syncCreateAgentModeButtons();
   }
 }
 
@@ -9928,6 +10062,8 @@ async function onCreateAgentTeamChange() {
 
 function _resetCreateAgentPanels() {
   mobileCreateAgentMode = 'webot';
+  MobileAgentCreationTools.reset();
+  document.querySelectorAll('#create-agent-modal .create-agent-advanced').forEach(details=>{details.open=false;});
   _syncCreateAgentModeButtons();
   const pWebot = document.getElementById('create-agent-panel-webot');
   const pAcp = document.getElementById('create-agent-panel-acp');
@@ -9935,24 +10071,37 @@ function _resetCreateAgentPanels() {
   if (pAcp) { pAcp.style.display = 'none'; pAcp.innerHTML = ''; delete pAcp.dataset.ready; pAcp.dataset.generation = String(Number(pAcp.dataset.generation || 0) + 1); }
 }
 
-async function showCreateAgentModal(preferredTeam = '') {
+async function showCreateAgentModal(preferredTeam = '', purpose = '') {
   hideCreateMenu();
   closeOasisSidebar();
   document.getElementById('create-agent-modal').classList.add('show');
   document.getElementById('create-agent-overlay').classList.add('show');
   createAgentTagOptions = [];
+  mobileCreateAgentPurpose=purpose;mobileGroupRole='companion';mobileCreationPermissionsCustomized=false;
   _resetCreateAgentPanels();
+  renderMobileGroupRoles();
+  const capability=document.getElementById('mobile-agent-capability-presets');
+  capability.open=purpose!=='group';capability.classList.toggle('is-general-create',purpose!=='group');
+  document.getElementById('mobile-agent-capability-summary').textContent=_currentLang==='zh'?'能力与工具 · 高级设置':'Capabilities and tools · Advanced';
+  const presetHost=document.getElementById('mobile-agent-creation-presets');
+  presetHost.removeEventListener('click',markMobileCreationPermissions,true);
+  presetHost.addEventListener('click',markMobileCreationPermissions,true);
+  void MobileAgentCreationTools.mount('create-agent');
+  void AgentCreationPresets.mount('mobile-agent-creation-presets',applyMobileCreationTemplate,{initial:purpose==='group'?'group':'personal'});
   try {
     const data = await api('GET', '/teams');
     const teams = data.teams || [];
     const select = document.getElementById('create-agent-team');
     select.innerHTML = `<option value="">${t('no_team')}</option>` +
-      teams.map(tm => `<option value="${esc(tm)}">${esc(typeof workspaceTeamLabel === 'function' ? workspaceTeamLabel(tm) : tm)}</option>`).join('');
+      teams.filter(tm=>tm !== '__default__').map(tm => `<option value="${esc(tm)}">${esc(tm)}</option>`).join('');
   } catch (e) {
     console.error('Load teams for agent failed:', e);
   }
   const createTeamSel = document.getElementById('create-agent-team');
-  if (preferredTeam && createTeamSel) createTeamSel.value = preferredTeam;
+  if (preferredTeam && preferredTeam !== '__default__' && createTeamSel) {
+    createTeamSel.value = preferredTeam;
+    document.getElementById('create-agent-team-row').open = true;
+  }
   await loadCreateAgentTags(createTeamSel ? createTeamSel.value : '', '');
 }
 
@@ -9980,20 +10129,28 @@ function openMobileNativeSessions() {
 }
 
 function mobileCreateAgentExtras(prefix) {
-  const persona = document.getElementById(prefix + '-persona')?.value.trim() || '';
+  let persona = document.getElementById(prefix + '-persona')?.value.trim() || '';
+  const tag=prefix==='ca-acp'?_mobilePickedTag('ca-acp-tag','ca-acp-tag-custom'):document.getElementById('create-agent-tag')?.value;
+  if(!persona && !tag && mobileCreateAgentPurpose==='group')persona=mobileGroupRoles[mobileGroupRole].persona;
   const names = (document.getElementById(prefix + '-tools')?.value || '').split(/[,，\s]+/).filter(Boolean);
-  const tools = names.length ? [...new Set(names)] : null;
-  return { ...(persona ? {persona} : {}), ...(tools ? {tools, meta: {acp: {clawcross_tools: true, tools}}} : {}) };
+  const picked = MobileAgentCreationTools.value(prefix);
+  const tools = picked === undefined ? names.length ? [...new Set(names)] : null : picked;
+  const template=AgentCreationPresets.selected('mobile-agent-creation-presets');
+  return { ...(persona ? {persona} : {}), tools, ...(prefix === 'ca-acp' && tools !== null ? {meta:{acp:{clawcross_tools:true,tools}}} : {}), creation_template:template?.id || 'personal' };
 }
 
 async function submitCreateAgent() {
+  if (mobileCreateAgentSubmitting) return;
   const name = document.getElementById('create-agent-name').value.trim();
   const tag = document.getElementById('create-agent-tag').value.trim();
   const team = document.getElementById('create-agent-team').value;
   if (!name) {
     toast(t('agent_name_required'));
+    document.getElementById('create-agent-name').focus();
     return;
   }
+  mobileCreateAgentSubmitting = true;
+  _syncCreateAgentModeButtons();
   try {
     const agent = await registerAgent({ name, platform: 'webot', ...mobileCreateAgentExtras('create-agent') }, team, tag);
     toast(t('agent_created') + ': ' + name);
@@ -10003,12 +10160,18 @@ async function submitCreateAgent() {
     if (typeof loadContactsForTeam === 'function') loadContactsForTeam();
   } catch (e) {
     toast(t('agent_create_failed') + ': ' + e.message);
-  }
+  } finally { mobileCreateAgentSubmitting = false; _syncCreateAgentModeButtons(); }
 }
 
 async function showCreateGroupModal() {
   hideCreateMenu();
   closeOasisSidebar();
+  document.getElementById('create-custom-name').value = '';
+  document.getElementById('create-team-select').value = '';
+  document.getElementById('create-group-advanced').open = false;
+  document.getElementById('import-panel').style.display = 'none';
+  document.getElementById('import-panel-arrow').style.transform = '';
+  updateGroupNamePreview();
   // Show modal first, then load teams
   document.getElementById('create-modal').classList.add('show');
   document.getElementById('create-modal-overlay').classList.add('show');
@@ -10026,7 +10189,8 @@ function closeCreateModal() {
   // Clear inputs
   document.getElementById('create-team-select').value = '';
   document.getElementById('create-custom-name').value = '';
-  document.getElementById('group-name-preview').textContent = t('please_select_team');
+  document.getElementById('create-group-advanced').open = false;
+  document.getElementById('group-name-preview').textContent = t('create_new_group');
 }
 
 async function loadTeamsForCreate() {
@@ -10035,7 +10199,7 @@ async function loadTeamsForCreate() {
     const data = await api('GET', '/teams');
     const teams = data.teams || data || [];
     select.innerHTML = `<option value="">${t('select_team_placeholder')}</option>` +
-      workspaceTeamOptions(teams, esc);
+      workspaceTeamOptions(teams.filter(team => team !== '__default__'), esc);
   } catch (e) {
     toast(t('load_teams_failed') + ': ' + e.message);
   }
@@ -10046,28 +10210,23 @@ function onTeamSelectChange() {
 }
 
 function updateGroupNamePreview() {
-  const teamSelect = document.getElementById('create-team-select');
   const customNameInput = document.getElementById('create-custom-name');
   const previewEl = document.getElementById('group-name-preview');
-
-  const teamName = teamSelect.value;
   const customName = customNameInput.value.trim();
-
-  if (!teamName) {
-    previewEl.textContent = customName || '新群聊';
-    return;
-  }
-
-  // 群名：自定义名，或 team 名
-  previewEl.textContent = customName || teamName;
+  previewEl.textContent = customName || t('create_new_group');
 }
 
 async function submitCreateGroup() {
   const teamName = document.getElementById('create-team-select').value;
   const customName = document.getElementById('create-custom-name').value.trim();
+  if (!customName) {
+    toast(_currentLang === 'zh' ? '请填写群聊名称' : 'Enter a group name');
+    document.getElementById('create-custom-name').focus();
+    return;
+  }
 
-  // The group starts with the team's agents; after that it is a group like any other.
-  const title = customName || teamName || '新群聊';
+  // Team membership is an optional advanced choice; the group name is independent.
+  const title = customName;
   try {
     const card = teamName ? await api('GET', `/v1/teams/${encodeURIComponent(teamName)}`) : {members: []};
     const agents = (card.members || []).map(m => m.agent.agent_id);
@@ -10091,9 +10250,19 @@ function applyGroupDetail(detail) {
   document.getElementById('action-group-rename').style.display = String(detail.owner || '').startsWith('remote:') ? 'none' : '';
   const networkStatus = document.getElementById('group-network-status');
   networkStatus.style.display = detail.federated ? '' : 'none';
-  networkStatus.textContent = detail.federated ? (detail.connection_error || '群连接正常') : '';
+  networkStatus.textContent = detail.federated ? (detail.connection_error || (detail.external_access_enabled === false
+    ? (_currentLang === 'zh' ? '外部联网已暂停 · 本机连接正常' : 'External access paused · Host connected')
+    : (_currentLang === 'zh' ? '群连接正常' : 'Group connected'))) : '';
   document.getElementById('action-group-sharing').style.display = detail.federated ? '' : 'none';
   document.getElementById('action-group-leave').style.display = detail.federated && String(detail.owner || '').startsWith('remote:') ? '' : 'none';
+  document.getElementById('action-group-remove-local').style.display = detail.federated ? '' : 'none';
+  document.getElementById('action-group-dissolve').style.display = String(detail.owner || '').startsWith('remote:') ? 'none' : '';
+  document.getElementById('action-group-disconnect-external').style.display = detail.federated && !String(detail.owner || '').startsWith('remote:') ? '' : 'none';
+  const externalKey = detail.external_access_enabled === false ? 'group_resume_external' : 'group_disconnect_external';
+  const externalLabel = document.getElementById('group-external-access-label');
+  externalLabel.dataset.i18n = externalKey;
+  externalLabel.textContent = t(externalKey);
+  document.getElementById('action-group-disconnect-external').classList.toggle('danger', detail.external_access_enabled !== false);
   currentGroupPrimaryAgent = detail.primary_agent || '';
   isMuted = !!detail.dnd;
   if (isMuted) mutedGroupIds.add(detail.group_id); else mutedGroupIds.delete(detail.group_id);
@@ -14550,8 +14719,7 @@ async function importPersonalSkill() {
 
 // ════════════════════════════════════════════════════
 // ── Run Mode (chat / readonly / manual / auto / bypass) ──
-// Shares localStorage key 'clawRunMode' with PC main chat so the
-// three surfaces (CLI / PC web / mobile) stay in sync.
+// Agent settings are persisted by the backend. localStorage caches the label.
 // ════════════════════════════════════════════════════
 const RUN_MODE_VALID = ['chat', 'readonly', 'manual', 'auto', 'bypass'];
 const RUN_MODE_DEFAULT = 'auto';
@@ -15163,7 +15331,7 @@ function renderPersonaContactRow(exp, avatarClass) {
   const dname = personaDisplayName(exp);
   const info = escapeHtml(JSON.stringify({ name: dname, tag: exp.tag || '', persona: exp.persona || '', emoji: exp.emoji || '', source: exp.source || '', team: exp.team || '' }));
   const teamLabel = exp.team ? `<span style="font-size:11px;color:var(--text-hint);margin-left:4px;">[${esc(exp.team)}]</span>` : '';
-  return `<div class="contact-item expert-item" onclick="showPersonaDetail(JSON.parse(this.dataset.info))" data-info="${info}"><div class="contact-avatar ${avatarClass}">${exp.emoji || '🌟'}</div><div class="contact-name">${esc(dname)}${teamLabel}</div><span class="contact-type-pill prompt">Prompt</span>${exp.tag ? `<span class="contact-tag">${esc(exp.tag)}</span>` : ''}</div>`;
+  return `<div class="contact-item expert-item" onclick="showPersonaDetail(JSON.parse(this.dataset.info))" data-info="${info}"><div class="contact-avatar ${avatarClass}">${exp.emoji || '🌟'}</div><div class="contact-name" title="${esc(dname)}">${esc(dname)}${teamLabel}</div><span class="contact-type-pill prompt">Prompt</span>${exp.tag ? `<span class="contact-tag" title="${esc(exp.tag)}">${esc(exp.tag)}</span>` : ''}</div>`;
 }
 
 function renderContactSections(agents, customExperts, presetExperts, idPrefix) {
@@ -16931,8 +17099,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 <script>
 window.addEventListener('group-network-changed', async event => {
+  __mobileGroupDetailCache.clear();
+  const removed = event.detail?.removed_group_id;
+  if (removed) {
+    let pinned = getPinnedIds().filter(id => id !== removed);
+    localStorage.setItem('clawcross_pinned_groups', JSON.stringify(pinned));
+    mutedGroupIds.delete(removed);
+    groupUnreadCounts.delete(removed);
+    groupSnapshots.delete(removed);
+    groups = groups.filter(group => getGroupId(group) !== removed);
+    renderGroupList(groups);
+    if (currentGroupId === removed) goBack();
+  }
   await refreshGroups();
-  if (event.detail) await openChat(event.detail.group_id, event.detail.title);
+  if (event.detail?.group_id) await openChat(event.detail.group_id, event.detail.title);
   else if (currentGroupId) { try { await reloadGroupDetail(); } catch (_) { goBack(); } }
 });
 </script>

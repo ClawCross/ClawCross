@@ -5,15 +5,10 @@ if _src_dir not in _sys.path:
     _sys.path.insert(0, _src_dir)
 
 """
-MCP Tool Server: LLM API Access
+MCP Tool Server: Group Messaging
 
-Provides tools for the Agent:
-
-1. call_llm_api — Call any external OpenAI-compatible LLM API.
-   Agent provides url, api_key, model, messages content, and gets back the response.
-   Useful for consulting powerful/expensive models (GPT-5, Claude, etc.)
-
-2. send_to_group — Reply in a group chat or one-to-one private chat.
+send_to_group replies in a group or private chat. The legacy model-call helper
+is retained for internal callers and is not registered as an Agent tool.
 
 Messages to another agent session go through webot's send_to_session.
 
@@ -32,7 +27,7 @@ from common.runtime_paths import ENV_FILE
 # 加载 .env
 load_dotenv(dotenv_path=ENV_FILE)
 
-mcp = FastMCP("LLM API Access")
+mcp = FastMCP("Group Messaging")
 
 # Internal Agent endpoint
 _AGENT_PORT = os.getenv("PORT_AGENT", "51200")
@@ -42,7 +37,6 @@ _INTERNAL_TOKEN = os.getenv("INTERNAL_TOKEN", "")
 _DEFAULT_TIMEOUT = 120
 # Default timeout for internal sync calls
 
-@mcp.tool()
 async def call_llm_api(
     username: str,
     api_url: str,

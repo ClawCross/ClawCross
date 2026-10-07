@@ -30,7 +30,8 @@
 
     <link rel="stylesheet" href="/static/css/markdown-shared.css?v=20261004-fold-approval">
     <link rel="stylesheet" href="/static/css/theme.css?v=20261002-fold">
-    <link rel="stylesheet" href="/static/css/style.css?v=20261005-team-skills">
+    <link rel="stylesheet" href="/static/css/style.css?v=20261006-recent-five">
+    <link rel="stylesheet" href="/static/css/agent-creation-presets.css?v=20261006-agent-templates">
 <link rel="stylesheet" href="/static/css/group-network.css?v=20261004-message-menu">
 <link rel="stylesheet" href="/static/css/settings-polish.css?v=20261005-team-skills">
 </head>
@@ -290,6 +291,8 @@
                 <div class="studio-session-rail-body">
                     <button type="button" id="studio-new-conversation" class="studio-new-conversation oc-acp-session-ensure" onclick="studioNewConversation()"><svg class="ui-icon"><use href="/static/icons.svg#message-plus"/></svg><span data-i18n="studio_new_conversation">新建 Agent</span></button>
                 <!-- Chat runtime switcher: WeBot or an ACP tool -->
+                <details class="studio-platform-picker">
+                    <summary><span data-i18n="orch_agent_platform">Agent 平台</span></summary>
                 <div id="studio-chat-switcher" class="studio-chat-switcher" style="display:none;">
                     <div class="oc-switcher-inner">
                         <div class="oc-switcher-row-main">
@@ -306,11 +309,20 @@
                         </div>
                     </div>
                 </div>
+                <div id="studio-acpx-unavailable" class="studio-acpx-unavailable" hidden>
+                    <span data-i18n="acpx_required_for_external">外部 Agent 需要 acpx</span>
+                    <div data-component="acpx"><span data-component-status role="status">正在检查 acpx…</span> <button type="button" data-component-install hidden>下载并安装 acpx</button></div>
+                </div>
+                </details>
                 <div id="oc-internal-session-row" hidden>
                     <select id="oc-internal-session-pick" hidden tabindex="-1"><option value=""></option></select>
                 </div>
                 <div class="studio-session-list-heading" data-i18n="studio_history">最近 Agent</div>
                 <div id="studio-conversation-list" class="studio-conversation-list" aria-label="Recent Agents"></div>
+                <details id="studio-team-agent-tree" class="studio-team-tree" open ontoggle="if(this.open && typeof renderStudioTeamTree === 'function') renderStudioTeamTree(true)">
+                    <summary data-i18n="teams">Teams</summary>
+                    <div id="studio-team-agent-tree-list" class="studio-team-tree-list"></div>
+                </details>
                 <span id="oc-acp-session-status" class="oc-acp-session-status" aria-live="polite"></span>
                 </div>
                 </details>
@@ -995,6 +1007,7 @@
                 <button onclick="closeAgentMetaModal()" class="agent-meta-close">&times;</button>
             </div>
             <div class="agent-meta-body">
+                <div id="agent-meta-template-field"><div id="studio-agent-creation-presets"></div><p id="studio-agent-template-hint" class="agent-creation-preset-hint"></p></div>
                 <div id="agent-meta-platform-field">
                     <label class="agent-meta-label">连接方式</label>
                     <select id="agent-meta-platform" class="agent-meta-input" onchange="agentMetaPlatformChanged()"><option value="webot">WeBot</option></select>
@@ -1360,17 +1373,18 @@
 <link rel="stylesheet" href="/static/css/channel-setup.css?v=2">
 <script src="/static/js/channel-setup.js?v=20261004-tool-result"></script>
 <link rel="stylesheet" href="/static/css/native-session-browser.css?v=2">
-<script src="/static/js/native-session-browser.js?v=2"></script>
+<script src="/static/js/native-session-browser.js?v=20261006-acpx"></script>
+<script src="/static/js/agent-creation-presets.js?v=20261006-group-roles"></script>
     <script src="/static/js/markdown-shared.js?v=20261003-inline-approval"></script>
     <script src="/static/js/tinyfish-live-shared.js"></script>
-    <script src="/static/js/tool-catalog.js?v=20261001-groups"></script>
+    <script src="/static/js/tool-catalog.js?v=20261006-agent-templates"></script>
 <link rel="stylesheet" href="/static/css/group-message-menu.css?v=20261004-message-menu">
 <script src="/static/js/group-message-menu.js?v=20261004-message-menu"></script>
-<script src="/static/js/group-network-ui.js?v=20261004-message-menu"></script>
+<script src="/static/js/group-network-ui.js?v=20261006-network-pause"></script>
     <script src="/static/js/conversation-ui-panels.js?v=20261001-windows"></script>
     <script src="/static/js/components.js?v=20261004-windows-sandbox"></script>
     <script src="/static/js/attachment-utils.js?v=20261003-media"></script>
-    <script src="/static/js/main.js?v=20261005-team-skills"></script>
+    <script src="/static/js/main.js?v=20261006-recent-five"></script>
     <link rel="stylesheet" href="/static/css/external-agent-settings.css?v=20261004-effort-stops">
     <link rel="stylesheet" href="/static/css/runtime-settings.css?v=20261004-keepy-manager">
     <script src="/static/js/runtime-presentation.js?v=20261004-workspace"></script>

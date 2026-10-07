@@ -13,20 +13,27 @@ import re
 from webot import skills
 
 
-def _root(user_id: str, team: str = "", session_id: str = "") -> Path:
+def _root(user_id: str, team: str = "", session_id: str = "", memory_scope: str = 'workspace') -> Path:
     if not user_id or user_id in {".", ".."} or Path(user_id).name != user_id or "\\" in user_id:
         raise ValueError("Invalid user ID")
     if session_id:
-        roots = _catalog_roots(user_id, session_id, team)
+        roots = _catalog_roots(user_id, session_id, team, memory_scope=memory_scope)
         if not roots: raise ValueError('No Skill workspace is available')
         return roots[0][0]
     return skills._scope_skills_dir(user_id, team)
 
 
-def _catalog_roots(user_id: str, session_id: str, team: str = '', agent_config: dict | None = None) -> list[tuple[Path, str, str]]:
+def _catalog_roots(user_id: str, session_id: str, team: str = '', agent_config: dict | None = None,
+                   memory_scope: str = 'workspace') -> list[tuple[Path, str, str]]:
     from webot.workspace import resolve_session_workspace
     state = resolve_session_workspace(user_id, session_id, agent_config=agent_config)
     folders = list(state.folders) or [{'path':str(state.root), 'source':'user' if state.mode == 'shared' else state.mode, 'team':''}]
+    if memory_scope == 'companion':
+        folders = [folder for folder in folders if folder.get('source') == 'companion']
+        if not folders:
+            raise ValueError('Companion workspace is not enabled for this Agent')
+    elif memory_scope != 'workspace':
+        raise ValueError('Unsupported memory scope')
     if team:
         folders = [folder for folder in folders if folder.get('team') == team]
         if not folders:
@@ -49,9 +56,10 @@ def _catalog_roots(user_id: str, session_id: str, team: str = '', agent_config: 
     return result
 
 
-def _catalog(user_id: str, session_id: str, team: str = '', agent_config: dict | None = None) -> list[dict]:
+def _catalog(user_id: str, session_id: str, team: str = '', agent_config: dict | None = None,
+             memory_scope: str = 'workspace') -> list[dict]:
     entries, seen = [], set()
-    for root, namespace, selected_team in _catalog_roots(user_id, session_id, team, agent_config):
+    for root, namespace, selected_team in _catalog_roots(user_id, session_id, team, agent_config, memory_scope):
         for entry in _entries(user_id, selected_team, root=root, namespace=namespace):
             if entry['_path'] not in seen:
                 seen.add(entry['_path']); entries.append(entry)
@@ -87,7 +95,7 @@ def _entries(user_id: str, team: str = "", *, root: Path | None = None, namespac
         entries.append({
             "id": _identifier(team if namespace is None else namespace, key), "name": meta.get("name") or path.parent.name,
             "description": meta.get("description", ""), "category": meta.get("category", ""),
-            "scope": "team" if team else "personal", "team": team,
+            "scope": 'companion' if (namespace or '').startswith('companion:') else "team" if team else "personal", "team": team,
             "_path": path, "_key": path.parent.name,
         })
     return entries
@@ -97,18 +105,22 @@ def public_entry(entry: dict) -> dict:
     return {key: value for key, value in entry.items() if not key.startswith("_")}
 
 
-def list_memory(user_id: str, team: str = "", *, include_personal: bool = True, session_id: str = "", agent_config: dict | None = None, include_paths: bool = False) -> list[dict]:
+def list_memory(user_id: str, team: str = "", *, include_personal: bool = True, session_id: str = "", agent_config: dict | None = None, include_paths: bool = False, memory_scope: str = 'workspace') -> list[dict]:
     if session_id:
-        return [{**public_entry(entry), **({'path':str(entry['_path'])} if include_paths else {})} for entry in _catalog(user_id, session_id, team, agent_config)]
+        return [{**public_entry(entry), **({'path':str(entry['_path'])} if include_paths else {})} for entry in _catalog(user_id, session_id, team, agent_config, memory_scope)]
+    if memory_scope == 'companion':
+        raise ValueError('Companion memory requires an active Agent session')
     entries = _entries(user_id, team)
     if team and include_personal:
         entries += _entries(user_id)
     return [public_entry(entry) for entry in entries]
 
 
-def memory_target(user_id: str, selector: str, team: str = "", *, create: bool = False, shared: bool = False, session_id: str = "") -> dict:
+def memory_target(user_id: str, selector: str, team: str = "", *, create: bool = False, shared: bool = False, session_id: str = "", memory_scope: str = 'workspace') -> dict:
     selector = _name(selector)
-    entries = _catalog(user_id, session_id, team) if session_id else _entries(user_id, team)
+    if memory_scope == 'companion' and not session_id:
+        raise ValueError('Companion memory requires an active Agent session')
+    entries = _catalog(user_id, session_id, team, memory_scope=memory_scope) if session_id else _entries(user_id, team)
     if team and shared and not session_id:
         entries += _entries(user_id)
     matches = [entry for entry in entries if selector == entry["id"]]
@@ -125,7 +137,7 @@ def memory_target(user_id: str, selector: str, team: str = "", *, create: bool =
     except ValueError:
         key = "memory-" + hashlib.sha256(selector.encode()).hexdigest()[:20]
     if session_id:
-        root, namespace, selected_team = _catalog_roots(user_id, session_id, team)[0]
+        root, namespace, selected_team = _catalog_roots(user_id, session_id, team, memory_scope=memory_scope)[0]
         team = selected_team
     else:
         root, namespace = _root(user_id, team), team
@@ -133,8 +145,9 @@ def memory_target(user_id: str, selector: str, team: str = "", *, create: bool =
     target = root / key / "SKILL.md"
     if target.parent.is_symlink() or target.is_symlink() or not target.resolve().is_relative_to(root):
         raise ValueError("Invalid memory storage")
+    selected_scope = 'companion' if namespace.startswith('companion:') else 'team' if team else 'personal'
     return {"id": _identifier(namespace, key), "name": selector, "description": "", "category": "",
-            "scope": "team" if team else "personal", "team": team, "_path": target, "_key": key}
+            "scope": selected_scope, "team": team, "_path": target, "_key": key}
 
 
 def prepare_content(entry: dict, content: str, *, file_path=None) -> str:
@@ -164,21 +177,21 @@ def prepare_content(entry: dict, content: str, *, file_path=None) -> str:
     return content
 
 
-def refresh_index(user_id: str, team: str = "", *, session_id: str = "") -> None:
-    root = _root(user_id, team, session_id)
+def refresh_index(user_id: str, team: str = "", *, session_id: str = "", memory_scope: str = 'workspace') -> None:
+    root = _catalog_roots(user_id, session_id, team, memory_scope=memory_scope)[0][0] if session_id else _root(user_id, team, session_id, memory_scope)
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     path = root / "SKILLS_INDEX.md"
     if path.is_symlink():
         raise ValueError("Memory index cannot use symbolic links")
-    entries = list_memory(user_id, team, include_personal=False, session_id=session_id)
+    entries = list_memory(user_id, team, include_personal=False, session_id=session_id, memory_scope=memory_scope)
     text = "# Skills Index\n\n" + "\n".join(f"- **{e['name']}**: {e['description']}" for e in entries) + "\n"
     from webot.mcp.filemanager import _atomic_write_text
     _atomic_write_text(str(path), text)
 
 
 @contextmanager
-def memory_lock(user_id: str, team: str = "", *, session_id: str = ""):
-    root = _root(user_id, team, session_id)
+def memory_lock(user_id: str, team: str = "", *, session_id: str = "", memory_scope: str = 'workspace'):
+    root = _root(user_id, team, session_id, memory_scope)
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     path = root / ".memory.lock"
     if path.is_symlink():

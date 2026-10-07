@@ -1561,7 +1561,7 @@ async def configure_claude_keepalive(
 async def get_clawcross_help(topic: str = '', query: str = '', section: str = '') -> str:
     """查阅 ClawCross 本地功能与设置说明；只按需读取相关文档，不联网。
 
-    :param topic: 留空列主题；overview/configuration/channels/sandbox/agents/groups/teams/skills/cli/launch
+    :param topic: 留空列主题；overview/configuration/channels/sandbox/agents/management/mcp/groups/teams/skills/cli/launch
     :param query: 可选关键词；留空读主题概览
     :param section: 可选章节名；查返回 sections 后按需读取，避免加载全部文档
     """

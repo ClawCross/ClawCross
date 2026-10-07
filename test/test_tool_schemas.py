@@ -46,16 +46,17 @@ from webot.mcp_tool_docs import parse_tool_docstring
 
 MCP_SERVERS = (
     "commander", "filemanager", "llmapi", "oasis", "search",
-    "skills", "webot", "scheduler", "session", "notifier",
+    "skills", "webot", "scheduler", "session", "notifier", "management",
 )
 SESSION_ARGUMENTS = {"source_session", "session_id", "parent_session", "notify_session", "current_session_id"}
 
 # JSON size of the strict-bound tool array. The array renders ahead of the
 # system prompt on every request; growing it should be a decision, not drift.
-# General configuration and local help add three requested tools (measured
-# full inventory: 43,584 chars). Initial requests still contain only compact
+# Optional Team/group/alarm administration and session details extend the
+# measured full inventory to about 51,500 chars with Team workflows and clocks.
+# Initial requests contain compact
 # names/descriptions and tool_search/tool_call, not this full schema array.
-STRICT_TOOL_ARRAY_BUDGET_CHARS = 44_000
+STRICT_TOOL_ARRAY_BUDGET_CHARS = 52_000
 
 _inventory_cache = None
 

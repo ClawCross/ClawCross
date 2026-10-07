@@ -187,6 +187,23 @@ class TwoDeviceTests(unittest.IsolatedAsyncioTestCase):
         await b.consume(row, packet)
         self.assertEqual(len(b.gateway.received), 2)
 
+    async def test_pause_keeps_device_credentials_and_automatically_reconnects_on_resume(self):
+        credentials = [(client.store.get(client.user,client.alias)['token'],client.alias) for client in self.clients]
+        headers = {'Authorization':'Bearer '+self.host['token']}
+        async with httpx.AsyncClient(trust_env=False) as api:
+            response = await api.post(self.url+'/relay/manage/external_access',json={'enabled':False},headers=headers)
+            self.assertEqual(response.status_code,200,response.text)
+            await self.until(lambda:all(client.card(client.require(client.user,client.alias))['connection_state']=='paused' for client in self.clients))
+            for client,(token,alias) in zip(self.clients,credentials):
+                row=client.store.get(client.user,alias)
+                self.assertTrue(row['active'])
+                self.assertEqual(row['token'],token)
+            response = await api.post(self.url+'/relay/manage/external_access',json={'enabled':True},headers=headers)
+            self.assertEqual(response.status_code,200,response.text)
+            await self.until(lambda:all(not client.store.get(client.user,client.alias)['error'] for client in self.clients))
+        await self.clients[0].post('alice',self.clients[0].alias,'u:alice','RESTORED_WITHOUT_REJOIN')
+        await self.until(lambda:any('RESTORED_WITHOUT_REJOIN' in row[1] for row in self.clients[1].gateway.received))
+
     def server_events(self, row):
         return RelayStore(self.key_path.parent / 'group-relay.db').events(row['token'], 0)
 

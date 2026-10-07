@@ -12,7 +12,6 @@ import shutil
 import signal
 import subprocess
 import sys
-import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -21,6 +20,8 @@ from environment import bin_dir, component_status, ensure_core, install_componen
 
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 TRUE_VALUES = {"1", "true", "yes", "on"}
 LEGACY_PATHS = os.getenv("CLAWCROSS_USE_LEGACY_PATHS", "").lower() in TRUE_VALUES
 HOME = ROOT if LEGACY_PATHS else Path(os.getenv("CLAWCROSS_HOME") or Path.home() / ".clawcross")
@@ -129,21 +130,8 @@ def _stop_pid(path: Path, *, timeout: float = 8.0) -> None:
 
 
 def _clear_public_domain() -> None:
-    if not ENV_FILE.is_file():
-        return
-    original = ENV_FILE.read_text(encoding="utf-8")
-    updated = re.sub(r"(?m)^PUBLIC_DOMAIN=.*$", "PUBLIC_DOMAIN=", original)
-    if updated == original:
-        return
-    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=CONFIG_DIR,
-                                     prefix=".env-", delete=False) as temporary:
-        temporary.write(updated)
-        temporary_path = Path(temporary.name)
-    try:
-        temporary_path.chmod(ENV_FILE.stat().st_mode)
-        os.replace(temporary_path, ENV_FILE)
-    finally:
-        temporary_path.unlink(missing_ok=True)
+    from src.backend.common.public_access import write_tunnel_domain
+    write_tunnel_domain("", ENV_FILE)
 
 
 def _remove_owned_pid(path: Path, pid: int) -> None:
@@ -220,10 +208,10 @@ def _magic_links(env: dict[str, str], *, tunnel: bool) -> None:
     port = _port(env, "PORT_FRONTEND", 51209)
     suffix = f"/login-link/{match.group(1)}?user={user}"
     print(f"🔗 Magic link 本机: http://127.0.0.1:{port}{suffix}")
-    if tunnel and _pid(TUNNEL_PID):
-        domain = (_read_env().get("PUBLIC_DOMAIN") or "").rstrip("/")
-        if domain and domain != "wait to set":
-            print(f"🔗 Magic link 远程: {domain}{suffix}")
+    from src.backend.common.public_access import read_public_domain
+    domain = read_public_domain(ENV_FILE, tunnel_running=bool(_pid(TUNNEL_PID)))
+    if domain:
+        print(f"🔗 Magic link 远程: {domain}{suffix}")
 
 
 def _start_tunnel(env: dict[str, str]) -> bool:

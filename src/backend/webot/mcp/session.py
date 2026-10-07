@@ -21,17 +21,8 @@ from dotenv import dotenv_values
 from agents.client import AgentClient
 from common.runtime_paths import ENV_FILE
 from webot.mcp_tool_docs import DocumentedFastMCP as FastMCP
-from webot.checkpoint_paths import DEFAULT_CHECKPOINT_DB_DIR, checkpoint_store_exists
-from webot.checkpoint_repository import (
-    list_thread_ids_by_prefix,
-)
-from webot.context_store import ContextStore
 
 mcp = FastMCP("Session Management")
-
-# Checkpoint DB root — same as mainagent uses
-_DB_PATH = str(DEFAULT_CHECKPOINT_DB_DIR)
-
 
 @mcp.tool()
 async def fork_session(username: str = "", current_session_id: str = "", name: str = "", reason: str = "") -> str:
@@ -79,96 +70,67 @@ async def set_session_title(title: str, username: str = "", source_session: str 
 
 
 @mcp.tool()
-async def list_sessions(
-    username: str = "",
-    current_session_id: str = "",
-) -> str:
+async def list_sessions(username: str = "", current_session_id: str = "", query: str = "", limit: int = 30, platform: str = "") -> str:
+    """List or search the user's registered Agent/session IDs, including new Agents with no history.
+    Use get_session_details(target_session=ID) after choosing a result. Reads the Agent registry;
+    does not start external CLIs or replay conversations. For content search use search_sessions.
+
+    :param username: Runtime user identity; injected.
+    :param current_session_id: Current Agent; injected.
+    :param query: Match name, ID, title or Team name; empty lists recent Agents.
+    :param limit: Maximum results, 1 to 100.
+    :param platform: Optional runtime platform filter, such as webot, codex or claude.
     """
-    List the current user's conversation sessions — ID, title (first user
-    message), last message preview, and message count — with the current
-    session marked. Use it to pick a target session for callbacks
-    (notify_session) or cross-session workflows.
-    """
+    from agents.store import get_store, canonical_platform
     if not username:
-        return "❌ 无法获取用户信息"
+        return json.dumps({"ok":False,"error":"Missing user identity"})
+    keyword=query.strip().casefold()
+    rows=[]
+    for agent in sorted(get_store().list(username),key=lambda agent:agent.updated_at,reverse=True):
+        if platform and agent.platform!=canonical_platform(platform):continue
+        title=str(agent.config.get('title') or '')
+        if keyword and keyword not in ' '.join([agent.agent_id,agent.name,title,*agent.teams]).casefold():continue
+        rows.append({'session_id':agent.agent_id,'agent_id':agent.agent_id,'name':agent.name,'title':title,
+                     'platform':agent.platform,'teams':agent.teams,'updated_at':agent.updated_at,
+                     'is_current':agent.agent_id==current_session_id})
+        if len(rows)>=max(1,min(100,limit)):break
+    return json.dumps({'ok':True,'sessions':rows},ensure_ascii=False)
 
-    if not checkpoint_store_exists(_DB_PATH):
-        return "❌ 对话记录数据库不存在"
 
-    prefix = f"{username}#"
-    sessions = []
+@mcp.tool()
+async def get_session_details(username: str, target_session: str, history_limit: int = 0, source_session: str = "") -> str:
+    """查看 Agent/会话详情与近期历史：身份、模式、工具、沙盒和工作区；不启动外部 CLI。
+    Read one owned Agent/session's identity, mode, tools, sandbox and workspace settings.
+    Does not require this Agent to join the target's Team. Never returns API keys or connector secrets.
+    history_limit=0 returns metadata only; set 1 to 80 to retrieve recent ClawCross history.
+    Reads stored state without initializing a native CLI.
 
+    :param username: Runtime user identity; injected.
+    :param target_session: Exact Agent/session ID returned by list_sessions or search_sessions.
+    :param history_limit: Optional recent history count, 0 to 80.
+    :param source_session: Calling Agent; injected.
+    """
+    from agents.store import get_store
+    from webot.runtime import effective_session_mode
+    from webot.runtime_settings import get_runtime_settings
+    from webot.workspace import workspace_card
+    from webot.mcp.management import local_request, result
     try:
-        rows = await list_thread_ids_by_prefix(_DB_PATH, prefix)
-        for thread_id in rows:
-            sid = thread_id[len(prefix):]
-
-            messages = await ContextStore(_DB_PATH).load_context(thread_id)
-            if not messages:
-                continue
-
-            first_human = ""
-            last_human = ""
-            msg_count = 0
-
-            for m in messages:
-                # After proper deserialization, messages are LangChain objects
-                # Check type by class name (HumanMessage, AIMessage, etc.)
-                type_name = type(m).__name__
-
-                if type_name != "HumanMessage":
-                    continue
-
-                content = getattr(m, "content", "")
-                if not content:
-                    continue
-
-                # Handle multimodal content (list of parts)
-                if isinstance(content, list):
-                    text_parts = []
-                    for p in content:
-                        if isinstance(p, dict) and p.get("type") == "text":
-                            text_parts.append(p.get("text", ""))
-                    content = " ".join(text_parts) or "(多媒体消息)"
-                elif not isinstance(content, str):
-                    content = str(content)
-
-                # Skip system trigger messages
-                if content.startswith("[系统触发]"):
-                    continue
-
-                msg_count += 1
-                if not first_human:
-                    first_human = content[:80]
-                last_human = content[:80]
-
-            if not first_human:
-                continue  # Skip empty or system-only sessions
-
-            sessions.append({
-                "session_id": sid,
-                "title": first_human,
-                "last_message": last_human,
-                "message_count": msg_count,
-            })
-
-    except Exception as e:
-        return f"❌ 查询会话列表失败: {str(e)}"
-
-    current = current_session_id or "(unknown)"
-    if not sessions:
-        return f"📭 当前没有任何对话记录。当前会话: {current}"
-
-    lines = [f"📋 用户 {username} 的会话列表（共 {len(sessions)} 个，当前会话: {current}）:\n"]
-    for s in sessions:
-        marker = "（当前）" if s["session_id"] == current_session_id else ""
-        lines.append(
-            f"  🔹 session_id: \"{s['session_id']}\"{marker}\n"
-            f"     标题: {s['title']}\n"
-            f"     最新消息: {s['last_message']}\n"
-            f"     消息数: {s['message_count']}\n"
-        )
-    return "\n".join(lines)
+        if not 0<=history_limit<=80:raise ValueError('history_limit must be 0 to 80')
+        agent=get_store().require(username,target_session)
+        settings=get_runtime_settings(username,target_session)
+        tools=((agent.config.get('meta') or {}).get('acp') or {}).get('tools') if agent.platform!='webot' else agent.config.get('tools')
+        payload={'agent_id':agent.agent_id,'session_id':agent.agent_id,'name':agent.name,'platform':agent.platform,
+                 'title':agent.config.get('title',''),'persona':str(agent.config.get('persona') or '')[:4000],
+                 'teams':agent.teams,'tools':tools,'mode':effective_session_mode(username,target_session),
+                 'model':(agent.config.get('llm') or {}).get('model') or agent.config.get('model',''),
+                 'sandbox':{'backend':settings.approval.command_sandbox,'security':settings.approval.sandbox_security,
+                            'allowed_domains':settings.approval.sandbox_allowed_domains},
+                 'workspace':workspace_card(username,target_session,agent_config=agent.config),
+                 'created_at':agent.created_at,'updated_at':agent.updated_at}
+        if history_limit:payload['history']=await local_request(username,'GET','/v1/agents/'+target_session+'/history?limit='+str(history_limit))
+        return result(payload)
+    except Exception as error:return result(error=str(error))
 
 if __name__ == "__main__":
     mcp.run(transport="stdio")

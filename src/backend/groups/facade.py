@@ -186,6 +186,30 @@ def client_router(facade, *, internal_token, verify_password):
         except ClientError as exc:
             raise HTTPException(exc.status, str(exc)) from exc
 
+    @router.delete('/groups/{gid}/local')
+    async def remove_local(gid: str, authorization: str | None = Header(None)):
+        try:
+            return await facade.client.remove_local(user_of(authorization), gid)
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    @router.post('/groups/{gid}/disconnect-external')
+    async def disconnect_external(gid: str, authorization: str | None = Header(None)):
+        try:
+            return await asyncio.to_thread(facade.client.manage, user_of(authorization), gid, 'disconnect_external', {})
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    class ExternalAccess(BaseModel):
+        enabled: bool
+
+    @router.post('/groups/{gid}/external-access')
+    async def external_access(gid: str, body: ExternalAccess, authorization: str | None = Header(None)):
+        try:
+            return await asyncio.to_thread(facade.client.manage, user_of(authorization), gid, 'external_access', {'enabled':body.enabled})
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
     @router.post('/groups/{gid}/guest-invite')
     async def guest_invite(gid: str, body: dict, authorization: str | None = Header(None)):
         try:

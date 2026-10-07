@@ -352,6 +352,26 @@ async def add_task(task: CronTask):
 async def list_tasks():
     return [_task_card(task_id, info) for task_id, info in load_tasks().items() if isinstance(info, dict)]
 
+
+@app.patch('/tasks/{task_id}',response_model=TaskResponse)
+async def update_task(task_id:str,task:CronTask):
+    tasks=load_tasks();existing=tasks.get(task_id)
+    if not isinstance(existing,dict):raise HTTPException(404,detail='未找到任务')
+    if existing.get('user_id')!=task.user_id or existing.get('team','')!=task.team:
+        raise HTTPException(403,detail='不能更改闹钟所属用户或 Team')
+    agent=get_store().get(task.user_id,task.agent)
+    if agent is None:raise HTTPException(404,detail='目标 Agent 不存在')
+    try:
+        schedule_type=_schedule_type(task.model_dump())
+        if schedule_type=='once':_parse_run_at(task.run_at)
+        else:_parse_cron(task.cron)
+        info={**existing,**task.model_dump(),'agent':agent.agent_id}
+        _add_alarm_job(task_id,info)
+        tasks[task_id]=info;save_tasks(tasks)
+        return {**_task_card(task_id,info),'next_run':'已激活'}
+    except Exception as error:
+        raise HTTPException(400,detail=f'定时规则错误: {error}')
+
 @app.delete("/tasks/{task_id}")
 async def delete_task(task_id: str):
     if scheduler.get_job(task_id):

@@ -34,6 +34,8 @@ If you are an agent, do **not** load everything by default. Start with `AGENTS.m
 | Build Python-script OASIS workflows, call team agents from Python, or post into OASIS topics from code | [`workflowpy.md`](./workflowpy.md) | [`oasis-reference.md`](./oasis-reference.md), [`create_workflow.md`](./create_workflow.md), [`repo-index.md`](./repo-index.md) |
 | Understand runtime architecture / auth / services | [`runtime-reference.md`](./runtime-reference.md) | [`ports.md`](./ports.md), [`repo-index.md`](./repo-index.md) |
 | Inspect or extend MCP web search tools | [`mcp-search.md`](./mcp-search.md) | [`runtime-reference.md`](./runtime-reference.md), [`repo-index.md`](./repo-index.md) |
+| Choose Agent templates, manage Teams/groups/alarms through tools | [`agent-creation-and-management.md`](./agent-creation-and-management.md) | [`runtime-reference.md`](./runtime-reference.md) |
+| Design per-Agent custom MCP server connections | [`agent-mcp-interface-design.md`](./agent-mcp-interface-design.md) | [`agent-creation-and-management.md`](./agent-creation-and-management.md) |
 | Join or host groups across users/devices | [`group-network.md`](./group-network.md) | [`ports.md`](./ports.md), [`group-service-plan.md`](./group-service-plan.md) |
 | Find CLI syntax or examples | [`cli.md`](./cli.md) | `uv run src/cli/cli.py <command> --help` |
 | Build a Team | [`build_team.md`](./build_team.md) | [`example_team.md`](./example_team.md), [`team-anatomy.md`](./team-anatomy.md) |

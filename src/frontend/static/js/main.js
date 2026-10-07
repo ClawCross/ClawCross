@@ -154,7 +154,7 @@ const i18n = {
         agent_center_running: '运行中',
         agent_center_uncertain: '状态待确认',
         agent_center_empty: '当前筛选条件下没有 Agent',
-        agent_center_public: '公共',
+        agent_center_public: '未加入 Team',
         agent_center_connection: '连接',
         agent_center_evidence: '运行判断',
         agent_center_confirmed: '已确认',
@@ -424,6 +424,7 @@ const i18n = {
         orch_agents_empty: '暂无 Agent，点击 ➕ 新建',
         orch_add_agent_title: '新建 Agent',
         orch_agent_platform: '平台',
+        acpx_required_for_external: '外部 Agent 需要 acpx；安装后可切换到 Codex、Claude 等平台。',
         orch_agent_runtime_name: '运行时名称（该平台上的会话名）',
         orch_agent_name_required: '请输入名称',
         orch_agent_runtime_required: '请输入运行时名称',
@@ -838,7 +839,7 @@ const i18n = {
         run_mode_readonly: '只读模式',
         run_mode_chat: '交流模式 · 无工具',
         run_mode_auto: 'Auto · 替我审核',
-        run_mode_title: '交流：无工具；只读：查看和搜索；Manual：跳过确认；Auto：独立模型代审',
+        run_mode_title: '交流：无工具；只读：查看和搜索；Manual：人工审核；Auto：模型代审；Bypass：无审核',
     },
     'en': {
         // General
@@ -948,7 +949,7 @@ const i18n = {
         agent_center_running: 'Running',
         agent_center_uncertain: 'Uncertain',
         agent_center_empty: 'No agents match the current filters',
-        agent_center_public: 'Public',
+        agent_center_public: 'No Team',
         agent_center_connection: 'Connection',
         agent_center_evidence: 'Run evidence',
         agent_center_confirmed: 'Confirmed',
@@ -1218,6 +1219,7 @@ const i18n = {
         orch_agents_empty: 'No agents yet — click ➕ to create one',
         orch_add_agent_title: 'New Agent',
         orch_agent_platform: 'Platform',
+        acpx_required_for_external: 'External Agents require acpx. Install it to use Codex, Claude and other platforms.',
         orch_agent_runtime_name: 'Runtime name (the session name on that platform)',
         orch_agent_name_required: 'Name is required',
         orch_agent_runtime_required: 'Runtime name is required',
@@ -1640,7 +1642,7 @@ const i18n = {
         run_mode_readonly: 'Read-only',
         run_mode_chat: 'Chat · No tools',
         run_mode_auto: 'Auto · Review for me',
-        run_mode_title: 'Chat: no tools; Read-only: view and search; Manual: skip confirmation; Auto: independent review',
+        run_mode_title: 'Chat: no tools; Read-only: view and search; Manual: human review; Auto: model review; Bypass: no review',
     }
 };
 
@@ -1881,7 +1883,7 @@ function renderAgentCenterGrid() {
                 onclick="openAgentCenterDetail(this.dataset.agent)"
                 onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openAgentCenterDetail(this.dataset.agent)}">
                 <div class="agent-center-card-portrait ${webot ? 'internal' : 'external'}">
-                    <span class="agent-center-card-sigil">${webot ? '🧠' : '◈'}</span>
+                    <span class="agent-center-card-sigil" aria-hidden="true"><svg class="ui-icon"><use href="/static/icons.svg#${webot ? 'bot' : 'plug'}"/></svg></span>
                 </div>
                 <div class="agent-center-card-body">
                     <div class="agent-center-card-top">
@@ -1958,7 +1960,7 @@ function renderAgentCenterDetail() {
     host.innerHTML = `
         <div class="agent-dex-hero ${webot ? 'internal' : 'external'}">
             <button class="agent-dex-close" type="button" onclick="closeAgentCenterDetail()" aria-label="Close">×</button>
-            <div class="agent-dex-portrait">${webot ? '🧠' : '◈'}</div>
+            <div class="agent-dex-portrait" aria-hidden="true"><svg class="ui-icon"><use href="/static/icons.svg#${webot ? 'bot' : 'plug'}"/></svg></div>
             <div class="agent-dex-index">${agentCenterEscape(agent.platform)} · ${agentCenterEscape(state)}</div>
             <div class="agent-dex-title">${agentCenterEscape(agent.name)}</div>
             <div class="agent-dex-subtitle">${agentCenterEscape(agent.agent_id)} · ${agentCenterEscape(agent.platform)}</div>
@@ -1988,6 +1990,10 @@ function renderAgentCenterDetail() {
                 <p class="agent-dex-note">${currentLang === 'zh-CN' ? 'Y 仅允许一次；KEEP Y 记住当前 Agent 的具体授权。沙盒授权限定目标和读写类型，其他工具限定完整参数；严格模式不使用提权记录。' : 'Y allows once; KEEP Y remembers a specific grant for this Agent. Sandbox grants cover a target and access type; other tools cover exact arguments. Strict mode ignores escalation grants.'}</p>
                 <div class="agent-dex-actions"><button type="button" class="agent-center-btn" onclick="openWorkspaceSettings('${agentCenterEscape(agent.agent_id)}')">${currentLang === 'zh-CN' ? '工作区' : 'Workspaces'}</button><button type="button" class="agent-center-btn" onclick="openAgentRuntimeSettings('approval')">${currentLang === 'zh-CN' ? '配置模式、沙盒与授权' : 'Configure mode, sandbox and grants'}</button>${webot ? `<button type="button" class="agent-center-btn" onclick="openAgentRuntimeSettings('context')">${currentLang === 'zh-CN' ? '上下文与压缩' : 'Context and compaction'}</button><button type="button" class="agent-center-btn" onclick="openAgentModelSettings('${agentCenterEscape(agent.agent_id)}')">${currentLang === 'zh-CN' ? '模型与思考' : 'Model and reasoning'}</button>` : ''}</div>
             </details>
+            <section class="agent-dex-section agent-dex-skills-section">
+                <div class="agent-dex-section-title">${currentLang === 'zh-CN' ? '工作区 Skills' : 'Workspace skills'}</div>
+                <div id="agent-dex-skills-list" class="agent-dex-skills-list" data-agent-id="${agentCenterEscape(agent.agent_id)}"><span class="agent-dex-note">${agentCenterEscape(t('loading'))}</span></div>
+            </section>
             <section class="agent-dex-section">
                 <div class="agent-dex-section-title">${agentCenterEscape(t('agent_center_tools'))}</div>
                 <div class="agent-dex-fields">
@@ -2005,6 +2011,34 @@ function renderAgentCenterDetail() {
             </section>
             <div id="agent-dex-note" class="agent-dex-note"></div>
         </div>`;
+    loadAgentCenterSkills(agent.agent_id);
+}
+
+async function loadAgentCenterSkills(agentId) {
+    const host = document.getElementById('agent-dex-skills-list');
+    if (!host || host.dataset.agentId !== agentId) return;
+    try {
+        const result = await agentApi('GET', `/v1/agents/${encodeURIComponent(agentId)}/skills`);
+        if (!host.isConnected || host.dataset.agentId !== agentId) return;
+        if (!result.skills?.length) {
+            host.textContent = currentLang === 'zh-CN' ? '此 Agent 可用的工作区中还没有 Skill。' : 'No skills are available in this Agent’s workspaces yet.';
+            return;
+        }
+        host.replaceChildren(...result.skills.map(skill => {
+            const row = document.createElement('div'); row.className = 'agent-dex-skill-row';
+            const heading = document.createElement('div'); heading.className = 'agent-dex-skill-heading';
+            const title = document.createElement('strong'); title.textContent = skill.name;
+            const source = document.createElement('small');
+            const sourceLabels = currentLang === 'zh-CN'
+                ? {user:'用户空间',team:'团队',companion:'伴生工作区',cli:'CLI 工作区',custom:'自定义工作区'}
+                : {user:'User space',team:'Team',companion:'Companion',cli:'CLI workspace',custom:'Custom workspace'};
+            source.textContent = skill.source === 'team'
+                ? `${sourceLabels.team} · ${skill.team_name || ''}`
+                : (sourceLabels[skill.source] || skill.source || 'Workspace');
+            const description = document.createElement('span'); description.textContent = skill.description || skill.category || skill.id;
+            heading.append(title, source); row.append(heading, description); return row;
+        }));
+    } catch (error) { if (host.isConnected) host.textContent = error.message || String(error); }
 }
 
 async function loadAgentCenterRuntimeSettings(details) {
@@ -2109,6 +2143,7 @@ async function saveAgentCenterSettings(button) {
         renderAgentCenterGrid();
         renderAgentCenterDetail();
         setAgentCenterDetailNotice(t('agent_center_save_ok'));
+        await refreshStudioConversations();
     } catch (error) {
         setAgentCenterDetailNotice(`${t('agent_center_save_failed')}: ${error.message || error}`, true);
     } finally {
@@ -2145,6 +2180,7 @@ async function refreshAgentCenter() {
         ]);
         const teamsOf = {};
         for (const team of teams.data || []) {
+            if (team.virtual || team.is_default || team.kind === 'user_space' || team.team === '__default__') continue;
             for (const member of team.members || []) {
                 (teamsOf[member.agent.agent_id] = teamsOf[member.agent.agent_id] || []).push(team.team);
             }
@@ -2840,6 +2876,8 @@ async function openAgentMetaModal(mode, sessionId, existingMeta) {
     _agentMetaSessionId = sessionId;
     document.getElementById('agent-meta-error').textContent = '';
     document.getElementById('agent-meta-platform-field').hidden = mode !== 'create';
+    const templateField=document.getElementById('agent-meta-template-field');
+    if(templateField)templateField.hidden = mode !== 'create';
     const platformSelect = document.getElementById('agent-meta-platform');
     platformSelect.innerHTML = '<option value="webot">WeBot</option>' + ADD_EXT_PLATFORM_FALLBACK.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(addExtPlatformLabel(p))}</option>`).join('');
     platformSelect.value = 'webot';
@@ -2887,6 +2925,12 @@ async function openAgentMetaModal(mode, sessionId, existingMeta) {
         console.warn('Failed to load the persona library', e);
     }
     librarySelect.value = '';
+    if(mode==='create' && window.AgentCreationPresets)await AgentCreationPresets.mount('studio-agent-creation-presets',row=>{
+        if(!row){_syncAgentMetaTemplatePlatform();return;}
+        document.querySelectorAll('.agent-meta-tool-cb').forEach(checkbox=>{checkbox.checked=row.tools===null || row.tools.includes(checkbox.value);});
+        document.getElementById('studio-agent-template-hint').textContent=currentLang==='zh-CN'?(row.id==='admin'?'高权限管理能力，默认人工审核。':row.id==='group'?'严格沙盒与独立工作区，不开放跨会话指挥。':'模式、沙盒与工具范围会随模板保存。'):(row.id==='admin'?'Administrative capabilities with human review.':row.id==='group'?'Strict isolation and a private workspace, without cross-session control.':'The template saves mode, sandbox and tool scope.');
+        _syncAgentMetaTemplatePlatform();
+    });
     modal.style.display = 'flex';
     document.getElementById('agent-meta-name').focus();
     return new Promise(resolve => { _agentMetaCallback = resolve; });
@@ -2894,8 +2938,21 @@ async function openAgentMetaModal(mode, sessionId, existingMeta) {
 
 function agentMetaPlatformChanged() {
     const container = document.getElementById('agent-meta-component');
-    container.innerHTML = document.getElementById('agent-meta-platform').value === 'webot' ? '' : componentControlMarkup('acpx');
+    container.innerHTML = document.getElementById('agent-meta-platform').value === 'webot' ? ''
+        : `<p style="margin:4px 0;color:#64748b;font-size:11px;">${currentLang === 'zh-CN' ? '外部 Agent 需要 acpx；如未安装，可在这里下载。' : 'External Agents require acpx; download it here if it is missing.'}</p>${componentControlMarkup('acpx')}`;
     initComponentControls(container);
+    _syncAgentMetaTemplatePlatform();
+}
+
+function _syncAgentMetaTemplatePlatform() {
+    const external=document.getElementById('agent-meta-platform').value!=='webot';
+    window.AgentCreationPresets?.platform('studio-agent-creation-presets',external);
+    const preset=window.AgentCreationPresets?.selected('studio-agent-creation-presets');
+    const submit=document.querySelector('#agent-meta-modal .agent-meta-btn-save');
+    const incompatible=external && ['chat','group'].includes(preset?.id);
+    if(submit)submit.disabled=_agentMetaMode==='create' && (!preset || incompatible);
+    if(_agentMetaMode==='create' && incompatible)document.getElementById('agent-meta-error').textContent=currentLang==='zh-CN'?'此隔离模板需要 WeBot，请切换平台或选择其他模板。':'This isolated template requires WeBot. Change platform or template.';
+    else document.getElementById('agent-meta-error').textContent='';
 }
 
 let _agentMetaPersonas = [];
@@ -2921,11 +2978,12 @@ function _collectAgentMeta() {
     // The agent's own tools: all of them (null), or the ones checked.
     const checkboxes = [...document.querySelectorAll('.agent-meta-tool-cb')];
     const checkedNames = checkboxes.filter(cb => cb.checked).map(cb => cb.value);
-    const tools = checkboxes.length && checkedNames.length < allTools.length ? checkedNames : null;
+    const preset=_agentMetaMode==='create'?window.AgentCreationPresets?.selected('studio-agent-creation-presets'):null;
+    const tools=checkboxes.length?(_agentMetaMode==='create' || checkedNames.length!==allTools.length?checkedNames:null):(preset?.tools ?? null);
 
     const meta = { persona, tools };
     if (_agentMetaMode === 'edit') meta.title = document.getElementById('agent-meta-title').value.trim();
-    if (_agentMetaMode === 'create') meta.platform = document.getElementById('agent-meta-platform').value;
+    if (_agentMetaMode === 'create') {meta.platform = document.getElementById('agent-meta-platform').value;meta.creation_template=preset?.id || 'personal';}
     if (name !== null) meta.name = name;
     return meta;
 }
@@ -2978,20 +3036,21 @@ async function _loadAgentMetaMap(team = '') {
     try {
         const [agents, teams] = await Promise.all([agentApi('GET', '/v1/agents'), agentApi('GET', '/v1/teams')]);
         const webot = agents.data || [];
+        const scopeTeam = team && team !== '__default__' ? team : '';
         const membership = new Map();
         for (const card of teams.data || []) {
+            if (card.virtual || card.kind === 'user_space' || card.team === '__default__') continue;
             for (const m of card.members || []) {
-                if (!team || card.team === team) membership.set(m.agent.agent_id, m);
-                else if (!membership.has(m.agent.agent_id)) membership.set(m.agent.agent_id, null);
+                if (card.team === scopeTeam) membership.set(m.agent.agent_id, m);
             }
         }
-        const inScope = a => team ? Boolean(membership.get(a.agent_id)) : !membership.has(a.agent_id);
+        const inScope = a => !scopeTeam || Boolean(membership.get(a.agent_id));
         const map = {};
         for (const a of webot.filter(inScope)) {
             const member = membership.get(a.agent_id);
             map[a.agent_id] = {
-                agent_id: a.agent_id, name: member?.role || a.name, title: a.settings.title || '', persona: a.settings.persona || '',
-                platform: a.platform, tools: a.settings.tools, is_primary: Boolean(member?.is_lead), updated_at_ts: a.updated_at,
+                agent_id: a.agent_id, name: member?.role || a.name, title: a.settings?.title || '', persona: a.settings?.persona || '',
+                platform: a.platform, tools: a.settings?.tools, is_primary: Boolean(member?.is_lead), updated_at_ts: a.updated_at,
             };
         }
         return { map, allKnown: new Set(webot.map(a => a.agent_id)) };
@@ -3014,6 +3073,7 @@ async function fetchWebotSessions() {
     const {data} = await agentApi('GET', '/v1/agents?status=1');
     return (data || []).map(agent => ({
         ...agent.status, session_id: agent.agent_id, busy: agent.status?.state === 'running',
+        agent_name: agent.name, name: agent.name, platform: agent.platform,
     }));
 }
 
@@ -3045,6 +3105,7 @@ async function saveSessionAgent(sessionId, meta, team = _currentAgentTeam) {
         agent = await agentApi('POST', '/v1/agents', {
             agent_id: sessionId, platform: meta.platform || 'webot', name: meta.name || sessionId, persona: settings.persona || '',
             tools: settings.tools ?? null,
+            ...(meta.creation_template ? {creation_template:meta.creation_template} : {}),
         });
     }
     if (team) {
@@ -3069,7 +3130,7 @@ function _resolveTitle(originalTitle, sessionId, agentMap) {
 
 // "<agent name> · " when the session's row title is not already the name.
 function _sessionAgentLabel(session, agentMap) {
-    const name = (agentMap[session.session_id] || {}).name;
+    const name = session.agent_name || session.name || (agentMap[session.session_id] || {}).name;
     return name && name !== _resolveTitle(session.title, session.session_id, agentMap) ? name + ' · ' : '';
 }
 
@@ -4576,7 +4637,9 @@ async function loadSessionList() {
             if (!seenIds.has(sid) && meta && meta.name) {
                 allSessions.push({
                     session_id: sid,
-                    title: meta.name || 'Untitled',
+                    title: meta.title || '',
+                    agent_name: meta.name,
+                    platform: meta.platform,
                     message_count: 0,
                     created_at: meta.created_at || '',
                     updated_at: meta.updated_at || meta.created_at || ''
@@ -4640,7 +4703,9 @@ async function refreshHistoryList() {
             if (!seenIds.has(sid) && meta && meta.name) {
                 sessions.push({
                     session_id: sid,
-                    title: meta.name || 'Untitled',
+                    title: meta.title || '',
+                    agent_name: meta.name,
+                    platform: meta.platform,
                     message_count: 0,
                     created_at: meta.created_at || '',
                     updated_at: meta.updated_at || meta.created_at || ''
@@ -5064,7 +5129,12 @@ function renderStudioConversations() {
     const select = document.getElementById(mode === 'acp' ? 'oc-acp-session-pick' : 'oc-internal-session-pick');
     const selected = mode === 'acp' ? acpResolveSessionName() : currentSessionId;
     const options = [...(select?.options || [])].filter(option => option.value);
-    const items = options.map(option => ({id: option.value, title: option.textContent, agent: option.dataset.agentName || ''}));
+    const agentMap = _cachedAgentMap || {};
+    const items = options.slice(0,5).map(option => ({
+        id: option.value,
+        title: option.dataset.conversationTitle ?? option.textContent,
+        agent: option.dataset.agentName || agentMap[option.value]?.name || '',
+    }));
     host.replaceChildren();
     for (const item of items) {
         const button = document.createElement('button');
@@ -5074,9 +5144,11 @@ function renderStudioConversations() {
         button.title = [item.title, item.agent, item.id].filter(Boolean).join(' · ');
         button.setAttribute('aria-current', item.id === selected ? 'true' : 'false');
         const title = document.createElement('span');
-        title.textContent = item.title || t('studio_new_conversation');
+        title.className = 'studio-conversation-title';
+        title.textContent = item.title || (currentLang === 'zh-CN' ? '未命名对话' : 'Untitled conversation');
         const detail = document.createElement('small');
-        detail.textContent = (item.agent && item.agent !== item.title ? item.agent + ' · ' : '') + '#' + item.id.slice(-6);
+        detail.className = 'studio-conversation-agent';
+        detail.textContent = (item.agent || 'Agent') + ' · #' + item.id.slice(-6);
         button.append(title, detail);
         button.onclick = async () => {
             if (mode !== _ocChatMode) return;
@@ -5098,6 +5170,63 @@ function renderStudioConversations() {
     }
     const create = document.getElementById('studio-new-conversation');
     if (create) create.title = t('studio_new_conversation');
+    renderStudioTeamTree();
+}
+
+async function renderStudioTeamTree(force = false) {
+    const host = document.getElementById('studio-team-agent-tree-list');
+    if (!host || host.dataset.loading === '1' || (host.dataset.loaded === '1' && !force)) return;
+    host.dataset.loading = '1';
+    try {
+        const [response, agentResponse] = await Promise.all([agentApi('GET', '/v1/teams'), agentApi('GET', '/v1/agents')]);
+        const teams = response.data || [];
+        const allAgents = agentResponse.data || [];
+        const expanded = new Map([...host.querySelectorAll('.studio-team-node')].map(node=>[node.dataset.team,node.open]));
+        host.replaceChildren();
+        const addTeam = (teamName, memberRows, fixed = false) => {
+            const details = document.createElement('details');
+            details.className = 'studio-team-node' + (fixed ? ' is-default-team' : '');
+            details.dataset.team = fixed ? '__default__' : teamName;
+            details.open = expanded.get(details.dataset.team) || false;
+            const summary = document.createElement('summary'); summary.textContent = teamName;
+            details.appendChild(summary);
+            const members = document.createElement('div'); members.className = 'studio-team-members';
+            for (const member of memberRows) {
+                const agent = member.agent || {};
+                const button = document.createElement('button');
+                button.type = 'button'; button.className = 'studio-team-agent';
+                button.textContent = agent.name || agent.agent_id || member.role || 'Agent';
+                button.title = `${agent.name || ''} · ${agent.platform || 'webot'}`;
+                button.onclick = async () => {
+                    if (agent.platform && agent.platform !== 'webot') {
+                        const platform = String(agent.platform).toLowerCase();
+                        if (!_acpToolsCache.includes(platform)) {
+                            acpSetSessionStatus(currentLang === 'zh-CN' ? `当前未安装或未启用 ${platform} ACP` : `${platform} ACP is unavailable`, 'error');
+                            return;
+                        }
+                        await ocSwitchTo('acp', platform);
+                        document.getElementById('oc-acp-session-pick').value = '';
+                        document.getElementById('oc-acp-session-name').value = agent.agent_id;
+                        acpNotifySessionContextChanged();
+                    } else await openAgentSession(agent.agent_id);
+                };
+                members.appendChild(button);
+            }
+            details.appendChild(members); host.appendChild(details);
+        };
+        const virtualDefault = teams.find(team => team.is_default || team.kind === 'user_space' || team.team === '__default__');
+        const assigned = new Set();
+        for (const team of teams) {
+            if (team === virtualDefault) continue;
+            for (const member of team.members || []) assigned.add(member.agent?.agent_id);
+        }
+        const defaultMembers = virtualDefault?.members || allAgents.filter(agent => !assigned.has(agent.agent_id)).map(agent => ({agent}));
+        addTeam(currentLang === 'zh-CN' ? '用户空间' : 'User space', defaultMembers, true);
+        for (const team of teams) if (team !== virtualDefault) addTeam(team.team, team.members || []);
+    } catch (error) {
+        host.textContent = error.message || String(error);
+        host.dataset.loaded = '1';
+    } finally { host.dataset.loading = '0'; }
 }
 
 async function studioNewConversation() {
@@ -5125,7 +5254,7 @@ function ocInternalRepaintSessionPick() {
     const sel = document.getElementById('oc-internal-session-pick');
     if (!sel || _ocChatMode !== 'internal') return;
     const agentMap = _cachedAgentMap || {};
-    let list = Array.isArray(_mergedSessionsCache) ? _mergedSessionsCache.filter(item => !agentMap[item.session_id]?.platform || agentMap[item.session_id].platform === 'webot') : [];
+    let list = Array.isArray(_mergedSessionsCache) ? _mergedSessionsCache.filter(item => !(item.platform || agentMap[item.session_id]?.platform) || (item.platform || agentMap[item.session_id]?.platform) === 'webot') : [];
     const prev = sel.value;
     sel.innerHTML = '';
     const o0 = document.createElement('option');
@@ -5137,7 +5266,8 @@ function ocInternalRepaintSessionPick() {
         const opt = document.createElement('option');
         opt.value = s.session_id;
         opt.textContent = _resolveTitle(s.title, s.session_id, agentMap);
-        opt.dataset.agentName = agentMap[s.session_id]?.name || '';
+        opt.dataset.conversationTitle = agentMap[s.session_id]?.title || s.title || '';
+        opt.dataset.agentName = s.agent_name || s.name || agentMap[s.session_id]?.name || '';
         sel.appendChild(opt);
     }
     if (currentSessionId && Array.from(sel.options).some((o) => o.value === currentSessionId)) {
@@ -13156,6 +13286,7 @@ function showAddTeamMemberModal() {
             
             <!-- ACP agent form (codex, claude, gemini, …) -->
             <div id="form-external" style="display:none;">
+                <p style="margin:0 0 6px;color:#64748b;font-size:11px;">${currentLang === 'zh-CN' ? '连接外部 Agent 需要在主机安装 acpx。' : 'Connecting an external Agent requires acpx on this host.'}</p>
                 ${typeof componentControlMarkup === 'function' ? componentControlMarkup('acpx') : ''}
                 <div style="display:flex;flex-direction:column;gap:8px;">
                     <label style="font-size:11px;font-weight:600;color:#374151;">名称
@@ -15110,7 +15241,7 @@ async function acpLoadSessionsList() {
         // The sessions of this tool are its agents.
         const j = await agentApi('GET', '/v1/agents');
         if (revision !== _agentListRevision || tool !== _acpTool) return;
-        const sessions = (j.data || []).filter((a) => a.platform === tool);
+        const sessions = (j.data || []).filter((a) => a.platform === tool).sort((a,b)=>_timeValue(b.updated_at)-_timeValue(a.updated_at));
         const stored = localStorage.getItem('clawcross_acp_session_pick_' + tool);
         const missing = new Set([prev, stored].filter(id => id && !(j.data || []).some(a => a.agent_id === id)));
         for (const id of missing) forgetDeletedAgent(id);
@@ -15123,6 +15254,7 @@ async function acpLoadSessionsList() {
             const opt = document.createElement('option');
             opt.value = a.agent_id;
             opt.textContent = a.settings?.title || a.name;
+            opt.dataset.conversationTitle = a.settings?.title || a.status?.title || '';
             opt.dataset.agentName = a.name;
             sel.appendChild(opt);
         }
@@ -15468,6 +15600,8 @@ async function ocSwitchTo(mode, acpTool) {
 async function ocInitSwitcher() {
     const switcher = document.getElementById('studio-chat-switcher');
     if (!switcher) return;
+    const unavailable = document.getElementById('studio-acpx-unavailable');
+    if (unavailable) initComponentControls(unavailable);
 
     const acpTabs = document.getElementById('oc-acp-tabs');
 
@@ -15492,6 +15626,7 @@ async function ocInitSwitcher() {
             _acpTool = null;
             ocRenderAcpTabs([]);
         }
+        if (unavailable) unavailable.hidden = _acpAvailable;
         if (_acpAvailable) {
             switcher.style.display = '';
             if (acpTabs) {
@@ -15508,6 +15643,8 @@ async function ocInitSwitcher() {
         _acpTool = null;
         ocRenderAcpTabs([]);
         switcher.style.display = 'none';
+        if (unavailable) unavailable.hidden = false;
+        if (unavailable) initComponentControls(unavailable);
         if (acpTabs) acpTabs.style.display = 'none';
         console.log('Chat switcher init failed:', e && e.message);
         ocSyncSessionSubrowsVisibility();

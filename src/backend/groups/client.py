@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 import secrets
 import sqlite3
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 import httpx
 from websockets.asyncio.client import connect
@@ -36,11 +36,12 @@ class ClientError(GroupError):
 def parse_invite_link(link: str) -> tuple[str, str]:
     """``(front-end base URL, ticket)`` of an invitation link ``<base>/group-guest#<ticket>``."""
     parsed = urlsplit((link or '').strip())
-    if parsed.scheme not in {'http', 'https'} or not parsed.hostname or parsed.path.rstrip('/') != '/group-guest' or not parsed.fragment:
+    path = parsed.path.rstrip('/')
+    if parsed.scheme not in {'http', 'https'} or not parsed.hostname or not path.endswith('/group-guest') or not parsed.fragment or parsed.query:
         raise ClientError('请粘贴完整的邀请链接（…/group-guest#…）')
     if len(parsed.fragment) > 4096:
         raise ClientError('邀请链接无效')
-    return normalize_url(f'{parsed.scheme}://{parsed.netloc}'), parsed.fragment
+    return normalize_url(f'{parsed.scheme}://{parsed.netloc}' + path[:-len('/group-guest')]), parsed.fragment
 
 
 def normalize_url(value: str) -> str:
@@ -48,15 +49,16 @@ def normalize_url(value: str) -> str:
     if '://' not in raw:
         raw = 'http://' + raw
     parsed = urlsplit(raw)
-    if parsed.scheme not in {'http', 'https'} or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.path not in {'', '/'}:
-        raise ClientError('请使用服务器地址，例如 http://192.168.1.10:51203，不包含凭证或额外路径')
+    path = parsed.path.rstrip('/')
+    if parsed.scheme not in {'http', 'https'} or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment or any(part in {'.', '..'} for part in unquote(path).split('/')):
+        raise ClientError('请使用服务器地址或部署路径，例如 https://example.com/groups，不包含凭证、查询参数或路径跳转')
     try:
         port = parsed.port
     except ValueError as exc:
         raise ClientError('服务器端口无效') from exc
     host = parsed.hostname.lower()
     host = '[' + host + ']' if ':' in host else host
-    return f'{parsed.scheme}://{host}' + (f':{port}' if port else '')
+    return f'{parsed.scheme}://{host}' + (f':{port}' if port else '') + path
 
 
 class ClientStore:
@@ -137,8 +139,22 @@ class ClientStore:
             db.execute('UPDATE group_client_connections SET ' + ','.join(k + '=?' for k in fields) + ' WHERE owner=? AND alias=?',
                        (*fields.values(), owner, alias))
 
+    def remove(self, owner, alias):
+        """Forget this user's connection and cached data without contacting its server."""
+        with self.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row = db.execute('SELECT 1 FROM group_client_connections WHERE owner=? AND alias=?', (owner, alias)).fetchone()
+            if not row:
+                raise ClientError('本机没有这个群聊', 404)
+            for table in ('group_client_events', 'group_client_deliveries', 'group_client_connections'):
+                db.execute(f'DELETE FROM {table} WHERE owner=? AND alias=?', (owner, alias))
+
     def cache(self, row, event):
         with self.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if not db.execute('SELECT 1 FROM group_client_connections WHERE owner=? AND alias=? AND connection_id=? AND active=1',
+                              (row['owner'], row['alias'], row['connection_id'])).fetchone():
+                return
             db.execute('INSERT OR IGNORE INTO group_client_events VALUES(?,?,?,?)',
                        (row['owner'], row['alias'], event['id'], json.dumps(event, ensure_ascii=False)))
             cutoff = db.execute('SELECT id FROM group_client_events WHERE owner=? AND alias=? ORDER BY id DESC LIMIT 1 OFFSET 1999', (row['owner'], row['alias'])).fetchone()
@@ -158,7 +174,10 @@ class ClientStore:
 
     def mark_delivered(self, row, event_id, agent_id):
         with self.db() as db:
-            db.execute('INSERT OR IGNORE INTO group_client_deliveries VALUES(?,?,?,?)', (row['owner'], row['alias'], event_id, agent_id))
+            db.execute('''INSERT OR IGNORE INTO group_client_deliveries
+                          SELECT ?,?,?,? WHERE EXISTS(SELECT 1 FROM group_client_connections
+                          WHERE owner=? AND alias=? AND connection_id=? AND active=1)''',
+                       (row['owner'], row['alias'], event_id, agent_id, row['owner'], row['alias'], row['connection_id']))
 
     def unread_digest(self, row, agent_id, before):
         with self.db() as db:
@@ -180,6 +199,8 @@ class GroupClient:
         headers = {'Authorization': 'Bearer ' + row['token']}
         if row['via']:
             headers['X-Group-Invite'] = row['via']
+        if row.get('url') == service_url() and not row['via']:
+            headers['X-Group-Service-Key'] = service_key()
         return headers
 
     @staticmethod
@@ -221,6 +242,8 @@ class GroupClient:
         own = base in own_front_ends()
         front = frontend_url() if own else base
         invitation = {'X-Group-Invite': ticket}
+        if own:
+            invitation['X-Group-Service-Key'] = service_key()
         group_id = self.enroll(front, '/group-guest-api/info', invitation, {})['group_id']
         url, via = (service_url(), '') if own else (base, ticket)
         known = next((r for r in self.store.rows(owner) if r['url'] == url and r['remote_id'] == group_id and r['active']), None)
@@ -230,6 +253,8 @@ class GroupClient:
             alias = self.store.save(owner, url, result, via=via)
         else:
             alias = known['alias']
+        if own:
+            self.request(self.require(owner, alias), 'POST', '/host-local', {})
         for aid in agents:
             self.add_agent(owner, alias, aid)
         return self.card(self.require(owner, alias))
@@ -258,6 +283,15 @@ class GroupClient:
         if not row or not row['active']:
             raise ClientError('未加入此群，或群凭证已撤销', 403)
         return row
+
+    async def remove_local(self, owner, alias):
+        # Remove the credential first so in-flight responses cannot recreate the cache.
+        self.store.remove(owner, alias)
+        task = self.tasks.pop((owner, alias), None)
+        if task is not None:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        return {'removed': alias, 'local_only': True}
 
     def add_agent(self, owner, alias, aid):
         row = self.require(owner, alias)
@@ -316,8 +350,10 @@ class GroupClient:
             if original['principal'] == group.get('primary_agent'):
                 primary = visible['principal']
         messages = self.messages(row['owner'], row['alias'])
+        paused = '暂停外部联网' in row['error']
         return {**group, 'group_id': row['alias'], 'remote_group_id': row['remote_id'], 'server_url': row['url'],
-                'connection_state': 'connected' if not row['error'] else 'reconnecting', 'connection_error': row['error'],
+                'connection_state': 'paused' if paused else 'connected' if not row['error'] else 'reconnecting',
+                'external_access_enabled': False if paused else group.get('external_access_enabled', True), 'connection_error': row['error'],
                 'owner': row['owner'] if group.get('owner') == row['connection_id'] else 'remote:' + str(group.get('owner')),
                 'primary_agent': primary, 'members': members, 'member_count': len(members),
                 'member_names': [m['name'] for m in members][:4], 'messages': messages,
@@ -414,19 +450,35 @@ class GroupClient:
                     source = next((m for m in packet['group'].get('members', []) if m['principal'] == message['sender']), None)
                     human_requests = []
                     if source and not source['is_agent'] and not message.get('sender_agent_id'):
+                        verified_owner = bool(source.get('host_local') and row['url']==service_url() and source['user_id']==agent.owner)
                         human_requests = [{'id': f'group:{row["remote_id"]}:{event["id"]}',
                             'text': message['content'], 'source_kind': 'group_human',
-                            'sender_user': source['user_id'], 'sender_name': source['name'],
+                            'sender_user': source['user_id'] if verified_owner else 'remote:'+source['user_id'],
+                            'claimed_sender_user':source['user_id'], 'authenticated_owner':verified_owner, 'sender_name': source['name'],
                             'group_id': row['alias']}]
                     quote = message.get('reply')
                     reference = f'\n[引用消息 #{quote["id"]}] {quote["sender_name"]}:\n{quote["content"]}\n[引用结束]\n' if quote else ''
                     text = self.store.unread_digest(row, aid, event['id']) + f'[群聊「{card["title"]}」 group_id={row["alias"]}] {message["sender_name"]} 说:\n{reference}{message["content"]}'
+                    automatic = agent.config.get('creation_template') == 'chat'
+                    if automatic:
+                        from webot.runtime import effective_session_mode
+                        automatic = effective_session_mode(agent.owner,agent.agent_id) == 'chat'
+                    completion = None
+                    if automatic:
+                        async def completion(reply, owner=row['owner'], alias=row['alias'], target=aid, event_id=event['id']):
+                            if reply and reply.ok and reply.content.strip():
+                                try:
+                                    await self.post(owner,alias,target,reply.content,client_msg_id=f'chat-reply:{event_id}:{target}')
+                                except ClientError:
+                                    pass  # Membership or networking may change while the reply is generated.
+                    reply_meta = self.metadata(card,visible)
+                    reply_meta['reply_channel'] = '直接输出文字；系统会发送到当前群，不需要调用工具。' if automatic else reply_channel(agent,row['alias'])
                     receipt = await self.gateway.inbox(agent, AgentMessage(text=text, sender=message['sender'],
                         summary=f'群聊「{card["title"]}」 {message["sender_name"]}: {message["content"][:60]}',
                         attachments=message.get('attachments', [])), context={'conversation_id': row['alias'],
                         'delivery_id': f'relay:{row["alias"]}:{event["id"]}:{aid}',
                         'group_human_requests': human_requests,
-                        'groups': [{**self.metadata(card, visible), 'reply_channel': reply_channel(agent, row['alias'])}]})
+                        'groups': [reply_meta]},mode='chat' if automatic else None,on_complete=completion)
                     if not receipt.accepted:
                         raise ClientError('本机 agent 暂未接受群消息，稍后重试', 503)
                     self.store.mark_delivered(row, event['id'], aid)
@@ -489,6 +541,8 @@ class GroupClient:
             if not row or not row['active']:
                 return
             try:
+                if row['url'] == service_url() and not row['via']:
+                    await asyncio.to_thread(self.request, row, 'POST', '/host-local', {})
                 await (self._poll if row['via'] else self._stream)(owner, alias, connected)
                 if self.closed:
                     return
@@ -502,7 +556,9 @@ class GroupClient:
                 if revoked:
                     self.store.update(owner, alias, active=0, error='群凭证已失效或成员关系已撤销')
                     return
-                self.store.update(owner, alias, error='连接中断，正在重连')
+                paused = (isinstance(exc, ClientError) and exc.status == 503 and '暂停外部联网' in str(exc)) or (
+                    isinstance(exc, ConnectionClosed) and exc.rcvd and exc.rcvd.code == 1013 and '暂停外部联网' in exc.rcvd.reason)
+                self.store.update(owner, alias, error='群主已暂停外部联网，等待恢复' if paused else '连接中断，正在重连')
                 await asyncio.sleep(delay)
                 delay = min(30, delay * 2)
 

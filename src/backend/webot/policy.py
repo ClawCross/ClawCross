@@ -292,6 +292,8 @@ def _resolve_rule(policy: WeBotToolPolicy, tool_name: str) -> tuple[str, ToolPol
 
 
 def _extract_content_subject(tool_name: str, args: dict[str, Any]) -> str:
+    if tool_name in {'manage_team','manage_group','manage_agent_alarms'}:
+        return json.dumps(args,ensure_ascii=False,sort_keys=True,default=str)
     arg_name = _CONTENT_ARG_NAMES.get(tool_name)
     if not arg_name:
         return ""
@@ -329,6 +331,8 @@ def evaluate_tool_policy(
     approval = policy.default_approval
     if rule and rule.approval:
         approval = rule.approval
+    elif tool_name in {'manage_team','manage_group','manage_agent_alarms','send_to_session'}:
+        approval = 'manual'
 
     content_subject = _extract_content_subject(tool_name, args)
     path_subject = _extract_path_subject(tool_name, args)

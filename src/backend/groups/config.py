@@ -17,15 +17,13 @@ def frontend_url():
 
 def own_front_ends() -> set[str]:
     """The addresses this machine's web front end answers on: loopback, and its public domain."""
-    from common.env_settings import read_env_settings
-    from common.runtime_paths import ENV_FILE
+    from common.public_access import read_public_domain
 
-    public = (read_env_settings(str(ENV_FILE), ['PUBLIC_DOMAIN']).get('PUBLIC_DOMAIN')
-              or os.getenv('PUBLIC_DOMAIN') or '').strip().rstrip('/')
+    public = read_public_domain()
     port = int(os.getenv('PORT_FRONTEND', '51209'))
     found = {f'http://127.0.0.1:{port}', f'http://localhost:{port}', f'http://[::1]:{port}'}
     if public:
-        found.add(public if '://' in public else 'https://' + public)
+        found.add(public)
     return found
 
 

@@ -43,6 +43,27 @@ class _FakeAsyncClient:
 
 
 class TestSchedulerMcp(unittest.IsolatedAsyncioTestCase):
+    async def test_team_alarm_update_preserves_id_and_rejects_scope_changes(self):
+        from scheduler import service
+        from types import SimpleNamespace
+        from fastapi import HTTPException
+        tasks={'t1':{'user_id':'alice','team':'Project','agent':'worker','text':'Old','cron':'0 9 * * *','schedule_type':'cron','run_at':'','created_at':'original'}}
+        store=SimpleNamespace(get=lambda owner,aid:SimpleNamespace(agent_id='worker',name='Worker') if (owner,aid)==('alice','worker') else None)
+        with mock.patch.object(service,'load_tasks',return_value=tasks), \
+             mock.patch.object(service,'save_tasks') as save, \
+             mock.patch.object(service,'get_store',return_value=store), \
+             mock.patch.object(service,'_add_alarm_job') as schedule, \
+             mock.patch.object(service.scheduler,'get_job',return_value=None):
+            output=await service.update_task('t1',service.CronTask(user_id='alice',team='Project',agent='worker',text='New',cron='0 10 * * *'))
+            self.assertEqual(output['task_id'],'t1')
+            self.assertEqual(save.call_args.args[0]['t1']['created_at'],'original')
+            self.assertEqual(schedule.call_args.args[0],'t1')
+            save.reset_mock();schedule.reset_mock()
+            for patch in ({'user_id':'bob'},{'team':'Other'},{'cron':'bad'}):
+                with self.assertRaises(HTTPException):
+                    await service.update_task('t1',service.CronTask(**{'user_id':'alice','team':'Project','agent':'worker','text':'Bad','cron':'0 10 * * *',**patch}))
+            save.assert_not_called();schedule.assert_not_called()
+
     async def test_list_alarms_reports_scheduler_http_error(self):
         fake = _FakeAsyncClient(
             get_response=_FakeResponse({"detail": "boom"}, status_code=500, text='{"detail":"boom"}')
@@ -67,10 +88,10 @@ class TestSchedulerMcp(unittest.IsolatedAsyncioTestCase):
 
     async def test_delete_alarm_checks_owner_then_deletes(self):
         fake = _FakeAsyncClient(
-            get_response=_FakeResponse([{"task_id": "task-1", "user_id": "alice"}]),
+            get_response=_FakeResponse([{"task_id": "task-1", "user_id": "alice", "agent": "my-agent"}]),
             delete_response=_FakeResponse({"status": "deleted"}),
         )
         with mock.patch("webot.mcp.scheduler.httpx.AsyncClient", return_value=fake):
-            result = await scheduler_mcp.delete_alarm("alice", "task-1")
+            result = await scheduler_mcp.delete_alarm("alice", "task-1", session_id="my-agent")
 
         self.assertIn("已成功删除", result)

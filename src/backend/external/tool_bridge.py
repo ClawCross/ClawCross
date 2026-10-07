@@ -104,28 +104,33 @@ def bridge_router():
     async def invoke(body: ToolRequest, authorization: str | None = Header(None)):
         token = (authorization or '').removeprefix('Bearer ')
         key = _tokens.get(token)
+        if not key:
+            raise HTTPException(403, 'Invalid Agent connector credential')
         turn = _active.get(key)
-        if not turn:
+        if not turn and body.action != 'catalog':
             raise HTTPException(403, 'No active authorized Agent turn')
         current = get_store().require(*key)
         if not ((current.config.get('meta') or {}).get('acp') or {}).get('clawcross_tools', True):
             raise HTTPException(403, 'ClawCross connector disabled')
-        if turn['mode'] == 'chat':
+        if turn and turn['mode'] == 'chat' and body.action != 'catalog':
             raise HTTPException(403, 'Tools disabled in chat mode')
         if len(json.dumps(body.arguments)) > 200_000:
             raise HTTPException(413, 'Tool arguments too large')
         from langchain_core.messages import AIMessage, HumanMessage
-        from webot.engine.agent import UserAwareToolNode, available_internal_tool_names, _visible_tool_parameters
+        from webot.engine.agent import UserAwareToolNode, available_internal_tool_names, intrinsic_internal_tool_names, _visible_tool_parameters
         engine = get_gateway().runtimes[WEBOT].engine
         tools = engine._mcp_tools
         def meta(owner, aid):
             target = get_store().require(owner, aid)
-            return {'tools': ((target.config.get('meta') or {}).get('acp') or {}).get('tools'),
+            return {'tools': target.config.get('tools') if target.driver == WEBOT else ((target.config.get('meta') or {}).get('acp') or {}).get('tools'),
                     'teams': target.teams}
-        state = {'user_id': key[0], 'session_id': key[1], 'session_mode': turn['mode'],
-                 'enabled_tools': turn['enabled_tools'],
-                 '_approval_review_counters': turn['review_counters'],
-                 'trigger_source': 'system' if turn['context'].get('conversation_id') else 'user'}
+        if body.action == 'catalog':
+            intrinsic = intrinsic_internal_tool_names(tools,user_id=key[0],session_id=key[1],find_session_meta=meta)
+            return {'description':engine._tool_registry.compact_tool_list(intrinsic)}
+        state = {'user_id': key[0], 'session_id': key[1], 'session_mode': turn['mode'] if turn else None,
+                 'enabled_tools': turn['enabled_tools'] if turn else None,
+                 '_approval_review_counters': turn['review_counters'] if turn else {},
+                 'trigger_source': 'system' if turn and turn['context'].get('conversation_id') else 'user'}
         names = available_internal_tool_names(tools, user_id=key[0], session_id=key[1],
                                              state=state, find_session_meta=meta)
         if body.action == 'search':

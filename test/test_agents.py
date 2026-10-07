@@ -571,6 +571,28 @@ class ApiCase(StoreCase):
 
 
 class TestAgentsApi(ApiCase):
+    def test_creation_templates_persist_distinct_modes_and_sandboxes(self):
+        from webot import runtime_settings, runtime_store
+        self.enterContext(mock.patch.object(runtime_settings,'USER_FILES_DIR',Path(self.tmp.name)/'users'))
+        self.enterContext(mock.patch.object(runtime_store,'AGENT_RUNTIME_DB_DIR',Path(self.tmp.name)/'runtime'))
+        for template,mode,security in [('chat','chat','strict'),('group','auto','strict'),('personal','auto','standard'),('admin','manual','standard')]:
+            response=self.call('POST','/v1/agents',json={'name':template,'creation_template':template})
+            self.assertEqual(response.status_code,200,response.text)
+            agent=self.store.require('alice',response.json()['agent_id'])
+            settings=runtime_settings.get_runtime_settings('alice',agent.agent_id).approval
+            self.assertEqual((settings.mode,settings.sandbox_security,settings.command_sandbox),(mode,security,'auto'))
+            self.assertEqual(runtime_store.get_session_mode('alice',agent.agent_id)['mode'],mode)
+            if template=='chat':self.assertEqual(agent.config['tools'],[])
+            if template=='group':
+                self.assertNotIn('send_to_session',agent.config['tools'])
+                self.assertFalse(agent.config['workspaces']['user_shared'])
+                self.assertFalse(agent.config['workspaces']['teams'])
+            if template=='admin':self.assertIn('send_to_session',agent.config['tools'])
+            self.assertNotIn('call_llm_api',agent.config.get('tools') or [])
+        self.assertEqual(self.call('POST','/v1/agents',json={'creation_template':'unsafe'}).status_code,422)
+        for template in ('chat','group'):
+            self.assertEqual(self.call('POST','/v1/agents',json={'platform':'codex','creation_template':template}).status_code,400)
+
     def test_workspace_is_per_agent_and_creation_context_does_not_overwrite_it(self):
         root = Path(self.tmp.name) / 'launch'; root.mkdir()
         other = Path(self.tmp.name) / 'other'; other.mkdir()

@@ -121,6 +121,7 @@ def should_inject_new_inbox_notice(state: dict, turn_count: int) -> bool:
 
 # --- Tools that need automatic username injection ---
 USER_INJECTED_TOOLS = {
+    'manage_team','manage_group','manage_agent_alarms','get_session_details',
     # File management tools
     "list_files", "read_file", "write_file", "delete_file",
     # Command execution tools
@@ -139,7 +140,7 @@ USER_INJECTED_TOOLS = {
     # Session management tools
     "list_sessions", "fork_session", "set_session_title",
     # LLM API access tools
-    "call_llm_api", "send_to_session", "read_session_inbox", "mark_session_inbox_read",
+    "send_to_session", "read_session_inbox", "mark_session_inbox_read",
     # Group chat tools
     "send_to_group", "join_group", "leave_group", "list_agent_groups", "get_group_details", "get_team_details",
     # WeBot subagent tools
@@ -157,6 +158,8 @@ USER_INJECTED_TOOLS = {
 
 # Tools that need session_id auto-injected (in addition to username)
 SESSION_INJECTED_TOOLS = {
+    'manage_team':'source_session','manage_group':'source_session','manage_agent_alarms':'source_session',
+    'get_session_details':'source_session','list_alarms':'session_id','delete_alarm':'session_id',
     "get_configuration": "session_id",
     "request_configuration": "session_id",
     "request_channel_setup": "session_id",
@@ -208,6 +211,7 @@ TEAM_INJECTED_TOOLS: frozenset[str] = frozenset({
 
 # Session-related tool args that must always match runtime session (model cannot override).
 SESSION_FORCE_INJECTED_TOOLS: frozenset[str] = frozenset({
+    'manage_team','manage_group','manage_agent_alarms','get_session_details','list_alarms','delete_alarm','add_alarm',
     "run_command", "background_command_io",
     "web_search", "web_fetch",
     "send_to_session",
@@ -369,11 +373,13 @@ def _tool_input_schema(tool) -> dict | None:
     return None
 
 
-def available_internal_tool_names(tools, *, user_id: str, session_id: str,
-                                  state: dict, find_session_meta) -> set[str]:
-    """One allow set for model binding, discovery, and final execution."""
+def intrinsic_internal_tool_names(tools, *, user_id: str, session_id: str,
+                                  find_session_meta) -> set[str]:
+    """The Agent's own tool table, independent of modes and temporary selection."""
     names = {tool.name for tool in tools}
     own_tools = (find_session_meta(user_id, session_id) or {}).get("tools")
+    from webot.tool_capabilities import REMOVED_TOOLS
+    names.difference_update(REMOVED_TOOLS)
     if own_tools is not None:
         names.intersection_update(canonical_tool_names(own_tools))
     subagent = parse_subagent_session_id(session_id)
@@ -381,8 +387,6 @@ def available_internal_tool_names(tools, *, user_id: str, session_id: str,
         profile = get_agent_profile(subagent["agent_type"], user_id=user_id)
         if profile.allowed_tools is not None:
             names.intersection_update(profile.allowed_tools)
-    if state.get("enabled_tools") is not None:
-        names.intersection_update(canonical_tool_names(state["enabled_tools"]))
     from webot.subagent_permissions import parent_sessions
     for parent_session in parent_sessions(user_id, session_id):
         parent_tools = (find_session_meta(user_id, parent_session) or {}).get("tools")
@@ -393,8 +397,20 @@ def available_internal_tool_names(tools, *, user_id: str, session_id: str,
             profile = get_agent_profile(parent_profile["agent_type"], user_id=user_id)
             if profile.allowed_tools is not None:
                 names.intersection_update(profile.allowed_tools)
+    return names
+
+
+def available_internal_tool_names(tools, *, user_id: str, session_id: str,
+                                  state: dict, find_session_meta) -> set[str]:
+    """Apply runtime restrictions for search results and execution, not API descriptions."""
+    names = intrinsic_internal_tool_names(tools,user_id=user_id,session_id=session_id,
+                                         find_session_meta=find_session_meta)
+    if state.get("enabled_tools") is not None:
+        names.intersection_update(canonical_tool_names(state["enabled_tools"]))
+    from webot.subagent_permissions import parent_sessions
+    for parent_session in parent_sessions(user_id,session_id):
         names.intersection_update(filter_tools_for_mode(
-            sorted(names), effective_session_mode(user_id, parent_session)))
+            sorted(names),effective_session_mode(user_id,parent_session)))
     mode = effective_session_mode(user_id, session_id, state.get("session_mode"))
     return set(filter_tools_for_mode(sorted(names), mode))
 
@@ -748,6 +764,9 @@ class UserAwareToolNode:
                     and tc['id'] != state.get('_approval_resume_call_id')):
                 blocked_calls.append((tc, '沙盒权限由系统在执行失败后审核，不接受 Agent 自行申请提权。', False, ''))
                 continue
+            if tc['name'] in external_names and mode in {'chat','readonly'}:
+                blocked_calls.append((tc, '当前模式不允许调用外部工具。', False, ''))
+                continue
             if not mode_allows_tool(mode, tc["name"], tc.get("args")):
                 blocked_calls.append((tc, "当前模式不允许该工具操作。交流模式无工具；只读模式只允许查看和搜索。", False, ""))
                 continue
@@ -1031,7 +1050,8 @@ class TeamAgent:
         if agent is None:
             return None
         return {"teams": agent.teams, "name": agent.name,
-                "persona": agent.config.get("persona", ""), "tools": agent.config.get("tools")}
+                "persona": agent.config.get("persona", ""), "tools": agent.config.get("tools"),
+                'creation_template':agent.config.get('creation_template','')}
 
     def _get_internal_session_persona_prompt(self, user_id: str, session_id: str) -> str:
         """The identity of the agent this session is, from its own persona text."""
@@ -1047,10 +1067,11 @@ class TeamAgent:
         if not is_subagent:
             from common.agent_prompt import identity_sections, join_sections
             persona = self._get_internal_session_persona_prompt(user_id, session_id) if user_id and session_id else ""
+            isolated_group = (self._find_internal_session_meta(user_id,session_id) or {}).get('creation_template') == 'group'
             return join_sections(identity_sections(
                 base=prompts["base_system"], conversation=prompts["conversation_rules"],
-                persona=persona, user_profile=build_user_profile_block(user_id),
-                soul=build_soul_prompt(user_id))), prompts
+                persona=persona, user_profile='' if isolated_group else build_user_profile_block(user_id),
+                soul='' if isolated_group else build_soul_prompt(user_id))), prompts
         base = prompts["base_system_subagent"]
         if profile:
             base += "\n\n" + render_profile_system_prompt(profile)
@@ -1081,6 +1102,9 @@ class TeamAgent:
         # 2. Start MCP servers
         python_command = sys.executable
         mcp_servers = {
+            'management_service': {
+                'command':python_command,'args':[os.path.join(self._src_dir,'webot','mcp','management.py')],'transport':'stdio',
+            },
             "scheduler_service": {
                 "command": python_command,
                 "args": [os.path.join(self._src_dir, "webot", "mcp", "scheduler.py")],
@@ -1258,6 +1282,8 @@ class TeamAgent:
         for tc in last_msg.tool_calls:
             name = tc["name"]
             if name in external_names or canonical_tool_name(name) not in self._internal_tool_names:
+                if effective_session_mode(state.get('user_id',''),state.get('session_id',''),state.get('session_mode')) in {'chat','readonly'}:
+                    return True  # Route through execution checks instead of forwarding a forbidden call.
                 logger.info("external tool call %s: returning it to the caller", name)
                 return False
         return True
@@ -1305,8 +1331,8 @@ class TeamAgent:
         external_defs = _external_tool_defs(state)
         external_tool_names = {func_def["name"] for func_def in external_defs}
 
-        # Tool arguments are constrained at decode time by their JSON schema.
-        # Only tools this session may call this turn are sent.
+        # Bind the Agent's intrinsic definitions. Runtime restrictions ride in
+        # the tail block and are enforced again before search/execution.
         base_model, strict_tools, bind_kwargs = strict_tool_binding(self._select_model(state, turn))
         bind_tools_list = self._turn_tool_schemas(state, turn, external_defs, strict=strict_tools)
         llm = base_model.bind_tools(bind_tools_list, **bind_kwargs) if bind_tools_list else base_model
@@ -1546,20 +1572,16 @@ class TeamAgent:
         return llm_factory.create_chat_model(**inference)
 
     def _turn_tool_schemas(self, state: AgentState, turn: "_Turn", external_defs: list[dict], *, strict: bool) -> list:
-        """Core tool schemas, discovery for the eligible long tail, and caller tools.
-
-        The tool node recomputes the same allow set before it executes a call.
-        """
-        allowed = available_internal_tool_names(
+        """Definitions follow the intrinsic Agent table, preserving the API prefix."""
+        intrinsic = intrinsic_internal_tool_names(
             self._mcp_tools, user_id=turn.user_id, session_id=turn.session_id,
-            state=state, find_session_meta=self._find_internal_session_meta,
+            find_session_meta=self._find_internal_session_meta,
         )
         always_loaded = self._tool_registry.always_loaded_names
-        schemas = [bind_tool_schema(tool, strict=strict) for tool in self._mcp_tools
-                   if tool.name in allowed and tool.name in always_loaded]
-        schemas.extend(discovery_tool_schemas(self._tool_registry, allowed - always_loaded, strict=strict))
-        if turn.mode not in {"chat", "readonly"}:
-            schemas.extend(external_tool_schema(func_def, strict=strict) for func_def in external_defs)
+        schemas = [bind_tool_schema(tool, strict=strict) for tool in sorted(self._mcp_tools,key=lambda tool:tool.name)
+                   if tool.name in intrinsic and tool.name in always_loaded]
+        schemas.extend(discovery_tool_schemas(self._tool_registry, intrinsic - always_loaded, strict=strict))
+        schemas.extend(external_tool_schema(func_def, strict=strict) for func_def in external_defs)
         return schemas
 
     def _dynamic_context(self, state: AgentState, turn: "_Turn", reply_format_hint: str) -> str:
@@ -1596,8 +1618,13 @@ class TeamAgent:
             memory=get_memory_state(user_id, session_id),
         )
         from common.conversation_context import group_memberships
+        available = available_internal_tool_names(
+            self._mcp_tools,user_id=user_id,session_id=session_id,
+            state={**state,'session_mode':turn.mode},find_session_meta=self._find_internal_session_meta)
         block = (
             f"【Session Mode】\n{build_session_mode_message(turn.mode, turn.mode_payload['reason'])}\n\n"
+            f"【本轮工具范围】\n当前允许：{', '.join(sorted(available)) or '无'}。"
+            "工具目录描述不代表本轮授权；调用必须遵循当前范围和模式。\n\n"
             f"{runtime_block}\n"
             "\n" + render_group_context(state["messages"], memberships=group_memberships(user_id, session_id)) + "\n"
         )
@@ -2065,7 +2092,9 @@ class TeamAgent:
     def get_tools_info(self) -> list[dict]:
         """Return serializable tool metadata list."""
         from webot.engine.tool_catalog import tool_category
-        return [{"name": t.name, "description": t.description or "", "category": tool_category(t.name)} for t in self._mcp_tools]
+        from webot.tool_capabilities import REMOVED_TOOLS
+        return [{"name": t.name, "description": t.description or "", "category": tool_category(t.name)}
+                for t in self._mcp_tools if t.name not in REMOVED_TOOLS]
 
     # ------------------------------------------------------------------
     # Public interface: task management

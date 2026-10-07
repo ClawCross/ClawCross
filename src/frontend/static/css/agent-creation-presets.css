@@ -1,0 +1,7 @@
+.agent-creation-presets { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; margin: 0 0 18px; }
+.agent-creation-preset { display: flex; flex-direction: column; gap: 5px; min-width: 0; padding: 12px; border: 1px solid var(--border,var(--ui-hairline,#dce1e8)); border-radius: 11px; background: var(--bg-card,var(--ui-surface,#fff)); color: var(--text,var(--ui-text,#222)); text-align: left; cursor: pointer; font-family: inherit; }
+.agent-creation-preset strong { font-size: 13px; font-weight: 600; }
+.agent-creation-preset small { color: var(--text-secondary,var(--ui-text-2,#6b7280)); font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
+.agent-creation-preset.is-selected { border-color: var(--primary,var(--ui-accent,#007aff)); background: color-mix(in srgb,var(--primary,var(--ui-accent,#007aff)) 5%,var(--bg-card,var(--ui-surface,#fff))); }
+.agent-creation-preset:focus-visible { outline: 2px solid var(--primary,var(--ui-accent,#007aff)); outline-offset: 2px; }
+.agent-creation-preset-hint { margin: -5px 0 16px; color: var(--text-secondary,var(--ui-text-2,#6b7280)); font-size: 12px; line-height: 1.6; }
