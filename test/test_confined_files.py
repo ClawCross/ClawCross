@@ -120,6 +120,7 @@ def test_windows_leaf_handle_cannot_follow_reparse_or_read_alias(attributes, lin
     with pytest.raises(ValueError):
         open_checked(api, r'C:\work\file', directory=directory, read=read)
     assert api.closed == [42]
+    assert api.open_args[1] & (0x80000000 | 0x1)  # Read/list access activates sharing checks.
     assert not api.open_args[2] & 0x4  # No FILE_SHARE_DELETE: pinned name.
     assert api.open_args[5] & 0x00200000  # OPEN_REPARSE_POINT.
     assert ctypes.sizeof(FileInfo) == 52

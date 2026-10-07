@@ -62,7 +62,10 @@ class PinnedHandle:
 def open_checked(api, path, *, read=False, directory=False):
     # BACKUP_SEMANTICS opens directory handles; OPEN_REPARSE_POINT prevents
     # traversal at the final component. Pinned parents protect intermediates.
-    value = api.CreateFileW(str(path), 0x80000000 if read else 0x80,
+    # Attribute-only handles do not participate in Windows sharing checks.
+    # FILE_READ_DATA / FILE_LIST_DIRECTORY makes denying SHARE_DELETE pin
+    # the file or directory name until this handle closes.
+    value = api.CreateFileW(str(path), 0x80000000 if read else 0x80 | 0x1,
                            0x1 | 0x2, None, 3, 0x02000000 | 0x00200000, None)
     if value is None or value == ctypes.c_void_p(-1).value:
         raise ctypes.WinError(ctypes.get_last_error())
