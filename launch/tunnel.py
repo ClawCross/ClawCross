@@ -10,10 +10,8 @@ import queue
 import re
 import shutil
 import signal
-import stat
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 from pathlib import Path
@@ -27,6 +25,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from src.backend.common.runtime_paths import (  # noqa: E402
     ENV_FILE, PID_DIR, WORKSPACE_DIR, cloudflared_path, ensure_runtime_dirs,
 )
+from src.backend.common.public_access import write_tunnel_domain  # noqa: E402
 
 ensure_runtime_dirs()
 PID_FILE = PID_DIR / "tunnel.pid"
@@ -109,24 +108,8 @@ def _claim_pid() -> None:
 
 
 def _write_public_domain(value: str) -> None:
-    """Replace the runtime URL atomically; the configured hostname stays intact."""
-    mode = stat.S_IMODE(ENV_FILE.stat().st_mode) if ENV_FILE.exists() else 0o600
-    lines = ENV_FILE.read_text(encoding="utf-8").splitlines(keepends=True) if ENV_FILE.exists() else []
-    replacement = f"PUBLIC_DOMAIN={value}\n"
-    updated = [replacement if line.strip().startswith("PUBLIC_DOMAIN=") else line for line in lines]
-    if not any(line.strip().startswith("PUBLIC_DOMAIN=") for line in lines):
-        if updated and not updated[-1].endswith("\n"):
-            updated.append("\n")
-        updated.append(replacement)
-    fd, temporary = tempfile.mkstemp(prefix=".env.tunnel-", dir=ENV_FILE.parent)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            os.chmod(temporary, mode)
-            handle.write("".join(updated))
-        os.replace(temporary, ENV_FILE)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
+    """Publish a Quick Tunnel URL while retaining a configured fixed domain."""
+    write_tunnel_domain(value, ENV_FILE)
 
 
 def _owns_pid(path: Path, pid: int) -> bool:
@@ -160,8 +143,7 @@ def cleanup() -> None:
         _remove_owned_pid(CLOUDFLARED_PID_FILE, _child.pid)
     if _claimed and _owns_pid(PID_FILE, os.getpid()):
         try:
-            if dotenv_values(str(ENV_FILE)).get("PUBLIC_DOMAIN") == _public_url:
-                _write_public_domain("")
+            write_tunnel_domain("", ENV_FILE, expected=_public_url)
         finally:
             _remove_owned_pid(PID_FILE, os.getpid())
 

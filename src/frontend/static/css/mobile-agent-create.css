@@ -1,0 +1,58 @@
+/* The same compact fields and disclosure order as Studio, sized for touch. */
+#create-agent-modal { width: min(460px, calc(100vw - 12px)); color: var(--text); }
+#create-agent-modal [hidden] { display: none !important; }
+#create-agent-modal .drawer-header { flex-shrink: 0; background: var(--bg-card); }
+#create-agent-modal .drawer-body.create-agent-drawer-body { padding: 0 !important; gap: 0 !important; background: var(--bg-card); }
+#create-agent-modal .create-agent-intro { flex-shrink: 0; margin: 0; padding: 18px 20px 12px; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
+#create-agent-modal #create-agent-mode-bar { display: flex; gap: 4px; margin: 0 20px 16px; padding: 4px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); }
+#create-agent-modal .add-agent-mode-btn { display: flex; flex: 1; align-items: center; justify-content: center; gap: 8px; min-width: 0; min-height: 42px; padding: 8px; border: 0; border-radius: 9px; background: transparent; color: var(--text-secondary); font-family: inherit; font-size: 13px; font-weight: 600; line-height: 1.4; cursor: pointer; }
+#create-agent-modal .add-agent-mode-btn.active { background: var(--bg-card); color: var(--text); box-shadow: 0 1px 5px rgba(15,23,42,.07); }
+#create-agent-modal .add-agent-mode-btn .ui-icon { width: 18px; height: 18px; }
+#create-agent-modal #create-agent-panels-scroll { padding: 0 20px 20px; overscroll-behavior: contain; }
+#create-agent-modal .create-agent-form { padding: 0; font-size: 13px; }
+#create-agent-modal .side-panel-field { margin: 0 0 16px; }
+#create-agent-modal .side-panel-label, #create-agent-modal .create-agent-form > label { display: block; margin: 0 0 8px; color: var(--text); font-size: 13px; font-weight: 600; line-height: 1.5; }
+#create-agent-modal .side-panel-input, #create-agent-modal .create-agent-form > input, #create-agent-modal .create-agent-form > select { width: 100%; min-width: 0; min-height: 46px; padding: 11px 12px; border: 1px solid var(--border); border-radius: 10px; outline: none; background: var(--bg-card); color: var(--text); font: inherit; font-size: 16px; box-sizing: border-box; }
+#create-agent-modal input:focus, #create-agent-modal select:focus, #create-agent-modal textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent); }
+#create-agent-modal .create-agent-advanced { margin: 16px 0 0; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-card); }
+#create-agent-modal .create-agent-advanced summary { min-height: 24px; color: var(--text-secondary); font-size: 13px; line-height: 1.7; font-weight: 600; cursor: pointer; }
+#create-agent-modal .create-agent-advanced[open] summary { color: var(--text); margin-bottom: 16px; }
+#create-agent-modal .create-agent-advanced .side-panel-label { margin-top: 18px; }
+#create-agent-modal .create-agent-advanced .side-panel-label:first-of-type { margin-top: 0; }
+#create-agent-modal #create-agent-team-row { flex-shrink: initial; padding: 14px; }
+#create-agent-modal .side-panel-hint { color: var(--text-hint); font-size: 12px; line-height: 1.5; }
+#create-agent-modal .create-agent-component { margin: 12px 0 0; padding: 10px 12px; border-radius: 10px; background: var(--bg); color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
+#create-agent-modal .create-agent-component p { margin: 0; }
+#create-agent-modal .side-panel-tag-list { margin: 8px 0 0; box-shadow: none; border-radius: 10px; max-height: 180px; }
+#create-agent-modal .side-panel-tag-option { min-height: 48px; padding: 9px 10px; }
+#create-agent-modal .side-panel-tag-name { font-size: 13px; }
+#create-agent-modal .create-agent-native-btn { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; margin-top: 14px; padding: 10px 4px; border: 0; background: transparent; color: var(--primary); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+#create-agent-modal .create-agent-native-btn span { flex: 1; }
+#create-agent-modal .create-agent-native-btn .ui-icon { width: 18px; height: 18px; }
+#create-agent-modal .create-agent-footer { flex-shrink: 0; padding: 12px 20px max(14px, env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--bg-card); }
+#create-agent-modal .create-agent-footer p { margin: 0 0 10px; }
+#create-agent-modal .create-agent-footer-actions { display: flex; gap: 10px; }
+#create-agent-modal .create-agent-footer-actions button { min-height: 46px; margin: 0; font-size: 14px; border-radius: 10px; cursor: pointer; }
+#create-agent-modal .create-agent-cancel { flex: 0 0 82px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary); }
+#create-agent-modal .side-panel-primary-btn { flex: 1; width: auto; border: 1px solid transparent; }
+#create-agent-modal button:disabled { opacity: .55; cursor: wait; }
+#create-agent-modal button:focus-visible, #create-agent-modal summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+#create-agent-modal .create-agent-tool-all { display: flex; align-items: center; gap: 9px; min-height: 40px; margin: 0; font-size: 13px; font-weight: 500; }
+#create-agent-modal .create-agent-tool-all input { width: 17px; height: 17px; accent-color: var(--primary); }
+#create-agent-modal #mobile-group-role-picker .agent-creation-preset:last-child { grid-column: 1 / -1; }
+#create-agent-modal #mobile-agent-capability-presets { margin: 0 0 16px; }
+#create-agent-modal #mobile-agent-capability-presets.is-general-create { border: 0; padding: 0; }
+#create-agent-modal #mobile-agent-capability-presets.is-general-create > summary { display: none; }
+#create-agent-modal #mobile-agent-capability-presets .agent-creation-presets { margin: 10px 0; }
+#create-agent-modal .create-agent-tool-select { margin-top: 10px; }
+#create-agent-modal .create-agent-tool-actions { display: flex; gap: 8px; margin: 10px 0; }
+#create-agent-modal .create-agent-tool-actions button { padding: 7px 10px; min-height: 36px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text-secondary); font-size: 12px; }
+#create-agent-modal .tool-category { margin: 10px 0; padding: 10px; border: 1px solid var(--border); border-radius: 10px; }
+#create-agent-modal .tool-category-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 8px !important; font-size: 12px !important; }
+#create-agent-modal .tool-category-heading small { color: var(--text-hint); font-weight: 400; }
+#create-agent-modal .tool-category-items { display: flex; flex-wrap: wrap; gap: 6px; }
+#create-agent-modal .tool-tag { max-width: 100%; min-height: 36px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text-secondary); font-size: 11px; overflow-wrap: anywhere; cursor: pointer; }
+#create-agent-modal .tool-tag.enabled { color: var(--primary); border-color: color-mix(in srgb, var(--primary) 30%, var(--border)); background: color-mix(in srgb, var(--primary) 7%, var(--bg-card)); }
+@media (max-width: 600px) {
+  #create-agent-modal { width: 100%; max-width: 100%; min-width: 0; border-radius: 0; }
+}

@@ -212,8 +212,7 @@ def _configured_workspace(user_id: str, session_id: str, agent_config: dict, exp
 def workspace_card(user_id: str, session_id: str, *, agent_config: dict | None = None) -> dict:
     state = resolve_session_workspace(user_id, session_id, agent_config=agent_config)
     return {'cwd':str(state.cwd), 'root':str(state.root), 'roots':[str(root) for root in state.roots],
-            'folders':list(state.folders) or [{'path':str(state.root),'source':state.mode,'team':''}], 'mode':state.mode,
-            'default_team':DEFAULT_TEAM}
+            'folders':list(state.folders) or [{'path':str(state.root),'source':state.mode,'team':''}], 'mode':state.mode}
 
 
 def _ensure_within(base: Path, candidate: Path) -> Path:

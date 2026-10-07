@@ -1,4 +1,44 @@
 const { test, expect } = require('@playwright/test');
+const creation=require('./agent-creation-fixture');
+
+test('contact creation offers group roles and keeps capabilities in advanced settings',async({page})=>{
+  await page.setViewportSize({width:390,height:844});
+  await stub(page,{posts:[],control:[]});
+  await page.route('**/proxy_acpx_status',route=>route.fulfill({json:{tools:['codex']}}));
+  await page.route('**/proxy_tools',route=>route.fulfill({json:{tools:creation.tools}}));
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.goto('/mobile/group_chat');
+  await page.evaluate(async()=>{
+    window.registerAgent=async fields=>{window.__createdFields=fields;return {agent_id:'group-role-agent'};};
+    window.startPrivateChat=async()=>true;
+    await showCreateAgentModal('','group');
+  });
+  const roles=page.locator('#mobile-group-role-picker');
+  await expect(roles.locator('[data-group-role]')).toHaveCount(3);
+  await expect(page.locator('#mobile-agent-capability-presets')).not.toHaveAttribute('open','');
+  await roles.locator('[data-group-role="advisor"]').click();
+  await expect.poll(()=>page.evaluate(()=>AgentCreationPresets.selected('mobile-agent-creation-presets')?.id)).toBe('group');
+  expect(await page.evaluate(()=>window.__createdFields)).toBeUndefined();
+  await page.evaluate(()=>setCreateAgentMode('acp'));
+  await expect(page.locator('#ca-acp-name')).toBeVisible();
+  await expect(page.locator('#ca-acp-submit')).toBeEnabled();
+  expect(await page.evaluate(()=>AgentCreationPresets.selected('mobile-agent-creation-presets').id)).toBe('personal');
+  await page.evaluate(()=>setCreateAgentMode('webot'));
+  await expect.poll(()=>page.evaluate(()=>AgentCreationPresets.selected('mobile-agent-creation-presets').id)).toBe('group');
+  await page.locator('#mobile-agent-capability-presets > summary').click();
+  await page.locator('#mobile-agent-creation-presets [data-preset="admin"]').click();
+  expect(await page.evaluate(()=>AgentCreationPresets.selected('mobile-agent-creation-presets').id)).toBe('admin');
+  await page.locator('#mobile-agent-creation-presets [data-preset="group"]').click();
+  await page.locator('#mobile-agent-capability-presets > summary').click();
+  await page.locator('#create-agent-name').fill('科学顾问');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.screenshot({path:'/tmp/clawcross-contact-group-roles.png'});
+  await page.locator('#create-agent-submit').click();
+  const created=await page.evaluate(()=>window.__createdFields);
+  expect(created).toMatchObject({name:'科学顾问',platform:'webot',creation_template:'group',tools:['send_to_group']});
+  expect(created.persona).toContain('专业顾问');
+  expect(errors).toEqual([]);
+});
 test.use({ launchOptions: { executablePath: process.env.CLAWCROSS_TEST_CHROME || '/usr/bin/google-chrome' } });
 
 // The mobile message center speaks to agents by id: groups, members, @mentions and
@@ -34,6 +74,7 @@ async function stub(page, calls) {
   }
   await page.route('**/proxy_check_session', (route) => json(route, { valid: true, user_id: 'tester', has_password: true, mode: 'local' }));
   await page.route('**/api/llm_config_status', (route) => json(route, { configured: true }));
+  await page.route('**/v1/agents/creation-templates',route=>json(route,{data:creation.templates}));
   await page.route('**/teams', (route) => json(route, { teams: ['dev'] }));
   await page.route(/\/proxy_visual\/experts/, (route) => json(route, [
     { name: '创意专家', tag: 'creative', persona: 'creative persona', source: 'public', emoji: '🎨' },
@@ -275,6 +316,7 @@ test('contact creation preserves drafts and offers persona and scoped ClawCross 
   await page.setViewportSize({width:390,height:844});
   await stub(page,{posts:[],control:[]});
   await page.route('**/proxy_acpx_status',route=>route.fulfill({json:{tools:['codex','claude','gemini','qwen']}}));
+  await page.route('**/proxy_tools',route=>route.fulfill({json:{tools:creation.tools}}));
   await page.addInitScript(()=>{localStorage.setItem('clawcross_lang','zh');});
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('/mobile/group_chat');
@@ -286,15 +328,56 @@ test('contact creation preserves drafts and offers persona and scoped ClawCross 
   await expect(page.locator('#ca-acp-name')).toBeVisible();
   await page.locator('#ca-acp-platform').selectOption('qwen');
   await page.locator('#ca-acp-name').fill('Research');
-  await page.locator('#create-agent-panel-acp summary').click();
+  await page.locator('#create-agent-panel-acp .create-agent-advanced > summary').click();
   await page.locator('#ca-acp-persona').fill('Help me research');
-  await page.locator('#ca-acp-tools').fill('read_file, send_to_group');
+  await page.locator('#ca-acp-tools-picker [data-tool-all]').uncheck();
+  await expect(page.locator('#ca-acp-tools-picker .tool-tag.enabled')).toHaveCount(2);
+  await page.locator('#ca-acp-tools-picker [data-select-all]').click();
+  await expect(page.locator('#ca-acp-tools-picker .tool-tag.enabled')).toHaveCount(3);
+  await page.locator('#ca-acp-tools-picker .tool-tag',{hasText:'manage_team'}).click();
+  await expect(page.locator('#ca-acp-tools-picker .tool-tag.enabled')).toHaveCount(2);
   await page.evaluate(()=>{setCreateAgentMode('webot');setCreateAgentMode('acp');});
   await expect(page.locator('#ca-acp-name')).toHaveValue('Research');
   await expect(page.locator('#ca-acp-persona')).toHaveValue('Help me research');
   expect(await page.evaluate(()=>window.__createdFields)).toBeUndefined();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.screenshot({path:'/tmp/clawcross-mobile-agent-create.png'});
   await page.locator('#ca-acp-submit').click();
-  expect(await page.evaluate(()=>window.__createdFields)).toEqual({name:'Research',platform:'qwen',persona:'Help me research',tools:['read_file','send_to_group'],meta:{acp:{clawcross_tools:true,tools:['read_file','send_to_group']}}});
+  expect(await page.evaluate(()=>window.__createdFields)).toEqual({name:'Research',platform:'qwen',persona:'Help me research',tools:['read_file','send_to_group'],meta:{acp:{clawcross_tools:true,tools:['read_file','send_to_group']}},creation_template:'personal'});
+  expect(errors).toEqual([]);
+});
+
+test('small-screen Agent templates prepare safely and chat submits an explicit empty tool set',async({page})=>{
+  await page.setViewportSize({width:320,height:600});
+  await stub(page,{posts:[],control:[]});
+  await page.route('**/proxy_acpx_status',route=>route.fulfill({json:{tools:['codex']}}));
+  await page.route('**/proxy_tools',route=>route.fulfill({json:{tools:creation.tools}}));
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.goto('/mobile/group_chat');
+  await page.evaluate(async()=>{
+    window.registerAgent=async fields=>{window.__createdFields=fields;return {agent_id:'ag_chat'};};
+    window.startPrivateChat=async()=>true;
+    await showCreateAgentModal();
+  });
+  const choices=page.locator('#mobile-agent-creation-presets');
+  await expect(choices.locator('button')).toHaveCount(4);
+  await choices.locator('[data-preset="chat"]').click();
+  await page.evaluate(()=>setCreateAgentMode('acp'));
+  await expect(page.locator('#ca-acp-name')).toBeVisible();
+  await expect(page.locator('#ca-acp-submit')).toBeDisabled();
+  await expect(page.locator('#mobile-agent-template-hint')).toContainText('需要 WeBot');
+  await choices.locator('[data-preset="admin"]').click();
+  await expect(page.locator('#ca-acp-submit')).toBeEnabled();
+  expect(await page.evaluate(()=>window.__createdFields)).toBeUndefined();
+  await page.evaluate(()=>setCreateAgentMode('webot'));
+  await choices.locator('[data-preset="chat"]').click();
+  await page.locator('#create-agent-name').fill('Chat companion');
+  expect(await page.evaluate(()=>MobileAgentCreationTools.value('create-agent'))).toEqual([]);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  const footer=await page.locator('#create-agent-submit').boundingBox();
+  expect(footer.y+footer.height).toBeLessThanOrEqual(600);
+  await page.screenshot({path:'/tmp/clawcross-mobile-agent-templates.png'});
+  await page.locator('#create-agent-submit').click();
+  expect(await page.evaluate(()=>window.__createdFields)).toEqual({name:'Chat companion',platform:'webot',tools:[],creation_template:'chat'});
   expect(errors).toEqual([]);
 });

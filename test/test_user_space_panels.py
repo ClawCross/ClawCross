@@ -55,6 +55,16 @@ class UserSpacePanelsTests(unittest.TestCase):
         self.assertEqual(card['title'], '用户空间')
         self.assertFalse(self.store.folder('tester', '__default__').exists())
 
+    def test_user_space_view_does_not_assign_an_agent_to_a_team(self):
+        from agents.routes import agent_card
+        agent = self.store.agents.create('tester', driver='webot', name='Independent')
+        self.store.members('tester', '__default__')
+        card = agent_card(self.store.agents.require('tester', agent.agent_id))
+        self.assertEqual(card['settings']['teams'], [])
+        self.assertNotIn('default_team', card)
+        self.store.add('tester', 'real-team', agent.agent_id)
+        self.assertEqual(agent_card(self.store.agents.require('tester', agent.agent_id))['settings']['teams'], ['real-team'])
+
     def test_default_skills_use_user_workspace_and_directory_identity(self):
         created = skills.create_skill('tester', name='folder-key', content=self.content('中文显示名'))
         self.assertTrue(created['success'], created)

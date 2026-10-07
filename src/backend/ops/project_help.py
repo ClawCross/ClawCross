@@ -10,6 +10,8 @@ TOPICS = {
     'channels': ('消息平台与通知', 'channel-setup.md', '机器人连接、访问身份与通知收件人'),
     'sandbox': ('命令沙盒与审核', 'command-isolation-plan.md', '普通/严格模式、权限、进程和平台限制'),
     'agents': ('外部 Agent 与会话导入', 'native-sessions.md', 'Codex/Claude 原生会话的登记与恢复'),
+    'management': ('Agent 模板与管理工具', 'agent-creation-and-management.md', '新建模板、可选管理权限与自己的闹钟'),
+    'mcp': ('Agent MCP 接口方案', 'agent-mcp-interface-design.md', '每个 Agent 的连接、凭证、工具范围与实现状态'),
     'groups': ('群聊与分享', 'group-network.md', '群服务器、加入凭证、人类参与者'),
     'teams': ('团队与工作流', 'team-creator.md', '协作角色与 ClawCross Creator'),
     'skills': ('工作区与技能', 'workspaces-and-skills.md', '共享技能、干净工作区与严格模式'),

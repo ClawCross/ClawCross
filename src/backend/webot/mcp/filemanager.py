@@ -246,13 +246,14 @@ def _atomic_write_text(path: str, content: str, *, encoding: str = "utf-8", atom
 
 @mcp.tool()
 @confined_operation
-async def list_files(username: str, session_id: str = "", folder: str = ".", storage: Literal["file", "memory"] = "file", team: str | None = None) -> str:
+async def list_files(username: str, session_id: str = "", folder: str = ".", storage: Literal["file", "memory"] = "file", team: str | None = None, memory_scope: Literal["workspace", "companion"] = "workspace") -> str:
     """
     列出目录文件，或用 storage="memory" 列出 Skill/记忆条目（编号、名称、说明，无路径）。
 
     :param username: 用户名（由系统自动注入，无需手动传递）
     :param folder: 要列出的目录；支持绝对路径，相对路径以当前 session cwd 为基准
     :param storage: file 为普通目录；memory 为 Skill 正文条目，此时 folder 保持默认值
+    :param memory_scope: memory 范围；companion 只读写本 Agent 的伴生工作区
     :param team: memory 范围；团队名为该团队的条目，null 或空字符串为个人，列团队时也列出共享个人条目
     :return: 文件列表的描述
     """
@@ -263,10 +264,11 @@ async def list_files(username: str, session_id: str = "", folder: str = ".", sto
             if folder not in {"", "."}:
                 return "❌ memory 模式按条目管理，不接受目录路径。"
             reject = await _memory_access_gate(username, session_id, "list_files",
-                {"folder": folder, "storage": storage, "team": team})
+                {"folder": folder, "storage": storage, "team": team, "memory_scope": memory_scope})
             if reject:
                 return reject
-            return json.dumps({"storage": "memory", "items": list_memory(username, team, session_id=session_id)}, ensure_ascii=False)
+            return json.dumps({"storage": "memory", "memory_scope": memory_scope,
+                               "items": list_memory(username, team, session_id=session_id, memory_scope=memory_scope)}, ensure_ascii=False)
         if storage != "file":
             return "❌ 不支持的 storage。"
         reject, user_path = await _file_access_gate(username, session_id, "list_files",
@@ -318,6 +320,7 @@ async def read_file(
     include_sha256: bool = False,
     storage: Literal["file", "memory"] = "file",
     team: str | None = None,
+    memory_scope: Literal["workspace", "companion"] = "workspace",
 ):
     """
     读取文件。文本按块返回，适合大文件渐进读取；图片（png/jpg/gif/webp/bmp）
@@ -331,6 +334,7 @@ async def read_file(
     :param line_count: 按行读取的行数；0 表示默认值（200），上限 2000
     :param encoding: 文件编码，默认 utf-8
     :param include_sha256: 是否在结果中附上文件的 sha256，可作为之后 write_file 的 expected_sha256
+    :param memory_scope: memory 范围；companion 只读取当前 Agent 伴生工作区的条目
     :param storage: file 为普通文件；memory 只读取 Skill 正文，不读取支持文件
     :param team: memory 范围；团队名为该团队的条目，null 或空字符串为个人，读团队时也可读共享个人条目
     :return: 文件内容或错误信息
@@ -342,11 +346,11 @@ async def read_file(
             reject = await _memory_access_gate(username, session_id, "read_file", {
                 "filename": filename, "offset": offset, "limit": limit,
                 "start_line": start_line, "line_count": line_count, "encoding": encoding,
-                "include_sha256": include_sha256, "storage": storage, "team": team,
+                "include_sha256": include_sha256, "storage": storage, "team": team, "memory_scope": memory_scope,
             })
             if reject:
                 return reject
-            file_path = _memory_file_path(memory_target(username, filename, team, shared=True, session_id=session_id)["_path"], username, session_id)
+            file_path = _memory_file_path(memory_target(username, filename, team, shared=True, session_id=session_id, memory_scope=memory_scope)["_path"], username, session_id)
             encoding = "utf-8"
         elif storage == "file":
             reject, file_path = await _file_access_gate(username, session_id, "read_file", {
@@ -440,6 +444,7 @@ async def write_file(
     replace_all: bool = False,
     storage: Literal["file", "memory"] = "file",
     team: str | None = None,
+    memory_scope: Literal["workspace", "companion"] = "workspace",
 ) -> str:
     """
     创建或写入文件。改已有文件的一小段时优先用 mode="str_replace"，不要整篇
@@ -458,7 +463,8 @@ async def write_file(
     :param encoding: 文件编码，默认 utf-8
     :param expected_sha256: 可选的并发保护：文件当前 sha256 与之不一致时拒绝写入
     :param storage: file 为普通文件；memory 仅写入 Skill 正文，接受 Markdown 并维护元信息和索引
-    :param team: memory 范围；团队名为该团队的条目，null 或空字符串为个人，修改不会回退到共享个人条目
+    :param team: memory 范围；指定团队的条目
+    :param memory_scope: memory 范围；companion 仅访问此 Agent 伴生目录中的条目
     :return: 操作结果描述
     """
     normalized_mode_check = (mode or "overwrite").strip().lower()
@@ -480,12 +486,12 @@ async def write_file(
                 "start": start, "end": end, "encoding": encoding,
                 "expected_sha256": expected_sha256, "old_string": old_string,
                 "new_string": new_string, "replace_all": replace_all,
-                "storage": storage, "team": team,
+                "storage": storage, "team": team, "memory_scope": memory_scope,
             })
             if reject:
                 return reject
-            guard.enter_context(memory_lock(username, team, session_id=session_id))
-            entry = memory_target(username, filename, team, create=normalized_mode_check in {"overwrite", "append", "create"}, session_id=session_id)
+            guard.enter_context(memory_lock(username, team, session_id=session_id, memory_scope=memory_scope))
+            entry = memory_target(username, filename, team, create=normalized_mode_check in {"overwrite", "append", "create"}, session_id=session_id, memory_scope=memory_scope)
             file_path = _memory_file_path(entry["_path"], username, session_id, create_parents=True)
             encoding = "utf-8"
         elif storage == "file":
@@ -564,8 +570,8 @@ async def write_file(
             new_content = prepare_content(entry, new_content, file_path=file_path)
         _atomic_write_text(file_path, new_content, encoding=encoding, atomic=True)
         if entry is not None:
-            refresh_index(username, team, session_id=session_id)
-            saved = memory_target(username, entry["id"], team, session_id=session_id)
+            refresh_index(username, team, session_id=session_id, memory_scope=memory_scope)
+            saved = memory_target(username, entry["id"], team, session_id=session_id, memory_scope=memory_scope)
             return json.dumps({"success": True, "storage": "memory", **public_entry(saved),
                                "sha256": _file_sha256(file_path), "chars": len(new_content)}, ensure_ascii=False)
         action = {
@@ -592,13 +598,14 @@ async def write_file(
 
 @mcp.tool()
 @confined_operation
-async def delete_file(username: str, filename: str, session_id: str = "", storage: Literal["file", "memory"] = "file", team: str | None = None) -> str:
+async def delete_file(username: str, filename: str, session_id: str = "", storage: Literal["file", "memory"] = "file", team: str | None = None, memory_scope: Literal["workspace", "companion"] = "workspace") -> str:
     """
     删除用户的指定文件。
 
     :param username: 用户名（由系统自动注入，无需手动传递）
     :param filename: file 模式为文件路径；memory 模式为条目编号或名称
     :param storage: file 删除普通文件；memory 仅删除 Skill 正文，支持文件保留
+    :param memory_scope: memory 范围；companion 只删除当前 Agent 伴生工作区的条目
     :param team: memory 范围；团队名为该团队的条目，null 或空字符串为个人
     :return: 操作结果描述
     """
@@ -607,14 +614,14 @@ async def delete_file(username: str, filename: str, session_id: str = "", storag
         if storage == "memory":
             from webot.skill_memory import memory_lock, memory_target, public_entry, refresh_index
             reject = await _memory_access_gate(username, session_id, "delete_file",
-                {"filename": filename, "storage": storage, "team": team})
+                {"filename": filename, "storage": storage, "team": team, "memory_scope": memory_scope})
             if reject:
                 return reject
-            with memory_lock(username, team, session_id=session_id):
-                entry = memory_target(username, filename, team, session_id=session_id)
+            with memory_lock(username, team, session_id=session_id, memory_scope=memory_scope):
+                entry = memory_target(username, filename, team, session_id=session_id, memory_scope=memory_scope)
                 target = _memory_file_path(entry["_path"], username, session_id)
                 target.unlink() if isinstance(target, ConfinedPath) else os.remove(target)
-                refresh_index(username, team, session_id=session_id)
+                refresh_index(username, team, session_id=session_id, memory_scope=memory_scope)
                 return json.dumps({"success": True, "deleted": public_entry(entry)}, ensure_ascii=False)
         if storage != "file":
             return "❌ 不支持的 storage。"

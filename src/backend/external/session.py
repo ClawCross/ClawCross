@@ -60,7 +60,8 @@ def identity_sections(agent: Agent) -> dict[str, str]:
     sections = shared_identity(
         base=_prompt_file("base_system.txt"), conversation=_prompt_file("conversation_rules.txt"),
         persona=frame_session_identity(agent.name, "", str(agent.config.get("persona") or "").strip()),
-        user_profile=build_user_profile_block(agent.owner), soul=build_soul_prompt(agent.owner),
+        user_profile='' if agent.config.get('creation_template')=='group' else build_user_profile_block(agent.owner),
+        soul='' if agent.config.get('creation_template')=='group' else build_soul_prompt(agent.owner),
         session=f"【ClawCross 会话】\nowner: {agent.owner}\nagent_id: {agent.agent_id}")
     return {"base_rules": sections.pop("base_rules"),
             "external_rules": _prompt_file("external_agent_system.txt"), **sections}
@@ -151,6 +152,11 @@ def build_dynamic_context(agent: Agent, msg: AgentMessage, *, context: dict[str,
     teams = sorted({str(team).strip() for team in agent.teams if str(team).strip()})
     connected = agent.driver == ACPX and ((agent.config.get('meta') or {}).get('acp') or {}).get('clawcross_tools', True)
     memberships = group_memberships(agent.owner, agent.agent_id)
+    configured_tools = ((agent.config.get('meta') or {}).get('acp') or {}).get('tools') if agent.driver == ACPX else agent.config.get('tools')
+    tool_scope = 'Agent 固有工具：' + (', '.join(sorted(set(configured_tools))) or '无') if configured_tools is not None else 'Agent 固有工具：全部工具。'
+    if enabled_tools is not None:
+        tool_scope += '\n本轮临时选择：' + (', '.join(sorted(set(enabled_tools))) or '无')
+    tool_scope += '\n实际调用继续受当前模式、继承范围与审核限制。'
     dynamic = {
         **{"identity_" + name: value for name, value in (identity if identity is not None else identity_sections(agent)).items()},
         "cli_entry": "" if connected else f"当前命令入口：{cli_entry(agent.owner)} --help；替代此前提供的旧命令路径。",
@@ -162,7 +168,7 @@ def build_dynamic_context(agent: Agent, msg: AgentMessage, *, context: dict[str,
         "workflows": "" if connected else "\n\n".join(filter(None, (build_team_workflow_prompt(agent.owner, team=team) for team in teams))),
         "instructions": msg.instructions.strip(),
         "mode": build_session_mode_message(mode) if mode else "",
-        "tools": "" if enabled_tools is None else "本轮允许的工具：" + (", ".join(enabled_tools) or "无"),
+        "tools": tool_scope,
         "tool_connector": ("ClawCross MCP 已开启：通过 tool_search 查询准确参数，再用 tool_call 调用；"
                            "身份由服务器注入，工具受当前模式、名单与审核约束。")
                           if connected

@@ -57,6 +57,7 @@ _EXTERNAL_SETTINGS = ("api_url", "api_key", "model", "headers", "meta")
 class AgentCreate(BaseModel):
     agent_id: str = ""       # its session number; a new ag_… when not given
     name: str = ""
+    creation_template: Literal['', 'chat', 'group', 'personal', 'admin'] = ''
     platform: str = WEBOT
     persona: str = ""        # its persona: the text itself (a library persona is copied in)
     workspace_root: str = ""  # legacy single custom folder
@@ -159,7 +160,7 @@ def agent_card(agent: Agent) -> dict[str, Any]:
         "settings": settings,
         "created_at": agent.created_at,
         "updated_at": agent.updated_at,
-        "default_team": "__default__",
+        "creation_template": config.get('creation_template',''),
     }
 
 
@@ -170,9 +171,22 @@ def runtime_of(platform: str) -> tuple[str, dict[str, Any]]:
 
 
 def new_agent_config(body: AgentCreate) -> tuple[str, dict[str, Any]]:
+    if body.creation_template:
+        from agents.creation_templates import creation_template
+        template = creation_template(body.creation_template)
+        defaults = {}
+        if 'tools' not in body.model_fields_set:
+            defaults['tools'] = template['tools']
+        if 'workspaces' not in body.model_fields_set:
+            defaults['workspaces'] = template['workspaces']
+        body = body.model_copy(update=defaults)
     from webot.workspace import configured_workspace_root
     driver, config = runtime_of(body.platform)
+    if body.creation_template in {'chat','group'} and driver != WEBOT:
+        raise ValueError('纯聊天与陌生群模板要求 WeBot；外部 CLI 原生工具无法由 ClawCross 保证无工具或严格工作区隔离。')
     config.update({"persona": body.persona.strip()})
+    if body.creation_template:
+        config['creation_template'] = body.creation_template
     if body.workspace_root:
         config['workspace_root'] = configured_workspace_root(body.workspace_root)
     from webot.workspace import normalize_workspace_config
@@ -324,6 +338,13 @@ def create_agents_router(
                 normalize_workspace_config({'paths':[body.cli_workspace]}, user_id=user)
             config['workspaces'] = normalize_workspace_config(config['workspaces'], user_id=user)
             agent = store.create(user, driver=driver, config=config, name=body.name, agent_id=body.agent_id)
+            if body.creation_template:
+                from agents.creation_templates import save_initial_settings
+                try:
+                    save_initial_settings(user,agent.agent_id,body.creation_template)
+                except Exception:
+                    store.delete(user,agent.agent_id)
+                    raise
             if body.cli_workspace:
                 from webot.workspace import set_cli_workspace
                 set_cli_workspace(user, agent.agent_id, body.cli_workspace)
@@ -332,6 +353,12 @@ def create_agents_router(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         return agent_card(agent)
+
+    @router.get('/v1/agents/creation-templates')
+    async def creation_templates(authorization: str | None = Header(None)):
+        user_of(authorization)
+        from agents.creation_templates import catalog
+        return {'data':catalog()}
 
     def host_access(user: str, authorization: str | None, proof: str | None):
         from agents.native_sessions import allowed
@@ -388,6 +415,28 @@ def create_agents_router(
                     **workspace_card(user, agent.agent_id, agent_config=agent.config)}
         except (ValueError, RuntimeError) as exc:
             return {'agent_id':agent.agent_id, 'settings':agent.config.get('workspaces') or {'companion':False,'user_shared':True,'cli':False,'teams':False,'paths':[agent.config['workspace_root']] if agent.config.get('workspace_root') else []}, 'folders':[], 'error':str(exc)}
+
+    @router.get('/v1/agents/{ref}/skills')
+    async def agent_skills(ref: str, authorization: str | None = Header(None)):
+        user = user_of(authorization)
+        agent = lookup(user, ref)
+        from webot.skill_memory import _catalog_roots, _entries, public_entry
+        rows = []
+        seen = set()
+        try:
+            roots = _catalog_roots(user, agent.agent_id, agent_config=agent.config)
+            for root, namespace, selected_team in roots:
+                source = namespace.split(':', 1)[0] if ':' in namespace else ('team' if selected_team else 'user')
+                for entry in _entries(user, selected_team, root=root, namespace=namespace):
+                    path = entry['_path']
+                    if path in seen:
+                        continue
+                    seen.add(path)
+                    rows.append({**public_entry(entry), 'source': source,
+                                 'team_name': selected_team if source == 'team' else ''})
+        except (ValueError, RuntimeError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return {'agent_id': agent.agent_id, 'enabled': bool(roots), 'skills': rows}
 
     @router.get("/v1/agents/{ref}/capabilities")
     async def agent_capabilities(ref: str, authorization: str | None = Header(None)):

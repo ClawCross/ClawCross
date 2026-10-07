@@ -26,22 +26,22 @@ def canonical_action_args(tool_name: str, args: dict) -> dict:
             "stream": "stdout", "cwd": "", "offset": 0, "limit": 0,
         }
     elif tool_name == "list_files":
-        defaults = {"session_id": "", "folder": ".", "storage": "file", "team": ""}
+        defaults = {"session_id": "", "folder": ".", "storage": "file", "team": "", "memory_scope": "workspace"}
     elif tool_name == "read_file":
         defaults = {
             "session_id": "", "offset": 0, "limit": 0, "start_line": 0,
             "line_count": 0, "encoding": "utf-8", "include_sha256": False,
-            "storage": "file", "team": "",
+            "storage": "file", "team": "", "memory_scope": "workspace",
         }
     elif tool_name == "write_file":
         defaults = {
             "content": "", "session_id": "", "mode": "overwrite", "start": 0,
             "end": 0, "encoding": "utf-8", "expected_sha256": "",
             "old_string": "", "new_string": "", "replace_all": False,
-            "storage": "file", "team": "",
+            "storage": "file", "team": "", "memory_scope": "workspace",
         }
     elif tool_name == "delete_file":
-        defaults = {"session_id": "", "storage": "file", "team": ""}
+        defaults = {"session_id": "", "storage": "file", "team": "", "memory_scope": "workspace"}
     elif tool_name == "web_fetch":
         defaults = {"max_chars": 12000, "timeout": 15, "username": "", "session_id": ""}
     elif tool_name == "web_search":

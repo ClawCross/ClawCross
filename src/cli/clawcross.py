@@ -89,26 +89,32 @@ INTERNAL_TOKEN = os.getenv("INTERNAL_TOKEN", "")
 
 
 def _public_front_url() -> str:
-    """Return PUBLIC_DOMAIN (normalized to a full URL) when the tunnel is up,
-    else the localhost FRONT_BASE. Re-reads .env each call so tunnel updates
-    are picked up immediately without restarting the CLI.
+    """Return a configured public entry, or a live Quick Tunnel, else localhost.
+    Re-read .env so updates take effect without restarting the CLI.
 
     Note: HTTP requests still target FRONT_BASE because backend endpoints like
     /generate_login_link are localhost-only by design. This helper is for
     *display* (welcome banner, status output) only.
     """
-    try:
-        pid = int((PID_DIR / "tunnel.pid").read_text(encoding="utf-8").strip())
-        os.kill(pid, 0)
-        vals = read_env_all(str(ENV_FILE))
-    except Exception:
+    from src.backend.common.public_access import read_public_domain, is_quick_tunnel_domain
+    domain = read_public_domain(ENV_FILE)
+    if not domain:
         return FRONT_BASE
-    domain = (vals.get("PUBLIC_DOMAIN") or "").strip().rstrip("/")
-    if not domain or domain == "wait to set":
-        return FRONT_BASE
-    if domain.startswith(("http://", "https://")):
-        return domain
-    return f"https://{domain}"
+    if is_quick_tunnel_domain(domain):
+        try:
+            pid = int((PID_DIR / "tunnel.pid").read_text(encoding="utf-8").strip())
+            if pid <= 0:
+                return FRONT_BASE
+            if os.name == "nt":
+                result = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"],
+                                        capture_output=True, text=True, timeout=5)
+                if str(pid) not in result.stdout:
+                    return FRONT_BASE
+            else:
+                os.kill(pid, 0)
+        except (OSError, ValueError, subprocess.SubprocessError):
+            return FRONT_BASE
+    return domain
 
 # Unified CLI permission modes, sent as ``session_mode``; each runtime (WeBot, or an
 # ACP agent through acpx) applies it its own way.
@@ -1323,11 +1329,8 @@ def _cmd_tunnel(arg: str = "") -> None:
             return False, pid
 
     def _public_domain():
-        try:
-            v = (read_env_all(str(ENV_FILE)).get("PUBLIC_DOMAIN") or "").strip()
-        except Exception:
-            return ""
-        return "" if v in ("", "wait to set") else v
+        from src.backend.common.public_access import read_public_domain
+        return read_public_domain(ENV_FILE, tunnel_running=_running()[0])
 
     action = (arg or "status").strip().lower()
     if action in ("", "status"):
@@ -1338,6 +1341,8 @@ def _cmd_tunnel(arg: str = "") -> None:
             print(f"🌍 公网: {dom}" if dom else "⏳ 公网地址尚未就绪")
         else:
             print("❌ tunnel 未运行（/tunnel on 开启）")
+            if _public_domain():
+                print(f"🌍 已配置公网入口: {_public_domain()}")
         return
     if action in ("on", "start"):
         ok, pid = _running()
@@ -1404,11 +1409,8 @@ def _cmd_tunnel(arg: str = "") -> None:
         any_killed = _kill_pidfile(pidfile)
         any_killed = _kill_pidfile(os.path.join(str(PID_DIR), "cloudflared.pid")) or any_killed
         print("✅ tunnel 已停止" if any_killed else "tunnel 未运行")
-        # 清掉 PUBLIC_DOMAIN，避免 /front 仍显示已失效的公网地址
-        try:
-            write_env_settings(str(ENV_FILE), {"PUBLIC_DOMAIN": "wait to set"})
-        except Exception:
-            pass
+        from src.backend.common.public_access import write_tunnel_domain
+        write_tunnel_domain("", ENV_FILE)
         return
     print(f"未知参数: {action}（用 on / off / status）")
 

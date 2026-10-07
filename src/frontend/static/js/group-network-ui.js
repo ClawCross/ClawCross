@@ -65,6 +65,55 @@
   function notify(message) {
     if (window.toast) window.toast(message); else window.alert(message);
   }
+  const text = (zh, en) => document.documentElement.lang === 'zh-CN' ? zh : en;
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+  async function ensurePublicEntry(status) {
+    const readStatus = async () => {
+      const response = await fetch('/proxy_tunnel/status');
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || '公网状态查询失败');
+      return data;
+    };
+    let state = await readStatus();
+    if (state.public_domain) return state.public_domain;
+    if (!window.confirm(text(
+      '没有配置公网域名。生成邀请链接需要下载并启动 Cloudflare Tunnel，继续吗？',
+      'No public domain is configured. Creating this invite requires downloading and starting Cloudflare Tunnel. Continue?'
+    ))) throw new Error(text('已取消生成邀请链接', 'Invite creation cancelled'));
+
+    let componentResponse = await fetch('/proxy_components/cloudflared');
+    let component = await componentResponse.json();
+    if (!componentResponse.ok) throw new Error(component.error || 'Cloudflare Tunnel 状态查询失败');
+    if (!component.installed) {
+      status.textContent = text('正在下载并安装 Cloudflare Tunnel…', 'Downloading and installing Cloudflare Tunnel…');
+      componentResponse = await fetch('/proxy_components/cloudflared', {
+        method: 'POST', headers: {'X-Requested-With': 'ClawCross'}
+      });
+      component = await componentResponse.json();
+      if (!componentResponse.ok) throw new Error(component.error || 'Cloudflare Tunnel 安装失败');
+      for (let i = 0; i < 120 && component.state === 'installing'; i++) {
+        await wait(1000);
+        componentResponse = await fetch('/proxy_components/cloudflared');
+        component = await componentResponse.json();
+        if (!componentResponse.ok) throw new Error(component.error || 'Cloudflare Tunnel 状态查询失败');
+      }
+      if (!component.installed) throw new Error(component.detail || 'Cloudflare Tunnel 安装失败');
+    }
+
+    state = await readStatus();
+    if (!state.running) {
+      status.textContent = text('正在启动 Cloudflare Tunnel…', 'Starting Cloudflare Tunnel…');
+      const startResponse = await fetch('/proxy_tunnel/start', {method: 'POST'});
+      const started = await startResponse.json().catch(() => ({}));
+      if (!startResponse.ok) throw new Error(started.error || 'Cloudflare Tunnel 启动失败');
+    }
+    for (let i = 0; i < 60; i++) {
+      await wait(1500);
+      state = await readStatus();
+      if (state.public_domain) return state.public_domain;
+    }
+    throw new Error(text('Tunnel 已启动，但公网域名仍未就绪。请稍后重试。', 'The tunnel started, but its public URL is not ready yet. Try again shortly.'));
+  }
   function changed(group) {
     window.dispatchEvent(new CustomEvent('group-network-changed', { detail: group }));
   }
@@ -155,6 +204,8 @@
         catch (_) { link.focus(); link.select(); view.status.textContent = '请手动复制'; }
       });
       const create = button('', 'secondary', () => busy(create, view.status, '正在生成…', async () => {
+        await ensurePublicEntry(view.status);
+        await refreshTunnelControl();
         const data = await request('POST', `/${encodeURIComponent(gid)}/guest-link`, {});
         link.value = data.url;
         remember(gid, data.url);
@@ -183,13 +234,49 @@
       refresh();
       const actions = el('div', 'gn-actions');
       actions.append(copy, create, stop);
+      const publicNote = el('p', 'gn-note', text(
+        '若没有公网域名，生成邀请时会提示并启动 Cloudflare Tunnel。也可以先在这里单独下载 cloudflared。',
+        'If no public domain is configured, invite creation will prompt before starting Cloudflare Tunnel. You can also install cloudflared here first.'
+      ));
+      const cloudflare = el('div', 'gn-component-control');
+      if (typeof window.componentControlMarkup === 'function') {
+        cloudflare.innerHTML = window.componentControlMarkup('cloudflared');
+      }
+      const tunnelStatus = el('p', 'gn-note');
+      const closeTunnel = button(text('关闭公网通道 · Cloudflare', 'Close public tunnel · Cloudflare'), 'quiet', () => {
+        if (!window.confirm(text(
+          '关闭本机的 Cloudflare Tunnel？通过此通道访问的页面和群聊会断线；自行配置的反向代理仍由服务器管理。',
+          'Close this device’s Cloudflare Tunnel? Pages and groups using it will disconnect. Separately configured reverse proxies remain managed by the server.'
+        ))) return;
+        busy(closeTunnel, view.status, text('正在关闭公网通道…', 'Closing the public tunnel…'), async () => {
+          const response = await fetch('/proxy_tunnel/stop', {method:'POST'});
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || response.statusText);
+          await refreshTunnelControl();
+          view.status.textContent = text('Cloudflare 公网通道已关闭。', 'The Cloudflare public tunnel is closed.');
+        });
+      });
+      closeTunnel.hidden = true;
+      async function refreshTunnelControl() {
+        try {
+          const response = await fetch('/proxy_tunnel/status');
+          const state = await response.json();
+          if (!response.ok || !view.root.isConnected) return;
+          closeTunnel.hidden = !state.running;
+          tunnelStatus.textContent = state.running
+            ? text('本机 Cloudflare 公网通道正在运行', 'This device’s Cloudflare public tunnel is running')
+            : text('本机 Cloudflare 公网通道已关闭', 'This device’s Cloudflare public tunnel is closed');
+        } catch (_) { tunnelStatus.textContent = text('公网通道状态暂时不可用', 'Public tunnel status is unavailable'); }
+      }
       const steps = el('ul', 'gn-steps');
       for (const text of [
         '朋友扫码或打开链接，取名字、设密码即可聊天，不需要主站账号。',
         '装了 ClawCross 的朋友在「加入群聊」粘贴链接，加入后还能带上自己的 agent。',
         '链接 30 天内可用来加入；换新链接或停止邀请后旧链接失效，已加入的人不受影响。',
       ]) steps.append(el('li', '', text));
-      view.body.append(qr,qrCaption,download,link, actions, steps);
+      view.body.append(qr,qrCaption,download,link, publicNote, cloudflare, tunnelStatus, closeTunnel, actions, steps);
+      if (typeof window.initComponentControls === 'function') window.initComponentControls(cloudflare);
+      void refreshTunnelControl();
       // Cached links retain their exact QR payload; this does not rotate invitations.
       if (link.value) {
         try {
@@ -207,6 +294,41 @@
       if (!window.confirm('退出此群？你引入的 agent 也会退出。')) return;
       try { await request('POST', `/${encodeURIComponent(gid)}/leave`, {}); changed(); }
       catch (error) { notify(error.message); }
+    },
+
+    async toggleExternalAccess(gid) {
+      try {
+        const current = await request('GET', `/${encodeURIComponent(gid)}`);
+        return await this.setExternalAccess(gid, current.external_access_enabled === false);
+      } catch (error) { notify(error.message); }
+    },
+
+    async setExternalAccess(gid, enabled) {
+      if (!enabled && !window.confirm(text(
+        '暂停当前群的所有非主机连接？成员、凭证、邀请和历史全部保留，本机连接继续可用。恢复外部联网后可重新连接。',
+        'Pause all non-host connections in this group? Members, credentials, invitations and history remain. Host connections continue working. External clients can reconnect when access resumes.'
+      ))) return;
+      try {
+        const group = await request('POST', `/${encodeURIComponent(gid)}/external-access`, {enabled});
+        changed(group);
+        notify(enabled ? text('已恢复外部联网', 'External access resumed') : text('外部联网已暂停，成员和凭证保留', 'External access paused; members and credentials remain'));
+      } catch (error) { notify(error.message); }
+    },
+
+    async disconnectExternal(gid) { return this.setExternalAccess(gid, false); },
+
+    async removeLocal(gid, confirmRemoval = true) {
+      if (confirmRemoval && !window.confirm(text(
+        '从本机移除此群聊？将停止重连并清理本地凭证和聊天缓存。远端群聊及成员关系保留。',
+        'Remove this group from this device? Reconnection stops and local credentials and chat cache are deleted. The server group and membership remain.'
+      ))) return false;
+      try {
+        await request('DELETE', `/${encodeURIComponent(gid)}/local`);
+        remember(gid, '');
+        changed({removed_group_id: gid});
+        notify(text('群聊已从本机移除', 'Group removed from this device'));
+        return true;
+      } catch (error) { notify(error.message); return false; }
     },
   };
 })();

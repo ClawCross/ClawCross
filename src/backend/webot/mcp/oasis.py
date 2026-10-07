@@ -1344,6 +1344,7 @@ async def get_publicnet_info() -> str:
             data = resp.json()
 
         tunnel = data.get("tunnel", {})
+        domain = tunnel.get("public_domain", "")
         ports = data.get("ports", {})
 
         lines = ["📡 系统信息\n"]
@@ -1351,16 +1352,17 @@ async def get_publicnet_info() -> str:
         # Tunnel info
         if tunnel.get("running"):
             lines.append("🌐 公网隧道: ✅ 运行中")
-            domain = tunnel.get("public_domain", "")
-            if domain:
-                lines.append(f"   公网地址: {domain}")
-            else:
+            if not domain:
                 lines.append("   ⏳ 公网地址尚未就绪")
             lines.append(f"   PID: {tunnel.get('pid')}")
         else:
             lines.append("🌐 公网隧道: ❌ 未运行")
-            lines.append("   💡 可通过 launch/run.sh start-tunnel 启动")
-            lines.append("   💡 或在前端 Settings 面板中点击「启动隧道」")
+            if not domain:
+                lines.append("   💡 可通过 launch/run.sh start-tunnel 启动")
+                lines.append("   💡 或在前端 Settings 面板中点击「启动隧道」")
+        if domain:
+            lines.append(f"🌍 已配置公网入口: {domain}")
+            lines.append("   地址来自运行配置；本工具不验证外网可达性。")
 
         # Ports
         lines.append(f"\n📌 端口:")

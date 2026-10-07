@@ -1489,12 +1489,8 @@ async def publicnet_info():
     without needing direct access to .env files.
     """
     running, pid = _tunnel_running()
-    domain = ""
-    if running:
-        from dotenv import dotenv_values
-        domain = dotenv_values(str(ENV_FILE)).get("PUBLIC_DOMAIN") or ""
-        if domain == "wait to set":
-            domain = ""
+    from common.public_access import read_public_domain
+    domain = read_public_domain(ENV_FILE, tunnel_running=running)
 
     frontend_port = _get_env("PORT_FRONTEND", "51209")
     oasis_port = _get_env("PORT_OASIS", "51202")

@@ -39,7 +39,6 @@ SESSION_CONTEXT_TOOLS = (
 SEARCH_TOOLS = (
     "web_search",
     "web_fetch",
-    "call_llm_api",
 )
 
 FILE_READ_TOOLS = (

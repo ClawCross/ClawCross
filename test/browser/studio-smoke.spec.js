@@ -1,4 +1,101 @@
 const { test, expect } = require('@playwright/test');
+const creation=require('./agent-creation-fixture');
+
+test('recent Agents stop at five and Team branches remain expanded after member selection',async({page})=>{
+  const agents=Array.from({length:7},(_,index)=>({agent_id:'recent-'+index,name:'Agent '+index,platform:'webot',
+    settings:{title:'Task '+index,teams:index===0?['Project']:[]},updated_at:1790000000+index,
+    status:{state:'idle',title:'Task '+index,updated_at:1790000000+index}}));
+  await stubStudioNetwork(page,{}, {agents});
+  await page.route(/\/v1\/teams(\?.*)?$/,route=>route.fulfill({json:{data:[{team:'Project',members:[{agent:agents[0],role:'Member'}]}]}}));
+  await page.route('**/v1/agents/recent-0',route=>route.fulfill({json:agents[0]}));
+  await page.goto('/studio');
+  await page.locator('.studio-conversation-switcher > summary').click();
+  await expect(page.locator('.studio-conversation-item')).toHaveCount(5);
+  expect(await page.locator('.studio-conversation-item > span').allTextContents()).toEqual(['Task 6','Task 5','Task 4','Task 3','Task 2']);
+  expect(await page.locator('.studio-conversation-agent').allTextContents()).toEqual(['Agent 6 · #cent-6','Agent 5 · #cent-5','Agent 4 · #cent-4','Agent 3 · #cent-3','Agent 2 · #cent-2']);
+  const team=page.locator('.studio-team-node[data-team="Project"]');
+  await team.locator('summary').click();
+  await expect(team).toHaveAttribute('open','');
+  await team.locator('.studio-team-agent').click();
+  await page.evaluate(()=>renderStudioTeamTree(true));
+  await expect(team).toHaveAttribute('open','');
+  await expect(page.locator('.studio-conversation-item')).toHaveCount(5);
+  await page.setViewportSize({width:390,height:844});
+  await team.locator('.studio-team-agent').click();
+  await expect(page.locator('.studio-conversation-switcher')).toHaveAttribute('open','');
+  await expect(team).toHaveAttribute('open','');
+});
+
+test('recent conversations show Agent names with virtual user space and update after rename',async({page})=>{
+  const calls={};
+  const agents=[
+    {agent_id:'named-agent',name:'研究员 Alice',platform:'webot',teams:['Project'],settings:{title:'整理报告',tools:null},status:{state:'idle',title:'整理报告'}},
+    {agent_id:'native-named',name:'代码助手',platform:'codex',settings:{title:'修复错误'},status:{state:'idle',title:'修复错误'}},
+  ];
+  await stubStudioNetwork(page,calls,{agents,acpxStatusPayload:{available:true,tools:['codex']}});
+  await page.route(/\/v1\/teams(\?.*)?$/,route=>route.fulfill({json:{data:[
+    {team:'__default__',kind:'user_space',virtual:true,members:agents.map(agent=>({agent,role:agent.name}))},
+    {team:'Project',members:[{agent:agents[0],role:'团队昵称'}]},
+  ]}}));
+  await page.route('**/v1/agents/named-agent',route=>{
+    if(route.request().method()==='PATCH'){
+      const value=route.request().postDataJSON();agents[0].name=value.name;Object.assign(agents[0].settings,value.settings);
+    }
+    return route.fulfill({json:agents[0]});
+  });
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.goto('/studio');
+  await page.locator('.studio-conversation-switcher > summary').click();
+  const row=page.locator('.studio-conversation-item[data-session-id="named-agent"]');
+  await expect(row.locator('span')).toHaveText('整理报告');
+  await expect(row.locator('small')).toContainText('研究员 Alice');
+  await expect(page.locator('.studio-conversation-item[data-session-id="native-named"]')).toHaveCount(0);
+  await page.evaluate(async()=>{await openAgentCenter();await openAgentCenterDetail('named-agent');});
+  await page.locator('#agent-dex-name').fill('新版研究员');
+  await page.locator('#agent-center-detail button[onclick="saveAgentCenterSettings(this)"]').click();
+  await expect(row.locator('span')).toHaveText('整理报告');
+  await expect(row.locator('small')).toContainText('新版研究员');
+  await page.evaluate(()=>closeAgentCenter());
+  await page.setViewportSize({width:390,height:844});
+  await expect(row).toBeVisible();
+  await page.screenshot({path:'/tmp/clawcross-recent-agent-names.png'});
+  await page.evaluate(async()=>{_ocChatMode='acp';_acpTool='codex';await acpLoadSessionsList();});
+  const native=page.locator('.studio-conversation-item[data-session-id="native-named"]');
+  await expect(native.locator('span')).toHaveText('修复错误');
+  await expect(native.locator('small')).toContainText('代码助手');
+  expect(errors).toEqual([]);
+});
+
+test('studio Agent templates keep administrative tools opt-in and platform compatibility current',async({page})=>{
+  const calls={importOpenClaw:0,tinyfishRun:0,approvalActions:[]};
+  await stubStudioNetwork(page,calls,{acpxStatusPayload:{available:true,tools:['codex']}});
+  await page.route('**/v1/agents/creation-templates',route=>route.fulfill({json:{data:creation.templates}}));
+  await page.route('**/proxy_tools',route=>route.fulfill({json:{tools:creation.tools}}));
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.goto('/studio');
+  await page.evaluate(tools=>{allTools=tools;void openAgentMetaModal('create');},creation.tools);
+  const choices=page.locator('#studio-agent-creation-presets');
+  await expect(choices.locator('button')).toHaveCount(4);
+  await choices.locator('[data-preset="chat"]').click();
+  expect(await page.evaluate(()=>_collectAgentMeta().tools)).toEqual([]);
+  await page.locator('#agent-meta-platform').selectOption('codex');
+  await expect(page.locator('.agent-meta-btn-save')).toBeDisabled();
+  await choices.locator('[data-preset="personal"]').click();
+  await expect(page.locator('.agent-meta-btn-save')).toBeEnabled();
+  expect(await page.evaluate(()=>_collectAgentMeta().tools)).not.toContain('manage_team');
+  await page.evaluate(()=>_agentMetaToolsSelectAll(true));
+  expect(await page.evaluate(()=>_collectAgentMeta().tools)).toContain('manage_team');
+  await choices.locator('[data-preset="admin"]').click();
+  expect(await page.evaluate(()=>_collectAgentMeta())).toMatchObject({creation_template:'admin',tools:creation.tools.map(tool=>tool.name)});
+  expect(calls.agentCreates).toEqual([]);
+  const bounds=await page.locator('.agent-meta-dialog').boundingBox();
+  const height=await page.evaluate(()=>innerHeight);
+  expect(bounds.y).toBeGreaterThanOrEqual(0);
+  expect(bounds.y+bounds.height).toBeLessThanOrEqual(height);
+  await expect(page.locator('.agent-meta-btn-save')).toBeInViewport();
+  await page.screenshot({path:'/tmp/clawcross-studio-agent-templates.png'});
+  expect(errors).toEqual([]);
+});
 
 async function stubStudioNetwork(page, calls, options = {}) {
   const webotState = {
@@ -265,6 +362,7 @@ async function stubStudioNetwork(page, calls, options = {}) {
   );
 
   await page.route('**/proxy_check_session', (route) => json(route, { valid: true, user_id: 'smoke-user' }));
+  await page.route('**/v1/agents/creation-templates',route=>json(route,{data:creation.templates}));
   await page.route('**/proxy_tools', (route) => json(route, []));
   await page.route('**/proxy_oasis/topics', (route) => json(route, []));
   await page.route('**/proxy_tunnel/status', (route) => json(route, { running: false, public_domain: '' }));

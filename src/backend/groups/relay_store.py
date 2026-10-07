@@ -77,6 +77,12 @@ class RelayStore:
                                        ('guest_password_hash', "TEXT NOT NULL DEFAULT ''")]:
                 if column not in columns:
                     db.execute(f'ALTER TABLE relay_connections ADD COLUMN {column} {definition}')
+            if 'host_local' not in columns:
+                db.execute('ALTER TABLE relay_connections ADD COLUMN host_local INTEGER NOT NULL DEFAULT 0')
+                # A group is created only through the server's machine control API.
+                db.execute('UPDATE relay_connections SET host_local=1 WHERE id IN (SELECT owner_connection FROM relay_groups)')
+            if 'external_access_enabled' not in {row[1] for row in db.execute('PRAGMA table_info(relay_groups)')}:
+                db.execute('ALTER TABLE relay_groups ADD COLUMN external_access_enabled INTEGER NOT NULL DEFAULT 1')
         if os.name != 'nt':
             self.path.chmod(0o600)
 
@@ -92,14 +98,24 @@ class RelayStore:
             db.close()
 
     @staticmethod
-    def auth(db, token: str):
+    def auth(db, token: str, *, check_network: bool = True):
         row = db.execute('SELECT * FROM relay_connections WHERE token_hash=? AND revoked=0', (digest(token),)).fetchone()
         if row is None:
             row = db.execute('''SELECT c.* FROM relay_connections c JOIN relay_guest_tokens t ON t.connection_id=c.id
                                 WHERE t.token_hash=? AND c.revoked=0 AND c.guest=1''', (digest(token),)).fetchone()
         if row is None:
             raise RelayError('群凭证无效、已退出或被撤销', 401)
+        if check_network:
+            RelayStore.require_external_access(db, row['group_id'], host_local=bool(row['host_local']))
         return row
+
+    @staticmethod
+    def require_external_access(db, gid: str, *, host_local: bool = False):
+        if host_local:
+            return
+        group = db.execute('SELECT external_access_enabled FROM relay_groups WHERE id=?', (gid,)).fetchone()
+        if group is not None and not group['external_access_enabled']:
+            raise RelayError('群主已暂停外部联网，请等待恢复；成员与凭证保留', 503)
 
     @staticmethod
     def _event(db, gid: str, kind: str, body: dict):
@@ -112,26 +128,29 @@ class RelayStore:
         if group is None:
             raise RelayError('群不存在', 404)
         members = [dict(row) for row in db.execute('''SELECT m.id AS principal,m.agent_id,m.name,m.platform,m.muted,
-                  c.node_id,c.user_id,c.display_name,c.id AS connection_id
+                  c.node_id,c.user_id,c.display_name,c.id AS connection_id,c.host_local
                   FROM relay_members m JOIN relay_connections c ON c.id=m.connection_id
                   WHERE m.group_id=? AND c.revoked=0 ORDER BY c.joined_at,m.agent_id''', (gid,))]
         for member in members:
             member['is_agent'] = bool(member['agent_id'])
             member['muted'] = bool(member['muted'])
+            member['host_local'] = bool(member['host_local'])
         return {'group_id': gid, 'title': group['title'], 'kind': group['kind'],
                 'owner': group['owner_connection'], 'primary_agent': group['primary_member'],
                 'dnd': bool(group['dnd']), 'version': group['version'], 'members': members,
+                'external_access_enabled': bool(group['external_access_enabled']),
                 'member_count': len(members)}
 
-    def _connect(self, db, gid: str, *, node_id: str, user_id: str, display_name: str):
+    def _connect(self, db, gid: str, *, node_id: str, user_id: str, display_name: str, host_local: bool = False):
+        self.require_external_access(db, gid, host_local=host_local)
         self._unique_name(db, gid, display_name, guests_only=True)
         if len(self._card(db, gid)['members']) >= 256:
             raise RelayError('群最多容纳 256 个成员', 409)
         if db.execute('SELECT COUNT(*) FROM relay_connections WHERE group_id=? AND revoked=0', (gid,)).fetchone()[0] >= 128:
             raise RelayError('群成员连接已达到上限', 409)
         cid, token = 'c_' + secrets.token_hex(12), secrets.token_urlsafe(32)
-        db.execute('INSERT INTO relay_connections(id,group_id,token_hash,node_id,user_id,display_name,joined_at) VALUES(?,?,?,?,?,?,?)',
-                   (cid, gid, digest(token), node_id, user_id, display_name, time.time()))
+        db.execute('INSERT INTO relay_connections(id,group_id,token_hash,node_id,user_id,display_name,joined_at,host_local) VALUES(?,?,?,?,?,?,?,?)',
+                   (cid, gid, digest(token), node_id, user_id, display_name, time.time(), int(host_local)))
         db.execute('INSERT INTO relay_members(id,group_id,connection_id,agent_id,name,platform) VALUES(?,?,?,?,?,?)',
                    ('p_' + secrets.token_hex(12), gid, cid, '', display_name, 'human'))
         return cid, token
@@ -144,12 +163,12 @@ class RelayStore:
             # password_hash/salt/local_join are columns of the password joins that invitation links replaced.
             db.execute('INSERT INTO relay_groups(id,title,kind,owner_connection,password_hash,salt,local_join,created_at) VALUES(?,?,?,?,?,?,?,?)',
                        (gid, title.strip(), kind, '', '', '', 0, time.time()))
-            cid, token = self._connect(db, gid, node_id=node_id, user_id=user_id, display_name=display_name)
+            cid, token = self._connect(db, gid, node_id=node_id, user_id=user_id, display_name=display_name, host_local=True)
             db.execute('UPDATE relay_groups SET owner_connection=? WHERE id=?', (cid, gid))
             self._event(db, gid, 'metadata', {})
             return {'token': token, 'connection_id': cid, 'group': self._card(db, gid)}
 
-    def join(self, invite: str, *, node_id: str, user_id: str, display_name: str) -> dict:
+    def join(self, invite: str, *, node_id: str, user_id: str, display_name: str, host_local: bool = False) -> dict:
         """A new member connection, by the group's invitation link."""
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -157,10 +176,19 @@ class RelayStore:
             if not row:
                 raise RelayError('邀请链接已失效', 403)
             gid = row['group_id']
-            cid, token = self._connect(db, gid, node_id=node_id, user_id=user_id, display_name=display_name)
+            cid, token = self._connect(db, gid, node_id=node_id, user_id=user_id, display_name=display_name, host_local=host_local)
             db.execute('UPDATE relay_groups SET version=version+1 WHERE id=?', (gid,))
             self._event(db, gid, 'joined', {'connection_id': cid, 'display_name': display_name})
             return {'token': token, 'connection_id': cid, 'group': self._card(db, gid)}
+
+    def confirm_host_local(self, token: str) -> dict:
+        """Called only after the relay API verifies a local machine credential."""
+        with self.db() as db:
+            conn = self.auth(db, token, check_network=False)
+            if conn['guest']:
+                raise RelayError('访客不能登记为主机连接', 403)
+            db.execute('UPDATE relay_connections SET host_local=1 WHERE id=?', (conn['id'],))
+            return {'host_local': True}
 
     @staticmethod
     def _unique_name(db, gid, name, *, exclude=None, guests_only=False):
@@ -187,11 +215,12 @@ class RelayStore:
             db.execute('INSERT INTO relay_guest_invites VALUES(?,?)', (conn['group_id'], digest(invite)))
             return {'invite': invite, 'title': group['title']}
 
-    def guest_info(self, invite):
+    def guest_info(self, invite, *, host_local: bool = False):
         with self.db() as db:
             row = db.execute('SELECT group_id FROM relay_guest_invites WHERE token_hash=?', (digest(invite),)).fetchone()
             if not row:
                 raise RelayError('分享链接已失效', 403)
+            self.require_external_access(db, row['group_id'], host_local=host_local)
             return {'title': self._card(db, row['group_id'])['title'], 'group_id': row['group_id']}
 
     @staticmethod
@@ -208,6 +237,7 @@ class RelayStore:
             if not row:
                 raise RelayError('分享链接已失效', 403)
             gid = row['group_id']
+            self.require_external_access(db, gid)
             normalized = unicodedata.normalize('NFKC', name).casefold()
             existing = next((m for m in db.execute('''SELECT m.name,c.* FROM relay_members m
                 JOIN relay_connections c ON c.id=m.connection_id WHERE m.group_id=? AND c.revoked=0''', (gid,))
@@ -365,6 +395,13 @@ class RelayStore:
                     raise RelayError('只有群主可以删除群', 403)
                 db.execute('DELETE FROM relay_groups WHERE id=?', (conn['group_id'],))
                 return {'deleted': conn['group_id']}
+            elif action in {'disconnect_external', 'external_access'}:
+                if not owner:
+                    raise RelayError('只有群主可以设置外部联网', 403)
+                enabled = False if action == 'disconnect_external' else fields.get('enabled')
+                if not isinstance(enabled, bool):
+                    raise RelayError('联网开关必须为布尔值')
+                db.execute('UPDATE relay_groups SET external_access_enabled=? WHERE id=?', (int(enabled), conn['group_id']))
             elif action == 'patch':
                 if not owner:
                     raise RelayError('只有群主可以管理群', 403)
@@ -397,7 +434,8 @@ class RelayStore:
                                       WHERE m.id=relay_groups.primary_member AND c.revoked=0)''', (conn['group_id'],))
             db.execute('UPDATE relay_groups SET version=version+1 WHERE id=?', (conn['group_id'],))
             self._event(db, conn['group_id'], 'metadata', {})
-            return {'left': True} if action == 'leave' else self._card(db, conn['group_id'])
+            result = {'left': True} if action == 'leave' else self._card(db, conn['group_id'])
+            return result
 
     def post(self, token: str, *, content: str, agent_id: str = '', mentions: list[str] = (),
              attachments: list[dict] = (), client_msg_id: str = '', expected_title: str | None = None,

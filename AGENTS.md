@@ -115,6 +115,8 @@ The goal is a **silent, non-interactive install**. NEVER repeatedly ask the user
 
 Do not add AI tool or model names as authors or `Co-authored-by` trailers. Preserve the user's configured Git identity; add co-authorship only when the user explicitly requests it.
 
+Preserve the model's cacheable prefix. Generate `tool_search.desc` from each Agent's intrinsic tool table, with deterministic names, descriptions and ordering. Mode changes and temporary `enabled_tools` selection belong in the runtime block; they must not rewrite descriptions or reshape API tool definitions. Search and execution still enforce the current restrictions. A deliberate change to the intrinsic table updates its catalog. Guard this with `test/test_prompt_prefix_stability.py`.
+
 4. Do not install or configure OpenClaw unless the user explicitly asks for it.
 5. Cloudflare Tunnel requires `start --tunnel` or `start-tunnel` and an already installed cloudflared binary.
 6. On Windows, prefer the PowerShell flow. Use WSL only if the user prefers it.

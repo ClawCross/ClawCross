@@ -317,7 +317,8 @@ from frontend.proxies.components import register_component_routes
 register_component_routes(app)
 
 register_group_routes(app, port_agent=PORT_AGENT, internal_token=INTERNAL_TOKEN)
-register_guest_routes(app, port_agent=PORT_AGENT, internal_token=INTERNAL_TOKEN, public_base=lambda: _get_public_domain())
+register_guest_routes(app, port_agent=PORT_AGENT, internal_token=INTERNAL_TOKEN, public_base=lambda: _get_public_domain(),
+                      is_host_request=lambda: _is_direct_local_request())
 register_agent_routes(
     app,
     port_agent=PORT_AGENT,
@@ -3721,19 +3722,17 @@ def _tunnel_running() -> tuple[bool, int | None]:
 
 def _get_public_domain() -> str:
     """Configured HTTPS entry works with either a tunnel or a reverse proxy."""
-    from dotenv import dotenv_values
-    vals = dotenv_values(str(ENV_FILE))
-    domain = vals.get("PUBLIC_DOMAIN", "")
-    if domain == "wait to set":
-        return ""
-    return domain
+    from common.public_access import read_public_domain
+    return read_public_domain(ENV_FILE, tunnel_running=_tunnel_running()[0])
 
 
 @app.route("/proxy_tunnel/status", methods=["GET"])
 def proxy_tunnel_status():
     """Return tunnel running status and public URL."""
     running, pid = _tunnel_running()
-    domain = _get_public_domain() if running else ""
+    # PUBLIC_DOMAIN may point at a separately managed reverse proxy such as
+    # Caddy, so it remains useful even when the Cloudflare tunnel is stopped.
+    domain = _get_public_domain()
     return jsonify({"running": running, "pid": pid, "public_domain": domain})
 
 
@@ -3822,32 +3821,16 @@ def proxy_tunnel_stop():
     if os.path.isfile(_TUNNEL_PIDFILE):
         os.remove(_TUNNEL_PIDFILE)
 
-    # Clear PUBLIC_DOMAIN from .env so stale URLs are not used
+    # Clear only the temporary Quick Tunnel URL; keep configured proxy domains.
     _clear_public_domain()
 
     return jsonify({"status": "stopped"})
 
 
 def _clear_public_domain():
-    """Clear PUBLIC_DOMAIN in config/.env after tunnel stops."""
-    env_file = str(ENV_FILE)
-    if not os.path.exists(env_file):
-        return
-    try:
-        with open(env_file, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-        new_lines = []
-        for line in lines:
-            if line.strip().startswith("PUBLIC_DOMAIN="):
-                new_lines.append("PUBLIC_DOMAIN=\n")
-            else:
-                new_lines.append(line)
-        with open(env_file, "w", encoding="utf-8") as f:
-            f.writelines(new_lines)
-        # Also clear from current process env
-        os.environ.pop("PUBLIC_DOMAIN", None)
-    except Exception:
-        pass
+    """Remove a temporary tunnel URL without discarding a configured domain."""
+    from common.public_access import write_tunnel_domain
+    write_tunnel_domain("", ENV_FILE)
 
 
 # ------------------------------------------------------------------
@@ -5054,4 +5037,6 @@ def import_team_from_url():
 
 
 if __name__ == "__main__":
-    app.run(host=os.getenv("FRONTEND_BIND_HOST", "127.0.0.1"), port=int(os.getenv("PORT_FRONTEND", "51209")), debug=False, threaded=True)
+    # Keep the web application loopback-only. Public access belongs to an
+    # explicitly configured local reverse proxy or Cloudflare Tunnel.
+    app.run(host="127.0.0.1", port=int(os.getenv("PORT_FRONTEND", "51209")), debug=False, threaded=True)

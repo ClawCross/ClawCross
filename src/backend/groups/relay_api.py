@@ -113,7 +113,7 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
     async def admin_manage(gid: str, action: str, body: dict, request: Request):
         if not local_control(request, key):
             raise HTTPException(403, '服务器管理只允许本机机器凭证')
-        if action not in {'patch', 'remove_member', 'member_patch', 'primary', 'delete'}:
+        if action not in {'patch', 'remove_member', 'member_patch', 'primary', 'delete', 'disconnect_external', 'external_access'}:
             raise HTTPException(400, '不支持的服务器管理操作')
         return await invoke(store.manage, '', action, body, admin_group=gid)
 
@@ -128,7 +128,13 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
         limited('join:global', 120)
         limited('join:' + (request.client.host if request.client else '?'), 12)
         fields = body.model_dump()
-        return await invoke(store.join, fields.pop('invite'), **fields)
+        return await invoke(store.join, fields.pop('invite'), **fields, host_local=local_control(request, key))
+
+    @router.post('/host-local')
+    async def confirm_host_local(request: Request, authorization: str | None = Header(None)):
+        if not local_control(request, key):
+            raise HTTPException(403, '主机连接需要本机机器凭证')
+        return await invoke(store.confirm_host_local, token(authorization))
 
     @router.post('/poll')
     async def poll(body: dict, authorization: str | None = Header(None)):
@@ -184,7 +190,7 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
     @router.post('/guest/info')
     async def guest_info(body: dict, request: Request):
         limited('guest-info:' + (request.client.host if request.client else '?'), 120)
-        return await invoke(store.guest_info, str(body.get('invite', ''))[:100])
+        return await invoke(store.guest_info, str(body.get('invite', ''))[:100], host_local=local_control(request, key))
 
     @router.post('/guest/join')
     async def guest_join(body: GuestJoin, request: Request):
@@ -264,7 +270,10 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
                     pass
         except (WebSocketDisconnect, asyncio.TimeoutError):
             pass
-        except (RelayError, ValueError, TypeError):
+        except RelayError as exc:
+            await ws.close(1013 if exc.status == 503 else 1008,
+                           reason='群主已暂停外部联网' if exc.status == 503 else '')
+        except (ValueError, TypeError):
             await ws.close(1008)
         finally:
             if admitted:

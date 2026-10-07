@@ -187,6 +187,26 @@ class GuestProxyTests(unittest.TestCase):
         self.assertEqual(transport.request.call_args.kwargs['json'], {'invite':'a'*43,'name':'Bob','password':'guest-password'})
         with self.client.session_transaction() as session: self.assertNotIn('user_id', session)
 
+    def test_machine_proof_is_forwarded_only_for_a_host_request_to_its_own_relay(self):
+        from itsdangerous import URLSafeTimedSerializer
+        app = Flask('host-proof'); app.secret_key = 'host-proof-secret'
+        origin = {'host':True}
+        register_guest_routes(app,port_agent=1234,internal_token='internal',is_host_request=lambda:origin['host'])
+        client = app.test_client()
+        signer = URLSafeTimedSerializer(app.secret_key,salt='group-human-invite-v1')
+        transport = Mock(); transport.request.return_value = Mock(status_code=200)
+        transport.request.return_value.json.return_value = {'group_id':'g_1','title':'Friends'}
+        with patch('frontend.proxies.group_guests.requests.Session') as factory, \
+                patch('groups.config.service_key',return_value='machine-key'), \
+                patch('groups.config.service_url',return_value='http://127.0.0.1:51203'):
+            factory.return_value.__enter__.return_value = transport
+            for host,url,expected in [(True,'http://127.0.0.1:51203',True),(False,'http://127.0.0.1:51203',False),(True,'https://remote.example',False)]:
+                origin['host'] = host
+                ticket = signer.dumps({'url':url,'invite':'a'*43})
+                response = client.post('/group-guest-api/info',json={},headers={'X-Group-Invite':ticket,'X-Group-Service-Key':'machine-key'})
+                self.assertEqual(response.status_code,200)
+                self.assertEqual('X-Group-Service-Key' in transport.request.call_args.kwargs['headers'],expected)
+
 
     def _ticket(self):
         with self.client.session_transaction() as session: session['user_id'] = 'alice'
@@ -248,8 +268,11 @@ class JoinLinkTests(unittest.TestCase):
     def test_this_machines_own_link_becomes_a_local_member(self):
         with patch('groups.client.own_front_ends', return_value={'https://me.example'}), \
                 patch('groups.client.frontend_url', return_value='http://127.0.0.1:51209'), \
-                patch('groups.client.service_url', return_value='http://127.0.0.1:51203'):
+                patch('groups.client.service_url', return_value='http://127.0.0.1:51203'), \
+                patch('groups.client.service_key', return_value='machine-key'), \
+                patch.object(self.client, 'request', return_value={'host_local':True}) as attest:
             card = self.client.join_link('bob', link='https://me.example/group-guest#ticket')
+            self.assertEqual(attest.call_args.args[1:], ('POST', '/host-local', {}))
         row = self.store.get('bob', card['group_id'])
         self.assertEqual((row['url'], row['via']), ('http://127.0.0.1:51203', ''))
         self.assertEqual(self.calls[-1][0], 'http://127.0.0.1:51209')

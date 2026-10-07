@@ -8,13 +8,27 @@ import json
 import httpx
 from mcp.server.fastmcp import FastMCP
 
-mcp = FastMCP('ClawCross')
+class AgentBridgeMCP(FastMCP):
+    async def list_tools(self):
+        tools = await super().list_tools()
+        try:
+            catalog = await request({'action':'catalog'})
+        except (httpx.HTTPError, ValueError, KeyError):
+            return tools
+        description = catalog.get('description')
+        if not isinstance(description,str) or not description:
+            return tools
+        return [tool.model_copy(update={'description':description}) if tool.name=='tool_search' else tool for tool in tools]
+
+
+mcp = AgentBridgeMCP('ClawCross')
 
 
 async def request(body):
     # The backend bounds approval waits and command execution. A separate
     # HTTP read deadline must not terminate a tool while its human is deciding.
-    async with httpx.AsyncClient(timeout=httpx.Timeout(connect=10, read=None, write=30, pool=10), trust_env=False) as client:
+    read_timeout = 10 if body.get('action')=='catalog' else None
+    async with httpx.AsyncClient(timeout=httpx.Timeout(connect=10, read=read_timeout, write=30, pool=10), trust_env=False) as client:
         response = await client.post(os.environ['CLAWCROSS_BRIDGE_URL'], json=body,
             headers={'Authorization': 'Bearer ' + os.environ['CLAWCROSS_BRIDGE_TOKEN']})
         if response.status_code != 200:

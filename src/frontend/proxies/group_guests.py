@@ -6,6 +6,7 @@ browser it is the guest chat page; pasted into another ClawCross it joins that
 device as a full member, whose group traffic then goes through ``/relay/*`` here.
 """
 import re
+import hmac
 from urllib.parse import quote, urlsplit
 from hashlib import sha256
 
@@ -14,8 +15,18 @@ from flask import jsonify, render_template, request
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 
 
-def register_guest_routes(app, *, port_agent, internal_token, public_base=lambda: ''):
+def register_guest_routes(app, *, port_agent, internal_token, public_base=lambda: '', is_host_request=lambda: False):
     signer = URLSafeTimedSerializer(app.secret_key, salt='group-human-invite-v1')
+
+    def host_proof_headers(target):
+        """Forward machine proof only from a direct host client to this host's relay."""
+        supplied = request.headers.get('X-Group-Service-Key', '')
+        if not supplied or not is_host_request():
+            return {}
+        from groups.config import service_key, service_url
+        if target['url'].rstrip('/') == service_url() and hmac.compare_digest(supplied, service_key()):
+            return {'X-Group-Service-Key': supplied}
+        return {}
 
     @app.post('/proxy_groups/<gid>/guest-qr')
     def existing_invitation_qr(gid):
@@ -83,7 +94,7 @@ def register_guest_routes(app, *, port_agent, internal_token, public_base=lambda
         except BadSignature:
             return jsonify(error='邀请链接无效或已过期'), 403
         body = request.get_json(silent=True) if request.method == 'POST' else None
-        headers = {}
+        headers = host_proof_headers(target)
         if call == 'join':
             body = body if isinstance(body, dict) else {}
             body = {'invite': target['invite'], **{k: str(body.get(k, ''))[:160] for k in ('node_id', 'user_id', 'display_name')}}
@@ -140,7 +151,7 @@ def register_guest_routes(app, *, port_agent, internal_token, public_base=lambda
         elif action == 'messages':
             body = {'content': body.get('content', ''), 'client_msg_id': body.get('client_msg_id', ''),
                     'mentions': body.get('mentions', []), 'reply_to':body.get('reply_to')}
-        headers = {}
+        headers = host_proof_headers(target)
         if action not in {'info', 'join'}:
             credential = request.headers.get('X-Guest-Token', '')
             if not credential or len(credential) > 100:

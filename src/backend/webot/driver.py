@@ -98,7 +98,7 @@ class WebotRuntime(Runtime):
         the sender's user (``source_user``, when another) and a label (``source_label``)."""
         from webot.api.system_models import SystemTriggerRequest
 
-        await self.system.run(SystemTriggerRequest(
+        req = SystemTriggerRequest(
             user_id=agent.owner, session_id=agent.agent_id, text=msg.text,
             inbox_source_session=msg.sender or "system", inbox_summary=msg.summary,
             inbox_message_id=str(context.get('delivery_id') or ''),
@@ -107,7 +107,23 @@ class WebotRuntime(Runtime):
             attachments=list(msg.attachments) or None,
             groups=context.get("groups") or [],
             group_human_requests=context.get("group_human_requests") or [],
-        ))
+            wait_reply=bool(on_complete),
+        )
+        if on_complete:
+            async def deliver_reply():
+                try:
+                    result = await self.system.run(req)
+                    reply = AgentReply(ok=True,content=str(result.get('reply') or ''))
+                except Exception as exc:
+                    reply = AgentReply(ok=False,error=str(exc))
+                completed = on_complete(reply)
+                if hasattr(completed,'__await__'):
+                    await completed
+            task = asyncio.create_task(deliver_reply())
+            self._background.add(task)
+            task.add_done_callback(self._background.discard)
+        else:
+            await self.system.run(req)
         return DeliveryReceipt(accepted=True)
 
     # ── control plane ────────────────────────────────────────────────────

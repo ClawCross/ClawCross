@@ -6,9 +6,12 @@ per-turn runtime state rides at the tail (and only when it changed).
 """
 
 import sys
+import json
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
+from langchain_core.tools import StructuredTool
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC_DIR = PROJECT_ROOT / "src" / "backend"
@@ -366,6 +369,49 @@ class DynamicTeamAndSkills(unittest.TestCase):
 
 
 class ToolSearchKeepsToolDefinitionsStable(unittest.TestCase):
+    def test_forbidden_caller_tools_pass_through_execution_checks(self):
+        from webot.engine.agent import UserAwareToolNode
+        from webot import runtime_store
+        from tempfile import TemporaryDirectory
+        import asyncio
+        engine=TeamAgent.__new__(TeamAgent)
+        engine._internal_tool_names={'tool_call','tool_search'}
+        caller={'type':'function','function':{'name':'caller_tool','parameters':{'type':'object','properties':{}}}}
+        with TemporaryDirectory() as temp, patch.object(runtime_store,'AGENT_RUNTIME_DB_DIR',Path(temp)):
+            for mode in ('chat','readonly'):
+                state={'user_id':'alice','session_id':'guard','session_mode':mode,'tools':[caller],
+                       'messages':[AIMessage(content='',tool_calls=[{'name':'caller_tool','args':{},'id':'external-1'}])]}
+                self.assertTrue(engine._should_continue(state))
+                output=asyncio.run(UserAwareToolNode([])(state,{}))
+                self.assertTrue(any('不允许' in str(message.content) for message in output['messages']))
+
+    def test_api_definitions_follow_intrinsic_table_across_modes_and_temporary_selection(self):
+        from webot import runtime_store
+        from tempfile import TemporaryDirectory
+        def tool(name):
+            return StructuredTool(name=name,description=name+' tool',args_schema={'type':'object','properties':{'value':{'type':'string'}},'required':['value']},func=lambda **_: 'ok')
+        engine=TeamAgent.__new__(TeamAgent)
+        engine._mcp_tools=[tool(name) for name in ('read_file','run_command','get_session_details','manage_group','manage_team')]
+        engine._tool_registry=LazyToolRegistry();engine._tool_registry.register_tools(engine._mcp_tools)
+        engine._tool_registry.set_always_loaded({'read_file','run_command'})
+        innate=['read_file','run_command','get_session_details','manage_group']
+        engine._find_internal_session_meta=lambda *_:{'tools':innate}
+        external=[{'name':'caller_tool','description':'Caller function','parameters':{'type':'object','properties':{},'required':[]}}]
+        snapshots=[]
+        with TemporaryDirectory() as temp, patch.object(runtime_store,'AGENT_RUNTIME_DB_DIR',Path(temp)):
+            for mode in ('auto','manual','bypass','readonly','chat'):
+                for selected in (None,[],['read_file'],['manage_group']):
+                    turn=SimpleNamespace(user_id='alice',session_id='stable',mode=mode)
+                    schemas=engine._turn_tool_schemas({'session_mode':mode,'enabled_tools':selected},turn,external,strict=True)
+                    snapshots.append(json.dumps(schemas,sort_keys=True,ensure_ascii=False))
+        self.assertEqual(len(set(snapshots)),1)
+        self.assertIn('manage_group',snapshots[0])
+        self.assertNotIn('manage_team',snapshots[0])
+        innate.remove('manage_group')
+        with TemporaryDirectory() as temp, patch.object(runtime_store,'AGENT_RUNTIME_DB_DIR',Path(temp)):
+            updated=engine._turn_tool_schemas({},turn,external,strict=True)
+        self.assertNotIn('manage_group',json.dumps(updated))
+
     def test_search_only_returns_results(self):
         registry = LazyToolRegistry()
         registry.register_tools([SimpleNamespace(name="search_archive", description="Search archived records")])

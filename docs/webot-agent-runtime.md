@@ -59,6 +59,8 @@ This document records the current, running WeBot delegated runtime that is now c
 
 ## Runtime Best Practices
 
+- **Preserve the Agent's tool prefix.** Generate API definitions and `tool_search.desc` from this Agent's intrinsic table. Mode and temporary selection changes travel in the runtime block and affect search/execution checks; they do not rewrite that prefix. Editing the intrinsic table intentionally updates the catalog. External ClawCross MCP discovery follows the same rule.
+
 - Always call `spawn_subagent` with a `profile` that matches the work (planner/reviewer/coder) so `webot_profiles` can apply the right mode and tool set.
 - Keep `max_turns` low for research modes; `webot_runtime.resolve_max_turns` already prefers explicit overrides and stops internal tools once limits hit.
 - Use `send_subagent_message` for follow-ups so the existing session record is reused instead of creating duplicate sidechains.
