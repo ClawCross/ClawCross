@@ -1,7 +1,7 @@
 """Codex, Claude Code, Gemini, OpenClaw and other ACP tools, through the acpx CLI.
 
-acpx keeps a queue per session, so a message sent while the agent is busy waits
-its turn: the runtime needs no inbox of its own.
+Incoming messages use the shared durable inbox and wait for the session turn
+lock. MCP results carry live inbox notices while a native turn is running.
 """
 
 from __future__ import annotations
@@ -12,9 +12,10 @@ from collections import deque
 import time
 
 from agents.messages import ACPX_OVERRIDES_BY_MODE, AgentMessage, AgentReply
-from agents.runtime import NO_TIMEOUT, ControlError, Runtime
+from agents.runtime import NO_TIMEOUT, ControlError
 from agents.store import Agent, AgentStore, canonical_platform
 from external import session
+from external.inbox import InboxRuntime
 
 
 def adapter(agent: Agent | None = None):
@@ -42,12 +43,11 @@ def command_options(agent: Agent, *, long: bool) -> dict[str, Any]:
     }
 
 
-class AcpRuntime(Runtime):
+class AcpRuntime(InboxRuntime):
     controls = ("cancel", "reset")
 
     def __init__(self, store: AgentStore | None = None) -> None:
-        super().__init__()
-        self._store = store
+        super().__init__(store)
         self._events = {}
         self._sequence = 0
 

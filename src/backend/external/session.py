@@ -114,10 +114,15 @@ class PreparedTurn:
     user_input: str = ""
 
 
+def native_workspace_pinned(agent: Agent) -> bool:
+    return bool(agent.runtime.get('acp_cwd') and
+                (agent.runtime.get('native_resume_id') or agent.runtime.get('negotiation_sent') or agent.runtime.get('native_cwd_pinned')))
+
+
 def native_workspace_cwd(agent: Agent) -> str:
     # Native session continuity metadata belongs to the adapter; workspace
     # settings contain only source switches and user-supplied custom directories.
-    if agent.runtime.get('acp_cwd'):
+    if native_workspace_pinned(agent):
         return str(agent.runtime['acp_cwd'])
     if 'workspaces' in agent.config:
         from webot.workspace import resolve_session_workspace
@@ -151,6 +156,7 @@ def build_dynamic_context(agent: Agent, msg: AgentMessage, *, context: dict[str,
     from agents.gateway import cli_entry
     teams = sorted({str(team).strip() for team in agent.teams if str(team).strip()})
     connected = agent.driver == ACPX and ((agent.config.get('meta') or {}).get('acp') or {}).get('clawcross_tools', True)
+    from external.inbox import inbox_context, can_read_inbox
     memberships = group_memberships(agent.owner, agent.agent_id)
     configured_tools = ((agent.config.get('meta') or {}).get('acp') or {}).get('tools') if agent.driver == ACPX else agent.config.get('tools')
     tool_scope = 'Agent 固有工具：' + (', '.join(sorted(set(configured_tools))) or '无') if configured_tools is not None else 'Agent 固有工具：全部工具。'
@@ -164,6 +170,7 @@ def build_dynamic_context(agent: Agent, msg: AgentMessage, *, context: dict[str,
         "teams": render_team_skill_context(teams),
         "groups": render_group_metadata(current_group_metadata(context.get("groups") or [], memberships)),
         "group_memberships": render_group_metadata(memberships),
+        "inbox": inbox_context(agent.owner, agent.agent_id, readable=can_read_inbox(agent, mode)),
         "skills": build_user_skills_listing(agent.owner, session_id=agent.agent_id, agent_config=agent.config, teams=teams, tool_mode="mcp" if connected else "cli"),
         "workflows": "" if connected else "\n\n".join(filter(None, (build_team_workflow_prompt(agent.owner, team=team) for team in teams))),
         "instructions": msg.instructions.strip(),
@@ -220,6 +227,8 @@ def forget(store: AgentStore | None, agent: Agent, *, new_session: bool = False)
     runtime = {"session_generation": uuid.uuid4().hex[:12]} if new_session else {}
     if agent.runtime.get('acp_cwd'):
         runtime['acp_cwd'] = agent.runtime['acp_cwd']
+        if native_workspace_pinned(agent):
+            runtime['native_cwd_pinned'] = True
     (store or get_store()).set_runtime(agent.owner, agent.agent_id, runtime)
 
 

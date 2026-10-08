@@ -6,7 +6,7 @@ from external.session import runtime_session
 
 
 def native_options(agent):
-    from external.acpx import _default_acpx_cwd
+    from external.session import native_workspace_cwd
     # Reuse only an option catalog, never another session's selected values.
     candidates = []
     package = {'codex':'@agentclientprotocol/codex-acp', 'claude':'@agentclientprotocol/claude-agent-acp'}.get(agent.platform)
@@ -20,7 +20,7 @@ def native_options(agent):
             continue
         if record.get('closed'):
             continue
-        if Path(record.get('cwd', '')).resolve() != Path(agent.runtime.get('acp_cwd') or _default_acpx_cwd()).resolve():
+        if Path(record.get('cwd', '')).resolve() != Path(native_workspace_cwd(agent)).resolve():
             continue
         options = (record.get('acpx') or {}).get('config_options') or []
         if record.get('name') == runtime_session(agent) and options:
@@ -54,11 +54,15 @@ def initial_config_options(agent):
 
 def capability_card(agent):
     from common.reasoning_levels import level_map
+    from external.session import native_workspace_cwd, native_workspace_pinned
+    from webot.runtime import effective_session_mode
     acp = (agent.config.get('meta') or {}).get('acp') or {}
     options = native_options(agent)
     options = [{**item, 'reasoning_level_map':level_map([choice.get('value') for choice in item.get('options', [])])}
                if item.get('id') in {'reasoning_effort', 'effort'} else item for item in options]
     return {'platform': agent.platform, 'transport': 'acpx', 'streaming_tools': True,
+            'mode': effective_session_mode(agent.owner, agent.agent_id),
+            'native_workspace': {'cwd': native_workspace_cwd(agent), 'pinned': native_workspace_pinned(agent)},
             'clawcross_tools': bool(acp.get('clawcross_tools', True)),
             'config_options': options, 'settings': {'clawcross_tools': True, **acp},
             'modes': ['chat', 'readonly', 'manual', 'auto', 'bypass'],

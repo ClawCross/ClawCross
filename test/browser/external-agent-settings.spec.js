@@ -61,6 +61,28 @@ test('Claude uses its own effort key and the dialog fits a mobile viewport', asy
   expect(box.y + box.height).toBeLessThanOrEqual(844);
 });
 
+test('external mode persists for the chosen Agent and workspace opens for that Agent', async ({page}) => {
+  await setup(page);
+  const modes=[];
+  await page.route('**/proxy_webot_runtime_settings', route=>{
+    const body=route.request().postDataJSON(); modes.push(body);
+    return route.fulfill({json:{effective_mode:body.settings.approval.mode}});
+  });
+  await page.evaluate(()=>{
+    window.openWorkspaceSettings=id=>{window.__workspaceTarget=id;};
+    return openExternalAgentSettings('session-1');
+  });
+  await expect(page.locator('[data-status]')).toContainText('连接成功');
+  await page.locator('#external-run-mode').selectOption('readonly');
+  await page.locator('[data-save]').click();
+  await expect(page.locator('[data-status]')).toContainText('已保存');
+  expect(modes).toEqual([{session_id:'session-1',settings:{approval:{mode:'readonly'}}}]);
+  await page.locator('summary').filter({hasText:'工作区'}).click();
+  await page.locator('[data-workspaces]').click();
+  expect(await page.evaluate(()=>window.__workspaceTarget)).toBe('session-1');
+  await expect(page.locator('#external-agent-settings')).toHaveCount(0);
+});
+
 test('ACP tabs use the selected external Agent rather than the WeBot session', async ({page}) => {
   await setup(page);
   const writes=[];

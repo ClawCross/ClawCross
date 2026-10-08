@@ -1,6 +1,35 @@
 const { test, expect } = require('@playwright/test');
 const creation=require('./agent-creation-fixture');
 
+test('Agent details and subagent pages stay inside the desktop conversation column', async ({page}) => {
+  await page.setViewportSize({width:1360,height:900});
+  await stub(page,{posts:[],control:[]});
+  await page.goto('/mobile/group_chat');
+  await page.evaluate(()=>openSubagentPanel());
+  await expect(page.locator('#subagent-panel-overlay')).toHaveClass(/open/);
+  const check = async selector => {
+    const geometry = await page.evaluate(selector=>{
+      const shell=document.querySelector('.app-container');
+      const box=shell.getBoundingClientRect(),cols=getComputedStyle(shell).gridTemplateColumns.split(' ').map(parseFloat);
+      const panel=document.querySelector(selector).getBoundingClientRect();
+      return {expectedLeft:box.left+cols[0]+cols[1],expectedRight:box.right,expectedTop:box.top,
+        left:panel.left,right:panel.right,top:panel.top};
+    },selector);
+    expect(geometry.left).toBeCloseTo(geometry.expectedLeft,0);
+    expect(geometry.right).toBeCloseTo(geometry.expectedRight,0);
+    expect(geometry.top).toBeCloseTo(geometry.expectedTop,0);
+  };
+  await page.waitForFunction(()=>getComputedStyle(document.getElementById('subagent-panel-overlay')).transform==='matrix(1, 0, 0, 1, 0, 0)');
+  await check('#subagent-panel-overlay');
+  await page.evaluate(()=>closeSubagentPanel());
+  await page.evaluate(()=>showAgentDetail('ag_codex00001'));
+  await page.waitForFunction(()=>getComputedStyle(document.getElementById('agent-detail-overlay')).transform==='matrix(1, 0, 0, 1, 0, 0)');
+  await check('#agent-detail-overlay');
+  await page.setViewportSize({width:390,height:844});
+  await expect.poll(async()=>Math.round((await page.locator('#agent-detail-overlay').boundingBox()).width)).toBe(390);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+
 test('contact creation offers group roles and keeps capabilities in advanced settings',async({page})=>{
   await page.setViewportSize({width:390,height:844});
   await stub(page,{posts:[],control:[]});

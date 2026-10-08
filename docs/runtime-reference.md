@@ -2,6 +2,27 @@
 
 This reference captures the architecture, service responsibilities, and runtime data layout for Clawcross’s Claude-Code-inspired agent runtime. It emphasizes WeBot, session state, MCP tooling, and the canonical runtime DTO that now powers the browser UI, CLI/BFF proxies, voice state, and memory/Kairos surfaces.
 
+## External Agent inbox and live context
+
+ACP and HTTP sessions use the same durable, per-user/per-Agent inbox as WeBot.
+Deliveries wait for the existing external session turn lock; provider failures keep
+the message queued and service startup resumes it through its own runtime.
+Reading a queued passive message during an active turn consumes it and avoids a
+second wake. Relay delivery IDs prevent duplicate entries.
+
+For ACP sessions with `read_session_inbox` enabled, `inbox` dynamic blocks contain
+bounded notices and IDs; that tool returns the full body and marks it read.
+ClawCross MCP search/call results carry only changed dynamic blocks, so incoming
+messages are visible during an ongoing native turn. Group blocks contain metadata
+only. Plain chat sessions or transports without the reader receive message bodies
+directly and retain the normal group reply callback.
+
+ACP settings expose per-Agent ClawCross mode, the native adapter's advertised
+options, and workspace settings. Before the first prompt, the selected workspace
+sets acpx's native cwd. After conversation/resume, that cwd stays pinned, including
+reset, to preserve native history; changes to the folder collection still apply to
+ClawCross file/command tools and appear in the next dynamic block.
+
 ## Architecture Map
 
 ```

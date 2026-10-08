@@ -397,7 +397,7 @@ class TestGateway(StoreCase):
         self.assertEqual(req.enabled_tools, [])  # chat mode: no tools
         self.assertEqual(req.inbox_source_session, "")
 
-    def test_inbox_queues_for_webot_and_sends_to_others(self):
+    def test_inbox_queues_for_webot_and_external_readers(self):
         receipt = asyncio.run(self.gateway.inbox(
             self.webot(), AgentMessage(text="later", sender="u:alice", summary="群聊「Dev」 alice: later"),
             mode="bypass"))
@@ -412,7 +412,8 @@ class TestGateway(StoreCase):
             await asyncio.gather(*self.gateway.runtimes[ACPX]._background)
 
         asyncio.run(run())
-        self.assertTrue(self.acpx.calls[0]["prompt_text"].endswith("\n\nlater"))
+        self.assertIn("【本轮 inbox】", self.acpx.calls[0]["prompt_text"])
+        self.assertIn("read_session_inbox", self.acpx.calls[0]["prompt_text"])
         self.assertEqual(self.acpx.calls[0]["non_interactive_permissions"], "deny")  # in the mode it was sent in
 
     def test_an_external_trigger_is_sent_in_the_background_and_reports_back(self):

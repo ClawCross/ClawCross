@@ -9,9 +9,10 @@ from typing import Any
 import httpx
 
 from agents.messages import AgentMessage, AgentReply, build_openai_content
-from agents.runtime import NO_TIMEOUT, Runtime
+from agents.runtime import NO_TIMEOUT
 from agents.store import Agent, AgentStore
 from external import session
+from external.inbox import InboxRuntime
 
 
 def chat_completions_url(api_url: str) -> str:
@@ -34,12 +35,11 @@ def _reply_text(data: Any) -> str:
     return next((data[k] for k in ("content", "text", "message", "reply") if isinstance(data.get(k), str)), "")
 
 
-class HttpRuntime(Runtime):
+class HttpRuntime(InboxRuntime):
     controls = ("reset",)
 
     def __init__(self, store: AgentStore | None = None) -> None:
-        super().__init__()
-        self._store = store
+        super().__init__(store)
 
     def endpoint(self, agent: Agent) -> tuple[str, str, str, dict[str, str]]:
         """``(api_url, api_key, model, headers)`` for this agent's session."""

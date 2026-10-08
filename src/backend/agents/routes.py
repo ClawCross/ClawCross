@@ -410,9 +410,13 @@ def create_agents_router(
         user = user_of(authorization)
         agent = lookup(user, ref)
         from webot.workspace import workspace_card, workspace_config
+        native = {}
+        if agent.driver == ACPX:
+            from external.session import native_workspace_cwd, native_workspace_pinned
+            native = {'native_workspace': {'cwd':native_workspace_cwd(agent), 'pinned':native_workspace_pinned(agent)}}
         try:
             return {'agent_id':agent.agent_id, 'settings':workspace_config(agent.config),
-                    **workspace_card(user, agent.agent_id, agent_config=agent.config)}
+                    **workspace_card(user, agent.agent_id, agent_config=agent.config), **native}
         except (ValueError, RuntimeError) as exc:
             return {'agent_id':agent.agent_id, 'settings':agent.config.get('workspaces') or {'companion':False,'user_shared':True,'cli':False,'teams':False,'paths':[agent.config['workspace_root']] if agent.config.get('workspace_root') else []}, 'folders':[], 'error':str(exc)}
 

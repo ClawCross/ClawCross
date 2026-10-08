@@ -52,6 +52,13 @@
         const form = overlay.querySelector('form'), status = overlay.querySelector('[role="status"]'), save = form.querySelector('[type="submit"]');
         const url = '/v1/agents/' + encodeURIComponent(agent);
         const render = payload => {
+            let notice = overlay.querySelector('.workspace-native-notice');
+            if (!notice && payload.native_workspace) {
+                notice = document.createElement('p'); notice.className='workspace-settings-help workspace-native-notice';
+                overlay.querySelector('.workspace-settings-help').after(notice);
+            }
+            if (notice && payload.native_workspace) notice.textContent = text('原生 CLI 工作目录：','Native CLI working directory: ') + payload.native_workspace.cwd + '。' +
+                (payload.native_workspace.pinned ? text('已连接会话保持此目录；下面的目录集合用于 ClawCross 工具。','Connected sessions keep this directory; the folders below apply to ClawCross tools.') : text('首次连接会从所选工作区启动。','The first connection starts in the selected workspace.'));
             const list = overlay.querySelector('.workspace-folder-list');
             const labels = Object.fromEntries(sources.map(([key,zh,en])=>[key,text(zh,en)]));
             labels.user=labels.user_shared; labels.team=labels.teams; labels.custom=text('添加的目录','Added folder');

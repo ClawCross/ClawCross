@@ -519,6 +519,14 @@ class SystemService:
         """Resume durable deliveries left queued when the process stopped."""
         async with self._inbox_guard:
             for user_id, session_id in list_queued_inbox_targets():
+                from agents.store import get_store, WEBOT
+                from agents.gateway import get_gateway
+                target = get_store().get(user_id, session_id)
+                if target and target.driver != WEBOT:
+                    runtime = get_gateway().runtime(target)
+                    if hasattr(runtime, "resume_inbox"):
+                        runtime.resume_inbox(target)
+                    continue
                 self._ensure_inbox_worker(user_id, session_id)
 
     async def run(self, req: SystemTriggerRequest) -> dict[str, Any]:

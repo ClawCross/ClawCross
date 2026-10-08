@@ -60,6 +60,7 @@
       overlay.querySelector('[data-save]').textContent = '保存';
       overlay.querySelector('[data-test]').textContent = '测试连接';
       overlay.querySelector('[data-uncreated]')?.remove();
+      overlay.querySelector('[data-workspaces]').disabled = false;
     };
     const settings = card.settings || {};
     const options = Array.isArray(card.config_options) ? card.config_options : [];
@@ -67,7 +68,15 @@
       <header><h2 id="external-settings-title">${escape(card.platform)} · Agent 设置</h2><button type="button" data-close aria-label="关闭">×</button></header>
       ${uncreated ? '<p role="status" data-uncreated>此 Agent 尚未创建。点击下方创建按钮后才会创建。</p>' : ''}
       <p>设置仅用于这个 Agent，从下一轮调用生效。原生模式和权限由外部 Agent 执行。</p>
-      <div class="external-settings-fields">${options.length ? options.map((item, index) => {
+      <div class="external-settings-fields">
+      <label>ClawCross 运行模式<select id="external-run-mode">
+        ${[['chat','交流 · 不调用工具'],['readonly','只读 · 阅读与查询'],['manual','人工审核'],['auto','自动审核'],['bypass','不审核']].map(([value,label])=>`<option value="${value}" ${value === (refreshed?.runMode || card.mode || 'auto') ? 'selected' : ''}>${label}</option>`).join('')}
+      </select><small>仅此 Agent 生效，约束 ClawCross 工具及本轮 acpx 权限；原生模式在下方适配器选项中单独设置。</small></label>
+      <details><summary>工作区</summary><p>原生 CLI 当前目录：<code>${escape(card.native_workspace?.cwd || '连接后显示')}</code></p>
+        <small>${card.native_workspace?.pinned ? '已连接的会话保留原生目录，避免丢失历史。下方可以调整 ClawCross 文件和命令工具可用的目录。' : '首次连接使用 Agent 工作区作为 acpx 工作目录。可以先设置目录，再测试连接。'}</small>
+        <button type="button" data-workspaces ${uncreated ? 'disabled' : ''}>配置这个 Agent 的工作区</button>
+      </details>
+      ${options.length ? options.map((item, index) => {
         const selected = settings.config_options?.[item.id] ?? item.currentValue ?? '';
         if (window.ReasoningLevels && Object.keys(item.reasoning_level_map || {}).length) {
           const level = settings.reasoning_level === 0 ? 0 : ReasoningLevels.selected(settings.reasoning_level,selected);
@@ -126,7 +135,7 @@
         const toolList = overlay.querySelector('#external-tool-list').value;
         const display = {...fresh, settings:{...fresh.settings, ...draft,
           config_options:{...fresh.settings?.config_options, ...changed}}};
-        await open(id, {card:display, focus:previousFocus, status:'连接成功，配置已更新'});
+        await open(id, {card:display, runMode:overlay.querySelector('#external-run-mode').value, focus:previousFocus, status:'连接成功，配置已更新'});
         document.querySelector('#external-tool-list').value = toolList;
         document.querySelector('#external-agent-settings [data-test]').focus();
         syncMenu();
@@ -148,12 +157,20 @@
           config_options, ...(effortInput ? {reasoning_level:Number(effortInput.value)} : {}), clawcross_tools: overlay.querySelector('#external-tools').checked,
           timeout_sec: Number(overlay.querySelector('#external-timeout').value),
           ttl_sec: Number(overlay.querySelector('#external-ttl').value), tools: names.length ? names : null});
+        const runMode = overlay.querySelector('#external-run-mode').value;
+        if (runMode !== (card.mode || 'auto')) {
+          const runtime = await request('/proxy_webot_runtime_settings', 'POST', {session_id:id, settings:{approval:{mode:runMode}}});
+          saved.mode = runtime.effective_mode || runMode;
+        }
         cache.set(id, {value: saved, at: Date.now()});
+        card = saved;
+        if (typeof getMobileRuntimeAgentId === 'function' && getMobileRuntimeAgentId() === id && typeof setRunMode === 'function') setRunMode(saved.mode || runMode);
         status.textContent = '已保存，下一轮生效';
         syncMenu();
       } catch (error) { status.textContent = error.message; }
       finally { this.disabled = false; if (overlay.isConnected) this.focus(); }
     };
+    overlay.querySelector('[data-workspaces]').onclick = () => { close(); openWorkspaceSettings(id); };
     document.body.appendChild(overlay);
     overlay.querySelector('[data-close]').focus();
     if (!uncreated && !refreshed) overlay.querySelector('[data-test]').click();
