@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from typing import Callable
 
-_FIELDS = ("group_id", "title", "kind", "owner", "identity", "role", "delivery", "reply_channel", "primary_agent", "server_url", "remote_group_id")
+_FIELDS = ("group_id", "title", "announcement", "kind", "owner", "identity", "role", "delivery", "reply_channel", "primary_agent", "server_url", "remote_group_id")
 _membership_provider: Callable[[str, str], list[dict]] | None = None
 
 

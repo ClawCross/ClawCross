@@ -4570,8 +4570,8 @@
 <script src="/static/js/mobile-agent-create-tools.js?v=20261006-tool-table"></script>
 <link rel="stylesheet" href="/static/css/group-message-menu.css?v=20261004-message-menu">
 <script src="/static/js/group-message-menu.js?v=20261004-message-menu"></script>
-<script src="/static/js/group-network-ui.js?v=20261006-network-pause"></script>
-<link rel="stylesheet" href="/static/css/group-network.css?v=20261004-message-menu">
+<script src="/static/js/group-network-ui.js?v=20261009-history-metadata"></script>
+<link rel="stylesheet" href="/static/css/group-network.css?v=20261009-history-metadata">
 <link rel="stylesheet" href="/static/css/settings-polish.css?v=20261005-team-skills">
 <link rel="stylesheet" href="/static/css/mobile-profile.css?v=20261004-studio-header">
 <link rel="stylesheet" href="/static/css/runtime-settings.css?v=20261004-keepy-manager">
@@ -4690,6 +4690,7 @@
     </div>
   </div>
   <div id="group-network-status" style="display:none;padding:6px 14px;font-size:12px;color:var(--text-secondary);overflow-wrap:anywhere" role="status"></div>
+  <button type="button" id="group-announcement" class="group-announcement" hidden onclick="GroupNetworkUI.announcement(currentGroupId)" aria-label="查看群公告"></button>
   <div class="approval-strip" id="approval-strip"></div>
   <div class="chat-body" id="chat-body"></div>
   <div id="new-msg-banner" onclick="dismissNewMsgBanner()">
@@ -4817,6 +4818,9 @@
   <div class="ui-menu-sep"></div>
   <button type="button" class="ui-menu-item" id="action-group-rename" onclick="closeChatActions();GroupNetworkUI.rename(currentGroupId)">
     <svg class="ui-icon"><use href="/static/icons.svg#pencil"/></svg><span class="ui-menu-label">修改群名</span>
+  </button>
+  <button type="button" class="ui-menu-item" onclick="closeChatActions();GroupNetworkUI.announcement(currentGroupId)">
+    <svg class="ui-icon"><use href="/static/icons.svg#bell"/></svg><span>群公告</span>
   </button>
   <button type="button" class="ui-menu-item" onclick="closeChatActions();GroupNetworkUI.search(currentGroupId)">
     <svg class="ui-icon"><use href="/static/icons.svg#search"/></svg><span class="ui-menu-label">查找聊天记录</span>
@@ -5061,6 +5065,7 @@
       <span style="font-size:15px;font-weight:500;color:var(--text);" data-i18n="contacts_experts_btn">添加 Agent</span>
     </div>
     <div class="contacts-team-switcher">
+      <button type="button" class="gn-team-info" id="contacts-team-info" hidden aria-label="Team 介绍" onclick="GroupNetworkUI.teamInfo(document.getElementById('contacts-team-select').value)">Team 介绍</button>
       <span class="contacts-team-label" data-i18n="select_team_label">选择team</span>
       <select id="contacts-team-select" onchange="loadContactsForTeam()">
         <option value="" data-i18n="public_agent">全部 Agent</option>
@@ -8990,7 +8995,10 @@ async function refreshGroups(options = {}) {
   const container = document.getElementById('group-list-container');
   try {
     const data = await api('GET', '/proxy_groups');
-    const nextGroups = data.groups || [];
+    const nextGroups = (data.groups || []).map(group => {
+      const known = groups.find(item => getGroupId(item) === getGroupId(group));
+      return Number(known?.version || 0) > Number(group.version || 0) ? {...group,...known} : group;
+    });
     mutedGroupIds = new Set(nextGroups.filter(g => g.dnd).map(getGroupId));
     syncGroupSnapshotsAndUnread(nextGroups);
     groups = nextGroups;
@@ -8998,6 +9006,9 @@ async function refreshGroups(options = {}) {
     if (activeGroup && activeGroup.title) {
       currentGroupName = activeGroup.title;
       document.getElementById('chat-title').textContent = activeGroup.title;
+      const announcement = document.getElementById('group-announcement');
+      announcement.hidden = !activeGroup.announcement;
+      announcement.textContent = activeGroup.announcement ? '群公告 · ' + activeGroup.announcement : '';
     }
     renderGroupList(groups);
     prefetchTopGroupDetails(nextGroups);
@@ -10339,9 +10350,14 @@ async function submitCreateGroup() {
 // Show what the server says about the open group: its primary agent, members.
 function applyGroupDetail(detail) {
   if (!detail) return;
+  const known = groups.find(group => getGroupId(group) === detail.group_id);
+  if (Number(known?.version || 0) > Number(detail.version || 0)) return;
   _cacheSet(__mobileGroupDetailCache, detail.group_id, detail);
   if (detail.group_id !== currentGroupId) return;
   if(detail.title) {currentGroupName=detail.title;document.getElementById('chat-title').textContent=detail.title;}
+  const announcement = document.getElementById('group-announcement');
+  announcement.hidden = !detail.announcement;
+  announcement.textContent = detail.announcement ? '群公告 · ' + detail.announcement : '';
   document.getElementById('action-group-rename').style.display = String(detail.owner || '').startsWith('remote:') ? 'none' : '';
   const networkStatus = document.getElementById('group-network-status');
   networkStatus.style.display = detail.federated ? '' : 'none';
@@ -15588,6 +15604,8 @@ async function filterContactsList() {
 }
 
 async function loadContactsForTeam() {
+  const selectedTeam = document.getElementById('contacts-team-select').value;
+  document.getElementById('contacts-team-info').hidden = !selectedTeam || selectedTeam === '__default__';
   // Clear search when switching team
   contactsSearchKeyword = '';
   const searchInput = document.getElementById('contacts-search-input');
@@ -17196,6 +17214,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 <script>
 window.addEventListener('group-network-changed', async event => {
   __mobileGroupDetailCache.clear();
+  const updated = event.detail;
+  if (updated?.group_id && updated.group_id === currentGroupId) {
+    groups = groups.map(group => getGroupId(group) === updated.group_id ? {...group,...updated} : group);
+    applyGroupDetail(updated);
+    renderGroupList(groups);
+  }
   const removed = event.detail?.removed_group_id;
   if (removed) {
     let pinned = getPinnedIds().filter(id => id !== removed);
@@ -17208,7 +17232,7 @@ window.addEventListener('group-network-changed', async event => {
     if (currentGroupId === removed) goBack();
   }
   await refreshGroups();
-  if (event.detail?.group_id) await openChat(event.detail.group_id, event.detail.title);
+  if (updated?.open_group) await openChat(updated.group_id, updated.title);
   else if (currentGroupId) { try { await reloadGroupDetail(); } catch (_) { goBack(); } }
 });
 </script>

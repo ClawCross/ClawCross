@@ -244,7 +244,7 @@ async def list_agent_groups(username: str, source_session: str = "") -> str:
 
 @mcp.tool()
 async def get_group_details(username: str, group_id: str, source_session: str = "") -> str:
-    """Read one of this agent's groups: exact group ID/title, owner, members, roles and reply channel.
+    """Read one of this agent's groups: exact group ID/title, announcement, owner, members, roles and reply channel.
     No conversation bodies. username/source_session are injected. Non-members cannot read it.
 
     Args:
@@ -262,7 +262,7 @@ async def get_group_details(username: str, group_id: str, source_session: str = 
 
 @mcp.tool()
 async def get_team_details(username: str, team: str) -> str:
-    """Read an owned team's agents, IDs, roles and lead. username is injected.
+    """Read an owned team's introduction, agents, IDs, roles and lead. username is injected.
     Call when team details are needed; do not infer roles from old conversation history.
 
     Args:

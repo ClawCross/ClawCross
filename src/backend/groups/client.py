@@ -136,6 +136,13 @@ class ClientStore:
         if not set(fields) <= allowed:
             raise ValueError('invalid connection fields')
         with self.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if 'metadata' in fields:
+                current = db.execute('SELECT metadata FROM group_client_connections WHERE owner=? AND alias=?', (owner, alias)).fetchone()
+                if current and json.loads(fields['metadata']).get('version', 0) < json.loads(current['metadata']).get('version', 0):
+                    fields.pop('metadata')
+            if not fields:
+                return
             db.execute('UPDATE group_client_connections SET ' + ','.join(k + '=?' for k in fields) + ' WHERE owner=? AND alias=?',
                        (*fields.values(), owner, alias))
 
@@ -407,6 +414,7 @@ class GroupClient:
     @staticmethod
     def metadata(card, member):
         return {'group_id': card['group_id'], 'title': card['title'], 'kind': card['kind'],
+                'announcement': card.get('announcement', ''),
                 'owner': card['owner'], 'identity': member['name'],
                 'role': 'primary_agent' if card['primary_agent'] == member['principal'] else 'member',
                 'server_url': card['server_url'], 'remote_group_id': card['remote_group_id'],

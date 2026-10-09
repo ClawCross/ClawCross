@@ -107,6 +107,18 @@ async def test_team_workflow_lifecycle_uses_existing_scoped_directories(registry
     assert not json.loads(await management.manage_team('alice','get_workflow','Project',{'name':'review'},'manager'))['ok']
 
 
+async def test_team_introduction_management_returns_current_details(registry):
+    _,teams,_=registry
+    created=json.loads(await management.manage_team('alice','create','Introduction',{'description':'First purpose'},'manager'))
+    assert created['ok'] and created['data']['description']=='First purpose'
+    updated=json.loads(await management.manage_team('alice','update','Introduction',{'description':'New purpose'},'manager'))
+    assert updated['ok'] and updated['data']['description']=='New purpose'
+    described=json.loads(await management.manage_team('alice','get','Introduction',source_session='manager'))
+    assert described['data']['description']==teams.description('alice','Introduction')
+    denied=json.loads(await management.manage_team('alice','update','Introduction',{'description':'x'*4001},'manager'))
+    assert not denied['ok'] and teams.description('alice','Introduction')=='New purpose'
+
+
 async def test_team_alarms_stay_in_team_and_creation_requires_a_member(registry,monkeypatch):
     _,teams,_=registry
     teams.create('alice','Project');teams.add('alice','Project','native')

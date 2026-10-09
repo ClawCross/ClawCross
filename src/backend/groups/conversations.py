@@ -203,6 +203,7 @@ class Conversations:
         return {
             "group_id": conversation.conv_id, "title": conversation.title, "kind": conversation.kind,
             "owner": conversation.owner, "primary_agent": lead or "",
+            "announcement": conversation.meta.get("announcement", ""),
             "identity": member.name, "role": role, "delivery": delivery,
             "members": [{"name": m.name, "kind": "agent" if m.agent else "human", "muted": m.muted,
                          **({"agent_id": m.principal} if m.agent else {"user_id": m.principal.removeprefix(HUMAN_PREFIX)})} for m in members],

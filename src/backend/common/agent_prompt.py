@@ -12,11 +12,17 @@ def join_sections(sections: dict[str, str]) -> str:
     return '\n\n'.join(value.strip() for value in sections.values() if value and value.strip())
 
 
-def render_team_skill_context(teams, skills_listing: str = '') -> str:
+def render_team_skill_context(teams, skills_listing: str = '', *, user_id: str = '') -> str:
     names = sorted({str(team).strip() for team in teams if str(team).strip()})
     parts = []
     if names:
-        parts.append('【所属 Teams】\n' + '\n'.join(f'team: {team}' for team in names))
+        from teams.store import get_team_store
+        store = get_team_store() if user_id else None
+        entries = []
+        for team in names:
+            description = store.description(user_id, team) if store else ''
+            entries.append(f'team: {team}' + (f'\n介绍: {description}' if description else ''))
+        parts.append('【所属 Teams】\n' + '\n'.join(entries))
     if skills_listing.strip():
         parts.append(skills_listing.strip())
     return '\n\n'.join(parts)

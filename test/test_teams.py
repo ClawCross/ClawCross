@@ -206,6 +206,19 @@ class TestTeamsApi(TeamCase):
     def call(self, method, path, **kwargs):
         return self.client.request(method, path, headers={"Authorization": f"Bearer {TOKEN}:alice"}, **kwargs)
 
+    def test_introduction_persists_and_follows_rename(self):
+        created=self.call('POST','/v1/teams',json={'team':'New project','description':'Build together'})
+        self.assertEqual(created.status_code,200)
+        self.assertEqual(created.json()['description'],'Build together')
+        changed=self.call('PATCH','/v1/teams/New project',json={'description':'Current purpose'})
+        self.assertEqual(changed.status_code,200)
+        self.assertEqual(TeamStore(self.agents,self.teams.user_files_dir).description('alice','New project'),'Current purpose')
+        renamed=self.call('PATCH','/v1/teams/New project',json={'name':'Renamed project'})
+        self.assertEqual(renamed.json()['description'],'Current purpose')
+        self.assertEqual(self.call('PATCH','/v1/teams/Renamed project',json={'description':'x'*4001}).status_code,422)
+        self.assertEqual(self.call('PATCH','/v1/teams/__default__',json={'description':'not a real team'}).status_code,400)
+        self.assertEqual(self.call('PATCH','/v1/teams/Renamed project',json={'description':''}).json()['description'],'')
+
     def test_members_and_lead(self):
         added = self.call("POST", "/v1/teams/dev/members", json={"agent": "coder", "role": "Builder"}).json()
         self.assertEqual((added["role"], added["agent"]["agent_id"]), ("Builder", self.coder.agent_id))

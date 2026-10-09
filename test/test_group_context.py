@@ -14,6 +14,32 @@ from webot.context import render_group_context
 
 
 class GroupContextTests(unittest.TestCase):
+    def test_introductions_and_announcements_are_live_incremental_metadata(self):
+        from teams.store import TeamStore
+        from common.agent_prompt import render_team_skill_context
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch('external.session.identity_sections',return_value={'base_rules':'rules'}), \
+                patch('webot.skills.build_user_skills_listing',return_value=''), \
+                patch('common.conversation_context._membership_provider') as provider:
+            store=AgentStore(Path(tmp)/'agents.db')
+            teams=TeamStore(store,Path(tmp)/'users');teams.create('alice','Project')
+            teams.set_description('alice','Project','First purpose')
+            agent=store.create('alice',driver=HTTP,config={'api_url':'http://unused'})
+            teams.add('alice','Project',agent.agent_id)
+            provider.return_value=[{'group_id':'g1','title':'Friends','announcement':'First rules'}]
+            def turn():
+                current=store.require('alice',agent.agent_id)
+                return current,prepare_turn(current,AgentMessage(text='hello'),context={},mode=None,enabled_tools=None,response_format=None)
+            with patch('teams.store.get_team_store',return_value=teams):
+                self.assertIn('First purpose',render_team_skill_context(['Project'],user_id='alice'))
+                current,first=turn();self.assertIn('First rules',first.text);self.assertIn('First purpose',first.text)
+                remember_turn(store,current,first);self.assertEqual(turn()[1].text,'hello')
+                teams.set_description('alice','Project','Changed purpose')
+                provider.return_value=[{'group_id':'g1','title':'Friends','announcement':'Changed rules'}]
+                current,changed=turn();self.assertIn('Changed purpose',changed.text);self.assertIn('Changed rules',changed.text)
+                self.assertNotIn('First purpose',changed.text);self.assertNotIn('First rules',changed.text)
+                remember_turn(store,current,changed);self.assertEqual(turn()[1].text,'hello')
+
     def test_live_membership_survives_plain_chat_and_removes_stale_delivery_identity(self):
         live = [{'group_id': 'g1', 'title': 'Renamed', 'identity': 'Builder'}]
         rendered = render_group_context([HumanMessage(content='normal chat')], memberships=live)

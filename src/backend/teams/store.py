@@ -24,6 +24,7 @@ from typing import Any, Iterator
 from agents.store import Agent, AgentStore
 
 MEMBERS_FILE = "members.json"
+TEAM_INFO_FILE = "team.json"
 DEFAULT_TEAM = "__default__"
 
 
@@ -70,6 +71,34 @@ class TeamStore:
 
     def create(self, owner: str, team: str) -> None:
         self.folder(owner, team).mkdir(parents=True, exist_ok=True)
+
+    def description(self, owner: str, team: str) -> str:
+        """Live project metadata; the virtual user view has no Team files."""
+        if team == DEFAULT_TEAM:
+            return ""
+        try:
+            info = json.loads((self.folder(owner, team) / TEAM_INFO_FILE).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return ""
+        value = info.get("description", "") if isinstance(info, dict) else ""
+        return value if isinstance(value, str) else ""
+
+    def set_description(self, owner: str, team: str, description: str) -> None:
+        self.require(owner, team)
+        if team == DEFAULT_TEAM:
+            raise ValueError("用户空间是虚拟视图，没有 Team 介绍")
+        if not isinstance(description, str) or len(description) > 4000:
+            raise ValueError("Team 介绍最多 4000 个字符")
+        folder = self.folder(owner, team)
+        with _exclusive(folder):
+            file = folder / TEAM_INFO_FILE
+            info = json.loads(file.read_text(encoding="utf-8")) if file.exists() else {}
+            if not isinstance(info, dict):
+                raise ValueError("team.json 应为一个对象")
+            info["description"] = description.strip()
+            temporary = folder / f".{TEAM_INFO_FILE}.tmp"
+            temporary.write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
+            os.replace(temporary, file)
 
     def delete(self, owner: str, team: str) -> None:
         """Remove the team and its assets; its agents stay."""

@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>朋友群聊</title>
-  <link rel="stylesheet" href="/static/css/group-guest.css?v=20261004-message-menu">
+  <link rel="stylesheet" href="/static/css/group-guest.css?v=20261009-announcement">
   <link rel="stylesheet" href="/static/css/group-message-menu.css?v=20261004-message-menu">
   <script defer src="/static/js/group-message-menu.js?v=20261004-message-menu"></script>
-  <script defer src="/static/js/group-guest.js?v=20261004-message-menu"></script>
+  <script defer src="/static/js/group-guest.js?v=20261009-announcement"></script>
 </head>
 <body>
 <main>
@@ -23,6 +23,7 @@
     <div><button type="submit">保存密码</button><button id="password-cancel" type="button">取消</button></div>
   </form>
   <section id="chat" hidden>
+    <p id="announcement" class="guest-announcement" hidden></p>
     <details id="members"><summary id="member-count">群成员</summary><ul id="member-list"></ul></details>
     <details id="history"><summary>查找聊天记录</summary>
       <form id="history-search"><label class="sr-only" for="history-query">搜索聊天记录</label><input id="history-query" type="search" maxlength="120" required placeholder="关键词或成员名字"><button type="submit">搜索</button></form>

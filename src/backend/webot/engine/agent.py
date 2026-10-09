@@ -1593,6 +1593,7 @@ class TeamAgent:
         show_skills = (not turn.is_subagent) or (turn.profile and turn.profile.include_user_skills)
         team_skill_context = render_team_skill_context(
             session_teams, self._get_user_skills(user_id, session_teams, session_id) if show_skills else "",
+            user_id=user_id,
         )
         # The inbox worker's HumanMessage already carries its digest. Any other
         # turn surfaces newly queued messages once, on its first model call.

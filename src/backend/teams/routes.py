@@ -18,7 +18,7 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from fastapi import APIRouter, Header, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from agents.routes import agent_card, authenticate
 from teams.manifest import import_folder
@@ -27,10 +27,12 @@ from teams.store import Member, TeamNotFound, TeamStore, valid_team_name
 
 class TeamCreate(BaseModel):
     team: str
+    description: str = Field("", max_length=4000)
 
 
 class TeamRename(BaseModel):
-    name: str
+    name: str | None = None
+    description: str | None = Field(None, max_length=4000)
 
 
 class MemberAdd(BaseModel):
@@ -57,6 +59,7 @@ def team_card(teams: TeamStore, owner: str, team: str) -> dict[str, Any]:
     lead = next((m for m in members if m.is_lead), None)
     return {
         "team": team,
+        "description": teams.description(owner, team),
         "lead": lead.agent.agent_id if lead else None,
         "members": [member_card(m) for m in members],
         "is_default":team == '__default__',
@@ -103,6 +106,8 @@ def create_teams_router(
         if teams.exists(user, body.team):
             raise HTTPException(status_code=409, detail="team already exists")
         teams.create(user, body.team.strip())
+        if body.description:
+            teams.set_description(user, body.team.strip(), body.description)
         return team_card(teams, user, body.team.strip())
 
     @router.post("/v1/teams/{team}/members")
@@ -157,15 +162,19 @@ def create_teams_router(
     async def rename_team(team: str, body: TeamRename, authorization: str | None = Header(None)):
         user = user_of(authorization)
         require(user, team)
-        if not valid_team_name(body.name):
+        if body.name is not None and not valid_team_name(body.name):
             raise HTTPException(status_code=400, detail="invalid team name")
         try:
-            teams.rename(user, team, body.name.strip())
+            if body.name is not None and body.name.strip() != team:
+                teams.rename(user, team, body.name.strip())
+                team = body.name.strip()
+            if body.description is not None:
+                teams.set_description(user, team, body.description)
         except FileExistsError as exc:
             raise HTTPException(status_code=409, detail=str(exc))
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
-        return team_card(teams, user, body.name.strip())
+        return team_card(teams, user, team)
 
     @router.delete("/v1/teams/{team}")
     async def delete_team(team: str, authorization: str | None = Header(None)):

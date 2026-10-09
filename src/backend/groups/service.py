@@ -62,6 +62,7 @@ class GroupService:
         return {
             "group_id": conversation.conv_id,
             "title": conversation.title,
+            "announcement": conversation.meta.get("announcement", ""),
             "kind": conversation.kind,
             "owner": conversation.owner,
             "member_count": len(members),
@@ -136,11 +137,17 @@ class GroupService:
         if not self.store.message(conv_id,message_id): raise GroupError('此群没有这条消息',404)
         return {'focus_id':message_id,'messages':[message_card(self.conversations,m) for m in self.store.message_context(conv_id,message_id)]}
 
-    def update(self, user: str, conv_id: str, *, title: str | None = None, dnd: bool | None = None) -> dict:
-        self._get(user, conv_id, manage=True)
+    def update(self, user: str, conv_id: str, *, title: str | None = None, dnd: bool | None = None, announcement: str | None = None) -> dict:
+        conversation = self._get(user, conv_id, manage=True)
         changes: dict[str, Any] = {}
-        if title is not None and title.strip():
+        if title is not None:
+            if not title.strip() or len(title) > 160:
+                raise GroupError("群名称需要 1 至 160 个字符")
             changes["title"] = title.strip()
+        if announcement is not None:
+            if len(announcement) > 4000:
+                raise GroupError("群公告最多 4000 个字符")
+            changes["meta"] = {**conversation.meta, "announcement": announcement.strip()}
         if dnd is not None:
             changes["dnd"] = int(dnd)
         if changes:

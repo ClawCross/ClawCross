@@ -13,6 +13,31 @@ test('visible Agent activity uses gateway states and clears the running marker',
   await expect(page.locator('#activity-check .agent-activity-dot')).toBeHidden();
 });
 
+test('group announcement and Team introduction can be edited without rendering HTML',async({page})=>{
+  const {errors}=await mobileSetup(page);
+  await page.evaluate(()=>toggleChatActions());
+  await page.locator('#chat-actions-sheet').getByRole('button',{name:'群公告',exact:true}).click();
+  await page.getByRole('textbox',{name:'群公告',exact:true}).fill('群约定 <img src=x>');
+  await page.getByRole('button',{name:'保存公告',exact:true}).click();
+  await expect(page.locator('#group-announcement')).toHaveText('群公告 · 群约定 <img src=x>');
+  await expect(page.locator('#group-announcement img')).toHaveCount(0);
+  await page.locator('#group-announcement').click();
+  await expect(page.getByRole('textbox',{name:'群公告',exact:true})).toHaveValue('群约定 <img src=x>');
+  await page.getByRole('textbox',{name:'群公告',exact:true}).fill('');await page.getByRole('button',{name:'保存公告',exact:true}).click();
+  await expect(page.locator('#group-announcement')).toBeHidden();
+  let description='介绍';
+  await page.route('**/v1/teams/Project',route=>{
+    if(route.request().method()==='PATCH')description=route.request().postDataJSON().description;
+    return route.fulfill({json:{team:'Project',title:'Project',description}});
+  });
+  await page.evaluate(()=>GroupNetworkUI.teamInfo('Project'));
+  await expect(page.getByRole('textbox',{name:'Team 介绍',exact:true})).toHaveValue('介绍');
+  await page.getByRole('textbox',{name:'Team 介绍',exact:true}).fill('共同目标');
+  await page.getByRole('button',{name:'保存介绍',exact:true}).click();
+  await expect(page.locator('.group-network-dialog')).toHaveCount(0);
+  expect(description).toBe('共同目标');expect(errors).toEqual([]);
+});
+
 test('history search combines dates and members and opens the original context safely',async({page})=>{
   await page.setViewportSize({width:390,height:844});await mobileSetup(page);
   await page.route('**/proxy_groups/rg_one/search?**',route=>{
@@ -25,6 +50,12 @@ test('history search combines dates and members and opens the original context s
     {id:2,sender_name:'Alice',content:'测试内容 <script>bad</script>',created_at:1790000001},
     {id:3,sender_name:'Alice',content:'之后的消息',created_at:1790000002}]}}));
   await page.evaluate(()=>GroupNetworkUI.search('rg_one'));
+  const layout=await page.locator('.gn-search-filters').evaluate(filters=>{
+    const query=filters.previousElementSibling.getBoundingClientRect(),box=filters.getBoundingClientRect();
+    return {queryWidth:query.width,filterWidth:box.width,stacked:box.top>=query.bottom};
+  });
+  expect(layout.stacked).toBe(true);
+  expect(layout.queryWidth).toBeGreaterThan(250);
   await page.getByRole('searchbox',{name:'搜索聊天记录'}).fill('测试');
   await page.getByLabel('按成员筛选').selectOption('u:alice');
   await page.getByLabel('开始日期').fill('2026-09-01');await page.getByLabel('结束日期').fill('2026-10-09');
@@ -45,12 +76,12 @@ async function mobileSetup(page) {
   await page.route('**/proxy_check_session',route=>route.fulfill({json:{valid:true,user_id:'alice',has_password:true,mode:'local'}}));
   await page.route('**/api/llm_config_status',route=>route.fulfill({json:{configured:true}}));
   await page.route('**/proxy_tunnel/status',route=>route.fulfill({json:{running:false,public_domain:'https://chat.example'}}));
-  let title='朋友们';
+  let title='朋友们',announcement='',version=1;
   const messages=[{id:10,sender:'u:alice',sender_name:'Alice',content:'旧消息 <script>bad</script>',created_at:1790000000}];
   const calls=[];
   await page.route('**/proxy_groups**',async route=>{
     const request=route.request(),url=new URL(request.url());calls.push({path:url.pathname,method:request.method(),body:request.postDataJSON()});
-    const group={group_id:'rg_one',title,kind:'group',owner:'alice',members:[{principal:'u:alice',name:'Alice',is_agent:false}],messages,federated:true,member_count:1};
+    const group={group_id:'rg_one',title,announcement,version,kind:'group',owner:'alice',members:[{principal:'u:alice',name:'Alice',is_agent:false}],messages,federated:true,member_count:1};
     if(url.pathname==='/proxy_groups') return route.fulfill({json:{groups:[group]}});
     if(url.pathname.endsWith('/search')) {
       expect(url.searchParams.get('query')).toBe('早期');
@@ -63,8 +94,10 @@ async function mobileSetup(page) {
       return route.fulfill({json:{created:true,message:messages.at(-1)}});
     }
     if(url.pathname.endsWith('/messages')) return route.fulfill({json:{messages}});
-    if(request.method()==='PATCH') title=request.postDataJSON().title;
-    return route.fulfill({json:request.method()==='PATCH'?{...group,title}:group});
+    if(request.method()==='PATCH') {
+      const body=request.postDataJSON();if(body.title!==undefined)title=body.title;if(body.announcement!==undefined)announcement=body.announcement;version++;
+    }
+    return route.fulfill({json:request.method()==='PATCH'?{...group,title,announcement,version}:group});
   });
   await page.goto('/mobile/group_chat');
   await expect(page.locator('#tab-chats')).toBeVisible();
@@ -108,12 +141,16 @@ for(const mobile of [false,true]) {
       await page.waitForTimeout(600);
       await expect(page.getByRole('menu')).toHaveCount(0);
     }
-    await page.evaluate(()=>GroupNetworkUI.rename('rg_one'));
+    await page.evaluate(()=>toggleChatActions());
+    await page.locator('#action-group-rename').click();
     await page.getByRole('textbox',{name:'群名',exact:true}).fill('我们的新群');
     await page.getByRole('button',{name:'保存群名',exact:true}).click();
     await expect(page.locator('#chat-title')).toHaveText('我们的新群');
+    await page.evaluate(()=>applyGroupDetail({group_id:'rg_one',version:1,title:'旧快照',members:[]}));
+    await expect(page.locator('#chat-title')).toHaveText('我们的新群');
     expect(calls.some(call=>call.method==='PATCH'&&call.path==='/proxy_groups/rg_one'&&call.body.title==='我们的新群')).toBe(true);
-    await page.evaluate(()=>GroupNetworkUI.search('rg_one'));
+    await page.evaluate(()=>toggleChatActions());
+    await page.locator('#chat-actions-sheet').getByRole('button',{name:'查找聊天记录'}).click();
     await page.getByRole('searchbox',{name:'搜索聊天记录'}).fill('早期');
     await page.getByRole('button',{name:'搜索',exact:true}).click();
     await expect(page.locator('.gn-search-results')).toContainText('早期历史 <img');

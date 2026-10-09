@@ -76,8 +76,8 @@ class GroupFacade:
         if gid.startswith('rg_'): return self.client.message_context(user,gid,message_id)
         return self.rpc(user,'GET','/'+quote(gid,safe='')+f'/messages/{message_id}/context')
 
-    def update(self, user, gid, *, title=None, dnd=None):
-        fields = {k: v for k, v in {'title': title, 'dnd': dnd}.items() if v is not None}
+    def update(self, user, gid, *, title=None, dnd=None, announcement=None):
+        fields = {k: v for k, v in {'title': title, 'dnd': dnd, 'announcement': announcement}.items() if v is not None}
         if gid.startswith('rg_'):
             return self.client.manage(user, gid, 'patch', fields)
         return self.rpc(user, 'PATCH', '/' + quote(gid, safe=''), fields)

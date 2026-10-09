@@ -4785,6 +4785,9 @@ def download_team_snapshot():
                 zipf.writestr("internal_agents.json", dumps(portable_internal))
             if portable_external and (_inc("external_agents") or _inc("skills") or _inc("cron")):
                 zipf.writestr("external_agents.json", dumps(portable_external))
+            description = teams.description(user_id, team)
+            if description:
+                zipf.writestr("team.json", json.dumps({"description": description}, ensure_ascii=False, indent=2))
             experts_file = os.path.join(team_dir, "oasis_experts.json")
             if _inc("personas") and os.path.exists(experts_file):
                 with open(experts_file, encoding="utf-8") as source:

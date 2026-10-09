@@ -107,6 +107,8 @@
   }
   function showJoin() { clearTimeout(timer); el('join').hidden = false; el('chat').hidden = true; el('rename').hidden = true; el('password-open').hidden = true; el('password-form').hidden = true; }
   function render(data) {
+    el('announcement').hidden = !data.announcement;
+    el('announcement').textContent = data.announcement ? '群公告 · ' + data.announcement : '';
     identityKey(data);
     el('password-open').textContent = data.password_set ? '修改密码' : '设置密码';
     principal = data.principal; el('title').textContent = data.title; el('name').value = data.name;

@@ -135,9 +135,50 @@
       input.focus();
     },
 
+    async announcement(gid) {
+      let group;
+      try { group = await request('GET', '/' + encodeURIComponent(gid)); }
+      catch (error) { notify(error.message); return; }
+      const view = dialog('群公告', group.title || '');
+      const input = el('textarea', 'gn-input');
+      input.rows = 7; input.maxLength = 4000; input.value = group.announcement || '';
+      input.setAttribute('aria-label', '群公告');
+      input.readOnly = String(group.owner || '').startsWith('remote:');
+      input.placeholder = input.readOnly ? '暂无群公告' : '写下群的介绍、约定或重要通知';
+      view.body.append(input);
+      if (!input.readOnly) {
+        const save = button('保存公告','primary',()=>busy(save,view.status,'正在保存…',async()=>{
+          const updated = await request('PATCH','/' + encodeURIComponent(gid),{announcement:input.value.trim()});
+          view.done(); changed(updated);
+        }));
+        view.body.append(el('p','gn-note','成员及 Agent 都能看到公告；留空可清除。'),save);
+      }
+    },
+
+    async teamInfo(team) {
+      if (!team || team === '__default__') return;
+      const path = '/v1/teams/' + encodeURIComponent(team);
+      async function teamRequest(method,body) {
+        const response=await fetch(path,{method,headers:{'Content-Type':'application/json'},credentials:'same-origin',cache:'no-store',...(body===undefined?{}:{body:JSON.stringify(body)})});
+        const data=await response.json();
+        if(!response.ok)throw new Error(data.detail || data.error || 'Team 请求失败');
+        return data;
+      }
+      let info;
+      try { info=await teamRequest('GET'); } catch(error){notify(error.message);return;}
+      const view=dialog('Team 介绍', info.title || team);
+      const input=el('textarea','gn-input');input.rows=7;input.maxLength=4000;input.value=info.description || '';
+      input.setAttribute('aria-label','Team 介绍');input.placeholder='介绍项目的目标、分工或约定';
+      const save=button('保存介绍','primary',()=>busy(save,view.status,'正在保存…',async()=>{
+        await teamRequest('PATCH',{description:input.value.trim()});view.done();
+        window.dispatchEvent(new CustomEvent('team-info-changed',{detail:{team}}));
+      }));
+      view.body.append(input,el('p','gn-note','所属 Agent 的动态块与详情工具会提供最新介绍。'),save);
+    },
+
     search(gid) {
       const view = dialog('查找聊天记录','搜索本群全部历史消息');
-      const form = el('form','gn-search-form');
+      const form = el('form','gn-search-controls');
       const input = el('input','gn-input'); input.type='search'; input.maxLength=120; input.placeholder='搜索聊天内容'; input.setAttribute('aria-label','搜索聊天记录');
       const submit = el('button','gn-btn gn-btn-primary','搜索'); submit.type='submit';
       const main=el('div','gn-search-form');main.append(input,submit);
@@ -154,7 +195,7 @@
       const results = el('div','gn-search-results');
       let before=0, query='', generation=0,criteria={};
       const messages = new Map();
-      GroupMessageMenu.bind(results, id => messages.get(id), message => { view.done(); if(window.setGroupReply) window.setGroupReply(message); });
+      GroupMessageMenu.bind(results, id => messages.get(id), message => { view.done(); if(window.setGroupReply) window.setGroupReply({...message,group_id:gid}); });
       const more = button('更早的结果','secondary',()=>search(false)); more.hidden=true;
       async function search(reset) {
         const requestGeneration = reset ? ++generation : generation;
@@ -218,7 +259,7 @@
       const join = button('加入', 'primary', () => busy(join, view.status, '正在加入…', async () => {
         const group = await request('POST', '/join', { invite: input.value.trim(), agents: [] });
         view.done();
-        changed(group);
+        changed({...group,open_group:true});
       }));
       join.disabled = true;
       input.addEventListener('input', () => { join.disabled = !input.value.includes('/group-guest#'); });

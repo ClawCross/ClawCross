@@ -48,6 +48,7 @@ class GroupCreate(BaseModel):
 class GroupPatch(BaseModel):
     title: str | None = None
     dnd: bool | None = None
+    announcement: str | None = Field(None, max_length=4000)
 
 
 class MessagePost(BaseModel):
@@ -180,7 +181,7 @@ def create_groups_router(
 
     @router.patch("/groups/{conv_id}")
     async def update_group(conv_id: str, body: GroupPatch, authorization: str | None = Header(None)):
-        return call(service.update, user_of(authorization), conv_id, title=body.title, dnd=body.dnd)
+        return call(service.update, user_of(authorization), conv_id, title=body.title, dnd=body.dnd, announcement=body.announcement)
 
     @router.delete("/groups/{conv_id}")
     async def delete_group(conv_id: str, authorization: str | None = Header(None)):

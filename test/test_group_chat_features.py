@@ -35,6 +35,20 @@ class GroupChatFeatures(unittest.TestCase):
         self.gid = self.host['group']['group_id']
         self.guest = self.store.guest_join(self.store.guest_invite(self.host['token'])['invite'],'Bob','password123')
 
+    def test_announcement_permissions_and_stale_metadata_after_rename(self):
+        cache = ClientStore(Path(self.temp.name)/'client.db')
+        alias = cache.save('alice','http://127.0.0.1:51203',self.host)
+        updated = self.store.manage(self.host['token'],'patch',{'title':'New name','announcement':'Group rules'})
+        cache.update('alice',alias,metadata=json.dumps(updated))
+        cache.update('alice',alias,metadata=json.dumps(self.host['group']),error='')
+        self.assertEqual(json.loads(cache.get('alice',alias)['metadata'])['title'],'New name')
+        self.assertEqual(self.store.guest_state(self.guest['token'])['announcement'],'Group rules')
+        with self.assertRaises(RelayError):self.store.manage(self.guest['token'],'patch',{'announcement':'malicious'})
+        with self.assertRaises(RelayError):self.store.manage(self.host['token'],'patch',{'announcement':'x'*4001})
+        self.assertEqual(self.store.manage(self.host['token'],'patch',{'announcement':''})['announcement'],'')
+        # Existing databases retain the new metadata after reopening.
+        self.assertEqual(RelayStore(self.store.path).events(self.host['token'],0)['group']['title'],'New name')
+
     def test_rename_keeps_id_history_members_and_notifies_clients(self):
         original = self.store.post(self.host['token'],content='Before rename')['message']
         with self.assertRaises(RelayError): self.store.manage(self.guest['token'],'patch',{'title':'Hijacked'})

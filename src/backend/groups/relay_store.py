@@ -83,6 +83,8 @@ class RelayStore:
                 db.execute('UPDATE relay_connections SET host_local=1 WHERE id IN (SELECT owner_connection FROM relay_groups)')
             if 'external_access_enabled' not in {row[1] for row in db.execute('PRAGMA table_info(relay_groups)')}:
                 db.execute('ALTER TABLE relay_groups ADD COLUMN external_access_enabled INTEGER NOT NULL DEFAULT 1')
+            if 'announcement' not in {row[1] for row in db.execute('PRAGMA table_info(relay_groups)')}:
+                db.execute("ALTER TABLE relay_groups ADD COLUMN announcement TEXT NOT NULL DEFAULT ''")
         if os.name != 'nt':
             self.path.chmod(0o600)
 
@@ -136,6 +138,7 @@ class RelayStore:
             member['muted'] = bool(member['muted'])
             member['host_local'] = bool(member['host_local'])
         return {'group_id': gid, 'title': group['title'], 'kind': group['kind'],
+                'announcement': group['announcement'],
                 'owner': group['owner_connection'], 'primary_agent': group['primary_member'],
                 'dnd': bool(group['dnd']), 'version': group['version'], 'members': members,
                 'external_access_enabled': bool(group['external_access_enabled']),
@@ -306,6 +309,7 @@ class RelayStore:
                     messages.append({k: message[k] for k in ('sender', 'sender_name', 'content', 'created_at')} |
                                     {'id': row['id'], 'reply_to':message.get('reply_to'), 'reply':message.get('reply')})
             return {'group_id': conn['group_id'], 'password_set': bool(conn['guest_password_hash']), 'title': group['title'], 'members': [{k: m[k] for k in ('principal', 'name', 'is_agent')} for m in group['members']],
+                    'announcement': group['announcement'],
                     'messages': messages, 'cursor': cursor, 'has_more': more, 'principal': member['principal'], 'name': member['name']}
 
     def guest_rename(self, token, name):
@@ -405,13 +409,16 @@ class RelayStore:
             elif action == 'patch':
                 if not owner:
                     raise RelayError('只有群主可以管理群', 403)
-                for key in ('title', 'dnd'):
+                for key in ('title', 'dnd', 'announcement'):
                     if key in fields and fields[key] is not None:
                         if key == 'title' and (not isinstance(fields[key], str) or not fields[key].strip() or len(fields[key]) > 160):
                             raise RelayError('群名称需要 1 至 160 个字符')
-                        if key != 'title' and not isinstance(fields[key], bool):
+                        if key == 'announcement' and (not isinstance(fields[key], str) or len(fields[key]) > 4000):
+                            raise RelayError('群公告最多 4000 个字符')
+                        if key == 'dnd' and not isinstance(fields[key], bool):
                             raise RelayError('群设置必须为布尔值')
-                        db.execute(f'UPDATE relay_groups SET {key}=? WHERE id=?', (fields[key], conn['group_id']))
+                        value = fields[key].strip() if isinstance(fields[key], str) else fields[key]
+                        db.execute(f'UPDATE relay_groups SET {key}=? WHERE id=?', (value, conn['group_id']))
             elif action == 'primary':
                 if not owner:
                     raise RelayError('只有群主可以设置主 agent', 403)

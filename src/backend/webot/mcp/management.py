@@ -50,6 +50,7 @@ class TeamFields(BaseModel):
 class GroupFields(BaseModel):
     model_config=ConfigDict(extra='forbid')
     title:str|None=None
+    announcement:str|None=None
     agents:list[str]|None=None
     agent:str|None=None
     principal:str|None=None
@@ -179,13 +180,15 @@ async def local_request(owner,method,path,body=None,*,scheduler=False):
 
 
 @mcp.tool()
-async def manage_team(username:str,action:Literal['list','get','create','rename','delete','create_agent','add_member','update_member','remove_member','list_personas','save_persona','delete_persona','update_agent','list_workflows','get_workflow','save_workflow','delete_workflow','list_alarms','create_alarm','update_alarm','delete_alarm'],
+async def manage_team(username:str,action:Literal['list','get','create','update','rename','delete','create_agent','add_member','update_member','remove_member','list_personas','save_persona','delete_persona','update_agent','list_workflows','get_workflow','save_workflow','delete_workflow','list_alarms','create_alarm','update_alarm','delete_alarm'],
                       team:str='',data:TeamFields|None=None,source_session:str='')->str:
-    """管理 Team：成员、人设、工作流、闹钟和 Agent 配置；创建、改名、删除；不必加入。
+    """管理 Team：介绍、成员、人设、工作流、闹钟和 Agent 配置；创建、改名、删除；不必加入。
     Manage the user's Teams without requiring this Agent to be a member.
     Uses the Agent's ordinary tool table; mutations require review.
     Group participation uses join_group/leave_group, not this tool.
     create uses team; rename data={name}; member operations data={agent,role?,is_lead?,tag?}.
+    create/update data={description?} sets the Team introduction (max 4000 characters; empty clears it).
+    get returns the introduction and current Team details; introductions also appear in members' runtime context.
     create_agent data={name,platform?,persona?,creation_template?,tools?,role?}; default personal template.
     save_persona data={tag,name,persona,emoji?}; delete_persona data={tag}.
     update_agent data={agent,name?,persona?,tools?} edits a Team member's non-secret settings.
@@ -210,11 +213,18 @@ async def manage_team(username:str,action:Literal['list','get','create','rename'
         if action=='list':return result([team_card(store,username,name) for name in store.teams(username) if name!=DEFAULT_TEAM])
         if not valid_team_name(team) or team==DEFAULT_TEAM:raise ValueError('请指定真实 Team；用户空间仅用于查看')
         if action=='create':
-            fields(data,[])
+            fields(data,['description'])
+            if len(data.get('description',''))>4000:raise ValueError('Team 介绍最多 4000 个字符')
             if store.exists(username,team):raise ValueError('Team 已存在')
-            store.create(username,team);return result(team_card(store,username,team))
+            store.create(username,team)
+            if 'description' in data:store.set_description(username,team,data['description'])
+            return result(team_card(store,username,team))
         store.require(username,team)
         if action=='get':return result(team_card(store,username,team))
+        if action=='update':
+            fields(data,['description'])
+            if 'description' not in data:raise ValueError('请提供 description；空文本表示清除介绍')
+            store.set_description(username,team,data['description']);return result(team_card(store,username,team))
         if action in {'list_workflows','get_workflow','save_workflow','delete_workflow'}:
             return result(team_workflows(store,username,team,action,data))
         if action=='create_alarm':
@@ -264,12 +274,14 @@ async def manage_team(username:str,action:Literal['list','get','create','rename'
 
 
 @mcp.tool()
-async def manage_group(username:str,action:Literal['list','get','create','rename','delete','add_member','remove_member','member_settings','set_primary','external_access'],
+async def manage_group(username:str,action:Literal['list','get','create','update','rename','delete','add_member','remove_member','member_settings','set_primary','external_access'],
                        group_id:str='',data:GroupFields|None=None,source_session:str='')->str:
-    """管理群聊：建群、改名、拉入 Agent、踢成员、暂停/恢复联网；以本用户群主权限操作。
+    """管理群聊：建群、改名、公告、拉入 Agent、踢成员、暂停/恢复联网；以本用户群主权限操作。
     Administer groups as the owning user; this Agent need not join the group.
     Uses the Agent's ordinary tool table and review. Does not grant administration of other users' groups.
     create data={title,agents?}; rename data={title}; members data={agent} or {principal}.
+    update data={title?,announcement?} changes group metadata; announcement max 4000 characters, empty clears it.
+    get returns the announcement and details. Members receive current announcements in their runtime group metadata.
     member_settings data={principal,muted?,nickname?}; set_primary data={agent}.
     external_access data={enabled}: pause/resume networking while preserving members and history.
     Joining/leaving yourself remains in join_group/leave_group.
@@ -293,6 +305,10 @@ async def manage_group(username:str,action:Literal['list','get','create','rename
         if action=='get':return result(card)
         if card.get('owner')!=username:raise ValueError('当前用户不是群主，不能管理此群')
         if action=='rename':fields(data,['title']);required(data,'title');return result(await local_request(username,'PATCH',path,data))
+        if action=='update':
+            fields(data,['title','announcement'])
+            if not data:raise ValueError('请提供 title 或 announcement')
+            return result(await local_request(username,'PATCH',path,data))
         if action=='delete':fields(data,[]);return result(await local_request(username,'DELETE',path))
         if action=='add_member':fields(data,['agent']);required(data,'agent');return result(await local_request(username,'POST',path+'/members',data))
         if action in {'remove_member','member_settings'}:
