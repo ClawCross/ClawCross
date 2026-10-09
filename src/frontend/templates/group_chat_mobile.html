@@ -4581,6 +4581,8 @@
 <link rel="stylesheet" href="/static/css/workspace-settings.css?v=20261005-team-skills">
 <link rel="stylesheet" href="/static/css/mobile-panel-layout.css?v=20261008">
 <script defer src="/static/js/mobile-panel-layout.js?v=20261008"></script>
+<link rel="stylesheet" href="/static/css/agent-activity.css?v=20261009">
+<script defer src="/static/js/agent-activity.js?v=20261009"></script>
 </head>
 <body>
 
@@ -5312,7 +5314,17 @@
   </div>
   <div class="drawer-body create-agent-drawer-body">
     <p class="create-agent-intro" data-i18n="agent_creation_intro">取个名字，就可以开始对话。</p>
-    <div id="create-agent-mode-bar" role="tablist" aria-label="Agent 平台" onkeydown="handleCreateAgentTabKey(event)">
+    <div class="create-agent-form">
+      <label class="side-panel-label" for="create-agent-name" data-i18n="agent_name_label">伙伴名称</label>
+      <input type="text" id="create-agent-name" class="side-panel-input" maxlength="160" autocomplete="off" data-i18n="agent_creation_name_placeholder" placeholder="例如：写作助手" onkeydown="if(event.key==='Enter'){if(mobileCreateAgentMode==='acp')mobileSubmitCreateAcpAgent();else submitCreateAgent();}">
+      <details class="create-agent-advanced"><summary data-i18n="choose_companion">选择伙伴 · 可选</summary>
+        <label class="side-panel-label" for="create-agent-companion" data-i18n="companion_source">使用的伙伴</label>
+        <select id="create-agent-companion" class="side-panel-input" onchange="chooseMobileCompanion(this.value)">
+          <option value="webot" data-i18n="builtin_companion">ClawCross 内置伙伴</option><option value="codex">Codex</option><option value="claude">Claude Code</option>
+        </select>
+      </details>
+    </div>
+    <div id="create-agent-mode-bar" style="display:none" aria-hidden="true" onkeydown="handleCreateAgentTabKey(event)">
       <button type="button" class="add-agent-mode-btn active" data-mode="webot" role="tab" aria-selected="true" aria-controls="create-agent-panel-webot" onclick="setCreateAgentMode('webot')"><svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg#bot"/></svg><span>WeBot</span></button>
       <button type="button" class="add-agent-mode-btn" data-mode="acp" role="tab" aria-selected="false" aria-controls="create-agent-panel-acp" tabindex="-1" onclick="setCreateAgentMode('acp')"><svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg#plug"/></svg><span data-i18n="mobile_create_agent_mode_acp">外部 Agent</span></button>
     </div>
@@ -5324,10 +5336,6 @@
       </details>
       <div id="create-agent-panel-webot" role="tabpanel">
         <div class="create-agent-form">
-            <div class="side-panel-field">
-              <label class="side-panel-label" for="create-agent-name" data-i18n="agent_name_label">Agent 名称</label>
-              <input type="text" id="create-agent-name" class="side-panel-input" maxlength="160" autocomplete="off" data-i18n="agent_creation_name_placeholder" placeholder="例如：写作助手" onkeydown="if(event.key==='Enter')submitCreateAgent()">
-            </div>
             <details class="create-agent-advanced"><summary data-i18n="agent_creation_advanced">人设与工具 · 高级设置</summary>
               <label class="side-panel-label" data-i18n="agent_creation_persona">希望这个 Agent 怎么帮助你？</label>
               <textarea id="create-agent-persona" class="side-panel-input" rows="3"></textarea>
@@ -6018,6 +6026,9 @@ const I18N = {
     mobile_add_headers_json_err: 'Headers 不是合法 JSON',
 
     // ── Create menu ──
+    choose_companion: '选择伙伴 · 可选',
+    companion_source: '使用的伙伴',
+    builtin_companion: 'ClawCross 内置伙伴',
     create_new_agent: '新建 Agent',
     agent_creation_intro: '取个名字，就可以开始对话。',
     agent_creation_name_placeholder: '例如：写作助手',
@@ -6657,6 +6668,9 @@ const I18N = {
     mobile_add_ext_url_required: 'HTTP platform requires API URL (except openclaw tag)',
     mobile_add_headers_json_err: 'Headers must be valid JSON',
 
+    choose_companion: 'Choose a companion · Optional',
+    companion_source: 'Companion',
+    builtin_companion: 'ClawCross companion',
     create_new_agent: 'New Agent',
     agent_creation_intro: 'Give your Agent a name to start chatting.',
     agent_creation_name_placeholder: 'For example: Writing assistant',
@@ -9129,12 +9143,13 @@ function renderGroupList(list) {
     const activeClass = currentGroupId && String(currentGroupId) === String(gid) ? ' active' : '';
 
     return `
-      <div class="swipe-wrapper${isPinned ? ' pinned' : ''}${activeClass}" data-gid="${esc(gid)}">
+      <div class="swipe-wrapper${isPinned ? ' pinned' : ''}${activeClass}" data-gid="${esc(gid)}" data-group-agent-ids="${esc(JSON.stringify((g.members || []).filter(m=>m.is_agent&&!m.remote).map(m=>m.agent?.agent_id || m.principal)))}">
         <div class="group-item" onclick="openChat('${escapedGid}', '${escapedName}')" ontouchstart="prefetchGroupDetail('${escapedGid}')" onmouseenter="prefetchGroupDetail('${escapedGid}')">
           ${avatarHtml}
           <div class="group-info">
             <div class="group-name-row">
               <div class="group-name">${renderGroupNameDisplay(name)}</div>
+              <span class="group-activity-label" hidden></span>
               ${timeStr ? `<span class="group-time">${timeStr}</span>` : ''}
             </div>
             <div class="group-meta-row">
@@ -9950,6 +9965,13 @@ let mobileCreateTemplateGeneration = 0;
 let mobileCreateAgentPurpose = '';
 let mobileCreationPermissionsCustomized = false;
 let mobileGroupRole = 'companion';
+let mobileCompanionPlatform = 'codex';
+function chooseMobileCompanion(platform) {
+  if (platform !== 'webot') mobileCompanionPlatform = platform;
+  setCreateAgentMode(platform === 'webot' ? 'webot' : 'acp');
+  const field=document.getElementById('ca-acp-platform');
+  if (field && platform !== 'webot') field.value=platform;
+}
 const mobileGroupRoles = {
   companion:{zh:'聊天伙伴',en:'Chat companion',hintZh:'一起聊天，把话题说清楚',hintEn:'Join conversations and clarify ideas',persona:'你是一位友好的群聊伙伴，用清楚自然的语言交流，认真回应问题，帮助大家把话题说清楚。'},
   advisor:{zh:'专家顾问',en:'Expert advisor',hintZh:'分析问题，提供专业建议',hintEn:'Analyze questions and offer advice',persona:'你是一位群聊中的专业顾问，先理解问题和已有事实，说明依据与不确定性，给出简明、可操作的建议。专业领域以用户选定的人设或当前任务为准。'},
@@ -10008,7 +10030,7 @@ function _syncCreateAgentModeButtons() {
   const external = mobileCreateAgentMode === 'acp';
   const incompatible = external && ['chat','group'].includes(AgentCreationPresets.selected('mobile-agent-creation-presets')?.id);
   AgentCreationPresets.platform('mobile-agent-creation-presets',external);
-  if(incompatible)document.getElementById('mobile-agent-template-hint').textContent=_currentLang==='zh'?'此隔离模板需要 WeBot，请切换平台或选择其他模板。':'This isolated template requires WeBot. Change platform or template.';
+  if(incompatible)document.getElementById('mobile-agent-template-hint').textContent=_currentLang==='zh'?'此隔离模板适用于内置伙伴，请选择其他能力模板。':'This isolation preset applies to the built-in companion. Choose another capability preset.';
   const internalButton = document.getElementById('create-agent-submit');
   const externalButton = document.getElementById('ca-acp-submit');
   const ready=!!AgentCreationPresets.selected('mobile-agent-creation-presets');
@@ -10028,6 +10050,7 @@ function handleCreateAgentTabKey(event) {
 function setCreateAgentMode(mode) {
   if (!['webot', 'acp'].includes(mode)) return;
   mobileCreateAgentMode = mode;
+  document.getElementById('create-agent-companion').value=mode==='webot'?'webot':mobileCompanionPlatform;
   if(mobileCreateAgentPurpose==='group' && !mobileCreationPermissionsCustomized)AgentCreationPresets.select('mobile-agent-creation-presets',mode==='acp'?'personal':'group');
   _syncCreateAgentModeButtons();
   const pWebot = document.getElementById('create-agent-panel-webot');
@@ -10052,11 +10075,8 @@ async function renderCreateAgentAcpPanel() {
   if (Number(panel.dataset.generation) !== generation) return;
   panel.innerHTML = `
     <div class="create-agent-form">
-      <div class="side-panel-field"><label class="side-panel-label" for="ca-acp-name">${esc(t('agent_name_label'))}</label>
-      <input type="text" id="ca-acp-name" class="side-panel-input" maxlength="160" placeholder="${esc(t('agent_creation_name_placeholder'))}" autocomplete="off"></div>
-      <label class="side-panel-label" for="ca-acp-platform">${esc(t('mobile_add_ext_platform'))}</label>
-      <select id="ca-acp-platform" class="side-panel-input">${platformOpts}</select>
-      <div class="create-agent-component"><p>${esc(_currentLang === 'zh' ? '通过 acpx 连接 Codex、Claude 等平台；需要时可在这里下载。ClawCross 模式与沙盒约束接入工具，原生 CLI 工具由其自身权限控制。' : 'Connect Codex, Claude and other platforms through acpx. ClawCross policies govern its tools; native CLI tools use their own permissions.')}</p>${componentControlMarkup('acpx')}</div>
+      <select id="ca-acp-platform" hidden>${platformOpts}</select>
+      <div class="create-agent-component"><p>${esc(_currentLang === 'zh' ? '使用 Codex、Claude 等伙伴需要连接组件，可在这里下载。请先在主机上登录所选服务；所选程序也会使用自己的权限设置。' : 'Codex, Claude and other companions need a connector, available here. Sign in to the selected service on the host first; that program also uses its own permission settings.')}</p>${componentControlMarkup('acpx')}</div>
       <details class="create-agent-advanced"><summary>${esc(t('agent_creation_advanced'))}</summary>
         <label class="side-panel-label" for="ca-acp-persona">${esc(t('agent_creation_persona'))}</label>
         <textarea id="ca-acp-persona" class="side-panel-input" rows="3"></textarea>
@@ -10070,6 +10090,11 @@ async function renderCreateAgentAcpPanel() {
       </details>
     </div>`;
   initComponentControls(panel);
+  const companion=document.getElementById('create-agent-companion');
+  const native=document.getElementById('ca-acp-platform');
+  companion.innerHTML='<option value="webot">'+esc(_currentLang==='zh'?'ClawCross 内置伙伴':'ClawCross companion')+'</option>'+platformOpts;
+  native.value=mobileCompanionPlatform;
+  companion.value=mobileCompanionPlatform;
   void MobileAgentCreationTools.mount('ca-acp');
   const tagSel = document.getElementById('ca-acp-tag');
   const tagCust = document.getElementById('ca-acp-tag-custom');
@@ -10090,12 +10115,12 @@ async function mobileSubmitCreateAcpAgent() {
   if (mobileCreateAgentSubmitting) return;
   const team = mobileGetCreateAgentTeam();
   const btn = document.getElementById('ca-acp-submit');
-  const name = String((document.getElementById('ca-acp-name') || {}).value || '').trim();
+  const name = String((document.getElementById('create-agent-name') || {}).value || '').trim();
   const runtime = String((document.getElementById('ca-acp-runtime') || {}).value || '').trim();
   const platform = String((document.getElementById('ca-acp-platform') || {}).value || '');
   if (!name) {
     toast(t('agent_name_required'));
-    document.getElementById('ca-acp-name')?.focus();
+    document.getElementById('create-agent-name')?.focus();
     return;
   }
   if (!platform) {
@@ -10421,6 +10446,7 @@ function clearGroupReply() {
   document.getElementById('group-reply-preview').hidden=true;
 }
 function setGroupReply(message) {
+  if(message.group_id && message.group_id!==currentGroupId){toast('请先打开这条消息所属的群聊。');return;}
   if(!currentGroupId || !Number.isSafeInteger(Number(message.id)) || Number(message.id)<=0) return;
   groupReplyContext={...message,group_id:currentGroupId};
   const preview=document.getElementById('group-reply-preview');preview.hidden=false;
@@ -13585,8 +13611,8 @@ function renderMembers(members) {
           <button onclick="event.stopPropagation();showAgentStatus('${jsPrincipal}','${jsName}')" class="member-action-btn" title="${t('tip_agent_status')}">📊</button>
         </div>`;
     return `
-      <div class="member-item" onclick="insertMention('${jsPrincipal}', '${jsName}')">
-        <div class="member-avatar ${agentAvatarClass(agent.platform)} clickable" onclick="event.stopPropagation();showAgentDetail('${jsPrincipal}')" title="${t('tip_view_detail')}">${esc(initial)}</div>
+      <div class="member-item" ${m.remote?'':`data-agent-activity="${esc(agent.agent_id)}"`} onclick="insertMention('${jsPrincipal}', '${jsName}')">
+        <div class="member-avatar ${agentAvatarClass(agent.platform)} clickable" onclick="event.stopPropagation();showAgentDetail('${jsPrincipal}')" title="${t('tip_view_detail')}">${esc(initial)}<span class="agent-activity-dot" role="img" hidden></span></div>
         <div class="member-info" style="flex:1;">
           <div class="member-name">${esc(name)}</div>
           <div class="member-tag">${esc(agentPlatformLabel(agent.platform))} · ${esc(agent.agent_id)}${m.muted ? ' · 已禁言' : ''}${isPrimary ? ' · ⭐ 主 agent' : ''}</div>
@@ -15394,7 +15420,7 @@ function renderAgentGroupsHtml(entries, idPrefix, renderRow) {
 function renderAgentContactRow(entry) {
   const name = entry.name || entry.agent.name;
   const teamLabel = entry.team ? `<span style="font-size:11px;color:var(--text-hint);margin-left:4px;">[${esc(entry.team)}]</span>` : '';
-  return `<div class="contact-item" onclick="showAgentDetail('${entry.agent.agent_id}')"><div class="contact-avatar ${agentAvatarClass(entry.agent.platform)}">${esc(avatarLabelFromDisplayName(name))}</div><div class="contact-main"><div class="contact-name">${esc(name)}${entry.is_lead ? ' ⭐' : ''}${teamLabel}</div></div>${entry.tag ? `<span class="contact-tag">${esc(entry.tag)}</span>` : ''}</div>`;
+  return `<div class="contact-item" data-agent-activity="${esc(entry.agent.agent_id)}" onclick="showAgentDetail('${entry.agent.agent_id}')"><div class="contact-avatar ${agentAvatarClass(entry.agent.platform)}">${esc(avatarLabelFromDisplayName(name))}<span class="agent-activity-dot" role="img" hidden></span></div><div class="contact-main"><div class="contact-name">${esc(name)}${entry.is_lead ? ' ⭐' : ''}${teamLabel}</div></div>${entry.tag ? `<span class="contact-tag">${esc(entry.tag)}</span>` : ''}</div>`;
 }
 
 function renderPersonaContactRow(exp, avatarClass) {

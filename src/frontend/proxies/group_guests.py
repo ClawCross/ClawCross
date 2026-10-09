@@ -82,7 +82,8 @@ def register_guest_routes(app, *, port_agent, internal_token, public_base=lambda
     @app.route('/relay/<path:call>', methods=['GET', 'POST'])
     def group_device_relay(call):
         allowed = (request.method, call) in device_calls or (
-            request.method == 'POST' and re.fullmatch(r'manage/[a-z_]{1,40}', call))
+            request.method == 'POST' and re.fullmatch(r'manage/[a-z_]{1,40}', call)) or (
+            request.method == 'GET' and re.fullmatch(r'messages/[0-9]+/context',call))
         if not allowed:
             return jsonify(error='不支持的群操作'), 404
         ticket = request.headers.get('X-Group-Invite', '')
@@ -108,7 +109,7 @@ def register_guest_routes(app, *, port_agent, internal_token, public_base=lambda
                 client.trust_env = False
                 response = client.request(request.method, target['url'] + '/relay/' + call, headers=headers, json=body,
                                           params=({'after_id': request.args.get('after_id', '0')} if call == 'messages'
-                                                  else {key: request.args.get(key, default) for key,default in (('query',''),('before_id','0'),('limit','50'))} if call == 'search' else None),
+                                                  else {key: request.args.get(key, default) for key,default in (('query',''),('before_id','0'),('limit','50'),('sender',''),('from_ts','0'),('to_ts','0'))} if call == 'search' else None),
                                           timeout=20, allow_redirects=False)
             result = jsonify(response.json())
             result.status_code = response.status_code

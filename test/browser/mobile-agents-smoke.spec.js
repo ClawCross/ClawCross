@@ -49,7 +49,7 @@ test('contact creation offers group roles and keeps capabilities in advanced set
   await expect.poll(()=>page.evaluate(()=>AgentCreationPresets.selected('mobile-agent-creation-presets')?.id)).toBe('group');
   expect(await page.evaluate(()=>window.__createdFields)).toBeUndefined();
   await page.evaluate(()=>setCreateAgentMode('acp'));
-  await expect(page.locator('#ca-acp-name')).toBeVisible();
+  await expect(page.locator('#create-agent-name')).toBeVisible();
   await expect(page.locator('#ca-acp-submit')).toBeEnabled();
   expect(await page.evaluate(()=>AgentCreationPresets.selected('mobile-agent-creation-presets').id)).toBe('personal');
   await page.evaluate(()=>setCreateAgentMode('webot'));
@@ -348,7 +348,7 @@ test('external agent accepts a Chinese name without a manual runtime id and offe
   await expect(page.locator('[data-component-status]')).toContainText('已安装');
   expect(installs).toEqual(['acpx']);
   await page.locator('#ca-acp-platform').selectOption('codex');
-  await page.locator('#ca-acp-name').fill('中文助手');
+  await page.locator('#create-agent-name').fill('中文助手');
   await expect(page.locator('#ca-acp-runtime')).toHaveValue('');
   await page.evaluate(() => mobileSubmitCreateAcpAgent());
   expect(await page.evaluate(() => window.__createdFields)).toEqual({name:'中文助手',platform:'codex',creation_template:'personal',tools:null});
@@ -418,9 +418,10 @@ test('contact creation preserves drafts and offers persona and scoped ClawCross 
     window.startPrivateChat=async()=>true;
     await showCreateAgentModal();setCreateAgentMode('acp');
   });
-  await expect(page.locator('#ca-acp-name')).toBeVisible();
-  await page.locator('#ca-acp-platform').selectOption('qwen');
-  await page.locator('#ca-acp-name').fill('Research');
+  await expect(page.locator('#create-agent-name')).toBeVisible();
+  await page.locator('#create-agent-companion').evaluate(el=>el.closest('details').open=true);
+  await page.locator('#create-agent-companion').selectOption('qwen');
+  await page.locator('#create-agent-name').fill('Research');
   await page.locator('#create-agent-panel-acp .create-agent-advanced > summary').click();
   await page.locator('#ca-acp-persona').fill('Help me research');
   await page.locator('#ca-acp-tools-picker [data-tool-all]').uncheck();
@@ -430,7 +431,7 @@ test('contact creation preserves drafts and offers persona and scoped ClawCross 
   await page.locator('#ca-acp-tools-picker .tool-tag',{hasText:'manage_team'}).click();
   await expect(page.locator('#ca-acp-tools-picker .tool-tag.enabled')).toHaveCount(2);
   await page.evaluate(()=>{setCreateAgentMode('webot');setCreateAgentMode('acp');});
-  await expect(page.locator('#ca-acp-name')).toHaveValue('Research');
+  await expect(page.locator('#create-agent-name')).toHaveValue('Research');
   await expect(page.locator('#ca-acp-persona')).toHaveValue('Help me research');
   expect(await page.evaluate(()=>window.__createdFields)).toBeUndefined();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
@@ -456,7 +457,7 @@ test('small-screen Agent templates prepare safely and chat submits an explicit e
   await expect(choices.locator('button')).toHaveCount(4);
   await choices.locator('[data-preset="chat"]').click();
   await page.evaluate(()=>setCreateAgentMode('acp'));
-  await expect(page.locator('#ca-acp-name')).toBeVisible();
+  await expect(page.locator('#create-agent-name')).toBeVisible();
   await expect(page.locator('#ca-acp-submit')).toBeDisabled();
   await expect(page.locator('#mobile-agent-template-hint')).toContainText('需要 WeBot');
   await choices.locator('[data-preset="admin"]').click();

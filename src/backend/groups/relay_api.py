@@ -4,7 +4,7 @@ from collections import defaultdict, deque
 import hmac
 import time
 
-from fastapi import APIRouter, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Header, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 from groups.relay_store import RelayError, RelayStore
@@ -157,7 +157,7 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
 
     @router.get('/search')
     @router.get('/guest/search')
-    async def search(request: Request, query: str, before_id: int = 0, limit: int = 50, authorization: str | None = Header(None)):
+    async def search(request: Request, query: str = '', before_id: int = 0, limit: int = 50, sender: str = Query('',max_length=160), from_ts: int = Query(0,ge=0,le=253402300799), to_ts: int = Query(0,ge=0,le=253402300799), authorization: str | None = Header(None)):
         credential = token(authorization)
         await invoke(store.detail, credential)
         from groups.relay_store import digest
@@ -165,11 +165,15 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
         guest = request.url.path.endswith('/guest/search')
         if guest:
             await invoke(store.guest_identity, credential)
-        result = await invoke(store.search_messages, credential, query, max(0,before_id), limit)
+        result = await invoke(store.search_messages, credential, query, max(0,before_id), limit, sender=sender,from_ts=from_ts,to_ts=to_ts)
         if guest:
             result['messages'] = [{k:m.get(k) for k in ('id','sender','sender_name','content','created_at','reply_to','reply')}
                                   for m in result['messages']]
         return result
+
+    @router.get('/messages/{message_id}/context')
+    async def message_context(message_id: int, authorization: str | None = Header(None)):
+        return await invoke(store.message_context, token(authorization), message_id)
 
     @router.post('/messages')
     async def post(body: Post, authorization: str | None = Header(None)):

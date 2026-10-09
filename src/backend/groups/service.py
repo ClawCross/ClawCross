@@ -120,14 +120,21 @@ class GroupService:
         self._get(user, conv_id)
         return [message_card(self.conversations, m) for m in self.store.messages(conv_id, after_id=after_id)]
 
-    def search_messages(self, user, conv_id, query, before_id=0, limit=50):
+    def search_messages(self, user, conv_id, query, before_id=0, limit=50, **filters):
         self._get(user, conv_id)
         query = query.strip()
-        if not query or len(query) > 120:
+        if (not query and not any(filters.values())) or len(query) > 120:
             raise GroupError('搜索词需要 1–120 个字符')
-        messages = self.store.search_messages(conv_id, query, before_id, limit)
-        return {'messages':[message_card(self.conversations,m) for m in messages],
-                'next_before_id':messages[-1].id if len(messages) == min(50,max(1,limit)) else 0}
+        limit=min(50,max(1,limit))
+        if filters.get('from_ts') and filters.get('to_ts') and filters['from_ts']>filters['to_ts']: raise GroupError('日期范围无效')
+        messages = self.store.search_messages(conv_id, query, before_id, limit+1, **filters)
+        return {'messages':[message_card(self.conversations,m) for m in messages[:limit]],
+                'next_before_id':messages[limit-1].id if len(messages)>limit else 0}
+
+    def message_context(self, user, conv_id, message_id):
+        self._get(user,conv_id)
+        if not self.store.message(conv_id,message_id): raise GroupError('此群没有这条消息',404)
+        return {'focus_id':message_id,'messages':[message_card(self.conversations,m) for m in self.store.message_context(conv_id,message_id)]}
 
     def update(self, user: str, conv_id: str, *, title: str | None = None, dnd: bool | None = None) -> dict:
         self._get(user, conv_id, manage=True)

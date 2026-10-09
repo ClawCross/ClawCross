@@ -5134,12 +5134,18 @@ body.session-panel-resizing * {
 #chat-box .message-user { background: var(--ui-accent); border-bottom-right-radius: 6px; box-shadow: none; }
 .studio-conversation-switcher { flex: 0 0 48px; min-width: 0; background: var(--ui-canvas); border-right: 1px solid var(--ui-hairline); font-family: var(--ui-font); overflow: hidden; }
 .studio-conversation-switcher[open] { flex-basis: 280px; display: flex; flex-direction: column; }
-.studio-conversation-switcher > summary { display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 14px; cursor: pointer; list-style: none; color: var(--ui-text-2); font-size: 13px; font-weight: 600; }
+.studio-conversation-switcher > summary { display: flex; flex-shrink: 0; align-items: center; gap: 10px; height: 46px; padding: 0 14px; cursor: pointer; list-style: none; color: var(--ui-text-2); font-size: 13px; font-weight: 600; }
 .studio-conversation-switcher > summary::-webkit-details-marker, .studio-more-menu > summary::-webkit-details-marker { display: none; }
 .studio-conversation-switcher > summary .ui-icon { width: 20px; height: 20px; flex-shrink: 0; }
 .studio-conversation-switcher:not([open]) > summary span { display: none; }
 .studio-conversation-switcher > summary:hover { background: var(--ui-surface-2); color: var(--ui-text); }
-.studio-session-rail-body { display: flex; flex-direction: column; min-height: 0; flex: 1; padding: 0 10px 12px; gap: 12px; }
+.studio-session-rail-body { display: flex; flex-direction: column; min-height: 0; flex: 1; padding: 0 10px 12px; gap: 12px; overflow-y: auto; overscroll-behavior: contain; }
+.studio-recent-agents { flex: 0 0 auto; min-height: 0; }
+.studio-recent-agents > summary { list-style: none; cursor: pointer; padding: 8px 10px; }
+.studio-recent-agents > summary::-webkit-details-marker { display: none; }
+.studio-recent-agents > summary::before { content: '›'; display: inline-block; width: 15px; transition: transform .18s ease; }
+.studio-recent-agents[open] > summary::before { transform: rotate(90deg); }
+.studio-recent-agents > .studio-conversation-list { max-height: 250px; overflow-y: auto; }
 .studio-new-conversation { display: flex; align-items: center; justify-content: flex-start; gap: 10px; width: 100%; padding: 10px 12px; border: 1px solid var(--ui-hairline); border-radius: 10px; background: var(--ui-surface); color: var(--ui-text); font: 600 13px var(--ui-font); cursor: pointer; }
 .studio-new-conversation .ui-icon { width: 18px; height: 18px; }
 .studio-new-conversation:hover { border-color: var(--ui-accent); background: var(--ui-accent-tint); }
@@ -5166,7 +5172,13 @@ body.session-panel-resizing * {
 .studio-platform-picker > summary::-webkit-details-marker, .studio-team-tree > summary::-webkit-details-marker, .studio-team-node > summary::-webkit-details-marker { display: none; }
 .studio-platform-picker > summary::before, .studio-team-tree > summary::before, .studio-team-node > summary::before { content: '›'; display: inline-block; width: 15px; transition: transform .18s ease; }
 .studio-platform-picker[open] > summary::before, .studio-team-tree[open] > summary::before, .studio-team-node[open] > summary::before { transform: rotate(90deg); }
-.studio-team-tree { flex: 0 0 auto; max-height: 42%; overflow: auto; border-top: 1px solid var(--ui-hairline); padding-top: 5px; }
+.studio-team-tree { flex: 1 0 120px; min-height: 0; overflow: hidden; border-top: 1px solid var(--ui-hairline); padding-top: 5px; }
+.studio-team-tree[open] { display: flex; flex-direction: column; }
+.studio-conversation-switcher[open]::details-content { display:flex; flex-direction:column; flex:1; min-height:0; overflow:hidden; }
+.studio-team-tree[open]::details-content { display:flex; flex-direction:column; flex:1; min-height:0; overflow:hidden; }
+.studio-team-tree:not([open]) { flex: 0 0 auto; }
+.studio-team-tree > summary { flex-shrink: 0; }
+.studio-team-tree-list { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .studio-team-node > summary { padding: 6px 10px 6px 19px; }
 .studio-team-node.is-default-team > summary { color: var(--ui-accent); font-weight: 700; }
 .studio-team-members { display: grid; gap: 2px; padding: 0 5px 5px 28px; }

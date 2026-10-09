@@ -25,6 +25,24 @@ from webot import runtime_store
 
 
 class RelayStoreTests(unittest.TestCase):
+    def test_history_filters_pagination_and_context_are_group_scoped(self):
+        other=self.join()
+        first=self.store.post(self.host['token'],content='earlier % literal')['message']
+        second=self.store.post(other['token'],content='newer search')['message']
+        sender=second['sender'];stamp=second['created_at']
+        found=self.store.search_messages(self.host['token'],'',sender=sender,from_ts=stamp,to_ts=stamp)
+        self.assertEqual([m['id'] for m in found['messages']],[second['id']])
+        self.assertEqual(found['next_before_id'],0)
+        page=self.store.search_messages(self.host['token'],'',limit=1,from_ts=1)
+        self.assertEqual(page['next_before_id'],second['id'])
+        next_page=self.store.search_messages(self.host['token'],'',before_id=page['next_before_id'],limit=1,from_ts=1)
+        self.assertEqual(next_page['next_before_id'],0)
+        self.assertEqual(self.store.search_messages(self.host['token'],'%')['messages'][0]['id'],first['id'])
+        context=self.store.message_context(self.host['token'],first['id'])
+        self.assertEqual([m['id'] for m in context['messages']],[first['id'],second['id']])
+        unrelated=self.store.create(title='Other',node_id='separate',user_id='eve',display_name='Eve')
+        with self.assertRaises(RelayError):self.store.message_context(unrelated['token'],first['id'])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

@@ -298,6 +298,17 @@ def create_agents_router(
             cards = [agent_card(a) for a in agents]
         return {"object": "list", "data": list(cards)}
 
+    @router.get('/v1/agents/activity')
+    async def agent_activity(authorization: str | None = Header(None)):
+        """Live states without adapter probes, history reads or membership scans."""
+        from agents.runtime import Runtime
+        states = []
+        for agent in store.list(user_of(authorization)):
+            runtime = gateway.runtime(agent)
+            state = 'unknown' if type(runtime).is_busy is Runtime.is_busy else ('running' if runtime.is_busy(agent) else 'idle')
+            states.append({'agent_id':agent.agent_id, 'name':agent.name, 'state':state})
+        return {'data':states}
+
     @router.get('/v1/agents/model-profiles')
     async def list_model_profiles(authorization: str | None = Header(None)):
         from agents.model_profiles import catalog

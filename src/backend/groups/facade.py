@@ -66,11 +66,15 @@ class GroupFacade:
             return self.client.messages(user, gid, after_id)
         return self.rpc(user, 'GET', '/' + quote(gid, safe='') + '/messages', params={'after_id': after_id})['messages']
 
-    def search_messages(self, user, gid, query, before_id=0, limit=50):
+    def search_messages(self, user, gid, query, before_id=0, limit=50, **filters):
         if gid.startswith('rg_'):
-            return self.client.search_messages(user, gid, query, before_id, limit)
+            return self.client.search_messages(user, gid, query, before_id, limit, **filters)
         return self.rpc(user, 'GET', '/' + quote(gid, safe='') + '/search',
-                        params={'query':query,'before_id':before_id,'limit':limit})
+                        params={'query':query,'before_id':before_id,'limit':limit,**filters})
+
+    def message_context(self,user,gid,message_id):
+        if gid.startswith('rg_'): return self.client.message_context(user,gid,message_id)
+        return self.rpc(user,'GET','/'+quote(gid,safe='')+f'/messages/{message_id}/context')
 
     def update(self, user, gid, *, title=None, dnd=None):
         fields = {k: v for k, v in {'title': title, 'dnd': dnd}.items() if v is not None}
@@ -113,7 +117,10 @@ class GroupFacade:
 
     def typing(self, user, gid):
         if gid.startswith('rg_'):
-            return {'typing': [], 'names': []}
+            card = self.client.card(self.client.require(user, gid))
+            active = [m for m in card['members'] if m.get('agent') and m['agent']['status']['state'] == 'running']
+            return {'typing':[m['name'] for m in active], 'names':[m['name'] for m in active],
+                    'agents':[{'agent_id':m['agent']['agent_id'], 'name':m['name'], 'state':'running'} for m in active]}
         return self.rpc(user, 'GET', '/' + quote(gid, safe='') + '/typing')
 
     def agents_available(self, user, gid):

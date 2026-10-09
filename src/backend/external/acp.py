@@ -50,6 +50,7 @@ class AcpRuntime(InboxRuntime):
         super().__init__(store)
         self._events = {}
         self._sequence = 0
+        self._control_stopping = set()
 
     def events(self, agent, after=0):
         events = self._events.get((agent.owner, agent.agent_id), ())
@@ -87,6 +88,8 @@ class AcpRuntime(InboxRuntime):
                 try:
                     reply = await self.ask(agent, message, context=context, **kwargs)
                     await queue.put(('reply', reply))
+                except asyncio.CancelledError:
+                    await queue.put(('reply', AgentReply(ok=False, error='Agent turn cancelled')))
                 except Exception as exc:
                     await queue.put(('reply', AgentReply(ok=False, error=str(exc))))
 
@@ -134,22 +137,19 @@ class AcpRuntime(InboxRuntime):
         return model, connector_file(agent), native_config
 
     async def ask(self, agent: Agent, msg: AgentMessage, *, context, mode, enabled_tools, response_format, timeout) -> AgentReply:
-        async with session.turn(self._store, agent) as current:
-            if current.runtime.get('native_resume_id') and current.runtime.get('acp_cwd'):
-                from webot.workspace import set_cli_workspace
-                set_cli_workspace(current.owner, current.agent_id, current.runtime['acp_cwd'])
-            if context.get('_acp_turn_started'):
-                context['_acp_turn_started'].set()
-            try:
+        try:
+            async with session.turn(self._store, agent) as current:
+                if current.runtime.get('native_resume_id') and current.runtime.get('acp_cwd'):
+                    from webot.workspace import set_cli_workspace
+                    set_cli_workspace(current.owner, current.agent_id, current.runtime['acp_cwd'])
+                if context.get('_acp_turn_started'):
+                    context['_acp_turn_started'].set()
                 return await self._ask_turn(current, msg, context=context, mode=mode, enabled_tools=enabled_tools,
                                             response_format=response_format, timeout=timeout)
-            except asyncio.CancelledError:
-                # Still holding the turn lock: cancel cannot hit the next request.
-                try:
-                    await self._control(current, 'cancel')
-                except (ControlError, RuntimeError):
-                    pass
-                raise
+        except asyncio.CancelledError:
+            if (agent.owner, agent.agent_id) in self._control_stopping:
+                return AgentReply(ok=False, error='Agent turn cancelled')
+            raise
 
     async def _ask_turn(self, agent: Agent, msg: AgentMessage, *, context, mode, enabled_tools, response_format, timeout) -> AgentReply:
         from external.acpx import AcpxError, acpx_options_from_agent, get_acpx_adapter
@@ -198,6 +198,13 @@ class AcpRuntime(InboxRuntime):
                         on_event=on_event, **run,
                         **({'resume_session_id': agent.runtime['native_resume_id']} if agent.runtime.get('native_resume_id') else {}),
                     )
+            except asyncio.CancelledError:
+                # Cancel the native turn while its ClawCross lock is still held.
+                try:
+                    await self._control(agent, 'cancel')
+                except (ControlError, RuntimeError):
+                    pass
+                raise
             except (AcpxError, RuntimeError) as exc:
                 return session.Sent(ok=False, error=str(exc))
             return session.Sent(ok=True, content=trace.text or "", raw={
@@ -239,10 +246,40 @@ class AcpRuntime(InboxRuntime):
         return session.is_busy(self._store, agent)
 
     async def control(self, agent: Agent, action: str) -> dict[str, Any]:
+        async with session.control_lock(self._store,agent):
+            return await self._control_action(agent,action)
+
+    async def _control_action(self, agent, action):
         if action == "reset":
-            async with session.turn(self._store, agent) as current:
-                return await self._control(current, action)
+            key = (agent.owner, agent.agent_id)
+            self._inbox_paused.add(key)
+            try:
+                await self._stop_turn(agent)
+                async with session.turn(self._store, agent,cancellable=False) as current:
+                    return await self._control(current, action)
+            finally:
+                self._inbox_paused.discard(key)
+        if action == 'cancel' and session.request_tasks(self._store,agent):
+            await self._stop_turn(agent)
+            return {'cancel': True}
         return await self._control(agent, action)
+
+    async def _stop_turn(self, agent):
+        current = asyncio.current_task()
+        tasks = session.request_tasks(self._store,agent) | {self._inbox_tasks.get((agent.owner,agent.agent_id))}
+        tasks.discard(None)
+        tasks.discard(current)
+        key = (agent.owner, agent.agent_id)
+        self._control_stopping.add(key)
+        for task in tasks:
+            task.cancel()
+        try:
+            if tasks:
+                await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), 15)
+        except TimeoutError as exc:
+            raise ControlError('Agent cancellation did not finish; retry after its native turn stops') from exc
+        finally:
+            self._control_stopping.discard(key)
 
     async def _control(self, agent: Agent, action: str) -> dict[str, Any]:
         from external.acpx import AcpxError
@@ -283,10 +320,25 @@ class AcpRuntime(InboxRuntime):
                 for item in entries[-limit:] if isinstance(item, dict) and item.get('role') in {'user', 'assistant'}]
 
     async def destroy(self, agent: Agent) -> None:
-        acpx, key = adapter(agent), session.runtime_session(agent)
-        await acpx.close_session(
-            tool=agent.platform, session_key=key, acpx_session=acpx.to_acpx_session_name(tool=agent.platform, session_key=key),
-            **command_options(agent, long=False),
-        )
-        await session.drop_log(agent)
-        self._events.pop((agent.owner, agent.agent_id), None)
+        async with session.control_lock(self._store,agent):
+            return await self._destroy_owned(agent)
+
+    async def _destroy_owned(self, agent):
+        identity = (agent.owner, agent.agent_id)
+        self._inbox_paused.add(identity)
+        try:
+            was_busy = self.is_busy(agent)
+            await self._stop_turn(agent)
+            async with session.turn(self._store, agent,cancellable=False) as current:
+                if was_busy or current.runtime.get('acp_cwd') or current.runtime.get('native_resume_id'):
+                    acpx, key = adapter(current), session.runtime_session(current)
+                    await acpx.close_session(tool=current.platform, session_key=key,
+                        acpx_session=acpx.to_acpx_session_name(tool=current.platform, session_key=key),
+                        **command_options(current, long=False))
+                await session.drop_log(current)
+            from external.tool_bridge import revoke_connector
+            revoke_connector(agent)
+            self._events.pop(identity, None)
+        except Exception:
+            self._inbox_paused.discard(identity)
+            raise

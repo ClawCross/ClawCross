@@ -225,8 +225,8 @@ class AgentGateway:
             await self.runtime(agent).destroy(agent)
         except Exception as exc:
             logger.exception("cleanup of %s failed", agent.agent_id)
-            if agent.driver == WEBOT:
-                raise ControlError(f"WeBot cleanup failed: {exc}") from exc
+            if agent.driver in (WEBOT, ACPX):
+                raise ControlError(f"{agent.platform} cleanup failed: {exc}") from exc
 
 
 _GATEWAY: AgentGateway | None = None

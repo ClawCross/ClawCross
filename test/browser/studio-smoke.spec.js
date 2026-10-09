@@ -1,6 +1,22 @@
 const { test, expect } = require('@playwright/test');
 const creation=require('./agent-creation-fixture');
 
+test('Studio recent Agents collapse and long Team membership scrolls independently',async({page})=>{
+  await page.setViewportSize({width:1200,height:720});
+  const agents=Array.from({length:90},(_,index)=>({agent_id:'scroll-'+index,name:'伙伴 '+index,platform:'webot',settings:{},status:{state:'idle'}}));
+  await stubStudioNetwork(page,{}, {agents});
+  await page.route(/\/v1\/teams(\?.*)?$/,route=>route.fulfill({json:{data:[{team:'Long team',members:agents.map(agent=>({agent}))}]}}));
+  await page.goto('/studio');await page.locator('.studio-conversation-switcher > summary').click();
+  await page.locator('#studio-recent-agents > summary').click();
+  await expect(page.locator('#studio-conversation-list')).toBeHidden();
+  const team=page.locator('.studio-team-node[data-team="Long team"]');await team.locator('summary').click();
+  const list=page.locator('#studio-team-agent-tree-list');
+  expect(await list.evaluate(el=>el.scrollHeight>el.clientHeight)).toBe(true);
+  await team.locator('.studio-team-agent').last().scrollIntoViewIfNeeded();
+  await expect(team.locator('.studio-team-agent').last()).toBeVisible();
+  expect(await list.evaluate(el=>el.scrollTop>0)).toBe(true);
+});
+
 test('recent Agents stop at five and Team branches remain expanded after member selection',async({page})=>{
   const agents=Array.from({length:7},(_,index)=>({agent_id:'recent-'+index,name:'Agent '+index,platform:'webot',
     settings:{title:'Task '+index,teams:index===0?['Project']:[]},updated_at:1790000000+index,

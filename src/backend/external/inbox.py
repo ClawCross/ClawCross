@@ -46,12 +46,13 @@ class InboxRuntime(Runtime):
         self._store = store
         self._inbox_tasks = {}
         self._inbox_callbacks = {}
+        self._inbox_paused = set()
 
     async def inbox(self, agent, msg, *, context, mode, on_complete):
         record = create_inbox_message(
             agent.owner, source_session=msg.sender or "system", target_session=agent.agent_id,
             target_agent_id=agent.agent_id, content=msg.text, title=msg.summary,
-            source_label=str(context.get("source_label") or ""),
+            source_label=str(context.get("source_label") or msg.sender or "system"),
             message_id=str(context.get("delivery_id") or "") or None,
             metadata={"source_user": context.get("source_user") or agent.owner,
                       "context": context, "mode": mode, "instructions": msg.instructions,
@@ -69,6 +70,8 @@ class InboxRuntime(Runtime):
 
     def resume_inbox(self, agent):
         key = (agent.owner, agent.agent_id)
+        if key in self._inbox_paused:
+            return
         task = self._inbox_tasks.get(key)
         if task is None or task.done():
             task = asyncio.create_task(self._drain_inbox(agent))
@@ -120,6 +123,8 @@ class InboxRuntime(Runtime):
                         mark_inbox_delivered(agent.owner, [item.message_id])
                     await self._settle(item.message_id, reply)
         except asyncio.CancelledError:
+            for item in list_inbox_messages(*key, status="queued", limit=None):
+                await self._settle(item.message_id, AgentReply(ok=False, error="Agent turn cancelled"))
             raise
         except Exception as exc:
             logger.exception("External inbox delivery failed for %s", key)

@@ -1476,6 +1476,17 @@ await fn(process.argv[2]);'''
         # A legitimate tool-only turn has no assistant text. Protocol traffic
         # includes the incoming prompt and must never become the reply.
         assembled = extracted_text if extracted_text is not None else (legacy or output.strip())
+        # Some native Codex builds serialize provider errors as message chunks
+        # and still end the ACP turn successfully. The native metadata warning
+        # identifies this transport case; ordinary user-requested JSON is text.
+        if not tool_uses and assembled.startswith('Warning: Model metadata'):
+            start = assembled.find('{')
+            try:
+                failure = json.loads(assembled[start:]) if start >= 0 else {}
+            except ValueError:
+                failure = {}
+            if isinstance(failure, dict) and failure.get('type') == 'error' and isinstance(failure.get('error'), dict):
+                raise AcpxError(str(failure['error'].get('message') or 'Native provider request failed'))
         return AcpxPromptTrace(
             text=assembled,
             message_chunks=message_parts,

@@ -17,6 +17,16 @@ _tokens = {}
 _active = {}
 
 
+def revoke_connector(agent):
+    principal = (agent.owner, agent.agent_id)
+    for token, target in list(_tokens.items()):
+        if target == principal:
+            _tokens.pop(token, None)
+    key = hashlib.sha256(f'{agent.owner}\0{agent.agent_id}'.encode()).hexdigest()
+    for suffix in ('.json', '.token'):
+        (STATE_DIR / 'acp-connectors' / (key + suffix)).unlink(missing_ok=True)
+
+
 def connector_file(agent):
     key = hashlib.sha256(f'{agent.owner}\0{agent.agent_id}'.encode()).hexdigest()
     directory = STATE_DIR / 'acp-connectors'

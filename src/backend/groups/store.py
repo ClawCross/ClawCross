@@ -288,12 +288,18 @@ class ConversationStore:
         found = self.messages(conv_id, limit=1, latest=True)
         return found[0] if found else None
 
-    def search_messages(self, conv_id: str, query: str, before_id: int = 0, limit: int = 50) -> list[Message]:
+    def search_messages(self, conv_id: str, query: str, before_id: int = 0, limit: int = 50, *, sender='', from_ts=0, to_ts=0) -> list[Message]:
         pattern = '%' + query.replace('\\','\\\\').replace('%','\\%').replace('_','\\_') + '%'
         rows = self._run("""SELECT * FROM conversation_messages WHERE conv_id=? AND (?=0 OR id<?)
-                           AND content LIKE ? ESCAPE '\\' ORDER BY id DESC LIMIT ?""",
-                         (conv_id,before_id,before_id,pattern,min(50,max(1,limit))))
+                           AND (?='' OR content LIKE ? ESCAPE '\\' OR sender LIKE ? ESCAPE '\\')
+                           AND (?='' OR sender=?) AND (?=0 OR created_at>=?) AND (?=0 OR created_at<=?) ORDER BY id DESC LIMIT ?""",
+                         (conv_id,before_id,before_id,query,pattern,pattern,sender,sender,from_ts,from_ts,to_ts,to_ts,min(51,max(1,limit))))
         return [self._message(row) for row in rows]
+
+    def message_context(self, conv_id, message_id):
+        before=self._run('SELECT * FROM conversation_messages WHERE conv_id=? AND id<? ORDER BY id DESC LIMIT 15',(conv_id,message_id))
+        after=self._run('SELECT * FROM conversation_messages WHERE conv_id=? AND id>=? ORDER BY id LIMIT 16',(conv_id,message_id))
+        return [self._message(row) for row in [*reversed(before),*after]]
 
     def message_count(self, conv_id: str) -> int:
         return self._run("SELECT COUNT(*) FROM conversation_messages WHERE conv_id = ?", (conv_id,))[0][0]

@@ -70,6 +70,13 @@
 .gn-qr[hidden],.gn-qr-caption[hidden],.gn-btn[hidden] { display:none; }
 .gn-search-form { display:flex; gap:8px; }
 .gn-search-form .gn-input { flex:1; }
+.gn-search-filters { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
+.gn-search-filter { display:grid; gap:5px; font-size:12px; color:var(--ui-text-2); min-width:0; }
+.gn-search-filter:first-child { grid-column:1 / -1; }
+.gn-search-filter .gn-input { box-sizing:border-box; min-width:0; width:100%; }
+.gn-search-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+.gn-search-result mark { background:#fcdf90; color:inherit; border-radius:3px; }
+.gn-search-result.gn-message-focus { border:1px solid var(--ui-accent); background:var(--ui-accent-tint); }
 .gn-search-results { display:grid; gap:12px; }
 .gn-search-result { padding:12px; border-radius:12px; background:var(--ui-surface-2); overflow-wrap:anywhere; }
 .gn-search-result small { display:block; color:var(--ui-text-2); margin:4px 0; }

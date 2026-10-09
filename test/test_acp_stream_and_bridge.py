@@ -24,6 +24,33 @@ def packet(kind, **data):
 
 
 class ACPStreamTests(unittest.IsolatedAsyncioTestCase):
+    async def test_native_provider_failure_is_not_a_successful_answer(self):
+        warning='Warning: Model metadata for `unsupported` not found. Defaulting to fallback metadata.\n\n'
+        failure={'type':'error','status':400,'error':{'type':'invalid_request_error','message':'unsupported account model'}}
+        output=json.dumps({'jsonrpc':'2.0',**packet('agent_message_chunk',content={'type':'text','text':warning+json.dumps(failure)})})
+        with self.assertRaisesRegex(AcpxError,'unsupported account model'):
+            AcpxAdapter._extract_trace(output)
+        ordinary=json.dumps({'jsonrpc':'2.0',**packet('agent_message_chunk',content={'type':'text','text':json.dumps(failure)})})
+        self.assertEqual(AcpxAdapter._extract_trace(ordinary).text,json.dumps(failure))
+
+    async def test_reset_stops_a_busy_turn_before_resetting_the_native_session(self):
+        with TemporaryDirectory() as tmp:
+            store=AgentStore(Path(tmp)/'agents.db');agent=store.create('control-test',driver=ACPX,config={'platform':'codex'})
+            runtime=AcpRuntime(store);started=asyncio.Event()
+            async def blocked(*args,**kwargs):
+                started.set();await asyncio.Event().wait()
+            runtime._ask_turn=blocked;runtime._control=AsyncMock(return_value={'reset':True})
+            task=asyncio.create_task(runtime.ask(agent,AgentMessage(text='work'),context={},mode='readonly',enabled_tools=None,response_format=None,timeout=None))
+            await started.wait()
+            queued=asyncio.create_task(runtime.ask(agent,AgentMessage(text='next'),context={},mode='readonly',enabled_tools=None,response_format=None,timeout=None))
+            await asyncio.sleep(0)
+            self.assertTrue(runtime.is_busy(agent))
+            self.assertEqual(await asyncio.wait_for(runtime.control(agent,'reset'),1),{'reset':True})
+            self.assertEqual((await task).error,'Agent turn cancelled')
+            self.assertEqual((await queued).error,'Agent turn cancelled')
+            self.assertFalse(runtime.is_busy(agent))
+            self.assertFalse(runtime._inbox_paused)
+
     async def test_old_protocol_error_is_filtered_only_for_presentation(self):
         from external import session
         with TemporaryDirectory() as tmp:

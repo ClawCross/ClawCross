@@ -523,20 +523,36 @@ class RelayStore:
                               (conn['group_id'], after)).fetchall()
             return [{**json.loads(r['body'])['message'], 'id': r['id']} for r in reversed(rows)]
 
-    def search_messages(self, token: str, query: str, before_id: int = 0, limit: int = 50) -> dict:
+    def search_messages(self, token: str, query: str, before_id: int = 0, limit: int = 50, *, sender='', from_ts=0, to_ts=0) -> dict:
         query = query.strip()
-        if not query or len(query) > 120:
+        if (not query and not (sender or from_ts or to_ts)) or len(query) > 120:
             raise RelayError('搜索词需要 1–120 个字符')
+        if from_ts < 0 or to_ts < 0 or (from_ts and to_ts and from_ts > to_ts):
+            raise RelayError('日期范围无效')
         limit = min(50, max(1, limit))
         with self.db() as db:
             conn = self.auth(db, token)
             pattern = '%' + query.replace('\\','\\\\').replace('%','\\%').replace('_','\\_') + '%'
             rows = db.execute("""SELECT id,body FROM relay_events WHERE group_id=? AND kind='message'
-                AND (?=0 OR id<?) AND (json_extract(body,'$.message.content') LIKE ? ESCAPE '\\'
-                OR json_extract(body,'$.message.sender_name') LIKE ? ESCAPE '\\') ORDER BY id DESC LIMIT ?""",
-                (conn['group_id'],before_id,before_id,pattern,pattern,limit)).fetchall()
-            return {'messages':[{**json.loads(row['body'])['message'],'id':row['id']} for row in rows],
-                    'next_before_id':rows[-1]['id'] if len(rows) == limit else 0}
+                AND (?=0 OR id<?) AND (?='' OR json_extract(body,'$.message.content') LIKE ? ESCAPE '\\'
+                OR json_extract(body,'$.message.sender_name') LIKE ? ESCAPE '\\')
+                AND (?='' OR json_extract(body,'$.message.sender')=?)
+                AND (?=0 OR json_extract(body,'$.message.created_at')>=?)
+                AND (?=0 OR json_extract(body,'$.message.created_at')<=?) ORDER BY id DESC LIMIT ?""",
+                (conn['group_id'],before_id,before_id,query,pattern,pattern,sender,sender,from_ts,from_ts,to_ts,to_ts,limit+1)).fetchall()
+            found=rows[:limit]
+            return {'messages':[{**json.loads(row['body'])['message'],'id':row['id']} for row in found],
+                    'next_before_id':found[-1]['id'] if len(rows)>limit else 0}
+
+    def message_context(self, token, message_id):
+        with self.db() as db:
+            conn=self.auth(db,token)
+            args=(conn['group_id'],message_id)
+            focus=db.execute("SELECT id FROM relay_events WHERE group_id=? AND id=? AND kind='message'",args).fetchone()
+            if not focus: raise RelayError('此群没有这条消息',404)
+            before=db.execute("SELECT id,body FROM relay_events WHERE group_id=? AND id<? AND kind='message' ORDER BY id DESC LIMIT 15",args).fetchall()
+            after=db.execute("SELECT id,body FROM relay_events WHERE group_id=? AND id>=? AND kind='message' ORDER BY id LIMIT 16",args).fetchall()
+            return {'focus_id':message_id,'messages':[{**json.loads(row['body'])['message'],'id':row['id']} for row in [*reversed(before),*after]]}
 
     def acknowledge(self, token: str, cursor: int):
         with self.db() as db:

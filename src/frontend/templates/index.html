@@ -317,8 +317,10 @@
                 <div id="oc-internal-session-row" hidden>
                     <select id="oc-internal-session-pick" hidden tabindex="-1"><option value=""></option></select>
                 </div>
-                <div class="studio-session-list-heading" data-i18n="studio_history">最近 Agent</div>
-                <div id="studio-conversation-list" class="studio-conversation-list" aria-label="Recent Agents"></div>
+                <details id="studio-recent-agents" class="studio-recent-agents" open>
+                    <summary class="studio-session-list-heading" data-i18n="studio_history">最近 Agent</summary>
+                    <div id="studio-conversation-list" class="studio-conversation-list" aria-label="Recent Agents"></div>
+                </details>
                 <details id="studio-team-agent-tree" class="studio-team-tree" open ontoggle="if(this.open && typeof renderStudioTeamTree === 'function') renderStudioTeamTree(true)">
                     <summary data-i18n="teams">Teams</summary>
                     <div id="studio-team-agent-tree-list" class="studio-team-tree-list"></div>

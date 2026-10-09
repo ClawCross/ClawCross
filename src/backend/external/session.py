@@ -25,6 +25,9 @@ logger = logging.getLogger(__name__)
 from common.runtime_paths import PROJECT_ROOT  # noqa: E402
 
 _turn_locks = weakref.WeakKeyDictionary()
+_turn_tasks = weakref.WeakKeyDictionary()
+_pending_turns = weakref.WeakKeyDictionary()
+_control_locks = weakref.WeakKeyDictionary()
 
 
 def runtime_session(agent: Agent) -> str:
@@ -87,13 +90,42 @@ def delivered_context(agent: Agent) -> dict[str, str]:
 
 
 @asynccontextmanager
-async def turn(store: AgentStore | None, agent: Agent):
+async def turn(store: AgentStore | None, agent: Agent, *, cancellable=True):
     """Serialize a session's turns and read its persisted negotiation state afresh."""
     selected_store = store or get_store()
     locks = _turn_locks.setdefault(asyncio.get_running_loop(), {})
     key = (selected_store.db_path, agent.owner, agent.agent_id)
-    async with locks.setdefault(key, asyncio.Lock()):
-        yield selected_store.require(agent.owner, agent.agent_id)
+    task = asyncio.current_task()
+    pending = _pending_turns.setdefault(asyncio.get_running_loop(), {}).setdefault(key,set())
+    if cancellable: pending.add(task)
+    try:
+        if cancellable:
+            async with control_lock(store,agent): pass
+        async with locks.setdefault(key, asyncio.Lock()):
+            tasks = _turn_tasks.setdefault(asyncio.get_running_loop(), {})
+            tasks[key] = task
+            try:
+                yield selected_store.require(agent.owner, agent.agent_id)
+            finally:
+                if tasks.get(key) is task: tasks.pop(key, None)
+    finally:
+        pending.discard(task)
+
+
+def control_lock(store, agent):
+    selected = store or get_store()
+    key=(selected.db_path,agent.owner,agent.agent_id)
+    return _control_locks.setdefault(asyncio.get_running_loop(),{}).setdefault(key,asyncio.Lock())
+
+
+def request_tasks(store, agent):
+    selected=store or get_store()
+    return set(_pending_turns.get(asyncio.get_running_loop(),{}).get((selected.db_path,agent.owner,agent.agent_id),()))
+
+
+def running_task(store: AgentStore | None, agent: Agent):
+    selected = store or get_store()
+    return _turn_tasks.get(asyncio.get_running_loop(), {}).get((selected.db_path, agent.owner, agent.agent_id))
 
 
 def is_busy(store: AgentStore | None, agent: Agent) -> bool:

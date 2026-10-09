@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from agents.routes import authenticate
@@ -109,8 +109,12 @@ def create_groups_router(
         return {"messages": call(service.messages, user_of(authorization), conv_id, after_id)}
 
     @router.get('/groups/{conv_id}/search')
-    async def search_messages(conv_id: str, query: str, before_id: int = 0, limit: int = 50, authorization: str | None = Header(None)):
-        return call(service.search_messages, user_of(authorization), conv_id, query, max(0,before_id), limit)
+    async def search_messages(conv_id: str, query: str = '', before_id: int = 0, limit: int = 50, sender: str = Query('',max_length=160), from_ts: int = Query(0,ge=0,le=253402300799), to_ts: int = Query(0,ge=0,le=253402300799), authorization: str | None = Header(None)):
+        return call(service.search_messages, user_of(authorization), conv_id, query, max(0,before_id), limit, sender=sender,from_ts=from_ts,to_ts=to_ts)
+
+    @router.get('/groups/{conv_id}/messages/{message_id}/context')
+    async def message_context(conv_id: str, message_id: int, authorization: str | None = Header(None)):
+        return call(service.message_context,user_of(authorization),conv_id,message_id)
 
     @router.post("/groups/{conv_id}/messages")
     async def post_message(

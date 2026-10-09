@@ -338,9 +338,16 @@ class GroupClient:
             principal = (member['agent_id'] or 'u:' + row['owner']) if local else member['principal']
             agent = None
             if member['is_agent']:
+                state = 'remote' if not local else 'idle'
+                original = self.agents.get(row['owner'], member['agent_id']) if local else None
+                busy = getattr(self.gateway, 'is_busy', None)
+                if original and callable(busy):
+                    from agents.store import ACPX, WEBOT
+                    if original.driver in (ACPX, WEBOT):
+                        state = 'running' if busy(original) else 'idle'
                 agent = {'agent_id': principal, 'name': member['name'], 'platform': member['platform'],
                          'remote': not local, 'settings': {'persona': '', 'tools': [], 'teams': []},
-                         'status': {'state': 'remote' if not local else 'idle', 'actions': []}}
+                         'status': {'state': state, 'actions': []}}
             members.append({**member, 'principal': principal, 'agent': agent, 'nickname': '', 'remote': not local,
                             'is_owner': not member['is_agent'] and member['connection_id'] == group.get('owner'),
                             'can_remove': (group.get('owner') == row['connection_id'] and member['connection_id'] != group.get('owner'))
@@ -373,9 +380,14 @@ class GroupClient:
                            'mentions': [mapping.get(m, m) for m in message.get('mentions', [])]})
         return result
 
-    def search_messages(self, owner, alias, query, before_id=0, limit=50):
+    def search_messages(self, owner, alias, query, before_id=0, limit=50, **filters):
         row = self.require(owner, alias)
-        return self.request(row, 'GET', '/search', params={'query':query,'before_id':before_id,'limit':limit})
+        if filters.get('sender'):
+            filters['sender']=self.principal(row,filters['sender'])
+        return self.request(row, 'GET', '/search', params={'query':query,'before_id':before_id,'limit':limit,**filters})
+
+    def message_context(self, owner, alias, message_id):
+        return self.request(self.require(owner,alias),'GET',f'/messages/{message_id}/context')
 
     def memberships(self, owner, aid):
         result = []

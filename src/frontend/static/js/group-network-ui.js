@@ -138,24 +138,50 @@
     search(gid) {
       const view = dialog('查找聊天记录','搜索本群全部历史消息');
       const form = el('form','gn-search-form');
-      const input = el('input','gn-input'); input.type='search'; input.required=true; input.maxLength=120; input.placeholder='关键词或成员名字'; input.setAttribute('aria-label','搜索聊天记录');
+      const input = el('input','gn-input'); input.type='search'; input.maxLength=120; input.placeholder='搜索聊天内容'; input.setAttribute('aria-label','搜索聊天记录');
       const submit = el('button','gn-btn gn-btn-primary','搜索'); submit.type='submit';
-      form.append(input,submit);
+      const main=el('div','gn-search-form');main.append(input,submit);
+      const filters=el('div','gn-search-filters');
+      const sender=el('select','gn-input');sender.setAttribute('aria-label','按成员筛选');sender.append(new Option('全部成员',''));
+      const from=el('input','gn-input');from.type='date';from.setAttribute('aria-label','开始日期');
+      const to=el('input','gn-input');to.type='date';to.setAttribute('aria-label','结束日期');
+      for(const [label,field] of [['成员',sender],['开始日期',from],['结束日期',to]]){const row=el('label','gn-search-filter');row.append(el('span','',label),field);filters.append(row);}
+      form.append(main,filters);
+      request('GET','/'+encodeURIComponent(gid)).then(group=>{
+        if(!view.root.isConnected)return;
+        for(const member of group.members || [])sender.append(new Option(member.name || member.principal,member.principal));
+      }).catch(()=>{});
       const results = el('div','gn-search-results');
-      let before=0, query='', generation=0;
+      let before=0, query='', generation=0,criteria={};
       const messages = new Map();
       GroupMessageMenu.bind(results, id => messages.get(id), message => { view.done(); if(window.setGroupReply) window.setGroupReply(message); });
       const more = button('更早的结果','secondary',()=>search(false)); more.hidden=true;
       async function search(reset) {
         const requestGeneration = reset ? ++generation : generation;
-        if (reset) {query=input.value.trim();before=0;results.replaceChildren();messages.clear();more.hidden=true;}
-        if (!query) return;
+        if (reset) {
+          query=input.value.trim();before=0;results.replaceChildren();messages.clear();more.hidden=true;
+          const start=from.value?new Date(from.value+'T00:00:00'):null;
+          const end=to.value?new Date(to.value+'T00:00:00'):null;if(end)end.setDate(end.getDate()+1);
+          criteria={sender:sender.value,from_ts:start?Math.floor(start.getTime()/1000):0,to_ts:end?Math.floor(end.getTime()/1000)-1:0};
+        }
+        if (!query && !Object.values(criteria).some(Boolean)){view.status.textContent='输入关键词，或选择成员、日期。';return;}
+        if(criteria.from_ts && criteria.to_ts && criteria.from_ts>criteria.to_ts){view.status.textContent='结束日期不能早于开始日期。';return;}
         await busy(reset ? submit : more, view.status,'正在查找…',async()=>{
-          const data = await request('GET','/' + encodeURIComponent(gid) + '/search?' + new URLSearchParams({query,before_id:before,limit:50}));
+          const data = await request('GET','/' + encodeURIComponent(gid) + '/search?' + new URLSearchParams({query,before_id:before,limit:50,...criteria}));
           if (!view.root.isConnected || generation !== requestGeneration) return;
           for (const message of data.messages || []) {
+            if(messages.has(message.id))continue;
             const row=el('article','gn-search-result');
-            row.append(el('strong','',message.sender_name || message.sender),el('small','',new Date(message.created_at * 1000).toLocaleString()),el('p','',message.content));
+            const snippet=el('p');
+            const content=String(message.content || '');const index=query?content.toLocaleLowerCase().indexOf(query.toLocaleLowerCase()):-1;
+            const start=Math.max(0,index-75),end=Math.min(content.length,Math.max(start+300,index+query.length+75));
+            if(start)snippet.append(document.createTextNode('…'));
+            if(index>=0){snippet.append(document.createTextNode(content.slice(start,index)),el('mark','',content.slice(index,index+query.length)),document.createTextNode(content.slice(index+query.length,end)));}
+            else snippet.append(document.createTextNode(content.slice(start,end)));
+            if(end<content.length)snippet.append(document.createTextNode('…'));
+            const actions=el('div','gn-search-actions');
+            actions.append(button('查看上下文','secondary',()=>window.GroupNetworkUI.context(gid,message,view.done)),button('引用回复','quiet',()=>{view.done();window.setGroupReply?.({...message,group_id:gid});}));
+            row.append(el('strong','',message.sender_name || message.sender),el('small','',new Date(message.created_at * 1000).toLocaleString()),snippet,actions);
             messages.set(message.id,message); row.dataset.groupMessageId=message.id;row.tabIndex=0;
             results.append(row);
           }
@@ -165,6 +191,21 @@
       }
       form.addEventListener('submit',event=>{event.preventDefault();search(true);});
       view.body.append(form,results,more);input.focus();
+    },
+
+    async context(gid,message,closeSearch) {
+      const view=dialog('聊天记录','查看这条消息前后的对话');
+      try {
+        const data=await request('GET','/'+encodeURIComponent(gid)+'/messages/'+message.id+'/context');
+        if(!view.root.isConnected)return;
+        for(const item of data.messages || []){
+          const row=el('article','gn-search-result');row.dataset.groupMessageId=item.id;
+          if(Number(item.id)===Number(message.id))row.classList.add('gn-message-focus');
+          row.append(el('strong','',item.sender_name || item.sender),el('small','',new Date(item.created_at*1000).toLocaleString()),el('p','',item.content));
+          row.append(button('引用回复','quiet',()=>{view.done();closeSearch?.();window.setGroupReply?.({...item,group_id:gid});}));view.body.append(row);
+        }
+        view.body.querySelector('.gn-message-focus')?.scrollIntoView({block:'center'});
+      } catch(error){view.status.textContent=error.message;view.status.classList.add('is-error');}
     },
 
     join() {

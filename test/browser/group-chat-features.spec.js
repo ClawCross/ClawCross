@@ -1,5 +1,44 @@
 const {test,expect}=require('@playwright/test');
 
+test('visible Agent activity uses gateway states and clears the running marker',async({page})=>{
+  await mobileSetup(page);let running=true;
+  await page.route('**/v1/agents/activity',route=>route.fulfill({json:{data:[{agent_id:'activity-agent',state:running?'running':'idle'}]}}));
+  await page.evaluate(()=>{
+    const row=document.createElement('div');row.id='activity-check';row.dataset.agentActivity='activity-agent';
+    row.innerHTML='<span class="agent-activity-dot" hidden></span>';document.body.appendChild(row);
+    return AgentActivity.refresh();
+  });
+  await expect(page.locator('#activity-check .agent-activity-dot')).toBeVisible();
+  running=false;await page.evaluate(()=>AgentActivity.refresh());
+  await expect(page.locator('#activity-check .agent-activity-dot')).toBeHidden();
+});
+
+test('history search combines dates and members and opens the original context safely',async({page})=>{
+  await page.setViewportSize({width:390,height:844});await mobileSetup(page);
+  await page.route('**/proxy_groups/rg_one/search?**',route=>{
+    const q=new URL(route.request().url()).searchParams;
+    expect(q.get('sender')).toBe('u:alice');expect(Number(q.get('from_ts'))).toBeGreaterThan(0);expect(Number(q.get('to_ts'))).toBeGreaterThan(Number(q.get('from_ts')));
+    return route.fulfill({json:{messages:[{id:2,sender:'u:alice',sender_name:'Alice',content:'测试内容 <script>bad</script>',created_at:1790000000}],next_before_id:0}});
+  });
+  await page.route('**/proxy_groups/rg_one/messages/2/context',route=>route.fulfill({json:{focus_id:2,messages:[
+    {id:1,sender_name:'Alice',content:'之前的消息',created_at:1790000000},
+    {id:2,sender_name:'Alice',content:'测试内容 <script>bad</script>',created_at:1790000001},
+    {id:3,sender_name:'Alice',content:'之后的消息',created_at:1790000002}]}}));
+  await page.evaluate(()=>GroupNetworkUI.search('rg_one'));
+  await page.getByRole('searchbox',{name:'搜索聊天记录'}).fill('测试');
+  await page.getByLabel('按成员筛选').selectOption('u:alice');
+  await page.getByLabel('开始日期').fill('2026-09-01');await page.getByLabel('结束日期').fill('2026-10-09');
+  await page.getByRole('button',{name:'搜索',exact:true}).click();
+  await expect(page.locator('.gn-search-result mark')).toHaveText('测试');
+  await page.getByRole('button',{name:'查看上下文'}).click();
+  await expect(page.locator('.gn-message-focus')).toContainText('测试内容');
+  await expect(page.locator('.group-network-dialog').last()).toContainText('之前的消息');
+  await expect(page.locator('.group-network-dialog script')).toHaveCount(0);
+  await page.locator('.gn-message-focus').getByRole('button',{name:'引用回复'}).click();
+  await expect(page.locator('.group-network-dialog')).toHaveCount(0);
+  await expect(page.locator('#group-reply-preview')).toContainText('测试内容');
+});
+
 async function mobileSetup(page) {
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.addInitScript(()=>{localStorage.setItem('clawcross_lang','zh');window.alert=()=>{};});

@@ -197,7 +197,11 @@ async def join_group(username: str, invite: str, source_session: str = "") -> st
             response = await client.post(f"http://127.0.0.1:{_AGENT_PORT}/groups/join", headers=internal_headers(username),
                                          json={"invite": invite, "agents": [source_session]})
         if response.status_code != 200:
-            return f"❌ 加入群聊失败 (HTTP {response.status_code})"
+            try:
+                detail=response.json().get('detail') or response.json().get('error') or ''
+            except ValueError:
+                detail=''
+            return f"❌ 加入群聊失败 (HTTP {response.status_code})" + (f"：{str(detail)[:200]}" if detail else '')
         group = response.json()
         return json.dumps({"group_id": group['group_id'], "title": group['title'], "server_url": group['server_url']}, ensure_ascii=False)
     except httpx.HTTPError:
