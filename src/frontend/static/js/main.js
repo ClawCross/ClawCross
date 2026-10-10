@@ -5192,7 +5192,7 @@ async function renderStudioTeamTree(force = false) {
             details.appendChild(summary);
             const members = document.createElement('div'); members.className = 'studio-team-members';
             if (!fixed) {
-                const info = document.createElement('button');info.type='button';info.className='studio-team-agent studio-team-info';
+                const info = document.createElement('button');info.type='button';info.className='studio-team-info';
                 info.textContent=currentLang === 'en' ? 'Team introduction' : 'Team 介绍';
                 info.onclick=()=>GroupNetworkUI.teamInfo(teamName);members.appendChild(info);
             }

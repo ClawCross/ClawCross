@@ -5125,6 +5125,16 @@ body.session-panel-resizing * {
 /* Studio keeps the conversation as the primary surface. */
 #page-chat { min-width: 0; background: var(--ui-canvas); font-family: var(--ui-font); }
 #chat-standard-shell { position: relative; display: flex; flex-direction: row; flex: 1; min-width: 0; min-height: 0; }
+#studio-chat-layout { display:flex; flex:1; min-width:0; min-height:0; overflow:hidden; }
+.studio-ui-workspace { display:flex; flex:0 0 var(--studio-ui-share,60%); min-width:0; min-height:0; padding:12px; background:var(--ui-canvas); }
+.studio-ui-stage { flex:1; min-width:0; min-height:0; }
+.studio-ui-divider { position:relative; flex:0 0 10px; align-self:stretch; margin:0; padding:0; border:0; background:transparent; cursor:col-resize; touch-action:none; }
+.studio-ui-divider::before { content:''; position:absolute; inset:0 4px; background:var(--ui-hairline); border-radius:6px; transition:background .15s; }
+.studio-ui-divider > span { position:absolute; top:50%; left:3px; width:4px; height:32px; border-radius:6px; background:var(--ui-text-3); opacity:.45; }
+.studio-ui-divider:hover::before, .studio-ui-divider:focus-visible::before { background:var(--ui-accent); }
+.studio-ui-workspace[hidden], .studio-ui-divider[hidden] { display:none; }
+#studio-chat-layout.is-resizing { user-select:none; }
+#studio-chat-layout.is-resizing iframe { pointer-events:none; }
 #studio-chat-workspace { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
 #chat-box { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; background: var(--ui-canvas); }
 #chat-box > div { min-width: 0; }
@@ -5182,8 +5192,8 @@ body.session-panel-resizing * {
 .studio-team-node > summary { padding: 6px 10px 6px 19px; }
 .studio-team-node.is-default-team > summary { color: var(--ui-accent); font-weight: 700; }
 .studio-team-members { display: grid; gap: 2px; padding: 0 5px 5px 28px; }
-.studio-team-agent { width: 100%; min-width: 0; overflow: hidden; padding: 6px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--ui-text-2); text-align: left; text-overflow: ellipsis; white-space: nowrap; font: 12px var(--ui-font); cursor: pointer; }
-.studio-team-agent:hover { background: var(--ui-surface-2); color: var(--ui-text); }
+.studio-team-agent, .studio-team-info { width: 100%; min-width: 0; overflow: hidden; padding: 6px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--ui-text-2); text-align: left; text-overflow: ellipsis; white-space: nowrap; font: 12px var(--ui-font); cursor: pointer; }
+.studio-team-agent:hover, .studio-team-info:hover { background: var(--ui-surface-2); color: var(--ui-text); }
 .studio-team-tree-empty { padding: 8px 14px; color: var(--ui-text-3); font-size: 11px; }
 .studio-team-tree > summary:hover, .studio-team-node > summary:hover, .studio-platform-picker > summary:hover { color: var(--ui-text); background: var(--ui-surface-2); }
 .studio-new-conversation:focus-visible, .studio-conversation-item:focus-visible, .studio-conversation-switcher > summary:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: -2px; }
@@ -5261,6 +5271,13 @@ body.session-panel-resizing * {
 .conversation-ui-panel-heading > button:last-child:hover { color: #bc3444; background: #fce5e8; }
 .conversation-ui-panel iframe { box-sizing: border-box; border: 0; border-radius: 0; min-width: 0; }
 .conversation-ui-panel.is-floating iframe { flex: 1; height: 0; min-height: 0; max-height: none; }
+.conversation-ui-panel.is-docked { position:fixed; border-color:var(--ui-hairline); border-radius:14px; box-shadow:var(--ui-shadow-1); }
+.conversation-ui-panel.is-docked iframe { flex:1; height:0; min-height:0; max-height:none; }
+.conversation-ui-panel.is-docked .conversation-ui-panel-heading { cursor:default; }
+.conversation-ui-panel.is-docked .conversation-ui-panel-resize { display:none; }
+.conversation-ui-panel-heading > button.panel-layout-button { width:auto; padding:5px 8px; font-size:12px; white-space:nowrap; }
+.conversation-ui-panel-placeholder { width:100%; padding:13px 16px; border:1px solid var(--ui-hairline); border-radius:14px; background:var(--ui-surface); color:var(--ui-text-2); text-align:left; font:13px/1.5 var(--ui-font); cursor:pointer; }
+.conversation-ui-panel-placeholder[hidden] { display:none; }
 .conversation-ui-panel.is-manipulating iframe { pointer-events: none; }
 .conversation-ui-panel-resize { position: absolute; right: 0; bottom: 0; width: 28px; height: 28px; border: 0; border-radius: 8px 0 0 0; background: #edf2fb; color: #7688aa; cursor: nwse-resize; touch-action: none; z-index: 1; }
 .conversation-ui-panel-menu { padding-top: 4px; margin-top: 8px; }
@@ -5277,6 +5294,14 @@ body.session-panel-resizing * {
 .conversation-ui-panel-menu-item > span { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .conversation-ui-panel-menu-item > small, .conversation-ui-panel-empty { color: #8190a8; font-size: 12px; }
 .conversation-ui-panel-empty { padding: 9px; }
+@media (max-width:768px) {
+    #studio-chat-layout.has-ui-panel { flex-direction:column; }
+    .studio-ui-workspace { flex-basis:var(--studio-ui-share-mobile,50%); padding:8px; }
+    .studio-ui-divider { flex-basis:10px; cursor:row-resize; }
+    .studio-ui-divider::before { inset:4px 0; }
+    .studio-ui-divider > span { top:3px; left:calc(50% - 16px); width:32px; height:4px; }
+    #studio-chat-layout.has-ui-panel .composer-dock { padding-top:2px; }
+}
 .studio-more-menu[open] { z-index: 3000; }
 .session-compaction-indicator {
     padding: 4px 2px;

@@ -29,10 +29,12 @@ def build_ui_panel(title: str, html: str, css: str = "", javascript: str = "") -
 
 @mcp.tool()
 async def show_ui_panel(title: str, html: str, css: str = "", javascript: str = "") -> str:
-    """Show an interactive panel within the current Studio chat turn.
+    """Show an interactive UI within the current Studio chat turn.
 
-    Use this when a small form, chart, or interactive preview helps answer the
-    user's request. The panel has no access to the conversation, cookies, or
+    Use this for a custom interface, form, chart, or interactive workspace.
+    Users can click the UI to open it in Studio's center pane, with chat on the
+    right; they can resize the split, return it to chat, minimize or close it.
+    The panel has no access to the conversation, cookies, or
     network. Keep important results in your normal text response too.
 
     :param title: Short accessible panel heading.

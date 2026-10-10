@@ -1,4 +1,55 @@
 const { test, expect } = require('@playwright/test');
+
+test('UI tool opens a resizable center workspace and keeps the conversation and iframe state',async({page})=>{
+  await page.setViewportSize({width:1600,height:900});
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await stubStudioNetwork(page,{});await page.goto('/studio');
+  await expect(page.locator('#user-input')).toBeVisible();
+  await page.locator('#user-input').fill('未发送的草稿');
+  await page.evaluate(()=>{
+    window.testUi={title:'我的工作台',html:'<button id="count">0</button>',css:'',javascript:'document.querySelector("button").onclick=e=>e.target.textContent=+e.target.textContent+1;'};
+    document.getElementById('chat-box').append(createConversationUiPanel(testUi));
+  });
+  const panel=page.locator('.conversation-ui-panel[aria-label="我的工作台"]');
+  const counter=page.frameLocator('.conversation-ui-panel[aria-label="我的工作台"] iframe').locator('#count');
+  await expect(page.locator('#studio-ui-workspace')).toBeHidden();
+  await counter.click();await expect(panel).toHaveClass(/is-docked/);
+  await expect(counter).toHaveText('1');
+  await expect(page.locator('#user-input')).toHaveValue('未发送的草稿');
+  const center=await page.locator('#studio-ui-workspace').boundingBox(),chat=await page.locator('#studio-chat-workspace').boundingBox();
+  expect(center.x+center.width).toBeLessThanOrEqual(chat.x);
+  const before=await panel.boundingBox(),bar=await page.locator('#studio-ui-divider').boundingBox();
+  await page.mouse.move(bar.x+bar.width/2,bar.y+bar.height/2);await page.mouse.down();
+  await page.mouse.move(bar.x+bar.width/2+70,bar.y+bar.height/2,{steps:6});await page.mouse.up();
+  await expect.poll(async()=>(await panel.boundingBox()).width).toBeGreaterThan(before.width);
+  await expect(counter).toHaveText('1');
+  await panel.getByRole('button',{name:'返回对话',exact:true}).click();
+  await expect(page.locator('#studio-ui-workspace')).toBeHidden();await expect(counter).toHaveText('1');
+  await page.evaluate(()=>document.getElementById('chat-box').append(createConversationUiPanel({...testUi,title:'另一个界面'})));
+  const second=page.locator('.conversation-ui-panel[aria-label="另一个界面"]');
+  await page.frameLocator('.conversation-ui-panel[aria-label="另一个界面"] iframe').locator('#count').click();
+  await expect(second).toHaveClass(/is-docked/);await expect(counter).toHaveText('1');
+  await panel.getByRole('button',{name:'放到中间',exact:true}).click();
+  await expect(second).not.toHaveClass(/is-docked/);
+  await second.getByRole('button',{name:'关闭面板',exact:true}).click();
+  await panel.getByRole('button',{name:'最小化面板',exact:true}).click();
+  await expect(page.locator('#studio-ui-workspace')).toBeHidden();
+  await page.locator('#studio-more-menu > summary').click();await page.locator('#conversation-ui-panel-menu > summary').click();
+  await page.getByRole('button',{name:'我的工作台 已最小化 · 恢复'}).click();
+  await expect(panel).toHaveClass(/is-docked/);await expect(counter).toHaveText('1');
+  await page.setViewportSize({width:390,height:844});
+  await expect(page.locator('#studio-ui-divider')).toHaveAttribute('aria-orientation','horizontal');
+  const mobileCenter=await page.locator('#studio-ui-workspace').boundingBox(),mobileChat=await page.locator('#studio-chat-workspace').boundingBox();
+  expect(mobileCenter.y+mobileCenter.height).toBeLessThanOrEqual(mobileChat.y);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await panel.getByRole('button',{name:'关闭面板',exact:true}).click();
+  await expect(page.locator('#studio-ui-workspace')).toBeHidden();await expect(page.locator('.conversation-ui-panel iframe')).toHaveCount(0);
+  await page.evaluate(()=>document.getElementById('chat-box').append(createConversationUiPanel({...testUi,title:'会话界面'})));
+  await page.locator('.conversation-ui-panel[aria-label="会话界面"]').getByRole('button',{name:'放到中间',exact:true}).click();
+  await page.evaluate(()=>ConversationUiPanels.beginSession('another-session'));
+  await expect(page.locator('#studio-ui-workspace')).toBeHidden();await expect(page.locator('.conversation-ui-panel')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
 const creation=require('./agent-creation-fixture');
 
 test('Studio recent Agents collapse and long Team membership scrolls independently',async({page})=>{
