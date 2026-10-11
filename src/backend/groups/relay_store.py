@@ -1,4 +1,5 @@
-"""Group relay persistence. It knows participants and credentials, never agent runtimes."""
+"""Group relay persistence. It knows participants and credentials, never agent runtimes:
+agents run on members' devices, a ClawCross or the browser tab of a member who opened the link."""
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -27,6 +28,10 @@ def digest(token: str) -> str:
 
 def password_hash(password: str, salt: str) -> str:
     return hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 210000).hex()
+
+
+# A member is online while its device called within this window; hidden browser tabs poll about once a minute.
+ONLINE_SECONDS = 90
 
 
 class RelayStore:
@@ -72,11 +77,15 @@ class RelayStore:
                 );
             ''')
             columns = {r[1] for r in db.execute('PRAGMA table_info(relay_connections)')}
+            # `guest` marks connections made in a browser. guest_salt/guest_password_hash hold the password
+            # of any member that joined by link, from a browser or a ClawCross.
             for column, definition in [('guest', 'INTEGER NOT NULL DEFAULT 0'),
                                        ('guest_salt', "TEXT NOT NULL DEFAULT ''"),
                                        ('guest_password_hash', "TEXT NOT NULL DEFAULT ''")]:
                 if column not in columns:
                     db.execute(f'ALTER TABLE relay_connections ADD COLUMN {column} {definition}')
+            if 'seen_at' not in columns:
+                db.execute('ALTER TABLE relay_connections ADD COLUMN seen_at REAL NOT NULL DEFAULT 0')
             if 'host_local' not in columns:
                 db.execute('ALTER TABLE relay_connections ADD COLUMN host_local INTEGER NOT NULL DEFAULT 0')
                 # A group is created only through the server's machine control API.
@@ -104,11 +113,13 @@ class RelayStore:
         row = db.execute('SELECT * FROM relay_connections WHERE token_hash=? AND revoked=0', (digest(token),)).fetchone()
         if row is None:
             row = db.execute('''SELECT c.* FROM relay_connections c JOIN relay_guest_tokens t ON t.connection_id=c.id
-                                WHERE t.token_hash=? AND c.revoked=0 AND c.guest=1''', (digest(token),)).fetchone()
+                                WHERE t.token_hash=? AND c.revoked=0''', (digest(token),)).fetchone()
         if row is None:
             raise RelayError('群凭证无效、已退出或被撤销', 401)
         if check_network:
             RelayStore.require_external_access(db, row['group_id'], host_local=bool(row['host_local']))
+        if row['seen_at'] < time.time() - 15:
+            db.execute('UPDATE relay_connections SET seen_at=? WHERE id=?', (time.time(), row['id']))
         return row
 
     @staticmethod
@@ -130,13 +141,17 @@ class RelayStore:
         if group is None:
             raise RelayError('群不存在', 404)
         members = [dict(row) for row in db.execute('''SELECT m.id AS principal,m.agent_id,m.name,m.platform,m.muted,
-                  c.node_id,c.user_id,c.display_name,c.id AS connection_id,c.host_local
+                  c.node_id,c.user_id,c.display_name,c.id AS connection_id,c.host_local,c.seen_at,c.guest
                   FROM relay_members m JOIN relay_connections c ON c.id=m.connection_id
                   WHERE m.group_id=? AND c.revoked=0 ORDER BY c.joined_at,m.agent_id''', (gid,))]
+        online_since = time.time() - ONLINE_SECONDS
         for member in members:
             member['is_agent'] = bool(member['agent_id'])
             member['muted'] = bool(member['muted'])
             member['host_local'] = bool(member['host_local'])
+            member['online'] = member.pop('seen_at') > online_since
+            # What the device is, for views that draw the group by device.
+            member['device_kind'] = 'browser' if member.pop('guest') else 'client'
         return {'group_id': gid, 'title': group['title'], 'kind': group['kind'],
                 'announcement': group['announcement'],
                 'owner': group['owner_connection'], 'primary_agent': group['primary_member'],
@@ -171,18 +186,51 @@ class RelayStore:
             self._event(db, gid, 'metadata', {})
             return {'token': token, 'connection_id': cid, 'group': self._card(db, gid)}
 
-    def join(self, invite: str, *, node_id: str, user_id: str, display_name: str, host_local: bool = False) -> dict:
-        """A new member connection, by the group's invitation link."""
+    def join(self, invite: str, *, node_id: str, user_id: str, display_name: str, password: str, host_local: bool = False) -> dict:
+        """A ClawCross joins by the group's invitation link, as the member that name and password identify."""
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
             row = db.execute('SELECT group_id FROM relay_guest_invites WHERE token_hash=?', (digest(invite),)).fetchone()
             if not row:
                 raise RelayError('邀请链接已失效', 403)
             gid = row['group_id']
-            cid, token = self._connect(db, gid, node_id=node_id, user_id=user_id, display_name=display_name, host_local=host_local)
-            db.execute('UPDATE relay_groups SET version=version+1 WHERE id=?', (gid,))
-            self._event(db, gid, 'joined', {'connection_id': cid, 'display_name': display_name})
+            cid, token = self._sign_in(db, gid, display_name, password, lambda: self._connect(
+                db, gid, node_id=node_id, user_id=user_id, display_name=display_name, host_local=host_local))
             return {'token': token, 'connection_id': cid, 'group': self._card(db, gid)}
+
+    @staticmethod
+    def _check_password(password):
+        if not isinstance(password, str) or not 6 <= len(password) <= 128:
+            raise RelayError('密码需要 6 至 128 个字符')
+
+    def _sign_in(self, db, gid, name, password, create):
+        """A member is its name and password in the group: the same pair on any device, a browser or a
+        ClawCross, returns to that member with a new credential. A new name makes a member through
+        `create()`, which returns ``(connection id, credential)``."""
+        self._check_password(password)
+        normalized = unicodedata.normalize('NFKC', name.strip()).casefold()
+        existing = next((m for m in db.execute('''SELECT m.name,c.* FROM relay_members m
+            JOIN relay_connections c ON c.id=m.connection_id WHERE m.group_id=? AND c.revoked=0 AND m.agent_id=?''', (gid, ''))
+            if unicodedata.normalize('NFKC', m['name'].strip()).casefold() == normalized), None)
+        if existing:
+            if not existing['guest_password_hash']:
+                raise RelayError('这个名字已有人使用；如果是你，请在原来的设备上设置密码后再登录', 409)
+            if not hmac.compare_digest(existing['guest_password_hash'], password_hash(password, existing['guest_salt'])):
+                raise RelayError('名字或密码不正确', 403)
+            token = secrets.token_urlsafe(32)
+            db.execute('INSERT INTO relay_guest_tokens VALUES(?,?,?)', (digest(token), existing['id'], time.time()))
+            # Bound stored credentials while retaining concurrent devices.
+            db.execute('''DELETE FROM relay_guest_tokens WHERE connection_id=? AND token_hash NOT IN
+                          (SELECT token_hash FROM relay_guest_tokens WHERE connection_id=? ORDER BY created_at DESC LIMIT 16)''',
+                       (existing['id'], existing['id']))
+            return existing['id'], token
+        self._unique_name(db, gid, name)
+        cid, token = create()
+        salt = secrets.token_hex(16)
+        db.execute('UPDATE relay_connections SET guest_salt=?,guest_password_hash=? WHERE id=?', (salt, password_hash(password, salt), cid))
+        db.execute('UPDATE relay_groups SET version=version+1 WHERE id=?', (gid,))
+        self._event(db, gid, 'joined', {'connection_id': cid, 'display_name': name.strip()})
+        return cid, token
 
     def confirm_host_local(self, token: str) -> dict:
         """Called only after the relay API verifies a local machine credential."""
@@ -226,14 +274,9 @@ class RelayStore:
             self.require_external_access(db, row['group_id'], host_local=host_local)
             return {'title': self._card(db, row['group_id'])['title'], 'group_id': row['group_id']}
 
-    @staticmethod
-    def _guest_password(password):
-        if not isinstance(password, str) or not 6 <= len(password) <= 128:
-            raise RelayError('密码需要 6 至 128 个字符')
-
-    def guest_join(self, invite, name, password=''):
+    def guest_join(self, invite, name, password):
+        """A person opens the link in a browser and signs in with a name and password; the browser may bring an agent."""
         name = name.strip()
-        self._guest_password(password)
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
             row = db.execute('SELECT group_id FROM relay_guest_invites WHERE token_hash=?', (digest(invite),)).fetchone()
@@ -241,38 +284,20 @@ class RelayStore:
                 raise RelayError('分享链接已失效', 403)
             gid = row['group_id']
             self.require_external_access(db, gid)
-            normalized = unicodedata.normalize('NFKC', name).casefold()
-            existing = next((m for m in db.execute('''SELECT m.name,c.* FROM relay_members m
-                JOIN relay_connections c ON c.id=m.connection_id WHERE m.group_id=? AND c.revoked=0''', (gid,))
-                if unicodedata.normalize('NFKC', m['name'].strip()).casefold() == normalized), None)
-            if existing:
-                if not existing['guest'] or not existing['guest_password_hash']:
-                    raise RelayError('这个名字已有人使用；旧访客请在原浏览器设置密码，或请群主移除后重新加入', 409)
-                if not hmac.compare_digest(existing['guest_password_hash'], password_hash(password, existing['guest_salt'])):
-                    raise RelayError('名字或密码不正确', 403)
-                token = secrets.token_urlsafe(32)
-                db.execute('INSERT INTO relay_guest_tokens VALUES(?,?,?)', (digest(token), existing['id'], time.time()))
-                # Bound stored browser credentials while retaining concurrent devices.
-                db.execute('''DELETE FROM relay_guest_tokens WHERE connection_id=? AND token_hash NOT IN
-                              (SELECT token_hash FROM relay_guest_tokens WHERE connection_id=? ORDER BY created_at DESC LIMIT 16)''',
-                           (existing['id'], existing['id']))
-                return {'token': token, 'name': existing['name'], 'password_set': True}
-            self._unique_name(db, gid, name)
-            cid, token = self._connect(db, gid, node_id='guest', user_id='guest_' + secrets.token_hex(12), display_name=name)
-            salt = secrets.token_hex(16)
-            db.execute('UPDATE relay_connections SET guest=1,guest_salt=?,guest_password_hash=? WHERE id=?',
-                       (salt, password_hash(password, salt), cid))
-            db.execute('UPDATE relay_groups SET version=version+1 WHERE id=?', (gid,))
-            self._event(db, gid, 'joined', {'connection_id': cid, 'display_name': name})
-            return {'token': token, 'name': name, 'password_set': True}
+            def browser():
+                cid, token = self._connect(db, gid, node_id='guest', user_id='guest_' + secrets.token_hex(12), display_name=name)
+                db.execute('UPDATE relay_connections SET guest=1 WHERE id=?', (cid,))
+                return cid, token
+            cid, token = self._sign_in(db, gid, name, password, browser)
+            member = db.execute("SELECT name FROM relay_members WHERE connection_id=? AND agent_id=''", (cid,)).fetchone()
+            return {'token': token, 'name': member['name'], 'password_set': True}
 
-    def guest_set_password(self, token, password):
-        self._guest_password(password)
+    def set_password(self, token, password):
+        """Sets or changes the password of the caller's member, e.g. one that joined before passwords."""
+        self._check_password(password)
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
             conn = self.auth(db, token)
-            if not conn['guest']:
-                raise RelayError('需要访客身份', 403)
             salt = secrets.token_hex(16)
             db.execute('UPDATE relay_connections SET guest_salt=?,guest_password_hash=? WHERE id=?',
                        (salt, password_hash(password, salt), conn['id']))
@@ -281,8 +306,6 @@ class RelayStore:
     def guest_identity(self, token):
         with self.db() as db:
             conn = self.auth(db, token)
-            if not conn['guest']:
-                raise RelayError('需要访客身份', 403)
             member = db.execute("SELECT id,name FROM relay_members WHERE connection_id=? AND agent_id=''", (conn['id'],)).fetchone()
             return {'principal': member['id'], 'name': member['name']}
 
@@ -290,8 +313,6 @@ class RelayStore:
         with self.db() as db:
             db.execute('BEGIN')
             conn = self.auth(db, token)
-            if not conn['guest']:
-                raise RelayError('需要访客身份', 403)
             group = self._card(db, conn['group_id'])
             member = next(m for m in group['members'] if m['connection_id'] == conn['id'] and not m['is_agent'])
             if after < 0:
@@ -305,10 +326,17 @@ class RelayStore:
             messages = []
             for row in rows:
                 if row['kind'] == 'message':
-                    message = json.loads(row['body'])['message']
+                    body = json.loads(row['body'])
+                    message = body['message']
                     messages.append({k: message[k] for k in ('sender', 'sender_name', 'content', 'created_at')} |
-                                    {'id': row['id'], 'reply_to':message.get('reply_to'), 'reply':message.get('reply')})
-            return {'group_id': conn['group_id'], 'password_set': bool(conn['guest_password_hash']), 'title': group['title'], 'members': [{k: m[k] for k in ('principal', 'name', 'is_agent')} for m in group['members']],
+                                    {'id': row['id'], 'reply_to':message.get('reply_to'), 'reply':message.get('reply'),
+                                     'targets': body.get('targets', [])})
+            # `device` numbers the connections, so a browser can group members by device without learning ids.
+            devices = list(dict.fromkeys(m['connection_id'] for m in group['members']))
+            members = [{k: m[k] for k in ('principal', 'name', 'is_agent', 'online', 'device_kind', 'platform')} |
+                       {'own': m['connection_id'] == conn['id'], 'device': devices.index(m['connection_id'])}
+                       for m in group['members']]
+            return {'group_id': conn['group_id'], 'password_set': bool(conn['guest_password_hash']), 'title': group['title'], 'members': members,
                     'announcement': group['announcement'],
                     'messages': messages, 'cursor': cursor, 'has_more': more, 'principal': member['principal'], 'name': member['name']}
 
@@ -317,8 +345,6 @@ class RelayStore:
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
             conn = self.auth(db, token)
-            if not conn['guest']:
-                raise RelayError('需要访客身份', 403)
             member = db.execute("SELECT id FROM relay_members WHERE connection_id=? AND agent_id=''", (conn['id'],)).fetchone()
             self._unique_name(db, conn['group_id'], name, exclude=member['id'])
             db.execute('UPDATE relay_members SET name=? WHERE id=?', (name, member['id']))
@@ -338,10 +364,8 @@ class RelayStore:
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
             conn = self.auth(db, token)
-            if conn['guest']:
-                raise RelayError('访客只能以本人身份聊天', 403)
-            self._unique_name(db, conn['group_id'], name, guests_only=True)
-            existing = db.execute('SELECT 1 FROM relay_members WHERE connection_id=? AND agent_id=?', (conn['id'], agent_id)).fetchone()
+            existing = db.execute('SELECT id FROM relay_members WHERE connection_id=? AND agent_id=?', (conn['id'], agent_id)).fetchone()
+            self._unique_name(db, conn['group_id'], name, exclude=existing and existing['id'], guests_only=True)
             if not existing and db.execute('SELECT COUNT(*) FROM relay_members WHERE connection_id=?', (conn['id'],)).fetchone()[0] >= 33:
                 raise RelayError('此连接最多引入 32 个 agent', 409)
             group = self._card(db, conn['group_id'])
@@ -370,8 +394,6 @@ class RelayStore:
                 conn = db.execute('SELECT * FROM relay_connections WHERE id=?', (owner_id,)).fetchone()
             else:
                 conn = self.auth(db, token)
-            if conn['guest'] and action != 'leave':
-                raise RelayError('访客不能管理群或成员', 403)
             if action == 'member_patch' and fields.get('name'):
                 self._unique_name(db, conn['group_id'], fields['name'],
                                   exclude=fields.get('principal'), guests_only=True)
@@ -452,8 +474,6 @@ class RelayStore:
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
             conn = self.auth(db, token)
-            if conn['guest'] and (agent_id or attachments):
-                raise RelayError('访客只能发送本人文本消息', 403)
             group = self._card(db, conn['group_id'])
             sender = next((m for m in group['members'] if m['connection_id'] == conn['id'] and m['agent_id'] == agent_id), None)
             if sender is None or sender['muted']:

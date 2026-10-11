@@ -361,7 +361,7 @@ def _user_exists_in_users_json(username: str) -> bool:
 # --- Unified auth: before_request hook ---
 # Routes that do NOT require login
 _PUBLIC_ROUTES = frozenset({
-    'group_guest_page', 'group_guest_api', 'group_device_relay',
+    'group_guest_page', 'group_guest_api', 'group_guest_worker', 'group_device_relay',
     'index', 'manifest', 'service_worker', 'static',
     'proxy_openai_completions', 'proxy_openai_models',
     'proxy_login', 'proxy_logout', 'proxy_check_session',

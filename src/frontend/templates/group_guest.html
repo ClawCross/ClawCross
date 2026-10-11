@@ -3,17 +3,20 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>朋友群聊</title>
-  <link rel="stylesheet" href="/static/css/group-guest.css?v=20261009-announcement">
+  <link rel="stylesheet" href="/static/css/group-guest.css?v=20261011-devices">
   <link rel="stylesheet" href="/static/css/group-message-menu.css?v=20261004-message-menu">
+  <link rel="stylesheet" href="/static/css/group-device-map.css?v=20261011-devices">
   <script defer src="/static/js/group-message-menu.js?v=20261004-message-menu"></script>
-  <script defer src="/static/js/group-guest.js?v=20261009-announcement"></script>
+  <script defer src="/static/js/group-device-map.js?v=20261011-devices2"></script>
+  <script defer src="/static/js/group-guest-agent.js?v=20261011-agent"></script>
+  <script defer src="/static/js/group-guest.js?v=20261011-passwords"></script>
 </head>
 <body>
 <main>
-  <header><div><span class="eyebrow">一起聊聊</span><h1 id="title">群聊</h1></div><div class="identity-actions"><button id="password-open" hidden>设置密码</button><button id="rename" hidden>改名</button></div></header>
+  <header><div><span class="eyebrow">一起聊聊</span><h1 id="title">群聊</h1></div><div class="identity-actions"><button id="agent-open" type="button" hidden>我的 Agent</button><button id="password-open" hidden>设置密码</button><button id="rename" hidden>改名</button></div></header>
   <p id="status" role="status" aria-live="polite">正在打开群聊…</p>
   <form id="join" hidden>
-    <h2>进入群聊</h2><p>首次使用这个名字时设置密码；再次进入时输入原名字和密码。</p>
+    <h2>进入群聊</h2><p>首次使用这个名字时设置密码；以后在任何设备上输入原名字和密码，都会回到你在群里的身份。进群后还可以创建一个在浏览器里运行的 Agent。</p>
     <label for="name">你的名字</label><input id="name" maxlength="40" required autocomplete="username">
     <label for="password">你的密码</label><input id="password" type="password" minlength="6" maxlength="128" required autocomplete="current-password">
     <button type="submit">进入群聊</button>
@@ -24,7 +27,10 @@
   </form>
   <section id="chat" hidden>
     <p id="announcement" class="guest-announcement" hidden></p>
-    <details id="members"><summary id="member-count">群成员</summary><ul id="member-list"></ul></details>
+    <details id="members"><summary id="member-count">群成员</summary>
+      <button id="member-view" type="button" aria-pressed="false">设备图</button>
+      <ul id="member-list"></ul><div id="member-map" hidden></div>
+    </details>
     <details id="history"><summary>查找聊天记录</summary>
       <form id="history-search"><label class="sr-only" for="history-query">搜索聊天记录</label><input id="history-query" type="search" maxlength="120" required placeholder="关键词或成员名字"><button type="submit">搜索</button></form>
       <div id="history-results"></div><button id="history-more" type="button" hidden>更早的结果</button><p id="history-status" role="status"></p>
@@ -37,4 +43,34 @@
     </div>
   </section>
 </main>
+<dialog id="agent-dialog" aria-labelledby="agent-title">
+  <div class="agent-head"><h2 id="agent-title">我的 Agent</h2><button id="agent-close" type="button" aria-label="关闭">×</button></div>
+  <p class="agent-note">它在你的浏览器里运行，在群里和其他 agent 一样：被 @ 或你没 @ 任何人时会回复，能管理几个文件、运行 JavaScript 计算。</p>
+  <section id="agent-main" hidden>
+    <p id="agent-status" role="status"></p>
+    <div class="agent-actions"><button id="agent-pause" type="button">暂停</button><button id="agent-files-open" type="button">文件</button><button id="agent-edit" type="button">设置</button><button id="agent-remove" type="button" class="danger">移除</button></div>
+  </section>
+  <form id="agent-form" hidden>
+    <p id="agent-elsewhere" class="agent-note" hidden>这个 agent 的设置不在这个浏览器里。重新设置后，就由这个浏览器运行它。</p>
+    <label for="agent-name">名字</label><input id="agent-name" maxlength="40" required>
+    <label for="agent-persona">人设（可不填）</label><textarea id="agent-persona" rows="3" maxlength="2000" placeholder="例如：说话简洁的旅行规划助手"></textarea>
+    <p class="agent-note">模型：任何 OpenAI 兼容接口。key 只保存在这个浏览器，直接发给这家服务；有些服务不允许浏览器直接调用。</p>
+    <label for="agent-base">接口地址</label><input id="agent-base" type="url" required placeholder="例如 https://api.deepseek.com/v1">
+    <label for="agent-model">模型</label><input id="agent-model" required placeholder="例如 deepseek-flash">
+    <label for="agent-key">API key</label><input id="agent-key" type="password" autocomplete="off" required>
+    <button type="submit" id="agent-save">创建 Agent</button>
+  </form>
+  <section id="agent-files" hidden>
+    <p class="agent-note">文件只存在这个浏览器里。群里的人可能让 agent 读出文件内容，不要放私密资料。</p>
+    <div class="agent-actions"><button id="agent-file-new" type="button">新文件</button><button id="agent-file-upload" type="button">上传</button><input id="agent-file-input" type="file" hidden><button id="agent-files-back" type="button">返回</button></div>
+    <form id="agent-file-editor" hidden>
+      <input id="agent-file-path" maxlength="200" required placeholder="文件路径，例如 notes/todo.md" aria-label="文件路径">
+      <textarea id="agent-file-content" rows="12" aria-label="文件内容"></textarea>
+      <div class="agent-actions"><button type="submit">保存</button><button id="agent-file-cancel" type="button">取消</button></div>
+    </form>
+    <ul id="agent-file-list"></ul>
+    <p id="agent-files-empty" class="agent-note">工作区是空的。</p>
+  </section>
+  <p id="agent-error" class="error" role="alert" hidden></p>
+</dialog>
 </body></html>

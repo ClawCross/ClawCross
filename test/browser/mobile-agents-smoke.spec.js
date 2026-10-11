@@ -303,13 +303,16 @@ test('remote group join and sharing stay usable on a narrow phone', async ({ pag
   await page.goto('/mobile/group_chat');
   await page.evaluate(() => GroupNetworkUI.join());
   const dialog = page.locator('.group-network-dialog');
-  await expect(dialog.locator('input, textarea')).toHaveCount(1);  // only the link: no address or password
+  await expect(dialog.locator('input, textarea')).toHaveCount(3);  // the link, then the member's name and password; no address
   await dialog.locator('textarea').fill('https://friends.example/group-guest#ticket');
+  await expect(dialog.getByRole('button', { name: '加入' })).toBeDisabled();
+  await dialog.getByLabel('你在群里的名字').fill('Tester');
+  await dialog.getByLabel('密码').fill('password123');
   const bounds = await dialog.boundingBox();
   expect(bounds.x).toBeGreaterThanOrEqual(0); expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
   await dialog.getByRole('button', { name: '加入' }).click();
   await expect(dialog).toHaveCount(0);
-  expect(joins).toEqual([{ invite: 'https://friends.example/group-guest#ticket', agents: [] }]);
+  expect(joins).toEqual([{ invite: 'https://friends.example/group-guest#ticket', agents: [], name: 'Tester', password: 'password123' }]);
   await expect(page.locator('#member-list')).toContainText('Remote friend');
   await expect(page.locator('#member-list')).not.toContainText('取消任务');
   await page.evaluate(() => showAgentDetail('p_remote'));

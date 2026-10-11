@@ -239,9 +239,10 @@ class GroupClient:
         except (httpx.HTTPError, ValueError) as exc:
             raise ClientError('无法连接群服务器或服务器响应无效', 503) from exc
 
-    def join_link(self, owner, *, link, agents=()):
-        """Join as a full member with an invitation link. Through another machine's
-        front end the membership polls; through this machine's own it is a local one."""
+    def join_link(self, owner, *, link, agents=(), name='', password=''):
+        """Join as a full member with an invitation link, signed in by a name and password: the same
+        pair on another device returns to the same member. Through another machine's front end the
+        membership polls; through this machine's own it is a local one."""
         base, ticket = parse_invite_link(link)
         for aid in agents:
             if self.agents.get(owner, aid) is None:
@@ -255,8 +256,10 @@ class GroupClient:
         url, via = (service_url(), '') if own else (base, ticket)
         known = next((r for r in self.store.rows(owner) if r['url'] == url and r['remote_id'] == group_id and r['active']), None)
         if known is None:
+            if not password:
+                raise ClientError('第一次加入这个群要用名字和密码：请本人在消息中心「加入群聊」或 CLI groups join 里填写', 400)
             result = self.enroll(front, '/relay/join', invitation, {
-                'node_id': self.store.node_id, 'user_id': owner, 'display_name': owner})
+                'node_id': self.store.node_id, 'user_id': owner, 'display_name': name.strip() or owner, 'password': password})
             alias = self.store.save(owner, url, result, via=via)
         else:
             alias = known['alias']

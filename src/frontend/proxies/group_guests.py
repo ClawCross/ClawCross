@@ -4,7 +4,9 @@ establishes a main-site session.
 The link ``<public base>/group-guest#<ticket>`` is one invitation: opened in a
 browser it is the guest chat page; pasted into another ClawCross it joins that
 device as a full member, whose group traffic then goes through ``/relay/*`` here.
+A guest's browser uses the same ``/relay/*`` calls to bring the agent it runs.
 """
+from pathlib import Path
 import re
 import hmac
 from urllib.parse import quote, urlsplit
@@ -98,7 +100,7 @@ def register_guest_routes(app, *, port_agent, internal_token, public_base=lambda
         headers = host_proof_headers(target)
         if call == 'join':
             body = body if isinstance(body, dict) else {}
-            body = {'invite': target['invite'], **{k: str(body.get(k, ''))[:160] for k in ('node_id', 'user_id', 'display_name')}}
+            body = {'invite': target['invite'], **{k: str(body.get(k, ''))[:160] for k in ('node_id', 'user_id', 'display_name', 'password')}}
         else:
             credential = request.headers.get('Authorization', '')
             if not credential.startswith('Bearer ') or len(credential) > 200:
@@ -123,7 +125,19 @@ def register_guest_routes(app, *, port_agent, internal_token, public_base=lambda
         response = app.make_response(render_template('group_guest.html'))
         response.headers['Referrer-Policy'] = 'no-referrer'
         response.headers['Cache-Control'] = 'no-store'
-        response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self'; style-src 'self'; frame-ancestors 'none'; base-uri 'none'"
+        # connect-src: a guest's agent calls the model provider the guest chose, straight from the browser.
+        response.headers['Content-Security-Policy'] = ("default-src 'self'; script-src 'self'; style-src 'self'; "
+            "connect-src 'self' https: http://localhost:* http://127.0.0.1:*; frame-ancestors 'none'; base-uri 'none'")
+        return response
+
+    worker = Path(__file__).resolve().parents[1] / 'static' / 'js' / 'group-guest-worker.js'
+
+    @app.get('/group-guest-worker.js')
+    def group_guest_worker():
+        """Where a guest's agent runs JavaScript: its own CSP allows no network and no further scripts."""
+        response = app.response_class(worker.read_text(encoding='utf-8'), mimetype='text/javascript')
+        response.headers['Content-Security-Policy'] = "default-src 'none'; script-src 'unsafe-eval'"
+        response.headers['Cache-Control'] = 'no-cache'
         return response
 
     @app.route('/group-guest-api/<action>', methods=['GET', 'POST'])

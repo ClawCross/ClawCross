@@ -1,4 +1,4 @@
-/* A human-only group client. Main-site login cookies are not used. */
+/* A browser member's group client; the agent it may bring runs in group-guest-agent.js. Main-site login cookies are not used. */
 (() => {
   'use strict';
   const el = id => document.getElementById(id);
@@ -105,7 +105,7 @@
     }
     return data;
   }
-  function showJoin() { clearTimeout(timer); el('join').hidden = false; el('chat').hidden = true; el('rename').hidden = true; el('password-open').hidden = true; el('password-form').hidden = true; }
+  function showJoin() { clearTimeout(timer); el('join').hidden = false; el('chat').hidden = true; el('rename').hidden = true; el('agent-open').hidden = true; el('password-open').hidden = true; el('password-form').hidden = true; }
   function render(data) {
     el('announcement').hidden = !data.announcement;
     el('announcement').textContent = data.announcement ? '群公告 · ' + data.announcement : '';
@@ -116,6 +116,7 @@
     el('member-count').textContent = '群成员 · ' + data.members.length;
     el('member-list').replaceChildren(...members.map(m => {
       const li = document.createElement('li'), button = document.createElement('button');
+      li.className = m.online ? 'online' : 'offline'; li.title = m.online ? '在线' : '离线';
       button.type = 'button'; button.textContent = m.name; button.setAttribute('aria-label', '提及 ' + m.name);
       button.addEventListener('click', () => { mentionRange = null; chooseMember(m); }); li.append(button); return li;
     }));
@@ -141,7 +142,17 @@
     if (seen.size > 2000) { const recent = Array.from(seen).slice(-1000); seen.clear(); recent.forEach(id => seen.add(id)); }
     if (nearBottom) box.scrollTop = box.scrollHeight;
     cursor = data.cursor; remember();
+    agent.update(data);
+    latest = data; drawDevices();
   }
+  // The member list can be shown as a picture of the connected devices instead.
+  let latest = null, byDevice = false;
+  function drawDevices() { if (byDevice && latest) GroupDeviceMap.render(el('member-map'), {title: latest.title, members: latest.members}); }
+  el('member-view').addEventListener('click', () => {
+    byDevice = !byDevice;
+    el('member-view').textContent = byDevice ? '列表' : '设备图'; el('member-view').setAttribute('aria-pressed', String(byDevice));
+    el('member-list').hidden = byDevice; el('member-map').hidden = !byDevice; drawDevices();
+  });
   async function poll() {
     if (polling || !credential) return;
     clearTimeout(timer); polling = true;
@@ -203,7 +214,7 @@
       await api('password', {password:el('new-password').value});
       el('new-password').value = ''; el('password-form').hidden = true;
       el('password-open').textContent = '修改密码';
-      status('密码已保存，之后可用这个名字和密码重新进入');
+      status('密码已保存，之后可在任何设备上用这个名字和密码回来');
     } catch (error) { status(error.message, true); } finally { button.disabled = false; }
   });
   el('rename').addEventListener('click', async () => {
@@ -211,6 +222,8 @@
     try { await api('rename', {name:name.trim()}); await poll(); } catch (error) { status(error.message, true); }
   });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) void poll(); });
+  // The agent this browser may bring into the group; it reads each poll's state.
+  const agent = GuestAgent.start({ ticket, token: () => credential, refresh: () => poll() });
   async function start() {
     if (!ticket) { status('请从朋友发来的分享链接进入', true); return; }
     el('name').value = saved.name || '朋友' + Math.floor(1000 + Math.random() * 9000);

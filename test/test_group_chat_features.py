@@ -33,7 +33,7 @@ class GroupChatFeatures(unittest.TestCase):
         self.store = RelayStore(Path(self.temp.name)/'group-relay.db')
         self.host = self.store.create(title='Friends',node_id='host',user_id='alice',display_name='Alice')
         self.gid = self.host['group']['group_id']
-        self.guest = self.store.guest_join(self.store.guest_invite(self.host['token'])['invite'],'Bob','password123')
+        self.guest = self.store.guest_join(self.store.guest_invite(self.host['token'])['invite'],'Bob', 'password123')
 
     def test_announcement_permissions_and_stale_metadata_after_rename(self):
         cache = ClientStore(Path(self.temp.name)/'client.db')
@@ -98,7 +98,7 @@ class GroupChatFeatures(unittest.TestCase):
             self.assertEqual(response.status_code,200)
             self.assertNotIn('sender_connection',response.text)
             self.assertNotIn('sender_agent_id',response.text)
-            self.assertEqual(api.get('/relay/guest/search',params={'query':'find'},headers={'Authorization':'Bearer '+self.host['token']}).status_code,403)
+            self.assertEqual(api.get('/relay/guest/search',params={'query':'find'},headers={'Authorization':'Bearer '+self.host['token']}).status_code,200)
             self.store.manage(self.host['token'],'remove_member',{'principal':self.store.guest_identity(self.guest['token'])['principal']})
             self.assertEqual(api.get('/relay/guest/search',params={'query':'find'},headers=headers).status_code,401)
 

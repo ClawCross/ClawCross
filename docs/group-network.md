@@ -6,8 +6,9 @@
 
 一个群只有一种邀请：群主在消息中心群聊 ⋮ →「邀请朋友」生成的链接，`https://<前端公网地址>/group-guest#<票据>`。
 
-- 朋友用浏览器打开：取名字、设密码即可聊天，不需要账号，也不会登录主站。访客可以发本人文本、@ 成员、查找历史、引用回复、看成员和改自己的名字，不能管理群成员。
-- 装了 ClawCross 的朋友在消息中心「+ → 加入群聊」粘贴同一个链接：以正式成员加入，可以在群成员里添加自己的 agent。不需要填写服务器地址、端口或密码。
+- 朋友用浏览器打开：填名字和密码即可聊天，不需要账号，也不会登录主站。名字加密码就是这个人在群里的身份：第一次加入时设置，以后在任何设备（浏览器或 ClawCross）上用同样的名字和密码都回到同一个成员，别人不能冒用这个名字。访客可以发消息、@ 成员、查找历史、引用回复、看成员和在线状态、改自己的名字和密码，不能管理群。
+- 访客还可以在页面上「我的 Agent」创建一个在自己浏览器里运行的 agent：对群来说它是访客连接下的普通 agent 成员（平台 `browser`），经 `/relay/agents`、`/relay/messages` 加入和发言。被唤醒时它带上最近的群消息调用访客自己填的 OpenAI 兼容模型（key 只存在浏览器、由浏览器直连厂商，页面 CSP 的 `connect-src` 因此放开 https），可读写浏览器 IndexedDB 里的小工作区（200 个文件、5 MB），并在 `/group-guest-worker.js` 里运行 JavaScript：这个 Worker 自带不许联网、不许再加载脚本的 CSP，并去掉了存储和网络对象。页面关闭时 agent 离线，再打开时一次处理期间的消息；同一浏览器只有一个标签页运行它。
+- 装了 ClawCross 的朋友在消息中心「+ → 加入群聊」粘贴同一个链接，同样填名字和密码：以正式成员加入，可以在群成员里添加自己的 agent。不需要填写服务器地址或端口。agent 的 `join_group` 工具不接收密码：本人还没加入时它会提示先由本人加入，本人加入后它直接把 agent 带进群。
 - 链接 30 天内可用于加入。「换一个新链接」或「停止邀请」后旧链接失效，已经加入的人不受影响；群主可以在成员列表里移除成员。
 
 经链接加入的设备通过群主的前端公网地址收发：前端只转发 `/relay/join`、`/relay/poll`、`/relay/group`、`/relay/messages`、`/relay/search`、`/relay/agents`、`/relay/manage/*`，每次都要带链接里的票据，加入之后再带群连接凭证。前端是 Flask，不转发 WebSocket，所以这类成员每 2 秒轮询一次新消息；本机和直接连到群服务器的设备仍用 WebSocket。粘贴的是本机自己的链接时（本机地址或当前 `PUBLIC_DOMAIN`），加入后直接连本机群服务器。
@@ -34,7 +35,7 @@
 # 群主生成邀请链接（旧链接随之失效）
 uv run src/cli/cli.py -u alice groups invite --group-id rg_本地群号
 # 用邀请链接加入，也可同时引入自己拥有的 agent
-uv run src/cli/cli.py -u bob groups join --invite 'https://host.example.com/group-guest#…' --agents my_agent
+uv run src/cli/cli.py -u bob groups join --invite 'https://host.example.com/group-guest#…' --member-name Bob --password '至少6位' --agents my_agent
 # 返回值给出本地 rg_* 群号，后续均用这个本地群号
 uv run src/cli/cli.py -u bob groups send --group-id rg_本地群号 --message '大家好'
 uv run src/cli/cli.py -u bob groups leave --group-id rg_本地群号

@@ -256,14 +256,20 @@
       input.placeholder = 'https://…/group-guest#…';
       input.autocomplete = 'off';
       input.spellcheck = false;
+      const name = el('input', 'gn-input');
+      name.placeholder = '你在群里的名字'; name.maxLength = 40; name.autocomplete = 'nickname'; name.setAttribute('aria-label', '你在群里的名字');
+      const password = el('input', 'gn-input');
+      password.type = 'password'; password.placeholder = '密码（至少 6 位）'; password.maxLength = 128;
+      password.autocomplete = 'current-password'; password.setAttribute('aria-label', '密码');
       const join = button('加入', 'primary', () => busy(join, view.status, '正在加入…', async () => {
-        const group = await request('POST', '/join', { invite: input.value.trim(), agents: [] });
+        const group = await request('POST', '/join', { invite: input.value.trim(), agents: [], name: name.value.trim(), password: password.value });
         view.done();
         changed({...group,open_group:true});
       }));
-      join.disabled = true;
-      input.addEventListener('input', () => { join.disabled = !input.value.includes('/group-guest#'); });
-      view.body.append(input, el('p', 'gn-note', '加入后你可以发言；你的 agent 要在群成员里手动添加后才会收到群消息。'), join);
+      const ready = () => { join.disabled = !input.value.includes('/group-guest#') || !name.value.trim() || password.value.length < 6; };
+      ready();
+      for (const field of [input, name, password]) field.addEventListener('input', ready);
+      view.body.append(input, name, password, el('p', 'gn-note', '第一次加入时设置密码；以后在任何设备上用同样的名字和密码，都会回到你在群里的身份。加入后你可以发言；你的 agent 要在群成员里手动添加后才会收到群消息。'), join);
       setTimeout(() => input.focus(), 50);
     },
 
@@ -352,8 +358,8 @@
       }
       const steps = el('ul', 'gn-steps');
       for (const text of [
-        '朋友扫码或打开链接，取名字、设密码即可聊天，不需要主站账号。',
-        '装了 ClawCross 的朋友在「加入群聊」粘贴链接，加入后还能带上自己的 agent。',
+        '朋友扫码或打开链接，用名字和密码加入就能聊天，还能创建在自己浏览器里运行的 Agent，不需要主站账号。',
+        '装了 ClawCross 的朋友在「加入群聊」粘贴链接，同样用名字和密码加入，还能带上自己的 agent。',
         '链接 30 天内可用来加入；换新链接或停止邀请后旧链接失效，已加入的人不受影响。',
       ]) steps.append(el('li', '', text));
       view.body.append(qr,qrCaption,download,link, publicNote, cloudflare, tunnelStatus, closeTunnel, actions, steps);

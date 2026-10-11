@@ -572,7 +572,8 @@ def cmd_groups(args):
 
     if args.action in {"join", "leave", "invite"}:
         if args.action == "join":
-            data = {"invite": args.invite, "agents": [a.strip() for a in (args.agents or "").split(",") if a.strip()]}
+            data = {"invite": args.invite, "agents": [a.strip() for a in (args.agents or "").split(",") if a.strip()],
+                    "name": args.member_name or "", "password": args.password or ""}
             code, body = _req("POST", base + "/join", headers=hdrs, data=data)
         elif args.action == "leave":
             code, body = _req("POST", f"{base}/{gid}/leave", headers=hdrs, data={})
@@ -2435,6 +2436,8 @@ def build_parser():
     c.add_argument("--data", help="JSON 数据")
     c.add_argument("--after-id", help="增量获取消息 (messages 时)")
     c.add_argument("--invite", help="邀请链接 (join 时)。invite 操作会生成新的邀请链接，旧链接随之失效")
+    c.add_argument("--member-name", help="你在群里的名字 (join 时，默认用户名)")
+    c.add_argument("--password", help="你在群里的密码 (join 时)；同样的名字和密码在任何设备上都会回到同一个成员")
 
     # profile
     c = sub.add_parser("profile", help="用户画像管理")

@@ -1,0 +1,28 @@
+/* Group members drawn by device (group-device-map.js). Colours follow the page: --dm-surface is the card
+   background, everything else derives from the text colour. */
+.dm{position:relative;display:flex;flex-direction:column;gap:30px;padding:10px 6px 6px}
+.dm-lines{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}
+.dm-track{fill:none;stroke:rgba(127,127,127,.32);stroke-width:1.6}
+.dm-flow{fill:none;stroke:#42ae7d;stroke-width:1.6;stroke-dasharray:7 16;opacity:.7;animation:dm-stream 5s linear infinite}
+.dm-packet{fill:#3aaa76}
+@keyframes dm-stream{to{stroke-dashoffset:-46}}
+@media (prefers-reduced-motion:reduce){.dm-flow{animation:none}}
+.dm-row{position:relative;z-index:1;display:grid;grid-template-columns:repeat(auto-fit,minmax(138px,1fr));gap:12px;justify-items:center}
+.dm-row:empty{display:none}
+.dm-device{width:100%;max-width:230px;min-width:0;padding:12px;border-radius:18px;background:var(--dm-surface,#fff);border:1px solid rgba(127,127,127,.22);box-shadow:0 10px 26px -18px rgba(15,23,42,.3)}
+.dm-own{border-color:rgba(54,168,111,.55)}
+.dm-offline{box-shadow:none}.dm-offline .dm-device-title,.dm-offline .dm-people{opacity:.5}
+.dm-device-title{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;opacity:.75;min-width:0}
+.dm-device-title>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dm-icon{width:15px;height:15px;flex:none;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.dm-people{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 8px}
+.dm-chip{display:inline-flex;align-items:center;gap:5px;max-width:100%;padding:5px 9px 5px 6px;border-radius:11px;font-size:12px;background:#eeeafa;color:#6f5aa6}
+.dm-chip>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dm-agent{background:#e3f3e9;color:#33794f}
+.dm-state{display:flex;align-items:center;gap:6px;font-size:11px;opacity:.7}
+.dm-dot{width:7px;height:7px;border-radius:50%;background:#2f9a5b;box-shadow:0 0 0 3px rgba(47,154,91,.14)}
+.dm-offline .dm-dot{background:#b5b9b6;box-shadow:none}
+.dm-hub{position:relative;z-index:1;align-self:center;display:flex;flex-direction:column;align-items:center;gap:3px;text-align:center;max-width:80%}
+.dm-hub-icon{display:flex;align-items:center;justify-content:center;width:54px;height:54px;margin-bottom:6px;border-radius:19px;background:#36a86f;color:#fff;box-shadow:0 12px 24px -13px rgba(54,168,111,.6),0 0 0 8px rgba(54,168,111,.1)}
+.dm-hub-icon .dm-icon{width:25px;height:25px;stroke-width:1.6}
+.dm-hub>strong{font-size:14px;overflow-wrap:anywhere}.dm-hub>small{font-size:11px;opacity:.65}

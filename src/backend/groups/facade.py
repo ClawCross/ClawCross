@@ -167,6 +167,8 @@ def client_router(facade, *, internal_token, verify_password):
     class JoinBody(BaseModel):
         invite: str = Field(min_length=1, max_length=5000)  # the invitation link
         agents: list[str] = Field(default_factory=list, max_length=32)
+        name: str = Field('', max_length=40)       # the member's name and password in that group
+        password: str = Field('', max_length=128)
 
     router = APIRouter()
 
@@ -178,7 +180,8 @@ def client_router(facade, *, internal_token, verify_password):
         user = user_of(authorization)
         try:
             agents = [facade.agent_id(user, a) for a in body.agents]
-            card = await asyncio.to_thread(facade.client.join_link, user, link=body.invite, agents=agents)
+            card = await asyncio.to_thread(facade.client.join_link, user, link=body.invite, agents=agents,
+                                           name=body.name, password=body.password)
             facade.client.ensure(user, card['group_id'])
             return card
         except ClientError as exc:

@@ -14,7 +14,8 @@ class Join(BaseModel):
     invite: str = Field(min_length=20, max_length=100)
     node_id: str = Field(max_length=100)
     user_id: str = Field(max_length=100)
-    display_name: str = Field(max_length=160)
+    display_name: str = Field(min_length=1, max_length=40)
+    password: str = Field(min_length=6, max_length=128)
 
 
 class Create(BaseModel):
@@ -32,12 +33,12 @@ class AgentJoin(BaseModel):
 
 
 class GuestJoin(BaseModel):
-    password: str = Field(min_length=6, max_length=128)
     invite: str = Field(min_length=20, max_length=100)
     name: str = Field(min_length=1, max_length=40)
+    password: str = Field(min_length=6, max_length=128)
 
 
-class GuestPassword(BaseModel):
+class Password(BaseModel):
     password: str = Field(min_length=6, max_length=128)
 
 
@@ -219,11 +220,11 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
         return {'id': result['message']['id']}
 
     @router.post('/guest/password')
-    async def guest_password(body: GuestPassword, authorization: str | None = Header(None)):
+    async def guest_password(body: Password, authorization: str | None = Header(None)):
         credential = token(authorization)
         from groups.relay_store import digest
         limited('guest-password:' + digest(credential), 12)
-        return await invoke(store.guest_set_password, credential, body.password)
+        return await invoke(store.set_password, credential, body.password)
 
     @router.post('/guest/rename')
     async def guest_rename(body: GuestName, authorization: str | None = Header(None)):
@@ -255,14 +256,16 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
             sockets[identity] += 1
             pending -= 1
             admitted = True
-            cursor, version = max(0, int(hello.get('cursor', 0))), -1
+            cursor, seen = max(0, int(hello.get('cursor', 0))), None
             while True:
                 packet = await asyncio.to_thread(store.events, credential, cursor)
-                if packet['events'] or packet['group']['version'] != version:
+                # The card is sent again when it changes, or when a device goes online or offline.
+                card = (packet['group']['version'], [m['online'] for m in packet['group']['members']])
+                if packet['events'] or card != seen:
                     await ws.send_json({'type': 'events', **packet})
                     if packet['events']:
                         cursor = packet['events'][-1]['id']
-                    version = packet['group']['version']
+                    seen = card
                 try:
                     reply = await asyncio.wait_for(ws.receive_json(), 1)
                     if reply.get('type') == 'ack':

@@ -52,7 +52,7 @@ class RelayStoreTests(unittest.TestCase):
         self.invite = self.store.guest_invite(self.host['token'])['invite']
 
     def join(self, invite=None, name='Bob'):
-        return self.store.join(invite or self.invite, node_id='two', user_id=name.lower(), display_name=name)
+        return self.store.join(invite or self.invite, node_id='two', user_id=name.lower(), display_name=name, password='password123')
 
     def test_only_a_current_invitation_joins_and_members_are_notified(self):
         with self.assertRaises(RelayError): self.join('x' * 43)
@@ -106,7 +106,7 @@ class RelayStoreTests(unittest.TestCase):
             self.assertEqual(api.get('/relay/admin/groups').status_code, 403)
             headers = {'X-Group-Service-Key': 'machine-control'}
             self.assertEqual(api.get('/relay/admin/groups', headers=headers).status_code, 200)
-            joined = api.post('/relay/join', json={'invite': self.invite, 'node_id': 'x', 'user_id': 'bob', 'display_name': 'Bob'}).json()
+            joined = api.post('/relay/join', json={'invite': self.invite, 'node_id': 'x', 'user_id': 'bob', 'display_name': 'Bob', 'password': 'password123'}).json()
             with api.websocket_connect('/relay/ws') as ws:
                 ws.send_json({'token': joined['token'], 'cursor': 0})
                 packet = ws.receive_json()
@@ -162,7 +162,7 @@ class TwoDeviceTests(unittest.IsolatedAsyncioTestCase):
                 client = GroupClient(ClientStore(root / f'device{index}/client.db'), FakeAgents(user), FakeGateway())
                 self.clients.append(client)
                 # What join_link does once the front end has checked the link; the member then streams over WebSocket.
-                joined = (await api.post(self.url + '/relay/join', json={'invite': invite, 'node_id': client.store.node_id, 'user_id': user, 'display_name': user})).json()
+                joined = (await api.post(self.url + '/relay/join', json={'invite': invite, 'node_id': client.store.node_id, 'user_id': user, 'display_name': user, 'password': 'password123'})).json()
                 client.alias = client.store.save(user, self.url, joined); client.user = user
                 await asyncio.to_thread(client.add_agent, user, client.alias, 'same')
                 client.ensure(user, client.alias)

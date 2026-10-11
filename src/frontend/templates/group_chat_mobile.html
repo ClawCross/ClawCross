@@ -4582,6 +4582,8 @@
 <link rel="stylesheet" href="/static/css/mobile-panel-layout.css?v=20261008">
 <script defer src="/static/js/mobile-panel-layout.js?v=20261008"></script>
 <link rel="stylesheet" href="/static/css/agent-activity.css?v=20261009">
+<link rel="stylesheet" href="/static/css/group-device-map.css?v=20261011-devices">
+<script src="/static/js/group-device-map.js?v=20261011-devices2"></script>
 <script defer src="/static/js/agent-activity.js?v=20261009"></script>
 </head>
 <body>
@@ -5551,9 +5553,13 @@
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
     </button>
     <span class="drawer-header-title"><span data-i18n="group_members">群成员</span> <span id="member-count" style="font-weight:400;font-size:13px;color:var(--text-secondary);"></span></span>
-    <button id="mute-all-members-btn" onclick="toggleMuteAllMembers()" style="margin-left:auto;background:#fff7ed;color:#c2410c;border:1px solid #fdba74;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:700;cursor:pointer;">全员禁言</button>
+    <button id="member-view-btn" class="drawer-header-back" style="margin-left:auto;" onclick="toggleMemberView()" title="按设备查看" aria-label="按设备查看" aria-pressed="false">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="5" cy="5" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="17" cy="19" r="2"/><path d="M6.5 6.5 9.8 9.8M17.3 7.2l-3 2.7M16 17.4l-2.3-3"/></svg>
+    </button>
+    <button id="mute-all-members-btn" onclick="toggleMuteAllMembers()" style="margin-left:8px;background:#fff7ed;color:#c2410c;border:1px solid #fdba74;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:700;cursor:pointer;">全员禁言</button>
   </div>
   <div class="drawer-body" id="member-list"></div>
+  <div class="drawer-body" id="member-map" style="display:none;padding:16px 12px;--dm-surface:var(--ui-surface);"></div>
 </div>
 
 <!-- Add Agent Sidebar -->
@@ -13594,6 +13600,7 @@ function renderMembers(members) {
     muteAllBtn.textContent = allMuted ? '解除全员禁言' : '全员禁言';
     muteAllBtn.dataset.allMuted = allMuted ? '1' : '';
   }
+  drawMemberDevices();
   const list = document.getElementById('member-list');
   list.innerHTML = members.map(m => {
     const name = m.name || m.principal;
@@ -13639,6 +13646,22 @@ function renderMembers(members) {
         ${removeBtn}
       </div>`;
   }).join('');
+}
+
+// The member drawer can show the group by device instead: who is on which device, with which agents, and online or not.
+let memberViewByDevice = false;
+function drawMemberDevices() {
+  if (memberViewByDevice) GroupDeviceMap.render(document.getElementById('member-map'), { title: currentGroupName, members: currentMembers, lang: _currentLang });
+}
+function toggleMemberView() {
+  memberViewByDevice = !memberViewByDevice;
+  const button = document.getElementById('member-view-btn');
+  const label = memberViewByDevice ? (_currentLang === 'zh' ? '按列表查看' : 'Show as list') : (_currentLang === 'zh' ? '按设备查看' : 'Show by device');
+  button.title = label; button.setAttribute('aria-label', label); button.setAttribute('aria-pressed', String(memberViewByDevice));
+  button.style.background = memberViewByDevice ? 'var(--ui-accent-tint)' : '';
+  document.getElementById('member-list').style.display = memberViewByDevice ? 'none' : '';
+  document.getElementById('member-map').style.display = memberViewByDevice ? '' : 'none';
+  drawMemberDevices();
 }
 
 async function toggleMemberMute(principal, muted, name) {
