@@ -152,6 +152,8 @@ def native_workspace_pinned(agent: Agent) -> bool:
 
 
 def native_workspace_cwd(agent: Agent) -> str:
+    if agent.config.get('connection_id'):
+        return str(agent.runtime.get('acp_cwd') or agent.config.get('remote_cwd') or f'~/.clawcross/workspaces/{agent.agent_id}')
     # Native session continuity metadata belongs to the adapter; workspace
     # settings contain only source switches and user-supplied custom directories.
     if native_workspace_pinned(agent):
@@ -174,6 +176,11 @@ def workspace_context(agent: Agent) -> str:
     if agent.driver == ACPX:
         value['native_cwd'] = native_workspace_cwd(agent)
         value['scope'] = 'root/cwd 是 ClawCross command 工具工作区；native_cwd 是外部 CLI 工作目录，原生工具遵循自身权限。'
+        if agent.config.get('connection_id'):
+            from connections.ssh import get_connections
+            connection=get_connections().card(agent.owner,agent.config['connection_id'])
+            value['device']={key:connection[key] for key in ('id','name','host','kind')}
+            value['scope']='原生 CLI 和 native_cwd 位于 SSH 远端；ClawCross MCP 由本机统一审核，文件与 command 工具使用本机工作区。'
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
 
 
@@ -197,7 +204,7 @@ def build_dynamic_context(agent: Agent, msg: AgentMessage, *, context: dict[str,
     tool_scope += '\n实际调用继续受当前模式、继承范围与审核限制。'
     dynamic = {
         **{"identity_" + name: value for name, value in (identity if identity is not None else identity_sections(agent)).items()},
-        "cli_entry": "" if connected else f"当前命令入口：{cli_entry(agent.owner)} --help；替代此前提供的旧命令路径。",
+        "cli_entry": "" if connected or agent.config.get('connection_id') else f"当前命令入口：{cli_entry(agent.owner)} --help；替代此前提供的旧命令路径。",
         "workspace": workspace_context(agent),
         "teams": render_team_skill_context(teams, user_id=agent.owner),
         "groups": render_group_metadata(current_group_metadata(context.get("groups") or [], memberships)),
@@ -216,6 +223,12 @@ def build_dynamic_context(agent: Agent, msg: AgentMessage, *, context: dict[str,
                           + json.dumps(context["command_tools"], ensure_ascii=False, sort_keys=True)) if context.get("command_tools") else "",
         "reply_format": json.dumps(response_format, ensure_ascii=False, sort_keys=True) if response_format else "",
     }
+    if agent.config.get('connection_id'):
+        if connected and dynamic['skills']:
+            dynamic['skills']='以下 Skill 位于本机 ClawCross 工作区，请通过 ClawCross 文件和 command 工具使用。\n'+dynamic['skills']
+        if not connected:
+            dynamic['skills']='';dynamic['workflows']=''
+            dynamic['tool_connector']='ClawCross MCP 未开启；只使用远端原生工具。本机的 CLI 路径不适用于远端。'
     return dynamic
 
 

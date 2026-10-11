@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import json
 from typing import Any, Callable
 
@@ -316,7 +317,7 @@ class WeBotService:
         plan = get_session_plan(user_id, session_id)
         inbox_items = list_inbox_messages(user_id, session_id, limit=20)
         artifacts = list_runtime_artifacts(user_id, session_id, limit=20)
-        keepalive = get_claude_keepalive_state(user_id, session_id)
+        keepalive = get_claude_keepalive_state(user_id, session_id) if os.getenv('CLAWCROSS_LEGACY_CLAUDE_CODE','').lower() in {'1','true','yes','on'} else None
         approvals = [
             {
                 "approval_id": approval.approval_id,
@@ -378,7 +379,7 @@ class WeBotService:
             "claude_code": {
                 "status": detect_claude_code_cached(ttl_seconds=60),
                 "keepalive": self._serialize_claude_keepalive(keepalive),
-            },
+            } if keepalive else None,
         }
 
     async def list_subagents(self, user_id: str, password: str, x_internal_token: str | None):
@@ -816,6 +817,8 @@ class WeBotService:
         x_internal_token: str | None,
     ):
         self.verify_auth_or_token(user_id, password, x_internal_token)
+        if os.getenv('CLAWCROSS_LEGACY_CLAUDE_CODE','').lower() not in {'1','true','yes','on'}:
+            raise HTTPException(410, '旧 Claude 控制入口已停用；请登记 Claude Agent 并使用通用 Agent API。')
         keepalive = get_claude_keepalive_state(user_id, session_id or "default")
         return {
             "status": "success",
@@ -832,6 +835,8 @@ class WeBotService:
         x_internal_token: str | None,
     ):
         self.verify_auth_or_token(req.user_id, req.password, x_internal_token)
+        if os.getenv('CLAWCROSS_LEGACY_CLAUDE_CODE','').lower() not in {'1','true','yes','on'}:
+            raise HTTPException(410, '旧 Claude 控制入口已停用；请登记 Claude Agent 并使用通用 Agent API。')
         record = save_claude_keepalive_state(
             req.user_id,
             req.session_id,
@@ -859,6 +864,8 @@ class WeBotService:
         x_internal_token: str | None,
     ):
         self.verify_auth_or_token(req.user_id, req.password, x_internal_token)
+        if os.getenv('CLAWCROSS_LEGACY_CLAUDE_CODE','').lower() not in {'1','true','yes','on'}:
+            raise HTTPException(410, '旧 Claude 控制入口已停用；请登记 Claude Agent 并使用通用 Agent API。')
         result = probe_claude_acp(
             prompt=req.prompt,
             session_name=req.session_name,
@@ -883,6 +890,8 @@ class WeBotService:
         x_internal_token: str | None,
     ):
         self.verify_auth_or_token(req.user_id, req.password, x_internal_token)
+        if os.getenv('CLAWCROSS_LEGACY_CLAUDE_CODE','').lower() not in {'1','true','yes','on'}:
+            raise HTTPException(410, '旧 Claude 控制入口已停用；请登记 Claude Agent 并使用通用 Agent API。')
         state = get_claude_keepalive_state(req.user_id, req.session_id)
         prompt = req.prompt or state.prompt or "ping"
         if req.use_acp:

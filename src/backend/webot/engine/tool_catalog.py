@@ -7,7 +7,7 @@ TOOL_CATEGORIES = {
     "commands": {"run_command", "background_command_io", "cancel_background_command"},
     "web": {"web_search", "web_fetch"},
     "sessions": {"list_sessions", "fork_session", "set_session_title", "search_sessions", "send_to_session", "read_session_inbox", "mark_session_inbox_read", "send_to_group",'get_session_details'},
-    "agents": {"spawn_subagent", "list_subagents", "send_subagent_message", "get_subagent_history", "cancel_subagent", "delete_subagent", "write_session_plan", "read_session_plan", "clear_session_plan", "list_tool_approvals", "set_session_mode", "claude_code_status", "probe_claude_code", "configure_claude_keepalive"},
+    "agents": {"spawn_subagent", "list_subagents", "send_subagent_message", "get_subagent_history", "cancel_subagent", "delete_subagent", "write_session_plan", "read_session_plan", "clear_session_plan", "list_tool_approvals", "set_session_mode"},
     "workflows": {"list_oasis_experts", "save_oasis_expert", "delete_oasis_expert", "start_new_oasis", "check_oasis_discussion", "cancel_oasis_discussion", "save_oasis_workflow", "list_oasis_workflows", "get_workflow_rules", "list_oasis_agent_catalog", "get_publicnet_info"},
     "skills": {"manage_personality"},
     "notifications": {"get_current_time", "add_alarm", "list_alarms", "delete_alarm", "set_notification_channel", "remove_notification_channel", "send_notification", "get_notification_status", "get_channel_setup", "request_channel_setup",'manage_agent_alarms'},

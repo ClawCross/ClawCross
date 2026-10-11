@@ -1321,6 +1321,7 @@
                     <h2 id="agent-center-title" data-i18n="agent_center_title">Agent 中心</h2>
                 </div>
                 <div class="agent-center-header-actions">
+                    <button class="agent-center-btn" type="button" onclick="DeviceConnections.open()">设备与 SSH</button>
                     <button class="agent-center-btn" type="button" onclick="ClawcrossNativeSessions.open()" data-i18n="native_session_register">登记外部会话</button>
                     <button id="agent-center-refresh-btn" class="agent-center-btn primary" type="button" onclick="refreshAgentCenter()" data-i18n="agent_center_refresh_status">刷新状态</button>
                     <button class="agent-center-close" type="button" onclick="closeAgentCenter()" aria-label="Close">&times;</button>
@@ -1392,12 +1393,14 @@
     <script src="/static/js/conversation-ui-panels.js?v=20261010-ui-workspace"></script>
     <script src="/static/js/components.js?v=20261004-windows-sandbox"></script>
     <script src="/static/js/attachment-utils.js?v=20261003-media"></script>
-    <script src="/static/js/main.js?v=20261010-ui-workspace"></script>
+    <script src="/static/js/main.js?v=20261011-ssh"></script>
     <link rel="stylesheet" href="/static/css/external-agent-settings.css?v=20261004-effort-stops">
     <link rel="stylesheet" href="/static/css/runtime-settings.css?v=20261004-keepy-manager">
     <script src="/static/js/runtime-presentation.js?v=20261008-inbox"></script>
 <script src="/static/js/reasoning-levels.js?v=20261004-effort-stops"></script>
-<script src="/static/js/external-agent-settings.js?v=20261008-workspaces-modes"></script>
+    <link rel="stylesheet" href="/static/css/connections.css?v=20261011">
+    <script src="/static/js/connections.js?v=20261011"></script>
+    <script src="/static/js/external-agent-settings.js?v=20261011-ssh"></script>
 <script src="/static/js/model-profiles.js?v=20261004-effort-slider"></script>
     <script src="/static/js/remembered-approvals-ui.js?v=20261004-keepy-manager"></script>
     <script src="/static/js/runtime-settings.js?v=20261005-workspaces"></script>

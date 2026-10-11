@@ -21,6 +21,11 @@ from external.inbox import InboxRuntime
 def adapter(agent: Agent | None = None):
     from external.acpx import AcpxError, get_acpx_adapter
 
+    if agent and agent.config.get('connection_id'):
+        from connections.acpx import SSHAcpxAdapter
+        try:return SSHAcpxAdapter(agent)
+        except (LookupError,RuntimeError) as exc:raise ControlError(str(exc)) from exc
+
     from ops.components import binary_path
     if not binary_path("acpx"):
         raise ControlError("acpx is not installed")
@@ -136,10 +141,21 @@ class AcpRuntime(InboxRuntime):
         model = str(agent.config.get("model") or native_config.get("model") or "").strip() or None
         return model, connector_file(agent), native_config
 
+    async def _resolve_remote_workspace(self, agent):
+        if not agent.config.get('connection_id') or agent.runtime.get('acp_cwd'):return agent
+        from connections.ssh import get_connections
+        cwd=await get_connections().resolve_workspace(agent.owner,agent.config['connection_id'],session.native_workspace_cwd(agent))
+        if self._store:
+            self._store.patch_runtime(agent.owner,agent.agent_id,{'acp_cwd':cwd})
+            return self._store.require(agent.owner,agent.agent_id)
+        from dataclasses import replace
+        return replace(agent,runtime={**agent.runtime,'acp_cwd':cwd})
+
     async def ask(self, agent: Agent, msg: AgentMessage, *, context, mode, enabled_tools, response_format, timeout) -> AgentReply:
         try:
             async with session.turn(self._store, agent) as current:
-                if current.runtime.get('native_resume_id') and current.runtime.get('acp_cwd'):
+                current=await self._resolve_remote_workspace(current)
+                if not current.config.get('connection_id') and current.runtime.get('native_resume_id') and current.runtime.get('acp_cwd'):
                     from webot.workspace import set_cli_workspace
                     set_cli_workspace(current.owner, current.agent_id, current.runtime['acp_cwd'])
                 if context.get('_acp_turn_started'):
@@ -188,7 +204,7 @@ class AcpRuntime(InboxRuntime):
         async def send() -> session.Sent:
             try:
                 with active_turn(agent, msg, context, mode, enabled_tools, prepared=prepared, response_format=response_format):
-                    selected = get_acpx_adapter(cwd=session.native_workspace_cwd(agent))
+                    selected = adapter(agent)
                     trace = await selected.prompt_with_trace(
                         tool=canonical_platform(agent.platform),
                         session_key=session.runtime_session(agent),
@@ -223,17 +239,21 @@ class AcpRuntime(InboxRuntime):
             raise ControlError('Agent 正在运行，请在本轮结束后测试连接')
         from external.acpx import AcpxError, acpx_options_from_agent, get_acpx_adapter
         async with session.turn(self._store, agent) as current:
+            current=await self._resolve_remote_workspace(current)
             options = acpx_options_from_agent(current.config, default_timeout_sec=60)
             options['timeout_sec'] = min(options.get('timeout_sec') or 60, 90)
             model, connector, _ = self._native_session(current)
             try:
-                selected = get_acpx_adapter(cwd=session.native_workspace_cwd(current))
+                selected = adapter(current)
                 await selected.ensure_session(
                     tool=canonical_platform(current.platform), session_key=session.runtime_session(current),
                     acpx_session=session.runtime_session(current), system_prompt=None,
                     model=model, mcp_config=connector, **options,
                     **({'resume_session_id': current.runtime['native_resume_id']} if current.runtime.get('native_resume_id') else {}))
                 session.remember(self._store, current, acp_cwd=session.native_workspace_cwd(current))
+                if current.config.get('connection_id') and self._store:
+                    choices=await selected.refresh_options(current.platform,session.runtime_session(current))
+                    self._store.patch_runtime(current.owner,current.agent_id,{'remote_config_options':choices})
             except (AcpxError, RuntimeError) as exc:
                 raise ControlError(str(exc)) from exc
 
@@ -286,6 +306,12 @@ class AcpRuntime(InboxRuntime):
 
         acpx, key = adapter(agent), session.runtime_session(agent)
         try:
+            if agent.config.get('connection_id'):
+                from connections.store import get_connection_store
+                connection=get_connection_store().get(agent.owner,agent.config['connection_id'])
+                if not connection['enabled']:
+                    if action=='reset':session.forget(self._store,agent,new_session=True)
+                    return {'action':action,'state':'idle','detail':'本机请求已停止；SSH 已暂停，未确认远端原生进程状态。'}
             if action == "cancel":
                 await acpx.ops_cancel(
                     tool=agent.platform, session_key=key, **command_options(agent, long=False))
@@ -330,7 +356,11 @@ class AcpRuntime(InboxRuntime):
             was_busy = self.is_busy(agent)
             await self._stop_turn(agent)
             async with session.turn(self._store, agent,cancellable=False) as current:
-                if was_busy or current.runtime.get('acp_cwd') or current.runtime.get('native_resume_id'):
+                remote_paused=False
+                if current.config.get('connection_id'):
+                    from connections.store import get_connection_store
+                    remote_paused=not get_connection_store().get(current.owner,current.config['connection_id'])['enabled']
+                if not remote_paused and (was_busy or current.runtime.get('acp_cwd') or current.runtime.get('native_resume_id')):
                     acpx, key = adapter(current), session.runtime_session(current)
                     await acpx.close_session(tool=current.platform, session_key=key,
                         acpx_session=acpx.to_acpx_session_name(tool=current.platform, session_key=key),

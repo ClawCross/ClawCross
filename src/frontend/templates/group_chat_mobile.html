@@ -36,7 +36,9 @@
 <link rel="stylesheet" href="/static/css/external-agent-settings.css?v=20261004-effort-stops">
 <script src="/static/js/runtime-presentation.js?v=20261008-inbox"></script>
 <script src="/static/js/reasoning-levels.js?v=20261004-effort-stops"></script>
-<script src="/static/js/external-agent-settings.js?v=20261008-workspaces-modes"></script>
+<link rel="stylesheet" href="/static/css/connections.css?v=20261011">
+<script src="/static/js/connections.js?v=20261011"></script>
+<script src="/static/js/external-agent-settings.js?v=20261011-ssh"></script>
 <script src="/static/js/model-profiles.js?v=20261004-effort-slider"></script>
 <script src="/static/js/approval-ui.js?v=20261004-fold-approval"></script>
 <link rel="stylesheet" href="/static/css/channel-setup.css?v=2">
@@ -5067,6 +5069,7 @@
       <span style="font-size:15px;font-weight:500;color:var(--text);" data-i18n="contacts_experts_btn">添加 Agent</span>
     </div>
     <div class="contacts-team-switcher">
+      <button type="button" class="gn-team-info" onclick="DeviceConnections.open()">设备与 SSH</button>
       <button type="button" class="gn-team-info" id="contacts-team-info" hidden aria-label="Team 介绍" onclick="GroupNetworkUI.teamInfo(document.getElementById('contacts-team-select').value)">Team 介绍</button>
       <span class="contacts-team-label" data-i18n="select_team_label">选择team</span>
       <select id="contacts-team-select" onchange="loadContactsForTeam()">
@@ -8376,15 +8379,14 @@ async function refreshRemoteClaudeSessions(showToast = false) {
   }
 }
 
-window.addEventListener('clawcross:agent-imported', () => { void refreshAgentOps(); });
+window.addEventListener('clawcross:agent-imported', () => { void refreshGroups(); });
 
 async function refreshAgentOps(showToast = false) {
   const btn = document.getElementById('fleet-refresh');
   if (btn) btn.disabled = true;
   try {
     await Promise.all([
-      refreshFleetState(false),
-      refreshRemoteClaudeSessions(false)
+      refreshFleetState(false)
     ]);
     if (showToast) toast(_currentLang === 'zh' ? '项目状态已刷新' : 'Project state refreshed', 1600);
   } finally {
@@ -15459,7 +15461,7 @@ function renderAgentGroupsHtml(entries, idPrefix, renderRow) {
 function renderAgentContactRow(entry) {
   const name = entry.name || entry.agent.name;
   const teamLabel = entry.team ? `<span style="font-size:11px;color:var(--text-hint);margin-left:4px;">[${esc(entry.team)}]</span>` : '';
-  return `<div class="contact-item" data-agent-activity="${esc(entry.agent.agent_id)}" onclick="showAgentDetail('${entry.agent.agent_id}')"><div class="contact-avatar ${agentAvatarClass(entry.agent.platform)}">${esc(avatarLabelFromDisplayName(name))}<span class="agent-activity-dot" role="img" hidden></span></div><div class="contact-main"><div class="contact-name">${esc(name)}${entry.is_lead ? ' ⭐' : ''}${teamLabel}</div></div>${entry.tag ? `<span class="contact-tag">${esc(entry.tag)}</span>` : ''}</div>`;
+  return `<div class="contact-item" data-agent-activity="${esc(entry.agent.agent_id)}" onclick="showAgentDetail('${entry.agent.agent_id}')"><div class="contact-avatar ${agentAvatarClass(entry.agent.platform)}">${esc(avatarLabelFromDisplayName(name))}<span class="agent-activity-dot" role="img" hidden></span></div><div class="contact-main"><div class="contact-name">${esc(name)}${entry.is_lead ? ' ⭐' : ''}${teamLabel}</div>${entry.agent.location?.kind==='ssh'?`<small>${esc(entry.agent.location.name)} · SSH</small>`:''}</div>${entry.tag ? `<span class="contact-tag">${esc(entry.tag)}</span>` : ''}</div>`;
 }
 
 function renderPersonaContactRow(exp, avatarClass) {

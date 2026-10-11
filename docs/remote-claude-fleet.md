@@ -1,5 +1,8 @@
 # Remote Claude Fleet 接入流程
 
+> 这是旧 Fleet 的兼容接入文档。新设备与远端 ACP Agent 统一接入请阅读
+> [SSH 设备与统一 Agent 管理](ssh-agents.md)。旧主控、自动审核和发布默认关闭。
+
 本文记录把一台新的远端电脑接入 ClawCross Project Fleet 的标准流程。目标是让远端 Claude Code / Claude Agents session 能被本机 ClawCross 发现、收发消息、读取 dashboard TODO，并通过私有 fleet 更新任务状态和评论。
 
 不要把密码、`INTERNAL_TOKEN`、Claude remote-control 链接、Claude session id 或 fleet runtime state 写进 dashboard 仓库。dashboard 只保留项目、TODO、comment、result 等任务信息；Claude 配置和控制链路只放在 ClawCross 里。

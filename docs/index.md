@@ -43,7 +43,8 @@ If you are an agent, do **not** load everything by default. Start with `AGENTS.m
 | Convert a workflow canvas into a Team | [`team-creator.md`](./team-creator.md) | [`build_team.md`](./build_team.md), [`create_workflow.md`](./create_workflow.md) |
 | Create / debug workflow YAML | [`create_workflow.md`](./create_workflow.md) | [`example_team.md`](./example_team.md) |
 | Use OpenClaw (an ACP agent, like Codex) | [`openclaw-commands.md`](./openclaw-commands.md) | [`build_team.md`](./build_team.md) |
-| Add or debug remote Claude computers in Project Fleet | [`remote-claude-fleet.md`](./remote-claude-fleet.md) | [`ports.md`](./ports.md), [`runtime-reference.md`](./runtime-reference.md), [`repo-index.md`](./repo-index.md) |
+| Manage SSH devices and remote ACP Agents | [`ssh-agents.md`](./ssh-agents.md) | [`runtime-reference.md`](./runtime-reference.md), [`repo-index.md`](./repo-index.md) |
+| Maintain the legacy remote Claude Fleet | [`remote-claude-fleet.md`](./remote-claude-fleet.md) | [`ports.md`](./ports.md), [`runtime-reference.md`](./runtime-reference.md), [`repo-index.md`](./repo-index.md) |
 | Configure or debug ACP / acpx (Codex / Claude Code / Gemini / OpenClaw agents) | [`runtime-reference.md`](./runtime-reference.md) | [`build_team.md`](./build_team.md), [`oasis-reference.md`](./oasis-reference.md), [`repo-index.md`](./repo-index.md) |
 | Configure TinyFish internet search agent | [`tinyfish-monitor.md`](./tinyfish-monitor.md) | [`runtime-reference.md`](./runtime-reference.md), [`repo-index.md`](./repo-index.md) |
 | Inspect ports, proxies, or service boundaries | [`ports.md`](./ports.md) | [`repo-index.md`](./repo-index.md) |

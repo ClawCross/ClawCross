@@ -62,6 +62,8 @@ def reply_channel(agent: Agent, conversation_id: str) -> str:
     if agent.driver == ACPX and ((agent.config.get('meta') or {}).get('acp') or {}).get('clawcross_tools', True):
         args = json.dumps({'group_id': conversation_id, 'content': '你的回复'}, ensure_ascii=False)
         return f'通过 ClawCross MCP tool_call 调用 send_to_group，arguments_json={args}；身份自动注入。'
+    if agent.config.get('connection_id'):
+        return '直接输出文字；ClawCross 会返回当前消息来源群。向其他群主动发送需要启用 ClawCross MCP。'
     return (f'{cli_entry(agent.owner)} '
             f"groups send --group-id {shlex.quote(conversation_id)} --agent {shlex.quote(agent.agent_id)} "
             "--message '你的回复'")

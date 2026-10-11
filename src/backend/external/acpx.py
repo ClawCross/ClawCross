@@ -274,6 +274,9 @@ class AcpxAdapter:
     def available(self) -> bool:
         return bool(self._acpx_bin)
 
+    async def _spawn_process(self, *command, **kwargs):
+        return await asyncio.create_subprocess_exec(*command, **kwargs)
+
     @staticmethod
     def to_acpx_session_name(*, tool: str, session_key: str) -> str:
         # Use business session key directly as acpx transport session.
@@ -532,7 +535,7 @@ await fn(process.argv[2]);'''
         )
         cmd.extend(["--format", "quiet", *args])
         try:
-            proc = await asyncio.create_subprocess_exec(
+            proc = await self._spawn_process(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -638,7 +641,7 @@ await fn(process.argv[2]);'''
         node = shutil.which('node')
         if not node or not self._acpx_bin:
             return {'status': 'unavailable', 'detail': 'Node/acpx is not installed', 'messages': []}
-        proc = await asyncio.create_subprocess_exec(
+        proc = await self._spawn_process(
             node, str(Path(__file__).with_name('native_history.mjs')),
             stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
         package_cli = Path(self._acpx_bin).resolve()
@@ -1136,7 +1139,7 @@ await fn(process.argv[2]);'''
         )
         _aux_tail = " ".join(cmd[3:7]) if len(cmd) > 7 else " ".join(cmd[3:])
         _acp_mark("acpx.aux.spawn.pre", op=_aux_tail, timeout_sec=timeout_sec)
-        proc = await asyncio.create_subprocess_exec(
+        proc = await self._spawn_process(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -1185,7 +1188,7 @@ await fn(process.argv[2]);'''
         # Cheap fingerprint of the command for trace correlation without leaking prompts.
         _cmd_tail = " ".join(cmd[-4:]) if len(cmd) > 4 else " ".join(cmd)
         _acp_mark("acpx.spawn.pre", cmd_tail=_cmd_tail, timeout_sec=timeout_sec)
-        proc = await asyncio.create_subprocess_exec(
+        proc = await self._spawn_process(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=None,

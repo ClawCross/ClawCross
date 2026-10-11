@@ -440,7 +440,7 @@ def start_fleet_conductor_if_configured():
         except Exception as exc:
             print(f"   ⚠️ 读取 fleet.env 失败，conductor 可能缺少 dashboard 配置: {exc}")
 
-    enabled = (conductor_env.get("CLAWCROSS_FLEET_CONDUCTOR") or "1").strip().lower()
+    enabled = (conductor_env.get("CLAWCROSS_FLEET_CONDUCTOR") or "0").strip().lower()
     if enabled in ("0", "false", "no", "off"):
         print("🧭 [skip] ClawCross fleet 主控已禁用（CLAWCROSS_FLEET_CONDUCTOR=0）")
         return None

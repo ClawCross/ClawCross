@@ -174,7 +174,7 @@ class ConnectionProbeTests(unittest.IsolatedAsyncioTestCase):
             agent = store.create('alice', driver=ACPX, config={'platform':'codex','model':'gpt-5.5'})
             runtime = AcpRuntime(store=store)
             adapter = SimpleNamespace(ensure_session=AsyncMock(), prompt_with_trace=AsyncMock())
-            with patch('external.acpx.get_acpx_adapter',return_value=adapter), \
+            with patch('external.acp.adapter',return_value=adapter), \
                  patch('external.acp_settings.initial_config_options',return_value={}), \
                  patch('external.tool_bridge.connector_file',return_value='/scoped-mcp.json'):
                 await runtime.test_connection(agent)

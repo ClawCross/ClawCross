@@ -54,7 +54,10 @@
     let uncreated = Boolean(card.uncreated);
     const createIfNeeded = async () => {
       if (!uncreated) return;
-      await studioEnsureAgent(id, {platform: card.platform});
+      await studioEnsureAgent(id, {platform: card.platform,connection_id:overlay.querySelector('#external-connection').value,
+        remote_cwd:overlay.querySelector('#external-remote-cwd').value.trim()});
+      card.connection_id=overlay.querySelector('#external-connection').value;
+      card.remote_cwd=overlay.querySelector('#external-remote-cwd').value.trim();
       uncreated = false;
       cache.delete(id);
       overlay.querySelector('[data-save]').textContent = '保存';
@@ -63,12 +66,16 @@
       overlay.querySelector('[data-workspaces]').disabled = false;
     };
     const settings = card.settings || {};
+    const connections=window.DeviceConnections ? await DeviceConnections.list().catch(()=>[]) : [];
     const options = Array.isArray(card.config_options) ? card.config_options : [];
     overlay.innerHTML = `<section class="external-settings-dialog">
       <header><h2 id="external-settings-title">${escape(card.platform)} · Agent 设置</h2><button type="button" data-close aria-label="关闭">×</button></header>
       ${uncreated ? '<p role="status" data-uncreated>此 Agent 尚未创建。点击下方创建按钮后才会创建。</p>' : ''}
       <p>设置仅用于这个 Agent，从下一轮调用生效。原生模式和权限由外部 Agent 执行。</p>
       <div class="external-settings-fields">
+      <label>运行设备<select id="external-connection"><option value="">本机</option>${connections.map(row=>`<option value="${escape(row.id)}" ${card.connection_id===row.id?'selected':''}>${escape(row.name)} · SSH</option>`).join('')}</select></label>
+      <label>远端原生工作目录<input id="external-remote-cwd" value="${escape(card.remote_cwd||'')}" placeholder="留空使用远端独立工作目录"></label>
+      <button type="button" data-devices>管理设备与 SSH 连接</button>
       <label>ClawCross 运行模式<select id="external-run-mode">
         ${[['chat','交流 · 不调用工具'],['readonly','只读 · 阅读与查询'],['manual','人工审核'],['auto','自动审核'],['bypass','不审核']].map(([value,label])=>`<option value="${value}" ${value === (refreshed?.runMode || card.mode || 'auto') ? 'selected' : ''}>${label}</option>`).join('')}
       </select><small>仅此 Agent 生效，约束 ClawCross 工具及本轮 acpx 权限；原生模式在下方适配器选项中单独设置。</small></label>
@@ -112,12 +119,27 @@
       }
     });
     overlay.querySelector('[data-close]').onclick = close;
+    overlay.querySelector('[data-devices]').onclick = async () => {
+      await DeviceConnections.open();
+      const select=overlay.querySelector('#external-connection'),selected=select.value;
+      const rows=await DeviceConnections.list();
+      select.innerHTML='<option value="">本机</option>'+rows.map(row=>`<option value="${escape(row.id)}">${escape(row.name)} · SSH</option>`).join('');select.value=selected;
+    };
+    const saveConnection = async () => {
+      const connection_id=overlay.querySelector('#external-connection').value;
+      const remote_cwd=overlay.querySelector('#external-remote-cwd').value.trim();
+      if(connection_id!==(card.connection_id||'') || remote_cwd!==(card.remote_cwd||'')) {
+        await request('/v1/agents/'+encodeURIComponent(id),'PATCH',{settings:{connection_id,remote_cwd}});
+        card.connection_id=connection_id;card.remote_cwd=remote_cwd;cache.delete(id);
+      }
+    };
     overlay.querySelector('[data-test]').onclick = async function () {
       this.disabled = true;
       const save = overlay.querySelector('[data-save]'); save.disabled = true;
       const status = overlay.querySelector('[data-status]'); status.textContent = '连接中…';
       try {
         await createIfNeeded();
+        await saveConnection();
         const fresh = await request('/v1/agents/' + encodeURIComponent(id) + '/test-connection', 'POST');
         cache.set(id, {value:fresh, at:Date.now()});
         if (!overlay.isConnected) return;
@@ -153,6 +175,7 @@
         const effortInput = overlay.querySelector('[data-unified-effort]');
         const names = overlay.querySelector('#external-tool-list').value.split(/[,，\s]+/).filter(Boolean);
         await createIfNeeded();
+        await saveConnection();
         const saved = await request('/v1/agents/' + encodeURIComponent(id) + '/acp-settings', 'PATCH', {
           config_options, ...(effortInput ? {reasoning_level:Number(effortInput.value)} : {}), clawcross_tools: overlay.querySelector('#external-tools').checked,
           timeout_sec: Number(overlay.querySelector('#external-timeout').value),

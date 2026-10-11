@@ -1888,7 +1888,7 @@ function renderAgentCenterGrid() {
                 <div class="agent-center-card-body">
                     <div class="agent-center-card-top">
                         <div class="agent-center-identity">
-                            <div class="agent-center-card-number">NO.${String(index).padStart(3, '0')} · ${agentCenterEscape(agent.platform)}</div>
+                            <div class="agent-center-card-number">NO.${String(index).padStart(3, '0')} · ${agentCenterEscape(agent.platform)} · ${agentCenterEscape(agent.location?.name || '本机')}${agent.location?.kind==='ssh'?' · SSH':''}</div>
                             <div class="agent-center-name" title="${agentCenterEscape(agent.name)}">${agentCenterEscape(agent.name)}</div>
                             <div class="agent-center-id" title="${agentCenterEscape(agent.agent_id)}">${agentCenterEscape(agent.agent_id)}</div>
                         </div>
@@ -2186,6 +2186,7 @@ async function refreshAgentCenter() {
             }
         }
         agentCenterAgents = (agents.data || []).map(agent => ({...agent, teams: teamsOf[agent.agent_id] || []}));
+        for (const agent of agentCenterAgents) if (agent.location?.kind==='ssh' && !_acpToolsCache.includes(agent.platform)) _acpToolsCache.push(agent.platform);
         updateAgentCenterFilters();
         renderAgentCenterSummary();
         setAgentCenterNotice(t('agent_center_status_hint'));
@@ -5148,7 +5149,7 @@ function renderStudioConversations() {
         title.textContent = item.title || (currentLang === 'zh-CN' ? '未命名对话' : 'Untitled conversation');
         const detail = document.createElement('small');
         detail.className = 'studio-conversation-agent';
-        detail.textContent = (item.agent || 'Agent') + ' · #' + item.id.slice(-6);
+        detail.textContent = (item.agent || 'Agent') + ' · #' + item.id.slice(-6) + (agentMap[item.id]?.location?.kind==='ssh'?' · '+agentMap[item.id].location.name:'');
         button.append(title, detail);
         button.onclick = async () => {
             if (mode !== _ocChatMode) return;
@@ -5205,6 +5206,7 @@ async function renderStudioTeamTree(force = false) {
                 button.onclick = async () => {
                     if (agent.platform && agent.platform !== 'webot') {
                         const platform = String(agent.platform).toLowerCase();
+                        if (agent.location?.kind==='ssh' && !_acpToolsCache.includes(platform)) _acpToolsCache.push(platform);
                         if (!_acpToolsCache.includes(platform)) {
                             acpSetSessionStatus(currentLang === 'zh-CN' ? `当前未安装或未启用 ${platform} ACP` : `${platform} ACP is unavailable`, 'error');
                             return;
@@ -15622,7 +15624,10 @@ async function ocInitSwitcher() {
         _acpToolsCache = Array.isArray(acpData && acpData.tools)
             ? acpData.tools.map((t) => String(t || '').trim().toLowerCase()).filter(Boolean)
             : [];
-        _acpAvailable = !!(acpData && acpData.available && _acpToolsCache.length > 0);
+        const remoteAgents=await agentApi('GET','/v1/agents').catch(()=>({data:[]}));
+        const remotePlatforms=(remoteAgents.data||[]).filter(agent=>agent.location?.kind==='ssh').map(agent=>agent.platform);
+        _acpToolsCache=[...new Set([..._acpToolsCache,...remotePlatforms])];
+        _acpAvailable = !!((acpData?.available || remotePlatforms.length) && _acpToolsCache.length > 0);
         if (_acpAvailable) {
             ocRenderAcpTabs(_acpToolsCache);
             if (_acpTool && !_acpToolsCache.includes(_acpTool)) _acpTool = null;
