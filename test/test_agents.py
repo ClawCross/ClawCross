@@ -173,6 +173,7 @@ class TestGateway(StoreCase):
         _Http.posts = []
         for target, value in (("webot.profiles.frame_session_identity", lambda *a: "PERSONA"),
                               ("external.acpx.get_acpx_adapter", lambda *a, **k: self.acpx),
+                              ("ops.components.binary_path", lambda component: "/fixture/acpx" if component == "acpx" else None),
                               ("external.http.httpx.AsyncClient", _Http),
                               ("external.history._STORE", None)):
             patcher = mock.patch(target, value)
@@ -518,6 +519,9 @@ class TestControl(StoreCase):
         ])
 
         codex = self.codex()
+        # Native control is relevant only after this Agent actually connected.
+        self.store.patch_runtime(codex.owner, codex.agent_id, {"acp_cwd": self.tmp.name})
+        codex = self.store.require(codex.owner, codex.agent_id)
         key = runtime_session(codex)
         patcher = mock.patch.object(external_agent_history, "_STORE", None)
         patcher.start()
@@ -715,6 +719,33 @@ class TestAgentClient(ApiCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         return AgentClient(owner, base_url="http://agent.test", internal_token=TOKEN)
+
+    def test_python_temporary_tool_agent_uses_the_real_agent_api(self):
+        from oasis.agent_center import AgentCenter
+        from webot.runtime_settings import _load
+
+        center = AgentCenter("alice")
+        center._client = self.client_for()
+
+        async def run():
+            async with center.temporary_agent("Reader", tools=["read_file"]) as worker:
+                self.assertTrue((await worker.send("first")).ok)
+                self.assertTrue((await worker.send("second")).ok)
+                stored = self.store.require("alice", worker.agent_id)
+                self.assertEqual(stored.config["tools"], ["read_file"])
+                self.assertEqual(stored.config["creation_template"], "personal")
+                self.assertTrue(stored.config["workspaces"]["companion"])
+                self.assertFalse(stored.config["workspaces"]["user_shared"])
+                self.assertIn(worker.agent_id, _load("alice")["sessions"])
+                return worker.agent_id
+
+        with mock.patch.object(self.gateway, "destroy", new_callable=mock.AsyncMock,
+                               wraps=self.gateway.destroy) as destroy:
+            agent_id = asyncio.run(run())
+            destroy.assert_awaited_once()
+        self.assertIsNone(self.store.get("alice", agent_id))
+        self.assertNotIn(agent_id, _load("alice")["sessions"])
+        self.assertEqual(self.gateway.ask.await_count, 2)
 
     def test_make_ask_and_delete_a_temporary_agent(self):
         class Reply(BaseModel):

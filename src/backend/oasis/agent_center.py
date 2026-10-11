@@ -6,6 +6,7 @@ they live in. A persona call is a temporary agent made for that one call.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 import uuid
@@ -22,6 +23,68 @@ from agents.routes import agent_card
 from agents.store import Agent, get_store
 from oasis.experts import _build_identity_prompt, get_all_experts
 from teams.store import get_team_store
+
+
+class TemporaryAgent:
+    """A workflow-owned Agent; reusable within its scope and closed on exit."""
+
+    def __init__(self, client: AgentClient, fields: dict[str, Any], *, instructions: str = ""):
+        self.agent_id = fields["agent_id"]
+        self._client = client
+        self._fields = fields
+        self._instructions = instructions
+        self._attempted = False
+        self._made = False
+        self._closed = False
+        self._creation_lock = asyncio.Lock()
+        self._turn_lock = asyncio.Lock()
+
+    async def start(self):
+        async with self._creation_lock:
+            if self._closed:
+                raise RuntimeError("Temporary Agent is already closed")
+            if not self._made:
+                self._attempted = True
+                await self._client.create(**self._fields)
+                self._made = True
+        return self
+
+    async def send(self, prompt: str, *, timeout: float | None = None) -> AgentReply:
+        # One Agent remembers sequential turns; different Agents can run in parallel.
+        async with self._turn_lock:
+            await self.start()
+            return await self._client.ask(
+                self.agent_id, AgentMessage(text=prompt, instructions=self._instructions), timeout=timeout)
+
+    async def close(self) -> None:
+        async with self._creation_lock:
+            if self._closed:
+                return
+            # A cancelled create request may already have registered its Agent.
+            if self._attempted:
+                await self._client.delete(self.agent_id)
+            self._closed = True
+            self._made = False
+
+    async def __aenter__(self):
+        try:
+            return await self.start()
+        except BaseException:
+            await self.close()
+            raise
+
+    async def __aexit__(self, *_exc):
+        await self.close()
+
+
+def _temporary_tools(tools: list[str] | str | None) -> list[str] | None:
+    if tools is None or tools == "none":
+        return []
+    if tools == "all":
+        return None
+    if not isinstance(tools, list) or any(not isinstance(name, str) or not name.strip() for name in tools):
+        raise ValueError("tools must be 'none', 'all', or a list of tool names")
+    return list(dict.fromkeys(tools))
 
 
 def build_persona_catalog(user_id: str, team: str = "") -> list[dict[str, Any]]:
@@ -51,6 +114,45 @@ class AgentCenter:
         self.team = team
         self._personas = build_persona_catalog(user_id, team)
         self._client = AgentClient(user_id)
+        self._temporary: set[TemporaryAgent] = set()
+
+    def temporary_agent(self, name: str = "", *, persona_override: str = "",
+                        persona_tag: str | None = None, tools: list[str] | str | None = None,
+                        llm: dict[str, Any] | None = None, creation_template: str = "personal",
+                        workspaces: dict[str, Any] | None = None) -> TemporaryAgent:
+        """A temporary WeBot with its own memory, tool table and approval/sandbox policy.
+
+        Use ``async with center.temporary_agent(...):`` for an explicit scope;
+        the workflow also closes any remaining handles when it ends.
+        """
+        persona = self.get_persona(persona_tag) if persona_tag else {}
+        fields = {
+            "agent_id": f"tmp__py__{uuid.uuid4().hex[:12]}", "name": name or persona.get("name") or "临时 agent",
+            "platform": "webot", "tools": _temporary_tools(tools),
+            "persona": persona_override or persona.get("persona") or "",
+            "llm": {**persona.get("llm", {}), **(llm or {})}, "creation_template": creation_template,
+        }
+        if workspaces is not None:
+            fields["workspaces"] = deepcopy(workspaces)
+        return self._track_temporary(fields)
+
+    def _track_temporary(self, fields: dict[str, Any], instructions: str = "") -> TemporaryAgent:
+        agent = TemporaryAgent(self._client, fields, instructions=instructions)
+        self._temporary.add(agent)
+        return agent
+
+    async def close_temporary_agents(self) -> None:
+        """Close only Agents this workflow created, including errored/cancelled turns."""
+        agents = list(self._temporary)
+        results = await asyncio.gather(*(agent.close() for agent in agents), return_exceptions=True)
+        errors = []
+        for agent, result in zip(agents, results):
+            if isinstance(result, BaseException):
+                errors.append(f"{agent.agent_id}: {result}")
+            else:
+                self._temporary.discard(agent)
+        if errors:
+            raise RuntimeError("Could not clean up temporary Agents: " + "; ".join(errors))
 
     # ── agents ───────────────────────────────────────────────────────────
 
@@ -105,19 +207,25 @@ class AgentCenter:
         return deepcopy(matches[0])
 
     async def send_persona(self, target: str, prompt: str, *, persona_override: str | None = None,
-                           llm: dict[str, Any] | None = None) -> AgentReply:
-        """One call to a temporary agent with a persona from the library: no tools, no memory."""
+                           llm: dict[str, Any] | None = None, tools: list[str] | str | None = None,
+                           creation_template: str = "personal",
+                           workspaces: dict[str, Any] | None = None) -> AgentReply:
+        """One temporary persona task; tools opt into a WeBot, closed after its reply."""
         persona = self.get_persona(target)
         text = persona_override if persona_override is not None else persona["persona"]
-        return await self._one_call(persona["name"], text, prompt, {**persona["llm"], **(llm or {})})
+        return await self._one_call(persona["name"], text, prompt, {**persona["llm"], **(llm or {})},
+                                    tools=tools, creation_template=creation_template, workspaces=workspaces)
 
     async def send_agent_once(self, name: str = "", prompt: str | None = None, *,
-                              persona_override: str | None = None, llm: dict[str, Any] | None = None) -> AgentReply:
+                              persona_override: str | None = None, llm: dict[str, Any] | None = None,
+                              tools: list[str] | str | None = None, creation_template: str = "personal",
+                              workspaces: dict[str, Any] | None = None) -> AgentReply:
         """One call to an ad-hoc temporary agent: ``send_agent_once(prompt)`` or
         ``send_agent_once(name, prompt, persona_override=…)``."""
         if prompt is None:
             prompt, name = name, ""
-        return await self._one_call(name or "临时 agent", persona_override or "", prompt, dict(llm or {}))
+        return await self._one_call(name or "临时 agent", persona_override or "", prompt, dict(llm or {}),
+                                    tools=tools, creation_template=creation_template, workspaces=workspaces)
 
     async def call_llm(self, prompt: str, *, temperature: float | None = None, model: str | None = None,
                        max_tokens: int | None = None) -> AgentReply:
@@ -131,11 +239,21 @@ class AgentCenter:
             llm["max_tokens"] = max_tokens
         return await self._one_call("llm", "", prompt, llm)
 
-    async def _one_call(self, name: str, persona: str, prompt: str, llm: dict[str, Any]) -> AgentReply:
-        agent_id = f"tmp__py__{uuid.uuid4().hex[:12]}"
-        await self._client.create(agent_id=agent_id, name=name, platform="llm", llm=llm)
-        instructions = _build_identity_prompt(name, persona).strip() if persona else ""
+    async def _one_call(self, name: str, persona: str, prompt: str, llm: dict[str, Any], *,
+                        tools: list[str] | str | None = None, creation_template: str = "personal",
+                        workspaces: dict[str, Any] | None = None) -> AgentReply:
+        chosen = _temporary_tools(tools)
+        if chosen is None or chosen:
+            agent = self.temporary_agent(name, persona_override=persona, tools=tools, llm=llm,
+                                         creation_template=creation_template, workspaces=workspaces)
+        else:
+            fields = {"agent_id": f"tmp__py__{uuid.uuid4().hex[:12]}", "name": name,
+                      "platform": "llm", "llm": llm}
+            instructions = _build_identity_prompt(name, persona).strip() if persona else ""
+            agent = self._track_temporary(fields, instructions)
         try:
-            return await self._client.ask(agent_id, AgentMessage(text=prompt, instructions=instructions))
+            async with agent:
+                return await agent.send(prompt)
         finally:
-            await self._client.delete(agent_id)
+            if agent._closed:
+                self._temporary.discard(agent)

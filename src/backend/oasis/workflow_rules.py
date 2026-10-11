@@ -40,11 +40,13 @@ Reference docs: `docs/workflowpy.md`, `docs/oasis-reference.md`.
   - `ctx.get_agent(...)`, `ctx.get_persona(...)`
 - Sending (async, `await` required):
   - `await ctx.send_agent(agent_id, prompt)`
-  - `await ctx.send_agent_once(prompt)` — ad-hoc temporary independent agent;
-    no target, no persona_override, no catalog registration, no external id
-  - `await ctx.send_agent_once(agent_id, prompt)` — existing concrete agent,
-    one-shot with throwaway session cleaned up after the call
-  - `await ctx.send_persona(persona_tag, prompt)`
+  - `await ctx.send_agent_once(prompt)` — a newly created temporary agent
+  - `await ctx.send_agent_once(name, prompt, tools=[...])` — one task with tools;
+    the first argument is its display name, not an existing Agent id
+  - `await ctx.send_persona(persona_tag, prompt, tools=[...])`
+  - `async with ctx.temporary_agent(name, tools=[...]) as agent:` then
+    `await agent.send(prompt)` — a reusable temporary WeBot with its own memory;
+    closed at scope exit, also cleaned up at workflow completion/failure/cancellation
   - `await ctx.call_llm(prompt, temperature=..., model=...)` — one-shot bare
     LLM call: no persona, no memory, no tools
   - `await ctx.publish(text, author=...)`
@@ -65,8 +67,7 @@ Reference docs: `docs/workflowpy.md`, `docs/oasis-reference.md`.
   *additional* topics beyond the default one.
 
 ## Send result handling
-- `send_agent(...)` and `send_persona(...)` return a `SendToAgentResult`
-  object with attributes `.ok`, `.content`, `.error`, `.meta`.
+- Send methods return an `AgentReply` with `.ok`, `.content`, `.error`.
 - Use attribute access (`reply.content`, `reply.ok`); do NOT treat it as a
   plain dict.
 - When persisting send results, only keep JSON-serializable fields like
@@ -86,19 +87,24 @@ Reference docs: `docs/workflowpy.md`, `docs/oasis-reference.md`.
   by raising — do NOT silently fall back to "pick the first agent".
 
 ## Memory & multi-round prompts
-- `send_agent(...)` may use an existing session and therefore may have
-  memory, but workflow-critical context should still be passed explicitly
+- `send_agent(...)` uses an existing Agent's memory; workflow-critical context should still be passed explicitly
   when later steps depend on earlier outputs.
-- `send_agent_once(...)` guarantees no memory: `send_agent_once(prompt)` or
-  `send_agent_once(name, prompt)` makes a temporary model-call agent for that
-  one call and deletes it after the call.
-- `send_persona(...)` is a lightweight role-based call; do not rely on
-  implicit long-term memory there.
+- `send_agent_once(...)` and `send_persona(...)` start fresh for each task and
+  delete their temporary Agent afterward. Without tools they use a lightweight
+  model call; `tools=[...]` or `tools="all"` uses a WeBot's full tool loop.
+- `temporary_agent(...)` keeps memory between `.send(...)` calls only within
+  this workflow. Use separate temporary Agents with `asyncio.gather` for parallel work.
+  Tools are stored in each Agent's intrinsic table at creation. The default
+  `creation_template="personal"` uses AI review, a command sandbox and a private
+  companion workspace; `creation_template="group"` uses strict isolation.
+  Optional `workspaces={...}`, `persona_tag=...`, `persona_override=...` and
+  `llm={...}` configure this new Agent. No existing Agent is reset or deleted.
 - `call_llm(...)` is the cheapest primitive: a single stateless LLM
   completion with no persona framing and no tools. Use it for pure text
   transforms (summarize, classify, rewrite).
-- For multi-round workflows, manually splice prior outputs into the next
-  prompt instead of relying on hidden session memory.
+- Persist useful replies with `ctx.publish`, `ctx.set_result` or output files
+  before the temporary Agent is destroyed. Python workflow code itself is a
+  trusted server-side script; the Agent's tool sandbox does not sandbox that Python code.
 
 ## Recommended patterns
 - Default: get `ctx.list_agents()` for the current team scope, run them

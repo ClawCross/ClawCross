@@ -137,6 +137,7 @@ Helper methods:
 - `await ctx.send_agent(...)`
 - `await ctx.send_agent_once(...)`
 - `await ctx.send_persona(...)`
+- `ctx.temporary_agent(...)` (an async context manager)
 - `await ctx.call_llm(...)`
 - `await ctx.publish(...)`
 - `await ctx.create_empty_topic(...)`
@@ -192,6 +193,51 @@ single-argument one-shot form:
 ```python
 reply = await ctx.send_agent_once("Analyze this task as an independent agent:\n" + ctx.question)
 ```
+
+### Temporary Agents with tools
+
+A one-task helper can use the normal WeBot tool loop, then delete its Agent and
+conversation automatically:
+
+```python
+reply = await ctx.send_agent_once(
+    "Researcher", ctx.question,
+    tools=["web_search", "web_fetch"],
+)
+if not reply.ok:
+    raise RuntimeError(reply.error)
+await ctx.publish(reply.content, author="Researcher")
+```
+
+Use an explicit scope to keep the same temporary Agent's memory across tasks:
+
+```python
+async with ctx.temporary_agent(
+    "Reviewer", persona_tag="critical", tools=["read_file", "list_files"],
+) as reviewer:
+    first = await reviewer.send(ctx.question)
+    if not first.ok:
+        raise RuntimeError(first.error)
+    second = await reviewer.send("Review your findings and give the final answer.")
+    if not second.ok:
+        raise RuntimeError(second.error)
+    ctx.set_result({"review": second.content})
+```
+
+`tools` accepts `"none"` (default), `"all"`, or a tool-name list. Tool access is
+registered on this Agent, so the normal tool checks still apply. The default
+`creation_template="personal"` uses AI approval, the command sandbox and a private
+companion workspace. Use `creation_template="group"` for strict isolation, or
+provide `workspaces={...}` and `llm={...}` for this Agent's workspace and model.
+
+Normal completion, exceptions and cancellation all close temporary Agents in
+both CLI/decorator and OASIS Python runners. Handles used without `async with`
+are also closed when the workflow ends. A forcibly killed process or machine
+failure cannot run `finally`; it may need later cleanup. Existing Agents and
+generated files are retained; save replies in workflow results or posts before
+closing their temporary conversations. Python workflow scripts run as trusted
+server-side code; these settings constrain the Agent's tools, not the workflow
+script itself.
 
 ### 3. `send_agent(...)` returns an `AgentReply`
 

@@ -131,8 +131,12 @@ def bridge_router():
         engine = get_gateway().runtimes[WEBOT].engine
         tools = engine._mcp_tools
         def meta(owner, aid):
-            target = get_store().require(owner, aid)
+            target = get_store().get(owner, aid)
+            if target is None:
+                return None
+            acp = ((target.config.get('meta') or {}).get('acp') or {})
             return {'tools': target.config.get('tools') if target.driver == WEBOT else ((target.config.get('meta') or {}).get('acp') or {}).get('tools'),
+                    'clawcross_tools': True if target.driver == WEBOT else acp.get('clawcross_tools', True),
                     'teams': target.teams}
         if body.action == 'catalog':
             intrinsic = intrinsic_internal_tool_names(tools,user_id=key[0],session_id=key[1],find_session_meta=meta)

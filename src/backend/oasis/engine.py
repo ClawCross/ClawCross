@@ -249,14 +249,18 @@ class DiscussionEngine:
             make = {"agent_id": agent_id, "name": name, "platform": "llm", "llm": llm}
             return Participant(user_id, agent_id, name=name, tag=tag, persona=persona, timeout=timeout,
                                make=make, remembers=False)
-        make = {"agent_id": agent_id, "name": name, "platform": "webot", "llm": llm}
         chosen = None if config["tools"] == "all" else list(config["tools"])
+        if tools is not None:
+            chosen = list(tools) if chosen is None else [name for name in chosen if name in tools]
+        make = {"agent_id": agent_id, "name": name, "platform": "webot", "llm": llm,
+                "tools": chosen, "persona": persona, "creation_template": "personal"}
         print(f"  [OASIS] 🧪 {key} → temporary WeBot session {agent_id} (tools={config['tools']})")
         return Participant(user_id, agent_id, name=name, tag=tag, persona=persona, tools=chosen, timeout=timeout,
                            make=make)
 
     async def _discard_ephemeral_sessions(self) -> None:
         """Delete the temporary agents this topic made (its personas)."""
+        errors = []
         for participant in self.experts:
             if not participant.temporary:
                 continue
@@ -264,6 +268,9 @@ class DiscussionEngine:
                 await participant.discard()
             except Exception as exc:
                 print(f"  [OASIS] ⚠️ could not discard {participant.name}: {exc}")
+                errors.append(f"{participant.name}: {exc}")
+        if errors:
+            raise RuntimeError("Temporary Agent cleanup failed: " + "; ".join(errors))
 
     @staticmethod
     def _lookup_by_tag(tag: str, user_id: str, team: str = "") -> dict | None:
@@ -525,7 +532,12 @@ class DiscussionEngine:
             self.forum.conclusion = f"讨论过程中出现错误: {str(e)}"
 
         finally:
-            await self._discard_ephemeral_sessions()
+            try:
+                await self._discard_ephemeral_sessions()
+            except Exception as exc:
+                self.forum.status = "error"
+                self.forum.conclusion += f"\n\n[临时 Agent 清理失败] {exc}"
+                self.forum.log_event("cleanup_failed", detail=str(exc))
 
     async def _run_graph(self):
         """使用 Pregel 风格超步迭代执行图。

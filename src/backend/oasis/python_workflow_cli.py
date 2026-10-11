@@ -238,7 +238,10 @@ async def _run(main_func: Callable[[StandaloneWorkflowContext], Awaitable[Any]])
                 question=ctx.question or "Standalone python workflow",
                 max_rounds=1,
             )
-        returned = await main_func(ctx)
+        try:
+            returned = await main_func(ctx)
+        finally:
+            await ctx.close_temporary_agents()
         if ctx.result is None and returned is not None:
             ctx.result = returned
         if ctx.auto_topic and ctx.topic_id:

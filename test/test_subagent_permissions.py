@@ -144,9 +144,29 @@ class SubagentPermissionTests(unittest.TestCase):
         self.set_approval("parent", mode="chat")
         self.assertEqual(self.available(self.child, metadata), set())
 
+    def test_deleted_parent_does_not_expand_child_tools(self):
+        self.assertEqual(self.available(self.child, {"parent": {"tools": ["read_file"]}}), {"read_file"})
+        self.assertEqual(self.available(self.child, {}), set())
+
+    def test_external_parent_mcp_tools_and_disable_flag_limit_children(self):
+        from agents.store import ACPX, AgentStore
+        from webot.engine.agent import TeamAgent
+
+        store = AgentStore(Path(self.tmp.name) / "agents.db")
+        parent = store.create("alice", driver=ACPX, config={"platform": "codex", "meta": {
+            "acp": {"tools": ["read_file"], "clawcross_tools": True}}})
+        child = self.add_child("external", parent.agent_id)
+        with patch("agents.store.get_store", return_value=store):
+            metadata = TeamAgent._find_internal_session_meta(None, "alice", parent.agent_id)
+            self.assertEqual(self.available(child, {parent.agent_id: metadata}), {"read_file"})
+            store.update("alice", parent.agent_id, config={"platform": "codex", "meta": {
+                "acp": {"tools": ["read_file"], "clawcross_tools": False}}})
+            metadata = TeamAgent._find_internal_session_meta(None, "alice", parent.agent_id)
+            self.assertEqual(self.available(child, {parent.agent_id: metadata}), set())
+
     def test_parent_planning_mode_cannot_be_escaped_by_coder(self):
         runtime_store.save_session_mode("alice", "parent", mode="plan")
-        self.assertEqual(self.available(self.child, {}), {"read_file", "web_fetch"})
+        self.assertEqual(self.available(self.child, {"parent": {}}), {"read_file", "web_fetch"})
 
     def test_spawn_continue_and_followup_all_inherit_before_backend_call(self):
         from webot.mcp import webot

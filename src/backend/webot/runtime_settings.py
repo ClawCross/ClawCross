@@ -289,6 +289,11 @@ def _save_runtime_settings(user_id: str, *, settings: dict, session_id: str = ""
     RuntimeSettings.model_validate(defaults)
     for override in data["sessions"].values():
         RuntimeSettings.model_validate(_merge(defaults, override))
+    _write_settings(user_id, data)
+    return runtime_settings_payload(user_id, session_id)
+
+
+def _write_settings(user_id: str, data: dict) -> None:
     path = settings_path(user_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix=".runtime-settings-", dir=path.parent)
@@ -299,7 +304,17 @@ def _save_runtime_settings(user_id: str, *, settings: dict, session_id: str = ""
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
-    return runtime_settings_payload(user_id, session_id)
+
+
+@_serialize_settings
+def forget_runtime_settings(user_id: str, *, session_id: str) -> bool:
+    """Remove only the deleted Agent's overrides and remembered sandbox grants."""
+    data = _load(user_id)
+    if not session_id or session_id not in data.get("sessions", {}):
+        return False
+    data["sessions"].pop(session_id)
+    _write_settings(user_id, data)
+    return True
 
 
 @_serialize_settings

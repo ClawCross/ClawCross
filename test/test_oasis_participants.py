@@ -191,6 +191,142 @@ class TestParticipant(EngineCase):
 
 
 class TestAgentCenter(EngineCase):
+    def test_cancelling_an_active_tool_task_closes_its_agent(self):
+        from oasis.agent_center import AgentCenter
+
+        async def work():
+            center = AgentCenter("alice", "dev")
+            entered = asyncio.Event()
+
+            async def blocked(*args, **kwargs):
+                entered.set()
+                await asyncio.Event().wait()
+
+            self.fake.ask = blocked
+            agent = center.temporary_agent("Active", tools=["read_file"])
+
+            async def task():
+                async with agent:
+                    await agent.send("read")
+
+            running = asyncio.create_task(task())
+            await asyncio.wait_for(entered.wait(), timeout=1)
+            running.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await running
+            await center.close_temporary_agents()
+            self.assertEqual(self.fake.deleted, [agent.agent_id])
+
+        asyncio.run(work())
+
+    def test_yaml_cleanup_failure_is_visible_and_residents_are_retained(self):
+        built = self.engine("  - id: a\n    persona: critical\n    tools: [read_file]\n")
+        self.fake.delete = mock.AsyncMock(side_effect=RuntimeError("delete unavailable"))
+        asyncio.run(built.run())
+        self.assertEqual(built.forum.status, "error")
+        self.assertIn("delete unavailable", built.forum.conclusion)
+        self.assertIsNotNone(self.store.get("alice", self.coder.agent_id))
+
+    def test_temporary_tool_agent_reuses_memory_and_closes_its_scope(self):
+        from oasis.agent_center import AgentCenter
+
+        center = AgentCenter("alice", "dev")
+
+        async def work():
+            async with center.temporary_agent("Reader", tools=["read_file"], persona_override="Read carefully") as agent:
+                await agent.send("first")
+                await agent.send("second")
+                agent_id = agent.agent_id
+            with self.assertRaisesRegex(RuntimeError, "closed"):
+                await agent.send("third")
+            await center.close_temporary_agents()
+            return agent_id
+
+        agent_id = asyncio.run(work())
+        self.assertEqual(len(self.fake.made), 1)
+        self.assertEqual(self.fake.made[0]["tools"], ["read_file"])
+        self.assertEqual(self.fake.made[0]["persona"], "Read carefully")
+        self.assertEqual(self.fake.made[0]["creation_template"], "personal")
+        self.assertEqual([ask["agent"] for ask in self.fake.asks], [agent_id, agent_id])
+        self.assertEqual(self.fake.deleted, [agent_id])
+        self.assertTrue(all(ask["msg"].instructions == "" for ask in self.fake.asks))
+
+    def test_one_task_and_persona_can_use_tools_without_leaving_agents(self):
+        from oasis.agent_center import AgentCenter
+
+        center = AgentCenter("alice", "dev")
+        asyncio.run(center.send_agent_once("Reader", "read", tools=["read_file"]))
+        asyncio.run(center.send_persona("critical", "review", tools="all", creation_template="group"))
+        self.assertEqual([made["platform"] for made in self.fake.made], ["webot", "webot"])
+        self.assertEqual(self.fake.made[0]["tools"], ["read_file"])
+        self.assertIsNone(self.fake.made[1]["tools"])
+        self.assertEqual(self.fake.made[1]["creation_template"], "group")
+        self.assertEqual(self.fake.deleted, [made["agent_id"] for made in self.fake.made])
+        self.assertEqual(center._temporary, set())
+
+    def test_failed_or_cancelled_creation_is_cleaned_up(self):
+        from oasis.agent_center import AgentCenter
+
+        for error in (RuntimeError("create failed"), asyncio.CancelledError()):
+            with self.subTest(error=type(error).__name__):
+                center = AgentCenter("alice", "dev")
+                self.fake.create = mock.AsyncMock(side_effect=error)
+                agent = center.temporary_agent("Partial", tools=["read_file"])
+
+                async def work():
+                    with self.assertRaises(type(error)):
+                        async with agent:
+                            self.fail("Creation should fail")
+                    await center.close_temporary_agents()
+
+                asyncio.run(work())
+                self.assertEqual(self.fake.deleted[-1], agent.agent_id)
+        self.assertNotIn(self.coder.agent_id, self.fake.deleted)
+
+    def test_python_runners_clean_up_agents_even_without_an_explicit_scope(self):
+        from oasis.python_workflow import run_python_workflow_standalone
+        from oasis.python_workflow_cli import _run
+
+        source = Path(self.tmp.name) / "temporary.py"
+        source.write_text("worker = temporary_agent('Reader', tools=['read_file'])\n"
+                          "await worker.send(question)\nset_result('DONE')\n")
+        result = asyncio.run(run_python_workflow_standalone(python_file=str(source), user_id="alice", question="read"))
+        self.assertEqual(result["result"], "DONE")
+        self.assertEqual(self.fake.deleted, [made["agent_id"] for made in self.fake.made])
+
+        async def main(ctx):
+            worker = ctx.temporary_agent("CLI", tools=["read_file"])
+            await worker.send("read")
+            raise RuntimeError("workflow failed")
+
+        result_file = Path(self.tmp.name) / "result.json"
+        with mock.patch.object(sys, "argv", ["workflow.py", "--user-id", "alice", "--no-auto-topic", "--result-file", str(result_file)]), \
+             mock.patch("builtins.print"):
+            self.assertEqual(asyncio.run(_run(main)), 1)
+        self.assertFalse(json.loads(result_file.read_text())["ok"])
+        self.assertEqual(self.fake.deleted, [made["agent_id"] for made in self.fake.made])
+
+    def test_topic_python_workflow_cancellation_cleans_up(self):
+        from oasis.python_workflow import PythonWorkflowEngine
+
+        source = Path(self.tmp.name) / "cancel.py"
+        source.write_text("worker = ctx.temporary_agent('Reader', tools=['read_file'])\n"
+                          "await worker.send(question)\nraise asyncio.CancelledError()\n")
+        forum = DiscussionForum("cancel", "read", "alice")
+        engine = PythonWorkflowEngine(forum=forum, python_file=str(source), user_id="alice", team="dev")
+        with self.assertRaises(asyncio.CancelledError):
+            asyncio.run(engine.run())
+        self.assertEqual(self.fake.deleted, [made["agent_id"] for made in self.fake.made])
+
+    def test_yaml_tool_scope_is_registered_and_run_scope_can_narrow_it(self):
+        built = DiscussionEngine(forum=DiscussionForum("limited", "read", "alice"),
+                                 schedule_yaml="version: 2\nplan:\n  - id: reader\n    persona: critical\n    tools: all\n",
+                                 user_id="alice", bot_enabled_tools=["read_file"])
+        participant = built.experts[0]
+        self.assertEqual(participant.tools, ["read_file"])
+        self.assertEqual(participant._make["tools"], ["read_file"])
+        self.assertEqual(participant._make["creation_template"], "personal")
+
     def test_workflows_reach_team_agents_and_personas(self):
         from oasis.agent_center import AgentCenter
 

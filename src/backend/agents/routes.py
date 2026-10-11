@@ -707,7 +707,9 @@ def create_agents_router(
         except ControlError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         from webot.workspace import clear_cli_workspace
+        from webot.runtime_settings import forget_runtime_settings
         clear_cli_workspace(agent.owner, agent.agent_id)
+        forget_runtime_settings(agent.owner, session_id=agent.agent_id)
         store.delete(agent.owner, agent.agent_id)
         from agents.native_sessions import release_agent
         release_agent(agent.owner, agent.agent_id)

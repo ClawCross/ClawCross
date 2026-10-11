@@ -9,6 +9,7 @@ decides what to say to its agent and what to post from the answer.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
@@ -67,6 +68,8 @@ class Participant:
         self.temporary = make is not None
         self._make = make
         self._made = False
+        self._creation_attempted = False
+        self._creation_lock = asyncio.Lock()
         self._remembers = remembers
         self._started = False
         self._seen: set[int] = set()
@@ -115,11 +118,18 @@ class Participant:
 
     async def _reply(self, text: str, *, is_selector: bool, execute: bool) -> dict | str:
         """The agent's answer as parsed OASIS JSON, or its raw text when it gives none."""
-        if self._make is not None and not self._made:
-            await self.client.create(**self._make)
-            self._made = True
+        if self._make is not None:
+            async with self._creation_lock:
+                if not self._made:
+                    self._creation_attempted = True
+                    await self.client.create(**self._make)
+                    self._made = True
+        instructions = self._identity()
+        if (self._make is not None and self._make.get("platform") == "webot"
+                and self._make.get("persona") == self.persona):
+            instructions = ""  # its persona is in the Agent's own system prompt
         reply = await self.client.ask(
-            self.agent_id, AgentMessage(text=text, instructions=self._identity()), enabled_tools=self.tools,
+            self.agent_id, AgentMessage(text=text, instructions=instructions), enabled_tools=self.tools,
             response_format=OasisChooseOut if is_selector else OasisReplyOut,
             timeout=NO_TIMEOUT if execute else self.timeout,
         )
@@ -168,6 +178,7 @@ class Participant:
 
     async def discard(self) -> None:
         """Delete the temporary agent made for the topic."""
-        if self._made:
+        if self._creation_attempted:
             await self.client.delete(self.agent_id)
             self._made = False
+            self._creation_attempted = False

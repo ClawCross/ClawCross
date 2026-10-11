@@ -79,18 +79,29 @@ class AgentAccess:
     def get_persona(self, target: str) -> dict[str, Any]:
         return self._agent_center.get_persona(target)
 
+    def temporary_agent(self, name: str = "", **options):
+        """Create a scoped, reusable WeBot; the workflow cleans up remaining handles."""
+        return self._agent_center.temporary_agent(name, **options)
+
+    async def close_temporary_agents(self) -> None:
+        await self._agent_center.close_temporary_agents()
+
     async def send_agent(self, target: str, prompt: str, *, persona_tag: str | None = None,
                          persona_override: str | None = None) -> AgentReply:
         return await self._agent_center.send_agent(target, prompt, persona_tag=persona_tag,
                                                    persona_override=persona_override)
 
     async def send_agent_once(self, name: str = "", prompt: str | None = None, *,
-                              persona_override: str | None = None, llm: dict[str, Any] | None = None) -> AgentReply:
-        return await self._agent_center.send_agent_once(name, prompt, persona_override=persona_override, llm=llm)
+                              persona_override: str | None = None, llm: dict[str, Any] | None = None,
+                              tools: list[str] | str | None = None, **options) -> AgentReply:
+        return await self._agent_center.send_agent_once(name, prompt, persona_override=persona_override,
+                                                        llm=llm, tools=tools, **options)
 
     async def send_persona(self, target: str, prompt: str, *, persona_override: str | None = None,
-                           llm: dict[str, Any] | None = None) -> AgentReply:
-        return await self._agent_center.send_persona(target, prompt, persona_override=persona_override, llm=llm)
+                           llm: dict[str, Any] | None = None, tools: list[str] | str | None = None,
+                           **options) -> AgentReply:
+        return await self._agent_center.send_persona(target, prompt, persona_override=persona_override,
+                                                    llm=llm, tools=tools, **options)
 
     async def call_llm(self, prompt: str, *, temperature: float | None = None, model: str | None = None,
                        max_tokens: int | None = None) -> AgentReply:
@@ -238,16 +249,20 @@ async def run_python_workflow_standalone(
         "send_agent": ctx.send_agent,
         "send_agent_once": ctx.send_agent_once,
         "send_persona": ctx.send_persona,
+        "temporary_agent": ctx.temporary_agent,
         "call_llm": ctx.call_llm,
         "publish": ctx.publish,
         "set_conclusion": ctx.set_conclusion,
         "AgentCenter": AgentCenter,
     }
-    result = await _execute_python_workflow_source(
-        source=source,
-        python_file=python_file,
-        globals_dict=globals_dict,
-    )
+    try:
+        result = await _execute_python_workflow_source(
+            source=source,
+            python_file=python_file,
+            globals_dict=globals_dict,
+        )
+    finally:
+        await ctx.close_temporary_agents()
     return {
         "ok": True,
         "mode": "standalone",
@@ -311,6 +326,7 @@ class PythonWorkflowEngine:
             "send_agent": ctx.send_agent,
             "send_agent_once": ctx.send_agent_once,
             "send_persona": ctx.send_persona,
+            "temporary_agent": ctx.temporary_agent,
             "call_llm": ctx.call_llm,
             "publish": ctx.publish,
             "set_conclusion": ctx.set_conclusion,
@@ -323,6 +339,8 @@ class PythonWorkflowEngine:
             )
         except Exception as e:
             raise RuntimeError(f"workflowpy 脚本执行失败: {e}") from e
+        finally:
+            await ctx.close_temporary_agents()
 
     async def run(self):
         self.forum.status = "discussing"

@@ -412,6 +412,10 @@ def available_internal_tool_names(tools, *, user_id: str, session_id: str,
         names.intersection_update(canonical_tool_names(state["enabled_tools"]))
     from webot.subagent_permissions import parent_sessions
     for parent_session in parent_sessions(user_id,session_id):
+        parent_meta = find_session_meta(user_id, parent_session)
+        if parent_meta is None or parent_meta.get("clawcross_tools") is False:
+            # A deleted parent cannot become an unrestricted permission source.
+            return set()
         names.intersection_update(filter_tools_for_mode(
             sorted(names),effective_session_mode(user_id,parent_session)))
     mode = effective_session_mode(user_id, session_id, state.get("session_mode"))
@@ -1047,13 +1051,16 @@ class TeamAgent:
         teams it is in, its persona text, and the tools it has (None: all of them)."""
         if not user_id or not session_id:
             return None
-        from agents.store import get_store
+        from agents.store import WEBOT, get_store
 
         agent = get_store().get(user_id, session_id)
         if agent is None:
             return None
+        acp = ((agent.config.get("meta") or {}).get("acp") or {})
+        tools = agent.config.get("tools") if agent.driver == WEBOT else acp.get("tools")
         return {"teams": agent.teams, "name": agent.name,
-                "persona": agent.config.get("persona", ""), "tools": agent.config.get("tools"),
+                "persona": agent.config.get("persona", ""), "tools": tools,
+                "clawcross_tools": True if agent.driver == WEBOT else acp.get("clawcross_tools", True),
                 'creation_template':agent.config.get('creation_template','')}
 
     def _get_internal_session_persona_prompt(self, user_id: str, session_id: str) -> str:

@@ -132,6 +132,14 @@ Options of `persona:`:
 | `tools` | `none` | `none` = one model call per turn (lightest); `all` or a list such as `[read_file, web_search]` = a temporary WeBot session that may call those tools |
 | `instance` | `1` | several copies of the same persona in one topic: `instance: 2`, `instance: 3`, … |
 
+A tooled persona's tool list is registered on its temporary WeBot, with the
+personal-assistant approval/sandbox defaults and a private companion workspace.
+The run's `bot_enabled_tools`, when provided, narrows that list. The Agent is
+deleted at topic completion, failure or cancellation; workflow posts and output
+files remain available. Python workflows provide equivalent temporary Agents
+through `ctx.send_agent_once(..., tools=[...])` and `ctx.temporary_agent(...)`;
+see [WorkflowPy](./workflowpy.md#temporary-agents-with-tools).
+
 `instruction:` (optional, on any participant step) tells that participant what to focus on in this step.
 
 ### 4.1 Which one to use
