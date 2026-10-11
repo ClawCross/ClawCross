@@ -340,7 +340,9 @@ test('remote group join and sharing stay usable on a narrow phone', async ({ pag
 test('external agent accepts a Chinese name without a manual runtime id and offers explicit install', async ({ page }) => {
   await page.setViewportSize({width:390,height:844});
   await stub(page, {posts:[],control:[]});
-  const installs = [], created = [];
+  const installs = [];
+  await page.route('**/proxy_acpx_status', route => route.fulfill({json:{tools:['codex','claude']}}));
+  await page.route('**/proxy_tools', route => route.fulfill({json:{tools:creation.tools}}));
   await page.route('**/proxy_components/acpx', route => {
     if (route.request().method() === 'POST') installs.push('acpx');
     return route.fulfill({contentType:'application/json',body:JSON.stringify({name:'acpx',installed:installs.length > 0,ready:installs.length > 0,missing:[],can_install:true,state:installs.length ? 'complete' : '',platform:'linux'})});
@@ -350,20 +352,20 @@ test('external agent accepts a Chinese name without a manual runtime id and offe
   await page.evaluate(async () => {
     window.registerAgent = async fields => { window.__createdFields = fields; return {agent_id:'ag_generated'}; };
     window.startPrivateChat = async () => true;
-    setCreateAgentMode('acp');
-    await renderCreateAgentAcpPanel();
-    document.getElementById('create-agent-modal').classList.add('show');
+    await showCreateAgentModal();
   });
+  await page.locator('#create-agent-modal details:has(#create-agent-companion) > summary').click();
+  await page.locator('#create-agent-companion').selectOption('codex');
   await expect(page.locator('[data-component-status]')).toContainText('尚未安装');
   expect(installs).toEqual([]);
+  expect(await page.evaluate(() => window.__createdFields)).toBeUndefined();
   await page.locator('[data-component-install]').click();
   await expect(page.locator('[data-component-status]')).toContainText('已安装');
   expect(installs).toEqual(['acpx']);
-  await page.locator('#ca-acp-platform').selectOption('codex');
   await page.locator('#create-agent-name').fill('中文助手');
   await expect(page.locator('#ca-acp-runtime')).toHaveValue('');
-  await page.evaluate(() => mobileSubmitCreateAcpAgent());
-  expect(await page.evaluate(() => window.__createdFields)).toEqual({name:'中文助手',platform:'codex',creation_template:'personal',tools:null});
+  await page.locator('#ca-acp-submit').click();
+  expect(await page.evaluate(() => window.__createdFields)).toEqual({name:'中文助手',platform:'codex',creation_template:'personal',tools:['read_file','send_to_group'],meta:{acp:{clawcross_tools:true,tools:['read_file','send_to_group']}}});
 });
 
 
@@ -471,7 +473,7 @@ test('small-screen Agent templates prepare safely and chat submits an explicit e
   await page.evaluate(()=>setCreateAgentMode('acp'));
   await expect(page.locator('#create-agent-name')).toBeVisible();
   await expect(page.locator('#ca-acp-submit')).toBeDisabled();
-  await expect(page.locator('#mobile-agent-template-hint')).toContainText('需要 WeBot');
+  await expect(page.locator('#mobile-agent-template-hint')).toContainText('适用于内置伙伴');
   await choices.locator('[data-preset="admin"]').click();
   await expect(page.locator('#ca-acp-submit')).toBeEnabled();
   expect(await page.evaluate(()=>window.__createdFields)).toBeUndefined();
