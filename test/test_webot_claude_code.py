@@ -1,4 +1,5 @@
 import sys
+import os
 import unittest
 from datetime import datetime
 from pathlib import Path
@@ -33,6 +34,10 @@ class _FakeAgent:
 
 
 class WeBotClaudeCodeTests(unittest.TestCase):
+    def setUp(self):
+        enabled=patch.dict(os.environ, {'CLAWCROSS_LEGACY_CLAUDE_CODE':'1'})
+        enabled.start();self.addCleanup(enabled.stop)
+
     def test_claude_monitor_reset_parser(self):
         now = datetime(2026, 5, 17, 10, 0, tzinfo=ZoneInfo("UTC"))
         absolute = parse_reset_time("Limit resets at: 11:30 AM", timezone_name="UTC", now=now)

@@ -6,6 +6,8 @@ from external.session import runtime_session
 
 
 def native_options(agent):
+    if agent.config.get('connection_id'):
+        return agent.runtime.get('remote_config_options') or []
     from external.session import native_workspace_cwd
     # Reuse only an option catalog, never another session's selected values.
     candidates = []
@@ -61,6 +63,7 @@ def capability_card(agent):
     options = [{**item, 'reasoning_level_map':level_map([choice.get('value') for choice in item.get('options', [])])}
                if item.get('id') in {'reasoning_effort', 'effort'} else item for item in options]
     return {'platform': agent.platform, 'transport': 'acpx', 'streaming_tools': True,
+            'connection_id':agent.config.get('connection_id',''),'remote_cwd':agent.config.get('remote_cwd',''),
             'mode': effective_session_mode(agent.owner, agent.agent_id),
             'native_workspace': {'cwd': native_workspace_cwd(agent), 'pinned': native_workspace_pinned(agent)},
             'clawcross_tools': bool(acp.get('clawcross_tools', True)),

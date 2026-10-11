@@ -47,6 +47,7 @@ Use this file when an agent needs to **index the repo before reading code**. It 
 | `scheduler/` | the scheduler service (port 51201), cron parsing, internal alarms, background-job notices |
 | `channels/` | chat channel bridges (webhook, NoneBot, WeClaw) |
 | `fleet/` | the cross-session fleet control plane |
+| `connections/` | user-owned SSH devices, scoped MCP return channel and the remote ACP transport |
 | `ops/` | the Agent service's own operations: login, tools, TTS, settings, self-update |
 | `tinyfish/` | TinyFish internet monitoring |
 | `common/` | shared by all: runtime paths, env settings, logging, auth, the LLM factory |

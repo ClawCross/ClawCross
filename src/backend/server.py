@@ -185,6 +185,8 @@ async def lifespan(app: FastAPI):
     await group_client.close()
     await session_service.close()
     await agent.shutdown()
+    from connections.ssh import get_connections
+    await get_connections().close()
 
 
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
@@ -240,6 +242,9 @@ app.include_router(
         verify_auth_or_token=verify_auth_or_token,
     )
 )
+from connections.routes import create_connections_router
+app.include_router(create_connections_router(internal_token=INTERNAL_TOKEN, verify_password=verify_password,
+    agents=agent_store,gateway=gateway))
 
 app.include_router(create_trigger_router(internal_token=INTERNAL_TOKEN, store=agent_store, gateway=gateway))
 from agents.routes import create_bridge_router

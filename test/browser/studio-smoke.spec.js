@@ -1,5 +1,18 @@
 const { test, expect } = require('@playwright/test');
 
+test('local and SSH Agents share the center and remote ACP works without local acpx',async({page})=>{
+  const agents=[{agent_id:'local',name:'本机伙伴',platform:'webot',settings:{},location:{kind:'local',name:'本机'},status:{state:'idle'}},
+    {agent_id:'remote',name:'远端伙伴',platform:'claude',settings:{},location:{kind:'ssh',name:'笔记本',host:'laptop'},status:{state:'idle'}}];
+  await stubStudioNetwork(page,{}, {agents,acpxStatusPayload:{available:false,tools:[]}});
+  await page.goto('/studio');await page.evaluate(()=>openAgentCenter());
+  await expect(page.locator('.agent-center-card')).toHaveCount(2);
+  await expect(page.locator('.agent-center-card[data-agent="remote"]')).toContainText('笔记本 · SSH');
+  await page.evaluate(()=>closeAgentCenter());
+  await expect.poll(()=>page.evaluate(()=>_acpToolsCache.includes('claude'))).toBe(true);
+  await page.evaluate(()=>ocSwitchTo('acp','claude'));
+  expect(await page.evaluate(()=>_ocChatMode)).toBe('acp');
+});
+
 test('UI tool opens a resizable center workspace and keeps the conversation and iframe state',async({page})=>{
   await page.setViewportSize({width:1600,height:900});
   const errors=[];page.on('pageerror',error=>errors.push(error.message));

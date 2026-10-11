@@ -28,7 +28,6 @@ from typing import Literal
 from pydantic import BaseModel, Field
 from webot.mcp_tool_docs import DocumentedFastMCP as FastMCP
 
-from webot.claude_code import detect_claude_code_cached, probe_claude_acp, run_claude_cli_prompt
 from webot.profiles import (
     build_subagent_session_id,
     get_agent_profile,
@@ -44,7 +43,6 @@ from webot.runtime_store import (
     create_run_record,
     delete_session_plan,
     delete_session_todos,
-    get_claude_keepalive_state,
     get_latest_run_for_agent,
     get_run,
     get_session_mode as load_session_mode,
@@ -58,11 +56,9 @@ from webot.runtime_store import (
     list_runs_for_parent_session,
     list_runs_for_session,
     mark_inbox_read,
-    record_claude_keepalive_result,
     record_run_event,
     release_run_worker,
     request_run_interrupt,
-    save_claude_keepalive_state,
     save_session_mode,
     save_session_plan,
     save_session_todos,
@@ -1453,109 +1449,6 @@ async def clear_session_plan(
         return f"🧹 已清除会话{'和'.join(cleared)}: {session_id}"
     return f"📭 会话 {session_id} 没有可清除的内容。"
 
-
-@mcp.tool()
-async def claude_code_status(
-    username: str,
-    source_session: str = "",
-) -> str:
-    """查看本机 Claude Code 是否可用，以及当前会话的保活配置状态。"""
-    session_id = source_session or "default"
-    status = detect_claude_code_cached(ttl_seconds=10)
-    keepalive = get_claude_keepalive_state(username, session_id)
-    errors = status.get("errors") or []
-    return (
-        "🧭 Claude Code 本地状态\n"
-        f"available: {status.get('available', False)}\n"
-        f"claude: {status.get('claude_version') or status.get('claude_path') or '(missing)'}\n"
-        f"acpx: {status.get('acpx_path') or '(missing)'} · claude_supported={status.get('acpx_claude_supported', False)}\n"
-        f"keepalive: {'enabled' if keepalive.enabled else 'disabled'} · {keepalive.start_time}-{keepalive.sleep_time} · {keepalive.weekdays}\n"
-        f"last: {keepalive.last_status} · {keepalive.last_run_at or '(never)'}\n"
-        f"errors: {_trim('; '.join(str(item) for item in errors), 500) or '(none)'}"
-    )
-
-@mcp.tool()
-async def probe_claude_code(
-    username: str,
-    prompt: str = "",
-    source_session: str = "",
-    use_acp: bool = True,
-    timeout: int = 90,
-) -> str:
-    """立刻向本机 Claude Code 发一条消息：确认通道能用，或手动触发一次保活。
-
-    :param prompt: 发送的消息；留空用保活配置里的提示词
-    :param use_acp: True 走 ACP 通道；False 直接调用 claude CLI
-    :param timeout: 等待回复的最长秒数
-    """
-    session_id = source_session or "default"
-    state = get_claude_keepalive_state(username, session_id)
-    effective_prompt = prompt or state.prompt or "ping"
-    result = (
-        probe_claude_acp(
-            prompt=effective_prompt,
-            session_name=f"clawcross-{username}-{session_id}".replace("#", "-")[:80],
-            timeout=timeout,
-        )
-        if use_acp
-        else run_claude_cli_prompt(prompt=effective_prompt, model=state.model, timeout=timeout)
-    )
-    record_claude_keepalive_result(
-        username,
-        session_id,
-        status="success" if result.get("ok") else "failed",
-        result=str(result.get("stdout_tail") or "")[-2000:],
-        error=str(result.get("error") or result.get("stderr_tail") or "")[-1000:],
-        metadata={"probe": True, "source": "mcp", "use_acp": use_acp},
-    )
-    channel = "ACP" if use_acp else "CLI"
-    if result.get("ok"):
-        return f"✅ Claude Code {channel} 调用成功\nsession_id: {session_id}"
-    return f"❌ Claude Code {channel} 调用失败\n{_trim(str(result.get('error') or result.get('stderr_tail') or ''), 1200)}"
-
-
-@mcp.tool()
-async def configure_claude_keepalive(
-    username: str,
-    enabled: bool = True,
-    prompt: str = "ping",
-    source_session: str = "",
-    timezone_name: str = "",
-    start_time: str = "06:00",
-    sleep_time: str = "23:00",
-    weekdays: str = "MTWRFSU",
-    timeout: int = 90,
-) -> str:
-    """配置当前会话对 Claude Code 的定时保活：开关、提示词、时区、起止时刻、生效星期。
-
-    :param enabled: 是否开启定时保活
-    :param prompt: 保活时发送的消息
-    :param timezone_name: IANA 时区名，如 Asia/Shanghai；留空用系统时区
-    :param start_time: 每天开始保活的时刻，HH:MM
-    :param sleep_time: 每天停止保活的时刻，HH:MM
-    :param weekdays: 生效星期，每个字母代表一天：M T W R F S U（R=周四，U=周日）
-    :param timeout: 每次保活等待回复的最长秒数
-    """
-    session_id = source_session or "default"
-    record = save_claude_keepalive_state(
-        username,
-        session_id,
-        enabled=enabled,
-        prompt=prompt,
-        timezone_name=timezone_name,
-        start_time=start_time,
-        sleep_time=sleep_time,
-        weekdays=weekdays,
-        timeout_seconds=timeout,
-        metadata={"source": "mcp"},
-    )
-    return (
-        "✅ Claude keepalive 配置已保存\n"
-        f"session_id: {record.session_id}\n"
-        f"enabled: {record.enabled}\n"
-        f"window: {record.start_time}-{record.sleep_time} {record.timezone or '(local)'}\n"
-        "说明：ClawCross 只保存和执行安全的一次性 kickoff，不会自动安装系统唤醒/睡眠任务。"
-    )
 
 @mcp.tool()
 async def get_clawcross_help(topic: str = '', query: str = '', section: str = '') -> str:

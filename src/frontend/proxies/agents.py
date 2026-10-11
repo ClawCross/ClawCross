@@ -12,7 +12,7 @@ import requests
 
 # Reachable without a browser session: the Agent service authenticates the
 # forwarded ``Authorization`` itself, like /v1/chat/completions.
-PUBLIC_AGENT_ENDPOINTS = frozenset({"public_agents", "public_teams"})
+PUBLIC_AGENT_ENDPOINTS = frozenset({"public_agents", "public_teams", "public_connections"})
 
 _METHODS = ["GET", "POST", "PATCH", "DELETE"]
 
@@ -61,3 +61,8 @@ def register_agent_routes(app, *, port_agent: int, internal_token: str, is_host_
     @app.route("/v1/teams/<path:rest>", methods=_METHODS, endpoint="public_teams")
     def public_teams(rest: str = ""):
         return _relay("/v1/teams" + (f"/{quote(rest, safe='/')}" if rest else ""))
+
+    @app.route('/v1/connections',methods=_METHODS,endpoint='public_connections')
+    @app.route('/v1/connections/<path:rest>',methods=_METHODS,endpoint='public_connections')
+    def public_connections(rest: str = ''):
+        return _relay('/v1/connections'+(f'/{quote(rest,safe="/")}' if rest else ''))

@@ -66,10 +66,10 @@ class InjectedParamsAreHidden(unittest.TestCase):
         tool = _tool("some_other_tool", username="", note="")
         self.assertIs(hide_injected_params(tool), tool)
 
-    def test_probe_claude_code_is_injected_not_model_supplied(self):
-        # probe_claude_code used to take username from the model, which let a
+    def test_send_to_session_is_injected_not_model_supplied(self):
+        # Caller identity cannot come from the model, which would let a
         # call act as another user. It is injected like its siblings now.
-        bound = hide_injected_params(_tool("probe_claude_code", username="", source_session="", prompt=""))
+        bound = hide_injected_params(_tool("send_to_session", username="", source_session="", prompt=""))
         self.assertEqual(set(_properties(bound)), {"prompt"})
 
     def test_unknown_tools_pass_through_untouched(self):

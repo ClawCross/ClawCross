@@ -19,6 +19,7 @@ id that is not there yet makes that agent — ``platform`` says of which runtime
 from __future__ import annotations
 
 from typing import Any, Callable, Iterable, Literal
+import re
 
 from fastapi import APIRouter, Header, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -43,7 +44,7 @@ from common.auth_utils import extract_user_password_session, is_internal_bearer,
 
 # Settings a caller may set; everything else in a driver's config is its own.
 # ``title`` names the work the session is doing (the agent or the user sets it).
-_SHARED_SETTINGS = ("persona", "title", "workspace_root", "workspaces")
+_SHARED_SETTINGS = ("persona", "title", "workspace_root", "workspaces", "connection_id", "remote_cwd")
 TITLE_MAX = 80
 
 
@@ -59,6 +60,8 @@ class AgentCreate(BaseModel):
     name: str = ""
     creation_template: Literal['', 'chat', 'group', 'personal', 'admin'] = ''
     platform: str = WEBOT
+    connection_id: str = Field('', max_length=100)
+    remote_cwd: str = Field('', max_length=4096)
     persona: str = ""        # its persona: the text itself (a library persona is copied in)
     workspace_root: str = ""  # legacy single custom folder
     workspaces: dict[str, Any] | None = None
@@ -161,7 +164,29 @@ def agent_card(agent: Agent) -> dict[str, Any]:
         "created_at": agent.created_at,
         "updated_at": agent.updated_at,
         "creation_template": config.get('creation_template',''),
+        "location": agent_location(agent),
     }
+
+
+def agent_location(agent):
+    connection_id=agent.config.get('connection_id')
+    if not connection_id:return {'kind':'local','name':'本机'}
+    from connections.ssh import get_connections
+    try:
+        card=get_connections().card(agent.owner,connection_id)
+        return {key:card[key] for key in ('id','kind','name','host','state')}
+    except LookupError:return {'kind':'ssh','id':connection_id,'name':'连接已删除','state':'disconnected'}
+
+
+def validate_agent_connection(owner, config, driver):
+    connection_id=config.get('connection_id','')
+    if not isinstance(connection_id,str) or len(connection_id)>100:raise ValueError('Invalid connection_id')
+    cwd=config.get('remote_cwd','')
+    if not isinstance(cwd,str) or len(cwd)>4096 or any(ord(c)<32 for c in cwd):raise ValueError('Invalid remote workspace')
+    if connection_id:
+        if driver!=ACPX:raise ValueError('SSH 连接用于 ACP/CLI Agent；请选择 Codex、Claude 或其他 ACP 平台')
+        from connections.store import get_connection_store
+        get_connection_store().get(owner,connection_id)
 
 
 def runtime_of(platform: str) -> tuple[str, dict[str, Any]]:
@@ -182,6 +207,11 @@ def new_agent_config(body: AgentCreate) -> tuple[str, dict[str, Any]]:
         body = body.model_copy(update=defaults)
     from webot.workspace import configured_workspace_root
     driver, config = runtime_of(body.platform)
+    if body.connection_id:
+        if canonical_platform(body.platform) in ('webot','http','llm',''):raise ValueError('请选择远端 ACP/CLI 平台')
+        driver=ACPX;config['platform']=canonical_platform(body.platform)
+        if not re.fullmatch(r'[a-z][a-z0-9_-]{0,50}',config['platform']):raise ValueError('Invalid remote platform')
+    config.update({'connection_id':body.connection_id,'remote_cwd':body.remote_cwd.strip()})
     if body.creation_template in {'chat','group'} and driver != WEBOT:
         raise ValueError('纯聊天与陌生群模板要求 WeBot；外部 CLI 原生工具无法由 ClawCross 保证无工具或严格工作区隔离。')
     config.update({"persona": body.persona.strip()})
@@ -344,6 +374,7 @@ def create_agents_router(
         user = user_of(authorization)
         try:
             driver, config = new_agent_config(body)
+            validate_agent_connection(user,config,driver)
             from webot.workspace import normalize_workspace_config
             if body.cli_workspace:
                 normalize_workspace_config({'paths':[body.cli_workspace]}, user_id=user)
@@ -361,7 +392,7 @@ def create_agents_router(
                 set_cli_workspace(user, agent.agent_id, body.cli_workspace)
         except AgentExists as exc:
             raise HTTPException(status_code=409, detail={"error": str(exc), "agent": agent_card(exc.agent)})
-        except ValueError as exc:
+        except (ValueError,LookupError) as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         return agent_card(agent)
 
@@ -606,6 +637,11 @@ def create_agents_router(
         if unknown:
             raise HTTPException(status_code=400, detail=f"unknown settings for {agent.platform}: {unknown}")
         config = {**agent.config, **body.settings}
+        try:validate_agent_connection(user,config,agent.driver)
+        except (ValueError,LookupError) as exc:raise HTTPException(400,str(exc)) from exc
+        if any(key in body.settings and body.settings[key]!=agent.config.get(key,'') for key in ('connection_id','remote_cwd')):
+            if gateway.is_busy(agent) or agent.runtime.get('negotiation_sent') or agent.runtime.get('native_resume_id'):
+                raise HTTPException(409,'连接和原生目录与会话绑定，请先重置或新建 Agent')
         if 'workspace_root' in body.settings:
             from webot.workspace import configured_workspace_root
             try:

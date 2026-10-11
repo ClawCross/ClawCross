@@ -11,14 +11,19 @@ async def list_all_sessions(user_id: str, acpx_bin: str | None) -> dict:
 
     owned = {(canonical_platform(agent.platform), runtime_session(agent)): agent
              for agent in get_store().list(user_id) if agent.driver == ACPX}
-    if not owned or not acpx_bin:
+    if not owned:
         return {"status": "success", "acpx_sessions": []}
+    rows = [{"platform":agent.platform,"name":runtime_session(agent),"agent_id":agent.agent_id,
+             "agent_name":agent.name,"session_id":agent.runtime.get('native_resume_id'),
+             "cwd":agent.runtime.get('acp_cwd') or agent.config.get('remote_cwd',''),
+             "connection_id":agent.config['connection_id'],"closed":False}
+            for agent in owned.values() if agent.config.get('connection_id')]
+    if not acpx_bin:return {'status':'success','acpx_sessions':rows}
     adapter = get_acpx_adapter()
-    rows = []
-    for platform in sorted({key[0] for key in owned}):
+    for platform in sorted({key[0] for key,agent in owned.items() if not agent.config.get('connection_id')}):
         for row in await adapter.list_sessions(tool=platform):
             agent = owned.get((platform, row["name"]))
-            if agent is None:
+            if agent is None or agent.config.get('connection_id'):
                 continue
             rows.append({"platform": platform, "session_id": row.get("acpxRecordId"),
                          "name": row["name"], "agent_id": agent.agent_id,
@@ -47,6 +52,14 @@ async def close_acp_session(platform: str, session_name: str, cwd: str = "", *, 
                   and runtime_session(agent) == session_name), None)
     if owned is None:
         raise HTTPException(404, "No owned ACP session")
+    if owned.config.get('connection_id'):
+        from external.acp import adapter as select_adapter, command_options
+        try:
+            selected=select_adapter(owned)
+            await selected.close_session(tool=owned.platform,session_key=session_name,acpx_session=session_name,
+                **command_options(owned,long=False))
+            return {'status':'success','platform':owned.platform,'session_name':session_name}
+        except RuntimeError as exc:return {'status':'error','reason':str(exc)}
     # The runtime owns cwd; never let a browser select another user's record.
     adapter = get_acpx_adapter(cwd=owned.runtime['acp_cwd']) if owned.runtime.get('acp_cwd') else get_acpx_adapter()
     cwd = adapter._cwd

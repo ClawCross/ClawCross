@@ -57,13 +57,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--dashboard-publish",
         action=argparse.BooleanOptionalAction,
-        default=_env_bool("CLAWCROSS_FLEET_DASHBOARD_PUBLISH", True),
+        default=_env_bool("CLAWCROSS_FLEET_DASHBOARD_PUBLISH", False),
         help="Commit and push dashboard/state/tasks.json when the conductor changes dashboard task state.",
     )
     parser.add_argument(
         "--dashboard-supabase-sync",
         action=argparse.BooleanOptionalAction,
-        default=_env_bool("CLAWCROSS_FLEET_DASHBOARD_SUPABASE_SYNC", True),
+        default=_env_bool("CLAWCROSS_FLEET_DASHBOARD_SUPABASE_SYNC", False),
         help="Sync dashboard/state/*.json into Supabase when the conductor changes dashboard task state.",
     )
     parser.add_argument(
@@ -75,7 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--codex-review",
         action=argparse.BooleanOptionalAction,
-        default=_env_bool("CLAWCROSS_FLEET_CONDUCTOR_CODEX_REVIEW", True),
+        default=_env_bool("CLAWCROSS_FLEET_CONDUCTOR_CODEX_REVIEW", False),
         help="Use local Codex exec to inspect and resolve review/待审查 TODOs before surfacing them to the user.",
     )
     parser.add_argument(

@@ -486,8 +486,9 @@ class GroupClient:
                     if automatic:
                         from webot.runtime import effective_session_mode
                         automatic = effective_session_mode(agent.owner,agent.agent_id) == 'chat'
+                    text_reply=automatic or (agent.config.get('connection_id') and not ((agent.config.get('meta') or {}).get('acp') or {}).get('clawcross_tools',True))
                     completion = None
-                    if automatic:
+                    if text_reply:
                         async def completion(reply, owner=row['owner'], alias=row['alias'], target=aid, event_id=event['id']):
                             if reply and reply.ok and reply.content.strip():
                                 try:
@@ -495,7 +496,7 @@ class GroupClient:
                                 except ClientError:
                                     pass  # Membership or networking may change while the reply is generated.
                     reply_meta = self.metadata(card,visible)
-                    reply_meta['reply_channel'] = '直接输出文字；系统会发送到当前群，不需要调用工具。' if automatic else reply_channel(agent,row['alias'])
+                    reply_meta['reply_channel'] = '直接输出文字；系统会发送到当前群，不需要调用工具。' if text_reply else reply_channel(agent,row['alias'])
                     receipt = await self.gateway.inbox(agent, AgentMessage(text=text, sender=message['sender'],
                         summary=f'群聊「{card["title"]}」 {message["sender_name"]}: {message["content"][:60]}',
                         attachments=message.get('attachments', [])), context={'conversation_id': row['alias'],

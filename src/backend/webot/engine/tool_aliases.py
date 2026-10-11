@@ -82,7 +82,6 @@ TOOL_ALIASES: dict[str, ToolAlias] = {
     "read_session_todos": ToolAlias("read_session_plan"),
     "write_session_todos": ToolAlias("write_session_plan", forced={"target": "todos"}),
     "clear_session_todos": ToolAlias("clear_session_plan", forced={"target": "todos"}),
-    "run_claude_keepalive_once": ToolAlias("probe_claude_code"),
     "enter_plan_mode": ToolAlias("set_session_mode", forced={"mode": "plan"}, widens_access=True),
     "exit_plan_mode": ToolAlias("set_session_mode", forced={"mode": "execute"}, widens_access=True),
     "list_webot_agent_profiles": ToolAlias("list_subagents"),

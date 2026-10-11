@@ -156,7 +156,6 @@ USER_INJECTED_TOOLS = {
     "write_session_plan", "read_session_plan", "clear_session_plan",
     "list_tool_approvals", "resolve_tool_approval",
     "set_session_mode",
-    "claude_code_status", "probe_claude_code", "configure_claude_keepalive",
     # Self-evolution tools
     "skill_evolution_report",
     "search_sessions", "usage_status",
@@ -202,9 +201,6 @@ SESSION_INJECTED_TOOLS = {
     "clear_session_plan": "source_session",
     "list_tool_approvals": "source_session",
     "set_session_mode": "source_session",
-    "claude_code_status": "source_session",
-    "probe_claude_code": "source_session",
-    "configure_claude_keepalive": "source_session",
     # Self-evolution tools
     "skill_evolution_report": "session_id",
     "search_sessions": "session_id",
