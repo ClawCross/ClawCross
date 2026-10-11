@@ -142,10 +142,9 @@ class LazyToolRegistry:
         This reduces prompt size significantly.
         """
         lines = [
-            "This Agent's intrinsic tool catalog; current mode and temporary selection govern availability. "
-            "Call enabled tools through tool_call. If you are unsure of a tool's "
-            "parameters, required fields, or accepted values, use tool_search first; do not guess. "
-            "Search by capability or exact tool name to retrieve its full schema:"
+            "This Agent's other tools; the current mode and selection decide which are usable now. "
+            "Get a tool's full schema with tool_search (by capability or exact name), then call it "
+            "through tool_call; never guess parameters:"
         ]
 
         # Group by category

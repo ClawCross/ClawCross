@@ -131,9 +131,9 @@ async def send_to_group(
     expected_title: str | None = None,
 ) -> str:
     """
-    Post into a group chat or private chat you are a member of: the reply to a
-    message marked "[群聊 …]" or "[私聊 …]" (people only see what is posted
-    here), or speaking up on your own.
+    Post into a group or private chat you belong to. Use it to reply to a message
+    marked "[群聊 …]" or "[私聊 …]" (people only see what is posted here), or to
+    speak up on your own.
 
     Args:
         username: (auto-injected) current user identity; do NOT set manually
@@ -230,7 +230,7 @@ async def leave_group(username: str, group_id: str, source_session: str = "") ->
 
 @mcp.tool()
 async def list_agent_groups(username: str, source_session: str = "") -> str:
-    """List this agent's live group/private-chat membership, group IDs, names and roles.
+    """List this agent's live group and private-chat memberships. Gives group IDs, names and roles;
     username and source_session are injected; do not set them. No conversation bodies.
     Use these exact group IDs when choosing where to send a message.
     """
@@ -244,8 +244,8 @@ async def list_agent_groups(username: str, source_session: str = "") -> str:
 
 @mcp.tool()
 async def get_group_details(username: str, group_id: str, source_session: str = "") -> str:
-    """Read one of this agent's groups: exact group ID/title, announcement, owner, members, roles and reply channel.
-    No conversation bodies. username/source_session are injected. Non-members cannot read it.
+    """Read one of this agent's groups. Gives its exact group ID/title, announcement, owner, members, roles and
+    reply channel; no conversation bodies. username/source_session are injected. Non-members cannot read it.
 
     Args:
         group_id: Exact group ID from the live membership list, never a guessed name.

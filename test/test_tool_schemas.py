@@ -26,12 +26,15 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import StructuredTool
 
 from webot.engine.agent import (
+    ALWAYS_LOADED_TOOLS,
     SESSION_INJECTED_TOOLS,
     USER_INJECTED_TOOLS,
     UserAwareToolNode,
     bind_tool_schema,
+    discovery_tool_schemas,
     external_tool_schema,
 )
+from webot.engine.lazy_tool_discovery import LazyToolRegistry
 from webot.engine.tool_schema import (
     StrictSchemaError,
     decode_structured_final,
@@ -46,17 +49,16 @@ from webot.mcp_tool_docs import parse_tool_docstring
 
 MCP_SERVERS = (
     "commander", "filemanager", "llmapi", "oasis", "search",
-    "skills", "webot", "scheduler", "session", "notifier", "management",
+    "skills", "webot", "scheduler", "session", "notifier", "management", "ui_panel",
 )
 SESSION_ARGUMENTS = {"source_session", "session_id", "parent_session", "notify_session", "current_session_id"}
 
-# JSON size of the strict-bound tool array. The array renders ahead of the
-# system prompt on every request; growing it should be a decision, not drift.
-# Optional Team/group/alarm administration and session details extend the
-# measured full inventory to about 51,500 chars with Team workflows and clocks.
-# Initial requests contain compact
-# names/descriptions and tool_search/tool_call, not this full schema array.
-STRICT_TOOL_ARRAY_BUDGET_CHARS = 52_000
+# JSON size of the tool array every request carries: the always-loaded tools with their
+# strict schemas, plus tool_search (whose description lists the other tools in one line
+# each) and tool_call. It renders ahead of the system prompt on every request; growing it
+# should be a decision, not drift. The other tools' full schemas are paid for only when
+# tool_search returns them, so their size is not budgeted here.
+RESIDENT_TOOL_ARRAY_BUDGET_CHARS = 10_800
 
 _inventory_cache = None
 
@@ -302,12 +304,19 @@ class McpToolInventory(unittest.TestCase):
                 self.assertEqual(strict_violations(bound["function"]["parameters"]), [])
                 self.assertFalse(_hidden_arguments(name) & set(bound["function"]["parameters"]["properties"]))
 
-    def test_strict_tool_array_stays_within_budget(self):
-        bound = [bind_tool_schema(_as_structured_tool(tool), strict=True) for _s, tool in self.tools.values()]
-        size = len(json.dumps(bound, ensure_ascii=False, separators=(",", ":")))
+    def test_resident_tool_array_stays_within_budget(self):
+        tools = [_as_structured_tool(tool) for _s, tool in self.tools.values()]
+        registry = LazyToolRegistry()
+        registry.register_tools(tools)
+        registry.set_always_loaded(set(ALWAYS_LOADED_TOOLS))
+        self.assertLessEqual(ALWAYS_LOADED_TOOLS, set(self.tools))
+        resident = [bind_tool_schema(tool, strict=True) for tool in sorted(tools, key=lambda tool: tool.name)
+                    if tool.name in ALWAYS_LOADED_TOOLS]
+        resident += discovery_tool_schemas(registry, set(self.tools) - ALWAYS_LOADED_TOOLS, strict=True)
+        size = len(json.dumps(resident, ensure_ascii=False, separators=(",", ":")))
         self.assertLessEqual(
-            size, STRICT_TOOL_ARRAY_BUDGET_CHARS,
-            f"strict tool array is {size} chars; raise the budget only on purpose",
+            size, RESIDENT_TOOL_ARRAY_BUDGET_CHARS,
+            f"resident tool array is {size} chars; raise the budget only on purpose",
         )
 
     def test_binding_is_deterministic(self):

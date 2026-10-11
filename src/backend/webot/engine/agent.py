@@ -120,6 +120,13 @@ def should_inject_new_inbox_notice(state: dict, turn_count: int) -> bool:
 
 
 # --- Tools that need automatic username injection ---
+# Tools bound with their full schema on every request; all others are reached through
+# tool_search/tool_call. This set, with those two, is what every request pays for.
+# No "search_files" — no server defines one; grep through run_command.
+ALWAYS_LOADED_TOOLS = frozenset({
+    "read_file", "write_file", "list_files", "run_command", "set_session_title",
+})
+
 USER_INJECTED_TOOLS = {
     'manage_team','manage_group','manage_agent_alarms','get_session_details',
     # File management tools
@@ -1177,11 +1184,7 @@ class TeamAgent:
 
         # 3.5 Register tools in lazy discovery registry (new)
         self._tool_registry.register_tools(self._mcp_tools)
-        # Mark essential tools as always-loaded
-        self._tool_registry.set_always_loaded({
-            # No "search_files" — no server defines one; grep through run_command.
-            "read_file", "write_file", "list_files", "run_command", "show_ui_panel", "set_session_title",
-        })
+        self._tool_registry.set_always_loaded(set(ALWAYS_LOADED_TOOLS))
 
         # 4. Build the fixed model -> tools -> model loop.  A general-purpose
         # graph engine is unnecessary because ClawCross has no dynamic graph,

@@ -45,6 +45,15 @@ class CommanderTests(unittest.TestCase):
             await asyncio.sleep(0.1)
         return status
 
+    def test_run_command_names_this_machines_system_and_shell(self):
+        tool = next(t for t in asyncio.run(commander.mcp.list_tools()) if t.name == "run_command")
+        self.assertIn(commander.host_note(), tool.description)
+        self.assertNotIn("{", tool.description)
+        self.assertIn("cmd.exe", commander.host_note("win32", "AMD64"))
+        self.assertIn("powershell -NoProfile -Command", commander.host_note("win32", "AMD64"))
+        self.assertEqual(commander.host_note("darwin", "arm64"), "宿主系统：macOS（arm64）。shell 命令由 /bin/sh -c 执行。")
+        self.assertEqual(commander.host_note("linux", ""), "宿主系统：Linux（unknown）。shell 命令由 /bin/sh -c 执行。")
+
     def test_run_command_truncates_large_stream_output(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

@@ -264,7 +264,7 @@ async def test_remote_human_claiming_owner_name_is_not_owner_authorization(regis
     host=relay.create(title='Group',node_id='local',user_id='alice',display_name='Alice')
     group=relay.add_agent(host['token'],agent_id='plain',name='Plain',platform='webot')
     principal=next(member['principal'] for member in group['members'] if member['agent_id']=='plain')
-    remote=relay.join(relay.guest_invite(host['token'])['invite'],node_id='local',user_id='alice',display_name='Claimed Alice')
+    remote=relay.join(relay.guest_invite(host['token'])['invite'],node_id='local',user_id='alice',display_name='Claimed Alice',password='password123')
     gateway=SimpleNamespace(inbox=AsyncMock(return_value=DeliveryReceipt(accepted=True)))
     client=GroupClient(ClientStore(root/'client.db'),store,gateway)
     alias=client.store.save('alice',service_url(),{**host,'group':relay.detail(host['token'])})

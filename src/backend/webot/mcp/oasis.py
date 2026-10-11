@@ -393,9 +393,9 @@ async def save_oasis_expert(
     temperature: float = -1,
 ) -> str:
     """
-    Create or update a custom expert persona for the current user, keyed by tag:
-    updates the expert if the tag exists, otherwise creates it (then name and
-    persona are required).
+    Create or update the user's custom expert persona, keyed by tag. An existing
+    tag updates that expert; a new tag creates one, and then name and persona
+    are required.
 
     Args:
         username: (auto-injected) current user identity; do NOT set manually
@@ -601,8 +601,8 @@ async def start_new_oasis(
 @mcp.tool()
 async def check_oasis_discussion(topic_id: str = "", username: str = "", team: str = "") -> str:
     """
-    Check an OASIS run started by start_new_oasis — a discussion's status and
-    recent posts, or a Python workflow run's result; with no id, list all
+    Check an OASIS run started by start_new_oasis. Gives a discussion's status and
+    recent posts, or a Python workflow run's result; with no id, lists all
     discussion topics and recent Python runs.
 
     Args:
@@ -973,9 +973,9 @@ async def list_oasis_workflows(username: str = "", team: str = "", kind: Literal
 @mcp.tool()
 async def get_workflow_rules(kind: Literal["python", "yaml"]) -> str:
     """
-    Return the canonical authoring rules for an OASIS workflow — the workflowpy
-    ctx API and constraints, or the YAML graph format. Call this BEFORE
-    writing or editing one.
+    Return the authoring rules for an OASIS workflow. Gives the workflowpy ctx API
+    and constraints, or the YAML graph format; call this BEFORE writing or
+    editing one.
 
     :param kind: Which workflow format: "python" or "yaml"
     """
@@ -1289,8 +1289,8 @@ async def _cancel_oasis_python_run(run_id: str, username: str = "") -> str:
 @mcp.tool()
 async def list_oasis_agent_catalog(username: str = "", team: str = "") -> str:
     """
-    List the agents a Python workflow (and a YAML ``agent:`` step) can call:
-    the team's members with their role names, or all of the user's agents.
+    List the agents an OASIS workflow can call. For a Python workflow or a YAML
+    ``agent:`` step: the team's members with their role names, or all of the user's agents.
 
     :param team: Optional team whose agents to list; empty lists the user's own
     """

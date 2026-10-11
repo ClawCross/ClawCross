@@ -248,13 +248,13 @@ def _atomic_write_text(path: str, content: str, *, encoding: str = "utf-8", atom
 @confined_operation
 async def list_files(username: str, session_id: str = "", folder: str = ".", storage: Literal["file", "memory"] = "file", team: str | None = None, memory_scope: Literal["workspace", "companion"] = "workspace") -> str:
     """
-    列出目录文件，或用 storage="memory" 列出 Skill/记忆条目（编号、名称、说明，无路径）。
+    列出目录；storage="memory" 时列出 Skill/记忆条目。
 
     :param username: 用户名（由系统自动注入，无需手动传递）
-    :param folder: 要列出的目录；支持绝对路径，相对路径以当前 session cwd 为基准
-    :param storage: file 为普通目录；memory 为 Skill 正文条目，此时 folder 保持默认值
-    :param memory_scope: memory 范围；companion 只读写本 Agent 的伴生工作区
-    :param team: memory 范围；团队名为该团队的条目，null 或空字符串为个人，列团队时也列出共享个人条目
+    :param folder: 相对会话 cwd
+    :param storage: 存储位置
+    :param memory_scope: companion 为本 Agent 伴生目录
+    :param team: memory 的团队，空为个人
     :return: 文件列表的描述
     """
     team = team or ""
@@ -323,20 +323,19 @@ async def read_file(
     memory_scope: Literal["workspace", "companion"] = "workspace",
 ):
     """
-    读取文件。文本按块返回，适合大文件渐进读取；图片（png/jpg/gif/webp/bmp）
-    直接作为图片交给你查看。
+    读文件，文本分块返回，图片直接给你看。
 
     :param username: 用户名（由系统自动注入，无需手动传递）
-    :param filename: file 模式为文件路径；memory 模式为 list_files 返回的条目编号或名称
-    :param offset: 按字符分块读取的起点；首次传 0，之后用上一次结果给出的 offset 继续
-    :param limit: 按字符分块时本次最多读取的字符数；0 表示默认值（12000），上限 50000
-    :param start_line: 按行读取的起始行号（从 1 开始）；与 line_count 任一大于 0 时改为按行读取
-    :param line_count: 按行读取的行数；0 表示默认值（200），上限 2000
-    :param encoding: 文件编码，默认 utf-8
-    :param include_sha256: 是否在结果中附上文件的 sha256，可作为之后 write_file 的 expected_sha256
-    :param memory_scope: memory 范围；companion 只读取当前 Agent 伴生工作区的条目
-    :param storage: file 为普通文件；memory 只读取 Skill 正文，不读取支持文件
-    :param team: memory 范围；团队名为该团队的条目，null 或空字符串为个人，读团队时也可读共享个人条目
+    :param filename: 路径；memory 时为条目编号或名称
+    :param offset: 按字符读的起点
+    :param limit: 字符数，上限 50000
+    :param start_line: 按行读的起始行，从 1 开始
+    :param line_count: 行数，上限 2000
+    :param encoding: 编码
+    :param include_sha256: 附上 sha256 供 write_file 校验
+    :param storage: 存储位置
+    :param memory_scope: companion 为本 Agent 伴生目录
+    :param team: memory 的团队，空为个人
     :return: 文件内容或错误信息
     """
     team = team or ""
@@ -447,24 +446,22 @@ async def write_file(
     memory_scope: Literal["workspace", "companion"] = "workspace",
 ) -> str:
     """
-    创建或写入文件。改已有文件的一小段时优先用 mode="str_replace"，不要整篇
-    overwrite：old_string 须在文件中原样出现且唯一，不唯一就多带几行上下文或设
-    replace_all。单次 content 尽量不超过约 4000 字符，长内容分多次 append 写入。
+    写文件。改一小段用 mode="str_replace"；长内容分次 append。
 
     :param username: 用户名（由系统自动注入，无需手动传递）
-    :param filename: file 模式为文件路径；memory 模式为条目编号或名称，新名称创建条目
-    :param content: overwrite/append/prepend/insert/replace_range 模式下要写入的内容
-    :param old_string: str_replace 模式下要查找的原文片段
-    :param new_string: str_replace 模式下的替换内容
-    :param replace_all: str_replace 模式下是否替换全部匹配（默认只允许唯一匹配）
-    :param mode: 写入模式：overwrite / append / prepend / insert / replace_range / str_replace；文件不存在时只允许 overwrite 或 append
-    :param start: insert / replace_range 模式下的起始字符位置（从 0 开始）
-    :param end: replace_range 模式下的结束字符位置（不含）
-    :param encoding: 文件编码，默认 utf-8
-    :param expected_sha256: 可选的并发保护：文件当前 sha256 与之不一致时拒绝写入
-    :param storage: file 为普通文件；memory 仅写入 Skill 正文，接受 Markdown 并维护元信息和索引
-    :param team: memory 范围；指定团队的条目
-    :param memory_scope: memory 范围；companion 仅访问此 Agent 伴生目录中的条目
+    :param filename: 路径；memory 时为条目编号或名称
+    :param content: 写入内容
+    :param old_string: 要替换的原文
+    :param new_string: 替换后的文本
+    :param replace_all: 替换全部匹配
+    :param encoding: 编码
+    :param storage: 存储位置
+    :param mode: overwrite / append / prepend / insert / replace_range / str_replace
+    :param start: insert / replace_range 的起始字符位置
+    :param end: replace_range 的结束字符位置
+    :param expected_sha256: 与当前 sha256 不符则拒绝写入
+    :param team: memory 的团队
+    :param memory_scope: companion 为本 Agent 伴生目录
     :return: 操作结果描述
     """
     normalized_mode_check = (mode or "overwrite").strip().lower()

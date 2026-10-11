@@ -14,6 +14,7 @@ MCP 指令执行工具服务 — 审核和可选的 Auto SRT 隔离
 
 import os
 import sys
+import platform
 import asyncio
 import contextlib
 import hashlib
@@ -63,6 +64,19 @@ USER_FILES_BASE = str(USER_FILES_DIR)
 
 # 平台检测
 IS_WINDOWS = sys.platform == "win32"
+
+
+def host_note(system: str = sys.platform, arch: str = platform.machine()) -> str:
+    """The machine and shell that run commands, for run_command's description.
+
+    Fixed for the life of the process, so it keeps the tool table, and with it
+    the cacheable prefix, the same on every request."""
+    arch = arch or "unknown"
+    if system == "win32":
+        return (f"宿主系统：Windows（{arch}）。shell 命令由 cmd.exe 执行；"
+                'PowerShell 语法请写成 powershell -NoProfile -Command "…"。')
+    name = {"linux": "Linux", "darwin": "macOS"}.get(system, system)
+    return f"宿主系统：{name}（{arch}）。shell 命令由 /bin/sh -c 执行。"
 
 # ======== 安全配置（支持 .env 自定义）========
 
@@ -1167,7 +1181,6 @@ async def _wait_for_output(path: str, start: int, wait_seconds: float, job: "Bac
             return
 
 
-@mcp.tool()
 async def run_command(
     username: str,
     command: str,
@@ -1184,21 +1197,18 @@ async def run_command(
     sandbox_approval_chain: list[str] | None = None,
 ) -> str:
     """
-    在会话工作目录运行 shell/Python。foreground 返回结果，background 返回 job_id，
-    interactive 用 background_command_io 输入/读输出。
-    后台任务可跨轮通过 background_command_io 查看，cancel_background_command 停止。
-    Linux 普通模式支持 ps/top/free；严格模式仅开放资源统计和启动时的进程基本信息。
-    跨轮后台任务使用管理工具，不能用任意 PID 控制宿主进程；严格模式不可提权。
+    在会话工作目录运行 shell 或 Python。background 返回 job_id，用 background_command_io 查看、
+    cancel_background_command 停止；interactive 用 background_command_io 收发。
+    {host}
+    联网只能经 HTTP_PROXY/HTTPS_PROXY/ALL_PROXY。沙盒拒绝的权限由系统审核后重试；严格模式不可提权。
 
-    :param command: shell 命令；language=python 时是 Python 代码（interactive 下先执行它再进入 REPL，可为空）
-    :param language: shell 或 python
-    :param mode: 前台、后台或交互
-    :param cwd: 相对工作区解析，留空用根目录
-    :param timeout_seconds: 0 用默认值（前台 180，后台/交互 300 秒），上限 MAX_EXEC_TIMEOUT
-    :param max_output_chars: 输出字符上限，0=8000，最小 256
-    :param notify_on_done: 后台/交互结束后通知会话并附输出尾部
-    沙盒权限拒绝由系统逐项审核，批准后累计权限重试，最多 8 次且共用执行期限。初始化故障不提权。
-    联网须用 HTTP_PROXY/HTTPS_PROXY/ALL_PROXY（curl、urllib/requests 支持）；原始 socket/直连被阻止。
+    :param command: shell 命令或 Python 代码
+    :param language: 语言
+    :param mode: 运行方式
+    :param cwd: 相对工作区
+    :param max_output_chars: 输出字符上限
+    :param timeout_seconds: 秒，默认前台 180、后台 300
+    :param notify_on_done: 后台结束后通知会话
     """
     is_python = language == "python"
     interactive = mode == "interactive"
@@ -1454,6 +1464,11 @@ async def run_command(
         return result
     except Exception as e:
         return f"❌ 执行异常: {str(e)}"
+
+
+# Registered after the description names this machine's system and shell.
+run_command.__doc__ = run_command.__doc__.replace("{host}", host_note())
+mcp.tool()(run_command)
 
 
 @mcp.tool()

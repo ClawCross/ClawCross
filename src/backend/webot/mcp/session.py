@@ -47,12 +47,9 @@ async def fork_session(username: str = "", current_session_id: str = "", name: s
 
 @mcp.tool()
 async def set_session_title(title: str, username: str = "", source_session: str = "") -> str:
-    """Set the title this conversation shows in the sidebar: a short phrase naming the
-    work, e.g. "排查登录超时" or "Q3 sales report". Call it once the work is clear and
-    again when it changes; it replaces any earlier title, including one the user set.
-    Your own agent name stays as it is.
+    """Set this conversation's sidebar title: a short phrase naming the work. Update it when the work changes.
 
-    :param title: The work title, one line, at most 30 characters
+    :param title: One line, at most 30 characters
     :param username: Current user, injected by the runtime
     :param source_session: Current session, injected by the runtime
     """
@@ -71,7 +68,7 @@ async def set_session_title(title: str, username: str = "", source_session: str 
 
 @mcp.tool()
 async def list_sessions(username: str = "", current_session_id: str = "", query: str = "", limit: int = 30, platform: str = "") -> str:
-    """List or search the user's registered Agent/session IDs, including new Agents with no history.
+    """List or search the user's registered Agent/session IDs. Includes new Agents with no history.
     Use get_session_details(target_session=ID) after choosing a result. Reads the Agent registry;
     does not start external CLIs or replay conversations. For content search use search_sessions.
 

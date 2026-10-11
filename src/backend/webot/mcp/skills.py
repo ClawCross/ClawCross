@@ -34,7 +34,7 @@ async def skill_evolution_report(
     strategy: str = "auto",
 ) -> str:
     """
-    Build a lightweight EvoSkill-style report for a skill using recent failures.
+    Build an EvoSkill-style report for a skill from recent failures.
 
     The report analyzes recent trajectory failures plus any explicit execution
     error text you pass in, then produces a small candidate frontier of
@@ -118,7 +118,7 @@ async def search_sessions(
 @mcp.tool()
 async def usage_status(username: str, days: int = 30) -> str:
     """
-    Get usage analytics for the current user: session stats, tool usage
+    Get the current user's usage analytics. Covers session stats, tool usage
     patterns, activity trends, model breakdown, cost estimation, and
     conversation trajectory stats (success/failure rates, tool calls per turn).
 
