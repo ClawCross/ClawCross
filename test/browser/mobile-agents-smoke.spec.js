@@ -199,7 +199,11 @@ async function stub(page, calls) {
 test('mobile message center works with agents of any platform by id', async ({ page }) => {
   const calls = { posts: [], control: [] };
   const pageErrors = [];
+  const legacyRequests = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
+  page.on('request', (request) => {
+    if (/\/proxy_(fleet_|remote_claude_sessions)/.test(request.url())) legacyRequests.push(request.url());
+  });
   await stub(page, calls);
   await page.addInitScript(() => {
     window.alert = () => {};
@@ -209,7 +213,11 @@ test('mobile message center works with agents of any platform by id', async ({ p
 
   await page.goto('/mobile/group_chat');
   await expect(page.locator('#group-list-container')).toContainText('Dev');
-  await expect(page.locator('#fleet-section')).toBeHidden();
+  await expect(page.locator('#fleet-section, #remote-claude-page')).toHaveCount(0);
+  await page.route('**/v1/connections', (route) => route.fulfill({ json: { data: [] } }));
+  await page.evaluate(() => document.getElementById('device-connections-menu-item').click());
+  await expect(page.locator('.device-connections-dialog')).toBeVisible();
+  await page.locator('.device-connections-dialog [data-close]').click();
   await expect(page.locator('#group-list-container')).toContainText('好的，已完成');  // last message preview
 
   await page.locator('.group-item', { hasText: 'Dev' }).first().click();
@@ -248,6 +256,7 @@ test('mobile message center works with agents of any platform by id', async ({ p
   await expect(page.locator('#agent-detail-body')).toContainText('ag_codex00001');
 
   expect(pageErrors).toEqual([]);
+  expect(legacyRequests).toEqual([]);
 });
 
 test('mobile saves five distinct permission modes per Agent and keeps Manual separate from Bypass', async ({ page }) => {
