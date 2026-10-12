@@ -106,7 +106,8 @@ scenarios.debate=()=>{
       await bob.locator('#coach').fill('抓住通勤时间这一点');
       await bob.getByRole('button',{name:'递纸条'}).click();
       await expect(bob.getByText('待用纸条：抓住通勤时间这一点')).toBeVisible();
-      coached?.();
+      await expect.poll(()=>coached,{timeout:15000}).not.toBeNull();             // Beta's opening request has arrived
+      coached();
       await expect(alice.locator('.speech')).toHaveCount(6,{timeout:15000});
       await expect(alice.locator('.speech.con').nth(1)).toContainText('Beta 的反驳发言');
       await expect(bob.getByText('评委 Alpha：反方胜')).toBeVisible({timeout:10000});
