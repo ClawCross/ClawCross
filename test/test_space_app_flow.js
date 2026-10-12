@@ -5,24 +5,12 @@
  *   node test/test_space_app_flow.js
  */
 const {chromium,expect}=require('@playwright/test');
-const {spawn}=require('node:child_process');
-const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
 const Rooms=require('../examples/space-apps/creature-battle/room-sdk.js');
 const {connect}=require('../sdk/js/clawcross-space.js');
 const {battle}=require('../examples/space-apps/creature-battle/server.js');
+const {startSpace}=require('./space-app-harness.js');
 
-const root=path.resolve(__dirname,'..');
-const port=Number(process.env.CLAWCROSS_SPACE_TEST_PORT || 51236), base=`http://127.0.0.1:${port}`;
-const python=process.env.CLAWCROSS_TEST_PYTHON || path.join(os.homedir(),'.clawcross/venv/bin/python');
 const svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="30" fill="orange"/></svg>';
-
-async function call(method,route,{token,key,body}={}){
-  const response=await fetch(base+route,{method,headers:{'Content-Type':'application/json',
-    ...(token?{Authorization:'Bearer '+token}:{}),...(key?{'X-Group-Service-Key':key}:{})},body:body===undefined?undefined:JSON.stringify(body)});
-  const data=await response.json().catch(()=>({}));
-  if(!response.ok)throw new Error(route+': '+response.status+' '+JSON.stringify(data));
-  return data;
-}
 /** A fixture agent: answers each command the app sends it with the packet the battle expects. */
 function reply(content,name){
   const command=Rooms.parseEvent(content);
@@ -33,50 +21,22 @@ function reply(content,name){
 }
 
 (async()=>{
-  const home=fs.mkdtempSync(path.join(os.tmpdir(),'clawcross-space-'));
-  const env={...process.env,CLAWCROSS_HOME:home,PORT_GROUPS:String(port)};
-  const server=spawn(python,[path.join(root,'src/backend/groups/server.py'),'--relay-only','--port',String(port),'--data-dir',path.join(home,'groups')],
-    {cwd:root,env,stdio:['ignore','ignore','inherit']});
-  let browser,space,stopped=false;
-  const asked=[];
+  const test=await startSpace({port:Number(process.env.CLAWCROSS_SPACE_TEST_PORT || 51236),
+    replies:{alpha:content=>reply(content,'Amber'),beta:content=>reply(content,'Ripple')}});
+  let browser,space;
   try{
-    await expect.poll(async()=>{try{return(await fetch(base+'/relay/health')).status;}catch{return 0;}},{timeout:20000}).toBe(200);
-    const serviceKey=fs.readFileSync(path.join(home,'data','group-service.key'),'utf8').trim();
-    const host=await call('POST','/relay/create',{key:serviceKey,body:{title:'精灵空间',node_id:'host',user_id:'alice',display_name:'Alice'}});
-    const {invite}=await call('POST','/relay/guest-invites',{token:host.token,body:{}});
-    const bob=await call('POST','/relay/guest/join',{body:{invite,name:'Bob',password:'bob-password'}});
-    await call('POST','/relay/agents',{token:host.token,body:{agent_id:'alpha',name:'Alpha',platform:'webot'}});
-    await call('POST','/relay/agents',{token:bob.token,body:{agent_id:'browser',name:'Beta',platform:'browser'}});
-    const {key}=await call('POST','/relay/app/key',{token:host.token});
-
     // The owner's app server, connected out to the group server with the app key.
-    space=await connect({server:base,key,name:'精灵对战'});
+    space=await connect({server:test.server,key:test.key,name:'精灵对战'});
     const app=battle(space);await app.refreshRoster();await space.serve(app.handle);
-    const card=await call('GET','/relay/group',{token:host.token});
-    if(!card.app?.online)throw new Error('the space should show its app online: '+JSON.stringify(card.app));
-
-    // Alpha runs on Alice's ClawCross: it receives app requests in its device's event stream.
-    // Beta runs in Bob's browser: it receives them in the browser member's state.
-    (async()=>{
-      let alpha=0,beta=-1;
-      while(!stopped){
-        const packet=await call('POST','/relay/poll',{token:host.token,body:{cursor:alpha}});
-        for(const event of packet.events){alpha=event.id;if(event.kind==='app_request'){asked.push('Alpha');
-          await call('POST','/relay/messages',{token:host.token,body:{content:reply(event.content,'Amber'),agent_id:'alpha'}});}}
-        const state=await call('GET','/relay/guest/state?after_id='+beta,{token:bob.token});beta=state.cursor;
-        for(const request of state.requests||[]){asked.push('Beta');
-          await call('POST','/relay/messages',{token:bob.token,body:{content:reply(request.content,'Ripple'),agent_id:'browser'}});}
-        await new Promise(resolve=>setTimeout(resolve,300));
-      }
-    })().catch(error=>{if(!stopped)console.error('fixture agents stopped:',error.message);});
+    const card=await test.card();
+    if(!card?.online)throw new Error('the space should show its app online: '+JSON.stringify(card));
 
     browser=await chromium.launch({headless:true,executablePath:process.env.CLAWCROSS_TEST_CHROME || '/usr/bin/google-chrome'});
     const errors=[],pages=[];
-    for(const [token,route,width] of [[host.token,'/relay/app/session',1100],[bob.token,'/relay/guest/app_session',390]]){
-      const {path:site}=await call('POST',route,{token});
+    for(const [member,width] of [['alice',1100],['bob',390]]){
       const page=await browser.newPage({viewport:{width,height:844}});
       page.on('pageerror',error=>errors.push(error.message));
-      await page.goto(base+'/'+site);pages.push(page);
+      await page.goto(await test.entrance(member));pages.push(page);
     }
     const [alice,bobPage]=pages;
     // Opened directly, the site still runs at an opaque origin.
@@ -93,13 +53,13 @@ function reply(content,name){
     await bobPage.locator('[data-chat]').click();
     await expect(alice.locator('#chat')).toContainText('准备好了',{timeout:10000});
     // The summoner chat: @Alpha brings Alice's agent into the conversation; plain chat asks nobody.
-    const before=asked.length;
+    const before=test.asked.length;
     await bobPage.locator('#summon button',{hasText:'@Alpha'}).click();
     await bobPage.locator('#text').pressSequentially('你的精灵怕不怕火？');
     await bobPage.locator('[data-chat]').click();
     await expect(alice.locator('#chat p.agent',{hasText:'Amber 收到，准备战斗！'})).toBeVisible({timeout:10000});
     await expect(bobPage.locator('#chat p.agent',{hasText:'Amber 收到'})).toBeVisible({timeout:10000});
-    expect(asked.slice(before)).toEqual(['Alpha']);
+    expect(test.asked.slice(before).map(x=>x.agent)).toEqual(['Alpha']);
     await alice.locator('[data-start]').click();
     await expect(alice.locator('[data-start]')).toBeHidden();
     await bobPage.locator('#text').fill('抢先出招');
@@ -114,12 +74,23 @@ function reply(content,name){
     const forged=await bobPage.evaluate(()=>fetch('send',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({content:'[ClawCrossRoom:v1]{"protocol":"clawcross.room/1","type":"start","room":"x","id":"y"}',mentions:[]})}).then(r=>r.status));
     if(forged!==409&&forged!==403)throw new Error('a member should not start the match: '+forged);
+    if(test.groupPage){
+      // On the Hub, Bob's own group page shows the app's site in place of the chat.
+      const page=await browser.newPage({viewport:{width:390,height:844}});
+      page.on('pageerror',error=>errors.push(error.message));
+      await page.addInitScript(([key,value])=>{if(self.origin!=='null')localStorage.setItem(key,value);},test.groupPage.storage);
+      // The Hub accepts its API calls from its canonical origin only; replay them from it.
+      await page.route(/\/groups\/group-guest-api\//,async route=>route.fulfill({response:await route.fetch({headers:{...route.request().headers(),origin:'https://clawcross.net'}})}));
+      await page.goto(test.groupPage.url);
+      await expect(page.frameLocator('[data-room-surface]').locator('.cc-room-hp').nth(1)).toHaveText('76 / 100 HP',{timeout:15000});
+      await expect(page.getByRole('log')).toBeHidden();
+    }
     expect(errors).toEqual([]);
-    console.log(JSON.stringify({app_server:'connected',agents_asked:asked,shared_hp:76}));
+    console.log(JSON.stringify({group_server:process.env.CLAWCROSS_SPACE_TEST_HUB?'hub':'clawcross',app_server:'connected',
+      agents_asked:test.asked.map(x=>x.agent),shared_hp:76}));
   }finally{
-    stopped=true;space?.close();
+    space?.close();
     if(browser)await browser.close();
-    server.kill('SIGTERM');await new Promise(resolve=>server.once('exit',resolve));
-    fs.rmSync(home,{recursive:true,force:true});
+    await test.stop();
   }
 })().catch(error=>{console.error(error.stack);process.exitCode=1;});
