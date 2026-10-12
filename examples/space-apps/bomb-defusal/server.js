@@ -94,7 +94,7 @@ function render(s){
   if(!$('setup').hidden&&!$('setup').childElementCount)fill($('setup'),el('div',{class:'row'},
     el('label',{},'专家 ',el('select',{id:'expert'},...s.members.filter(m=>m.agent).map(a=>el('option',{value:a.id},a.name)))),
     el('label',{},'拆弹员 ',el('select',{id:'defuser'},...s.members.filter(m=>!m.agent).map(p=>el('option',{value:p.id,selected:p.id===s.me.id},p.name)))),
-    el('select',{id:'minutes'},...g.minutes.map(m=>el('option',{value:m},m+' 分钟'))),
+    el('select',{id:'minutes'},...g.minutes.map(m=>el('option',{value:m,selected:m===8},m+' 分钟'))),
     el('button',{onclick:()=>act(()=>api('start',{expert:$('expert').value,defuser:$('defuser').value,minutes:+$('minutes').value}))},'开始')));
   fill($('head'),g.status==='idle'?el('span',{class:'muted'},s.owner?'选专家和拆弹员。':'等群主开局。')
     :[el('span',{class:'grow'},'专家 ',el('span',{class:'agent'},g.expertName),' · 拆弹员 '+g.defuserName+' · 失误 '+'✗'.repeat(g.strikes)+'○'.repeat(3-g.strikes)),

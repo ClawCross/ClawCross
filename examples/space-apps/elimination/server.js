@@ -9,7 +9,7 @@
 'use strict';
 const { run, page, refuse } = require('../../../sdk/js/space-app.js');
 
-const SECONDS = [10, 15, 30];
+const SECONDS = [30, 15, 10];   // real agents often need 10–30 s, so the default is the longest
 const COUNTS = [5, 8, 12];
 const BREAK_MS = 6000;
 const AGENTS = 8;
@@ -82,7 +82,7 @@ function setup(app) {
     const topic = String(body.topic || '').trim().slice(0, 40) || '综合知识';
     const count = COUNTS.includes(body.count) ? body.count : COUNTS[0];
     Object.assign(show, { round: show.round + 1, status: 'writing', host: host.name, hostId: host.id, topic, error: '', questions: [], index: 0,
-      seconds: SECONDS.includes(body.seconds) ? body.seconds : 15, players: new Map(), answers: new Map(), dropped: 0 });
+      seconds: SECONDS.includes(body.seconds) ? body.seconds : SECONDS[0], players: new Map(), answers: new Map(), dropped: 0 });
     app.changed();
     const round = show.round;
     app.askJSON(host.id, `你在空间「${app.title}」为直播淘汰赛出题。范围：${topic}。出 ${count} 道单选题，每题 3 个选项、只有一个正确答案，` +
