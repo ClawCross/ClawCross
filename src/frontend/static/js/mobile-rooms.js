@@ -37,6 +37,10 @@
         const selected = gid;
         handle = ClawCrossRooms.mountRoom(document.getElementById('room-app-surface'), {
           onComposer: value => {composer = value; paintComposer();},
+          onSuggest: text => {
+            apiUI.setMode('command');
+            const input=document.getElementById('msg-input');input.value=text;input.focus();input.dispatchEvent(new Event('input',{bubbles:true}));
+          },
           send: async (content, mentions) => {
             await api('POST', '/proxy_groups/' + encodeURIComponent(selected) + '/messages',
               {content: content, mentions: mentions, client_msg_id: ClawCrossRooms.uid()});

@@ -101,14 +101,15 @@ test('a room app renders Agent SVGs and sends battle commands through the existi
     await route.fulfill({response,body});
   });
   const svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="30" fill="orange"/></svg>';
-  const config={v:1,app:'battle',id:'mobile-match',manual_start:true,owner_only:true,host:{key:'u:tester',name:'tester'},players:[
+  const config={v:1,app:'battle',id:'mobile-match',manual_start:true,owner_only:true,battle_rules:2,host:{key:'u:tester',name:'tester'},players:[
     {key:LEAD.agent_id,name:LEAD.name,controller:'tester'},{key:CODEX.agent_id,name:CODEX.name,controller:'tester'}]};
   const rows=[];
   const add=(sender,event)=>rows.push({id:rows.length+1,sender,sender_name:sender,content:Rooms.encodeEvent({...event,room:config.id}),created_at:1790000000});
   add('u:tester',{type:'command',kind:'avatar',fighter:LEAD.agent_id,id:'avatar1'});
   add('u:tester',{type:'command',kind:'avatar',fighter:CODEX.agent_id,id:'avatar2'});
-  add(LEAD.agent_id,{type:'avatar',id:'avatar1',svg,name:'Amber'});
-  add(CODEX.agent_id,{type:'avatar',id:'avatar2',svg,name:'Ripple'});
+  const moves=['喷射火焰','撞击','守住','自我再生'];
+  add(LEAD.agent_id,{type:'avatar',id:'avatar1',svg,name:'Amber',elements:['normal'],moves});
+  add(CODEX.agent_id,{type:'avatar',id:'avatar2',svg,name:'Ripple',elements:['normal'],moves});
   const card={...GROUP,announcement:Rooms.encodeConfig(config),members:[{principal:'u:tester',name:'tester',is_agent:false},member(LEAD),member(CODEX)]};
   await page.route('**/proxy_groups',route=>route.fulfill({json:{groups:[card]}}));
   await page.route(/\/proxy_groups\/g_dev$/,route=>route.fulfill({json:{...card,messages:rows}}));
@@ -127,6 +128,8 @@ test('a room app renders Agent SVGs and sends battle commands through the existi
   await page.goto('/mobile/group_chat');
   await page.locator('.group-item',{hasText:'Dev'}).first().click();
   await expect(page.locator('#room-app-surface .cc-room-image')).toHaveCount(2);
+  await expect(page.locator('.cc-room-move')).toHaveCount(8);
+  await expect(page.locator('.cc-room-type')).toHaveCount(2);
   await expect(page.locator('#room-app-surface textarea')).toHaveCount(0);
   await expect(page.locator('#room-composer')).toBeVisible();
   await page.locator('#room-composer [data-room-mode="chat"]').click();
@@ -136,13 +139,16 @@ test('a room app renders Agent SVGs and sends battle commands through the existi
   await page.locator('[data-start]').click();
   await expect(page.locator('[data-start]')).toBeHidden();
   await page.locator('#room-composer [data-room-mode="command"]').click();
-  await page.locator('#msg-input').fill('抓住破绽，用喷射火焰');
+  await page.locator('.cc-room-fighter').first().getByRole('button',{name:'使用喷射火焰',exact:true}).click();
+  await expect(page.locator('#msg-input')).toHaveValue('使用喷射火焰');
   await page.locator('#send-btn').click();
   await expect(page.locator('.cc-room-hp').nth(1)).toHaveText('76 / 100 HP');
+  await expect(page.locator('.cc-room-effect img')).toHaveAttribute('data-move','喷射火焰');
   const sent=calls.posts.find(row=>Rooms.parseEvent(row.content)?.kind==='turn');
   expect(sent.mentions).toEqual([LEAD.agent_id]);
   expect(sent.content).toContain('【主人指令】');
   expect(Rooms.parseEvent(sent.content).controller).toBe('tester');
+  expect(sent.content).toContain('四个');
   await page.evaluate(()=>goBack());
   await expect(page.locator('#room-composer')).toBeHidden();
 });

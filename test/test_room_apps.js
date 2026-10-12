@@ -92,3 +92,47 @@ test('explicit start and controller identity govern alternating turns',()=>{
   assert.equal(state.turn,3);
   assert.deepEqual(state.fighters.map(f=>f.hp),[86,86]);
 });
+
+function preparedV2(attacker=['fire'], defender=['grass'], moves=['喷射火焰','撞击','守住','自我再生']) {
+  const rows=prepared();
+  rows[2].content=Rooms.encodeEvent({type:'avatar',room:'match',id:'a1',name:'Amber',elements:attacker,moves,svg});
+  rows[3].content=Rooms.encodeEvent({type:'avatar',room:'match',id:'a2',name:'Ripple',elements:defender,moves:['撞击','水枪','守住','自我再生'],svg});
+  rows.push(message('owner',{type:'start'}));
+  return rows;
+}
+test('new creatures select exactly four unique catalog moves and valid attributes',()=>{
+  assert.equal(Battle.SKILLS.length,44);
+  assert.equal(Object.keys(Battle.TYPES).length,18);
+  const cfg={...config,battle_rules:2,manual_start:true};
+  const rows=preparedV2();
+  const state=new Battle.BattleModel().rebuild(cfg,members,rows);
+  assert.deepEqual(state.fighters[0].moves,['喷射火焰','撞击','守住','自我再生']);
+  assert.deepEqual(state.fighters[0].elements,['fire']);
+  for (const moves of [[],['撞击','撞击','守住','自我再生'],['撞击','destroy','守住','自我再生']]) {
+    assert.equal(new Battle.BattleModel().rebuild(cfg,members,preparedV2(['fire'],['grass'],moves)).fighters[0].svg,'');
+  }
+  assert.equal(new Battle.BattleModel().rebuild(cfg,members,preparedV2(['unknown'])).fighters[0].svg,'');
+});
+test('unselected moves do not settle and new type rules apply STAB, resistance and immunity',()=>{
+  const cfg={...config,battle_rules:2,manual_start:true},model=new Battle.BattleModel();
+  const rows=preparedV2();rows.push(command('1',1,'alpha'),move('1',1,'十万伏特'));
+  assert.equal(model.rebuild(cfg,members,rows).turn,1);
+  rows.push(move('1',1,'喷射火焰'));
+  assert.equal(model.rebuild(cfg,members,rows).fighters[1].hp,28); // 24 × 1.5 × 2
+  const resisted=preparedV2(['fire'],['water']);resisted.push(command('r',1,'alpha'),move('r',1,'喷射火焰'));
+  assert.equal(model.rebuild(cfg,members,resisted).fighters[1].hp,82);
+  const immune=preparedV2(['electric'],['ground'],['十万伏特','撞击','守住','自我再生']);immune.push(command('i',1,'alpha'),move('i',1,'十万伏特'));
+  assert.equal(model.rebuild(cfg,members,immune).fighters[1].hp,100);
+  assert.equal(model.state.turn,2);
+  assert.equal(Battle.effectiveness('fire',['grass','steel']),4);
+  assert.equal(Battle.effectiveness('ground',['flying','steel']),0);
+});
+test('skill effects are self-contained animated SVGs for both attack directions and status moves',()=>{
+  for (const skill of Battle.SKILLS) for (const side of [0,1]) {
+    const svg=Battle.effectSvg(skill,side);
+    assert.ok(svg.startsWith('<svg'));
+    assert.match(svg,/<animate/);
+    assert.doesNotMatch(svg,/<script|onload=|foreignObject|<image|href=/i);
+    if(!['guard','heal'].includes(skill.type)) assert.ok(svg.includes(side?'M490 110 L110 110':'M110 110 L490 110'));
+  }
+});

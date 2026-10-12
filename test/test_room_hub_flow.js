@@ -64,7 +64,7 @@ const svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><defs><
         if(command&&!answered.has(command.id)){
           answered.add(command.id);requestsSeen.push({agent:name,kind:command.kind});
           content=Rooms.encodeEvent(command.kind==='avatar'
-            ?{type:'avatar',room:command.room,id:command.id,name:name==='Alpha'?'Amber':'Ripple',element:'normal',svg}
+            ?{type:'avatar',room:command.room,id:command.id,name:name==='Alpha'?'Amber':'Ripple',elements:['normal'],moves:['喷射火焰','撞击','守住','自我再生'],svg}
             :{type:'move',room:command.room,id:command.id,turn:command.turn,move:'喷射火焰',narration:'抓住破绽，火焰命中！'});
         }
         await route.fulfill({json:{choices:[{message:{role:'assistant',content},finish_reason:'stop'}],usage:{prompt_tokens:100,completion_tokens:100}},
@@ -93,6 +93,8 @@ const svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><defs><
       throw error;
     }
     await expect(friendPage.locator('.cc-room-image')).toHaveCount(2,{timeout:10000});
+    await expect(host.locator('.cc-room-move')).toHaveCount(8);
+    await expect(friendPage.locator('.cc-room-move')).toHaveCount(8);
     await expect(friendPage.locator('.cc-room-setup')).toBeHidden();
     await expect(host.locator('.cc-room-setup')).toBeHidden();
     await expect(host.locator('[data-room-surface] textarea')).toHaveCount(0);
@@ -109,6 +111,7 @@ const svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><defs><
     await host.getByRole('textbox',{name:'消息',exact:true}).fill('抓住机会，用喷射火焰进攻');
     await host.getByRole('button',{name:'发送',exact:true}).click();
     await expect(host.locator('.cc-room-hp').nth(1)).toHaveText('76 / 100 HP',{timeout:15000});
+    await expect(host.locator('.cc-room-effect img')).toHaveAttribute('data-move','喷射火焰');
     await expect(friendPage.locator('.cc-room-hp').nth(1)).toHaveText('76 / 100 HP',{timeout:10000});
     await host.getByRole('textbox',{name:'消息',exact:true}).fill('不能代替朋友出招');
     await expect(host.getByRole('button',{name:'发送',exact:true})).toBeDisabled();

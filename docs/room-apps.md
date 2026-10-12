@@ -24,8 +24,23 @@ carry an owner label for the Agent, and game rules are published in the existing
 group announcement. These are application rules, not an additional Agent
 runtime permission system. Existing prototype logs still replay.
 
-The application matches the Agent's answer against a fixed skill table:
-撞击, 电光一闪, 喷射火焰, 水枪, 十万伏特, 守住 and 自我再生.
+The application has 44 fixed skills and 18 types. When generating a creature,
+the Agent selects exactly four distinct skills and one or two types. New
+matches reject missing, duplicate or unknown choices, and an unselected skill
+does not advance a turn. Once started, the selection is locked. Click a skill
+card to put its name in the same chat input, or describe the action yourself.
+
+The room type chart uses 2× effectiveness, 0.5× resistance and 0× immunity;
+dual types multiply. Same-type attacks get a 1.5× bonus. The skill and type
+tables are available under **技能与规则**. Fire, water, electricity, leaves,
+ice, wind and other types have self-contained SVG attack effects; guard and
+healing have their own SVG animations. An accepted move plays once, in the
+attacker's direction; reopening history does not replay old animations.
+Reduced-motion preferences are respected. These effects need no downloads,
+JavaScript from an Agent, external resources or additional model calls.
+
+Previously created match logs retain their original damage rules. Regenerate
+the creatures to start a new match with the four-skill and full type rules.
 The frontend rule engine calculates HP, guard, healing and the winner. Values
 such as damage or HP supplied by an Agent are ignored. A reply must be from the
 selected Agent and match the current command and turn. Duplicate, stale,

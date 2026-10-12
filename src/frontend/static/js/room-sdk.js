@@ -34,7 +34,7 @@
   }
   function createConfig(app, actor) {
     return {v: 1, app: app, id: uid(), host: actor || {key: '', name: ''}, players: [],
-      ...(app === 'battle' ? {manual_start: true, owner_only: true} : {})};
+      ...(app === 'battle' ? {manual_start: true, owner_only: true, battle_rules: 2} : {})};
   }
   function encodeEvent(event, instructions) {
     return EVENT + JSON.stringify(Object.assign({protocol: 'clawcross.room/1'}, event)) +
