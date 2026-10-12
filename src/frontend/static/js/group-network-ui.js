@@ -260,18 +260,24 @@
       input.spellcheck = false;
       const name = el('input', 'gn-input');
       name.placeholder = '你在群里的名字'; name.maxLength = 40; name.autocomplete = 'nickname'; name.setAttribute('aria-label', '你在群里的名字');
+      name.value = window.__currentUser || '';
       const password = el('input', 'gn-input');
-      password.type = 'password'; password.placeholder = '密码（至少 6 位）'; password.maxLength = 128;
+      password.type = 'password'; password.placeholder = '原身份的密码（选填）'; password.maxLength = 128;
       password.autocomplete = 'current-password'; password.setAttribute('aria-label', '密码');
+      const advanced = el('details');
+      advanced.append(el('summary', 'gn-note', '高级 · 恢复已有密码身份'), password,
+        el('p', 'gn-note', '仅用于恢复以前设置过密码的身份。新加入的身份由本机自动保存凭证。'));
       const join = button('加入', 'primary', () => busy(join, view.status, '正在加入…', async () => {
-        const group = await request('POST', '/join', { invite: input.value.trim(), agents: [], name: name.value.trim(), password: password.value });
+        const fields = {invite: input.value.trim(), agents: [], name: name.value.trim()};
+        if (password.value) fields.password = password.value;
+        const group = await request('POST', '/join', fields);
         view.done();
         changed({...group,open_group:true});
       }));
-      const ready = () => { join.disabled = !input.value.includes('/group-guest#') || !name.value.trim() || password.value.length < 6; };
+      const ready = () => { join.disabled = !input.value.includes('/group-guest#') || !name.value.trim() || !!password.value && password.value.length < 6; };
       ready();
       for (const field of [input, name, password]) field.addEventListener('input', ready);
-      view.body.append(input, name, password, el('p', 'gn-note', '第一次加入时设置密码；以后在任何设备上用同样的名字和密码，都会回到你在群里的身份。加入后你可以发言；你的 agent 要在群成员里手动添加后才会收到群消息。'), join);
+      view.body.append(input, name, el('p', 'gn-note', '无需设置密码，凭证由 ClawCross 自动保存在本机。再次加入会沿用本机身份，其他设备不能仅凭同名接管。加入后可在群成员里添加自己的 Agent。'), join, advanced);
       setTimeout(() => input.focus(), 50);
     },
 
@@ -409,8 +415,8 @@
 
     async removeLocal(gid, confirmRemoval = true) {
       if (confirmRemoval && !window.confirm(text(
-        '从本机移除此群聊？将停止重连并清理本地凭证和聊天缓存。远端群聊及成员关系保留。',
-        'Remove this group from this device? Reconnection stops and local credentials and chat cache are deleted. The server group and membership remain.'
+        '从本机移除此群聊？将停止重连并清理连接令牌和聊天缓存。本机身份凭证、远端群聊及成员关系保留，之后可用原昵称再次加入。',
+        'Remove this group from this device? Reconnection stops; the connection token and chat cache are deleted. Device login credentials and server membership remain so you can rejoin with your name.'
       ))) return false;
       try {
         await request('DELETE', `/${encodeURIComponent(gid)}/local`);

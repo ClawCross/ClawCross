@@ -2437,7 +2437,7 @@ def build_parser():
     c.add_argument("--after-id", help="增量获取消息 (messages 时)")
     c.add_argument("--invite", help="邀请链接 (join 时)。invite 操作会生成新的邀请链接，旧链接随之失效")
     c.add_argument("--member-name", help="你在群里的名字 (join 时，默认用户名)")
-    c.add_argument("--password", help="你在群里的密码 (join 时)；同样的名字和密码在任何设备上都会回到同一个成员")
+    c.add_argument("--password", help="可选：恢复已有密码身份；不填则自动使用本机保存的群身份凭证")
 
     # profile
     c = sub.add_parser("profile", help="用户画像管理")

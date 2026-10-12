@@ -68,6 +68,10 @@ class ClientStore:
         with self.db() as db:
             db.executescript('''
                 CREATE TABLE IF NOT EXISTS group_client_identity(id INTEGER PRIMARY KEY CHECK(id=1),node_id TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS group_client_login_secrets(
+                    owner TEXT NOT NULL,url TEXT NOT NULL,remote_id TEXT NOT NULL,secret TEXT NOT NULL,
+                    PRIMARY KEY(owner,url,remote_id)
+                );
                 CREATE TABLE IF NOT EXISTS group_client_connections(
                     owner TEXT NOT NULL, alias TEXT NOT NULL, url TEXT NOT NULL, remote_id TEXT NOT NULL,
                     connection_id TEXT NOT NULL, token TEXT NOT NULL, cursor INTEGER NOT NULL DEFAULT 0,
@@ -106,6 +110,23 @@ class ClientStore:
         with self.db() as db:
             return [dict(r) for r in db.execute('SELECT * FROM group_client_connections' + (' WHERE owner=?' if owner is not None else ''),
                                                (owner,) if owner is not None else ())]
+
+    def login_secret(self, owner, url, remote_id):
+        """A private, persistent password scoped to this device, user and remote group.
+
+        Retained when a local connection is removed, so rejoining does not lose
+        the member's name. It is never included in group cards or exports.
+        """
+        with self.db() as db:
+            db.execute('INSERT OR IGNORE INTO group_client_login_secrets VALUES(?,?,?,?)',
+                       (owner, url, remote_id, secrets.token_urlsafe(32)))
+            return db.execute('SELECT secret FROM group_client_login_secrets WHERE owner=? AND url=? AND remote_id=?',
+                              (owner, url, remote_id)).fetchone()[0]
+
+    def remember_login_secret(self, owner, url, remote_id, secret):
+        with self.db() as db:
+            db.execute('INSERT INTO group_client_login_secrets VALUES(?,?,?,?) ON CONFLICT(owner,url,remote_id) DO UPDATE SET secret=excluded.secret',
+                       (owner, url, remote_id, secret))
 
     def get(self, owner, alias):
         with self.db() as db:
@@ -240,9 +261,11 @@ class GroupClient:
             raise ClientError('无法连接群服务器或服务器响应无效', 503) from exc
 
     def join_link(self, owner, *, link, agents=(), name='', password=''):
-        """Join as a full member with an invitation link, signed in by a name and password: the same
-        pair on another device returns to the same member. Through another machine's front end the
-        membership polls; through this machine's own it is a local one."""
+        """Join by invitation using a device-local password, or an explicit legacy password.
+
+        Through another machine's front end membership polls; through this
+        machine's own it is a local one. Existing connection tokens keep working.
+        """
         base, ticket = parse_invite_link(link)
         for aid in agents:
             if self.agents.get(owner, aid) is None:
@@ -256,10 +279,16 @@ class GroupClient:
         url, via = (service_url(), '') if own else (base, ticket)
         known = next((r for r in self.store.rows(owner) if r['url'] == url and r['remote_id'] == group_id and r['active']), None)
         if known is None:
-            if not password:
-                raise ClientError('第一次加入这个群要用名字和密码：请本人在消息中心「加入群聊」或 CLI groups join 里填写', 400)
-            result = self.enroll(front, '/relay/join', invitation, {
-                'node_id': self.store.node_id, 'user_id': owner, 'display_name': name.strip() or owner, 'password': password})
+            secret = password or self.store.login_secret(owner, url, group_id)
+            try:
+                result = self.enroll(front, '/relay/join', invitation, {
+                    'node_id': self.store.node_id, 'user_id': owner, 'display_name': name.strip() or owner, 'password': secret})
+            except ClientError as exc:
+                if not password and str(exc) in ('名字或密码不正确', '这个名字已有人使用；如果是你，请在原来的设备上设置密码后再登录'):
+                    raise ClientError('这个昵称已被其他身份使用。请换一个昵称，或在原设备继续加入；已有密码的身份可在高级选项中恢复。', 409) from exc
+                raise
+            if password:
+                self.store.remember_login_secret(owner, url, group_id, password)
             alias = self.store.save(owner, url, result, via=via)
         else:
             alias = known['alias']

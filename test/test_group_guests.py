@@ -26,6 +26,30 @@ class GuestTests(unittest.TestCase):
         self.host = self.store.create(title='Friends', node_id='host', user_id='alice', display_name='Alice')
         self.invite = self.store.guest_invite(self.host['token'])['invite']
 
+    def test_automatic_client_login_rejoins_locally_but_another_device_cannot_take_the_name(self):
+        first_store=ClientStore(Path(self.temp.name)/'device-one.db')
+        second_store=ClientStore(Path(self.temp.name)/'device-two.db')
+        first=GroupClient(first_store,Mock(),Mock())
+        second=GroupClient(second_store,Mock(),Mock())
+        def enroll(url,path,headers,body):
+            if path.endswith('/info'): return {'group_id':self.host['group']['group_id']}
+            try:
+                return self.store.join(self.invite,**body)
+            except RelayError as exc:
+                raise ClientError(str(exc),exc.status) from exc
+        link='https://host.example/group-guest#'+self.invite
+        with patch.object(GroupClient,'enroll',side_effect=enroll), patch('groups.client.own_front_ends',return_value=set()):
+            card=first.join_link('bob',link=link,name='Bob')
+            original=first_store.get('bob',card['group_id'])['connection_id']
+            with self.assertRaises(ClientError) as denied:
+                second.join_link('bob',link=link,name='Bob')
+            self.assertEqual(denied.exception.status,409)
+            self.assertIn('昵称',str(denied.exception))
+            first_store.remove('bob',card['group_id'])
+            again=first.join_link('bob',link=link,name='Bob')
+            self.assertEqual(first_store.get('bob',again['group_id'])['connection_id'],original)
+        self.assertEqual(len(self.store.detail(self.host['token'])['members']),2)
+
     def test_name_collisions_and_concurrent_join(self):
         with self.assertRaises(RelayError): self.store.guest_join(self.invite, ' alice ', 'password123')
         with self.assertRaises(RelayError): self.store.guest_join(self.invite, '\u200b', 'password123')
@@ -309,12 +333,34 @@ class JoinLinkTests(unittest.TestCase):
 
     def test_the_first_join_signs_in_with_a_name_and_password(self):
         with patch('groups.client.own_front_ends', return_value=set()):
-            with self.assertRaises(ClientError) as missing:
-                self.client.join_link('bob', link='https://host.example/group-guest#ticket')
-            self.assertEqual(missing.exception.status, 400)
             self.client.join_link('bob', link='https://host.example/group-guest#ticket', name=' Bob ', password='password123')
         self.assertEqual({k: self.bodies[-1][k] for k in ('user_id', 'display_name', 'password')},
                          {'user_id': 'bob', 'display_name': 'Bob', 'password': 'password123'})
+
+    def test_device_credentials_are_persistent_scoped_and_not_in_cards(self):
+        link='https://host.example/group-guest#ticket'
+        with patch('groups.client.own_front_ends', return_value=set()):
+            card=self.client.join_link('bob',link=link,name='Bob')
+            secret=self.bodies[-1]['password']
+            self.assertGreaterEqual(len(secret),40)
+            self.assertNotIn(secret,json.dumps(card))
+            self.store.remove('bob',card['group_id'])
+            reopened=ClientStore(self.store.path)
+            self.assertEqual(reopened.login_secret('bob','https://host.example','g_1'),secret)
+            self.client.join_link('bob',link=link,name='Bob')
+            self.assertEqual(self.bodies[-1]['password'],secret)
+            self.assertNotEqual(reopened.login_secret('alice','https://host.example','g_1'),secret)
+            self.assertNotEqual(reopened.login_secret('bob','https://other.example','g_1'),secret)
+            self.assertNotEqual(reopened.login_secret('bob','https://host.example','g_2'),secret)
+            other=ClientStore(self.store.path.with_name('another-device.db'))
+            self.assertNotEqual(other.login_secret('bob','https://host.example','g_1'),secret)
+
+    def test_legacy_password_is_remembered_after_successful_login(self):
+        with patch('groups.client.own_front_ends', return_value=set()):
+            card=self.client.join_link('bob',link='https://host.example/group-guest#ticket',password='password123')
+            self.store.remove('bob',card['group_id'])
+            self.client.join_link('bob',link='https://host.example/group-guest#ticket')
+            self.assertEqual(self.bodies[-1]['password'],'password123')
 
     def test_only_an_invitation_link_is_accepted(self):
         for bad in ('', 'g_1', 'https://host.example/studio#x', 'ftp://host.example/group-guest#x', 'https://host.example/group-guest'):
