@@ -88,6 +88,41 @@ const GROUP = {
   member_names: ['Lead', 'Codex', 'tester'], message_count: 2, last_message: MESSAGES[1], dnd: false, updated_at: 1790000010,
 };
 
+test('a room app renders Agent SVGs and sends battle commands through the existing group API',async({page})=>{
+  const Rooms=require('../../src/frontend/static/js/room-sdk.js');
+  const calls={posts:[],control:[]};await stub(page,calls);
+  const svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="30" fill="orange"/></svg>';
+  const config={v:1,app:'battle',id:'mobile-match',host:{key:'u:tester',name:'tester'},players:[
+    {key:LEAD.agent_id,name:LEAD.name,controller:'tester'},{key:CODEX.agent_id,name:CODEX.name,controller:'tester'}]};
+  const rows=[];
+  const add=(sender,event)=>rows.push({id:rows.length+1,sender,sender_name:sender,content:Rooms.encodeEvent({...event,room:config.id}),created_at:1790000000});
+  add('u:tester',{type:'command',kind:'avatar',fighter:LEAD.agent_id,id:'avatar1'});
+  add('u:tester',{type:'command',kind:'avatar',fighter:CODEX.agent_id,id:'avatar2'});
+  add(LEAD.agent_id,{type:'avatar',id:'avatar1',svg,name:'Amber'});
+  add(CODEX.agent_id,{type:'avatar',id:'avatar2',svg,name:'Ripple'});
+  const card={...GROUP,announcement:Rooms.encodeConfig(config),members:[{principal:'u:tester',name:'tester',is_agent:false},member(LEAD),member(CODEX)]};
+  await page.route('**/proxy_groups',route=>route.fulfill({json:{groups:[card]}}));
+  await page.route(/\/proxy_groups\/g_dev$/,route=>route.fulfill({json:{...card,messages:rows}}));
+  await page.route('**/proxy_groups/g_dev/messages**',route=>{
+    if(route.request().method()==='POST'){
+      const body=route.request().postDataJSON();calls.posts.push(body);
+      const command=Rooms.parseEvent(body.content);
+      add('u:tester',command);
+      add(LEAD.agent_id,{type:'move',id:command.id,turn:command.turn,move:'喷射火焰'});
+    }
+    return route.fulfill({json:{messages:rows}});
+  });
+  await page.addInitScript(()=>localStorage.setItem('clawcross_lang','zh'));
+  await page.goto('/mobile/group_chat');
+  await page.locator('.group-item',{hasText:'Dev'}).first().click();
+  await expect(page.locator('#room-app-surface .cc-room-image')).toHaveCount(2);
+  await page.locator('.cc-room-command textarea').fill('抓住破绽，用喷射火焰');
+  await page.locator('[data-command]').click();
+  await expect(page.locator('.cc-room-hp').nth(1)).toHaveText('76 / 100 HP');
+  expect(calls.posts[0].mentions).toEqual([LEAD.agent_id]);
+  expect(Rooms.parseEvent(calls.posts[0].content).kind).toBe('turn');
+});
+
 test('mobile empty chats create a first companion once and open its private conversation',async({page})=>{
   await page.setViewportSize({width:390,height:844});
   await stub(page,{posts:[],control:[]});

@@ -141,14 +141,16 @@
       catch (error) { notify(error.message); return; }
       const view = dialog('群公告', group.title || '');
       const input = el('textarea', 'gn-input');
-      input.rows = 7; input.maxLength = 4000; input.value = group.announcement || '';
+      input.rows = 7; input.maxLength = 4000; input.value = window.ClawCrossRooms ? ClawCrossRooms.humanAnnouncement(group.announcement) : group.announcement || '';
       input.setAttribute('aria-label', '群公告');
       input.readOnly = String(group.owner || '').startsWith('remote:');
       input.placeholder = input.readOnly ? '暂无群公告' : '写下群的介绍、约定或重要通知';
       view.body.append(input);
       if (!input.readOnly) {
         const save = button('保存公告','primary',()=>busy(save,view.status,'正在保存…',async()=>{
-          const updated = await request('PATCH','/' + encodeURIComponent(gid),{announcement:input.value.trim()});
+          const config = window.ClawCrossRooms ? ClawCrossRooms.parseConfig(group.announcement) : null;
+          const value = config ? ClawCrossRooms.encodeConfig(config, input.value.trim()) : input.value.trim();
+          const updated = await request('PATCH','/' + encodeURIComponent(gid),{announcement:value});
           view.done(); changed(updated);
         }));
         view.body.append(el('p','gn-note','成员及 Agent 都能看到公告；留空可清除。'),save);

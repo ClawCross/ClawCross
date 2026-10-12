@@ -38,6 +38,9 @@
 <script src="/static/js/reasoning-levels.js?v=20261004-effort-stops"></script>
 <link rel="stylesheet" href="/static/css/connections.css?v=20261011">
 <script src="/static/js/connections.js?v=20261011"></script>
+<script src="/static/js/room-sdk.js?v=20261012-rooms"></script>
+<script src="/static/js/room-battle.js?v=20261012-rooms"></script>
+<script src="/static/js/mobile-rooms.js?v=20261012-rooms"></script>
 <script src="/static/js/external-agent-settings.js?v=20261011-ssh"></script>
 <script src="/static/js/model-profiles.js?v=20261004-effort-slider"></script>
 <script src="/static/js/approval-ui.js?v=20261004-fold-approval"></script>
@@ -4041,7 +4044,7 @@
 <script src="/static/js/mobile-agent-create-tools.js?v=20261006-tool-table"></script>
 <link rel="stylesheet" href="/static/css/group-message-menu.css?v=20261004-message-menu">
 <script src="/static/js/group-message-menu.js?v=20261004-message-menu"></script>
-<script src="/static/js/group-network-ui.js?v=20261009-history-metadata"></script>
+<script src="/static/js/group-network-ui.js?v=20261012-room-metadata"></script>
 <link rel="stylesheet" href="/static/css/group-network.css?v=20261009-history-metadata">
 <link rel="stylesheet" href="/static/css/settings-polish.css?v=20261005-team-skills">
 <link rel="stylesheet" href="/static/css/mobile-profile.css?v=20261004-studio-header">
@@ -4149,6 +4152,7 @@
   </div>
   <div id="group-network-status" style="display:none;padding:6px 14px;font-size:12px;color:var(--text-secondary);overflow-wrap:anywhere" role="status"></div>
   <button type="button" id="group-announcement" class="group-announcement" hidden onclick="GroupNetworkUI.announcement(currentGroupId)" aria-label="查看群公告"></button>
+  <div id="room-app-surface" hidden style="flex-shrink:0;max-height:55dvh;overflow:auto;min-width:0;"></div>
   <div class="approval-strip" id="approval-strip"></div>
   <div class="chat-body" id="chat-body"></div>
   <div id="new-msg-banner" onclick="dismissNewMsgBanner()">
@@ -4890,10 +4894,14 @@
   <div class="drawer-body" style="padding:16px;">
 
     <div style="margin-bottom:16px;">
-      <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px;" data-i18n="group_title_label">群聊名称</label>
+      <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px;" data-i18n="group_title_label">房间名称</label>
       <input type="text" id="create-custom-name" data-i18n="group_title_placeholder" placeholder="例如：周末读书会" style="width:100%;padding:12px;border:1px solid var(--border);border-radius:10px;font-size:16px;background:var(--bg-card);" oninput="updateGroupNamePreview()" onkeydown="if(event.key==='Enter')submitCreateGroup()">
     </div>
 
+    <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px;">房间玩法</label>
+    <select id="create-room-app" style="width:100%;padding:11px;border:1px solid var(--border);border-radius:10px;background:var(--bg-card);color:var(--text);margin-bottom:16px;">
+      <option value="chat">聊天房间</option><option value="battle">精灵对战 · SVG 形象与自然语言指挥</option>
+    </select>
     <details id="create-group-advanced" style="margin-bottom:16px;border:1px solid var(--border);border-radius:10px;background:var(--bg-card);">
     <summary style="padding:12px 14px;cursor:pointer;color:var(--text-secondary);font-size:13px;font-weight:600;" data-i18n="group_advanced_options">高级选项 · 导入 Team 或添加 Team 成员</summary>
     <div style="padding:0 12px 12px;">
@@ -5176,10 +5184,10 @@ const I18N = {
   zh: {
     // ── Page title & headers ──
     page_title: 'Agent 消息中心',
-    header_agent_msg: 'Agent消息',
+    header_agent_msg: '房间',
     header_contacts: '通讯录',
     header_profile: '我',
-    tab_chats: '对话',
+    tab_chats: '房间',
     tab_contacts: '通讯录',
     tab_team: 'Team',
     tab_team_hub: 'Team Hub',
@@ -5301,8 +5309,8 @@ const I18N = {
     delete_failed: '删除失败',
 
     // ── Create group ──
-    create_group: '创建群聊',
-    group_title_label: '群聊名称',
+    create_group: '创建房间',
+    group_title_label: '房间名称',
     group_title_placeholder: '例如：周末读书会',
     group_advanced_options: '高级选项 · 导入 Team 或添加 Team 成员',
     select_team_optional: '导入 Team 成员（可选）',
@@ -5483,7 +5491,7 @@ const I18N = {
     agent_creation_library: '或选择已有的人设',
     agent_creation_tools: '允许的工具',
     agent_creation_tools_hint: '填写工具名，用逗号分隔；以后也可以在 Agent 设置中调整。',
-    create_new_group: '创建新群聊',
+    create_new_group: '创建新房间',
     agent_name_label: 'Agent 名称',
     agent_tag_label: 'Tag 标签（人设prompt）',
     create_agent_no_tags: '暂无预设人设，可以直接描述你需要的帮助。',
@@ -5827,10 +5835,10 @@ const I18N = {
 
   en: {
     page_title: 'Agent Message Center',
-    header_agent_msg: 'Messages',
+    header_agent_msg: 'Rooms',
     header_contacts: 'Contacts',
     header_profile: 'Me',
-    tab_chats: 'Chats',
+    tab_chats: 'Rooms',
     tab_contacts: 'Contacts',
     tab_team: 'Team',
     tab_team_hub: 'Team Hub',
@@ -5946,8 +5954,8 @@ const I18N = {
     group_dissolved: 'Group dissolved',
     delete_failed: 'Delete failed',
 
-    create_group: 'Create Group',
-    group_title_label: 'Group name',
+    create_group: 'Create Room',
+    group_title_label: 'Room name',
     group_title_placeholder: 'For example: Weekend book club',
     group_advanced_options: 'Advanced · Import a Team or add its members',
     select_team_optional: 'Add Team members (optional)',
@@ -6125,7 +6133,7 @@ const I18N = {
     agent_creation_library: 'Or choose an existing persona',
     agent_creation_tools: 'Allowed tools',
     agent_creation_tools_hint: 'Comma-separated tool names. You can change these in Agent settings later.',
-    create_new_group: 'Create New Group',
+    create_new_group: 'Create New Room',
     agent_name_label: 'Agent Name',
     agent_tag_label: 'Tag (persona prompt)',
     create_agent_no_tags: 'No presets available. Describe the help you need.',
@@ -7460,11 +7468,13 @@ async function refreshGroups(options = {}) {
     groups = nextGroups;
     const activeGroup = groups.find(group => getGroupId(group) === currentGroupId);
     if (activeGroup && activeGroup.title) {
+      MobileRooms.metadata(activeGroup);
       currentGroupName = activeGroup.title;
       document.getElementById('chat-title').textContent = activeGroup.title;
       const announcement = document.getElementById('group-announcement');
-      announcement.hidden = !activeGroup.announcement;
-      announcement.textContent = activeGroup.announcement ? '群公告 · ' + activeGroup.announcement : '';
+      const note = ClawCrossRooms.humanAnnouncement(activeGroup.announcement);
+      announcement.hidden = !note;
+      announcement.textContent = note ? '群公告 · ' + note : '';
     }
     renderGroupList(groups);
     prefetchTopGroupDetails(nextGroups);
@@ -7617,6 +7627,7 @@ function renderGroupList(list) {
             <div class="group-name-row">
               <div class="group-name">${renderGroupNameDisplay(name)}</div>
               <span class="group-activity-label" hidden></span>
+              ${ClawCrossRooms.parseConfig(g.announcement)?.app === 'battle' ? '<span style="font-size:10px;color:var(--text-secondary);white-space:nowrap;">精灵对战</span>' : ''}
               ${timeStr ? `<span class="group-time">${timeStr}</span>` : ''}
             </div>
             <div class="group-meta-row">
@@ -8729,6 +8740,7 @@ async function showCreateGroupModal() {
   hideCreateMenu();
   closeOasisSidebar();
   document.getElementById('create-custom-name').value = '';
+  document.getElementById('create-room-app').value = 'chat';
   document.getElementById('create-team-select').value = '';
   document.getElementById('create-group-advanced').open = false;
   document.getElementById('import-panel').style.display = 'none';
@@ -8793,6 +8805,12 @@ async function submitCreateGroup() {
     const card = teamName ? await api('GET', `/v1/teams/${encodeURIComponent(teamName)}`) : {members: []};
     const agents = (card.members || []).map(m => m.agent.agent_id);
     const data = await api('POST', '/proxy_groups', { title, agents });
+    if (document.getElementById('create-room-app').value === 'battle') {
+      const group = data.members ? data : await api('GET', '/proxy_groups/' + encodeURIComponent(data.group_id));
+      const person = (group.members || []).find(member => !member.agent && !member.is_agent);
+      const config = ClawCrossRooms.createConfig('battle', {key: person?.principal || selfPrincipal(), name: person?.name || window.__currentUser || ''});
+      await api('PATCH', '/proxy_groups/' + encodeURIComponent(data.group_id), {announcement: ClawCrossRooms.encodeConfig(config)});
+    }
     toast(t('group_created') + ': ' + data.title);
     closeCreateModal();
     refreshGroups();
@@ -8812,8 +8830,9 @@ function applyGroupDetail(detail) {
   if (detail.group_id !== currentGroupId) return;
   if(detail.title) {currentGroupName=detail.title;document.getElementById('chat-title').textContent=detail.title;}
   const announcement = document.getElementById('group-announcement');
-  announcement.hidden = !detail.announcement;
-  announcement.textContent = detail.announcement ? '群公告 · ' + detail.announcement : '';
+  const note = ClawCrossRooms.humanAnnouncement(detail.announcement);
+  announcement.hidden = !note;
+  announcement.textContent = note ? '群公告 · ' + note : '';
   document.getElementById('action-group-rename').style.display = String(detail.owner || '').startsWith('remote:') ? 'none' : '';
   const networkStatus = document.getElementById('group-network-status');
   networkStatus.style.display = detail.federated ? '' : 'none';
@@ -8834,6 +8853,7 @@ function applyGroupDetail(detail) {
   isMuted = !!detail.dnd;
   if (isMuted) mutedGroupIds.add(detail.group_id); else mutedGroupIds.delete(detail.group_id);
   renderMembers(detail.members || []);
+  MobileRooms.update(detail);
 }
 
 async function reloadGroupDetail() {
@@ -8898,6 +8918,7 @@ async function openChat(groupId, name) {
 }
 
 function goBack() {
+  MobileRooms.close();
   GroupMessageMenu.close();
   stopPolling();
   stopOasisPolling();
@@ -8928,6 +8949,7 @@ function setGroupReply(message) {
 }
 GroupMessageMenu.bind(document.getElementById('chat-body'), id => groupReplyMessages.get(id), setGroupReply);
 function renderMessages(msgs) {
+  MobileRooms.observe(msgs);
   groupReplyMessages.clear();
   const body = document.getElementById('chat-body');
   if (!msgs.length) {
@@ -9028,7 +9050,7 @@ function renderOneMsgHTML(m) {
   const isAgent = sender.startsWith('ag_');
 
   // 非自己的消息使用 markdown 渲染，自己的消息纯文本
-  const rawContent = tcNormalizeEscapedText(m.content || '');
+  const rawContent = tcNormalizeEscapedText(ClawCrossRooms.describeMessage(m.content || ''));
   let contentHTML;
   let bubbleClass = 'msg-bubble';
   if (!isSelf) {
@@ -11889,6 +11911,7 @@ async function pollNewMessages() {
       refreshPendingApprovalsForCurrentGroup(),
     ]);
     const msgs = data.messages || [];
+    MobileRooms.observe(msgs);
     if (msgs.length) appendMessages(msgs);
   } catch (_) { /* silent */ } finally {
     _polling = false;
