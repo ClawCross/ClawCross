@@ -190,13 +190,13 @@ window.App=(()=>{
   function el(tag,props,...children){
     const node=document.createElement(tag);
     for(const [k,v] of Object.entries(props||{}))if(k.startsWith('on'))node.addEventListener(k.slice(2),v);else if(v!==false&&v!=null)node.setAttribute(k,v===true?'':v);
-    for(const child of children.flat())if(child!=null&&child!==false)node.append(child.nodeType?child:document.createTextNode(String(child)));
+    for(const child of children.flat(Infinity))if(child!=null&&child!==false)node.append(child.nodeType?child:document.createTextNode(String(child)));
     return node;
   }
   /** Replaces a node's children, skipping empty ones; a focused field kept with App.keep stays focused. */
   function fill(node,...children){
     const active=document.activeElement,range=active&&typeof active.selectionStart==='number'?[active.selectionStart,active.selectionEnd]:null;
-    node.replaceChildren(...children.flat().filter(c=>c!=null&&c!==false));
+    node.replaceChildren(...children.flat(Infinity).filter(c=>c!=null&&c!==false));
     if(active&&active!==document.body&&active.isConnected&&document.activeElement!==active){active.focus();if(range)try{active.setSelectionRange(...range);}catch{}}
     return node;
   }

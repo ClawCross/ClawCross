@@ -790,6 +790,31 @@ scenarios['mock-interview']=()=>scenario('mock-interview',{
   }
 });
 
+scenarios['language-partner']=()=>scenario('language-partner',{
+  replies(agent,prompt){
+    if(prompt.includes('总结这次练习'))return JSON.stringify({mistakes:['形容词放错位置'],words:['large - 大杯','to go - 外带'],next:'多用 please。'});
+    if(prompt.includes('学生回答'))return JSON.stringify({ok:false,better:'Can I get a large coffee, please?',why:'形容词放名词前'});
+    return prompt.includes('先开场')?'Hi! What can I get for you today?':'Sure, a large coffee. For here or to go?';
+  },
+  async play({alice,bob,test}){
+    await alice.locator('#partner').selectOption({label:'Beta'});await alice.locator('#tutor').selectOption({label:'Alpha'});
+    await alice.locator('#start').click();
+    await expect(alice.getByText('Hi! What can I get for you today?')).toBeVisible({timeout:10000});
+    await alice.locator('#say').fill('I want a coffee big.');await alice.locator('#send').click();
+    await expect(alice.getByText('Sure, a large coffee. For here or to go?')).toBeVisible({timeout:10000});
+    await expect(alice.locator('.note.fix')).toHaveText('✎ Can I get a large coffee, please? · 形容词放名词前');
+    const tutor=test.asked.find(a=>a.content.includes('学生回答'));
+    expect(tutor.agent).toBe('Alpha');expect(tutor.content).toContain('对方刚说：「Hi! What can I get for you today?」');
+    expect(test.asked.filter(a=>a.agent==='Beta').at(-1).content).toContain('学生：I want a coffee big.');
+    await expect(bob.locator('#chat')).not.toContainText('coffee');                 // Alice's practice is hers alone
+    await expect(bob.locator('#setup')).toBeVisible();
+    await alice.locator('#end').click();
+    await expect(alice.getByText('large - 大杯')).toBeVisible({timeout:10000});
+    await expect(alice.getByText('下次：多用 please。')).toBeVisible();
+    await expect(alice.locator('#setup')).toBeVisible();
+  }
+});
+
 (async()=>{
   const chosen=process.argv.slice(2).length?process.argv.slice(2):Object.keys(scenarios);
   const results={};
