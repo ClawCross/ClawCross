@@ -941,6 +941,32 @@ scenarios['city-walk']=()=>scenario('city-walk',{
   }
 });
 
+scenarios['bulls-cows']=()=>{
+  let alphaGuesses=0;
+  return scenario('bulls-cows',{
+    replies(agent,prompt){
+      if(prompt.includes('想一个四位数'))return JSON.stringify({secret:agent==='Alpha'?'5678':'9012'});
+      return JSON.stringify({guess:agent==='Alpha'?(++alphaGuesses===1?'1243':'9012'):'0000'});
+    },
+    async play({alice,bob,test}){
+      await alice.locator('#secret').fill('1234');await alice.locator('#rival').selectOption({label:'Alpha'});await alice.locator('#me').click();
+      await expect(alice.locator('#guess-box')).toBeVisible({timeout:10000});await expect(bob.locator('#guess-box')).toBeHidden();
+      await expect(alice.locator('.secret')).toHaveText(['1234']);await expect(bob.locator('.secret')).toHaveCount(0);   // secrets stay private
+      await alice.locator('#guess').fill('5679');await alice.locator('#send').click();
+      await expect(bob.locator('.side').first().locator('.log')).toHaveText(['1. 5679  →  3A0B']);
+      await expect(bob.locator('.side').nth(1).locator('.log')).toHaveText(['1. 1243  →  2A2B'],{timeout:10000});
+      await alice.locator('#guess').fill('5678');await alice.locator('#send').click();
+      await expect(bob.getByText('Alice 赢了！')).toBeVisible();
+      await expect(bob.locator('.secret')).toHaveText(['1234','5678']);
+      expect(test.asked.filter(a=>a.agent==='Alpha').every(a=>!a.content.includes('1234'))).toBe(true);
+      await alice.locator('#a').selectOption({label:'Alpha'});await alice.locator('#b').selectOption({label:'Beta'});await alice.locator('#duel').click();
+      await expect(bob.getByText('Alpha 赢了！')).toBeVisible({timeout:10000});
+      await expect(bob.locator('.side').first().locator('.log')).toHaveText(['1. 9012  →  4A0B']);
+      expect(test.asked.filter(a=>a.content.includes('想一个四位数')).map(a=>a.agent)).toEqual(['Alpha','Alpha','Beta']);
+    }
+  });
+};
+
 (async()=>{
   const chosen=process.argv.slice(2).length?process.argv.slice(2):Object.keys(scenarios);
   const results={};
