@@ -21,13 +21,16 @@ const PAGE = page({
 #board i.last{outline:2px solid #e03131}#board i.hint{background:#228be6;opacity:.45}.seat{flex:1;min-width:200px}`,
   body: `<h1>五子棋军师</h1><div class="row" id="seats"></div><p id="status" class="muted"></p><div id="board"></div><div id="advice"></div>`,
   script: `
-const {api,watch,act,el,fill}=App,$=id=>document.getElementById(id);
+const {api,watch,act,el,fill,keep}=App,$=id=>document.getElementById(id);
 const COLS='ABCDEFGHIJKLMNO';
 function seat(s,color){
   const g=s.state,who=g.seats[color],agents=s.members.filter(m=>m.agent);
+  // The agent picker is kept across renders so someone else's move does not reset a choice.
+  const pick=keep('agent-'+color,()=>el('select',{id:'agent-'+color}));
+  if(pick.options.length!==agents.length){const v=pick.value;fill(pick,...agents.map(a=>el('option',{value:a.id},a.name)));if(agents.some(a=>a.id===v))pick.value=v;}
   return el('div',{class:'card seat'},el('strong',{},color==='black'?'⚫ 黑棋':'⚪ 白棋'),' ',who?(who.agent?'🤖 ':'')+who.name:el('span',{class:'muted'},'空位'),
     g.status!=='playing'?el('div',{class:'row',style:'margin-top:6px'},el('button',{class:'ghost',onclick:()=>act(()=>api('sit',{color}))},'我来下'),
-      el('select',{id:'agent-'+color},...agents.map(a=>el('option',{value:a.id},a.name))),el('button',{class:'ghost',onclick:()=>act(()=>api('sit',{color,agent:$('agent-'+color).value}))},'交给 agent')):null);
+      pick,el('button',{class:'ghost',onclick:()=>act(()=>api('sit',{color,agent:$('agent-'+color).value}))},'交给 agent')):null);
 }
 function render(s){
   const g=s.state,mine=['black','white'].find(c=>g.seats[c]&&!g.seats[c].agent&&g.seats[c].id===s.me.id);

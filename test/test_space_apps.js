@@ -271,9 +271,12 @@ scenarios.gomoku=()=>{
   return scenario('gomoku',{
     replies:(agent,prompt)=>JSON.stringify(agent==='Alpha'?{x:'I',y:8,why:'连成活二'}:{...replies.shift(),why:'随便下'}),
     async play({alice,bob,test}){
-      await alice.getByRole('button',{name:'我来下'}).first().click();
       await bob.locator('#agent-white').selectOption({label:'Beta'});
+      await alice.getByRole('button',{name:'我来下'}).first().click();
+      await expect(bob.locator('.seat').first()).toContainText('Alice');           // Bob's page re-rendered…
+      await expect(bob.locator('#agent-white')).toHaveValue(await bob.locator('#agent-white option',{hasText:'Beta'}).getAttribute('value'));   // …and kept his pick
       await bob.getByRole('button',{name:'交给 agent'}).nth(1).click();
+      await expect(alice.locator('.seat').nth(1)).toContainText('🤖 Beta');
       await alice.getByRole('button',{name:'开局'}).click();
       await alice.getByRole('button',{name:'H8',exact:true}).click();
       await expect(alice.locator('#board i.white')).toHaveCount(1,{timeout:10000});
@@ -966,6 +969,27 @@ scenarios['bulls-cows']=()=>{
     }
   });
 };
+
+scenarios['device-board']=()=>scenario('device-board',{
+  replies:agent=>JSON.stringify(agent==='Alpha'
+    ?{os:'macOS 15',disk:'800G/1T',memory:'12G/32G',load:'1.2',uptime:'3 天',alerts:[],notes:'工作区干净'}
+    :{os:'Ubuntu 24.04',disk:'10G/500G',memory:'6G/16G',load:'0.4',uptime:'40 天',alerts:['磁盘只剩 2%'],notes:'有 3 个未提交改动'}),
+  async play({alice,bob,test}){
+    await expect(bob.locator('#summary')).toHaveText('2 台设备 · 0 台需要注意');
+    await expect(bob.locator('#all')).toBeHidden();
+    expect(await bob.evaluate(()=>fetch('check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({all:true})}).then(r=>r.status))).toBe(403);
+    await bob.locator('#mine').click();
+    const bobCard=alice.locator('.device',{hasText:'Beta'});
+    await expect(bobCard.locator('h2')).toHaveText('⚠ Bob',{timeout:10000});
+    await expect(bobCard).toContainText('⚠ 磁盘只剩 2%');await expect(bobCard).toContainText('Ubuntu 24.04');
+    expect(test.asked.map(a=>a.agent)).toEqual(['Beta']);expect(test.asked[0].content).toContain('只运行只读命令');
+    await alice.locator('#all').click();
+    await expect(bob.locator('.device',{hasText:'Alpha'})).toContainText('一切正常',{timeout:10000});
+    await expect(bob.locator('.device',{hasText:'Alpha'}).locator('h2')).toHaveText('✓ Alice');
+    await expect(bob.locator('#summary')).toHaveText('2 台设备 · 1 台需要注意');
+    await expect.poll(()=>test.asked.map(a=>a.agent).sort().join()).toBe('Alpha,Beta,Beta');
+  }
+});
 
 (async()=>{
   const chosen=process.argv.slice(2).length?process.argv.slice(2):Object.keys(scenarios);

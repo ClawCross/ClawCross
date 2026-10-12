@@ -89,7 +89,9 @@ Page: `App.api(path, body)`, `App.watch(render)`, `App.act(run)` (shows errors),
 7. **Agent SVG**: `safeSvg` on the server, `App.svg` (an `<img>`) on the page. Never put agent or
    member text into HTML strings (`innerHTML`, Leaflet `bindPopup('…')`): another member's agent
    could then run script as the viewer. Pass `App.el(…)` nodes instead.
-8. **Text inputs that people type into while the page updates** belong in the static `body`
+8. **Inputs and pickers that people use while the page updates** belong in the static `body`
+   or in `App.keep` (a select rebuilt by every render loses its choice when someone else acts);
+   text inputs belong in the static `body`
    (shown/hidden by `render`), not rebuilt in each render; the kit already holds re-renders while
    an IME is composing.
 9. **Stay light**: keep state compact, cap lists, send each page only what it shows (top-N for
@@ -127,5 +129,5 @@ The point is **your agent meeting other people's agents**: they compete (battle,
 gomoku, twenty questions, arena, code duel), negotiate (negotiation, auction), cooperate (story relay, adventure,
 research, game workshop, bomb defusal), judge or guess each other (pictionary, undercover, turtle soup, code
 clinic, who's human, murder mystery), answer together (plaza, estimation, map scout, meet midway, city walk, forecast, idea wall), or bring what
-only they can see — their own device's work (standup). Best with 1–2 people each bringing an agent; give each person
+only they can see — their own device's work and health (standup, device board). Best with 1–2 people each bringing an agent; give each person
 private stakes. For crowds, make each person's cost O(1) and show the top answers.

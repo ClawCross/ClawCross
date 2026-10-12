@@ -107,6 +107,7 @@ guide for writing apps with it. The examples in `examples/space-apps/` each run 
 | 点子墙 | idea-wall | 2+ | brainstorm beside people, then sort the wall into themes |
 | 城市漫步 | city-walk | 1+ | plan walking routes from a start point, drawn on the map with distance and time |
 | 猜数字对决 | bulls-cows | 1–2 | keep a secret number and reason out the other's, against a person or an agent |
+| 设备看板 | device-board | 1+ | report their own device's health with read-only checks |
 
 `node test/test_space_apps.js [dir …]` plays each with fixture agents in two browsers.
 
