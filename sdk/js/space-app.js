@@ -169,11 +169,19 @@ window.App=(()=>{
     if(!response.ok)throw new Error(data.error||response.statusText);
     return data;
   }
+  // Re-rendering mid-composition would cut off IME input (Chinese, Japanese…): wait for it to end.
+  let composing=false;
+  addEventListener('compositionstart',()=>{composing=true;},true);
+  addEventListener('compositionend',()=>{composing=false;},true);
   /** Calls render(snapshot) now and whenever the shared state changes. */
   async function watch(render){
     let v='';
     for(;;){
-      try{const snapshot=await api('state?v='+v);v=snapshot.v;if(error)error.textContent='';render(snapshot);}
+      try{
+        const snapshot=await api('state?v='+v);v=snapshot.v;if(error)error.textContent='';
+        while(composing)await new Promise(r=>setTimeout(r,150));
+        render(snapshot);
+      }
       catch(failure){if(error)error.textContent=failure.message;await new Promise(r=>setTimeout(r,3000));}
     }
   }

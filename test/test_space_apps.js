@@ -33,7 +33,7 @@ async function scenario(dir,{replies,play}){
     catch(error){
       const shown=(await pages.alice.locator('main').innerText().catch(()=>'')).replace(/\s+/g,' ').slice(0,500);
       const notes=await Promise.all(Object.entries(pages).map(async([m,p])=>m+': '+await p.locator('#app-error').textContent().catch(()=>'')));
-      throw new Error(error.message.split('\n')[0]+' || page: '+shown+' || errors: '+errors.join('; ')+' || shown errors: '+notes.join('; ')+' || asked: '+test.asked.map(a=>a.agent).join(','));
+      throw new Error(error.message.split('\n').filter((line,i)=>!i||/^(Locator|Expected|Received)/.test(line.trim())).join(' ').replace(/\x1b\[\d+m/g,'')+' || page: '+shown+' || errors: '+errors.join('; ')+' || shown errors: '+notes.join('; ')+' || asked: '+test.asked.map(a=>a.agent).join(','));
     }
     for(const page of Object.values(pages))expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     expect(errors).toEqual([]);
@@ -475,6 +475,74 @@ scenarios.adventure=()=>scenario('adventure',{
     await expect(alice.getByText('被机械狗咬了一口')).toBeVisible({timeout:10000});
     await expect(bob.locator('.hero .hp')).toHaveText('♥ 7');
     await expect(bob.getByRole('heading',{name:'冒险结束'})).toBeVisible();
+  }
+});
+
+scenarios['game-workshop']=()=>scenario('game-workshop',{
+  replies(agent,prompt){
+    const game=title=>'<!doctype html><html><head><title>t</title></head><body>'+title+'<button id="b">点我</button><p id="s">0</p><p id="net"></p>'+
+      '<script>let n=0;b.onclick=()=>s.textContent=++n;fetch("https://example.com/").then(()=>net.textContent="leaked",()=>net.textContent="offline")</script></body></html>';
+    return agent==='Alpha'?'做了一个点击计数器\n```html\n'+game('')+'\n```':'**加上了标题**\n```html\n'+game('<h1>点点乐</h1>')+'\n```';
+  },
+  async play({alice,bob,test}){
+    await expect(alice.locator('#builder option').first()).toHaveText('Alpha');   // your own agent first
+    await expect(bob.locator('#builder option').first()).toHaveText('Beta');
+    await alice.locator('#ask').fill('做一个点击计数器');await alice.locator('#send').click();
+    const bobGame=bob.frameLocator('#preview');
+    await bobGame.locator('#b').click({timeout:15000});
+    await expect(bobGame.locator('#s')).toHaveText('1');
+    await expect(bobGame.locator('#net')).toHaveText('offline');                 // no network inside the game
+    await bob.locator('#ask').fill('加一个标题');await bob.locator('#send').click();
+    await expect(bobGame.locator('h1')).toHaveText('点点乐',{timeout:15000});
+    expect(test.asked[1].agent).toBe('Beta');
+    expect(test.asked[1].content).toContain('id="b"');                            // built on the last version
+    expect(test.asked[1].content).toContain('Alpha：做一个点击计数器 → 做了一个点击计数器');
+    await expect(bob.getByText('第 2 版：加上了标题')).toBeVisible();
+    await expect(bob.getByRole('button',{name:'回到这一版'})).toHaveCount(0);
+    await alice.getByRole('button',{name:'回到这一版'}).click();
+    await expect(bobGame.locator('h1')).toHaveCount(0,{timeout:10000});
+    await expect(bob.locator('#version')).toHaveText('第 3 版');
+  }
+});
+
+scenarios['who-is-human']=()=>scenario('who-is-human',{
+  replies(agent,prompt){
+    const key=text=>(new RegExp('([A-P])\\. '+text).exec(prompt)||[])[1];
+    if(prompt.includes('判断哪些是人写的'))return JSON.stringify(agent==='Alpha'?{human:[key('煎饼')],why:'有具体的加蛋细节'}:{human:[key('豆浆')],why:'抱怨油条很真实'});
+    return JSON.stringify({answer:agent==='Alpha'?'豆浆油条，油条有点软':'没吃，起晚了 hhh'});
+  },
+  async play({alice,bob,test}){
+    await alice.getByRole('button',{name:'开一轮'}).click();
+    await expect(bob.getByText('用一句话描述你今天的早餐')).toBeVisible();
+    await bob.locator('#answer').dispatchEvent('compositionstart');               // Bob is mid-IME: his page holds still
+    const before=await bob.locator('#round').innerText();
+    await alice.locator('#answer').fill('煎饼果子加两个蛋');await alice.getByRole('button',{name:'提交'}).click();
+    await expect(alice.getByText('你的回答：煎饼果子加两个蛋')).toBeVisible();
+    await bob.waitForTimeout(1000);
+    expect(await bob.locator('#round').innerText()).toBe(before);
+    await bob.locator('#answer').dispatchEvent('compositionend');
+    await expect(bob.locator('#round')).not.toHaveText(before);
+    await bob.locator('#answer').fill('一杯冰美式');await bob.getByRole('button',{name:'提交'}).click();
+    await expect(alice.getByText('已收到 4 份回答')).toBeVisible({timeout:10000});
+    await expect(bob.locator('main')).not.toContainText('煎饼');                  // nobody sees answers yet
+    await expect(bob.getByText('你的回答：一杯冰美式')).toBeVisible();
+    await expect(bob.getByRole('button',{name:'开始猜'})).toHaveCount(0);
+    await alice.getByRole('button',{name:'开始猜'}).click();
+    const label=async(page,text,v)=>{const row=page.locator('.entry',{hasText:text});await row.getByRole('button',{name:v,exact:true}).click();await expect(row.getByRole('button',{name:v,exact:true})).toHaveClass('on');};
+    await expect(bob.locator('.entry',{hasText:'一杯冰美式'})).toContainText('你的');
+    await expect(bob.locator('.entry',{hasText:'一杯冰美式'}).getByRole('button')).toHaveCount(0);
+    await expect(bob.locator('#entries')).not.toContainText('Alpha');            // authors stay hidden
+    await label(bob,'煎饼','人');await label(bob,'豆浆','AI');await label(bob,'没吃','人');
+    await label(alice,'冰美式','人');await label(alice,'豆浆','人');await label(alice,'没吃','AI');
+    await expect(alice.getByText('2 人猜完 · agent 判断 2/2')).toBeVisible({timeout:10000});
+    expect(test.asked.find(a=>a.agent==='Alpha'&&a.content.includes('判断')).content).not.toContain('豆浆油条');   // its own answer is left out
+    await alice.getByRole('button',{name:'揭晓'}).click();
+    await expect(bob.locator('.entry',{hasText:'豆浆'})).toContainText('Alpha · 3 人中 2 人认为是人类');
+    const score=name=>bob.locator('.score',{hasText:name}).locator('b');
+    await expect(score('Alpha')).toHaveText('4');await expect(score('Alice')).toHaveText('3');
+    await expect(score('Bob')).toHaveText('3');await expect(score('Beta')).toHaveText('1');
+    await expect(bob.getByText('积分 · 人类 6 : 5 agent')).toBeVisible();
+    await expect(bob.getByText('Beta 的判断：抱怨油条很真实')).toBeVisible();
   }
 });
 
