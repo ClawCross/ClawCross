@@ -684,6 +684,42 @@ scenarios['code-duel']=()=>scenario('code-duel',{
   }
 });
 
+scenarios['bomb-defusal']=()=>scenario('bomb-defusal',{
+  replies:(agent,prompt)=>prompt.trimEnd().endsWith('Alice：有几根线？')?'先告诉我线的颜色顺序和序列号末位。':'收到，继续说。',
+  async play({alice,bob,test}){
+    const {solve}=require(path.join(apps,'bomb-defusal','server.js'));
+    await alice.locator('#expert').selectOption({label:'Beta'});await alice.getByRole('button',{name:'开始'}).click();
+    await expect(bob.locator('.bomb')).toBeVisible();
+    await expect(bob.locator('#say-box')).toBeHidden();await expect(bob.locator('.wire button')).toHaveCount(0);   // Bob only watches
+    await alice.locator('#say').fill('有几根线？');await alice.locator('#send').click();
+    await expect(bob.getByText('先告诉我线的颜色顺序和序列号末位。')).toBeVisible({timeout:10000});
+    const state=async()=>(await alice.evaluate(()=>fetch('state').then(r=>r.json()))).state;
+    const bomb=(await state()).bomb;
+    expect(bomb.button.strip).toBeUndefined();                                   // the strip shows only while holding
+    expect(test.asked[0].agent).toBe('Beta');expect(test.asked[0].content).toContain('【拆弹手册】');
+    expect(test.asked[0].content).not.toContain(bomb.serial);                    // the expert never sees the bomb
+    const answer=solve({...bomb,button:{...bomb.button,strip:'blue'}});
+    const wrong=answer.wire===0?1:0;
+    await alice.locator('.wire').nth(wrong).getByRole('button',{name:'剪'}).click();
+    await expect(bob.locator('#head')).toContainText('失误 ✗○○');
+    await alice.locator('#say').fill('剪错了');await alice.locator('#send').click();
+    await expect.poll(()=>test.asked.length).toBe(2);
+    expect(test.asked[1].content).toContain('剪断了第 '+(wrong+1)+' 根线');expect(test.asked[1].content).toContain('错了，记一次失误');
+    await alice.locator('.wire').nth(answer.wire).getByRole('button',{name:'剪'}).click();
+    const panel=alice.locator('.module').nth(1);
+    if(answer.button==='press')await panel.locator('.bigbutton').click();
+    else{
+      await panel.locator('button.ghost',{hasText:'按住'}).click();
+      await expect(panel.locator('.strip')).toBeVisible();
+      const digit={blue:4,white:1,yellow:5,red:1}[(await state()).holding];
+      await panel.getByRole('button',{name:String(digit),exact:true}).click();
+    }
+    for(const key of answer.keys)await alice.locator('.key',{hasText:key}).click();
+    await expect(bob.locator('#head')).toContainText('💚 炸弹已拆除');
+    await expect(bob.locator('.module.solved')).toHaveCount(3);
+  }
+});
+
 (async()=>{
   const chosen=process.argv.slice(2).length?process.argv.slice(2):Object.keys(scenarios);
   const results={};

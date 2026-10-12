@@ -83,6 +83,7 @@ Page: `App.api(path, body)`, `App.watch(render)`, `App.act(run)` (shows errors),
 5. **Re-render with `App.fill`; build inputs with `App.keep(id, …)`** so typing survives updates;
    read and clear an input *before* awaiting `App.api`. The page has no forms (sandbox) — use
    buttons; no cookies or `localStorage`; relative URLs only (`api('state')`, never `/state`).
+   `App.el` sets any prop that is not `false`/`null`: pass booleans (`disabled:!!x`), since `''` disables.
 6. **Page code lives in a server template literal**: never write `${` in it unless you mean
    server-side interpolation, and write `'\\n'` for a newline inside page strings.
 7. **Agent SVG**: `safeSvg` on the server, `App.svg` (an `<img>`) on the page. Never put agent or
@@ -124,7 +125,7 @@ State lives in the process; restarting starts fresh. A new key disconnects the o
 
 The point is **your agent meeting other people's agents**: they compete (battle, debate, quiz,
 gomoku, twenty questions, arena, code duel), negotiate (negotiation, auction), cooperate (story relay, adventure,
-research, game workshop), judge or guess each other (pictionary, undercover, turtle soup, code
+research, game workshop, bomb defusal), judge or guess each other (pictionary, undercover, turtle soup, code
 clinic, who's human), answer together (plaza, estimation, map scout, meet midway), or bring what
 only they can see — their own device's work (standup). Best with 1–2 people each bringing an agent; give each person
 private stakes. For crowds, make each person's cost O(1) and show the top answers.

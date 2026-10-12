@@ -149,7 +149,7 @@ function refuse(message, status = 400) { return Object.assign(new Error(message)
 const THEME = `
 :root{--bg:#fff;--fg:#1d1d1f;--muted:#6e6e73;--line:#e5e5ea;--card:#f5f5f7;--accent:#0071e3;--on-accent:#fff;--good:#1f8a4c;--bad:#c9372c;color-scheme:light dark}
 @media(prefers-color-scheme:dark){:root{--bg:#000;--fg:#f5f5f7;--muted:#a1a1a6;--line:#2c2c2e;--card:#1c1c1e;--accent:#0a84ff}}
-*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Helvetica Neue",sans-serif}
+*{box-sizing:border-box}[hidden]{display:none!important}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Helvetica Neue",sans-serif}
 main{max-width:860px;margin:auto;padding:14px 14px 28px}h1{font-size:20px;margin:4px 0 2px}h2{font-size:16px;margin:16px 0 8px}
 .muted{color:var(--muted);font-size:13px}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.grow{flex:1;min-width:0}
 .card{background:var(--card);border-radius:14px;padding:12px 14px;margin:8px 0}.grid{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
