@@ -885,6 +885,40 @@ scenarios['emoji-riddle']=()=>scenario('emoji-riddle',{
   }
 });
 
+scenarios['idea-wall']=()=>scenario('idea-wall',{
+  replies(agent,prompt){
+    if(prompt.includes('整理点子墙')){
+      const ids=[...prompt.matchAll(/#(\d+) (\S+)/g)].map(m=>[m[1],m[2]]);
+      const pick=words=>ids.filter(([,t])=>words.some(w=>t.includes(w))).map(([id])=>id);
+      return JSON.stringify({themes:[{name:'户外',ideas:pick(['爬山','露营','卡丁车'])},{name:'室内',ideas:pick(['密室','桌游'])}],summary:'大家更想去户外。'});
+    }
+    return JSON.stringify({ideas:agent==='Beta'?['桌游馆','露营烧烤']:['卡丁车']});
+  },
+  async play({alice,bob,test}){
+    await expect(bob.locator('#topic-box')).toBeHidden();
+    await alice.locator('#topic').fill('周末团建去哪');await alice.locator('#set').click();
+    await bob.locator('#idea').fill('去爬山');await bob.locator('#post').click();
+    await alice.locator('#idea').fill('密室逃脱');await alice.locator('#post').click();
+    await bob.getByRole('button',{name:'派我的 agent 出点子'}).click();
+    await expect(alice.locator('.idea',{hasText:'露营烧烤'})).toContainText('Beta',{timeout:10000});
+    expect(test.asked[0].agent).toBe('Beta');expect(test.asked[0].content).toContain('- 去爬山');
+    await alice.getByRole('button',{name:'派所有 agent 出点子'}).click();
+    await expect(bob.locator('.idea',{hasText:'卡丁车'})).toContainText('Alpha',{timeout:10000});
+    expect(test.asked.map(a=>a.agent)).toEqual(['Beta','Alpha']);               // Beta brainstorms once per topic
+    const dot=(page,text)=>page.locator('.idea',{hasText:text}).locator('.dot').click();
+    for(const idea of ['露营烧烤','去爬山','桌游馆'])await dot(bob,idea);
+    await expect(bob.getByText('你还有 0 个点')).toBeVisible();
+    await dot(bob,'卡丁车');
+    await expect(bob.locator('#app-error')).toHaveText('每人只有 3 个点，先撤掉一个');
+    await dot(alice,'露营烧烤');
+    await expect(bob.locator('.idea').first()).toContainText('露营烧烤');await expect(bob.locator('.idea').first().locator('.dot')).toHaveText('● 2');
+    await alice.locator('#sorter').selectOption({label:'Alpha'});await alice.getByRole('button',{name:'让它归类总结'}).click();
+    await expect(bob.getByText('大家更想去户外。')).toBeVisible({timeout:10000});
+    await expect(bob.locator('.theme',{has:bob.getByRole('heading',{name:'户外'})}).locator('.idea')).toHaveCount(3);
+    await expect(bob.locator('.theme',{has:bob.getByRole('heading',{name:'室内'})}).locator('.idea')).toHaveCount(2);
+  }
+});
+
 (async()=>{
   const chosen=process.argv.slice(2).length?process.argv.slice(2):Object.keys(scenarios);
   const results={};
