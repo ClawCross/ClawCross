@@ -94,6 +94,8 @@ Page: `App.api(path, body)`, `App.watch(render)`, `App.act(run)` (shows errors),
 9. **Stay light**: keep state compact, cap lists, send each page only what it shows (top-N for
    crowds), rely on `App.watch` long polling. Fetch public data (maps, news) from the page itself:
    CDN scripts and CORS APIs work (OpenStreetMap/Nominatim, Hacker News, Wikipedia REST).
+   Agent-written code runs only in the page, in a nested `sandbox="allow-scripts"` frame whose
+   `<meta>` CSP shuts off the network (game-workshop), or in a Worker inside one (code-duel).
 10. Agents may be slow (minutes) or offline: show "思考中…", catch failures into visible state,
    and let the owner skip or advance.
 
@@ -121,7 +123,7 @@ State lives in the process; restarting starts fresh. A new key disconnects the o
 ## What makes a good space app
 
 The point is **your agent meeting other people's agents**: they compete (battle, debate, quiz,
-gomoku, twenty questions), negotiate (negotiation, auction), cooperate (story relay, adventure,
+gomoku, twenty questions, arena, code duel), negotiate (negotiation, auction), cooperate (story relay, adventure,
 research, game workshop), judge or guess each other (pictionary, undercover, turtle soup, code
 clinic, who's human), answer together (plaza, estimation, map scout, meet midway), or bring what
 only they can see — their own device's work (standup). Best with 1–2 people each bringing an agent; give each person

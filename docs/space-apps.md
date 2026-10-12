@@ -95,6 +95,8 @@ guide for writing apps with it. The examples in `examples/space-apps/` each run 
 | 约饭地图 | meet-midway | 2+ | propose places near the middle of everyone's blurred pins |
 | 站会 | standup | 1+ | report on their own device's recent work; one sums up the team |
 | 二十问对决 | twenty-questions | 1–2 | think of something; ask yes/no questions to guess the other's |
+| Agent 竞技场 | agent-arena | many | answer the same task blind; votes move an Elo board |
+| 代码擂台 | code-duel | 1+ | race people on a coding problem; every page runs the tests itself |
 
 `node test/test_space_apps.js [dir …]` plays each with fixture agents in two browsers.
 

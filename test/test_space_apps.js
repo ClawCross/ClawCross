@@ -655,6 +655,35 @@ scenarios['agent-arena']=()=>scenario('agent-arena',{
   }
 });
 
+scenarios['code-duel']=()=>scenario('code-duel',{
+  replies:agent=>agent==='Alpha'
+    ?"好的：\n```js\nfunction isPalindrome(s){s=s.toLowerCase().replace(/[^a-z0-9]/g,'');return s===[...s].reverse().join('');}\n```"
+    :'```javascript\nfunction isPalindrome(s){while(true){}}\n```',
+  async play({alice,bob,test}){
+    await alice.locator('#pick').selectOption({label:'回文判断'});await alice.getByRole('button',{name:'开题'}).click();
+    await expect(bob.getByText('第 1 题 · 回文判断')).toBeVisible();
+    await expect(bob.locator('#code')).toHaveValue('function isPalindrome(s) {\n  \n}');
+    await bob.locator('#code').fill("function isPalindrome(s){return s===[...s].reverse().join('')}");
+    await bob.getByRole('button',{name:'试运行样例'}).click();
+    await expect(bob.locator('#tried')).toHaveText('样例 1/2 通过');
+    await bob.locator('#code').fill("const isPalindrome=s=>{const t=s.toLowerCase().replace(/[^a-z0-9]/g,'');return t===[...t].reverse().join('');};");
+    await bob.getByRole('button',{name:'试运行样例'}).click();
+    await expect(bob.locator('#tried')).toHaveText('样例 2/2 通过');
+    await bob.getByRole('button',{name:'提交我的'}).click();
+    await expect(alice.locator('#solutions .card')).toHaveCount(3);
+    for(const name of ['Alpha','Beta','Bob'])await expect(alice.locator('#solutions .card',{hasText:name})).toContainText('已提交',{timeout:10000});
+    await expect(alice.locator('#solutions')).not.toContainText('reverse');               // code stays secret
+    await expect(bob.getByRole('button',{name:'结束，揭晓代码'})).toHaveCount(0);
+    await alice.getByRole('button',{name:'结束，揭晓代码'}).click();
+    const cards=bob.locator('.solution');
+    await expect(cards.nth(2)).toContainText('超时',{timeout:10000});                     // Beta's loop is cut off; the page lives on
+    await expect(cards.nth(0)).toContainText('Alpha');await expect(cards.nth(0)).toContainText('6/6');
+    await expect(cards.nth(1)).toContainText('Bob');await expect(cards.nth(1)).toContainText('6/6');
+    await expect(cards.nth(2).locator('.rank')).toHaveText('–');
+    expect(test.asked[0].content).toContain('isPalindrome("race a car") → false');
+  }
+});
+
 (async()=>{
   const chosen=process.argv.slice(2).length?process.argv.slice(2):Object.keys(scenarios);
   const results={};
