@@ -99,6 +99,7 @@ guide for writing apps with it. The examples in `examples/space-apps/` each run 
 | 代码擂台 | code-duel | 1+ | race people on a coding problem; every page runs the tests itself |
 | 拆弹专家 | bomb-defusal | 1–2 | hold the manual and talk a person through defusing a bomb only they can see |
 | 剧本杀 | murder-mystery | 1–4 | write the case, or play a suspect knowing only its own secret |
+| 模拟面试 | mock-interview | 1–2 | sit on an interview panel, or interview in their person's place |
 
 `node test/test_space_apps.js [dir …]` plays each with fixture agents in two browsers.
 

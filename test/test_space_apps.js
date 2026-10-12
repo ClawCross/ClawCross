@@ -756,6 +756,40 @@ scenarios['murder-mystery']=()=>scenario('murder-mystery',{
   }
 });
 
+scenarios['mock-interview']=()=>scenario('mock-interview',{
+  replies(agent,prompt){
+    if(prompt.includes('给候选人打分'))return JSON.stringify(agent==='Alpha'?{score:8,hire:'推荐',good:'思路清晰',improve:'多讲数据'}:{score:6,hire:'待定',good:'沟通不错',improve:'缺少业务例子'});
+    if(prompt.includes('替你的主人去面'))return '我会先用 Lighthouse 定位瓶颈。';
+    const qs=agent==='Alpha'?['请讲讲你做过最难的性能优化。','那次优化你怎么衡量效果？']:['你怎么和产品经理对齐需求？','说一个你推动过的跨团队项目。'];
+    return JSON.stringify({question:prompt.includes(qs[0])?qs[1]:qs[0]});
+  },
+  async play({alice,bob,test}){
+    await alice.locator('#role').fill('前端工程师，3 年经验');await alice.locator('#resume').fill('做过电商大促性能优化');
+    await alice.locator('#start').click();
+    const answers=['把首屏从 4 秒降到 1.2 秒。','看 LCP 和转化率。','先写一页需求对齐文档。','推动过组件库统一。'];
+    const questions=['请讲讲你做过最难的性能优化。','你怎么和产品经理对齐需求？','那次优化你怎么衡量效果？','说一个你推动过的跨团队项目。'];
+    for(let i=0;i<4;i++){
+      await expect(alice.locator('.q').nth(i)).toContainText(questions[i],{timeout:10000});
+      await expect(alice.locator('#answer-box')).toBeVisible();await expect(bob.locator('#answer-box')).toBeHidden();
+      await alice.locator('#answer').fill(answers[i]);await alice.locator('#send').click();
+      await expect(bob.locator('.q').nth(i)).toContainText(answers[i]);
+    }
+    await expect(bob.getByText('面试结果 · 平均 7.0 分')).toBeVisible({timeout:10000});
+    await expect(bob.locator('.card',{hasText:'思路清晰'})).toContainText('推荐');
+    await expect(bob.locator('main')).not.toContainText('电商大促');                // the résumé is for the panel only
+    expect(test.asked[0].content).toContain('做过电商大促性能优化');
+    expect(test.asked[2].content).toContain('答：把首屏从 4 秒降到 1.2 秒。');
+    // Bob sends his own agent in.
+    await bob.locator('#candidate').selectOption({label:'我的 Beta'});await bob.locator('#per').selectOption('1');
+    await bob.locator('#role').fill('产品经理');await bob.locator('#start').click();
+    await expect(alice.getByText('候选人：Beta（Bob 的 agent）')).toBeVisible();
+    await expect(alice.locator('.q').first()).toContainText('我会先用 Lighthouse 定位瓶颈。',{timeout:10000});
+    await expect(alice.getByText('面试结果 · 平均 8.0 分')).toBeVisible({timeout:10000});
+    await expect(alice.locator('.chip')).toHaveCount(1);                            // Beta is the candidate, not on the panel
+    await expect(alice.locator('#answer-box')).toBeHidden();
+  }
+});
+
 (async()=>{
   const chosen=process.argv.slice(2).length?process.argv.slice(2):Object.keys(scenarios);
   const results={};
