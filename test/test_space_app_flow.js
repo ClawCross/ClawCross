@@ -26,6 +26,7 @@ async function call(method,route,{token,key,body}={}){
 /** A fixture agent: answers each command the app sends it with the packet the battle expects. */
 function reply(content,name){
   const command=Rooms.parseEvent(content);
+  if(!command)return `${name} 收到，准备战斗！`;   // a summoner-chat mention
   return Rooms.encodeEvent(command.kind==='avatar'
     ?{type:'avatar',room:command.room,id:command.id,name,elements:['normal'],moves:['喷射火焰','撞击','守住','自我再生'],svg}
     :{type:'move',room:command.room,id:command.id,turn:command.turn,move:'喷射火焰',narration:'火焰命中！'});
@@ -91,6 +92,14 @@ function reply(content,name){
     await bobPage.locator('#text').fill('准备好了');
     await bobPage.locator('[data-chat]').click();
     await expect(alice.locator('#chat')).toContainText('准备好了',{timeout:10000});
+    // The summoner chat: @Alpha brings Alice's agent into the conversation; plain chat asks nobody.
+    const before=asked.length;
+    await bobPage.locator('#summon button',{hasText:'@Alpha'}).click();
+    await bobPage.locator('#text').pressSequentially('你的精灵怕不怕火？');
+    await bobPage.locator('[data-chat]').click();
+    await expect(alice.locator('#chat p.agent',{hasText:'Amber 收到，准备战斗！'})).toBeVisible({timeout:10000});
+    await expect(bobPage.locator('#chat p.agent',{hasText:'Amber 收到'})).toBeVisible({timeout:10000});
+    expect(asked.slice(before)).toEqual(['Alpha']);
     await alice.locator('[data-start]').click();
     await expect(alice.locator('[data-start]')).toBeHidden();
     await bobPage.locator('#text').fill('抢先出招');

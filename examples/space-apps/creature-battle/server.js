@@ -25,7 +25,9 @@ function page() {
 html,body{height:100%;margin:0;font-family:system-ui,sans-serif;background:#fff;color:#17252d}
 body{display:flex;flex-direction:column}#room-root{flex:1;min-height:0;overflow:auto}.cc-room-battle{min-height:100%;box-sizing:border-box}
 #chat{max-height:28%;overflow:auto;padding:6px 14px;font-size:13px;line-height:1.5;border-top:1px solid #e3e9ee}#chat:empty{display:none}
-#chat p{margin:3px 0;overflow-wrap:anywhere}#chat b{font-weight:600;margin-right:6px}
+#chat p{margin:3px 0;overflow-wrap:anywhere}#chat b{font-weight:600;margin-right:6px}#chat p.agent b{color:#14745b}
+#summon{display:flex;flex-wrap:wrap;gap:5px;grid-column:1/-1}#summon:empty{display:none}
+#summon button{padding:3px 9px;font-size:12px;border-radius:99px}
 #bar{display:grid;grid-template-columns:1fr auto auto;gap:6px;padding:8px 10px;border-top:1px solid #e3e9ee}
 #hint{grid-column:1/-1;font-size:11px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #text{font:inherit;font-size:14px;resize:none;border:1px solid #cbd5e1;border-radius:12px;padding:8px 10px;min-width:0;background:inherit;color:inherit}
@@ -33,14 +35,14 @@ body{display:flex;flex-direction:column}#room-root{flex:1;min-height:0;overflow:
 #bar button[data-command]{background:#14745b;color:#fff}#bar button:disabled{opacity:.45;cursor:default}
 @media(prefers-color-scheme:dark){body{background:#15212b;color:#e0eaf1}#chat,#bar{border-color:#263644}#bar button{background:#263644;color:#d6e2ed}}
 </style></head><body><main id="room-root"></main><section id="chat" aria-label="聊天"></section>
-<div id="bar"><span id="hint" role="status"></span><textarea id="text" rows="1" maxlength="2000" aria-label="消息"></textarea>
+<div id="bar"><span id="hint" role="status"></span><div id="summon" aria-label="召唤 agent"></div><textarea id="text" rows="1" maxlength="2000" aria-label="消息"></textarea>
 <button type="button" data-command disabled>出招</button><button type="button" data-chat>聊天</button></div>
 ${scripts}
 <script>
 (function(){
   const root=document.getElementById('room-root'),chat=document.getElementById('chat'),text=document.getElementById('text');
   const hint=document.getElementById('hint'),command=document.querySelector('[data-command]'),talk=document.querySelector('[data-chat]');
-  const seen=new Set();let composer=null,after=0;
+  const seen=new Set(),summon=document.getElementById('summon');let composer=null,after=0,agents='';
   async function api(address,body){
     const response=await fetch(address,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const data=await response.json().catch(()=>({}));
@@ -52,7 +54,8 @@ ${scripts}
     for(const row of rows||[]){
       if(seen.has(row.id)||ClawCrossRooms.parseEvent(row.content))continue;
       seen.add(row.id);const line=document.createElement('p'),who=document.createElement('b');
-      who.textContent=row.sender_name;line.append(who,document.createTextNode(row.content));chat.append(line);
+      line.className=(client.snapshot.members||[]).some(m=>m.key===row.sender&&m.is_agent)?'agent':'';
+      who.textContent=(line.className?'🤖 ':'')+row.sender_name;line.append(who,document.createTextNode(row.content));chat.append(line);
     }
     while(chat.children.length>50)chat.firstElementChild.remove();
     chat.scrollTop=chat.scrollHeight;
@@ -70,9 +73,16 @@ ${scripts}
     onSuggest:value=>{text.value=value;text.focus();}
   });
   const game=ClawCrossBattle.mount(root,client);
+  // The summoner chat: @name (or @所有人) brings that agent into the conversation.
+  function chips(){
+    const names=(client.snapshot.members||[]).filter(m=>m.is_agent).map(m=>m.name);
+    if(names.join('|')===agents)return;agents=names.join('|');
+    summon.replaceChildren(...[...names,'所有人'].map(name=>{const b=document.createElement('button');b.type='button';b.textContent='@'+name;
+      b.onclick=()=>{text.value=(text.value.trim()?text.value.trim()+' ':'')+'@'+name+' ';text.focus();};return b;}));
+  }
   async function refresh(){
     const data=await api('state?after='+after);after=data.cursor;
-    client.update(data.snapshot);show(data.snapshot.messages);game.update(client.snapshot);
+    client.update(data.snapshot);show(data.snapshot.messages);chips();game.update(client.snapshot);
   }
   async function run(button,task){
     const value=text.value.trim();if(!value)return;
@@ -101,6 +111,17 @@ function battle(space) {
   const refreshRoster = async () => { roster = await space.members(); };
   const append = (sender, name, content) => { const row = { id: rows.length + 1, sender, sender_name: name, content, created_at: Date.now() / 1000 }; rows.push(row); return row; };
 
+  /** The summoner chat: a message naming @agent (or @所有人) asks those agents to answer in the chat. */
+  async function summon(person, content) {
+    const agents = roster.members.filter((m) => m.agent && (/@(所有人|all)(?![\w-])/i.test(content) || content.includes('@' + m.name)));
+    if (!agents.length) return;
+    const chat = rows.filter((r) => !Rooms.parseEvent(r.content)).slice(-15).map((r) => r.sender_name + '：' + r.content).join('\n');
+    for (const agent of agents) {
+      await space.ask(agent.id, `你是「${roster.title}」精灵对战里的参战 agent「${agent.name}」，正在召唤师聊天里和大家说话。\n` +
+        `最近的聊天：\n${chat}\n\n${person.name} 提到了你。直接回复一两句话，口吻符合你的身份；你的回复会原样显示在聊天区，不要加名字前缀，也不要使用任何协议格式。`);
+    }
+  }
+
   /** Whether the rules accept this person's command now, judged by the same model the page uses. */
   function accepted(event, row) {
     const before = new Battle.BattleModel().rebuild(config, view(), rows);
@@ -113,7 +134,11 @@ function battle(space) {
   async function send(person, { content, mentions }) {
     if (typeof content !== 'string' || !content.trim() || content.length > 65536) throw Object.assign(new Error('消息无效'), { status: 400 });
     const event = Rooms.parseEvent(content);
-    if (!event) return append(person.id, person.name, content);   // chat calls no agent
+    if (!event) {
+      const row = append(person.id, person.name, content);
+      await summon(person, content);
+      return row;
+    }
     if (!config) throw Object.assign(new Error('群主还没有设置对局'), { status: 409 });
     const row = { id: rows.length + 1, sender: person.id, sender_name: person.name, content, created_at: Date.now() / 1000 };
     if (!accepted(event, row)) throw Object.assign(new Error('现在不能这样操作'), { status: 403 });
