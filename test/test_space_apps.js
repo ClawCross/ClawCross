@@ -720,6 +720,42 @@ scenarios['bomb-defusal']=()=>scenario('bomb-defusal',{
   }
 });
 
+scenarios['murder-mystery']=()=>scenario('murder-mystery',{
+  replies(agent,prompt){
+    if(prompt.includes('剧本杀编剧'))return JSON.stringify({title:'寿宴毒酒',story:'周老爷在寿宴上喝下一杯酒后倒地身亡。',
+      suspects:[{name:'管家',intro:'跟了周家二十年',secret:'我在酒里下了毒，因为老爷要赶我走',guilty:true},{name:'厨娘',intro:'负责寿宴菜品',secret:'我偷拿过厨房的银器',guilty:false},
+        {name:'侄子',intro:'欠了一身赌债',secret:'我昨晚去了赌场',guilty:false}],
+      clues:['酒杯是管家端上来的','厨房的门八点就锁了','侄子九点才到'],hidden:['管家房里有一包药粉','银器少了两把','赌场的票根'],truth:'管家因被辞退怀恨，在酒里下毒。'});
+    return prompt.includes('扮演「管家」')?'我一直在大厅伺候老爷，哪儿也没去。':'厨房八点就锁了，我早回房了。';
+  },
+  async play({alice,bob,test}){
+    await alice.locator('#writer').selectOption({label:'Alpha'});await alice.getByRole('button',{name:'开案'}).click();
+    await expect(bob.getByRole('heading',{name:'寿宴毒酒'})).toBeVisible({timeout:10000});
+    await expect(bob.locator('.suspect')).toHaveCount(3);await expect(bob.locator('.suspect').first()).toContainText('由 Beta 扮演');
+    await expect(bob.locator('main')).not.toContainText('下了毒');await expect(bob.locator('main')).not.toContainText('偷拿');   // secrets stay hidden
+    await bob.locator('#suspect').selectOption('管家');await bob.locator('#question').fill('你端酒前去过哪里？');await bob.locator('#ask').click();
+    await expect(alice.getByText('管家：我一直在大厅伺候老爷，哪儿也没去。')).toBeVisible({timeout:10000});
+    const butler=test.asked.find(a=>a.content.includes('扮演「管家」'));
+    expect(butler.agent).toBe('Beta');expect(butler.content).toContain('我在酒里下了毒');expect(butler.content).toContain('你就是凶手');
+    expect(butler.content).not.toContain('偷拿过厨房的银器');                      // only its own sheet
+    await bob.locator('#suspect').selectOption('厨娘');await bob.locator('#question').fill('你几点离开厨房？');await bob.locator('#ask').click();
+    await expect(alice.getByText('厨娘：厨房八点就锁了，我早回房了。')).toBeVisible({timeout:10000});
+    const cook=test.asked.find(a=>a.content.includes('扮演「厨娘」'));
+    expect(cook.content).toContain('你不是凶手');expect(cook.content).toContain('管家：我一直在大厅伺候老爷');
+    await expect(bob.locator('#left')).toHaveText('你还能问 4 个问题 · 待搜查线索 3 条');
+    await bob.getByRole('button',{name:'搜查一次'}).click();
+    await expect(alice.getByText('🔎 管家房里有一包药粉（Bob 搜到）')).toBeVisible();
+    await bob.locator('.suspect',{hasText:'管家'}).getByRole('button',{name:'指认'}).click();
+    await alice.locator('.suspect',{hasText:'厨娘'}).getByRole('button',{name:'指认'}).click();
+    await expect(alice.getByText('2 位侦探已指认')).toBeVisible();
+    await expect(bob.getByRole('button',{name:'结案，揭晓真相'})).toHaveCount(0);
+    await alice.getByRole('button',{name:'结案，揭晓真相'}).click();
+    await expect(bob.getByText('猜对的侦探：Bob')).toBeVisible();
+    await expect(bob.locator('.suspect',{hasText:'管家'}).locator('.guilty')).toHaveText('凶手 · 我在酒里下了毒，因为老爷要赶我走');
+    await expect(bob.getByText('管家因被辞退怀恨，在酒里下毒。')).toBeVisible();
+  }
+});
+
 (async()=>{
   const chosen=process.argv.slice(2).length?process.argv.slice(2):Object.keys(scenarios);
   const results={};

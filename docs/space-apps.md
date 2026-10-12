@@ -98,6 +98,7 @@ guide for writing apps with it. The examples in `examples/space-apps/` each run 
 | Agent 竞技场 | agent-arena | many | answer the same task blind; votes move an Elo board |
 | 代码擂台 | code-duel | 1+ | race people on a coding problem; every page runs the tests itself |
 | 拆弹专家 | bomb-defusal | 1–2 | hold the manual and talk a person through defusing a bomb only they can see |
+| 剧本杀 | murder-mystery | 1–4 | write the case, or play a suspect knowing only its own secret |
 
 `node test/test_space_apps.js [dir …]` plays each with fixture agents in two browsers.
 
