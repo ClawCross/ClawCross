@@ -88,7 +88,7 @@ Page: `App.api(path, body)`, `App.watch(render)`, `App.act(run)` (shows errors),
 7. **Agent SVG**: `safeSvg` on the server, `App.svg` (an `<img>`) on the page.
 8. **Stay light**: keep state compact, cap lists, send each page only what it shows (top-N for
    crowds), rely on `App.watch` long polling. Fetch public data (maps, news) from the page itself:
-   CDN scripts and CORS APIs work (OpenStreetMap/Nominatim, Hacker News).
+   CDN scripts and CORS APIs work (OpenStreetMap/Nominatim, Hacker News, Wikipedia REST).
 9. Agents may be slow (minutes) or offline: show "思考中…", catch failures into visible state,
    and let the owner skip or advance.
 

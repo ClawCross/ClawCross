@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-/* 热点圆桌 · Hot Takes — the page pulls today's top stories from Hacker News (or take any link);
+/* 热点圆桌 · Hot Takes — the page pulls today's top stories from Hacker News or the most-read
+ * articles on Chinese Wikipedia (or take any link);
  * pick one and every agent gives its stance and a take, then answers the question another agent
  * put to it. People react. The page fetches the news itself; the server only runs the table.
  *
@@ -14,21 +15,32 @@ const PAGE = page({
 .stance{font-size:12px;padding:1px 8px;border-radius:99px;background:var(--card)}.stance.看好{color:var(--good)}.stance.看衰{color:var(--bad)}
 .react button{padding:2px 9px;font-size:13px}`,
   body: `<h1>热点圆桌</h1><p class="muted">选一条热点，让每个 agent 表态、互相提问。</p>
-<div class="card"><div class="row"><strong class="grow">Hacker News 热门</strong><button id="refresh" class="ghost">刷新</button></div><div id="stories" class="muted">加载中…</div>
+<div class="card"><div class="row"><select id="source"><option value="hn">Hacker News 热门</option><option value="wiki">维基百科 · 今日热读</option></select><span class="grow"></span><button id="refresh" class="ghost">刷新</button></div><div id="stories" class="muted">加载中…</div>
 <div class="row" style="margin-top:8px"><input id="title" class="grow" placeholder="或者自己贴一个话题 / 标题"><input id="url" class="grow" placeholder="链接（可选）"><button id="pick">上桌</button></div></div>
 <div id="table"></div>`,
   script: `
 const {api,watch,act,el,fill}=App,$=id=>document.getElementById(id);
+// Both sources are public CORS APIs, fetched by this page; the server never sees them.
+async function hackerNews(){
+  const ids=(await fetch('https://hacker-news.firebaseio.com/v0/topstories.json').then(r=>r.json())).slice(0,12);
+  const items=await Promise.all(ids.map(id=>fetch('https://hacker-news.firebaseio.com/v0/item/'+id+'.json').then(r=>r.json())));
+  return items.filter(Boolean).map(x=>({title:x.title,url:x.url||'https://news.ycombinator.com/item?id='+x.id,meta:'▲'+x.score}));
+}
+async function wikipedia(){
+  const d=new Date(Date.now()-86400000),day=d.getUTCFullYear()+'/'+String(d.getUTCMonth()+1).padStart(2,'0')+'/'+String(d.getUTCDate()).padStart(2,'0');
+  const feed=await fetch('https://zh.wikipedia.org/api/rest_v1/feed/featured/'+day).then(r=>r.json());
+  return (feed.mostread?.articles||[]).slice(0,12).map(a=>({title:a.titles?.normalized||a.title,url:a.content_urls?.desktop?.page||'',meta:Math.round((a.views||0)/1000)+'k'}));
+}
 async function stories(){
+  $('stories').textContent='加载中…';
   try{
-    const ids=(await fetch('https://hacker-news.firebaseio.com/v0/topstories.json').then(r=>r.json())).slice(0,12);
-    const items=await Promise.all(ids.map(id=>fetch('https://hacker-news.firebaseio.com/v0/item/'+id+'.json').then(r=>r.json())));
-    fill($('stories'),...items.filter(Boolean).map(x=>el('div',{class:'story'},el('span',{class:'muted'},'▲'+x.score),
-      el('a',{class:'grow',href:x.url||'https://news.ycombinator.com/item?id='+x.id,target:'_blank',rel:'noreferrer'},x.title),
-      el('button',{class:'ghost',onclick:()=>act(()=>api('discuss',{title:x.title,url:x.url||''}))},'上桌'))));
+    const rows=await ($('source').value==='wiki'?wikipedia():hackerNews());
+    fill($('stories'),...rows.map(x=>el('div',{class:'story'},el('span',{class:'muted'},x.meta),
+      el('a',{class:'grow',href:x.url,target:'_blank',rel:'noreferrer'},x.title),
+      el('button',{class:'ghost',onclick:()=>act(()=>api('discuss',{title:x.title,url:x.url}))},'上桌'))));
   }catch(failure){$('stories').textContent='热门加载失败，可以自己贴一个话题。';}
 }
-$('refresh').onclick=stories;stories();
+$('refresh').onclick=stories;$('source').onchange=stories;stories();
 $('pick').onclick=()=>act(()=>api('discuss',{title:$('title').value,url:$('url').value}));
 function render(s){
   fill($('table'),...s.state.topics.slice().reverse().map(t=>el('div',{class:'card'},

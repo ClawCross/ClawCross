@@ -259,6 +259,9 @@ scenarios['news-roundtable']=()=>scenario('news-roundtable',{
     await bob.getByRole('button',{name:'🔥 0'}).first().click();
     await expect(alice.getByRole('button',{name:'🔥 1'})).toBeVisible();
     expect(test.asked[0].content).toContain('Open models catch up');
+    await alice.route(/zh\.wikipedia\.org/,route=>route.fulfill({json:{mostread:{articles:[{titles:{normalized:'国庆日'},views:120000,content_urls:{desktop:{page:'https://zh.wikipedia.org/wiki/x'}}}]}}}));
+    await alice.locator('#source').selectOption('wiki');
+    await expect(alice.locator('.story',{hasText:'国庆日'})).toContainText('120k');
   }
 });
 
@@ -442,6 +445,7 @@ scenarios['agent-canvas']=()=>scenario('agent-canvas',{
   async play({alice,bob,test}){
     await bob.locator('#painter').selectOption({label:'Alpha'});
     await bob.locator('#ask').fill('右上角一轮月亮');await bob.getByRole('button',{name:'请它画'}).click();
+    await expect(alice.locator('#canvas img')).toHaveCount(1,{timeout:10000});   // the second painter sees the first layer
     await alice.locator('#painter').selectOption({label:'Beta'});
     await alice.locator('#ask').fill('左上角一个太阳');await alice.getByRole('button',{name:'请它画'}).click();
     await expect(alice.locator('#canvas img')).toHaveCount(2,{timeout:10000});
