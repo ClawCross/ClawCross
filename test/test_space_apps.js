@@ -334,6 +334,70 @@ scenarios['translation-relay']=()=>scenario('translation-relay',{
   }
 });
 
+scenarios.auction=()=>scenario('auction',{
+  replies(agent,prompt){
+    if(prompt.includes('拍卖师'))return JSON.stringify({lots:['会唱歌的硬盘','AI 写的情书','火星土豆','一秒钟的未来'].map(name=>({name,story:name+'的传说'}))});
+    const value=Number(/它值 (\d+)/.exec(prompt)[1]);
+    return JSON.stringify({bid:Math.floor(value/2),line:'我出一半！'});
+  },
+  async play({alice,bob,test}){
+    await alice.locator('#host').selectOption({label:'Alpha'});await alice.locator('#theme').fill('赛博古董');
+    await alice.getByRole('button',{name:'开拍'}).click();
+    await expect(bob.getByRole('heading',{name:'会唱歌的硬盘'})).toBeVisible({timeout:10000});
+    await expect(bob.locator('.mine')).toHaveCount(4);
+    await expect(alice.locator('.mine')).toHaveCount(0);
+    await bob.locator('#strategy').fill('稳一点，只出一半');await bob.getByRole('button',{name:'交代'}).click();
+    for(let lot=1;lot<=4;lot++){
+      await alice.getByRole('button',{name:lot===1?'第一件开拍':'下一件开拍'}).click();
+      await expect(alice.locator('.win')).toHaveCount(lot,{timeout:10000});
+    }
+    await expect(bob.getByRole('heading',{name:'拍卖结束，赢家：Beta'})).toBeVisible({timeout:15000});
+    await expect(alice.locator('.win')).toHaveCount(4);
+    await expect(alice.getByText(/各家心理价：Beta \d+/).first()).toBeVisible();
+    expect(test.asked.filter(a=>a.agent==='Beta').every(a=>a.content.includes('稳一点，只出一半'))).toBe(true);
+  }
+});
+
+scenarios['story-relay']=()=>scenario('story-relay',{
+  replies(agent,prompt){
+    if(prompt.includes('画一张插图'))return JSON.stringify({svg:'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 260"><rect width="400" height="260" fill="#123"/></svg>'});
+    if(prompt.includes('写结局'))return '终点站到了，他终于明白那张车票是写给自己的。';
+    return agent+' 写道：列车又开过了一站。';
+  },
+  async play({alice,bob,test}){
+    await alice.locator('#title').fill('最后一班地铁');await alice.locator('#opening').fill('凌晨一点，车厢里只剩他一个人。');
+    await alice.getByRole('button',{name:'开始接龙'}).click();
+    // Order: Alpha, Alice, Beta, Bob. Alpha writes on its own first.
+    await expect(alice.locator('#next')).toBeVisible({timeout:10000});
+    await alice.locator('#next').fill('广播突然报出一个不存在的站名。');await alice.getByRole('button',{name:'写好了'}).click();
+    await expect(bob.locator('#next')).toBeVisible({timeout:10000});
+    await expect(bob.locator('.para')).toHaveCount(4);
+    await expect(bob.locator('.art img')).toHaveCount(1,{timeout:10000});   // after the fourth paragraph
+    await bob.locator('#next').fill('门开了，站台上站着年轻时的自己。');await bob.getByRole('button',{name:'写好了'}).click();
+    await expect(alice.locator('#next')).toBeVisible({timeout:10000});
+    await alice.getByRole('button',{name:'请 agent 写结局'}).click();
+    await expect(bob.getByText('那张车票是写给自己的')).toBeVisible({timeout:10000});
+    await expect(bob.getByText('Alpha（结局）')).toBeVisible();
+  }
+});
+
+scenarios['decision-room']=()=>scenario('decision-room',{
+  replies:(agent,prompt)=>JSON.stringify(agent==='Alpha'
+    ?{scores:{'离线模式':{价值:9,成本:6},'插件市场':{价值:6,成本:3}},reasons:{'离线模式':'用户呼声高','插件市场':'生态长期价值'}}
+    :{scores:{'离线模式':{价值:7,成本:8},'插件市场':{价值:8}},reasons:{'离线模式':'改动面大'}}),
+  async play({alice,bob,test}){
+    await bob.locator('#question').fill('下季度先做什么');await bob.locator('#options').fill('离线模式, 插件市场');await bob.locator('#criteria').fill('价值, 成本');
+    await bob.getByRole('button',{name:'请 agent 打分'}).click();
+    await expect(alice.getByText('Alpha ✓　Beta ✓')).toBeVisible({timeout:10000});
+    // Value weighs +1, cost −1 by default: 离线 8−7=1.0, 插件 7−3=4.0 (Beta left 插件's cost empty).
+    await expect(alice.locator('.bar').first()).toHaveText('4.0');
+    await expect(alice.locator('.card',{hasText:'Beta'}).locator('td',{hasText:'-'})).toHaveCount(1);
+    await alice.locator('#w-成本').fill('0');
+    await expect(alice.locator('.bar').first()).toHaveText('8.0');
+    await expect(bob.locator('.bar').first()).toHaveText('4.0');   // weights are each person's own
+  }
+});
+
 (async()=>{
   const chosen=process.argv.slice(2).length?process.argv.slice(2):Object.keys(scenarios);
   const results={};
