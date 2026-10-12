@@ -251,6 +251,32 @@
       } catch(error){view.status.textContent=error.message;view.status.classList.add('is-error');}
     },
 
+    async app(gid) {
+      let group;
+      try { group = await request('GET', '/' + encodeURIComponent(gid)); }
+      catch (error) { notify(error.message); return; }
+      const view = dialog('小程序', '群里的人打开这个群时看到的页面，是一个网页文件（.html）');
+      view.body.append(el('p', 'gn-note', group.app ? '当前：' + group.app.name : '当前没有小程序，大家看到的是普通聊天'));
+      const file = el('input', 'gn-input');
+      file.type = 'file'; file.accept = '.html,text/html'; file.setAttribute('aria-label', '小程序网页文件');
+      const upload = button(group.app ? '更换' : '上传', 'primary', () => busy(upload, view.status, '正在上传…', async () => {
+        const chosen = file.files[0];
+        if (!chosen) throw new Error('请选择一个网页文件');
+        const html = await chosen.text();
+        const name = new DOMParser().parseFromString(html, 'text/html').title.trim() || chosen.name.replace(/\.html?$/i, '');
+        const updated = await request('PUT', '/' + encodeURIComponent(gid) + '/app', {name: name.slice(0, 80), html});
+        view.done(); changed(updated);
+      }));
+      view.body.append(file, upload);
+      if (group.app) {
+        const remove = button('移除小程序', 'quiet', () => busy(remove, view.status, '正在移除…', async () => {
+          const updated = await request('DELETE', '/' + encodeURIComponent(gid) + '/app');
+          view.done(); changed(updated);
+        }));
+        view.body.append(remove);
+      }
+    },
+
     join() {
       const view = dialog('加入群聊', '粘贴朋友发来的邀请链接');
       const input = el('textarea', 'gn-input gn-link-input');

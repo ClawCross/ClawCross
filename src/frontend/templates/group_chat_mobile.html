@@ -38,9 +38,9 @@
 <script src="/static/js/reasoning-levels.js?v=20261004-effort-stops"></script>
 <link rel="stylesheet" href="/static/css/connections.css?v=20261011">
 <script src="/static/js/connections.js?v=20261011"></script>
-<script src="/static/js/room-sdk.js?v=20261012-composer"></script>
-<script src="/static/js/room-battle.js?v=20261012-composer"></script>
-<script src="/static/js/mobile-rooms.js?v=20261012-composer"></script>
+<script src="/static/js/room-sdk.js?v=20261012-group-apps"></script>
+<script src="/static/js/room-app-host.js?v=20261012-group-apps"></script>
+<script src="/static/js/mobile-rooms.js?v=20261012-group-apps"></script>
 <script src="/static/js/external-agent-settings.js?v=20261011-ssh"></script>
 <script src="/static/js/model-profiles.js?v=20261004-effort-slider"></script>
 <script src="/static/js/approval-ui.js?v=20261004-fold-approval"></script>
@@ -1265,12 +1265,11 @@
     background: var(--ui-danger-tint);
   }
 
-  .room-composer[hidden] { display:none!important; }
-  .room-composer { display:flex; align-items:center; gap:10px; padding:6px 12px 2px; min-width:0; }
-  .room-composer-modes { display:flex; flex-shrink:0; padding:3px; border-radius:99px; background:var(--ui-surface-3); }
-  .room-composer-modes button { border:0; border-radius:99px; padding:5px 13px; font:inherit; font-size:12px; color:var(--text-secondary); background:transparent; cursor:pointer; }
-  .room-composer-modes button[aria-pressed="true"] { background:var(--bg-card); color:var(--primary); box-shadow:0 1px 5px #00000010; font-weight:600; }
-  .room-composer [data-room-hint] { min-width:0; font-size:11px; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  /* A group with an app shows the app in place of the chat log and input. */
+  #room-app-surface { display:none; flex:1; min-height:0; min-width:0; overflow:hidden; }
+  #chat-page.room-app-view #room-app-surface { display:flex; }
+  #chat-page.room-app-view #chat-body, #chat-page.room-app-view #new-msg-banner,
+  #chat-page.room-app-view .typing-bar, #chat-page.room-app-view .input-bar-wrap { display:none!important; }
   .send-btn {
     width: 36px; height: 36px;
     display: flex; align-items: center; justify-content: center;
@@ -4050,7 +4049,7 @@
 <script src="/static/js/mobile-agent-create-tools.js?v=20261006-tool-table"></script>
 <link rel="stylesheet" href="/static/css/group-message-menu.css?v=20261004-message-menu">
 <script src="/static/js/group-message-menu.js?v=20261004-message-menu"></script>
-<script src="/static/js/group-network-ui.js?v=20261012-room-metadata"></script>
+<script src="/static/js/group-network-ui.js?v=20261012-group-apps"></script>
 <link rel="stylesheet" href="/static/css/group-network.css?v=20261009-history-metadata">
 <link rel="stylesheet" href="/static/css/settings-polish.css?v=20261005-team-skills">
 <link rel="stylesheet" href="/static/css/mobile-profile.css?v=20261004-studio-header">
@@ -4158,7 +4157,7 @@
   </div>
   <div id="group-network-status" style="display:none;padding:6px 14px;font-size:12px;color:var(--text-secondary);overflow-wrap:anywhere" role="status"></div>
   <button type="button" id="group-announcement" class="group-announcement" hidden onclick="GroupNetworkUI.announcement(currentGroupId)" aria-label="查看群公告"></button>
-  <div id="room-app-surface" hidden style="flex-shrink:0;max-height:55dvh;overflow:auto;min-width:0;"></div>
+  <div id="room-app-surface"></div>
   <div class="approval-strip" id="approval-strip"></div>
   <div class="chat-body" id="chat-body"></div>
   <div id="new-msg-banner" onclick="dismissNewMsgBanner()">
@@ -4170,13 +4169,6 @@
     <span id="typing-text"></span>
   </div>
   <div class="input-bar-wrap">
-    <div id="room-composer" class="room-composer" hidden>
-      <div class="room-composer-modes" role="group" aria-label="消息用途">
-        <button type="button" data-room-mode="chat" aria-pressed="false" onclick="MobileRooms.setMode('chat')">聊天</button>
-        <button type="button" data-room-mode="command" aria-pressed="true" onclick="MobileRooms.setMode('command')">出招</button>
-      </div>
-      <span data-room-hint role="status"></span>
-    </div>
     <div id="group-reply-preview" class="group-reply-preview" hidden>
       <div><strong data-reply-name></strong><p data-reply-text></p></div>
       <button type="button" onclick="clearGroupReply()" aria-label="取消引用">×</button>
@@ -4273,6 +4265,9 @@
   </button>
   <button type="button" class="ui-menu-item" onclick="closeChatActions();GroupNetworkUI.announcement(currentGroupId)">
     <svg class="ui-icon"><use href="/static/icons.svg#bell"/></svg><span>群公告</span>
+  </button>
+  <button type="button" class="ui-menu-item" id="action-group-app" style="display:none" onclick="closeChatActions();GroupNetworkUI.app(currentGroupId)">
+    <svg class="ui-icon"><use href="/static/icons.svg#window"/></svg><span class="ui-menu-label">小程序</span>
   </button>
   <button type="button" class="ui-menu-item" onclick="closeChatActions();GroupNetworkUI.search(currentGroupId)">
     <svg class="ui-icon"><use href="/static/icons.svg#search"/></svg><span class="ui-menu-label">查找聊天记录</span>
@@ -4911,10 +4906,6 @@
       <input type="text" id="create-custom-name" data-i18n="group_title_placeholder" placeholder="例如：周末读书会" style="width:100%;padding:12px;border:1px solid var(--border);border-radius:10px;font-size:16px;background:var(--bg-card);" oninput="updateGroupNamePreview()" onkeydown="if(event.key==='Enter')submitCreateGroup()">
     </div>
 
-    <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px;">房间玩法</label>
-    <select id="create-room-app" style="width:100%;padding:11px;border:1px solid var(--border);border-radius:10px;background:var(--bg-card);color:var(--text);margin-bottom:16px;">
-      <option value="chat">聊天房间</option><option value="battle">精灵对战 · SVG 形象与自然语言指挥</option>
-    </select>
     <details id="create-group-advanced" style="margin-bottom:16px;border:1px solid var(--border);border-radius:10px;background:var(--bg-card);">
     <summary style="padding:12px 14px;cursor:pointer;color:var(--text-secondary);font-size:13px;font-weight:600;" data-i18n="group_advanced_options">高级选项 · 导入 Team 或添加 Team 成员</summary>
     <div style="padding:0 12px 12px;">
@@ -7640,7 +7631,7 @@ function renderGroupList(list) {
             <div class="group-name-row">
               <div class="group-name">${renderGroupNameDisplay(name)}</div>
               <span class="group-activity-label" hidden></span>
-              ${ClawCrossRooms.parseConfig(g.announcement)?.app === 'battle' ? '<span style="font-size:10px;color:var(--text-secondary);white-space:nowrap;">精灵对战</span>' : ''}
+              ${g.app ? `<span style="font-size:10px;color:var(--text-secondary);white-space:nowrap;">${esc(g.app.name)}</span>` : ''}
               ${timeStr ? `<span class="group-time">${timeStr}</span>` : ''}
             </div>
             <div class="group-meta-row">
@@ -8753,7 +8744,6 @@ async function showCreateGroupModal() {
   hideCreateMenu();
   closeOasisSidebar();
   document.getElementById('create-custom-name').value = '';
-  document.getElementById('create-room-app').value = 'chat';
   document.getElementById('create-team-select').value = '';
   document.getElementById('create-group-advanced').open = false;
   document.getElementById('import-panel').style.display = 'none';
@@ -8818,12 +8808,6 @@ async function submitCreateGroup() {
     const card = teamName ? await api('GET', `/v1/teams/${encodeURIComponent(teamName)}`) : {members: []};
     const agents = (card.members || []).map(m => m.agent.agent_id);
     const data = await api('POST', '/proxy_groups', { title, agents });
-    if (document.getElementById('create-room-app').value === 'battle') {
-      const group = data.members ? data : await api('GET', '/proxy_groups/' + encodeURIComponent(data.group_id));
-      const person = (group.members || []).find(member => !member.agent && !member.is_agent);
-      const config = ClawCrossRooms.createConfig('battle', {key: person?.principal || selfPrincipal(), name: person?.name || window.__currentUser || ''});
-      await api('PATCH', '/proxy_groups/' + encodeURIComponent(data.group_id), {announcement: ClawCrossRooms.encodeConfig(config)});
-    }
     toast(t('group_created') + ': ' + data.title);
     closeCreateModal();
     refreshGroups();
@@ -8847,6 +8831,7 @@ function applyGroupDetail(detail) {
   announcement.hidden = !note;
   announcement.textContent = note ? '群公告 · ' + note : '';
   document.getElementById('action-group-rename').style.display = String(detail.owner || '').startsWith('remote:') ? 'none' : '';
+  document.getElementById('action-group-app').style.display = detail.federated && !String(detail.owner || '').startsWith('remote:') ? '' : 'none';
   const networkStatus = document.getElementById('group-network-status');
   networkStatus.style.display = detail.federated ? '' : 'none';
   networkStatus.textContent = detail.federated ? (detail.connection_error || (detail.external_access_enabled === false
@@ -9625,22 +9610,6 @@ async function sendMessage() {
   closeInputActions();
 
   const btn = document.getElementById('send-btn');
-  if (window.MobileRooms?.commandSelected() && !selectedWorkflow) {
-    if (pendingAttachments.length || mcPendingAudios.length || selectedOasisContexts.length) {
-      toast('附件和工作流信息请切换到聊天后发送');
-      return;
-    }
-    btn.disabled = true;
-    try {
-      await MobileRooms.submit(text);
-      input.value = '';
-      mentionState.picked.clear();
-      clearGroupReply();
-      scrollToBottom();
-    } catch (error) { toast(error.message); }
-    finally { btn.disabled = false; }
-    return;
-  }
   btn.disabled = true;
   input.value = '';
   const attachToSend = pendingAttachments.length ? [...pendingAttachments] : null;

@@ -220,6 +220,31 @@ def client_router(facade, *, internal_token, verify_password):
         except ClientError as exc:
             raise HTTPException(exc.status, str(exc)) from exc
 
+    class AppPage(BaseModel):
+        name: str = Field(min_length=1, max_length=80)
+        html: str = Field(min_length=1, max_length=1536 * 1024)
+
+    @router.get('/groups/{gid}/app')
+    async def get_app(gid: str, authorization: str | None = Header(None)):
+        try:
+            return await asyncio.to_thread(facade.client.request, facade.client.require(user_of(authorization), gid), 'GET', '/app')
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    @router.put('/groups/{gid}/app')
+    async def set_app(gid: str, body: AppPage, authorization: str | None = Header(None)):
+        try:
+            return await asyncio.to_thread(facade.client.manage, user_of(authorization), gid, 'app', body.model_dump())
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    @router.delete('/groups/{gid}/app')
+    async def remove_app(gid: str, authorization: str | None = Header(None)):
+        try:
+            return await asyncio.to_thread(facade.client.manage, user_of(authorization), gid, 'app', {'html': ''})
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
     @router.post('/groups/{gid}/guest-invite')
     async def guest_invite(gid: str, body: dict, authorization: str | None = Header(None)):
         try:

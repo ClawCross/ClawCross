@@ -103,3 +103,39 @@ test('guest identity survives a new invitation and a closed page; password resto
     await expect(another.locator('#status')).toContainText('密码已保存');
   } finally {await fresh.close();}
 });
+
+test('a browser member sees the group app in place of the chat under the page policy', async ({ page }) => {
+  await page.setViewportSize({width:390,height:844});
+  const Rooms = require('../../src/frontend/static/js/room-sdk.js');
+  const app = require('./miniapp-fixture').battleApp();
+  const errors = []; page.on('pageerror', e => errors.push(e.message));
+  page.on('console', m => { if (/Content Security Policy/.test(m.text())) errors.push(m.text()); });
+  const posts = [];
+  const messages = [{id:1,sender:'alice',sender_name:'Alice',content:'欢迎来对战',created_at:1790000000}];
+  const config = {v:1,app:'battle',id:'match',host:{key:'alice',name:'Alice'},players:[]};
+  await page.addInitScript(() => { if (self.origin !== 'null') localStorage.setItem('group-guest:test-invite', JSON.stringify({token:'guest-token',name:'Bob'})); });
+  await page.route('**/group-guest-api/**', async route => {
+    const action = new URL(route.request().url()).pathname.split('/').pop();
+    let result = {};
+    if (action === 'state') result = {group_id:'g1',title:'对战群',name:'Bob',principal:'bob',password_set:true,
+      announcement:Rooms.encodeConfig(config,'一起玩'),app:{name:app.name,sha256:app.sha256,size:app.html.length},
+      members:[{principal:'alice',name:'Alice',is_agent:false,device:0},{principal:'a1',name:'Alpha',is_agent:true,device:0},
+        {principal:'bob',name:'Bob',is_agent:false,device:1,own:true},{principal:'b1',name:'Beta',is_agent:true,device:1}],
+      messages:new URL(route.request().url()).searchParams.get('after_id')==='-1'?messages:[],cursor:1,has_more:false};
+    if (action === 'app') result = app;
+    if (action === 'messages') { const body = route.request().postDataJSON(); posts.push(body); result = {id:2}; }
+    await route.fulfill({contentType:'application/json', body:JSON.stringify(result)});
+  });
+  await page.goto('/group-guest#test-invite');
+  const arena = page.frameLocator('#room-app-surface iframe');
+  await expect(arena.locator('.cc-room-battle')).toBeVisible();
+  await expect(arena.locator('#chat')).toContainText('欢迎来对战');
+  await expect(page.locator('#messages')).toBeHidden();
+  await expect(page.locator('#composer')).toBeHidden();
+  await expect(page.locator('#announcement')).toHaveText('群公告 · 一起玩');
+  await arena.locator('#text').fill('我来了');
+  await arena.locator('[data-chat]').click();
+  await expect.poll(() => posts[0]?.content).toBe('我来了');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  expect(errors).toEqual([]);
+});

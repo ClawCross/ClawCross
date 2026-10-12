@@ -79,7 +79,7 @@ def register_guest_routes(app, *, port_agent, internal_token, public_base=lambda
 
     # A device joined by link reaches the group server only through these calls.
     device_calls = {('POST', 'join'), ('POST', 'poll'), ('GET', 'group'), ('GET', 'messages'), ('GET', 'search'),
-                    ('POST', 'messages'), ('POST', 'agents')}
+                    ('POST', 'messages'), ('POST', 'agents'), ('GET', 'app')}
 
     @app.route('/relay/<path:call>', methods=['GET', 'POST'])
     def group_device_relay(call):
@@ -142,7 +142,7 @@ def register_guest_routes(app, *, port_agent, internal_token, public_base=lambda
 
     @app.route('/group-guest-api/<action>', methods=['GET', 'POST'])
     def group_guest_api(action):
-        methods = {'info': 'POST', 'join': 'POST', 'state': 'GET', 'messages': 'POST', 'search':'GET', 'rename': 'POST', 'password': 'POST'}
+        methods = {'info': 'POST', 'join': 'POST', 'state': 'GET', 'messages': 'POST', 'search':'GET', 'rename': 'POST', 'password': 'POST', 'app': 'GET'}
         if methods.get(action) != request.method:
             return jsonify(error='不支持的操作'), 405
         ticket = request.headers.get('X-Group-Invite', '')

@@ -1,10 +1,10 @@
-/* An example room application. Its only transport is ordinary group messages. */
+/* The creature battle, a group app. Its only transport is ordinary group messages:
+ * it asks the members' agents for SVG creatures and moves in a fixed reply format. */
 (function (root, factory) {
-  const sdk = typeof module === 'object' && module.exports ? require('./room-sdk.js') : root.ClawCrossRooms;
+  const sdk = typeof module === 'object' && module.exports ? require('../../../src/frontend/static/js/room-sdk.js') : root.ClawCrossRooms;
   const app = factory(sdk);
   if (typeof module === 'object' && module.exports) module.exports = app;
   if (root) root.ClawCrossBattle = app;
-  sdk.registerApp('battle', app);
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (Rooms) {
   'use strict';
   const TYPES = Object.freeze(Object.fromEntries([
@@ -272,7 +272,7 @@
       ].filter(Boolean).join('；');chart.append(line);
     }
     root.querySelector('.cc-room-skills').append(chart);
-    const model = new BattleModel(), cache = new Map();
+    const model = new BattleModel(), cache = new Map(), blank = Rooms.createConfig('battle');
     let snapshot = {}, config = null, busy = false, synced = !client.transport.loadHistory, historyRoom = '', destroyed = false, rosterSignature = '', paintKey = '', settingsOpen = false;
     const errorBox = root.querySelector('.cc-room-error');
     const selects = [...root.querySelectorAll('select')];
@@ -361,7 +361,7 @@
       const hint = !synced ? '正在同步对战记录' : !ready ? '等待双方形象生成' : !s.started ? '等待房主点击开始对战' :
         s.winner !== null ? '对局结束，可在对阵中开启新对局' : s.pending && !s.invalid ? '等待 ' + s.fighters[s.active].name + ' 回复' :
         permitted ? '指挥 ' + s.fighters[s.active].ref.name + ' · 第 ' + s.turn + ' 回合' : '等待 ' + s.fighters[s.active].ref.controller + ' 指挥';
-      client.setComposer({kind:'battle', label: hint, canSubmit: !!(synced && !busy && permitted && s.started && s.winner === null && (!s.pending || s.invalid)),
+      client.setComposer({kind:'battle',actionLabel:'精灵对战', label: hint, canSubmit: !!(synced && !busy && permitted && s.started && s.winner === null && (!s.pending || s.invalid)),
         placeholder: '告诉你的精灵怎么行动，例如：抓住机会，用喷射火焰'});
       const log = root.querySelector('.cc-room-log'); log.replaceChildren();
       for (const item of s.log.slice(-4)) {
@@ -394,7 +394,8 @@
       const members = model.members;
       const chosen = selects.map(select => members.find(m => m.key === select.value));
       if (chosen.some(m => !m) || chosen[0].key === chosen[1].key) throw new Error('请先加入并选择两个不同 Agent');
-      const next = Rooms.createConfig('battle', snapshot.actor);
+      const next = Rooms.createConfig(config.app, snapshot.actor);
+      Object.assign(next,{manual_start:true,owner_only:true,battle_rules:2});
       next.players = chosen.map(Rooms.binding);
       // The owner-managed announcement is already delivered to Agents by the
       // existing group runtime. Keep human text while publishing game rules.
@@ -421,8 +422,8 @@
         await act(() => issue(state().active, 'turn', request));
       },
       update: function (next) {
-        snapshot = next; config = Rooms.parseConfig(next.announcement); ingest(next.messages);
-        if (!config) return;
+        // Until the owner sets up a match the group carries no battle configuration.
+        snapshot = next; config = Rooms.parseConfig(next.announcement) || blank; ingest(next.messages);
         if (client.transport.loadHistory && historyRoom !== next.roomId) {
           historyRoom = next.roomId; synced = false;
           Promise.resolve(client.transport.loadHistory()).then(messages => {

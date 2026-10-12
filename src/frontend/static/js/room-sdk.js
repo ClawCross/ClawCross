@@ -1,4 +1,5 @@
-/* ClawCross Rooms SDK: application-level adapters over the existing group APIs.
+/* ClawCross Rooms SDK: the room protocol over the existing group APIs, shared by
+ * group apps and the pages that host them (room-app-host.js).
  * This file is also vendored by ClawCrossHub/lib/rooms. No Agent runtime changes.
  */
 (function (root, factory) {
@@ -9,7 +10,6 @@
   'use strict';
   const CONFIG = '[ClawCrossRoomConfig:v1]';
   const EVENT = '[ClawCrossRoom:v1]';
-  const apps = new Map();
   function uid() {
     return typeof crypto !== 'undefined' && crypto.randomUUID
       ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
@@ -33,8 +33,7 @@
     return result;
   }
   function createConfig(app, actor) {
-    return {v: 1, app: app, id: uid(), host: actor || {key: '', name: ''}, players: [],
-      ...(app === 'battle' ? {manual_start: true, owner_only: true, battle_rules: 2} : {})};
+    return {v: 1, app: app, id: uid(), host: actor || {key: '', name: ''}, players: []};
   }
   function encodeEvent(event, instructions) {
     return EVENT + JSON.stringify(Object.assign({protocol: 'clawcross.room/1'}, event)) +
@@ -63,15 +62,9 @@
     }
     return null;
   }
+  // A plain chat view shows an app's protocol messages as one placeholder line.
   function describeMessage(content) {
-    const event = parseEvent(content);
-    if (!event) return content;
-    if (event.type === 'command') return event.kind === 'avatar' ? '请求生成精灵形象' :
-      (event.controller ? '主人指令 · ' + event.controller + (event.agent_name ? ' → ' + event.agent_name : '') + '\n' : '') + (event.request || '发出对战指令');
-    if (event.type === 'avatar') return '生成精灵形象' + (event.name ? ' · ' + event.name : '');
-    if (event.type === 'move') return '出招：' + String(event.move || '') + (event.narration ? '\n' + event.narration : '');
-    if (event.type === 'start') return '开始对战';
-    return content;
+    return parseEvent(content) ? '[小程序消息]' : content;
   }
   function normalizeMembers(rows) {
     const members = (rows || []).map(row => Object.assign({}, row, {
@@ -123,37 +116,8 @@
       if (this.transport.onComposer) this.transport.onComposer(value);
     }
   }
-  function registerApp(id, app) { apps.set(id, app); }
-  function mountRoom(container, transport) {
-    const client = new RoomClient(transport);
-    let handle = null, kind = '', last = {};
-    function update(snapshot) {
-      last = snapshot;
-      client.update(snapshot);
-      const config = parseConfig(snapshot.announcement);
-      const next = config ? config.app : 'chat';
-      if (next !== kind) {
-        if (handle) handle.destroy();
-        client.setComposer(null);
-        container.replaceChildren();
-        kind = next;
-        handle = apps.has(next) ? apps.get(next).mount(container, client) : null;
-      }
-      container.hidden = !handle;
-      if (handle) handle.update(client.snapshot);
-    }
-    return {
-      update: update, client: client,
-      refresh: function () { update(last); },
-      submit: function (text) {
-        if (!handle || !handle.submit) return Promise.reject(new Error('当前房间没有对战指令'));
-        return handle.submit(text);
-      },
-      destroy: function () { if (handle) handle.destroy(); client.setComposer(null); container.replaceChildren(); }
-    };
-  }
   return {CONFIG: CONFIG, EVENT: EVENT, uid: uid, parseConfig: parseConfig, encodeConfig: encodeConfig,
     createConfig: createConfig, humanAnnouncement: humanAnnouncement, encodeEvent: encodeEvent,
     parseEvent: parseEvent, describeMessage: describeMessage, normalizeMembers: normalizeMembers,
-    binding: binding, resolveMember: resolveMember, RoomClient: RoomClient, registerApp: registerApp, mountRoom: mountRoom};
+    binding: binding, resolveMember: resolveMember, RoomClient: RoomClient};
 });

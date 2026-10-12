@@ -152,6 +152,11 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
     async def group(authorization: str | None = Header(None)):
         return await invoke(store.detail, token(authorization))
 
+    @router.get('/app')
+    @router.get('/guest/app')
+    async def app(authorization: str | None = Header(None)):
+        return await invoke(store.app, token(authorization))
+
     @router.get('/messages')
     async def messages(after_id: int = 0, authorization: str | None = Header(None)):
         return {'messages': await invoke(store.messages, token(authorization), max(0, after_id))}

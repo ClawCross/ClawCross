@@ -18,3 +18,5 @@
 #agent-file-list button{padding:5px 8px;background:transparent;color:#315b45;font-size:12px}#agent-file-list .file-name{flex:1;min-width:0;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}#agent-file-list small{color:#7a877e}
 #agent-file-editor{display:grid;gap:8px;margin:8px 0}#agent-file-content{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;resize:vertical;max-height:none}
 #member-view{float:right;margin-top:-26px;padding:5px 12px;font-size:12px;background:#edf3ed;color:#315b45}#members:not([open]) #member-view{display:none}#member-map{clear:both;max-height:min(58vh,460px);overflow:auto;padding-top:6px}
+/* A group with an app shows the app in place of the messages and input. */
+#room-app-surface{display:none;flex:1;min-height:0}#chat.room-app-view #room-app-surface{display:flex}#chat.room-app-view #messages,#chat.room-app-view #composer{display:none}

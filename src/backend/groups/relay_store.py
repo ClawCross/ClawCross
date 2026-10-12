@@ -32,6 +32,9 @@ def password_hash(password: str, salt: str) -> str:
 
 # A member is online while its device called within this window; hidden browser tabs poll about once a minute.
 ONLINE_SECONDS = 90
+# A group's app is one HTML page that every member's device shows in place of the plain chat;
+# its upload has to fit the server's 2 MiB request limit.
+APP_BYTES = 1536 * 1024
 
 
 class RelayStore:
@@ -74,6 +77,10 @@ class RelayStore:
                 CREATE TABLE IF NOT EXISTS relay_guest_invites (
                     group_id TEXT PRIMARY KEY REFERENCES relay_groups(id) ON DELETE CASCADE,
                     token_hash TEXT UNIQUE NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS relay_apps (
+                    group_id TEXT PRIMARY KEY REFERENCES relay_groups(id) ON DELETE CASCADE,
+                    name TEXT NOT NULL, html TEXT NOT NULL, sha256 TEXT NOT NULL, size INTEGER NOT NULL, updated_at REAL NOT NULL
                 );
             ''')
             columns = {r[1] for r in db.execute('PRAGMA table_info(relay_connections)')}
@@ -152,8 +159,9 @@ class RelayStore:
             member['online'] = member.pop('seen_at') > online_since
             # What the device is, for views that draw the group by device.
             member['device_kind'] = 'browser' if member.pop('guest') else 'client'
+        app = db.execute('SELECT name,sha256,size FROM relay_apps WHERE group_id=?', (gid,)).fetchone()
         return {'group_id': gid, 'title': group['title'], 'kind': group['kind'],
-                'announcement': group['announcement'],
+                'announcement': group['announcement'], 'app': dict(app) if app else None,
                 'owner': group['owner_connection'], 'primary_agent': group['primary_member'],
                 'dnd': bool(group['dnd']), 'version': group['version'], 'members': members,
                 'external_access_enabled': bool(group['external_access_enabled']),
@@ -337,7 +345,7 @@ class RelayStore:
                        {'own': m['connection_id'] == conn['id'], 'device': devices.index(m['connection_id'])}
                        for m in group['members']]
             return {'group_id': conn['group_id'], 'password_set': bool(conn['guest_password_hash']), 'title': group['title'], 'members': members,
-                    'announcement': group['announcement'],
+                    'announcement': group['announcement'], 'app': group['app'],
                     'messages': messages, 'cursor': cursor, 'has_more': more, 'principal': member['principal'], 'name': member['name']}
 
     def guest_rename(self, token, name):
@@ -352,6 +360,15 @@ class RelayStore:
             db.execute('UPDATE relay_groups SET version=version+1 WHERE id=?', (conn['group_id'],))
             self._event(db, conn['group_id'], 'metadata', {})
             return {'name': name}
+
+    def app(self, token: str) -> dict:
+        """The group's app page, for any member's device to show."""
+        with self.db() as db:
+            conn = self.auth(db, token)
+            row = db.execute('SELECT name,sha256,html FROM relay_apps WHERE group_id=?', (conn['group_id'],)).fetchone()
+            if row is None:
+                raise RelayError('这个群没有小程序', 404)
+            return dict(row)
 
     def detail(self, token: str) -> dict:
         with self.db() as db:
@@ -441,6 +458,21 @@ class RelayStore:
                             raise RelayError('群设置必须为布尔值')
                         value = fields[key].strip() if isinstance(fields[key], str) else fields[key]
                         db.execute(f'UPDATE relay_groups SET {key}=? WHERE id=?', (value, conn['group_id']))
+            elif action == 'app':
+                # The owner sets the group's app, or removes it with an empty page.
+                if not owner:
+                    raise RelayError('只有群主可以设置小程序', 403)
+                html, name = fields.get('html'), fields.get('name')
+                if not isinstance(html, str) or len(html.encode()) > APP_BYTES:
+                    raise RelayError('小程序需要是不超过 1.5 MiB 的网页文件')
+                if not html:
+                    db.execute('DELETE FROM relay_apps WHERE group_id=?', (conn['group_id'],))
+                elif not isinstance(name, str) or not name.strip() or len(name.strip()) > 80:
+                    raise RelayError('小程序名称需要 1 至 80 个字符')
+                else:
+                    db.execute('INSERT INTO relay_apps VALUES(?,?,?,?,?,?) ON CONFLICT(group_id) DO UPDATE SET name=excluded.name,'
+                               'html=excluded.html,sha256=excluded.sha256,size=excluded.size,updated_at=excluded.updated_at',
+                               (conn['group_id'], name.strip(), html, hashlib.sha256(html.encode()).hexdigest(), len(html.encode()), time.time()))
             elif action == 'primary':
                 if not owner:
                     raise RelayError('只有群主可以设置主 agent', 403)

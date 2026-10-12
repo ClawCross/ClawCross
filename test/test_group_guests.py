@@ -202,6 +202,24 @@ class GuestTests(unittest.TestCase):
             self.assertEqual(client.get('/relay/guest/state', headers={'Authorization':'Bearer '+self.host['token']}).status_code, 200)
 
 
+    def test_the_owner_stores_one_app_page_that_every_member_loads(self):
+        page = '<!doctype html><title>精灵对战</title><p>battle</p>'
+        with TestClient(create_app(data_dir=self.temp.name, control_key='key', legacy=False)) as client:
+            guest = client.post('/relay/guest/join', json={'invite':self.invite,'name':'Bob','password':'password123'}).json()
+            host, member = {'Authorization':'Bearer ' + self.host['token']}, {'Authorization':'Bearer ' + guest['token']}
+            self.assertEqual(client.get('/relay/guest/app', headers=member).status_code, 404)
+            self.assertEqual(client.post('/relay/manage/app', headers=member, json={'name':'X','html':page}).status_code, 403)
+            card = client.post('/relay/manage/app', headers=host, json={'name':'精灵对战','html':page}).json()
+            self.assertEqual(card['app']['name'], '精灵对战')
+            self.assertEqual(card['app']['size'], len(page.encode()))
+            self.assertNotIn('html', card['app'])
+            self.assertEqual(client.get('/relay/guest/state', headers=member).json()['app'], card['app'])
+            self.assertEqual(client.get('/relay/guest/app', headers=member).json(), {'name':'精灵对战','sha256':card['app']['sha256'],'html':page})
+            self.assertEqual(client.get('/relay/app', headers=host).json()['html'], page)
+            self.assertEqual(client.post('/relay/manage/app', headers=host, json={'name':'X','html':'x' * (1536 * 1024 + 1)}).status_code, 400)
+            self.assertIsNone(client.post('/relay/manage/app', headers=host, json={'html':''}).json()['app'])
+            self.assertEqual(client.get('/relay/app', headers=host).status_code, 404)
+
 class GuestProxyTests(unittest.TestCase):
     def setUp(self):
         self.app = Flask(__name__, template_folder=str(ROOT / 'src/frontend/templates'))

@@ -88,18 +88,10 @@ const GROUP = {
   member_names: ['Lead', 'Codex', 'tester'], message_count: 2, last_message: MESSAGES[1], dnd: false, updated_at: 1790000010,
 };
 
-test('a room app renders Agent SVGs and sends battle commands through the existing group API',async({page})=>{
+test('a group app replaces the chat and drives Agents through the existing group API',async({page})=>{
   const Rooms=require('../../src/frontend/static/js/room-sdk.js');
   const calls={posts:[],control:[]};await stub(page,calls);
-  // Reproduce a live frontend with a cached template but refreshed assets.
-  // The room adapter must upgrade it without restarting any Agent service.
-  await page.route('**/mobile/group_chat',async route=>{
-    const response=await route.fetch();
-    let body=await response.text();
-    body=body.replace(/\s*<div id="room-composer"[\s\S]*?<span data-room-hint role="status"><\/span>\s*<\/div>/,'');
-    body=body.replace(/  if \(window\.MobileRooms\?\.commandSelected\(\) && !selectedWorkflow\) \{[\s\S]*?\n  btn.disabled = true;\n  input.value = '';/,"  btn.disabled = true;\n  input.value = '';");
-    await route.fulfill({response,body});
-  });
+  const app=require('./miniapp-fixture').battleApp();
   const svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="30" fill="orange"/></svg>';
   const config={v:1,app:'battle',id:'mobile-match',manual_start:true,owner_only:true,battle_rules:2,host:{key:'u:tester',name:'tester'},players:[
     {key:LEAD.agent_id,name:LEAD.name,controller:'tester'},{key:CODEX.agent_id,name:CODEX.name,controller:'tester'}]};
@@ -110,9 +102,11 @@ test('a room app renders Agent SVGs and sends battle commands through the existi
   const moves=['喷射火焰','撞击','守住','自我再生'];
   add(LEAD.agent_id,{type:'avatar',id:'avatar1',svg,name:'Amber',elements:['normal'],moves});
   add(CODEX.agent_id,{type:'avatar',id:'avatar2',svg,name:'Ripple',elements:['normal'],moves});
-  const card={...GROUP,announcement:Rooms.encodeConfig(config),members:[{principal:'u:tester',name:'tester',is_agent:false},member(LEAD),member(CODEX)]};
+  const card={...GROUP,federated:true,app:{name:app.name,sha256:app.sha256,size:app.html.length},announcement:Rooms.encodeConfig(config),
+    members:[{principal:'u:tester',name:'tester',is_agent:false},member(LEAD),member(CODEX)]};
   await page.route('**/proxy_groups',route=>route.fulfill({json:{groups:[card]}}));
   await page.route(/\/proxy_groups\/g_dev$/,route=>route.fulfill({json:{...card,messages:rows}}));
+  await page.route('**/proxy_groups/g_dev/app',route=>route.fulfill({json:app}));
   await page.route('**/proxy_groups/g_dev/messages**',route=>{
     if(route.request().method()==='POST'){
       const body=route.request().postDataJSON();calls.posts.push(body);
@@ -124,33 +118,37 @@ test('a room app renders Agent SVGs and sends battle commands through the existi
     }
     return route.fulfill({json:{messages:rows}});
   });
-  await page.addInitScript(()=>localStorage.setItem('clawcross_lang','zh'));
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  // Init scripts also run in the app's sandboxed frame, which has no storage.
+  await page.addInitScript(()=>{if(self.origin!=='null')localStorage.setItem('clawcross_lang','zh');});
   await page.goto('/mobile/group_chat');
   await page.locator('.group-item',{hasText:'Dev'}).first().click();
-  await expect(page.locator('#room-app-surface .cc-room-image')).toHaveCount(2);
-  await expect(page.locator('.cc-room-move')).toHaveCount(8);
-  await expect(page.locator('.cc-room-type')).toHaveCount(2);
-  await expect(page.locator('#room-app-surface textarea')).toHaveCount(0);
-  await expect(page.locator('#room-composer')).toBeVisible();
-  await page.locator('#room-composer [data-room-mode="chat"]').click();
-  await page.locator('#msg-input').fill('大家准备好了吗');
-  await page.locator('#send-btn').click();
-  expect(calls.posts[0].content).toBe('大家准备好了吗');
-  await page.locator('[data-start]').click();
-  await expect(page.locator('[data-start]')).toBeHidden();
-  await page.locator('#room-composer [data-room-mode="command"]').click();
-  await page.locator('.cc-room-fighter').first().getByRole('button',{name:'使用喷射火焰',exact:true}).click();
-  await expect(page.locator('#msg-input')).toHaveValue('使用喷射火焰');
-  await page.locator('#send-btn').click();
-  await expect(page.locator('.cc-room-hp').nth(1)).toHaveText('76 / 100 HP');
-  await expect(page.locator('.cc-room-effect img')).toHaveAttribute('data-move','喷射火焰');
+  const arena=page.frameLocator('#room-app-surface iframe');
+  await expect(arena.locator('.cc-room-image')).toHaveCount(2);
+  await expect(arena.locator('.cc-room-move')).toHaveCount(8);
+  await expect(arena.locator('.cc-room-type')).toHaveCount(2);
+  // The app is the group's page: ClawCross's own chat log and input give way to it.
+  await expect(page.locator('#chat-body')).toBeHidden();
+  await expect(page.locator('#msg-input')).toBeHidden();
+  await arena.locator('#text').fill('大家准备好了吗');
+  await arena.locator('[data-chat]').click();
+  await expect.poll(()=>calls.posts[0]?.content).toBe('大家准备好了吗');
+  await expect(arena.locator('#chat')).toContainText('大家准备好了吗');
+  await arena.locator('[data-start]').click();
+  await expect(arena.locator('[data-start]')).toBeHidden();
+  await arena.locator('.cc-room-fighter').first().getByRole('button',{name:'使用喷射火焰',exact:true}).click();
+  await expect(arena.locator('#text')).toHaveValue('使用喷射火焰');
+  await arena.locator('[data-command]').click();
+  await expect(arena.locator('.cc-room-hp').nth(1)).toHaveText('76 / 100 HP');
+  await expect(arena.locator('.cc-room-effect img')).toHaveAttribute('data-move','喷射火焰');
   const sent=calls.posts.find(row=>Rooms.parseEvent(row.content)?.kind==='turn');
   expect(sent.mentions).toEqual([LEAD.agent_id]);
   expect(sent.content).toContain('【主人指令】');
   expect(Rooms.parseEvent(sent.content).controller).toBe('tester');
   expect(sent.content).toContain('四个');
+  expect(errors).toEqual([]);
   await page.evaluate(()=>goBack());
-  await expect(page.locator('#room-composer')).toBeHidden();
+  await expect(page.locator('#chat-page')).not.toHaveClass(/room-app-view/);
 });
 
 test('mobile empty chats create a first companion once and open its private conversation',async({page})=>{

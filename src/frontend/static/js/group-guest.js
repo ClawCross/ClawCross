@@ -92,7 +92,7 @@
     } catch (_) {}
   }
   async function api(action, body, params = '') {
-    const response = await fetch('/group-guest-api/' + action + (action === 'state' ? '?after_id=' + cursor : params ? '?' + params : ''), {
+    const response = await fetch('/group-guest-api/' + action + (params ? '?' + params : action === 'state' ? '?after_id=' + cursor : ''), {
       method: body === undefined ? 'GET' : 'POST', credentials: 'omit',
       headers: {'Content-Type': 'application/json', 'X-Group-Invite': ticket, 'X-Guest-Token': credential},
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -106,9 +106,29 @@
     return data;
   }
   function showJoin() { clearTimeout(timer); el('join').hidden = false; el('chat').hidden = true; el('rename').hidden = true; el('agent-open').hidden = true; el('password-open').hidden = true; el('password-form').hidden = true; }
+  // The group's app, when its card names one, replaces the messages and input.
+  const room = ClawCrossRoomHost.mountApp(el('room-app-surface'), {
+    loadApp: () => api('app'),
+    send: async (content, mentions) => { await api('messages', {content, mentions, client_msg_id: crypto.randomUUID()}); await poll(); },
+    configure: async () => { throw new Error('只有群主可以修改群公告'); },
+    loadHistory: async () => {
+      const history = [];
+      for (let after = 0, page = 0; page < 200; page++) {
+        const data = await api('state', undefined, 'after_id=' + after);
+        history.push(...data.messages);
+        if (!data.has_more) return history;
+        after = data.cursor;
+      }
+      throw new Error('聊天记录过长');
+    }
+  }, '/static/room-app-frame.html');
   function render(data) {
-    el('announcement').hidden = !data.announcement;
-    el('announcement').textContent = data.announcement ? '群公告 · ' + data.announcement : '';
+    const note = ClawCrossRooms.humanAnnouncement(data.announcement);
+    el('announcement').hidden = !note;
+    el('announcement').textContent = note ? '群公告 · ' + note : '';
+    el('chat').classList.toggle('room-app-view', !!data.app);
+    room.update({app: data.app, roomId: data.group_id, title: data.title, announcement: data.announcement, members: data.members,
+      messages: data.messages, actor: {key: data.principal, name: data.name}, isOwner: false});
     identityKey(data);
     el('password-open').textContent = data.password_set ? '修改密码' : '设置密码';
     principal = data.principal; el('title').textContent = data.title; el('name').value = data.name;
