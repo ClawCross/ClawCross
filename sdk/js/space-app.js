@@ -1,0 +1,204 @@
+/* A small kit for space apps on top of clawcross-space.js (Node 18+, no dependencies).
+ *
+ *   const { run, page } = require('./space-app');
+ *   run({ name: '辩论擂台' }, (app) => {
+ *     let topic = '';
+ *     app.page(page({ title: '辩论擂台', body: '…', script: '…' }));   // GET /
+ *     app.state((member) => ({ topic, me: member }));                   // GET /state, long-polled by App.watch
+ *     app.route('POST', '/topic', (member, body) => { topic = body.topic; app.changed(); });
+ *     const reply = await app.ask(agentId, '…');                         // one request per agent at a time
+ *   });
+ *
+ *   node my-app.js --server <group server> --key <app key>
+ *
+ * Pages get `window.App`: App.api(path, body), App.watch(render), App.el(tag, props, ...children).
+ * Keep state small and rendering in the page; the server holds shared state and calls agents.
+ */
+'use strict';
+const { connect } = require('./clawcross-space');
+
+const WATCH_MS = 20_000;
+const ASK_MS = 5 * 60_000;
+
+/** Pulls the first JSON object or array out of an agent's reply (fenced or bare). */
+function json(text) {
+  const source = String(text || '');
+  const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(source);
+  for (const candidate of [fenced?.[1], source]) {
+    if (!candidate) continue;
+    const start = candidate.search(/[[{]/);
+    if (start < 0) continue;
+    for (let end = candidate.length; end > start; end--) {
+      if (!']}'.includes(candidate[end - 1])) continue;
+      try { return JSON.parse(candidate.slice(start, end)); } catch { /* shorter */ }
+    }
+  }
+  return null;
+}
+
+class App {
+  constructor(space, name) {
+    this.space = space;
+    this.name = name;
+    this.roster = { title: '', members: [] };
+    this.version = 0;
+    this.watchers = new Set();
+    this.routes = new Map();
+    this.queues = new Map();      // per agent: the tail of its request chain
+    this.pending = new Map();     // request id -> resolve
+    this.listeners = new Set();
+    this.html = '';
+    this.view = () => ({});
+    space.on('agent', (output) => {
+      const resolve = this.pending.get(output.request);
+      if (resolve) { this.pending.delete(output.request); resolve(output.content); }
+      else for (const fn of this.listeners) fn(output);
+    });
+    space.on('member', () => this.refresh().catch(() => {}));
+  }
+
+  async refresh() { this.roster = await this.space.members(); this.changed(); }
+  get title() { return this.roster.title; }
+  members() { return this.roster.members; }
+  agents() { return this.roster.members.filter((m) => m.agent); }
+  humans() { return this.roster.members.filter((m) => !m.agent); }
+  member(id) { return this.roster.members.find((m) => m.id === id); }
+  isOwner(id) { return !!this.member(id)?.owner; }
+  /** People and agents on one device: an agent's human is the person sharing its device. */
+  ownerOf(agentId) { const agent = this.member(agentId); return this.humans().find((m) => m.device === agent?.device); }
+  agentsOf(personId) { const person = this.member(personId); return this.agents().filter((m) => m.device === person?.device); }
+
+  /** Tells every watching page that the state changed. */
+  changed() { this.version++; for (const wake of this.watchers) wake(); }
+
+  /** Asks one agent and resolves with its reply. Requests to the same agent wait their turn. */
+  ask(agent, prompt, { timeout = ASK_MS } = {}) {
+    const previous = this.queues.get(agent) || Promise.resolve();
+    const turn = previous.catch(() => {}).then(async () => {
+      const id = await this.space.ask(agent, prompt);
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => { this.pending.delete(id); reject(new Error('agent 没有在时限内回复')); }, timeout);
+        this.pending.set(id, (content) => { clearTimeout(timer); resolve(content); });
+      });
+    });
+    this.queues.set(agent, turn);
+    return turn;
+  }
+
+  /** Asks for JSON; resolves with the parsed value, or null when the reply has none. */
+  async askJSON(agent, prompt, options) {
+    return json(await this.ask(agent, prompt + '\n\n只回复 JSON，不要其他文字。', options));
+  }
+
+  /** Agent output no ask is waiting for, e.g. an agent speaking up on its own. */
+  onMessage(fn) { this.listeners.add(fn); }
+
+  page(html) { this.html = html; }
+  state(fn) { this.view = fn; }
+  route(method, path, handler) { this.routes.set(method + ' ' + path, handler); }
+
+  async handle(req, res) {
+    const send = (status, body, type = 'application/json; charset=utf-8') =>
+      res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store' }).end(type.startsWith('application/json') ? JSON.stringify(body) : body);
+    try {
+      const url = new URL(req.url, 'http://space');
+      const member = { ...(this.member(req.member.id) || {}), id: req.member.id, name: req.member.name };
+      if (req.method === 'GET' && url.pathname === '/') return send(200, this.html, 'text/html; charset=utf-8');
+      if (req.method === 'GET' && url.pathname === '/state') {
+        // Long poll: answer when the state moves past the page's version, or after a while anyway.
+        const seen = Number(url.searchParams.get('v'));
+        if (Number.isInteger(seen) && seen === this.version) {
+          await new Promise((resolve) => {
+            const done = () => { clearTimeout(timer); this.watchers.delete(done); resolve(); };
+            const timer = setTimeout(done, WATCH_MS);
+            this.watchers.add(done);
+            req.on('close', done);
+          });
+        }
+        return send(200, { v: this.version, title: this.title, me: member, owner: !!member.owner,
+          members: this.members(), state: await this.view(member) });
+      }
+      const handler = this.routes.get(req.method + ' ' + url.pathname);
+      if (!handler) return send(404, { error: '没有这个页面' });
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString() || '{}') : Object.fromEntries(url.searchParams);
+      const result = await handler(member, body, url);
+      return send(200, result === undefined ? { ok: true } : result);
+    } catch (error) {
+      send(error.status || 400, { error: error.message || String(error) });
+    }
+  }
+}
+
+/** An error the page shows as is. */
+function refuse(message, status = 400) { return Object.assign(new Error(message), { status }); }
+
+const THEME = `
+:root{--bg:#fff;--fg:#1d1d1f;--muted:#6e6e73;--line:#e5e5ea;--card:#f5f5f7;--accent:#0071e3;--on-accent:#fff;--good:#1f8a4c;--bad:#c9372c;color-scheme:light dark}
+@media(prefers-color-scheme:dark){:root{--bg:#000;--fg:#f5f5f7;--muted:#a1a1a6;--line:#2c2c2e;--card:#1c1c1e;--accent:#0a84ff}}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Helvetica Neue",sans-serif}
+main{max-width:860px;margin:auto;padding:14px 14px 28px}h1{font-size:20px;margin:4px 0 2px}h2{font-size:16px;margin:16px 0 8px}
+.muted{color:var(--muted);font-size:13px}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.grow{flex:1;min-width:0}
+.card{background:var(--card);border-radius:14px;padding:12px 14px;margin:8px 0}.grid{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
+button{font:inherit;border:0;border-radius:999px;padding:7px 15px;background:var(--accent);color:var(--on-accent);cursor:pointer}
+button.ghost{background:var(--card);color:var(--fg)}button:disabled{opacity:.45;cursor:default}
+input,textarea,select{font:inherit;color:inherit;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:8px 10px;min-width:0}
+textarea{width:100%;resize:vertical}.chip{display:inline-block;padding:2px 9px;border-radius:999px;background:var(--card);font-size:12px}
+.agent{color:var(--good);font-weight:600}.error{color:var(--bad);font-size:13px;min-height:1em}.pre{white-space:pre-wrap;overflow-wrap:anywhere}
+`;
+
+const CLIENT = `
+window.App=(()=>{
+  const error=document.getElementById('app-error');
+  async function api(path,body){
+    const response=await fetch(path,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(data.error||response.statusText);
+    return data;
+  }
+  /** Calls render(snapshot) now and whenever the shared state changes. */
+  async function watch(render){
+    let v='';
+    for(;;){
+      try{const snapshot=await api('state?v='+v);v=snapshot.v;if(error)error.textContent='';render(snapshot);}
+      catch(failure){if(error)error.textContent=failure.message;await new Promise(r=>setTimeout(r,3000));}
+    }
+  }
+  /** Runs an action; its error, if any, shows in #app-error. */
+  async function act(run){try{return await run();}catch(failure){if(error)error.textContent=failure.message;}}
+  function el(tag,props,...children){
+    const node=document.createElement(tag);
+    for(const [k,v] of Object.entries(props||{}))if(k.startsWith('on'))node.addEventListener(k.slice(2),v);else if(v!==false&&v!=null)node.setAttribute(k,v===true?'':v);
+    for(const child of children.flat())if(child!=null&&child!==false)node.append(child.nodeType?child:document.createTextNode(String(child)));
+    return node;
+  }
+  return {api,watch,act,el};
+})();
+`;
+
+/** The page shell every app uses: theme, an error line and `window.App`. Pages use relative URLs. */
+function page({ title, style = '', body = '', script = '', head = '' }) {
+  return `<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${title}</title><style>${THEME}${style}</style>${head}</head><body><main>${body}<p id="app-error" class="error" role="alert"></main>
+<script>${CLIENT}</script><script>${script.replace(/<\/script/gi, '<\\/script')}</script></body></html>`;
+}
+
+/** Connects with --server/--key (or CLAWCROSS_SPACE_SERVER/KEY), lets `setup` define the app, then serves it. */
+async function run({ name }, setup, options = {}) {
+  const args = Object.fromEntries(process.argv.slice(2).flatMap((value, index, all) => value.startsWith('--') ? [[value.slice(2), all[index + 1]]] : []));
+  const space = await connect({ server: options.server || args.server || process.env.CLAWCROSS_SPACE_SERVER,
+    key: options.key || args.key || process.env.CLAWCROSS_SPACE_KEY, name });
+  const app = new App(space, name);
+  await app.refresh();
+  await setup(app);
+  await space.serve((req, res) => app.handle(req, res));
+  if (!options.server) {
+    space.on('offline', (error) => console.error('暂时连不上群聊服务器：' + error.message));
+    space.on('closed', (error) => { console.error(error.message); process.exit(1); });
+    console.log(`${name}已连接到空间「${app.title}」`);
+  }
+  return app;
+}
+
+module.exports = { run, page, json, refuse, App };
