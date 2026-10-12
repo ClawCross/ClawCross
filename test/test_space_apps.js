@@ -437,6 +437,43 @@ scenarios.estimation=()=>scenario('estimation',{
   }
 });
 
+scenarios['agent-canvas']=()=>scenario('agent-canvas',{
+  replies:(agent,prompt)=>JSON.stringify({svg:'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 400"><circle cx="'+(agent==='Alpha'?500:100)+'" cy="80" r="40" fill="#ffe066"/></svg>'}),
+  async play({alice,bob,test}){
+    await bob.locator('#painter').selectOption({label:'Alpha'});
+    await bob.locator('#ask').fill('右上角一轮月亮');await bob.getByRole('button',{name:'请它画'}).click();
+    await alice.locator('#painter').selectOption({label:'Beta'});
+    await alice.locator('#ask').fill('左上角一个太阳');await alice.getByRole('button',{name:'请它画'}).click();
+    await expect(alice.locator('#canvas img')).toHaveCount(2,{timeout:10000});
+    expect(test.asked.find(a=>a.agent==='Beta').content).toContain('Alpha 画了「右上角一轮月亮」');
+    await expect(bob.locator('.layer',{hasText:'左上角一个太阳'}).getByRole('button')).toHaveCount(0);   // Bob can't undo Alice's layer
+    await bob.locator('.layer',{hasText:'右上角一轮月亮'}).getByRole('button',{name:'撤掉'}).click();
+    await expect(alice.locator('#canvas img')).toHaveCount(1);
+  }
+});
+
+scenarios.adventure=()=>scenario('adventure',{
+  replies(agent,prompt){
+    if(prompt.includes('主持人'))return JSON.stringify(prompt.includes('开场')
+      ?{scene:'霓虹雨夜，失窃的芯片最后出现在面馆后巷。',hp:{},ended:false}
+      :{scene:'Beta 追进后巷，被机械狗咬了一口，但拿回了芯片。',hp:{Beta:-3},ended:true});
+    return JSON.stringify({action:prompt.includes('追进后巷')?'追进后巷抓人':'四处看看'});
+  },
+  async play({alice,bob,test}){
+    await alice.locator('#master').selectOption({label:'Alpha'});
+    await alice.getByRole('button',{name:'出发'}).click();
+    await expect(bob.getByText('霓虹雨夜，失窃的芯片最后出现在面馆后巷。')).toBeVisible({timeout:10000});
+    await expect(alice.locator('#order-'+(await bob.locator('[id^=order-]').getAttribute('id')).slice(6))).toHaveCount(0);
+    await bob.locator('[id^=order-]').fill('追进后巷');await bob.getByRole('button',{name:'下令'}).click();
+    await expect(bob.getByText('已下令：追进后巷')).toBeVisible();
+    await alice.getByRole('button',{name:'进入下一回合'}).click();
+    await expect(alice.getByText(/追进后巷抓人 🎲\d+/)).toBeVisible({timeout:10000});
+    await expect(alice.getByText('被机械狗咬了一口')).toBeVisible({timeout:10000});
+    await expect(bob.locator('.hero .hp')).toHaveText('♥ 7');
+    await expect(bob.getByRole('heading',{name:'冒险结束'})).toBeVisible();
+  }
+});
+
 (async()=>{
   const chosen=process.argv.slice(2).length?process.argv.slice(2):Object.keys(scenarios);
   const results={};
