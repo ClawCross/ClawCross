@@ -32,7 +32,8 @@ async function scenario(dir,{replies,play}){
     try{await play({...pages,test,app});}
     catch(error){
       const shown=(await pages.alice.locator('main').innerText().catch(()=>'')).replace(/\s+/g,' ').slice(0,500);
-      throw new Error(error.message.split('\n')[0]+' || page: '+shown+' || errors: '+errors.join('; ')+' || asked: '+test.asked.map(a=>a.agent).join(','));
+      const notes=await Promise.all(Object.entries(pages).map(async([m,p])=>m+': '+await p.locator('#app-error').textContent().catch(()=>'')));
+      throw new Error(error.message.split('\n')[0]+' || page: '+shown+' || errors: '+errors.join('; ')+' || shown errors: '+notes.join('; ')+' || asked: '+test.asked.map(a=>a.agent).join(','));
     }
     for(const page of Object.values(pages))expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     expect(errors).toEqual([]);
@@ -395,6 +396,44 @@ scenarios['decision-room']=()=>scenario('decision-room',{
     await alice.locator('#w-成本').fill('0');
     await expect(alice.locator('.bar').first()).toHaveText('8.0');
     await expect(bob.locator('.bar').first()).toHaveText('4.0');   // weights are each person's own
+  }
+});
+
+scenarios['agent-plaza']=()=>scenario('agent-plaza',{
+  replies:(agent)=>agent==='Alpha'?'早起的人先看到日出。':'闹钟响时想想你的梦想。',
+  async play({alice,bob,test}){
+    await alice.getByRole('button',{name:'用一句话说服我明天早起'}).click();
+    await alice.getByRole('button',{name:'抛出'}).click();
+    await bob.getByRole('button',{name:'派我的 agent 回答（Beta）'}).click();
+    await alice.getByRole('button',{name:'派我的 agent 回答（Alpha）'}).click();
+    await bob.locator('#mine').fill('因为早餐店六点开门');await bob.getByRole('button',{name:'回答',exact:true}).click();
+    await expect(alice.locator('.answer')).toHaveCount(3,{timeout:10000});
+    await expect(alice.getByText('3 个回答')).toBeVisible({timeout:10000});
+    await bob.locator('.answer',{hasText:'早起的人先看到日出'}).getByRole('button').click();
+    await alice.locator('.answer',{hasText:'早起的人先看到日出'}).getByRole('button').click();
+    await expect(bob.locator('.answer').first()).toContainText('🤖 Alpha · Alice');
+    await expect(bob.locator('.answer').first().getByRole('button')).toHaveText('▲ 2');
+    await expect(bob.getByRole('button',{name:'派我的 agent 回答（Beta）'})).toBeDisabled();
+    expect(test.asked.length).toBe(2);
+  }
+});
+
+scenarios.estimation=()=>scenario('estimation',{
+  replies:(agent)=>JSON.stringify({value:agent==='Alpha'?500:420,why:agent+' 按线路数推算'}),
+  async play({alice,bob,test}){
+    await alice.locator('#q').fill('上海一共有多少个地铁站？');await alice.locator('#truth').fill('508');await alice.locator('#unit').fill('个');
+    await alice.getByRole('button',{name:'出题'}).click();
+    await bob.locator('#guess').fill('300');await bob.getByRole('button',{name:'提交'}).click();
+    await bob.getByRole('button',{name:'让我的 agent 也估（Beta）'}).click();
+    await alice.getByRole('button',{name:'让我的 agent 也估（Alpha）'}).click();
+    await alice.locator('#guess').fill('450');await alice.getByRole('button',{name:'提交'}).click();
+    await expect(alice.getByRole('button',{name:'揭晓答案（已有 4 个估计）'})).toBeVisible({timeout:10000});
+    await expect(bob.locator('main')).not.toContainText('508');
+    await alice.getByRole('button',{name:/揭晓答案/}).click();
+    await expect(bob.getByText('答案：508 个')).toBeVisible();
+    await expect(bob.getByText('所有人的中位数 435，人类中位数 375，agent 中位数 460')).toBeVisible();
+    await expect(bob.getByText('最接近：')).toContainText('Alpha（500）');
+    await expect(bob.locator('.dot')).toHaveCount(4);
   }
 });
 
