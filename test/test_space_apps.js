@@ -261,6 +261,79 @@ scenarios['news-roundtable']=()=>scenario('news-roundtable',{
   }
 });
 
+scenarios.gomoku=()=>{
+  const replies=[{x:'H',y:8},{x:'A',y:1},{x:'B',y:1},{x:'C',y:1},{x:'D',y:1},{x:'E',y:1}];   // the first is taken: Beta retries
+  return scenario('gomoku',{
+    replies:(agent,prompt)=>JSON.stringify(agent==='Alpha'?{x:'I',y:8,why:'连成活二'}:{...replies.shift(),why:'随便下'}),
+    async play({alice,bob,test}){
+      await alice.getByRole('button',{name:'我来下'}).first().click();
+      await bob.locator('#agent-white').selectOption({label:'Beta'});
+      await bob.getByRole('button',{name:'交给 agent'}).nth(1).click();
+      await alice.getByRole('button',{name:'开局'}).click();
+      await alice.getByRole('button',{name:'H8',exact:true}).click();
+      await expect(alice.locator('#board i.white')).toHaveCount(1,{timeout:10000});
+      expect(test.asked.filter(a=>a.agent==='Beta').length).toBe(2);   // one illegal point, then a legal one
+      await alice.getByRole('button',{name:'问军师'}).click();
+      await expect(alice.getByText('军师建议 I8：连成活二')).toBeVisible({timeout:10000});
+      await expect(bob.locator('#advice')).not.toContainText('军师建议');
+      for(const [i,cell] of ['I8','J8','K8','L8'].entries()){
+        await alice.getByRole('button',{name:cell,exact:true}).click();
+        if(cell!=='L8')await expect(alice.locator('#board i.white')).toHaveCount(i+2,{timeout:10000});
+      }
+      await expect(bob.locator('#status')).toHaveText('黑棋 Alice 连成五子获胜！',{timeout:10000});
+      await expect(bob.locator('#board i.black')).toHaveCount(5);
+      await expect(bob.locator('#board i.white')).toHaveCount(4);
+    }
+  });
+};
+
+scenarios.quiz=()=>scenario('quiz',{
+  replies(agent,prompt){
+    if(prompt.includes('出 5 道'))return JSON.stringify({questions:[
+      {question:'宋朝的开国皇帝是？',options:['赵匡胤','李世民','朱元璋','刘邦'],answer:0,explain:'960 年陈桥兵变'},
+      {question:'《清明上河图》的作者？',options:['王希孟','张择端','苏轼','米芾'],answer:1,explain:'北宋张择端'}]});
+    return JSON.stringify({choice:prompt.includes('开国皇帝')?'A':'C'});
+  },
+  async play({alice,bob,test}){
+    await alice.locator('#topic').fill('宋朝历史');await alice.locator('#master').selectOption({label:'Alpha'});
+    await alice.getByRole('button',{name:'开擂'}).click();
+    await expect(bob.getByRole('heading',{name:'宋朝的开国皇帝是？'})).toBeVisible({timeout:10000});
+    await expect(bob.getByText('已作答：Beta')).toBeVisible({timeout:10000});
+    await bob.getByRole('button',{name:'B. 李世民'}).click();
+    await alice.getByRole('button',{name:'A. 赵匡胤'}).click();
+    await expect(bob.locator('main')).not.toContainText('陈桥兵变');
+    await alice.getByRole('button',{name:'揭晓答案'}).click();
+    await expect(bob.getByText('解析：960 年陈桥兵变')).toBeVisible();
+    await expect(bob.locator('.board')).toContainText('Beta 1');
+    await expect(bob.locator('.board')).toContainText('Alice 1');
+    await expect(bob.locator('.board')).toContainText('Bob 0');
+    await alice.getByRole('button',{name:'下一题'}).click();
+    await expect(bob.getByRole('heading',{name:'《清明上河图》的作者？'})).toBeVisible();
+    await bob.getByRole('button',{name:'B. 张择端'}).click();
+    await expect(bob.getByText(/已作答：.*Bob/)).toBeVisible({timeout:10000});
+    await alice.getByRole('button',{name:'揭晓答案'}).click();
+    await alice.getByRole('button',{name:'结束'}).click();
+    await expect(bob.getByRole('heading',{name:/冠军：(Beta|Alice|Bob)/})).toBeVisible();
+    expect(test.asked.filter(a=>a.agent==='Alpha').length).toBe(1);
+  }
+});
+
+scenarios['translation-relay']=()=>scenario('translation-relay',{
+  replies(agent,prompt){
+    if(prompt.includes('点评'))return '意思保留了大半，在日语那一步丢了典故。保真分 62';
+    const lang=/译成(.+?)，/.exec(prompt)[1];
+    return '['+lang+'] '+prompt.split('\n').pop();
+  },
+  async play({alice,bob,test}){
+    await bob.locator('#text').fill('塞翁失马');
+    await bob.getByRole('button',{name:'开始接力'}).click();
+    await expect(alice.getByText(/保真分 62/)).toBeVisible({timeout:15000});
+    await expect(alice.locator('.hop')).toHaveCount(5);
+    await expect(alice.locator('.final')).toHaveText('回到中文：[中文] [法语] [日语] [英语] 塞翁失马');
+    expect(test.asked.map(a=>a.agent)).toEqual(['Alpha','Beta','Alpha','Beta','Alpha']);
+  }
+});
+
 (async()=>{
   const chosen=process.argv.slice(2).length?process.argv.slice(2):Object.keys(scenarios);
   const results={};
