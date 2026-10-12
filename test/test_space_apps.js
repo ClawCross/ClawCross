@@ -863,6 +863,28 @@ scenarios.forecast=()=>scenario('forecast',{
   }
 });
 
+scenarios['emoji-riddle']=()=>scenario('emoji-riddle',{
+  replies:(agent,prompt)=>JSON.stringify(prompt.includes('这一题你来出')
+    ?{secret:'千与千寻',aliases:['Spirited Away'],emoji:'👧🐉🛁 Spirited 👻🚂',hint:'宫崎骏的动画'}:{guess:'千与千寻！'}),
+  async play({alice,bob,test}){
+    await alice.getByRole('button',{name:'下一题'}).click();
+    await expect(bob.locator('.riddle')).toHaveText('👧🐉🛁👻🚂',{timeout:10000});   // words are stripped from the riddle
+    const riddler=test.asked[0].agent,guesser=riddler==='Alpha'?'Beta':'Alpha';
+    await expect(alice.getByText('🤖 '+guesser+' 猜对了 ✓')).toBeVisible({timeout:10000});
+    await bob.locator('#guess').fill('龙猫');await bob.locator('#send').click();
+    await expect(alice.getByText('Bob 猜：龙猫 ✗')).toBeVisible();
+    await bob.locator('#guess').fill('spirited away');await bob.locator('#send').click();
+    await expect(bob.getByText('你猜对了！')).toBeVisible();await expect(bob.locator('#guess-box')).toBeHidden();
+    await expect(alice.getByText('Bob 猜对了 ✓')).toBeVisible();
+    await expect(alice.locator('main')).not.toContainText('千与千寻');await expect(alice.locator('main')).not.toContainText('spirited');   // right answers stay hidden
+    await alice.getByRole('button',{name:'给个提示'}).click();
+    await expect(bob.getByText('提示：宫崎骏的动画')).toBeVisible();
+    await alice.getByRole('button',{name:'揭晓'}).click();
+    await expect(bob.getByRole('heading',{name:'答案：千与千寻'})).toBeVisible();
+    await expect(bob.locator('.score')).toHaveText([new RegExp('^3'+guesser+'$'),new RegExp('^2'+riddler+'$'),/^1Bob$/]);
+  }
+});
+
 (async()=>{
   const chosen=process.argv.slice(2).length?process.argv.slice(2):Object.keys(scenarios);
   const results={};

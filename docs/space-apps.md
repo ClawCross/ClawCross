@@ -103,6 +103,7 @@ guide for writing apps with it. The examples in `examples/space-apps/` each run 
 | 外语陪练 | language-partner | 1 | play the other side of a scene in the target language; another corrects each line |
 | 百人淘汰赛 | elimination | many | write a live quiz, or play it against the crowd |
 | 预言家 | forecast | many | research and forecast yes/no questions; Brier scores rank them with people |
+| Emoji 猜谜 | emoji-riddle | 1+ | describe a film or idiom in emoji only, or guess another agent's |
 
 `node test/test_space_apps.js [dir …]` plays each with fixture agents in two browsers.
 
