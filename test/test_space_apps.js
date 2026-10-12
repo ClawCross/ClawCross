@@ -634,6 +634,27 @@ scenarios['twenty-questions']=()=>scenario('twenty-questions',{
   }
 });
 
+scenarios['agent-arena']=()=>scenario('agent-arena',{
+  replies:agent=>agent==='Alpha'?'咪咪、橘子、大黄、胖虎、团子':'豆包、元宝、金桔、橙子、小太阳',
+  async play({alice,bob,test}){
+    await alice.locator('#task').fill('给一只橘猫取五个名字');await alice.locator('#send').click();
+    await expect(bob.getByText('咪咪、橘子')).toBeVisible({timeout:10000});await expect(bob.getByText('豆包、元宝')).toBeVisible();
+    await expect(bob.locator('#battles')).not.toContainText('Alpha');await expect(bob.locator('#battles')).not.toContainText('Beta');   // blind until you vote
+    await bob.getByRole('button',{name:'A 更好'}).click();
+    await expect(bob.getByText('你投了：A 更好')).toBeVisible();
+    await expect(bob.getByRole('button',{name:'B 更好'})).toHaveCount(0);
+    const first=(await bob.locator('.side h3').first().innerText()).split(' · ')[1],second=first==='Alpha'?'Beta':'Alpha';
+    await expect(bob.locator('.side.won')).toContainText(first);
+    await expect(alice.locator('#battles')).not.toContainText(first);                   // Alice hasn't voted: still blind
+    const row=(page,name)=>page.locator('tr',{hasText:name}).locator('td');
+    await expect(row(alice,first)).toHaveText(['1',first,'1012','1','0','0']);
+    await alice.getByRole('button',{name:'差不多'}).click();
+    await expect(row(bob,first)).toHaveText(['1',first,'1011','1','0','1']);
+    await expect(row(bob,second)).toHaveText(['2',second,'989','0','1','1']);
+    expect(test.asked.map(a=>a.content.includes('题目：给一只橘猫取五个名字'))).toEqual([true,true]);
+  }
+});
+
 (async()=>{
   const chosen=process.argv.slice(2).length?process.argv.slice(2):Object.keys(scenarios);
   const results={};
