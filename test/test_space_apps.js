@@ -919,6 +919,28 @@ scenarios['idea-wall']=()=>scenario('idea-wall',{
   }
 });
 
+scenarios['city-walk']=()=>scenario('city-walk',{
+  replies:agent=>JSON.stringify(agent==='Alpha'
+    ?{title:'外滩咖啡线',stops:[{name:'外白渡桥',lat:31.2445,lng:121.4904,minutes:20,why:'看日落'},{name:'乍浦路咖啡馆',lat:31.2478,lng:121.4862,minutes:40,why:'手冲不错'}]}
+    :{title:'老城厢',stops:[{name:'故宫',lat:39.9163,lng:116.3972,minutes:60},{name:'豫园',lat:31.2272,lng:121.4921,minutes:300,why:'九曲桥'}]}),
+  async play({alice,bob,test}){
+    await alice.route(/nominatim\.openstreetmap\.org/,route=>route.fulfill({json:[{lat:'31.2397',lon:'121.4998',display_name:'外滩, 黄浦区, 上海'}]}));
+    await alice.locator('#q').fill('外滩');await alice.locator('#find').click();
+    await alice.getByRole('button',{name:'外滩, 黄浦区, 上海'}).click();
+    await alice.locator('#interests label',{hasText:'咖啡'}).locator('input').check();
+    await alice.locator('#duration').selectOption('2 小时');await alice.locator('#plan').click();
+    const alpha=bob.locator('.route',{hasText:'外滩咖啡线'}),beta=bob.locator('.route',{hasText:'老城厢'});
+    await expect(alpha).toContainText(/步行约 1\.\d 公里 · 走路 \d+ 分钟 \+ 停留 60 分钟/,{timeout:10000});
+    await expect(beta.locator('.stop')).toHaveText(['1. 豫园（240 分钟）九曲桥']);   // Beijing is out of walking range; the stay is capped
+    await expect(beta).toContainText('可能超时');
+    expect(test.asked[0].content).toContain('兴趣：咖啡');expect(test.asked[0].content).toContain('约 120 分钟');
+    await alpha.getByRole('button',{name:'👍 0'}).click();
+    await expect(alice.locator('.route',{hasText:'外滩咖啡线'}).getByRole('button')).toHaveText('👍 1');
+    await expect(alpha.getByRole('link',{name:'在谷歌地图里导航'})).toHaveAttribute('href',/\/dir\/31\.23970,121\.49980\/31\.24450,121\.49040\/31\.24780,121\.48620\//);
+    if(await bob.evaluate(()=>!!window.L))await expect(bob.locator('path.leaflet-interactive')).toHaveCount(6);
+  }
+});
+
 (async()=>{
   const chosen=process.argv.slice(2).length?process.argv.slice(2):Object.keys(scenarios);
   const results={};
