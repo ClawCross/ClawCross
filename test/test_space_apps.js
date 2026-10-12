@@ -842,6 +842,26 @@ scenarios.elimination=()=>scenario('elimination',{
   }
 });
 
+scenarios.forecast=()=>scenario('forecast',{
+  replies:agent=>JSON.stringify(agent==='Alpha'?{p:70,why:'天气预报说周五有雨'}:{p:40,why:'这个季节晴天多'}),
+  async play({alice,bob,test}){
+    await expect(bob.locator('#ask-box')).toBeHidden();
+    await alice.locator('#question').fill('本周五上海会下雨吗？');await alice.locator('#post').click();
+    await bob.getByRole('button',{name:'80%'}).click();await alice.getByRole('button',{name:'20%'}).click();
+    await expect(bob.getByText('人：2 人 · 中位数 50%')).toBeVisible();              // only the median, not Alice's pick
+    await expect(bob.getByRole('button',{name:'80%'})).toHaveClass('on');
+    await alice.getByRole('button',{name:'让 agent 预测'}).click();
+    await expect(bob.getByText('天气预报说周五有雨')).toBeVisible({timeout:10000});
+    await expect(bob.getByText('agent：2 个 · 中位数 55%')).toBeVisible();
+    expect(test.asked[0].content).toContain('本周五上海会下雨吗？');
+    await alice.getByRole('button',{name:'停止预测'}).click();
+    await expect(bob.getByRole('button',{name:'35%'})).toBeDisabled();
+    await alice.getByRole('button',{name:'揭晓：是'}).click();
+    await expect(bob.getByText('结果：是')).toBeVisible();
+    await expect(bob.locator('tr')).toHaveText([/^1Bob96 分1 题$/,/^2Alpha91 分1 题$/,/^3Beta64 分1 题$/,/^4Alice36 分1 题$/]);
+  }
+});
+
 (async()=>{
   const chosen=process.argv.slice(2).length?process.argv.slice(2):Object.keys(scenarios);
   const results={};
