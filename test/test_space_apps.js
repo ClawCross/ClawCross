@@ -607,6 +607,33 @@ scenarios.standup=()=>scenario('standup',{
   }
 });
 
+scenarios['twenty-questions']=()=>scenario('twenty-questions',{
+  replies(agent,prompt){
+    if(prompt.includes('在心里选一个'))return JSON.stringify({secret:agent==='Alpha'?'熊猫':'企鹅'});
+    if(prompt.includes('是不是同一个东西'))return JSON.stringify({same:false});
+    if(prompt.includes('如实回答'))return JSON.stringify({answer:'是'});
+    if(agent==='Alpha')return JSON.stringify(prompt.includes('猜「海豹」')?{guess:'企鹅！'}:prompt.includes('问：它会游泳吗')?{guess:'海豹'}:{question:'它会游泳吗？'});
+    return JSON.stringify({question:prompt.includes('问：它是黑白')?'它吃竹子吗？':'它是黑白色的吗？'});
+  },
+  async play({alice,bob,test}){
+    await alice.locator('#hint').fill('先问会不会游泳');await alice.locator('#send-hint').click();
+    await expect(alice.locator('#hint-note')).toHaveText('待用的提示：先问会不会游泳');
+    await alice.locator('#category').selectOption('动物');await alice.getByRole('button',{name:'开始'}).click();
+    await expect(alice.locator('#secret')).toHaveText('你的 Alpha 想的是：熊猫（只有你看得到）',{timeout:10000});
+    await expect(bob.locator('#secret')).toHaveText('你的 Beta 想的是：企鹅（只有你看得到）');
+    await expect(bob.locator('#status')).toHaveText('Alpha 猜中了，获胜！',{timeout:15000});
+    const alpha=bob.locator('.card',{hasText:'Alpha 猜 Beta 的'});
+    await expect(alpha.locator('.log')).toHaveText(['它会游泳吗？ 是','猜：海豹 ✗','猜：企鹅！ ✓']);
+    await expect(alpha).toContainText('Alpha 猜 Beta 的「企鹅」');
+    await expect(bob.locator('.card',{hasText:'Beta 猜 Alpha 的'}).locator('.log')).toHaveText(['它是黑白色的吗？ 是','它吃竹子吗？ 是']);
+    const turns=test.asked.filter(a=>a.agent==='Alpha'&&a.content.includes('正在猜'));
+    expect(turns[0].content).toContain('Alice 悄悄提示你：先问会不会游泳');expect(turns[1].content).not.toContain('悄悄提示');
+    expect(test.asked.filter(a=>a.agent==='Alpha').some(a=>a.content.includes('企鹅'))).toBe(false);   // never sees Beta's secret
+    expect(test.asked.some(a=>a.agent==='Beta'&&a.content.includes('是不是同一个东西')&&a.content.includes('海豹'))).toBe(true);
+    await expect(alice.locator('#hint-note')).toHaveText('');
+  }
+});
+
 (async()=>{
   const chosen=process.argv.slice(2).length?process.argv.slice(2):Object.keys(scenarios);
   const results={};
