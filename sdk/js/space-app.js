@@ -12,7 +12,8 @@
  *   node my-app.js --server <group server> --key <app key>
  *
  * Pages get `window.App`: App.api(path, body), App.watch(render), App.act(run),
- * App.el(tag, props, ...children) and App.fill(node, ...children).
+ * App.el(tag, props, ...children), App.fill(node, ...children), App.keep(id, make) and App.svg(markup).
+ * Re-render with fill; make inputs with keep so typing survives updates.
  * Keep state small and rendering in the page; the server holds shared state and calls agents.
  */
 'use strict';
@@ -132,6 +133,16 @@ class App {
   }
 }
 
+/** The first <svg> in an agent's reply if it is plain drawing: no scripts, links, external
+ * resources or embedded documents; otherwise ''. Pages show it as an <img> data URL. */
+function safeSvg(text, max = 16000) {
+  const svg = /<svg[\s\S]*?<\/svg>/i.exec(String(text || ''))?.[0] || '';
+  if (!svg || svg.length > max) return '';
+  if (/<(script|foreignObject|image|iframe|use|a|style)\b/i.test(svg)) return '';
+  if (/\son[a-z]+\s*=|href\s*=|javascript:|<!ENTITY|@import|url\s*\(\s*['"]?(?!#)/i.test(svg)) return '';
+  return svg;
+}
+
 /** An error the page shows as is. */
 function refuse(message, status = 400) { return Object.assign(new Error(message), { status }); }
 
@@ -174,9 +185,18 @@ window.App=(()=>{
     for(const child of children.flat())if(child!=null&&child!==false)node.append(child.nodeType?child:document.createTextNode(String(child)));
     return node;
   }
-  /** Replaces a node's children, skipping empty ones. */
-  function fill(node,...children){node.replaceChildren(...children.flat().filter(c=>c!=null&&c!==false));return node;}
-  return {api,watch,act,el,fill};
+  /** Replaces a node's children, skipping empty ones; a focused field kept with App.keep stays focused. */
+  function fill(node,...children){
+    const active=document.activeElement,range=active&&typeof active.selectionStart==='number'?[active.selectionStart,active.selectionEnd]:null;
+    node.replaceChildren(...children.flat().filter(c=>c!=null&&c!==false));
+    if(active&&active!==document.body&&active.isConnected&&document.activeElement!==active){active.focus();if(range)try{active.setSelectionRange(...range);}catch{}}
+    return node;
+  }
+  /** The element with this id if the page has it, else make() — so re-rendering keeps what people are typing. */
+  function keep(id,make){return document.getElementById(id)||make();}
+  /** An <img> showing an SVG the server already checked. */
+  function svg(markup,props){return el('img',{...(props||{}),src:'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(markup)});}
+  return {api,watch,act,el,fill,keep,svg};
 })();
 `;
 
@@ -204,4 +224,4 @@ async function run({ name }, setup, options = {}) {
   return app;
 }
 
-module.exports = { run, page, json, refuse, App };
+module.exports = { run, page, json, refuse, safeSvg, App };

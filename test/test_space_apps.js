@@ -143,6 +143,87 @@ scenarios.negotiation=()=>{
   });
 };
 
+scenarios['turtle-soup']=()=>scenario('turtle-soup',{
+  replies(agent,prompt){
+    if(prompt.includes('原创一道'))return JSON.stringify({title:'半夜的电话',surface:'他接起电话听了一秒，就哭着报了警。',bottom:'电话里是他自己的声音：录音机里循环着他求救的留言。'});
+    if(prompt.includes('你在帮'))return JSON.stringify({question:'电话那头的人他认识吗？'});
+    if(prompt.includes('给出推理'))return JSON.stringify({correct:prompt.includes('自己的声音'),comment:prompt.includes('自己的声音')?'完全正确':'还差关键一点'});
+    return JSON.stringify({answer:prompt.includes('认识')?'是':'否',note:''});
+  },
+  async play({alice,bob,test}){
+    await alice.locator('#host').selectOption({label:'Alpha'});
+    await alice.getByRole('button',{name:'熬一锅汤'}).click();
+    await expect(bob.getByText('他接起电话听了一秒，就哭着报了警。')).toBeVisible({timeout:10000});
+    await expect(bob.locator('main')).not.toContainText('录音机');
+    await bob.locator('#q').fill('他在打电话前受伤了吗？');await bob.getByRole('button',{name:'提问',exact:true}).click();
+    await expect(alice.locator('.qa',{hasText:'受伤'}).locator('.ans')).toHaveText('否',{timeout:10000});
+    await bob.getByRole('button',{name:'让 Beta 帮我问'}).click();
+    await expect(alice.locator('.qa',{hasText:'Beta（替 Bob）'})).toContainText('电话那头的人他认识吗？',{timeout:10000});
+    await expect(alice.locator('.qa',{hasText:'认识'}).locator('.ans')).toHaveText('是',{timeout:10000});
+    await bob.locator('#guess').fill('他听到的是自己的声音');await bob.getByRole('button',{name:'揭晓我的推理'}).click();
+    await expect(alice.getByText('Bob 猜中了！汤底：')).toBeVisible({timeout:10000});
+    await expect(bob.getByText('录音机里循环着他求救的留言')).toBeVisible();
+    expect(test.asked.filter(a=>a.agent==='Beta').length).toBe(1);
+  }
+});
+
+scenarios.pictionary=()=>scenario('pictionary',{
+  replies(agent,prompt){
+    const word=/要画的词是「(.+?)」/.exec(prompt)?.[1];
+    if(word)return JSON.stringify({svg:'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300"><!--'+word+'--><circle cx="150" cy="150" r="90" fill="#f59f00"/></svg>'});
+    return JSON.stringify({guess:/<!--(.+?)-->/.exec(prompt)?.[1]||'不知道'});
+  },
+  async play({alice,bob,test}){
+    await alice.getByRole('button',{name:'下一轮'}).click();
+    await expect(bob.locator('.canvas img')).toBeVisible({timeout:10000});
+    await expect(bob.getByText('🤖 Beta：')).toBeVisible({timeout:10000});
+    const word=/要画的词是「(.+?)」/.exec(test.asked[0].content)[1];
+    await expect(bob.locator('main')).not.toContainText('答案：');
+    await bob.locator('#guess').fill('不对的词');await bob.getByRole('button',{name:'猜',exact:true}).click();
+    await bob.locator('#guess').fill(word);await bob.getByRole('button',{name:'猜',exact:true}).click();
+    await expect(alice.locator('.guess',{hasText:'Bob'}).last()).toContainText('猜对了');
+    await expect(alice.locator('.scores')).toContainText('Bob 2');
+    await expect(alice.locator('.scores')).toContainText('Beta 2');
+    await expect(alice.locator('.scores')).toContainText('Alpha 2');
+    await alice.getByRole('button',{name:'揭晓并进入下一轮'}).click();
+    await expect(bob.getByText('答案：'+word)).toBeVisible();
+    await alice.getByRole('button',{name:'下一轮'}).click();
+    await expect(bob.getByRole('heading',{name:/第 2 轮 · Beta/})).toBeVisible({timeout:10000});
+  }
+});
+
+scenarios.undercover=()=>{
+  let spy='',known;const found=new Promise(resolve=>known=resolve);
+  return scenario('undercover',{
+    async replies(agent,prompt){
+      // Fixture agents vote once the test has worked out the undercover from everyone's words.
+      if(prompt.includes('投票找出卧底')){await found;return JSON.stringify({vote:spy!==agent?spy:/选一个：(.+?)、/.exec(prompt)[1],reason:'描述最不一样'});}
+      return JSON.stringify({say:agent+' 说：生活里常见'});
+    },
+    async play({alice,bob,test}){
+      await alice.getByRole('button',{name:'开始一局'}).click();
+      const word=async page=>(await page.locator('.word').textContent()).trim();
+      await expect(alice.locator('.word')).toBeVisible();
+      const words={Alice:await word(alice),Bob:await word(bob)};
+      // Describe until the round is over; agents speak on their own.
+      for(let i=0;i<40&&!(await alice.getByText('投票中').isVisible());i++){
+        for(const [page,name] of [[alice,'Alice'],[bob,'Bob']])if(await page.locator('#say').isVisible()){await page.locator('#say').fill(name+' 觉得很普通');await page.getByRole('button',{name:'说',exact:true}).click();}
+        await alice.waitForTimeout(250);
+      }
+      for(const a of test.asked)words[a.agent]=/你的词是「(.+?)」/.exec(a.content)[1];
+      const counts={};for(const w of Object.values(words))counts[w]=(counts[w]||0)+1;
+      spy=Object.keys(words).find(n=>counts[words[n]]===1);known();
+      expect(Object.keys(words).length).toBe(4);
+      for(const [page,name] of [[alice,'Alice'],[bob,'Bob']]){
+        const target=name===spy?Object.keys(words).find(n=>n!==spy&&n!==name):spy;
+        await page.locator('.player',{hasText:target}).getByRole('button',{name:'投他'}).click();
+      }
+      await expect(bob.getByRole('heading',{name:'平民获胜！卧底是 '+spy})).toBeVisible({timeout:15000});
+      await expect(alice.locator('.player',{hasText:spy})).toHaveClass(/out/);
+    }
+  });
+};
+
 (async()=>{
   const chosen=process.argv.slice(2).length?process.argv.slice(2):Object.keys(scenarios);
   const results={};

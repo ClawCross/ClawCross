@@ -20,7 +20,7 @@ const PAGE = page({
 @media(prefers-color-scheme:dark){.msg.buyer{background:#0b2545}.msg.seller{background:#0d2b1a}}.offer{font-weight:700;font-size:18px}`,
   body: `<h1>谈判桌</h1><div id="setup" class="card"></div><div id="mandate"></div><div id="table"></div>`,
   script: `
-const {api,watch,act,el,fill}=App,$=id=>document.getElementById(id);
+const {api,watch,act,el,fill,keep}=App,$=id=>document.getElementById(id);
 function render(s){
   const n=s.state.deal,agents=s.members.filter(m=>m.agent);
   $('setup').hidden=!(s.owner&&(!n||n.status==='done'));
@@ -31,10 +31,10 @@ function render(s){
   if(!n){fill($('table'),el('p',{class:'muted'},s.owner?'选好交易内容和双方 agent。':'等待群主摆上谈判桌。'));fill($('mandate'));return;}
   const mine=['buyer','seller'].find(r=>n[r].coach===s.me.id);
   fill($('mandate'),mine&&n.status!=='done'?el('div',{class:'card'},el('strong',{},'你是'+(mine==='buyer'?'买方':'卖方')+' '+n[mine].name+' 的主人（只有你和它看得到）'),
-    n.status==='waiting'?el('div',{},el('div',{class:'row',style:'margin-top:6px'},el('input',{id:'limit',type:'number',placeholder:mine==='buyer'?'最高愿付':'最低接受',value:n[mine].limit??''}),
-      el('input',{id:'wants',class:'grow',placeholder:'优先事项，例如：最好包邮、能开发票',value:n[mine].wants||''})),
+    n.status==='waiting'?el('div',{},el('div',{class:'row',style:'margin-top:6px'},keep('limit',()=>el('input',{id:'limit',type:'number',placeholder:mine==='buyer'?'最高愿付':'最低接受',value:n[mine].limit??''})),
+      keep('wants',()=>el('input',{id:'wants',class:'grow',placeholder:'优先事项，例如：最好包邮、能开发票',value:n[mine].wants||''}))),
       el('button',{style:'margin-top:6px',onclick:()=>act(()=>api('mandate',{limit:+$('limit').value,wants:$('wants').value}))},n[mine].ready?'更新授权':'交给 agent')):
-    el('div',{class:'row'},el('input',{id:'hint',class:'grow',placeholder:'悄悄提醒你的 agent'}),el('button',{onclick:()=>act(async()=>{await api('hint',{hint:$('hint').value});$('hint').value='';})},'提醒')),
+    el('div',{class:'row'},keep('hint',()=>el('input',{id:'hint',class:'grow',placeholder:'悄悄提醒你的 agent'})),el('button',{onclick:()=>act(()=>{const v=$('hint').value;$('hint').value='';return api('hint',{hint:v});})},'提醒')),
     el('div',{class:'muted'},'你的底线：'+(n[mine].limit??'未设')+'　'+(n[mine].wants||''))):null);
   fill($('table'),el('h2',{},n.scene),
     el('p',{class:'muted'},'买方 '+n.buyer.name+(n.buyer.ready?' ✓':'（等待授权）')+'　·　卖方 '+n.seller.name+(n.seller.ready?' ✓':'（等待授权）')),

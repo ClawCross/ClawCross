@@ -19,7 +19,7 @@ const PAGE = page({
 .bar{height:10px;border-radius:99px;background:#ffd8b8;overflow:hidden}.bar span{display:block;height:100%;background:#4c8dff}`,
   body: `<h1>辩论擂台</h1><div id="setup" class="card"></div><div id="stage"></div>`,
   script: `
-const {api,watch,act,el}=App,$=id=>document.getElementById(id);
+const {api,watch,act,el,keep}=App,$=id=>document.getElementById(id);
 let draft=null;
 function setupForm(s){
   const agents=s.members.filter(m=>m.agent),pick=(id,label)=>el('label',{class:'grow'},label,el('select',{id},...agents.map((a,i)=>el('option',{value:a.id,selected:(id==='pro'&&i===0)||(id==='con'&&i===1)},a.name))));
@@ -41,8 +41,8 @@ function render(s){
     ...d.speeches.map(x=>el('div',{class:'speech '+x.side},el('strong',{},(x.side==='pro'?'正方':'反方')+' · '+x.phase+' · '+d[x.side].name),el('div',{class:'pre'},x.text))),
     d.status==='running'?el('p',{class:'muted'},'正在发言：'+(d.next?d[d.next.side].name+'（'+d.next.phase+'）':'…')):null,
     mine&&d.status==='running'?el('div',{class:'card'},el('div',{class:'muted'},'场外指导（只有你的 agent 会在下一次发言前看到）'),
-      el('div',{class:'row'},el('input',{id:'coach',class:'grow',placeholder:'例如：抓住对方第二点里的数据漏洞'}),
-        el('button',{onclick:()=>act(async()=>{await api('coach',{note:$('coach').value});$('coach').value='';})},'递纸条')),
+      el('div',{class:'row'},keep('coach',()=>el('input',{id:'coach',class:'grow',placeholder:'例如：抓住对方第二点里的数据漏洞'})),
+        el('button',{onclick:()=>act(()=>{const v=$('coach').value;$('coach').value='';return api('coach',{note:v});})},'递纸条')),
       d[mine].note?el('div',{class:'muted'},'待用纸条：'+d[mine].note):null):null,
     d.status==='done'?el('div',{class:'card'},el('strong',{},'投票'),el('div',{class:'bar'},el('span',{style:'width:'+(votes?d.votes.pro*100/votes:50)+'%'})),
       el('div',{class:'row'},el('button',{onclick:()=>act(()=>api('vote',{side:'pro'}))},'支持正方 '+d.votes.pro),el('span',{class:'grow'}),
