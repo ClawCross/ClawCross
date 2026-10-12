@@ -86,6 +86,63 @@ scenarios['code-clinic']=()=>scenario('code-clinic',{
   }
 });
 
+scenarios.debate=()=>{
+  let coached=null;
+  return scenario('debate',{
+    async replies(agent,prompt){
+      if(prompt.includes('评委'))return JSON.stringify({winner:'con',reason:'反方回应更直接'});
+      // Beta takes its time on the opening so Bob can pass it a note before the rebuttal.
+      if(agent==='Beta'&&prompt.includes('「立论」'))await new Promise(resolve=>{coached=resolve;setTimeout(resolve,8000);});
+      return agent+' 的'+(/「(.+?)」发言/.exec(prompt)?.[1]||'')+'发言';
+    },
+    async play({alice,bob,test}){
+      await expect(bob.locator('#setup')).toBeHidden();
+      await alice.getByRole('button',{name:'远程办公比坐班更高效'}).click();
+      await alice.locator('#judge').selectOption({label:'Alpha'});
+      await alice.getByRole('button',{name:'开始辩论'}).click();
+      await expect(bob.locator('#coach')).toBeVisible({timeout:10000});
+      await expect(alice.locator('#coach')).toHaveCount(1);   // Alice coaches Alpha
+      await bob.locator('#coach').fill('抓住通勤时间这一点');
+      await bob.getByRole('button',{name:'递纸条'}).click();
+      await expect(bob.getByText('待用纸条：抓住通勤时间这一点')).toBeVisible();
+      coached?.();
+      await expect(alice.locator('.speech')).toHaveCount(6,{timeout:15000});
+      await expect(alice.locator('.speech.con').nth(1)).toContainText('Beta 的反驳发言');
+      await expect(bob.getByText('评委 Alpha：反方胜')).toBeVisible({timeout:10000});
+      await bob.getByRole('button',{name:/支持反方/}).click();
+      await expect(alice.getByRole('button',{name:/支持反方/})).toHaveText('支持反方 1');
+      const rebuttal=test.asked.find(a=>a.agent==='Beta'&&a.content.includes('「反驳」'));
+      expect(rebuttal.content).toContain('抓住通勤时间这一点');
+      expect(test.asked.find(a=>a.agent==='Beta'&&a.content.includes('「总结」')).content).not.toContain('抓住通勤时间');
+    }
+  });
+};
+
+scenarios.negotiation=()=>{
+  const script={Beta:[{say:'九千，不能再少',offer:9000,accept:false},{say:'七千五成交吧',offer:7500,accept:false}],
+    Alpha:[{say:'六千五最多了',offer:6500,accept:false},{say:'好，七千五',offer:null,accept:true}]};
+  return scenario('negotiation',{
+    replies:(agent,prompt)=>JSON.stringify(script[agent].shift()),
+    async play({alice,bob,test}){
+      await alice.getByRole('button',{name:'一台用了两年的索尼 A7M4 相机，带两个镜头'}).click();
+      await alice.getByRole('button',{name:'摆上谈判桌'}).click();
+      await alice.locator('#limit').fill('8000');await alice.locator('#wants').fill('要发票');
+      await alice.getByRole('button',{name:'交给 agent'}).click();
+      await bob.locator('#limit').fill('6000');await bob.getByRole('button',{name:'交给 agent'}).click();
+      await expect(alice.getByRole('button',{name:'开始谈判'})).toBeEnabled();
+      // Each side's limit stays with its own person until the end.
+      await expect(bob.locator('main')).not.toContainText('8000');
+      await expect(alice.locator('main')).not.toContainText('6000');
+      await alice.getByRole('button',{name:'开始谈判'}).click();
+      await expect(bob.getByText('成交价 7500')).toBeVisible({timeout:15000});
+      await expect(alice.getByText('买方省下 500，卖方多赚 1500')).toBeVisible();
+      expect(test.asked[0].agent).toBe('Beta');
+      expect(test.asked.find(a=>a.agent==='Alpha').content).toContain('最高愿付 8000；要发票');
+      expect(test.asked.find(a=>a.agent==='Beta').content).not.toContain('8000');
+    }
+  });
+};
+
 (async()=>{
   const chosen=process.argv.slice(2).length?process.argv.slice(2):Object.keys(scenarios);
   const results={};

@@ -11,7 +11,8 @@
  *
  *   node my-app.js --server <group server> --key <app key>
  *
- * Pages get `window.App`: App.api(path, body), App.watch(render), App.el(tag, props, ...children).
+ * Pages get `window.App`: App.api(path, body), App.watch(render), App.act(run),
+ * App.el(tag, props, ...children) and App.fill(node, ...children).
  * Keep state small and rendering in the page; the server holds shared state and calls agents.
  */
 'use strict';
@@ -173,7 +174,9 @@ window.App=(()=>{
     for(const child of children.flat())if(child!=null&&child!==false)node.append(child.nodeType?child:document.createTextNode(String(child)));
     return node;
   }
-  return {api,watch,act,el};
+  /** Replaces a node's children, skipping empty ones. */
+  function fill(node,...children){node.replaceChildren(...children.flat().filter(c=>c!=null&&c!==false));return node;}
+  return {api,watch,act,el,fill};
 })();
 `;
 

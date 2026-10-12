@@ -30,7 +30,7 @@ function render(s){
   const lines=new Set(r.findings.map(f=>f.line).filter(Boolean));
   const code=el('div',{class:'code'},...r.code.split('\\n').map((text,i)=>el('div',{class:lines.has(i+1)?'hit':''},String(i+1).padStart(4)+'  '+text)));
   const status=Object.values(r.agents).map(a=>a.name+'：'+({reviewing:'审查中…',examining:'质询中…',done:'完成',failed:'未完成'}[a.status]||a.status)).join('　');
-  $('session').replaceChildren(el('h2',{},'会诊 · '+r.focus+'（'+r.by+'）'),el('p',{class:'muted'},status),code,
+  App.fill($('session'),el('h2',{},'会诊 · '+r.focus+'（'+r.by+'）'),el('p',{class:'muted'},status),code,
     el('h2',{},'发现（'+r.findings.length+'）'),
     ...r.findings.map(f=>el('div',{class:'card'},
       el('div',{class:'row'},el('span',{class:'sev '+f.severity},f.severity),el('strong',{class:'grow'},f.title),el('span',{class:'muted'},(f.line?'第 '+f.line+' 行 · ':'')+f.agentName)),

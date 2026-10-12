@@ -54,7 +54,7 @@ function render(s){
   if(!center&&s.state.center)setCenter(s.state.center.lat,s.state.center.lng,s.state.center.label);
   if(layer)layer.clearLayers();
   const bounds=[];
-  $('missions').replaceChildren(...s.state.missions.slice().reverse().map((m,index)=>el('div',{class:'card'},
+  App.fill($('missions'),...s.state.missions.slice().reverse().map((m,index)=>el('div',{class:'card'},
     el('div',{class:'row'},el('strong',{class:'grow'},m.task),el('span',{class:'muted'},m.by+' · '+m.center.label)),
     ...Object.entries(m.results).map(([agent,r])=>el('div',{},el('div',{class:'agent',style:'color:'+color(agent)},r.name,' ',r.status==='asking'?'正在侦察…':r.status==='failed'?'没有完成：'+r.error:''),
       r.note?el('div',{class:'muted pre'},r.note):null,
