@@ -546,6 +546,41 @@ scenarios['who-is-human']=()=>scenario('who-is-human',{
   }
 });
 
+scenarios['meet-midway']=()=>scenario('meet-midway',{
+  replies:(agent,prompt)=>JSON.stringify({places:agent==='Alpha'
+    ?[{name:'外滩火锅',lat:31.2360,lng:121.4880,why:'两边都近'}]
+    :[{name:'<img src=x onerror=window.pwned=1>江边火锅',lat:31.2400,lng:121.4900,why:'看江景'},{name:'远方小馆',lat:32.5,lng:122.9,why:'太远'}]}),
+  async play({alice,bob,test}){
+    const places={'人民广场':['31.2304','121.4737'],'陆家嘴':['31.2397','121.4998']};
+    for(const page of [alice,bob])await page.route(/nominatim\.openstreetmap\.org/,route=>{
+      const url=new URL(route.request().url());
+      if(url.pathname.includes('reverse'))return route.fulfill({json:{display_name:'外滩, 黄浦区, 上海'}});
+      const [lat,lon]=places[url.searchParams.get('q')];return route.fulfill({json:[{lat,lon,display_name:url.searchParams.get('q')+', 上海'}]});
+    });
+    const pin=async(page,q)=>{await page.locator('#q').fill(q);await page.locator('#find').click();await page.getByRole('button',{name:q+', 上海'}).click();};
+    await pin(alice,'人民广场');await pin(bob,'陆家嘴');
+    await expect(alice.locator('#me')).toContainText('你的位置：人民广场');
+    await expect(alice.locator('#middle')).toHaveText('大家的中点：外滩, 黄浦区');
+    const bobState=await bob.evaluate(()=>fetch('state').then(r=>r.text()));
+    expect(bobState).not.toContain('121.4737');expect(bobState).not.toContain('人民广场');     // Alice's pin is blurred for Bob
+    await bob.locator('#want').fill('火锅，人均 100');await bob.locator('#ask').click();
+    await expect(alice.getByText('外滩火锅')).toBeVisible({timeout:15000});
+    await expect(alice.getByText('<img src=x onerror=window.pwned=1>江边火锅')).toBeVisible();
+    await expect(alice.getByText('远方小馆')).toHaveCount(0);                                      // too far, dropped
+    await expect(alice.locator('.place',{hasText:'外滩火锅'})).toContainText(/最远 1\.\d 公里 · 平均 1\.\d 公里 · 两边都近/);
+    const prompt=test.asked[0].content;
+    expect(prompt).toContain('31.23, 121.47');expect(prompt).not.toContain('121.4737');
+    await bob.locator('.place',{hasText:'外滩火锅'}).getByRole('button').click();
+    await expect(alice.locator('.place',{hasText:'外滩火锅'})).toContainText('最受欢迎');
+    await expect(alice.locator('.place',{hasText:'外滩火锅'}).getByRole('button')).toHaveText('👍 1');
+    if(await alice.evaluate(()=>!!window.L)){
+      await alice.evaluate(()=>layer.eachLayer(l=>l.getPopup&&l.getPopup()&&l.openPopup()));
+      await alice.waitForTimeout(300);
+      expect(await alice.evaluate(()=>window.pwned)).toBeUndefined();
+    }
+  }
+});
+
 (async()=>{
   const chosen=process.argv.slice(2).length?process.argv.slice(2):Object.keys(scenarios);
   const results={};

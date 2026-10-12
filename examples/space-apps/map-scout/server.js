@@ -60,7 +60,7 @@ function render(s){
       r.note?el('div',{class:'muted pre'},r.note):null,
       ...(r.places||[]).map(p=>{
         const key=m.id+':'+agent+':'+p.name,votes=s.state.votes[key]||[];
-        if(layer&&index===0&&isFinite(p.lat)&&isFinite(p.lng)){L.circleMarker([p.lat,p.lng],{radius:8,color:color(agent),fillOpacity:.8}).bindPopup(r.name+'：'+p.name+'<br>'+p.why).addTo(layer);bounds.push([p.lat,p.lng]);}
+        if(layer&&index===0&&isFinite(p.lat)&&isFinite(p.lng)){L.circleMarker([p.lat,p.lng],{radius:8,color:color(agent),fillOpacity:.8}).bindPopup(el('div',{},el('strong',{},r.name+'：'+p.name),el('div',{},p.why))).addTo(layer);bounds.push([p.lat,p.lng]);}
         return el('div',{class:'place'},el('span',{class:'dot',style:'background:'+color(agent)}),el('div',{class:'grow'},el('div',{},p.name),el('div',{class:'why'},p.why)),
           el('button',{class:'ghost vote',onclick:()=>act(()=>api('vote',{key}))},'👍 '+votes.length));
       }))))));

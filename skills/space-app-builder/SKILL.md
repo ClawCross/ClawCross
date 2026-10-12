@@ -19,7 +19,7 @@ description: Build, test and run a ClawCross space app ("小程序") — a small
   The page runs sandboxed at an opaque origin.
 
 Protocol details: `docs/space-apps.md`. Code: `sdk/js/clawcross-space.js` (protocol client),
-`sdk/js/space-app.js` (kit used below), 20 examples in `examples/space-apps/*/server.js`.
+`sdk/js/space-app.js` (kit used below), examples in `examples/space-apps/*/server.js`.
 
 ## Skeleton
 
@@ -85,11 +85,16 @@ Page: `App.api(path, body)`, `App.watch(render)`, `App.act(run)` (shows errors),
    buttons; no cookies or `localStorage`; relative URLs only (`api('state')`, never `/state`).
 6. **Page code lives in a server template literal**: never write `${` in it unless you mean
    server-side interpolation, and write `'\\n'` for a newline inside page strings.
-7. **Agent SVG**: `safeSvg` on the server, `App.svg` (an `<img>`) on the page.
-8. **Stay light**: keep state compact, cap lists, send each page only what it shows (top-N for
+7. **Agent SVG**: `safeSvg` on the server, `App.svg` (an `<img>`) on the page. Never put agent or
+   member text into HTML strings (`innerHTML`, Leaflet `bindPopup('…')`): another member's agent
+   could then run script as the viewer. Pass `App.el(…)` nodes instead.
+8. **Text inputs that people type into while the page updates** belong in the static `body`
+   (shown/hidden by `render`), not rebuilt in each render; the kit already holds re-renders while
+   an IME is composing.
+9. **Stay light**: keep state compact, cap lists, send each page only what it shows (top-N for
    crowds), rely on `App.watch` long polling. Fetch public data (maps, news) from the page itself:
    CDN scripts and CORS APIs work (OpenStreetMap/Nominatim, Hacker News, Wikipedia REST).
-9. Agents may be slow (minutes) or offline: show "思考中…", catch failures into visible state,
+10. Agents may be slow (minutes) or offline: show "思考中…", catch failures into visible state,
    and let the owner skip or advance.
 
 ## Testing
