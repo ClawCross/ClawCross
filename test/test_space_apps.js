@@ -224,6 +224,43 @@ scenarios.undercover=()=>{
   });
 };
 
+scenarios['research-roundtable']=()=>scenario('research-roundtable',{
+  replies(agent,prompt){
+    if(prompt.includes('点评其他人'))return JSON.stringify({critiques:[{target:agent==='Alpha'?'Beta':'Alpha',comment:agent+' 觉得数据不足'}]});
+    if(prompt.includes('汇总人'))return '结论：先做工具类。\n共识：都看好 agent。\n分歧：定价。\n未知：监管。';
+    return JSON.stringify({summary:agent+' 的结论',points:[agent+' 要点一',agent+' 要点二'],sources:[{title:agent+' 来源',url:'https://example.com/'+agent}]});
+  },
+  async play({alice,bob,test}){
+    await bob.locator('#question').fill('个人开发者做什么 AI 产品？');
+    await bob.locator('#writer').selectOption({label:'Beta'});
+    await bob.locator('#ask').click();
+    await expect(alice.getByText('结论：先做工具类。')).toBeVisible({timeout:15000});
+    await expect(alice.locator('.brief').filter({has:alice.getByRole('heading',{name:'Alpha'})})).toContainText('→ 对 Beta：Alpha 觉得数据不足');
+    await expect(alice.getByRole('link',{name:'Beta 来源'})).toHaveAttribute('href','https://example.com/Beta');
+    await expect(alice.getByRole('heading',{name:'报告 · Beta'})).toBeVisible();
+    expect(test.asked.length).toBe(5);
+    expect(test.asked.at(-1).agent).toBe('Beta');
+  }
+});
+
+scenarios['news-roundtable']=()=>scenario('news-roundtable',{
+  replies(agent,prompt){
+    if(prompt.includes('问你：'))return agent+' 回答：因为成本降了';
+    return JSON.stringify({stance:agent==='Alpha'?'看好':'看衰',take:agent+' 认为这是大事',question:'你凭什么这么说？'});
+  },
+  async play({alice,bob,test}){
+    for(const page of [alice,bob])await page.route(/hacker-news\.firebaseio\.com/,route=>route.fulfill({json:route.request().url().includes('topstories')?[1]:{id:1,title:'Open models catch up',score:321,url:'https://example.com/hn'}}));
+    await alice.reload();
+    await alice.locator('.story',{hasText:'Open models catch up'}).getByRole('button',{name:'上桌'}).click();
+    await expect(bob.locator('.stance.看衰')).toBeVisible({timeout:15000});
+    await expect(bob.getByText('↳ Beta：Beta 回答：因为成本降了')).toBeVisible({timeout:10000});
+    await expect(bob.getByText('↳ Alpha：Alpha 回答：因为成本降了')).toBeVisible();
+    await bob.getByRole('button',{name:'🔥 0'}).first().click();
+    await expect(alice.getByRole('button',{name:'🔥 1'})).toBeVisible();
+    expect(test.asked[0].content).toContain('Open models catch up');
+  }
+});
+
 (async()=>{
   const chosen=process.argv.slice(2).length?process.argv.slice(2):Object.keys(scenarios);
   const results={};
