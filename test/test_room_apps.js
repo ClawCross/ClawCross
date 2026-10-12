@@ -77,3 +77,18 @@ test('active SVG content and external resources are rejected',()=>{
     '<svg xmlns="http://www.w3.org/2000/svg"><path style="fill:url(https://example.com)"/></svg>'
   ])assert.equal(Battle.safeSvg(unsafe),'');
 });
+test('explicit start and controller identity govern alternating turns',()=>{
+  const cfg={...config,manual_start:true,owner_only:true};
+  const rows=prepared(),model=new Battle.BattleModel();
+  rows.push(command('early',1,'alpha'),move('early',1,'撞击'));
+  assert.equal(model.rebuild(cfg,members,rows).turn,1);
+  rows.push(message('viewer',{type:'start'}));
+  assert.equal(model.rebuild(cfg,members,rows).started,false);
+  rows.push(message('owner',{type:'start'}),command('1',1,'alpha'),move('1',1,'撞击'));
+  rows.push(command('stolen',2,'beta','owner'),move('stolen',2,'撞击','beta'));
+  assert.equal(model.rebuild(cfg,members,rows).turn,2);
+  rows.push(command('2',2,'beta','bob'),move('2',2,'撞击','beta'));
+  const state=model.rebuild(cfg,members,rows);
+  assert.equal(state.turn,3);
+  assert.deepEqual(state.fighters.map(f=>f.hp),[86,86]);
+});

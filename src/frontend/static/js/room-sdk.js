@@ -33,7 +33,8 @@
     return result;
   }
   function createConfig(app, actor) {
-    return {v: 1, app: app, id: uid(), host: actor || {key: '', name: ''}, players: []};
+    return {v: 1, app: app, id: uid(), host: actor || {key: '', name: ''}, players: [],
+      ...(app === 'battle' ? {manual_start: true, owner_only: true} : {})};
   }
   function encodeEvent(event, instructions) {
     return EVENT + JSON.stringify(Object.assign({protocol: 'clawcross.room/1'}, event)) +
@@ -65,9 +66,11 @@
   function describeMessage(content) {
     const event = parseEvent(content);
     if (!event) return content;
-    if (event.type === 'command') return event.kind === 'avatar' ? '请求生成精灵形象' : event.request || '发出对战指令';
+    if (event.type === 'command') return event.kind === 'avatar' ? '请求生成精灵形象' :
+      (event.controller ? '主人指令 · ' + event.controller + (event.agent_name ? ' → ' + event.agent_name : '') + '\n' : '') + (event.request || '发出对战指令');
     if (event.type === 'avatar') return '生成精灵形象' + (event.name ? ' · ' + event.name : '');
     if (event.type === 'move') return '出招：' + String(event.move || '') + (event.narration ? '\n' + event.narration : '');
+    if (event.type === 'start') return '开始对战';
     return content;
   }
   function normalizeMembers(rows) {
@@ -114,6 +117,11 @@
       if (!this.snapshot.isOwner) throw new Error('只有房主可以设置房间玩法');
       return this.transport.configure(encodeConfig(config, this.snapshot.announcement));
     }
+    setComposer(value) {
+      if (JSON.stringify(this.composer) === JSON.stringify(value)) return;
+      this.composer = value;
+      if (this.transport.onComposer) this.transport.onComposer(value);
+    }
   }
   function registerApp(id, app) { apps.set(id, app); }
   function mountRoom(container, transport) {
@@ -126,6 +134,7 @@
       const next = config ? config.app : 'chat';
       if (next !== kind) {
         if (handle) handle.destroy();
+        client.setComposer(null);
         container.replaceChildren();
         kind = next;
         handle = apps.has(next) ? apps.get(next).mount(container, client) : null;
@@ -136,7 +145,11 @@
     return {
       update: update, client: client,
       refresh: function () { update(last); },
-      destroy: function () { if (handle) handle.destroy(); container.replaceChildren(); }
+      submit: function (text) {
+        if (!handle || !handle.submit) return Promise.reject(new Error('当前房间没有对战指令'));
+        return handle.submit(text);
+      },
+      destroy: function () { if (handle) handle.destroy(); client.setComposer(null); container.replaceChildren(); }
     };
   }
   return {CONFIG: CONFIG, EVENT: EVENT, uid: uid, parseConfig: parseConfig, encodeConfig: encodeConfig,

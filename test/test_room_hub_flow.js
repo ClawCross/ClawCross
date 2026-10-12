@@ -12,7 +12,7 @@ const svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><defs><
   const data=fs.mkdtempSync(path.join(os.tmpdir(),'clawcross-room-flow-'));
   const log=fs.openSync('/tmp/clawcross-room-flow-server.log','w');
   const server=spawn('/usr/bin/node',[path.join(hub,'node_modules/next/dist/bin/next'),'start','--hostname','127.0.0.1','--port','51213'],
-    {cwd:hub,env:{...process.env,CLAWCROSSHUB_BUILD_DIR:'.next-room-apps',CLAWCROSSHUB_DATA_DIR:data,NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore',log,log]});
+    {cwd:hub,env:{...process.env,CLAWCROSSHUB_BUILD_DIR:process.env.CLAWCROSS_ROOM_TEST_BUILD || '.next-room-apps',CLAWCROSSHUB_DATA_DIR:data,NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore',log,log]});
   const api=await request.newContext({baseURL:base});
   let browser;
   try{
@@ -95,11 +95,34 @@ const svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><defs><
     await expect(friendPage.locator('.cc-room-image')).toHaveCount(2,{timeout:10000});
     await expect(friendPage.locator('.cc-room-setup')).toBeHidden();
     await expect(host.locator('.cc-room-setup')).toBeHidden();
-    await host.locator('.cc-room-command textarea').fill('抓住机会，用喷射火焰进攻');
-    await host.locator('[data-command]').click();
+    await expect(host.locator('[data-room-surface] textarea')).toHaveCount(0);
+    await expect(host.locator('[data-start]')).toBeVisible();
+    await expect(friendPage.locator('[data-start]')).toBeHidden();
+    await host.getByRole('textbox',{name:'消息',exact:true}).fill('开始前聊一句');
+    await expect(host.getByRole('button',{name:'发送',exact:true})).toBeDisabled();
+    await host.locator('[data-room-mode="chat"]').click();
+    await host.getByRole('button',{name:'发送',exact:true}).click();
+    await expect(friendPage.getByText('开始前聊一句',{exact:true})).toBeVisible();
+    await host.locator('[data-start]').click();
+    await expect(host.locator('[data-start]')).toBeHidden();
+    await host.locator('[data-room-mode="command"]').click();
+    await host.getByRole('textbox',{name:'消息',exact:true}).fill('抓住机会，用喷射火焰进攻');
+    await host.getByRole('button',{name:'发送',exact:true}).click();
     await expect(host.locator('.cc-room-hp').nth(1)).toHaveText('76 / 100 HP',{timeout:15000});
     await expect(friendPage.locator('.cc-room-hp').nth(1)).toHaveText('76 / 100 HP',{timeout:10000});
-    for(const page of pages)expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await host.getByRole('textbox',{name:'消息',exact:true}).fill('不能代替朋友出招');
+    await expect(host.getByRole('button',{name:'发送',exact:true})).toBeDisabled();
+    await friendPage.getByRole('textbox',{name:'消息',exact:true}).fill('我也使用喷射火焰');
+    await friendPage.getByRole('button',{name:'发送',exact:true}).click();
+    await expect(host.locator('.cc-room-hp').first()).toHaveText('76 / 100 HP',{timeout:15000});
+    await expect(friendPage.locator('.cc-room-hp').first()).toHaveText('76 / 100 HP',{timeout:10000});
+    for(const page of pages) {
+      expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+      const bounds=await page.getByRole('button',{name:'发送',exact:true}).boundingBox();
+      expect(bounds.y+bounds.height).toBeLessThanOrEqual(page.viewportSize().height);
+      const transcript=await page.getByRole('log').boundingBox();
+      expect(transcript.height).toBeGreaterThan(48);
+    }
     expect(errors).toEqual([]);
     await host.screenshot({path:'/tmp/clawcross-room-battle-desktop.png'});
     await friendPage.screenshot({path:'/tmp/clawcross-room-battle-mobile.png'});

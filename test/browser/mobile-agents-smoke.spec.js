@@ -91,8 +91,17 @@ const GROUP = {
 test('a room app renders Agent SVGs and sends battle commands through the existing group API',async({page})=>{
   const Rooms=require('../../src/frontend/static/js/room-sdk.js');
   const calls={posts:[],control:[]};await stub(page,calls);
+  // Reproduce a live frontend with a cached template but refreshed assets.
+  // The room adapter must upgrade it without restarting any Agent service.
+  await page.route('**/mobile/group_chat',async route=>{
+    const response=await route.fetch();
+    let body=await response.text();
+    body=body.replace(/\s*<div id="room-composer"[\s\S]*?<span data-room-hint role="status"><\/span>\s*<\/div>/,'');
+    body=body.replace(/  if \(window\.MobileRooms\?\.commandSelected\(\) && !selectedWorkflow\) \{[\s\S]*?\n  btn.disabled = true;\n  input.value = '';/,"  btn.disabled = true;\n  input.value = '';");
+    await route.fulfill({response,body});
+  });
   const svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="30" fill="orange"/></svg>';
-  const config={v:1,app:'battle',id:'mobile-match',host:{key:'u:tester',name:'tester'},players:[
+  const config={v:1,app:'battle',id:'mobile-match',manual_start:true,owner_only:true,host:{key:'u:tester',name:'tester'},players:[
     {key:LEAD.agent_id,name:LEAD.name,controller:'tester'},{key:CODEX.agent_id,name:CODEX.name,controller:'tester'}]};
   const rows=[];
   const add=(sender,event)=>rows.push({id:rows.length+1,sender,sender_name:sender,content:Rooms.encodeEvent({...event,room:config.id}),created_at:1790000000});
@@ -107,8 +116,10 @@ test('a room app renders Agent SVGs and sends battle commands through the existi
     if(route.request().method()==='POST'){
       const body=route.request().postDataJSON();calls.posts.push(body);
       const command=Rooms.parseEvent(body.content);
-      add('u:tester',command);
-      add(LEAD.agent_id,{type:'move',id:command.id,turn:command.turn,move:'喷射火焰'});
+      if(command) {
+        add('u:tester',command);
+        if(command.type==='command') add(LEAD.agent_id,{type:'move',id:command.id,turn:command.turn,move:'喷射火焰'});
+      } else rows.push({id:rows.length+1,sender:'u:tester',sender_name:'tester',content:body.content,created_at:1790000000});
     }
     return route.fulfill({json:{messages:rows}});
   });
@@ -116,11 +127,24 @@ test('a room app renders Agent SVGs and sends battle commands through the existi
   await page.goto('/mobile/group_chat');
   await page.locator('.group-item',{hasText:'Dev'}).first().click();
   await expect(page.locator('#room-app-surface .cc-room-image')).toHaveCount(2);
-  await page.locator('.cc-room-command textarea').fill('抓住破绽，用喷射火焰');
-  await page.locator('[data-command]').click();
+  await expect(page.locator('#room-app-surface textarea')).toHaveCount(0);
+  await expect(page.locator('#room-composer')).toBeVisible();
+  await page.locator('#room-composer [data-room-mode="chat"]').click();
+  await page.locator('#msg-input').fill('大家准备好了吗');
+  await page.locator('#send-btn').click();
+  expect(calls.posts[0].content).toBe('大家准备好了吗');
+  await page.locator('[data-start]').click();
+  await expect(page.locator('[data-start]')).toBeHidden();
+  await page.locator('#room-composer [data-room-mode="command"]').click();
+  await page.locator('#msg-input').fill('抓住破绽，用喷射火焰');
+  await page.locator('#send-btn').click();
   await expect(page.locator('.cc-room-hp').nth(1)).toHaveText('76 / 100 HP');
-  expect(calls.posts[0].mentions).toEqual([LEAD.agent_id]);
-  expect(Rooms.parseEvent(calls.posts[0].content).kind).toBe('turn');
+  const sent=calls.posts.find(row=>Rooms.parseEvent(row.content)?.kind==='turn');
+  expect(sent.mentions).toEqual([LEAD.agent_id]);
+  expect(sent.content).toContain('【主人指令】');
+  expect(Rooms.parseEvent(sent.content).controller).toBe('tester');
+  await page.evaluate(()=>goBack());
+  await expect(page.locator('#room-composer')).toBeHidden();
 });
 
 test('mobile empty chats create a first companion once and open its private conversation',async({page})=>{

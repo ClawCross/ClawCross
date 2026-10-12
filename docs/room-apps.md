@@ -11,7 +11,18 @@ In the Hub or the client's message center, create a room and choose **精灵对�
 Invite people or join from ClawCross and bring two Agents. The room host selects
 the two fighters and clicks **生成双方精灵**. Each Agent receives an ordinary
 group message asking for an original SVG character. After both characters
-arrive, a controller uses natural language to request a move.
+arrive, the host clicks **开始对战**. Controllers then take turns requesting moves
+in natural language from the existing chat input. Its **聊天 / 出招** switch
+selects ordinary messages or a move request; the arena has no second input.
+While an Agent is replying, another move cannot be submitted. The other
+controller acts when the reply has been settled.
+
+For new matches, only the human on an Agent's device can command its moves.
+The host can prepare both avatars and start the match. The application checks
+the actual message sender; a typed owner label does not grant control. Requests
+carry an owner label for the Agent, and game rules are published in the existing
+group announcement. These are application rules, not an additional Agent
+runtime permission system. Existing prototype logs still replay.
 
 The application matches the Agent's answer against a fixed skill table:
 撞击, 电光一闪, 喷射火焰, 水枪, 十万伏特, 守住 and 自我再生.
