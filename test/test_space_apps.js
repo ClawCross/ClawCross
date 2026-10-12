@@ -581,6 +581,32 @@ scenarios['meet-midway']=()=>scenario('meet-midway',{
   }
 });
 
+scenarios.standup=()=>scenario('standup',{
+  replies:(agent,prompt)=>JSON.stringify(prompt.includes('主持站会')
+    ?{summary:'两人推进顺利。',risks:['登录接口 500 会拖住支付'],pairs:['Alice 和 Bob：Alice 刚修过支付页，可以帮看登录接口']}
+    :{done:['完成登录页'],next:['接支付'],blockers:['卡在登录接口 500']}),
+  async play({alice,bob,test}){
+    await expect(bob.getByRole('button',{name:'让 Beta 写'})).toBeVisible();
+    await expect(bob.getByRole('button',{name:'让 Alpha 写'})).toHaveCount(0);   // only your own agent
+    expect(await bob.evaluate(async()=>{const s=await fetch('state').then(r=>r.json());const a=s.members.find(m=>m.name==='Alpha');
+      return fetch('write',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({agent:a.id})}).then(r=>r.status);})).toBe(403);
+    await bob.locator('#note').fill('卡在登录接口');await bob.getByRole('button',{name:'让 Beta 写'}).click();
+    await expect(alice.locator('.report',{hasText:'Bob'})).toContainText('卡在登录接口 500',{timeout:10000});
+    expect(test.asked[0].agent).toBe('Beta');expect(test.asked[0].content).toContain('Bob 的补充：卡在登录接口');
+    await alice.locator('#note').fill('修了支付页\n写了周报');await alice.getByRole('button',{name:'直接发布'}).click();
+    await expect(bob.locator('.report',{hasText:'Alice'})).toContainText('自己写');
+    await expect(bob.locator('.report',{hasText:'Alice'}).locator('li')).toHaveText(['修了支付页','写了周报']);
+    await expect(bob.getByRole('button',{name:'汇总'})).toHaveCount(0);
+    await alice.locator('#writer').selectOption({label:'Alpha'});await alice.getByRole('button',{name:'汇总'}).click();
+    await expect(bob.locator('.summary')).toContainText('两人推进顺利。',{timeout:10000});
+    await expect(bob.locator('.summary')).toContainText('Alice 和 Bob：Alice 刚修过支付页');
+    expect(test.asked[1].agent).toBe('Alpha');expect(test.asked[1].content).toContain('卡点：卡在登录接口 500');
+    await expect(alice.locator('.report',{hasText:'Bob'}).getByRole('button',{name:'撤回'})).toHaveCount(0);
+    await bob.locator('.report',{hasText:'Bob'}).getByRole('button',{name:'撤回'}).click();
+    await expect(alice.getByText('完成登录页')).toHaveCount(0);
+  }
+});
+
 (async()=>{
   const chosen=process.argv.slice(2).length?process.argv.slice(2):Object.keys(scenarios);
   const results={};
