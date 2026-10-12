@@ -79,7 +79,27 @@ def register_guest_routes(app, *, port_agent, internal_token, public_base=lambda
 
     # A device joined by link reaches the group server only through these calls.
     device_calls = {('POST', 'join'), ('POST', 'poll'), ('GET', 'group'), ('GET', 'messages'), ('GET', 'search'),
-                    ('POST', 'messages'), ('POST', 'agents'), ('GET', 'app')}
+                    ('POST', 'messages'), ('POST', 'agents')}
+
+    @app.route('/relay/app/<path:rest>', methods=['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'])
+    def group_app_relay(rest):
+        """A space's app reaches this machine's group server here, and members' pages reach the app.
+        App calls carry the app key; page requests carry their signed entrance in the path."""
+        from groups.config import service_url
+        headers = {k: v for k, v in request.headers.items() if k.lower() in {
+            'authorization', 'content-type', 'accept', 'accept-language', 'if-none-match', 'if-modified-since', 'range', 'user-agent'}}
+        try:
+            with requests.Session() as client:
+                client.trust_env = False
+                response = client.request(request.method, service_url() + '/relay/app/' + rest, params=request.args,
+                                          headers=headers, data=request.get_data(), timeout=45, allow_redirects=False)
+        except requests.RequestException:
+            return jsonify(error='暂时无法连接群服务器，请稍后重试'), 503
+        result = app.response_class(response.content, status=response.status_code)
+        for name, value in response.headers.items():
+            if name.lower() not in {'content-length', 'transfer-encoding', 'connection', 'content-encoding', 'server', 'date'}:
+                result.headers[name] = value
+        return result
 
     @app.route('/relay/<path:call>', methods=['GET', 'POST'])
     def group_device_relay(call):
@@ -142,7 +162,7 @@ def register_guest_routes(app, *, port_agent, internal_token, public_base=lambda
 
     @app.route('/group-guest-api/<action>', methods=['GET', 'POST'])
     def group_guest_api(action):
-        methods = {'info': 'POST', 'join': 'POST', 'state': 'GET', 'messages': 'POST', 'search':'GET', 'rename': 'POST', 'password': 'POST', 'app': 'GET'}
+        methods = {'info': 'POST', 'join': 'POST', 'state': 'GET', 'messages': 'POST', 'search':'GET', 'rename': 'POST', 'password': 'POST', 'app_session': 'POST'}
         if methods.get(action) != request.method:
             return jsonify(error='不支持的操作'), 405
         ticket = request.headers.get('X-Group-Invite', '')

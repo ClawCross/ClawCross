@@ -450,7 +450,7 @@ class GroupClient:
                 'owner': card['owner'], 'identity': member['name'],
                 'role': 'primary_agent' if card['primary_agent'] == member['principal'] else 'member',
                 'server_url': card['server_url'], 'remote_group_id': card['remote_group_id'],
-                'delivery': '群成员可见；按当前群规则唤醒其他 agent。',
+                'delivery': '回复只交给这个空间的小程序，不进群聊。' if card.get('app') else '群成员可见；按当前群规则唤醒其他 agent。',
                 'members': [{k: m[k] for k in ('name', 'muted', 'user_id', 'agent_id', 'node_id') if k in m} | {'kind': 'agent' if m['is_agent'] else 'human'} for m in card['members']],
                 'reply_channel': f'send_to_group(group_id="{card["group_id"]}", content="你的回复")'}
 
@@ -471,6 +471,8 @@ class GroupClient:
         if response.status_code >= 400:
             raise ClientError(str(response.json().get('detail', '发送失败')), response.status_code)
         result = response.json()
+        if result.get('app'):
+            return result  # in a space with an app, the output went to the app rather than the chat
         self.store.cache(row, {'id': result['message']['id'], 'kind': 'message', 'message': result['message']})
         return {**result, 'message': self.messages(owner, alias, result['message']['id'] - 1)[-1]}
 
@@ -511,31 +513,45 @@ class GroupClient:
                     quote = message.get('reply')
                     reference = f'\n[引用消息 #{quote["id"]}] {quote["sender_name"]}:\n{quote["content"]}\n[引用结束]\n' if quote else ''
                     text = self.store.unread_digest(row, aid, event['id']) + f'[群聊「{card["title"]}」 group_id={row["alias"]}] {message["sender_name"]} 说:\n{reference}{message["content"]}'
-                    automatic = agent.config.get('creation_template') == 'chat'
-                    if automatic:
-                        from webot.runtime import effective_session_mode
-                        automatic = effective_session_mode(agent.owner,agent.agent_id) == 'chat'
-                    text_reply=automatic or (agent.config.get('connection_id') and not ((agent.config.get('meta') or {}).get('acp') or {}).get('clawcross_tools',True))
-                    completion = None
-                    if text_reply:
-                        async def completion(reply, owner=row['owner'], alias=row['alias'], target=aid, event_id=event['id']):
-                            if reply and reply.ok and reply.content.strip():
-                                try:
-                                    await self.post(owner,alias,target,reply.content,client_msg_id=f'chat-reply:{event_id}:{target}')
-                                except ClientError:
-                                    pass  # Membership or networking may change while the reply is generated.
-                    reply_meta = self.metadata(card,visible)
-                    reply_meta['reply_channel'] = '直接输出文字；系统会发送到当前群，不需要调用工具。' if text_reply else reply_channel(agent,row['alias'])
-                    receipt = await self.gateway.inbox(agent, AgentMessage(text=text, sender=message['sender'],
+                    await self._wake(row, card, agent, visible, event['id'], AgentMessage(text=text, sender=message['sender'],
                         summary=f'群聊「{card["title"]}」 {message["sender_name"]}: {message["content"][:60]}',
-                        attachments=message.get('attachments', [])), context={'conversation_id': row['alias'],
-                        'delivery_id': f'relay:{row["alias"]}:{event["id"]}:{aid}',
-                        'group_human_requests': human_requests,
-                        'groups': [reply_meta]},mode='chat' if automatic else None,on_complete=completion)
-                    if not receipt.accepted:
-                        raise ClientError('本机 agent 暂未接受群消息，稍后重试', 503)
-                    self.store.mark_delivered(row, event['id'], aid)
+                        attachments=message.get('attachments', [])), human_requests)
+            elif event.get('kind') == 'app_request':
+                # The space's app asks one of this device's agents directly; only this device receives it.
+                aid = event.get('agent_id')
+                agent = self.agents.get(row['owner'], aid) if aid in allowed else None
+                visible = next((m for m in card['members'] if m['principal'] == aid and not m['remote']), None)
+                if agent and visible and not self.store.delivered(row, event['id'], aid):
+                    await self._wake(row, card, agent, visible, event['id'], AgentMessage(
+                        text=f'[空间「{card["title"]}」的小程序 group_id={row["alias"]}] 请求:\n{event["content"]}',
+                        sender='app', summary=f'空间「{card["title"]}」的小程序: {event["content"][:60]}'), [])
             self.store.update(row['owner'], row['alias'], cursor=event['id'])
+
+    async def _wake(self, row, card, agent, visible, event_id, message, human_requests):
+        """Wakes one local agent with a group message or an app request; its reply goes back to the group."""
+        aid = agent.agent_id
+        automatic = agent.config.get('creation_template') == 'chat'
+        if automatic:
+            from webot.runtime import effective_session_mode
+            automatic = effective_session_mode(agent.owner,agent.agent_id) == 'chat'
+        text_reply=automatic or (agent.config.get('connection_id') and not ((agent.config.get('meta') or {}).get('acp') or {}).get('clawcross_tools',True))
+        completion = None
+        if text_reply:
+            async def completion(reply, owner=row['owner'], alias=row['alias'], target=aid):
+                if reply and reply.ok and reply.content.strip():
+                    try:
+                        await self.post(owner,alias,target,reply.content,client_msg_id=f'chat-reply:{event_id}:{target}')
+                    except ClientError:
+                        pass  # Membership or networking may change while the reply is generated.
+        reply_meta = self.metadata(card,visible)
+        reply_meta['reply_channel'] = '直接输出文字；系统会发送到当前群，不需要调用工具。' if text_reply else reply_channel(agent,row['alias'])
+        receipt = await self.gateway.inbox(agent, message, context={'conversation_id': row['alias'],
+            'delivery_id': f'relay:{row["alias"]}:{event_id}:{aid}',
+            'group_human_requests': human_requests,
+            'groups': [reply_meta]},mode='chat' if automatic else None,on_complete=completion)
+        if not receipt.accepted:
+            raise ClientError('本机 agent 暂未接受群消息，稍后重试', 503)
+        self.store.mark_delivered(row, event_id, aid)
 
     def ensure(self, owner, alias):
         key = (owner, alias)

@@ -141,16 +141,14 @@
       catch (error) { notify(error.message); return; }
       const view = dialog('群公告', group.title || '');
       const input = el('textarea', 'gn-input');
-      input.rows = 7; input.maxLength = 4000; input.value = window.ClawCrossRooms ? ClawCrossRooms.humanAnnouncement(group.announcement) : group.announcement || '';
+      input.rows = 7; input.maxLength = 4000; input.value = group.announcement || '';
       input.setAttribute('aria-label', '群公告');
       input.readOnly = String(group.owner || '').startsWith('remote:');
       input.placeholder = input.readOnly ? '暂无群公告' : '写下群的介绍、约定或重要通知';
       view.body.append(input);
       if (!input.readOnly) {
         const save = button('保存公告','primary',()=>busy(save,view.status,'正在保存…',async()=>{
-          const config = window.ClawCrossRooms ? ClawCrossRooms.parseConfig(group.announcement) : null;
-          const value = config ? ClawCrossRooms.encodeConfig(config, input.value.trim()) : input.value.trim();
-          const updated = await request('PATCH','/' + encodeURIComponent(gid),{announcement:value});
+          const updated = await request('PATCH','/' + encodeURIComponent(gid),{announcement:input.value.trim()});
           view.done(); changed(updated);
         }));
         view.body.append(el('p','gn-note','成员及 Agent 都能看到公告；留空可清除。'),save);
@@ -255,21 +253,26 @@
       let group;
       try { group = await request('GET', '/' + encodeURIComponent(gid)); }
       catch (error) { notify(error.message); return; }
-      const view = dialog('小程序', '群里的人打开这个群时看到的页面，是一个网页文件（.html）');
-      view.body.append(el('p', 'gn-note', group.app ? '当前：' + group.app.name : '当前没有小程序，大家看到的是普通聊天'));
-      const file = el('input', 'gn-input');
-      file.type = 'file'; file.accept = '.html,text/html'; file.setAttribute('aria-label', '小程序网页文件');
-      const upload = button(group.app ? '更换' : '上传', 'primary', () => busy(upload, view.status, '正在上传…', async () => {
-        const chosen = file.files[0];
-        if (!chosen) throw new Error('请选择一个网页文件');
-        const html = await chosen.text();
-        const name = new DOMParser().parseFromString(html, 'text/html').title.trim() || chosen.name.replace(/\.html?$/i, '');
-        const updated = await request('PUT', '/' + encodeURIComponent(gid) + '/app', {name: name.slice(0, 80), html});
-        view.done(); changed(updated);
+      const view = dialog('小程序', '你自己运行的小程序服务器，用这里的地址和密钥连进空间；成员打开空间时看到它的页面');
+      view.body.append(el('p', 'gn-note', group.app ? (group.app.name || '小程序') + ' · ' + (group.app.online ? '在线' : '未连接')
+        : '还没有小程序，大家看到的是普通群聊'));
+      const issued = el('div', 'gn-body');
+      const field = (label, value) => {
+        const input = el('input', 'gn-input gn-link'); input.readOnly = true; input.value = value; input.setAttribute('aria-label', label);
+        input.addEventListener('focus', () => input.select());
+        issued.append(el('p', 'gn-note', label), input);
+      };
+      const make = button(group.app ? '重置密钥' : '生成密钥', 'primary', () => busy(make, view.status, '正在生成…', async () => {
+        const { key } = await request('POST', '/' + encodeURIComponent(gid) + '/app-key', {});
+        issued.replaceChildren();
+        field('服务器地址', location.origin);
+        field('小程序密钥（只显示这一次）', key);
+        field('例如在 ClawCross 目录运行精灵对战', `node examples/space-apps/creature-battle/server.js --server ${location.origin} --key ${key}`);
+        view.status.textContent = group.app ? '已重置，之前的小程序已断开' : '';
       }));
-      view.body.append(file, upload);
+      view.body.append(make, issued);
       if (group.app) {
-        const remove = button('移除小程序', 'quiet', () => busy(remove, view.status, '正在移除…', async () => {
+        const remove = button('断开小程序', 'quiet', () => busy(remove, view.status, '正在断开…', async () => {
           const updated = await request('DELETE', '/' + encodeURIComponent(gid) + '/app');
           view.done(); changed(updated);
         }));

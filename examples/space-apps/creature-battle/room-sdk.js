@@ -1,6 +1,6 @@
-/* ClawCross Rooms SDK: the room protocol over the existing group APIs, shared by
- * group apps and the pages that host them (room-app-host.js).
- * This file is also vendored by ClawCrossHub/lib/rooms. No Agent runtime changes.
+/* The creature battle's message protocol, shared by its server and its page: the match
+ * settings (`[ClawCrossRoomConfig:v1]`), protocol messages (`[ClawCrossRoom:v1]` JSON) and a
+ * RoomClient the page's view talks through.
  */
 (function (root, factory) {
   const api = factory();
@@ -62,10 +62,6 @@
     }
     return null;
   }
-  // A plain chat view shows an app's protocol messages as one placeholder line.
-  function describeMessage(content) {
-    return parseEvent(content) ? '[小程序消息]' : content;
-  }
   function normalizeMembers(rows) {
     const members = (rows || []).map(row => Object.assign({}, row, {
       key: String(row.principal || row.agent_id || (row.agent && row.agent.agent_id) || ''),
@@ -118,6 +114,6 @@
   }
   return {CONFIG: CONFIG, EVENT: EVENT, uid: uid, parseConfig: parseConfig, encodeConfig: encodeConfig,
     createConfig: createConfig, humanAnnouncement: humanAnnouncement, encodeEvent: encodeEvent,
-    parseEvent: parseEvent, describeMessage: describeMessage, normalizeMembers: normalizeMembers,
+    parseEvent: parseEvent, normalizeMembers: normalizeMembers,
     binding: binding, resolveMember: resolveMember, RoomClient: RoomClient};
 });

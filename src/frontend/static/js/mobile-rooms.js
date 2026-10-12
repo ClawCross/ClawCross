@@ -1,55 +1,43 @@
-/* A group whose card names an app shows that app in place of the chat log and input.
- * The app reaches the group only through the existing /proxy_groups endpoints. */
+/* A space whose card names an app shows the app's site in place of the chat log and input.
+ * The site is the group server's tunnel to the app server the space's owner runs; it opens
+ * sandboxed, so it never acts as this page. */
 (function (root) {
   'use strict';
-  let handle = null, detail = null, messages = new Map(), gid = '';
-  function actorOf(group) {
-    const person = (group.members || []).find(member => !member.is_agent && !member.agent &&
-      (member.remote === false || member.principal === selfPrincipal()));
-    return {key: person ? person.principal : selfPrincipal(), name: person ? person.name : window.__currentUser || ''};
+  let gid = '', frame = null;
+  function notice(text) {
+    const status = document.createElement('p');
+    status.className = 'room-app-notice'; status.setAttribute('role', 'status'); status.textContent = text;
+    document.getElementById('room-app-surface').replaceChildren(status);
+    frame = null;
   }
-  function draw() {
-    if (!handle || !detail) return;
-    document.getElementById('chat-page').classList.toggle('room-app-view', !!detail.app);
-    handle.update({app: detail.app || null, roomId: gid, title: detail.title || '', announcement: detail.announcement || '',
-      members: detail.members || currentMembers || [], messages: [...messages.values()], actor: actorOf(detail),
-      isOwner: !String(detail.owner || '').startsWith('remote:')});
+  function show(group) {
+    document.getElementById('chat-page').classList.toggle('room-app-view', !!group.app);
+    if (!group.app) { document.getElementById('room-app-surface').replaceChildren(); frame = null; return; }
+    if (!group.app.online) { notice('「' + (group.app.name || '小程序') + '」暂时不在线'); return; }
+    if (frame) return;
+    const selected = gid;
+    frame = document.createElement('iframe');
+    api('POST', '/proxy_groups/' + encodeURIComponent(selected) + '/app-session').then(({url}) => {
+      if (gid !== selected || !frame) return;
+      frame.title = group.app.name || '小程序';
+      frame.setAttribute('sandbox', 'allow-scripts allow-forms allow-popups allow-modals allow-downloads');
+      frame.referrerPolicy = 'no-referrer';
+      frame.src = url;
+      document.getElementById('room-app-surface').replaceChildren(frame);
+    }, error => { if (gid === selected) notice('小程序打开失败：' + error.message); });
   }
   root.MobileRooms = {
     update(group) {
       if (!group || group.group_id !== currentGroupId) return;
-      if (gid !== group.group_id) {
-        root.MobileRooms.close();
-        gid = group.group_id;
-        const path = '/proxy_groups/' + encodeURIComponent(gid);
-        handle = ClawCrossRoomHost.mountApp(document.getElementById('room-app-surface'), {
-          loadApp: () => api('GET', path + '/app'),
-          send: async (content, mentions) => {
-            await api('POST', path + '/messages', {content: content, mentions: mentions, client_msg_id: ClawCrossRooms.uid()});
-            if (currentGroupId === group.group_id) await pollNewMessages();
-          },
-          configure: async announcement => {
-            const updated = await api('PATCH', path, {announcement: announcement});
-            if (currentGroupId === group.group_id) applyGroupDetail(updated);
-          },
-          loadHistory: async () => (await api('GET', path + '/messages?after_id=0')).messages || []
-        }, '/static/room-app-frame.html');
-      }
-      detail = group;
-      for (const message of group.messages || []) messages.set(Number(message.id), message);
-      draw();
+      if (gid !== group.group_id) { root.MobileRooms.close(); gid = group.group_id; }
+      show(group);
     },
     metadata(group) {
-      if (detail && group && group.group_id === gid) root.MobileRooms.update({...detail, ...group, members: group.members || detail.members});
-    },
-    observe(rows) {
-      if (!handle || !detail) return;
-      for (const row of rows || []) if (Number.isSafeInteger(Number(row.id))) messages.set(Number(row.id), row);
-      draw();
+      if (group && group.group_id === gid) show(group);
     },
     close() {
-      if (handle) handle.destroy();
-      handle = null; detail = null; gid = ''; messages.clear();
+      gid = ''; frame = null;
+      document.getElementById('room-app-surface')?.replaceChildren();
       document.getElementById('chat-page')?.classList.remove('room-app-view');
     }
   };

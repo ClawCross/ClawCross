@@ -1,7 +1,8 @@
-/* The creature battle, a group app. Its only transport is ordinary group messages:
- * it asks the members' agents for SVG creatures and moves in a fixed reply format. */
+/* The creature battle's rules and page, shared by its app server (server.js) and the page it
+ * serves. Agents are asked for SVG creatures and moves in a fixed reply format; the match is
+ * the log of people's commands and agents' replies, which BattleModel settles. */
 (function (root, factory) {
-  const sdk = typeof module === 'object' && module.exports ? require('../../../src/frontend/static/js/room-sdk.js') : root.ClawCrossRooms;
+  const sdk = typeof module === 'object' && module.exports ? require('./room-sdk.js') : root.ClawCrossRooms;
   const app = factory(sdk);
   if (typeof module === 'object' && module.exports) module.exports = app;
   if (root) root.ClawCrossBattle = app;

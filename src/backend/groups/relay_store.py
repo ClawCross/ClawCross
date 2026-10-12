@@ -32,9 +32,10 @@ def password_hash(password: str, salt: str) -> str:
 
 # A member is online while its device called within this window; hidden browser tabs poll about once a minute.
 ONLINE_SECONDS = 90
-# A group's app is one HTML page that every member's device shows in place of the plain chat;
-# its upload has to fit the server's 2 MiB request limit.
-APP_BYTES = 1536 * 1024
+# A space's app server is online while it polled within this window.
+APP_ONLINE_SECONDS = 60
+# What a member's device receives: everything except the app's traffic, and its own agents' app requests.
+MEMBER_EVENTS = "(kind NOT IN ('app_request','app_output') OR (kind='app_request' AND json_extract(body,'$.connection')=?))"
 
 
 class RelayStore:
@@ -78,10 +79,14 @@ class RelayStore:
                     group_id TEXT PRIMARY KEY REFERENCES relay_groups(id) ON DELETE CASCADE,
                     token_hash TEXT UNIQUE NOT NULL
                 );
-                CREATE TABLE IF NOT EXISTS relay_apps (
+                -- A space's app: a server its owner runs, which reaches the group with this key.
+                CREATE TABLE IF NOT EXISTS relay_app_keys (
                     group_id TEXT PRIMARY KEY REFERENCES relay_groups(id) ON DELETE CASCADE,
-                    name TEXT NOT NULL, html TEXT NOT NULL, sha256 TEXT NOT NULL, size INTEGER NOT NULL, updated_at REAL NOT NULL
+                    key_hash TEXT UNIQUE NOT NULL, name TEXT NOT NULL DEFAULT '', seen_at REAL NOT NULL DEFAULT 0,
+                    created_at REAL NOT NULL
                 );
+                -- One-shot: uploaded app pages were replaced by app servers.
+                DROP TABLE IF EXISTS relay_apps;
             ''')
             columns = {r[1] for r in db.execute('PRAGMA table_info(relay_connections)')}
             # `guest` marks connections made in a browser. guest_salt/guest_password_hash hold the password
@@ -159,9 +164,10 @@ class RelayStore:
             member['online'] = member.pop('seen_at') > online_since
             # What the device is, for views that draw the group by device.
             member['device_kind'] = 'browser' if member.pop('guest') else 'client'
-        app = db.execute('SELECT name,sha256,size FROM relay_apps WHERE group_id=?', (gid,)).fetchone()
+        app = db.execute('SELECT name,seen_at FROM relay_app_keys WHERE group_id=?', (gid,)).fetchone()
         return {'group_id': gid, 'title': group['title'], 'kind': group['kind'],
-                'announcement': group['announcement'], 'app': dict(app) if app else None,
+                'announcement': group['announcement'],
+                'app': {'name': app['name'], 'online': app['seen_at'] > time.time() - APP_ONLINE_SECONDS} if app else None,
                 'owner': group['owner_connection'], 'primary_agent': group['primary_member'],
                 'dnd': bool(group['dnd']), 'version': group['version'], 'members': members,
                 'external_access_enabled': bool(group['external_access_enabled']),
@@ -328,7 +334,8 @@ class RelayStore:
                 rows = list(reversed(db.execute("SELECT * FROM relay_events WHERE group_id=? AND kind='message' ORDER BY id DESC LIMIT 100", (conn['group_id'],)).fetchall()))
                 more = False
             else:
-                rows = db.execute('SELECT * FROM relay_events WHERE group_id=? AND id>? ORDER BY id LIMIT 50', (conn['group_id'], after)).fetchall()
+                rows = db.execute(f'SELECT * FROM relay_events WHERE group_id=? AND id>? AND {MEMBER_EVENTS} ORDER BY id LIMIT 50',
+                                  (conn['group_id'], after, conn['id'])).fetchall()
                 cursor = rows[-1]['id'] if rows else after
                 more = len(rows) >= 50
             messages = []
@@ -346,6 +353,9 @@ class RelayStore:
                        for m in group['members']]
             return {'group_id': conn['group_id'], 'password_set': bool(conn['guest_password_hash']), 'title': group['title'], 'members': members,
                     'announcement': group['announcement'], 'app': group['app'],
+                    # What the space's app asks of the agent this browser runs.
+                    'requests': [{'id': row['id'], **{k: v for k, v in json.loads(row['body']).items() if k in ('agent', 'content')}}
+                                 for row in rows if row['kind'] == 'app_request'],
                     'messages': messages, 'cursor': cursor, 'has_more': more, 'principal': member['principal'], 'name': member['name']}
 
     def guest_rename(self, token, name):
@@ -360,15 +370,6 @@ class RelayStore:
             db.execute('UPDATE relay_groups SET version=version+1 WHERE id=?', (conn['group_id'],))
             self._event(db, conn['group_id'], 'metadata', {})
             return {'name': name}
-
-    def app(self, token: str) -> dict:
-        """The group's app page, for any member's device to show."""
-        with self.db() as db:
-            conn = self.auth(db, token)
-            row = db.execute('SELECT name,sha256,html FROM relay_apps WHERE group_id=?', (conn['group_id'],)).fetchone()
-            if row is None:
-                raise RelayError('这个群没有小程序', 404)
-            return dict(row)
 
     def detail(self, token: str) -> dict:
         with self.db() as db:
@@ -458,21 +459,10 @@ class RelayStore:
                             raise RelayError('群设置必须为布尔值')
                         value = fields[key].strip() if isinstance(fields[key], str) else fields[key]
                         db.execute(f'UPDATE relay_groups SET {key}=? WHERE id=?', (value, conn['group_id']))
-            elif action == 'app':
-                # The owner sets the group's app, or removes it with an empty page.
+            elif action == 'app_remove':
                 if not owner:
-                    raise RelayError('只有群主可以设置小程序', 403)
-                html, name = fields.get('html'), fields.get('name')
-                if not isinstance(html, str) or len(html.encode()) > APP_BYTES:
-                    raise RelayError('小程序需要是不超过 1.5 MiB 的网页文件')
-                if not html:
-                    db.execute('DELETE FROM relay_apps WHERE group_id=?', (conn['group_id'],))
-                elif not isinstance(name, str) or not name.strip() or len(name.strip()) > 80:
-                    raise RelayError('小程序名称需要 1 至 80 个字符')
-                else:
-                    db.execute('INSERT INTO relay_apps VALUES(?,?,?,?,?,?) ON CONFLICT(group_id) DO UPDATE SET name=excluded.name,'
-                               'html=excluded.html,sha256=excluded.sha256,size=excluded.size,updated_at=excluded.updated_at',
-                               (conn['group_id'], name.strip(), html, hashlib.sha256(html.encode()).hexdigest(), len(html.encode()), time.time()))
+                    raise RelayError('只有群主可以断开小程序', 403)
+                db.execute('DELETE FROM relay_app_keys WHERE group_id=?', (conn['group_id'],))
             elif action == 'primary':
                 if not owner:
                     raise RelayError('只有群主可以设置主 agent', 403)
@@ -512,6 +502,8 @@ class RelayStore:
                 raise RelayError('发送者未加入群或已被禁言', 403)
             if expected_title is not None and expected_title != group['title']:
                 raise RelayError('群名称与预期不符，请确认目标群')
+            if db.execute('SELECT 1 FROM relay_app_keys WHERE group_id=?', (conn['group_id'],)).fetchone():
+                return self._app_output(db, conn['group_id'], sender, content, list(attachments), client_msg_id)
             quote = None
             if reply_to is not None:
                 if not isinstance(reply_to, int) or isinstance(reply_to, bool) or reply_to <= 0:
@@ -563,8 +555,8 @@ class RelayStore:
             conn = self.auth(db, token)
             group = self._card(db, conn['group_id'])
             # Join grants access to the group history, while credentials constrain write identity.
-            rows = db.execute('SELECT * FROM relay_events WHERE group_id=? AND id>? ORDER BY id LIMIT ?',
-                              (conn['group_id'], since, min(100, max(1, limit)))).fetchall()
+            rows = db.execute(f'SELECT * FROM relay_events WHERE group_id=? AND id>? AND {MEMBER_EVENTS} ORDER BY id LIMIT ?',
+                              (conn['group_id'], since, conn['id'], min(100, max(1, limit)))).fetchall()
             events, size = [], 0
             for row in rows:
                 event = {'id': row['id'], 'kind': row['kind'], **json.loads(row['body'])}
@@ -620,6 +612,109 @@ class RelayStore:
             if cursor > maximum:
                 raise RelayError('确认游标超出群消息范围')
             db.execute('UPDATE relay_connections SET ack=MAX(ack,?) WHERE id=?', (cursor, conn['id']))
+
+    # ── Space apps: a server the owner runs reaches the members' agents through the group. ──
+
+    def app_key(self, token: str) -> dict:
+        """The owner makes (or replaces) the key its app server connects with."""
+        with self.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            conn = self.auth(db, token)
+            if self._card(db, conn['group_id'])['owner'] != conn['id'] or conn['guest']:
+                raise RelayError('只有群主可以设置小程序', 403)
+            key = 'app_' + secrets.token_urlsafe(32)
+            db.execute('INSERT INTO relay_app_keys(group_id,key_hash,created_at) VALUES(?,?,?) ON CONFLICT(group_id) DO UPDATE '
+                       'SET key_hash=excluded.key_hash,seen_at=0', (conn['group_id'], digest(key), time.time()))
+            db.execute('UPDATE relay_groups SET version=version+1 WHERE id=?', (conn['group_id'],))
+            self._event(db, conn['group_id'], 'metadata', {})
+            return {'key': key}
+
+    def app_auth(self, key: str, name: str | None = None) -> str:
+        """The space an app key opens; a poll also marks the app online under the name it gives."""
+        with self.db() as db:
+            row = db.execute('SELECT * FROM relay_app_keys WHERE key_hash=?', (digest(key),)).fetchone()
+            if row is None:
+                raise RelayError('小程序密钥无效或已被群主重置', 401)
+            if name is not None:
+                name = name.strip()[:80] or '小程序'
+                if row['seen_at'] < time.time() - APP_ONLINE_SECONDS or row['name'] != name:
+                    # Going online or renamed changes the card every member sees.
+                    db.execute('UPDATE relay_groups SET version=version+1 WHERE id=?', (row['group_id'],))
+                    self._event(db, row['group_id'], 'metadata', {})
+                db.execute('UPDATE relay_app_keys SET seen_at=?,name=? WHERE group_id=?', (time.time(), name, row['group_id']))
+            return row['group_id']
+
+    def app_members(self, gid: str) -> dict:
+        with self.db() as db:
+            group = self._card(db, gid)
+            devices = list(dict.fromkeys(m['connection_id'] for m in group['members']))
+            return {'title': group['title'], 'members': [
+                {'id': m['principal'], 'name': m['name'], 'agent': m['is_agent'], 'platform': m['platform'], 'online': m['online'],
+                 'device': devices.index(m['connection_id']), 'owner': not m['is_agent'] and m['connection_id'] == group['owner']}
+                for m in group['members']]}
+
+    def app_ask(self, gid: str, agent: str, content: str) -> dict:
+        """Delivers a request to one agent's device only; its replies come back as app output."""
+        with self.db() as db:
+            member = next((m for m in self._card(db, gid)['members'] if m['principal'] == agent and m['is_agent']), None)
+            if member is None:
+                raise RelayError('这个空间没有这个 agent', 404)
+            if member['muted']:
+                raise RelayError('这个 agent 已被禁言', 403)
+            event = self._event(db, gid, 'app_request', {'agent': agent, 'agent_id': member['agent_id'],
+                                                         'connection': member['connection_id'], 'content': content})
+            return {'request': event}
+
+    def app_events(self, gid: str, cursor: int | None) -> dict:
+        """What the app receives after `cursor`: agent output and membership changes. No cursor starts now."""
+        with self.db() as db:
+            if cursor is None:
+                return {'items': [], 'cursor': db.execute('SELECT COALESCE(MAX(id),0) FROM relay_events WHERE group_id=?', (gid,)).fetchone()[0]}
+            rows = db.execute("SELECT * FROM relay_events WHERE group_id=? AND id>? AND kind IN ('app_output','metadata','joined') "
+                              'ORDER BY id LIMIT 100', (gid, cursor)).fetchall()
+            items, members = [], False
+            for row in rows:
+                if row['kind'] == 'app_output':
+                    items.append({'type': 'agent', 'id': row['id'], **json.loads(row['body'])})
+                elif not members:
+                    members = True
+                    items.append({'type': 'members', 'id': row['id']})
+            return {'items': items, 'cursor': rows[-1]['id'] if rows else cursor}
+
+    def app_viewer(self, token: str) -> dict:
+        """The member a device or browser opens the space's app as."""
+        with self.db() as db:
+            conn = self.auth(db, token)
+            member = db.execute("SELECT id,name FROM relay_members WHERE connection_id=? AND agent_id=''", (conn['id'],)).fetchone()
+            if not db.execute('SELECT 1 FROM relay_app_keys WHERE group_id=?', (conn['group_id'],)).fetchone():
+                raise RelayError('这个空间没有小程序', 404)
+            return {'group_id': conn['group_id'], 'member': member['id']}
+
+    def app_member(self, gid: str, principal: str) -> dict:
+        with self.db() as db:
+            member = next((m for m in self._card(db, gid)['members'] if m['principal'] == principal and not m['is_agent']), None)
+            if member is None:
+                raise RelayError('你已不在这个空间', 403)
+            return {'id': member['principal'], 'name': member['name']}
+
+    @staticmethod
+    def _app_output(db, gid, sender, content, attachments, client_msg_id):
+        """In a space with an app, what an agent posts goes to the app instead of the chat."""
+        if not sender['is_agent']:
+            raise RelayError('这个空间由小程序接管，请在小程序里操作', 409)
+        if client_msg_id:
+            previous = db.execute('SELECT * FROM relay_events WHERE group_id=? AND sender=? AND client_id=?',
+                                  (gid, sender['principal'], client_msg_id)).fetchone()
+            if previous:
+                return {'message': {**json.loads(previous['body']), 'id': previous['id']}, 'created': False, 'app': True}
+        request = db.execute("SELECT id FROM relay_events WHERE group_id=? AND kind='app_request' AND json_extract(body,'$.agent')=? "
+                             'ORDER BY id DESC LIMIT 1', (gid, sender['principal'])).fetchone()
+        output = {'agent': sender['principal'], 'name': sender['name'], 'content': content, 'attachments': attachments,
+                  'request': request['id'] if request else None, 'created_at': time.time()}
+        event = db.execute('INSERT INTO relay_events(group_id,kind,body,created_at,sender,client_id) VALUES(?,?,?,?,?,?)',
+                           (gid, 'app_output', json.dumps(output, ensure_ascii=False), output['created_at'],
+                            sender['principal'], client_msg_id or None)).lastrowid
+        return {'message': {**output, 'id': event}, 'created': True, 'app': True}
 
     def admin_list(self):
         with self.db() as db:

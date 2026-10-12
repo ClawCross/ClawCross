@@ -91,7 +91,7 @@
 
   /** Starts the agent of this page's group. `token` reads the guest credential, `refresh` polls the chat. */
   function start({ ticket, token, refresh }) {
-    let group = '', title = '', owner = '', members = [], messages = [], files = null;
+    let group = '', title = '', owner = '', members = [], messages = [], requests = [], files = null;
     let holder = false, locking = false, busy = false, failure = '', state = { state: 'off' }, view = 'main';
     const settings = () => group ? read('group-guest-agent:' + group, null) : null;
     const saveSettings = value => write('group-guest-agent:' + group, value);
@@ -132,30 +132,50 @@
       if (!config || !me) return say({ state: 'off' });
       if (!holder || busy) return;
       if (config.paused) return say({ state: 'paused' });
-      const latest = messages.length ? messages[messages.length - 1].id : 0;
+      const latest = Math.max(messages.length ? messages[messages.length - 1].id : 0, requests.length ? requests[requests.length - 1].id : 0);
       const saved = cursor();
       // A new agent, or one set up again on this device, starts from now rather than the history.
       if (saved === null) saveCursor(latest);
       const from = saved ?? latest;
-      if (!messages.some(m => m.id > from && (m.targets || []).includes(me.principal))) {
+      // In a space with an app, the app asks this agent directly; otherwise mentions wake it.
+      const ask = requests.find(r => r.id > from && r.agent === me.principal);
+      if (!ask && !messages.some(m => m.id > from && (m.targets || []).includes(me.principal))) {
         return say(failure ? { state: 'error', detail: failure } : { state: 'idle' });
       }
       busy = true;
       say({ state: 'replying' });
       try {
-        await turn(config, me, latest);
+        if (ask) await answer(config, me, ask);
+        else await turn(config, me, latest);
         failure = '';
       } catch (error) {
         failure = error.message;
       } finally {
-        saveCursor(latest);
+        saveCursor(ask ? ask.id : latest);
         busy = false;
       }
       return kick();
     }
 
     async function turn(config, me, upto) {
-      const conversation = [{ role: 'system', content: instructions(config, me) }, { role: 'user', content: transcript(me) }];
+      const reply = await respond(config, [{ role: 'system', content: instructions(config, me) }, { role: 'user', content: transcript(me) }]);
+      if (reply) await relay('messages', { content: reply.slice(0, 60000), agent_id: AGENT_ID, client_msg_id: 'browser:' + upto });
+    }
+
+    /** One request from the space's app; the reply goes back to the app. */
+    async function answer(config, me, ask) {
+      const system = [
+        `你是空间「${title}」里的成员「${me.name}」，运行在${owner}的浏览器里。`,
+        config.persona.trim() ? '你的人设：' + config.persona.trim() : '',
+        '这个空间的小程序直接向你提出请求。你最终输出的文字会原样作为回复交给小程序，按请求里要求的格式写。',
+        '需要时可以用工具读写你的工作区文件，或运行 JavaScript 计算；工具结果只有你看得到。'
+      ].filter(Boolean).join('\n');
+      const reply = await respond(config, [{ role: 'system', content: system }, { role: 'user', content: ask.content }]);
+      if (reply) await relay('messages', { content: reply.slice(0, 60000), agent_id: AGENT_ID, client_msg_id: 'browser-app:' + ask.id });
+    }
+
+    /** The model's final text after any tool calls; empty when it chose not to reply. */
+    async function respond(config, conversation) {
       let reply = '';
       for (let step = 1; step <= MAX_STEPS; step++) {
         const message = (await complete(config, conversation, step < MAX_STEPS)).choices?.[0]?.message;
@@ -164,8 +184,7 @@
         conversation.push(message);
         for (const call of message.tool_calls) conversation.push({ role: 'tool', tool_call_id: call.id, content: await useTool(call) });
       }
-      if (!reply || reply === NO_REPLY) return;
-      await relay('messages', { content: reply.slice(0, 60000), agent_id: AGENT_ID, client_msg_id: 'browser:' + upto });
+      return reply === NO_REPLY ? '' : reply;
     }
 
     function instructions(config, me) {
@@ -379,7 +398,7 @@
     });
 
     return {
-      /** The chat after a poll: group identity, members and the newest messages. */
+      /** The chat after a poll: group identity, members, the newest messages and the app's requests. */
       update(data) {
         if (!group && data.identity_key) {
           group = data.identity_key;
@@ -392,6 +411,8 @@
         members = data.members;
         const seen = new Set(messages.map(m => m.id));
         messages = [...messages, ...data.messages.filter(m => !seen.has(m.id))].sort((a, b) => a.id - b.id).slice(-200);
+        const asked = new Set(requests.map(r => r.id));
+        requests = [...requests, ...(data.requests || []).filter(r => !asked.has(r.id))].sort((a, b) => a.id - b.id).slice(-50);
         if (!group) return;
         render();
         void kick();

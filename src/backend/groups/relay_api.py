@@ -1,10 +1,20 @@
-"""Network-facing relay protocol, with invitation-link joins and scoped duplex sessions."""
+"""Network-facing relay protocol, with invitation-link joins and scoped duplex sessions.
+
+A space's app is a server its owner runs anywhere. It connects out to this relay with the
+space's app key and long-polls ``/relay/app/poll``: members' page requests (tunnelled from
+``/relay/app/site/<session>/…``), its agents' output and membership changes arrive there.
+It asks one agent with ``/relay/app/ask`` and answers page requests with ``/relay/app/respond``.
+"""
 import asyncio
+import base64
 from collections import defaultdict, deque
+import hashlib
 import hmac
+import json
+import secrets
 import time
 
-from fastapi import APIRouter, Header, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Header, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 from groups.relay_store import RelayError, RelayStore
@@ -63,6 +73,34 @@ class Post(BaseModel):
     reply_to: int | None = None
 
 
+class AppPoll(BaseModel):
+    cursor: int | None = None  # None starts from now
+    name: str = Field('', max_length=80)
+
+
+class AppAsk(BaseModel):
+    agent: str = Field(min_length=1, max_length=100)
+    content: str = Field(min_length=1, max_length=65536)
+
+
+class AppReply(BaseModel):
+    id: str = Field(min_length=1, max_length=64)
+    status: int = Field(200, ge=100, le=599)
+    headers: dict[str, str] = Field(default_factory=dict)
+    body: str = ''  # base64
+
+
+# Page requests carry these headers to the app; the app's replies keep these.
+APP_REQUEST_HEADERS = {'accept', 'accept-language', 'content-type', 'if-none-match', 'if-modified-since', 'range', 'user-agent'}
+APP_REPLY_HEADERS = {'content-type', 'cache-control', 'etag', 'last-modified', 'location', 'content-disposition', 'content-range',
+                     'accept-ranges'}
+# The page runs at an opaque origin: it can never act as the site that serves it.
+APP_PAGE_HEADERS = {'Content-Security-Policy': 'sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads',
+                    'Access-Control-Allow-Origin': '*', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer'}
+APP_WAIT_SECONDS = 15
+APP_REPLY_SECONDS = 30
+
+
 def local_control(request: Request, key: str) -> bool:
     return bool(request.client and request.client.host in {'127.0.0.1', '::1'} and
                 hmac.compare_digest(request.headers.get('x-group-service-key', ''), key))
@@ -73,6 +111,9 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
     rate = defaultdict(deque)
     sockets = defaultdict(int)
     pending = 0
+    # Page requests waiting for each space's app, which this process alone tunnels.
+    tunnels = defaultdict(lambda: {'queue': deque(), 'wake': asyncio.Event(), 'replies': {}, 'seen': 0.0})
+    signing = (key or secrets.token_hex(32)).encode()
 
     def limited(identity, maximum):
         now = time.monotonic()
@@ -99,6 +140,29 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
             return await asyncio.to_thread(fn, *args, **kwargs)
         except RelayError as exc:
             raise HTTPException(exc.status, str(exc)) from exc
+
+    def app_key(authorization):
+        credential = token(authorization)
+        if not credential.startswith('app_'):
+            raise HTTPException(401, '需要小程序密钥')
+        return credential
+
+    def sign(value: str) -> str:
+        return hmac.new(signing, value.encode(), hashlib.sha256).hexdigest()[:32]
+
+    def session_of(gid: str, member: str) -> str:
+        """A member's entrance to the space's site, valid for a day; it is the page's only credential."""
+        payload = base64.urlsafe_b64encode(json.dumps([gid, member, int(time.time()) + 86400]).encode()).decode().rstrip('=')
+        return payload + '.' + sign(payload)
+
+    def viewer_of(session: str) -> tuple[str, str]:
+        payload, _, mark = session.partition('.')
+        if not payload or not hmac.compare_digest(mark, sign(payload)):
+            raise HTTPException(404, '小程序入口无效')
+        gid, member, expires = json.loads(base64.urlsafe_b64decode(payload + '=' * (-len(payload) % 4)))
+        if expires < time.time():
+            raise HTTPException(404, '小程序入口已过期，请重新打开空间')
+        return gid, member
 
     @router.get('/health')
     async def health():
@@ -151,11 +215,6 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
     @router.get('/group')
     async def group(authorization: str | None = Header(None)):
         return await invoke(store.detail, token(authorization))
-
-    @router.get('/app')
-    @router.get('/guest/app')
-    async def app(authorization: str | None = Header(None)):
-        return await invoke(store.app, token(authorization))
 
     @router.get('/messages')
     async def messages(after_id: int = 0, authorization: str | None = Header(None)):
@@ -238,6 +297,80 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
     @router.post('/manage/{action}')
     async def manage(action: str, body: dict, authorization: str | None = Header(None)):
         return await invoke(store.manage, token(authorization), action, body)
+
+    @router.post('/app/key')
+    async def make_app_key(authorization: str | None = Header(None)):
+        return await invoke(store.app_key, token(authorization))
+
+    @router.post('/app/session')
+    @router.post('/guest/app_session')
+    async def app_session(authorization: str | None = Header(None)):
+        viewer = await invoke(store.app_viewer, token(authorization))
+        return {'path': f"relay/app/site/{session_of(viewer['group_id'], viewer['member'])}/"}
+
+    @router.api_route('/app/site/{session}', methods=['GET', 'HEAD'])
+    async def app_site_root(session: str):
+        return Response(status_code=307, headers={'Location': f'./{session}/'})
+
+    @router.api_route('/app/site/{session}/{path:path}', methods=['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'])
+    async def app_site(session: str, path: str, request: Request):
+        gid, principal = viewer_of(session)
+        if request.method == 'OPTIONS':
+            return Response(status_code=204, headers={**APP_PAGE_HEADERS, 'Access-Control-Allow-Methods': '*',
+                                                      'Access-Control-Allow-Headers': '*', 'Access-Control-Max-Age': '600'})
+        member = await invoke(store.app_member, gid, principal)
+        tunnel = tunnels[gid]
+        if tunnel['seen'] < time.monotonic() - 60:
+            return Response('小程序暂时不在线，请稍后再打开。', status_code=503, media_type='text/plain; charset=utf-8', headers=APP_PAGE_HEADERS)
+        rid = secrets.token_hex(12)
+        reply = asyncio.get_running_loop().create_future()
+        tunnel['replies'][rid] = reply
+        tunnel['queue'].append({'type': 'http', 'id': rid, 'member': member, 'method': request.method, 'path': '/' + path,
+                                'query': request.url.query, 'body': base64.b64encode(await request.body()).decode(),
+                                'headers': {k: v for k, v in request.headers.items() if k.lower() in APP_REQUEST_HEADERS}})
+        tunnel['wake'].set()
+        try:
+            answer = await asyncio.wait_for(reply, APP_REPLY_SECONDS)
+        except asyncio.TimeoutError:
+            return Response('小程序没有响应。', status_code=504, media_type='text/plain; charset=utf-8', headers=APP_PAGE_HEADERS)
+        finally:
+            tunnel['replies'].pop(rid, None)
+        headers = {k: v for k, v in answer.headers.items() if k.lower() in APP_REPLY_HEADERS}
+        return Response(base64.b64decode(answer.body), status_code=answer.status, headers={**headers, **APP_PAGE_HEADERS})
+
+    @router.post('/app/poll')
+    async def app_poll(body: AppPoll, authorization: str | None = Header(None)):
+        gid = await invoke(store.app_auth, app_key(authorization), body.name or '小程序')
+        tunnel = tunnels[gid]
+        deadline = time.monotonic() + APP_WAIT_SECONDS
+        while True:
+            tunnel['seen'] = time.monotonic()
+            requests = [tunnel['queue'].popleft() for _ in range(len(tunnel['queue']))]
+            packet = await invoke(store.app_events, gid, body.cursor)
+            if requests or packet['items'] or body.cursor is None or time.monotonic() >= deadline:
+                return {'items': requests + packet['items'], 'cursor': packet['cursor']}
+            tunnel['wake'].clear()
+            try:
+                await asyncio.wait_for(tunnel['wake'].wait(), 0.5)
+            except asyncio.TimeoutError:
+                pass
+
+    @router.post('/app/respond')
+    async def app_respond(body: AppReply, authorization: str | None = Header(None)):
+        reply = tunnels[await invoke(store.app_auth, app_key(authorization))]['replies'].get(body.id)
+        if reply is not None and not reply.done():
+            reply.set_result(body)
+        return {'ok': reply is not None}
+
+    @router.get('/app/members')
+    async def app_members(authorization: str | None = Header(None)):
+        return await invoke(store.app_members, await invoke(store.app_auth, app_key(authorization)))
+
+    @router.post('/app/ask')
+    async def app_ask(body: AppAsk, authorization: str | None = Header(None)):
+        gid = await invoke(store.app_auth, app_key(authorization))
+        limited('app-ask:' + gid, 120)
+        return await invoke(store.app_ask, gid, body.agent, body.content)
 
     @router.websocket('/ws')
     async def stream(ws: WebSocket):

@@ -106,29 +106,28 @@
     return data;
   }
   function showJoin() { clearTimeout(timer); el('join').hidden = false; el('chat').hidden = true; el('rename').hidden = true; el('agent-open').hidden = true; el('password-open').hidden = true; el('password-form').hidden = true; }
-  // The group's app, when its card names one, replaces the messages and input.
-  const room = ClawCrossRoomHost.mountApp(el('room-app-surface'), {
-    loadApp: () => api('app'),
-    send: async (content, mentions) => { await api('messages', {content, mentions, client_msg_id: crypto.randomUUID()}); await poll(); },
-    configure: async () => { throw new Error('只有群主可以修改群公告'); },
-    loadHistory: async () => {
-      const history = [];
-      for (let after = 0, page = 0; page < 200; page++) {
-        const data = await api('state', undefined, 'after_id=' + after);
-        history.push(...data.messages);
-        if (!data.has_more) return history;
-        after = data.cursor;
-      }
-      throw new Error('聊天记录过长');
-    }
-  }, '/static/room-app-frame.html');
+  // A space with an app shows the app's site, tunnelled to the owner's app server, in place of the
+  // messages and input. It opens sandboxed, so it never acts as this page.
+  let appFrame = null;
+  function showApp(app) {
+    el('chat').classList.toggle('room-app-view', !!app);
+    const notice = text => { const p = document.createElement('p'); p.className = 'room-app-notice'; p.textContent = text; el('room-app-surface').replaceChildren(p); appFrame = null; };
+    if (!app) { el('room-app-surface').replaceChildren(); appFrame = null; return; }
+    if (!app.online) { notice('「' + (app.name || '小程序') + '」暂时不在线'); return; }
+    if (appFrame) return;
+    const frame = appFrame = document.createElement('iframe');
+    api('app_session', {}).then(({path}) => {
+      if (appFrame !== frame) return;
+      frame.title = app.name || '小程序';
+      frame.setAttribute('sandbox', 'allow-scripts allow-forms allow-popups allow-modals allow-downloads');
+      frame.referrerPolicy = 'no-referrer'; frame.src = '/' + path;
+      el('room-app-surface').replaceChildren(frame);
+    }, error => { if (appFrame === frame) notice('小程序打开失败：' + error.message); });
+  }
   function render(data) {
-    const note = ClawCrossRooms.humanAnnouncement(data.announcement);
-    el('announcement').hidden = !note;
-    el('announcement').textContent = note ? '群公告 · ' + note : '';
-    el('chat').classList.toggle('room-app-view', !!data.app);
-    room.update({app: data.app, roomId: data.group_id, title: data.title, announcement: data.announcement, members: data.members,
-      messages: data.messages, actor: {key: data.principal, name: data.name}, isOwner: false});
+    el('announcement').hidden = !data.announcement;
+    el('announcement').textContent = data.announcement ? '群公告 · ' + data.announcement : '';
+    showApp(data.app);
     identityKey(data);
     el('password-open').textContent = data.password_set ? '修改密码' : '设置密码';
     principal = data.principal; el('title').textContent = data.title; el('name').value = data.name;

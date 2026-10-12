@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const Rooms = require('../src/frontend/static/js/room-sdk.js');
-const Battle = require('../examples/room-apps/creature-battle/battle.js');
+const Rooms = require('../examples/space-apps/creature-battle/room-sdk.js');
+const Battle = require('../examples/space-apps/creature-battle/battle.js');
 const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="30" fill="#ff9900"/></svg>';
 const members = [
   {principal:'owner',name:'Alice',is_agent:false,device:0},

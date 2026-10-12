@@ -220,28 +220,30 @@ def client_router(facade, *, internal_token, verify_password):
         except ClientError as exc:
             raise HTTPException(exc.status, str(exc)) from exc
 
-    class AppPage(BaseModel):
-        name: str = Field(min_length=1, max_length=80)
-        html: str = Field(min_length=1, max_length=1536 * 1024)
-
-    @router.get('/groups/{gid}/app')
-    async def get_app(gid: str, authorization: str | None = Header(None)):
+    @router.post('/groups/{gid}/app-key')
+    async def app_key(gid: str, authorization: str | None = Header(None)):
+        """The owner's key for the app server it runs; a new key disconnects the previous one."""
         try:
-            return await asyncio.to_thread(facade.client.request, facade.client.require(user_of(authorization), gid), 'GET', '/app')
-        except ClientError as exc:
-            raise HTTPException(exc.status, str(exc)) from exc
-
-    @router.put('/groups/{gid}/app')
-    async def set_app(gid: str, body: AppPage, authorization: str | None = Header(None)):
-        try:
-            return await asyncio.to_thread(facade.client.manage, user_of(authorization), gid, 'app', body.model_dump())
+            row = facade.client.require(user_of(authorization), gid)
+            return await asyncio.to_thread(facade.client.request, row, 'POST', '/app/key', {})
         except ClientError as exc:
             raise HTTPException(exc.status, str(exc)) from exc
 
     @router.delete('/groups/{gid}/app')
     async def remove_app(gid: str, authorization: str | None = Header(None)):
         try:
-            return await asyncio.to_thread(facade.client.manage, user_of(authorization), gid, 'app', {'html': ''})
+            return await asyncio.to_thread(facade.client.manage, user_of(authorization), gid, 'app_remove', {})
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    @router.post('/groups/{gid}/app-session')
+    async def app_session(gid: str, authorization: str | None = Header(None)):
+        """Where this member's page of the space's app opens: the group server's site, tunnelled to the app."""
+        try:
+            row = facade.client.require(user_of(authorization), gid)
+            path = (await asyncio.to_thread(facade.client.request, row, 'POST', '/app/session', {}))['path']
+            own = row['url'] == service_url() and not row['via']
+            return {'url': '/' + path if own else row['url'] + '/' + path}
         except ClientError as exc:
             raise HTTPException(exc.status, str(exc)) from exc
 

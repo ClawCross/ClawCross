@@ -202,23 +202,62 @@ class GuestTests(unittest.TestCase):
             self.assertEqual(client.get('/relay/guest/state', headers={'Authorization':'Bearer '+self.host['token']}).status_code, 200)
 
 
-    def test_the_owner_stores_one_app_page_that_every_member_loads(self):
-        page = '<!doctype html><title>精灵对战</title><p>battle</p>'
+    def test_an_app_server_runs_the_space_and_calls_one_agent_directly(self):
+        import base64, threading
+        card = self.store.add_agent(self.host['token'], agent_id='creative', name='创意专家', platform='webot')
+        agent = next(m['principal'] for m in card['members'] if m['is_agent'])
         with TestClient(create_app(data_dir=self.temp.name, control_key='key', legacy=False)) as client:
             guest = client.post('/relay/guest/join', json={'invite':self.invite,'name':'Bob','password':'password123'}).json()
             host, member = {'Authorization':'Bearer ' + self.host['token']}, {'Authorization':'Bearer ' + guest['token']}
-            self.assertEqual(client.get('/relay/guest/app', headers=member).status_code, 404)
-            self.assertEqual(client.post('/relay/manage/app', headers=member, json={'name':'X','html':page}).status_code, 403)
-            card = client.post('/relay/manage/app', headers=host, json={'name':'精灵对战','html':page}).json()
-            self.assertEqual(card['app']['name'], '精灵对战')
-            self.assertEqual(card['app']['size'], len(page.encode()))
-            self.assertNotIn('html', card['app'])
-            self.assertEqual(client.get('/relay/guest/state', headers=member).json()['app'], card['app'])
-            self.assertEqual(client.get('/relay/guest/app', headers=member).json(), {'name':'精灵对战','sha256':card['app']['sha256'],'html':page})
-            self.assertEqual(client.get('/relay/app', headers=host).json()['html'], page)
-            self.assertEqual(client.post('/relay/manage/app', headers=host, json={'name':'X','html':'x' * (1536 * 1024 + 1)}).status_code, 400)
-            self.assertIsNone(client.post('/relay/manage/app', headers=host, json={'html':''}).json()['app'])
-            self.assertEqual(client.get('/relay/app', headers=host).status_code, 404)
+            self.assertEqual(client.post('/relay/app/key', headers=member).status_code, 403)
+            self.assertEqual(client.post('/relay/guest/app_session', headers=member).status_code, 404)
+            key = client.post('/relay/app/key', headers=host).json()['key']
+            app = {'Authorization':'Bearer ' + key}
+            self.assertEqual(client.post('/relay/app/poll', headers=member, json={}).status_code, 401)
+            start = client.post('/relay/app/poll', headers=app, json={'name':'精灵对战'}).json()
+            self.assertEqual(self.store.detail(self.host['token'])['app'], {'name':'精灵对战','online':True})
+            members = client.get('/relay/app/members', headers=app).json()['members']
+            self.assertEqual([m['name'] for m in members if m['owner']], ['Alice'])
+            self.assertEqual({m['name'] for m in members if m['agent']}, {'创意专家'})
+            # A request reaches only the device that runs the agent.
+            request = client.post('/relay/app/ask', headers=app, json={'agent':agent,'content':'画一只精灵'}).json()['request']
+            asked = [e for e in self.store.events(self.host['token'], 0)['events'] if e['kind'] == 'app_request']
+            self.assertEqual([(e['id'], e['content'], e['agent_id']) for e in asked], [(request, '画一只精灵', 'creative')])
+            self.assertFalse([e for e in self.store.events(guest['token'], 0)['events'] if e['kind'] == 'app_request'])
+            self.assertEqual(client.get('/relay/guest/state', headers=member).json()['requests'], [])
+            # The agent's send_to_group output goes to the app, not the chat; people cannot post here.
+            self.store.post(self.host['token'], content='<svg/>', agent_id='creative')
+            self.assertEqual(client.post('/relay/guest/messages', headers=member, json={'content':'hi'}).status_code, 409)
+            output = client.post('/relay/app/poll', headers=app, json={'cursor':start['cursor']}).json()
+            replies = [i for i in output['items'] if i['type'] == 'agent']
+            self.assertEqual([(i['agent'], i['content'], i['request']) for i in replies], [(agent, '<svg/>', request)])
+            self.assertFalse([e for e in self.store.events(guest['token'], 0)['events'] if e['kind'] == 'app_output'])
+            # A member's page request is tunnelled to the app with the verified member.
+            path = client.post('/relay/guest/app_session', headers=member).json()['path']
+            result = {}
+            page = threading.Thread(target=lambda: result.update(response=client.post('/' + path + 'move?x=1', content=b'{"a":1}',
+                                    headers={'Content-Type':'application/json','Cookie':'session=secret'})))
+            page.start()
+            item = None
+            for _ in range(20):
+                item = next((i for i in client.post('/relay/app/poll', headers=app, json={'cursor':output['cursor']}).json()['items']
+                             if i['type'] == 'http'), None)
+                if item: break
+            self.assertEqual((item['method'], item['path'], item['query'], item['member']['name']), ('POST', '/move', 'x=1', 'Bob'))
+            self.assertEqual(base64.b64decode(item['body']), b'{"a":1}')
+            self.assertNotIn('cookie', item['headers'])
+            client.post('/relay/app/respond', headers=app, json={'id':item['id'],'status':201,'body':base64.b64encode(b'ok').decode(),
+                                                                 'headers':{'Content-Type':'text/plain','Set-Cookie':'x=1'}})
+            page.join(10)
+            response = result['response']
+            self.assertEqual((response.status_code, response.text), (201, 'ok'))
+            self.assertIn('sandbox', response.headers['content-security-policy'])
+            self.assertNotIn('set-cookie', response.headers)
+            self.assertEqual(client.get('/relay/app/site/forged.token/').status_code, 404)
+            # Disconnecting the app returns the space to plain chat.
+            self.assertIsNone(client.post('/relay/manage/app_remove', headers=host, json={}).json()['app'])
+            self.assertEqual(client.post('/relay/app/poll', headers=app, json={}).status_code, 401)
+            self.assertEqual(client.post('/relay/guest/messages', headers=member, json={'content':'hi'}).status_code, 200)
 
 class GuestProxyTests(unittest.TestCase):
     def setUp(self):
@@ -226,6 +265,20 @@ class GuestProxyTests(unittest.TestCase):
         self.app.secret_key = 'test-secret'
         register_guest_routes(self.app, port_agent=1234, internal_token='internal', public_base=lambda:'https://chat.example')
         self.client = self.app.test_client()
+
+    def test_app_calls_and_member_pages_pass_through_to_this_machines_group_server(self):
+        reply = Mock(status_code=201, content=b'page', headers={'Content-Type':'text/html','Content-Security-Policy':'sandbox allow-scripts'})
+        with patch('frontend.proxies.group_guests.requests.Session.request', return_value=reply) as forward:
+            response = self.client.post('/relay/app/site/abc.def/move?x=1', data=b'{}',
+                                        headers={'Content-Type':'application/json','Cookie':'session=secret','Authorization':'Bearer app_k'})
+        self.assertEqual((response.status_code, response.data), (201, b'page'))
+        self.assertEqual(response.headers['Content-Security-Policy'], 'sandbox allow-scripts')
+        method, url = forward.call_args.args[:2]
+        self.assertEqual(method, 'POST')
+        self.assertTrue(url.endswith('/relay/app/site/abc.def/move'))
+        self.assertEqual(dict(forward.call_args.kwargs['params']), {'x':'1'})
+        self.assertNotIn('Cookie', forward.call_args.kwargs['headers'])
+        self.assertEqual(forward.call_args.kwargs['headers']['Authorization'], 'Bearer app_k')
 
     def test_signed_invitation_and_no_main_login(self):
         self.assertEqual(self.client.post('/proxy_groups/rg_x/guest-link', json={}).status_code, 401)
