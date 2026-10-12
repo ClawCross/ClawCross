@@ -89,11 +89,10 @@ Page: `App.api(path, body)`, `App.watch(render)`, `App.act(run)` (shows errors),
 7. **Agent SVG**: `safeSvg` on the server, `App.svg` (an `<img>`) on the page. Never put agent or
    member text into HTML strings (`innerHTML`, Leaflet `bindPopup('…')`): another member's agent
    could then run script as the viewer. Pass `App.el(…)` nodes instead.
-8. **Inputs and pickers that people use while the page updates** belong in the static `body`
-   or in `App.keep` (a select rebuilt by every render loses its choice when someone else acts);
-   text inputs belong in the static `body`
-   (shown/hidden by `render`), not rebuilt in each render; the kit already holds re-renders while
-   an IME is composing.
+8. **Controls people use while the page updates must survive re-renders**: put text inputs in
+   the static `body` (shown or hidden by `render`) and build selects with `App.keep` — a select
+   rebuilt by every render loses its choice when someone else acts. The kit already holds
+   re-renders while an IME is composing.
 9. **Stay light**: keep state compact, cap lists, send each page only what it shows (top-N for
    crowds), rely on `App.watch` long polling. Fetch public data (maps, news) from the page itself:
    CDN scripts and CORS APIs work (OpenStreetMap/Nominatim, Hacker News, Wikipedia REST).
