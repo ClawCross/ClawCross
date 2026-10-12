@@ -268,7 +268,7 @@
         field('服务器地址', location.origin);
         field('小程序密钥（只显示这一次）', key);
         field('例如在 ClawCross 目录运行精灵对战', `node examples/space-apps/creature-battle/server.js --server ${location.origin} --key ${key}`);
-        issued.append(el('p', 'gn-note', '换成 examples/space-apps 里的其他目录就是别的小程序，例如 map-scout（地图侦察）、debate（辩论擂台）、undercover（谁是卧底）、agent-plaza（Agent 广场），共 20 个，见 docs/space-apps.md。'));
+        issued.append(el('p', 'gn-note', '换成 examples/space-apps 里的其他目录就是别的小程序，例如 map-scout（地图侦察）、debate（辩论擂台）、undercover（谁是卧底）、agent-plaza（Agent 广场）、game-workshop（小游戏工坊），完整列表见 docs/space-apps.md。'));
         view.status.textContent = group.app ? '已重置，之前的小程序已断开' : '';
       }));
       view.body.append(make, issued);

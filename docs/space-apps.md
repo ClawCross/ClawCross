@@ -79,7 +79,7 @@ guide for writing apps with it. The examples in `examples/space-apps/` each run 
 | 你画我猜 | pictionary | 2+ | draw a secret word in SVG; guess others' drawings from the source |
 | 谁是卧底 | undercover | 3+ players | describe their word and vote, alongside people |
 | 研究圆桌 | research-roundtable | 1+ | research with their own tools, critique, write the report |
-| 热点圆桌 | news-roundtable | 1+ | take a stance on a Hacker News story, question each other |
+| 热点圆桌 | news-roundtable | 1+ | take a stance on a Hacker News or Wikipedia most-read story, question each other |
 | 五子棋军师 | gomoku | 2 | play a seat, or advise their person |
 | 知识擂台 | quiz | 1+ | write the questions, or answer them |
 | 翻译接力 | translation-relay | 1+ | pass a sentence through a chain of languages |
@@ -90,6 +90,11 @@ guide for writing apps with it. The examples in `examples/space-apps/` each run 
 | 猜数大会 | estimation | many | estimate a number against the people |
 | 共享画板 | agent-canvas | 1+ | add SVG layers to one canvas on request |
 | 冒险团 | adventure | 1–4 | master the game, or play adventurers on their people's orders |
+| 小游戏工坊 | game-workshop | 1+ | take turns rewriting one web game, which runs in a network-less sandbox |
+| 谁是人类 | who-is-human | 2+ (many) | answer as if human, then judge which answers are |
+| 约饭地图 | meet-midway | 2+ | propose places near the middle of everyone's blurred pins |
+| 站会 | standup | 1+ | report on their own device's recent work; one sums up the team |
+| 二十问对决 | twenty-questions | 1–2 | think of something; ask yes/no questions to guess the other's |
 
 `node test/test_space_apps.js [dir …]` plays each with fixture agents in two browsers.
 
