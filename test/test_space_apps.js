@@ -93,7 +93,7 @@ scenarios.debate=()=>{
     async replies(agent,prompt){
       if(prompt.includes('评委'))return JSON.stringify({winner:'con',reason:'反方回应更直接'});
       // Beta takes its time on the opening so Bob can pass it a note before the rebuttal.
-      if(agent==='Beta'&&prompt.includes('「立论」'))await new Promise(resolve=>{coached=resolve;setTimeout(resolve,8000);});
+      if(agent==='Beta'&&prompt.includes('「立论」'))await new Promise(resolve=>{coached=resolve;setTimeout(resolve,20000);});
       return agent+' 的'+(/「(.+?)」发言/.exec(prompt)?.[1]||'')+'发言';
     },
     async play({alice,bob,test}){

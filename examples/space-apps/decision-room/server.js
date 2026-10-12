@@ -34,8 +34,8 @@ function render(s){
   fill($('room'),el('h2',{},d.question),el('p',{class:'muted'},d.scores.map(x=>x.name+(x.matrix?' ✓':x.error?' ✗':' 打分中…')).join('　')),
     el('div',{class:'card'},el('strong',{},'你的权重（负数表示越低越好）'),...d.criteria.map(c=>el('div',{class:'row'},el('span',{style:'width:90px'},c),
       keep('w-'+c,()=>el('input',{id:'w-'+c,type:'range',min:-3,max:3,step:1,value:weights[c],oninput:e=>{weights[c]=+e.target.value;render(last);}})),el('span',{},String(weights[c]))))),
-    el('div',{class:'card'},el('strong',{},'排名'),...ranked.map(r=>el('div',{class:'row',style:'margin:4px 0'},el('span',{style:'width:120px'},r.o),
-      el('div',{class:'bar',style:'width:'+Math.max(4,Math.abs(r.v)/max*70)+'%;background:'+(r.v<0?'var(--bad)':'var(--accent)')},r.v.toFixed(1))))),
+    el('div',{class:'card'},el('strong',{},'排名'),...ranked.map(r=>el('div',{class:'row',style:'margin:4px 0;flex-wrap:nowrap'},el('span',{style:'width:96px;flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'},r.o),
+      el('div',{style:'flex:1;min-width:0'},el('div',{class:'bar',style:'width:'+Math.max(12,Math.abs(r.v)/max*100)+'%;background:'+(r.v<0?'var(--bad)':'var(--accent)')},r.v.toFixed(1)))))),
     ...scored.map(x=>el('div',{class:'card'},el('strong',{class:'agent'},x.name),el('table',{},el('tr',{},el('th',{},''),...d.criteria.map(c=>el('th',{},c)),el('th',{},'理由')),
       ...d.options.map(o=>el('tr',{},el('td',{},o),...d.criteria.map(c=>el('td',{},String(x.matrix[o]?.[c]??'-'))),el('td',{},x.reasons[o]||'')))))));
 }
