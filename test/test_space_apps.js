@@ -815,6 +815,33 @@ scenarios['language-partner']=()=>scenario('language-partner',{
   }
 });
 
+scenarios.elimination=()=>scenario('elimination',{
+  replies(agent,prompt){
+    if(prompt.includes('为直播淘汰赛出题'))return JSON.stringify({questions:[{q:'中国最长的河是？',options:['黄河','长江','珠江'],answer:1},{q:'面积最大的省级行政区是？',options:['新疆','西藏','内蒙古'],answer:0}]});
+    return JSON.stringify({answer:prompt.includes('最长的河')?1:0});
+  },
+  async play({alice,bob,test}){
+    await alice.locator('#host').selectOption({label:'Alpha'});await alice.locator('#topic').fill('中国地理');
+    await alice.locator('#seconds').selectOption('30');await alice.locator('#begin').click();
+    await expect(bob.getByText('中国最长的河是？')).toBeVisible({timeout:10000});
+    const q=(await bob.evaluate(()=>fetch('state').then(r=>r.json()))).state.question;
+    expect(q.answer).toBe(-1);expect(q.counts).toBeNull();                         // no answer before the reveal
+    await alice.getByRole('button',{name:'B. 长江'}).click();await bob.getByRole('button',{name:'A. 黄河'}).click();
+    await expect(bob.getByText('你被淘汰了，继续围观')).toBeVisible({timeout:10000});  // Beta answered too, so it revealed at once
+    await expect(bob.locator('.option.right')).toContainText('B. 长江 · 2');
+    await expect(bob.getByText('这一题淘汰 1 人')).toBeVisible();
+    expect(test.asked.find(a=>a.agent==='Beta').content).not.toContain('"answer":1');
+    await alice.getByRole('button',{name:'下一题'}).click();
+    await expect(bob.getByText('面积最大的省级行政区是？')).toBeVisible();
+    await expect(bob.locator('.option').first()).toBeDisabled();                   // Bob is out
+    await alice.getByRole('button',{name:'B. 西藏'}).click();
+    await expect(alice.getByText('你被淘汰了，继续围观')).toBeVisible({timeout:10000});
+    await alice.getByRole('button',{name:'下一题'}).click();
+    await expect(bob.getByText('幸存者：Beta')).toBeVisible();
+    await expect(bob.getByText('存活 1 / 3')).toBeVisible();
+  }
+});
+
 (async()=>{
   const chosen=process.argv.slice(2).length?process.argv.slice(2):Object.keys(scenarios);
   const results={};
