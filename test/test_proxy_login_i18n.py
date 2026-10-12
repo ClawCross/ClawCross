@@ -17,6 +17,15 @@ class ProxyLoginI18nTests(unittest.TestCase):
     def setUp(self):
         self.client = front.app.test_client()
 
+    def test_space_app_tunnel_needs_no_login(self):
+        # Members' sandboxed app pages and the owner's app server carry their own credentials, not a login.
+        reply = mock.Mock(status_code=200, content=b'{}', headers={'Content-Type': 'application/json'})
+        with mock.patch('frontend.proxies.group_guests.requests.Session.request', return_value=reply) as forward:
+            response = self.client.get('/relay/app/site/abc.def/state?after=0')
+            poll = self.client.post('/relay/app/poll', json={}, headers={'Authorization': 'Bearer app_key'})
+        self.assertEqual((response.status_code, poll.status_code), (200, 200))
+        self.assertEqual(forward.call_count, 2)
+
     def test_local_login_without_username_returns_bilingual_error(self):
         response = self.client.post(
             "/proxy_login",

@@ -362,6 +362,8 @@ def _user_exists_in_users_json(username: str) -> bool:
 # Routes that do NOT require login
 _PUBLIC_ROUTES = frozenset({
     'group_guest_page', 'group_guest_api', 'group_guest_worker', 'group_device_relay',
+    # A space's app server (app key) and members' app pages (signed entrance) carry their own credentials.
+    'group_app_relay',
     'index', 'manifest', 'service_worker', 'static',
     'proxy_openai_completions', 'proxy_openai_models',
     'proxy_login', 'proxy_logout', 'proxy_check_session',
