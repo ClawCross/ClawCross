@@ -53,11 +53,45 @@ App calls carry `Authorization: Bearer <app key>` under `<server>/relay/app/`:
 Members open `POST /relay/app/session` (a device) or `/relay/guest/app_session` (a browser);
 the returned path `relay/app/site/<entrance>/` is that member's signed entrance, valid for a
 day. Page requests under it reach the app with the member's identity; the app answers within
-30 s. Pages use relative URLs; WebSockets are not tunnelled, so use polling or SSE.
+30 s with the whole reply, so WebSockets and streamed responses (SSE) do not pass; pages
+long-poll instead. Pages use relative URLs.
 
 The site runs at an opaque origin: ClawCross opens it in a sandboxed frame, and every site
 response carries `Content-Security-Policy: sandbox …`, so even opened directly it can never act
 as the group server's site, read its storage or use its cookies. Cookies are not forwarded.
+
+## Kit and examples
+
+`sdk/js/space-app.js` is a small kit on top of the SDK: per-agent ask queues with JSON replies
+(`app.ask`, `app.askJSON`), a per-member state the page long-polls (`app.state`, `app.changed`,
+`App.watch`), routes, a shared page shell and `safeSvg`. `skills/space-app-builder/SKILL.md` is the
+guide for writing apps with it. The examples in `examples/space-apps/` each run as
+`node examples/space-apps/<dir>/server.js --server <address> --key <app key>`:
+
+| App | Dir | People | What the agents do |
+|---|---|---|---|
+| 精灵对战 | creature-battle | 2 | draw SVG creatures, fight on their people's commands, chat when @-mentioned |
+| 地图侦察 | map-scout | 1+ | find places for a mission, drawn on an OpenStreetMap map |
+| 代码会诊 | code-clinic | 1–2 | review code independently, then cross-examine each other |
+| 辩论擂台 | debate | 2 | argue three rounds coached by their people; a third agent judges |
+| 谈判桌 | negotiation | 2 | bargain as buyer and seller under limits only their people know |
+| 海龟汤 | turtle-soup | 1–4 | host a lateral-thinking puzzle; players' agents suggest questions |
+| 你画我猜 | pictionary | 2+ | draw a secret word in SVG; guess others' drawings from the source |
+| 谁是卧底 | undercover | 3+ players | describe their word and vote, alongside people |
+| 研究圆桌 | research-roundtable | 1+ | research with their own tools, critique, write the report |
+| 热点圆桌 | news-roundtable | 1+ | take a stance on a Hacker News story, question each other |
+| 五子棋军师 | gomoku | 2 | play a seat, or advise their person |
+| 知识擂台 | quiz | 1+ | write the questions, or answer them |
+| 翻译接力 | translation-relay | 1+ | pass a sentence through a chain of languages |
+| 拍卖行 | auction | 1+ | invent lots; bid sealed on private valuations and their people's strategy |
+| 故事接龙 | story-relay | 1–4 | write in turn with people and illustrate scenes |
+| 决策会 | decision-room | 1+ | score options per criterion; people weigh |
+| Agent 广场 | agent-plaza | many | answer the owner's question; everyone votes |
+| 猜数大会 | estimation | many | estimate a number against the people |
+| 共享画板 | agent-canvas | 1+ | add SVG layers to one canvas on request |
+| 冒险团 | adventure | 1–4 | master the game, or play adventurers on their people's orders |
+
+`node test/test_space_apps.js [dir …]` plays each with fixture agents in two browsers.
 
 ## Example: creature battle
 
@@ -65,12 +99,12 @@ as the group server's site, read its storage or use its cookies. Cookies are not
 and agents' replies — in memory, decides who may act with the rules in `battle.js`, asks the
 two chosen agents for SVG creatures and moves, and serves the arena page. The owner picks two
 agents and starts; each controller commands the agent on their own device with **出招**;
-**聊天** posts chat inside the app. Damage uses a fixed table of 44 skills and 18 types;
+**聊天** posts chat inside the app; writing @agent (or @所有人) in it asks that agent to answer in the chat. Damage uses a fixed table of 44 skills and 18 types;
 values an agent supplies are ignored.
 
 ## Verification
 
-`node test/test_space_app_flow.js` runs an isolated group server, the battle app server and
+`node test/test_space_app_flow.js` (and `node test/test_space_apps.js`) run an isolated group server, the battle app server and
 two members' pages, with a ClawCross-device agent and a browser-member agent answering the
 app's requests. `node --test test/test_room_apps.js` covers the battle rules;
 `test/test_group_guests.py` covers keys, requests, output routing and the tunnel.
