@@ -4968,7 +4968,7 @@
       <label style="display:block;font-size:12px;color:var(--text-hint);margin-bottom:4px;" data-i18n="group_name_preview">群聊名称预览</label>
       <div id="group-name-preview" style="font-size:16px;font-weight:600;color:var(--text);" data-i18n="create_new_group">创建新群聊</div>
     </div>
-    <button onclick="submitCreateGroup()" style="width:100%;padding:12px;background:var(--primary);color:#fff;border:none;border-radius:8px;font-size:16px;font-weight:600;cursor:pointer;" data-i18n="create_group">创建群聊</button>
+    <button id="create-group-submit" onclick="submitCreateGroup()" style="width:100%;padding:12px;background:var(--primary);color:#fff;border:none;border-radius:8px;font-size:16px;font-weight:600;cursor:pointer;" data-i18n="create_group">创建群聊</button>
   </div>
 </div>
 
@@ -8792,7 +8792,10 @@ function updateGroupNamePreview() {
   previewEl.textContent = customName || t('create_new_group');
 }
 
+// One creation at a time: on a slow network repeated taps must not create several groups.
+let creatingGroup = false;
 async function submitCreateGroup() {
+  if (creatingGroup) return;
   const teamName = document.getElementById('create-team-select').value;
   const customName = document.getElementById('create-custom-name').value.trim();
   if (!customName) {
@@ -8803,6 +8806,8 @@ async function submitCreateGroup() {
 
   // Team membership is an optional advanced choice; the group name is independent.
   const title = customName;
+  const button = document.getElementById('create-group-submit'), label = button.textContent;
+  creatingGroup = true; button.disabled = true; button.textContent = _currentLang === 'zh' ? '正在创建…' : 'Creating…';
   try {
     const card = teamName ? await api('GET', `/v1/teams/${encodeURIComponent(teamName)}`) : {members: []};
     const agents = (card.members || []).map(m => m.agent.agent_id);
@@ -8813,6 +8818,8 @@ async function submitCreateGroup() {
     setTimeout(() => openChat(data.group_id, data.title), 300);
   } catch (e) {
     toast(t('create_failed') + ': ' + e.message);
+  } finally {
+    creatingGroup = false; button.disabled = false; button.textContent = label;
   }
 }
 
