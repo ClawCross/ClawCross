@@ -11,12 +11,15 @@ const {battle}=require('../examples/space-apps/creature-battle/server.js');
 const {startSpace}=require('./space-app-harness.js');
 
 const svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="30" fill="orange"/></svg>';
+// Amber draws its own fireball and jumps; Ripple gives no actions and gets the room's defaults.
+const fireball="<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 600 240'><circle cx='110' cy='110' r='22' fill='#ff5a1f'><animateMotion path='M0 0 L380 0' dur='.8s' fill='freeze'/></circle></svg>";
 /** A fixture agent: answers each command the app sends it with the packet the battle expects. */
 function reply(content,name){
   const command=Rooms.parseEvent(content);
   if(!command)return `${name} 收到，准备战斗！`;   // a summoner-chat mention
   return Rooms.encodeEvent(command.kind==='avatar'
-    ?{type:'avatar',room:command.room,id:command.id,name,elements:['normal'],moves:['喷射火焰','撞击','守住','自我再生'],svg}
+    ?{type:'avatar',room:command.room,id:command.id,name,elements:['normal'],moves:['喷射火焰','撞击','守住','自我再生'],svg,
+      ...(name==='Amber'?{actions:{'喷射火焰':{motion:'jump',effect:fireball}}}:{})}
     :{type:'move',room:command.room,id:command.id,turn:command.turn,move:'喷射火焰',narration:'火焰命中！'});
 }
 
@@ -67,9 +70,17 @@ function reply(content,name){
     await alice.locator('#text').fill('用喷射火焰进攻');
     await alice.locator('[data-command]').click();
     await expect(alice.locator('.cc-room-hp').nth(1)).toHaveText('76 / 100 HP',{timeout:15000});
+    // Amber's skill plays the effect and motion its agent designed with it.
+    await expect(alice.locator('.cc-room-effect img')).toHaveAttribute('data-own','1');
+    expect(decodeURIComponent(await alice.locator('.cc-room-effect img').getAttribute('src'))).toContain('#ff5a1f');
+    await expect(alice.locator('.cc-room-image').first()).toHaveAttribute('data-motion','jump');
+    expect(test.asked[0].content).toContain('motion 是精灵本体的动作');
     await expect(bobPage.locator('.cc-room-hp').nth(1)).toHaveText('76 / 100 HP',{timeout:10000});
     await bobPage.locator('[data-command]').click();
     await expect(alice.locator('.cc-room-hp').first()).toHaveText('76 / 100 HP',{timeout:15000});
+    // Ripple brought no actions: the room's own effect, mirrored for the right side, and a lunge.
+    await expect(alice.locator('.cc-room-effect img')).not.toHaveAttribute('data-own','1');
+    await expect(alice.locator('.cc-room-image').nth(1)).toHaveAttribute('data-motion','lunge');
     // The app enforces turns: Bob cannot act for Alice's agent through the app's own API.
     const forged=await bobPage.evaluate(()=>fetch('send',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({content:'[ClawCrossRoom:v1]{"protocol":"clawcross.room/1","type":"start","room":"x","id":"y"}',mentions:[]})}).then(r=>r.status));

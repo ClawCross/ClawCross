@@ -136,3 +136,26 @@ test('skill effects are self-contained animated SVGs for both attack directions 
     if(!['guard','heal'].includes(skill.type)) assert.ok(svg.includes(side?'M490 110 L110 110':'M110 110 L490 110'));
   }
 });
+test('agents give each chosen skill a body motion and an animated effect; unsafe or foreign ones are dropped',()=>{
+  const effect="<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 600 240'><circle cx='110' cy='110' r='20' fill='orange'><animateMotion path='M0 0 L380 0' dur='.8s' fill='freeze'/></circle></svg>";
+  const moves=['喷射火焰','撞击','守住','自我再生'];
+  const actions=Battle.actionsFor({
+    'flamethrower':{motion:'lunge',effect},                                            // an alias names the skill
+    '撞击':{motion:'cartwheel',effect},                                                // an unknown motion is dropped, the effect kept
+    '守住':{motion:'pulse',effect:effect.replace('<circle','<script>alert(1)</script><circle')},
+    '自我再生':{motion:'spin',effect:effect.replace("attributeName","x").replace('<animateMotion',"<set attributeName='href' to='https://example.com'/><animateMotion")},
+    '十万伏特':{motion:'jump',effect},                                                 // not one of its four skills
+  },moves);
+  assert.deepEqual(Object.keys(actions),['喷射火焰','撞击','守住','自我再生']);
+  assert.deepEqual(actions['喷射火焰'],{motion:'lunge',effect});
+  assert.deepEqual(actions['撞击'],{motion:'',effect});
+  assert.deepEqual(actions['守住'],{motion:'pulse',effect:''});
+  assert.deepEqual(actions['自我再生'],{motion:'spin',effect:''});
+  assert.equal(Battle.safeSvg(effect.replace('</svg>','<path d="'+'M0 0'.repeat(400)+'"/></svg>'),true),'');   // too long
+  // The model keeps the actions with the creature.
+  const cfg={...config,battle_rules:2,manual_start:true},rows=preparedV2();
+  rows[2].content=Rooms.encodeEvent({type:'avatar',room:'match',id:'a1',name:'Amber',elements:['fire'],moves,svg,actions:{'喷射火焰':{motion:'jump',effect}}});
+  const state=new Battle.BattleModel().rebuild(cfg,members,rows);
+  assert.deepEqual(state.fighters[0].actions,{'喷射火焰':{motion:'jump',effect}});
+  assert.deepEqual(state.fighters[1].actions,{});
+});

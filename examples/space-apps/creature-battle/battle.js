@@ -42,6 +42,9 @@
     ['咬住','bite','dark',18],['恶之波动','dark pulse','dark',24],['金属爪','metal claw','steel',18],['加农光炮','flash cannon','steel',26],
     ['妖精之风','fairy wind','fairy',18],['月亮之力','moonblast','fairy',26],['守住','protect','guard',0],['自我再生','recover','heal',22]
   ].map(([name,alias,type,power])=>Object.freeze({name,aliases:Object.freeze([alias]),type,power})));
+  // Body motions an agent gives its skills when it designs its creature; the room plays them.
+  const MOTIONS = Object.freeze({lunge:'冲撞', jump:'跳起', shake:'抖动', spin:'旋转', pulse:'蓄力'});
+  const ANIMATIONS = new Set(['animate','animatetransform','animatemotion','set','mpath']);
   function typeId(value) {
     const text=String(value || '').trim().toLowerCase();
     return TYPES[text] ? text : Object.keys(TYPES).find(id=>TYPES[id].name===text) || '';
@@ -66,10 +69,12 @@
     const text = String(name || '').trim().toLowerCase();
     return SKILLS.find(skill => skill.name === text || skill.aliases.includes(text)) || null;
   }
-  function safeSvg(raw) {
+  /** A creature as plain SVG drawing, or with `effect` a skill effect that may also animate (SMIL). */
+  function safeSvg(raw, effect) {
     const text = String(raw || '').trim();
-    if (text.length > 6000 || !/^<svg[\s>]/i.test(text) || !/<\/svg>\s*$/i.test(text)) return '';
+    if (text.length > (effect ? 1500 : 6000) || !/^<svg[\s>]/i.test(text) || !/<\/svg>\s*$/i.test(text)) return '';
     if (/<!DOCTYPE|<!ENTITY|<script\b|<foreignObject\b|<image\b|<iframe\b|<style\b|\bon\w+\s*=|javascript:|@import/i.test(text)) return '';
+    if (/attributeName\s*=\s*["']\s*(?:xlink:)?(?:href|on)/i.test(text)) return '';
     for (const match of text.matchAll(/\b(?:href|src)\s*=\s*["']([^"']*)["']/gi)) if (!match[1].startsWith('#')) return '';
     for (const match of text.matchAll(/url\s*\(([^)]*)\)/gi)) if (!match[1].trim().replace(/^["']|["']$/g, '').startsWith('#')) return '';
     if (typeof DOMParser === 'undefined') return text;
@@ -80,14 +85,27 @@
       'title','desc','defs','lineargradient','radialgradient','stop','clippath','mask','pattern','use','filter',
       'fegaussianblur','fedropshadow','feoffset','femerge','femergenode','fecolormatrix','feblend','fecomposite','feflood']);
     for (const element of doc.querySelectorAll('*')) {
-      if (element.namespaceURI !== 'http://www.w3.org/2000/svg' || !allowed.has(element.localName.toLowerCase())) return '';
+      const name = element.localName.toLowerCase();
+      if (element.namespaceURI !== 'http://www.w3.org/2000/svg' || !allowed.has(name) && !(effect && ANIMATIONS.has(name))) return '';
       for (const attr of Array.from(element.attributes)) {
         if (/^on/i.test(attr.name)) return '';
         if (['href','src'].includes(attr.localName.toLowerCase()) && !attr.value.startsWith('#')) return '';
       }
     }
-    node.setAttribute('width', '384'); node.setAttribute('height', '384');
+    if (!effect) { node.setAttribute('width', '384'); node.setAttribute('height', '384'); }
     return new XMLSerializer().serializeToString(node);
+  }
+  /** The skill actions an agent drew with its creature: a body motion and an animated effect per chosen skill. */
+  function actionsFor(raw, moves) {
+    const actions = {};
+    if (!raw || typeof raw !== 'object') return actions;
+    for (const [name, value] of Object.entries(raw)) {
+      const skill = skillFor(name);
+      if (!skill || !moves.includes(skill.name) || !value || typeof value !== 'object') continue;
+      const motion = Object.hasOwn(MOTIONS, value.motion) ? value.motion : '', effect = safeSvg(value.effect, true);
+      if (motion || effect) actions[skill.name] = {motion, effect};
+    }
+    return actions;
   }
   function damage(skill, defender, attacker, rules) {
     if (rules>=2) {
@@ -114,7 +132,7 @@
       const refs = Array.isArray(config.players) ? config.players.slice(0, 2) : [];
       const agents = refs.map(ref => Rooms.resolveMember(ref, this.members));
       const fighters = refs.map((ref, index) => ({ref: ref, agent: agents[index], hp: 100, guard: false,
-        name: ref.name || '精灵', svg: '', element: 'normal', elements: ['normal'], moves: []}));
+        name: ref.name || '精灵', svg: '', element: 'normal', elements: ['normal'], moves: [], actions: {}}));
       this.state = {fighters: fighters, rules:config.battle_rules || 1, started: !config.manual_start, turn: 1, active: 0, pending: null, awaiting: {}, winner: null, log: [], invalid: ''};
       if (fighters.length !== 2 || agents.some(agent => !agent || !agent.is_agent) || agents[0].key === agents[1].key) return this.state;
       const rows = [...new Map((messages || []).map(message => [Number(message.id), message])).values()]
@@ -168,6 +186,7 @@
         }
         fighter.svg = svg; fighter.name = String(event.name || fighter.ref.name).slice(0, 40);
         fighter.elements = elements || ['normal']; fighter.element = fighter.elements[0]; fighter.moves = moves || [];
+        fighter.actions = actionsFor(event.actions, fighter.moves);
         delete s.awaiting[fighter.ref.key];
       } else if (event.type === 'move' && s.pending && event.id === s.pending.id && side === s.active &&
                  event.turn === s.turn && s.winner === null) {
@@ -201,9 +220,13 @@
     if (event.kind === 'avatar') return base +
       '为自己设计一个原创精灵，选择 1–2 个属性，并从下列固定技能表选择四个不同技能。回复名字、elements 属性编号列表、moves 技能名称列表和 SVG 形象。\n属性：'+JSON.stringify(Object.values(TYPES).map(type=>({id:type.id,name:type.name})))+
       '\n技能：'+JSON.stringify(SKILLS.map(({name,type,power})=>({name,type,power})))+
-      '\nSVG 不超过 4000 字符，只用绘图元素、渐变和文字，不能含脚本、外部资源、image 或 foreignObject。技能动画由房间根据所选技能使用 SVG 播放。\n' +
+      '\nSVG 形象不超过 3000 字符，只用绘图元素、渐变和文字，不能含脚本、外部资源、image 或 foreignObject；属性值用单引号。' +
+      '\n再为四个技能各设计出招动作 actions：motion 是精灵本体的动作，从 '+Object.entries(MOTIONS).map(([id,name])=>id+'（'+name+'）').join('、')+' 里选；' +
+      'effect 是一段约 1 秒的 SVG 特效动画，viewBox 为 0 0 600 240，施放者在左边 (110,110)、对手在右边 (490,110)，背景透明、不要文字，' +
+      '用 animate、animateTransform、animateMotion 做动画，每段不超过 800 字符，属性值用单引号。整条消息不超过 7000 字符。\n' +
       '请保留 room 和 id，按以下格式发送一条群消息：\n' + Rooms.encodeEvent(Object.assign(frame,
-        {name: '你的精灵名字', elements: ['fire'], moves: ['喷射火焰','撞击','守住','自我再生'], svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">你的绘图</svg>'}));
+        {name: '你的精灵名字', elements: ['fire'], moves: ['喷射火焰','撞击','守住','自我再生'], svg: "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'>你的绘图</svg>",
+          actions: {'喷射火焰': {motion: 'lunge', effect: "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 600 240'>你的特效动画</svg>"}, '撞击': {motion: 'jump', effect: '…'}}}));
     return base + '【主人指令】主人：' + event.controller + '；目标 Agent：' + fighter.ref.name + '。只处理自己主人的本轮指令。\n用户指令：' + event.request + '\n当前回合：' + state.turn +
       '\n战斗状态：' + JSON.stringify(state.fighters.map(row => ({name: row.name, hp: row.hp, elements: row.elements, moves:row.moves, guard: row.guard}))) +
       '\n只能从这只精灵生成时选中的四个技能中选择一个；伤害和胜负由房间规则计算，不要自己改 HP。'+
@@ -251,6 +274,8 @@
     '.cc-room-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:10px}.cc-room-footer [data-start]{padding:10px 20px;border-radius:99px;box-shadow:0 4px 12px #14745b22}.cc-room-error{font-size:12px;color:#c94444;margin-top:8px;min-height:0}' +
     '.cc-room-skills{font-size:11px;margin-top:9px;color:var(--text-secondary,#64748b)}.cc-room-skills summary{cursor:pointer}.cc-room-skills div{display:flex;flex-wrap:wrap;gap:5px;padding-top:7px}.cc-room-skills span{padding:4px 7px;border:1px solid #ccd8d6;border-radius:7px}' +
     '.dark .cc-room-battle,[data-theme="dark"] .cc-room-battle{--bg-card:#15212b;--text:#e0eaf1;--text-secondary:#a6b6c3}.dark .cc-room-btn.secondary{background:#263644;color:#d6e2ed}' +
+    '.cc-room-image.cc-room-move-lunge{animation:cc-room-lunge .8s ease-out}.cc-room-image.cc-room-move-jump{animation:cc-room-jump .8s ease-out}.cc-room-image.cc-room-move-shake{animation:cc-room-shake .6s linear}.cc-room-image.cc-room-move-spin{animation:cc-room-spin .8s ease-in-out}.cc-room-image.cc-room-move-pulse{animation:cc-room-pulse .8s ease-in-out}' +
+    '@keyframes cc-room-lunge{35%{transform:translateX(var(--toward)) scale(1.06)}}@keyframes cc-room-jump{40%{transform:translateY(-38px)}70%{transform:translateY(4px)}}@keyframes cc-room-shake{20%,60%{transform:translateX(-9px)}40%,80%{transform:translateX(9px)}}@keyframes cc-room-spin{to{transform:rotate(360deg)}}@keyframes cc-room-pulse{50%{transform:scale(1.18);filter:brightness(1.35)}}' +
     '@keyframes cc-room-idle{0%,100%{transform:translateY(2px)}50%{transform:translateY(-5px)}}@media(max-width:500px){.cc-room-battle{padding:10px}.cc-room-setup{grid-template-columns:1fr 1fr}.cc-room-setup button{grid-column:1/-1}.cc-room-image,.cc-room-placeholder{height:110px}.cc-room-image{width:110px}.cc-room-fighters{gap:10px}.cc-room-stage{padding-top:12px}}@media(prefers-reduced-motion:reduce){.cc-room-image{animation:none}.cc-room-health span{transition:none}}';
   function mount(container, client) {
     if (!document.getElementById('cc-room-battle-style')) {
@@ -279,12 +304,24 @@
     const selects = [...root.querySelectorAll('select')];
     const prepare = root.querySelector('[data-prepare]'), start = root.querySelector('[data-start]');
     const effect=root.querySelector('.cc-room-effect');
-    let animationRoom='',lastEffect='',historyDrawn=false,effectTimer;
-    function showEffect(action) {
+    let animationRoom='',lastEffect='',historyDrawn=false,effectTimer,moving=null;
+    /** Plays a creature's body motion; a repaint during it picks it up where it was. */
+    function animate(image, index) {
+      if (!image || !moving || moving.side!==index || Date.now()-moving.at>900) return;
+      image.classList.add('cc-room-move-'+moving.motion);image.dataset.motion=moving.motion;
+      image.style.setProperty('--toward',index?'-60px':'60px');image.style.animationDelay=-(Date.now()-moving.at)+'ms';
+    }
+    function showEffect(action, s) {
       clearTimeout(effectTimer);effect.replaceChildren();
       if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+      const skill=skillFor(action.move),own=(s.fighters[action.side]?.actions || {})[action.move];
       const image=document.createElement('img');image.alt=action.move+' · 技能动画';image.dataset.move=action.move;
-      image.src='data:image/svg+xml;charset=UTF-8,'+encodeURIComponent(effectSvg(skillFor(action.move),action.side));effect.append(image);
+      image.src='data:image/svg+xml;charset=UTF-8,'+encodeURIComponent(own?.effect || effectSvg(skill,action.side));
+      // The agent drew its effect casting from the left: mirror it for the creature on the right.
+      if (own?.effect) { image.dataset.own='1'; if (action.side===1) image.style.transform='scaleX(-1)'; }
+      effect.append(image);
+      moving={side:action.side,motion:own?.motion || (['guard','heal'].includes(skill.type)?'pulse':'lunge'),at:Date.now()};
+      animate(root.querySelectorAll('.cc-room-fighter')[action.side]?.querySelector('.cc-room-image'),action.side);
       effectTimer=setTimeout(()=>effect.replaceChildren(),1400);
     }
     function ingest(messages) { for (const message of messages || []) cache.set(Number(message.id), message); }
@@ -325,7 +362,7 @@
         const label = document.createElement('div'); label.className = 'cc-room-name'; label.textContent = fighter ? fighter.name : (index ? '右方精灵' : '左方精灵');
         if (fighter && fighter.svg) {
           const image = document.createElement('img'); image.className = 'cc-room-image'; image.alt = fighter.name;
-          image.src = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(fighter.svg); card.append(image);
+          image.src = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(fighter.svg); animate(image, index); card.append(image);
         } else {
           const placeholder = document.createElement('div'); placeholder.className = 'cc-room-placeholder';
           placeholder.textContent = fighter && s.awaiting[fighter.ref.key] ? 'Agent 正在生成…' : '等待精灵登场'; card.append(placeholder);
@@ -344,7 +381,8 @@
           for (const name of fighter.moves) {
             const skill=skillFor(name),button=document.createElement('button');button.type='button';button.className='cc-room-move';button.textContent=name;
             button.style.color=(TYPES[skill.type] || {color:'#bbf7d0'}).color;button.setAttribute('aria-label','使用'+name);
-            button.title=(TYPES[skill.type]?.name || '变化')+' · 威力 '+skill.power+' · 对当前对手 ×'+effectiveness(skill.type,s.fighters[1-index]?.elements);
+            button.title=(TYPES[skill.type]?.name || '变化')+' · 威力 '+skill.power+' · 对当前对手 ×'+effectiveness(skill.type,s.fighters[1-index]?.elements)+
+              (fighter.actions[name]?.motion?' · 动作：'+MOTIONS[fighter.actions[name].motion]:'')+(fighter.actions[name]?.effect?' · 自带特效':'');
             button.disabled=!synced || busy || !s.started || index!==s.active || s.winner!==null || (!!s.pending && !s.invalid) || !allowedController(me,fighter.agent,config,members);
             button.onclick=()=>client.transport.onSuggest?.('使用'+name);moves.append(button);
           }
@@ -374,7 +412,7 @@
       if (animationRoom!==config.id) {animationRoom=config.id;historyDrawn=false;lastEffect='';clearTimeout(effectTimer);effect.replaceChildren();}
       const latest=s.log.at(-1);
       if (synced && !historyDrawn) {historyDrawn=true;lastEffect=latest?.id || '';}
-      else if (synced && latest && latest.id!==lastEffect) {lastEffect=latest.id;showEffect(latest);}
+      else if (synced && latest && latest.id!==lastEffect) {lastEffect=latest.id;showEffect(latest,s);}
     }
     root.querySelector('[data-settings]').onclick = () => {settingsOpen = !settingsOpen; render();};
     async function act(fn) {
@@ -437,5 +475,5 @@
     };
   }
   return {label: '精灵对战', TYPES:TYPES, TYPE_CHART:TYPE_CHART, SKILLS: SKILLS, skillFor: skillFor, effectiveness:effectiveness,
-    selectedMoves:selectedMoves, effectSvg:effectSvg, safeSvg: safeSvg, BattleModel: BattleModel, mount: mount};
+    selectedMoves:selectedMoves, effectSvg:effectSvg, safeSvg: safeSvg, actionsFor: actionsFor, MOTIONS: MOTIONS, BattleModel: BattleModel, mount: mount};
 });
