@@ -146,7 +146,13 @@ class SpaceAppRunner:
                     self.start(row['owner'], row['gid'], row['app'])
                     break
                 except ClientError as exc:
-                    if exc.status in (400, 403, 404) or attempt == 19:
+                    if exc.status in (403, 404):
+                        # The space is gone, or this member left it: nothing to run there any more.
+                        with self.lock:
+                            self.runs.pop((row['owner'], row['gid']), None)
+                            self.save()
+                        break
+                    if exc.status == 400 or attempt == 19:
                         with self.lock:
                             if (row['owner'], row['gid']) in self.runs:
                                 self.runs[(row['owner'], row['gid'])]['error'] = '重新启动失败：' + str(exc)

@@ -146,3 +146,13 @@ def test_routes_list_start_report_and_stop(home):
         assert api.get('/groups/rg_1/app-run', headers=alice).json()['name'] == '回声'
         assert api.post('/groups/rg_1/app-run', json={'app': 'echo'}, headers={'Authorization': 'Bearer internal:bob'}).status_code == 403
         assert api.delete('/groups/rg_1/app-run', headers=alice).json()['status'] == 'stopped'
+
+
+def test_a_run_whose_space_is_gone_is_forgotten_at_restart(home):
+    record = home / 'data' / 'space-app-runs.json'
+    record.parent.mkdir(parents=True)
+    record.write_text(json.dumps([{'owner': 'bob', 'gid': 'rg_gone', 'app': 'echo', 'pid': 0}]))
+    runner = space_apps.SpaceAppRunner(Server())   # bob is not in that space (any more)
+    runner.restore()
+    wait(lambda: ('bob', 'rg_gone') not in runner.runs)
+    assert json.loads(record.read_text()) == []
