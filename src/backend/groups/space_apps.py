@@ -3,7 +3,8 @@
 An app is a folder with a ``server.js``: the examples shipped in ``examples/space-apps`` and the
 owner's own in ``<state dir>/space-apps`` (an own folder of the same name wins). Starting one
 asks the space's group server for a fresh app key and runs ``node server.js`` with the server and
-key in its environment. Runs are remembered, so ClawCross starts them again after a restart.
+key in its environment; stopping ends it and takes it off the space. Runs are remembered, so
+ClawCross starts them again after a restart.
 """
 import json
 import os
@@ -110,9 +111,11 @@ class SpaceAppRunner:
         return self.status(owner, gid)
 
     def stop(self, owner, gid) -> dict:
+        """Ends the app and takes it off the space, which is plain group chat again."""
         with self.lock:
             self._stop(owner, gid)
             self.save()
+        self.client.manage(owner, gid, 'app_remove', {})
         return self.status(owner, gid)
 
     def _stop(self, owner, gid):

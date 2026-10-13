@@ -285,13 +285,14 @@
         view.status.textContent = ''; paint();
         await wait(2500); await refresh();
       }));
+      // Stopping also takes the app off the space: it is plain group chat again.
       const stop = button('停止', 'quiet', () => busy(stop, view.status, '正在停止…', async () => {
-        run = await request('DELETE', path + '/app-run'); view.status.textContent = ''; await refresh();
+        run = await request('DELETE', path + '/app-run'); view.status.textContent = '已停止，空间恢复为普通群聊'; await refresh(); changed(group);
       }));
       pick.addEventListener('change', describe);
       const actions = el('div', 'gn-actions'); actions.append(launch, stop);
       view.body.append(state, problem, pick, about, actions,
-        el('p', 'gn-note', 'ClawCross 会一直运行它，重启后自动恢复；启动会替换空间当前连着的小程序。把自己的小程序放进 ' + catalog.folder + '/<名字>/server.js，就会出现在这里。'));
+        el('p', 'gn-note', 'ClawCross 会一直运行它，重启后自动恢复；启动会替换空间当前连着的小程序，停止后空间恢复为普通群聊。把自己的小程序放进 ' + catalog.folder + '/<名字>/server.js，就会出现在这里。'));
       // Advanced: run an app server yourself, anywhere, with a key.
       const advanced = el('details'), issued = el('div', 'gn-body');
       advanced.append(el('summary', 'gn-note', '高级 · 自己运行小程序服务器'), issued);

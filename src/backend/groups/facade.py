@@ -262,7 +262,11 @@ def client_router(facade, *, internal_token, verify_password):
 
     @router.delete('/groups/{gid}/app-run')
     async def stop_app(gid: str, authorization: str | None = Header(None)):
-        return await asyncio.to_thread(facade.apps.stop, user_of(authorization), gid)
+        """Stops the app this machine runs for the space and returns the space to plain chat."""
+        try:
+            return await asyncio.to_thread(facade.apps.stop, user_of(authorization), gid)
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
 
     @router.post('/groups/{gid}/app-session')
     async def app_session(gid: str, authorization: str | None = Header(None)):

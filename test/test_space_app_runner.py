@@ -51,6 +51,12 @@ class Server:
 
     def __init__(self):
         self.keys = 0
+        self.removed = []
+
+    def manage(self, owner, gid, action, fields):
+        assert action == 'app_remove'
+        self.removed.append(gid)
+        return {}
 
     def require(self, owner, gid):
         if owner != 'alice':
@@ -79,7 +85,8 @@ def test_own_apps_are_listed_beside_and_over_the_shipped_ones(home):
 
 
 def test_start_runs_the_app_with_a_fresh_key_and_stop_ends_it(home):
-    runner = space_apps.SpaceAppRunner(Server())
+    server = Server()
+    runner = space_apps.SpaceAppRunner(server)
     assert runner.start('alice', 'rg_1', 'echo')['status'] == 'running'
     started = home / 'state' / 'space-apps' / 'echo' / 'started.json'
     wait(started.exists)
@@ -93,6 +100,7 @@ def test_start_runs_the_app_with_a_fresh_key_and_stop_ends_it(home):
     proc = runner.runs[('alice', 'rg_1')]['proc']
     assert runner.stop('alice', 'rg_1') == {'app': None, 'status': 'stopped'}
     assert proc.poll() is not None
+    assert server.removed == ['rg_1']   # stopping takes the app off the space: plain chat again
     assert json.loads((home / 'data' / 'space-app-runs.json').read_text()) == []
 
 
