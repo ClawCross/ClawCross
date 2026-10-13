@@ -991,6 +991,77 @@ scenarios['device-board']=()=>scenario('device-board',{
   }
 });
 
+
+scenarios['task-board']=()=>scenario('task-board',{
+  replies:()=>JSON.stringify({tasks:[{title:'检查所有按钮',detail:'逐个验证手机界面上的点击反馈'}]}),
+  async play({alice,bob,test}){
+    await alice.locator('#title').fill('整理发布说明');await alice.locator('#add').click();
+    const task=bob.locator('.task',{hasText:'整理发布说明'});await expect(task).toBeVisible();
+    await task.getByRole('button',{name:'我来做'}).click();await task.getByRole('button',{name:'开始',exact:true}).click();
+    await expect(alice.locator('.lane',{hasText:'进行中'})).toContainText('整理发布说明');
+    await bob.locator('#goal').fill('验证移动端');await bob.locator('#plan').click();
+    await expect(bob.locator('#plans')).toContainText('检查所有按钮',{timeout:10000});
+    await expect(alice.locator('#plans')).not.toContainText('检查所有按钮');
+    await bob.getByRole('button',{name:'加入看板'}).click();
+    await expect(alice.locator('#board')).toContainText('检查所有按钮');
+    const denied=await bob.evaluate(async()=>{const s=await App.api('state');try{await App.api('plan',{goal:'越过身份',agent:s.members.find(m=>m.name==='Alpha').id});return '';}catch(e){return e.message;}});
+    expect(denied).toContain('自己的 Agent');expect(test.asked.map(a=>a.agent)).toEqual(['Beta']);
+  }
+});
+scenarios['event-planner']=()=>scenario('event-planner',{
+  replies:()=>JSON.stringify({advice:'私人建议：选周日，接孩子后更从容。'}),
+  async play({alice,bob,test}){
+    await alice.locator('#title').fill('周末读书会');await alice.locator('#slots').fill('周六 14:00\n周日 15:00');
+    await alice.locator('#capacity').fill('1');await alice.locator('#create').click();
+    await bob.locator('.slot',{hasText:'周六 14:00'}).getByRole('button',{name:'这个时间可以'}).click();
+    await expect(alice.locator('.slot',{hasText:'周六 14:00'})).toContainText('Bob');
+    await expect(alice.locator('.slot',{hasText:'周六 14:00'}).getByRole('button',{name:'这个时间可以'})).toBeDisabled();
+    await bob.locator('#note').fill('下午要接孩子');await bob.locator('#ask').click();
+    await expect(bob.locator('#advice')).toContainText('接孩子',{timeout:10000});
+    await expect(alice.locator('main')).not.toContainText('接孩子');
+    await alice.locator('.slot',{hasText:'周六 14:00'}).getByRole('button',{name:'确定这个时间'}).click();
+    await expect(bob.locator('#head')).toContainText('已确定：周六 14:00');
+    expect(test.asked[0].agent).toBe('Beta');expect(test.asked[0].content).toContain('下午要接孩子');
+  }
+});
+scenarios.flashcards=()=>scenario('flashcards',{
+  replies:(agent,prompt)=>prompt.includes('制作主题')
+    ?JSON.stringify({cards:[{question:'植物在哪里进行光合作用？',answer:'主要在叶绿体中。'},{question:'光合作用需要什么能量？',answer:'光能。'}]})
+    :JSON.stringify({explanation:'私人讲解：把叶绿体想成植物的小工厂。'}),
+  async play({alice,bob,test}){
+    await alice.locator('#topic').fill('植物基础');await alice.locator('#generate').click();
+    await expect(bob.locator('#card')).toContainText('植物在哪里进行光合作用？',{timeout:10000});
+    await expect(bob.locator('#card')).not.toContainText('叶绿体');
+    await bob.getByRole('button',{name:'翻面看答案'}).click();await expect(bob.locator('#card')).toContainText('叶绿体');
+    await expect(alice.locator('#card')).not.toContainText('叶绿体');
+    await bob.locator('#explain').click();await expect(bob.locator('#explanation')).toContainText('小工厂',{timeout:10000});
+    await expect(alice.locator('#explanation')).not.toContainText('小工厂');
+    await bob.getByRole('button',{name:'记住了'}).click();await expect(bob.locator('#card')).toContainText('光合作用需要什么能量？');
+    await expect(alice.locator('#progress')).toContainText('Bob · 1/2');
+    expect(test.asked.map(a=>a.agent)).toEqual(['Alpha','Beta']);
+  }
+});
+scenarios['writing-room']=()=>scenario('writing-room',{
+  replies:()=>JSON.stringify({text:'这是大家一起打磨后的清晰介绍。'}),
+  async play({alice,bob,test}){
+    await alice.locator('#title').fill('产品介绍');await alice.locator('#text').fill('初稿很长。');await alice.locator('#save').click();
+    await expect(bob.locator('#document')).toContainText('初稿很长。');
+    await bob.locator('#goal').fill('更简洁');await bob.locator('#rewrite').click();
+    await expect(alice.locator('#suggestions')).toContainText('清晰介绍',{timeout:10000});
+    await alice.locator('#text').fill('尚未提交的个人草稿'); // must survive another participant posting
+    await bob.getByText('自己提交改写建议',{exact:true}).click();
+    await bob.locator('#manual').fill('另一份建议稿');await bob.locator('#propose').click();
+    await expect(alice.locator('#suggestions')).toContainText('另一份建议稿');
+    await expect(alice.locator('#text')).toHaveValue('尚未提交的个人草稿');
+    await alice.locator('.proposal',{hasText:'清晰介绍'}).getByRole('button',{name:'采纳建议'}).click();
+    await expect(bob.locator('#document')).toContainText('清晰介绍');
+    await alice.locator('#save').click();await expect(alice.locator('#app-error')).toContainText('文稿已更新');
+    await expect(alice.locator('#text')).toHaveValue('尚未提交的个人草稿');
+    await alice.locator('#reload').click();await expect(alice.locator('#text')).toHaveValue('这是大家一起打磨后的清晰介绍。');
+    expect(test.asked.map(a=>a.agent)).toEqual(['Beta']);
+  }
+});
+
 (async()=>{
   const chosen=process.argv.slice(2).length?process.argv.slice(2):Object.keys(scenarios);
   const results={};

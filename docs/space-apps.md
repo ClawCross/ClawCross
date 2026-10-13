@@ -116,6 +116,10 @@ guide for writing apps with it. The examples in `examples/space-apps/` each run 
 | 城市漫步 | city-walk | 1+ | plan walking routes from a start point, drawn on the map with distance and time |
 | 猜数字对决 | bulls-cows | 1–2 | keep a secret number and reason out the other's, against a person or an agent |
 | 设备看板 | device-board | 1+ | report their own device's health with read-only checks |
+| 协作看板 | task-board | 1+ | propose task breakdowns for their person; people accept, claim and move tasks |
+| 活动排期 | event-planner | 2+ | compare time slots using their person's private availability; people sign up |
+| 闪卡学堂 | flashcards | 1+ | create a shared deck and privately explain cards; each person learns at their own pace |
+| 协作写作 | writing-room | 1+ | propose rewrites of a shared draft; the owner reviews and accepts versioned changes |
 
 `node test/test_space_apps.js [dir …]` plays each with fixture agents in two browsers.
 
