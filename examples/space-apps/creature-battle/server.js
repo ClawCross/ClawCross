@@ -95,8 +95,10 @@ ${scripts}
   // The page is sandboxed without forms, so the buttons act on click.
   command.addEventListener('click',()=>run(command,value=>game.submit(value)));
   talk.addEventListener('click',()=>run(talk,value=>api('send',{content:value,mentions:[]}).then(refresh)));
-  paint();refresh().catch(error=>{hint.textContent=error.message;});
-  setInterval(()=>refresh().catch(()=>{}),1500);
+  paint();
+  // One refresh at a time: the next starts 1.5 s after the last one came back, so slow replies never pile up.
+  (async()=>{try{await refresh();}catch(error){hint.textContent=error.message;}
+    for(;;){await new Promise(done=>setTimeout(done,1500));await refresh().catch(()=>{});}})();
 })();
 </script></body></html>`;
 }
