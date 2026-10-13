@@ -46,7 +46,8 @@ ${scripts}
   const hint=document.getElementById('hint'),command=document.querySelector('[data-command]'),talk=document.querySelector('[data-chat]');
   const seen=new Set(),summon=document.getElementById('summon');let composer=null,after=0,agents='';
   async function api(address,body){
-    const response=await fetch(address,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    // text/plain keeps a POST "simple": the sandboxed page skips the CORS preflight round trip.
+    const response=await fetch(address,body===undefined?{}:{method:'POST',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:JSON.stringify(body)});
     const data=await response.json().catch(()=>({}));
     if(!response.ok)throw new Error(data.error||response.statusText);
     return data;
@@ -155,8 +156,10 @@ function battle(space) {
   space.on('member', () => refreshRoster().catch(() => {}));
 
   async function handle(req, res) {
+    // The page itself may be cached; the match and actions never are.
     const reply = (status, body, type = 'application/json; charset=utf-8') =>
-      res.writeHead(status, { 'Content-Type': type }).end(type.startsWith('application/json') ? JSON.stringify(body) : body);
+      res.writeHead(status, { 'Content-Type': type, 'Cache-Control': type.startsWith('text/html') ? 'private, max-age=600' : 'no-store' })
+        .end(type.startsWith('application/json') ? JSON.stringify(body) : body);
     try {
       const url = new URL(req.url, 'http://space');
       const person = { id: req.member.id, name: req.member.name };

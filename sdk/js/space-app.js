@@ -100,8 +100,10 @@ class App {
   route(method, path, handler) { this.routes.set(method + ' ' + path, handler); }
 
   async handle(req, res) {
+    // The page itself is the same for everyone and may be cached; state and actions never are.
     const send = (status, body, type = 'application/json; charset=utf-8') =>
-      res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store' }).end(type.startsWith('application/json') ? JSON.stringify(body) : body);
+      res.writeHead(status, { 'Content-Type': type, 'Cache-Control': type.startsWith('text/html') ? 'private, max-age=600' : 'no-store' })
+        .end(type.startsWith('application/json') ? JSON.stringify(body) : body);
     try {
       const url = new URL(req.url, 'http://space');
       const member = { ...(this.member(req.member.id) || {}), id: req.member.id, name: req.member.name };
@@ -164,7 +166,8 @@ const CLIENT = `
 window.App=(()=>{
   const error=document.getElementById('app-error');
   async function api(path,body){
-    const response=await fetch(path,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    // text/plain keeps a POST "simple": the sandboxed page skips the CORS preflight round trip.
+    const response=await fetch(path,body===undefined?{}:{method:'POST',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:JSON.stringify(body)});
     const data=await response.json().catch(()=>({}));
     if(!response.ok)throw new Error(data.error||response.statusText);
     return data;

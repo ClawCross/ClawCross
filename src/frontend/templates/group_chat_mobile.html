@@ -38,7 +38,7 @@
 <script src="/static/js/reasoning-levels.js?v=20261004-effort-stops"></script>
 <link rel="stylesheet" href="/static/css/connections.css?v=20261011">
 <script src="/static/js/connections.js?v=20261011"></script>
-<script src="/static/js/mobile-rooms.js?v=20261013-space-apps"></script>
+<script src="/static/js/mobile-rooms.js?v=20261013-keep-apps"></script>
 <script src="/static/js/external-agent-settings.js?v=20261011-ssh"></script>
 <script src="/static/js/model-profiles.js?v=20261004-effort-slider"></script>
 <script src="/static/js/approval-ui.js?v=20261004-fold-approval"></script>
@@ -1267,6 +1267,7 @@
   #room-app-surface { display:none; flex:1; min-height:0; min-width:0; overflow:hidden; }
   #chat-page.room-app-view #room-app-surface { display:flex; }
   #room-app-surface > iframe { flex:1; width:100%; height:100%; border:0; background:var(--bg-card); }
+  #room-app-surface > [hidden] { display:none; }
   .room-app-notice { margin:auto; padding:24px; color:var(--text-secondary); font-size:14px; text-align:center; }
   #chat-page.room-app-view #chat-body, #chat-page.room-app-view #new-msg-banner,
   #chat-page.room-app-view .typing-bar, #chat-page.room-app-view .input-bar-wrap { display:none!important; }
