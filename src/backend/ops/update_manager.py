@@ -205,7 +205,9 @@ def collect_repo_state(*, fetch_remote: bool = False) -> dict[str, Any]:
     latest_short = _git_output_or_default("", "rev-parse", "--short", upstream)
     latest_subject = _git_output_or_default("", "log", "-1", "--pretty=%s", upstream)
     dirty = bool(_git_output_or_default("", "status", "--porcelain"))
-    has_update = bool(current_commit and latest_commit and current_commit != latest_commit)
+    # An update is upstream work this checkout lacks; local commits not yet pushed are not one.
+    behind = _git_output_or_default("0", "rev-list", "--count", f"HEAD..{upstream}")
+    has_update = bool(current_commit and latest_commit and current_commit != latest_commit and behind.isdigit() and int(behind) > 0)
     return {
         "repo_root": str(PROJECT_ROOT),
         "branch": branch,

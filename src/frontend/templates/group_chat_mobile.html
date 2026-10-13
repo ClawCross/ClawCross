@@ -3141,6 +3141,8 @@
     transition: transform .28s cubic-bezier(.4,0,.2,1);
   }
   .settings-modal-overlay.open { transform: translateX(0); }
+  /* Slid out is not enough: on a centred wide screen the panel would still show in the right margin. */
+  .settings-modal-overlay:not(.open) { visibility: hidden; transition: transform .28s cubic-bezier(.4,0,.2,1), visibility 0s .28s; }
   .settings-modal {
     flex: 1; display: flex; flex-direction: column;
     background: var(--bg); width: 100%; max-width: 100%;
@@ -8942,6 +8944,7 @@ function toggleGroupList(force) {
   const label = collapsed ? '展开群聊列表' : '收起群聊列表', button = document.getElementById('list-toggle-btn');
   button.title = label; button.setAttribute('aria-label', label);
   try { localStorage.setItem('clawcross.groupListCollapsed', collapsed ? '1' : ''); } catch (_) {}
+  dispatchEvent(new Event('resize'));   // panels that open over the conversation follow its new width
 }
 try { if (localStorage.getItem('clawcross.groupListCollapsed')) toggleGroupList(true); } catch (_) {}
 
