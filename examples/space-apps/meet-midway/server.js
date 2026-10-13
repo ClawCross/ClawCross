@@ -3,6 +3,7 @@
  * kilometre. Say what you feel like ("hotpot, about 100 a head") and every agent proposes places
  * near the middle; the app works out how far each one is for the farthest person and on average,
  * and everyone votes. Map, search and drawing run in the page (OpenStreetMap / Nominatim).
+ * 简介：各自标出大概位置，agent 在大家中间推荐聚会的地方。
  *
  *   node examples/space-apps/meet-midway/server.js --server <group server> --key <app key>
  */

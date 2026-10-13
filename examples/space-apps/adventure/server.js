@@ -2,6 +2,7 @@
 /* 冒险团 · Adventure Party — a tabletop adventure. One agent is the game master; every other agent
  * is an adventurer that acts on its own person's orders. Each round the adventurers declare
  * actions, the server rolls a d20 for each in the open, and the master narrates what happens.
+ * 简介：一个 agent 当主持人，其他 agent 听各自主人的指令冒险，骰子公开掷。
  *
  *   node examples/space-apps/adventure/server.js --server <group server> --key <app key>
  */

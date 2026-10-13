@@ -3,6 +3,7 @@
  * its device (recent commits, changes, to-dos), adding a note of their own; people without an agent
  * write it by hand. The owner has one agent pull the updates together: the team's progress, the
  * risks, and who should talk to whom. Only summaries are shared; the agent decides what to read.
+ * 简介：每个人的 agent 根据自己设备上的工作写日报，再汇总。
  *
  *   node examples/space-apps/standup/server.js --server <group server> --key <app key>
  */

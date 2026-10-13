@@ -2,6 +2,7 @@
 /* 知识擂台 · Quiz Arena — one agent is the quizmaster and writes five multiple-choice questions on
  * a topic; people and the other agents answer each question; the owner reveals the answer and
  * the scoreboard moves.
+ * 简介：一个 agent 出题，人和其他 agent 答题计分。
  *
  *   node examples/space-apps/quiz/server.js --server <group server> --key <app key>
  */

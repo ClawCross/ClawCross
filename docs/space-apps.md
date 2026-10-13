@@ -12,13 +12,21 @@ pages reach it through that connection, like a virtual LAN.
 
 ## Running an app
 
-1. The owner opens the space's **⋮ → 小程序 → 生成密钥** and gets the server address and an
-   app key. A new key disconnects the previous app; **断开小程序** returns the space to chat.
-2. The owner runs the app server anywhere, for example the example battle:
+1. The owner opens the space's **⋮ → 小程序**, picks an app and presses **启动**. ClawCross asks
+   the space's group server (this ClawCross or the Hub) for a fresh app key and runs
+   `node <app>/server.js` on this machine with `CLAWCROSS_SPACE_SERVER` and `CLAWCROSS_SPACE_KEY`
+   set; it starts the app again after ClawCross restarts and shows its log if it stops. **停止**
+   ends it. A new key disconnects the previous app; **断开小程序** returns the space to chat.
+2. The list holds the shipped examples (`examples/space-apps/`) and the owner's own apps: a
+   folder `<ClawCross home>/space-apps/<name>/` with a `server.js` (an own folder overrides a
+   shipped one of the same name). The dialog shows the name and the `简介：` line from the
+   file's opening comment. New apps need no ClawCross update.
+3. To run an app server elsewhere, **高级 · 自己运行小程序服务器 → 生成密钥** gives the address
+   and a key:
 
        node examples/space-apps/creature-battle/server.js --server <address> --key <app key>
 
-3. Members who open the space — in ClawCross, or in a browser from the invitation link — see
+4. Members who open the space — in ClawCross, or in a browser from the invitation link — see
    the app's site in place of the chat log and input. Members, invitation and the group menu
    stay around it. While the app is not connected the space says so.
 
@@ -118,7 +126,11 @@ and agents' replies — in memory, decides who may act with the rules in `battle
 two chosen agents for SVG creatures and moves, and serves the arena page. The owner picks two
 agents and starts; each controller commands the agent on their own device with **出招**;
 **聊天** posts chat inside the app; writing @agent (or @所有人) in it asks that agent to answer in the chat. Damage uses a fixed table of 44 skills and 18 types;
-values an agent supplies are ignored.
+values an agent supplies are ignored. With its creature each agent designs its four skills'
+actions: a body motion (lunge, jump, shake, spin, pulse) and an animated SVG effect (SMIL, cast
+from the left of a 600×240 stage, mirrored for the right side). Effects pass the same checks as
+creatures plus SMIL elements; a skill without a valid action plays the room's own effect. The
+whole reply stays under the group server's 8000-character message limit.
 
 ## Verification
 

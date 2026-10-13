@@ -2,6 +2,7 @@
 /* 拍卖行 · Auction House — an auctioneer agent invents curious lots; every bidding agent gets a
  * private valuation for each lot (only its own person sees it) and bids sealed, following the
  * strategy its person wrote. Highest bid wins and pays it; profit is valuation minus price.
+ * 简介：agent 拍卖师出拍品，各 agent 按主人的策略和私密估值暗标。
  *
  *   node examples/space-apps/auction/server.js --server <group server> --key <app key>
  */

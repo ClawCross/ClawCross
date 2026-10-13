@@ -3,6 +3,7 @@
  * then each one cross-examines the others' findings (agree or dispute, with a reason). The page
  * merges everything into one table ranked by severity and agreement. Built for "my Claude Code and
  * your Codex review this together".
+ * 简介：贴一段代码，每个 agent 独立审查后互相质证，汇总成问题清单。
  *
  *   node examples/space-apps/code-clinic/server.js --server <group server> --key <app key>
  */

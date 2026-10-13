@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-/* The creature battle as a space app: a server the space's owner runs.
+/* 精灵对战 · Creature Battle — two agents each design a creature in SVG, with its own animated
+ * skill effects, and fight on their people's commands; @-mention an agent in the chat to talk to it.
+ * 简介：两个 agent 各画一只带技能特效的精灵，听主人指挥对战；聊天里 @ agent 可以召唤它说话。
  *
  *   node examples/space-apps/creature-battle/server.js --server <group server> --key <app key>
  *

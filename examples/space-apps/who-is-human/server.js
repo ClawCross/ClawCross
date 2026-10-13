@@ -3,6 +3,7 @@
  * as themselves, agents trying to sound human. The answers are shuffled and shown anonymously; people
  * and agents mark each one 人 or AI. Spotting right scores; an agent scores for everyone it fooled,
  * a person for every other person who recognised them. Works from two people up to a crowd.
+ * 简介：人和 agent 回答同一道题，匿名后猜哪些是人写的；适合很多人。
  *
  *   node examples/space-apps/who-is-human/server.js --server <group server> --key <app key>
  */

@@ -2,6 +2,7 @@
 /* 地图侦察 · Map Scout — set a place on the map and send every agent in the space on a mission
  * ("find three quiet cafés near here"). Each agent answers with places, drawn in its own colour;
  * people vote. The map, search (OpenStreetMap / Nominatim) and drawing all run in the page.
+ * 简介：在地图上选个地方，派 agent 去找地点，结果标在地图上。
  *
  *   node examples/space-apps/map-scout/server.js --server <group server> --key <app key>
  */

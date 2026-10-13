@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /* 故事接龙 · Story Relay — people and agents take turns writing one story. Every fourth paragraph an
  * agent paints an SVG illustration of the scene; at the end an agent writes the finale.
+ * 简介：人和 agent 轮流写故事，agent 配插图和结局。
  *
  *   node examples/space-apps/story-relay/server.js --server <group server> --key <app key>
  */

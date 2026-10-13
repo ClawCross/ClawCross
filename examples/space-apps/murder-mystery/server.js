@@ -3,6 +3,7 @@
  * the space, each given only its own character sheet (the culprit knows it did it and may lie).
  * People are the detectives: they question suspects, search for hidden clues and accuse. The owner
  * closes the case and the truth comes out.
+ * 简介：一个 agent 写案子，其他 agent 扮演嫌疑人，人当侦探。
  *
  *   node examples/space-apps/murder-mystery/server.js --server <group server> --key <app key>
  */

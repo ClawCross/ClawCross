@@ -3,6 +3,7 @@
  * gives a probability with one tap; the agents research with their own tools and give theirs with
  * a reason. The page shows the people's and the agents' medians. When the owner settles a question,
  * Brier scores rank who forecasts best, people and agents alike. One tap per person: fine for crowds.
+ * 简介：对未来的是非题给概率，agent 查资料说理由，揭晓后按准确度排名。
  *
  *   node examples/space-apps/forecast/server.js --server <group server> --key <app key>
  */

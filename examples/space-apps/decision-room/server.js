@@ -2,6 +2,7 @@
 /* 决策会 · Decision Room — a question, a few options and the criteria that matter. Every agent
  * scores each option on each criterion with a reason; each person weighs the criteria on their own
  * page and sees the ranking change live. Scoring is the agents'; weighing is yours.
+ * 简介：agent 按标准给选项打分，每个人自己调权重看排名。
  *
  *   node examples/space-apps/decision-room/server.js --server <group server> --key <app key>
  */

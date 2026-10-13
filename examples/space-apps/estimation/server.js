@@ -2,6 +2,7 @@
 /* 猜数大会 · Wisdom of Crowds — a number question with a true answer (the owner's, kept secret).
  * People and agents each estimate; at the reveal the page shows every guess, the crowd's median,
  * who came closest, and whether the people or the agents guessed better. Light enough for a crowd.
+ * 简介：人和 agent 一起估一个数，看谁最接近、人和 agent 谁更准；适合很多人。
  *
  *   node examples/space-apps/estimation/server.js --server <group server> --key <app key>
  */

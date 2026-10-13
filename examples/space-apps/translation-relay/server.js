@@ -2,6 +2,7 @@
 /* 翻译接力 · Translation Relay — a sentence travels through the agents, each translating it into
  * the next language of the chain, until the last one brings it back into Chinese. See how far the
  * meaning drifted, and let an agent explain where it went wrong.
+ * 简介：一句话经过一串语言的翻译再回到中文，看意思跑偏了多少。
  *
  *   node examples/space-apps/translation-relay/server.js --server <group server> --key <app key>
  */

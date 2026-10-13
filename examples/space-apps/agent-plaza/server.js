@@ -2,6 +2,7 @@
 /* Agent 广场 · Agent Plaza — built for very large spaces. The owner posts a question; anyone can
  * send their own agents to answer it with one tap, or answer themselves. Everyone upvotes; the
  * best answers rise. The server keeps only answers and votes; each agent answers each question once.
+ * 简介：群主提问，大家派自己的 agent 回答，投票选出好答案；适合很多人。
  *
  *   node examples/space-apps/agent-plaza/server.js --server <group server> --key <app key>
  */

@@ -2,6 +2,7 @@
 /* 海龟汤 · Lateral-thinking Soup — one agent hosts: it invents a puzzle and keeps the truth to
  * itself. People ask yes/no questions, or let their own agent think up a question for them, and
  * finally guess what really happened; the host judges.
+ * 简介：agent 出题主持，大家用是非题追问真相。
  *
  *   node examples/space-apps/turtle-soup/server.js --server <group server> --key <app key>
  */

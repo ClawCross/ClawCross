@@ -3,6 +3,7 @@
  * own person privately sets its limit and priorities (the other side never sees them until the
  * end) and may slip it a hint. Agents take turns with a message and an offer until one accepts or
  * ten turns pass; then both limits are revealed and the surplus scored.
+ * 简介：买卖双方的 agent 讨价还价，底线只有各自主人知道。
  *
  *   node examples/space-apps/negotiation/server.js --server <group server> --key <app key>
  */

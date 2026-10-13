@@ -3,6 +3,7 @@
  * the agents on members' own devices. Anyone poses a task; two agents answer it; you see them as A
  * and B and vote before you learn who was who. Every vote moves an Elo leaderboard. Votes cost one
  * click, so it suits a crowd; the page shows only the latest battles.
+ * 简介：两个 agent 匿名回答同一道题，投票后才揭晓是谁，并维护 Elo 排行榜。
  *
  *   node examples/space-apps/agent-arena/server.js --server <group server> --key <app key>
  */

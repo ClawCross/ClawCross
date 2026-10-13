@@ -250,35 +250,76 @@
     },
 
     async app(gid) {
-      let group;
-      try { group = await request('GET', '/' + encodeURIComponent(gid)); }
+      const path = '/' + encodeURIComponent(gid);
+      let group, catalog, run;
+      try { [group, catalog, run] = await Promise.all([request('GET', path), request('GET', '/space-apps'), request('GET', path + '/app-run')]); }
       catch (error) { notify(error.message); return; }
-      const view = dialog('小程序', '你自己运行的小程序服务器，用这里的地址和密钥连进空间；成员打开空间时看到它的页面');
-      view.body.append(el('p', 'gn-note', group.app ? (group.app.name || '小程序') + ' · ' + (group.app.online ? '在线' : '未连接')
-        : '还没有小程序，大家看到的是普通群聊'));
-      const issued = el('div', 'gn-body');
+      const view = dialog('小程序', '选一个小程序，由这台 ClawCross 运行；成员打开空间时看到它的页面');
+      const state = el('p', 'gn-note'), problem = el('pre', 'gn-note gn-app-error');
+      const pick = el('select', 'gn-input'), about = el('p', 'gn-note');
+      pick.setAttribute('aria-label', '选择小程序');
+      for (const [source, label] of [['mine', '我的小程序'], ['builtin', '自带示例']]) {
+        const apps = catalog.apps.filter(app => app.source === source);
+        if (!apps.length) continue;
+        const group_ = el('optgroup'); group_.label = label;
+        for (const app of apps) group_.append(new Option(app.name, app.id));
+        pick.append(group_);
+      }
+      const describe = () => { about.textContent = catalog.apps.find(app => app.id === pick.value)?.about || ''; };
+      const paint = () => {
+        const name = run.name || run.app;
+        state.textContent = run.status === 'running' ? '运行中 · ' + name + (group.app?.online ? ' · 已连上空间' : ' · 正在连接…')
+          : run.status === 'starting' ? '正在重新启动 · ' + name
+          : run.status === 'exited' ? '已停止 · ' + name
+          : group.app ? '空间连着别处运行的小程序 · ' + (group.app.online ? '在线' : '未连接') : '还没有小程序，大家看到的是普通群聊';
+        problem.textContent = run.status === 'exited' ? run.error || '' : '';
+        problem.hidden = !problem.textContent;
+        launch.textContent = run.app && run.status !== 'exited' ? '换成这个' : '启动';
+        stop.hidden = !run.app;
+        if (run.app && catalog.apps.some(app => app.id === run.app)) pick.value = run.app;
+        describe();
+      };
+      const refresh = async () => { [group, run] = await Promise.all([request('GET', path), request('GET', path + '/app-run')]); paint(); };
+      const launch = button('启动', 'primary', () => busy(launch, view.status, '正在启动…', async () => {
+        run = await request('POST', path + '/app-run', { app: pick.value });
+        view.status.textContent = ''; paint();
+        await wait(2500); await refresh();
+      }));
+      const stop = button('停止', 'quiet', () => busy(stop, view.status, '正在停止…', async () => {
+        run = await request('DELETE', path + '/app-run'); view.status.textContent = ''; await refresh();
+      }));
+      pick.addEventListener('change', describe);
+      const actions = el('div', 'gn-actions'); actions.append(launch, stop);
+      view.body.append(state, problem, pick, about, actions,
+        el('p', 'gn-note', 'ClawCross 会一直运行它，重启后自动恢复；启动会替换空间当前连着的小程序。把自己的小程序放进 ' + catalog.folder + '/<名字>/server.js，就会出现在这里。'));
+      // Advanced: run an app server yourself, anywhere, with a key.
+      const advanced = el('details'), issued = el('div', 'gn-body');
+      advanced.append(el('summary', 'gn-note', '高级 · 自己运行小程序服务器'), issued);
       const field = (label, value) => {
         const input = el('input', 'gn-input gn-link'); input.readOnly = true; input.value = value; input.setAttribute('aria-label', label);
         input.addEventListener('focus', () => input.select());
         issued.append(el('p', 'gn-note', label), input);
       };
-      const make = button(group.app ? '重置密钥' : '生成密钥', 'primary', () => busy(make, view.status, '正在生成…', async () => {
-        const { key } = await request('POST', '/' + encodeURIComponent(gid) + '/app-key', {});
-        issued.replaceChildren();
+      const make = button('生成密钥', 'secondary', () => busy(make, view.status, '正在生成…', async () => {
+        const { key } = await request('POST', path + '/app-key', {});
+        issued.replaceChildren(make);
         field('服务器地址', location.origin);
         field('小程序密钥（只显示这一次）', key);
         field('例如在 ClawCross 目录运行精灵对战', `node examples/space-apps/creature-battle/server.js --server ${location.origin} --key ${key}`);
-        issued.append(el('p', 'gn-note', '换成 examples/space-apps 里的其他目录就是别的小程序，例如 map-scout（地图侦察）、debate（辩论擂台）、undercover（谁是卧底）、agent-plaza（Agent 广场）、game-workshop（小游戏工坊），完整列表见 docs/space-apps.md。'));
-        view.status.textContent = group.app ? '已重置，之前的小程序已断开' : '';
+        view.status.textContent = '新密钥已生成，之前连着的小程序已断开';
+        await refresh();
       }));
-      view.body.append(make, issued);
+      issued.append(make);
       if (group.app) {
         const remove = button('断开小程序', 'quiet', () => busy(remove, view.status, '正在断开…', async () => {
-          const updated = await request('DELETE', '/' + encodeURIComponent(gid) + '/app');
+          if (run.app) await request('DELETE', path + '/app-run');
+          const updated = await request('DELETE', path + '/app');
           view.done(); changed(updated);
         }));
-        view.body.append(remove);
+        issued.append(remove);
       }
+      view.body.append(advanced);
+      paint();
     },
 
     join() {

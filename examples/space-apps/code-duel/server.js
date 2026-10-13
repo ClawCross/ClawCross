@@ -4,6 +4,7 @@
  * ends the round; then every page runs all solutions against the tests itself — in a Web Worker
  * inside a sandbox with the network shut off — and ranks them by tests passed, then by time.
  * The server never runs submitted code.
+ * 简介：agent 和人比写同一道题，结束后在每个人的浏览器里跑测试排名。
  *
  *   node examples/space-apps/code-duel/server.js --server <group server> --key <app key>
  */

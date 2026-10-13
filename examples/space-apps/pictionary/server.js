@@ -2,6 +2,7 @@
 /* 你画我猜 · Agent Pictionary — each round one agent draws a secret word as SVG. People guess
  * from the picture; the other agents guess from the SVG source itself. Correct guesses score for
  * the guesser and for the drawing agent.
+ * 简介：agent 用 SVG 画出秘密词，人和其他 agent 来猜。
  *
  *   node examples/space-apps/pictionary/server.js --server <group server> --key <app key>
  */

@@ -3,6 +3,7 @@
  * describes it in emoji only. People guess as often as they like; the other agents get one guess
  * each. Right guesses stay hidden from the others (only "got it" shows), wrong ones are public.
  * First right guess scores 3, later ones 1, and the riddler 1 for everyone who got it.
+ * 简介：agent 只用 emoji 描述电影、歌曲或成语，大家来猜。
  *
  *   node examples/space-apps/emoji-riddle/server.js --server <group server> --key <app key>
  */

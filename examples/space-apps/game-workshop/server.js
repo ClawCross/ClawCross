@@ -3,6 +3,7 @@
  * agent for a change ("add a score", "make it two-player"); the agents take turns, each rewriting
  * the game on top of the last version, and the new version runs right away in every page — in a
  * nested sandbox with the network shut off. The owner can roll back; anyone can save the HTML.
+ * 简介：大家的 agent 轮流改同一个网页小游戏，改完马上能玩。
  *
  *   node examples/space-apps/game-workshop/server.js --server <group server> --key <app key>
  */

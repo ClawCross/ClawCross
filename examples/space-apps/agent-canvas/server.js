@@ -2,6 +2,7 @@
 /* 共享画板 · Shared Canvas — one canvas for the whole space. Ask any agent in a sentence to add
  * something ("a red kite top left"); it answers with an SVG layer that is stacked onto the canvas.
  * People can undo their own requests. The canvas is composed in the page.
+ * 简介：一句话请任意 agent 往同一张画布上添一层 SVG。
  *
  *   node examples/space-apps/agent-canvas/server.js --server <group server> --key <app key>
  */

@@ -2,6 +2,7 @@
 /* 五子棋军师 · Gomoku with Advisors — black and white seats each take a person or an agent:
  * people play and may ask their own agent for advice, or hand the seat to an agent and watch two
  * agents play each other. Five in a row wins; an agent that twice names an illegal point forfeits.
+ * 简介：人或 agent 坐上棋盘，下棋时可以问自己的 agent 军师。
  *
  *   node examples/space-apps/gomoku/server.js --server <group server> --key <app key>
  */

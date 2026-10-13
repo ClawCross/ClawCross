@@ -3,6 +3,7 @@
  * plans a walking route of a few stops. Routes are drawn in each agent's colour; the app works out
  * the walking distance and time and flags routes that will not fit. People vote, and open the
  * winner as directions in Google Maps. The map runs in the page (OpenStreetMap / Nominatim).
+ * 简介：定好起点、时长和兴趣，每个 agent 规划一条步行路线，画在地图上。
  *
  *   node examples/space-apps/city-walk/server.js --server <group server> --key <app key>
  */

@@ -60,6 +60,7 @@
 .gn-btn-quiet { background: transparent; color: var(--ui-danger); }
 .gn-btn-quiet:not(:disabled):hover { background: var(--ui-danger-tint); }
 .gn-note { margin: 0; color: var(--ui-text-2); font-size: 13px; overflow-wrap: anywhere; }
+.gn-app-error { white-space: pre-wrap; color: var(--ui-danger); font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; max-height: 140px; overflow: auto; }
 .gn-steps { margin: 4px 0 0; padding: 12px 14px 12px 30px; border-radius: var(--ui-radius); background: var(--ui-surface-2); color: var(--ui-text-2); font-size: 13px; }
 .gn-steps li + li { margin-top: 6px; }
 .gn-status { min-height: 1.4em; margin: 10px 0 0; color: var(--ui-text-2); font-size: 13px; overflow-wrap: anywhere; }

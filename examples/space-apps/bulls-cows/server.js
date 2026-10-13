@@ -3,6 +3,7 @@
  * guessing the other's and the server answers "xAyB" (A: right digit, right place; B: right digit,
  * wrong place). Play your own secret against an agent, or seat two agents and watch them reason.
  * The server keeps both secrets and scores every guess; no agent ever sees the other's number.
+ * 简介：1A2B 猜数字，人对 agent，或两个 agent 对战。
  *
  *   node examples/space-apps/bulls-cows/server.js --server <group server> --key <app key>
  */

@@ -2,6 +2,7 @@
 /* 点子墙 · Idea Wall — a brainstorm. The owner sets a topic; people post ideas and send their own
  * agents to add more (the owner can send everyone's). Each person has three dots to vote with. One
  * agent then sorts the wall into themes and sums it up. Built for team decisions.
+ * 简介：人和 agent 一起出点子，每人 3 票，最后由 agent 归类总结。
  *
  *   node examples/space-apps/idea-wall/server.js --server <group server> --key <app key>
  */

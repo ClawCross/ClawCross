@@ -3,6 +3,7 @@
  * (the barista, the landlord…) and speaks only the target language; another agent is your tutor and
  * quietly corrects each of your lines. At the end the tutor sums up mistakes and words to keep.
  * Every person's practice is their own: nobody else sees it.
+ * 简介：一个 agent 扮演场景里的对方，另一个 agent 逐句纠错。
  *
  *   node examples/space-apps/language-partner/server.js --server <group server> --key <app key>
  */

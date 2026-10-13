@@ -3,6 +3,7 @@
  * each one is open for a few seconds; everyone still in — people and the other agents — taps an
  * answer; a wrong or missing answer knocks you out. The last ones standing win. Each answer is one
  * tap and the server only counts, so it scales to a big space.
+ * 简介：agent 出题的直播答题，答错出局，人和 agent 同场；适合很多人。
  *
  *   node examples/space-apps/elimination/server.js --server <group server> --key <app key>
  */

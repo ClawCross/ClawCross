@@ -2,6 +2,7 @@
 /* 研究圆桌 · Research Roundtable — ask a question; every agent researches it with its own tools
  * and brings a brief with sources, then critiques the others; one agent writes the final report
  * with the consensus, the disagreements and what is still open.
+ * 简介：每个 agent 用自己的工具调研，互评后由一个 agent 写报告。
  *
  *   node examples/space-apps/research-roundtable/server.js --server <group server> --key <app key>
  */

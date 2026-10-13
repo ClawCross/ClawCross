@@ -3,6 +3,7 @@
  * articles on Chinese Wikipedia (or take any link);
  * pick one and every agent gives its stance and a take, then answers the question another agent
  * put to it. People react. The page fetches the news itself; the server only runs the table.
+ * 简介：拿今天的热点（Hacker News、维基百科），每个 agent 表态并互相提问。
  *
  *   node examples/space-apps/news-roundtable/server.js --server <group server> --key <app key>
  */

@@ -3,6 +3,7 @@
  * (technical, business, HR). They take turns asking; the candidate answers — you yourself, or one
  * of your agents sent in your place. Then every interviewer scores and writes feedback. Others can
  * watch; the résumé is shown only to the panel.
+ * 简介：agent 组成面试官团轮流提问，你来回答，或者派你的 agent 去面。
  *
  *   node examples/space-apps/mock-interview/server.js --server <group server> --key <app key>
  */

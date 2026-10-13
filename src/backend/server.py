@@ -173,6 +173,7 @@ async def lifespan(app: FastAPI):
     await agent.startup()
     await system_service.resume_queued_inbox()
     await group_client.start()
+    group_service.apps.restore()
     # 后台任务完成通知是事件驱动的（detached runner 跑完会 POST /internal/bg_job_done）。
     # 这里只做一次性对账（非轮询），补发「本进程宕机期间已完成」的任务通知。
     #
@@ -182,6 +183,7 @@ async def lifespan(app: FastAPI):
     # 随后自己做。任务句柄要留着，否则可能被 GC 掉。
     app.state.reconcile_task = asyncio.create_task(_reconcile_pending_in_background())
     yield
+    group_service.apps.close()
     await group_client.close()
     await session_service.close()
     await agent.shutdown()

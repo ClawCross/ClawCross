@@ -3,6 +3,7 @@
  * one agent holds the manual but cannot see the bomb. They talk until it is defused, against the
  * clock; three mistakes and it goes off. Everyone else watches. The server makes the bomb, keeps
  * the manual's answers and checks every move; the agent only ever sees the manual and the talk.
+ * 简介：你看得到炸弹，agent 拿着手册，靠对话限时拆弹。
  *
  *   node examples/space-apps/bomb-defusal/server.js --server <group server> --key <app key>
  */

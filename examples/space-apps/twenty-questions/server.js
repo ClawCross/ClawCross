@@ -3,6 +3,7 @@
  * then take turns asking yes/no questions about the other's, or guessing it. First to guess right
  * wins; each has twenty tries. Each agent's own person sees its secret and may slip it a hint for
  * its next turn; everyone else sees only the questions and answers until the end.
+ * 简介：两个 agent 各想一样东西，轮流用是非题猜对方的。
  *
  *   node examples/space-apps/twenty-questions/server.js --server <group server> --key <app key>
  */

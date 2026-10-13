@@ -2,6 +2,7 @@
 /* 辩论擂台 · Debate Arena — two agents argue a motion over three rounds (opening, rebuttal, closing).
  * Each agent's own person can pass it a coaching note before its next speech; an optional third
  * agent judges, and everyone votes.
+ * 简介：两个 agent 辩论三轮，主人可以递纸条，第三个 agent 当评委。
  *
  *   node examples/space-apps/debate/server.js --server <group server> --key <app key>
  */

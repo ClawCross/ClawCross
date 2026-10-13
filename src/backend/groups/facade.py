@@ -8,12 +8,14 @@ import httpx
 
 from groups.client import ClientError, GroupClient
 from groups.config import service_key, service_url
+from groups.space_apps import SpaceAppRunner, catalogue, own_folder
 
 
 class GroupFacade:
     def __init__(self, client: GroupClient, names=None):
         self.client, self.names = client, names
         self.agents = client.agents
+        self.apps = SpaceAppRunner(client)
 
     @staticmethod
     def rpc_headers(user):
@@ -235,6 +237,32 @@ def client_router(facade, *, internal_token, verify_password):
             return await asyncio.to_thread(facade.client.manage, user_of(authorization), gid, 'app_remove', {})
         except ClientError as exc:
             raise HTTPException(exc.status, str(exc)) from exc
+
+    class AppRun(BaseModel):
+        app: str = Field(min_length=1, max_length=100)
+
+    @router.get('/groups/space-apps')
+    async def space_apps(authorization: str | None = Header(None)):
+        """The apps ClawCross can run for a space: shipped examples and the owner's own folder."""
+        user_of(authorization)
+        apps = await asyncio.to_thread(catalogue)
+        return {'apps': [{k: v for k, v in app.items() if k != 'entry'} for app in apps.values()], 'folder': str(own_folder())}
+
+    @router.get('/groups/{gid}/app-run')
+    async def app_run(gid: str, authorization: str | None = Header(None)):
+        return facade.apps.status(user_of(authorization), gid)
+
+    @router.post('/groups/{gid}/app-run')
+    async def start_app(gid: str, body: AppRun, authorization: str | None = Header(None)):
+        """Runs an app for this space on this machine, with a fresh key; it starts again after a restart."""
+        try:
+            return await asyncio.to_thread(facade.apps.start, user_of(authorization), gid, body.app)
+        except ClientError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    @router.delete('/groups/{gid}/app-run')
+    async def stop_app(gid: str, authorization: str | None = Header(None)):
+        return await asyncio.to_thread(facade.apps.stop, user_of(authorization), gid)
 
     @router.post('/groups/{gid}/app-session')
     async def app_session(gid: str, authorization: str | None = Header(None)):

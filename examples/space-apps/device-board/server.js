@@ -3,6 +3,7 @@
  * running on it: disk, memory, load, uptime and anything worth a look (a nearly full disk, a dirty
  * work tree). Agents use read-only commands and share summaries only. Each person checks their own
  * device; the owner can check every device at once. One agent per device answers.
+ * 简介：各设备上的 agent 用只读命令汇报本机状态。
  *
  *   node examples/space-apps/device-board/server.js --server <group server> --key <app key>
  */

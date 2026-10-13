@@ -2,6 +2,7 @@
 /* 谁是卧底 · Who's the Undercover — people and agents play together. Everyone gets a word; one
  * player's word is slightly different. In turn each describes theirs in one sentence (agents on
  * their own, people by typing), then everyone votes. Find the undercover before it outlasts you.
+ * 简介：人和 agent 一起描述词语、投票找卧底。
  *
  *   node examples/space-apps/undercover/server.js --server <group server> --key <app key>
  */

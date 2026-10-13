@@ -26,6 +26,8 @@ Protocol details: `docs/space-apps.md`. Code: `sdk/js/clawcross-space.js` (proto
 ```js
 #!/usr/bin/env node
 /* 名字 · English name — one paragraph: what people and agents do here.
+ * 简介：一句中文简介（ClawCross 的小程序列表显示它）。
+ *
  *   node examples/space-apps/<dir>/server.js --server <group server> --key <app key>
  */
 'use strict';
@@ -115,9 +117,13 @@ CLAWCROSS_SPACE_TEST_HUB=<hub checkout> node test/test_space_apps.js <dir>   # a
 
 ## Running it for a real space
 
+Put the app in `<ClawCross home>/space-apps/<dir>/server.js` (usually `~/.clawcross/space-apps/`);
+the space's owner then picks it in **⋮ → 小程序** and presses **启动**: ClawCross gets a key, runs
+it with `CLAWCROSS_SPACE_SERVER`/`CLAWCROSS_SPACE_KEY`, restarts it with ClawCross and shows its log.
+The kit's `run()` reads those variables, so the same file also runs by hand anywhere:
+
 ```
-node examples/space-apps/<dir>/server.js --server <address shown in the dialog> --key <app key>
-# keep it running: setsid nohup node … > app.log 2>&1 &
+node examples/space-apps/<dir>/server.js --server <address> --key <app key>   # 高级 · 生成密钥
 ```
 
 State lives in the process; restarting starts fresh. A new key disconnects the old app.
