@@ -3077,6 +3077,12 @@
     transition: transform .28s cubic-bezier(.4,0,.2,1);
   }
   .profile-subpage.open { transform: translateX(0); }
+  /* Slid out is not enough: on a centred wide screen a closed panel would still show in the right margin.
+     Hide it once it has slid away; it still slides in and out. */
+  .settings-modal-overlay:not(.open), .profile-subpage:not(.open), .agent-history-overlay:not(.open),
+  .agent-detail-overlay:not(.open), .subagent-panel-overlay:not(.open), .drawer:not(.show) {
+    visibility: hidden; transition-property: transform, opacity, visibility; transition-delay: 0s, 0s, .32s;
+  }
   .profile-subpage-header {
     display: flex; align-items: center; height: var(--header-h);
     padding: 0 6px; background: var(--bg-card);
@@ -3141,8 +3147,7 @@
     transition: transform .28s cubic-bezier(.4,0,.2,1);
   }
   .settings-modal-overlay.open { transform: translateX(0); }
-  /* Slid out is not enough: on a centred wide screen the panel would still show in the right margin. */
-  .settings-modal-overlay:not(.open) { visibility: hidden; transition: transform .28s cubic-bezier(.4,0,.2,1), visibility 0s .28s; }
+
   .settings-modal {
     flex: 1; display: flex; flex-direction: column;
     background: var(--bg); width: 100%; max-width: 100%;
