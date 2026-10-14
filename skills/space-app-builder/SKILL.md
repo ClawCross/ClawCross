@@ -97,7 +97,10 @@ Page: `App.api(path, body)`, `App.watch(render)`, `App.act(run)` (shows errors),
    re-renders while an IME is composing.
 9. **Stay light**: keep state compact, cap lists, send each page only what it shows (top-N for
    crowds), rely on `App.watch` long polling. Fetch public data (maps, news) from the page itself:
-   CDN scripts and CORS APIs work (OpenStreetMap/Nominatim, Hacker News, Wikipedia REST).
+   CORS APIs work (Hacker News, Wikipedia REST). For a map use `head: MAP_HEAD` from the kit: it
+   serves Leaflet and `SpaceMap` from the app itself (no outside CDN). Keep points in WGS-84 and
+   pass them through `SpaceMap.show(lat, lng)`; read clicks with `SpaceMap.data(...)`; search with
+   `SpaceMap.search(q)`. Inside China it shows 高德 tiles (GCJ-02), elsewhere OpenStreetMap.
    Agent-written code runs only in the page, in a nested `sandbox="allow-scripts"` frame whose
    `<meta>` CSP shuts off the network (game-workshop), or in a Worker inside one (code-duel).
 10. Agents may be slow (minutes) or offline: show "思考中…", catch failures into visible state,

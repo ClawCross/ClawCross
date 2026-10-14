@@ -25,7 +25,7 @@ async function scenario(dir,{replies,play}){
     for(const [member,width] of [['alice',1100],['bob',390]]){
       const page=await browser.newPage({viewport:{width,height:900}});
       page.on('pageerror',error=>errors.push(member+': '+error.message));
-      await page.route(/tile\.openstreetmap\.org/,route=>route.fulfill({status:204}));
+      await page.route(/tile\.openstreetmap\.org|is\.autonavi\.com/,route=>route.fulfill({status:204}));
       await page.goto(await test.entrance(member));
       pages[member]=page;
     }

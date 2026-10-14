@@ -8,7 +8,7 @@
  *   node examples/space-apps/city-walk/server.js --server <group server> --key <app key>
  */
 'use strict';
-const { run, page, refuse } = require('../../../sdk/js/space-app.js');
+const { run, page, refuse, MAP_HEAD } = require('../../../sdk/js/space-app.js');
 
 const DURATIONS = { '2 小时': 120, '半天': 240, '一整天': 480 };
 const INTERESTS = ['美食', '咖啡', '建筑', '书店', '公园', '博物馆', '夜景', '小众'];
@@ -24,8 +24,7 @@ function km(a, b) {
 
 const PAGE = page({
   title: '城市漫步',
-  head: '<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">' +
-        '<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>',
+  head: MAP_HEAD,
   style: `#map{height:44vh;min-height:260px;border-radius:14px;background:var(--card)}#found button{margin:3px 4px 0 0}
 .route h3{margin:0;font-size:15px}.stop{font-size:14px;padding:2px 0}.stop .why{color:var(--muted);font-size:13px}.over{color:var(--bad)}
 .interests label{font-size:13px}`,
@@ -39,17 +38,18 @@ const PAGE = page({
   script: `
 const {api,watch,act,el,fill}=App,$=id=>document.getElementById(id);
 const COLORS=['#0071e3','#e8590c','#2b8a3e','#ae3ec9','#c92a2a','#1098ad'];
-let map=null,layer=null,start=null,ready=false;
+let map=null,layer=null,start=null,ready=false,last=null;
 if(window.L){
-  map=L.map('map').setView([31.2304,121.4737],13);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
+  // Points stay WGS-84; SpaceMap places them on the map (高德 in China) and reads clicks back.
+  map=SpaceMap.tiles(L.map('map').setView(SpaceMap.show(31.2304,121.4737),13));
   layer=L.layerGroup().addTo(map);
-  map.on('click',e=>setStart(e.latlng.lat,e.latlng.lng,'地图上选的点'));
+  map.on('click',e=>{const [lat,lng]=SpaceMap.data(e.latlng.lat,e.latlng.lng);setStart(lat,lng,'地图上选的点');});
+  map.on('spacemapchange',()=>{if(last)render(last);});
 }else $('map').textContent='地图加载失败，仍可以搜索和查看结果。';
-function setStart(lat,lng,label){start={lat:+lat,lng:+lng,label};$('start').textContent='起点：'+label;if(map)map.setView([start.lat,start.lng],15);}
+function setStart(lat,lng,label){start={lat:+lat,lng:+lng,label};$('start').textContent='起点：'+label;if(map)map.setView(SpaceMap.show(start.lat,start.lng),15);}
 $('find').onclick=()=>act(async()=>{
   const q=$('q').value.trim();if(!q)return;
-  const rows=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=5&q='+encodeURIComponent(q)).then(r=>r.json());
+  const rows=await SpaceMap.search(q);
   fill($('found'),...rows.map(r=>el('button',{class:'ghost',onclick:()=>{setStart(r.lat,r.lon,r.display_name.split(',').slice(0,2).join(','));fill($('found'));}},r.display_name.split(',').slice(0,3).join(','))),rows.length?null:'没有找到。');
 });
 $('plan').onclick=()=>act(()=>{
@@ -59,6 +59,7 @@ $('plan').onclick=()=>act(()=>{
 /** Directions through every stop, opened in Google Maps. */
 const directions=(s,r)=>'https://www.google.com/maps/dir/'+[s,...r.stops].map(p=>p.lat.toFixed(5)+','+p.lng.toFixed(5)).join('/')+'/data=!4m2!4m1!3e2';
 function render(s){
+  last=s;
   const w=s.state,agents=s.members.filter(m=>m.agent);
   const color=id=>COLORS[Math.max(0,agents.findIndex(a=>a.id===id))%COLORS.length];
   if(!ready){ready=true;fill($('interests'),...w.interests.map(x=>el('label',{class:'chip'},el('input',{type:'checkbox',value:x}),' '+x)));fill($('duration'),...w.durations.map(d=>el('option',{},d)));}
@@ -71,12 +72,12 @@ function render(s){
         ...r.stops.map((p,i)=>el('div',{class:'stop'},(i+1)+'. '+p.name+(p.minutes?'（'+p.minutes+' 分钟）':''),p.why?el('div',{class:'why'},p.why):null)),
         el('a',{href:directions(plan.start,r),target:'_blank',rel:'noreferrer',class:'chip'},'在谷歌地图里导航')])));
   if(!layer||!plan)return;
-  layer.clearLayers();const bounds=[[plan.start.lat,plan.start.lng]];
-  L.circleMarker([plan.start.lat,plan.start.lng],{radius:8,color:'#111',fillOpacity:1}).bindTooltip(el('span',{},'起点')).addTo(layer);
+  layer.clearLayers();const origin=SpaceMap.show(plan.start.lat,plan.start.lng),bounds=[origin];
+  L.circleMarker(origin,{radius:8,color:'#111',fillOpacity:1}).bindTooltip(el('span',{},'起点')).addTo(layer);
   for(const r of plan.routes.filter(r=>r.status==='done')){
-    const path=[[plan.start.lat,plan.start.lng],...r.stops.map(p=>[p.lat,p.lng])];bounds.push(...path);
+    const path=[origin,...r.stops.map(p=>SpaceMap.show(p.lat,p.lng))];bounds.push(...path);
     L.polyline(path,{color:color(r.agent),weight:4,opacity:.8}).addTo(layer);
-    r.stops.forEach((p,i)=>L.circleMarker([p.lat,p.lng],{radius:6,color:color(r.agent),fillOpacity:.9}).bindTooltip(el('span',{},(i+1)+'. '+p.name)).addTo(layer));
+    r.stops.forEach((p,i)=>L.circleMarker(SpaceMap.show(p.lat,p.lng),{radius:6,color:color(r.agent),fillOpacity:.9}).bindTooltip(el('span',{},(i+1)+'. '+p.name)).addTo(layer));
   }
   map.fitBounds(bounds,{padding:[30,30],maxZoom:16});
 }

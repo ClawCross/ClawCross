@@ -7,12 +7,11 @@
  *   node examples/space-apps/map-scout/server.js --server <group server> --key <app key>
  */
 'use strict';
-const { run, page, refuse } = require('../../../sdk/js/space-app.js');
+const { run, page, refuse, MAP_HEAD } = require('../../../sdk/js/space-app.js');
 
 const PAGE = page({
   title: '地图侦察',
-  head: '<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">' +
-        '<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>',
+  head: MAP_HEAD,
   style: `#map{height:46vh;min-height:260px;border-radius:14px;background:var(--card)}#search-results button{margin:3px 4px 0 0}
 .place{display:flex;gap:8px;align-items:flex-start}.dot{width:10px;height:10px;border-radius:50%;margin-top:7px;flex:none}
 .place .why{font-size:13px;color:var(--muted)}.vote{padding:3px 10px;font-size:13px}`,
@@ -30,16 +29,17 @@ const {api,watch,act,el}=App,$=id=>document.getElementById(id);
 const COLORS=['#0071e3','#e8590c','#2b8a3e','#ae3ec9','#c92a2a','#1098ad','#f08c00','#5c7cfa'];
 let center=null,snapshot=null,map=null,layer=null,chosen=new Set(),pinned='';
 if(window.L){
-  map=L.map('map').setView([31.2304,121.4737],12);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
+  // Points stay WGS-84; SpaceMap places them on the map (高德 in China) and reads clicks back.
+  map=SpaceMap.tiles(L.map('map').setView(SpaceMap.show(31.2304,121.4737),12));
   layer=L.layerGroup().addTo(map);
-  map.on('click',e=>setCenter(e.latlng.lat,e.latlng.lng,'地图上选的点'));
+  map.on('click',e=>{const [lat,lng]=SpaceMap.data(e.latlng.lat,e.latlng.lng);setCenter(lat,lng,'地图上选的点');});
+  map.on('spacemapchange',()=>{if(snapshot)render(snapshot);});
 }else $('map').textContent='地图加载失败，仍可以搜索和查看结果。';
 function setCenter(lat,lng,label){center={lat:+lat,lng:+lng,label};pinned='';$('center').textContent='中心：'+label+'（'+center.lat.toFixed(4)+', '+center.lng.toFixed(4)+'）';
-  if(map)map.setView([center.lat,center.lng],Math.max(map.getZoom(),14));}
+  if(map)map.setView(SpaceMap.show(center.lat,center.lng),Math.max(map.getZoom(),14));}
 $('find').onclick=()=>act(async()=>{
   const q=$('q').value.trim();if(!q)return;
-  const rows=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=5&q='+encodeURIComponent(q)).then(r=>r.json());
+  const rows=await SpaceMap.search(q);
   $('search-results').replaceChildren(...rows.map(r=>el('button',{class:'ghost',onclick:()=>setCenter(r.lat,r.lon,r.display_name.split(',').slice(0,2).join(','))},r.display_name.split(',').slice(0,3).join(','))));
   if(!rows.length)$('search-results').textContent='没有找到。';
 });
@@ -61,7 +61,7 @@ function render(s){
       r.note?el('div',{class:'muted pre'},r.note):null,
       ...(r.places||[]).map(p=>{
         const key=m.id+':'+agent+':'+p.name,votes=s.state.votes[key]||[];
-        if(layer&&index===0&&isFinite(p.lat)&&isFinite(p.lng)){L.circleMarker([p.lat,p.lng],{radius:8,color:color(agent),fillOpacity:.8}).bindPopup(el('div',{},el('strong',{},r.name+'：'+p.name),el('div',{},p.why))).addTo(layer);bounds.push([p.lat,p.lng]);}
+        if(layer&&index===0&&isFinite(p.lat)&&isFinite(p.lng)){L.circleMarker(SpaceMap.show(p.lat,p.lng),{radius:8,color:color(agent),fillOpacity:.8}).bindPopup(el('div',{},el('strong',{},r.name+'：'+p.name),el('div',{},p.why))).addTo(layer);bounds.push(SpaceMap.show(p.lat,p.lng));}
         return el('div',{class:'place'},el('span',{class:'dot',style:'background:'+color(agent)}),el('div',{class:'grow'},el('div',{},p.name),el('div',{class:'why'},p.why)),
           el('button',{class:'ghost vote',onclick:()=>act(()=>api('vote',{key}))},'👍 '+votes.length));
       }))))));

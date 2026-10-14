@@ -8,7 +8,7 @@
  *   node examples/space-apps/meet-midway/server.js --server <group server> --key <app key>
  */
 'use strict';
-const { run, page, refuse } = require('../../../sdk/js/space-app.js');
+const { run, page, refuse, MAP_HEAD } = require('../../../sdk/js/space-app.js');
 
 const AGENTS = 6;
 const RADIUS_KM = 30;
@@ -22,8 +22,7 @@ function km(a, b) {
 
 const PAGE = page({
   title: '约饭地图',
-  head: '<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">' +
-        '<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>',
+  head: MAP_HEAD,
   style: `#map{height:44vh;min-height:260px;border-radius:14px;background:var(--card)}#found button{margin:3px 4px 0 0}
 .place{display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--line)}.dot{width:10px;height:10px;border-radius:50%;margin-top:7px;flex:none}
 .top{color:var(--good);font-size:12px;font-weight:600}`,
@@ -39,14 +38,15 @@ const {api,watch,act,el,fill}=App,$=id=>document.getElementById(id);
 const COLORS=['#0071e3','#e8590c','#2b8a3e','#ae3ec9','#c92a2a','#1098ad'];
 let map=null,layer=null,snapshot=null,middleKey='';
 if(window.L){
-  map=L.map('map').setView([31.2304,121.4737],11);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
+  // Points stay WGS-84; SpaceMap places them on the map (高德 in China) and reads clicks back.
+  map=SpaceMap.tiles(L.map('map').setView(SpaceMap.show(31.2304,121.4737),11));
   layer=L.layerGroup().addTo(map);
-  map.on('click',e=>act(()=>api('where',{lat:e.latlng.lat,lng:e.latlng.lng,label:'地图上选的点'})));
+  map.on('click',e=>{const [lat,lng]=SpaceMap.data(e.latlng.lat,e.latlng.lng);act(()=>api('where',{lat,lng,label:'地图上选的点'}));});
+  map.on('spacemapchange',()=>{if(snapshot)render(snapshot);});
 }else $('map').textContent='地图加载失败，仍可以搜索和查看结果。';
 $('find').onclick=()=>act(async()=>{
   const q=$('q').value.trim();if(!q)return;
-  const rows=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=5&q='+encodeURIComponent(q)).then(r=>r.json());
+  const rows=await SpaceMap.search(q);
   fill($('found'),...rows.map(r=>el('button',{class:'ghost',onclick:()=>act(async()=>{await api('where',{lat:+r.lat,lng:+r.lon,label:r.display_name.split(',')[0]});fill($('found'));})},r.display_name.split(',').slice(0,3).join(','))),
     rows.length?null:'没有找到。');
 });
@@ -55,7 +55,7 @@ $('ask').onclick=()=>act(()=>{const v=$('want').value;$('want').value='';return 
 async function nameMiddle(m){
   const key=m.lat.toFixed(3)+','+m.lng.toFixed(3);if(key===middleKey)return;middleKey=key;
   $('middle').textContent='大家的中点：'+key;
-  try{const r=await fetch('https://nominatim.openstreetmap.org/reverse?format=json&zoom=14&lat='+m.lat+'&lon='+m.lng).then(r=>r.json());
+  try{const r=await SpaceMap.reverse(m.lat,m.lng);
     if(r.display_name&&key===middleKey)$('middle').textContent='大家的中点：'+r.display_name.split(',').slice(0,2).join(',');}catch{}
 }
 function render(s){
@@ -73,10 +73,10 @@ function render(s){
       el('button',{class:x.voted?'':'ghost',onclick:()=>act(()=>api('vote',{plan:p.id,place:x.id}))},'👍 '+x.votes))))));
   if(!layer)return;
   layer.clearLayers();const bounds=[];
-  for(const p of w.people){const at=[p.lat,p.lng];bounds.push(at);
+  for(const p of w.people){const at=SpaceMap.show(p.lat,p.lng);bounds.push(at);
     (p.me?L.circleMarker(at,{radius:7,color:'#0071e3',fillOpacity:.9}):L.circle(at,{radius:900,color:'#888',fillOpacity:.15})).bindTooltip(el('span',{},p.name)).addTo(layer);}
-  if(w.middle){L.marker([w.middle.lat,w.middle.lng],{title:'中点'}).addTo(layer);bounds.push([w.middle.lat,w.middle.lng]);}
-  for(const x of plans[0]?.places||[]){L.circleMarker([x.lat,x.lng],{radius:8,color:color(x.agent),fillOpacity:.8}).bindPopup(el('div',{},el('strong',{},x.name),el('div',{},x.agentName))).addTo(layer);bounds.push([x.lat,x.lng]);}
+  if(w.middle){const at=SpaceMap.show(w.middle.lat,w.middle.lng);L.circleMarker(at,{radius:10,color:'#2b8a3e',weight:3,fillColor:'#fff',fillOpacity:1}).bindTooltip(el('span',{},'中点')).addTo(layer);bounds.push(at);}
+  for(const x of plans[0]?.places||[]){L.circleMarker(SpaceMap.show(x.lat,x.lng),{radius:8,color:color(x.agent),fillOpacity:.8}).bindPopup(el('div',{},el('strong',{},x.name),el('div',{},x.agentName))).addTo(layer);bounds.push(SpaceMap.show(x.lat,x.lng));}
   if(bounds.length)map.fitBounds(bounds,{padding:[30,30],maxZoom:15});
 }
 watch(render);`

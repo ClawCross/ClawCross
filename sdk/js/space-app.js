@@ -20,6 +20,17 @@
 const { connect } = require('./clawcross-space');
 
 const WATCH_MS = 20_000;
+
+/** Files every app serves next to its page, so maps need no outside CDN: <script src="leaflet.js">. */
+const STATIC = {
+  '/leaflet.js': ['vendor/leaflet/leaflet.js', 'application/javascript; charset=utf-8'],
+  '/leaflet.css': ['vendor/leaflet/leaflet.css', 'text/css; charset=utf-8'],
+  '/space-map.js': ['space-map.js', 'application/javascript; charset=utf-8'],
+};
+const files = new Map();
+const staticFile = (name) => files.get(name) ?? files.set(name, require('node:fs').readFileSync(require('node:path').join(__dirname, name))).get(name);
+/** The head of a page with a map: Leaflet and SpaceMap (sdk/js/space-map.js). */
+const MAP_HEAD = '<link rel="stylesheet" href="leaflet.css"><script src="leaflet.js"></script><script src="space-map.js"></script>';
 const ASK_MS = 5 * 60_000;
 
 /** Pulls the first JSON object or array out of an agent's reply (fenced or bare). */
@@ -108,6 +119,10 @@ class App {
       const url = new URL(req.url, 'http://space');
       const member = { ...(this.member(req.member.id) || {}), id: req.member.id, name: req.member.name };
       if (req.method === 'GET' && url.pathname === '/') return send(200, this.html, 'text/html; charset=utf-8');
+      if (req.method === 'GET' && Object.hasOwn(STATIC, url.pathname)) {
+        const [file, type] = STATIC[url.pathname];
+        return res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'public, max-age=86400' }).end(staticFile(file));
+      }
       if (req.method === 'GET' && url.pathname === '/state') {
         // Long poll: answer when the state moves past the page's version, or after a while anyway.
         const seen = Number(url.searchParams.get('v'));
@@ -235,4 +250,4 @@ async function run({ name }, setup, options = {}) {
   return app;
 }
 
-module.exports = { run, page, json, refuse, safeSvg, App };
+module.exports = { run, page, json, refuse, safeSvg, App, MAP_HEAD };
