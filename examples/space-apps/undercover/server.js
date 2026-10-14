@@ -13,6 +13,7 @@ const PAIRS = [['苹果', '梨'], ['咖啡', '奶茶'], ['地铁', '公交'], ['
   ['雨伞', '雨衣'], ['火锅', '麻辣烫'], ['西瓜', '哈密瓜'], ['牛奶', '豆浆'], ['电影院', '剧院'], ['口罩', '围巾'], ['高铁', '飞机'], ['蜡烛', '台灯']];
 
 const PAGE = page({
+  appId: 'undercover',
   title: '谁是卧底',
   style: `.player{display:inline-flex;gap:4px;align-items:center;padding:4px 10px;border-radius:99px;background:var(--card);margin:3px}
 .player.out{opacity:.4;text-decoration:line-through}.player.now{outline:2px solid var(--accent)}.word{font-size:22px;font-weight:700}`,

@@ -123,6 +123,13 @@ guide for writing apps with it. The examples in `examples/space-apps/` each run 
 
 `node test/test_space_apps.js [dir …]` plays each with fixture agents in two browsers.
 
+The shipped pages share `sdk/js/space-app-theme.js`: readable card surfaces, touch-sized
+controls, keyboard focus styles and light/dark colours. Each kit page selects its own visual
+profile with `page({appId: '<dir>', ...})`; boards, maps, reading pages and games have distinct
+layouts. A custom app can omit `appId` and use the shared components with its own `style`.
+`node test/test_space_app_layouts.js [dir …]` checks the pages at desktop and phone widths,
+including expanded panels and dark mode, without calling models or touching live groups.
+
 ## Example: creature battle
 
 `examples/space-apps/creature-battle/server.js` keeps the match — the log of people's commands

@@ -15,6 +15,7 @@ const path = require('node:path');
 const { connect } = require('../../../sdk/js/clawcross-space.js');
 const Rooms = require('./room-sdk.js');
 const Battle = require('./battle.js');
+const { THEME } = require('../../../sdk/js/space-app-theme.js');
 
 const PAGE_SCRIPTS = [path.join(__dirname, 'room-sdk.js'), path.join(__dirname, 'battle.js')];
 
@@ -24,18 +25,17 @@ function page() {
   return `<!doctype html><html lang="zh"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>精灵对战</title><style>
-html,body{height:100%;margin:0;font-family:system-ui,sans-serif;background:#fff;color:#17252d}
-body{display:flex;flex-direction:column}#room-root{flex:1;min-height:0;overflow:auto}.cc-room-battle{min-height:100%;box-sizing:border-box}
-#chat{max-height:28%;overflow:auto;padding:6px 14px;font-size:13px;line-height:1.5;border-top:1px solid #e3e9ee}#chat:empty{display:none}
-#chat p{margin:3px 0;overflow-wrap:anywhere}#chat b{font-weight:600;margin-right:6px}#chat p.agent b{color:#14745b}
-#summon{display:flex;flex-wrap:wrap;gap:5px;grid-column:1/-1}#summon:empty{display:none}
-#summon button{padding:3px 9px;font-size:12px;border-radius:99px}
-#bar{display:grid;grid-template-columns:1fr auto auto;gap:6px;padding:8px 10px;border-top:1px solid #e3e9ee}
-#hint{grid-column:1/-1;font-size:11px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#text{font:inherit;font-size:14px;resize:none;border:1px solid #cbd5e1;border-radius:12px;padding:8px 10px;min-width:0;background:inherit;color:inherit}
-#bar button{font:inherit;font-size:13px;border:0;border-radius:12px;padding:0 14px;cursor:pointer;background:#edf2f5;color:#405367}
-#bar button[data-command]{background:#14745b;color:#fff}#bar button:disabled{opacity:.45;cursor:default}
-@media(prefers-color-scheme:dark){body{background:#15212b;color:#e0eaf1}#chat,#bar{border-color:#263644}#bar button{background:#263644;color:#d6e2ed}}
+${THEME}
+html,body{height:100%}body{height:100dvh;display:flex;flex-direction:column}
+main#room-root{flex:1;min-height:0;overflow:auto;width:100%;padding:24px 24px 16px}.cc-room-battle{min-height:100%;box-sizing:border-box}
+#chat{max-height:24%;overflow:auto;padding:12px max(24px,calc((100vw - 952px)/2));font-size:13px;line-height:1.8;border-top:1px solid var(--line);background:var(--card)}#chat:empty{display:none}
+#chat p{margin:6px 0;overflow-wrap:anywhere}#chat b{font-weight:650;margin-right:8px}#chat p.agent b{color:var(--good)}
+#summon{display:flex;flex-wrap:wrap;gap:6px;grid-column:1/-1}#summon:empty{display:none}#summon button{min-height:32px;padding:5px 10px;font-size:12px;border-radius:9px}
+#bar{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;padding:14px max(24px,calc((100vw - 952px)/2));padding-bottom:max(14px,env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--card)}
+#hint{grid-column:1/-1;font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+#text{font:inherit;resize:none;border-radius:14px;padding:12px 14px;min-width:0;background:var(--bg);color:var(--fg)}
+#bar button{font-size:13px;padding:10px 16px;background:var(--surface);color:var(--fg)}#bar button[data-command]{background:var(--accent);color:var(--on-accent)}
+@media(max-width:600px){main#room-root{padding:16px 12px 12px}#chat{padding:10px 16px}#bar{padding:12px 12px max(12px,env(safe-area-inset-bottom));gap:8px}#bar button{padding:10px 12px}#text{font-size:16px}}
 </style></head><body><main id="room-root"></main><section id="chat" aria-label="聊天"></section>
 <div id="bar"><span id="hint" role="status"></span><div id="summon" aria-label="召唤 agent"></div><textarea id="text" rows="1" maxlength="2000" aria-label="消息"></textarea>
 <button type="button" data-command disabled>出招</button><button type="button" data-chat>聊天</button></div>

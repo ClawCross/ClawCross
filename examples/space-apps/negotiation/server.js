@@ -16,6 +16,7 @@ const SCENES = ['一台用了两年的索尼 A7M4 相机，带两个镜头', '�
 const ROLE = { buyer: '买方', seller: '卖方' };
 
 const PAGE = page({
+  appId: 'negotiation',
   title: '谈判桌',
   style: `.msg{border-radius:14px;padding:9px 12px;margin:7px 0;max-width:86%}.msg.buyer{background:#e7f1ff}.msg.seller{background:#e9f7ef;margin-left:auto}
 @media(prefers-color-scheme:dark){.msg.buyer{background:#0b2545}.msg.seller{background:#0d2b1a}}.offer{font-weight:700;font-size:18px}`,

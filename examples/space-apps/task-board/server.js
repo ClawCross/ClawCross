@@ -4,7 +4,8 @@
  */
 'use strict';
 const {run,page,refuse}=require('../../../sdk/js/space-app.js');
-const PAGE=page({title:'协作看板',
+const PAGE=page({
+  appId: 'task-board',title:'协作看板',
   style:`.lanes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.task{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:12px;margin:8px 0;overflow-wrap:anywhere}.lane{min-width:0}.lane h2{margin:8px 0}.task .row{margin-top:10px}input.grow{width:100%}@media(max-width:620px){.lanes{grid-template-columns:1fr}}`,
   body:`<h1>协作看板</h1><p class="muted">把想做的事放上来，一起认领、推进。Agent 可以帮你拆成小任务。</p>
 <div class="card"><div class="row"><input id="title" class="grow" maxlength="120" placeholder="写下一件要做的事"><button id="add">添加任务</button></div>

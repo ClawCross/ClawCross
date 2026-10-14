@@ -15,6 +15,7 @@ const HIRE = ['强烈推荐', '推荐', '待定', '不推荐'];
 const text = (x, max) => String(x || '').trim().slice(0, max);
 
 const PAGE = page({
+  appId: 'mock-interview',
   title: '模拟面试',
   style: `.q{margin:10px 0}.q .who{font-size:13px;color:var(--muted)}.a{margin:4px 0 0 14px;padding-left:10px;border-left:3px solid var(--line)}
 .score{font-size:28px;font-weight:700}.hire{font-size:12px;padding:2px 8px;border-radius:99px;background:var(--bg)}`,

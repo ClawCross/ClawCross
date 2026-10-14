@@ -10,6 +10,7 @@
 const { run, page, refuse } = require('../../../sdk/js/space-app.js');
 
 const PAGE = page({
+  appId: 'decision-room',
   title: '决策会',
   style: `.bar{height:22px;border-radius:8px;background:var(--accent);color:#fff;font-size:12px;padding:2px 8px;white-space:nowrap;min-width:fit-content}
 table{border-collapse:collapse;width:100%;font-size:13px}td,th{border-bottom:1px solid var(--line);padding:5px;text-align:left}input[type=range]{width:120px}`,

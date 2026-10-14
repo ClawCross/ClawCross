@@ -4,7 +4,8 @@
  */
 'use strict';
 const {run,page,refuse}=require('../../../sdk/js/space-app.js');
-const PAGE=page({title:'闪卡学堂',
+const PAGE=page({
+  appId: 'flashcards',title:'闪卡学堂',
   style:`.study{text-align:center;padding:28px 18px;min-height:210px}.question{font-size:22px;font-weight:600;overflow-wrap:anywhere}.answer{margin:18px 0;white-space:pre-wrap;overflow-wrap:anywhere}.study .row{justify-content:center}.progress{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0}.progress .chip{padding:5px 10px}input.grow{width:100%}`,
   body:`<h1>闪卡学堂</h1><p class="muted">共享一副卡片，各自按自己的节奏复习。翻面后再记录是否记住。</p>
 <div id="builder" class="card" hidden><div class="row"><input id="topic" class="grow" maxlength="120" placeholder="主题，例如：前端基础"><select id="maker" aria-label="制卡 Agent"></select><button id="generate">Agent 制卡</button></div>

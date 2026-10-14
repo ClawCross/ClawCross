@@ -4,7 +4,8 @@
  */
 'use strict';
 const {run,page,refuse}=require('../../../sdk/js/space-app.js');
-const PAGE=page({title:'协作写作',
+const PAGE=page({
+  appId: 'writing-room',title:'协作写作',
   style:`.document{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.8}.proposal{border:1px solid var(--line);border-radius:14px;background:var(--bg);padding:14px;margin:10px 0}.proposal .row{margin-top:10px}textarea{line-height:1.6}input.grow{width:100%}.version{font-variant-numeric:tabular-nums}`,
   body:`<h1>协作写作</h1><p class="muted">一起打磨文章、公告或产品介绍。每次改写先成为建议，由群主采纳。</p>
 <div id="editor" class="card" hidden><input id="title" style="width:100%" maxlength="120" placeholder="文稿标题">

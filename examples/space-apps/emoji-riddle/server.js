@@ -14,6 +14,7 @@ const CATEGORIES = ['电影', '歌曲', '成语', '城市', '动画'];
 const norm = (x) => String(x || '').toLowerCase().replace(/[\s\p{P}\p{S}]/gu, '');
 
 const PAGE = page({
+  appId: 'emoji-riddle',
   title: 'Emoji 猜谜',
   style: `.riddle{font-size:44px;letter-spacing:4px;text-align:center;margin:14px 0;line-height:1.3}.guess{font-size:14px;padding:2px 0}.right{color:var(--good);font-weight:600}
 .score{display:flex;gap:8px}.score b{width:2em;text-align:right}`,

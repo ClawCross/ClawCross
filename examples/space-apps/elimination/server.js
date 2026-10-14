@@ -16,6 +16,7 @@ const BREAK_MS = 6000;
 const AGENTS = 8;
 
 const PAGE = page({
+  appId: 'elimination',
   title: '百人淘汰赛',
   style: `.question{font-size:20px;font-weight:600;margin:10px 0}.option{display:block;width:100%;text-align:left;margin:6px 0;padding:11px 14px;position:relative;overflow:hidden}
 .option .bar{position:absolute;inset:0 auto 0 0;background:rgba(127,127,127,.18)}.option span{position:relative}.option.right{outline:2px solid var(--good)}.option.mine{font-weight:700}

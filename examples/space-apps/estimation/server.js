@@ -15,6 +15,7 @@ const median = (values) => {
 };
 
 const PAGE = page({
+  appId: 'estimation',
   title: '猜数大会',
   style: `.dots{position:relative;height:70px;border-bottom:2px solid var(--line);margin:16px 6px}.dot{position:absolute;bottom:0;width:10px;height:10px;border-radius:50%;transform:translateX(-50%)}
 .dot.human{background:#e8590c}.dot.agent{background:var(--good)}.truth{position:absolute;bottom:0;top:0;border-left:3px solid var(--bad)}.big{font-size:22px;font-weight:700}`,

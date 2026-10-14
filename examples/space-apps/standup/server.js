@@ -15,6 +15,7 @@ const lines = (list, max = 6) => (Array.isArray(list) ? list : []).map((x) => St
 const today = () => new Date().toLocaleDateString('sv-SE');   // YYYY-MM-DD, server time
 
 const PAGE = page({
+  appId: 'standup',
   title: '站会',
   style: `.report h2{margin:0 0 4px;font-size:15px}.report ul{margin:2px 0 6px;padding-left:20px}.report .tag{font-size:12px;color:var(--muted)}
 .blocker{color:var(--bad)}.summary{border:1px solid var(--accent)}`,

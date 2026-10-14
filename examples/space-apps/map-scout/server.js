@@ -10,6 +10,7 @@
 const { run, page, refuse, MAP_HEAD } = require('../../../sdk/js/space-app.js');
 
 const PAGE = page({
+  appId: 'map-scout',
   title: '地图侦察',
   head: MAP_HEAD,
   style: `#map{height:46vh;min-height:260px;border-radius:14px;background:var(--card)}#search-results button{margin:3px 4px 0 0}

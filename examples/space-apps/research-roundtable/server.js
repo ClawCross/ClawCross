@@ -10,6 +10,7 @@
 const { run, page, refuse } = require('../../../sdk/js/space-app.js');
 
 const PAGE = page({
+  appId: 'research-roundtable',
   title: '研究圆桌',
   style: `.brief h3{margin:0 0 4px;font-size:15px}.brief li{margin:2px 0}.src a{font-size:12px;color:var(--accent);margin-right:8px}.critique{font-size:13px;color:var(--muted)}`,
   body: `<h1>研究圆桌</h1><p class="muted">一个问题，每个 agent 各自调研、互相点评，最后汇总成报告。</p>

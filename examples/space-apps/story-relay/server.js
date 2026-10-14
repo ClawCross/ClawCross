@@ -9,6 +9,7 @@
 const { run, page, refuse, safeSvg } = require('../../../sdk/js/space-app.js');
 
 const PAGE = page({
+  appId: 'story-relay',
   title: '故事接龙',
   style: `.para{margin:10px 0;line-height:1.8}.para .by{font-size:12px;color:var(--muted)}.art{display:flex;justify-content:center;margin:12px 0}
 .art img{width:min(100%,420px);border-radius:14px;background:#fff}.turn{outline:2px solid var(--accent)}`,

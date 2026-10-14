@@ -21,6 +21,7 @@ function km(a, b) {
 }
 
 const PAGE = page({
+  appId: 'meet-midway',
   title: '约饭地图',
   head: MAP_HEAD,
   style: `#map{height:44vh;min-height:260px;border-radius:14px;background:var(--card)}#found button{margin:3px 4px 0 0}

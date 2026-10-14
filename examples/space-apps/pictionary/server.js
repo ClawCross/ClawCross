@@ -14,6 +14,7 @@ const WORDS = ['长颈鹿', '自行车', '火箭', '雨伞', '灯塔', '冰淇�
 const same = (a, b) => String(a || '').replace(/[\s，。！？、,.!?"'“”]/g, '').toLowerCase() === String(b || '').toLowerCase();
 
 const PAGE = page({
+  appId: 'pictionary',
   title: '你画我猜',
   style: `.canvas{display:flex;justify-content:center;background:#fff;border-radius:16px;padding:10px}.canvas img{width:min(100%,360px);aspect-ratio:1}
 .guess{padding:4px 0}.right{color:var(--good);font-weight:600}.scores span{margin-right:10px}`,

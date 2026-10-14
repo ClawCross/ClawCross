@@ -20,6 +20,7 @@ function score(secret, guess) {
 }
 
 const PAGE = page({
+  appId: 'bulls-cows',
   title: '猜数字对决',
   style: `.side{flex:1;min-width:200px}.log{font:15px ui-monospace,monospace;padding:2px 0}.win{color:var(--good);font-weight:700}.secret{letter-spacing:4px;font:700 18px ui-monospace,monospace}`,
   body: `<h1>猜数字对决</h1><p class="muted">双方各藏一个四位数（数字不重复），轮流猜对方的。A = 数字和位置都对，B = 数字对位置不对。</p>

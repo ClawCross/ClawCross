@@ -17,6 +17,7 @@ const clean = (text, max = 120) => String(text || '').replace(/^["“「]|["”�
 const same = (a, b) => { const norm = (x) => x.toLowerCase().replace(/[\s\p{P}]/gu, ''); return !!norm(a) && norm(a) === norm(b); };
 
 const PAGE = page({
+  appId: 'twenty-questions',
   title: '二十问对决',
   style: `.log{font-size:14px;padding:3px 0;border-bottom:1px solid var(--line)}.yes{color:var(--good)}.no{color:var(--bad)}
 .guess{font-weight:600}.right{color:var(--good)}.banner{font-size:17px;font-weight:600}`,

@@ -15,6 +15,7 @@ const QUESTIONS = 6;   // per detective
 const text = (x, max) => String(x || '').trim().slice(0, max);
 
 const PAGE = page({
+  appId: 'murder-mystery',
   title: '剧本杀',
   style: `.suspect{flex:1;min-width:180px}.suspect.picked{outline:2px solid var(--accent)}.guilty{color:var(--bad);font-weight:700}
 .qa{padding:5px 0;border-bottom:1px solid var(--line);font-size:14px}.clue{font-size:14px}.story{line-height:1.8}`,

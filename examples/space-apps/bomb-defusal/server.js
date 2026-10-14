@@ -71,6 +71,7 @@ function makeBomb() {
 }
 
 const PAGE = page({
+  appId: 'bomb-defusal',
   title: '拆弹专家',
   style: `.bomb{background:#2b2b2e;color:#eee;border-radius:16px;padding:14px;display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
 .module{background:#3a3a3e;border-radius:12px;padding:10px}.module.solved{outline:2px solid #3fb950}.module h3{margin:0 0 8px;font-size:13px;color:#bbb}

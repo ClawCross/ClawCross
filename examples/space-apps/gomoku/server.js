@@ -14,6 +14,7 @@ const COLS = 'ABCDEFGHIJKLMNO';
 const NAMES = { black: '黑棋', white: '白棋' };
 
 const PAGE = page({
+  appId: 'gomoku',
   title: '五子棋军师',
   style: `#board{display:grid;grid-template-columns:repeat(15,1fr);gap:0;width:min(100%,480px);aspect-ratio:1;background:#e3b778;border-radius:10px;padding:4px;margin:8px auto}
 #board button{padding:0;border-radius:0;background:transparent;border:0;position:relative;aspect-ratio:1}

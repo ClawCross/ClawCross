@@ -14,6 +14,7 @@ const PER_PERSON = 10;
 const DOTS = 3;
 
 const PAGE = page({
+  appId: 'idea-wall',
   title: '点子墙',
   style: `.idea{display:flex;gap:8px;align-items:center;padding:6px 10px;background:var(--bg);border:1px solid var(--line);border-radius:10px;margin:5px 0}
 .idea .grow{overflow-wrap:anywhere}.dot{padding:3px 10px;font-size:13px}.dot.on{background:var(--accent);color:var(--on-accent)}.theme h2{margin-top:4px}`,

@@ -163,19 +163,7 @@ function safeSvg(text, max = 16000) {
 /** An error the page shows as is. */
 function refuse(message, status = 400) { return Object.assign(new Error(message), { status }); }
 
-const THEME = `
-:root{--bg:#fff;--fg:#1d1d1f;--muted:#6e6e73;--line:#e5e5ea;--card:#f5f5f7;--accent:#0071e3;--on-accent:#fff;--good:#1f8a4c;--bad:#c9372c;color-scheme:light dark}
-@media(prefers-color-scheme:dark){:root{--bg:#000;--fg:#f5f5f7;--muted:#a1a1a6;--line:#2c2c2e;--card:#1c1c1e;--accent:#0a84ff}}
-*{box-sizing:border-box}[hidden]{display:none!important}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Helvetica Neue",sans-serif}
-main{max-width:860px;margin:auto;padding:14px 14px 28px}h1{font-size:20px;margin:4px 0 2px}h2{font-size:16px;margin:16px 0 8px}
-.muted{color:var(--muted);font-size:13px}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.grow{flex:1;min-width:0}
-.card{background:var(--card);border-radius:14px;padding:12px 14px;margin:8px 0}.grid{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
-button{font:inherit;border:0;border-radius:999px;padding:7px 15px;background:var(--accent);color:var(--on-accent);cursor:pointer}
-button.ghost{background:var(--card);color:var(--fg)}button:disabled{opacity:.45;cursor:default}
-input,textarea,select{font:inherit;color:inherit;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:8px 10px;min-width:0}
-textarea{width:100%;resize:vertical}.chip{display:inline-block;padding:2px 9px;border-radius:999px;background:var(--card);font-size:12px}
-.agent{color:var(--good);font-weight:600}.error{color:var(--bad);font-size:13px;min-height:1em}.pre{white-space:pre-wrap;overflow-wrap:anywhere}
-`;
+const { THEME, appearance } = require('./space-app-theme.js');
 
 const CLIENT = `
 window.App=(()=>{
@@ -227,9 +215,12 @@ window.App=(()=>{
 `;
 
 /** The page shell every app uses: theme, an error line and `window.App`. Pages use relative URLs. */
-function page({ title, style = '', body = '', script = '', head = '' }) {
+function page({ title, appId = '', style = '', body = '', script = '', head = '' }) {
+  const skin = appearance(appId);
+  if (appId) body = body.replace(/<h1>([\s\S]*?)<\/h1>\s*(?:<p class="muted">([\s\S]*?)<\/p>)?/,
+    (_, heading, intro) => skin.header(heading) + ((intro || skin.intro) ? '<p class="app-intro">' + (intro || skin.intro) + '</p>' : ''));
   return `<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${title}</title><style>${THEME}${style}</style>${head}</head><body><main>${body}<p id="app-error" class="error" role="alert"></main>
+<title>${title}</title><style>${THEME}${style}${skin.css}</style>${head}</head><body><main>${body}<p id="app-error" class="error" role="alert"></main>
 <script>${CLIENT}</script><script>${script.replace(/<\/script/gi, '<\\/script')}</script></body></html>`;
 }
 

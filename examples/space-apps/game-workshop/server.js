@@ -15,6 +15,7 @@ const VERSIONS = 12;
 const QUEUE = 8;
 
 const PAGE = page({
+  appId: 'game-workshop',
   title: '小游戏工坊',
   style: `#preview{width:100%;height:min(62vh,440px);border:1px solid var(--line);border-radius:14px;background:#fff;display:block}
 .change{display:flex;gap:8px;align-items:baseline;padding:5px 0;border-bottom:1px solid var(--line);font-size:14px}.change .grow{overflow-wrap:anywhere}`,

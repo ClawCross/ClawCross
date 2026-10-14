@@ -17,6 +17,7 @@ const TURNS = 30;
 const text = (x, max) => String(x || '').trim().slice(0, max);
 
 const PAGE = page({
+  appId: 'language-partner',
   title: '外语陪练',
   style: `.line{margin:8px 0;max-width:85%}.line.me{margin-left:auto;text-align:right}.bubble{display:inline-block;padding:7px 12px;border-radius:16px;background:var(--card);text-align:left}
 .me .bubble{background:var(--accent);color:var(--on-accent)}.note{font-size:13px;margin-top:3px}.note.ok{color:var(--good)}.note.fix{color:#e8590c}`,

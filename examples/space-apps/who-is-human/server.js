@@ -17,6 +17,7 @@ const AGENTS = 8;
 const TEXT = 80;
 
 const PAGE = page({
+  appId: 'who-is-human',
   title: '谁是人类',
   style: `.question{font-size:19px;font-weight:600;margin:6px 0}.entry{display:flex;gap:10px;align-items:center}.entry .key{font-weight:700;width:1.4em}
 .label button{padding:4px 12px}.label button.on{background:var(--accent);color:var(--on-accent)}.label button.off{background:var(--card);color:var(--fg)}

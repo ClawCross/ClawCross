@@ -10,6 +10,7 @@
 const { run, page, refuse } = require('../../../sdk/js/space-app.js');
 
 const PAGE = page({
+  appId: 'turtle-soup',
   title: '海龟汤',
   style: `.surface{font-size:17px;line-height:1.7}.qa{padding:6px 0;border-bottom:1px solid var(--line)}.ans{font-weight:700;margin-left:6px}
 .ans.是{color:var(--good)}.ans.否{color:var(--bad)}.ans.无关{color:var(--muted)}.ans.接近了{color:#e8590c}`,

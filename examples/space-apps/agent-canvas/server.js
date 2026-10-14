@@ -12,6 +12,7 @@ const { run, page, refuse, safeSvg } = require('../../../sdk/js/space-app.js');
 const LAYERS = 40;
 
 const PAGE = page({
+  appId: 'agent-canvas',
   title: '共享画板',
   style: `#canvas{position:relative;width:min(100%,600px);aspect-ratio:3/2;margin:8px auto;background:#fffdf7;border-radius:16px;overflow:hidden;border:1px solid var(--line)}
 #canvas img{position:absolute;inset:0;width:100%;height:100%}.layer{display:flex;gap:8px;align-items:center;font-size:13px;padding:3px 0}`,

@@ -13,6 +13,7 @@ const { run, page, refuse } = require('../../../sdk/js/space-app.js');
 const SEVERITY = { high: 3, medium: 2, low: 1 };
 
 const PAGE = page({
+  appId: 'code-clinic',
   title: '代码会诊',
   style: `.code{font:12px/1.55 ui-monospace,Menlo,monospace;background:var(--card);border-radius:12px;padding:10px;overflow:auto;max-height:42vh;white-space:pre}
 .code .hit{background:#ffd8a8;color:#000}.sev{font-size:11px;padding:1px 8px;border-radius:99px;color:#fff}.sev.high{background:#c92a2a}.sev.medium{background:#e8590c}.sev.low{background:#868e96}

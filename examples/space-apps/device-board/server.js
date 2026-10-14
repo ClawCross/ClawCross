@@ -13,6 +13,7 @@ const { run, page, refuse } = require('../../../sdk/js/space-app.js');
 const text = (x, max) => String(x || '').trim().slice(0, max);
 
 const PAGE = page({
+  appId: 'device-board',
   title: '设备看板',
   style: `.device h2{margin:0;font-size:15px}.metric{display:flex;gap:8px;font-size:14px;padding:1px 0}.metric span:first-child{color:var(--muted);width:3.5em;flex:none}
 .alert{color:var(--bad);font-size:14px}.ok{color:var(--good)}`,

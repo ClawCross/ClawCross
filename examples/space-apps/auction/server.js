@@ -13,6 +13,7 @@ const BUDGET = 100;
 const LOTS = 4;
 
 const PAGE = page({
+  appId: 'auction',
   title: '拍卖行',
   style: `.lot h3{margin:0}.bid{display:flex;justify-content:space-between;padding:3px 0}.win{color:var(--good);font-weight:700}.mine{background:#fff3bf;color:#000;border-radius:8px;padding:2px 8px}`,
   body: `<h1>拍卖行</h1><p class="muted">每个 agent 对拍品有自己的心理价，只有它的主人知道。密封出价，价高者得。</p>

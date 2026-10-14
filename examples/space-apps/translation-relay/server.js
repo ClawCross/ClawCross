@@ -12,6 +12,7 @@ const { run, page, refuse } = require('../../../sdk/js/space-app.js');
 const LANGS = ['英语', '日语', '法语', '德语', '俄语', '韩语', '西班牙语', '阿拉伯语', '文言文', '粤语'];
 
 const PAGE = page({
+  appId: 'translation-relay',
   title: '翻译接力',
   style: `.hop{border-left:3px solid var(--accent);padding:4px 10px;margin:8px 0}.final{font-size:18px;font-weight:600}`,
   body: `<h1>翻译接力</h1><p class="muted">一句话在 agent 之间按语言接力翻译，最后译回中文，看意思还剩多少。</p>

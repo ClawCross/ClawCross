@@ -37,6 +37,10 @@ async function scenario(dir,{replies,play}){
     }
     for(const page of Object.values(pages))expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     expect(errors).toEqual([]);
+    if(process.env.SPACE_APP_SCREENSHOTS){
+      require('node:fs').mkdirSync(process.env.SPACE_APP_SCREENSHOTS,{recursive:true});
+      for(const [member,page] of Object.entries(pages))await page.screenshot({path:path.join(process.env.SPACE_APP_SCREENSHOTS,dir+'-'+member+'-played.png'),fullPage:true});
+    }
     return {asked:test.asked.map(x=>x.agent)};
   }finally{
     app?.space.close();

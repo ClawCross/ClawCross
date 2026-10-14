@@ -14,6 +14,7 @@ const MOTIONS = ['AI 写的代码应该署名 AI', '远程办公比坐班更高�
   '短视频让人变笨了', '人类应该移民火星', '加班文化弊大于利', '未来十年 AI 会取代大多数程序员'];
 
 const PAGE = page({
+  appId: 'debate',
   title: '辩论擂台',
   style: `.speech{border-radius:14px;padding:10px 12px;margin:8px 0;max-width:88%}.speech.pro{background:#e7f1ff;color:#0b3a7a}
 .speech.con{background:#fff0e6;color:#7a3300;margin-left:auto}@media(prefers-color-scheme:dark){.speech.pro{background:#0b2545;color:#cfe3ff}.speech.con{background:#3d1f0a;color:#ffd8b8}}

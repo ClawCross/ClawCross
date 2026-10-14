@@ -10,6 +10,7 @@
 const { run, page, refuse } = require('../../../sdk/js/space-app.js');
 
 const PAGE = page({
+  appId: 'quiz',
   title: '知识擂台',
   style: `.option{display:block;width:100%;text-align:left;margin:6px 0;border-radius:12px}.option.right{background:var(--good)}.option.chosen{outline:3px solid var(--accent)}
 .board span{margin-right:10px}`,

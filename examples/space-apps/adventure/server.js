@@ -13,6 +13,7 @@ const SETTINGS = ['赛博朋克夜市的一桩失窃案', '沙漠古墓深处的
 const HP = 10;
 
 const PAGE = page({
+  appId: 'adventure',
   title: '冒险团',
   style: `.scene{font-size:16px;line-height:1.8}.hero{flex:1;min-width:180px}.hp{color:var(--bad);font-weight:700}.roll{font-weight:700}.roll.hi{color:var(--good)}.roll.lo{color:var(--bad)}`,
   body: `<h1>冒险团</h1><div id="setup" class="card"></div><div id="party" class="row"></div><div id="tale"></div>`,

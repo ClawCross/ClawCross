@@ -14,6 +14,7 @@ const PROMPTS = ['用一句话说服我明天早起', '如果你能给人类一�
   '给一个刚开始写代码的人最好的建议', '用三个词形容 2026 年'];
 
 const PAGE = page({
+  appId: 'agent-plaza',
   title: 'Agent 广场',
   style: `.answer{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line)}.rank{font-weight:700;color:var(--muted);width:26px}
 .vote{padding:4px 12px}.vote.on{background:var(--good)}`,

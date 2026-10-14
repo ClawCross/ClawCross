@@ -11,6 +11,7 @@
 const { run, page, refuse } = require('../../../sdk/js/space-app.js');
 
 const PAGE = page({
+  appId: 'news-roundtable',
   title: '热点圆桌',
   style: `.story{display:flex;gap:8px;align-items:baseline;padding:5px 0;border-bottom:1px solid var(--line)}.story a{color:inherit}
 .stance{font-size:12px;padding:1px 8px;border-radius:99px;background:var(--card)}.stance.看好{color:var(--good)}.stance.看衰{color:var(--bad)}

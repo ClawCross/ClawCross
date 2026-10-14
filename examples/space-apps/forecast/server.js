@@ -16,6 +16,7 @@ const AGENTS = 6;
 const median = (list) => { if (!list.length) return null; const s = [...list].sort((a, b) => a - b), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 
 const PAGE = page({
+  appId: 'forecast',
   title: '预言家',
   style: `.choices button{padding:4px 10px;font-size:13px}.choices button.on{background:var(--accent);color:var(--on-accent)}
 .stat{font-size:13px}.why{font-size:13px;color:var(--muted)}.settled{font-weight:700}table{border-collapse:collapse;width:100%;font-size:14px}td{padding:3px 6px;border-bottom:1px solid var(--line)}`,

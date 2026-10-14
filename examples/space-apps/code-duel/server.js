@@ -30,6 +30,7 @@ const AGENTS = 4;
 const MAX_CODE = 8000;
 
 const PAGE = page({
+  appId: 'code-duel',
   title: '代码擂台',
   style: `#runner{display:none}code,textarea.code{font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace}
 .solution pre{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:8px;overflow:auto;max-height:260px;font-size:12px}

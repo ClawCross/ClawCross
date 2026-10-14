@@ -4,7 +4,8 @@
  */
 'use strict';
 const {run,page,refuse}=require('../../../sdk/js/space-app.js');
-const PAGE=page({title:'活动排期',
+const PAGE=page({
+  appId: 'event-planner',title:'活动排期',
   style:`.slot{border:1px solid var(--line);background:var(--bg);border-radius:14px;padding:14px;margin:8px 0;overflow-wrap:anywhere}.slot.chosen{border-color:var(--accent)}.slot .row{margin-top:8px}input.grow{width:100%}.meter{height:5px;border-radius:99px;background:var(--line);overflow:hidden}.meter span{display:block;height:100%;background:var(--accent)}`,
   body:`<h1>活动排期</h1><p class="muted">周末聚会、读书会或线上讨论，看看大家哪段时间方便。</p>
 <div id="setup" class="card" hidden><input id="title" style="width:100%" maxlength="120" placeholder="活动名称">

@@ -16,6 +16,7 @@ const BATTLES = 12;
 const K = 24;
 
 const PAGE = page({
+  appId: 'agent-arena',
   title: 'Agent 竞技场',
   style: `.duel{display:grid;grid-template-columns:1fr 1fr;gap:10px}@media(max-width:600px){.duel{grid-template-columns:1fr}}
 .side{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:10px;max-height:340px;overflow:auto}
