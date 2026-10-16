@@ -28,7 +28,7 @@ ${fs.readFileSync(path.join(__dirname, 'arena.css'), 'utf8')}
 </style></head><body><main id="room-root"></main><section id="chat" aria-label="聊天"></section>
 <div id="bar"><div id="command-context" hidden><span>给我的精灵下指令</span><button type="button" id="cancel-command" aria-label="取消出招指令">×</button></div>
 <textarea id="text" rows="1" maxlength="2000" aria-label="消息"></textarea>
-<button type="button" data-send>发送</button><span id="hint" role="status"></span></div>
+<button type="button" data-send aria-label="发送" title="发送"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg></button><span id="hint" role="status"></span></div>
 ${scripts}
 <script>
 (function(){
@@ -48,7 +48,7 @@ ${scripts}
       if(seen.has(row.id)||ClawCrossRooms.parseEvent(row.content))continue;
       seen.add(row.id);const line=document.createElement('p'),who=document.createElement('b');
       line.className=(client.snapshot.members||[]).some(m=>m.key===row.sender&&m.is_agent)?'agent':'';
-      who.textContent=(line.className?'🤖 ':'')+row.sender_name;line.append(who,document.createTextNode(row.content));chat.append(line);
+      who.textContent=row.sender_name;line.append(who,document.createTextNode(row.content));chat.append(line);
     }
     while(chat.children.length>50)chat.firstElementChild.remove();
     chat.scrollTop=chat.scrollHeight;
