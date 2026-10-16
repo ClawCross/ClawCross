@@ -56,6 +56,13 @@ const preview=new Set(['task-board','event-planner','flashcards','writing-room',
         await page.waitForFunction(()=>document.documentElement.dataset.ready==='yes',null,{timeout:10000})
           .catch(async error=>{throw new Error(dir+' '+width+': '+error.message+' '+await page.locator('#app-error').textContent().catch(()=>''));});
         expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),dir+' '+width+' overflow').toBe(true);
+        if(dir==='creature-battle'&&who==='alice'){
+          const setup=await page.locator('.cc-room-stage>.cc-room-setup').boundingBox();
+          const arena=await page.locator('.cc-room-stage').boundingBox();
+          const creatures=await page.locator('.cc-room-fighters').boundingBox();
+          expect(setup.y).toBeGreaterThanOrEqual(creatures.y+creatures.height-1);
+          expect(setup.y+setup.height).toBeLessThanOrEqual(arena.y+arena.height);
+        }
         // Opening optional panels must also fit. Includes battle rules, manual decks and histories.
         await page.locator('details').evaluateAll(nodes=>nodes.forEach(node=>{node.open=true;}));
         expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),dir+' '+width+' expanded overflow').toBe(true);

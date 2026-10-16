@@ -305,8 +305,9 @@
   function mount(container, client) {
     const root = document.createElement('section'); root.className = 'cc-room-battle';
     root.innerHTML = '<div class="cc-room-head"><div class="cc-room-brand"><span aria-hidden="true">✦</span><div><small>CREATURE ARENA</small><strong>精灵对战</strong></div></div><div><span class="cc-room-tag">Agent 设计 · 玩家指挥</span><button class="cc-room-btn secondary" data-settings>对阵与设计</button></div></div>' +
+      '<div class="cc-room-stage"><div class="cc-room-fighters"></div>' +
       '<div class="cc-room-setup"><label>左方 Agent<select data-player="0"></select></label><label>右方 Agent<select data-player="1"></select></label><button class="cc-room-btn" data-prepare>生成双方精灵</button></div>' +
-      '<div class="cc-room-stage"><div class="cc-room-fighters"></div><div class="cc-room-effect"></div><div class="cc-room-status" role="status"></div><div class="cc-room-footer"><button class="cc-room-btn" data-start>开始对战</button></div></div>' +
+      '<div class="cc-room-effect"></div><div class="cc-room-status" role="status"></div><div class="cc-room-footer"><button class="cc-room-btn" data-start>开始对战</button></div></div>' +
       '<div class="cc-room-console"><section class="cc-room-conversation"><div class="cc-room-panel-head">召唤师频道<small>聊天与 Agent 指令</small></div><div class="cc-room-chat-slot"></div></section>' +
       '<section class="cc-room-controls"><div class="cc-room-panel-head"><span data-move-title>技能指令</span><small data-turn-hint>等待精灵登场</small></div><div class="cc-room-moves"></div><div class="cc-room-agent-order"><span>点技能直接出招</span><button data-agent-command>让 Agent 决定 ↗</button></div><div class="cc-room-log"></div></section></div>' +
       '<div class="cc-room-error" role="status"></div><details class="cc-room-skills"><summary>设计规则与参考技能</summary><p>生命 / 攻击 / 防御 / 速度：各 60–140，总计 400 点。自定义四招，总威力最多 100。速度决定先手，之后轮流行动。</p><div></div></details>';
@@ -447,7 +448,7 @@
         !ready ? '先让双方 Agent 生成精灵形象' : !s.started ? '双方已就绪 · 等待房主开始对战' :
         '第 ' + s.turn + ' 回合 · ' + s.fighters[s.active].name + (s.pending ? ' 正在选择招式…' : ' 行动');
       const permitted = ready && allowedController(me, s.fighters[s.active].agent, config, members);
-      start.hidden = !snapshot.isOwner || !ready || s.started;
+      start.hidden = !snapshot.isOwner || !ready || s.started || !root.querySelector('.cc-room-setup').hidden;
       start.disabled = busy || !synced;
       const hint = !synced ? '正在同步对战记录' : !ready ? '等待双方形象生成' : !s.started ? '等待房主点击开始对战' :
         s.winner !== null ? '对局结束，可在对阵中开启新对局' : s.pending && !s.invalid ? '等待 ' + s.fighters[s.active].name + ' 回复' :
