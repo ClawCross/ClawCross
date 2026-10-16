@@ -36,8 +36,8 @@ function reply(content,name){
 
     browser=await chromium.launch({headless:true,executablePath:process.env.CLAWCROSS_TEST_CHROME || '/usr/bin/google-chrome'});
     const errors=[],pages=[];
-    for(const [member,width] of [['alice',1100],['bob',390]]){
-      const page=await browser.newPage({viewport:{width,height:844}});
+    for(const [member,width,height] of [['alice',1100,760],['bob',390,650]]){
+      const page=await browser.newPage({viewport:{width,height}});
       page.on('pageerror',error=>errors.push(error.message));
       await page.goto(await test.entrance(member));pages.push(page);
     }
@@ -94,7 +94,12 @@ function reply(content,name){
     await expect(bobPage.locator('.cc-room-hp').nth(1)).toHaveText('52 / 100 HP',{timeout:10000});
     expect(test.asked.length).toBe(askedBeforeClick);
     await expect(alice.locator('#text')).toHaveValue('');
-    for(const page of pages)expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    for(const page of pages){
+      expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+      expect(await page.locator('#room-root').evaluate(node=>node.scrollHeight<=node.clientHeight+1)).toBe(true);
+      const input=await page.locator('#text').boundingBox();expect(input.y+input.height).toBeLessThanOrEqual(page.viewportSize().height);
+      expect((await page.locator('.cc-room-image').first().boundingBox()).height).toBeGreaterThan(48);
+    }
     if(process.env.SPACE_APP_SCREENSHOTS){
       require('node:fs').mkdirSync(process.env.SPACE_APP_SCREENSHOTS,{recursive:true});
       for(const [i,page] of pages.entries())await page.screenshot({path:require('node:path').join(process.env.SPACE_APP_SCREENSHOTS,'battle-played-'+i+'.png'),fullPage:true});

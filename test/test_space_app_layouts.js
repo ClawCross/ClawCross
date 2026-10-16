@@ -48,14 +48,20 @@ const preview=new Set(['task-board','event-planner','flashcards','writing-room',
     const origin='http://127.0.0.1:'+server.address().port;
     if(process.env.SPACE_APP_SCREENSHOTS)fs.mkdirSync(process.env.SPACE_APP_SCREENSHOTS,{recursive:true});
     for(const [dir] of apps){
-      for(const [width,colorScheme,who] of [[1100,'light','alice'],[390,'light','alice'],[320,'dark','bob']]){
-        const page=await browser.newPage({viewport:{width,height:850},colorScheme,reducedMotion:'reduce'});
+      const viewports=dir==='creature-battle'?[[1100,'light','alice',760],[390,'light','alice',844],[390,'light','alice',650],[320,'dark','bob',640]]:[[1100,'light','alice',850],[390,'light','alice',850],[320,'dark','bob',850]];
+      for(const [width,colorScheme,who,height] of viewports){
+        const page=await browser.newPage({viewport:{width,height},colorScheme,reducedMotion:'reduce'});
         page.on('pageerror',e=>errors.push(dir+' '+width+': '+e.message));
         await page.route(/https?:\/\/(?!127\.0\.0\.1)/,route=>route.fulfill({status:200,json:[]}));
         await page.goto(origin+'/'+dir+'/'+who+'/');
         await page.waitForFunction(()=>document.documentElement.dataset.ready==='yes',null,{timeout:10000})
           .catch(async error=>{throw new Error(dir+' '+width+': '+error.message+' '+await page.locator('#app-error').textContent().catch(()=>''));});
         expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),dir+' '+width+' overflow').toBe(true);
+        if(dir==='creature-battle'){
+          expect(await page.locator('#room-root').evaluate(node=>node.scrollHeight<=node.clientHeight+1),width+'x'+height+' fits one screen').toBe(true);
+          const send=await page.locator('[data-send]').boundingBox();
+          expect(send.y+send.height).toBeLessThanOrEqual(height);
+        }
         if(dir==='creature-battle'&&who==='alice'){
           const setup=await page.locator('.cc-room-stage>.cc-room-setup').boundingBox();
           const arena=await page.locator('.cc-room-stage').boundingBox();
@@ -66,8 +72,9 @@ const preview=new Set(['task-board','event-planner','flashcards','writing-room',
         // Opening optional panels must also fit. Includes battle rules, manual decks and histories.
         await page.locator('details').evaluateAll(nodes=>nodes.forEach(node=>{node.open=true;}));
         expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),dir+' '+width+' expanded overflow').toBe(true);
+        if(dir==='creature-battle')await page.locator('details').evaluateAll(nodes=>nodes.forEach(node=>{node.open=false;}));
         if(process.env.SPACE_APP_SCREENSHOTS&&preview.has(dir)&&width!==320)
-          await page.screenshot({path:path.join(process.env.SPACE_APP_SCREENSHOTS,dir+'-'+width+'.png'),fullPage:true});
+          await page.screenshot({path:path.join(process.env.SPACE_APP_SCREENSHOTS,dir+'-'+width+'-'+height+'.png'),fullPage:true});
         await page.close();
       }
       expect(errors).toEqual([]);results.push(dir);console.log('PASS '+dir);
