@@ -89,6 +89,7 @@ const GROUP = {
 };
 
 test('a space with an app shows the app site sandboxed in place of the chat',async({page})=>{
+  await page.setViewportSize({width:390,height:844});
   const calls={posts:[],control:[]};await stub(page,calls);
   let card={...GROUP,federated:true,owner:'tester',app:{name:'精灵对战',online:false},members:[{principal:'u:tester',name:'tester',is_agent:false},member(LEAD)]};
   let sessions=0;
@@ -112,6 +113,13 @@ test('a space with an app shows the app site sandboxed in place of the chat',asy
   await expect(frame).toHaveAttribute('sandbox','allow-scripts allow-forms allow-popups allow-modals allow-downloads');
   await expect(page.frameLocator('#room-app-surface iframe').locator('#app')).toHaveText('arena');
   expect(sessions).toBe(1);
+  const before=await frame.boundingBox();
+  await page.locator('#app-fullscreen-btn').click();
+  await expect(page.locator('body')).toHaveClass(/app-maximized/);
+  expect((await frame.boundingBox()).height).toBeGreaterThan(before.height);
+  await page.locator('#app-fullscreen-exit').click();
+  await expect(page.locator('body')).not.toHaveClass(/app-maximized/);
+  expect(sessions).toBe(1); // Expanding keeps the same app and its state.
   // The members, invitation and menu stay outside the app.
   await page.locator('#chat-more-btn').click();
   await expect(page.locator('#action-group-app')).toBeVisible();

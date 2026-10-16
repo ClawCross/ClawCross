@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /* 精灵对战 · Creature Battle — two agents each design a creature in SVG, with its own animated
  * skill effects, and fight on their people's commands; @-mention an agent in the chat to talk to it.
- * 简介：两个 agent 各画一只带技能特效的精灵，听主人指挥对战；聊天里 @ agent 可以召唤它说话。
+ * 简介：Agent 设计精灵、四个技能与属性点；玩家点技能或发指令对战，精灵气泡展示对话。
  *
  *   node examples/space-apps/creature-battle/server.js --server <group server> --key <app key>
  *
@@ -15,7 +15,6 @@ const path = require('node:path');
 const { connect } = require('../../../sdk/js/clawcross-space.js');
 const Rooms = require('./room-sdk.js');
 const Battle = require('./battle.js');
-const { THEME } = require('../../../sdk/js/space-app-theme.js');
 
 const PAGE_SCRIPTS = [path.join(__dirname, 'room-sdk.js'), path.join(__dirname, 'battle.js')];
 
@@ -25,26 +24,18 @@ function page() {
   return `<!doctype html><html lang="zh"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>精灵对战</title><style>
-${THEME}
-html,body{height:100%}body{height:100dvh;display:flex;flex-direction:column}
-main#room-root{flex:1;min-height:0;overflow:auto;width:100%;padding:24px 24px 16px}.cc-room-battle{min-height:100%;box-sizing:border-box}
-#chat{max-height:24%;overflow:auto;padding:12px max(24px,calc((100vw - 952px)/2));font-size:13px;line-height:1.8;border-top:1px solid var(--line);background:var(--card)}#chat:empty{display:none}
-#chat p{margin:6px 0;overflow-wrap:anywhere}#chat b{font-weight:650;margin-right:8px}#chat p.agent b{color:var(--good)}
-#summon{display:flex;flex-wrap:wrap;gap:6px;grid-column:1/-1}#summon:empty{display:none}#summon button{min-height:32px;padding:5px 10px;font-size:12px;border-radius:9px}
-#bar{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;padding:14px max(24px,calc((100vw - 952px)/2));padding-bottom:max(14px,env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--card)}
-#hint{grid-column:1/-1;font-size:12px;color:var(--muted);overflow-wrap:anywhere}
-#text{font:inherit;resize:none;border-radius:14px;padding:12px 14px;min-width:0;background:var(--bg);color:var(--fg)}
-#bar button{font-size:13px;padding:10px 16px;background:var(--surface);color:var(--fg)}#bar button[data-command]{background:var(--accent);color:var(--on-accent)}
-@media(max-width:600px){main#room-root{padding:16px 12px 12px}#chat{padding:10px 16px}#bar{padding:12px 12px max(12px,env(safe-area-inset-bottom));gap:8px}#bar button{padding:10px 12px}#text{font-size:16px}}
+${fs.readFileSync(path.join(__dirname, 'arena.css'), 'utf8')}
 </style></head><body><main id="room-root"></main><section id="chat" aria-label="聊天"></section>
-<div id="bar"><span id="hint" role="status"></span><div id="summon" aria-label="召唤 agent"></div><textarea id="text" rows="1" maxlength="2000" aria-label="消息"></textarea>
-<button type="button" data-command disabled>出招</button><button type="button" data-chat>聊天</button></div>
+<div id="bar"><span id="hint" role="status"></span><div id="summon" aria-label="召唤 agent"></div>
+<label id="input-mode-label">发送方式 <select id="input-mode" aria-label="发送方式"><option value="chat">聊天 · @ Agent 可以对话</option><option value="command">指挥 · 请我的 Agent 选择技能</option></select></label>
+<textarea id="text" rows="1" maxlength="2000" aria-label="消息"></textarea>
+<button type="button" data-send>发送</button></div>
 ${scripts}
 <script>
 (function(){
   const root=document.getElementById('room-root'),chat=document.getElementById('chat'),text=document.getElementById('text');
-  const hint=document.getElementById('hint'),command=document.querySelector('[data-command]'),talk=document.querySelector('[data-chat]');
-  const seen=new Set(),summon=document.getElementById('summon');let composer=null,after=0,agents='';
+  const hint=document.getElementById('hint'),send=document.querySelector('[data-send]'),mode=document.getElementById('input-mode');
+  const seen=new Set(),summon=document.getElementById('summon');let composer=null,after=0,agents='',sending=false;
   async function api(address,body){
     // text/plain keeps a POST "simple": the sandboxed page skips the CORS preflight round trip.
     const response=await fetch(address,body===undefined?{}:{method:'POST',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:JSON.stringify(body)});
@@ -64,18 +55,21 @@ ${scripts}
     chat.scrollTop=chat.scrollHeight;
   }
   function paint(){
-    command.disabled=!composer||!composer.canSubmit;
-    hint.textContent=composer?composer.label:'';
-    text.placeholder=composer&&composer.canSubmit?composer.placeholder:'和大家聊聊';
+    send.disabled=sending||mode.value==='command'&&(!composer||!composer.canSubmit);
+    hint.textContent=mode.value==='command'?(composer?composer.label:'等待开始'):'';
+    text.placeholder=mode.value==='command'?'告诉我的精灵怎么行动…':'和大家聊聊，@ Agent 让它回应';
   }
+  function commandInput(){mode.value='command';paint();text.focus();}
   const client=new ClawCrossRooms.RoomClient({
     send:(content,mentions)=>api('send',{content,mentions}).then(refresh),
     configure:announcement=>api('configure',{announcement}).then(refresh),
     loadHistory:async()=>{const data=await api('history');show(data.messages);return data.messages;},
     onComposer:value=>{composer=value;paint();},
-    onSuggest:value=>{text.value=value;text.focus();}
+    onSuggest:value=>{text.value=value;text.focus();},onCommand:commandInput
   });
   const game=ClawCrossBattle.mount(root,client);
+  game.chatSlot.append(chat,document.getElementById('bar'));
+  mode.onchange=paint;
   // The summoner chat: @name (or @所有人) brings that agent into the conversation.
   function chips(){
     const names=(client.snapshot.members||[]).filter(m=>m.is_agent).map(m=>m.name);
@@ -89,13 +83,15 @@ ${scripts}
   }
   async function run(button,task){
     const value=text.value.trim();if(!value)return;
-    button.disabled=true;
-    try{await task(value);text.value='';button.disabled=false;paint();}
-    catch(error){button.disabled=false;paint();hint.textContent=error.message||String(error);}
+    if(sending)return;sending=true;paint();
+    let failure='';
+    try{await task(value);text.value='';}
+    catch(error){failure=error.message||String(error);}
+    finally{sending=false;paint();if(failure)hint.textContent=failure;}
   }
   // The page is sandboxed without forms, so the buttons act on click.
-  command.addEventListener('click',()=>run(command,value=>game.submit(value)));
-  talk.addEventListener('click',()=>run(talk,value=>api('send',{content:value,mentions:[]}).then(refresh)));
+  send.addEventListener('click',()=>run(send,value=>mode.value==='command'?game.submit(value):api('send',{content:value,mentions:[]}).then(refresh)));
+  text.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();if(!send.disabled)send.click();}});
   paint();
   // One refresh at a time: the next starts 1.5 s after the last one came back, so slow replies never pile up.
   (async()=>{try{await refresh();}catch(error){hint.textContent=error.message;}
@@ -133,6 +129,7 @@ function battle(space) {
     const after = new Battle.BattleModel().rebuild(config, view(), [...rows, row]);
     if (event.type === 'start') return !before.started && after.started;
     if (event.type !== 'command') return false;
+    if(event.kind==='skill')return after.turn===before.turn+1 && after.log.at(-1)?.id===event.id || after.winner!==null && before.winner===null && after.log.at(-1)?.id===event.id;
     return event.kind === 'avatar' ? after.awaiting[event.fighter] === event.id : after.pending?.id === event.id && before.pending?.id !== event.id;
   }
 
@@ -148,7 +145,7 @@ function battle(space) {
     const row = { id: rows.length + 1, sender: person.id, sender_name: person.name, content, created_at: Date.now() / 1000 };
     if (!accepted(event, row)) throw Object.assign(new Error('现在不能这样操作'), { status: 403 });
     rows.push(row);
-    for (const agent of (mentions || []).filter((id) => member(id)?.agent)) await space.ask(agent, content);
+    if(event.kind!=='skill')for (const agent of (mentions || []).filter((id) => member(id)?.agent)) await space.ask(agent, content);
     return row;
   }
 

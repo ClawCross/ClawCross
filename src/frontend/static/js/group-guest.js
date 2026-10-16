@@ -109,8 +109,18 @@
   // A space with an app shows the app's site, tunnelled to the owner's app server, in place of the
   // messages and input. It opens sandboxed, so it never acts as this page.
   let appFrame = null;
+  function expandApp(value) {
+    document.body.classList.toggle('app-expanded', value);
+    el('app-expand').setAttribute('aria-pressed', String(value));
+    el('app-expand').textContent = value ? '⤡ 退出全页面' : '⤢ 全页面';
+  }
+  el('app-expand').onclick = () => expandApp(!document.body.classList.contains('app-expanded'));
+  addEventListener('keydown', event => { if (event.key === 'Escape') expandApp(false); });
   function showApp(app) {
     el('chat').classList.toggle('room-app-view', !!app);
+    el('app-toolbar').hidden = !app;
+    document.body.classList.toggle('has-room-app', !!app);
+    if (!app) expandApp(false);
     const notice = text => { const p = document.createElement('p'); p.className = 'room-app-notice'; p.textContent = text; el('room-app-surface').replaceChildren(p); appFrame = null; };
     if (!app) { el('room-app-surface').replaceChildren(); appFrame = null; return; }
     if (!app.online) { notice('「' + (app.name || '小程序') + '」暂时不在线'); return; }

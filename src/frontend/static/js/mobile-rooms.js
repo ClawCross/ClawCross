@@ -34,7 +34,7 @@
     document.getElementById('chat-page').classList.toggle('room-app-view', !!group.app);
     for (const entry of frames.values()) entry.frame.hidden = true;
     notice('');
-    if (!group.app) { drop(gid); return; }   // the app was stopped: plain chat again
+    if (!group.app) { document.body.classList.remove('app-maximized'); drop(gid); return; }   // the app was stopped: plain chat again
     const name = group.app.name || '小程序';
     if (!group.app.online) { drop(gid); notice('「' + name + '」暂时不在线'); return; }
     const kept = frames.get(gid);

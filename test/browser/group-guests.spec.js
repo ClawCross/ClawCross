@@ -129,6 +129,13 @@ test('a browser member sees the space app site in place of the chat under the pa
   await expect(page.locator('#announcement')).toHaveText('群公告 · 一起玩');
   await page.locator('#members summary').click();
   await expect(page.locator('#member-list')).toContainText('Alice');
+  const frame=page.locator('#room-app-surface iframe'),before=await frame.boundingBox();
+  await page.locator('#app-expand').click();
+  await expect(page.locator('body')).toHaveClass(/app-expanded/);
+  expect((await frame.boundingBox()).height).toBeGreaterThan(before.height);
+  await expect(page.locator('#members')).toBeHidden();
+  await page.getByRole('button',{name:'退出全页面'}).click();
+  await expect(page.locator('#members')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   expect(errors).toEqual([]);
 });

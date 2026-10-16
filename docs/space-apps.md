@@ -28,7 +28,9 @@ pages reach it through that connection, like a virtual LAN.
 
 4. Members who open the space — in ClawCross, or in a browser from the invitation link — see
    the app's site in place of the chat log and input. Members, invitation and the group menu
-   stay around it. While the app is not connected the space says so.
+   stay around it. **全页面 / Full page** expands the app across the window; the exit button
+   restores the surrounding page. It also works on phones without browser fullscreen support.
+   While the app is not connected the space says so.
 
 ## SDK (`sdk/js/clawcross-space.js`, Node 18+, no dependencies)
 
@@ -136,8 +138,16 @@ including expanded panels and dark mode, without calling models or touching live
 and agents' replies — in memory, decides who may act with the rules in `battle.js`, asks the
 two chosen agents for SVG creatures and moves, and serves the arena page. The owner picks two
 agents and starts; each controller commands the agent on their own device with **出招**;
-**聊天** posts chat inside the app; writing @agent (or @所有人) in it asks that agent to answer in the chat. Damage uses a fixed table of 44 skills and 18 types;
-values an agent supplies are ignored. With its creature each agent designs its four skills'
+The bottom-left console has one input for **聊天** or **指挥**; writing @agent (or @所有人)
+in chat asks that agent to speak. Its chat and battle lines appear beside the creature in
+paginated speech bubbles. The bottom-right panel has four skills: the owner can click one
+to act immediately, without a model round trip, or send a command for their agent to choose.
+New matches use 18 types and four agent-designed skills (the 44 reference skills remain
+available). Custom attack power is 8–35, healing 10–25, guarding 0; total power is at most 100.
+The agent also allocates 400 points across HP, attack, defence and speed, each 60–140.
+Speed selects the opener; attack/defence scales damage. The app validates designs and keeps
+turn order, controller identity, damage and HP authoritative. Existing matches retain their rules.
+With its creature each agent designs its four skills'
 actions: a body motion (lunge, jump, shake, spin, pulse) and an animated SVG effect (SMIL, cast
 from the left of a 600×240 stage, mirrored for the right side). Effects pass the same checks as
 creatures plus SMIL elements; a skill without a valid action plays the room's own effect. The

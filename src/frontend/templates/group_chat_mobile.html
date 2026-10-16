@@ -38,7 +38,7 @@
 <script src="/static/js/reasoning-levels.js?v=20261004-effort-stops"></script>
 <link rel="stylesheet" href="/static/css/connections.css?v=20261011">
 <script src="/static/js/connections.js?v=20261011"></script>
-<script src="/static/js/mobile-rooms.js?v=20261013-keep-apps"></script>
+<script src="/static/js/mobile-rooms.js?v=20261017-full-page"></script>
 <script src="/static/js/external-agent-settings.js?v=20261011-ssh"></script>
 <script src="/static/js/model-profiles.js?v=20261004-effort-slider"></script>
 <script src="/static/js/approval-ui.js?v=20261004-fold-approval"></script>
@@ -1272,9 +1272,10 @@
   #app-fullscreen-btn, #list-toggle-btn, #app-fullscreen-exit { display:none; }
   #chat-page.room-app-view #app-fullscreen-btn { display:flex; }
   #room-app-surface:fullscreen { display:flex; background:var(--bg-card); }
-  body.app-maximized #room-app-surface { display:flex; position:fixed; inset:0; z-index:10000; background:var(--bg-card); }
-  body.app-maximized #app-fullscreen-exit { display:block; position:fixed; top:calc(10px + env(safe-area-inset-top)); right:12px; z-index:10001;
-    border:0; border-radius:99px; padding:7px 14px; font-size:13px; background:rgba(0,0,0,.55); color:#fff; }
+  body.app-maximized #room-app-surface { display:flex; position:fixed; inset:44px 0 0; z-index:10000; background:var(--bg-card); }
+  #app-fullscreen-toolbar { display:none; }
+  body.app-maximized #app-fullscreen-toolbar { display:flex; position:fixed; inset:0 0 auto; height:44px; padding:6px 12px; box-sizing:border-box; z-index:10001; background:var(--bg-card); color:var(--text-secondary); font-size:13px; align-items:center; justify-content:space-between; }
+  body.app-maximized #app-fullscreen-exit { display:block; border:0; border-radius:9px; padding:7px 14px; font-size:13px; background:var(--bg-body); color:var(--text-primary); }
   .room-app-notice { margin:auto; padding:24px; color:var(--text-secondary); font-size:14px; text-align:center; }
   #chat-page.room-app-view #chat-body, #chat-page.room-app-view #new-msg-banner,
   #chat-page.room-app-view .typing-bar, #chat-page.room-app-view .input-bar-wrap { display:none!important; }
@@ -4172,14 +4173,14 @@
     <div class="header-title" id="chat-title" data-i18n="header_agent_msg">Agent消息</div>
     <div style="display:flex;gap:2px;align-items:center;margin-left:auto;">
       <button type="button" class="header-btn" id="list-toggle-btn" onclick="toggleGroupList()" title="收起群聊列表" aria-label="收起群聊列表"><svg class="ui-icon"><use href="/static/icons.svg#panel-left"/></svg></button>
-      <button type="button" class="header-btn" id="app-fullscreen-btn" onclick="toggleAppFullscreen()" title="全屏" aria-label="小程序全屏"><svg class="ui-icon"><use href="/static/icons.svg#maximize"/></svg></button>
+      <button type="button" class="header-btn" id="app-fullscreen-btn" onclick="toggleAppFullscreen()" title="全页面" aria-label="小程序全页面"><svg class="ui-icon"><use href="/static/icons.svg#maximize"/></svg></button>
       <button type="button" class="header-btn" id="chat-more-btn" onclick="toggleChatActions()" data-i18n-title="tip_more" title="更多"><svg class="ui-icon"><use href="/static/icons.svg#more"/></svg></button>
     </div>
   </div>
   <div id="group-network-status" style="display:none;padding:6px 14px;font-size:12px;color:var(--text-secondary);overflow-wrap:anywhere" role="status"></div>
   <button type="button" id="group-announcement" class="group-announcement" hidden onclick="GroupNetworkUI.announcement(currentGroupId)" aria-label="查看群公告"></button>
   <div id="room-app-surface"></div>
-  <button type="button" id="app-fullscreen-exit" onclick="toggleAppFullscreen()">退出全屏</button>
+  <div id="app-fullscreen-toolbar"><span>小程序 · 全页面</span><button type="button" id="app-fullscreen-exit" onclick="toggleAppFullscreen()">退出全页面</button></div>
   <div class="approval-strip" id="approval-strip"></div>
   <div class="chat-body" id="chat-body"></div>
   <div id="new-msg-banner" onclick="dismissNewMsgBanner()">
@@ -8955,12 +8956,9 @@ try { if (localStorage.getItem('clawcross.groupListCollapsed')) toggleGroupList(
 
 // The space's app takes the whole screen; without the browser's full screen it covers the page.
 function toggleAppFullscreen() {
-  const surface = document.getElementById('room-app-surface');
-  if (document.fullscreenElement) { document.exitFullscreen(); return; }
-  if (document.body.classList.contains('app-maximized')) { document.body.classList.remove('app-maximized'); return; }
-  if (surface.requestFullscreen) surface.requestFullscreen().catch(() => document.body.classList.add('app-maximized'));
-  else document.body.classList.add('app-maximized');
+  document.body.classList.toggle('app-maximized');
 }
+addEventListener('keydown', event => { if (event.key === 'Escape') document.body.classList.remove('app-maximized'); });
 
 function goBack() {
   document.body.classList.remove('app-maximized');

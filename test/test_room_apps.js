@@ -100,6 +100,34 @@ function preparedV2(attacker=['fire'], defender=['grass'], moves=['喷射火焰'
   rows.push(message('owner',{type:'start'}));
   return rows;
 }
+const customSkills=[{name:'星屑',type:'normal',power:20},{name:'焰弧',type:'fire',power:30},
+  {name:'护光',type:'guard',power:0},{name:'暖流',type:'heal',power:20}];
+function preparedV3(){
+  const rows=prepared();
+  rows[2].content=Rooms.encodeEvent({type:'avatar',room:'match',id:'a1',name:'Amber',elements:['fire'],stats:{hp:120,attack:100,defense:100,speed:80},skills:customSkills,svg});
+  rows[3].content=Rooms.encodeEvent({type:'avatar',room:'match',id:'a2',name:'Ripple',elements:['normal'],skills:customSkills,svg});
+  rows.push(message('owner',{type:'start'}));return rows;
+}
+test('designed stats and custom skills have bounded budgets and speed selects the opener',()=>{
+  assert.equal(Battle.statsFor({hp:140,attack:140,defense:140,speed:140}),null);
+  assert.equal(Battle.skillsFor({skills:customSkills.map(s=>({...s,power:999}))}),null);
+  assert.equal(Battle.skillsFor({skills:customSkills.map(s=>({...s,type:'constructor'}))}),null);
+  const state=new Battle.BattleModel().rebuild({...config,battle_rules:3,manual_start:true,owner_only:true},members,preparedV3());
+  assert.equal(state.active,1);assert.equal(state.fighters[0].hp,120);assert.equal(state.fighters[0].maxHp,120);
+  assert.deepEqual(state.fighters[0].moves,customSkills.map(s=>s.name));
+});
+test('a human can directly use only their own active creature skills, with replay protection and designed HP',()=>{
+  const cfg={...config,battle_rules:3,manual_start:true,owner_only:true},rows=preparedV3(),model=new Battle.BattleModel();
+  const direct=(sender,id,turn,fighter,move)=>message(sender,{type:'command',kind:'skill',id,turn,fighter,move});
+  rows.push(direct('owner','stolen',1,'beta','星屑'));
+  assert.equal(model.rebuild(cfg,members,rows).log.length,0);
+  rows.push(direct('bob','real',1,'beta','星屑'));
+  let state=model.rebuild(cfg,members,rows);assert.equal(state.fighters[0].hp,90);assert.equal(state.turn,2);
+  rows.push(direct('bob','real',1,'beta','星屑'),direct('owner','bad-skill',2,'alpha','破坏光线'));
+  assert.equal(model.rebuild(cfg,members,rows).turn,2);
+  rows.push(direct('owner','heal',2,'alpha','暖流'));
+  state=model.rebuild(cfg,members,rows);assert.equal(state.fighters[0].hp,110);assert.equal(state.turn,3);
+});
 test('new creatures select exactly four unique catalog moves and valid attributes',()=>{
   assert.equal(Battle.SKILLS.length,44);
   assert.equal(Object.keys(Battle.TYPES).length,18);
