@@ -97,6 +97,12 @@ function reply(content,name){
     for(const [width,height] of [[1100,760],[390,844],[390,650],[320,568],[844,390],[1024,500],[768,600]]){
       await alice.setViewportSize({width,height});
       expect(await alice.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+      await expect.poll(()=>alice.locator('.cc-room-bubble').evaluateAll(bubbles=>bubbles.every(bubble=>{
+        const image=bubble.parentElement.querySelector('.cc-room-image');
+        if(!image)return true;
+        const text=bubble.getBoundingClientRect(),sprite=image.getBoundingClientRect();
+        return text.bottom<=sprite.top;
+      })),'speech stays clear of creatures at '+width+'x'+height).toBe(true);
       const buttons=alice.locator('.cc-room-move,[data-send],[data-agent-command]');
       for(let i=0;i<await buttons.count();i++){
         await expect.poll(()=>buttons.nth(i).evaluate(node=>{node.scrollIntoView({block:'nearest'});const r=node.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return r.width>=30&&r.height>=22&&r.y>=0&&r.bottom<=innerHeight+1&&(node===hit||node.contains(hit));}),'button reachable at '+width+'x'+height).toBe(true);
