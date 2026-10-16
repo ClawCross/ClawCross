@@ -662,6 +662,16 @@ class UserAwareToolNode:
             f"原因：{reason or '该工具调用不满足当前策略要求。'}"
         )
 
+    @staticmethod
+    def _unknown_tool_result(tc: dict, target_name: str) -> ToolMessage:
+        return ToolMessage(
+            content=tool_result_payload(
+                target_name, ok=False, error_type="unknown_tool", retryable=True,
+                message="未找到该工具。请用 tool_search 查询工具的准确名称和参数，再继续完成任务。",
+            ),
+            name=tc["name"], tool_call_id=tc["id"], status="error",
+        )
+
     def _discover(self, tc: dict, *, tools_by_name: dict, long_tail_names: set[str]) -> ToolMessage | None:
         """Answer ``tool_search``, or resolve ``tool_call`` into its target call in place.
 
@@ -682,23 +692,33 @@ class UserAwareToolNode:
         if tc["name"] != "tool_call":
             return None
         call_args = tc.get("args") if isinstance(tc.get("args"), dict) else {}
-        target_name = str(call_args.get("tool_name") or "")
+        target_name = str(call_args.get("tool_name") or "").strip()
         raw_json = call_args.get("arguments_json")
         try:
-            if target_name not in long_tail_names or target_name not in tools_by_name:
-                raise ValueError("This tool is not available through tool_call in the current session")
             if not isinstance(raw_json, str) or len(raw_json) > 200_000:
                 raise ValueError("arguments_json must be a JSON object string under 200 KB")
             parsed_args = json.loads(raw_json)
             if not isinstance(parsed_args, dict):
                 raise ValueError("arguments_json must contain a JSON object")
+            if target_name not in tools_by_name:
+                target_name, parsed_args = resolve_tool_call(target_name, parsed_args)
+            if target_name not in tools_by_name:
+                return self._unknown_tool_result(tc, target_name)
+            # Binding a tool's schema eagerly or lazily is not a permission.
+            # Both entrypoints run the same enablement/mode/approval checks below.
             schema = _visible_tool_parameters(tools_by_name[target_name])
             parsed_args = drop_null_optionals(parsed_args, schema)
             from jsonschema import validate
             validate(parsed_args, {**schema, "additionalProperties": False})
         except Exception as exc:
-            return ToolMessage(content=f"Invalid tool_call: {type(exc).__name__}: {str(exc)[:300]}",
-                               name="tool_call", tool_call_id=tc["id"], status="error")
+            return ToolMessage(
+                content=tool_result_payload(
+                    target_name, ok=False, error_type="invalid_tool_arguments", retryable=True,
+                    message="工具参数无效。请按工具定义修正；参数不确定时先用 tool_search 查询，再继续完成任务。",
+                    details={"error": f"{type(exc).__name__}: {str(exc)[:300]}"},
+                ),
+                name="tool_call", tool_call_id=tc["id"], status="error",
+            )
         # From here on the call is the original tool: every mode, enablement,
         # policy, approval and MCP permit check applies to it.
         tc["name"], tc["args"] = target_name, parsed_args
@@ -783,6 +803,9 @@ class UserAwareToolNode:
             if tc["name"] in tools_by_name and tc["name"] not in available_names:
                 logger.info("blocked disabled tool call: %s", tc["name"])
                 blocked_calls.append((tc, "该工具当前未在会话的 enabled_tools 列表中。", False, ""))
+                continue
+            if tc["name"] not in tools_by_name and tc["name"] not in external_names:
+                result_messages.append(self._unknown_tool_result(tc, tc["name"]))
                 continue
 
             self._inject_identity(tc, user_id, session_id, defaults=True)
@@ -1279,15 +1302,14 @@ class TeamAgent:
     # Loop routing
     # ------------------------------------------------------------------
     def _should_continue(self, state: AgentState) -> bool:
-        """Run tools only when every call is one of ours; a caller-supplied
-        (external) tool call ends the loop and goes back to the caller."""
+        """Only declared caller tools leave the loop; unknown names get repair feedback."""
         last_msg = state["messages"][-1]
         if not getattr(last_msg, "tool_calls", None):
             return False
         external_names = _external_tool_names(state)
         for tc in last_msg.tool_calls:
             name = tc["name"]
-            if name in external_names or canonical_tool_name(name) not in self._internal_tool_names:
+            if name in external_names:
                 if effective_session_mode(state.get('user_id',''),state.get('session_id',''),state.get('session_mode')) in {'chat','readonly'}:
                     return True  # Route through execution checks instead of forwarding a forbidden call.
                 logger.info("external tool call %s: returning it to the caller", name)
@@ -1460,7 +1482,8 @@ class TeamAgent:
             )
 
         if should_stop_for_turn_limit(next_turn_count, turn.max_turns,
-                                      getattr(response, "tool_calls", None), self._internal_tool_names):
+                                      getattr(response, "tool_calls", None), self._internal_tool_names,
+                                      external_tool_names=external_tool_names):
             self._session_hook(turn, "stop", {"reason": "max_turns"},
                                result={"next_turn_count": next_turn_count, "max_turns": turn.max_turns})
             response = AIMessage(content=build_turn_limit_message(extract_text(response.content), turn.max_turns))

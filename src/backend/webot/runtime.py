@@ -158,13 +158,19 @@ def should_stop_for_turn_limit(
     max_turns: int | None,
     tool_calls: list[dict] | None,
     internal_tool_names: set[str] | frozenset[str],
+    *,
+    external_tool_names: set[str] | frozenset[str] | None = None,
 ) -> bool:
     if max_turns is None or next_turn_count < max_turns:
         return False
     if not tool_calls:
         return False
     for tool_call in tool_calls:
-        if tool_call.get("name") not in internal_tool_names:
+        name = tool_call.get("name")
+        if external_tool_names is not None:
+            if name in external_tool_names:
+                return False
+        elif name not in internal_tool_names:
             return False
     return True
 

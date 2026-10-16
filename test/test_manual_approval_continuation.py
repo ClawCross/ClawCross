@@ -176,7 +176,7 @@ class ManualContinuationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_external_agent_approval_does_not_prompt_native_agent_again(self):
         record = await self.pending()
-        target = SimpleNamespace(driver='acpx')
+        target = SimpleNamespace(driver='acpx', config={})
         gateway = SimpleNamespace(trigger=AsyncMock())
         with patch('agents.store.get_store', return_value=SimpleNamespace(get=lambda *a: target)), \
              patch('agents.gateway.get_gateway', return_value=gateway):

@@ -146,7 +146,8 @@ class OldNameCalls(unittest.IsolatedAsyncioTestCase):
     def test_old_name_routes_to_internal_tools_not_the_caller(self):
         agent = TeamAgent.__new__(TeamAgent)
         agent._internal_tool_names = frozenset({"write_file"})
-        state = {"messages": [AIMessage(content="", tool_calls=[{"name": "append_file", "args": {}, "id": "c1"}])]}
+        state = {"user_id": "alice", "session_id": "s1", "session_mode": "bypass",
+                 "messages": [AIMessage(content="", tool_calls=[{"name": "append_file", "args": {}, "id": "c1"}])]}
         self.assertTrue(agent._should_continue(state))
         # ...unless the caller itself supplied a tool under that name.
         state["external_tools"] = [{"type": "function", "function": {"name": "append_file"}}]
