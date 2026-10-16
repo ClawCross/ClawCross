@@ -109,13 +109,21 @@
   // A space with an app shows the app's site, tunnelled to the owner's app server, in place of the
   // messages and input. It opens sandboxed, so it never acts as this page.
   let appFrame = null;
-  function expandApp(value) {
+  function setAppExpanded(value) {
     document.body.classList.toggle('app-expanded', value);
     el('app-expand').setAttribute('aria-pressed', String(value));
-    el('app-expand').textContent = value ? '⤡ 退出全页面' : '⤢ 全页面';
+    el('app-collapse').hidden=!value;
   }
-  el('app-expand').onclick = () => expandApp(!document.body.classList.contains('app-expanded'));
-  addEventListener('keydown', event => { if (event.key === 'Escape') expandApp(false); });
+  async function expandApp(value) {
+    const host=el('app-fullscreen-host');setAppExpanded(value);
+    if(value){try{await host.requestFullscreen();}catch(_){}}
+    else if(document.fullscreenElement===host)await document.exitFullscreen();
+  }
+  let nativeAppFullscreen=false;
+  el('app-expand').onclick = () => expandApp(true);
+  el('app-collapse').onclick = () => expandApp(false);
+  addEventListener('keydown', event => { if (event.key === 'Escape') setAppExpanded(false); });
+  addEventListener('fullscreenchange',()=>{if(document.fullscreenElement===el('app-fullscreen-host'))nativeAppFullscreen=true;else if(nativeAppFullscreen){nativeAppFullscreen=false;setAppExpanded(false);}});
   function showApp(app) {
     el('chat').classList.toggle('room-app-view', !!app);
     el('app-toolbar').hidden = !app;

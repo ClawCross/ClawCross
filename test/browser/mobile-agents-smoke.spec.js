@@ -116,6 +116,8 @@ test('a space with an app shows the app site sandboxed in place of the chat',asy
   const before=await frame.boundingBox();
   await page.locator('#app-fullscreen-btn').click();
   await expect(page.locator('body')).toHaveClass(/app-maximized/);
+  await expect.poll(()=>page.evaluate(()=>document.fullscreenElement?.id)).toBe('app-fullscreen-host');
+  const full=await frame.boundingBox();expect(full.x).toBe(0);expect(full.y).toBe(0);expect(full.width).toBe(390);expect(full.height).toBe(844);
   expect((await frame.boundingBox()).height).toBeGreaterThan(before.height);
   await page.locator('#app-fullscreen-exit').click();
   await expect(page.locator('body')).not.toHaveClass(/app-maximized/);
@@ -124,7 +126,11 @@ test('a space with an app shows the app site sandboxed in place of the chat',asy
   await page.locator('#chat-more-btn').click();
   await expect(page.locator('#action-group-app')).toBeVisible();
   expect(errors).toEqual([]);
+  await page.locator('#chat-actions-overlay').click({position:{x:8,y:8}});
+  await page.locator('#app-fullscreen-btn').click();
+  await expect.poll(()=>page.evaluate(()=>document.fullscreenElement?.id)).toBe('app-fullscreen-host');
   await page.evaluate(()=>goBack());
+  await expect.poll(()=>page.evaluate(()=>document.fullscreenElement)).toBeNull();
   await expect(page.locator('#chat-page')).not.toHaveClass(/room-app-view/);
 });
 

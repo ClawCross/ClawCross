@@ -28,8 +28,9 @@ pages reach it through that connection, like a virtual LAN.
 
 4. Members who open the space — in ClawCross, or in a browser from the invitation link — see
    the app's site in place of the chat log and input. Members, invitation and the group menu
-   stay around it. **全页面 / Full page** expands the app across the window; the exit button
-   restores the surrounding page. It also works on phones without browser fullscreen support.
+   stay around it. **全屏 / Fullscreen** opens the app in browser fullscreen, covering the
+   entire screen. The floating exit button (or Escape) restores the page. Browsers without
+   fullscreen support expand the app across the available viewport instead.
    While the app is not connected the space says so.
 
 ## SDK (`sdk/js/clawcross-space.js`, Node 18+, no dependencies)
@@ -137,11 +138,13 @@ including expanded panels and dark mode, without calling models or touching live
 `examples/space-apps/creature-battle/server.js` keeps the match — the log of people's commands
 and agents' replies — in memory, decides who may act with the rules in `battle.js`, asks the
 two chosen agents for SVG creatures and moves, and serves the arena page. The owner picks two
-agents and starts; each controller commands the agent on their own device with **出招**;
-The bottom-left console has one input for **聊天** or **指挥**; writing @agent (or @所有人)
-in chat asks that agent to speak. Its chat and battle lines appear beside the creature in
-paginated speech bubbles. The bottom-right panel has four skills: the owner can click one
-to act immediately, without a model round trip, or send a command for their agent to choose.
+agents and starts; each controller controls the agent on their own device.
+The chat area has one input and one send button; writing @agent (or @所有人) asks that
+agent to speak. Its chat and battle lines appear beside the creature in paginated speech
+bubbles. The skill panel has four buttons: a controller can click one to act immediately,
+without a model round trip, or choose **请 Agent 出招** to send a one-time instruction
+through the same input. Afterwards the input returns to ordinary chat. On narrow screens
+the panels stack; on short landscape screens they sit beside the arena.
 New matches use 18 types and four agent-designed skills (the 44 reference skills remain
 available). Custom attack power is 8–35, healing 10–25, guarding 0; total power is at most 100.
 The agent also allocates 400 points across HP, attack, defence and speed, each 60–140.

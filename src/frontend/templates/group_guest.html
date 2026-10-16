@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>朋友群聊</title>
-  <link rel="stylesheet" href="/static/css/group-guest.css?v=20261017-full-page">
+  <link rel="stylesheet" href="/static/css/group-guest.css?v=20261017-fullscreen-fix">
   <link rel="stylesheet" href="/static/css/group-message-menu.css?v=20261004-message-menu">
   <link rel="stylesheet" href="/static/css/group-device-map.css?v=20261011-devices">
   <script defer src="/static/js/group-message-menu.js?v=20261004-message-menu"></script>
   <script defer src="/static/js/group-device-map.js?v=20261011-devices2"></script>
   <script defer src="/static/js/group-guest-agent.js?v=20261013-space-apps"></script>
-  <script defer src="/static/js/group-guest.js?v=20261017-full-page"></script>
+  <script defer src="/static/js/group-guest.js?v=20261017-fullscreen-fix"></script>
 </head>
 <body>
 <main>
@@ -35,8 +35,8 @@
       <form id="history-search"><label class="sr-only" for="history-query">搜索聊天记录</label><input id="history-query" type="search" maxlength="120" required placeholder="关键词或成员名字"><button type="submit">搜索</button></form>
       <div id="history-results"></div><button id="history-more" type="button" hidden>更早的结果</button><p id="history-status" role="status"></p>
     </details>
-    <div id="app-toolbar" hidden><span>小程序</span><button id="app-expand" type="button" aria-pressed="false">⤢ 全页面</button></div>
-    <div id="room-app-surface"></div>
+    <div id="app-toolbar" hidden><span>小程序</span><button id="app-expand" type="button" aria-pressed="false">⤢ 全屏</button></div>
+    <div id="app-fullscreen-host"><div id="room-app-surface"></div><button id="app-collapse" type="button" hidden>退出全屏</button></div>
     <div id="messages" role="log" aria-label="群聊消息" aria-live="polite"></div>
     <div id="composer">
       <div id="mention-menu" role="listbox" aria-label="选择要提及的群成员" hidden></div>

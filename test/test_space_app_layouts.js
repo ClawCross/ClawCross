@@ -48,7 +48,7 @@ const preview=new Set(['task-board','event-planner','flashcards','writing-room',
     const origin='http://127.0.0.1:'+server.address().port;
     if(process.env.SPACE_APP_SCREENSHOTS)fs.mkdirSync(process.env.SPACE_APP_SCREENSHOTS,{recursive:true});
     for(const [dir] of apps){
-      const viewports=dir==='creature-battle'?[[1100,'light','alice',760],[390,'light','alice',844],[390,'light','alice',650],[320,'dark','bob',640]]:[[1100,'light','alice',850],[390,'light','alice',850],[320,'dark','bob',850]];
+      const viewports=dir==='creature-battle'?[[1100,'light','alice',760],[390,'light','alice',844],[390,'light','alice',650],[320,'dark','alice',568],[844,'light','alice',390],[1024,'light','alice',500],[768,'light','alice',600],[320,'dark','bob',640]]:[[1100,'light','alice',850],[390,'light','alice',850],[320,'dark','bob',850]];
       for(const [width,colorScheme,who,height] of viewports){
         const page=await browser.newPage({viewport:{width,height},colorScheme,reducedMotion:'reduce'});
         page.on('pageerror',e=>errors.push(dir+' '+width+': '+e.message));
@@ -58,9 +58,10 @@ const preview=new Set(['task-board','event-planner','flashcards','writing-room',
           .catch(async error=>{throw new Error(dir+' '+width+': '+error.message+' '+await page.locator('#app-error').textContent().catch(()=>''));});
         expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),dir+' '+width+' overflow').toBe(true);
         if(dir==='creature-battle'){
-          expect(await page.locator('#room-root').evaluate(node=>node.scrollHeight<=node.clientHeight+1),width+'x'+height+' fits one screen').toBe(true);
-          const send=await page.locator('[data-send]').boundingBox();
-          expect(send.y+send.height).toBeLessThanOrEqual(height);
+          if(height>=600)expect(await page.locator('#room-root').evaluate(node=>node.scrollHeight<=node.clientHeight+1),width+'x'+height+' fits one screen').toBe(true);
+          for(const selector of ['[data-send]',...(who==='alice'?['[data-prepare]']:[])]){
+            await expect.poll(()=>page.locator(selector).evaluate(node=>{node.scrollIntoView({block:'nearest'});const r=node.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return r.width>=30&&r.height>=22&&r.y>=0&&r.bottom<=innerHeight+1&&(node===hit||node.contains(hit));}),selector+' reachable at '+width+'x'+height).toBe(true);
+          }
         }
         if(dir==='creature-battle'&&who==='alice'){
           const setup=await page.locator('.cc-room-stage>.cc-room-setup').boundingBox();

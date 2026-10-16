@@ -26,16 +26,15 @@ function page() {
 <title>精灵对战</title><style>
 ${fs.readFileSync(path.join(__dirname, 'arena.css'), 'utf8')}
 </style></head><body><main id="room-root"></main><section id="chat" aria-label="聊天"></section>
-<div id="bar"><span id="hint" role="status"></span><div id="summon" aria-label="召唤 agent"></div>
-<label id="input-mode-label">发送方式 <select id="input-mode" aria-label="发送方式"><option value="chat">聊天 · @ Agent 可以对话</option><option value="command">指挥 · 请我的 Agent 选择技能</option></select></label>
+<div id="bar"><div id="command-context" hidden><span>给我的精灵下指令</span><button type="button" id="cancel-command" aria-label="取消出招指令">×</button></div>
 <textarea id="text" rows="1" maxlength="2000" aria-label="消息"></textarea>
-<button type="button" data-send>发送</button></div>
+<button type="button" data-send>发送</button><span id="hint" role="status"></span></div>
 ${scripts}
 <script>
 (function(){
   const root=document.getElementById('room-root'),chat=document.getElementById('chat'),text=document.getElementById('text');
-  const hint=document.getElementById('hint'),send=document.querySelector('[data-send]'),mode=document.getElementById('input-mode');
-  const seen=new Set(),summon=document.getElementById('summon');let composer=null,after=0,agents='',sending=false;
+  const hint=document.getElementById('hint'),send=document.querySelector('[data-send]'),context=document.getElementById('command-context');
+  const seen=new Set();let composer=null,after=0,sending=false,command=false;
   async function api(address,body){
     // text/plain keeps a POST "simple": the sandboxed page skips the CORS preflight round trip.
     const response=await fetch(address,body===undefined?{}:{method:'POST',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:JSON.stringify(body)});
@@ -55,42 +54,35 @@ ${scripts}
     chat.scrollTop=chat.scrollHeight;
   }
   function paint(){
-    send.disabled=sending||mode.value==='command'&&(!composer||!composer.canSubmit);
-    hint.textContent=mode.value==='command'?(composer?composer.label:'等待开始'):'';
-    text.placeholder=mode.value==='command'?'告诉我的精灵怎么行动…':'和大家聊聊，@ Agent 让它回应';
+    send.disabled=sending||command&&(!composer||!composer.canSubmit);
+    context.hidden=!command;
+    text.placeholder=command?'告诉我的精灵怎么行动…':'聊聊，或 @ Agent';
   }
-  function commandInput(){mode.value='command';paint();text.focus();}
+  function commandInput(){command=true;hint.textContent='';paint();text.focus();}
   const client=new ClawCrossRooms.RoomClient({
     send:(content,mentions)=>api('send',{content,mentions}).then(refresh),
     configure:announcement=>api('configure',{announcement}).then(refresh),
     loadHistory:async()=>{const data=await api('history');show(data.messages);return data.messages;},
     onComposer:value=>{composer=value;paint();},
-    onSuggest:value=>{text.value=value;text.focus();},onCommand:commandInput
+    onSuggest:value=>{commandInput();text.value=value;},onCommand:commandInput
   });
   const game=ClawCrossBattle.mount(root,client);
   game.chatSlot.append(chat,document.getElementById('bar'));
-  mode.onchange=paint;
-  // The summoner chat: @name (or @所有人) brings that agent into the conversation.
-  function chips(){
-    const names=(client.snapshot.members||[]).filter(m=>m.is_agent).map(m=>m.name);
-    if(names.join('|')===agents)return;agents=names.join('|');
-    summon.replaceChildren(...[...names,'所有人'].map(name=>{const b=document.createElement('button');b.type='button';b.textContent='@'+name;
-      b.onclick=()=>{text.value=(text.value.trim()?text.value.trim()+' ':'')+'@'+name+' ';text.focus();};return b;}));
-  }
+  document.getElementById('cancel-command').onclick=()=>{command=false;paint();text.focus();};
   async function refresh(){
     const data=await api('state?after='+after);after=data.cursor;
-    client.update(data.snapshot);show(data.snapshot.messages);chips();game.update(client.snapshot);
+    client.update(data.snapshot);show(data.snapshot.messages);game.update(client.snapshot);
   }
   async function run(button,task){
     const value=text.value.trim();if(!value)return;
-    if(sending)return;sending=true;paint();
+    if(sending)return;sending=true;hint.textContent='';paint();
     let failure='';
-    try{await task(value);text.value='';}
+    try{await task(value);text.value='';command=false;}
     catch(error){failure=error.message||String(error);}
     finally{sending=false;paint();if(failure)hint.textContent=failure;}
   }
   // The page is sandboxed without forms, so the buttons act on click.
-  send.addEventListener('click',()=>run(send,value=>mode.value==='command'?game.submit(value):api('send',{content:value,mentions:[]}).then(refresh)));
+  send.addEventListener('click',()=>run(send,value=>command?game.submit(value):api('send',{content:value,mentions:[]}).then(refresh)));
   text.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();if(!send.disabled)send.click();}});
   paint();
   // One refresh at a time: the next starts 1.5 s after the last one came back, so slow replies never pile up.

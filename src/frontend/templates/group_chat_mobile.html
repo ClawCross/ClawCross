@@ -38,7 +38,7 @@
 <script src="/static/js/reasoning-levels.js?v=20261004-effort-stops"></script>
 <link rel="stylesheet" href="/static/css/connections.css?v=20261011">
 <script src="/static/js/connections.js?v=20261011"></script>
-<script src="/static/js/mobile-rooms.js?v=20261017-full-page"></script>
+<script src="/static/js/mobile-rooms.js?v=20261017-fullscreen-fix"></script>
 <script src="/static/js/external-agent-settings.js?v=20261011-ssh"></script>
 <script src="/static/js/model-profiles.js?v=20261004-effort-slider"></script>
 <script src="/static/js/approval-ui.js?v=20261004-fold-approval"></script>
@@ -1271,10 +1271,14 @@
   /* Full screen for the app; where the browser has no full screen (iPhone) it covers the page instead. */
   #app-fullscreen-btn, #list-toggle-btn, #app-fullscreen-exit { display:none; }
   #chat-page.room-app-view #app-fullscreen-btn { display:flex; }
-  #room-app-surface:fullscreen { display:flex; background:var(--bg-card); }
-  body.app-maximized #room-app-surface { display:flex; position:fixed; inset:44px 0 0; z-index:10000; background:var(--bg-card); }
+  #app-fullscreen-host { display:none; flex:1; min-height:0; min-width:0; }
+  #chat-page.room-app-view #app-fullscreen-host { display:flex; }
+  #app-fullscreen-host:fullscreen { display:flex; width:100vw; height:100dvh; background:var(--bg-card); }
+  body.app-maximized #chat-page { transform:none!important; inset:0!important; width:100vw!important; max-width:none!important; z-index:10000; }
+  body.app-maximized #app-fullscreen-host { display:flex; position:fixed; inset:0; z-index:10000; background:var(--bg-card); }
+  body.app-maximized #room-app-surface { display:flex; }
   #app-fullscreen-toolbar { display:none; }
-  body.app-maximized #app-fullscreen-toolbar { display:flex; position:fixed; inset:0 0 auto; height:44px; padding:6px 12px; box-sizing:border-box; z-index:10001; background:var(--bg-card); color:var(--text-secondary); font-size:13px; align-items:center; justify-content:space-between; }
+  body.app-maximized #app-fullscreen-toolbar { display:flex; position:absolute; top:8px; left:50%; transform:translateX(-50%); z-index:10001; }
   body.app-maximized #app-fullscreen-exit { display:block; border:0; border-radius:9px; padding:7px 14px; font-size:13px; background:var(--bg-body); color:var(--text-primary); }
   .room-app-notice { margin:auto; padding:24px; color:var(--text-secondary); font-size:14px; text-align:center; }
   #chat-page.room-app-view #chat-body, #chat-page.room-app-view #new-msg-banner,
@@ -4173,14 +4177,14 @@
     <div class="header-title" id="chat-title" data-i18n="header_agent_msg">Agent消息</div>
     <div style="display:flex;gap:2px;align-items:center;margin-left:auto;">
       <button type="button" class="header-btn" id="list-toggle-btn" onclick="toggleGroupList()" title="收起群聊列表" aria-label="收起群聊列表"><svg class="ui-icon"><use href="/static/icons.svg#panel-left"/></svg></button>
-      <button type="button" class="header-btn" id="app-fullscreen-btn" onclick="toggleAppFullscreen()" title="全页面" aria-label="小程序全页面"><svg class="ui-icon"><use href="/static/icons.svg#maximize"/></svg></button>
+      <button type="button" class="header-btn" id="app-fullscreen-btn" onclick="toggleAppFullscreen()" title="全屏" aria-label="小程序全屏"><svg class="ui-icon"><use href="/static/icons.svg#maximize"/></svg></button>
       <button type="button" class="header-btn" id="chat-more-btn" onclick="toggleChatActions()" data-i18n-title="tip_more" title="更多"><svg class="ui-icon"><use href="/static/icons.svg#more"/></svg></button>
     </div>
   </div>
   <div id="group-network-status" style="display:none;padding:6px 14px;font-size:12px;color:var(--text-secondary);overflow-wrap:anywhere" role="status"></div>
   <button type="button" id="group-announcement" class="group-announcement" hidden onclick="GroupNetworkUI.announcement(currentGroupId)" aria-label="查看群公告"></button>
-  <div id="room-app-surface"></div>
-  <div id="app-fullscreen-toolbar"><span>小程序 · 全页面</span><button type="button" id="app-fullscreen-exit" onclick="toggleAppFullscreen()">退出全页面</button></div>
+  <div id="app-fullscreen-host"><div id="room-app-surface"></div>
+  <div id="app-fullscreen-toolbar"><button type="button" id="app-fullscreen-exit" onclick="toggleAppFullscreen()">退出全屏</button></div></div>
   <div class="approval-strip" id="approval-strip"></div>
   <div class="chat-body" id="chat-body"></div>
   <div id="new-msg-banner" onclick="dismissNewMsgBanner()">
@@ -8891,7 +8895,7 @@ async function reloadGroupDetail() {
 
 
 async function openChat(groupId, name) {
-  document.body.classList.remove('app-maximized');
+  closeAppFullscreen();
   GroupMessageMenu.close();
   clearGroupReply();
   currentGroupId = groupId;
@@ -8955,13 +8959,25 @@ function toggleGroupList(force) {
 try { if (localStorage.getItem('clawcross.groupListCollapsed')) toggleGroupList(true); } catch (_) {}
 
 // The space's app takes the whole screen; without the browser's full screen it covers the page.
-function toggleAppFullscreen() {
-  document.body.classList.toggle('app-maximized');
+function closeAppFullscreen() {
+  if(document.fullscreenElement===document.getElementById('app-fullscreen-host'))document.exitFullscreen().catch(()=>{});
+  document.body.classList.remove('app-maximized');
 }
+async function toggleAppFullscreen() {
+  const host=document.getElementById('app-fullscreen-host');
+  if(document.body.classList.contains('app-maximized')){
+    if(document.fullscreenElement===host)await document.exitFullscreen();
+    document.body.classList.remove('app-maximized');return;
+  }
+  document.body.classList.add('app-maximized');
+  try{await host.requestFullscreen();}catch(_){}
+}
+let nativeAppFullscreen=false;
+addEventListener('fullscreenchange',()=>{if(document.fullscreenElement===document.getElementById('app-fullscreen-host'))nativeAppFullscreen=true;else if(nativeAppFullscreen){nativeAppFullscreen=false;document.body.classList.remove('app-maximized');}});
 addEventListener('keydown', event => { if (event.key === 'Escape') document.body.classList.remove('app-maximized'); });
 
 function goBack() {
-  document.body.classList.remove('app-maximized');
+  closeAppFullscreen();
   MobileRooms.close();
   GroupMessageMenu.close();
   stopPolling();

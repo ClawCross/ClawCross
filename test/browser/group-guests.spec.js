@@ -132,10 +132,19 @@ test('a browser member sees the space app site in place of the chat under the pa
   const frame=page.locator('#room-app-surface iframe'),before=await frame.boundingBox();
   await page.locator('#app-expand').click();
   await expect(page.locator('body')).toHaveClass(/app-expanded/);
+  await expect.poll(()=>page.evaluate(()=>document.fullscreenElement?.id)).toBe('app-fullscreen-host');
+  const full=await frame.boundingBox();expect(full.x).toBe(0);expect(full.y).toBe(0);expect(full.height).toBe(844);
   expect((await frame.boundingBox()).height).toBeGreaterThan(before.height);
   await expect(page.locator('#members')).toBeHidden();
-  await page.getByRole('button',{name:'退出全页面'}).click();
+  await page.getByRole('button',{name:'退出全屏'}).click();
   await expect(page.locator('#members')).toBeVisible();
+  // Browsers without the Fullscreen API still cover the complete page viewport.
+  await page.evaluate(()=>{HTMLElement.prototype.requestFullscreen=()=>Promise.reject(new Error('unsupported'));});
+  await page.locator('#app-expand').click();
+  await expect(page.locator('body')).toHaveClass(/app-expanded/);
+  expect(await page.evaluate(()=>document.fullscreenElement)).toBeNull();
+  const fallback=await frame.boundingBox();expect(fallback.x).toBe(0);expect(fallback.y).toBe(0);expect(fallback.width).toBe(390);expect(fallback.height).toBe(844);
+  await page.getByRole('button',{name:'退出全屏'}).click();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   expect(errors).toEqual([]);
 });

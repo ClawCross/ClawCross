@@ -57,8 +57,8 @@ function reply(content,name){
     await expect(alice.locator('#chat')).toContainText('准备好了',{timeout:10000});
     // The summoner chat: @Alpha brings Alice's agent into the conversation; plain chat asks nobody.
     const before=test.asked.length;
-    await bobPage.locator('#summon button',{hasText:'@Alpha'}).click();
-    await bobPage.locator('#text').pressSequentially('你的精灵怕不怕火？');
+    await expect(bobPage.locator('#bar button:visible')).toHaveCount(1);
+    await bobPage.locator('#text').fill('@Alpha 你的精灵怕不怕火？');
     await bobPage.locator('[data-send]').click();
     await expect(alice.locator('#chat p.agent',{hasText:'Amber 收到，准备战斗！'})).toBeVisible({timeout:10000});
     await expect(bobPage.locator('#chat p.agent',{hasText:'Amber 收到'})).toBeVisible({timeout:10000});
@@ -70,10 +70,8 @@ function reply(content,name){
     await bubble.getByRole('button',{name:'上一页对话'}).click();await expect(bubble.locator('p')).toHaveText(firstLine);
     await alice.locator('[data-start]').click();
     await expect(alice.locator('[data-start]')).toBeHidden();
-    await bobPage.locator('#input-mode').selectOption('command');
-    await alice.locator('#input-mode').selectOption('command');
-    await bobPage.locator('#text').fill('抢先出招');
-    await expect(bobPage.locator('[data-send]')).toBeDisabled();
+    await expect(bobPage.locator('[data-agent-command]')).toBeDisabled();
+    await alice.locator('[data-agent-command]').click();
     await alice.locator('#text').fill('用喷射火焰进攻');
     await alice.locator('[data-send]').click();
     await expect(alice.locator('.cc-room-hp').nth(1)).toHaveText('76 / 100 HP',{timeout:15000});
@@ -83,6 +81,8 @@ function reply(content,name){
     await expect(alice.locator('.cc-room-image').first()).toHaveAttribute('data-motion','jump');
     expect(test.asked[0].content).toContain('motion 是精灵本体的动作');
     await expect(bobPage.locator('.cc-room-hp').nth(1)).toHaveText('76 / 100 HP',{timeout:10000});
+    await bobPage.locator('[data-agent-command]').click();
+    await bobPage.locator('#text').fill('用星焰进攻');
     await bobPage.locator('[data-send]').click();
     await expect(alice.locator('.cc-room-hp').first()).toHaveText('76 / 100 HP',{timeout:15000});
     // Ripple brought no actions: the room's own effect, mirrored for the right side, and a lunge.
@@ -94,12 +94,15 @@ function reply(content,name){
     await expect(bobPage.locator('.cc-room-hp').nth(1)).toHaveText('52 / 100 HP',{timeout:10000});
     expect(test.asked.length).toBe(askedBeforeClick);
     await expect(alice.locator('#text')).toHaveValue('');
-    for(const page of pages){
-      expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
-      expect(await page.locator('#room-root').evaluate(node=>node.scrollHeight<=node.clientHeight+1)).toBe(true);
-      const input=await page.locator('#text').boundingBox();expect(input.y+input.height).toBeLessThanOrEqual(page.viewportSize().height);
-      expect((await page.locator('.cc-room-image').first().boundingBox()).height).toBeGreaterThan(48);
+    for(const [width,height] of [[1100,760],[390,844],[390,650],[320,568],[844,390],[1024,500],[768,600]]){
+      await alice.setViewportSize({width,height});
+      expect(await alice.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+      const buttons=alice.locator('.cc-room-move,[data-send],[data-agent-command]');
+      for(let i=0;i<await buttons.count();i++){
+        await expect.poll(()=>buttons.nth(i).evaluate(node=>{node.scrollIntoView({block:'nearest'});const r=node.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return r.width>=30&&r.height>=22&&r.y>=0&&r.bottom<=innerHeight+1&&(node===hit||node.contains(hit));}),'button reachable at '+width+'x'+height).toBe(true);
+      }
     }
+    await alice.setViewportSize({width:1100,height:760});
     if(process.env.SPACE_APP_SCREENSHOTS){
       require('node:fs').mkdirSync(process.env.SPACE_APP_SCREENSHOTS,{recursive:true});
       for(const [i,page] of pages.entries())await page.screenshot({path:require('node:path').join(process.env.SPACE_APP_SCREENSHOTS,'battle-played-'+i+'.png'),fullPage:true});
@@ -118,9 +121,11 @@ function reply(content,name){
       await page.goto(test.groupPage.url);
       await expect(page.frameLocator('[data-room-surface]').locator('.cc-room-hp').nth(1)).toHaveText('52 / 100 HP',{timeout:15000});
       const frame=page.locator('[data-room-surface]');const beforeHeight=(await frame.boundingBox()).height;
-      await page.getByRole('button',{name:/^(全页面|Full page)$/}).click();
+      await page.getByRole('button',{name:/^(全屏|Fullscreen)$/}).click();
+      await expect.poll(()=>page.evaluate(()=>!!document.fullscreenElement)).toBe(true);
       expect((await frame.boundingBox()).height).toBeGreaterThan(beforeHeight);
-      await page.getByRole('button',{name:/^(退出全页面|Exit full page)$/}).click();
+      const full=await frame.boundingBox();expect(full.x).toBe(0);expect(full.y).toBe(0);expect(full.width).toBe(page.viewportSize().width);expect(full.height).toBe(page.viewportSize().height);
+      await page.getByRole('button',{name:/^(退出全屏|Exit fullscreen)$/}).click();
       await expect(page.getByRole('log')).toBeHidden();
     }
     expect(errors).toEqual([]);
