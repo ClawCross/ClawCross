@@ -1,7 +1,6 @@
 #!/usr/bin/env node
-/* 精灵对战 · Creature Battle — two agents each design a creature in SVG, with its own animated
- * skill effects, and fight on their people's commands; @-mention an agent in the chat to talk to it.
- * 简介：从浮岛首页启程，收集、培养与对战；侧栏设计师定制 SVG 精灵和技能动画，精灵背包与成长自动存档。
+/* 精灵对战 · Creature Battle — AI Agents create companions; players choose backpack creatures to battle.
+ * 简介：AI Agent 创作 SVG 精灵、技能动画与介绍，存入精灵背包；玩家选择自己的精灵参战，培养与对局自动存档。
  *
  *   node examples/space-apps/creature-battle/server.js --server <group server> --key <app key>
  *
@@ -17,6 +16,7 @@ const Battle = require('./battle.js');
 const {Store}=require('../../../sdk/js/space-store');
 const {Garden}=require('./garden');
 const {Designer}=require('./designer');
+const {Arena}=require('./arena');
 const crypto=require('node:crypto');
 
 const PAGE_SCRIPTS = ['room-sdk.js','battle.js','garden-ui.js','game-shell.js'].map(file=>path.join(__dirname,file));
@@ -69,13 +69,15 @@ ${scripts}
   const client=new ClawCrossRooms.RoomClient({
     send:(content,mentions)=>api('send',{content,mentions}).then(refresh),
     configure:announcement=>api('configure',{announcement}).then(refresh),
+    readyCompanion:body=>api('arena/ready',body).then(refresh),
+    startCompanion:body=>api('arena/start',body).then(refresh),
     loadHistory:async()=>{const data=await api('history');show(data.messages);return data.messages;},
     onComposer:value=>{composer=value;paint();},
     onSuggest:value=>{commandInput();text.value=value;},onCommand:commandInput
   });
   const game=ClawCrossBattle.mount(root,client);
   shell=ClawCrossGameShell.mount(root,{chat,bar:document.getElementById('bar'),api,onChannel:value=>{if(value==='assistant')command=false;paint();}});
-  const garden=ClawCrossGarden.mount(root,api,{parent:shell.scene,toolbar:false,onClose:()=>shell.navigate('home'),onDesign:c=>shell.openDesigner(c)});
+  const garden=ClawCrossGarden.mount(root,api,{parent:shell.scene,toolbar:false,onClose:()=>shell.navigate('home'),onDesign:c=>shell.openDesigner(c),onCreate:()=>shell.newCreature()});
   shell.attachGarden(garden);
   document.getElementById('cancel-command').onclick=()=>{command=false;paint();text.focus();};
   function receive(data){
@@ -120,6 +122,7 @@ function battle(space) {
   const viewers = new Set();
   let revision = 0;
   const designer=new Designer(store,garden,space,()=>roster,changed);
+  const arena=new Arena(store,garden,()=>roster,()=>config,next=>{config=next;},changed);
 
   const view = () => roster.members.map((m) => ({ principal: m.id, name: m.name, is_agent: m.agent, device: m.device, platform: m.platform }));
   const member = (id) => roster.members.find((m) => m.id === id);
@@ -136,8 +139,9 @@ function battle(space) {
 
 
   function snapshot(person, after=0) {
+    const visible=arena.display(),announcement=visible?Rooms.encodeConfig({...visible,companions:undefined}):'';
     return {cursor:rows.length, revision, epoch, snapshot:{roomId:'space',title:roster.title,
-      announcement:config?Rooms.encodeConfig(config):'',members:view(),messages:rows.slice(after),
+      announcement,members:view(),messages:rows.slice(after),arena:arena.view(person.id),
       actor:{key:person.id,name:person.name},isOwner:!!member(person.id)?.owner,garden:garden.view(person.id),assistant:designer.view(person.id)}};
   }
   function push(viewer) {
@@ -151,7 +155,7 @@ function battle(space) {
     if(config){
       const state=new Battle.BattleModel().rebuild(config,view(),rows),owners=[];
       for(const fighter of state.fighters){const agent=member(fighter.agent?.key),owner=roster.members.find(m=>!m.agent&&agent&&m.device===agent.device);owners.push(owner?.id);
-        if(owner&&fighter.svg)garden.capture(owner.id,agent.id,fighter);}
+        if(!config.companion_battle&&owner&&fighter.svg)garden.capture(owner.id,agent.id,fighter);}
       garden.reward(config.id,state,owners);
     }
     revision++;for(const viewer of viewers)push(viewer);
@@ -170,6 +174,7 @@ function battle(space) {
 
   /** Whether the rules accept this person's command now, judged by the same model the page uses. */
   function accepted(event, row) {
+    if(config.companion_battle&&(event.type!=='command'||event.kind!=='skill'))return false;
     const before = new Battle.BattleModel().rebuild(config, view(), rows);
     const after = new Battle.BattleModel().rebuild(config, view(), [...rows, row]);
     if (event.type === 'start') return !before.started && after.started;
@@ -226,12 +231,16 @@ function battle(space) {
       const body = JSON.parse(Buffer.concat(chunks).toString() || '{}');
       if(req.method==='POST'&&url.pathname==='/assistant')return reply(200,await designer.ask(person,body));
       if(req.method==='POST'&&url.pathname==='/assistant/cancel')return reply(200,designer.cancel(person.id));
+      if(req.method==='POST'&&url.pathname==='/arena/ready')return reply(200,arena.choose(person,body.creature));
+      if(req.method==='POST'&&url.pathname==='/arena/start')return reply(200,arena.start(person,body.opponent));
+      if(req.method==='POST'&&url.pathname==='/arena/leave')return reply(200,arena.leave(person));
       if(req.method==='POST'&&url.pathname.startsWith('/garden/')){const result=garden.act(person.id,url.pathname.slice(8),body);changed();return reply(200,result);}
       if (req.method === 'POST' && url.pathname === '/send') return reply(200, await send(person, body));
       if (req.method === 'POST' && url.pathname === '/configure') {
         if (!owner) return reply(403, { error: '只有群主可以设置对局' });
         const next = Rooms.parseConfig(body.announcement);
         if (!next) return reply(400, { error: '对局设置无效' });
+        if(next.companion_battle||next.companions)return reply(400,{error:'请由每位玩家在竞技场选择自己的背包精灵参战。'});
         config = next;changed();
         return reply(200, { ok: true });
       }

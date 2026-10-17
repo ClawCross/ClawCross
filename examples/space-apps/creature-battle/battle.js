@@ -140,6 +140,7 @@
   }
   function allowedController(person, fighter, config, members) {
     if (!person || person.is_agent || !fighter) return false;
+    if(config.companion_battle)return person.key===fighter.key;
     if (config.owner_only) return person.device_key === fighter.device_key;
     const host = Rooms.resolveMember(config.host, members);
     return !!(host && host.key === person.key) || person.name === fighter.controller;
@@ -156,7 +157,8 @@
       const fighters = refs.map((ref, index) => ({ref: ref, agent: agents[index], hp: 100, maxHp:100, stats:statsFor(null), guard: false,
         name: ref.name || '精灵', svg: '', element: 'normal', elements: ['normal'], moves: [], skills:[], actions: {}}));
       this.state = {fighters: fighters, rules:config.battle_rules || 1, started: !config.manual_start, turn: 1, active: 0, pending: null, awaiting: {}, winner: null, log: [], invalid: ''};
-      if (fighters.length !== 2 || agents.some(agent => !agent || !agent.is_agent) || agents[0].key === agents[1].key) return this.state;
+      if(config.companion_battle){for(let i=0;i<fighters.length;i++){const c=config.companions?.[i];if(!c)continue;const skills=c.skills.map(name=>c.customSkills?.find(s=>s.name===name)||skillFor(name));Object.assign(fighters[i],{creature:c.id,name:c.name,svg:safeSvg(c.svg),level:c.level,stats:c.stats,maxHp:c.stats.hp,hp:c.stats.hp,elements:c.elements,element:c.elements[0],moves:c.skills,skills,actions:actionsFor(c.actions,c.skills,skills)});}if(this.state.started&&fighters.length===2)this.state.active=fighters[1].stats.speed>fighters[0].stats.speed?1:0;}
+      if (fighters.length !== 2 || agents.some(agent => !agent || (config.companion_battle?agent.is_agent:!agent.is_agent)) || agents[0].key === agents[1].key) return this.state;
       const rows = [...new Map((messages || []).map(message => [Number(message.id), message])).values()]
         .sort((a, b) => Number(a.id) - Number(b.id));
       for (const message of rows) this.apply(message);
@@ -317,6 +319,7 @@
     const path=document.createElementNS('http://www.w3.org/2000/svg','path');path.setAttribute('d',paths[type]||paths.normal);icon.append(path);return icon;
   }
   function mount(container, client) {
+    const bagMode=typeof client.transport.readyCompanion==='function';
     const root = document.createElement('section'); root.className = 'cc-room-battle';
     root.innerHTML = '<div class="cc-room-head"><div class="cc-room-brand"><span aria-hidden="true">✦</span><div><small>联机竞技场</small><strong>精灵对战</strong></div></div><div><button class="cc-room-btn secondary" data-settings>对阵设置</button></div></div>' +
       '<div class="cc-room-stage"><div class="cc-room-fighters"></div>' +
@@ -326,6 +329,7 @@
       '<section class="cc-room-controls"><div class="cc-room-panel-head"><span data-move-title>技能</span><small data-turn-hint>等待精灵登场</small></div><div class="cc-room-moves"></div><div class="cc-room-agent-order"><button data-agent-command>请 Agent 出招</button></div><div class="cc-room-log"></div></section></div>' +
       '<div class="cc-room-error" role="status"></div><details class="cc-room-skills"><summary>设计规则与参考技能</summary><p>生命 / 攻击 / 防御 / 速度：各 60–140，总计 400 点。自定义四招，总威力最多 100。速度决定先手，之后轮流行动。</p><div></div></details>';
     container.append(root);
+    if(bagMode){root.dataset.source='companions';root.querySelector('.cc-room-setup').innerHTML='<label>我的出战精灵<select data-companion aria-label="选择出战精灵"></select></label><button class="cc-room-btn" data-prepare>携带精灵参战</button><label>对手<select data-opponent aria-label="选择对手"></select></label><div class="arena-ready-players" aria-live="polite"></div>';root.querySelector('[data-agent-command]').hidden=true;root.querySelector('.cc-room-skills summary').textContent='对战规则与参考技能';root.querySelector('.cc-room-skills>p').textContent='选择自己的背包精灵参战。开局锁定等级、属性与技能；速度决定先手，之后轮流点击技能。';}
     for (const skill of SKILLS) { const chip = document.createElement('span'); chip.textContent = skill.name+' · '+(TYPES[skill.type]?.name || (skill.type==='heal'?'回复':'防守'))+(skill.power?' '+skill.power:''); root.querySelector('.cc-room-skills div').append(chip); }
     const chart=document.createElement('section');chart.className='cc-room-matchups';
     const description=document.createElement('p');description.textContent='克制 ×2 · 抵抗 ×0.5 · 免疫 ×0 · 双属性相乘 · 本系攻击 ×1.5';chart.append(description);
@@ -403,12 +407,18 @@
       if (!config || destroyed) return;
       const key = JSON.stringify([config, cache.size, snapshot.actor, snapshot.isOwner,
         (snapshot.members || []).map(m => [m.key,m.principal,m.name,m.is_agent,m.controller,m.device,m.connection_id]),
-        busy,synced,settingsOpen,window.innerWidth<640]);
+        busy,synced,settingsOpen,window.innerWidth<640,bagMode?snapshot.arena:null,bagMode?snapshot.garden?.creatures.map(c=>[c.id,c.name,c.level]):null]);
       if (key === paintKey) return;
       paintKey = key;
       const s = state(), members = model.members;
       const signature = JSON.stringify(members.filter(m => m.is_agent).map(m => [m.key,m.name,m.controller]));
-      if (signature !== rosterSignature) {
+      if(bagMode){
+        const pets=snapshot.garden?.creatures||[],ready=snapshot.arena?.ready||[],own=ready.find(p=>p.key===snapshot.actor?.key),others=ready.filter(p=>p.key!==snapshot.actor?.key);
+        const choices=JSON.stringify([pets.map(c=>[c.id,c.name,c.level]),ready.map(p=>[p.key,p.name,p.creature.id]),snapshot.arena?.selected]);
+        if(choices!==rosterSignature){rosterSignature=choices;const prior=selects[0].value;selects[0].replaceChildren();for(const c of pets)selects[0].append(new Option(c.name+' · Lv.'+c.level,c.id));if(!pets.length)selects[0].append(new Option('先在背包新建或领取精灵',''));selects[0].value=own?.creature.id||pets.find(c=>c.id===prior)?.id||snapshot.garden?.selected||pets[0]?.id||'';
+          const rival=selects[1].value;selects[1].replaceChildren();for(const p of others)selects[1].append(new Option(p.name+' · '+p.creature.name,p.key));if(!others.length)selects[1].append(new Option('等待其他玩家参战',''));if(others.some(p=>p.key===rival))selects[1].value=rival;}
+        const list=root.querySelector('.arena-ready-players');list.textContent=ready.length?ready.map(p=>p.name+' · '+p.creature.name).join('　/　'):'每位玩家从自己的背包选好精灵，再进入竞技场。';
+      }else if (signature !== rosterSignature) {
         rosterSignature = signature;
         const agents = members.filter(m => m.is_agent);
         selects.forEach((select,index) => {
@@ -425,10 +435,10 @@
       const ready = s.fighters.length === 2 && s.fighters.every(f => f.agent && f.svg);
       root.dataset.phase=ready?(s.winner!==null?'finished':s.started?'battle':'ready'):'setup';
       const me = members.find(m => m.key === (snapshot.actor || {}).key);
-      root.querySelector('.cc-room-setup').hidden = !snapshot.isOwner || (ready && !settingsOpen);
-      root.querySelector('[data-settings]').hidden = !snapshot.isOwner;
-      prepare.disabled = busy || members.filter(m => m.is_agent).length < 2;
-      prepare.textContent = (config.players || []).length ? '重新生成 / 新对局' : '生成双方精灵';
+      root.querySelector('.cc-room-setup').hidden = bagMode?!!snapshot.arena?.active:!snapshot.isOwner || (ready && !settingsOpen);
+      root.querySelector('[data-settings]').hidden = bagMode||!snapshot.isOwner;
+      prepare.disabled = busy || (bagMode?!snapshot.garden?.creatures.length:members.filter(m => m.is_agent).length < 2);
+      prepare.textContent = bagMode?(snapshot.arena?.selected?'更新出战精灵':'携带精灵参战'):(config.players || []).length ? '重新生成 / 新对局' : '生成双方精灵';
       const field=root.querySelector('.cc-room-fighters');
       for(let index=0;index<2;index++){
         const fighter=s.fighters[index];
@@ -441,7 +451,7 @@
         card.classList.toggle('active',index===s.active);
         const profile=card.querySelector('.cc-room-profile'),maxHp=fighter?.maxHp||100;
         profile.querySelector('.cc-room-name').textContent=(fighter?.svg?fighter.name+' · Lv.'+fighter.level:fighter?.name)||(index?'右方精灵':'左方精灵');
-        profile.querySelector('small').textContent=fighter?fighter.ref.name+(fighter.ref.controller?' · '+fighter.ref.controller:''):'加入房间中的 Agent';
+        profile.querySelector('small').textContent=fighter?fighter.ref.name+(fighter.ref.controller&&fighter.ref.controller!==fighter.ref.name?' · '+fighter.ref.controller:''):bagMode?'等待玩家携带精灵参战':'加入房间中的 Agent';
         profile.querySelector('.cc-room-health span').style.width=(fighter?fighter.hp/maxHp*100:100)+'%';
         profile.querySelector('.cc-room-hp').textContent=fighter?.svg?fighter.hp+' / '+maxHp+' HP':'等待设计';
         const types=profile.querySelector('.cc-room-types');types.replaceChildren();
@@ -496,8 +506,9 @@
       status.textContent = !synced ? '正在同步对战记录…' : s.winner !== null ? s.fighters[s.winner].name + ' 获胜！' :
         !ready ? '先让双方 Agent 生成精灵形象' : !s.started ? '双方已就绪 · 等待房主开始对战' :
         '第 ' + s.turn + ' 回合 · ' + s.fighters[s.active].name + (s.pending ? ' 正在选择招式…' : ' 行动');
+      if(bagMode&&!snapshot.arena?.active)status.textContent=s.winner!==null?s.fighters[s.winner].name+' 获胜！选择精灵可再来一场。':(snapshot.arena?.ready.length||0)>=2?'双方精灵已就绪，可以开始对战。':'从背包选好精灵，等待另一位玩家参战。';
       const permitted = ready && allowedController(me, s.fighters[s.active].agent, config, members);
-      start.hidden = !snapshot.isOwner || !ready || s.started || !root.querySelector('.cc-room-setup').hidden;
+      start.hidden = bagMode?!!snapshot.arena?.active||!snapshot.arena?.selected||!snapshot.arena?.ready.some(p=>p.key!==snapshot.actor?.key):!snapshot.isOwner || !ready || s.started || !root.querySelector('.cc-room-setup').hidden;
       root.querySelector('.cc-room-footer').hidden=start.hidden;
       start.disabled = busy || !synced;
       const hint = !synced ? '正在同步对战记录' : !ready ? '等待双方形象生成' : !s.started ? '等待房主点击开始对战' :
@@ -535,6 +546,7 @@
       await client.sendToAgent(target.agent, Rooms.encodeEvent(event, prompt(event, s, target)));
     }
     prepare.onclick = () => act(async () => {
+      if(bagMode){await client.transport.readyCompanion({creature:selects[0].value});return;}
       const members = model.members;
       const chosen = selects.map(select => members.find(m => m.key === select.value));
       if (chosen.some(m => !m) || chosen[0].key === chosen[1].key) throw new Error('请先加入并选择两个不同 Agent');
@@ -554,6 +566,7 @@
       await Promise.all([issue(0, 'avatar'), issue(1, 'avatar')]);
     }).catch(() => {});
     start.onclick = () => act(async () => {
+      if(bagMode){await client.transport.startCompanion({opponent:selects[1].value});return;}
       const s = state();
       if (!snapshot.isOwner || !synced || s.started || !s.fighters.every(f => f.svg)) return;
       await client.publish(Rooms.encodeEvent({type:'start', room:config.id, id:Rooms.uid()}));
@@ -568,7 +581,7 @@
       },
       update: function (next) {
         // Until the owner sets up a match the group carries no battle configuration.
-        snapshot = next; config = Rooms.parseConfig(next.announcement) || blank; ingest(next.messages);
+        snapshot = next; config = Rooms.parseConfig(next.announcement) || blank;if(config.companion_battle)config={...config,companions:next.arena?.fighters||[]};ingest(next.messages);
         if (client.transport.loadHistory && historyRoom !== next.roomId) {
           historyRoom = next.roomId; synced = false;
           Promise.resolve(client.transport.loadHistory()).then(messages => {

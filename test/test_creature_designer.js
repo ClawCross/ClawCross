@@ -17,5 +17,10 @@ const {Designer,MARKER}=require('../examples/space-apps/creature-battle/designer
  await designer.ask({id:'alice',name:'Alice'},{agent:'alpha',creature:pet.id,content:'再次改造'});const last=store.data.designers.alice.pending.id;designer.cancel('alice');
  designer.receive({agent:'alpha',request:7,content:MARKER+JSON.stringify({request:last,design:{name:'迟到的回复'}})});assert.equal(garden.view('alice').creatures[0].name,'星屿灵狐');
  assert.throws(()=>garden.design('alice',pet.id,{svg:'<svg><script>alert(1)</script></svg>'},'alpha'));assert.equal(garden.view('alice').creatures[0].name,'星屿灵狐');
+ const size=garden.view('alice').creatures.length;
+ await designer.ask({id:'alice',name:'Alice'},{agent:'alpha',create:true,content:'创造一只新的精灵'});
+ const fresh=store.data.designers.alice.pending.id;
+ designer.receive({agent:'alpha',request:7,content:MARKER+JSON.stringify({request:fresh,design:{...design,description:'星光凝成的原创伙伴。',skills:[{name:'火花',type:'fire',power:16},{name:'撞击',type:'normal',power:14},{name:'守住',type:'guard',power:0},{name:'自我再生',type:'heal',power:22}]}})});
+ const created=garden.view('alice');assert.equal(created.creatures.length,size+1);assert.equal(created.creatures.at(-1).level,1);assert.equal(created.creatures.at(-1).description,'星光凝成的原创伙伴。');assert.equal(designer.view('alice').ui.creature,created.creatures.at(-1).id);
  console.log('PASS: assistant ownership, reply correlation, safe design, protected growth, UI navigation, cancellation and private history');
 })().catch(e=>{console.error(e);process.exitCode=1;});

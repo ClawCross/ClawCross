@@ -32,6 +32,13 @@ function gain(c,xp){const before=c.level;c.xp+=xp;while(c.level<LEVEL_CAP&&c.xp>
 function unlocked(c){const species=SPECIES[c.species],list=species?species.moves.filter((_,i)=>c.level>=[1,3,5,10][i]):c.skills;return [...new Set([...c.skills,...list])];}
 function publicCreature(c){return{...c,stats:stats(c),nextXp:c.level*40,form:form(c.level),unlocked:unlocked(c),svg:c.svg||(c.species?art(c.species,c.level):'')};}
 function initial(){return{coins:60,balls:3,potions:3,creatures:[],selected:'',encounter:null,notice:'选一位伙伴，开始你的冒险。',requests:[]};}
+function designFields(c,raw,agent){
+ const svg=raw.svg===undefined?publicCreature(c).svg:Battle.safeSvg(raw.svg),skills=raw.skills===undefined?c.skills.map(name=>c.customSkills?.find(s=>s.name===name)||Battle.skillFor(name)):Battle.skillsFor(raw);
+ const elements=raw.elements===undefined?c.elements:raw.elements,base=raw.stats===undefined?c.base:Battle.statsFor(raw.stats);
+ if(!svg||!skills||skills.length!==4||skills.some(s=>!s)||!base||!Array.isArray(elements)||elements.length<1||elements.length>2||elements.some(t=>!Object.hasOwn(Battle.TYPES,t)))fail('设计没有通过形象、属性或技能校验，原设计已保留。');
+ const moves=skills.map(s=>s.name),actions=Battle.actionsFor({...c.actions,...raw.actions},moves,skills);
+ return{name:raw.name?String(raw.name).slice(0,40):c.name,description:raw.description===undefined?c.description||'':String(raw.description).slice(0,600),svg,elements:[...new Set(elements)],base,skills:moves,customSkills:skills,actions,designer:agent};
+}
 class Garden{
  constructor(store){this.store=store;if(!store.data.garden)this.store.update(d=>{d.garden={players:{},settled:[]};});}
  ensure(id){if(!Object.hasOwn(this.store.data.garden.players,id))this.store.update(d=>{d.garden.players[id]=initial();});return this.store.data.garden.players[id];}
@@ -88,16 +95,17 @@ class Garden{
  design(owner,id,raw,agent){
   const p=this.ensure(owner),c=p.creatures.find(c=>c.id===id);if(!c)fail('只能设计自己背包里的精灵。');
   if(p.encounter&&!p.encounter.done)fail('先完成当前探险，再修改设计。');
-  const svg=raw.svg===undefined?publicCreature(c).svg:Battle.safeSvg(raw.svg);
-  const skills=raw.skills===undefined?c.skills.map(name=>c.customSkills?.find(s=>s.name===name)||Battle.skillFor(name)):Battle.skillsFor(raw);
-  const elements=raw.elements===undefined?c.elements:raw.elements;
-  const base=raw.stats===undefined?c.base:Battle.statsFor(raw.stats);
-  if(!svg||!skills||skills.length!==4||skills.some(s=>!s)||!base||!Array.isArray(elements)||elements.length<1||elements.length>2||elements.some(t=>!Object.hasOwn(Battle.TYPES,t)))fail('设计没有通过形象、属性或技能校验，原设计已保留。');
-  const moves=skills.map(s=>s.name),actions=Battle.actionsFor({...c.actions,...raw.actions},moves,skills);
+  const fields=designFields(c,raw,agent);
   this.store.update(d=>{const pet=d.garden.players[owner].creatures.find(c=>c.id===id);
    if(pet.agent&&!pet.arenaSource)pet.arenaSource=pet.svg;
-   Object.assign(pet,{name:raw.name?String(raw.name).slice(0,40):pet.name,svg,elements:[...new Set(elements)],base,skills:moves,customSkills:skills,actions,designer:agent});
+   Object.assign(pet,fields);
    d.garden.players[owner].notice='新设计已保存，等级和培养进度保持不变。';});
+ }
+ create(owner,raw,agent){
+  const p=this.ensure(owner);if(p.creatures.length>=12)fail('精灵背包已满，最多保留 12 位伙伴。');
+  if(typeof raw.name!=='string'||!raw.name.trim()||!raw.svg||!raw.skills||typeof raw.description!=='string'||!raw.description.trim())fail('新精灵需要名字、介绍、SVG 形象和四项技能。');
+  const c={...creature('spark'),species:null};Object.assign(c,designFields(c,raw,agent));
+  this.store.update(d=>{const player=d.garden.players[owner];player.creatures.push(c);player.selected=c.id;player.notice='AI Agent 创作的新精灵「'+c.name+'」已加入背包。';});return c.id;
  }
  capture(owner,agent,fighter){
   this.ensure(owner);const prior=this.store.data.garden.players[owner].creatures.find(c=>c.agent===agent);
@@ -107,7 +115,7 @@ class Garden{
  }
  reward(match,state,owners){
   if(state.winner===null||this.store.data.garden.settled.includes(match))return;
-  this.store.update(d=>{d.garden.settled.push(match);for(let side=0;side<2;side++){const p=d.garden.players[owners[side]],c=p?.creatures.find(c=>c.agent===state.fighters[side].agent?.key);if(!c)continue;gain(c,side===state.winner?60:25);p.coins+=side===state.winner?20:8;p.notice='竞技场结算：经验 +'+(side===state.winner?60:25)+'。';}});
+  this.store.update(d=>{d.garden.settled.push(match);for(let side=0;side<2;side++){const p=d.garden.players[owners[side]],fighter=state.fighters[side],c=p?.creatures.find(c=>fighter.creature?c.id===fighter.creature:c.agent===fighter.agent?.key);if(!c)continue;gain(c,side===state.winner?60:25);p.coins+=side===state.winner?20:8;p.notice='竞技场结算：经验 +'+(side===state.winner?60:25)+'。';}});
  }
 }
 module.exports={Garden,SPECIES,art,stats,gain};

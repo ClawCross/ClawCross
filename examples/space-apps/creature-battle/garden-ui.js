@@ -31,6 +31,7 @@ function mount(container,api,options={}){
   const wallet=el('span','garden-wallet','✦ '+data.coins+' 星币'),back=el('button','garden-back',options.onClose?'返回首页':'返回竞技场');back.type='button';back.onclick=()=>{overlay.hidden=true;if(options.onClose)options.onClose();else open.focus({preventScroll:true});};head.append(title,wallet,back);
   const nav=el('nav','garden-tabs');for(const [id,label]of[['partners','伙伴'],['training','训练'],['journey','探险']]){const b=el('button',tab===id?'active':'',label);b.type='button';b.onclick=()=>{tab=id;render();};nav.append(b);}
   const body=el('div','garden-scroll');
+  if(tab==='partners'&&options.onCreate){const create=el('section','garden-create-card'),copy=el('div');copy.append(el('strong','','AI Agent 设计你的新精灵'),el('p','','形象、四个技能、动画与介绍，一起创造。'));const b=el('button','garden-button primary','新建精灵');b.onclick=()=>options.onCreate();create.append(copy,b);body.append(create);}
   let c=data.creatures.find(c=>c.id===selected)||data.creatures.find(c=>c.id===data.selected)||data.creatures[0];if(c)selected=c.id;
   if(!data.creatures.length){
    const welcome=el('div','garden-intro');welcome.append(el('small','','第一位伙伴'),el('h3','','从一次相遇开始'),el('p','','选择你的初始伙伴。训练、探索、结契，让它陪你一起成长。'));body.append(welcome);
@@ -50,7 +51,7 @@ function mount(container,api,options={}){
    const team=el('div','garden-team');for(const pet of data.creatures){const b=el('button','garden-companion'+(pet.id===selected?' selected':''));b.type='button';b.setAttribute('aria-pressed',String(pet.id===selected));b.append(icon(pet.svg,pet.name),el('span','',pet.name),el('small','','Lv.'+pet.level));b.onclick=()=>{selected=pet.id;render();};team.append(b);}
    let detail=body;if(tab==='partners'){const layout=el('div','garden-bag-layout'),collection=el('section','garden-collection');collection.append(el('h3','','我的伙伴 · '+data.creatures.length),team);detail=el('section','garden-detail');layout.append(collection,detail);body.append(layout);}else body.append(team);
    const hero=el('section','garden-hero'),portrait=el('div','garden-portrait');portrait.append(icon(c.svg,c.name));
-   const about=el('div','garden-about');about.append(el('small','',types(c)+' · '+['初始形态','成长形态','共鸣形态'][c.form]),el('h3','',c.name),el('p','',c.agent||c.designer?'由你的设计师定制':'星光草原的伙伴'),el('strong','','Lv.'+c.level),meter(c.xp,c.nextXp,'experience'),el('small','','经验 '+c.xp+' / '+c.nextXp));hero.append(portrait,about);detail.append(hero);
+   const about=el('div','garden-about');about.append(el('small','',types(c)+' · '+['初始形态','成长形态','共鸣形态'][c.form]),el('h3','',c.name),el('p','garden-description',c.description||(c.agent||c.designer?'由 AI Agent 为你创作的伙伴':'星光草原的伙伴')),el('strong','','Lv.'+c.level),meter(c.xp,c.nextXp,'experience'),el('small','','经验 '+c.xp+' / '+c.nextXp));hero.append(portrait,about);detail.append(hero);
    const vitals=el('div','garden-vitals');vitals.append(el('span','','体力 '+c.energy+'/100'),el('span','','亲密度 '+c.bond+'/100'));for(const[key,label]of[['hp','生命'],['attack','攻击'],['defense','防御'],['speed','速度']])vitals.append(el('span','',label+' '+c.stats[key]));detail.append(vitals);
    if(tab==='training'){
     body.append(el('h3','garden-section-title','今天一起练什么？'));

@@ -144,8 +144,10 @@ including expanded panels and dark mode, without calling models or touching live
 ## Example: creature battle
 
 The app opens at an illustrated game home, with a companion backpack, training, exploration
-and arena navigation. A collapsible **精灵设计师** sidebar accepts natural-language requests
-for the selected companion's SVG appearance and animated skills. App-level
+and arena navigation. The **AI Agent 精灵设计师** sidebar starts open and accepts natural-language
+requests to create a new companion with a description, SVG appearance and animated skills,
+or edit an existing companion. Players enter the arena with their own saved backpack
+companions; battle input and rewards do not require Agent calls. App-level
 `[ClawCrossGame:v1]` replies are bound to the requesting member, Agent, request ID and
 companion. The host validates designs and only allows named game screens; no generated page
 code is executed. Design conversations are member-owned. The same sidebar input can switch
