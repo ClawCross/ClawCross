@@ -35,8 +35,8 @@ class TitleScreen extends MenuScreen {
     c.scale(s * 100 / (sw + 32) , s * 100 / (sw + 32));
     Font.center(c, this.splash, 0, -8, '#FFFF00');
     c.restore();
-    Font.draw(c, 'Minecraft JS 复刻 (使用 26.2 官方材质)', 2, ui.h - 10, '#FFFFFF');
-    const t = '非官方作品 · 仅供比赛展示';
+    Font.draw(c, '方块世界 · '+(window.VOXEL_PACK?.mode==='upstream'?'个人开发测试':'原创程序化材质'), 2, ui.h - 10, '#FFFFFF');
+    const t = 'OpusMC / MIT · 非官方作品';
     Font.draw(c, t, ui.w - Font.width(t) - 2, ui.h - 10, '#FFFFFF');
   }
 }
