@@ -180,6 +180,7 @@ the current page, and cleared on logout. Tool code remains in an isolated sandbo
 | `src/frontend/static/js/tool-catalog.js` | tool categories and grouped picker shared by desktop/mobile |
 | `src/frontend/static/js/runtime-settings.js` | context usage meter and context/approval settings |
 | `src/frontend/static/js/main.js` | main desktop frontend logic |
+| `src/frontend/static/js/settings-navigation.js`, `src/frontend/static/css/settings-polish.css` | shared Studio/Mobile settings categories, search, form presentation and public access controls |
 | `src/frontend/static/css/style.css` | main desktop styling, including OASIS Town / swarm / ReportAgent panels |
 | `src/frontend/proxies/webot.py` | Flask proxy routes for WeBot runtime panel and tool policy |
 | `src/frontend/static/js/creator.js` | ClawCross Creator page logic, i18n, persistence, DAG preview |

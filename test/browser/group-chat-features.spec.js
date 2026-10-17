@@ -234,3 +234,46 @@ test('guest history search quotes older messages and preserves the reference on 
   await expect(page.locator('#reply-preview')).toContainText('最近的消息');
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);expect(errors).toEqual([]);
 });
+
+for (const viewport of [{width:390,height:844},{width:360,height:640}]) {
+  test(`mobile settings fit ${viewport.width}px and retain edits across sections`, async ({page}) => {
+    await page.setViewportSize(viewport);
+    await mobileSetup(page);
+    const saved=[];
+    await page.route('**/proxy_settings_full',route=>{
+      if(route.request().method()==='POST') {
+        saved.push(route.request().postDataJSON().settings);
+        return route.fulfill({json:{status:'success',updated:['LLM_MODEL']}});
+      }
+      return route.fulfill({json:{settings:{LLM_PROVIDER:'openai',LLM_MODEL:'mobile-model',PORT_AGENT:'51200'}}});
+    });
+    await page.route('**/proxy_tunnel/status',route=>route.fulfill({json:{running:false,provider:'hub',public_domain:''}}));
+    await page.evaluate(()=>openSettings());
+    const modal=page.locator('#settings-modal');
+    await expect(page.getByLabel('默认模型',{exact:true})).toHaveValue('mobile-model');
+    await page.getByLabel('默认模型',{exact:true}).fill('mobile-draft');
+    await modal.screenshot({path:`/tmp/clawcross-settings-mobile-${viewport.width}.png`});
+    for(const category of ['public','channels','integrations','account','advanced','models']) {
+      await page.locator(`[data-settings-tab="${category}"]`).click();
+      await expect(modal.locator('.settings-footer .settings-btn-save')).toBeInViewport();
+      const bounds=await modal.locator('.settings-modal').boundingBox();
+      expect(bounds.x).toBeGreaterThanOrEqual(0);
+      expect(bounds.x+bounds.width).toBeLessThanOrEqual(viewport.width);
+      expect(bounds.y+bounds.height).toBeLessThanOrEqual(viewport.height);
+      expect(await modal.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+    }
+    await expect(page.getByLabel('默认模型',{exact:true})).toHaveValue('mobile-draft');
+    await page.locator('[data-settings-tab="public"]').click();
+    await expect(page.locator('#tunnel-provider')).toHaveValue('hub');
+    await expect(page.locator('#tunnel-cloudflare-download')).toBeHidden();
+    await page.locator('#tunnel-provider').selectOption('cloudflare');
+    await expect(page.locator('#tunnel-cloudflare-download')).toBeVisible();
+    await page.getByRole('searchbox',{name:'搜索设置'}).fill('PORT_AGENT');
+    await expect(page.locator('[data-key="PORT_AGENT"]')).toBeVisible();
+    await modal.locator('.settings-footer .settings-btn-save').click();
+    expect(saved).toEqual([{LLM_MODEL:'mobile-draft'}]);
+    await page.evaluate(()=>openSettings('user-password'));
+    await expect(page.locator('#settings-user-password')).toBeVisible();
+    await expect(page.locator('[data-settings-tab="account"]')).toHaveAttribute('aria-pressed','true');
+  });
+}

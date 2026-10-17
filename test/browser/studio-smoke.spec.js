@@ -736,11 +736,15 @@ test('studio workflow tab and settings actions stay responsive', async ({ page }
   await expect(page.locator('#settings-modal')).toBeVisible();
   await expect(page.locator('#settings-import-openclaw-btn')).toBeEnabled();
   await expect(page.locator('#settings-export-openclaw-btn')).toHaveCount(0);
+  await page.locator('[data-settings-tab="integrations"]').click();
   await expect(page.locator('#tinyfish-run-btn')).toBeVisible();
 
+  await page.locator('[data-settings-tab="models"]').click();
+  await page.locator('.settings-import-options > summary').click();
   await page.locator('#settings-import-openclaw-btn').click();
   await expect.poll(() => calls.importOpenClaw).toBe(1);
 
+  await page.locator('[data-settings-tab="integrations"]').click();
   await page.locator('#tinyfish-run-btn').click();
   await expect.poll(() => calls.tinyfishRun).toBe(1);
 
@@ -1402,4 +1406,43 @@ test('Studio approval buttons live in the verified bubble and display the human 
   await expect(page.locator('[data-approval-reply]')).toContainText('同意这次操作');
   await expect(bubble.getByRole('button')).toHaveCount(0);
   expect(prompts).toBe(0);expect(errors).toEqual([]);
+});
+
+test('settings categories preserve drafts, search configuration keys, and save hidden fields', async ({ page }) => {
+  const calls = {}, errors = [], saved = [];
+  await stubStudioNetwork(page, calls);
+  await page.route('**/proxy_settings_full', route => {
+    if (route.request().method() === 'POST') {
+      saved.push(route.request().postDataJSON().settings);
+      return route.fulfill({json:{status:'success',updated:['LLM_MODEL','PORT_AGENT']}});
+    }
+    return route.fulfill({json:{settings:{LLM_PROVIDER:'openai',LLM_MODEL:'saved-model',PORT_AGENT:'51200',INTERNAL_TOKEN:'****saved'}}});
+  });
+  await page.route('**/proxy_tunnel/status', route => route.fulfill({json:{running:true,provider:'hub',public_domain:'https://d-test.clawcross.net'}}));
+  page.on('pageerror', error => errors.push(error.message));
+  await page.setViewportSize({width:1280,height:900});
+  await page.goto('/studio');
+  await page.evaluate(() => openSettings());
+  const modal = page.locator('#settings-modal');
+  await expect(page.getByLabel('默认模型', {exact:true})).toHaveValue('saved-model');
+  await page.getByLabel('默认模型', {exact:true}).fill('draft-model');
+  await modal.screenshot({path:'/tmp/clawcross-settings-desktop-models.png'});
+  await page.locator('[data-settings-tab="public"]').click();
+  await expect(page.locator('#tunnel-url-input')).toHaveValue('https://d-test.clawcross.net');
+  await expect(page.locator('#tunnel-provider')).toBeDisabled();
+  await expect(page.locator('#tunnel-cloudflare-download')).toBeHidden();
+  await modal.screenshot({path:'/tmp/clawcross-settings-desktop-public.png'});
+  await page.getByRole('searchbox', {name:'搜索设置'}).fill('PORT_AGENT');
+  await expect(page.locator('[data-key="PORT_AGENT"]')).toBeVisible();
+  await page.locator('[data-key="PORT_AGENT"]').fill('51220');
+  await page.getByRole('searchbox', {name:'搜索设置'}).fill('no-match-configuration');
+  await expect(page.locator('.settings-empty')).toBeVisible();
+  await page.locator('[data-settings-tab="models"]').click();
+  await expect(page.getByLabel('默认模型', {exact:true})).toHaveValue('draft-model');
+  await modal.locator('.settings-footer .settings-btn-save').click();
+  expect(saved).toEqual([{LLM_MODEL:'draft-model',PORT_AGENT:'51220'}]);
+  await page.evaluate(() => openSettings({focus:'user-password'}));
+  await expect(page.locator('#settings-user-password')).toBeFocused();
+  await expect(page.locator('[data-settings-tab="account"]')).toHaveAttribute('aria-pressed','true');
+  expect(errors).toEqual([]);
 });

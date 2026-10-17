@@ -1,35 +1,138 @@
-/* Shared settings and mobile creation surfaces. Controls keep their existing actions. */
-#settings-modal{padding:24px;background:rgba(21,30,46,.32);backdrop-filter:blur(10px);box-sizing:border-box;align-items:center;justify-content:center;flex-direction:row}
-#settings-modal .settings-modal{width:760px;max-width:100%;max-height:calc(100dvh - 48px);border:1px solid var(--ui-hairline,#e4e8ee);border-radius:22px;background:var(--ui-surface,#fff);box-shadow:0 24px 80px rgba(25,36,57,.18);overflow:hidden;color:var(--ui-text,#263247)}
-#settings-modal .settings-header{padding:22px 26px;gap:14px;min-height:70px;height:auto;flex-shrink:0;background:var(--ui-surface,#fff);border-bottom:1px solid var(--ui-hairline,#e4e8ee)}
-#settings-modal .settings-header h2{font-size:19px;letter-spacing:-.35px;font-weight:650;color:inherit}
-#settings-modal .settings-close-btn{display:grid;place-items:center;min-width:36px;min-height:36px;border-radius:10px;background:var(--ui-hover,#f1f4f8);color:var(--ui-text-2,#65728a)}
-#settings-modal .settings-body{padding:24px;min-height:0;overflow-x:hidden;background:var(--ui-canvas,#f6f8fb);scrollbar-gutter:stable}
-#settings-modal .settings-hint{padding:12px 15px;margin-bottom:20px;border:0;background:transparent;color:var(--ui-text-2,#65728a);line-height:1.65;font-size:13px}
-#settings-modal .settings-group{margin-bottom:16px;border:1px solid var(--ui-hairline,#e4e8ee);border-radius:15px;background:var(--ui-surface,#fff)}
-#settings-modal .settings-group-title{padding:16px 18px;background:transparent;color:inherit;font-size:14px;font-weight:650;line-height:1.5}
-#settings-modal .settings-group-title:hover{background:var(--ui-hover,#f1f4f8)}
-#settings-modal .settings-group-body{padding:4px 18px 18px}
-#settings-modal .settings-field{gap:7px;margin-bottom:17px;min-width:0}
-#settings-modal .settings-label{font-family:inherit;font-size:12px;letter-spacing:0;color:var(--ui-text-2,#65728a);overflow-wrap:anywhere}
-#settings-modal .settings-input{width:100%;max-width:100%;min-width:0;box-sizing:border-box;padding:11px 12px;border-radius:10px;border:1px solid var(--ui-hairline,#dce2eb);font:inherit;font-size:14px;line-height:1.5;background:var(--ui-surface,#fff);color:inherit}
-#settings-modal .settings-footer{padding:16px 24px;gap:10px;flex-wrap:wrap;background:var(--ui-surface,#fff);border-top:1px solid var(--ui-hairline,#e4e8ee)}
-#settings-modal .settings-btn{min-height:40px;border-radius:10px;padding:10px 17px;font-size:13px;font-weight:600;box-shadow:none}
-#settings-modal .settings-btn-restart{background:var(--ui-hover,#f1f4f8);color:var(--ui-text-2,#65728a);border:1px solid var(--ui-hairline,#dce2eb)}
-#settings-modal :is(button,input,select,textarea):focus-visible{outline:2px solid var(--ui-accent,#4476db);outline-offset:2px}
-#settings-modal .cc-channel-picker{margin:0 0 22px;padding:22px;background:var(--ui-surface,#fff);border-color:var(--ui-hairline,#e4e8ee)}
-#settings-modal .cc-channel-form{background:var(--ui-canvas,#f6f8fb)}
-@media(max-width:600px){
-  #settings-modal{padding:0}
-  #settings-modal .settings-modal{width:100%;height:100dvh;max-height:100dvh;border:0;border-radius:0}
-  #settings-modal .settings-header{padding:16px 18px;padding-top:max(16px,env(safe-area-inset-top))}
-  #settings-modal .settings-body{padding:16px}
-  #settings-modal .settings-footer{padding:12px 16px;padding-bottom:max(12px,env(safe-area-inset-bottom))}
-  #settings-modal .settings-input{font-size:16px}
-  #settings-modal .settings-footer>div:empty{display:none}
-  #settings-modal .settings-footer .settings-btn{flex:1;padding:10px 8px}
-  #settings-modal .cc-channel-picker{padding:17px}
+/* Settings share one layout and visual vocabulary in Studio and Mobile. */
+#settings-modal {
+  padding: 28px; box-sizing: border-box; align-items: center; justify-content: center;
+  flex-direction: row; background: rgba(20, 25, 35, .28); backdrop-filter: blur(12px);
 }
+#settings-modal .settings-modal {
+  width: 980px; height: min(780px, calc(100dvh - 56px)); max-width: 100%;
+  max-height: calc(100dvh - 56px); flex: initial; display: flex; flex-direction: column;
+  border: 1px solid var(--ui-hairline); border-radius: 22px; overflow: hidden;
+  background: var(--ui-surface); color: var(--ui-text); box-shadow: var(--ui-shadow-pop);
+  font-family: var(--ui-font);
+}
+#settings-modal .settings-header {
+  display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;
+  height: auto; min-height: 76px; padding: 16px 25px; gap: 12px;
+  background: var(--ui-surface); border-bottom: 1px solid var(--ui-hairline);
+}
+#settings-modal .settings-title-block {display: flex; align-items: baseline; gap: 13px; order: 0;}
+#settings-modal .settings-title-block > span {font-size: 13px; font-weight: 600; color: var(--ui-text-2);}
+#settings-modal .settings-header h2 {margin: 0; font-size: 21px; font-weight: 650; letter-spacing: -.5px; color: inherit;}
+#settings-modal .settings-close-btn {
+  display: grid; place-items: center; width: 34px; height: 34px; padding: 0; order: 1;
+  flex-shrink: 0; border: 0; border-radius: 50%; background: var(--ui-surface-2);
+  color: var(--ui-text-2); font-size: 24px; cursor: pointer;
+}
+#settings-modal .settings-close-btn:hover {background: var(--ui-surface-3); color: var(--ui-text);}
+#settings-modal .settings-layout {display: grid; grid-template-columns: 208px minmax(0, 1fr); flex: 1; min-height: 0;}
+#settings-modal .settings-navigation {
+  display: flex; flex-direction: column; gap: 22px; min-height: 0; overflow-y: auto;
+  padding: 22px 14px 16px; border-right: 1px solid var(--ui-hairline); background: var(--ui-canvas);
+}
+#settings-modal .settings-search {
+  display: flex; align-items: center; gap: 7px; padding: 9px 10px; border-radius: 9px;
+  background: var(--ui-surface); border: 1px solid var(--ui-hairline);
+}
+#settings-modal .settings-search svg {width: 16px; height: 16px; flex-shrink: 0; color: var(--ui-text-2);}
+#settings-modal .settings-search input {
+  min-width: 0; width: 100%; border: 0; padding: 0; outline: 0; box-shadow: none;
+  background: transparent; color: inherit; font: inherit; font-size: 13px;
+}
+#settings-modal .settings-search:focus-within {border-color: var(--ui-accent); box-shadow: 0 0 0 3px var(--ui-accent-tint);}
+#settings-modal .settings-nav-items {display: flex; flex-direction: column; gap: 5px;}
+#settings-modal .settings-nav-items button {
+  display: flex; align-items: center; gap: 11px; min-height: 43px; width: 100%;
+  border: 0; border-radius: 10px; padding: 11px 12px; background: transparent;
+  font: inherit; font-size: 13px; text-align: left; color: var(--ui-text-2); cursor: pointer;
+}
+#settings-modal .settings-nav-items svg {width: 19px; height: 19px; flex-shrink: 0;}
+#settings-modal .settings-nav-items button:hover {background: var(--ui-hover); color: var(--ui-text);}
+#settings-modal .settings-nav-items button[aria-pressed=true] {background: var(--ui-accent-tint); color: var(--ui-accent); font-weight: 600;}
+#settings-modal .settings-nav-note {margin: auto 12px 0; padding-top: 16px; font-size: 11px; letter-spacing: .2px; color: var(--ui-text-3);}
+#settings-modal .settings-body {
+  min-height: 0; min-width: 0; padding: 27px 30px 32px; overflow-y: auto; overflow-x: hidden;
+  background: var(--ui-surface); scrollbar-gutter: stable; overscroll-behavior: contain;
+}
+#settings-modal .settings-page-heading {margin-bottom: 24px;}
+#settings-modal .settings-page-heading h3 {margin: 0 0 8px; font-size: 23px; letter-spacing: -.55px; font-weight: 650; line-height: 1.4;}
+#settings-modal .settings-page-heading p {margin: 0; max-width: 54ch; font-size: 12px; line-height: 1.8; color: var(--ui-text-2);}
+#settings-modal .settings-group {margin-bottom: 18px; border: 1px solid var(--ui-hairline); border-radius: 14px; background: var(--ui-surface); overflow: hidden;}
+#settings-modal .settings-group-title {padding: 17px 19px; background: transparent; color: inherit; font-size: 14px; font-weight: 600; line-height: 1.5;}
+#settings-modal .settings-group-title:hover {background: var(--ui-hover);}
+#settings-modal .settings-chevron {font-size: 9px; color: var(--ui-text-3);}
+#settings-modal .settings-group-body {padding: 0 19px 20px;}
+#settings-modal .settings-field {gap: 7px; margin-bottom: 18px; min-width: 0;}
+#settings-modal .settings-label {font: inherit; font-size: 12px; letter-spacing: 0; font-weight: 500; color: var(--ui-text-2); overflow-wrap: anywhere; margin: 0;}
+#settings-modal .settings-input {
+  width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; padding: 10px 12px;
+  border-radius: 9px; border: 1px solid var(--ui-hairline-strong); font: inherit;
+  font-size: 13px; line-height: 1.5; background: var(--ui-surface); color: var(--ui-text);
+}
+#settings-modal select.settings-input {min-height: 41px;}
+#settings-modal .settings-input::placeholder {color: var(--ui-text-3);}
+#settings-modal .settings-input:focus {border-color: var(--ui-accent); box-shadow: 0 0 0 3px var(--ui-accent-tint); outline: none;}
+#settings-modal :is(.settings-description,.settings-field-note) {font-size: 12px; line-height: 1.8; color: var(--ui-text-2); margin: 0 0 18px;}
+#settings-modal .settings-field-note {margin: 0; font-size: 11px;}
+#settings-modal .settings-import-options {border-top: 1px solid var(--ui-hairline); margin-top: 20px; padding-top: 14px;}
+#settings-modal .settings-import-options > summary {font-size: 12px; color: var(--ui-text-2); cursor: pointer; padding: 4px 0;}
+#settings-modal .settings-import-options > div {margin: 12px 0 0 !important; padding: 12px !important; background: var(--ui-canvas) !important; border: 0 !important; border-radius: 10px !important;}
+#settings-modal :is(#settings-import-openclaw-btn,#settings-use-antigravity-btn) {background: var(--ui-surface) !important; border-color: var(--ui-hairline) !important; border-radius: 9px !important;}
+#settings-modal .settings-connection-state {display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; padding: 15px 0 0; border-top: 1px solid var(--ui-hairline);}
+#settings-modal #tunnel-status-text {display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ui-text-2) !important;}
+#settings-modal #tunnel-status-text::before {content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--ui-text-3); flex-shrink: 0;}
+#settings-modal .settings-public-card[data-connected=true] #tunnel-status-text::before {background: var(--ui-success); box-shadow: 0 0 0 3px rgba(52,199,89,.12);}
+#settings-modal .settings-action-button {
+  min-height: 37px; border-radius: 9px; padding: 9px 14px; border: 0 !important;
+  background: var(--ui-accent) !important; color: white !important; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+#settings-modal .settings-public-card[data-connected=true] .settings-action-button {background: var(--ui-surface-2) !important; color: var(--ui-text) !important;}
+#settings-modal #tunnel-url-row {margin-top: 18px;}
+#settings-modal .settings-url-control {display: flex; gap: 8px; margin-top: 7px;}
+#settings-modal #tunnel-url-input {font-size: 12px; color: var(--ui-accent); background: var(--ui-canvas);}
+#settings-modal .settings-url-control button {border: 1px solid var(--ui-hairline); background: var(--ui-surface-2); color: var(--ui-text); border-radius: 9px; padding: 9px 14px; font-size: 12px; white-space: nowrap; cursor: pointer;}
+#settings-modal .settings-footer {padding: 15px 24px; gap: 10px; flex-wrap: wrap; background: var(--ui-surface); border-top: 1px solid var(--ui-hairline); flex-shrink: 0;}
+#settings-modal .settings-btn {min-height: 39px; border-radius: 9px; padding: 9px 18px; font-size: 13px; font-weight: 500; box-shadow: none;}
+#settings-modal .settings-btn-save {background: var(--ui-accent); color: white;}
+#settings-modal :is(.settings-btn-restart,.settings-btn-cancel) {background: var(--ui-surface-2); color: var(--ui-text-2); border: 1px solid transparent;}
+#settings-modal .settings-btn:hover {filter: brightness(.97);}
+#settings-modal button:disabled {opacity: .5; cursor: default;}
+#settings-modal :is(button,input,select,textarea,summary,[role=button]):focus-visible {outline: 2px solid var(--ui-accent-ring); outline-offset: 2px;}
+#settings-modal .cc-channel-picker {margin: 0 0 18px; padding: 20px; background: var(--ui-surface); border-color: var(--ui-hairline); border-radius: 14px;}
+#settings-modal .cc-channel-picker h3 {font-size: 15px; font-weight: 600;}
+#settings-modal .cc-channel-picker p {color: var(--ui-text-2); opacity: 1; font-size: 12px;}
+#settings-modal .cc-channel-picker > button {background: var(--ui-accent-tint); color: var(--ui-accent); font-weight: 500; border-color: transparent; margin-top: 14px;}
+#settings-modal .cc-channel-form {background: var(--ui-canvas); border-color: var(--ui-hairline);}
+#settings-modal details.settings-group > summary {padding: 16px 19px; font-size: 12px; color: var(--ui-text-2); cursor: pointer;}
+#settings-modal .settings-empty {padding: 48px 12px; text-align: center; color: var(--ui-text-2); font-size: 13px; line-height: 1.8;}
+#settings-modal [hidden] {display: none !important;}
+@media (max-width: 700px) {
+  #settings-modal {padding: 0;}
+  #settings-modal .settings-modal {width: 100%; height: 100dvh; max-height: 100dvh; border: 0; border-radius: 0;}
+  #settings-modal .settings-header {min-height: 64px; padding: 13px 18px; padding-top: max(13px, env(safe-area-inset-top));}
+  #settings-modal .settings-header h2 {font-size: 19px;}
+  #settings-modal .settings-title-block {gap: 10px;}
+  #settings-modal .settings-layout {display: flex; flex-direction: column;}
+  #settings-modal .settings-navigation {flex-shrink: 0; gap: 11px; padding: 13px 16px 0; border-right: 0; border-bottom: 1px solid var(--ui-hairline); overflow: visible;}
+  #settings-modal .settings-search {padding: 9px 11px;}
+  #settings-modal .settings-search input {font-size: 16px;}
+  #settings-modal .settings-nav-items {flex-direction: row; gap: 4px; overflow-x: auto; padding-bottom: 11px; scrollbar-width: none;}
+  #settings-modal .settings-nav-items::-webkit-scrollbar {display: none;}
+  #settings-modal .settings-nav-items button {width: auto; flex-shrink: 0; min-height: 36px; padding: 9px 11px; font-size: 12px; border-radius: 8px;}
+  #settings-modal .settings-nav-items svg,#settings-modal .settings-nav-note {display: none;}
+  #settings-modal .settings-body {padding: 23px 16px 24px;}
+  #settings-modal .settings-page-heading {margin-bottom: 19px;}
+  #settings-modal .settings-page-heading h3 {font-size: 21px;}
+  #settings-modal .settings-group-title {padding: 16px;}
+  #settings-modal .settings-group-body {padding: 0 16px 17px;}
+  #settings-modal .settings-field {margin-bottom: 17px;}
+  #settings-modal .settings-input {font-size: 16px;}
+  #settings-modal .settings-footer {padding: 12px 16px; padding-bottom: max(12px, env(safe-area-inset-bottom)); gap: 8px;}
+  #settings-modal .settings-footer > div:empty {display: none;}
+  #settings-modal .settings-footer .settings-btn {flex: 1; min-width: 0; padding: 9px 8px; font-size: 12px;}
+  #settings-modal .cc-channel-picker {padding: 17px;}
+}
+@media (prefers-reduced-motion: reduce) {#settings-modal,#settings-modal .settings-modal {animation: none; transition: none;}}
+
 /* Creation, channel and alarm drawers share one compact visual vocabulary. */
 :is(#create-agent-modal,#mobile-alarm-modal,#mobile-channel-config,#create-modal,#add-agent-modal,#mobile-skill-detail) .drawer-header{padding:14px 18px;gap:12px;border-bottom:1px solid var(--border);background:var(--bg-card)}
 :is(#create-agent-modal,#mobile-alarm-modal,#mobile-channel-config,#create-modal,#add-agent-modal) .drawer-header-title{font-size:17px;font-weight:650;letter-spacing:-.25px}

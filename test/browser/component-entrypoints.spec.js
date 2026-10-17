@@ -7,6 +7,7 @@ test('Studio plus keeps runtime settings while global settings expose contextual
   await page.route('**/proxy_check_session',route=>route.fulfill({contentType:'application/json',body:'{"valid":true,"user_id":"tester"}'}));
   await page.route('**/api/llm_config_status',route=>route.fulfill({contentType:'application/json',body:'{"configured":true}'}));
   await page.route('**/api/setup_status',route=>route.fulfill({contentType:'application/json',body:'{"llm_configured":true}'}));
+  await page.route('**/proxy_tunnel/status',route=>route.fulfill({json:{running:false,provider:'hub',public_domain:''}}));
   await page.route('**/proxy_webot_runtime_settings**',route=>route.fulfill({contentType:'application/json',body:JSON.stringify({settings})}));
   await page.route('**/proxy_components/*',route=>{
     const name=new URL(route.request().url()).pathname.split('/').pop();
@@ -30,12 +31,16 @@ test('Studio plus keeps runtime settings while global settings expose contextual
   await expect(page.locator('#studio-components-menu')).toHaveCount(0);
   await page.route('**/proxy_settings_full',route=>route.fulfill({contentType:'application/json',body:JSON.stringify({settings:{}})}));
   await page.evaluate(()=>openSettings());
+  await page.locator('[data-settings-tab="integrations"]').click();
   await expect(page.locator('#settings-external-agents [data-component="acpx"] button')).toBeVisible();
+  await page.locator('[data-settings-tab="channels"]').click();
   for(const name of ['weclaw','nonebot','channels']) await expect(page.locator(`#settings-body [data-component="${name}"] button`)).toBeVisible();
+  await page.locator('[data-settings-tab="public"]').click();
   await expect(page.locator('#tunnel-provider')).toHaveValue('hub');
   await expect(page.locator('#settings-body [data-component="cloudflared"] button')).toBeHidden();
   await page.locator('#tunnel-provider').selectOption('cloudflare');
   await expect(page.locator('#settings-body [data-component="cloudflared"] button')).toBeVisible();
+  await page.locator('[data-settings-tab="channels"]').click();
   await expect(page.locator('#settings-body details.settings-group > summary')).toContainText('高级连接参数与原始配置');
   expect(installs).toEqual([]);
   await page.locator('#settings-body [data-component="weclaw"] button').click();

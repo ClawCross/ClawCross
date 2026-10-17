@@ -700,19 +700,19 @@ const i18n = {
 
         // 设置
         settings: '⚙️',
-        settings_title: '⚙️ 系统设置',
+        settings_title: '设置',
         settings_save: '保存',
         settings_saved: '✅ 设置已保存',
         settings_save_fail: '❌ 保存失败',
         settings_load_fail: '❌ 加载设置失败',
         settings_restart_hint: '修改配置后请先「保存」，再点击「重启服务」使配置生效',
-        settings_restart_btn: '🔄 重启服务',
+        settings_restart_btn: '重启服务',
         settings_restarting: '⏳ 正在重启...',
         settings_restart_ok: '✅ 重启信号已发送（约 20 秒后自动刷新，也可随时手动刷新）',
         settings_restart_fail: '❌ 重启失败',
         settings_restart_confirm: '确定要重启所有服务吗？未保存的配置修改将丢失。',
         menu_settings: '⚙️ 设置',
-        settings_group_llm: 'LLM 模型配置',
+        settings_group_llm: '默认模型',
         settings_group_tts: '音频配置',
         settings_group_oasis: 'OASIS 论坛',
         settings_group_ports: '端口配置',
@@ -802,12 +802,12 @@ const i18n = {
         settings_antigravity_apply: '应用 Antigravity 预设',
         settings_antigravity_applied: '✅ 已应用 Antigravity 预设，请选择模型后保存',
         settings_group_tunnel: '🌐 公网隧道',
-        tunnel_start: '启动隧道',
-        tunnel_stop: '停止隧道',
+        tunnel_start: '开启公网访问',
+        tunnel_stop: '关闭公网访问',
         tunnel_starting: '启动中...',
         tunnel_stopping: '停止中...',
-        tunnel_running: '✅ 隧道运行中',
-        tunnel_stopped: '❌ 隧道未运行',
+        tunnel_running: '公网访问已开启',
+        tunnel_stopped: '公网访问已关闭',
         tunnel_url_pending: '公网地址生成中...',
         tunnel_url_hint: '点击复制公网地址',
 
@@ -1503,19 +1503,19 @@ const i18n = {
 
         // Settings
         settings: '⚙️',
-        settings_title: '⚙️ System Settings',
+        settings_title: 'Settings',
         settings_save: 'Save',
         settings_saved: '✅ Settings saved',
         settings_save_fail: '❌ Save failed',
         settings_load_fail: '❌ Failed to load settings',
         settings_restart_hint: 'After editing, click "Save" first, then "Restart" to apply changes',
-        settings_restart_btn: '🔄 Restart',
+        settings_restart_btn: 'Restart',
         settings_restarting: '⏳ Restarting...',
         settings_restart_ok: '✅ Restart signal sent (auto-refresh in ~20s, or refresh manually anytime)',
         settings_restart_fail: '❌ Restart failed',
         settings_restart_confirm: 'Restart all services? Unsaved changes will be lost.',
         menu_settings: '⚙️ Settings',
-        settings_group_llm: 'LLM Model',
+        settings_group_llm: 'Default model',
         settings_group_tts: 'Audio',
         settings_group_oasis: 'OASIS Forum',
         settings_group_ports: 'Ports',
@@ -1605,12 +1605,12 @@ const i18n = {
         settings_antigravity_apply: 'Apply Antigravity Preset',
         settings_antigravity_applied: '✅ Antigravity preset applied. Select a model and save.',
         settings_group_tunnel: '🌐 Public Tunnel',
-        tunnel_start: 'Start Tunnel',
-        tunnel_stop: 'Stop Tunnel',
+        tunnel_start: 'Enable public access',
+        tunnel_stop: 'Disable public access',
         tunnel_starting: 'Starting...',
         tunnel_stopping: 'Stopping...',
-        tunnel_running: '✅ Tunnel Running',
-        tunnel_stopped: '❌ Tunnel Not Running',
+        tunnel_running: 'Public access is on',
+        tunnel_stopped: 'Public access is off',
         tunnel_url_pending: 'Public URL is still being generated...',
         tunnel_url_hint: 'Click to copy public URL',
 
@@ -5797,25 +5797,11 @@ function renderSettings(settings) {
     const body = document.getElementById('settings-body');
     let html = `<div class="settings-hint">${t('settings_restart_hint')}</div>`;
     html += _renderCurrentUserPasswordCard();
-    html += '<div id="configuration-assistant"></div>';
+    html += '<div id="configuration-assistant" data-settings-category="advanced"></div>';
 
-    html += `<div class="settings-group" id="settings-external-agents"><div class="settings-group-title" onclick="this.parentElement.classList.toggle('collapsed')">外部 Agent <span class="settings-chevron">▼</span></div><div class="settings-group-body">${componentSettingsMarkup('agents')}</div></div>`;
+    html += `<div class="settings-group" id="settings-external-agents" data-settings-category="integrations"><div class="settings-group-title" onclick="this.parentElement.classList.toggle('collapsed')">外部 Agent <span class="settings-chevron">▼</span></div><div class="settings-group-body">${componentSettingsMarkup('agents')}</div></div>`;
 
-    // Tunnel control section
-    html += `<div class="settings-group">`;
-    html += `<div class="settings-group-title" onclick="this.parentElement.classList.toggle('collapsed')">${t('settings_group_tunnel')} <span class="settings-chevron">▼</span></div>`;
-    html += `<div class="settings-group-body">`;
-    html += `<div class="settings-field" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">`;
-    html += `<label>服务 <select id="tunnel-provider" onchange="document.getElementById('tunnel-cloudflare-download').hidden=this.value!=='cloudflare'"><option value="hub">ClawCross Hub</option><option value="cloudflare">Cloudflare</option></select></label>`;
-    html += `<p style="font-size:12px;opacity:.75">ClawCross Hub 提供专属 HTTPS 子域名，无需额外下载。开启后远程访问仍需登录；设备须保持运行。</p>`;
-    html += `<div id="tunnel-cloudflare-download" hidden>${componentControlMarkup('cloudflared')}</div>`;
-    html += `<span id="tunnel-status-text" style="font-size:13px;color:#888;">⏳ ${t('loading')}...</span>`;
-    html += `<button id="tunnel-toggle-btn" onclick="toggleTunnel()" style="padding:4px 14px;border-radius:6px;border:1px solid #444;background:#222;color:#ddd;cursor:pointer;font-size:12px;" disabled>${t('tunnel_start')}</button>`;
-    html += `</div>`;
-    html += `<div id="tunnel-url-row" style="display:none;margin-top:6px;">`;
-    html += `<input id="tunnel-url-input" class="settings-input" type="text" readonly style="font-size:12px;color:#6cf;cursor:pointer;" onclick="this.select();document.execCommand('copy')" />`;
-    html += `</div>`;
-    html += `</div></div>`;
+    html += ClawcrossSettings.publicAccessMarkup(currentLang, componentControlMarkup('cloudflared'));
 
     // Collect all keys from settings
     const allKeys = Object.keys(settings);
@@ -5829,12 +5815,13 @@ function renderSettings(settings) {
         if (group.id === 'llm') {
             html += _renderLlmGroup(settings);
         } else if (group.id === 'bots') {
-            html += `<div id="channel-setup-settings"></div>${componentSettingsMarkup('channels')}<details class="settings-group"><summary style="padding:16px;cursor:pointer;">${currentLang === 'zh-CN' ? '高级连接参数与原始配置' : 'Advanced connection settings'}</summary>${_renderGroup({title:t(group.label)}, groupKeys, settings)}</details>`;
+            html += `<div data-settings-category="channels"><div id="channel-setup-settings"></div>${componentSettingsMarkup('channels')}<details class="settings-group"><summary style="padding:16px;cursor:pointer;">${currentLang === 'zh-CN' ? '高级连接参数与原始配置' : 'Advanced connection settings'}</summary>${_renderGroup({title:t(group.label),id:group.id}, groupKeys, settings)}</details></div>`;
         } else if (group.id === 'tinyfish') {
             html += _renderTinyfishGroup(settings);
         } else {
             html += _renderGroup({
                 title: t(group.label),
+                id: group.id,
                 help: SETTINGS_GROUP_HELP_KEYS[group.id] ? t(SETTINGS_GROUP_HELP_KEYS[group.id]) : '',
             }, groupKeys, settings);
         }
@@ -5847,6 +5834,7 @@ function renderSettings(settings) {
     }
 
     body.innerHTML = html;
+    ClawcrossSettings.mount(body, currentLang);
     void ClawcrossChannelSetup.mount(document.getElementById('configuration-assistant'), {general: true, sessionId: currentSessionId || 'settings'});
     void ClawcrossChannelSetup.mount(document.getElementById('channel-setup-settings'));
     initComponentControls(body);
@@ -5868,7 +5856,7 @@ function _renderCurrentUserPasswordCard() {
         { user_id: currentUserId }
     );
     return `
-        <div class="settings-group" id="settings-user-password-section" data-settings-focus="user-password">
+        <div class="settings-group" id="settings-user-password-section" data-settings-category="account" data-settings-focus="user-password">
             <div class="settings-group-title" onclick="this.parentElement.classList.toggle('collapsed')">${t('settings_user_password_title')} <span class="settings-chevron">▼</span></div>
             <div class="settings-group-body">
                 <div class="settings-user-password-card">
@@ -5901,6 +5889,7 @@ function _applySettingsFocusTarget() {
     _settingsFocusTarget = '';
     if (!target) return;
     requestAnimationFrame(() => {
+        ClawcrossSettings.reveal(target);
         target.classList.remove('collapsed');
         target.scrollIntoView({ behavior: 'smooth', block: 'start' });
         const input = target.querySelector('input, textarea, select, button');
@@ -5923,7 +5912,7 @@ function _renderLlmGroup(settings) {
         </button>
     `;
 
-    let html = `<div class="settings-group">`;
+    let html = `<div class="settings-group" data-settings-category="models">`;
     html += `<div class="settings-group-title" onclick="this.parentElement.classList.toggle('collapsed')">${t('settings_group_llm')} <span class="settings-chevron">▼</span></div>`;
     html += `<div class="settings-group-body">`;
 
@@ -5995,7 +5984,7 @@ function _renderLlmGroup(settings) {
         html += `<option value="${escapeHtml(curModel)}"></option>`;
     }
     html += `</datalist>`;
-    html += `<button id="settings-detect-models-btn" onclick="settingsDetectModels()" style="padding:7px 14px;border-radius:7px;border:none;background:linear-gradient(135deg,#2563eb,#3b82f6);color:#fff;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">🔍 检测模型</button>`;
+    html += `<button id="settings-detect-models-btn" onclick="settingsDetectModels()" style="padding:7px 14px;border-radius:7px;border:none;background:linear-gradient(135deg,#2563eb,#3b82f6);color:#fff;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">${currentLang === 'zh-CN' ? '检测模型' : 'Find models'}</button>`;
     html += `</div>`;
     html += `<div id="settings-detect-status" style="margin-top:4px;font-size:11px;color:#6b7280;"></div>`;
     html += `</div>`;
@@ -6012,7 +6001,7 @@ function _renderLlmGroup(settings) {
 
 function _renderTinyfishGroup(settings) {
     const keys = ['TINYFISH_API_KEY', 'TINYFISH_BASE_URL', 'TINYFISH_MONITOR_DB_PATH', 'TINYFISH_MONITOR_TARGETS_PATH', 'TINYFISH_MONITOR_ENABLED', 'TINYFISH_MONITOR_CRON'];
-    let html = `<div class="settings-group" id="settings-tinyfish-group">`;
+    let html = `<div class="settings-group" id="settings-tinyfish-group" data-settings-category="integrations">`;
     html += `<div class="settings-group-title" onclick="this.parentElement.classList.toggle('collapsed')">${t('settings_group_tinyfish')} <span class="settings-chevron">▼</span></div>`;
     html += `<div class="settings-group-body">`;
     html += `<div style="margin-bottom:12px;padding:10px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;">`;
@@ -6430,7 +6419,7 @@ async function settingsDetectModels() {
         statusEl.textContent = '❌ 网络错误: ' + e.message;
     } finally {
         detectBtn.disabled = false;
-        detectBtn.textContent = '🔍 检测模型';
+        detectBtn.textContent = currentLang === 'zh-CN' ? '检测模型' : 'Find models';
     }
 }
 
@@ -6464,7 +6453,7 @@ function _initSettingsLlmGroup(settings) {
 function _renderGroup(groupMeta, keys, settings) {
     const title = typeof groupMeta === 'string' ? groupMeta : groupMeta.title;
     const groupHelp = typeof groupMeta === 'string' ? '' : (groupMeta.help || '');
-    let html = `<div class="settings-group">`;
+    let html = `<div class="settings-group" data-settings-category="${ClawcrossSettings.categoryForGroup(groupMeta.id)}">`;
     html += `<div class="settings-group-title" onclick="this.parentElement.classList.toggle('collapsed')">${title} <span class="settings-chevron">▼</span></div>`;
     html += `<div class="settings-group-body">`;
     if (groupHelp) {
@@ -6922,6 +6911,7 @@ async function _refreshTunnelStatus() {
         const provider=document.getElementById('tunnel-provider');
         if(provider){if(!provider.dataset.loaded || data.running)provider.value=data.provider || 'hub';provider.dataset.loaded='1';provider.disabled=!!data.running;document.getElementById('tunnel-cloudflare-download').hidden=provider.value!=='cloudflare';}
         const publicDomain = (data.public_domain || '').trim();
+        document.querySelector('.settings-public-card')?.setAttribute('data-connected', String(!!data.running && !!publicDomain));
         _tunnelRunning = !!data.running;
         _tunnelPublicDomain = publicDomain;
         const statusEl = document.getElementById('tunnel-status-text');
@@ -7662,7 +7652,7 @@ async function wizardDetectModels() {
         errorEl.style.display = 'block';
     } finally {
         detectBtn.disabled = false;
-        detectBtn.textContent = '🔍 检测模型';
+        detectBtn.textContent = currentLang === 'zh-CN' ? '检测模型' : 'Find models';
     }
 }
 

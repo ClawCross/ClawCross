@@ -45,6 +45,8 @@
 <script src="/static/js/approval-ui.js?v=20261004-fold-approval"></script>
 <link rel="stylesheet" href="/static/css/channel-setup.css?v=2">
 <script src="/static/js/channel-setup.js?v=20261004-tool-result"></script>
+<script src="/static/js/settings-navigation.js?v=20261017-settings-navigation"></script>
+
 <link rel="stylesheet" href="/static/css/native-session-browser.css?v=2">
 <script src="/static/js/native-session-browser.js?v=20261017-custom-acp"></script>
 <script src="/static/js/markdown-shared.js?v=20261003-inline-approval"></script>
@@ -4076,7 +4078,7 @@
 <script src="/static/js/group-message-menu.js?v=20261004-message-menu"></script>
 <script src="/static/js/group-network-ui.js?v=20261017-hub-tunnel"></script>
 <link rel="stylesheet" href="/static/css/group-network.css?v=20261013-app-runner">
-<link rel="stylesheet" href="/static/css/settings-polish.css?v=20261005-team-skills">
+<link rel="stylesheet" href="/static/css/settings-polish.css?v=20261017-settings-navigation">
 <link rel="stylesheet" href="/static/css/mobile-profile.css?v=20261004-studio-header">
 <link rel="stylesheet" href="/static/css/runtime-settings.css?v=20261004-keepy-manager">
 <script src="/static/js/remembered-approvals-ui.js?v=20261004-keepy-manager"></script>
@@ -4690,17 +4692,17 @@
 <div id="settings-modal" class="settings-modal-overlay" style="display:none;">
   <div class="settings-modal">
     <div class="settings-header">
-      <button onclick="closeSettings()" class="settings-close-btn">
+      <button onclick="closeSettings()" class="settings-close-btn" aria-label="关闭设置 / Close settings">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
       </button>
-      <h2 data-i18n="settings_title">⚙️ 系统设置</h2>
+      <div class="settings-title-block"><span>ClawCross</span><h2 data-i18n="settings_title">设置</h2></div>
     </div>
     <div class="settings-body" id="settings-body">
       <div class="settings-loading" data-i18n="loading">加载中...</div>
     </div>
     <div class="settings-footer">
       <div style="flex:1"></div>
-      <button onclick="restartClawcross()" class="settings-btn settings-btn-restart" data-i18n="settings_restart">🔄 重启服务</button>
+      <button onclick="restartClawcross()" class="settings-btn settings-btn-restart" data-i18n="settings_restart">重启服务</button>
       <button onclick="closeSettings()" class="settings-btn settings-btn-cancel" data-i18n="cancel">取消</button>
       <button onclick="saveSettings()" class="settings-btn settings-btn-save" data-i18n="save">保存</button>
     </div>
@@ -5621,11 +5623,11 @@ const I18N = {
     language_en: 'English',
 
     // ── Settings ──
-    settings_title: '⚙️ 系统设置',
+    settings_title: '设置',
     settings_hint: '⚠️ 修改设置后需要重启服务才能生效',
     settings_save: '保存',
     settings_cancel: '取消',
-    settings_restart: '🔄 重启服务',
+    settings_restart: '重启服务',
     settings_saved: '✅ 设置已保存',
     settings_save_failed: '❌ 保存设置失败',
     settings_load_failed: '加载设置失败',
@@ -5663,10 +5665,10 @@ const I18N = {
     // ── Tunnel ──
     tunnel_control: '🌐 隧道控制',
     tunnel_loading: '⏳ 加载中...',
-    tunnel_running: '✅ 隧道运行中',
-    tunnel_stopped: '⏹ 隧道未运行',
-    tunnel_start: '启动隧道',
-    tunnel_stop: '停止隧道',
+    tunnel_running: '公网访问已开启',
+    tunnel_stopped: '公网访问已关闭',
+    tunnel_start: '开启公网访问',
+    tunnel_stop: '关闭公网访问',
     tunnel_starting: '⏳ 启动中...',
     tunnel_stopping: '⏳ 停止中...',
     tunnel_url_pending: '公网地址生成中...',
@@ -5677,7 +5679,7 @@ const I18N = {
     sg_antigravity_applied: '✅ 已应用 Antigravity 预设，请选择模型后保存',
 
     // ── Settings groups ──
-    sg_llm: 'LLM 模型',
+    sg_llm: '默认模型',
     sg_tts: '音频配置',
     sg_tinyfish: 'TinyFish 搜索代理',
     sg_oasis: 'Oasis 协作',
@@ -6257,11 +6259,11 @@ const I18N = {
     language_zh: '中文',
     language_en: 'English',
 
-    settings_title: '⚙️ System Settings',
+    settings_title: 'Settings',
     settings_hint: '⚠️ Changes require a service restart to take effect',
     settings_save: 'Save',
     settings_cancel: 'Cancel',
-    settings_restart: '🔄 Restart Services',
+    settings_restart: 'Restart services',
     settings_saved: '✅ Settings saved',
     settings_save_failed: '❌ Failed to save settings',
     settings_load_failed: 'Failed to load settings',
@@ -6298,10 +6300,10 @@ const I18N = {
 
     tunnel_control: '🌐 Tunnel Control',
     tunnel_loading: '⏳ Loading...',
-    tunnel_running: '✅ Tunnel running',
-    tunnel_stopped: '⏹ Tunnel not running',
-    tunnel_start: 'Start Tunnel',
-    tunnel_stop: 'Stop Tunnel',
+    tunnel_running: 'Public access is on',
+    tunnel_stopped: 'Public access is off',
+    tunnel_start: 'Enable public access',
+    tunnel_stop: 'Disable public access',
     tunnel_starting: '⏳ Starting...',
     tunnel_stopping: '⏳ Stopping...',
     tunnel_url_pending: 'Public URL is still being generated...',
@@ -6311,7 +6313,7 @@ const I18N = {
     sg_antigravity_apply: 'Apply Preset',
     sg_antigravity_applied: '✅ Antigravity preset applied. Select a model and save.',
 
-    sg_llm: 'LLM Model',
+    sg_llm: 'Default model',
     sg_tts: 'Audio Config',
     sg_tinyfish: 'TinyFish Monitor',
     sg_oasis: 'Oasis Collaboration',
@@ -14510,6 +14512,7 @@ async function openSettings(scrollToGroup) {
                 ? document.getElementById('settings-user-password-section')
                 : document.getElementById('settings-' + scrollToGroup + '-group');
             if (targetGroup) {
+                ClawcrossSettings.reveal(targetGroup);
                 setTimeout(() => targetGroup.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
             }
         }
@@ -14522,23 +14525,11 @@ function renderSettings(settings) {
     const body = document.getElementById('settings-body');
     let html = `<div class="settings-hint">${t('settings_hint')}</div>`;
     html += _renderCurrentUserPasswordCard();
-    html += '<div id="mobile-configuration-assistant"></div>';
+    html += '<div id="mobile-configuration-assistant" data-settings-category="advanced"></div>';
 
-    html += `<div class="settings-group" id="settings-external-agents"><div class="settings-group-title" onclick="this.parentElement.classList.toggle('collapsed')">外部 Agent <span class="settings-chevron">▼</span></div><div class="settings-group-body">${componentSettingsMarkup('agents')}</div></div>`;
+    html += `<div class="settings-group" id="settings-external-agents" data-settings-category="integrations"><div class="settings-group-title" onclick="this.parentElement.classList.toggle('collapsed')">外部 Agent <span class="settings-chevron">▼</span></div><div class="settings-group-body">${componentSettingsMarkup('agents')}</div></div>`;
 
-    // Tunnel control section
-    html += '<div class="settings-group">';
-    html += `<div class="settings-group-title" onclick="this.parentElement.classList.toggle('collapsed')">${t('tunnel_control')} <span class="settings-chevron">▼</span></div>`;
-    html += '<div class="settings-group-body">';
-    html += '<div class="settings-field" style="display:flex;flex-direction:row;align-items:center;gap:8px;flex-wrap:wrap;">';
-    html += componentControlMarkup('cloudflared');
-    html += `<span id="tunnel-status-text" style="font-size:13px;color:#888;">${t('tunnel_loading')}</span>`;
-    html += `<button id="tunnel-toggle-btn" onclick="toggleTunnel()" style="padding:4px 14px;border-radius:6px;border:1px solid #ccc;background:#f5f5f5;color:#333;cursor:pointer;font-size:12px;" disabled>${t('tunnel_start')}</button>`;
-    html += '</div>';
-    html += '<div id="tunnel-url-row" style="display:none;margin-top:6px;">';
-    html += '<input id="tunnel-url-input" class="settings-input" type="text" readonly style="font-size:12px;color:#2563eb;cursor:pointer;" onclick="this.select();document.execCommand(\'copy\');toast(t(\'copied\'))" />';
-    html += '</div>';
-    html += '</div></div>';
+    html += ClawcrossSettings.publicAccessMarkup(_currentLang, componentControlMarkup('cloudflared'));
 
     // Collect all keys
     const allKeys = Object.keys(settings);
@@ -14553,12 +14544,13 @@ function renderSettings(settings) {
         if (group.id === 'llm') {
             html += _renderLlmGroup(settings);
         } else if (group.id === 'bots') {
-            html += _renderGroup({title:t(group.labelKey),help:SETTINGS_GROUP_HELP[group.id] ? t(SETTINGS_GROUP_HELP[group.id]) : '',components:'channels'}, groupKeys, settings);
+            html += `<div data-settings-category="channels"><div id="channel-setup-settings"></div>${componentSettingsMarkup('channels')}<details class="settings-group"><summary>${_currentLang === 'zh' ? '高级连接参数与原始配置' : 'Advanced connection settings'}</summary>${_renderGroup({title:t(group.labelKey),id:group.id,help:SETTINGS_GROUP_HELP[group.id] ? t(SETTINGS_GROUP_HELP[group.id]) : ''}, groupKeys, settings)}</details></div>`;
         } else if (group.id === 'tinyfish') {
             html += _renderTinyfishGroup(settings);
         } else {
             html += _renderGroup({
                 title: t(group.labelKey),
+                id: group.id,
                 help: SETTINGS_GROUP_HELP[group.id] ? t(SETTINGS_GROUP_HELP[group.id]) : '',
             }, groupKeys, settings);
         }
@@ -14571,6 +14563,8 @@ function renderSettings(settings) {
     }
 
     body.innerHTML = html;
+    ClawcrossSettings.mount(body, _currentLang);
+    void ClawcrossChannelSetup.mount(document.getElementById('channel-setup-settings'));
     void ClawcrossChannelSetup.mount(document.getElementById('mobile-configuration-assistant'), {general: true, sessionId: currentGroupPrimaryAgent || 'settings'});
     initComponentControls(body);
     _refreshTunnelStatus();
@@ -14590,7 +14584,7 @@ function _renderCurrentUserPasswordCard() {
         { user_id: window.__currentUser }
     );
     return (
-        '<div class="settings-group" id="settings-user-password-section">' +
+        '<div class="settings-group" id="settings-user-password-section" data-settings-category="account">' +
             '<div class="settings-group-title" onclick="this.parentElement.classList.toggle(\'collapsed\')">' + escapeHtml(t('settings_user_password_title')) + ' <span class="settings-chevron">▼</span></div>' +
             '<div class="settings-group-body">' +
                 '<div class="settings-user-password-card">' +
@@ -14620,7 +14614,7 @@ function _renderCurrentUserPasswordCard() {
 function _renderGroup(groupMeta, keys, settings) {
     const title = typeof groupMeta === 'string' ? groupMeta : groupMeta.title;
     const groupHelp = typeof groupMeta === 'string' ? '' : (groupMeta.help || '');
-    let html = '<div class="settings-group">';
+    let html = `<div class="settings-group" data-settings-category="${ClawcrossSettings.categoryForGroup(groupMeta.id)}">`;
     html += '<div class="settings-group-title" onclick="this.parentElement.classList.toggle(\'collapsed\')">' + escapeHtml(title) + ' <span class="settings-chevron">▼</span></div>';
     html += '<div class="settings-group-body">';
     if (groupHelp) {
@@ -14680,7 +14674,7 @@ function _renderLlmGroup(settings) {
             '<span id="' + subtitleId + '" style="display:block;font-size:11px;font-weight:400;color:var(--text-hint);margin-top:2px;">' + escapeHtml(t('loading')) + '</span>' +
         '</button>';
 
-    let html = '<div class="settings-group" id="settings-llm-group">';
+    let html = '<div class="settings-group" id="settings-llm-group" data-settings-category="models">';
     html += '<div class="settings-group-title" onclick="this.parentElement.classList.toggle(\'collapsed\')">' + escapeHtml(t('sg_llm')) + ' <span class="settings-chevron">▼</span></div>';
     html += '<div class="settings-group-body">';
 
@@ -14756,7 +14750,7 @@ function _renderLlmGroup(settings) {
 
 function _renderTinyfishGroup(settings) {
     const keys = ['TINYFISH_API_KEY', 'TINYFISH_BASE_URL', 'TINYFISH_MONITOR_DB_PATH', 'TINYFISH_MONITOR_TARGETS_PATH', 'TINYFISH_MONITOR_ENABLED', 'TINYFISH_MONITOR_CRON'];
-    let html = '<div class="settings-group" id="settings-tinyfish-group">';
+    let html = '<div class="settings-group" id="settings-tinyfish-group" data-settings-category="integrations">';
     html += '<div class="settings-group-title" onclick="this.parentElement.classList.toggle(\'collapsed\')">' + escapeHtml(t('sg_tinyfish')) + ' <span class="settings-chevron">▼</span></div>';
     html += '<div class="settings-group-body">';
     html += '<div style="margin-bottom:12px;padding:10px;background:var(--bg);border-radius:8px;border:0.5px solid var(--border);">';
@@ -15449,7 +15443,10 @@ async function _refreshTunnelStatus() {
     try {
         const r = await fetch('/proxy_tunnel/status');
         const data = await r.json();
+        const provider=document.getElementById('tunnel-provider');
+        if(provider){if(!provider.dataset.loaded || data.running)provider.value=data.provider || 'hub';provider.dataset.loaded='1';provider.disabled=!!data.running;document.getElementById('tunnel-cloudflare-download').hidden=provider.value!=='cloudflare';}
         const publicDomain = (data.public_domain || '').trim();
+        document.querySelector('.settings-public-card')?.setAttribute('data-connected', String(!!data.running && !!publicDomain));
         _tunnelRunning = !!data.running;
         _tunnelPublicDomain = publicDomain;
         const statusEl = document.getElementById('tunnel-status-text');
@@ -15462,12 +15459,11 @@ async function _refreshTunnelStatus() {
             statusEl.textContent = publicDomain
                 ? t('tunnel_running')
                 : `${t('tunnel_running')} · ${t('tunnel_url_pending')}`;
-            statusEl.style.color = publicDomain ? '#16a34a' : '#2563eb';
+            statusEl.style.color = publicDomain ? '#6cf' : '#f6c453';
             if (btn) {
                 btn.textContent = t('tunnel_stop');
-                btn.style.background = '#fee2e2';
-                btn.style.borderColor = '#fca5a5';
-                btn.style.color = '#dc2626';
+                btn.style.background = '#622';
+                btn.style.borderColor = '#a44';
                 btn.disabled = false;
             }
             _showTunnelUrlState(urlRow, urlInput, publicDomain);
@@ -15482,9 +15478,8 @@ async function _refreshTunnelStatus() {
             statusEl.style.color = '#888';
             if (btn) {
                 btn.textContent = t('tunnel_start');
-                btn.style.background = '#f5f5f5';
-                btn.style.borderColor = '#ccc';
-                btn.style.color = '#333';
+                btn.style.background = '#222';
+                btn.style.borderColor = '#444';
                 btn.disabled = false;
             }
             _hideTunnelUrlState(urlRow, urlInput);
@@ -15505,7 +15500,10 @@ async function toggleTunnel() {
 
     if (_tunnelRunning) {
         btn.textContent = t('tunnel_stopping');
-        try { await fetch('/proxy_tunnel/stop', { method: 'POST' }); } catch (e) { /* ignore */ }
+        try {
+            await fetch('/proxy_tunnel/stop', { method: 'POST' });
+        } catch (e) { /* ignore */ }
+        // Poll until stopped
         for (let i = 0; i < 10; i++) {
             await new Promise(r => setTimeout(r, 1000));
             await _refreshTunnelStatus();
@@ -15514,7 +15512,11 @@ async function toggleTunnel() {
     } else {
         btn.textContent = t('tunnel_starting');
         _showTunnelUrlState(document.getElementById('tunnel-url-row'), document.getElementById('tunnel-url-input'), '');
-        try { await fetch('/proxy_tunnel/start', { method: 'POST' }); } catch (e) { /* ignore */ }
+        try {
+            const response=await fetch('/proxy_tunnel/start', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:document.getElementById('tunnel-provider')?.value})});
+            const started=await response.json();if(!response.ok)throw new Error(started.error || response.statusText);
+        } catch (e) { alert(e.message);await _refreshTunnelStatus();return; }
+        // Poll until running with URL
         for (let i = 0; i < 30; i++) {
             await new Promise(r => setTimeout(r, 2000));
             await _refreshTunnelStatus();
