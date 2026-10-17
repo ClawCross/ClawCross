@@ -216,7 +216,11 @@
         const stats=cfg.battle_rules>=3?statsFor(event.stats):statsFor(null);
         if(!stats){s.invalid='属性点各为 60–140 的整数，总和必须为 400。请重新生成。';return;}
         fighter.svg = svg; fighter.name = String(event.name || fighter.ref.name).slice(0, 40);
-        fighter.stats=stats;fighter.maxHp=stats.hp;fighter.hp=stats.hp;
+        fighter.baseStats=stats;
+        fighter.level=cfg.progression?Math.max(1,Math.min(30,Math.floor(Number(event.level)||1))):1;
+        const growth=cfg.progression?event.growth||{}:{};
+        fighter.stats=Object.fromEntries(Object.entries(stats).map(([key,value])=>[key,Math.round(value*(1+.04*(fighter.level-1))+Math.max(0,Math.min(20,Number(growth[key])||0)))]));
+        fighter.maxHp=fighter.stats.hp;fighter.hp=fighter.maxHp;
         fighter.elements = elements || ['normal']; fighter.element = fighter.elements[0]; fighter.moves = moves || [];
         fighter.skills=skills||fighter.moves.map(skillFor);
         fighter.actions = actionsFor(event.actions, fighter.moves, fighter.skills);
@@ -436,7 +440,7 @@
         }
         card.classList.toggle('active',index===s.active);
         const profile=card.querySelector('.cc-room-profile'),maxHp=fighter?.maxHp||100;
-        profile.querySelector('.cc-room-name').textContent=fighter?.name||(index?'右方精灵':'左方精灵');
+        profile.querySelector('.cc-room-name').textContent=(fighter?.svg?fighter.name+' · Lv.'+fighter.level:fighter?.name)||(index?'右方精灵':'左方精灵');
         profile.querySelector('small').textContent=fighter?fighter.ref.name+(fighter.ref.controller?' · '+fighter.ref.controller:''):'加入房间中的 Agent';
         profile.querySelector('.cc-room-health span').style.width=(fighter?fighter.hp/maxHp*100:100)+'%';
         profile.querySelector('.cc-room-hp').textContent=fighter?.svg?fighter.hp+' / '+maxHp+' HP':'等待设计';
@@ -535,7 +539,7 @@
       const chosen = selects.map(select => members.find(m => m.key === select.value));
       if (chosen.some(m => !m) || chosen[0].key === chosen[1].key) throw new Error('请先加入并选择两个不同 Agent');
       const next = Rooms.createConfig(config.app, snapshot.actor);
-      Object.assign(next,{manual_start:true,owner_only:true,battle_rules:3});
+      Object.assign(next,{manual_start:true,owner_only:true,battle_rules:3,progression:true});
       next.players = chosen.map(Rooms.binding);
       // The owner-managed announcement is already delivered to Agents by the
       // existing group runtime. Keep human text while publishing game rules.

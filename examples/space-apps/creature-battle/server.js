@@ -1,13 +1,12 @@
 #!/usr/bin/env node
 /* 精灵对战 · Creature Battle — two agents each design a creature in SVG, with its own animated
  * skill effects, and fight on their people's commands; @-mention an agent in the chat to talk to it.
- * 简介：Agent 设计精灵、四个技能与属性点；玩家点技能或发指令对战，精灵气泡展示对话。
+ * 简介：领养、训练、升级与野外捕获；Agent 设计精灵，玩家点技能或发指令对战，成长与对局自动存档。
  *
  *   node examples/space-apps/creature-battle/server.js --server <group server> --key <app key>
  *
  * It keeps the match (the log of people's commands and agents' replies), decides who may act,
- * asks the agents through the space and serves the page members see. The match lives in memory;
- * restarting the server starts a new one.
+ * asks the agents through the space and serves the page members see. The match, companions and progression are saved in the app data directory.
  */
 'use strict';
 const fs = require('node:fs');
@@ -15,8 +14,11 @@ const path = require('node:path');
 const { connect } = require('../../../sdk/js/clawcross-space.js');
 const Rooms = require('./room-sdk.js');
 const Battle = require('./battle.js');
+const {Store}=require('../../../sdk/js/space-store');
+const {Garden}=require('./garden');
+const crypto=require('node:crypto');
 
-const PAGE_SCRIPTS = [path.join(__dirname, 'room-sdk.js'), path.join(__dirname, 'battle.js')];
+const PAGE_SCRIPTS = [path.join(__dirname, 'room-sdk.js'), path.join(__dirname, 'battle.js'),path.join(__dirname,'garden-ui.js')];
 
 /** The page members see: the battle's own view, its chat and its input. Every URL is relative. */
 function page() {
@@ -25,6 +27,7 @@ function page() {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>精灵对战</title><style>
 ${fs.readFileSync(path.join(__dirname, 'arena.css'), 'utf8')}
+${fs.readFileSync(path.join(__dirname,'garden.css'),'utf8')}
 </style></head><body><main id="room-root"></main><section id="chat" aria-label="聊天"></section>
 <div id="bar"><div id="command-context" hidden><span>给我的精灵下指令</span><button type="button" id="cancel-command" aria-label="取消出招指令">×</button></div>
 <textarea id="text" rows="1" maxlength="2000" aria-label="消息"></textarea>
@@ -34,7 +37,7 @@ ${scripts}
 (function(){
   const root=document.getElementById('room-root'),chat=document.getElementById('chat'),text=document.getElementById('text');
   const hint=document.getElementById('hint'),send=document.querySelector('[data-send]'),context=document.getElementById('command-context');
-  const seen=new Set();let composer=null,after=0,revision=-1,sending=false,command=false;
+  const seen=new Set();let composer=null,after=0,revision=-1,epoch='',sending=false,command=false;
   async function api(address,body){
     // text/plain keeps a POST "simple": the sandboxed page skips the CORS preflight round trip.
     const response=await fetch(address,body===undefined?{}:{method:'POST',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:JSON.stringify(body)});
@@ -68,12 +71,14 @@ ${scripts}
     onSuggest:value=>{commandInput();text.value=value;},onCommand:commandInput
   });
   const game=ClawCrossBattle.mount(root,client);
+  const garden=ClawCrossGarden.mount(root,api);
   game.chatSlot.append(chat,document.getElementById('bar'));
   document.getElementById('cancel-command').onclick=()=>{command=false;paint();text.focus();};
   function receive(data){
+    if(epoch!==data.epoch){epoch=data.epoch;revision=-1;}
     if(data.revision<revision)return;
     revision=data.revision;after=Math.max(after,data.cursor);
-    client.update(data.snapshot);show(data.snapshot.messages);game.update(client.snapshot);
+    client.update(data.snapshot);show(data.snapshot.messages);game.update(client.snapshot);garden.update(data.snapshot.garden);
   }
   async function refresh(){receive(await api('state?after='+after));}
   async function run(button,task){
@@ -103,8 +108,10 @@ ${scripts}
 
 /** The battle server; `space` is a connected ClawCross space. */
 function battle(space) {
-  const rows = [];      // the match: people's commands and chat, agents' replies
-  let config = null;    // the players and rules the owner set
+  const store=new Store(space.dataDir,{rows:[],config:null});
+  const garden=new Garden(store),epoch=crypto.randomUUID();
+  const rows = store.data.rows || [];
+  let config = store.data.config || null;    // the players and rules the owner set
   let roster = { title: '', members: [] };
   const viewers = new Set();
   let revision = 0;
@@ -115,12 +122,18 @@ function battle(space) {
     const next = await space.members();
     if(JSON.stringify(next)!==JSON.stringify(roster)){roster=next;changed();}
   };
-  const append = (sender, name, content) => { const row = { id: rows.length + 1, sender, sender_name: name, content, created_at: Date.now() / 1000 }; rows.push(row); changed(); return row; };
+  const append=(sender,name,content)=>{
+    const event=Rooms.parseEvent(content);
+    if(event?.type==='avatar')content=Rooms.encodeEvent({...event,...garden.levelFor(sender)});
+    const row={id:rows.length+1,sender,sender_name:name,content,created_at:Date.now()/1000};
+    rows.push(row);changed();return row;
+  };
+
 
   function snapshot(person, after=0) {
-    return {cursor:rows.length, revision, snapshot:{roomId:'space',title:roster.title,
+    return {cursor:rows.length, revision, epoch, snapshot:{roomId:'space',title:roster.title,
       announcement:config?Rooms.encodeConfig(config):'',members:view(),messages:rows.slice(after),
-      actor:{key:person.id,name:person.name},isOwner:!!member(person.id)?.owner}};
+      actor:{key:person.id,name:person.name},isOwner:!!member(person.id)?.owner,garden:garden.view(person.id)}};
   }
   function push(viewer) {
     if(viewer.res.writableNeedDrain || viewer.revision===revision)return;
@@ -128,7 +141,16 @@ function battle(space) {
     viewer.res.write('data: '+JSON.stringify(snapshot(viewer.person,viewer.after))+'\n\n');
     viewer.after=rows.length;viewer.revision=revision;
   }
-  function changed(){revision++;for(const viewer of viewers)push(viewer);}
+  function changed(){
+    store.update(d=>{d.rows=rows;d.config=config;});
+    if(config){
+      const state=new Battle.BattleModel().rebuild(config,view(),rows),owners=[];
+      for(const fighter of state.fighters){const agent=member(fighter.agent?.key),owner=roster.members.find(m=>!m.agent&&agent&&m.device===agent.device);owners.push(owner?.id);
+        if(owner&&fighter.svg)garden.capture(owner.id,agent.id,fighter);}
+      garden.reward(config.id,state,owners);
+    }
+    revision++;for(const viewer of viewers)push(viewer);
+  }
 
   /** The summoner chat: a message naming @agent (or @所有人) asks those agents to answer in the chat. */
   async function summon(person, content) {
@@ -192,10 +214,12 @@ function battle(space) {
         res.on('close',()=>{clearInterval(heartbeat);viewers.delete(viewer);});
         return;
       }
+      if(req.method==='GET'&&url.pathname==='/garden')return reply(200,garden.view(person.id));
       if (req.method === 'GET' && url.pathname === '/history') return reply(200, { messages: rows });
       const chunks = [];
       for await (const chunk of req) chunks.push(chunk);
       const body = JSON.parse(Buffer.concat(chunks).toString() || '{}');
+      if(req.method==='POST'&&url.pathname.startsWith('/garden/')){const result=garden.act(person.id,url.pathname.slice(8),body);changed();return reply(200,result);}
       if (req.method === 'POST' && url.pathname === '/send') return reply(200, await send(person, body));
       if (req.method === 'POST' && url.pathname === '/configure') {
         if (!owner) return reply(403, { error: '只有群主可以设置对局' });
@@ -225,4 +249,4 @@ async function main() {
 }
 
 if (require.main === module) main().catch((error) => { console.error(error.message); process.exit(1); });
-module.exports = { battle, page };
+module.exports = { battle, createApp:battle, name:'精灵对战', page };

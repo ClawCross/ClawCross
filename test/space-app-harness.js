@@ -85,7 +85,7 @@ async function startSpace({port=51236,replies}){
     }
   })().catch(error=>{if(!stopped)console.error('fixture agents stopped:',error.message);});
   return {
-    server:space.server,key,asked,groupPage:space.groupPage,
+    server:space.server,key,asked,groupPage:space.groupPage,dataDir:path.join(home,'app-data'),
     card:async()=>(await space.state(alice,-1)).app,
     /** The page URL each member opens: their own signed entrance. */
     entrance:async(member)=>space.page((await relay('POST','/relay/app/session',{token:member==='bob'?bob:alice})).path),

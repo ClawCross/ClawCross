@@ -29,7 +29,7 @@ function reply(content,name){
   let browser,space;
   try{
     // The owner's app server, connected out to the group server with the app key.
-    space=await connect({server:test.server,key:test.key,name:'精灵对战'});
+    space=await connect({server:test.server,key:test.key,name:'精灵对战',dataDir:test.dataDir});
     const app=battle(space);await app.refreshRoster();await space.serve(app.handle);
     const card=await test.card();
     if(!card?.online)throw new Error('the space should show its app online: '+JSON.stringify(card));
@@ -44,6 +44,24 @@ function reply(content,name){
     const [alice,bobPage]=pages;
     // Opened directly, the site still runs at an opaque origin.
     expect(await alice.evaluate(()=>self.origin)).toBe('null');
+    await alice.setViewportSize({width:390,height:650});
+    await alice.getByRole('button',{name:'精灵基地',exact:true}).click();
+    await alice.getByRole('button',{name:'选择 萤尾',exact:true}).click();
+    await expect(alice.locator('.garden-hero')).toContainText('Lv.1');
+    await alice.getByRole('button',{name:'训练',exact:true}).click();
+    await alice.getByRole('button',{name:'力量训练 · 8星币',exact:true}).click();
+    await expect(alice.locator('.garden-notice')).toContainText('经验 +35');
+    await alice.getByRole('button',{name:'力量训练 · 8星币',exact:true}).click();
+    await expect(alice.locator('.garden-hero')).toContainText('Lv.2');
+    if(process.env.SPACE_APP_SCREENSHOTS){require('fs').mkdirSync(process.env.SPACE_APP_SCREENSHOTS,{recursive:true});await alice.screenshot({path:require('path').join(process.env.SPACE_APP_SCREENSHOTS,'garden-training.png')});}
+    await alice.getByRole('button',{name:'探险',exact:true}).click();
+    await alice.getByRole('button',{name:'和 萤尾 出发',exact:true}).click();
+    await expect(alice.locator('.garden-opponent')).toHaveCount(2);
+    await alice.getByRole('button',{name:/^火花 /}).click();
+    await expect(alice.locator('.garden-battle-log')).toContainText('造成');
+    await alice.getByRole('button',{name:'返回基地',exact:true}).click();
+    await alice.getByRole('button',{name:'返回竞技场',exact:true}).click();
+    await alice.setViewportSize({width:1100,height:760});
     await expect(alice.locator('.cc-room-setup select').first()).toContainText('Alpha');
     await expect(bobPage.locator('.cc-room-setup')).toBeHidden();
     await alice.locator('.cc-room-setup select').first().selectOption({label:'Alpha · Alice'});
@@ -62,7 +80,7 @@ function reply(content,name){
     await expect(bobPage.locator('#bar button:visible')).toHaveCount(1);
     await bobPage.locator('#text').fill('@Alpha 你的精灵怕不怕火？');
     await bobPage.locator('[data-send]').click();
-    await expect(alice.locator('#chat p.agent',{hasText:'Amber 收到，准备战斗！'})).toBeVisible({timeout:10000});
+    await expect(alice.locator('#chat p.agent',{hasText:'Amber 收到，准备战斗！'})).toBeVisible({timeout:20000}).catch(async error=>{console.error('chat diagnostics',JSON.stringify({asked:test.asked.map(x=>x.agent),chat:await alice.locator('#chat').textContent(),hint:await bobPage.locator('#hint').textContent(),errors}));throw error;});
     await expect(bobPage.locator('#chat p.agent',{hasText:'Amber 收到'})).toBeVisible({timeout:10000});
     expect(test.asked.slice(before).map(x=>x.agent)).toEqual(['Alpha']);
     const bubble=alice.getByRole('complementary',{name:'Amber 的对话'});
@@ -141,6 +159,15 @@ function reply(content,name){
       await page.getByRole('button',{name:/^(退出全屏|Exit fullscreen)$/}).click();
       await expect(page.getByRole('log')).toBeHidden();
     }
+    // A new app process restores both the arena and each member's companions.
+    space.close();
+    space=await connect({server:test.server,key:test.key,name:'精灵对战',dataDir:test.dataDir});
+    const restored=battle(space);await restored.refreshRoster();await space.serve(restored.handle);
+    await alice.reload();
+    await expect(alice.locator('.cc-room-hp').nth(1)).toHaveText('52 / 100 HP');
+    await alice.getByRole('button',{name:'精灵基地',exact:true}).click();
+    await expect(alice.locator('.garden-hero')).toContainText('Lv.2');
+    await expect(alice.locator('.garden-companion')).toHaveCount(2);
     expect(errors).toEqual([]);
     console.log(JSON.stringify({group_server:process.env.CLAWCROSS_SPACE_TEST_HUB?'hub':'clawcross',app_server:'connected',
       agents_asked:test.asked.map(x=>x.agent),shared_hp:76}));

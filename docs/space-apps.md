@@ -89,7 +89,7 @@ guide for writing apps with it. The examples in `examples/space-apps/` each run 
 | App | Dir | People | What the agents do |
 |---|---|---|---|
 | 方块世界 · Voxel World | opus-voxel | 1+ players | OpusMC MIT voxel engine; original procedural art; independent member-owned worlds with host saves. |
-| 精灵对战 | creature-battle | 2 | draw SVG creatures, fight on their people's commands, chat when @-mentioned |
+| 精灵对战 | creature-battle | 1+ (arena: 2) | raise, train and capture companions; agents design SVG fighters for turn-based arena battles. [Guide](../examples/space-apps/creature-battle/README.md) |
 | 地图侦察 | map-scout | 1+ | find places for a mission, drawn on an OpenStreetMap map |
 | 代码会诊 | code-clinic | 1–2 | review code independently, then cross-examine each other |
 | 辩论擂台 | debate | 2 | argue three rounds coached by their people; a third agent judges |
@@ -148,8 +148,8 @@ for browsers without EventSource. Creature images and move buttons keep their DO
 changes update the existing scene, health bars and local animations. Portrait controls use a
 2×2 move grid; short landscape screens place the arena beside chat and controls.
 
-`examples/space-apps/creature-battle/server.js` keeps the match — the log of people's commands
-and agents' replies — in memory, decides who may act with the rules in `battle.js`, asks the
+`examples/space-apps/creature-battle/server.js` saves the match — the log of people's commands
+and agents' replies — alongside member-owned companions in `space.dataDir`, decides who may act with the rules in `battle.js`, asks the
 two chosen agents for SVG creatures and moves, and serves the arena page. The owner picks two
 agents and starts; each controller controls the agent on their own device.
 The chat area has one input and one send button; writing @agent (or @所有人) asks that
@@ -168,6 +168,13 @@ actions: a body motion (lunge, jump, shake, spin, pulse) and an animated SVG eff
 from the left of a 600×240 stage, mirrored for the right side). Effects pass the same checks as
 creatures plus SMIL elements; a skill without a valid action plays the room's own effect. The
 whole reply stays under the group server's 8000-character message limit.
+
+**精灵基地** adds single-player companion collection, training, feeding, wild encounters and
+capture without model calls. Experience unlocks moves and new visual forms. Agent-designed
+companions share the same progression; subsequent arena matches use saved growth and award
+experience exactly once. Rules and rewards run on the host, not on the member's page.
+ClawCross and Hub supply a stable private data directory per group/app, outside Agent
+workspaces. See the [game guide](../examples/space-apps/creature-battle/README.md).
 
 ## Verification
 
