@@ -342,10 +342,16 @@
     const speechCursor=new Map();
     let animationRoom='',lastEffect='',historyDrawn=false,effectTimer,moving=null;
     /** Plays a creature's body motion; a repaint during it picks it up where it was. */
-    function animate(image, index) {
-      if (!image || !moving || moving.side!==index || Date.now()-moving.at>900) return;
-      image.classList.add('cc-room-move-'+moving.motion);image.dataset.motion=moving.motion;
-      image.style.setProperty('--toward',index?'-60px':'60px');image.style.animationDelay=-(Date.now()-moving.at)+'ms';
+    function animate(image,index){
+      if(!image||!moving||moving.side!==index||Date.now()-moving.at>900)return;
+      const toward=index?-60:60,motion=moving.motion;
+      const frames={lunge:[{transform:'translateX(0)'},{transform:'translateX('+toward+'px) scale(1.06)',offset:.4},{transform:'translateX(0)'}],
+        jump:[{transform:'translateY(0)'},{transform:'translateY(-34px)',offset:.4},{transform:'translateY(0)'}],
+        shake:[{transform:'translateX(-7px)'},{transform:'translateX(7px)'},{transform:'translateX(-7px)'},{transform:'translateX(0)'}],
+        spin:[{transform:'rotate(0)'},{transform:'rotate(360deg)'}],pulse:[{transform:'scale(1)'},{transform:'scale(1.16)',offset:.5},{transform:'scale(1)'}]};
+      image.dataset.motion=motion;image.battleMotion?.cancel();
+      image.battleMotion=image.animate(frames[motion]||frames.lunge,{duration:850,easing:'cubic-bezier(.2,.7,.3,1)'});
+      image.battleMotion.currentTime=Date.now()-moving.at;
     }
     function showEffect(action, s) {
       clearTimeout(effectTimer);effect.replaceChildren();
@@ -358,6 +364,11 @@
       effect.append(image);
       moving={side:action.side,motion:own?.motion || (['guard','heal'].includes(skill.type)?'pulse':'lunge'),at:Date.now()};
       animate(root.querySelectorAll('.cc-room-fighter')[action.side]?.querySelector('.cc-room-image'),action.side);
+      const target=root.querySelectorAll('.cc-room-fighter')[['guard','heal'].includes(skill.type)?action.side:1-action.side];
+      const avatar=target?.querySelector('.cc-room-avatar');
+      if(avatar && !['guard','heal'].includes(skill.type))avatar.animate([{filter:'brightness(1)'},{filter:'brightness(1.8)',transform:'translateX(-5px)',offset:.5},{filter:'brightness(1)',transform:'translateX(0)'}],{duration:700,delay:250});
+      const amount=/造成 (\d+) 点伤害/.exec(action.text);
+      if(avatar && amount){const number=document.createElement('span');number.className='cc-room-damage';number.textContent='−'+amount[1];avatar.append(number);setTimeout(()=>number.remove(),1300);}
       effectTimer=setTimeout(()=>effect.replaceChildren(),1400);
     }
     function ingest(messages) { for (const message of messages || []) cache.set(Number(message.id), message); }
@@ -372,17 +383,17 @@
         const length=window.matchMedia('(max-width:640px)').matches?36:72;
         for(let n=0;n<chars.length;n+=length)pages.push({id:row.id+':'+n,text:chars.slice(n,n+length).join('')});
       }
-      if(!pages.length)return;
+      if(!pages.length){card.querySelector('.cc-room-bubble')?.remove();return;}
       const tail=pages.at(-1).id,prior=speechCursor.get(index);
       let chosen=prior?.tail===tail?pages.findIndex(page=>page.id===prior.id):pages.findIndex(page=>page.id.split(':')[0]===tail.split(':')[0]);
       if(chosen<0)chosen=pages.length-1;
-      const bubble=document.createElement('aside');bubble.className='cc-room-bubble';bubble.setAttribute('aria-label',fighter.name+' 的对话');
-      const text=document.createElement('p'),nav=document.createElement('nav'),count=document.createElement('span');
-      const previous=document.createElement('button'),next=document.createElement('button');
+      const bubble=card.querySelector('.cc-room-bubble')||document.createElement('aside');bubble.className='cc-room-bubble';bubble.setAttribute('aria-label',fighter.name+' 的对话');
+      const text=bubble.querySelector('p')||document.createElement('p'),nav=bubble.querySelector('nav')||document.createElement('nav'),count=nav.querySelector('span')||document.createElement('span');
+      const previous=nav.querySelector('button:first-child')||document.createElement('button'),next=nav.querySelector('button:last-child')||document.createElement('button');
       previous.type=next.type='button';previous.textContent='‹';next.textContent='›';previous.setAttribute('aria-label','上一页对话');next.setAttribute('aria-label','下一页对话');
       function paint(){text.textContent=pages[chosen].text;count.textContent=(chosen+1)+' / '+pages.length;previous.disabled=chosen===0;next.disabled=chosen===pages.length-1;speechCursor.set(index,{tail,id:pages[chosen].id});}
       previous.onclick=()=>{if(chosen>0){chosen--;paint();}};next.onclick=()=>{if(chosen<pages.length-1){chosen++;paint();}};
-      nav.append(previous,count,next);bubble.append(text,nav);card.append(bubble);paint();
+      if(!nav.children.length)nav.append(previous,count,next);if(!bubble.children.length)bubble.append(text,nav);if(!bubble.isConnected)card.append(bubble);paint();
     }
     function render() {
       if (!config || destroyed) return;
@@ -414,32 +425,42 @@
       root.querySelector('[data-settings]').hidden = !snapshot.isOwner;
       prepare.disabled = busy || members.filter(m => m.is_agent).length < 2;
       prepare.textContent = (config.players || []).length ? '重新生成 / 新对局' : '生成双方精灵';
-      const field = root.querySelector('.cc-room-fighters'); field.replaceChildren();
-      for (let index = 0; index < 2; index++) {
-        const fighter = s.fighters[index];
-        const card = document.createElement('div'); card.className = 'cc-room-fighter' + (index === s.active ? ' active' : '');
-        const profile=document.createElement('div');profile.className='cc-room-profile';
-        const label=document.createElement('div');label.className='cc-room-name';label.textContent=fighter?fighter.name:(index?'右方精灵':'左方精灵');profile.append(label);
-        if(fighter?.svg){
-          const types=document.createElement('div');types.className='cc-room-types';
-          for(const id of fighter.elements){const tag=document.createElement('span');tag.className='cc-room-type';tag.textContent=TYPES[id].name;tag.style.color=TYPES[id].color;types.append(tag);}profile.append(types);
+      const field=root.querySelector('.cc-room-fighters');
+      for(let index=0;index<2;index++){
+        const fighter=s.fighters[index];
+        let card=field.children[index];
+        if(!card){
+          card=document.createElement('div');card.className='cc-room-fighter';
+          card.innerHTML='<div class="cc-room-profile"><div class="cc-room-name"></div><div class="cc-room-types"></div><small></small><div class="cc-room-health"><span></span></div><div class="cc-room-hp"></div><div class="cc-room-points"></div></div><div class="cc-room-avatar"></div>';
+          field.append(card);
         }
-        const owner=document.createElement('small');owner.textContent=fighter?fighter.ref.name+(fighter.ref.controller?' · '+fighter.ref.controller:''):'加入房间中的 Agent';profile.append(owner);
-        const maxHp=fighter?.maxHp||100,bar=document.createElement('div');bar.className='cc-room-health';
-        const hp=document.createElement('span');hp.style.width=(fighter?fighter.hp/maxHp*100:100)+'%';bar.append(hp);profile.append(bar);
-        const number=document.createElement('div');number.className='cc-room-hp';number.textContent=fighter?.svg?fighter.hp+' / '+maxHp+' HP':'等待设计';profile.append(number);
-        if(fighter?.svg){const points=document.createElement('div');points.className='cc-room-points';
-          for(const [key,title] of [['attack','攻击'],['defense','防御'],['speed','速度']]){const part=document.createElement('span'),value=document.createElement('b');value.textContent=fighter.stats[key];part.append(title+' ',value);points.append(part);}profile.append(points);}
-        card.append(profile);
-        const avatar=document.createElement('div');avatar.className='cc-room-avatar';
+        card.classList.toggle('active',index===s.active);
+        const profile=card.querySelector('.cc-room-profile'),maxHp=fighter?.maxHp||100;
+        profile.querySelector('.cc-room-name').textContent=fighter?.name||(index?'右方精灵':'左方精灵');
+        profile.querySelector('small').textContent=fighter?fighter.ref.name+(fighter.ref.controller?' · '+fighter.ref.controller:''):'加入房间中的 Agent';
+        profile.querySelector('.cc-room-health span').style.width=(fighter?fighter.hp/maxHp*100:100)+'%';
+        profile.querySelector('.cc-room-hp').textContent=fighter?.svg?fighter.hp+' / '+maxHp+' HP':'等待设计';
+        const types=profile.querySelector('.cc-room-types');types.replaceChildren();
+        if(fighter?.svg)for(const id of fighter.elements){const tag=document.createElement('span');tag.className='cc-room-type';tag.textContent=TYPES[id].name;tag.style.color=TYPES[id].color;types.append(tag);}
+        const points=profile.querySelector('.cc-room-points');points.replaceChildren();
+        if(fighter?.svg)for(const [key,title] of [['attack','攻击'],['defense','防御'],['speed','速度']]){
+          const part=document.createElement('span'),value=document.createElement('b');value.textContent=fighter.stats[key];part.append(title+' ',value);points.append(part);
+        }
+        const avatar=card.querySelector('.cc-room-avatar');
         if(fighter?.svg){
-          const image=document.createElement('img');image.className='cc-room-image';image.alt=fighter.name;
-          image.src='data:image/svg+xml;charset=UTF-8,'+encodeURIComponent(fighter.svg);animate(image,index);avatar.append(image);
-        }else{const placeholder=document.createElement('div');placeholder.className='cc-room-placeholder';
-          const image=document.createElement('img');image.alt='';image.src='data:image/svg+xml;charset=UTF-8,'+encodeURIComponent(waitingCreature(index));
-          const caption=document.createElement('span');caption.textContent=fighter&&s.awaiting[fighter.ref.key]?'正在设计…':'等待精灵登场';placeholder.append(image,caption);avatar.append(placeholder);}
-        card.append(avatar);speech(card,index,s);
-        field.append(card);
+          let image=avatar.querySelector('.cc-room-image');
+          if(!image){image=document.createElement('img');image.className='cc-room-image';avatar.replaceChildren(image);}
+          const source='data:image/svg+xml;charset=UTF-8,'+encodeURIComponent(fighter.svg);
+          if(image.getAttribute('src')!==source){image.src=source;animate(image,index);}
+          image.alt=fighter.name;
+        }else{
+          let placeholder=avatar.querySelector('.cc-room-placeholder');
+          if(!placeholder){placeholder=document.createElement('div');placeholder.className='cc-room-placeholder';
+            const image=document.createElement('img');image.alt='';image.src='data:image/svg+xml;charset=UTF-8,'+encodeURIComponent(waitingCreature(index));
+            placeholder.append(image,document.createElement('span'));avatar.replaceChildren(placeholder);}
+          placeholder.querySelector('span').textContent=fighter&&s.awaiting[fighter.ref.key]?'正在设计…':'等待精灵登场';
+        }
+        speech(card,index,s);
       }
       const controlled=s.fighters.findIndex((fighter,index)=>index===s.active&&allowedController(me,fighter.agent,config,members));
       const own=controlled>=0?controlled:s.fighters.findIndex(fighter=>allowedController(me,fighter.agent,config,members));
@@ -447,17 +468,25 @@
       root.querySelector('[data-move-title]').textContent=(fighter?.name||'精灵')+'的招式';
       root.querySelector('[data-turn-hint]').textContent=own<0?'观战中':selected===s.active&&s.started?'轮到你了':'等待对方行动';
       root.querySelector('.cc-room-controls').dataset.yourTurn=String(own>=0&&selected===s.active&&s.started&&s.winner===null);
-      const movePanel=root.querySelector('.cc-room-moves');movePanel.replaceChildren();
+      const movePanel=root.querySelector('.cc-room-moves');
+      const oldMoves=[...movePanel.children];let moveIndex=0;
       for(const name of fighter?.moves||[]){
-        const skill=fighterSkill(fighter,name),button=document.createElement('button');button.type='button';button.className='cc-room-move';
+        const skill=fighterSkill(fighter,name);
+        let button=oldMoves[moveIndex];
+        if(!button || button.dataset.skill!==name || button.dataset.type!==skill.type){
+        const prior=button;button=document.createElement('button');button.type='button';button.className='cc-room-move';button.dataset.skill=name;button.dataset.type=skill.type;
         const icon=document.createElement('span');icon.className='cc-room-move-icon';icon.append(moveIcon(skill.type));button.append(icon);
         const moveName=document.createElement('span');moveName.className='cc-room-move-name';moveName.textContent=name;button.append(moveName);
         button.style.setProperty('--skill-color',(TYPES[skill.type]||{color:skill.type==='heal'?'#55ae88':'#579fce'}).color);button.setAttribute('aria-label','使用'+name);
         const note=document.createElement('small');note.textContent=(TYPES[skill.type]?.name|| (skill.type==='heal'?'回复':'防守'))+' · '+(skill.type==='guard'?'减伤 65%':skill.type==='heal'?'回复 '+skill.power:'威力 '+skill.power);button.append(note);
         button.title=skill.description||note.textContent;
+        if(prior)prior.replaceWith(button);else movePanel.append(button);
+        }
+        moveIndex++;
         button.disabled=!synced||busy||!s.started||selected!==s.active||s.winner!==null||!!s.pending&&!s.invalid||own<0;
-        button.onclick=()=>act(()=>client.publish(Rooms.encodeEvent({type:'command',kind:'skill',room:config.id,id:Rooms.uid(),fighter:fighter.ref.key,turn:s.turn,move:name}))).catch(()=>{});movePanel.append(button);
+        button.onclick=()=>act(()=>client.publish(Rooms.encodeEvent({type:'command',kind:'skill',room:config.id,id:Rooms.uid(),fighter:fighter.ref.key,turn:s.turn,move:name}))).catch(()=>{});
       }
+      for(const unused of oldMoves.slice(moveIndex))unused.remove();
       root.querySelector('[data-agent-command]').disabled=own<0||selected!==s.active||!synced||busy||!s.started||s.winner!==null||!!s.pending&&!s.invalid;
       const status = root.querySelector('.cc-room-status');
       status.textContent = !synced ? '正在同步对战记录…' : s.winner !== null ? s.fighters[s.winner].name + ' 获胜！' :
@@ -484,6 +513,7 @@
       if (synced && !historyDrawn) {historyDrawn=true;lastEffect=latest?.id || '';}
       else if (synced && latest && latest.id!==lastEffect) {lastEffect=latest.id;showEffect(latest,s);}
     }
+    const resize=()=>{paintKey='';render();};window.addEventListener('resize',resize);
     root.querySelector('[data-agent-command]').onclick=()=>client.transport.onCommand?.();
     root.querySelector('[data-settings]').onclick = () => {settingsOpen = !settingsOpen; render();};
     async function act(fn) {
@@ -543,7 +573,7 @@
         }
         render();
       },
-      destroy: function () { destroyed = true; clearTimeout(effectTimer); client.setComposer(null); root.remove(); cache.clear(); }
+      destroy: function () { destroyed = true;window.removeEventListener('resize',resize); clearTimeout(effectTimer); client.setComposer(null); root.remove(); cache.clear(); }
     };
   }
   return {label: '精灵对战', TYPES:TYPES, TYPE_CHART:TYPE_CHART, SKILLS: SKILLS, skillFor: skillFor, effectiveness:effectiveness,

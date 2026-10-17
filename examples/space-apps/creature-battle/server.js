@@ -34,7 +34,7 @@ ${scripts}
 (function(){
   const root=document.getElementById('room-root'),chat=document.getElementById('chat'),text=document.getElementById('text');
   const hint=document.getElementById('hint'),send=document.querySelector('[data-send]'),context=document.getElementById('command-context');
-  const seen=new Set();let composer=null,after=0,sending=false,command=false;
+  const seen=new Set();let composer=null,after=0,revision=-1,sending=false,command=false;
   async function api(address,body){
     // text/plain keeps a POST "simple": the sandboxed page skips the CORS preflight round trip.
     const response=await fetch(address,body===undefined?{}:{method:'POST',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:JSON.stringify(body)});
@@ -44,6 +44,7 @@ ${scripts}
   }
   // Plain messages are the room's chat; protocol messages drive the battle.
   function show(rows){
+    const following=chat.scrollHeight-chat.scrollTop-chat.clientHeight<32;
     for(const row of rows||[]){
       if(seen.has(row.id)||ClawCrossRooms.parseEvent(row.content))continue;
       seen.add(row.id);const line=document.createElement('p'),who=document.createElement('b');
@@ -51,7 +52,7 @@ ${scripts}
       who.textContent=row.sender_name;line.append(who,document.createTextNode(row.content));chat.append(line);
     }
     while(chat.children.length>50)chat.firstElementChild.remove();
-    chat.scrollTop=chat.scrollHeight;
+    if(following)chat.scrollTop=chat.scrollHeight;
   }
   function paint(){
     send.disabled=sending||command&&(!composer||!composer.canSubmit);
@@ -69,10 +70,12 @@ ${scripts}
   const game=ClawCrossBattle.mount(root,client);
   game.chatSlot.append(chat,document.getElementById('bar'));
   document.getElementById('cancel-command').onclick=()=>{command=false;paint();text.focus();};
-  async function refresh(){
-    const data=await api('state?after='+after);after=data.cursor;
+  function receive(data){
+    if(data.revision<revision)return;
+    revision=data.revision;after=Math.max(after,data.cursor);
     client.update(data.snapshot);show(data.snapshot.messages);game.update(client.snapshot);
   }
+  async function refresh(){receive(await api('state?after='+after));}
   async function run(button,task){
     const value=text.value.trim();if(!value)return;
     if(sending)return;sending=true;hint.textContent='';paint();
@@ -85,9 +88,15 @@ ${scripts}
   send.addEventListener('click',()=>run(send,value=>command?game.submit(value):api('send',{content:value,mentions:[]}).then(refresh)));
   text.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();if(!send.disabled)send.click();}});
   paint();
-  // One refresh at a time: the next starts 1.5 s after the last one came back, so slow replies never pile up.
-  (async()=>{try{await refresh();}catch(error){hint.textContent=error.message;}
-    for(;;){await new Promise(done=>setTimeout(done,1500));await refresh().catch(()=>{});}})();
+  // Network events update game state; local animations never wait for a polling timer.
+  if(window.EventSource){
+    const stream=new EventSource('events?after='+after);
+    stream.onmessage=event=>receive(JSON.parse(event.data));
+    stream.onopen=()=>{if(hint.dataset.offline){hint.textContent='';delete hint.dataset.offline;}};
+    stream.onerror=()=>{hint.dataset.offline='1';hint.textContent='连接中断，正在重连…';};
+    window.addEventListener('pagehide',event=>{if(!event.persisted)stream.close();});
+  }else (async()=>{for(;;){await refresh().catch(()=>{});await new Promise(done=>setTimeout(done,1500));}})();
+
 })();
 </script></body></html>`;
 }
@@ -97,12 +106,29 @@ function battle(space) {
   const rows = [];      // the match: people's commands and chat, agents' replies
   let config = null;    // the players and rules the owner set
   let roster = { title: '', members: [] };
-  const html = page();
+  const viewers = new Set();
+  let revision = 0;
 
   const view = () => roster.members.map((m) => ({ principal: m.id, name: m.name, is_agent: m.agent, device: m.device, platform: m.platform }));
   const member = (id) => roster.members.find((m) => m.id === id);
-  const refreshRoster = async () => { roster = await space.members(); };
-  const append = (sender, name, content) => { const row = { id: rows.length + 1, sender, sender_name: name, content, created_at: Date.now() / 1000 }; rows.push(row); return row; };
+  const refreshRoster = async () => {
+    const next = await space.members();
+    if(JSON.stringify(next)!==JSON.stringify(roster)){roster=next;changed();}
+  };
+  const append = (sender, name, content) => { const row = { id: rows.length + 1, sender, sender_name: name, content, created_at: Date.now() / 1000 }; rows.push(row); changed(); return row; };
+
+  function snapshot(person, after=0) {
+    return {cursor:rows.length, revision, snapshot:{roomId:'space',title:roster.title,
+      announcement:config?Rooms.encodeConfig(config):'',members:view(),messages:rows.slice(after),
+      actor:{key:person.id,name:person.name},isOwner:!!member(person.id)?.owner}};
+  }
+  function push(viewer) {
+    if(viewer.res.writableNeedDrain || viewer.revision===revision)return;
+    if(!member(viewer.person.id)){viewer.res.end();return;}
+    viewer.res.write('data: '+JSON.stringify(snapshot(viewer.person,viewer.after))+'\n\n');
+    viewer.after=rows.length;viewer.revision=revision;
+  }
+  function changed(){revision++;for(const viewer of viewers)push(viewer);}
 
   /** The summoner chat: a message naming @agent (or @所有人) asks those agents to answer in the chat. */
   async function summon(person, content) {
@@ -136,11 +162,12 @@ function battle(space) {
     if (!config) throw Object.assign(new Error('群主还没有设置对局'), { status: 409 });
     const row = { id: rows.length + 1, sender: person.id, sender_name: person.name, content, created_at: Date.now() / 1000 };
     if (!accepted(event, row)) throw Object.assign(new Error('现在不能这样操作'), { status: 403 });
-    rows.push(row);
+    rows.push(row);changed();
     if(event.kind!=='skill')for (const agent of (mentions || []).filter((id) => member(id)?.agent)) await space.ask(agent, content);
     return row;
   }
 
+  space.on('closing',()=>{for(const viewer of viewers)viewer.res.end();viewers.clear();});
   space.on('agent', ({ agent, name, content }) => append(agent, name, content));
   space.on('member', () => refreshRoster().catch(() => {}));
 
@@ -153,12 +180,17 @@ function battle(space) {
       const url = new URL(req.url, 'http://space');
       const person = { id: req.member.id, name: req.member.name };
       const owner = !!member(person.id)?.owner;
-      if (req.method === 'GET' && url.pathname === '/') return reply(200, html, 'text/html; charset=utf-8');
-      if (req.method === 'GET' && url.pathname === '/state') {
-        const after = Number(url.searchParams.get('after')) || 0;
-        return reply(200, { cursor: rows.length, snapshot: {
-          roomId: 'space', title: roster.title, announcement: config ? Rooms.encodeConfig(config) : '', members: view(),
-          messages: rows.slice(after), actor: { key: person.id, name: person.name }, isOwner: owner } });
+      if (req.method === 'GET' && url.pathname === '/') return reply(200, page(), 'text/html; charset=utf-8');
+      if (req.method === 'GET' && url.pathname === '/state')
+        return reply(200,snapshot(person,Math.max(0,Number(url.searchParams.get('after'))||0)));
+      if (req.method === 'GET' && url.pathname === '/events') {
+        res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-store','X-Accel-Buffering':'no'});
+        const viewer={res,person,after:Math.max(0,Number(url.searchParams.get('after'))||0),revision:-1};
+        viewers.add(viewer);res.write('retry: 1000\n\n');push(viewer);
+        const heartbeat=setInterval(()=>{if(!res.writableNeedDrain)res.write(': keepalive\n\n');},15000);
+        heartbeat.unref();res.on('drain',()=>push(viewer));
+        res.on('close',()=>{clearInterval(heartbeat);viewers.delete(viewer);});
+        return;
       }
       if (req.method === 'GET' && url.pathname === '/history') return reply(200, { messages: rows });
       const chunks = [];
@@ -169,7 +201,7 @@ function battle(space) {
         if (!owner) return reply(403, { error: '只有群主可以设置对局' });
         const next = Rooms.parseConfig(body.announcement);
         if (!next) return reply(400, { error: '对局设置无效' });
-        config = next;
+        config = next;changed();
         return reply(200, { ok: true });
       }
       return reply(404, { error: '没有这个页面' });

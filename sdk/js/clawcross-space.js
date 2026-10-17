@@ -73,7 +73,9 @@ class Space extends EventEmitter {
   endpoint() { return this.site?.listening ? { port: this.site.address().port, secret: this.secret } : {}; }
 
   close() {
+    if (this.closed) return;
     this.closed = true;
+    this.emit('closing');
     this.site?.close();
   }
 

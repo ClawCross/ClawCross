@@ -52,9 +52,11 @@ function reply(content,name){
     await expect(alice.locator('.cc-room-image')).toHaveCount(2,{timeout:15000});
     await expect(bobPage.locator('.cc-room-image')).toHaveCount(2,{timeout:10000});
     await expect(bobPage.locator('[data-start]')).toBeHidden();
+    await alice.evaluate(()=>{window.stableCreature=document.querySelector('.cc-room-image');window.stableMove=document.querySelector('.cc-room-move');});
     await bobPage.locator('#text').fill('准备好了');
     await bobPage.locator('[data-send]').click();
     await expect(alice.locator('#chat')).toContainText('准备好了',{timeout:10000});
+    expect(await alice.evaluate(()=>window.stableCreature===document.querySelector('.cc-room-image')&&window.stableMove===document.querySelector('.cc-room-move'))).toBe(true);
     // The summoner chat: @Alpha brings Alice's agent into the conversation; plain chat asks nobody.
     const before=test.asked.length;
     await expect(bobPage.locator('#bar button:visible')).toHaveCount(1);
@@ -94,6 +96,7 @@ function reply(content,name){
     await expect(bobPage.locator('.cc-room-hp').nth(1)).toHaveText('52 / 100 HP',{timeout:10000});
     expect(test.asked.length).toBe(askedBeforeClick);
     await expect(alice.locator('#text')).toHaveValue('');
+    await alice.setViewportSize({width:390,height:650});
     for(const [width,height] of [[1100,760],[390,844],[390,650],[320,568],[844,390],[1024,500],[768,600]]){
       await alice.setViewportSize({width,height});
       expect(await alice.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
@@ -103,7 +106,11 @@ function reply(content,name){
         const text=bubble.getBoundingClientRect(),sprite=image.getBoundingClientRect();
         return text.bottom<=sprite.top;
       })),'speech stays clear of creatures at '+width+'x'+height).toBe(true);
+      expect(await alice.evaluate(()=>document.querySelector('#room-root').scrollHeight<=innerHeight+1)).toBe(true);
+      const moveBounds=await alice.locator('.cc-room-move').evaluateAll(nodes=>nodes.map(node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width};}));
+      expect(moveBounds[0].y).toBe(moveBounds[1].y);expect(moveBounds[2].y).toBeGreaterThan(moveBounds[0].y);
       const buttons=alice.locator('.cc-room-move,[data-send],[data-agent-command]');
+      if(process.env.SPACE_APP_SCREENSHOTS){const fs=require('node:fs'),path=require('node:path');fs.mkdirSync(process.env.SPACE_APP_SCREENSHOTS,{recursive:true});await alice.screenshot({path:path.join(process.env.SPACE_APP_SCREENSHOTS,'battle-'+width+'x'+height+'.png')});}
       for(let i=0;i<await buttons.count();i++){
         await expect.poll(()=>buttons.nth(i).evaluate(node=>{node.scrollIntoView({block:'nearest'});const r=node.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return r.width>=30&&r.height>=22&&r.y>=0&&r.bottom<=innerHeight+1&&(node===hit||node.contains(hit));}),'button reachable at '+width+'x'+height).toBe(true);
       }

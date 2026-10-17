@@ -142,6 +142,11 @@ including expanded panels and dark mode, without calling models or touching live
 
 ## Example: creature battle
 
+The battle page receives state changes through SSE, with reconnect and a polling fallback
+for browsers without EventSource. Creature images and move buttons keep their DOM identity;
+changes update the existing scene, health bars and local animations. Portrait controls use a
+2×2 move grid; short landscape screens place the arena beside chat and controls.
+
 `examples/space-apps/creature-battle/server.js` keeps the match — the log of people's commands
 and agents' replies — in memory, decides who may act with the rules in `battle.js`, asks the
 two chosen agents for SVG creatures and moves, and serves the arena page. The owner picks two
