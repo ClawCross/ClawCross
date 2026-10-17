@@ -1,0 +1,21 @@
+const assert=require('node:assert/strict');
+const {Store}=require('../sdk/js/space-store');
+const {Garden}=require('../examples/space-apps/creature-battle/garden');
+const {Designer,MARKER}=require('../examples/space-apps/creature-battle/designer');
+(async()=>{
+ const store=new Store(null,{}),garden=new Garden(store);const pet=garden.act('alice','adopt',{species:'spark'}).creatures[0];
+ garden.act('alice','train',{focus:'attack'});const before=garden.view('alice').creatures[0];
+ const members=[{id:'alice',device:'a'},{id:'bob',device:'b'},{id:'alpha',device:'a',agent:true},{id:'beta',device:'b',agent:true}];
+ const designer=new Designer(store,garden,{ask:async()=>7},()=>({members}),()=>{});
+ await assert.rejects(()=>designer.ask({id:'alice',name:'Alice'},{agent:'beta',content:'改造'}));
+ await designer.ask({id:'alice',name:'Alice'},{agent:'alpha',creature:pet.id,content:'设计形象与火球动画'});
+ const request=store.data.designers.alice.pending.id;
+ const design={name:'星屿灵狐',svg:'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" fill="teal"/></svg>',level:999,xp:9999,actions:{火花:{motion:'jump',effect:'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 240"><circle r="20"><animateMotion path="M100 100L500 100" dur="1s"/></circle></svg>'}}};
+ assert.equal(designer.receive({agent:'beta',request:7,content:MARKER+JSON.stringify({request,design})}),true);assert.ok(store.data.designers.alice.pending);
+ designer.receive({agent:'alpha',request:7,content:MARKER+JSON.stringify({request,creature:pet.id,screen:'bag',say:'已保存',design})});
+ const after=garden.view('alice').creatures[0];assert.equal(after.name,'星屿灵狐');assert.equal(after.level,before.level);assert.equal(after.xp,before.xp);assert.equal(after.actions.火花.motion,'jump');assert.equal(designer.view('alice').ui.screen,'bag');assert.equal(designer.view('bob').messages.length,0);
+ await designer.ask({id:'alice',name:'Alice'},{agent:'alpha',creature:pet.id,content:'再次改造'});const last=store.data.designers.alice.pending.id;designer.cancel('alice');
+ designer.receive({agent:'alpha',request:7,content:MARKER+JSON.stringify({request:last,design:{name:'迟到的回复'}})});assert.equal(garden.view('alice').creatures[0].name,'星屿灵狐');
+ assert.throws(()=>garden.design('alice',pet.id,{svg:'<svg><script>alert(1)</script></svg>'},'alpha'));assert.equal(garden.view('alice').creatures[0].name,'星屿灵狐');
+ console.log('PASS: assistant ownership, reply correlation, safe design, protected growth, UI navigation, cancellation and private history');
+})().catch(e=>{console.error(e);process.exitCode=1;});

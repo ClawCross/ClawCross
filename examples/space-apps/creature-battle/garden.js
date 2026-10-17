@@ -30,7 +30,7 @@ function creature(species,level=1){
 function stats(c){return Object.fromEntries(keys.map(k=>[k,Math.round(c.base[k]*(1+.04*(c.level-1))+(c.training[k]||0)+form(c.level)*4)]));}
 function gain(c,xp){const before=c.level;c.xp+=xp;while(c.level<LEVEL_CAP&&c.xp>=c.level*40){c.xp-=c.level*40;c.level++;}if(c.level===LEVEL_CAP)c.xp=0;return c.level-before;}
 function unlocked(c){const species=SPECIES[c.species],list=species?species.moves.filter((_,i)=>c.level>=[1,3,5,10][i]):c.skills;return [...new Set([...c.skills,...list])];}
-function publicCreature(c){return{...c,stats:stats(c),nextXp:c.level*40,form:form(c.level),unlocked:unlocked(c),svg:c.species?art(c.species,c.level):c.svg};}
+function publicCreature(c){return{...c,stats:stats(c),nextXp:c.level*40,form:form(c.level),unlocked:unlocked(c),svg:c.svg||(c.species?art(c.species,c.level):'')};}
 function initial(){return{coins:60,balls:3,potions:3,creatures:[],selected:'',encounter:null,notice:'选一位伙伴，开始你的冒险。',requests:[]};}
 class Garden{
  constructor(store){this.store=store;if(!store.data.garden)this.store.update(d=>{d.garden={players:{},settled:[]};});}
@@ -59,12 +59,12 @@ class Garden{
     else if(action==='encounter'){
      if(c.energy<8)fail('先让伙伴休息一下。');c.energy-=8;p.selected=c.id;
      const names=Object.keys(SPECIES),wild=creature(names[crypto.randomInt(names.length)],Math.max(1,c.level-1+crypto.randomInt(3))),maxHp=55+wild.level*9;
-     p.encounter={id:crypto.randomUUID(),creature:c.id,wild:publicCreature(wild),wildHp:maxHp,wildMaxHp:maxHp,hp:stats(c).hp,maxHp:stats(c).hp,pp:c.skills.map(name=>['守住','自我再生'].includes(name)?3:12),turn:1,done:false,log:['在星光草原遇到了 '+wild.name+'！']};p.notice='探险开始了。';
+     p.encounter={id:crypto.randomUUID(),creature:c.id,wild:publicCreature(wild),wildHp:maxHp,wildMaxHp:maxHp,hp:stats(c).hp,maxHp:stats(c).hp,pp:c.skills.map(name=>['guard','heal'].includes((c.customSkills?.find(s=>s.name===name)||Battle.skillFor(name))?.type)?3:12),turn:1,done:false,log:['在星光草原遇到了 '+wild.name+'！']};p.notice='探险开始了。';
     }else{
      const e=p.encounter;if(!e||e.done||e.creature!==c.id)fail('当前没有进行中的探险。');let guard=false;
      if(action==='move'){
       const slot=body.slot;if(!Number.isInteger(slot)||slot<0||slot>3||e.pp[slot]<=0)fail('选择一项还有次数的技能。');
-      const name=c.skills[slot],move=Battle.skillFor(name)||c.customSkills?.find(s=>s.name===name);if(!move)fail('技能无效。');e.pp[slot]--;
+      const name=c.skills[slot],move=c.customSkills?.find(s=>s.name===name)||Battle.skillFor(name);if(!move)fail('技能无效。');e.pp[slot]--;
       if(move.type==='guard'){guard=true;e.log.push(c.name+' 进入防守。');}
       else if(move.type==='heal'){e.hp=Math.min(e.maxHp,e.hp+move.power);e.log.push(c.name+' 恢复了生命。');}
       else{const hit=Math.max(0,Math.round(move.power*Battle.effectiveness(move.type,e.wild.elements)*stats(c).attack/e.wild.stats.defense));e.wildHp=Math.max(0,e.wildHp-hit);e.log.push(c.name+' 使用 '+name+'，造成 '+hit+' 点伤害。');}
@@ -85,11 +85,25 @@ class Garden{
   });return this.view(id);
  }
  levelFor(agent){for(const p of Object.values(this.store.data.garden.players)){const c=p.creatures.find(c=>c.agent===agent);if(c)return{level:c.level,growth:c.training};}return{level:1,growth:{}};}
+ design(owner,id,raw,agent){
+  const p=this.ensure(owner),c=p.creatures.find(c=>c.id===id);if(!c)fail('只能设计自己背包里的精灵。');
+  if(p.encounter&&!p.encounter.done)fail('先完成当前探险，再修改设计。');
+  const svg=raw.svg===undefined?publicCreature(c).svg:Battle.safeSvg(raw.svg);
+  const skills=raw.skills===undefined?c.skills.map(name=>c.customSkills?.find(s=>s.name===name)||Battle.skillFor(name)):Battle.skillsFor(raw);
+  const elements=raw.elements===undefined?c.elements:raw.elements;
+  const base=raw.stats===undefined?c.base:Battle.statsFor(raw.stats);
+  if(!svg||!skills||skills.length!==4||skills.some(s=>!s)||!base||!Array.isArray(elements)||elements.length<1||elements.length>2||elements.some(t=>!Object.hasOwn(Battle.TYPES,t)))fail('设计没有通过形象、属性或技能校验，原设计已保留。');
+  const moves=skills.map(s=>s.name),actions=Battle.actionsFor({...c.actions,...raw.actions},moves,skills);
+  this.store.update(d=>{const pet=d.garden.players[owner].creatures.find(c=>c.id===id);
+   if(pet.agent&&!pet.arenaSource)pet.arenaSource=pet.svg;
+   Object.assign(pet,{name:raw.name?String(raw.name).slice(0,40):pet.name,svg,elements:[...new Set(elements)],base,skills:moves,customSkills:skills,actions,designer:agent});
+   d.garden.players[owner].notice='新设计已保存，等级和培养进度保持不变。';});
+ }
  capture(owner,agent,fighter){
   this.ensure(owner);const prior=this.store.data.garden.players[owner].creatures.find(c=>c.agent===agent);
-  if(prior?.svg===fighter.svg&&JSON.stringify(prior.customSkills)===JSON.stringify(fighter.skills))return;
+  if((prior?.arenaSource||prior?.svg)===fighter.svg&&JSON.stringify(prior.arenaSkills||prior.customSkills)===JSON.stringify(fighter.skills))return;
   this.store.update(d=>{const p=d.garden.players[owner];let c=p.creatures.find(c=>c.agent===agent);if(!c){c={...creature('spark'),species:null,agent};p.creatures.push(c);if(!p.selected)p.selected=c.id;}
-   Object.assign(c,{name:fighter.name,svg:fighter.svg,elements:fighter.elements,base:fighter.baseStats||fighter.stats,skills:fighter.moves,customSkills:fighter.skills});});
+   Object.assign(c,{name:fighter.name,svg:fighter.svg,arenaSource:fighter.svg,arenaSkills:fighter.skills,elements:fighter.elements,base:fighter.baseStats||fighter.stats,skills:fighter.moves,customSkills:fighter.skills,actions:fighter.actions||{}});});
  }
  reward(match,state,owners){
   if(state.winner===null||this.store.data.garden.settled.includes(match))return;

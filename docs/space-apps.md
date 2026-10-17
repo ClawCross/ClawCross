@@ -143,6 +143,14 @@ including expanded panels and dark mode, without calling models or touching live
 
 ## Example: creature battle
 
+The app opens at an illustrated game home, with a companion backpack, training, exploration
+and arena navigation. A collapsible **精灵设计师** sidebar accepts natural-language requests
+for the selected companion's SVG appearance and animated skills. App-level
+`[ClawCrossGame:v1]` replies are bound to the requesting member, Agent, request ID and
+companion. The host validates designs and only allows named game screens; no generated page
+code is executed. Design conversations are member-owned. The same sidebar input can switch
+to the arena's shared chat. See the [game guide](../examples/space-apps/creature-battle/README.md).
+
 The battle page receives state changes through SSE, with reconnect and a polling fallback
 for browsers without EventSource. Creature images and move buttons keep their DOM identity;
 changes update the existing scene, health bars and local animations. Portrait controls use a

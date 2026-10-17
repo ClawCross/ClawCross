@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /* 精灵对战 · Creature Battle — two agents each design a creature in SVG, with its own animated
  * skill effects, and fight on their people's commands; @-mention an agent in the chat to talk to it.
- * 简介：领养、训练、升级与野外捕获；Agent 设计精灵，玩家点技能或发指令对战，成长与对局自动存档。
+ * 简介：从浮岛首页启程，收集、培养与对战；侧栏设计师定制 SVG 精灵和技能动画，精灵背包与成长自动存档。
  *
  *   node examples/space-apps/creature-battle/server.js --server <group server> --key <app key>
  *
@@ -16,18 +16,20 @@ const Rooms = require('./room-sdk.js');
 const Battle = require('./battle.js');
 const {Store}=require('../../../sdk/js/space-store');
 const {Garden}=require('./garden');
+const {Designer}=require('./designer');
 const crypto=require('node:crypto');
 
-const PAGE_SCRIPTS = [path.join(__dirname, 'room-sdk.js'), path.join(__dirname, 'battle.js'),path.join(__dirname,'garden-ui.js')];
+const PAGE_SCRIPTS = ['room-sdk.js','battle.js','garden-ui.js','game-shell.js'].map(file=>path.join(__dirname,file));
 
 /** The page members see: the battle's own view, its chat and its input. Every URL is relative. */
 function page() {
   const scripts = PAGE_SCRIPTS.map((file) => '<script>' + fs.readFileSync(file, 'utf8').replace(/<\/script/gi, '<\\/script') + '</script>').join('\n');
   return `<!doctype html><html lang="zh"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>精灵对战</title><style>
+<title>星屿纪行 · 精灵对战</title><style>
 ${fs.readFileSync(path.join(__dirname, 'arena.css'), 'utf8')}
 ${fs.readFileSync(path.join(__dirname,'garden.css'),'utf8')}
+${fs.readFileSync(path.join(__dirname,'game-shell.css'),'utf8')}
 </style></head><body><main id="room-root"></main><section id="chat" aria-label="聊天"></section>
 <div id="bar"><div id="command-context" hidden><span>给我的精灵下指令</span><button type="button" id="cancel-command" aria-label="取消出招指令">×</button></div>
 <textarea id="text" rows="1" maxlength="2000" aria-label="消息"></textarea>
@@ -37,7 +39,7 @@ ${scripts}
 (function(){
   const root=document.getElementById('room-root'),chat=document.getElementById('chat'),text=document.getElementById('text');
   const hint=document.getElementById('hint'),send=document.querySelector('[data-send]'),context=document.getElementById('command-context');
-  const seen=new Set();let composer=null,after=0,revision=-1,epoch='',sending=false,command=false;
+  const seen=new Set();let composer=null,after=0,revision=-1,epoch='',sending=false,command=false,shell=null;
   async function api(address,body){
     // text/plain keeps a POST "simple": the sandboxed page skips the CORS preflight round trip.
     const response=await fetch(address,body===undefined?{}:{method:'POST',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:JSON.stringify(body)});
@@ -58,11 +60,12 @@ ${scripts}
     if(following)chat.scrollTop=chat.scrollHeight;
   }
   function paint(){
-    send.disabled=sending||command&&(!composer||!composer.canSubmit);
+    if(!shell)return;
+    send.disabled=sending||(command?(!composer||!composer.canSubmit):!shell.canSend());
     context.hidden=!command;
-    text.placeholder=command?'告诉我的精灵怎么行动…':'聊聊，或 @ Agent';
+    text.placeholder=command?'告诉我的精灵怎么行动…':shell.channel()==='assistant'?'描述你的精灵，或想要的技能动画…':'聊聊，或 @ Agent';
   }
-  function commandInput(){command=true;hint.textContent='';paint();text.focus();}
+  function commandInput(){shell?.openChat();command=true;hint.textContent='';paint();text.focus();}
   const client=new ClawCrossRooms.RoomClient({
     send:(content,mentions)=>api('send',{content,mentions}).then(refresh),
     configure:announcement=>api('configure',{announcement}).then(refresh),
@@ -71,26 +74,27 @@ ${scripts}
     onSuggest:value=>{commandInput();text.value=value;},onCommand:commandInput
   });
   const game=ClawCrossBattle.mount(root,client);
-  const garden=ClawCrossGarden.mount(root,api);
-  game.chatSlot.append(chat,document.getElementById('bar'));
+  shell=ClawCrossGameShell.mount(root,{chat,bar:document.getElementById('bar'),api,onChannel:value=>{if(value==='assistant')command=false;paint();}});
+  const garden=ClawCrossGarden.mount(root,api,{parent:shell.scene,toolbar:false,onClose:()=>shell.navigate('home'),onDesign:c=>shell.openDesigner(c)});
+  shell.attachGarden(garden);
   document.getElementById('cancel-command').onclick=()=>{command=false;paint();text.focus();};
   function receive(data){
     if(epoch!==data.epoch){epoch=data.epoch;revision=-1;}
     if(data.revision<revision)return;
     revision=data.revision;after=Math.max(after,data.cursor);
-    client.update(data.snapshot);show(data.snapshot.messages);game.update(client.snapshot);garden.update(data.snapshot.garden);
+    client.update(data.snapshot);show(data.snapshot.messages);game.update(client.snapshot);garden.update(data.snapshot.garden);shell.update(client.snapshot);
   }
   async function refresh(){receive(await api('state?after='+after));}
   async function run(button,task){
     const value=text.value.trim();if(!value)return;
-    if(sending)return;sending=true;hint.textContent='';paint();
+    if(sending)return;sending=true;hint.textContent='';text.value='';paint();
     let failure='';
-    try{await task(value);text.value='';command=false;}
-    catch(error){failure=error.message||String(error);}
+    try{await task(value);command=false;}
+    catch(error){failure=error.message||String(error);if(!text.value)text.value=value;}
     finally{sending=false;paint();if(failure)hint.textContent=failure;}
   }
   // The page is sandboxed without forms, so the buttons act on click.
-  send.addEventListener('click',()=>run(send,value=>command?game.submit(value):api('send',{content:value,mentions:[]}).then(refresh)));
+  send.addEventListener('click',()=>run(send,value=>command?game.submit(value):shell.submit(value).then(refresh)));
   text.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();if(!send.disabled)send.click();}});
   paint();
   // Network events update game state; local animations never wait for a polling timer.
@@ -115,6 +119,7 @@ function battle(space) {
   let roster = { title: '', members: [] };
   const viewers = new Set();
   let revision = 0;
+  const designer=new Designer(store,garden,space,()=>roster,changed);
 
   const view = () => roster.members.map((m) => ({ principal: m.id, name: m.name, is_agent: m.agent, device: m.device, platform: m.platform }));
   const member = (id) => roster.members.find((m) => m.id === id);
@@ -133,7 +138,7 @@ function battle(space) {
   function snapshot(person, after=0) {
     return {cursor:rows.length, revision, epoch, snapshot:{roomId:'space',title:roster.title,
       announcement:config?Rooms.encodeConfig(config):'',members:view(),messages:rows.slice(after),
-      actor:{key:person.id,name:person.name},isOwner:!!member(person.id)?.owner,garden:garden.view(person.id)}};
+      actor:{key:person.id,name:person.name},isOwner:!!member(person.id)?.owner,garden:garden.view(person.id),assistant:designer.view(person.id)}};
   }
   function push(viewer) {
     if(viewer.res.writableNeedDrain || viewer.revision===revision)return;
@@ -190,13 +195,13 @@ function battle(space) {
   }
 
   space.on('closing',()=>{for(const viewer of viewers)viewer.res.end();viewers.clear();});
-  space.on('agent', ({ agent, name, content }) => append(agent, name, content));
+  space.on('agent',message=>{if(!designer.receive(message))append(message.agent,message.name,message.content);});
   space.on('member', () => refreshRoster().catch(() => {}));
 
   async function handle(req, res) {
-    // The page itself may be cached; the match and actions never are.
+    // Reloading a mini app should always load its current UI and member state.
     const reply = (status, body, type = 'application/json; charset=utf-8') =>
-      res.writeHead(status, { 'Content-Type': type, 'Cache-Control': type.startsWith('text/html') ? 'private, max-age=600' : 'no-store' })
+      res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store' })
         .end(type.startsWith('application/json') ? JSON.stringify(body) : body);
     try {
       const url = new URL(req.url, 'http://space');
@@ -219,6 +224,8 @@ function battle(space) {
       const chunks = [];
       for await (const chunk of req) chunks.push(chunk);
       const body = JSON.parse(Buffer.concat(chunks).toString() || '{}');
+      if(req.method==='POST'&&url.pathname==='/assistant')return reply(200,await designer.ask(person,body));
+      if(req.method==='POST'&&url.pathname==='/assistant/cancel')return reply(200,designer.cancel(person.id));
       if(req.method==='POST'&&url.pathname.startsWith('/garden/')){const result=garden.act(person.id,url.pathname.slice(8),body);changed();return reply(200,result);}
       if (req.method === 'POST' && url.pathname === '/send') return reply(200, await send(person, body));
       if (req.method === 'POST' && url.pathname === '/configure') {
