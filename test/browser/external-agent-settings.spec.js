@@ -23,6 +23,7 @@ async function setup(page, platform = 'codex') {
   await page.evaluate(() => {window.currentSessionId = 'session-1';});
   await page.addStyleTag({path:path.resolve('src/frontend/static/css/external-agent-settings.css')});
   await page.addScriptTag({path:path.resolve('src/frontend/static/js/reasoning-levels.js')});
+  await page.addScriptTag({path:path.resolve('src/frontend/static/js/acp-launch-settings.js')});
   await page.addScriptTag({path:path.resolve('src/frontend/static/js/external-agent-settings.js')});
   return {writes, key};
 }
@@ -142,6 +143,26 @@ test('uncreated ACP profile opens settings without creation and creates only on 
   await page.locator('[data-save]').click();
   await expect(page.locator('[data-status]')).toContainText('已保存');
   expect(created).toBe(1);
+});
+
+test('custom ACP launcher is saved per Agent and selecting it does not create a session', async ({page}) => {
+  await setup(page);
+  let created=null;
+  await page.route('**/v1/agents/new-custom/capabilities',route=>route.fulfill({status:404,json:{detail:'no agent'}}));
+  await page.route('**/v1/agents',route=>{created=route.request().postDataJSON();return route.fulfill({json:{agent_id:'new-custom'}});});
+  await page.route('**/v1/agents/new-custom/acp-settings',route=>route.fulfill({json:{platform:'acp',transport:'acpx',settings:{}}}));
+  await page.evaluate(()=>{
+    window._ocChatMode='acp';window._acpTool='acp';
+    window.acpResolveSessionName=()=> 'new-custom';
+    window.studioEnsureAgent=(id,fields)=>fetch('/v1/agents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({agent_id:id,...fields})});
+  });
+  await page.evaluate(()=>openExternalAgentSettings());
+  expect(created).toBeNull();
+  await page.locator('#external-acp-launch [data-launch-value]').fill('node "/Apps/MyAgent/Server.js" --stdio');
+  await page.locator('[data-save]').click();
+  await expect(page.locator('[data-status]')).toContainText('已保存');
+  expect(created.platform).toBe('acp');
+  expect(created.meta.acp).toEqual({agent_name:'',agent_command:'node "/Apps/MyAgent/Server.js" --stdio'});
 });
 
 

@@ -235,9 +235,16 @@ def new_agent_config(body: AgentCreate) -> tuple[str, dict[str, Any]]:
         "headers": dict(body.headers),
         "meta": dict(body.meta),
     })
-    if driver == ACPX and body.tools is not None:
-        acp = {**(config['meta'].get('acp') or {}), 'tools':body.tools}
-        config['meta'] = {**config['meta'], 'acp':acp}
+    if driver == ACPX:
+        from external.acp_launcher import validate_launch_settings, launch_settings
+        acp = config['meta'].get('acp') or {}
+        if not isinstance(acp, dict):
+            raise ValueError('ACP settings must be an object')
+        if body.tools is not None:
+            acp = {**acp, 'tools':body.tools}
+        config['meta']['acp'] = validate_launch_settings(acp)
+        if config['platform'] == 'acp' and not any(launch_settings(config).values()):
+            raise ValueError('请填写自定义 ACP Agent 名称或启动命令')
     return driver, config
 
 
@@ -637,6 +644,16 @@ def create_agents_router(
         if unknown:
             raise HTTPException(status_code=400, detail=f"unknown settings for {agent.platform}: {unknown}")
         config = {**agent.config, **body.settings}
+        if agent.driver == ACPX and 'meta' in body.settings:
+            from external.acp_settings import validate_settings
+            meta = config.get('meta') or {}
+            acp = (meta.get('acp') or {}) if isinstance(meta,dict) else None
+            if not isinstance(acp,dict):
+                raise HTTPException(400,'ACP settings must be an object')
+            try:
+                launch={key:acp.get(key,'') for key in ('agent_command','agent_name')}
+                validate_settings(agent,launch)
+            except ValueError as exc:raise HTTPException(400,str(exc)) from exc
         try:validate_agent_connection(user,config,agent.driver)
         except (ValueError,LookupError) as exc:raise HTTPException(400,str(exc)) from exc
         if any(key in body.settings and body.settings[key]!=agent.config.get(key,'') for key in ('connection_id','remote_cwd')):

@@ -60,12 +60,14 @@ for await(const line of readline.createInterface({input:process.stdin})) {
  } else if(p.method==='session/prompt'||p.method==='session/new') process.exit(10);
 }''')
             helper=Path(__file__).resolve().parents[1]/'src/backend/external/native_history.mjs'
-            payload={'acpx':acpx,'platform':'codex','session_id':'old-session','cwd':tmp,'argv':['node',str(fake)],'timeout_ms':10000}
-            result=subprocess.run(['node',str(helper)],input=json.dumps(payload),capture_output=True,text=True,timeout=15)
-            self.assertEqual(result.returncode,0,result.stderr)
-            packets=[json.loads(line) for line in result.stdout.splitlines()]
-            self.assertEqual(packets[-1]['status'],'loaded',packets)
-            self.assertEqual(packets[-1]['events'],2)
+            for launch in ({'argv':['node',str(fake)]}, {'agent_command':f'node "{fake}"'}):
+                with self.subTest(launcher=launch):
+                    payload={'acpx':acpx,'platform':'acp','session_id':'old-session','cwd':tmp,'timeout_ms':10000,**launch}
+                    result=subprocess.run(['node',str(helper)],input=json.dumps(payload),capture_output=True,text=True,timeout=15)
+                    self.assertEqual(result.returncode,0,result.stderr)
+                    packets=[json.loads(line) for line in result.stdout.splitlines()]
+                    self.assertEqual(packets[-1]['status'],'loaded',packets)
+                    self.assertEqual(packets[-1]['events'],2)
 
 
 class HistoryStoreTests(unittest.IsolatedAsyncioTestCase):

@@ -29,6 +29,9 @@ _FALLBACK: frozenset[str] = frozenset(
         "aider",
         "claude-code",
         "gemini-cli",
+        "codebuddy",
+        "zcode",
+        "acp",
     }
 )
 
@@ -61,7 +64,7 @@ def acpx_agent_command_names() -> frozenset[str]:
         name = m.group(1).strip().lower()
         if name and name not in tools:
             tools.append(name)
-    return frozenset(tools) if tools else _FALLBACK
+    return frozenset(tools) | {'codebuddy', 'zcode', 'acp'} if tools else _FALLBACK
 
 
 def acpx_agent_tags_with_legacy() -> frozenset[str]:

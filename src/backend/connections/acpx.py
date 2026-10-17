@@ -17,6 +17,9 @@ class SSHAcpxAdapter(AcpxAdapter):
         from external.session import native_workspace_cwd
         self._cwd=native_workspace_cwd(agent)
         self._pending_initial_prompt={}
+        from external.acp_launcher import launch_settings
+        launch=launch_settings(agent.config)
+        self._agent_command=launch['agent_command'];self._agent_name=launch['agent_name']
 
     def _local_config_options(self, name):
         return self.agent.runtime.get('remote_config_options') or []
@@ -56,7 +59,7 @@ class SSHAcpxAdapter(AcpxAdapter):
 
     async def refresh_options(self, platform, name):
         try:
-            output=await self._run_json([platform,'sessions','show',name],timeout_sec=15,allow_nonzero=False,offline=True)
+            output=await self._run_json(self._command_prefix(tool=platform,session_key=name)+['sessions','show',name],timeout_sec=15,allow_nonzero=False,offline=True)
             record=json.loads(output)
             if isinstance(record,list):record=record[-1]
             return (record.get('acpx') or {}).get('config_options') or record.get('configOptions') or []

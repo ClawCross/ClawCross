@@ -173,6 +173,10 @@ ACP 运行状态轮询仅检查本机任务锁，不启动外部适配器；会�
 
 ### 外部 Agent 设置与工具通道
 
+Studio 和手机端的新建 Agent、外部 Agent 设置提供 CodeBuddy（`codebuddy --acp`）、ZCode（第三方桥接 `zcode-acp-server`）及“自定义 ACP”。自定义方式可填写 `acpx --agent` 后面的完整启动命令，或填写 `~/.acpx/config.json` 中已配置的 Agent 名称，不要求 acpx 内置该平台。配置保存在当前 Agent 的 `meta.acp.agent_command` / `agent_name`，两者择一；本机及 SSH 调用共用此配置。程序需自行安装并登录，保存配置不安装或启动程序；测试连接或发消息才启动。Windows 建议在 acpx 中配置名称及结构化 argv，再通过名称引用，避免路径引号歧义。
+
+启动方式参与 acpx 会话标识。已有连接固定原启动方式，以免误接其他程序或丢失历史；需要更换程序时新建 Agent。取消、关闭、会话追踪及读取 acpx 记录均使用该 Agent 的启动配置。模型、思考强度和原生模式仍由实际连接的 ACP 程序声明，不假定各平台支持相同设置。参见 [acpx 自定义 Agent](https://github.com/openclaw/acpx/blob/main/docs/custom-agents.md)、[CodeBuddy ACP](https://www.codebuddy.ai/docs/cli/acp)、[ZCode ACP 桥接](https://github.com/william0wang/zcode-acp)。
+
 统一使用 acpx，Codex 的 ACP 适配器连接 Codex App Server；不再额外解析原生 CLI 文本。`GET /v1/agents/{id}/capabilities` 从该 Agent 的本地 acpx 记录读取实际配置选项，不启动适配器。Studio 加号的运行设置、Agent 详情及手机设置支持原生模型、模式、思考强度和连接时限。Codex 的 `reasoning_effort` 与 Claude 的 `effort` 分别使用适配器返回的值；通过 `PATCH /v1/agents/{id}/acp-settings` 独立保存，下一轮只应用变化的设置。acpx 0.19 持久会话使用 `set`，`--config-option` 仅用于一次性 `exec`。
 
 ClawCross MCP 工具默认启用，可按 Agent 关闭。启用时每个 Agent 使用独立的凭证及 MCP 配置，连接器只暴露 `tool_search` 和 `tool_call`；工具搜索返回准确参数。服务端验证当前用户、Agent、活动调用、工具名单、每轮模式，并通过 WeBot 的工具执行节点执行命令规则和审核。身份参数不能由外部 Agent 覆盖。acpx 权限策略仅将带 ClawCross 完整命名空间的两个 MCP 包装器委托给后端审核，不对原生 shell 自动放行；否则 Claude 的只读批准会拒绝通用 MCP 包装器。原生 CLI 工具继续使用自身的沙盒与审批；ClawCross 的自动审核不接管原生 shell。群聊通过 MCP 发送时使用相同的身份与群成员校验；未启用时提供已安装 Python 的 CLI 命令，避免 `uv run` 因缓存写入触发额外审核。

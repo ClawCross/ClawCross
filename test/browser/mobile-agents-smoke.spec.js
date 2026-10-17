@@ -467,7 +467,7 @@ test('mobile accepts Y/N as scoped approval controls for external agents without
   expect(errors).toEqual([]);
 });
 
-test('contact creation preserves drafts and offers persona and scoped ClawCross tools', async ({page})=>{
+for (const platform of ['qwen','acp']) test('contact creation preserves drafts and scoped tools: '+platform, async ({page})=>{
   await page.setViewportSize({width:390,height:844});
   await stub(page,{posts:[],control:[]});
   await page.route('**/proxy_acpx_status',route=>route.fulfill({json:{tools:['codex','claude','gemini','qwen']}}));
@@ -482,7 +482,8 @@ test('contact creation preserves drafts and offers persona and scoped ClawCross 
   });
   await expect(page.locator('#create-agent-name')).toBeVisible();
   await page.locator('#create-agent-companion').evaluate(el=>el.closest('details').open=true);
-  await page.locator('#create-agent-companion').selectOption('qwen');
+  await page.locator('#create-agent-companion').selectOption(platform);
+  if(platform==='acp') await page.locator('#ca-acp-launch [data-launch-value]').fill('node "/Apps/MyAgent/Server.js" --stdio');
   await page.locator('#create-agent-name').fill('Research');
   await page.locator('#create-agent-panel-acp .create-agent-advanced > summary').click();
   await page.locator('#ca-acp-persona').fill('Help me research');
@@ -499,7 +500,7 @@ test('contact creation preserves drafts and offers persona and scoped ClawCross 
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await page.screenshot({path:'/tmp/clawcross-mobile-agent-create.png'});
   await page.locator('#ca-acp-submit').click();
-  expect(await page.evaluate(()=>window.__createdFields)).toEqual({name:'Research',platform:'qwen',persona:'Help me research',tools:['read_file','send_to_group'],meta:{acp:{clawcross_tools:true,tools:['read_file','send_to_group']}},creation_template:'personal'});
+  expect(await page.evaluate(()=>window.__createdFields)).toEqual({name:'Research',platform,persona:'Help me research',tools:['read_file','send_to_group'],meta:{acp:{clawcross_tools:true,tools:['read_file','send_to_group'],...(platform==='acp'?{agent_name:'',agent_command:'node "/Apps/MyAgent/Server.js" --stdio'}:{})}},creation_template:'personal'});
   expect(errors).toEqual([]);
 });
 

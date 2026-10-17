@@ -16,9 +16,11 @@ let overrides = {};
 try {
   const config = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.acpx', 'config.json'), 'utf8'));
   for (const [name, value] of Object.entries(config.agents || {})) {
-    if (typeof value?.command === 'string') overrides[name] = value.command;
+    if (typeof value?.command === 'string' || Array.isArray(value?.command)) overrides[name] = value.command;
   }
 } catch {}
+const agentId = input.agent_name || input.platform;
+if (input.agent_command) overrides[agentId] = input.agent_command;
 const moduleRoot = path.dirname(path.dirname(path.dirname(binary)));
 const registry = registryModule.createAgentRegistry({overrides, resolvePackageRoot: name => {
   const candidate = path.join(moduleRoot, name);
@@ -36,7 +38,7 @@ const registry = registryModule.createAgentRegistry({overrides, resolvePackageRo
   } catch {}
   return undefined;
 }});
-const inspection = registry.inspect(input.platform);
+const inspection = registry.inspect(agentId);
 const argv = input.argv || (inspection?.launch.kind === 'installed' ? inspection.launch.argv : null);
 if (!argv?.length) {
   process.stdout.write(JSON.stringify({type:'result', status:'unavailable', detail:'ACP adapter is not installed; no components were downloaded.'})+'\n');

@@ -39,13 +39,14 @@
 <link rel="stylesheet" href="/static/css/connections.css?v=20261011">
 <script src="/static/js/connections.js?v=20261011"></script>
 <script src="/static/js/mobile-rooms.js?v=20261017-fullscreen-fix"></script>
-<script src="/static/js/external-agent-settings.js?v=20261011-ssh"></script>
+<script src="/static/js/acp-launch-settings.js?v=20261017-custom-acp"></script>
+<script src="/static/js/external-agent-settings.js?v=20261017-custom-acp"></script>
 <script src="/static/js/model-profiles.js?v=20261004-effort-slider"></script>
 <script src="/static/js/approval-ui.js?v=20261004-fold-approval"></script>
 <link rel="stylesheet" href="/static/css/channel-setup.css?v=2">
 <script src="/static/js/channel-setup.js?v=20261004-tool-result"></script>
 <link rel="stylesheet" href="/static/css/native-session-browser.css?v=2">
-<script src="/static/js/native-session-browser.js?v=20261006-acpx"></script>
+<script src="/static/js/native-session-browser.js?v=20261017-custom-acp"></script>
 <script src="/static/js/markdown-shared.js?v=20261003-inline-approval"></script>
 <script src="/static/js/tinyfish-live-shared.js"></script>
 <script src="/static/vendor/pretext.global.js?v=20260402-pretext"></script>
@@ -8478,7 +8479,7 @@ function chooseMobileCompanion(platform) {
   if (platform !== 'webot') mobileCompanionPlatform = platform;
   setCreateAgentMode(platform === 'webot' ? 'webot' : 'acp');
   const field=document.getElementById('ca-acp-platform');
-  if (field && platform !== 'webot') field.value=platform;
+  if (field && platform !== 'webot') { field.value=platform; AcpLaunchSettings.mount('ca-acp-launch',platform); }
 }
 const mobileGroupRoles = {
   companion:{zh:'聊天伙伴',en:'Chat companion',hintZh:'一起聊天，把话题说清楚',hintEn:'Join conversations and clarify ideas',persona:'你是一位友好的群聊伙伴，用清楚自然的语言交流，认真回应问题，帮助大家把话题说清楚。'},
@@ -8584,6 +8585,7 @@ async function renderCreateAgentAcpPanel() {
   panel.innerHTML = `
     <div class="create-agent-form">
       <select id="ca-acp-platform" hidden>${platformOpts}</select>
+      <div id="ca-acp-launch"></div>
       <div class="create-agent-component"><p>${esc(_currentLang === 'zh' ? '使用 Codex、Claude 等伙伴需要连接组件，可在这里下载。请先在主机上登录所选服务；所选程序也会使用自己的权限设置。' : 'Codex, Claude and other companions need a connector, available here. Sign in to the selected service on the host first; that program also uses its own permission settings.')}</p>${componentControlMarkup('acpx')}</div>
       <details class="create-agent-advanced"><summary>${esc(t('agent_creation_advanced'))}</summary>
         <label class="side-panel-label" for="ca-acp-persona">${esc(t('agent_creation_persona'))}</label>
@@ -8603,6 +8605,7 @@ async function renderCreateAgentAcpPanel() {
   companion.innerHTML='<option value="webot">'+esc(_currentLang==='zh'?'ClawCross 内置伙伴':'ClawCross companion')+'</option>'+platformOpts;
   native.value=mobileCompanionPlatform;
   companion.value=mobileCompanionPlatform;
+  AcpLaunchSettings.mount('ca-acp-launch',mobileCompanionPlatform);
   void MobileAgentCreationTools.mount('ca-acp');
   const tagSel = document.getElementById('ca-acp-tag');
   const tagCust = document.getElementById('ca-acp-tag-custom');
@@ -8641,7 +8644,9 @@ async function mobileSubmitCreateAcpAgent() {
   if (btn) { btn.dataset.orig = btn.textContent; btn.textContent = t('adding'); }
   try {
     // The runtime name is the new agent's number: its session in that runtime.
-    const agent = await registerAgent({ name, platform, ...mobileCreateAgentExtras('ca-acp'), ...(runtime ? { agent_id: runtime } : {}) }, team, _mobilePickedTag('ca-acp-tag', 'ca-acp-tag-custom'));
+    const launch = AcpLaunchSettings.value('ca-acp-launch', platform);
+    const extras = mobileCreateAgentExtras('ca-acp');
+    const agent = await registerAgent({ name, platform, ...extras, meta:{...extras.meta,acp:{...extras.meta?.acp,...launch}}, ...(runtime ? { agent_id: runtime } : {}) }, team, _mobilePickedTag('ca-acp-tag', 'ca-acp-tag-custom'));
     closeCreateAgentModal();
     invalidateContactsPrefetch();
     await startPrivateChat(agent.agent_id);
@@ -12435,6 +12440,7 @@ function onAddAgentTeamChanged() {
 
 
 const MOBILE_ACP_PLATFORM_FALLBACK = [
+  'codebuddy', 'zcode', 'acp',
   'openclaw', 'codex', 'claude', 'claude-code', 'gemini', 'gemini-cli', 'aider', 'cursor', 'copilot', 'droid',
   'iflow', 'kilocode', 'kimi', 'kiro', 'opencode', 'pi', 'qoder', 'qwen', 'trae',
 ];
@@ -12781,6 +12787,8 @@ function getPlatformBadgeInfo(raw) {
   const map = {
     openclaw: { short: 'OC', label: 'OpenClaw' },
     codex: { short: 'CX', label: 'Codex' },
+    codebuddy: { short: 'CB', label: 'CodeBuddy' },
+    zcode: { short: 'ZC', label: 'ZCode' },
     claudecode: { short: 'CC', label: 'Claude Code' },
     claude: { short: 'CL', label: 'Claude' },
     gemini: { short: 'GM', label: 'Gemini' },
@@ -12788,7 +12796,7 @@ function getPlatformBadgeInfo(raw) {
     cursor: { short: 'CU', label: 'Cursor' },
     aider: { short: 'AI', label: 'Aider' },
     http: { short: 'API', label: 'HTTP API' },
-    acp: { short: 'ACP', label: 'ACP' },
+    acp: { short: 'ACP', label: '自定义 ACP / Custom ACP' },
     unknown: { short: '???', label: _currentLang === 'zh' ? '未知平台' : 'Unknown' },
     default: { short: 'EXT', label: _currentLang === 'zh' ? '外部' : 'External' },
   };

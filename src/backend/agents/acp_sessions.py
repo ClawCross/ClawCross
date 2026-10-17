@@ -20,7 +20,17 @@ async def list_all_sessions(user_id: str, acpx_bin: str | None) -> dict:
             for agent in owned.values() if agent.config.get('connection_id')]
     if not acpx_bin:return {'status':'success','acpx_sessions':rows}
     adapter = get_acpx_adapter()
-    for platform in sorted({key[0] for key,agent in owned.items() if not agent.config.get('connection_id')}):
+    from external.acp_launcher import launch_settings
+    custom = [agent for agent in owned.values() if not agent.config.get('connection_id') and any(launch_settings(agent.config).values())]
+    for agent in custom:
+        from external.acp import adapter as select_adapter
+        for row in await select_adapter(agent).list_sessions(tool=agent.platform):
+            if row['name'] == runtime_session(agent):
+                rows.append({"platform": agent.platform, "session_id": row.get("acpxRecordId"),
+                             "name": row["name"], "agent_id": agent.agent_id,
+                             "agent_name": agent.name, "cwd": row.get("cwd"),
+                             "last_used_at": row.get("lastUsedAt"), "closed": row.get("closed", False)})
+    for platform in sorted({key[0] for key,agent in owned.items() if not agent.config.get('connection_id') and agent not in custom}):
         for row in await adapter.list_sessions(tool=platform):
             agent = owned.get((platform, row["name"]))
             if agent is None or agent.config.get('connection_id'):
@@ -61,7 +71,9 @@ async def close_acp_session(platform: str, session_name: str, cwd: str = "", *, 
             return {'status':'success','platform':owned.platform,'session_name':session_name}
         except RuntimeError as exc:return {'status':'error','reason':str(exc)}
     # The runtime owns cwd; never let a browser select another user's record.
-    adapter = get_acpx_adapter(cwd=owned.runtime['acp_cwd']) if owned.runtime.get('acp_cwd') else get_acpx_adapter()
+    from external.acp_launcher import launch_settings
+    launch = launch_settings(owned.config)
+    adapter = get_acpx_adapter(cwd=owned.runtime.get('acp_cwd'), **launch) if any(launch.values()) or owned.runtime.get('acp_cwd') else get_acpx_adapter()
     cwd = adapter._cwd
     platform = canonical_platform(owned.platform)
     if not acpx_bin:
@@ -79,7 +91,8 @@ async def close_acp_session(platform: str, session_name: str, cwd: str = "", *, 
     cmd = [acpx_bin]
     if acpx_cwd:
         cmd.extend(["--cwd", acpx_cwd])
-    cmd.extend([platform, "sessions", "close", session_name])
+    prefix = adapter._command_prefix(tool=platform, session_key=session_name) if any(launch.values()) else [platform]
+    cmd.extend(prefix + ["sessions", "close", session_name])
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,

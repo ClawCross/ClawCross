@@ -30,7 +30,8 @@ def adapter(agent: Agent | None = None):
     if not binary_path("acpx"):
         raise ControlError("acpx is not installed")
     try:
-        return get_acpx_adapter(cwd=session.native_workspace_cwd(agent)) if agent else get_acpx_adapter()
+        from external.acp_launcher import launch_settings
+        return get_acpx_adapter(cwd=session.native_workspace_cwd(agent), **launch_settings(agent.config)) if agent else get_acpx_adapter()
     except AcpxError as exc:
         raise ControlError(str(exc)) from exc
 

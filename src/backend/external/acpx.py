@@ -262,10 +262,12 @@ def _default_acpx_cwd() -> str:
 class AcpxAdapter:
     """Minimal async wrapper around acpx CLI sessions/prompt."""
 
-    def __init__(self, *, cwd: str | None = None):
+    def __init__(self, *, cwd: str | None = None, agent_command: str = '', agent_name: str = ''):
         from ops.components import binary_path
         self._acpx_bin = binary_path("acpx")
         self._cwd = cwd or _default_acpx_cwd()
+        self._agent_command = agent_command
+        self._agent_name = agent_name
         self._pending_initial_prompt: dict[str, str] = {}
         if not self._acpx_bin:
             raise AcpxError("acpx binary not found in PATH")
@@ -573,7 +575,7 @@ await fn(process.argv[2]);'''
             raise AcpxError("sessions list is not supported for openclaw agent mode")
         # Agent-side session/list starts the adapter and may enumerate unrelated
         # Codex/Claude histories. Status probes only need acpx's local records.
-        raw = await self._run_json([tool_n, "sessions", "list", "--local"], timeout_sec=10, allow_nonzero=False)
+        raw = await self._run_json(self._command_prefix(tool=tool_n, session_key='') + ["sessions", "list", "--local"], timeout_sec=10, allow_nonzero=False)
         text = raw.strip()
         if not text:
             return []
@@ -619,7 +621,7 @@ await fn(process.argv[2]);'''
 
     async def list_native_sessions(self, *, tool: str, cursor: str = '') -> dict:
         """Explicit native metadata query; never used by passive status polling."""
-        args = [tool, 'sessions', 'list']
+        args = self._command_prefix(tool=tool, session_key='') + ['sessions', 'list']
         if cursor:
             args.extend(['--cursor', cursor])
         raw = await self._run_json(args, timeout_sec=30, allow_nonzero=False,
@@ -649,7 +651,9 @@ await fn(process.argv[2]);'''
             candidate = Path(self._acpx_bin).parent.parent / 'acpx' / 'dist' / 'cli.js'
             if candidate.is_file():
                 package_cli = candidate
-        payload = json.dumps({'acpx': str(package_cli), 'platform': tool, 'session_id': session_id, 'cwd': cwd}).encode()
+        prefix = self._command_prefix(tool=tool, session_key='')
+        launch = {'agent_command': prefix[1]} if prefix[0] == '--agent' else {'agent_name': prefix[0]}
+        payload = json.dumps({'acpx': str(package_cli), 'platform': tool, 'session_id': session_id, 'cwd': cwd, **launch}).encode()
         try:
             output, _ = await asyncio.wait_for(proc.communicate(payload), timeout=50)
         except (asyncio.TimeoutError, asyncio.CancelledError):
@@ -1289,8 +1293,16 @@ await fn(process.argv[2]);'''
             raise AcpxError(f"acpx failed ({returncode}): {msg}")
         return out
 
-    @staticmethod
-    def _command_prefix(*, tool: str, session_key: str) -> list[str]:
+    def _command_prefix(self, *, tool: str, session_key: str) -> list[str]:
+        if getattr(self, '_agent_name', ''):
+            return [self._agent_name]
+        if getattr(self, '_agent_command', ''):
+            return ['--agent', self._agent_command]
+        from external.acp_launcher import LAUNCH_PRESETS
+        if tool in LAUNCH_PRESETS and LAUNCH_PRESETS[tool]['agent_command']:
+            return ['--agent', LAUNCH_PRESETS[tool]['agent_command']]
+        if tool == 'acp':
+            raise AcpxError('请先配置自定义 ACP Agent 名称或启动命令')
         aliases = {
             "claude-code": "claude",
             "gemini-cli": "gemini",
@@ -1514,13 +1526,13 @@ await fn(process.argv[2]);'''
         return None
 
 
-_adapter_singletons: dict[str, AcpxAdapter] = {}
+_adapter_singletons: dict[tuple[str, str, str], AcpxAdapter] = {}
 
 
-def get_acpx_adapter(*, cwd: str | None = None) -> AcpxAdapter:
-    key = os.path.realpath(cwd or _default_acpx_cwd())
+def get_acpx_adapter(*, cwd: str | None = None, agent_command: str = '', agent_name: str = '') -> AcpxAdapter:
+    key = (os.path.realpath(cwd or _default_acpx_cwd()), agent_command, agent_name)
     adapter = _adapter_singletons.get(key)
     if adapter is None:
-        adapter = AcpxAdapter(cwd=key)
+        adapter = AcpxAdapter(cwd=key[0], agent_command=agent_command, agent_name=agent_name)
         _adapter_singletons[key] = adapter
     return adapter

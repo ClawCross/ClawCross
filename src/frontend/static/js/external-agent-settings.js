@@ -54,8 +54,10 @@
     let uncreated = Boolean(card.uncreated);
     const createIfNeeded = async () => {
       if (!uncreated) return;
+      const launch = AcpLaunchSettings.value('external-acp-launch', card.platform);
       await studioEnsureAgent(id, {platform: card.platform,connection_id:overlay.querySelector('#external-connection').value,
-        remote_cwd:overlay.querySelector('#external-remote-cwd').value.trim()});
+        remote_cwd:overlay.querySelector('#external-remote-cwd').value.trim(), meta:{acp:launch}});
+      card.launcher = launch;
       card.connection_id=overlay.querySelector('#external-connection').value;
       card.remote_cwd=overlay.querySelector('#external-remote-cwd').value.trim();
       uncreated = false;
@@ -68,11 +70,13 @@
     const settings = card.settings || {};
     const connections=window.DeviceConnections ? await DeviceConnections.list().catch(()=>[]) : [];
     const options = Array.isArray(card.config_options) ? card.config_options : [];
+    const platformLabel = {acp:'自定义 ACP',codebuddy:'CodeBuddy',zcode:'ZCode'}[card.platform] || card.platform;
     overlay.innerHTML = `<section class="external-settings-dialog">
-      <header><h2 id="external-settings-title">${escape(card.platform)} · Agent 设置</h2><button type="button" data-close aria-label="关闭">×</button></header>
+      <header><h2 id="external-settings-title">${escape(platformLabel)} · Agent 设置</h2><button type="button" data-close aria-label="关闭">×</button></header>
       ${uncreated ? '<p role="status" data-uncreated>此 Agent 尚未创建。点击下方创建按钮后才会创建。</p>' : ''}
       <p>设置仅用于这个 Agent，从下一轮调用生效。原生模式和权限由外部 Agent 执行。</p>
       <div class="external-settings-fields">
+      <div id="external-acp-launch"></div>
       <label>运行设备<select id="external-connection"><option value="">本机</option>${connections.map(row=>`<option value="${escape(row.id)}" ${card.connection_id===row.id?'selected':''}>${escape(row.name)} · SSH</option>`).join('')}</select></label>
       <label>远端原生工作目录<input id="external-remote-cwd" value="${escape(card.remote_cwd||'')}" placeholder="留空使用远端独立工作目录"></label>
       <button type="button" data-devices>管理设备与 SSH 连接</button>
@@ -126,6 +130,12 @@
       select.innerHTML='<option value="">本机</option>'+rows.map(row=>`<option value="${escape(row.id)}">${escape(row.name)} · SSH</option>`).join('');select.value=selected;
     };
     const saveConnection = async () => {
+      const launch={agent_name:'',agent_command:'',...AcpLaunchSettings.value('external-acp-launch',card.platform)};
+      const previous=card.launcher || {agent_name:'',agent_command:''};
+      if(launch.agent_name!==(previous.agent_name||'') || launch.agent_command!==(previous.agent_command||'')) {
+        const saved=await request('/v1/agents/'+encodeURIComponent(id)+'/acp-settings','PATCH',launch);
+        card={...card,...saved,launcher:launch};cache.delete(id);
+      }
       const connection_id=overlay.querySelector('#external-connection').value;
       const remote_cwd=overlay.querySelector('#external-remote-cwd').value.trim();
       if(connection_id!==(card.connection_id||'') || remote_cwd!==(card.remote_cwd||'')) {
@@ -195,6 +205,7 @@
     };
     overlay.querySelector('[data-workspaces]').onclick = () => { close(); openWorkspaceSettings(id); };
     document.body.appendChild(overlay);
+    AcpLaunchSettings.mount('external-acp-launch',card.platform,card.launcher || {},Boolean(card.native_workspace?.pinned));
     overlay.querySelector('[data-close]').focus();
     if (!uncreated && !refreshed) overlay.querySelector('[data-test]').click();
   }

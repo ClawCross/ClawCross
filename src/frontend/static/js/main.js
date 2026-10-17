@@ -9043,6 +9043,9 @@ var _acpLastTranscriptKey = '';
 function _acpDisplayLabel(tool) {
     const tName = String(tool || '').trim();
     if (!tName) return '';
+    if (tName === 'acp') return currentLang === 'zh-CN' ? '自定义 ACP' : 'Custom ACP';
+    if (tName === 'codebuddy') return 'CodeBuddy';
+    if (tName === 'zcode') return 'ZCode';
     return tName.charAt(0).toUpperCase() + tName.slice(1);
 }
 
@@ -9065,7 +9068,7 @@ function ocRenderAcpTabs(tools) {
         btn.type = 'button';
         btn.className = 'oc-switcher-tab oc-tab-with-acp-ico';
         btn.dataset.acpTool = tName;
-        btn.onclick = () => ocSwitchTo('acp', tName);
+        btn.onclick = async () => { await ocSwitchTo('acp', tName); if(tName==='acp') await openExternalAgentSettings(); };
         btn.innerHTML =
             '<span class="oc-acp-ico ' + _acpIconClass(tName) + '" aria-hidden="true"></span>' +
             '<span>' + escapeHtml(_acpDisplayLabel(tName)) + '</span>';
@@ -13108,10 +13111,11 @@ async function deleteTeamMember(agentId) {
 }
 
 function addExtOnPlatformChange() {
-    // External agents are ACP tools (codex, claude, openclaw, …).
+    AcpLaunchSettings.mount('add-ext-acp-launch', document.getElementById('add-ext-platform').value);
 }
 
 const ADD_EXT_PLATFORM_FALLBACK = [
+    'codebuddy', 'zcode', 'acp',
     'openclaw',
     'codex',
     'claude',
@@ -13138,6 +13142,7 @@ function addExtPlatformLabel(value) {
     const v = String(value || '').trim().toLowerCase();
     if (!v) return '';
     const map = {
+        codebuddy: 'CodeBuddy', zcode: 'ZCode', acp: '自定义 ACP / Custom ACP',
         openclaw: 'OpenClaw',
         codex: 'Codex',
         claude: 'Claude',
@@ -13204,6 +13209,7 @@ async function populateAddExtPlatformOptions(selected = '') {
     sel.innerHTML = '<option value="">加载中...</option>';
     const options = await fetchAddExtPlatformOptions();
     sel.innerHTML = renderAddExtPlatformOptions(options, selected);
+    addExtOnPlatformChange();
 }
 
 async function populateAddExtTagSelectOptions() {
@@ -13316,6 +13322,7 @@ function showAddTeamMemberModal() {
                             <option value="">加载中...</option>
                         </select>
                     </label>
+                    <div id="add-ext-acp-launch"></div>
                 </div>
                 <div class="orch-modal-btns" style="margin-top:12px;">
                     <button onclick="document.getElementById('add-team-member-overlay').remove()" style="padding:6px 14px;border-radius:6px;border:1px solid #d1d5db;background:white;color:#374151;cursor:pointer;font-size:12px;">取消</button>
@@ -13611,7 +13618,8 @@ async function addExternalMember(event) {
     
     try {
         // The new agent's number (its session), when given
-        await createTeamAgent({ name, platform, ...(globalName ? { agent_id: globalName } : {}) }, name, tag);
+        const launch = AcpLaunchSettings.value('add-ext-acp-launch', platform);
+        await createTeamAgent({ name, platform, meta:{acp:launch}, ...(globalName ? { agent_id: globalName } : {}) }, name, tag);
 
         if (typeof orchToast === 'function') {
             orchToast('成员添加成功');

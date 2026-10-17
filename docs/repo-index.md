@@ -236,11 +236,12 @@ For external AI agent communication via the Agent Client Protocol:
 | Path | Purpose |
 |---|---|
 | `src/backend/external/acpx.py` | Singleton `AcpxAdapter` wrapping the `acpx` CLI; manages sessions and prompt execution |
+| `src/backend/external/acp_launcher.py`, `src/frontend/static/js/acp-launch-settings.js` | Per-Agent custom launch command or configured acpx alias; shared Studio/mobile form and CodeBuddy/ZCode presets |
 | `src/backend/external/acp.py` | the only acpx consumer: the runtime of codex, claude-code, gemini … agents |
 | `src/backend/external/session.py`, `src/backend/external/history.py` | what the external runtimes share: the session named after the agent id, the identity prompt, the exchange log |
 | `src/backend/agents/platforms.py` | which platforms are ACP tools (the `acpx` agent list) |
 
-Known ACP tools (external AI agents): `openclaw`, `codex`, `claude`, `gemini`, `aider`.
+Known ACP tools (external AI agents): `openclaw`, `codex`, `claude`, `gemini`, `aider`, plus the discovered acpx list. `codebuddy` and `zcode` provide launch presets; `acp` accepts any installed ACP command or configured acpx alias.
 
 `acpx` is optional. Install it explicitly with `bash launch/run.sh install-component acpx` before using ACP agents.
 

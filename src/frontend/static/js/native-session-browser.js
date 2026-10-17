@@ -26,6 +26,7 @@
         void fetch('/proxy_acpx_status').then(response=>response.json()).then(data=>{
             if (!overlay.isConnected) return;
             for (const platform of data.tools || []) {
+                if (platform==='acp') continue; // Custom launchers are configured when creating an Agent.
                 if (![...select.options].some(option=>option.value===platform)) {
                     const option=document.createElement('option'); option.value=platform; option.textContent=platform; select.append(option);
                 }
