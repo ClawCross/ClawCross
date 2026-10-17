@@ -77,35 +77,15 @@
     let state = await readStatus();
     if (state.public_domain) return state.public_domain;
     if (!window.confirm(text(
-      '没有配置公网域名。生成邀请链接需要下载并启动 Cloudflare Tunnel，继续吗？',
-      'No public domain is configured. Creating this invite requires downloading and starting Cloudflare Tunnel. Continue?'
+      '将连接 ClawCross Hub，获得可访问完整页面的专属子域名，并生成邀请链接。继续吗？',
+      'Connect to ClawCross Hub for a device subdomain with full web access and create this invitation?'
     ))) throw new Error(text('已取消生成邀请链接', 'Invite creation cancelled'));
 
-    let componentResponse = await fetch('/proxy_components/cloudflared');
-    let component = await componentResponse.json();
-    if (!componentResponse.ok) throw new Error(component.error || 'Cloudflare Tunnel 状态查询失败');
-    if (!component.installed) {
-      status.textContent = text('正在下载并安装 Cloudflare Tunnel…', 'Downloading and installing Cloudflare Tunnel…');
-      componentResponse = await fetch('/proxy_components/cloudflared', {
-        method: 'POST', headers: {'X-Requested-With': 'ClawCross'}
-      });
-      component = await componentResponse.json();
-      if (!componentResponse.ok) throw new Error(component.error || 'Cloudflare Tunnel 安装失败');
-      for (let i = 0; i < 120 && component.state === 'installing'; i++) {
-        await wait(1000);
-        componentResponse = await fetch('/proxy_components/cloudflared');
-        component = await componentResponse.json();
-        if (!componentResponse.ok) throw new Error(component.error || 'Cloudflare Tunnel 状态查询失败');
-      }
-      if (!component.installed) throw new Error(component.detail || 'Cloudflare Tunnel 安装失败');
-    }
-
-    state = await readStatus();
     if (!state.running) {
-      status.textContent = text('正在启动 Cloudflare Tunnel…', 'Starting Cloudflare Tunnel…');
-      const startResponse = await fetch('/proxy_tunnel/start', {method: 'POST'});
-      const started = await startResponse.json().catch(() => ({}));
-      if (!startResponse.ok) throw new Error(started.error || 'Cloudflare Tunnel 启动失败');
+      status.textContent = text('正在连接 ClawCross Hub…', 'Connecting to ClawCross Hub…');
+      const response = await fetch('/proxy_tunnel/start', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:'hub'})});
+      const started = await response.json();
+      if (!response.ok) throw new Error(started.error || 'Hub 连接失败');
     }
     for (let i = 0; i < 60; i++) {
       await wait(1500);
@@ -403,25 +383,25 @@
       const actions = el('div', 'gn-actions');
       actions.append(copy, create, stop);
       const publicNote = el('p', 'gn-note', text(
-        '若没有公网域名，生成邀请时会提示并启动 Cloudflare Tunnel。也可以先在这里单独下载 cloudflared。',
-        'If no public domain is configured, invite creation will prompt before starting Cloudflare Tunnel. You can also install cloudflared here first.'
+        '没有公网域名时，可连接 ClawCross Hub 获得专属 HTTPS 子域名，无需下载组件。Cloudflare 可在公网设置中手动选择。',
+        'Connect to ClawCross Hub for a device HTTPS subdomain without extra downloads. Cloudflare remains an option in public access settings.'
       ));
       const cloudflare = el('div', 'gn-component-control');
       if (typeof window.componentControlMarkup === 'function') {
-        cloudflare.innerHTML = window.componentControlMarkup('cloudflared');
+        cloudflare.textContent = text('默认服务：ClawCross Hub','Default service: ClawCross Hub');
       }
       const tunnelStatus = el('p', 'gn-note');
-      const closeTunnel = button(text('关闭公网通道 · Cloudflare', 'Close public tunnel · Cloudflare'), 'quiet', () => {
+      const closeTunnel = button(text('关闭公网通道', 'Close public tunnel'), 'quiet', () => {
         if (!window.confirm(text(
-          '关闭本机的 Cloudflare Tunnel？通过此通道访问的页面和群聊会断线；自行配置的反向代理仍由服务器管理。',
-          'Close this device’s Cloudflare Tunnel? Pages and groups using it will disconnect. Separately configured reverse proxies remain managed by the server.'
+          '关闭本机公网连接？通过此通道访问的页面和群聊会断线，设备地址保留供下次连接。',
+          'Close this device’s public connection? Pages and groups using it will disconnect. The device address is retained for next time.'
         ))) return;
         busy(closeTunnel, view.status, text('正在关闭公网通道…', 'Closing the public tunnel…'), async () => {
           const response = await fetch('/proxy_tunnel/stop', {method:'POST'});
           const data = await response.json();
           if (!response.ok) throw new Error(data.error || response.statusText);
           await refreshTunnelControl();
-          view.status.textContent = text('Cloudflare 公网通道已关闭。', 'The Cloudflare public tunnel is closed.');
+          view.status.textContent = text('公网通道已关闭。', 'The public connection is closed.');
         });
       });
       closeTunnel.hidden = true;
@@ -432,8 +412,8 @@
           if (!response.ok || !view.root.isConnected) return;
           closeTunnel.hidden = !state.running;
           tunnelStatus.textContent = state.running
-            ? text('本机 Cloudflare 公网通道正在运行', 'This device’s Cloudflare public tunnel is running')
-            : text('本机 Cloudflare 公网通道已关闭', 'This device’s Cloudflare public tunnel is closed');
+            ? text('本机公网通道正在运行', 'This device’s public connection is running')
+            : text('本机公网通道已关闭', 'This device’s public connection is closed');
         } catch (_) { tunnelStatus.textContent = text('公网通道状态暂时不可用', 'Public tunnel status is unavailable'); }
       }
       const steps = el('ul', 'gn-steps');

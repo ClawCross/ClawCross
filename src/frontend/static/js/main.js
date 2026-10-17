@@ -5806,7 +5806,9 @@ function renderSettings(settings) {
     html += `<div class="settings-group-title" onclick="this.parentElement.classList.toggle('collapsed')">${t('settings_group_tunnel')} <span class="settings-chevron">▼</span></div>`;
     html += `<div class="settings-group-body">`;
     html += `<div class="settings-field" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">`;
-    html += componentControlMarkup('cloudflared');
+    html += `<label>服务 <select id="tunnel-provider" onchange="document.getElementById('tunnel-cloudflare-download').hidden=this.value!=='cloudflare'"><option value="hub">ClawCross Hub</option><option value="cloudflare">Cloudflare</option></select></label>`;
+    html += `<p style="font-size:12px;opacity:.75">ClawCross Hub 提供专属 HTTPS 子域名，无需额外下载。开启后远程访问仍需登录；设备须保持运行。</p>`;
+    html += `<div id="tunnel-cloudflare-download" hidden>${componentControlMarkup('cloudflared')}</div>`;
     html += `<span id="tunnel-status-text" style="font-size:13px;color:#888;">⏳ ${t('loading')}...</span>`;
     html += `<button id="tunnel-toggle-btn" onclick="toggleTunnel()" style="padding:4px 14px;border-radius:6px;border:1px solid #444;background:#222;color:#ddd;cursor:pointer;font-size:12px;" disabled>${t('tunnel_start')}</button>`;
     html += `</div>`;
@@ -6857,6 +6859,8 @@ async function _syncPublicToggle() {
     try {
         const r = await fetch('/proxy_tunnel/status');
         const data = await r.json();
+        const provider=document.getElementById('tunnel-provider');
+        if(provider){if(!provider.dataset.loaded || data.running)provider.value=data.provider || 'hub';provider.dataset.loaded='1';provider.disabled=!!data.running;document.getElementById('tunnel-cloudflare-download').hidden=provider.value!=='cloudflare';}
         const publicDomain = (data.public_domain || '').trim();
         _tunnelRunning = !!data.running;
         _tunnelPublicDomain = publicDomain;
@@ -6892,7 +6896,8 @@ async function handlePublicToggle(checked) {
     }
     try {
         const endpoint = checked ? '/proxy_tunnel/start' : '/proxy_tunnel/stop';
-        await fetch(endpoint, { method: 'POST' });
+        const response=await fetch(endpoint, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:document.getElementById('tunnel-provider')?.value})});
+        const started=await response.json();if(!response.ok)throw new Error(started.error || response.statusText);
         // Poll for status update
         const maxPolls = checked ? 30 : 10;
         const interval = checked ? 2000 : 1000;
@@ -6903,7 +6908,7 @@ async function handlePublicToggle(checked) {
             if (checked && sd.running && sd.public_domain) break;
             if (!checked && !sd.running) break;
         }
-    } catch (e) { /* ignore */ }
+    } catch (e) { alert(e.message); }
     await _syncPublicToggle();
     // Also refresh the tunnel section inside settings body if present
     if (typeof _refreshTunnelStatus === 'function') _refreshTunnelStatus();
@@ -6914,6 +6919,8 @@ async function _refreshTunnelStatus() {
     try {
         const r = await fetch('/proxy_tunnel/status');
         const data = await r.json();
+        const provider=document.getElementById('tunnel-provider');
+        if(provider){if(!provider.dataset.loaded || data.running)provider.value=data.provider || 'hub';provider.dataset.loaded='1';provider.disabled=!!data.running;document.getElementById('tunnel-cloudflare-download').hidden=provider.value!=='cloudflare';}
         const publicDomain = (data.public_domain || '').trim();
         _tunnelRunning = !!data.running;
         _tunnelPublicDomain = publicDomain;
@@ -6981,8 +6988,9 @@ async function toggleTunnel() {
         btn.textContent = t('tunnel_starting');
         _showTunnelUrlState(document.getElementById('tunnel-url-row'), document.getElementById('tunnel-url-input'), '');
         try {
-            await fetch('/proxy_tunnel/start', { method: 'POST' });
-        } catch (e) { /* ignore */ }
+            const response=await fetch('/proxy_tunnel/start', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:document.getElementById('tunnel-provider')?.value})});
+            const started=await response.json();if(!response.ok)throw new Error(started.error || response.statusText);
+        } catch (e) { alert(e.message);await _refreshTunnelStatus();return; }
         // Poll until running with URL
         for (let i = 0; i < 30; i++) {
             await new Promise(r => setTimeout(r, 2000));

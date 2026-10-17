@@ -136,7 +136,7 @@ For the full install guide (OpenClaw, Antigravity, MiniMax, WSL, manual CLI conf
 - **Multimodal I/O** — images, files, voice input, TTS, provider-aware audio defaults
 - **Automation** — scheduled tasks and long-running workflow execution
 - **TinyFish** — internet search agent powered by TinyFish Web Agent API
-- **Remote access** — Cloudflare Tunnel with login-token / password flows
+- **Remote access** — Hub device subdomains with login-token / password flows; optional Cloudflare
 - **Flow distribution** — browse and share workflows on [ClawcrossHub](https://clawcross.net)
 
 ## What You Can Do Today
@@ -160,7 +160,7 @@ For the full install guide (OpenClaw, Antigravity, MiniMax, WSL, manual CLI conf
 | **Automation** | Scheduled tasks and long-running workflow execution |
 | **TinyFish** | Internet search agent for web crawling and structured data extraction |
 | **Flow distribution** | Browse and share flows on [ClawcrossHub](https://clawcross.net) |
-| **Remote access** | Cloudflare Tunnel plus login-token / password flows |
+| **Remote access** | Hub device subdomains plus login-token / password flows; optional Cloudflare |
 
 ## Flow Distribution Platform
 

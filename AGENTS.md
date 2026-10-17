@@ -1,6 +1,6 @@
 ---
 name: "Clawcross"
-description: "A multi-agent orchestration platform with visual workflow (OASIS). Create and configure agents (WeBot, ACP tools such as Codex, Claude Code and OpenClaw, external API), orchestrate them into Teams, build new Teams with ClawCross Creator, and design workflows via visual canvas. Supports Team conversations, OASIS Town with living GraphRAG memory, scheduled tasks, Telegram/QQ bots, TinyFish internet search agent, and Cloudflare Tunnel for remote access."
+description: "A multi-agent orchestration platform with visual workflow (OASIS). Create and configure agents (WeBot, ACP tools such as Codex, Claude Code and OpenClaw, external API), orchestrate them into Teams, build new Teams with ClawCross Creator, and design workflows via visual canvas. Supports Team conversations, OASIS Town with living GraphRAG memory, scheduled tasks, Telegram/QQ bots, TinyFish internet search agent, and Hub device subdomains for remote access (Cloudflare optional)."
 user-invokable: true
 compatibility:
   - "deepseek"
@@ -12,7 +12,7 @@ compatibility:
   - "antigravity"
   - "minimax"
 
-argument-hint: "[RECOMMENDED] Configure LLM_API_KEY and LLM_BASE_URL in the first-login wizard. [MODEL] The wizard can discover available models when LLM_MODEL is empty. [OPTIONAL] TTS_MODEL/TTS_VOICE, STT_MODEL/WHISPER_MODEL, TINYFISH_*, TELEGRAM_BOT_TOKEN/QQ_APP_ID, PORT_*. [INTEGRATIONS] Importing OpenClaw's LLM settings needs --with-openclaw; Cloudflare Tunnel needs --tunnel and an installed cloudflared binary."
+argument-hint: "[RECOMMENDED] Configure LLM_API_KEY and LLM_BASE_URL in the first-login wizard. [MODEL] The wizard can discover available models when LLM_MODEL is empty. [OPTIONAL] TTS_MODEL/TTS_VOICE, STT_MODEL/WHISPER_MODEL, TINYFISH_*, TELEGRAM_BOT_TOKEN/QQ_APP_ID, PORT_*. [INTEGRATIONS] Importing OpenClaw's LLM settings needs --with-openclaw; Hub public access needs --tunnel; optional Cloudflare requires TUNNEL_PROVIDER=cloudflare and an installed binary."
 
 metadata:
   version: "1.1.0"
@@ -99,7 +99,7 @@ The goal is a **silent, non-interactive install**. NEVER repeatedly ask the user
    - Warns if `LLM_MODEL` is empty; strict mode with `CLAWCROSS_REQUIRE_LLM_MODEL=1` stops before launching services
    - Imports OpenClaw LLM config (read-only) only with `--with-openclaw` and only when ClawCross has no real API key
      (it will NOT overwrite a user-provided real `LLM_API_KEY`)
-   - Starts locally by default; `--tunnel` uses an already installed cloudflared binary for remote access
+   - Starts locally by default; `--tunnel` connects outbound to ClawCross Hub for a persistent device subdomain; Cloudflare is explicitly selectable
    - Prints a local Magic link, plus a remote link when the explicit tunnel is ready
 2. **Do NOT ask the user for API credentials before starting** unless `LLM_MODEL` discovery requires a configured provider/key. The frontend provides a first-login setup wizard where the user can configure API Key, provider, and model values.
 3. After `start`, **always tell the user the access URLs** — copy them from the command output into your reply (do not assume the user saw the terminal):
@@ -118,7 +118,7 @@ Do not add AI tool or model names as authors or `Co-authored-by` trailers. Prese
 Preserve the model's cacheable prefix. Generate `tool_search.desc` from each Agent's intrinsic tool table, with deterministic names, descriptions and ordering. Mode changes and temporary `enabled_tools` selection belong in the runtime block; they must not rewrite descriptions or reshape API tool definitions. Search and execution still enforce the current restrictions. A deliberate change to the intrinsic table updates its catalog. Guard this with `test/test_prompt_prefix_stability.py`.
 
 4. Do not install or configure OpenClaw unless the user explicitly asks for it.
-5. Cloudflare Tunnel requires `start --tunnel` or `start-tunnel` and an already installed cloudflared binary.
+5. Public access requires `start --tunnel` or `start-tunnel`. Hub is the default and needs no additional binary. Cloudflare requires `TUNNEL_PROVIDER=cloudflare` and an already installed cloudflared binary.
 6. On Windows, prefer the PowerShell flow. Use WSL only if the user prefers it.
 7. Audio settings should follow the detected LLM provider when left blank:
    - OpenAI: `TTS_MODEL=gpt-4o-mini-tts`, `TTS_VOICE=alloy`, `STT_MODEL=whisper-1`

@@ -63,7 +63,7 @@ The simplest path is `start`. It creates the runtime `.env` when needed. An empt
 # Linux / macOS
 bash launch/run.sh start          # 准备 Python/venv/核心依赖，初始化 .env，启动服务
 # Optional flags (same semantics as Windows run.ps1):
-#   --tunnel         Use an already installed cloudflared binary for a public tunnel.
+#   --tunnel         Connect to ClawCross Hub for a persistent public device subdomain.
 #   --with-openclaw  Import LLM settings from an existing OpenClaw install when ClawCross has no key.
 bash launch/run.sh start --tunnel --with-openclaw   # explicit integrations
 # → Open http://127.0.0.1:51209 (or use the printed Magic link; remote/HTTPS needs the remote link)
@@ -96,7 +96,7 @@ bash launch/run.sh install-component cloudflared
 bash launch/run.sh install-component srt          # optional command sandbox
 ```
 
-Use the same subcommands with `launch/run.ps1` on Windows. `channels` installs legacy QQ/Telegram and media packages; NoneBot adapters are installed separately. `acpx`, WeClaw, and cloudflared are placed under `CLAWCROSS_BIN_DIR` when installed through this interface. `start` may use a cloudflared binary already present on the machine, but never downloads it.
+Use the same subcommands with `launch/run.ps1` on Windows. `channels` installs legacy QQ/Telegram and media packages; NoneBot adapters are installed separately. `acpx`, WeClaw, and cloudflared are placed under `CLAWCROSS_BIN_DIR` when installed through this interface. Hub is the default public provider and needs no extra binary. Explicit Cloudflare selection uses an existing binary and never downloads it at startup.
 SRT is also explicit and stays off until a session selects `command_sandbox=srt`. On Linux it needs `bwrap`, `socat`, and `rg`; on macOS it needs `rg`. Windows additionally requires the separately elevated `srt windows-install` setup.
 
 The `start` command automatically:
@@ -105,7 +105,7 @@ The `start` command automatically:
 3. Imports LLM fields from an existing OpenClaw installation (read-only) only with `--with-openclaw` and only when the local key is empty or placeholder.
 4. Warns if `LLM_MODEL` is missing; set `CLAWCROSS_REQUIRE_LLM_MODEL=1` to require one before launching services
 5. Starts all services after the model check passes
-6. Prints a local Magic link. With `--tunnel`, it also starts an already installed Cloudflare Quick Tunnel and prints a remote link when available. Startup never downloads cloudflared.
+6. Prints a local Magic link. With `--tunnel`, it connects to ClawCross Hub and prints the device HTTPS link when available. Select `TUNNEL_PROVIDER=cloudflare` to use an installed cloudflared binary instead.
 
 After startup, the frontend setup wizard handles remaining LLM configuration via the web UI. The wizard detects local OpenClaw and Antigravity-Manager and offers one-click import buttons.
 
@@ -113,7 +113,7 @@ After startup, the frontend setup wizard handles remaining LLM configuration via
 
 | Flag | When to use | Behavior |
 |------|-------------|----------|
-| **`--tunnel`** | Public access is explicitly requested. | Background `start` uses an already installed cloudflared binary. Foreground mode remains local. |
+| **`--tunnel`** | Public access is explicitly requested. | Background `start` uses Hub by default; Cloudflare is selectable through `TUNNEL_PROVIDER`. Foreground mode remains local. |
 | **`--with-openclaw`** | The user wants ClawCross to reuse OpenClaw's LLM settings. | Reads OpenClaw's config into `config/.env` while ClawCross has no key; never writes OpenClaw. |
 | **`--no-tunnel`, `--no-openclaw`** | Older scripts or automation still pass these flags. | Accepted for compatibility; they preserve the local-only default. |
 

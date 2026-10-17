@@ -3735,14 +3735,28 @@ def proxy_tunnel_status():
     # PUBLIC_DOMAIN may point at a separately managed reverse proxy such as
     # Caddy, so it remains useful even when the Cloudflare tunnel is stopped.
     domain = _get_public_domain()
-    return jsonify({"running": running, "pid": pid, "public_domain": domain})
+    from common.hub_access import tunnel_state
+    state=tunnel_state() if running else {}
+    settings=read_env_all(str(ENV_FILE))
+    provider=state.get('provider') or settings.get('TUNNEL_PROVIDER') or 'hub'
+    if state.get('provider')=='hub':domain=state.get('public_domain','') if state.get('phase')=='connected' else ''
+    return jsonify({"running": running, "pid": pid, "public_domain": domain,
+                    "provider":provider,"phase":state.get('phase','connected' if running else 'stopped'),
+                    "error":state.get('error','')})
 
 
 @app.route("/proxy_tunnel/start", methods=["POST"])
 def proxy_tunnel_start():
-    """Start cloudflare tunnel in background."""
+    """Start the selected public entry only after an explicit user action."""
+    body=request.get_json(silent=True) or {}
+    if not isinstance(body,dict):return jsonify(error='Invalid request'),400
+    provider=body.get('provider') or read_env_all(str(ENV_FILE)).get('TUNNEL_PROVIDER') or 'hub'
+    if provider not in {'hub','cloudflare'}:return jsonify(error='Invalid tunnel provider'),400
     running, pid = _tunnel_running()
     if running:
+        from common.hub_access import tunnel_state
+        current=tunnel_state().get('provider') or read_env_all(str(ENV_FILE)).get('TUNNEL_PROVIDER') or 'hub'
+        if provider!=current:return jsonify(error='请先关闭当前公网通道，再选择其他服务。'),409
         domain = _get_public_domain()
         return jsonify({"status": "already_running", "pid": pid, "public_domain": domain})
 
@@ -3755,12 +3769,14 @@ def proxy_tunnel_start():
         import sys as _sys
         runtime_env = set_subprocess_env(os.environ)
         preflight = _subprocess.run(
-            [_sys.executable, _TUNNEL_SCRIPT, "--check"],
+            [_sys.executable, _TUNNEL_SCRIPT, "--provider",provider,"--check"],
             cwd=runtime_working_dir, env=runtime_env,
             capture_output=True, text=True, timeout=10,
         )
         if preflight.returncode:
             return jsonify({"error": (preflight.stderr or preflight.stdout).strip()}), 400
+        from dotenv import set_key
+        set_key(str(ENV_FILE),'TUNNEL_PROVIDER',provider)
         log_fh = open(log_file, "w")
         popen_kwargs = dict(
             stdout=log_fh,
@@ -3776,7 +3792,7 @@ def proxy_tunnel_start():
             popen_kwargs["start_new_session"] = True
 
         try:
-            proc = _subprocess.Popen([_sys.executable, _TUNNEL_SCRIPT], **popen_kwargs)
+            proc = _subprocess.Popen([_sys.executable, _TUNNEL_SCRIPT,'--provider',provider], **popen_kwargs)
         finally:
             log_fh.close()
         return jsonify({"status": "started", "pid": proc.pid})

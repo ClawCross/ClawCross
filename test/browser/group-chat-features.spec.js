@@ -114,6 +114,22 @@ async function holdMessage(locator) {
   await locator.evaluate(target => target.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerType:'touch',pointerId:7,isPrimary:true})));
 }
 
+test('an invitation enables Hub without installing a tunnel binary',async({page})=>{
+  await mobileSetup(page);
+  let enabled=false,installs=0;
+  await page.route('**/proxy_tunnel/status',route=>route.fulfill({json:{running:enabled,provider:'hub',phase:enabled?'connected':'stopped',public_domain:enabled?'https://d-example.clawcross.net':''}}));
+  await page.route('**/proxy_tunnel/start',route=>{
+    expect(route.request().postDataJSON()).toEqual({provider:'hub'});enabled=true;
+    return route.fulfill({json:{status:'started'}});
+  });
+  await page.route('**/proxy_components/cloudflared',route=>{if(route.request().method()==='POST')installs++;return route.fulfill({json:{installed:false}});});
+  page.on('dialog',dialog=>{expect(dialog.message()).toContain('ClawCross Hub');return dialog.accept();});
+  await page.evaluate(()=>GroupNetworkUI.sharing('rg_one'));
+  await page.getByRole('button',{name:'生成邀请链接',exact:true}).click();
+  await expect(page.getByAltText('扫描二维码加入群聊')).toBeVisible();
+  expect(enabled).toBe(true);expect(installs).toBe(0);
+});
+
 for(const mobile of [false,true]) {
   test(`group features: ${mobile?'mobile':'desktop'} rename, search, quote and invite QR`,async({page})=>{
     await page.setViewportSize(mobile?{width:390,height:844}:{width:1200,height:850});

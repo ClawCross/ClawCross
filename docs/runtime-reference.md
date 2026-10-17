@@ -48,6 +48,8 @@ Side systems
 
 ### Startup readiness
 
+公网入口由用户显式开启，默认使用 ClawCross Hub：设备主动建立 WSS 连接，获得持久的设备子域名，可访问完整前端、SSE 对话和附件。设备凭证保存在工作区外的 `config/hub-tunnel.json`（0600），状态保存在 `run/hub-tunnel-status.json`。断线自动重连；关闭后保留设备地址，不重放中断的请求。远程请求仍需正常登录，不能获得本机直连权限。Hub URL 通过 `CLAWCROSS_HUB_URL` 配置；Cloudflare 通过 `TUNNEL_PROVIDER=cloudflare` 显式选择并单独安装 cloudflared。固定 `PUBLIC_DOMAIN` 不被覆盖，开启的 Hub 地址仅在运行期间优先使用。
+
 The launcher starts the five core services concurrently and records each process's
 time to readiness. Bundled tool definitions are read from their existing FastMCP
 registrations in the Agent API process, sharing Python imports. Actual tool calls

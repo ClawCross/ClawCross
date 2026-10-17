@@ -31,7 +31,11 @@ test('Studio plus keeps runtime settings while global settings expose contextual
   await page.route('**/proxy_settings_full',route=>route.fulfill({contentType:'application/json',body:JSON.stringify({settings:{}})}));
   await page.evaluate(()=>openSettings());
   await expect(page.locator('#settings-external-agents [data-component="acpx"] button')).toBeVisible();
-  for(const name of ['weclaw','nonebot','channels','cloudflared']) await expect(page.locator(`#settings-body [data-component="${name}"] button`)).toBeVisible();
+  for(const name of ['weclaw','nonebot','channels']) await expect(page.locator(`#settings-body [data-component="${name}"] button`)).toBeVisible();
+  await expect(page.locator('#tunnel-provider')).toHaveValue('hub');
+  await expect(page.locator('#settings-body [data-component="cloudflared"] button')).toBeHidden();
+  await page.locator('#tunnel-provider').selectOption('cloudflare');
+  await expect(page.locator('#settings-body [data-component="cloudflared"] button')).toBeVisible();
   await expect(page.locator('#settings-body details.settings-group > summary')).toContainText('高级连接参数与原始配置');
   expect(installs).toEqual([]);
   await page.locator('#settings-body [data-component="weclaw"] button').click();

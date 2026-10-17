@@ -27,6 +27,13 @@ def is_quick_tunnel_domain(value: str | None) -> bool:
 
 
 def read_public_domain(env_file: Path | None = None, *, tunnel_running: bool | None = None) -> str:
+    # The enabled device tunnel owns a runtime URL; fixed user configuration is
+    # never overwritten, so stopping the tunnel restores the configured entry.
+    if env_file is None or Path(env_file) == runtime_paths.ENV_FILE:
+        from .hub_access import tunnel_state
+        state = tunnel_state()
+        if state.get('phase') == 'connected' and state.get('provider') == 'hub':
+            return normalize_public_domain(state.get('public_domain'))
     env_file = env_file if env_file is not None else runtime_paths.ENV_FILE
     values = dotenv_values(str(env_file))
     domain = normalize_public_domain(values.get("PUBLIC_DOMAIN", os.getenv("PUBLIC_DOMAIN")))

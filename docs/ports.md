@@ -107,12 +107,12 @@
 ```
 公网用户
   ↓ HTTPS
-[单个 Cloudflare 临时隧道]
+[Hub 设备子域名 / 显式选择的 Cloudflare 通道]
   └─→ 127.0.0.1:51209 (frontend) → PUBLIC_DOMAIN
 ```
 
 - 此隧道只暴露前端（`src/frontend/server.py`）；Bark 保持本地访问
-- 每次仅生成一个公网地址；重启后地址可能变化。`cloudflared` 必须预先安装，启动脚本不会下载
+- 默认 Hub 通过设备主动建立的 WSS 连接转发完整前端，设备地址在重连后保留，无需额外二进制。Cloudflare 需显式选择并预先安装 cloudflared，其临时地址可能变化，启动脚本不会下载
 - 所有内部服务（Agent、Scheduler、OASIS）**不对外暴露**
 - 前端到内部服务的通信全部通过前端（`src/frontend/server.py`）反向代理
 

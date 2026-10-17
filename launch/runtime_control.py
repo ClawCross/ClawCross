@@ -218,7 +218,7 @@ def _start_tunnel(env: dict[str, str]) -> bool:
     check = subprocess.run([sys.executable, str(ROOT / "launch/tunnel.py"), "--check"],
                            cwd=ROOT, env=env, capture_output=True, text=True, check=False)
     if check.returncode:
-        print("Cloudflare Tunnel skipped: cloudflared is unavailable. Install it explicitly if needed.")
+        print((check.stderr or check.stdout).strip() or 'Public tunnel is unavailable.')
         return False
     _stop_pid(TUNNEL_PID)
     _clear_public_domain()
@@ -229,10 +229,13 @@ def _start_tunnel(env: dict[str, str]) -> bool:
         process = subprocess.Popen([sys.executable, str(ROOT / "launch/tunnel.py")], cwd=WORKSPACE_DIR,
                                    env=env, stdin=subprocess.DEVNULL, stdout=log,
                                    stderr=subprocess.STDOUT, **kwargs)
-    print("Starting Cloudflare Tunnel from the installed cloudflared binary...", flush=True)
+    print("Connecting the public tunnel (Hub by default)...", flush=True)
     deadline = time.monotonic() + 65
     while time.monotonic() < deadline:
-        domain = (_read_env().get("PUBLIC_DOMAIN") or "").strip()
+        from src.backend.common.public_access import read_public_domain
+        from src.backend.common.hub_access import tunnel_state
+        state=tunnel_state()
+        domain=state.get('public_domain','') if env.get('TUNNEL_PROVIDER','hub')=='hub' else read_public_domain(ENV_FILE,tunnel_running=True)
         if domain and domain != "wait to set" and process.poll() is None:
             print(f"Mobile access: {domain}/mobile_group_chat")
             return True

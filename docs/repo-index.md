@@ -61,6 +61,7 @@ Read these first for setup or environment changes:
 | `launch/run.sh` | Linux / macOS uv and Python bootstrap |
 | `launch/run.ps1` | Windows uv and Python bootstrap |
 | `launch/runtime_control.py` | shared Python start, stop, status, and tunnel lifecycle |
+| `src/backend/ops/hub_tunnel.py`, `src/backend/common/hub_access.py` | outbound Hub device entry, private credentials and runtime URL; `launch/tunnel.py` selects Hub or explicit Cloudflare |
 | `launch/environment.py` | core Python dependencies and explicit optional component installs |
 | `config/requirements-channels.txt` | optional QQ, Telegram, and media dependencies |
 | `src/backend/ops/setup/configure.py` | `.env` initialization and configuration logic |

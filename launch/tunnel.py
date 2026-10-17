@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run one Cloudflare Quick Tunnel for the frontend without downloading binaries."""
+"""User-enabled public entry: Hub by default, Cloudflare explicitly selectable."""
 
 from __future__ import annotations
 
@@ -196,13 +196,28 @@ def start_tunnels() -> None:
 
 if __name__ == "__main__":
     try:
-        if sys.argv[1:] == ["--check"]:
-            _tunnel_command()
-            print("Cloudflare Quick Tunnel is ready to start", flush=True)
-        elif not sys.argv[1:]:
-            start_tunnels()
+        import argparse
+        parser=argparse.ArgumentParser()
+        parser.add_argument('--provider',choices=['hub','cloudflare'],default=_setting('TUNNEL_PROVIDER') or 'hub')
+        parser.add_argument('--check',action='store_true')
+        args=parser.parse_args()
+        if args.provider=='cloudflare':
+            if args.check:
+                _tunnel_command()
+                print('Cloudflare Quick Tunnel is ready to start',flush=True)
+            else:start_tunnels()
         else:
-            raise RuntimeError("Usage: tunnel.py [--check]")
+            import asyncio
+            sys.path.insert(0,str(PROJECT_ROOT/'src'/'backend'))
+            from ops.hub_tunnel import check, run
+            origin=_setting('CLAWCROSS_HUB_URL') or 'https://clawcross.net'
+            if args.check:
+                asyncio.run(check(origin))
+                print('ClawCross Hub is ready to connect',flush=True)
+            else:
+                _claim_pid()
+                try:asyncio.run(run(origin,int(_setting('PORT_FRONTEND') or '51209')))
+                finally:cleanup()
     except Exception as exc:
         print(f"Tunnel unavailable: {exc}", file=sys.stderr, flush=True)
         raise SystemExit(1)
