@@ -4986,7 +4986,6 @@ async function switchToSession(sessionId, force = false, options = {}) {
     const quiet = options.quiet === true;
     const closeSidebar = options.closeSidebar === true;
     if (!force && sessionId === currentSessionId) { if (closeSidebar) closeSessionSidebar(); return; }
-    if (!quiet) showPageLoading();
     // 切换前先重置按钮到 idle 状态（避免旧 session 的 streaming/busy 状态残留）
     setStreamingUI(false);
     setSystemBusyUI(false);
@@ -5002,6 +5001,9 @@ async function switchToSession(sessionId, force = false, options = {}) {
     sessionStorage.setItem('sessionId', sessionId);
     updateSessionDisplay();
     if (closeSidebar) closeSessionSidebar();
+    // The page stays usable while loading; a later switch makes this one's results stale.
+    const contextKey = chatRunContextKey();
+    const stale = () => chatRunContextKey() !== contextKey;
 
     // ACP 模式：左侧会话只影响未命名时的 acpx 会话键与本地转写，不加载 WeBot 历史
     if (_ocChatMode === 'acp' && _acpTool) {
@@ -5009,10 +5011,10 @@ async function switchToSession(sessionId, force = false, options = {}) {
         if (chatBoxAcp) {
             _acpLastTranscriptKey = acpComputeTranscriptKey();
             await acpPaintTranscript();
+            if (stale()) return;
         }
         restoreActiveChatRunForCurrentContext();
         await syncCurrentChatRunUI();
-        if (!quiet) hidePageLoading();
         return;
     }
 
@@ -5025,7 +5027,9 @@ async function switchToSession(sessionId, force = false, options = {}) {
         // The messages first: reading them brings the session's context use up to date.
         const data = await agentApi('GET', `/v1/agents/${encodeURIComponent(sessionId)}/history?limit=1000`)
             .catch(e => { if (e.status === 404) return {messages: []}; throw e; });
+        if (stale()) return;
         const status = await fetchSessionStatus(sessionId);
+        if (stale()) return;
         chatBox.innerHTML = '';
         if (RUN_MODE_VALID.includes(status.mode)) setRunMode(status.mode);
         showSessionContextUsage(status.context);
@@ -5034,7 +5038,6 @@ async function switchToSession(sessionId, force = false, options = {}) {
             renderWeBotWelcomeMessage();
             restoreActiveChatRunForCurrentContext();
             await syncCurrentChatRunUI();
-            hidePageLoading();
             return;
         }
 
@@ -5099,6 +5102,7 @@ async function switchToSession(sessionId, force = false, options = {}) {
         highlightMarkdownIn(chatBox);
         scrollChatToBottom(chatBox, { force: true });
     } catch (e) {
+        if (stale()) return;
         chatBox.innerHTML = `
             <div class="text-xs text-red-400 text-center py-4">${t('history_error')}: ${e.message}</div>`;
     }
@@ -5106,10 +5110,10 @@ async function switchToSession(sessionId, force = false, options = {}) {
     if (_ocChatMode === 'internal') {
         restoreActiveChatRunForCurrentContext();
         await syncCurrentChatRunUI();
+        if (stale()) return;
         ocInternalRepaintSessionPick();
         scrollChatToBottom(chatBox, { force: true });
     }
-    if (!quiet) hidePageLoading();
 }
 
 function ocSyncSessionSubrowsVisibility() {
