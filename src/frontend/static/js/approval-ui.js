@@ -114,6 +114,9 @@
             // by an agent or tool never supplies approval arguments/identity.
             const matches = [...root.querySelectorAll('[data-approval-bubble]')]
                 .filter(node => node.dataset.approvalBubble === item.approval_id && !node.closest('details'));
+            // Polling may render the request before its chat message arrives.
+            // The same approval still has only one interactive presentation.
+            matches.slice(0, -1).forEach(node => node.remove());
             let bubble = matches.at(-1);
             if (!bubble) {
                 const raw = '【操作授权请求】\n' + JSON.stringify({id: item.approval_id, tool: item.tool_name,

@@ -34,6 +34,7 @@ async function openRuntimeSettings(sessionId = '', tab = 'context') {
         document.body.appendChild(overlay);
     }
     overlay.style.display = 'flex';
+    overlay.classList.add('open');
     overlay.setAttribute('aria-labelledby', 'runtime-settings-title');
     overlay.innerHTML = `<div class="settings-modal runtime-settings-dialog">
         <div class="runtime-settings-header">

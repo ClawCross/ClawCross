@@ -4,7 +4,7 @@ const fs=require('node:fs');
 for(const [name,width,height] of [['studio',1100,800],['mobile',390,844]]) {
     test(`${name} workspace sources save switches and only custom paths`,async({page})=>{
         await page.setViewportSize({width,height});
-        await page.route('**/studio',route=>route.fulfill({contentType:'text/html',body:'<html lang="zh"><body><div id="runtime-settings-modal" class="settings-modal-overlay" style="display:flex"><div class="settings-modal runtime-settings-dialog"><button id="open">工作区</button><button id="parent-last">原窗口</button></div></div></body></html>'}));
+        await page.route('**/studio',route=>route.fulfill({contentType:'text/html; charset=utf-8',body:'<html lang="zh"><body><div id="runtime-settings-modal" class="settings-modal-overlay open" style="display:flex"><div class="settings-modal runtime-settings-dialog"><button id="open">工作区</button><button id="parent-last">原窗口</button></div></div></body></html>'}));
         const writes=[];
         const settings={companion:true,user_shared:false,cli:true,teams:true,paths:[]};
         await page.route('**/v1/agents/agent-1/workspaces',route=>route.fulfill({json:{settings,folders:[

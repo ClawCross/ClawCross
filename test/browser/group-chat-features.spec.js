@@ -277,3 +277,31 @@ for (const viewport of [{width:390,height:844},{width:360,height:640}]) {
     await expect(page.locator('[data-settings-tab="account"]')).toHaveAttribute('aria-pressed','true');
   });
 }
+
+test('adding group members reports refusal details and retries only failed selections',async({page})=>{
+  await mobileSetup(page);
+  const attempts=[];
+  let blocked=true;
+  await page.route('**/proxy_groups/rg_one/members',route=>{
+    const aid=route.request().postDataJSON().agent;attempts.push(aid);
+    if(aid==='needs-retry' && blocked)return route.fulfill({status:409,json:{error:'这个名字已有人使用，请换一个'}});
+    return route.fulfill({json:{group_id:'rg_one',title:'朋友们',version:20,kind:'group',members:[]}});
+  });
+  await page.evaluate(()=>{
+    document.getElementById('add-agent-modal').classList.add('show');
+    document.getElementById('add-agent-team-select').innerHTML='<option value="">全部 Agent</option>';
+    addAgentSelected.clear();addAgentPicks.clear();
+    for(const id of ['already-added','needs-retry']) {
+      addAgentSelected.add('agent:'+id);addAgentPicks.set('agent:'+id,{agent_id:id});
+    }
+    return confirmAddAgents();
+  });
+  await expect(page.locator('#add-agent-error')).toContainText('这个名字已有人使用，请换一个');
+  await expect(page.locator('#add-agent-modal')).toHaveClass(/show/);
+  expect(await page.evaluate(()=>[...addAgentSelected])).toEqual(['agent:needs-retry']);
+  blocked=false;
+  await page.evaluate(()=>confirmAddAgents());
+  expect(attempts).toEqual(['already-added','needs-retry','needs-retry']);
+  await expect(page.locator('#add-agent-error')).toHaveCount(0);
+  await expect(page.locator('#add-agent-modal')).not.toHaveClass(/show/);
+});

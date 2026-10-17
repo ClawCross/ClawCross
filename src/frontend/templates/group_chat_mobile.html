@@ -42,7 +42,7 @@
 <script src="/static/js/acp-launch-settings.js?v=20261017-custom-acp"></script>
 <script src="/static/js/external-agent-settings.js?v=20261017-custom-acp"></script>
 <script src="/static/js/model-profiles.js?v=20261004-effort-slider"></script>
-<script src="/static/js/approval-ui.js?v=20261004-fold-approval"></script>
+<script src="/static/js/approval-ui.js?v=20261017-approval-dedup"></script>
 <link rel="stylesheet" href="/static/css/channel-setup.css?v=2">
 <script src="/static/js/channel-setup.js?v=20261004-tool-result"></script>
 <script src="/static/js/settings-navigation.js?v=20261017-settings-navigation"></script>
@@ -4082,8 +4082,8 @@
 <link rel="stylesheet" href="/static/css/mobile-profile.css?v=20261004-studio-header">
 <link rel="stylesheet" href="/static/css/runtime-settings.css?v=20261004-keepy-manager">
 <script src="/static/js/remembered-approvals-ui.js?v=20261004-keepy-manager"></script>
-<script src="/static/js/runtime-settings.js?v=20261005-workspaces"></script>
-<script src="/static/js/workspace-settings.js?v=20261008-native-workspace"></script>
+<script src="/static/js/runtime-settings.js?v=20261017-visible-dialogs"></script>
+<script src="/static/js/workspace-settings.js?v=20261017-visible-dialogs"></script>
 <link rel="stylesheet" href="/static/css/workspace-settings.css?v=20261005-team-skills">
 <link rel="stylesheet" href="/static/css/mobile-panel-layout.css?v=20261008">
 <script defer src="/static/js/mobile-panel-layout.js?v=20261008"></script>
@@ -12641,28 +12641,47 @@ function resetAddAgentFooter() {
 async function confirmAddAgents() {
   if (!currentGroupId || addAgentSelected.size === 0) return;
   const footer = document.getElementById('add-agent-footer');
+  const groupId = currentGroupId;
+  document.getElementById('add-agent-error')?.remove();
   footer.innerHTML = `<div style="text-align:center;padding:12px;color:var(--text-secondary);">${t('adding')}</div>`;
 
   let addAgentsCompletedOk = false;
   try {
     const team = document.getElementById('add-agent-team-select').value;
-    let success = 0, failed = 0;
-    for (const key of addAgentSelected) {
+    let success = 0;
+    const failures = [];
+    for (const key of [...addAgentSelected]) {
       const pick = addAgentPicks.get(key) || {};
       try {
         // A persona joins as a new WeBot agent wearing it.
         const agentId = pick.agent_id
           || (await registerAgent({ name: pick.persona.name, platform: 'webot' }, team, pick.persona.tag)).agent_id;
-        applyGroupDetail(await api('POST', `/proxy_groups/${encodeURIComponent(currentGroupId)}/members`, { agent: agentId }));
+        // A failed join must not create another Agent on retry.
+        pick.agent_id = agentId;
+        const detail = await api('POST', `/proxy_groups/${encodeURIComponent(groupId)}/members`, { agent: agentId });
+        if (currentGroupId === groupId) applyGroupDetail(detail);
+        addAgentSelected.delete(key);
+        const checkbox = [...document.querySelectorAll('#add-agent-body input[type="checkbox"]')].find(input => input.value === key);
+        if (checkbox) checkbox.checked = false;
         success++;
       } catch (e) {
-        failed++;
+        failures.push(e.message || t('add_failed'));
       }
     }
-    toast(failed > 0 ? t('add_partial', {s: success, f: failed}) : t('add_success', {n: success}));
-    closeAddAgentModal();
+    if (failures.length) {
+      const error = document.createElement('div');
+      error.id = 'add-agent-error';
+      error.setAttribute('role', 'alert');
+      error.style.cssText = 'padding:12px;margin:12px 0;color:var(--ui-danger,#dc2626);font-size:13px;line-height:1.6;white-space:pre-wrap;';
+      error.textContent = [...new Set(failures)].join('\n');
+      document.getElementById('add-agent-body').prepend(error);
+      toast(t('add_partial', {s: success, f: failures.length}) + ' · ' + failures[0]);
+    } else {
+      toast(t('add_success', {n: success}));
+      closeAddAgentModal();
+      addAgentsCompletedOk = true;
+    }
     invalidateContactsPrefetch();
-    addAgentsCompletedOk = true;
   } catch (e) {
     toast((e && e.message) ? e.message : t('add_failed'));
   } finally {

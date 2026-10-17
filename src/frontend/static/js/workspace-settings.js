@@ -22,7 +22,7 @@
         let overlay = document.getElementById('workspace-settings-modal');
         if (overlay) overlay.remove();
         overlay = document.createElement('div');
-        overlay.id = 'workspace-settings-modal'; overlay.className = 'settings-modal-overlay';
+        overlay.id = 'workspace-settings-modal'; overlay.className = 'settings-modal-overlay open';
         overlay.setAttribute('role','dialog'); overlay.setAttribute('aria-modal','true');
         overlay.setAttribute('aria-labelledby','workspace-settings-title'); overlay.style.display = 'flex';
         const previousFocus = document.activeElement;

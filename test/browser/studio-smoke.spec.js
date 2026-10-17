@@ -179,7 +179,7 @@ test('studio Agent templates keep administrative tools opt-in and platform compa
 
 async function stubStudioNetwork(page, calls, options = {}) {
   const webotState = {
-    approvals: [
+    approvals: options.approvals || [
       {
         approval_id: 'approval-1',
         review: { reviewer: 'user', conversation_reply: true, verdict: { decision: 'ask_user', reason: '请确认操作' } },
@@ -1348,7 +1348,7 @@ test('Studio approval buttons and typed replies use the same control without sen
   const calls = {importOpenClaw: 0, tinyfishRun: 0, approvalActions: []};
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
-  await stubStudioNetwork(page, calls);
+  await stubStudioNetwork(page, calls, {approvals:[]});
   await page.goto('/studio');
   const sid = await page.evaluate(() => currentSessionId);
   let pending = true;
@@ -1362,9 +1362,12 @@ test('Studio approval buttons and typed replies use the same control without sen
   let prompts = 0;
   await page.route('**/v1/chat/completions',route => {prompts++;return route.fulfill({json:{}});});
   await page.evaluate(item => {
+    // The poll can arrive before the request's chat message.
+    renderStudioApprovalStrip([item]);
     appendMessage('【操作授权请求】\n'+JSON.stringify({id:item.approval_id,tool:item.tool_name,args:item.args,reason:item.request_reason})+'\n本次操作未执行。请回复 Y/N。',false);
     renderStudioApprovalStrip([item]);
   },item);
+  await expect(page.locator(`[data-approval-bubble="${item.approval_id}"]`)).toHaveCount(1);
   await expect(page.locator('.cc-approval-bubble .cc-approval-disclosure')).toHaveAttribute('open','');
   await expect(page.locator('.cc-approval-bubble details details')).not.toHaveAttribute('open','');
   await expect(page.locator('.cc-approval-status')).toContainText('等待确认');
