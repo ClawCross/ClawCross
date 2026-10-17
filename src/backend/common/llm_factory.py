@@ -306,7 +306,7 @@ def get_provider_audio_defaults(provider: str) -> dict[str, str]:
 def create_chat_model(
     *,
     temperature: float = 0.7,
-    max_tokens: int = 2048,
+    max_tokens: int | None = None,
     timeout: int = 60,
     max_retries: int = 2,
     model: str | None = None,
@@ -327,7 +327,7 @@ def create_chat_model(
       - LLM_BASE_URL（部分 provider 有默认值）
 
     :param temperature: 生成温度
-    :param max_tokens: 最大 token 数
+    :param max_tokens: 最大输出 token 数；不传时用模型自身的输出上限
     :param timeout: 超时时间（秒）
     :param max_retries: 最大重试次数
     :param model: 模型名称（优先于 env）
@@ -377,9 +377,13 @@ def create_chat_model(
         api_key=api_key,
     )
     supports_temp = _model_supports_temperature(model, provider)
-    from common.model_capabilities import reasoning_effort as supported_effort
+    from common.model_capabilities import model_capabilities, reasoning_effort as supported_effort
     effort = supported_effort(model, provider, reasoning_effort or "", level=reasoning_level)
     inference_kwargs = {"reasoning_effort": effort} if effort else {}
+    if not max_tokens:
+        # Unset: the model's own output limit, so a reply ends where the model ends it.
+        from common.effort_controller import resolve_default_chat_max_output_tokens
+        max_tokens = model_capabilities(model, provider).get("max_output_tokens") or resolve_default_chat_max_output_tokens()
 
     if provider == "ollama":
         env_base_url_is_ollama = infer_provider(

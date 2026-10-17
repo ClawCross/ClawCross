@@ -12,7 +12,6 @@ from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from webot.engine.lightweight_agent_runtime import AgentRecursionError
 
-from common.effort_controller import resolve_default_chat_max_output_tokens
 from common.logging_utils import get_logger
 from agents import openai
 from agents.openai import ChatCompletionRequest, ChatMessage
@@ -23,7 +22,6 @@ logger = get_logger("openai_service")
 # 默认 500 步上限；可用 env GRAPH_RECURSION_LIMIT 覆盖（调大容长任务，调小更早兜底）。
 # 超出后不崩溃，由下方 AgentRecursionError 分支优雅返回提示。
 _GRAPH_RECURSION_LIMIT = int(os.getenv("GRAPH_RECURSION_LIMIT", "500"))
-_DEFAULT_WEBOT_CHAT_MAX_TOKENS = resolve_default_chat_max_output_tokens()
 
 class OpenAIChatService:
     """OpenAI 兼容聊天服务，提供 Chat Completions API 实现。"""
@@ -618,9 +616,8 @@ class OpenAIChatService:
         input_messages = self._build_input_messages(req)
 
         model_name = req.model or "webot"
-        effective_max_tokens = req.max_tokens
-        if model_name == "webot" and (effective_max_tokens is None or effective_max_tokens <= 0):
-            effective_max_tokens = _DEFAULT_WEBOT_CHAT_MAX_TOKENS
+        # Unset: the model's own output limit.
+        effective_max_tokens = req.max_tokens if (req.max_tokens or 0) > 0 else None
 
         user_input = {
             "messages": input_messages,

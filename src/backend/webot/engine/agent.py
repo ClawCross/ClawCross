@@ -1399,7 +1399,9 @@ class TeamAgent:
         ).values())
         # Budgets follow the model actually used this turn (route, override).
         context_window = resolve_context_window(settings, model_name or None)
-        output_reserve = max(2048, int(turn.max_tokens or getattr(base_model, "max_tokens", 0) or 0))
+        # The history budget keeps a typical reply's room; the request itself may run to the model's limit.
+        from common.effort_controller import resolve_default_chat_max_output_tokens
+        output_reserve = int(turn.max_tokens or resolve_default_chat_max_output_tokens())
         history_budget = resolve_context_history_budget(
             settings, is_subagent=turn.is_subagent, model=model_name or None,
             prefix_tokens=prefix_tokens, output_reserve=output_reserve,
@@ -1577,17 +1579,17 @@ class TeamAgent:
             return llm_factory.create_chat_model(
                 model=override.get("model"), api_key=override.get("api_key"),
                 base_url=override.get("base_url"), provider=override.get("provider"),
-                max_tokens=max_tokens or 2048, **inference,
+                max_tokens=max_tokens, **inference,
             )
         from agents.model_profiles import agent_model_override
         saved = agent_model_override(turn.user_id, turn.session_id)
         if saved:
             return llm_factory.create_chat_model(
                 model=saved.get('model'), provider=saved.get('provider'), api_key=saved.get('api_key'),
-                base_url=saved.get('base_url'), max_tokens=max_tokens or 2048, **inference,
+                base_url=saved.get('base_url'), max_tokens=max_tokens, **inference,
             )
         if turn.profile and turn.profile.preferred_model:
-            return llm_factory.create_chat_model(model=turn.profile.preferred_model, max_tokens=max_tokens or 2048, **inference)
+            return llm_factory.create_chat_model(model=turn.profile.preferred_model, max_tokens=max_tokens, **inference)
         last_input = (state.get("messages") or [None])[-1]
         if (not turn.is_subagent and isinstance(last_input, HumanMessage)
                 and isinstance(last_input.content, str) and last_input.content):
@@ -1596,11 +1598,9 @@ class TeamAgent:
                 logger.info("cheap model route: %s reason=%s", route["model"], route.get("routing_reason"))
                 return llm_factory.create_chat_model(
                     model=route["model"], provider=route.get("provider"), api_key=route.get("api_key"),
-                    base_url=route.get("base_url"), max_tokens=max_tokens or 2048, **inference,
+                    base_url=route.get("base_url"), max_tokens=max_tokens, **inference,
                 )
-        if max_tokens is not None and max_tokens > 0:
-            return llm_factory.create_chat_model(max_tokens=max_tokens, **inference)
-        return llm_factory.create_chat_model(**inference)
+        return llm_factory.create_chat_model(max_tokens=max_tokens, **inference)
 
     def _turn_tool_schemas(self, state: AgentState, turn: "_Turn", external_defs: list[dict], *, strict: bool) -> list:
         """Definitions follow the intrinsic Agent table, preserving the API prefix."""
