@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Minecraft JS 复刻版</title>
+<style>
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
+  canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+  #ui { pointer-events: none; }
+  #textinput { position: absolute; display: none; background: transparent; border: none; outline: none; color: #fff;
+    font-family: "Microsoft YaHei", "PingFang SC", sans-serif; padding: 0 2px; text-shadow: 2px 2px 0 #3f3f3f; z-index: 5; }
+  #err { position: absolute; left: 10%; top: 30%; width: 80%; color: #fff; font: 18px sans-serif; white-space: pre-wrap; display: none; text-align: center; }
+  #boot { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; font: 16px "Microsoft YaHei", sans-serif; background: #ef323d; }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<canvas id="ui"></canvas>
+<input id="textinput" type="text" autocomplete="off" spellcheck="false">
+<div id="boot">Minecraft JS 复刻版 · 正在加载…</div>
+<div id="err"></div>
+<script src="js/assets.js"></script>
+<script src="js/util.js"></script>
+<script src="js/blocks.js"></script>
+<script src="js/world.js"></script>
+<script src="js/mesher.js"></script>
+<script src="js/render.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/entity.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/save.js"></script>
+<script src="js/game.js"></script>
+<script src="js/screens.js"></script>
+<script src="js/main.js"></script>
+<script>
+  // hide boot splash once the title screen is up
+  (function wait() { if (window.game && window.game.state !== 'boot') document.getElementById('boot').style.display = 'none'; else setTimeout(wait, 100); })();
+</script>
+</body>
+</html>

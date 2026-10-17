@@ -1,0 +1,12 @@
+/* WebGL boot once, then backend save persistence and member isolation without extra GPU worlds. */
+const {startSpace}=require('./space-app-harness');
+const {connect}=require('../sdk/js/clawcross-space');
+const {createApp}=require('../examples/space-apps/opus-voxel/server');
+const {chromium,expect}=require('@playwright/test');
+const fs=require('fs'),os=require('os'),path=require('path');
+(async()=>{let test,space,browser;const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'voxel-save-'));
+try{test=await startSpace({port:Number(process.env.CLAWCROSS_SPACE_TEST_PORT||51241),replies:{}});space=await connect({server:test.server,key:test.key,name:'方块世界',dataDir});await space.serve(createApp(space).handle);
+browser=await chromium.launch({headless:true,executablePath:'/usr/bin/google-chrome',args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});const page=await browser.newPage({viewport:{width:800,height:600}}),errors=[];page.on('pageerror',e=>{errors.push(e.message);console.log('JS ERROR',e.message);});page.on('console',m=>{if(m.type()==='error')console.log('CONSOLE',m.text().slice(0,150));});page.on('requestfailed',r=>console.log('FAILED',new URL(r.url()).pathname.split('/').pop()));await page.goto(await test.entrance('alice'),{waitUntil:'domcontentloaded'});await expect.poll(()=>page.evaluate(()=>window.game?.state),{timeout:20000}).toBe('title');expect(await page.evaluate(()=>DB.backend)).toBe('server');
+await page.evaluate(async()=>{await DB.putWorld({id:'test-world',name:'我的方块世界',lastPlayed:1});await DB.putChunks('test-world',[[0,0,{b:new Uint16Array([2,3]),m:new Uint16Array([0])}]]);});await page.route('**/js/main.js',route=>route.fulfill({body:'',contentType:'application/javascript'}));await page.reload({waitUntil:'domcontentloaded'});expect(await page.evaluate(async()=>(await DB.listWorlds())[0].name)).toBe('我的方块世界');
+await page.close();const bob=await browser.newPage();await bob.route('**/js/main.js',route=>route.fulfill({body:'',contentType:'application/javascript'}));await bob.goto(await test.entrance('bob'),{waitUntil:'domcontentloaded'});expect(await bob.evaluate(()=>DB.listWorlds())).toEqual([]);expect(errors).toEqual([]);console.log('PASS: WebGL title, original assets, backend world/chunk saves, reload and member isolation');
+}finally{await browser?.close();space?.close();if(test)await test.stop();fs.rmSync(dataDir,{recursive:true,force:true});}})().catch(e=>{console.error(e.stack);process.exitCode=1;});

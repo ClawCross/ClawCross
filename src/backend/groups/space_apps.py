@@ -100,6 +100,8 @@ class SpaceAppRunner:
             raise ClientError('小程序只能在群聊所在主机启动；本地群聊可通过 Hub 公网链接分享', 400)
         # The group server checks that this member owns the space; a new key disconnects the old app.
         key = self.client.request(row, 'POST', '/app/key', {})['key']
+        state = DATA_DIR / 'space-app-data' / gid / app_id
+        state.mkdir(parents=True, exist_ok=True, mode=0o700)
         with self.lock:
             self._stop(owner, gid)
             log = self.log(gid)
@@ -108,7 +110,7 @@ class SpaceAppRunner:
                 out.write(f'\n--- {time.strftime("%Y-%m-%d %H:%M:%S")} 启动 {app["name"]}\n'.encode())
                 proc = subprocess.Popen([node, app['entry']], cwd=str(Path(app['entry']).parent), stdin=subprocess.DEVNULL,
                                         stdout=out, stderr=subprocess.STDOUT, **DETACH,
-                                        env={**os.environ, 'CLAWCROSS_SPACE_SERVER': row['url'], 'CLAWCROSS_SPACE_KEY': key, 'CLAWCROSS_SPACE_LOCAL_TOKEN': service_key()})
+                                        env={**os.environ, 'CLAWCROSS_SPACE_SERVER': row['url'], 'CLAWCROSS_SPACE_KEY': key, 'CLAWCROSS_SPACE_LOCAL_TOKEN': service_key(), 'CLAWCROSS_SPACE_DATA_DIR': str(state)})
             self.runs[(owner, gid)] = {'app': app_id, 'name': app['name'], 'proc': proc, 'started': time.time(), 'error': ''}
             self.save()
         return self.status(owner, gid)

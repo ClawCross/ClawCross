@@ -229,7 +229,7 @@ function page({ title, appId = '', style = '', body = '', script = '', head = ''
 async function run({ name }, setup, options = {}) {
   const args = Object.fromEntries(process.argv.slice(2).flatMap((value, index, all) => value.startsWith('--') ? [[value.slice(2), all[index + 1]]] : []));
   const space = await connect({ server: options.server || args.server || process.env.CLAWCROSS_SPACE_SERVER,
-    key: options.key || args.key || process.env.CLAWCROSS_SPACE_KEY, name });
+    key: options.key || args.key || process.env.CLAWCROSS_SPACE_KEY, name, dataDir: options.dataDir });
   const app = new App(space, name);
   await app.refresh();
   await setup(app);

@@ -137,7 +137,7 @@
     api('app_session', {}).then(({path}) => {
       if (appFrame !== frame) return;
       frame.title = app.name || '小程序';
-      frame.setAttribute('sandbox', 'allow-scripts allow-forms allow-popups allow-modals allow-downloads');
+      frame.setAttribute('sandbox', 'allow-scripts allow-forms allow-popups allow-modals allow-downloads allow-pointer-lock');
       frame.referrerPolicy = 'no-referrer'; frame.src = '/' + path;
       el('room-app-surface').replaceChildren(frame);
     }, error => { if (appFrame === frame) notice('小程序打开失败：' + error.message); });

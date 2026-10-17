@@ -54,7 +54,9 @@
     "tools/maintenance/*.py",
     "AGENTS.md",
     "SKILL.md",
-    "README_CN.md"
+    "README_CN.md",
+    "examples/space-apps/**",
+    "sdk/js/**"
   ],
   "scripts": {
     "clawcross": "node bin/clawcross.js",

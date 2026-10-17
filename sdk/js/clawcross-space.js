@@ -17,13 +17,14 @@ const crypto = require('node:crypto');
 const { EventEmitter } = require('node:events');
 
 class Space extends EventEmitter {
-  constructor({ server, key, name = '', localToken = process.env.CLAWCROSS_SPACE_LOCAL_TOKEN }) {
+  constructor({ server, key, name = '', dataDir = process.env.CLAWCROSS_SPACE_DATA_DIR, localToken = process.env.CLAWCROSS_SPACE_LOCAL_TOKEN }) {
     super();
     if (!server || !key) throw new Error('需要群聊服务器地址和小程序密钥');
     const address = new URL(server);
     if (!['127.0.0.1', 'localhost', '[::1]'].includes(address.hostname) || !localToken)
       throw new Error('小程序须在群聊主机运行，并由主机提供 CLAWCROSS_SPACE_LOCAL_TOKEN');
     this.localToken = localToken;
+    this.dataDir = dataDir;
     this.base = String(server).replace(/\/+$/, '') + '/relay/app/';
     this.key = key;
     this.name = name;

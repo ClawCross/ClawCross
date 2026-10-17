@@ -15,7 +15,7 @@ from groups.relay_store import RelayError
 REQUEST_HEADERS = {'accept', 'accept-language', 'content-type', 'if-none-match', 'if-modified-since', 'range', 'user-agent'}
 REPLY_HEADERS = {'content-type', 'content-encoding', 'cache-control', 'etag', 'last-modified', 'location',
                  'content-disposition', 'content-range', 'accept-ranges'}
-PAGE_HEADERS = {'Content-Security-Policy': 'sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads',
+PAGE_HEADERS = {'Content-Security-Policy': 'sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads allow-pointer-lock',
                 'Access-Control-Allow-Origin': '*', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer',
                 'X-Accel-Buffering': 'no'}
 

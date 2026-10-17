@@ -88,6 +88,7 @@ guide for writing apps with it. The examples in `examples/space-apps/` each run 
 
 | App | Dir | People | What the agents do |
 |---|---|---|---|
+| 方块世界 · Voxel World | opus-voxel | 1+ players | OpusMC MIT voxel engine; original procedural art; independent member-owned worlds with host saves. |
 | 精灵对战 | creature-battle | 2 | draw SVG creatures, fight on their people's commands, chat when @-mentioned |
 | 地图侦察 | map-scout | 1+ | find places for a mission, drawn on an OpenStreetMap map |
 | 代码会诊 | code-clinic | 1–2 | review code independently, then cross-examine each other |

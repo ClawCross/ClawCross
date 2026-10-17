@@ -48,7 +48,7 @@
     drop(gid);   // another app now runs in this space
     const selected = gid, frame = document.createElement('iframe');
     frame.title = name;
-    frame.setAttribute('sandbox', 'allow-scripts allow-forms allow-popups allow-modals allow-downloads');
+    frame.setAttribute('sandbox', 'allow-scripts allow-forms allow-popups allow-modals allow-downloads allow-pointer-lock');
     frame.referrerPolicy = 'no-referrer';
     frames.set(selected, { frame, name });
     surface().append(frame);
