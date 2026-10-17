@@ -1,6 +1,6 @@
 # Clawcross 端口大全
 
-> 最后更新：2026-10-01
+> 最后更新：2026-10-17
 
 ## 端口总览
 
@@ -10,7 +10,7 @@
 | **51201** | `PORT_SCHEDULER` | `src/backend/scheduler/service.py` | 定时任务调度中心 | `127.0.0.1` | 否 |
 | **51202** | `PORT_OASIS` | `src/backend/oasis/server.py` | OASIS 论坛 / Agent 管理与编排中心 | `127.0.0.1` | 否 |
 | **51203** | `PORT_GROUPS` | `src/backend/groups/server.py` | 独立群聊服务器、群连接与转发 | `127.0.0.1`（可显式更改） | 默认否 |
-| **51209** | `PORT_FRONTEND` | `src/frontend/server.py` | 前端 Web UI（Flask） | `0.0.0.0` | 是 Tunnel |
+| **51209** | `PORT_FRONTEND` | `src/frontend/server.py` | 前端 Web UI（Flask） | `127.0.0.1` | 经显式 Tunnel 或反向代理 |
 | **51210** | —（硬编码） | `src/frontend/visual.py` | 可视化编排系统（开发用） | `0.0.0.0` | 否 |
 | **58010** | `PORT_BARK` | 外部二进制 `bin/bark-server` | Bark 推送服务器 | — | 是 Tunnel |
 
@@ -88,15 +88,17 @@
 
 ## 启动顺序
 
-由 `launch/launcher.py` 定义：
+由 `launch/launcher.py` 并行启动以下服务，按实际就绪状态等待，日志输出各组件耗时：
 
-| 步骤 | 服务 | 端口 | 等待时间 |
-|------|------|------|----------|
-| 1/5 | 定时调度中心 | 51201 | 2s |
-| 2/5 | OASIS 论坛 | 51202 | 2s |
-| 3/5 | AI Agent | 51200 | 3s |
-| 4/5 | 渠道配置 | — | 交互式 |
-| 5/5 | 前端 Web UI | 51209 | 1s |
+| 服务 | 端口 | 就绪检查 |
+|------|------|----------|
+| 群聊服务器 | 51203 | `/relay/health` |
+| 定时调度中心 | 51201 | TCP 监听 |
+| OASIS 论坛 | 51202 | `/experts` |
+| AI Agent | 51200 | `/health`，完成工具目录和应用生命周期初始化 |
+| 前端 Web UI | 51209 | TCP 监听 |
+
+内置工具目录在主进程读取，不为获取定义而启动 12 个 MCP 子进程；实际工具调用仍走原 stdio MCP 通道。已配置且明确启用的渠道在核心服务就绪后启动。重载时只在端口仍被占用时等待释放，不再固定等待两秒。
 
 ## Tunnel 暴露策略
 

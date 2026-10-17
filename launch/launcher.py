@@ -33,6 +33,7 @@ import concurrent.futures
 import json
 import os
 import signal
+import socket
 import atexit
 import time
 import stat
@@ -273,37 +274,13 @@ def _direct_opener():
 
 
 def is_port_listening(port):
-    port = str(port)
-
-    if sys.platform == "win32":
-        code, output = _command_output(["netstat", "-ano", "-p", "tcp"])
-        if code == 0:
-            target = f":{port}"
-            for line in output.splitlines():
-                upper = line.upper()
-                if target in line and "LISTENING" in upper:
-                    return True
+    # Core services and their readiness URLs use loopback on all platforms.
+    # A refused connection is cheap; do not spawn ss/lsof/netstat on every poll.
+    try:
+        with socket.create_connection(('127.0.0.1', int(port)), timeout=0.1):
+            return True
+    except OSError:
         return False
-
-    code, output = _command_output(["ss", "-ltn"])
-    if code == 0:
-        target = f":{port}"
-        for line in output.splitlines():
-            if target in line:
-                return True
-
-    code, output = _command_output(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN"])
-    if code == 0 and output.strip():
-        return True
-
-    code, output = _command_output(["netstat", "-ltn"])
-    if code == 0:
-        target = f":{port}"
-        for line in output.splitlines():
-            if target in line:
-                return True
-
-    return False
 
 
 def wait_for_service_ready(
@@ -352,6 +329,7 @@ def wait_for_service_ready(
 
 def start_service(service):
     print(service["message"])
+    service['started_at'] = time.monotonic()
     proc = subprocess.Popen(
         [venv_python, os.path.join(PROJECT_ROOT, service["script"])],
         cwd=WORKING_DIR,
@@ -375,6 +353,7 @@ def wait_for_started_services(services):
             timeout=service.get("timeout", 20.0),
             health_url=service.get("health_url"),
         )
+        service['startup_seconds'] = time.monotonic() - service['started_at']
         return service
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(services))) as pool:
@@ -382,7 +361,7 @@ def wait_for_started_services(services):
         try:
             for future in concurrent.futures.as_completed(futures):
                 service = future.result()
-                print(f"   ✅ {service['label']} 已就绪 (port {service['port']})")
+                print(f"   ✅ {service['label']} 已就绪 (port {service['port']}, {service['startup_seconds']:.2f}s)", flush=True)
         except Exception:
             for future in futures:
                 future.cancel()
@@ -390,10 +369,12 @@ def wait_for_started_services(services):
 
 
 def launch_services(services):
+    started = time.monotonic()
     for service in services:
         start_service(service)
 
     wait_for_started_services(services)
+    print(f"   ⏱ 全部核心服务已就绪 ({time.monotonic() - started:.2f}s)", flush=True)
 
 
 def _channel_disabled():
@@ -592,7 +573,7 @@ services = [
         "script": "src/backend/server.py",
         "port": PORT_AGENT,
         "timeout": 120.0,
-        "health_url": f"http://127.0.0.1:{PORT_AGENT}/v1/models",
+        "health_url": f"http://127.0.0.1:{PORT_AGENT}/health",
         "pid_name": "mainagent",
     },
 ]
@@ -891,8 +872,10 @@ try:
                 except Exception:
                     pass
 
-            # 等待端口释放（避免 Address already in use）
-            time.sleep(2)
+            # Ports normally close with their processes; wait only if still held.
+            release_deadline = time.monotonic() + 2
+            while time.monotonic() < release_deadline and any(is_port_listening(service['port']) for service in services):
+                time.sleep(0.05)
 
             # 重新加载 .env 配置
             load_dotenv(dotenv_path=ENV_FILE_PATH, override=True)

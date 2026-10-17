@@ -1205,8 +1205,10 @@ class TeamAgent:
                     "CLAWCROSS_WORKSPACE_ORIGIN_SERVICE": f'http://127.0.0.1:{os.getenv("PORT_AGENT", "51200")}'}
         self._mcp_client = MultiServerMCPClient(mcp_servers)
 
-        # 3. Fetch tool definitions (new API: no context manager needed)
-        self._mcp_tools = await self._mcp_client.get_tools()
+        # 3. Read bundled definitions without spawning one Python per server.
+        # Tool execution still uses each server's original MCP connection.
+        from webot.engine.builtin_tools import load_builtin_tools
+        self._mcp_tools = await load_builtin_tools(self._mcp_client)
 
         # 3.5 Register tools in lazy discovery registry (new)
         self._tool_registry.register_tools(self._mcp_tools)

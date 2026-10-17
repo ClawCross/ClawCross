@@ -46,6 +46,20 @@ Side systems
     -> WeBot dream pipeline (`webot_memory.py`) as the current browser-native autoDream layer
 ```
 
+### Startup readiness
+
+The launcher starts the five core services concurrently and records each process's
+time to readiness. Bundled tool definitions are read from their existing FastMCP
+registrations in the Agent API process, sharing Python imports. Actual tool calls
+continue through the original per-server stdio MCP connections, with the same
+schemas, result conversion, permissions and sandbox enforcement. No tool server or
+external Agent is started just to construct the bundled tool catalogue.
+
+`GET /health` returns success only after the Agent API's startup lifespan completes.
+Launch readiness uses this endpoint instead of `/v1/models`, which can discover
+external platforms. Port checks use loopback sockets on every supported platform;
+reloading waits for ports only while they remain occupied, up to two seconds.
+
 ## Service Responsibilities
 
 | Service | Ownership |

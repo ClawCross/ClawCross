@@ -3,6 +3,7 @@ import asyncio
 import base64
 import json
 from pathlib import Path
+from types import SimpleNamespace
 import re
 import sys
 import tempfile
@@ -16,6 +17,7 @@ sys.path.insert(0,str(ROOT/'src'))
 from groups.relay_store import RelayStore, RelayError
 from groups.server import create_app
 from groups.client import ClientStore, GroupClient, ClientError
+from groups.facade import GroupFacade
 from groups.store import ConversationStore, human
 from groups.conversations import Conversations, message_card
 from groups.service import GroupService, Forbidden
@@ -25,6 +27,19 @@ from fastapi.testclient import TestClient
 from flask import Flask
 import qrcode
 import httpx
+
+
+class DirectChatTitleTests(unittest.TestCase):
+    def test_new_direct_chat_uses_agent_name_unless_a_title_was_supplied(self):
+        store=Mock();store.rows.return_value=[];store.node_id='device';store.save.return_value='rg_new'
+        agents=Mock();agents.get.return_value=SimpleNamespace(agent_id='agent-one',name='飞天 Bot')
+        client=GroupClient(store,agents,Mock())
+        client.enroll=Mock(return_value={});client.add_agent=Mock();client.require=Mock();client.card=Mock(return_value={'group_id':'rg_new'})
+        client.ensure=Mock()
+        for supplied,expected in [('', '飞天 Bot'), ('我的自定义名称','我的自定义名称')]:
+            with self.subTest(title=supplied), patch('groups.client.service_key',return_value='test'):
+                GroupFacade(client).create('alice',title=supplied,kind='direct',agents=['agent-one'])
+                self.assertEqual(client.enroll.call_args.args[3]['title'],expected)
 
 
 class GroupChatFeatures(unittest.TestCase):

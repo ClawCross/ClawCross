@@ -273,7 +273,7 @@ def start(args: argparse.Namespace) -> int:
             groups = _port(env, "PORT_GROUPS", 51203)
             while process.poll() is None and time.monotonic() < deadline:
                 if (_probe(f"http://127.0.0.1:{groups}/relay/health") and
-                _probe(f"http://127.0.0.1:{agent}/v1/models") and
+                _probe(f"http://127.0.0.1:{agent}/health") and
                         _probe(f"http://127.0.0.1:{oasis}/experts") and
                         _probe(f"http://127.0.0.1:{frontend}/")):
                     print(f"Local web UI: http://127.0.0.1:{frontend}", flush=True)
@@ -302,7 +302,7 @@ def start(args: argparse.Namespace) -> int:
         if process.poll() is not None:
             break
         if (_probe(f"http://127.0.0.1:{groups}/relay/health") and
-                _probe(f"http://127.0.0.1:{agent}/v1/models") and
+                _probe(f"http://127.0.0.1:{agent}/health") and
                 _probe(f"http://127.0.0.1:{oasis}/experts") and
                 _probe(f"http://127.0.0.1:{frontend}/")):
             ready = True

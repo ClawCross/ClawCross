@@ -136,6 +136,7 @@ A WeBot session is its agent: listed, read, compacted and deleted through `/v1/a
 ### Runtime plumbing
 
 - `src/backend/webot/engine/agent.py`
+- `src/backend/webot/engine/builtin_tools.py` — shared-process bundled tool catalogue; actual calls retain their stdio MCP transport
 - `src/backend/webot/engine/agent_runtime_state.py`
 - `src/backend/webot/skill_evolution.py`
 - `src/backend/webot/skill_memory.py` — path-free Skill正文 entries via file tools in memory mode

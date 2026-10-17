@@ -40,7 +40,7 @@ class GroupFacade:
 
     def create(self, user, *, title, kind='group', agents=()):
         ids = [self.agent_id(user, a) for a in agents]
-        card = self.client.create(user, title=title or '私聊', kind=kind, agents=ids)
+        card = self.client.create(user, title=title if kind == 'direct' else title or '私聊', kind=kind, agents=ids)
         self.client.ensure(user, card['group_id'])
         return card
 

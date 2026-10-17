@@ -308,6 +308,8 @@ class GroupClient:
         for aid in agents:
             if self.agents.get(owner, aid) is None:
                 raise ClientError('只能引入自己拥有的 agent', 403)
+        if kind == 'direct' and not (title or '').strip():
+            title = self.agents.get(owner, agents[0]).name or agents[0]
         url = service_url()
         result = self.enroll(url, '/relay/create', {'X-Group-Service-Key': service_key()}, {
             'title': title, 'kind': kind,

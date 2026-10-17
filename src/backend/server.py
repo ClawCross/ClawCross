@@ -193,6 +193,12 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
+
+@app.get('/health')
+async def health():
+    # Uvicorn serves requests only after the full startup lifespan has completed.
+    return {'status': 'ok'}
+
 # --- CORS: 允许前端直连 ---
 app.add_middleware(
     CORSMiddleware,
