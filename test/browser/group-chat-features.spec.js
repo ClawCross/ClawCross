@@ -330,3 +330,47 @@ for(const consent of [false,true]) {
     expect(await page.evaluate(()=>_cacheGetFresh(__mobileGroupDetailCache,'rg_one').kind)).toBe(consent?'group':'direct');
   });
 }
+
+test('room metadata polls preserve iframe focus and do not pull it back from the host page',async({page})=>{
+  await mobileSetup(page);
+  const appGroup={group_id:'rg_one',title:'朋友们',kind:'group',version:1,members:[],app:{name:'精灵对战',online:true}};
+  await page.route('**/proxy_groups',route=>route.fulfill({json:{groups:[appGroup]}}));
+  await page.route('**/proxy_groups/rg_one',route=>route.fulfill({json:appGroup}));
+  await page.route('**/proxy_groups/rg_one/app-session',route=>route.fulfill({json:{url:'/focus-fixture/'}}));
+  await page.route('**/focus-fixture/',route=>route.fulfill({contentType:'text/html',body:'<textarea id="game-input" aria-label="Game input"></textarea>'}));
+  await page.evaluate(()=>MobileRooms.update({group_id:'rg_one',app:{name:'精灵对战',online:true}}));
+  const frame=page.frameLocator('#room-app-surface iframe');
+  await frame.getByLabel('Game input').fill('do not lose my draft');
+  await frame.getByLabel('Game input').evaluate(input=>input.setSelectionRange(3,7));
+  await page.evaluate(()=>MobileRooms.metadata({group_id:'rg_one',app:{name:'精灵对战',online:true}}));
+  await expect(frame.getByLabel('Game input')).toBeFocused();
+  expect(await frame.getByLabel('Game input').evaluate(input=>[input.selectionStart,input.selectionEnd])).toEqual([3,7]);
+  await page.evaluate(()=>{
+    const button=document.createElement('button');button.id='outside-app';button.textContent='Outside app';
+    button.style.cssText='position:fixed;top:10px;left:10px;z-index:99999';document.body.append(button);
+  });
+  await page.locator('#outside-app').click();
+  await page.evaluate(()=>{
+    for(let i=0;i<5;i++)MobileRooms.metadata({group_id:'rg_one',app:{name:'精灵对战',online:true}});
+  });
+  await expect(page.locator('#outside-app')).toBeFocused();
+  await expect(frame.getByLabel('Game input')).toHaveValue('do not lose my draft');
+});
+
+test('shared app rendering restores the caret only while its document has focus',async({page})=>{
+  const {page:appPage}=require('../../sdk/js/space-app.js');
+  await page.setContent('<button id="outside">Other controls</button><iframe id="app" style="width:800px;height:500px"></iframe>');
+  await page.locator('#app').evaluate((el,html)=>{el.srcdoc=html;},appPage({title:'Focus fixture',body:'<div id="fields"><textarea id="draft" aria-label="Draft"></textarea></div>'}));
+  const input=page.frameLocator('#app').getByLabel('Draft');
+  await input.fill('abcdef');
+  await input.evaluate(el=>el.setSelectionRange(2,4,'backward'));
+  await input.evaluate(()=>App.fill(document.getElementById('fields'),App.keep('draft',()=>null)));
+  await expect(input).toBeFocused();
+  expect(await input.evaluate(el=>[el.selectionStart,el.selectionEnd,el.selectionDirection])).toEqual([2,4,'backward']);
+  await input.evaluate(el=>{window.focusEvents=0;el.addEventListener('focus',()=>window.focusEvents++);});
+  await page.locator('#outside').click();
+  expect(await input.evaluate(()=>document.hasFocus())).toBe(false);
+  await input.evaluate(()=>App.fill(document.getElementById('fields'),App.keep('draft',()=>null)));
+  expect(await input.evaluate(()=>window.focusEvents)).toBe(0);
+  await expect(page.locator('#outside')).toBeFocused();
+});

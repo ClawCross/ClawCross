@@ -32,7 +32,9 @@
   }
   function show(group) {
     document.getElementById('chat-page').classList.toggle('room-app-view', !!group.app);
-    for (const entry of frames.values()) entry.frame.hidden = true;
+    // A metadata poll must not hide the active iframe: doing so blurs its
+    // focused field even when the same iframe is shown again immediately.
+    for (const [id, entry] of frames) if (id !== gid && !entry.frame.hidden) entry.frame.hidden = true;
     notice('');
     if (!group.app) { root.closeAppFullscreen?.(); drop(gid); return; }   // the app was stopped: plain chat again
     const name = group.app.name || '小程序';
@@ -40,7 +42,7 @@
     const kept = frames.get(gid);
     if (kept && kept.name === name) {
       frames.delete(gid); frames.set(gid, kept);   // most recent last
-      kept.frame.hidden = false;
+      if (kept.frame.hidden) kept.frame.hidden = false;
       return;
     }
     drop(gid);   // another app now runs in this space

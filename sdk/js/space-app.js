@@ -202,8 +202,9 @@ window.App=(()=>{
   /** Replaces a node's children, skipping empty ones; a focused field kept with App.keep stays focused. */
   function fill(node,...children){
     const active=document.activeElement,range=active&&typeof active.selectionStart==='number'?[active.selectionStart,active.selectionEnd]:null;
+    const restore=document.hasFocus()&&node.contains(active),direction=active?.selectionDirection;
     node.replaceChildren(...children.flat(Infinity).filter(c=>c!=null&&c!==false));
-    if(active&&active!==document.body&&active.isConnected&&document.activeElement!==active){active.focus();if(range)try{active.setSelectionRange(...range);}catch{}}
+    if(restore&&active&&active!==document.body&&active.isConnected&&document.activeElement!==active){active.focus({preventScroll:true});if(range)try{active.setSelectionRange(...range,direction);}catch{}}
     return node;
   }
   /** The element with this id if the page has it, else make() — so re-rendering keeps what people are typing. */
