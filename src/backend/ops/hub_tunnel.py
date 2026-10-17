@@ -73,8 +73,8 @@ async def register(origin):
 async def serve_socket(ws,api,target,registration):
     lock=asyncio.Lock();requests={}
     async def send(packet):
-        async with lock:await ws.send(json.dumps(packet))
-    await send({'device_id':registration['device_id'],'token':registration['token']})
+        async with lock:await ws.send(json.dumps(packet,ensure_ascii=False))
+    await send({'device_id':registration['device_id'],'token':registration['token'],'features':['websocket']})
     ready=json.loads(await asyncio.wait_for(ws.recv(),10))
     if ready.get('type')!='ready' or ready.get('public_domain')!=registration['public_domain']:
         raise RuntimeError('Hub did not authenticate this device')
@@ -114,18 +114,67 @@ async def serve_socket(ws,api,target,registration):
                 await send({'type':'response_chunk','id':identifier,'data':base64.b64encode(b'The local frontend did not respond.').decode()})
                 await send({'type':'response_end','id':identifier})
         finally:requests.pop(identifier,None)
+    async def websocket(packet, state):
+        from websockets.exceptions import ConnectionClosed
+        identifier = packet['id']
+        try:
+            path = packet.get('path', '')
+            if not path.startswith('/') or path.startswith('//') or any(c in path for c in ('\r', '\n', '\\')):
+                raise ValueError('Invalid WebSocket path')
+            host = urlsplit(registration['public_domain']).netloc
+            headers = forwarded_headers(packet.get('headers', []), host, packet.get('remote') or '198.51.100.1')
+            headers = [(k,v) for k,v in headers if k.lower() != 'host' and not k.lower().startswith('sec-websocket-')]
+            async with connect(target.replace('http:', 'ws:', 1) + path, additional_headers=headers,
+                               subprotocols=packet.get('subprotocols') or None, proxy=None,
+                               open_timeout=5, max_size=128*1024) as upstream:
+                await send({'type':'ws_accept', 'id':identifier, 'subprotocol':upstream.subprotocol})
+
+                async def upload():
+                    while True:
+                        item = await state['body'].get()
+                        if item['type'] == 'ws_close':
+                            await upstream.close(item.get('code', 1000), item.get('reason', ''))
+                            return
+                        data = base64.b64decode(item['data'], validate=True) if item.get('binary') else item['data']
+                        await upstream.send(data)
+                        await send({'type':'request_credit', 'id':identifier})
+
+                async def download():
+                    async for data in upstream:
+                        await state['credit'].acquire()
+                        await send({'type':'ws_data', 'id':identifier, 'binary':isinstance(data, bytes),
+                            'data':base64.b64encode(data).decode() if isinstance(data, bytes) else data})
+                    await send({'type':'ws_close', 'id':identifier, 'code':upstream.close_code or 1000,
+                                'reason':upstream.close_reason or ''})
+                tasks = [asyncio.create_task(upload()), asyncio.create_task(download())]
+                try:
+                    await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+                    await send({'type':'ws_close', 'id':identifier, 'code':upstream.close_code or 1000})
+                finally:
+                    for task in tasks: task.cancel()
+                    await asyncio.gather(*tasks, return_exceptions=True)
+        except asyncio.CancelledError: raise
+        except ConnectionClosed as exc:
+            with suppress(Exception):
+                await send({'type':'ws_close', 'id':identifier, 'code':exc.rcvd.code if exc.rcvd else 1011})
+        except Exception:
+            with suppress(Exception):
+                await send({'type':'ws_close', 'id':identifier, 'code':1011})
+        finally: requests.pop(identifier, None)
+
     try:
         async for raw in ws:
             packet=json.loads(raw);identifier=packet.get('id');kind=packet.get('type')
-            if kind=='request':
+            if kind in {'request','ws_open'}:
                 if len(requests)>=64:raise RuntimeError('Too many active requests')
                 state={'body':asyncio.Queue(WINDOW+2),'credit':asyncio.Semaphore(WINDOW)}
                 requests[identifier]=state
-                state['task']=asyncio.create_task(execute(packet,state))
+                state['task']=asyncio.create_task(websocket(packet,state) if kind=='ws_open' else execute(packet,state))
                 continue
             state=requests.get(identifier)
             if state is None:continue
-            if kind=='request_chunk':state['body'].put_nowait(base64.b64decode(packet['data'],validate=True))
+            if kind in {'ws_data','ws_close'}:state['body'].put_nowait(packet)
+            elif kind=='request_chunk':state['body'].put_nowait(base64.b64decode(packet['data'],validate=True))
             elif kind=='request_end':state['body'].put_nowait(None)
             elif kind=='response_credit':state['credit'].release()
             elif kind=='cancel':state['task'].cancel()

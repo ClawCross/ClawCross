@@ -1,9 +1,7 @@
 """Network-facing relay protocol, with invitation-link joins and scoped duplex sessions.
 
-A space's app is a server its owner runs anywhere. It connects out to this relay with the
-space's app key and long-polls ``/relay/app/poll``: members' page requests (tunnelled from
-``/relay/app/site/<session>/…``), its agents' output and membership changes arrive there.
-It asks one agent with ``/relay/app/ask`` and answers page requests with ``/relay/app/respond``.
+A space's app runs on the group host. Its page requests stream to its local port;
+app polls carry only agent output and membership changes.
 """
 import asyncio
 import base64
@@ -16,6 +14,7 @@ import time
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
+from groups.space_proxy import LocalApps
 
 from groups.relay_store import RelayError, RelayStore
 
@@ -74,7 +73,12 @@ class Post(BaseModel):
     reply_to: int | None = None
 
 
-class AppPoll(BaseModel):
+class AppEndpoint(BaseModel):
+    port: int | None = Field(None, ge=1, le=65535)
+    secret: str = Field('', max_length=128)
+
+
+class AppPoll(AppEndpoint):
     cursor: int | None = None  # None starts from now
     name: str = Field('', max_length=80)
 
@@ -82,24 +86,6 @@ class AppPoll(BaseModel):
 class AppAsk(BaseModel):
     agent: str = Field(min_length=1, max_length=100)
     content: str = Field(min_length=1, max_length=65536)
-
-
-class AppReply(BaseModel):
-    id: str = Field(min_length=1, max_length=64)
-    status: int = Field(200, ge=100, le=599)
-    headers: dict[str, str] = Field(default_factory=dict)
-    body: str = ''  # base64
-
-
-# Page requests carry these headers to the app; the app's replies keep these.
-APP_REQUEST_HEADERS = {'accept', 'accept-language', 'content-type', 'if-none-match', 'if-modified-since', 'range', 'user-agent'}
-APP_REPLY_HEADERS = {'content-type', 'cache-control', 'etag', 'last-modified', 'location', 'content-disposition', 'content-range',
-                     'accept-ranges'}
-# The page runs at an opaque origin: it can never act as the site that serves it.
-APP_PAGE_HEADERS = {'Content-Security-Policy': 'sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads',
-                    'Access-Control-Allow-Origin': '*', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer'}
-APP_WAIT_SECONDS = 15
-APP_REPLY_SECONDS = 30
 
 
 def local_control(request: Request, key: str) -> bool:
@@ -112,8 +98,7 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
     rate = defaultdict(deque)
     sockets = defaultdict(int)
     pending = 0
-    # Page requests waiting for each space's app, which this process alone tunnels.
-    tunnels = defaultdict(lambda: {'queue': deque(), 'wake': asyncio.Event(), 'replies': {}, 'seen': 0.0})
+    apps = LocalApps(store)
     signing = (key or secrets.token_hex(32)).encode()
 
     def limited(identity, maximum):
@@ -316,60 +301,50 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
     @router.api_route('/app/site/{session}/{path:path}', methods=['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'])
     async def app_site(session: str, path: str, request: Request):
         gid, principal = viewer_of(session)
-        if request.method == 'OPTIONS':
-            return Response(status_code=204, headers={**APP_PAGE_HEADERS, 'Access-Control-Allow-Methods': '*',
-                                                      'Access-Control-Allow-Headers': '*', 'Access-Control-Max-Age': '600'})
         member = await invoke(store.app_member, gid, principal)
-        tunnel = tunnels[gid]
-        if tunnel['seen'] < time.monotonic() - 60:
-            return Response('小程序暂时不在线，请稍后再打开。', status_code=503, media_type='text/plain; charset=utf-8', headers=APP_PAGE_HEADERS)
-        rid = secrets.token_hex(12)
-        reply = asyncio.get_running_loop().create_future()
-        tunnel['replies'][rid] = reply
-        tunnel['queue'].append({'type': 'http', 'id': rid, 'member': member, 'method': request.method, 'path': '/' + path,
-                                'query': request.url.query, 'body': base64.b64encode(await request.body()).decode(),
-                                'headers': {k: v for k, v in request.headers.items() if k.lower() in APP_REQUEST_HEADERS}})
-        tunnel['wake'].set()
+        return await apps.http(request, gid, member, path)
+
+    @router.websocket('/app/site/{session}/{path:path}')
+    async def app_socket(ws: WebSocket, session: str, path: str):
         try:
-            answer = await asyncio.wait_for(reply, APP_REPLY_SECONDS)
-        except asyncio.TimeoutError:
-            return Response('小程序没有响应。', status_code=504, media_type='text/plain; charset=utf-8', headers=APP_PAGE_HEADERS)
-        finally:
-            tunnel['replies'].pop(rid, None)
-        headers = {k: v for k, v in answer.headers.items() if k.lower() in APP_REPLY_HEADERS}
-        return Response(base64.b64decode(answer.body), status_code=answer.status, headers={**headers, **APP_PAGE_HEADERS})
+            gid, principal = viewer_of(session)
+            member = await invoke(store.app_member, gid, principal)
+            await apps.websocket(ws, gid, member, path)
+        except HTTPException:
+            await ws.close(1008)
+
+    async def host_app(request, authorization, name=None):
+        if not local_control(request, key):
+            raise HTTPException(403, '小程序须在群聊主机运行')
+        credential = app_key(authorization)
+        return credential, await invoke(store.app_auth, credential, name)
+
+    @router.post('/app/serve')
+    async def app_serve(body: AppEndpoint, request: Request, authorization: str | None = Header(None)):
+        credential, gid = await host_app(request, authorization)
+        apps.register(gid, credential, body.port, body.secret)
+        return {'ok': True}
 
     @router.post('/app/poll')
-    async def app_poll(body: AppPoll, authorization: str | None = Header(None)):
-        gid = await invoke(store.app_auth, app_key(authorization), body.name or '小程序')
-        tunnel = tunnels[gid]
-        deadline = time.monotonic() + APP_WAIT_SECONDS
+    async def app_poll(body: AppPoll, request: Request, authorization: str | None = Header(None)):
+        credential, gid = await host_app(request, authorization, body.name or '小程序')
+        if body.port:
+            apps.register(gid, credential, body.port, body.secret)
+        deadline = time.monotonic() + 15
         while True:
-            tunnel['seen'] = time.monotonic()
-            requests = [tunnel['queue'].popleft() for _ in range(len(tunnel['queue']))]
             packet = await invoke(store.app_events, gid, body.cursor)
-            if requests or packet['items'] or body.cursor is None or time.monotonic() >= deadline:
-                return {'items': requests + packet['items'], 'cursor': packet['cursor']}
-            tunnel['wake'].clear()
-            try:
-                await asyncio.wait_for(tunnel['wake'].wait(), 0.5)
-            except asyncio.TimeoutError:
-                pass
-
-    @router.post('/app/respond')
-    async def app_respond(body: AppReply, authorization: str | None = Header(None)):
-        reply = tunnels[await invoke(store.app_auth, app_key(authorization))]['replies'].get(body.id)
-        if reply is not None and not reply.done():
-            reply.set_result(body)
-        return {'ok': reply is not None}
+            if packet['items'] or body.cursor is None or time.monotonic() >= deadline:
+                return packet
+            await asyncio.sleep(0.5)
 
     @router.get('/app/members')
-    async def app_members(authorization: str | None = Header(None)):
-        return await invoke(store.app_members, await invoke(store.app_auth, app_key(authorization)))
+    async def app_members(request: Request, authorization: str | None = Header(None)):
+        _, gid = await host_app(request, authorization)
+        return await invoke(store.app_members, gid)
 
     @router.post('/app/ask')
-    async def app_ask(body: AppAsk, authorization: str | None = Header(None)):
-        gid = await invoke(store.app_auth, app_key(authorization))
+    async def app_ask(body: AppAsk, request: Request, authorization: str | None = Header(None)):
+        _, gid = await host_app(request, authorization)
         limited('app-ask:' + gid, 120)
         return await invoke(store.app_ask, gid, body.agent, body.content)
 

@@ -28,6 +28,7 @@ async function clawcross(port,home){
   await expect.poll(async()=>{try{return(await fetch(origin+'/relay/health')).status;}catch{return 0;}},{timeout:20000}).toBe(200);
   const call=(method,route,options)=>request(origin,method,route,options);
   const serviceKey=fs.readFileSync(path.join(home,'data','group-service.key'),'utf8').trim();
+  process.env.CLAWCROSS_SPACE_LOCAL_TOKEN=serviceKey;
   const alice=await call('POST','/relay/create',{key:serviceKey,body:{title:'测试空间',node_id:'host',user_id:'alice',display_name:'Alice'}});
   const {invite}=await call('POST','/relay/guest-invites',{token:alice.token,body:{}});
   const bob=await call('POST','/relay/guest/join',{body:{invite,name:'Bob',password:'bob-password'}});
@@ -44,6 +45,7 @@ async function hub(port,home){
       CLAWCROSSHUB_DATA_DIR:home,NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','ignore','inherit']});
   await expect.poll(async()=>{try{return(await fetch(origin+'/groups')).status;}catch{return 0;}},{timeout:30000}).toBe(200);
   const call=(method,route,options)=>request(origin+'/groups',method,route,options);
+  process.env.CLAWCROSS_SPACE_LOCAL_TOKEN=fs.readFileSync(path.join(home,'space-app-local.key'),'utf8').trim();
   const alice=await call('POST','/group-guest-api/create',{body:{title:'测试空间'}});
   await call('POST','/group-guest-api/rename',{guest:alice.token,body:{name:'Alice'}});
   const bob=await call('POST','/group-guest-api/join',{invite:alice.invite,body:{name:'Bob',password:'bob-password'}});

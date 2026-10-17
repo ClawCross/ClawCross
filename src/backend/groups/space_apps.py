@@ -95,6 +95,9 @@ class SpaceAppRunner:
         if not node:
             raise ClientError('运行小程序需要先安装 Node.js 18 或更新版本', 400)
         row = self.client.require(owner, gid)
+        from groups.config import service_url, service_key
+        if row['url'].rstrip('/') != service_url().rstrip('/') or row.get('via'):
+            raise ClientError('小程序只能在群聊所在主机启动；本地群聊可通过 Hub 公网链接分享', 400)
         # The group server checks that this member owns the space; a new key disconnects the old app.
         key = self.client.request(row, 'POST', '/app/key', {})['key']
         with self.lock:
@@ -105,7 +108,7 @@ class SpaceAppRunner:
                 out.write(f'\n--- {time.strftime("%Y-%m-%d %H:%M:%S")} 启动 {app["name"]}\n'.encode())
                 proc = subprocess.Popen([node, app['entry']], cwd=str(Path(app['entry']).parent), stdin=subprocess.DEVNULL,
                                         stdout=out, stderr=subprocess.STDOUT, **DETACH,
-                                        env={**os.environ, 'CLAWCROSS_SPACE_SERVER': row['url'], 'CLAWCROSS_SPACE_KEY': key})
+                                        env={**os.environ, 'CLAWCROSS_SPACE_SERVER': row['url'], 'CLAWCROSS_SPACE_KEY': key, 'CLAWCROSS_SPACE_LOCAL_TOKEN': service_key()})
             self.runs[(owner, gid)] = {'app': app_id, 'name': app['name'], 'proc': proc, 'started': time.time(), 'error': ''}
             self.save()
         return self.status(owner, gid)

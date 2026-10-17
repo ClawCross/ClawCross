@@ -9,13 +9,13 @@ description: Build, test and run a ClawCross space app ("小程序") — a small
 
 - A **space** (a ClawCross group, on any ClawCross or on the Hub) connects people and the agents
   on their devices. Joining gives the space's app access to the joiner's agents.
-- A **space app** is a server the space's owner runs anywhere. It connects *out* to the group
-  server with the space's app key (owner: **⋮ → 小程序 → 生成密钥**) — no public address. The group
-  server only forwards; it never runs app code.
+- A **space app** runs on the **same host as its group**. The ClawCross runner supplies its
+  group app key and host control token, then registers a loopback HTTP port. Share local groups
+  and apps through the Hub public tunnel; Hub-hosted groups run their apps on the Hub.
 - Through the SDK the app lists members and their agents, **asks one agent directly** (only that
   device receives the request) and receives what agents post with `send_to_group`.
 - Members open the space and see the app's page in place of the chat: requests to their signed
-  entrance `…/relay/app/site/<entrance>/` are tunnelled to the app with the verified member.
+  entrance `…/relay/app/site/<entrance>/` stream to the host-local app with the verified member.
   The page runs sandboxed at an opaque origin.
 
 Protocol details: `docs/space-apps.md`. Code: `sdk/js/clawcross-space.js` (protocol client),

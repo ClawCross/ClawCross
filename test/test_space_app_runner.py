@@ -16,6 +16,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
 
+from groups.config import service_url
 from groups import space_apps
 from groups.client import ClientError
 from groups.facade import GroupFacade, client_router
@@ -61,7 +62,7 @@ class Server:
     def require(self, owner, gid):
         if owner != 'alice':
             raise ClientError('未加入此群，或群凭证已撤销', 403)
-        return {'url': 'http://127.0.0.1:9/groups'}
+        return {'url': service_url()}
 
     def request(self, row, method, path, body=None):
         assert (method, path) == ('POST', '/app/key')
@@ -90,7 +91,7 @@ def test_start_runs_the_app_with_a_fresh_key_and_stop_ends_it(home):
     assert runner.start('alice', 'rg_1', 'echo')['status'] == 'running'
     started = home / 'state' / 'space-apps' / 'echo' / 'started.json'
     wait(started.exists)
-    assert json.loads(started.read_text()) == {'server': 'http://127.0.0.1:9/groups', 'key': 'app_key_1'}
+    assert json.loads(started.read_text()) == {'server': service_url(), 'key': 'app_key_1'}
     assert [row['app'] for row in json.loads((home / 'data' / 'space-app-runs.json').read_text())] == ['echo']
     assert runner.status('bob', 'rg_1') == {'app': None, 'status': 'stopped'}   # another local user's view
     proc = runner.runs[('alice', 'rg_1')]['proc']
@@ -156,3 +157,12 @@ def test_a_run_whose_space_is_gone_is_forgotten_at_restart(home):
     runner.restore()
     wait(lambda: ('bob', 'rg_gone') not in runner.runs)
     assert json.loads(record.read_text()) == []
+
+
+def test_remote_groups_cannot_start_local_apps(home):
+    server = Server()
+    server.require = lambda owner, gid: {'url':'https://remote.example/groups'}
+    runner = space_apps.SpaceAppRunner(server)
+    with pytest.raises(ClientError, match='群聊所在主机'):
+        runner.start('alice', 'rg_remote', 'echo')
+    assert not runner.runs and server.keys == 0

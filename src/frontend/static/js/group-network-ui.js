@@ -251,7 +251,7 @@
         state.textContent = run.status === 'running' ? '运行中 · ' + name + (group.app?.online ? ' · 已连上空间' : ' · 正在连接…')
           : run.status === 'starting' ? '正在重新启动 · ' + name
           : run.status === 'exited' ? '已停止 · ' + name
-          : group.app ? '空间连着别处运行的小程序 · ' + (group.app.online ? '在线' : '未连接') : '还没有小程序，大家看到的是普通群聊';
+          : group.app ? '由群聊主机运行的小程序 · ' + (group.app.online ? '在线' : '未连接') : '还没有小程序，大家看到的是普通群聊';
         problem.textContent = run.status === 'exited' ? run.error || '' : '';
         problem.hidden = !problem.textContent;
         launch.textContent = run.app && run.status !== 'exited' ? '换成这个' : '启动';
@@ -274,32 +274,7 @@
       view.body.append(state, problem, pick, about, actions,
         el('p', 'gn-note', 'ClawCross 会一直运行它，重启后自动恢复；启动会替换空间当前连着的小程序，停止后空间恢复为普通群聊。把自己的小程序放进 ' + catalog.folder + '/<名字>/server.js，就会出现在这里。'));
       // Advanced: run an app server yourself, anywhere, with a key.
-      const advanced = el('details'), issued = el('div', 'gn-body');
-      advanced.append(el('summary', 'gn-note', '高级 · 自己运行小程序服务器'), issued);
-      const field = (label, value) => {
-        const input = el('input', 'gn-input gn-link'); input.readOnly = true; input.value = value; input.setAttribute('aria-label', label);
-        input.addEventListener('focus', () => input.select());
-        issued.append(el('p', 'gn-note', label), input);
-      };
-      const make = button('生成密钥', 'secondary', () => busy(make, view.status, '正在生成…', async () => {
-        const { key } = await request('POST', path + '/app-key', {});
-        issued.replaceChildren(make);
-        field('服务器地址', location.origin);
-        field('小程序密钥（只显示这一次）', key);
-        field('例如在 ClawCross 目录运行精灵对战', `node examples/space-apps/creature-battle/server.js --server ${location.origin} --key ${key}`);
-        view.status.textContent = '新密钥已生成，之前连着的小程序已断开';
-        await refresh();
-      }));
-      issued.append(make);
-      if (group.app) {
-        const remove = button('断开小程序', 'quiet', () => busy(remove, view.status, '正在断开…', async () => {
-          if (run.app) await request('DELETE', path + '/app-run');
-          const updated = await request('DELETE', path + '/app');
-          view.done(); changed(updated);
-        }));
-        issued.append(remove);
-      }
-      view.body.append(advanced);
+      view.body.append(el('p', 'gn-note', '小程序与群聊在同一主机运行。本地群聊可通过 Hub 公网链接分享；远程群聊的小程序由远程主机管理。'));
       paint();
     },
 

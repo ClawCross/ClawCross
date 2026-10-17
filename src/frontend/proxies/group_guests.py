@@ -83,23 +83,80 @@ def register_guest_routes(app, *, port_agent, internal_token, public_base=lambda
 
     @app.route('/relay/app/<path:rest>', methods=['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'])
     def group_app_relay(rest):
-        """A space's app reaches this machine's group server here, and members' pages reach the app.
-        App calls carry the app key; page requests carry their signed entrance in the path."""
+        """Only members' signed page entrances are public; SDK control stays host local."""
         from groups.config import service_url
+        if not rest.startswith('site/'):
+            return jsonify(error='小程序只能由群聊主机运行'), 403
         headers = {k: v for k, v in request.headers.items() if k.lower() in {
-            'authorization', 'content-type', 'accept', 'accept-language', 'if-none-match', 'if-modified-since', 'range', 'user-agent'}}
+            'content-type', 'accept', 'accept-language', 'if-none-match', 'if-modified-since', 'range', 'user-agent'}}
+        client = requests.Session()
+        client.trust_env = False
         try:
-            with requests.Session() as client:
-                client.trust_env = False
-                response = client.request(request.method, service_url() + '/relay/app/' + rest, params=request.args,
-                                          headers=headers, data=request.get_data(), timeout=45, allow_redirects=False)
+            response = client.request(request.method, service_url() + '/relay/app/' + rest, params=request.args,
+                headers=headers, data=request.get_data(), timeout=(5, None), allow_redirects=False, stream=True)
         except requests.RequestException:
+            client.close()
             return jsonify(error='暂时无法连接群服务器，请稍后重试'), 503
-        result = app.response_class(response.content, status=response.status_code)
+
+        def content():
+            try:
+                while True:
+                    part = response.raw.read1(65536, decode_content=False)
+                    if not part:
+                        break
+                    yield part
+            finally:
+                response.close()
+                client.close()
+        result = app.response_class(content(), status=response.status_code)
         for name, value in response.headers.items():
-            if name.lower() not in {'content-length', 'transfer-encoding', 'connection', 'content-encoding', 'server', 'date'}:
+            if name.lower() not in {'content-length', 'transfer-encoding', 'connection', 'server', 'date'}:
                 result.headers[name] = value
+        result.headers['X-Accel-Buffering'] = 'no'
         return result
+
+    @app.route('/relay/app/site/<path:rest>', websocket=True)
+    def group_app_websocket(rest):
+        from contextlib import suppress
+        import threading
+        from simple_websocket import Server, ConnectionClosed
+        from websockets.sync.client import connect
+        from websockets.exceptions import ConnectionClosed as UpstreamClosed
+        from groups.config import service_url
+
+        protocols = [p.strip() for p in request.headers.get('Sec-WebSocket-Protocol', '').split(',') if p.strip()]
+        upstream = None
+        try:
+            url = service_url().replace('http://', 'ws://', 1).replace('https://', 'wss://', 1)
+            url += '/relay/app/site/' + rest + ('?' + request.query_string.decode('ascii') if request.query_string else '')
+            upstream = connect(url, subprotocols=protocols or None, proxy=None, open_timeout=5, max_size=1024*1024)
+            browser = Server.accept(request.environ, subprotocols=[upstream.subprotocol] if upstream.subprotocol else [])
+
+            def download():
+                try:
+                    for data in upstream:
+                        browser.send(data)
+                except (UpstreamClosed, ConnectionClosed, OSError):
+                    pass
+                finally:
+                    with suppress(Exception):
+                        browser.close(reason=upstream.close_code or 1000)
+            thread = threading.Thread(target=download, daemon=True)
+            thread.start()
+            try:
+                while True:
+                    data = browser.receive()
+                    if data is not None:
+                        upstream.send(data)
+            finally:
+                upstream.close()
+                thread.join(timeout=3)
+        except (UpstreamClosed, ConnectionClosed, OSError):
+            pass
+        finally:
+            if upstream is not None:
+                upstream.close()
+        return ''
 
     @app.route('/relay/<path:call>', methods=['GET', 'POST'])
     def group_device_relay(call):

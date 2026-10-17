@@ -6,25 +6,25 @@ callable. A space may have an **app** — a server its owner runs — that decid
 member sees and how and in which order the agents are used. Plain group chat is what a space
 shows without an app.
 
-The group server — the Hub, or any ClawCross — is the infrastructure. The app server needs no
-public address: it connects out to the group server with the space's app key, and members'
-pages reach it through that connection, like a virtual LAN.
+The app and its group run on **the same host**. The SDK opens a loopback HTTP port and
+registers it with the local group server. Members' pages stream directly to that port with
+verified membership. To share a local group and app, enable ClawCross's Hub public tunnel;
+Hub-hosted groups run their apps on the Hub. Agents may still run on other devices.
 
 ## Running an app
 
 1. The owner opens the space's **⋮ → 小程序**, picks an app and presses **启动**. ClawCross asks
    the space's group server (this ClawCross or the Hub) for a fresh app key and runs
-   `node <app>/server.js` on this machine with `CLAWCROSS_SPACE_SERVER` and `CLAWCROSS_SPACE_KEY`
+   `node <app>/server.js` on this machine with `CLAWCROSS_SPACE_SERVER`, `CLAWCROSS_SPACE_KEY` and the host control token
    set; it starts the app again after ClawCross restarts and shows its log if it stops. **停止**
    ends it. A new key disconnects the previous app; **断开小程序** returns the space to chat.
 2. The list holds the shipped examples (`examples/space-apps/`) and the owner's own apps: a
    folder `<ClawCross home>/space-apps/<name>/` with a `server.js` (an own folder overrides a
    shipped one of the same name). The dialog shows the name and the `简介：` line from the
    file's opening comment. New apps need no ClawCross update.
-3. To run an app server elsewhere, **高级 · 自己运行小程序服务器 → 生成密钥** gives the address
-   and a key:
-
-       node examples/space-apps/creature-battle/server.js --server <address> --key <app key>
+3. Custom apps also run on the group host. The runner provides `CLAWCROSS_SPACE_LOCAL_TOKEN`
+   in addition to the group-scoped app key. A public address and an app key alone cannot
+   register an endpoint on another machine. There is no remote app-server relay.
 
 4. Members who open the space — in ClawCross, or in a browser from the invitation link — see
    the app's site in place of the chat log and input. Members, invitation and the group menu
@@ -53,19 +53,26 @@ cannot post plain messages there.
 
 ## Protocol
 
-App calls carry `Authorization: Bearer <app key>` under `<server>/relay/app/`:
+Host-local SDK calls carry `Authorization: Bearer <app key>` and
+`X-Group-Service-Key: <host control token>` under `<server>/relay/app/`:
 
-- `POST poll {cursor, name}` — long poll (15 s). Returns `{items, cursor}`; items are
-  `http` (a member's page request), `agent` (output) and `members` (a change). A `null`
-  cursor starts from now.
-- `POST respond {id, status, headers, body}` — answers an `http` item (body base64, ≤ 1.5 MiB).
-- `GET members`, `POST ask {agent, content}`.
+- `POST serve {port, secret}` registers the app's **127.0.0.1** port and random secret.
+- `POST poll {cursor, name, port?, secret?}` refreshes the endpoint and long-polls Agent output
+  and membership events (15 s). A null cursor starts from now. Page traffic is separate.
+- `GET members`, `POST ask {agent, content}` retain their existing semantics.
+- The old `respond` endpoint and HTTP events in polls have been removed.
 
-Members open `POST /relay/app/session` (a device) or `/relay/guest/app_session` (a browser);
-the returned path `relay/app/site/<entrance>/` is that member's signed entrance, valid for a
-day. Page requests under it reach the app with the member's identity; the app answers within
-30 s with the whole reply, so WebSockets and streamed responses (SSE) do not pass; pages
-long-poll instead. Pages use relative URLs.
+Members obtain a signed page entrance through `POST /relay/app/session` (device) or
+`/relay/guest/app_session` (browser). Every HTTP request and WebSocket handshake validates
+current group membership. Rotating/removing the app key invalidates the local endpoint.
+Use relative URLs inside the app; membership cookies are never forwarded to its port.
+
+HTTP responses stream immediately, including SSE and long polls, without the old 1.5 MiB
+whole-response limit. Native WebSockets preserve text, binary, subprotocols and close frames.
+Node apps can use `space.serve(handler, {upgrade(req, socket, head) { /* WS library */ }})`;
+`req.member` is verified for both handlers. The Hub device tunnel multiplexes WebSockets
+alongside HTTP; its WebSocket message limit is 128 KiB with bounded flow control.
+The self-hosted Hub routes app WebSocket upgrades through its relay gateway (see deploy Caddyfile).
 
 The site runs at an opaque origin: ClawCross opens it in a sandboxed frame, and every site
 response carries `Content-Security-Policy: sandbox …`, so even opened directly it can never act

@@ -8,20 +8,22 @@
  *   space.on('agent', ({ agent, name, request, content }) => …);  // what agents post with send_to_group
  *   space.on('member', () => …);        // someone joined, left or changed
  *
- * The app server needs no public address: it connects out to the space's group server, and the
- * members' pages reach `serve()` through that connection. Use relative URLs in pages.
+ * Run the app on the group server's host. Pages stream directly to its loopback HTTP port;
+ * use the Hub public tunnel to share a local group. Use relative URLs in pages.
  */
 'use strict';
 const http = require('node:http');
 const crypto = require('node:crypto');
 const { EventEmitter } = require('node:events');
 
-const REPLY_BYTES = 1536 * 1024;
-
 class Space extends EventEmitter {
-  constructor({ server, key, name = '' }) {
+  constructor({ server, key, name = '', localToken = process.env.CLAWCROSS_SPACE_LOCAL_TOKEN }) {
     super();
     if (!server || !key) throw new Error('需要群聊服务器地址和小程序密钥');
+    const address = new URL(server);
+    if (!['127.0.0.1', 'localhost', '[::1]'].includes(address.hostname) || !localToken)
+      throw new Error('小程序须在群聊主机运行，并由主机提供 CLAWCROSS_SPACE_LOCAL_TOKEN');
+    this.localToken = localToken;
     this.base = String(server).replace(/\/+$/, '') + '/relay/app/';
     this.key = key;
     this.name = name;
@@ -33,7 +35,7 @@ class Space extends EventEmitter {
 
   async call(method, path, body) {
     const response = await fetch(this.base + path, {
-      method, headers: { Authorization: 'Bearer ' + this.key, 'Content-Type': 'application/json' },
+      method, headers: { Authorization: 'Bearer ' + this.key, 'X-Group-Service-Key': this.localToken, 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body)
     });
     const data = await response.json().catch(() => ({}));
@@ -52,15 +54,23 @@ class Space extends EventEmitter {
   async ask(agent, content) { return (await this.call('POST', 'ask', { agent, content })).request; }
 
   /** Members' pages are served by `handler(req, res)`; `req.member` is `{ id, name }`, verified by the group server. */
-  serve(handler) {
+  async serve(handler, { upgrade } = {}) {
     this.site = http.createServer((req, res) => {
       // Only requests forwarded by this SDK carry the secret; others on this machine are refused.
       if (req.headers['x-space-secret'] !== this.secret) { res.writeHead(403).end(); return; }
       req.member = { id: String(req.headers['x-space-member'] || ''), name: decodeURIComponent(String(req.headers['x-space-member-name'] || '')) };
       handler(req, res);
     });
-    return new Promise((resolve) => this.site.listen(0, '127.0.0.1', resolve));
+    if (upgrade) this.site.on('upgrade', (req, socket, head) => {
+      if (req.headers['x-space-secret'] !== this.secret) { socket.destroy(); return; }
+      req.member = { id: String(req.headers['x-space-member'] || ''), name: decodeURIComponent(String(req.headers['x-space-member-name'] || '')) };
+      upgrade(req, socket, head);
+    });
+    await new Promise((resolve, reject) => { this.site.once('error', reject); this.site.listen(0, '127.0.0.1', resolve); });
+    await this.call('POST', 'serve', this.endpoint());
   }
+
+  endpoint() { return this.site?.listening ? { port: this.site.address().port, secret: this.secret } : {}; }
 
   close() {
     this.closed = true;
@@ -71,7 +81,7 @@ class Space extends EventEmitter {
     let delay = 1000;
     while (!this.closed) {
       try {
-        const packet = await this.call('POST', 'poll', { cursor: this.cursor, name: this.name });
+        const packet = await this.call('POST', 'poll', { cursor: this.cursor, name: this.name, ...this.endpoint() });
         this.cursor = packet.cursor;
         delay = 1000;
         for (const item of packet.items) this.dispatch(item);
@@ -85,31 +95,10 @@ class Space extends EventEmitter {
   }
 
   dispatch(item) {
-    if (item.type === 'http') this.forward(item).catch((error) => this.emit('offline', error));
-    else if (item.type === 'agent') this.emit('agent', { agent: item.agent, name: item.name, request: item.request, content: item.content });
+    if (item.type === 'agent') this.emit('agent', { agent: item.agent, name: item.name, request: item.request, content: item.content });
     else if (item.type === 'members') this.emit('member');
   }
 
-  async forward(item) {
-    const reply = await new Promise((resolve) => {
-      if (!this.site) { resolve({ status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' }, body: Buffer.from('小程序还没有页面') }); return; }
-      const request = http.request({
-        host: '127.0.0.1', port: this.site.address().port, method: item.method, path: item.path + (item.query ? '?' + item.query : ''),
-        headers: { ...item.headers, 'x-space-secret': this.secret, 'x-space-member': item.member.id,
-          'x-space-member-name': encodeURIComponent(item.member.name) }
-      }, (response) => {
-        const chunks = []; let size = 0;
-        response.on('data', (chunk) => { size += chunk.length; if (size <= REPLY_BYTES) chunks.push(chunk); });
-        response.on('end', () => resolve(size > REPLY_BYTES
-          ? { status: 502, headers: { 'content-type': 'text/plain; charset=utf-8' }, body: Buffer.from('小程序回复超过 1.5 MiB') }
-          : { status: response.statusCode, headers: response.headers, body: Buffer.concat(chunks) }));
-      });
-      request.on('error', (error) => resolve({ status: 502, headers: { 'content-type': 'text/plain; charset=utf-8' }, body: Buffer.from(String(error.message)) }));
-      request.end(Buffer.from(item.body || '', 'base64'));
-    });
-    const headers = Object.fromEntries(Object.entries(reply.headers).filter(([, value]) => typeof value === 'string'));
-    await this.call('POST', 'respond', { id: item.id, status: reply.status, headers, body: reply.body.toString('base64') });
-  }
 }
 
 /** Connects to a space with its app key; the returned space keeps polling until `close()`. */
