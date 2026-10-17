@@ -40,6 +40,7 @@ class AgentJoin(BaseModel):
     agent_id: str = Field(min_length=1, max_length=100)
     name: str = Field(min_length=1, max_length=160)
     platform: str = Field('agent', max_length=50)
+    convert_to_group: bool = False
 
 
 class GuestJoin(BaseModel):

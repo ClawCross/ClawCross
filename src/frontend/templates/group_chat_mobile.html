@@ -12642,6 +12642,11 @@ async function confirmAddAgents() {
   if (!currentGroupId || addAgentSelected.size === 0) return;
   const footer = document.getElementById('add-agent-footer');
   const groupId = currentGroupId;
+  const group = _cacheGetFresh(__mobileGroupDetailCache, groupId) || groups.find(item => getGroupId(item) === groupId);
+  const convertToGroup = group?.kind === 'direct';
+  if (convertToGroup && !confirm(_currentLang === 'zh'
+      ? '添加成员后，这段私聊将转为群聊，原有聊天记录也会对新成员可见。继续添加吗？'
+      : 'Adding members turns this private chat into a group. New members will also be able to read its existing history. Continue?')) return;
   document.getElementById('add-agent-error')?.remove();
   footer.innerHTML = `<div style="text-align:center;padding:12px;color:var(--text-secondary);">${t('adding')}</div>`;
 
@@ -12658,7 +12663,9 @@ async function confirmAddAgents() {
           || (await registerAgent({ name: pick.persona.name, platform: 'webot' }, team, pick.persona.tag)).agent_id;
         // A failed join must not create another Agent on retry.
         pick.agent_id = agentId;
-        const detail = await api('POST', `/proxy_groups/${encodeURIComponent(groupId)}/members`, { agent: agentId });
+        const fields = {agent: agentId};
+        if (convertToGroup) fields.convert_to_group = true;
+        const detail = await api('POST', `/proxy_groups/${encodeURIComponent(groupId)}/members`, fields);
         if (currentGroupId === groupId) applyGroupDetail(detail);
         addAgentSelected.delete(key);
         const checkbox = [...document.querySelectorAll('#add-agent-body input[type="checkbox"]')].find(input => input.value === key);

@@ -100,6 +100,30 @@ class RelayStoreTests(unittest.TestCase):
         with self.assertRaises(RelayError): self.store.post(self.host['token'], agent_id='a', content='not allowed')
         with self.assertRaises(RelayError): self.store.post(self.host['token'], content='', attachments=[{'data': 'a' * (513 * 1024)}])
 
+    def test_direct_chat_converts_only_with_confirmation_and_preserves_identity_and_history(self):
+        import sqlite3
+        private = self.store.create(title='Original', kind='direct', node_id='one', user_id='alice', display_name='Alice')
+        token = private['token']
+        gid = private['group']['group_id']
+        self.store.add_agent(token, agent_id='first', name='First', platform='webot')
+        self.store.post(token, content='Original private history')
+        history = self.store.messages(token)
+        with self.assertRaises(RelayError):
+            self.store.add_agent(token, agent_id='second', name='Second', platform='codex')
+        self.assertEqual(self.store.detail(token)['kind'], 'direct')
+        with self.store.db() as db:
+            db.execute("CREATE TRIGGER reject_blocked BEFORE INSERT ON relay_members WHEN NEW.agent_id='blocked' BEGIN SELECT RAISE(ABORT,'blocked'); END")
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.store.add_agent(token, agent_id='blocked', name='Blocked', platform='webot', convert_to_group=True)
+        self.assertEqual(self.store.detail(token)['kind'], 'direct')
+        group = self.store.add_agent(token, agent_id='second', name='Second', platform='codex', convert_to_group=True)
+        self.assertEqual(group['kind'], 'group')
+        self.assertEqual(group['group_id'], gid)
+        self.assertEqual(group['title'], 'Original')
+        self.assertEqual(len(group['members']), 3)
+        self.assertEqual(self.store.messages(token), history)
+        self.assertTrue(self.store.guest_invite(token)['invite'])
+
     def test_loopback_admin_body_limits_and_duplex_ws(self):
         app = create_app(data_dir=self.temp.name, control_key='machine-control', legacy=False)
         with TestClient(app, client=('127.0.0.1', 1500)) as api:

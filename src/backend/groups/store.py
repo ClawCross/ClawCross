@@ -207,11 +207,23 @@ class ConversationStore:
     def membership(self, conv_id: str, principal: str) -> Membership | None:
         return next((m for m in self.members(conv_id) if m.principal == principal), None)
 
-    def add_member(self, conv_id: str, principal: str, *, nickname: str = "") -> None:
-        self._run(
-            "INSERT OR IGNORE INTO conversation_members (conv_id, principal, nickname, joined_at) VALUES (?, ?, ?, ?)",
-            (conv_id, principal, nickname, time.time()),
-        )
+    def add_member(self, conv_id: str, principal: str, *, nickname: str = "", convert_to_group: bool = False) -> None:
+        conn = self._connect()
+        try:
+            conn.execute('BEGIN IMMEDIATE')
+            conn.execute(
+                "INSERT OR IGNORE INTO conversation_members (conv_id, principal, nickname, joined_at) VALUES (?, ?, ?, ?)",
+                (conv_id, principal, nickname, time.time()),
+            )
+            if convert_to_group:
+                conn.execute("UPDATE conversations SET kind=?, updated_at=? WHERE conv_id=? AND kind=?",
+                             (GROUP, time.time(), conv_id, DIRECT))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
     def remove_member(self, conv_id: str, principal: str) -> None:
         self._run("DELETE FROM conversation_members WHERE conv_id = ? AND principal = ?", (conv_id, principal))

@@ -334,12 +334,15 @@ class GroupClient:
             await asyncio.gather(task, return_exceptions=True)
         return {'removed': alias, 'local_only': True}
 
-    def add_agent(self, owner, alias, aid):
+    def add_agent(self, owner, alias, aid, *, convert_to_group=False):
         row = self.require(owner, alias)
         agent = self.agents.get(owner, aid)
         if not agent:
             raise ClientError('只能引入自己拥有的 agent', 403)
-        group = self.request(row, 'POST', '/agents', {'agent_id': aid, 'name': agent.name, 'platform': agent.platform})
+        fields = {'agent_id': aid, 'name': agent.name, 'platform': agent.platform}
+        if convert_to_group:
+            fields['convert_to_group'] = True
+        group = self.request(row, 'POST', '/agents', fields)
         allowed = set(json.loads(row['allowed_agents']))
         allowed.add(aid)
         self.store.update(owner, alias, metadata=json.dumps(group, ensure_ascii=False), allowed_agents=json.dumps(sorted(allowed)))

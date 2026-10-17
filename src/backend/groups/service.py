@@ -160,11 +160,13 @@ class GroupService:
 
     # ── members ──────────────────────────────────────────────────────────
 
-    def add_member(self, user: str, conv_id: str, agent_ref: str) -> dict:
+    def add_member(self, user: str, conv_id: str, agent_ref: str, *, convert_to_group: bool = False) -> dict:
         conversation = self._get(user, conv_id, manage=True)
-        if conversation.kind == DIRECT:
-            raise GroupError("私聊不能加人")
-        self.store.add_member(conv_id, self.agent_id(user, agent_ref))
+        aid = self.agent_id(user, agent_ref)
+        new_member = self.store.membership(conv_id, aid) is None
+        if conversation.kind == DIRECT and new_member and not convert_to_group:
+            raise GroupError("添加额外成员需要先确认将私聊转为群聊；原有历史会对新成员可见")
+        self.store.add_member(conv_id, aid, convert_to_group=convert_to_group and new_member and conversation.kind == DIRECT)
         return self.detail(user, conv_id)
 
     def remove_member(self, user: str, conv_id: str, principal: str) -> dict:

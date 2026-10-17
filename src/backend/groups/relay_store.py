@@ -376,7 +376,8 @@ class RelayStore:
             conn = self.auth(db, token)
             return self._card(db, conn['group_id'])
 
-    def add_agent(self, token: str, *, agent_id: str, name: str, platform: str) -> dict:
+    def add_agent(self, token: str, *, agent_id: str, name: str, platform: str,
+                  convert_to_group: bool = False) -> dict:
         if not agent_id:
             raise RelayError('agent 编号不能为空')
         with self.db() as db:
@@ -390,7 +391,11 @@ class RelayStore:
             if not existing and len(group['members']) >= 256:
                 raise RelayError('群最多容纳 256 个成员', 409)
             if not existing and group['kind'] == 'direct' and any(m['is_agent'] for m in group['members']):
-                raise RelayError('私聊只能有一个 agent', 409)
+                if not convert_to_group:
+                    raise RelayError('添加额外成员需要先确认将私聊转为群聊；原有历史会对新成员可见', 409)
+                if group['owner'] != conn['id']:
+                    raise RelayError('只有群主可以将私聊转为群聊', 403)
+                db.execute("UPDATE relay_groups SET kind='group' WHERE id=?", (conn['group_id'],))
             db.execute('INSERT INTO relay_members(id,group_id,connection_id,agent_id,name,platform) VALUES(?,?,?,?,?,?) '
                        'ON CONFLICT(connection_id,agent_id) DO UPDATE SET name=excluded.name,platform=excluded.platform',
                        ('p_' + secrets.token_hex(12), conn['group_id'], conn['id'], agent_id, name, platform))

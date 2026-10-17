@@ -305,3 +305,28 @@ test('adding group members reports refusal details and retries only failed selec
   await expect(page.locator('#add-agent-error')).toHaveCount(0);
   await expect(page.locator('#add-agent-modal')).not.toHaveClass(/show/);
 });
+
+for(const consent of [false,true]) {
+  test(`private chat conversion ${consent?'preserves the conversation':'can be cancelled before any write'}`,async({page})=>{
+    await mobileSetup(page);
+    const writes=[];
+    await page.route('**/proxy_groups/rg_one/members',route=>{
+      writes.push(route.request().postDataJSON());
+      return route.fulfill({json:{group_id:'rg_one',kind:'group',title:'朋友们',version:101,members:[]}});
+    });
+    page.on('dialog',dialog=>{
+      expect(dialog.message()).toContain('原有聊天记录也会对新成员可见');
+      return consent?dialog.accept():dialog.dismiss();
+    });
+    await page.evaluate(()=>{
+      applyGroupDetail({group_id:'rg_one',kind:'direct',title:'朋友们',version:100,members:[]});
+      addAgentSelected.clear();addAgentPicks.clear();
+      addAgentSelected.add('agent:second');addAgentPicks.set('agent:second',{agent_id:'second'});
+      return confirmAddAgents();
+    });
+    expect(writes).toEqual(consent?[{agent:'second',convert_to_group:true}]:[]);
+    expect(await page.evaluate(()=>currentGroupId)).toBe('rg_one');
+    await expect(page.locator('#chat-body')).toContainText('旧消息');
+    expect(await page.evaluate(()=>_cacheGetFresh(__mobileGroupDetailCache,'rg_one').kind)).toBe(consent?'group':'direct');
+  });
+}

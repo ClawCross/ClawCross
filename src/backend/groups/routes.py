@@ -64,6 +64,7 @@ class MessagePost(BaseModel):
 
 class MemberAdd(BaseModel):
     agent: str
+    convert_to_group: bool = False
 
 
 class MemberPatch(BaseModel):
@@ -148,7 +149,8 @@ def create_groups_router(
 
     @router.post("/groups/{conv_id}/members")
     async def add_member(conv_id: str, body: MemberAdd, authorization: str | None = Header(None)):
-        return call(service.add_member, user_of(authorization), conv_id, body.agent)
+        return call(service.add_member, user_of(authorization), conv_id, body.agent,
+                    convert_to_group=body.convert_to_group)
 
     @router.patch("/groups/{conv_id}/members/{principal}")
     async def update_member(conv_id: str, principal: str, body: MemberPatch, authorization: str | None = Header(None)):

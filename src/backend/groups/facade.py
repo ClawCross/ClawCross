@@ -89,10 +89,11 @@ class GroupFacade:
             return self.client.manage(user, gid, 'delete', {})
         return self.rpc(user, 'DELETE', '/' + quote(gid, safe=''))
 
-    def add_member(self, user, gid, ref):
+    def add_member(self, user, gid, ref, *, convert_to_group=False):
         if gid.startswith('rg_'):
-            return self.client.add_agent(user, gid, self.agent_id(user, ref))
-        return self.rpc(user, 'POST', '/' + quote(gid, safe='') + '/members', {'agent': ref})
+            return self.client.add_agent(user, gid, self.agent_id(user, ref), convert_to_group=convert_to_group)
+        return self.rpc(user, 'POST', '/' + quote(gid, safe='') + '/members',
+                        {'agent': ref, 'convert_to_group': convert_to_group})
 
     def remove_member(self, user, gid, principal):
         if gid.startswith('rg_'):
