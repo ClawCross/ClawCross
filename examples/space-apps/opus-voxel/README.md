@@ -16,9 +16,9 @@ pinned to `ca677140a47e668aeb2cfab65d4b3057f786f25d`.
 - Saves go to the host, scoped to the verified member ID, rather than relying on
   IndexedDB in a sandboxed frame. Changing devices preserves saves when signing in
   as the same group member. Other members cannot read those worlds.
-- This is a **single-player** voxel game. Joining the same ClawCross group does not
-  synchronize players into a shared Minecraft world. No vanilla-protocol multiplayer
-  is implemented or advertised.
+- Single-player worlds are each member's own. The space's owner can also open one world to
+  the room for **room multiplayer** (below). No vanilla-protocol multiplayer is implemented
+  or advertised.
 
 Select **方块世界** in a local group's app picker, or in a self-hosted Hub lobby.
 Nothing is downloaded on launch. WebGL2 is required; performance depends on the device.
@@ -48,6 +48,15 @@ The host runner supplies `CLAWCROSS_SPACE_DATA_DIR` outside Agent workspaces.
 | `POST api/build` | `{"world"?, "origin"?, "blocks"}` |
 
 命令：`state`、`blocks`、`inspect {from,to}`（最多 32768 格）、`move {forward,strafe,jump,sneak,sprint,ticks}`（每秒 20 刻，最多 200）、`look {yaw,pitch}` 或 `{at:[x,y,z]}`（角度）、`select {slot}`、`dig {x,y,z}`、`place {x,y,z,block?}`、`chat {text}`（可发 `/tp`、`/time`、`/give` 等）、`wait {ticks}`、`build {origin,blocks}`。挖掘和放置要在够得着的距离内；生存模式放置需要背包里有该方块。
+
+## 房间联机
+
+- **群主**：进入自己的一个世界 → 游戏菜单 → **房间联机…** → **开放当前世界**。这个世界会被复制为本房间的联机世界，之后的建造都发生在联机世界里；你的单人存档保持开放那一刻的样子。也可以在这里**关闭联机**或**重新开放**。
+- **成员**：标题画面 → **房间联机…** → **加入联机世界**。
+- **同步方式**：每个方块改动都经主机服务器：成员的改动要在够得着的距离内（8 格）、不能把实心方块放进别人身体，通过后广播给所有人，否则发回纠正。玩家位置每秒同步 10 次。群主的页面负责生物、液体流动、作物生长和昼夜天气，并同步给其他人；群主离开时，这些会暂停，其他人仍可建造。
+- **各自保存**：每个人的背包、血量和位置按成员身份保存在房间里，换设备也在。
+- **目前的限制**：箱子、熔炉的内容各自独立、不同步；敌对生物只追击群主；玩家之间不能互相攻击；其他玩家头顶不显示名字；联机世界里的生物不存档，重新进入后会自然刷新。
+- **实现**：每位成员一条 WebSocket（`<app URL>/room`，`room-socket.js`）。服务端 `room-world.js` 直接运行引擎自己的 `world.js`/`save.js` 保存权威区块，数据在主机的 `room-world.json`；页面端是 `multiplayer.js`。Hub 大厅需要把小程序的 `upgrade` 传给 `space.serve`。
 
 ## 个人开发测试素材开关
 

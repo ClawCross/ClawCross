@@ -6,10 +6,11 @@
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),os=require('node:os');
 const {connect}=require('../../../sdk/js/clawcross-space');
 const {Store}=require('../../../sdk/js/space-store');
+const {createRoom}=require('./room-world');
 const root=path.join(__dirname,'vendor/opusmc/game');
 const revision='ca677140a47e668aeb2cfab65d4b3057f786f25d';
 function createApp(space,{testAssets=process.env.CLAWCROSS_VOXEL_TEST_ASSETS??path.join(os.homedir(),'.clawcross','developer-assets','opusmc-'+revision,'assets.js')}={}){
- const saves=new Map();
+ const saves=new Map(),room=createRoom(space);
  const store=id=>{if(!saves.has(id))saves.set(id,new Store(space.dataDir,{worlds:[],chunks:{}},'member-'+crypto.createHash('sha256').update(id).digest('hex')+'.json'));return saves.get(id);};
  const resources=async id=>{
   const owner=(await space.members()).members.some(m=>m.id===id&&m.owner&&!m.agent);
@@ -19,7 +20,7 @@ function createApp(space,{testAssets=process.env.CLAWCROSS_VOXEL_TEST_ASSETS??pa
  const entry=fs.readFileSync(path.join(root,'index.html'),'utf8').replace('js/assets.js','resource-assets.js')
   .replace('<script src="resource-assets.js">','<script>window.VOXEL_LAYOUT='+fs.readFileSync(path.join(__dirname,'asset-layout.json'),'utf8')+';</script><script src="resource-assets.js">')
   .replace('<script src="js/game.js">','<script src="save-bridge.js"></script><script src="js/game.js">')
-  .replace('</body>','<script src="touch.js"></script><script src="developer-settings.js"></script><script src="world-tools.js"></script></body>').replaceAll('Minecraft JS 复刻版','方块世界 · OpusMC');
+  .replace('</body>','<script src="touch.js"></script><script src="developer-settings.js"></script><script src="flat-layers.js"></script><script src="world-tools.js"></script><script src="multiplayer.js"></script></body>').replaceAll('Minecraft JS 复刻版','方块世界 · OpusMC');
  // Character control: agents queue commands at <app URL>/api/…; the member's open page long-polls /control,
  // runs them in its game and returns the results with its next poll.
  const links=new Map();
@@ -78,6 +79,7 @@ function createApp(space,{testAssets=process.env.CLAWCROSS_VOXEL_TEST_ASSETS??pa
    if(req.method==='GET'){
     if(url.pathname==='/')return reply(200,entry,'text/html; charset=utf-8');
     if(url.pathname==='/api'||url.pathname==='/api/')return reply(200,HELP);
+    if(url.pathname==='/room')return reply(200,room.status(req.member.id));
     if(url.pathname==='/api/state'){const[result]=await run(req.member.id,[{type:'state'}],20000);return reply(result.ok?200:409,result.ok?result.result:{error:result.error});}
     if(url.pathname==='/builds')return reply(200,{builds:store(req.member.id).data.pendingBuilds?.[url.searchParams.get('world')]||[]});
     if(url.pathname==='/resources')return reply(200,await resources(req.member.id));
@@ -126,8 +128,10 @@ function createApp(space,{testAssets=process.env.CLAWCROSS_VOXEL_TEST_ASSETS??pa
    });return reply(200,{ok:true});
   }catch(error){if(!res.headersSent)reply(error.status||400,{error:error.message});}
  }
- return{handle};
+ // The room's shared world talks over one WebSocket per member at <app URL>/room.
+ const upgrade=(req,socket,head)=>new URL(req.url,'http://app').pathname==='/room'?room.upgrade(req,socket,head):socket.destroy();
+ return{handle,upgrade,close:room.close};
 }
-async function main(){const space=await connect({server:process.env.CLAWCROSS_SPACE_SERVER,key:process.env.CLAWCROSS_SPACE_KEY,name:'方块世界'});await space.serve(createApp(space).handle);}
+async function main(){const space=await connect({server:process.env.CLAWCROSS_SPACE_SERVER,key:process.env.CLAWCROSS_SPACE_KEY,name:'方块世界'});const app=createApp(space);await space.serve(app.handle,{upgrade:app.upgrade});}
 if(require.main===module)main().catch(error=>{console.error(error.message);process.exit(1);});
 module.exports={createApp,name:'方块世界'};

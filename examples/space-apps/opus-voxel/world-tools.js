@@ -37,34 +37,8 @@
  // ── 1. superflat layers ───────────────────────────────────────────────────
  // Bottom to top; "2*dirt" is two layers of dirt. The engine's own flat world is the 默认 preset.
  const PRESETS=[['默认','bedrock,56*stone,3*dirt,grass_block'],['经典','bedrock,2*dirt,grass_block']];
- function parseLayers(text){
-  const layers=[];let height=0;
-  for(const part of String(text).split(',').map(s=>s.trim()).filter(Boolean)){
-   const match=/^(?:(\d+)\s*\*\s*)?([a-z0-9_]+)$/.exec(part);
-   if(!match)throw Error('无法识别：'+part);
-   const count=match[1]===undefined?1:+match[1];
-   if(count<1)throw Error('层数至少为 1：'+part);
-   layers.push([count,blockId(match[2])]);height+=count;
-  }
-  if(!layers.length)throw Error('至少需要一层');
-  if(height>=HEIGHT)throw Error('总层数需小于 '+HEIGHT);
-  return layers;
- }
- const layersHeight=layers=>layers.reduce((sum,[count])=>sum+count,0);
- const generateFlat=World.prototype.generateFlat;
- World.prototype.generateFlat=function(cx,cz){
-  if(!this.flatLayers)return generateFlat.call(this,cx,cz);
-  const ch=new Chunk(cx,cz),column=[];
-  for(const[count,id]of this.flatLayers)for(let k=0;k<count;k++)column.push(id);
-  for(let z=0;z<16;z++)for(let x=0;x<16;x++){
-   for(let y=0;y<column.length;y++)ch.blocks[(y<<8)|(z<<4)|x]=column[y];
-   ch.biome[z*16+x]=BI.PLAINS;
-   this.tintFor(this.grassMap,0.3,0.2,ch.grass,(z*16+x)*3);
-   this.tintFor(this.foliageMap,0.3,0.2,ch.foliage,(z*16+x)*3);
-  }
-  ch.recount();
-  return ch;
- };
+ const parseLayers=text=>VoxelFlatLayers.parseLayers(text,BLOCKS,HEIGHT),layersHeight=VoxelFlatLayers.layersHeight;
+ VoxelFlatLayers.install(World,Chunk,BI);
  const setupWorld=Game.prototype.setupWorld;
  Game.prototype.setupWorld=function(seed){
   setupWorld.call(this,seed);
