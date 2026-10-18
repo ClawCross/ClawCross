@@ -14,6 +14,14 @@ try{
  const before=JSON.stringify(garden.store.data);assert.throws(()=>garden.act('alice','train',{creature:id,focus:'arbitrary'}));assert.equal(JSON.stringify(garden.store.data),before);
  assert.equal(garden.view('bob').creatures.length,0);assert.throws(()=>garden.act('bob','select',{creature:id}));
  alice=garden.act('alice','encounter',{creature:id});let n=0;
+ alice=garden.act('alice','move',{creature:id,slot:2});
+ assert.deepEqual(alice.encounter.events.map(event=>event.side),[0,1]);
+ assert.equal(alice.encounter.events[0].type,'guard');assert.ok(alice.encounter.events[1].move);
+ assert.equal(alice.encounter.events[1].hp,alice.encounter.hp);
+ const effects=structuredClone(alice.encounter.events);
+ alice=garden.act('alice','move',{creature:id,slot:0});
+ assert.notEqual(alice.encounter.events[0].id,effects[0].id);
+ assert.equal(alice.encounter.events[0].wildHp,alice.encounter.wildHp);
  while(!alice.encounter.done&&n++<30){const slot=alice.encounter.pp[0]>0?0:1;alice=garden.act('alice','move',{creature:id,slot,requestId:'move-'+n});}
  assert.ok(alice.encounter.done);assert.ok(['won','lost'].includes(alice.encounter.result));assert.ok(alice.coins>44);
  const saved=structuredClone(alice);garden=new Garden(new Store(dir,{rows:[],config:null}));assert.deepEqual(garden.view('alice'),saved);

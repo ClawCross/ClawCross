@@ -17,9 +17,10 @@ const {Store}=require('../../../sdk/js/space-store');
 const {Garden}=require('./garden');
 const {Designer}=require('./designer');
 const {Arena}=require('./arena');
+const {Tower}=require('./tower');
 const crypto=require('node:crypto');
 
-const PAGE_SCRIPTS = ['room-sdk.js','battle.js','garden-ui.js','game-shell.js'].map(file=>path.join(__dirname,file));
+const PAGE_SCRIPTS = ['room-sdk.js','combat.js','battle.js','garden-ui.js','game-shell.js','tower-ui.js'].map(file=>path.join(__dirname,file));
 
 /** The page members see: the battle's own view, its chat and its input. Every URL is relative. */
 function page() {
@@ -79,6 +80,7 @@ ${scripts}
   shell=ClawCrossGameShell.mount(root,{chat,bar:document.getElementById('bar'),api,onChannel:value=>{if(value==='assistant')command=false;paint();}});
   const garden=ClawCrossGarden.mount(root,api,{parent:shell.scene,toolbar:false,onClose:()=>shell.navigate('home'),onDesign:c=>shell.openDesigner(c),onCreate:()=>shell.newCreature()});
   shell.attachGarden(garden);
+  const tower=ClawCrossTower.mount(shell.scene,api,{onDesign:()=>shell.designTower(),onField:()=>shell.navigate('journey'),onBag:()=>shell.navigate('bag')});shell.attachTower(tower);
   document.getElementById('cancel-command').onclick=()=>{command=false;paint();text.focus();};
   function receive(data){
     if(epoch!==data.epoch){epoch=data.epoch;revision=-1;}
@@ -121,7 +123,8 @@ function battle(space) {
   let roster = { title: '', members: [] };
   const viewers = new Set();
   let revision = 0;
-  const designer=new Designer(store,garden,space,()=>roster,changed);
+  const tower=new Tower(store,garden,changed);
+  const designer=new Designer(store,garden,space,()=>roster,changed,tower);
   const arena=new Arena(store,garden,()=>roster,()=>config,next=>{config=next;},changed);
 
   const view = () => roster.members.map((m) => ({ principal: m.id, name: m.name, is_agent: m.agent, device: m.device, platform: m.platform }));
@@ -139,10 +142,10 @@ function battle(space) {
 
 
   function snapshot(person, after=0) {
-    const visible=arena.display(),announcement=visible?Rooms.encodeConfig({...visible,companions:undefined}):'';
+    const visible=arena.display(),announcement=visible?Rooms.encodeConfig({...visible,companions:undefined,squads:undefined}):'';
     return {cursor:rows.length, revision, epoch, snapshot:{roomId:'space',title:roster.title,
       announcement,members:view(),messages:rows.slice(after),arena:arena.view(person.id),
-      actor:{key:person.id,name:person.name},isOwner:!!member(person.id)?.owner,garden:garden.view(person.id),assistant:designer.view(person.id)}};
+      actor:{key:person.id,name:person.name},isOwner:!!member(person.id)?.owner,garden:garden.view(person.id),assistant:designer.view(person.id),expedition:tower.view(person.id)}};
   }
   function push(viewer) {
     if(viewer.res.writableNeedDrain || viewer.revision===revision)return;
@@ -174,11 +177,12 @@ function battle(space) {
 
   /** Whether the rules accept this person's command now, judged by the same model the page uses. */
   function accepted(event, row) {
-    if(config.companion_battle&&(event.type!=='command'||event.kind!=='skill'))return false;
+    if(config.companion_battle&&(event.type!=='command'||!['skill','switch'].includes(event.kind)))return false;
     const before = new Battle.BattleModel().rebuild(config, view(), rows);
     const after = new Battle.BattleModel().rebuild(config, view(), [...rows, row]);
     if (event.type === 'start') return !before.started && after.started;
     if (event.type !== 'command') return false;
+    if(event.kind==='switch')return after.log.at(-1)?.id===event.id&&(after.turn===before.turn+1||before.replacement!==null&&after.replacement===null);
     if(event.kind==='skill')return after.turn===before.turn+1 && after.log.at(-1)?.id===event.id || after.winner!==null && before.winner===null && after.log.at(-1)?.id===event.id;
     return event.kind === 'avatar' ? after.awaiting[event.fighter] === event.id : after.pending?.id === event.id && before.pending?.id !== event.id;
   }
@@ -224,14 +228,17 @@ function battle(space) {
         res.on('close',()=>{clearInterval(heartbeat);viewers.delete(viewer);});
         return;
       }
+      if(req.method==='GET'&&url.pathname==='/tower')return reply(200,tower.view(person.id));
       if(req.method==='GET'&&url.pathname==='/garden')return reply(200,garden.view(person.id));
       if (req.method === 'GET' && url.pathname === '/history') return reply(200, { messages: rows });
       const chunks = [];
       for await (const chunk of req) chunks.push(chunk);
       const body = JSON.parse(Buffer.concat(chunks).toString() || '{}');
+      if(req.method==='POST'&&url.pathname==='/tower/start')return reply(200,tower.start(person,body.team));
+      if(req.method==='POST'&&url.pathname==='/tower/action')return reply(200,tower.act(person.id,body));
       if(req.method==='POST'&&url.pathname==='/assistant')return reply(200,await designer.ask(person,body));
       if(req.method==='POST'&&url.pathname==='/assistant/cancel')return reply(200,designer.cancel(person.id));
-      if(req.method==='POST'&&url.pathname==='/arena/ready')return reply(200,arena.choose(person,body.creature));
+      if(req.method==='POST'&&url.pathname==='/arena/ready')return reply(200,arena.choose(person,body.creature,body.team));
       if(req.method==='POST'&&url.pathname==='/arena/start')return reply(200,arena.start(person,body.opponent));
       if(req.method==='POST'&&url.pathname==='/arena/leave')return reply(200,arena.leave(person));
       if(req.method==='POST'&&url.pathname.startsWith('/garden/')){const result=garden.act(person.id,url.pathname.slice(8),body);changed();return reply(200,result);}
@@ -240,7 +247,7 @@ function battle(space) {
         if (!owner) return reply(403, { error: '只有群主可以设置对局' });
         const next = Rooms.parseConfig(body.announcement);
         if (!next) return reply(400, { error: '对局设置无效' });
-        if(next.companion_battle||next.companions)return reply(400,{error:'请由每位玩家在竞技场选择自己的背包精灵参战。'});
+        if(next.companion_battle||next.companions||next.squads)return reply(400,{error:'请由每位玩家在竞技场选择自己的背包精灵参战。'});
         config = next;changed();
         return reply(200, { ok: true });
       }
