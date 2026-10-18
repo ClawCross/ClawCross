@@ -19,11 +19,24 @@ function reply(content){const match=/\[ClawCrossGame:v1\]({[^\n]+})/.exec(conten
   for(const [person,width,height]of[['alice',1100,760],['bob',390,650]]){const page=await browser.newPage({viewport:{width,height}});page.on('pageerror',e=>errors.push(e.message));await page.goto(await test.entrance(person));pages.push(page);}
   const[alice,bob]=pages;
   for(const page of pages){await expect(page.getByRole('complementary',{name:'AI Agent 精灵设计师'})).toBeVisible();await expect(page.getByRole('region',{name:'游戏首页'})).toBeVisible();}
+  await alice.getByRole('button',{name:'让我的 Agent 设计精灵'}).click();
+  await expect(alice.locator('#text')).toHaveValue(/创造一只独特的新精灵/);
+  await expect(alice.getByRole('combobox',{name:'选择设计师'}).locator('option')).toHaveText(['Alpha']);
+  await bob.getByRole('button',{name:'开始设计我的精灵',exact:true}).click();
+  await expect(bob.getByRole('combobox',{name:'选择设计师'}).locator('option')).toHaveText(['Beta']);
+  expect(test.asked).toEqual([]);
   await shot(alice,'home-ai-desktop');await shot(bob,'home-ai-mobile');
   for(const page of pages)await page.getByRole('button',{name:'收起设计师'}).click();
   expect(await alice.evaluate(()=>self.origin)).toBe('null');
   await alice.locator('.realm-nav [data-nav=bag]').click();await alice.getByRole('button',{name:'选择 萤尾',exact:true}).click();
-  await alice.getByRole('button',{name:'训练',exact:true}).click();
+  await alice.getByRole('button',{name:'培养',exact:true}).click();
+  await expect(alice.locator('.garden-training [data-focus]')).toHaveCount(4);
+  await expect(alice.locator('.garden-condition')).toContainText('100 / 100');
+  await shot(alice,'training-desktop');
+  await alice.setViewportSize({width:390,height:650});
+  expect(await alice.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await alice.locator('[data-focus="attack"]').scrollIntoViewIfNeeded();await shot(alice,'training-mobile');
+  await alice.setViewportSize({width:1100,height:760});
   await alice.getByRole('button',{name:'力量训练 · 8星币',exact:true}).click();await expect(alice.locator('.garden-notice')).toContainText('经验 +35');
   await alice.getByRole('button',{name:'力量训练 · 8星币',exact:true}).click();await expect(alice.locator('.garden-hero')).toContainText('Lv.2');
   await alice.getByRole('button',{name:'伙伴',exact:true}).click();await alice.getByRole('button',{name:'新建精灵',exact:true}).click();
@@ -34,15 +47,31 @@ function reply(content){const match=/\[ClawCrossGame:v1\]({[^\n]+})/.exec(conten
   await alice.getByRole('button',{name:'收起设计师'}).click();await alice.locator('.garden-moves').getByRole('button',{name:'星焰',exact:true}).click();await expect(alice.locator('.garden-effect')).toHaveAttribute('data-own','1');
   await shot(alice,'backpack-ai-created');
   await bob.locator('.realm-nav [data-nav=bag]').click();await bob.getByRole('button',{name:'选择 潮团',exact:true}).click();
-  for(const page of pages){await page.locator('.realm-nav [data-nav=arena]').click();await expect(page.locator('select[data-player]')).toHaveCount(0);await expect(page.locator('[data-agent-command]')).toBeHidden();}
+  await alice.locator('.realm-nav [data-nav=tower]').click();await alice.getByRole('button',{name:'星光草原',exact:true}).click();
+  await expect(alice.locator('.garden-tabs')).toBeHidden();
+  await expect(alice.getByRole('button',{name:'冒险',exact:true})).toHaveCount(1);
+  await expect(alice.getByRole('button',{name:'探险',exact:true})).toHaveCount(0);
+  await alice.getByRole('button',{name:'和 星屿灵狐 出发',exact:true}).click();
+  for(const legacy of [false,true]){
+   if(legacy)await alice.route('**/garden/move',async route=>{const response=await route.fetch();const json=await response.json();delete json.encounter.events;await route.fulfill({response,json});});
+   await alice.locator('.garden-moves button').nth(legacy?1:0).click();
+   await expect(alice.locator('.garden-effect[data-side="0"]')).toHaveAttribute('data-own',legacy?'0':'1');
+   await expect(alice.locator('.garden-effect[data-side="1"]')).toBeVisible();
+   await expect(alice.locator('.garden-turn-status')).toContainText(' 使用 ');
+   if(!legacy)await shot(alice,'wild-counterattack');
+   await expect(alice.locator('.garden-moves button').first()).toBeEnabled();
+  }
+  await alice.getByRole('button',{name:'返回基地',exact:true}).click();
+  for(const page of pages){await page.locator('.realm-nav [data-nav=arena]').click();await expect(page.locator('select[data-player]')).toHaveCount(0);await expect(page.locator('#room-root [data-agent-command]')).toBeHidden();}
   await alice.getByRole('combobox',{name:'选择出战精灵'}).selectOption({label:'星屿灵狐 · Lv.1'});
   await alice.getByRole('button',{name:'携带精灵参战',exact:true}).click();await bob.getByRole('button',{name:'携带精灵参战',exact:true}).click();
   await expect(alice.locator('.arena-ready-players')).toContainText('Bob · 潮团');await alice.getByRole('button',{name:'开始对战',exact:true}).click();
-  await expect(alice.locator('.cc-room-hp').first()).toHaveText('100 / 100 HP');await expect(bob.locator('.cc-room-hp').nth(1)).toHaveText('100 / 100 HP');
+  await expect(alice.locator('#room-root .cc-room-hp').first()).toHaveText('100 / 100 HP');await expect(bob.locator('#room-root .cc-room-hp').nth(1)).toHaveText('100 / 100 HP');
   const forged=await bob.evaluate(()=>fetch('state').then(r=>r.json()).then(d=>{const c=ClawCrossRooms.parseConfig(d.snapshot.announcement);return fetch('send',{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({content:ClawCrossRooms.encodeEvent({type:'command',kind:'skill',room:c.id,id:'forged',fighter:c.players[0].key,turn:1,move:'星焰'})})}).then(r=>r.status);}));expect(forged).toBe(403);
-  await alice.getByRole('button',{name:'使用星焰',exact:true}).click();await expect(bob.locator('.cc-room-hp').nth(1)).toHaveText('64 / 100 HP');await expect(alice.locator('.cc-room-effect img')).toHaveAttribute('data-own','1');
-  await bob.getByRole('button',{name:'使用水枪',exact:true}).click();await expect(alice.locator('.cc-room-hp').first()).toHaveText('70 / 100 HP');
-  await alice.getByRole('button',{name:'使用星焰',exact:true}).click();await expect(bob.locator('.cc-room-hp').nth(1)).toHaveText('28 / 100 HP');
+  await alice.getByRole('button',{name:'使用星焰',exact:true}).click();await expect(bob.locator('#room-root .cc-room-hp').nth(1)).toHaveText('64 / 100 HP');await expect(alice.locator('#room-root .cc-room-effect img')).toHaveAttribute('data-own','1');
+  await bob.getByRole('button',{name:'使用水枪',exact:true}).click();await expect(alice.locator('#room-root .cc-room-hp').first()).toHaveText('70 / 100 HP');
+  await expect(alice.locator('#room-root .cc-room-effect img')).toHaveAttribute('data-side','1');
+  await alice.getByRole('button',{name:'使用星焰',exact:true}).click();await expect(bob.locator('#room-root .cc-room-hp').nth(1)).toHaveText('28 / 100 HP');
   expect(test.asked.map(x=>x.agent)).toEqual(['Alpha']);
   await alice.evaluate(()=>{window.stableCreature=document.querySelector('.cc-room-image');window.stableMove=document.querySelector('.cc-room-move');});
   await bob.evaluate(()=>fetch('send',{method:'POST',headers:{'Content-Type':'text/plain'},body:'{"content":"准备好了","mentions":[]}'}));await expect(alice.locator('#chat')).toContainText('准备好了');
@@ -50,12 +79,12 @@ function reply(content){const match=/\[ClawCrossGame:v1\]({[^\n]+})/.exec(conten
   for(const[width,height]of[[1100,760],[390,844],[390,650],[320,568],[844,390],[1024,500],[768,600]]){
    await alice.setViewportSize({width,height});expect(await alice.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
    expect(await alice.evaluate(()=>{const root=document.querySelector('#room-root');return root.scrollHeight<=root.clientHeight+1;})).toBe(true);
-   const buttons=alice.locator('.cc-room-move');for(let i=0;i<await buttons.count();i++)await expect.poll(()=>buttons.nth(i).evaluate(n=>{const r=n.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return r.width>=30&&r.height>=22&&r.bottom<=innerHeight+1&&(hit===n||n.contains(hit));})).toBe(true);
+   const buttons=alice.locator('#room-root .cc-room-move');for(let i=0;i<await buttons.count();i++)await expect.poll(()=>buttons.nth(i).evaluate(n=>{const r=n.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return r.width>=30&&r.height>=22&&r.bottom<=innerHeight+1&&(hit===n||n.contains(hit));})).toBe(true);
    await shot(alice,'arena-'+width+'x'+height);
   }
-  await alice.setViewportSize({width:1100,height:760});await bob.getByRole('button',{name:'使用水枪',exact:true}).click();await expect(alice.locator('.cc-room-hp').first()).toHaveText('40 / 100 HP');
-  await alice.getByRole('button',{name:'使用星焰',exact:true}).click();await expect(alice.locator('.cc-room-status')).toContainText('星屿灵狐 获胜');
-  if(test.groupPage){const page=await browser.newPage({viewport:{width:390,height:844}});page.on('pageerror',e=>errors.push(e.message));await page.addInitScript(([key,value])=>{if(self.origin!=='null')localStorage.setItem(key,value);},test.groupPage.storage);await page.route(/\/groups\/group-guest-api\//,async route=>route.fulfill({response:await route.fetch({headers:{...route.request().headers(),origin:'https://clawcross.net'}})}));await page.goto(test.groupPage.url);const frame=page.frameLocator('[data-room-surface]');await frame.locator('.realm-nav [data-nav=arena]').click();await expect(frame.locator('.cc-room-status')).toContainText('星屿灵狐 获胜');await page.getByRole('button',{name:/^(全屏|Fullscreen)$/}).click();await expect.poll(()=>page.evaluate(()=>!!document.fullscreenElement)).toBe(true);await page.getByRole('button',{name:/^(退出全屏|Exit fullscreen)$/}).click();}
+  await alice.setViewportSize({width:1100,height:760});await bob.getByRole('button',{name:'使用水枪',exact:true}).click();await expect(alice.locator('#room-root .cc-room-hp').first()).toHaveText('40 / 100 HP');
+  await alice.getByRole('button',{name:'使用星焰',exact:true}).click();await expect(alice.locator('#room-root .cc-room-status')).toContainText('星屿灵狐 获胜');
+  if(test.groupPage){const page=await browser.newPage({viewport:{width:390,height:844}});page.on('pageerror',e=>errors.push(e.message));await page.addInitScript(([key,value])=>{if(self.origin!=='null')localStorage.setItem(key,value);},test.groupPage.storage);await page.route(/\/groups\/group-guest-api\//,async route=>route.fulfill({response:await route.fetch({headers:{...route.request().headers(),origin:'https://clawcross.net'}})}));await page.goto(test.groupPage.url);const frame=page.frameLocator('[data-room-surface]');await frame.locator('.realm-nav [data-nav=arena]').click();await expect(frame.locator('#room-root .cc-room-status')).toContainText('星屿灵狐 获胜');await page.getByRole('button',{name:/^(全屏|Fullscreen)$/}).click();await expect.poll(()=>page.evaluate(()=>!!document.fullscreenElement)).toBe(true);await page.getByRole('button',{name:/^(退出全屏|Exit fullscreen)$/}).click();}
   space.close();await start();await alice.reload();await expect(alice.getByRole('complementary',{name:'AI Agent 精灵设计师'})).toBeVisible();await alice.getByRole('button',{name:'收起设计师'}).click();await alice.locator('.realm-nav [data-nav=bag]').click();
   await expect(alice.locator('.garden-hero')).toContainText('星屿灵狐');await expect(alice.locator('.garden-hero')).toContainText('Lv.2');await expect(alice.locator('.garden-description')).toContainText('由星光凝成');await expect(alice.locator('.garden-companion')).toHaveCount(2);
   expect(errors).toEqual([]);console.log('PASS:',process.env.CLAWCROSS_SPACE_TEST_HUB?'Hub':'ClawCross','default AI sidebar, new companion with description/animation, private backpack, player-only arena, seven sizes, rewards and restart');

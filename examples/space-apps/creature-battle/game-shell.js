@@ -15,61 +15,62 @@ function landscape(){
 }
 function mount(root,{chat,bar,api,onChannel}){
  const app=el('div','creature-app'),header=el('header','realm-header');
- header.innerHTML='<button class="realm-brand" data-nav="home" aria-label="返回游戏首页"><span>✧</span><span>星屿纪行<small>COMPANION ODYSSEY</small></span></button><nav class="realm-nav" aria-label="游戏导航"><button data-nav="home">首页</button><button data-nav="bag">精灵背包</button><button data-nav="journey">探索</button><button data-nav="arena">竞技场</button></nav><button class="realm-designer-toggle" aria-expanded="false">✧ <span>设计师</span></button>';
+ header.innerHTML='<button class="realm-brand" data-nav="home" aria-label="返回游戏首页"><span>✧</span><span>星屿纪行<small>COMPANION ODYSSEY</small></span></button><nav class="realm-nav" aria-label="游戏导航"><button data-nav="home">首页</button><button data-nav="bag">精灵背包</button><button data-nav="tower">冒险</button><button data-nav="arena">竞技场</button></nav><button class="realm-designer-toggle" aria-expanded="false">✧ <span>设计师</span></button>';
  const scene=el('div','realm-scene'),home=el('section','realm-home');home.setAttribute('aria-label','游戏首页');
- home.innerHTML='<div class="realm-landscape" aria-hidden="true">'+landscape()+'</div><div class="realm-home-copy"><p class="realm-eyebrow">每一段冒险，都从相遇开始</p><h1>去往星光<br>与你的伙伴同行</h1><p class="realm-description">遇见、培养、探索。让你的想象，成为独一无二的精灵。</p><div class="realm-home-actions"><button class="realm-start">开始冒险 <span>↗</span></button><button class="realm-bag-link">打开精灵背包 <span data-count>0</span></button></div><p class="realm-home-save">✦ 成长与旅程自动保存</p></div><img class="realm-home-pet" alt="你的精灵伙伴"><div class="realm-home-pet-label"><small>等待相遇</small><strong>你的第一位伙伴</strong></div><button class="realm-field-link">星光草原 <span>探索野生精灵 →</span></button>';
+ home.innerHTML='<div class="realm-landscape" aria-hidden="true">'+landscape()+'</div><div class="realm-home-copy"><p class="realm-eyebrow">你的想象，由自己的 Agent 实现</p><h1>想象一位伙伴<br>一起去往星光</h1><p class="realm-description">告诉你的 Agent 它的模样与能力。原创形象、四个技能和出招动画，一起带进冒险。</p><div class="realm-home-actions"><button class="realm-design-start">让我的 Agent 设计精灵 <span>✧</span></button><button class="realm-start">先选一只初始精灵 <span>→</span></button></div><p class="realm-home-save">✦ 精灵、培养与旅程自动保存</p></div><img class="realm-home-pet" alt="你的精灵伙伴"><div class="realm-home-pet-label"><small>等待你的想象</small><strong>你的第一位原创伙伴</strong></div>';
  const aside=el('aside','realm-designer');aside.id='realm-designer';aside.hidden=true;aside.setAttribute('aria-label','AI Agent 精灵设计师');
  aside.innerHTML='<div class="designer-heading"><span class="designer-mark">✧</span><div><strong>精灵设计师</strong><small>把你的想象变成伙伴</small></div><button class="designer-close" aria-label="收起设计师">×</button></div><div class="designer-channels"><button data-channel="assistant" aria-pressed="true">设计助手</button><button data-channel="group" aria-pressed="false">对战聊天</button></div><div class="designer-config"><label>我的设计师<select aria-label="选择设计师"></select></label><p class="designer-context">先选择一位伙伴</p></div><div class="designer-history" role="log" aria-label="设计对话"></div><div class="designer-public" hidden></div><div class="designer-pending" role="status" hidden><span>设计师正在构思…</span><button>取消等待</button></div><div class="designer-suggestions"><button data-suggest="appearance">重绘形象</button><button data-suggest="animation">设计技能动画</button></div>';
  aside.querySelector('.designer-heading strong').textContent='AI Agent 精灵设计师';aside.querySelector('.designer-heading small').textContent='原创形象 · 技能动画 · 精灵介绍';aside.querySelector('[data-channel=group]').textContent='玩家聊天';
  const toggle=header.querySelector('.realm-designer-toggle'),history=aside.querySelector('.designer-history'),publicChat=aside.querySelector('.designer-public'),select=aside.querySelector('select');toggle.setAttribute('aria-label','AI Agent 精灵设计师');toggle.querySelector('span').textContent='AI 设计师';
  const backdrop=el('button','designer-backdrop');backdrop.hidden=true;backdrop.setAttribute('aria-label','关闭设计师侧栏');
  scene.append(home,root);root.hidden=true;app.append(header,scene,backdrop,aside);document.body.append(app);publicChat.append(chat);aside.append(bar);
- let garden,snapshot={},channel='assistant',screen='home',selected='',open=false,creating=false,rosterKey='',historyKey='',uiId=null;
+ let garden,tower,designTask='creature',snapshot={},channel='assistant',screen='home',selected='',open=false,creating=false,rosterKey='',historyKey='',uiId=null;
  const text=bar.querySelector('textarea'),seen=new Set();
  function setChannel(value){channel=value;history.hidden=value!=='assistant';publicChat.hidden=value!=='group';aside.querySelector('.designer-config').hidden=value!=='assistant';aside.querySelector('.designer-suggestions').hidden=value!=='assistant';aside.querySelectorAll('[data-channel]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.channel===value)));onChannel?.(value);paintPending();}
  function paintPending(){aside.querySelector('.designer-pending').hidden=channel!=='assistant'||!snapshot.assistant?.pending;}
  function showDesigner(value=true,mode=channel){open=value;aside.hidden=!value;backdrop.hidden=!value;app.classList.toggle('designer-open',value);toggle.setAttribute('aria-expanded',String(value));if(value)setChannel(mode);window.dispatchEvent(new Event('resize'));}
  function navigate(next,id=''){
-  if(!['home','bag','training','journey','arena'].includes(next))return;
-  screen=next;if(id)selected=id;garden?.close();home.hidden=next!=='home';root.hidden=next!=='arena';
-  if(['arena','journey'].includes(next)&&open&&matchMedia('(max-width:1000px)').matches)showDesigner(false);
+  if(!['home','bag','training','journey','tower','arena'].includes(next))return;
+  screen=next;if(id)selected=id;garden?.close();tower?.close();if(next==='tower')tower?.open();home.hidden=next!=='home';root.hidden=next!=='arena';
+  if(['arena','journey','tower'].includes(next)&&open&&matchMedia('(max-width:1000px)').matches)showDesigner(false);
   if(['bag','training','journey'].includes(next))garden?.open({bag:'partners',training:'training',journey:'journey'}[next],id);
-  header.querySelectorAll('[data-nav]').forEach(b=>b.setAttribute('aria-current',b.dataset.nav===(next==='training'?'bag':next)?'page':'false'));
+  header.querySelectorAll('[data-nav]').forEach(b=>b.setAttribute('aria-current',b.dataset.nav===(next==='training'?'bag':next==='journey'?'tower':next)?'page':'false'));
   window.dispatchEvent(new Event('resize'));
  }
  function current(){if(creating)return null;return snapshot.garden?.creatures.find(c=>c.id===(garden?.selected()||selected))||snapshot.garden?.creatures.find(c=>c.id===snapshot.garden.selected)||snapshot.garden?.creatures[0];}
  function suggest(kind,c=current()){
-  creating=false;if(c)selected=c.id;showDesigner(true,'assistant');
+  creating=false;designTask='creature';if(c)selected=c.id;showDesigner(true,'assistant');
   text.value=c?(kind==='animation'?'请为「'+c.name+'」的四个技能设计有辨识度的 SVG 动画和动作，保持现有形象。':'请为「'+c.name+'」设计一个更精致、独特的原创 SVG 形象，保留培养进度，并打开精灵背包让我看看。'):'我想设计自己的精灵，请先带我领取第一位伙伴。';text.focus({preventScroll:true});
  }
- function newCreature(){creating=true;showDesigner(true,'assistant');aside.querySelector('.designer-context').textContent='正在新建精灵 · AI Agent 原创设计';text.value='请为我创造一只独特的新精灵，包括名字、介绍、原创 SVG 形象、四个技能与对应的技能动画，完成后加入我的精灵背包。';text.focus({preventScroll:true});}
+ function newCreature(){designTask='creature';creating=true;showDesigner(true,'assistant');aside.querySelector('.designer-context').textContent='正在新建精灵 · AI Agent 原创设计';text.value='请为我创造一只独特的新精灵，包括名字、介绍、原创 SVG 形象、四个技能与对应的技能动画，完成后加入我的精灵背包。';text.focus({preventScroll:true});}
  header.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>navigate(b.dataset.nav));
- home.querySelector('.realm-start').onclick=()=>navigate(snapshot.garden?.creatures.length?'journey':'bag');
- home.querySelector('.realm-bag-link').onclick=()=>navigate('bag');home.querySelector('.realm-field-link').onclick=()=>navigate('journey');
+ home.querySelector('.realm-start').onclick=()=>navigate(snapshot.garden?.creatures.length?'tower':'bag');
+ home.querySelector('.realm-design-start').onclick=newCreature;
  toggle.onclick=()=>showDesigner(!open);aside.querySelector('.designer-close').onclick=()=>showDesigner(false);backdrop.onclick=()=>showDesigner(false);
  aside.querySelectorAll('[data-channel]').forEach(b=>b.onclick=()=>setChannel(b.dataset.channel));
  aside.querySelectorAll('[data-suggest]').forEach(b=>b.onclick=()=>!current()&&b.dataset.suggest==='appearance'?newCreature():suggest(b.dataset.suggest));
  aside.querySelector('.designer-pending button').onclick=()=>api('assistant/cancel',{}).then(()=>api('state')).then(data=>update(data.snapshot)).catch(e=>{bar.querySelector('#hint').textContent=e.message;});
  select.onchange=()=>onChannel?.(channel);
  function update(next){
-  snapshot=next;const c=current(),g=next.garden,a=next.assistant;
-  if(g){const hero=c||g.creatures.find(p=>p.id===g.selected)||g.creatures[0],pet=hero||g.species[0],portrait=home.querySelector('.realm-home-pet');if(pet?.svg&&portrait.dataset.svg!==pet.svg){portrait.dataset.svg=pet.svg;portrait.src=image(pet.svg);}home.querySelector('[data-count]').textContent=g.creatures.length;
-   home.querySelector('.realm-home-pet-label strong').textContent=hero?hero.name:'你的第一位伙伴';home.querySelector('.realm-home-pet-label small').textContent=hero?'Lv.'+hero.level+' · 一起踏上新的旅程':'等待相遇';}
+  snapshot=next;tower?.update(next.expedition);const c=current(),g=next.garden,a=next.assistant;
+  if(g){const hero=c||g.creatures.find(p=>p.id===g.selected)||g.creatures[0],pet=hero||g.species[0],portrait=home.querySelector('.realm-home-pet');if(pet?.svg&&portrait.dataset.svg!==pet.svg){portrait.dataset.svg=pet.svg;portrait.src=image(pet.svg);}
+   home.querySelector('.realm-start').firstChild.textContent=g.creatures.length?'继续探索 ':'先选一只初始精灵 ';
+   home.querySelector('.realm-home-pet-label strong').textContent=hero?hero.name:'你的第一位原创伙伴';home.querySelector('.realm-home-pet-label small').textContent=hero?'Lv.'+hero.level+' · 一起踏上新的旅程':'等待你的想象';}
   const person=next.members?.find(m=>(m.key||m.principal)===next.actor?.key),agents=(next.members||[]).filter(m=>m.is_agent&&person&&m.device===person.device),key=JSON.stringify(agents.map(m=>[m.key||m.principal,m.name]));
   if(key!==rosterKey){rosterKey=key;const prior=select.value;select.replaceChildren();for(const m of agents)select.append(new Option(m.name,m.key||m.principal));if(!agents.length)select.append(new Option('尚未加入自己的 Agent',''));select.value=agents.some(m=>(m.key||m.principal)===prior)?prior:a?.agent||agents[0]?.key||agents[0]?.principal||'';}
-  aside.querySelector('.designer-context').textContent=!agents.length?'加入自己的 AI Agent，即可创作新精灵；也可以先领取初始伙伴。':creating?'正在新建精灵 · AI Agent 原创设计':c?'正在设计：'+c.name+' · Lv.'+c.level:'描述你的想象，让 AI Agent 创作第一只精灵。';
+  aside.querySelector('.designer-context').textContent=!agents.length?'加入自己的 AI Agent，即可创作新精灵；也可以先领取初始伙伴。':designTask==='tower'?'正在设计后续星塔关卡 · 剧情、敌人与动画':creating?'正在新建精灵 · AI Agent 原创设计':c?'正在设计：'+c.name+' · Lv.'+c.level:'描述你的想象，让 AI Agent 创作第一只精灵。';
   aside.querySelector('[data-suggest=appearance]').textContent=c?'重绘形象':'创造新精灵';
   const messages=a?.messages||[],ids=messages.map(m=>m.id).join(',');
   if(ids!==historyKey){historyKey=ids;const following=history.scrollHeight-history.scrollTop-history.clientHeight<50;for(const m of messages){if(seen.has(m.id))continue;seen.add(m.id);const item=el('article','designer-message '+m.role),who=el('small','',m.role==='user'?'你':m.role==='status'?'游戏提示':'设计师');item.append(who,el('p','',m.text));history.append(item);}if(following)history.scrollTop=history.scrollHeight;}
-  if(!messages.length&&!history.querySelector('.designer-welcome')){const intro=el('div','designer-welcome');intro.append(el('span','','✧'),el('h3','','你的精灵，由你想象'),el('p','','描述你喜欢的形象，或告诉设计师技能应该怎样释放。设计会直接出现在游戏里。'));history.append(intro);}if(messages.length)history.querySelector('.designer-welcome')?.remove();
+  if(!messages.length&&!history.querySelector('.designer-welcome')){const intro=el('div','designer-welcome');intro.append(el('span','','✧'),el('h3','','自己的 Agent，自己的精灵'),el('p','','选好上方自己的 Agent，描述你喜欢的形象和能力。它会设计完整的精灵、四招与动画，直接放进背包。'));const start=el('button','designer-create-first','开始设计我的精灵');start.onclick=newCreature;intro.append(start);history.append(intro);}if(messages.length)history.querySelector('.designer-welcome')?.remove();
   paintPending();
   if(a?.ui){if(uiId===null)uiId=a.ui.id;else if(a.ui.id!==uiId){uiId=a.ui.id;creating=false;navigate(a.ui.screen,a.ui.creature);}}
   else if(uiId===null)uiId='';
   onChannel?.(channel);
  }
  navigate('home');showDesigner(true,'assistant');
- return{scene,attachGarden(value){garden=value;},navigate,update,newCreature,openDesigner(c){suggest('appearance',c);},openChat(){showDesigner(true,'group');},channel:()=>channel,canSend:()=>channel==='group'||!!select.value&&!snapshot.assistant?.pending,
-  async submit(content){if(channel==='group')return api('send',{content,mentions:[]});const c=current();return api('assistant',{content,agent:select.value,creature:c?.id||'',create:creating||!snapshot.garden?.creatures.length});}};
+ return{scene,attachTower(value){tower=value;},designTower(){designTask='tower';creating=false;showDesigner(true,'assistant');aside.querySelector('.designer-context').textContent='设计接下来尚未开始的 1–3 层星塔关卡';text.value='请为我设计接下来的星塔关卡：原创敌人形象、四个技能与领域特效，还有每层的冒险剧情。';text.focus({preventScroll:true});},attachGarden(value){garden=value;},navigate,update,newCreature,openDesigner(c){suggest('appearance',c);},openChat(){showDesigner(true,'group');},channel:()=>channel,canSend:()=>channel==='group'||!!select.value&&!snapshot.assistant?.pending,
+  async submit(content){if(channel==='group')return api('send',{content,mentions:[]});const c=designTask==='tower'?null:current();return api('assistant',{content,agent:select.value,task:designTask,creature:c?.id||'',create:designTask!=='tower'&&(creating||!snapshot.garden?.creatures.length)});}};
 }
 global.ClawCrossGameShell={mount,landscape};
 })(globalThis);

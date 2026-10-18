@@ -30,3 +30,37 @@
 .garden-moves { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:14px 0 0; }.garden-button.skill { min-height:48px; background:#9dc5bc13; font-size:13px; }.garden-battle-log { color:#a8bec4; font-size:12px; }.garden-battle-log p { margin:5px 0; }
 .garden-notice { padding:12px 24px; border-top:1px solid #cbe8df14; font-size:12px; color:#bad5c6; background:#0e1b27; }.garden-notice.error { color:#efbcac; }
 @media(max-width:600px){.cc-garden{inset:4px;border-radius:18px}.garden-head{padding:14px 14px 10px;gap:8px}.garden-head h2{font-size:19px}.garden-head small{font-size:8px}.garden-wallet{font-size:11px}.garden-back{font-size:10px;padding:7px 10px}.garden-tabs{padding:0 14px 9px}.garden-tabs button{padding:7px 18px;font-size:12px}.garden-scroll{padding:12px 14px}.garden-starters{gap:8px}.garden-starter{padding:10px 6px;border-radius:14px}.garden-starter h3{font-size:16px}.garden-starter p{font-size:10px}.garden-starter .garden-button{padding:8px 5px;font-size:11px;width:100%}.garden-intro{padding:12px 0}.garden-intro h3{font-size:23px}.garden-intro p{font-size:11px}.garden-hero{gap:14px}.garden-about h3{font-size:24px}.garden-portrait img{max-width:190px}.garden-vitals{font-size:10px;gap:7px 12px;padding:7px}.garden-training{grid-template-columns:1fr 1fr;gap:7px}.garden-training .garden-button{min-height:54px}.garden-learn{grid-template-columns:1fr}.garden-companion{padding:6px 9px}.garden-encounter{padding:10px;gap:16px}.garden-opponent img{max-height:170px}.garden-opponent h3{font-size:16px}.garden-notice{padding:10px 14px;font-size:11px}.garden-tools .garden-button{padding:8px 10px;font-size:11px}.garden-expedition h3{font-size:22px}.garden-expedition img{width:180px}}
+
+/* A single exploration route; the backpack tabs only switch collection and care. */
+.garden-head{grid-row:1}.garden-tabs{grid-row:2}.garden-scroll{grid-row:3}.garden-notice{grid-row:4}
+.garden-tabs[hidden]{display:none}.garden-tabs button[aria-pressed=true]{color:#eef7db;background:#91c3b52b}
+.garden-condition{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:16px 0}
+.garden-condition>div{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}
+.garden-condition span{color:#9fbebd;font-size:11px}.garden-condition strong{color:#e1eee4;font-size:11px;font-weight:550}
+.garden-condition .garden-meter{grid-column:1/-1;height:5px}.garden-meter.bond>span{background:linear-gradient(90deg,#c3a0ce,#f0c3be)}
+.garden-vitals{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:0;margin:14px 0}
+.garden-vitals>div{text-align:center;border:1px solid #c0ddd81a;background:#d0e9de06;border-radius:12px;padding:10px 6px}
+.garden-vitals small{display:block;color:#8eafaf;font-size:10px}.garden-vitals strong{display:block;margin-top:4px;color:#e4eede;font-size:18px;font-variant-numeric:tabular-nums}
+.garden-training-layout{display:grid;grid-template-columns:minmax(250px,.85fr) minmax(0,1.15fr);gap:22px;max-width:1100px;margin:8px auto 0;align-items:start}
+.garden-training-profile{padding:20px;border:1px solid #c0ddd820;border-radius:22px;background:linear-gradient(150deg,#63877b1b,#172c3d77);min-width:0}
+.garden-training-profile .garden-hero{grid-template-columns:minmax(90px,.8fr) minmax(0,1fr);gap:12px}
+.garden-training-profile .garden-portrait>img{height:145px;object-fit:contain}.garden-training-profile .garden-about h3{font-size:25px;margin:6px 0}
+.garden-training-profile .garden-description{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin:6px 0}
+.garden-training-profile .garden-about>strong{margin-top:8px}
+.garden-care{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px}.garden-care .garden-button{font-size:12px;padding:12px 7px;background:#a6c4bd0d}
+.garden-care small{display:block;font-size:9px;color:#91afad;margin-top:6px}
+.garden-plan-eyebrow{display:block;font-size:10px;letter-spacing:.12em;color:#a3c2b4;margin:8px 0}.garden-plan-title{font-size:24px;letter-spacing:.02em;margin:0 0 8px;font-weight:600}
+.garden-training-plan>.garden-note{margin:0 0 18px;line-height:1.6}
+.garden-training{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.garden-training .garden-button{position:relative;display:grid;grid-template-columns:1fr auto;gap:7px;text-align:left;padding:17px;min-height:150px;background:linear-gradient(145deg,#acd1bf12,#152a3b);border:1px solid #b4d5ca26;border-radius:18px}
+.garden-training .garden-button>strong{font-size:16px;color:#e8f0de;font-weight:600}
+.garden-training-symbol{grid-column:2;grid-row:1/3;font-size:28px;color:#a8d8bc;align-self:center}.garden-training [data-focus=attack] .garden-training-symbol{color:#edba96}.garden-training [data-focus=defense] .garden-training-symbol{color:#a0c5e7}.garden-training [data-focus=speed] .garden-training-symbol{color:#dfcb8a}
+.garden-training-gain{font-size:11px;color:#a7c7ba}.garden-training .garden-meter,.garden-training .garden-training-cost{grid-column:1/-1}
+.garden-training .garden-meter{height:4px;margin-top:5px}.garden-training .garden-button>small{grid-column:1/-1;font-size:9px;color:#8daaaa}
+.garden-training-cost{font-size:11px;color:#dbe6cd;padding-top:8px;margin-top:2px;border-top:1px solid #b7d1c317}
+.garden-button:disabled{opacity:.45;cursor:default}.garden-growth-guide{font-size:11px;color:#91afad;margin-top:18px;line-height:1.8}.garden-growth-guide summary{cursor:pointer;padding:5px 0}.garden-growth-guide p{margin:6px 0}
+.garden-opponent{position:relative}.garden-turn-status{text-align:center;min-height:18px;margin:12px 0 2px;color:#d8e6c3;font-size:12px}
+.garden-damage{position:absolute;left:50%;top:42%;font-size:30px;font-weight:750;color:#fff1c3;text-shadow:0 2px 10px #091522;z-index:5;pointer-events:none;animation:garden-hit .85s ease-out forwards}
+@keyframes garden-hit{from{opacity:0;transform:translate(-50%,10px) scale(.8)}25%{opacity:1;transform:translate(-50%,-5px) scale(1.1)}to{opacity:0;transform:translate(-50%,-45px) scale(1)}}
+@media(max-width:700px){.garden-training-layout{grid-template-columns:1fr;gap:18px}.garden-training-profile{padding:15px}.garden-training-profile .garden-portrait>img{height:120px}.garden-training-profile .garden-about h3{font-size:23px}.garden-care{margin-top:12px}.garden-training .garden-button{padding:14px;min-height:145px}.garden-plan-title{font-size:22px}.garden-training{gap:9px}.garden-condition{margin:12px 0}.garden-vitals{margin:12px 0}.garden-vitals>div{padding:8px 4px}}
+@media(prefers-reduced-motion:reduce){.garden-damage{animation:none;transform:translateX(-50%)}.garden-meter>span{transition:none}}
