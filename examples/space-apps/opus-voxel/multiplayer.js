@@ -81,7 +81,7 @@
   let list=[],bytes=0;
   for(const[key,rec]of chunks){
    const entry=[Math.floor(key/65536)-32768,(key%65536)-32768,{b:Array.from(rec.b),m:Array.from(rec.m)}],size=JSON.stringify(entry).length;
-   if(bytes+size>400000&&list.length){send({t:'openChunks',list});list=[];bytes=0;}
+   if(bytes+size>100000&&list.length){send({t:'openChunks',list});list=[];bytes=0;}
    list.push(entry);bytes+=size;
   }
   if(list.length)send({t:'openChunks',list});
@@ -101,7 +101,7 @@
   const before=this.getMeta(x,y,z);setMeta.call(this,x,y,z,meta);
   if(this===window.game?.world&&shared()&&net.applying!==x+','+y+','+z&&this.getMeta(x,y,z)!==before)net.queue.push([x,y,z,this.getBlock(x,y,z),meta&255]);
  };
- setInterval(()=>{if(!shared()){net.queue.length=0;return;}while(net.queue.length)send({t:'set',list:net.queue.splice(0,4000)});},50);
+ setInterval(()=>{if(!shared()){net.queue.length=0;return;}while(net.queue.length)send({t:'set',list:net.queue.splice(0,3000)});},50);
  function applyRemote(list){
   const g=window.game;if(!shared()||!Array.isArray(list))return;
   const w=g.world;

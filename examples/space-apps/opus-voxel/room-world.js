@@ -3,15 +3,15 @@
  * not inside another player) and sent to everyone. Each page keeps its own player, inventory and health.
  * The owner's page simulates creatures, physics and time; this server passes them on.
  *
- * Messages are JSON over one WebSocket per member (<app URL>/room). Outgoing messages stay under
- * the group servers' 1 MB WebSocket limit by sending chunks in batches. */
+ * Messages are JSON over one WebSocket per member (<app URL>/room). Every message stays far below
+ * the smallest WebSocket limit on the way (128 KB through a Hub device tunnel). */
 'use strict';
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const {Store}=require('../../../sdk/js/space-store');
 const {accept}=require('./room-socket');
 const FlatLayers=require('./flat-layers');
 
-const BATCH=400000;          // bytes of chunk data per message
+const BATCH=100000;          // bytes of chunk data per message
 const REACH=8;               // blocks from a member's eyes
 const SAVE_MS=10000;
 
@@ -98,7 +98,7 @@ function createRoom(space){
   return true;
  }
  function changeBlocks(peer,list){
-  if(!Array.isArray(list)||list.length>5000)throw Error('一次最多 5000 个方块改动');
+  if(!Array.isArray(list)||list.length>4000)throw Error('一次最多 4000 个方块改动');
   const accepted=[],refused=[];
   for(const entry of list){
    if(!Array.isArray(entry))continue;
