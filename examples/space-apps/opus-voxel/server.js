@@ -19,7 +19,7 @@ function createApp(space,{testAssets=process.env.CLAWCROSS_VOXEL_TEST_ASSETS??pa
  const entry=fs.readFileSync(path.join(root,'index.html'),'utf8').replace('js/assets.js','resource-assets.js')
   .replace('<script src="resource-assets.js">','<script>window.VOXEL_LAYOUT='+fs.readFileSync(path.join(__dirname,'asset-layout.json'),'utf8')+';</script><script src="resource-assets.js">')
   .replace('<script src="js/game.js">','<script src="save-bridge.js"></script><script src="js/game.js">')
-  .replace('</body>','<script src="touch.js"></script><script src="developer-settings.js"></script></body>').replaceAll('Minecraft JS 复刻版','方块世界 · OpusMC');
+  .replace('</body>','<script src="touch.js"></script><script src="developer-settings.js"></script><script src="world-tools.js"></script></body>').replaceAll('Minecraft JS 复刻版','方块世界 · OpusMC');
  async function handle(req,res){
   const reply=(status,data,type='application/json')=>res.writeHead(status,{'Content-Type':type,'Cache-Control':'no-store'}).end(type==='application/json'?JSON.stringify(data):data);
   try{
