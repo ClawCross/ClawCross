@@ -83,7 +83,7 @@ function createApp(space,{testAssets=process.env.CLAWCROSS_VOXEL_TEST_ASSETS??pa
     if(url.pathname==='/resources')return reply(200,await resources(req.member.id));
     if(url.pathname==='/resource-assets.js'){
      const pack=await resources(req.member.id);
-     const source=fs.readFileSync(pack.mode==='upstream'?testAssets:path.join(__dirname,'procedural-assets.js'),'utf8');
+     const source=pack.mode==='upstream'?fs.readFileSync(testAssets,'utf8'):['pixel-art.js','procedural-assets.js'].map(file=>fs.readFileSync(path.join(__dirname,file),'utf8')).join('\n');
      return reply(200,'window.VOXEL_PACK='+JSON.stringify(pack)+';\n'+source,'application/javascript; charset=utf-8');
     }
     const file=url.pathname.startsWith('/js/')?path.join(root,url.pathname):path.join(__dirname,url.pathname);
