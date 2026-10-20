@@ -115,7 +115,7 @@ class NativeSessionTests(unittest.IsolatedAsyncioTestCase):
         agent = native_sessions.register('alice', rows['sessions'][0]['ticket'], '', self.store)
         runtime = AcpRuntime(self.store)
         adapter = AsyncMock()
-        adapter.prompt_with_trace.return_value = AcpxPromptTrace('answer', [], [], [], [], '')
+        adapter.prompt_with_trace.return_value = AcpxPromptTrace('answer', [], '')
         history = AsyncMock()
         with patch('external.acpx.get_acpx_adapter', return_value=adapter) as factory, \
              patch.object(runtime, '_native_session', return_value=(None, None, {})), \

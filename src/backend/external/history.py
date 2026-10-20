@@ -1,7 +1,7 @@
 """External agent chat history persistence.
 
 模仿 ``data/agent_checkpoints`` 的"每会话一库"模式，记录与外部 agent
-（HTTP / ACP）之间的 prompt / response / tool_call / tool_result。
+（HTTP / ACP）之间的每一轮：prompt，然后按发生顺序的文字段与工具调用（每个工具一行）。
 
 - 文件布局：``data/external_agent_history/<platform>#<session_key>.db``
 - 表：``session_meta``（每库 1 行）、``messages``（明细流水）
@@ -113,6 +113,75 @@ def _extract_user_text_from_openai_messages(messages: list[Any]) -> str:
     return ""
 
 
+def _item_row(item: dict[str, Any]) -> tuple[str, str, str, dict[str, Any]]:
+    """The log row of one turn item (``external.acp_events.apply``)."""
+    if item.get("kind") == "tool":
+        return ("tool_result", "tool", str(item.get("output") or ""),
+                {"tool_name": item.get("title") or "", "tool_call_id": item.get("id"),
+                 "status": item.get("status"), "input": item.get("input")})
+    return ("recv", "assistant", str(item.get("text") or ""), {})
+
+
+async def _order_turn_rows(db: aiosqlite.Connection) -> None:
+    """One-shot rewrite of turns logged before items: their reply came before their
+    tools, and a tool's call and result were two rows. Each tool becomes one row and
+    the reply follows the tools, as turns are logged now."""
+    cursor = await db.execute(
+        "SELECT rowid, request_id, direction, content, meta_json FROM messages WHERE request_id IN "
+        "(SELECT request_id FROM messages WHERE direction IN ('tool_call', 'tool_result') "
+        "AND request_id NOT LIKE 'native:%') ORDER BY rowid")
+    turns: dict[str, list] = {}
+    for row in await cursor.fetchall():
+        turns.setdefault(row[1], []).append(row)
+    top = (await (await db.execute("SELECT COALESCE(MAX(rowid), 0) FROM messages")).fetchone())[0]
+    for rows in turns.values():
+        prompt, tools, reply, calls, dropped = [], [], [], {}, []
+        for rowid, _, direction, content, meta_json in rows:
+            try:
+                meta = json.loads(meta_json or "{}")
+            except ValueError:
+                meta = {}
+            if direction not in ("tool_call", "tool_result"):
+                (prompt if direction == "send" else reply).append([rowid, direction, content, meta])
+                continue
+            try:
+                item = json.loads(content)
+            except ValueError:
+                item = None
+            if not isinstance(item, dict):
+                tools.append([rowid, "tool_result", content, meta])
+                continue
+            name = str(item.get("name") or item.get("tool_name") or meta.get("tool_name") or "")
+            if direction == "tool_call":
+                entry = [rowid, "tool_result", "", {"tool_name": name, "tool_call_id": str(item.get("id") or ""),
+                                                    "input": item.get("input", item.get("args"))}]
+                tools.append(entry)
+                if item.get("id"):
+                    calls[str(item["id"])] = entry
+                continue
+            output = next((item[k] for k in ("content", "output", "output_text", "result") if k in item), "")
+            output = output if isinstance(output, str) else _json_dump(output)
+            entry = calls.pop(str(item.get("tool_call_id") or ""), None)
+            if entry is None:
+                tools.append([rowid, "tool_result", output, {"tool_name": name, "status": item.get("status"),
+                                                             "tool_call_id": str(item.get("tool_call_id") or "")}])
+            else:
+                entry[2] = output
+                entry[3]["status"] = item.get("status")
+                dropped.append(rowid)
+        order = prompt + tools + reply
+        slots = sorted(entry[0] for entry in order)
+        await db.executemany("DELETE FROM messages WHERE rowid = ?", [(rowid,) for rowid in dropped])
+        # Through spare row IDs, so no two rows ever hold the same one.
+        await db.executemany(
+            "UPDATE messages SET rowid = ?, direction = ?, content = ?, meta_json = ? WHERE rowid = ?",
+            [(top + 1 + index, direction, content, _json_dump(meta), rowid)
+             for index, (rowid, direction, content, meta) in enumerate(order)])
+        await db.executemany("UPDATE messages SET rowid = ? WHERE rowid = ?",
+                             [(slot, top + 1 + index) for index, slot in enumerate(slots)])
+        top += len(order)
+
+
 def history_options_disabled(options: dict[str, Any] | None) -> bool:
     return bool((options or {}).get(_OPT_DISABLED))
 
@@ -213,6 +282,9 @@ class ExternalAgentHistoryStore:
             path.parent.mkdir(parents=True, exist_ok=True)
             async with aiosqlite.connect(path) as db:
                 await db.executescript(_INIT_SCHEMA)
+                if (await (await db.execute("PRAGMA user_version")).fetchone())[0] < 1:
+                    await _order_turn_rows(db)
+                    await db.execute("PRAGMA user_version = 1")
                 await db.commit()
             self._initialized.add(path)
 
@@ -253,35 +325,25 @@ class ExternalAgentHistoryStore:
             )
             await db.commit()
 
-    async def _insert_message(
+    async def _insert_messages(
         self,
         path: Path,
         *,
         ts: float,
         request_id: str,
-        direction: str,
-        role: str,
-        content: str,
-        meta: dict[str, Any] | None,
+        rows: list[tuple[str, str, str, dict[str, Any]]],
         ctx: HistoryContext,
     ) -> None:
+        """Append ``(direction, role, content, meta)`` rows in order, in one transaction."""
         async with aiosqlite.connect(path) as db:
-            await db.execute(
+            await db.executemany(
                 """
                 INSERT INTO messages (
                     ts, request_id, direction, role, content, meta_json, user_id, group_id
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (
-                    ts,
-                    request_id,
-                    direction,
-                    role,
-                    content,
-                    _json_dump(meta or {}),
-                    ctx.user_id,
-                    ctx.group_id,
-                ),
+                [(ts, request_id, direction, role, content, _json_dump(meta), ctx.user_id, ctx.group_id)
+                 for direction, role, content, meta in rows],
             )
             await db.commit()
 
@@ -321,16 +383,7 @@ class ExternalAgentHistoryStore:
                 meta["prompt_kind"] = "messages"
             elif not isinstance(prompt, str):
                 meta["prompt_kind"] = type(prompt).__name__
-            await self._insert_message(
-                path,
-                ts=ts,
-                request_id=rid,
-                direction="send",
-                role="user",
-                content=content,
-                meta=meta,
-                ctx=ctx,
-            )
+            await self._insert_messages(path, ts=ts, request_id=rid, rows=[("send", "user", content, meta)], ctx=ctx)
         except Exception as e:
             logger.warning("external history record_send failed: %s", e)
         return rid
@@ -363,7 +416,12 @@ class ExternalAgentHistoryStore:
                 ctx=ctx,
                 ts=ts,
             )
-            if ok:
+            # An ACP turn brings its items (text runs and tool calls) in the order they happened.
+            items = raw_response.get("items") if isinstance(raw_response, dict) else None
+            rows = [_item_row(item) for item in items or ()]
+            if not ok:
+                rows.append(("error", "assistant", _coerce_text(error or "unknown error"), {"ok": False}))
+            elif items is None:
                 meta: dict[str, Any] = {"ok": True}
                 if raw_response is not None and not isinstance(raw_response, str):
                     meta["raw_kind"] = type(raw_response).__name__
@@ -371,112 +429,10 @@ class ExternalAgentHistoryStore:
                         for k in ("usage", "cumulative_token_usage", "request_token_usage"):
                             if k in raw_response:
                                 meta[k] = raw_response[k]
-                await self._insert_message(
-                    path,
-                    ts=ts,
-                    request_id=request_id,
-                    direction="recv",
-                    role="assistant",
-                    content=_coerce_text(content),
-                    meta=meta,
-                    ctx=ctx,
-                )
-                # If raw_response carries an ACP trace, record tool_calls/tool_results too.
-                if isinstance(raw_response, dict):
-                    await self._record_trace_inline(
-                        path,
-                        ts=ts,
-                        request_id=request_id,
-                        trace=raw_response,
-                        ctx=ctx,
-                    )
-            else:
-                await self._insert_message(
-                    path,
-                    ts=ts,
-                    request_id=request_id,
-                    direction="error",
-                    role="assistant",
-                    content=_coerce_text(error or "unknown error"),
-                    meta={"ok": False},
-                    ctx=ctx,
-                )
+                rows.append(("recv", "assistant", _coerce_text(content), meta))
+            await self._insert_messages(path, ts=ts, request_id=request_id, rows=rows, ctx=ctx)
         except Exception as e:
             logger.warning("external history record_recv failed: %s", e)
-
-    async def record_acpx_trace(
-        self,
-        *,
-        platform: str,
-        session_key: str | None,
-        connect_type: str,
-        request_id: str,
-        trace: dict[str, Any],
-        options: dict[str, Any] | None,
-    ) -> None:
-        """Record tool_uses/tool_results from an AcpxPromptTrace-shaped dict.
-
-        Used by streaming consumers that get the trace separately from the recv.
-        """
-        if history_options_disabled(options):
-            return
-        try:
-            ctx = HistoryContext.from_options(options)
-            path = self.db_path(platform, session_key)
-            await self._ensure_schema(path)
-            await self._record_trace_inline(
-                path,
-                ts=time.time(),
-                request_id=request_id,
-                trace=trace,
-                ctx=ctx,
-            )
-        except Exception as e:
-            logger.warning("external history record_acpx_trace failed: %s", e)
-
-    async def _record_trace_inline(
-        self,
-        path: Path,
-        *,
-        ts: float,
-        request_id: str,
-        trace: dict[str, Any],
-        ctx: HistoryContext,
-    ) -> None:
-        tool_uses = trace.get("tool_uses") if isinstance(trace, dict) else None
-        tool_results = trace.get("tool_results") if isinstance(trace, dict) else None
-        if isinstance(tool_uses, list):
-            for use in tool_uses:
-                if not isinstance(use, dict):
-                    continue
-                name = str(use.get("name") or use.get("tool_name") or "")
-                content = _coerce_text(use)
-                await self._insert_message(
-                    path,
-                    ts=ts,
-                    request_id=request_id,
-                    direction="tool_call",
-                    role="tool",
-                    content=content,
-                    meta={"tool_name": name},
-                    ctx=ctx,
-                )
-        if isinstance(tool_results, list):
-            for tr in tool_results:
-                if not isinstance(tr, dict):
-                    continue
-                name = str(tr.get("name") or tr.get("tool_name") or "")
-                content = _coerce_text(tr)
-                await self._insert_message(
-                    path,
-                    ts=ts,
-                    request_id=request_id,
-                    direction="tool_result",
-                    role="tool",
-                    content=content,
-                    meta={"tool_name": name},
-                    ctx=ctx,
-                )
 
     async def import_native_messages(self, *, platform: str, session_key: str, native_id: str,
                                      messages: list[dict], user_id: str) -> int:
@@ -523,9 +479,21 @@ class ExternalAgentHistoryStore:
             values = (before, limit+1) if before is not None else (limit+1,)
             cursor = await db.execute(f'SELECT * FROM messages {clause} ORDER BY rowid DESC LIMIT ?', values)
             rows = await cursor.fetchall()
-        has_more = len(rows) > limit
+            has_more = len(rows) > limit
+            rows = rows[:limit]
+            if has_more and rows[-1]['direction'] != 'send':
+                # Start the page at a prompt, so no turn is split between two pages.
+                oldest = rows[-1]['rowid']
+                start = (await (await db.execute(
+                    "SELECT MAX(rowid) FROM messages WHERE rowid < ? AND direction = 'send'", (oldest,))).fetchone())[0]
+                if start is not None:
+                    cursor = await db.execute(
+                        'SELECT * FROM messages WHERE rowid >= ? AND rowid < ? ORDER BY rowid DESC', (start, oldest))
+                    rows += await cursor.fetchall()
+                    has_more = bool(await (await db.execute(
+                        'SELECT 1 FROM messages WHERE rowid < ? LIMIT 1', (start,))).fetchone())
         out = []
-        for row in reversed(rows[:limit]):
+        for row in reversed(rows):
             item = dict(row)
             try:
                 item['meta'] = json.loads(item.pop('meta_json') or '{}')

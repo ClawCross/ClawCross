@@ -3882,7 +3882,7 @@ function watchApprovalContinuation(sessionId) {
                 clearInterval(_approvalContinuationTimer);
                 _approvalContinuationTimer = null;
                 if (_ocChatMode === 'acp' && _acpTool) {
-                    await acpRefreshCurrentTranscriptFromHistory({showLoading: false});
+                    await acpLoadSessionHistory({showLoading: false, keepScroll: true});
                     setSystemBusyUI(false);
                 } else {
                     await switchToSession(sessionId, true, {quiet: true});
@@ -4879,10 +4879,9 @@ function forgetDeletedAgent(sessionId) {
         if (node.dataset.sessionId === sessionId) node.remove();
     });
     for (const [key, id] of Object.entries(_acpResolvedSessionNameByKey)) {
-        if (id !== sessionId) continue;
-        delete _acpResolvedSessionNameByKey[key];
-        delete _acpTranscriptByKey[key];
+        if (id === sessionId) delete _acpResolvedSessionNameByKey[key];
     }
+    if (_acpFollower?.agentId === sessionId) acpUnfollow();
     for (let index = localStorage.length - 1; index >= 0; index--) {
         const key = localStorage.key(index);
         if (/^clawcross_acp_(session_pick_|session_name_|resolved_session_)/.test(key)
@@ -4989,9 +4988,6 @@ async function switchToSession(sessionId, force = false, options = {}) {
     // 切换前先重置按钮到 idle 状态（避免旧 session 的 streaming/busy 状态残留）
     setStreamingUI(false);
     setSystemBusyUI(false);
-    if (_ocChatMode === 'acp' && _acpTool) {
-        acpSaveTranscript();
-    }
     currentSessionId = sessionId;
     if (window.ExternalAgentSettings) ExternalAgentSettings.syncMenu();
     updateBackendCompactionStatus(null);
@@ -7972,12 +7968,12 @@ async function syncCurrentChatRunUI() {
         return true;
     }
 
-    // ACP agents do not expose their running state through the Internal
-    // session-status endpoint. Their browser-side run map remains authoritative.
+    // An external agent's running turn is what its follower shows.
     if (_ocChatMode !== 'internal' || !currentSessionId) {
         currentAbortController = null;
-        setStreamingUI(false);
-        return false;
+        const busy = _ocChatMode === 'acp' && !!_acpFollower?.view;
+        setStreamingUI(busy);
+        return busy;
     }
 
     const requestSeq = ++_chatRunStatusRequestSeq;
@@ -8030,7 +8026,7 @@ function restoreActiveChatRunForCurrentContext() {
 }
 
 async function handleCancel() {
-    const targetSession = cancelTargetSessionId || currentSessionId;
+    const targetSession = _ocChatMode === 'acp' && _acpTool ? acpResolveSessionName() : (cancelTargetSessionId || currentSessionId);
     const run = currentActiveChatRun();
     const controller = run && run.controller ? run.controller : currentAbortController;
     if (controller) {
@@ -8244,6 +8240,75 @@ function renderWeBotWelcomeMessage(message = null) {
     scrollChatToBottom(chatBox, { force: true });
 }
 
+// The user message of a chat request: the text with any persona or workflow it
+// carries first, then its images, audio and files as OpenAI content parts.
+function chatMessageContent(text, imagesToSend, audiosToSend, filesToSend, workflowsToSend) {
+    // --- 构造 workflow / persona 前缀（隐藏在消息中发送给后端） ---
+    let personaPrefix = '';
+    if (selectedPersona && selectedPersona.persona && personaInjectedSession !== currentSessionId) {
+        personaPrefix =
+            `【expert persona, apply it now】\n` +
+            `Name: ${selectedPersona.name || selectedPersona.tag || 'expert'}\n` +
+            `Tag: ${selectedPersona.tag || '(none)'}\n` +
+            `---\n${selectedPersona.persona}\n---\n`;
+        personaInjectedSession = currentSessionId;
+    }
+
+    let workflowPrefix = '';
+    for (const wf of workflowsToSend) {
+        if ((wf.mode || 'yaml') === 'python') {
+            workflowPrefix += `【python workflow, use it now】\n` +
+                `Team Name: ${wf.team || '(non-team)'}\n` +
+                `Python Name: ${wf.name}\n` +
+                `Absolute Path: ${wf.path || '(unknown)'}\n` +
+                (wf.content ? `---\n${wf.content}\n---\n` : '');
+        } else {
+            workflowPrefix += `【oasis workflow, use it now】\n` +
+                `Team Name: ${wf.team || '(non-team)'}\n` +
+                `YAML Name: ${wf.name}\n` +
+                `Absolute Path: ${wf.path || '(unknown)'}\n` +
+                (wf.content ? `---\n${wf.content}\n---\n` : '');
+        }
+    }
+    const fullText_to_send = personaPrefix + workflowPrefix + text;
+
+    // --- 构造 OpenAI 格式的 content parts ---
+    const contentParts = [];
+    if (fullText_to_send) {
+        contentParts.push({ type: 'text', text: fullText_to_send });
+    }
+    // 图片 → image_url
+    for (const img of imagesToSend) {
+        contentParts.push({ type: 'image_url', image_url: { url: img } });
+    }
+    // 音频 → input_audio
+    for (const audio of audiosToSend) {
+        contentParts.push({
+            type: 'input_audio',
+            input_audio: { data: audio.base64, format: audio.format || 'webm' }
+        });
+    }
+    // 文件 → file
+    for (const f of filesToSend) {
+        const fileData = f.content.startsWith('data:') ? f.content : 'data:application/octet-stream;base64,' + f.content;
+        contentParts.push({
+            type: 'file',
+            file: { filename: f.name, file_data: fileData }
+        });
+    }
+
+    // 如果只有纯文本，content 用字符串；否则用 parts 数组
+    let msgContent;
+    if (contentParts.length === 1 && contentParts[0].type === 'text') {
+        msgContent = contentParts[0].text;
+    } else if (contentParts.length > 0) {
+        msgContent = contentParts;
+    } else {
+        msgContent = '(空消息)';
+    }
+    return msgContent;
+}
+
 async function handleSend() {
     const text = inputField.value.trim();
     if (!text && pendingImages.length === 0 && pendingFiles.length === 0 && pendingAudios.length === 0 && pendingWorkflows.length === 0) return;
@@ -8315,6 +8380,11 @@ async function handleSend() {
     renderWorkflowPreviews();
     sendBtn.disabled = true;
     showTyping();
+    const msgContent = chatMessageContent(text, imagesToSend, audiosToSend, filesToSend, workflowsToSend);
+    if (_ocChatMode === 'acp') {
+        await acpSendTurn(msgContent);
+        return;
+    }
 
     const streamAbortController = new AbortController();
     currentAbortController = streamAbortController;
@@ -8331,8 +8401,6 @@ async function handleSend() {
         key: _streamOwnerKey,
         mode: _ocChatMode,
         sessionId: currentSessionId,
-        acpTool: _acpTool || null,
-        acpTranscriptKey: (_ocChatMode === 'acp' && _acpTool) ? _acpTranscriptKey() : '',
         controller: streamAbortController,
         status: 'running',
         fullText: '',
@@ -8343,89 +8411,14 @@ async function handleSend() {
     const streamOwns = () => _computeStreamCtxKey() === _streamOwnerKey;
 
     try {
-        // --- 构造 workflow / persona 前缀（隐藏在消息中发送给后端） ---
-        let personaPrefix = '';
-        if (selectedPersona && selectedPersona.persona && personaInjectedSession !== currentSessionId) {
-            personaPrefix =
-                `【expert persona, apply it now】\n` +
-                `Name: ${selectedPersona.name || selectedPersona.tag || 'expert'}\n` +
-                `Tag: ${selectedPersona.tag || '(none)'}\n` +
-                `---\n${selectedPersona.persona}\n---\n`;
-            personaInjectedSession = currentSessionId;
-        }
-
-        let workflowPrefix = '';
-        for (const wf of workflowsToSend) {
-            if ((wf.mode || 'yaml') === 'python') {
-                workflowPrefix += `【python workflow, use it now】\n` +
-                    `Team Name: ${wf.team || '(non-team)'}\n` +
-                    `Python Name: ${wf.name}\n` +
-                    `Absolute Path: ${wf.path || '(unknown)'}\n` +
-                    (wf.content ? `---\n${wf.content}\n---\n` : '');
-            } else {
-                workflowPrefix += `【oasis workflow, use it now】\n` +
-                    `Team Name: ${wf.team || '(non-team)'}\n` +
-                    `YAML Name: ${wf.name}\n` +
-                    `Absolute Path: ${wf.path || '(unknown)'}\n` +
-                    (wf.content ? `---\n${wf.content}\n---\n` : '');
-            }
-        }
-        const fullText_to_send = personaPrefix + workflowPrefix + text;
-
-        // --- 构造 OpenAI 格式的 content parts ---
-        const contentParts = [];
-        if (fullText_to_send) {
-            contentParts.push({ type: 'text', text: fullText_to_send });
-        }
-        // 图片 → image_url
-        for (const img of imagesToSend) {
-            contentParts.push({ type: 'image_url', image_url: { url: img } });
-        }
-        // 音频 → input_audio
-        for (const audio of audiosToSend) {
-            contentParts.push({
-                type: 'input_audio',
-                input_audio: { data: audio.base64, format: audio.format || 'webm' }
-            });
-        }
-        // 文件 → file
-        for (const f of filesToSend) {
-            const fileData = f.content.startsWith('data:') ? f.content : 'data:application/octet-stream;base64,' + f.content;
-            contentParts.push({
-                type: 'file',
-                file: { filename: f.name, file_data: fileData }
-            });
-        }
-
-        // 如果只有纯文本，content 用字符串；否则用 parts 数组
-        let msgContent;
-        if (contentParts.length === 1 && contentParts[0].type === 'text') {
-            msgContent = contentParts[0].text;
-        } else if (contentParts.length > 0) {
-            msgContent = contentParts;
-        } else {
-            msgContent = '(空消息)';
-        }
-
         // --- 构造 OpenAI /v1/chat/completions 请求 ---
-        const messages = [];
-        messages.push({ role: 'user', content: msgContent });
-
-        // Every agent is talked to by its number (session_id); ``model`` names the runtime of a new one.
-        const isAcpChat = (_ocChatMode === 'acp' && _acpTool);
-        let openaiPayload;
-        if (isAcpChat) {
-            const agentId = acpResolveSessionName();
-            openaiPayload = { model: _acpTool, messages: messages, stream: true, session_id: agentId };
-        } else {
-            openaiPayload = {
-                model: 'webot',
-                messages: messages,
-                stream: true,
-                session_id: currentSessionId,
-                enabled_tools: getEnabledTools(),
-            };
-        }
+        const openaiPayload = {
+            model: 'webot',
+            messages: [{ role: 'user', content: msgContent }],
+            stream: true,
+            session_id: currentSessionId,
+            enabled_tools: getEnabledTools(),
+        };
         applyRunModeToPayload(openaiPayload);
         const chatEndpoint = '/v1/chat/completions';
 
@@ -8453,10 +8446,7 @@ async function handleSend() {
         if (!response.ok) throw new Error(await extractErrorMessageFromResponse(response, "Agent error"));
 
         // Unsent drafts stay out of the rail. Refresh persisted Agents after the first request.
-        if (streamOwns()) {
-            if (chatRun.mode === 'internal') void loadSessionList();
-            else if (chatRun.mode === 'acp') void acpLoadSessionsList();
-        }
+        if (streamOwns()) void loadSessionList();
 
         if (streamOwns()) {
             agentDiv = appendMessage('', false);
@@ -8470,9 +8460,6 @@ async function handleSend() {
         let buffer = '';
         let allSegmentTexts = [];  // 记录所有段落的文本
         let sawToolActivity = false;
-        let sawAcpxTrace = false;
-        const acpxToolIndicators = new Map();
-        const acpxToolContents = new Map();
 
         // 辅助函数：封存当前文本气泡，添加朗读按钮
         function sealCurrentBubble() {
@@ -8549,96 +8536,6 @@ async function handleSend() {
             scrollChatToBottom(chatBox, { settle: false });
         }
 
-        function acpxToolDisplayName(meta = {}) {
-            return String(meta.title || meta.name || meta.kind || meta.tool_call_id || 'tool');
-        }
-
-        // 仅在新 meta 实际带 title/name/kind 时才覆盖名字。
-        // 否则保留已显示的；都没有时才退化到 tool_call_id。
-        // 修复：acpx_tool_update 只带 tool_call_id+content_text，过去会把上一帧
-        //       acpx_tool_start 的 title 覆盖成 id。
-        function _acpxApplyName(nameEl, meta, toolCallId) {
-            if (!nameEl) return;
-            const incoming = String(meta.title || meta.name || meta.kind || '').trim();
-            if (incoming) {
-                nameEl.textContent = incoming;
-                return;
-            }
-            if (!nameEl.textContent.trim()) {
-                nameEl.textContent = toolCallId || 'tool';
-            }
-        }
-
-        function upsertAcpxToolIndicator(meta = {}) {
-            if (!streamOwns()) return null;
-            const toolCallId = String(meta.tool_call_id || '').trim();
-            if (!toolCallId) return null;
-            let indicator = acpxToolIndicators.get(toolCallId);
-            if (!indicator) {
-                const w = document.createElement('div');
-                w.className = 'flex justify-start animate-in fade-in duration-200';
-                const d = document.createElement('details');
-                d.open = true;
-                d.className = 'stream-tool-indicator';
-                d.dataset.toolCallId = toolCallId;
-                d.innerHTML = `
-                    <summary>
-                        <span class="stream-tool-icon">🔧</span>
-                        <span class="stream-tool-name"></span>
-                        <span class="stream-tool-status stream-tool-running">…</span>
-                    </summary>
-                    <div class="stream-tool-result" style="display:none;margin-top:8px;">
-                        <pre class="whitespace-pre-wrap break-words" style="margin:0;max-height:360px;overflow:auto;"></pre>
-                    </div>`;
-                w.appendChild(d);
-                chatBox.appendChild(w);
-                indicator = d;
-                acpxToolIndicators.set(toolCallId, indicator);
-            }
-            const nameEl = indicator.querySelector('.stream-tool-name');
-            _acpxApplyName(nameEl, meta, toolCallId);
-            scrollChatToBottom(chatBox, { settle: false });
-            return indicator;
-        }
-
-        function updateAcpxToolIndicator(meta = {}) {
-            const indicator = upsertAcpxToolIndicator(meta);
-            if (!indicator) return;
-            const detailsEl = indicator.querySelector('.stream-tool-result');
-            const preEl = detailsEl ? detailsEl.querySelector('pre') : null;
-            if (!detailsEl || !preEl) return;
-            const payload = String(meta.content_text || '');
-            if (!payload) return;
-            const toolCallId = String(meta.tool_call_id || '').trim();
-            const prev = acpxToolContents.get(toolCallId) || '';
-            if (payload === prev) return;
-            let next = payload;
-            if (payload.startsWith(prev)) {
-                next = payload;
-            }
-            acpxToolContents.set(toolCallId, next);
-            preEl.textContent = next;
-            detailsEl.style.display = '';
-            scrollChatToBottom(chatBox, { settle: false });
-        }
-
-        function finishAcpxToolIndicator(meta = {}) {
-            const toolCallId = String(meta.tool_call_id || '').trim();
-            const indicator = toolCallId ? upsertAcpxToolIndicator(meta) : null;
-            if (!indicator) return;
-            updateAcpxToolIndicator(meta);
-            // acpx_tool_end 仍会带 title，补一次名字（防止 update 过程已把名字洗成 id）
-            _acpxApplyName(indicator.querySelector('.stream-tool-name'), meta, toolCallId);
-            const statusEl = indicator.querySelector('.stream-tool-status');
-            if (statusEl) {
-                statusEl.textContent = meta.status === 'failed' ? '❌' : '✅';
-                statusEl.classList.remove('stream-tool-running');
-                statusEl.classList.add('stream-tool-done');
-            }
-            indicator.open = false;
-            scrollChatToBottom(chatBox, { settle: false });
-        }
-
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
@@ -8660,23 +8557,7 @@ async function handleSend() {
                     // --- 处理结构化 meta 事件 ---
                     if (delta.meta) {
                         const m = delta.meta;
-                        if (m.type === 'acpx_trace') {
-                            sawAcpxTrace = true;
-                            sawToolActivity = sawToolActivity
-                                || (Array.isArray(m.tool_uses) && m.tool_uses.length > 0)
-                                || (Array.isArray(m.tool_results) && m.tool_results.length > 0)
-                                || (Array.isArray(m.messages) && m.messages.length > 0);
-                        } else if (m.type === 'acpx_tool_start') {
-                            sawToolActivity = true;
-                            upsertAcpxToolIndicator(m);
-                            updateAcpxToolIndicator(m);
-                        } else if (m.type === 'acpx_tool_update') {
-                            sawToolActivity = true;
-                            updateAcpxToolIndicator(m);
-                        } else if (m.type === 'acpx_tool_end') {
-                            sawToolActivity = true;
-                            finishAcpxToolIndicator(m);
-                        } else if (m.type === 'error') {
+                        if (m.type === 'error') {
                             chatRun.error = m.message || 'Agent call failed';
                         } else if (m.type === 'tools_start') {
                             // LLM 回复结束，即将调工具 → 封存当前气泡
@@ -8744,12 +8625,8 @@ async function handleSend() {
         }
 
         const hasRenderedToolIndicators = !!chatBox.querySelector('.stream-tool-indicator');
-        if (_ocChatMode === 'acp' && _acpTool && (sawAcpxTrace || sawToolActivity || !fullText)) {
-            acpRefreshCurrentTranscriptFromHistory({ showLoading: false }).catch((e) => {
-                console.warn('acpRefreshCurrentTranscriptFromHistory failed', e);
-            });
-        } else if ((sawToolActivity || hasRenderedToolIndicators) && _ocChatMode === 'internal' && currentSessionId &&
-                   window.ExternalAgentSettings?.peek(currentSessionId)?.transport !== 'acpx') {
+        if ((sawToolActivity || hasRenderedToolIndicators) && currentSessionId &&
+            window.ExternalAgentSettings?.peek(currentSessionId)?.transport !== 'acpx') {
             await new Promise((resolve) => setTimeout(resolve, 300));
             await switchToSession(currentSessionId, true, { quiet: true });
         }
@@ -8787,9 +8664,6 @@ async function handleSend() {
             appendMessage(t('agent_error') + ': ' + errText, false);
         }
     } finally {
-        if (chatRun.mode === 'acp' && chatRun.acpTranscriptKey) {
-            delete _acpTranscriptByKey[chatRun.acpTranscriptKey];
-        }
         if (activeChatRuns.get(_streamOwnerKey) === chatRun) {
             activeChatRuns.delete(_streamOwnerKey);
         }
@@ -9038,7 +8912,6 @@ var _ocChatMode = 'internal';       // 'internal' | 'acp'
 var _acpAvailable = false;
 var _acpToolsCache = [];
 var _acpTool = null;                // selected acpx tool when _ocChatMode === 'acp'
-var _acpTranscriptByKey = Object.create(null);
 var _acpResolvedSessionNameByKey = Object.create(null);
 var _acpLastTranscriptKey = '';
 
@@ -15225,10 +15098,6 @@ function acpNotifySessionContextChanged() {
     const newKey = acpComputeTranscriptKey();
     if (window.ExternalAgentSettings) ExternalAgentSettings.syncMenu();
     if (newKey === _acpLastTranscriptKey) return;
-    const chatBox = document.getElementById('chat-box');
-    if (chatBox && _acpLastTranscriptKey) {
-        _acpTranscriptByKey[_acpLastTranscriptKey] = chatBox.innerHTML;
-    }
     _acpLastTranscriptKey = newKey;
     acpRememberResolvedSessionName(acpComputeSessionNameFromInputs(), newKey);
     acpPaintTranscript();
@@ -15289,200 +15158,152 @@ async function acpLoadSessionsList() {
     }
 }
 
-function acpSaveTranscript() {
-    const chatBox = document.getElementById('chat-box');
-    if (!chatBox || !_acpTool) return;
-    _acpTranscriptByKey[_acpTranscriptKey()] = chatBox.innerHTML;
-}
-
-function acpExtractMessageTextParts(contentBlocks) {
-    const texts = [];
-    const toolUses = [];
-    if (!Array.isArray(contentBlocks)) {
-        return { text: '', toolUses: [] };
-    }
-    for (const block of contentBlocks) {
-        if (!block || typeof block !== 'object') continue;
-        if (typeof block.Text === 'string') {
-            const txt = block.Text.trim();
-            if (txt) texts.push(txt);
-        } else if (block.Text && typeof block.Text === 'object') {
-            const txt = String(block.Text.text || block.Text.value || '').trim();
-            if (txt) texts.push(txt);
-        } else if (block.Thinking) {
-            const thinking = block.Thinking;
-            const txt = typeof thinking === 'string'
-                ? thinking.trim()
-                : String((thinking && (thinking.text || thinking.value)) || '').trim();
-            if (txt) texts.push(txt);
-        } else if (block.ToolUse && typeof block.ToolUse === 'object') {
-            toolUses.push(block.ToolUse);
-        }
-    }
-    return { text: texts.join('\n\n').trim(), toolUses };
-}
-
-function acpRenderToolUses(toolUses) {
-    if (!Array.isArray(toolUses) || toolUses.length === 0) return '';
-    return toolUses.map((toolUse) => {
-        const name = escapeHtml(String(toolUse.name || toolUse.tool_name || 'tool'));
-        const input = toolUse.input ? escapeHtml(JSON.stringify(toolUse.input, null, 2)) : '';
-        return `
-            <details class="completed-tool-details">
-                <summary>🛠 ${name}</summary>
-                ${input ? `<pre class="whitespace-pre-wrap break-all text-[11px] leading-5">${input}</pre>` : ''}
-            </details>
-        `;
-    }).join('');
-}
-
-function acpRenderToolResults(toolResults) {
-    if (!Array.isArray(toolResults) || toolResults.length === 0) return '';
-    return toolResults.map((result, idx) => {
-        const title = escapeHtml(String(result.tool_name || result.name || `tool_result_${idx + 1}`));
-        const content = result.output_text || result.output || result.result || result.content || JSON.stringify(result, null, 2);
-        return `
-            <div class="flex justify-start">
-                <div class="bg-gray-100 border border-dashed border-gray-300 p-3 max-w-[85%] shadow-sm text-xs text-gray-500 rounded-lg">
-                    <div class="font-semibold text-gray-600 mb-1">🔧 ${t('tool_return')}: ${title}</div>
-                    ${renderToolPager(String(content || ''), { title: t('tool_full_output') })}
-                </div>
-            </div>
-        `;
-    }).join('');
-}
-
-function acpRenderSessionMessages(messages) {
-    if (!Array.isArray(messages) || messages.length === 0) {
-        return '';
-    }
-    let html = '';
-    for (const item of messages) {
-        if (!item || typeof item !== 'object') continue;
-        for (const [role, payload] of Object.entries(item)) {
-            if (!payload || typeof payload !== 'object') continue;
-            const normalizedRole = String(role || '').toLowerCase();
-            const parsed = acpExtractMessageTextParts(payload.content);
-            const text = parsed.text;
-            const toolUsesHtml = acpRenderToolUses(parsed.toolUses);
-            const toolResults = payload.tool_results && typeof payload.tool_results === 'object'
-                ? Object.values(payload.tool_results).filter((v) => v && typeof v === 'object')
-                : [];
-
-            if (normalizedRole === 'user') {
-                html += `
-                    <div class="flex justify-end">
-                        <div class="message-user bg-blue-600 text-white p-4 max-w-[85%] shadow-sm">
-                            ${RuntimePresentation.user(text || '(empty)')}
-                        </div>
-                    </div>`;
-            } else {
-                html += `
-                    <div class="flex justify-start">
-                        <div class="message-agent bg-white border p-4 max-w-[85%] shadow-sm text-gray-700 markdown-body tc-markdown">
-                            ${toolUsesHtml}
-                            ${text ? renderMarkdown(text) : '<span class="text-gray-400 text-xs">(' + t('tool_calling') + ')</span>'}
-                        </div>
-                    </div>`;
-            }
-            if (toolResults.length > 0) {
-                html += acpRenderToolResults(toolResults);
-            }
-        }
-    }
-    return html;
-}
-
-function acpExtractHistoryPreviewParts(text) {
-    const raw = String(text || '');
-    const toolUses = [];
-    const cleaned = raw.replace(/\[tool:([\s\S]*?)\]/g, (_, inner) => {
-        const cmd = String(inner || '').trim();
-        if (cmd) toolUses.push(cmd);
-        return '';
-    });
-    return {
-        text: cleaned.trim(),
-        toolUses,
-    };
-}
-
-async function acpLoadSessionHistory(force = false, options = {}) {
+// The visible external agent's conversation: its history, then the turn it is
+// running, followed through GET /v1/agents/{id}/events. A turn does not depend on
+// the page that sent it, so any page that opens the agent shows it the same way.
+async function acpLoadSessionHistory(options = {}) {
     const chatBox = document.getElementById('chat-box');
     if (!chatBox || !_acpTool) return false;
-    const showLoading = options.showLoading !== false;
-    const applyToChat = options.applyToChat !== false;
-    const cacheKey = _acpTranscriptKey();
-    if (!force && _acpTranscriptByKey[cacheKey]) {
-        if (applyToChat) {
-            chatBox.innerHTML = _acpTranscriptByKey[cacheKey];
-            ocRefreshTtsButtonsIn(chatBox);
-            scrollChatToBottom(chatBox, { force: true });
-        }
-        return true;
-    }
-
     const sessionName = acpResolveSessionName();
     if (!sessionName) return false;
-
-    if (showLoading && applyToChat) {
+    const contextKey = chatRunContextKey();
+    if (options.showLoading !== false) {
         chatBox.innerHTML = `<div class="text-xs text-gray-400 text-center py-4">${t('history_loading_msg')}</div>`;
     }
-    try {
-        const html = await studioAgentHistoryHtml(sessionName);
-        if (html) {
-            _acpTranscriptByKey[cacheKey] = html;
-            if (applyToChat) {
-                chatBox.innerHTML = html;
-                ClawcrossNativeSessions.attachHistoryPager({agentId:sessionName,container:chatBox,nextBefore:studioHistoryCursors.get(sessionName),render:studioHistoryHtml});
-                ocRefreshTtsButtonsIn(chatBox);
-                scrollChatToBottom(chatBox, { force: true });
-            }
-            return true;
-        }
-    } catch (e) {
-        console.warn('acpLoadSessionHistory failed', e);
-    }
-    return false;
+    const html = await studioAgentHistoryHtml(sessionName);
+    if (chatRunContextKey() !== contextKey) return true;  // another conversation is showing
+    if (!html) return false;
+    chatBox.innerHTML = html;
+    ClawcrossNativeSessions.attachHistoryPager({agentId:sessionName,container:chatBox,nextBefore:studioHistoryCursors.get(sessionName),render:studioHistoryHtml});
+    ocRefreshTtsButtonsIn(chatBox);
+    if (_acpFollower && _acpFollower.agentId === sessionName && _acpFollower.view) chatBox.appendChild(_acpFollower.view.el);
+    scrollChatToBottom(chatBox, { force: options.keepScroll !== true });
+    return true;
 }
 
 async function acpPaintTranscript() {
     const chatBox = document.getElementById('chat-box');
     if (!chatBox || !_acpTool) return;
-    // Prefer backend session history over any cached placeholder HTML.
-    // The cache may contain only the ACP welcome card from a prior switch.
-    if (await acpLoadSessionHistory(true)) {
-        _acpLastTranscriptKey = acpComputeTranscriptKey();
-        return;
-    }
-    const k = _acpTranscriptKey();
-    if (_acpTranscriptByKey[k]) {
-        chatBox.innerHTML = _acpTranscriptByKey[k];
-        ocRefreshTtsButtonsIn(chatBox);
-        scrollChatToBottom(chatBox, { force: true });
-        return;
-    }
-    const label = _acpDisplayLabel(_acpTool || '');
-    chatBox.innerHTML =
-        '<div class="flex justify-start">' +
-        '<div class="message-agent bg-white border p-4 max-w-[85%] shadow-sm text-gray-700">' +
-        escapeHtml(label) +
-        '<br><span style="font-size:0.85em;color:#6b7280;">' +
-        escapeHtml(t('oc_acp_via')) +
-        '</span></div></div>';
-    scrollChatToBottom(chatBox, { force: true });
     _acpLastTranscriptKey = acpComputeTranscriptKey();
+    if (!await acpLoadSessionHistory()) {
+        chatBox.innerHTML =
+            '<div class="flex justify-start">' +
+            '<div class="message-agent bg-white border p-4 max-w-[85%] shadow-sm text-gray-700">' +
+            escapeHtml(_acpDisplayLabel(_acpTool || '')) +
+            '<br><span style="font-size:0.85em;color:#6b7280;">' +
+            escapeHtml(t('oc_acp_via')) +
+            '</span></div></div>';
+        scrollChatToBottom(chatBox, { force: true });
+    }
+    acpFollow(acpResolveSessionName());
 }
 
-async function acpRefreshCurrentTranscriptFromHistory(options = {}) {
-    if (_ocChatMode !== 'acp' || !_acpTool) return;
-    const ok = await acpLoadSessionHistory(true, options);
-    if (!ok) {
-        if (options.applyToChat !== false && options.showLoading !== false) {
-            await acpPaintTranscript();
+let _acpFollower = null;
+
+function acpUnfollow() {
+    const follower = _acpFollower;
+    _acpFollower = null;
+    if (!follower) return;
+    follower.controller.abort();
+    follower.view?.stop();
+    follower.view?.el.remove();
+}
+
+function acpFollow(agentId) {
+    if (_acpFollower && _acpFollower.agentId === agentId) return;
+    acpUnfollow();
+    if (!agentId) return;
+    const follower = {agentId, controller: new AbortController(), cursor: 0, turnId: null, view: null};
+    _acpFollower = follower;
+    void acpFollowLoop(follower);
+}
+
+async function acpFollowLoop(follower) {
+    const following = () => _acpFollower === follower;
+    let attaching = true;
+    while (following()) {
+        let data;
+        try {
+            const response = await fetch(`/v1/agents/${encodeURIComponent(follower.agentId)}/events?after=${follower.cursor}&wait=${attaching ? 0 : 25}`,
+                {signal: follower.controller.signal});
+            if (response.status === 404) {  // not made yet: the first message makes it and follows again
+                if (following()) _acpFollower = null;
+                return;
+            }
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            data = await response.json();
+        } catch (e) {
+            if (!following()) return;
+            await new Promise((resolve) => setTimeout(resolve, 2000));  // the connection dropped: retry
+            continue;
         }
-    } else {
-        _acpLastTranscriptKey = acpComputeTranscriptKey();
+        if (!following()) return;
+        await acpShowTurn(follower, data, attaching);
+        follower.cursor = data.cursor;
+        attaching = false;
+    }
+}
+
+async function acpShowTurn(follower, data, attaching) {
+    const chatBox = document.getElementById('chat-box');
+    const turn = data.turn;
+    const fresh = !!turn && turn.id !== follower.turnId;
+    if (fresh) {
+        follower.view?.stop();
+        follower.view?.el.remove();
+        follower.view = null;
+        follower.turnId = turn.id;
+        // Its prompt (and, if it is already over, all of it) is in the history now.
+        if (!attaching) await acpLoadSessionHistory({showLoading: false, keepScroll: true});
+        if (_acpFollower !== follower) return;
+    }
+    if (turn && turn.running) {
+        if (!follower.view) {
+            document.getElementById('typing-indicator')?.remove();
+            follower.view = AgentTurns.live(turn);
+            chatBox.appendChild(follower.view.el);
+        }
+        follower.view.update(data.items);
+        setSystemBusyUI(true);
+        scrollChatToBottom(chatBox, { settle: false });
+    } else if (follower.view) {
+        follower.view.stop();
+        await acpLoadSessionHistory({showLoading: false, keepScroll: true});
+        follower.view.el.remove();
+        follower.view = null;
+        if (_acpFollower === follower) setSystemBusyUI(false);
+    } else if (fresh && !attaching) {
+        setSystemBusyUI(false);
+    }
+}
+
+// Start a turn of the visible external agent. It runs on its own, so the stream
+// is not read: the follower shows the turn like any other page would.
+async function acpSendTurn(msgContent) {
+    const agentId = acpResolveSessionName();
+    const payload = { model: _acpTool, messages: [{ role: 'user', content: msgContent }], stream: true, session_id: agentId };
+    applyRunModeToPayload(payload);
+    setSystemBusyUI(true);
+    try {
+        const response = await fetch('/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        if (response.status === 401) {
+            document.getElementById('typing-indicator')?.remove();
+            appendMessage(t('login_expired'), false);
+            showLoginScreen();
+            return;
+        }
+        if (!response.ok) throw new Error(await extractErrorMessageFromResponse(response, 'Agent error'));
+        response.body?.cancel().catch(() => {});
+        acpFollow(agentId);  // a new agent exists now
+        void acpLoadSessionsList();
+    } catch (error) {
+        document.getElementById('typing-indicator')?.remove();
+        appendMessage(t('agent_error') + ': ' + (error && error.message ? error.message : formatApiErrorField(error)), false);
+        if (!_acpFollower?.view) setSystemBusyUI(false);
     }
 }
 
@@ -15519,43 +15340,7 @@ async function studioAgentHistoryHtml(agentId) {
 }
 
 function studioHistoryHtml(messages) {
-    if (!Array.isArray(messages) || messages.length === 0) return '';
-    const parts = [];
-    for (const msg of messages) {
-        const direction = String(msg && msg.direction || '');
-        const role = String(msg && msg.role || '');
-        let content = String(msg && msg.content || '');
-        if (!content) continue;
-        if (direction === 'send' || role === 'user') {
-            parts.push(
-                '<div class="flex justify-end animate-in fade-in duration-300">' +
-                '<div class="p-4 max-w-[85%] shadow-sm bg-blue-600 text-white message-user">' +
-                RuntimePresentation.user(content, msg) +
-                '</div></div>'
-            );
-        } else if (direction === 'recv' || role === 'assistant') {
-            parts.push(
-                '<div class="flex justify-start animate-in fade-in duration-300">' +
-                '<div class="p-4 max-w-[85%] shadow-sm bg-white border text-gray-800 message-agent markdown-body tc-markdown">' +
-                renderMarkdown(content) +
-                '</div></div>'
-            );
-        } else if (role === 'tool') {
-            parts.push('<div class="flex justify-start"><div class="message-agent">' +
-                RuntimePresentation.tool(renderToolPager(content, {title: t('tool_full_output')}), msg.tool_name || '工具轨迹') + '</div></div>');
-        } else if (role === 'system') {
-            parts.push('<details class="runtime-context-details"><summary>思考 / Thinking</summary><div class="markdown-body">' + renderMarkdown(content) + '</div></details>');
-        } else if (direction === 'error') {
-            parts.push(
-                '<div class="flex justify-start">' +
-                '<div class="p-4 max-w-[85%] shadow-sm bg-red-50 border border-red-300 text-red-700 message-agent">' +
-                '⚠️ ' + escapeHtml(content) +
-                '</div></div>'
-            );
-        }
-        // Historical tool rows stay collapsed until explicitly expanded.
-    }
-    return parts.join('');
+    return AgentTurns.historyHtml(messages);
 }
 
 /**
@@ -15571,9 +15356,7 @@ async function ocSwitchTo(mode, acpTool) {
     const modeChanged = prevMode !== mode;
     const acpToolChanged = mode === 'acp' && prevAcpTool !== nextAcp;
 
-    if (_ocChatMode === 'acp' && (mode !== 'acp' || nextAcp !== _acpTool)) {
-        acpSaveTranscript();
-    }
+    if (mode !== 'acp') acpUnfollow();
 
     _ocChatMode = mode;
     _acpTool = nextAcp;

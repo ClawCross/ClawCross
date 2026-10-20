@@ -106,7 +106,7 @@ class ACPStreamTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(AcpxAdapter._extract_text(output),'')
         trace=AcpxAdapter._extract_trace(output)
         self.assertEqual(trace.text,'')
-        self.assertEqual(trace.tool_uses[0]['name'],'Read')
+        self.assertEqual([(i['kind'],i['title']) for i in trace.items],[('tool','Read')])
     async def test_stdout_delivers_tool_events_while_process_is_running(self):
         adapter = AcpxAdapter.__new__(AcpxAdapter)
         values = [packet('tool_call', toolCallId='a', title='Read file', status='in_progress'),
@@ -123,7 +123,8 @@ class ACPStreamTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([e['type'] for e in seen], ['acpx_tool_start', 'acpx_tool_end'])
         self.assertEqual(seen[-1]['content_text'], 'safe result')
         trace = adapter._extract_trace(output)
-        self.assertEqual(trace.tool_uses[0]['name'], 'Read file')
+        self.assertEqual(trace.items[0]['title'], 'Read file')
+        self.assertEqual(trace.items[0]['output'], 'safe result')
 
     async def test_chat_yields_tool_event_before_final_reply(self):
         with TemporaryDirectory() as tmp:
@@ -132,9 +133,9 @@ class ACPStreamTests(unittest.IsolatedAsyncioTestCase):
             runtime = AcpRuntime(store)
             release = asyncio.Event()
             async def ask_turn(current, msg, **kwargs):
-                await kwargs['context']['_acp_event_sink']({'type':'acpx_tool_start','tool_call_id':'a','title':'Read'})
+                kwargs['context']['_acp_event_sink']({'type':'acpx_tool_start','tool_call_id':'a','title':'Read'})
                 await release.wait()
-                await kwargs['context']['_acp_event_sink']({'type':'text','text':'answer'})
+                kwargs['context']['_acp_event_sink']({'type':'text','text':'answer'})
                 return AgentReply(ok=True, content='answer')
             runtime._ask_turn = ask_turn
             response = await runtime.chat(agent, ChatCompletionRequest(stream=True, messages=[{'role':'user','content':'read'}]))
@@ -165,6 +166,84 @@ class ACPStreamTests(unittest.IsolatedAsyncioTestCase):
         await adapter.prompt_with_trace(tool='codex', session_key='owned', prompt_text='hello',
                                          config_options={'reasoning_effort':'high'})
         adapter._run_json.assert_not_awaited()
+
+
+class TurnFollowTests(unittest.IsolatedAsyncioTestCase):
+    """A turn runs on without the page that sent it; any page follows it item by item."""
+
+    async def asyncSetUp(self):
+        from external import history, session
+        from external.acpx import AcpxPromptTrace
+        tmp = TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        history.reset_store_for_test(Path(tmp.name) / 'history')
+        self.store = AgentStore(Path(tmp.name) / 'agents.db')
+        self.agent = self.store.create('alice', driver=ACPX, config={'platform': 'codex'})
+        self.runtime = AcpRuntime(self.store)
+        self.release = asyncio.Event()
+        lines = [{'jsonrpc': '2.0', **value} for value in (
+            packet('agent_message_chunk', content={'type': 'text', 'text': 'Looking. '}),
+            packet('tool_call', toolCallId='a', title='Read', status='in_progress'),
+            packet('tool_call_update', toolCallId='a', status='completed', rawOutput='file'),
+            packet('agent_message_chunk', content={'type': 'text', 'text': 'Done.'}))]
+        release = self.release
+
+        class Adapter:
+            async def prompt_with_trace(self, *, on_event, **kwargs):
+                for index, line in enumerate(lines):
+                    if index == 2:
+                        await release.wait()
+                    await on_event(normalize_event(line))
+                return AcpxAdapter._extract_trace('\n'.join(map(json.dumps, lines)))
+
+            async def ops_cancel(self, **kwargs):
+                pass
+
+        for target, value in (('external.acp.adapter', lambda agent=None: Adapter()),
+                              ('external.session.prepare_turn', lambda *a, **k: session.PreparedTurn('hi', None, {}, {})),
+                              ('external.session.remember_turn', lambda *a, **k: None)):
+            patcher = patch(target, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.runtime._native_session = lambda agent: (None, None, {})
+
+    async def follow(self, until):
+        cursor, seen = 0, {}
+        while True:
+            data = await asyncio.wait_for(self.runtime.events(self.agent, cursor, wait=2), 3)
+            cursor = data['cursor']
+            seen.update({item['id']: item for item in data['items']})
+            if until(data['turn'], seen):
+                return data['turn'], list(seen.values())
+
+    async def log(self):
+        from external import session
+        return [(m['role'], m['content']) for m in await session.log(self.agent, 20)]
+
+    async def test_the_turn_outlives_its_stream_and_is_logged_in_order(self):
+        response = await self.runtime.chat(self.agent, ChatCompletionRequest(
+            model='codex', stream=True, session_mode='auto', messages=[{'role': 'user', 'content': 'read'}]))
+        stream = response.body_iterator
+        await anext(stream)
+        await stream.aclose()  # the page went away
+        turn, items = await self.follow(lambda turn, seen: 'a' in seen)
+        self.assertTrue(turn['running'])
+        self.assertEqual([(i['kind'], i.get('text') or i['status']) for i in items],
+                         [('text', 'Looking. '), ('tool', 'in_progress')])
+        self.release.set()
+        turn, items = await self.follow(lambda turn, seen: not turn['running'])
+        self.assertEqual(await self.log(), [('user', 'hi'), ('assistant', 'Looking. '), ('tool', 'file'),
+                                            ('assistant', 'Done.')])
+
+    async def test_cancel_keeps_what_the_turn_did(self):
+        task = asyncio.create_task(self.runtime.ask(self.agent, AgentMessage(text='read'), context={}, mode='auto',
+                                                    enabled_tools=None, response_format=None, timeout=None))
+        await self.follow(lambda turn, seen: 'a' in seen)
+        self.assertEqual(await self.runtime.control(self.agent, 'cancel'), {'cancel': True})
+        self.assertEqual((await task).error, 'Agent turn cancelled')
+        turn, _ = await self.follow(lambda turn, seen: not turn['running'])
+        self.assertEqual(await self.log(), [('user', 'hi'), ('assistant', 'Looking. '), ('tool', ''),
+                                            ('assistant', 'Agent turn cancelled')])
 
 
 class ConnectionProbeTests(unittest.IsolatedAsyncioTestCase):

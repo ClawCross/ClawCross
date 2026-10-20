@@ -1,0 +1,61 @@
+/* An external agent's turn (agent-turns.js): its steps folded into one line
+   above the final answer; a running turn shows them as they happen. */
+.agent-turn-live [hidden] { display: none !important; }
+.agent-turn-row { margin: 2px 0; }
+.agent-turn-process { max-width: min(85%, 800px); min-width: 0; font-size: 13px; color: var(--ui-text-2); }
+.agent-turn-process > summary {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 4px 10px; border-radius: 999px;
+  cursor: pointer; list-style: none; user-select: none;
+  transition: background-color 0.15s, color 0.15s;
+}
+.agent-turn-process > summary::-webkit-details-marker { display: none; }
+.agent-turn-process > summary::before {
+  content: ''; width: 5px; height: 5px; margin: 0 2px;
+  border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg); transition: transform 0.15s var(--ui-ease);
+}
+.agent-turn-process[open] > summary::before { transform: rotate(45deg); }
+.agent-turn-process > summary:hover { background: var(--ui-hover); color: var(--ui-text); }
+.agent-turn-live .agent-turn-process > summary::after {
+  content: ''; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--ui-accent); animation: pulse 1.5s infinite;
+}
+.agent-turn-steps {
+  display: flex; flex-direction: column; gap: 8px;
+  margin: 6px 0 6px 14px; padding-left: 14px;
+  border-left: 1px solid var(--ui-hairline-strong);
+}
+.agent-turn-steps .agent-step-text { color: var(--ui-text-2); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.agent-turn-steps .agent-step-text > :first-child { margin-top: 0; }
+.agent-turn-steps .agent-step-text > :last-child { margin-bottom: 0; }
+
+.agent-step-tool > summary, .agent-step-thought > summary {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+  cursor: pointer; list-style: none; color: var(--ui-text); overflow-wrap: anywhere;
+}
+.agent-step-tool > summary::-webkit-details-marker, .agent-step-thought > summary::-webkit-details-marker { display: none; }
+.agent-step-thought > summary { color: var(--ui-text-2); }
+.agent-step-mark {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; flex-shrink: 0; font-size: 12px; line-height: 1;
+}
+.agent-step-tool[data-status="completed"] .agent-step-mark::before { content: '✓'; color: var(--ui-success); }
+.agent-step-tool[data-status="failed"] .agent-step-mark::before { content: '✕'; color: var(--ui-danger); }
+.agent-step-tool[data-status="running"] .agent-step-mark {
+  width: 12px; height: 12px; margin: 2px;
+  border: 1.5px solid var(--ui-hairline-strong); border-top-color: var(--ui-accent); border-radius: 50%;
+  animation: tts-spin 0.8s linear infinite;
+}
+.agent-step-title { min-width: 0; }
+.agent-step-body { margin: 6px 0 2px 24px; }
+.agent-step-body pre, .agent-step-thought .markdown-body {
+  margin: 0; padding: 8px 10px; max-height: 320px; overflow: auto;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+  background: var(--ui-surface-2); color: var(--ui-text); border-radius: var(--ui-radius-sm);
+  font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.agent-step-body .agent-step-input { margin-bottom: 6px; color: var(--ui-text-2); }
+.agent-step-body .agent-step-output:empty { display: none; }
+.agent-step-thought .markdown-body { font: 13px/1.6 var(--ui-font); margin: 6px 0 2px 24px; white-space: normal; }
+.agent-step-body .tool-pager-block:first-child { margin-top: 0 !important; }

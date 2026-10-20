@@ -1,3 +1,4 @@
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -174,70 +175,79 @@ class StoreTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(messages[1]["content"], "missing api_url")
             self.assertEqual(messages[1]["meta"]["ok"], False)
 
-    async def test_record_recv_with_dict_raw_response_inlines_tools(self):
-        """Validate that tool_uses/tool_results in raw_response (the
-        return_trace=True path) get recorded automatically by record_recv."""
+    async def test_record_recv_logs_turn_items_in_order(self):
+        """An ACP turn's text runs and tool calls are logged as they happened."""
         with TemporaryDirectory() as tmp:
             store = ExternalAgentHistoryStore(tmp)
             rid = await store.record_send(
-                platform="claude",
-                session_key="recv-tools",
-                connect_type="acp",
-                prompt="run ls",
-                options=None,
-            )
+                platform="claude", session_key="recv-tools", connect_type="acp", prompt="run ls", options=None)
+            items = [{"id": "text-0", "kind": "text", "text": "Let me look."},
+                     {"id": "t1", "kind": "tool", "title": "ls", "status": "completed",
+                      "input": {"path": "/"}, "output": "a b c"},
+                     {"id": "text-2", "kind": "text", "text": "here you go"}]
             await store.record_recv(
-                platform="claude",
-                session_key="recv-tools",
-                connect_type="acp",
-                request_id=rid,
-                ok=True,
-                content="here you go",
-                raw_response={
-                    "messages": [{"role": "assistant", "content": "here you go"}],
-                    "tool_uses": [{"name": "ls", "args": {"path": "/"}}],
-                    "tool_results": [{"name": "ls", "output": "a b c"}],
-                },
-                error=None,
-                options=None,
-            )
-            messages = await store.list_messages(
-                platform="claude", session_key="recv-tools"
-            )
-            directions = [m["direction"] for m in messages]
-            self.assertEqual(directions, ["send", "recv", "tool_call", "tool_result"])
-            tool_call_row = messages[2]
-            self.assertEqual(tool_call_row["meta"]["tool_name"], "ls")
+                platform="claude", session_key="recv-tools", connect_type="acp", request_id=rid,
+                ok=True, content="Let me look.here you go", raw_response={"items": items}, error=None, options=None)
+            messages = await store.list_messages(platform="claude", session_key="recv-tools")
+            self.assertEqual([(m["direction"], m["content"]) for m in messages],
+                             [("send", "run ls"), ("recv", "Let me look."), ("tool_result", "a b c"),
+                              ("recv", "here you go")])
+            self.assertEqual(messages[2]["meta"], {"tool_name": "ls", "tool_call_id": "t1",
+                                                   "status": "completed", "input": {"path": "/"}})
 
-    async def test_acpx_trace_records_tool_calls_and_results(self):
+    async def test_failed_turn_keeps_its_items_before_the_error(self):
         with TemporaryDirectory() as tmp:
             store = ExternalAgentHistoryStore(tmp)
             rid = await store.record_send(
-                platform="claude",
-                session_key="trace1",
-                connect_type="acp",
-                prompt="run tool",
-                options=None,
-            )
-            trace = {
-                "messages": [{"role": "assistant", "content": "ok"}],
-                "tool_uses": [{"name": "ls", "args": {"path": "/"}}],
-                "tool_results": [{"name": "ls", "output": "foo bar"}],
-            }
-            await store.record_acpx_trace(
-                platform="claude",
-                session_key="trace1",
-                connect_type="acp",
-                request_id=rid,
-                trace=trace,
-                options=None,
-            )
-            messages = await store.list_messages(
-                platform="claude", session_key="trace1"
-            )
-            directions = [m["direction"] for m in messages]
-            self.assertIn("tool_call", directions)
-            self.assertIn("tool_result", directions)
+                platform="codex", session_key="failed", connect_type="acp", prompt="go", options=None)
+            await store.record_recv(
+                platform="codex", session_key="failed", connect_type="acp", request_id=rid, ok=False,
+                content="", raw_response={"items": [{"id": "t", "kind": "tool", "title": "Run", "status": "in_progress",
+                                                     "input": None, "output": ""}]},
+                error="Agent turn cancelled", options=None)
+            messages = await store.list_messages(platform="codex", session_key="failed")
+            self.assertEqual([m["direction"] for m in messages], ["send", "tool_result", "error"])
+
+    async def test_old_turns_are_rewritten_once_with_tools_before_the_reply(self):
+        import aiosqlite
+        from external.history import _INIT_SCHEMA
+        with TemporaryDirectory() as tmp:
+            store = ExternalAgentHistoryStore(tmp)
+            path = store.db_path("codex", "old")
+            async with aiosqlite.connect(path) as db:
+                await db.executescript(_INIT_SCHEMA)
+                rows = [("r1", "send", "user", "question"), ("r1", "recv", "assistant", "Looking.Answer"),
+                        ("r1", "tool_call", "tool", json.dumps({"id": "a", "name": "Read", "input": {"p": 1}})),
+                        ("r1", "tool_call", "tool", json.dumps({"id": "b", "name": "Run", "input": {}})),
+                        ("r1", "tool_result", "tool", json.dumps({"tool_call_id": "a", "name": "Read", "status": "completed", "content": "text"})),
+                        ("r1", "tool_result", "tool", json.dumps({"tool_call_id": "b", "name": "Run", "status": "failed", "content": "boom"})),
+                        ("r2", "send", "user", "next"), ("r2", "recv", "assistant", "plain")]
+                await db.executemany("INSERT INTO messages (ts, request_id, direction, role, content) VALUES (1, ?, ?, ?, ?)", rows)
+                await db.commit()
+            messages = (await store.message_page(platform="codex", session_key="old"))["rows"]
+            self.assertEqual([(m["direction"], m["content"]) for m in messages],
+                             [("send", "question"), ("tool_result", "text"), ("tool_result", "boom"),
+                              ("recv", "Looking.Answer"), ("send", "next"), ("recv", "plain")])
+            self.assertEqual(messages[1]["meta"], {"tool_name": "Read", "tool_call_id": "a", "input": {"p": 1}, "status": "completed"})
+            self.assertEqual(messages[2]["meta"]["status"], "failed")
+            self.assertEqual([m["rowid"] for m in messages], sorted(m["rowid"] for m in messages))
+
+    async def test_pages_start_at_a_prompt(self):
+        with TemporaryDirectory() as tmp:
+            store = ExternalAgentHistoryStore(tmp)
+            for turn in range(3):
+                rid = await store.record_send(platform="codex", session_key="pages", connect_type="acp",
+                                              prompt=f"q{turn}", options=None)
+                items = [{"id": f"t{n}", "kind": "tool", "title": "Run", "status": "completed", "input": None, "output": ""}
+                         for n in range(3)] + [{"id": "text-3", "kind": "text", "text": f"a{turn}"}]
+                await store.record_recv(platform="codex", session_key="pages", connect_type="acp", request_id=rid,
+                                        ok=True, content=f"a{turn}", raw_response={"items": items}, error=None, options=None)
+            page = await store.message_page(platform="codex", session_key="pages", limit=7)
+            self.assertEqual([row["content"] for row in page["rows"]][0], "q1")
+            self.assertEqual(len(page["rows"]), 10)
+            older = await store.message_page(platform="codex", session_key="pages", limit=7, before=page["next_before"])
+            self.assertEqual([row["content"] for row in older["rows"]][0], "q0")
+            self.assertFalse(older["has_more"])
 
     async def test_purge_keeps_last_n(self):
         with TemporaryDirectory() as tmp:

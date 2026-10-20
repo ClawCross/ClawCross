@@ -1344,6 +1344,57 @@ test('external New Agent stays a draft until the first message request', async (
   expect(calls.agentCreates).toEqual([]);
 });
 
+test('an external Agent turn is followed after a reload and its steps fold above the answer', async ({page}) => {
+  const errors = []; page.on('pageerror', error => errors.push(error.message));
+  const agents = [{agent_id:'codex-work',name:'Codex',platform:'codex',settings:{title:'Fix login'},status:{state:'running'}}];
+  await stubStudioNetwork(page, {}, {acpxStatusPayload:{available:true,tools:['codex']},agents});
+  const prompt = {role:'user', direction:'send', content:'把登录页的 bug 修一下', ts:1000};
+  const steps = [
+    {role:'assistant', direction:'recv', content:'我先看一下登录页的代码。', ts:1083},
+    {role:'tool', direction:'tool_result', tool_name:'读取 src/login.js', status:'completed', input:{path:'src/login.js'}, content:'export function login() {}', ts:1083},
+    {role:'tool', direction:'tool_result', tool_name:'运行 npm test', status:'completed', content:'2 passed', ts:1083}];
+  let finished = false, cancels = 0;
+  await page.route(/\/v1\/agents\/codex-work\/history/, route => route.fulfill({json:{messages: finished
+    ? [prompt, ...steps, {role:'assistant', direction:'recv', content:'已修复：登录按钮重复提交。', ts:1083}] : [prompt], next_before:null}}));
+  await page.route(/\/v1\/agents\/codex-work\/control/, route => { cancels++; return route.fulfill({json:{cancel:true}}); });
+  const started = Date.now() / 1000 - 41;
+  const turn = running => ({id:'turn-1', group_id:'', running, started_at:started, finished_at:running ? null : started + 83});
+  await page.route(/\/v1\/agents\/codex-work\/events/, async route => {
+    if (new URL(route.request().url()).searchParams.get('after') === '0') return route.fulfill({json:{turn:turn(true), cursor:3, items:[
+      {id:'text-0', kind:'text', text:'我先看一下登录页的代码。'},
+      {id:'t1', kind:'tool', title:'读取 src/login.js', status:'completed', input:{path:'src/login.js'}, output:'export function login() {}'},
+      {id:'t2', kind:'tool', title:'运行 npm test', status:'in_progress', input:null, output:'running'}]}});
+    for (let i = 0; i < 200 && !finished; i++) await new Promise(resolve => setTimeout(resolve, 50));
+    if (!finished) return route.fulfill({json:{turn:turn(true), cursor:3, items:[]}});
+    return route.fulfill({json:{turn:turn(false), cursor:5, items:[
+      {id:'t2', kind:'tool', title:'运行 npm test', status:'completed', input:null, output:'2 passed'},
+      {id:'text-3', kind:'text', text:'已修复：登录按钮重复提交。'}]}});
+  });
+  await page.goto('/studio');
+  await page.locator('.studio-conversation-switcher > summary').click();
+  await page.locator('.studio-platform-picker > summary').click();
+  await page.locator('[data-acp-tool="codex"]').click();
+  await page.locator('.studio-conversation-item[data-session-id="codex-work"]').click();
+  const live = page.locator('#chat-box .agent-turn-live');
+  await expect(live.locator('.agent-step')).toHaveCount(3);
+  await expect(live.locator('.agent-turn-process > summary')).toHaveText(/^处理中 \d+秒 · 3 步$/);
+  await expect(live.locator('.agent-step-tool[data-status="running"]')).toContainText('运行 npm test');
+  await expect(page.locator('#cancel-btn')).toBeVisible();
+  await page.locator('#cancel-btn').click();
+  await expect.poll(() => cancels).toBe(1);
+  finished = true;
+  await expect(live).toHaveCount(0);
+  const process = page.locator('#chat-box .agent-turn-process');
+  await expect(process).toHaveCount(1);
+  await expect(process).not.toHaveAttribute('open', '');
+  await expect(process.locator('> summary')).toHaveText('已处理 1分23秒 · 3 步');
+  await expect(page.locator('#chat-box > :last-child .message-agent')).toContainText('已修复：登录按钮重复提交。');
+  await process.locator('> summary').click();
+  await expect(process.locator('.agent-step-tool')).toHaveCount(2);
+  await expect(page.locator('#send-btn')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
 test('Studio approval buttons and typed replies use the same control without sending Y to the agent', async ({page}) => {
   const calls = {importOpenClaw: 0, tinyfishRun: 0, approvalActions: []};
   const errors = [];

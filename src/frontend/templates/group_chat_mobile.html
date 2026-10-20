@@ -12019,11 +12019,11 @@ async function pollExternalToolActivity(typing) {
       const data = await api('GET', `/v1/agents/${encodeURIComponent(id)}/events?after=${_externalToolCursors.get(id) || 0}`);
       if (currentGroupId !== groupId) return;
       _externalToolCursors.set(id, data.cursor || 0);
-      for (const event of data.events || []) {
-        if (event.group_id !== groupId || !event.type.startsWith('acpx_tool_')) continue;
-        const key = id + ':' + event.tool_call_id;
-        if (event.type === 'acpx_tool_end') completedThisPoll.add(member.name + ':' + event.tool_call_id);
-        _externalToolRows.set(key, {...(_externalToolRows.get(key) || {}), ...event, agentName: member.name});
+      if (data.turn?.group_id !== groupId) return;
+      for (const item of data.items || []) {
+        if (item.kind !== 'tool') continue;
+        if (['completed', 'failed'].includes(item.status)) completedThisPoll.add(member.name + ':' + item.id);
+        _externalToolRows.set(id + ':' + item.id, {...item, agentName: member.name});
       }
     } catch (_) { /* Foreign or removed agents expose no events. */ }
   }));
@@ -12038,7 +12038,7 @@ async function pollExternalToolActivity(typing) {
   }
   const rows = [..._externalToolRows.values()].slice(-6);
   const previouslyOpen = new Set([...panel.querySelectorAll('details[open]')].map(el => el.dataset.key));
-  panel.innerHTML = rows.map(event => `<details data-key="${esc(event.agentName + ':' + event.tool_call_id)}" ${!['completed','failed'].includes(event.status) || (previouslyOpen.has(event.agentName + ':' + event.tool_call_id) && !completedThisPoll.has(event.agentName + ':' + event.tool_call_id)) ? 'open' : ''}><summary>${esc(event.agentName)} · ${esc(event.title || event.kind || '工具')} · ${event.status === 'failed' ? '失败' : event.status === 'completed' ? '完成' : '调用中'}</summary><pre>${esc(event.content_text || '')}</pre></details>`).join('');
+  panel.innerHTML = rows.map(tool => `<details data-key="${esc(tool.agentName + ':' + tool.id)}" ${!['completed','failed'].includes(tool.status) || (previouslyOpen.has(tool.agentName + ':' + tool.id) && !completedThisPoll.has(tool.agentName + ':' + tool.id)) ? 'open' : ''}><summary>${esc(tool.agentName)} · ${esc(tool.title || '工具')} · ${tool.status === 'failed' ? '失败' : tool.status === 'completed' ? '完成' : '调用中'}</summary><pre>${esc(tool.output || '')}</pre></details>`).join('');
   // Keep only the displayed recent calls, including pending calls.
   if (_externalToolRows.size > 24) {
     const pending = [..._externalToolRows.entries()].filter(([, e]) => !['failed', 'completed'].includes(e.status));

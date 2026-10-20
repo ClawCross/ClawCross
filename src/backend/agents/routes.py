@@ -9,6 +9,7 @@
     POST   /v1/agents/{ref}/inbox      put a message in its inbox
     POST   /v1/agents/{ref}/control    status, or one of the runtime's actions (cancel, reset, …)
     GET    /v1/agents/{ref}/history    the agent's own conversation (?limit=)
+    GET    /v1/agents/{ref}/events     an ACP agent's current turn, item by item (?after=&wait=)
 
 ``ref`` is an agent id (its session number) or ``<team>.<name>``. Sending to an
 id that is not there yet makes that agent — ``platform`` says of which runtime
@@ -532,10 +533,13 @@ def create_agents_router(
         return capability_card(updated)
 
     @router.get('/v1/agents/{ref}/events')
-    async def agent_events(ref: str, after: int = Query(0, ge=0), authorization: str | None = Header(None)):
+    async def agent_events(ref: str, after: int = Query(0, ge=0), wait: float = Query(0, ge=0, le=25),
+                           authorization: str | None = Header(None)):
+        """The current turn and its items changed after *after*; *wait* s for a change."""
         agent = lookup(user_of(authorization), ref)
-        runtime = gateway.runtime(agent)
-        return runtime.events(agent, after) if agent.driver == ACPX else {'events': [], 'cursor': 0}
+        if agent.driver != ACPX:
+            return {'turn': None, 'items': [], 'cursor': 0}
+        return await gateway.runtime(agent).events(agent, after, wait)
 
     @router.post("/v1/agents/{ref}/fork")
     async def fork_agent(ref: str, body: AgentForkBody, authorization: str | None = Header(None)):

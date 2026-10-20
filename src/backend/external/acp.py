@@ -2,19 +2,21 @@
 
 Incoming messages use the shared durable inbox and wait for the session turn
 lock. MCP results carry live inbox notices while a native turn is running.
+A turn runs on when the request that started it goes away; ``events`` lets any
+page follow the current turn item by item.
 """
 
 from __future__ import annotations
 
 from typing import Any
 import asyncio
-from collections import deque
 import time
+import uuid
 
 from agents.messages import ACPX_OVERRIDES_BY_MODE, AgentMessage, AgentReply
 from agents.runtime import NO_TIMEOUT, ControlError
 from agents.store import Agent, AgentStore, canonical_platform
-from external import session
+from external import acp_events, session
 from external.inbox import InboxRuntime
 
 
@@ -49,19 +51,64 @@ def command_options(agent: Agent, *, long: bool) -> dict[str, Any]:
     }
 
 
+class _Turn:
+    """An agent's current or last turn, as the pages following it see it."""
+
+    def __init__(self, group_id):
+        self.id = uuid.uuid4().hex
+        self.group_id = group_id or ''
+        self.started_at = time.time()
+        self.finished_at = None
+        self.items = []
+        self.changed = {}  # item id -> sequence number of its last change
+        self.cursor = 0
+
+    def card(self):
+        return {'id': self.id, 'group_id': self.group_id, 'running': self.finished_at is None,
+                'started_at': self.started_at, 'finished_at': self.finished_at}
+
+
 class AcpRuntime(InboxRuntime):
     controls = ("cancel", "reset")
 
     def __init__(self, store: AgentStore | None = None) -> None:
         super().__init__(store)
-        self._events = {}
+        self._turns = {}
+        self._followers = {}
         self._sequence = 0
         self._control_stopping = set()
 
-    def events(self, agent, after=0):
-        events = self._events.get((agent.owner, agent.agent_id), ())
-        return {'events': [event for event in events if event['seq'] > after],
-                'cursor': events[-1]['seq'] if events else 0}
+    def _changed(self, key, turn, item=None):
+        self._sequence += 1
+        turn.cursor = self._sequence
+        if item is not None:
+            turn.changed[item['id']] = self._sequence
+        follower = self._followers.pop(key, None)
+        if follower:
+            follower.set()
+
+    async def events(self, agent, after=0, wait=0.0):
+        """The agent's current (or last) turn and its items changed after *after*.
+
+        With *wait*, the call waits that long for a change, so a page that opens
+        while the turn runs follows it as the page that sent it does.
+        """
+        key = (agent.owner, agent.agent_id)
+        if after > self._sequence:
+            after = 0  # a cursor from before a restart
+        turn = self._turns.get(key)
+        if wait and (turn is None or turn.cursor <= after):
+            follower = self._followers.setdefault(key, asyncio.Event())
+            try:
+                await asyncio.wait_for(follower.wait(), wait)
+                await asyncio.sleep(0.08)  # gather the next few chunks into this reply
+            except TimeoutError:
+                pass
+            turn = self._turns.get(key)
+        if turn is None:
+            return {'turn': None, 'items': [], 'cursor': self._sequence}
+        return {'turn': turn.card(), 'cursor': turn.cursor,
+                'items': [dict(item) for item in turn.items if turn.changed[item['id']] > after]}
 
     async def chat(self, agent, req):
         from agents.openai import chunk, completion_id, response, streaming
@@ -78,28 +125,26 @@ class AcpRuntime(InboxRuntime):
                       response_format=req.response_format, timeout=None)
         context = {'teams': agent.teams, 'command_tools': req.tools or []}
         if not req.stream:
-            reply = await self.ask(agent, message, context=context, **kwargs)
+            reply = await asyncio.shield(self._detach(self.ask(agent, message, context=context, **kwargs)))
             if not reply.ok:
                 raise HTTPException(502, reply.error or 'Agent call failed')
             return response(reply.content, model=model)
 
         async def generate():
-            queue = asyncio.Queue(maxsize=256)
-            started = asyncio.Event()
-            context['_acp_event_sink'] = queue.put
-            context['_acp_turn_started'] = started
+            queue = asyncio.Queue()
+            context['_acp_event_sink'] = queue.put_nowait
             cid = completion_id()
 
             async def run():
                 try:
                     reply = await self.ask(agent, message, context=context, **kwargs)
-                    await queue.put(('reply', reply))
                 except asyncio.CancelledError:
-                    await queue.put(('reply', AgentReply(ok=False, error='Agent turn cancelled')))
+                    reply = AgentReply(ok=False, error='Agent turn cancelled')
                 except Exception as exc:
-                    await queue.put(('reply', AgentReply(ok=False, error=str(exc))))
+                    reply = AgentReply(ok=False, error=str(exc))
+                queue.put_nowait(('reply', reply))
 
-            task = asyncio.create_task(run())
+            self._detach(run())
             emitted_text = False
             try:
                 yield chunk(model=model, completion_id=cid)
@@ -124,11 +169,16 @@ class AcpRuntime(InboxRuntime):
                     else:
                         yield chunk(meta=event, model=model, completion_id=cid)
             finally:
-                if not task.done():
-                    # Cancelling a queued request must not cancel somebody else's turn.
-                    task.cancel()
-                    await asyncio.gather(task, return_exceptions=True)
+                # Like a message typed into WeBot, the turn runs on when the reader leaves;
+                # only cancel stops it.
+                context['_acp_event_sink'] = None
         return streaming(generate())
+
+    def _detach(self, coro):
+        task = asyncio.create_task(coro)
+        self._background.add(task)
+        task.add_done_callback(self._background.discard)
+        return task
 
     def _native_session(self, agent: Agent) -> tuple[str | None, str | None, dict]:
         """``(model, MCP connector file, native config options)`` of the agent's ACP session."""
@@ -159,8 +209,6 @@ class AcpRuntime(InboxRuntime):
                 if not current.config.get('connection_id') and current.runtime.get('native_resume_id') and current.runtime.get('acp_cwd'):
                     from webot.workspace import set_cli_workspace
                     set_cli_workspace(current.owner, current.agent_id, current.runtime['acp_cwd'])
-                if context.get('_acp_turn_started'):
-                    context['_acp_turn_started'].set()
                 return await self._ask_turn(current, msg, context=context, mode=mode, enabled_tools=enabled_tools,
                                             response_format=response_format, timeout=timeout)
         except asyncio.CancelledError:
@@ -187,22 +235,21 @@ class AcpRuntime(InboxRuntime):
         model, connector, native_config = self._native_session(agent)
         from external.tool_bridge import active_turn
 
-        tool_output = {}
+        key = (agent.owner, agent.agent_id)
+        turn = _Turn(context.get('group_id') or context.get('conversation_id'))
+
         async def on_event(event):
-            tool_id = event.get('tool_call_id')
-            if tool_id and 'content_delta' in event:
-                tool_output[tool_id] = (tool_output.get(tool_id, '') + event.pop('content_delta'))[-32000:]
-                event['content_text'] = tool_output[tool_id]
-            if event['type'] != 'text':
-                self._sequence += 1
-                self._events.setdefault((agent.owner, agent.agent_id), deque(maxlen=256)).append(
-                    {**event, 'seq': self._sequence, 'at': time.time(),
-                     'group_id': context.get('group_id') or context.get('conversation_id')})
+            item = acp_events.apply(turn.items, event)
+            if item is not None:
+                self._changed(key, turn, item)
             sink = context.get('_acp_event_sink')
             if sink:
-                await sink(event)
+                sink(event)
 
         async def send() -> session.Sent:
+            # The prompt is in the history now: followers show this turn after it.
+            self._turns[key] = turn
+            self._changed(key, turn)
             try:
                 with active_turn(agent, msg, context, mode, enabled_tools, prepared=prepared, response_format=response_format):
                     selected = adapter(agent)
@@ -223,12 +270,16 @@ class AcpRuntime(InboxRuntime):
                     pass
                 raise
             except (AcpxError, RuntimeError) as exc:
-                return session.Sent(ok=False, error=str(exc))
-            return session.Sent(ok=True, content=trace.text or "", raw={
-                "messages": trace.messages, "tool_uses": trace.tool_uses, "tool_results": trace.tool_results,
-            })
+                return session.Sent(ok=False, error=str(exc), raw={"items": turn.items})
+            return session.Sent(ok=True, content=trace.text or "", raw={"items": trace.items})
 
-        reply = await session.exchange(agent, connect_type="acp", prompt=prompt, context=context, send=send, prepared=prepared)
+        try:
+            reply = await session.exchange(agent, connect_type="acp", prompt=prompt, context=context, send=send,
+                                           prepared=prepared, partial=lambda: {"items": turn.items})
+        finally:
+            if self._turns.get(key) is turn:
+                turn.finished_at = time.time()  # after its history is written
+                self._changed(key, turn)
         if reply.ok:
             session.remember(self._store, agent, acp_cwd=session.native_workspace_cwd(agent))
             session.remember_turn(self._store, agent, prepared)
@@ -369,7 +420,7 @@ class AcpRuntime(InboxRuntime):
                 await session.drop_log(current)
             from external.tool_bridge import revoke_connector
             revoke_connector(agent)
-            self._events.pop(identity, None)
+            self._turns.pop(identity, None)
         except Exception:
             self._inbox_paused.discard(identity)
             raise

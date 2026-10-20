@@ -288,8 +288,12 @@ class Sent:
 
 
 async def exchange(agent: Agent, *, connect_type: str, prompt: Any, context: dict[str, Any],
-                   send: Callable[[], Awaitable[Sent]], prepared: PreparedTurn | None = None) -> AgentReply:
-    """Send, and log both sides in the agent's exchange log (a failed log never fails the send)."""
+                   send: Callable[[], Awaitable[Sent]], prepared: PreparedTurn | None = None,
+                   partial: Callable[[], Any] | None = None) -> AgentReply:
+    """Send, and log both sides in the agent's exchange log (a failed log never fails the send).
+
+    *partial* is what a cancelled send had produced (its ``raw``), logged before the cancellation.
+    """
     options = history.attach_history_context(
         {}, user_id=agent.owner, group_id=str(context.get("conversation_id") or ""), global_name=agent.agent_id)
     if prepared is not None:
@@ -300,17 +304,24 @@ async def exchange(agent: Agent, *, connect_type: str, prompt: Any, context: dic
         request_id = await (await history.get_store()).record_send(prompt=prompt, options=options, **where)
     except Exception as exc:
         logger.warning("history record_send failed: %s", exc)
-    try:
-        sent = await send()
-    except Exception as exc:
-        sent = Sent(ok=False, error=str(exc))
-    if request_id:
+    async def record(sent: Sent) -> None:
+        if not request_id:
+            return
         try:
             await (await history.get_store()).record_recv(
                 request_id=request_id, ok=sent.ok, content=sent.content, raw_response=sent.raw,
                 error=sent.error or None, options=options, **where)
         except Exception as exc:
             logger.warning("history record_recv failed: %s", exc)
+
+    try:
+        sent = await send()
+    except asyncio.CancelledError:
+        await asyncio.shield(record(Sent(ok=False, error="Agent turn cancelled", raw=partial() if partial else None)))
+        raise
+    except Exception as exc:
+        sent = Sent(ok=False, error=str(exc))
+    await record(sent)
     return AgentReply(ok=sent.ok, content=sent.content, error=sent.error)
 
 
@@ -328,10 +339,12 @@ async def log_page(agent: Agent, limit: int, before: int | None = None) -> dict:
 
 
 def present_log(rows: list[dict]) -> list[dict]:
+    """Log rows as messages; a turn is its prompt, then its text runs and tools in order."""
     messages = []
     for row in rows:
         role = row.get('role') or ('user' if row.get('direction') == 'send' else 'assistant')
         content = row.get('content') or ''
+        meta = row.get('meta') or {}
         if row.get('direction') == 'error' and '{"jsonrpc"' in content:
             import re
             from external.acpx import public_command_error
@@ -341,30 +354,18 @@ def present_log(rows: list[dict]) -> list[dict]:
         if role == 'assistant' and content.lstrip().startswith('{"jsonrpc"'):
             # Older tool-only turns stored protocol output as assistant text.
             # Clean the presentation without changing the original audit log.
-            from external.acpx import AcpxAdapter
-            trace = AcpxAdapter._extract_trace(content)
-            for call, result in zip(trace.tool_uses, trace.tool_results):
-                messages.append({'role': 'tool', 'tool_name': call.get('name', ''),
-                                 'content': result.get('content', ''), 'status': result.get('status')})
-            content = trace.text
-            if not content:
-                continue
+            from external.acp_events import items_from_output
+            for item in items_from_output(content):
+                messages.append({'role': 'tool', 'tool_name': item['title'], 'content': item['output'],
+                                 'status': item['status'], 'input': item['input'], 'ts': row.get('ts')}
+                                if item['kind'] == 'tool' else
+                                {'role': 'assistant', 'content': item['text'], 'ts': row.get('ts')})
+            continue
+        item = {'role': role, 'content': content, 'rowid': row.get('rowid'), 'direction': row.get('direction'),
+                'source': meta.get('source', 'clawcross'), 'ts': row.get('ts')}
         if role == 'tool':
-            try:
-                item = json.loads(content)
-            except (ValueError, TypeError):
-                item = None
-            if isinstance(item, dict) and row.get('direction') in ('tool_call', 'tool_result') and (row.get('meta') or {}).get('source') != 'native':
-                messages.append({'role': 'tool', 'tool_name': item.get('name') or item.get('tool_name') or '',
-                                 'content': json.dumps(item.get('input', {}), ensure_ascii=False)
-                                 if row['direction'] == 'tool_call' else str(item.get('content', '')),
-                                 'status': item.get('status')})
-                continue
-        meta = row.get('meta') or {}
-        item = {'role': role, 'content': content, 'rowid':row.get('rowid'), 'direction':row.get('direction'),
-                'source':meta.get('source', 'clawcross')}
-        if role == 'tool':
-            item.update(tool_name=meta.get('tool_name', ''), status=meta.get('status'), tool_call_id=meta.get('tool_call_id'))
+            item.update(tool_name=meta.get('tool_name', ''), status=meta.get('status'),
+                        tool_call_id=meta.get('tool_call_id'), input=meta.get('input'))
         if row.get('direction') == 'thought':
             item['role'] = 'system'
         if meta.get('content_blocks'):

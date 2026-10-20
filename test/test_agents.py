@@ -106,7 +106,7 @@ class _Acpx:
 
     async def prompt_with_trace(self, **kwargs):
         self.calls.append(kwargs)
-        return SimpleNamespace(text=self.text, messages=[], tool_uses=[], tool_results=[])
+        return SimpleNamespace(text=self.text, items=[{'id': 'text-0', 'kind': 'text', 'text': self.text}])
 
 
 class _Http:

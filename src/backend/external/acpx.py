@@ -61,11 +61,9 @@ def bridge_permission_flags(cmd: list[str], mcp_config: str | None):
 
 @dataclass(slots=True)
 class AcpxPromptTrace:
+    """A finished turn: its reply text and its items in order (``acp_events.apply``)."""
     text: str
-    message_chunks: list[str]
-    messages: list[dict[str, Any]]
-    tool_uses: list[dict[str, Any]]
-    tool_results: list[dict[str, Any]]
+    items: list[dict[str, Any]]
     raw_output: str
 
 
@@ -1342,61 +1340,6 @@ await fn(process.argv[2]);'''
         return t if isinstance(t, str) else ""
 
     @staticmethod
-    def extract_stream_event(obj: Any) -> dict[str, Any] | None:
-        """Parse realtime ACPX session/update events useful for frontend streaming."""
-        if not isinstance(obj, dict) or obj.get("jsonrpc") != "2.0":
-            return None
-        if obj.get("method") != "session/update":
-            return None
-        params = obj.get("params")
-        if not isinstance(params, dict):
-            return None
-        upd = params.get("update")
-        if not isinstance(upd, dict):
-            return None
-
-        update_type = upd.get("sessionUpdate")
-        if update_type == "agent_message_chunk":
-            content = upd.get("content")
-            if not isinstance(content, dict):
-                return None
-            if content.get("type") != "text":
-                return None
-            text = content.get("text")
-            if not isinstance(text, str):
-                return None
-            return {"type": "agent_message_chunk", "text": text}
-
-        if update_type == "tool_call":
-            return {
-                "type": "tool_call",
-                "tool_call_id": str(upd.get("toolCallId") or ""),
-                "title": str(upd.get("title") or ""),
-                "kind": str(upd.get("kind") or ""),
-                "status": str(upd.get("status") or ""),
-                "raw_input": upd.get("rawInput"),
-                "locations": upd.get("locations") if isinstance(upd.get("locations"), list) else [],
-            }
-
-        if update_type == "tool_call_update":
-            parts: list[str] = []
-            for item in upd.get("content") or []:
-                if not isinstance(item, dict):
-                    continue
-                content = item.get("content")
-                if not isinstance(content, dict):
-                    continue
-                if content.get("type") == "text" and isinstance(content.get("text"), str):
-                    parts.append(content["text"])
-            return {
-                "type": "tool_call_update",
-                "tool_call_id": str(upd.get("toolCallId") or ""),
-                "content_text": "".join(parts),
-            }
-
-        return None
-
-    @staticmethod
     def _extract_text(output: str) -> str | None:
         """Parse acpx stdout: JSON-RPC stream (session/update … agent_message_chunk) or legacy summary JSON."""
         message_parts: list[str] = []
@@ -1426,75 +1369,17 @@ await fn(process.argv[2]);'''
 
     @staticmethod
     def _extract_trace(output: str) -> AcpxPromptTrace:
-        message_parts: list[str] = []
-        messages: list[dict[str, Any]] = []
-        tool_uses: list[dict[str, Any]] = []
-        tool_results: list[dict[str, Any]] = []
-        legacy: str | None = None
-
-        for line in output.splitlines():
-            line = line.strip()
-            if not line.startswith("{"):
-                continue
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-
-            part = AcpxAdapter._extract_acpx_agent_message_chunks(obj)
-            if part is not None:
-                message_parts.append(part)
-
-            if isinstance(obj, dict):
-                if obj.get("schema") == "acpx.session.v1" and isinstance(obj.get("messages"), list):
-                    for item in obj.get("messages") or []:
-                        if isinstance(item, dict):
-                            messages.append(item)
-                            for role_payload in item.values():
-                                if not isinstance(role_payload, dict):
-                                    continue
-                                content = role_payload.get("content")
-                                if isinstance(content, list):
-                                    for block in content:
-                                        if not isinstance(block, dict):
-                                            continue
-                                        if "ToolUse" in block and isinstance(block["ToolUse"], dict):
-                                            tool_uses.append(block["ToolUse"])
-                                results = role_payload.get("tool_results")
-                                if isinstance(results, dict):
-                                    for result in results.values():
-                                        if isinstance(result, dict):
-                                            tool_results.append(result)
-
-            cand = AcpxAdapter._pick_text(obj)
-            if cand:
-                legacy = cand
-
-        from external.acp_events import normalize_event
-        tools = {}
-        for line in output.splitlines():
-            try:
-                event = normalize_event(json.loads(line))
-            except ValueError:
-                continue
-            if event and event['type'].startswith('acpx_tool_'):
-                tools.setdefault(event['tool_call_id'], {}).update(event)
-        if tools:
-            tool_uses.extend({'id': key, 'name': item.get('title', key), 'input': item.get('input', {})}
-                             for key, item in tools.items())
-            tool_results.extend({'tool_call_id': key, 'name': item.get('title', key), 'status': item.get('status'),
-                                 'content': item.get('content_text', '')} for key, item in tools.items())
-
-        # Keep the primary assistant text extraction identical to the legacy
-        # prompt() path so main-page chat rendering stays stable.
-        extracted_text = AcpxAdapter._extract_text(output)
+        from external.acp_events import items_from_output
+        items = items_from_output(output)
         # A legitimate tool-only turn has no assistant text. Protocol traffic
         # includes the incoming prompt and must never become the reply.
-        assembled = extracted_text if extracted_text is not None else (legacy or output.strip())
+        extracted_text = AcpxAdapter._extract_text(output)
+        assembled = extracted_text if extracted_text is not None else output.strip()
+        has_tools = any(item['kind'] == 'tool' for item in items)
         # Some native Codex builds serialize provider errors as message chunks
         # and still end the ACP turn successfully. The native metadata warning
         # identifies this transport case; ordinary user-requested JSON is text.
-        if not tool_uses and assembled.startswith('Warning: Model metadata'):
+        if not has_tools and assembled.startswith('Warning: Model metadata'):
             start = assembled.find('{')
             try:
                 failure = json.loads(assembled[start:]) if start >= 0 else {}
@@ -1502,14 +1387,9 @@ await fn(process.argv[2]);'''
                 failure = {}
             if isinstance(failure, dict) and failure.get('type') == 'error' and isinstance(failure.get('error'), dict):
                 raise AcpxError(str(failure['error'].get('message') or 'Native provider request failed'))
-        return AcpxPromptTrace(
-            text=assembled,
-            message_chunks=message_parts,
-            messages=messages,
-            tool_uses=tool_uses,
-            tool_results=tool_results,
-            raw_output=output,
-        )
+        if assembled and not any(item['kind'] == 'text' for item in items):
+            items.append({'id': f'text-{len(items)}', 'kind': 'text', 'text': assembled})  # summary output, no chunks
+        return AcpxPromptTrace(text=assembled, items=items, raw_output=output)
 
     @staticmethod
     def _pick_text(obj: Any) -> str | None:
