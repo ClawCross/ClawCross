@@ -87,7 +87,7 @@ These are the main services Clawcross runs:
 | `src/backend/groups/admin.py` | host-only group administration |
 | `src/frontend/server.py` | Flask frontend and proxy gateway |
 | `src/backend/scheduler/service.py` | scheduler service |
-| `src/backend/teams/creator.py` | ClawCross Creator discovery, extraction, build, jobs, and translation pipeline |
+| `src/backend/teams/creator.py` | Internal persona import and Team artifact helpers (no standalone Creator UI/API) |
 | `src/backend/tinyfish/monitor.py` | shared TinyFish monitor runtime used by frontend, scheduler, and CLI |
 | `src/backend/oasis/server.py` | OASIS service |
 | `launch/launcher.py` | multi-service startup order |
@@ -180,13 +180,11 @@ the current page, and cleared on logout. Tool code remains in an isolated sandbo
 | `src/frontend/static/js/tool-catalog.js` | tool categories and grouped picker shared by desktop/mobile |
 | `src/frontend/static/js/runtime-settings.js` | context usage meter and context/approval settings |
 | `src/frontend/static/js/main.js` | main desktop frontend logic |
+| `src/frontend/static/js/conversation-start.js`, `src/frontend/static/css/conversation-polish.css` | draft suggestions, Create page and conversation presentation |
 | `src/frontend/static/js/settings-navigation.js`, `src/frontend/static/css/settings-polish.css` | shared Studio/Mobile settings categories, search, form presentation and public access controls |
 | `src/frontend/static/css/style.css` | main desktop styling, including OASIS Town / swarm / ReportAgent panels |
 | `src/frontend/proxies/webot.py` | Flask proxy routes for WeBot runtime panel and tool policy |
-| `src/frontend/static/js/creator.js` | ClawCross Creator page logic, i18n, persistence, DAG preview |
-| `src/frontend/static/css/creator.css` | ClawCross Creator styles and DAG layout |
 | `src/frontend/static/js/orchestration.js` | Studio canvas logic, including `Generate Team` |
-| `src/frontend/templates/creator.html` | ClawCross Creator HTML shell |
 | `src/frontend/templates/group_chat_mobile.html` | mobile group chat page and mobile settings UI |
 | `src/frontend/templates/` | other HTML templates |
 | `src/frontend/static/` | CSS, JS, images (served at `/static`) |
@@ -322,7 +320,6 @@ When changing code, check the nearest validation surface:
 | `test/test_configure_openclaw_sync.py` | OpenClaw LLM import tests |
 | `test/test_oasis_swarm_engine.py` | swarm scaffold / blueprint normalization tests |
 | `test/test_oasis_graph_memory.py` | GraphRAG persistence, retrieval, and ReportAgent fallback tests |
-| `test/browser/creator-smoke.spec.js` | Playwright smoke for `/creator` direct mentor/colleague generation flows |
 | `test/browser/studio-smoke.spec.js` | Playwright smoke for `/studio` tabs, settings actions, and WeBot runtime sidebar |
 | `test/llm_live_smoke.py` | opt-in real provider LLM smoke test |
 | `test/cloudflare_live_smoke.py` | opt-in Cloudflare quick tunnel smoke test |
@@ -331,7 +328,6 @@ When changing code, check the nearest validation surface:
 | `python test/tinyfish_live_smoke.py --site <site_key>` | opt-in real TinyFish smoke test |
 | `uv run src/cli/cli.py status` | smoke test services |
 | `python -m py_compile <file>` | quick syntax check for touched Python files |
-| `node --check src/frontend/static/js/creator.js` | quick ClawCross Creator syntax check |
 | `node --check src/frontend/static/js/main.js` | quick JS syntax check |
 
 ## Task-to-File Lookup
@@ -380,20 +376,16 @@ Read:
 - `src/backend/oasis/swarm_engine.py`
 - `src/backend/oasis/graph_memory.py`
 
-### "ClawCross Creator or workflow-to-team is wrong"
+### "Team management or workflow-to-team is wrong"
 
 Read:
 
-- `docs/team-creator.md`
+- `docs/team-management.md`
 - `src/frontend/server.py`
-- `src/backend/teams/creator.py`
-- `src/frontend/static/js/creator.js`
-- `src/frontend/static/css/creator.css`
-- `src/frontend/templates/creator.html`
+- `src/backend/webot/mcp/management.py`
+- `src/backend/teams/routes.py`
+- `src/backend/teams/store.py`
 - `src/frontend/static/js/orchestration.js`
-- `test/test_team_creator_jobs.py`
-- `test/test_team_creator_workflow.py`
-- `test/test_team_creator_zip.py`
 
 ### "An OpenClaw agent does not answer"
 

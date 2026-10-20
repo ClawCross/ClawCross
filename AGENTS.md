@@ -1,6 +1,6 @@
 ---
 name: "Clawcross"
-description: "A multi-agent orchestration platform with visual workflow (OASIS). Create and configure agents (WeBot, ACP tools such as Codex, Claude Code and OpenClaw, external API), orchestrate them into Teams, build new Teams with ClawCross Creator, and design workflows via visual canvas. Supports Team conversations, OASIS Town with living GraphRAG memory, scheduled tasks, Telegram/QQ bots, TinyFish internet search agent, and Hub device subdomains for remote access (Cloudflare optional)."
+description: "A multi-agent orchestration platform with visual workflow (OASIS). Create and configure agents (WeBot, ACP tools such as Codex, Claude Code and OpenClaw, external API), orchestrate them into Teams, manage Teams through the main Agent, and design workflows via visual canvas. Supports Team conversations, OASIS Town with living GraphRAG memory, scheduled tasks, Telegram/QQ bots, TinyFish internet search agent, and Hub device subdomains for remote access (Cloudflare optional)."
 user-invokable: true
 compatibility:
   - "deepseek"
@@ -67,7 +67,7 @@ Read only the docs relevant to the current task:
 |---|---|---|
 | Install / configure / start | [`SKILL.md`](./SKILL.md) | [`docs/ports.md`](./docs/ports.md) if ports matter |
 | Understand what Clawcross is | [`docs/overview.md`](./docs/overview.md) | [`README.md`](./README.md) |
-| Build a Team / use ClawCross Creator | [`docs/team-creator.md`](./docs/team-creator.md) | [`docs/build_team.md`](./docs/build_team.md) |
+| Build or manage a Team with the main Agent | [`docs/team-management.md`](./docs/team-management.md) | [`docs/build_team.md`](./docs/build_team.md) |
 | OASIS / Town Mode / GraphRAG | [`docs/oasis-reference.md`](./docs/oasis-reference.md) | [`docs/create_workflow.md`](./docs/create_workflow.md) |
 | Runtime architecture / auth | [`docs/runtime-reference.md`](./docs/runtime-reference.md) | [`docs/ports.md`](./docs/ports.md) |
 | CLI commands | [`docs/cli.md`](./docs/cli.md) | `uv run src/cli/cli.py <cmd> --help` |

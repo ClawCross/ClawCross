@@ -46,6 +46,7 @@ class CreateTopicRequest(BaseModel):
     callback_url: Optional[str] = None  # 讨论结束时回调的URL
     callback_session_id: Optional[str] = None  # 回调会话ID
     team: Optional[str] = None         # 团队名称（用于分组代理存储）
+    agent_map: dict[str, str] = Field(default_factory=dict)  # 本次运行的内部名称 -> Agent ID
     autogen_swarm: bool = False        # 是否自动生成 swarm / GraphRAG 蓝图
     swarm_mode: Optional[str] = "prediction"  # swarm blueprint 模式
     allow_empty: bool = False          # 允许创建无引擎的纯人工 topic
@@ -156,6 +157,7 @@ class TopicDetail(BaseModel):
     posts: list[PostInfo]
     timeline: list[TimelineEventInfo] = []
     discussion: bool = True
+    agent_map: dict[str, str] = Field(default_factory=dict)
     conclusion: Optional[str] = None
     pending_human: Optional[HumanWaitInfo] = None
     swarm_mode: Optional[str] = None       # swarm blueprint mode

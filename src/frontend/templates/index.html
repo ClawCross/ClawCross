@@ -32,8 +32,10 @@
     <link rel="stylesheet" href="/static/css/theme.css?v=20261002-fold">
     <link rel="stylesheet" href="/static/css/style.css?v=20261010-ui-workspace">
     <link rel="stylesheet" href="/static/css/agent-creation-presets.css?v=20261006-agent-templates">
-<link rel="stylesheet" href="/static/css/group-network.css?v=20261013-app-runner">
+<link rel="stylesheet" href="/static/css/group-network.css?v=20261019-scan">
 <link rel="stylesheet" href="/static/css/settings-polish.css?v=20261017-settings-navigation">
+<link rel="stylesheet" href="/static/css/conversation-polish.css?v=20261018-view-switch-right">
+<link rel="stylesheet" href="/static/css/workspace-pages.css?v=20261018-workspace-polish">
 </head>
 <body class="bg-gray-100 font-sans leading-normal tracking-normal">
 
@@ -251,7 +253,7 @@
                 <div class="page-tab" id="tab-agent-center" onclick="openAgentCenter()" data-i18n="tab_agent_center">Agents</div>
                 <div class="page-tab" id="tab-group" onclick="switchPage('group')" data-i18n="tab_group">Team</div>
                 <div class="page-tab" id="tab-orchestrate" onclick="switchPage('orchestrate')" data-i18n="tab_orchestrate">Workflow</div>
-                <div class="page-tab" id="tab-groupchat" onclick="window.location.assign('/mobile/group_chat')" data-i18n="tab_groupchat" data-i18n-title="tip_open_msgcenter" title="打开消息中心">消息中心</div>
+                <a id="tab-groupchat" class="studio-mode-switch" href="/mobile/group_chat" title="切换到 Message" aria-label="切换到 Message"><svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg?v=20261018-switch#switch-layout"/></svg><span>Message</span></a>
             </div>
             <!-- === Chat Page === -->
             <div id="page-chat" class="chat-page" style="display:flex;">
@@ -336,11 +338,7 @@
                 <div id="studio-chat-workspace">
 
                 <div id="chat-box" class="chat-container overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6 flex-grow bg-gray-50">
-                    <div class="flex justify-start">
-                        <div class="message-agent bg-white border p-4 max-w-[85%] shadow-sm text-gray-700" data-i18n="welcome_message">
-                            你好，想做什么直接告诉我。
-                        </div>
-                    </div>
+                    <section class="conversation-welcome" data-conversation-welcome><h1>今天，一起做点什么？</h1></section>
                 </div>
 
                 <div class="composer-dock">
@@ -535,6 +533,7 @@
 <button onclick="deleteTeam()" class="text-xs bg-red-50 text-red-600 hover:bg-red-100 px-2 py-1 rounded border border-red-200" title="删除团队" style="display:none;">🗑️</button>
                             </div>
                         </div>
+                        <div id="team-space-context" class="team-space-context" hidden></div>
                         <div id="group-messages-box" class="group-messages-box">
                             <!-- Team members table overlay -->
                             <div id="team-members-overlay" class="team-members-overlay" style="display:none;">
@@ -1391,11 +1390,12 @@
     <script src="/static/js/tool-catalog.js?v=20261006-agent-templates"></script>
 <link rel="stylesheet" href="/static/css/group-message-menu.css?v=20261004-message-menu">
 <script src="/static/js/group-message-menu.js?v=20261004-message-menu"></script>
-<script src="/static/js/group-network-ui.js?v=20261017-hub-tunnel"></script>
+<script src="/static/js/group-network-ui.js?v=20261019-human-profile"></script>
     <script src="/static/js/conversation-ui-panels.js?v=20261010-ui-workspace"></script>
     <script src="/static/js/components.js?v=20261004-windows-sandbox"></script>
     <script src="/static/js/attachment-utils.js?v=20261003-media"></script>
-    <script src="/static/js/main.js?v=20261017-switch-no-overlay"></script>
+    <script src="/static/js/conversation-start.js?v=20261018-create"></script>
+    <script src="/static/js/main.js?v=20261018-workspace-polish"></script>
     <link rel="stylesheet" href="/static/css/external-agent-settings.css?v=20261004-effort-stops">
     <link rel="stylesheet" href="/static/css/runtime-settings.css?v=20261004-keepy-manager">
     <script src="/static/js/runtime-presentation.js?v=20261008-inbox"></script>

@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Agent 消息中心</title>
+<script src="/static/js/agent-profile.js?v=20261019"></script>
+<script src="/static/js/human-profile.js?v=20261019-portrait-images"></script>
+<script src="/static/js/user-portrait.js?v=20261019-images"></script>
+<link rel="stylesheet" href="/static/css/human-profile.css?v=20261019-portrait-images">
+<script src="/static/js/group-history.js?v=20261019"></script>
+<script src="/static/js/group-chat-state.js?v=20261020-receipts"></script>
+<script src="/static/js/group-receipts.js?v=20261020-receipts"></script>
 <script src="/static/js/attachment-utils.js?v=20261003-media"></script>
 <script>
   // Early language detection to avoid flash of wrong lang
@@ -4076,8 +4083,8 @@
 <script src="/static/js/mobile-agent-create-tools.js?v=20261006-tool-table"></script>
 <link rel="stylesheet" href="/static/css/group-message-menu.css?v=20261004-message-menu">
 <script src="/static/js/group-message-menu.js?v=20261004-message-menu"></script>
-<script src="/static/js/group-network-ui.js?v=20261017-hub-tunnel"></script>
-<link rel="stylesheet" href="/static/css/group-network.css?v=20261013-app-runner">
+<script src="/static/js/group-network-ui.js?v=20261019-human-profile"></script>
+<link rel="stylesheet" href="/static/css/group-network.css?v=20261020-receipts">
 <link rel="stylesheet" href="/static/css/settings-polish.css?v=20261017-settings-navigation">
 <link rel="stylesheet" href="/static/css/mobile-profile.css?v=20261004-studio-header">
 <link rel="stylesheet" href="/static/css/runtime-settings.css?v=20261004-keepy-manager">
@@ -4091,6 +4098,10 @@
 <link rel="stylesheet" href="/static/css/group-device-map.css?v=20261011-devices">
 <script src="/static/js/group-device-map.js?v=20261011-devices2"></script>
 <script defer src="/static/js/agent-activity.js?v=20261009"></script>
+<link rel="stylesheet" href="/static/css/conversation-polish.css?v=20261018-view-switch-right">
+<link rel="stylesheet" href="/static/css/workspace-pages.css?v=20261018-contacts-scroll">
+<link rel="stylesheet" href="/static/css/agent-profile.css?v=20261019">
+<style>.group-history-bar{display:flex;flex-direction:column;align-items:center;gap:5px;margin:0 auto 20px;padding:7px 12px;max-width:100%;font-size:11px;color:var(--text-secondary,#8190a2)}.group-history-bar button{border:0;border-radius:99px;background:var(--bg-card,#fff);color:var(--primary,#1479ec);padding:9px 16px;min-height:36px;font:inherit;font-size:12px;cursor:pointer}.group-history-bar button:disabled{opacity:.5}.group-history-bar button[hidden],#action-group-host[hidden],#profile-group-host[hidden]{display:none}</style>
 </head>
 <body>
 
@@ -4131,7 +4142,7 @@
 <!-- ═══════════════ Tab: 对话 (Chats) ═══════════════ -->
 <div id="tab-chats" class="tab-page active">
   <div class="header">
-    <div class="mobile-studio-header-slot"><a class="mobile-studio-header-link" href="/studio" title="切换到 Studio" aria-label="切换到 Studio"><svg class="ui-icon"><use href="/static/icons.svg#switch-layout"/></svg><span>Studio</span></a></div>
+    <div class="mobile-studio-header-slot"><a class="mobile-studio-header-link" href="/studio" title="切换到 Studio" aria-label="切换到 Studio"><svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg?v=20261018-switch#switch-layout"/></svg><span>Studio</span></a></div>
     <div class="header-title" data-i18n="header_agent_msg">Agent消息</div>
     <div style="display:flex;gap:4px;position:relative;margin-left:auto;">
       <button type="button" class="header-btn" onclick="toggleCreateMenu(event)" data-i18n-title="tip_new" title="新建"><svg class="ui-icon"><use href="/static/icons.svg#plus"/></svg></button>
@@ -4144,6 +4155,9 @@
         </button>
         <button type="button" class="ui-menu-item" onclick="hideCreateMenu();GroupNetworkUI.join()">
           <svg class="ui-icon"><use href="/static/icons.svg#log-in"/></svg><span class="ui-menu-label">加入群聊</span>
+        </button>
+        <button type="button" class="ui-menu-item" onclick="hideCreateMenu();GroupNetworkUI.scan()">
+          <svg class="ui-icon"><use href="/static/icons.svg#scan"/></svg><span class="ui-menu-label">扫一扫</span>
         </button>
         <button type="button" class="ui-menu-item" id="device-connections-menu-item" onclick="hideCreateMenu();DeviceConnections.open()">
           <svg class="ui-icon"><use href="/static/icons.svg#monitor"/></svg><span class="ui-menu-label">设备与 SSH</span>
@@ -4177,7 +4191,7 @@
     <button class="header-back-btn" onclick="goBack()">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
     </button>
-    <div class="header-title" id="chat-title" data-i18n="header_agent_msg">Agent消息</div>
+    <button type="button" class="chat-heading" onclick="toggleDrawer()" data-i18n-title="view_members" title="查看群成员"><span class="header-title" id="chat-title" data-i18n="header_agent_msg">聊天</span><span class="chat-heading-meta" id="chat-context-meta"></span></button>
     <div style="display:flex;gap:2px;align-items:center;margin-left:auto;">
       <button type="button" class="header-btn" id="list-toggle-btn" onclick="toggleGroupList()" title="收起群聊列表" aria-label="收起群聊列表"><svg class="ui-icon"><use href="/static/icons.svg#panel-left"/></svg></button>
       <button type="button" class="header-btn" id="app-fullscreen-btn" onclick="toggleAppFullscreen()" title="全屏" aria-label="小程序全屏"><svg class="ui-icon"><use href="/static/icons.svg#maximize"/></svg></button>
@@ -4312,6 +4326,7 @@
   <button type="button" class="ui-menu-item danger" id="action-group-leave" style="display:none" onclick="closeChatActions();GroupNetworkUI.leave(currentGroupId)">
     <svg class="ui-icon"><use href="/static/icons.svg#log-out"/></svg><span class="ui-menu-label">退出群聊</span>
   </button>
+  <a href="/group-host" class="ui-menu-item" id="action-group-host" hidden><svg class="ui-icon"><use href="/static/icons.svg#settings"/></svg><span class="ui-menu-label">群聊服务器 · 联网管理</span></a>
   <button type="button" class="ui-menu-item danger" id="action-group-disconnect-external" style="display:none" onclick="closeChatActions();GroupNetworkUI.toggleExternalAccess(currentGroupId)">
     <svg class="ui-icon"><use href="/static/icons.svg#shield"/></svg><span class="ui-menu-label" id="group-external-access-label" data-i18n="group_disconnect_external">关闭所有非主机连接</span>
   </button>
@@ -4443,112 +4458,13 @@
     <button class="header-btn" onclick="refreshContacts()" data-i18n-title="tip_refresh" title="刷新" style="font-size:16px;margin-left:auto;">↻</button>
   </div>
   <div class="contacts-area" id="contacts-area">
-    <div class="contacts-search-bar">
-      <input type="text" class="contacts-search-input" id="contacts-search-input" data-i18n-placeholder="search_contacts" placeholder="搜索联系人..." oninput="filterContactsList()">
+    <div class="contacts-search-bar"><svg class="ui-icon"><use href="/static/icons.svg#search"/></svg><input type="search" class="contacts-search-input" id="contacts-search-input" data-i18n-placeholder="search_contacts" placeholder="搜索联系人..." oninput="filterContactsList()"></div>
+    <div class="contacts-team-switcher" id="contacts-scope" data-user-space="true">
+      <label for="contacts-team-select" class="contacts-team-label"><svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg#sliders"/></svg><span data-i18n="contacts_view">筛选</span></label>
+      <select id="contacts-team-select" onchange="loadContactsForTeam()"><option value="">用户空间</option></select>
+      <button type="button" class="gn-team-info" id="contacts-team-info" hidden onclick="GroupNetworkUI.teamInfo(document.getElementById('contacts-team-select').value)"><svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg#id-card"/></svg><span data-i18n="contacts_team_info">团队介绍</span></button>
     </div>
-    <!-- 导入团队 -->
-    <div onclick="toggleContactsImportPanel()" style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;cursor:pointer;user-select:none;background:var(--bg-card);border-bottom:0.5px solid var(--border);">
-      <div style="display:flex;align-items:center;gap:8px;">
-        <span style="font-size:18px;">📦</span>
-        <span style="font-size:15px;font-weight:500;color:var(--text);" data-i18n="import_team">导入团队</span>
-      </div>
-      <span id="contacts-import-arrow" style="font-size:12px;color:var(--text-secondary);transition:transform .2s;">▼</span>
-    </div>
-    <div id="contacts-import-panel" style="display:none;padding:12px 16px;background:var(--bg-card);border-bottom:0.5px solid var(--border);">
-      <!-- 预设型：内置制度团队（与主页面一致） -->
-      <div onclick="showMobileBuiltinPresetModal()" style="display:flex;align-items:center;gap:10px;padding:10px 12px;margin-bottom:8px;border-radius:8px;background:var(--bg);cursor:pointer;border:1px solid var(--border);">
-        <span style="font-size:20px;">🏛️</span>
-        <div>
-          <div style="font-size:14px;font-weight:600;color:var(--text);" data-i18n="import_preset">预设型（内置制度）</div>
-          <div style="font-size:11px;color:var(--text-hint);margin-top:2px;" data-i18n="import_preset_desc">Hub / ZIP 之外的第三种：一键安装明·唐·企业制等模板</div>
-        </div>
-      </div>
-      <!-- Clawcross Hub -->
-      <div onclick="showContactsHubImport()" style="display:flex;align-items:center;gap:10px;padding:10px 12px;margin-bottom:8px;border-radius:8px;background:var(--bg);cursor:pointer;border:1px solid var(--border);">
-        <span style="font-size:20px;">🌐</span>
-        <div>
-          <div style="font-size:14px;font-weight:600;color:var(--text);" data-i18n="import_from_hub">从 Clawcross Hub 导入</div>
-          <div style="font-size:11px;color:var(--text-hint);margin-top:2px;" data-i18n="hub_desc">浏览并下载社区团队配置</div>
-        </div>
-      </div>
-      <!-- Hub 导入展开区 -->
-      <div id="contacts-hub-import-area" style="display:none;margin-bottom:8px;padding:10px 12px;border-radius:8px;background:var(--bg);border:1px solid var(--border);">
-        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;" data-i18n="paste_hub_cmd">粘贴从 Hub 复制的下载命令：</div>
-        <textarea id="contacts-hub-curl-input" placeholder="curl -L 'https://clawcross.net/api/workflows/xxx/download' -o team_xxx.zip" style="width:100%;height:60px;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:monospace;background:var(--bg-card);color:var(--text);resize:none;"></textarea>
-        <div style="display:flex;gap:8px;margin-top:8px;">
-          <button onclick="openTeamHubSite()" style="flex:1;padding:8px;background:var(--bg-card);color:var(--primary);border:1px solid var(--primary);border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;" data-i18n="go_to_hub">🌐 前往 Hub</button>
-          <button onclick="importFromHubContacts()" style="flex:1;padding:8px;background:var(--primary);color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;" data-i18n="download_import">📥 下载并导入</button>
-        </div>
-      </div>
-      <!-- 选项2: 上传导入 -->
-      <div onclick="document.getElementById('contacts-import-upload-input').click()" style="display:flex;align-items:center;gap:10px;padding:10px 12px;margin-bottom:8px;border-radius:8px;background:var(--bg);cursor:pointer;border:1px solid var(--border);">
-        <span style="font-size:20px;">📁</span>
-        <div>
-          <div style="font-size:14px;font-weight:600;color:var(--text);" data-i18n="upload_zip">上传 .zip 文件导入</div>
-          <div style="font-size:11px;color:var(--text-hint);margin-top:2px;" data-i18n="upload_zip_desc">从本地选择团队快照文件</div>
-        </div>
-      </div>
-      <input type="file" id="contacts-import-upload-input" accept=".zip" style="display:none;" onchange="importTeamFromZip(this)">
-      <!-- 关系型 Skill 导入 -->
-      <div onclick="togglePersonalSkillImport()" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;background:var(--bg);cursor:pointer;border:1px solid var(--border);">
-        <span style="font-size:20px;">💝</span>
-        <div style="flex:1;">
-          <div style="font-size:14px;font-weight:600;color:var(--text);">关系型 Skill 导入</div>
-          <div style="font-size:11px;color:var(--text-hint);margin-top:2px;">前任 / crush / yourself / 群友 等角色 skill</div>
-        </div>
-        <span id="personal-skill-arrow" style="font-size:12px;color:var(--text-secondary);transition:transform .2s;">▼</span>
-      </div>
-      <div id="personal-skill-import-panel" style="display:none;margin-top:8px;padding:12px;border-radius:8px;background:var(--bg);border:1px solid var(--border);">
-        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px;">
-          支持：<a href="https://github.com/therealXiaomanChu/ex-skill" target="_blank" style="color:var(--primary);">前任.skill</a>、
-          <a href="https://github.com/xiaoheizi8/crush-skills" target="_blank" style="color:var(--primary);">crush.skill</a>、
-          <a href="https://github.com/notdog1998/yourself-skill" target="_blank" style="color:var(--primary);">yourself.skill</a>、
-          <a href="https://github.com/Neko-Suwako/pig-skill" target="_blank" style="color:var(--primary);">群友.skill</a>
-        </div>
-        <div style="margin-bottom:8px;">
-          <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Skill 类型</label>
-          <select id="personal-skill-type" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:7px;background:var(--bg-card);color:var(--text);font-size:13px;">
-            <option value="ex">前任 (ex-skill)</option>
-            <option value="crush">暗恋对象 (crush-skill)</option>
-            <option value="yourself">自己 (yourself-skill)</option>
-            <option value="pig">群友 (pig-skill)</option>
-          </select>
-        </div>
-        <div style="margin-bottom:8px;">
-          <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">meta.json <span style="color:#f55;">*</span></label>
-          <input type="file" id="personal-skill-meta" accept=".json" style="width:100%;font-size:12px;">
-        </div>
-        <div style="margin-bottom:8px;">
-          <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">persona.md <span style="color:#f55;">*</span></label>
-          <input type="file" id="personal-skill-persona" accept=".md,.txt" style="width:100%;font-size:12px;">
-        </div>
-        <div style="margin-bottom:12px;">
-          <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">memory.md / self.md（可选）</label>
-          <input type="file" id="personal-skill-memory" accept=".md,.txt" style="width:100%;font-size:12px;">
-        </div>
-        <div style="margin-bottom:10px;">
-          <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">导入到团队（可选）</label>
-          <input type="text" id="personal-skill-team" placeholder="留空则自动创建" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:7px;background:var(--bg-card);color:var(--text);font-size:13px;">
-        </div>
-        <button onclick="importPersonalSkill()" id="personal-skill-import-btn" style="width:100%;padding:10px;border:none;border-radius:8px;background:var(--primary);color:#fff;font-size:14px;font-weight:600;cursor:pointer;">
-          导入角色
-        </button>
-        <div id="personal-skill-status" style="margin-top:8px;font-size:12px;color:var(--text-secondary);"></div>
-      </div>
-    </div>
-    <!-- 添加 Agent -->
-    <div onclick="showCreateAgentModal(document.getElementById('contacts-team-select').value,'group')" style="display:flex;align-items:center;gap:8px;padding:12px 16px;cursor:pointer;user-select:none;background:var(--bg-card);border-bottom:0.5px solid var(--border);">
-      <span style="font-size:18px;">🤖</span>
-      <span style="font-size:15px;font-weight:500;color:var(--text);" data-i18n="contacts_experts_btn">添加 Agent</span>
-    </div>
-    <div class="contacts-team-switcher">
-      <button type="button" class="gn-team-info" onclick="DeviceConnections.open()">设备与 SSH</button>
-      <button type="button" class="gn-team-info" id="contacts-team-info" hidden aria-label="Team 介绍" onclick="GroupNetworkUI.teamInfo(document.getElementById('contacts-team-select').value)">Team 介绍</button>
-      <span class="contacts-team-label" data-i18n="select_team_label">选择team</span>
-      <select id="contacts-team-select" onchange="loadContactsForTeam()">
-        <option value="" data-i18n="public_agent">全部 Agent</option>
-      </select>
-    </div>
+    <div class="contacts-library-heading"><span data-i18n="contacts_directory">联系人与人设</span><button type="button" onclick="DeviceConnections.open()"><svg class="ui-icon"><use href="/static/icons.svg#monitor"/></svg><span data-i18n="contacts_devices">设备与 SSH</span></button></div>
     <div id="contacts-list"></div>
   </div>
 </div>
@@ -4561,66 +4477,36 @@
     <div style="width:32px"></div>
   </div>
   <div class="discover-area">
-    <div class="discover-section">
-      <div class="discover-card" onclick="openClawcrossStudio()">
-        <div class="discover-card-icon">🎨</div>
-        <div class="discover-card-body">
-          <div class="discover-card-title" data-i18n="team_studio">Team Studio</div>
-          <div class="discover-card-desc" data-i18n="discover_studio_desc">管理你的 Agent、编排工作流</div>
-        </div>
-        <div class="discover-card-arrow">›</div>
-      </div>
+    <section class="create-feature create-hub-feature">
+      <svg class="create-feature-art" viewBox="0 0 320 120" fill="none" aria-hidden="true">
+        <path d="M76 60h168M160 22v76M84 28l152 64M84 92l152-64" stroke="currentColor" stroke-opacity=".16" stroke-width="1.5" stroke-dasharray="4 6"/>
+        <circle cx="160" cy="60" r="34" fill="var(--ui-accent-tint)"/><circle cx="160" cy="60" r="24" fill="var(--bg-card)" stroke="currentColor" stroke-opacity=".2"/>
+        <path d="m160 47 3.5 9.5L173 60l-9.5 3.5L160 73l-3.5-9.5L147 60l9.5-3.5z" fill="currentColor"/>
+        <rect x="43" y="39" width="42" height="42" rx="13" fill="var(--bg-card)" stroke="currentColor" stroke-opacity=".16"/>
+        <rect x="236" y="39" width="42" height="42" rx="13" fill="var(--bg-card)" stroke="currentColor" stroke-opacity=".16"/>
+        <path d="M55 55h18M55 61h13M55 67h9M248 54l6 6-6 6m10 0h8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="100" cy="18" r="7" fill="currentColor" fill-opacity=".16"/><circle cx="220" cy="102" r="7" fill="currentColor" fill-opacity=".16"/>
+        <circle cx="100" cy="102" r="4" fill="currentColor" fill-opacity=".24"/><circle cx="220" cy="18" r="4" fill="currentColor" fill-opacity=".24"/>
+      </svg>
+      <h2 data-i18n="create_feature_title">ClawCross Hub</h2>
+      <p data-i18n="create_feature_desc">探索社区团队、群聊与小程序。</p>
+      <button type="button" class="create-primary" onclick="openTeamHubSite()"><span data-i18n="create_start">打开 ClawCross Hub</span><svg class="ui-icon"><use href="/static/icons.svg#chevron-right"/></svg></button>
+    </section>
+    <div class="create-shortcuts">
+      <a class="create-shortcut" href="/studio?compose=team"><svg class="ui-icon"><use href="/static/icons.svg#users"/></svg><strong data-i18n="create_team">组建协作团队</strong><span data-i18n="create_team_desc">在对话里安排成员与分工</span></a>
+      <a class="create-shortcut" href="/studio?compose=app"><svg class="ui-icon"><use href="/static/icons.svg#window"/></svg><strong data-i18n="create_app">做一个小程序</strong><span data-i18n="create_app_desc">创造能和朋友分享的体验</span></a>
     </div>
+    <a class="create-talk-entry" href="/studio?compose=idea"><span class="create-talk-symbol"><svg class="ui-icon"><use href="/static/icons.svg#sparkles"/></svg></span><span><strong data-i18n="create_talk_title">有自己的想法？</strong><small data-i18n="create_talk_desc">和 Agent 聊聊，一起把它做出来。</small></span><svg class="ui-icon"><use href="/static/icons.svg#chevron-right"/></svg></a>
+    <h2 class="create-section-label" data-i18n="create_resources">灵感与资源</h2>
     <div class="discover-section">
-      <div class="discover-card" onclick="openTeamHubSite()">
-        <div class="discover-card-icon">🌐</div>
-        <div class="discover-card-body">
-          <div class="discover-card-title" data-i18n="tab_team_hub">Team Hub</div>
-          <div class="discover-card-desc" data-i18n="discover_hub_desc">浏览社区分享的团队配置</div>
-        </div>
-        <div class="discover-card-arrow">›</div>
-      </div>
+      <button type="button" class="discover-card" onclick="showMobileSkillManager()"><span class="discover-card-icon"><svg class="ui-icon"><use href="/static/icons.svg#sparkles"/></svg></span><span class="discover-card-body"><span class="discover-card-title" data-i18n="create_skills">技能库</span><span class="discover-card-desc" data-i18n="create_skills_desc">查看、导入和管理 Agent 的技能</span></span><span class="discover-card-arrow">›</span></button>
     </div>
+    <h2 class="create-section-label" data-i18n="create_connections">连接与自动化</h2>
     <div class="discover-section">
-      <div class="discover-card" onclick="showMobileSkillManager()">
-        <div class="discover-card-icon">🧩</div>
-        <div class="discover-card-body">
-          <div class="discover-card-title">Skill 管理</div>
-          <div class="discover-card-desc">管理全局 Skill 和 Team Skill，导入 Skill ZIP</div>
-        </div>
-        <div class="discover-card-arrow">›</div>
-      </div>
+      <button type="button" class="discover-card" onclick="showMobileChannelConfig()"><span class="discover-card-icon"><svg class="ui-icon"><use href="/static/icons.svg#message-plus"/></svg></span><span class="discover-card-body"><span class="discover-card-title" data-i18n="create_channels">消息渠道</span><span class="discover-card-desc" data-i18n="create_channels_desc">把 Agent 连接到微信、Telegram 等平台</span></span><span class="discover-card-arrow">›</span></button>
+      <button type="button" class="discover-card" onclick="showMobileAlarmManager()"><span class="discover-card-icon"><svg class="ui-icon"><use href="/static/icons.svg#clock"/></svg></span><span class="discover-card-body"><span class="discover-card-title" data-i18n="mobile_alarm_manager">定时任务</span><span class="discover-card-desc" data-i18n="create_alarms_desc">让 Agent 在合适的时间提醒或行动</span></span><span class="discover-card-arrow">›</span></button>
     </div>
-    <div class="discover-section">
-      <div class="discover-card" onclick="showMobileChannelConfig()">
-        <div class="discover-card-icon">🤖</div>
-        <div class="discover-card-body">
-          <div class="discover-card-title">Channel 设置</div>
-          <div class="discover-card-desc">配置微信、Telegram、QQ 等渠道连接和访问白名单</div>
-        </div>
-        <div class="discover-card-arrow">›</div>
-      </div>
-    </div>
-    <div class="discover-section">
-      <div class="discover-card" onclick="showMobileAlarmManager()">
-        <div class="discover-card-icon">⏰</div>
-        <div class="discover-card-body">
-          <div class="discover-card-title" data-i18n="mobile_alarm_manager">定时任务</div>
-          <div class="discover-card-desc" data-i18n="mobile_alarm_manager_desc">管理 public agent 的闹钟提醒</div>
-        </div>
-        <div class="discover-card-arrow">›</div>
-      </div>
-    </div>
-    <div class="discover-section">
-      <div class="discover-card" onclick="openClawcrossCreator()">
-        <div class="discover-card-icon">🛠️</div>
-        <div class="discover-card-body">
-          <div class="discover-card-title" data-i18n="team_creator">Team Creator</div>
-          <div class="discover-card-desc" data-i18n="discover_creator_desc">创建并发布新的团队页面</div>
-        </div>
-        <div class="discover-card-arrow">›</div>
-      </div>
-    </div>
+    <p class="create-footnote" data-i18n="create_footnote">这些事也可以直接在对话里告诉 Agent。</p>
   </div>
 </div>
 
@@ -4681,7 +4567,7 @@
     <span class="tab-label" data-i18n="tab_profile">我</span>
   </div>
   <a class="tab-item mobile-studio-link" href="/studio" title="切换到 Studio" aria-label="切换到 Studio">
-    <div class="tab-icon"><svg class="ui-icon"><use href="/static/icons.svg#switch-layout"/></svg></div>
+    <div class="tab-icon"><svg class="ui-icon" aria-hidden="true"><use href="/static/icons.svg?v=20261018-switch#switch-layout"/></svg></div>
     <span class="tab-label">Studio</span>
   </a>
 </div>
@@ -5137,13 +5023,13 @@
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
     </button>
     <div class="oasis-header-title">
-      <span>🏛️</span>
+      <svg class="ui-icon"><use href="/static/icons.svg#workflow"/></svg>
       <span id="oasis-header-label" data-i18n="workflow_runs">工作流运行</span>
     </div>
     <div class="oasis-header-actions">
       <button class="oasis-header-btn" id="oasis-back-btn" onclick="showOasisTopicList()" data-i18n-title="tip_back_list" title="返回列表" style="display:none;">←</button>
-      <button class="oasis-header-btn" id="oasis-launch-wf-btn" onclick="showOasisLaunchPanel()" title="启动工作流" style="font-size:13px;font-weight:700;">▶</button>
-      <button class="oasis-header-btn" onclick="refreshOasisTopics()" data-i18n-title="tip_refresh" title="刷新">🔄</button>
+      <button class="oasis-header-btn" id="oasis-launch-wf-btn" onclick="showOasisLaunchPanel()" title="启动工作流" style="font-size:13px;font-weight:700;"><svg class="ui-icon"><use href="/static/icons.svg#play"/></svg></button>
+      <button class="oasis-header-btn" onclick="refreshOasisTopics()" data-i18n-title="tip_refresh" title="刷新"><svg class="ui-icon"><use href="/static/icons.svg#refresh"/></svg></button>
     </div>
   </div>
   <div class="oasis-body" id="oasis-body">
@@ -5220,6 +5106,19 @@ const I18N = {
     page_title: 'Agent 消息中心',
     header_agent_msg: '聊天',
     header_contacts: '通讯录',
+    contacts_view: "筛选",
+    contacts_directory: "联系人与人设",
+    contacts_devices: "设备与 SSH",
+    contacts_team_info: "团队介绍",
+    personal_overview: "个人总览",
+    contacts_user_scope: "全部 Agent 与用户共享资源的固定视图",
+    contacts_named_scope: "这个团队的成员与专属资源",
+    contacts_team_badge: "项目团队",
+    contacts_persona_label: "人设",
+    create_talk_title: "有自己的想法？",
+    create_talk_desc: "和 Agent 聊聊，一起把它做出来。",
+    chat_private_label: "私聊 · 点击查看成员",
+    chat_member_count: "{n} 位成员 · 点击查看",
     header_profile: '我',
     tab_chats: '聊天',
     tab_contacts: '通讯录',
@@ -5229,8 +5128,30 @@ const I18N = {
     header_discover: '创造',
     discover_studio_desc: '管理你的 Agent、编排工作流',
     discover_hub_desc: '浏览社区分享的团队配置',
-    team_creator: 'Team Creator',
-    discover_creator_desc: '创建并发布新的团队页面',
+    create_feature_title: "ClawCross Hub",
+    create_feature_desc: "探索社区团队、群聊与小程序。",
+    create_start: "打开 ClawCross Hub",
+    create_team: "组建协作团队",
+    create_team_desc: "在对话里安排成员与分工",
+    create_app: "做一个小程序",
+    create_app_desc: "创造能和朋友分享的体验",
+    create_resources: "灵感与资源",
+    create_hub: "探索社区",
+    create_hub_desc: "发现团队模板和更多灵感",
+    create_skills: "技能库",
+    create_skills_desc: "查看、导入和管理 Agent 的技能",
+    create_connections: "连接与自动化",
+    create_channels: "消息渠道",
+    create_channels_desc: "把 Agent 连接到微信、Telegram 等平台",
+    create_alarms_desc: "让 Agent 在合适的时间提醒或行动",
+    create_footnote: "这些事也可以直接在对话里告诉 Agent。",
+    group_start_title: "这里，是你们的聊天空间",
+    group_start_desc: "和朋友分享想法，或用 @ 邀请 Agent 加入讨论。第一句话，由你开始。",
+    group_start_write: "说声你好",
+    group_start_members: "看看成员",
+    group_start_direct_title: "和你的伙伴打个招呼",
+    group_start_direct_desc: "提个问题、分享灵感，或交给 TA 一件想做的事。",
+    group_start_hello: "你好！",
     mobile_alarm_manager: '定时任务',
     mobile_alarm_manager_desc: '管理 public / Team agent 的闹钟提醒',
     mobile_alarm_scope: '范围',
@@ -5871,17 +5792,52 @@ const I18N = {
     page_title: 'Agent Message Center',
     header_agent_msg: 'Chats',
     header_contacts: 'Contacts',
+    contacts_view: "Filter",
+    contacts_directory: "Contacts & personas",
+    contacts_devices: "Devices & SSH",
+    contacts_team_info: "About this team",
+    personal_overview: "Personal overview",
+    contacts_user_scope: "A fixed overview of all your Agents and shared resources",
+    contacts_named_scope: "Members and resources belonging to this team",
+    contacts_team_badge: "Project team",
+    contacts_persona_label: "Persona",
+    create_talk_title: "Have an idea of your own?",
+    create_talk_desc: "Talk it through with your Agent and bring it to life.",
+    chat_private_label: "Private chat · View members",
+    chat_member_count: "{n} members · View details",
     header_profile: 'Me',
     tab_chats: 'Chats',
     tab_contacts: 'Contacts',
     tab_team: 'Team',
     tab_team_hub: 'Team Hub',
-    tab_discover: 'Discover',
-    header_discover: 'Discover',
+    tab_discover: 'Create',
+    header_discover: 'Create',
     discover_studio_desc: 'Manage Agents & orchestrate workflows',
     discover_hub_desc: 'Browse community-shared team configs',
-    team_creator: 'Team Creator',
-    discover_creator_desc: 'Create and publish new team pages',
+    create_feature_title: "ClawCross Hub",
+    create_feature_desc: "Discover community teams, chats and mini apps.",
+    create_start: "Explore ClawCross Hub",
+    create_team: "Build a team",
+    create_team_desc: "Arrange people and roles in chat",
+    create_app: "Make a mini app",
+    create_app_desc: "Create an experience to share",
+    create_resources: "Inspiration & resources",
+    create_hub: "Explore the community",
+    create_hub_desc: "Discover team templates and ideas",
+    create_skills: "Skill library",
+    create_skills_desc: "Browse, import and manage Agent skills",
+    create_connections: "Connections & automation",
+    create_channels: "Messaging channels",
+    create_channels_desc: "Connect Agents to WeChat, Telegram and more",
+    create_alarms_desc: "Let Agents remind you or act at the right time",
+    create_footnote: "You can ask your Agent to help with these in chat, too.",
+    group_start_title: "A space for your conversation",
+    group_start_desc: "Share an idea with friends, or @ an Agent to bring them into the conversation. You get to say the first word.",
+    group_start_write: "Say hello",
+    group_start_members: "View members",
+    group_start_direct_title: "Say hello to your companion",
+    group_start_direct_desc: "Ask a question, share an idea, or give them something to do.",
+    group_start_hello: "Hello!",
     mobile_alarm_manager: 'Scheduled Tasks',
     mobile_alarm_manager_desc: 'Manage alarms for public / Team agents',
     mobile_alarm_scope: 'Scope',
@@ -6524,6 +6480,8 @@ function setLang(lang) {
   document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
   document.title = t('page_title');
   applyLangToDOM();
+  updateChatHeadingMeta();
+  updateContactsScope();
   updateLocalPasswordBanner();
   if (mobileUpdateSnapshot) renderMobileUpdateBanner(mobileUpdateSnapshot);
   // Re-render dynamic areas that are currently visible
@@ -8003,53 +7961,6 @@ function toggleImportPanel() {
   }
 }
 
-// ── Contacts page inline import panel ──
-function toggleContactsImportPanel() {
-  const panel = document.getElementById('contacts-import-panel');
-  const arrow = document.getElementById('contacts-import-arrow');
-  if (panel.style.display === 'none') {
-    panel.style.display = 'block';
-    arrow.style.transform = 'rotate(180deg)';
-  } else {
-    panel.style.display = 'none';
-    arrow.style.transform = '';
-    document.getElementById('contacts-hub-import-area').style.display = 'none';
-  }
-}
-
-function showContactsHubImport() {
-  const area = document.getElementById('contacts-hub-import-area');
-  area.style.display = area.style.display === 'none' ? 'block' : 'none';
-}
-
-async function importFromHubContacts() {
-  const raw = document.getElementById('contacts-hub-curl-input').value;
-  if (!raw.trim()) {
-    toast(t('please_paste_cmd'));
-    return;
-  }
-  // Reuse the same hub import logic
-  const { url, teamName } = _parseHubInput(raw);
-  if (!url) {
-    toast(t('invalid_url'));
-    return;
-  }
-  let finalTeam = teamName;
-  if (!finalTeam) {
-    finalTeam = prompt(t('enter_team_name'));
-    if (!finalTeam || !finalTeam.trim()) return;
-    finalTeam = finalTeam.trim();
-  }
-  if (!confirm(t('confirm_hub_import', {name: finalTeam}))) return;
-  toast(t('downloading_hub'));
-  try {
-    await _performHubImportFromUrl(url, finalTeam, { closeAreas: true });
-    document.getElementById('contacts-hub-curl-input').value = '';
-  } catch (e) {
-    toast(t('import_failed') + ': ' + e.message);
-  }
-}
-
 function showHubImport() {
   const area = document.getElementById('hub-import-area');
   area.style.display = area.style.display === 'none' ? 'block' : 'none';
@@ -8859,13 +8770,18 @@ async function submitCreateGroup() {
 
 // ── Open chat ──
 // Show what the server says about the open group: its primary agent, members.
+function updateChatHeadingMeta() {
+  const meta = document.getElementById('chat-context-meta');
+  if (!meta) return;
+  meta.textContent = meta.dataset.kind === 'direct' ? t('chat_private_label') : t('chat_member_count', {n: meta.dataset.count || '0'});
+}
 function applyGroupDetail(detail) {
   if (!detail) return;
   const known = groups.find(group => getGroupId(group) === detail.group_id);
   if (Number(known?.version || 0) > Number(detail.version || 0)) return;
   _cacheSet(__mobileGroupDetailCache, detail.group_id, detail);
   if (detail.group_id !== currentGroupId) return;
-  if(detail.title) {currentGroupName=detail.title;document.getElementById('chat-title').textContent=detail.title;}
+  if(detail.title) {currentGroupName=detail.title;document.getElementById('chat-title').textContent=detail.title;document.getElementById('chat-title').removeAttribute('data-i18n');}
   const announcement = document.getElementById('group-announcement');
   announcement.hidden = !detail.announcement;
   announcement.textContent = detail.announcement ? '群公告 · ' + detail.announcement : '';
@@ -8886,11 +8802,17 @@ function applyGroupDetail(detail) {
   externalLabel.dataset.i18n = externalKey;
   externalLabel.textContent = t(externalKey);
   document.getElementById('action-group-disconnect-external').classList.toggle('danger', detail.external_access_enabled !== false);
+  const count = (detail.members || []).length || detail.member_count || 0;
+  const context = document.getElementById('chat-context-meta');
+  context.dataset.kind = detail.kind || 'group';
+  context.dataset.count = String(count);
+  updateChatHeadingMeta();
   currentGroupPrimaryAgent = detail.primary_agent || '';
   isMuted = !!detail.dnd;
   if (isMuted) mutedGroupIds.add(detail.group_id); else mutedGroupIds.delete(detail.group_id);
   renderMembers(detail.members || []);
   MobileRooms.update(detail);
+  GroupReceipts.update(detail);
 }
 
 async function reloadGroupDetail() {
@@ -9015,14 +8937,28 @@ function setGroupReply(message) {
   document.getElementById('msg-input').focus();
 }
 GroupMessageMenu.bind(document.getElementById('chat-body'), id => groupReplyMessages.get(id), setGroupReply);
+function fillGroupGreeting() {
+  const input = document.getElementById('msg-input');
+  if (!input.value.trim()) input.value = t('group_start_hello');
+  input.dispatchEvent(new Event('input', {bubbles: true}));
+  input.focus();
+}
 function renderMessages(msgs) {
   groupReplyMessages.clear();
   const body = document.getElementById('chat-body');
   if (!msgs.length) {
-    body.innerHTML = `<div class="refresh-hint">${t('no_messages')}</div>`;
+    const direct = groups.find(g => getGroupId(g) === currentGroupId)?.kind === 'direct';
+    body.innerHTML = `<section class="group-start refresh-hint">
+      <div class="group-start-icon"><svg class="ui-icon"><use href="/static/icons.svg#${direct ? 'message-plus' : 'users'}"/></svg></div>
+      <h2 data-i18n="${direct ? 'group_start_direct_title' : 'group_start_title'}">${esc(t(direct ? 'group_start_direct_title' : 'group_start_title'))}</h2>
+      <p data-i18n="${direct ? 'group_start_direct_desc' : 'group_start_desc'}">${esc(t(direct ? 'group_start_direct_desc' : 'group_start_desc'))}</p>
+      <div class="group-start-actions"><button type="button" onclick="fillGroupGreeting()"><svg class="ui-icon"><use href="/static/icons.svg#pencil"/></svg><span data-i18n="group_start_write">${esc(t('group_start_write'))}</span></button><button type="button" onclick="toggleDrawer()"><svg class="ui-icon"><use href="/static/icons.svg#users"/></svg><span data-i18n="group_start_members">${esc(t('group_start_members'))}</span></button></div>
+    </section>`;
+    GroupHistory.attach(currentGroupId, msgs);
     return;
   }
   body.innerHTML = msgs.map(m => renderOneMsgHTML(m)).join('');
+  GroupHistory.attach(currentGroupId, msgs);
   if (window.ClawcrossMarkdown) window.ClawcrossMarkdown.highlight(body);
   // 将初始加载的消息 ID 加入去重集合，防止后续 poll 重复渲染
   msgs.forEach(m => { if (m.id) renderedMsgIds.add(m.id); });
@@ -9150,7 +9086,7 @@ function renderOneMsgHTML(m) {
       <div class="msg-avatar ${isAgent ? 'clickable' : ''}" style="background:${stringToColor(sender)}"${avatarAttrs}>${esc(initial)}</div>
       <div class="msg-body">
         <div class="msg-sender">${esc(displayName)}</div>
-        <div class="${bubbleClass}"${Number.isSafeInteger(Number(m.id)) ? ` data-group-message-id="${Number(m.id)}" tabindex="0"` : ''}>${quoteHTML}${contentHTML}${attachHTML}</div>
+        <div class="${bubbleClass}"${isSelf ? ' data-group-self="true"' : ''}${Number.isSafeInteger(Number(m.id)) ? ` data-group-message-id="${Number(m.id)}" tabindex="0"` : ''}>${quoteHTML}${contentHTML}${attachHTML}</div>
         <div class="msg-time">${ts}</div>
       </div>
     </div>`;
@@ -9662,6 +9598,8 @@ async function sendMessage() {
   const text = input.value.trim();
   if (!text && !pendingAttachments.length && !mcPendingAudios.length && !selectedOasisContexts.length) return;  // need text, attachments, audios, or task context
   if (!currentGroupId) return;
+  const sendingGroupId = currentGroupId;
+  const sendingReply = groupReplyContext;
   if (text && !pendingAttachments.length && !mcPendingAudios.length && !selectedOasisContexts.length && !selectedWorkflow) {
     try {
       const sessions = (currentMembers || []).filter(m => m.agent).map(m => String(m.agent.agent_id));
@@ -9703,8 +9641,8 @@ async function sendMessage() {
     } else {
       // Each woken Agent uses its own persisted mode and permissions.
       const body = { content: finalText || '(attachment)' };
-      const replying=groupReplyContext;
-      if(replying && replying.group_id===currentGroupId) body.reply_to=Number(replying.id);
+      const replying=sendingReply;
+      if(replying && replying.group_id===sendingGroupId) body.reply_to=Number(replying.id);
       if (mentions.length) body.mentions = mentions;
       if (attachToSend) body.attachments = attachToSend;
       if (audiosToSend) {
@@ -9716,21 +9654,26 @@ async function sendMessage() {
         }
       }
       ClawCrossAttachments.assertGroupSize(body.content, body.attachments || []);
-      await api('POST', `/proxy_groups/${encodeURIComponent(currentGroupId)}/messages`, body);
+      if (String(sendingGroupId).startsWith('rg_')) await GroupReceipts.send(sendingGroupId, body);
+      else await api('POST', `/proxy_groups/${encodeURIComponent(sendingGroupId)}/messages`, body);
       if(groupReplyContext===replying) clearGroupReply();
       // Poll will pick up the message
-      await pollNewMessages();
-      scrollToBottom();  // 发消息后滚到底（对齐 main-local）
+      if (currentGroupId === sendingGroupId) {
+        await pollNewMessages();
+        scrollToBottom();
+      }
     }
   } catch (e) {
     toast(t('send_failed') + ': ' + e.message);
-    input.value = text;
-    if (attachToSend) { pendingAttachments = attachToSend; renderAttachPreview(); }
-    if (audiosToSend) { mcPendingAudios = audiosToSend; mcRenderAudioPreviews(); }
-    if (contextsToSend.length) { selectedOasisContexts = contextsToSend; renderOasisContextPreview(); }
+    if (currentGroupId === sendingGroupId) {
+      input.value = text;
+      if (attachToSend) { pendingAttachments = attachToSend; renderAttachPreview(); }
+      if (audiosToSend) { mcPendingAudios = audiosToSend; mcRenderAudioPreviews(); }
+      if (contextsToSend.length) { selectedOasisContexts = contextsToSend; renderOasisContextPreview(); }
+    }
   } finally {
     btn.disabled = false;
-    input.focus();
+    if (currentGroupId === sendingGroupId) input.focus();
   }
 }
 
@@ -10338,14 +10281,14 @@ function renderOasisTopics(topics) {
         <div class="oasis-topic-header">
           <span class="oasis-status-badge ${si.cls}">${si.text}</span>
           <div style="display:flex;align-items:center;gap:4px;">
-            ${isRunning ? `<button onclick="event.stopPropagation();cancelOasisTopic('${safeTopicId}')" class="oasis-action-btn oasis-btn-cancel" title="${t('oasis_cancel')}" style="opacity:0.7;">⏹</button>` : ''}
-            <button onclick="event.stopPropagation();addOasisTopicContext('${safeTopicId}', '${topicLabel}')" class="oasis-action-btn" title="${t('oasis_add_context')}" style="opacity:0.85;">➕</button>
-            <button onclick="event.stopPropagation();deleteOasisTopic('${safeTopicId}')" class="oasis-action-btn oasis-btn-delete" title="${t('oasis_delete')}" style="opacity:0.7;">🗑</button>
+            ${isRunning ? `<button onclick="event.stopPropagation();cancelOasisTopic('${safeTopicId}')" class="oasis-action-btn oasis-btn-cancel" title="${t('oasis_cancel')}" style="opacity:0.7;"><svg class="ui-icon"><use href="/static/icons.svg#stop"/></svg></button>` : ''}
+            <button onclick="event.stopPropagation();addOasisTopicContext('${safeTopicId}', '${topicLabel}')" class="oasis-action-btn" title="${t('oasis_add_context')}" style="opacity:0.85;"><svg class="ui-icon"><use href="/static/icons.svg#plus"/></svg></button>
+            <button onclick="event.stopPropagation();deleteOasisTopic('${safeTopicId}')" class="oasis-action-btn oasis-btn-delete" title="${t('oasis_delete')}" style="opacity:0.7;"><svg class="ui-icon"><use href="/static/icons.svg#trash"/></svg></button>
             <span style="font-size:10px;color:var(--text-hint);">${tp.created_at ? oasisFormatTime(tp.created_at) : ''}</span>
           </div>
         </div>
         <div class="oasis-topic-question">${esc(tp.question || '')}</div>
-        <div class="oasis-topic-meta">💬 ${tp.post_count || 0} ${t('oasis_posts')} · 🔄 ${tp.current_round || 0}/${tp.max_rounds || 5} ${t('oasis_rounds')}</div>
+        <div class="oasis-topic-meta"><svg class="ui-icon"><use href="/static/icons.svg#message-plus"/></svg> ${tp.post_count || 0} ${t('oasis_posts')} · ${tp.current_round || 0}/${tp.max_rounds || 5} ${t('oasis_rounds')}</div>
       </div>`;
   }).join('');
 }
@@ -10981,10 +10924,6 @@ function openClawcrossHub() {
   if (!popup) {
     window.location.assign(buildClawcrossHubUrl());
   }
-}
-
-function openClawcrossCreator() {
-  window.location.assign('/creator');
 }
 
 // ── Mobile Channel Settings ──
@@ -11970,14 +11909,17 @@ function stopPolling() {
 async function pollNewMessages() {
   if (!currentGroupId) return;
   if (_polling) return;  // 上一次 poll 还没完成，跳过
+  const pollingGroupId = currentGroupId;
   _polling = true;
   try {
     const [data] = await Promise.all([
-      api('GET', `/proxy_groups/${encodeURIComponent(currentGroupId)}/messages?after_id=${lastMsgId}`),
+      api('GET', `/proxy_groups/${encodeURIComponent(pollingGroupId)}/messages?after_id=${lastMsgId}`),
       refreshPendingApprovalsForCurrentGroup(),
     ]);
+    if (currentGroupId !== pollingGroupId) return;
     const msgs = data.messages || [];
     if (msgs.length) appendMessages(msgs);
+    GroupReceipts.update({group_id:pollingGroupId, capabilities:data.capabilities, receipts:data.receipts});
   } catch (_) { /* silent */ } finally {
     _polling = false;
   }
@@ -12151,11 +12093,13 @@ function renderMembers(members) {
       const removeHuman = m.can_remove ? `<button type="button" onclick="event.stopPropagation();removeMemberFromGroup('${jsPrincipal}','${jsName}')" class="member-action-btn member-action-danger" title="${t('tip_remove')}" aria-label="${t('tip_remove')} ${esc(name)}">${t('tip_remove')}</button>` : '';
       return `
       <div class="member-item">
-        <div class="member-avatar owner">${esc(initial)}</div>
-        <div class="member-info" style="flex:1;">
-          <div class="member-name">${esc(name)}</div>
-          <div class="member-tag">${m.is_owner || (m.is_owner === undefined && !m.remote) ? t('owner') : (_currentLang === 'zh' ? '群成员' : 'Member')}</div>
-        </div>
+        <button type="button" class="human-member-entry" onclick="showHumanDetail('${jsPrincipal}')" aria-label="${esc(name)} · ${_currentLang === 'zh' ? '个人资料' : 'Personal profile'}">
+          <span class="member-avatar owner">${esc(initial)}</span>
+          <span class="member-info" style="flex:1;">
+            <span class="member-name">${esc(name)}</span>
+            <span class="member-tag">${m.is_owner ? t('owner') : (_currentLang === 'zh' ? '群成员' : 'Member')}${m.online === undefined ? '' : ' · ' + (m.online ? (_currentLang === 'zh' ? '在线' : 'Online') : (_currentLang === 'zh' ? '离线' : 'Offline'))}</span>
+          </span>
+        </button>
         ${removeHuman}
       </div>`;
     }
@@ -12187,6 +12131,25 @@ function renderMembers(members) {
 }
 
 // The member drawer can show the group by device instead: who is on which device, with which agents, and online or not.
+function showHumanDetail(principal) {
+  const member = currentMembers.find(m => m.principal === principal && !m.is_agent);
+  if (!member) return;
+  const gid = currentGroupId;
+  HumanProfile.open({member, members:currentMembers, title:currentGroupName,
+    canEdit:!!member.can_edit_profile,
+    loadImage:image=>api('GET', `/proxy_groups/${encodeURIComponent(gid)}/members/${encodeURIComponent(member.principal)}/profile-images/${encodeURIComponent(image.id)}`),
+    save:async fields => {
+      const group = await api('PATCH', `/proxy_groups/${encodeURIComponent(gid)}/profile`, fields);
+      if (gid === currentGroupId) renderMembers(group.members || []);
+      window.dispatchEvent(new CustomEvent('group-network-changed', {detail:group}));
+      return group;
+    },
+    mention:m=>{if(gid===currentGroupId){if(document.getElementById('drawer').classList.contains('show'))toggleDrawer();insertMention(m.principal,m.name);}},
+    agent:m=>{if(gid===currentGroupId)showAgentDetail(m.principal);},
+    remove:member.can_remove?m=>removeMemberFromGroup(m.principal,m.name):null,
+  });
+}
+
 let memberViewByDevice = false;
 function drawMemberDevices() {
   if (memberViewByDevice) GroupDeviceMap.render(document.getElementById('member-map'), { title: currentGroupName, members: currentMembers, lang: _currentLang });
@@ -12847,16 +12810,17 @@ async function showAgentDetail(agentId) {
   const overlay = document.getElementById('agent-detail-overlay');
   const body = document.getElementById('agent-detail-body');
   const title = document.getElementById('agent-detail-title');
-  title.textContent = '🤖';
+  title.textContent = _currentLang === 'zh' ? '伙伴资料' : 'Agent profile';
   body.innerHTML = `<div class="agent-detail-loading">${t('loading')}</div>`;
   overlay.style.display = 'flex';
   requestAnimationFrame(() => { overlay.classList.add('open'); });
   try {
     const remote = currentMembers.find(m => m.remote && m.principal === agentId);
-    const agent = remote ? {...remote.agent, remote: true, agent_id: remote.agent?.agent_id || agentId, name: remote.name || remote.agent?.name || agentId, groups: [{title: groups.find(g => g.group_id === currentGroupId)?.title || '当前群聊', group_id: currentGroupId}]} : await api('GET', `/v1/agents/${encodeURIComponent(agentId)}`);
+    const agent = remote ? {...remote.agent, remote: true, agent_id: remote.agent?.agent_id || agentId, name: remote.name || remote.agent?.name || agentId, profile_member: remote, groups: [{title: groups.find(g => g.group_id === currentGroupId)?.title || '当前群聊', group_id: currentGroupId}]} : await api('GET', `/v1/agents/${encodeURIComponent(agentId)}`);
     if (__agentDetailRenderSeq !== renderSeq) return;
-    title.textContent = `🤖 ${agent.name}`;
+    title.textContent = _currentLang === 'zh' ? '伙伴资料' : 'Agent profile';
     body.innerHTML = renderAgentBasicInfo(agent);
+    AgentProfile.mount(body, agent);
   } catch (e) {
     if (__agentDetailRenderSeq === renderSeq) body.innerHTML = `<div class="agent-detail-loading">${esc(e.message)}</div>`;
   }
@@ -12864,6 +12828,7 @@ async function showAgentDetail(agentId) {
 
 // A persona from the library: read it, or chat with an agent wearing it.
 function showPersonaDetail(persona) {
+  document.getElementById('agent-detail-body').onclick = null;
   ++__agentDetailRenderSeq;
   const overlay = document.getElementById('agent-detail-overlay');
   document.getElementById('agent-detail-title').textContent = `${persona.emoji || '🌟'} ${persona.name}`;
@@ -13158,61 +13123,7 @@ function closeAgentHistory() {
 }
 
 function renderAgentBasicInfo(agent) {
-  const settings = agent.settings || {};
-  const jsId = agent.agent_id.replace(/'/g, "\\'");
-  const jsName = agent.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-  const status = agent.status || {};
-  let html = `<div class="agent-detail-section">
-    <div class="agent-detail-label">${t('basic_info')}</div>
-    <div class="agent-detail-value">
-      <div><strong>${esc(agent.name)}</strong></div>
-      <div style="margin-top:4px;">
-        ${renderPlatformBadge(agentPlatformLabel(agent.platform))}
-        ${(settings.teams || []).map(team => `<span class="agent-detail-tag blue">${esc(team)}</span>`).join('')}
-        ${status.state ? `<span class="agent-detail-tag ${status.state === 'running' ? 'green' : 'gray'}">${esc(status.state)}</span>` : ''}
-      </div>
-    </div>
-  </div>
-  <div class="agent-detail-section">
-    <div class="agent-detail-label">${t('agent_address')}</div>
-    <div class="agent-detail-value mono" style="overflow-wrap:anywhere;">${esc(agent.agent_id)}</div>
-  </div>`;
-  html += `<div class="agent-detail-section">
-    <div class="agent-detail-label">${_currentLang === 'zh' ? '所在群聊' : 'Conversations'}</div>
-    <div class="agent-detail-value" style="overflow-wrap:anywhere;">${esc((agent.groups || []).map(g => `${g.title} (${g.group_id})`).join(', ') || '-')}</div>
-  </div>`;
-  if (settings.persona) {
-    html += `<div class="agent-detail-section">
-      <div class="agent-detail-label">${_currentLang === 'zh' ? '人设' : 'Persona'}</div>
-      <div class="agent-detail-value agent-detail-scroll-text">${esc(settings.persona)}</div>
-    </div>`;
-  }
-  if (settings.model || settings.api_url) {
-    html += `<div class="agent-detail-section">
-      <div class="agent-detail-label">${t('agent_runtime')}</div>
-      <div class="agent-detail-value" style="font-size:13px;line-height:1.7;">
-        ${settings.model ? `<div><strong>Model:</strong> <code>${esc(settings.model)}</code></div>` : ''}
-        ${settings.api_url ? `<div><strong>URL:</strong> <code>${esc(settings.api_url)}</code></div>` : ''}
-      </div>
-    </div>`;
-  }
-  if (agent.remote) return html + '<div class="agent-detail-section">远端 agent 的设置和运行状态由所属设备管理。</div>';
-  const button = (onclick, label, color, filled = false) =>
-    `<button onclick="${escapeHtml(onclick)}" style="width:100%;padding:14px;background:${filled ? color : 'var(--bg-card)'};color:${filled ? 'white' : color};border:none;box-shadow:${filled ? 'none' : 'var(--ui-shadow-1)'};border-radius:12px;font-size:15px;font-weight:600;cursor:pointer;">${label}</button>`;
-  html += `<div style="padding:16px;display:flex;flex-direction:column;gap:10px;">
-    ${button(`startPrivateChat('${jsId}')`, t('start_private_chat'), 'var(--primary)', true)}
-    ${button(`showAgentHistory('${jsId}','${jsName}')`, t('view_main_history'), 'var(--primary)')}
-    ${button(`openAgentSettingsSheet('${jsId}')`, t('edit_agent'), 'var(--primary)')}
-    <details class="mobile-agent-advanced"><summary>${_currentLang === 'zh' ? '高级设置' : 'Advanced settings'}</summary>
-      <p>${_currentLang === 'zh' ? 'Y 仅批准一次；KEEP Y 记住这个 Agent 的具体授权。严格沙盒不允许提权。' : 'Y allows once; KEEP Y remembers a specific grant for this Agent. Strict sandbox disables escalation.'}</p>
-      ${button(`openWorkspaceSettings('${jsId}')`, _currentLang === 'zh' ? '工作区' : 'Workspaces', 'var(--primary)')}
-      ${button(`openRuntimeSettings('${jsId}','approval')`, _currentLang === 'zh' ? '模式、沙盒与授权' : 'Mode, sandbox and grants', 'var(--primary)')}
-      ${button(`openAgentModelSettings('${jsId}')`, _currentLang === 'zh' ? '模型与思考' : 'Model and reasoning', 'var(--primary)')}
-      ${agent.platform === 'webot' ? button(`openRuntimeSettings('${jsId}','context')`, _currentLang === 'zh' ? '上下文与压缩' : 'Context and compaction', 'var(--primary)') : ''}
-    </details>
-    ${button(`deleteAgentFromDetail('${jsId}')`, t('delete_agent'), 'var(--ui-danger)')}
-  </div>`;
-  return html;
+  return AgentProfile.render(agent);
 }
 
 // Delete an agent: it leaves every team and conversation.
@@ -13388,7 +13299,7 @@ async function importPersonalSkill() {
     try { metaJson = JSON.parse(metaText); }
     catch(e) { throw new Error('meta.json 格式错误: ' + e.message); }
 
-    const resp = await fetch('/api/team-creator/import-personal', {
+    const resp = await fetch('/api/skills/import-personal', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -14019,34 +13930,34 @@ function renderAgentGroupsHtml(entries, idPrefix, renderRow) {
   return platforms.map(platform => {
     const items = byPlatform[platform];
     const uid = idPrefix + 'agents-' + platform.replace(/[^a-zA-Z0-9]/g, '_');
-    return `<div class="contacts-cat-group"><div class="contacts-cat-header contacts-ext-sub expanded" onclick="(function(h){var l=document.getElementById('${uid}');if(!l)return;h.classList.toggle('expanded');l.classList.toggle('expanded');})(this)"><span class="cat-icon">${platform === 'webot' ? '🤖' : platform === 'openclaw' ? '🦞' : '🔌'}</span><span class="cat-name">${esc(agentPlatformLabel(platform))}</span><span class="cat-count">${items.length}</span><span class="cat-arrow">▶</span></div><div id="${uid}" class="contacts-cat-list expanded">${items.map(renderRow).join('')}</div></div>`;
+    return `<div class="contacts-cat-group"><div class="contacts-cat-header contacts-ext-sub expanded" onclick="(function(h){var l=document.getElementById('${uid}');if(!l)return;h.classList.toggle('expanded');l.classList.toggle('expanded');})(this)"><span class="cat-icon"><svg class="ui-icon"><use href="/static/icons.svg#${platform === 'webot' ? 'bot' : 'plug'}"/></svg></span><span class="cat-name">${esc(agentPlatformLabel(platform))}</span><span class="cat-count">${items.length}</span><span class="cat-arrow">▶</span></div><div id="${uid}" class="contacts-cat-list expanded">${items.map(renderRow).join('')}</div></div>`;
   }).join('');
 }
 
 function renderAgentContactRow(entry) {
-  const name = entry.name || entry.agent.name;
-  const teamLabel = entry.team ? `<span style="font-size:11px;color:var(--text-hint);margin-left:4px;">[${esc(entry.team)}]</span>` : '';
-  return `<div class="contact-item" data-agent-activity="${esc(entry.agent.agent_id)}" onclick="showAgentDetail('${entry.agent.agent_id}')"><div class="contact-avatar ${agentAvatarClass(entry.agent.platform)}">${esc(avatarLabelFromDisplayName(name))}<span class="agent-activity-dot" role="img" hidden></span></div><div class="contact-main"><div class="contact-name">${esc(name)}${entry.is_lead ? ' ⭐' : ''}${teamLabel}</div>${entry.agent.location?.kind==='ssh'?`<small>${esc(entry.agent.location.name)} · SSH</small>`:''}</div>${entry.tag ? `<span class="contact-tag">${esc(entry.tag)}</span>` : ''}</div>`;
+  const name = entry.name || entry.agent.name || entry.agent.agent_id;
+  const metadata = [agentPlatformLabel(entry.agent.platform), entry.team, entry.tag,
+    entry.agent.location?.kind === 'ssh' ? entry.agent.location.name + ' · SSH' : ''].filter(Boolean);
+  return `<div class="contact-item contact-agent" role="button" tabindex="0" data-agent-activity="${esc(entry.agent.agent_id)}" onclick="showAgentDetail('${entry.agent.agent_id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click()}"><div class="contact-avatar ${agentAvatarClass(entry.agent.platform)}">${esc(avatarLabelFromDisplayName(name))}<span class="agent-activity-dot" role="img" hidden></span></div><div class="contact-main"><div class="contact-name" title="${esc(name)}">${esc(name)}${entry.is_lead ? ' <span class="contact-lead" title="Lead">★</span>' : ''}</div><div class="contact-meta-line">${metadata.map(text => `<span>${esc(text)}</span>`).join('')}</div></div><svg class="ui-icon contact-chevron"><use href="/static/icons.svg#chevron-right"/></svg></div>`;
 }
 
 function renderPersonaContactRow(exp, avatarClass) {
   const dname = personaDisplayName(exp);
   const info = escapeHtml(JSON.stringify({ name: dname, tag: exp.tag || '', persona: exp.persona || '', emoji: exp.emoji || '', source: exp.source || '', team: exp.team || '' }));
-  const teamLabel = exp.team ? `<span style="font-size:11px;color:var(--text-hint);margin-left:4px;">[${esc(exp.team)}]</span>` : '';
-  return `<div class="contact-item expert-item" onclick="showPersonaDetail(JSON.parse(this.dataset.info))" data-info="${info}"><div class="contact-avatar ${avatarClass}">${exp.emoji || '🌟'}</div><div class="contact-name" title="${esc(dname)}">${esc(dname)}${teamLabel}</div><span class="contact-type-pill prompt">Prompt</span>${exp.tag ? `<span class="contact-tag" title="${esc(exp.tag)}">${esc(exp.tag)}</span>` : ''}</div>`;
+  return `<div class="contact-item expert-item" role="button" tabindex="0" onclick="showPersonaDetail(JSON.parse(this.dataset.info))" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click()}" data-info="${info}"><div class="contact-avatar ${avatarClass}">${esc(exp.emoji || '✧')}</div><div class="contact-main"><div class="contact-name" title="${esc(dname)}">${esc(dname)}</div><div class="contact-meta-line"><span>${esc(t('contacts_persona_label'))}</span>${exp.team ? `<span>${esc(exp.team)}</span>` : ''}${exp.tag ? `<span title="${esc(exp.tag)}">${esc(exp.tag)}</span>` : ''}</div></div><svg class="ui-icon contact-chevron"><use href="/static/icons.svg#chevron-right"/></svg></div>`;
 }
 
 function renderContactSections(agents, customExperts, presetExperts, idPrefix) {
-  let html = `<div class="contact-section-title contact-section-l1-internal">🤖 ${t('contacts_agents')} (${agents.length})</div>`;
+  let html = `<div class="contact-section-title contact-section-l1-internal"><svg class="ui-icon"><use href="/static/icons.svg#bot"/></svg> ${t('contacts_agents')} (${agents.length})</div>`;
   html += agents.length
     ? '<div class="contact-external-nested">' + renderAgentGroupsHtml(agents, idPrefix, renderAgentContactRow) + '</div>'
     : `<div style="text-align:center;padding:20px;color:var(--text-secondary)">${t('no_agents')}</div>`;
   if (customExperts.length) {
-    html += `<div class="contact-section-title contact-section-l3-custom">🛠️ ${t('contacts_custom_personas')} (${customExperts.length})</div>`;
+    html += `<div class="contact-section-title contact-section-l3-custom"><svg class="ui-icon"><use href="/static/icons.svg#sliders"/></svg> ${t('contacts_custom_personas')} (${customExperts.length})</div>`;
     html += customExperts.map(exp => renderPersonaContactRow(exp, 'custom')).join('');
   }
   if (presetExperts.length) {
-    html += `<div class="contact-section-title contact-section-l4-preset">🌟 ${t('contacts_preset_personas')} (${presetExperts.length})</div>`;
+    html += `<div class="contact-section-title contact-section-l4-preset"><svg class="ui-icon"><use href="/static/icons.svg#sparkles"/></svg> ${t('contacts_preset_personas')} (${presetExperts.length})</div>`;
     html += '<div class="contact-external-nested">' + renderPresetExpertsCategoriesHtml(
       presetExperts.map(exp => Object.assign({}, exp, { _cat: (exp.source === 'agency' && exp.category) ? exp.category : '_public' })),
       contactsPresetCategoryLabels(), idPrefix + 'preset-', (exp) => renderPersonaContactRow(exp, 'preset'),
@@ -14102,10 +14013,10 @@ function renderPresetExpertsCategoriesHtml(presetExperts, catLabels, idPrefix, r
     const items = byCat[cat];
     const info = catLabels[cat] || {icon: '📂', key: null};
     const catName = info.key ? t(info.key) : cat;
-    const subLabel = '4.' + (idx + 1) + ' ' + catName;
+    const subLabel = catName;
     const isPublic = (cat === '_public');
     const uid = idPrefix + 'pcat-' + cat.replace(/[^a-zA-Z0-9]/g, '_');
-    html += `<div class="contacts-cat-group"><div class="contacts-cat-header contacts-preset-sub${isPublic ? ' expanded' : ''}" onclick="(function(h){var l=document.getElementById('${uid}');if(!l)return;h.classList.toggle('expanded');l.classList.toggle('expanded');})(this)"><span class="cat-icon">${info.icon}</span><span class="cat-name">${esc(subLabel)}</span><span class="cat-count">${items.length}</span><span class="cat-arrow">▶</span></div><div id="${uid}" class="contacts-cat-list${isPublic ? ' expanded' : ''}">`;
+    html += `<div class="contacts-cat-group"><div class="contacts-cat-header contacts-preset-sub${isPublic ? ' expanded' : ''}" onclick="(function(h){var l=document.getElementById('${uid}');if(!l)return;h.classList.toggle('expanded');l.classList.toggle('expanded');})(this)"><span class="cat-icon"><svg class="ui-icon"><use href="/static/icons.svg#sparkles"/></svg></span><span class="cat-name">${esc(subLabel)}</span><span class="cat-count">${items.length}</span><span class="cat-arrow">▶</span></div><div id="${uid}" class="contacts-cat-list${isPublic ? ' expanded' : ''}">`;
     items.forEach(exp => { html += renderRowHtml(exp); });
     html += '</div></div>';
   });
@@ -14173,14 +14084,21 @@ async function filterContactsList() {
     return;
   }
 
+  const team = document.getElementById('contacts-team-select').value;
+  const kw = contactsSearchKeyword;
   container.innerHTML = renderContactsSectionSkeleton(5);
-  const data = await loadAllContactsForSearch();
+  const data = team
+    ? await Promise.all([
+        listAgentEntries(team),
+        api('GET', `/proxy_visual/experts?team=${encodeURIComponent(team)}`),
+      ]).then(([agents, experts]) => ({agents, experts: Array.isArray(experts) ? experts : []})).catch(() => null)
+    : await loadAllContactsForSearch();
+  if (team !== document.getElementById('contacts-team-select').value || kw !== contactsSearchKeyword) return;
   if (!data) {
     container.innerHTML = `<div class="contacts-empty"><span style="font-size:40px;margin-bottom:12px;">⚠️</span><span>加载失败</span></div>`;
     return;
   }
 
-  const kw = contactsSearchKeyword;
   const agents = data.agents.filter(e => [e.name, e.agent.settings?.persona, e.team, e.agent.platform, e.agent.agent_id]
     .some(v => String(v || '').toLowerCase().includes(kw)));
   const experts = data.experts.filter(exp => [exp.name, exp.description, exp.team, exp.tag]
@@ -14193,8 +14111,14 @@ async function filterContactsList() {
     : `<div class="contacts-empty"><span style="font-size:40px;margin-bottom:12px;">🔍</span><span>${t('no_contacts_result')}</span></div>`;
 }
 
+function updateContactsScope() {
+  const team = document.getElementById('contacts-team-select').value;
+  const personal = !team || team === '__default__';
+  document.getElementById('contacts-scope').dataset.userSpace = String(personal);
+}
 async function loadContactsForTeam() {
   const selectedTeam = document.getElementById('contacts-team-select').value;
+  updateContactsScope();
   document.getElementById('contacts-team-info').hidden = !selectedTeam || selectedTeam === '__default__';
   // Clear search when switching team
   contactsSearchKeyword = '';
@@ -14234,6 +14158,7 @@ async function loadContactsForTeam() {
 // ══════════════════════════════════════════════════════════
 // Profile (我)
 // ══════════════════════════════════════════════════════════
+let userProfileImages = [], _profilePortraitEditor;
 async function loadProfile() {
   profileLoaded = true;
   const container = document.getElementById('profile-area');
@@ -14250,11 +14175,13 @@ async function loadProfile() {
 
   // Try to load user profile
   userProfileText = '';
+  userProfileImages = [];
   try {
     const resp = await fetch('/proxy_user_profile');
     if (resp.ok) {
       const data = await resp.json();
       userProfileText = data.profile || '';
+      userProfileImages = data.images || [];
     }
   } catch (e) { /* silent */ }
 
@@ -14269,12 +14196,13 @@ async function loadProfile() {
 
     <div class="profile-section">
       ${row(t('user_profile_title'), 'id-card', 'openProfileSubpage()', 'green',
-        `<span class="profile-row-value" id="profile-status">${userProfileText ? t('profile_set') : t('profile_not_set')}</span>`)}
+        `<span class="profile-row-value" id="profile-status">${userProfileText || userProfileImages.length ? t('profile_set') : t('profile_not_set')}</span>`)}
       ${row(t('session_tracker'), 'history', 'openSessionsSubpage()', 'blue')}
     </div>
 
     <div class="profile-section">
       ${row(t('system_settings'), 'settings', 'showSettingsInfo()', 'gray')}
+      <a id="profile-group-host" href="/group-host" class="profile-row" hidden style="text-decoration:none;color:inherit"><span class="profile-row-icon profile-icon-blue">${icon('globe')}</span><span class="profile-row-label">${_currentLang === 'zh' ? '群聊服务器与联网' : 'Group server and networking'}</span><span class="profile-row-arrow">${icon('chevron-right')}</span></a>
       <div class="profile-row profile-language-row">
         <span class="profile-row-icon profile-icon-blue">${icon('languages')}</span>
         <span class="profile-row-label">${t('language_label')}</span>
@@ -14293,6 +14221,7 @@ async function loadProfile() {
 
     <button type="button" class="profile-logout-btn" onclick="doLogout()">${t('logout')}</button>
   `;
+  GroupHistory.refreshHostEntry();
 }
 
 // ── Profile Sub-page  ──
@@ -14305,11 +14234,9 @@ function openProfileSubpage() {
   _profileEditing = false;
   footer.style.display = 'none';
 
-  if (userProfileText) {
+  if (userProfileText || userProfileImages.length) {
     body.innerHTML = `
-      <div class="profile-view-card">
-        <div class="profile-view-text">${esc(userProfileText)}</div>
-      </div>
+      <div class="profile-view-card" id="private-portrait-view"></div>
       <div style="padding:0 16px;">
         <button onclick="startProfileEdit()" style="width:100%;padding:12px;background:var(--ui-accent-tint);color:var(--primary);border:none;border-radius:12px;font-size:15px;font-weight:600;cursor:pointer;">${t('edit_profile')}</button>
       </div>`;
@@ -14324,6 +14251,8 @@ function openProfileSubpage() {
       </div>`;
   }
 
+  const portraitView = body.querySelector('#private-portrait-view');
+  if (portraitView) UserPortrait.render(portraitView, {text:userProfileText,images:userProfileImages});
   // Slide in
   requestAnimationFrame(() => { subpage.classList.add('open'); });
 }
@@ -14340,8 +14269,9 @@ function startProfileEdit() {
   const footer = document.getElementById('profile-subpage-footer');
   footer.style.display = 'flex';
 
-  body.innerHTML = `
-    <textarea class="profile-edit-textarea" id="profile-textarea" placeholder="${t('profile_edit_placeholder')}">${userProfileText ? esc(userProfileText) : ''}</textarea>`;
+  body.replaceChildren();
+  _profilePortraitEditor = UserPortrait.edit(body, {text:userProfileText,images:userProfileImages});
+  body.querySelector('textarea').id = 'profile-textarea';
 
   // Auto focus
   const ta = document.getElementById('profile-textarea');
@@ -14355,17 +14285,19 @@ function cancelProfileEdit() {
 }
 
 async function saveProfile() {
-  const text = document.getElementById('profile-textarea').value;
   try {
+    const portrait = _profilePortraitEditor.value();
     const resp = await fetch('/proxy_user_profile', {
       method: 'PUT',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({profile: text})
+      body: JSON.stringify({profile: portrait.text, images: portrait.images})
     });
     if (resp.ok) {
-      userProfileText = text;
+      const saved = await resp.json();
+      userProfileText = saved.profile;
+      userProfileImages = saved.images || [];
       const statusEl = document.getElementById('profile-status');
-      if (statusEl) statusEl.textContent = text ? t('profile_set') : t('profile_not_set');
+      if (statusEl) statusEl.textContent = userProfileText || userProfileImages.length ? t('profile_set') : t('profile_not_set');
       toast(t('profile_saved'));
       // Return to view mode
       _profileEditing = false;

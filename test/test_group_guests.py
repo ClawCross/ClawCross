@@ -251,6 +251,20 @@ class GuestProxyTests(unittest.TestCase):
         register_guest_routes(self.app, port_agent=1234, internal_token='internal', public_base=lambda:'https://chat.example')
         self.client = self.app.test_client()
 
+    def test_browser_agent_cross_origin_calls_require_group_credentials_not_main_login(self):
+        headers={'Origin':'https://clawcross.net','Access-Control-Request-Method':'POST',
+                 'Access-Control-Request-Headers':'content-type,x-group-invite,authorization'}
+        for route in ('/group-guest-api/join','/relay/agents'):
+            response=self.client.options(route,headers=headers)
+            self.assertEqual(response.status_code,200)
+            self.assertEqual(response.headers.get('Access-Control-Allow-Origin'),'*')
+            self.assertNotIn('Access-Control-Allow-Credentials',response.headers)
+        denied=self.client.post('/relay/agents',headers={'Origin':'https://clawcross.net'},json={'agent_id':'forged'})
+        self.assertEqual(denied.status_code,403)
+        private=self.client.post('/proxy_groups/g/guest-link',headers={'Origin':'https://clawcross.net'},json={})
+        self.assertEqual(private.status_code,401)
+        self.assertNotIn('Access-Control-Allow-Origin',private.headers)
+
     def test_app_calls_and_member_pages_pass_through_to_this_machines_group_server(self):
         reply = Mock(status_code=201, headers={'Content-Type':'text/html','Content-Security-Policy':'sandbox allow-scripts'})
         reply.raw.read1.side_effect = [b'page', b'']

@@ -509,10 +509,13 @@ def build_user_profile_block(user_id: str) -> str:
         with open(fpath, "r", encoding="utf-8") as f:
             profile = f.read().strip()
     except (FileNotFoundError, OSError):
+        profile = ""
+    from common.user_portrait import read_portrait
+    images = read_portrait(Path(USER_FILES_DIR), user_id)['images']
+    if not profile and not images:
         return ""
-    if not profile:
-        return ""
-    return f"\n【用户画像（描述对方，不是你）】\n{profile}\n"
+    pictures = '\n画像附图（长期背景，不是本轮请求）：' + ', '.join(f'{image["name"]} [{image["id"]}]' for image in images) if images else ''
+    return f"\n【用户画像（描述对方，不是你）】\n{profile}{pictures}\n"
 
 
 # ── Internal helpers ────────────────────────────────────────────────

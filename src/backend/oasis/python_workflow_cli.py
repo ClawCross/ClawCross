@@ -21,6 +21,7 @@ _PROJECT_ROOT = str(PROJECT_ROOT)
 load_dotenv(dotenv_path=ENV_FILE)
 
 from oasis.agent_center import AgentCenter
+from oasis.agent_bindings import add_agent_map_arguments, runtime_agent_map
 from oasis.python_workflow import AgentAccess
 from oasis.forum_client import conclude_topic, create_empty_topic, publish_to_topic, vote_topic_post
 
@@ -212,6 +213,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--run-id", default="", help="Optional run ID supplied by the launcher.")
     parser.add_argument("--meta-file", default="", help="Optional metadata JSON file maintained by the launcher.")
     parser.add_argument("--result-file", default="", help="Optional JSON output file.")
+    add_agent_map_arguments(parser)
     parser.add_argument(
         "--no-auto-topic",
         action="store_true",
@@ -233,6 +235,7 @@ async def _run(main_func: Callable[[StandaloneWorkflowContext], Awaitable[Any]])
     )
     exit_code = 0
     try:
+        ctx._agent_center.bind_agents(runtime_agent_map(args))
         if ctx.auto_topic:
             await ctx.create_empty_topic(
                 question=ctx.question or "Standalone python workflow",
@@ -257,6 +260,7 @@ async def _run(main_func: Callable[[StandaloneWorkflowContext], Awaitable[Any]])
             "question": ctx.question,
             "user_id": ctx.user_id,
             "team": ctx.team,
+            "agent_map": ctx.agent_map,
             "topic_id": ctx.topic_id,
             "result": ctx.result,
             "conclusion": ctx.conclusion,

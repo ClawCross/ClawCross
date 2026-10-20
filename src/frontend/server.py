@@ -39,6 +39,7 @@ from scheduler.internal_alarm import export_team_alarms, restore_team_alarms, te
 from common.llm_factory import create_chat_model, extract_text, infer_provider
 from frontend.proxies.groups import register_group_routes
 from frontend.proxies.group_guests import register_guest_routes
+from frontend.proxies.group_host import register_group_host_routes
 from frontend.proxies.agents import PUBLIC_AGENT_ENDPOINTS, register_agent_routes
 from frontend.proxies.oasis import register_oasis_routes
 from frontend.proxies.webot import register_webot_routes
@@ -53,28 +54,15 @@ from tinyfish.monitor import (
     stream_live_run,
     submit_monitor_run,
 )
+# Reuse artifact import/export helpers; Team creation is managed by the current Agent.
 from teams.creator import (
-    build_from_roles,
     build_attachment_content_disposition,
-    build_team_zip,
-    build_team_creator_download_name,
-    create_job,
     distill_colleague_skill_artifacts,
-    get_job,
     import_colleague_skill,
     import_mentor_skill,
     import_personal_skill,
-    list_jobs,
-    map_roles_to_team,
-    parse_extracted_roles,
-    serialize_extracted_roles,
-    smart_select_roles,
-    stream_discovery,
-    stream_extraction,
-    translate_texts_via_llm,
-    update_job,
-    PRESET_POOL,
 )
+
 from teams.preset_assets import install_team_preset, list_team_presets
 from teams.snapshot_skills import (
     add_team_skills_to_zip,
@@ -317,6 +305,7 @@ from frontend.proxies.components import register_component_routes
 register_component_routes(app)
 
 register_group_routes(app, port_agent=PORT_AGENT, internal_token=INTERNAL_TOKEN)
+register_group_host_routes(app, is_host_request=lambda: _is_direct_local_request())
 register_guest_routes(app, port_agent=PORT_AGENT, internal_token=INTERNAL_TOKEN, public_base=lambda: _get_public_domain(),
                       is_host_request=lambda: _is_direct_local_request())
 register_agent_routes(
@@ -914,253 +903,11 @@ def tinyfish_site_latest(site_key):
 
 @app.route("/creator")
 def creator():
-    """ClawCross Creator page with TinyFish Live Crawl integration."""
-    return render_template("creator.html")
+    """Keep old bookmarks useful; Team management now happens in the main conversation."""
+    return redirect("/studio?compose=team")
 
 
-# ──────────────────────────────────────────────────────────────
-# ClawCross Creator API — three-stage pipeline
-# ──────────────────────────────────────────────────────────────
-
-@app.route("/api/team-creator/discover", methods=["POST"])
-def team_creator_discover():
-    """Stage 1: Discovery — stream SSE events while TinyFish searches for SOP/org pages."""
-    body = request.get_json(silent=True) or {}
-    task_description = str(body.get("task_description") or body.get("task") or "").strip()
-    search_url = str(body.get("search_url") or "").strip()
-
-    if not task_description:
-        return jsonify({"ok": False, "error": "task_description is required"}), 400
-
-    def generate():
-        try:
-            for event in stream_discovery(task_description, search_url):
-                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-        except Exception as exc:
-            payload = {"type": "ERROR", "error": str(exc)}
-            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-
-    return Response(
-        stream_with_context(generate()),
-        mimetype="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
-
-
-@app.route("/api/team-creator/extract", methods=["POST"])
-def team_creator_extract():
-    """Stage 2: Extraction — stream SSE events while TinyFish extracts roles from a page."""
-    body = request.get_json(silent=True) or {}
-    page_url = str(body.get("url") or body.get("page_url") or "").strip()
-    page_title = str(body.get("title") or "").strip()
-
-    if not page_url:
-        return jsonify({"ok": False, "error": "url is required"}), 400
-
-    def generate():
-        try:
-            for event in stream_extraction(page_url, page_title):
-                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-        except Exception as exc:
-            payload = {"type": "ERROR", "error": str(exc)}
-            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-
-    return Response(
-        stream_with_context(generate()),
-        mimetype="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
-
-
-@app.route("/api/team-creator/build", methods=["POST"])
-def team_creator_build():
-    """Stage 3: Build — convert roles into Clawcross team config.
-
-    Accepts either:
-    - Pre-extracted roles: {"roles": [...], "team_name": "...", "task": "..."}
-    - Or extraction results: {"extraction_results": [...], "team_name": "...", "task": "..."}
-
-    Returns the team config JSON (experts + agents + YAML workflow).
-    """
-    body = request.get_json(silent=True) or {}
-    team_name = str(body.get("team_name") or body.get("team") or "").strip()
-    task = str(body.get("task_description") or body.get("task") or "").strip()
-
-    if not team_name:
-        return jsonify({"ok": False, "error": "team_name is required"}), 400
-
-    roles_data = body.get("roles")
-    extraction_results = body.get("extraction_results")
-    owner_id = str(session.get("user_id") or "").strip()
-
-    if not ((roles_data and isinstance(roles_data, list)) or (extraction_results and isinstance(extraction_results, list))):
-        return jsonify({"ok": False, "error": "Provide 'roles' (array) or 'extraction_results'"}), 400
-
-    def _normalize_role_records(items):
-        normalized = []
-        for item in items or []:
-            if not isinstance(item, dict):
-                continue
-            role_name = str(item.get("role_name") or "").strip()
-            if not role_name:
-                continue
-            normalized.append(
-                {
-                    "role_name": role_name,
-                    "personality_traits": list(item.get("personality_traits") or []),
-                    "primary_responsibilities": list(item.get("primary_responsibilities") or []),
-                    "depends_on": list(item.get("depends_on") or item.get("input_dependency") or []),
-                    "tools_used": list(item.get("tools_used") or []),
-                    "source_url": str(item.get("source_url") or "").strip(),
-                    "expert_tag": str(item.get("expert_tag") or item.get("_expert_tag") or "").strip(),
-                    "output_target": list(item.get("output_target") or []),
-                }
-            )
-        return normalized
-
-    job = create_job(task, team_name, owner_id=owner_id)
-    extracted_roles_payload = []
-
-    try:
-        update_job(job.job_id, owner_id=owner_id, status="running", error="")
-        if roles_data and isinstance(roles_data, list):
-            # Direct role input
-            normalized_roles = _normalize_role_records(roles_data)
-            extracted_roles_payload = normalized_roles
-            team_config = build_from_roles(normalized_roles, team_name, task)
-        elif extraction_results and isinstance(extraction_results, list):
-            # Parse from TinyFish extraction results
-            roles = parse_extracted_roles(extraction_results)
-            if not roles:
-                update_job(job.job_id, owner_id=owner_id, status="failed", error="No roles could be extracted from results")
-                return jsonify({"ok": False, "error": "No roles could be extracted from results", "job_id": job.job_id}), 400
-            extracted_roles_payload = serialize_extracted_roles(roles)
-            team_config = map_roles_to_team(roles, team_name, task)
-
-        saved_job = update_job(
-            job.job_id,
-            owner_id=owner_id,
-            status="complete",
-            extracted_roles=extracted_roles_payload,
-            team_config=team_config,
-            error="",
-        )
-        return jsonify({"ok": True, "team_config": team_config, "job": saved_job.to_dict() if saved_job else {"job_id": job.job_id}})
-    except Exception as e:
-        saved_job = update_job(
-            job.job_id,
-            owner_id=owner_id,
-            status="failed",
-            extracted_roles=extracted_roles_payload,
-            error=str(e),
-        )
-        return jsonify({"ok": False, "error": str(e), "job_id": job.job_id, "job": saved_job.to_dict() if saved_job else None}), 500
-
-
-@app.route("/api/team-creator/download", methods=["POST"])
-def team_creator_download():
-    """Download the built team as a ZIP snapshot (same format as /teams/snapshot/download).
-
-    Accepts the team_config from /api/team-creator/build.
-    """
-    body = request.get_json(silent=True) or {}
-    team_name = str(body.get("team_name") or body.get("team") or "").strip()
-    team_config = body.get("team_config")
-
-    if not team_name:
-        return jsonify({"ok": False, "error": "team_name is required"}), 400
-    if not team_config:
-        return jsonify({"ok": False, "error": "team_config is required"}), 400
-
-    try:
-        zip_bytes = build_team_zip(team_config, team_name)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = build_team_creator_download_name(team_name, timestamp)
-
-        return Response(
-            zip_bytes,
-            mimetype="application/zip",
-            headers={"Content-Disposition": build_attachment_content_disposition(filename)},
-        )
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/api/team-creator/smart-select", methods=["POST"])
-def team_creator_smart_select():
-    """LLM-powered intelligent role selection + preset expert matching.
-
-    Accepts:
-        {"roles": [...], "max_roles": 8, "task_description": "..."}
-
-    Returns:
-        {"ok": true, "selected_indices": [0,2,5], "preset_matches": [...], "reasoning": "..."}
-    """
-    body = request.get_json(silent=True) or {}
-    roles = body.get("roles")
-    max_roles = int(body.get("max_roles", 8))
-    task_desc = str(body.get("task_description") or "").strip()
-
-    if not roles or not isinstance(roles, list):
-        return jsonify({"ok": False, "error": "roles (array) is required"}), 400
-
-    try:
-        result = smart_select_roles(roles, max_roles, task_desc)
-        return jsonify({"ok": True, **result})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/api/team-creator/translate", methods=["POST"])
-def team_creator_translate():
-    """Translate ClawCross Creator dynamic UI text into the requested language."""
-    body = request.get_json(silent=True) or {}
-    texts = body.get("texts")
-    target_lang = str(body.get("target_lang") or "").strip().lower()
-    source_lang = str(body.get("source_lang") or "").strip()
-    context = str(body.get("context") or "").strip()
-
-    if not isinstance(texts, list):
-        return jsonify({"ok": False, "error": "texts (array) is required"}), 400
-    if target_lang not in {"zh", "zh-cn", "en"}:
-        return jsonify({"ok": False, "error": "target_lang must be zh or en"}), 400
-
-    try:
-        translations = translate_texts_via_llm(
-            [str(item or "") for item in texts],
-            target_lang=target_lang,
-            source_lang=source_lang,
-            context=context,
-        )
-        return jsonify({"ok": True, "translations": translations})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/api/team-creator/presets")
-def team_creator_presets():
-    """Return available preset expert tags for matching UI.
-
-    Now returns richer data including category, description, name_zh
-    to support the new expert pool browser in ClawCross Creator.
-    Note: The primary frontend now uses /proxy_visual/experts directly.
-    This endpoint remains for backward compatibility and lightweight usage.
-    """
-    presets = [
-        {
-            "tag": v["tag"],
-            "name": v["name"],
-            "name_zh": v.get("name_zh", ""),
-            "source": v["source"],
-            "category": v.get("category", ""),
-            "description": v.get("description", ""),
-            "temperature": v.get("temperature", 0.7),
-        }
-        for v in PRESET_POOL.values()
-    ]
-    return jsonify({"ok": True, "presets": presets, "count": len(presets)})
-
-
+# Persona/skill import helpers remain available independently of the retired Creator UI.
 def _resolve_team_creator_import_path(raw_path: str) -> Path:
     value = str(raw_path or "").strip()
     if not value:
@@ -1231,6 +978,7 @@ def _load_mentor_import_from_paths(
     return mentor_json, skill_md
 
 
+@app.route("/api/skills/import-colleague", methods=["POST"])
 @app.route("/api/team-creator/import-colleague", methods=["POST"])
 def team_creator_import_colleague():
     """Import a colleague-skill output (meta.json + persona.md + work.md) into ClawCross Creator.
@@ -1318,6 +1066,7 @@ def team_creator_import_colleague():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@app.route("/api/skills/import-mentor", methods=["POST"])
 @app.route("/api/team-creator/import-mentor", methods=["POST"])
 def team_creator_import_mentor():
     """Import a supervisor/mentor skill output ({name}.json + SKILL.md) into ClawCross Creator.
@@ -1389,6 +1138,7 @@ def team_creator_import_mentor():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@app.route("/api/skills/import-personal", methods=["POST"])
 @app.route("/api/team-creator/import-personal", methods=["POST"])
 def team_creator_import_personal():
     """Import a personal/relationship-type skill into ClawCross Creator.
@@ -1461,6 +1211,7 @@ def team_creator_import_personal():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@app.route("/api/skills/arxiv-search", methods=["POST"])
 @app.route("/api/team-creator/arxiv-search", methods=["POST"])
 def team_creator_arxiv_search():
     """Search ArXiv for papers by author and return a ready-to-import mentor JSON.
@@ -1520,6 +1271,7 @@ def team_creator_arxiv_search():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@app.route("/api/skills/feishu-collect", methods=["POST"])
 @app.route("/api/team-creator/feishu-collect", methods=["POST"])
 def team_creator_feishu_collect():
     """Collect Feishu messages for a colleague and return colleague-compatible data.
@@ -1628,24 +1380,6 @@ def team_creator_feishu_collect():
 
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
-
-
-@app.route("/api/team-creator/jobs")
-def team_creator_jobs():
-    """List all build jobs."""
-    owner_id = str(session.get("user_id") or "").strip()
-    limit = request.args.get("limit", type=int)
-    return jsonify({"ok": True, "jobs": list_jobs(owner_id=owner_id, limit=limit)})
-
-
-@app.route("/api/team-creator/jobs/<job_id>")
-def team_creator_job_status(job_id):
-    """Get status of a specific build job."""
-    owner_id = str(session.get("user_id") or "").strip()
-    job = get_job(job_id, owner_id=owner_id)
-    if not job:
-        return jsonify({"ok": False, "error": "Job not found"}), 404
-    return jsonify({"ok": True, "job": job.to_dict(include_payload=True)})
 
 
 @app.route("/studio")
@@ -2976,7 +2710,9 @@ def proxy_user_profile():
                 profile_text = f.read().strip()
     except Exception:
         pass
-    return jsonify({"user_id": user_id, "profile": profile_text})
+    from common.user_portrait import read_portrait
+    portrait = read_portrait(Path(USER_FILES_DIR), user_id)
+    return jsonify({"user_id": user_id, "profile": profile_text, "images": portrait['images']})
 
 
 @app.route("/proxy_user_profile", methods=["PUT"])
@@ -2987,13 +2723,25 @@ def proxy_save_user_profile():
         return jsonify({"error": "not logged in"}), 401
     data = request.get_json() or {}
     profile_text = data.get("profile", "")
+    from common.user_portrait import MAX_TEXT, image_records, read_portrait
+    if not isinstance(profile_text, str) or len(profile_text) > MAX_TEXT:
+        return jsonify(error='用户画像文字最多 16000 字符'), 400
+    try:
+        images = image_records(data['images'], read_portrait(Path(USER_FILES_DIR), user_id)['images']) if 'images' in data else None
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
     profile_dir = os.path.join(str(USER_FILES_DIR), user_id)
     profile_path = os.path.join(profile_dir, "user_profile.txt")
     try:
         os.makedirs(profile_dir, exist_ok=True)
         with open(profile_path, "w", encoding="utf-8") as f:
             f.write(profile_text)
-        return jsonify({"ok": True, "profile": profile_text})
+        if images is not None:
+            image_path = Path(profile_dir) / 'user_profile.images.json'
+            temporary = image_path.with_suffix('.json.tmp')
+            temporary.write_text(json.dumps(images, ensure_ascii=False), encoding='utf-8')
+            temporary.replace(image_path)
+        return jsonify({"ok": True, "profile": profile_text, "images": images if images is not None else read_portrait(Path(USER_FILES_DIR), user_id)['images']})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -3177,7 +2925,10 @@ def _spawn_standalone_python_workflow(
     python_file: str,
     question: str,
     team: str = "",
+    agent_map: dict[str, str] | None = None,
 ) -> dict[str, str | int]:
+    from oasis.agent_bindings import validate_agent_map
+    bindings = validate_agent_map(agent_map if agent_map is not None else {})
     runs_dir = os.path.join(str(DATA_DIR), "python_workflow_runs")
     os.makedirs(runs_dir, exist_ok=True)
     run_id = uuid.uuid4().hex[:12]
@@ -3195,6 +2946,8 @@ def _spawn_standalone_python_workflow(
     ]
     if team:
         cmd.extend(["--team", team])
+    if bindings:
+        cmd.extend(["--agent-map", json.dumps(bindings, ensure_ascii=False)])
 
     log_file = open(log_path, "a", encoding="utf-8")
     proc = subprocess.Popen(
@@ -3567,6 +3320,7 @@ def proxy_visual_run_python_workflow():
             python_file=python_file,
             question=question,
             team=team,
+            agent_map=data.get("agent_map"),
         )
         return jsonify({
             "started": True,

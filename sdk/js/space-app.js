@@ -68,6 +68,10 @@ class App {
       else for (const fn of this.listeners) fn(output);
     });
     space.on('member', () => this.refresh().catch(() => {}));
+    space.on('closing', () => {
+      for (const finish of this.pending.values()) finish.cancel();
+      this.pending.clear(); this.queues.clear(); this.listeners.clear();
+    });
   }
 
   async refresh() { this.roster = await this.space.members(); this.changed(); }
@@ -88,10 +92,14 @@ class App {
   ask(agent, prompt, { timeout = ASK_MS } = {}) {
     const previous = this.queues.get(agent) || Promise.resolve();
     const turn = previous.catch(() => {}).then(async () => {
+      if (this.space.closed) throw new Error('群聊小程序已停止');
       const id = await this.space.ask(agent, prompt);
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => { this.pending.delete(id); reject(new Error('agent 没有在时限内回复')); }, timeout);
-        this.pending.set(id, (content) => { clearTimeout(timer); resolve(content); });
+        const finish = content => { clearTimeout(timer); resolve(content); };
+        finish.cancel = () => { clearTimeout(timer); reject(new Error('群聊小程序已停止')); };
+        if (this.space.closed) finish.cancel();
+        else this.pending.set(id, finish);
       });
     });
     this.queues.set(agent, turn);

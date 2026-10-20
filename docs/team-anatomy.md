@@ -2,7 +2,7 @@
 
 A single concrete example of what a running ClawCross team is made of. We use **`paper-review-council`** as the case study because it touches everything a team can have: member agents, persona prompts, a YAML workflow, a Python workflow, team-scoped SKILLs, and preset stamps.
 
-> If you want command-line creation, read [`build_team.md`](./build_team.md). If you want the browser flow, read [`team-creator.md`](./team-creator.md). For the full YAML grammar see [`create_workflow.md`](./create_workflow.md). This document is just "what is a team made of."
+> If you want command-line creation, read [`build_team.md`](./build_team.md). For Team management through conversation, read [`team-management.md`](./team-management.md). For the full YAML grammar see [`create_workflow.md`](./create_workflow.md). This document is just "what is a team made of."
 
 ---
 
@@ -692,7 +692,7 @@ ls oasis/yaml/  oasis/python/  skills/
 ## 14. Related docs
 
 - [`build_team.md`](./build_team.md) — CLI to create / edit teams and add members.
-- [`team-creator.md`](./team-creator.md) — browser-based Creator (discovery, smart-select, ZIP export).
+- [`team-management.md`](./team-management.md) — main-Agent Team management, members, workflows and schedules.
 - [`create_workflow.md`](./create_workflow.md) — full YAML grammar: selectors, conditional edges, dispatchers.
 - [`workflowpy.md`](./workflowpy.md) — Python-script workflow mode in more depth (Agent Center, forum helpers).
 - [`oasis-reference.md`](./oasis-reference.md) — OASIS runtime model (Town Mode, GraphRAG, ReportAgent).

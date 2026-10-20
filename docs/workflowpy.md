@@ -169,6 +169,41 @@ agents = await ctx.list_agents()
 
 ### 2. Name agents by role or id
 
+Agent bindings are runtime inputs. Write the workflow using internal names:
+
+```python
+from oasis.workflow import Context, workflow
+
+@workflow
+async def main(ctx: Context):
+    reply = await ctx.send_agent("writer", ctx.question)
+    if not reply.ok:
+        raise RuntimeError(reply.error)
+    ctx.set_result({"text": reply.content, "bindings": ctx.agent_map})
+```
+
+Pass a table when launching, without editing the script:
+
+```bash
+python my_workflow.py --user-id alice --question "Draft a plan" \
+  --agent-map '{"writer":"ag_writer_id"}'
+```
+
+Or supply `--agent-map-file agents.yaml` (JSON is also supported). That runtime
+input file contains a plain name/ID mapping or an `agent_map` block. These flags
+also work with `src/backend/oasis/run_python_workflow.py`.
+
+`start_new_oasis(python_file="my_workflow.py", question="...", agent_map={...})`
+and the frontend's `/proxy_visual/run-python-workflow` request forward the same
+run input. `ctx.agent_map` exposes the effective table: current Team roles plus
+this run's overrides. Legacy injected Python workflows receive the same table
+as `agent_map` and `ctx.agent_map` through `POST /topics`.
+
+The runner does not read module-level `AGENT_MAP` definitions. It never rewrites
+the workflow script. Bindings are scoped to each run, validated for the current
+user, and recorded in the run result. Two runs can use different Agent IDs
+with exactly the same source.
+
 `ctx.list_agents()` returns the team's members (outside a team: all of your
 agents) as agent cards with their `role`: `agent_id`, `name`, `platform`,
 `settings`. `ctx.send_agent(target, …)` accepts a member's name in the team, an
@@ -410,7 +445,7 @@ If an AI agent is asked to generate a Python workflow, it should follow these ru
 - prefer the `@workflow` decorator; use the explicit `if __name__ == "__main__"`
   form only when other top-level code must run after `main`
 - prefer `ctx.send_persona(...)` for persona-only speaking roles
-- prefer unique `agent["id"]` when using `ctx.send_agent(...)`
+- use a bound name or unique `agent["agent_id"]` with `ctx.send_agent(...)`
 - do not assume implicit memory is enough
 - store structured outputs in `ctx.set_result(...)`
 - use `ctx.set_conclusion(...)` for a short final summary

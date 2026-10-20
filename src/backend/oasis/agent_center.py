@@ -22,6 +22,7 @@ from agents.messages import AgentMessage, AgentReply
 from agents.routes import agent_card
 from agents.store import Agent, get_store
 from oasis.experts import _build_identity_prompt, get_all_experts
+from oasis.agent_bindings import mapped_agent, merge_agent_maps, team_agent_map, validate_agent_map
 from teams.store import get_team_store
 
 
@@ -109,12 +110,28 @@ def build_persona_catalog(user_id: str, team: str = "") -> list[dict[str, Any]]:
 
 
 class AgentCenter:
-    def __init__(self, user_id: str, team: str = ""):
+    def __init__(self, user_id: str, team: str = "", *, agent_map: dict[str, str] | None = None):
         self.user_id = user_id
         self.team = team
         self._personas = build_persona_catalog(user_id, team)
         self._client = AgentClient(user_id)
         self._temporary: set[TemporaryAgent] = set()
+        self._agent_map: dict[str, str] = {}
+        if agent_map is not None:
+            self.bind_agents(agent_map)
+
+    @property
+    def agent_map(self) -> dict[str, str]:
+        """Team role bindings plus this run's explicit overrides (a copy)."""
+        return merge_agent_maps(team_agent_map(self.user_id, self.team), self._agent_map)
+
+    def bind_agents(self, mapping: dict[str, str]) -> dict[str, str]:
+        chosen = validate_agent_map(mapping)
+        # Check every target before changing any binding. Never invent an Agent.
+        for name in chosen:
+            mapped_agent(self.user_id, name, chosen)
+        self._agent_map = merge_agent_maps(self._agent_map, chosen)
+        return self.agent_map
 
     def temporary_agent(self, name: str = "", *, persona_override: str = "",
                         persona_tag: str | None = None, tools: list[str] | str | None = None,
@@ -173,7 +190,7 @@ class AgentCenter:
         if not key:
             raise ValueError("target 不能为空")
         try:
-            return resolve_agent(self.user_id, self.team, key)
+            return resolve_agent(self.user_id, self.team, key, self.agent_map)
         except LookupError:
             raise ValueError(f"未找到 agent: {target}") from None
 

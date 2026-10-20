@@ -114,7 +114,7 @@ For the full install guide (OpenClaw, Antigravity, MiniMax, WSL, manual CLI conf
 
 - **Team-based orchestration** — combine WeBot, Codex, Claude Code, OpenClaw and API agents into a single Team with one-click import/export
 - **16 built-in Team Presets** — LLM Council, Nuwa All-Stars, Content Empire, Strategists, Tech Titans, and more — install and run immediately
-- **AI team builder** — ClawCross Creator discovers SOP pages, extracts roles with TinyFish, and generates editable personas plus a DAG workflow
+- **Teams through conversation** — Ask your main Agent to manage members, personas, workflows and schedules with optional management tools
 - **Visual orchestration** — design workflows in OASIS with sequential, parallel, branching, or DAG-style expert coordination
 
 ### Claude-Code-Style Delegation with WeBot
@@ -146,7 +146,7 @@ For the full install guide (OpenClaw, Antigravity, MiniMax, WSL, manual CLI conf
 | **OpenAI-compatible API** | Local chat completions endpoint for apps, tools, and clients |
 | **Web UI** | Chat, settings, OASIS panel, group chat, tunnel control, WeBot runtime panel |
 | **Team Presets** | 15 ready-to-use expert teams — install and start collaborating immediately |
-| **ClawCross Creator** | Turn a task description or SOP pages into roles, personas, and an OASIS workflow |
+| **Conversational Team management** | Let the main Agent create Teams and configure members, workflows and schedules |
 | **OASIS workflows** | Sequential, parallel, branching, and DAG-style expert orchestration |
 | **OASIS Town** | Pixel-town visualization with live residents, nudges, and swarm graph |
 | **WeBot runtime** | Claude-Code-style delegation with profiles, modes, tool policies, and per-Agent runtime state |

@@ -1,6 +1,6 @@
 # Build Team via CLI (Quick Reference)
 
-> 用 `src/cli/cli.py` 从零搭一个团队的最短路径。浏览器里从任务描述 / SOP / 工作流画布生成团队，请看 [team-creator.md](./team-creator.md)。
+> 用 `src/cli/cli.py` 从零搭一个团队的最短路径。在主 Agent 对话里创建与管理团队，请看 [team-management.md](./team-management.md)。
 
 ---
 

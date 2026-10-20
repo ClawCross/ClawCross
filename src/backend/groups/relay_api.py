@@ -152,13 +152,36 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
 
     @router.get('/health')
     async def health():
-        return {'status': 'ok', 'protocol': 1}
+        from groups.receipts import PROTOCOL
+        return {'status': 'ok', **PROTOCOL, 'transports': ['poll', 'websocket']}
+
+    @router.get('/capabilities')
+    async def capabilities():
+        return await health()
+
+    @router.post('/receipts')
+    @router.post('/guest/receipts')
+    async def receipt(body: dict, authorization: str | None = Header(None)):
+        return await invoke(store.receipt, token(authorization), body.get('device_id'),
+                            body.get('received_cursor', 0), body.get('read_cursor'))
 
     @router.get('/admin/groups')
     async def admin_groups(request: Request):
         if not local_control(request, key):
             raise HTTPException(403, '服务器管理只允许本机机器凭证')
         return {'groups': await invoke(store.admin_list)}
+
+    @router.get('/admin/network')
+    async def admin_network(request: Request):
+        if not local_control(request, key):
+            raise HTTPException(403, '服务器管理只允许本机机器凭证')
+        return await invoke(store.network_status)
+
+    @router.post('/admin/network')
+    async def set_admin_network(body: dict, request: Request):
+        if not local_control(request, key):
+            raise HTTPException(403, '服务器管理只允许本机机器凭证')
+        return await invoke(store.set_network_enabled, body.get('enabled'))
 
     @router.post('/admin/groups/{gid}/{action}')
     async def admin_manage(gid: str, action: str, body: dict, request: Request):
@@ -193,9 +216,11 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
         end: acknowledge ``cursor`` and receive the events after it."""
         credential = token(authorization)
         cursor = body.get('cursor', 0)
-        if not isinstance(cursor, int) or cursor < 0:
+        if type(cursor) is not int or cursor < 0:
             raise HTTPException(400, '无效的游标')
         await invoke(store.acknowledge, credential, cursor)
+        if body.get('device_id') is not None:
+            await invoke(store.receipt, credential, body['device_id'], body.get('received_cursor', cursor))
         return {'type': 'events', **await invoke(store.events, credential, cursor)}
 
     @router.get('/group')
@@ -279,6 +304,17 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
     @router.post('/guest/rename')
     async def guest_rename(body: GuestName, authorization: str | None = Header(None)):
         return await invoke(store.guest_rename, token(authorization), body.name)
+
+    @router.post('/guest/profile')
+    async def guest_profile(body: dict, authorization: str | None = Header(None)):
+        credential = token(authorization)
+        await invoke(store.manage, credential, 'profile', body)
+        state = await invoke(store.guest_state, credential, 0)
+        return {'members': state['members']}
+
+    @router.get('/guest/image')
+    async def guest_image(principal: str, image_id: str, authorization: str | None = Header(None)):
+        return await invoke(store.profile_image, token(authorization), principal, image_id)
 
     @router.post('/manage/{action}')
     async def manage(action: str, body: dict, authorization: str | None = Header(None)):
@@ -366,7 +402,10 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
             if sum(sockets.values()) >= 256 or sockets.get(identity, 0) >= 2:
                 await ws.close(1013)
                 return
+            device_id = hello.get('device_id')
             await asyncio.to_thread(store.acknowledge, credential, max(0, int(hello.get('cursor', 0))))
+            if device_id is not None:
+                await asyncio.to_thread(store.receipt, credential, device_id, hello.get('received_cursor', hello.get('cursor', 0)))
             sockets[identity] += 1
             pending -= 1
             admitted = True
@@ -374,7 +413,7 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
             while True:
                 packet = await asyncio.to_thread(store.events, credential, cursor)
                 # The card is sent again when it changes, or when a device goes online or offline.
-                card = (packet['group']['version'], [m['online'] for m in packet['group']['members']])
+                card = (packet['group']['version'], [m['online'] for m in packet['group']['members']], packet.get('receipts'))
                 if packet['events'] or card != seen:
                     await ws.send_json({'type': 'events', **packet})
                     if packet['events']:
@@ -386,7 +425,7 @@ def relay_router(store: RelayStore, key: str) -> APIRouter:
                         ack = int(reply.get('cursor', 0))
                         if ack > cursor:
                             raise RelayError('确认了未发送的事件')
-                        await asyncio.to_thread(store.acknowledge, credential, ack)
+                        await asyncio.to_thread(store.acknowledge, credential, ack, device_id)
                 except asyncio.TimeoutError:
                     pass
         except (WebSocketDisconnect, asyncio.TimeoutError):

@@ -12,7 +12,7 @@ import time
 import uuid
 import weakref
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
@@ -144,6 +144,7 @@ class PreparedTurn:
     identity_sections: dict[str, str]
     runtime_context: str = ""
     user_input: str = ""
+    profile_images: list[dict] = field(default_factory=list)
 
 
 def native_workspace_pinned(agent: Agent) -> bool:
@@ -245,7 +246,12 @@ def prepare_turn(agent: Agent, msg: AgentMessage, *, context: dict[str, Any], mo
     text = compose_text_prompt(msg.text, msg.attachments) if plain_text else msg.text
     # Compatibility indicator only; identity content is sent through delta exactly once.
     identity = None if any(key.startswith('identity_') for key in previous) else _join_identity(sections)
-    return PreparedTurn("\n\n".join(filter(None, [delta, text])), identity, dynamic, sections, delta, text)
+    images = []
+    if agent.config.get('creation_template') != 'group' and previous.get('identity_user_profile') != dynamic.get('identity_user_profile'):
+        from common.user_portrait import image_attachments
+        from webot.skills import USER_FILES_DIR
+        images = image_attachments(USER_FILES_DIR, agent.owner)
+    return PreparedTurn("\n\n".join(filter(None, [delta, text])), identity, dynamic, sections, delta, text, images)
 
 
 def remember_turn(store: AgentStore | None, agent: Agent, prepared: PreparedTurn) -> None:

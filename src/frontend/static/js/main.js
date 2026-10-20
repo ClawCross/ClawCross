@@ -1700,6 +1700,12 @@ function applyTranslations() {
         el.title = t(el.getAttribute('data-i18n-title'));
     });
 
+    const welcome = document.querySelector('#chat-box > [data-conversation-welcome]');
+    if (welcome) {
+        const label = welcome.dataset.welcomeLabel || '';
+        welcome.outerHTML = ConversationStart.welcome({label});
+    }
+
     // 更新 title
     document.title = 'Clawcross | AI Agent';
 
@@ -3233,13 +3239,7 @@ function handleNewSession() {
         sessionStorage.setItem('sessionId', currentSessionId);
         updateSessionDisplay();
         // Clear chat box for new conversation
-        const chatBox = document.getElementById('chat-box');
-        chatBox.innerHTML = `
-            <div class="flex justify-start">
-                <div class="message-agent bg-white border p-4 max-w-[85%] shadow-sm text-gray-700">
-                    ${t('new_session_message')}
-                </div>
-            </div>`;
+        renderWeBotWelcomeMessage();
         await loadSessionList();
     });
 }
@@ -4892,7 +4892,7 @@ function forgetDeletedAgent(sessionId) {
         currentSessionId = generateSessionId();
         sessionStorage.setItem('sessionId', currentSessionId);
         updateSessionDisplay();
-        if (_ocChatMode === 'internal') renderWeBotWelcomeMessage(t('new_session_message'));
+        if (_ocChatMode === 'internal') renderWeBotWelcomeMessage();
     }
     if (externalSelected) {
         // A replacement stays a draft; deletion must not create another Agent.
@@ -4917,7 +4917,7 @@ async function deleteSession(sessionId) {
             currentSessionId = generateSessionId();
             sessionStorage.setItem('sessionId', currentSessionId);
             updateSessionDisplay();
-            renderWeBotWelcomeMessage(t('new_session_message'));
+            renderWeBotWelcomeMessage();
         }
         await loadSessionList();
     } catch (e) {
@@ -4948,7 +4948,7 @@ async function deleteAllSessions() {
             currentSessionId = generateSessionId();
             sessionStorage.setItem('sessionId', currentSessionId);
             updateSessionDisplay();
-            renderWeBotWelcomeMessage(t('new_session_message'));
+            renderWeBotWelcomeMessage();
         }
         await loadSessionList();
         if (failCount > 0) alert(`${failCount} 个会话删除失败`);
@@ -5193,7 +5193,12 @@ async function renderStudioTeamTree(force = false) {
             details.className = 'studio-team-node' + (fixed ? ' is-default-team' : '');
             details.dataset.team = fixed ? '__default__' : teamName;
             details.open = expanded.get(details.dataset.team) || false;
-            const summary = document.createElement('summary'); summary.textContent = teamName;
+            const summary = document.createElement('summary');
+            const label = document.createElement('span'); label.textContent = teamName; summary.appendChild(label);
+            const badge = document.createElement('small'); badge.className = 'studio-team-kind';
+            badge.textContent = fixed ? (currentLang === 'en' ? 'Personal' : '个人总览') : String(memberRows.length);
+            summary.appendChild(badge);
+            if (fixed) summary.title = currentLang === 'en' ? 'A fixed overview of your Agents, not a project team' : '用户 Agent 的固定总览，不是项目团队';
             details.appendChild(summary);
             const members = document.createElement('div'); members.className = 'studio-team-members';
             if (!fixed) {
@@ -7015,12 +7020,7 @@ function showLoginScreen() {
     document.getElementById('login-error').classList.add('hidden');
     document.getElementById('username-input').focus();
     const chatBox = document.getElementById('chat-box');
-    chatBox.innerHTML = `
-        <div class="flex justify-start">
-            <div class="message-agent bg-white border p-4 max-w-[85%] shadow-sm text-gray-700">
-                ${t('welcome_message')}
-            </div>
-    </div>`;
+    chatBox.innerHTML = ConversationStart.welcome();
     // Stop OASIS polling
     stopOasisPolling();
     updateLocalLoginBanner();
@@ -7266,6 +7266,7 @@ async function applyStudioInitialTabAfterAuth() {
     if (!(_tabParam === 'group' || _tabParam === 'chat' || _tabParam === 'orchestrate')) {
         await switchPage('chat');
     }
+    ConversationStart.consumeIntent();
 }
 
 // Session check
@@ -8180,6 +8181,7 @@ function createConversationUiPanel(panel) {
 }
 
 function appendMessage(content, isUser = false, images = [], fileNames = [], audioNames = [], workflowNames = []) {
+    document.querySelector('#chat-box > [data-conversation-welcome]')?.remove();
     const wrapper = document.createElement('div');
     wrapper.className = `flex ${isUser ? 'justify-end' : 'justify-start'} animate-in fade-in duration-300`;
     const div = document.createElement('div');
@@ -8231,16 +8233,11 @@ function showTyping() {
     scrollChatToBottom(chatBox, { settle: false });
 }
 
-function renderWeBotWelcomeMessage(message = null) {
+function renderWeBotWelcomeMessage() {
     const chatBox = document.getElementById('chat-box');
     if (!chatBox) return;
     ConversationUiPanels.beginSession(currentSessionId);
-    chatBox.innerHTML = `
-        <div class="flex justify-start">
-            <div class="message-agent bg-white border p-4 max-w-[85%] shadow-sm text-gray-700">
-                ${message || t('welcome_message')}
-            </div>
-        </div>`;
+    chatBox.innerHTML = ConversationStart.welcome();
     scrollChatToBottom(chatBox, { force: true });
 }
 
@@ -11961,15 +11958,19 @@ function renderGroupList(teams) {
         }
     }
     const ordered = ['__default__', ...teams.filter(team => team !== '__default__')].filter(team => teams.includes(team));
+    const firstNamedTeam = ordered.find(team => team !== '__default__');
     container.innerHTML = ordered.map(team => {
         const isActive = team === currentGroupId;
         const virtual = team === '__default__';
         // encodeURIComponent 放入 onclick 内层单引号字符串，避免 JSON.stringify 的双引号截断 HTML 属性
         const te = encodeURIComponent(team).replace(/'/g, '%27');
         return `
+            ${virtual || team === firstNamedTeam ? `<div class="team-list-section-label">${currentLang === 'en' ? (virtual ? 'PERSONAL' : 'PROJECT TEAMS') : (virtual ? '我的空间' : '项目团队')}</div>` : ''}
             <div class="group-item ${isActive ? 'active' : ''} ${virtual ? 'user-space-item' : ''}" data-team="${te}" onclick="void openGroup(decodeURIComponent('${te}'))">
-                <div class="group-name">${escapeHtml(virtual ? (currentLang === 'en' ? 'User space' : '用户空间') : team)}${virtual ? `<span class="user-space-badge">${currentLang === 'en' ? 'Fixed view' : '固定视图'}</span>` : ''}</div>
-                <div class="group-meta">${escapeHtml(virtual ? (currentLang === 'en' ? 'All your Agents · Virtual' : '该用户的全部 Agent · 虚拟') : t('group_item_open_hint'))}</div>
+                <span class="team-list-icon"><svg class="ui-icon"><use href="/static/icons.svg#${virtual ? 'user' : 'users'}"/></svg></span>
+                <div class="team-list-copy"><div class="group-name">${escapeHtml(virtual ? (currentLang === 'en' ? 'User space' : '用户空间') : team)}</div>
+                <div class="group-meta">${escapeHtml(virtual ? (currentLang === 'en' ? 'All Agents & shared resources' : '全部 Agent 与共享资源') : t('group_item_open_hint'))}</div>
+                ${virtual ? `<span class="user-space-badge">${currentLang === 'en' ? 'Personal overview' : '固定个人总览'}</span>` : ''}</div>
                 ${virtual ? '' : `
                 <button type="button" class="group-rename-btn" title="${escapeHtml(t('group_rename_team'))}" aria-label="${escapeHtml(t('group_rename_team'))}" onclick="event.stopPropagation(); renameTeamByName(decodeURIComponent('${te}'))">✏️</button>
                 <button type="button" class="group-delete-btn" title="删除团队" onclick="event.stopPropagation(); deleteTeamByName(decodeURIComponent('${te}'))">🗑️</button>`}
@@ -11987,6 +11988,12 @@ async function openGroup(teamName) {
     document.getElementById('group-empty-placeholder').style.display = 'none';
     const activeChat = document.getElementById('group-active-chat');
     activeChat.style.display = 'flex';
+    activeChat.classList.toggle('is-user-space', teamName === '__default__');
+    const spaceContext = document.getElementById('team-space-context');
+    if (spaceContext) {
+        spaceContext.hidden = teamName !== '__default__';
+        spaceContext.innerHTML = `<span class="team-space-emblem"><svg class="ui-icon"><use href="/static/icons.svg#user"/></svg></span><div><strong>${currentLang === 'en' ? 'Your personal overview' : '你的个人空间总览'}</strong><p>${currentLang === 'en' ? 'All your Agents and shared resources, in one fixed view. This is not a project team.' : '汇总你的全部 Agent 与共享资源。这是固定视图，不是一个项目团队。'}</p></div>`;
+    }
 
     // 设置团队名称和ID
     document.getElementById('group-active-name').textContent = workspaceTeamLabel(teamName);
@@ -14286,8 +14293,9 @@ function switchTeamTab(tab) {
     // Reset all tabs to inactive
     const inactiveStyle = {background: '#f9fafb', color: '#374151', borderColor: '#d1d5db'};
     [btnMembers, btnExperts, btnWorkflows, btnAlarms, btnSkills].forEach(btn => {
-        if (btn) { btn.style.background = inactiveStyle.background; btn.style.color = inactiveStyle.color; btn.style.borderColor = inactiveStyle.borderColor; }
+        if (btn) { btn.setAttribute('aria-pressed', 'false'); btn.style.background = inactiveStyle.background; btn.style.color = inactiveStyle.color; btn.style.borderColor = inactiveStyle.borderColor; }
     });
+    document.getElementById('team-tab-' + tab)?.setAttribute('aria-pressed', 'true');
     if (panelMembers) panelMembers.style.display = 'none';
     if (panelExperts) panelExperts.style.display = 'none';
     if (panelWorkflows) panelWorkflows.style.display = 'none';
@@ -15463,13 +15471,7 @@ async function acpPaintTranscript() {
         return;
     }
     const label = _acpDisplayLabel(_acpTool || '');
-    chatBox.innerHTML =
-        '<div class="flex justify-start">' +
-        '<div class="message-agent bg-white border p-4 max-w-[85%] shadow-sm text-gray-700">' +
-        escapeHtml(label) +
-        '<br><span style="font-size:0.85em;color:#6b7280;">' +
-        escapeHtml(t('oc_acp_via')) +
-        '</span></div></div>';
+    chatBox.innerHTML = ConversationStart.welcome({label});
     scrollChatToBottom(chatBox, { force: true });
     _acpLastTranscriptKey = acpComputeTranscriptKey();
 }

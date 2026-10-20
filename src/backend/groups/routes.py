@@ -108,7 +108,11 @@ def create_groups_router(
 
     @router.get("/groups/{conv_id}/messages")
     async def list_messages(conv_id: str, after_id: int = 0, authorization: str | None = Header(None)):
-        return {"messages": call(service.messages, user_of(authorization), conv_id, after_id)}
+        user = user_of(authorization)
+        result = {"messages": call(service.messages, user, conv_id, after_id)}
+        if hasattr(service, 'message_state'):
+            result.update(call(service.message_state, user, conv_id))
+        return result
 
     @router.get('/groups/{conv_id}/search')
     async def search_messages(conv_id: str, query: str = '', before_id: int = 0, limit: int = 50, sender: str = Query('',max_length=160), from_ts: int = Query(0,ge=0,le=253402300799), to_ts: int = Query(0,ge=0,le=253402300799), authorization: str | None = Header(None)):

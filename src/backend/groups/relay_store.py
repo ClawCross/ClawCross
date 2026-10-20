@@ -14,6 +14,8 @@ import time
 import unicodedata
 
 from groups.delivery import WakeRequest, mentions_everyone, select_wake_targets, resolve_text_mentions
+from common.user_portrait import MAX_TEXT, image_records, public_portrait
+from groups.receipts import PROTOCOL, ReceiptStore
 
 
 class RelayError(Exception):
@@ -38,7 +40,7 @@ APP_ONLINE_SECONDS = 60
 MEMBER_EVENTS = "(kind NOT IN ('app_request','app_output') OR (kind='app_request' AND json_extract(body,'$.connection')=?))"
 
 
-class RelayStore:
+class RelayStore(ReceiptStore):
     def __init__(self, path: str | Path):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -70,6 +72,8 @@ class RelayStore:
                     sender TEXT, client_id TEXT, UNIQUE(group_id, sender, client_id)
                 );
                 CREATE INDEX IF NOT EXISTS relay_events_group ON relay_events(group_id, id);
+                CREATE TABLE IF NOT EXISTS relay_settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+                INSERT OR IGNORE INTO relay_settings VALUES('external_access_enabled','1');
                 CREATE TABLE IF NOT EXISTS relay_guest_tokens (
                     token_hash TEXT PRIMARY KEY,
                     connection_id TEXT NOT NULL REFERENCES relay_connections(id) ON DELETE CASCADE,
@@ -92,6 +96,7 @@ class RelayStore:
             # `guest` marks connections made in a browser. guest_salt/guest_password_hash hold the password
             # of any member that joined by link, from a browser or a ClawCross.
             for column, definition in [('guest', 'INTEGER NOT NULL DEFAULT 0'),
+                                       ('profile', "TEXT NOT NULL DEFAULT '{}'"),
                                        ('guest_salt', "TEXT NOT NULL DEFAULT ''"),
                                        ('guest_password_hash', "TEXT NOT NULL DEFAULT ''")]:
                 if column not in columns:
@@ -108,6 +113,7 @@ class RelayStore:
                 db.execute("ALTER TABLE relay_groups ADD COLUMN announcement TEXT NOT NULL DEFAULT ''")
         if os.name != 'nt':
             self.path.chmod(0o600)
+        self.init_receipts()
 
     @contextmanager
     def db(self):
@@ -138,6 +144,8 @@ class RelayStore:
     def require_external_access(db, gid: str, *, host_local: bool = False):
         if host_local:
             return
+        if not RelayStore.network_enabled(db):
+            raise RelayError('服务器已暂停外部联网，请等待恢复；成员与凭证保留', 503)
         group = db.execute('SELECT external_access_enabled FROM relay_groups WHERE id=?', (gid,)).fetchone()
         if group is not None and not group['external_access_enabled']:
             raise RelayError('群主已暂停外部联网，请等待恢复；成员与凭证保留', 503)
@@ -153,12 +161,13 @@ class RelayStore:
         if group is None:
             raise RelayError('群不存在', 404)
         members = [dict(row) for row in db.execute('''SELECT m.id AS principal,m.agent_id,m.name,m.platform,m.muted,
-                  c.node_id,c.user_id,c.display_name,c.id AS connection_id,c.host_local,c.seen_at,c.guest
+                  c.node_id,c.user_id,c.display_name,c.id AS connection_id,c.host_local,c.seen_at,c.guest,c.profile,c.joined_at
                   FROM relay_members m JOIN relay_connections c ON c.id=m.connection_id
                   WHERE m.group_id=? AND c.revoked=0 ORDER BY c.joined_at,m.agent_id''', (gid,))]
         online_since = time.time() - ONLINE_SECONDS
         for member in members:
             member['is_agent'] = bool(member['agent_id'])
+            member['profile'] = public_portrait(json.loads(member['profile'])) if not member['is_agent'] else {}
             member['muted'] = bool(member['muted'])
             member['host_local'] = bool(member['host_local'])
             member['online'] = member.pop('seen_at') > online_since
@@ -170,7 +179,9 @@ class RelayStore:
                 'app': {'name': app['name'], 'online': app['seen_at'] > time.time() - APP_ONLINE_SECONDS} if app else None,
                 'owner': group['owner_connection'], 'primary_agent': group['primary_member'],
                 'dnd': bool(group['dnd']), 'version': group['version'], 'members': members,
-                'external_access_enabled': bool(group['external_access_enabled']),
+                'external_access_enabled': bool(group['external_access_enabled']) and RelayStore.network_enabled(db),
+                'group_external_access_enabled': bool(group['external_access_enabled']),
+                'server_external_access_enabled': RelayStore.network_enabled(db),
                 'member_count': len(members)}
 
     def _connect(self, db, gid: str, *, node_id: str, user_id: str, display_name: str, host_local: bool = False):
@@ -348,11 +359,13 @@ class RelayStore:
                                      'targets': body.get('targets', [])})
             # `device` numbers the connections, so a browser can group members by device without learning ids.
             devices = list(dict.fromkeys(m['connection_id'] for m in group['members']))
-            members = [{k: m[k] for k in ('principal', 'name', 'is_agent', 'online', 'device_kind', 'platform')} |
-                       {'own': m['connection_id'] == conn['id'], 'device': devices.index(m['connection_id'])}
+            members = [{k: m[k] for k in ('principal', 'agent_id', 'name', 'is_agent', 'online', 'muted', 'device_kind', 'platform', 'profile', 'joined_at')} |
+                       {'own': m['connection_id'] == conn['id'], 'device': devices.index(m['connection_id']),
+                        'is_owner': not m['is_agent'] and m['connection_id'] == group['owner']}
                        for m in group['members']]
             return {'group_id': conn['group_id'], 'password_set': bool(conn['guest_password_hash']), 'title': group['title'], 'members': members,
                     'announcement': group['announcement'], 'app': group['app'],
+                    **PROTOCOL, 'receipts': self.receipt_snapshot(db, conn['group_id']),
                     # What the space's app asks of the agent this browser runs.
                     'requests': [{'id': row['id'], **{k: v for k, v in json.loads(row['body']).items() if k in ('agent', 'content')}}
                                  for row in rows if row['kind'] == 'app_request'],
@@ -370,6 +383,17 @@ class RelayStore:
             db.execute('UPDATE relay_groups SET version=version+1 WHERE id=?', (conn['group_id'],))
             self._event(db, conn['group_id'], 'metadata', {})
             return {'name': name}
+
+    def profile_image(self, token, principal, image_id):
+        with self.db() as db:
+            conn = self.auth(db, token)
+            row = db.execute('''SELECT c.profile FROM relay_members m JOIN relay_connections c ON c.id=m.connection_id
+                              WHERE m.id=? AND m.group_id=? AND m.agent_id='' AND c.revoked=0''',
+                             (principal, conn['group_id'])).fetchone()
+            for image in json.loads(row['profile']).get('images', []) if row else []:
+                if image['id'] == image_id:
+                    return {'url': image['url']}
+            raise RelayError('画像图片不存在或不属于当前群', 404)
 
     def detail(self, token: str) -> dict:
         with self.db() as db:
@@ -422,7 +446,30 @@ class RelayStore:
                                   exclude=fields.get('principal'), guests_only=True)
             group = self._card(db, conn['group_id'])
             owner = group['owner'] == conn['id']
-            if action == 'leave':
+            if action == 'profile':
+                limits = {'name': 40, 'avatar': 16, 'bio': 280, 'location': 80, 'text': MAX_TEXT, 'images': 0}
+                if not fields or set(fields) - limits.keys():
+                    raise RelayError('个人资料字段无效')
+                for field, value in fields.items():
+                    if field != 'images' and (not isinstance(value, str) or len(value) > limits[field]):
+                        raise RelayError('个人资料内容过长或格式无效')
+                member = next(m for m in group['members'] if m['connection_id'] == conn['id'] and not m['is_agent'])
+                if 'name' in fields:
+                    name = fields['name'].strip()
+                    if not name:
+                        raise RelayError('昵称不能为空')
+                    self._unique_name(db, conn['group_id'], name, exclude=member['principal'])
+                    db.execute('UPDATE relay_members SET name=? WHERE id=?', (name, member['principal']))
+                    db.execute('UPDATE relay_connections SET display_name=? WHERE id=?', (name, conn['id']))
+                stored = json.loads(conn['profile'])
+                profile = {**stored, **{k: v.strip() for k, v in fields.items() if k not in {'name','images'}}}
+                if 'images' in fields:
+                    try:
+                        profile['images'] = image_records(fields['images'], stored.get('images', []))
+                    except ValueError as exc:
+                        raise RelayError(str(exc)) from exc
+                db.execute('UPDATE relay_connections SET profile=? WHERE id=?', (json.dumps(profile, ensure_ascii=False), conn['id']))
+            elif action == 'leave':
                 if owner:
                     raise RelayError('群主应删除群或先转让管理权限', 409)
                 db.execute('UPDATE relay_connections SET revoked=1 WHERE id=?', (conn['id'],))
@@ -570,14 +617,16 @@ class RelayStore:
                     break
                 events.append(event)
                 size += length
-            return {'group': group, 'connection_id': conn['id'], 'events': events}
+            return {'group': group, 'connection_id': conn['id'], 'events': events,
+                    **PROTOCOL, 'receipts': self.receipt_snapshot(db, conn['group_id'])}
 
     def messages(self, token: str, after: int = 0) -> list[dict]:
         with self.db() as db:
             conn = self.auth(db, token)
-            rows = db.execute("SELECT * FROM relay_events WHERE group_id=? AND kind='message' AND id>? ORDER BY id DESC LIMIT 100",
+            order = 'ASC' if after else 'DESC'
+            rows = db.execute(f"SELECT * FROM relay_events WHERE group_id=? AND kind='message' AND id>? ORDER BY id {order} LIMIT 100",
                               (conn['group_id'], after)).fetchall()
-            return [{**json.loads(r['body'])['message'], 'id': r['id']} for r in reversed(rows)]
+            return [{**json.loads(r['body'])['message'], 'id': r['id']} for r in (rows if after else reversed(rows))]
 
     def search_messages(self, token: str, query: str, before_id: int = 0, limit: int = 50, *, sender='', from_ts=0, to_ts=0) -> dict:
         query = query.strip()
@@ -610,13 +659,17 @@ class RelayStore:
             after=db.execute("SELECT id,body FROM relay_events WHERE group_id=? AND id>=? AND kind='message' ORDER BY id LIMIT 16",args).fetchall()
             return {'focus_id':message_id,'messages':[{**json.loads(row['body'])['message'],'id':row['id']} for row in [*reversed(before),*after]]}
 
-    def acknowledge(self, token: str, cursor: int):
+    def acknowledge(self, token: str, cursor: int, device_id=None):
+        if type(cursor) is not int or cursor < 0:
+            raise RelayError('无效的确认游标')
         with self.db() as db:
             conn = self.auth(db, token)
             maximum = db.execute('SELECT COALESCE(MAX(id),0) FROM relay_events WHERE group_id=?', (conn['group_id'],)).fetchone()[0]
             if cursor > maximum:
                 raise RelayError('确认游标超出群消息范围')
             db.execute('UPDATE relay_connections SET ack=MAX(ack,?) WHERE id=?', (cursor, conn['id']))
+        if device_id is not None:
+            self.receipt(token, device_id, cursor)
 
     # ── Space apps: a server the owner runs reaches the members' agents through the group. ──
 
@@ -724,3 +777,25 @@ class RelayStore:
     def admin_list(self):
         with self.db() as db:
             return [self._card(db, row['id']) for row in db.execute('SELECT id FROM relay_groups ORDER BY created_at DESC')]
+
+    @staticmethod
+    def network_enabled(db):
+        row = db.execute("SELECT value FROM relay_settings WHERE key='external_access_enabled'").fetchone()
+        return row is None or row['value'] == '1'
+
+    def network_status(self):
+        with self.db() as db:
+            return {'enabled': self.network_enabled(db),
+                    'group_count': db.execute('SELECT COUNT(*) FROM relay_groups').fetchone()[0]}
+
+    def set_network_enabled(self, enabled):
+        if not isinstance(enabled, bool):
+            raise RelayError('联网开关必须为布尔值')
+        with self.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if enabled != self.network_enabled(db):
+                db.execute("UPDATE relay_settings SET value=? WHERE key='external_access_enabled'", ('1' if enabled else '0',))
+                db.execute('UPDATE relay_groups SET version=version+1')
+                for row in db.execute('SELECT id FROM relay_groups').fetchall():
+                    self._event(db, row['id'], 'metadata', {})
+        return self.network_status()

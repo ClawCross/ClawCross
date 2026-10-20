@@ -114,7 +114,7 @@ powershell -ExecutionPolicy Bypass -File .\launch\run.ps1 stop
 
 - **Team 统一编排** — 把 WeBot、Codex、Claude Code、OpenClaw、API agent 组合成单一 Team，支持一键导入导出
 - **16 个内置 Team 预设** — LLM 顾问团、女娲全明星、内容帝国、战略分析团、科技巨头等——安装即用
-- **自带 AI 团队构建器** — ClawCross Creator 发现 SOP 页面、用 TinyFish 抽取角色，生成可编辑的人设和 DAG 工作流
+- **在对话里管理团队** — 主 Agent 使用可选管理工具配置成员、人设、工作流与定时任务
 - **可视化编排** — 在 OASIS 中设计顺序、并行、分支或 DAG 风格的专家协作工作流
 
 ### 类 Claude Code 的委托能力：WeBot
@@ -147,7 +147,7 @@ powershell -ExecutionPolicy Bypass -File .\launch\run.ps1 stop
 | **OpenAI 兼容 API** | 给应用、脚本、客户端提供本地模型入口 |
 | **Web UI** | 聊天、设置、OASIS 面板、群聊、隧道控制、WeBot 运行面板 |
 | **Team 预设** | 15 个开箱即用的专家团队——安装即可开始协作 |
-| **ClawCross Creator** | 把任务描述或 SOP 页面转换成角色、人设和 OASIS 工作流 |
+| **对话式团队管理** | 由主 Agent 创建团队、配置成员、管理工作流和定时任务 |
 | **OASIS 工作流** | 顺序、并行、分支、DAG 风格的专家编排 |
 | **OASIS Town** | 像素小镇可视化 + swarm 图谱 + 实时 nudge |
 | **WeBot 运行时** | 类 Claude Code 委托：角色、模式、工具策略、桥接会话 |

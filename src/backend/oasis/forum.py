@@ -199,6 +199,7 @@ class DiscussionForum:
         self._waiting_experts: set[str] = set()  # 当前 round 在等待 callback 的 expert 集合
         self.schedule_yaml: str | None = None  # 原始 workflow/schedule，供 world refresh 使用
         self.team: str = ""
+        self.agent_map: dict[str, str] = {}
         self.swarm_mode: str = ""
         self.swarm: dict[str, Any] | None = None
         self._event_counter = 0
@@ -282,6 +283,7 @@ class DiscussionForum:
             "status": self.status,
             "discussion": self.discussion,
             "schedule_yaml": self.schedule_yaml,
+            "agent_map": self.agent_map,
             "team": self.team,
             "swarm_mode": self.swarm_mode,
             "swarm": self.swarm,
@@ -302,6 +304,7 @@ class DiscussionForum:
         forum.status = d.get("status", "concluded")
         forum.discussion = d.get("discussion", True)
         forum.schedule_yaml = d.get("schedule_yaml")
+        forum.agent_map = dict(d.get("agent_map") or {})
         forum.team = d.get("team", "")
         forum.swarm_mode = d.get("swarm_mode", "")
         forum.swarm = d.get("swarm")
